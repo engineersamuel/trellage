@@ -167,6 +167,7 @@ usage() {
     '  update --check PROFILE|--all' \
     '  update PROFILE|--all' \
     '  repair PROFILE' \
+    '  harness-version' \
     '  --native-auth PROFILE [CODEX_ARGS...]' \
     '  PROFILE [CODEX_ARGS...]'
 }
@@ -194,6 +195,19 @@ codex_version_if_available() {
   version="$(printf '%s\n' "$output" | extract_semver)"
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
   printf '%s\n' "$version"
+}
+
+print_harness_version_json() {
+  local installed
+  installed="$(codex_version_if_available)"
+  jq -cn --arg installed "$installed" '{
+    schemaVersion: 1,
+    launcher: "cdx",
+    harness: "codex",
+    installed: ($installed | if length > 0 then . else null end),
+    latest: null,
+    latestKnown: false
+  }'
 }
 
 conservative_headless() {
@@ -3596,6 +3610,10 @@ case "$command" in
     [ "$#" -eq 2 ] || die "usage: $launcher_name repair PROFILE"
     require_profile "$2"
     run_locked_profile_action "$2" repair_profile
+    ;;
+  harness-version )
+    [ "$#" -eq 1 ] || die "usage: $launcher_name harness-version"
+    print_harness_version_json
     ;;
   * )
     validate_catalog

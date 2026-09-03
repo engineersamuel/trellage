@@ -61,11 +61,27 @@ const launchersWithoutDoctorSupport: ReadonlySet<NativeLauncherAlias> = new Set<
  */
 const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>(["cldx"])
 
+/**
+ * Every current native launcher exposes a launcher-scoped `harness-version`
+ * subcommand reporting the installed harness CLI's own version (verified
+ * directly against each of `prototypes/trellage-*-profiles/bin/*` and
+ * `prototypes/trellage-codex-common/native-codex`) — including `cldx`,
+ * which lacks `update --check` support but does support `harness-version`
+ * via `native-claude`'s existing internal version helper. Kept as an
+ * explicit exclusion set, matching `launchersWithoutDoctorSupport` and
+ * `launchersWithoutUpdateCheckSupport`, so a future launcher without a
+ * coherent single-binary "harness version" concept (e.g. a multi-tool
+ * toolchain launcher) can be added here without fabricating a version.
+ */
+const launchersWithoutHarnessVersionSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([])
+
 export interface NativeLauncherCapabilities {
   readonly doctorSupported: boolean
   readonly inventorySupported: boolean
   /** Whether this launcher's `update --check PROFILE` (a read-only, non-mutating command) is safe to run in the background. */
   readonly updateCheckSupported: boolean
+  /** Whether this launcher's `harness-version` (a read-only, launcher-scoped, non-mutating command reporting the harness CLI's own version) is safe to run in the background. */
+  readonly harnessVersionSupported: boolean
 }
 
 export const nativeLauncherCapabilities = (launcher: string): NativeLauncherCapabilities => {
@@ -74,6 +90,7 @@ export const nativeLauncherCapabilities = (launcher: string): NativeLauncherCapa
     doctorSupported: supported,
     inventorySupported: supported,
     updateCheckSupported: supported && !launchersWithoutUpdateCheckSupport.has(launcher as NativeLauncherAlias),
+    harnessVersionSupported: supported && !launchersWithoutHarnessVersionSupport.has(launcher as NativeLauncherAlias),
   }
 }
 
@@ -100,6 +117,8 @@ export interface AdminProfileEntry {
   readonly version?: string
   /** Whether this profile's launcher supports a read-only `update --check` (see `launchersWithoutUpdateCheckSupport`). Always `false` for sandbox profiles: `trellage upgrade` rebuilds the locked image and has no safe read-only equivalent. */
   readonly updateCheckSupported: boolean
+  /** Whether this profile's launcher supports a read-only, launcher-scoped `harness-version` (see `launchersWithoutHarnessVersionSupport`). Always `false` for sandbox profiles. */
+  readonly harnessVersionSupported: boolean
   /** The latest version reported by the most recent successful `update --check`, when it differs from `version`. `undefined` while unchecked, unsupported, or when already current. */
   readonly latestVersion?: string
   /** `true` only when a successful check found a newer version than `version`. `undefined` while unchecked/unsupported/malformed. */
@@ -222,7 +241,7 @@ export const aggregateAdminProfiles = (
           // `inventory`/`update --check` subcommand at all (verified against `prototypes/trellage/trellage`'s
           // own mode dispatch); claiming either would either fabricate data or hit the launcher's blanket
           // "an interactive terminal is required" guard for any unrecognized mode.
-          { doctorSupported: true, inventorySupported: false, updateCheckSupported: false }
+          { doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: false }
     const derived =
       entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
     const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs))
@@ -241,6 +260,7 @@ export const aggregateAdminProfiles = (
       install: derived.install,
       ...(readiness?.version === undefined ? {} : { version: readiness.version }),
       updateCheckSupported: capabilities.updateCheckSupported,
+      harnessVersionSupported: capabilities.harnessVersionSupported,
       ...(updateCheck.latestVersion === undefined ? {} : { latestVersion: updateCheck.latestVersion }),
       ...(updateCheck.updateAvailable === undefined ? {} : { updateAvailable: updateCheck.updateAvailable }),
       ...(updateCheck.updateCheckDiagnostic === undefined ? {} : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic }),

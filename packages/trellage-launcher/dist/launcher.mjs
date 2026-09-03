@@ -16686,7 +16686,7 @@ var require_backend = __commonJS({
                       return "html_all_collection";
                     }
                   }
-                  if (!isPlainObject3(data)) {
+                  if (!isPlainObject4(data)) {
                     return "class_instance";
                   }
                   return "object";
@@ -16945,7 +16945,7 @@ var require_backend = __commonJS({
                   }
                 case "thenable":
                   var displayName;
-                  if (isPlainObject3(data)) {
+                  if (isPlainObject4(data)) {
                     displayName = "Thenable";
                   } else {
                     var _resolvedConstructorName = data.constructor.name;
@@ -17013,7 +17013,7 @@ var require_backend = __commonJS({
                   }
               }
             }
-            var isPlainObject3 = function isPlainObject4(object) {
+            var isPlainObject4 = function isPlainObject5(object) {
               var objectPrototype = Object.getPrototypeOf(object);
               if (!objectPrototype) return true;
               var objectParentPrototype = Object.getPrototypeOf(objectPrototype);
@@ -22569,7 +22569,7 @@ var require_backend = __commonJS({
                 var symbolOrNumber = renderer_typeof(type) === "object" && type !== null ? type.$$typeof : type;
                 return renderer_typeof(symbolOrNumber) === "symbol" ? symbolOrNumber.toString() : symbolOrNumber;
               }
-              var _ReactTypeOfWork = ReactTypeOfWork, CacheComponent = _ReactTypeOfWork.CacheComponent, ClassComponent = _ReactTypeOfWork.ClassComponent, IncompleteClassComponent = _ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = _ReactTypeOfWork.IncompleteFunctionComponent, FunctionComponent = _ReactTypeOfWork.FunctionComponent, IndeterminateComponent = _ReactTypeOfWork.IndeterminateComponent, ForwardRef = _ReactTypeOfWork.ForwardRef, HostRoot = _ReactTypeOfWork.HostRoot, HostHoistable = _ReactTypeOfWork.HostHoistable, HostSingleton = _ReactTypeOfWork.HostSingleton, HostComponent = _ReactTypeOfWork.HostComponent, HostPortal = _ReactTypeOfWork.HostPortal, HostText = _ReactTypeOfWork.HostText, Fragment5 = _ReactTypeOfWork.Fragment, LazyComponent = _ReactTypeOfWork.LazyComponent, LegacyHiddenComponent = _ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = _ReactTypeOfWork.MemoComponent, OffscreenComponent = _ReactTypeOfWork.OffscreenComponent, Profiler = _ReactTypeOfWork.Profiler, ScopeComponent = _ReactTypeOfWork.ScopeComponent, SimpleMemoComponent = _ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = _ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = _ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = _ReactTypeOfWork.TracingMarkerComponent, Throw = _ReactTypeOfWork.Throw, ViewTransitionComponent = _ReactTypeOfWork.ViewTransitionComponent, ActivityComponent = _ReactTypeOfWork.ActivityComponent;
+              var _ReactTypeOfWork = ReactTypeOfWork, CacheComponent = _ReactTypeOfWork.CacheComponent, ClassComponent = _ReactTypeOfWork.ClassComponent, IncompleteClassComponent = _ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = _ReactTypeOfWork.IncompleteFunctionComponent, FunctionComponent = _ReactTypeOfWork.FunctionComponent, IndeterminateComponent = _ReactTypeOfWork.IndeterminateComponent, ForwardRef = _ReactTypeOfWork.ForwardRef, HostRoot = _ReactTypeOfWork.HostRoot, HostHoistable = _ReactTypeOfWork.HostHoistable, HostSingleton = _ReactTypeOfWork.HostSingleton, HostComponent = _ReactTypeOfWork.HostComponent, HostPortal = _ReactTypeOfWork.HostPortal, HostText = _ReactTypeOfWork.HostText, Fragment4 = _ReactTypeOfWork.Fragment, LazyComponent = _ReactTypeOfWork.LazyComponent, LegacyHiddenComponent = _ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = _ReactTypeOfWork.MemoComponent, OffscreenComponent = _ReactTypeOfWork.OffscreenComponent, Profiler = _ReactTypeOfWork.Profiler, ScopeComponent = _ReactTypeOfWork.ScopeComponent, SimpleMemoComponent = _ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = _ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = _ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = _ReactTypeOfWork.TracingMarkerComponent, Throw = _ReactTypeOfWork.Throw, ViewTransitionComponent = _ReactTypeOfWork.ViewTransitionComponent, ActivityComponent = _ReactTypeOfWork.ActivityComponent;
               function resolveFiberType(type) {
                 var typeSymbol = getTypeSymbol(type);
                 switch (typeSymbol) {
@@ -22625,7 +22625,7 @@ var require_backend = __commonJS({
                   case HostPortal:
                   case HostText:
                     return null;
-                  case Fragment5:
+                  case Fragment4:
                     return "Fragment";
                   case LazyComponent:
                     return "Lazy";
@@ -22780,7 +22780,7 @@ var require_backend = __commonJS({
             function renderer_attach(hook, rendererID, renderer2, global2, shouldStartProfilingNow, profilingSettings) {
               var version2 = renderer2.reconcilerVersion || renderer2.version;
               var _getInternalReactCons = getInternalReactConstants(version2), getDisplayNameForFiber = _getInternalReactCons.getDisplayNameForFiber, getTypeSymbol = _getInternalReactCons.getTypeSymbol, ReactPriorityLevels = _getInternalReactCons.ReactPriorityLevels, ReactTypeOfWork = _getInternalReactCons.ReactTypeOfWork, StrictModeBits = _getInternalReactCons.StrictModeBits, SuspenseyImagesMode = _getInternalReactCons.SuspenseyImagesMode;
-              var ActivityComponent = ReactTypeOfWork.ActivityComponent, ClassComponent = ReactTypeOfWork.ClassComponent, ContextConsumer = ReactTypeOfWork.ContextConsumer, DehydratedSuspenseComponent = ReactTypeOfWork.DehydratedSuspenseComponent, ForwardRef = ReactTypeOfWork.ForwardRef, Fragment5 = ReactTypeOfWork.Fragment, FunctionComponent = ReactTypeOfWork.FunctionComponent, HostRoot = ReactTypeOfWork.HostRoot, HostHoistable = ReactTypeOfWork.HostHoistable, HostSingleton = ReactTypeOfWork.HostSingleton, HostPortal = ReactTypeOfWork.HostPortal, HostComponent = ReactTypeOfWork.HostComponent, HostText = ReactTypeOfWork.HostText, IncompleteClassComponent = ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = ReactTypeOfWork.IncompleteFunctionComponent, IndeterminateComponent = ReactTypeOfWork.IndeterminateComponent, LegacyHiddenComponent = ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = ReactTypeOfWork.MemoComponent, OffscreenComponent = ReactTypeOfWork.OffscreenComponent, SimpleMemoComponent = ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = ReactTypeOfWork.TracingMarkerComponent, Throw = ReactTypeOfWork.Throw, ViewTransitionComponent = ReactTypeOfWork.ViewTransitionComponent;
+              var ActivityComponent = ReactTypeOfWork.ActivityComponent, ClassComponent = ReactTypeOfWork.ClassComponent, ContextConsumer = ReactTypeOfWork.ContextConsumer, DehydratedSuspenseComponent = ReactTypeOfWork.DehydratedSuspenseComponent, ForwardRef = ReactTypeOfWork.ForwardRef, Fragment4 = ReactTypeOfWork.Fragment, FunctionComponent = ReactTypeOfWork.FunctionComponent, HostRoot = ReactTypeOfWork.HostRoot, HostHoistable = ReactTypeOfWork.HostHoistable, HostSingleton = ReactTypeOfWork.HostSingleton, HostPortal = ReactTypeOfWork.HostPortal, HostComponent = ReactTypeOfWork.HostComponent, HostText = ReactTypeOfWork.HostText, IncompleteClassComponent = ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = ReactTypeOfWork.IncompleteFunctionComponent, IndeterminateComponent = ReactTypeOfWork.IndeterminateComponent, LegacyHiddenComponent = ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = ReactTypeOfWork.MemoComponent, OffscreenComponent = ReactTypeOfWork.OffscreenComponent, SimpleMemoComponent = ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = ReactTypeOfWork.TracingMarkerComponent, Throw = ReactTypeOfWork.Throw, ViewTransitionComponent = ReactTypeOfWork.ViewTransitionComponent;
               var ImmediatePriority = ReactPriorityLevels.ImmediatePriority, UserBlockingPriority = ReactPriorityLevels.UserBlockingPriority, NormalPriority = ReactPriorityLevels.NormalPriority, LowPriority = ReactPriorityLevels.LowPriority, IdlePriority = ReactPriorityLevels.IdlePriority, NoPriority = ReactPriorityLevels.NoPriority;
               var getLaneLabelMap = renderer2.getLaneLabelMap, injectProfilingHooks = renderer2.injectProfilingHooks, overrideHookState = renderer2.overrideHookState, overrideHookStateDeletePath = renderer2.overrideHookStateDeletePath, overrideHookStateRenamePath = renderer2.overrideHookStateRenamePath, overrideProps = renderer2.overrideProps, overridePropsDeletePath = renderer2.overridePropsDeletePath, overridePropsRenamePath = renderer2.overridePropsRenamePath, scheduleRefresh = renderer2.scheduleRefresh, setErrorHandler = renderer2.setErrorHandler, setSuspenseHandler = renderer2.setSuspenseHandler, scheduleUpdate = renderer2.scheduleUpdate, scheduleRetry = renderer2.scheduleRetry, getCurrentFiber = renderer2.getCurrentFiber;
               var supportsTogglingError = typeof setErrorHandler === "function" && typeof scheduleUpdate === "function";
@@ -23141,7 +23141,7 @@ var require_backend = __commonJS({
                     return true;
                   case HostRoot:
                     return false;
-                  case Fragment5:
+                  case Fragment4:
                     return key === null;
                   default:
                     var typeSymbol = getTypeSymbol(type);
@@ -23215,7 +23215,7 @@ var require_backend = __commonJS({
                     return ElementTypeHostComponent;
                   case HostPortal:
                   case HostText:
-                  case Fragment5:
+                  case Fragment4:
                     return ElementTypeOtherOrUnknown;
                   case MemoComponent:
                   case SimpleMemoComponent:
@@ -68116,12 +68116,14 @@ var import_react37 = __toESM(require_react(), 1);
 // src/admin-model.ts
 var launchersWithoutDoctorSupport = /* @__PURE__ */ new Set([]);
 var launchersWithoutUpdateCheckSupport = /* @__PURE__ */ new Set(["cldx"]);
+var launchersWithoutHarnessVersionSupport = /* @__PURE__ */ new Set([]);
 var nativeLauncherCapabilities = (launcher) => {
   const supported = !launchersWithoutDoctorSupport.has(launcher);
   return {
     doctorSupported: supported,
     inventorySupported: supported,
-    updateCheckSupported: supported && !launchersWithoutUpdateCheckSupport.has(launcher)
+    updateCheckSupported: supported && !launchersWithoutUpdateCheckSupport.has(launcher),
+    harnessVersionSupported: supported && !launchersWithoutHarnessVersionSupport.has(launcher)
   };
 };
 var commandPathFor = (entry, catalog) => entry.surface === "sandbox" ? catalog.sandboxCommandPath : catalog.native.find((native2) => native2.launcher === entry.launcher && native2.name === entry.name)?.commandPath ?? "";
@@ -68164,7 +68166,7 @@ var aggregateAdminProfiles = (catalog, readinessInputs = [], updateCheckInputs =
     // `inventory`/`update --check` subcommand at all (verified against `prototypes/trellage/trellage`'s
     // own mode dispatch); claiming either would either fabricate data or hit the launcher's blanket
     // "an interactive terminal is required" guard for any unrecognized mode.
-    { doctorSupported: true, inventorySupported: false, updateCheckSupported: false }
+    { doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: false }
   );
   const derived = entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness);
   const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs));
@@ -68183,6 +68185,7 @@ var aggregateAdminProfiles = (catalog, readinessInputs = [], updateCheckInputs =
     install: derived.install,
     ...readiness?.version === void 0 ? {} : { version: readiness.version },
     updateCheckSupported: capabilities.updateCheckSupported,
+    harnessVersionSupported: capabilities.harnessVersionSupported,
     ...updateCheck.latestVersion === void 0 ? {} : { latestVersion: updateCheck.latestVersion },
     ...updateCheck.updateAvailable === void 0 ? {} : { updateAvailable: updateCheck.updateAvailable },
     ...updateCheck.updateCheckDiagnostic === void 0 ? {} : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic },
@@ -68538,102 +68541,73 @@ var forkFailureToHerdrWorktree = async (runner, request, options) => {
   }
 };
 
-// src/admin-version-check.ts
-var buildUpdateCheckCommand = (entry) => ({
-  executable: entry.commandPath,
-  args: ["update", "--check", entry.name]
+// src/admin-harness-version.ts
+var buildHarnessVersionCommand = (commandPath) => ({
+  executable: commandPath,
+  args: ["harness-version"]
 });
-var currentPatterns = [
-  // fmx: "fmx update: default is current (abc123def456)"
-  // cpx/grx: "default: current (1.2.3)"
-  /\bcurrent\s*\(([^)]+)\)/i,
-  // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
-  /\b(\S+)\s+is current\b/i,
-  // cdx skill-only profiles with no marketplace version to name, e.g.
-  // "youtube: current" (native-codex's `update_check_skill_profile`).
-  /:\s*current\s*$/i
-];
-var updateAvailablePatterns = [
-  // prx/jcx/omp/picx: "prx update: 0.8.1 -> 0.9.0 available"
-  /([^\s:][^\s]*)\s*->\s*([^\s]+?)\s+available/i,
-  // cpx/grx: "default: update available (1.2.3 -> 1.3.0)"
-  /update available\s*\(\s*([^\s]+?)\s*->\s*([^\s)]+?)\s*\)/i,
-  // fmx: "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)"
-  /is stale\s*\(installed\s+([^\s,]+),\s*catalog pin\s+([^\s)]+)\)/i
-];
-var bareUpdateAvailablePatterns = [/:\s*update available\s*$/i];
-var notInstalledPatterns = [
-  /:\s*not installed\b/i,
-  /\bis not set up\b/i
-];
-var versionColumnsFor = (installedVersion, supported, result) => {
-  const installedFallback = installedVersion ?? "\u2014";
-  if (!supported || result === void 0 || "malformed" in result) {
-    return { installed: installedFallback, latest: "\u2014", status: "unknown" };
-  }
-  const installed = result.installed ?? installedVersion ?? "\u2014";
-  if (result.current) return { installed, latest: installed, status: "match" };
-  return { installed, latest: result.latest, status: "mismatch" };
-};
-var parseUpdateCheckOutput = (stdout, installedVersion) => {
+var isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var parseHarnessVersionOutput = (stdout) => {
   const trimmed = stdout.trim();
-  if (trimmed.length === 0) return { malformed: true, diagnostic: "update --check produced no output" };
-  for (const pattern of notInstalledPatterns) {
-    if (pattern.test(trimmed)) return { malformed: true, diagnostic: trimmed.split("\n")[0] ?? trimmed };
+  if (trimmed.length === 0) return { kind: "unavailable", diagnostic: "harness-version produced no output" };
+  let payload;
+  try {
+    payload = JSON.parse(trimmed);
+  } catch {
+    return { kind: "unavailable", diagnostic: `harness-version produced non-JSON output: ${trimmed.split("\n")[0] ?? trimmed}` };
   }
-  for (const pattern of updateAvailablePatterns) {
-    const match = pattern.exec(trimmed);
-    if (match?.[2] !== void 0) {
-      const installed = match[1] ?? installedVersion;
-      return { current: false, latest: match[2], ...installed === void 0 ? {} : { installed } };
-    }
+  if (!isPlainObject(payload) || payload.schemaVersion !== 1) {
+    return { kind: "unavailable", diagnostic: "harness-version produced an unrecognized schema" };
   }
-  for (const pattern of currentPatterns) {
-    const match = pattern.exec(trimmed);
-    if (match !== null) {
-      const installed = match[1] ?? installedVersion;
-      return { current: true, ...installed === void 0 ? {} : { installed } };
-    }
+  const installed = typeof payload.installed === "string" ? payload.installed : void 0;
+  if (installed === void 0) {
+    return { kind: "unavailable", diagnostic: "harness-version could not determine the installed harness version" };
   }
-  for (const pattern of bareUpdateAvailablePatterns) {
-    if (pattern.test(trimmed)) {
-      return { current: false, latest: "\u2014", ...installedVersion === void 0 ? {} : { installed: installedVersion } };
-    }
-  }
-  return {
-    malformed: true,
-    diagnostic: `unrecognized update --check output${installedVersion === void 0 ? "" : ` (installed ${installedVersion})`}: ${trimmed.split("\n")[0] ?? trimmed}`
-  };
+  const latestKnown = payload.latestKnown === true;
+  const latest = typeof payload.latest === "string" ? payload.latest : void 0;
+  if (!latestKnown || latest === void 0) return { kind: "unknown-latest", installed };
+  return { kind: "known-latest", installed, latest };
 };
+var harnessVersionColumnsFor = (supported, result) => {
+  if (!supported || result === void 0 || result.kind === "unavailable") {
+    return { installed: "\u2014", latest: "\u2014", status: "unknown" };
+  }
+  if (result.kind === "unknown-latest") return { installed: result.installed, latest: "\u2014", status: "unknown" };
+  return result.installed === result.latest ? { installed: result.installed, latest: result.latest, status: "match" } : { installed: result.installed, latest: result.latest, status: "mismatch" };
+};
+var harnessVersionLauncherFor = (entry) => entry.surface === "native" ? entry.launcher : void 0;
 
-// src/admin-version-cache.ts
+// src/admin-harness-version-cache.ts
 import { mkdir as mkdir2, readFile as readFile3, rename as rename2, unlink as unlink3, writeFile as writeFile2 } from "node:fs/promises";
 import os5 from "node:os";
 import path9 from "node:path";
 import { randomUUID as randomUUID3 } from "node:crypto";
 var maximumCacheBytes = 256 * 1024;
-var maximumCacheEntries = 512;
-var versionCacheTtlMs = 24 * 60 * 60 * 1e3;
-var emptyRecord = { schemaVersion: 2, entries: {} };
+var maximumCacheEntries = 64;
+var harnessVersionCacheTtlMs = 24 * 60 * 60 * 1e3;
+var emptyRecord = { schemaVersion: 1, entries: {} };
 var isMissingFile = (error) => error instanceof Error && "code" in error && error.code === "ENOENT";
-var isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isPlainObject2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var parseResult = (value) => {
-  if (!isPlainObject(value)) return void 0;
-  const installed = typeof value.installed === "string" ? value.installed : void 0;
-  if (value.malformed === true && typeof value.diagnostic === "string") return { malformed: true, diagnostic: value.diagnostic };
-  if (value.current === true) return { current: true, ...installed === void 0 ? {} : { installed } };
-  if (value.current === false && typeof value.latest === "string") {
-    return { current: false, latest: value.latest, ...installed === void 0 ? {} : { installed } };
+  if (!isPlainObject2(value)) return void 0;
+  if (value.kind === "unavailable" && typeof value.diagnostic === "string") {
+    return { kind: "unavailable", diagnostic: value.diagnostic };
+  }
+  if (value.kind === "unknown-latest" && typeof value.installed === "string") {
+    return { kind: "unknown-latest", installed: value.installed };
+  }
+  if (value.kind === "known-latest" && typeof value.installed === "string" && typeof value.latest === "string") {
+    return { kind: "known-latest", installed: value.installed, latest: value.latest };
   }
   return void 0;
 };
 var parseEntry = (value) => {
-  if (!isPlainObject(value)) return void 0;
+  if (!isPlainObject2(value)) return void 0;
   const result = parseResult(value.result);
   if (result === void 0 || typeof value.checkedAt !== "number" || !Number.isFinite(value.checkedAt)) return void 0;
   return { result, checkedAt: value.checkedAt };
 };
-var parseVersionCacheRecord = (source) => {
+var parseHarnessVersionCacheRecord = (source) => {
   if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) return emptyRecord;
   let payload;
   try {
@@ -68641,15 +68615,15 @@ var parseVersionCacheRecord = (source) => {
   } catch {
     return emptyRecord;
   }
-  if (!isPlainObject(payload) || payload.schemaVersion !== 2 || !isPlainObject(payload.entries)) return emptyRecord;
+  if (!isPlainObject2(payload) || payload.schemaVersion !== 1 || !isPlainObject2(payload.entries)) return emptyRecord;
   const entries = {};
-  for (const [ref, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
+  for (const [launcher, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
     const entry = parseEntry(value);
-    if (entry !== void 0) entries[ref] = entry;
+    if (entry !== void 0) entries[launcher] = entry;
   }
-  return { schemaVersion: 2, entries };
+  return { schemaVersion: 1, entries };
 };
-var loadVersionCache = async (cachePath) => {
+var loadHarnessVersionCache = async (cachePath) => {
   let source;
   try {
     source = await readFile3(cachePath, "utf8");
@@ -68657,7 +68631,7 @@ var loadVersionCache = async (cachePath) => {
     if (isMissingFile(error)) return emptyRecord;
     return emptyRecord;
   }
-  return parseVersionCacheRecord(source);
+  return parseHarnessVersionCacheRecord(source);
 };
 var removeTemporaryCache = async (temporaryPath) => {
   try {
@@ -68666,64 +68640,72 @@ var removeTemporaryCache = async (temporaryPath) => {
     if (!isMissingFile(error)) throw error;
   }
 };
-var saveVersionCache = async (cachePath, value) => {
+var saveHarnessVersionCache = async (cachePath, value) => {
   await mkdir2(path9.dirname(cachePath), { recursive: true, mode: 448 });
   const temporaryPath = `${cachePath}.${process.pid}.${randomUUID3()}.tmp`;
   const source = `${JSON.stringify(value)}
 `;
   if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
-    throw new Error(`admin version cache exceeds ${maximumCacheBytes} bytes`);
+    throw new Error(`admin harness-version cache exceeds ${maximumCacheBytes} bytes`);
   }
   try {
     await writeFile2(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 384 });
     await rename2(temporaryPath, cachePath);
   } catch (error) {
     await removeTemporaryCache(temporaryPath);
-    throw new Error(`could not write admin version cache: ${cachePath}`, { cause: error });
+    throw new Error(`could not write admin harness-version cache: ${cachePath}`, { cause: error });
   }
 };
-var defaultAdminVersionCachePath = (env3 = process.env) => {
+var defaultAdminHarnessVersionCachePath = (env3 = process.env) => {
   const cacheRoot = env3.XDG_CACHE_HOME ?? path9.join(os5.homedir(), ".cache");
-  return path9.join(cacheRoot, "trellage", "trx-admin", "version-cache.json");
+  return path9.join(cacheRoot, "trellage", "trx-admin", "harness-version-cache.json");
 };
-var isVersionCacheStale = (entry, now) => entry === void 0 || now - entry.checkedAt >= versionCacheTtlMs || "malformed" in entry.result;
+var isHarnessVersionCacheStale = (entry, now) => entry === void 0 || now - entry.checkedAt >= harnessVersionCacheTtlMs || entry.result.kind === "unavailable";
 
-// src/admin-version-scheduler.ts
+// src/admin-harness-version-scheduler.ts
 var defaultMaxConcurrent2 = 4;
-var runManagerRefFor = (ref) => `${ref}::update-check`;
-var updateCheckRefFor = runManagerRefFor;
-var shouldAutoRetryMalformedVersion = (result, ref, alreadyAutoRetriedRefs) => "malformed" in result && !alreadyAutoRetriedRefs.has(ref);
-var versionCheckResultForEntry = (entry, runManager) => {
-  const status = runManager.status(updateCheckRefFor(entry.ref));
+var harnessVersionRefFor = (launcher) => `harness-version::${launcher}`;
+var harnessVersionResultForLauncher = (launcher, runManager) => {
+  const status = runManager.status(harnessVersionRefFor(launcher));
   const latest = status.latest;
   if (latest === void 0) return void 0;
-  if (latest.state === "success") return parseUpdateCheckOutput(latest.stdout, entry.version);
-  if (latest.state === "failure") {
-    const parsed = parseUpdateCheckOutput(latest.stdout, entry.version);
-    if (!("malformed" in parsed)) return parsed;
-  }
+  if (latest.state === "success") return parseHarnessVersionOutput(latest.stdout);
   const reason = latest.stderr.trim() || latest.stdout.trim() || latest.state;
-  return { malformed: true, diagnostic: `update --check ${latest.state}: ${reason.split("\n")[0] ?? reason}` };
+  return { kind: "unavailable", diagnostic: `harness-version ${latest.state}: ${reason.split("\n")[0] ?? reason}` };
 };
-var resultFromRun = (entry, runManager) => versionCheckResultForEntry(entry, runManager) ?? { malformed: true, diagnostic: "update --check did not complete" };
-var runBatchedVersionChecks = async (entries, runManager, cache3, options = {}) => {
+var resultFromRun = (launcher, runManager) => harnessVersionResultForLauncher(launcher, runManager) ?? { kind: "unavailable", diagnostic: "harness-version did not complete" };
+var distinctLauncherEntries = (entries) => {
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const entry of entries) {
+    if (!entry.harnessVersionSupported) continue;
+    const launcher = harnessVersionLauncherFor(entry);
+    if (launcher === void 0 || seen.has(launcher)) continue;
+    seen.add(launcher);
+    result.push(entry);
+  }
+  return result;
+};
+var runBatchedHarnessVersionChecks = async (entries, runManager, cache3, options = {}) => {
   const maxConcurrent = options.maxConcurrent ?? defaultMaxConcurrent2;
   const now = options.now ?? (() => Date.now());
   const forceResync = options.forceResync ?? false;
-  const queue = entries.filter((entry) => entry.updateCheckSupported).filter((entry) => forceResync || isVersionCacheStale(cache3.entries[entry.ref], now())).slice();
+  const queue = distinctLauncherEntries(entries).filter((entry) => forceResync || isHarnessVersionCacheStale(cache3.entries[entry.launcher ?? ""], now())).slice();
   if (queue.length === 0) return;
   const worker = async () => {
     for (; ; ) {
       const entry = queue.shift();
       if (entry === void 0) return;
-      const command = buildUpdateCheckCommand(entry);
-      const ref = updateCheckRefFor(entry.ref);
+      const launcher = harnessVersionLauncherFor(entry);
+      if (launcher === void 0) continue;
+      const command = buildHarnessVersionCommand(entry.commandPath);
+      const ref = harnessVersionRefFor(launcher);
       if (forceResync) {
         await runManager.retry(ref, command.executable, command.args);
       } else {
         await runManager.trigger(ref, command.executable, command.args);
       }
-      options.onResult?.(entry.ref, { result: resultFromRun(entry, runManager), checkedAt: now() });
+      options.onResult?.(launcher, { result: resultFromRun(launcher, runManager), checkedAt: now() });
     }
   };
   const workerCount = Math.max(1, Math.min(maxConcurrent, queue.length));
@@ -68735,19 +68717,19 @@ var buildInventoryCommand = (entry) => ({
   executable: entry.commandPath,
   args: ["inventory", entry.name, "--json"]
 });
-var isPlainObject2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isPlainObject3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 var isReadiness = (value) => value === "healthy" || value === "unhealthy" || value === "not-setup" || value === "busy";
 var parsePlugins = (value) => {
   if (!Array.isArray(value)) return void 0;
   const plugins = [];
   for (const item of value) {
-    if (!isPlainObject2(item) || typeof item.name !== "string") return void 0;
+    if (!isPlainObject3(item) || typeof item.name !== "string") return void 0;
     plugins.push({ name: item.name, version: typeof item.version === "string" ? item.version : void 0 });
   }
   return plugins;
 };
 var parseSkills = (value) => {
-  if (!isPlainObject2(value)) return void 0;
+  if (!isPlainObject3(value)) return void 0;
   const packageCount = typeof value.packageCount === "number" ? value.packageCount : void 0;
   const visibleCount = typeof value.visibleCount === "number" ? value.visibleCount : void 0;
   return { packageCount, visibleCount };
@@ -68765,7 +68747,7 @@ var parseInventoryOutput = (stdout) => {
   } catch {
     return { malformed: true, diagnostic: "inventory --json did not return valid JSON" };
   }
-  if (!isPlainObject2(value)) return { malformed: true, diagnostic: "inventory --json must return a JSON object" };
+  if (!isPlainObject3(value)) return { malformed: true, diagnostic: "inventory --json must return a JSON object" };
   if (value.schemaVersion !== 1) return { malformed: true, diagnostic: "inventory --json returned an unsupported schema version" };
   if (!isReadiness(value.readiness)) return { malformed: true, diagnostic: "inventory --json returned an unsupported readiness value" };
   const plugins = parsePlugins(value.plugins);
@@ -68894,7 +68876,7 @@ var AdminDetailPanel = ({
     else if (input === "l") setLaunchConfirming(true);
     else if (input === "f" && canFork) setForkConfirming(true);
     else if (input === "p" && canRepair) setRepairConfirming(true);
-    else if (input === "u" && entry.updateCheckSupported && !versionRunning) onForceResyncVersion(entry);
+    else if (input === "u" && entry.harnessVersionSupported && !versionRunning) onForceResyncVersion(entry);
   });
   const latest = snapshot.latest;
   return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1, marginTop: 1, children: [
@@ -68915,23 +68897,21 @@ var AdminDetailPanel = ({
       /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.install })
     ] }),
     (() => {
-      const versionCols = versionColumnsFor(entry.version, entry.updateCheckSupported, versionResult);
+      if (!entry.harnessVersionSupported) return null;
+      const versionCols = harnessVersionColumnsFor(entry.harnessVersionSupported, versionResult);
       const versionColor = versionCellColor(versionCols.status);
-      if (!entry.updateCheckSupported && entry.version === void 0) return null;
       return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
-        "Version:",
+        "Harness version:",
         " ",
         versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
           spinnerFrameAt(tick),
           " checking\u2026"
         ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...versionColor === void 0 ? {} : { color: versionColor }, children: versionCols.installed }),
-        entry.updateCheckSupported ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
-          " \xB7 Latest version: ",
-          versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
-            spinnerFrameAt(tick),
-            " checking\u2026"
-          ] }) : versionResult !== void 0 && "malformed" in versionResult ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: versionResult.diagnostic }) : versionResult === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "not yet checked" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...versionColor === void 0 ? {} : { color: versionColor }, children: versionCols.latest })
-        ] }) : null
+        " \xB7 Latest version: ",
+        versionRunning ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+          spinnerFrameAt(tick),
+          " checking\u2026"
+        ] }) : versionResult !== void 0 && versionResult.kind === "unavailable" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: versionResult.diagnostic }) : versionResult === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "not yet checked" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...versionColor === void 0 ? {} : { color: versionColor }, children: versionCols.latest })
       ] });
     })(),
     entry.healthDiagnostic === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: entry.healthDiagnostic }),
@@ -68961,7 +68941,7 @@ var AdminDetailPanel = ({
             { key: "l", label: "launch in terminal" },
             canFork ? { key: "f", label: "fork to fix" } : void 0,
             canRepair ? { key: "p", label: "repair profile" } : void 0,
-            entry.updateCheckSupported && !versionRunning ? { key: "u", label: "resync version" } : void 0
+            entry.harnessVersionSupported && !versionRunning ? { key: "u", label: "resync version" } : void 0
           ].filter((item) => item !== void 0)
         }
       ) })
@@ -69113,9 +69093,9 @@ var AdminApp = ({
   const versionRunManager = versionRunManagerRef.current;
   const versionBatchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
   const versionAutoRetriedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
-  const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 2, entries: {} });
+  const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 1, entries: {} });
   const [versionCacheLoaded, setVersionCacheLoaded] = (0, import_react37.useState)(false);
-  const versionCachePath = (0, import_react37.useMemo)(() => defaultAdminVersionCachePath(), []);
+  const versionCachePath = (0, import_react37.useMemo)(() => defaultAdminHarnessVersionCachePath(), []);
   const openGuideOverlay = (entry) => {
     setGuideOverlay({ entry, body: void 0, note: void 0 });
     loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry)).then((result) => {
@@ -69156,7 +69136,7 @@ var AdminApp = ({
   }, [entries, runManager]);
   (0, import_react37.useEffect)(() => {
     let cancelled = false;
-    loadVersionCache(versionCachePath).then((record5) => {
+    loadHarnessVersionCache(versionCachePath).then((record5) => {
       if (!cancelled) setVersionCache(record5);
     }).finally(() => {
       if (!cancelled) setVersionCacheLoaded(true);
@@ -69165,37 +69145,41 @@ var AdminApp = ({
       cancelled = true;
     };
   }, []);
-  const persistVersionResult = (ref, cacheEntry) => {
+  const persistVersionResult = (launcher, cacheEntry) => {
     setVersionCache((previous) => {
-      const next = { schemaVersion: 2, entries: { ...previous.entries, [ref]: cacheEntry } };
-      void saveVersionCache(versionCachePath, next).catch(() => void 0);
+      const next = { schemaVersion: 1, entries: { ...previous.entries, [launcher]: cacheEntry } };
+      void saveHarnessVersionCache(versionCachePath, next).catch(() => void 0);
       return next;
     });
   };
-  const autoRetryMalformedVersion = (entry, cacheEntry) => {
-    if (!shouldAutoRetryMalformedVersion(cacheEntry.result, entry.ref, versionAutoRetriedRefs.current)) return;
-    versionAutoRetriedRefs.current.add(entry.ref);
-    void runBatchedVersionChecks([entry], versionRunManager, versionCache, {
+  const autoRetryUnavailableVersion = (entries2, launcher, cacheEntry) => {
+    if (cacheEntry.result.kind !== "unavailable" || versionAutoRetriedRefs.current.has(launcher)) return;
+    versionAutoRetriedRefs.current.add(launcher);
+    const launcherEntries = entries2.filter((entry) => harnessVersionLauncherFor(entry) === launcher);
+    void runBatchedHarnessVersionChecks(launcherEntries, versionRunManager, versionCache, {
       forceResync: true,
       onResult: persistVersionResult
     });
   };
   (0, import_react37.useEffect)(() => {
     if (!versionCacheLoaded) return;
-    const supportedRefs = entries.filter((entry) => entry.updateCheckSupported).map((entry) => entry.ref);
-    if (!shouldStartBatch(supportedRefs, versionBatchStartedRefs.current)) return;
-    versionBatchStartedRefs.current = new Set(supportedRefs);
-    void runBatchedVersionChecks(entries, versionRunManager, versionCache, {
-      onResult: (ref, cacheEntry) => {
-        persistVersionResult(ref, cacheEntry);
-        const entry = entries.find((candidate) => candidate.ref === ref);
-        if (entry !== void 0) autoRetryMalformedVersion(entry, cacheEntry);
+    const supportedLaunchers = Array.from(
+      new Set(entries.filter((entry) => entry.harnessVersionSupported).map((entry) => harnessVersionLauncherFor(entry) ?? ""))
+    ).filter((launcher) => launcher.length > 0);
+    if (!shouldStartBatch(supportedLaunchers, versionBatchStartedRefs.current)) return;
+    versionBatchStartedRefs.current = new Set(supportedLaunchers);
+    void runBatchedHarnessVersionChecks(entries, versionRunManager, versionCache, {
+      onResult: (launcher, cacheEntry) => {
+        persistVersionResult(launcher, cacheEntry);
+        autoRetryUnavailableVersion(entries, launcher, cacheEntry);
       }
     });
   }, [entries, versionRunManager, versionCacheLoaded, versionCachePath]);
   const forceResyncVersion = (entry) => {
-    versionAutoRetriedRefs.current.delete(entry.ref);
-    void runBatchedVersionChecks([entry], versionRunManager, versionCache, {
+    const launcher = harnessVersionLauncherFor(entry);
+    if (launcher !== void 0) versionAutoRetriedRefs.current.delete(launcher);
+    const launcherEntries = entries.filter((candidate) => harnessVersionLauncherFor(candidate) === launcher);
+    void runBatchedHarnessVersionChecks(launcherEntries, versionRunManager, versionCache, {
       forceResync: true,
       onResult: persistVersionResult
     }).finally(() => setTick((value) => value + 1));
@@ -69271,9 +69255,16 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
   const viewState = resolveAdminViewState(entries, sorted, false);
   const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1);
   const selected = sorted[boundedIndex];
-  const versionResultFor = (entry) => versionCheckResultForEntry(entry, versionRunManager) ?? versionCache.entries[entry.ref]?.result;
-  const versionRunning = (entry) => versionRunManager.status(updateCheckRefFor(entry.ref)).state === "running";
-  const versionColumnsFor2 = (entry) => versionColumnsFor(entry.version, entry.updateCheckSupported, versionResultFor(entry));
+  const versionResultFor = (entry) => {
+    const launcher = harnessVersionLauncherFor(entry);
+    if (launcher === void 0) return void 0;
+    return harnessVersionResultForLauncher(launcher, versionRunManager) ?? versionCache.entries[launcher]?.result;
+  };
+  const versionRunning = (entry) => {
+    const launcher = harnessVersionLauncherFor(entry);
+    return launcher !== void 0 && versionRunManager.status(harnessVersionRefFor(launcher)).state === "running";
+  };
+  const versionColumnsFor = (entry) => harnessVersionColumnsFor(entry.harnessVersionSupported, versionResultFor(entry));
   const statusesByRef = (0, import_react37.useMemo)(() => {
     const map = /* @__PURE__ */ new Map();
     for (const entry of sorted) map.set(entry.ref, runStatusOf(entry, runManager.status(entry.ref)));
@@ -69281,7 +69272,7 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
   }, [sorted, runManager, tick]);
   const versionColumnsByRef = (0, import_react37.useMemo)(() => {
     const map = /* @__PURE__ */ new Map();
-    for (const entry of sorted) map.set(entry.ref, versionColumnsFor2(entry));
+    for (const entry of sorted) map.set(entry.ref, versionColumnsFor(entry));
     return map;
   }, [sorted, versionRunManager, versionCache, tick]);
   const widths = (0, import_react37.useMemo)(
@@ -69402,7 +69393,7 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         const active = index === boundedIndex;
         const status = runStatusOf(entry, runManager.status(entry.ref));
         const versionRunningNow = versionRunning(entry);
-        const versionCols = versionColumnsByRef.get(entry.ref) ?? versionColumnsFor2(entry);
+        const versionCols = versionColumnsByRef.get(entry.ref) ?? versionColumnsFor(entry);
         const versionColor = versionCellColor(versionCols.status);
         return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u203A " : "  " }) }),

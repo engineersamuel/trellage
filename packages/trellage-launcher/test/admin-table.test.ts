@@ -18,6 +18,7 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
   install: "installed",
   stale: false,
   updateCheckSupported: true,
+  harnessVersionSupported: true,
   updateCheckStale: false,
   ...overrides,
 })

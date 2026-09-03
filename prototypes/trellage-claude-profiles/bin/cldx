@@ -19,6 +19,7 @@ Usage:
   cldx setup [default]
   cldx doctor [default]
   cldx repair [default]
+  cldx harness-version
 
 Bare cldx invocations use the default profile.
 EOF
@@ -351,6 +352,19 @@ case "${1-}" in
     [[ "$#" -le 1 ]] || die "usage: cldx $command_name [default]"
     require_default_profile "${1-default}"
     "${command_name}_profile"
+    ;;
+  harness-version)
+    shift
+    [[ "$#" -eq 0 ]] || die 'harness-version accepts no arguments'
+    installed="$("$native_claude" version)"
+    jq -cn --arg installed "$installed" '{
+      schemaVersion: 1,
+      launcher: "cldx",
+      harness: "claude",
+      installed: ($installed | if length > 0 then . else null end),
+      latest: null,
+      latestKnown: false
+    }'
     ;;
   default)
     shift

@@ -17,6 +17,7 @@ const entry: AdminProfileEntry = {
   install: "installed",
   stale: false,
   updateCheckSupported: true,
+  harnessVersionSupported: true,
   updateCheckStale: false,
 }
 

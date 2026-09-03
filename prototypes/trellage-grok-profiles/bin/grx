@@ -116,7 +116,8 @@ usage() {
     '  grx doctor PROFILE' \
     '  grx update --check PROFILE|--all' \
     '  grx update PROFILE|--all' \
-    '  grx repair PROFILE'
+    '  grx repair PROFILE' \
+    '  grx harness-version'
 }
 
 require_command() {
@@ -267,6 +268,19 @@ grok_version_if_available() {
   version="$(printf '%s\n' "$output" | extract_semver)"
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
   printf '%s\n' "$version"
+}
+
+print_harness_version_json() {
+  local installed
+  installed="$(grok_version_if_available)"
+  jq -cn --arg installed "$installed" '{
+    schemaVersion: 1,
+    launcher: "grx",
+    harness: "grok",
+    installed: ($installed | if length > 0 then . else null end),
+    latest: null,
+    latestKnown: false
+  }'
 }
 
 conservative_headless() {
@@ -1963,6 +1977,10 @@ case "$command_name" in
       resolve_grok
       for_selected_profiles "$1" update_profile
     fi
+    ;;
+  harness-version)
+    [ "$#" -eq 0 ] || die 'harness-version accepts no arguments'
+    print_harness_version_json
     ;;
   *)
     launch_profile "$command_name" "$@"

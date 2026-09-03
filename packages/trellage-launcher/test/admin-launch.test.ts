@@ -32,6 +32,7 @@ const nativeEntry: AdminProfileEntry = {
   install: "installed",
   stale: false,
   updateCheckSupported: true,
+  harnessVersionSupported: true,
   updateCheckStale: false,
 }
 
@@ -48,6 +49,7 @@ const sandboxEntry: AdminProfileEntry = {
   install: "unknown",
   stale: false,
   updateCheckSupported: false,
+  harnessVersionSupported: false,
   updateCheckStale: false,
 }
 

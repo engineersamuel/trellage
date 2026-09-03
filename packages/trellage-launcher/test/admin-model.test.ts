@@ -128,7 +128,7 @@ describe("aggregateAdminProfiles", () => {
   it("marks a sandbox profile as not supporting inventory (the sandbox launcher has no `inventory` subcommand)", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
     const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    expect(sandbox).toMatchObject({ doctorSupported: true, inventorySupported: false, updateCheckSupported: false })
+    expect(sandbox).toMatchObject({ doctorSupported: true, inventorySupported: false, updateCheckSupported: false, harnessVersionSupported: false })
   })
 
   it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {
@@ -238,6 +238,7 @@ describe("toProfileGuideIdentity", () => {
         install: "installed",
         stale: false,
         updateCheckSupported: true,
+        harnessVersionSupported: true,
         updateCheckStale: false,
       }),
     ).toEqual({ surface: "native", launcher: "cpx", profile: "hve" })
@@ -257,6 +258,7 @@ describe("toProfileGuideIdentity", () => {
         install: "installed",
         stale: false,
         updateCheckSupported: false,
+        harnessVersionSupported: false,
         updateCheckStale: false,
       }),
     ).toEqual({ surface: "sandbox", profile: "prime-agent" })

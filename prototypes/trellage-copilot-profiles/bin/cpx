@@ -56,6 +56,7 @@ Usage:
   cpx update --check PROFILE|--all
   cpx update PROFILE|--all
   cpx repair PROFILE
+  cpx harness-version
 EOF
 }
 
@@ -1556,6 +1557,19 @@ repair_profile() {
   printf '%s: repaired\n' "$profile"
 }
 
+print_harness_version_json() {
+  local installed
+  installed="$(copilot_version_if_available)"
+  jq -cn --arg installed "$installed" '{
+    schemaVersion: 1,
+    launcher: "cpx",
+    harness: "copilot",
+    installed: ($installed | if length > 0 then . else null end),
+    latest: null,
+    latestKnown: false
+  }'
+}
+
 require_command jq
 validate_catalog
 
@@ -1604,6 +1618,10 @@ case "$command_name" in
     [[ "$#" == 1 ]] || die 'repair requires PROFILE'
     require_command copilot
     repair_profile "$1"
+    ;;
+  harness-version)
+    [[ "$#" == 0 ]] || die 'harness-version accepts no arguments'
+    print_harness_version_json
     ;;
   -h|--help|help)
     usage

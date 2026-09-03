@@ -25,6 +25,7 @@ Usage:
   picx doctor [default]
   picx repair [default]
   picx update [--check] [default]
+  picx harness-version
 
 Bare picx invocations use the default profile.
 EOF
@@ -922,6 +923,21 @@ check_for_update() {
   fi
 }
 
+print_harness_version_json() {
+  local installed='' latest=''
+
+  installed="$(read_installed_version 2>/dev/null || :)"
+  latest="$(resolve_latest_version 2>/dev/null || :)"
+  jq -cn --arg installed "$installed" --arg latest "$latest" '{
+    schemaVersion: 1,
+    launcher: "picx",
+    harness: "pi",
+    installed: ($installed | if length > 0 then . else null end),
+    latest: ($latest | if length > 0 then . else null end),
+    latestKnown: true
+  }'
+}
+
 update_profile() {
   local current latest
 
@@ -1228,6 +1244,11 @@ case "$command_name" in
     else
       update_profile
     fi
+    ;;
+  harness-version)
+    shift
+    [[ "$#" -eq 0 ]] || die 'harness-version accepts no arguments'
+    print_harness_version_json
     ;;
   default)
     select_profile "$command_name"

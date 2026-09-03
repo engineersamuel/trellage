@@ -222,6 +222,7 @@ printf '%s\n' \
   '  update --check PROFILE|--all' \
   '  update PROFILE|--all' \
   '  repair PROFILE' \
+  '  harness-version' \
   '  --native-auth PROFILE [CODEX_ARGS...]' \
   '  PROFILE [CODEX_ARGS...]' >"$expected_help"
 HOME="$fixture_root/home" "$fixture_launcher" --help >"$fixture_root/help.out" || fail 'help failed'
