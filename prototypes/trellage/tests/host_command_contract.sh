@@ -2625,7 +2625,7 @@ test_claude_attachment_prepares_and_restores_tty() {
     || fail 'Claude Docker attachment did not receive a prepared terminal'
   [[ -s "$tty_before" && -s "$tty_after" ]] || fail 'Claude TTY state capture is incomplete'
   cmp -s "$tty_before" "$tty_after" || fail 'Claude attachment did not restore the exact terminal state'
-  printf 'Trellage host test: PASS: Claude attachment prepares and restores its PTY\n'
+  printf 'Trellage host test: PASS: Claude attachment preserves input bytes and restores its PTY\n'
 }
 
 test_doctor_reports_status_without_mutation_or_secrets() {
