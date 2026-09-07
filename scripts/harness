@@ -108,6 +108,7 @@ validate_manifest() {
       and (.service | type == "string")
       and (.port | type == "number" and . >= 1024 and . <= 65535)
       and (.model | type == "string" and length > 0)
+      and ((has("reasoningEffort") | not) or (.reasoningEffort | type == "string" and length > 0))
       and (.provider | type == "string" and length > 0)
       and (.packages | type == "array" and length == 1)
       and all(.packages[];
@@ -222,10 +223,12 @@ compose_for() {
   local secret_file="$2"
   shift 2
 
-  local contestant_id runtime port experiment package_ref package_plugins skills_context
+  local contestant_id runtime port experiment package_ref package_plugins skills_context model reasoning_effort
   local compose_args env_args
   contestant_id="$(jq -r '.id' <<<"$contestant")"
   runtime="$(jq -r '.runtime' <<<"$contestant")"
+  model="$(jq -r '.model' <<<"$contestant")"
+  reasoning_effort="$(jq -r '.reasoningEffort // "max"' <<<"$contestant")"
   port="$(jq -r '.port' <<<"$contestant")"
   experiment="$harness_id-$contestant_id"
   package_ref="$(jq -r '.packages[0].ref' <<<"$contestant")"
@@ -247,6 +250,8 @@ compose_for() {
   case "$runtime" in
     codex)
       env_args+=(
+        CODEX_MODEL="${CODEX_MODEL:-$model}"
+        CODEX_REASONING_EFFORT="${CODEX_REASONING_EFFORT:-$reasoning_effort}"
         WSHOBSON_AGENTS_REF="$package_ref"
         WSHOBSON_AGENTS_PLUGIN="$package_plugins"
       )
@@ -254,6 +259,8 @@ compose_for() {
     copilot)
       compose_args+=(-f compose.copilot.yaml)
       env_args+=(
+        COPILOT_MODEL="${COPILOT_MODEL:-$model}"
+        COPILOT_REASONING_EFFORT="${COPILOT_REASONING_EFFORT:-$reasoning_effort}"
         AWESOME_COPILOT_REF="$package_ref"
         AWESOME_COPILOT_PLUGINS="$package_plugins"
         HARNESS_COPILOT_TOKEN_FILE="${secret_file:-/dev/null}"

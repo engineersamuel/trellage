@@ -17,6 +17,61 @@ case "$session_mode" in
     ;;
 esac
 
+default_model="${CODEX_MODEL:-gpt-6-astra}"
+default_reasoning_effort="${CODEX_REASONING_EFFORT:-max}"
+model="$default_model"
+reasoning_effort="$default_reasoning_effort"
+model_override=''
+
+apply_config_override() {
+  local key="${1%%=*}"
+  local value="${1#*=}"
+  key="${key//[[:space:]]/}"
+  case "$key" in
+    model | model_reasoning_effort) ;;
+    *) return ;;
+  esac
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  case "$value" in
+    \"*\") value="$(jq -er 'select(type == "string")' <<<"$value")" ;;
+    \'*\') value="${value:1:${#value}-2}" ;;
+  esac
+  case "$key" in
+    model) model="$value" ;;
+    model_reasoning_effort) reasoning_effort="$value" ;;
+  esac
+}
+
+# Match Codex's option precedence for the proxy probe and runtime receipt.
+caller_args=("$@")
+for ((index = 0; index < ${#caller_args[@]}; index++)); do
+  argument="${caller_args[$index]}"
+  case "$argument" in
+    --) break ;;
+    -m | --model | -c | --config)
+      index=$((index + 1))
+      [[ "$index" -lt "${#caller_args[@]}" ]] || break
+      value="${caller_args[$index]}"
+      case "$argument" in
+        -m | --model) model_override="$value" ;;
+        -c | --config) apply_config_override "$value" ;;
+      esac
+      ;;
+    --model=*) model_override="${argument#--model=}" ;;
+    -m?*) model_override="${argument#-m}" ;;
+    --config=*) apply_config_override "${argument#--config=}" ;;
+    -c?*) apply_config_override "${argument#-c}" ;;
+  esac
+done
+[[ -z "$model_override" ]] || model="$model_override"
+
+config_args=(
+  -c "model=$(jq -nc --arg value "$default_model" '$value')"
+  -c "model_reasoning_effort=$(jq -nc --arg value "$default_reasoning_effort" '$value')"
+  -c "plan_mode_reasoning_effort=$(jq -nc --arg value "$default_reasoning_effort" '$value')"
+)
+
 mkdir -p /workspace/.harness
 session_file='/workspace/.harness/codex-session-id'
 events_file='/workspace/.harness/codex-events.jsonl'
@@ -30,16 +85,17 @@ curl -fsS http://copilot-proxy-rs:8080/health \
 curl -fsS http://copilot-proxy-rs:8080/v1/models \
   > /workspace/.harness/proxy-models.json
 
-jq -e '
+jq -e --arg model "$model" '
   any(.models[]?;
-    .slug == "gpt-5.5"
+    .slug == $model
     and any(.supported_endpoints[]?; . == "/responses")
   )
 ' /workspace/.harness/proxy-models.json >/dev/null
 
 curl -fsS http://copilot-proxy-rs:8080/v1/responses \
   -H 'Content-Type: application/json' \
-  -d '{"model":"gpt-5.5","input":"Reply with exactly PROXY_OK"}' \
+  -d "$(jq -nc --arg model "$model" --arg effort "$reasoning_effort" \
+    '{model: $model, reasoning: {effort: $effort}, input: "Reply with exactly PROXY_OK"}')" \
   > /workspace/.harness/proxy-proof.json
 
 proxy_text="$(jq -r '[.output[]?.content[]? | select(.type == "output_text") | .text] | join("")' /workspace/.harness/proxy-proof.json)"
@@ -51,6 +107,7 @@ proxy_text="$(jq -r '[.output[]?.content[]? | select(.type == "output_text") | .
 set +e
 if [[ "$session_mode" == '--new' ]]; then
   codex exec \
+    "${config_args[@]}" \
     --json \
     --dangerously-bypass-approvals-and-sandbox \
     -C /workspace \
@@ -78,6 +135,7 @@ else
     mv "$session_tmp" "$session_file"
   fi
   codex exec resume \
+    "${config_args[@]}" \
     --json \
     --dangerously-bypass-approvals-and-sandbox \
     --output-last-message "$last_message_file" \
@@ -103,12 +161,13 @@ codex_version="$(codex --version | head -n 1)"
 jq -n \
   --arg runtime codex \
   --arg provider copilot-proxy-rs \
-  --arg model gpt-5.5 \
+  --arg model "$model" \
+  --arg reasoningEffort "$reasoning_effort" \
   --arg version "$codex_version" \
   --arg startedAt "$started_at" \
   --arg finishedAt "$finished_at" \
   --argjson exitCode "$codex_status" \
-  '{runtime: $runtime, provider: $provider, model: $model, version: $version,
+  '{runtime: $runtime, provider: $provider, model: $model, reasoningEffort: $reasoningEffort, version: $version,
     startedAt: $startedAt, finishedAt: $finishedAt, exitCode: $exitCode}' \
   >"$runtime_file"
 

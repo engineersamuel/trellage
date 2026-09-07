@@ -88,10 +88,15 @@ jq -n \
   --arg wshobsonPlugin "${WSHOBSON_AGENTS_PLUGIN:-}" \
   --arg skillsContext "${HARNESS_SKILLS_CONTEXT:-}" \
   --arg skillsState "$skills_state" \
+  --arg codexModel "${CODEX_MODEL:-}" \
+  --arg codexEffort "${CODEX_REASONING_EFFORT:-}" \
+  --arg copilotModel "${COPILOT_MODEL:-}" \
+  --arg copilotEffort "${COPILOT_REASONING_EFFORT:-}" \
   '{tokenState: $tokenState, promptHash: $promptHash,
     npmRegistry: $npmRegistry, pypiIndex: $pypiIndex,
     wshobsonPlugin: $wshobsonPlugin, skillsContext: $skillsContext,
-    skillsState: $skillsState, args: $ARGS.positional}' \
+    skillsState: $skillsState, codexModel: $codexModel, codexEffort: $codexEffort,
+    copilotModel: $copilotModel, copilotEffort: $copilotEffort, args: $ARGS.positional}' \
   --args -- "$@" \
   >"$FAKE_DOCKER_LOG_DIR/call.$$.json"
 
@@ -165,6 +170,10 @@ runner_env=(
   -u GH_TOKEN
   -u UV_DEFAULT_INDEX
   -u PIP_INDEX_URL
+  -u CODEX_MODEL
+  -u CODEX_REASONING_EFFORT
+  -u COPILOT_MODEL
+  -u COPILOT_REASONING_EFFORT
   PATH="$fake_bin:$PATH"
   npm_config_registry='https://packagefeedproxy.microsoft.io/npm/registry/'
   FAKE_DOCKER_LOG_DIR="$docker_log_dir"
@@ -200,6 +209,8 @@ grep -Fq 'duplicate contestant port' "$fixture_root/invalid.stderr" \
 
 for invalid_mutation in \
   '.acceptance = "unknown-v1"' \
+  '.contestants[0].reasoningEffort = ""' \
+  '.contestants[1].reasoningEffort = 3' \
   '.contestants[0].packages[0].ref = "../main"' \
   '.contestants[0].packages[0].ref = "feature/unsafe"' \
   '.contestants[0].packages[0].plugins += ["api-security"]' \
@@ -244,9 +255,39 @@ jq -s -e '
   and ([.[] | select(.promptHash != "")] | length) == 2
   and any(.[]; (.args | index("agent")) and .tokenState == "absent")
   and any(.[]; (.args | index("copilot_agent")) and .tokenState == "set")
+  and any(.[]; (.args | index("agent")) and .codexModel == "gpt-6-astra" and .codexEffort == "max")
+  and any(.[]; (.args | index("copilot_agent")) and .copilotModel == "gpt-6-astra" and .copilotEffort == "max")
 ' "${run_calls[@]}" >/dev/null || fail 'prompt parity or Copilot-only secret scope failed'
 [[ "$(find "$gh_log_dir" -type f -name '*.txt' | wc -l | tr -d ' ')" == '1' ]] \
   || fail 'gh auth token fallback was not used exactly once'
+
+override_manifest="$fixture_root/override.json"
+jq '
+  .contestants[0].model = "gpt-5.5"
+  | .contestants[0].reasoningEffort = "high"
+  | .contestants[1].model = "gpt-override"
+  | del(.contestants[1].reasoningEffort)
+' "$manifest" >"$override_manifest"
+rm -f "$docker_log_dir"/* "$gh_log_dir"/*
+"${runner_env[@]}" "$runner" resume "$override_manifest" >/dev/null
+jq -s -e '
+  length == 2
+  and all(.[]; .args | index("--resume"))
+  and any(.[]; (.args | index("agent")) and .codexModel == "gpt-5.5" and .codexEffort == "high")
+  and any(.[]; (.args | index("copilot_agent")) and .copilotModel == "gpt-override" and .copilotEffort == "max")
+' "$docker_log_dir"/*.json >/dev/null \
+  || fail 'manifest model/effort overrides or omitted-effort defaults were lost on resume'
+
+rm -f "$docker_log_dir"/* "$gh_log_dir"/*
+"${runner_env[@]}" CODEX_MODEL=gpt-env CODEX_REASONING_EFFORT=low \
+  COPILOT_MODEL=gpt-5.5 COPILOT_REASONING_EFFORT=medium \
+  "$runner" run "$override_manifest" >/dev/null
+jq -s -e '
+  length == 2
+  and any(.[]; (.args | index("agent")) and .codexModel == "gpt-env" and .codexEffort == "low")
+  and any(.[]; (.args | index("copilot_agent")) and .copilotModel == "gpt-5.5" and .copilotEffort == "medium")
+' "$docker_log_dir"/*.json >/dev/null \
+  || fail 'explicit environment model/effort overrides were lost'
 
 rm -f "$docker_log_dir"/* "$gh_log_dir"/*
 sessions_output="$("${runner_env[@]}" "$runner" sessions "$manifest")"
@@ -355,7 +396,9 @@ for contestant_id in codex-wshobson copilot-awesome; do
   jq -n \
     --arg runtime "$runtime" \
     --arg provider "$provider" \
-    '{runtime: $runtime, provider: $provider, model: "gpt-5.5", version: "fixture",
+    --arg model "$(jq -r --arg id "$contestant_id" '.contestants[] | select(.id == $id) | .model' "$manifest")" \
+    --arg reasoningEffort "$(jq -r --arg id "$contestant_id" '.contestants[] | select(.id == $id) | .reasoningEffort' "$manifest")" \
+    '{runtime: $runtime, provider: $provider, model: $model, reasoningEffort: $reasoningEffort, version: "fixture",
       startedAt: "2026-07-21T00:00:00Z", finishedAt: "2026-07-21T00:01:00Z", exitCode: 0}' \
     >"$harness_root/$runtime_name"
   printf '%s\n' '{"type":"result","fixture":true}' >"$harness_root/$events_name"

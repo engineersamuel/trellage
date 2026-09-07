@@ -287,12 +287,52 @@ describe("parseProfile", () => {
     expect(result.profile.harness.kind).toBe("copilot")
     expect(isCopilotProfile(result.profile)).toBe(true)
     if (!isCopilotProfile(result.profile)) throw new Error("expected Copilot profile")
-    expect(result.profile.harness.copilot.auth).toBe("host-or-login")
+    expect(result.profile.harness.copilot).toEqual({
+      auth: "host-or-login",
+      model: "gpt-6-astra",
+      reasoning_effort: "max",
+    })
     expect(result.profile.plugins[0]).toMatchObject({
       adapter: "copilot-marketplace",
       marketplace: "hve-core",
       select: ["hve-core"],
     })
+  })
+
+  it.each(["minimal", "low", "medium", "high", "xhigh", "max"])("accepts Codex reasoning effort %s", async (effort) => {
+    const result = await decode(profile().replace('reasoning_effort = "medium"', `reasoning_effort = "${effort}"`))
+
+    if (!isCodexProfile(result.profile)) throw new Error("expected Codex profile")
+    expect(result.profile.harness.codex.reasoning_effort).toBe(effort)
+  })
+
+  it.each(["none", "minimal", "low", "medium", "high", "xhigh", "max"])(
+    "preserves explicit Copilot model and reasoning effort %s",
+    async (effort) => {
+      const source = copilotProfile().replace(
+        'auth = "host-or-login"',
+        `auth = "host-or-login"\nmodel = "gpt-5.5"\nreasoning_effort = "${effort}"`,
+      )
+      const result = await decode(source)
+
+      if (!isCopilotProfile(result.profile)) throw new Error("expected Copilot profile")
+      expect(result.profile.harness.copilot).toEqual({
+        auth: "host-or-login",
+        model: "gpt-5.5",
+        reasoning_effort: effort,
+      })
+    },
+  )
+
+  it("rejects unsupported Codex and Copilot reasoning efforts", async () => {
+    await expect(
+      decode(profile().replace('reasoning_effort = "medium"', 'reasoning_effort = "invalid"')),
+    ).rejects.toThrow(/reasoning_effort/)
+    await expect(
+      decode(
+        copilotProfile().replace('auth = "host-or-login"', 'auth = "host-or-login"\nreasoning_effort = "invalid"'),
+      ),
+    ).rejects.toThrow(/reasoning_effort/)
   })
 
   it("decodes a first-class Headlong profile without harness-specific configuration", async () => {

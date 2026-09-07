@@ -971,6 +971,8 @@ jq --arg commandPath "$runtime_parent/cpx/bin/cpx" -e '
       and .commandPath == $commandPath
       and .profileArgument == "cpx-p"
       and .passthroughArgs == ["two words", "", "--literal=*"]
+      and .defaultModel == "gpt-6-astra"
+      and .models == ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"]
       and .plugins == ["cpx-plug"]
       and .skills == []
       and .mcps == ["docs", "files"]
@@ -1022,7 +1024,7 @@ jq -e '
       and .[0].harness == "codex"
       and .[0].profile == "pstack"
       and .[0].commandAlias == "cdx"
-      and .[0].defaultModel == "gpt-5.6-sol"
+      and .[0].defaultModel == "gpt-6-astra"
       and .[0].modelOverrideSupported == true)
   and ([.choices[] | select(.id == "cdx:youtube")]
     | length == 1
@@ -1030,7 +1032,7 @@ jq -e '
       and .[0].harness == "codex"
       and .[0].profile == "youtube"
       and .[0].commandAlias == "cdx"
-      and .[0].defaultModel == "gpt-5.6-sol"
+      and .[0].defaultModel == "gpt-6-astra"
       and .[0].skills == ["youtube-full"]
       and .[0].modelOverrideSupported == true)
 ' "$fixture_root/picker-input.json" >/dev/null \

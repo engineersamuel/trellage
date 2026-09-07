@@ -73,7 +73,8 @@ ENV HOME=/home/agent \
     npm_config_cache=/workspace/.npm \
     npm_config_update_notifier=false \
     COPILOT_AUTO_UPDATE=false \
-    COPILOT_MODEL=gpt-5.5
+    COPILOT_MODEL=gpt-6-astra \
+    COPILOT_REASONING_EFFORT=max
 
 WORKDIR /workspace
 USER 10001:10001

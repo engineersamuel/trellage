@@ -171,6 +171,13 @@ tools = { allow = ["search"], deny = ["delete"] }
   })
   it.each([
     ["Copilot", copilotProfile, "/profiles/copilot-hve/profile.toml", "copilot", "gpt-5.6-sol"],
+    [
+      "Copilot with defaults",
+      copilotProfile.replace('model = "gpt-5.6-sol"\n', ""),
+      "/profiles/copilot-hve/profile.toml",
+      "copilot",
+      "gpt-6-astra",
+    ],
     ["Pi", piProfile, "/profiles/pi-oh-my-pi/profile.toml", "pi", "gpt-5.6-terra"],
     ["Headlong", headlongProfile, "/profiles/headlong/profile.toml", "headlong", "claude-sonnet-5"],
   ])("projects the %s model", async (_label, source, profilePath, kind, expectedModel) => {

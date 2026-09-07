@@ -96,7 +96,7 @@ const codexModel = (profile: Profile): Option.Option<string> =>
   isCodexProfile(profile) ? Option.some(profile.harness.codex.model) : Option.none()
 
 const copilotModel = (profile: Profile): Option.Option<string> =>
-  isCopilotProfile(profile) ? Option.some(profile.harness.copilot.model ?? "gpt-5.6-sol") : Option.none()
+  isCopilotProfile(profile) ? Option.some(profile.harness.copilot.model) : Option.none()
 
 const claudeModel = (profile: Profile): Option.Option<string> =>
   isClaudeProfile(profile) ? Option.some(profile.harness.claude.model) : Option.none()

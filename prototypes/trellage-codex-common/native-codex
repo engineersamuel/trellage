@@ -554,9 +554,10 @@ prepare_profile_home() {
 config_prefix() {
   cat <<'EOF'
 # trellage-managed-codex-config-begin
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_provider = "copilotproxy"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "max"
+plan_mode_reasoning_effort = "max"
 # trellage-managed-codex-config-end
 
 # trellage-profile-local-config-begin

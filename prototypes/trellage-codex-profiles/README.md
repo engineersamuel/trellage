@@ -3,6 +3,12 @@
 `cdx` runs the host Codex CLI with named, isolated user-state homes. The
 catalog contains `pstack`, `superpowers`, and the skill-only `youtube` profile.
 
+Every profile defaults to `gpt-6-astra` with `model_reasoning_effort = "max"`.
+Plan mode also defaults to `max` through `plan_mode_reasoning_effort`.
+Setup, repair, and launch refresh these managed defaults while preserving
+profile-local settings. Pass `-m MODEL` and
+`-c 'model_reasoning_effort="LEVEL"'` to override them for one launch.
+
 ## Install
 
 Prerequisites are Codex CLI 0.146.0 or later, Node.js 22+, npm, `jq`, `curl`,

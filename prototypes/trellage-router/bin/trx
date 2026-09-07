@@ -356,7 +356,7 @@ build_choices() {
     --argjson passthroughArgs "${21}" '
     def models($catalog; $profile):
       if $catalog.launcher == "cpx" or $catalog.launcher == "cdx" then
-        {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
+        {defaultModel:"gpt-6-astra",models:["gpt-6-astra","gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
       elif $catalog.launcher == "cldx" then
         {defaultModel:"claude-opus-5",models:["claude-opus-5","claude-sonnet-5","claude-haiku-4.5"],modelOverrideSupported:true}
       elif $catalog.launcher == "omp" and $profile.name == "copilot" then

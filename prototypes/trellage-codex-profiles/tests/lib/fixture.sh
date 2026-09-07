@@ -650,14 +650,14 @@ case "$*" in
           if (!seen_nux) {
             if (previous != "") print ""
             print "[tui.model_availability_nux]"
-            print "\"gpt-5.6-sol\" = 2"
+            print "\"gpt-6-astra\" = 2"
             print ""
           }
         }
         $0 == "[tui.model_availability_nux]" { seen_nux = 1; in_nux = 1; print; next }
         in_nux && /^\[/ { in_nux = 0 }
-        in_nux && $0 ~ /^"gpt-5\.6-sol" = / {
-          print "\"gpt-5.6-sol\" = 2"
+        in_nux && $0 ~ /^"gpt-6-astra" = / {
+          print "\"gpt-6-astra\" = 2"
           next
         }
         { print; previous = $0 }

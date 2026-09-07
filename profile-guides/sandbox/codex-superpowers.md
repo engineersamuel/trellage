@@ -61,7 +61,7 @@ workflows:
 
 - Superpowers skills (brainstorming, writing-plans, test-driven-development, systematic-debugging, requesting/receiving-code-review, and related) trigger automatically from natural-language intent — there is no documented slash-command syntax for them.
 - The bundled `full-stack-orchestration` role from `wshobson/agents` is available for larger tasks needing coordinated agent roles.
-- This profile runs Codex (`gpt-5.6-sol`) with `--dangerously-bypass-approvals-and-sandbox`, so it does not pause for approval prompts inside the container.
+- This profile runs Codex (`gpt-6-astra`, max reasoning) with `--dangerously-bypass-approvals-and-sandbox`, so it does not pause for approval prompts inside the container.
 
 ## Gotchas
 

@@ -1000,7 +1000,7 @@ awk -v marker='# trellage-managed-codex-provider-end' '
     print "[hooks.state]"
     print ""
     print "[tui.model_availability_nux]"
-    print "\"gpt-5.6-sol\" = 1"
+    print "\"gpt-6-astra\" = 1"
   }
   { print }
 ' "$proxy_config_before" >"$fixture_root/session-live-before.toml"
@@ -1014,7 +1014,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   || fail 'session-live hooks/tui launch cleanup failed'
 grep -E '^\[projects\."' "$pstack_home/config.toml" >/dev/null \
   && fail 'session-live launch left generated project trust'
-grep -F -- '"gpt-5.6-sol" = 2' "$pstack_home/config.toml" >/dev/null \
+grep -F -- '"gpt-6-astra" = 2' "$pstack_home/config.toml" >/dev/null \
   || fail 'session-live launch cleanup dropped tui nux mutation'
 grep -F -- '[hooks.state]' "$pstack_home/config.toml" >/dev/null \
   || fail 'session-live launch cleanup dropped hooks.state'
@@ -1132,7 +1132,7 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print "trusted_hash = \"sha256:398989e9bdf95b43657a40589049a298a170f1946642abe2124fe9ee222caa5a\""
     print ""
     print "[tui.model_availability_nux]"
-    print "\"gpt-5.6-sol\" = 1"
+    print "\"gpt-6-astra\" = 1"
   }
   { print }
 ' "$pstack_home/config.toml" >"$fixture_root/stale-project-with-hooks-nux.toml"
@@ -1150,7 +1150,7 @@ grep -F -- 'trusted_hash = "sha256:398989e9bdf95b43657a40589049a298a170f1946642a
   || fail 'doctor lost a hook approval trust hash'
 grep -F -- '[tui.model_availability_nux]' "$pstack_home/config.toml" >/dev/null \
   || fail 'doctor stripped tui nux flags alongside stale project trust'
-grep -F -- '"gpt-5.6-sol" = 1' "$pstack_home/config.toml" >/dev/null \
+grep -F -- '"gpt-6-astra" = 1' "$pstack_home/config.toml" >/dev/null \
   || fail 'doctor lost a tui nux flag'
 cp "$proxy_config_before" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
@@ -1165,7 +1165,7 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print "trusted_hash = \"sha256:a044cd448bad32f8a34e7639e24f7aa40ba782ee3221fa3c510958986e26518f\""
     print ""
     print "[tui.model_availability_nux]"
-    print "\"gpt-5.6-sol\" = 1"
+    print "\"gpt-6-astra\" = 1"
     print ""
   }
   { print }
@@ -1206,7 +1206,7 @@ cp "$proxy_config_before" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 
 real_cmp="$(command -v cmp)"
-sed 's/model = "gpt-5.6-sol"/model = "concurrent-launch-winner"/' \
+sed 's/model = "gpt-6-astra"/model = "concurrent-launch-winner"/' \
   "$proxy_config_before" >"$fixture_root/concurrent-launch-config.toml"
 chmod 0600 "$fixture_root/concurrent-launch-config.toml"
 cat >"$fake_bin/cmp" <<'EOF'
@@ -1316,9 +1316,10 @@ fi
 expected_config="$fixture_root/expected-config.toml"
 cat >"$expected_config" <<EOF
 # trellage-managed-codex-config-begin
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_provider = "copilotproxy"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "max"
+plan_mode_reasoning_effort = "max"
 # trellage-managed-codex-config-end
 
 # trellage-profile-local-config-begin
@@ -1535,9 +1536,10 @@ jq -se --arg superpowers "$superpowers_home" '
 expected_youtube_config="$fixture_root/expected-youtube-config.toml"
 cat >"$expected_youtube_config" <<'EOF'
 # trellage-managed-codex-config-begin
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_provider = "copilotproxy"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "max"
+plan_mode_reasoning_effort = "max"
 # trellage-managed-codex-config-end
 
 # trellage-profile-local-config-begin
@@ -2135,7 +2137,9 @@ real_ln="$(command -v ln)"
 
 write_custom_main_config "$expected_config"
 sed \
-  -e 's/model = "gpt-5.6-sol"/model = "wrong-managed-model"/' \
+  -e 's/model = "gpt-6-astra"/model = "gpt-5.6-sol"/' \
+  -e 's/model_reasoning_effort = "max"/model_reasoning_effort = "medium"/' \
+  -e '/^plan_mode_reasoning_effort = /d' \
   -e 's/hooks = true/hooks = false/' \
   "$custom_config" >"$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
@@ -2270,7 +2274,7 @@ case "${2:-}" in
 esac
 EOF
 chmod +x "$fake_bin/cp"
-sed 's/model = "gpt-5.6-sol"/model = "snapshot-race-model"/' \
+sed 's/model = "gpt-6-astra"/model = "snapshot-race-model"/' \
   "$custom_config" >"$pstack_home/config.toml"
 sed 's/2026-07-30T21:16:34Z/2026-07-30T21:16:35Z/' \
   "$pstack_home/config.toml" >"$fixture_root/config-snapshot-race-expected.toml"
@@ -2305,7 +2309,7 @@ for argument in "$@"; do
 done
 EOF
 chmod +x "$fake_bin/chmod"
-sed 's/model = "gpt-5.6-sol"/model = "publish-race-model"/' \
+sed 's/model = "gpt-6-astra"/model = "publish-race-model"/' \
   "$custom_config" >"$pstack_home/config.toml"
 sed 's/2026-07-30T21:16:34Z/2026-07-30T21:16:36Z/' \
   "$pstack_home/config.toml" >"$fixture_root/config-publish-race-expected.toml"
@@ -2334,7 +2338,7 @@ fi
 exec "$CDX_TEST_REAL_CAT" "$@"
 EOF
 chmod +x "$fake_bin/cat"
-sed 's/model = "gpt-5.6-sol"/model = "write-failure-model"/' \
+sed 's/model = "gpt-6-astra"/model = "write-failure-model"/' \
   "$custom_config" >"$pstack_home/config.toml"
 cp "$pstack_home/config.toml" "$fixture_root/config-write-failure-before.toml"
 assert_command_fails config-write-failure env HOME="$fixture_root/home" \
@@ -2563,7 +2567,7 @@ assert_invalid_markers_rejected bare-provider-assignment-before-marketplace
 cp "$fixture_root/config-valid" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 
-sed 's/model = "gpt-5.6-sol"/model = "publication-must-fail"/' \
+sed 's/model = "gpt-6-astra"/model = "publication-must-fail"/' \
   "$fixture_root/config-valid" >"$pstack_home/config.toml"
 cp "$pstack_home/config.toml" "$fixture_root/config-before-publication-failure"
 config_inode="$(file_inode "$pstack_home/config.toml")"
@@ -2646,7 +2650,7 @@ cp "$fixture_root/config-valid" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 
 config_inode="$(file_inode "$pstack_home/config.toml")"
-sed 's/model = "gpt-5.6-sol"/model = "setup-must-not-replace"/' \
+sed 's/model = "gpt-6-astra"/model = "setup-must-not-replace"/' \
   "$fixture_root/config-valid" >"$pstack_home/config.toml"
 cp "$pstack_home/config.toml" "$fixture_root/config-before-setup"
 assert_command_fails setup-does-not-replace env HOME="$fixture_root/home" \

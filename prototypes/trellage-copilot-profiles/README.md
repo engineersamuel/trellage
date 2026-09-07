@@ -99,6 +99,10 @@ after selection; `trx` never performs setup, repair, or update.
 
 Profile launches always pass `--autopilot --allow-all --no-ask-user`, so
 Copilot runs autonomously without waiting for permission or user-input prompts.
+Every profile defaults to `--model gpt-6-astra --effort max`. Caller arguments
+follow these defaults, so `--model` and `--effort` (or `--reasoning-effort`)
+can select a different model or reasoning level for one launch. Lifecycle
+commands do not add model or reasoning arguments.
 
 `update --check` compares the installed plugin version reported by Copilot with
 the official marketplace manifest. Launch self-heals a missing cataloged plugin

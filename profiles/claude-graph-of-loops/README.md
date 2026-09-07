@@ -113,7 +113,8 @@ inspection and wrapped shell commands before that action.
   phase, the identical command passing green, and all final node gates
   passing after the last specialist attempt. Missing red evidence, a
   changed green command, or a failing final gate blocks integration.
-- **Codex review is Trellage-owned and container-isolated.** It runs
+- **Codex review is Trellage-owned and container-isolated.** It defaults to
+  `gpt-6-astra` with `max` reasoning and runs
   ephemerally in Codex external-sandbox mode because the Trellage Docker
   container is the security boundary and nested Linux user namespaces are not
   portable. It writes one final JSON response, and Trellage validates that

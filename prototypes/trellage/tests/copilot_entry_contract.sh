@@ -265,6 +265,8 @@ run_entry() {
     --env 'TRELLAGE_TEST_OUTPUT=/test-output' \
     --env 'TRELLAGE_AGENT=copilot' \
     --env 'TRELLAGE_PROFILE_NAME=copilot-hve-test' \
+    --env "TRELLAGE_COPILOT_MODEL=${TRELLAGE_COPILOT_MODEL-}" \
+    --env "TRELLAGE_COPILOT_REASONING_EFFORT=${TRELLAGE_COPILOT_REASONING_EFFORT-}" \
     --env "COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN-}" \
     --env "GH_TOKEN=${GH_TOKEN-}" \
     --env "GITHUB_TOKEN=${GITHUB_TOKEN-}" \
@@ -309,7 +311,8 @@ output_file_mode() {
 prompt='literal $(touch /tmp/not-executed) prompt'
 COPILOT_GITHUB_TOKEN='selected-token' GH_TOKEN='poison-gh' GITHUB_TOKEN='poison-github' \
   run_entry prompt --allow-all -- "$prompt"
-expected_prompt_argv=$'--allow-all\n-p\nliteral $(touch /tmp/not-executed) prompt'
+default_model_argv=$'--model\ngpt-6-astra\n--effort\nmax'
+expected_prompt_argv="$default_model_argv"$'\n--allow-all\n-p\nliteral $(touch /tmp/not-executed) prompt'
 prompt_argv="$(read_output_file argv)"
 prompt_env="$(read_output_file env)"
 [[ "$(output_file_mode "$output/argv")" == 600 \
@@ -340,7 +343,7 @@ jq -e '
 COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= run_entry new --allow-all
 interactive_argv="$(read_output_file argv)"
 interactive_env="$(read_output_file env)"
-[[ "$interactive_argv" == '--allow-all' ]] \
+[[ "$interactive_argv" == "$default_model_argv"$'\n--allow-all' ]] \
   || fail 'bare new mode was not left interactive without a prompt flag'
 grep -Fqx 'COPILOT_GITHUB_TOKEN=' <<<"$interactive_env" \
   || fail 'bare new mode invented Copilot authentication'
@@ -350,8 +353,20 @@ TRELLAGE_RESUME_SESSION_ID="$resume_session_id" \
   COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= \
   run_entry resume --allow-all
 exact_resume_argv="$(read_output_file argv)"
-[[ "$exact_resume_argv" == $'--allow-all\n--resume='"$resume_session_id" ]] \
+[[ "$exact_resume_argv" == "$default_model_argv"$'\n--allow-all\n--resume='"$resume_session_id" ]] \
   || fail 'exact resume did not map to Copilot --resume=ID argv'
+
+TRELLAGE_COPILOT_MODEL=gpt-5.5 TRELLAGE_COPILOT_REASONING_EFFORT=high \
+  run_entry prompt --model gpt-5.4-mini --reasoning-effort low -- 'explicit overrides'
+[[ "$(read_output_file argv)" == $'--model\ngpt-5.5\n--effort\nhigh\n--model\ngpt-5.4-mini\n--reasoning-effort\nlow\n-p\nexplicit overrides' ]] \
+  || fail 'configured Copilot defaults did not precede explicit caller overrides'
+
+run_entry new --version
+[[ "$(read_output_file argv)" == --version ]] \
+  || fail 'version probe received session model defaults'
+run_entry new plugin list
+[[ "$(read_output_file argv)" == $'plugin\nlist' ]] \
+  || fail 'plugin inventory probe received session model defaults'
 
 hint_output="$(
   TRELLAGE_RESUME_PROFILE=/tmp/copilot-hve/profile.toml \

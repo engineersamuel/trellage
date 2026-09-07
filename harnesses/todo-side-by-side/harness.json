@@ -9,7 +9,8 @@
       "runtime": "codex",
       "service": "agent",
       "port": 4173,
-      "model": "gpt-5.5",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "max",
       "provider": "copilot-proxy-rs",
       "packages": [
         {
@@ -28,7 +29,8 @@
       "runtime": "copilot",
       "service": "copilot_agent",
       "port": 4174,
-      "model": "gpt-5.5",
+      "model": "gpt-6-astra",
+      "reasoningEffort": "max",
       "provider": "github-copilot-native",
       "packages": [
         {

@@ -1,6 +1,6 @@
 schema = 1
 name = "codex-superpowers"
-description = "Sandboxed Codex (`gpt-5.6-sol`) for disciplined feature delivery through brainstorm, plan, TDD, debugging, review, and verification. Its differentiator is a reproducible containerized Superpowers loop for implementation, not a host-native structured-engineering session."
+description = "Sandboxed Codex (`gpt-6-astra`, max reasoning) for disciplined feature delivery through brainstorm, plan, TDD, debugging, review, and verification. Its differentiator is a reproducible containerized Superpowers loop for implementation, not a host-native structured-engineering session."
 skill_bundles = ["sandbox-common", "codex-superpowers"]
 
 [harness]
@@ -9,8 +9,8 @@ version = "latest"
 args = ["--dangerously-bypass-approvals-and-sandbox"]
 
 [harness.codex]
-model = "gpt-5.6-sol"
-reasoning_effort = "medium"
+model = "gpt-6-astra"
+reasoning_effort = "max"
 model_provider = "copilot_proxy"
 
 [harness.codex.providers.copilot_proxy]
