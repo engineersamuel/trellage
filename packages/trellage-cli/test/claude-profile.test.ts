@@ -463,7 +463,7 @@ describe("authored Claude graph-of-loops profile", () => {
       models: {
         supervisor: "claude-haiku-4.5",
         specialist: "claude-opus-5",
-        reviewer: "gpt-5.6-sol",
+        reviewer: "gpt-6-astra",
       },
       limits: {
         max_parallel_nodes: 3,
@@ -590,8 +590,8 @@ describe("authored Claude graph-of-loops profile", () => {
 
   it("renders the configured Graph of Loops reviewer model and effort", async () => {
     const source = (await readFile(graphOfLoopsProfilePath, "utf8"))
-      .replace('model = "gpt-5.6-sol"', 'model = "gpt-5.4-mini"')
-      .replace('reasoning_effort = "medium"', 'reasoning_effort = "high"')
+      .replace('model = "gpt-6-astra"', 'model = "gpt-5.4-mini"')
+      .replace('reasoning_effort = "max"', 'reasoning_effort = "high"')
     const document = await Effect.runPromise(parseProfile(source, graphOfLoopsProfilePath))
     if (!isGraphOfLoopsProfile(document.profile)) throw new Error("expected Graph of Loops profile")
 

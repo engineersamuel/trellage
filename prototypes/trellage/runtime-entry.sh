@@ -148,7 +148,7 @@ case "$mode" in
     [[ "$#" -eq 2 && "$1" == -- && -n "$2" ]] \
       || fail 'prompt mode requires exactly one prompt after --'
     prompt="$2"
-    set -- "$prompt_command" exec "${prompt_args[@]}" -- "$prompt"
+    set -- "$prompt_command" exec ${prompt_args[@]+"${prompt_args[@]}"} -- "$prompt"
     mode=new
     ;;
   *) mode=passthrough ;;
@@ -159,6 +159,7 @@ if [[ "$mode" == passthrough ]]; then
   exec "$@"
 fi
 
+command -v jq >/dev/null 2>&1 || fail 'jq is required for native session discovery'
 install_session_bridge_hook
 codex_command="$1"
 shift
@@ -166,9 +167,16 @@ hook_trust_args=()
 if [[ -n "${CI:-}" || -n "${TRELLAGE_AUTOMATION:-}" || ! -t 0 || ! -t 1 || ! -t 2 ]]; then
   hook_trust_args+=(--dangerously-bypass-hook-trust)
 fi
-set -- "$codex_command" --enable hooks "${hook_trust_args[@]}" "$@"
+model_args=()
+if [[ -n "${TRELLAGE_CODEX_MODEL-}" ]]; then
+  model_args+=(-c "model=$(jq -cn --arg model "$TRELLAGE_CODEX_MODEL" '$model')")
+fi
+if [[ -n "${TRELLAGE_CODEX_REASONING_EFFORT-}" ]]; then
+  encoded_reasoning_effort="$(jq -cn --arg effort "$TRELLAGE_CODEX_REASONING_EFFORT" '$effort')"
+  model_args+=(-c "model_reasoning_effort=$encoded_reasoning_effort" -c "plan_mode_reasoning_effort=$encoded_reasoning_effort")
+fi
+set -- "$codex_command" --enable hooks ${hook_trust_args[@]+"${hook_trust_args[@]}"} ${model_args[@]+"${model_args[@]}"} "$@"
 
-command -v jq >/dev/null 2>&1 || fail 'jq is required for native session discovery'
 umask 077
 mkdir -p "$metadata_dir"
 

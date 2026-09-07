@@ -19,6 +19,9 @@ services:
     pids_limit: 512
     mem_limit: 4g
     cpus: 4.0
+    environment:
+      COPILOT_MODEL: ${COPILOT_MODEL:-gpt-6-astra}
+      COPILOT_REASONING_EFFORT: ${COPILOT_REASONING_EFFORT:-max}
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001
     volumes:

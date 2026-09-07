@@ -53,6 +53,7 @@ workflows:
 
 ## Workflow Notes
 
+- The default model is `gpt-6-astra` with `max` reasoning.
 - HVE Core is explicitly called out upstream as opinionated and rapidly evolving — treat it as a source of patterns rather than a stable, unchanging platform.
 - `/rpi` selects the RPI Agent for the Research-Plan-Implement-Review cycle; `/hve-builder` helps fork or adapt those patterns into an independently owned agentic SDLC.
 - This profile installs the `microsoft/hve-core` plugin via the Copilot marketplace adapter, pinned to a specific commit.

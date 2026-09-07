@@ -82,8 +82,8 @@ class CodexReviewGate:
         worktree_path: str,
         base_revision: str = "",
         prompt: str = "",
-        model: str = "gpt-5.6-sol",
-        reasoning_effort: str = "medium",
+        model: str = "gpt-6-astra",
+        reasoning_effort: str = "max",
         output_dir: Path | None = None,
         **_ignored: Any,
     ) -> dict[str, Any]:

@@ -566,7 +566,8 @@ launch_profile() {
 
   ensure_profile_for_launch "$profile"
   exec env COPILOT_HOME="$(profile_home "$profile")" \
-    copilot --autopilot --allow-all --no-ask-user "$@"
+    copilot --autopilot --allow-all --no-ask-user \
+    --model gpt-6-astra --effort max "$@"
 }
 
 plugin_inventory_snapshot() {

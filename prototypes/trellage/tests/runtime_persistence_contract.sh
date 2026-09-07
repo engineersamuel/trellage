@@ -518,7 +518,8 @@ run_copilot_persistence_contract() {
 
   run_copilot_sync "$fixture"
   run_copilot_sync "$fixture" prompt --allow-all -- 'hello $(false)'
-  printf '%s\0' --allow-all -p 'hello $(false)' >"$fixture/expected-prompt-argv"
+  printf '%s\0' --model gpt-6-astra --effort max --allow-all -p 'hello $(false)' \
+    >"$fixture/expected-prompt-argv"
   cmp -s "$fixture/output/argv" "$fixture/expected-prompt-argv" \
     || fail 'portable prompt did not use exact native Copilot -p argv'
   [[ "$(cat "$fixture/output/token-presence")" == present ]] \

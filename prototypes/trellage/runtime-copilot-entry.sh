@@ -1034,6 +1034,14 @@ if [[ "$read_only_probe" != true ]]; then
 fi
 release_runtime_lock
 
+if [[ "$read_only_probe" != true ]]; then
+  harness_args=(
+    --model "${TRELLAGE_COPILOT_MODEL:-gpt-6-astra}"
+    --effort "${TRELLAGE_COPILOT_REASONING_EFFORT:-max}"
+    "${harness_args[@]}"
+  )
+fi
+
 case "$mode" in
   new)
     if [[ "$read_only_probe" != true && -n "$inherited_copilot_github_token" ]]; then

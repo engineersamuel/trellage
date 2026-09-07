@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { afterAll, describe, expect, it } from "vitest"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
@@ -405,6 +405,8 @@ size = "106111479"
 rename_exe = "copilot"`)
     expect(rendered).toContain('COPILOT_HOME = "/home/agent/.copilot"')
     expect(rendered).toContain('COPILOT_AUTO_UPDATE = "false"')
+    expect(rendered).toContain('TRELLAGE_COPILOT_MODEL = "gpt-6-astra"')
+    expect(rendered).toContain('TRELLAGE_COPILOT_REASONING_EFFORT = "max"')
     expect(rendered).toContain('XDG_CACHE_HOME = "/home/agent/.cache"')
     expect(rendered).not.toContain('XDG_CACHE_HOME = "/tmp/.cache"')
     expect(rendered).toContain('"/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }')
@@ -440,11 +442,59 @@ rename_exe = "copilot"`)
     expect(rendered).not.toContain("host-or-login")
   })
 
+  it("renders explicit Copilot model and effort overrides in the container environment", () => {
+    const configured = Effect.runSync(
+      parseProfile(
+        copilotSource.replace(
+          'auth = "host-or-login"',
+          'auth = "host-or-login"\nmodel = "gpt-5.5"\nreasoning_effort = "high"',
+        ),
+        "/profile/copilot.toml",
+      ),
+    ).profile
+    const rendered = renderMiseConfig(configured, lock("copilot"), {
+      baseReference: "docker.io/library/node@sha256:base",
+      imageTag: "trellage-profile-copilot-hve:locked",
+      runtimeSupport: copilotRuntime,
+    })
+
+    expect(rendered).toContain('TRELLAGE_COPILOT_MODEL = "gpt-5.5"')
+    expect(rendered).toContain('TRELLAGE_COPILOT_REASONING_EFFORT = "high"')
+  })
+
+  it.each(["codex", "copilot"] as const)(
+    "renders the authored %s profile with Astra and maximum reasoning",
+    async (kind) => {
+      const name = kind === "codex" ? "codex-superpowers" : "copilot-hve"
+      const profilePath = path.resolve(import.meta.dirname, "../../../profiles", name, "profile.toml")
+      const configured = Effect.runSync(parseProfile(await readFile(profilePath, "utf8"), profilePath)).profile
+      const rendered = renderMiseConfig(configured, lock(kind), {
+        baseReference: "docker.io/library/node@sha256:base",
+        imageTag: `trellage-profile-${name}:locked`,
+        runtimeSupport: kind === "codex" ? codexRuntime : copilotRuntime,
+      })
+
+      expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_MODEL = "gpt-6-astra"`)
+      expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_REASONING_EFFORT = "max"`)
+    },
+  )
+
+  it("renders the authored Codex model and maximum reasoning in config.toml", async () => {
+    const profilePath = path.resolve(import.meta.dirname, "../../../profiles/codex-superpowers/profile.toml")
+    const configured = Effect.runSync(parseProfile(await readFile(profilePath, "utf8"), profilePath)).profile
+    const config = renderCodexConfig(configured)
+
+    expect(config).toContain('model = "gpt-6-astra"')
+    expect(config).toContain('model_reasoning_effort = "max"')
+    expect(config).toContain('plan_mode_reasoning_effort = "max"')
+  })
+
   it("renders Codex providers and stdio/HTTP MCPs without secret values", () => {
     expect(renderCodexConfig(profile)).toMatchInlineSnapshot(`
       "model = \"gpt-5.5\"
       model_provider = \"proxy\"
       model_reasoning_effort = \"medium\"
+      plan_mode_reasoning_effort = \"medium\"
 
       [model_providers.proxy]
       name = \"Copilot Proxy\"

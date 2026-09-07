@@ -93,16 +93,21 @@ const Provider = Schema.Struct({
   stream_idle_timeout_ms: Schema.optional(Schema.Number.pipe(Schema.int(), Schema.positive())),
 })
 
+const ReasoningEffort = Schema.Literal("minimal", "low", "medium", "high", "xhigh", "max")
+
 const Codex = Schema.Struct({
   model: NonEmpty,
-  reasoning_effort: Schema.Literal("minimal", "low", "medium", "high", "xhigh"),
+  reasoning_effort: ReasoningEffort,
   model_provider: NonEmpty,
   providers: Schema.Record({ key: NonEmpty, value: Provider }),
 })
 
 const Copilot = Schema.Struct({
   auth: Schema.Literal("host-or-login"),
-  model: Schema.optional(NonEmpty),
+  model: Schema.optionalWith(NonEmpty, { default: () => "gpt-6-astra" }),
+  reasoning_effort: Schema.optionalWith(Schema.Union(Schema.Literal("none"), ReasoningEffort), {
+    default: () => "max",
+  }),
 })
 
 const Claude = Schema.Struct({
@@ -238,7 +243,7 @@ const GraphReview = Schema.Struct({
   kind: Schema.Literal(GraphReviewKind.CodexReviewer),
   required: Schema.Literal(true),
   model: NonEmpty,
-  reasoning_effort: Schema.Literal("minimal", "low", "medium", "high", "xhigh"),
+  reasoning_effort: ReasoningEffort,
 })
 
 const GraphProof = Schema.Struct({

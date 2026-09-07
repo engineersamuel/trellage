@@ -18,6 +18,9 @@ case "$session_mode" in
     ;;
 esac
 
+model="${COPILOT_MODEL:-gpt-6-astra}"
+reasoning_effort="${COPILOT_REASONING_EFFORT:-max}"
+
 secret_file='/run/secrets/copilot_token'
 [[ -r "$secret_file" ]] || {
   printf 'native Copilot authentication secret is unavailable\n' >&2
@@ -59,7 +62,8 @@ done
 
 copilot_args=(
   -C /workspace
-  --model "${COPILOT_MODEL:-gpt-5.5}"
+  --model "$model"
+  --reasoning-effort "$reasoning_effort"
   "${plugin_args[@]}"
   --disable-builtin-mcps
   --no-remote
@@ -124,12 +128,13 @@ copilot_version="$(copilot --version | head -n 1)"
 jq -n \
   --arg runtime copilot \
   --arg provider github-copilot-native \
-  --arg model "${COPILOT_MODEL:-gpt-5.5}" \
+  --arg model "$model" \
+  --arg reasoningEffort "$reasoning_effort" \
   --arg version "$copilot_version" \
   --arg startedAt "$started_at" \
   --arg finishedAt "$finished_at" \
   --argjson exitCode "$copilot_status" \
-  '{runtime: $runtime, provider: $provider, model: $model, version: $version,
+  '{runtime: $runtime, provider: $provider, model: $model, reasoningEffort: $reasoningEffort, version: $version,
     startedAt: $startedAt, finishedAt: $finishedAt, exitCode: $exitCode}' \
   >"$runtime_file"
 

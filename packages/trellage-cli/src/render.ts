@@ -79,6 +79,7 @@ export const renderCodexConfiguration = (codex: CodexProfile["harness"]["codex"]
     `model = ${quote(codex.model)}`,
     `model_provider = ${quote(codex.model_provider)}`,
     `model_reasoning_effort = ${quote(codex.reasoning_effort)}`,
+    `plan_mode_reasoning_effort = ${quote(codex.reasoning_effort)}`,
   ]
   for (const [providerName, provider] of Object.entries(codex.providers)) {
     lines.push("", `[model_providers.${quoteKey(providerName)}]`)
@@ -185,7 +186,12 @@ ${renderOci(
   profile,
   lock,
   options,
-  ['CODEX_HOME = "/home/agent/.codex"', ...sessionBridgeEnvironment(profile)],
+  [
+    'CODEX_HOME = "/home/agent/.codex"',
+    `TRELLAGE_CODEX_MODEL = ${quote(profile.harness.codex.model)}`,
+    `TRELLAGE_CODEX_REASONING_EFFORT = ${quote(profile.harness.codex.reasoning_effort)}`,
+    ...sessionBridgeEnvironment(profile),
+  ],
   [`"dev.trellage.codex.version" = ${quote(harness.version)}`],
 )}`
 }
@@ -222,7 +228,13 @@ ${renderOci(
   profile,
   lock,
   options,
-  ['COPILOT_HOME = "/home/agent/.copilot"', 'COPILOT_AUTO_UPDATE = "false"', ...sessionBridgeEnvironment(profile)],
+  [
+    'COPILOT_HOME = "/home/agent/.copilot"',
+    'COPILOT_AUTO_UPDATE = "false"',
+    `TRELLAGE_COPILOT_MODEL = ${quote(profile.harness.copilot.model)}`,
+    `TRELLAGE_COPILOT_REASONING_EFFORT = ${quote(profile.harness.copilot.reasoning_effort)}`,
+    ...sessionBridgeEnvironment(profile),
+  ],
   ['"dev.trellage.harness.kind" = "copilot"', `"dev.trellage.copilot.version" = ${quote(harness.version)}`],
   "/home/agent/.cache",
 )}`

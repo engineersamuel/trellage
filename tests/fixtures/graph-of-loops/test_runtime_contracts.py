@@ -3027,7 +3027,16 @@ class TestSpecialist(unittest.TestCase):
 class TestCodexReviewFlags(unittest.TestCase):
     """Verify Codex exec uses the container as its outer sandbox."""
 
-    def test_codex_cmd_flags(self) -> None:
+    def test_codex_default_model_and_effort(self) -> None:
+        runner = FakeCodexRunner({"findings": [], "summary": "clean"})
+        review = CodexReviewGate(runner=runner)
+        with tempfile.TemporaryDirectory() as td:
+            review.review(node_id="n1", worktree_path=td)
+            command = runner.calls[-1]
+            self.assertEqual(command[command.index("-m") + 1], "gpt-6-astra")
+            self.assertIn('model_reasoning_effort="max"', command)
+
+    def test_codex_cmd_flags_preserve_model_and_effort_overrides(self) -> None:
         runner = FakeCodexRunner({"findings": [], "summary": "clean"})
         review = CodexReviewGate(runner=runner)
         with tempfile.TemporaryDirectory() as td:
