@@ -100,7 +100,7 @@ const githubToolArtifactUrlValid = (artifact: ArtifactLock): boolean => {
   }
   if (artifact.name === "bv") {
     return new RegExp(
-      `^https://github\\.com/Dicklesworthstone/beads_viewer/releases/download/v?${version}/bv_linux_arm64\\.tar\\.gz$`,
+      `^https://github\\.com/Dicklesworthstone/beads_viewer/releases/download/v?${version}/bv_(?:${version}_)?linux_arm64\\.tar\\.gz$`,
     ).test(artifact.url)
   }
   if (artifact.name === "raindrop") {

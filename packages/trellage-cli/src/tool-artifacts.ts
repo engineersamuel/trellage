@@ -62,8 +62,8 @@ export const resolveToolArtifacts = (
     }
     if (requested.has("bv")) {
       artifacts.push(
-        yield* githubTool(cacheHome, platform, "bv", "Dicklesworthstone/beads_viewer", (_version, selectedPlatform) =>
-          selectedPlatform === "linux/arm64" ? "bv_linux_arm64.tar.gz" : "bv_linux_amd64.tar.gz",
+        yield* githubTool(cacheHome, platform, "bv", "Dicklesworthstone/beads_viewer", (version, selectedPlatform) =>
+          selectedPlatform === "linux/arm64" ? `bv_${version}_linux_arm64.tar.gz` : `bv_${version}_linux_amd64.tar.gz`,
         ),
       )
     }

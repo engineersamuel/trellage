@@ -815,6 +815,49 @@ gear = "full"
     expect(lock.packages.graph_runtime_integrity).toBe(expected)
   })
 
+  it.each([
+    { archive: "bv_0.24.1_linux_arm64.tar.gz", valid: true },
+    { archive: "bv_linux_arm64.tar.gz", valid: true },
+    { archive: "bv_0.24.0_linux_arm64.tar.gz", valid: false },
+    { archive: "bv_0.24.1_linux_amd64.tar.gz", valid: false },
+  ])("validates Beads Viewer archive $archive in a graph lock", async ({ archive, valid }) => {
+    const graph = graphDocument()
+    const documentWithViewer = {
+      ...graph,
+      profile: {
+        ...graph.profile,
+        image: {
+          ...graph.profile.image,
+          tools: [
+            ...(graph.profile.image.tools ?? []),
+            { kind: "github-release", repository: "Dicklesworthstone/beads_viewer", name: "bv" } as const,
+          ],
+        },
+      },
+    }
+    const resolved = await Effect.runPromise(compileLock(graph, undefined, false, fakeResolvers(commit("1"), [])))
+    const withViewer: ProfileLock = {
+      ...resolved,
+      packages: {
+        ...resolved.packages,
+        artifacts: [
+          ...(resolved.packages.artifacts ?? []),
+          {
+            name: "bv",
+            version: "0.24.1",
+            integrity: digest("a"),
+            url: `https://github.com/Dicklesworthstone/beads_viewer/releases/download/v0.24.1/${archive}`,
+            size: 123,
+          },
+        ],
+      },
+    }
+
+    expect(lockedArtifactError(documentWithViewer, withViewer, "linux/arm64")).toBe(
+      valid ? undefined : "artifact URL is invalid: bv",
+    )
+  })
+
   it("rejects missing or malformed Graph of Loops runtime integrity", async () => {
     const resolved = await Effect.runPromise(
       compileLock(graphDocument(), undefined, false, fakeResolvers(commit("1"), [])),
