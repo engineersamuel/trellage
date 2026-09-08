@@ -35,6 +35,14 @@ const record = async (event: FixtureEvent): Promise<void> => {
   events.push(event)
   await appendFile(eventPath, `${JSON.stringify(event)}\n`)
 }
+// Acknowledge consumed keys even when they intentionally produce no redraw.
+const recordInput = (input: Buffer | string): void => {
+  void record({ kind: "input", input: input.toString() }).catch((error: unknown) => {
+    console.error(error)
+    process.exit(1)
+  })
+}
+process.stdin.on("data", recordInput)
 const headless = {
   schemaVersion: 1,
   prompt: true,
@@ -212,5 +220,6 @@ try {
   await writeFile(path.join(root, "result.json"), JSON.stringify({ result, events, writes }), { mode: 0o600 })
   process.exitCode = exitCode
 } finally {
+  process.stdin.off("data", recordInput)
   instance.cleanup()
 }

@@ -85,6 +85,8 @@ rendering and style-only queue-focus updates. Screen reads happen after the
 terminal emulator has processed the output. Waits require the expected profile,
 prompt, menu selection, or single highlighted queue job ID. Receipt of terminal
 bytes alone is not a completed UI transition. There are no fixed sleeps.
+For an ignored key such as `L` on an empty queue, the fixture records stdin
+receipt before the next key is sent, so Ink cannot combine it with Enter.
 Failures include keyboard input, the last screen, and recent raw terminal output.
 
 These tests do not prove live provider compatibility, recommendation quality,

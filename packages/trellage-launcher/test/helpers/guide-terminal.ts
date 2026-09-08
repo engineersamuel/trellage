@@ -36,6 +36,10 @@ export const createGuideTerminal = async (entry: string, onTestFailed: TestConte
     readScreen((text) => {
       for (const expected of texts) expect(text).toContain(expected)
     })
+  const events = async (): Promise<ReadonlyArray<FixtureEvent>> => {
+    const lines = (await readFile(path.join(root, "events.jsonl"), "utf8")).trimEnd()
+    return lines.length === 0 ? [] : lines.split("\n").map((line) => JSON.parse(line) as FixtureEvent)
+  }
   return {
     root,
     text: (): string => screen,
@@ -99,10 +103,12 @@ export const createGuideTerminal = async (entry: string, onTestFailed: TestConte
         expect(selectedQueueJobs).toEqual([id])
       })
     },
-    async events(): Promise<ReadonlyArray<FixtureEvent>> {
-      const lines = (await readFile(path.join(root, "events.jsonl"), "utf8")).trimEnd()
-      return lines.length === 0 ? [] : lines.split("\n").map((line) => JSON.parse(line) as FixtureEvent)
+    async waitForInput(input: string): Promise<void> {
+      await vi.waitFor(async () => {
+        expect((await events()).some((event) => event.kind === "input" && event.input === input)).toBe(true)
+      }, waitOptions)
     },
+    events,
     async finish(keys: string, exitCode = 0): Promise<FixtureReport> {
       press(keys)
       await vi.waitFor(() => expect(exit).toMatchObject({ exitCode }), waitOptions)

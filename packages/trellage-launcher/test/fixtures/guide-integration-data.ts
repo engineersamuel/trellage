@@ -196,6 +196,7 @@ export interface RecordedCommand {
 }
 
 export type FixtureEvent =
+  | { readonly kind: "input"; readonly input: string }
   | {
       readonly kind: "match"
       readonly intent: string

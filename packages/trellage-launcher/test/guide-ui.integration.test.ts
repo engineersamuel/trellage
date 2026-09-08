@@ -581,6 +581,7 @@ it("removes every queued job and does not emit a command for an empty launch", a
     await guide.pressAndWait("x", queueText(remaining))
   }
   guide.press("L")
+  await guide.waitForInput("L")
   await guide.pressAndWait(enter, "Batch queue is empty.")
   await assertDeferredLaunch(guide)
   const report = await guide.finish("q", 130)
