@@ -18,6 +18,7 @@
 .env.*
 !.env.example
 node_modules/
+.vitest/
 __pycache__/
 *.py[cod]
 playwright-report/
