@@ -542,11 +542,14 @@ it("launches five recommendations and three pinned lenses together from a reopen
   assertDataflow(report, selections)
 }, 30_000)
 
-it.for([41, 97])(
-  "removes seeded jobs from an eight-job queue without mixing prompts or IDs, seed %i",
+it.for([
+  { seed: 41, columns: 120 },
+  { seed: 97, columns: 240 },
+])(
+  "removes seeded jobs without mixing prompts or IDs, seed $seed at $columns columns",
   { timeout: 45_000 },
-  async (seed, { guide }) => {
-    await guide.start(FixtureMode.Herdr)
+  async ({ seed, columns }, { guide }) => {
+    await guide.start(FixtureMode.Herdr, columns)
     await enterIntent(guide)
     const generated = await queueProfiles(guide, [...recommendationIds, ...pinnedIds], seed)
     const retained = [...generated]

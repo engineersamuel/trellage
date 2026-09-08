@@ -4145,7 +4145,7 @@ const QueuedJobBlock = ({
     </Text>
     <Text dimColor wrap="truncate-end">
       {"  "}
-      {renderCommandPreview(job.command)}
+      {compactCommandPreview(renderCommandPreview(job.command))}
     </Text>
     {preview.lines.map((line, index) => (
       <Text key={`${job.id}:${index}`} dimColor={!selected} wrap="truncate-end">

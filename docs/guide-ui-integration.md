@@ -32,7 +32,7 @@ Handoffs are recorded requests, not real harness launches.
 | Queue Council, Research, and HVE RPI; return to the main screen and press `L` | 1 | 9 | 3 | 3 | Correct skill frames and the HVE `--agent hve-core:rpi-agent` argument |
 | Visit all five recommendations in seeded order; choose seeded candidates and press `L` | 2 | 15 | 5 | 5 | Every selected profile appears once, with its own prompt and launcher arguments |
 | Queue all five recommendations and all three lenses; reopen a fork and press `L` | 1 | 24 | 8 | 8 | The global launch key dispatches the full queue, not only the active fork |
-| Remove three seeded entries from an eight-job queue | 2 | 24 | 8 to 5 | 5 | Only retained job IDs launch, in queue order; profile and prompt pairs stay intact |
+| Remove three seeded entries from an eight-job queue at 120 and 240 columns | 2 | 24 | 8 to 5 | 5 | The selected job stays visible; only retained job IDs launch, in queue order; profile and prompt pairs stay intact |
 | Remove every entry; try `L` and Enter; cancel | 1 | 15 | 5 to 0 | 0 | Empty queues emit no allocation or launch command |
 | Augment the draft with Research or Codebase before matching | 2 | 3 | 1 | 1 | The full augmented intent reaches matching, generation, optimization, and the final command |
 | Augment from prompt review after one job is queued | 1 | 6 | 2 | 2 | Matching uses the new intent; the existing queued prompt does not change |
@@ -41,9 +41,12 @@ Handoffs are recorded requests, not real harness launches.
 | Mix a current-workspace pane, a new tab, and a new worktree | 1 | 9 | 3 | 3 | Exact allocation commands, branch, base ref, returned pane IDs, and launch directories |
 | Confirm a dirty checkout or reuse an existing worktree | 2 | 3 | 1 | 1 | Both dirty-checkout confirmations are required; reuse opens rather than creates, and uses Herdr's returned canonical cwd |
 
-The recommendation cases use seeds `17` and `73`. Queue removal uses seeds
-`41` and `97`. Other multi-profile cases also have fixed seeds. A failure is
-repeatable; the test does not use ambient randomness.
+The recommendation cases use seeds `17` and `73`. Queue removal uses seed `41`
+at 120 columns and seed `97` at 240 columns, both with 40 rows. The wide case
+exposes multiline command previews even when temporary paths are long. Both
+cases require the selected job to stay visible before opening or removing it.
+Other multi-profile cases also have fixed seeds. A failure is repeatable; the
+test does not use ambient randomness.
 
 ## Input and output contracts
 
