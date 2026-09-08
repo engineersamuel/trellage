@@ -17,6 +17,8 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
 ## Build and test
 
 - Run the full repository suite with `make test`.
+- When working on `trx guide` code, always run `mise run trx-guide-test` and
+  ensure it passes before completing the work.
 - Run profile compiler tests with `make profile-compiler`.
 - Run native profile matrix contracts with `make profile-matrix-test`.
 - Run static native profile verification with `make profile-matrix`.
