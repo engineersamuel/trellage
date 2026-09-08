@@ -1,11 +1,40 @@
 # Verification
 
+Use a current Node.js 24 release with its bundled npm, as CI does. The
+repository test packages use Vitest 5, which requires Node.js 22.12 or a newer
+supported Node.js release. Test reports and artifacts under `.vitest/` are
+ignored.
+
 Run repository contracts without launching paid agents:
 
 ```bash
 make test
 git diff --check
 ```
+
+Run the offline `trx guide` UI integration matrix after installing the
+launcher dependencies and building `packages/trellage-guide-core`:
+
+```bash
+mise run trx-guide-test
+```
+
+The [guide UI integration matrix](guide-ui-integration.md) covers 17
+keyboard-driven scenarios in the real Ink guide. It includes all five ranked
+recommendations, all three pinned lenses, seeded candidate choices and queue
+removals, both prompt augmentation paths, prompt edits, and `L` batch launches.
+It checks complete rendered prompts, candidate and job counts, and exact
+Native, Sandbox, and Herdr commands, including arguments and working directories.
+
+Provider replies, readiness checks, Git inspection, augmentation inputs, and
+Herdr responses are fixtures. No harness, repository packer, or worktree
+operation runs. The matrix covers UI interaction and command handoff, not
+live LLM calls, caching, harness startup, or the outer `trx` shell router.
+It runs in the normal launcher suite, using
+Vitest's default `forks` pool rather than worker threads.
+`node-pty` requires native build tools if a matching prebuilt binary is not
+available. Its test dependency is pinned to `1.2.0-beta.15` because `1.1.0`
+ships a non-executable spawn helper on macOS ARM64.
 
 Install the repository profile compiler dependencies once to install the Git
 hooks:

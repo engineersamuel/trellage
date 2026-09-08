@@ -81000,7 +81000,7 @@ var QueuedJobBlock = ({
   ] }),
   /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Text, { dimColor: true, wrap: "truncate-end", children: [
     "  ",
-    renderCommandPreview(job.command)
+    compactCommandPreview(renderCommandPreview(job.command))
   ] }),
   preview.lines.map((line, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, { dimColor: !selected, wrap: "truncate-end", children: line.length === 0 ? " " : line }, `${job.id}:${index}`))
 ] });
