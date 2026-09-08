@@ -136,6 +136,41 @@ describe("parseGuideCatalog", () => {
     expect(index.get("sandbox:unknown")).toBeUndefined()
   })
 
+  it("retains the authored launch agent without exposing it as match-model metadata", () => {
+    const catalog = parseGuideCatalog(
+      JSON.stringify({
+        ...validCatalog,
+        sandbox: validCatalog.sandbox.map((entry) => ({
+          ...entry,
+          guide: {
+            ...entry.guide,
+            workflows: entry.guide.workflows.map((workflow) => ({ ...workflow, launchAgent: "hve-core:dt-coach" })),
+          },
+        })),
+      }),
+    )
+
+    expect(catalog.sandbox[0]?.guide.workflows[0]?.launchAgent).toBe("hve-core:dt-coach")
+    expect(JSON.stringify(guideMatchCatalogEntries(catalog))).not.toContain("launchAgent")
+  })
+
+  it.each(["hve-core/dt-coach", "--agent", "a".repeat(129)])(
+    "rejects a launch agent that cannot reach the runtime: %s",
+    (agent) => {
+      const source = {
+        ...validCatalog,
+        sandbox: validCatalog.sandbox.map((entry) => ({
+          ...entry,
+          guide: {
+            ...entry.guide,
+            workflows: entry.guide.workflows.map((workflow) => ({ ...workflow, launchAgent: agent })),
+          },
+        })),
+      }
+      expect(() => parseGuideCatalog(JSON.stringify(source))).toThrow(/launchAgent/)
+    },
+  )
+
   it("rejects malformed JSON", () => {
     expect(() => parseGuideCatalog("{not json")).toThrow(GuideValidationError)
   })

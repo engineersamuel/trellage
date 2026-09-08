@@ -76,6 +76,41 @@ describe("profile guide parser", () => {
     expect(parsed.body).toContain("# Social media")
   })
 
+  it.each(["hve-core:dt-coach", "custom:DT-Coach", "a".repeat(128)])(
+    "preserves a supported launchAgent identifier: %s",
+    (agent) => {
+      const source = validGuide.replace(
+        "    skill: social-media-skills:post-writer\n",
+        `    skill: social-media-skills:post-writer\n    launchAgent: ${JSON.stringify(agent)}\n`,
+      )
+
+      const parsed = parseProfileGuide("profile-guides/sandbox/social.md", source)
+
+      expect(parsed.guide.workflows[0]?.launchAgent).toBe(agent)
+    },
+  )
+
+  it.each(["../etc/passwd", "hve-core/dt-coach", "--agent", "dt coach", "a".repeat(129)])(
+    "rejects an unsupported launchAgent value: %s",
+    (agent) => {
+      const source = validGuide.replace(
+        "    skill: social-media-skills:post-writer\n",
+        `    skill: social-media-skills:post-writer\n    launchAgent: ${JSON.stringify(agent)}\n`,
+      )
+
+      expect(() => parseProfileGuide("social.md", source)).toThrow(/launchAgent/)
+    },
+  )
+
+  it("rejects an empty launchAgent value", () => {
+    const source = validGuide.replace(
+      "    skill: social-media-skills:post-writer\n",
+      "    skill: social-media-skills:post-writer\n    launchAgent: ''\n",
+    )
+
+    expect(() => parseProfileGuide("social.md", source)).toThrow("must not be empty")
+  })
+
   it("rejects unsupported frontmatter keys", () => {
     const source = validGuide.replace("schemaVersion: 1", "schemaVersion: 1\nprofile: social")
 
@@ -115,9 +150,7 @@ describe("profile guide parser", () => {
     const duplicate = validGuide.replace("{{intent}}", "{{intent}} {{intent}}")
 
     expect(() => parseProfileGuide("social.md", missing)).toThrow("must contain the {{intent}} placeholder")
-    expect(() => parseProfileGuide("social.md", duplicate)).toThrow(
-      "must contain exactly one {{intent}} placeholder",
-    )
+    expect(() => parseProfileGuide("social.md", duplicate)).toThrow("must contain exactly one {{intent}} placeholder")
     expect(() => parseProfileGuide("social.md", validGuide)).not.toThrow()
   })
 

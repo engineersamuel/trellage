@@ -67,6 +67,7 @@ trellage-orphan-cleanup:
 	bash tests/trellage_orphan_cleanup_contract.sh
 
 trellage-host-runtime: profile-compiler
+	HERDR_ENV=0 TRELLAGE_HOST_AGENT_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh
 	HERDR_ENV=0 TRELLAGE_HOST_SESSION_BRIDGE_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh
 	HERDR_ENV=0 TRELLAGE_HOST_LIFECYCLE_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh
 	HERDR_ENV=0 TRELLAGE_HOST_CLAUDE_TTY_ONLY=1 bash prototypes/trellage/tests/host_command_contract.sh

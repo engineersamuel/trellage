@@ -1,10 +1,10 @@
 import path from "node:path"
 import { spawn } from "node:child_process"
+import { isLaunchAgentIdentifier } from "../../trellage-guide-core/dist/index.js"
 
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u
 const safeLauncherAlias = /^[a-z][a-z0-9-]{0,63}$/u
 const safeProfileName = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
-const safeAgentName = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
 const safeShellText = /^[A-Za-z0-9_./:-]+$/u
 const gitBranchPrefix = "refs/heads/"
 const commandOutputLimitBytes = 1024 * 1024
@@ -63,6 +63,7 @@ export interface SandboxSelectedProfile {
   readonly commandPath: string
   readonly profile: string
   readonly headlessPrompt: boolean
+  readonly agent?: string
 }
 
 export type SelectedProfile = NativeSelectedProfile | SandboxSelectedProfile
@@ -336,11 +337,13 @@ const validateHeadlessPrompt = (value: unknown): boolean => {
   return value
 }
 
-const validateAgent = (value: unknown, launcher: string): string | undefined => {
+const validateAgent = (value: unknown, launcher?: string): string | undefined => {
   if (value === undefined) return undefined
   const agent = getString(value, "selected profile agent")
-  if (launcher !== "cpx") throw new Error("selected profile agent is supported only by the cpx launcher")
-  if (!safeAgentName.test(agent)) throw new Error("selected profile agent must be a simple agent identifier")
+  if (launcher !== undefined && launcher !== "cpx") {
+    throw new Error("selected profile agent is supported only by the cpx launcher")
+  }
+  if (!isLaunchAgentIdentifier(agent)) throw new Error("selected profile agent must be a simple agent identifier")
   return agent
 }
 
@@ -528,11 +531,13 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
     }
   }
   if (surface === "sandbox") {
+    const agent = validateAgent(value.agent)
     return {
       surface,
       commandPath: validateCommandPath(value.commandPath),
       profile: validateProfileName(value.profile),
       headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
+      ...(agent === undefined ? {} : { agent }),
     }
   }
   throw new Error("selected profile surface must be native or sandbox")
@@ -553,13 +558,10 @@ export const buildGuideLaunchCommand = (
   delivery?: PromptDelivery,
 ): BuiltCommandSpec => {
   const normalizedDelivery = normalizePromptDelivery(delivery)
-  const baseArgs =
-    selectedProfile.surface === "native"
-      ? [
-          selectedProfile.profile,
-          ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
-        ]
-      : ["--profile", selectedProfile.profile]
+  const baseArgs = [
+    ...(selectedProfile.surface === "native" ? [selectedProfile.profile] : ["--profile", selectedProfile.profile]),
+    ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
+  ]
   if (normalizedDelivery.mode === "argv") {
     if (selectedProfile.surface === "sandbox") {
       return {

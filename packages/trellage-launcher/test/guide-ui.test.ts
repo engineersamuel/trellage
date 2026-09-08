@@ -982,9 +982,37 @@ describe("guideUiReducer: intent and match", () => {
       })
     })
 
-    it("ignores progress and output from a run that is no longer current", () => {
-      const state = guideUiReducer(started(), { type: GuideUiActionType.AugmentOutput, runId: 99, line: "stale" })
-      expect(state.augmentJob?.log).toEqual([])
+    it.each([
+      { type: GuideUiActionType.AugmentProgress, runId: 1, phase: GuideAugmentPhase.RunningResearch },
+      { type: GuideUiActionType.AugmentOutput, runId: 1, line: "stale" },
+      { type: GuideUiActionType.AugmentSucceeded, runId: 1, text: "stale result" },
+      { type: GuideUiActionType.AugmentFailed, runId: 1, message: "stale failure" },
+    ] satisfies ReadonlyArray<GuideUiAction>)("ignores $type from stale or settled runs", (action) => {
+      const running = started()
+      expect(guideUiReducer(running, { ...action, runId: 99 })).toBe(running)
+
+      const failed = guideUiReducer(running, {
+        type: GuideUiActionType.AugmentFailed,
+        runId: 1,
+        message: "research failed",
+      })
+      const retried = guideUiReducer(failed, { type: GuideUiActionType.AugmentRetry })
+      const discarded = guideUiReducer(running, { type: GuideUiActionType.AugmentDiscard })
+      for (const state of [failed, retried, discarded]) {
+        expect(guideUiReducer(state, action)).toBe(state)
+      }
+    })
+
+    it.each([
+      { type: GuideUiActionType.AugmentMove, delta: 1 },
+      { type: GuideUiActionType.AugmentConfirm },
+      { type: GuideUiActionType.AugmentRetry },
+      { type: GuideUiActionType.AugmentApply },
+      { type: GuideUiActionType.AugmentDiscard },
+      { type: GuideUiActionType.AugmentBack },
+    ] satisfies ReadonlyArray<GuideUiAction>)("ignores $type without its active stage or job", (action) => {
+      const state = withDraft("keep this draft")
+      expect(guideUiReducer(state, action)).toBe(state)
     })
 
     it("watches a running job from any screen and leaves it running on back", () => {

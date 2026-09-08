@@ -849,6 +849,19 @@ actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
 [[ "$actual_bare_launch" == "$expected_bare_launch" ]] \
   || fail 'bare launch did not add the default permission argument'
 
+for agent in hve-core:dt-coach hve-core:rpi-agent; do
+  (
+    cd "$worktree"
+    "$prototype_root/bin/cpx" hve --agent "$agent" -i 'Preserve the selected workflow.'
+  ) >"$fixture_root/agent-launch.out"
+  expected_agent_launch="$(jq -cn \
+    --argjson launch "$expected_bare_launch" \
+    --arg agent "$agent" \
+    '$launch | .args += ["--agent", $agent, "-i", "Preserve the selected workflow."]')"
+  [[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_agent_launch" ]] \
+    || fail "native launch lost the $agent workflow selection or interactive prompt"
+done
+
 valid_json_stream="$fixture_root/headless-valid.jsonl"
 printf '%s\n' \
   '{"type":"session.start","data":{"sessionId":"fixture-session"}}' \

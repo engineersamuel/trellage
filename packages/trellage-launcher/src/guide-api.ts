@@ -37,6 +37,7 @@ import {
   type SandboxGuideCatalogEntry,
 } from "./guide-catalog.js"
 import {
+  buildGuideLaunchCommand,
   parseSelectedProfile,
   renderCommandPreview,
   type CommandSpec,
@@ -669,19 +670,19 @@ export interface PublicGuideCommand {
  * `trellage` (Sandbox) as the public executable — never the internal
  * absolute `commandPath`. Adds `-p <prompt>` only when the profile's
  * `headless.prompt` capability is true; otherwise returns the base
- * interactive command with `promptHandling: "manual-paste"`.
+ * interactive command with `promptHandling: "manual-paste"`. Resolves the
+ * selected workflow's agent through the same launch state as the interactive UI.
  */
 export const publicGuideLaunchCommand = (
   catalog: CombinedGuideCatalog,
   ref: string,
   prompt: string,
+  workflowId: string,
 ): PublicGuideCommand => {
-  const entry = findFullCatalogEntry(catalog, ref)
-  if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${ref}`)
-  const native = isNativeEntry(entry)
-  const executable = native ? entry.launcher : "trellage"
-  const baseArgs = native ? [entry.name] : ["--profile", entry.name]
-  const headlessPrompt = entry.headless.prompt
+  const selected = selectedProfileFromCatalogRef(catalog, ref, workflowId)
+  const executable = selected.surface === "native" ? selected.launcher : "trellage"
+  const baseArgs = buildGuideLaunchCommand(selected).command.args
+  const headlessPrompt = selected.headlessPrompt
   const args = headlessPrompt ? [...baseArgs, "-p", prompt] : baseArgs
   const promptHandling: PromptHandlingMode = headlessPrompt ? "argv" : "manual-paste"
   const command: CommandSpec = { executable, args }
@@ -689,14 +690,20 @@ export const publicGuideLaunchCommand = (
 }
 
 /**
- * Converts a catalog reference into the validated internal `SelectedProfile`
+ * Converts a catalog reference and workflow into the validated `SelectedProfile`
  * used for later launch: the root `sandboxCommandPath` for Sandbox profiles,
  * the native entry's own `commandPath` for native profiles, and
- * `headless.prompt` from the catalog as `headlessPrompt`.
+ * `headless.prompt` from the catalog as `headlessPrompt`, and the authored
+ * workflow's `launchAgent` as `agent`.
  */
-export const selectedProfileFromCatalogRef = (catalog: CombinedGuideCatalog, ref: string): SelectedProfile => {
+export const selectedProfileFromCatalogRef = (
+  catalog: CombinedGuideCatalog,
+  ref: string,
+  workflowId: string,
+): SelectedProfile => {
   const entry = findFullCatalogEntry(catalog, ref)
   if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${ref}`)
+  const agent = findGuideWorkflow(entry.guide, workflowId).launchAgent
   if (isNativeEntry(entry)) {
     return parseSelectedProfile({
       surface: "native",
@@ -704,13 +711,18 @@ export const selectedProfileFromCatalogRef = (catalog: CombinedGuideCatalog, ref
       commandPath: entry.commandPath,
       profile: entry.name,
       headlessPrompt: entry.headless.prompt,
+      ...(agent === undefined ? {} : { agent }),
     })
+  }
+  if (agent !== undefined && entry.harness.kind !== "copilot") {
+    throw new GuideServiceError(`Workflow launchAgent is supported only for Copilot Sandbox profiles: ${ref}`)
   }
   return parseSelectedProfile({
     surface: "sandbox",
     commandPath: catalog.sandboxCommandPath,
     profile: entry.name,
     headlessPrompt: entry.headless.prompt,
+    ...(agent === undefined ? {} : { agent }),
   })
 }
 
@@ -986,7 +998,7 @@ export const runGuideGenerate = async (
         title: candidate.title,
         prompt: candidate.prompt,
         notes: candidate.notes,
-        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt),
+        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt, workflowId),
       }),
     ),
     "generation prompt candidates",

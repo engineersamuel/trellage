@@ -13,6 +13,7 @@ const identityPart = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const skillIdentifier = /^[a-z0-9][a-z0-9._:/-]*$/u;
 const controls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
 const singleLineControls = /[\u0000-\u001f\u007f-\u009f]/u;
+export const isLaunchAgentIdentifier = (value) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value);
 const fail = (path, message) => {
     throw new ProfileGuideValidationError(path, message);
 };
@@ -95,10 +96,14 @@ const workflows = (value, path) => {
     const result = value.map((item, index) => {
         const itemPath = `${path}[${index}]`;
         const fields = record(item, itemPath);
-        exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill"]);
+        exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent"]);
         const skill = fields.skill === undefined ? undefined : text(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en");
         if (skill !== undefined && !skillIdentifier.test(skill)) {
             fail(`${itemPath}.skill`, "must be a portable skill or command identifier");
+        }
+        const launchAgent = fields.launchAgent === undefined ? undefined : text(fields.launchAgent, `${itemPath}.launchAgent`, 128);
+        if (launchAgent !== undefined && !isLaunchAgentIdentifier(launchAgent)) {
+            fail(`${itemPath}.launchAgent`, "must be a portable agent identifier");
         }
         const promptTemplate = text(fields.promptTemplate, `${itemPath}.promptTemplate`, 16000, {
             multiline: true,
@@ -119,6 +124,7 @@ const workflows = (value, path) => {
             id: identifier(fields.id, `${itemPath}.id`),
             description: text(fields.description, `${itemPath}.description`, 2000),
             ...(skill === undefined ? {} : { skill }),
+            ...(launchAgent === undefined ? {} : { launchAgent }),
             examples: stringArray(fields.examples, `${itemPath}.examples`, {
                 minimum: 2,
                 maximumItems: 32,

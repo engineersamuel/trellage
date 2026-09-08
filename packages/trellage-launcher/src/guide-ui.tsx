@@ -963,30 +963,42 @@ const applyAugmentJob = (state: GuideUiState, job: GuideAugmentJob, text: string
 const liveJob = (state: GuideUiState, runId: number): GuideAugmentJob | undefined =>
   state.augmentJob?.runId === runId && state.augmentJob.status === "running" ? state.augmentJob : undefined
 
+const openAugment = (state: GuideUiState): GuideUiState => {
+  // A job already exists: the same key watches it rather than starting another.
+  if (state.augmentJob !== undefined) {
+    return state.stage === GuideUiStage.Augmenting
+      ? state
+      : { ...state, stage: GuideUiStage.Augmenting, augmentViewReturnStage: state.stage }
+  }
+  if (state.stage === GuideUiStage.Intent) {
+    return state.textDraft.trim().length === 0
+      ? state
+      : openAugmentChooser(state, GuideUiStage.Intent, state.textDraft)
+  }
+  // From the prompt page the draft is already the prompt, and the augmented
+  // text goes back to that same page rather than to the intent editor.
+  if (state.stage === GuideUiStage.PromptReview) {
+    return state.promptReviewEditing || state.textDraft.trim().length === 0
+      ? state
+      : openAugmentChooser(state, GuideUiStage.PromptReview, state.textDraft)
+  }
+  if (state.stage !== GuideUiStage.MatchFailed || state.intent === undefined) return state
+  return openAugmentChooser(state, GuideUiStage.Intent, state.intent)
+}
+
+const confirmAugment = (state: GuideUiState): GuideUiState => {
+  if (state.stage !== GuideUiStage.Augment) return state
+  const kind = augmentOptions[state.augmentIndex]
+  if (kind === undefined || state.textDraft.trim().length === 0) return state
+  const returnStage =
+    state.augmentViewReturnStage === GuideUiStage.PromptReview ? GuideUiStage.PromptReview : GuideUiStage.Intent
+  return startAugmentJob(state, kind, state.textDraft, returnStage, 1)
+}
+
 const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
-    case GuideUiActionType.AugmentOpen: {
-      // A job already exists: the same key watches it rather than starting another.
-      if (state.augmentJob !== undefined) {
-        return state.stage === GuideUiStage.Augmenting
-          ? state
-          : { ...state, stage: GuideUiStage.Augmenting, augmentViewReturnStage: state.stage }
-      }
-      if (state.stage === GuideUiStage.Intent) {
-        return state.textDraft.trim().length === 0
-          ? state
-          : openAugmentChooser(state, GuideUiStage.Intent, state.textDraft)
-      }
-      // From the prompt page the draft is already the prompt, and the augmented
-      // text goes back to that same page rather than to the intent editor.
-      if (state.stage === GuideUiStage.PromptReview) {
-        return state.promptReviewEditing || state.textDraft.trim().length === 0
-          ? state
-          : openAugmentChooser(state, GuideUiStage.PromptReview, state.textDraft)
-      }
-      if (state.stage !== GuideUiStage.MatchFailed || state.intent === undefined) return state
-      return openAugmentChooser(state, GuideUiStage.Intent, state.intent)
-    }
+    case GuideUiActionType.AugmentOpen:
+      return openAugment(state)
 
     case GuideUiActionType.AugmentMove:
       return state.stage === GuideUiStage.Augment
@@ -996,15 +1008,27 @@ const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState
           }
         : state
 
-    case GuideUiActionType.AugmentConfirm: {
-      if (state.stage !== GuideUiStage.Augment) return state
-      const kind = augmentOptions[state.augmentIndex]
-      if (kind === undefined || state.textDraft.trim().length === 0) return state
-      const returnStage =
-        state.augmentViewReturnStage === GuideUiStage.PromptReview ? GuideUiStage.PromptReview : GuideUiStage.Intent
-      return startAugmentJob(state, kind, state.textDraft, returnStage, 1)
-    }
+    case GuideUiActionType.AugmentConfirm:
+      return confirmAugment(state)
 
+    case GuideUiActionType.AugmentBack:
+      // Leaving the chooser or the watch screen. A running job keeps running.
+      return state.stage === GuideUiStage.Augment || state.stage === GuideUiStage.Augmenting
+        ? {
+            ...state,
+            stage: state.augmentViewReturnStage ?? GuideUiStage.Intent,
+            augmentViewReturnStage: undefined,
+            errorMessage: undefined,
+          }
+        : state
+
+    default:
+      return state
+  }
+}
+
+const reduceAugmentRun = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
     case GuideUiActionType.AugmentProgress: {
       const job = liveJob(state, action.runId)
       return job === undefined ? state : { ...state, augmentJob: { ...job, phase: action.phase } }
@@ -1033,6 +1057,13 @@ const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState
         : { ...state, augmentJob: { ...job, status: "failed", phase: undefined, errorMessage: action.message } }
     }
 
+    default:
+      return state
+  }
+}
+
+const reduceAugmentJob = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
     case GuideUiActionType.AugmentRetry: {
       const job = state.augmentJob
       if (job === undefined || job.status !== "failed") return state
@@ -1056,18 +1087,6 @@ const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState
         augmentViewReturnStage: undefined,
       }
     }
-
-    case GuideUiActionType.AugmentBack:
-      // Leaving the chooser or the watch screen. A running job keeps running.
-      return state.stage === GuideUiStage.Augment || state.stage === GuideUiStage.Augmenting
-        ? {
-            ...state,
-            stage: state.augmentViewReturnStage ?? GuideUiStage.Intent,
-            augmentViewReturnStage: undefined,
-            errorMessage: undefined,
-          }
-        : state
-
 
     default:
       return state
@@ -1868,13 +1887,13 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.AugmentOpen]: reduceAugment,
   [GuideUiActionType.AugmentMove]: reduceAugment,
   [GuideUiActionType.AugmentConfirm]: reduceAugment,
-  [GuideUiActionType.AugmentProgress]: reduceAugment,
-  [GuideUiActionType.AugmentOutput]: reduceAugment,
-  [GuideUiActionType.AugmentSucceeded]: reduceAugment,
-  [GuideUiActionType.AugmentFailed]: reduceAugment,
-  [GuideUiActionType.AugmentRetry]: reduceAugment,
-  [GuideUiActionType.AugmentApply]: reduceAugment,
-  [GuideUiActionType.AugmentDiscard]: reduceAugment,
+  [GuideUiActionType.AugmentProgress]: reduceAugmentRun,
+  [GuideUiActionType.AugmentOutput]: reduceAugmentRun,
+  [GuideUiActionType.AugmentSucceeded]: reduceAugmentRun,
+  [GuideUiActionType.AugmentFailed]: reduceAugmentRun,
+  [GuideUiActionType.AugmentRetry]: reduceAugmentJob,
+  [GuideUiActionType.AugmentApply]: reduceAugmentJob,
+  [GuideUiActionType.AugmentDiscard]: reduceAugmentJob,
   [GuideUiActionType.AugmentBack]: reduceAugment,
   [GuideUiActionType.MatchRetry]: reduceMatch,
   [GuideUiActionType.MatchProgress]: reduceMatchProgress,
@@ -2105,7 +2124,11 @@ export const pinnedGuideLenses = (catalog: CombinedGuideCatalog): ReadonlyArray<
   })
 
 export const selectedProfileForPinnedLens = (catalog: CombinedGuideCatalog, lens: GuidePinnedLens): SelectedProfile => {
-  const selectedProfile = selectedProfileFromCatalogRef(catalog, lens.recommendation.profileRef)
+  const selectedProfile = selectedProfileFromCatalogRef(
+    catalog,
+    lens.recommendation.profileRef,
+    lens.recommendation.workflowId,
+  )
   if (lens.agent === undefined) return selectedProfile
   if (selectedProfile.surface !== "native") {
     throw new Error(`Pinned lens agent requires a native profile: ${lens.recommendation.profileRef}`)
@@ -4674,7 +4697,11 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
     const recommendation = recommendationAt(state.recommendations, state.recommendationIndex)
     dispatch({
       type: GuideUiActionType.RecommendationsConfirm,
-      selectedProfile: selectedProfileFromCatalogRef(props.catalog, recommendation.profileRef),
+      selectedProfile: selectedProfileFromCatalogRef(
+        props.catalog,
+        recommendation.profileRef,
+        recommendation.workflowId,
+      ),
     })
   } else if (input === "q") cancel()
 }
@@ -5145,6 +5172,7 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
         props.catalog,
         state.selectedRecommendation.profileRef,
         tripleAt(state.candidates, state.candidateIndex).prompt,
+        state.selectedRecommendation.workflowId,
       )}
     />
   )

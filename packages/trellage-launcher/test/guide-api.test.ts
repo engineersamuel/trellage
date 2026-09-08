@@ -116,6 +116,7 @@ workflows:
   - id: plan
     description: Draft an implementation plan.
     skill: writing-plans
+    launchAgent: hve-core:dt-coach
     examples:
       - Plan this feature
       - Draft a phased implementation plan
@@ -145,6 +146,7 @@ const guidePrimeAgent: ProfileGuideV1 = {
       id: "plan",
       description: "Draft an implementation plan.",
       skill: "writing-plans",
+      launchAgent: "hve-core:dt-coach",
       examples: ["Plan this feature", "Draft a phased implementation plan"],
       promptTemplate: "Use the writing-plans skill:\n{{intent}}",
     },
@@ -1159,6 +1161,16 @@ describe("runGuideGenerate", () => {
       expect(response.profile.profileRef).toBe("sandbox:prime-agent")
       expect(response.candidates).toHaveLength(3)
       expect(response.candidates[0]?.prompt).toBe("Use the writing-plans skill:\nPrompt Master: Do the focused thing.")
+      // The selected workflow declares launchAgent, so every generated
+      // candidate's command must include --agent <value> after --profile.
+      expect(response.candidates[0]?.command.args).toEqual([
+        "--profile",
+        "prime-agent",
+        "--agent",
+        "hve-core:dt-coach",
+        "-p",
+        "Use the writing-plans skill:\nPrompt Master: Do the focused thing.",
+      ])
       expect(provider.optimizeCalls).toEqual([
         {
           targetTool: "copilot",
@@ -1372,6 +1384,8 @@ describe("runGuideGenerate", () => {
       // "deep-refactor" shares far more tokens with the intent than "quick-fix".
       expect(response.profile.workflowId).toBe("deep-refactor")
       expect(response.candidates[0]?.prompt).toBe("Prompt Master: Do the focused thing.")
+      // "deep-refactor" declares no launchAgent, so --agent must be omitted.
+      expect(response.candidates[0]?.command.args).toEqual(["foo", "-p", "Prompt Master: Do the focused thing."])
       expect(provider.optimizeCalls).toEqual([
         {
           targetTool: "jules",
@@ -1920,7 +1934,7 @@ describe("runGuideGenerate", () => {
 describe("publicGuideLaunchCommand", () => {
   it("uses the launcher alias and appends -p <prompt> when headless.prompt is true", () => {
     const catalog = buildCatalog("/tmp-unused")
-    const command = publicGuideLaunchCommand(catalog, "native:cdx/pstack", "say hello world")
+    const command = publicGuideLaunchCommand(catalog, "native:cdx/pstack", "say hello world", "review")
     expect(command.executable).toBe("cdx")
     expect(command.args).toEqual(["pstack", "-p", "say hello world"])
     expect(command.promptHandling).toBe("argv")
@@ -1930,7 +1944,7 @@ describe("publicGuideLaunchCommand", () => {
 
   it("uses 'trellage' and the base interactive command when headless.prompt is false", () => {
     const catalog = buildCatalog("/tmp-unused")
-    const command = publicGuideLaunchCommand(catalog, "sandbox:other", "say hello world")
+    const command = publicGuideLaunchCommand(catalog, "sandbox:other", "say hello world", "draft")
     expect(command.executable).toBe("trellage")
     expect(command.args).toEqual(["--profile", "other"])
     expect(command.promptHandling).toBe("manual-paste")
@@ -1939,14 +1953,51 @@ describe("publicGuideLaunchCommand", () => {
 
   it("throws for an unknown profile reference", () => {
     const catalog = buildCatalog("/tmp-unused")
-    expect(() => publicGuideLaunchCommand(catalog, "sandbox:does-not-exist", "x")).toThrow(GuideServiceError)
+    expect(() => publicGuideLaunchCommand(catalog, "sandbox:does-not-exist", "x", "draft")).toThrow(GuideServiceError)
+  })
+
+  it("rejects a workflow agent on a native launcher without agent support", () => {
+    const catalog = withCdxPstackGuide(buildCatalog("/tmp-unused"), {
+      ...guideCdxHve,
+      workflows: guideCdxHve.workflows.map((workflow) => ({ ...workflow, launchAgent: "hve-core:dt-coach" })),
+    })
+    expect(() => publicGuideLaunchCommand(catalog, "native:cdx/pstack", "say hello world", "review")).toThrow(
+      /only by the cpx launcher/,
+    )
+  })
+
+  it("includes the workflow agent without changing Sandbox manual-paste delivery", () => {
+    const initial = buildCatalog("/tmp-unused")
+    const catalog = {
+      ...initial,
+      sandbox: initial.sandbox.map((entry) => ({ ...entry, headless: { ...entry.headless, prompt: false } })),
+    }
+    const command = publicGuideLaunchCommand(catalog, "sandbox:prime-agent", "say hello world", "plan")
+    expect(command.executable).toBe("trellage")
+    expect(command.args).toEqual(["--profile", "prime-agent", "--agent", "hve-core:dt-coach"])
+    expect(command.promptHandling).toBe("manual-paste")
+    expect(command.preview).toBe("trellage --profile prime-agent --agent hve-core:dt-coach")
+  })
+
+  it("does not carry another workflow's agent into a plain launch", () => {
+    const catalog = buildCatalog("/tmp-unused")
+    const command = publicGuideLaunchCommand(catalog, "sandbox:prime-agent", "say hello world", "review")
+    expect(command.executable).toBe("trellage")
+    expect(command.args).toEqual(["--profile", "prime-agent", "-p", "say hello world"])
+  })
+
+  it("rejects an unknown workflow rather than silently dropping its launch settings", () => {
+    const catalog = buildCatalog("/tmp-unused")
+    expect(() => publicGuideLaunchCommand(catalog, "sandbox:other", "say hello world", "missing")).toThrow(
+      /Unknown workflow reference/,
+    )
   })
 })
 
 describe("selectedProfileFromCatalogRef", () => {
   it("uses the native entry's own commandPath", () => {
     const catalog = buildCatalog("/tmp-unused")
-    expect(selectedProfileFromCatalogRef(catalog, "native:cdx/pstack")).toEqual({
+    expect(selectedProfileFromCatalogRef(catalog, "native:cdx/pstack", "review")).toEqual({
       surface: "native",
       launcher: "cdx",
       commandPath: "/opt/trellage/cdx/bin/cdx",
@@ -1957,7 +2008,7 @@ describe("selectedProfileFromCatalogRef", () => {
 
   it("uses the root sandboxCommandPath, not the profile's own path", () => {
     const catalog = buildCatalog("/tmp-unused")
-    expect(selectedProfileFromCatalogRef(catalog, "sandbox:other")).toEqual({
+    expect(selectedProfileFromCatalogRef(catalog, "sandbox:other", "draft")).toEqual({
       surface: "sandbox",
       commandPath: "/opt/trellage/bin/trellage",
       profile: "other",
@@ -1967,7 +2018,20 @@ describe("selectedProfileFromCatalogRef", () => {
 
   it("throws for an unknown profile reference", () => {
     const catalog = buildCatalog("/tmp-unused")
-    expect(() => selectedProfileFromCatalogRef(catalog, "native:cdx/does-not-exist")).toThrow(GuideServiceError)
+    expect(() => selectedProfileFromCatalogRef(catalog, "native:cdx/does-not-exist", "review")).toThrow(
+      GuideServiceError,
+    )
+  })
+
+  it.each(["claude", "pi"])("rejects workflow agents for the %s Sandbox harness before launching", (kind) => {
+    const initial = buildCatalog("/tmp-unused")
+    const catalog = {
+      ...initial,
+      sandbox: initial.sandbox.map((entry) => ({ ...entry, harness: { ...entry.harness, kind } })),
+    }
+    expect(() => selectedProfileFromCatalogRef(catalog, "sandbox:prime-agent", "plan")).toThrow(
+      /only for Copilot Sandbox profiles/,
+    )
   })
 })
 

@@ -71,6 +71,15 @@ scope in the body. Do not duplicate the fixed frame's source-evidence, prior
 art, unresolved-question, risk, implementation-option, or approach-change
 requirements.
 
+For the `customer-engagement-lifecycle` workflow (on both `native:cpx/hve` and
+`sandbox:copilot-hve`), keep every specialist reference tied to its exact
+installed `hve-core` agent name — DT Coach, Meeting Analyst, BRD Builder, PRD
+Builder, UX UI Designer, ADR Creator, Privacy Planner, RAI Planner, Security
+Planner, SSSC Planner, Functional Planner, and Backlog Manager — instead of a
+generic category such as "UX review" or "security review". Name only the
+agents whose concerns actually apply to the stated intent and lifecycle
+maturity; do not force every agent into every candidate.
+
 For `native:fmx/default`, every candidate must make Firstmate the sole fleet
 router and integration authority. Cover the supported fleet lifecycle
 conditionally: verify the target and registration state; resolve project
