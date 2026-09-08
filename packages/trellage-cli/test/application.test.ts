@@ -434,6 +434,9 @@ const testBuildLock = {
 const runtimeSupport = (root: string) => ({
   codexEntry: path.join(root, "runtime-entry.sh"),
   copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
+  copilotModelSettings: fileURLToPath(
+    new URL("../../../prototypes/trellage/copilot-model-settings.py", import.meta.url),
+  ),
   headlongEntry: path.join(root, "runtime-headlong-entry.sh"),
   sessionBridge: fileURLToPath(new URL("../../../scripts/trellage-session-bridge.py", import.meta.url)),
   piEntry: path.join(root, "runtime-pi-entry.sh"),

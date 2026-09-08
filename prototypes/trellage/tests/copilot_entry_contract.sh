@@ -256,6 +256,7 @@ run_entry() {
     --user '10001:10001' \
     --entrypoint /bin/bash \
     --mount "type=bind,src=$entry,dst=/test/runtime-copilot-entry.sh,readonly" \
+    --mount "type=bind,src=$prototype_dir/copilot-model-settings.py,dst=/usr/local/bin/trellage-copilot-model-settings,readonly" \
     --mount "type=bind,src=$prototype_dir/../../scripts/trellage-session-bridge.py,dst=/usr/local/bin/trellage-session-bridge,readonly" \
     --mount "type=bind,src=$seed,dst=/usr/local/share/trellage/copilot-seed,readonly" \
     --mount "type=bind,src=$runtime,dst=/home/agent/.copilot" \
@@ -267,6 +268,7 @@ run_entry() {
     --env 'TRELLAGE_PROFILE_NAME=copilot-hve-test' \
     --env "TRELLAGE_COPILOT_MODEL=${TRELLAGE_COPILOT_MODEL-}" \
     --env "TRELLAGE_COPILOT_REASONING_EFFORT=${TRELLAGE_COPILOT_REASONING_EFFORT-}" \
+    --env "TRELLAGE_COPILOT_PLAN_MODE_REASONING_EFFORT=${TRELLAGE_COPILOT_PLAN_MODE_REASONING_EFFORT-}" \
     --env "COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN-}" \
     --env "GH_TOKEN=${GH_TOKEN-}" \
     --env "GITHUB_TOKEN=${GITHUB_TOKEN-}" \
@@ -311,7 +313,7 @@ output_file_mode() {
 prompt='literal $(touch /tmp/not-executed) prompt'
 COPILOT_GITHUB_TOKEN='selected-token' GH_TOKEN='poison-gh' GITHUB_TOKEN='poison-github' \
   run_entry prompt --allow-all -- "$prompt"
-default_model_argv=$'--model\ngpt-6-astra\n--effort\nmax'
+default_model_argv=$'--model\ngpt-6-astra\n--effort\nlow'
 expected_prompt_argv="$default_model_argv"$'\n--allow-all\n-p\nliteral $(touch /tmp/not-executed) prompt'
 prompt_argv="$(read_output_file argv)"
 prompt_env="$(read_output_file env)"
@@ -339,6 +341,11 @@ jq -e '
   and .trustedFolders == ["/existing", "/"]
 ' "$runtime/config.json" >/dev/null \
   || fail 'Copilot workspace trust was not persisted without changing existing config'
+jq -e '
+  .model == "gpt-6-astra" and .effortLevel == "low"
+  and .planModel == "gpt-6-astra" and .planEffortLevel == "max"
+' "$runtime/settings.json" >/dev/null \
+  || fail 'Copilot default and plan modes did not receive separate model settings'
 
 COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= run_entry new --allow-all
 interactive_argv="$(read_output_file argv)"
@@ -357,9 +364,16 @@ exact_resume_argv="$(read_output_file argv)"
   || fail 'exact resume did not map to Copilot --resume=ID argv'
 
 TRELLAGE_COPILOT_MODEL=gpt-5.5 TRELLAGE_COPILOT_REASONING_EFFORT=high \
+  TRELLAGE_COPILOT_PLAN_MODE_REASONING_EFFORT=xhigh \
   run_entry prompt --model gpt-5.4-mini --reasoning-effort low -- 'explicit overrides'
 [[ "$(read_output_file argv)" == $'--model\ngpt-5.5\n--effort\nhigh\n--model\ngpt-5.4-mini\n--reasoning-effort\nlow\n-p\nexplicit overrides' ]] \
   || fail 'configured Copilot defaults did not precede explicit caller overrides'
+jq -e '
+  .model == "gpt-5.5" and .effortLevel == "high"
+  and .planModel == "gpt-5.5" and .planEffortLevel == "xhigh"
+' "$runtime/settings.json" >/dev/null \
+  || fail 'Copilot plan overrides did not stay separate from default effort'
+settings_before_probe="$(cat "$runtime/settings.json")"
 
 run_entry new --version
 [[ "$(read_output_file argv)" == --version ]] \
@@ -367,6 +381,8 @@ run_entry new --version
 run_entry new plugin list
 [[ "$(read_output_file argv)" == $'plugin\nlist' ]] \
   || fail 'plugin inventory probe received session model defaults'
+[[ "$(cat "$runtime/settings.json")" == "$settings_before_probe" ]] \
+  || fail 'read-only Copilot probes changed model settings'
 
 hint_output="$(
   TRELLAGE_RESUME_PROFILE=/tmp/copilot-hve/profile.toml \
@@ -389,6 +405,11 @@ assert_no_transaction_temps 'failed prompt mode'
 
 jq -e '.trustedFolders == ["/existing", "/"]' "$runtime/config.json" >/dev/null \
   || fail 'repeated Copilot launches duplicated the trusted workspace'
+jq -e '
+  .model == "gpt-6-astra" and .effortLevel == "low"
+  and .planModel == "gpt-6-astra" and .planEffortLevel == "max"
+' "$runtime/settings.json" >/dev/null \
+  || fail 'repeated Copilot launches did not restore managed mode defaults'
 jq -e '
   .hooks.SessionStart
   | map(select(

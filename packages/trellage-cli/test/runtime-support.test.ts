@@ -30,6 +30,7 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
   const paths = {
     codexEntry: path.join(root, "runtime-entry.sh"),
     copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
+    copilotModelSettings: path.join(root, "copilot-model-settings.py"),
     sessionBridge: path.join(root, "trellage-session-bridge.py"),
     piEntry: path.join(root, "runtime-pi-entry.sh"),
     primeEntry: path.join(root, "runtime-prime-entry.sh"),
@@ -43,6 +44,7 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
   await Promise.all([
     writeFile(paths.codexEntry, "codex-entry\n"),
     writeFile(paths.copilotEntry, "copilot-entry\n"),
+    writeFile(paths.copilotModelSettings, "copilot-model-settings\n"),
     writeFile(paths.sessionBridge!, "session-bridge\n"),
     writeFile(paths.piEntry, "pi-entry\n"),
     writeFile(paths.primeEntry, "prime-entry\n"),
@@ -69,6 +71,7 @@ describe("runtime support snapshots", () => {
     expect(codex.files.map((file) => file.role)).toEqual(["runtime-entry", "session-bridge"])
     expect(copilot.files.map((file) => file.role)).toEqual([
       "runtime-copilot-entry",
+      "copilot-model-settings",
       "finalize-copilot-seed",
       "copilot-instruction-rundown",
       "session-bridge",
@@ -184,7 +187,10 @@ describe("runtime support snapshots", () => {
   it("changes each harness hash for every selected file mutation", async () => {
     const cases = [
       ["codex", ["codexEntry", "sessionBridge"]],
-      ["copilot", ["copilotEntry", "finalizeCopilotSeed", "copilotInstructionRundown", "sessionBridge"]],
+      [
+        "copilot",
+        ["copilotEntry", "copilotModelSettings", "finalizeCopilotSeed", "copilotInstructionRundown", "sessionBridge"],
+      ],
       [
         "claude",
         ["claudeEntry", "finalizeClaudeSeed", "claudeBrowserAgent", "claudeOutputStyleRundown", "sessionBridge"],
@@ -204,11 +210,13 @@ describe("runtime support snapshots", () => {
 
   it("uses length-delimited framing rather than ambiguous byte concatenation", async () => {
     const { paths } = await fixtures()
+    const modelSettings = paths.copilotModelSettings
+    if (modelSettings === undefined) throw new Error("expected Copilot model settings fixture")
     await writeFile(paths.copilotEntry, "ab")
-    await writeFile(paths.finalizeCopilotSeed, "c")
+    await writeFile(modelSettings, "c")
     const left = await Effect.runPromise(createRuntimeSupportSnapshot("copilot", paths))
     await writeFile(paths.copilotEntry, "a")
-    await writeFile(paths.finalizeCopilotSeed, "bc")
+    await writeFile(modelSettings, "bc")
     const right = await Effect.runPromise(createRuntimeSupportSnapshot("copilot", paths))
 
     expect(Buffer.concat(left.files.map((file) => file.bytes))).toEqual(

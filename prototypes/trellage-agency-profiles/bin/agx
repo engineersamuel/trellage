@@ -78,6 +78,10 @@ if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+model_settings_source="$runtime_root/copilot-model-settings.py"
+if [[ ! -f "$model_settings_source" ]]; then
+  model_settings_source="$runtime_root/../trellage/copilot-model-settings.py"
+fi
 
 validate_catalog() {
   [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
@@ -296,6 +300,11 @@ prepare_profile_home() {
   [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile home: $path"
   chmod 0700 "$(profile_root "$profile")" "$path"
   require_safe_profile_path "$profile"
+  require_command python3
+  [[ -f "$model_settings_source" && ! -L "$model_settings_source" ]] \
+    || die "missing managed model settings helper: $model_settings_source"
+  python3 "$model_settings_source" "$path" gpt-6-astra low max \
+    || die "failed to update managed model settings: $profile"
 }
 
 ensure_floating_skills() {
@@ -535,7 +544,8 @@ launch_profile() {
   exec env \
     COPILOT_HOME="$(profile_home "$profile")" \
     AZURE_TOKEN_CREDENTIALS="$ready_auth" \
-    "$ready_executable" copilot --profile-only "$(profile_value "$profile" agencyProfile)" -- "$@"
+    "$ready_executable" copilot --profile-only "$(profile_value "$profile" agencyProfile)" -- \
+    --model gpt-6-astra --effort low "$@"
 }
 
 require_command jq

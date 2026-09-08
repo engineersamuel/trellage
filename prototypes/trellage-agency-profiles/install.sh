@@ -25,6 +25,8 @@ install_root="$runtime_parent/agx"
 runtime_bin="$install_root/bin"
 installed_launcher="$runtime_bin/agx"
 installed_catalog="$install_root/catalog.json"
+installed_model_settings="$install_root/copilot-model-settings.py"
+model_settings_source="$source_dir/../trellage/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-agency-profiles"
 command_dir="$local_dir/bin"
 command_path="$command_dir/agx"
@@ -59,6 +61,11 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
     || refuse "refusing to replace unrelated command: $command_path"
 fi
 
+[[ -f "$model_settings_source" && ! -L "$model_settings_source" ]] \
+  || refuse "missing model settings helper: $model_settings_source"
+[[ ! -L "$installed_model_settings" \
+  && ( ! -e "$installed_model_settings" || -f "$installed_model_settings" ) ]] \
+  || refuse "unsafe managed model settings helper: $installed_model_settings"
 mkdir -p "$runtime_bin" "$command_dir"
 for path in "$runtime_bin" "$install_root"; do
   [[ -d "$path" && ! -L "$path" ]] || refuse "unsafe managed directory: $path"
@@ -76,11 +83,17 @@ marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")" || {
   rm -f -- "$launcher_stage" "$catalog_stage"
   refuse 'cannot stage ownership marker'
 }
-trap 'rm -f -- "$launcher_stage" "$catalog_stage" "$marker_stage"' EXIT
+model_settings_stage="$(mktemp "$install_root/.model-settings.XXXXXX")" || {
+  rm -f -- "$launcher_stage" "$catalog_stage" "$marker_stage"
+  refuse 'cannot stage model settings helper'
+}
+trap 'rm -f -- "$launcher_stage" "$catalog_stage" "$marker_stage" "$model_settings_stage"' EXIT
 install -m 0755 "$source_dir/bin/agx" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
+install -m 0755 "$model_settings_source" "$model_settings_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
 chmod 0644 "$marker_stage"
+mv -f "$model_settings_stage" "$installed_model_settings"
 mv -f "$launcher_stage" "$installed_launcher"
 mv -f "$catalog_stage" "$installed_catalog"
 mv -f "$marker_stage" "$ownership_marker"

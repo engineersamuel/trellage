@@ -173,7 +173,12 @@ if [[ -n "${TRELLAGE_CODEX_MODEL-}" ]]; then
 fi
 if [[ -n "${TRELLAGE_CODEX_REASONING_EFFORT-}" ]]; then
   encoded_reasoning_effort="$(jq -cn --arg effort "$TRELLAGE_CODEX_REASONING_EFFORT" '$effort')"
-  model_args+=(-c "model_reasoning_effort=$encoded_reasoning_effort" -c "plan_mode_reasoning_effort=$encoded_reasoning_effort")
+  model_args+=(-c "model_reasoning_effort=$encoded_reasoning_effort")
+fi
+plan_mode_reasoning_effort="${TRELLAGE_CODEX_PLAN_MODE_REASONING_EFFORT:-${TRELLAGE_CODEX_REASONING_EFFORT-}}"
+if [[ -n "$plan_mode_reasoning_effort" ]]; then
+  encoded_plan_effort="$(jq -cn --arg effort "$plan_mode_reasoning_effort" '$effort')"
+  model_args+=(-c "plan_mode_reasoning_effort=$encoded_plan_effort")
 fi
 set -- "$codex_command" --enable hooks ${hook_trust_args[@]+"${hook_trust_args[@]}"} ${model_args[@]+"${model_args[@]}"} "$@"
 

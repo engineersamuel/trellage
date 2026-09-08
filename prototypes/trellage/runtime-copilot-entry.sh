@@ -1031,13 +1031,18 @@ fi
 if [[ "$read_only_probe" != true ]]; then
   ensure_workspace_trusted
   install_session_bridge_hook
+  python3 /usr/local/bin/trellage-copilot-model-settings \
+    "$runtime_home" "${TRELLAGE_COPILOT_MODEL:-gpt-6-astra}" \
+    "${TRELLAGE_COPILOT_REASONING_EFFORT:-low}" \
+    "${TRELLAGE_COPILOT_PLAN_MODE_REASONING_EFFORT:-max}" \
+    || fail 'cannot update Copilot model settings'
 fi
 release_runtime_lock
 
 if [[ "$read_only_probe" != true ]]; then
   harness_args=(
     --model "${TRELLAGE_COPILOT_MODEL:-gpt-6-astra}"
-    --effort "${TRELLAGE_COPILOT_REASONING_EFFORT:-max}"
+    --effort "${TRELLAGE_COPILOT_REASONING_EFFORT:-low}"
     "${harness_args[@]}"
   )
 fi

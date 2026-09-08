@@ -95,17 +95,19 @@ const rustArtifacts = [
     size: 1,
   },
 ] as const
-const withSessionBridge = (support: RuntimeSupportPaths): RuntimeSupportPaths => ({
+const withRuntimeHelpers = (support: RuntimeSupportPaths): RuntimeSupportPaths => ({
   ...support,
   sessionBridge: support.sessionBridge ?? path.join(path.dirname(support.codexEntry), "trellage-session-bridge.py"),
+  copilotModelSettings:
+    support.copilotModelSettings ?? path.join(path.dirname(support.copilotEntry), "copilot-model-settings.py"),
 })
 const createRuntimeSupportSnapshot = (
   ...[kind, support, selection, claudeMode]: Parameters<typeof createRuntimeSupportSnapshotRaw>
-) => createRuntimeSupportSnapshotRaw(kind, withSessionBridge(support), selection, claudeMode)
+) => createRuntimeSupportSnapshotRaw(kind, withRuntimeHelpers(support), selection, claudeMode)
 const createBuildContext = (...arguments_: Parameters<typeof createBuildContextRaw>) => {
   const runtimeSupport = arguments_[3]
   if (typeof runtimeSupport !== "string" && !isRuntimeSupportSnapshot(runtimeSupport)) {
-    arguments_[3] = withSessionBridge(runtimeSupport)
+    arguments_[3] = withRuntimeHelpers(runtimeSupport)
   }
   return createBuildContextRaw(...arguments_)
 }
@@ -113,6 +115,7 @@ const temporaryRoot = async (prefix: string): Promise<string> => {
   const root = await mkdtemp(path.join(os.tmpdir(), prefix))
   temporaryRoots.push(root)
   await writeFile(path.join(root, "trellage-session-bridge.py"), "#!/usr/bin/env python3\n")
+  await writeFile(path.join(root, "copilot-model-settings.py"), "#!/usr/bin/env python3\n")
   return root
 }
 

@@ -34,6 +34,10 @@ session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
 if [[ ! -f "$session_bridge_source" ]]; then
   session_bridge_source="$runtime_root/../../scripts/trellage-session-bridge.py"
 fi
+model_settings_source="$runtime_root/lib/copilot-model-settings.py"
+if [[ ! -f "$model_settings_source" ]]; then
+  model_settings_source="$runtime_root/../trellage/copilot-model-settings.py"
+fi
 
 die() {
   printf 'cpx: %s\n' "$1" >&2
@@ -485,6 +489,16 @@ prepare_profile_home() {
   chmod 0700 "$(profile_home "$profile")" \
     || die "failed to secure profile home: $(profile_home "$profile")"
   ensure_instructions "$profile"
+  ensure_model_settings "$profile"
+}
+
+ensure_model_settings() {
+  local profile="$1"
+  require_command python3
+  [[ -f "$model_settings_source" && ! -L "$model_settings_source" ]] \
+    || die "missing managed model settings helper: $model_settings_source"
+  python3 "$model_settings_source" "$(profile_home "$profile")" gpt-6-astra low max \
+    || die "failed to update managed model settings: $profile"
 }
 
 install_session_bridge() {
@@ -567,7 +581,7 @@ launch_profile() {
   ensure_profile_for_launch "$profile"
   exec env COPILOT_HOME="$(profile_home "$profile")" \
     copilot --autopilot --allow-all --no-ask-user \
-    --model gpt-6-astra --effort max "$@"
+    --model gpt-6-astra --effort low "$@"
 }
 
 plugin_inventory_snapshot() {

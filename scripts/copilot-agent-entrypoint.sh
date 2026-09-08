@@ -11,6 +11,10 @@ mkdir -p \
   /workspace/.cache \
   /workspace/.config
 
+python3 /usr/local/bin/trellage-copilot-model-settings \
+  "$COPILOT_HOME" "${COPILOT_MODEL:-gpt-6-astra}" \
+  "${COPILOT_REASONING_EFFORT:-low}" "${COPILOT_PLAN_MODE_REASONING_EFFORT:-max}"
+
 managed_instructions='/usr/local/share/trellage/copilot-instructions/rundown.instructions.md'
 instructions_tmp="$(mktemp "$COPILOT_HOME/instructions/.rundown.instructions.md.XXXXXX")"
 cat -- "$managed_instructions" >"$instructions_tmp"

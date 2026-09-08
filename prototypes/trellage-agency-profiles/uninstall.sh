@@ -20,6 +20,7 @@ install_root="$canonical_home/.local/share/trellage/agx"
 runtime_bin="$install_root/bin"
 installed_launcher="$runtime_bin/agx"
 installed_catalog="$install_root/catalog.json"
+installed_model_settings="$install_root/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-agency-profiles"
 command_path="$canonical_home/.local/bin/agx"
 
@@ -39,12 +40,15 @@ fi
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ -f "$installed_catalog" && ! -L "$installed_catalog" ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
+[[ ! -L "$installed_model_settings" \
+  && ( ! -e "$installed_model_settings" || -f "$installed_model_settings" ) ]] \
+  || refuse "unsafe managed model settings helper: $installed_model_settings"
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
     || refuse "refusing to remove unrelated command: $command_path"
   rm "$command_path"
 fi
-rm -f -- "$installed_launcher" "$installed_catalog" "$ownership_marker"
+rm -f -- "$installed_launcher" "$installed_catalog" "$installed_model_settings" "$ownership_marker"
 rmdir "$runtime_bin" "$install_root" 2>/dev/null \
   || refuse "managed runtime contains unrelated files: $install_root"
 printf 'Uninstalled agx; profile homes were preserved.\n'

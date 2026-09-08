@@ -9,6 +9,7 @@ import type { Profile } from "./profile.js"
 export interface RuntimeSupportPaths {
   readonly codexEntry: string
   readonly copilotEntry: string
+  readonly copilotModelSettings?: string
   readonly sessionBridge?: string
   readonly headlongEntry?: string
   readonly piEntry?: string
@@ -92,6 +93,13 @@ const selectedFiles = (
           role: "runtime-copilot-entry",
           destination: "/usr/local/bin/trellage-copilot-entry",
           buildContextPath: "runtime-copilot-entry.sh",
+          mode: 0o755,
+        },
+        {
+          property: "copilotModelSettings",
+          role: "copilot-model-settings",
+          destination: "/usr/local/bin/trellage-copilot-model-settings",
+          buildContextPath: ".runtime-support/copilot-model-settings.py",
           mode: 0o755,
         },
         {

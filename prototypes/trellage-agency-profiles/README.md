@@ -31,11 +31,17 @@ The launch command is:
 
 ```bash
 COPILOT_HOME="$HOME/.local/share/trellage/profiles/agency/trellage-azure/home" \
-  agency copilot --profile-only trellage-azure -- <copilot-arguments>
+  agency copilot --profile-only trellage-azure -- \
+  --model gpt-6-astra --effort low <copilot-arguments>
 ```
 
 The `--` separator is required: arguments before it belong to Agency, while
 arguments after it belong to Copilot.
+
+Default mode uses `gpt-6-astra` with `low` effort. Plan mode uses the same model
+with `max` effort. Caller arguments follow the default model and effort flags,
+so explicit overrides still win. Python 3 is required to update the managed
+mode settings in the isolated Copilot home.
 
 ## Profile composition
 
@@ -90,8 +96,9 @@ Profile state:
 ~/.local/share/trellage/profiles/agency/trellage-azure/
 ```
 
-`setup` and `repair` create or validate only the owned profile root, isolated
-Copilot home, and `native-common` floating skills. Re-run `./install.sh`, or use
+`setup`, `repair`, and launch refresh the owned profile root, isolated Copilot
+home, managed mode settings, and `native-common` floating skills. The shared
+model-settings helper preserves all other Copilot settings. Re-run `./install.sh`, or use
 the repository native rebuild, to update the launcher and catalog. Uninstall
 removes only the owned launcher runtime and exact command symlink; profile
 homes and Agency-managed state outside Trellage are preserved.

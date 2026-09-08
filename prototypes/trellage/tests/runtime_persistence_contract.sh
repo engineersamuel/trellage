@@ -222,6 +222,7 @@ run_copilot_sync() {
     --read-only \
     --entrypoint /bin/bash \
     --mount "type=bind,src=$copilot_runtime_entry,dst=/test/runtime-copilot-entry.sh,readonly" \
+    --mount "type=bind,src=$prototype_dir/copilot-model-settings.py,dst=/usr/local/bin/trellage-copilot-model-settings,readonly" \
     --mount "type=bind,src=$fixture/seed,dst=/usr/local/share/trellage/copilot-seed,readonly" \
     --mount "type=bind,src=$fixture/runtime,dst=/home/agent/.copilot" \
     --mount "type=bind,src=$fixture/fake-bin,dst=/test-bin,readonly" \
@@ -518,7 +519,7 @@ run_copilot_persistence_contract() {
 
   run_copilot_sync "$fixture"
   run_copilot_sync "$fixture" prompt --allow-all -- 'hello $(false)'
-  printf '%s\0' --model gpt-6-astra --effort max --allow-all -p 'hello $(false)' \
+  printf '%s\0' --model gpt-6-astra --effort low --allow-all -p 'hello $(false)' \
     >"$fixture/expected-prompt-argv"
   cmp -s "$fixture/output/argv" "$fixture/expected-prompt-argv" \
     || fail 'portable prompt did not use exact native Copilot -p argv'

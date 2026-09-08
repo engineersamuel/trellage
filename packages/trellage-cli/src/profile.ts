@@ -98,6 +98,7 @@ const ReasoningEffort = Schema.Literal("minimal", "low", "medium", "high", "xhig
 const Codex = Schema.Struct({
   model: NonEmpty,
   reasoning_effort: ReasoningEffort,
+  plan_mode_reasoning_effort: Schema.optional(ReasoningEffort),
   model_provider: NonEmpty,
   providers: Schema.Record({ key: NonEmpty, value: Provider }),
 })
@@ -106,6 +107,9 @@ const Copilot = Schema.Struct({
   auth: Schema.Literal("host-or-login"),
   model: Schema.optionalWith(NonEmpty, { default: () => "gpt-6-astra" }),
   reasoning_effort: Schema.optionalWith(Schema.Union(Schema.Literal("none"), ReasoningEffort), {
+    default: () => "low",
+  }),
+  plan_mode_reasoning_effort: Schema.optionalWith(Schema.Union(Schema.Literal("none"), ReasoningEffort), {
     default: () => "max",
   }),
 })

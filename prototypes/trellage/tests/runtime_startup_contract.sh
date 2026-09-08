@@ -146,6 +146,7 @@ run_copilot_case() {
     --read-only \
     --entrypoint /bin/bash \
     --mount "type=bind,src=$copilot_runtime_entry,dst=/test/runtime-copilot-entry.sh,readonly" \
+    --mount "type=bind,src=$prototype_dir/copilot-model-settings.py,dst=/usr/local/bin/trellage-copilot-model-settings,readonly" \
     --mount "type=bind,src=$case_root/seed,dst=/usr/local/share/trellage/copilot-seed,readonly" \
     "${runtime_args[@]}" \
     --mount "type=bind,src=$case_root/fake-bin,dst=/test-bin,readonly" \
@@ -210,7 +211,7 @@ run_copilot_startup_contract() {
   create_copilot_seed "$case_root/seed"
   create_fake_copilot "$case_root/fake-bin"
   run_copilot_case "$case_root" new
-  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort max
+  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort low
 
   case_root="$test_root/copilot-new-native-filesystem"
   mkdir -p "$case_root"
@@ -220,21 +221,21 @@ run_copilot_startup_contract() {
     cat "$case_root/runtime.log" >&2
     fail 'normal plugin staging failed on a native container filesystem'
   fi
-  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort max
+  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort low
 
   case_root="$test_root/copilot-new-empty-prompt"
   mkdir -p "$case_root"
   create_copilot_seed "$case_root/seed"
   create_fake_copilot "$case_root/fake-bin"
   run_copilot_case "$case_root" new -- ''
-  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort max -i ''
+  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort low -i ''
 
   case_root="$test_root/copilot-new"
   mkdir -p "$case_root"
   create_copilot_seed "$case_root/seed"
   create_fake_copilot "$case_root/fake-bin"
   run_copilot_case "$case_root" new --model gpt-test
-  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort max --model gpt-test
+  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort low --model gpt-test
   cmp -s \
     "$case_root/seed/installed-plugins/hve-core/hve-core/commands/review.md" \
     "$case_root/runtime/installed-plugins/hve-core/hve-core/commands/review.md" \
@@ -253,7 +254,7 @@ run_copilot_startup_contract() {
   create_fake_copilot "$case_root/fake-bin"
   COPILOT_TEST_TOKEN_PRESENT=1 COPILOT_TEST_XTRACE=1 \
     run_copilot_case "$case_root" new --model gpt-test -- "$prompt"
-  assert_copilot_case "$case_root" present --model gpt-6-astra --effort max --model gpt-test -i "$prompt"
+  assert_copilot_case "$case_root" present --model gpt-6-astra --effort low --model gpt-test -i "$prompt"
 
   case_root="$test_root/copilot-version-token-free"
   mkdir -p "$case_root"
@@ -276,7 +277,7 @@ run_copilot_startup_contract() {
   create_copilot_seed "$case_root/seed"
   create_fake_copilot "$case_root/fake-bin"
   run_copilot_case "$case_root" resume --model gpt-test
-  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort max --model gpt-test --continue
+  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort low --model gpt-test --continue
 
   case_root="$test_root/copilot-resume-with-token"
   mkdir -p "$case_root"
@@ -284,14 +285,14 @@ run_copilot_startup_contract() {
   create_fake_copilot "$case_root/fake-bin"
   COPILOT_TEST_TOKEN_PRESENT=1 \
     run_copilot_case "$case_root" resume --model gpt-test
-  assert_copilot_case "$case_root" present --model gpt-6-astra --effort max --model gpt-test --continue
+  assert_copilot_case "$case_root" present --model gpt-6-astra --effort low --model gpt-test --continue
 
   case_root="$test_root/copilot-resume-bare"
   mkdir -p "$case_root"
   create_copilot_seed "$case_root/seed"
   create_fake_copilot "$case_root/fake-bin"
   run_copilot_case "$case_root" resume
-  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort max --continue
+  assert_copilot_case "$case_root" absent --model gpt-6-astra --effort low --continue
 
   case_root="$test_root/copilot-sync-failure"
   mkdir -p "$case_root/runtime"

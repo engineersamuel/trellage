@@ -127,22 +127,25 @@ printf 'Trellage runtime session test: PASS: portable prompt uses native Codex e
 
 printf 'model = "gpt-5.5"\nmodel_reasoning_effort = "medium"\n' \
   >"$test_root/codex-home/config.toml"
-default_model_args=$'ARG\t--enable\nARG\thooks\nARG\t--dangerously-bypass-hook-trust\nARG\t-c\nARG\tmodel="gpt-6-astra"\nARG\t-c\nARG\tmodel_reasoning_effort="max"\nARG\t-c\nARG\tplan_mode_reasoning_effort="max"'
+default_model_args=$'ARG\t--enable\nARG\thooks\nARG\t--dangerously-bypass-hook-trust\nARG\t-c\nARG\tmodel="gpt-6-astra"\nARG\t-c\nARG\tmodel_reasoning_effort="low"\nARG\t-c\nARG\tplan_mode_reasoning_effort="max"'
 for mode in new prompt resume; do
   : >"$test_root/codex.log"
   case "$mode" in
     new)
-      TRELLAGE_CODEX_MODEL=gpt-6-astra TRELLAGE_CODEX_REASONING_EFFORT=max \
+      TRELLAGE_CODEX_MODEL=gpt-6-astra TRELLAGE_CODEX_REASONING_EFFORT=low \
+        TRELLAGE_CODEX_PLAN_MODE_REASONING_EFFORT=max \
         run_entry new codex
       expected_model_args="$default_model_args"
       ;;
     prompt)
-      TRELLAGE_CODEX_MODEL=gpt-6-astra TRELLAGE_CODEX_REASONING_EFFORT=max \
+      TRELLAGE_CODEX_MODEL=gpt-6-astra TRELLAGE_CODEX_REASONING_EFFORT=low \
+        TRELLAGE_CODEX_PLAN_MODE_REASONING_EFFORT=max \
         run_entry prompt codex -- 'new defaults'
       expected_model_args="$default_model_args"$'\nARG\texec\nARG\t--\nARG\tnew defaults'
       ;;
     resume)
-      TRELLAGE_CODEX_MODEL=gpt-6-astra TRELLAGE_CODEX_REASONING_EFFORT=max \
+      TRELLAGE_CODEX_MODEL=gpt-6-astra TRELLAGE_CODEX_REASONING_EFFORT=low \
+        TRELLAGE_CODEX_PLAN_MODE_REASONING_EFFORT=max \
         run_entry resume codex
       expected_model_args="$default_model_args"$'\nARG\tresume\nARG\t'"$thread_id"
       ;;
@@ -154,11 +157,24 @@ done
   || fail 'Codex launch defaults replaced persistent user configuration'
 
 : >"$test_root/codex.log"
-TRELLAGE_CODEX_MODEL=gpt-6-astra TRELLAGE_CODEX_REASONING_EFFORT=max \
+TRELLAGE_CODEX_MODEL=gpt-6-astra TRELLAGE_CODEX_REASONING_EFFORT=low \
+  TRELLAGE_CODEX_PLAN_MODE_REASONING_EFFORT=max \
   run_entry new codex -m gpt-5.5 -c 'model_reasoning_effort="low"' -c 'plan_mode_reasoning_effort="high"'
 [[ "$(cat "$test_root/codex.log")" == "$default_model_args"$'\nARG\t-m\nARG\tgpt-5.5\nARG\t-c\nARG\tmodel_reasoning_effort="low"\nARG\t-c\nARG\tplan_mode_reasoning_effort="high"' ]] \
   || fail 'Codex model and effort defaults did not precede explicit caller overrides'
 printf 'Trellage runtime session test: PASS: Codex model defaults and overrides preserve persistent state\n'
+
+: >"$test_root/codex.log"
+TRELLAGE_CODEX_REASONING_EFFORT=medium TRELLAGE_CODEX_PLAN_MODE_REASONING_EFFORT= \
+  run_entry new codex
+[[ "$(cat "$test_root/codex.log")" == $'ARG\t--enable\nARG\thooks\nARG\t--dangerously-bypass-hook-trust\nARG\t-c\nARG\tmodel_reasoning_effort="medium"\nARG\t-c\nARG\tplan_mode_reasoning_effort="medium"' ]] \
+  || fail 'legacy Codex environment lost its inherited plan effort'
+
+: >"$test_root/codex.log"
+TRELLAGE_CODEX_REASONING_EFFORT= TRELLAGE_CODEX_PLAN_MODE_REASONING_EFFORT=high \
+  run_entry new codex
+[[ "$(cat "$test_root/codex.log")" == $'ARG\t--enable\nARG\thooks\nARG\t--dangerously-bypass-hook-trust\nARG\t-c\nARG\tplan_mode_reasoning_effort="high"' ]] \
+  || fail 'Codex plan-only override changed the default effort'
 
 rm -rf "$test_root/codex-home"
 : >"$test_root/codex.log"

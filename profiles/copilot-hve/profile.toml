@@ -11,7 +11,8 @@ args = ["--allow-all"]
 [harness.copilot]
 auth = "host-or-login"
 model = "gpt-6-astra"
-reasoning_effort = "max"
+reasoning_effort = "low"
+plan_mode_reasoning_effort = "max"
 
 [image]
 base = "node:bookworm-slim"
