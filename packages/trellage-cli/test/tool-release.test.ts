@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { resolveNodeRelease } from "../src/node-release.js"
 import { resolvePythonRelease } from "../src/python-release.js"
 import { graphRustVersion, resolveGraphRustToolchain, resolveRustToolchain } from "../src/rust-release.js"
+import { resolveToolArtifacts } from "../src/tool-artifacts.js"
 import { resolveUvRelease } from "../src/uv-release.js"
 
 const originalFetch = globalThis.fetch
@@ -13,6 +14,36 @@ afterEach(() => {
 })
 
 describe("floating build tool resolution", () => {
+  it.each(["linux/arm64", "linux/amd64"] as const)(
+    "resolves the versioned Beads Viewer release asset for %s",
+    async (platform) => {
+      const version = "0.24.1"
+      const architecture = platform === "linux/arm64" ? "arm64" : "amd64"
+      const assetName = `bv_${version}_linux_${architecture}.tar.gz`
+      const url = `https://github.com/Dicklesworthstone/beads_viewer/releases/download/v${version}/${assetName}`
+      const integrity = `sha256:${"a".repeat(64)}`
+      const fetchRelease = vi.fn<typeof fetch>(async () => {
+        return new Response(
+          JSON.stringify({
+            tag_name: `v${version}`,
+            prerelease: false,
+            draft: false,
+            assets: [{ name: assetName, browser_download_url: url, digest: integrity, size: 123 }],
+          }),
+        )
+      })
+      globalThis.fetch = fetchRelease
+
+      await expect(Effect.runPromise(resolveToolArtifacts("cache", platform, ["bv"]))).resolves.toEqual([
+        { name: "bv", version, integrity, url, size: 123 },
+      ])
+      expect(fetchRelease).toHaveBeenCalledExactlyOnceWith(
+        "https://api.github.com/repos/Dicklesworthstone/beads_viewer/releases/latest",
+        expect.objectContaining({ redirect: "error" }),
+      )
+    },
+  )
+
   it("selects the newest stable Node LTS artifact and checksum", async () => {
     globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
       const url = String(input)
