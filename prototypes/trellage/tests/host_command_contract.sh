@@ -1463,6 +1463,16 @@ unsupported output format: invalid|--output-format=invalid
 --trellage-events is not supported for compiler commands|validate --trellage-events=true
 --model is not supported for compiler commands|build --model gpt-5.5
 --model is not supported for compiler commands|validate --model=gpt-5.5
+--agent requires a value|--agent
+--agent requires a value|--agent=
+--agent may be specified only once|--agent hve-core:dt-coach --agent hve-core:rpi-agent
+--agent may be specified only once|--agent=hve-core:dt-coach --agent=hve-core:rpi-agent
+unsafe --agent value|--agent ../etc/passwd
+unsafe --agent value|--agent=../etc/passwd
+--agent is not supported for compiler commands|build --agent hve-core:dt-coach
+--agent is not supported for compiler commands|validate --agent=hve-core:dt-coach
+--agent is supported only for agent launches|shell --agent hve-core:dt-coach
+--agent is supported only for agent launches|doctor --agent=hve-core:dt-coach
 resume with --prompt requires a session ID|resume -p hello
 resume with --prompt requires a session ID|-p hello resume
 resume session ID must be a UUID|resume not-a-session-id
@@ -5794,6 +5804,69 @@ test_model_overrides_reach_each_runtime() {
   printf 'Trellage host test: PASS: every non-Qwen harness receives custom model overrides\n'
 }
 
+test_agent_overrides_reach_copilot_runtimes() {
+  local worktree="$test_root/agent-overrides-worktree"
+  local docker_log="$test_root/agent-overrides.docker.log"
+  local state_volume profile_hash launch output
+  local session_id=5b3664c0-9954-4526-8aab-d3d2c177798d
+  local prompt="Preserve the customer's literal \$HOME."
+  local -a launch_args
+  mkdir -p "$worktree"
+  state_volume="$(resource_names "$worktree" copilot-hve-test copilot | tail -n 1)"
+  profile_hash="$(jq -r '.profile_hash' "$copilot_metadata")"
+  for launch in new interactive-prompt prompt resume; do
+    case "$launch" in
+      new) launch_args=(--agent hve-core:dt-coach) ;;
+      interactive-prompt) launch_args=(--agent=hve-core:dt-coach "$prompt") ;;
+      prompt) launch_args=(--agent hve-core:dt-coach -p "$prompt") ;;
+      resume) launch_args=(resume "$session_id" --agent hve-core:dt-coach) ;;
+    esac
+    : >"$docker_log"
+    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE=matching-running \
+      FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+      FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
+      FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
+      run_copilot_tty "$worktree" "$docker_log" "$worktree" \
+        env TRELLAGE_IMAGE=test/copilot:locked "$prototype_dir/trellage" "${launch_args[@]}"
+    assert_arg "$docker_log" --agent
+    assert_arg "$docker_log" hve-core:dt-coach
+    [[ "$(grep -Fxc $'ARG\t--agent' "$docker_log")" == 1 ]] \
+      || fail "$launch did not forward the workflow agent exactly once"
+    if [[ "$launch" == interactive-prompt || "$launch" == prompt ]]; then
+      [[ "$(last_harness_exec_argument "$docker_log")" == $'ARG\t'"$prompt" ]] \
+        || fail "$launch changed the literal prompt while forwarding the agent"
+    fi
+  done
+
+  : >"$docker_log"
+  if output="$(run_non_tty "$worktree" "$docker_log" "$worktree" \
+    "$prototype_dir/trellage" --agent hve-core:dt-coach 2>&1)"; then
+    fail 'Codex accepted a Copilot workflow agent'
+  fi
+  grep -Fq -- '--agent is not supported for' <<<"$output" \
+    || fail 'unsupported harness agent had the wrong diagnostic'
+  assert_no_mutation "$docker_log"
+
+  : >"$docker_log"
+  if output="$(FAKE_HARNESS_METADATA_OVERRIDE="$pi_metadata" \
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --agent hve-core:dt-coach 2>&1)"; then
+    fail 'Pi accepted a Copilot workflow agent'
+  fi
+  grep -Fq -- '--agent is not supported for pi-oh-my-pi-test' <<<"$output" \
+    || fail 'Pi workflow agent had the wrong diagnostic'
+  assert_no_mutation "$docker_log"
+  printf 'Trellage host test: PASS: Copilot workflow agents reach new, prompt, and resume runtimes\n'
+}
+
+if [[ "${TRELLAGE_HOST_AGENT_ONLY:-}" == 1 ]]; then
+  test_agent_overrides_reach_copilot_runtimes
+  test_portable_prompt_parser_contract
+  test_session_final_message_contract
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_HEADLESS_ONLY:-}" == 1 ]]; then
   test_output_format_contract
   test_trellage_event_bridge_contract
@@ -5812,6 +5885,7 @@ test_claude_launch_allows_empty_harness_args
 test_claude_core_injects_exact_metadata_routing_only_at_final_exec
 test_claude_model_override_routes_only_opus
 test_model_overrides_reach_each_runtime
+test_agent_overrides_reach_copilot_runtimes
 test_profile_compiler_bootstraps_when_missing_or_stale
 test_list_delegates_to_effect_cli
 test_upgrade_delegates_to_effect_cli

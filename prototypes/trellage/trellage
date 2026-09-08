@@ -149,6 +149,7 @@ if [[ "$compiler_mode" == true ]]; then
       -p|--prompt|--prompt=*) fail '--prompt is not supported for compiler commands' ;;
       -i|--interactive|--interactive=*) fail '-i and --interactive have been removed; run trellage with no arguments' ;;
       --model|--model=*) fail '--model is not supported for compiler commands' ;;
+      --agent|--agent=*) fail '--agent is not supported for compiler commands' ;;
       --output-format|--output-format=*) fail '--output-format is not supported for compiler commands' ;;
       --trellage-events|--trellage-events=*) fail '--trellage-events is not supported for compiler commands' ;;
     esac
@@ -158,6 +159,7 @@ fi
 profile_argument=
 auth_mode_argument=
 model_argument=
+agent_argument=
 output_format=text
 output_format_set=false
 trellage_events=false
@@ -169,6 +171,7 @@ resume_session_id=
 session_agent=
 session_container_id=
 session_invocation_id=
+session_subcommand_seen=false
 if [[ "$compiler_mode" == false ]]; then
   parsed_arguments=()
   while (( $# > 0 )); do
@@ -207,6 +210,28 @@ if [[ "$compiler_mode" == false ]]; then
         [[ -z "$model_argument" ]] || fail '--model may be specified only once'
         model_argument="${1#--model=}"
         [[ -n "$model_argument" ]] || fail '--model requires a value'
+        shift
+        ;;
+      --agent)
+        if [[ "$session_subcommand_seen" == true ]]; then
+          parsed_arguments+=("$1")
+          shift
+          continue
+        fi
+        [[ -z "$agent_argument" ]] || fail '--agent may be specified only once'
+        [[ $# -ge 2 && -n "$2" ]] || fail '--agent requires a value'
+        agent_argument="$2"
+        shift 2
+        ;;
+      --agent=*)
+        if [[ "$session_subcommand_seen" == true ]]; then
+          parsed_arguments+=("$1")
+          shift
+          continue
+        fi
+        [[ -z "$agent_argument" ]] || fail '--agent may be specified only once'
+        agent_argument="${1#--agent=}"
+        [[ -n "$agent_argument" ]] || fail '--agent requires a value'
         shift
         ;;
       --output-format)
@@ -257,6 +282,9 @@ if [[ "$compiler_mode" == false ]]; then
         fail "unknown option: $1"
         ;;
       *)
+        if [[ "${#parsed_arguments[@]}" -eq 0 && "$1" == session ]]; then
+          session_subcommand_seen=true
+        fi
         parsed_arguments+=("$1")
         shift
         ;;
@@ -348,6 +376,13 @@ if [[ -n "$model_argument" ]]; then
     *) fail '--model is supported only for agent launches' ;;
   esac
 fi
+if [[ -n "$agent_argument" ]]; then
+  [[ "$agent_argument" =~ ^[A-Za-z0-9][A-Za-z0-9:_.-]{0,127}$ ]] || fail 'unsafe --agent value'
+  case "$mode" in
+    new|prompt|resume) ;;
+    *) fail '--agent is supported only for agent launches' ;;
+  esac
+fi
 if [[ "$output_format_set" == true ]]; then
   case "$mode" in
     new|prompt|resume) ;;
@@ -357,6 +392,7 @@ fi
 if [[ "$mode" == session-final-message ]]; then
   [[ -z "$auth_mode_argument" ]] || fail '--auth-mode cannot be combined with session final-message'
   [[ -z "$model_argument" ]] || fail '--model cannot be combined with session final-message'
+  [[ -z "$agent_argument" ]] || fail '--agent cannot be combined with session final-message'
   [[ "$output_format_set" == false ]] || fail '--output-format cannot be combined with session final-message'
   [[ "$trellage_events" == false ]] || fail '--trellage-events cannot be combined with session final-message'
 fi
@@ -899,6 +935,13 @@ while IFS= read -r harness_arg; do
 done < <(jq -r '.harness_args[]' <<<"$profile_metadata")
 if [[ -n "$model_argument" && "$harness_kind" != claude ]]; then
   harness_args+=(--model "$model_argument")
+fi
+if [[ -n "$agent_argument" ]]; then
+  case "$harness_kind" in
+    copilot) ;;
+    *) fail "--agent is not supported for $profile_name" ;;
+  esac
+  harness_args+=(--agent "$agent_argument")
 fi
 secret_environment=()
 while IFS=$'\t' read -r secret_target secret_source; do

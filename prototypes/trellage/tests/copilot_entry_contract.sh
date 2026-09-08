@@ -384,6 +384,20 @@ run_entry new plugin list
 [[ "$(cat "$runtime/settings.json")" == "$settings_before_probe" ]] \
   || fail 'read-only Copilot probes changed model settings'
 
+for mode in new prompt; do
+  prompt_flag=-i
+  [[ "$mode" != prompt ]] || prompt_flag=-p
+  COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= \
+    run_entry "$mode" --allow-all --agent hve-core:dt-coach -- 'Customer discovery only.'
+  [[ "$(read_output_file argv)" == "$default_model_argv"$'\n--allow-all\n--agent\nhve-core:dt-coach\n'"$prompt_flag"$'\nCustomer discovery only.' ]] \
+    || fail "$mode mode lost the selected workflow agent or changed its prompt"
+done
+TRELLAGE_RESUME_SESSION_ID="$resume_session_id" \
+  COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= \
+  run_entry resume --allow-all --agent hve-core:dt-coach
+[[ "$(read_output_file argv)" == "$default_model_argv"$'\n--allow-all\n--agent\nhve-core:dt-coach\n--resume='"$resume_session_id" ]] \
+  || fail 'resume lost the selected workflow agent'
+
 hint_output="$(
   TRELLAGE_RESUME_PROFILE=/tmp/copilot-hve/profile.toml \
   TRELLAGE_TEST_CREATE_SESSION_ID="$resume_session_id" \

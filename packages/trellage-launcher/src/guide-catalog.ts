@@ -19,6 +19,7 @@
  * `trellage-guide-core` applies to authored Markdown guides.
  */
 import {
+  isLaunchAgentIdentifier,
   profileGuideIdentityKey,
   type ProfileGuidePrerequisite,
   type ProfileGuideV1,
@@ -88,11 +89,16 @@ const placeholderPattern = /\{\{([^{}]+)\}\}/gu
 
 const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow => {
   const fields = record(value, path)
-  exactKeys(fields, path, ["id", "description", "examples", "promptTemplate"], ["skill"])
+  exactKeys(fields, path, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent"])
   const skill =
     fields.skill === undefined ? undefined : text(fields.skill, `${path}.skill`, 256).toLocaleLowerCase("en")
   if (skill !== undefined && !portableIdentifierPattern.test(skill)) {
     fail(`${path}.skill`, "must be a portable skill or command identifier")
+  }
+  const launchAgent =
+    fields.launchAgent === undefined ? undefined : text(fields.launchAgent, `${path}.launchAgent`, 128)
+  if (launchAgent !== undefined && !isLaunchAgentIdentifier(launchAgent)) {
+    fail(`${path}.launchAgent`, "must be a portable agent identifier")
   }
   const promptTemplate = text(fields.promptTemplate, `${path}.promptTemplate`, 16000, { multiline: true })
   const intentPlaceholderCount = promptTemplate.split("{{intent}}").length - 1
@@ -111,6 +117,7 @@ const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow =>
     id: identifier(fields.id, `${path}.id`),
     description: text(fields.description, `${path}.description`, 2000),
     ...(skill === undefined ? {} : { skill }),
+    ...(launchAgent === undefined ? {} : { launchAgent }),
     examples: stringArray(fields.examples, `${path}.examples`, { minimum: 2, maximumItems: 32, itemMaximum: 2000 }),
     promptTemplate,
   }

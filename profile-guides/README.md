@@ -44,6 +44,20 @@ Use the body for detailed operating notes, verified invocation syntax, and
 generation context. Do not put important matching distinctions only in the
 body.
 
+## Workflow launch settings
+
+Use optional `launchAgent` metadata when a workflow requires a specific
+installed Copilot custom agent, for example `launchAgent: hve-core:dt-coach`.
+The value is an exact agent identifier of at most 128 ASCII letters, digits,
+periods, underscores, colons, or hyphens, starting with a letter or digit.
+
+The guide carries this selection into command previews, current-terminal
+launches, and Herdr handoffs and queued jobs as `--agent <identifier>`.
+It is supported by native `cpx` and Sandbox `copilot` profiles. It does
+not install agents, change prompt delivery, or select an agent for other
+workflows on the same profile. Omit it when no workflow-specific agent is
+required.
+
 ## Exclude profile maintenance
 
 Workflows describe work that a user wants the agent to do. Do not add

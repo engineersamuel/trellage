@@ -14,6 +14,7 @@ export interface ProfileGuideWorkflow {
     readonly id: string;
     readonly description: string;
     readonly skill?: string;
+    readonly launchAgent?: string;
     readonly examples: ReadonlyArray<string>;
     readonly promptTemplate: string;
 }
@@ -42,6 +43,7 @@ export declare class ProfileGuideValidationError extends Error {
     readonly path: string;
     constructor(path: string, message: string);
 }
+export declare const isLaunchAgentIdentifier: (value: string) => boolean;
 export declare const parseProfileGuide: (path: string, source: string) => ProfileGuideDocument;
 export declare const profileGuideIdentityKey: (identity: ProfileGuideIdentity) => string;
 export declare const profileGuideRelativePath: (identity: ProfileGuideIdentity) => string;

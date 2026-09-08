@@ -82,7 +82,16 @@
       "id": "sandbox-hve-delivery",
       "intent": "Use a container-isolated GitHub Copilot RPI workflow to research, plan, implement, review, and prepare a feature for a pull request.",
       "expectedProfiles": ["sandbox:copilot-hve"],
+      "expectedWorkflows": { "sandbox:copilot-hve": "rpi-agent-cycle" },
       "maxRank": 3,
+      "excludedProfiles": ["native:cpx/hve"]
+    },
+    {
+      "id": "sandbox-hve-customer-engagement-lifecycle",
+      "intent": "We're starting discovery with a customer on a new capability and need to validate the problem with Design Thinking before we build anything.",
+      "expectedProfiles": ["sandbox:copilot-hve"],
+      "expectedWorkflows": { "sandbox:copilot-hve": "customer-engagement-lifecycle" },
+      "maxRank": 1,
       "excludedProfiles": ["native:cpx/hve"]
     },
     {

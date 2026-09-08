@@ -247,6 +247,25 @@ describe("guide launch command building", () => {
     ])
   })
 
+  it("preserves a workflow agent when native prompt delivery requires manual paste", () => {
+    const selected = parseSelectedProfile({
+      ...nativeProfile,
+      headlessPrompt: false,
+      agent: "hve-core:dt-coach",
+    })
+    expect(buildGuideLaunchCommand(selected, { mode: "argv", prompt: "Discover the customer problem." })).toEqual({
+      command: {
+        executable: nativeProfile.commandPath,
+        args: ["hve-core", "--agent", "hve-core:dt-coach"],
+      },
+      promptHandling: "manual-paste",
+    })
+  })
+
+  it("rejects an unsafe Sandbox agent instead of dropping it during queue validation", () => {
+    expect(() => parseSelectedProfile({ ...sandboxProfile, agent: "--unsafe" })).toThrow(/simple agent identifier/)
+  })
+
   it("keeps launcher identity and validates absolute command paths", () => {
     expect(nativeProfile).toMatchObject({
       surface: "native",
