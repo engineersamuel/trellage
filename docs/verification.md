@@ -1,8 +1,9 @@
 # Verification
 
-Use Node.js 24, as CI does. The repository test packages use Vitest 5, which
-requires Node.js 22.12 or a newer supported Node.js release. Test reports and
-artifacts under `.vitest/` are ignored.
+Use a current Node.js 24 release with its bundled npm, as CI does. The
+repository test packages use Vitest 5, which requires Node.js 22.12 or a newer
+supported Node.js release. Test reports and artifacts under `.vitest/` are
+ignored.
 
 Run repository contracts without launching paid agents:
 
