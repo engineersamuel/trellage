@@ -79,7 +79,7 @@ export const renderCodexConfiguration = (codex: CodexProfile["harness"]["codex"]
     `model = ${quote(codex.model)}`,
     `model_provider = ${quote(codex.model_provider)}`,
     `model_reasoning_effort = ${quote(codex.reasoning_effort)}`,
-    `plan_mode_reasoning_effort = ${quote(codex.reasoning_effort)}`,
+    `plan_mode_reasoning_effort = ${quote(codex.plan_mode_reasoning_effort ?? codex.reasoning_effort)}`,
   ]
   for (const [providerName, provider] of Object.entries(codex.providers)) {
     lines.push("", `[model_providers.${quoteKey(providerName)}]`)
@@ -190,6 +190,7 @@ ${renderOci(
     'CODEX_HOME = "/home/agent/.codex"',
     `TRELLAGE_CODEX_MODEL = ${quote(profile.harness.codex.model)}`,
     `TRELLAGE_CODEX_REASONING_EFFORT = ${quote(profile.harness.codex.reasoning_effort)}`,
+    `TRELLAGE_CODEX_PLAN_MODE_REASONING_EFFORT = ${quote(profile.harness.codex.plan_mode_reasoning_effort ?? profile.harness.codex.reasoning_effort)}`,
     ...sessionBridgeEnvironment(profile),
   ],
   [`"dev.trellage.codex.version" = ${quote(harness.version)}`],
@@ -220,6 +221,7 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }
 "/usr/local/share/trellage/copilot-seed" = { source = "copilot-seed", mode = "copy" }
 ${renderRuntimeDotfile(options, "runtime-copilot-entry")}
+${renderRuntimeDotfile(options, "copilot-model-settings")}
 ${renderSessionBridgeDotfile(options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
@@ -233,6 +235,7 @@ ${renderOci(
     'COPILOT_AUTO_UPDATE = "false"',
     `TRELLAGE_COPILOT_MODEL = ${quote(profile.harness.copilot.model)}`,
     `TRELLAGE_COPILOT_REASONING_EFFORT = ${quote(profile.harness.copilot.reasoning_effort)}`,
+    `TRELLAGE_COPILOT_PLAN_MODE_REASONING_EFFORT = ${quote(profile.harness.copilot.plan_mode_reasoning_effort)}`,
     ...sessionBridgeEnvironment(profile),
   ],
   ['"dev.trellage.harness.kind" = "copilot"', `"dev.trellage.copilot.version" = ${quote(harness.version)}`],

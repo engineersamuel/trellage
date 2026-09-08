@@ -19,7 +19,7 @@ case "$session_mode" in
 esac
 
 model="${COPILOT_MODEL:-gpt-6-astra}"
-reasoning_effort="${COPILOT_REASONING_EFFORT:-max}"
+reasoning_effort="${COPILOT_REASONING_EFFORT:-low}"
 
 secret_file='/run/secrets/copilot_token'
 [[ -r "$secret_file" ]] || {

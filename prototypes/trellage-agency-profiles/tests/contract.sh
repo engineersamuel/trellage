@@ -69,7 +69,8 @@ jq -cn \
   --arg home "$HOME" \
   --arg cwd "$PWD" \
   --arg auth "${AZURE_TOKEN_CREDENTIALS-}" \
-  '$ARGS.named + {args: $ARGS.positional}' \
+  --slurpfile settings "$COPILOT_HOME/settings.json" \
+  '$ARGS.named + {args: $ARGS.positional, settings: $settings[0]}' \
   --args -- "$@" >>"$FAKE_AGENCY_LOG"
 EOF
 chmod 0755 "$fixture_bin/agency"
@@ -153,6 +154,11 @@ expected_home="$fixture_home/.local/share/trellage/profiles/agency/trellage-azur
 [[ -d "$expected_home" && ! -L "$expected_home" ]] || fail 'profile home was not created safely'
 [[ "$(file_mode "$expected_home")" == 700 ]] \
   || fail 'profile home mode differs'
+jq -e '
+  .model == "gpt-6-astra" and .effortLevel == "low"
+  and .planModel == "gpt-6-astra" and .planEffortLevel == "max"
+' "$expected_home/settings.json" >/dev/null \
+  || fail 'setup did not configure separate default and plan effort'
 assert_line 'trellage-agency-profile-v1' \
   "$fixture_home/.local/share/trellage/profiles/agency/trellage-azure/.managed-by-trellage-agency-profiles"
 
@@ -210,11 +216,15 @@ jq -e \
   and (.tools | index("resourcehealth_health-events_list") != null)
 ' "$fixture_root/inventory.json" >/dev/null || fail 'healthy inventory differs'
 
+jq '
+  .effortLevel = "max" | .planEffortLevel = "low" | .userSetting = "preserve"
+' "$expected_home/settings.json" >"$fixture_root/stale-model-settings.json"
+cp "$fixture_root/stale-model-settings.json" "$expected_home/settings.json"
 checks_before_launch="$(grep -Fxc 'config check --skip-remotes' "$agency_command_log")"
 sources_before_launch="$(grep -Fxc 'config list --show-source' "$agency_command_log")"
 (
   cd "$worktree"
-  "$launcher" trellage-azure 'space value' '' '*' --model gpt-5.6-sol
+  "$launcher" trellage-azure 'space value' '' '*' --model gpt-5.6-sol --effort high
 )
 jq -e \
   --arg home "$expected_home" \
@@ -224,16 +234,27 @@ jq -e \
   and .home == $realHome
   and .cwd == $cwd
   and .auth == "AzureCliCredential"
+  and .settings.model == "gpt-6-astra"
+  and .settings.effortLevel == "low"
+  and .settings.planModel == "gpt-6-astra"
+  and .settings.planEffortLevel == "max"
+  and .settings.userSetting == "preserve"
   and .args == [
     "copilot",
     "--profile-only",
     "trellage-azure",
     "--",
+    "--model",
+    "gpt-6-astra",
+    "--effort",
+    "low",
     "space value",
     "",
     "*",
     "--model",
-    "gpt-5.6-sol"
+    "gpt-5.6-sol",
+    "--effort",
+    "high"
   ]
 ' "$agency_log" >/dev/null || fail 'launch environment or argument forwarding differs'
 [[ "$(grep -Fxc 'config check --skip-remotes' "$agency_command_log")" \
@@ -357,6 +378,9 @@ installed_root="$install_home/.local/share/trellage/agx"
 installed_command="$install_home/.local/bin/agx"
 [[ -x "$installed_root/bin/agx" && -f "$installed_root/catalog.json" ]] \
   || fail 'installer did not publish runtime files'
+cmp -s "$installed_root/copilot-model-settings.py" \
+  "$repository_root/prototypes/trellage/copilot-model-settings.py" \
+  || fail 'installer did not publish the shared model settings helper'
 [[ -L "$installed_command" && "$(readlink "$installed_command")" == "$installed_root/bin/agx" ]] \
   || fail 'installer did not publish the exact command symlink'
 assert_line 'trellage-agency-profiles-v1' \

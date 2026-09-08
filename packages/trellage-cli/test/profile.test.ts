@@ -290,7 +290,8 @@ describe("parseProfile", () => {
     expect(result.profile.harness.copilot).toEqual({
       auth: "host-or-login",
       model: "gpt-6-astra",
-      reasoning_effort: "max",
+      reasoning_effort: "low",
+      plan_mode_reasoning_effort: "max",
     })
     expect(result.profile.plugins[0]).toMatchObject({
       adapter: "copilot-marketplace",
@@ -320,6 +321,7 @@ describe("parseProfile", () => {
         auth: "host-or-login",
         model: "gpt-5.5",
         reasoning_effort: effort,
+        plan_mode_reasoning_effort: "max",
       })
     },
   )
@@ -333,6 +335,23 @@ describe("parseProfile", () => {
         copilotProfile().replace('auth = "host-or-login"', 'auth = "host-or-login"\nreasoning_effort = "invalid"'),
       ),
     ).rejects.toThrow(/reasoning_effort/)
+  })
+
+  it.each(["codex", "copilot"] as const)("preserves and validates separate %s plan effort", async (kind) => {
+    const source =
+      kind === "codex" ? profile().replace('reasoning_effort = "medium"', 'reasoning_effort = "low"') : copilotProfile()
+    const configured = source.replace(`[harness.${kind}]`, `[harness.${kind}]\nplan_mode_reasoning_effort = "high"`)
+    const result = await decode(configured)
+    const harness = result.profile.harness
+    if (harness.kind !== "codex" && harness.kind !== "copilot") throw new Error("expected Codex or Copilot")
+    const configuration = harness.kind === "codex" ? harness.codex : harness.copilot
+
+    expect(configuration.reasoning_effort).toBe("low")
+    expect(configuration.plan_mode_reasoning_effort).toBe("high")
+    expect(profileHash(result)).not.toBe(profileHash(await decode(source)))
+    await expect(
+      decode(configured.replace('plan_mode_reasoning_effort = "high"', 'plan_mode_reasoning_effort = "invalid"')),
+    ).rejects.toThrow(/plan_mode_reasoning_effort/)
   })
 
   it("decodes a first-class Headlong profile without harness-specific configuration", async () => {

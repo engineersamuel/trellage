@@ -31,6 +31,8 @@ try:
     (instructions / "rundown.instructions.md").write_text("Fixture instructions\n")
     (fixture / "secrets/copilot_token").write_text("fixture-token")
     shutil.copyfile(root / "docker/codex-config.toml", codex_home / "config.toml")
+    model_settings_helper = bin_dir / "trellage-copilot-model-settings"
+    shutil.copyfile(root / "prototypes/trellage/copilot-model-settings.py", model_settings_helper)
 
     # Execute the shipped scripts with only container filesystem roots remapped.
     for name in (
@@ -64,6 +66,7 @@ if args == ["--version"]:
     sys.exit(0)
 workspace = Path(os.environ["FIXTURE_WORKSPACE"])
 home = Path(os.environ[f"{runtime.upper()}_HOME"])
+settings = {}
 if runtime == "codex":
     config = tomllib.loads((home / "config.toml").read_text())
     model_override = None
@@ -102,6 +105,7 @@ if runtime == "codex":
 else:
     config_file = home / "config.json"
     config = json.loads(config_file.read_text()) if config_file.exists() else {}
+    settings = json.loads((home / "settings.json").read_text())
     model = args[args.index("--model") + 1]
     effort = args[args.index("--reasoning-effort") + 1]
     session_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -111,7 +115,7 @@ else:
     print(json.dumps({"type": "assistant.message", "data": {"content": "OK"}}))
     print(json.dumps({"type": "result", "sessionId": session_id}))
 (workspace / f"{runtime}-call.json").write_text(json.dumps({
-    "model": model, "reasoningEffort": effort, "args": args, "config": config,
+    "model": model, "reasoningEffort": effort, "args": args, "config": config, "settings": settings,
 }))
 '''
     for name in ("codex", "copilot"):
@@ -173,7 +177,7 @@ else:
         "COPILOT_HOME": str(copilot_home), "PATH": f"{bin_dir}:{env['PATH']}",
         "FIXTURE_ROOT": str(fixture), "FIXTURE_WORKSPACE": str(workspace),
     })
-    def check(runtime, mode, model="gpt-6-astra", effort="max", overrides=None, arguments=(), plan_effort="max"):
+    def check(runtime, mode, model="gpt-6-astra", effort="low", overrides=None, arguments=(), plan_effort="max"):
         config_file = copilot_home / "config.json"
         stored_config = config_file.read_bytes() if config_file.exists() else None
         config_mode = config_file.stat().st_mode if config_file.exists() else None
@@ -204,6 +208,10 @@ else:
             assert request["model"] == model, request
             assert request["reasoning"]["effort"] == effort, request
         else:
+            assert launch["settings"]["model"] == model, launch
+            assert launch["settings"]["effortLevel"] == effort, launch
+            assert launch["settings"]["planModel"] == model, launch
+            assert launch["settings"]["planEffortLevel"] == plan_effort, launch
             if stored_config is None:
                 assert not config_file.exists(), "Copilot launch created persistent config"
             else:
@@ -212,6 +220,14 @@ else:
 
     check("codex", "--new")
     check("copilot", "--new")
+    settings_file = copilot_home / "settings.json"
+    assert settings_file.stat().st_mode & 0o777 == 0o600
+    settings_file.write_text(json.dumps({
+        "model": "gpt-stale", "effortLevel": "max",
+        "planModel": "gpt-stale", "planEffortLevel": "low",
+        "theme": "dark", "hooks": {"SessionStart": []},
+    }))
+    settings_file.chmod(0o640)
     (copilot_home / "config.json").write_text(
         '{"model":"gpt-stored","reasoningEffort":"low","theme":"dark"}'
     )
@@ -221,7 +237,23 @@ else:
         check(runtime, "--resume", "gpt-5.5", "high", {
             f"{runtime.upper()}_MODEL": "gpt-5.5",
             f"{runtime.upper()}_REASONING_EFFORT": "high",
-        }, plan_effort="high")
+        })
+    check("codex", "--resume", overrides={
+        "CODEX_PLAN_MODE_REASONING_EFFORT": "high",
+    }, plan_effort="high")
+    check("copilot", "--resume", overrides={
+        "COPILOT_PLAN_MODE_REASONING_EFFORT": "xhigh",
+    }, plan_effort="xhigh")
+    settings = json.loads(settings_file.read_text())
+    assert settings["theme"] == "dark" and settings["hooks"] == {"SessionStart": []}
+    assert settings_file.stat().st_mode & 0o777 == 0o640
+    settings_before = settings_file.read_bytes()
+    settings_inode = settings_file.stat().st_ino
+    check("copilot", "--new", overrides={
+        "COPILOT_PLAN_MODE_REASONING_EFFORT": "xhigh",
+    }, plan_effort="xhigh")
+    assert settings_file.read_bytes() == settings_before
+    assert settings_file.stat().st_ino == settings_inode, "unchanged settings were replaced"
     check("codex", "--new", "gpt-5.5", "medium", arguments=(
         "--model", "gpt-5.5", "-c", 'model_reasoning_effort="medium"',
     ))
@@ -232,6 +264,40 @@ else:
         "-mgpt-5.5", "-cmodel=gpt-override", "-cmodel_reasoning_effort=high",
         "--config=plan_mode_reasoning_effort=medium",
     ), plan_effort="medium")
+
+    invalid_home = fixture / "invalid-model-settings"
+    invalid_home.mkdir()
+    invalid_settings = invalid_home / "settings.json"
+    helper_command = [
+        sys.executable, str(model_settings_helper), str(invalid_home),
+        "gpt-6-astra", "low", "max",
+    ]
+    for contents in ("not-json", "[]", '{"model":"one"} {"model":"two"}'):
+        invalid_settings.write_text(contents)
+        result = subprocess.run(helper_command, text=True, capture_output=True, timeout=5)
+        assert result.returncode != 0 and "Copilot model settings:" in result.stderr, result
+        assert invalid_settings.read_text() == contents
+    invalid_settings.unlink()
+    outside = fixture / "unmanaged-settings.json"
+    outside.write_text('{"unmanaged":true}')
+    invalid_settings.symlink_to(outside)
+    result = subprocess.run(helper_command, text=True, capture_output=True, timeout=5)
+    assert result.returncode != 0 and invalid_settings.is_symlink(), result
+    assert outside.read_text() == '{"unmanaged":true}'
+    invalid_settings.unlink()
+    os.link(outside, invalid_settings)
+    result = subprocess.run(helper_command, text=True, capture_output=True, timeout=5)
+    assert result.returncode != 0 and invalid_settings.stat().st_nlink == 2, result
+    assert outside.read_text() == '{"unmanaged":true}'
+    invalid_settings.unlink()
+    os.mkfifo(invalid_settings)
+    result = subprocess.run(helper_command, text=True, capture_output=True, timeout=5)
+    assert result.returncode != 0, result
+    invalid_settings.unlink()
+    invalid_settings.mkdir()
+    result = subprocess.run(helper_command, text=True, capture_output=True, timeout=5)
+    assert result.returncode != 0 and invalid_settings.is_dir(), result
+    assert not list(invalid_home.glob(".settings.json.trellage.*"))
 finally:
     shutil.rmtree(fixture)
 PY

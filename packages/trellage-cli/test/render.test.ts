@@ -274,6 +274,7 @@ afterAll(() => rm(runtimeRoot, { recursive: true, force: true }))
 const runtimePaths = {
   codexEntry: path.join(runtimeRoot, "runtime-entry.sh"),
   copilotEntry: path.join(runtimeRoot, "runtime-copilot-entry.sh"),
+  copilotModelSettings: path.join(runtimeRoot, "copilot-model-settings.py"),
   sessionBridge: path.join(runtimeRoot, "trellage-session-bridge.py"),
   piEntry: path.join(runtimeRoot, "runtime-pi-entry.sh"),
   primeEntry: path.join(runtimeRoot, "runtime-prime-entry.sh"),
@@ -406,7 +407,8 @@ rename_exe = "copilot"`)
     expect(rendered).toContain('COPILOT_HOME = "/home/agent/.copilot"')
     expect(rendered).toContain('COPILOT_AUTO_UPDATE = "false"')
     expect(rendered).toContain('TRELLAGE_COPILOT_MODEL = "gpt-6-astra"')
-    expect(rendered).toContain('TRELLAGE_COPILOT_REASONING_EFFORT = "max"')
+    expect(rendered).toContain('TRELLAGE_COPILOT_REASONING_EFFORT = "low"')
+    expect(rendered).toContain('TRELLAGE_COPILOT_PLAN_MODE_REASONING_EFFORT = "max"')
     expect(rendered).toContain('XDG_CACHE_HOME = "/home/agent/.cache"')
     expect(rendered).not.toContain('XDG_CACHE_HOME = "/tmp/.cache"')
     expect(rendered).toContain('"/home/agent/.keep" = { source = "workspace.keep", mode = "copy" }')
@@ -419,6 +421,9 @@ rename_exe = "copilot"`)
     expect
       .soft(rendered)
       .toContain('"/usr/local/bin/trellage-copilot-entry" = { source = "runtime-copilot-entry.sh", mode = "copy" }')
+    expect(rendered).toContain(
+      '"/usr/local/bin/trellage-copilot-model-settings" = { source = ".runtime-support/copilot-model-settings.py", mode = "copy" }',
+    )
     expect(rendered).toContain(
       '"/usr/local/bin/trellage-session-bridge" = { source = ".runtime-support/trellage-session-bridge", mode = "copy" }',
     )
@@ -447,7 +452,7 @@ rename_exe = "copilot"`)
       parseProfile(
         copilotSource.replace(
           'auth = "host-or-login"',
-          'auth = "host-or-login"\nmodel = "gpt-5.5"\nreasoning_effort = "high"',
+          'auth = "host-or-login"\nmodel = "gpt-5.5"\nreasoning_effort = "high"\nplan_mode_reasoning_effort = "xhigh"',
         ),
         "/profile/copilot.toml",
       ),
@@ -460,10 +465,11 @@ rename_exe = "copilot"`)
 
     expect(rendered).toContain('TRELLAGE_COPILOT_MODEL = "gpt-5.5"')
     expect(rendered).toContain('TRELLAGE_COPILOT_REASONING_EFFORT = "high"')
+    expect(rendered).toContain('TRELLAGE_COPILOT_PLAN_MODE_REASONING_EFFORT = "xhigh"')
   })
 
   it.each(["codex", "copilot"] as const)(
-    "renders the authored %s profile with Astra and maximum reasoning",
+    "renders the authored %s profile with Astra, low default effort, and max plan effort",
     async (kind) => {
       const name = kind === "codex" ? "codex-superpowers" : "copilot-hve"
       const profilePath = path.resolve(import.meta.dirname, "../../../profiles", name, "profile.toml")
@@ -475,17 +481,18 @@ rename_exe = "copilot"`)
       })
 
       expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_MODEL = "gpt-6-astra"`)
-      expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_REASONING_EFFORT = "max"`)
+      expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_REASONING_EFFORT = "low"`)
+      expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_PLAN_MODE_REASONING_EFFORT = "max"`)
     },
   )
 
-  it("renders the authored Codex model and maximum reasoning in config.toml", async () => {
+  it("renders separate default and plan reasoning for the authored Codex model", async () => {
     const profilePath = path.resolve(import.meta.dirname, "../../../profiles/codex-superpowers/profile.toml")
     const configured = Effect.runSync(parseProfile(await readFile(profilePath, "utf8"), profilePath)).profile
     const config = renderCodexConfig(configured)
 
     expect(config).toContain('model = "gpt-6-astra"')
-    expect(config).toContain('model_reasoning_effort = "max"')
+    expect(config).toContain('model_reasoning_effort = "low"')
     expect(config).toContain('plan_mode_reasoning_effort = "max"')
   })
 

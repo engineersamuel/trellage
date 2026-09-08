@@ -1318,7 +1318,7 @@ cat >"$expected_config" <<EOF
 # trellage-managed-codex-config-begin
 model = "gpt-6-astra"
 model_provider = "copilotproxy"
-model_reasoning_effort = "max"
+model_reasoning_effort = "low"
 plan_mode_reasoning_effort = "max"
 # trellage-managed-codex-config-end
 
@@ -1538,7 +1538,7 @@ cat >"$expected_youtube_config" <<'EOF'
 # trellage-managed-codex-config-begin
 model = "gpt-6-astra"
 model_provider = "copilotproxy"
-model_reasoning_effort = "max"
+model_reasoning_effort = "low"
 plan_mode_reasoning_effort = "max"
 # trellage-managed-codex-config-end
 
@@ -2138,7 +2138,7 @@ real_ln="$(command -v ln)"
 write_custom_main_config "$expected_config"
 sed \
   -e 's/model = "gpt-6-astra"/model = "gpt-5.6-sol"/' \
-  -e 's/model_reasoning_effort = "max"/model_reasoning_effort = "medium"/' \
+  -e 's/model_reasoning_effort = "low"/model_reasoning_effort = "max"/' \
   -e '/^plan_mode_reasoning_effort = /d' \
   -e 's/hooks = true/hooks = false/' \
   "$custom_config" >"$pstack_home/config.toml"

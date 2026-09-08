@@ -99,7 +99,11 @@ after selection; `trx` never performs setup, repair, or update.
 
 Profile launches always pass `--autopilot --allow-all --no-ask-user`, so
 Copilot runs autonomously without waiting for permission or user-input prompts.
-Every profile defaults to `--model gpt-6-astra --effort max`. Caller arguments
+Every profile defaults to `--model gpt-6-astra --effort low`. Plan mode uses
+`gpt-6-astra` with `max` effort. Setup, repair, and launch refresh only the
+managed `model`, `effortLevel`, `planModel`, and `planEffortLevel` keys in the
+profile's `settings.json`, preserving other settings. Copilot restores the
+session's default model and effort when you leave plan mode. Caller arguments
 follow these defaults, so `--model` and `--effort` (or `--reasoning-effort`)
 can select a different model or reasoning level for one launch. Lifecycle
 commands do not add model or reasoning arguments.

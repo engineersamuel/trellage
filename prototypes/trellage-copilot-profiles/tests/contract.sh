@@ -205,7 +205,7 @@ materialize_plannotator_plugin() {
 }
 
 if [[ "${1-} ${2-} ${3-}" == '--autopilot --allow-all --no-ask-user' \
-  && "${4-} ${5-} ${6-} ${7-} ${8-}" == '--model gpt-6-astra --effort max --fixture-capability-inventory' ]]; then
+  && "${4-} ${5-} ${6-} ${7-} ${8-}" == '--model gpt-6-astra --effort low --fixture-capability-inventory' ]]; then
   if [[ -f "$installed" ]]; then
     while IFS=$'\t' read -r plugin _version; do
       printf 'plugin:%s\n' "$plugin"
@@ -774,7 +774,7 @@ assert_not_contains "$HOME/.copilot" "$fake_copilot_log"
 expected_hve_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "max", "--prompt", "hello world", "--allow-tool", "git status"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "hello world", "--allow-tool", "git status"]}')"
 actual_hve_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '1p')"
 [[ "$actual_hve_launch" == "$expected_hve_launch" ]] \
   || fail 'hve launch did not preserve the exact ordered argument vector'
@@ -787,7 +787,7 @@ expected_superpowers_home="$HOME/.local/share/trellage/profiles/copilot/superpow
 expected_superpowers_launch="$(jq -cn \
   --arg home "$expected_superpowers_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "max", "--model", "gpt-5.5", "--effort", "high", "--prompt", "two words", "--", "--deny-tool"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--model", "gpt-5.5", "--effort", "high", "--prompt", "two words", "--", "--deny-tool"]}')"
 actual_superpowers_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '2p')"
 [[ "$actual_superpowers_launch" == "$expected_superpowers_launch" ]] \
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
@@ -803,7 +803,7 @@ expected_tufte_home="$HOME/.local/share/trellage/profiles/copilot/tufte-vdqi/hom
 expected_awesome_launch="$(jq -cn \
   --arg home "$expected_awesome_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "max", "--prompt", "find useful skills", "--deny-url=example.com", "--model=gpt-5.5", "--reasoning-effort=low"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "find useful skills", "--deny-url=example.com", "--model=gpt-5.5", "--reasoning-effort=low"]}')"
 actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '3p')"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
@@ -815,7 +815,7 @@ actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_arg
 expected_compound_engineering_launch="$(jq -cn \
   --arg home "$expected_compound_engineering_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "max", "--prompt", "ship and compound this feature"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "ship and compound this feature"]}')"
 actual_compound_engineering_launch="$(jq -c --arg home "$expected_compound_engineering_home" \
   'select(.home == $home and .args[0] == "--autopilot")' "$fake_copilot_argv_log" | tail -n 1)"
 [[ "$actual_compound_engineering_launch" == "$expected_compound_engineering_launch" ]] \
@@ -828,7 +828,7 @@ actual_compound_engineering_launch="$(jq -c --arg home "$expected_compound_engin
 expected_tufte_launch="$(jq -cn \
   --arg home "$expected_tufte_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "max", "--prompt", "critique this chart"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "critique this chart"]}')"
 actual_tufte_launch="$(jq -c \
   --arg home "$expected_tufte_home" \
   --arg prompt 'critique this chart' \
@@ -844,7 +844,7 @@ actual_tufte_launch="$(jq -c \
 expected_bare_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "max"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low"]}')"
 actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
 [[ "$actual_bare_launch" == "$expected_bare_launch" ]] \
   || fail 'bare launch did not add the default permission argument'
@@ -872,7 +872,7 @@ jq -se 'length == 2 and all(.[]; type == "object")' \
 expected_json_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "max", "--prompt", "machine output", "--output-format", "json", "--stream", "off"]}')"
+  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "machine output", "--output-format", "json", "--stream", "off"]}')"
 [[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_json_launch" ]] \
   || fail 'JSON headless launch argument vector differs'
 
@@ -923,7 +923,7 @@ for permission_argument_vector in "${permission_argument_vectors[@]}"; do
     --arg home "$expected_hve_home" \
     --arg cwd "$worktree" \
     --args '{home: $home, cwd: $cwd, args: $ARGS.positional}' \
-    -- "--autopilot" "--allow-all" "--no-ask-user" --model gpt-6-astra --effort max "${permission_args[@]}" --prompt 'permission contract')"
+    -- "--autopilot" "--allow-all" "--no-ask-user" --model gpt-6-astra --effort low "${permission_args[@]}" --prompt 'permission contract')"
   [[ "$actual_permission_launch" == "$expected_permission_launch" ]] \
     || fail "explicit permission arguments changed: $permission_argument_vector"
 done
@@ -998,7 +998,29 @@ for profile in awesome compound-engineering hve plannotator superpowers tufte-vd
     | length == 1
   ' "$profile_home/settings.json" >/dev/null \
     || fail "$profile launch did not migrate the session bridge hook"
+  jq -e '
+    .model == "gpt-6-astra" and .effortLevel == "low"
+    and .planModel == "gpt-6-astra" and .planEffortLevel == "max"
+  ' "$profile_home/settings.json" >/dev/null \
+    || fail "$profile did not keep separate default and plan model settings"
 done
+
+cp "$expected_hve_home/settings.json" "$fixture_root/model-settings-before.json"
+jq '
+  .model = "gpt-stale" | .effortLevel = "max"
+  | .planModel = "gpt-stale" | .planEffortLevel = "low"
+  | .userSetting = "preserve"
+' "$expected_hve_home/settings.json" >"$fixture_root/stale-model-settings.json"
+cp "$fixture_root/stale-model-settings.json" "$expected_hve_home/settings.json"
+"$launcher" hve --version >"$fixture_root/model-settings-repair.out"
+jq -e '
+  .model == "gpt-6-astra" and .effortLevel == "low"
+  and .planModel == "gpt-6-astra" and .planEffortLevel == "max"
+  and .userSetting == "preserve"
+  and (.hooks.SessionStart | length) > 0
+' "$expected_hve_home/settings.json" >/dev/null \
+  || fail 'launch did not repair model defaults while preserving user settings and hooks'
+cp "$fixture_root/model-settings-before.json" "$expected_hve_home/settings.json"
 
 before_native_auth_failure_hash="$(profile_tree_hash "$expected_hve_home")"
 native_auth_failure_status=0
@@ -2311,6 +2333,9 @@ assert_contains 'trellage-profiles-v1' "$runtime_root/.managed-by-trellage-profi
 cmp -s "$runtime_root/lib/trellage-session-bridge.py" \
   "$prototype_root/../../scripts/trellage-session-bridge.py" \
   || fail 'installed runtime session bridge differs'
+cmp -s "$runtime_root/lib/copilot-model-settings.py" \
+  "$prototype_root/../trellage/copilot-model-settings.py" \
+  || fail 'installed model settings helper differs'
 for asset in rundown.instructions.md NOTICE.md; do
   [[ -f "$runtime_root/assets/rundown/$asset" && ! -L "$runtime_root/assets/rundown/$asset" ]] \
     || fail "installer did not publish asset: $asset"
@@ -2318,6 +2343,7 @@ for asset in rundown.instructions.md NOTICE.md; do
     || fail "installed asset differs: $asset"
 done
 "$installed" list >"$fixture_root/installed-list.out"
+"$installed" hve --version >"$fixture_root/installed-model-settings.out"
 assert_contains $'compound-engineering\tcompound-engineering@compound-engineering-plugin' \
   "$fixture_root/installed-list.out"
 assert_contains $'hve\thve-core@hve-core' "$fixture_root/installed-list.out"
@@ -2329,6 +2355,7 @@ assert_contains $'tufte-vdqi\ttufte-vdqi@tufte-vdqi-marketplace' \
 "$uninstaller"
 [[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/bin/cpx behind'
 [[ ! -e "$runtime_root/assets" ]] || fail 'uninstaller left runtime assets behind'
+[[ ! -e "$runtime_root/lib" ]] || fail 'uninstaller left runtime helpers behind'
 [[ -d "$HOME/.local/share/trellage/profiles/copilot/hve/home" ]] \
   || fail 'uninstaller removed profile state'
 

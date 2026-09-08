@@ -70,8 +70,11 @@ mise run trellage -- --profile copilot-hve
 ```
 
 All Copilot and Codex native, Sandbox, and comparison profiles default to
-`gpt-6-astra` with `max` reasoning. Explicit harness model and reasoning
-arguments override these defaults.
+`gpt-6-astra` with `low` reasoning. Plan mode uses `gpt-6-astra` with `max`
+reasoning. Explicit harness model and reasoning arguments override the default
+mode settings. Sandbox profiles set plan effort with
+`harness.codex.plan_mode_reasoning_effort` or
+`harness.copilot.plan_mode_reasoning_effort`.
 
 ## Fresh Azure VM Acceptance
 
@@ -1427,9 +1430,11 @@ channels with a fresh image build. Later `run` and `resume` commands reuse
 those installed images.
 
 Each contestant declares its `model`. The optional `reasoningEffort` defaults
-to `max`; Codex uses the same default for Plan mode. Set `CODEX_MODEL` and
+to `low`; plan mode uses the same model with `max` reasoning. Set `CODEX_MODEL` and
 `CODEX_REASONING_EFFORT`, or `COPILOT_MODEL` and `COPILOT_REASONING_EFFORT`,
-to override the corresponding manifest settings for a run or resume.
+to override the corresponding manifest settings for a run or resume. Set
+`CODEX_PLAN_MODE_REASONING_EFFORT` or `COPILOT_PLAN_MODE_REASONING_EFFORT` to
+override plan effort separately.
 
 Each package entry contains:
 

@@ -1476,6 +1476,10 @@ const defaultRuntimeSupport: RuntimeSupport = {
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/runtime-copilot-entry.sh",
   ),
+  copilotModelSettings: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../prototypes/trellage/copilot-model-settings.py",
+  ),
   sessionBridge: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../scripts/trellage-session-bridge.py",

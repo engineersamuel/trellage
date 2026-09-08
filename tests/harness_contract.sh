@@ -28,7 +28,7 @@ import tomllib
 
 config = tomllib.loads(Path("docker/codex-config.toml").read_text())
 assert config["model"] == "gpt-6-astra", "Codex model default changed"
-assert config["model_reasoning_effort"] == "max", "Codex reasoning default changed"
+assert config["model_reasoning_effort"] == "low", "Codex reasoning default changed"
 assert config["plan_mode_reasoning_effort"] == "max", "Codex Plan reasoning default changed"
 provider = config["model_providers"][config["model_provider"]]
 assert provider["base_url"] == "http://copilot-proxy-rs:8080/v1", "proxy URL is not container-local"
@@ -79,16 +79,17 @@ grep -Fq 'set HARNESS_SKILLS_CONTEXT to a staged floating-skill snapshot' \
   || fail 'Compose did not explain the missing floating-skill build context'
 
 compose_json="$(
-  env -u CODEX_MODEL -u CODEX_REASONING_EFFORT HARNESS_SKILLS_CONTEXT=/dev/null \
+  env -u CODEX_MODEL -u CODEX_REASONING_EFFORT -u CODEX_PLAN_MODE_REASONING_EFFORT \
+    HARNESS_SKILLS_CONTEXT=/dev/null \
     docker compose --profile tools config --format json
 )"
 alternate_compose_json="$(
   HARNESS_SKILLS_CONTEXT=/dev/null EXPERIMENT_ID=isolation-probe APP_PORT=4273 \
-    CODEX_MODEL=gpt-5.5 CODEX_REASONING_EFFORT=medium \
+    CODEX_MODEL=gpt-5.5 CODEX_REASONING_EFFORT=medium CODEX_PLAN_MODE_REASONING_EFFORT=high \
     docker compose --profile tools config --format json
 )"
 copilot_compose_json="$(
-  env -u COPILOT_MODEL -u COPILOT_REASONING_EFFORT \
+  env -u COPILOT_MODEL -u COPILOT_REASONING_EFFORT -u COPILOT_PLAN_MODE_REASONING_EFFORT \
   HARNESS_SKILLS_CONTEXT=/dev/null \
   HARNESS_COPILOT_TOKEN_FILE='/tmp/contract-sentinel-copilot-token' \
   EXPERIMENT_ID='copilot-isolation-probe' \
@@ -97,24 +98,29 @@ copilot_compose_json="$(
 )"
 override_copilot_compose_json="$(
   HARNESS_SKILLS_CONTEXT=/dev/null COPILOT_MODEL=gpt-5.5 COPILOT_REASONING_EFFORT=high \
+    COPILOT_PLAN_MODE_REASONING_EFFORT=xhigh \
     docker compose -f compose.yaml -f compose.copilot.yaml --profile tools config --format json
 )"
 
 jq -e '
   .services.agent.environment.CODEX_MODEL == "gpt-6-astra"
-  and .services.agent.environment.CODEX_REASONING_EFFORT == "max"
+  and .services.agent.environment.CODEX_REASONING_EFFORT == "low"
+  and .services.agent.environment.CODEX_PLAN_MODE_REASONING_EFFORT == "max"
 ' <<<"$compose_json" >/dev/null || fail 'Codex launch defaults changed'
 jq -e '
   .services.agent.environment.CODEX_MODEL == "gpt-5.5"
   and .services.agent.environment.CODEX_REASONING_EFFORT == "medium"
+  and .services.agent.environment.CODEX_PLAN_MODE_REASONING_EFFORT == "high"
 ' <<<"$alternate_compose_json" >/dev/null || fail 'Codex launch overrides were lost'
 jq -e '
   .services.copilot_agent.environment.COPILOT_MODEL == "gpt-6-astra"
-  and .services.copilot_agent.environment.COPILOT_REASONING_EFFORT == "max"
+  and .services.copilot_agent.environment.COPILOT_REASONING_EFFORT == "low"
+  and .services.copilot_agent.environment.COPILOT_PLAN_MODE_REASONING_EFFORT == "max"
 ' <<<"$copilot_compose_json" >/dev/null || fail 'Copilot launch defaults changed'
 jq -e '
   .services.copilot_agent.environment.COPILOT_MODEL == "gpt-5.5"
   and .services.copilot_agent.environment.COPILOT_REASONING_EFFORT == "high"
+  and .services.copilot_agent.environment.COPILOT_PLAN_MODE_REASONING_EFFORT == "xhigh"
 ' <<<"$override_copilot_compose_json" >/dev/null || fail 'Copilot launch overrides were lost'
 
 jq -e '

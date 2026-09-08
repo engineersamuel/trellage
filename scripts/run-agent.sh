@@ -18,7 +18,8 @@ case "$session_mode" in
 esac
 
 default_model="${CODEX_MODEL:-gpt-6-astra}"
-default_reasoning_effort="${CODEX_REASONING_EFFORT:-max}"
+default_reasoning_effort="${CODEX_REASONING_EFFORT:-low}"
+default_plan_mode_reasoning_effort="${CODEX_PLAN_MODE_REASONING_EFFORT:-max}"
 model="$default_model"
 reasoning_effort="$default_reasoning_effort"
 model_override=''
@@ -69,7 +70,7 @@ done
 config_args=(
   -c "model=$(jq -nc --arg value "$default_model" '$value')"
   -c "model_reasoning_effort=$(jq -nc --arg value "$default_reasoning_effort" '$value')"
-  -c "plan_mode_reasoning_effort=$(jq -nc --arg value "$default_reasoning_effort" '$value')"
+  -c "plan_mode_reasoning_effort=$(jq -nc --arg value "$default_plan_mode_reasoning_effort" '$value')"
 )
 
 mkdir -p /workspace/.harness
