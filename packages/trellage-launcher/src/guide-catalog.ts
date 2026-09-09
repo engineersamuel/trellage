@@ -307,6 +307,7 @@ export interface SandboxGuideCatalogEntry {
   readonly resolutionPolicy: "floating"
   readonly locallyResolved: boolean
   readonly releaseLockAvailable: boolean
+  readonly resolvedVersion: string | null
   readonly skillBundles: ReadonlyArray<string>
   readonly skillsMode: "floating" | "locked"
   readonly finalDigestLocked: boolean
@@ -341,7 +342,7 @@ const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalog
     "headless",
     "locked",
     "herdrCompatibility",
-  ])
+  ], ["resolvedVersion"])
   if (fields.sandbox !== true) fail(`${path}.sandbox`, "must equal true")
   const harness = record(fields.harness, `${path}.harness`)
   exactKeys(harness, `${path}.harness`, ["kind", "version"], ["model"])
@@ -363,6 +364,10 @@ const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalog
     resolutionPolicy: literal(fields.resolutionPolicy, `${path}.resolutionPolicy`, ["floating"] as const),
     locallyResolved: boolean(fields.locallyResolved, `${path}.locallyResolved`),
     releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path}.releaseLockAvailable`),
+    resolvedVersion:
+      fields.resolvedVersion === undefined
+        ? null
+        : nullableText(fields.resolvedVersion, `${path}.resolvedVersion`, 128),
     skillBundles: stringArray(fields.skillBundles, `${path}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
     skillsMode: literal(fields.skillsMode, `${path}.skillsMode`, ["floating", "locked"] as const),
     finalDigestLocked: boolean(fields.finalDigestLocked, `${path}.finalDigestLocked`),
@@ -436,6 +441,7 @@ export interface GuideCatalogEntryRef {
   readonly name: string
   readonly launcher?: string
   readonly harness?: string
+  readonly resolvedVersion?: string
   readonly description: string
   readonly sandbox: boolean
   readonly guide: ProfileGuideV1
@@ -460,6 +466,7 @@ export const guideCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArra
       surface: "sandbox",
       name: entry.name,
       harness: entry.harness.kind,
+      ...(entry.resolvedVersion === null ? {} : { resolvedVersion: entry.resolvedVersion }),
       description: entry.description,
       sandbox: entry.sandbox,
       guide: entry.guide,

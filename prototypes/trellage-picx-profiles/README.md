@@ -38,6 +38,11 @@ Setup installs the shared floating `native-common` skill bundle into the
 isolated Pi profile and snapshots `~/.copilot/models.json` as read-only
 `.copilot-models.json`. The first native setup fetches the bundle; later
 launches reuse the shared cache until `trx skills update` refreshes it.
+Run `picx skills-update default` after that refresh to copy and verify only
+managed skills in the existing owned profile. Custom skills, extensions,
+configuration, and authentication are preserved. Missing caches, invalid
+ownership, unsafe paths, and name collisions fail closed. This command never
+fetches, starts Pi or the proxy, or runs setup or repair.
 Launches remove host Copilot, OpenAI, and Azure OpenAI credential variables
 because the managed proxy provider uses no API key.
 

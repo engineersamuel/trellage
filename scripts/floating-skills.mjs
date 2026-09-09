@@ -13,6 +13,7 @@ const safeName = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const safeRepository = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/
 const maxSkills = 200
 const maxSnapshotBytes = 100 * 1024 * 1024
+export const readOnlyStageSupported = true
 
 export class FloatingSkillsError extends Error {
   constructor(message, options) {
@@ -169,6 +170,7 @@ const run = async (command, args, options = {}) => {
       encoding: "utf8",
       maxBuffer: 50 * 1024 * 1024,
       env: options.env,
+      signal: options.signal,
     })
   } catch (cause) {
     const detail =
@@ -213,7 +215,7 @@ const localSkillsCli = async () => {
   return undefined
 }
 
-const generateGenericSkills = async (source, checkout, destination, skillsCli) => {
+const generateGenericSkills = async (source, checkout, destination, skillsCli, readOnly = false, signal) => {
   await mkdir(destination, { recursive: true })
   const args = [
     "add",
@@ -226,6 +228,25 @@ const generateGenericSkills = async (source, checkout, destination, skillsCli) =
     "--yes",
   ]
   const local = skillsCli ?? (await localSkillsCli())
+  if (readOnly && local === undefined) fail("read-only skills check requires the installed skills CLI; no packages were installed")
+  if (readOnly) {
+    await run(process.execPath, [local, ...args], {
+      cwd: destination, signal,
+      env: {
+        ...process.env,
+        HOME: destination,
+        XDG_STATE_HOME: path.join(destination, ".state"),
+        XDG_CONFIG_HOME: path.join(destination, ".config"),
+        XDG_CACHE_HOME: path.join(destination, ".cache"),
+        XDG_DATA_HOME: path.join(destination, ".data"),
+        CODEX_HOME: path.join(destination, ".codex"),
+        NODE_DISABLE_COMPILE_CACHE: "1",
+        TMPDIR: destination,
+        CI: "1", DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1", npm_config_ignore_scripts: "true",
+      },
+    })
+    return path.join(destination, ".agents", "skills")
+  }
   if (local === undefined) {
     await runInteractive("npx", ["--yes", "skills@latest", ...args], destination)
   } else {
@@ -234,12 +255,16 @@ const generateGenericSkills = async (source, checkout, destination, skillsCli) =
   return path.join(destination, ".agents", "skills")
 }
 
-const checkoutLatest = async (repository, destination) => {
+const checkoutLatest = async (repository, destination, signal, readOnly) => {
+  const options = readOnly
+    ? { signal, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", TMPDIR: path.dirname(destination) } }
+    : { signal }
+  const gitOptions = readOnly ? ["-c", "credential.helper=", "-c", "core.askPass="] : []
   await mkdir(destination)
-  await run("git", ["init", "--quiet", destination])
-  await run("git", ["-C", destination, "remote", "add", "origin", repository])
-  await run("git", ["-C", destination, "fetch", "--quiet", "--depth", "1", "origin", "HEAD"])
-  await run("git", ["-C", destination, "checkout", "--quiet", "--detach", "FETCH_HEAD"])
+  await run("git", [...gitOptions, "init", "--quiet", destination], options)
+  await run("git", [...gitOptions, "-C", destination, "remote", "add", "origin", repository], options)
+  await run("git", [...gitOptions, "-C", destination, "fetch", "--quiet", "--depth", "1", "origin", "HEAD"], options)
+  await run("git", [...gitOptions, "-C", destination, "checkout", "--quiet", "--detach", "FETCH_HEAD"], options)
   await rm(path.join(destination, ".git"), { recursive: true, force: true })
 }
 
@@ -290,10 +315,10 @@ const publishDirectory = async (stage, destination) => {
   }
 }
 
-const generatedSkillRoot = (source, sourceRoot, temporary, skillsCli) =>
+const generatedSkillRoot = (source, sourceRoot, temporary, skillsCli, readOnly, signal) =>
   source.adapter === "omp-native"
     ? Promise.resolve(path.join(sourceRoot, ".omp", "skills"))
-    : generateGenericSkills(source, sourceRoot, path.join(temporary, `generated-${source.id}`), skillsCli)
+    : generateGenericSkills(source, sourceRoot, path.join(temporary, `generated-${source.id}`), skillsCli, readOnly, signal)
 
 const selectedSkillNames = async (source, generatedRoot) => {
   const entries = await readdir(generatedRoot, { withFileTypes: true }).catch((cause) => {
@@ -317,10 +342,10 @@ const selectedSkillNames = async (source, generatedRoot) => {
   return expected
 }
 
-const materializeSource = async ({ source, temporary, snapshotSkills, names, skillsCli }) => {
+const materializeSource = async ({ source, temporary, snapshotSkills, names, skillsCli, readOnly, signal }) => {
   const sourceRoot = path.join(temporary, `source-${source.id}`)
-  await checkoutLatest(source.repository, sourceRoot)
-  const generatedRoot = await generatedSkillRoot(source, sourceRoot, temporary, skillsCli)
+  await checkoutLatest(source.repository, sourceRoot, signal, readOnly)
+  const generatedRoot = await generatedSkillRoot(source, sourceRoot, temporary, skillsCli, readOnly, signal)
   const actual = await selectedSkillNames(source, generatedRoot)
   let bytes = 0
   const alwaysOn = []
@@ -341,7 +366,7 @@ const materializeSource = async ({ source, temporary, snapshotSkills, names, ski
   return { bytes, alwaysOn }
 }
 
-export const stageLatest = async ({ catalog, bundleIds, destination, skillsCli }) => {
+export const stageLatest = async ({ catalog, bundleIds, destination, skillsCli, readOnly = false, signal }) => {
   const plan = resolvePlan(catalog, bundleIds)
   const parent = path.dirname(path.resolve(destination))
   await mkdir(parent, { recursive: true })
@@ -354,7 +379,8 @@ export const stageLatest = async ({ catalog, bundleIds, destination, skillsCli }
   let totalBytes = 0
   try {
     for (const source of plan) {
-      const materialized = await materializeSource({ source, temporary, snapshotSkills, names, skillsCli })
+      signal?.throwIfAborted()
+      const materialized = await materializeSource({ source, temporary, snapshotSkills, names, skillsCli, readOnly, signal })
       totalBytes += materialized.bytes
       if (totalBytes > maxSnapshotBytes) fail(`skill snapshot exceeds ${maxSnapshotBytes} bytes`)
       alwaysOn.push(...materialized.alwaysOn)
@@ -727,6 +753,135 @@ export const checkNative = ({ catalog, bundleIds, cache, skillsCli }) =>
     }
   })
 
+const checkSharedVariant = async (catalog, variant, stage, signal) => {
+  try {
+    signal?.throwIfAborted()
+    const status = await lstat(variant.cache)
+    if (!status.isDirectory() || status.isSymbolicLink()) fail(`invalid skill cache: ${variant.cache}`)
+    await validateSnapshot(variant.cache)
+    const latest = path.join(stage, variant.name)
+    await stageLatest({ catalog, bundleIds: variant.bundles, destination: latest, readOnly: true, signal })
+    return { kind: (await snapshotsMatch(latest, variant.cache)) ? "current" : "available" }
+  } catch (error) {
+    return { kind: "unknown", diagnostic: `${variant.name}: ${error.message}` }
+  }
+}
+
+export const checkSharedNative = async ({ catalog, variants, signal, cwd = process.cwd() }) => {
+  const stage = await mkdtemp(path.join(cwd, ".trellage-shared-skills-check."))
+  try {
+    const results = []
+    for (const variant of variants) results.push(await checkSharedVariant(catalog, variant, stage, signal))
+    signal?.throwIfAborted()
+    const diagnostic = results.filter((result) => result.kind === "unknown").map((result) => result.diagnostic).join("; ")
+    if (results.some((result) => result.kind === "available")) {
+      return diagnostic ? { kind: "available", diagnostic } : { kind: "available" }
+    }
+    if (diagnostic) return { kind: "unknown", diagnostic }
+    if (results.length === 0) return { kind: "unknown", diagnostic: "No shared skill caches were checked." }
+    return { kind: "current" }
+  } finally {
+    await rm(stage, { recursive: true, force: true })
+  }
+}
+
+const checkSharedCommand = async (catalog) => {
+  const controller = new AbortController()
+  const abort = () => controller.abort(new Error("Shared skills check cancelled."))
+  const common = path.join(os.homedir(), ".local", "share", "trellage", "common")
+  const variants = [
+    { name: "native-common", bundles: ["native-common"], cache: defaultCache() },
+    { name: "youtube", bundles: ["native-common", "youtube"], cache: path.join(path.dirname(defaultCache()), "cdx-youtube-skills") },
+    { name: "omp-community", bundles: ["omp-community"], cache: path.join(common, "omp-community-skills") },
+    { name: "guide-prompt-master", bundles: ["guide-prompt-master"], cache: path.join(common, "guide-prompt-master-skills") },
+  ]
+  process.once("SIGTERM", abort)
+  process.once("SIGINT", abort)
+  try {
+    process.stdout.write(`${JSON.stringify(await checkSharedNative({ catalog, variants, signal: controller.signal }))}\n`)
+  } finally {
+    process.removeListener("SIGTERM", abort)
+    process.removeListener("SIGINT", abort)
+  }
+}
+
+const optionalLstat = async (file) => {
+  try {
+    return await lstat(file)
+  } catch (cause) {
+    if (cause?.code === "ENOENT") return undefined
+    throw cause
+  }
+}
+
+const bakedManagedNames = async (target, expected) => {
+  const targetStatus = await lstat(target)
+  if (!targetStatus.isDirectory() || targetStatus.isSymbolicLink()) fail("baked skills are not a regular directory")
+  const marker = path.join(target, ".trellage-floating-skills")
+  const markerStatus = await optionalLstat(marker)
+  const managed = markerStatus === undefined ? undefined : await readManagedNames(marker, "baked floating skill manifest")
+  if (managed !== undefined && managed.length === 0) fail("baked floating skill manifest is empty")
+  if (managed === undefined && !(await readdir(target)).some((name) => expected.includes(name))) {
+    fail("installed image has no identifiable managed floating skill snapshot")
+  }
+  for (const name of managed ?? expected) {
+    const status = await optionalLstat(path.join(target, name))
+    if (status !== undefined) await validateSkillDirectory(target, name, true)
+  }
+  return managed
+}
+
+const compareBakedInstructions = async (snapshot, target) => {
+  const instructions = path.join(target, ".trellage-floating-always-on.md")
+  const status = await optionalLstat(instructions)
+  if (status === undefined || !status.isFile() || status.isSymbolicLink()) fail("baked floating instruction evidence is missing or unsafe")
+  const current = (await readFile(instructions)).equals(await readFile(path.join(snapshot, "always-on.md")))
+  return { kind: current ? "current" : "available" }
+}
+
+export const compareBakedSkills = async (snapshot, target) => {
+  const expected = await validateSnapshot(snapshot)
+  const managed = await bakedManagedNames(target, expected)
+  if (managed !== undefined && JSON.stringify([...managed].sort()) !== JSON.stringify([...expected].sort())) {
+    return { kind: "available" }
+  }
+  try {
+    for (const name of expected) await compareManagedTree(path.join(snapshot, "skills", name), path.join(target, name), name)
+  } catch (error) {
+    if (error instanceof FloatingSkillsError && error.message.startsWith("managed skill differs")) return { kind: "available" }
+    throw error
+  }
+  if (managed === undefined) {
+    const extra = (await readdir(target)).filter((name) => !expected.includes(name))
+    if (extra.length > 0) return { kind: "unknown", diagnostic: "Older image has additional skills with no floating ownership manifest." }
+    return { kind: "unknown", diagnostic: "Older image lacks floating ownership and instruction evidence." }
+  }
+  return compareBakedInstructions(snapshot, target)
+}
+
+const checkContainerCommand = async (catalog, bundles, options) => {
+  if (options.target === undefined) fail("check-container requires --target")
+  const controller = new AbortController()
+  const abort = () => controller.abort(new Error("Container skills check cancelled."))
+  process.once("SIGTERM", abort)
+  process.once("SIGINT", abort)
+  let stage
+  try {
+    stage = await mkdtemp(path.join(options.output ?? process.cwd(), ".trellage-container-skills-check."))
+    const snapshot = path.join(stage, "snapshot")
+    await stageLatest({
+      catalog, bundleIds: bundles, destination: snapshot, skillsCli: options.skills_cli,
+      readOnly: true, signal: controller.signal,
+    })
+    controller.signal.throwIfAborted()
+    process.stdout.write(`${JSON.stringify(await compareBakedSkills(snapshot, options.target))}\n`)
+  } finally {
+    if (stage !== undefined) await rm(stage, { recursive: true, force: true })
+    process.removeListener("SIGTERM", abort)
+    process.removeListener("SIGINT", abort)
+  }
+}
+
 const defaultCatalogPath = async () => {
   for (const candidate of [path.join(scriptDirectory, "skills.json"), path.join(scriptDirectory, "..", "skills.json")]) {
     try {
@@ -855,6 +1010,8 @@ const verifyRepairableCommand = async (options) => {
 }
 
 const dispatch = (command, catalog, bundles, cache, options) => {
+  if (command === "check-container") return checkContainerCommand(catalog, bundles, options)
+  if (command === "check-shared") return checkSharedCommand(catalog)
   if (command === "stage") return stageCommand(catalog, bundles, options)
   if (command === "sync") return syncCommand(options)
   if (command === "ensure") return ensureCommand(catalog, bundles, cache, options)

@@ -31,3 +31,15 @@ results/
 .beads-credential-key
 .beads/proxieddb/
 /.trx-guide/
+
+# Native profile runtime state
+/prototypes/trellage-*-profiles/cache/
+/prototypes/trellage-*-profiles/mise/
+/prototypes/trellage-*-profiles/installed-version
+/prototypes/trellage-*-profiles/.installed-version.*
+/prototypes/trellage-*-profiles/.profile-backup.*
+/prototypes/trellage-*-profiles/npm-prefix/
+/prototypes/trellage-*-profiles/.npm-prefix-stage.*
+/prototypes/trellage-*-profiles/runtime-identity.json
+/prototypes/trellage-*-profiles/.runtime-identity.*
+/prototypes/common/omp-community-skills/

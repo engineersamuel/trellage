@@ -138,7 +138,15 @@ done
 mode=new
 compiler_mode=false
 case "${1:-}" in
-  validate|lock|build|upgrade|ci-verify|list)
+  --help|-h)
+    printf '%s\n' \
+      'Usage: trellage [--profile PROFILE] [AGENT ARGS...]' \
+      '  trellage skills-check PROFILE' \
+      '  trellage harness-version PROFILE' \
+      '  trellage validate|lock|build|upgrade|ci-verify|list [PROFILE]'
+    exit 0
+    ;;
+  validate|lock|build|upgrade|ci-verify|list|harness-version|skills-check)
     mode=compiler
     compiler_mode=true
     ;;
@@ -403,6 +411,12 @@ case "$mode" in
 esac
 
 prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+if [[ "${1:-}" == skills-check ]]; then
+  compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
+  [[ -f "$compiler" && ! -L "$compiler" ]] || fail 'refresh the installed profile compiler for skills-check'
+  export NODE_DISABLE_COMPILE_CACHE=1
+  exec node "$compiler" "$@"
+fi
 dependency_bootstrap="$prototype_dir/../../scripts/bootstrap-development-dependencies.sh"
 [[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
 compiler_package_dir="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)"
@@ -570,7 +584,7 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doc
 fi
 
 case "${1:-}" in
-  validate|lock|build|upgrade|ci-verify|list)
+  validate|lock|build|upgrade|ci-verify|list|harness-version)
     discard_ambient_github_auth
     exec "${clean_child_environment[@]}" node "$compiler" "$@"
     ;;

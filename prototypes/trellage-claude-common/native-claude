@@ -9,6 +9,8 @@
 #   native-claude launch  --home ABS --marker ABS --marker-value VALUE \
 #     --bridge enabled|disabled [--profile NAME] -- [CLAUDE_ARGS...]
 #   native-claude version
+#   native-claude harness-update
+#   native-claude skills-update --home ABS --marker ABS --marker-value VALUE
 #   native-claude model-id
 #   native-claude exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 #
@@ -67,6 +69,9 @@ Usage:
   $launcher_name launch --home ABS --marker ABS --marker-value VALUE \\
       --bridge enabled|disabled [--profile NAME] -- [CLAUDE_ARGS...]
   $launcher_name version
+  $launcher_name harness-update
+  $launcher_name skills-update --home ABS --marker ABS --marker-value VALUE
+  $launcher_name skills-check --home ABS --marker ABS --marker-value VALUE
   $launcher_name model-id
   $launcher_name exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 EOF
@@ -262,6 +267,15 @@ claude_version_if_available() {
   printf '%s\n' "$version"
 }
 
+harness_update_command() {
+  local executable
+
+  [[ "$#" -eq 0 ]] || die 'harness-update accepts no arguments'
+  scrub_provider_environment
+  executable="$(claude_executable)"
+  exec "$executable" update
+}
+
 ensure_floating_skills() {
   local home="$1"
 
@@ -275,6 +289,22 @@ ensure_floating_skills() {
     --bundle native-common \
     --target "$home/skills" \
     || die 'failed to install floating skills'
+}
+
+sync_cached_skills() {
+  local mode="$1" home="$2" helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("$mode")
+  [[ "$mode" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "$mode" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$home/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$home/skills" \
+    || die "failed to update cached skills: $home"
 }
 
 ensure_onboarding() {
@@ -643,7 +673,7 @@ validate_common_arguments() {
 # spawns: claude --version, the floating-skills ensure (node), the
 # copilot-proxy-rs health/model probes (curl), session-bridge hook
 # installation (python3), or the final launched Claude process. Called as
-# early as possible in prepare/doctor/launch/version, before any such
+# early as possible in prepare/doctor/launch/version/harness-update/skills-update, before any such
 # external process, and reused (never duplicated) so launch's final exec
 # inherits the same clean environment established here. model-id starts
 # no child process and needs no scrub. Never wildcard this list; each
@@ -704,6 +734,28 @@ exec_clean_command() {
     exec "$resolved_interpreter" "$resolved_command" "${@:2}"
   fi
   exec "$resolved_command" "${@:2}"
+}
+
+skills_update_command() {
+  local home='' marker='' marker_value='' mode=--sync
+
+  scrub_provider_environment
+  while [[ "$#" -gt 0 ]]; do
+    [[ "$#" -ge 2 ]] || die "missing value for $1"
+    case "$1" in
+      --home) home="$2" ;;
+      --marker) marker="$2" ;;
+      --marker-value) marker_value="$2" ;;
+      --mode)
+        [[ "$2" == --sync || "$2" == --check || "$2" == --fresh ]] || die "invalid skills update mode: $2"
+        mode="$2" ;;
+      *) die "unknown option: $1" ;;
+    esac
+    shift 2
+  done
+  validate_common_arguments "$home" "$marker" "$marker_value" disabled
+  require_owned_profile "$home" "$marker" "$marker_value"
+  sync_cached_skills "$mode" "$home"
 }
 
 prepare_command() {
@@ -898,6 +950,18 @@ case "${1-}" in
     [[ "$#" -eq 0 ]] || die 'version accepts no arguments'
     scrub_provider_environment
     claude_version_if_available
+    ;;
+  harness-update)
+    shift
+    harness_update_command "$@"
+    ;;
+  skills-check)
+    shift
+    skills_update_command "$@" --mode --fresh
+    ;;
+  skills-update)
+    shift
+    skills_update_command "$@"
     ;;
   model-id)
     shift

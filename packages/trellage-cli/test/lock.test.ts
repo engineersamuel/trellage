@@ -113,6 +113,10 @@ repository = "gastownhall/beads"
 name = "bd"
 [[image.tools]]
 kind = "github-release"
+repository = "Dicklesworthstone/beads_viewer"
+name = "bv"
+[[image.tools]]
+kind = "github-release"
 repository = "openai/codex"
 name = "codex"
 [[image.tools]]
@@ -305,6 +309,13 @@ const graphToolArtifacts = [
     version: "1.2.2",
     integrity: digest("7"),
     url: "https://github.com/gastownhall/beads/releases/download/v1.2.2/beads_1.2.2_linux_arm64.tar.gz",
+    size: 1,
+  },
+  {
+    name: "bv",
+    version: "0.24.0",
+    integrity: digest("6"),
+    url: "https://github.com/Dicklesworthstone/beads_viewer/releases/download/v0.24.0/bv_0.24.0_linux_arm64.tar.gz",
     size: 1,
   },
   {
@@ -816,44 +827,31 @@ gear = "full"
   })
 
   it.each([
-    { archive: "bv_0.24.1_linux_arm64.tar.gz", valid: true },
-    { archive: "bv_linux_arm64.tar.gz", valid: true },
-    { archive: "bv_0.24.0_linux_arm64.tar.gz", valid: false },
-    { archive: "bv_0.24.1_linux_amd64.tar.gz", valid: false },
-  ])("validates Beads Viewer archive $archive in a graph lock", async ({ archive, valid }) => {
+    { archive: "bv_0.24.1_linux_arm64.tar.gz", host: "github.com", valid: true },
+    { archive: "bv_linux_arm64.tar.gz", host: "github.com", valid: true },
+    { archive: "bv_0.24.0_linux_arm64.tar.gz", host: "github.com", valid: false },
+    { archive: "bv_0.24.1_linux_amd64.tar.gz", host: "github.com", valid: false },
+    { archive: "bv_0.24.1_linux_arm64.tar.gz", host: "example.test", valid: false },
+  ])("validates Beads Viewer archive $archive from $host in a graph lock", async ({ archive, host, valid }) => {
     const graph = graphDocument()
-    const documentWithViewer = {
-      ...graph,
-      profile: {
-        ...graph.profile,
-        image: {
-          ...graph.profile.image,
-          tools: [
-            ...(graph.profile.image.tools ?? []),
-            { kind: "github-release", repository: "Dicklesworthstone/beads_viewer", name: "bv" } as const,
-          ],
-        },
-      },
-    }
     const resolved = await Effect.runPromise(compileLock(graph, undefined, false, fakeResolvers(commit("1"), [])))
     const withViewer: ProfileLock = {
       ...resolved,
       packages: {
         ...resolved.packages,
-        artifacts: [
-          ...(resolved.packages.artifacts ?? []),
-          {
-            name: "bv",
-            version: "0.24.1",
-            integrity: digest("a"),
-            url: `https://github.com/Dicklesworthstone/beads_viewer/releases/download/v0.24.1/${archive}`,
-            size: 123,
-          },
-        ],
+        artifacts: (resolved.packages.artifacts ?? []).map((artifact) =>
+          artifact.name === "bv"
+            ? {
+                ...artifact,
+                version: "0.24.1",
+                url: `https://${host}/Dicklesworthstone/beads_viewer/releases/download/v0.24.1/${archive}`,
+              }
+            : artifact,
+        ),
       },
     }
 
-    expect(lockedArtifactError(documentWithViewer, withViewer, "linux/arm64")).toBe(
+    expect(lockedArtifactError(graph, withViewer, "linux/arm64")).toBe(
       valid ? undefined : "artifact URL is invalid: bv",
     )
   })

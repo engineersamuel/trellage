@@ -74,6 +74,7 @@ const validCatalog = {
       resolutionPolicy: "floating",
       locallyResolved: false,
       releaseLockAvailable: true,
+      resolvedVersion: "1.0.70",
       skillBundles: ["sandbox-common"],
       skillsMode: "floating",
       finalDigestLocked: false,
@@ -119,12 +120,34 @@ describe("parseGuideCatalog", () => {
     expect(entries).toHaveLength(2)
     expect(entries.map((entry) => entry.ref)).toEqual(["native:cdx/pstack", "sandbox:prime-agent"])
     expect(entries[0]).toMatchObject({ surface: "native", launcher: "cdx", harness: "codex", name: "pstack" })
-    expect(entries[1]).toMatchObject({ surface: "sandbox", harness: "copilot", name: "prime-agent" })
+    expect(entries[1]).toMatchObject({
+      surface: "sandbox",
+      harness: "copilot",
+      name: "prime-agent",
+      resolvedVersion: "1.0.70",
+    })
     expect(catalog.sandbox[0]).toMatchObject({
       resolutionPolicy: "floating",
       locallyResolved: false,
       releaseLockAvailable: true,
+      resolvedVersion: "1.0.70",
     })
+  })
+
+  it("accepts an older catalog without resolvedVersion and projects no installed version", () => {
+    const { resolvedVersion: _resolvedVersion, ...withoutResolvedVersion } = validCatalog.sandbox[0]!
+    const catalog = parseGuideCatalog(JSON.stringify({ ...validCatalog, sandbox: [withoutResolvedVersion] }))
+
+    expect(catalog.sandbox[0]?.resolvedVersion).toBeNull()
+    expect(guideCatalogEntries(catalog)[1]?.resolvedVersion).toBeUndefined()
+  })
+
+  it("rejects a malformed resolvedVersion", () => {
+    const broken = {
+      ...validCatalog,
+      sandbox: [{ ...validCatalog.sandbox[0], resolvedVersion: 42 }],
+    }
+    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
   })
 
   it("builds a workflow index keyed by ref", () => {
@@ -341,9 +364,7 @@ describe("parseGuideCatalog", () => {
         },
       ],
     }
-    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(
-      "must contain exactly one {{intent}} placeholder",
-    )
+    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow("must contain exactly one {{intent}} placeholder")
   })
 
   it("rejects a promptTemplate containing an unsupported placeholder alongside {{intent}}", () => {

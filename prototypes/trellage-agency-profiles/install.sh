@@ -109,5 +109,6 @@ if [[ ! -L "$command_path" ]]; then
   trap - EXIT
 fi
 
+node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
 printf 'Installed agx at %s\n' "$command_path"

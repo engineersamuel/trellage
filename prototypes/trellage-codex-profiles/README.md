@@ -74,7 +74,24 @@ cdx update youtube
 cdx update --all
 cdx repair superpowers
 cdx repair youtube
+cdx harness-update
 ```
+
+`cdx harness-update` updates the shared host Codex CLI through its built-in
+`codex update` command. It takes no profile argument and applies to every
+native Codex profile, including `youtube` and `superpowers`. It does not run
+plugin or skill updates, load the YouTube environment, or change profile homes.
+Older Codex installations without a built-in updater fail with a diagnostic;
+update those installations with their original package manager.
+
+`cdx skills-update PROFILE` copies and verifies managed skills from an
+existing cache after `trx skills update`. Plugin profiles use `native-common`;
+`youtube` uses the combined `native-common` and `youtube` snapshot at
+`${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cdx-youtube-skills`.
+Custom skills are preserved. Missing profiles or caches, invalid ownership,
+unsafe paths, and name collisions fail closed. This command never fetches,
+runs Codex, changes plugins or authentication, or loads the YouTube Varlock
+environment. `--native-auth skills-update` is not a valid launch.
 
 Use `cdx list --json` for the stable machine-readable catalog, including
 launcher, harness, profile kind, plugin or managed-skill identity, source,
@@ -94,7 +111,8 @@ skills. Unrelated marketplace caches are never scanned.
 After installing the native launchers and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
 harness/profile picker. Remaining arguments are forwarded to `cdx` unchanged
-after selection; `trx` never performs setup, repair, or update.
+after selection; the bare picker never performs setup, repair, or update.
+In `trx admin`, press `U`, then `y` to update the shared Codex harness.
 
 Profile launch always passes `--sandbox workspace-write -c
 sandbox_workspace_write.network_access=true` and disables

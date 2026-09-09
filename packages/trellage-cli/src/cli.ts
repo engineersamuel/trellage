@@ -18,9 +18,12 @@ import {
   sanitizeNpmRegistry,
   snapshotProfileReleaseLock,
   upgradeProfile,
+  type UpgradeOptions,
   verifyProfile,
 } from "./application.js"
 import { environmentMetadata } from "./environment.js"
+import { harnessVersionReport } from "./harness-version-report.js"
+import { skillsCheckReport } from "./skills-check-report.js"
 import { discoverProfileChoices } from "./profile-discovery.js"
 import { resolveSandboxHeadlessCapabilities } from "./headless-capabilities.js"
 import { formatProfileListHuman, toFullList, toSimplifiedList } from "./profile-list.js"
@@ -71,6 +74,13 @@ const locked = Options.boolean("locked")
 const json = Options.boolean("json").pipe(Options.withDefault(false))
 const jsonFull = Options.boolean("json-full").pipe(Options.withDefault(false))
 const full = Options.boolean("full").pipe(Options.withDefault(false))
+const refreshLatestOption = Options.boolean("refresh-latest").pipe(Options.withDefault(false))
+const strictHarnessOption = Options.boolean("strict-harness").pipe(
+  Options.withDefault(false),
+  Options.withDescription(
+    "Fail instead of retaining the previous harness when package or harness-source resolution fails.",
+  ),
+)
 
 const currentGitWorktree = (cwd: string) =>
   Effect.tryPromise({
@@ -180,7 +190,7 @@ const reportUpgradeFallbacks = (fallbacks: ReadonlyArray<string>) =>
     discard: true,
   })
 
-const upgradeAllProfiles = (target: DockerTarget, npmRegistry?: string) =>
+const upgradeAllProfiles = (target: DockerTarget, npmRegistry?: string, options: UpgradeOptions = {}) =>
   Effect.gen(function* () {
     const worktree = yield* currentGitWorktree(process.cwd())
     const profiles = yield* discoverProfileChoices(profileDiscoveryRoots(worktree)).pipe(
@@ -193,7 +203,7 @@ const upgradeAllProfiles = (target: DockerTarget, npmRegistry?: string) =>
     const results = yield* Effect.forEach(
       profiles,
       (profile) =>
-        upgradeProfile(profile.value, cacheHome, runtimeSupport, target, undefined, npmRegistry).pipe(
+        upgradeProfile(profile.value, cacheHome, runtimeSupport, target, undefined, npmRegistry, options).pipe(
           Effect.tap((result) => reportUpgradeFallbacks(result.fallbacks)),
           Effect.tap((result) => Console.log(`upgraded: ${profile.name} (${result.digest})`)),
           Effect.match({
@@ -219,25 +229,32 @@ const upgradeAllProfiles = (target: DockerTarget, npmRegistry?: string) =>
     return yield* Effect.void
   })
 
-const upgrade = Command.make("upgrade", { profile: profileArgument }, ({ profile }) =>
-  Option.isSome(profile) && profile.value === "all"
-    ? withDockerTarget((target) =>
-        configuredNpmRegistry.pipe(Effect.flatMap((npmRegistry) => upgradeAllProfiles(target, npmRegistry))),
-      )
-    : withDockerTarget((target) =>
-        selectedResolvedProfile(profile, target.platform).pipe(
-          Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-          Effect.flatMap((selected) =>
-            configuredNpmRegistry.pipe(
-              Effect.flatMap((npmRegistry) =>
-                upgradeProfile(selected, cacheHome, runtimeSupport, target, undefined, npmRegistry),
+const upgrade = Command.make(
+  "upgrade",
+  { profile: profileArgument, strictHarness: strictHarnessOption },
+  ({ profile, strictHarness }) =>
+    Option.isSome(profile) && profile.value === "all"
+      ? withDockerTarget((target) =>
+          configuredNpmRegistry.pipe(
+            Effect.flatMap((npmRegistry) => upgradeAllProfiles(target, npmRegistry, { strictHarness })),
+          ),
+        )
+      : withDockerTarget((target) =>
+          selectedResolvedProfile(profile, target.platform).pipe(
+            Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+            Effect.flatMap((selected) =>
+              configuredNpmRegistry.pipe(
+                Effect.flatMap((npmRegistry) =>
+                  upgradeProfile(selected, cacheHome, runtimeSupport, target, undefined, npmRegistry, {
+                    strictHarness,
+                  }),
+                ),
               ),
             ),
+            Effect.tap((result) => reportUpgradeFallbacks(result.fallbacks)),
+            Effect.flatMap((result) => Console.log(`upgraded: ${result.image} (${result.digest})`)),
           ),
-          Effect.tap((result) => reportUpgradeFallbacks(result.fallbacks)),
-          Effect.flatMap((result) => Console.log(`upgraded: ${result.image} (${result.digest})`)),
         ),
-      ),
 )
 
 const list = Command.make("list", { json, jsonFull, full }, ({ json: asJson, jsonFull: asJsonFull, full: asFull }) =>
@@ -291,6 +308,40 @@ const metadata = Command.make("metadata", { profile: profileArgument }, ({ profi
   ),
 )
 
+/**
+ * Read-only, non-mutating `LAUNCHER harness-version`-equivalent for a
+ * sandbox profile (see `harness-version-report.ts`) — reports the harness
+ * baked into this specific profile's locked/built image, never fabricated
+ * when no local lock is ready. Mirrors every native launcher's
+ * `harness-version` JSON envelope so the Admin UI's existing parsing and
+ * scheduling machinery applies unchanged.
+ */
+const runHarnessVersion = ({
+  profile,
+  refreshLatest,
+}: {
+  readonly profile: Option.Option<string>
+  readonly refreshLatest: boolean
+}) =>
+  withDockerTarget((target) =>
+    selectedResolvedProfile(profile, target.platform).pipe(
+      Effect.flatMap((selected) => harnessVersionReport(selected, target.platform, cacheHome, {}, { refreshLatest })),
+      Effect.flatMap((result) => Console.log(JSON.stringify(result))),
+    ),
+  )
+
+const harnessVersionArguments = { profile: profileArgument, refreshLatest: refreshLatestOption }
+const harnessVersion = Command.make("harness-version", harnessVersionArguments, runHarnessVersion)
+
+const skillsCheck = Command.make("skills-check", { profile: profileArgument }, ({ profile }) =>
+  withDockerTarget((target) =>
+    selectedProfile(profile).pipe(
+      Effect.flatMap((selected) => skillsCheckReport(selected, target)),
+      Effect.flatMap((result) => Console.log(JSON.stringify(result))),
+    ),
+  ),
+)
+
 const ciVerify = Command.make("ci-verify", { profile: profileArgument }, ({ profile }) =>
   withDockerTarget((target) =>
     selectedResolvedProfile(profile, target.platform, "release").pipe(
@@ -324,8 +375,24 @@ const choices = Command.make("choices", {}, () =>
 )
 
 const root = Command.make("trellage-profile", {}, () =>
-  Console.log("Use validate, lock, build, upgrade, ci-verify, metadata, environment, choices, or list."),
-).pipe(Command.withSubcommands([validate, lock, build, upgrade, ciVerify, list, metadata, environment, choices]))
+  Console.log(
+    "Use validate, lock, build, upgrade, ci-verify, metadata, harness-version, skills-check, environment, choices, or list.",
+  ),
+).pipe(
+  Command.withSubcommands([
+    validate,
+    lock,
+    build,
+    upgrade,
+    ciVerify,
+    list,
+    metadata,
+    harnessVersion,
+    skillsCheck,
+    environment,
+    choices,
+  ]),
+)
 
 const cli = Command.run(root, { name: "Trellage profile compiler", version: "0.1.0" })
 

@@ -29,7 +29,24 @@ cldx
 cldx -p "Reply exactly CLDX_OK"
 cldx --model claude-sonnet-5 -p "Reply exactly CLDX_SONNET_OK"
 cldx repair
+cldx harness-update
 ```
+
+`cldx harness-update` updates the shared host Claude Code executable with its
+built-in updater. It takes no profile argument, requires no profile setup or
+running proxy, and does not run an agent session. It uses the shared runtime's
+credential-environment scrub without adding profile, model, or proxy settings.
+Updater output and failure status pass through unchanged.
+
+In `trx admin`, select `claude / default`, then press `U` and confirm with `y`.
+Native Claude updates remain separate from Claude container updates.
+
+`cldx skills-update default` copies and verifies only managed `native-common`
+skills after `trx skills update` refreshes the shared cache. It requires an
+existing owned profile. It preserves custom skills, authentication, settings,
+output styles, and session hooks. Missing caches, invalid ownership, unsafe
+paths, and name collisions fail closed. It never fetches, starts Claude, or
+checks or starts the proxy.
 
 The installer publishes `~/.local/bin/cldx` and owns its runtime beneath
 `~/.local/share/trellage/cldx/`. Claude profile state lives at:

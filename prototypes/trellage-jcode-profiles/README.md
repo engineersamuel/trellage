@@ -43,6 +43,13 @@ runtime, and records the exact installed version in the local
 network request. Only explicit `jcx update` resolves latest again, and a failed
 update preserves the last good installed version and receipt.
 
+`jcx skills-update default` copies and verifies only the refreshed
+`native-common` cache after `trx skills update`. It requires an existing owned
+profile and managed skill state. Custom skills, configuration, authentication,
+and runtime receipts are preserved. Missing caches, invalid ownership, unsafe
+paths, and name collisions fail closed. It never fetches, runs jcode, or
+checks or starts the proxy.
+
 Profile state lives at:
 
 ```text

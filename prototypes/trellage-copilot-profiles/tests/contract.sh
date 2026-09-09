@@ -46,7 +46,9 @@ profile_tree_hash() {
   ) | shasum -a 256 | awk '{print $1}'
 }
 
-fixture_root="$(mktemp -d)"
+fixture_root="$prototype_root/.contract-fixture.$$"
+[[ ! -e "$fixture_root" && ! -L "$fixture_root" ]] || fail "fixture path already exists: $fixture_root"
+mkdir -m 0700 "$fixture_root"
 cleanup() {
   rm -rf "$fixture_root"
 }
@@ -67,6 +69,19 @@ set -euo pipefail
 if [[ "${1-}" == --version ]]; then
   printf 'copilot %s\n' "${FAKE_COPILOT_VERSION:-1.0.81}"
   exit 0
+fi
+
+if [[ "${1-}" == update ]]; then
+  jq -cn \
+    --arg home "$HOME" \
+    --arg copilotHome "${COPILOT_HOME-}" \
+    '$ARGS.named + {args: $ARGS.positional}' \
+    --args -- "$@" >>"${FAKE_COPILOT_HARNESS_UPDATE_LOG:?}"
+  printf 'fixture harness update\n'
+  if [[ "${FAKE_COPILOT_HARNESS_UPDATE_STATUS:-0}" != 0 ]]; then
+    printf 'fixture harness download failed\n' >&2
+  fi
+  exit "${FAKE_COPILOT_HARNESS_UPDATE_STATUS:-0}"
 fi
 
 : "${COPILOT_HOME:?COPILOT_HOME must be set}"
@@ -540,6 +555,37 @@ readme="$prototype_root/README.md"
 [[ -x "$installer" ]] || fail "missing executable installer: $installer"
 [[ -x "$uninstaller" ]] || fail "missing executable uninstaller: $uninstaller"
 assert_line 'Copilot authentication is inherited through the CLI native credential mechanism; cpx never copies ~/.copilot into a profile home.' "$readme"
+
+export FAKE_COPILOT_HARNESS_UPDATE_LOG="$fixture_root/harness-update.jsonl"
+profiles_before_harness_update="$(profile_tree_hash "$HOME/.local/share/trellage/profiles/copilot")"
+env -u COPILOT_HOME "$launcher" harness-update >"$fixture_root/harness-update.out"
+jq -se '
+  length == 1
+  and .[0].args == ["update", "stable"]
+  and .[0].home == env.HOME
+  and .[0].copilotHome == ""
+' "$FAKE_COPILOT_HARNESS_UPDATE_LOG" >/dev/null \
+  || fail 'harness-update did not delegate once to the host stable harness updater'
+[[ "$(profile_tree_hash "$HOME/.local/share/trellage/profiles/copilot")" == "$profiles_before_harness_update" ]] \
+  || fail 'harness-update changed profile homes'
+[[ ! -s "$fake_copilot_log" ]] || fail 'harness-update ran a profile or plugin command'
+assert_contains 'fixture harness update' "$fixture_root/harness-update.out"
+
+harness_update_status=0
+env -u COPILOT_HOME FAKE_COPILOT_HARNESS_UPDATE_STATUS=23 "$launcher" harness-update \
+  >"$fixture_root/harness-update-failure.out" 2>"$fixture_root/harness-update-failure.err" \
+  || harness_update_status=$?
+[[ "$harness_update_status" == 23 ]] || fail 'harness-update swallowed the updater exit status'
+assert_contains 'fixture harness download failed' "$fixture_root/harness-update-failure.err"
+for argument in hve --all --check; do
+  if "$launcher" harness-update "$argument" >"$fixture_root/harness-update-invalid.out" 2>&1; then
+    fail "harness-update accepted unsupported argument: $argument"
+  fi
+  assert_contains 'harness-update accepts no arguments' "$fixture_root/harness-update-invalid.out"
+done
+[[ "$(wc -l <"$FAKE_COPILOT_HARNESS_UPDATE_LOG" | tr -d ' ')" == 2 ]] \
+  || fail 'invalid harness-update arguments reached the harness updater'
+
 jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["awesome", "compound-engineering", "hve", "plannotator", "superpowers", "tufte-vdqi"]

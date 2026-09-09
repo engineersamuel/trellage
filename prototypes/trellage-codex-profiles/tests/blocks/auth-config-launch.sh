@@ -188,7 +188,7 @@ assert_usage_status() {
 }
 
 assert_usage_status native-missing --native-auth
-for lifecycle_profile in list setup doctor update repair --help -h; do
+for lifecycle_profile in list setup doctor update repair skills-update skills-check harness-version harness-update --help -h; do
   assert_usage_status "native-$lifecycle_profile" --native-auth "$lifecycle_profile" pstack
 done
 native_unknown_status=0
@@ -222,6 +222,10 @@ printf '%s\n' \
   '  update --check PROFILE|--all' \
   '  update PROFILE|--all' \
   '  repair PROFILE' \
+  '  skills-update PROFILE' \
+  '  skills-check PROFILE' \
+  '  harness-version' \
+  '  harness-update' \
   '  --native-auth PROFILE [CODEX_ARGS...]' \
   '  PROFILE [CODEX_ARGS...]' >"$expected_help"
 HOME="$fixture_root/home" "$fixture_launcher" --help >"$fixture_root/help.out" || fail 'help failed'
@@ -2703,7 +2707,7 @@ assert_command_fails config-create-race env HOME="$race_home" PATH="$fake_bin:$P
 race_config="$race_home/.local/share/trellage/profiles/codex/pstack/home/config.toml"
 grep -F -- 'cdx: failed to publish profile config without replacing existing file' \
   "$fixture_root/config-create-race.out" >/dev/null \
-  || fail 'config create race diagnostic differs'
+  || fail "config create race diagnostic differs: $(cat "$fixture_root/config-create-race.out")"
 cmp -s "$race_source" "$race_config" || fail 'config create race replaced concurrent bytes'
 [ "$(file_inode "$race_config")" = "$race_source_inode" ] \
   || fail 'config create race replaced concurrent inode'

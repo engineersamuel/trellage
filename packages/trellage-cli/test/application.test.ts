@@ -1287,7 +1287,7 @@ describe("transactional profile upgrade", () => {
     ])
   })
 
-  it("falls back to the verified locked source after latest resolution retries are exhausted", async () => {
+  it.each([false, true])("keeps verified plugin-source fallback when strictHarness=%s", async (strictHarness) => {
     const fixture = await prepare()
     const builtLocks: Array<ProfileLock> = []
     mocks.requests.length = 0
@@ -1304,7 +1304,11 @@ describe("transactional profile upgrade", () => {
     }
 
     await expect(
-      Effect.runPromise(upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services)),
+      Effect.runPromise(
+        upgradeProfile(fixture.profilePath, fixture.root, fixture.support, arm64Target, services, undefined, {
+          strictHarness,
+        }),
+      ),
     ).resolves.toEqual({
       image: fixture.canonical,
       digest: digest("9"),
@@ -1339,6 +1343,74 @@ describe("transactional profile upgrade", () => {
         fallbacks: ["harness pi@latest -> 17.2.6"],
       },
     )
+  })
+
+  it("preserves the image and receipt instead of retaining an old harness in strict mode", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "harness-upgrade-strict-"))
+    const profilePath = await writeReadyProfile(root, piSource, piLock("replaced-by-writeReadyProfile"), true)
+    const document = await Effect.runPromise(loadProfile(profilePath))
+    const receiptPath = resolutionReceiptPath(document, "linux/arm64", root)
+    const originalReceipt = await readFile(receiptPath, "utf8")
+    const support = runtimeSupport(root)
+    await writeFile(support.piEntry, "#!/bin/sh\n")
+    mocks.failPackageResolutions = 3
+    const buildCandidate = vi.fn<UpgradeServices["buildCandidate"]>(() => Effect.succeed(digest("9")))
+    const tagImage = vi.fn<UpgradeServices["tagImage"]>(() => Effect.void)
+    const services: UpgradeServices = {
+      buildCandidate,
+      imageExists: () => Effect.succeed(true),
+      tagImage,
+      removeImage: () => Effect.void,
+    }
+
+    await expect(
+      Effect.runPromise(
+        upgradeProfile(profilePath, root, support, arm64Target, services, undefined, { strictHarness: true }),
+      ),
+    ).rejects.toThrow(/package resolution failed/)
+    expect(buildCandidate).not.toHaveBeenCalled()
+    expect(tagImage).not.toHaveBeenCalled()
+    expect(await readFile(receiptPath, "utf8")).toBe(originalReceipt)
+  })
+
+  it("does not reuse a previous Headlong harness source in strict mode", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-headlong-strict-source-"))
+    const profilePath = await writeReadyProfile(
+      root,
+      headlongSource,
+      headlongLock("replaced-by-writeReadyProfile"),
+      true,
+    )
+    const document = await Effect.runPromise(loadProfile(profilePath))
+    const receiptPath = resolutionReceiptPath(document, "linux/arm64", root)
+    const originalReceipt = await readFile(receiptPath, "utf8")
+    const support = runtimeSupport(root)
+    await writeFile(support.headlongEntry, "#!/bin/sh\n")
+    mocks.sourceFiles = headlongFiles
+    mocks.requests.length = 0
+    mocks.failUnlockedSourceResolutions = 3
+    const buildCandidate = vi.fn<UpgradeServices["buildCandidate"]>(() => Effect.succeed(digest("9")))
+    const tagImage = vi.fn<UpgradeServices["tagImage"]>(() => Effect.void)
+    const services: UpgradeServices = {
+      buildCandidate,
+      imageExists: () => Effect.succeed(true),
+      tagImage,
+      removeImage: () => Effect.void,
+    }
+
+    await expect(
+      Effect.runPromise(
+        upgradeProfile(profilePath, root, support, arm64Target, services, undefined, { strictHarness: true }),
+      ),
+    ).rejects.toThrow(/source resolution failed/)
+    expect(mocks.requests).toEqual([
+      expect.not.objectContaining({ lockedCommit: expect.anything() }),
+      expect.not.objectContaining({ lockedCommit: expect.anything() }),
+      expect.not.objectContaining({ lockedCommit: expect.anything() }),
+    ])
+    expect(buildCandidate).not.toHaveBeenCalled()
+    expect(tagImage).not.toHaveBeenCalled()
+    expect(await readFile(receiptPath, "utf8")).toBe(originalReceipt)
   })
 
   it("does not reuse Headlong packages after the harness source advances", async () => {

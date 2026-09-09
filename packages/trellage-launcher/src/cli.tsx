@@ -39,6 +39,16 @@ import {
   type BasketPreviewResult,
 } from "./basket-preview.js"
 import { ForkPreviewApp, forkPreviewHelpText, parseForkPreviewArgv, type ForkPreviewResult } from "./fork-preview.js"
+import { AdminRoot } from "./admin-ui.js"
+import { AdminRunManager } from "./admin-run-manager.js"
+import { DoctorFailureDiagnosisProvider } from "./admin-diagnosis-provider.js"
+import {
+  confirmHarnessUpgrade,
+  InteractiveTerminalRequiredError,
+  normalizeInteractiveTerminalError,
+  runHarnessUpgradeCli,
+  type HarnessUpgradeConfirmation,
+} from "./harness-upgrade-cli.js"
 
 interface LaunchIntent {
   readonly id: string
@@ -571,9 +581,9 @@ const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
         if (output !== process.stderr) output.destroy()
       },
     }
-  } catch {
+  } catch (cause) {
     if (input !== undefined && input !== process.stdin) input.destroy()
-    throw new Error("an interactive controlling terminal is required")
+    throw normalizeInteractiveTerminalError(cause)
   }
 }
 
@@ -738,7 +748,87 @@ const runForkPreviewMode = async (): Promise<void> => {
   if (result.kind === "launched") process.stdout.write(`${result.lines.join("\n")}\n`)
 }
 
+const runAdminMode = async (): Promise<void> => {
+  const guideRoot = process.argv[3]
+  if (guideRoot === undefined) throw new Error("admin requires GUIDE_ROOT")
+  const catalog = readGuideCatalog()
+  const runner = createNodeCommandRunner()
+  const runManager = new AdminRunManager({ runner })
+  const diagnosisProvider = new DoctorFailureDiagnosisProvider()
+  const terminal = openInteractiveTerminalStreams()
+  const { input, output } = terminal
+  try {
+    const instance = render(
+      <AdminRoot
+        catalog={catalog}
+        runner={runner}
+        runManager={runManager}
+        guideRoot={guideRoot}
+        cwd={process.cwd()}
+        diagnosisProvider={diagnosisProvider}
+        herdrEnv={herdrEnvironment()}
+        routerCommandPath={process.env.TRELLAGE_TRX_COMMAND_PATH ?? "trx"}
+      />,
+      {
+        stdin: input,
+        stdout: output,
+        interactive: true,
+        exitOnCtrlC: false,
+        kittyKeyboard: { mode: "disabled" },
+        alternateScreen: true,
+        maxFps: 30,
+      },
+    )
+    await instance.waitUntilExit()
+  } finally {
+    terminal.close()
+  }
+}
+
+const confirmHarnessUpgradeMode = async (signal?: AbortSignal): Promise<HarnessUpgradeConfirmation> => {
+  let terminal: InteractiveTerminalStreams
+  try {
+    terminal = openInteractiveTerminalStreams()
+  } catch (error) {
+    if (error instanceof InteractiveTerminalRequiredError) return "unavailable"
+    throw error
+  }
+  try {
+    return await confirmHarnessUpgrade(terminal.input, terminal.output, signal)
+  } finally {
+    terminal.close()
+  }
+}
+
+const runHarnessUpgradeMode = async (): Promise<void> => {
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  process.on("SIGINT", cancel)
+  process.on("SIGTERM", cancel)
+  try {
+    process.exitCode = await runHarnessUpgradeCli({
+      argv: process.argv.slice(3),
+      readCatalog: () => readGuideCatalog(0),
+      runner: createNodeCommandRunner(),
+      cwd: process.cwd(),
+      routerCommandPath: process.env.TRELLAGE_TRX_COMMAND_PATH ?? "trx",
+      writeLine: (line) => {
+        process.stdout.write(`${line}\n`)
+      },
+      confirm: confirmHarnessUpgradeMode,
+      signal: controller.signal,
+    })
+  } finally {
+    process.removeListener("SIGINT", cancel)
+    process.removeListener("SIGTERM", cancel)
+  }
+}
+
 const main = async () => {
+  if (process.argv[2] === "upgrade") {
+    await runHarnessUpgradeMode()
+    return
+  }
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList()
     return
@@ -753,6 +843,10 @@ const main = async () => {
   }
   if (process.argv[2] === "guide") {
     await runGuideMode()
+    return
+  }
+  if (process.argv[2] === "admin") {
+    await runAdminMode()
     return
   }
   const catalog = parseLaunchCatalog(await readInput(process.argv[2]))

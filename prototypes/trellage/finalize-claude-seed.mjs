@@ -398,7 +398,9 @@ const collectGeneratedManagedPaths = async (seed) => {
   managed.push(...(await collectOptionalManagedDirectory(seed, "skills", "skills", "skills")))
   managed.push(...(await collectOptionalManagedDirectory(seed, "output-styles", "output-styles", "output styles")))
   managed.push(...(await collectOptionalManagedFile(seed, "CLAUDE.md", "instructions")))
-  return managed
+  return managed.filter((entry) =>
+    !["skills/.trellage-floating-skills", "skills/.trellage-floating-always-on.md"].includes(entry),
+  )
 }
 
 /** Fail unless the generated installed-plugin registry has exactly one matching user-scope record. */

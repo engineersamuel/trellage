@@ -28,8 +28,11 @@ Usage:
   prx setup [default]
   prx doctor [default]
   prx repair [default]
+  prx skills-update PROFILE
+  prx skills-check PROFILE
   prx shutdown [default]
   prx update [--check] [default]
+  prx harness-version
 
 Bare prx invocations use the default profile.
 EOF
@@ -102,6 +105,25 @@ ensure_floating_skills() {
     --target "$profile_home/skills" \
     || die 'failed to install floating skills'
 }
+
+skills_update_profile() {
+  local helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("${1:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  require_owned_profile
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$profile_home/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$profile_home/skills" \
+    || die 'failed to update cached skills: default'
+  [[ "${skill_args[0]}" == --fresh ]] || printf 'default: skills updated from cache\n'
+}
+
 # UID-global default socket is /tmp/prime-agent-$UID/daemon.sock. Resident workers
 # inherit the supervisor's env at spawn, and PRIME_AGENT_KERNEL_* is not on the
 # client→daemon allowlist — so a daemon started without our kernel paths keeps
@@ -1406,10 +1428,21 @@ await new Promise((resolve) => {
 
 stop_profile_daemon_socket() {
   local launch_js="$npm_prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
+  local fallback_launch_js="$HOME/.local/share/trellage/prx/npm-prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
 
   if ! daemon_socket_is_listening; then
     rm -f -- "$daemon_socket"
     return 1
+  fi
+  # The profile daemon is shared (keyed by $profile_root under $HOME), but
+  # npm_prefix is per-runtime_root. A daemon started by a different prx copy
+  # (another worktree, or the installed runtime) has no client module staged
+  # here yet. Fall back to the canonical installed runtime's copy before
+  # giving up: any recent daemon-launch.js build can speak the shutdown
+  # protocol to gracefully stop an already-running daemon.
+  if [[ ! -f "$launch_js" || -L "$launch_js" ]] \
+    && [[ -f "$fallback_launch_js" && ! -L "$fallback_launch_js" ]]; then
+    launch_js="$fallback_launch_js"
   fi
   [[ -f "$launch_js" && ! -L "$launch_js" ]] \
     || die "prime-agent daemon-launch module missing; run prx repair ($launch_js)"
@@ -1583,6 +1616,22 @@ check_for_update() {
   else
     printf 'prx update: %s -> %s available\n' "$current" "$latest"
   fi
+}
+
+print_harness_version_json() {
+  local installed='' latest=''
+
+  require_command mise
+  installed="$(read_installed_version 2>/dev/null || :)"
+  latest="$(resolve_latest_version 2>/dev/null || :)"
+  jq -cn --arg installed "$installed" --arg latest "$latest" '{
+    schemaVersion: 1,
+    launcher: "prx",
+    harness: "prime",
+    installed: ($installed | if length > 0 then . else null end),
+    latest: ($latest | if length > 0 then . else null end),
+    latestKnown: true
+  }'
 }
 
 update_profile() {
@@ -1809,6 +1858,18 @@ case "${1-}" in
     require_default_profile "${1-default}"
     run_locked "${command_name}_profile"
     ;;
+  skills-check)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-check requires PROFILE'
+    require_default_profile "$1"
+    skills_update_profile --fresh
+    ;;
+  skills-update)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-update requires PROFILE'
+    require_default_profile "$1"
+    skills_update_profile
+    ;;
   shutdown)
     shift
     [[ "$#" -le 1 ]] || die 'shutdown accepts only default'
@@ -1831,6 +1892,11 @@ case "${1-}" in
     else
       run_locked update_profile
     fi
+    ;;
+  harness-version)
+    shift
+    [[ "$#" -eq 0 ]] || die 'harness-version accepts no arguments'
+    print_harness_version_json
     ;;
   default)
     shift

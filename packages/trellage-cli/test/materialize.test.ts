@@ -215,6 +215,8 @@ describe("Hyperresearch seed normalization", () => {
     await mkdir(path.join(root, "skills", "hyperresearch"), { recursive: true })
     await mkdir(path.join(root, "agents"), { recursive: true })
     await writeFile(path.join(root, "skills", "hyperresearch", "SKILL.md"), "skill\n")
+    await writeFile(path.join(root, "skills", ".trellage-floating-skills"), "hyperresearch\n")
+    await writeFile(path.join(root, "skills", ".trellage-floating-always-on.md"), "")
     await writeFile(path.join(root, "agents", "hyperresearch-z.md"), "agent\n")
     await writeFile(path.join(root, "default-user-settings.json"), '{"outputStyle":"Rundown"}\n')
 

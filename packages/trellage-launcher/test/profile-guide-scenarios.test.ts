@@ -290,6 +290,7 @@ const sandboxCatalogEntry = async (
     resolutionPolicy: "floating",
     locallyResolved: false,
     releaseLockAvailable: false,
+    resolvedVersion: null,
     skillBundles: [],
     skillsMode: "floating",
     finalDigestLocked: false,
@@ -395,9 +396,9 @@ describe("profile guide recommendation scenarios", () => {
     expect(() => parseScenario({ ...baseScenario, expectedWorkflows: { "": "workflow-one" } }, 0)).toThrow(
       "scenario 0.expectedWorkflows profile key must be text",
     )
-    expect(() =>
-      parseScenario({ ...baseScenario, expectedWorkflows: { "native:test/one": " " } }, 0),
-    ).toThrow("scenario 0.expectedWorkflows.native:test/one must be text")
+    expect(() => parseScenario({ ...baseScenario, expectedWorkflows: { "native:test/one": " " } }, 0)).toThrow(
+      "scenario 0.expectedWorkflows.native:test/one must be text",
+    )
     expect(() =>
       parseScenario({ ...baseScenario, expectedWorkflows: { "native:test/two": "workflow-two" } }, 0),
     ).toThrow("scenario 0.expectedWorkflows key native:test/two must also appear in expectedProfiles")

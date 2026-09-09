@@ -103,6 +103,14 @@ the repository native rebuild, to update the launcher and catalog. Uninstall
 removes only the owned launcher runtime and exact command symlink; profile
 homes and Agency-managed state outside Trellage are preserved.
 
+## Skills-only updates
+
+After `trx skills update`, run `agx skills-update trellage-azure` to copy and
+verify the refreshed `native-common` cache in the existing owned profile.
+Custom skills are preserved. Missing caches, unowned state, and unsafe paths
+fail without starting Agency, checking Azure authentication, or changing
+profile configuration. This command never fetches or creates a profile.
+
 ## Test
 
 ```bash

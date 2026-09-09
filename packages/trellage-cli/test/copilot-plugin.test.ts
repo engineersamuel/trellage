@@ -819,12 +819,18 @@ describe("finalize-copilot-seed", () => {
     const fixture = await nativeSeed()
     await mkdir(path.join(fixture.seed, "skills", "caveman"), { recursive: true })
     await writeFile(path.join(fixture.seed, "skills", "caveman", "SKILL.md"), "ACTIVE EVERY RESPONSE\n")
+    await writeFile(path.join(fixture.seed, "skills", ".trellage-floating-skills"), "caveman\n")
+    await writeFile(path.join(fixture.seed, "skills", ".trellage-floating-always-on.md"), "ACTIVE EVERY RESPONSE\n")
     await writeFile(path.join(fixture.seed, "copilot-instructions.md"), "ACTIVE EVERY RESPONSE\n")
 
     await runFinalizer(fixture.seed)
 
     const managed = await readFile(path.join(fixture.seed, "managed-files.txt"), "utf8")
     expect(managed).toContain("skills/caveman/SKILL.md\n")
+    expect(managed).not.toContain(".trellage-floating")
+    await expect(readFile(path.join(fixture.seed, "skills", ".trellage-floating-skills"), "utf8")).resolves.toBe(
+      "caveman\n",
+    )
     expect(managed).toContain("copilot-instructions.md\n")
     await expect(readFile(path.join(fixture.seed, "skills", "caveman", "SKILL.md"), "utf8")).resolves.toBe(
       "ACTIVE EVERY RESPONSE\n",

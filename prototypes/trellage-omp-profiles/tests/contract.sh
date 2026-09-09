@@ -641,7 +641,7 @@ grep -Fqx 'omp: unknown --headless-policy: unsupported' \
 [[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$unknown_before" ]] \
   || fail 'unknown headless policy invoked OMP'
 
-if FAKE_OMP_EXIT_STATUS=37 "$command_path" --help >/dev/null 2>&1; then
+if FAKE_OMP_EXIT_STATUS=37 "$command_path" local --help >/dev/null 2>&1; then
   fail 'launcher swallowed upstream failure'
 else
   status=$?

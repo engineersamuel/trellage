@@ -70,6 +70,7 @@ expected_entries="$(printf '%s\n' \
   './lib' \
   './lib/native-codex' \
   './lib/trellage-session-bridge.py')"
+skills_entries="$(printf '%s\n%s' "$expected_entries" './native-skills.mjs')"
 legacy_entries="$(printf '%s\n' \
   '.' \
   './.fish-recovery' \
@@ -85,6 +86,7 @@ legacy_entries="$(printf '%s\n' \
   './lib' \
   './lib/native-codex')"
 [ "$actual_entries" = "$expected_entries" ] || [ "$actual_entries" = "$legacy_entries" ] \
+  || [ "$actual_entries" = "$skills_entries" ] \
   || refuse "refusing unexpected content in owned runtime: $install_root"
 [ -z "$(find "$install_root" -type l -print -quit)" ] \
   || refuse "refusing symlinked content in owned runtime: $install_root"
@@ -104,6 +106,10 @@ if [ -e "$install_root/lib/trellage-session-bridge.py" ]; then
   [ -f "$install_root/lib/trellage-session-bridge.py" ] \
     && [ ! -L "$install_root/lib/trellage-session-bridge.py" ] \
     || refuse "unsafe managed runtime file: $install_root/lib/trellage-session-bridge.py"
+fi
+if [ -e "$install_root/native-skills.mjs" ]; then
+  [ -f "$install_root/native-skills.mjs" ] && [ ! -L "$install_root/native-skills.mjs" ] \
+    || refuse "unsafe Native skills helper: $install_root/native-skills.mjs"
 fi
 expected_after="$(sed -n '1p' "$recovery/sha256-after")"
 [ "$(wc -l <"$recovery/original-mode" | tr -d ' ')" -eq 1 ] \

@@ -72,6 +72,7 @@ cpx update compound-engineering
 cpx update hve
 cpx update tufte-vdqi
 cpx update --all
+cpx harness-update
 cpx repair compound-engineering
 cpx repair hve
 cpx repair tufte-vdqi
@@ -95,7 +96,7 @@ skill count.
 After installing the native launchers and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
 harness/profile picker. Remaining arguments are forwarded to `cpx` unchanged
-after selection; `trx` never performs setup, repair, or update.
+after selection; the bare picker never performs setup, repair, or update.
 
 Profile launches always pass `--autopilot --allow-all --no-ask-user`, so
 Copilot runs autonomously without waiting for permission or user-input prompts.
@@ -114,6 +115,18 @@ and removes forbidden Superpowers variants without updating healthy plugins.
 Cataloged retired plugin identities are removed during setup, launch, update,
 and repair. Updates remain explicit and use native Copilot
 marketplace/plugin commands.
+
+`cpx harness-update` updates the host Copilot CLI shared by all `cpx`
+profiles. It runs Copilot's own `update stable` command, preserves its
+output and exit status, and does not change profile homes or plugins.
+It is separate from `cpx update PROFILE`, which updates plugins only.
+
+`cpx skills-update PROFILE` copies and verifies only the existing shared
+`native-common` skill cache. Run `trx skills update` first to refresh it.
+The profile and its managed skill state must already exist. Custom skills
+are preserved; unsafe paths, invalid ownership, and name collisions fail
+closed. This command never fetches, runs Copilot, changes plugins, or changes
+authentication files or permissions.
 
 The `plannotator` profile installs
 `plannotator-effective-html@effective-html` from

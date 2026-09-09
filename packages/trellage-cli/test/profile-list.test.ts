@@ -100,6 +100,7 @@ describe("profile list DTOs", () => {
           resolutionPolicy: "floating",
           locallyResolved: true,
           releaseLockAvailable: true,
+          resolvedVersion: "0.147.0",
           skillBundles: ["sandbox-common"],
           skillsMode: "floating",
           finalDigestLocked: false,
@@ -141,6 +142,7 @@ describe("profile list DTOs", () => {
     expect(entry?.locked).toBe(false)
     expect(entry?.locallyResolved).toBe(false)
     expect(entry?.releaseLockAvailable).toBe(false)
+    expect(entry?.resolvedVersion).toBeNull()
     expect(entry?.headless).toEqual(resolveSandboxHeadlessCapabilities("codex", null))
     expect(entry?.herdrCompatibility).toEqual({ status: "untested" })
   })
@@ -163,6 +165,7 @@ describe("profile list DTOs", () => {
 
     expect(entry?.locked).toBe(false)
     expect(entry?.releaseLockAvailable).toBe(true)
+    expect(entry?.resolvedVersion).toBeNull()
   })
 
   it("publishes the current Claude marketplace contract and fails closed on later drift", () => {

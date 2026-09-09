@@ -282,7 +282,8 @@ cmp -s "$recovery/removed-line" \
 assert_no_install_staging "$install_home"
 
 rm "$install_home/.local/share/trellage/cdx/lib/native-codex" \
-  "$install_home/.local/share/trellage/cdx/lib/trellage-session-bridge.py"
+  "$install_home/.local/share/trellage/cdx/lib/trellage-session-bridge.py" \
+  "$install_home/.local/share/trellage/cdx/native-skills.mjs"
 rmdir "$install_home/.local/share/trellage/cdx/lib"
 legacy_marketplace_dir="$install_home/.local/share/trellage/cdx/marketplaces/hve-core/.agents/plugins"
 mkdir -p "$legacy_marketplace_dir"

@@ -53,6 +53,20 @@ build inputs.
 ./trellage lock ../../profiles/codex-superpowers/profile.toml
 ```
 
+## Check skill updates
+
+```bash
+./trellage skills-check codex-superpowers
+```
+
+This read-only check compares fresh configured skills with the installed
+image. It resolves an exact local image ID, copies the baked skill directory
+from an owned temporary stopped container, and removes the temporary resources.
+It does not start a session, rebuild an image, or change a profile or receipt.
+Missing images and ambiguous ownership evidence in older images report
+`unknown`, not `current`. New image builds include managed ownership and
+instruction evidence for subsequent checks.
+
 ## Build
 
 Resolve approved stable inputs, fetch current skill content, and import the
@@ -209,7 +223,7 @@ trellage shell|start|stop|doctor|destroy [--profile PROFILE]
 trellage validate [PROFILE]
 trellage lock [--update] [PROFILE]
 trellage build [--locked] [PROFILE]
-trellage upgrade [PROFILE|all]
+trellage upgrade [--strict-harness] [PROFILE|all]
 
 trellage                    # select a profile, then start its interactive harness
 trellage --profile NAME     # directly launch one profile
@@ -234,6 +248,14 @@ the new local receipt and image. If VPN or upstream access blocks one profile,
 its existing receipt and image remain intact, the remaining profiles still
 run, and the command exits nonzero with a failure summary. Every image build
 resolves selected skill bundles from current default-branch content.
+
+Add `--strict-harness` to require successful harness package and harness-source
+resolution, including Headlong's source revision.
+If resolution fails, the command reports the cause and keeps the existing
+image and receipt instead of rebuilding with the previous harness version.
+This mode still honors configured version pins and permits verified plugin-source
+and base-image fallback. Without the flag, upgrades retain their existing
+reported fallback behavior.
 
 ### Remote Execution (Azure)
 

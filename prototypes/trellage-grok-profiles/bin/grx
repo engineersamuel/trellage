@@ -116,7 +116,11 @@ usage() {
     '  grx doctor PROFILE' \
     '  grx update --check PROFILE|--all' \
     '  grx update PROFILE|--all' \
-    '  grx repair PROFILE'
+    '  grx repair PROFILE' \
+    '  grx skills-update PROFILE' \
+    '  grx skills-check PROFILE' \
+    '  grx harness-version' \
+    '  grx harness-update'
 }
 
 require_command() {
@@ -153,6 +157,26 @@ verify_repairable_floating_skills() {
     --bundle native-common \
     --target "$(profile_home "$profile")/skills" \
     || die "floating skills cannot be repaired safely: $profile"
+}
+
+skills_update_profile() {
+  local profile="$1" helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("${2:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills" \
+    || die "failed to update cached skills: $profile"
+  [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile"
 }
 
 single_json_document() {
@@ -267,6 +291,66 @@ grok_version_if_available() {
   version="$(printf '%s\n' "$output" | extract_semver)"
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
   printf '%s\n' "$version"
+}
+
+print_harness_version_json() {
+  local executable installed output current latest latest_diagnostic
+
+  executable="$(command -v grok 2>/dev/null || :)"
+  installed="$(grok_version_if_available)"
+  latest=''
+  latest_diagnostic=''
+  if [[ "$executable" != */* || ! -x "$executable" ]]; then
+    latest_diagnostic='grok latest-version check could not find the installed executable'
+  elif ! output="$("$executable" update --check --json 2>/dev/null)"; then
+    latest_diagnostic='grok latest-version check failed'
+  else
+    current="$(jq -er '
+      select(
+        type == "object"
+        and .channel == "stable"
+        and .error == null
+        and (.currentVersion | type) == "string"
+        and (.latestVersion | type) == "string"
+      )
+      | .currentVersion
+    ' <<<"$output" 2>/dev/null || :)"
+    latest="$(jq -er '
+      select(
+        type == "object"
+        and .channel == "stable"
+        and .error == null
+        and (.currentVersion | type) == "string"
+        and (.latestVersion | type) == "string"
+      )
+      | .latestVersion
+    ' <<<"$output" 2>/dev/null || :)"
+    if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ \
+      || ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      latest=''
+      latest_diagnostic='grok latest-version check returned invalid JSON'
+    elif [[ -z "$installed" || "$current" != "$installed" ]]; then
+      latest=''
+      latest_diagnostic='grok latest-version check did not match the installed version'
+    fi
+  fi
+  jq -cn \
+    --arg installed "$installed" \
+    --arg latest "$latest" \
+    --arg latestDiagnostic "$latest_diagnostic" '
+    {
+      schemaVersion: 1,
+      launcher: "grx",
+      harness: "grok",
+      installed: ($installed | if length > 0 then . else null end),
+      latest: ($latest | if length > 0 then . else null end),
+      latestKnown: ($latest | length > 0)
+    }
+    | if ($latestDiagnostic | length) > 0
+      then . + {latestDiagnostic: $latestDiagnostic}
+      else .
+      end
+  '
 }
 
 conservative_headless() {
@@ -1952,6 +2036,14 @@ case "$command_name" in
     resolve_grok
     repair_profile "$1"
     ;;
+  skills-check)
+    [ "$#" -eq 1 ] || die 'skills-check requires PROFILE'
+    skills_update_profile "$1" --fresh
+    ;;
+  skills-update)
+    [ "$#" -eq 1 ] || die 'skills-update requires PROFILE'
+    skills_update_profile "$1"
+    ;;
   update)
     if [ "${1:-}" = '--check' ]; then
       [ "$#" -eq 2 ] || die 'update --check requires PROFILE or --all'
@@ -1963,6 +2055,15 @@ case "$command_name" in
       resolve_grok
       for_selected_profiles "$1" update_profile
     fi
+    ;;
+  harness-version)
+    [ "$#" -eq 0 ] || die 'harness-version accepts no arguments'
+    print_harness_version_json
+    ;;
+  harness-update)
+    [ "$#" -eq 0 ] || die 'harness-update accepts no arguments'
+    resolve_grok
+    exec "$grok_executable" update --stable
     ;;
   *)
     launch_profile "$command_name" "$@"

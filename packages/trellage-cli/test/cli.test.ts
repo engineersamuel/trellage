@@ -8,8 +8,10 @@ import { describe, expect, it, vi } from "vitest"
 const cliHarness = vi.hoisted(() => ({
   main: undefined as unknown,
   selected: [] as Array<string>,
+  harnessVersionSelected: [] as Array<string>,
   upgraded: [] as Array<string>,
   registries: [] as Array<string | undefined>,
+  strictHarness: [] as Array<boolean>,
   guide: {
     schemaVersion: 1,
     capabilities: ["test"],
@@ -71,14 +73,35 @@ vi.mock("../src/application.js", async (importOriginal) => {
       _target: unknown,
       _services: unknown,
       npmRegistry: string | undefined,
+      options: { readonly strictHarness?: boolean } = {},
     ) =>
       Effect.gen(function* () {
         cliHarness.upgraded.push(profilePath)
         cliHarness.registries.push(npmRegistry)
+        cliHarness.strictHarness.push(options.strictHarness === true)
         if (profilePath === "/profiles/beta/profile.toml") {
           return yield* Effect.fail(new actual.ApplicationError({ message: "VPN blocked beta" }))
         }
-        return { image: `image:${path.basename(path.dirname(profilePath))}`, digest: "sha256:updated" }
+        return { image: `image:${path.basename(path.dirname(profilePath))}`, digest: "sha256:updated", fallbacks: [] }
+      }),
+  }
+})
+
+vi.mock("../src/harness-version-report.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/harness-version-report.js")>()
+  const { Effect } = await import("effect")
+  return {
+    ...actual,
+    harnessVersionReport: (profilePath: string) =>
+      Effect.sync(() => {
+        cliHarness.harnessVersionSelected.push(profilePath)
+        return {
+          schemaVersion: 1 as const,
+          harness: "claude",
+          installed: "2.1.222",
+          latest: "2.1.230",
+          latestKnown: true,
+        }
       }),
   }
 })
@@ -173,19 +196,23 @@ const runMetadata = async (
   }
 }
 
-const runUpgradeAll = async (): Promise<{
+const runUpgradeAll = async (
+  args: ReadonlyArray<string> = ["all"],
+): Promise<{
   readonly upgraded: ReadonlyArray<string>
   readonly registries: ReadonlyArray<string | undefined>
+  readonly strictHarness: ReadonlyArray<boolean>
   readonly exitCode: number | undefined
 }> => {
   const originalArgv = process.argv
   const originalExitCode = process.exitCode
   try {
-    process.argv = [process.execPath, "trellage-profile", "upgrade", "all"]
+    process.argv = [process.execPath, "trellage-profile", "upgrade", ...args]
     process.exitCode = undefined
     cliHarness.main = undefined
     cliHarness.upgraded = []
     cliHarness.registries = []
+    cliHarness.strictHarness = []
     vi.resetModules()
     await import("../src/cli.js")
     if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
@@ -193,6 +220,7 @@ const runUpgradeAll = async (): Promise<{
     return {
       upgraded: [...cliHarness.upgraded],
       registries: [...cliHarness.registries],
+      strictHarness: [...cliHarness.strictHarness],
       exitCode: process.exitCode,
     }
   } finally {
@@ -230,11 +258,51 @@ const runList = async (
   }
 }
 
+const runHarnessVersion = async (
+  args: ReadonlyArray<string>,
+): Promise<{
+  readonly selected: ReadonlyArray<string>
+  readonly logs: ReadonlyArray<string>
+  readonly exitCode: number | undefined
+}> => {
+  const originalArgv = process.argv
+  const originalExitCode = process.exitCode
+  const logs: Array<string> = []
+  const originalLog = console.log
+  try {
+    process.argv = [process.execPath, "trellage-profile", "harness-version", ...args]
+    process.exitCode = undefined
+    cliHarness.main = undefined
+    cliHarness.harnessVersionSelected = []
+    console.log = (...parts: Array<unknown>) => {
+      logs.push(parts.map(String).join(" "))
+    }
+    vi.resetModules()
+    await import("../src/cli.js")
+    if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
+    await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
+    return { selected: [...cliHarness.harnessVersionSelected], logs, exitCode: process.exitCode }
+  } finally {
+    process.argv = originalArgv
+    process.exitCode = originalExitCode
+    console.log = originalLog
+  }
+}
+
 describe("CLI identity and failure reporting", () => {
+  it.each(["explicit.toml", "all"])("passes strict harness resolution through upgrade %s", async (profile) => {
+    const result = await runUpgradeAll([profile, "--strict-harness"])
+
+    expect(result.upgraded).toHaveLength(profile === "all" ? 3 : 1)
+    expect(result.strictHarness).toEqual(result.upgraded.map(() => true))
+    expect(result.exitCode ?? 0).toBe(profile === "all" ? 1 : 0)
+  })
+
   it("uses Trellage identity and prints the full failure cause tree", () => {
     expect.soft(cliSource).toContain('Command.make("trellage-profile"')
     expect.soft(cliSource).toContain('Command.make("choices"')
     expect.soft(cliSource).toContain('Command.make("list"')
+    expect.soft(cliSource).toContain('Command.make("harness-version"')
     expect.soft(cliSource).toContain('Options.boolean("json")')
     expect.soft(cliSource).toContain('Options.boolean("json-full")')
     expect.soft(cliSource).toContain('Options.boolean("full")')
@@ -266,6 +334,20 @@ describe("CLI identity and failure reporting", () => {
     const selected = await runMetadata([], { harness: "legacy.toml" })
     expect(selected).toHaveLength(1)
     expect(selected[0]).not.toBe(legacy)
+  })
+
+  it("resolves the profile and prints the harness-version report", async () => {
+    const result = await runHarnessVersion(["explicit.toml"])
+
+    expect(result.exitCode ?? 0).toBe(0)
+    expect(result.selected).toEqual([path.resolve("explicit.toml")])
+    expect(JSON.parse(result.logs.join("\n"))).toEqual({
+      schemaVersion: 1,
+      harness: "claude",
+      installed: "2.1.222",
+      latest: "2.1.230",
+      latestKnown: true,
+    })
   })
 
   it("lists simplified and full JSON catalogs", async () => {
@@ -327,6 +409,7 @@ describe("CLI identity and failure reporting", () => {
     await expect(runUpgradeAll()).resolves.toEqual({
       upgraded: ["/profiles/alpha/profile.toml", "/profiles/beta/profile.toml", "/profiles/gamma/profile.toml"],
       registries: expect.arrayContaining([expect.any(String)]),
+      strictHarness: [false, false, false],
       exitCode: 1,
     })
   })

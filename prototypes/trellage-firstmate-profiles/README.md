@@ -28,6 +28,7 @@ fmx inventory PROFILE --json        live readiness and fleet state
 fmx setup PROFILE|--all             install the pinned runtime and profile state
 fmx doctor PROFILE                  diagnose without changing anything
 fmx repair PROFILE                  restore managed state
+fmx skills-update PROFILE           copy refreshed cached skills only
 fmx update [--check] PROFILE|--all  move the runtime to the catalog pin
 ```
 
@@ -39,6 +40,14 @@ Network use, stated precisely:
 - `update --check` never fetches. It is a purely offline receipt comparison.
 - `repair` fetches **only** when it must restage the runtime; otherwise it is
   local.
+- `skills-update PROFILE` never fetches. After `trx skills update`, it copies
+  and verifies only managed `native-common` skills in that profile's existing
+  captain and known worker homes. It requires profile ownership and an idle
+  fleet, and holds the existing mutation lock. Every home is checked before
+  the first sync. Custom skills, authentication, source pins, receipts, and
+  fleet configuration are preserved. Missing caches, invalid ownership,
+  unsafe paths, and name collisions fail closed. It does not run Firstmate
+  or Claude, check GitHub authentication, or check or start the proxy.
 - `doctor` never fetches Firstmate source, but it does run the GitHub identity
   check (`gh auth status`), local Firstmate prerequisite detection, and the
   shared Claude health checks (local proxy), so it is not fully offline.

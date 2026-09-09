@@ -16,7 +16,12 @@ const guideCaptureSources: ReadonlyArray<GuideCaptureSource> = [
   "terminal",
   "capture-queue",
 ]
-const guideCaptureConfidences: ReadonlyArray<GuideCaptureConfidence> = ["user-selected", "exact", "snapshot", "user-curated"]
+const guideCaptureConfidences: ReadonlyArray<GuideCaptureConfidence> = [
+  "user-selected",
+  "exact",
+  "snapshot",
+  "user-curated",
+]
 
 const appendTruncatedChunk = (target: Array<Buffer>, buffer: Buffer, currentLength: number): number => {
   target.push(buffer)
@@ -98,6 +103,8 @@ export interface CommandRunOptions {
   readonly cwd?: string
   readonly env?: NodeJS.ProcessEnv
   readonly timeoutMs?: number
+  /** Allows read-only checks to finish resource cleanup before forced termination. */
+  readonly terminationGraceMs?: number
   readonly signal?: AbortSignal
   readonly outputOverflow?: "terminate" | "truncate"
   /**
@@ -577,8 +584,7 @@ export const buildGuideLaunchCommand = (
         executable: selectedProfile.commandPath,
         args: nativePromptArgs(selectedProfile, baseArgs, normalizedDelivery.prompt),
       },
-      promptHandling:
-        selectedProfile.headlessPrompt || selectedProfile.launcher === "cdx" ? "argv" : "manual-paste",
+      promptHandling: selectedProfile.headlessPrompt || selectedProfile.launcher === "cdx" ? "argv" : "manual-paste",
     }
   }
   return {
@@ -617,10 +623,7 @@ const nativeArgvPromptSeparator: Record<string, ReadonlyArray<string>> = {
  * prompt has no such handshake. Only launchers with no known prompt flag fall
  * back to the paste path.
  */
-export const buildHerdrGuideLaunch = (
-  selectedProfile: SelectedProfile,
-  prompt: string,
-): BuiltHerdrGuideLaunch => {
+export const buildHerdrGuideLaunch = (selectedProfile: SelectedProfile, prompt: string): BuiltHerdrGuideLaunch => {
   if (selectedProfile.surface === "sandbox") {
     return {
       command: buildGuideLaunchCommand(selectedProfile, { mode: "argv", prompt }).command,
@@ -701,7 +704,7 @@ export const createNodeCommandRunner = (): CommandRunner => ({
         child.kill("SIGTERM")
         forceKillTimer = setTimeout(() => {
           child.kill("SIGKILL")
-        }, forcedKillDelayMs)
+        }, options?.terminationGraceMs ?? forcedKillDelayMs)
       }
 
       const appendChunk = (target: Array<Buffer>, chunk: Buffer | string, stream: "stdout" | "stderr") => {
@@ -713,11 +716,7 @@ export const createNodeCommandRunner = (): CommandRunner => ({
             requestTermination("output-limit", stream)
             return
           }
-          const boundedLength = appendTruncatedChunk(
-            target,
-            buffer,
-            stream === "stdout" ? stdoutLength : stderrLength,
-          )
+          const boundedLength = appendTruncatedChunk(target, buffer, stream === "stdout" ? stdoutLength : stderrLength)
           if (stream === "stdout") stdoutLength = boundedLength
           else stderrLength = boundedLength
           return
@@ -919,80 +918,77 @@ export const runInteractiveCommand = async (
     })
   })
 
-  const optionalBoundedText = (value: unknown, name: string, maximum: number): string | undefined => {
-    if (value === undefined) return undefined
-    const text = getString(value, name)
-    if (text.length > maximum || controlCharacters.test(text)) {
-      throw new GuideLaunchError({
-        kind: "invalid-output",
-        message: `${name} is invalid`,
-      })
-    }
-    return text
+const optionalBoundedText = (value: unknown, name: string, maximum: number): string | undefined => {
+  if (value === undefined) return undefined
+  const text = getString(value, name)
+  if (text.length > maximum || controlCharacters.test(text)) {
+    throw new GuideLaunchError({
+      kind: "invalid-output",
+      message: `${name} is invalid`,
+    })
   }
+  return text
+}
 
-  const parseGuideCaptureProvenance = (value: unknown): GuideCaptureProvenance | undefined => {
-    if (value === undefined) return undefined
-    const fields = getRecord(value, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture")
-    const allowedKeys = new Set(["source", "confidence", "agent", "sessionId", "identitySource", "profile"])
-    const unexpectedKeys = Object.keys(fields).filter((key) => !allowedKeys.has(key))
-    if (unexpectedKeys.length > 0) {
-      throw new GuideLaunchError({
-        kind: "invalid-output",
-        message: `TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture contains unsupported keys: ${unexpectedKeys.join(", ")}`,
-      })
-    }
-    const source = getString(fields.source, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.source")
-    const confidence = getString(fields.confidence, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.confidence")
-    if (!guideCaptureSources.includes(source as GuideCaptureSource)) {
-      throw new GuideLaunchError({
-        kind: "invalid-output",
-        message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture has an unsupported source",
-      })
-    }
-    if (!guideCaptureConfidences.includes(confidence as GuideCaptureConfidence)) {
-      throw new GuideLaunchError({
-        kind: "invalid-output",
-        message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture has an unsupported confidence",
-      })
-    }
-    const expectedConfidence = source === "selection"
+const parseGuideCaptureProvenance = (value: unknown): GuideCaptureProvenance | undefined => {
+  if (value === undefined) return undefined
+  const fields = getRecord(value, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture")
+  const allowedKeys = new Set(["source", "confidence", "agent", "sessionId", "identitySource", "profile"])
+  const unexpectedKeys = Object.keys(fields).filter((key) => !allowedKeys.has(key))
+  if (unexpectedKeys.length > 0) {
+    throw new GuideLaunchError({
+      kind: "invalid-output",
+      message: `TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture contains unsupported keys: ${unexpectedKeys.join(", ")}`,
+    })
+  }
+  const source = getString(fields.source, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.source")
+  const confidence = getString(fields.confidence, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.confidence")
+  if (!guideCaptureSources.includes(source as GuideCaptureSource)) {
+    throw new GuideLaunchError({
+      kind: "invalid-output",
+      message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture has an unsupported source",
+    })
+  }
+  if (!guideCaptureConfidences.includes(confidence as GuideCaptureConfidence)) {
+    throw new GuideLaunchError({
+      kind: "invalid-output",
+      message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture has an unsupported confidence",
+    })
+  }
+  const expectedConfidence =
+    source === "selection"
       ? "user-selected"
       : source === "terminal"
         ? "snapshot"
         : source === "capture-queue"
           ? "user-curated"
           : "exact"
-    if (confidence !== expectedConfidence) {
-      throw new GuideLaunchError({
-        kind: "invalid-output",
-        message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture source and confidence do not match",
-      })
-    }
-    const agent = optionalBoundedText(fields.agent, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.agent", 128)
-    const sessionId = optionalBoundedText(
-      fields.sessionId,
-      "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.sessionId",
-      128,
-    )
-    const identitySource = optionalBoundedText(
-      fields.identitySource,
-      "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.identitySource",
-      128,
-    )
-    const profile = optionalBoundedText(fields.profile, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.profile", 128)
-    return {
-      source: source as GuideCaptureSource,
-      confidence: confidence as GuideCaptureConfidence,
-      ...(agent === undefined ? {} : { agent }),
-      ...(sessionId === undefined ? {} : { sessionId }),
-      ...(identitySource === undefined ? {} : { identitySource }),
-      ...(profile === undefined ? {} : { profile }),
-    }
+  if (confidence !== expectedConfidence) {
+    throw new GuideLaunchError({
+      kind: "invalid-output",
+      message: "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture source and confidence do not match",
+    })
   }
+  const agent = optionalBoundedText(fields.agent, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.agent", 128)
+  const sessionId = optionalBoundedText(fields.sessionId, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.sessionId", 128)
+  const identitySource = optionalBoundedText(
+    fields.identitySource,
+    "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.identitySource",
+    128,
+  )
+  const profile = optionalBoundedText(fields.profile, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.profile", 128)
+  return {
+    source: source as GuideCaptureSource,
+    confidence: confidence as GuideCaptureConfidence,
+    ...(agent === undefined ? {} : { agent }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(identitySource === undefined ? {} : { identitySource }),
+    ...(profile === undefined ? {} : { profile }),
+  }
+}
 
-  const parsePopupHerdrContext = (source: string): HerdrContext => {
-    const fields = parseJsonRecord(source, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON")
+const parsePopupHerdrContext = (source: string): HerdrContext => {
+  const fields = parseJsonRecord(source, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON")
   const allowedKeys = new Set(["schemaVersion", "surface", "workspaceId", "paneId", "cwd", "capture"])
   const unexpectedKeys = Object.keys(fields).filter((key) => !allowedKeys.has(key))
   if (unexpectedKeys.length > 0) {

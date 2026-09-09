@@ -19,6 +19,10 @@ Usage:
   cldx setup [default]
   cldx doctor [default]
   cldx repair [default]
+  cldx skills-update PROFILE
+  cldx skills-check PROFILE
+  cldx harness-version
+  cldx harness-update
 
 Bare cldx invocations use the default profile.
 EOF
@@ -351,6 +355,42 @@ case "${1-}" in
     [[ "$#" -le 1 ]] || die "usage: cldx $command_name [default]"
     require_default_profile "${1-default}"
     "${command_name}_profile"
+    ;;
+  skills-check)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-check requires PROFILE'
+    require_default_profile "$1"
+    "$native_claude" --help | grep -q 'skills-check' || die 'refresh the Native Claude runtime for skills-check'
+    exec "$native_claude" skills-check \
+      --home "$profile_home" --marker "$profile_marker" \
+      --marker-value "$profile_marker_value"
+    ;;
+  skills-update)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-update requires PROFILE'
+    require_default_profile "$1"
+    "$native_claude" skills-update \
+      --home "$profile_home" --marker "$profile_marker" \
+      --marker-value "$profile_marker_value"
+    printf 'default: skills updated from cache\n'
+    ;;
+  harness-version)
+    shift
+    [[ "$#" -eq 0 ]] || die 'harness-version accepts no arguments'
+    installed="$("$native_claude" version)"
+    jq -cn --arg installed "$installed" '{
+      schemaVersion: 1,
+      launcher: "cldx",
+      harness: "claude",
+      installed: ($installed | if length > 0 then . else null end),
+      latest: null,
+      latestKnown: false
+    }'
+    ;;
+  harness-update)
+    shift
+    [[ "$#" -eq 0 ]] || die 'harness-update accepts no arguments'
+    exec "$native_claude" harness-update
     ;;
   default)
     shift

@@ -130,5 +130,6 @@ if [[ ! -L "$command_path" ]]; then
   ln -s "$installed_launcher" "$command_path"
 fi
 
+node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
 printf 'Installed cpx at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"

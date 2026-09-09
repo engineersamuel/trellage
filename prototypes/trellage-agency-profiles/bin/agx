@@ -57,6 +57,8 @@ Usage:
   agx inventory PROFILE --json
   agx doctor PROFILE
   agx repair PROFILE
+  agx skills-update PROFILE
+  agx skills-check PROFILE
 
 Launcher updates are installed by re-running install.sh or the Trellage native
 rebuild. Agency and Azure MCP never auto-update during an agx launch.
@@ -331,6 +333,27 @@ verify_floating_skills() {
     || die "floating skills are unhealthy: $profile"
 }
 
+skills_update_profile() {
+  local profile="$1" helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("${2:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  require_profile "$profile"
+  require_safe_profile_path "$profile"
+  verify_profile_marker "$profile"
+  [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills" \
+    || die "failed to update cached skills: $profile"
+  [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile"
+}
+
 agency_executable() {
   local discovered='' resolved standard_path
   standard_path="$HOME/.config/agency/CurrentVersion/agency"
@@ -583,6 +606,14 @@ case "$command_name" in
   repair)
     [[ "$#" -eq 1 ]] || die 'repair requires PROFILE'
     repair_profile "$1"
+    ;;
+  skills-check)
+    [[ "$#" -eq 1 ]] || die 'skills-check requires PROFILE'
+    skills_update_profile "$1" --fresh
+    ;;
+  skills-update)
+    [[ "$#" -eq 1 ]] || die 'skills-update requires PROFILE'
+    skills_update_profile "$1"
     ;;
   -h|--help|help)
     usage

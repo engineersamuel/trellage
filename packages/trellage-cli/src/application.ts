@@ -78,6 +78,10 @@ export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly cause?: unknown
 }> {}
 
+export interface UpgradeOptions {
+  readonly strictHarness?: boolean
+}
+
 export interface UpgradeServices {
   readonly buildCandidate: (
     document: ProfileDocument,
@@ -1320,6 +1324,16 @@ const injectFloatingSkills = (
     const destination = floatingSkillDestination(document, context)
     yield* io("cannot initialize floating skill destination", () => mkdir(destination, { recursive: true }))
     yield* copyFloatingSkills(snapshot, destination, names)
+    yield* io("cannot write baked floating skill ownership", () =>
+      writeFile(path.join(destination, ".trellage-floating-skills"), `${names.join("\n")}\n`, { flag: "wx" }),
+    )
+    yield* io("cannot record baked floating instructions", async () =>
+      writeFile(
+        path.join(destination, ".trellage-floating-always-on.md"),
+        await readFile(path.join(snapshot, "always-on.md")),
+        { flag: "wx" },
+      ),
+    )
     yield* appendFloatingInstructions(document, context, snapshot)
     yield* updateFloatingManagedManifests(document, context, snapshot, names)
   })
@@ -1613,8 +1627,10 @@ const upgradeResolvers = (
   current: ProfileLock | undefined,
   base: LockResolvers,
   fallbacks: Array<string>,
+  options: UpgradeOptions,
 ): LockResolvers => {
   const canFallback = current !== undefined && lockIsReady(document, current, base.platform)
+  const canFallbackPackages = canFallback && options.strictHarness !== true
   const currentPackageRequest =
     current === undefined
       ? undefined
@@ -1627,6 +1643,7 @@ const upgradeResolvers = (
     resolveSource: (request) =>
       retryUpgradeStep(base.resolveSource(request)).pipe(
         Effect.catchAll((cause) => {
+          if (options.strictHarness === true && request.kind === "harness") return Effect.fail(cause)
           if (!canFallback || !request.update || request.previousCommit === undefined) return Effect.fail(cause)
           return retryUpgradeStep(base.resolveSource({ ...request, update: false })).pipe(
             Effect.tap(() =>
@@ -1641,7 +1658,7 @@ const upgradeResolvers = (
       retryUpgradeStep(base.resolvePackages(request)).pipe(
         Effect.catchAll((cause) => {
           if (
-            !canFallback ||
+            !canFallbackPackages ||
             currentPackageRequest === undefined ||
             !packageResolutionInputsMatch(currentPackageRequest, request) ||
             current.packages.harness.kind !== request.kind ||
@@ -1756,6 +1773,7 @@ export const upgradeProfile = (
   target: DockerTarget,
   services?: UpgradeServices,
   npmRegistry?: string,
+  options: UpgradeOptions = {},
 ): Effect.Effect<
   { readonly image: string; readonly digest: string; readonly fallbacks: ReadonlyArray<string> },
   ApplicationError
@@ -1812,6 +1830,7 @@ export const upgradeProfile = (
               current,
               productionResolvers(xdgCacheHome, platform, npmRegistry),
               fallbacks,
+              options,
             )
             const candidateLock = yield* compileLock(document, current, true, resolvers).pipe(
               Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
@@ -1978,7 +1997,7 @@ export const upgradeProfile = (
  * Canonical production tag. Keyed on profile name and platform, so a worktree
  * profile and the deployed profile of the same name share it.
  */
-const profileImage = (name: string, platform: Platform): string =>
+export const profileImage = (name: string, platform: Platform): string =>
   `trellage-profile-${name}-${platformIdentity(platform)}:locked`
 
 const shortDigest = (value: string): string => value.replace(/^sha256:/, "").slice(0, 12)

@@ -70,6 +70,17 @@ atomically into each profile's `agent/community-skills` directory without
 removing unrelated skills. Run `trx skills update` to refresh both the common
 native skills and this OMP-only cache from the approved default branches.
 
+Then run `omp skills-update local` and `omp skills-update copilot` to update
+the existing copies. Each command checks both caches and both managed targets
+before writing `agent/skills` (`native-common`) or `agent/community-skills`
+(`omp-community`). Custom skills are preserved. Missing caches or copies,
+invalid ownership, unsafe paths, and name collisions fail closed. The command
+never fetches, starts OMP or the proxy, changes configuration or authentication,
+or updates the harness. Older profiles without a managed community copy need
+their normal explicit upgrade first.
+`omp --help` shows launcher commands without starting OMP. Use
+`omp local --help` or `omp copilot --help` for upstream OMP help.
+
 Setup and repair refuse symlinked paths or unrelated existing profile files.
 They preserve other profile state, including sessions. `doctor` is read-only
 and checks managed bytes and the receipt-selected `mise` installation. The `local`

@@ -43,12 +43,15 @@ fi
 [[ ! -L "$installed_model_settings" \
   && ( ! -e "$installed_model_settings" || -f "$installed_model_settings" ) ]] \
   || refuse "unsafe managed model settings helper: $installed_model_settings"
+[[ ! -L "$install_root/native-skills.mjs" \
+  && ( ! -e "$install_root/native-skills.mjs" || -f "$install_root/native-skills.mjs" ) ]] \
+  || refuse "unsafe Native skills helper: $install_root/native-skills.mjs"
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
     || refuse "refusing to remove unrelated command: $command_path"
   rm "$command_path"
 fi
-rm -f -- "$installed_launcher" "$installed_catalog" "$installed_model_settings" "$ownership_marker"
+rm -f -- "$installed_launcher" "$installed_catalog" "$installed_model_settings" "$ownership_marker" "$install_root/native-skills.mjs"
 rmdir "$runtime_bin" "$install_root" 2>/dev/null \
   || refuse "managed runtime contains unrelated files: $install_root"
 printf 'Uninstalled agx; profile homes were preserved.\n'

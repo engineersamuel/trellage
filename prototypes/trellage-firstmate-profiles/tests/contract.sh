@@ -482,6 +482,8 @@ esac
 FAKE_PREREQUISITE_HELPER
 chmod 0755 "$mirror/prototypes/trellage-firstmate-profiles/lib/fmx-prerequisites"
 cp "$fake_native_claude" "$mirror/prototypes/trellage-claude-common/native-claude"
+cp "$repo_root/prototypes/trellage-claude-common/native-skills.mjs" \
+  "$mirror/prototypes/trellage-claude-common/native-skills.mjs"
 chmod 0755 "$mirror/prototypes/trellage-claude-common/native-claude"
 cp "$repo_root/scripts/trellage-session-bridge.py" "$mirror/scripts/trellage-session-bridge.py"
 cp "$repo_root/scripts/install-floating-skills-runtime.sh" "$mirror/scripts/"
@@ -1533,6 +1535,20 @@ jq -e --arg manifestDigest "$expected_manifest_digest" \
 ' "$logs/inventory-pstack.json" >/dev/null \
   || fail 'the second profile did not report the same overlay identity'
 
+for profile in default pstack-workers; do
+  fmx harness-version "$profile" >"$logs/harness-version-$profile.json" \
+    || fail "harness-version failed for $profile"
+  jq -e --arg commit "$pinned_commit" '
+    .schemaVersion == 1
+    and .launcher == "fmx"
+    and .harness == "firstmate"
+    and .installed == $commit
+    and .latest == $commit
+    and .latestKnown == true
+  ' "$logs/harness-version-$profile.json" >/dev/null \
+    || fail "harness-version did not report the installed and catalog versions for $profile"
+done
+
 # Inventory verifies that no mutating generation changed across its complete
 # snapshot. Force a publication while the first doctor pass is held; inventory
 # must discard that pass and retry against the new generation.
@@ -1627,6 +1643,14 @@ fmx update --check default >"$logs/update-check-stale.out" 2>&1 \
   || fail 'update --check on a stale profile failed'
 assert_contains 'is stale (installed 111111111111, catalog pin 4ad8cbaeafc1' \
   "$logs/update-check-stale.out"
+fmx harness-version default >"$logs/harness-version-stale.json" \
+  || fail 'harness-version on a stale profile failed'
+jq -e --arg latest "$pinned_commit" '
+  .installed == "1111111111111111111111111111111111111111"
+  and .latest == $latest
+  and .latestKnown == true
+' "$logs/harness-version-stale.json" >/dev/null \
+  || fail 'harness-version did not preserve the stale Firstmate installed commit'
 fmx update default >"$logs/update-stale.out" 2>&1 || fail 'update on a stale profile failed'
 assert_contains "fmx update: default 111111111111 -> 4ad8cbaeafc1 installed" \
   "$logs/update-stale.out"
@@ -3699,5 +3723,39 @@ if [[ -f "$repo_root/prototypes/trellage-claude-common/native-claude" ]]; then
   [[ -x "$real_home/.local/share/trellage/fmx/lib/native-claude" ]] \
     || fail 'the repository install did not stage the shared Claude helper'
 fi
+
+# ===========================================================================
+# 15. Running $launcher directly from the checked-out repository, uninstalled.
+#
+# `mise run trx admin` (and trx generally, via TRELLAGE_TRX_SOURCE_ROOT) runs
+# every native launcher's bin/ script directly against the repository source
+# tree, never through install.sh. A merged-but-never-locally-installed
+# profile must still resolve its shared helpers from repository-sibling
+# source locations instead of dying as if the launcher package were broken.
+# ===========================================================================
+
+uninstalled_home="$fixture_root/uninstalled-home"
+mkdir -p "$uninstalled_home"
+status=0
+env -i HOME="$uninstalled_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
+  GH_CONFIG_DIR="$uninstalled_home/.config/gh" \
+  FAKE_GH_STATUS=1 \
+  GH_TOKEN=fixture-gh-token GITHUB_TOKEN=fixture-github-token \
+  COPILOT_GITHUB_TOKEN=fixture-copilot-token \
+  COPILOT_PROXY_GITHUB_TOKEN=fixture-proxy-token \
+  GH_ENTERPRISE_TOKEN=fixture-enterprise-token \
+  GITHUB_ENTERPRISE_TOKEN=fixture-github-enterprise-token \
+  COPILOT_TOKEN=fixture-copilot-only-token \
+  "$launcher" setup default \
+  >"$logs/uninstalled-setup.out" 2>"$logs/uninstalled-setup.err" || status=$?
+[[ "$status" == 1 ]] \
+  || fail "uninstalled setup exited $status instead of 1 (unauthenticated gh)"
+if grep -q 'missing shared native Claude helper' "$logs/uninstalled-setup.err"; then
+  fail 'uninstalled setup could not resolve the shared native Claude helper from the repository'
+fi
+if grep -q 'missing fmx prerequisite manifest' "$logs/uninstalled-setup.err"; then
+  fail 'uninstalled setup could not resolve the prerequisite manifest from the repository'
+fi
+assert_contains 'GitHub CLI' "$logs/uninstalled-setup.err"
 
 printf 'fmx contract: PASS\n'

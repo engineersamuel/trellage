@@ -26,6 +26,7 @@ export interface FullProfileListEntry {
   readonly resolutionPolicy: "floating"
   readonly locallyResolved: boolean
   readonly releaseLockAvailable: boolean
+  readonly resolvedVersion: string | null
   readonly skillBundles: ReadonlyArray<string>
   readonly skillsMode: "floating" | "locked"
   readonly finalDigestLocked: boolean
@@ -104,6 +105,7 @@ export const toFullList = (
       resolutionPolicy: choice.resolutionPolicy ?? "floating",
       locallyResolved: entryReadiness.locallyResolved,
       releaseLockAvailable: entryReadiness.releaseLockAvailable,
+      resolvedVersion: entryReadiness.resolvedVersion,
       skillBundles: choice.skillBundles ?? [],
       skillsMode: choice.skillsMode ?? ((choice.skillBundles?.length ?? 0) > 0 ? "floating" : "locked"),
       finalDigestLocked:

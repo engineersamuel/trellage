@@ -125,5 +125,6 @@ if [[ ! -L "$command_path" ]]; then
   mv "$command_stage" "$command_path"
 fi
 
+node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
 printf 'Installed cldx at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"

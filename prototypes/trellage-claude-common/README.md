@@ -2,14 +2,14 @@
 
 Shared Native Claude runtime consumed by owned Claude launchers: `cldx` and
 `fmx` are both current consumers of this stable internal API. This package
-owns exactly one file: `native-claude`, an executable Bash script that
-centralizes every piece of Claude-profile logic that must behave
-identically across launchers.
+owns `native-claude`, an executable Bash script that centralizes shared
+Claude-profile logic, and `native-skills.mjs`, the cache-only skill sync
+adapter installed in all ten Native launcher runtimes.
 
 ## Internal API
 
-`native-claude` exposes a stable, flag-based CLI. All four common flags are
-required unless noted; `launch` also requires the `--` separator:
+`native-claude` exposes a stable, flag-based CLI. `prepare`, `doctor`, and
+`launch` require all four common flags; `launch` also requires the `--` separator:
 
 ```
 native-claude prepare --home ABS --marker ABS --marker-value VALUE \
@@ -22,6 +22,9 @@ native-claude launch --home ABS --marker ABS --marker-value VALUE \
   --bridge enabled|disabled [--profile NAME] -- [CLAUDE_ARGS...]
 
 native-claude version      # prints the normalized semantic version (X.Y.Z)
+native-claude harness-update # updates the shared host Claude executable
+native-claude skills-update --home ABS --marker ABS --marker-value VALUE \
+  [--mode --check|--sync]
 native-claude model-id     # prints the default model id (claude-opus-5)
 native-claude exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 ```
@@ -56,6 +59,31 @@ Flags:
 the resolved `claude` binary in place (replacing the `native-claude`
 process), preserving PID/signal transparency for the calling launcher.
 
+`harness-update` takes no flags or profile arguments. It applies the shared
+provider/token scrub, resolves the host Claude executable, and execs the
+built-in updater without preparing a profile or requiring the proxy.
+
+`skills-update` requires an existing owned home and managed skills. It applies
+the same provider/token scrub and preserves `GH_CONFIG_DIR`. It copies only
+the managed `native-common` skills from the shared cache, then verifies the
+copy. `--mode --check` performs only the safety checks; the default is
+`--sync`. It does not run Claude, check the proxy, change authentication,
+settings, onboarding, output styles, or session bridges.
+
+`native-skills.mjs MANAGER --sync CACHE TARGET [CACHE TARGET...]` uses the
+floating-skills manager's `syncSnapshot` and `verifyTarget` APIs. It never
+fetches. All caches and managed targets are checked before the first write.
+Missing profiles or caches, invalid ownership manifests, managed symlinks,
+hard links, and paths writable by other users cause a nonzero exit. Custom
+skills and other unmanaged files are preserved; name collisions fail closed.
+The default Native cache is
+`${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills`.
+Run `trx skills update` before a profile sync to refresh the cache.
+
+The offline cross-launcher contract is
+`node --test prototypes/trellage-claude-common/tests/native-skills.test.mjs`
+from the repository root. The Claude profile contract also runs it.
+
 `exec-clean` is the internal preprocessor boundary for another executable
 inside the same installed runtime. It applies the shared provider/token scrub,
 validates an absolute, non-symlink command under `TRELLAGE_CLAUDE_RUNTIME_ROOT`,
@@ -84,7 +112,7 @@ assets/schemas live outside this shared runtime's scope.
 
 ## Provider/token scrub contract
 
-`prepare`, `doctor`, `launch`, `exec-clean`, and the standalone `version` verb each call a
+`prepare`, `doctor`, `launch`, `exec-clean`, `harness-update`, `skills-update`, and the standalone `version` verb each call a
 single shared `scrub_provider_environment` as early as possible — before
 any external child process this runtime spawns (`claude --version`, the
 floating-skills `ensure` (node), the copilot-proxy-rs health/model probes
@@ -182,6 +210,22 @@ Callers must export:
   when running uninstalled from a worktree.
 
 ## Owned launcher responsibilities
+
+All Native launchers expose `skills-check PROFILE`. It fetches current skill
+sources into disposable staging under the caller's working directory and
+compares the contents with the profile's managed skills. It does not publish a
+shared cache, copy profile skills, install packages, or change authentication.
+The installed skills CLI is required for generic skill sources. Missing
+dependencies, unsafe paths, and fetch failures are errors, not proof of currency.
+Each target reports JSON with `kind: "current"` or `kind: "available"`; Firstmate
+reports each captain/worker target. Staging is removed after success, failure,
+or handled cancellation.
+
+Admin checks launcher help before calling this verb. Older launcher or helper
+installations need a normal Trellage launcher refresh before checks can work.
+Container profiles use `trellage skills-check PROFILE` instead. That check
+reads the actual immutable local image, not a leftover build context.
+Missing images or ambiguous ownership evidence remain unknown.
 
 An owned launcher (like `cldx`) remains a thin delegator: it owns its own
 public CLI surface, catalog validation, `list`/`inventory` projections, and

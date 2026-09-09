@@ -557,7 +557,9 @@ export const managedClaudeFiles = async (root: string): Promise<ReadonlyArray<st
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
   }
-  return found.sort()
+  return found
+    .filter((entry) => !["skills/.trellage-floating-skills", "skills/.trellage-floating-always-on.md"].includes(entry))
+    .sort()
 }
 
 export const hyperresearchSeedInstallArguments = (

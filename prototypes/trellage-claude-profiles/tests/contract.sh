@@ -230,6 +230,49 @@ grep -Fq 'cldx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err
   || fail 'unsupported Trellage event contract diagnostic differs'
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
+harness_update_log="$fixture_root/harness-update.log"
+run_harness_update() {
+  FAKE_CLAUDE_LOG="$harness_update_log" "$command_path" harness-update "$@"
+}
+
+printf 'Claude updated\n' >"$fixture_root/updater-stdout.txt"
+FAKE_PROXY_HEALTH=down FAKE_CLAUDE_STDOUT_FILE="$fixture_root/updater-stdout.txt" \
+  run_harness_update >"$fixture_root/harness-update.out" \
+  || fail 'harness update required profile setup or a running proxy'
+jq -es '
+  length == 1
+  and .[0].args == ["update"]
+  and .[0].configDir == ""
+  and .[0].authToken == ""
+  and .[0].baseUrl == ""
+  and .[0].opus == ""
+  and .[0].sonnet == ""
+  and .[0].haiku == ""
+' "$harness_update_log" >/dev/null || fail 'harness update launched a profile instead of the host updater'
+cmp -s "$fixture_root/updater-stdout.txt" "$fixture_root/harness-update.out" \
+  || fail 'harness update hid updater output'
+[[ ! -e "$profile_root" ]] || fail 'harness update created a profile'
+[[ ! -e "$HOME/.claude" ]] || fail 'harness update created host authentication or configuration'
+
+printf 'fixture Claude updater failed\n' >"$fixture_root/updater-stderr.txt"
+update_status=0
+FAKE_CLAUDE_EXIT_STATUS=23 FAKE_CLAUDE_STDERR_FILE="$fixture_root/updater-stderr.txt" \
+  run_harness_update >"$fixture_root/harness-update-failed.out" 2>"$fixture_root/harness-update-failed.err" || update_status=$?
+[[ "$update_status" == 23 ]] || fail "harness update exit was $update_status, expected 23"
+cmp -s "$fixture_root/updater-stderr.txt" "$fixture_root/harness-update-failed.err" \
+  || fail 'harness update hid the updater diagnostic'
+
+calls_before="$(wc -l <"$harness_update_log" | tr -d ' ')"
+for argument in default --all --check; do
+  if run_harness_update "$argument" >"$fixture_root/harness-update-invalid.out" 2>"$fixture_root/harness-update-invalid.err"; then
+    fail "harness update accepted $argument"
+  fi
+  grep -Fxq 'cldx: harness-update accepts no arguments' "$fixture_root/harness-update-invalid.err" \
+    || fail 'harness update argument diagnostic differs'
+done
+[[ "$(wc -l <"$harness_update_log" | tr -d ' ')" == "$calls_before" ]] \
+  || fail 'invalid harness update arguments reached Claude'
+
 "$command_path" default -p 'self-heal-before-setup-probe' \
   >"$fixture_root/self-heal.out" 2>"$fixture_root/self-heal.err" \
   || fail 'launch before explicit setup did not self-heal'
@@ -670,6 +713,22 @@ done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$version_scrub_dump" \
   || fail 'version scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
 
+update_scrub_dump="$fixture_root/update-scrub-dump.txt"
+env "${poison_env_assignments[@]}" \
+  GH_CONFIG_DIR=/fixture/gh-config-marker \
+  FAKE_CLAUDE_ENV_DUMP="$update_scrub_dump" \
+  FAKE_CLAUDE_LOG="$harness_update_log" \
+  "$command_path" harness-update >"$fixture_root/update-scrub-check.out" \
+  || fail 'scrub-check harness update failed'
+for scrubbed_var in "${scrubbed_var_names[@]}"; do
+  grep -q "^${scrubbed_var}=" "$update_scrub_dump" \
+    && fail "harness update did not scrub $scrubbed_var"
+done
+grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$update_scrub_dump" \
+  || fail 'harness update scrubbed file-backed gh configuration'
+grep -Fqx "HOME=$HOME" "$update_scrub_dump" \
+  || fail 'harness update changed HOME'
+
 # --- bridge separation: prepare --bridge disabled must remove exactly the
 # Trellage-managed hook and executable, and must never touch unrelated
 # SessionStart hook entries.
@@ -1000,5 +1059,8 @@ jq -e --arg cmd "$expected_spaced_hook_command" \
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'
 [[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstaller left command'
 [[ -d "$profile_home" ]] || fail 'uninstaller removed profile state'
+
+node --test "$root/../trellage-claude-common/tests/native-skills.test.mjs" \
+  || fail 'Native skills-only contracts failed'
 
 printf 'cldx contract: PASS\n'
