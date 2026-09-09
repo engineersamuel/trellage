@@ -78884,7 +78884,7 @@ var confirmAugment = (state) => {
   const returnStage = state.augmentViewReturnStage === "prompt-review" /* PromptReview */ ? "prompt-review" /* PromptReview */ : "intent" /* Intent */;
   return startAugmentJob(state, kind, state.textDraft, returnStage, 1);
 };
-var reduceAugment = (state, action) => {
+var reduceAugmentNavigation = (state, action) => {
   switch (action.type) {
     case "augment/open" /* AugmentOpen */:
       return openAugment(state);
@@ -78957,6 +78957,7 @@ var reduceAugmentJob = (state, action) => {
       return state;
   }
 };
+var reduceAugment = (state, action) => reduceAugmentJob(reduceAugmentRun(reduceAugmentNavigation(state, action), action), action);
 var recommendationsState = (state, recommendations, usedLiteralFallback) => ({
   ...state,
   stage: "recommendations" /* Recommendations */,
@@ -79523,13 +79524,13 @@ var domainReducerByActionType = {
   ["augment/open" /* AugmentOpen */]: reduceAugment,
   ["augment/move" /* AugmentMove */]: reduceAugment,
   ["augment/confirm" /* AugmentConfirm */]: reduceAugment,
-  ["augment/progress" /* AugmentProgress */]: reduceAugmentRun,
-  ["augment/output" /* AugmentOutput */]: reduceAugmentRun,
-  ["augment/succeeded" /* AugmentSucceeded */]: reduceAugmentRun,
-  ["augment/failed" /* AugmentFailed */]: reduceAugmentRun,
-  ["augment/retry" /* AugmentRetry */]: reduceAugmentJob,
-  ["augment/apply" /* AugmentApply */]: reduceAugmentJob,
-  ["augment/discard" /* AugmentDiscard */]: reduceAugmentJob,
+  ["augment/progress" /* AugmentProgress */]: reduceAugment,
+  ["augment/output" /* AugmentOutput */]: reduceAugment,
+  ["augment/succeeded" /* AugmentSucceeded */]: reduceAugment,
+  ["augment/failed" /* AugmentFailed */]: reduceAugment,
+  ["augment/retry" /* AugmentRetry */]: reduceAugment,
+  ["augment/apply" /* AugmentApply */]: reduceAugment,
+  ["augment/discard" /* AugmentDiscard */]: reduceAugment,
   ["augment/back" /* AugmentBack */]: reduceAugment,
   ["match/retry" /* MatchRetry */]: reduceMatch,
   ["match/progress" /* MatchProgress */]: reduceMatchProgress,

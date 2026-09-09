@@ -971,9 +971,7 @@ const openAugment = (state: GuideUiState): GuideUiState => {
       : { ...state, stage: GuideUiStage.Augmenting, augmentViewReturnStage: state.stage }
   }
   if (state.stage === GuideUiStage.Intent) {
-    return state.textDraft.trim().length === 0
-      ? state
-      : openAugmentChooser(state, GuideUiStage.Intent, state.textDraft)
+    return state.textDraft.trim().length === 0 ? state : openAugmentChooser(state, GuideUiStage.Intent, state.textDraft)
   }
   // From the prompt page the draft is already the prompt, and the augmented
   // text goes back to that same page rather than to the intent editor.
@@ -995,7 +993,7 @@ const confirmAugment = (state: GuideUiState): GuideUiState => {
   return startAugmentJob(state, kind, state.textDraft, returnStage, 1)
 }
 
-const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+const reduceAugmentNavigation = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.AugmentOpen:
       return openAugment(state)
@@ -1082,7 +1080,8 @@ const reduceAugmentJob = (state: GuideUiState, action: GuideUiAction): GuideUiSt
       if (state.augmentJob === undefined) return state
       return {
         ...state,
-        stage: state.stage === GuideUiStage.Augmenting ? (state.augmentViewReturnStage ?? GuideUiStage.Intent) : state.stage,
+        stage:
+          state.stage === GuideUiStage.Augmenting ? (state.augmentViewReturnStage ?? GuideUiStage.Intent) : state.stage,
         augmentJob: undefined,
         augmentViewReturnStage: undefined,
       }
@@ -1092,6 +1091,9 @@ const reduceAugmentJob = (state: GuideUiState, action: GuideUiAction): GuideUiSt
       return state
   }
 }
+
+const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState =>
+  reduceAugmentJob(reduceAugmentRun(reduceAugmentNavigation(state, action), action), action)
 
 const recommendationsState = (
   state: GuideUiState,
@@ -1887,13 +1889,13 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.AugmentOpen]: reduceAugment,
   [GuideUiActionType.AugmentMove]: reduceAugment,
   [GuideUiActionType.AugmentConfirm]: reduceAugment,
-  [GuideUiActionType.AugmentProgress]: reduceAugmentRun,
-  [GuideUiActionType.AugmentOutput]: reduceAugmentRun,
-  [GuideUiActionType.AugmentSucceeded]: reduceAugmentRun,
-  [GuideUiActionType.AugmentFailed]: reduceAugmentRun,
-  [GuideUiActionType.AugmentRetry]: reduceAugmentJob,
-  [GuideUiActionType.AugmentApply]: reduceAugmentJob,
-  [GuideUiActionType.AugmentDiscard]: reduceAugmentJob,
+  [GuideUiActionType.AugmentProgress]: reduceAugment,
+  [GuideUiActionType.AugmentOutput]: reduceAugment,
+  [GuideUiActionType.AugmentSucceeded]: reduceAugment,
+  [GuideUiActionType.AugmentFailed]: reduceAugment,
+  [GuideUiActionType.AugmentRetry]: reduceAugment,
+  [GuideUiActionType.AugmentApply]: reduceAugment,
+  [GuideUiActionType.AugmentDiscard]: reduceAugment,
   [GuideUiActionType.AugmentBack]: reduceAugment,
   [GuideUiActionType.MatchRetry]: reduceMatch,
   [GuideUiActionType.MatchProgress]: reduceMatchProgress,
