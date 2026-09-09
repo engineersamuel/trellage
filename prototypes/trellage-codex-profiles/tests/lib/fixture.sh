@@ -35,6 +35,8 @@ case "$fixture_root" in
   "${TMPDIR:-/tmp}"/trellage-cdx-contract.*) ;;
   *) printf 'refusing unsafe fixture root: %s\n' "$fixture_root" >&2; exit 1 ;;
 esac
+# Project-local fixtures must not discover the surrounding repository as their workspace.
+export GIT_CEILING_DIRECTORIES="$fixture_root"
 
 tracked_async_pids=()
 tracked_async_pid_count=0
@@ -139,6 +141,7 @@ mkdir -p \
   "$fixture_youtube_skills_cache/skills/youtube-full"
 cp "$launcher" "$fixture_launcher"
 cp "$common_launcher" "$fixture_common_launcher"
+cp "$root/../trellage-claude-common/native-skills.mjs" "$fixture_profiles/native-skills.mjs"
 cp "$root/../../scripts/trellage-session-bridge.py" "$fixture_session_bridge"
 cp "$catalog" "$fixture_catalog"
 install -m 0555 "$root/../../scripts/floating-skills.mjs" \

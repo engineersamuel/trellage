@@ -28,6 +28,8 @@ Usage:
   prx setup [default]
   prx doctor [default]
   prx repair [default]
+  prx skills-update PROFILE
+  prx skills-check PROFILE
   prx shutdown [default]
   prx update [--check] [default]
   prx harness-version
@@ -103,6 +105,25 @@ ensure_floating_skills() {
     --target "$profile_home/skills" \
     || die 'failed to install floating skills'
 }
+
+skills_update_profile() {
+  local helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("${1:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  require_owned_profile
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$profile_home/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$profile_home/skills" \
+    || die 'failed to update cached skills: default'
+  [[ "${skill_args[0]}" == --fresh ]] || printf 'default: skills updated from cache\n'
+}
+
 # UID-global default socket is /tmp/prime-agent-$UID/daemon.sock. Resident workers
 # inherit the supervisor's env at spawn, and PRIME_AGENT_KERNEL_* is not on the
 # client→daemon allowlist — so a daemon started without our kernel paths keeps
@@ -1836,6 +1857,18 @@ case "${1-}" in
     [[ "$#" -le 1 ]] || die "$command_name accepts only default"
     require_default_profile "${1-default}"
     run_locked "${command_name}_profile"
+    ;;
+  skills-check)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-check requires PROFILE'
+    require_default_profile "$1"
+    skills_update_profile --fresh
+    ;;
+  skills-update)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-update requires PROFILE'
+    require_default_profile "$1"
+    skills_update_profile
     ;;
   shutdown)
     shift

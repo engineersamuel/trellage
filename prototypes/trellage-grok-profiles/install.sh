@@ -26,6 +26,7 @@ install_root="$runtime_parent/grx"
 runtime_bin="$install_root/bin"
 installed_launcher="$runtime_bin/grx"
 installed_catalog="$install_root/catalog.json"
+installed_native_skills="$install_root/native-skills.mjs"
 ownership_marker="$install_root/.managed-by-trellage-grok-profiles"
 ownership_value='trellage-grok-profiles-v1'
 command_dir="$local_dir/bin"
@@ -85,13 +86,16 @@ if [ -e "$install_root" ]; then
     || refuse "refusing unsafe managed runtime path: $installed_catalog"
   [ -r "$installed_catalog" ] \
     || refuse "refusing unreadable owned runtime file: $installed_catalog"
+  [ ! -L "$installed_native_skills" ] \
+    && { [ ! -e "$installed_native_skills" ] || [ -f "$installed_native_skills" ]; } \
+    || refuse "unsafe Native skills helper: $installed_native_skills"
   for entry in \
     "$install_root"/.[!.]* \
     "$install_root"/..?* \
     "$install_root"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     case "$entry" in
-      "$runtime_bin"|"$installed_catalog"|"$ownership_marker") ;;
+      "$runtime_bin"|"$installed_catalog"|"$ownership_marker"|"$installed_native_skills") ;;
       *) refuse "refusing unexpected content in owned runtime: $entry" ;;
     esac
   done
@@ -535,5 +539,6 @@ fi
 
 publication_completed=true
 publication_active=false
+node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
 printf 'Installed grx at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"

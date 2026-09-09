@@ -94,6 +94,11 @@ export class AdminRunManager {
     this.inFlight.get(ref)?.controller.abort()
   }
 
+  /** Waits for the current run before a caller needs a new observation after a mutation. */
+  waitForIdle(ref: string): Promise<void> {
+    return this.inFlight.get(ref)?.promise ?? Promise.resolve()
+  }
+
   private startRun(ref: string, executable: string, args: ReadonlyArray<string>, timeoutMsOverride?: number): Promise<void> {
     const controller = new AbortController()
     const startedAt = this.now()

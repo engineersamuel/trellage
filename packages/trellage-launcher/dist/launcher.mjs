@@ -8391,14 +8391,14 @@ var require_react_reconciler_production = __commonJS({
       }
       var exports2 = {};
       "use strict";
-      var React16 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
+      var React17 = require_react(), Scheduler2 = require_scheduler(), assign = Object.assign, REACT_LEGACY_ELEMENT_TYPE = Symbol.for("react.element"), REACT_ELEMENT_TYPE = Symbol.for("react.transitional.element"), REACT_PORTAL_TYPE = Symbol.for("react.portal"), REACT_FRAGMENT_TYPE = Symbol.for("react.fragment"), REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode"), REACT_PROFILER_TYPE = Symbol.for("react.profiler"), REACT_CONSUMER_TYPE = Symbol.for("react.consumer"), REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref"), REACT_SUSPENSE_TYPE = Symbol.for("react.suspense"), REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list"), REACT_MEMO_TYPE = Symbol.for("react.memo"), REACT_LAZY_TYPE = Symbol.for("react.lazy");
       Symbol.for("react.scope");
       var REACT_ACTIVITY_TYPE = Symbol.for("react.activity");
       Symbol.for("react.legacy_hidden");
       Symbol.for("react.tracing_marker");
       var REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel");
       Symbol.for("react.view_transition");
-      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
+      var MAYBE_ITERATOR_SYMBOL = Symbol.iterator, REACT_CLIENT_REFERENCE = Symbol.for("react.client.reference"), isArrayImpl = Array.isArray, ReactSharedInternals = React17.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, rendererVersion = $$$config.rendererVersion, rendererPackageName = $$$config.rendererPackageName, extraDevToolsConfig = $$$config.extraDevToolsConfig, getPublicInstance = $$$config.getPublicInstance, getRootHostContext = $$$config.getRootHostContext, getChildHostContext = $$$config.getChildHostContext, prepareForCommit = $$$config.prepareForCommit, resetAfterCommit = $$$config.resetAfterCommit, createInstance = $$$config.createInstance;
       $$$config.cloneMutableInstance;
       var appendInitialChild = $$$config.appendInitialChild, finalizeInitialChildren = $$$config.finalizeInitialChildren, shouldSetTextContent = $$$config.shouldSetTextContent, createTextInstance = $$$config.createTextInstance;
       $$$config.cloneMutableTextInstance;
@@ -12970,7 +12970,7 @@ var require_backend = __commonJS({
                     return o2 && "function" == typeof Symbol && o2.constructor === Symbol && o2 !== Symbol.prototype ? "symbol" : typeof o2;
                   }, _typeof(o);
                 }
-                var ErrorStackParser = __webpack_require__2(206), React16 = __webpack_require__2(189), assign = Object.assign, ReactSharedInternals = React16.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"), hasOwnProperty = Object.prototype.hasOwnProperty, hookLog = [], primitiveStackCache = null;
+                var ErrorStackParser = __webpack_require__2(206), React17 = __webpack_require__2(189), assign = Object.assign, ReactSharedInternals = React17.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, REACT_CONTEXT_TYPE = Symbol.for("react.context"), REACT_MEMO_CACHE_SENTINEL = Symbol.for("react.memo_cache_sentinel"), hasOwnProperty = Object.prototype.hasOwnProperty, hookLog = [], primitiveStackCache = null;
                 function getPrimitiveStackCache() {
                   if (null === primitiveStackCache) {
                     var cache3 = /* @__PURE__ */ new Map();
@@ -13132,7 +13132,7 @@ var require_backend = __commonJS({
                     });
                     return value;
                   },
-                  useEffect: function useEffect9(create3) {
+                  useEffect: function useEffect10(create3) {
                     nextHook();
                     hookLog.push({
                       displayName: null,
@@ -13205,7 +13205,7 @@ var require_backend = __commonJS({
                     return [initialArg, function() {
                     }];
                   },
-                  useRef: function useRef6(initialValue) {
+                  useRef: function useRef7(initialValue) {
                     var hook = nextHook();
                     initialValue = null !== hook ? hook.memoizedState : {
                       current: initialValue
@@ -13220,7 +13220,7 @@ var require_backend = __commonJS({
                     });
                     return initialValue;
                   },
-                  useState: function useState9(initialState) {
+                  useState: function useState10(initialState) {
                     var hook = nextHook();
                     initialState = null !== hook ? hook.memoizedState : "function" === typeof initialState ? initialState() : initialState;
                     hookLog.push({
@@ -22569,7 +22569,7 @@ var require_backend = __commonJS({
                 var symbolOrNumber = renderer_typeof(type) === "object" && type !== null ? type.$$typeof : type;
                 return renderer_typeof(symbolOrNumber) === "symbol" ? symbolOrNumber.toString() : symbolOrNumber;
               }
-              var _ReactTypeOfWork = ReactTypeOfWork, CacheComponent = _ReactTypeOfWork.CacheComponent, ClassComponent = _ReactTypeOfWork.ClassComponent, IncompleteClassComponent = _ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = _ReactTypeOfWork.IncompleteFunctionComponent, FunctionComponent = _ReactTypeOfWork.FunctionComponent, IndeterminateComponent = _ReactTypeOfWork.IndeterminateComponent, ForwardRef = _ReactTypeOfWork.ForwardRef, HostRoot = _ReactTypeOfWork.HostRoot, HostHoistable = _ReactTypeOfWork.HostHoistable, HostSingleton = _ReactTypeOfWork.HostSingleton, HostComponent = _ReactTypeOfWork.HostComponent, HostPortal = _ReactTypeOfWork.HostPortal, HostText = _ReactTypeOfWork.HostText, Fragment4 = _ReactTypeOfWork.Fragment, LazyComponent = _ReactTypeOfWork.LazyComponent, LegacyHiddenComponent = _ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = _ReactTypeOfWork.MemoComponent, OffscreenComponent = _ReactTypeOfWork.OffscreenComponent, Profiler = _ReactTypeOfWork.Profiler, ScopeComponent = _ReactTypeOfWork.ScopeComponent, SimpleMemoComponent = _ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = _ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = _ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = _ReactTypeOfWork.TracingMarkerComponent, Throw = _ReactTypeOfWork.Throw, ViewTransitionComponent = _ReactTypeOfWork.ViewTransitionComponent, ActivityComponent = _ReactTypeOfWork.ActivityComponent;
+              var _ReactTypeOfWork = ReactTypeOfWork, CacheComponent = _ReactTypeOfWork.CacheComponent, ClassComponent = _ReactTypeOfWork.ClassComponent, IncompleteClassComponent = _ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = _ReactTypeOfWork.IncompleteFunctionComponent, FunctionComponent = _ReactTypeOfWork.FunctionComponent, IndeterminateComponent = _ReactTypeOfWork.IndeterminateComponent, ForwardRef = _ReactTypeOfWork.ForwardRef, HostRoot = _ReactTypeOfWork.HostRoot, HostHoistable = _ReactTypeOfWork.HostHoistable, HostSingleton = _ReactTypeOfWork.HostSingleton, HostComponent = _ReactTypeOfWork.HostComponent, HostPortal = _ReactTypeOfWork.HostPortal, HostText = _ReactTypeOfWork.HostText, Fragment5 = _ReactTypeOfWork.Fragment, LazyComponent = _ReactTypeOfWork.LazyComponent, LegacyHiddenComponent = _ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = _ReactTypeOfWork.MemoComponent, OffscreenComponent = _ReactTypeOfWork.OffscreenComponent, Profiler = _ReactTypeOfWork.Profiler, ScopeComponent = _ReactTypeOfWork.ScopeComponent, SimpleMemoComponent = _ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = _ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = _ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = _ReactTypeOfWork.TracingMarkerComponent, Throw = _ReactTypeOfWork.Throw, ViewTransitionComponent = _ReactTypeOfWork.ViewTransitionComponent, ActivityComponent = _ReactTypeOfWork.ActivityComponent;
               function resolveFiberType(type) {
                 var typeSymbol = getTypeSymbol(type);
                 switch (typeSymbol) {
@@ -22625,7 +22625,7 @@ var require_backend = __commonJS({
                   case HostPortal:
                   case HostText:
                     return null;
-                  case Fragment4:
+                  case Fragment5:
                     return "Fragment";
                   case LazyComponent:
                     return "Lazy";
@@ -22780,7 +22780,7 @@ var require_backend = __commonJS({
             function renderer_attach(hook, rendererID, renderer2, global2, shouldStartProfilingNow, profilingSettings) {
               var version2 = renderer2.reconcilerVersion || renderer2.version;
               var _getInternalReactCons = getInternalReactConstants(version2), getDisplayNameForFiber = _getInternalReactCons.getDisplayNameForFiber, getTypeSymbol = _getInternalReactCons.getTypeSymbol, ReactPriorityLevels = _getInternalReactCons.ReactPriorityLevels, ReactTypeOfWork = _getInternalReactCons.ReactTypeOfWork, StrictModeBits = _getInternalReactCons.StrictModeBits, SuspenseyImagesMode = _getInternalReactCons.SuspenseyImagesMode;
-              var ActivityComponent = ReactTypeOfWork.ActivityComponent, ClassComponent = ReactTypeOfWork.ClassComponent, ContextConsumer = ReactTypeOfWork.ContextConsumer, DehydratedSuspenseComponent = ReactTypeOfWork.DehydratedSuspenseComponent, ForwardRef = ReactTypeOfWork.ForwardRef, Fragment4 = ReactTypeOfWork.Fragment, FunctionComponent = ReactTypeOfWork.FunctionComponent, HostRoot = ReactTypeOfWork.HostRoot, HostHoistable = ReactTypeOfWork.HostHoistable, HostSingleton = ReactTypeOfWork.HostSingleton, HostPortal = ReactTypeOfWork.HostPortal, HostComponent = ReactTypeOfWork.HostComponent, HostText = ReactTypeOfWork.HostText, IncompleteClassComponent = ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = ReactTypeOfWork.IncompleteFunctionComponent, IndeterminateComponent = ReactTypeOfWork.IndeterminateComponent, LegacyHiddenComponent = ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = ReactTypeOfWork.MemoComponent, OffscreenComponent = ReactTypeOfWork.OffscreenComponent, SimpleMemoComponent = ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = ReactTypeOfWork.TracingMarkerComponent, Throw = ReactTypeOfWork.Throw, ViewTransitionComponent = ReactTypeOfWork.ViewTransitionComponent;
+              var ActivityComponent = ReactTypeOfWork.ActivityComponent, ClassComponent = ReactTypeOfWork.ClassComponent, ContextConsumer = ReactTypeOfWork.ContextConsumer, DehydratedSuspenseComponent = ReactTypeOfWork.DehydratedSuspenseComponent, ForwardRef = ReactTypeOfWork.ForwardRef, Fragment5 = ReactTypeOfWork.Fragment, FunctionComponent = ReactTypeOfWork.FunctionComponent, HostRoot = ReactTypeOfWork.HostRoot, HostHoistable = ReactTypeOfWork.HostHoistable, HostSingleton = ReactTypeOfWork.HostSingleton, HostPortal = ReactTypeOfWork.HostPortal, HostComponent = ReactTypeOfWork.HostComponent, HostText = ReactTypeOfWork.HostText, IncompleteClassComponent = ReactTypeOfWork.IncompleteClassComponent, IncompleteFunctionComponent = ReactTypeOfWork.IncompleteFunctionComponent, IndeterminateComponent = ReactTypeOfWork.IndeterminateComponent, LegacyHiddenComponent = ReactTypeOfWork.LegacyHiddenComponent, MemoComponent = ReactTypeOfWork.MemoComponent, OffscreenComponent = ReactTypeOfWork.OffscreenComponent, SimpleMemoComponent = ReactTypeOfWork.SimpleMemoComponent, SuspenseComponent = ReactTypeOfWork.SuspenseComponent, SuspenseListComponent = ReactTypeOfWork.SuspenseListComponent, TracingMarkerComponent = ReactTypeOfWork.TracingMarkerComponent, Throw = ReactTypeOfWork.Throw, ViewTransitionComponent = ReactTypeOfWork.ViewTransitionComponent;
               var ImmediatePriority = ReactPriorityLevels.ImmediatePriority, UserBlockingPriority = ReactPriorityLevels.UserBlockingPriority, NormalPriority = ReactPriorityLevels.NormalPriority, LowPriority = ReactPriorityLevels.LowPriority, IdlePriority = ReactPriorityLevels.IdlePriority, NoPriority = ReactPriorityLevels.NoPriority;
               var getLaneLabelMap = renderer2.getLaneLabelMap, injectProfilingHooks = renderer2.injectProfilingHooks, overrideHookState = renderer2.overrideHookState, overrideHookStateDeletePath = renderer2.overrideHookStateDeletePath, overrideHookStateRenamePath = renderer2.overrideHookStateRenamePath, overrideProps = renderer2.overrideProps, overridePropsDeletePath = renderer2.overridePropsDeletePath, overridePropsRenamePath = renderer2.overridePropsRenamePath, scheduleRefresh = renderer2.scheduleRefresh, setErrorHandler = renderer2.setErrorHandler, setSuspenseHandler = renderer2.setSuspenseHandler, scheduleUpdate = renderer2.scheduleUpdate, scheduleRetry = renderer2.scheduleRetry, getCurrentFiber = renderer2.getCurrentFiber;
               var supportsTogglingError = typeof setErrorHandler === "function" && typeof scheduleUpdate === "function";
@@ -23141,7 +23141,7 @@ var require_backend = __commonJS({
                     return true;
                   case HostRoot:
                     return false;
-                  case Fragment4:
+                  case Fragment5:
                     return key === null;
                   default:
                     var typeSymbol = getTypeSymbol(type);
@@ -23215,7 +23215,7 @@ var require_backend = __commonJS({
                     return ElementTypeHostComponent;
                   case HostPortal:
                   case HostText:
-                  case Fragment4:
+                  case Fragment5:
                     return ElementTypeOtherOrUnknown;
                   case MemoComponent:
                   case SimpleMemoComponent:
@@ -41334,7 +41334,7 @@ var require_jsx_runtime = __commonJS({
 });
 
 // src/cli.tsx
-var import_react38 = __toESM(require_react(), 1);
+var import_react39 = __toESM(require_react(), 1);
 import { constants as constants5, openSync } from "node:fs";
 import { readFile as readFile4, writeFile as writeFile3 } from "node:fs/promises";
 import tty3 from "node:tty";
@@ -51666,7 +51666,12 @@ var guideCaptureSources = [
   "terminal",
   "capture-queue"
 ];
-var guideCaptureConfidences = ["user-selected", "exact", "snapshot", "user-curated"];
+var guideCaptureConfidences = [
+  "user-selected",
+  "exact",
+  "snapshot",
+  "user-curated"
+];
 var appendTruncatedChunk = (target, buffer, currentLength) => {
   target.push(buffer);
   let boundedLength = currentLength + buffer.length;
@@ -52034,7 +52039,7 @@ var createNodeCommandRunner = () => ({
       child.kill("SIGTERM");
       forceKillTimer = setTimeout(() => {
         child.kill("SIGKILL");
-      }, forcedKillDelayMs);
+      }, options?.terminationGraceMs ?? forcedKillDelayMs);
     };
     const appendChunk = (target, chunk, stream) => {
       if (terminationKind === "output-limit") return;
@@ -52045,11 +52050,7 @@ var createNodeCommandRunner = () => ({
           requestTermination("output-limit", stream);
           return;
         }
-        const boundedLength = appendTruncatedChunk(
-          target,
-          buffer,
-          stream === "stdout" ? stdoutLength : stderrLength
-        );
+        const boundedLength = appendTruncatedChunk(target, buffer, stream === "stdout" ? stdoutLength : stderrLength);
         if (stream === "stdout") stdoutLength = boundedLength;
         else stderrLength = boundedLength;
         return;
@@ -52275,11 +52276,7 @@ var parseGuideCaptureProvenance = (value) => {
     });
   }
   const agent = optionalBoundedText(fields.agent, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.agent", 128);
-  const sessionId = optionalBoundedText(
-    fields.sessionId,
-    "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.sessionId",
-    128
-  );
+  const sessionId = optionalBoundedText(fields.sessionId, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.sessionId", 128);
   const identitySource = optionalBoundedText(
     fields.identitySource,
     "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON.capture.identitySource",
@@ -68113,7 +68110,7 @@ var ForkPreviewApp = ({ variant }) => {
 };
 
 // src/admin-ui.tsx
-var import_react37 = __toESM(require_react(), 1);
+var import_react38 = __toESM(require_react(), 1);
 
 // src/admin-model.ts
 var allNativeLaunchers = [
@@ -68212,6 +68209,11 @@ var optionalUpdateFields = (updateCheck) => ({
   ...updateCheck.updateCheckDiagnostic === void 0 ? {} : { updateCheckDiagnostic: updateCheck.updateCheckDiagnostic },
   ...updateCheck.updateCheckedAt === void 0 ? {} : { updateCheckedAt: updateCheck.updateCheckedAt }
 });
+var optionalHarnessTargetFields = (entry, catalog) => {
+  if (entry.surface !== "sandbox") return {};
+  const selector = catalog.sandbox.find((profile) => profile.name === entry.name)?.harness.version;
+  return selector === void 0 ? {} : { harnessVersionSelector: selector };
+};
 var aggregateAdminProfile = (entry, catalog, readinessInputs, updateCheckInputs) => {
   const readiness = readinessFor(entry.ref, readinessInputs);
   const capabilities = entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : sandboxCapabilities;
@@ -68229,6 +68231,7 @@ var aggregateAdminProfile = (entry, catalog, readinessInputs, updateCheckInputs)
     health: derived.health,
     install: derived.install,
     ...optionalReadinessFields(entry, readiness, derived),
+    ...optionalHarnessTargetFields(entry, catalog),
     updateCheckSupported: capabilities.updateCheckSupported,
     harnessVersionSupported: capabilities.harnessVersionSupported,
     ...optionalUpdateFields(updateCheck),
@@ -68374,6 +68377,10 @@ var AdminRunManager = class {
   /** Cancels the in-flight run for the profile, if any. No-ops when nothing is running. */
   cancel(ref) {
     this.inFlight.get(ref)?.controller.abort();
+  }
+  /** Waits for the current run before a caller needs a new observation after a mutation. */
+  waitForIdle(ref) {
+    return this.inFlight.get(ref)?.promise ?? Promise.resolve();
   }
   startRun(ref, executable, args, timeoutMsOverride) {
     const controller = new AbortController();
@@ -68703,14 +68710,15 @@ var resultForEntry = (entry, resultForOperation, sandboxInstalledForRef) => {
   const installed = sandboxInstalledForRef(entry.ref) ?? (validVersion(entry.version) === void 0 ? { kind: "unavailable", diagnostic: "sandbox profile has no ready installed harness resolution" } : { kind: "known", version: entry.version });
   return { installed, latest: raw?.latest ?? { kind: "unsupported" } };
 };
-var reconcileHarnessVersionResults = (entries, resultForOperation, sandboxInstalledForRef = () => void 0) => {
+var shareableReleaseKeyFor = (entry) => entry.surface === "native" && entry.launcher === "fmx" ? void 0 : harnessVersionReleaseKeyFor(entry);
+var reconcileHarnessVersionObservations = (entries, observationFor2) => {
   const results = /* @__PURE__ */ new Map();
   const latestByRelease = /* @__PURE__ */ new Map();
   for (const entry of entries) {
-    const result = resultForEntry(entry, resultForOperation, sandboxInstalledForRef);
+    const result = observationFor2(entry);
     if (result === void 0) continue;
     results.set(entry.ref, result);
-    const releaseKey = harnessVersionReleaseKeyFor(entry);
+    const releaseKey = shareableReleaseKeyFor(entry);
     if (releaseKey === void 0 || result.latest.kind !== "known") continue;
     const versions = latestByRelease.get(releaseKey) ?? /* @__PURE__ */ new Set();
     versions.add(result.latest.version);
@@ -68718,7 +68726,7 @@ var reconcileHarnessVersionResults = (entries, resultForOperation, sandboxInstal
   }
   for (const entry of entries) {
     const result = results.get(entry.ref);
-    const releaseKey = harnessVersionReleaseKeyFor(entry);
+    const releaseKey = shareableReleaseKeyFor(entry);
     if (result === void 0 || releaseKey === void 0 || result.latest.kind === "known") continue;
     const versions = latestByRelease.get(releaseKey);
     if (versions?.size !== 1) continue;
@@ -68726,6 +68734,7 @@ var reconcileHarnessVersionResults = (entries, resultForOperation, sandboxInstal
   }
   return results;
 };
+var reconcileHarnessVersionResults = (entries, resultForOperation, sandboxInstalledForRef = () => void 0) => reconcileHarnessVersionObservations(entries, (entry) => resultForEntry(entry, resultForOperation, sandboxInstalledForRef));
 var harnessVersionEntriesForForceResync = (selected, entries) => {
   const operationKey = harnessVersionOperationKeyFor(selected);
   if (operationKey === void 0) return [];
@@ -68958,7 +68967,7 @@ var runBatchedHarnessVersionChecks = async (entries, runManager, cache3, options
         const operation = queue.shift();
         if (operation === void 0) return;
         const command = buildHarnessVersionCommand(operation.entry, {
-          refreshLatest: forceRun && operation.entry.surface === "sandbox"
+          refreshLatest: operation.entry.surface === "sandbox" && (options.refreshLatest ?? forceRun)
         });
         const ref = harnessVersionRefFor(operation.key);
         if (forceRun) {
@@ -68990,6 +68999,273 @@ var runBatchedHarnessVersionChecks = async (entries, runManager, cache3, options
     (operation) => attempted.has(operation.key) && operationNeedsRetry(operation, results.get(operation.key), operations, results)
   );
   await runOperations(fallbackRetries, true);
+};
+
+// src/admin-update-command.ts
+import { stripVTControlCharacters } from "node:util";
+var updateDiagnostic = (error) => {
+  if (error instanceof CommandRunnerError) return error.stderr.trim() || error.stdout.trim() || error.message;
+  if (error instanceof Error && error.message.trim().length > 0) return error.message.trim();
+  return String(error);
+};
+var managementVerb = (command) => {
+  const verb = command.args[0];
+  if (verb === "harness-update" || verb === "skills-update") return verb;
+  return verb === "skills" && command.args[1] === "update" ? "skills update" : void 0;
+};
+var checkManagementCommand = async (command, runner, cwd2, signal) => {
+  const verb = managementVerb(command);
+  if (verb === void 0) return;
+  const help = await runner.run(command.executable, ["--help"], {
+    cwd: cwd2,
+    timeoutMs: 1e4,
+    outputOverflow: "truncate",
+    ...signal === void 0 ? {} : { signal }
+  });
+  const text4 = stripVTControlCharacters(`${help.stdout}
+${help.stderr}`);
+  if (!new RegExp(`(?:^|\\s)${verb.replace(" ", "\\s+")}(?:\\s|$)`, "m").test(text4)) {
+    throw new Error(`${command.executable} does not support ${verb}. Refresh the installed Trellage launcher first.`);
+  }
+};
+var runUpdateCommand = async (command, runner, cwd2, signal) => {
+  if (signal?.aborted === true) return { state: "failure", diagnostic: "Update cancelled before this command started." };
+  try {
+    await checkManagementCommand(command, runner, cwd2, signal);
+    signal?.throwIfAborted();
+    const output = await runner.run(command.executable, command.args, {
+      cwd: cwd2,
+      timeoutMs: 30 * 60 * 1e3,
+      outputOverflow: "truncate",
+      ...signal === void 0 ? {} : { signal }
+    });
+    return { state: "success", stdout: output.stdout, stderr: output.stderr };
+  } catch (error) {
+    return { state: "failure", diagnostic: updateDiagnostic(error) };
+  }
+};
+var harnessFallbackLine = (step, output) => {
+  if (step.command.args[0] !== "upgrade") return void 0;
+  const headlong = step.targets.some((entry) => entry.harness === "headlong");
+  return stripVTControlCharacters(output).split("\n").find(
+    (line) => line.startsWith("upgrade fallback: harness ") || headlong && line.startsWith("upgrade fallback: source https://github.com/laude-institute/headlong.git@")
+  );
+};
+var runProfileUpdateStep = async (step, runner, cwd2, signal) => {
+  const output = await runUpdateCommand(step.command, runner, cwd2, signal);
+  const fallback = output.state === "success" ? harnessFallbackLine(step, `${output.stdout}
+${output.stderr}`) : void 0;
+  const diagnostic2 = output.state === "failure" ? output.diagnostic : fallback === void 0 ? void 0 : `Harness was not updated: ${fallback}`;
+  return step.targets.map(
+    ({ ref, name }) => diagnostic2 === void 0 ? { ref, name, state: "success" } : { ref, name, state: "failure", diagnostic: diagnostic2 }
+  );
+};
+
+// src/admin-skills-update.ts
+var nativeSkillsUpdatePlanFor = (entries, routerCommandPath) => {
+  const targets = entries.filter((entry) => entry.surface === "native");
+  return targets.length === 0 ? void 0 : { refresh: { executable: routerCommandPath, args: ["skills", "update"] }, targets };
+};
+var nativeSkillsUpdateCommand = (entry) => {
+  if (entry.launcher === void 0 || !isKnownNativeLauncher(entry.launcher) || entry.commandPath.length === 0) return void 0;
+  return { executable: entry.commandPath, args: ["skills-update", entry.name] };
+};
+var runNativeSkillsUpdate = async (plan, runner, cwd2, options) => {
+  options.onProgress?.({ kind: "cache-started" });
+  const cache3 = await runUpdateCommand(plan.refresh, runner, cwd2, options.signal);
+  options.onProgress?.({ kind: "cache-completed", result: cache3 });
+  const results = [];
+  if (cache3.state === "failure") return { cache: cache3, results };
+  for (const entry of plan.targets) {
+    if (options.signal?.aborted === true) break;
+    options.onProgress?.({ kind: "profile-started", entry });
+    const command = nativeSkillsUpdateCommand(entry);
+    const applied = command === void 0 ? [{ ref: entry.ref, name: entry.name, state: "failure", diagnostic: `Skills update is not supported for ${entry.ref}.` }] : await runProfileUpdateStep({ command, targets: [entry] }, runner, cwd2, options.signal);
+    for (const result of applied) {
+      results.push(result);
+      options.onProgress?.({ kind: "profile-completed", result });
+    }
+  }
+  return { cache: cache3, results };
+};
+
+// src/admin-harness-update.ts
+var nativeHarnessUpdates = /* @__PURE__ */ new Map([
+  ["cpx", { command: "harness-update", shared: true }],
+  ["cdx", { command: "harness-update", shared: true }],
+  ["grx", { command: "harness-update", shared: true }],
+  ["cldx", { command: "harness-update", shared: true }],
+  ["fmx", { command: "update", shared: false }],
+  ["jcx", { command: "update", shared: true }],
+  ["omp", { command: "update", shared: true }],
+  ["picx", { command: "update", shared: true }],
+  ["prx", { command: "update", shared: true }]
+]);
+var harnessUpdateKeyFor = (entry) => {
+  if (entry.harness === void 0 || entry.commandPath.length === 0) return void 0;
+  if (entry.surface === "sandbox") {
+    return harnessVersionReleaseKeyFor(entry) === void 0 ? void 0 : `sandbox:${entry.harness}`;
+  }
+  return entry.launcher !== void 0 && nativeHarnessUpdates.has(entry.launcher) ? `native:${entry.launcher}` : void 0;
+};
+var buildHarnessUpdateCommand = (entry) => {
+  if (entry.surface === "sandbox") {
+    return { executable: entry.commandPath, args: ["upgrade", entry.name, "--strict-harness"] };
+  }
+  const update = nativeHarnessUpdates.get(entry.launcher ?? "");
+  if (update === void 0) throw new Error(`Harness update is not supported for ${entry.ref}`);
+  return {
+    executable: entry.commandPath,
+    args: update.command === "harness-update" ? ["harness-update"] : ["update", entry.name]
+  };
+};
+var harnessUpdatePlanFor = (selected, entries, versionResult) => {
+  const key = harnessUpdateKeyFor(selected);
+  if (key === void 0 || selected.harness === void 0) return void 0;
+  const targets = [
+    ...new Map(
+      entries.filter((entry) => harnessUpdateKeyFor(entry) === key && entry.commandPath === selected.commandPath).map((entry) => [entry.ref, entry])
+    ).values()
+  ].sort((left, right) => left.ref.localeCompare(right.ref));
+  if (!targets.some((entry) => entry.ref === selected.ref)) return void 0;
+  const shared = selected.surface === "native" && nativeHarnessUpdates.get(selected.launcher ?? "")?.shared === true;
+  const steps = shared ? [{ command: buildHarnessUpdateCommand(selected), targets }] : targets.map((entry) => ({ command: buildHarnessUpdateCommand(entry), targets: [entry] }));
+  return {
+    key,
+    surface: selected.surface,
+    harness: selected.harness,
+    latestVersion: versionResult?.latest.kind === "known" ? versionResult.latest.version : void 0,
+    targets,
+    steps
+  };
+};
+var harnessUpdateRefreshTargets = (plan) => {
+  if (plan.surface === "sandbox") return plan.targets;
+  const scopes = /* @__PURE__ */ new Map();
+  for (const target of plan.targets) {
+    const key = harnessVersionOperationKeyFor(target);
+    if (key !== void 0 && !scopes.has(key)) scopes.set(key, target);
+  }
+  return [...scopes.values()];
+};
+var refreshHarnessUpdateVersions = async (plan, runManager, cache3, onResult) => {
+  for (const target of harnessUpdateRefreshTargets(plan)) {
+    const key = harnessVersionOperationKeyFor(target);
+    if (key === void 0) throw new Error(`Harness version refresh is not supported for ${target.ref}`);
+    await runManager.waitForIdle(harnessVersionRefFor(key));
+    await runBatchedHarnessVersionChecks([target], runManager, cache3, {
+      forceResync: true,
+      refreshLatest: false,
+      selectedEntryRef: target.ref,
+      onResult
+    });
+  }
+};
+var runHarnessUpdate = async (plan, runner, cwd2, options = {}) => {
+  const results = [];
+  for (const step of plan.steps) {
+    options.onStepStart?.(step);
+    const stepResults = await runProfileUpdateStep(step, runner, cwd2, options.signal);
+    results.push(...stepResults);
+    options.onStepComplete?.(step, stepResults);
+  }
+  return { key: plan.key, surface: plan.surface, harness: plan.harness, results };
+};
+var queueScopeKey = (plans, skills) => JSON.stringify({
+  harnesses: plans.map((plan) => ({
+    key: plan.key,
+    steps: plan.steps.map((step) => ({ command: step.command, refs: step.targets.map((entry) => entry.ref) }))
+  })),
+  skills: skills === void 0 ? void 0 : {
+    refresh: skills.refresh,
+    targets: skills.targets.map((entry) => [entry.ref, entry.launcher, entry.name, entry.commandPath])
+  }
+});
+var HarnessUpdateManager = class {
+  constructor(runner, cwd2) {
+    this.runner = runner;
+    this.cwd = cwd2;
+  }
+  inFlight = /* @__PURE__ */ new Map();
+  allRun;
+  allScopeKey;
+  isRunning(key) {
+    return this.inFlight.has(key);
+  }
+  isBusy() {
+    return this.allRun !== void 0 || this.inFlight.size > 0;
+  }
+  run(plan, refresh) {
+    if (this.allRun !== void 0) return Promise.reject(new Error("Update all is running. Wait for it to finish before using U."));
+    return this.start(plan, refresh);
+  }
+  runAll(plans, options) {
+    const scopeKey = queueScopeKey(plans, options.skills);
+    if (this.allRun !== void 0) {
+      return this.allScopeKey === scopeKey ? this.allRun : Promise.reject(new Error("An update-all operation with a different scope is running. Wait for it to finish."));
+    }
+    if (this.inFlight.size > 0)
+      return Promise.reject(new Error("A harness update is already running. Wait for it to finish before updating all."));
+    const run = Promise.resolve().then(() => this.runQueue(plans, options)).finally(() => {
+      this.allRun = void 0;
+      this.allScopeKey = void 0;
+    });
+    this.allScopeKey = scopeKey;
+    this.allRun = run;
+    return run;
+  }
+  async runQueue(plans, options) {
+    const native2 = plans.filter((plan) => plan.surface === "native");
+    const containers = plans.filter((plan) => plan.surface === "sandbox");
+    const nativeReports = await this.runGroupPhase(native2, options, 0, plans.length);
+    const skills = options.skills === void 0 || options.signal?.aborted === true ? void 0 : await runNativeSkillsUpdate(options.skills, this.runner, this.cwd, {
+      ...options.signal === void 0 ? {} : { signal: options.signal },
+      onProgress: (event) => options.onProgress?.({ kind: "skills", event })
+    });
+    const containerReports = await this.runGroupPhase(containers, options, native2.length, plans.length);
+    return { reports: [...nativeReports, ...containerReports], skills };
+  }
+  async runGroupPhase(plans, options, offset, total) {
+    const reports = [];
+    for (const [index, plan] of plans.entries()) {
+      if (options.signal?.aborted === true) break;
+      options.onProgress?.({ kind: "started", plan, index: index + offset, total });
+      const report2 = await this.runQueuedGroup(plan, options);
+      reports.push(report2);
+      options.onProgress?.({ kind: "completed", report: report2, index: index + offset, total });
+    }
+    return reports;
+  }
+  async runQueuedGroup(plan, options) {
+    let refreshError;
+    const refresh = async () => {
+      if (options.signal?.aborted === true) {
+        refreshError = "Version refresh was cancelled.";
+        return;
+      }
+      try {
+        await options.refresh(plan);
+      } catch (error) {
+        refreshError = updateDiagnostic(error);
+      }
+    };
+    const outcome = await this.start(plan, refresh, {
+      ...options.signal === void 0 ? {} : { signal: options.signal },
+      onStepStart: (step) => options.onProgress?.({ kind: "step-started", plan, step }),
+      onStepComplete: (step, results) => options.onProgress?.({ kind: "step-completed", plan, step, results })
+    });
+    return { plan, outcome, ...refreshError === void 0 ? {} : { refreshError } };
+  }
+  start(plan, refresh, options = {}) {
+    const existing = this.inFlight.get(plan.key);
+    if (existing !== void 0) return existing;
+    const run = runHarnessUpdate(plan, this.runner, this.cwd, options).then(async (outcome) => {
+      await refresh();
+      return outcome;
+    }).finally(() => this.inFlight.delete(plan.key));
+    this.inFlight.set(plan.key, run);
+    return run;
+  }
 };
 
 // src/admin-inventory.ts
@@ -69039,31 +69315,671 @@ var parseInventoryOutput = (stdout) => {
   return { readiness: value.readiness, plugins, skills, mcps };
 };
 
-// src/admin-ui.tsx
+// src/admin-harness-update-all.ts
+var harnessUpdateScopeKey = (plan) => JSON.stringify([plan.key, plan.steps.map((step) => step.command.executable)]);
+var unsupportedReason = (entry) => {
+  if (entry.commandPath.length === 0) return "The launcher command is unavailable.";
+  if (entry.harness === void 0) return "The harness identity is missing.";
+  const identity = entry.surface === "native" ? entry.launcher ?? "unknown launcher" : entry.harness;
+  return `No harness update command is supported for ${identity}.`;
+};
+var harnessUpdateAllPlanFor = (entries, versionResultFor = () => void 0, routerCommandPath = "trx") => {
+  const profiles = [...new Map(entries.map((entry) => [entry.ref, entry])).values()].sort(
+    (left, right) => left.ref.localeCompare(right.ref)
+  );
+  const plans = /* @__PURE__ */ new Map();
+  const unsupported = [];
+  for (const entry of profiles) {
+    const plan = harnessUpdatePlanFor(entry, profiles, versionResultFor(entry));
+    if (plan === void 0) {
+      unsupported.push({ entry, diagnostic: unsupportedReason(entry) });
+    } else {
+      const key = harnessUpdateScopeKey(plan);
+      if (!plans.has(key)) plans.set(key, plan);
+    }
+  }
+  const groups = [...plans.values()];
+  return {
+    skills: nativeSkillsUpdatePlanFor(profiles, routerCommandPath),
+    groups,
+    unsupported,
+    profileCount: profiles.length,
+    nativeUpdateCount: groups.filter((group) => group.surface === "native").reduce((count, group) => count + group.steps.length, 0),
+    containerUpdateCount: groups.filter((group) => group.surface === "sandbox").reduce((count, group) => count + group.steps.length, 0)
+  };
+};
+var runAllHarnessUpdates = async (plan, manager, options) => {
+  if (plan.profileCount === 0 && plan.skills === void 0) throw new Error("No updates were selected.");
+  const { reports, skills } = await manager.runAll(plan.groups, {
+    ...options,
+    ...plan.skills === void 0 ? {} : { skills: plan.skills }
+  });
+  return { plan, reports, skills, cancelled: options.signal?.aborted === true };
+};
+var nativeSkillsSummary = (outcome) => {
+  const results = outcome.skills?.results ?? [];
+  return {
+    nativeSkillsUpdated: results.filter((result) => result.state === "success").length,
+    nativeSkillsFailed: results.filter((result) => result.state === "failure").length,
+    nativeSkillsNotRun: (outcome.plan.skills?.targets.length ?? 0) - results.length,
+    skillsCacheFailed: outcome.skills?.cache.state === "failure"
+  };
+};
+var harnessUpdateAllSummary = (outcome) => {
+  const results = outcome.reports.flatMap((report2) => report2.outcome.results);
+  const updated = results.filter((result) => result.state === "success").length;
+  const failed = results.filter((result) => result.state === "failure").length;
+  const unsupported = outcome.plan.unsupported.length;
+  const refreshFailed = outcome.reports.filter((report2) => report2.refreshError !== void 0).length;
+  const notRun = outcome.plan.profileCount - results.length - unsupported;
+  const skills = nativeSkillsSummary(outcome);
+  const skillsComplete = !skills.skillsCacheFailed && skills.nativeSkillsFailed === 0 && skills.nativeSkillsNotRun === 0;
+  return {
+    updated,
+    failed,
+    unsupported,
+    refreshFailed,
+    notRun,
+    ...skills,
+    success: (outcome.plan.profileCount > 0 || outcome.plan.skills !== void 0) && !outcome.cancelled && failed === 0 && unsupported === 0 && refreshFailed === 0 && notRun === 0 && skillsComplete
+  };
+};
+var refreshHarnessUpdateGroupVersions = async (plan, runManager, cache3, onResult) => {
+  if (harnessUpdateRefreshTargets(plan).length === 0) throw new Error(`Installed-version refresh is not supported for ${plan.key}.`);
+  const failures = [];
+  await refreshHarnessUpdateVersions(plan, runManager, cache3, (key, entry, source) => {
+    onResult(key, entry, source);
+    if (entry.result.installed.kind === "unavailable") failures.push(`${source.ref}: ${entry.result.installed.diagnostic}`);
+  });
+  if (failures.length > 0) throw new Error(`Installed-version refresh failed: ${failures.join("; ")}`);
+};
+
+// src/admin-harness-update-all-ui.tsx
+var import_react37 = __toESM(require_react(), 1);
+
+// src/admin-harness-update-preview.ts
+var latestTargetFor = (result, suffix = "") => {
+  const latest = result?.latest;
+  if (latest?.kind === "known") return { version: latest.version, label: `${latest.version}${suffix}` };
+  return { label: latest?.kind === "failed" ? "unknown (lookup failed)" : "unknown" };
+};
+var sandboxTargetFor = (selector, result) => {
+  if (selector === "latest") return latestTargetFor(result);
+  if (selector === void 0) return { label: "unknown (target selector unavailable)" };
+  if (/^(?:\d+\.\d+\.\d+|[0-9a-f]{40})$/u.test(selector)) return { version: selector, label: `${selector} (pinned)` };
+  return { label: `unknown (selector: ${selector})` };
+};
+var targetFor = (entry, result) => entry.surface === "sandbox" ? sandboxTargetFor(entry.harnessVersionSelector, result) : latestTargetFor(result, entry.launcher === "fmx" ? " (catalog pin)" : "");
+var harnessUpgradeAvailability = (entry, result) => {
+  const target = targetFor(entry, result);
+  if (result?.installed.kind !== "known" || target.version === void 0) return "unknown";
+  return result.installed.version === target.version ? "current" : "available";
+};
+var harnessUpgradeVersionPreview = (entry, result) => {
+  const current = result?.installed.kind === "known" ? result.installed.version : void 0;
+  const target = targetFor(entry, result);
+  const isCurrent = current !== void 0 && current === target.version;
+  return { isCurrent, text: isCurrent ? target.label : `${current ?? "unknown"} -> ${target.label}` };
+};
+
+// src/admin-update-selection.ts
+var versionIssue = (entry, result) => {
+  if (result?.installed.kind === "unavailable") return { ref: entry.ref, diagnostic: result.installed.diagnostic };
+  if (result?.latest.kind === "failed") return { ref: entry.ref, diagnostic: result.latest.diagnostic };
+  return { ref: entry.ref, diagnostic: "Harness version could not be checked." };
+};
+var selectGroup = (group, wanted) => {
+  const steps = group.steps.map((step) => ({ ...step, targets: step.targets.filter((entry) => wanted.has(entry.ref)) })).filter((step) => step.targets.length > 0);
+  const targets = group.targets.filter((entry) => wanted.has(entry.ref));
+  return targets.length === 0 ? void 0 : { ...group, targets, steps };
+};
+var collectHarnessUpdates = (full, versionResultFor, issues) => {
+  const wanted = /* @__PURE__ */ new Set();
+  for (const entry of full.groups.flatMap((group) => group.targets)) {
+    const result = versionResultFor(entry);
+    const availability = harnessUpgradeAvailability(entry, result);
+    if (availability === "unknown") issues.push(versionIssue(entry, result));
+    if (availability === "available") wanted.add(entry.ref);
+  }
+  return wanted;
+};
+var collectSkillUpdates = (full, skillChecks, issues) => {
+  const profiles = new Map([
+    ...full.groups.flatMap((group) => group.targets).map((entry) => [entry.ref, entry]),
+    ...(full.skills?.targets ?? []).map((entry) => [entry.ref, entry])
+  ]);
+  const updates = /* @__PURE__ */ new Set();
+  for (const ref of [...profiles.keys(), "skills:shared"]) {
+    const check2 = skillChecks.get(ref);
+    if (ref === "skills:shared" && check2 === void 0) continue;
+    if (check2?.kind === "available") updates.add(ref);
+    if (check2?.diagnostic !== void 0) issues.push({ ref, diagnostic: check2.diagnostic });
+    else if (check2 === void 0 || check2.kind === "unknown") issues.push({ ref, diagnostic: "Skill update check did not complete." });
+  }
+  return updates;
+};
+var selectAvailableAdminUpdates = (full, versionResultFor, skillChecks, routerCommandPath = full.skills?.refresh.executable ?? "trx") => {
+  const issues = full.unsupported.map(({ entry, diagnostic: diagnostic2 }) => ({ ref: entry.ref, diagnostic: diagnostic2 }));
+  const harnessUpdateRefs = collectHarnessUpdates(full, versionResultFor, issues);
+  const skillUpdateRefs = collectSkillUpdates(full, skillChecks, issues);
+  const containerSkillRefs = full.groups.filter((group) => group.surface === "sandbox").flatMap((group) => group.targets.filter((entry) => skillUpdateRefs.has(entry.ref)).map((entry) => entry.ref));
+  const wanted = /* @__PURE__ */ new Set([...harnessUpdateRefs, ...containerSkillRefs]);
+  const groups = full.groups.map((group) => selectGroup(group, wanted)).filter((group) => group !== void 0);
+  const dependentSkillRefs = new Set(
+    groups.filter((group) => group.surface === "native").flatMap((group) => group.targets.map((entry) => entry.ref))
+  );
+  const targets = full.skills?.targets.filter((entry) => skillUpdateRefs.has(entry.ref) || dependentSkillRefs.has(entry.ref)) ?? [];
+  const sharedSkillsUpdate = skillUpdateRefs.has("skills:shared");
+  const skills = targets.length > 0 || sharedSkillsUpdate ? { refresh: full.skills?.refresh ?? { executable: routerCommandPath, args: ["skills", "update"] }, targets } : void 0;
+  return {
+    plan: {
+      groups,
+      skills,
+      unsupported: [],
+      profileCount: groups.reduce((count, group) => count + group.targets.length, 0),
+      nativeUpdateCount: groups.filter((group) => group.surface === "native").reduce((count, group) => count + group.steps.length, 0),
+      containerUpdateCount: groups.filter((group) => group.surface === "sandbox").reduce((count, group) => count + group.steps.length, 0)
+    },
+    issues,
+    harnessUpdateRefs,
+    skillUpdateRefs,
+    dependentSkillRefs,
+    sharedSkillsUpdate
+  };
+};
+var hasSelectedAdminUpdates = (plan) => plan.groups.length > 0 || plan.skills !== void 0;
+
+// src/admin-harness-update-all-ui.tsx
 var import_jsx_runtime4 = __toESM(require_jsx_runtime(), 1);
+var confirmationView = (plan) => ({
+  phase: "confirming",
+  visible: true,
+  plan,
+  catalogProfileCount: plan.profileCount,
+  completedSteps: 0,
+  activePlan: void 0,
+  activeStep: void 0,
+  results: /* @__PURE__ */ new Map(),
+  reports: [],
+  stage: "harnesses",
+  skillsEvent: void 0,
+  skillsResults: /* @__PURE__ */ new Map(),
+  skillsCache: void 0,
+  checking: true,
+  skillChecks: /* @__PURE__ */ new Map(),
+  versionChecks: /* @__PURE__ */ new Map(),
+  issues: [],
+  harnessUpdateRefs: /* @__PURE__ */ new Set(),
+  skillUpdateRefs: /* @__PURE__ */ new Set(),
+  dependentSkillRefs: /* @__PURE__ */ new Set(),
+  sharedSkillsUpdate: false
+});
+var emptySelectionPlan = () => ({
+  groups: [],
+  skills: void 0,
+  unsupported: [],
+  profileCount: 0,
+  nativeUpdateCount: 0,
+  containerUpdateCount: 0
+});
+var selectedView = (state, routerCommandPath) => {
+  if (state.phase !== "confirming") return state;
+  if (state.checking) return { ...state, plan: emptySelectionPlan() };
+  const selection = selectAvailableAdminUpdates(
+    state.plan,
+    (entry) => state.versionChecks.get(entry.ref),
+    state.skillChecks,
+    routerCommandPath
+  );
+  return applySelection(state, selection);
+};
+var applySelection = (state, selection) => ({
+  ...state,
+  ...selection
+});
+var applySkillsEvent = (state, event) => {
+  const next = { ...state, stage: "skills", skillsEvent: event };
+  if (event.kind === "cache-completed") return { ...next, skillsCache: event.result };
+  if (event.kind === "profile-completed")
+    return { ...next, skillsResults: new Map(state.skillsResults).set(event.result.ref, event.result) };
+  return next;
+};
+var applyQueueEvent = (state, event) => {
+  if (state?.phase !== "running") return state;
+  switch (event.kind) {
+    case "skills":
+      return applySkillsEvent(state, event.event);
+    case "started":
+      return { ...state, stage: "harnesses", activePlan: event.plan, activeStep: void 0 };
+    case "step-started":
+      return { ...state, activeStep: event.step };
+    case "step-completed": {
+      const results = new Map(state.results);
+      for (const result of event.results) results.set(result.ref, result);
+      return { ...state, results, activeStep: void 0, completedSteps: state.completedSteps + 1 };
+    }
+    case "completed":
+      return { ...state, activePlan: void 0, reports: [...state.reports, event.report] };
+  }
+};
+var useHarnessUpdateAll = (options) => {
+  const [state, setState] = (0, import_react37.useState)(void 0);
+  const controller = (0, import_react37.useRef)(void 0);
+  const discovery = (0, import_react37.useRef)(void 0);
+  (0, import_react37.useEffect)(
+    () => () => {
+      controller.current?.abort();
+      discovery.current?.abort();
+    },
+    []
+  );
+  const open3 = () => {
+    if (controller.current !== void 0) {
+      setState((previous) => previous === void 0 ? previous : { ...previous, visible: true });
+      return;
+    }
+    const next = confirmationView(harnessUpdateAllPlanFor(options.entries, options.versionResultFor, options.routerCommandPath));
+    if (options.manager.isBusy()) {
+      setState({
+        ...next,
+        plan: emptySelectionPlan(),
+        checking: false,
+        phase: "error",
+        message: "A harness update is already running. Wait for it to finish before updating all."
+      });
+      return;
+    }
+    discovery.current?.abort();
+    const abort = new AbortController();
+    discovery.current = abort;
+    setState(next);
+    void Promise.all([options.checkVersions(abort.signal), options.checkSkills(abort.signal)]).then(([versionChecks, skillChecks]) => {
+      if (abort.signal.aborted) return;
+      setState((previous) => previous?.phase === "confirming" ? { ...previous, checking: false, versionChecks, skillChecks } : previous);
+    }).catch((error) => {
+      if (abort.signal.aborted) return;
+      abort.abort();
+      const message = error instanceof Error ? error.message : String(error);
+      setState(
+        (previous) => previous === void 0 ? previous : { ...previous, plan: emptySelectionPlan(), checking: false, phase: "error", message }
+      );
+    });
+  };
+  const close = () => {
+    discovery.current?.abort();
+    setState(
+      (previous) => previous?.phase === "confirming" ? void 0 : previous === void 0 ? previous : { ...previous, visible: false }
+    );
+  };
+  const confirm = () => {
+    if (state?.phase !== "confirming" || state.checking || controller.current !== void 0) return;
+    const selected = selectedView(state, options.routerCommandPath);
+    if (!hasSelectedAdminUpdates(selected.plan)) return;
+    const reason = options.blockReason();
+    if (reason !== void 0) {
+      setState({ ...state, message: reason });
+      return;
+    }
+    const abort = new AbortController();
+    controller.current = abort;
+    setState({ ...selected, phase: "running", cancelling: false });
+    void runAllHarnessUpdates(selected.plan, options.manager, {
+      refresh: options.refresh,
+      signal: abort.signal,
+      onProgress: (event) => setState((previous) => applyQueueEvent(previous, event))
+    }).then((outcome) => setState((previous) => previous === void 0 ? previous : { ...previous, phase: "done", outcome })).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setState((previous) => previous === void 0 ? previous : { ...previous, phase: "error", message });
+    }).finally(() => {
+      controller.current = void 0;
+    });
+  };
+  const cancel = () => {
+    controller.current?.abort();
+    setState((previous) => previous?.phase === "running" ? { ...previous, cancelling: true } : previous);
+  };
+  return {
+    state: state === void 0 ? void 0 : selectedView(state, options.routerCommandPath),
+    open: open3,
+    close,
+    confirm,
+    cancel,
+    running: state?.phase === "running"
+  };
+};
+var completedStatus = (outcome) => {
+  const summary = harnessUpdateAllSummary(outcome);
+  const label = outcome.cancelled ? "Update all cancelled" : "Update all finished";
+  const harnesses = `${label}: ${summary.updated} updated, ${summary.failed} failed, ${summary.unsupported} unsupported, ${summary.refreshFailed} refresh errors, ${summary.notRun} not run.`;
+  const cache3 = summary.skillsCacheFailed ? "Shared skill cache refresh failed. " : "";
+  return `${harnesses}
+${cache3}Native skills: ${summary.nativeSkillsUpdated} updated, ${summary.nativeSkillsFailed} failed, ${summary.nativeSkillsNotRun} not run.`;
+};
+var runningStatus = (state) => state.stage === "skills" ? `Updating Native skills: ${state.skillsResults.size}/${state.plan.skills?.targets.length ?? 0} profiles processed.` : `Updating harnesses and Container skills: ${state.completedSteps}/${state.plan.nativeUpdateCount + state.plan.containerUpdateCount} commands completed.`;
+var viewStatus = (state) => {
+  switch (state.phase) {
+    case "confirming":
+      return confirmationStatus(state);
+    case "running":
+      return state.cancelling ? "Cancel requested. Completed updates are kept." : runningStatus(state);
+    case "done":
+      return completedStatus(state.outcome);
+    case "error":
+      return `Update all could not finish: ${state.message}`;
+  }
+};
+var confirmationStatus = (state) => {
+  if (state.checking) return "Checking harness versions and skill sources for available updates...";
+  if (state.catalogProfileCount === 0) return "No profiles were discovered.";
+  if (state.phase === "confirming" && state.message !== void 0) return state.message;
+  if (hasSelectedAdminUpdates(state.plan)) return "Review the available updates below before you start.";
+  return state.issues.length > 0 ? "No confirmed updates. Some checks could not finish." : "Everything is up to date.";
+};
+var HarnessUpdateAllStatus = ({ state }) => {
+  if (state === void 0) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: viewStatus(state) }),
+    state.phase === "running" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Profile actions are paused. Press A to view progress or cancel." }) : null
+  ] });
+};
+var profileResultLine = (entry, state, versionResultFor) => {
+  const result = state.results.get(entry.ref);
+  const preview = harnessUpgradeVersionPreview(entry, versionResultFor(entry));
+  const profile = `\`${entry.ref}\`: ${preview.text}`;
+  if (result?.state === "failure") return `- **Failed** ${profile}: ${result.diagnostic}`;
+  if (result?.state === "success") return `- **Updated** ${profile}`;
+  if (state.activeStep?.targets.some((target) => target.ref === entry.ref) === true) return `- **Running** ${profile}`;
+  if (state.phase === "confirming" && !state.harnessUpdateRefs.has(entry.ref)) return `- **Skills update** ${profile}`;
+  const label = state.phase === "confirming" ? "Planned" : state.phase === "done" ? "Not run" : "Queued";
+  return `- ${label} ${profile}`;
+};
+var groupLines = (group, state, versionResultFor) => [
+  `### ${group.surface === "native" ? "Native harness" : "Container harness and skills"}: ${group.harness}`,
+  ...group.targets.map((entry) => profileResultLine(entry, state, versionResultFor)),
+  ""
+];
+var skillsLines = (state) => {
+  if (state.plan.skills === void 0) return [];
+  const cache3 = state.skillsCache;
+  const lines = [
+    "### Native skills",
+    cache3?.state === "failure" ? `**Shared cache refresh failed:** ${cache3.diagnostic}` : "Refresh selected skills, then copy and verify the affected profiles."
+  ];
+  if (state.sharedSkillsUpdate)
+    lines.push(state.skillsCache?.state === "success" ? "- Shared skill cache updated" : "- Shared skill cache update");
+  const dependencies = state.plan.skills.targets.filter((entry) => !state.skillUpdateRefs.has(entry.ref));
+  if (dependencies.length > 0) lines.push(`Required after harness updates: synchronize managed skills for ${dependencies.length} profiles.`);
+  lines.push(...state.plan.skills.targets.flatMap((entry) => skillResultLines(state, entry)));
+  return [...lines, ""];
+};
+var skillResultLines = (state, entry) => {
+  const result = state.skillsResults.get(entry.ref);
+  if (!state.skillUpdateRefs.has(entry.ref) && result?.state !== "failure") return [];
+  if (result?.state === "success") return [`- **Skills updated** \`${entry.ref}\``];
+  if (result?.state === "failure") return [`- **Skills failed** \`${entry.ref}\`: ${result.diagnostic}`];
+  const label = state.phase === "done" || state.skillsCache?.state === "failure" ? "Skills not run" : "Skills update";
+  return [`- ${label} \`${entry.ref}\``];
+};
+var viewBody = (state, versionResultFor) => {
+  if (state.checking) return "";
+  const issues = state.issues.map(({ ref, diagnostic: diagnostic2 }) => `- \`${ref}\`: ${diagnostic2}`);
+  const refreshErrors = state.reports.flatMap(
+    (report2) => report2.refreshError === void 0 ? [] : [`- **Version refresh failed** ${report2.plan.key}: ${report2.refreshError}`]
+  );
+  return [
+    ...refreshErrors,
+    "",
+    ...hasSelectedAdminUpdates(state.plan) ? ["Available updates only. Current items are hidden.", "Version changes: current -> target."] : [],
+    "",
+    ...state.plan.groups.flatMap((group) => groupLines(group, state, versionResultFor)),
+    ...skillsLines(state),
+    ...issues.length > 0 ? ["### Incomplete checks", "Unknown results are not counted as available updates.", ...issues] : []
+  ].join("\n");
+};
+var skillsOperation = (event) => {
+  if (event?.kind === "profile-started") return `Copying and verifying skills: ${event.entry.ref}`;
+  if (event?.kind === "profile-completed") return `Skills ${event.result.state}: ${event.result.ref}`;
+  return "Refreshing shared Native skill caches.";
+};
+var currentOperation = (state) => {
+  if (state.phase !== "running") return void 0;
+  if (state.stage === "skills") return skillsOperation(state.skillsEvent);
+  if (state.activePlan === void 0) return void 0;
+  if (state.activeStep === void 0) return `Reading installed versions: ${state.activePlan.key}`;
+  const targets = state.activeStep.targets.map((entry) => entry.name).join(", ");
+  return `${state.activePlan.key}: ${targets}`;
+};
+var viewHints = (state) => {
+  if (state.phase === "confirming")
+    return state.checking || !hasSelectedAdminUpdates(state.plan) ? "[q/Esc] close" : "[y] update selected items  [q/Esc] cancel";
+  if (state.phase === "running") return "[c] cancel updates  [q/Esc] back (updates continue)";
+  return "[q/Esc] back to list";
+};
+var HarnessUpdateAllOverlay = ({
+  state,
+  columns,
+  rows,
+  onConfirm,
+  onClose,
+  onCancel
+}) => {
+  use_input_default((char, key) => {
+    if (key.escape || char === "q") onClose();
+    else if (char === "y" && state.phase === "confirming") onConfirm();
+    else if (char === "c" && state.phase === "running") onCancel();
+  });
+  const operation = currentOperation(state);
+  const versionResultFor = (entry) => state.versionChecks.get(entry.ref);
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "Update all harnesses and skills" }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: "Available Native and Container updates, including profiles hidden by filters." }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+      "Native updates: ",
+      state.plan.nativeUpdateCount,
+      " | Container builds: ",
+      state.plan.containerUpdateCount,
+      " | Incomplete checks:",
+      " ",
+      state.issues.length
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+      "Native skill copies: ",
+      state.plan.skills?.targets.length ?? 0,
+      ". Container builds refresh their configured skills."
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Version and source pins are kept. Trellage itself is not updated. Sessions are not restarted." }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: viewStatus(state) }),
+    operation === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: operation }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MarkdownTextViewport, { value: viewBody(state, versionResultFor), width: Math.max(20, columns - 4), height: Math.max(3, rows - 16) }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "[PgUp/PgDn] scroll through all profiles and results" }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: viewHints(state) })
+  ] });
+};
+
+// src/admin-harness-update-discovery.ts
+var scopeKeyFor = (entry) => {
+  const operation = harnessVersionOperationKeyFor(entry);
+  return operation === void 0 ? void 0 : JSON.stringify([entry.commandPath, operation]);
+};
+var emptyCache = { schemaVersion: 2, entries: {} };
+var publishResults = (entries, results, onResult) => {
+  for (const entry of entries) {
+    const key = harnessVersionOperationKeyFor(entry);
+    const result = results.get(entry.ref);
+    const paths = new Set(
+      entries.filter((candidate) => harnessVersionOperationKeyFor(candidate) === key).map((candidate) => candidate.commandPath)
+    );
+    if (key !== void 0 && result !== void 0 && paths.size === 1) onResult?.(key, { result, checkedAt: Date.now() }, entry);
+  }
+};
+var readMissingScopes = async (entries, raw, manager, signal, onResult) => {
+  for (const entry of entries) {
+    const key = scopeKeyFor(entry);
+    if (key === void 0 || raw.has(key)) continue;
+    signal.throwIfAborted();
+    await runBatchedHarnessVersionChecks([entry], manager, emptyCache, { forceResync: true, refreshLatest: true, onResult });
+  }
+};
+var observationFor = (entry, raw, installed) => {
+  const key = scopeKeyFor(entry);
+  const result = key === void 0 ? void 0 : raw.get(key);
+  if (entry.surface === "native") return result;
+  return {
+    installed: installed.get(entry.ref) ?? { kind: "unavailable", diagnostic: "Installed Container version could not be checked." },
+    latest: result?.latest ?? { kind: "unsupported" }
+  };
+};
+var checkAdminHarnessUpdates = async (entries, runner, cwd2, signal, onResult) => {
+  const manager = new AdminRunManager({
+    runner: {
+      run: async (executable, args, options) => {
+        signal.throwIfAborted();
+        const combined = options?.signal === void 0 ? signal : AbortSignal.any([signal, options.signal]);
+        return runner.run(executable, args, { ...options, cwd: cwd2, signal: combined });
+      }
+    }
+  });
+  const raw = /* @__PURE__ */ new Map();
+  const installed = /* @__PURE__ */ new Map();
+  const collect = (_key, observation, entry) => {
+    const key = scopeKeyFor(entry);
+    if (key !== void 0) raw.set(key, observation.result);
+    if (entry.surface === "sandbox") installed.set(entry.ref, observation.result.installed);
+  };
+  await runBatchedHarnessVersionChecks(entries, manager, emptyCache, { forceResync: true, refreshLatest: true, onResult: collect });
+  await readMissingScopes(entries, raw, manager, signal, collect);
+  for (const entry of entries.filter((candidate) => candidate.surface === "sandbox" && !installed.has(candidate.ref))) {
+    signal.throwIfAborted();
+    await runBatchedHarnessVersionChecks([entry], manager, emptyCache, {
+      forceResync: true,
+      refreshLatest: false,
+      // Only the fresh release checks above determine targets; ignore stale CLI latest caches here.
+      onResult: (_key, observation) => installed.set(entry.ref, observation.result.installed)
+    });
+  }
+  signal.throwIfAborted();
+  const results = reconcileHarnessVersionObservations(entries, (entry) => observationFor(entry, raw, installed));
+  publishResults(entries, results, onResult);
+  return results;
+};
+
+// src/admin-skills-check.ts
+import { stripVTControlCharacters as stripVTControlCharacters2 } from "node:util";
+var unknown = (diagnostic2) => ({ kind: "unknown", diagnostic: diagnostic2 });
+var parseResult2 = (stdout) => {
+  const lines = stdout.trim().split("\n");
+  const results = lines.map((line) => {
+    const value = JSON.parse(line);
+    if (typeof value !== "object" || value === null || !("kind" in value))
+      throw new Error("Invalid skills check output.");
+    if (value.kind === "current" || value.kind === "available") {
+      const diagnostic2 = "diagnostic" in value && typeof value.diagnostic === "string" ? value.diagnostic : void 0;
+      return diagnostic2 === void 0 ? { kind: value.kind } : { kind: value.kind, diagnostic: diagnostic2 };
+    }
+    if (value.kind === "unknown" && "diagnostic" in value && typeof value.diagnostic === "string" && value.diagnostic.trim()) {
+      return unknown(value.diagnostic);
+    }
+    throw new Error("Skills check returned no reliable freshness evidence.");
+  });
+  return results.find((result) => result.kind === "unknown") ?? results.find((result) => result.kind === "available") ?? { kind: "current" };
+};
+var checkEntry = async (entry, runner, cwd2, signal, helpChecks) => {
+  if (entry.surface === "native" && !isKnownNativeLauncher(entry.launcher ?? "") || entry.commandPath.length === 0) {
+    return unknown("This launcher has no supported read-only skills check.");
+  }
+  try {
+    signal.throwIfAborted();
+    let supported = helpChecks.get(entry.commandPath);
+    if (supported === void 0) {
+      supported = runner.run(entry.commandPath, ["--help"], {
+        cwd: cwd2,
+        signal,
+        timeoutMs: 1e4,
+        env: { ...process.env, NODE_DISABLE_COMPILE_CACHE: "1" }
+      }).then(
+        (output2) => /(?:^|\s)skills-check\s+PROFILE(?:\s|$)/m.test(
+          stripVTControlCharacters2(`${output2.stdout}
+${output2.stderr}`)
+        )
+      );
+      helpChecks.set(entry.commandPath, supported);
+    }
+    if (!await supported) return unknown("Refresh the installed Trellage launcher to enable read-only skills-check.");
+    signal.throwIfAborted();
+    const output = await runner.run(entry.commandPath, ["skills-check", entry.name], {
+      cwd: cwd2,
+      signal,
+      timeoutMs: 5 * 60 * 1e3,
+      terminationGraceMs: 15e3,
+      env: { ...process.env, NODE_DISABLE_COMPILE_CACHE: "1" }
+    });
+    signal.throwIfAborted();
+    return parseResult2(output.stdout);
+  } catch (error) {
+    return unknown(updateDiagnostic(error));
+  }
+};
+var checkShared = async (runner, cwd2, routerCommandPath, signal) => {
+  try {
+    signal.throwIfAborted();
+    const help = await runner.run(routerCommandPath, ["--help"], {
+      cwd: cwd2,
+      signal,
+      timeoutMs: 1e4,
+      env: { ...process.env, NODE_DISABLE_COMPILE_CACHE: "1" }
+    });
+    const text4 = stripVTControlCharacters2(`${help.stdout}
+${help.stderr}`);
+    if (!/(?:^|\s)skills\s+check\s+--json(?:\s|$)/m.test(text4)) {
+      return unknown("Refresh the installed router to enable read-only shared skills checks.");
+    }
+    signal.throwIfAborted();
+    const output = await runner.run(routerCommandPath, ["skills", "check", "--json"], {
+      cwd: cwd2,
+      signal,
+      timeoutMs: 5 * 60 * 1e3,
+      terminationGraceMs: 15e3,
+      env: { ...process.env, NODE_DISABLE_COMPILE_CACHE: "1" }
+    });
+    signal.throwIfAborted();
+    return parseResult2(output.stdout);
+  } catch (error) {
+    return unknown(updateDiagnostic(error));
+  }
+};
+async function checkAdminSkillsUpdates(entries, runner, cwd2, routerCommandPath, signal) {
+  const results = /* @__PURE__ */ new Map();
+  const helpChecks = /* @__PURE__ */ new Map();
+  for (const entry of entries) results.set(entry.ref, await checkEntry(entry, runner, cwd2, signal, helpChecks));
+  results.set("skills:shared", await checkShared(runner, cwd2, routerCommandPath, signal));
+  return results;
+}
+
+// src/admin-ui.tsx
+var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
 var sortCycle = ["name", "health", "install", "surface"];
 var runStatusOf = (entry, snapshot) => {
   if (!entry.doctorSupported) return "unsupported";
   if (snapshot.state === "idle" && entry.health === "malformed-output") return "malformed-output";
   return snapshot.state;
 };
-var StatusText = ({ status, tick, bold = false, dimColor = false }) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold, dimColor, children: [
-  status === "running" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+var StatusText = ({ status, tick, bold = false, dimColor = false }) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold, dimColor, children: [
+  status === "running" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "cyan", children: [
     spinnerFrameAt(tick),
     " "
   ] }) : null,
   statusLabel(status)
 ] });
 var versionCellColor = (status) => status === "match" ? "green" : status === "mismatch" ? "yellow" : void 0;
-var ShortcutHints = ({ items }) => items.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: items.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
+var ShortcutHints = ({ items }) => items.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: items.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
   index > 0 ? "   " : "",
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "cyan", children: [
     "[",
     item.key,
     "]"
   ] }),
   " ",
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: item.label })
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: item.label })
 ] }, item.key)) });
 var HarnessVersionDetail = ({
   supported,
@@ -69071,27 +69987,262 @@ var HarnessVersionDetail = ({
   running,
   tick
 }) => {
-  if (!supported) return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Harness version: not supported by this launcher." });
+  if (!supported) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "Harness version: not supported by this launcher." });
   const columns = harnessVersionColumnsFor(true, result);
   const color = versionCellColor(columns.status);
   const valueStyle = color === void 0 ? {} : { color };
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { wrap: "wrap", children: [
       "Harness version:",
       " ",
-      running ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+      running ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "cyan", children: [
         spinnerFrameAt(tick),
         " checking\u2026"
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...valueStyle, children: columns.installed }),
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, ...valueStyle, children: columns.installed }),
       " \xB7 Latest version: ",
-      running ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+      running ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "cyan", children: [
         spinnerFrameAt(tick),
         " checking\u2026"
-      ] }) : result === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "not yet checked" }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, ...valueStyle, children: columns.latest })
+      ] }) : result === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "not yet checked" }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, ...valueStyle, children: columns.latest })
     ] }),
-    result?.installed.kind === "unavailable" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: result.installed.diagnostic }) : null,
-    result?.latest.kind === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "red", wrap: "wrap", children: result.latest.diagnostic }) : null
+    result?.installed.kind === "unavailable" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, wrap: "wrap", children: result.installed.diagnostic }) : null,
+    result?.latest.kind === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "red", wrap: "wrap", children: result.latest.diagnostic }) : null
   ] });
+};
+var harnessUpdateSurfaceLabel = (surface) => surface === "sandbox" ? "container" : "native";
+var CompletedHarnessUpdate = ({ outcome }) => {
+  const failures = outcome.results.filter((result) => result.state === "failure");
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, wrap: "wrap", children: [
+    "Updated ",
+    outcome.results.length - failures.length,
+    "/",
+    outcome.results.length,
+    " ",
+    outcome.harness,
+    " ",
+    harnessUpdateSurfaceLabel(outcome.surface),
+    " profiles.",
+    failures.length === 0 ? "" : ` Failed: ${failures.map((result) => `${result.name}: ${result.diagnostic}`).join("; ")}.`
+  ] });
+};
+var HarnessUpdateStatus = ({ state, tick }) => {
+  if (state === void 0) return null;
+  if (state.status === "running") {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "cyan", children: [
+      spinnerFrameAt(tick),
+      " Updating ",
+      state.targetCount,
+      " ",
+      harnessUpdateSurfaceLabel(state.surface),
+      " profiles\u2026"
+    ] });
+  }
+  if (state.status === "error") {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "red", wrap: "wrap", children: [
+      "Harness update or version refresh failed: ",
+      state.message
+    ] });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(CompletedHarnessUpdate, { outcome: state.outcome });
+};
+var HarnessUpdateControl = ({
+  plan,
+  state,
+  tick,
+  confirming
+}) => {
+  const canUpdate = plan !== void 0 && state?.status !== "running";
+  if (plan === void 0 && state === void 0) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", children: [
+    canUpdate ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ShortcutHints, { items: [{ key: "U", label: "update harness" }] }) : null,
+    confirming && plan !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "yellow", wrap: "wrap", children: [
+      "Press [y] to update ",
+      plan.harness,
+      " for all ",
+      plan.targets.length,
+      " ",
+      harnessUpdateSurfaceLabel(plan.surface),
+      " profiles, or any other key to cancel.",
+      " ",
+      plan.latestVersion === void 0 ? "The update command will resolve the configured version." : `Latest reported: ${plan.latestVersion}. Existing version pins are preserved.`
+    ] }) : null,
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(HarnessUpdateStatus, { state, tick })
+  ] });
+};
+var forkOutcomeMessage = (outcome) => {
+  if (outcome.kind === "launched") return `Forked to a new Herdr worktree: ${outcome.result.checkoutPath}`;
+  if (outcome.kind === "unavailable") return "Herdr is not available in this session.";
+  if (outcome.kind === "not-ready") return `Worktree is not ready to create (${outcome.inspection.kind}).`;
+  return outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+};
+var repairStatusNote = (repairMessage3, repairState, setupState, doctorStatus) => {
+  if (repairMessage3 !== void 0) return repairMessage3;
+  if (repairState === "idle") return void 0;
+  if (setupState === "idle") return `Repair ${repairState} (recheck: ${statusLabel(doctorStatus)}).`;
+  return `Repair ${repairState}, setup ${setupState} (recheck: ${statusLabel(doctorStatus)}).`;
+};
+var DetailSummary = ({
+  entry,
+  versionResult,
+  versionRunning,
+  tick
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "cyan", children: [
+    entry.name,
+    " ",
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+      "\xB7 ",
+      entry.surface,
+      entry.launcher === void 0 ? "" : ` \xB7 ${entry.launcher}`
+    ] })
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { wrap: "wrap", children: entry.description }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+    "Health: ",
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, children: entry.health }),
+    " \xB7 Install: ",
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, children: entry.install })
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    HarnessVersionDetail,
+    {
+      supported: entry.harnessVersionSupported,
+      result: versionResult,
+      running: versionRunning,
+      tick
+    }
+  ),
+  entry.healthDiagnostic === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, wrap: "wrap", children: entry.healthDiagnostic })
+] });
+var DoctorPanel = ({
+  entry,
+  snapshot,
+  status,
+  controls: controls4,
+  canFork,
+  canRepair,
+  versionRunning,
+  tick
+}) => {
+  const shortcutItems = [
+    controls4.canTrigger ? { key: "d", label: "run doctor" } : void 0,
+    controls4.canCancel ? { key: "c", label: "cancel" } : void 0,
+    controls4.canRetry ? { key: "r", label: "retry" } : void 0,
+    { key: "g", label: "view guide" },
+    entry.inventorySupported ? { key: "i", label: "view inventory" } : void 0,
+    { key: "l", label: "launch in terminal" },
+    canFork ? { key: "f", label: "fork to fix" } : void 0,
+    canRepair ? { key: "p", label: "repair profile" } : void 0,
+    entry.harnessVersionSupported && !versionRunning ? { key: "u", label: "resync version" } : void 0
+  ].filter((item) => item !== void 0);
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+      "Doctor status: ",
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(StatusText, { status, tick, bold: true })
+    ] }),
+    snapshot.latest === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, wrap: "wrap", children: (snapshot.latest.stdout || snapshot.latest.stderr || "").slice(0, 4e3) }),
+    snapshot.history.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+      historyScopeLabel,
+      " (",
+      snapshot.history.length,
+      " run",
+      snapshot.history.length === 1 ? "" : "s",
+      " recorded)"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", flexDirection: "column", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ShortcutHints, { items: shortcutItems }) })
+  ] });
+};
+var DiagnosisPanel = ({
+  diagnosis,
+  herdrAvailable
+}) => {
+  if (diagnosis === void 0) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", borderStyle: "round", borderColor: "magenta", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "magenta", children: "Copilot diagnosis" }),
+    diagnosis.status === "diagnosing" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", children: "Diagnosing failure\u2026" }) : null,
+    diagnosis.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "yellow", wrap: "wrap", children: [
+      "Diagnosis unavailable: ",
+      diagnosis.message
+    ] }) : null,
+    diagnosis.status === "done" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { wrap: "wrap", children: diagnosis.result.summary }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { wrap: "wrap", dimColor: true, children: [
+        "Suggested fix: ",
+        diagnosis.result.suggestedFix
+      ] }),
+      herdrAvailable === false ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "Herdr is unavailable in this session; fork to fix is disabled." }) : null
+    ] }) : null
+  ] });
+};
+var ConfirmationPrompt = ({
+  confirmation,
+  entry
+}) => {
+  if (confirmation === "launch") {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "yellow", children: [
+      "Press [y] to hand this terminal to ",
+      entry.name,
+      " now, or any other key to cancel."
+    ] });
+  }
+  if (confirmation === "fork") {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "yellow", children: [
+      "Press [y] to create a new Herdr worktree and hand it ",
+      entry.name,
+      "'s suggested fix now, or any other key to cancel."
+    ] });
+  }
+  if (confirmation === "repair") {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "yellow", children: [
+      "Press [y] to run ",
+      entry.name,
+      "'s repair (and setup, if still needed) now and recheck doctor afterward, or any other key to cancel."
+    ] });
+  }
+  return null;
+};
+var DetailMessages = ({
+  launchMessage,
+  forkMessage,
+  repairNote
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+  launchMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: launchMessage }),
+  forkMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, wrap: "wrap", children: forkMessage }),
+  repairNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, wrap: "wrap", children: repairNote })
+] });
+var handleDetailConfirmation = (input, options) => {
+  if (options.confirmation === void 0) return false;
+  if (input === "y") {
+    if (options.confirmation === "launch") options.confirmLaunch();
+    if (options.confirmation === "fork") options.confirmFork();
+    if (options.confirmation === "repair") options.confirmRepair();
+    if (options.confirmation === "harness-update" && options.harnessUpdatePlan !== void 0)
+      options.onUpdateHarness(options.harnessUpdatePlan);
+  }
+  options.cancelConfirmation();
+  return true;
+};
+var handleDoctorInput = (input, options) => {
+  if ((input === "d" || input === "r") && (options.controls.canTrigger || options.controls.canRetry)) {
+    options.runOrRetryDoctor();
+    return true;
+  }
+  if (input === "c" && options.controls.canCancel) {
+    options.cancelDoctor();
+    return true;
+  }
+  return false;
+};
+var handleDetailShortcut = (input, options) => {
+  if (handleDoctorInput(input, options)) return;
+  if (input === "g") options.onOpenGuide(options.entry);
+  else if (input === "i" && options.entry.inventorySupported) options.onOpenInventory(options.entry);
+  else if (input === "l") options.setConfirmation("launch");
+  else if (input === "f" && options.canFork) options.setConfirmation("fork");
+  else if (input === "p" && options.canRepair) options.setConfirmation("repair");
+  else if (input === "u" && options.entry.harnessVersionSupported && !options.versionRunning)
+    options.onForceResyncVersion(options.entry);
+  else if (input === "U" && options.harnessUpdatePlan !== void 0) options.setConfirmation("harness-update");
 };
 var AdminDetailPanel = ({
   entry,
@@ -69104,30 +70255,37 @@ var AdminDetailPanel = ({
   tick,
   versionResult,
   versionRunning,
-  onForceResyncVersion
+  onForceResyncVersion,
+  harnessUpdatePlan,
+  harnessUpdateState,
+  onUpdateHarness,
+  onConfirmationChange,
+  inputActive
 }) => {
-  const [, forceRender] = (0, import_react37.useState)(0);
-  const [launchConfirming, setLaunchConfirming] = (0, import_react37.useState)(false);
-  const [launchMessage, setLaunchMessage] = (0, import_react37.useState)(void 0);
-  const [forkConfirming, setForkConfirming] = (0, import_react37.useState)(false);
-  const [forkMessage, setForkMessage] = (0, import_react37.useState)(void 0);
-  const [repairConfirming, setRepairConfirming] = (0, import_react37.useState)(false);
-  const [repairMessage3, setRepairMessage] = (0, import_react37.useState)(void 0);
-  (0, import_react37.useEffect)(() => {
-    setLaunchConfirming(false);
+  const [, forceRender] = (0, import_react38.useState)(0);
+  const [confirmation, setConfirmation] = (0, import_react38.useState)(void 0);
+  const [launchMessage, setLaunchMessage] = (0, import_react38.useState)(void 0);
+  const [forkMessage, setForkMessage] = (0, import_react38.useState)(void 0);
+  const [repairMessage3, setRepairMessage] = (0, import_react38.useState)(void 0);
+  (0, import_react38.useEffect)(() => {
+    setConfirmation(void 0);
+    onConfirmationChange(false);
     setLaunchMessage(void 0);
-    setForkConfirming(false);
     setForkMessage(void 0);
-    setRepairConfirming(false);
     setRepairMessage(void 0);
-  }, [entry.ref]);
+    return () => onConfirmationChange(false);
+  }, [entry.ref, onConfirmationChange]);
+  const updateConfirmation = (next) => {
+    setConfirmation(next);
+    onConfirmationChange(next !== void 0);
+  };
   const snapshot = runManager.status(entry.ref);
   const status = runStatusOf(entry, snapshot);
   const controls4 = controlsForStatus(status);
   const repairSnapshot = runManager.status(repairRefFor(entry));
   const setupSnapshot = runManager.status(setupRefFor(entry));
   const canRepair = isRepairSupported(entry) && controls4.canRetry && repairSnapshot.state !== "running" && setupSnapshot.state !== "running";
-  const repairNote = repairMessage3 ?? (repairSnapshot.state === "idle" ? void 0 : setupSnapshot.state === "idle" ? `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).` : `Repair ${repairSnapshot.state}, setup ${setupSnapshot.state} (recheck: ${statusLabel(status)}).`);
+  const repairNote = repairStatusNote(repairMessage3, repairSnapshot.state, setupSnapshot.state, status);
   const runOrRetryDoctor = () => {
     const command = buildDiagnosticCommand(entry);
     const action = controls4.canRetry ? runManager.retry(entry.ref, command.executable, command.args) : runManager.trigger(entry.ref, command.executable, command.args);
@@ -69139,7 +70297,6 @@ var AdminDetailPanel = ({
     forceRender((value) => value + 1);
   };
   const confirmRepair = () => {
-    setRepairConfirming(false);
     setRepairMessage(`Running ${entry.name}'s repair\u2026`);
     repairThenRecheckDoctor(entry, runManager).then((outcome) => {
       const setupNote = outcome.setupState === void 0 ? "" : ` Setup also attempted (${outcome.setupState}).`;
@@ -69148,138 +70305,63 @@ var AdminDetailPanel = ({
   };
   const confirmLaunch = () => {
     launchAdminProfile(entry, true).then(() => setLaunchMessage(`Handed the terminal to ${entry.name}.`)).catch((error) => setLaunchMessage(error instanceof Error ? error.message : String(error)));
-    setLaunchConfirming(false);
   };
   const canFork = diagnosis?.status === "done" && herdrAvailable === true;
   const confirmFork = () => {
-    setForkConfirming(false);
     setForkMessage(`Creating a Herdr worktree to fix ${entry.name}\u2026`);
-    onForkToFix(entry, diagnosis?.status === "done" ? diagnosis.result : void 0).then((outcome) => {
-      if (outcome.kind === "launched") setForkMessage(`Forked to a new Herdr worktree: ${outcome.result.checkoutPath}`);
-      else if (outcome.kind === "unavailable") setForkMessage("Herdr is not available in this session.");
-      else if (outcome.kind === "not-ready") setForkMessage(`Worktree is not ready to create (${outcome.inspection.kind}).`);
-      else setForkMessage(outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
-    }).catch((error) => setForkMessage(error instanceof Error ? error.message : String(error)));
+    onForkToFix(entry, diagnosis?.status === "done" ? diagnosis.result : void 0).then((outcome) => setForkMessage(forkOutcomeMessage(outcome))).catch((error) => setForkMessage(error instanceof Error ? error.message : String(error)));
   };
   use_input_default((input) => {
-    if (launchConfirming) {
-      if (input === "y") confirmLaunch();
-      else setLaunchConfirming(false);
-      return;
-    }
-    if (forkConfirming) {
-      if (input === "y") confirmFork();
-      else setForkConfirming(false);
-      return;
-    }
-    if (repairConfirming) {
-      if (input === "y") confirmRepair();
-      else setRepairConfirming(false);
-      return;
-    }
-    if (input === "g") onOpenGuide(entry);
-    else if (input === "i" && entry.inventorySupported) onOpenInventory(entry);
-    else if ((input === "d" || input === "r") && (controls4.canTrigger || controls4.canRetry)) runOrRetryDoctor();
-    else if (input === "c" && controls4.canCancel) cancelDoctor();
-    else if (input === "l") setLaunchConfirming(true);
-    else if (input === "f" && canFork) setForkConfirming(true);
-    else if (input === "p" && canRepair) setRepairConfirming(true);
-    else if (input === "u" && entry.harnessVersionSupported && !versionRunning) onForceResyncVersion(entry);
-  });
-  const latest = snapshot.latest;
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1, marginTop: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
-      entry.name,
-      " ",
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
-        "\xB7 ",
-        entry.surface,
-        entry.launcher === void 0 ? "" : ` \xB7 ${entry.launcher}`
-      ] })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: entry.description }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-      "Health: ",
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.health }),
-      " \xB7 Install: ",
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: entry.install })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      HarnessVersionDetail,
+    const options = {
+      confirmation,
+      entry,
+      controls: controls4,
+      canFork,
+      canRepair,
+      versionRunning,
+      confirmLaunch,
+      confirmFork,
+      confirmRepair,
+      cancelConfirmation: () => updateConfirmation(void 0),
+      runOrRetryDoctor,
+      cancelDoctor,
+      onOpenGuide,
+      onOpenInventory,
+      setConfirmation: updateConfirmation,
+      onForceResyncVersion,
+      harnessUpdatePlan: harnessUpdateState?.status === "running" ? void 0 : harnessUpdatePlan,
+      onUpdateHarness
+    };
+    if (!handleDetailConfirmation(input, options)) handleDetailShortcut(input, options);
+  }, { isActive: inputActive });
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", paddingX: 1, marginTop: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(DetailSummary, { entry, versionResult, versionRunning, tick }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      DoctorPanel,
       {
-        supported: entry.harnessVersionSupported,
-        result: versionResult,
-        running: versionRunning,
+        entry,
+        snapshot,
+        status,
+        controls: controls4,
+        canFork,
+        canRepair,
+        versionRunning,
         tick
       }
     ),
-    entry.healthDiagnostic === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: entry.healthDiagnostic }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-        "Doctor status: ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatusText, { status, tick, bold: true })
-      ] }),
-      latest === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: (latest.stdout || latest.stderr || "").slice(0, 4e3) }),
-      snapshot.history.length === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
-        historyScopeLabel,
-        " (",
-        snapshot.history.length,
-        " run",
-        snapshot.history.length === 1 ? "" : "s",
-        " recorded)"
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", flexDirection: "column", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-        ShortcutHints,
-        {
-          items: [
-            controls4.canTrigger ? { key: "d", label: "run doctor" } : void 0,
-            controls4.canCancel ? { key: "c", label: "cancel" } : void 0,
-            controls4.canRetry ? { key: "r", label: "retry" } : void 0,
-            { key: "g", label: "view guide" },
-            entry.inventorySupported ? { key: "i", label: "view inventory" } : void 0,
-            { key: "l", label: "launch in terminal" },
-            canFork ? { key: "f", label: "fork to fix" } : void 0,
-            canRepair ? { key: "p", label: "repair profile" } : void 0,
-            entry.harnessVersionSupported && !versionRunning ? { key: "u", label: "resync version" } : void 0
-          ].filter((item) => item !== void 0)
-        }
-      ) })
-    ] }),
-    diagnosis === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", borderStyle: "round", borderColor: "magenta", paddingX: 1, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "Copilot diagnosis" }),
-      diagnosis.status === "diagnosing" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "Diagnosing failure\u2026" }) : null,
-      diagnosis.status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", wrap: "wrap", children: [
-        "Diagnosis unavailable: ",
-        diagnosis.message
-      ] }) : null,
-      diagnosis.status === "done" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { wrap: "wrap", children: diagnosis.result.summary }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { wrap: "wrap", dimColor: true, children: [
-          "Suggested fix: ",
-          diagnosis.result.suggestedFix
-        ] }),
-        herdrAvailable === false ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Herdr is unavailable in this session; fork to fix is disabled." }) : null
-      ] }) : null
-    ] }),
-    launchConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
-      "Press [y] to hand this terminal to ",
-      entry.name,
-      " now, or any other key to cancel."
-    ] }) : null,
-    launchMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: launchMessage }),
-    forkConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
-      "Press [y] to create a new Herdr worktree and hand it ",
-      entry.name,
-      "'s suggested fix now, or any other key to cancel."
-    ] }) : null,
-    forkMessage === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: forkMessage }),
-    repairConfirming ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
-      "Press [y] to run ",
-      entry.name,
-      "'s repair (and setup, if still needed) now and recheck doctor afterward, or any other key to cancel."
-    ] }) : null,
-    repairNote === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: repairNote }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "j/k", label: "move selection" }, { key: "q", label: "quit" }] }) })
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(DiagnosisPanel, { diagnosis, herdrAvailable }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ConfirmationPrompt, { confirmation, entry }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(DetailMessages, { launchMessage, forkMessage, repairNote }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      HarnessUpdateControl,
+      {
+        plan: harnessUpdatePlan,
+        state: harnessUpdateState,
+        tick,
+        confirming: confirmation === "harness-update"
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ShortcutHints, { items: [{ key: "j/k", label: "move selection" }, { key: "q", label: "quit" }] }) })
   ] });
 };
 var GuideOverlay = ({
@@ -69288,80 +70370,167 @@ var GuideOverlay = ({
   note,
   columns,
   rows
-}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { borderStyle: "round", borderColor: "cyan", paddingX: 1, justifyContent: "space-between", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { borderStyle: "round", borderColor: "cyan", paddingX: 1, justifyContent: "space-between", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "cyan", children: [
     entry.name,
     " guide",
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       entry.surface,
       entry.launcher === void 0 ? "" : ` \xB7 ${entry.launcher}`
     ] })
   ] }) }),
-  note === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: note }),
-  note === void 0 && body === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Loading guide\u2026" }) : null,
-  body === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(MarkdownTextViewport, { value: body, width: Math.max(20, columns - 4), height: Math.max(6, rows - 6), resetKey: entry.ref }) }),
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "PageUp/PageDown", label: "scroll" }, { key: "q/Esc", label: "back to list" }] }) })
+  note === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", wrap: "wrap", children: note }),
+  note === void 0 && body === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "Loading guide\u2026" }) : null,
+  body === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { marginTop: 1, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(MarkdownTextViewport, { value: body, width: Math.max(20, columns - 4), height: Math.max(6, rows - 6), resetKey: entry.ref }) }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ShortcutHints, { items: [{ key: "PageUp/PageDown", label: "scroll" }, { key: "q/Esc", label: "back to list" }] }) })
 ] });
+var InventoryPlugins = ({ outcome }) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "cyan", children: [
+    "Plugins (",
+    outcome.plugins.length,
+    ")"
+  ] }),
+  outcome.plugins.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "None reported." }) : outcome.plugins.map((plugin) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+    "\xB7 ",
+    plugin.name,
+    plugin.version === void 0 ? "" : ` (${plugin.version})`
+  ] }, plugin.name))
+] });
+var InventorySkills = ({ outcome }) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "cyan", children: "Skills" }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+    outcome.skills.visibleCount === void 0 ? "visible: unknown" : `visible: ${outcome.skills.visibleCount}`,
+    " \xB7 ",
+    outcome.skills.packageCount === void 0 ? "packages: unknown" : `packages: ${outcome.skills.packageCount}`
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, wrap: "wrap", children: "Skills are managed as one shared bundle pinned to a single commit per profile, not individually versioned, so only counts are available." })
+] });
+var InventoryMcps = ({ outcome }) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "cyan", children: [
+    "MCP servers (",
+    outcome.mcps.length,
+    ")"
+  ] }),
+  outcome.mcps.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "None reported." }) : outcome.mcps.map((name) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+    "\xB7 ",
+    name
+  ] }, name))
+] });
+var InventoryDetails = ({ outcome }) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+    "Readiness: ",
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, children: outcome.readiness })
+  ] }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(InventoryPlugins, { outcome }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(InventorySkills, { outcome }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(InventoryMcps, { outcome })
+] });
+var InventoryContent = ({
+  status,
+  outcome,
+  message
+}) => {
+  if (status === "loading") return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "Loading inventory\u2026" });
+  if (status === "error") {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", wrap: "wrap", children: message ?? "Inventory is unavailable." });
+  }
+  if (outcome === void 0) return null;
+  if (outcome.malformed === true) {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", wrap: "wrap", children: outcome.diagnostic });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(InventoryDetails, { outcome });
+};
 var InventoryOverlay = ({
   entry,
   status,
   outcome,
   message
-}) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { borderStyle: "round", borderColor: "blue", paddingX: 1, justifyContent: "space-between", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "blue", children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { borderStyle: "round", borderColor: "blue", paddingX: 1, justifyContent: "space-between", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "blue", children: [
     entry.name,
     " inventory",
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       entry.surface,
       entry.launcher === void 0 ? "" : ` \xB7 ${entry.launcher}`
     ] })
   ] }) }),
-  status === "loading" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "Loading inventory\u2026" }) : null,
-  status === "error" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: message ?? "Inventory is unavailable." }) : null,
-  status === "done" && outcome !== void 0 && outcome.malformed === true ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", wrap: "wrap", children: outcome.diagnostic }) : null,
-  status === "done" && outcome !== void 0 && outcome.malformed !== true ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-      "Readiness: ",
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, children: outcome.readiness })
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(InventoryContent, { status, outcome, message }),
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ShortcutHints, { items: [{ key: "q/Esc", label: "back to list" }] }) })
+] });
+var handleOverlayInput = (char, key, guideOpen, inventoryOpen, closeGuide, closeInventory) => {
+  if (guideOpen) {
+    if (char === "q" || key.escape) closeGuide();
+    return true;
+  }
+  if (inventoryOpen) {
+    if (char === "q" || key.escape) closeInventory();
+    return true;
+  }
+  return false;
+};
+var handleSearchInput2 = (char, key, setSearching, setQuery2) => {
+  if (key.return || key.escape) {
+    setSearching(false);
+    return;
+  }
+  if (key.backspace || key.delete) {
+    setQuery2((value) => value.slice(0, -1));
+    return;
+  }
+  if (char.length === 1) setQuery2((value) => value + char);
+};
+var handleAdminListInput = (char, key, options) => {
+  if (char === "/") options.setSearching(true);
+  else if (char === "A") options.openHarnessUpdates();
+  else if (char === "q" || key.escape) options.exit();
+  else if (char === "j" || key.downArrow)
+    options.setSelectedIndex((value) => Math.min(options.sortedLength - 1, value + 1));
+  else if (char === "k" || key.upArrow) options.setSelectedIndex((value) => Math.max(0, value - 1));
+  else if (char === "s") options.setSortIndex((value) => (value + 1) % sortCycle.length);
+  else if (char === "S") options.setSortDescending((value) => !value);
+};
+var profileWorkIsRunning = (entry, manager) => [entry.ref, repairRefFor(entry), setupRefFor(entry)].some((ref) => manager.status(ref).state === "running");
+var AdminListHeader = ({
+  profileCount,
+  sortIndex,
+  sortDescending,
+  searching,
+  query,
+  updateAllRunning,
+  versionCacheError
+}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "cyan", children: [
+      "Trellage Admin \u2014 ",
+      profileCount,
+      " profiles"
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
-        "Plugins (",
-        outcome.plugins.length,
-        ")"
-      ] }),
-      outcome.plugins.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "None reported." }) : outcome.plugins.map((plugin) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-        "\xB7 ",
-        plugin.name,
-        plugin.version === void 0 ? "" : ` (${plugin.version})`
-      ] }, plugin.name))
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "Skills" }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-        outcome.skills.visibleCount === void 0 ? "visible: unknown" : `visible: ${outcome.skills.visibleCount}`,
-        " \xB7 ",
-        outcome.skills.packageCount === void 0 ? "packages: unknown" : `packages: ${outcome.skills.packageCount}`
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, wrap: "wrap", children: "Skills are managed as one shared bundle pinned to a single commit per profile, not individually versioned, so only counts are available." })
-    ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { marginTop: 1, flexDirection: "column", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
-        "MCP servers (",
-        outcome.mcps.length,
-        ")"
-      ] }),
-      outcome.mcps.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { dimColor: true, children: "None reported." }) : outcome.mcps.map((name) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { children: [
-        "\xB7 ",
-        name
-      ] }, name))
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+      "sort: ",
+      sortCycle[sortIndex],
+      sortDescending ? " \u2193" : " \u2191"
     ] })
-  ] }) : null,
-  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { marginTop: 1, paddingX: 1, borderStyle: "round", borderColor: "gray", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(ShortcutHints, { items: [{ key: "q/Esc", label: "back to list" }] }) })
+  ] }),
+  searching ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+    "Search: ",
+    query,
+    "\u2588"
+  ] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ShortcutHints, { items: [
+    { key: "A", label: updateAllRunning ? "view update progress" : "update all" },
+    { key: "/", label: "search" },
+    { key: "s", label: "sort" },
+    { key: "S", label: "reverse" },
+    { key: "j/k", label: "move" },
+    { key: "q", label: "quit" }
+  ] }),
+  versionCacheError === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "red", wrap: "wrap", children: [
+    "Harness-version cache error: ",
+    versionCacheError
+  ] })
 ] });
 var AdminApp = ({
   entries,
@@ -69370,35 +70539,39 @@ var AdminApp = ({
   runner,
   diagnosisProvider,
   herdrEnv,
-  cwd: cwd2
+  cwd: cwd2,
+  routerCommandPath = "trx"
 }) => {
   const { exit } = use_app_default();
   const { rows, columns } = use_window_size_default();
-  const [query, setQuery2] = (0, import_react37.useState)("");
-  const [searching, setSearching] = (0, import_react37.useState)(false);
-  const [sortIndex, setSortIndex] = (0, import_react37.useState)(0);
-  const [sortDescending, setSortDescending] = (0, import_react37.useState)(false);
-  const [selectedIndex, setSelectedIndex] = (0, import_react37.useState)(0);
-  const [tick, setTick] = (0, import_react37.useState)(0);
-  const [diagnosisByRef, setDiagnosisByRef] = (0, import_react37.useState)(/* @__PURE__ */ new Map());
-  const [herdrAvailable, setHerdrAvailable] = (0, import_react37.useState)(void 0);
-  const [guideOverlay, setGuideOverlay] = (0, import_react37.useState)(void 0);
-  const [inventoryOverlay, setInventoryOverlay] = (0, import_react37.useState)(void 0);
-  const batchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
-  const diagnosedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
-  const repairAttemptedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
-  const versionRunManagerRef = (0, import_react37.useRef)(void 0);
+  const [query, setQuery2] = (0, import_react38.useState)("");
+  const [searching, setSearching] = (0, import_react38.useState)(false);
+  const [sortIndex, setSortIndex] = (0, import_react38.useState)(0);
+  const [sortDescending, setSortDescending] = (0, import_react38.useState)(false);
+  const [selectedIndex, setSelectedIndex] = (0, import_react38.useState)(0);
+  const [detailConfirmationActive, setDetailConfirmationActive] = (0, import_react38.useState)(false);
+  const [tick, setTick] = (0, import_react38.useState)(0);
+  const [diagnosisByRef, setDiagnosisByRef] = (0, import_react38.useState)(/* @__PURE__ */ new Map());
+  const [herdrAvailable, setHerdrAvailable] = (0, import_react38.useState)(void 0);
+  const [guideOverlay, setGuideOverlay] = (0, import_react38.useState)(void 0);
+  const [inventoryOverlay, setInventoryOverlay] = (0, import_react38.useState)(void 0);
+  const batchStartedRefs = (0, import_react38.useRef)(/* @__PURE__ */ new Set());
+  const diagnosedRefs = (0, import_react38.useRef)(/* @__PURE__ */ new Set());
+  const repairAttemptedRefs = (0, import_react38.useRef)(/* @__PURE__ */ new Set());
+  const versionRunManagerRef = (0, import_react38.useRef)(void 0);
   if (versionRunManagerRef.current === void 0) versionRunManagerRef.current = new AdminRunManager({ runner });
   const versionRunManager = versionRunManagerRef.current;
-  const versionBatchStartedRefs = (0, import_react37.useRef)(/* @__PURE__ */ new Set());
-  const [versionCache, setVersionCache] = (0, import_react37.useState)({ schemaVersion: 2, entries: {} });
-  const [versionCacheError, setVersionCacheError] = (0, import_react37.useState)(void 0);
-  const [sandboxInstalledByRef, setSandboxInstalledByRef] = (0, import_react37.useState)(
+  const versionBatchStartedRefs = (0, import_react38.useRef)(/* @__PURE__ */ new Set());
+  const [versionCache, setVersionCache] = (0, import_react38.useState)({ schemaVersion: 2, entries: {} });
+  const [versionCacheError, setVersionCacheError] = (0, import_react38.useState)(void 0);
+  const [sandboxInstalledByRef, setSandboxInstalledByRef] = (0, import_react38.useState)(
     /* @__PURE__ */ new Map()
   );
-  const [versionCacheLoaded, setVersionCacheLoaded] = (0, import_react37.useState)(false);
-  const versionCachePath = (0, import_react37.useMemo)(() => defaultAdminHarnessVersionCachePath(), []);
-  const versionCacheSaveQueue = (0, import_react37.useMemo)(() => createHarnessVersionCacheSaveQueue(versionCachePath), [versionCachePath]);
+  const [versionCacheLoaded, setVersionCacheLoaded] = (0, import_react38.useState)(false);
+  const [harnessUpdateByKey, setHarnessUpdateByKey] = (0, import_react38.useState)(/* @__PURE__ */ new Map());
+  const harnessUpdateManager = (0, import_react38.useMemo)(() => new HarnessUpdateManager(runner, cwd2), [runner, cwd2]);
+  const versionCachePath = (0, import_react38.useMemo)(() => defaultAdminHarnessVersionCachePath(), []);
+  const versionCacheSaveQueue = (0, import_react38.useMemo)(() => createHarnessVersionCacheSaveQueue(versionCachePath), [versionCachePath]);
   const openGuideOverlay = (entry) => {
     setGuideOverlay({ entry, body: void 0, note: void 0 });
     loadAdminProfileGuideBody(guideRoot, toProfileGuideIdentity(entry)).then((result) => {
@@ -69427,17 +70600,17 @@ var AdminApp = ({
     });
   };
   const closeInventoryOverlay = () => setInventoryOverlay(void 0);
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     const interval = setInterval(() => setTick((value) => value + 1), 500);
     return () => clearInterval(interval);
   }, []);
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     const doctorRefs = entries.filter((entry) => entry.doctorSupported).map((entry) => entry.ref);
     if (!shouldStartBatch(doctorRefs, batchStartedRefs.current)) return;
     batchStartedRefs.current = new Set(doctorRefs);
     void runBatchedDoctorChecks(entries, runManager);
   }, [entries, runManager]);
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     let cancelled = false;
     loadHarnessVersionCache(versionCachePath).then((record5) => {
       if (!cancelled) setVersionCache(record5);
@@ -69462,7 +70635,7 @@ var AdminApp = ({
       return next;
     });
   };
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     if (!versionCacheLoaded) return;
     const supportedOperations = Array.from(
       new Set(
@@ -69484,7 +70657,22 @@ var AdminApp = ({
     }).finally(() => setTick((value) => value + 1));
     setTick((value) => value + 1);
   };
-  (0, import_react37.useEffect)(() => {
+  const updateHarness = (plan) => {
+    if (harnessUpdateManager.isRunning(plan.key)) return;
+    setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, {
+      status: "running",
+      targetCount: plan.targets.length,
+      surface: plan.surface
+    }));
+    void harnessUpdateManager.run(plan, () => refreshHarnessUpdateVersions(plan, versionRunManager, versionCache, persistVersionResult)).then((outcome) => {
+      setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, { status: "done", outcome }));
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, { status: "error", message }));
+    }).finally(() => setTick((value) => value + 1));
+  };
+  (0, import_react38.useEffect)(() => {
+    if (harnessUpdateManager.isBusy()) return;
     const statusesByRef2 = new Map(
       entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)])
     );
@@ -69498,7 +70686,7 @@ var AdminApp = ({
       void repairThenRecheckDoctor(entry, runManager).finally(() => setTick((value) => value + 1));
     }
   });
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     let cancelled = false;
     isForkToHerdrAvailable(runner, herdrEnv, cwd2).then((available) => {
       if (!cancelled) setHerdrAvailable(available);
@@ -69509,7 +70697,7 @@ var AdminApp = ({
       cancelled = true;
     };
   }, []);
-  (0, import_react37.useEffect)(() => {
+  (0, import_react38.useEffect)(() => {
     const statusesByRef2 = new Map(
       entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)])
     );
@@ -69546,8 +70734,8 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
       { cwd: cwd2, command: buildAdminLaunchCommand(entry), promptDelivery: "agent" }
     );
   };
-  const filtered = (0, import_react37.useMemo)(() => filterAdminProfiles(entries, query), [entries, query]);
-  const sorted = (0, import_react37.useMemo)(
+  const filtered = (0, import_react38.useMemo)(() => filterAdminProfiles(entries, query), [entries, query]);
+  const sorted = (0, import_react38.useMemo)(
     () => sortAdminProfiles(filtered, sortCycle[sortIndex] ?? "name", sortDescending ? "desc" : "asc"),
     [filtered, sortIndex, sortDescending]
   );
@@ -69560,6 +70748,16 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
     (ref) => sandboxInstalledByRef.get(ref)
   );
   const versionResultFor = (entry) => versionResultsByRef.get(entry.ref);
+  const allUpdates = useHarnessUpdateAll({
+    entries,
+    manager: harnessUpdateManager,
+    refresh: (plan) => refreshHarnessUpdateGroupVersions(plan, versionRunManager, versionCache, persistVersionResult),
+    versionResultFor,
+    routerCommandPath,
+    checkVersions: (signal) => checkAdminHarnessUpdates(entries, runner, cwd2, signal, persistVersionResult),
+    checkSkills: (signal) => checkAdminSkillsUpdates(entries, runner, cwd2, routerCommandPath, signal),
+    blockReason: () => entries.some((entry) => profileWorkIsRunning(entry, runManager)) ? "A profile check, repair, or setup is running. Wait for it to finish, then press y." : void 0
+  });
   const versionRunning = (entry) => {
     const operationKeys = new Set(
       harnessVersionEntriesForForceResync(entry, entries).map(harnessVersionOperationKeyFor).filter((operationKey) => operationKey !== void 0)
@@ -69569,17 +70767,17 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
     );
   };
   const versionColumnsFor = (entry) => harnessVersionColumnsFor(entry.harnessVersionSupported, versionResultFor(entry));
-  const statusesByRef = (0, import_react37.useMemo)(() => {
+  const statusesByRef = (0, import_react38.useMemo)(() => {
     const map = /* @__PURE__ */ new Map();
     for (const entry of sorted) map.set(entry.ref, runStatusOf(entry, runManager.status(entry.ref)));
     return map;
   }, [sorted, runManager, tick]);
-  const versionColumnsByRef = (0, import_react37.useMemo)(() => {
+  const versionColumnsByRef = (0, import_react38.useMemo)(() => {
     const map = /* @__PURE__ */ new Map();
     for (const entry of sorted) map.set(entry.ref, versionColumnsFor(entry));
     return map;
   }, [sorted, versionRunManager, versionCache, tick]);
-  const widths = (0, import_react37.useMemo)(
+  const widths = (0, import_react38.useMemo)(
     () => adminTableColumnWidths(sorted, statusesByRef, columns, versionColumnsByRef),
     [sorted, statusesByRef, versionColumnsByRef, columns]
   );
@@ -69588,56 +70786,49 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
       exit();
       return;
     }
-    if (guideOverlay !== void 0) {
-      if (char === "q" || key.escape) closeGuideOverlay();
+    if (allUpdates.state?.visible === true) return;
+    if (detailConfirmationActive) return;
+    if (handleOverlayInput(
+      char,
+      key,
+      guideOverlay !== void 0,
+      inventoryOverlay !== void 0,
+      closeGuideOverlay,
+      closeInventoryOverlay
+    ))
       return;
-    }
-    if (inventoryOverlay !== void 0) {
-      if (char === "q" || key.escape) closeInventoryOverlay();
-      return;
-    }
     if (searching) {
-      if (key.return || key.escape) {
-        setSearching(false);
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setQuery2((value) => value.slice(0, -1));
-        return;
-      }
-      if (char.length === 1) setQuery2((value) => value + char);
+      handleSearchInput2(char, key, setSearching, setQuery2);
       return;
     }
-    if (char === "/") {
-      setSearching(true);
-      return;
-    }
-    if (char === "q" || key.escape) {
-      exit();
-      return;
-    }
-    if (char === "j" || key.downArrow) {
-      setSelectedIndex((value) => Math.min(sorted.length - 1, value + 1));
-      return;
-    }
-    if (char === "k" || key.upArrow) {
-      setSelectedIndex((value) => Math.max(0, value - 1));
-      return;
-    }
-    if (char === "s") {
-      setSortIndex((value) => (value + 1) % sortCycle.length);
-      return;
-    }
-    if (char === "S") {
-      setSortDescending((value) => !value);
-      return;
-    }
+    handleAdminListInput(char, key, {
+      exit,
+      openHarnessUpdates: allUpdates.open,
+      sortedLength: sorted.length,
+      setSearching,
+      setSelectedIndex,
+      setSortIndex,
+      setSortDescending
+    });
   });
+  if (allUpdates.state?.visible === true) {
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      HarnessUpdateAllOverlay,
+      {
+        state: allUpdates.state,
+        columns,
+        rows,
+        onConfirm: allUpdates.confirm,
+        onClose: allUpdates.close,
+        onCancel: allUpdates.cancel
+      }
+    );
+  }
   if (guideOverlay !== void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(GuideOverlay, { entry: guideOverlay.entry, body: guideOverlay.body, note: guideOverlay.note, columns, rows });
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(GuideOverlay, { entry: guideOverlay.entry, body: guideOverlay.body, note: guideOverlay.note, columns, rows });
   }
   if (inventoryOverlay !== void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
       InventoryOverlay,
       {
         entry: inventoryOverlay.entry,
@@ -69647,55 +70838,36 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
       }
     );
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { justifyContent: "space-between", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: true, color: "cyan", children: [
-        "Trellage Admin \u2014 ",
-        entries.length,
-        " profiles"
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
-        "sort: ",
-        sortCycle[sortIndex],
-        sortDescending ? " \u2193" : " \u2191"
-      ] })
-    ] }),
-    searching ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { dimColor: true, children: [
-      "Search: ",
-      query,
-      "\u2588"
-    ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      ShortcutHints,
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      AdminListHeader,
       {
-        items: [
-          { key: "/", label: "search" },
-          { key: "s", label: "sort" },
-          { key: "S", label: "reverse" },
-          { key: "j/k", label: "move" },
-          { key: "q", label: "quit" }
-        ]
+        profileCount: entries.length,
+        sortIndex,
+        sortDescending,
+        searching,
+        query,
+        updateAllRunning: allUpdates.running,
+        versionCacheError
       }
     ),
-    versionCacheError === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "red", wrap: "wrap", children: [
-      "Harness-version cache error: ",
-      versionCacheError
-    ] }),
-    viewState === "discovering" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "Discovering profiles\u2026" }) : null,
-    viewState === "empty-no-profiles" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { color: "yellow", children: "No profiles were discovered." }) : null,
-    viewState === "empty-no-match" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "yellow", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(HarnessUpdateAllStatus, { state: allUpdates.state }),
+    viewState === "discovering" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", children: "Discovering profiles\u2026" }) : null,
+    viewState === "empty-no-profiles" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", children: "No profiles were discovered." }) : null,
+    viewState === "empty-no-match" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "yellow", children: [
       'No profiles match "',
       query,
       '".'
     ] }) : null,
-    viewState === "ready" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { children: " " }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE NAME" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "green", children: "TYPE" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "magenta", children: "STATUS" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "blue", children: "VERSION" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.latestVersion, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: true, color: "blue", children: "LATEST VERSION" }) })
+    viewState === "ready" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: " " }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE NAME" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "green", children: "TYPE" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "magenta", children: "STATUS" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "blue", children: "VERSION" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.latestVersion, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "blue", children: "LATEST VERSION" }) })
       ] }),
       sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
         const active = index === boundedIndex;
@@ -69703,24 +70875,24 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         const versionRunningNow = versionRunning(entry);
         const versionCols = versionColumnsByRef.get(entry.ref) ?? versionColumnsFor(entry);
         const versionColor = versionCellColor(versionCols.status);
-        return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u203A " : "  " }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness ?? "\u2014" }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.name }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: adminProfileType(entry) }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(StatusText, { status, tick, bold: active, dimColor: !active }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { bold: active, ...versionColor === void 0 ? { dimColor: !active } : { color: versionColor }, wrap: "truncate-end", children: [
-            versionRunningNow ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "cyan", children: [
+        return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u203A " : "  " }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness ?? "\u2014" }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.name, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.name }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.type, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: adminProfileType(entry) }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.status, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(StatusText, { status, tick, bold: active, dimColor: !active }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.version, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: active, ...versionColor === void 0 ? { dimColor: !active } : { color: versionColor }, wrap: "truncate-end", children: [
+            versionRunningNow ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "cyan", children: [
               spinnerFrameAt(tick),
               " "
             ] }) : null,
             versionRunningNow ? "checking\u2026" : versionCols.installed
           ] }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Box_default, { width: widths.latestVersion, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(Text, { bold: active, ...versionColor === void 0 ? { dimColor: !active } : { color: versionColor }, wrap: "truncate-end", children: versionRunningNow ? "" : versionCols.latest }) })
+          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.latestVersion, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, ...versionColor === void 0 ? { dimColor: !active } : { color: versionColor }, wrap: "truncate-end", children: versionRunningNow ? "" : versionCols.latest }) })
         ] }, entry.ref);
       })
     ] }) : null,
-    selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
       AdminDetailPanel,
       {
         entry: selected,
@@ -69733,7 +70905,12 @@ ${snapshot.latest?.stderr ?? ""}`.trim();
         tick,
         versionResult: versionResultFor(selected),
         versionRunning: versionRunning(selected),
-        onForceResyncVersion: forceResyncVersion
+        onForceResyncVersion: forceResyncVersion,
+        harnessUpdatePlan: allUpdates.running ? void 0 : harnessUpdatePlanFor(selected, entries, versionResultFor(selected)),
+        harnessUpdateState: harnessUpdateByKey.get(harnessUpdateKeyFor(selected) ?? ""),
+        onUpdateHarness: updateHarness,
+        onConfirmationChange: setDetailConfirmationActive,
+        inputActive: !searching && !allUpdates.running
       }
     ) : null
   ] });
@@ -69745,11 +70922,12 @@ var AdminRoot = ({
   guideRoot,
   cwd: cwd2,
   diagnosisProvider,
-  herdrEnv
+  herdrEnv,
+  routerCommandPath = "trx"
 }) => {
-  const [entries, setEntries] = (0, import_react37.useState)(() => aggregateAdminProfiles(catalog));
-  const [refreshError, setRefreshError] = (0, import_react37.useState)(void 0);
-  (0, import_react37.useEffect)(() => {
+  const [entries, setEntries] = (0, import_react38.useState)(() => aggregateAdminProfiles(catalog));
+  const [refreshError, setRefreshError] = (0, import_react38.useState)(void 0);
+  (0, import_react38.useEffect)(() => {
     let cancelled = false;
     refreshAdminEntries(runner, catalog, cwd2).then((refreshed) => {
       if (!cancelled) setEntries(refreshed);
@@ -69760,13 +70938,13 @@ var AdminRoot = ({
       cancelled = true;
     };
   }, []);
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Box_default, { flexDirection: "column", children: [
-    refreshError === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(Text, { color: "red", wrap: "wrap", children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", children: [
+    refreshError === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "red", wrap: "wrap", children: [
       "Health/install refresh failed: ",
       refreshError,
       ". Showing last-known status."
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
       AdminApp,
       {
         entries,
@@ -69775,7 +70953,8 @@ var AdminRoot = ({
         runner,
         diagnosisProvider,
         herdrEnv,
-        cwd: cwd2
+        cwd: cwd2,
+        routerCommandPath
       }
     )
   ] });
@@ -69968,8 +71147,260 @@ var DoctorFailureDiagnosisProvider = class {
   }
 };
 
+// src/harness-upgrade-cli.ts
+import { createInterface } from "node:readline";
+var harnessUpgradeHelpText = `Usage:
+  trx upgrade all [--yes | --dry-run]
+
+Update harness versions AND skills for every Native and Container catalog profile.
+The preview includes profiles hidden by Admin filters. One queue runs:
+1. Native harness updates: shared runtimes once, Firstmate per profile.
+2. Shared Native skill-cache refresh: one trx skills update.
+3. Native profile skill copies and verification, including Agency.
+4. Container harness builds, including current configured skills.
+Native skill copies are final; harness updates cannot overwrite them afterward.
+Admin U remains the selected harness-only action.
+
+Without a flag, preview the scope and require you to type yes at a terminal.
+--yes authorizes updates without an interactive terminal.
+--dry-run previews the scope without running updates or version checks.
+
+Existing profile version and source pins are preserved. Unsupported profiles,
+fallbacks, failures, and unreadable installed versions are reported.
+Independent updates continue after failures. Cancellation stops later updates.
+Exit status is nonzero for incomplete discovery, unsupported profiles, failed
+harness or skill updates, failed installed-version reads, and profiles not run.
+A failed skill cache refresh skips Native copies, not independent harness updates.
+Cancellation exits 130.
+
+This does not install or upgrade Trellage itself.
+trellage upgrade all remains Container-only.`;
+var helpArguments = /* @__PURE__ */ new Set(["--help", "-h", "help"]);
+var usageError = () => new Error("Use trx upgrade all [--yes | --dry-run], or trx upgrade --help.");
+var parseHarnessUpgradeArgv = (argv) => {
+  if (argv.length === 1 && helpArguments.has(argv[0])) return { kind: "help" };
+  if (argv[0] !== "all" || argv.length > 2) throw usageError();
+  if (argv.length === 1) return { kind: "run", approval: "confirm" };
+  const flag = argv[1];
+  if (helpArguments.has(flag)) return { kind: "help" };
+  if (flag === "--yes") return { kind: "run", approval: "yes" };
+  if (flag === "--dry-run") return { kind: "run", approval: "dry-run" };
+  throw usageError();
+};
+var InteractiveTerminalRequiredError = class extends Error {
+  constructor(cause) {
+    super("an interactive controlling terminal is required", { cause });
+    this.name = "InteractiveTerminalRequiredError";
+  }
+};
+var unavailableTerminalCodes = /* @__PURE__ */ new Set(["ENXIO", "ENOTTY", "ENOENT", "EACCES", "EPERM"]);
+var normalizeInteractiveTerminalError = (cause) => {
+  if (cause instanceof Error && "code" in cause && typeof cause.code === "string" && unavailableTerminalCodes.has(cause.code)) {
+    return new InteractiveTerminalRequiredError(cause);
+  }
+  return cause;
+};
+var confirmHarnessUpgrade = (input, output, signal) => {
+  if (input.isTTY !== true) return Promise.resolve("unavailable");
+  if (signal?.aborted === true) return Promise.resolve("cancelled");
+  return new Promise((resolve2) => {
+    const prompt = createInterface({ input, output, terminal: true });
+    const cancel = () => finish("cancelled");
+    const finish = (result) => {
+      prompt.removeListener("close", cancel);
+      prompt.removeListener("SIGINT", cancel);
+      signal?.removeEventListener("abort", cancel);
+      prompt.close();
+      resolve2(result);
+    };
+    prompt.once("close", cancel);
+    prompt.once("SIGINT", cancel);
+    signal?.addEventListener("abort", cancel, { once: true });
+    prompt.question(
+      "Update all supported harness versions and skills? Type yes to update, or press Enter to cancel: ",
+      (answer) => finish(answer.trim().toLowerCase() === "yes" ? "confirmed" : "cancelled")
+    );
+  });
+};
+var groupLabel = (group) => `${group.surface === "native" ? "Native" : "Container"} ${group.harness} (${group.key})`;
+var completeCatalogPlan = (catalog, routerCommandPath) => {
+  if (catalog.native.length === 0 || catalog.sandbox.length === 0) {
+    throw new Error("Incomplete catalog: both Native and Container profiles are required. No harness or skill updates were started.");
+  }
+  const entries = aggregateAdminProfiles(catalog);
+  const plan = harnessUpdateAllPlanFor(entries, void 0, routerCommandPath);
+  if (plan.profileCount !== catalog.native.length + catalog.sandbox.length) {
+    throw new Error("Incomplete catalog: profile identities were lost or duplicated. No harness or skill updates were started.");
+  }
+  return plan;
+};
+var writeSkillsPreview = (skills, write) => {
+  if (skills === void 0) return;
+  write(`Native skills: refresh shared caches once; copy and verify ${skills.targets.length} catalog profiles.`);
+  write(`  Refresh: ${renderCommandPreview(skills.refresh)}`);
+  write("  Caches: native-common, Codex YouTube, Oh My Pi community, and guide Prompt Master.");
+  for (const entry of skills.targets) {
+    const command = nativeSkillsUpdateCommand(entry);
+    write(
+      command === void 0 ? `Unsupported Native skills ${entry.ref}: No skills-update command is available.` : `  ${entry.ref}: ${renderCommandPreview(command)}`
+    );
+  }
+};
+var writeHarnessPreview = (groups, write) => {
+  for (const group of groups) {
+    write(`${groupLabel(group)}: ${group.targets.length} profiles`);
+    for (const entry of group.targets) write(`  ${entry.ref}`);
+    for (const step of group.steps) write(`  Command: ${renderCommandPreview(step.command)}`);
+  }
+};
+var writePreview = (plan, write) => {
+  write(`Update all harness versions and skills: ${plan.profileCount} catalog profiles, ${plan.groups.length} supported harness groups.`);
+  write(`Scope: ${plan.nativeUpdateCount} Native runtime/profile updates; ${plan.containerUpdateCount} Container image updates.`);
+  write("Includes the full catalog, without Admin filters. Existing profile version and source pins are preserved.");
+  write("Trellage installation and upgrades are separate. Unsupported profiles are not substituted with plugin updates.");
+  writeHarnessPreview(
+    plan.groups.filter((group) => group.surface === "native"),
+    write
+  );
+  writeSkillsPreview(plan.skills, write);
+  write("Container builds refresh configured skills as part of each harness update; no separate Container skill mutation is added.");
+  writeHarnessPreview(
+    plan.groups.filter((group) => group.surface === "sandbox"),
+    write
+  );
+  for (const { entry, diagnostic: diagnostic2 } of plan.unsupported) write(`Unsupported harness ${entry.ref}: ${diagnostic2}`);
+};
+var writeSkillsProgress = (event, write) => {
+  if (event.kind === "cache-started") {
+    write("Native skills: refreshing shared caches once.");
+  } else if (event.kind === "cache-completed") {
+    write(
+      event.result.state === "success" ? "Native skills caches refreshed." : `Native skills cache failed: ${event.result.diagnostic}. Native copies will not run; no stale cache is used.`
+    );
+  } else if (event.kind === "profile-started") {
+    write(`Copying and verifying Native skills: ${event.entry.ref}`);
+  } else {
+    const { result } = event;
+    write(result.state === "success" ? `Updated Native skills ${result.ref}` : `Failed Native skills ${result.ref}: ${result.diagnostic}`);
+  }
+};
+var writeProgress = (event, write) => {
+  if (event.kind === "skills") {
+    writeSkillsProgress(event.event, write);
+    return;
+  }
+  if (event.kind === "started") {
+    write(`[${event.index + 1}/${event.total}] ${groupLabel(event.plan)}`);
+  } else if (event.kind === "step-started") {
+    write(`Running: ${renderCommandPreview(event.step.command)}`);
+  } else if (event.kind === "step-completed") {
+    for (const result of event.results) {
+      write(result.state === "success" ? `Updated harness ${result.ref}` : `Failed harness ${result.ref}: ${result.diagnostic}`);
+    }
+  } else if (event.report.refreshError !== void 0) {
+    write(`Installed-version refresh failed for ${groupLabel(event.report.plan)}: ${event.report.refreshError}`);
+  }
+};
+var upgradeRunner = (options) => ({
+  run: (executable, args, runOptions) => {
+    const signals = [options.signal, runOptions?.signal].filter((signal) => signal !== void 0);
+    return options.runner.run(executable, args, {
+      ...runOptions,
+      cwd: options.cwd,
+      ...signals.length === 0 ? {} : { signal: AbortSignal.any(signals) }
+    });
+  }
+});
+var versionRefresh = (runner, write) => {
+  const manager = new AdminRunManager({ runner });
+  let cache3 = { schemaVersion: 2, entries: {} };
+  return (group) => refreshHarnessUpdateGroupVersions(group, manager, cache3, (key, entry, source) => {
+    cache3 = { schemaVersion: 2, entries: { ...cache3.entries, [key]: entry } };
+    const { installed, latest } = entry.result;
+    write(`Installed ${source.ref}: ${installed.kind === "known" ? installed.version : `unavailable: ${installed.diagnostic}`}`);
+    if (latest.kind === "failed") write(`Latest-version lookup failed for ${source.ref}: ${latest.diagnostic}`);
+    if (latest.kind === "unsupported") write(`Latest-version lookup unsupported for ${source.ref}.`);
+  });
+};
+var writeHarnessNotRun = (outcome, write) => {
+  const reported = new Set(outcome.reports.flatMap((report2) => report2.outcome.results.map((result) => result.ref)));
+  for (const group of outcome.plan.groups) {
+    for (const entry of group.targets) {
+      if (!reported.has(entry.ref)) write(`Harness not run ${entry.ref}: ${outcome.cancelled ? "cancelled" : "no result was reported"}.`);
+    }
+  }
+};
+var skillsNotRunReason = (outcome) => {
+  if (outcome.cancelled) return "cancelled";
+  if (outcome.skills?.cache.state === "failure") return "shared cache refresh failed; no stale cache is used";
+  return "no result was reported";
+};
+var writeSkillsNotRun = (outcome, write) => {
+  const reported = new Set(outcome.skills?.results.map((result) => result.ref) ?? []);
+  for (const entry of outcome.plan.skills?.targets ?? []) {
+    if (!reported.has(entry.ref)) write(`Native skills not run ${entry.ref}: ${skillsNotRunReason(outcome)}.`);
+  }
+};
+var skillsCacheStatus = (outcome) => {
+  if (outcome.plan.skills === void 0) return "not required";
+  if (outcome.skills === void 0) return "not run";
+  return outcome.skills.cache.state === "success" ? "updated" : "failed";
+};
+var writeOutcome = (outcome, write) => {
+  const summary = harnessUpdateAllSummary(outcome);
+  writeHarnessNotRun(outcome, write);
+  writeSkillsNotRun(outcome, write);
+  write(
+    `Harness summary: ${summary.updated} updated, ${summary.failed} failed, ${summary.unsupported} unsupported, ${summary.refreshFailed} installed-version refresh failures, ${summary.notRun} not run.`
+  );
+  write(
+    `Native skills summary: ${summary.nativeSkillsUpdated} updated, ${summary.nativeSkillsFailed} failed, ${summary.nativeSkillsNotRun} not run; shared cache: ${skillsCacheStatus(outcome)}.`
+  );
+  if (outcome.cancelled) {
+    write("Update all cancelled. Completed updates were not rolled back.");
+    return 130;
+  }
+  write(
+    summary.success ? "All catalog harness versions and skills were updated." : "Update all did not complete successfully. See the diagnostics above."
+  );
+  return summary.success ? 0 : 1;
+};
+var authorizeUpdates = async (approval, options) => {
+  if (options.signal?.aborted === true) return "cancelled";
+  if (approval === "yes") return "confirmed";
+  return options.confirm?.(options.signal) ?? "unavailable";
+};
+var runHarnessUpgradeCli = async (options) => {
+  const args = parseHarnessUpgradeArgv(options.argv);
+  if (args.kind === "help") {
+    options.writeLine(harnessUpgradeHelpText);
+    return 0;
+  }
+  const plan = completeCatalogPlan(await options.readCatalog(), options.routerCommandPath ?? "trx");
+  writePreview(plan, options.writeLine);
+  if (args.approval === "dry-run") {
+    options.writeLine("Dry run. No harness or skill updates or installed-version checks were started.");
+    const unsupportedSkills = plan.skills?.targets.some((entry) => nativeSkillsUpdateCommand(entry) === void 0) ?? false;
+    return plan.unsupported.length === 0 && !unsupportedSkills ? 0 : 1;
+  }
+  const confirmation = await authorizeUpdates(args.approval, options);
+  if (confirmation !== "confirmed") {
+    options.writeLine(
+      confirmation === "cancelled" ? "Update all cancelled. No harness or skill updates were started." : "No approval: an interactive terminal is required. Use --yes to authorize updates, or --dry-run to preview."
+    );
+    return confirmation === "cancelled" ? 130 : 1;
+  }
+  const runner = upgradeRunner(options);
+  const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager(runner, options.cwd), {
+    refresh: versionRefresh(runner, options.writeLine),
+    onProgress: (event) => writeProgress(event, options.writeLine),
+    ...options.signal === void 0 ? {} : { signal: options.signal }
+  });
+  return writeOutcome(outcome, options.writeLine);
+};
+
 // src/cli.tsx
-var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
 var readInput = async (filename) => {
   if (filename !== void 0) return readFile4(filename, "utf8");
   const chunks = [];
@@ -69997,8 +71428,8 @@ var detailColors = {
   Sandbox: "green",
   Status: "gray"
 };
-var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { wrap: "wrap", children: [
-  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
+var DetailLine = ({ row }) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { wrap: "wrap", children: [
+  row.label === void 0 ? "  " : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { bold: true, color: detailColors[row.label], children: [
     row.label,
     ":",
     " "
@@ -70011,10 +71442,10 @@ var DetailsView = ({
   visibleDetails,
   detailOffset,
   detailCapacity
-}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { justifyContent: "space-between", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: "cyan", children: "Profile details" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
       detailOffset + 1,
       "\u2013",
       Math.min(expandedDetails.length, detailOffset + detailCapacity),
@@ -70022,40 +71453,40 @@ var DetailsView = ({
       expandedDetails.length
     ] })
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       selected.harness
     ] })
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", marginTop: 1, children: visibleDetails.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(DetailLine, { row }, `${detailOffset + index}:${row.label ?? "continuation"}`)) }),
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: "\u2191/\u2193 or j/k scroll \xB7 D/Esc/q back" })
 ] });
 var ProfileTable = ({
   shown,
   state,
   widths
-}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: " " }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
+}) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", marginTop: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: " " }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: "yellow", children: "HARNESS" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: "cyan", children: "PROFILE" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: "green", children: "SANDBOX" }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: "magenta", children: "MODEL" }) })
   ] }),
-  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
+  shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: "yellow", children: "No matching profiles" }) : shown.map((entry) => {
     const active = entry.id === state.selectedId;
     const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel;
     const modelLabel = entryModel === void 0 ? "\u2014" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`;
     const sandboxLabel = entry.sandbox === void 0 ? "\u2014" : entry.sandbox ? "true" : "false";
-    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
+    return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: 2, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: active, ...active ? { color: "green" } : {}, children: active ? "\u276F " : "  " }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: widths.harness, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: active, color: "yellow", dimColor: !active, wrap: "truncate-end", children: entry.harness }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: widths.profile, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: active, color: "cyan", dimColor: !active, wrap: "truncate-end", children: entry.profile }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: widths.sandbox, children: widths.sandbox === 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: active, color: "green", dimColor: !active, wrap: "truncate-end", children: sandboxLabel }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { width: widths.model, children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: active, color: "magenta", dimColor: !active, wrap: "truncate-end", children: modelLabel }) })
     ] }, entry.id);
   })
 ] });
@@ -70063,37 +71494,37 @@ var SelectionSummary = ({
   selected,
   summaryRows,
   summaryTruncated
-}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
+}) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Box_default, { flexDirection: "column", marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, children: selected === void 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { children: "Adjust the search to select a profile." }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: "green", children: selected.profile }),
     " ",
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
       "\xB7 ",
       selected.harness
     ] })
   ] }),
-  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
-  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
+  summaryRows.map((row, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(DetailLine, { row }, `${index}:${row.label ?? "continuation"}`)),
+  summaryTruncated ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { color: "yellow", children: "More metadata available \u2014 press D for full details." }) : null
 ] }) });
 var ModelChooser = ({
   selected,
   modelIndex,
   editingCustomModel,
   customModel
-}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, children: "Select model" }),
-  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", borderStyle: "double", borderColor: "magenta", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, children: "Select model" }),
+  selected.models.map((candidate, index) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { ...index === modelIndex ? { color: "magenta" } : {}, children: [
     index === modelIndex ? "\u276F " : "  ",
     candidate,
     candidate === selected.defaultModel ? " (default)" : ""
   ] }, candidate)),
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { ...modelIndex === selected.models.length ? { color: "magenta" } : {}, children: [
     modelIndex === selected.models.length ? "\u276F " : "  ",
     "Custom\u2026"
   ] }),
-  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { children: [
+  editingCustomModel ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { children: [
     "Model ID: ",
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { color: "yellow", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { color: "yellow", children: [
       customModel,
       "\u2588"
     ] })
@@ -70103,7 +71534,7 @@ var ShortcutHelp = ({
   searching,
   herdrAvailable,
   remoteAvailable
-}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
+}) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { dimColor: true, children: searching ? "Type to filter \xB7 \u2191\u2193 move \xB7 \u21B5 launch \xB7 Esc commands \xB7 Ctrl-C cancel" : `\u2191\u2193 move \xB7 / search \xB7 S sort \xB7 M model \xB7 D details \xB7 \u21B5 launch${herdrAvailable ? " \xB7 H Herdr" : ""}${remoteAvailable ? " \xB7 R Remote" : ""} \xB7 Esc` });
 var SelectionView = ({
   catalog,
   state,
@@ -70119,10 +71550,10 @@ var SelectionView = ({
   modelIndex,
   editingCustomModel,
   customModel
-}) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Box_default, { justifyContent: "space-between", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { dimColor: true, children: [
+}) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { flexDirection: "column", paddingX: 1, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Box_default, { justifyContent: "space-between", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Text, { bold: true, color: "cyan", children: catalog.prompt }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { dimColor: true, children: [
       "Sort: ",
       state.sort,
       " \xB7 Herdr: ",
@@ -70132,21 +71563,21 @@ var SelectionView = ({
       remoteAvailable ? "available" : "unavailable"
     ] })
   ] }),
-  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { wrap: "wrap", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { bold: true, color: "blue", children: [
+  catalog.description === void 0 ? null : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { wrap: "wrap", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { bold: true, color: "blue", children: [
       "Context:",
       " "
     ] }),
     catalog.description
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(Text, { ...searching ? { color: "yellow" } : {}, children: [
     "Search: ",
     state.query,
     searching ? "\u2588" : ""
   ] }),
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ProfileTable, { shown, state, widths }),
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
-  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ProfileTable, { shown, state, widths }),
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(SelectionSummary, { selected, summaryRows, summaryTruncated }),
+  choosingModel && selected !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
     ModelChooser,
     {
       selected,
@@ -70155,7 +71586,7 @@ var SelectionView = ({
       customModel
     }
   ) : null,
-  /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
+  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ShortcutHelp, { searching, herdrAvailable, remoteAvailable })
 ] });
 var Launcher = ({
   catalog,
@@ -70164,20 +71595,20 @@ var Launcher = ({
 }) => {
   const { exit } = use_app_default();
   const { columns, rows } = use_window_size_default();
-  const [state, updateState] = (0, import_react38.useState)(() => createLauncherState(catalog.entries));
-  const [searching, setSearching] = (0, import_react38.useState)(true);
-  const [choosingModel, setChoosingModel] = (0, import_react38.useState)(false);
-  const [modelIndex, setModelIndex] = (0, import_react38.useState)(0);
-  const [editingCustomModel, setEditingCustomModel] = (0, import_react38.useState)(false);
-  const [customModel, setCustomModel] = (0, import_react38.useState)("");
-  const [showingDetails, setShowingDetails] = (0, import_react38.useState)(false);
-  const [detailOffset, setDetailOffset] = (0, import_react38.useState)(0);
-  const visible = (0, import_react38.useMemo)(() => visibleEntries(state), [state]);
+  const [state, updateState] = (0, import_react39.useState)(() => createLauncherState(catalog.entries));
+  const [searching, setSearching] = (0, import_react39.useState)(true);
+  const [choosingModel, setChoosingModel] = (0, import_react39.useState)(false);
+  const [modelIndex, setModelIndex] = (0, import_react39.useState)(0);
+  const [editingCustomModel, setEditingCustomModel] = (0, import_react39.useState)(false);
+  const [customModel, setCustomModel] = (0, import_react39.useState)("");
+  const [showingDetails, setShowingDetails] = (0, import_react39.useState)(false);
+  const [detailOffset, setDetailOffset] = (0, import_react39.useState)(0);
+  const visible = (0, import_react39.useMemo)(() => visibleEntries(state), [state]);
   const selected = selectedEntry(state);
   const selectedModel = selected === void 0 ? void 0 : state.modelByEntry[selected.id];
   const model = selected === void 0 ? void 0 : selectedModel ?? selected.defaultModel;
   const forwardedModel = selectedModel === void 0 || selectedModel === selected?.defaultModel ? void 0 : selectedModel;
-  const expandedDetails = (0, import_react38.useMemo)(
+  const expandedDetails = (0, import_react39.useMemo)(
     () => selected === void 0 ? [] : detailRows(selected, model, Math.max(16, columns - 4), forwardedModel),
     [selected, model, columns, forwardedModel]
   );
@@ -70258,11 +71689,11 @@ var Launcher = ({
   );
   const start = Math.max(0, Math.min(selectedIndex - Math.floor(capacity / 2), visible.length - capacity));
   const shown = visible.slice(start, start + capacity);
-  const widths = (0, import_react38.useMemo)(() => tableColumns(visible, columns), [visible, columns]);
+  const widths = (0, import_react39.useMemo)(() => tableColumns(visible, columns), [visible, columns]);
   const detailCapacity = Math.max(1, rows - 4);
   const visibleDetails = expandedDetails.slice(detailOffset, detailOffset + detailCapacity);
   if (showingDetails && selected !== void 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+    return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
       DetailsView,
       {
         selected,
@@ -70273,7 +71704,7 @@ var Launcher = ({
       }
     );
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
     SelectionView,
     {
       catalog,
@@ -70343,9 +71774,9 @@ var openInteractiveTerminalStreams = () => {
         if (output !== process.stderr) output.destroy();
       }
     };
-  } catch {
+  } catch (cause) {
     if (input !== void 0 && input !== process.stdin) input.destroy();
-    throw new Error("an interactive controlling terminal is required");
+    throw normalizeInteractiveTerminalError(cause);
   }
 };
 var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory) => {
@@ -70383,7 +71814,7 @@ var runInteractiveGuideMode = async (argv, guideRoot, promptMasterSkillDirectory
   let result;
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
         GuideApp,
         {
           catalog,
@@ -70452,7 +71883,7 @@ var runGuidePreviewMode = async () => {
   const terminal = openInteractiveTerminalStreams();
   let result;
   try {
-    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime5.jsx)(BasketPreviewApp, {}), {
+    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime6.jsx)(BasketPreviewApp, {}), {
       stdin: terminal.input,
       stdout: terminal.output,
       interactive: true,
@@ -70483,7 +71914,7 @@ var runForkPreviewMode = async () => {
   const terminal = openInteractiveTerminalStreams();
   let result;
   try {
-    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ForkPreviewApp, { variant: args.variant }), {
+    const instance = render_default(/* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ForkPreviewApp, { variant: args.variant }), {
       stdin: terminal.input,
       stdout: terminal.output,
       interactive: true,
@@ -70515,7 +71946,7 @@ var runAdminMode = async () => {
   const { input, output } = terminal;
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
         AdminRoot,
         {
           catalog,
@@ -70524,7 +71955,8 @@ var runAdminMode = async () => {
           guideRoot,
           cwd: process.cwd(),
           diagnosisProvider,
-          herdrEnv: herdrEnvironment()
+          herdrEnv: herdrEnvironment(),
+          routerCommandPath: process.env.TRELLAGE_TRX_COMMAND_PATH ?? "trx"
         }
       ),
       {
@@ -70542,7 +71974,49 @@ var runAdminMode = async () => {
     terminal.close();
   }
 };
+var confirmHarnessUpgradeMode = async (signal) => {
+  let terminal;
+  try {
+    terminal = openInteractiveTerminalStreams();
+  } catch (error) {
+    if (error instanceof InteractiveTerminalRequiredError) return "unavailable";
+    throw error;
+  }
+  try {
+    return await confirmHarnessUpgrade(terminal.input, terminal.output, signal);
+  } finally {
+    terminal.close();
+  }
+};
+var runHarnessUpgradeMode = async () => {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.on("SIGINT", cancel);
+  process.on("SIGTERM", cancel);
+  try {
+    process.exitCode = await runHarnessUpgradeCli({
+      argv: process.argv.slice(3),
+      readCatalog: () => readGuideCatalog(0),
+      runner: createNodeCommandRunner(),
+      cwd: process.cwd(),
+      routerCommandPath: process.env.TRELLAGE_TRX_COMMAND_PATH ?? "trx",
+      writeLine: (line) => {
+        process.stdout.write(`${line}
+`);
+      },
+      confirm: confirmHarnessUpgradeMode,
+      signal: controller.signal
+    });
+  } finally {
+    process.removeListener("SIGINT", cancel);
+    process.removeListener("SIGTERM", cancel);
+  }
+};
 var main = async () => {
+  if (process.argv[2] === "upgrade") {
+    await runHarnessUpgradeMode();
+    return;
+  }
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList();
     return;
@@ -70575,7 +72049,7 @@ var main = async () => {
   }
   try {
     const instance = render_default(
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
         Launcher,
         {
           catalog,

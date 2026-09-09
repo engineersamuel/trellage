@@ -42,6 +42,13 @@ import { ForkPreviewApp, forkPreviewHelpText, parseForkPreviewArgv, type ForkPre
 import { AdminRoot } from "./admin-ui.js"
 import { AdminRunManager } from "./admin-run-manager.js"
 import { DoctorFailureDiagnosisProvider } from "./admin-diagnosis-provider.js"
+import {
+  confirmHarnessUpgrade,
+  InteractiveTerminalRequiredError,
+  normalizeInteractiveTerminalError,
+  runHarnessUpgradeCli,
+  type HarnessUpgradeConfirmation,
+} from "./harness-upgrade-cli.js"
 
 interface LaunchIntent {
   readonly id: string
@@ -574,9 +581,9 @@ const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
         if (output !== process.stderr) output.destroy()
       },
     }
-  } catch {
+  } catch (cause) {
     if (input !== undefined && input !== process.stdin) input.destroy()
-    throw new Error("an interactive controlling terminal is required")
+    throw normalizeInteractiveTerminalError(cause)
   }
 }
 
@@ -760,6 +767,7 @@ const runAdminMode = async (): Promise<void> => {
         cwd={process.cwd()}
         diagnosisProvider={diagnosisProvider}
         herdrEnv={herdrEnvironment()}
+        routerCommandPath={process.env.TRELLAGE_TRX_COMMAND_PATH ?? "trx"}
       />,
       {
         stdin: input,
@@ -777,7 +785,50 @@ const runAdminMode = async (): Promise<void> => {
   }
 }
 
+const confirmHarnessUpgradeMode = async (signal?: AbortSignal): Promise<HarnessUpgradeConfirmation> => {
+  let terminal: InteractiveTerminalStreams
+  try {
+    terminal = openInteractiveTerminalStreams()
+  } catch (error) {
+    if (error instanceof InteractiveTerminalRequiredError) return "unavailable"
+    throw error
+  }
+  try {
+    return await confirmHarnessUpgrade(terminal.input, terminal.output, signal)
+  } finally {
+    terminal.close()
+  }
+}
+
+const runHarnessUpgradeMode = async (): Promise<void> => {
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  process.on("SIGINT", cancel)
+  process.on("SIGTERM", cancel)
+  try {
+    process.exitCode = await runHarnessUpgradeCli({
+      argv: process.argv.slice(3),
+      readCatalog: () => readGuideCatalog(0),
+      runner: createNodeCommandRunner(),
+      cwd: process.cwd(),
+      routerCommandPath: process.env.TRELLAGE_TRX_COMMAND_PATH ?? "trx",
+      writeLine: (line) => {
+        process.stdout.write(`${line}\n`)
+      },
+      confirm: confirmHarnessUpgradeMode,
+      signal: controller.signal,
+    })
+  } finally {
+    process.removeListener("SIGINT", cancel)
+    process.removeListener("SIGTERM", cancel)
+  }
+}
+
 const main = async () => {
+  if (process.argv[2] === "upgrade") {
+    await runHarnessUpgradeMode()
+    return
+  }
   if (process.argv[2] === "enrich-native-list") {
     await runEnrichNativeList()
     return

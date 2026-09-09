@@ -860,6 +860,10 @@ const inventoryGenericSkillEntry = async (context, directory, relativeDirectory,
   if (!inside(context.root, await realpath(absolute))) {
     fail(`generic skill path escapes seed: ${relative}`)
   }
+  if ([".trellage-floating-skills", ".trellage-floating-always-on.md"].includes(relative)) {
+    if (!status.isFile()) fail(`invalid baked skill evidence: ${relative}`)
+    return
+  }
   if (status.isDirectory()) {
     await inventoryGenericSkillDirectory(context, absolute, relative)
     return
@@ -886,7 +890,9 @@ const inventoryGenericSkills = async (seed, forbiddenBuildPaths) => {
   if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) fail("generic skills path must be a directory")
   const root = await realpath(skills)
   const context = { root, forbiddenBuildPaths, entries: [] }
-  for (const name of await readdir(skills)) safeIdentifier(name, "generic skill")
+  for (const name of await readdir(skills)) {
+    if (![".trellage-floating-skills", ".trellage-floating-always-on.md"].includes(name)) safeIdentifier(name, "generic skill")
+  }
   await inventoryGenericSkillDirectory(context, skills, "")
   return context.entries
 }

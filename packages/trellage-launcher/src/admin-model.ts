@@ -120,6 +120,8 @@ export interface AdminProfileEntry {
   readonly healthDiagnostic?: string
   readonly install: AdminInstallStatus
   readonly version?: string
+  /** Configured Container selector, separate from the installed version and latest release. */
+  readonly harnessVersionSelector?: string
   /** Whether this profile's launcher supports a read-only `update --check` (see `launchersWithoutUpdateCheckSupport`). Always `false` for sandbox profiles: `trellage upgrade` rebuilds the locked image and has no safe read-only equivalent. */
   readonly updateCheckSupported: boolean
   /** Whether this profile supports the read-only `harness-version` report. Sandbox reports use receipt-backed installed revisions and authoritative latest sources where defined. */
@@ -265,6 +267,15 @@ const optionalUpdateFields = (
   ...(updateCheck.updateCheckedAt === undefined ? {} : { updateCheckedAt: updateCheck.updateCheckedAt }),
 })
 
+const optionalHarnessTargetFields = (
+  entry: GuideCatalogEntryRef,
+  catalog: CombinedGuideCatalog,
+): Pick<AdminProfileEntry, "harnessVersionSelector"> => {
+  if (entry.surface !== "sandbox") return {}
+  const selector = catalog.sandbox.find((profile) => profile.name === entry.name)?.harness.version
+  return selector === undefined ? {} : { harnessVersionSelector: selector }
+}
+
 const aggregateAdminProfile = (
   entry: GuideCatalogEntryRef,
   catalog: CombinedGuideCatalog,
@@ -289,6 +300,7 @@ const aggregateAdminProfile = (
     health: derived.health,
     install: derived.install,
     ...optionalReadinessFields(entry, readiness, derived),
+    ...optionalHarnessTargetFields(entry, catalog),
     updateCheckSupported: capabilities.updateCheckSupported,
     harnessVersionSupported: capabilities.harnessVersionSupported,
     ...optionalUpdateFields(updateCheck),

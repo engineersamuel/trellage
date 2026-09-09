@@ -25,6 +25,8 @@ import type { AdminRunManager } from "./admin-run-manager.js"
 export interface HarnessVersionSchedulerOptions {
   readonly maxConcurrent?: number
   readonly forceResync?: boolean
+  /** Overrides whether a forced sandbox run also bypasses the CLI's latest-version cache. */
+  readonly refreshLatest?: boolean
   readonly selectedEntryRef?: string
   readonly now?: () => number
   readonly onResult?: (
@@ -222,7 +224,8 @@ export const runBatchedHarnessVersionChecks = async (
         const operation = queue.shift()
         if (operation === undefined) return
         const command = buildHarnessVersionCommand(operation.entry, {
-          refreshLatest: forceRun && operation.entry.surface === "sandbox",
+          refreshLatest:
+            operation.entry.surface === "sandbox" && (options.refreshLatest ?? forceRun),
         })
         const ref = harnessVersionRefFor(operation.key)
         if (forceRun) {

@@ -28,6 +28,8 @@ Usage:
   omp setup [local|copilot|--all]
   omp doctor [local|copilot]
   omp repair [local|copilot]
+  omp skills-update PROFILE
+  omp skills-check PROFILE
   omp update [--check] [local|copilot|--all]
   omp harness-version
 
@@ -113,6 +115,27 @@ check_community_skills() {
     --cache "$community_skills_cache" \
     --target "$agent_root/community-skills" \
     || die "failed to validate OMP community skills: $profile_key"
+}
+
+skills_update_profile() {
+  local helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("${1:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  require_owned_profile
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+      "$cache" "$agent_root/skills" "$community_skills_cache" "$agent_root/community-skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+    "$cache" "$agent_root/skills" \
+    "$community_skills_cache" "$agent_root/community-skills" \
+    || die "failed to update cached skills: $profile_key"
+  [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile_key"
 }
 
 version_at_least() {
@@ -1200,7 +1223,7 @@ validate_catalog
 
 command_name="${1-}"
 case "$command_name" in
-  help)
+  help|--help)
     usage
     ;;
   list)
@@ -1236,6 +1259,18 @@ case "$command_name" in
       || die 'repair accepts only local or copilot'
     select_profile "${1-local}"
     repair_profile
+    ;;
+  skills-check)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-check requires PROFILE'
+    select_profile "$1"
+    skills_update_profile --fresh
+    ;;
+  skills-update)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-update requires PROFILE'
+    select_profile "$1"
+    skills_update_profile
     ;;
   update)
     shift

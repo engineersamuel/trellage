@@ -132,7 +132,7 @@ maybe_load_native_environment() {
 
   case "${1-}" in
     --native-auth) profile="${2-}" ;;
-    "" | --help | -h | list | inventory | setup | doctor | update | repair) return ;;
+    "" | --help | -h | list | inventory | setup | doctor | update | repair | skills-update | skills-check | harness-version | harness-update) return ;;
     *) profile="$1" ;;
   esac
   [[ -n "$profile" ]] || return

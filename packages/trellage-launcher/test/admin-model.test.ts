@@ -194,7 +194,14 @@ describe("aggregateAdminProfiles", () => {
   it("projects a ready sandbox resolution as its installed harness version", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
     const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    expect(sandbox).toMatchObject({ version: "1.0.70" })
+    expect(sandbox).toMatchObject({ version: "1.0.70", harnessVersionSelector: "1.0.0" })
+    expect(entries.find((entry) => entry.surface === "native")?.harnessVersionSelector).toBeUndefined()
+  })
+
+  it("keeps a floating harness target separate from an unavailable installed version", () => {
+    const entries = aggregateAdminProfiles(fixtureCatalogWithClaudeSandbox())
+    expect(entries[0]).toMatchObject({ harnessVersionSelector: "latest" })
+    expect(entries[0]?.version).toBeUndefined()
   })
 
   it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {

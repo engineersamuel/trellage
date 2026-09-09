@@ -227,6 +227,25 @@ describe("runBatchedHarnessVersionChecks", () => {
     await batch
   })
 
+  it("can force an installed-version refresh while reusing the CLI latest cache", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const batch = runBatchedHarnessVersionChecks([sandboxEntry()], manager, emptyCache(), {
+      forceResync: true,
+      refreshLatest: false,
+    })
+
+    await flush()
+    expect(runner.calls).toEqual([
+      {
+        executable: "/opt/trellage/bin/trellage",
+        args: ["harness-version", "claude-blog"],
+      },
+    ])
+    runner.resolveNext(runResult("2.1.260", "2.1.260"))
+    await batch
+  })
+
   it("uses the selected sandbox profile as the sole force-refresh latest producer", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })

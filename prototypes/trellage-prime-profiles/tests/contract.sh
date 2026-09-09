@@ -246,7 +246,7 @@ cli="${1-}"
 shift || true
 [[ -n "$cli" && -f "$cli" ]] || exit 97
 case "$cli" in
-  */floating-skills.mjs) exec "$REAL_NODE" "$cli" "$@" ;;
+  */floating-skills.mjs|*/native-skills.mjs) exec "$REAL_NODE" "$cli" "$@" ;;
 esac
 # Execute the fake CLI script directly (it is a bash stub, not JS).
 exec bash "$cli" "$@"

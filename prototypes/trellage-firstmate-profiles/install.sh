@@ -35,6 +35,7 @@ command_dir="$local_dir/bin"
 command_path="$command_dir/fmx"
 
 native_claude_source="$repo_root/prototypes/trellage-claude-common/native-claude"
+native_skills_source="$repo_root/prototypes/trellage-claude-common/native-skills.mjs"
 session_bridge_source="$repo_root/scripts/trellage-session-bridge.py"
 floating_runtime_installer="$repo_root/scripts/install-floating-skills-runtime.sh"
 prerequisite_helper_source="$source_dir/lib/fmx-prerequisites"
@@ -122,6 +123,9 @@ require_owned_runtime_contents() {
   require_runtime_file "$install_root/lib/fmx-overlay.py"
   require_runtime_file "$install_root/lib/fmx-prerequisites"
   require_runtime_file "$install_root/lib/native-claude"
+  if [[ -e "$install_root/native-skills.mjs" || -L "$install_root/native-skills.mjs" ]]; then
+    require_runtime_file "$install_root/native-skills.mjs"
+  fi
   require_runtime_file "$install_root/lib/trellage-session-bridge.py"
   require_runtime_file "$installed_catalog"
   require_runtime_file "$install_root/prerequisite-lock/manifest.json"
@@ -144,6 +148,7 @@ require_owned_runtime_contents() {
       "$install_root/lib/fmx-overlay.py"|\
       "$install_root/lib/fmx-prerequisites"|\
       "$install_root/lib/native-claude"|\
+      "$install_root/native-skills.mjs"|\
       "$install_root/lib/trellage-session-bridge.py"|\
       "$installed_catalog"|\
       "$install_root/policies"|\
@@ -252,6 +257,7 @@ require_regular_file "$source_dir/catalog.json" 'catalog'
 require_regular_file "$native_claude_source" 'shared native Claude helper'
 require_regular_file "$session_bridge_source" 'session bridge'
 require_regular_file "$floating_runtime_installer" 'floating-skills runtime installer'
+require_regular_file "$native_skills_source" 'Native skills helper'
 [[ -x "$floating_runtime_installer" ]] \
   || refuse "floating-skills runtime installer is not executable: $floating_runtime_installer"
 [[ -d "$source_dir/policies" && ! -L "$source_dir/policies" ]] \
@@ -711,6 +717,7 @@ stage_file "$source_dir/lib/fmx-worker" "$staging_root/new-runtime/lib/fmx-worke
 stage_file "$source_dir/lib/fmx-overlay.py" "$staging_root/new-runtime/lib/fmx-overlay.py" 0755
 stage_file "$prerequisite_helper_source" "$staging_root/new-runtime/lib/fmx-prerequisites" 0755
 stage_file "$native_claude_source" "$staging_root/new-runtime/lib/native-claude" 0755
+stage_file "$native_skills_source" "$staging_root/new-runtime/native-skills.mjs" 0644
 stage_file "$session_bridge_source" \
   "$staging_root/new-runtime/lib/trellage-session-bridge.py" 0755
 stage_file "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json" 0644

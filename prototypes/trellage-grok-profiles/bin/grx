@@ -117,7 +117,10 @@ usage() {
     '  grx update --check PROFILE|--all' \
     '  grx update PROFILE|--all' \
     '  grx repair PROFILE' \
-    '  grx harness-version'
+    '  grx skills-update PROFILE' \
+    '  grx skills-check PROFILE' \
+    '  grx harness-version' \
+    '  grx harness-update'
 }
 
 require_command() {
@@ -154,6 +157,26 @@ verify_repairable_floating_skills() {
     --bundle native-common \
     --target "$(profile_home "$profile")/skills" \
     || die "floating skills cannot be repaired safely: $profile"
+}
+
+skills_update_profile() {
+  local profile="$1" helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("${2:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills" \
+    || die "failed to update cached skills: $profile"
+  [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile"
 }
 
 single_json_document() {
@@ -2013,6 +2036,14 @@ case "$command_name" in
     resolve_grok
     repair_profile "$1"
     ;;
+  skills-check)
+    [ "$#" -eq 1 ] || die 'skills-check requires PROFILE'
+    skills_update_profile "$1" --fresh
+    ;;
+  skills-update)
+    [ "$#" -eq 1 ] || die 'skills-update requires PROFILE'
+    skills_update_profile "$1"
+    ;;
   update)
     if [ "${1:-}" = '--check' ]; then
       [ "$#" -eq 2 ] || die 'update --check requires PROFILE or --all'
@@ -2028,6 +2059,11 @@ case "$command_name" in
   harness-version)
     [ "$#" -eq 0 ] || die 'harness-version accepts no arguments'
     print_harness_version_json
+    ;;
+  harness-update)
+    [ "$#" -eq 0 ] || die 'harness-update accepts no arguments'
+    resolve_grok
+    exec "$grok_executable" update --stable
     ;;
   *)
     launch_profile "$command_name" "$@"

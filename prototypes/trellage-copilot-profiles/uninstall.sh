@@ -88,6 +88,9 @@ fi
   || refuse "refusing unsafe managed runtime path: $installed_model_settings"
 [[ ! -L "$installed_assets" && ( ! -e "$installed_assets" || -d "$installed_assets" ) ]] \
   || refuse "refusing unsafe managed runtime path: $installed_assets"
+[[ ! -L "$install_root/native-skills.mjs" \
+  && ( ! -e "$install_root/native-skills.mjs" || -f "$install_root/native-skills.mjs" ) ]] \
+  || refuse "unsafe Native skills helper: $install_root/native-skills.mjs"
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   if [[ ! -L "$command_path" || "$(readlink "$command_path")" != "$installed_launcher" ]]; then
@@ -96,7 +99,7 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
   rm "$command_path"
 fi
 
-rm -f "$installed_launcher" "$installed_catalog" "$ownership_marker"
+rm -f "$installed_launcher" "$installed_catalog" "$ownership_marker" "$install_root/native-skills.mjs"
 rm -f "$installed_session_bridge" "$installed_model_settings"
 rm -f "$installed_assets/rundown.instructions.md" "$installed_assets/NOTICE.md"
 rmdir "$installed_assets" "$install_root/assets" 2>/dev/null || true

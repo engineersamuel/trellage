@@ -56,7 +56,10 @@ Usage:
   cpx update --check PROFILE|--all
   cpx update PROFILE|--all
   cpx repair PROFILE
+  cpx skills-update PROFILE
+  cpx skills-check PROFILE
   cpx harness-version
+  cpx harness-update
 EOF
 }
 
@@ -85,6 +88,26 @@ verify_floating_skills() {
     --bundle native-common \
     --target "$(profile_home "$profile")/skills" \
     || die "floating skills are unhealthy: $profile"
+}
+
+skills_update_profile() {
+  local profile="$1" helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("${2:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  require_profile "$profile"
+  require_safe_profile_home "$profile"
+  [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills" \
+    || die "failed to update cached skills: $profile"
+  [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile"
 }
 
 extract_semver() {
@@ -1619,9 +1642,22 @@ case "$command_name" in
     require_command copilot
     repair_profile "$1"
     ;;
+  skills-check)
+    [[ "$#" == 1 ]] || die 'skills-check requires PROFILE'
+    skills_update_profile "$1" --fresh
+    ;;
+  skills-update)
+    [[ "$#" == 1 ]] || die 'skills-update requires PROFILE'
+    skills_update_profile "$1"
+    ;;
   harness-version)
     [[ "$#" == 0 ]] || die 'harness-version accepts no arguments'
     print_harness_version_json
+    ;;
+  harness-update)
+    [[ "$#" == 0 ]] || die 'harness-update accepts no arguments'
+    require_command copilot
+    exec copilot update stable
     ;;
   -h|--help|help)
     usage

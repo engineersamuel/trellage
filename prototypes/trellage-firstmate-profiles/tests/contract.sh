@@ -482,6 +482,8 @@ esac
 FAKE_PREREQUISITE_HELPER
 chmod 0755 "$mirror/prototypes/trellage-firstmate-profiles/lib/fmx-prerequisites"
 cp "$fake_native_claude" "$mirror/prototypes/trellage-claude-common/native-claude"
+cp "$repo_root/prototypes/trellage-claude-common/native-skills.mjs" \
+  "$mirror/prototypes/trellage-claude-common/native-skills.mjs"
 chmod 0755 "$mirror/prototypes/trellage-claude-common/native-claude"
 cp "$repo_root/scripts/trellage-session-bridge.py" "$mirror/scripts/trellage-session-bridge.py"
 cp "$repo_root/scripts/install-floating-skills-runtime.sh" "$mirror/scripts/"

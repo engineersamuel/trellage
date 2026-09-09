@@ -54,11 +54,28 @@ import {
   harnessVersionResultForOperation,
   runBatchedHarnessVersionChecks,
 } from "./admin-harness-version-scheduler.js"
+import {
+  HarnessUpdateManager,
+  harnessUpdateKeyFor,
+  harnessUpdatePlanFor,
+  refreshHarnessUpdateVersions,
+  type HarnessUpdateOutcome,
+  type HarnessUpdatePlan,
+} from "./admin-harness-update.js"
 import { buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.js"
+import { refreshHarnessUpdateGroupVersions } from "./admin-harness-update-all.js"
+import { HarnessUpdateAllOverlay, HarnessUpdateAllStatus, useHarnessUpdateAll } from "./admin-harness-update-all-ui.js"
+import { checkAdminHarnessUpdates } from "./admin-harness-update-discovery.js"
+import { checkAdminSkillsUpdates } from "./admin-skills-check.js"
 
 type DiagnosisState =
   | { readonly status: "diagnosing" }
   | { readonly status: "done"; readonly result: DoctorFailureDiagnosisResult }
+  | { readonly status: "error"; readonly message: string }
+
+type HarnessUpdateState =
+  | { readonly status: "running"; readonly targetCount: number; readonly surface: AdminProfileEntry["surface"] }
+  | { readonly status: "done"; readonly outcome: HarnessUpdateOutcome }
   | { readonly status: "error"; readonly message: string }
 
 const sortCycle: ReadonlyArray<AdminSortKey> = ["name", "health", "install", "surface"]
@@ -168,6 +185,323 @@ const HarnessVersionDetail = ({
   )
 }
 
+const harnessUpdateSurfaceLabel = (surface: AdminProfileEntry["surface"]): string =>
+  surface === "sandbox" ? "container" : "native"
+
+const CompletedHarnessUpdate = ({ outcome }: { readonly outcome: HarnessUpdateOutcome }) => {
+  const failures = outcome.results.filter((result) => result.state === "failure")
+  return (
+    <Text dimColor wrap="wrap">
+      Updated {outcome.results.length - failures.length}/{outcome.results.length} {outcome.harness}{" "}
+      {harnessUpdateSurfaceLabel(outcome.surface)} profiles.
+      {failures.length === 0
+        ? ""
+        : ` Failed: ${failures.map((result) => `${result.name}: ${result.diagnostic}`).join("; ")}.`}
+    </Text>
+  )
+}
+
+const HarnessUpdateStatus = ({ state, tick }: { readonly state: HarnessUpdateState | undefined; readonly tick: number }) => {
+  if (state === undefined) return null
+  if (state.status === "running") {
+    return (
+      <Text color="cyan">
+        {spinnerFrameAt(tick)} Updating {state.targetCount} {harnessUpdateSurfaceLabel(state.surface)} profiles…
+      </Text>
+    )
+  }
+  if (state.status === "error") {
+    return (
+      <Text color="red" wrap="wrap">
+        Harness update or version refresh failed: {state.message}
+      </Text>
+    )
+  }
+  return <CompletedHarnessUpdate outcome={state.outcome} />
+}
+
+const HarnessUpdateControl = ({
+  plan,
+  state,
+  tick,
+  confirming,
+}: {
+  readonly plan: HarnessUpdatePlan | undefined
+  readonly state: HarnessUpdateState | undefined
+  readonly tick: number
+  readonly confirming: boolean
+}) => {
+  const canUpdate = plan !== undefined && state?.status !== "running"
+
+  if (plan === undefined && state === undefined) return null
+  return (
+    <Box flexDirection="column">
+      {canUpdate ? <ShortcutHints items={[{ key: "U", label: "update harness" }]} /> : null}
+      {confirming && plan !== undefined ? (
+        <Text color="yellow" wrap="wrap">
+          Press [y] to update {plan.harness} for all {plan.targets.length} {harnessUpdateSurfaceLabel(plan.surface)} profiles,
+          or any other key to cancel.{" "}
+          {plan.latestVersion === undefined
+            ? "The update command will resolve the configured version."
+            : `Latest reported: ${plan.latestVersion}. Existing version pins are preserved.`}
+        </Text>
+      ) : null}
+      <HarnessUpdateStatus state={state} tick={tick} />
+    </Box>
+  )
+}
+
+type DetailConfirmation = "launch" | "fork" | "repair" | "harness-update"
+
+const forkOutcomeMessage = (outcome: HerdrForkOutcome): string => {
+  if (outcome.kind === "launched") return `Forked to a new Herdr worktree: ${outcome.result.checkoutPath}`
+  if (outcome.kind === "unavailable") return "Herdr is not available in this session."
+  if (outcome.kind === "not-ready") return `Worktree is not ready to create (${outcome.inspection.kind}).`
+  return outcome.error instanceof Error ? outcome.error.message : String(outcome.error)
+}
+
+const repairStatusNote = (
+  repairMessage: string | undefined,
+  repairState: AdminRunStatus["state"],
+  setupState: AdminRunStatus["state"],
+  doctorStatus: AdminStatus,
+): string | undefined => {
+  if (repairMessage !== undefined) return repairMessage
+  if (repairState === "idle") return undefined
+  if (setupState === "idle") return `Repair ${repairState} (recheck: ${statusLabel(doctorStatus)}).`
+  return `Repair ${repairState}, setup ${setupState} (recheck: ${statusLabel(doctorStatus)}).`
+}
+
+const DetailSummary = ({
+  entry,
+  versionResult,
+  versionRunning,
+  tick,
+}: {
+  readonly entry: AdminProfileEntry
+  readonly versionResult: AdminHarnessVersionResult | undefined
+  readonly versionRunning: boolean
+  readonly tick: number
+}) => (
+  <>
+    <Text bold color="cyan">
+      {entry.name}{" "}
+      <Text dimColor>
+        · {entry.surface}
+        {entry.launcher === undefined ? "" : ` · ${entry.launcher}`}
+      </Text>
+    </Text>
+    <Text wrap="wrap">{entry.description}</Text>
+    <Text>
+      Health: <Text bold>{entry.health}</Text> · Install: <Text bold>{entry.install}</Text>
+    </Text>
+    <HarnessVersionDetail
+      supported={entry.harnessVersionSupported}
+      result={versionResult}
+      running={versionRunning}
+      tick={tick}
+    />
+    {entry.healthDiagnostic === undefined ? null : (
+      <Text dimColor wrap="wrap">
+        {entry.healthDiagnostic}
+      </Text>
+    )}
+  </>
+)
+
+const DoctorPanel = ({
+  entry,
+  snapshot,
+  status,
+  controls,
+  canFork,
+  canRepair,
+  versionRunning,
+  tick,
+}: {
+  readonly entry: AdminProfileEntry
+  readonly snapshot: AdminRunStatus
+  readonly status: AdminStatus
+  readonly controls: ReturnType<typeof controlsForStatus>
+  readonly canFork: boolean
+  readonly canRepair: boolean
+  readonly versionRunning: boolean
+  readonly tick: number
+}) => {
+  const shortcutItems = [
+    controls.canTrigger ? { key: "d", label: "run doctor" } : undefined,
+    controls.canCancel ? { key: "c", label: "cancel" } : undefined,
+    controls.canRetry ? { key: "r", label: "retry" } : undefined,
+    { key: "g", label: "view guide" },
+    entry.inventorySupported ? { key: "i", label: "view inventory" } : undefined,
+    { key: "l", label: "launch in terminal" },
+    canFork ? { key: "f", label: "fork to fix" } : undefined,
+    canRepair ? { key: "p", label: "repair profile" } : undefined,
+    entry.harnessVersionSupported && !versionRunning ? { key: "u", label: "resync version" } : undefined,
+  ].filter((item): item is { readonly key: string; readonly label: string } => item !== undefined)
+  return (
+    <Box marginTop={1} flexDirection="column">
+      <Text>
+        Doctor status: <StatusText status={status} tick={tick} bold /></Text>
+      {snapshot.latest === undefined ? null : (
+        <Text dimColor wrap="wrap">
+          {(snapshot.latest.stdout || snapshot.latest.stderr || "").slice(0, 4000)}
+        </Text>
+      )}
+      {snapshot.history.length === 0 ? null : (
+        <Text dimColor>
+          {historyScopeLabel} ({snapshot.history.length} run{snapshot.history.length === 1 ? "" : "s"} recorded)
+        </Text>
+      )}
+      <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray" flexDirection="column">
+        <ShortcutHints items={shortcutItems} />
+      </Box>
+    </Box>
+  )
+}
+
+const DiagnosisPanel = ({
+  diagnosis,
+  herdrAvailable,
+}: {
+  readonly diagnosis: DiagnosisState | undefined
+  readonly herdrAvailable: boolean | undefined
+}) => {
+  if (diagnosis === undefined) return null
+  return (
+    <Box marginTop={1} flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
+      <Text bold color="magenta">
+        Copilot diagnosis
+      </Text>
+      {diagnosis.status === "diagnosing" ? <Text color="yellow">Diagnosing failure…</Text> : null}
+      {diagnosis.status === "error" ? (
+        <Text color="yellow" wrap="wrap">
+          Diagnosis unavailable: {diagnosis.message}
+        </Text>
+      ) : null}
+      {diagnosis.status === "done" ? (
+        <Box flexDirection="column">
+          <Text wrap="wrap">{diagnosis.result.summary}</Text>
+          <Text wrap="wrap" dimColor>
+            Suggested fix: {diagnosis.result.suggestedFix}
+          </Text>
+          {herdrAvailable === false ? <Text dimColor>Herdr is unavailable in this session; fork to fix is disabled.</Text> : null}
+        </Box>
+      ) : null}
+    </Box>
+  )
+}
+
+const ConfirmationPrompt = ({
+  confirmation,
+  entry,
+}: {
+  readonly confirmation: DetailConfirmation | undefined
+  readonly entry: AdminProfileEntry
+}) => {
+  if (confirmation === "launch") {
+    return <Text color="yellow">Press [y] to hand this terminal to {entry.name} now, or any other key to cancel.</Text>
+  }
+  if (confirmation === "fork") {
+    return (
+      <Text color="yellow">
+        Press [y] to create a new Herdr worktree and hand it {entry.name}&apos;s suggested fix now, or any other key to cancel.
+      </Text>
+    )
+  }
+  if (confirmation === "repair") {
+    return (
+      <Text color="yellow">
+        Press [y] to run {entry.name}&apos;s repair (and setup, if still needed) now and recheck doctor afterward, or any other key to
+        cancel.
+      </Text>
+    )
+  }
+  return null
+}
+
+const DetailMessages = ({
+  launchMessage,
+  forkMessage,
+  repairNote,
+}: {
+  readonly launchMessage: string | undefined
+  readonly forkMessage: string | undefined
+  readonly repairNote: string | undefined
+}) => (
+  <>
+    {launchMessage === undefined ? null : <Text dimColor>{launchMessage}</Text>}
+    {forkMessage === undefined ? null : (
+      <Text dimColor wrap="wrap">
+        {forkMessage}
+      </Text>
+    )}
+    {repairNote === undefined ? null : (
+      <Text dimColor wrap="wrap">
+        {repairNote}
+      </Text>
+    )}
+  </>
+)
+
+interface DetailInputOptions {
+  readonly confirmation: DetailConfirmation | undefined
+  readonly entry: AdminProfileEntry
+  readonly controls: ReturnType<typeof controlsForStatus>
+  readonly canFork: boolean
+  readonly canRepair: boolean
+  readonly versionRunning: boolean
+  readonly confirmLaunch: () => void
+  readonly confirmFork: () => void
+  readonly confirmRepair: () => void
+  readonly cancelConfirmation: () => void
+  readonly runOrRetryDoctor: () => void
+  readonly cancelDoctor: () => void
+  readonly onOpenGuide: (entry: AdminProfileEntry) => void
+  readonly onOpenInventory: (entry: AdminProfileEntry) => void
+  readonly setConfirmation: (confirmation: DetailConfirmation) => void
+  readonly onForceResyncVersion: (entry: AdminProfileEntry) => void
+  readonly harnessUpdatePlan: HarnessUpdatePlan | undefined
+  readonly onUpdateHarness: (plan: HarnessUpdatePlan) => void
+}
+
+const handleDetailConfirmation = (input: string, options: DetailInputOptions): boolean => {
+  if (options.confirmation === undefined) return false
+  if (input === "y") {
+    if (options.confirmation === "launch") options.confirmLaunch()
+    if (options.confirmation === "fork") options.confirmFork()
+    if (options.confirmation === "repair") options.confirmRepair()
+    if (options.confirmation === "harness-update" && options.harnessUpdatePlan !== undefined)
+      options.onUpdateHarness(options.harnessUpdatePlan)
+  }
+  options.cancelConfirmation()
+  return true
+}
+
+const handleDoctorInput = (input: string, options: DetailInputOptions): boolean => {
+  if ((input === "d" || input === "r") && (options.controls.canTrigger || options.controls.canRetry)) {
+    options.runOrRetryDoctor()
+    return true
+  }
+  if (input === "c" && options.controls.canCancel) {
+    options.cancelDoctor()
+    return true
+  }
+  return false
+}
+
+const handleDetailShortcut = (input: string, options: DetailInputOptions): void => {
+  if (handleDoctorInput(input, options)) return
+  if (input === "g") options.onOpenGuide(options.entry)
+  else if (input === "i" && options.entry.inventorySupported) options.onOpenInventory(options.entry)
+  else if (input === "l") options.setConfirmation("launch")
+  else if (input === "f" && options.canFork) options.setConfirmation("fork")
+  else if (input === "p" && options.canRepair) options.setConfirmation("repair")
+  else if (input === "u" && options.entry.harnessVersionSupported && !options.versionRunning)
+    options.onForceResyncVersion(options.entry)
+  else if (input === "U" && options.harnessUpdatePlan !== undefined) options.setConfirmation("harness-update")
+}
+
 const AdminDetailPanel = ({
   entry,
   runManager,
@@ -180,6 +514,11 @@ const AdminDetailPanel = ({
   versionResult,
   versionRunning,
   onForceResyncVersion,
+  harnessUpdatePlan,
+  harnessUpdateState,
+  onUpdateHarness,
+  onConfirmationChange,
+  inputActive,
 }: {
   readonly entry: AdminProfileEntry
   readonly runManager: AdminRunManager
@@ -192,23 +531,31 @@ const AdminDetailPanel = ({
   readonly versionResult: AdminHarnessVersionResult | undefined
   readonly versionRunning: boolean
   readonly onForceResyncVersion: (entry: AdminProfileEntry) => void
+  readonly harnessUpdatePlan: HarnessUpdatePlan | undefined
+  readonly harnessUpdateState: HarnessUpdateState | undefined
+  readonly onUpdateHarness: (plan: HarnessUpdatePlan) => void
+  readonly onConfirmationChange: (active: boolean) => void
+  readonly inputActive: boolean
 }) => {
   const [, forceRender] = useState(0)
-  const [launchConfirming, setLaunchConfirming] = useState(false)
+  const [confirmation, setConfirmation] = useState<DetailConfirmation | undefined>(undefined)
   const [launchMessage, setLaunchMessage] = useState<string | undefined>(undefined)
-  const [forkConfirming, setForkConfirming] = useState(false)
   const [forkMessage, setForkMessage] = useState<string | undefined>(undefined)
-  const [repairConfirming, setRepairConfirming] = useState(false)
   const [repairMessage, setRepairMessage] = useState<string | undefined>(undefined)
 
   useEffect(() => {
-    setLaunchConfirming(false)
+    setConfirmation(undefined)
+    onConfirmationChange(false)
     setLaunchMessage(undefined)
-    setForkConfirming(false)
     setForkMessage(undefined)
-    setRepairConfirming(false)
     setRepairMessage(undefined)
-  }, [entry.ref])
+    return () => onConfirmationChange(false)
+  }, [entry.ref, onConfirmationChange])
+
+  const updateConfirmation = (next: DetailConfirmation | undefined) => {
+    setConfirmation(next)
+    onConfirmationChange(next !== undefined)
+  }
 
   const snapshot = runManager.status(entry.ref)
   const status = runStatusOf(entry, snapshot)
@@ -216,13 +563,7 @@ const AdminDetailPanel = ({
   const repairSnapshot = runManager.status(repairRefFor(entry))
   const setupSnapshot = runManager.status(setupRefFor(entry))
   const canRepair = isRepairSupported(entry) && controls.canRetry && repairSnapshot.state !== "running" && setupSnapshot.state !== "running"
-  const repairNote =
-    repairMessage ??
-    (repairSnapshot.state === "idle"
-      ? undefined
-      : setupSnapshot.state === "idle"
-        ? `Repair ${repairSnapshot.state} (recheck: ${statusLabel(status)}).`
-        : `Repair ${repairSnapshot.state}, setup ${setupSnapshot.state} (recheck: ${statusLabel(status)}).`)
+  const repairNote = repairStatusNote(repairMessage, repairSnapshot.state, setupSnapshot.state, status)
 
   const runOrRetryDoctor = () => {
     const command = buildDiagnosticCommand(entry)
@@ -254,7 +595,6 @@ const AdminDetailPanel = ({
    * same fixed, safe commands the profile's own launcher already exposes.
    */
   const confirmRepair = () => {
-    setRepairConfirming(false)
     setRepairMessage(`Running ${entry.name}'s repair…`)
     repairThenRecheckDoctor(entry, runManager)
       .then((outcome) => {
@@ -269,150 +609,62 @@ const AdminDetailPanel = ({
     launchAdminProfile(entry, true)
       .then(() => setLaunchMessage(`Handed the terminal to ${entry.name}.`))
       .catch((error: unknown) => setLaunchMessage(error instanceof Error ? error.message : String(error)))
-    setLaunchConfirming(false)
   }
 
   const canFork = diagnosis?.status === "done" && herdrAvailable === true
   const confirmFork = () => {
-    setForkConfirming(false)
     setForkMessage(`Creating a Herdr worktree to fix ${entry.name}…`)
     onForkToFix(entry, diagnosis?.status === "done" ? diagnosis.result : undefined)
-      .then((outcome) => {
-        if (outcome.kind === "launched") setForkMessage(`Forked to a new Herdr worktree: ${outcome.result.checkoutPath}`)
-        else if (outcome.kind === "unavailable") setForkMessage("Herdr is not available in this session.")
-        else if (outcome.kind === "not-ready") setForkMessage(`Worktree is not ready to create (${outcome.inspection.kind}).`)
-        else setForkMessage(outcome.error instanceof Error ? outcome.error.message : String(outcome.error))
-      })
+      .then((outcome) => setForkMessage(forkOutcomeMessage(outcome)))
       .catch((error: unknown) => setForkMessage(error instanceof Error ? error.message : String(error)))
   }
 
   useInput((input) => {
-    if (launchConfirming) {
-      if (input === "y") confirmLaunch()
-      else setLaunchConfirming(false)
-      return
+    const options: DetailInputOptions = {
+      confirmation,
+      entry,
+      controls,
+      canFork,
+      canRepair,
+      versionRunning,
+      confirmLaunch,
+      confirmFork,
+      confirmRepair,
+      cancelConfirmation: () => updateConfirmation(undefined),
+      runOrRetryDoctor,
+      cancelDoctor,
+      onOpenGuide,
+      onOpenInventory,
+      setConfirmation: updateConfirmation,
+      onForceResyncVersion,
+      harnessUpdatePlan: harnessUpdateState?.status === "running" ? undefined : harnessUpdatePlan,
+      onUpdateHarness,
     }
-    if (forkConfirming) {
-      if (input === "y") confirmFork()
-      else setForkConfirming(false)
-      return
-    }
-    if (repairConfirming) {
-      if (input === "y") confirmRepair()
-      else setRepairConfirming(false)
-      return
-    }
-    if (input === "g") onOpenGuide(entry)
-    else if (input === "i" && entry.inventorySupported) onOpenInventory(entry)
-    else if ((input === "d" || input === "r") && (controls.canTrigger || controls.canRetry)) runOrRetryDoctor()
-    else if (input === "c" && controls.canCancel) cancelDoctor()
-    else if (input === "l") setLaunchConfirming(true)
-    else if (input === "f" && canFork) setForkConfirming(true)
-    else if (input === "p" && canRepair) setRepairConfirming(true)
-    else if (input === "u" && entry.harnessVersionSupported && !versionRunning) onForceResyncVersion(entry)
-  })
+    if (!handleDetailConfirmation(input, options)) handleDetailShortcut(input, options)
+  }, { isActive: inputActive })
 
-  const latest = snapshot.latest
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginTop={1}>
-      <Text bold color="cyan">
-        {entry.name}{" "}
-        <Text dimColor>
-          · {entry.surface}
-          {entry.launcher === undefined ? "" : ` · ${entry.launcher}`}
-        </Text>
-      </Text>
-      <Text wrap="wrap">{entry.description}</Text>
-      <Text>
-        Health: <Text bold>{entry.health}</Text> · Install: <Text bold>{entry.install}</Text>
-      </Text>
-      <HarnessVersionDetail
-        supported={entry.harnessVersionSupported}
-        result={versionResult}
-        running={versionRunning}
+      <DetailSummary entry={entry} versionResult={versionResult} versionRunning={versionRunning} tick={tick} />
+      <DoctorPanel
+        entry={entry}
+        snapshot={snapshot}
+        status={status}
+        controls={controls}
+        canFork={canFork}
+        canRepair={canRepair}
+        versionRunning={versionRunning}
         tick={tick}
       />
-      {entry.healthDiagnostic === undefined ? null : (
-        <Text dimColor wrap="wrap">
-          {entry.healthDiagnostic}
-        </Text>
-      )}
-      <Box marginTop={1} flexDirection="column">
-        <Text>
-          Doctor status: <StatusText status={status} tick={tick} bold /></Text>
-        {latest === undefined ? null : (
-          <Text dimColor wrap="wrap">
-            {(latest.stdout || latest.stderr || "").slice(0, 4000)}
-          </Text>
-        )}
-        {snapshot.history.length === 0 ? null : (
-          <Text dimColor>
-            {historyScopeLabel} ({snapshot.history.length} run{snapshot.history.length === 1 ? "" : "s"} recorded)
-          </Text>
-        )}
-        <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray" flexDirection="column">
-          <ShortcutHints
-            items={[
-              controls.canTrigger ? { key: "d", label: "run doctor" } : undefined,
-              controls.canCancel ? { key: "c", label: "cancel" } : undefined,
-              controls.canRetry ? { key: "r", label: "retry" } : undefined,
-              { key: "g", label: "view guide" },
-              entry.inventorySupported ? { key: "i", label: "view inventory" } : undefined,
-              { key: "l", label: "launch in terminal" },
-              canFork ? { key: "f", label: "fork to fix" } : undefined,
-              canRepair ? { key: "p", label: "repair profile" } : undefined,
-              entry.harnessVersionSupported && !versionRunning ? { key: "u", label: "resync version" } : undefined,
-            ].filter((item): item is { readonly key: string; readonly label: string } => item !== undefined)}
-          />
-        </Box>
-      </Box>
-      {diagnosis === undefined ? null : (
-        <Box marginTop={1} flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
-          <Text bold color="magenta">
-            Copilot diagnosis
-          </Text>
-          {diagnosis.status === "diagnosing" ? <Text color="yellow">Diagnosing failure…</Text> : null}
-          {diagnosis.status === "error" ? (
-            <Text color="yellow" wrap="wrap">
-              Diagnosis unavailable: {diagnosis.message}
-            </Text>
-          ) : null}
-          {diagnosis.status === "done" ? (
-            <Box flexDirection="column">
-              <Text wrap="wrap">{diagnosis.result.summary}</Text>
-              <Text wrap="wrap" dimColor>
-                Suggested fix: {diagnosis.result.suggestedFix}
-              </Text>
-              {herdrAvailable === false ? <Text dimColor>Herdr is unavailable in this session; fork to fix is disabled.</Text> : null}
-            </Box>
-          ) : null}
-        </Box>
-      )}
-      {launchConfirming ? (
-        <Text color="yellow">Press [y] to hand this terminal to {entry.name} now, or any other key to cancel.</Text>
-      ) : null}
-      {launchMessage === undefined ? null : <Text dimColor>{launchMessage}</Text>}
-      {forkConfirming ? (
-        <Text color="yellow">
-          Press [y] to create a new Herdr worktree and hand it {entry.name}&apos;s suggested fix now, or any other key to cancel.
-        </Text>
-      ) : null}
-      {forkMessage === undefined ? null : (
-        <Text dimColor wrap="wrap">
-          {forkMessage}
-        </Text>
-      )}
-      {repairConfirming ? (
-        <Text color="yellow">
-          Press [y] to run {entry.name}&apos;s repair (and setup, if still needed) now and recheck doctor afterward, or any other key to
-          cancel.
-        </Text>
-      ) : null}
-      {repairNote === undefined ? null : (
-        <Text dimColor wrap="wrap">
-          {repairNote}
-        </Text>
-      )}
+      <DiagnosisPanel diagnosis={diagnosis} herdrAvailable={herdrAvailable} />
+      <ConfirmationPrompt confirmation={confirmation} entry={entry} />
+      <DetailMessages launchMessage={launchMessage} forkMessage={forkMessage} repairNote={repairNote} />
+      <HarnessUpdateControl
+        plan={harnessUpdatePlan}
+        state={harnessUpdateState}
+        tick={tick}
+        confirming={confirmation === "harness-update"}
+      />
       <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray">
         <ShortcutHints items={[{ key: "j/k", label: "move selection" }, { key: "q", label: "quit" }]} />
       </Box>
@@ -468,6 +720,93 @@ const GuideOverlay = ({
   </Box>
 )
 
+const InventoryPlugins = ({ outcome }: { readonly outcome: Exclude<AdminInventoryOutcome, { readonly malformed: true }> }) => (
+  <Box marginTop={1} flexDirection="column">
+    <Text bold color="cyan">
+      Plugins ({outcome.plugins.length})
+    </Text>
+    {outcome.plugins.length === 0 ? (
+      <Text dimColor>None reported.</Text>
+    ) : (
+      outcome.plugins.map((plugin) => (
+        <Text key={plugin.name}>
+          · {plugin.name}
+          {plugin.version === undefined ? "" : ` (${plugin.version})`}
+        </Text>
+      ))
+    )}
+  </Box>
+)
+
+const InventorySkills = ({ outcome }: { readonly outcome: Exclude<AdminInventoryOutcome, { readonly malformed: true }> }) => (
+  <Box marginTop={1} flexDirection="column">
+    <Text bold color="cyan">
+      Skills
+    </Text>
+    <Text>
+      {outcome.skills.visibleCount === undefined ? "visible: unknown" : `visible: ${outcome.skills.visibleCount}`}
+      {" · "}
+      {outcome.skills.packageCount === undefined ? "packages: unknown" : `packages: ${outcome.skills.packageCount}`}
+    </Text>
+    <Text dimColor wrap="wrap">
+      Skills are managed as one shared bundle pinned to a single commit per profile, not individually versioned, so only counts are
+      available.
+    </Text>
+  </Box>
+)
+
+const InventoryMcps = ({ outcome }: { readonly outcome: Exclude<AdminInventoryOutcome, { readonly malformed: true }> }) => (
+  <Box marginTop={1} flexDirection="column">
+    <Text bold color="cyan">
+      MCP servers ({outcome.mcps.length})
+    </Text>
+    {outcome.mcps.length === 0 ? (
+      <Text dimColor>None reported.</Text>
+    ) : (
+      outcome.mcps.map((name) => <Text key={name}>· {name}</Text>)
+    )}
+  </Box>
+)
+
+const InventoryDetails = ({ outcome }: { readonly outcome: Exclude<AdminInventoryOutcome, { readonly malformed: true }> }) => (
+  <Box marginTop={1} flexDirection="column">
+    <Text>
+      Readiness: <Text bold>{outcome.readiness}</Text>
+    </Text>
+    <InventoryPlugins outcome={outcome} />
+    <InventorySkills outcome={outcome} />
+    <InventoryMcps outcome={outcome} />
+  </Box>
+)
+
+const InventoryContent = ({
+  status,
+  outcome,
+  message,
+}: {
+  readonly status: "loading" | "done" | "error"
+  readonly outcome: AdminInventoryOutcome | undefined
+  readonly message: string | undefined
+}) => {
+  if (status === "loading") return <Text dimColor>Loading inventory…</Text>
+  if (status === "error") {
+    return (
+      <Text color="yellow" wrap="wrap">
+        {message ?? "Inventory is unavailable."}
+      </Text>
+    )
+  }
+  if (outcome === undefined) return null
+  if (outcome.malformed === true) {
+    return (
+      <Text color="yellow" wrap="wrap">
+        {outcome.diagnostic}
+      </Text>
+    )
+  }
+  return <InventoryDetails outcome={outcome} />
+}
+
 /**
  * Renders a profile's install detail — plugins, skill counts, and MCP
  * servers — from the existing `inventory PROFILE --json` command (already
@@ -500,67 +839,122 @@ const InventoryOverlay = ({
         </Text>
       </Text>
     </Box>
-    {status === "loading" ? <Text dimColor>Loading inventory…</Text> : null}
-    {status === "error" ? (
-      <Text color="yellow" wrap="wrap">
-        {message ?? "Inventory is unavailable."}
-      </Text>
-    ) : null}
-    {status === "done" && outcome !== undefined && outcome.malformed === true ? (
-      <Text color="yellow" wrap="wrap">
-        {outcome.diagnostic}
-      </Text>
-    ) : null}
-    {status === "done" && outcome !== undefined && outcome.malformed !== true ? (
-      <Box marginTop={1} flexDirection="column">
-        <Text>
-          Readiness: <Text bold>{outcome.readiness}</Text>
-        </Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text bold color="cyan">
-            Plugins ({outcome.plugins.length})
-          </Text>
-          {outcome.plugins.length === 0 ? (
-            <Text dimColor>None reported.</Text>
-          ) : (
-            outcome.plugins.map((plugin) => (
-              <Text key={plugin.name}>
-                · {plugin.name}
-                {plugin.version === undefined ? "" : ` (${plugin.version})`}
-              </Text>
-            ))
-          )}
-        </Box>
-        <Box marginTop={1} flexDirection="column">
-          <Text bold color="cyan">
-            Skills
-          </Text>
-          <Text>
-            {outcome.skills.visibleCount === undefined ? "visible: unknown" : `visible: ${outcome.skills.visibleCount}`}
-            {" · "}
-            {outcome.skills.packageCount === undefined ? "packages: unknown" : `packages: ${outcome.skills.packageCount}`}
-          </Text>
-          <Text dimColor wrap="wrap">
-            Skills are managed as one shared bundle pinned to a single commit per profile, not individually versioned, so only counts
-            are available.
-          </Text>
-        </Box>
-        <Box marginTop={1} flexDirection="column">
-          <Text bold color="cyan">
-            MCP servers ({outcome.mcps.length})
-          </Text>
-          {outcome.mcps.length === 0 ? (
-            <Text dimColor>None reported.</Text>
-          ) : (
-            outcome.mcps.map((name) => <Text key={name}>· {name}</Text>)
-          )}
-        </Box>
-      </Box>
-    ) : null}
+    <InventoryContent status={status} outcome={outcome} message={message} />
     <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray">
       <ShortcutHints items={[{ key: "q/Esc", label: "back to list" }]} />
     </Box>
   </Box>
+)
+
+interface AdminInputKey {
+  readonly ctrl: boolean
+  readonly escape: boolean
+  readonly return: boolean
+  readonly backspace: boolean
+  readonly delete: boolean
+  readonly downArrow: boolean
+  readonly upArrow: boolean
+}
+
+interface AdminListInputOptions {
+  readonly exit: () => void
+  readonly openHarnessUpdates: () => void
+  readonly sortedLength: number
+  readonly setSearching: (value: boolean) => void
+  readonly setSelectedIndex: React.Dispatch<React.SetStateAction<number>>
+  readonly setSortIndex: React.Dispatch<React.SetStateAction<number>>
+  readonly setSortDescending: React.Dispatch<React.SetStateAction<boolean>>
+}
+
+const handleOverlayInput = (
+  char: string,
+  key: AdminInputKey,
+  guideOpen: boolean,
+  inventoryOpen: boolean,
+  closeGuide: () => void,
+  closeInventory: () => void,
+): boolean => {
+  if (guideOpen) {
+    if (char === "q" || key.escape) closeGuide()
+    return true
+  }
+  if (inventoryOpen) {
+    if (char === "q" || key.escape) closeInventory()
+    return true
+  }
+  return false
+}
+
+const handleSearchInput = (
+  char: string,
+  key: AdminInputKey,
+  setSearching: (value: boolean) => void,
+  setQuery: React.Dispatch<React.SetStateAction<string>>,
+): void => {
+  if (key.return || key.escape) {
+    setSearching(false)
+    return
+  }
+  if (key.backspace || key.delete) {
+    setQuery((value) => value.slice(0, -1))
+    return
+  }
+  if (char.length === 1) setQuery((value) => value + char)
+}
+
+const handleAdminListInput = (char: string, key: AdminInputKey, options: AdminListInputOptions): void => {
+  if (char === "/") options.setSearching(true)
+  else if (char === "A") options.openHarnessUpdates()
+  else if (char === "q" || key.escape) options.exit()
+  else if (char === "j" || key.downArrow)
+    options.setSelectedIndex((value) => Math.min(options.sortedLength - 1, value + 1))
+  else if (char === "k" || key.upArrow) options.setSelectedIndex((value) => Math.max(0, value - 1))
+  else if (char === "s") options.setSortIndex((value) => (value + 1) % sortCycle.length)
+  else if (char === "S") options.setSortDescending((value) => !value)
+}
+
+const profileWorkIsRunning = (entry: AdminProfileEntry, manager: AdminRunManager): boolean =>
+  [entry.ref, repairRefFor(entry), setupRefFor(entry)].some((ref) => manager.status(ref).state === "running")
+
+const AdminListHeader = ({
+  profileCount,
+  sortIndex,
+  sortDescending,
+  searching,
+  query,
+  updateAllRunning,
+  versionCacheError,
+}: {
+  readonly profileCount: number
+  readonly sortIndex: number
+  readonly sortDescending: boolean
+  readonly searching: boolean
+  readonly query: string
+  readonly updateAllRunning: boolean
+  readonly versionCacheError: string | undefined
+}) => (
+  <>
+    <Box justifyContent="space-between">
+      <Text bold color="cyan">Trellage Admin — {profileCount} profiles</Text>
+      <Text dimColor>
+        sort: {sortCycle[sortIndex]}
+        {sortDescending ? " ↓" : " ↑"}
+      </Text>
+    </Box>
+    {searching ? <Text dimColor>Search: {query}█</Text> : (
+      <ShortcutHints items={[
+        { key: "A", label: updateAllRunning ? "view update progress" : "update all" },
+        { key: "/", label: "search" },
+        { key: "s", label: "sort" },
+        { key: "S", label: "reverse" },
+        { key: "j/k", label: "move" },
+        { key: "q", label: "quit" },
+      ]} />
+    )}
+    {versionCacheError === undefined ? null : (
+      <Text color="red" wrap="wrap">Harness-version cache error: {versionCacheError}</Text>
+    )}
+  </>
 )
 
 export const AdminApp = ({
@@ -571,6 +965,7 @@ export const AdminApp = ({
   diagnosisProvider,
   herdrEnv,
   cwd,
+  routerCommandPath = "trx",
 }: {
   readonly entries: ReadonlyArray<AdminProfileEntry>
   readonly runManager: AdminRunManager
@@ -579,6 +974,7 @@ export const AdminApp = ({
   readonly diagnosisProvider: DoctorFailureDiagnosisProvider
   readonly herdrEnv: HerdrEnvironment
   readonly cwd: string
+  readonly routerCommandPath?: string
 }) => {
   const { exit } = useApp()
   const { rows, columns } = useWindowSize()
@@ -587,6 +983,7 @@ export const AdminApp = ({
   const [sortIndex, setSortIndex] = useState(0)
   const [sortDescending, setSortDescending] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [detailConfirmationActive, setDetailConfirmationActive] = useState(false)
   const [tick, setTick] = useState(0)
   const [diagnosisByRef, setDiagnosisByRef] = useState<ReadonlyMap<string, DiagnosisState>>(new Map())
   const [herdrAvailable, setHerdrAvailable] = useState<boolean | undefined>(undefined)
@@ -615,6 +1012,8 @@ export const AdminApp = ({
     new Map(),
   )
   const [versionCacheLoaded, setVersionCacheLoaded] = useState(false)
+  const [harnessUpdateByKey, setHarnessUpdateByKey] = useState<ReadonlyMap<string, HarnessUpdateState>>(new Map())
+  const harnessUpdateManager = useMemo(() => new HarnessUpdateManager(runner, cwd), [runner, cwd])
   const versionCachePath = useMemo(() => defaultAdminHarnessVersionCachePath(), [])
   const versionCacheSaveQueue = useMemo(() => createHarnessVersionCacheSaveQueue(versionCachePath), [versionCachePath])
 
@@ -785,6 +1184,25 @@ export const AdminApp = ({
     setTick((value) => value + 1)
   }
 
+  const updateHarness = (plan: HarnessUpdatePlan) => {
+    if (harnessUpdateManager.isRunning(plan.key)) return
+    setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, {
+      status: "running",
+      targetCount: plan.targets.length,
+      surface: plan.surface,
+    }))
+    void harnessUpdateManager
+      .run(plan, () => refreshHarnessUpdateVersions(plan, versionRunManager, versionCache, persistVersionResult))
+      .then((outcome) => {
+        setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, { status: "done", outcome }))
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error)
+        setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, { status: "error", message }))
+      })
+      .finally(() => setTick((value) => value + 1))
+  }
+
   /**
    * Attempts one automatic `repair` for every repair-capable profile that
    * finishes the startup doctor batch (or any later retry) in a failed
@@ -798,6 +1216,7 @@ export const AdminApp = ({
    * above it.
    */
   useEffect(() => {
+    if (harnessUpdateManager.isBusy()) return
     const statusesByRef = new Map<string, AdminRunStatus>(
       entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)]),
     )
@@ -887,6 +1306,18 @@ export const AdminApp = ({
     (ref) => sandboxInstalledByRef.get(ref),
   )
   const versionResultFor = (entry: AdminProfileEntry) => versionResultsByRef.get(entry.ref)
+  const allUpdates = useHarnessUpdateAll({
+    entries,
+    manager: harnessUpdateManager,
+    refresh: (plan) => refreshHarnessUpdateGroupVersions(plan, versionRunManager, versionCache, persistVersionResult),
+    versionResultFor,
+    routerCommandPath,
+    checkVersions: (signal) => checkAdminHarnessUpdates(entries, runner, cwd, signal, persistVersionResult),
+    checkSkills: (signal) => checkAdminSkillsUpdates(entries, runner, cwd, routerCommandPath, signal),
+    blockReason: () => entries.some((entry) => profileWorkIsRunning(entry, runManager))
+      ? "A profile check, repair, or setup is running. Wait for it to finish, then press y."
+      : undefined,
+  })
   const versionRunning = (entry: AdminProfileEntry) => {
     const operationKeys = new Set(
       harnessVersionEntriesForForceResync(entry, entries)
@@ -921,58 +1352,46 @@ export const AdminApp = ({
       exit()
       return
     }
-    if (guideOverlay !== undefined) {
-      // The guide overlay owns the whole screen while open, so `q`/Escape
-      // return to the main list instead of falling through to the normal
-      // quit-the-app handling below (or search/sort/movement, which don't
-      // apply while a guide is showing). PageUp/PageDown scrolling is
-      // handled by `MarkdownTextViewport` itself, which stays mounted.
-      if (char === "q" || key.escape) closeGuideOverlay()
+    if (allUpdates.state?.visible === true) return
+    if (detailConfirmationActive) return
+    if (
+      handleOverlayInput(
+        char,
+        key,
+        guideOverlay !== undefined,
+        inventoryOverlay !== undefined,
+        closeGuideOverlay,
+        closeInventoryOverlay,
+      )
+    )
       return
-    }
-    if (inventoryOverlay !== undefined) {
-      // Same full-screen-overlay behavior as the guide overlay above:
-      // `q`/Escape return to the main list rather than exiting the app.
-      if (char === "q" || key.escape) closeInventoryOverlay()
-      return
-    }
     if (searching) {
-      if (key.return || key.escape) {
-        setSearching(false)
-        return
-      }
-      if (key.backspace || key.delete) {
-        setQuery((value) => value.slice(0, -1))
-        return
-      }
-      if (char.length === 1) setQuery((value) => value + char)
+      handleSearchInput(char, key, setSearching, setQuery)
       return
     }
-    if (char === "/") {
-      setSearching(true)
-      return
-    }
-    if (char === "q" || key.escape) {
-      exit()
-      return
-    }
-    if (char === "j" || key.downArrow) {
-      setSelectedIndex((value) => Math.min(sorted.length - 1, value + 1))
-      return
-    }
-    if (char === "k" || key.upArrow) {
-      setSelectedIndex((value) => Math.max(0, value - 1))
-      return
-    }
-    if (char === "s") {
-      setSortIndex((value) => (value + 1) % sortCycle.length)
-      return
-    }
-    if (char === "S") {
-      setSortDescending((value) => !value)
-      return
-    }
+    handleAdminListInput(char, key, {
+      exit,
+      openHarnessUpdates: allUpdates.open,
+      sortedLength: sorted.length,
+      setSearching,
+      setSelectedIndex,
+      setSortIndex,
+      setSortDescending,
+    })
   })
+
+  if (allUpdates.state?.visible === true) {
+    return (
+      <HarnessUpdateAllOverlay
+        state={allUpdates.state}
+        columns={columns}
+        rows={rows}
+        onConfirm={allUpdates.confirm}
+        onClose={allUpdates.close}
+        onCancel={allUpdates.cancel}
+      />
+    )
+  }
 
   if (guideOverlay !== undefined) {
     return <GuideOverlay entry={guideOverlay.entry} body={guideOverlay.body} note={guideOverlay.note} columns={columns} rows={rows} />
@@ -991,33 +1410,16 @@ export const AdminApp = ({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box justifyContent="space-between">
-        <Text bold color="cyan">
-          Trellage Admin — {entries.length} profiles
-        </Text>
-        <Text dimColor>
-          sort: {sortCycle[sortIndex]}
-          {sortDescending ? " ↓" : " ↑"}
-        </Text>
-      </Box>
-      {searching ? (
-        <Text dimColor>Search: {query}█</Text>
-      ) : (
-        <ShortcutHints
-          items={[
-            { key: "/", label: "search" },
-            { key: "s", label: "sort" },
-            { key: "S", label: "reverse" },
-            { key: "j/k", label: "move" },
-            { key: "q", label: "quit" },
-          ]}
-        />
-      )}
-      {versionCacheError === undefined ? null : (
-        <Text color="red" wrap="wrap">
-          Harness-version cache error: {versionCacheError}
-        </Text>
-      )}
+      <AdminListHeader
+        profileCount={entries.length}
+        sortIndex={sortIndex}
+        sortDescending={sortDescending}
+        searching={searching}
+        query={query}
+        updateAllRunning={allUpdates.running}
+        versionCacheError={versionCacheError}
+      />
+      <HarnessUpdateAllStatus state={allUpdates.state} />
       {viewState === "discovering" ? <Text color="yellow">Discovering profiles…</Text> : null}
       {viewState === "empty-no-profiles" ? <Text color="yellow">No profiles were discovered.</Text> : null}
       {viewState === "empty-no-match" ? <Text color="yellow">No profiles match &quot;{query}&quot;.</Text> : null}
@@ -1118,6 +1520,11 @@ export const AdminApp = ({
           versionResult={versionResultFor(selected)}
           versionRunning={versionRunning(selected)}
           onForceResyncVersion={forceResyncVersion}
+          harnessUpdatePlan={allUpdates.running ? undefined : harnessUpdatePlanFor(selected, entries, versionResultFor(selected))}
+          harnessUpdateState={harnessUpdateByKey.get(harnessUpdateKeyFor(selected) ?? "")}
+          onUpdateHarness={updateHarness}
+          onConfirmationChange={setDetailConfirmationActive}
+          inputActive={!searching && !allUpdates.running}
         />
       ) : null}
     </Box>
@@ -1139,6 +1546,7 @@ export const AdminRoot = ({
   cwd,
   diagnosisProvider,
   herdrEnv,
+  routerCommandPath = "trx",
 }: {
   readonly catalog: CombinedGuideCatalog
   readonly runner: CommandRunner
@@ -1147,6 +1555,7 @@ export const AdminRoot = ({
   readonly cwd: string
   readonly diagnosisProvider: DoctorFailureDiagnosisProvider
   readonly herdrEnv: HerdrEnvironment
+  readonly routerCommandPath?: string
 }) => {
   const [entries, setEntries] = useState<ReadonlyArray<AdminProfileEntry>>(() => aggregateAdminProfiles(catalog))
   const [refreshError, setRefreshError] = useState<string | undefined>(undefined)
@@ -1182,6 +1591,7 @@ export const AdminRoot = ({
         diagnosisProvider={diagnosisProvider}
         herdrEnv={herdrEnv}
         cwd={cwd}
+        routerCommandPath={routerCommandPath}
       />
     </Box>
   )

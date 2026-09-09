@@ -24,6 +24,8 @@ Usage:
   picx setup [default]
   picx doctor [default]
   picx repair [default]
+  picx skills-update PROFILE
+  picx skills-check PROFILE
   picx update [--check] [default]
   picx harness-version
 
@@ -88,6 +90,24 @@ ensure_floating_skills() {
     --bundle native-common \
     --target "$agent_root/skills" \
     || die "failed to install floating skills: $profile_key"
+}
+
+skills_update_profile() {
+  local helper="$runtime_root/native-skills.mjs"
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  local skill_args=("${1:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  require_owned_profile
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  require_command node
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$agent_root/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$agent_root/skills" \
+    || die "failed to update cached skills: $profile_key"
+  [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile_key"
 }
 
 canonical_directory() {
@@ -1226,6 +1246,18 @@ case "$command_name" in
     [[ "$#" -le 1 ]] || die 'repair accepts only default'
     select_profile "${1-default}"
     repair_profile
+    ;;
+  skills-check)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-check requires PROFILE'
+    select_profile "$1"
+    skills_update_profile --fresh
+    ;;
+  skills-update)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-update requires PROFILE'
+    select_profile "$1"
+    skills_update_profile
     ;;
   update)
     shift

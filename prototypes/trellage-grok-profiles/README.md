@@ -59,7 +59,21 @@ grx update --check --all
 grx update superpowers
 grx update --all
 grx repair superpowers
+grx harness-update
 ```
+
+`grx harness-update` runs `grok update --stable` to update the shared host
+Grok CLI. It takes no profile argument and does not run plugin updates, set
+`GROK_HOME`, or refresh profile authentication. No profile setup or Grok login
+is required for this binary update.
+
+`grx skills-update superpowers` copies and verifies only managed
+`native-common` skills after `trx skills update` refreshes the shared cache.
+The profile and its managed skill state must already exist. Custom skills,
+plugins, authentication bytes, and authentication permissions are preserved.
+Missing caches, invalid ownership, unsafe paths, and name collisions fail
+closed. This command never fetches, runs Grok, starts the proxy, or repairs
+authentication.
 
 Use `grx list --json` for the stable machine-readable catalog, including
 launcher, harness, plugin, source, marketplace, standalone MCP metadata, and a
@@ -78,11 +92,13 @@ report a version.
 After installing the native launchers and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
 harness/profile picker. Remaining arguments are forwarded to `grx` unchanged
-after selection; `trx` never performs setup, repair, or update.
+after selection; the bare picker never performs setup, repair, or update.
+In `trx admin`, press `U`, then `y` to update the shared Grok harness.
 
 `setup` creates a profile home and installs its cataloged plugin. Launching with
-`grx superpowers` never installs or updates anything. Version
-checks and changes are explicit through `grx update --check` and `grx update`.
+`grx superpowers` never installs or updates anything. Plugin
+checks and changes are explicit through `grx update --check` and
+`grx update`. Harness changes use `grx harness-update`.
 
 ### Model routing
 
@@ -103,16 +119,17 @@ forwarded unchanged.
 
 Proxy routing applies only to profile launches. Setup, repair, update, doctor,
 and other lifecycle operations do not receive the proxy variables. Plain `grok`
-and `~/.grok` remain untouched, so direct Grok usage keeps xAI OAuth and its
-`grok-4.6` default.
+keeps xAI OAuth and its `grok-4.6` default; profile operations do not rewrite
+host configuration or authentication.
 
 ### Never-authenticate, never-prompt guarantee
 
 `grx` itself never performs xAI authentication and never shows a login or
 device-code prompt. It exclusively routes model traffic through
-`copilot-proxy-rs` for every profile launch, and it will only ever invoke the
-real `grok` binary once it has verified — locally, structurally, without
-contacting xAI — that a usable credential is already in place.
+`copilot-proxy-rs` for every profile launch. For profile operations, it invokes
+the real `grok` binary only after verifying — locally, structurally, without
+contacting xAI — that a usable credential is already in place. Harness version
+checks and binary updates do not need authentication.
 
 This relies on one, one-time, out-of-band precondition: a genuine
 `grok login` performed once on the host, outside `grx` (see Prerequisites

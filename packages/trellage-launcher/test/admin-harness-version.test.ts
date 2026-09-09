@@ -322,6 +322,28 @@ describe("reconcileHarnessVersionResults", () => {
     expect(results.get(sandbox.ref)?.latest).toEqual({ kind: "known", version: "18.1.3" })
   })
 
+  it("never substitutes another Firstmate profile's catalog pin for an unavailable target", () => {
+    const first = nativeEntry({ ref: "native:fmx/default", launcher: "fmx", harness: "firstmate", name: "default" })
+    const second = nativeEntry({
+      ref: "native:fmx/pstack-workers",
+      launcher: "fmx",
+      harness: "firstmate",
+      name: "pstack-workers",
+    })
+    const unavailable: AdminHarnessVersionResult = {
+      installed: { kind: "known", version: "b".repeat(40) },
+      latest: { kind: "failed", diagnostic: "catalog pin unavailable" },
+    }
+    const raw = new Map<string, AdminHarnessVersionResult>([
+      ["native:fmx:default", known("a".repeat(40), "c".repeat(40))],
+      ["native:fmx:pstack-workers", unavailable],
+    ])
+
+    const results = reconcileHarnessVersionResults([first, second], (key) => raw.get(key))
+    expect(results.get(first.ref)).toEqual(known("a".repeat(40), "c".repeat(40)))
+    expect(results.get(second.ref)).toEqual(unavailable)
+  })
+
   it("applies a profile-scoped sandbox installed refresh without copying it to peers", () => {
     const first = sandboxEntry({ version: "2.1.220" })
     const second = sandboxEntry({

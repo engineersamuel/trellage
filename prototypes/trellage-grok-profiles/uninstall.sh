@@ -25,6 +25,7 @@ install_root="$runtime_parent/grx"
 runtime_bin="$install_root/bin"
 installed_launcher="$runtime_bin/grx"
 installed_catalog="$install_root/catalog.json"
+installed_native_skills="$install_root/native-skills.mjs"
 ownership_marker="$install_root/.managed-by-trellage-grok-profiles"
 ownership_value='trellage-grok-profiles-v1'
 command_dir="$local_dir/bin"
@@ -82,6 +83,9 @@ cmp -s "$ownership_marker" <(printf '%s\n' "$ownership_value") \
   || refuse "refusing unsafe managed runtime path: $installed_catalog"
 [ -r "$installed_catalog" ] \
   || refuse "refusing unreadable owned runtime file: $installed_catalog"
+[ ! -L "$installed_native_skills" ] \
+  && { [ ! -e "$installed_native_skills" ] || [ -f "$installed_native_skills" ]; } \
+  || refuse "unsafe Native skills helper: $installed_native_skills"
 
 for entry in \
   "$install_root"/.[!.]* \
@@ -89,7 +93,7 @@ for entry in \
   "$install_root"/*; do
   [ -e "$entry" ] || [ -L "$entry" ] || continue
   case "$entry" in
-    "$runtime_bin"|"$installed_catalog"|"$ownership_marker") ;;
+    "$runtime_bin"|"$installed_catalog"|"$ownership_marker"|"$installed_native_skills") ;;
     *) refuse "refusing unexpected content in owned runtime: $entry" ;;
   esac
 done
@@ -142,6 +146,7 @@ rollback_attempted=false
 rollback_succeeded=false
 launcher_staged=false
 catalog_staged=false
+native_skills_staged=false
 marker_staged=false
 runtime_bin_removed=false
 install_root_removed=false
@@ -163,6 +168,7 @@ cleanup_runtime_staging() {
   for staged_file in \
     "$staging_root/launcher" \
     "$staging_root/catalog" \
+    "$staging_root/native-skills" \
     "$staging_root/marker"; do
     rm -f -- "$staged_file" || cleanup_ok=false
   done
@@ -204,6 +210,16 @@ cleanup_staging() {
   fi
 }
 
+restore_native_skills() {
+  [ "$native_skills_staged" = true ] || return 0
+  if [ -f "$staging_root/native-skills" ] && [ ! -L "$staging_root/native-skills" ]; then
+    [ ! -e "$installed_native_skills" ] && [ ! -L "$installed_native_skills" ] || return 1
+    mv "$staging_root/native-skills" "$installed_native_skills"
+  else
+    [ -f "$installed_native_skills" ] && [ ! -L "$installed_native_skills" ]
+  fi
+}
+
 rollback_transaction() {
   local rollback_ok=true
 
@@ -236,6 +252,7 @@ rollback_transaction() {
       mkdir -m "$runtime_bin_mode" "$runtime_bin" || rollback_ok=false
     fi
   fi
+  restore_native_skills || rollback_ok=false
   if [ "$marker_staged" = true ]; then
     if [ -f "$staging_root/marker" ] && [ ! -L "$staging_root/marker" ]; then
       if [ ! -e "$ownership_marker" ] && [ ! -L "$ownership_marker" ]; then
@@ -362,6 +379,11 @@ catalog_staged=true
 mv "$installed_catalog" "$staging_root/catalog" \
   || transaction_failure "could not stage installed catalog: $installed_catalog"
 inject_failure_at after-catalog-remove
+if [ -f "$installed_native_skills" ]; then
+  native_skills_staged=true
+  mv "$installed_native_skills" "$staging_root/native-skills" \
+    || transaction_failure "could not stage Native skills helper: $installed_native_skills"
+fi
 marker_staged=true
 mv "$ownership_marker" "$staging_root/marker" \
   || transaction_failure "could not stage ownership marker: $ownership_marker"

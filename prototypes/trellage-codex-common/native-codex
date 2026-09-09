@@ -149,6 +149,43 @@ floating_skills_cache() {
   fi
 }
 
+scrub_skills_environment() {
+  unset OPENAI_API_KEY OPENAI_BASE_URL CODEX_API_KEY AZURE_API_KEY AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT
+  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
+  unset ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
+  unset ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL
+  unset CLAUDE_CODE_USE_FOUNDRY ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_BASE_URL ANTHROPIC_FOUNDRY_RESOURCE
+  unset CLAUDE_CODE_USE_BEDROCK ANTHROPIC_BEDROCK_BASE_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+  unset AWS_PROFILE AWS_BEARER_TOKEN_BEDROCK AWS_REGION AWS_DEFAULT_REGION AWS_ROLE_ARN
+  unset AWS_WEB_IDENTITY_TOKEN_FILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
+  unset CLAUDE_CODE_USE_VERTEX ANTHROPIC_VERTEX_BASE_URL GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID
+  unset CLOUD_ML_REGION GOOGLE_CLOUD_PROJECT GOOGLE_CLOUD_QUOTA_PROJECT GOOGLE_CLOUD_REGION VERTEX_PROJECT VERTEX_REGION
+  unset AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID
+  unset COPILOT_GITHUB_TOKEN COPILOT_PROXY_GITHUB_TOKEN COPILOT_TOKEN
+  unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
+}
+
+skills_update_profile() {
+  local profile="$1" helper="$script_dir/native-skills.mjs"
+  local skill_args=("${2:---sync}")
+  [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
+
+  scrub_skills_environment
+  require_profile "$profile"
+  require_profile_home_ready "$profile"
+  build_floating_skills_args "$profile"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$script_dir/../trellage-claude-common/native-skills.mjs"
+  [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
+  if [[ "${skill_args[0]}" == --fresh ]]; then
+    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+      "$(floating_skills_cache "$profile")" "$(profile_home "$profile")/skills"
+  fi
+  node "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+    "$(floating_skills_cache "$profile")" "$(profile_home "$profile")/skills" \
+    || die "failed to update cached skills: $profile"
+  [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile"
+}
+
 die() {
   printf '%s: %s\n' "$launcher_name" "$*" >&2
   exit 1
@@ -167,7 +204,10 @@ usage() {
     '  update --check PROFILE|--all' \
     '  update PROFILE|--all' \
     '  repair PROFILE' \
+    '  skills-update PROFILE' \
+    '  skills-check PROFILE' \
     '  harness-version' \
+    '  harness-update' \
     '  --native-auth PROFILE [CODEX_ARGS...]' \
     '  PROFILE [CODEX_ARGS...]'
 }
@@ -221,6 +261,14 @@ print_harness_version_json() {
     latest: ($latest | if length > 0 then . else null end),
     latestKnown: ($latest | length > 0)
   }'
+}
+
+update_harness() {
+  resolve_codex
+  # Older Codex versions can interpret an unknown subcommand as an agent prompt.
+  "$codex_executable" help update >/dev/null \
+    || die 'installed Codex has no built-in updater; update it with its package manager'
+  exec "$codex_executable" update
 }
 
 conservative_headless() {
@@ -3568,7 +3616,7 @@ case "$command" in
     profile="$2"
     shift 2
     case "$profile" in
-      list|inventory|setup|doctor|update|repair|--help|-h)
+      list|inventory|setup|doctor|update|repair|skills-update|skills-check|harness-version|harness-update|--help|-h)
         usage >&2
         exit 2
         ;;
@@ -3624,9 +3672,23 @@ case "$command" in
     require_profile "$2"
     run_locked_profile_action "$2" repair_profile
     ;;
+  skills-check )
+    validate_catalog
+    [ "$#" -eq 2 ] || die "usage: $launcher_name skills-check PROFILE"
+    skills_update_profile "$2" --fresh
+    ;;
+  skills-update )
+    validate_catalog
+    [ "$#" -eq 2 ] || die "usage: $launcher_name skills-update PROFILE"
+    skills_update_profile "$2"
+    ;;
   harness-version )
     [ "$#" -eq 1 ] || die "usage: $launcher_name harness-version"
     print_harness_version_json
+    ;;
+  harness-update )
+    [ "$#" -eq 1 ] || die "usage: $launcher_name harness-update"
+    update_harness
     ;;
   * )
     validate_catalog

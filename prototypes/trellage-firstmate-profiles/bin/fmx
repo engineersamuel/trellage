@@ -32,6 +32,8 @@ Usage:
   fmx setup PROFILE|--all
   fmx doctor PROFILE
   fmx repair PROFILE
+  fmx skills-update PROFILE
+  fmx skills-check PROFILE
   fmx update [--check] PROFILE|--all
 
 Profiles: default, pstack-workers.
@@ -46,6 +48,8 @@ Network use:
   update --check       always offline: it compares the installed receipt to
                        the catalog pin and never fetches.
   repair               fetches only when it must restage the runtime.
+  skills-update        copies the refreshed shared skill cache into existing
+                       captain and worker homes; requires an idle fleet.
   doctor               never fetch Firstmate source, but does run the GitHub
                        identity check, Firstmate prerequisite detection, and
                        the shared Claude health checks.
@@ -525,14 +529,23 @@ session_state() {
   lock_state "$session_lock"
 }
 
+require_safe_worker_entry() {
+  local entry="$1" mode="$2"
+
+  [[ "$mode" == require-safe ]] || return 0
+  [[ -d "$entry" && ! -L "$entry" ]] || die "unsafe worker home: $entry"
+}
+
 # Emits "<task-id> <active|stale|orphaned>" for every worker home fmx knows
 # about. Orphaned means an fmx worker home with no live marker and no Firstmate
 # task record; it is reported, never removed.
 worker_states() {
-  local entry task pid state
+  local entry task pid state mode="${1-report}"
 
   [[ -d "$worker_root" && ! -L "$worker_root" ]] || return 0
   for entry in "$worker_root"/*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    require_safe_worker_entry "$entry" "$mode"
     [[ -d "$entry" && ! -L "$entry" ]] || continue
     task="$(basename "$entry")"
     if pid="$(read_pid_file "$entry/.active")" && pid_alive "$pid"; then
@@ -1671,6 +1684,57 @@ report_doctor_prerequisites() {
 # Commands.
 # ---------------------------------------------------------------------------
 
+profile_skill_roots() {
+  local states task state
+
+  states="$(worker_states require-safe)" || die "cannot inspect worker homes: $profile_key"
+  printf '%s\n' "$captain_root"
+  while read -r task state; do
+    [[ -n "$task" ]] || continue
+    [[ "$task" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "unsafe worker task id: $task"
+    printf '%s/%s\n' "$worker_root" "$task"
+  done <<<"$states"
+}
+
+skills_check_profile() {
+  local roots root skills_check_pid
+  require_native_claude
+  require_owned_profile
+  profile_is_set_up || die "profile is not set up; run fmx setup $profile_key"
+  native_claude --help | grep -q 'skills-check' || die 'refresh the Native Claude runtime for skills-check'
+  roots="$(profile_skill_roots)" || die "cannot inspect profile skill homes: $profile_key"
+  while IFS= read -r root; do
+    TRELLAGE_CLAUDE_LAUNCHER_NAME="$launcher_name" TRELLAGE_CLAUDE_RUNTIME_ROOT="$runtime_root" \
+      "$native_claude" skills-check \
+      --home "$root/claude" --marker "$root/$ownership_basename" \
+      --marker-value "$ownership_value" &
+    skills_check_pid=$!
+    trap 'kill -TERM "$skills_check_pid" 2>/dev/null || :; wait "$skills_check_pid" || :; exit 143' INT TERM
+    wait "$skills_check_pid" || die "could not check skills: $root/claude"
+    trap - INT TERM
+  done <<<"$roots"
+}
+
+skills_update_profile() {
+  local roots root mode
+
+  require_native_claude
+  require_owned_profile
+  profile_is_set_up || die "profile is not set up; run fmx setup $profile_key"
+  acquire_mutation_lock 'skills-update'
+  require_idle_fleet 'skills-update'
+  roots="$(profile_skill_roots)" || die "cannot inspect profile skill homes: $profile_key"
+  for mode in --check --sync; do
+    while IFS= read -r root; do
+      native_claude skills-update \
+        --home "$root/claude" --marker "$root/$ownership_basename" \
+        --marker-value "$ownership_value" --mode "$mode" \
+        || die "could not update cached skills: $root/claude"
+    done <<<"$roots"
+  done
+  printf '%s: skills updated from cache\n' "$profile_key"
+}
+
 setup_profile() {
   local commit repository overlay_commit checkout staged_receipt
 
@@ -2195,6 +2259,20 @@ case "${1-}" in
     require_safe_home
     select_profile "$1"
     repair_profile
+    ;;
+  skills-check)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-check requires PROFILE'
+    require_safe_home
+    select_profile "$1"
+    skills_check_profile
+    ;;
+  skills-update)
+    shift
+    [[ "$#" -eq 1 ]] || die 'skills-update requires PROFILE'
+    require_safe_home
+    select_profile "$1"
+    skills_update_profile
     ;;
   update)
     shift

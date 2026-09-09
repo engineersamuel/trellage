@@ -56,10 +56,15 @@ trx run cldx default
 trx --model gpt-5.6-terra
 trx list
 trx list --json
+trx admin
+trx upgrade all --dry-run
+trx upgrade all
+trx upgrade all --yes
 trx guide
 trx guide --intent "Write a technical LinkedIn post"
 trx guide --intent "$(cat /tmp/large-prompt.md)" --ui-variant pager
 trx skills status
+trx skills check --json
 trx skills update
 ```
 
@@ -151,12 +156,128 @@ model for launchers that support overrides. `H`
 launches the selection in a new Herdr pane when available. Ctrl-C cancels from
 any mode; Escape cancels after filter mode is left. Cancellation exits with
 status 130. Remaining arguments are forwarded unchanged after the selected
-launcher profile. `trx` never runs setup, update, or repair.
+launcher profile. The bare picker never runs setup, update, or repair.
+
+### Admin harness updates
+
+Press `A` in `trx admin` to preview **Update all harness versions and skills**,
+then confirm only the available updates. Discovery checks the full Native
+and Container catalog, including profiles hidden by filters. It refreshes
+harness version observations and checks skill availability without updating
+installed runtimes, profile skills, or images. Source checks may use the network.
+Confirmation is disabled while discovery runs.
+
+Discovery uses `LAUNCHER skills-check PROFILE` for Native profiles,
+`trellage skills-check PROFILE` for Containers, and `trx skills check --json`
+for the shared caches. Installed launchers and the compiler must support
+these commands; old installations produce incomplete-check diagnostics.
+Container checks inspect an exact local image ID through an owned temporary
+stopped container. They never start its entrypoint or attach host mounts.
+Missing images and ambiguous ownership in older images remain unknown.
+
+Current harnesses and skills are hidden. Version changes show
+`current -> target`; configured version and source pins remain in force.
+Failed or incomplete checks appear separately, not as available updates or
+as proof that an item is current. The confirmed selection is fixed when
+you press `y`; floating releases can still advance before an updater runs.
+When nothing is selected, `y` does not start a maintenance run.
+
+Native skill-only changes do not invoke a harness updater. A Container with
+changed skills is selected for a rebuild even if its harness version matches.
+Selected Native harness updates retain a required final managed-skill sync
+for their affected profiles; these dependencies are summarized rather than
+shown as unrelated skill updates. Shared-cache-only changes can run without
+profile copies. `U` remains the selected harness-only maintenance action.
+
+In `trx admin`, select a profile, press `U`, then `y` to update its harness.
+The confirmation names the affected surface and number of profiles. `U`
+is available for supported harnesses even when installed or latest-version
+data is missing, or the last check reported the harness as current.
+Lowercase `u` only refreshes version data.
+
+Container updates run `trellage upgrade PROFILE --strict-harness` for every discovered
+container profile with the same harness, including profiles hidden by the
+current filter. This covers Claude, Codex, Copilot, Oh My Pi (`pi`),
+Prime, and Headlong. Existing version pins are preserved. Failed package
+resolution is reported as a failure, not as an update using the old harness.
+
+Native updates remain separate from container updates. Copilot, Codex, Grok,
+and Claude use `cpx harness-update`, `cdx harness-update`, `grx harness-update`,
+and `cldx harness-update` once per shared host binary. Selecting either Codex
+`youtube` or `superpowers` updates the same Codex binary for all native Codex profiles.
+Grok updates the stable channel. Oh My Pi, jcode, Pi Coding Agent, and Prime
+use their launcher's `update` command once per shared runtime. Firstmate
+runs `fmx update PROFILE` for each profile to apply its catalog-pinned
+source and overlay. Native launchers without a harness update command
+do not offer this action; plugin updates are not used as a substitute.
+
+Updates run sequentially within a group and report each profile's result.
+A failed profile does not stop the remaining profiles. Version data is
+refreshed afterward, once per shared native runtime or per container and
+Firstmate profile. A running group cannot be started a second time.
+
+### Global harness and skills update command
+
+`trx upgrade all` uses the same full catalog, planner, and sequential update
+queue as Admin's `A` action. The `trellage-upgrade-all` skill uses this command
+rather than a second update loop. The operation updates harness versions
+**and skills**. It prints the profiles, commands, unsupported entries, and
+update counts before it asks you to type `yes` at a terminal. Piped input is
+not approval. The catalog input and confirmation terminal are separate.
+Unlike Admin's updates-only selection, this command remains a full maintenance
+run. Its dry-run does not fetch update availability.
+
+```sh
+trx upgrade all --dry-run  # Preview only; no updates or version checks.
+trx upgrade all           # Preview, then require terminal confirmation.
+trx upgrade all --yes     # Explicitly authorize non-interactive updates.
+```
+
+`--yes` and `--dry-run` cannot be combined. Help and invalid arguments are
+handled before launcher discovery. Missing, invalid, or incomplete catalogs
+stop the operation before any update starts.
+
+The shared queue runs Native harness updates first. It then runs the current
+router's `trx skills update` once, refreshing all four Native skill caches:
+`native-common`, Codex YouTube, Oh My Pi community, and guide Prompt Master.
+Every Native profile, including Agency, then receives `skills-update PROFILE`
+to copy and verify its configured skills. This final copy follows harness
+updates because some harness updaters rewrite skills. No `repair`, `setup`,
+or plugin update is substituted for a skills update. The router keeps its
+exact executable path, including when it runs from a source worktree.
+
+Container harness builds run afterward and refresh their configured skills
+through the existing build path. There is no separate Container skill
+mutation. All phases use the same exclusive queue as Admin's `A` action.
+
+The command preserves each profile's version and source pins. It reports
+progress, separate harness and Native skills results, and fresh installed
+versions. Independent updates continue after command or version-read
+failures. If any Native skill cache refresh fails, all Native profile
+copies are skipped; old cached skills are not reported as current. A
+per-profile copy or verification failure does not stop the other profiles
+or Container updates.
+
+Unsupported harnesses are reported rather than silently skipped. Agency
+still receives skills even when its harness updater is unsupported; that
+unsupported harness still makes the overall result incomplete. Container
+harness fallback is a failure, not a successful rebuild of the old harness.
+
+Any failed harness update, shared skill cache refresh, Native skill copy
+or verification, unsupported profile, unreadable installed version, or
+profile not run makes the exit status nonzero. Harness counts and Native
+skill counts are reported separately. A dry-run also returns nonzero if it
+finds unsupported profiles, and never refreshes caches or copies skills.
+Cancellation returns `130`, stops active update commands and later phases,
+and does not roll back completed updates.
+
+`trellage upgrade all` remains Container-only. Installing or upgrading
+Trellage itself is a separate operation; this command does neither.
 
 `trx` fails closed if a launcher is absent, does not resolve to its owned
 runtime, or has an invalid catalog. The selected native launcher performs its
 own launch-time readiness checks and handles not-setup or unhealthy profiles.
-Interactive use requires stdin and stderr attached to a TTY; a non-TTY
+The bare picker requires stdin and stderr attached to a TTY; a non-TTY
 invocation exits `1`.
 
 `trx run LAUNCHER PROFILE [-- ARGS...]` is the non-interactive routing
@@ -178,10 +299,25 @@ launcher/profile pairs.
 The first setup or launch through any native launcher fetches the
 `native-common` bundle from the approved repositories' current default
 branches. The shared snapshot is then reused without network access.
-`trx skills status` reports the installed names. `trx skills update` performs
-the only normal refresh and atomically replaces the shared snapshot. A failed
-update keeps the previous snapshot. These two commands do not require launcher
-discovery and do not start an agent.
+`trx skills status` reports the installed names. `trx skills update` is the
+cache refresh used by the unified operation. It refreshes the four caches
+listed above; a failed cache update keeps that cache's previous snapshot.
+It does not copy the refreshed skills into every profile on its own.
+`trx skills check --json` compares all four existing caches with freshly fetched
+sources without publishing caches or copying profile skills. It returns
+`{"kind":"current"}`, `{"kind":"available"}`, or
+`{"kind":"unknown","diagnostic":"..."}`. A known difference returns `available`;
+any other incomplete checks remain in its diagnostic. Without a known difference,
+missing caches or failed checks return `unknown`, never `current`.
+The installed skills CLI is required; checks never install it. Disposable staging
+is under the working directory and is removed after the check.
+
+Admin exposes this result as `skills:shared`, including guide Prompt Master
+changes that need no Native profile copies. Older routers without this command
+need a normal launcher refresh.
+
+These commands do not require launcher discovery, bootstrap development
+dependencies, or start an agent.
 
 Rows show `harness / profile`. The highlighted detail pane shows the resolved
 launcher alias, absolute binary path, and exact JSON argument vector—including

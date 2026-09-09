@@ -43,6 +43,13 @@ managed npm prefix, and records the exact installed version in the local
 network request. Only explicit `prx update` resolves latest again. Updates
 stage and verify a complete npm prefix before publication.
 
+`prx skills-update default` copies and verifies only the refreshed
+`native-common` cache after `trx skills update`. It requires an existing owned
+profile and managed skill state. Custom skills, extensions, authentication,
+runtime receipts, and kernel state are preserved. Missing caches, invalid
+ownership, unsafe paths, and name collisions fail closed. It never fetches,
+starts Prime or the proxy, or starts or stops the daemon.
+
 `prx` records one canonical runtime identity containing the identity schema,
 the exact Prime Agent version, a deterministic SHA-256 of the bundled
 `dist/prime-agent-runtime` tree, and the managed kernel specification version.

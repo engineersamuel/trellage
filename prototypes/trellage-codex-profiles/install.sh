@@ -15,6 +15,7 @@ home="$(cd -L "$home" >/dev/null 2>&1 && pwd -L)" || refuse "refusing unsafe HOM
 
 source_dir="$(cd "$(dirname "$0")" && pwd)"
 common_launcher="$source_dir/../trellage-codex-common/native-codex"
+native_skills_source="$source_dir/../trellage-claude-common/native-skills.mjs"
 session_bridge_source="$source_dir/../../scripts/trellage-session-bridge.py"
 floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-runtime.sh"
 environment_runtime_installer="$source_dir/../../scripts/install-native-environment-runtime.sh"
@@ -24,7 +25,7 @@ for runtime_installer in "$floating_runtime_installer" "$environment_runtime_ins
   [ -f "$runtime_installer" ] && [ ! -L "$runtime_installer" ] && [ -x "$runtime_installer" ] \
     || refuse "required runtime installer is missing or unsafe: $runtime_installer"
 done
-for runtime_input in "$floating_skills_manager" "$floating_skills_catalog"; do
+for runtime_input in "$floating_skills_manager" "$floating_skills_catalog" "$native_skills_source"; do
   [ -f "$runtime_input" ] && [ ! -L "$runtime_input" ] \
     || refuse "required runtime input is missing or unsafe: $runtime_input"
 done
@@ -543,12 +544,14 @@ if [ -d "$install_root" ]; then
     './lib/trellage-session-bridge.py')"
   legacy_lib_entries="$(printf '%s\n' './lib' './lib/native-codex')"
   expected_entries="$(printf '%s\n%s' "$recovery_entries" "$lib_entries")"
+  skills_entries="$(printf '%s\n%s' "$expected_entries" './native-skills.mjs')"
   legacy_lib_marketplace_entries="$(printf '%s\n%s\n%s' \
     "$recovery_entries" "$legacy_lib_entries" "$marketplace_entries")"
   legacy_lib_entries="$(printf '%s\n%s' "$recovery_entries" "$legacy_lib_entries")"
   legacy_marketplace_entries="$(printf '%s\n%s' \
     "$recovery_entries" "$marketplace_entries")"
   [ "$actual_entries" = "$expected_entries" ] \
+    || [ "$actual_entries" = "$skills_entries" ] \
     || [ "$actual_entries" = "$legacy_lib_entries" ] \
     || [ "$actual_entries" = "$legacy_lib_marketplace_entries" ] \
     || [ "$actual_entries" = "$legacy_marketplace_entries" ] \
@@ -573,6 +576,11 @@ if [ -d "$install_root" ]; then
     [ -f "$install_root/lib/trellage-session-bridge.py" ] \
       && [ ! -L "$install_root/lib/trellage-session-bridge.py" ] \
       || refuse "refusing unsafe managed runtime file: $install_root/lib/trellage-session-bridge.py"
+  fi
+  if [ "$actual_entries" = "$skills_entries" ]; then
+    for path in "$install_root/native-skills.mjs" "$install_root/lib/trellage-session-bridge.py"; do
+      [ -f "$path" ] && [ ! -L "$path" ] || refuse "refusing unsafe managed runtime file: $path"
+    done
   fi
   runtime_owned=true
 fi
@@ -869,6 +877,7 @@ chmod 0755 \
 chmod 0700 "$staging_root/new-runtime/.fish-recovery"
 install -m 0755 "$source_dir/bin/cdx" "$staging_root/new-runtime/bin/cdx"
 install -m 0755 "$common_launcher" "$staging_root/new-runtime/lib/native-codex"
+install -m 0644 "$native_skills_source" "$staging_root/new-runtime/native-skills.mjs"
 install -m 0755 "$session_bridge_source" \
   "$staging_root/new-runtime/lib/trellage-session-bridge.py"
 install -m 0644 "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json"

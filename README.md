@@ -140,7 +140,8 @@ Four resolution commands, four different jobs:
   beside `profile.toml`.
 - `trellage upgrade <profile>` refreshes floating inputs, builds a candidate,
   and atomically adopts the new local receipt and image. Failure preserves the
-  last good installation.
+  last good installation. Add `--strict-harness` to fail if package resolution
+  would retain the previous harness instead.
 - `trellage lock <profile>` creates an exact portable release snapshot beside
   the profile. This is the only normal command that writes a release lock.
 - `trellage build --locked <profile>` and `trellage ci-verify <profile>`
@@ -703,6 +704,32 @@ the pinned Firstmate source and overlay are installed as an explicit,
 reviewable step. Running `setup`/`doctor` ahead of time is recommended for
 every launcher so missing prerequisites are reported before a session starts.
 
+For harness versions and skills, use `trx admin`: press `A` to check the full
+catalog, including profiles hidden by filters. The preview lists only known
+available updates; current harnesses and skills are hidden. Version changes
+show `current -> target`, with configured pins kept. Failed or incomplete
+checks are listed separately and are not treated as current.
+Press `y` to run the displayed selection after the checks finish.
+Native skill-only updates do not run a harness updater. Container skill
+changes require an image rebuild. A selected Native harness update also
+synchronizes its affected profiles' managed skills afterward.
+`U` still updates the selected harness group. For a full maintenance run
+through the same queue, use the command below or `trellage-upgrade-all`:
+
+```bash
+trx upgrade all --dry-run  # Preview without updating harnesses or skills.
+trx upgrade all            # Preview, then ask for confirmation.
+trx upgrade all --yes      # Run without an interactive confirmation.
+```
+
+These actions update selected shared Native runtimes once, refresh the shared
+skill caches, then copy and verify skills for affected Native profiles. Container
+profiles are rebuilt with current configured skills. The final Native skill
+copies cannot be overwritten by a later harness updater. Profile version and
+source pins are preserved. Unsupported profiles and failures are reported;
+independent updates continue. This does not install Trellage or restart
+sessions. `trellage upgrade all` remains Container-only.
+
 The first native setup or launch fetches `native-common` from the approved
 default branches and publishes one shared cache. Later launches use that cache
 without network access. Refresh it only when you choose:
@@ -714,6 +741,9 @@ trx skills update
 
 An update is atomic. If fetch or validation fails, the previous cache and
 profile skills remain available.
+
+`trx skills update` remains a cache-only maintenance command. Use the unified
+`trx upgrade all` operation to update harnesses and deployed skill copies together.
 
 The installers publish these commands and managed runtimes:
 

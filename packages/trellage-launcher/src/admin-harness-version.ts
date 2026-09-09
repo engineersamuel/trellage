@@ -215,23 +215,26 @@ const resultForEntry = (
   return { installed, latest: raw?.latest ?? { kind: "unsupported" } }
 }
 
+// Firstmate reports a profile's catalog pin, not a shared upstream release.
+const shareableReleaseKeyFor = (entry: AdminProfileEntry): HarnessReleaseKey | undefined =>
+  entry.surface === "native" && entry.launcher === "fmx" ? undefined : harnessVersionReleaseKeyFor(entry)
+
 /**
  * Produces one effective result per row. Conflicting latest values disable
  * cross-row promotion for that release identity rather than selecting an
  * arbitrary winner.
  */
-export const reconcileHarnessVersionResults = (
+export const reconcileHarnessVersionObservations = (
   entries: ReadonlyArray<AdminProfileEntry>,
-  resultForOperation: (operationKey: string) => AdminHarnessVersionResult | undefined,
-  sandboxInstalledForRef: (ref: string) => AdminInstalledVersionState | undefined = () => undefined,
+  observationFor: (entry: AdminProfileEntry) => AdminHarnessVersionResult | undefined,
 ): ReadonlyMap<string, AdminHarnessVersionResult> => {
   const results = new Map<string, AdminHarnessVersionResult>()
   const latestByRelease = new Map<HarnessReleaseKey, Set<string>>()
   for (const entry of entries) {
-    const result = resultForEntry(entry, resultForOperation, sandboxInstalledForRef)
+    const result = observationFor(entry)
     if (result === undefined) continue
     results.set(entry.ref, result)
-    const releaseKey = harnessVersionReleaseKeyFor(entry)
+    const releaseKey = shareableReleaseKeyFor(entry)
     if (releaseKey === undefined || result.latest.kind !== "known") continue
     const versions = latestByRelease.get(releaseKey) ?? new Set<string>()
     versions.add(result.latest.version)
@@ -240,7 +243,7 @@ export const reconcileHarnessVersionResults = (
 
   for (const entry of entries) {
     const result = results.get(entry.ref)
-    const releaseKey = harnessVersionReleaseKeyFor(entry)
+    const releaseKey = shareableReleaseKeyFor(entry)
     if (result === undefined || releaseKey === undefined || result.latest.kind === "known") continue
     const versions = latestByRelease.get(releaseKey)
     if (versions?.size !== 1) continue
@@ -248,6 +251,13 @@ export const reconcileHarnessVersionResults = (
   }
   return results
 }
+
+export const reconcileHarnessVersionResults = (
+  entries: ReadonlyArray<AdminProfileEntry>,
+  resultForOperation: (operationKey: string) => AdminHarnessVersionResult | undefined,
+  sandboxInstalledForRef: (ref: string) => AdminInstalledVersionState | undefined = () => undefined,
+): ReadonlyMap<string, AdminHarnessVersionResult> =>
+  reconcileHarnessVersionObservations(entries, (entry) => resultForEntry(entry, resultForOperation, sandboxInstalledForRef))
 
 export const harnessVersionEntriesForForceResync = (
   selected: AdminProfileEntry,

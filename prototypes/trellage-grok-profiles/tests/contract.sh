@@ -198,7 +198,8 @@ expected_readme_commands="$(printf '%s\n' \
   'grx update --check --all' \
   'grx update superpowers' \
   'grx update --all' \
-  'grx repair superpowers')"
+  'grx repair superpowers' \
+  'grx harness-update')"
 [ "$readme_commands" = "$expected_readme_commands" ] \
   || fail 'README command block does not match the supported grx command forms'
 
@@ -232,7 +233,9 @@ jq -e '
 ' "$prototype_root/catalog.json" >/dev/null \
   || fail 'catalog does not match the approved profile contract'
 
-fixture_root="$(mktemp -d)"
+fixture_root="$prototype_root/.contract-fixture.$$"
+[[ ! -e "$fixture_root" && ! -L "$fixture_root" ]] || fail "fixture path already exists: $fixture_root"
+mkdir -m 0700 "$fixture_root"
 cleanup() {
   chmod -R u+rwx "$fixture_root" 2>/dev/null || true
   rm -rf "$fixture_root"
@@ -315,6 +318,17 @@ if [ "${1-}" = 'update' ] && [ "${2-}" = '--check' ] && [ "${3-}" = '--json' ]; 
     exit "$FAKE_GROK_UPDATE_CHECK_STATUS"
   fi
   printf '%s\n' "${FAKE_GROK_UPDATE_CHECK_JSON:-{\"currentVersion\":\"0.2.112\",\"latestVersion\":\"0.2.120\",\"channel\":\"stable\",\"updateAvailable\":true,\"error\":null}}"
+  exit 0
+fi
+
+if [ "${1-}" = 'update' ]; then
+  printf '%s\n' "args=$*" "HOME=$HOME" "GROK_HOME=${GROK_HOME-}" >>"$FAKE_GROK_HARNESS_LOG"
+  [ "$#" -eq 2 ] && [ "$2" = '--stable' ] || exit 91
+  if [ "${FAKE_GROK_HARNESS_UPDATE_STATUS:-0}" -ne 0 ]; then
+    printf 'fixture Grok updater failed\n' >&2
+    exit "$FAKE_GROK_HARNESS_UPDATE_STATUS"
+  fi
+  printf 'Grok updated\n'
   exit 0
 fi
 
@@ -843,6 +857,52 @@ assert_line '  grx update --check PROFILE|--all' "$help_output"
 assert_line '  grx update PROFILE|--all' "$help_output"
 assert_line '  grx repair PROFILE' "$help_output"
 assert_line '  grx harness-version' "$help_output"
+assert_line '  grx harness-update' "$help_output"
+
+harness_home="$fixture_root/harness-home"
+mkdir -p "$harness_home"
+run_harness_update() (
+  unset GROK_HOME
+  export HOME="$harness_home"
+  export FAKE_GROK_HARNESS_LOG="$fixture_root/harness-update.log"
+  ./bin/grx harness-update "$@"
+)
+
+run_harness_update >"$fixture_root/harness-update.out" \
+  || fail 'harness update required profile setup or authentication'
+cmp -s "$fixture_root/harness-update.log" <(printf '%s\n' \
+  'args=update --stable' "HOME=$harness_home" 'GROK_HOME=') \
+  || fail 'harness update changed its arguments, HOME, or profile environment'
+assert_line 'Grok updated' "$fixture_root/harness-update.out"
+[ -z "$(find "$harness_home" -mindepth 1 -print -quit)" ] \
+  || fail 'harness update created authentication or profile state'
+
+update_status=0
+FAKE_GROK_HARNESS_UPDATE_STATUS=23 run_harness_update \
+  >"$fixture_root/harness-update-failed.out" 2>"$fixture_root/harness-update-failed.err" || update_status=$?
+[ "$update_status" -eq 23 ] || fail "harness update exit was $update_status, expected 23"
+assert_line 'fixture Grok updater failed' "$fixture_root/harness-update-failed.err"
+
+calls_before="$(wc -l <"$fixture_root/harness-update.log" | tr -d ' ')"
+for argument in superpowers --all --check; do
+  if run_harness_update "$argument" >"$fixture_root/harness-update-invalid.out" 2>"$fixture_root/harness-update-invalid.err"; then
+    fail "harness update accepted $argument"
+  fi
+  assert_line 'grx: harness-update accepts no arguments' "$fixture_root/harness-update-invalid.err"
+done
+[ "$(wc -l <"$fixture_root/harness-update.log" | tr -d ' ')" = "$calls_before" ] \
+  || fail 'invalid harness update arguments reached Grok'
+
+missing_grok_bin="$fixture_root/missing-grok-bin"
+mkdir -p "$missing_grok_bin"
+for tool in bash dirname uname jq; do
+  ln -s "$(command -v "$tool")" "$missing_grok_bin/$tool"
+done
+if HOME="$harness_home" PATH="$missing_grok_bin" ./bin/grx harness-update \
+  >"$fixture_root/harness-update-missing.out" 2>"$fixture_root/harness-update-missing.err"; then
+  fail 'harness update accepted a missing Grok executable'
+fi
+assert_line 'grx: required command not found: grok' "$fixture_root/harness-update-missing.err"
 
 ./bin/grx harness-version >"$fixture_root/harness-version.json"
 jq -e '
