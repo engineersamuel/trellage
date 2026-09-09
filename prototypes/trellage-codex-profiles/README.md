@@ -114,18 +114,19 @@ harness/profile picker. Remaining arguments are forwarded to `cdx` unchanged
 after selection; the bare picker never performs setup, repair, or update.
 In `trx admin`, press `U`, then `y` to update the shared Codex harness.
 
-Profile launch always passes `--sandbox workspace-write -c
-sandbox_workspace_write.network_access=true` and disables
-`default_mode_request_user_input`. Interactive launches use
-`--ask-for-approval on-request`, which lets Codex request permission for Git
-metadata writes and other commands that must cross the workspace sandbox
-boundary. Non-interactive launches use `--ask-for-approval never` so automation
-cannot hang waiting for input. Codex's native OS-level sandbox (Seatbelt on
-macOS, Landlock+bubblewrap on Linux) restricts writes to the workspace and temp
-directories while still allowing reads and network access. Plugin code and
-Codex commands can still read any host data available to the process and reach
-the network. Use `cdx` only with trusted repositories and plugins. Lifecycle
-commands do not add these launch flags.
+Profile launch always passes `--dangerously-bypass-approvals-and-sandbox` and
+disables `default_mode_request_user_input`. This selects **Full Access**:
+`approval_policy = "never"` and `sandbox_mode = "danger-full-access"`.
+The default applies to `pstack`, `superpowers`, and `youtube`, with proxy or
+`--native-auth` authentication, in interactive and non-interactive sessions.
+New and resumed sessions use the same launch policy.
+
+Codex does not request command approvals, and its native OS-level sandbox is
+disabled. Plugin code and Codex commands can read, write, and use the network
+with the host account's permissions. Isolated profile state is not a security
+boundary. Use `cdx` only with trusted repositories and plugins; use Trellage
+Sandbox when isolation is required. Lifecycle commands do not add these
+launch flags.
 
 Hook trust uses contextual `--dangerously-bypass-hook-trust`:
 

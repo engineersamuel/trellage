@@ -269,7 +269,7 @@ const nativeCatalogEntry = async (
     name: identity.profile,
     description: catalogMetadata.description,
     headless: catalogMetadata.headless,
-    sandbox: identity.launcher === "cdx" || identity.launcher === "grx",
+    sandbox: identity.launcher === "grx",
     herdrCompatibility: { status: "test" },
     guide: loaded.guide,
     commandPath: `/tmp/${identity.launcher}`,

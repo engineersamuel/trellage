@@ -90,7 +90,7 @@ create_native_launcher() {
   fi
 
   local sandbox=false
-  if [[ "$launcher" == cdx || "$launcher" == grx ]]; then
+  if [[ "$launcher" == grx ]]; then
     sandbox=true
   fi
 
@@ -783,9 +783,9 @@ jq -e '
   ]
   and [.profiles[] | .sandbox] == [
     false,
-    true,
-    true,
-    true,
+    false,
+    false,
+    false,
     false,
     false,
     false,
@@ -1406,7 +1406,7 @@ selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
 ((selection_milliseconds < 4000)) \
   || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
 jq --arg commandPath "$runtime_parent/cpx/bin/cpx" -e '
-  .description == "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries."
+  .description == "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) uses Full Access without a native sandbox. Grok (grx) enables its native sandbox; other native profiles are not security boundaries."
   and (.choices[0]
     | .label == "copilot / cpx-p"
       and (.description | length == 1200)
@@ -1501,10 +1501,10 @@ jq -e '
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not enable model overrides for every launcher except local Qwen'
 jq -e '
-  ([.choices[] | select(.id == "cdx:cdx-p") | .sandbox] == [true])
+  ([.choices[] | select(.id == "cdx:cdx-p") | .sandbox] == [false])
   and ([.choices[] | select(.id == "grx:grx-p") | .sandbox] == [true])
-  and ([.choices[] | select(.id == "cdx:pstack") | .sandbox] == [true])
-  and ([.choices[] | select(.id == "cdx:youtube") | .sandbox] == [true])
+  and ([.choices[] | select(.id == "cdx:pstack") | .sandbox] == [false])
+  and ([.choices[] | select(.id == "cdx:youtube") | .sandbox] == [false])
   and ([.choices[] | select(.commandAlias == "agx" or .commandAlias == "cldx" or .commandAlias == "fmx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not expose accurate per-choice sandbox status'

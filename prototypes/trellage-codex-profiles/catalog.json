@@ -3,7 +3,7 @@
   "profiles": {
     "pstack": {
       "kind": "plugin",
-      "description": "Host-native Codex CLI with a workspace-write OS sandbox for structured, verified multi-step engineering through the explicit Aqua-123 pstack $pstack-for-codex:poteto-mode workflow.",
+      "description": "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for structured, verified multi-step engineering through the explicit Aqua-123 pstack $pstack-for-codex:poteto-mode workflow.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,
@@ -39,7 +39,7 @@
     },
     "superpowers": {
       "kind": "plugin",
-      "description": "Host-native Codex CLI with a workspace-write OS sandbox for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow.",
+      "description": "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,
@@ -75,7 +75,7 @@
     },
     "youtube": {
       "kind": "skills",
-      "description": "Host-native Codex CLI with a workspace-write OS sandbox for transcript-backed YouTube search, summaries, channel browsing, and playlist research through TranscriptAPI.",
+      "description": "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for transcript-backed YouTube search, summaries, channel browsing, and playlist research through TranscriptAPI.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,

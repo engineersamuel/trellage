@@ -331,7 +331,7 @@ validate_catalog() {
       "profiles": {
         "pstack": {
           "kind": "plugin",
-          "description": "Host-native Codex CLI with a workspace-write OS sandbox for structured, verified multi-step engineering through the explicit Aqua-123 pstack $pstack-for-codex:poteto-mode workflow.",
+          "description": "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for structured, verified multi-step engineering through the explicit Aqua-123 pstack $pstack-for-codex:poteto-mode workflow.",
           "headless": {
             "schemaVersion": 1,
             "prompt": false,
@@ -363,7 +363,7 @@ validate_catalog() {
         },
         "superpowers": {
           "kind": "plugin",
-          "description": "Host-native Codex CLI with a workspace-write OS sandbox for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow.",
+          "description": "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow.",
           "headless": {
             "schemaVersion": 1,
             "prompt": false,
@@ -395,7 +395,7 @@ validate_catalog() {
         },
         "youtube": {
           "kind": "skills",
-          "description": "Host-native Codex CLI with a workspace-write OS sandbox for transcript-backed YouTube search, summaries, channel browsing, and playlist research through TranscriptAPI.",
+          "description": "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for transcript-backed YouTube search, summaries, channel browsing, and playlist research through TranscriptAPI.",
           "headless": {
             "schemaVersion": 1,
             "prompt": false,
@@ -448,10 +448,8 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: $launcher,
       harness: "codex",
-      # cdx enables the Codex native --sandbox workspace-write profile with
-      # network access. Interactive sessions can approve commands that must
-      # cross the sandbox boundary; unattended sessions fail closed.
-      sandbox: true,
+      # Full Access disables the Codex OS sandbox; profile state stays isolated.
+      sandbox: false,
       profiles: [
         .profiles
         | to_entries
@@ -3448,7 +3446,6 @@ run_codex_child() {
   local profile="$1" native="$2"
   local home target
   local before child_status cleanup_status wait_status release_status=0
-  local approval_policy=never
   local monitor_child=yes
   home="$(profile_home "$profile")"
   target="$home/config.toml"
@@ -3491,7 +3488,6 @@ run_codex_child() {
   trap 'launch_signal TERM' TERM
   if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
     monitor_child=no
-    approval_policy=on-request
   else
     set -m
   fi
@@ -3502,9 +3498,7 @@ run_codex_child() {
     fi
     # Bash 3.2 + set -u: empty array [@] is unbound; expand only when set/non-empty.
     if [ "$native" = yes ]; then
-      exec "$codex_executable" --sandbox workspace-write \
-        -c sandbox_workspace_write.network_access=true \
-        --ask-for-approval "$approval_policy" \
+      exec "$codex_executable" --dangerously-bypass-approvals-and-sandbox \
         --disable default_mode_request_user_input \
         ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
         -c 'model_provider="openai"' \
@@ -3512,9 +3506,7 @@ run_codex_child() {
         ${profile_codex_args[@]+"${profile_codex_args[@]}"} \
         "$@"
     else
-      exec "$codex_executable" --sandbox workspace-write \
-        -c sandbox_workspace_write.network_access=true \
-        --ask-for-approval "$approval_policy" \
+      exec "$codex_executable" --dangerously-bypass-approvals-and-sandbox \
         --disable default_mode_request_user_input \
         ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
         ${trust_codex_args[@]+"${trust_codex_args[@]}"} \

@@ -3,7 +3,7 @@ schemaVersion: 1
 capabilities:
   - superpowers-tdd-and-debugging-workflows
   - subagent-dispatch-workflow
-  - codex-workspace-write-sandbox
+  - codex-full-access
   - keyless-proxy-model-routing
   - isolated-codex-profile-home
 bestFor:
@@ -12,8 +12,9 @@ bestFor:
   - Code-review loops that want both requesting-code-review and receiving-code-review conventions plus subagent-driven or parallel-agent dispatch
 avoidFor:
   - Tasks that need native OpenAI authentication by default; the profile routes through copilot-proxy-rs unless you opt in with cdx --native-auth
-  - Anything needing an interactive approval pause; launch always passes --ask-for-approval never and disables user-input requests
+  - Anything needing a command approval pause; launch uses Full Access and disables user-input requests
   - Sessions that need a different marketplace's skill set installed alongside superpowers; setup and launch remove forbidden Superpowers variants rather than mixing them
+  - Work requiring an OS-level sandbox; use the codex-superpowers Trellage Sandbox profile instead
 prerequisites:
   - id: codex-cli
     description: Codex CLI 0.146.0 or later installed on the host.
@@ -69,13 +70,15 @@ review, verification, and branch-finishing discipline. See
   `systematic-debugging`, `test-driven-development`, `using-git-worktrees`,
   `using-superpowers`, `verification-before-completion`, `writing-plans`, and
   `writing-skills` — driving a Codex CLI session.
-- You want Codex's native OS-level sandbox: writes restricted to workspace and
-  temp directories, reads and network access allowed, no approval prompts.
+- You want Codex Full Access with no command approval prompts and no Codex OS
+  sandbox. Commands run with the host account's permissions.
 - You want disciplined branch-finishing and verification-before-completion
   habits enforced by the skill set rather than by manual checklist.
 
 ## Avoid This Profile When
 
+- You need a security boundary around agent commands. Use the
+  `codex-superpowers` Trellage Sandbox profile instead.
 - You need native OpenAI authentication by default; use
   `cdx --native-auth superpowers exec "..."` for one launch instead.
 - You want to combine superpowers with a different Codex marketplace plugin in

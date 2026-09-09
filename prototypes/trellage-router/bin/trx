@@ -36,7 +36,7 @@ readonly trx_herdr_ledger='[
   { "launcher": "fmx", "profile": "pstack-workers", "status": "untested", "notes": "The shared Firstmate runtime passed the fmx/default Herdr fleet round trip, and static worker-policy contracts pass. Awaiting a profile-specific pstack-workers fleet round trip." },
   { "launcher": "omp", "profile": "copilot", "status": "verified" },
   { "launcher": "picx", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
-  { "launcher": "cdx", "profile": "pstack", "status": "untested", "notes": "Static profile, plugin inventory, and native sandbox contracts pass; awaiting an end-to-end Herdr round trip." },
+  { "launcher": "cdx", "profile": "pstack", "status": "untested", "notes": "Static profile, plugin inventory, and native launch contracts pass; awaiting an end-to-end Herdr round trip." },
   { "launcher": "cdx", "profile": "youtube", "status": "verified", "notes": "Verified end-to-end with Herdr v0.8.2: a fresh cdx youtube session loaded youtube-full and completed one free TranscriptAPI channel/resolve request for @GitHub with the expected channel ID and canonical URL, using standard-input curl configuration without putting the key in process arguments." },
   { "launcher": "cpx", "profile": "hve", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally via cpx repair hve (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
   { "launcher": "cpx", "profile": "compound-engineering", "status": "untested", "notes": "Static catalog, plugin inventory, and profile-guide contracts pass; an end-to-end Herdr round trip has not yet been recorded." },
@@ -453,7 +453,7 @@ build_choices() {
       } + models($catalog; $profile));
     {
       prompt: "Select a Trellage harness/profile",
-      description: "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) and Grok (grx) enable the native sandbox for each harness; other native profiles are not security boundaries.",
+      description: "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) uses Full Access without a native sandbox. Grok (grx) enables its native sandbox; other native profiles are not security boundaries.",
       choices: [
         pair($cpxCatalog),
         pair($cdxCatalog),

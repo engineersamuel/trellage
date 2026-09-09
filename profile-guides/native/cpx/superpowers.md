@@ -14,7 +14,7 @@ avoidFor:
   - Tasks scoped to discovering/importing Copilot agents, instructions, or skills — use cpx awesome instead
   - Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user
   - Mixing in the hve-core plugin in the same profile; setup and launch manage exactly one cataloged plugin per profile
-  - Work needing an OS-level sandbox; choose `cdx superpowers` for Codex or `grx superpowers` for Grok Build instead
+  - Work needing isolation; choose the codex-superpowers Trellage Sandbox profile for Codex or `grx superpowers` for Grok Build's native OS sandbox
 prerequisites:
   - id: copilot-cli
     description: GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host.
