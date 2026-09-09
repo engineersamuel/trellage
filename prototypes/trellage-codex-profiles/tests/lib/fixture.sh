@@ -470,7 +470,7 @@ export FAKE_CODEX_PROJECT_TRUST_VALUE
 
 case "${FAKE_CODEX_SIGNAL_PARENT:-}" in
   HUP|INT|TERM)
-    if [ "${1:-}" = '--sandbox' ] \
+    if [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ] \
       && [ "${FAKE_CODEX_APPEND_PROJECT_TRUST:-}" = 1 ]; then
       persist_project_trust
     fi
@@ -632,7 +632,7 @@ case "$*" in
     printf '%s\n' '{"upgraded":true}'
     ;;
   *)
-    if [ "${1:-}" = '--sandbox' ] \
+    if [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ] \
       && [ "${FAKE_CODEX_APPEND_PROJECT_TRUST:-}" = 1 ]; then
       fake_project_append_count="${FAKE_CODEX_APPEND_PROJECT_TRUST_COUNT:-1}"
       [ "${FAKE_CODEX_APPEND_PROJECT_TRUST_TWICE:-}" != 1 ] \
@@ -646,7 +646,8 @@ case "$*" in
         || cp "$CODEX_HOME/config.toml" "$FAKE_CODEX_CAPTURE_PROJECT_CONFIG"
     fi
     # Simulate Codex session-live native writes that must not fail cleanup.
-    if [ "${1:-}" = '--sandbox' ] && [ "${FAKE_CODEX_BUMP_TUI_NUX:-}" = 1 ]; then
+    if [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ] \
+      && [ "${FAKE_CODEX_BUMP_TUI_NUX:-}" = 1 ]; then
       staged="$CODEX_HOME/.fake-codex-config-nux.$$"
       awk -v marker='# trellage-managed-codex-provider-end' '
         $0 == marker {
@@ -737,17 +738,14 @@ case "$*" in
       : >"$FAKE_CODEX_RELEASE_RACE_DIR/child-started"
     fi
     if [ "$profile" = superpowers ] \
-      && [ "${1:-}" = '--sandbox' ]; then
-      # Skip the fixed cdx-injected launch flags (--sandbox <mode>, repeatable
-      # -c <value>, --ask-for-approval <value>, --disable <value>,
-      # --dangerously-bypass-hook-trust with no value) to find the first
-      # actual user-supplied argument, regardless of how many -c overrides
-      # cdx currently injects ahead of it.
+      && [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ]; then
+      # Skip cdx-injected flags to find the first caller argument. Full Access
+      # and hook-trust bypass flags do not consume a value.
       launch_action=''
       while [ $# -gt 0 ]; do
         case "$1" in
-          --sandbox|-c|--ask-for-approval|--disable) shift 2 ;;
-          --dangerously-bypass-hook-trust) shift 1 ;;
+          -c|--disable) shift 2 ;;
+          --dangerously-bypass-approvals-and-sandbox|--dangerously-bypass-hook-trust) shift ;;
           *) launch_action="$1"; break ;;
         esac
       done

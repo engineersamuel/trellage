@@ -103,7 +103,7 @@
     },
     {
       "id": "codex-native-superpowers",
-      "intent": "Use host-native Codex with its workspace-write sandbox and the Codex-adapted Superpowers workflow to plan, implement with TDD, review, and finish this branch.",
+      "intent": "Use host-native Codex with Full Access and the Codex-adapted Superpowers workflow to plan, implement with TDD, review, and finish this branch.",
       "expectedProfiles": ["native:cdx/superpowers"],
       "maxRank": 3,
       "excludedProfiles": ["sandbox:codex-superpowers"]

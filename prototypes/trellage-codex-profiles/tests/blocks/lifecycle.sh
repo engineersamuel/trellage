@@ -294,8 +294,7 @@ jq -se --arg trustPath "$(CDPATH= cd -P -- . && pwd)" "
 $(strip_project_trust_c_jq)
   length == 1
   and (.[0].args | strip_project_trust_c) == [
-    \"--sandbox\", \"workspace-write\", \"-c\", \"sandbox_workspace_write.network_access=true\",
-    \"--ask-for-approval\", \"never\", \"--disable\", \"default_mode_request_user_input\",
+    \"--dangerously-bypass-approvals-and-sandbox\", \"--disable\", \"default_mode_request_user_input\",
     \"--dangerously-bypass-hook-trust\", \"--version\"
   ]
   and any(.[0].args[]; is_project_trust_override and contains(\$trustPath))
@@ -1039,7 +1038,7 @@ grep -F -- 'pstack' "$fixture_root/native-malformed-host-auth.out" >/dev/null \
 jq -se '
   length == 1
   and .[0].args == ["login","status"]
-  and (map(select(.args[0] == "--sandbox")) | length) == 0
+  and (map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length) == 0
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'malformed host auth invoked a native launch or proxy fallback'
 printf '%s\n' '{"tokens":{"access_token":"native-v1","refresh_token":"native-refresh-v1"}}' \
@@ -1075,8 +1074,7 @@ $(strip_project_trust_c_jq)
   and .[2].home == \$home
   and .[2].cwd == \$cwd
   and (.[2].args | strip_project_trust_c) == [
-    \"--sandbox\", \"workspace-write\", \"-c\", \"sandbox_workspace_write.network_access=true\",
-    \"--ask-for-approval\", \"never\", \"--disable\", \"default_mode_request_user_input\",
+    \"--dangerously-bypass-approvals-and-sandbox\", \"--disable\", \"default_mode_request_user_input\",
     \"--dangerously-bypass-hook-trust\",
     \"-c\", \"model_provider=\\\"openai\\\"\",
     \"-m\", \"gpt-5.5\", \"exec\", \"--json\", \"hello world\"
@@ -1246,7 +1244,7 @@ assert_native_refresh_failure() {
   [ -z "$(find "$pstack_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
     || fail "$label left authentication staging debris"
   jq -se '
-    map(select(.args[0] == "--sandbox")) | length == 0
+    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length == 0
   ' "$fixture_root/fake-codex.log" >/dev/null \
     || fail "$label invoked a native launch or proxy fallback"
 }
@@ -1521,7 +1519,7 @@ assert_isolation_snapshot_unchanged native-target-changed-during-copy
 [ -z "$(find "$pstack_home" -maxdepth 1 -name '.auth.*' -print -quit)" ] \
   || fail 'destination safety failure left authentication staging debris'
 jq -se '
-  map(select(.args[0] == "--sandbox")) | length == 0
+  map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) | length == 0
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'destination safety failure invoked a native launch or proxy fallback'
 rm "$fake_bin/cp" "$pstack_home/auth.json"
@@ -1551,8 +1549,7 @@ $(strip_project_trust_c_jq)
   length == 2
   and .[0].args == [\"plugin\",\"list\",\"--json\"]
   and (.[1].args | strip_project_trust_c) == [
-    \"--sandbox\", \"workspace-write\", \"-c\", \"sandbox_workspace_write.network_access=true\",
-    \"--ask-for-approval\", \"never\", \"--disable\", \"default_mode_request_user_input\",
+    \"--dangerously-bypass-approvals-and-sandbox\", \"--disable\", \"default_mode_request_user_input\",
     \"--dangerously-bypass-hook-trust\", \"--version\"
   ]
   and any(.[1].args[]; is_project_trust_override and contains(\$trustPath))

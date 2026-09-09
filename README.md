@@ -892,10 +892,12 @@ cdx update --check pstack
 cdx update pstack
 ```
 
-It uses the same native Codex `workspace-write` sandbox and authentication
-policy as `cdx`. Node.js is required by upstream hooks and validation. Bun is
-optional. Pstack is a Codex profile, so Trellage does not install a `pstack`
-executable and does not shadow the Unix debugger with that name.
+Like all `cdx` profiles, it uses Full Access by default: no command approval
+prompts and no Codex OS sandbox. Commands run with the host account's
+permissions. Use Trellage Sandbox when isolation is required. Authentication
+policy is unchanged. Node.js is required by upstream hooks and validation.
+Bun is optional. Pstack is a Codex profile, so Trellage does not install a
+`pstack` executable and does not shadow the Unix debugger with that name.
 
 The opt-in `cdx youtube` profile adds only the `youtube-full` Agent Skill from
 [`ZeroPointRepo/youtube-skills`](https://github.com/ZeroPointRepo/youtube-skills)

@@ -3,7 +3,7 @@ schemaVersion: 1
 capabilities:
   - pstack-poteto-mode-orchestration
   - explicit-skill-invocation-workflows
-  - codex-workspace-write-sandbox
+  - codex-full-access
   - keyless-proxy-model-routing
   - isolated-codex-profile-home
 bestFor:
@@ -14,6 +14,7 @@ avoidFor:
   - Casual prompts that do not name a skill; all 45 pstack-for-codex skills require explicit $name invocation and are not auto-triggered
   - Tasks needing native OpenAI authentication by default; the profile routes through copilot-proxy-rs unless you opt in with cdx --native-auth
   - Multi-writer parallel edits on one shared checkout without isolation; pstack falls back to serial execution when safe isolation is unavailable
+  - Work requiring an OS-level sandbox; use a Trellage Sandbox profile instead
 prerequisites:
   - id: codex-cli
     description: Codex CLI 0.146.0 or later installed on the host.
@@ -78,14 +79,16 @@ the real result before declaring completion.
   `$pstack-for-codex:no-comments`, `$pstack-for-codex:unslop`,
   `$pstack-for-codex:show-me-your-work`, and
   `$pstack-for-codex:setup-benny`.
-- You want Codex's native OS-level sandbox: writes restricted to workspace and
-  temp directories, reads and network access allowed, no approval prompts.
+- You want Codex Full Access with no command approval prompts and no Codex OS
+  sandbox. Commands run with the host account's permissions.
 - You want verification checkpoints and, for long, autonomous, or multi-phase
   work, a recorded decision trail through
   `$pstack-for-codex:show-me-your-work`.
 
 ## Avoid This Profile When
 
+- You need a security boundary around agent commands. Use a Trellage Sandbox
+  profile instead; isolated Native profile state is not a sandbox.
 - You expect skills to trigger automatically from plain descriptions — every
   pstack-for-codex skill is explicit-invocation only; nothing fires without a
   `$name` in the prompt.

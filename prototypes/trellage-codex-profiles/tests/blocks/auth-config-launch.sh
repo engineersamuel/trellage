@@ -13,6 +13,7 @@ blocks_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 # Contract launches must not inherit user or runner environment policy.
 unset \
   BASH_ENV \
+  CDX_HOOK_TRUST \
   ENV \
   TRANSCRIPT_API_KEY \
   TRELLAGE_CONFIG \
@@ -24,6 +25,7 @@ jq -e '
   .schemaVersion == 1
   and (.profiles | keys | sort) == ["pstack", "superpowers", "youtube"]
   and .profiles.pstack.kind == "plugin"
+  and .profiles.pstack.description == "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for structured, verified multi-step engineering through the explicit Aqua-123 pstack $pstack-for-codex:poteto-mode workflow."
   and .profiles.pstack.marketplaceKind == "git-local"
   and .profiles.pstack.marketplaceSource == "Aqua-123/pstack-for-codex"
   and .profiles.pstack.marketplaceName == "pstack-for-codex-local"
@@ -35,7 +37,7 @@ jq -e '
   and .profiles.pstack.requiredEnvironment == []
   and .profiles.pstack.standaloneMcps == []
   and .profiles.superpowers.kind == "plugin"
-  and .profiles.superpowers.description == "Host-native Codex CLI with a workspace-write OS sandbox for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow."
+  and .profiles.superpowers.description == "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for TDD, root-cause fixes, reviews, and clean branches through the Codex-adapted Superpowers workflow."
   and .profiles.superpowers.marketplaceKind == "git"
   and .profiles.superpowers.marketplaceSource == "obra/superpowers-marketplace"
   and .profiles.superpowers.marketplaceName == "superpowers-marketplace"
@@ -48,6 +50,7 @@ jq -e '
   and .profiles.superpowers.requiredEnvironment == []
   and .profiles.superpowers.standaloneMcps == []
   and .profiles.youtube.kind == "skills"
+  and .profiles.youtube.description == "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for transcript-backed YouTube search, summaries, channel browsing, and playlist research through TranscriptAPI."
   and .profiles.youtube.plugin == null
   and .profiles.youtube.source == "ZeroPointRepo/youtube-skills"
   and .profiles.youtube.skillBundles == ["native-common", "youtube"]
@@ -71,9 +74,9 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cdx"
   and .harness == "codex"
-  and .sandbox == true
+  and .sandbox == false
   and [.profiles[].name] == ["pstack", "superpowers", "youtube"]
-  and all(.profiles[]; (.description | type == "string" and length > 0))
+  and all(.profiles[]; .description | contains("Full Access by default (no command approvals or Codex OS sandbox)"))
   and .profiles[0].headless == {
     "schemaVersion": 1,
     "prompt": false,
@@ -321,10 +324,8 @@ cp "$pstack_home/config.toml" "$fixture_root/proxy-launch-config-before.toml"
   "$fixture_launcher" pstack -m gpt-5.5 exec --json 'hello world') \
   || fail 'pstack launch failed'
 
-HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-FAKE_CODEX_LOG="$fixture_root/pty-fake-codex.log" \
-python3 - "$fixture_launcher" <<'PY' \
-  || fail 'interactive Codex launch could not read from the foreground terminal'
+run_codex_with_tty() {
+  python3 - "$fixture_launcher" "$@" <<'PY'
 import os
 import pty
 import select
@@ -337,7 +338,7 @@ pid, terminal = pty.fork()
 if pid == 0:
     environment = os.environ.copy()
     environment["FAKE_CODEX_TTY_READ"] = "1"
-    os.execvpe(launcher, [launcher, "pstack", "--version"], environment)
+    os.execvpe(launcher, [launcher, *sys.argv[2:]], environment)
 
 output = bytearray()
 sent = False
@@ -368,14 +369,24 @@ if status != 0 or b"TTY_READ_DONE" not in output:
     sys.stderr.buffer.write(output)
     raise SystemExit(1)
 PY
+}
 
-jq -se '
-  map(select(.args[0] == "--sandbox")) as $launches |
-  ($launches | length) == 1
-  and (($launches[0].args | index("--ask-for-approval")) as $approvalIndex |
-    $launches[0].args[$approvalIndex + 1] == "on-request")
-' "$fixture_root/pty-fake-codex.log" >/dev/null \
-  || fail 'interactive Codex launch did not enable on-request approvals'
+HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
+  CI= TRELLAGE_AUTOMATION= CDX_AUTOMATION= \
+  FAKE_CODEX_LOG="$fixture_root/pty-fake-codex.log" \
+  run_codex_with_tty pstack --version \
+  || fail 'interactive Codex launch could not read from the foreground terminal'
+
+jq -se "
+$(strip_project_trust_c_jq)
+  map(select(.args[0] == \"--dangerously-bypass-approvals-and-sandbox\")) as \$launches |
+  (\$launches | length) == 1
+  and (\$launches[0].args | strip_project_trust_c) == [
+    \"--dangerously-bypass-approvals-and-sandbox\", \"--disable\", \"default_mode_request_user_input\",
+    \"--version\"
+  ]
+" "$fixture_root/pty-fake-codex.log" >/dev/null \
+  || fail 'interactive Codex launch did not use Full Access with normal hook trust'
 
 cmp -s "$fixture_root/proxy-launch-config-before.toml" "$pstack_home/config.toml" \
   || fail 'proxy launch did not restore exact prelaunch config bytes'
@@ -384,14 +395,13 @@ jq -se --arg codexHome "$pstack_home" \
   --arg home "$fixture_root/home" \
   --arg cwd "$original_cwd" \
   --arg trustOverride "projects={\"$original_cwd_physical\"={trust_level=\"trusted\"}}" '
-    map(select(.args[0] == "--sandbox")) as $launches |
+    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
     ($launches | length) == 1
     and $launches[0].codexHome == $codexHome
     and $launches[0].home == $home
     and $launches[0].cwd == $cwd
     and $launches[0].args == [
-      "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
-      "--ask-for-approval", "never", "--disable", "default_mode_request_user_input",
+      "--dangerously-bypass-approvals-and-sandbox", "--disable", "default_mode_request_user_input",
       "--dangerously-bypass-hook-trust",
       "-c", $trustOverride,
       "-m", "gpt-5.5", "exec", "--json", "hello world"
@@ -407,7 +417,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   "$fixture_launcher" pstack --version \
   || fail 'CDX_HOOK_TRUST=prompt launch failed'
 jq -se '
-  map(select(.args[0] == "--sandbox")) as $launches |
+  map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
   ($launches | length) == 1
   and all($launches[0].args[]; . != "--dangerously-bypass-hook-trust")
 ' "$fixture_root/fake-codex.log" >/dev/null \
@@ -419,7 +429,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   "$fixture_launcher" pstack --version \
   || fail 'CDX_HOOK_TRUST=bypass launch failed'
 jq -se '
-  map(select(.args[0] == "--sandbox")) as $launches |
+  map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
   ($launches | length) == 1
   and any($launches[0].args[]; . == "--dangerously-bypass-hook-trust")
 ' "$fixture_root/fake-codex.log" >/dev/null \
@@ -434,6 +444,9 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
 grep -F 'CDX_HOOK_TRUST must be auto, bypass, or prompt' \
   "$fixture_root/hook-trust-invalid.out" >/dev/null \
   || fail 'invalid CDX_HOOK_TRUST diagnostic missing'
+jq -se 'all(.[]; .args[0] != "--dangerously-bypass-approvals-and-sandbox")' \
+  "$fixture_root/fake-codex.log" >/dev/null \
+  || fail 'invalid CDX_HOOK_TRUST started a Codex session'
 : >"$fixture_root/fake-codex.log"
 
 auth_is_absent "$pstack_home/auth.json" || fail 'launch copied host authentication'
@@ -469,7 +482,7 @@ worktree_trust_log="$fixture_root/fake-codex-worktree-trust.log"
 jq -se \
   --arg linkPath "$worktree_trust_link_physical" \
   --arg mainPath "$worktree_trust_main_physical" '
-    map(select(.args[0] == "--sandbox")) as $launches |
+    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
     ($launches | length) == 1
     and any(
       $launches[0].args[];
@@ -1392,7 +1405,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   || fail 'repair preserved forbidden Superpowers in pstack'
 : >"$fake_state/pstack/forbidden-superpowers-direct"
 : >"$fake_state/pstack/forbidden-superpowers-renamed"
-launches_before="$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
+launches_before="$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
   "$fixture_root/fake-codex.log")"
 mkdir -p "$fixture_root/home/.codex"
 printf '%s\n' '{"tokens":{"access_token":"contamination-check"}}' \
@@ -1418,7 +1431,7 @@ rm "$pstack_home/auth.json"
 [ ! -e "$fake_state/pstack/forbidden-superpowers-direct" ] \
   && [ ! -e "$fake_state/pstack/forbidden-superpowers-renamed" ] \
   || fail 'contaminated launch preserved forbidden Superpowers variants'
-[ "$(jq -s '[.[] | select(.args[0] == "--sandbox")] | length' \
+[ "$(jq -s '[.[] | select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")] | length' \
   "$fixture_root/fake-codex.log")" = "$((launches_before + 2))" ] \
   || fail 'self-healed launches did not start the underlying Codex agent'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -1886,6 +1899,134 @@ HOME="$fixture_root/home" fake_env "$fixture_launcher" superpowers \
   || fail 'first Superpowers launch after setup failed'
 assert_isolation_snapshot_unchanged launch-after-fresh-superpowers-setup
 
+# Cover each profile/auth/terminal combination without repeating every command.
+assert_full_access_launch() {
+  local profile="$1" auth_mode="$2" terminal_mode="$3"
+  local label="full-access-$1-$2-$3" forwarded expected
+  local profile_home="$fixture_root/home/.local/share/trellage/profiles/codex/$1/home"
+  local -a launch_args prefix
+  shift 3
+  launch_args=("$profile" "$@")
+  prefix=(--dangerously-bypass-approvals-and-sandbox --disable default_mode_request_user_input)
+  [ "$terminal_mode" = tty ] || prefix+=(--dangerously-bypass-hook-trust)
+  if [ "$auth_mode" = native ]; then
+    launch_args=(--native-auth "${launch_args[@]}")
+    prefix+=(-c 'model_provider="openai"')
+  fi
+  forwarded="$(jq -cn --args '$ARGS.positional' -- "$@")" \
+    || fail "$label could not encode caller arguments"
+  expected="$(jq -cn --args '$ARGS.positional' -- "${prefix[@]}")" \
+    || fail "$label could not encode launch defaults"
+  : >"$fixture_root/$label.log"
+  (
+    cd "$original_cwd" || exit 1
+    export HOME="$fixture_root/home" PATH="$fake_bin:$PATH"
+    export FAKE_CODEX_LOG="$fixture_root/$label.log" FAKE_CODEX_LOGIN_STATUS=0
+    unset CDX_HOOK_TRUST CI TRELLAGE_AUTOMATION CDX_AUTOMATION TRANSCRIPT_API_KEY
+    [ "$profile" != youtube ] || export TRANSCRIPT_API_KEY="$youtube_secret"
+    if [ "$terminal_mode" = tty ]; then
+      run_codex_with_tty "${launch_args[@]}"
+    else
+      "$fixture_launcher" "${launch_args[@]}" </dev/null
+    fi
+  ) >"$fixture_root/$label.out" 2>&1 || {
+    cat "$fixture_root/$label.out" >&2
+    fail "$label failed"
+  }
+  jq -se --arg profile "$profile" --arg authMode "$auth_mode" \
+    --arg codexHome "$profile_home" --arg home "$fixture_root/home" \
+    --arg cwd "$original_cwd" --argjson expected "$expected" \
+    --argjson forwarded "$forwarded" \
+    --arg instructions "developer_instructions=\"${youtube_developer_instructions}\"" \
+    "$(strip_project_trust_c_jq)"'
+      map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches
+      | ($launches | length) == 1
+      and $launches[0].codexHome == $codexHome
+      and $launches[0].home == $home
+      and $launches[0].cwd == $cwd
+      and (($launches[0].youtubeApiKeyPresent == true) == ($profile == "youtube"))
+      and (
+        [.[] | select(.args == ["login", "status"]) | .codexHome]
+        == if $authMode == "native" then [$home + "/.codex"] else [] end
+      )
+      and all(.[] | select(.args[0] != "--dangerously-bypass-approvals-and-sandbox");
+        .args == ["login", "status"] or .args == ["plugin", "list", "--json"])
+      and (
+        ($launches[0].args | strip_project_trust_c) as $args
+        | ($expected | length) as $prefixLength
+        | ($forwarded | length) as $forwardedLength
+        | $args[0:$prefixLength] == $expected
+        and $args[-$forwardedLength:] == $forwarded
+        and ($args | index("--sandbox")) == null
+        and ($args | index("--ask-for-approval")) == null
+        and ($args | index("sandbox_workspace_write.network_access=true")) == null
+        and (
+          $args[$prefixLength:(($args | length) - $forwardedLength)] as $profileArgs
+          | if $profile == "youtube" then
+              $profileArgs[0:5] == [
+                "-c", "shell_environment_policy.inherit=all",
+                "-c", "shell_environment_policy.ignore_default_excludes=true", "-c"
+              ]
+              and ($profileArgs[5] | startswith("shell_environment_policy.include_only=")
+                and contains("\"TRANSCRIPT_API_KEY\""))
+              and $profileArgs[6:] == ["-c", $instructions]
+            else $profileArgs == [] end
+        )
+      )
+    ' "$fixture_root/$label.log" >/dev/null \
+    || fail "$label changed Full Access defaults, authentication, or caller arguments"
+  if [ "$auth_mode" = native ]; then
+    cmp -s "$fixture_root/home/.codex/auth.json" "$profile_home/auth.json" \
+      || fail "$label did not copy the selected native authentication"
+  fi
+}
+
+auth_is_absent "$fixture_root/home/.codex/auth.json" \
+  || fail 'Full Access fixture would overwrite host authentication'
+printf '%s\n' '{"tokens":{"access_token":"full-access-fixture"}}' \
+  >"$fixture_root/home/.codex/auth.json"
+chmod 0600 "$fixture_root/home/.codex/auth.json"
+for full_access_profile in pstack superpowers youtube; do
+  full_access_auth="$fixture_root/home/.local/share/trellage/profiles/codex/$full_access_profile/home/auth.json"
+  if [ -f "$full_access_auth" ]; then
+    mv "$full_access_auth" "$fixture_root/full-access-$full_access_profile-auth.saved"
+  fi
+done
+write_isolation_snapshot full-access-launches
+while read -r full_access_profile full_access_auth full_access_terminal full_access_action; do
+  case "$full_access_action" in
+    new) full_access_args=('new prompt with "quotes" and literal *') ;;
+    exec) full_access_args=(exec --json -m gpt-5.5 'exec prompt with spaces') ;;
+    resume) full_access_args=(resume --last 'resume prompt with spaces') ;;
+    exec-resume) full_access_args=(exec resume --last --json '') ;;
+    *) fail "unknown Full Access fixture action: $full_access_action" ;;
+  esac
+  assert_full_access_launch "$full_access_profile" "$full_access_auth" \
+    "$full_access_terminal" "${full_access_args[@]}"
+done <<'EOF'
+pstack proxy tty new
+pstack proxy non-tty exec
+pstack native tty resume
+pstack native non-tty exec-resume
+superpowers proxy tty resume
+superpowers proxy non-tty exec-resume
+superpowers native tty new
+superpowers native non-tty exec
+youtube proxy tty new
+youtube proxy non-tty exec
+youtube native tty resume
+youtube native non-tty exec-resume
+EOF
+assert_isolation_snapshot_unchanged full-access-launches
+for full_access_profile in pstack superpowers youtube; do
+  full_access_auth="$fixture_root/home/.local/share/trellage/profiles/codex/$full_access_profile/home/auth.json"
+  rm -f "$full_access_auth"
+  if [ -f "$fixture_root/full-access-$full_access_profile-auth.saved" ]; then
+    mv "$fixture_root/full-access-$full_access_profile-auth.saved" "$full_access_auth"
+  fi
+done
+rm "$fixture_root/home/.codex/auth.json"
+
 upgrade_failure_home="$fixture_root/upgrade-failure-home"
 prepare_test_home() {
   test_home="$1"
@@ -1913,7 +2054,7 @@ upgrade_failure_profile="$upgrade_failure_home/.local/share/trellage/profiles/co
   || fail 'failed fresh Superpowers materialization added selected plugin before upgrade'
 jq -se '
   any(.[]; .args == ["plugin","marketplace","upgrade","superpowers-marketplace","--json"])
-  and all(.[]; .args[0] != "--sandbox")
+  and all(.[]; .args[0] != "--dangerously-bypass-approvals-and-sandbox")
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'failed fresh Superpowers materialization used a launch fallback'
 : >"$fixture_root/fake-codex.log"
@@ -2798,7 +2939,9 @@ rm "$fake_bin/codex"
 mv "$fake_bin/codex-real" "$fake_bin/codex"
 
 jq -se '
-  all(.[] | select(.args[0] == "--sandbox");
+  map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches
+  | ($launches | length) > 0
+  and all($launches[];
     ((.args | join(" ")) | test("marketplace add|plugin add|marketplace upgrade|plugin remove") | not))
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch invoked a forbidden marketplace or plugin mutation'

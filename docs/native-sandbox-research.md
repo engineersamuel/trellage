@@ -1,8 +1,9 @@
 # Native launcher sandboxing — research and decisions
 
-Status: **`cdx`/`grx` sandboxed natively;
+Status: **`grx` is sandboxed natively; `cdx` uses Full Access by default.
 `cldx`/`cpx`/`fmx`/`jcx`/`omp`/`picx`/`prx` remain unsandboxed; clawk
-evaluated and not adopted.** Recorded so the finding is not re-discovered.
+evaluated and not adopted.** The original Codex sandbox decision is retained
+below as history, not as the current launch policy.
 
 Background: Trellage Sandbox profiles (compiled by `packages/trellage-cli`,
 built and run via `trellage build`) always execute inside a resolved, built
@@ -10,44 +11,42 @@ Docker container, so they are implicitly sandboxed regardless of harness kind.
 Trellage Native launchers (`cdx`, `cpx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`,
 `picx`, `prx`) run the underlying harness CLI directly on the host. This
 repo's own guidance previously stated flatly that "Trellage Native profiles isolate
-agent state but are not containers or security boundaries" — this document
-records why that statement now has two exceptions (`cdx`, `grx`) and why the
-other seven remain unsandboxed by design rather than by oversight.
+agent state but are not containers or security boundaries". The original
+sandbox rollout made two exceptions (`cdx`, `grx`). Codex now defaults to Full
+Access at the user's request, leaving Grok as the only native sandbox exception.
 
 `trellage list --json-full` (Trellage Sandbox) and every native launcher's
 `list --json` now carry a `sandbox: boolean` field reflecting this reality.
 
 ---
 
-## 1. What was verified (settled facts, not just vendor docs)
+## 1. What was verified during the original sandbox rollout
 
 Verified directly against the actual invocation code in this repo and the
 locally installed CLI binaries — not just aggregator search results, which
 proved unreliable for some of the Grok config claims below.
 
-| Harness (launcher) | Native OS-level sandbox exists? | Verified invocation before this change | Verdict |
+| Harness (launcher) | Native OS-level sandbox exists? | Invocation before the original rollout | Decision |
 |---|---|---|---|
-| Codex (`cdx`) | **Yes** — `--sandbox {read-only,workspace-write,danger-full-access}`, enforced by Seatbelt (macOS) / Landlock+bubblewrap (Linux). Confirmed via installed `codex-cli 0.147.0 --help` and https://developers.openai.com/codex/agent-approvals-security. | `cdx` passed `--dangerously-bypass-approvals-and-sandbox` (`prototypes/trellage-codex-profiles/bin/cdx`) — sandbox was actively disabled | **Now sandboxed** (this change) |
-| Grok (`grx`) | **Yes** — `--sandbox <PROFILE>` (`workspace`, `devbox`, `read-only`, `strict`), enforced by Landlock (Linux, network) / Seatbelt (macOS, filesystem). Confirmed via installed `grok 1.0.0 (stable) --help` and https://docs.x.ai/build/features/sandbox. | `grx` passed no sandbox-related flag at all | **Now sandboxed** (this change) |
+| Codex (`cdx`) | **Yes** — `--sandbox {read-only,workspace-write,danger-full-access}`, enforced by Seatbelt (macOS) / Landlock+bubblewrap (Linux). Confirmed via installed `codex-cli 0.147.0 --help` and https://developers.openai.com/codex/agent-approvals-security. | `cdx` passed `--dangerously-bypass-approvals-and-sandbox` (`prototypes/trellage-codex-profiles/bin/cdx`) — sandbox was actively disabled | Initially enabled; superseded by Full Access (section 2) |
+| Grok (`grx`) | **Yes** — `--sandbox <PROFILE>` (`workspace`, `devbox`, `read-only`, `strict`), enforced by Landlock (Linux, network) / Seatbelt (macOS, filesystem). Confirmed via installed `grok 1.0.0 (stable) --help` and https://docs.x.ai/build/features/sandbox. | `grx` passed no sandbox-related flag at all | Enabled; retained |
 | Claude Code (`cldx`) | **Partial** — `/sandbox` mode exists (bubblewrap/Seatbelt-backed Bash sandboxing), but requires enabling per-session and doesn't compose with `--dangerously-skip-permissions` the way `cldx` invokes Claude today | `cldx` invokes `claude --dangerously-skip-permissions --permission-mode bypassPermissions` (full bypass) | Not flipped — see §3 |
 | Copilot CLI (`cpx`) | **No** — no built-in OS-level sandbox (seatbelt/seccomp/landlock/container); only a trust-directory + tool-approval prompt layer. Real isolation requires an external container. | No sandbox flags exist to pass | Not flippable natively — see §3 |
 | jcode (`jcx`), oh-my-pi (`omp`), Pi (`picx`), Prime (`prx`), Firstmate (`fmx`) | No evidence of built-in OS-level sandboxing found in vendor docs or this repo's invocation code | No sandbox flags | Treated as unsandboxed/unresearched-capability |
 
-## 2. Codex and Grok: what changed
+## 2. Current defaults and the prior Codex policy
 
-Network access stays allowed. The filesystem/network sandbox remains the main
-security boundary; interactive Codex sessions may request approval only when a
-command must cross that boundary, while unattended launches never prompt.
+Network access stays allowed for both launchers, but only Grok retains its
+native sandbox by default.
 
-- **`cdx`**, including its `pstack` profile: uses
-  `--sandbox workspace-write -c sandbox_workspace_write.network_access=true`.
-  `workspace-write` restricts writes to the workspace + temp dirs (reads
-  elsewhere are still permitted by this Codex sandbox mode); the `-c`
-  override re-enables network access, which `workspace-write` blocks by
-  default. Interactive launches use `--ask-for-approval on-request` so the
-  user can approve protected Git metadata writes; non-interactive launches use
-  `--ask-for-approval never` so automation fails closed instead of hanging.
-- **`grx`**: added `--sandbox workspace` alongside the existing
+- **`cdx`**, including `pstack`, `superpowers`, and `youtube`: uses
+  `--dangerously-bypass-approvals-and-sandbox`. This selects Full Access
+  (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`) for
+  both authentication paths and both interactive and non-interactive launches.
+  Commands run with the host account's permissions, without command approval
+  prompts or a Codex OS sandbox. Profile-state isolation is not a security
+  boundary. Hook trust remains a separate control.
+- **`grx`**: uses `--sandbox workspace` alongside the existing
   `--permission-mode bypassPermissions --always-approve`. Per xAI's docs,
   `workspace` is the only built-in profile that keeps network access
   allowed while restricting writes to the CWD (+ `~/.grok/` for session
@@ -56,7 +55,18 @@ command must cross that boundary, while unattended launches never prompt.
   limits what an approved call can do"), so the existing bypass/auto-approve
   flags are unaffected by adding the sandbox restriction.
 
-Both sandboxed launchers' `list --json` report `sandbox: true`.
+`cdx list --json` reports `sandbox: false`; `grx list --json` reports
+`sandbox: true`. Use Trellage Sandbox when Codex commands require isolation.
+Container and comparison Codex sessions keep their Docker boundary. Dedicated
+read-only Codex verification probes and the Graph of Loops reviewer retain
+their separate read-only policies.
+
+**Previous Codex default (superseded):** `cdx` used
+`--sandbox workspace-write -c sandbox_workspace_write.network_access=true`.
+Interactive launches used `--ask-for-approval on-request` so the user could
+approve protected Git metadata writes; non-interactive launches used
+`--ask-for-approval never`. That policy restricted writes to the workspace and
+temporary directories. It was not Full Access.
 
 ## 3. clawk fit-check for the remaining unsandboxed launchers
 
@@ -105,7 +115,6 @@ gets non-experimental Linux support, but is not scheduled work today.
 ## 4. Project guide update
 
 The statement "Trellage Native profiles isolate agent state but are not
-containers or security boundaries" (previously universal) now has two
-exceptions: `cdx` and `grx` enable a real native OS-level sandbox as
-described above. `cldx`, `cpx`, `jcx`, `omp`, `picx`, `prx`, and `fmx` remain
-exactly as that statement describes.
+containers or security boundaries" now has one exception: `grx` enables its
+native OS-level sandbox. `cdx` uses Full Access by default; `cldx`, `cpx`,
+`jcx`, `omp`, `picx`, `prx`, and `fmx` remain unsandboxed as before.
