@@ -104,6 +104,9 @@ export interface GuideModelSession {
   readonly sessionId: string
   sendAndWait(options: { readonly prompt: string }, timeoutMs: number): Promise<GuideModelMessage | undefined>
   disconnect(): Promise<void>
+  send?(options: { readonly prompt: string }): Promise<string>
+  on?(handler: (event: { readonly type: string; readonly data: unknown }) => void): () => void
+  abort?(): Promise<void>
 }
 
 /**
@@ -117,6 +120,7 @@ export interface GuideModelClient {
   createSession(config: SessionConfig): Promise<GuideModelSession>
   deleteSession(sessionId: string): Promise<void>
   stop(): Promise<ReadonlyArray<Error>>
+  forceStop?(): Promise<void>
 }
 
 /** Thrown when the configured model is missing or does not support the configured reasoning effort. */
@@ -188,6 +192,8 @@ export interface CopilotGuideProviderOptions {
   readonly enrichTimeoutMs?: number
   /** Injectable client constructor, so unit tests never spawn a real Copilot runtime. */
   readonly clientFactory?: (options: CopilotClientOptions) => GuideModelClient
+  /** When supplied, requests use real SDK abort and bounded cleanup. */
+  readonly signal?: AbortSignal
 }
 
 const defaultClientFactory = (options: CopilotClientOptions): GuideModelClient => new CopilotClient(options)
@@ -298,6 +304,366 @@ const collectClientStopErrors = async (client: GuideModelClient, cleanupErrors: 
   }
 }
 
+export const restrictedGuideSessionConfig = (options: {
+  readonly model: string
+  readonly effort: GuideReasoningEffort
+  readonly clientName: string
+  readonly workingDirectory: string
+  readonly systemPrompt: string
+  readonly systemMessageMode?: "append" | "replace"
+  readonly skillDirectory?: string
+  readonly onActivity?: (event: { readonly type: string }) => void
+}): SessionConfig => ({
+  clientName: options.clientName,
+  model: options.model,
+  reasoningEffort: options.effort,
+  workingDirectory: options.workingDirectory,
+  enableConfigDiscovery: false,
+  tools: [],
+  availableTools: [],
+  mcpServers: {},
+  customAgents: [],
+  ...skillSessionPolicy(options.skillDirectory),
+  pluginDirectories: [],
+  instructionDirectories: [],
+  hooks: {},
+  requestExtensions: false,
+  requestCanvasRenderer: false,
+  manageScheduleEnabled: false,
+  skipCustomInstructions: true,
+  enableOnDemandInstructionDiscovery: false,
+  enableFileHooks: false,
+  enableHostGitOperations: false,
+  enableSessionStore: false,
+  infiniteSessions: { enabled: false },
+  memory: { enabled: false },
+  skipEmbeddingRetrieval: true,
+  embeddingCacheStorage: "in-memory",
+  enableFileChangeTracking: false,
+  enableSessionTelemetry: false,
+  remoteSession: "off",
+  onPermissionRequest: () => ({ kind: "reject" }),
+  ...(options.onActivity === undefined ? {} : { onEvent: options.onActivity }),
+  systemMessage: { mode: options.systemMessageMode ?? "append", content: options.systemPrompt },
+})
+
+export enum RestrictedGuideEventType {
+  Message = "assistant.message",
+  Idle = "session.idle",
+  Error = "session.error",
+}
+
+export interface RestrictedGuideModelSession {
+  readonly sessionId: string
+  send(options: { readonly prompt: string }): Promise<string>
+  on(handler: (event: { readonly type: string; readonly data: unknown }) => void): () => void
+  abort(): Promise<void>
+  disconnect(): Promise<void>
+}
+
+export interface RestrictedGuideModelClient {
+  start(): Promise<void>
+  listModels(): Promise<ReadonlyArray<ModelInfo>>
+  createSession(config: SessionConfig): Promise<RestrictedGuideModelSession>
+  deleteSession(sessionId: string): Promise<void>
+  stop(): Promise<ReadonlyArray<Error>>
+  forceStop(): Promise<void>
+}
+
+export interface RestrictedGuideModelRequest {
+  readonly model: string
+  readonly effort: GuideReasoningEffort
+  readonly systemPrompt: string
+  readonly prompt: string
+  readonly timeoutMs: number
+  readonly cleanupTimeoutMs: number
+  readonly maximumResponseBytes: number
+  readonly inspectModel: (model: ModelInfo) => void
+  readonly signal?: AbortSignal
+  readonly baseDirectory?: string
+  readonly workingDirectory?: string
+  readonly copilotCliPath?: string
+  readonly clientFactory?: (options: CopilotClientOptions) => RestrictedGuideModelClient
+  readonly skillDirectory?: string
+  readonly systemMessageMode?: "append" | "replace"
+  readonly clientName?: string
+  readonly onActivity?: (event: { readonly type: string }) => void
+}
+
+export class RestrictedGuideModelError extends Error {
+  constructor(
+    readonly code: string,
+    readonly cleanupFailures: ReadonlyArray<string> = [],
+  ) {
+    super(
+      `restricted model request ${code}${cleanupFailures.length === 0 ? "" : `; cleanup failed: ${cleanupFailures.join(", ")}`}`,
+    )
+    this.name = code === "cancelled" ? "AbortError" : "RestrictedGuideModelError"
+  }
+}
+
+const within = async <Value>(
+  step: () => Promise<Value>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<Value> => {
+  if (signal?.aborted) throw new RestrictedGuideModelError("cancelled")
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let cancel: (() => void) | undefined
+  const interruption = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new RestrictedGuideModelError("timed-out")), timeoutMs)
+    cancel = () => reject(new RestrictedGuideModelError("cancelled"))
+    signal?.addEventListener("abort", cancel, { once: true })
+  })
+  try {
+    return await Promise.race([step(), interruption])
+  } finally {
+    clearTimeout(timer)
+    if (cancel !== undefined) signal?.removeEventListener("abort", cancel)
+  }
+}
+
+/**
+ * One inference request, without schema repair. Unlike SDK sendAndWait, the
+ * event waiter can be removed immediately after an acknowledged abort; it
+ * does not leave the SDK's idle timer alive after disconnect.
+ */
+class RestrictedGuideRequest {
+  private readonly client: RestrictedGuideModelClient
+  private readonly workingDirectory: string
+  private readonly deadline: number
+  private readonly pending = new Set<Promise<unknown>>()
+  private readonly cleanupFailures: string[] = []
+  private stage = "start"
+  private closing = false
+  private session: RestrictedGuideModelSession | undefined
+  private unsubscribe: (() => void) | undefined
+  private content: string | undefined
+  private failure: unknown
+
+  constructor(private readonly options: RestrictedGuideModelRequest) {
+    const baseDirectory = options.baseDirectory ?? path.join(os.homedir(), ".copilot", "trx-guide")
+    this.workingDirectory = options.workingDirectory ?? os.homedir()
+    this.deadline = Date.now() + options.timeoutMs
+    const cliPath = options.copilotCliPath ?? findExecutableOnPath("copilot")
+    this.client = (options.clientFactory ?? ((config) => new CopilotClient(config)))({
+      mode: "empty",
+      builtinPluginDirectories: [],
+      ...(cliPath === undefined ? {} : { connection: RuntimeConnection.forStdio({ path: cliPath }) }),
+      baseDirectory,
+      workingDirectory: this.workingDirectory,
+    })
+  }
+
+  private tracked<Value>(step: () => Promise<Value>): Promise<Value> {
+    const promise = Promise.resolve().then(step)
+    this.pending.add(promise)
+    const settled = async (): Promise<void> => {
+      this.pending.delete(promise)
+      if (this.closing) await this.cleanupStep("late-operation-force-stop", () => this.client.forceStop())
+    }
+    void promise.then(settled, settled)
+    return promise
+  }
+
+  private async cleanupStep(label: string, step: () => Promise<unknown>): Promise<boolean> {
+    try {
+      await within(step, this.options.cleanupTimeoutMs)
+      return true
+    } catch {
+      this.cleanupFailures.push(label)
+      return false
+    }
+  }
+
+  private requestStep<Value>(step: () => Promise<Value>): Promise<Value> {
+    return within(() => this.tracked(step), Math.max(1, this.deadline - Date.now()), this.options.signal)
+  }
+
+  private checkModel(models: ReadonlyArray<ModelInfo>): void {
+    const model = models.find(({ id }) => id === this.options.model)
+    if (model === undefined) throw new GuideModelCapabilityError(`model is not available: ${this.options.model}`)
+    if (model.policy?.state === "disabled") throw new GuideModelCapabilityError(`model is disabled by policy: ${model.id}`)
+    if (!model.capabilities.supports.reasoningEffort) {
+      throw new GuideModelCapabilityError(`model does not support reasoning effort: ${model.id}`)
+    }
+    const efforts = model.supportedReasoningEfforts ?? []
+    if (!efforts.includes(this.options.effort)) {
+      throw new GuideModelCapabilityError(
+        `model does not support effort "${this.options.effort}": ${model.id} supports: ${efforts.join(", ") || "(none)"}`,
+      )
+    }
+    this.options.inspectModel(model)
+  }
+
+  private async open(): Promise<RestrictedGuideModelSession> {
+    await this.requestStep(() => this.client.start())
+    this.stage = "model-metadata"
+    this.checkModel(await this.requestStep(() => this.client.listModels()))
+    this.stage = "create-session"
+    return this.requestStep(async () => {
+      const created = await this.client.createSession(restrictedGuideSessionConfig({
+        model: this.options.model,
+        effort: this.options.effort,
+        workingDirectory: this.workingDirectory,
+        clientName: this.options.clientName ?? "trellage-trx-continuation",
+        systemPrompt: this.options.systemPrompt,
+        ...(this.options.skillDirectory === undefined ? {} : { skillDirectory: this.options.skillDirectory }),
+        ...(this.options.systemMessageMode === undefined ? {} : { systemMessageMode: this.options.systemMessageMode }),
+        ...(this.options.onActivity === undefined ? {} : { onActivity: this.options.onActivity }),
+      }))
+      this.session = created
+      // A delayed create response must not resurrect a cancelled request.
+      if (this.closing) {
+        await this.cleanupStep("late-session-abort", () => created.abort())
+        await this.cleanupStep("late-session-disconnect", () => created.disconnect())
+        await this.cleanupStep("late-session-delete", () => this.client.deleteSession(created.sessionId))
+        await this.cleanupStep("late-session-force-stop", () => this.client.forceStop())
+      }
+      return created
+    })
+  }
+
+  private acceptMessage(data: unknown): void {
+    if (typeof data !== "object" || data === null || !("content" in data) || typeof data.content !== "string") {
+      throw new RestrictedGuideModelError("invalid-message")
+    }
+    if (Buffer.byteLength(data.content, "utf8") > this.options.maximumResponseBytes) {
+      throw new RestrictedGuideModelError("response-too-large")
+    }
+    this.content = data.content
+  }
+
+  private async send(activeSession: RestrictedGuideModelSession): Promise<void> {
+    let resolveIdle: (() => void) | undefined
+    let rejectIdle: ((error: Error) => void) | undefined
+    const idle = new Promise<void>((resolve, reject) => {
+      resolveIdle = resolve
+      rejectIdle = reject
+    })
+    // A synchronous fake, or an early runtime event, may arrive during send.
+    void idle.catch(() => undefined)
+    this.unsubscribe = activeSession.on((event) => {
+      try {
+        switch (event.type) {
+          case RestrictedGuideEventType.Message:
+            this.acceptMessage(event.data)
+            break
+          case RestrictedGuideEventType.Idle:
+            resolveIdle?.()
+            break
+          case RestrictedGuideEventType.Error:
+            throw new RestrictedGuideModelError("runtime-error")
+        }
+      } catch (error) {
+        rejectIdle?.(error as Error)
+      }
+    })
+    this.stage = "send"
+    await this.requestStep(() => activeSession.send({ prompt: this.options.prompt }))
+    this.stage = "response"
+    await within(() => idle, Math.max(1, this.deadline - Date.now()), this.options.signal)
+    if (this.content === undefined) throw new RestrictedGuideModelError("no-assistant-message")
+    if (this.options.signal?.aborted) throw new RestrictedGuideModelError("cancelled")
+  }
+
+  private async abortFailedRequest(): Promise<void> {
+    if (this.failure === undefined) return
+    const session = this.session
+    if (session === undefined) {
+      await this.cleanupStep("force-stop", () => this.client.forceStop())
+    } else if (!(await this.cleanupStep("abort", () => session.abort()))) {
+      await this.cleanupStep("force-stop", () => this.client.forceStop())
+    }
+  }
+
+  private async cleanup(): Promise<void> {
+    this.closing = true
+    await this.abortFailedRequest()
+    await this.cleanupStep("event-unsubscribe", async () => this.unsubscribe?.())
+    if (this.session !== undefined) {
+      const session = this.session
+      await this.cleanupStep("disconnect", () => session.disconnect())
+      await this.cleanupStep("delete-session", () => this.client.deleteSession(session.sessionId))
+    }
+    const stopped = await this.cleanupStep("stop", async () => {
+      const errors = await this.client.stop()
+      if (errors.length > 0) throw new Error("stop")
+    })
+    if (!stopped || this.cleanupFailures.length > 0) {
+      await this.cleanupStep("force-stop", () => this.client.forceStop())
+    }
+    if (this.pending.size > 0) {
+      await this.cleanupStep("pending-operation", () => Promise.allSettled([...this.pending]))
+      // start/create may have finished while stop was running.
+      await this.cleanupStep("force-stop", () => this.client.forceStop())
+    }
+  }
+
+  async run(): Promise<string> {
+    try {
+      await this.send(await this.open())
+    } catch (error) {
+      this.failure = error
+    } finally {
+      await this.cleanup()
+    }
+    if (this.failure instanceof RestrictedGuideModelError) {
+      throw new RestrictedGuideModelError(this.failure.code, this.cleanupFailures)
+    }
+    if (this.failure instanceof GuideModelCapabilityError) {
+      if (this.cleanupFailures.length === 0) throw this.failure
+      throw new RestrictedGuideModelError(this.failure.message, this.cleanupFailures)
+    }
+    if (this.failure !== undefined) throw new RestrictedGuideModelError(`${this.stage}-failed`, this.cleanupFailures)
+    if (this.cleanupFailures.length > 0) throw new RestrictedGuideModelError("cleanup-failed", this.cleanupFailures)
+    return this.content!
+  }
+}
+
+export const runRestrictedGuideModelRequest = async (options: RestrictedGuideModelRequest): Promise<string> => {
+  if (options.signal?.aborted) throw new RestrictedGuideModelError("cancelled")
+  for (const value of [options.timeoutMs, options.cleanupTimeoutMs, options.maximumResponseBytes]) {
+    if (!Number.isSafeInteger(value) || value <= 0) throw new RestrictedGuideModelError("invalid-limits")
+  }
+  return new RestrictedGuideRequest(options).run()
+}
+
+const cancellableClient = (client: GuideModelClient): RestrictedGuideModelClient => {
+  if (client.forceStop === undefined) throw new GuideModelCapabilityError("The model client does not support forceStop.")
+  return {
+    start: () => client.start(),
+    listModels: () => client.listModels(),
+    deleteSession: (id) => client.deleteSession(id),
+    stop: () => client.stop(),
+    forceStop: () => client.forceStop!(),
+    createSession: async (config) => {
+      const session = await client.createSession(config)
+      return {
+        sessionId: session.sessionId,
+        disconnect: () => session.disconnect(),
+        abort: async () => {
+          if (session.abort === undefined) throw new GuideModelCapabilityError("The model session does not support abort.")
+          await session.abort()
+        },
+        on: (handler) => {
+          if (session.on === undefined || session.send === undefined || session.abort === undefined) {
+            throw new GuideModelCapabilityError("The model session does not support cancellable requests.")
+          }
+          return session.on(handler)
+        },
+        send: (input) => session.send!(input),
+      }
+    },
+  }
+}
+
+interface GuideRunOptions<Input> {
+  readonly message?: (input: Input) => string
+  readonly skillDirectory?: string
+  readonly onActivity?: (line: string) => void
+}
+
 export class CopilotGuideProvider implements GuideProvider {
   private readonly routing: GuideModelRouting
   private readonly prompts: GuideModelPrompts
@@ -313,6 +679,7 @@ export class CopilotGuideProvider implements GuideProvider {
   private readonly optimizeTimeoutMs: number
   private readonly enrichTimeoutMs: number
   private readonly clientFactory: (options: CopilotClientOptions) => GuideModelClient
+  private readonly signal: AbortSignal | undefined
 
   constructor(options: CopilotGuideProviderOptions) {
     this.routing = resolveProviderRouting(options)
@@ -329,6 +696,7 @@ export class CopilotGuideProvider implements GuideProvider {
     this.optimizeTimeoutMs = options.optimizeTimeoutMs ?? 60_000
     this.enrichTimeoutMs = options.enrichTimeoutMs ?? 180_000
     this.clientFactory = options.clientFactory ?? defaultClientFactory
+    this.signal = options.signal
   }
 
   async match(input: GuideMatchInput): Promise<GuideMatchResult> {
@@ -389,19 +757,76 @@ export class CopilotGuideProvider implements GuideProvider {
     })
   }
 
+  private sessionConfig<Input>(phase: GuideModelPhase, systemPrompt: string, options: GuideRunOptions<Input>): SessionConfig {
+    const config = this.routing[phase]
+    return restrictedGuideSessionConfig({
+      clientName: this.clientName,
+      model: config.model,
+      effort: config.effort,
+      workingDirectory: this.workingDirectory,
+      systemPrompt,
+      systemMessageMode: this.systemMessageMode,
+      ...(options.skillDirectory === undefined ? {} : { skillDirectory: options.skillDirectory }),
+      ...(options.onActivity === undefined
+        ? {}
+        : { onActivity: (event: { readonly type: string }) => options.onActivity?.(`${phase}: ${event.type}`) }),
+    })
+  }
+
+  private async runCancellable<Input, Output>(
+    phase: GuideModelPhase,
+    systemPrompt: string,
+    input: Input,
+    timeoutMs: number,
+    validate: (value: unknown) => Output,
+    options: GuideRunOptions<Input>,
+  ): Promise<Output> {
+    const config = this.routing[phase]
+    const original = requestMessage(input, options.message)
+    const execute = (prompt: string): Promise<string> => runRestrictedGuideModelRequest({
+      ...config, systemPrompt, prompt, timeoutMs,
+      cleanupTimeoutMs: 3_000,
+      maximumResponseBytes,
+      baseDirectory: this.baseDirectory,
+      workingDirectory: this.workingDirectory,
+      systemMessageMode: this.systemMessageMode,
+      clientName: this.clientName,
+      inspectModel: () => undefined,
+      clientFactory: (clientOptions) => cancellableClient(this.clientFactory(clientOptions)),
+      ...(this.signal === undefined ? {} : { signal: this.signal }),
+      ...(this.copilotCliPath === undefined ? {} : { copilotCliPath: this.copilotCliPath }),
+      ...(options.skillDirectory === undefined ? {} : { skillDirectory: options.skillDirectory }),
+      ...(options.onActivity === undefined
+        ? {}
+        : { onActivity: (event) => options.onActivity?.(`${phase}: ${event.type}`) }),
+    })
+    options.onActivity?.(`${phase}: requesting`)
+    const response = await execute(original).catch((error: unknown) => {
+      if (error instanceof RestrictedGuideModelError && error.code === "response-too-large" && error.cleanupFailures.length === 0) return undefined
+      throw error
+    })
+    try {
+      if (response === undefined) throw new GuideModelResponseError("completed response exceeded the byte limit")
+      return validate(parseJson(response))
+    } catch {
+      const repaired = await execute(`${original}\n\nThe previous completed response was invalid. Return corrected raw JSON matching the system schema exactly.`)
+      try {
+        return validate(parseJson(repaired))
+      } catch {
+        throw new GuideModelResponseError("model returned invalid JSON or schema after one repair")
+      }
+    }
+  }
+
   private async run<Input, Output>(
     phase: GuideModelPhase,
     systemPrompt: string,
     input: Input,
     timeoutMs: number,
     validate: (value: unknown) => Output,
-    options: {
-      readonly message?: (input: Input) => string
-      readonly skillDirectory?: string
-      /** Receives one short line per session event, for a live progress window. */
-      readonly onActivity?: (line: string) => void
-    } = {},
+    options: GuideRunOptions<Input> = {},
   ): Promise<Output> {
+    if (this.signal !== undefined) return this.runCancellable(phase, systemPrompt, input, timeoutMs, validate, options)
     const config = this.routing[phase]
     const client = this.clientFactory({
       mode: "empty",
@@ -430,45 +855,7 @@ export class CopilotGuideProvider implements GuideProvider {
         )
       }
 
-      const sessionConfig: SessionConfig = {
-        clientName: this.clientName,
-        model: config.model,
-        reasoningEffort: config.effort,
-        workingDirectory: this.workingDirectory,
-        enableConfigDiscovery: false,
-        tools: [],
-        availableTools: [],
-        mcpServers: {},
-        customAgents: [],
-        ...skillSessionPolicy(options.skillDirectory),
-        pluginDirectories: [],
-        instructionDirectories: [],
-        requestExtensions: false,
-        requestCanvasRenderer: false,
-        manageScheduleEnabled: false,
-        skipCustomInstructions: true,
-        enableOnDemandInstructionDiscovery: false,
-        enableFileHooks: false,
-        enableHostGitOperations: false,
-        enableSessionStore: false,
-        infiniteSessions: { enabled: false },
-        memory: { enabled: false },
-        skipEmbeddingRetrieval: true,
-        embeddingCacheStorage: "in-memory",
-        enableFileChangeTracking: false,
-        enableSessionTelemetry: false,
-        remoteSession: "off",
-        onPermissionRequest: () => ({ kind: "reject" }),
-        // Session events are the only visible sign of a long model call. Only
-        // the event type is surfaced: content stays out of the progress window.
-        ...(options.onActivity === undefined
-          ? {}
-          : { onEvent: (event: { readonly type: string }) => options.onActivity?.(`${phase}: ${event.type}`) }),
-        systemMessage:
-          this.systemMessageMode === "replace"
-            ? { mode: "replace", content: systemPrompt }
-            : { mode: "append", content: systemPrompt },
-      }
+      const sessionConfig = this.sessionConfig(phase, systemPrompt, options)
       session = await client.createSession(sessionConfig)
       const first = await session.sendAndWait({ prompt: requestMessage(input, options.message) }, timeoutMs)
       if (first === undefined) {

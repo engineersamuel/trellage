@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { createPrivateContinuationJob } from "../src/continuation-launch.js"
 
 import {
   createQueuedGuideJob,
@@ -79,7 +80,11 @@ class BatchRunner implements CommandRunner {
   private herdrResponse(args: ReadonlyArray<string>): CommandRunResult | undefined {
     if (args[0] === "pane" && args[1] === "split") {
       this.split += 1
-      return { stdout: JSON.stringify({ result: { pane: { pane_id: `9-${this.split}` } } }), stderr: "", exitCode: 0 }
+      return {
+        stdout: JSON.stringify({ result: { pane: { pane_id: `9-${this.split}` } } }),
+        stderr: "",
+        exitCode: 0,
+      }
     }
     if (args[0] === "tab" && args[1] === "create") {
       this.split += 1
@@ -97,7 +102,11 @@ class BatchRunner implements CommandRunner {
       )
     }
     if (args[0] === "agent" && args[1] === "get") {
-      return { stdout: JSON.stringify({ result: { agent: { agent_status: "idle" } } }), stderr: "", exitCode: 0 }
+      return {
+        stdout: JSON.stringify({ result: { agent: { agent_status: "idle" } } }),
+        stderr: "",
+        exitCode: 0,
+      }
     }
     return undefined
   }
@@ -148,6 +157,60 @@ const worktreeCreates = (runner: BatchRunner): ReadonlyArray<string> =>
     .map((call) => call.args[call.args.indexOf("--branch") + 1] ?? "")
 
 describe("guide batch queue", () => {
+  it("requires an explicit private launcher and records allocation before prompt submission", async () => {
+    const job = createPrivateContinuationJob(1, native("cpx", "default"), "Synthetic private prompt", here)
+    const rejectedRunner = new BatchRunner()
+    const rejected = await executeGuideBatch(
+      { jobs: [job], context },
+      { runner: rejectedRunner, write: () => undefined },
+    )
+    expect(rejected.result.entries[0]?.status).toBe("invalid")
+    expect(rejectedRunner.calls).toEqual([])
+
+    const events: string[] = []
+    const result = await executeGuideBatch(
+      { jobs: [job], context },
+      {
+        runner: new BatchRunner(),
+        write: () => undefined,
+        onAllocated: async (_, destination) => {
+          events.push(`allocated:${destination.paneId}`)
+        },
+        launchPrivate: async (_, options) => {
+          expect(options.command.args).toEqual(["default"])
+          events.push(`submit:${options.paneId}`)
+          return { paneId: options.paneId, commandPreview: "cpx default" }
+        },
+        onResult: async (entry) => {
+          events.push(entry.status)
+        },
+      },
+    )
+    expect(events).toEqual(["allocated:9-1", "submit:9-1", "launched"])
+    expect(result.exitCode).toBe(0)
+  })
+
+  it("does not submit a prompt if recording its allocated destination fails", async () => {
+    let submissions = 0
+    const job = createPrivateContinuationJob(1, native("cpx", "default"), "Synthetic task", here)
+    const result = await executeGuideBatch(
+      { jobs: [job], context },
+      {
+        runner: new BatchRunner(),
+        write: () => undefined,
+        onAllocated: async () => {
+          throw new Error("Private store unavailable")
+        },
+        launchPrivate: async (_, options) => {
+          submissions += 1
+          return { paneId: options.paneId, commandPreview: "" }
+        },
+      },
+    )
+    expect(submissions).toBe(0)
+    expect(result.result.entries[0]?.status).toBe("allocation-failed")
+  })
+
   it("preserves enqueue order, keeps each placement, and rebuilds prompt delivery per profile", () => {
     let queue = emptyGuideQueue()
     queue = enqueueGuideJob(queue, native("cpx", "council", "claude-council"), "/council First proposal", here)
@@ -336,7 +399,11 @@ describe("guide batch queue", () => {
     const outcome = await executeGuideBatch({ jobs: [blocked, ready], context }, { runner, write: () => undefined })
 
     expect(outcome.exitCode).toBe(1)
-    expect(outcome.result.entries[0]).toMatchObject({ status: "not-ready", stage: "readiness", job: blocked })
+    expect(outcome.result.entries[0]).toMatchObject({
+      status: "not-ready",
+      stage: "readiness",
+      job: blocked,
+    })
     expect(outcome.result.entries[1]).toMatchObject({ status: "launched", job: ready })
   })
 
@@ -390,7 +457,11 @@ describe("guide batch queue", () => {
       { jobs: [launchJob, peer], context },
       { runner: launchRunner, write: (text) => writes.push(text) },
     )
-    expect(launch.result.entries[0]).toMatchObject({ status: "launch-failed", stage: "launch", job: launchJob })
+    expect(launch.result.entries[0]).toMatchObject({
+      status: "launch-failed",
+      stage: "launch",
+      job: launchJob,
+    })
     expect(launch.result.entries[1]).toMatchObject({ status: "launched", job: peer })
     expect(writes.join("")).toContain("Recovery prompt")
   })

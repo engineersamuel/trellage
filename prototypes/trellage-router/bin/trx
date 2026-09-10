@@ -68,6 +68,7 @@ Usage:
   trx list [--json]
   trx run LAUNCHER PROFILE [-- ARGS...]
   trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
+  trx guide --next-steps [--model MODEL] [--effort LEVEL]
   trx guide --preview
   trx guide --forks [VARIANT]
   trx inventory LAUNCHER PROFILE --json
@@ -135,6 +136,7 @@ guide_usage() {
 Usage:
   trx guide [INTENT]
   trx guide --intent INTENT [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
+  trx guide --next-steps [--model MODEL] [--effort LEVEL]
   trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
   trx guide --preview
   trx guide --forks [tabs|inline]
@@ -624,6 +626,41 @@ case "${1-}" in
       exit 0
     fi
     guide_args=("$@")
+    next_steps_seen=false
+    guide_value_expected=false
+    for guide_arg in "$@"; do
+      if [[ "$guide_value_expected" == true ]]; then
+        guide_value_expected=false
+        continue
+      fi
+      case "$guide_arg" in
+        --intent|--model|--effort|--ui-variant|--profile|--*-model|--*-effort)
+          guide_value_expected=true
+          ;;
+        --next-steps)
+          [[ "$next_steps_seen" == false ]] || die '--next-steps may be specified only once'
+          next_steps_seen=true
+          ;;
+        --next-steps=*) die '--next-steps does not accept a value' ;;
+      esac
+    done
+    if [[ "$next_steps_seen" == true ]]; then
+      guide_value_expected=false
+      for guide_arg in "$@"; do
+        if [[ "$guide_value_expected" == true ]]; then
+          guide_value_expected=false
+          continue
+        fi
+        case "$guide_arg" in
+          --json|--json=*|--intent|--intent=*|--stdin|--preview|--preview=*|--forks|--forks=*)
+            die '--next-steps cannot be combined with ordinary intent, JSON, stdin, or preview modes'
+            ;;
+          --model|--effort|--ui-variant|--profile|--*-model|--*-effort)
+            guide_value_expected=true
+            ;;
+        esac
+      done
+    fi
     ;;
   inventory)
     mode='inventory'

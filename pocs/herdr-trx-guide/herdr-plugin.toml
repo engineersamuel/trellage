@@ -16,6 +16,13 @@ contexts = ["pane"]
 command = ["node", "action.ts"]
 
 [[actions]]
+id = "analyze-conversation"
+title = "Analyze conversation for next steps"
+description = "Capture only the focused exact conversation, through its last completed assistant response, for guide review."
+contexts = ["pane"]
+command = ["node", "conversation-action.ts"]
+
+[[actions]]
 id = "queue-add-selection"
 title = "Add selection to Trellage guide queue"
 description = "Add a private macOS overlay selection request to the Trellage guide queue."
@@ -46,6 +53,14 @@ placement = "popup"
 width = "90%"
 height = "90%"
 command = ["node", "popup.ts"]
+
+[[panes]]
+id = "conversation"
+title = "Conversation next steps"
+placement = "popup"
+width = "90%"
+height = "90%"
+command = ["node", "conversation-popup.ts"]
 
 [[panes]]
 id = "queue-editor"

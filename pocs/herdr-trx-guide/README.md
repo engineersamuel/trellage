@@ -4,6 +4,11 @@ This proof-of-concept Herdr plugin opens highlighted terminal text, the final
 answer, or the filtered conversation from an exactly identified completed
 agent as the intent in a modal `trx guide` popup.
 
+The separate **Analyze conversation for next steps** choice captures the full
+filtered conversation from the originally focused pane. It also works while
+that agent is working, through its last completed assistant response. Capture
+and picker inspection do not call a model.
+
 It follows the selection flow used by
 [Herdr Annotate](https://github.com/plannotator/herdr-annotate): Herdr copies a
 mouse selection to the system clipboard, then a compact popup previews the
@@ -17,6 +22,7 @@ prepare a prompt, and hand the work to a Herdr workspace or worktree.
 - Python 3
 - `mise`
 - A local Trellage checkout with a trusted `mise.toml`
+- Built `trellage-guide-core` and `trellage-launcher` packages
 - Docker for Trellage Sandbox capture
 
 This plugin runs `mise run trx -- guide` from the Trellage checkout that
@@ -29,6 +35,7 @@ From the Trellage repository root:
 
 ```sh
 mise trust
+npm run build --prefix packages/trellage-guide-core
 npm run build --prefix packages/trellage-launcher
 npm ci --prefix pocs/herdr-trx-guide --omit=dev --ignore-scripts --no-audit --no-fund
 herdr plugin link pocs/herdr-trx-guide --enabled
@@ -94,6 +101,62 @@ To open the latest complete agent response directly:
 
 You can also press `prefix+ctrl+b`, select the current filtered conversation,
 an exact final result, or an explicit terminal snapshot, then press `Enter`.
+
+### Analyze the focused conversation
+
+1. Focus a supported Copilot, Codex, or Claude conversation, then press
+   `prefix+ctrl+b`.
+2. Select **Analyze conversation for next steps** and press `Enter`.
+3. Review the source, completed-response cutoff, history coverage, and model
+   settings in the full guide. Only explicit analysis in that guide can start
+   model work.
+
+The source is bound when the picker opens, not when it later receives
+`Enter`. The new choice never selects another pane, searches by working
+directory alone, chooses a recent session, or substitutes terminal text.
+Shells, unsupported harnesses, and missing exact identity show an unavailable
+row. The ordinary text and latest-result choices remain separate.
+
+This mode does not require an idle/completed marker. It includes human user
+messages and completed user-visible assistant answers; it excludes tools,
+reasoning, commentary, internal instructions, and nested-agent traffic. A
+pending user turn is not included after the last completed response. Coverage
+notices report a partial trailing record, later activity, recorded compaction,
+or unavailable attachment contents. Evidence IDs refer to stable source
+records, not text equality.
+
+The canonical evidence-ID scheme is
+`msg-` plus the full lowercase SHA-256 digest of UTF-8 compact JSON
+`[agent, sessionId, role, logicalKey]`. There is no event-type or `answer:`
+prefix. Copilot and Codex use the first nonempty string from their message
+payload's `messageId`, `message_id`, or `id`, then the enclosing event's
+`uuid` or `id`. Claude users use event `uuid`, then message `id`; Claude
+answers require a nonblank message `id`. Without a key, use `record:<recordIndex>`.
+Keys are not trimmed or normalized. Malformed Unicode in identities or event
+data is rejected before hashing; valid Unicode IDs keep their exact values.
+Indexes are zero-based physical JSONL
+line indexes, including blank lines. A legacy completion marker retains the
+content record's index; an assembled Claude answer uses its last
+fragment/end-turn record's index.
+
+`test/fixtures/conversation-evidence-ids.json` contains language-neutral
+records and exact expected IDs/order. A `null` record in that fixture means a
+blank JSONL line, not a JSON `null` value. Both parsers must normalize these
+fixtures independently; transporting Python-generated IDs through TypeScript
+alone is not an ID-parity test.
+
+The full transcript is read from a bounded, verified prefix. Append-only
+growth is allowed; replacement, truncation, a changed prefix, malformed
+complete records, links, and ambiguous identity fail closed. Host capture
+uses the normal or explicitly configured harness home. Native capture stays
+inside the selected profile home. Sandbox capture uses the exact validated
+container/invocation bridge and releases its sealed export after reading it.
+An old bridge reports that conversation export is unsupported.
+
+`a` does not enqueue an analysis choice. Opening this mode does not consume
+the copied-text queue or change the Swift selection-overlay flow.
+
+### Capture queue editor
 
 Press `e` to edit the capture queue on a separate screen. There, use `j`/`k`
 or the arrow keys to select an item, `x` to remove that item, `a` to return to
@@ -196,9 +259,10 @@ selection. It shows the clipboard text before you choose it.
   `recent_unwrapped` source. It is a screen snapshot, not an exact semantic
   final-message source.
 
-If the focused pane is a shell, the picker lists eligible agents in the same
-tab, then the same workspace. It never silently chooses between multiple
-completed agents.
+For the legacy result choices, if the focused pane is a shell, the picker
+lists eligible agents in the same tab, then the same workspace. It never
+silently chooses between multiple completed agents. The next-steps choice
+does not use that fallback.
 
 Herdr's default `[ui] copy_on_select = true` setting is required for the drag
 selection flow. If you set it to `false`, copy the retained selection before
@@ -229,11 +293,12 @@ container, profile, worktree, image, state volume, agent, mapping, and
 transcript before it returns the final message. Copilot nested-agent records
 and Claude subagent sessions are excluded.
 
-Sandbox conversation capture is not available yet because the bridge exposes
-only `session final-message`. The picker reports that limitation and does not
-substitute a terminal snapshot. Exact final-message capture remains available.
+The legacy **Open current conversation** path does not use the Sandbox
+conversation bridge. Use **Analyze conversation for next steps** for a full
+Sandbox conversation. Exact final-message capture remains available through
+the unchanged `session final-message` protocol.
 
-## Completion tracking
+## Completion tracking for legacy result shortcuts
 
 Herdr changes a completed pane from `done` to `idle` after you focus it. The
 plugin records a small marker when it sees the preceding `done` event. The
@@ -250,7 +315,14 @@ agent turn before the shortcut is available.
 
 ## Limits and fallback behavior
 
-- The guide intent limit is 60,000 characters.
+- Ordinary guide intents and copied captures retain the 60,000-character
+  limit. Their legacy conversation excerpt behavior is unchanged.
+- Next-steps capture does not use the 8 MiB tail reader or the 60,000-character
+  formatter. Its validated policy is `lib/conversation-policy.json`: 64 MiB
+  source bytes, 16 MiB per source record, 250,000 records, 100,000 normalized
+  messages, 4 MiB per visible message, 32 MiB total visible text, and 64 MiB
+  per private request. A limit failure is explicit; it never drops the start
+  of the conversation to fit. Sandbox export also enforces its bridge limits.
 - Markdown line breaks are preserved.
 - The plugin does not silently shorten an answer.
 - If Herdr reports a truncated terminal snapshot, the plugin stops. Highlight
@@ -298,6 +370,79 @@ Only the private one-use file path enters the guide environment. Standard
 input remains attached to the Herdr popup terminal so the Ink guide receives
 every key normally. The guide's existing model provider behavior starts after
 the launcher consumes the file.
+
+### Conversation requests and freshness
+
+`conversation-action.ts` stages the shared `ConversationSnapshot` only after
+explicit selection. Requests use opaque UUID names:
+
+```text
+HERDR_PLUGIN_STATE_DIR/continuations/choices/<uuid>.json
+HERDR_PLUGIN_STATE_DIR/continuations/requests/<uuid>.json
+```
+
+All continuation directories must be owned, real, mode-`0700` directories.
+Files must be owned mode-`0600` regular files with one link. Writes are atomic
+and locked. Unsafe paths and permissions are rejected, not repaired. The
+shared validator and runtime enums come from the built `trellage-guide-core`
+package. Build it before loading the plugin; Node's native TypeScript
+stripping cannot execute the core source enums.
+
+The dedicated `analyze-conversation` action opens the `conversation` plugin
+pane. `conversation-popup.ts` starts:
+
+```sh
+mise run --raw trx -- guide --next-steps
+```
+
+`TRELLAGE_GUIDE_CONVERSATION_REQUEST_FILE`, `HERDR_PLUGIN_STATE_DIR`, and the
+validated `TRELLAGE_GUIDE_HERDR_CONTEXT_JSON` popup metadata carry the
+conversation handoff. `TRELLAGE_GUIDE_CONVERSATION_HELPER_ROOT` points to the
+trusted checkout resolved from the configured plugin location, overriding any
+inherited value. This lets installed `trx` profile guides use the real source
+helper even when their parent directory has no `pocs` tree. The helper root
+does not come from conversation text, model output, or the source working
+directory. The popup context contains only `schemaVersion`, `surface`,
+`workspaceId`, `paneId`, and `cwd`; canonical source/capture metadata stays in
+the private snapshot. Transcript text is not placed in arguments, environment
+variables, notifications, or diagnostics. Legacy inline context/intent
+carriers are removed from the guide child's environment. The popup retains
+the request; the guide owns durable draft creation and request
+acknowledgment. A popup-open result is not proof of analysis or job launch.
+
+The root helper rechecks the original exact pane without changing the
+current focus:
+
+```sh
+node pocs/herdr-trx-guide/conversation-source.ts --check /private/request.json
+```
+
+It accepts only an owned `continuations/requests/<UUID>.json` file under
+`HERDR_PLUGIN_STATE_DIR` and returns only
+`{"sameSource":true,"revision":"<sha256>","advanced":false}` plus an optional
+safe message. `--refresh PATH` captures that same source again and returns
+only `{"requestPath":"/private/new-request.json"}`. Neither command consumes
+the old request. Saved snapshots stay embedded in durable drafts. The caller
+must stage a private request copy before checking or refreshing a saved draft;
+standalone snapshot paths and draft files are not transport inputs.
+
+Both source operations accept cancellation from the parent runner. On
+`SIGTERM`, `SIGINT`, or `SIGHUP`, the CLI aborts pending capture and Herdr
+socket requests, permits the Sandbox adapter to release any known sealed
+snapshot, and exits without output. The adapter receives the same
+`AbortSignal` for its owned page subprocesses. Existing request and draft
+files are preserved. Forced termination such as `SIGKILL` cannot run cleanup;
+the bridge's bounded stale-export cleanup remains the fallback. The parent
+runner retains its 60-second initial source-check limit.
+
+The source key binds the server socket instance, workspace/tab/pane, surface,
+harness, exact session, working directory, and applicable profile/container/
+invocation. Changing agent status sequences does not invalidate a still-running
+session. New human input and completed assistant answers change the revision.
+Pending human input changes it even if the completed-response cutoff is
+unchanged. Tool-only appends do not count as a new completed conversation. A
+different source or rewritten captured history blocks handoff instead of
+choosing another source.
 
 ## Troubleshooting
 

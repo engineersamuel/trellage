@@ -657,6 +657,28 @@ const genCandidates = (): GuideGenerateResult => ({
 // ---------------------------------------------------------------------------
 
 describe("parseGuideHeadlessArgv", () => {
+  it("routes next steps independently while retaining model overrides", () => {
+    expect(parseGuideHeadlessArgv(["--next-steps", "--model", "model-a", "--effort", "high"])).toMatchObject({
+      nextSteps: true,
+      model: "model-a",
+      effort: GuideEffort.High,
+      intent: undefined,
+      intentStdin: false,
+    })
+  })
+
+  it.each([
+    ["--json"],
+    ["--intent", "ordinary intent"],
+    ["ordinary intent"],
+    ["--intent-stdin"],
+    ["--profile", "native:cdx/pstack"],
+    ["--ui-variant", "pager"],
+    ["--next-steps"],
+  ])("rejects next steps combined with %j", (...flags) => {
+    expect(() => parseGuideHeadlessArgv(["--next-steps", ...flags])).toThrow(GuideArgsError)
+  })
+
   it("accepts --json with --intent", () => {
     const args = parseGuideHeadlessArgv(["--json", "--intent", "Review my PR"])
     expect(args).toEqual({
@@ -873,7 +895,10 @@ describe("parseGuideServiceRequestJson", () => {
 
 describe("resolveGuideModelConfig", () => {
   it("falls back to defaults when nothing is set", () => {
-    expect(resolveGuideModelConfig({}, {})).toEqual({ model: defaultGuideModelId, effort: defaultGuideEffort })
+    expect(resolveGuideModelConfig({}, {})).toEqual({
+      model: defaultGuideModelId,
+      effort: defaultGuideEffort,
+    })
     expect(resolveGuideModelRouting({}, {})).toEqual(defaultGuideModelRouting)
   })
 
@@ -1002,7 +1027,11 @@ describe("runGuideMatch", () => {
       expect(first?.headless.prompt).toBe(true)
       expect(first?.herdrCompatibility).toEqual({ status: "supported" })
 
-      expect(second).toMatchObject({ profileRef: "sandbox:prime-agent", surface: "sandbox", harness: "copilot" })
+      expect(second).toMatchObject({
+        profileRef: "sandbox:prime-agent",
+        surface: "sandbox",
+        harness: "copilot",
+      })
       expect(third).toMatchObject({ profileRef: "sandbox:other", surface: "sandbox" })
 
       const serialized = JSON.stringify(response)
@@ -1102,7 +1131,11 @@ describe("runGuideMatch", () => {
       )
 
       await expect(
-        runGuideMatch(provider, catalog, { intent: "Review my PR", model: "m", effort: GuideEffort.Medium }),
+        runGuideMatch(provider, catalog, {
+          intent: "Review my PR",
+          model: "m",
+          effort: GuideEffort.Medium,
+        }),
       ).rejects.toThrow(GuideServiceError)
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
@@ -1115,6 +1148,38 @@ describe("runGuideMatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("runGuideGenerate", () => {
+  it("honors an explicitly selected workflow rather than matching the action brief again", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-explicit-workflow-"))
+    try {
+      await writeGuideFixtures(tmpRoot)
+      const provider = new FakeGuideProvider({ candidates: [] }, genCandidates())
+      const response = await runGuideGenerate(provider, buildCatalog(tmpRoot), tmpRoot, {
+        intent: "Review this diff",
+        profileRef: "sandbox:prime-agent",
+        workflowId: "plan",
+        model: "model-a",
+        effort: GuideEffort.Medium,
+      })
+      expect(response.profile.workflowId).toBe("plan")
+      expect(response.candidates).toHaveLength(3)
+      expect(response.candidates.every(({ prompt }) => prompt.startsWith("Use the writing-plans skill:\n"))).toBe(true)
+      expect(provider.generateCalls[0]?.workflowId).toBe("plan")
+      expect(provider.matchCalls).toEqual([])
+      await expect(
+        runGuideGenerate(provider, buildCatalog(tmpRoot), tmpRoot, {
+          intent: "Review this diff",
+          profileRef: "sandbox:prime-agent",
+          workflowId: "missing",
+          model: "model-a",
+          effort: GuideEffort.Medium,
+        }),
+      ).rejects.toThrow("workflow is unknown")
+      expect(provider.generateCalls).toHaveLength(1)
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
   it("selects the matching workflow without repeating the model match phase", async () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-"))
     try {
@@ -1211,7 +1276,13 @@ describe("runGuideGenerate", () => {
       const cache = new GuideArtifactCache({
         cwd: tmpRoot,
         routing: defaultGuideModelRouting,
-        prompts: { match: "match", generate: "generate", optimize: "optimize", refine: "refine", enrich: "enrich" },
+        prompts: {
+          match: "match",
+          generate: "generate",
+          optimize: "optimize",
+          refine: "refine",
+          enrich: "enrich",
+        },
       })
       const request = {
         intent: "Plan the next milestone",
@@ -1959,7 +2030,10 @@ describe("publicGuideLaunchCommand", () => {
   it("rejects a workflow agent on a native launcher without agent support", () => {
     const catalog = withCdxPstackGuide(buildCatalog("/tmp-unused"), {
       ...guideCdxHve,
-      workflows: guideCdxHve.workflows.map((workflow) => ({ ...workflow, launchAgent: "hve-core:dt-coach" })),
+      workflows: guideCdxHve.workflows.map((workflow) => ({
+        ...workflow,
+        launchAgent: "hve-core:dt-coach",
+      })),
     })
     expect(() => publicGuideLaunchCommand(catalog, "native:cdx/pstack", "say hello world", "review")).toThrow(
       /only by the cpx launcher/,
@@ -1970,7 +2044,10 @@ describe("publicGuideLaunchCommand", () => {
     const initial = buildCatalog("/tmp-unused")
     const catalog = {
       ...initial,
-      sandbox: initial.sandbox.map((entry) => ({ ...entry, headless: { ...entry.headless, prompt: false } })),
+      sandbox: initial.sandbox.map((entry) => ({
+        ...entry,
+        headless: { ...entry.headless, prompt: false },
+      })),
     }
     const command = publicGuideLaunchCommand(catalog, "sandbox:prime-agent", "say hello world", "plan")
     expect(command.executable).toBe("trellage")
@@ -2027,7 +2104,10 @@ describe("selectedProfileFromCatalogRef", () => {
     const initial = buildCatalog("/tmp-unused")
     const catalog = {
       ...initial,
-      sandbox: initial.sandbox.map((entry) => ({ ...entry, harness: { ...entry.harness, kind } })),
+      sandbox: initial.sandbox.map((entry) => ({
+        ...entry,
+        harness: { ...entry.harness, kind },
+      })),
     }
     expect(() => selectedProfileFromCatalogRef(catalog, "sandbox:prime-agent", "plan")).toThrow(
       /only for Copilot Sandbox profiles/,
@@ -2112,8 +2192,16 @@ describe("literalGuideMatch", () => {
     const comparisonCatalog: CombinedGuideCatalog = {
       ...catalog,
       native: [
-        { ...catalog.native[1]!, guide: verboseGuide, description: "Broad repository engineering profile." },
-        { ...catalog.native[0]!, guide: focusedGuide, description: "Focused payment pipeline refactoring." },
+        {
+          ...catalog.native[1]!,
+          guide: verboseGuide,
+          description: "Broad repository engineering profile.",
+        },
+        {
+          ...catalog.native[0]!,
+          guide: focusedGuide,
+          description: "Focused payment pipeline refactoring.",
+        },
       ],
     }
 

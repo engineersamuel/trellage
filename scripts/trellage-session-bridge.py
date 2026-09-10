@@ -2,10 +2,13 @@
 
 import argparse
 import fcntl
+import hashlib
+import io
 import json
 import os
 import random
 import re
+import secrets
 import shlex
 import socket
 import stat
@@ -13,6 +16,8 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from contextlib import contextmanager
+from datetime import datetime, timezone
 
 
 MAX_HOOK_BYTES = 1024 * 1024
@@ -25,6 +30,24 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 SAFE_PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 SAFE_INVOCATION_ID = re.compile(r"^[a-f0-9]{32}$")
+SAFE_SNAPSHOT_ID = re.compile(r"^[a-f0-9]{64}$")
+SAFE_CURSOR = re.compile(r"^[a-f0-9]{128}$")
+CONVERSATION_COMMANDS = {
+    "export-conversation", "describe-conversation", "release-conversation"
+}
+CONVERSATION_HARD_LIMITS = {
+    "source_bytes": 64 * 1024 * 1024,
+    "record_bytes": 1024 * 1024,
+    "normalized_bytes": 32 * 1024 * 1024,
+    "page_bytes": 2 * 1024 * 1024,
+    "messages": 50_000,
+    "records": 200_000,
+    "pages": 512,
+    "snapshots": 8,
+    "snapshot_seconds": 900,
+}
+CONVERSATION_POLICY = CONVERSATION_HARD_LIMITS.copy()
+MAX_SNAPSHOT_BYTES = 40 * 1024 * 1024
 
 
 class BridgeError(Exception):
@@ -667,6 +690,981 @@ def final_message(agent, profile, invocation_id):
     }
 
 
+def conversation_policy():
+    policy = CONVERSATION_POLICY.copy()
+    if set(policy) != set(CONVERSATION_HARD_LIMITS):
+        raise BridgeError("conversation policy has unknown or missing limits")
+    if any(type(value) is not int or value <= 0 for value in policy.values()):
+        raise BridgeError("conversation policy has invalid limits")
+    if (
+        any(value > CONVERSATION_HARD_LIMITS[key] for key, value in policy.items())
+        or policy["record_bytes"] > policy["source_bytes"]
+        or policy["page_bytes"] < 1024
+    ):
+        raise BridgeError("conversation policy exceeds supported limits")
+    return policy
+
+
+def json_bytes(value):
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def digest(value):
+    return hashlib.sha256(value).hexdigest()
+
+
+def strict_json(source):
+    def object_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise BridgeError("conversation JSON contains duplicate fields")
+            result[key] = value
+        return result
+
+    def invalid_constant(_value):
+        raise BridgeError("conversation JSON contains a non-finite number")
+
+    try:
+        return json.loads(source, object_pairs_hook=object_pairs, parse_constant=invalid_constant)
+    except (UnicodeError, ValueError, RecursionError) as error:
+        raise BridgeError("conversation contains invalid JSON") from error
+
+
+def private_metadata(metadata, directory=False):
+    expected_mode = 0o700 if directory else 0o600
+    expected_type = stat.S_ISDIR if directory else stat.S_ISREG
+    if (
+        not expected_type(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(metadata.st_mode) != expected_mode
+        or (not directory and metadata.st_nlink != 1)
+    ):
+        raise BridgeError("conversation state has unsafe ownership, permissions, or links")
+
+
+def open_absolute_directory(candidate):
+    candidate = Path(candidate)
+    if not candidate.is_absolute() or ".." in candidate.parts:
+        raise BridgeError("conversation path must be absolute and confined")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor = os.open(candidate.anchor, flags)
+    try:
+        for name in candidate.parts[1:]:
+            child = os.open(name, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def private_child_directory(parent, name):
+    try:
+        os.mkdir(name, 0o700, dir_fd=parent)
+    except FileExistsError:
+        pass
+    descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+    try:
+        private_metadata(os.fstat(descriptor), directory=True)
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+@contextmanager
+def conversation_state():
+    home = os.environ.get("HOME", "")
+    descriptors = []
+    try:
+        descriptors.append(open_absolute_directory(home))
+        for name in (".trellage", "herdr-session-bridge", "conversations"):
+            descriptors.append(private_child_directory(descriptors[-1], name))
+        state = descriptors[-1]
+        lock = os.open(
+            "export.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+            0o600, dir_fd=state,
+        )
+        descriptors.append(lock)
+        private_metadata(os.fstat(lock))
+        deadline = time.monotonic() + 2
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise BridgeError("conversation state is busy")
+                time.sleep(0.02)
+        yield descriptors[-3], state
+        for parent, name, child in zip(
+            descriptors, (".trellage", "herdr-session-bridge", "conversations"), descriptors[1:]
+        ):
+            current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            opened = os.fstat(child)
+            private_metadata(current, directory=True)
+            if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+                raise BridgeError("conversation state directory changed")
+    except OSError as error:
+        raise BridgeError("conversation state is unavailable or unsafe") from error
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def read_exact(descriptor, length):
+    source = bytearray()
+    while len(source) < length:
+        chunk = os.read(descriptor, min(length - len(source), 1024 * 1024))
+        if not chunk:
+            raise BridgeError("conversation source was truncated")
+        source.extend(chunk)
+    return bytes(source)
+
+
+def read_private_file(directory, name, maximum):
+    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    try:
+        before = os.fstat(descriptor)
+        private_metadata(before)
+        if before.st_size > maximum:
+            raise BridgeError("conversation state exceeds its size budget")
+        source = read_exact(descriptor, before.st_size)
+        after = os.fstat(descriptor)
+        current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        if (
+            (before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+            != (after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+            or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino)
+        ):
+            raise BridgeError("conversation state changed during reading")
+        private_metadata(current)
+        return source
+    finally:
+        os.close(descriptor)
+
+
+def conversation_mapping(directory, agent, profile, invocation_id):
+    mapping = strict_json(read_private_file(directory, f"{invocation_id}.json", MAX_MAPPING_BYTES))
+    if (
+        not isinstance(mapping, dict)
+        or type(mapping.get("version")) is not int or mapping["version"] != 1
+        or mapping.get("conflict") is True
+    ):
+        raise BridgeError("conversation mapping is invalid or contains conflicting session identities")
+    validate_mapping(mapping, agent, profile)
+    return {name: mapping.get(name) for name in ("agent", "profile", "session_id", "transcript_path")}
+
+
+@contextmanager
+def open_conversation_transcript(mapping):
+    candidate = os.path.abspath(transcript_path(mapping))
+    root = transcript_root(mapping["agent"])
+    if (
+        not is_inside(root, candidate)
+        or candidate == root
+        or "subagents" in Path(candidate).parts
+    ):
+        raise BridgeError("conversation transcript is not the mapped main-session source")
+    parent = descriptor = None
+    try:
+        parent = open_absolute_directory(os.path.dirname(candidate))
+        descriptor = os.open(
+            os.path.basename(candidate), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+            dir_fd=parent,
+        )
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise BridgeError("conversation transcript must be a regular, unlinked file")
+        yield descriptor, candidate, metadata
+        current = os.stat(os.path.basename(candidate), dir_fd=parent, follow_symlinks=False)
+        check_parent = open_absolute_directory(os.path.dirname(candidate))
+        try:
+            reopened = os.fstat(check_parent)
+            original_parent = os.fstat(parent)
+            if (
+                (current.st_dev, current.st_ino) != (metadata.st_dev, metadata.st_ino)
+                or (reopened.st_dev, reopened.st_ino)
+                != (original_parent.st_dev, original_parent.st_ino)
+                or not stat.S_ISREG(current.st_mode)
+                or current.st_nlink != 1
+            ):
+                raise BridgeError("conversation source was replaced")
+        finally:
+            os.close(check_parent)
+    except OSError as error:
+        raise BridgeError("conversation transcript is unavailable or traverses unsafe links") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if parent is not None:
+            os.close(parent)
+
+
+def verify_conversation_prefix(mapping, proof):
+    with open_conversation_transcript(mapping) as (descriptor, _candidate, before):
+        if (before.st_dev, before.st_ino) != (proof["device"], proof["inode"]):
+            raise BridgeError("conversation source was replaced")
+        if before.st_size < proof["observedBytes"]:
+            raise BridgeError("conversation source was truncated")
+        source = read_exact(descriptor, proof["prefixBytes"])
+        after = os.fstat(descriptor)
+        if (
+            digest(source) != proof["prefixDigest"]
+            or after.st_size < before.st_size
+            or (
+                before.st_size == after.st_size
+                and (before.st_mtime_ns, before.st_ctime_ns)
+                != (after.st_mtime_ns, after.st_ctime_ns)
+            )
+        ):
+            raise BridgeError("conversation source prefix changed")
+
+
+def conversation_records(source, policy):
+    prefix_end = source.rfind(b"\n") + 1
+    tail = source[prefix_end:]
+    if len(tail) > policy["record_bytes"]:
+        raise BridgeError("conversation incomplete record exceeds its capture budget")
+    incomplete_tail = bool(tail.strip()) and not complete_json_tail(tail)
+    if tail.strip() and not incomplete_tail:
+        prefix_end = len(source)
+    prefix = source[:prefix_end]
+    records = []
+    for index, line in enumerate(io.BytesIO(prefix)):
+        if index >= policy["records"]:
+            raise BridgeError("conversation exceeds its record count budget")
+        value = conversation_record(line, policy)
+        if value is not None:
+            records.append((index, value))
+    return prefix, records, incomplete_tail
+
+
+def conversation_record(line, policy):
+    if line.endswith(b"\n"):
+        line = line[:-1]
+    if len(line) > policy["record_bytes"]:
+        raise BridgeError("conversation record exceeds its capture budget")
+    if not line.strip():
+        return None
+    value = strict_json(line)
+    if not isinstance(value, dict):
+        raise BridgeError("conversation record must be an object")
+    if meaningful_text(value.get("type")) is None:
+        raise BridgeError("conversation record has an invalid event type")
+    return value
+
+
+def complete_json_tail(source):
+    try:
+        json.loads(source)
+        return True
+    except (json.JSONDecodeError, UnicodeError):
+        return False
+    except (ValueError, RecursionError) as error:
+        raise BridgeError("conversation contains invalid JSON") from error
+
+
+def conversation_nested(record):
+    for value in (record, record.get("data"), record.get("payload"), record.get("message")):
+        if not isinstance(value, dict):
+            continue
+        if value.get("isSidechain") is True or value.get("is_sidechain") is True:
+            return True
+        if any(value.get(key) for key in (
+            "agentId", "agent_id", "parentToolCallId", "parent_tool_call_id",
+            "parentAgentId", "parent_agent_id", "parentSessionId", "parent_session_id",
+            "subagentId", "subagent_id",
+        )):
+            return True
+    return False
+
+
+def conversation_text(content, accepted=("text", "input_text", "output_text")):
+    if isinstance(content, str):
+        return meaningful_text(content)
+    if not isinstance(content, list):
+        return None
+    parts = [
+        part["text"] for part in content
+        if isinstance(part, dict) and part.get("type") in accepted
+        and meaningful_text(part.get("text")) is not None
+    ]
+    return "\n".join(parts) if parts else None
+
+
+def internal_user_text(text):
+    return text is not None and re.match(
+        r"^\s*(?:# AGENTS\.md instructions\b|<(?:(?:system[-_]reminder|environment_context|"
+        r"instructions|permissions instructions|developer_instructions|turn_aborted)\b))",
+        text, re.IGNORECASE,
+    ) is not None
+
+
+def conversation_identifier(value):
+    return value if isinstance(value, str) and value else None
+
+
+def conversation_event_id(record, payload):
+    for value in (
+        payload.get("messageId"), payload.get("message_id"), payload.get("id"),
+        record.get("uuid"), record.get("id"),
+    ):
+        identifier = conversation_identifier(value)
+        if identifier is not None:
+            return identifier
+    return None
+
+
+def internal_conversation_record(record, payload):
+    if any(record.get(name) is True or payload.get(name) is True for name in ("isMeta", "isSynthetic", "internal")):
+        return True
+    for value in (payload.get("source"), record.get("source"), payload.get("origin"), record.get("origin")):
+        if value is not None:
+            return value in ("system", "developer", "tool", "agent", "internal", "synthetic")
+    return False
+
+
+def codex_human_content(payload, kinds):
+    content = payload.get("content")
+    if all(kind == "user.text" for kind in kinds):
+        return content
+    if not isinstance(content, list) or len(content) != len(kinds):
+        raise BridgeError("Codex human input cannot be separated from injected instructions")
+    return [part for part, kind in zip(content, kinds) if kind == "user.text"]
+
+
+def compacted_conversation_record(record):
+    payload = record.get("payload")
+    subtype = payload.get("type") if isinstance(payload, dict) else None
+    return (
+        record.get("type") in {"compacted", "compaction", "session.compaction_complete", "session.compaction"}
+        or record.get("subtype") == "compact_boundary"
+        or record.get("isCompactSummary") is True
+        or subtype in ("context_compacted", "compacted")
+    )
+
+
+class ConversationNormalizer:
+    def __init__(self, mapping, policy):
+        self.agent = mapping["agent"]
+        self.session_id = mapping["session_id"]
+        self.policy = policy
+        self.messages = []
+        self.notices = set()
+        self.seen_events = {}
+        self.seen_messages = {}
+        self.claude_fragments = {}
+        self.pending_answer = None
+        self.turn_completed = False
+        self.summary_id = None
+
+    def normalized(self, role, text, index, key=None):
+        if text is None:
+            return None
+        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", text):
+            raise BridgeError("conversation text contains unsupported control characters")
+        # Match the TypeScript parser's evidence identity, including its record-index fallback.
+        identity = [self.agent, self.session_id, role, key if key is not None else f"record:{index}"]
+        return {
+            "id": "msg-" + digest(json_bytes(identity)),
+            "role": role, "text": text, "recordIndex": index,
+        }
+
+    def append(self, message):
+        if message is None:
+            return False
+        previous = self.seen_messages.get(message["id"])
+        if previous is not None:
+            if (previous["role"], previous["text"]) != (message["role"], message["text"]):
+                raise BridgeError("conversation has conflicting message identities")
+            return False
+        self.seen_messages[message["id"]] = message
+        self.messages.append(message)
+        if len(self.messages) > self.policy["messages"]:
+            raise BridgeError("conversation exceeds its message budget")
+        return True
+
+    def finish(self, message, summary=False):
+        if summary and self.turn_completed:
+            return
+        if message is not None:
+            if not summary and self.summary_id is not None:
+                self.messages = [entry for entry in self.messages if entry["id"] != self.summary_id]
+                self.seen_messages.pop(self.summary_id, None)
+            self.append(message)
+            self.turn_completed = True
+            self.summary_id = message["id"] if summary else None
+        self.pending_answer = None
+
+    def new_turn(self):
+        self.pending_answer = None
+        self.turn_completed = False
+        self.summary_id = None
+
+    def record_key(self, record, index):
+        if conversation_nested(record):
+            return None
+        kind = record.get("type")
+        event_id = (
+            conversation_identifier(record.get("uuid")) or conversation_identifier(record.get("id"))
+            or conversation_identifier(record.get("eventId"))
+        )
+        payload = next(
+            (value for value in (record.get("data"), record.get("payload"), record.get("message"))
+             if isinstance(value, dict)), {}
+        )
+        key = f"{kind}:{payload.get('type', '')}:{event_id}" if event_id else f"record:{index}"
+        if event_id:
+            encoded = digest(json_bytes(record))
+            if key in self.seen_events:
+                if self.seen_events[key] != encoded:
+                    raise BridgeError("conversation has conflicting event identities")
+                return None
+            self.seen_events[key] = encoded
+        if compacted_conversation_record(record):
+            self.notices.add("compacted-history")
+            return None
+        if record.get("isMeta") or record.get("isSynthetic"):
+            return None
+        return key
+
+    def content_text(self, content):
+        if isinstance(content, list) and any(
+            isinstance(part, dict) and part.get("type") in ("image", "input_image", "document")
+            for part in content
+        ):
+            self.notices.add("attachments-not-included")
+        return conversation_text(content, ("text", "input_text"))
+
+    def copilot_user(self, record, data):
+        if record.get("type") != "user.message" or internal_conversation_record(record, data):
+            return None
+        if data.get("attachments") or record.get("attachments"):
+            self.notices.add("attachments-not-included")
+        return self.content_text(data.get("content", record.get("content")))
+
+    def codex_user(self, record, payload):
+        if internal_conversation_record(record, payload):
+            return None
+        if record.get("type") == "event_msg" and payload.get("type") == "user_message":
+            text = meaningful_text(payload.get("message"))
+            if payload.get("images") or payload.get("local_images"):
+                self.notices.add("attachments-not-included")
+            return text
+        if record.get("type") == "response_item" and payload.get("role") == "user":
+            metadata = payload.get("internal_chat_message_metadata_passthrough")
+            kinds = metadata.get("content_item_kinds", []) if isinstance(metadata, dict) else []
+            if not isinstance(kinds, list):
+                raise BridgeError("Codex conversation user metadata is invalid")
+            if "user.text" in kinds:
+                return self.content_text(codex_human_content(payload, kinds))
+        return None
+
+    def claude_user(self, record):
+        message = record.get("message")
+        if (
+            record.get("type") != "user" or not isinstance(message, dict)
+            or internal_conversation_record(record, message)
+        ):
+            return None
+        content = message.get("content")
+        if isinstance(content, list) and any(
+            isinstance(part, dict) and part.get("type") == "tool_result" for part in content
+        ):
+            return None
+        return self.content_text(message.get("content"))
+
+    def copilot_answer(self, record, data, index):
+        phase = data.get("phase", record.get("phase"))
+        tools = data.get("toolRequests", record.get("toolRequests"))
+        if phase in ("commentary", "analysis", "reasoning") or tools:
+            self.pending_answer = None
+            return
+        if phase not in (None, "final_answer", "final"):
+            raise BridgeError("Copilot conversation has an unsupported completion phase")
+        text = conversation_text(data.get("content", record.get("content")))
+        answer = self.normalized("assistant", text, index, conversation_event_id(record, data))
+        if phase in ("final_answer", "final"):
+            self.finish(answer)
+        elif phase is None:
+            self.pending_answer = answer
+
+    def copilot_event(self, record, data, index):
+        kind = record.get("type")
+        if kind == "assistant.message":
+            self.copilot_answer(record, data, index)
+        elif kind == "session.task_complete":
+            summary = meaningful_text(data.get("summary")) or meaningful_text(record.get("summary"))
+            if summary is not None:
+                self.finish(self.normalized("assistant", summary, index, conversation_event_id(record, data)), summary=True)
+            elif not self.turn_completed:
+                self.finish(self.pending_answer)
+        elif kind in ("assistant.turn_end", "session.idle") and not self.turn_completed:
+            self.finish(self.pending_answer)
+        elif kind == "assistant.turn_start":
+            self.new_turn()
+        elif kind in ("tool.execution_start", "tool.executionStart"):
+            self.pending_answer = None
+
+    def codex_answer(self, record, payload, index, response=False):
+        phase = payload.get("phase")
+        if phase is None:
+            phase = payload.get("channel")
+        if phase in ("commentary", "analysis", "reasoning") or payload.get("recipient") not in (None, "all"):
+            return
+        if phase not in (None, "final_answer", "final"):
+            raise BridgeError("Codex conversation has an unsupported completion phase")
+        if response:
+            text = codex_message_text(payload)
+        else:
+            if self.turn_completed:
+                return
+            text = meaningful_text(payload.get("message"))
+        answer = self.normalized("assistant", text, index, conversation_event_id(record, payload))
+        if response and phase in ("final_answer", "final"):
+            self.finish(answer)
+        else:
+            self.pending_answer = answer
+
+    def codex_event(self, record, payload, index):
+        kind, subtype = record.get("type"), payload.get("type")
+        if kind == "response_item" and subtype == "message" and payload.get("role") == "assistant":
+            self.codex_answer(record, payload, index, response=True)
+        elif kind == "event_msg":
+            self.codex_terminal_event(record, payload, index)
+        elif kind == "response_item" and subtype in ("function_call", "custom_tool_call", "web_search_call"):
+            self.pending_answer = None
+
+    def codex_terminal_event(self, record, payload, index):
+        subtype = payload.get("type")
+        if subtype == "agent_message":
+            self.codex_answer(record, payload, index)
+        elif subtype in ("task_complete", "turn_complete"):
+            if not self.turn_completed:
+                self.finish(self.pending_answer or self.normalized(
+                    "assistant", meaningful_text(payload.get("last_agent_message")), index,
+                    conversation_event_id(record, payload),
+                ))
+        elif subtype == "task_started":
+            self.new_turn()
+        elif subtype in ("turn_aborted", "task_aborted"):
+            self.pending_answer = None
+
+    def claude_part(self, fragments, part, record):
+        if not isinstance(part, dict):
+            return
+        if part.get("type") == "tool_use":
+            fragments["tool_use"] = True
+            return
+        if part.get("type") != "text":
+            return
+        text = meaningful_text(part.get("text"))
+        if text is None:
+            return
+        identity = conversation_identifier(part.get("id"))
+        if identity is not None:
+            self.claude_identified_part(fragments, identity, text)
+            return
+        block = part.get("index", record.get("content_block_index"))
+        if block is None:
+            if fragments["complete"]:
+                raise BridgeError("Claude conversation completed message changed")
+            fragments["parts"].append(text)
+            return
+        if type(block) is not int or block < 0:
+            raise BridgeError("Claude conversation block identity is invalid")
+        previous = fragments["blocks"].get(block)
+        if previous is not None and previous != text and not text.startswith(previous):
+            raise BridgeError("Claude conversation block changed")
+        fragments["blocks"][block] = text
+
+    def claude_identified_part(self, fragments, identity, text):
+        previous = fragments["identities"].get(identity)
+        if previous is not None:
+            if previous != text:
+                raise BridgeError("Claude conversation block identity has conflicting content")
+            return
+        if fragments["complete"]:
+            raise BridgeError("Claude conversation completed message changed")
+        fragments["identities"][identity] = text
+        fragments["parts"].append(text)
+
+    def claude_event(self, record, index):
+        message = record.get("message")
+        if record.get("type") != "assistant" or not isinstance(message, dict):
+            return
+        message_id = meaningful_text(message.get("id"))
+        if message_id is None:
+            raise BridgeError("Claude conversation message identity is missing")
+        fragments = self.claude_fragments.setdefault(message_id, {
+            "parts": [], "blocks": {}, "identities": {}, "complete": False, "tool_use": False,
+        })
+        content = message.get("content") if isinstance(message.get("content"), list) else []
+        for part in content:
+            self.claude_part(fragments, part, record)
+        if message.get("stop_reason") == "end_turn" and not fragments["complete"]:
+            text = "\n".join(fragments["parts"] + [
+                fragments["blocks"][block] for block in sorted(fragments["blocks"])
+            ])
+            if not fragments["tool_use"]:
+                self.finish(self.normalized("assistant", meaningful_text(text), index, message_id))
+            fragments["complete"] = True
+
+    def accept(self, record, index):
+        key = self.record_key(record, index)
+        if key is None:
+            return
+        data = record.get("data") if isinstance(record.get("data"), dict) else {}
+        payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+        if self.agent == "copilot":
+            user_text = self.copilot_user(record, data)
+        elif self.agent == "codex":
+            user_text = self.codex_user(record, payload)
+        else:
+            user_text = self.claude_user(record)
+        if user_text is not None and not internal_user_text(user_text):
+            message_id = self.user_message_id(record, data, payload)
+            if self.append(self.normalized("user", user_text, index, message_id)):
+                self.new_turn()
+        elif self.agent == "copilot":
+            self.copilot_event(record, data, index)
+        elif self.agent == "codex":
+            self.codex_event(record, payload, index)
+        else:
+            self.claude_event(record, index)
+
+    def user_message_id(self, record, data, payload):
+        if self.agent == "copilot":
+            return conversation_event_id(record, data)
+        if self.agent == "codex":
+            return conversation_event_id(record, payload)
+        message = record.get("message", {})
+        return conversation_identifier(record.get("uuid")) or conversation_identifier(message.get("id"))
+
+    def result(self, incomplete_tail):
+        if incomplete_tail:
+            self.notices.add("incomplete-tail")
+        self.messages.sort(key=lambda message: message["recordIndex"])
+        completed = [message for message in self.messages if message["role"] == "assistant"]
+        if not completed:
+            raise BridgeError("conversation has no unambiguous completed assistant response")
+        cutoff = {"messageId": completed[-1]["id"], "recordIndex": completed[-1]["recordIndex"]}
+        activity_revision = digest(json_bytes(self.messages))
+        if self.has_pending_turn(cutoff):
+            self.notices.add("pending-turn-excluded")
+        messages = [message for message in self.messages if message["recordIndex"] <= cutoff["recordIndex"]]
+        if messages[0]["role"] != "user":
+            self.notices.add("history-starts-with-assistant")
+        encoded = json_bytes(messages)
+        if len(encoded) > self.policy["normalized_bytes"]:
+            raise BridgeError("conversation exceeds its normalized capture budget")
+        return {
+            "cutoff": cutoff, "revision": digest(encoded), "activityRevision": activity_revision,
+            "messages": messages,
+            "coverage": {"complete": not self.notices, "notices": sorted(self.notices)},
+        }
+
+    def has_pending_turn(self, cutoff):
+        if self.messages[-1]["recordIndex"] > cutoff["recordIndex"] or self.pending_answer is not None:
+            return True
+        return any(
+            not fragments["complete"] and not fragments["tool_use"] and (fragments["parts"] or fragments["blocks"])
+            for fragments in self.claude_fragments.values()
+        )
+
+
+def normalize_conversation(mapping, records, incomplete_tail, policy):
+    normalizer = ConversationNormalizer(mapping, policy)
+    for index, record in records:
+        normalizer.accept(record, index)
+    return normalizer.result(incomplete_tail)
+
+
+def validate_codex_conversation_identity(mapping, records):
+    found = False
+    for record in records:
+        if record.get("type") != "session_meta":
+            continue
+        payload = record.get("payload")
+        if not isinstance(payload, dict):
+            raise BridgeError("conversation Codex session metadata is invalid")
+        found = True
+        source = payload.get("source")
+        nested = isinstance(source, dict) and any(key.startswith("subagent") for key in source)
+        nested = nested or isinstance(source, str) and source.startswith("subagent")
+        if payload.get("id", payload.get("session_id")) != mapping["session_id"] or nested:
+            raise BridgeError("conversation is not the mapped Codex main session")
+    if not found:
+        raise BridgeError("conversation Codex session metadata is missing")
+
+
+def validate_copilot_conversation_identity(mapping, records):
+    for record in records:
+        if record.get("type") != "session.start" or conversation_nested(record):
+            continue
+        data = record.get("data")
+        session_id = text_field(data, "sessionId", "session_id") if isinstance(data, dict) else None
+        if session_id is not None and session_id != mapping["session_id"]:
+            raise BridgeError("conversation is not the mapped Copilot session")
+
+
+def capture_conversation_source(mapping, policy):
+    with open_conversation_transcript(mapping) as (descriptor, candidate, before):
+        if before.st_size > policy["source_bytes"]:
+            raise BridgeError("conversation exceeds its source capture budget")
+        source = read_exact(descriptor, before.st_size)
+        prefix, indexed_records, incomplete = conversation_records(source, policy)
+        records = [record for _index, record in indexed_records if not conversation_nested(record)]
+        if mapping["agent"] == "codex":
+            validate_codex_conversation_identity(mapping, records)
+        else:
+            validate_transcript_identity(mapping, candidate, "", records)
+            if mapping["agent"] == "copilot":
+                validate_copilot_conversation_identity(mapping, records)
+        result = normalize_conversation(mapping, indexed_records, incomplete, policy)
+        proof = {
+            "device": before.st_dev, "inode": before.st_ino, "observedBytes": before.st_size,
+            "prefixBytes": len(prefix), "prefixDigest": digest(prefix),
+        }
+        after = os.fstat(descriptor)
+        if after.st_size < before.st_size:
+            raise BridgeError("conversation source was truncated")
+        if after.st_size == before.st_size and (
+            after.st_mtime_ns, after.st_ctime_ns
+        ) != (before.st_mtime_ns, before.st_ctime_ns):
+            raise BridgeError("conversation source prefix changed during capture")
+        verify_conversation_prefix(mapping, proof)
+        return result, proof
+
+
+def conversation_identity(agent, profile, invocation_id, container_id, mapping):
+    require_pattern(invocation_id, SAFE_INVOCATION_ID, "conversation invocation ID")
+    require_pattern(container_id, SAFE_SNAPSHOT_ID, "conversation container ID")
+    if len(profile.encode()) > 1024:
+        raise BridgeError("conversation profile identity exceeds its size budget")
+    return {
+        "agent": agent, "profile": profile, "sessionId": mapping["session_id"],
+        "containerId": container_id, "invocationId": invocation_id,
+    }
+
+
+def load_conversation_snapshot(state, snapshot_id, identity=None, mapping=None, allow_expired=False):
+    require_pattern(snapshot_id, SAFE_SNAPSHOT_ID, "conversation snapshot ID")
+    source = read_private_file(state, f"{snapshot_id}.json", MAX_SNAPSHOT_BYTES)
+    if digest(source) != snapshot_id:
+        raise BridgeError("conversation snapshot seal does not match")
+    snapshot = strict_json(source)
+    if not valid_conversation_snapshot(snapshot):
+        raise BridgeError("conversation snapshot has an invalid format")
+    if identity is not None and (snapshot["identity"] != identity or snapshot["mapping"] != mapping):
+        raise BridgeError("conversation snapshot belongs to another source")
+    if not allow_expired and snapshot["expiresAt"] <= time.time():
+        raise BridgeError("conversation snapshot expired; capture the source again")
+    return snapshot
+
+
+def valid_conversation_snapshot(snapshot):
+    if not isinstance(snapshot, dict) or snapshot.get("schemaVersion") != 1:
+        return False
+    if any(not isinstance(snapshot.get(key), dict) for key in ("identity", "mapping", "proof", "data")):
+        return False
+    pages = snapshot.get("pages")
+    return (
+        type(snapshot.get("expiresAt")) in (int, float)
+        and isinstance(pages, list) and 0 < len(pages) <= 512
+        and all(isinstance(page, dict) and isinstance(page.get("messages"), list) for page in pages)
+    )
+
+
+def cleanup_conversation_snapshots(state, policy):
+    names = os.listdir(state)
+    if len(names) > policy["snapshots"] + 1:
+        raise BridgeError("conversation snapshot storage budget is exhausted")
+    count = 0
+    for name in names:
+        if name == "export.lock":
+            continue
+        if not name.endswith(".json") or SAFE_SNAPSHOT_ID.fullmatch(name[:-5]) is None:
+            raise BridgeError("conversation snapshot storage contains an unexpected entry")
+        snapshot = load_conversation_snapshot(state, name[:-5], allow_expired=True)
+        if snapshot["expiresAt"] <= time.time():
+            remove_sealed_snapshot(state, name[:-5])
+        else:
+            count += 1
+    if count >= policy["snapshots"]:
+        raise BridgeError("conversation snapshot storage budget is exhausted")
+
+
+def write_conversation_snapshot(state, snapshot):
+    source = json_bytes(snapshot)
+    if len(source) > MAX_SNAPSHOT_BYTES:
+        raise BridgeError("conversation snapshot exceeds its storage budget")
+    # The opaque, nonce-bearing content address seals metadata and every page without a sidecar key.
+    snapshot_id = digest(source)
+    name = f"{snapshot_id}.json"
+    descriptor = os.open(
+        name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=state
+    )
+    try:
+        offset = 0
+        while offset < len(source):
+            offset += os.write(descriptor, source[offset:])
+        os.fsync(descriptor)
+        os.fsync(state)
+    except BaseException:
+        os.unlink(name, dir_fd=state)
+        raise
+    finally:
+        os.close(descriptor)
+    return snapshot_id
+
+
+def remove_sealed_snapshot(state, snapshot_id):
+    name = f"{snapshot_id}.json"
+    if digest(read_private_file(state, name, MAX_SNAPSHOT_BYTES)) != snapshot_id:
+        raise BridgeError("conversation snapshot seal changed before release")
+    os.unlink(name, dir_fd=state)
+    os.fsync(state)
+
+
+def conversation_pages(messages, policy):
+    pages = []
+    current = []
+    size = 2
+    budget = policy["page_bytes"] - min(16 * 1024, policy["page_bytes"] // 2)
+    for message in messages:
+        message_size = len(json_bytes(message)) + 1
+        if message_size > budget:
+            raise BridgeError("conversation message exceeds its page budget")
+        if current and size + message_size > budget:
+            pages.append({"messages": current, "cursor": secrets.token_hex(32)})
+            current, size = [], 2
+        current.append(message)
+        size += message_size
+    if current:
+        pages.append({"messages": current, "cursor": secrets.token_hex(32)})
+    if len(pages) > policy["pages"]:
+        raise BridgeError("conversation exceeds its page budget")
+    return pages
+
+
+def conversation_page(snapshot_id, snapshot, index, policy):
+    pages = snapshot["pages"]
+    result = {
+        "schemaVersion": 1, **snapshot["identity"], "snapshotId": snapshot_id,
+        "capturedAt": snapshot["capturedAt"], **snapshot["data"],
+        "messages": pages[index]["messages"],
+        "page": {
+            "index": index, "total": len(pages),
+            "nextCursor": snapshot_id + pages[index + 1]["cursor"] if index + 1 < len(pages) else None,
+        },
+    }
+    if len(json_bytes(result)) > policy["page_bytes"]:
+        raise BridgeError("conversation page exceeds its transport budget")
+    return result
+
+
+def export_conversation(agent, profile, invocation_id, container_id, cursor=None):
+    policy = conversation_policy()
+    require_pattern(invocation_id, SAFE_INVOCATION_ID, "conversation invocation ID")
+    with conversation_state() as (directory, state):
+        mapping = conversation_mapping(directory, agent, profile, invocation_id)
+        identity = conversation_identity(agent, profile, invocation_id, container_id, mapping)
+        if cursor is not None:
+            require_pattern(cursor, SAFE_CURSOR, "conversation cursor")
+            snapshot_id = cursor[:64]
+            snapshot = load_conversation_snapshot(state, snapshot_id, identity, mapping)
+            indices = [index for index, page in enumerate(snapshot["pages"]) if page["cursor"] == cursor[64:]]
+            if len(indices) != 1 or indices[0] == 0:
+                raise BridgeError("conversation cursor is unknown")
+            verify_conversation_prefix(mapping, snapshot["proof"])
+            result = conversation_page(snapshot_id, snapshot, indices[0], policy)
+        else:
+            cleanup_conversation_snapshots(state, policy)
+            data, proof = capture_conversation_source(mapping, policy)
+            pages = conversation_pages(data.pop("messages"), policy)
+            snapshot = {
+                "schemaVersion": 1, "nonce": secrets.token_hex(32), "identity": identity,
+                "mapping": mapping, "proof": proof,
+                "capturedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                "expiresAt": time.time() + policy["snapshot_seconds"],
+                "data": data, "pages": pages,
+            }
+            if conversation_mapping(directory, agent, profile, invocation_id) != mapping:
+                raise BridgeError("conversation session mapping changed during capture")
+            snapshot_id = write_conversation_snapshot(state, snapshot)
+            try:
+                result = conversation_page(snapshot_id, snapshot, 0, policy)
+            except BaseException:
+                os.unlink(f"{snapshot_id}.json", dir_fd=state)
+                raise
+        if conversation_mapping(directory, agent, profile, invocation_id) != mapping:
+            raise BridgeError("conversation session mapping changed during export")
+        return result
+
+
+def describe_conversation(agent, profile, invocation_id, container_id, snapshot_id=None):
+    policy = conversation_policy()
+    require_pattern(invocation_id, SAFE_INVOCATION_ID, "conversation invocation ID")
+    with conversation_state() as (directory, state):
+        mapping = conversation_mapping(directory, agent, profile, invocation_id)
+        identity = conversation_identity(agent, profile, invocation_id, container_id, mapping)
+        snapshot = None
+        if snapshot_id is not None:
+            snapshot = load_conversation_snapshot(state, snapshot_id, identity, mapping)
+            verify_conversation_prefix(mapping, snapshot["proof"])
+        data, _proof = capture_conversation_source(mapping, policy)
+        data.pop("messages")
+        if conversation_mapping(directory, agent, profile, invocation_id) != mapping:
+            raise BridgeError("conversation session mapping changed during describe")
+        result = {"schemaVersion": 1, **identity, **data}
+        if snapshot is not None:
+            result["snapshotId"] = snapshot_id
+            result["changed"] = any(
+                data[key] != snapshot["data"][key] for key in ("revision", "activityRevision")
+            )
+        return result
+
+
+def release_conversation(agent, profile, invocation_id, container_id, snapshot_id):
+    require_pattern(invocation_id, SAFE_INVOCATION_ID, "conversation invocation ID")
+    with conversation_state() as (directory, state):
+        mapping = conversation_mapping(directory, agent, profile, invocation_id)
+        identity = conversation_identity(agent, profile, invocation_id, container_id, mapping)
+        load_conversation_snapshot(state, snapshot_id, identity, mapping, allow_expired=True)
+        if conversation_mapping(directory, agent, profile, invocation_id) != mapping:
+            raise BridgeError("conversation session mapping changed during release")
+        remove_sealed_snapshot(state, snapshot_id)
+        return {"schemaVersion": 1, **identity, "snapshotId": snapshot_id, "released": True}
+
+
+class UniqueConversationArgument(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if getattr(namespace, self.dest, None) is not None:
+            parser.error(f"{option_string} may be specified only once")
+        setattr(namespace, self.dest, values)
+
+
+def add_conversation_arguments(subparsers):
+    for command in sorted(CONVERSATION_COMMANDS):
+        conversation = subparsers.add_parser(command, allow_abbrev=False)
+        for argument in ("agent", "profile", "invocation", "container-id"):
+            options = {"choices": sorted(AGENTS)} if argument == "agent" else {}
+            conversation.add_argument(
+                f"--{argument}", required=True, action=UniqueConversationArgument, **options
+            )
+        if command == "export-conversation":
+            conversation.add_argument("--cursor", action=UniqueConversationArgument)
+        else:
+            conversation.add_argument(
+                "--snapshot", required=command == "release-conversation",
+                action=UniqueConversationArgument,
+            )
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -684,6 +1682,7 @@ def parse_arguments():
     final.add_argument("--agent", choices=sorted(AGENTS), required=True)
     final.add_argument("--profile", required=True)
     final.add_argument("--invocation", required=True)
+    add_conversation_arguments(subparsers)
     return parser.parse_args()
 
 
@@ -703,6 +1702,15 @@ def run_hook(arguments):
 
 def serialize_result(value):
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+def run_conversation_command(arguments, profile, invocation_id):
+    identity = (arguments.agent, profile, invocation_id, arguments.container_id)
+    if arguments.command == "export-conversation":
+        return export_conversation(*identity, cursor=arguments.cursor)
+    if arguments.command == "describe-conversation":
+        return describe_conversation(*identity, snapshot_id=arguments.snapshot)
+    return release_conversation(*identity, snapshot_id=arguments.snapshot)
 
 
 def main():
@@ -725,11 +1733,15 @@ def main():
         invocation_id = require_pattern(
             arguments.invocation, SAFE_INVOCATION_ID, "Trellage attachment invocation ID"
         )
-        print(serialize_result(final_message(arguments.agent, profile, invocation_id)))
+        if arguments.command in CONVERSATION_COMMANDS:
+            result = run_conversation_command(arguments, profile, invocation_id)
+        else:
+            result = final_message(arguments.agent, profile, invocation_id)
+        print(serialize_result(result))
         return 0
     except (BridgeError, OSError, UnicodeError) as error:
-        if arguments.command == "final-message":
-            print(f"trellage session final-message: {error}", file=sys.stderr)
+        if arguments.command == "final-message" or arguments.command in CONVERSATION_COMMANDS:
+            print(f"trellage session {arguments.command}: {error}", file=sys.stderr)
             return 1
         if arguments.command == "install-hook":
             print(f"trellage session bridge install: {error}", file=sys.stderr)

@@ -1,4 +1,7 @@
 import path from "node:path"
+import type { ConversationSnapshot } from "./conversation-contract.ts"
+
+export { parseConversationBinding } from "./conversation-validation.ts"
 
 export const guideIntentMaximumLength = 60_000
 
@@ -74,7 +77,17 @@ const optionalInvocationFields = (value) => {
   }
 }
 
-export const parseInvocationContext = (source) => {
+export interface InvocationContext {
+  readonly workspaceId: string
+  readonly paneId: string
+  readonly cwd: string
+  readonly tabId?: string
+  readonly agent?: string
+  readonly invocationSource?: string
+  readonly selectedText?: string
+}
+
+export const parseInvocationContext = (source: string): InvocationContext => {
   let value
   try {
     value = JSON.parse(source)
@@ -247,3 +260,24 @@ export const parsePopupInvocation = (value) => {
   if (!path.isAbsolute(cwd)) throw new Error("source working directory must be absolute")
   return { answer, capture, source: { workspaceId, paneId, cwd } }
 }
+
+export const parseConversationInvocationContext = (source: string) => {
+  const context = parseInvocationContext(source)
+  const { selectedText, ...focused } = context
+  if (context.invocationSource === panelInvocationSource) {
+    if (typeof selectedText !== "string" ||
+      !/^trellage-guide-conversation-choice:v1:[a-f0-9-]{36}$/u.test(selectedText)) {
+      throw new Error("The focused conversation choice token is missing or invalid.")
+    }
+    return { ...focused, conversationChoiceToken: selectedText }
+  }
+  return { ...focused, conversationChoiceToken: undefined }
+}
+
+export const conversationGuidePopupContext = (snapshot: ConversationSnapshot) => ({
+  schemaVersion: 1,
+  surface: "popup",
+  workspaceId: snapshot.source.workspaceId,
+  paneId: snapshot.source.paneId,
+  cwd: snapshot.source.cwd,
+})

@@ -630,6 +630,7 @@ assert_contains 'Interactive prompt viewers: pager, split, focus, bookends, dash
   "$fixture_root/guide-help.out"
 assert_contains 'trx guide --preview' "$fixture_root/guide-help.out"
 assert_contains 'trx guide --forks' "$fixture_root/guide-help.out"
+assert_contains 'trx guide --next-steps' "$fixture_root/guide-help.out"
 assert_contains 'It reads' "$fixture_root/guide-help.out"
 
 PATH=/usr/bin:/bin "$fixture_bin/trx" upgrade --help >"$fixture_root/upgrade-help.out"
@@ -1018,6 +1019,25 @@ jq -e \
   || fail 'guide mode rejected an omitted interactive intent'
 jq -e '.args == []' "$fixture_root/guide-no-args.json" >/dev/null \
   || fail 'guide mode added arguments when the interactive intent was omitted'
+"$fixture_bin/trx" guide --next-steps --model fixture-model --effort high \
+  >"$fixture_root/guide-next-steps.json" \
+  || fail 'guide next-steps mode was not forwarded'
+jq -e '.args == ["--next-steps", "--model", "fixture-model", "--effort", "high"]' \
+  "$fixture_root/guide-next-steps.json" >/dev/null \
+  || fail 'guide next-steps arguments changed during router handoff'
+"$fixture_bin/trx" guide --intent --next-steps --json >"$fixture_root/guide-next-steps-literal.json" \
+  || fail 'guide treated a literal intent value as the next-steps flag'
+jq -e '.args == ["--intent", "--next-steps", "--json"]' \
+  "$fixture_root/guide-next-steps-literal.json" >/dev/null \
+  || fail 'guide changed an ordinary literal intent'
+for conflicting_flag in --next-steps --next-steps=value --json --stdin --intent=ordinary --preview --forks; do
+  status=0
+  "$fixture_bin/trx" guide --next-steps "$conflicting_flag" \
+    >"$fixture_root/guide-next-steps-invalid.out" 2>"$fixture_root/guide-next-steps-invalid.err" \
+    || status=$?
+  [[ "$status" -ne 0 ]] || fail "guide next-steps accepted conflicting flag: $conflicting_flag"
+  assert_contains '--next-steps' "$fixture_root/guide-next-steps-invalid.err"
+done
 
 status=0
 "$fixture_bin/trx" admin extra-arg >"$fixture_root/admin-invalid.out" \

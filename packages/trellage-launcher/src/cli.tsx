@@ -2,6 +2,7 @@
 import { constants, openSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"
 import tty from "node:tty"
+import path from "node:path"
 import React, { useMemo, useState } from "react"
 import { Box, Text, render, useApp, useInput, useWindowSize } from "ink"
 import { parseLaunchCatalog, type LaunchCatalog } from "./catalog.js"
@@ -20,7 +21,7 @@ import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherSta
 import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting } from "./guide-api.js"
 import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.js"
 import { CopilotGuideProvider } from "./copilot-guide-provider.js"
-import { resolveInteractiveGuideIntent } from "./guide-interactive-intent.js"
+import { popupGuideIntentFileEnvironmentVariable, resolveInteractiveGuideIntent } from "./guide-interactive-intent.js"
 import { executeGuideUiResult } from "./guide-interactive-execution.js"
 import {
   createNodeCommandRunner,
@@ -32,6 +33,12 @@ import { loadDefaultGuidePrompts } from "./guide-prompts.js"
 import { GuideArtifactCache } from "./guide-match-cache.js"
 import { createInitialGuideRenderHandler } from "./guide-terminal.js"
 import { GuideApp, type GuideUiResult } from "./guide-ui.js"
+import { ContinuationApp } from "./continuation-ui.js"
+import { ContinuationStore } from "./continuation-store.js"
+import { ContinuationSourceClient } from "./continuation-source-client.js"
+import { openContinuationRequest } from "./continuation-entry.js"
+import { createContinuationServices, resolveContinuationModelRouting } from "./continuation-runtime.js"
+import { createCopilotContinuationProvider } from "./continuation-provider.js"
 import {
   BasketPreviewApp,
   basketPreviewHelpText,
@@ -593,6 +600,10 @@ const runInteractiveGuideMode = async (
   promptMasterSkillDirectory: string,
 ): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
+  if (args.nextSteps) {
+    await runContinuationMode(argv, guideRoot, promptMasterSkillDirectory)
+    return
+  }
   const herdrEnv = herdrEnvironment()
   const herdrContext = getHerdrContext(herdrEnv)
   const initialIntent = await resolveInteractiveGuideIntent({
@@ -663,6 +674,96 @@ const runInteractiveGuideMode = async (
     runner,
     write: (text) => process.stdout.write(text),
   })
+}
+
+const runContinuationMode = async (
+  argv: ReadonlyArray<string>,
+  guideRoot: string,
+  promptMasterSkillDirectory: string,
+): Promise<void> => {
+  const args = parseGuideHeadlessArgv(argv)
+  if (process.env[popupGuideIntentFileEnvironmentVariable] !== undefined) {
+    throw new Error("A conversation request cannot be combined with an ordinary guide intent file.")
+  }
+  const context = getHerdrContext(herdrEnvironment())
+  if (context === null) throw new Error("Conversation next steps requires Herdr.")
+  const stateRoot = process.env.HERDR_PLUGIN_STATE_DIR
+  if (stateRoot === undefined || !path.isAbsolute(stateRoot)) {
+    throw new Error("Conversation next steps requires the private Herdr plugin state directory.")
+  }
+  const runner = createNodeCommandRunner()
+  const store = new ContinuationStore(stateRoot)
+  const helperRoot = process.env.TRELLAGE_GUIDE_CONVERSATION_HELPER_ROOT ?? path.dirname(guideRoot)
+  if (!path.isAbsolute(helperRoot)) throw new Error("The conversation helper root must be absolute.")
+  const sourceClient = new ContinuationSourceClient({
+    store,
+    runner,
+    repoRoot: helperRoot,
+    env: process.env,
+  })
+  const routing = resolveGuideModelRouting(
+    {
+      ...(args.model === undefined ? {} : { model: args.model }),
+      ...(args.effort === undefined ? {} : { effort: args.effort }),
+    },
+    process.env,
+  )
+  const { draft, hasSavedDraft } = await openContinuationRequest({
+    store,
+    sourceClient,
+    context,
+    requestPath: process.env.TRELLAGE_GUIDE_CONVERSATION_REQUEST_FILE,
+    model: routing.match.model,
+    effort: routing.match.effort,
+  })
+  const catalog = readGuideCatalog()
+  const prompts = await loadDefaultGuidePrompts()
+  const services = createContinuationServices({
+    store,
+    sourceClient,
+    catalog,
+    guideRoot,
+    runner,
+    context,
+    socketPath: process.env.HERDR_SOCKET_PATH ?? "",
+    initialDraft: draft,
+    assessmentProvider: (current) => createCopilotContinuationProvider(resolveContinuationModelRouting(current).match),
+    preparationProvider: (current, signal) =>
+      new CopilotGuideProvider({
+        routing: resolveContinuationModelRouting(current),
+        prompts,
+        promptMasterSkillDirectory,
+        signal,
+      }),
+  })
+  const terminal = openInteractiveTerminalStreams()
+  try {
+    const instance = render(
+      <ContinuationApp
+        initialDraft={draft}
+        services={services}
+        hasSavedDraft={hasSavedDraft}
+        onExit={(code) => {
+          process.exitCode = code
+        }}
+      />,
+      {
+        stdin: terminal.input,
+        stdout: terminal.output,
+        interactive: true,
+        exitOnCtrlC: false,
+        kittyKeyboard: { mode: "disabled" },
+        alternateScreen: true,
+        onRender: createInitialGuideRenderHandler((text) => {
+          terminal.output.write(text)
+        }, process.env.INK_SCREEN_READER !== "true"),
+        maxFps: 30,
+      },
+    )
+    await instance.waitUntilExit()
+  } finally {
+    terminal.close()
+  }
 }
 
 const runGuideMode = async (): Promise<void> => {

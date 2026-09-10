@@ -13,7 +13,10 @@ import tempfile
 import textwrap
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
@@ -44,7 +47,6 @@ class NativeTuiMatrixTest(unittest.TestCase):
                 #!/usr/bin/env python3
                 import os
                 import re
-                import select
                 import signal
                 import subprocess
                 import sys
@@ -140,14 +142,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                     else:
                         print(decoded, flush=True)
                     prompt_number += 1
-                    if profile == "active-redraw":
-                        print(ready, flush=True)
-                        for active_tick in range(8):
-                            readable, _, _ = select.select([sys.stdin], [], [], 0.05)
-                            if readable:
-                                (log.parent / "early-input").write_text("received")
-                            print(f"ACTIVE {active_tick}", flush=True)
-                    elif profile != "startup-only":
+                    if profile != "startup-only":
                         show_ready()
                 """
             )
@@ -451,13 +446,89 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertEqual(profile["stages"]["turnTwo"], "pass")
         self.assertEqual(profile["stages"]["skill"], "pass")
 
+    def controlled_turn_process(self, namespace: dict, redraw_times: list[float]):
+        class ControlledProcess(namespace["PtyProcess"]):
+            def __init__(self) -> None:
+                self.now = 0.0
+                self.buffer = bytearray()
+                self.last_output_at = None
+                self.status = None
+                self.pending_output: list[tuple[float, bytes]] = []
+                self.sent: list[tuple[float, bytes]] = []
+
+            def pump(self, timeout: float) -> None:
+                deadline = round(self.now + timeout, 9)
+                if self.pending_output and self.pending_output[0][0] <= deadline:
+                    self.now, output = self.pending_output.pop(0)
+                    self.buffer.extend(output)
+                    self.last_output_at = self.now
+                else:
+                    self.now = deadline
+
+            def send(self, data: bytes) -> None:
+                self.sent.append((self.now, data))
+                if data == b"\r":
+                    self.pending_output.append((self.now, b"RESULT\nREADY>\n"))
+                    self.pending_output.extend(
+                        (round(self.now + offset, 9), b"ACTIVE\n")
+                        for offset in redraw_times
+                    )
+
+        return ControlledProcess()
+
     def test_live_mode_waits_for_active_turn_output_to_stop(self) -> None:
-        result = self.run_matrix(
-            [self.profile("active-redraw", launcher="fu")],
-            "--live",
+        namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
+        adapter = replace(
+            namespace["load_config"](self.config).adapters["active-turn-fixture"],
+            ready_settle=0,
+            submit_delay=0,
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse((self.state / "early-input").exists())
+        process = self.controlled_turn_process(
+            namespace, [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40]
+        )
+        # Replace only the runner's clock; turn, input, and readiness logic stay real.
+        with patch.dict(
+            namespace["run_turn"].__globals__,
+            {"time": SimpleNamespace(monotonic=lambda: process.now)},
+        ):
+            cursor = namespace["run_turn"](
+                process, adapter, 0, "first prompt", "RESULT", 2
+            )
+            self.assertAlmostEqual(process.now, 0.55)
+            self.assertEqual(process.pending_output, [])
+            namespace["run_turn"](
+                process, adapter, cursor, "second prompt", "RESULT", 3
+            )
+
+        self.assertEqual(process.sent, [
+            (0.0, b"first prompt"),
+            (0.0, b"\r"),
+            (0.55, b"second prompt"),
+            (0.55, b"\r"),
+        ])
+        self.assertAlmostEqual(process.now, 1.10)
+        self.assertEqual(process.pending_output, [])
+
+    def test_live_mode_accepts_a_quiet_gap_before_later_redraws(self) -> None:
+        namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
+        adapter = replace(
+            namespace["load_config"](self.config).adapters["active-turn-fixture"],
+            ready_settle=0,
+            submit_delay=0,
+        )
+        process = self.controlled_turn_process(
+            namespace, [0.05, 0.25, 0.30, 0.35, 0.40]
+        )
+        with patch.dict(
+            namespace["run_turn"].__globals__,
+            {"time": SimpleNamespace(monotonic=lambda: process.now)},
+        ):
+            namespace["run_turn"](process, adapter, 0, "prompt", "RESULT", 2)
+
+        self.assertAlmostEqual(process.now, 0.20)
+        self.assertAlmostEqual(process.last_output_at, 0.05)
+        self.assertEqual(len(process.pending_output), 4)
+        self.assertAlmostEqual(process.pending_output[0][0], 0.25)
 
     def test_live_mode_tracks_numbered_readiness_markers(self) -> None:
         result = self.run_matrix(
