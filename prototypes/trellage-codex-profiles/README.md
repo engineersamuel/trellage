@@ -27,6 +27,9 @@ next launch, then reuse the cached snapshot offline. `trx skills check` and
 
 Both authentication modes set
 `features.context_management.experimental_mode = true`.
+Use a Codex CLI that supports this nested setting; rollout is verified with
+0.153.0. Codex 0.147.0 rejects it with `invalid type: map, expected a boolean`.
+Upgrade the host CLI before migrating profiles if it reports that error.
 [OpenAI's configuration reference](https://developers.openai.com/codex/config-reference)
 requires ChatGPT sign-in on an eligible plan for experimental context
 management. Provider selection and authentication are unchanged.

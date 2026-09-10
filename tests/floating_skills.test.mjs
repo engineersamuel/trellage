@@ -534,6 +534,21 @@ test("refresh removes stale managed skills and preserves unmanaged skills", asyn
   assert.equal(await readFile(path.join(fixture.target, "unmanaged", "SKILL.md"), "utf8"), "keep\n")
 })
 
+test("read-only image snapshots can be published and replaced by their owner", async () => {
+  const fixture = await createFixture()
+  await updateNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache })
+  const source = path.join(fixture.cache, "skills", "fixture")
+  await chmod(source, 0o555)
+  try {
+    await syncSnapshot(fixture.cache, fixture.target)
+    await syncSnapshot(fixture.cache, fixture.target)
+    await verifyTarget(fixture.cache, fixture.target)
+    assert.equal((await lstat(source)).mode & 0o777, 0o555)
+  } finally {
+    await chmod(source, 0o755)
+  }
+})
+
 test("legacy Pi ownership marker migrates show-me without weakening collision checks", async () => {
   const fixture = await createFixture()
   await rm(path.join(fixture.repository, ".omp", "skills", "fixture"), { recursive: true })
