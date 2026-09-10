@@ -106,6 +106,7 @@ prime-entry: sandbox-entry-fixture
 	bash prototypes/trellage/tests/prime_entry_contract.sh
 
 native-codex-auth-config-launch:
+	node --test prototypes/trellage-codex-profiles/tests/orchestration.test.mjs
 	bash prototypes/trellage-codex-profiles/tests/blocks/auth-config-launch.sh
 
 native-codex-lifecycle:

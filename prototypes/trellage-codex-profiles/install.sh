@@ -550,7 +550,13 @@ if [ -d "$install_root" ]; then
   legacy_lib_entries="$(printf '%s\n%s' "$recovery_entries" "$legacy_lib_entries")"
   legacy_marketplace_entries="$(printf '%s\n%s' \
     "$recovery_entries" "$marketplace_entries")"
-  [ "$actual_entries" = "$expected_entries" ] \
+  orchestration_entries="$(printf '%s\n' "$skills_entries" \
+    './lib/codex-config.py' './lib/codex-agents.mjs' './lib/agents' \
+    './lib/agents/explorer.toml' './lib/agents/worker.toml' \
+    './lib/agents/tester.toml' './lib/agents/researcher.toml' \
+    './lib/agents/reviewer.toml' './lib/agents/LICENSE' './lib/agents/NOTICE' | LC_ALL=C sort)"
+  [ "$actual_entries" = "$orchestration_entries" ] \
+    || [ "$actual_entries" = "$expected_entries" ] \
     || [ "$actual_entries" = "$skills_entries" ] \
     || [ "$actual_entries" = "$legacy_lib_entries" ] \
     || [ "$actual_entries" = "$legacy_lib_marketplace_entries" ] \
@@ -579,6 +585,13 @@ if [ -d "$install_root" ]; then
   fi
   if [ "$actual_entries" = "$skills_entries" ]; then
     for path in "$install_root/native-skills.mjs" "$install_root/lib/trellage-session-bridge.py"; do
+      [ -f "$path" ] && [ ! -L "$path" ] || refuse "refusing unsafe managed runtime file: $path"
+    done
+  fi
+  if [ "$actual_entries" = "$orchestration_entries" ]; then
+    for path in "$install_root/lib/codex-config.py" "$install_root/lib/codex-agents.mjs" \
+      "$install_root/lib/trellage-session-bridge.py" "$install_root/native-skills.mjs" \
+      "$install_root/lib/agents/"*; do
       [ -f "$path" ] && [ ! -L "$path" ] || refuse "refusing unsafe managed runtime file: $path"
     done
   fi
@@ -877,6 +890,15 @@ chmod 0755 \
 chmod 0700 "$staging_root/new-runtime/.fish-recovery"
 install -m 0755 "$source_dir/bin/cdx" "$staging_root/new-runtime/bin/cdx"
 install -m 0755 "$common_launcher" "$staging_root/new-runtime/lib/native-codex"
+install -m 0644 "$source_dir/../trellage-codex-common/codex-config.py" "$staging_root/new-runtime/lib/"
+install -m 0644 "$source_dir/../trellage-codex-common/codex-agents.mjs" "$staging_root/new-runtime/lib/"
+mkdir "$staging_root/new-runtime/lib/agents"
+for role_asset in explorer.toml worker.toml tester.toml researcher.toml reviewer.toml; do
+  install -m 0644 "$source_dir/../trellage-codex-common/agents/$role_asset" "$staging_root/new-runtime/lib/agents/"
+done
+for role_license in LICENSE NOTICE; do
+  install -m 0644 "$source_dir/../trellage-codex-common/$role_license" "$staging_root/new-runtime/lib/agents/"
+done
 install -m 0644 "$native_skills_source" "$staging_root/new-runtime/native-skills.mjs"
 install -m 0755 "$session_bridge_source" \
   "$staging_root/new-runtime/lib/trellage-session-bridge.py"

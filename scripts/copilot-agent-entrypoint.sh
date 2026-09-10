@@ -23,6 +23,7 @@ mv -f "$instructions_tmp" "$COPILOT_HOME/instructions/rundown.instructions.md"
 node /usr/local/bin/floating-skills.mjs sync \
   --catalog /opt/floating-skills-catalog.json \
   --bundle comparison-common \
+  --exclude-skill astra-orchestrator \
   --output /opt/floating-skills \
   --target "$COPILOT_HOME/skills"
 

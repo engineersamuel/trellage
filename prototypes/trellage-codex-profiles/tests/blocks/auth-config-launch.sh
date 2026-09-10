@@ -32,7 +32,7 @@ jq -e '
   and .profiles.pstack.upstreamRepository == "https://github.com/Aqua-123/pstack-for-codex.git"
   and .profiles.pstack.plugin == "pstack-for-codex@pstack-for-codex-local"
   and .profiles.pstack.source == null
-  and .profiles.pstack.skillBundles == ["native-common"]
+  and .profiles.pstack.skillBundles == ["native-common", "codex-common"]
   and .profiles.pstack.managedSkills == []
   and .profiles.pstack.requiredEnvironment == []
   and .profiles.pstack.standaloneMcps == []
@@ -45,7 +45,7 @@ jq -e '
   and .profiles.superpowers.manifestUrl == "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json"
   and .profiles.superpowers.plugin == "superpowers@superpowers-marketplace"
   and .profiles.superpowers.source == null
-  and .profiles.superpowers.skillBundles == ["native-common"]
+  and .profiles.superpowers.skillBundles == ["native-common", "codex-common"]
   and .profiles.superpowers.managedSkills == []
   and .profiles.superpowers.requiredEnvironment == []
   and .profiles.superpowers.standaloneMcps == []
@@ -53,7 +53,7 @@ jq -e '
   and .profiles.youtube.description == "Host-native Codex CLI with Full Access by default (no command approvals or Codex OS sandbox) for transcript-backed YouTube search, summaries, channel browsing, and playlist research through TranscriptAPI."
   and .profiles.youtube.plugin == null
   and .profiles.youtube.source == "ZeroPointRepo/youtube-skills"
-  and .profiles.youtube.skillBundles == ["native-common", "youtube"]
+  and .profiles.youtube.skillBundles == ["native-common", "codex-common", "youtube"]
   and .profiles.youtube.managedSkills == ["youtube-full"]
   and .profiles.youtube.requiredEnvironment == ["TRANSCRIPT_API_KEY"]
   and .profiles.youtube.standaloneMcps == []
@@ -98,7 +98,7 @@ jq -e '
   and .profiles[0].plugin == "pstack-for-codex@pstack-for-codex-local"
   and .profiles[0].kind == "plugin"
   and .profiles[0].source == null
-  and .profiles[0].skillBundles == ["native-common"]
+  and .profiles[0].skillBundles == ["native-common", "codex-common"]
   and .profiles[0].managedSkills == []
   and .profiles[0].requiredEnvironment == []
   and .profiles[0].marketplace == {
@@ -114,7 +114,7 @@ jq -e '
   and .profiles[2].plugin == null
   and .profiles[2].kind == "skills"
   and .profiles[2].source == "ZeroPointRepo/youtube-skills"
-  and .profiles[2].skillBundles == ["native-common", "youtube"]
+  and .profiles[2].skillBundles == ["native-common", "codex-common", "youtube"]
   and .profiles[2].managedSkills == ["youtube-full"]
   and .profiles[2].requiredEnvironment == ["TRANSCRIPT_API_KEY"]
   and .profiles[2].marketplace == null
@@ -1335,7 +1335,7 @@ cat >"$expected_config" <<EOF
 # trellage-managed-codex-config-begin
 model = "gpt-6-astra"
 model_provider = "copilotproxy"
-model_reasoning_effort = "low"
+model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "max"
 # trellage-managed-codex-config-end
 
@@ -1344,6 +1344,15 @@ plan_mode_reasoning_effort = "max"
 
 [features]
 hooks = true
+
+[features.context_management]
+experimental_mode = true
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 4
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
 # trellage-profile-local-config-end
 
 # trellage-managed-codex-provider-begin
@@ -1555,7 +1564,7 @@ cat >"$expected_youtube_config" <<'EOF'
 # trellage-managed-codex-config-begin
 model = "gpt-6-astra"
 model_provider = "copilotproxy"
-model_reasoning_effort = "low"
+model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "max"
 # trellage-managed-codex-config-end
 
@@ -1564,6 +1573,15 @@ plan_mode_reasoning_effort = "max"
 
 [features]
 hooks = true
+
+[features.context_management]
+experimental_mode = true
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 4
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
 # trellage-profile-local-config-end
 
 # trellage-managed-codex-provider-begin
@@ -2283,7 +2301,7 @@ real_ln="$(command -v ln)"
 write_custom_main_config "$expected_config"
 sed \
   -e 's/model = "gpt-6-astra"/model = "gpt-5.6-sol"/' \
-  -e 's/model_reasoning_effort = "low"/model_reasoning_effort = "max"/' \
+  -e 's/model_reasoning_effort = "medium"/model_reasoning_effort = "max"/' \
   -e '/^plan_mode_reasoning_effort = /d' \
   -e 's/hooks = true/hooks = false/' \
   "$custom_config" >"$pstack_home/config.toml"
@@ -2945,6 +2963,63 @@ jq -se '
     ((.args | join(" ")) | test("marketplace add|plugin add|marketplace upgrade|plugin remove") | not))
 ' "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'launch invoked a forbidden marketplace or plugin mutation'
+
+. "$blocks_dir/../lib/skills-migration.sh"
+
+# Every selected profile migrates the previous config/role installation on its
+# next launch, without losing custom agents or custom nested TOML settings.
+for migration_profile in pstack superpowers youtube; do
+  migration_home="$fixture_root/home/.local/share/trellage/profiles/codex/$migration_profile/home"
+  cp "$migration_home/config.toml" "$fixture_root/$migration_profile-before-orchestration.toml"
+  python3 - "$migration_home/config.toml" <<'PYMIGRATE'
+import sys
+p = sys.argv[1]
+s = open(p).read().replace('model_reasoning_effort = "medium"', 'model_reasoning_effort = "low"')
+start = s.index('[features.context_management]')
+end = s.index('# trellage-profile-local-config-end', start)
+s = s[:start] + '[features.custom]\nkeep = "nested"\n[agents]\ncustom = "retained"\n' + s[end:]
+open(p, 'w').write(s)
+PYMIGRATE
+  rm "$migration_home/agents/worker.toml"
+  printf '%s\n' 'name = "personal"' 'model = "custom-model"' >"$migration_home/agents/personal.toml"
+  HOME="$fixture_root/home" TRANSCRIPT_API_KEY=fixture-migration-key \
+    fake_env "$fixture_launcher" "$migration_profile" --version \
+    >"$fixture_root/$migration_profile-orchestration-migration.out" \
+    || fail "$migration_profile next-launch orchestration migration failed"
+  node --input-type=module - "$migration_home" "$root/../../packages/trellage-cli/package.json" <<'JSMIGRATE'
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+const { parse } = createRequire(process.argv[3])('smol-toml');
+const home = process.argv[2];
+const config = parse(readFileSync(`${home}/config.toml`, 'utf8'));
+assert.equal(config.model, 'gpt-6-astra');
+assert.equal(config.model_reasoning_effort, 'medium');
+assert.equal(config.plan_mode_reasoning_effort, 'max');
+assert.equal(config.agents.enabled, true);
+assert.equal(config.agents.max_concurrent_threads_per_session, 4);
+assert.equal(config.agents.default_subagent_model, 'gpt-5.6-luna');
+assert.equal(config.agents.default_subagent_reasoning_effort, 'max');
+assert.equal(config.agents.custom, 'retained');
+assert.equal(config.features.context_management.experimental_mode, true);
+assert.equal(config.features.custom.keep, 'nested');
+assert.equal(parse(readFileSync(`${home}/agents/personal.toml`, 'utf8')).model, 'custom-model');
+for (const name of ['explorer', 'worker', 'tester', 'researcher', 'reviewer']) {
+  const role = parse(readFileSync(`${home}/agents/${name}.toml`, 'utf8'));
+  assert.equal(role.name, name);
+  assert.equal(role.model, name === 'reviewer' ? 'gpt-6-astra' : 'gpt-5.6-luna');
+  assert.equal(role.model_reasoning_effort, name === 'reviewer' ? 'low' : undefined);
+  assert.equal(role.sandbox_mode, undefined);
+  assert.equal(role.approval_policy, undefined);
+}
+JSMIGRATE
+  [ "$?" = 0 ] || fail "$migration_profile migrated effective settings differ"
+  cp "$migration_home/config.toml" "$fixture_root/$migration_profile-migrated.toml"
+  HOME="$fixture_root/home" fake_env "$fixture_launcher" repair "$migration_profile" >/dev/null \
+    || fail "$migration_profile repeated repair failed"
+  cmp -s "$migration_home/config.toml" "$fixture_root/$migration_profile-migrated.toml" \
+    || fail "$migration_profile repeated repair changed config bytes"
+done
 
 printf 'trellage Codex auth contract: PASS\n'
 printf 'trellage Codex config contract: PASS\n'

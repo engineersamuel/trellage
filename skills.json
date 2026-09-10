@@ -167,6 +167,10 @@
       "repository": "https://github.com/nidhinjs/prompt-master.git",
       "select": ["prompt-master"]
     },
+    "astra-orchestrator": {
+      "repository": "https://github.com/donvito/codex-astra-luna-orchestrator.git",
+      "select": ["astra-orchestrator"]
+    },
     "youtube-skills": {
       "repository": "https://github.com/ZeroPointRepo/youtube-skills.git",
       "select": ["youtube-full"]
@@ -175,7 +179,8 @@
   "bundles": {
     "sandbox-common": ["engineersamuel", "caveman", "mattpocock", "show-me", "i-have-adhd"],
     "native-common": ["engineersamuel", "show-me", "i-have-adhd"],
-    "comparison-common": ["engineersamuel", "show-me", "i-have-adhd"],
+    "comparison-common": ["engineersamuel", "show-me", "i-have-adhd", "astra-orchestrator"],
+    "codex-common": ["astra-orchestrator"],
     "codex-superpowers": ["superpowers"],
     "claude-frontend-design": ["impeccable", "emil-design", "hyperframes"],
     "claude-research": ["last30days"],

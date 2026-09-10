@@ -1,7 +1,7 @@
 schema = 1
 name = "codex-superpowers"
-description = "Sandboxed Codex (`gpt-6-astra`, low reasoning by default and max in plan mode) for disciplined feature delivery through brainstorm, plan, TDD, debugging, review, and verification. Its differentiator is a reproducible containerized Superpowers loop for implementation, not a host-native structured-engineering session."
-skill_bundles = ["sandbox-common", "codex-superpowers"]
+description = "Sandboxed Codex (`gpt-6-astra`, medium reasoning by default and max in plan mode) for disciplined feature delivery through brainstorm, plan, TDD, debugging, review, and verification. Its differentiator is a reproducible containerized Superpowers loop for implementation, not a host-native structured-engineering session."
+skill_bundles = ["sandbox-common", "codex-common", "codex-superpowers"]
 
 [harness]
 kind = "codex"
@@ -10,7 +10,7 @@ args = ["--dangerously-bypass-approvals-and-sandbox"]
 
 [harness.codex]
 model = "gpt-6-astra"
-reasoning_effort = "low"
+reasoning_effort = "medium"
 plan_mode_reasoning_effort = "max"
 model_provider = "copilot_proxy"
 

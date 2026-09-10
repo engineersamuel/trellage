@@ -10,7 +10,7 @@
       "service": "agent",
       "port": 4173,
       "model": "gpt-6-astra",
-      "reasoningEffort": "low",
+      "reasoningEffort": "medium",
       "provider": "copilot-proxy-rs",
       "packages": [
         {

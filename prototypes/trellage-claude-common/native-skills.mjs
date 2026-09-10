@@ -197,7 +197,8 @@ export const syncCachedSkills = async (managerPath, pairs, checkOnly = false) =>
 const bundlesForCache = (cache) => {
   switch (path.basename(cache)) {
     case "skills": return ["native-common"]
-    case "cdx-youtube-skills": return ["native-common", "youtube"]
+    case "cdx-skills": return ["native-common", "codex-common"]
+    case "cdx-youtube-pro-skills": return ["native-common", "codex-common", "youtube"]
     case "omp-community-skills": return ["omp-community"]
     case "guide-prompt-master-skills": return ["guide-prompt-master"]
     default: fail(`unknown skill cache variant: ${cache}`)

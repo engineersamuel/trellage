@@ -69,10 +69,13 @@ mise run trellage -- validate copilot-hve
 mise run trellage -- --profile copilot-hve
 ```
 
-All Copilot and Codex native, Sandbox, and comparison profiles default to
-`gpt-6-astra` with `low` reasoning. Plan mode uses `gpt-6-astra` with `max`
-reasoning. Explicit harness model and reasoning arguments override the default
-mode settings. Sandbox profiles set plan effort with
+Codex native, Sandbox, and comparison profiles use the upstream Pro preset:
+`gpt-6-astra` with `medium` reasoning, Luna execution subagents with `max`
+reasoning, and an Astra reviewer with `low` reasoning. Up to four subagents
+can run concurrently. Copilot retains Astra with `low` reasoning. Plan mode
+uses Astra with `max` reasoning; Claude Graph of Loops retains its dedicated
+Astra/`max` reviewer. Explicit harness model and reasoning arguments override
+the default mode settings. Sandbox profiles set plan effort with
 `harness.codex.plan_mode_reasoning_effort` or
 `harness.copilot.plan_mode_reasoning_effort`.
 
@@ -1503,7 +1506,8 @@ channels with a fresh image build. Later `run` and `resume` commands reuse
 those installed images.
 
 Each contestant declares its `model`. The optional `reasoningEffort` defaults
-to `low`; plan mode uses the same model with `max` reasoning. Set `CODEX_MODEL` and
+to `medium` for Codex and `low` for Copilot; plan mode uses the same model
+with `max` reasoning. Set `CODEX_MODEL` and
 `CODEX_REASONING_EFFORT`, or `COPILOT_MODEL` and `COPILOT_REASONING_EFFORT`,
 to override the corresponding manifest settings for a run or resume. Set
 `CODEX_PLAN_MODE_REASONING_EFFORT` or `COPILOT_PLAN_MODE_REASONING_EFFORT` to

@@ -238,8 +238,8 @@ handled before launcher discovery. Missing, invalid, or incomplete catalogs
 stop the operation before any update starts.
 
 The shared queue runs Native harness updates first. It then runs the current
-router's `trx skills update` once, refreshing all four Native skill caches:
-`native-common`, Codex YouTube, Oh My Pi community, and guide Prompt Master.
+router's `trx skills update` once, refreshing all five Native skill caches:
+`native-common`, Codex standard, Codex YouTube, Oh My Pi community, and guide Prompt Master.
 Every Native profile, including Agency, then receives `skills-update PROFILE`
 to copy and verify its configured skills. This final copy follows harness
 updates because some harness updaters rewrite skills. No `repair`, `setup`,
@@ -300,10 +300,10 @@ The first setup or launch through any native launcher fetches the
 `native-common` bundle from the approved repositories' current default
 branches. The shared snapshot is then reused without network access.
 `trx skills status` reports the installed names. `trx skills update` is the
-cache refresh used by the unified operation. It refreshes the four caches
+cache refresh used by the unified operation. It refreshes the five caches
 listed above; a failed cache update keeps that cache's previous snapshot.
 It does not copy the refreshed skills into every profile on its own.
-`trx skills check --json` compares all four existing caches with freshly fetched
+`trx skills check --json` compares all five existing caches with freshly fetched
 sources without publishing caches or copying profile skills. It returns
 `{"kind":"current"}`, `{"kind":"available"}`, or
 `{"kind":"unknown","diagnostic":"..."}`. A known difference returns `available`;

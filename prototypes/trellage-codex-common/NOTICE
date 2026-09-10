@@ -1,0 +1,5 @@
+Role templates adapted from donvito/codex-astra-luna-orchestrator
+https://github.com/donvito/codex-astra-luna-orchestrator
+Upstream revision: 9c2a98435ca9ed2b85ac6b0e942b5ded75a4d194
+Licensed under Apache-2.0; see LICENSE.
+Trellage changes: omit role permission overrides; Luna roles inherit reasoning effort; reviewer uses Astra/low.

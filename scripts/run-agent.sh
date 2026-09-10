@@ -18,7 +18,7 @@ case "$session_mode" in
 esac
 
 default_model="${CODEX_MODEL:-gpt-6-astra}"
-default_reasoning_effort="${CODEX_REASONING_EFFORT:-low}"
+default_reasoning_effort="${CODEX_REASONING_EFFORT:-medium}"
 default_plan_mode_reasoning_effort="${CODEX_PLAN_MODE_REASONING_EFFORT:-max}"
 model="$default_model"
 reasoning_effort="$default_reasoning_effort"

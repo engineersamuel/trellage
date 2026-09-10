@@ -104,8 +104,8 @@ const fixtureFor = async (context, descriptor) => {
     runtime,
     source,
     bin: path.join(root, "bin"),
-    cache: path.join(home, ".local/share/trellage/common/skills"),
-    youtubeCache: path.join(home, ".local/share/trellage/common/cdx-youtube-skills"),
+    cache: path.join(home, ".local/share/trellage/common", descriptor.alias === "cdx" ? "cdx-skills" : "skills"),
+    youtubeCache: path.join(home, ".local/share/trellage/common/cdx-youtube-pro-skills"),
     communityCache: path.join(home, ".local/share/trellage/common/omp-community-skills"),
     forbiddenLog: path.join(root, "forbidden.log"),
     envLog: path.join(root, "node-environment.log"),
@@ -392,13 +392,14 @@ test("router checks all shared caches, including guide-only changes, without pro
   await copy(path.join(repository, "prototypes/trellage-router/bin/trx"), router)
   await write(path.join(routerRoot, ".managed-by-trellage-router"), "trellage-router-v2")
   const guideCache = path.join(fixture.runtime, "../common/guide-prompt-master-skills")
-  const caches = [fixture.cache, fixture.youtubeCache, fixture.communityCache, guideCache]
+  const codexCache = path.join(fixture.runtime, "../common/cdx-skills")
+  const caches = [fixture.cache, codexCache, fixture.youtubeCache, fixture.communityCache, guideCache]
   for (const cache of caches) await seedSnapshot(cache, ["fixture"], 1)
   await write(path.join(runtime, "skills.json"), JSON.stringify({
     schema: 1,
     sources: { fixture: { repository: "https://github.com/fixture/skills.git", select: ["fixture"] } },
     bundles: {
-      "native-common": ["fixture"], youtube: ["fixture"], "omp-community": ["fixture"], "guide-prompt-master": ["fixture"],
+      "native-common": ["fixture"], "codex-common": ["fixture"], youtube: ["fixture"], "omp-community": ["fixture"], "guide-prompt-master": ["fixture"],
     },
   }))
   await write(path.join(fixture.bin, "git"), "#!/bin/sh\nexit 0\n", 0o755)
@@ -472,7 +473,7 @@ export const stageLatest = async ({ signal }) => {
       const closed = once(child, "close")
       const timer = setTimeout(() => child.kill("SIGKILL"), 5000)
       try {
-        await once(child.stdout, "data")
+        await Promise.race([once(child.stdout, "data"), closed.then(() => { throw new Error("skill check exited before fetching") })])
         child.kill("SIGTERM")
         const [code, signal] = await closed
         assert.equal(signal, null)
@@ -501,8 +502,8 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
   await cp(path.join(${JSON.stringify(freshRoot)}, bundleIds.join("+")), destination, { recursive: true })
 }
 `)
-    await seedSnapshot(path.join(freshRoot, "native-common"), ["kept", "retired"], 1)
-    await seedSnapshot(path.join(freshRoot, "native-common+youtube"), ["kept", "retired", "youtube-full"], 1)
+    await seedSnapshot(path.join(freshRoot, descriptor.alias === "cdx" ? "native-common+codex-common" : "native-common"), ["kept", "retired"], 1)
+    await seedSnapshot(path.join(freshRoot, "native-common+codex-common+youtube"), ["kept", "retired", "youtube-full"], 1)
     await seedSnapshot(path.join(freshRoot, "omp-community"), ["omp-kept", "omp-retired", "pstack-omp"], 1)
     const before = await Promise.all(profiles.map((profile) => treeState(profile.root, true)))
     const caches = await Promise.all([fixture.cache, fixture.youtubeCache, fixture.communityCache].map((cache) => treeState(cache, true)))
@@ -513,8 +514,8 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
       succeeds(current)
       assert.ok(current.stdout.trim().split("\n").every((line) => JSON.parse(line).kind === "current"))
     }
-    await seedSnapshot(path.join(freshRoot, "native-common"), ["kept", "retired"], 2)
-    await seedSnapshot(path.join(freshRoot, "native-common+youtube"), ["kept", "retired", "youtube-full"], 2)
+    await seedSnapshot(path.join(freshRoot, descriptor.alias === "cdx" ? "native-common+codex-common" : "native-common"), ["kept", "retired"], 2)
+    await seedSnapshot(path.join(freshRoot, "native-common+codex-common+youtube"), ["kept", "retired", "youtube-full"], 2)
     for (const profile of profiles) {
       const available = run(fixture, ["skills-check", profile.name])
       succeeds(available)
@@ -738,7 +739,7 @@ test("cache-only updates honor XDG_DATA_HOME without changing the default cache"
   const profile = await seedProfile(fixture, "youtube")
   const defaultBefore = await treeState(fixture.youtubeCache, true)
   const xdg = path.join(fixture.root, "data")
-  const cache = path.join(xdg, "trellage/common/cdx-youtube-skills")
+  const cache = path.join(xdg, "trellage/common/cdx-youtube-pro-skills")
   await seedSnapshot(cache, ["added", "kept", "youtube-full"], 2)
   succeeds(run(fixture, ["skills-update", "youtube"], { XDG_DATA_HOME: xdg }))
   await verifyTarget(cache, profile.targets[0].target)

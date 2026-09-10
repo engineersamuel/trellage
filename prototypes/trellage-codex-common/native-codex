@@ -62,6 +62,15 @@ if [ ! -f "$session_bridge_source" ]; then
   session_bridge_source="$script_dir/../../scripts/trellage-session-bridge.py"
 fi
 
+codex_config_helper="$script_dir/lib/codex-config.py"
+codex_agents_helper="$script_dir/lib/codex-agents.mjs"
+codex_agents_source="$script_dir/lib/agents"
+if [ ! -f "$codex_config_helper" ]; then
+  codex_config_helper="$script_dir/../trellage-codex-common/codex-config.py"
+  codex_agents_helper="$script_dir/../trellage-codex-common/codex-agents.mjs"
+  codex_agents_source="$script_dir/../trellage-codex-common/agents"
+fi
+
 build_floating_skills_args() {
   local profile="$1"
   local bundle
@@ -143,9 +152,9 @@ floating_skills_cache() {
   local common_root="${XDG_DATA_HOME:-${HOME%/}/.local/share}/trellage/common"
 
   if [ "$(catalog_value "$profile" kind)" = plugin ]; then
-    printf '%s\n' "$common_root/skills"
+    printf '%s\n' "$common_root/cdx-skills"
   else
-    printf '%s\n' "$common_root/cdx-$profile-skills"
+    printf '%s\n' "$common_root/cdx-$profile-pro-skills"
   fi
 }
 
@@ -356,7 +365,7 @@ validate_catalog() {
           "manifestUrl": "https://raw.githubusercontent.com/Aqua-123/pstack-for-codex/main/.codex-plugin/marketplace.json",
           "plugin": "pstack-for-codex@pstack-for-codex-local",
           "source": null,
-          "skillBundles": ["native-common"],
+          "skillBundles": ["native-common", "codex-common"],
           "managedSkills": [],
           "requiredEnvironment": [],
           "standaloneMcps": []
@@ -388,7 +397,7 @@ validate_catalog() {
           "manifestUrl": "https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json",
           "plugin": "superpowers@superpowers-marketplace",
           "source": null,
-          "skillBundles": ["native-common"],
+          "skillBundles": ["native-common", "codex-common"],
           "managedSkills": [],
           "requiredEnvironment": [],
           "standaloneMcps": []
@@ -415,7 +424,7 @@ validate_catalog() {
           },
           "plugin": null,
           "source": "ZeroPointRepo/youtube-skills",
-          "skillBundles": ["native-common", "youtube"],
+          "skillBundles": ["native-common", "codex-common", "youtube"],
           "managedSkills": ["youtube-full"],
           "requiredEnvironment": ["TRANSCRIPT_API_KEY"],
           "standaloneMcps": []
@@ -629,7 +638,7 @@ config_prefix() {
 # trellage-managed-codex-config-begin
 model = "gpt-6-astra"
 model_provider = "copilotproxy"
-model_reasoning_effort = "low"
+model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "max"
 # trellage-managed-codex-config-end
 
@@ -662,120 +671,37 @@ initial_config_content() {
       '' \
       '[features]' \
       'hooks = true' \
+      '' \
+      '[features.context_management]' \
+      'experimental_mode = true' \
+      '' \
+      '[agents]' \
+      'enabled = true' \
+      'max_concurrent_threads_per_session = 4' \
+      'default_subagent_model = "gpt-5.6-luna"' \
+      'default_subagent_reasoning_effort = "max"' \
     && config_suffix
 }
 
 append_local_config_with_hooks() {
-  local target="$1"
-  local local_begin="$2"
-  local local_end="$3"
-  local first_line=$((local_begin + 1))
-  local last_line=$((local_end - 1))
-
-  awk -v first="$first_line" -v last="$last_line" '
-    function compact(line, value) {
-      value = line
-      sub(/[[:space:]]*#.*$/, "", value)
-      gsub(/[[:space:]]/, "", value)
-      return value
-    }
-    function is_table(line) {
-      return line ~ /^[[:space:]]*\[/
-    }
-    function is_features(line) {
-      line = compact(line)
-      return line == "[features]" \
-        || line == "[\"features\"]" \
-        || line == "[\047features\047]"
-    }
-    function is_hooks(line) {
-      line = compact(line)
-      return line ~ /^hooks=/ \
-        || line ~ /^"hooks"=/ \
-        || line ~ /^\047hooks\047=/
-    }
-    function emit_hooks() {
-      if (!hooks_written) {
-        print "hooks = true"
-        hooks_written = 1
-      }
-    }
-    NR < first || NR > last { next }
-    {
-      if (in_features && is_table($0)) {
-        emit_hooks()
-        in_features = 0
-      }
-      if (is_features($0)) {
-        if (features_seen) exit 2
-        features_seen = 1
-        in_features = 1
-        print
-        next
-      }
-      if (in_features && is_hooks($0)) {
-        if (hooks_written) exit 2
-        emit_hooks()
-        next
-      }
-      print
-    }
-    END {
-      if (in_features) emit_hooks()
-      if (!features_seen) {
-        if (last >= first) print ""
-        print "[features]"
-        print "hooks = true"
-      }
-    }
-  ' "$target"
+  local target="$1" local_begin="$2" local_end="$3"
+  [ -f "$codex_config_helper" ] && [ ! -L "$codex_config_helper" ] \
+    && [ ! -L "${codex_config_helper%/*}" ] || return 1
+  awk -v first="$local_begin" -v last="$local_end" 'NR > first && NR < last' "$target" \
+    | python3 "$codex_config_helper"
 }
 
 validate_local_features_syntax() {
-  local target="$1"
-  local local_begin="$2"
-  local local_end="$3"
-  local first_line=$((local_begin + 1))
-  local last_line=$((local_end - 1))
+  append_local_config_with_hooks "$@" >/dev/null
+}
 
-  awk -v first="$first_line" -v last="$last_line" '
-    function compact(line, value) {
-      value = line
-      sub(/[[:space:]]*#.*$/, "", value)
-      gsub(/[[:space:]]/, "", value)
-      return value
-    }
-    function is_canonical_features_table(line) {
-      return line == "[features]" \
-        || line == "[\"features\"]" \
-        || line == "[\047features\047]"
-    }
-    function is_unsupported_features_table(line) {
-      return index(line, "[features.") == 1 \
-        || index(line, "[[features") == 1 \
-        || index(line, "[\"features\".") == 1 \
-        || index(line, "[[\"features\"") == 1 \
-        || index(line, "[\047features\047.") == 1 \
-        || index(line, "[[\047features\047") == 1
-    }
-    function is_root_features(line) {
-      return line ~ /^features[.=]/ \
-        || line ~ /^"features"[.=]/ \
-        || line ~ /^\047features\047[.=]/
-    }
-    BEGIN { root_scope = 1 }
-    NR < first || NR > last { next }
-    {
-      line = compact($0)
-      if (is_canonical_features_table(line)) {
-        root_scope = 0
-        next
-      }
-      if (is_unsupported_features_table(line)) exit 2
-      if (root_scope && is_root_features(line)) exit 2
-      if (line ~ /^\[/) root_scope = 0
-    }
-  ' "$target"
+manage_profile_agents() {
+  local profile="$1" mode="$2"
+  [ -f "$codex_agents_helper" ] && [ ! -L "$codex_agents_helper" ] \
+    && [ ! -L "${codex_agents_helper%/*}" ] \
+    || die "unsafe managed Codex agents helper: $codex_agents_helper"
+  node "$codex_agents_helper" "$mode" "$(profile_home "$profile")/agents" "$codex_agents_source" \
+    || die "managed Codex agents are unhealthy: $profile"
 }
 
 install_session_bridge() {
@@ -2297,6 +2223,7 @@ setup_profile() {
   require_profile "$profile"
   prepare_profile_home "$profile"
   ensure_floating_skills "$profile"
+  manage_profile_agents "$profile" install
   install_initial_config "$profile"
   recover_generated_project_trust "$profile"
   require_profile_config "$profile"
@@ -2320,6 +2247,7 @@ doctor_profile() {
   require_profile_config "$profile"
   validate_profile_paths "$profile"
   verify_floating_skills "$profile"
+  manage_profile_agents "$profile" verify
   if profile_uses_plugin "$profile"; then
     require_marketplace_inventory "$profile"
     require_plugin_inventory "$profile"
@@ -2484,6 +2412,7 @@ repair_profile() {
   verify_repairable_floating_skills "$profile"
   ensure_floating_skills "$profile"
   recover_generated_project_trust "$profile"
+  manage_profile_agents "$profile" install
   write_repaired_config "$profile" yes
   validate_profile_paths "$profile"
   install_session_bridge "$profile"
@@ -2768,6 +2697,7 @@ ensure_launch_ready() {
   if ! (
     require_profile_config "$profile"
     verify_floating_skills "$profile"
+  manage_profile_agents "$profile" verify
     if profile_uses_plugin "$profile"; then
       [ "$profile" = superpowers ] || require_plugin_inventory "$profile"
     fi

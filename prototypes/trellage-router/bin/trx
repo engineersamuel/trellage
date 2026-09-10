@@ -829,8 +829,15 @@ if [[ "$mode" == skills ]]; then
     node "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \
       --bundle native-common \
+      --bundle codex-common \
+      --cache "$native_common_root/cdx-skills" \
+      || die 'failed to update native Codex skills'
+    node "$floating_skills_manager" update \
+      --catalog "$floating_skills_catalog" \
+      --bundle native-common \
+      --bundle codex-common \
       --bundle youtube \
-      --cache "$native_common_root/cdx-youtube-skills" \
+      --cache "$native_common_root/cdx-youtube-pro-skills" \
       || die 'failed to update native YouTube skills'
     node "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \

@@ -177,7 +177,8 @@ else:
         "COPILOT_HOME": str(copilot_home), "PATH": f"{bin_dir}:{env['PATH']}",
         "FIXTURE_ROOT": str(fixture), "FIXTURE_WORKSPACE": str(workspace),
     })
-    def check(runtime, mode, model="gpt-6-astra", effort="low", overrides=None, arguments=(), plan_effort="max"):
+    def check(runtime, mode, model="gpt-6-astra", effort=None, overrides=None, arguments=(), plan_effort="max"):
+        effort = effort or ("medium" if runtime == "codex" else "low")
         config_file = copilot_home / "config.json"
         stored_config = config_file.read_bytes() if config_file.exists() else None
         config_mode = config_file.stat().st_mode if config_file.exists() else None

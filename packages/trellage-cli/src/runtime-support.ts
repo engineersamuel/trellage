@@ -45,7 +45,8 @@ export class RuntimeSupportError extends Data.TaggedError("RuntimeSupportError")
 }> {}
 
 interface SelectedFile {
-  readonly property: keyof RuntimeSupportPaths
+  readonly property?: keyof RuntimeSupportPaths
+  readonly source?: string
   readonly role: string
   readonly destination: string
   readonly buildContextPath: string
@@ -85,6 +86,20 @@ const selectedFiles = (
           buildContextPath: ".runtime-support/trellage-session-bridge",
           mode: 0o755,
         },
+        ...["explorer", "worker", "tester", "researcher", "reviewer"].map((role) => ({
+          source: path.resolve(import.meta.dirname, "../../../prototypes/trellage-codex-common/agents", `${role}.toml`),
+          role: `codex-agent-${role}`,
+          destination: `/home/agent/.codex/agents/${role}.toml`,
+          buildContextPath: `assets/agents/${role}.toml`,
+          mode: 0o644,
+        })),
+        ...["LICENSE", "NOTICE"].map((name) => ({
+          source: path.resolve(import.meta.dirname, "../../../prototypes/trellage-codex-common", name),
+          role: `codex-agents-${name.toLowerCase()}`,
+          destination: `/usr/local/share/trellage/codex-agents/${name}`,
+          buildContextPath: `.runtime-support/codex-agents-${name}`,
+          mode: 0o644,
+        })),
       ]
     case "copilot":
       return [
@@ -257,8 +272,8 @@ export const createRuntimeSupportSnapshot = (
     const files = yield* Effect.forEach(
       selectedFiles(harnessKind, claudeAdapter, claudeMode),
       (selected) => {
-        const candidate = paths[selected.property]
-        const message = `${label} runtime support ${selected.property} must be a regular readable file: ${candidate ?? "missing"}`
+        const candidate = selected.source ?? (selected.property === undefined ? undefined : paths[selected.property])
+        const message = `${label} runtime support ${selected.property ?? selected.role} must be a regular readable file: ${candidate ?? "missing"}`
         return Effect.tryPromise({
           try: async () => {
             if (candidate === undefined) throw new Error(message)

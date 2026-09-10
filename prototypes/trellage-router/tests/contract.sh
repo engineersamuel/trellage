@@ -51,8 +51,8 @@ assert_no_upgrade_mutation() {
 
 assert_native_skills_refreshed() {
   jq -se --arg router "$runtime_parent/trx/bin/trx" '
-    length == 4 and all(.[]; .args[0] == "update" and .routerCommandPath == $router)
-  ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh all four caches once through its own router'
+    length == 5 and all(.[]; .args[0] == "update" and .routerCommandPath == $router)
+  ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh all five caches once through its own router'
   jq -r '.catalog.native[] | .launcher + ":skills-update " + .name' \
     "$fixture_root/guide-catalog.json" | sort >"$fixture_root/expected-skills-update.log"
   sort "$skills_update_log" >"$fixture_root/actual-skills-update.log"
@@ -695,9 +695,14 @@ XDG_DATA_HOME="$fixture_root/xdg-data" \
   || fail 'skills update did not delegate to the floating-skills manager'
 grep -Fxq native-common "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the native bundle'
+grep -Fxq codex-common "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the Codex bundle'
+grep -Fxq "$fixture_root/xdg-data/trellage/common/cdx-skills" \
+  "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the native Codex cache'
 grep -Fxq youtube "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the native YouTube bundle'
-grep -Fxq "$fixture_root/xdg-data/trellage/common/cdx-youtube-skills" \
+grep -Fxq "$fixture_root/xdg-data/trellage/common/cdx-youtube-pro-skills" \
   "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the native YouTube cache'
 grep -Fxq omp-community "$fixture_root/skills-update.argv" \
@@ -710,7 +715,7 @@ grep -Fxq guide-prompt-master "$fixture_root/skills-update.argv" \
 grep -Fxq "$fixture_home/.local/share/trellage/common/guide-prompt-master-skills" \
   "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the guide Prompt Master cache'
-[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 4 ]] \
+[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 5 ]] \
   || fail 'skills update did not invoke all bundle updates'
 rm "$fixture_bin/node"
 ln -s "$real_node" "$fixture_bin/node"
@@ -1193,7 +1198,7 @@ export TRX_SKILLS_UPDATE_LOG="$skills_update_log"
 reset_upgrade_logs
 TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" skills update >"$fixture_root/skills-without-bootstrap.out" 2>&1 \
   || fail 'skills update unexpectedly ran the development dependency bootstrap'
-[[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 4 ]] || fail 'standalone skills update did not refresh the four caches'
+[[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 5 ]] || fail 'standalone skills update did not refresh the five caches'
 [[ ! -s "$upgrade_log" && ! -s "$skills_update_log" ]] || fail 'standalone cache refresh changed profiles or ran bootstrap'
 reset_upgrade_logs
 : >"$discovery_log"

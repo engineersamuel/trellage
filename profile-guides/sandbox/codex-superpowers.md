@@ -60,8 +60,9 @@ workflows:
 ## Workflow Notes
 
 - Superpowers skills (brainstorming, writing-plans, test-driven-development, systematic-debugging, requesting/receiving-code-review, and related) trigger automatically from natural-language intent — there is no documented slash-command syntax for them.
+- The Pro preset provides four Luna execution roles (`explorer`, `worker`, `tester`, `researcher`) with max reasoning and an Astra reviewer with low reasoning. Invoke `$astra-orchestrator` explicitly or let normal skill discovery select it.
 - The bundled `full-stack-orchestration` role from `wshobson/agents` is available for larger tasks needing coordinated agent roles.
-- This profile runs Codex (`gpt-6-astra`, max reasoning) with `--dangerously-bypass-approvals-and-sandbox`, so it does not pause for approval prompts inside the container.
+- This profile runs Codex (`gpt-6-astra`, medium reasoning; max in plan mode) with `--dangerously-bypass-approvals-and-sandbox`, so it does not pause for approval prompts inside the container.
 
 ## Gotchas
 

@@ -255,7 +255,7 @@ jq -s -e '
   and ([.[] | select(.promptHash != "")] | length) == 2
   and any(.[]; (.args | index("agent")) and .tokenState == "absent")
   and any(.[]; (.args | index("copilot_agent")) and .tokenState == "set")
-  and any(.[]; (.args | index("agent")) and .codexModel == "gpt-6-astra" and .codexEffort == "low")
+  and any(.[]; (.args | index("agent")) and .codexModel == "gpt-6-astra" and .codexEffort == "medium")
   and any(.[]; (.args | index("copilot_agent")) and .copilotModel == "gpt-6-astra" and .copilotEffort == "low")
 ' "${run_calls[@]}" >/dev/null || fail 'prompt parity or Copilot-only secret scope failed'
 [[ "$(find "$gh_log_dir" -type f -name '*.txt' | wc -l | tr -d ' ')" == '1' ]] \
