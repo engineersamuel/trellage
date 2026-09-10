@@ -289,6 +289,19 @@ printf 'worktree-local\n'
 WORKTREE_COMMAND
 chmod 0755 "$dispatch_worktree/prototypes/trellage/trellage"
 ln -s "$dispatch_main/prototypes/trellage/trellage" "$dispatch_bin/trellage"
+cp "$prototype_dir/install-trellage.sh" "$dispatch_worktree/prototypes/trellage/"
+if ! TRELLAGE_INSTALL_DIR="$dispatch_bin" \
+  "$dispatch_worktree/prototypes/trellage/install-trellage.sh" install; then
+  fail 'linked-worktree install rejected the existing same-repository launcher'
+fi
+[[ "$(readlink "$dispatch_bin/trellage")" == "$dispatch_main/prototypes/trellage/trellage" ]] \
+  || fail 'linked-worktree install redirected the shared launcher'
+if TRELLAGE_INSTALL_DIR="$dispatch_bin" \
+  "$dispatch_worktree/prototypes/trellage/install-trellage.sh" uninstall; then
+  fail 'linked-worktree uninstall removed another checkout launcher'
+fi
+[[ -L "$dispatch_bin/trellage" ]] \
+  || fail 'linked-worktree uninstall changed the shared launcher'
 dispatch_git_bin="$test_root/dispatch git bin"
 dispatch_git_log="$test_root/dispatch-git-env.log"
 real_git="$(command -v git)"
@@ -344,6 +357,24 @@ set -euo pipefail
 printf 'unexpected\n' >>"$WORKTREE_DISPATCH_LOG"
 UNRELATED_COMMAND
 chmod 0755 "$unrelated_repo/prototypes/trellage/trellage"
+refusal_bin="$test_root/refusal bin"
+mkdir -p "$refusal_bin"
+for refused_target in \
+  "$unrelated_repo/prototypes/trellage/trellage" \
+  "$dispatch_main/missing/prototypes/trellage/trellage" \
+  "$dispatch_main/other-command"; do
+  if [[ "$refused_target" == "$dispatch_main/other-command" ]]; then
+    cp "$dispatch_main/prototypes/trellage/trellage" "$refused_target"
+  fi
+  ln -s "$refused_target" "$refusal_bin/trellage"
+  if TRELLAGE_INSTALL_DIR="$refusal_bin" \
+    "$dispatch_worktree/prototypes/trellage/install-trellage.sh" install; then
+    fail "linked-worktree installer accepted unrelated target: $refused_target"
+  fi
+  [[ "$(readlink "$refusal_bin/trellage")" == "$refused_target" ]] \
+    || fail 'linked-worktree installer changed a refused target'
+  rm -- "$refusal_bin/trellage"
+done
 if (
   cd "$unrelated_repo/nested directory"
   WORKTREE_DISPATCH_LOG="$unrelated_log" "$dispatch_bin/trellage" validate
