@@ -28,8 +28,20 @@ import tomllib
 
 config = tomllib.loads(Path("docker/codex-config.toml").read_text())
 assert config["model"] == "gpt-6-astra", "Codex model default changed"
-assert config["model_reasoning_effort"] == "low", "Codex reasoning default changed"
+assert config["model_reasoning_effort"] == "medium", "Codex reasoning default changed"
 assert config["plan_mode_reasoning_effort"] == "max", "Codex Plan reasoning default changed"
+assert config["agents"] == {
+    "enabled": True, "max_concurrent_threads_per_session": 4,
+    "default_subagent_model": "gpt-5.6-luna", "default_subagent_reasoning_effort": "max",
+}
+assert config["features"]["context_management"]["experimental_mode"] is True
+roles = Path("prototypes/trellage-codex-common/agents")
+for role in ("explorer", "worker", "tester", "researcher", "reviewer"):
+    agent = tomllib.loads((roles / f"{role}.toml").read_text())
+    assert agent["name"] == role and agent["description"] and agent["developer_instructions"]
+    assert agent["model"] == ("gpt-6-astra" if role == "reviewer" else "gpt-5.6-luna")
+    assert agent.get("model_reasoning_effort") == ("low" if role == "reviewer" else None)
+    assert "sandbox_mode" not in agent and "approval_policy" not in agent
 provider = config["model_providers"][config["model_provider"]]
 assert provider["base_url"] == "http://copilot-proxy-rs:8080/v1", "proxy URL is not container-local"
 assert provider["wire_api"] == "responses", "Codex is not using Responses"
@@ -104,7 +116,7 @@ override_copilot_compose_json="$(
 
 jq -e '
   .services.agent.environment.CODEX_MODEL == "gpt-6-astra"
-  and .services.agent.environment.CODEX_REASONING_EFFORT == "low"
+  and .services.agent.environment.CODEX_REASONING_EFFORT == "medium"
   and .services.agent.environment.CODEX_PLAN_MODE_REASONING_EFFORT == "max"
 ' <<<"$compose_json" >/dev/null || fail 'Codex launch defaults changed'
 jq -e '

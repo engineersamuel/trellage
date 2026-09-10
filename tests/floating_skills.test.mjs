@@ -761,3 +761,27 @@ test("concurrent first use shares one cache and reclaims malformed locks", async
   assert.match(await readFile(path.join(secondTarget, "fixture", "SKILL.md"), "utf8"), /version one/)
   assert.equal(await lstat(`${fixture.cache}.lock`).catch(() => undefined), undefined)
 })
+
+
+test("snapshot CLI excludes Codex-only skills and rejects discoverable collisions", async () => {
+  const root = await temporaryRoot()
+  const snapshot = path.join(root, "snapshot")
+  const target = path.join(root, "target")
+  for (const name of ["astra-orchestrator", "shared"]) {
+    await mkdir(path.join(snapshot, "skills", name), { recursive: true })
+    await writeFile(path.join(snapshot, "skills", name, "SKILL.md"), `# ${name}\n`)
+  }
+  await writeFile(path.join(snapshot, "managed-skills.txt"), "astra-orchestrator\nshared\n")
+  await writeFile(path.join(snapshot, "always-on.md"), "")
+  const cli = path.join(repositoryRoot, "scripts/floating-skills.mjs")
+  await syncSnapshot(snapshot, target)
+  await execFilePromise(process.execPath, [cli, "sync", "--output", snapshot, "--target", target,
+    "--exclude-skill", "astra-orchestrator"])
+  assert.equal(await lstat(path.join(target, "astra-orchestrator")).catch(() => undefined), undefined)
+  await execFilePromise(process.execPath, [cli, "verify", "--cache", snapshot, "--target", target,
+    "--exclude-skill", "astra-orchestrator"])
+  await mkdir(path.join(target, "astra-orchestrator"))
+  await writeFile(path.join(target, "astra-orchestrator", "SKILL.md"), "custom")
+  await assert.rejects(execFilePromise(process.execPath, [cli, "sync", "--output", snapshot, "--target", target,
+    "--exclude-skill", "astra-orchestrator"]), /excluded skill remains discoverable/)
+})

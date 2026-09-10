@@ -71,7 +71,16 @@ const renderMcp = (mcp: Mcp): ReadonlyArray<string> => [
 
 export const renderCodexConfig = (profile: Profile): string => {
   assertCodexProfile(profile)
-  return renderCodexConfiguration(profile.harness.codex, profile.mcps)
+  return `${renderCodexConfiguration(profile.harness.codex, profile.mcps)}
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 4
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "max"
+
+[features.context_management]
+experimental_mode = true
+`
 }
 
 export const renderCodexConfiguration = (codex: CodexProfile["harness"]["codex"], mcps: ReadonlyArray<Mcp>): string => {
@@ -176,6 +185,8 @@ ${renderBootstrap(profile, options)}
 "/home/agent/.codex/config.toml" = { source = "codex-config.toml", mode = "copy" }
 "/home/agent/.codex/skills" = { source = "assets/skills", mode = "copy" }
 "/home/agent/.codex/agents" = { source = "assets/agents", mode = "copy" }
+"/usr/local/share/trellage/codex-agents/LICENSE" = { source = ".runtime-support/codex-agents-LICENSE", mode = "copy" }
+"/usr/local/share/trellage/codex-agents/NOTICE" = { source = ".runtime-support/codex-agents-NOTICE", mode = "copy" }
 ${profile.skill_bundles.length > 0 ? '"/home/agent/.codex/AGENTS.md" = { source = "assets/AGENTS.md", mode = "copy" }' : ""}
 ${renderRuntimeDotfile(options, "runtime-entry")}
 ${renderSessionBridgeDotfile(options)}

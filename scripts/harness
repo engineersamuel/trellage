@@ -228,7 +228,7 @@ compose_for() {
   contestant_id="$(jq -r '.id' <<<"$contestant")"
   runtime="$(jq -r '.runtime' <<<"$contestant")"
   model="$(jq -r '.model' <<<"$contestant")"
-  reasoning_effort="$(jq -r '.reasoningEffort // "low"' <<<"$contestant")"
+  reasoning_effort="$(jq -r '.reasoningEffort // (if .runtime == "codex" then "medium" else "low" end)' <<<"$contestant")"
   port="$(jq -r '.port' <<<"$contestant")"
   experiment="$harness_id-$contestant_id"
   package_ref="$(jq -r '.packages[0].ref' <<<"$contestant")"

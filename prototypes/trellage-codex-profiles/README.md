@@ -3,12 +3,33 @@
 `cdx` runs the host Codex CLI with named, isolated user-state homes. The
 catalog contains `pstack`, `superpowers`, and the skill-only `youtube` profile.
 
-Every profile uses `gpt-6-astra` with `model_reasoning_effort = "low"` by default.
+Every profile uses `gpt-6-astra` with `model_reasoning_effort = "medium"` by default.
 Plan mode uses the same model with `plan_mode_reasoning_effort = "max"`.
 Setup, repair, and launch refresh these managed defaults while preserving
 profile-local settings. Pass `-m MODEL` and
 `-c 'model_reasoning_effort="LEVEL"'` to override the default mode for one launch.
 Use `-c 'plan_mode_reasoning_effort="LEVEL"'` to override plan mode separately.
+
+The [upstream Pro preset](https://github.com/donvito/codex-astra-luna-orchestrator/)
+sets default subagents to `gpt-5.6-luna` with `max` reasoning and allows four
+concurrent subagents. Five managed roles are installed under each profile's
+`home/agents`: `explorer`, `worker`, `tester`, and `researcher` pin Luna and
+inherit the configured subagent effort; `reviewer` pins Astra with `low`
+reasoning. Roles inherit the profile's permissions. Setup, repair, and launch
+refresh managed roles while preserving unrelated custom agents and refusing
+unmanaged collisions at managed role names.
+
+The `astra-orchestrator` skill participates in normal Codex skill discovery
+and can also be invoked explicitly with `$astra-orchestrator`. Standard Codex
+and YouTube use separate shared skill caches; existing profiles migrate on
+next launch, then reuse the cached snapshot offline. `trx skills check` and
+`trx skills update` include both variants.
+
+Both authentication modes set
+`features.context_management.experimental_mode = true`.
+[OpenAI's configuration reference](https://developers.openai.com/codex/config-reference)
+requires ChatGPT sign-in on an eligible plan for experimental context
+management. Provider selection and authentication are unchanged.
 
 ## Install
 
@@ -85,9 +106,10 @@ Older Codex installations without a built-in updater fail with a diagnostic;
 update those installations with their original package manager.
 
 `cdx skills-update PROFILE` copies and verifies managed skills from an
-existing cache after `trx skills update`. Plugin profiles use `native-common`;
-`youtube` uses the combined `native-common` and `youtube` snapshot at
-`${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cdx-youtube-skills`.
+existing cache after `trx skills update`. Plugin profiles use `native-common`
+and `codex-common` at
+`${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cdx-skills`;
+`youtube` adds the `youtube` bundle in the separate `cdx-youtube-pro-skills` cache.
 Custom skills are preserved. Missing profiles or caches, invalid ownership,
 unsafe paths, and name collisions fail closed. This command never fetches,
 runs Codex, changes plugins or authentication, or loads the YouTube Varlock
@@ -152,8 +174,8 @@ the native marketplace upgrade. YouTube update compares and publishes a staged
 floating-skill snapshot.
 
 The `youtube` profile installs only `youtube-full` from
-`ZeroPointRepo/youtube-skills`, in addition to the shared `native-common`
-bundle. It requires an existing nonempty `TRANSCRIPT_API_KEY` only for launch.
+`ZeroPointRepo/youtube-skills`, in addition to the shared `native-common` and `codex-common`
+bundles. It requires an existing nonempty `TRANSCRIPT_API_KEY` only for launch.
 The key value is inherited through a YouTube-specific Codex shell-environment
 policy only by the final Codex child. Outside the bundled Varlock process,
 launcher helper subprocesses do not inherit it, and it is not written to

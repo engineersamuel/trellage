@@ -85,7 +85,12 @@ legacy_entries="$(printf '%s\n' \
   './catalog.json' \
   './lib' \
   './lib/native-codex')"
-[ "$actual_entries" = "$expected_entries" ] || [ "$actual_entries" = "$legacy_entries" ] \
+orchestration_entries="$(printf '%s\n' "$skills_entries" \
+  './lib/codex-config.py' './lib/codex-agents.mjs' './lib/agents' \
+  './lib/agents/explorer.toml' './lib/agents/worker.toml' \
+  './lib/agents/tester.toml' './lib/agents/researcher.toml' \
+  './lib/agents/reviewer.toml' './lib/agents/LICENSE' './lib/agents/NOTICE' | LC_ALL=C sort)"
+[ "$actual_entries" = "$orchestration_entries" ] || [ "$actual_entries" = "$expected_entries" ] || [ "$actual_entries" = "$legacy_entries" ] \
   || [ "$actual_entries" = "$skills_entries" ] \
   || refuse "refusing unexpected content in owned runtime: $install_root"
 [ -z "$(find "$install_root" -type l -print -quit)" ] \
@@ -110,6 +115,12 @@ fi
 if [ -e "$install_root/native-skills.mjs" ]; then
   [ -f "$install_root/native-skills.mjs" ] && [ ! -L "$install_root/native-skills.mjs" ] \
     || refuse "unsafe Native skills helper: $install_root/native-skills.mjs"
+fi
+if [ "$actual_entries" = "$orchestration_entries" ]; then
+  for path in "$install_root/lib/codex-config.py" "$install_root/lib/codex-agents.mjs" \
+    "$install_root/lib/agents/"*; do
+    [ -f "$path" ] && [ ! -L "$path" ] || refuse "unsafe managed runtime file: $path"
+  done
 fi
 expected_after="$(sed -n '1p' "$recovery/sha256-after")"
 [ "$(wc -l <"$recovery/original-mode" | tr -d ' ')" -eq 1 ] \

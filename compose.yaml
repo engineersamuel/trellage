@@ -43,7 +43,7 @@ services:
     cpus: 4.0
     environment:
       CODEX_MODEL: ${CODEX_MODEL:-gpt-6-astra}
-      CODEX_REASONING_EFFORT: ${CODEX_REASONING_EFFORT:-low}
+      CODEX_REASONING_EFFORT: ${CODEX_REASONING_EFFORT:-medium}
       CODEX_PLAN_MODE_REASONING_EFFORT: ${CODEX_PLAN_MODE_REASONING_EFFORT:-max}
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001

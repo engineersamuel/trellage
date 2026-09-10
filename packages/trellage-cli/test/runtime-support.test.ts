@@ -68,7 +68,13 @@ describe("runtime support snapshots", () => {
     const pi = await Effect.runPromise(createRuntimeSupportSnapshot("pi", paths))
     const prime = await Effect.runPromise(createRuntimeSupportSnapshot("prime", paths))
 
-    expect(codex.files.map((file) => file.role)).toEqual(["runtime-entry", "session-bridge"])
+    expect(codex.files.map((file) => file.role)).toEqual([
+      "runtime-entry",
+      "session-bridge",
+      ...["explorer", "worker", "tester", "researcher", "reviewer"].map((role) => `codex-agent-${role}`),
+      "codex-agents-license",
+      "codex-agents-notice",
+    ])
     expect(copilot.files.map((file) => file.role)).toEqual([
       "runtime-copilot-entry",
       "copilot-model-settings",
@@ -88,7 +94,7 @@ describe("runtime support snapshots", () => {
     )
     expect(pi.files.map((file) => file.role)).toEqual(["runtime-pi-entry"])
     expect(prime.files.map((file) => file.role)).toEqual(["runtime-prime-entry"])
-    expect(codex.hash).toBe("sha256:3d9b6495114316b53167c92db08fc1504dcfd12109528773cbafad7d8001c87c")
+    expect(codex.hash).toBe("sha256:5c33d15d46392fd516771d2974bb945dbde37ffcdb6b896537b37f9310695067")
     expect((await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))).hash).toBe(codex.hash)
 
     const claudeMarketplace = await Effect.runPromise(

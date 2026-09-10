@@ -469,7 +469,7 @@ rename_exe = "copilot"`)
   })
 
   it.each(["codex", "copilot"] as const)(
-    "renders the authored %s profile with Astra, low default effort, and max plan effort",
+    "renders the authored %s profile with Astra, configured default effort, and max plan effort",
     async (kind) => {
       const name = kind === "codex" ? "codex-superpowers" : "copilot-hve"
       const profilePath = path.resolve(import.meta.dirname, "../../../profiles", name, "profile.toml")
@@ -481,7 +481,9 @@ rename_exe = "copilot"`)
       })
 
       expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_MODEL = "gpt-6-astra"`)
-      expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_REASONING_EFFORT = "low"`)
+      expect(rendered).toContain(
+        `TRELLAGE_${kind.toUpperCase()}_REASONING_EFFORT = "${kind === "codex" ? "medium" : "low"}"`,
+      )
       expect(rendered).toContain(`TRELLAGE_${kind.toUpperCase()}_PLAN_MODE_REASONING_EFFORT = "max"`)
     },
   )
@@ -492,39 +494,52 @@ rename_exe = "copilot"`)
     const config = renderCodexConfig(configured)
 
     expect(config).toContain('model = "gpt-6-astra"')
-    expect(config).toContain('model_reasoning_effort = "low"')
+    expect(config).toContain('model_reasoning_effort = "medium"')
+    expect(config).toContain(
+      '[agents]\nenabled = true\nmax_concurrent_threads_per_session = 4\ndefault_subagent_model = "gpt-5.6-luna"\ndefault_subagent_reasoning_effort = "max"',
+    )
+    expect(config).toContain("[features.context_management]\nexperimental_mode = true")
     expect(config).toContain('plan_mode_reasoning_effort = "max"')
   })
 
   it("renders Codex providers and stdio/HTTP MCPs without secret values", () => {
     expect(renderCodexConfig(profile)).toMatchInlineSnapshot(`
-      "model = \"gpt-5.5\"
-      model_provider = \"proxy\"
-      model_reasoning_effort = \"medium\"
-      plan_mode_reasoning_effort = \"medium\"
+      "model = "gpt-5.5"
+      model_provider = "proxy"
+      model_reasoning_effort = "medium"
+      plan_mode_reasoning_effort = "medium"
 
       [model_providers.proxy]
-      name = \"Copilot Proxy\"
-      base_url = \"http://proxy:8080/v1\"
-      wire_api = \"responses\"
+      name = "Copilot Proxy"
+      base_url = "http://proxy:8080/v1"
+      wire_api = "responses"
       request_max_retries = 3
       stream_max_retries = 5
       stream_idle_timeout_ms = 300000
 
       [mcp_servers.local]
-      command = \"local-mcp\"
-      args = [\"serve\"]
-      env = { MODE = \"safe\" }
-      env_vars = [\"TOKEN\"]
-      enabled_tools = [\"search\"]
-      disabled_tools = [\"delete\"]
+      command = "local-mcp"
+      args = ["serve"]
+      env = { MODE = "safe" }
+      env_vars = ["TOKEN"]
+      enabled_tools = ["search"]
+      disabled_tools = ["delete"]
 
       [mcp_servers.docs]
-      url = \"https://example.test/mcp\"
+      url = "https://example.test/mcp"
       required = true
-      bearer_token_env_var = \"DOCS_TOKEN\"
-      http_headers = { \"X-Mode\" = \"safe\" }
-      env_http_headers = { Authorization = \"DOCS_TOKEN\" }
+      bearer_token_env_var = "DOCS_TOKEN"
+      http_headers = { "X-Mode" = "safe" }
+      env_http_headers = { Authorization = "DOCS_TOKEN" }
+
+      [agents]
+      enabled = true
+      max_concurrent_threads_per_session = 4
+      default_subagent_model = "gpt-5.6-luna"
+      default_subagent_reasoning_effort = "max"
+
+      [features.context_management]
+      experimental_mode = true
       "
     `)
   })

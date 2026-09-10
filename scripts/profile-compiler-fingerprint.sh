@@ -18,6 +18,9 @@ inputs=(
   "$guide_core/tsconfig.build.json"
   "$guide_core"/src/*.ts
   "$package_root"/src/*.ts
+  "$repo_root"/prototypes/trellage-codex-common/agents/*.toml
+  "$repo_root"/prototypes/trellage-codex-common/LICENSE
+  "$repo_root"/prototypes/trellage-codex-common/NOTICE
 )
 
 for input in "${inputs[@]}"; do

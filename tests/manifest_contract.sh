@@ -31,7 +31,7 @@ jq -e '
     and .service == "agent"
     and .port == 4173
     and .model == "gpt-6-astra"
-    and .reasoningEffort == "low"
+    and .reasoningEffort == "medium"
     and .provider == "copilot-proxy-rs"
     and .packages == [{
       "source": "https://github.com/wshobson/agents.git",

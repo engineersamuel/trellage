@@ -1862,6 +1862,13 @@ select = ["hve-core"]
       ),
     )
 
+    for (const role of ["explorer", "worker", "tester", "researcher", "reviewer"]) {
+      const agent = await readFile(path.join(context, "assets", "agents", `${role}.toml`), "utf8")
+      expect(agent).toContain(`name = "${role}"`)
+      expect(agent).toContain(`model = "${role === "reviewer" ? "gpt-6-astra" : "gpt-5.6-luna"}"`)
+      expect(agent).not.toContain("sandbox_mode")
+      expect(agent).not.toContain("approval_policy")
+    }
     expect.soft(path.basename(context)).toMatch(/^trellage-build-/)
     await expect(readFile(path.join(context, "assets", "agents", "native.toml"), "utf8")).resolves.toContain("native")
     await expect(readFile(path.join(context, "assets", "skills", "compat", "SKILL.md"), "utf8")).resolves.toBe(

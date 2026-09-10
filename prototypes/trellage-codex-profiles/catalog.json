@@ -31,7 +31,8 @@
       "plugin": "pstack-for-codex@pstack-for-codex-local",
       "source": null,
       "skillBundles": [
-        "native-common"
+        "native-common",
+        "codex-common"
       ],
       "managedSkills": [],
       "requiredEnvironment": [],
@@ -67,7 +68,8 @@
       "plugin": "superpowers@superpowers-marketplace",
       "source": null,
       "skillBundles": [
-        "native-common"
+        "native-common",
+        "codex-common"
       ],
       "managedSkills": [],
       "requiredEnvironment": [],
@@ -99,6 +101,7 @@
       "source": "ZeroPointRepo/youtube-skills",
       "skillBundles": [
         "native-common",
+        "codex-common",
         "youtube"
       ],
       "managedSkills": [

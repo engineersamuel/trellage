@@ -128,8 +128,8 @@ fixture_session_bridge="$fixture_profiles/lib/trellage-session-bridge.py"
 fixture_catalog="$fixture_profiles/catalog.json"
 fixture_skills_runtime="$fixture_root/common/floating-skills-runtime"
 fixture_environment_runtime="$fixture_root/common/native-environment-runtime"
-fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/skills"
-fixture_youtube_skills_cache="$fixture_root/home/.local/share/trellage/common/cdx-youtube-skills"
+fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/cdx-skills"
+fixture_youtube_skills_cache="$fixture_root/home/.local/share/trellage/common/cdx-youtube-pro-skills"
 mkdir -p \
   "$(dirname "$fixture_launcher")" \
   "$(dirname "$fixture_common_launcher")" \
@@ -141,6 +141,9 @@ mkdir -p \
   "$fixture_youtube_skills_cache/skills/youtube-full"
 cp "$launcher" "$fixture_launcher"
 cp "$common_launcher" "$fixture_common_launcher"
+cp "$root/../trellage-codex-common/codex-config.py" "$fixture_profiles/lib/"
+cp "$root/../trellage-codex-common/codex-agents.mjs" "$fixture_profiles/lib/"
+cp -R "$root/../trellage-codex-common/agents" "$fixture_profiles/lib/"
 cp "$root/../trellage-claude-common/native-skills.mjs" "$fixture_profiles/native-skills.mjs"
 cp "$root/../../scripts/trellage-session-bridge.py" "$fixture_session_bridge"
 cp "$catalog" "$fixture_catalog"

@@ -21,12 +21,15 @@ home="$fixture/home"
 fake_bin="$fixture/fake-bin"
 state="$fixture/state"
 common_runtime="$fixture/common/floating-skills-runtime"
-shared_cache="$home/.local/share/trellage/common/skills"
+shared_cache="$home/.local/share/trellage/common/cdx-skills"
 mkdir -p "$runtime/bin" "$runtime/lib" "$fake_bin" "$state" "$home" \
   "$common_runtime" "$shared_cache/skills/fixture-personal"
 cp "$root/bin/cdx" "$runtime/bin/cdx"
 cp "$root/catalog.json" "$runtime/catalog.json"
 cp "$root/../trellage-codex-common/native-codex" "$runtime/lib/native-codex"
+cp "$root/../trellage-codex-common/codex-config.py" "$runtime/lib/"
+cp "$root/../trellage-codex-common/codex-agents.mjs" "$runtime/lib/"
+cp -R "$root/../trellage-codex-common/agents" "$runtime/lib/"
 cp "$repository_root/scripts/trellage-session-bridge.py" \
   "$runtime/lib/trellage-session-bridge.py"
 chmod 0755 "$runtime/bin/cdx" "$runtime/lib/native-codex" \
@@ -223,7 +226,9 @@ run_cdx doctor pstack >"$fixture/doctor.out" || fail 'doctor failed'
 grep -Fqx -- 'pstack: healthy' "$fixture/doctor.out" || fail 'doctor output differs'
 profile_home="$home/.local/share/trellage/profiles/codex/pstack/home"
 [ -d "$profile_home" ] && [ ! -L "$profile_home" ] || fail 'profile home differs'
-[ ! -e "$profile_home/agents" ] || fail 'optional agents were installed'
+[ "$(find "$profile_home/agents" -type f -name '*.toml' | wc -l | tr -d ' ')" = 5 ] \
+  || fail 'managed orchestration roles differ'
+[ ! -e "$profile_home/agents/benny.toml" ] || fail 'optional pstack agents were installed'
 [ ! -e "$profile_home/benny" ] || fail 'Benny was enabled'
 
 run_cdx inventory pstack --json >"$fixture/inventory.json"

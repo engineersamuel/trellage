@@ -826,7 +826,8 @@ const checkSharedCommand = async (catalog) => {
   const common = path.join(os.homedir(), ".local", "share", "trellage", "common")
   const variants = [
     { name: "native-common", bundles: ["native-common"], cache: defaultCache() },
-    { name: "youtube", bundles: ["native-common", "youtube"], cache: path.join(path.dirname(defaultCache()), "cdx-youtube-skills") },
+    { name: "codex", bundles: ["native-common", "codex-common"], cache: path.join(path.dirname(defaultCache()), "cdx-skills") },
+    { name: "youtube", bundles: ["native-common", "codex-common", "youtube"], cache: path.join(path.dirname(defaultCache()), "cdx-youtube-pro-skills") },
     { name: "omp-community", bundles: ["omp-community"], cache: path.join(common, "omp-community-skills") },
     { name: "guide-prompt-master", bundles: ["guide-prompt-master"], cache: path.join(common, "guide-prompt-master-skills") },
   ]
@@ -934,12 +935,15 @@ const defaultCache = () =>
 
 const parseArguments = (arguments_) => {
   const command = arguments_[0]
-  const options = { bundles: [] }
+  const options = { bundles: [], excluded: [] }
   for (let index = 1; index < arguments_.length; index += 1) {
     const argument = arguments_[index]
     const value = arguments_[index + 1]
     if (argument === "--bundle" && value !== undefined) {
       options.bundles.push(value)
+      index += 1
+    } else if (argument === "--exclude-skill" && value !== undefined) {
+      options.excluded.push(value)
       index += 1
     } else if (
       ["--catalog", "--output", "--target", "--cache", "--skills-cli"].includes(argument) &&
@@ -949,7 +953,7 @@ const parseArguments = (arguments_) => {
       index += 1
     } else {
       fail(
-        "usage: floating-skills.mjs <stage|ensure|check|update|status|sync|verify|verify-repairable> [--bundle NAME] [--catalog FILE] [--output DIR] [--target DIR] [--cache DIR] [--skills-cli FILE]",
+        "usage: floating-skills.mjs <stage|ensure|check|update|status|sync|verify|verify-repairable> [--bundle NAME] [--catalog FILE] [--output DIR] [--target DIR] [--cache DIR] [--skills-cli FILE] [--exclude-skill NAME]",
       )
     }
   }
@@ -969,7 +973,7 @@ const stageCommand = async (catalog, bundles, options) => {
 
 const syncCommand = async (options) => {
   if (options.output === undefined || options.target === undefined) fail("sync requires --output and --target")
-  await syncSnapshot(options.output, options.target)
+  await syncSnapshot(options.output, options.target, options.excluded)
 }
 
 const ensureCommand = async (catalog, bundles, cache, options) => {
@@ -1036,7 +1040,7 @@ const statusCommand = async (bundles, cache) => {
 
 const verifyCommand = async (cache, options) => {
   if (options.target === undefined) fail("verify requires --target")
-  await verifyTarget(cache, options.target)
+  await verifyTarget(cache, options.target, options.excluded)
 }
 
 const verifyRepairableCommand = async (options) => {
