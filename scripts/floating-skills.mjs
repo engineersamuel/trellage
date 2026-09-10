@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile, spawn } from "node:child_process"
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -567,6 +567,17 @@ const assertNoUnmanagedCollisions = async (targetPath, sourceNames, managed) => 
   }
 }
 
+const makeCopiedDirectoriesWritable = async (directory) => {
+  const status = await lstat(directory)
+  if (!status.isDirectory() || status.isSymbolicLink()) fail(`invalid copied skill directory: ${directory}`)
+  // Image snapshots are read-only. Their private copies must support rename,
+  // rollback, and later removal without changing the source snapshot.
+  await chmod(directory, (status.mode & 0o777) | 0o700)
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) await makeCopiedDirectoriesWritable(path.join(directory, entry.name))
+  }
+}
+
 const stageTargetSkills = async (sourceSkills, sourceNames, staged) => {
   for (const name of sourceNames) {
     await cp(path.join(sourceSkills, name), path.join(staged, name), {
@@ -575,6 +586,7 @@ const stageTargetSkills = async (sourceSkills, sourceNames, staged) => {
       errorOnExist: true,
       verbatimSymlinks: true,
     })
+    await makeCopiedDirectoriesWritable(path.join(staged, name))
   }
 }
 
