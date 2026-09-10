@@ -133,6 +133,11 @@ mise run install-trellage
 ```
 
 Set `TRELLAGE_INSTALL_DIR` to override the destination directory. The installer refuses to overwrite another command or symlink and never creates a `harness` compatibility link.
+When the existing link points to the standard launcher in another worktree of
+the same Git repository, installation succeeds without changing the link.
+The launcher already dispatches to the current worktree. Separate clones,
+broken links, and unrelated commands still fail closed. Uninstall only removes
+the invoking checkout's exact link.
 
 The command remains linked to this prototype directory. Outside the Trellage
 repository, bundled profile discovery therefore uses the `profiles/` directory

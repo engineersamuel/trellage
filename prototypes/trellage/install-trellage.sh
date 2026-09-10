@@ -54,6 +54,29 @@ is_owned_link() {
   is_owned_link_at "$destination"
 }
 
+command_common_dir() (
+  local candidate="$1" root common_dir
+  [[ -f "$candidate" && -x "$candidate" && ! -L "$candidate" ]] || return 1
+  unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
+  root="$(git -C "$(dirname "$candidate")" rev-parse --show-toplevel 2>/dev/null)" \
+    || return 1
+  root="$(cd -P "$root" && pwd)" || return 1
+  [[ "$candidate" == "$root/prototypes/trellage/trellage" ]] || return 1
+  common_dir="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  [[ "$common_dir" == /* ]] || common_dir="$root/$common_dir"
+  cd -P "$common_dir" && pwd
+)
+
+is_same_repository_link() {
+  local target current_common target_common
+  [[ -L "$destination" ]] || return 1
+  target="$(readlink -- "$destination")" || return 1
+  [[ "$target" == /* ]] || return 1
+  current_common="$(command_common_dir "$command_path")" || return 1
+  target_common="$(command_common_dir "$target")" || return 1
+  [[ "$current_common" == "$target_common" ]]
+}
+
 restore_quarantined_path() {
   local quarantine="$1"
   [[ ! -e "$destination" && ! -L "$destination" ]] || return 1
@@ -90,6 +113,10 @@ case "$action" in
   install)
     mkdir -p -- "$install_dir"
     if [[ -e "$destination" || -L "$destination" ]]; then
+      if ! is_owned_link && is_same_repository_link; then
+        printf 'trellage installer: preserving same-repository launcher at %s\n' "$destination"
+        exit 0
+      fi
       is_owned_link || fail "refusing to overwrite unrelated path: $destination"
       printf 'trellage installer: already installed at %s\n' "$destination"
       exit 0
