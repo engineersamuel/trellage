@@ -34,7 +34,7 @@ workflows:
       Use the Rundown output style to provide a clear status and handoff for
       {{intent}}.
   - id: general-engineering-task
-    description: Delegate an implementation, debugging, or review task to Claude Opus 5, with the shared native-common skill bundle (engineersamuel skills plus show-me) available for repository hygiene, naming, and review support.
+    description: Delegate an implementation, debugging, or review task to Claude Opus 5, with the shared native-common skill bundle (engineersamuel skills, show-me, and manually activated i-have-adhd) available for repository hygiene, naming, and review support.
     examples:
       - Review this PR diff for correctness and naming issues
       - Debug why this test intermittently fails
@@ -78,7 +78,8 @@ authoritative operational reference.
 - Every `setup`, `doctor`, `repair`, and launch verifies proxy health and that
   `claude-opus-5` is advertised before running.
 - The profile also installs the shared `native-common` floating skill bundle
-  (see `skills.json`: `engineersamuel` wildcard selection plus `show-me`), so
+  (see `skills.json`: `engineersamuel` wildcard selection, `show-me`, and
+  manually activated `i-have-adhd`), so
   general-purpose repository skills remain available alongside Claude's own
   tool use.
 - The Rundown output style is applied at the launcher level (all launches of

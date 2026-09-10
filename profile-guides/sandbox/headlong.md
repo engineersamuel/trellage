@@ -107,6 +107,12 @@ Headlong runs as a persistent service. Exiting the attached shell does not
 stop its mind. Use Trellage `stop`, `start`, and `destroy` commands to manage
 the profile container lifecycle.
 
+`i-have-adhd` is available only through an explicit file-read request in the
+Headlong conversation. Ask the agent to read and apply
+`/home/agent/.headlong/.trellage/skills/i-have-adhd/SKILL.md`.
+Trellage keeps it outside both identity skill registries because Headlong
+ignores the manual-invocation metadata. It is not a `skills show` entry.
+
 ## Gotchas
 
 - Stop or destroy the profile explicitly when the work is complete.

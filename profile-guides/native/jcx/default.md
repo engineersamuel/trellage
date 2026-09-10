@@ -61,7 +61,8 @@ routed through keyless `copilot-proxy-rs` and defaulting to `gpt-5.6-sol` with
   sessions, authentication, and memory never touch a personal `jcode`
   installation.
 - You want the shared `native-common` floating skill bundle (`engineersamuel`
-  wildcard plus `show-me`) available alongside jcode's own tools.
+  wildcard, `show-me`, and manually activated `i-have-adhd`) available
+  alongside jcode's own tools.
 
 ## Avoid This Profile When
 
@@ -74,6 +75,11 @@ routed through keyless `copilot-proxy-rs` and defaulting to `gpt-5.6-sol` with
   is written, and the managed config always targets `copilot-proxy-rs`.
 
 ## Workflow Notes
+
+- Use `jcx skill i-have-adhd "PROMPT"` for a one-shot request with this output
+  skill. Its managed copy stays outside JCode's automatic skill discovery;
+  `/i-have-adhd` is not registered in JCode. See the native JCode README for
+  explicit use in an existing interactive session.
 
 - Bare `jcx`, `jcx default`, and `jcx run "..."` are equivalent entry points.
 - Every launch sets `JCODE_NO_TELEMETRY=1` and passes `--no-update` before

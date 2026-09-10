@@ -63,7 +63,8 @@ extension set. See `prototypes/trellage-picx-profiles/README.md`.
   sessions directory) that never touches `~/.pi`, `~/.omp`, or a host Pi
   installation.
 - You want the shared `native-common` floating skill bundle (`engineersamuel`
-  wildcard plus `show-me`) installed into the isolated profile.
+  wildcard, `show-me`, and manually activated `i-have-adhd`) installed into
+  the isolated profile.
 
 ## Avoid This Profile When
 

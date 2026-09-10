@@ -5,6 +5,7 @@ Shared Native Claude runtime consumed by owned Claude launchers: `cldx` and
 owns `native-claude`, an executable Bash script that centralizes shared
 Claude-profile logic, and `native-skills.mjs`, the cache-only skill sync
 adapter installed in all ten Native launcher runtimes.
+The optional `manual-skills.mjs` adapter is installed only for `jcx`.
 
 ## Internal API
 
@@ -79,6 +80,21 @@ skills and other unmanaged files are preserved; name collisions fail closed.
 The default Native cache is
 `${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills`.
 Run `trx skills update` before a profile sync to refresh the cache.
+
+`manual-skills.mjs MANAGER ensure|sync|verify|fresh|prompt CATALOG CACHE LIBRARY TARGET SKILL`
+keeps a complete managed library outside the harness home and excludes the
+selected skill from the harness's discovered target. It reuses the shared
+snapshot, ownership, collision, and verification logic. Existing managed copies
+can be moved out of discovery; unmanaged collisions stop the operation.
+`ensure` uses `native-common` and fetches only if the cache is absent. `sync`
+uses the existing cache, `fresh` is read-only, and `prompt` returns only a verified
+manual skill body for an explicit request.
+
+JCode installs both adapters with `native-skills.mjs --install-manual RUNTIME`;
+the normal `--install` operation remains unchanged for other launchers.
+The programmatic `syncCachedSkills` and `checkFreshSkills` APIs accept an optional
+third tuple item, `[CACHE, TARGET, EXCLUDED_NAMES]`, for the discovered copy.
+The private library still receives the complete snapshot.
 
 The offline cross-launcher contract is
 `node --test prototypes/trellage-claude-common/tests/native-skills.test.mjs`

@@ -114,6 +114,7 @@ const fixtureFor = async (context, descriptor) => {
   await copy(path.join(source, "bin", descriptor.alias), path.join(runtime, "bin", descriptor.alias))
   await copy(path.join(source, "catalog.json"), path.join(runtime, "catalog.json"))
   await copy(path.join(common, "native-skills.mjs"), path.join(runtime, "native-skills.mjs"))
+  await copy(path.join(common, "manual-skills.mjs"), path.join(runtime, "manual-skills.mjs"))
   await copy(manager, path.join(runtime, "../common/floating-skills-runtime/floating-skills.mjs"))
   await copy(path.join(repository, "skills.json"), path.join(runtime, "../common/floating-skills-runtime/skills.json"))
   await installSharedRuntime(fixture)
@@ -228,6 +229,9 @@ const seedProfile = async (fixture, name) => {
   const cache = name === "youtube" ? fixture.youtubeCache : fixture.cache
   const profile = { name, root, home, targets: [await seedSkillTarget(cache, home)], guards: [] }
   await markOwned(fixture, root)
+  if (fixture.descriptor.alias === "jcx") {
+    await syncSnapshot(cache, path.join(root, "skill-library"))
+  }
   if (fixture.descriptor.alias === "omp") {
     const target = path.join(home, "community-skills")
     await syncSnapshot(fixture.communityCache, target)
@@ -447,7 +451,7 @@ test("older skill managers fail closed before fetching or installing", async (co
 })
 
 for (const descriptor of launchers) {
-  if (["cpx", "cdx", "cldx", "fmx"].includes(descriptor.alias)) {
+  if (["cpx", "cdx", "cldx", "fmx", "jcx"].includes(descriptor.alias)) {
     test(`${descriptor.alias} cleans skill check staging when cancelled`, async (context) => {
       const fixture = await fixtureFor(context, descriptor)
       await seedCaches(fixture, 1)

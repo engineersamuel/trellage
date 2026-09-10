@@ -178,6 +178,10 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
     "https://github.com/ZeroPointRepo/youtube-skills.git",
   )
   assert.equal(catalog.sources["youtube-skills"].allowExecutables, false)
+  assert.deepEqual(catalog.sources["i-have-adhd"].select, ["i-have-adhd"])
+  assert.equal(catalog.sources["i-have-adhd"].repository, "https://github.com/ayghri/i-have-adhd.git")
+  assert.equal(catalog.sources["i-have-adhd"].alwaysOn, false)
+  assert.equal(catalog.sources["i-have-adhd"].allowExecutables, false)
   const ompCommunityNames = catalog.bundles["omp-community"].flatMap(
     (sourceId) => catalog.sources[sourceId].select,
   )
@@ -189,6 +193,7 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   assert.deepEqual(catalog.sources.engineersamuel.required, ["ui-guidelines"])
   for (const bundle of ["native-common", "sandbox-common", "comparison-common"]) {
     assert.ok(catalog.bundles[bundle].includes("engineersamuel"))
+    assert.ok(catalog.bundles[bundle].includes("i-have-adhd"))
   }
   assert.doesNotMatch(source, /"(?:ref|commit|integrity|digest|fetchedAt)"\s*:/)
   assert.throws(
@@ -621,13 +626,19 @@ test("repair preflight accepts managed drift and rejects unsafe targets", async 
   await assert.rejects(verifyRepairableTarget(fixture.target), /invalid skill target/)
 })
 
-test("generic sources use the configured materializer", async (t) => {
+test("generic materialization and sync preserve manual activation without enabling it", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "trellage-floating-skills-generic-"))
   t.after(() => rm(root, { recursive: true, force: true }))
   const repository = path.join(root, "repository")
-  const selected = path.join(repository, ".agents", "skills", "generic")
-  await mkdir(selected, { recursive: true })
-  await writeFile(path.join(selected, "SKILL.md"), "---\nname: generic\n---\n\nsource\n")
+  const selected = path.join(repository, "skills", "generic")
+  const manualInstructions = "---\nname: generic\ndisable-model-invocation: true\n---\n\nmanual instructions\n"
+  const manualPolicy = "policy:\n  allow_implicit_invocation: false\n"
+  const automatic = path.join(repository, "skills", "automatic")
+  await mkdir(path.join(selected, "agents"), { recursive: true })
+  await mkdir(automatic, { recursive: true })
+  await writeFile(path.join(selected, "SKILL.md"), manualInstructions)
+  await writeFile(path.join(selected, "agents", "openai.yaml"), manualPolicy)
+  await writeFile(path.join(automatic, "SKILL.md"), "---\nname: automatic\n---\n\nautomatic instructions\n")
   await initRepository(repository)
   await commit(repository, "initial generic skill")
 
@@ -637,11 +648,11 @@ test("generic sources use the configured materializer", async (t) => {
     `#!/usr/bin/env node
 const fs = require("node:fs")
 const path = require("node:path")
-const names = process.argv.flatMap((value, index, values) => value === "--skill" ? [values[index + 1]] : [])
+const source = process.argv[process.argv.indexOf("add") + 1]
+const names = process.argv.slice(process.argv.indexOf("--skill") + 1, process.argv.indexOf("--agent"))
 for (const name of names) {
   const output = path.join(process.cwd(), ".agents", "skills", name)
-  fs.mkdirSync(output, { recursive: true })
-  fs.writeFileSync(path.join(output, "SKILL.md"), "---\\nname: " + name + "\\n---\\n\\ngenerated\\n")
+  fs.cpSync(path.join(source, "skills", name), output, { recursive: true })
 }
 `,
   )
@@ -659,15 +670,33 @@ for (const name of names) {
           allowExecutables: false,
           allowWildcard: false,
         },
+        automatic: {
+          id: "automatic",
+          repository,
+          adapter: "generic",
+          select: ["automatic"],
+          alwaysOn: true,
+          allowExecutables: false,
+          allowWildcard: false,
+        },
       },
-      bundles: { test: ["generic"] },
+      bundles: { test: ["generic", "automatic"] },
     },
     bundleIds: ["test"],
     destination: output,
     skillsCli: materializer,
   })
 
-  assert.match(await readFile(path.join(output, "skills", "generic", "SKILL.md"), "utf8"), /generated/)
+  const alwaysOn = await readFile(path.join(output, "always-on.md"), "utf8")
+  assert.match(alwaysOn, /# Trellage managed always-on skill: automatic\n/)
+  assert.match(alwaysOn, /automatic instructions/)
+  assert.doesNotMatch(alwaysOn, /generic|manual instructions/)
+
+  const target = path.join(root, "profile", "skills")
+  await syncSnapshot(output, target)
+  assert.deepEqual(await verifyTarget(output, target), ["automatic", "generic"])
+  assert.equal(await readFile(path.join(target, "generic", "SKILL.md"), "utf8"), manualInstructions)
+  assert.equal(await readFile(path.join(target, "generic", "agents", "openai.yaml"), "utf8"), manualPolicy)
 })
 
 test("runtime publication restores the previous version when replacement fails", async () => {

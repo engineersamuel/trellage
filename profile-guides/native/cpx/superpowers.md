@@ -90,7 +90,8 @@ plugin from `obra/superpowers-marketplace`, the same skill library used by
   `superpowers` source selection (`https://github.com/obra/superpowers.git`),
   which the installed `superpowers-marketplace` plugin wraps.
 - The profile also carries the shared `native-common` floating skill bundle
-  (see `skills.json`: `engineersamuel` wildcard plus `show-me`), so
+  (see `skills.json`: `engineersamuel` wildcard, `show-me`, and manually
+  activated `i-have-adhd`), so
   general-purpose repository skills remain available alongside superpowers'.
 - Update uses the native marketplace upgrade mechanism (`cpx update
   superpowers`); setup/launch/update/repair remove forbidden Superpowers

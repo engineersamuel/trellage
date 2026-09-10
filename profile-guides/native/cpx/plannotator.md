@@ -89,6 +89,7 @@ self-contained visual artifacts: `design-artifact`, `html`, `html-diagram`,
 ## Gotchas
 
 - The profile also carries the shared `native-common` floating skill bundle,
-  including `engineersamuel/skills` and `show-me`.
+  including `engineersamuel/skills`, `show-me`, and manually activated
+  `i-have-adhd`.
 - `cpx update --check plannotator` compares the installed manifest version
   with the official upstream `.codex-plugin/plugin.json`.

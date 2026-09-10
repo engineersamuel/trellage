@@ -50,6 +50,35 @@ and runtime receipts are preserved. Missing caches, invalid ownership, unsafe
 paths, and name collisions fail closed. It never fetches, runs jcode, or
 checks or starts the proxy.
 
+## Manual output skill
+
+The shared bundle includes `i-have-adhd`, but JCode does not honor its
+`disable-model-invocation` metadata. `jcx` keeps a complete managed skill library
+outside `JCODE_HOME` and excludes this skill from `home/skills`, where JCode
+discovers skills automatically. Other skills remain available as before.
+
+Apply the skill to one explicit request:
+
+```bash
+jcx skill i-have-adhd "Summarize the current branch"
+```
+
+This command uses JCode's `run` command and exits after the response. It does not
+register `/i-have-adhd` or enable the skill for later ordinary launches.
+For an existing interactive JCode session, explicitly ask JCode to read and apply:
+
+```text
+~/.local/share/trellage/profiles/jcode/default/skill-library/i-have-adhd/SKILL.md
+```
+
+The mode then follows the upstream session rules; request `stop adhd mode` or
+`normal mode` to stop it. Install the updated launcher before `trx skills update`.
+Setup, launch, repair, and `skills-update` maintain both managed copies. An
+unmanaged `home/skills/i-have-adhd` collision stops the operation rather than
+deleting user content or allowing automatic discovery.
+
+## Profile state and launch
+
 Profile state lives at:
 
 ```text

@@ -536,6 +536,21 @@ the active identity kernel. Headlong uses the outer Trellage container as its
 sandbox. No Docker socket is mounted and no nested Docker daemon is started.
 Prompt, resume, model override, and structured output remain unsupported.
 
+`i-have-adhd` requires manual activation. Headlong does not enforce its upstream
+manual-only metadata, so Trellage keeps the skill in the private managed store
+and does not link it into any identity's `skills` or `kernel` directory.
+In the Headlong conversation, explicitly ask it to read and apply:
+
+```text
+/home/agent/.headlong/.trellage/skills/i-have-adhd/SKILL.md
+```
+
+The skill is not registered with `skills show`. Request `normal mode` or
+`stop adhd mode` to stop it after activation. Existing Trellage-owned links
+are removed on synchronization; unmanaged name collisions stop the launch
+without deleting user content. Rebuild the Headlong image to receive this
+runtime behavior.
+
 ## Pi with Oh My Pi
 
 The `pi-oh-my-pi` profile resolves the latest stable standalone `omp` executable

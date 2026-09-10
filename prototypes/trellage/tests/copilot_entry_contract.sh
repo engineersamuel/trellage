@@ -3,6 +3,7 @@ set -euo pipefail
 
 prototype_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 entry="$prototype_dir/runtime-copilot-entry.sh"
+source "$prototype_dir/../../tests/helpers/sandbox_entry_fixture.sh"
 root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-copilot-entry.XXXXXX")"
 image_ref="trellage-copilot-entry-contract:test-$$"
 fixture_image_created=false
@@ -11,19 +12,21 @@ fixture_source_pulled=false
 
 cleanup() {
   local status=$?
+  trap - EXIT
+  if ! sandbox_fixture_home_cleanup; then
+    printf 'Copilot entry contract: fixture home cleanup failed\n' >&2
+    [[ "$status" -ne 0 ]] || status=1
+  fi
   if [[ "$fixture_image_created" == true ]]; then
-    docker run --rm --network none --user '0:0' \
-      --entrypoint /bin/bash \
-      --mount "type=bind,src=$root/runtime,dst=/cleanup-runtime" \
-      --mount "type=bind,src=$root/output,dst=/cleanup-output" \
-      "$image_ref" -c 'chmod -R a+rwX /cleanup-runtime /cleanup-output' \
-      >/dev/null 2>&1 || true
     docker image rm --force "$image_ref" >/dev/null 2>&1 || true
   fi
   if [[ "$fixture_source_pulled" == true ]]; then
     docker image rm "$fixture_source_ref" >/dev/null 2>&1 || true
   fi
-  rm -rf -- "$root"
+  if ! rm -rf -- "$root"; then
+    printf 'Copilot entry contract: fixture input cleanup failed\n' >&2
+    [[ "$status" -ne 0 ]] || status=1
+  fi
   exit "$status"
 }
 trap cleanup EXIT
@@ -69,7 +72,7 @@ create_linux_rootfs() {
   local command_path python_stdlib ctypes_module
   mkdir -p "$root/rootfs"
   for command_name in \
-    bash env realpath jq sha256sum find sort sed cut cmp grep mktemp cp mv stat chmod \
+    bash env realpath jq sha256sum find sort sed cut cmp grep mktemp cp mv ln stat chmod chown \
     cat mkdir dirname basename python3 rm flock; do
     command_path="$(command -v "$command_name")" \
       || fail "fixture host lacks required command: $command_name"
@@ -123,6 +126,46 @@ create_fixture_image() {
   fixture_image_created=true
 }
 
+fixture_home_script() {
+  local home_mount="$1"
+  shift
+  docker run --rm -i \
+    --network none \
+    --read-only \
+    --user '10001:10001' \
+    --entrypoint /bin/bash \
+    --mount "$home_mount" \
+    --mount "type=bind,src=$seed,dst=/usr/local/share/trellage/copilot-seed,readonly" \
+    "$image_ref" -euo pipefail -c '
+      fail() {
+        printf "Copilot entry contract: FAIL: %s\n" "$1" >&2
+        exit 1
+      }
+      source /dev/stdin
+    ' -- "$@"
+}
+
+mutate_home() {
+  fixture_home_script "$sandbox_fixture_home_mount" "$@"
+}
+
+inspect_home() {
+  fixture_home_script "$sandbox_fixture_home_mount,readonly" "$@"
+}
+
+read_home_file() {
+  inspect_home "$1" <<'READ_HOME_FILE'
+cat -- "$1"
+READ_HOME_FILE
+}
+
+snapshot_home_tree() {
+  inspect_home "$1" <<'SNAPSHOT_HOME_TREE'
+find "$1" -printf '%y %m %U:%G %p %l\n' | LC_ALL=C sort
+find "$1" -type f -exec sha256sum -- {} + | LC_ALL=C sort
+SNAPSHOT_HOME_TREE
+}
+
 transaction_temp_scan() {
   local scan_root="$1"
   docker run --rm \
@@ -130,9 +173,9 @@ transaction_temp_scan() {
     --read-only \
     --user '10001:10001' \
     --entrypoint /bin/bash \
-    --mount "type=bind,src=$scan_root,dst=/runtime,readonly" \
+    --mount "$sandbox_fixture_home_mount,readonly" \
     "$image_ref" -c '
-      match="$(find /runtime -mindepth 1 \
+      match="$(find "$1" -mindepth 1 \
         \( -name ".hve-core.trellage-*" \
           -o -name ".settings.json.trellage.*" \
           -o -name ".managed-*.trellage.*" \) -print -quit)" || exit 74
@@ -140,18 +183,31 @@ transaction_temp_scan() {
         printf "%s\n" "$match"
         exit 3
       fi
-    '
+      exit 0
+    ' -- "$scan_root"
 }
 
 assert_transaction_scanner_contract() {
-  local clean="$root/scan-clean"
-  local matched="$root/scan-matched"
-  local denied="$root/scan-denied"
+  local clean='/home/agent/.fixture-scanner/clean'
+  local matched='/home/agent/.fixture-scanner/matched'
+  local denied='/home/agent/.fixture-scanner/denied'
   local scan_status=0
-  mkdir -p "$clean" "$matched" "$denied"
-  chmod 777 "$clean" "$matched"
-  : >"$matched/.managed-probe.trellage.1"
-  chmod 700 "$denied"
+  mutate_home "$clean" "$matched" <<'SCANNER_SETUP'
+umask 077
+mkdir -p -- "$1" "$2"
+: >"$2/.managed-probe.trellage.1"
+SCANNER_SETUP
+  docker run --rm \
+    --network none \
+    --read-only \
+    --user '0:0' \
+    --entrypoint /bin/bash \
+    --mount "$sandbox_fixture_home_mount" \
+    "$image_ref" -ceu '
+      mkdir -m 0700 -- "$1"
+      [[ "$(stat -c "%u:%g:%a" -- "$1")" == "0:0:700" ]]
+    ' -- "$denied" \
+    || fail 'could not create a root-owned denied transaction scan directory'
 
   transaction_temp_scan "$clean" >/dev/null 2>&1 \
     || fail 'transaction temporary scanner rejected a clean tree'
@@ -159,12 +215,10 @@ assert_transaction_scanner_contract() {
   transaction_temp_scan "$matched" >/dev/null 2>&1 || scan_status=$?
   [[ "$scan_status" -eq 3 ]] \
     || fail "transaction temporary scanner returned $scan_status for a match"
-  if [[ "$(uname -s)" == Linux ]]; then
-    scan_status=0
-    transaction_temp_scan "$denied" >/dev/null 2>&1 || scan_status=$?
-    [[ "$scan_status" -eq 74 ]] \
-      || fail "transaction temporary scanner returned $scan_status for a find error"
-  fi
+  scan_status=0
+  transaction_temp_scan "$denied" >/dev/null 2>&1 || scan_status=$?
+  [[ "$scan_status" -eq 74 ]] \
+    || fail "transaction temporary scanner returned $scan_status for a find error"
 }
 
 assert_no_transaction_temps() {
@@ -188,23 +242,15 @@ if [[ "${COPILOT_ENTRY_LINUX_ROOTFS_ONLY:-0}" == 1 ]]; then
 fi
 
 seed="$root/seed"
-runtime="$root/runtime"
+runtime='/home/agent/.copilot'
 fake_bin="$root/fake-bin"
-output="$root/output"
+output='/home/agent/.fixture-output'
 plugin="$seed/installed-plugins/hve-core/hve-core"
-mkdir -p "$plugin/.github/plugin" "$plugin/commands" "$seed/skills/caveman" "$runtime/skills/user-skill" "$runtime" "$fake_bin" "$output"
-chmod 777 "$runtime" "$output"
+mkdir -p "$plugin/.github/plugin" "$plugin/commands" "$seed/skills/caveman" "$fake_bin"
 printf '{"name":"hve-core","version":"3.3.101"}\n' >"$plugin/.github/plugin/plugin.json"
 printf 'managed review command\n' >"$plugin/commands/review.md"
 printf 'ACTIVE EVERY RESPONSE\n' >"$seed/skills/caveman/SKILL.md"
 printf 'ACTIVE EVERY RESPONSE\n' >"$seed/copilot-instructions.md"
-printf 'keep user skill\n' >"$runtime/skills/user-skill/SKILL.md"
-cp -R "$seed/skills/caveman" "$runtime/skills/caveman"
-cp "$seed/copilot-instructions.md" "$runtime/copilot-instructions.md"
-printf '{"keep":true,"trustedFolders":["/existing"]}\n' >"$runtime/config.json"
-printf '{"hooks":{"SessionStart":[{"type":"command","bash":"existing-session-start"}]}}\n' \
-  >"$runtime/settings.json"
-chmod -R a+rwX "$runtime/skills"
 printf '{"schema":1,"marketplace":"hve-core","plugin":"hve-core","version":"3.3.101"}\n' \
   >"$seed/managed-lock.json"
 printf '%s\n' \
@@ -245,10 +291,24 @@ FAKE_COPILOT
 chmod 755 "$fake_bin/copilot"
 
 create_fixture_image
+sandbox_fixture_home_create "$image_ref" copilot-entry \
+  || fail 'could not create the Copilot fixture home'
+mutate_home "$runtime" "$output" <<'INITIAL_STATE'
+runtime="$1"
+output="$2"
+seed='/usr/local/share/trellage/copilot-seed'
+umask 077
+mkdir -p "$runtime/skills/user-skill" "$output"
+printf 'keep user skill\n' >"$runtime/skills/user-skill/SKILL.md"
+cp -R "$seed/skills/caveman" "$runtime/skills/caveman"
+cp "$seed/copilot-instructions.md" "$runtime/copilot-instructions.md"
+printf '{"keep":true,"trustedFolders":["/existing"]}\n' >"$runtime/config.json"
+printf '{"hooks":{"SessionStart":[{"type":"command","bash":"existing-session-start"}]}}\n' \
+  >"$runtime/settings.json"
+INITIAL_STATE
 assert_transaction_scanner_contract
 
 run_entry() {
-  local status=0
   docker run --rm \
     --network none \
     --read-only \
@@ -259,11 +319,10 @@ run_entry() {
     --mount "type=bind,src=$prototype_dir/copilot-model-settings.py,dst=/usr/local/bin/trellage-copilot-model-settings,readonly" \
     --mount "type=bind,src=$prototype_dir/../../scripts/trellage-session-bridge.py,dst=/usr/local/bin/trellage-session-bridge,readonly" \
     --mount "type=bind,src=$seed,dst=/usr/local/share/trellage/copilot-seed,readonly" \
-    --mount "type=bind,src=$runtime,dst=/home/agent/.copilot" \
+    --mount "$sandbox_fixture_home_mount" \
     --mount "type=bind,src=$fake_bin,dst=/test-bin,readonly" \
-    --mount "type=bind,src=$output,dst=/test-output" \
     --env 'PATH=/test-bin:/usr/local/bin:/usr/bin:/bin' \
-    --env 'TRELLAGE_TEST_OUTPUT=/test-output' \
+    --env "TRELLAGE_TEST_OUTPUT=$output" \
     --env 'TRELLAGE_AGENT=copilot' \
     --env 'TRELLAGE_PROFILE_NAME=copilot-hve-test' \
     --env "TRELLAGE_COPILOT_MODEL=${TRELLAGE_COPILOT_MODEL-}" \
@@ -276,15 +335,10 @@ run_entry() {
     --env "TRELLAGE_TEST_CREATE_SESSION_ID=${TRELLAGE_TEST_CREATE_SESSION_ID-}" \
     --env "TRELLAGE_RESUME_PROFILE=${TRELLAGE_RESUME_PROFILE-}" \
     --env "TRELLAGE_RESUME_SESSION_ID=${TRELLAGE_RESUME_SESSION_ID-}" \
-    "$image_ref" /test/runtime-copilot-entry.sh "$@" || status=$?
-  docker run --rm \
-    --network none \
-    --user '0:0' \
-    --entrypoint /bin/bash \
-    --mount "type=bind,src=$runtime,dst=/fixture-runtime" \
-    "$image_ref" -c 'chmod -R a+rwX /fixture-runtime' \
-    || fail 'could not restore host access to Copilot runtime fixture state'
-  return "$status"
+    "$image_ref" -euo pipefail -c '
+      rm -f -- "$TRELLAGE_TEST_OUTPUT/argv" "$TRELLAGE_TEST_OUTPUT/env"
+      exec /bin/bash /test/runtime-copilot-entry.sh "$@"
+    ' -- "$@"
 }
 
 read_output_file() {
@@ -293,21 +347,12 @@ read_output_file() {
     argv|env) ;;
     *) fail "unsupported fixture output file: $output_file" ;;
   esac
-  docker run --rm \
-    --network none \
-    --read-only \
-    --user '10001:10001' \
-    --entrypoint /bin/bash \
-    --mount "type=bind,src=$output,dst=/test-output,readonly" \
-    "$image_ref" -c 'cat -- "/test-output/$1"' -- "$output_file"
-}
-
-output_file_mode() {
-  if stat -f '%Lp' "$1" >/dev/null 2>&1; then
-    stat -f '%Lp' "$1"
-  else
-    stat -c '%a' "$1"
-  fi
+  inspect_home "$output/$output_file" <<'READ_OUTPUT'
+[[ -f "$1" && ! -L "$1" ]] || fail "missing regular Copilot fixture capture: $1"
+[[ "$(stat -c '%a' -- "$1")" == 600 ]] \
+  || fail "Copilot fixture output did not preserve mode 0600: $1"
+cat -- "$1"
+READ_OUTPUT
 }
 
 prompt='literal $(touch /tmp/not-executed) prompt'
@@ -317,9 +362,6 @@ default_model_argv=$'--model\ngpt-6-astra\n--effort\nlow'
 expected_prompt_argv="$default_model_argv"$'\n--allow-all\n-p\nliteral $(touch /tmp/not-executed) prompt'
 prompt_argv="$(read_output_file argv)"
 prompt_env="$(read_output_file env)"
-[[ "$(output_file_mode "$output/argv")" == 600 \
-  && "$(output_file_mode "$output/env")" == 600 ]] \
-  || fail 'Copilot fixture output did not preserve mode 0600'
 [[ "$prompt_argv" == "$expected_prompt_argv" ]] \
   || fail 'prompt mode did not map the exact prompt to Copilot -p argv'
 grep -Fqx 'COPILOT_GITHUB_TOKEN=selected-token' <<<"$prompt_env" \
@@ -330,6 +372,8 @@ grep -Fqx 'GITHUB_TOKEN=' <<<"$prompt_env" \
   || fail 'prompt mode exposed ambient GITHUB_TOKEN'
 
 assert_no_transaction_temps 'successful prompt mode'
+inspect_home "$runtime" <<'INITIAL_CHECKS'
+runtime="$1"
 grep -Fqx 'ACTIVE EVERY RESPONSE' "$runtime/skills/caveman/SKILL.md" \
   || fail 'managed Caveman skill was not synchronized'
 grep -Fqx 'ACTIVE EVERY RESPONSE' "$runtime/copilot-instructions.md" \
@@ -346,6 +390,7 @@ jq -e '
   and .planModel == "gpt-6-astra" and .planEffortLevel == "max"
 ' "$runtime/settings.json" >/dev/null \
   || fail 'Copilot default and plan modes did not receive separate model settings'
+INITIAL_CHECKS
 
 COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= run_entry new --allow-all
 interactive_argv="$(read_output_file argv)"
@@ -368,12 +413,16 @@ TRELLAGE_COPILOT_MODEL=gpt-5.5 TRELLAGE_COPILOT_REASONING_EFFORT=high \
   run_entry prompt --model gpt-5.4-mini --reasoning-effort low -- 'explicit overrides'
 [[ "$(read_output_file argv)" == $'--model\ngpt-5.5\n--effort\nhigh\n--model\ngpt-5.4-mini\n--reasoning-effort\nlow\n-p\nexplicit overrides' ]] \
   || fail 'configured Copilot defaults did not precede explicit caller overrides'
+settings_before_probe="$(
+  inspect_home "$runtime/settings.json" <<'OVERRIDE_SETTINGS'
 jq -e '
   .model == "gpt-5.5" and .effortLevel == "high"
   and .planModel == "gpt-5.5" and .planEffortLevel == "xhigh"
-' "$runtime/settings.json" >/dev/null \
+' "$1" >/dev/null \
   || fail 'Copilot plan overrides did not stay separate from default effort'
-settings_before_probe="$(cat "$runtime/settings.json")"
+cat -- "$1"
+OVERRIDE_SETTINGS
+)"
 
 run_entry new --version
 [[ "$(read_output_file argv)" == --version ]] \
@@ -381,7 +430,8 @@ run_entry new --version
 run_entry new plugin list
 [[ "$(read_output_file argv)" == $'plugin\nlist' ]] \
   || fail 'plugin inventory probe received session model defaults'
-[[ "$(cat "$runtime/settings.json")" == "$settings_before_probe" ]] \
+settings_after_probe="$(read_home_file "$runtime/settings.json")"
+[[ "$settings_after_probe" == "$settings_before_probe" ]] \
   || fail 'read-only Copilot probes changed model settings'
 
 for mode in new prompt; do
@@ -417,6 +467,8 @@ COPILOT_GITHUB_TOKEN='selected-token' TRELLAGE_TEST_COPILOT_EXIT=29 \
 [[ "$status" -eq 29 ]] || fail "prompt mode changed Copilot status 29 to $status"
 assert_no_transaction_temps 'failed prompt mode'
 
+inspect_home "$runtime" <<'REPEATED_LAUNCH_CHECKS'
+runtime="$1"
 jq -e '.trustedFolders == ["/existing", "/"]' "$runtime/config.json" >/dev/null \
   || fail 'repeated Copilot launches duplicated the trusted workspace'
 jq -e '
@@ -437,7 +489,10 @@ jq -e '
   any(.hooks.SessionStart[]; .type == "command" and .bash == "existing-session-start")
 ' "$runtime/settings.json" >/dev/null \
   || fail 'Copilot SessionStart bridge replaced an existing hook'
+REPEATED_LAUNCH_CHECKS
 
+mutate_home "$runtime" <<'COMMENTED_CONFIG'
+runtime="$1"
 commented_config="$runtime/config.json.next"
 cat >"$commented_config" <<'EOF'
 // User settings belong in settings.json.
@@ -448,28 +503,72 @@ cat >"$commented_config" <<'EOF'
 }
 EOF
 mv -f -- "$commented_config" "$runtime/config.json"
+COMMENTED_CONFIG
 COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= \
   run_entry prompt --allow-all -- 'commented config'
+inspect_home "$runtime/config.json" <<'COMMENTED_CONFIG_CHECK'
 jq -e '
   .keep == true
   and .trustedFolders == ["/existing", "/"]
-' "$runtime/config.json" >/dev/null \
+' "$1" >/dev/null \
   || fail 'Copilot managed config comment prologue was not normalized safely'
+COMMENTED_CONFIG_CHECK
 assert_no_transaction_temps 'commented config normalization'
 
-printf 'not-json\n' >"$runtime/config.json"
+redirected_parent='/home/agent/.fixture-plugin-parent-target'
+mutate_home "$runtime" "$redirected_parent" <<'REDIRECT_PLUGIN_PARENT'
+runtime="$1"
+target="$2"
+# Redirect the marketplace parent, not the repairable managed-plugin leaf.
+parent="$runtime/installed-plugins/hve-core"
+mv -- "$parent" "$runtime/installed-plugins/hve-core.fixture-original"
+mkdir -p "$target/hve-core/commands"
+printf 'keep redirected plugin unchanged\n' >"$target/hve-core/commands/review.md"
+ln -s -- "$target" "$parent"
+REDIRECT_PLUGIN_PARENT
+redirected_parent_before="$(snapshot_home_tree "$redirected_parent")"
+if parent_refusal_output="$(run_entry prompt --allow-all -- 'redirected plugin parent' 2>&1)"; then
+  fail 'managed plugin parent redirection was accepted'
+fi
+grep -Fqx \
+  'trellage-copilot-entry: Copilot managed marketplace must be a directory without symlinks' \
+  <<<"$parent_refusal_output" \
+  || fail "managed plugin parent redirection failed for another reason: $parent_refusal_output"
+redirected_parent_after="$(snapshot_home_tree "$redirected_parent")"
+[[ "$redirected_parent_after" == "$redirected_parent_before" ]] \
+  || fail 'managed plugin parent redirection changed the redirected target'
+inspect_home "$runtime" "$output" <<'PLUGIN_PARENT_CHECKS'
+[[ -L "$1/installed-plugins/hve-core" ]] \
+  || fail 'managed plugin parent redirection was replaced instead of refused'
+[[ ! -e "$2/argv" && ! -L "$2/argv" && ! -e "$2/env" && ! -L "$2/env" ]] \
+  || fail 'managed plugin parent redirection reached Copilot'
+PLUGIN_PARENT_CHECKS
+assert_no_transaction_temps 'managed plugin parent redirection refusal'
+mutate_home "$runtime" <<'RESTORE_PLUGIN_PARENT'
+parent="$1/installed-plugins/hve-core"
+[[ -L "$parent" ]] || fail 'managed plugin parent redirection could not be restored'
+rm -- "$parent"
+mv -- "$1/installed-plugins/hve-core.fixture-original" "$parent"
+RESTORE_PLUGIN_PARENT
+
+mutate_home "$runtime/config.json" <<'MALFORMED_CONFIG'
+printf 'not-json\n' >"$1"
+MALFORMED_CONFIG
 if run_entry prompt --allow-all -- 'malformed config'; then
   fail 'malformed Copilot config was accepted'
 fi
 assert_no_transaction_temps 'malformed config rejection'
 
-printf '{"trustedFolders":[]}\n' >"$runtime/config-target.json"
-rm -f "$runtime/config.json"
-ln -s config-target.json "$runtime/config.json"
+mutate_home "$runtime" <<'SYMLINKED_CONFIG'
+printf '{"trustedFolders":[]}\n' >"$1/config-target.json"
+rm -f -- "$1/config.json"
+ln -s config-target.json "$1/config.json"
+SYMLINKED_CONFIG
 if run_entry prompt --allow-all -- 'symlinked config'; then
   fail 'symlinked Copilot config was accepted'
 fi
-[[ "$(cat "$runtime/config-target.json")" == '{"trustedFolders":[]}' ]] \
+config_target="$(read_home_file "$runtime/config-target.json")"
+[[ "$config_target" == '{"trustedFolders":[]}' ]] \
   || fail 'symlinked Copilot config target was modified'
 assert_no_transaction_temps 'symlinked config rejection'
 

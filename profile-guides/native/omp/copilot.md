@@ -95,7 +95,8 @@ local proxy. See `prototypes/trellage-omp-profiles/README.md`.
   launch argument vector; the agent can use all host access available to the
   OMP process.
 - The profile also carries the shared `native-common` floating skill bundle
-  (see `skills.json`: `engineersamuel` wildcard plus `show-me`).
+  (see `skills.json`: `engineersamuel` wildcard, `show-me`, and manually
+  activated `i-have-adhd`).
 
 ## Gotchas
 
