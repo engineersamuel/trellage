@@ -197,8 +197,9 @@ default = true
 - Keep changes scoped and preserve unrelated dirty-worktree edits.
 - Every new Trellage Sandbox profile under `profiles/` MUST include
   `sandbox-common` in `skill_bundles`. This bundle supplies Caveman as an
-  always-on skill, the selected mattpocock skills, `show-me`, and every skill
-  from `engineersamuel/skills` except cataloged exclusions. The
+  always-on skill, the selected mattpocock skills, `show-me`, manually activated
+  `i-have-adhd`, and every skill from `engineersamuel/skills` except cataloged
+  exclusions. The
   `engineersamuel` source MUST require `ui-guidelines`.
 - Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.
 - `skills.json` is the only skill-source allowlist. Skill entries MUST NOT
@@ -209,6 +210,16 @@ default = true
   `comparison-common` snapshot staged for that build operation. These common
   bundles MUST retain the `engineersamuel` source so `ui-guidelines` is
   available on every native and container surface.
+- The three common bundles MUST retain `i-have-adhd` with manual activation
+  only. Preserve its upstream manual-invocation metadata; do not enable
+  `alwaysOn` or install its upstream plugin, hooks, or extensions.
+- `jcx` MUST keep `i-have-adhd` outside JCode's automatic skill discovery.
+  Its managed library lives outside `JCODE_HOME`; explicit requests use
+  `jcx skill i-have-adhd PROMPT`. Reinstall the updated Native launchers before
+  refreshing a shared cache that adds this skill.
+- Headlong MUST keep `i-have-adhd` in its private managed store, not in an
+  identity's `skills` or `kernel` registry. Explicit requests read and apply
+  its private `SKILL.md`; Headlong does not enforce the upstream manual flag.
 - Native first use and `trx skills update` fetch current default-branch
   content. Later native launches reuse the shared cache without network
   access. Sandbox and comparison builds fetch current skill content at build

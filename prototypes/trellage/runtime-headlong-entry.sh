@@ -19,6 +19,8 @@ readonly source_marker="$metadata_home/source.commit"
 readonly initialized_marker="$metadata_home/initialized"
 readonly managed_manifest="$metadata_home/managed-skills.tsv"
 readonly managed_skills_home="$metadata_home/skills"
+# Headlong ignores manual-invocation metadata for registered skills.
+readonly manual_skill='i-have-adhd'
 readonly lock_file="$metadata_home/state.lock"
 readonly web_args='--host 0.0.0.0 --port 8080'
 readonly proxy_api_url='http://copilot-proxy-rs:8080/v1/messages'
@@ -444,7 +446,7 @@ check_managed_target() {
 
 sync_managed_skills() {
   local manifest="$skill_seed_root/managed-skills.tsv"
-  local identity name always_on extra source target old_target expected
+  local identity directory name always_on extra source target old_target expected
   local staged_skills="$metadata_home/skills.stage.$$"
   local backup_skills="$metadata_home/skills.backup.$$"
   validate_managed_skill_manifest
@@ -476,6 +478,12 @@ sync_managed_skills() {
 
   for identity in "$identities_home"/*; do
     [[ -d "$identity" && ! -L "$identity" ]] || continue
+    for directory in "$identity/skills" "$identity/kernel"; do
+      [[ ! -L "$directory" && ( ! -e "$directory" || -d "$directory" ) ]] \
+        || fail "managed Headlong skill directory is unsafe: $directory"
+      check_managed_target "$directory/$manual_skill" \
+        "$managed_skills_home/$manual_skill" "$manual_skill"
+    done
     while IFS=$'\t' read -r name always_on extra; do
       [[ -n "$name$always_on$extra" ]] || continue
       validate_manifest_line "$name" "$always_on" "$extra"
@@ -515,6 +523,9 @@ sync_managed_skills() {
   for identity in "$identities_home"/*; do
     [[ -d "$identity" && ! -L "$identity" ]] || continue
     mkdir -p -- "$identity/skills" "$identity/kernel"
+    for target in "$identity/skills/$manual_skill" "$identity/kernel/$manual_skill"; do
+      [[ ! -L "$target" ]] || rm -f -- "$target"
+    done
     if [[ -f "$managed_manifest" ]]; then
       while IFS=$'\t' read -r name always_on extra; do
         [[ -n "$name$always_on$extra" ]] || continue
@@ -528,6 +539,7 @@ sync_managed_skills() {
     fi
     while IFS=$'\t' read -r name always_on extra; do
       [[ -n "$name$always_on$extra" ]] || continue
+      [[ "$name" != "$manual_skill" ]] || continue
       if [[ "$always_on" == 1 ]]; then
         target="$identity/kernel/$name"
       else

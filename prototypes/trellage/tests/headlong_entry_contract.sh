@@ -41,6 +41,7 @@ tui_binary="$root/headlong-tui"
 mkdir -p \
   "$seed/tools" "$seed/bin" "$seed/identities" \
   "$skill_seed/skills/always-on" "$skill_seed/skills/on-demand" \
+  "$skill_seed/skills/i-have-adhd/agents" \
   "$home" "$output" "$fake_bin" "$control"
 chmod 777 "$home" "$output" "$control"
 home_mount="type=bind,src=$home,dst=/home/agent"
@@ -66,7 +67,11 @@ chmod 755 "$seed/bin/llm"
 chmod 755 "$seed/bin/shellm"
 printf '# Always On\n' >"$skill_seed/skills/always-on/SKILL.md"
 printf '# On Demand\n' >"$skill_seed/skills/on-demand/SKILL.md"
-printf 'always-on\t1\non-demand\t0\n' >"$skill_seed/managed-skills.tsv"
+printf '%s\n' '---' 'name: i-have-adhd' 'disable-model-invocation: true' '---' '' \
+  'Manual output fixture.' >"$skill_seed/skills/i-have-adhd/SKILL.md"
+printf '%s\n' 'policy:' '  allow_implicit_invocation: false' \
+  >"$skill_seed/skills/i-have-adhd/agents/openai.yaml"
+printf 'always-on\t1\ni-have-adhd\t0\non-demand\t0\n' >"$skill_seed/managed-skills.tsv"
 printf '1111111111111111111111111111111111111111\n' >"$seed_commit"
 chmod 666 "$seed_commit"
 
@@ -257,6 +262,24 @@ in_fixture() {
     "$fixture_ref" -ceu "$1"
 }
 
+assert_manual_skill_isolation() {
+  in_fixture '
+    manual=/home/agent/.headlong/.trellage/skills/i-have-adhd
+    seed=/usr/local/share/trellage/headlong-skills/skills/i-have-adhd
+    cmp "$seed/SKILL.md" "$manual/SKILL.md"
+    cmp "$seed/agents/openai.yaml" "$manual/agents/openai.yaml"
+    for identity in /home/agent/.headlong/app/.identities/*; do
+      [[ -d "$identity" && ! -L "$identity" ]] || continue
+      test -f "$identity/kernel/always-on/SKILL.md"
+      test -f "$identity/skills/on-demand/SKILL.md"
+      for directory in "$identity/skills" "$identity/kernel"; do
+        test ! -e "$directory/i-have-adhd"
+        test ! -L "$directory/i-have-adhd"
+      done
+    done
+  ' || fail 'manual skill was unavailable privately or exposed through an identity registry'
+}
+
 status=0
 run_entry invalid || status=$?
 [[ "$status" -ne 0 ]] || fail 'unsupported mode was accepted'
@@ -333,6 +356,60 @@ in_fixture '
 ' || fail 'managed skills, kernel, marker, secured environment, or the outside-app persona link were not synchronized'
 [[ "$(cat "$output/dash.log")" == dash ]] \
   || fail 'first attach did not ensure the dashboard was running'
+assert_manual_skill_isolation
+
+in_fixture '
+  manual=/home/agent/.headlong/.trellage/skills/i-have-adhd
+  ln -s "$manual" /home/agent/.headlong/identities/ada/skills/i-have-adhd
+  ln -s "$manual" /home/agent/.headlong/identities/ada/kernel/i-have-adhd
+  printf "Updated manual fixture.\n" \
+    >>/usr/local/share/trellage/headlong-skills/skills/i-have-adhd/SKILL.md
+'
+run_entry attach || fail 'manual skill migration failed'
+assert_manual_skill_isolation
+
+manual_digest="$(in_fixture 'sha256sum /home/agent/.headlong/.trellage/skills/i-have-adhd/SKILL.md')"
+in_fixture '
+  mkdir /home/agent/.headlong/identities/ada/skills/i-have-adhd
+  printf "User-owned skill.\n" >/home/agent/.headlong/identities/ada/skills/i-have-adhd/SKILL.md
+  printf "Update after collision is resolved.\n" \
+    >>/usr/local/share/trellage/headlong-skills/skills/i-have-adhd/SKILL.md
+'
+status=0
+run_entry attach || status=$?
+[[ "$status" -ne 0 ]] || fail 'unmanaged manual skill remained discoverable'
+grep -Fq 'managed Headlong skill collides with unmanaged state: i-have-adhd' "$output/stderr.log" \
+  || fail 'unmanaged manual skill diagnostic differs'
+[[ "$(in_fixture 'sha256sum /home/agent/.headlong/.trellage/skills/i-have-adhd/SKILL.md')" == "$manual_digest" ]] \
+  || fail 'manual skill collision changed the published private copy'
+in_fixture '
+  grep -Fqx "User-owned skill." /home/agent/.headlong/identities/ada/skills/i-have-adhd/SKILL.md
+  rm /home/agent/.headlong/identities/ada/skills/i-have-adhd/SKILL.md
+  rmdir /home/agent/.headlong/identities/ada/skills/i-have-adhd
+'
+
+in_fixture '
+  mkdir /test-output/manual-outside
+  printf "Untouched.\n" >/test-output/manual-outside/sentinel
+  ln -s /home/agent/.headlong/.trellage/skills/i-have-adhd /test-output/manual-outside/i-have-adhd
+  mv /home/agent/.headlong/identities/ada/kernel /home/agent/.headlong/identities/ada/kernel.saved
+  ln -s /test-output/manual-outside /home/agent/.headlong/identities/ada/kernel
+'
+status=0
+run_entry attach || status=$?
+[[ "$status" -ne 0 ]] || fail 'manual skill cleanup followed an unsafe registry directory'
+grep -Fq 'managed Headlong skill directory is unsafe:' "$output/stderr.log" \
+  || fail 'unsafe registry directory diagnostic differs'
+in_fixture '
+  grep -Fqx "Untouched." /test-output/manual-outside/sentinel
+  test -L /test-output/manual-outside/i-have-adhd
+  rm /home/agent/.headlong/identities/ada/kernel
+  mv /home/agent/.headlong/identities/ada/kernel.saved /home/agent/.headlong/identities/ada/kernel
+  rm /test-output/manual-outside/i-have-adhd /test-output/manual-outside/sentinel
+  rmdir /test-output/manual-outside
+'
+run_entry attach || fail 'manual skill update did not recover after collision removal'
+assert_manual_skill_isolation
 
 : >"$output/init.log"
 : >"$output/dash.log"
@@ -455,12 +532,12 @@ in_fixture 'printf "on-demand\t0\nalways-on\t1\n" >/usr/local/share/trellage/hea
 status=0
 run_entry attach || status=$?
 [[ "$status" -ne 0 ]] || fail 'attach accepted an unsorted managed skill manifest'
-in_fixture 'printf "always-on\t1\non-demand\t0\n" >/usr/local/share/trellage/headlong-skills/managed-skills.tsv'
+in_fixture 'printf "always-on\t1\ni-have-adhd\t0\non-demand\t0\n" >/usr/local/share/trellage/headlong-skills/managed-skills.tsv'
 
 in_fixture '
   mkdir -p /usr/local/share/trellage/headlong-skills/skills/collision
   printf "# Collision\n" >/usr/local/share/trellage/headlong-skills/skills/collision/SKILL.md
-  printf "always-on\t1\ncollision\t0\non-demand\t0\n" >/usr/local/share/trellage/headlong-skills/managed-skills.tsv
+  printf "always-on\t1\ncollision\t0\ni-have-adhd\t0\non-demand\t0\n" >/usr/local/share/trellage/headlong-skills/managed-skills.tsv
   printf "operator-owned\n" >/home/agent/.headlong/identities/ada/skills/collision
 '
 grep -Fqx $'collision\t0' "$skill_seed/managed-skills.tsv" \
@@ -478,7 +555,7 @@ in_fixture 'test "$(cat /home/agent/.headlong/identities/ada/skills/collision)" 
   || fail 'unmanaged managed-skill collision was modified'
 in_fixture '
   rm -rf /usr/local/share/trellage/headlong-skills/skills/collision
-  printf "always-on\t1\non-demand\t0\n" >/usr/local/share/trellage/headlong-skills/managed-skills.tsv
+  printf "always-on\t1\ni-have-adhd\t0\non-demand\t0\n" >/usr/local/share/trellage/headlong-skills/managed-skills.tsv
   rm -f /home/agent/.headlong/identities/ada/skills/collision
 '
 

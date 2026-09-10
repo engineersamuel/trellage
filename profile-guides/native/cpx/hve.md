@@ -146,7 +146,8 @@ Implement) skill set. See
 - `cpx update --check hve` / `cpx update hve` remove-and-reinstall only
   `hve-core@hve-core`; a failed reinstall stays visible and repairable.
 - The profile also carries the shared `native-common` floating skill bundle
-  (see `skills.json`: `engineersamuel` wildcard plus `show-me`), so
+  (see `skills.json`: `engineersamuel` wildcard, `show-me`, and manually
+  activated `i-have-adhd`), so
   general-purpose repository skills remain available alongside HVE Core's.
 
 ## Gotchas

@@ -94,7 +94,8 @@ Caveman plugin. See `prototypes/trellage-grok-profiles/README.md`.
 - Pass `-m`/`--model` to select another model from the proxy catalog instead
   of the `grok-4.6` default; `grx` forwards the option unchanged.
 - The profile also carries the shared `native-common` floating skill bundle
-  (see `skills.json`: `engineersamuel` wildcard plus `show-me`).
+  (see `skills.json`: `engineersamuel` wildcard, `show-me`, and manually
+  activated `i-have-adhd`).
 - Profile policy disables Claude/Cursor compatibility loading and Codex
   sessions; personal `~/.agents/skills` and `~/.agents/commands` are ignored,
   while repository-native `.grok`, `.agents`, and `AGENTS.md` remain visible.

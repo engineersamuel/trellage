@@ -148,6 +148,7 @@ native-jcode-profile:
 		--legal-comments=inline --log-level=error --outfile="$$bundle_check"; \
 	cmp -s "$$bundle_check" prototypes/trellage-jcode-profiles/config-manager.mjs \
 		|| { printf '%s\n' 'jcx config manager bundle is stale' >&2; exit 1; }
+	node --test prototypes/trellage-claude-common/tests/manual-skills.test.mjs
 	bash prototypes/trellage-jcode-profiles/tests/contract.sh
 
 native-omp-profile:

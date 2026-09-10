@@ -26,6 +26,10 @@
       "select": ["show-me"],
       "allowExecutables": true
     },
+    "i-have-adhd": {
+      "repository": "https://github.com/ayghri/i-have-adhd.git",
+      "select": ["i-have-adhd"]
+    },
     "superpowers": {
       "repository": "https://github.com/obra/superpowers.git",
       "select": [
@@ -169,9 +173,9 @@
     }
   },
   "bundles": {
-    "sandbox-common": ["engineersamuel", "caveman", "mattpocock", "show-me"],
-    "native-common": ["engineersamuel", "show-me"],
-    "comparison-common": ["engineersamuel", "show-me"],
+    "sandbox-common": ["engineersamuel", "caveman", "mattpocock", "show-me", "i-have-adhd"],
+    "native-common": ["engineersamuel", "show-me", "i-have-adhd"],
+    "comparison-common": ["engineersamuel", "show-me", "i-have-adhd"],
     "codex-superpowers": ["superpowers"],
     "claude-frontend-design": ["impeccable", "emil-design", "hyperframes"],
     "claude-research": ["last30days"],

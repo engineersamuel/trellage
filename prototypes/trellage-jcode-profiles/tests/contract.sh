@@ -126,6 +126,13 @@ chmod 0755 "$fake_bin/curl"
 
 install_fixture_node "$fake_bin"
 seed_floating_skills_cache "$home"
+manual_cache="$home/.local/share/trellage/common/skills"
+mkdir -p "$manual_cache/skills/i-have-adhd/agents"
+printf '%s\n' '---' 'name: i-have-adhd' 'disable-model-invocation: true' '---' '' \
+  'Manual output fixture.' >"$manual_cache/skills/i-have-adhd/SKILL.md"
+printf '%s\n' 'policy:' '  allow_implicit_invocation: false' \
+  >"$manual_cache/skills/i-have-adhd/agents/openai.yaml"
+printf '%s\n' fixture-personal i-have-adhd show-me >"$manual_cache/managed-skills.txt"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
 export FAKE_MISE_LOG="$fixture_root/mise.log"
@@ -276,6 +283,30 @@ jq -e '
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
 grep -Fq 'jcx doctor: OK (0.67.1, gpt-5.6-sol, medium)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
+
+manual_file="$profile_root/skill-library/i-have-adhd/SKILL.md"
+[[ -f "$manual_file" && ! -e "$profile_home/skills/i-have-adhd" ]] \
+  || fail 'manual skill was not isolated from automatic discovery'
+manual_prompt='Summarize this work; print literal $(false) and $HOME.'
+"$command_path" skill i-have-adhd "$manual_prompt" || fail 'manual skill invocation failed'
+tail -n 1 "$FAKE_JCODE_LOG" | jq -e \
+  --arg instructions "$(<"$manual_file")" \
+  --arg prompt "$manual_prompt" '
+    .args[0:3] == ["--no-update", "run", "--"]
+    and .args[3] == ($instructions + "\n\nUser request:\n" + $prompt)
+    and (.args | length) == 4
+  ' >/dev/null || fail 'manual invocation did not preserve the skill and literal prompt'
+"$command_path" run ordinary-probe || fail 'ordinary launch after manual invocation failed'
+tail -n 1 "$FAKE_JCODE_LOG" | jq -e \
+  '.args == ["--no-update", "run", "ordinary-probe"]' >/dev/null \
+  || fail 'manual skill leaked into a later ordinary launch'
+[[ ! -e "$profile_home/skills/i-have-adhd" ]] \
+  || fail 'manual invocation exposed the skill to automatic discovery'
+if "$command_path" skill unknown task >"$fixture_root/invalid-skill.out" 2>&1; then
+  fail 'manual invocation accepted an unsupported skill'
+fi
+grep -Fq 'usage: jcx skill i-have-adhd PROMPT' "$fixture_root/invalid-skill.out" \
+  || fail 'unsupported manual skill diagnostic differs'
 
 cat >"$profile_home/config.toml" <<'NORMALIZED_CONFIG'
 [keybindings]
@@ -582,6 +613,18 @@ status=0
 HOME="$fixture_root/unrelated-home" "$runtime_root/bin/jcx" setup \
   >"$fixture_root/unrelated.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'setup accepted unrelated profile files'
+
+unrelated_profile="$fixture_root/unrelated-home/.local/share/trellage/profiles/jcode/default"
+mkdir -p "$unrelated_profile/home"
+seed_floating_skills_cache "$fixture_root/unrelated-home"
+status=0
+HOME="$fixture_root/unrelated-home" "$runtime_root/bin/jcx" update \
+  >"$fixture_root/unrelated-update.out" 2>&1 || status=$?
+[[ "$status" == 1 ]] || fail 'update accepted unrelated profile files'
+[[ ! -e "$unrelated_profile/skill-library" && ! -e "$unrelated_profile/home/skills" ]] \
+  || fail 'update published skills into an unowned profile'
+[[ "$(<"$unrelated_profile/data")" == unrelated ]] \
+  || fail 'update changed unrelated profile data'
 
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'

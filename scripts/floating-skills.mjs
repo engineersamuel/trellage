@@ -659,17 +659,51 @@ const syncSnapshotUnlocked = async (sourceSkills, sourceNames, targetPath) => {
   }
 }
 
-export const syncSnapshot = async (snapshot, target) => {
+const validateExcludedSkills = (excluded) => {
+  if (!Array.isArray(excluded)) fail("excluded target skills must be a string array")
+  if (excluded.length > 0) assertStringArray(excluded, "excluded target skills")
+  if (excluded.some((name) => !safeName.test(name))) fail("unsafe excluded target skill")
+}
+
+export const selectTargetSkills = (names, excluded = []) => {
+  validateExcludedSkills(excluded)
+  const selected = names.filter((name) => !excluded.includes(name))
+  if (selected.length === 0) fail("skill target would be empty")
+  return selected
+}
+
+const verifyExcludedSkills = async (target, excluded, removable = []) => {
+  for (const name of excluded) {
+    const candidate = path.join(target, name)
+    const status = await lstat(candidate).catch((cause) => {
+      if (cause.code === "ENOENT") return undefined
+      throw cause
+    })
+    if (status !== undefined && !removable.includes(name)) {
+      fail(`excluded skill remains discoverable: ${candidate}`)
+    }
+  }
+}
+
+export const verifyTargetExclusions = async (target, excluded = [], repairable = false) => {
+  validateExcludedSkills(excluded)
+  const targetPath = path.resolve(target)
+  const removable = repairable ? await readTargetManagedNames(targetPath) : []
+  await verifyExcludedSkills(targetPath, excluded, removable)
+}
+
+export const syncSnapshot = async (snapshot, target, excluded = []) => {
   const snapshotPath = path.resolve(snapshot)
   const targetPath = path.resolve(target)
   const sourceSkills = path.join(snapshotPath, "skills")
-  const sourceNames = await validateSnapshot(snapshotPath)
+  const sourceNames = selectTargetSkills(await validateSnapshot(snapshotPath), excluded)
   await mkdir(targetPath, { recursive: true, mode: 0o700 })
   const targetStatus = await lstat(targetPath)
   if (!targetStatus.isDirectory() || targetStatus.isSymbolicLink()) fail(`invalid skill target: ${targetPath}`)
-  return withLock(path.join(targetPath, ".trellage-floating-skills.lock"), () =>
-    syncSnapshotUnlocked(sourceSkills, sourceNames, targetPath),
-  )
+  return withLock(path.join(targetPath, ".trellage-floating-skills.lock"), async () => {
+    await verifyExcludedSkills(targetPath, excluded, await readTargetManagedNames(targetPath))
+    return syncSnapshotUnlocked(sourceSkills, sourceNames, targetPath)
+  })
 }
 
 const compareManagedTree = async (source, target, skillName) => {
@@ -697,10 +731,11 @@ const compareManagedTree = async (source, target, skillName) => {
   if (!sourceBytes.equals(targetBytes)) fail(`managed skill differs from the current snapshot: ${skillName}`)
 }
 
-export const verifyTarget = async (snapshot, target) => {
+export const verifyTarget = async (snapshot, target, excluded = []) => {
   const snapshotPath = path.resolve(snapshot)
   const targetPath = path.resolve(target)
-  const expected = await validateSnapshot(snapshotPath)
+  const expected = selectTargetSkills(await validateSnapshot(snapshotPath), excluded)
+  await verifyExcludedSkills(targetPath, excluded)
   const managed = await readManagedNames(path.join(targetPath, ".trellage-managed-skills"), "managed skill manifest")
   if (JSON.stringify(managed) !== JSON.stringify(expected)) {
     fail(`managed skills differ from the current snapshot: ${targetPath}`)

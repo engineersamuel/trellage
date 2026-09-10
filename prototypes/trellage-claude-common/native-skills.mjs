@@ -10,7 +10,7 @@ const fail = (message) => {
   throw new Error(message)
 }
 
-const statusIfPresent = async (candidate) => {
+export const statusIfPresent = async (candidate) => {
   try {
     return await lstat(candidate)
   } catch (error) {
@@ -38,7 +38,7 @@ const expectedDirectoryPath = async (candidate) => {
   return path.join(await realpath(homePath), path.relative(homePath, candidate))
 }
 
-const requireDirectory = async (candidate, label) => {
+export const requireDirectory = async (candidate, label) => {
   if (!path.isAbsolute(candidate)) fail(`${label} must be an absolute path: ${candidate}`)
   const resolved = path.resolve(candidate)
   const status = await statusIfPresent(resolved)
@@ -50,7 +50,7 @@ const requireDirectory = async (candidate, label) => {
   return expected
 }
 
-const requireFile = async (candidate) => {
+export const requireFile = async (candidate) => {
   const status = await statusIfPresent(candidate)
   if (status === undefined) fail(`skills file is missing: ${candidate}`)
   requireOwnedEntry(candidate, status)
@@ -160,19 +160,21 @@ const requireTargetLock = async (target) => {
   if (!/^[1-9][0-9]*\n?$/.test(pid) || !Number.isSafeInteger(Number(pid))) fail(`invalid skill lock: ${lock}`)
 }
 
-const preflightPair = async (cachePath, targetPath) => {
+const preflightPair = async (cachePath, targetPath, excluded, manager) => {
   let cache
   try {
     cache = await requireDirectory(cachePath, "skill cache")
   } catch (error) {
     fail(`${error.message}; run trx skills update first`)
   }
-  const names = await requireSnapshot(cache)
+  const snapshotNames = await requireSnapshot(cache)
+  const names = excluded.length === 0 ? snapshotNames : manager.selectTargetSkills(snapshotNames, excluded)
   await requireDirectory(path.dirname(targetPath), "profile home")
   const target = await requireDirectory(targetPath, "profile skills directory")
   await requireTarget(target, names)
   await requireTargetLock(target)
-  return { cache, target }
+  if (excluded.length > 0) await manager.verifyTargetExclusions(target, excluded, true)
+  return { cache, target, excluded }
 }
 
 export const syncCachedSkills = async (managerPath, pairs, checkOnly = false) => {
@@ -181,12 +183,14 @@ export const syncCachedSkills = async (managerPath, pairs, checkOnly = false) =>
   if ((await realpath(resolvedManager)) !== resolvedManager) fail(`unsafe skills manager: ${managerPath}`)
   const manager = await import(pathToFileURL(resolvedManager).href)
   const validated = []
-  for (const [cache, target] of pairs) validated.push(await preflightPair(cache, target))
+  for (const [cache, target, excluded = []] of pairs) {
+    validated.push(await preflightPair(cache, target, excluded, manager))
+  }
   if (checkOnly) return
-  for (const { cache, target } of validated) {
-    await preflightPair(cache, target)
-    await manager.syncSnapshot(cache, target)
-    await manager.verifyTarget(cache, target)
+  for (const { cache, target, excluded } of validated) {
+    await preflightPair(cache, target, excluded, manager)
+    await manager.syncSnapshot(cache, target, excluded)
+    await manager.verifyTarget(cache, target, excluded)
   }
 }
 
@@ -200,9 +204,9 @@ const bundlesForCache = (cache) => {
   }
 }
 
-const targetMatches = async (manager, snapshot, target) => {
+const targetMatches = async (manager, snapshot, target, excluded) => {
   try {
-    await manager.verifyTarget(snapshot, target)
+    await manager.verifyTarget(snapshot, target, excluded)
     return true
   } catch (error) {
     if (error instanceof manager.FloatingSkillsError && /^managed skills? differ/.test(error.message)) return false
@@ -221,7 +225,7 @@ export const checkFreshSkills = async (managerPath, catalogPath, pairs, signal) 
   try {
     let current = true
     const snapshots = new Map()
-    for (const [cache, target] of pairs) {
+    for (const [cache, target, excluded = []] of pairs) {
       signal?.throwIfAborted()
       const bundles = bundlesForCache(cache)
       const key = bundles.join("+")
@@ -231,8 +235,8 @@ export const checkFreshSkills = async (managerPath, catalogPath, pairs, signal) 
         await manager.stageLatest({ catalog, bundleIds: bundles, destination: snapshot, readOnly: true, signal })
         snapshots.set(key, snapshot)
       }
-      await preflightPair(cache, target)
-      if (!(await targetMatches(manager, snapshot, target))) current = false
+      await preflightPair(cache, target, excluded, manager)
+      if (!(await targetMatches(manager, snapshot, target, excluded))) current = false
     }
     signal?.throwIfAborted()
     return { kind: current ? "current" : "available" }
@@ -241,30 +245,36 @@ export const checkFreshSkills = async (managerPath, catalogPath, pairs, signal) 
   }
 }
 
-const installHelper = async (runtimeRoot) => {
+const installHelper = async (runtimeRoot, includeManual = false) => {
   const root = await requireDirectory(runtimeRoot, "Native runtime")
-  const source = fileURLToPath(import.meta.url)
-  await requireFile(source)
-  const target = path.join(root, "native-skills.mjs")
-  if (await statusIfPresent(target)) await requireFile(target)
-  const stage = path.join(root, `.native-skills.${randomUUID()}`)
-  let staged = false
-  try {
-    await copyFile(source, stage, constants.COPYFILE_EXCL)
-    staged = true
-    await chmod(stage, 0o644)
-    await rename(stage, target)
-  } finally {
-    if (staged) {
-      await unlink(stage).catch((error) => {
-        if (error.code !== "ENOENT") throw error
-      })
+  const sourceRoot = path.dirname(fileURLToPath(import.meta.url))
+  const helpers = includeManual ? ["native-skills.mjs", "manual-skills.mjs"] : ["native-skills.mjs"]
+  for (const name of helpers) {
+    await requireFile(path.join(sourceRoot, name))
+    if (await statusIfPresent(path.join(root, name))) await requireFile(path.join(root, name))
+  }
+  for (const name of helpers) {
+    const stage = path.join(root, `.${name}.${randomUUID()}`)
+    let staged = false
+    try {
+      await copyFile(path.join(sourceRoot, name), stage, constants.COPYFILE_EXCL)
+      staged = true
+      await chmod(stage, 0o644)
+      await rename(stage, path.join(root, name))
+    } finally {
+      if (staged) {
+        await unlink(stage).catch((error) => {
+          if (error.code !== "ENOENT") throw error
+        })
+      }
     }
   }
 }
 
 const main = async (args) => {
-  if (args[0] === "--install" && args.length === 2) return installHelper(args[1])
+  if (args.length === 2 && ["--install", "--install-manual"].includes(args[0])) {
+    return installHelper(args[1], args[0] === "--install-manual")
+  }
   const [manager, command, ...remaining] = args
   const catalog = command === "--fresh" ? remaining.shift() : undefined
   const paths = remaining

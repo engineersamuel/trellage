@@ -161,6 +161,40 @@ source requires `ui-guidelines`, and that source is part of `sandbox-common`,
 `native-common`, and `comparison-common`. A skill-bearing rebuild is therefore
 not byte-reproducible.
 
+All three common bundles also include
+[`i-have-adhd`](https://github.com/ayghri/i-have-adhd) for manual activation only.
+Trellage preserves its manual-invocation metadata and installs the portable skill,
+not the upstream plugin, hooks, or extensions. It does not add this skill to
+automatic instructions. Use your harness's explicit skill interface; command
+syntax differs between harnesses.
+
+| Harness | Command in the harness conversation |
+| --- | --- |
+| Codex | `$i-have-adhd` |
+| Claude Code, Firstmate, Grok | `/i-have-adhd` |
+| Copilot, Agency | `/i-have-adhd`, subject to the compatibility note below |
+| Oh My Pi, Pi, Prime | `/skill:i-have-adhd` |
+
+On Copilot versions affected by
+[github/copilot-cli#4438](https://github.com/github/copilot-cli/issues/4438),
+explicitly ask the agent to read and apply the profile's
+`skills/i-have-adhd/SKILL.md` file instead of using its `skill` tool. Keep the
+manual-only metadata; removing it would permit automatic activation.
+
+JCode does not enforce the upstream manual-only metadata. `jcx` therefore keeps
+this skill outside JCode's automatic discovery paths. Use
+`jcx skill i-have-adhd "PROMPT"` for a one-shot request with the skill applied.
+See the [JCode manual skill instructions](prototypes/trellage-jcode-profiles/README.md#manual-output-skill)
+for use in an existing interactive session. After explicit activation, the
+upstream mode lasts for that session until you request `stop adhd mode` or
+`normal mode`.
+
+Headlong also ignores the manual-only metadata. Its copy stays in the private
+managed store, outside both identity skill registries. In the Headlong
+conversation, explicitly ask it to read and apply
+`/home/agent/.headlong/.trellage/skills/i-have-adhd/SKILL.md`.
+It is not registered with Headlong's `skills show` command.
+
 Launching handles the common case on its own: `trellage --profile <profile>`
 resolves and builds on first use, then reuses the matching local receipt and
 image. Harness updates do not need a profile edit: profiles declare
@@ -744,6 +778,13 @@ profile skills remain available.
 
 `trx skills update` remains a cache-only maintenance command. Use the unified
 `trx upgrade all` operation to update harnesses and deployed skill copies together.
+
+Reinstall the Native launchers before refreshing skills after a catalog or
+shared-helper change. For `i-have-adhd`, the updated JCode adapter must be
+installed before `trx skills update`; publishing only the catalog is not enough.
+Then copy the refreshed cache with each launcher's `skills-update PROFILE`
+command, or let its next normal launch sync the cache. Existing Sandbox and
+comparison images must be rebuilt with the updated Trellage compiler and runtime.
 
 The installers publish these commands and managed runtimes:
 
