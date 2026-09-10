@@ -1,3 +1,4 @@
+export * from "./conversation.js";
 export type ProfileGuideIdentity = {
     readonly surface: "native";
     readonly launcher: string;

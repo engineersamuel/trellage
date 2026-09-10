@@ -1,5 +1,6 @@
 import {
   buildHerdrGuideLaunch,
+  buildGuideLaunchCommand,
   createHerdrTab,
   createHerdrWorktree,
   launchInHerdrPaneAndPrompt,
@@ -37,6 +38,7 @@ export interface QueuedGuideJob {
   readonly command: CommandSpec
   readonly promptDelivery: HerdrPromptDeliveryMode
   readonly placement: JobPlacement
+  readonly privatePrompt?: boolean
 }
 
 export interface GuideQueueState {
@@ -110,6 +112,16 @@ export interface GuideBatchExecutionServices {
   readonly runner: CommandRunner
   readonly write: (text: string) => void
   readonly onProgress?: (event: GuideBatchProgressEvent) => void
+  readonly onAllocated?: (
+    job: QueuedGuideJob,
+    destination: {
+      readonly paneId: string
+      readonly workspaceId: string
+      readonly cwd: string
+    },
+  ) => Promise<void>
+  readonly onResult?: (entry: GuideBatchEntryResult) => Promise<void>
+  readonly launchPrivate?: typeof launchInHerdrPaneAndPrompt
 }
 
 export const emptyGuideQueue = (): GuideQueueState => ({ entries: [], nextId: 1, selectedIndex: 0 })
@@ -223,7 +235,9 @@ const validateQueuedJob = (job: QueuedGuideJob): string | undefined => {
   if (placementMessage !== undefined) return placementMessage
   try {
     const profile = parseSelectedProfile(job.profile)
-    const built = buildHerdrGuideLaunch(profile, job.prompt)
+    const built = job.privatePrompt
+      ? { command: buildGuideLaunchCommand(profile).command, promptDelivery: "agent" }
+      : buildHerdrGuideLaunch(profile, job.prompt)
     if (
       built.promptDelivery !== job.promptDelivery ||
       built.command.executable !== job.command.executable ||
@@ -340,7 +354,9 @@ const allocateJobs = async (
   for (const item of launchable) {
     report(services, item.job.id, "allocating", allocationDetail(item.job.placement))
     try {
-      allocated.push({ ...item, ...(await allocateJob(services.runner, context, item.job.placement)) })
+      const destination = await allocateJob(services.runner, context, item.job.placement)
+      await services.onAllocated?.(item.job, destination)
+      allocated.push({ ...item, ...destination })
     } catch (error) {
       const message = describeError(error)
       entries[item.index] = allocationFailure(item.job, message)
@@ -360,7 +376,10 @@ const checkReadiness = async (
     structurallyValid.map(async (item) => {
       report(services, item.job.id, "checking", "Checking profile readiness")
       try {
-        return { item, result: await checkSelectedProfileReadiness(services.runner, item.job.profile, context.cwd) }
+        return {
+          item,
+          result: await checkSelectedProfileReadiness(services.runner, item.job.profile, context.cwd),
+        }
       } catch (error) {
         return { item, error }
       }
@@ -376,7 +395,12 @@ const checkReadiness = async (
           : undefined
     if (message === undefined) launchable.push(outcome.item)
     else {
-      entries[outcome.item.index] = { job: outcome.item.job, status: "not-ready", stage: "readiness", message }
+      entries[outcome.item.index] = {
+        job: outcome.item.job,
+        status: "not-ready",
+        stage: "readiness",
+        message,
+      }
       report(services, outcome.item.job.id, "failed", message)
     }
   }
@@ -384,10 +408,7 @@ const checkReadiness = async (
 }
 
 /** Prints the per-entry outcome. The interactive guide prints this after Ink exits. */
-export const writeGuideBatchSummary = (
-  result: GuideBatchExecutionResult,
-  write: (text: string) => void,
-): void => {
+export const writeGuideBatchSummary = (result: GuideBatchExecutionResult, write: (text: string) => void): void => {
   write(`Batch launch summary: ${result.entries.length} job${result.entries.length === 1 ? "" : "s"}\n`)
   for (const entry of result.entries) {
     const identity = `${entry.job.id}. ${entry.job.profile.profile}`
@@ -418,7 +439,12 @@ export const executeGuideBatch = async (
   const seenIds = new Set<number>()
   const seenBranches = new Set<string>()
   batch.jobs.forEach((job, index) => {
-    const message = collidingEntryMessage(job, seenIds, seenBranches) ?? validateQueuedJob(job)
+    const message =
+      (job.privatePrompt && services.launchPrivate === undefined
+        ? "Private prompt delivery is unavailable."
+        : undefined) ??
+      collidingEntryMessage(job, seenIds, seenBranches) ??
+      validateQueuedJob(job)
     rememberEntry(job, seenIds, seenBranches)
     if (message === undefined) structurallyValid.push({ index, job })
     else {
@@ -432,7 +458,7 @@ export const executeGuideBatch = async (
 
   const launches = await Promise.allSettled(
     allocated.map((item) =>
-      launchInHerdrPaneAndPrompt(services.runner, {
+      (item.job.privatePrompt ? services.launchPrivate! : launchInHerdrPaneAndPrompt)(services.runner, {
         paneId: item.paneId,
         cwd: item.cwd,
         command: item.job.command,
@@ -459,7 +485,13 @@ export const executeGuideBatch = async (
       return
     }
     const message = describeError(launch.reason)
-    entries[item.index] = { job: item.job, status: "launch-failed", stage: "launch", paneId: item.paneId, message }
+    entries[item.index] = {
+      job: item.job,
+      status: "launch-failed",
+      stage: "launch",
+      paneId: item.paneId,
+      message,
+    }
     report(services, item.job.id, "failed", message)
   })
 
@@ -468,9 +500,15 @@ export const executeGuideBatch = async (
       if (entry !== undefined) return entry
       const job = batch.jobs[index]
       if (job === undefined) throw new Error("Batch result lost its queue entry.")
-      return { job, status: "invalid", stage: "validation", message: "Batch entry was not processed." }
+      return {
+        job,
+        status: "invalid",
+        stage: "validation",
+        message: "Batch entry was not processed.",
+      }
     }),
   }
+  for (const entry of result.entries) await services.onResult?.(entry)
   writeGuideBatchSummary(result, services.write)
   return { exitCode: guideBatchExitCode(result), result }
 }

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "maximumTranscriptBytes": 67108864,
+  "maximumRecordBytes": 16777216,
+  "maximumRecords": 250000,
+  "maximumMessages": 100000,
+  "maximumMessageBytes": 4194304,
+  "maximumTextBytes": 33554432,
+  "maximumRequestBytes": 67108864,
+  "readChunkBytes": 65536
+}

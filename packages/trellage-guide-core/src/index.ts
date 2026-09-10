@@ -2,6 +2,8 @@ import { parse } from "yaml"
 import { lstat, readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 
+export * from "./conversation.js"
+
 export type ProfileGuideIdentity =
   | {
       readonly surface: "native"

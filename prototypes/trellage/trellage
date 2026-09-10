@@ -141,6 +141,7 @@ case "${1:-}" in
   --help|-h)
     printf '%s\n' \
       'Usage: trellage [--profile PROFILE] [AGENT ARGS...]' \
+      '  trellage --profile PROFILE session final-message|export-conversation|describe-conversation|release-conversation --agent AGENT --container-id ID --invocation ID' \
       '  trellage skills-check PROFILE' \
       '  trellage harness-version PROFILE' \
       '  trellage validate|lock|build|upgrade|ci-verify|list [PROFILE]'
@@ -179,6 +180,9 @@ resume_session_id=
 session_agent=
 session_container_id=
 session_invocation_id=
+session_command=
+session_cursor=
+session_snapshot=
 session_subcommand_seen=false
 if [[ "$compiler_mode" == false ]]; then
   parsed_arguments=()
@@ -319,8 +323,11 @@ if [[ "$compiler_mode" == false ]]; then
         ;;
       session)
         [[ "$prompt_argument_set" == false ]] || fail '--prompt cannot be combined with session commands'
-        [[ "$#" -ge 2 && "$2" == final-message ]] \
-          || fail 'session requires the final-message subcommand'
+        session_command="${2:-}"
+        case "$session_command" in
+          final-message|export-conversation|describe-conversation|release-conversation) ;;
+          *) fail 'session requires final-message, export-conversation, describe-conversation, or release-conversation' ;;
+        esac
         shift 2
         while (( $# > 0 )); do
           case "$1" in
@@ -342,20 +349,40 @@ if [[ "$compiler_mode" == false ]]; then
               session_invocation_id="$2"
               shift 2
               ;;
-            *) fail "unknown session final-message argument: $1" ;;
+            --cursor)
+              [[ "$session_command" == export-conversation ]] \
+                || fail "--cursor is not supported for session $session_command"
+              [[ -z "$session_cursor" ]] || fail '--cursor may be specified only once'
+              [[ $# -ge 2 && -n "$2" ]] || fail '--cursor requires a value'
+              session_cursor="$2"
+              [[ "$session_cursor" =~ ^[0-9a-f]{128}$ ]] || fail 'invalid conversation cursor'
+              shift 2
+              ;;
+            --snapshot)
+              [[ "$session_command" == describe-conversation || "$session_command" == release-conversation ]] \
+                || fail "--snapshot is not supported for session $session_command"
+              [[ -z "$session_snapshot" ]] || fail '--snapshot may be specified only once'
+              [[ $# -ge 2 && -n "$2" ]] || fail '--snapshot requires a value'
+              session_snapshot="$2"
+              [[ "$session_snapshot" =~ ^[0-9a-f]{64}$ ]] || fail 'invalid conversation snapshot ID'
+              shift 2
+              ;;
+            *) fail "unknown session $session_command argument: $1" ;;
           esac
         done
-        [[ -n "$profile_argument" ]] || fail 'session final-message requires --profile'
+        [[ -n "$profile_argument" ]] || fail "session $session_command requires --profile"
         case "$session_agent" in
           copilot|codex|claude) ;;
-          *) fail 'session final-message agent must be copilot, codex, or claude' ;;
+          *) fail "session $session_command agent must be copilot, codex, or claude" ;;
         esac
         [[ "$session_container_id" =~ ^[0-9a-f]{64}$ ]] \
-          || fail 'session final-message container ID must be 64 lowercase hexadecimal characters'
+          || fail "session $session_command container ID must be 64 lowercase hexadecimal characters"
         [[ "$session_invocation_id" =~ ^[0-9a-f]{32}$ ]] \
-          || fail 'session final-message invocation ID must be 32 lowercase hexadecimal characters'
+          || fail "session $session_command invocation ID must be 32 lowercase hexadecimal characters"
+        [[ "$session_command" != release-conversation || -n "$session_snapshot" ]] \
+          || fail 'session release-conversation requires --snapshot'
         set --
-        mode=session-final-message
+        mode=session-bridge
         ;;
       shell|start|stop|doctor|destroy)
         [[ "$prompt_argument_set" == false ]] || fail '--prompt cannot be combined with positional arguments'
@@ -397,12 +424,12 @@ if [[ "$output_format_set" == true ]]; then
     *) fail '--output-format is supported only for agent launches' ;;
   esac
 fi
-if [[ "$mode" == session-final-message ]]; then
-  [[ -z "$auth_mode_argument" ]] || fail '--auth-mode cannot be combined with session final-message'
-  [[ -z "$model_argument" ]] || fail '--model cannot be combined with session final-message'
-  [[ -z "$agent_argument" ]] || fail '--agent cannot be combined with session final-message'
-  [[ "$output_format_set" == false ]] || fail '--output-format cannot be combined with session final-message'
-  [[ "$trellage_events" == false ]] || fail '--trellage-events cannot be combined with session final-message'
+if [[ "$mode" == session-bridge ]]; then
+  [[ -z "$auth_mode_argument" ]] || fail "--auth-mode cannot be combined with session $session_command"
+  [[ -z "$model_argument" ]] || fail "--model cannot be combined with session $session_command"
+  [[ -z "$agent_argument" ]] || fail "--agent cannot be combined with session $session_command"
+  [[ "$output_format_set" == false ]] || fail "--output-format cannot be combined with session $session_command"
+  [[ "$trellage_events" == false ]] || fail "--trellage-events cannot be combined with session $session_command"
 fi
 
 case "$mode" in
@@ -418,7 +445,9 @@ if [[ "${1:-}" == skills-check ]]; then
   exec node "$compiler" "$@"
 fi
 dependency_bootstrap="$prototype_dir/../../scripts/bootstrap-development-dependencies.sh"
-[[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
+if [[ "$mode" != session-bridge || "$session_command" == final-message ]]; then
+  [[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
+fi
 compiler_package_dir="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)"
 guide_core_package_dir="$(cd "$prototype_dir/../../packages/trellage-guide-core" && pwd -P)"
 compiler="$compiler_package_dir/dist/cli.js"
@@ -443,7 +472,7 @@ profile_compiler_is_fresh() {
 # image builds) can run before the requested command owns stdout. Keep
 # machine-readable output streams free of npm and build status output.
 run_lifecycle_command() {
-  if [[ "$output_format" == jsonl || "$mode" == session-final-message \
+  if [[ "$output_format" == jsonl || "$mode" == session-bridge \
     || "$mode" == compiler && "${trellage_arguments[0]}" == list ]]; then
     "$@" 1>&2
   else
@@ -1066,7 +1095,7 @@ sha256() {
 }
 
 if [[ "$mode" != prompt && "$mode" != start && "$mode" != stop && "$mode" != doctor && "$mode" != destroy \
-  && "$mode" != session-final-message \
+  && "$mode" != session-bridge \
   && ! ( "$mode" == resume && "$prompt_argument_set" == true ) \
   && "$output_format" != jsonl ]]; then
   [[ -t 0 && -t 1 ]] || fail 'an interactive terminal is required'
@@ -2514,45 +2543,55 @@ inspect_profile_image() {
   inspect_image_ref "$image"
 }
 
-if [[ "$mode" == session-final-message ]]; then
+if [[ "$mode" == session-bridge ]]; then
   [[ "$profile_locked" == true ]] \
-    || fail 'session final-message requires a current locked profile'
+    || fail "session $session_command requires a current locked profile"
   [[ "$session_agent" == "$harness_kind" ]] \
-    || fail "session final-message agent does not match profile harness: $profile_name"
+    || fail "session $session_command agent does not match profile harness: $profile_name"
   container_is_present \
-    || fail "session final-message container is unavailable: $container_name"
+    || fail "session $session_command container is unavailable: $container_name"
   inspect_container
   [[ "$container_id" == "$session_container_id" ]] \
-    || fail "session final-message container ID does not match the selected profile: $container_name"
+    || fail "session $session_command container ID does not match the selected profile: $container_name"
   container_is_current \
-    || fail "session final-message container is stale: $container_name"
+    || fail "session $session_command container is stale: $container_name"
   volume_is_present || fail "Docker state volume is missing: $state_volume"
   validate_state_volume
   validate_container_mounts
   validate_container_runtime
+  if [[ "$session_command" != final-message ]]; then
+    [[ "$(container_mount_state)" == current ]] \
+      || fail "session $session_command requires current container mounts: $container_name"
+    [[ "$(container_runtime_state)" == current ]] \
+      || fail "session $session_command requires current container runtime configuration: $container_name"
+  fi
   container_image_id="$(docker container inspect \
     --format '{{ .Image }}' "$container_id" 2>/dev/null)" \
     || fail "cannot inspect Docker container image: $container_name"
   inspect_image_ref "$container_image_id" \
-    || fail "session final-message container image is unavailable or stale: $container_name"
+    || fail "session $session_command container image is unavailable or stale: $container_name"
   [[ "$resolved_image_id" == "$container_image_id" ]] \
-    || fail "session final-message container image identity changed: $container_name"
+    || fail "session $session_command container image identity changed: $container_name"
   running="$(docker container inspect --format '{{ .State.Running }}' "$container_id" 2>/dev/null)" \
     || fail "cannot inspect Docker container state: $container_name"
   [[ "$running" == true ]] \
-    || fail "session final-message container is not running: $container_name"
+    || fail "session $session_command container is not running: $container_name"
   verify_docker_server
   docker_executable="$(command -v docker)" \
     || fail 'docker is required'
+  session_bridge_args=("$session_command" --agent "$session_agent" --profile "$profile_name"
+    --invocation "$session_invocation_id")
+  if [[ "$session_command" != final-message ]]; then
+    session_bridge_args+=(--container-id "$container_id")
+  fi
+  [[ -z "$session_cursor" ]] || session_bridge_args+=(--cursor "$session_cursor")
+  [[ -z "$session_snapshot" ]] || session_bridge_args+=(--snapshot "$session_snapshot")
   exec "$docker_executable" --host "$docker_endpoint" container exec \
     --user '10001:10001' \
     --workdir "$mount_path" \
     "$container_id" \
     /usr/local/bin/trellage-session-bridge \
-    final-message \
-    --agent "$session_agent" \
-    --profile "$profile_name" \
-    --invocation "$session_invocation_id"
+    "${session_bridge_args[@]}"
 fi
 
 if [[ "$profile_locked" != true ]]; then

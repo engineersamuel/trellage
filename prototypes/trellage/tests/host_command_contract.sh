@@ -5666,9 +5666,137 @@ test_session_final_message_contract() {
   printf 'Trellage host test: PASS: exact session final-message target and argv validation\n'
 }
 
+test_session_conversation_contract() {
+  local worktree="$test_root/session-conversation"
+  local docker_log="$test_root/session-conversation.docker.log"
+  local result_file="$test_root/session-conversation.json"
+  local stderr_file="$test_root/session-conversation.stderr"
+  local state_volume container_id invocation snapshot cursor operation status output failure
+  local selected_container selected_agent
+  mkdir -p "$worktree"
+  container_id="$(printf '%064d' 1)"
+  selected_container="$container_id"
+  selected_agent=copilot
+  invocation=0123456789abcdef0123456789abcdef
+  snapshot="$(printf '%064d' 3)"
+  cursor="$snapshot$(printf '%064d' 4)"
+  state_volume="$(resource_names "$worktree" copilot-hve-test copilot | tail -n 1)"
+  printf '%s\n' '{"schemaVersion":1,"fixture":"conversation"}' >"$result_file"
+
+  run_conversation_request() {
+    local operation="$1"
+    shift
+    local container_state=matching-running volume_state=matching runtime_state=matching
+    local models_state=matching container_runtime_hash="$runtime_hash" image_profile_hash
+    image_profile_hash="$(jq -r '.profile_hash' "$copilot_metadata")"
+    case "${1:-}" in
+      stopped) container_state=matching-stopped ;;
+      unrelated-container) container_state=unrelated ;;
+      unrelated-volume) volume_state=unrelated ;;
+      stale-runtime) container_runtime_hash=sha256:stale ;;
+      stale-image) image_profile_hash=sha256:stale ;;
+      missing-models) models_state=absent ;;
+      missing-runtime) runtime_state=absent ;;
+    esac
+    local args=(--profile copilot-hve-test session "$operation"
+      --agent "$selected_agent" --container-id "$selected_container" --invocation "$invocation")
+    if [[ "$operation" == export-conversation ]]; then
+      args+=(--cursor "$cursor")
+    else
+      args+=(--snapshot "$snapshot")
+    fi
+    FAKE_GH_STATE=failure FAKE_DOCKER_AGENT_STDOUT_FILE="$result_file" \
+      FAKE_DOCKER_VOLUME_STATE="$volume_state" FAKE_DOCKER_STATE_VOLUME="$state_volume" \
+      FAKE_DOCKER_CONTAINER_STATE="$container_state" FAKE_DOCKER_RUNTIME_STATE="$runtime_state" \
+      FAKE_DOCKER_MODELS_MOUNT_STATE="$models_state" \
+      FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$container_runtime_hash" \
+      FAKE_DOCKER_IMAGE_PROFILE_HASH="$image_profile_hash" \
+      FAKE_DOCKER_PROFILE=copilot-hve-test FAKE_DOCKER_PROTOTYPE=trellage-copilot \
+      run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+        env TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" "${args[@]}"
+  }
+
+  for operation in export-conversation describe-conversation release-conversation; do
+    : >"$docker_log"
+    output="$(run_conversation_request "$operation")"
+    [[ "$output" == '{"schemaVersion":1,"fixture":"conversation"}' ]] \
+      || fail "session $operation did not return the bridge result"
+    assert_arg "$docker_log" /usr/local/bin/trellage-session-bridge
+    assert_arg "$docker_log" "$operation"
+    assert_arg "$docker_log" --container-id
+    assert_arg "$docker_log" "$container_id"
+    assert_arg "$docker_log" "$invocation"
+    assert_arg "$docker_log" '10001:10001'
+    assert_arg "$docker_log" fake-image-id
+    if [[ "$operation" == export-conversation ]]; then
+      assert_arg "$docker_log" --cursor
+      assert_arg "$docker_log" "$cursor"
+    else
+      assert_arg "$docker_log" --snapshot
+      assert_arg "$docker_log" "$snapshot"
+    fi
+    ! grep -Fqx $'ARG\ttest/copilot:locked' "$docker_log" \
+      || fail "session $operation depended on a mutable image tag"
+    ! grep -Eq $'ARG\t(bash|fish|sh|-c|-lc|-Nlc|--mount|--volume)$' "$docker_log" \
+      || fail "session $operation used a shell or mounted private state"
+
+    for failure in stopped unrelated-container unrelated-volume stale-runtime stale-image missing-models missing-runtime; do
+      : >"$docker_log"
+      status=0
+      run_conversation_request "$operation" "$failure" \
+        >"$test_root/session-conversation-failed.stdout" 2>"$stderr_file" || status=$?
+      [[ "$status" -ne 0 ]] || fail "session $operation accepted $failure"
+      ! grep -Fq /usr/local/bin/trellage-session-bridge "$docker_log" \
+        || fail "session $operation executed after a failed container check"
+    done
+
+    : >"$docker_log"
+    selected_container="$(printf '%064d' 2)"
+    status=0
+    run_conversation_request "$operation" >"$test_root/session-conversation-id.stdout" \
+      2>"$stderr_file" || status=$?
+    [[ "$status" -ne 0 ]] || fail "session $operation accepted another container"
+    ! grep -Fq /usr/local/bin/trellage-session-bridge "$docker_log" \
+      || fail "session $operation executed for another container"
+    selected_container="$container_id"
+
+    selected_agent=claude
+    status=0
+    run_conversation_request "$operation" >"$test_root/session-conversation-agent.stdout" \
+      2>"$stderr_file" || status=$?
+    [[ "$status" -ne 0 ]] || fail "session $operation accepted another profile agent"
+    selected_agent=copilot
+  done
+  unset -f run_conversation_request
+
+  for failure in '--cursor ../outside' '--cursor bad --cursor bad' '--snapshot bad' '--unknown flag'; do
+    : >"$docker_log"
+    status=0
+    local first second third fourth
+    read -r first second third fourth <<<"$failure"
+    run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+      "$prototype_dir/trellage" --profile copilot-hve-test session export-conversation \
+      --agent copilot --container-id "$container_id" --invocation "$invocation" \
+      "$first" "$second" "$third" "$fourth" \
+      >"$test_root/session-conversation-invalid.stdout" 2>"$stderr_file" || status=$?
+    [[ "$status" -ne 0 ]] || fail "session export-conversation accepted invalid arguments"
+    ! grep -Fq /usr/local/bin/trellage-session-bridge "$docker_log" \
+      || fail "session export-conversation executed with invalid arguments"
+  done
+  status=0
+  run_copilot_non_tty "$worktree" "$docker_log" "$worktree" \
+    "$prototype_dir/trellage" --profile copilot-hve-test session release-conversation \
+    --agent copilot --container-id "$container_id" --invocation "$invocation" \
+    >"$test_root/session-release-missing.stdout" 2>"$stderr_file" || status=$?
+  [[ "$status" -ne 0 ]] || fail 'session release-conversation accepted a missing snapshot'
+  grep -Fq 'requires --snapshot' "$stderr_file" || fail 'release missing-snapshot diagnostic differs'
+  printf 'Trellage host test: PASS: sealed conversation operations reuse exact container validation\n'
+}
+
 if [[ "${TRELLAGE_HOST_SESSION_BRIDGE_ONLY:-}" == 1 ]]; then
   test_sandbox_session_bridge_attachment_contract
   test_session_final_message_contract
+  test_session_conversation_contract
   exit 0
 fi
 
@@ -5864,6 +5992,7 @@ if [[ "${TRELLAGE_HOST_AGENT_ONLY:-}" == 1 ]]; then
   test_agent_overrides_reach_copilot_runtimes
   test_portable_prompt_parser_contract
   test_session_final_message_contract
+  test_session_conversation_contract
   exit 0
 fi
 
@@ -5924,6 +6053,7 @@ test_trellage_event_bridge_contract
 test_headless_capabilities_precede_mutation
 test_sandbox_session_bridge_attachment_contract
 test_session_final_message_contract
+test_session_conversation_contract
 test_stopped_and_collision_behavior
 test_stale_container_preserves_active_sessions
 test_volume_collision_and_mount_validation

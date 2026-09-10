@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "maxSnapshotBytes": 33554432,
+  "maxMessages": 20000,
+  "maxInputBytes": 131072,
+  "maxSummaryInputBytes": 65536,
+  "maxResponseBytes": 32768,
+  "maxSummaryTextBytes": 4096,
+  "maxSummaryEvidenceBytes": 2048,
+  "maxSummaryPoints": 16,
+  "systemPromptReserveBytes": 8192,
+  "protocolReserveBytes": 2048,
+  "outputReserveTokens": 32768,
+  "runtimeReserveTokens": 8192,
+  "recentMessages": 6,
+  "maxSummaryChunks": 24,
+  "maxReductionLevels": 4,
+  "maxCalls": 64,
+  "schemaRepairAttempts": 1,
+  "requestTimeoutMs": 120000,
+  "cleanupTimeoutMs": 3000,
+  "allowedTools": [],
+  "contentRules": [
+    {
+      "id": "credential-token",
+      "pattern": "\\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{24,})\\b",
+      "flags": "u"
+    },
+    {
+      "id": "private-key",
+      "pattern": "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----",
+      "flags": "u"
+    },
+    {
+      "id": "assigned-credential",
+      "pattern": "\\b(?:api[_-]?key|access[_-]?token|password|client[_-]?secret)\\s*[\"']?\\s*[:=]\\s*[\"']?[A-Za-z0-9_+./=-]{12,}",
+      "flags": "iu"
+    },
+    {
+      "id": "instruction-override",
+      "pattern": "\\bignore\\s+(?:(?:all|any|the)\\s+)?(?:previous|prior|above|system|developer)\\s+(?:instructions|rules)\\b",
+      "flags": "iu"
+    },
+    {
+      "id": "credential-exfiltration",
+      "pattern": "\\b(?:upload|exfiltrate|send)\\s+(?:(?:all|the|your|my)\\s+)?(?:credentials|private keys|access tokens)\\s+to\\b",
+      "flags": "iu"
+    }
+  ]
+}

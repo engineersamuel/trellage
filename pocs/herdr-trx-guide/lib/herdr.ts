@@ -8,6 +8,7 @@ type JsonRecord = Record<string, unknown>
 interface HerdrRequestOptions {
   readonly socketPath?: string
   readonly timeoutMs?: number
+  readonly signal?: AbortSignal
 }
 
 interface HerdrRunOptions {
@@ -31,9 +32,10 @@ export class HerdrRequestError extends Error {
 export const requestHerdr = (
   method: string,
   params: JsonRecord,
-  { socketPath = process.env.HERDR_SOCKET_PATH, timeoutMs = 5000 } = {},
+  { socketPath = process.env.HERDR_SOCKET_PATH, timeoutMs = 5000, signal }: HerdrRequestOptions = {},
 ): Promise<JsonRecord> =>
   new Promise<JsonRecord>((resolve, reject) => {
+    signal?.throwIfAborted()
     if (typeof socketPath !== "string" || socketPath.length === 0) {
       reject(new Error("HERDR_SOCKET_PATH is not set"))
       return
@@ -46,12 +48,15 @@ export const requestHerdr = (
       if (settled) return
       settled = true
       clearTimeout(timer)
+      signal?.removeEventListener("abort", onAbort)
       socket.destroy()
       if (error) reject(error)
       else if (value !== undefined) resolve(value)
       else reject(new Error(`Herdr ${method} returned no result`))
     }
+    const onAbort = () => finish(new DOMException("Herdr request was aborted.", "AbortError"))
     const timer = setTimeout(() => finish(new Error(`Herdr ${method} timed out`)), timeoutMs)
+    signal?.addEventListener("abort", onAbort, { once: true })
     socket.setEncoding("utf8")
     socket.once("connect", () => {
       socket.write(`${JSON.stringify({ id: requestId, method, params })}\n`)

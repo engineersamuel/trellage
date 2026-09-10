@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url"
 
 import { readClipboard } from "./lib/clipboard.ts"
 import { inspectCaptureOptions, selectedTextChoice } from "./lib/capture-options.ts"
+import { focusedConversationChoice } from "./lib/conversation-capture.ts"
+import { removeConversationChoice, writeConversationChoice } from "./lib/conversation-state.ts"
 import {
   panelInvocationSource,
   parseCustomPopupContext,
@@ -25,6 +27,7 @@ import { stringWidth, truncateToWidth, wrapText } from "./lib/terminal-text.ts"
 
 export { panelInvocationSource }
 const actionId = "trellage.guide-handoff.open"
+const conversationActionId = "trellage.guide-handoff.analyze-conversation"
 
 const out = (stream, value) => stream.write(value)
 
@@ -102,6 +105,37 @@ const popupFooter = ({ busy, status, screen, queueOnly, choices }) => {
   return "Enter open  a add selected  e edit queue  x clear queue  q/Esc close"
 }
 
+export const invokeConversationChoice = async ({
+  choice,
+  operation = "open",
+  context,
+  stateDir,
+  request = requestHerdr,
+  choiceWriter = writeConversationChoice,
+  choiceRemover = removeConversationChoice,
+}) => {
+  if (operation !== "open" || choice.disabled || choice.binding === undefined) {
+    throw new Error("Conversation analysis is available only for an explicit supported focused source; it cannot be queued.")
+  }
+  const token = await choiceWriter(stateDir, choice.binding)
+  try {
+    await request("plugin.action.invoke", {
+      action_id: conversationActionId,
+      context: {
+        workspace_id: context.workspaceId,
+        ...(context.tabId === undefined ? {} : { tab_id: context.tabId }),
+        focused_pane_id: context.paneId,
+        focused_pane_cwd: context.cwd,
+        invocation_source: panelInvocationSource,
+        selected_text: token,
+      },
+    })
+  } catch (error) {
+    await choiceRemover(stateDir, token)
+    throw error
+  }
+}
+
 export const invokeGuideChoice = async ({
   choice,
   operation = "open",
@@ -111,6 +145,9 @@ export const invokeGuideChoice = async ({
   choiceWriter = writeChoice,
   choiceRemover = removeChoice,
 }) => {
+  if (choice.kind === "next-steps") {
+    return invokeConversationChoice({ choice, operation, context, stateDir, request })
+  }
   const choiceToken = await choiceWriter(
     stateDir,
     choice.kind === "queue"
@@ -160,11 +197,13 @@ export const main = async ({
   clipboardReader = readClipboard,
   request = requestHerdr,
   captureInspector = inspectCaptureOptions,
+  conversationInspector = focusedConversationChoice,
   initialStatus = "",
 } = {}) => {
   if (!input.isTTY || !output.isTTY) throw new Error("The guide source picker requires a terminal")
   const context = providedContext ?? parseCustomPopupContext(env)
   const stateDir = resolvePluginStateDirectory(env)
+  const conversationOption = queueOnly ? undefined : await conversationInspector(context, { env })
   const selection = queueOnly ? {} : selectionFromClipboard(clipboardReader())
   let captureQueue = await readCaptureQueue(stateDir)
   let inspected = { choices: [], notes: [] }
@@ -174,6 +213,7 @@ export const main = async ({
     } catch (error) {
       inspected = { choices: [], notes: [error instanceof Error ? error.message : String(error)] }
     }
+    if (conversationOption !== undefined) inspected.choices.unshift(conversationOption)
   }
   let choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
   let selectedIndex = 0
@@ -234,7 +274,7 @@ export const main = async ({
       const index = firstOption + visibleIndex
       const active = index === activeIndex
       const marker = active ? ">" : " "
-      const label = `${marker} ${choice.label}`
+      const label = `${marker} ${choice.label}${choice.disabled ? " [unavailable]" : ""}`
       writeAt(optionStart + visibleIndex, left, `${active ? "\x1b[7m" : ""}${clipped(label, width)}\x1b[0m`)
     })
 
@@ -275,6 +315,12 @@ export const main = async ({
       render()
       return
     }
+    if (choice.disabled) {
+      busy = false
+      status = choice.detail
+      render()
+      return
+    }
     try {
       await invokeGuideChoice({
         choice,
@@ -293,7 +339,7 @@ export const main = async ({
   const enqueueSelectedChoice = async () => {
     if (busy) return
     const choice = choices[selectedIndex]
-    if (choice === undefined || choice.kind === "queue") {
+    if (choice === undefined || choice.kind === "queue" || choice.kind === "next-steps") {
       status = "Choose highlighted text, an exact result, or a terminal snapshot to add"
       render()
       return

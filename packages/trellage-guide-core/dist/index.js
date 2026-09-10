@@ -1,6 +1,7 @@
 import { parse } from "yaml";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+export * from "./conversation.js";
 export class ProfileGuideValidationError extends Error {
     path;
     constructor(path, message) {

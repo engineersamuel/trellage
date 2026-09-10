@@ -10,6 +10,7 @@ import {
   extractTranscriptConversation,
 } from "./transcript-format.ts"
 import { trellageSessionIdentity } from "./trellage-session.ts"
+import { assertNoConversationSymlinks } from "./conversation-reader.ts"
 
 const maximumRoots = 80
 const maximumCandidates = 512
@@ -164,6 +165,7 @@ const walkJsonl = async (
   root,
   maximumDepth,
   matchesName: (name: string) => boolean = () => true,
+  strict = false,
 ) => {
   if (!(await safeDirectory(root))) return []
   const state = { files: [], pending: [{ directory: root, depth: 0 }], visitedEntries: 0 }
@@ -176,6 +178,9 @@ const walkJsonl = async (
       if (!walkBudgetAvailable(state)) break
       visitWalkEntry(state, current, entry, maximumDepth, matchesName)
     }
+  }
+  if (strict && !walkBudgetAvailable(state)) {
+    throw new Error("Exact transcript lookup exceeded its bounded search budget.")
   }
   return state.files
 }
@@ -213,11 +218,12 @@ const scanCopilot = async (root, roots, sessionId) => {
   return candidates
 }
 
-const scanCodex = async (root, roots, sessionId) => {
+const scanCodex = async (root, roots, sessionId, focused = false) => {
   const files = await walkJsonl(
     path.join(root, "sessions"),
     5,
     sessionId === undefined ? undefined : (name) => name.includes(sessionId),
+    focused,
   )
   const candidates = []
   for (const filePath of files) {
@@ -232,16 +238,25 @@ const scanCodex = async (root, roots, sessionId) => {
   return candidates
 }
 
-const scanClaude = async (root, roots, sessionId) => {
+const claudeMetadata = async (filePath, roots, focused) => {
+  if (focused) {
+    const head = claudeSessionMetadata(await readHead(filePath, roots))
+    if (head !== undefined) return head
+  }
+  return claudeSessionMetadata(await readTail(filePath, roots, 512 * 1024))
+}
+
+const scanClaude = async (root, roots, sessionId, focused = false) => {
   const files = await walkJsonl(
     path.join(root, "projects"),
     3,
     sessionId === undefined ? undefined : (name) => name === `${sessionId}.jsonl`,
+    focused,
   )
   const candidates = []
   for (const filePath of files) {
     try {
-      const metadata = claudeSessionMetadata(await readTail(filePath, roots, 512 * 1024))
+      const metadata = await claudeMetadata(filePath, roots, focused)
       if (metadata === undefined || !safeSessionId.test(metadata.id)) continue
       candidates.push(await candidate("claude", filePath, roots, metadata))
     } catch (error) {
@@ -251,14 +266,14 @@ const scanClaude = async (root, roots, sessionId) => {
   return candidates
 }
 
-const scanCandidates = async (agent, roots, sessionId) => {
+const scanCandidates = async (agent, roots, sessionId, focused = false) => {
   const groups = await Promise.all(
     roots.map((root) =>
       agent === "copilot"
         ? scanCopilot(root, roots, sessionId)
         : agent === "codex"
-          ? scanCodex(root, roots, sessionId)
-          : scanClaude(root, roots, sessionId),
+          ? scanCodex(root, roots, sessionId, focused)
+          : scanClaude(root, roots, sessionId, focused),
     ),
   )
   const unique = new Map()
@@ -307,7 +322,20 @@ export const sessionIdFromProcessInfo = (agent, processInfo) => {
   return ids.size === 1 ? [...ids][0] : undefined
 }
 
-const candidateFromExactPath = async (agent, value, roots) => {
+export const exactSessionIdFromProcessInfo = (agent, processInfo) => {
+  if (!isRecord(processInfo) || !Array.isArray(processInfo.foreground_processes)) return undefined
+  const ids = new Set<string>()
+  for (const process of processInfo.foreground_processes) {
+    if (!isRecord(process) || !Array.isArray(process.argv)) continue
+    const argv = process.argv.filter((value) => typeof value === "string")
+    if (!processMatchesAgent(agent, process, argv)) continue
+    for (const id of sessionIdsFromArgv(agent, argv)) ids.add(id)
+  }
+  if (ids.size > 1) throw new Error("Conflicting exact process session identities were reported.")
+  return [...ids][0]
+}
+
+const candidateFromExactPath = async (agent, value, roots, focused = false) => {
   if (!path.isAbsolute(value) || !value.endsWith(".jsonl")) return undefined
   try {
     const metadata =
@@ -318,7 +346,7 @@ const candidateFromExactPath = async (agent, value, roots) => {
           }
         : agent === "codex"
           ? codexSessionMetadata(await readHead(value, roots))
-          : claudeSessionMetadata(await readTail(value, roots, 512 * 1024))
+          : await claudeMetadata(value, roots, focused)
     if (metadata?.cwd === undefined) return undefined
     return candidate(agent, value, roots, metadata)
   } catch (error) {
@@ -327,7 +355,7 @@ const candidateFromExactPath = async (agent, value, roots) => {
   }
 }
 
-const exactPathSession = async (agent, agentSession, roots) => {
+const exactPathSession = async (agent, agentSession, roots, focused = false) => {
   if (
     !isRecord(agentSession) ||
     agentSession.agent !== agent ||
@@ -336,7 +364,7 @@ const exactPathSession = async (agent, agentSession, roots) => {
   ) {
     return undefined
   }
-  return candidateFromExactPath(agent, agentSession.value, roots)
+  return candidateFromExactPath(agent, agentSession.value, roots, focused)
 }
 
 export const sessionIdFromAgentSession = (agent, agentSession) => {
@@ -384,7 +412,7 @@ export const findTranscript = async ({ agent, cwd, agentSession, processInfo, to
   const nativeProfile = trellageIdentity?.surface === "native" ? trellageIdentity.profile : undefined
   const roots = await transcriptRoots(agent, env, nativeProfile)
   if (roots.length === 0) return undefined
-  const exactPath = await exactPathSession(agent, agentSession, roots)
+  const exactPath = await exactPathSession(agent, agentSession, roots, true)
   const agentSessionId = sessionIdFromAgentSession(agent, agentSession)
   const processSessionId = sessionIdFromProcessInfo(agent, processInfo)
   const nativeSessionId =
@@ -399,6 +427,93 @@ export const findTranscript = async ({ agent, cwd, agentSession, processInfo, to
     identitySource: exactIdentitySource({ agentSessionId, processSessionId, nativeSessionId }),
     profile: nativeProfile,
   }
+}
+
+const focusedHomePaths = (agent, env, nativeProfile) => {
+  const home = homeDirectory(env)
+  if (nativeProfile !== undefined) {
+    return home === undefined ? [] : [
+      path.join(home, ".local", "share", "trellage", "profiles", agent, nativeProfile, "home"),
+    ]
+  }
+  const explicit = agent === "copilot"
+    ? env.COPILOT_HOME
+    : agent === "codex" ? env.CODEX_HOME : env.CLAUDE_CONFIG_DIR
+  return [
+    ...(typeof explicit === "string" ? [explicit] : []),
+    ...(home === undefined ? [] : [path.join(home, agentConfigDirectory(agent))]),
+  ]
+}
+
+export const focusedTranscriptRoots = async (agent, env = process.env, nativeProfile?) => {
+  if (!supportedAgents.has(agent)) return []
+  const roots = []
+  for (const directory of focusedHomePaths(agent, env, nativeProfile)) {
+    if (!path.isAbsolute(directory)) throw new Error("The focused harness home must be an absolute path.")
+    try {
+      await assertNoConversationSymlinks(directory)
+      await addDirectory(roots, directory)
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error
+    }
+  }
+  return roots
+}
+
+const checkedFocusedReference = (agent, agentSession) => {
+  if (agentSession !== undefined && (
+    !isRecord(agentSession) || agentSession.agent !== agent ||
+    !["id", "path"].includes(agentSession.kind) || typeof agentSession.value !== "string"
+  )) throw new Error("The focused harness session reference is invalid.")
+  const agentSessionId = sessionIdFromAgentSession(agent, agentSession)
+  if (agentSession?.kind === "id" && agentSessionId === undefined) {
+    throw new Error("The focused harness session ID is invalid.")
+  }
+  return agentSessionId
+}
+
+const focusedCandidate = async (agent, agentSession, roots, exactId, nativeProfile, identitySource) => {
+  if (agentSession?.kind === "path") {
+    await assertNoConversationSymlinks(agentSession.value)
+    const exactPath = await exactPathSession(agent, agentSession, roots)
+    const transcript = exactPathTranscript(exactPath, exactId, nativeProfile)
+    if (transcript === undefined) throw new Error("The exact focused transcript is unavailable.")
+    return transcript
+  }
+  if (exactId === undefined) throw new Error("The focused pane has no exact session identity.")
+  const candidates = (await scanCandidates(agent, roots, exactId, true)).filter((item) => item.id === exactId)
+  if (candidates.length !== 1) {
+    throw new Error(candidates.length === 0
+      ? "The exact focused transcript is unavailable."
+      : "The focused session has more than one transcript; capture is ambiguous.")
+  }
+  return { ...candidates[0], identitySource, profile: nativeProfile }
+}
+
+export const findFocusedTranscript = async ({
+  agent, cwd, agentSession, processInfo, tokens, env = process.env,
+}) => {
+  if (!supportedAgents.has(agent)) throw new Error("The focused harness does not support conversation analysis.")
+  const identity = trellageSessionIdentity({ agent, tokens, processInfo })
+  if (identity?.surface === "sandbox") throw new Error("Sandbox conversations require the validated session bridge.")
+  const nativeProfile = identity?.surface === "native" ? identity.profile : undefined
+  const roots = await focusedTranscriptRoots(agent, env, nativeProfile)
+  if (roots.length === 0) throw new Error("The focused harness has no supported session root.")
+  const identifiers = {
+    agentSessionId: checkedFocusedReference(agent, agentSession),
+    processSessionId: exactSessionIdFromProcessInfo(agent, processInfo),
+    nativeSessionId: identity?.surface === "native" ? identity.sessionId : undefined,
+  }
+  const transcript = await focusedCandidate(
+    agent, agentSession, roots, exactSessionIdentity(identifiers), nativeProfile,
+    exactIdentitySource(identifiers),
+  )
+  if (!safeSessionId.test(transcript.id) ||
+    normalizedDirectory(transcript.cwd) !== normalizedDirectory(cwd)) {
+    throw new Error("The focused transcript does not match the source working directory or session.")
+  }
+  await assertNoConversationSymlinks(transcript.path)
+  return { ...transcript, roots }
 }
 
 export const captureStructuredFinalMessage = async (options) => {

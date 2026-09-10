@@ -202,6 +202,7 @@ export interface GuideHeadlessArgs {
   readonly model: string | undefined
   readonly effort: GuideEffort | undefined
   readonly uiVariant?: GuideLongPromptVariant
+  readonly nextSteps?: boolean
 }
 
 const helpFlag = "--help"
@@ -213,8 +214,9 @@ const profileFlag = "--profile"
 const modelFlag = "--model"
 const effortFlag = "--effort"
 const uiVariantFlag = "--ui-variant"
+const nextStepsFlag = "--next-steps"
 
-const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag])
+const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag])
 const valueFlags = new Set([intentFlag, profileFlag, modelFlag, effortFlag, uiVariantFlag])
 const knownFlags = new Set([...booleanFlags, ...valueFlags])
 
@@ -222,6 +224,7 @@ interface MutableGuideArgs {
   help: boolean
   json: boolean
   intentStdin: boolean
+  nextSteps: boolean
   intentFromFlag: string | undefined
   profile: string | undefined
   model: string | undefined
@@ -256,6 +259,10 @@ const consumeGuideFlag = (argv: ReadonlyArray<string>, index: number, state: Mut
     state.intentStdin = true
     return index
   }
+  if (token === nextStepsFlag) {
+    state.nextSteps = true
+    return index
+  }
   const value = argv[index + 1]
   if (value === undefined || value.startsWith("--")) {
     throw new GuideArgsError(`Missing value for flag: ${token}`)
@@ -286,6 +293,17 @@ const resolveGuideIntent = (state: MutableGuideArgs): string | undefined => {
 }
 
 const validateGuideModeFlags = (state: MutableGuideArgs): void => {
+  if (
+    state.nextSteps &&
+    (state.json ||
+      state.intentStdin ||
+      state.intentFromFlag !== undefined ||
+      state.positionals.length > 0 ||
+      state.profile !== undefined ||
+      state.uiVariant !== undefined)
+  ) {
+    throw new GuideArgsError("--next-steps requires a private conversation request, not another guide input or mode")
+  }
   if (state.profile !== undefined && !state.json) throw new GuideArgsError("--profile requires --json")
   if (state.uiVariant !== undefined && state.json) throw new GuideArgsError("--ui-variant is interactive-only")
 }
@@ -303,6 +321,7 @@ const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
     model: state.model,
     effort: state.effort,
     ...(state.uiVariant === undefined ? {} : { uiVariant: state.uiVariant }),
+    ...(state.nextSteps ? { nextSteps: true } : {}),
   }
 }
 
@@ -318,6 +337,7 @@ export const guideHeadlessHelpText = [
   "  --intent <text>       Multiline task description, up to 60,000 characters.",
   "                         May instead be given as a single positional argument.",
   "  --intent-stdin        Read the interactive guide intent as plain text from stdin.",
+  "  --next-steps          Analyze the focused conversation from a private Herdr popup request.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
   "                         reference instead of matching. Requires --json.",
   "  --model <id>            Override the configured model.",
@@ -340,6 +360,7 @@ export const parseGuideHeadlessArgv = (argv: ReadonlyArray<string>): GuideHeadle
     help: false,
     json: false,
     intentStdin: false,
+    nextSteps: false,
     intentFromFlag: undefined,
     profile: undefined,
     model: undefined,
@@ -764,6 +785,7 @@ export interface GuideGenerationResponse {
 
 export interface GuideGenerateRequest extends GuideMatchRequest {
   readonly profileRef: string
+  readonly workflowId?: string
 }
 
 const findGuideWorkflow = (guide: ProfileGuideV1, workflowId: string): ProfileGuideWorkflow => {
@@ -867,8 +889,8 @@ export const applyRequiredProfilePromptTemplate = (
 }
 
 /**
- * Generates prompts for one exact profile reference. Deterministically
- * selects that profile's best workflow by token overlap with `intent`, using
+ * Generates prompts for one exact profile reference. Honors an explicit
+ * workflow; otherwise selects the best workflow by token overlap with `intent`, using
  * source order as the tie-break. This avoids a second model-ranking call when
  * a caller already chose a profile from match mode. Loads only the selected
  * profile's full guide (Markdown body included), then calls `provider.generate`.
@@ -883,7 +905,7 @@ export const runGuideGenerate = async (
   const entry = findFullCatalogEntry(catalog, request.profileRef)
   if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${request.profileRef}`)
 
-  const workflowId = selectBestWorkflowByTokenOverlap(entry.guide.workflows, request.intent)
+  const workflowId = request.workflowId ?? selectBestWorkflowByTokenOverlap(entry.guide.workflows, request.intent)
 
   const loaded = await loadSelectedGuide(catalog, guideRoot, request.profileRef)
 
@@ -1031,7 +1053,11 @@ const profileTokenOverlapScore = (
   entry: GuideMatchCatalogEntry,
   intentTokens: ReadonlySet<string>,
   normalizedIntent: string,
-): { readonly score: number; readonly explicitIdentity: boolean; readonly identitySignals: string } => {
+): {
+  readonly score: number
+  readonly explicitIdentity: boolean
+  readonly identitySignals: string
+} => {
   const identityAliases =
     entry.launcher === undefined
       ? [entry.ref, `sandbox/${entry.name}`, `sandbox ${entry.name}`]
