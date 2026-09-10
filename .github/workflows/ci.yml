@@ -28,6 +28,7 @@ jobs:
             packages/trellage-cli/package-lock.json
             packages/trellage-guide-core/package-lock.json
             packages/trellage-launcher/package-lock.json
+            pocs/herdr-trx-guide/package-lock.json
       - name: Install required system tools
         run: sudo apt-get install --yes --no-install-recommends fish ripgrep
       - name: Verify required system tools
@@ -38,6 +39,8 @@ jobs:
         run: npm ci --prefix packages/trellage-guide-core
       - name: Install launcher dependencies
         run: npm ci --prefix packages/trellage-launcher
+      - name: Install Herdr guide integration dependencies
+        run: npm ci --prefix pocs/herdr-trx-guide
       - name: Install browser contract dependencies
         run: npm ci --prefix tests/playwright
       - name: Run full test and build suite

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { readFile, rm } from "node:fs/promises"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
@@ -15,7 +14,7 @@ import * as guideLaunch from "../src/guide-launch.js"
 import { createContinuationServices } from "../src/continuation-runtime.js"
 import { ContinuationStore } from "../src/continuation-store.js"
 import type { GuideProvider } from "../src/guide-provider.js"
-import { runtimeAssessment, runtimeCatalog, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
+import { createContinuationFixtureRoot, runtimeAssessment, runtimeCatalog, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -24,7 +23,7 @@ afterEach(async () => {
 })
 
 const setup = async () => {
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), "trx-runtime-")))
+  const root = await createContinuationFixtureRoot()
   roots.push(root)
   const store = new ContinuationStore(root)
   const snapshot = runtimeSnapshot(root)

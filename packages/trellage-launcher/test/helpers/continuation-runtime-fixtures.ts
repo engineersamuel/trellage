@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto"
+import { mkdtemp, realpath } from "node:fs/promises"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { parseGuideCatalog } from "../../src/guide-catalog.js"
 import {
   ActionAccess,
@@ -10,6 +13,12 @@ import {
   type ContinuationAssessment,
   type ConversationSnapshot,
 } from "../../../trellage-guide-core/dist/index.js"
+
+export const createContinuationFixtureRoot = async (): Promise<string> => {
+  // Match the store tests: shared temporary ancestors are intentionally rejected.
+  const directory = await realpath(fileURLToPath(new URL("../", import.meta.url)))
+  return mkdtemp(path.join(directory, ".continuation-state-"))
+}
 
 export const runtimeSnapshot = (cwd: string): ConversationSnapshot => ({
   schemaVersion: 1,

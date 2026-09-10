@@ -1,11 +1,10 @@
-import { mkdtemp, realpath, readdir, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { readdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ContinuationSourceClient } from "../src/continuation-source-client.js"
 import { ContinuationStore } from "../src/continuation-store.js"
 import { CommandRunnerError, type CommandRunner } from "../src/guide-launch.js"
-import { runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
+import { createContinuationFixtureRoot, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -13,7 +12,7 @@ afterEach(async () => {
 })
 
 const setup = async () => {
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), "trx-source-client-")))
+  const root = await createContinuationFixtureRoot()
   roots.push(root)
   const store = new ContinuationStore(root)
   const snapshot = runtimeSnapshot(root)

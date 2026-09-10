@@ -1,11 +1,9 @@
-import { mkdtemp, realpath, rm, stat } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import path from "node:path"
+import { realpath, rm, stat } from "node:fs/promises"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ContinuationActionStatus, ContinuationPlacementKind } from "../../trellage-guide-core/dist/index.js"
 import { openContinuationRequest, recoverInterruptedContinuation } from "../src/continuation-entry.js"
 import { ContinuationStore } from "../src/continuation-store.js"
-import { runtimeAssessment, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
+import { createContinuationFixtureRoot, runtimeAssessment, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -14,7 +12,7 @@ afterEach(async () => {
 })
 
 const setup = async () => {
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), "trx-continuation-entry-")))
+  const root = await createContinuationFixtureRoot()
   roots.push(root)
   const store = new ContinuationStore(root)
   const snapshot = runtimeSnapshot(root)
@@ -37,6 +35,22 @@ const setup = async () => {
 }
 
 describe("focused continuation entry", () => {
+  it("creates canonical private fixture roots without using the shared temporary directory", async () => {
+    vi.stubEnv("TMPDIR", "/tmp")
+    try {
+      const root = await createContinuationFixtureRoot()
+      roots.push(root)
+      expect(await realpath(root)).toBe(root)
+      expect((await stat(root)).mode & 0o777).toBe(0o700)
+      const store = new ContinuationStore(root)
+      await expect(store.create(runtimeSnapshot(root), "fixture-model", "medium")).resolves.toMatchObject({
+        snapshot: { source: { cwd: root } },
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it("durably creates a source-bound draft before consuming the request", async () => {
     const fixture = await setup()
     const opened = await openContinuationRequest(fixture)
