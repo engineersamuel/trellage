@@ -2986,10 +2986,11 @@ PYMIGRATE
     fake_env "$fixture_launcher" "$migration_profile" --version \
     >"$fixture_root/$migration_profile-orchestration-migration.out" \
     || fail "$migration_profile next-launch orchestration migration failed"
-  node --input-type=module - "$migration_home" <<'JSMIGRATE'
+  node --input-type=module - "$migration_home" "$root/../../packages/trellage-cli/package.json" <<'JSMIGRATE'
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parse } from 'smol-toml';
+import { createRequire } from 'node:module';
+const { parse } = createRequire(process.argv[3])('smol-toml');
 const home = process.argv[2];
 const config = parse(readFileSync(`${home}/config.toml`, 'utf8'));
 assert.equal(config.model, 'gpt-6-astra');

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
-import { parse } from 'smol-toml';
+import { createRequire } from 'node:module';
+const { parse } = createRequire(new URL('../../../packages/trellage-cli/package.json', import.meta.url))('smol-toml');
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, existsSync, readdirSync, writeFileSync, readFileSync, mkdirSync, realpathSync, symlinkSync, rmSync } from 'node:fs';
