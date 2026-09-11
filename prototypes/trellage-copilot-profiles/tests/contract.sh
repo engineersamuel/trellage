@@ -1108,12 +1108,17 @@ FAKE_COPILOT_SIGNAL_PID_FILE="$signal_pid_file" \
   >"$fixture_root/signal.out" \
   2>"$fixture_root/signal.err" &
 signal_launcher_pid=$!
-signal_attempt=0
-while [[ ! -s "$signal_pid_file" && "$signal_attempt" -lt 100 ]]; do
-  sleep 0.01
-  signal_attempt=$((signal_attempt + 1))
+signal_deadline=$((SECONDS + 10))
+while [[ ! -s "$signal_pid_file" && "$SECONDS" -lt "$signal_deadline" ]]; do
+  kill -0 "$signal_launcher_pid" 2>/dev/null || break
+  sleep 0.05
 done
-[[ -s "$signal_pid_file" ]] || fail 'signal fixture did not start Copilot'
+if [[ ! -s "$signal_pid_file" ]]; then
+  kill -TERM "$signal_launcher_pid" 2>/dev/null || true
+  wait "$signal_launcher_pid" || true
+  cat "$fixture_root/signal.err" >&2
+  fail 'signal fixture did not start Copilot within 10 seconds'
+fi
 signal_copilot_pid="$(<"$signal_pid_file")"
 kill -TERM "$signal_launcher_pid"
 wait "$signal_launcher_pid" || signal_status=$?
