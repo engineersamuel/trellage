@@ -306,6 +306,7 @@ PY
 grep -n 'DEFAULTS' -A20 "$root/../trellage-codex-common/codex-config.py" \
   | grep -F 'status_line' >/dev/null \
   && fail 'codex-config DEFAULTS unexpectedly manage status_line'
+cp "$pstack_home/config.toml" "$fixture_root/seeded-config.toml"
 cp "$pstack_home/config.toml" "$fixture_root/preexisting-config.toml"
 python3 - <<'PY' "$fixture_root/preexisting-config.toml"
 import pathlib, sys
@@ -322,6 +323,9 @@ HOME="$fixture_root/home" fake_env "$fixture_launcher" setup pstack \
   >"$fixture_root/setup-pstack-preexisting.out" || fail 'setup pstack with preexisting config failed'
 grep -Fqx -- '[tui]' "$pstack_home/config.toml" \
   && fail 'setup rewrote a preexisting config with [tui]'
+cmp -s "$fixture_root/preexisting-config.toml" "$pstack_home/config.toml" \
+  || fail 'setup changed preexisting config'
+cp "$fixture_root/seeded-config.toml" "$pstack_home/config.toml"
 hooks_hash="$(shasum -a 256 "$pstack_home/hooks.json" | awk '{print $1}')"
 config_hash="$(shasum -a 256 "$pstack_home/config.toml" | awk '{print $1}')"
 HOME="$fixture_root/home" fake_env "$fixture_launcher" setup pstack \
@@ -1446,7 +1450,10 @@ enabled = true
 # trellage-managed-codex-provider-end
 EOF
 
-cmp -s "$expected_config" "$pstack_home/config.toml" || fail 'initial managed config differs'
+cmp -s "$expected_config" "$pstack_home/config.toml" || {
+  diff -u "$expected_config" "$pstack_home/config.toml" >&2 || :
+  fail 'initial managed config differs'
+}
 [ "$(file_mode "$pstack_home")" = '700' ] || fail 'pstack home mode is not 0700'
 [ "$(file_mode "$pstack_home/config.toml")" = '600' ] || fail 'pstack config mode is not 0600'
 write_main_plugin_cache
@@ -1656,6 +1663,9 @@ enabled = true
 max_concurrent_threads_per_session = 4
 default_subagent_model = "gpt-5.6-luna"
 default_subagent_reasoning_effort = "max"
+
+[tui]
+status_line = ["git-branch", "context-used", "model-with-reasoning"]
 # trellage-profile-local-config-end
 
 # trellage-managed-codex-provider-begin
