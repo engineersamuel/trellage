@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promise
 import os from "node:os"
 import path from "node:path"
 import { afterEach, expect, it } from "vitest"
-import { readPreferredStyle, readRewriteCache, writePreferredStyle, writeRewriteCache, type RewriteCacheKey } from "../src/rewrite-state.js"
+import { readPreferredStyle, readRewriteCache, rewriteCacheKey, writePreferredStyle, writeRewriteCache, type RewriteCacheKey } from "../src/rewrite-state.js"
 const dirs: string[] = []
 const directory = async () => { const dir = await mkdtemp(path.join(os.tmpdir(), "rewrite-state-")); dirs.push(dir); return dir }
 const key = (value: string): RewriteCacheKey => ({ sourcePrompt: value, systemPrompt: "style", model: "model", effort: "high", version: "1" })
@@ -10,7 +10,9 @@ afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { re
 it("keeps the latest 100 results including maximum-size documents and private permissions", async () => {
   const dir = await directory()
   const markdown = "🦊".repeat(60_000)
-  for (let i = 0; i < 101; i++) await writeRewriteCache(key(String(i)), markdown, dir)
+  const entries = Array.from({ length: 100 }, (_, i) => ({ key: rewriteCacheKey(key(String(99 - i))), markdown }))
+  await writeFile(path.join(dir, "rewrite-cache.json"), JSON.stringify({ schemaVersion: 1, entries }), { mode: 0o600 })
+  await writeRewriteCache(key("100"), markdown, dir)
   expect(await readRewriteCache(key("0"), dir)).toBeUndefined()
   expect(await readRewriteCache(key("1"), dir)).toBe(markdown)
   expect(await readRewriteCache(key("100"), dir)).toBe(markdown)

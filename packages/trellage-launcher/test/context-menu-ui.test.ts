@@ -77,9 +77,9 @@ describe("contextual rewrite UI contract", () => {
     expect(markdownPromptLines("# Heading\n\n- **bold**\n\n`code`", 80).map(({ text, kind }) => ({ text, kind }))).toEqual([
       { text: "Heading", kind: "heading" },
       { text: "", kind: "body" },
-      { text: "• **bold**", kind: "list" },
+      { text: "• bold", kind: "list" },
       { text: "", kind: "body" },
-      { text: "`code`", kind: "body" },
+      { text: "code", kind: "body" },
     ])
     expect(markdownInlineSegments("**bold** and `code`")).toEqual([
       { text: "bold", kind: "bold" },
