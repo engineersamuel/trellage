@@ -23,6 +23,8 @@ share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/grx"
 runtime_bin="$install_root/bin"
+runtime_lib="$install_root/lib"
+installed_statusline="$runtime_lib/trellage-statusline.sh"
 installed_launcher="$runtime_bin/grx"
 installed_catalog="$install_root/catalog.json"
 installed_native_skills="$install_root/native-skills.mjs"
@@ -86,6 +88,29 @@ cmp -s "$ownership_marker" <(printf '%s\n' "$ownership_value") \
 [ ! -L "$installed_native_skills" ] \
   && { [ ! -e "$installed_native_skills" ] || [ -f "$installed_native_skills" ]; } \
   || refuse "unsafe Native skills helper: $installed_native_skills"
+[ ! -L "$runtime_lib" ] \
+  && { [ ! -e "$runtime_lib" ] || [ -d "$runtime_lib" ]; } \
+  || refuse "unsafe managed runtime lib: $runtime_lib"
+[ ! -L "$installed_statusline" ] \
+  && { [ ! -e "$installed_statusline" ] || [ -f "$installed_statusline" ]; } \
+  || refuse "unsafe managed statusline: $installed_statusline"
+if [ -d "$runtime_lib" ]; then
+  [ -r "$runtime_lib" ] && [ -x "$runtime_lib" ] \
+    || refuse "refusing unreadable owned runtime directory: $runtime_lib"
+  [ -w "$runtime_lib" ] \
+    || refuse "refusing non-writable or non-searchable owned runtime directory: $runtime_lib"
+  if [ -f "$installed_statusline" ]; then
+    [ -r "$installed_statusline" ] \
+      || refuse "refusing unreadable owned runtime file: $installed_statusline"
+  fi
+  for entry in "$runtime_lib"/.[!.]* "$runtime_lib"/..?* "$runtime_lib"/*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    case "$entry" in
+      "$installed_statusline") ;;
+      *) refuse "refusing unexpected content in owned runtime: $entry" ;;
+    esac
+  done
+fi
 
 for entry in \
   "$install_root"/.[!.]* \
@@ -93,7 +118,7 @@ for entry in \
   "$install_root"/*; do
   [ -e "$entry" ] || [ -L "$entry" ] || continue
   case "$entry" in
-    "$runtime_bin"|"$installed_catalog"|"$ownership_marker"|"$installed_native_skills") ;;
+    "$runtime_bin"|"$runtime_lib"|"$installed_catalog"|"$ownership_marker"|"$installed_native_skills") ;;
     *) refuse "refusing unexpected content in owned runtime: $entry" ;;
   esac
 done
@@ -136,6 +161,10 @@ file_mode() {
 
 install_root_mode="$(file_mode "$install_root")"
 runtime_bin_mode="$(file_mode "$runtime_bin")"
+runtime_lib_mode=''
+if [ -d "$runtime_lib" ]; then
+  runtime_lib_mode="$(file_mode "$runtime_lib")"
+fi
 command_dir_mode="$(file_mode "$command_dir")"
 staging_root=''
 command_staging_root=''
@@ -147,6 +176,8 @@ rollback_succeeded=false
 launcher_staged=false
 catalog_staged=false
 native_skills_staged=false
+statusline_staged=false
+runtime_lib_removed=false
 marker_staged=false
 runtime_bin_removed=false
 install_root_removed=false
@@ -169,6 +200,7 @@ cleanup_runtime_staging() {
     "$staging_root/launcher" \
     "$staging_root/catalog" \
     "$staging_root/native-skills" \
+    "$staging_root/statusline" \
     "$staging_root/marker"; do
     rm -f -- "$staged_file" || cleanup_ok=false
   done
@@ -253,6 +285,24 @@ rollback_transaction() {
     fi
   fi
   restore_native_skills || rollback_ok=false
+  if [ "$runtime_lib_removed" = true ] && [ ! -d "$runtime_lib" ]; then
+    if [ -e "$runtime_lib" ] || [ -L "$runtime_lib" ]; then
+      rollback_ok=false
+    else
+      mkdir -m "$runtime_lib_mode" "$runtime_lib" || rollback_ok=false
+    fi
+  fi
+  if [ "$statusline_staged" = true ]; then
+    if [ -f "$staging_root/statusline" ] && [ ! -L "$staging_root/statusline" ]; then
+      if [ ! -e "$installed_statusline" ] && [ ! -L "$installed_statusline" ]; then
+        mv "$staging_root/statusline" "$installed_statusline" || rollback_ok=false
+      else
+        rollback_ok=false
+      fi
+    elif [ ! -f "$installed_statusline" ] || [ -L "$installed_statusline" ]; then
+      rollback_ok=false
+    fi
+  fi
   if [ "$marker_staged" = true ]; then
     if [ -f "$staging_root/marker" ] && [ ! -L "$staging_root/marker" ]; then
       if [ ! -e "$ownership_marker" ] && [ ! -L "$ownership_marker" ]; then
@@ -293,6 +343,9 @@ rollback_transaction() {
     chmod "$runtime_bin_mode" "$runtime_bin" || rollback_ok=false
   fi
   chmod "$command_dir_mode" "$command_dir" || rollback_ok=false
+  if [ -n "$runtime_lib_mode" ] && [ -d "$runtime_lib" ]; then
+    chmod "$runtime_lib_mode" "$runtime_lib" || rollback_ok=false
+  fi
   if [ "$rollback_ok" = true ]; then
     cleanup_staging || rollback_ok=false
   fi
@@ -379,6 +432,18 @@ catalog_staged=true
 mv "$installed_catalog" "$staging_root/catalog" \
   || transaction_failure "could not stage installed catalog: $installed_catalog"
 inject_failure_at after-catalog-remove
+if [ -f "$installed_statusline" ]; then
+  statusline_staged=true
+  mv "$installed_statusline" "$staging_root/statusline" \
+    || transaction_failure "could not stage managed statusline: $installed_statusline"
+fi
+inject_failure_at after-statusline-remove
+if [ -d "$runtime_lib" ]; then
+  runtime_lib_removed=true
+  rmdir "$runtime_lib" 2>/dev/null \
+    || transaction_failure "could not remove owned runtime lib: $runtime_lib"
+fi
+inject_failure_at after-lib-remove
 if [ -f "$installed_native_skills" ]; then
   native_skills_staged=true
   mv "$installed_native_skills" "$staging_root/native-skills" \

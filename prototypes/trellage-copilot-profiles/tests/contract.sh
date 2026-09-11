@@ -1108,12 +1108,17 @@ FAKE_COPILOT_SIGNAL_PID_FILE="$signal_pid_file" \
   >"$fixture_root/signal.out" \
   2>"$fixture_root/signal.err" &
 signal_launcher_pid=$!
-signal_attempt=0
-while [[ ! -s "$signal_pid_file" && "$signal_attempt" -lt 100 ]]; do
-  sleep 0.01
-  signal_attempt=$((signal_attempt + 1))
+signal_deadline=$((SECONDS + 10))
+while [[ ! -s "$signal_pid_file" && "$SECONDS" -lt "$signal_deadline" ]]; do
+  kill -0 "$signal_launcher_pid" 2>/dev/null || break
+  sleep 0.05
 done
-[[ -s "$signal_pid_file" ]] || fail 'signal fixture did not start Copilot'
+if [[ ! -s "$signal_pid_file" ]]; then
+  kill -TERM "$signal_launcher_pid" 2>/dev/null || true
+  wait "$signal_launcher_pid" || true
+  cat "$fixture_root/signal.err" >&2
+  fail 'signal fixture did not start Copilot within 10 seconds'
+fi
 signal_copilot_pid="$(<"$signal_pid_file")"
 kill -TERM "$signal_launcher_pid"
 wait "$signal_launcher_pid" || signal_status=$?
@@ -1300,7 +1305,15 @@ jq -e '
     | select(.type == "command"
       and (.bash | contains(" native-hook --agent copilot --profile hve")))] | length) == 1
 ' "$settings" >/dev/null || fail 'setup session bridge hooks differ'
-settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
+jq -e --arg home "$expected_hve_home" '
+  .statusLine.type == "command"
+  and .statusLine.refreshInterval == 15
+  and .statusLine.command == ("bash " + $home + "/statusline.sh")
+  and .footer.showCustom == true
+' "$settings" >/dev/null \
+  || fail 'setup did not seed Copilot statusLine'
+[[ -x "$expected_hve_home/statusline.sh" && ! -L "$expected_hve_home/statusline.sh" ]] \
+  || fail 'setup did not install Copilot statusline.sh'
 bridge_hash="$(shasum -a 256 "$session_bridge" | awk '{print $1}')"
 managed_instructions="$expected_hve_home/instructions/rundown.instructions.md"
 [[ -f "$managed_instructions" && ! -L "$managed_instructions" ]] \
@@ -1341,6 +1354,7 @@ printf '%s\n' '# Unrelated package' \
 [[ ! -e "$HOME/.copilot/plugins/hve-core@hve-core" ]] \
   || fail 'setup leaked into global Copilot state'
 marketplace_add_count="$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")"
+settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
 "$launcher" setup hve
 [[ "$(grep -Fc 'args=plugin marketplace add microsoft/hve-core ' "$fake_copilot_log")" == "$marketplace_add_count" ]] \
   || fail 'repeated setup re-added an already registered marketplace'
@@ -1359,6 +1373,16 @@ jq -e '
   and any(.hooks.SessionStart[]; .bash == "user-session-start")
   and any(.hooks.SessionStart[]; .bash == "cccc-session-start")
 ' "$settings" >/dev/null || fail 'repair session bridge hooks differ'
+
+cat >"$expected_hve_home/settings.json" <<'EOF'
+{"statusLine":{"type":"command","command":"echo custom"}}
+EOF
+"$launcher" setup hve >"$fixture_root/custom-statusline-setup.out"
+jq -e '
+  .statusLine.type == "command"
+  and .statusLine.command == "echo custom"
+  and .footer.showCustom == true
+' "$settings" >/dev/null || fail 'setup did not preserve an existing Copilot statusLine while enabling footer.showCustom'
 
 doctor_output="$fixture_root/doctor.out"
 "$launcher" doctor hve >"$doctor_output"

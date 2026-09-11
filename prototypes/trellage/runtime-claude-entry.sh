@@ -122,8 +122,11 @@ jq -e '
 ' "$default_settings" >/dev/null || fail 'baked Claude default settings are invalid'
 jq -e '
   type == "object"
-  and keys == ["outputStyle"]
+  and keys == ["outputStyle", "statusLine"]
   and .outputStyle == "Rundown"
+  and .statusLine.type == "command"
+  and .statusLine.command == "bash /usr/local/share/trellage/statusline.sh"
+  and .statusLine.refreshInterval == 15
 ' "$default_user_settings" >/dev/null || fail 'baked Claude default user settings are invalid'
 jq -e '
   type == "object"
@@ -154,6 +157,7 @@ merge_default_user_settings() {
     else .[0]
     end
     | .outputStyle = (.outputStyle // $defaults[0].outputStyle)
+    | .statusLine = (.statusLine // $defaults[0].statusLine)
   ' "$settings" >"$settings_tmp"; then
     rm -f -- "$settings_tmp"
     fail 'Claude settings are invalid'

@@ -265,6 +265,10 @@ repository and host resources available to Grok.
 
 Run `./uninstall.sh` to remove the managed `grx` command and runtime.
 Uninstall preserves all profile homes, including authentication, plugins, sessions, memory, and permissions.
+The managed runtime includes `lib/trellage-statusline.sh`. Uninstall also
+supports older runtimes without `lib`. It refuses unexpected library content,
+symlinks, and unsafe file types before removal. If removal fails, rollback
+restores the statusline and library directory modes with the rest of the runtime.
 
 Run the contract suite with:
 

@@ -636,7 +636,7 @@ elif [[ "$harness_kind" == claude ]]; then
       test -f "$seed/default-settings.json" && test ! -L "$seed/default-settings.json"
       test -f "$seed/default-user-settings.json" && test ! -L "$seed/default-user-settings.json"
       jq -e '\''has("outputStyle") | not'\'' "$seed/default-settings.json" >/dev/null
-      jq -e '\''.outputStyle == "Rundown"'\'' "$seed/default-user-settings.json" >/dev/null
+      jq -e '\''keys == ["outputStyle","statusLine"] and .outputStyle == "Rundown" and .statusLine.type == "command" and .statusLine.command == "bash /usr/local/share/trellage/statusline.sh" and .statusLine.refreshInterval == 15'\'' "$seed/default-user-settings.json" >/dev/null
       trellage-claude-entry passthrough claude --version >/tmp/claude-version
       test "$(sed -n "s/^\([0-9.]*\) (Claude Code)$/\1/p" /tmp/claude-version)" = "$locked_version"
       test -f "$CLAUDE_CONFIG_DIR/skills/caveman/SKILL.md" && test ! -L "$CLAUDE_CONFIG_DIR/skills/caveman/SKILL.md"
@@ -647,7 +647,7 @@ elif [[ "$harness_kind" == claude ]]; then
       test -f "$CLAUDE_CONFIG_DIR/output-styles/rundown.md" && test ! -L "$CLAUDE_CONFIG_DIR/output-styles/rundown.md"
       test "$(stat -c "%u:%g" "$CLAUDE_CONFIG_DIR/output-styles/rundown.md")" = 10001:10001
       grep -Fq "name: Rundown" "$CLAUDE_CONFIG_DIR/output-styles/rundown.md"
-      jq -e '\''.outputStyle == "Rundown"'\'' "$CLAUDE_CONFIG_DIR/settings.json" >/dev/null
+      jq -e '\''.outputStyle == "Rundown" and .statusLine.type == "command" and .statusLine.command == "bash /usr/local/share/trellage/statusline.sh" and .statusLine.refreshInterval == 15'\'' "$CLAUDE_CONFIG_DIR/settings.json" >/dev/null
     ' -- "$locked_version" || fail 'Claude executable, entry, seed, managed state, or isolation probe failed'
 else
   docker run --rm \

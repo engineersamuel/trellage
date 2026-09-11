@@ -447,6 +447,7 @@ const runtimeSupport = (root: string) => ({
   claudeBrowserAgent: path.join(root, "hyperresearch-browser-fetcher.md"),
   claudeOutputStyleRundown: path.join(root, "output-style-rundown.md"),
   copilotInstructionRundown: path.join(root, "instruction-rundown.md"),
+  statusline: path.join(root, "trellage-statusline.sh"),
 })
 
 const pathExists = async (candidate: string) => {
@@ -1552,6 +1553,7 @@ gear = "full"
       writeFile(support.finalizeClaudeSeed, "export {}\n"),
       writeFile(support.claudeBrowserAgent, "browser\n"),
       writeFile(support.claudeOutputStyleRundown, "style\n"),
+      writeFile(support.statusline, "#!/usr/bin/env bash\n"),
     ])
     const sourceDirectory = path.join(root, "hyperresearch-source")
     await mkdir(sourceDirectory, { recursive: true })
@@ -2874,6 +2876,7 @@ select = ["hve-core"]
       writeFile(support.copilotEntry, "#!/bin/sh\n"),
       writeFile(support.finalizeCopilotSeed, "export {}\n"),
       writeFile(support.copilotInstructionRundown, "instruction\n"),
+      writeFile(support.statusline, "#!/usr/bin/env bash\n"),
     ])
     const scripts: Array<string> = []
     const builderArgs: Array<string> = []

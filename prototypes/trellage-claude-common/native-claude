@@ -58,6 +58,10 @@ session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
 if [[ ! -f "$session_bridge_source" ]]; then
   session_bridge_source="$runtime_root/../../scripts/trellage-session-bridge.py"
 fi
+statusline_source="$runtime_root/lib/trellage-statusline.sh"
+if [[ ! -f "$statusline_source" ]]; then
+  statusline_source="$runtime_root/../../scripts/trellage-statusline.sh"
+fi
 
 usage() {
   cat <<EOF
@@ -366,6 +370,23 @@ ensure_trust() {
   mv -f "$staged" "$onboarding"
 }
 
+install_statusline() {
+  local home="$1"
+  local dest="$home/statusline.sh"
+  local staged
+
+  [[ -f "$statusline_source" && -r "$statusline_source" && ! -L "$statusline_source" ]] \
+    || die "missing statusline script: $statusline_source"
+  [[ ! -L "$dest" && ( ! -e "$dest" || -f "$dest" ) ]] \
+    || die "unsafe statusline path: $dest"
+  staged="$(mktemp "$home/.statusline.sh.XXXXXX")" \
+    || die 'could not stage statusline script'
+  cat -- "$statusline_source" >"$staged" \
+    || die 'could not stage statusline script'
+  chmod 0755 "$staged"
+  mv -f "$staged" "$dest"
+}
+
 ensure_settings() {
   local home="$1" settings="$home/settings.json" staged
 
@@ -374,19 +395,33 @@ ensure_settings() {
   staged="$(mktemp "$home/.settings.json.XXXXXX")" \
     || die 'could not stage Claude settings'
   if [[ -e "$settings" ]]; then
-    if ! jq -s '
+    if ! jq -s --arg home "$home" '
       if length != 1 or (.[0] | type) != "object"
       then error("settings must contain exactly one object")
       else .[0]
       end
       | .outputStyle = (.outputStyle // "Rundown")
+      | if (.statusLine == null) then
+          .statusLine = {
+            type: "command",
+            command: ("bash " + $home + "/statusline.sh"),
+            refreshInterval: 15
+          }
+        else .
+        end
     ' "$settings" >"$staged"; then
       rm -f -- "$staged"
       die "invalid Claude settings: $settings"
     fi
   else
-    jq -n '{outputStyle: "Rundown"}' >"$staged" \
-      || die 'could not create Claude settings'
+    jq -n --arg home "$home" '{
+      outputStyle: "Rundown",
+      statusLine: {
+        type: "command",
+        command: ("bash " + $home + "/statusline.sh"),
+        refreshInterval: 15
+      }
+    }' >"$staged" || die 'could not create Claude settings'
   fi
   chmod 0600 "$staged"
   mv -f "$staged" "$settings"
@@ -799,6 +834,7 @@ prepare_command() {
   version="$(claude_version "$executable")"
   ensure_floating_skills "$home"
   ensure_onboarding "$home" "$version"
+  install_statusline "$home"
   ensure_settings "$home"
   if [[ "$bridge" == enabled ]]; then
     install_session_bridge "$home" "$profile"

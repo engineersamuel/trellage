@@ -57,6 +57,7 @@ const runtimeSupport = {
     "hyperresearch-browser-fetcher.md",
   ),
   claudeOutputStyleRundown: path.join(repositoryRoot, "prototypes", "trellage", "assets", "rundown", "rundown.md"),
+  statusline: path.join(repositoryRoot, "scripts", "trellage-statusline.sh"),
   copilotInstructionRundown: path.join(
     repositoryRoot,
     "prototypes",

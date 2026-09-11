@@ -20,6 +20,7 @@ export interface RuntimeSupportPaths {
   readonly claudeBrowserAgent?: string
   readonly claudeOutputStyleRundown?: string
   readonly copilotInstructionRundown?: string
+  readonly statusline?: string
 }
 
 export type RuntimeSupportOpener = (candidate: string, flags: "r") => Promise<FileHandle>
@@ -138,6 +139,13 @@ const selectedFiles = (
           buildContextPath: ".runtime-support/trellage-session-bridge",
           mode: 0o755,
         },
+        {
+          property: "statusline",
+          role: "statusline",
+          destination: "/usr/local/share/trellage/statusline.sh",
+          buildContextPath: ".runtime-support/trellage-statusline.sh",
+          mode: 0o755,
+        },
       ]
     case "headlong":
       return [
@@ -171,7 +179,14 @@ const selectedFiles = (
         buildContextPath: ".runtime-support/trellage-session-bridge",
         mode: 0o755,
       }
-      if (claudeMode === "core" && claudeAdapter === undefined) return [entry, outputStyle, sessionBridge]
+      const statusline: SelectedFile = {
+        property: "statusline",
+        role: "statusline",
+        destination: "/usr/local/share/trellage/statusline.sh",
+        buildContextPath: ".runtime-support/trellage-statusline.sh",
+        mode: 0o755,
+      }
+      if (claudeMode === "core" && claudeAdapter === undefined) return [entry, outputStyle, sessionBridge, statusline]
       return [
         entry,
         outputStyle,
@@ -194,6 +209,7 @@ const selectedFiles = (
               },
             ]),
         sessionBridge,
+        statusline,
       ]
     case "pi":
       return [

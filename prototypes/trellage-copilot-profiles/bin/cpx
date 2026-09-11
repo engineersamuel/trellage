@@ -34,6 +34,10 @@ session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
 if [[ ! -f "$session_bridge_source" ]]; then
   session_bridge_source="$runtime_root/../../scripts/trellage-session-bridge.py"
 fi
+statusline_source="$runtime_root/lib/trellage-statusline.sh"
+if [[ ! -f "$statusline_source" ]]; then
+  statusline_source="$runtime_root/../../scripts/trellage-statusline.sh"
+fi
 model_settings_source="$runtime_root/lib/copilot-model-settings.py"
 if [[ ! -f "$model_settings_source" ]]; then
   model_settings_source="$runtime_root/../trellage/copilot-model-settings.py"
@@ -514,6 +518,7 @@ prepare_profile_home() {
     || die "failed to secure profile home: $(profile_home "$profile")"
   ensure_instructions "$profile"
   ensure_model_settings "$profile"
+  ensure_statusline "$profile"
 }
 
 ensure_model_settings() {
@@ -523,6 +528,68 @@ ensure_model_settings() {
     || die "missing managed model settings helper: $model_settings_source"
   python3 "$model_settings_source" "$(profile_home "$profile")" gpt-6-astra low max \
     || die "failed to update managed model settings: $profile"
+}
+
+ensure_statusline() {
+  local profile="$1"
+  local home
+  local statusline_path
+  local settings
+  local staged
+
+  home="$(profile_home "$profile")"
+  statusline_path="$home/statusline.sh"
+  settings="$home/settings.json"
+  [[ -f "$statusline_source" && -r "$statusline_source" && ! -L "$statusline_source" ]] \
+    || die "missing statusline: $statusline_source"
+  [[ ! -L "$statusline_path" && ( ! -e "$statusline_path" || -f "$statusline_path" ) ]] \
+    || die "unsafe statusline path: $statusline_path"
+  staged="$(mktemp "$home/.statusline.sh.XXXXXX")" \
+    || die "failed to stage statusline: $statusline_path"
+  cat -- "$statusline_source" >"$staged" \
+    || die "failed to stage statusline: $statusline_path"
+  chmod 0755 "$staged" || die "failed to secure statusline: $statusline_path"
+  mv -f "$staged" "$statusline_path" || die "failed to publish statusline: $statusline_path"
+
+  if [[ ! -e "$settings" ]]; then
+    staged="$(mktemp "$home/.settings.json.XXXXXX")" \
+      || die "failed to stage Copilot settings: $settings"
+    jq -n --arg home "$home" '
+      {
+        statusLine: {
+          type: "command",
+          command: ("bash " + $home + "/statusline.sh"),
+          refreshInterval: 15
+        },
+        footer: {
+          showCustom: true
+        }
+      }
+    ' >"$staged" || die "failed to stage Copilot settings: $settings"
+    chmod 0600 "$staged" || die "failed to secure Copilot settings: $settings"
+    mv -f "$staged" "$settings" || die "failed to publish Copilot settings: $settings"
+    return
+  fi
+
+  [[ -f "$settings" && ! -L "$settings" ]] \
+    || die "unsafe Copilot settings: $settings"
+  staged="$(mktemp "$home/.settings.json.XXXXXX")" \
+    || die "failed to stage Copilot settings: $settings"
+  jq --arg home "$home" '
+    if type != "object" then error("settings root must be an object")
+    else
+      (if .statusLine == null then
+        .statusLine = {
+          type: "command",
+          command: ("bash " + $home + "/statusline.sh"),
+          refreshInterval: 15
+        }
+      else . end)
+      | .footer = ((.footer // {}) + (if .footer.showCustom == null then {showCustom: true} else {} end))
+    end
+  ' "$settings" >"$staged" || die "failed to stage Copilot settings: $settings"
+  chmod 0600 "$staged" || die "failed to secure Copilot settings: $settings"
+  mv -f "$staged" "$settings" || die "failed to publish Copilot settings: $settings"
 }
 
 install_session_bridge() {

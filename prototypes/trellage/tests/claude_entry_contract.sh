@@ -58,7 +58,12 @@ cat >"$seed/default-settings.json" <<'JSON'
 JSON
 cat >"$seed/default-user-settings.json" <<'JSON'
 {
-  "outputStyle": "Rundown"
+  "outputStyle": "Rundown",
+  "statusLine": {
+    "type": "command",
+    "command": "bash /usr/local/share/trellage/statusline.sh",
+    "refreshInterval": 15
+  }
 }
 JSON
 cat >"$seed/default-onboarding.json" <<'JSON'
@@ -140,6 +145,9 @@ jq -e '
   and .disableClaudeAiConnectors == true
   and .disableArtifact == true
   and .outputStyle == "Rundown"
+  and .statusLine.type == "command"
+  and .statusLine.command == "bash /usr/local/share/trellage/statusline.sh"
+  and .statusLine.refreshInterval == 15
 ' "$runtime/settings.json" >/dev/null
 jq -e '
   .hasCompletedOnboarding == true
@@ -384,6 +392,9 @@ grep -Fq 'Playwright extension token is absent' "$warning"
 jq -e '
   .outputStyle == "Explanatory"
   and .preserve == "user-state"
+  and .statusLine.type == "command"
+  and .statusLine.command == "bash /usr/local/share/trellage/statusline.sh"
+  and .statusLine.refreshInterval == 15
 ' "$runtime/settings.json" >/dev/null
 
 cp "$runtime/settings.json" "$root/valid-settings.json"
@@ -449,9 +460,30 @@ grep -Fqx 'before rollback' "$runtime/skills/hyperresearch/SKILL.md"
 jq -e '
   .outputStyle == "Explanatory"
   and .preserve == "user-state"
+  and .statusLine.type == "command"
+  and .statusLine.command == "bash /usr/local/share/trellage/statusline.sh"
+  and .statusLine.refreshInterval == 15
 ' "$runtime/settings.json" >/dev/null
 
 cp "$root/base-managed-paths.txt" "$seed/managed-paths.txt"
+
+printf '{"outputStyle":"Concise","statusLine":{"type":"command","command":"custom status","refreshInterval":30},"preserve":"custom-status"}\n' \
+  >"$runtime/settings.json"
+PATH="$fake_bin:$PATH" \
+  TRELLAGE_CLAUDE_SEED_HOME="$seed" TRELLAGE_CLAUDE_HOME="$runtime" \
+  TRELLAGE_CLAUDE_AUTH_MODE=native \
+  CLAUDE_ARGS_OUT="$root/custom-status-args" CLAUDE_CONFIG_OUT="$root/custom-status-config" \
+  CLAUDE_CONFIG_PATH_OUT="$root/custom-status-config-path" CLAUDE_ENV_OUT="$root/custom-status-env" \
+  "$entry" new claude --print hello >/dev/null
+jq -e '
+  .outputStyle == "Concise"
+  and .preserve == "custom-status"
+  and .statusLine.type == "command"
+  and .statusLine.command == "custom status"
+  and .statusLine.refreshInterval == 30
+' "$runtime/settings.json" >/dev/null
+
+printf 'before rollback\n' >"$runtime/skills/hyperresearch/SKILL.md"
 printf 'replacement that must roll back\n' >"$seed/skills/hyperresearch/SKILL.md"
 printf 'replacement root instructions\n' >"$seed/CLAUDE.md"
 fail_tar_bin="$root/fail-tar-bin"
@@ -865,6 +897,9 @@ grep -Fqx 'keep native auth' "$native_runtime/.credentials.json"
 jq -e '
   .theme == "dark"
   and .outputStyle == "Rundown"
+  and .statusLine.type == "command"
+  and .statusLine.command == "bash /usr/local/share/trellage/statusline.sh"
+  and .statusLine.refreshInterval == 15
   and .enabledPlugins["social-media-skills@social-media-skills"] == true
   and .pluginConfigs["social-media-skills@social-media-skills"].options.hook_profile == "minimal"
   and .pluginConfigs["social-media-skills@social-media-skills"].options.hooks_enabled == true

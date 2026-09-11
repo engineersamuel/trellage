@@ -552,6 +552,50 @@ merge_managed_settings() {
   managed_temporary=
 }
 
+merge_statusline_settings() {
+  local settings="$runtime_home/settings.json"
+  local temporary settings_identity settings_mode=600
+  runtime_root_is_unchanged \
+    || fail 'Copilot runtime home changed before statusLine repair'
+  [[ -f "$settings" && ! -L "$settings" ]] \
+    || fail "Copilot settings must be a regular file: $settings"
+  settings_identity="$(path_identity "$settings")"
+  settings_mode="$(stat -c '%a' -- "$settings")"
+  temporary="$(mktemp "$runtime_home/.settings.json.trellage.XXXXXX")"
+  managed_temporary="$temporary"
+  if ! jq --arg command 'bash /usr/local/share/trellage/statusline.sh' '
+    if type != "object" then error("settings root must be an object")
+    else
+      (if .statusLine == null then
+        .statusLine = {type:"command", command:$command, refreshInterval:15}
+      else . end)
+      | .footer = ((.footer // {}) + (if .footer.showCustom == null then {showCustom: true} else {} end))
+    end
+  ' "$settings" >"$temporary"; then
+    discard_managed_temporary \
+      || fail 'cannot remove the failed statusLine temporary file'
+    fail 'cannot merge Copilot statusLine settings'
+  fi
+  chmod "$settings_mode" "$temporary"
+  if ! runtime_root_is_unchanged; then
+    discard_managed_temporary \
+      || fail 'cannot remove the unsafe statusLine temporary file'
+    fail 'Copilot runtime home changed while staging statusLine repair'
+  fi
+  if [[ ! -f "$settings" || -L "$settings" \
+    || "$(path_identity "$settings")" != "$settings_identity" ]]; then
+    discard_managed_temporary \
+      || fail 'cannot remove the stale statusLine temporary file'
+    fail 'Copilot settings changed while staging statusLine repair'
+  fi
+  if ! mv -fT -- "$temporary" "$settings"; then
+    discard_managed_temporary \
+      || fail 'cannot remove the unpublished statusLine temporary file'
+    fail 'cannot publish Copilot statusLine settings'
+  fi
+  managed_temporary=
+}
+
 copilot_config_json() {
   local line leading=true
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -914,6 +958,7 @@ sync_managed_state() {
 
   sync_generic_state
   merge_managed_settings
+  merge_statusline_settings
   atomic_copy_control managed-lock.json
   atomic_copy_control managed-settings.json
   atomic_copy_control managed-files.txt
