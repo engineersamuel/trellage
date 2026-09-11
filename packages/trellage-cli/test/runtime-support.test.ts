@@ -212,7 +212,14 @@ describe("runtime support snapshots", () => {
       ],
       [
         "claude",
-        ["claudeEntry", "finalizeClaudeSeed", "claudeBrowserAgent", "claudeOutputStyleRundown", "sessionBridge", "statusline"],
+        [
+          "claudeEntry",
+          "finalizeClaudeSeed",
+          "claudeBrowserAgent",
+          "claudeOutputStyleRundown",
+          "sessionBridge",
+          "statusline",
+        ],
       ],
       ["prime", ["primeEntry"]],
     ] as const

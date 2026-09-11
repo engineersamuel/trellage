@@ -122,8 +122,7 @@ const renderRuntimeDotfile = (options: MiseRenderOptions, role: string): string 
 const renderSessionBridgeDotfile = (options: MiseRenderOptions): string =>
   renderRuntimeDotfile(options, "session-bridge")
 
-const renderStatuslineDotfile = (options: MiseRenderOptions): string =>
-  renderRuntimeDotfile(options, "statusline")
+const renderStatuslineDotfile = (options: MiseRenderOptions): string => renderRuntimeDotfile(options, "statusline")
 
 const sessionBridgeEnvironment = (profile: Profile): ReadonlyArray<string> => [
   `TRELLAGE_PROFILE_NAME = ${quote(profile.name)}`,

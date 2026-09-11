@@ -221,9 +221,7 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain('"hyperresearch-browser-fetcher.md"')
     expect(source).toContain("claudeOutputStyleRundown: path.join(")
     expect(source).toContain('"rundown.md"')
-    expect(source).toContain(
-      'statusline: path.join(repositoryRoot, "scripts", "trellage-statusline.sh")',
-    )
+    expect(source).toContain('statusline: path.join(repositoryRoot, "scripts", "trellage-statusline.sh")')
     expect(source).toContain(
       'finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.mjs")',
     )
