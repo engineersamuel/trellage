@@ -15,6 +15,7 @@ import stat
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -32,6 +33,14 @@ SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 SAFE_INVOCATION_ID = re.compile(r"^[a-f0-9]{32}$")
 SAFE_SNAPSHOT_ID = re.compile(r"^[a-f0-9]{64}$")
 SAFE_CURSOR = re.compile(r"^[a-f0-9]{128}$")
+CSI = re.compile(r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]")
+OSC = re.compile(r"(?:\x1b\]|\x9d)[\s\S]*?(?:\x07|\x1b\\|$)")
+UNSUPPORTED_CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+TOKEN = re.compile(r"(?<![A-Za-z0-9_])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{24,})(?![A-Za-z0-9_])")
+PRIVATE_KEY = re.compile(r"-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----[\s\S]*?(?:-----END(?: [A-Z0-9]+)? PRIVATE KEY-----|$)")
+ASSIGNED_DOUBLE = re.compile(r'''["']?(?a:\b)(?:api[_-]?key|access[_-]?token|password|client[_-]?secret)(?a:\b)["']?\s*(?:[:=]\s*)"((?:\\[\s\S]|[^"\\\r\n]){12,})"''', re.I)
+ASSIGNED_SINGLE = re.compile(r'''["']?(?a:\b)(?:api[_-]?key|access[_-]?token|password|client[_-]?secret)(?a:\b)["']?\s*(?:[:=]\s*)'((?:\\[\s\S]|[^'\\\r\n]){12,})' ''', re.I | re.X)
+ASSIGNED_UNQUOTED = re.compile(r'''["']?(?a:\b)(?:api[_-]?key|access[_-]?token|password|client[_-]?secret)(?a:\b)["']?\s*(?:[:=]\s*)(?!["'])([^\s,;}\]"']{12,})''', re.I)
 CONVERSATION_COMMANDS = {
     "export-conversation", "describe-conversation", "release-conversation"
 }
@@ -1021,10 +1030,10 @@ def conversation_event_id(record, payload):
 def internal_conversation_record(record, payload):
     if any(record.get(name) is True or payload.get(name) is True for name in ("isMeta", "isSynthetic", "internal")):
         return True
-    for value in (payload.get("source"), record.get("source"), payload.get("origin"), record.get("origin")):
-        if value is not None:
-            return value in ("system", "developer", "tool", "agent", "internal", "synthetic")
-    return False
+    return any(
+        value in ("system", "developer", "tool", "agent", "internal", "synthetic")
+        for value in (payload.get("source"), record.get("source"), payload.get("origin"), record.get("origin"))
+    )
 
 
 def codex_human_content(payload, kinds):
@@ -1047,6 +1056,56 @@ def compacted_conversation_record(record):
     )
 
 
+def accounting_record(record):
+    payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+    return record.get("type") == "token_usage_record" or (
+        record.get("type") == "event_msg" and payload.get("type") == "token_count"
+    )
+
+
+def sanitize_conversation_text(text):
+    cleaned = OSC.sub("", CSI.sub("", text))
+    cleaned = UNSUPPORTED_CONTROLS.sub("", cleaned)
+    controls_removed = cleaned != text
+    redacted = False
+    projection = []
+    starts = []
+    ends = []
+    for index, character in enumerate(cleaned):
+        normalized = unicodedata.normalize("NFKC", character)
+        projection.append(normalized)
+        starts.extend([index] * len(normalized))
+        ends.extend([index + 1] * len(normalized))
+    projected = "".join(projection)
+    spans = []
+    for pattern, replacement, group in (
+        (PRIVATE_KEY, "[REDACTED private key]", 0),
+        (TOKEN, "[REDACTED credential]", 0),
+        (ASSIGNED_DOUBLE, "[REDACTED credential]", 1),
+        (ASSIGNED_SINGLE, "[REDACTED credential]", 1),
+        (ASSIGNED_UNQUOTED, "[REDACTED credential]", 1),
+    ):
+        for match in pattern.finditer(projected):
+            value_start = match.start(group)
+            value_end = match.end(group)
+            if value_start >= len(starts) or value_end <= 0:
+                continue
+            start = starts[value_start]
+            end = ends[value_end - 1]
+            spans.append((start, end, replacement))
+            redacted = True
+    merged = []
+    for start, end, replacement in sorted(spans):
+        if merged and start < merged[-1][1]:
+            previous = merged[-1]
+            merged[-1] = (previous[0], max(previous[1], end), previous[2])
+        else:
+            merged.append((start, end, replacement))
+    for start, end, replacement in reversed(merged):
+        cleaned = cleaned[:start] + replacement + cleaned[end:]
+    return cleaned, redacted, controls_removed
+
+
 class ConversationNormalizer:
     def __init__(self, mapping, policy):
         self.agent = mapping["agent"]
@@ -1060,12 +1119,18 @@ class ConversationNormalizer:
         self.pending_answer = None
         self.turn_completed = False
         self.summary_id = None
+        self.compaction_tail = None
 
     def normalized(self, role, text, index, key=None):
         if text is None:
             return None
-        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", text):
-            raise BridgeError("conversation text contains unsupported control characters")
+        text, credentials_redacted, controls_removed = sanitize_conversation_text(text)
+        if credentials_redacted:
+            self.notices.add("Conversation credentials were redacted.")
+        if controls_removed:
+            self.notices.add("Terminal control sequences were removed.")
+        if not text.strip():
+            raise BridgeError("conversation text is empty after sanitization")
         # Match the TypeScript parser's evidence identity, including its record-index fallback.
         identity = [self.agent, self.session_id, role, key if key is not None else f"record:{index}"]
         return {
@@ -1126,10 +1191,31 @@ class ConversationNormalizer:
             self.seen_events[key] = encoded
         if compacted_conversation_record(record):
             self.notices.add("compacted-history")
+            self.discard_compaction_tail()
             return None
-        if record.get("isMeta") or record.get("isSynthetic"):
+        if internal_conversation_record(record, payload):
             return None
+        if not accounting_record(record):
+            self.compaction_tail = None
         return key
+
+    def discard_compaction_tail(self):
+        tail = self.compaction_tail
+        if tail is None:
+            return
+        candidate, source_type, source_subtype = tail
+        if not (
+            (source_type == "response_item" and source_subtype == "message")
+            or (source_type == "event_msg" and source_subtype == "agent_message")
+        ):
+            return
+        self.messages = [message for message in self.messages if message["id"] != candidate["id"]]
+        self.seen_messages.pop(candidate["id"], None)
+        if self.pending_answer is not None and self.pending_answer["id"] == candidate["id"]:
+            self.pending_answer = None
+        if self.summary_id == candidate["id"]:
+            self.summary_id = None
+        self.compaction_tail = None
 
     def content_text(self, content):
         if isinstance(content, list) and any(
@@ -1178,6 +1264,8 @@ class ConversationNormalizer:
         return self.content_text(message.get("content"))
 
     def copilot_answer(self, record, data, index):
+        if internal_conversation_record(record, data):
+            return
         phase = data.get("phase", record.get("phase"))
         tools = data.get("toolRequests", record.get("toolRequests"))
         if phase in ("commentary", "analysis", "reasoning") or tools:
@@ -1210,6 +1298,8 @@ class ConversationNormalizer:
             self.pending_answer = None
 
     def codex_answer(self, record, payload, index, response=False):
+        if internal_conversation_record(record, payload):
+            return
         phase = payload.get("phase")
         if phase is None:
             phase = payload.get("channel")
@@ -1224,6 +1314,8 @@ class ConversationNormalizer:
                 return
             text = meaningful_text(payload.get("message"))
         answer = self.normalized("assistant", text, index, conversation_event_id(record, payload))
+        if answer is not None:
+            self.compaction_tail = (answer, record.get("type"), payload.get("type"))
         if response and phase in ("final_answer", "final"):
             self.finish(answer)
         else:

@@ -267,29 +267,3 @@ export const captureFocusedConversation = async (
     coverage: normalized.coverage,
   })
 }
-
-export const focusedConversationChoice = async (
-  context: FocusedConversationContext,
-  dependencies: FocusedCaptureDependencies = {},
-) => {
-  const base = {
-    id: "next-steps",
-    kind: "next-steps",
-    label: "Analyze conversation for next steps",
-    preview: "Capture only the conversation in the originally focused pane, through its last completed assistant response. Review settings in the full guide before any model call.",
-  }
-  try {
-    const binding = await bindFocusedConversation(context, dependencies)
-    return {
-      ...base, binding,
-      detail: `Focused ${binding.agent} ${binding.surface} conversation. Source activity may continue during capture.`,
-      disabled: false,
-    }
-  } catch {
-    return {
-      ...base,
-      detail: "Unavailable: the focused pane has no supported, exact conversation source. No other pane will be selected.",
-      disabled: true,
-    }
-  }
-}

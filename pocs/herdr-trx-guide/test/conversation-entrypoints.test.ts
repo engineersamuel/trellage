@@ -6,8 +6,7 @@ import path from "node:path"
 import test from "node:test"
 import { promisify } from "node:util"
 
-import { invokeConversationChoice } from "../custom-popup.ts"
-import { bindFocusedConversation, captureFocusedConversation, focusedConversationChoice } from "../lib/conversation-capture.ts"
+import { bindFocusedConversation, captureFocusedConversation } from "../lib/conversation-capture.ts"
 import { readConversationRequest, writeConversationChoice, writeConversationRequest } from "../lib/conversation-state.ts"
 import { captureFixture, humanRecord, jsonl, repositoryRoot } from "./helpers/conversation-fixtures.ts"
 
@@ -78,49 +77,6 @@ const executableFixture = async (t) => {
   }
   return { ...fixture, server, herdr, env }
 }
-
-test("focused next-steps eligibility is independent of idle state and does not capture or invoke a model", async (t) => {
-  const fixture = await captureFixture(t)
-  let readCalls = 0
-  let sandboxCalls = 0
-  const choice = await focusedConversationChoice(fixture.context, {
-    ...fixture.dependencies,
-    recordReader: async () => { readCalls += 1; throw new Error("Must not capture in the picker") },
-    sandboxLookup: async () => { sandboxCalls += 1; throw new Error("Must not export in the picker") },
-  })
-  assert.equal(choice.label, "Analyze conversation for next steps")
-  assert.equal(choice.disabled, false)
-  assert.equal(choice.binding.sessionId, fixture.agentInfo.agent_session.value)
-  assert.equal(readCalls, 0)
-  assert.equal(sandboxCalls, 0)
-  fixture.agentInfo.agent = "unsupported-harness"
-  const disabled = await focusedConversationChoice(fixture.context, fixture.dependencies)
-  assert.equal(disabled.disabled, true)
-  assert.match(disabled.detail, /focused pane/u)
-})
-
-test("analysis invokes a dedicated action with a frozen token and cannot consume the capture queue", async (t) => {
-  const fixture = await captureFixture(t)
-  const choice = await focusedConversationChoice(fixture.context, fixture.dependencies)
-  const calls = []
-  await invokeConversationChoice({
-    choice, context: fixture.context, stateDir: fixture.root,
-    choiceWriter: async (_root, binding) => {
-      assert.deepEqual(binding, choice.binding)
-      return "trellage-guide-conversation-choice:v1:11111111-1111-4111-8111-111111111111"
-    },
-    request: async (method, params) => calls.push({ method, params }),
-  })
-  assert.equal(calls[0].params.action_id, "trellage.guide-handoff.analyze-conversation")
-  assert.equal(calls[0].params.context.focused_pane_id, fixture.context.paneId)
-  assert.doesNotMatch(JSON.stringify(calls), /Original human goal|Completed visible answer|stateChangeSeq/u)
-  await assert.rejects(invokeConversationChoice({
-    choice, context: fixture.context, stateDir: fixture.root, operation: "enqueue",
-  }), /cannot be queued/u)
-  await assert.rejects(invokeConversationChoice({
-    choice: { ...choice, disabled: true }, context: fixture.context, stateDir: fixture.root,
-  }), /explicit supported focused/u)
-})
 
 test("action captures on explicit selection and stages only a private snapshot path for the conversation popup", async (t) => {
   const fixture = await executableFixture(t)
@@ -270,10 +226,9 @@ test("source CLI rejects standalone snapshots, draft paths, and non-UUID request
   assert.deepEqual(await readConversationRequest(fixture.root, requestPath), snapshot)
 })
 
-test("plugin manifest keeps old shortcuts and adds the independent conversation action and pane", async () => {
+test("plugin manifest keeps the guide actions without a separate conversation action or pane", async () => {
   const source = await readFile(path.join(pluginRoot, "herdr-plugin.toml"), "utf8")
-  assert.match(source, /id = "analyze-conversation"[\s\S]*?command = \["node", "conversation-action\.ts"\]/u)
-  assert.match(source, /id = "conversation"[\s\S]*?command = \["node", "conversation-popup\.ts"\]/u)
+  assert.doesNotMatch(source, /analyze-conversation|conversation-popup\.ts/iu)
   assert.match(source, /command = \["node", "action\.ts"\]/u)
   assert.match(source, /command = \["node", "popup\.ts"\]/u)
   assert.match(source, /command = \["node", "overlay-action\.ts"\]/u)

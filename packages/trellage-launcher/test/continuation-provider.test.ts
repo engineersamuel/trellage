@@ -24,7 +24,7 @@ import {
   summaryFixture,
 } from "./helpers/continuation-provider-fixtures.js"
 
-const large = (): ConversationSnapshot => conversationFixture(30, 6000)
+const large = (): ConversationSnapshot => conversationFixture(100, 12_000)
 const rejected = async (promise: Promise<unknown>): Promise<ContinuationAnalysisError> => {
   try {
     await promise
@@ -55,8 +55,8 @@ describe("continuation call planning", () => {
 
   it("counts UTF-8 bytes and refuses an oversized recent turn without a tail fallback", () => {
     const snapshot = conversationFixture(2, 100)
-    const ascii = { ...snapshot, messages: snapshot.messages.map((message) => ({ ...message, text: "a".repeat(35_000) })) }
-    const unicode = { ...ascii, messages: ascii.messages.map((message) => ({ ...message, text: "😀".repeat(35_000) })) }
+    const ascii = { ...snapshot, messages: snapshot.messages.map((message) => ({ ...message, text: "a".repeat(Math.floor(continuationPolicy.maxInputBytes / 6)) })) }
+    const unicode = { ...ascii, messages: ascii.messages.map((message) => ({ ...message, text: "😀".repeat(Math.floor(continuationPolicy.maxInputBytes / 6)) })) }
     expect(continuationCallPlan(ascii, continuationEntries).summarizationCalls).toBe(0)
     expect(() => continuationCallPlan(unicode, continuationEntries)).toThrow("recent-history-or-catalog")
   })
@@ -79,10 +79,10 @@ describe("continuation call planning", () => {
   })
 
   it("stops explicitly on one over-budget older message", async () => {
-    const original = conversationFixture(8, 8000)
+    const original = conversationFixture(30, 40_000)
     const snapshot = {
       ...original,
-      messages: [{ ...original.messages[0]!, text: "x".repeat(75_000) }, ...original.messages.slice(1)],
+      messages: [{ ...original.messages[0]!, text: "x".repeat(continuationPolicy.maxSummaryInputBytes + 1) }, ...original.messages.slice(1)],
     }
     const provider = new FakeContinuationProvider()
     await expect(analyzeConversation(snapshot, continuationEntries, provider)).rejects.toThrow("single-evidence-message")
@@ -105,10 +105,14 @@ describe("continuation call planning", () => {
     const original = conversationFixture(28, 60_000)
     const snapshot = { ...original, messages: original.messages.map((message, index) =>
       index < 22 ? message : { ...message, text: "Recent complete turn." }) }
+    const crowdedEntries = continuationEntries.map((entry) => ({
+      ...entry,
+      description: "catalog entry ".repeat(70_000),
+    }))
     const provider = new FakeContinuationProvider()
-    const plan = continuationCallPlan(snapshot, continuationEntries)
+    const plan = continuationCallPlan(snapshot, crowdedEntries)
     const saves: number[] = []
-    const result = await analyzeConversation(snapshot, continuationEntries, provider, {
+    const result = await analyzeConversation(snapshot, crowdedEntries, provider, {
       onSummaries: async (summaries) => { saves.push(summaries.length) },
     })
     expect(plan.summarizationCalls).toBeGreaterThan(22)
@@ -121,6 +125,35 @@ describe("continuation call planning", () => {
     expect(input.summaries.flatMap(({ evidenceIds }) => evidenceIds)).toEqual(snapshot.messages.slice(0, -6).map(({ id }) => id))
     expect(input.summaries[0]?.text).toContain("Original goal")
     expect(input.messages.map(({ id }) => id)).toEqual(snapshot.messages.slice(-6).map(({ id }) => id))
+  })
+
+  it("moves complete older user turns into one summary when the catalog crowds the verbatim tail", () => {
+    const snapshot = conversationFixture(12, 30_000)
+    const crowdedEntries = continuationEntries.map((entry) => ({
+      ...entry,
+      description: "catalog entry ".repeat(63_000),
+    }))
+    const plan = continuationCallPlan(snapshot, crowdedEntries)
+    expect(plan.summarizationCalls).toBeGreaterThan(0)
+    const provider = new FakeContinuationProvider()
+    return analyzeConversation(snapshot, crowdedEntries, provider).then(({ summaries }) => {
+      const input = provider.assessmentRequests[0]!.input
+      expect(input.messages.map(({ id }) => id)).toEqual(snapshot.messages.slice(-4).map(({ id }) => id))
+      expect([...summaries.flatMap(({ evidenceIds }) => evidenceIds), ...input.messages.map(({ id }) => id)])
+        .toEqual(snapshot.messages.map(({ id }) => id))
+    })
+  })
+
+  it("moves older turns when citation limits prevent further summary reduction", async () => {
+    const snapshot = conversationFixture(200, 6000)
+    const entries = continuationEntries.map((entry) => ({ ...entry, description: "x".repeat(990_000) }))
+    const provider = new FakeContinuationProvider()
+    await analyzeConversation(snapshot, entries, provider)
+    const input = provider.assessmentRequests[0]!.input
+    expect(input.messages.length).toBeLessThan(continuationPolicy.recentMessages)
+    expect(input.messages.slice(-2)).toEqual(snapshot.messages.slice(-2))
+    expect([...input.summaries.flatMap(({ evidenceIds }) => evidenceIds), ...input.messages.map(({ id }) => id)])
+      .toEqual(snapshot.messages.map(({ id }) => id))
   })
 })
 
@@ -397,7 +430,7 @@ describe("continuation summary evidence and recovery", () => {
   })
 
   it("budgets citation coverage as well as source text for many short messages", async () => {
-    const snapshot = conversationFixture(1000, 170)
+    const snapshot = conversationFixture(1000, 1100)
     const provider = new FakeContinuationProvider()
     await analyzeConversation(snapshot, continuationEntries, provider)
     expect(provider.summaryRequests.length).toBeGreaterThan(1)

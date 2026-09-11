@@ -581,6 +581,48 @@ describe("Herdr availability helpers", () => {
     ).toMatchObject({ capture: { source: "capture-queue", confidence: "user-curated" } })
   })
 
+  it("accepts the exact conversation transcript source emitted by conversation capture", () => {
+    expect(
+      getHerdrContext({
+        HERDR_ENV: "1",
+        TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify({
+          schemaVersion: 1,
+          surface: "popup",
+          workspaceId: "w1",
+          paneId: "w1:p1",
+          cwd: "/repo",
+          capture: {
+            source: "conversation-transcript",
+            confidence: "exact",
+            agent: "copilot",
+            sessionId: "session-123",
+          },
+        }),
+      }),
+    ).toMatchObject({
+      surface: "popup",
+      capture: {
+        source: "conversation-transcript",
+        confidence: "exact",
+        agent: "copilot",
+        sessionId: "session-123",
+      },
+    })
+    expect(() =>
+      getHerdrContext({
+        HERDR_ENV: "1",
+        TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify({
+          schemaVersion: 1,
+          surface: "popup",
+          workspaceId: "w1",
+          paneId: "w1:p1",
+          cwd: "/repo",
+          capture: { source: "conversation-transcript", confidence: "snapshot" },
+        }),
+      }),
+    ).toThrow(/source and confidence do not match/u)
+  })
+
   it("rejects malformed or incomplete popup source metadata", () => {
     expect(() =>
       getHerdrContext({

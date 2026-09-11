@@ -4,6 +4,7 @@ import path from "node:path"
 import {
   ConversationAgent, ConversationRole, type ConversationMessage, type ConversationSource,
 } from "./conversation-contract.ts"
+import { sanitizeConversationText } from "../../../packages/trellage-guide-core/dist/conversation-sanitization.js"
 import { conversationCapturePolicy, type ConversationCapturePolicy } from "./conversation-policy.ts"
 import { ConversationSourceError, type ConversationRecord } from "./conversation-reader.ts"
 
@@ -18,10 +19,6 @@ const identifier = (value: unknown) =>
 const blocks = (value: unknown): Json[] => Array.isArray(value) ? value.map(object) : []
 const text = (value: unknown) => {
   if (typeof value !== "string" || value.trim().length === 0) return undefined
-  // oxlint-disable-next-line no-control-regex -- Reject transcript controls before display.
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u.test(value)) {
-    throw new ConversationSourceError("Conversation text contains unsupported control characters.")
-  }
   return value
 }
 
@@ -41,9 +38,10 @@ const nested = (entry: Json, payload: Json) =>
   )
 
 const internal = (entry: Json, payload: Json) =>
-  entry.isMeta === true || entry.isSynthetic === true || payload.isSynthetic === true ||
-  ["system", "developer", "tool", "agent", "internal", "synthetic"].includes(
-    String(payload.source ?? entry.source ?? payload.origin ?? entry.origin),
+  entry.isMeta === true || entry.isSynthetic === true || entry.internal === true ||
+  payload.isMeta === true || payload.isSynthetic === true || payload.internal === true ||
+  [entry.source, entry.origin, payload.source, payload.origin].some((value) =>
+    ["system", "developer", "tool", "agent", "internal", "synthetic"].includes(String(value)),
   )
 
 const loneSurrogates = /[\ud800-\udfff]/u
@@ -68,6 +66,7 @@ class TranscriptHistory {
   readonly agent: Agent
   readonly sessionId: string
   readonly cwd: string
+  compactionTail: { candidate: Candidate; sourceType: string; payloadType: string } | undefined
 
   constructor(agent: Agent, sessionId: string, cwd: string) {
     this.agent = agent
@@ -80,10 +79,16 @@ class TranscriptHistory {
   }
 
   candidate(role: Role, content: string, reference: ConversationRecord, messageId?: string): Candidate {
+    const sanitized = sanitizeConversationText(content)
+    if (sanitized.credentialsRedacted) this.notices.add("Conversation credentials were redacted.")
+    if (sanitized.controlsRemoved) this.notices.add("Terminal control sequences were removed.")
+    if (sanitized.text.trim().length === 0) {
+      throw new ConversationSourceError("Conversation text is empty after sanitization.")
+    }
     return {
       id: this.evidence(role, reference, messageId),
       role,
-      text: content,
+      text: sanitized.text,
       recordIndex: reference.recordIndex,
       completed: false,
     }
@@ -126,6 +131,21 @@ class TranscriptHistory {
     }
   }
 
+  discardCompactionTail() {
+    const tail = this.compactionTail
+    if (tail === undefined ||
+      !((tail.sourceType === "response_item" && tail.payloadType === "message") ||
+        (tail.sourceType === "event_msg" && tail.payloadType === "agent_message"))) return
+    this.entries.delete(tail.candidate.id)
+    if (this.pending?.id === tail.candidate.id) this.pending = undefined
+    if (this.presentation?.candidate.id === tail.candidate.id) this.presentation = undefined
+    this.compactionTail = undefined
+  }
+
+  observeCodexRecord(reference: ConversationRecord) {
+    if (!isCodexAccountingRecord(reference.value)) this.compactionTail = undefined
+  }
+
   newTurn() {
     this.pending = undefined
     this.presentation = undefined
@@ -143,9 +163,12 @@ class TranscriptHistory {
     this.entries.set(candidate.id, candidate)
   }
 
-  assistant(candidate: Candidate, completed: boolean, summary = false) {
+  assistant(candidate: Candidate, completed: boolean, summary = false, source?: Json) {
     if (!completed) {
       this.pending = candidate
+      this.compactionTail = source === undefined ? undefined : {
+        candidate, sourceType: String(source.type ?? ""), payloadType: String(object(source.payload).type ?? ""),
+      }
       return
     }
     if (summary && this.presentation !== undefined) return
@@ -160,6 +183,9 @@ class TranscriptHistory {
     if (previous === undefined) this.entries.set(committed.id, committed)
     this.pending = undefined
     this.presentation = { candidate: previous ?? committed, summary }
+    this.compactionTail = source === undefined ? undefined : {
+      candidate: committed, sourceType: String(source.type ?? ""), payloadType: String(object(source.payload).type ?? ""),
+    }
   }
 
   complete() {
@@ -174,6 +200,11 @@ const eventMessageId = (entry: Json, payload: Json) =>
   identifier(payload.messageId) ?? identifier(payload.message_id) ??
   identifier(payload.id) ?? identifier(entry.uuid) ?? identifier(entry.id)
 
+const isCodexAccountingRecord = (entry: Json) => {
+  if (entry.type === "token_usage_record") return true
+  return entry.type === "event_msg" && object(entry.payload).type === "token_count"
+}
+
 const compaction = (history: TranscriptHistory, entry: Json, payload: Json) => {
   if (["compacted", "summary", "session.compaction_complete", "session.compaction.completed",
     "compact_boundary"].includes(String(entry.type)) ||
@@ -187,6 +218,7 @@ const compaction = (history: TranscriptHistory, entry: Json, payload: Json) => {
 
 const copilotAssistant = (history: TranscriptHistory, reference: ConversationRecord, data: Json) => {
   const entry = reference.value
+  if (internal(entry, data)) return
   const requests = data.toolRequests ?? entry.toolRequests
   const phase = data.phase ?? entry.phase
   if ((phase !== undefined && phase !== null && !["final_answer", "final"].includes(String(phase))) ||
@@ -198,7 +230,7 @@ const copilotAssistant = (history: TranscriptHistory, reference: ConversationRec
   if (content !== undefined) {
     history.assistant(
       history.candidate(ConversationRole.Assistant, content, reference, eventMessageId(entry, data)),
-      phase === "final_answer" || phase === "final",
+      phase === "final_answer" || phase === "final", false, entry,
     )
   }
 }
@@ -266,6 +298,7 @@ const codexHumanText = (payload: Json) => {
 const parseCodexMessage = (
   history: TranscriptHistory, reference: ConversationRecord, payload: Json,
 ) => {
+  if (internal(reference.value, payload)) return
   if (payload.role === "user") {
     if (!codexHumanResponse(payload) || internal(reference.value, payload)) return
     history.attachments(payload)
@@ -283,7 +316,7 @@ const parseCodexMessage = (
   if (content !== undefined) {
     history.assistant(
       history.candidate(ConversationRole.Assistant, content, reference, eventMessageId(reference.value, payload)),
-      payload.phase === "final_answer" || payload.channel === "final",
+      payload.phase === "final_answer" || payload.channel === "final", false, reference.value,
     )
   }
 }
@@ -303,6 +336,7 @@ const completeCodexTask = (history: TranscriptHistory, reference: ConversationRe
 const parseCodexEvent = (
   history: TranscriptHistory, reference: ConversationRecord, payload: Json,
 ) => {
+  if (internal(reference.value, payload)) return
   if (payload.type === "task_started") {
     history.newTurn()
   } else if (payload.type === "user_message" && !internal(reference.value, payload)) {
@@ -316,6 +350,7 @@ const parseCodexEvent = (
     if (content !== undefined && history.presentation === undefined) {
       history.assistant(
         history.candidate(ConversationRole.Assistant, content, reference, eventMessageId(reference.value, payload)), false,
+        false, reference.value,
       )
     }
   } else if (payload.type === "task_complete") {
@@ -337,7 +372,12 @@ const parseCodexRecord = (
     return
   }
   history.checkIdentity(payload.session_id)
-  if (!history.unique(reference, payload) || compaction(history, entry, payload)) return
+  if (!history.unique(reference, payload)) return
+  if (compaction(history, entry, payload)) {
+    history.discardCompactionTail()
+    return
+  }
+  history.observeCodexRecord(reference)
   if (entry.type === "response_item" && payload.type === "message") {
     parseCodexMessage(history, reference, payload)
   } else if (entry.type === "event_msg") {

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises"
 import net from "node:net"
 import path from "node:path"
+import os from "node:os"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { Terminal } from "@xterm/headless"
@@ -43,6 +44,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const captureProgram = `
 import { pathToFileURL } from "node:url"
 import path from "node:path"
+import os from "node:os"
 const root = process.argv[1]
 const { captureFocusedConversation } = await import(pathToFileURL(path.join(root, "lib/conversation-capture.ts")))
 const { writeConversationRequest } = await import(pathToFileURL(path.join(root, "lib/conversation-state.ts")))
@@ -59,7 +61,7 @@ beforeAll(async () => {
 })
 
 const createFixture = async (onTestFailed: TestContext["onTestFailed"]) => {
-  const root = await realpath(await mkdtemp(path.join(repositoryRoot, ".cie-")))
+  const root = await realpath(await mkdtemp(path.join(os.homedir(), ".trx-cie-")))
   const home = path.join(root, "home")
   const guideRoot = path.join(home, ".local", "share", "trellage", "trx", "share", "profile-guides")
   const stateRoot = path.join(root, "state")
@@ -531,6 +533,28 @@ it("opens installed-style guide assets with the configured helper, saves a real 
     0o700,
   )
   await fixture.assertNoInferenceOrLaunch()
+}, 20_000)
+
+it("opens captured source messages from Setup and returns without inference or launch", async ({
+  fixture,
+}) => {
+  const captured = await fixture.capture()
+  const ui = fixture.start(captured.requestPath)
+  await ui.waitForText(
+    "TRX conversation next steps - Review source before analysis",
+    "Review source before analysis",
+    `Model: ${initialModel}`,
+  )
+
+  ui.press("t")
+  await ui.waitForText("Messages 1 of 2", "user", userText)
+  ui.press("\u001b[C")
+  await ui.waitForText("Messages 2 of 2", "assistant", assistantText)
+  ui.press("\u001b")
+  await ui.waitForText("Review source before analysis")
+
+  await fixture.assertNoInferenceOrLaunch()
+  await ui.finish()
 }, 20_000)
 
 it("cannot find the source helper beside installed guide assets without the configured helper root", async ({

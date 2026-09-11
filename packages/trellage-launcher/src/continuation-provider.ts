@@ -11,6 +11,7 @@ import {
   type ConversationSnapshot,
   type ConversationSummary,
 } from "../../trellage-guide-core/dist/conversation.js"
+import { sanitizeConversationSnapshot } from "../../trellage-guide-core/dist/conversation-sanitization.js"
 import {
   GuideModelCapabilityError,
   RestrictedGuideModelError,
@@ -403,7 +404,12 @@ const checkedSnapshot = (supplied: ConversationSnapshot): ConversationSnapshot =
     jsonBytes(supplied) > continuationPolicy.maxSnapshotBytes
   ) fail("snapshot-budget-or-schema")
   try {
-    return validateConversationSnapshot(supplied)
+    const sanitized = sanitizeConversationSnapshot(supplied)
+    if (
+      sanitized.messages.length > continuationPolicy.maxMessages ||
+      jsonBytes(sanitized) > continuationPolicy.maxSnapshotBytes
+    ) fail("snapshot-budget-or-schema")
+    return validateConversationSnapshot(sanitized)
   } catch {
     return fail("invalid-conversation-snapshot")
   }
@@ -486,7 +492,6 @@ const reduceNodes = (
     group.push(node)
   }
   append()
-  if (result.length >= roots.length) fail("summary-reduction-cannot-fit")
   return result
 }
 
@@ -498,15 +503,35 @@ const historyPlan = (snapshot: ConversationSnapshot, entries: ReadonlyArray<Guid
   }
   let start = Math.max(0, snapshot.messages.length - continuationPolicy.recentMessages)
   while (start > 0 && snapshot.messages[start]?.role !== ConversationRole.User) start -= 1
-  const recent = snapshot.messages.slice(start)
-  if (!fits(recent, [])) fail("recent-history-or-catalog-exceeds-input-budget")
-  const nodes = leafNodes(snapshot, snapshot.messages.slice(0, start))
-  let roots: ReadonlyArray<SummaryNode> = [...nodes]
+  let recent = snapshot.messages.slice(start)
+  let nodes: SummaryNode[] = []
+  let roots: ReadonlyArray<SummaryNode> = []
   let reductions = 0
-  while (!fits(recent, roots)) {
-    if (reductions >= continuationPolicy.maxReductionLevels) fail("summary-reduction-depth-cap")
-    roots = reduceNodes(snapshot, roots, nodes)
-    reductions += 1
+  while (true) {
+    if (!fits(recent, [])) {
+      const nextStart = snapshot.messages.findIndex(({ role }, index) => index > start && role === ConversationRole.User)
+      if (nextStart < 0) fail("recent-history-or-catalog-exceeds-input-budget")
+      start = nextStart
+      recent = snapshot.messages.slice(start)
+      continue
+    }
+    nodes = leafNodes(snapshot, snapshot.messages.slice(0, start))
+    roots = [...nodes]
+    reductions = 0
+    while (!fits(recent, roots)) {
+      if (roots.length <= 1 || reductions >= continuationPolicy.maxReductionLevels) break
+      const reduced = reduceNodes(snapshot, roots, nodes)
+      if (reduced.length >= roots.length) break
+      roots = reduced
+      reductions += 1
+    }
+    if (fits(recent, roots)) break
+    // Reserve room for at least one summary by moving the oldest complete
+    // user turn into summarization. The newest user turn always stays verbatim.
+    const nextStart = snapshot.messages.findIndex(({ role }, index) => index > start && role === ConversationRole.User)
+    if (nextStart < 0) fail("recent-history-or-catalog-exceeds-input-budget")
+    start = nextStart
+    recent = snapshot.messages.slice(start)
   }
   const maxCalls = (nodes.length + 1) * (1 + continuationPolicy.schemaRepairAttempts)
   if (maxCalls > continuationPolicy.maxCalls) fail("model-call-cap")

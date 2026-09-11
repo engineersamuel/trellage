@@ -191,7 +191,7 @@ const candidate = async (agent, filePath, roots, metadata) => {
   return { agent, path: canonical, mtimeMs: stat.mtimeMs, id: metadata.id, cwd: metadata.cwd }
 }
 
-const scanCopilot = async (root, roots, sessionId) => {
+const scanCopilot = async (root, roots, sessionId, focused = false) => {
   const sessionRoot = path.join(root, "session-state")
   if (!(await safeDirectory(sessionRoot))) return []
   const sessionIds =
@@ -212,6 +212,7 @@ const scanCopilot = async (root, roots, sessionId) => {
       if (cwd === undefined) continue
       candidates.push(await candidate("copilot", eventsPath, roots, { id, cwd }))
     } catch (error) {
+      if (error?.code !== "ENOENT" && focused) throw error
       if (error?.code !== "ENOENT") console.error(`Skipping Copilot session ${id}: ${error.message}`)
     }
   }
@@ -232,6 +233,7 @@ const scanCodex = async (root, roots, sessionId, focused = false) => {
       if (metadata === undefined || !safeSessionId.test(metadata.id)) continue
       candidates.push(await candidate("codex", filePath, roots, metadata))
     } catch (error) {
+      if (error?.code !== "ENOENT" && focused) throw error
       if (error?.code !== "ENOENT") console.error(`Skipping Codex transcript ${filePath}: ${error.message}`)
     }
   }
@@ -260,6 +262,7 @@ const scanClaude = async (root, roots, sessionId, focused = false) => {
       if (metadata === undefined || !safeSessionId.test(metadata.id)) continue
       candidates.push(await candidate("claude", filePath, roots, metadata))
     } catch (error) {
+      if (error?.code !== "ENOENT" && focused) throw error
       if (error?.code !== "ENOENT") console.error(`Skipping Claude transcript ${filePath}: ${error.message}`)
     }
   }
@@ -270,7 +273,7 @@ const scanCandidates = async (agent, roots, sessionId, focused = false) => {
   const groups = await Promise.all(
     roots.map((root) =>
       agent === "copilot"
-        ? scanCopilot(root, roots, sessionId)
+        ? scanCopilot(root, roots, sessionId, focused)
         : agent === "codex"
           ? scanCodex(root, roots, sessionId, focused)
           : scanClaude(root, roots, sessionId, focused),
@@ -350,6 +353,7 @@ const candidateFromExactPath = async (agent, value, roots, focused = false) => {
     if (metadata?.cwd === undefined) return undefined
     return candidate(agent, value, roots, metadata)
   } catch (error) {
+    if (focused) throw error
     console.error(`Skipping exact ${agent} transcript ${value}: ${error instanceof Error ? error.message : error}`)
     return undefined
   }
@@ -412,7 +416,7 @@ export const findTranscript = async ({ agent, cwd, agentSession, processInfo, to
   const nativeProfile = trellageIdentity?.surface === "native" ? trellageIdentity.profile : undefined
   const roots = await transcriptRoots(agent, env, nativeProfile)
   if (roots.length === 0) return undefined
-  const exactPath = await exactPathSession(agent, agentSession, roots, true)
+  const exactPath = await exactPathSession(agent, agentSession, roots, false)
   const agentSessionId = sessionIdFromAgentSession(agent, agentSession)
   const processSessionId = sessionIdFromProcessInfo(agent, processInfo)
   const nativeSessionId =
@@ -475,7 +479,7 @@ const checkedFocusedReference = (agent, agentSession) => {
 const focusedCandidate = async (agent, agentSession, roots, exactId, nativeProfile, identitySource) => {
   if (agentSession?.kind === "path") {
     await assertNoConversationSymlinks(agentSession.value)
-    const exactPath = await exactPathSession(agent, agentSession, roots)
+    const exactPath = await exactPathSession(agent, agentSession, roots, true)
     const transcript = exactPathTranscript(exactPath, exactId, nativeProfile)
     if (transcript === undefined) throw new Error("The exact focused transcript is unavailable.")
     return transcript
@@ -497,15 +501,16 @@ export const findFocusedTranscript = async ({
   const identity = trellageSessionIdentity({ agent, tokens, processInfo })
   if (identity?.surface === "sandbox") throw new Error("Sandbox conversations require the validated session bridge.")
   const nativeProfile = identity?.surface === "native" ? identity.profile : undefined
-  const roots = await focusedTranscriptRoots(agent, env, nativeProfile)
-  if (roots.length === 0) throw new Error("The focused harness has no supported session root.")
   const identifiers = {
     agentSessionId: checkedFocusedReference(agent, agentSession),
     processSessionId: exactSessionIdFromProcessInfo(agent, processInfo),
     nativeSessionId: identity?.surface === "native" ? identity.sessionId : undefined,
   }
+  const sessionId = exactSessionIdentity(identifiers)
+  const roots = await focusedTranscriptRoots(agent, env, nativeProfile)
+  if (roots.length === 0) throw new Error("The focused harness has no supported session root.")
   const transcript = await focusedCandidate(
-    agent, agentSession, roots, exactSessionIdentity(identifiers), nativeProfile,
+    agent, agentSession, roots, sessionId, nativeProfile,
     exactIdentitySource(identifiers),
   )
   if (!safeSessionId.test(transcript.id) ||
@@ -521,6 +526,35 @@ export const captureStructuredFinalMessage = async (options) => {
   if (transcript === undefined) return undefined
   const roots = await transcriptRoots(options.agent, options.env, transcript.profile)
   const text = extractTranscriptFinalMessage(options.agent, await readTail(transcript.path, roots))
+  return text === undefined
+    ? undefined
+    : {
+        text,
+        agent: options.agent,
+        sessionId: transcript.id,
+        transcriptPath: transcript.path,
+        identitySource: transcript.identitySource,
+        profile: transcript.profile,
+      }
+}
+
+const exactTranscriptUnavailable = (error) => {
+  const message = error instanceof Error ? error.message : String(error)
+  return /(?:no exact session identity|focused harness has no supported session root|focused harness does not support)/iu.test(message)
+}
+
+/**
+ * Reads the completed focused transcript with strict path and identity checks.
+ */
+export const captureStrictStructuredFinalMessage = async (options) => {
+  let transcript
+  try {
+    transcript = await findFocusedTranscript(options)
+  } catch (error) {
+    if (exactTranscriptUnavailable(error)) return undefined
+    throw error
+  }
+  const text = extractTranscriptFinalMessage(options.agent, await readTail(transcript.path, transcript.roots))
   return text === undefined
     ? undefined
     : {

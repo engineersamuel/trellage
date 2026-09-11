@@ -274,24 +274,35 @@ export const MarkdownTextViewport = ({
   width,
   height,
   resetKey,
+  startLine: controlledStartLine,
+  onStartLineChange,
 }: {
   readonly value: string
   readonly width: number
   readonly height: number
   readonly resetKey?: string
+  readonly startLine?: number
+  readonly onStartLineChange?: (startLine: number) => void
 }) => {
   const [requestedStartLine, setRequestedStartLine] = useState(0)
   const lines = markdownPromptLines(value, width)
   const viewportHeight = Math.max(1, height)
   const maximumStartLine = Math.max(0, lines.length - viewportHeight)
-  const startLine = Math.min(maximumStartLine, requestedStartLine)
+  const startLine = Math.min(maximumStartLine, Math.max(0, controlledStartLine ?? requestedStartLine))
   const pageSize = Math.max(1, viewportHeight - 1)
   useEffect(() => {
     setRequestedStartLine(0)
   }, [resetKey])
   useInput((_input, key) => {
-    if (key.pageUp) setRequestedStartLine(Math.max(0, startLine - pageSize))
-    else if (key.pageDown) setRequestedStartLine(Math.min(maximumStartLine, startLine + pageSize))
+    if (key.pageUp) {
+      const next = Math.max(0, startLine - pageSize)
+      setRequestedStartLine(next)
+      onStartLineChange?.(next)
+    } else if (key.pageDown) {
+      const next = Math.min(maximumStartLine, startLine + pageSize)
+      setRequestedStartLine(next)
+      onStartLineChange?.(next)
+    }
   })
   return (
     <Box flexDirection="column" height={viewportHeight} overflowY="hidden">

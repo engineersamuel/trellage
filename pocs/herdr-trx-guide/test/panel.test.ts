@@ -1,21 +1,36 @@
 import assert from "node:assert/strict"
+import { appendFile, writeFile } from "node:fs/promises"
 import test from "node:test"
 
 import {
   invokeGuideChoice,
+  initialSourceChoiceIndex,
   orderedSourceChoices,
   panelInvocationSource,
   sourcePickerStatus,
+  sourceChoiceIdentity,
+  sourcePickerHeader,
   waitForCaptureQueueGrowth,
 } from "../custom-popup.ts"
-import { ExactCaptureUnavailableError } from "../lib/capture.ts"
+import { captureAgentContent, ExactCaptureUnavailableError } from "../lib/capture.ts"
 import { inspectCaptureOptions, selectedTextChoice } from "../lib/capture-options.ts"
+import { assistantRecord, captureFixture, humanRecord, jsonl } from "./helpers/conversation-fixtures.ts"
 
 const context = {
   workspaceId: "w1",
   paneId: "w1:p1",
   cwd: "/repo",
 }
+
+test("keeps source identity stable as asynchronous labels and previews arrive", () => {
+  const before = { kind: "exact", paneId: "w1:p2", sessionId: "s1", stateChangeSeq: 4, label: "Loading" }
+  const after = { ...before, label: "Completed", preview: "Answer" }
+  assert.equal(sourceChoiceIdentity(before), sourceChoiceIdentity(after))
+})
+
+test("renders agent, pane, and project context in the first-paint header", () => {
+  assert.equal(sourcePickerHeader({ agent: "codex", paneId: "pane-1", cwd: "/work/project" }), "TRX actions · codex · pane-1 · project")
+})
 
 test("puts highlighted text before exact results and the capture queue last", () => {
   const choices = orderedSourceChoices(
@@ -26,6 +41,18 @@ test("puts highlighted text before exact results and the capture queue last", ()
   assert.deepEqual(choices.map((choice) => choice.kind), ["selection", "exact", "queue"])
   assert.equal(choices[0].preview, "Highlighted text")
   assert.equal(choices[2].label, "Open capture queue in trx guide (1)")
+})
+
+test("keeps the existing first source selected when Rewrite output is added", () => {
+  const rewrite = { kind: "rewrite", label: "Rewrite output" }
+  const choices = orderedSourceChoices(
+    [{ kind: "exact", paneId: "w1:p1", preview: "Current pane result" }],
+    undefined,
+    { schemaVersion: 1, entries: [] },
+    rewrite,
+  )
+  assert.deepEqual(choices.map((choice) => choice.kind), ["rewrite", "exact"])
+  assert.equal(initialSourceChoiceIndex(choices), 1)
 })
 
 test("marks a selected source for enqueue without putting text in action context", async () => {
@@ -269,12 +296,12 @@ test("offers conversation, exact result, and explicitly labeled terminal choices
     [
       {
         kind: "conversation",
-        label: "Open current Copilot conversation",
+        label: "Open current Copilot conversation (4)",
         preview: "Conversation transcript",
       },
       {
         kind: "exact",
-        label: "Open exact Copilot result",
+        label: "Open latest Copilot answer",
         preview: "Exact answer",
       },
       {
@@ -287,6 +314,34 @@ test("offers conversation, exact result, and explicitly labeled terminal choices
   assert.match(result.choices[0].detail, /4 recent messages, 1 older omitted/u)
   assert.match(result.choices[2].detail, /Not exact/u)
 })
+
+for (const agent of ["codex", "copilot", "claude"]) {
+  test(`refreshes the ${agent} conversation count and preview when the same session gains messages`, async (t) => {
+    const fixture = await captureFixture(t, agent)
+    fixture.agentInfo.agent_status = "done"
+    await writeFile(fixture.transcriptPath, jsonl(fixture.records.slice(0, 3)))
+    const dependencies = {
+      candidateResolver: async () => [fixture.agentInfo],
+      processReader: async () => fixture.processInfo,
+      capture: (options) => captureAgentContent({
+        ...options,
+        env: fixture.env,
+        terminalReader: async () => ({ text: "Terminal fixture", truncated: false }),
+      }),
+    }
+    const first = (await inspectCaptureOptions(fixture.context, dependencies)).choices.find((choice) => choice.kind === "conversation")
+    assert.match(first?.label ?? "", /conversation \(2\)$/u)
+    await appendFile(fixture.transcriptPath, jsonl([
+      humanRecord(agent, "new-user", "New request after closing the picker"),
+      assistantRecord(agent, "new-assistant", "New final answer after closing the picker"),
+    ]))
+    const second = (await inspectCaptureOptions(fixture.context, dependencies)).choices.find((choice) => choice.kind === "conversation")
+    assert.match(second?.label ?? "", /conversation \(4\)$/u)
+    assert.match(second?.preview ?? "", /New final answer after closing the picker/u)
+    assert.equal(second?.sessionId, first?.sessionId)
+    assert.equal(second?.stateChangeSeq, first?.stateChangeSeq)
+  })
+}
 
 test("keeps terminal capture explicit when exact identity is unavailable", async () => {
   const result = await inspectCaptureOptions(context, {

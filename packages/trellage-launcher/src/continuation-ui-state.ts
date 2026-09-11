@@ -23,6 +23,7 @@ export enum ContinuationScreen {
   Prompt = "prompt",
   Placement = "placement",
   Evidence = "evidence",
+  Messages = "messages",
   LatestConfirmation = "latest-confirmation",
   DiscardConfirmation = "discard-confirmation",
   LaunchConfirmation = "launch-confirmation",
@@ -93,6 +94,8 @@ export interface ContinuationUiState {
   readonly evidenceIndex: number
   readonly evidenceActionId: string | null
   readonly evidenceReturnScreen: ContinuationScreen
+  readonly messageIndex: number
+  readonly messageReturnScreen: ContinuationScreen
   readonly editor: ContinuationEditor | null
   readonly operation: ContinuationOperation
   readonly cancelling: boolean
@@ -118,6 +121,8 @@ export const initialContinuationUiState = (
   evidenceIndex: 0,
   evidenceActionId: null,
   evidenceReturnScreen: ContinuationScreen.Setup,
+  messageIndex: 0,
+  messageReturnScreen: ContinuationScreen.Setup,
   editor: null,
   operation: ContinuationOperation.Idle,
   cancelling: false,
@@ -456,8 +461,15 @@ export const changeContinuationEditor = (
   }
 }
 
-export const continuationViewKey = (state: ContinuationUiState): string =>
-  `${state.screen}:${state.actionIndex}:${state.optionIndex}:${state.candidateIndex}:${state.evidenceIndex}:${state.editor?.field ?? ""}`
+export const continuationViewKey = (state: ContinuationUiState): string => {
+  if (state.screen === ContinuationScreen.Messages) {
+    return `${state.screen}:${state.draft.snapshot.id}:${state.draft.snapshot.messages[state.messageIndex]?.id ?? "empty"}`
+  }
+  if (state.screen === ContinuationScreen.Evidence) {
+    return `${state.screen}:${state.draft.snapshot.id}:${state.evidenceActionId ?? "all"}:${state.evidenceIndex}`
+  }
+  return `${state.screen}:${state.actionIndex}:${state.optionIndex}:${state.candidateIndex}:${state.evidenceIndex}:${state.editor?.field ?? ""}`
+}
 
 export const continuationTextViewport = (lines: ReadonlyArray<string>, height: number, requestedStartLine: number) => {
   const viewportHeight = Math.max(1, height)

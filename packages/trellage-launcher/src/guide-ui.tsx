@@ -3085,7 +3085,12 @@ export const captureSourcePresentation = (
   const session = capture.sessionId === undefined ? "" : ` · session ${capture.sessionId.slice(0, 12)}`
   const profile = capture.profile === undefined ? "" : ` · profile ${capture.profile}`
   return {
-    label: capture.source === "sandbox-transcript" ? "Exact Sandbox result" : "Exact agent result",
+    label:
+      capture.source === "sandbox-transcript"
+        ? "Exact Sandbox result"
+        : capture.source === "conversation-transcript"
+          ? "Exact conversation transcript"
+          : "Exact agent result",
     detail: `${agent}${session}${profile}`,
     color: "green",
   }

@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, realpath, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
+import os from "node:os"
 
 export const repositoryRoot = path.resolve(import.meta.dirname, "../../../..")
 export const sessionId = "11111111-1111-4111-8111-111111111111"
 export const jsonl = (records) => `${records.map((record) => JSON.stringify(record)).join("\n")}\n`
 
 export const fixtureDirectory = async (t) => {
-  const root = path.join(repositoryRoot, ".t", `conv-${randomUUID().slice(0, 8)}`)
+  const root = path.join(await realpath(os.homedir()), `.trx-conv-${randomUUID().slice(0, 8)}`)
   await mkdir(root, { recursive: true, mode: 0o700 })
   await writeFile(path.join(root, "package.json"), '{"type":"commonjs"}\n', { mode: 0o600 })
   t.after(() => rm(root, { recursive: true, force: true }))

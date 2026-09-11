@@ -6,6 +6,7 @@ import {
   type ContinuationDraft,
   type NextAction,
 } from "../../trellage-guide-core/dist/index.js"
+import { sanitizeConversationSnapshot } from "../../trellage-guide-core/dist/conversation-sanitization.js"
 import { GuideEffort } from "./guide-api.js"
 import { describeGuideUiError, wrapGuideText } from "./guide-ui.js"
 import { isSubmitInput } from "./input.js"
@@ -45,6 +46,14 @@ import {
 // oxlint-disable-next-line no-control-regex -- Untrusted display text must not send terminal controls.
 const displayControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu
 const terminalText = (text: string): string => text.replace(/\r\n?/gu, "\n").replace(displayControls, "")
+const sanitizedSnapshots = new WeakMap<object, ReturnType<typeof sanitizeConversationSnapshot>>()
+const displaySnapshot = (draft: ContinuationDraft): ReturnType<typeof sanitizeConversationSnapshot> => {
+  const cached = sanitizedSnapshots.get(draft.snapshot)
+  if (cached !== undefined) return cached
+  const sanitized = sanitizeConversationSnapshot(draft.snapshot)
+  sanitizedSnapshots.set(draft.snapshot, sanitized)
+  return sanitized
+}
 
 enum ContinuationErrorName {
   Abort = "AbortError",
@@ -148,6 +157,7 @@ type ViewChange = Partial<Pick<
   ContinuationUiState,
   "screen" | "actionIndex" | "optionIndex" | "candidateIndex" | "evidenceIndex" |
   "evidenceActionId" | "evidenceReturnScreen" | "acknowledgeAdvanced"
+  | "messageIndex" | "messageReturnScreen"
 >>
 
 /** All effects are explicit and serialized. React rendering never saves, infers, or launches. */
@@ -414,6 +424,8 @@ export class ContinuationUiController {
         candidateIndex: 0,
         evidenceIndex: 0,
         evidenceActionId: null,
+        messageIndex: 0,
+        messageReturnScreen: ContinuationScreen.Setup,
         scroll: {},
         notice: "Latest snapshot saved. Review model and call count, then explicitly Analyze. The previous draft was kept.",
       })
@@ -813,7 +825,7 @@ const profileDocument = (state: ContinuationUiState, services: ContinuationServi
 
 const evidenceMessages = (state: ContinuationUiState) => {
   const ids = state.evidenceActionId === null ? null : continuationAction(state.draft, state.evidenceActionId).action.evidenceIds
-  return state.draft.snapshot.messages.filter(({ id }) => ids === null || ids.includes(id))
+  return displaySnapshot(state.draft).messages.filter(({ id }) => ids === null || ids.includes(id))
 }
 
 const evidenceDocument = (state: ContinuationUiState): ContinuationDocument => {
@@ -829,6 +841,16 @@ const evidenceDocument = (state: ContinuationUiState): ContinuationDocument => {
       "", message.text,
     ].join("\n"),
     controls: ["Left/Right Previous/next message", "Up/Down Scroll | a All snapshot evidence"],
+  }
+}
+
+const transcriptDocument = (state: ContinuationUiState): ContinuationDocument => {
+  const snapshot = displaySnapshot(state.draft)
+  const selected = snapshot.messages[state.messageIndex]
+  return {
+    title: `Messages ${selected === undefined ? 0 : state.messageIndex + 1} of ${snapshot.messages.length}`,
+    body: selected?.text ?? "No extracted messages are available. Press Esc to return to the source review.",
+    controls: ["Up/Down or k/j Previous/next | { / } First/last", "Home/End Start/end of message"],
   }
 }
 
@@ -923,6 +945,7 @@ const screenDocuments: Readonly<Record<
   [ContinuationScreen.Candidates]: candidateDocument,
   [ContinuationScreen.Placement]: placementDocument,
   [ContinuationScreen.Evidence]: evidenceDocument,
+  [ContinuationScreen.Messages]: transcriptDocument,
   [ContinuationScreen.LaunchConfirmation]: launchDocument,
   [ContinuationScreen.LatestConfirmation]: confirmationDocument,
   [ContinuationScreen.DiscardConfirmation]: confirmationDocument,
@@ -951,6 +974,12 @@ const openEvidence = (controller: ContinuationUiController, actionId: string | n
     evidenceActionId: actionId,
     evidenceReturnScreen: controller.getSnapshot().screen,
   })
+}
+
+const openMessages = (controller: ContinuationUiController): void => {
+  const state = controller.getSnapshot()
+  if (state.screen === ContinuationScreen.Messages) return
+  controller.view({ screen: ContinuationScreen.Messages, messageReturnScreen: state.screen })
 }
 
 const openProfileChoices = (controller: ContinuationUiController, workflows: boolean): void => {
@@ -1146,6 +1175,19 @@ const evidenceInput = (controller: ContinuationUiController, input: string, key:
   }
 }
 
+const messageInput = (controller: ContinuationUiController, input: string, key: Key, viewport: ContinuationViewport): void => {
+  const state = controller.getSnapshot()
+  const count = state.draft.snapshot.messages.length
+  if (key.upArrow || input === "k" || key.leftArrow || input === "[") controller.view({ messageIndex: step(state.messageIndex, -1, count) })
+  else if (key.downArrow || input === "j" || key.rightArrow || input === "]") controller.view({ messageIndex: step(state.messageIndex, 1, count) })
+  else if (input === "{") controller.view({ messageIndex: 0 })
+  else if (input === "}") controller.view({ messageIndex: Math.max(0, count - 1) })
+  else {
+    const delta = movement(input, key)
+    if (delta !== 0) controller.scroll(Math.min(viewport.maximumStartLine, Math.max(0, viewport.startLine + delta)))
+  }
+}
+
 const editorCursorCommand = (input: string, key: Key): ContinuationTextCommand | null => {
   if (key.ctrl) {
     const commands: Readonly<Record<string, ContinuationTextCommand>> = {
@@ -1193,6 +1235,8 @@ const back = (controller: ContinuationUiController): void => {
     else controller.view({ screen: ContinuationScreen.Overview })
   } else if (state.screen === ContinuationScreen.Evidence) {
     controller.view({ screen: state.evidenceReturnScreen })
+  } else if (state.screen === ContinuationScreen.Messages) {
+    controller.view({ screen: state.messageReturnScreen })
   } else if (state.screen === ContinuationScreen.Action || state.screen === ContinuationScreen.Overview) {
     controller.view({ screen: state.screen === ContinuationScreen.Action ? ContinuationScreen.Overview : ContinuationScreen.Setup })
   } else if (state.screen === ContinuationScreen.LatestConfirmation || state.screen === ContinuationScreen.DiscardConfirmation || state.screen === ContinuationScreen.LaunchConfirmation) {
@@ -1221,6 +1265,7 @@ const screenInputs: Readonly<Record<
   [ContinuationScreen.Candidates]: candidateInput,
   [ContinuationScreen.Placement]: placementInput,
   [ContinuationScreen.Evidence]: evidenceInput,
+  [ContinuationScreen.Messages]: messageInput,
   [ContinuationScreen.LaunchConfirmation]: launchInput,
   [ContinuationScreen.LatestConfirmation]: (controller, input) => { if (input === "y") void controller.latest() },
   [ContinuationScreen.DiscardConfirmation]: (controller, input) => { if (input === "D") void controller.discard() },
@@ -1232,6 +1277,7 @@ const globalInput = (controller: ContinuationUiController, input: string, key: K
   else if (key.escape) back(controller)
   else if (key.ctrl && input === "s" || (input === "s" && state.saveState === ContinuationSaveState.Failed)) void controller.save()
   else if (input === "u") void controller.reload()
+  else if (input === "t" && state.screen !== ContinuationScreen.Placement && state.screen !== ContinuationScreen.Prompt) openMessages(controller)
   else return false
   return true
 }
@@ -1284,7 +1330,9 @@ const continuationCommonControls = (state: ContinuationUiState): string => {
   if (cancellableOperations.has(state.operation)) return "Esc/q/Ctrl+C Cancel and wait"
   if (state.operation !== ContinuationOperation.Idle) return "Wait for saved results. No automatic resend."
   if (state.editor !== null) return "PgUp/PgDn Scroll | Esc Save/back | Ctrl+C Save/close"
-  return "PgUp/PgDn Scroll | Esc Back | q/Ctrl+C Close"
+  return state.screen === ContinuationScreen.Prompt || state.screen === ContinuationScreen.Placement
+    ? "PgUp/PgDn Scroll | Esc Back | q/Ctrl+C Close"
+    : "t View messages | PgUp/PgDn Scroll | Esc Back | q/Ctrl+C Close"
 }
 
 const useContinuationCursor = (
@@ -1335,13 +1383,28 @@ export const ContinuationApp = (props: ContinuationAppProps): React.ReactElement
     ...(state.error === null ? [] : [`ERROR: ${state.error}`, ""]),
     ...(state.notice === null ? [] : [state.notice, ""]),
   ]
+  const showingMessages = state.screen === ContinuationScreen.Messages && state.operation === ContinuationOperation.Idle
+  const snapshot = showingMessages ? displaySnapshot(state.draft) : null
+  const selectedMessage = snapshot?.messages[state.messageIndex]
+  const sidebarWidth = showingMessages && columns >= 100 ? Math.min(40, Math.floor(width / 3)) : 0
+  const readerWidth = width - (sidebarWidth > 0 ? sidebarWidth + 2 : 0)
+  const paneHeading = showingMessages ? wrapGuideText(terminalText([
+    `Message ${selectedMessage === undefined ? 0 : state.messageIndex + 1} of ${snapshot!.messages.length} | ${selectedMessage?.role ?? "No message"}`,
+    `Coverage: ${snapshot!.coverage.complete ? "complete" : "incomplete"} | Redactions marked`,
+  ].join("\n")), readerWidth).slice(0, Math.max(0, height - 1)) : []
+  const paneHeight = Math.max(1, height - paneHeading.length)
   const body = terminalText([...bodyPrefix, document.body].join("\n"))
-  const lines = useMemo(() => wrapGuideText(body, width), [body, width])
+  const lines = useMemo(() => wrapGuideText(body, readerWidth), [body, readerWidth])
   const cursorLine = document.cursorPrefix === undefined
     ? null : wrapGuideText(terminalText([...bodyPrefix, document.cursorPrefix].join("\n")), width).length - 1
   const viewKey = continuationViewKey(state)
-  const viewport = continuationTextViewport(lines, height, state.scroll[viewKey] ?? 0)
-  useContinuationCursor(controller, state.editor, cursorLine, width, { ...viewport, height })
+  const viewport = continuationTextViewport(lines, paneHeight, state.scroll[viewKey] ?? 0)
+  const sidebarHeight = Math.max(1, height - 1)
+  const sidebarStart = Math.max(0, Math.min(
+    (snapshot?.messages.length ?? 0) - sidebarHeight,
+    state.messageIndex - Math.floor(sidebarHeight / 2),
+  ))
+  useContinuationCursor(controller, state.editor, cursorLine, width, { ...viewport, height: paneHeight })
 
   useEffect(() => () => controller.dispose(), [controller])
   useEffect(() => {
@@ -1351,7 +1414,7 @@ export const ContinuationApp = (props: ContinuationAppProps): React.ReactElement
     if (index > 0) controller.scroll(index)
   }, [controller, state.screen, state.actionIndex, state.optionIndex, viewKey, document.focus, lines, state.scroll])
 
-  useInput((input, key) => handleContinuationInput(controller, input, key, { ...viewport, height }))
+  useInput((input, key) => handleContinuationInput(controller, input, key, { ...viewport, height: paneHeight }))
   usePaste((text) => {
     if (controller.getSnapshot().screen === ContinuationScreen.Editor) controller.text(ContinuationTextCommand.Insert, text)
   })
@@ -1359,8 +1422,20 @@ export const ContinuationApp = (props: ContinuationAppProps): React.ReactElement
   return (
     <Box flexDirection="column" width={Math.max(12, columns)} paddingX={1}>
       <Text bold>{header.join("\n")}</Text>
-      <Box flexDirection="column" height={height} overflowY="hidden">
-        <Text>{viewport.text}</Text>
+      <Box flexDirection="row" height={height} overflowY="hidden">
+        {sidebarWidth > 0 && <Box flexDirection="column" width={sidebarWidth} marginRight={2} flexShrink={0}>
+          <Text bold>MESSAGES</Text>
+          {snapshot!.messages.slice(sidebarStart, sidebarStart + sidebarHeight).map((message, index) => {
+            const ordinal = sidebarStart + index
+            return <Text key={message.id} bold={ordinal === state.messageIndex} wrap="truncate-end">
+              {`${ordinal === state.messageIndex ? ">" : " "} ${String(ordinal + 1).padStart(3, " ")} ${message.role.padEnd(9, " ")} ${terminalText(message.text.slice(0, 200)).replace(/\s+/gu, " ").trim()}`}
+            </Text>
+          })}
+        </Box>}
+        <Box flexDirection="column" width={readerWidth} flexShrink={0}>
+          {paneHeading.length > 0 && <Text bold>{paneHeading.join("\n")}</Text>}
+          <Text>{viewport.text}</Text>
+        </Box>
       </Box>
       <Text>{`Lines ${viewport.startLine + 1}-${viewport.startLine + viewport.lines.length}${viewport.atEnd ? " (end)" : " (more below)"}`}</Text>
       <Text bold {...(state.saveState === ContinuationSaveState.Failed || state.error !== null ? { color: "red" } : {})}>{status.join("\n")}</Text>

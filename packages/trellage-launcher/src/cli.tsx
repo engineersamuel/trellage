@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { constants, openSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"
+import { createInterface } from "node:readline"
 import tty from "node:tty"
 import path from "node:path"
 import React, { useMemo, useState } from "react"
@@ -59,6 +60,8 @@ import {
   runHarnessUpgradeCli,
   type HarnessUpgradeConfirmation,
 } from "./harness-upgrade-cli.js"
+import { parseContextMenuUiRequest, runContextMenuCommand } from "./context-menu-command.js"
+import { runContextMenuUi } from "./context-menu-ui.js"
 
 interface LaunchIntent {
   readonly id: string
@@ -77,6 +80,46 @@ const readInput = async (filename: string | undefined): Promise<string> => {
     chunks.push(buffer)
   }
   return Buffer.concat(chunks).toString("utf8")
+}
+
+const readContextMenuWorkerInput = async (onDisconnect: () => void): Promise<{
+  readonly input: string
+  readonly close: () => void
+}> => {
+  const reader = createInterface({ input: process.stdin, crlfDelay: Infinity })
+  let disposed = false
+  let lineReceived = false
+  let resolveLine: ((value: string) => void) | undefined
+  let rejectLine: ((error: Error) => void) | undefined
+  const line = new Promise<string>((resolve, reject) => {
+    resolveLine = resolve
+    rejectLine = reject
+  })
+  const onLine = (value: string): void => {
+    if (lineReceived) return
+    lineReceived = true
+    resolveLine?.(value)
+  }
+  const onClose = (): void => {
+    if (disposed) return
+    if (lineReceived) onDisconnect()
+    else rejectLine?.(new Error("rewrite worker request is missing"))
+  }
+  reader.on("line", onLine)
+  reader.on("close", onClose)
+  const close = (): void => {
+    if (disposed) return
+    disposed = true
+    reader.removeListener("line", onLine)
+    reader.removeListener("close", onClose)
+    reader.close()
+  }
+  try {
+    return { input: await line, close }
+  } catch (error) {
+    close()
+    throw error
+  }
 }
 
 const selectedEntry = (state: LauncherState) => state.entries.find(({ id }) => id === state.selectedId)
@@ -943,6 +986,40 @@ const runHarnessUpgradeMode = async (): Promise<void> => {
 }
 
 const main = async () => {
+  if (process.argv[2] === "rewrite-context") {
+    if (process.argv[3] === "--worker") {
+      const controller = new AbortController()
+      const cancel = () => controller.abort()
+      process.once("SIGINT", cancel)
+      process.once("SIGTERM", cancel)
+      let workerInput: { readonly input: string; readonly close: () => void } | undefined
+      try {
+        workerInput = await readContextMenuWorkerInput(cancel)
+        await runContextMenuCommand({ input: workerInput.input, signal: controller.signal })
+      } finally {
+        workerInput?.close()
+        process.removeListener("SIGINT", cancel)
+        process.removeListener("SIGTERM", cancel)
+      }
+      return
+    }
+    if (process.argv[3] === "--interactive") {
+      const request = parseContextMenuUiRequest(await readInput(undefined))
+      await runContextMenuUi({ request })
+      return
+    }
+    const controller = new AbortController()
+    const cancel = () => controller.abort()
+    process.once("SIGINT", cancel)
+    process.once("SIGTERM", cancel)
+    try {
+      await runContextMenuCommand({ input: await readInput(undefined), signal: controller.signal })
+    } finally {
+      process.removeListener("SIGINT", cancel)
+      process.removeListener("SIGTERM", cancel)
+    }
+    return
+  }
   if (process.argv[2] === "upgrade") {
     await runHarnessUpgradeMode()
     return

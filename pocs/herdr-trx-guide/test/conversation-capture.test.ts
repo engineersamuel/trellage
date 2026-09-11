@@ -4,9 +4,7 @@ import { appendFile, link, open, rename, symlink, truncate, writeFile } from "no
 import path from "node:path"
 import test from "node:test"
 
-import {
-  bindFocusedConversation, captureFocusedConversation, focusedConversationChoice,
-} from "../lib/conversation-capture.ts"
+import { bindFocusedConversation, captureFocusedConversation } from "../lib/conversation-capture.ts"
 import { parseConversationRecords } from "../lib/conversation-parser.ts"
 import { conversationCapturePolicy, validateConversationCapturePolicy } from "../lib/conversation-policy.ts"
 import { ConversationSourceError, readStableConversationRecords } from "../lib/conversation-reader.ts"
@@ -135,6 +133,46 @@ test("Codex supports event-only legacy user/final records with a task-complete b
   assert.throws(() => parse("codex", [
     { type: "session_meta", payload: { id: sessionId, cwd: "/repo", source: { subagent: {} } } },
   ]), /Nested Codex/u)
+})
+
+test("Codex excludes an assistant response stranded immediately before compaction accounting", () => {
+  assert.throws(() => parse("codex", [
+    metadataRecord("codex", "/repo"),
+    humanRecord("codex", "human", "Human request"),
+    { type: "response_item", payload: {
+      type: "message", role: "assistant", phase: "final_answer",
+      content: [{ type: "output_text", text: "Private pre-compaction answer" }],
+    } },
+    { type: "token_usage_record", payload: { input_tokens: 1, output_tokens: 1 } },
+    { type: "event_msg", payload: { type: "token_count", total: 2 } },
+    { type: "compacted", payload: { type: "context_compacted" } },
+  ]), /no unambiguous completed/u)
+})
+
+test("Codex preserves an assistant answer when visible completion activity precedes compaction", () => {
+  const result = parse("codex", [
+    metadataRecord("codex", "/repo"),
+    humanRecord("codex", "human", "Human request"),
+    { type: "response_item", payload: {
+      type: "message", role: "assistant", phase: "final_answer",
+      content: [{ type: "output_text", text: "Visible answer" }],
+    } },
+    { type: "event_msg", payload: { type: "task_complete" } },
+    { type: "token_usage_record", payload: { input_tokens: 1, output_tokens: 1 } },
+    { type: "compacted", payload: { type: "context_compacted" } },
+  ])
+  assert.deepEqual(result.messages.map((message) => message.text), ["Human request", "Visible answer"])
+})
+
+test("Codex does not promote a legacy pending event answer across compaction", () => {
+  assert.throws(() => parse("codex", [
+    metadataRecord("codex", "/repo"),
+    humanRecord("codex", "human", "Human request"),
+    { type: "event_msg", payload: { type: "agent_message", message: "Private pending answer" } },
+    { type: "token_usage_record", payload: { input_tokens: 1, output_tokens: 1 } },
+    { type: "event_msg", payload: { type: "token_count", total: 2 } },
+    { type: "compacted", payload: { type: "context_compacted" } },
+  ]), /no unambiguous completed/u)
 })
 
 test("Codex preserves older event-only input when later records use explicit user metadata", () => {
@@ -269,6 +307,21 @@ test("reports compaction and absent attachment contents without treating summari
   assert.equal(result.messages[0].text, "Use the image")
 })
 
+test("sanitizes captured user and assistant text before it is exported", () => {
+  const result = parse("copilot", [
+    { type: "user.message", data: { content: "send ghp_".concat("abcdefghijklmnopqrstuvwxyz1234\u001b[31m") } },
+    { type: "assistant.message", data: {
+      phase: "final_answer", content: 'password="Abcd12345678!rest"',
+    } },
+  ])
+  assert.deepEqual(result.messages.map((message) => message.text), [
+    "send [REDACTED credential]", 'password="[REDACTED credential]"',
+  ])
+  assert.match(result.coverage.notices.join(" "), /credentials were redacted/u)
+  assert.match(result.coverage.notices.join(" "), /control sequences were removed/u)
+  assert.doesNotMatch(JSON.stringify(result), /ghp_|Abcd12345678|\u001b/u)
+})
+
 for (const agent of ["copilot", "codex", "claude"]) {
 test(`${agent} full capture preserves a goal before 8 MiB and more than 60,000 visible characters`, async (t) => {
   const fixture = await captureFixture(t, agent)
@@ -346,12 +399,10 @@ test("reader fails on malformed committed records, malformed tails, invalid UTF-
 
 test("never falls back from a shell or unknown exact identity to another agent or Native home", async (t) => {
   const fixture = await captureFixture(t)
-  const unavailable = await focusedConversationChoice(fixture.context, {
+  await assert.rejects(bindFocusedConversation(fixture.context, {
     ...fixture.dependencies,
     getAgentForPane: async () => { throw new Error("No focused agent") },
-  })
-  assert.equal(unavailable.disabled, true)
-  assert.match(unavailable.detail, /No other pane/u)
+  }))
   fixture.agentInfo.agent_session = undefined
   fixture.processInfo.foreground_processes = []
   await assert.rejects(captureFocusedConversation(fixture.context, fixture.dependencies), /no exact session/u)
@@ -519,10 +570,9 @@ for (const agent of ["copilot", "codex", "claude"]) {
       recordReader: async () => { throw new Error("Host transcript reading must not run") },
       sandboxLookup: (options) => captureSandboxConversation({ ...options, bridgeRunner }),
     }
-    const choice = await focusedConversationChoice(fixture.context, dependencies)
-    assert.equal(choice.disabled, false)
+    const binding = await bindFocusedConversation(fixture.context, dependencies)
     assert.deepEqual(operations, [])
-    const first = await captureFocusedConversation({ ...fixture.context, binding: choice.binding }, dependencies)
+    const first = await captureFocusedConversation({ ...fixture.context, binding }, dependencies)
     assert.equal(first.source.surface, "sandbox")
     assert.equal(first.source.containerId, containerId)
     assert.equal(first.source.invocationId, invocationId)

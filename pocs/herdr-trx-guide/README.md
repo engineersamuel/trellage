@@ -4,10 +4,10 @@ This proof-of-concept Herdr plugin opens highlighted terminal text, the final
 answer, or the filtered conversation from an exactly identified completed
 agent as the intent in a modal `trx guide` popup.
 
-The separate **Analyze conversation for next steps** choice captures the full
-filtered conversation from the originally focused pane. It also works while
-that agent is working, through its last completed assistant response. Capture
-and picker inspection do not call a model.
+**Open current <harness> conversation (9)** shows the number of messages in
+the captured conversation. Every `prefix+ctrl+b` opening reads the current
+transcript again and refreshes the count and preview. Picker inspection does
+not call a model.
 
 It follows the selection flow used by
 [Herdr Annotate](https://github.com/plannotator/herdr-annotate): Herdr copies a
@@ -61,11 +61,15 @@ height = "90%"
 
 [[keys.command]]
 key = "prefix+ctrl+b"
-type = "popup"
-command = "node /absolute/path/to/trellage/pocs/herdr-trx-guide/custom-popup.ts"
-description = "Choose highlighted text or latest agent result for Trellage guide"
-width = 88
-height = 20
+type = "plugin_action"
+command = "trellage.guide-handoff.source-picker"
+description = "Open TRX actions"
+
+[[keys.command]]
+key = "prefix+ctrl+m"
+type = "plugin_action"
+command = "trellage.guide-handoff.context-menu"
+description = "Open TRX contextual actions for the active agent pane"
 ```
 
 Reload the Herdr configuration after you save it.
@@ -88,8 +92,98 @@ To collect highlighted text before opening the guide:
 
 When the capture queue is empty, `Enter` still opens the currently selected
 source immediately. Use the arrow keys or `j`/`k` to choose highlighted text,
-an exact result, a terminal snapshot, or the accumulated queue. Press `a` to
-queue the selected source or `Enter` to open it directly.
+an exact result, a terminal snapshot, the **Rewrite output** action, or the
+accumulated queue. Press `a` to queue the selected source or `Enter` to open
+it directly.
+
+The **TRX actions** popup opens at 88×20 with the invoking agent, pane, and
+project in its header. It shows loading rows immediately, then fills in each
+source independently. Ready choices remain usable while other sources load;
+Escape closes the picker at any point. Source failures appear beside their rows.
+The shortcut freezes the invoking pane context before opening the popup, so a
+focus change does not redirect capture. The picker captures the latest completed
+harness message from that pane's exact conversation transcript once when it opens.
+This includes Copilot task-completion summaries and does not depend on scroll
+position. When exact capture is unavailable, the picker can use the latest
+complete visible harness or system message. Session identity and transcript
+access errors stop capture instead of triggering that fallback.
+Choose **Rewrite output** to open
+the contextual action popup without recapturing a later pane state. Select
+one of the styles below; each choice includes a short description. The popup runs the Copilot SDK,
+shows a spinner while it works, renders the returned Markdown, and verifies
+the `c` copy action. The larger popup keeps the **Rewrite output** title and
+uses 90% of the terminal.
+
+| Style | Use it for |
+| --- | --- |
+| **TL&DR Rundown** | TL;DR, status checkboxes, blockers, and next choices. First in the list. |
+| Ponytail voice | Terse senior prose with the original facts and structure. |
+| STE English | ASD-STE100 guidance: plain words and direct sentences. |
+| Caveman speech | Short, blunt fragments with technical accuracy. |
+| Military | Problem → cause → fix, without a preamble. |
+| BLUF | Conclusion first, then reasons and tradeoffs. |
+| Reality Check | What works, real risks, and a candid verdict. |
+| no-slop | Plain, specific prose without filler or clichés. |
+| Humanizer | Remove AI writing tells while keeping voice and meaning. |
+| avoid-ai-writing | Audit AI patterns and return the clean rewrite. |
+| no-ai-slop | Peter Yang’s editing rules for cutting slop. |
+| unslop | Remove stock phrasing and canned transitions. |
+| Spartan | The whole answer first, with maximum compression. |
+| Attention-kind | Answer first, arrow bullets, and bold words to skim. |
+| wait-what | Re-explain plainly with context. |
+| ELI15 | One clear analogy, its limits, and a takeaway. |
+| ladder | The same answer at ages 5, 15, and professional. |
+| analogy-engine | One sustained analogy with an explicit mapping. |
+| First Principles | Build an explanation from facts and assumptions. |
+| Yoda | Plain technical English with a Yoda-style final line. |
+
+Rundown reads `~/.claude/output-styles/rundown.md` when selected, so local edits
+take effect on the next rewrite. If that file is missing or unreadable, the
+popup reports the error; it does not silently use another style. The remaining
+references ship as Markdown writing guidance with the plugin and require no
+network access at popup startup. See [style sources](rewrite-styles/README.md)
+for upstream links and attribution. These references do not install skills or
+enable their tools, hooks, or workflows. Rewrites apply the selected format to
+the captured content without inventing causes, fixes, or status.
+
+The last explicitly selected style is remembered without automatically starting
+a rewrite. Successful rewrites are saved privately in plugin state; reopening
+an unchanged message and style reuses the saved result without starting Copilot.
+The cache retains the latest 100 results without time expiry. Changes to source,
+effective instructions, skill contents, model, or effort invalidate the result.
+Storage failures appear as a nonblocking status.
+
+| Key | Action |
+| --- | --- |
+| `o` | Show the immutable original, including during loading or errors. |
+| `w` | Show the successful rewrite. |
+| `d` | Show a raw Markdown diff, side by side at 80 columns or wider, unified below. |
+| `c` | Copy original in Original view; copy rewrite in Rewritten or Diff view. |
+| `g` | Regenerate the selected style, bypassing the cache. |
+| `r` / `s` | Retry or return to style selection. |
+| `PgUp` / `PgDn` | Scroll the current view; each view remembers its position. |
+
+A failed or cancelled regeneration preserves the previous successful rewrite.
+Diff columns scroll together and use explicit addition/deletion markers. Copy
+feedback refers to the content and view that initiated it; the footer names the
+current copy target.
+
+Set `TRELLAGE_GUIDE_REWRITE_CONFIG_JSON` in the Herdr plugin environment to
+replace the built-in styles or tune the model. For example:
+
+```sh
+export TRELLAGE_GUIDE_REWRITE_CONFIG_JSON='{"model":"gpt-5.6-sol","effort":"medium","styles":[{"id":"plain","title":"Plain English","description":"Short direct sentences.","instruction":"Use short direct sentences and preserve Markdown."},{"id":"my-skill","title":"My skill","description":"Use the local style guide.","skillPath":"/absolute/path/to/style/SKILL.md"}]}'
+```
+
+`skillPath` accepts an absolute Markdown file or a directory containing
+`SKILL.md`. A configured `styles` array replaces the defaults, so include any
+built-in choices you want to keep.
+
+`prefix+ctrl+m` remains an optional direct alias for the contextual action
+plugin action. It captures the active pane when invoked and opens the same
+Herdr popup. Missing, changed, truncated, or ambiguous pane/message context,
+Copilot failures, cancellation, and clipboard failures remain visible in the
+popup.
 
 Press `x` on the main source screen to clear the complete capture queue while
 keeping the picker open.
@@ -100,24 +194,16 @@ To open the latest complete agent response directly:
 2. Press `prefix+shift+h`.
 
 You can also press `prefix+ctrl+b`, select the current filtered conversation,
-an exact final result, or an explicit terminal snapshot, then press `Enter`.
+the latest assistant answer, or an explicit terminal snapshot, then press `Enter`.
 
-### Analyze the focused conversation
+### Retained continuation capture internals
 
-1. Focus a supported Copilot, Codex, or Claude conversation, then press
-   `prefix+ctrl+b`.
-2. Select **Analyze conversation for next steps** and press `Enter`.
-3. Review the source, completed-response cutoff, history coverage, and model
-   settings in the full guide. Only explicit analysis in that guide can start
-   model work.
+The separate analysis action and popup are no longer registered in the
+plugin. Use **Open current <harness> conversation (9)** in `prefix+ctrl+b`.
+The following describes the retained continuation capture helpers for saved
+drafts and internal callers, rather than a source-picker action.
 
-The source is bound when the picker opens, not when it later receives
-`Enter`. The new choice never selects another pane, searches by working
-directory alone, chooses a recent session, or substitutes terminal text.
-Shells, unsupported harnesses, and missing exact identity show an unavailable
-row. The ordinary text and latest-result choices remain separate.
-
-This mode does not require an idle/completed marker. It includes human user
+Continuation capture does not require an idle/completed marker. It includes human user
 messages and completed user-visible assistant answers; it excludes tools,
 reasoning, commentary, internal instructions, and nested-agent traffic. A
 pending user turn is not included after the last completed response. Coverage
@@ -152,9 +238,6 @@ uses the normal or explicitly configured harness home. Native capture stays
 inside the selected profile home. Sandbox capture uses the exact validated
 container/invocation bridge and releases its sealed export after reading it.
 An old bridge reports that conversation export is unsupported.
-
-`a` does not enqueue an analysis choice. Opening this mode does not consume
-the copied-text queue or change the Swift selection-overlay flow.
 
 ### Capture queue editor
 
@@ -253,16 +336,15 @@ selection. It shows the clipboard text before you choose it.
   responses, while excluding system/developer instructions, tool calls,
   reasoning, commentary, nested-agent traffic, and duplicate records. Recent
   messages are retained when the complete history exceeds the guide limit.
-- **Exact agent result** uses a structured final answer from a safely
-  identified Copilot, Codex, or Claude session.
+- **Open latest <harness> answer** uses the most recent completed assistant
+  answer from an exactly identified Copilot, Codex, or Claude session.
 - **Terminal snapshot** explicitly uses Herdr `agent.read` output with the
   `recent_unwrapped` source. It is a screen snapshot, not an exact semantic
   final-message source.
 
-For the legacy result choices, if the focused pane is a shell, the picker
+If the focused pane is a shell, the picker
 lists eligible agents in the same tab, then the same workspace. It never
-silently chooses between multiple completed agents. The next-steps choice
-does not use that fallback.
+silently chooses between multiple completed agents.
 
 Herdr's default `[ui] copy_on_select = true` setting is required for the drag
 selection flow. If you set it to `false`, copy the retained selection before
@@ -293,10 +375,9 @@ container, profile, worktree, image, state volume, agent, mapping, and
 transcript before it returns the final message. Copilot nested-agent records
 and Claude subagent sessions are excluded.
 
-The legacy **Open current conversation** path does not use the Sandbox
-conversation bridge. Use **Analyze conversation for next steps** for a full
-Sandbox conversation. Exact final-message capture remains available through
-the unchanged `session final-message` protocol.
+**Open current conversation** supports direct and Native transcripts.
+Sandbox panes can use exact final-message capture through the
+`session final-message` protocol.
 
 ## Completion tracking for legacy result shortcuts
 
@@ -371,7 +452,7 @@ input remains attached to the Herdr popup terminal so the Ink guide receives
 every key normally. The guide's existing model provider behavior starts after
 the launcher consumes the file.
 
-### Conversation requests and freshness
+### Retained continuation requests
 
 `conversation-action.ts` stages the shared `ConversationSnapshot` only after
 explicit selection. Requests use opaque UUID names:
@@ -388,8 +469,8 @@ shared validator and runtime enums come from the built `trellage-guide-core`
 package. Build it before loading the plugin; Node's native TypeScript
 stripping cannot execute the core source enums.
 
-The dedicated `analyze-conversation` action opens the `conversation` plugin
-pane. `conversation-popup.ts` starts:
+The former `analyze-conversation` action and `conversation` plugin pane are
+unregistered. The retained `conversation-popup.ts` adapter starts:
 
 ```sh
 mise run --raw trx -- guide --next-steps

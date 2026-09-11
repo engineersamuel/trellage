@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { readClipboard } from "../lib/clipboard.ts"
+import { readClipboard, readClipboardAsync } from "../lib/clipboard.ts"
 
 test("reads the first available Linux clipboard adapter", () => {
   const calls = []
@@ -28,4 +28,25 @@ test("reports when no clipboard reader succeeds", () => {
     }),
     { ok: false, message: "No supported clipboard reader is available" },
   )
+})
+
+test("reads clipboard asynchronously without blocking the event loop and tries adapters independently", async () => {
+  const calls = []
+  const result = await readClipboardAsync({
+    platform: "linux",
+    exec: (command, args, options, callback) => {
+      calls.push(command)
+      setImmediate(() => callback(command === "wl-paste" ? new Error("missing") : null, command === "xclip" ? "ready" : ""))
+    },
+  })
+  assert.deepEqual(result, { ok: true, value: "ready" })
+  assert.deepEqual(calls, ["wl-paste", "xclip"])
+})
+
+test("reports an asynchronous clipboard failure after every adapter fails", async () => {
+  const result = await readClipboardAsync({
+    platform: "darwin",
+    exec: (_command, _args, _options, callback) => setImmediate(() => callback(new Error("unavailable"), "")),
+  })
+  assert.deepEqual(result, { ok: false, message: "No supported clipboard reader is available" })
 })

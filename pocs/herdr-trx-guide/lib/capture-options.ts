@@ -5,7 +5,7 @@ import { sourceAgentCandidates } from "./source-agent.ts"
 const completedStatus = (agent) =>
   agent.agent_status === "done" || agent.agent_status === "idle"
 
-const completionMarkerFor = (agent) =>
+export const completionMarkerFor = (agent) =>
   agent.agent_status === "idle"
     ? {
         schemaVersion: 1,
@@ -26,8 +26,8 @@ const shortSessionId = (sessionId) =>
 const exactChoice = (agent, captured) => ({
   id: `exact:${agent.pane_id}`,
   kind: "exact",
-  label: `Open exact ${agentLabel(agent)} result`,
-  detail: `Exact session ${shortSessionId(captured.sessionId)} from pane ${agent.pane_id}.`,
+  label: `Open latest ${agentLabel(agent)} answer`,
+  detail: `Latest completed assistant answer from exact session ${shortSessionId(captured.sessionId)} in pane ${agent.pane_id}.`,
   preview: captured.answer,
   paneId: agent.pane_id,
   stateChangeSeq: agent.state_change_seq,
@@ -37,7 +37,7 @@ const exactChoice = (agent, captured) => ({
 const conversationChoice = (agent, captured) => ({
   id: `conversation:${agent.pane_id}`,
   kind: "conversation",
-  label: `Open current ${agentLabel(agent)} conversation`,
+  label: `Open current ${agentLabel(agent)} conversation (${captured.messageCount})`,
   detail: `${captured.messageCount} recent message${captured.messageCount === 1 ? "" : "s"}${
     captured.omittedMessageCount > 0 ? `, ${captured.omittedMessageCount} older omitted` : ""
   } from exact session ${shortSessionId(captured.sessionId)}.`,
