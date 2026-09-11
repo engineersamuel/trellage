@@ -277,6 +277,7 @@ if [ "${GRX_INSTALL_TEST_FAIL_AT-}" = after-staging ]; then
 fi
 
 created_install_root=false
+created_runtime_lib=false
 created_runtime_bin=false
 created_command_dir=false
 old_launcher_staged=false
@@ -434,6 +435,9 @@ rollback_publish() {
   if [ "$created_runtime_bin" = true ] && [ -d "$runtime_bin" ]; then
     rmdir "$runtime_bin" 2>/dev/null || rollback_ok=false
   fi
+  if [ "$created_runtime_lib" = true ] && [ -d "$install_root/lib" ]; then
+    rmdir "$install_root/lib" 2>/dev/null || rollback_ok=false
+  fi
   if [ "$created_install_root" = true ] && [ -d "$install_root" ]; then
     rmdir "$install_root" 2>/dev/null || rollback_ok=false
   fi
@@ -490,6 +494,7 @@ if [ ! -d "$install_root" ]; then
   fi
 fi
 if [ ! -d "$install_root/lib" ]; then
+  created_runtime_lib=true
   mkdir -m 0755 "$install_root/lib" \
     || publish_failure "could not create runtime lib: $install_root/lib"
 fi

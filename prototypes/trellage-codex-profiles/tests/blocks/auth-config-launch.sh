@@ -1424,6 +1424,9 @@ enabled = true
 max_concurrent_threads_per_session = 4
 default_subagent_model = "gpt-5.6-luna"
 default_subagent_reasoning_effort = "max"
+
+[tui]
+status_line = ["git-branch", "context-used", "model-with-reasoning"]
 # trellage-profile-local-config-end
 
 # trellage-managed-codex-provider-begin
