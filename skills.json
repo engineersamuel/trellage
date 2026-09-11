@@ -174,12 +174,36 @@
     "youtube-skills": {
       "repository": "https://github.com/ZeroPointRepo/youtube-skills.git",
       "select": ["youtube-full"]
+    },
+    "antislop-core": {
+      "repository": "https://github.com/miqdadbadjuber/anti-slop.git",
+      "select": ["antislop"],
+      "alwaysOn": true
+    },
+    "antislop-addons": {
+      "repository": "https://github.com/miqdadbadjuber/anti-slop.git",
+      "select": ["antislop-ui", "antislop-copywriting", "antislop-human", "antislop-layoutmobile", "antislop-code"]
     }
   },
   "bundles": {
-    "sandbox-common": ["engineersamuel", "caveman", "mattpocock", "show-me", "i-have-adhd"],
-    "native-common": ["engineersamuel", "show-me", "i-have-adhd"],
-    "comparison-common": ["engineersamuel", "show-me", "i-have-adhd", "astra-orchestrator"],
+    "sandbox-common": [
+      "engineersamuel",
+      "caveman",
+      "mattpocock",
+      "show-me",
+      "i-have-adhd",
+      "antislop-core",
+      "antislop-addons"
+    ],
+    "native-common": ["engineersamuel", "show-me", "i-have-adhd", "antislop-core", "antislop-addons"],
+    "comparison-common": [
+      "engineersamuel",
+      "show-me",
+      "i-have-adhd",
+      "astra-orchestrator",
+      "antislop-core",
+      "antislop-addons"
+    ],
     "codex-common": ["astra-orchestrator"],
     "codex-superpowers": ["superpowers"],
     "claude-frontend-design": ["impeccable", "emil-design", "hyperframes"],

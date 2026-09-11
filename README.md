@@ -164,6 +164,12 @@ source requires `ui-guidelines`, and that source is part of `sandbox-common`,
 `native-common`, and `comparison-common`. A skill-bearing rebuild is therefore
 not byte-reproducible.
 
+All three common bundles install
+[`antislop`](https://github.com/miqdadbadjuber/anti-slop) as an always-on filter,
+plus its UI, copywriting, accessibility, responsive-layout, and code-comment
+skills for task-specific loading. The source uses explicit skill selections so
+new upstream skills do not enter profiles automatically.
+
 All three common bundles also include
 [`i-have-adhd`](https://github.com/ayghri/i-have-adhd) for manual activation only.
 Trellage preserves its manual-invocation metadata and installs the portable skill,
