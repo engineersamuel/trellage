@@ -182,6 +182,26 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   assert.equal(catalog.sources["i-have-adhd"].repository, "https://github.com/ayghri/i-have-adhd.git")
   assert.equal(catalog.sources["i-have-adhd"].alwaysOn, false)
   assert.equal(catalog.sources["i-have-adhd"].allowExecutables, false)
+  assert.equal(
+    catalog.sources["antislop-core"].repository,
+    "https://github.com/miqdadbadjuber/anti-slop.git",
+  )
+  assert.deepEqual(catalog.sources["antislop-core"].select, ["antislop"])
+  assert.equal(catalog.sources["antislop-core"].alwaysOn, true)
+  assert.equal(catalog.sources["antislop-core"].allowExecutables, false)
+  assert.equal(
+    catalog.sources["antislop-addons"].repository,
+    "https://github.com/miqdadbadjuber/anti-slop.git",
+  )
+  assert.deepEqual(catalog.sources["antislop-addons"].select, [
+    "antislop-ui",
+    "antislop-copywriting",
+    "antislop-human",
+    "antislop-layoutmobile",
+    "antislop-code",
+  ])
+  assert.equal(catalog.sources["antislop-addons"].alwaysOn, false)
+  assert.equal(catalog.sources["antislop-addons"].allowExecutables, false)
   const ompCommunityNames = catalog.bundles["omp-community"].flatMap(
     (sourceId) => catalog.sources[sourceId].select,
   )
@@ -194,6 +214,8 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   for (const bundle of ["native-common", "sandbox-common", "comparison-common"]) {
     assert.ok(catalog.bundles[bundle].includes("engineersamuel"))
     assert.ok(catalog.bundles[bundle].includes("i-have-adhd"))
+    assert.ok(catalog.bundles[bundle].includes("antislop-core"))
+    assert.ok(catalog.bundles[bundle].includes("antislop-addons"))
   }
   assert.doesNotMatch(source, /"(?:ref|commit|integrity|digest|fetchedAt)"\s*:/)
   assert.throws(
