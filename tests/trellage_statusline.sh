@@ -56,4 +56,3 @@ expect "$got" $'\n' 'empty stdin'
 code=0
 printf '%s' '{"model":{"display_name":"x"}}' | "$script" >/dev/null || code=$?
 [[ "$code" -eq 0 ]] || fail "nonzero exit $code"
-
