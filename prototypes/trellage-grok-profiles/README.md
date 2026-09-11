@@ -122,6 +122,46 @@ and other lifecycle operations do not receive the proxy variables. Plain `grok`
 keeps xAI OAuth and its `grok-4.6` default; profile operations do not rewrite
 host configuration or authentication.
 
+### GitHub authentication
+
+New `grx superpowers` sessions forward the host's active `github.com`
+credential by default. Run the launcher from an authenticated host terminal,
+outside Grok's sandbox. To disable automatic retrieval:
+
+```sh
+GRX_GH_AUTH_BRIDGE=0 grx superpowers
+```
+
+An unset or empty `GRX_GH_AUTH_BRIDGE`, or a value of `1`, enables the bridge.
+Other values fail. An enabled bridge rejects `GH_HOST` values other than
+empty or `github.com`; it does not change the host or select another account.
+
+Nonempty `GH_TOKEN` and `GITHUB_TOKEN` retain their normal precedence, in that
+order. The launcher preserves both and never replaces a rejected explicit
+token. Without either token, `gh` must be on PATH. The launcher retrieves the
+active host credential through `gh`, honoring `HOME` and `GH_CONFIG_DIR`, and
+exports `GH_TOKEN` after profile preparation, immediately before Grok starts.
+Each new launch retrieves a fresh value. Lifecycle commands do not retrieve
+GitHub credentials, and opting out does not scrub caller-provided tokens.
+
+Missing `gh`, failed lookup, or malformed output stops the final agent launch
+with a diagnostic. The bridge does not log in, switch accounts, change
+keychain access, or substitute Copilot, proxy, Enterprise, or xAI credentials.
+It creates no credential file and puts no credential in its output or command
+arguments. Shell tracing is disabled during credential handling.
+
+Grok and its child tools can use the credential. A child that outlives Grok can
+retain its environment. The bridge does not change `--sandbox workspace` or
+user shell filters. A filter that excludes token variables can still block
+tool authentication. Automatic storage by the installed Grok shell backend,
+such as snapshots or session logs, has not been independently verified; check
+with a dummy credential in isolated state rather than logging real values.
+
+Compare `gh api --hostname github.com user --jq .login` on the host and in a
+new Grok tool shell to check identity without printing a token. GitHub scopes,
+SSH identity, and worktree Git metadata write permissions remain separate.
+PR creation, merge, and auto-merge still require explicit authorization.
+
 ### Never-authenticate, never-prompt guarantee
 
 `grx` itself never performs xAI authentication and never shows a login or
@@ -175,8 +215,8 @@ Status 1 is expected in automation and is not an operational failure.
 
 At launch, `grx` preserves `HOME`, the current working directory (CWD), TTY,
 Git and SSH behavior, and the Herdr environment. It points `GROK_HOME` at the
-selected profile home and sets only the three model-routing variables described
-above.
+selected profile home and sets the three model-routing variables described
+above. The GitHub bridge may also export `GH_TOKEN`.
 
 Source authentication must be a readable, regular, non-symlink file; its source mode may be arbitrary.
 Source and profile authentication are also structurally validated (see

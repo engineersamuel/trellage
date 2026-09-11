@@ -1820,17 +1820,56 @@ ensure_launch_ready() {
   doctor_profile "$profile" >/dev/null
 }
 
+validate_github_auth_bridge() {
+  case "${GRX_GH_AUTH_BRIDGE:-1}" in
+    0) return ;;
+    1) ;;
+    *) die 'GRX_GH_AUTH_BRIDGE must be 0 or 1' ;;
+  esac
+  case "${GH_HOST:-github.com}" in
+    github.com) ;;
+    *) die 'GitHub auth bridge supports only github.com' ;;
+  esac
+}
+
+bridge_github_auth() {
+  [ "${GRX_GH_AUTH_BRIDGE:-1}" = 1 ] || return 0
+  # Keep credential checks and exports out of a caller's bash -x trace.
+  set +x
+  [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] || return 0
+  require_command gh
+
+  local credential status
+  # JSON capture preserves NULs and trailing newlines for validation.
+  if credential="$(GH_PROMPT_DISABLED=1 command gh auth token --hostname github.com 2>/dev/null \
+    | jq -Rs . 2>/dev/null)"; then
+    credential="$(printf '%s' "$credential" | jq -jer '
+      if endswith("\n") then .[:-1] else . end
+      | if length > 0 and (test("[[:space:][:cntrl:]]") | not)
+        then . else error("invalid credential") end
+    ' 2>/dev/null)" || die 'host GitHub credential lookup returned an unusable value'
+  else
+    status="$?"
+    die "host GitHub credential lookup failed (exit $status); launch grx from an authenticated host terminal"
+  fi
+  export GH_TOKEN="$credential"
+}
+
 launch_profile() {
   local profile="$1"
   shift
+  local home
   local grok_args=(--sandbox workspace --permission-mode bypassPermissions --always-approve "$@")
 
+  validate_github_auth_bridge
   ensure_launch_ready "$profile"
   ensure_floating_skills "$profile"
   resolve_grok
   refresh_auth "$profile"
+  home="$(profile_home "$profile")"
+  bridge_github_auth
   exec env \
-    GROK_HOME="$(profile_home "$profile")" \
+    GROK_HOME="$home" \
     GROK_MODELS_BASE_URL='http://127.0.0.1:8080/v1' \
     GROK_DEFAULT_MODEL='grok-4.6' \
     XAI_API_KEY='local-copilot-proxy' \
