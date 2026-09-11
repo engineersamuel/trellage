@@ -4296,6 +4296,8 @@ assert_line "grx install: failed to clean installation staging; runtime recovery
   || fail 'cleanup-failed TERM lost the staged catalog recovery asset'
 [ -f "$cleanup_failure_runtime_root/new-marker" ] \
   || fail 'cleanup-failed TERM lost the staged ownership recovery asset'
+[ -f "$cleanup_failure_runtime_root/new-statusline" ] \
+  || fail 'cleanup-failed TERM lost the staged statusline recovery asset'
 [ -L "$cleanup_failure_command_root/new-command" ] \
   || fail 'cleanup-failed TERM lost the staged command recovery asset'
 cleanup_failure_install_state="$(managed_install_state)"
@@ -4311,6 +4313,7 @@ rm -f \
   "$cleanup_failure_runtime_root/new-launcher" \
   "$cleanup_failure_runtime_root/new-catalog" \
   "$cleanup_failure_runtime_root/new-marker" \
+  "$cleanup_failure_runtime_root/new-statusline" \
   "$cleanup_failure_command_root/new-command"
 rmdir "$cleanup_failure_runtime_root" "$cleanup_failure_command_root"
 
@@ -4336,12 +4339,15 @@ assert_line "grx install: rollback failed during interrupted publication; runtim
   || fail 'rollback-failed TERM lost the staged catalog recovery asset'
 [ -f "$runtime_recovery_root/new-marker" ] \
   || fail 'rollback-failed TERM lost the staged ownership recovery asset'
+[ -f "$runtime_recovery_root/new-statusline" ] \
+  || fail 'rollback-failed TERM lost the staged statusline recovery asset'
 [ -L "$command_recovery_root/new-command" ] \
   || fail 'rollback-failed TERM lost the staged command recovery asset'
 rm -f \
   "$runtime_recovery_root/new-launcher" \
   "$runtime_recovery_root/new-catalog" \
   "$runtime_recovery_root/new-marker" \
+  "$runtime_recovery_root/new-statusline" \
   "$command_recovery_root/new-command"
 rmdir "$runtime_recovery_root" "$command_recovery_root"
 
@@ -4398,7 +4404,7 @@ preserved_session="$HOME/.local/share/trellage/profiles/grok/superpowers/home/se
 mkdir -p "$(dirname "$preserved_session")"
 printf 'preserve\n' >"$preserved_session"
 
-transaction_failure_points='after-launcher-remove after-catalog-remove after-marker-remove after-bin-remove after-root-remove after-command-remove'
+transaction_failure_points='after-launcher-remove after-catalog-remove after-statusline-remove after-lib-remove after-marker-remove after-bin-remove after-root-remove after-command-remove'
 transaction_baseline_failures=''
 for failure_point in $transaction_failure_points; do
   transaction_home="$fixture_root/transaction-$failure_point-home"
@@ -4406,6 +4412,8 @@ for failure_point in $transaction_failure_points; do
   HOME="$transaction_home" "$installer" >/dev/null
   transaction_root="$transaction_home/.local/share/trellage/grx"
   transaction_command="$transaction_home/.local/bin/grx"
+  chmod 0710 "$transaction_root/lib"
+  chmod 0740 "$transaction_root/lib/trellage-statusline.sh"
   transaction_sentinel="$transaction_home/user-sentinel"
   printf 'preserve transaction user data\n' >"$transaction_sentinel"
   transaction_state_before="$(managed_paths_state \
@@ -4506,6 +4514,8 @@ assert_line "grx uninstall: rollback failed; runtime recovery: $uninstall_runtim
   || fail 'uninstall rollback failure lost the catalog recovery asset'
 [ -f "$uninstall_runtime_recovery/marker" ] \
   || fail 'uninstall rollback failure lost the marker recovery asset'
+[ -f "$uninstall_runtime_recovery/statusline" ] \
+  || fail 'uninstall rollback failure lost the statusline recovery asset'
 assert_line 'preserve rollback-failure user data' \
   "$rollback_failure_home/user-sentinel"
 
@@ -4537,6 +4547,8 @@ assert_line "grx uninstall: failed to clean uninstall staging; runtime recovery:
   || fail 'uninstall cleanup failure lost the catalog recovery asset'
 [ -f "$uninstall_cleanup_runtime_recovery/marker" ] \
   || fail 'uninstall cleanup failure lost the marker recovery asset'
+[ -f "$uninstall_cleanup_runtime_recovery/statusline" ] \
+  || fail 'uninstall cleanup failure lost the statusline recovery asset'
 [ -L "$uninstall_cleanup_command_recovery/command" ] \
   || fail 'uninstall cleanup failure lost the command recovery asset'
 [ ! -e "$uninstall_cleanup_root" ] && [ ! -L "$uninstall_cleanup_root" ] \
@@ -4545,6 +4557,71 @@ assert_line "grx uninstall: failed to clean uninstall staging; runtime recovery:
   || fail 'uninstall cleanup failure left a partial live command'
 assert_line 'preserve cleanup-failure user data' \
   "$uninstall_cleanup_home/user-sentinel"
+
+for unsafe_case in lib-symlink lib-file statusline-symlink statusline-directory unexpected hidden unreadable-lib unwritable-lib unreadable-statusline; do
+  unsafe_home="$fixture_root/uninstall-$unsafe_case-home"
+  mkdir "$unsafe_home"
+  HOME="$unsafe_home" "$installer" >/dev/null
+  unsafe_root="$unsafe_home/.local/share/trellage/grx"
+  unsafe_command="$unsafe_home/.local/bin/grx"
+  unsafe_lib="$unsafe_root/lib"
+  unsafe_statusline="$unsafe_lib/trellage-statusline.sh"
+  case "$unsafe_case" in
+    lib-symlink)
+      mv "$unsafe_lib" "$unsafe_home/saved-lib"
+      ln -s "$unsafe_home/saved-lib" "$unsafe_lib"
+      expected_error="unsafe managed runtime lib: $unsafe_lib" ;;
+    lib-file)
+      mv "$unsafe_lib" "$unsafe_home/saved-lib"
+      printf 'preserve\n' >"$unsafe_lib"
+      expected_error="unsafe managed runtime lib: $unsafe_lib" ;;
+    statusline-symlink)
+      mv "$unsafe_statusline" "$unsafe_home/saved-statusline"
+      ln -s "$unsafe_home/saved-statusline" "$unsafe_statusline"
+      expected_error="unsafe managed statusline: $unsafe_statusline" ;;
+    statusline-directory)
+      mv "$unsafe_statusline" "$unsafe_home/saved-statusline"
+      mkdir "$unsafe_statusline"
+      expected_error="unsafe managed statusline: $unsafe_statusline" ;;
+    unexpected|hidden)
+      unexpected_name=unexpected
+      [ "$unsafe_case" != hidden ] || unexpected_name=.unexpected
+      printf 'preserve\n' >"$unsafe_lib/$unexpected_name"
+      expected_error="refusing unexpected content in owned runtime: $unsafe_lib/$unexpected_name" ;;
+    unreadable-lib)
+      chmod 0300 "$unsafe_lib"
+      expected_error="refusing unreadable owned runtime directory: $unsafe_lib" ;;
+    unwritable-lib)
+      chmod 0500 "$unsafe_lib"
+      expected_error="refusing non-writable or non-searchable owned runtime directory: $unsafe_lib" ;;
+    unreadable-statusline)
+      chmod 0000 "$unsafe_statusline"
+      expected_error="refusing unreadable owned runtime file: $unsafe_statusline" ;;
+  esac
+  if HOME="$unsafe_home" "$uninstaller" >"$fixture_root/$unsafe_case.out" \
+    2>"$fixture_root/$unsafe_case.err"; then
+    fail "uninstaller accepted $unsafe_case"
+  fi
+  assert_line "grx uninstall: $expected_error" "$fixture_root/$unsafe_case.err"
+  [ -f "$unsafe_root/bin/grx" ] && [ -L "$unsafe_command" ] \
+    || fail "$unsafe_case validation changed the managed installation"
+  case "$unsafe_case" in
+    unreadable-lib|unwritable-lib) chmod 0755 "$unsafe_lib" ;;
+    unreadable-statusline) chmod 0755 "$unsafe_statusline" ;;
+  esac
+done
+
+for legacy_case in no-lib empty-lib; do
+  legacy_home="$fixture_root/uninstall-$legacy_case-home"
+  mkdir "$legacy_home"
+  HOME="$legacy_home" "$installer" >/dev/null
+  legacy_root="$legacy_home/.local/share/trellage/grx"
+  rm "$legacy_root/lib/trellage-statusline.sh"
+  [ "$legacy_case" != no-lib ] || rmdir "$legacy_root/lib"
+  HOME="$legacy_home" "$uninstaller" >/dev/null
+  [ ! -e "$legacy_root" ] && [ ! -L "$legacy_home/.local/bin/grx" ] \
+    || fail "uninstaller did not remove $legacy_case installation"
+done
 
 "$uninstaller" >"$fixture_root/uninstall.out"
 if ! cmp -s "$fixture_root/uninstall.out" \
