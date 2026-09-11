@@ -12,6 +12,13 @@ make test
 git diff --check
 ```
 
+`make test` runs the compiler fingerprint performance contract in a separate
+serial phase after the parallel targets finish. It is not part of the parallel
+`launcher` target: concurrent suite activity can distort its wall-clock
+measurement. The contract still requires an unchanged SHA-256 digest and a
+cached-worktree fingerprint time strictly below 900 ms. Run it directly with
+`make profile-compiler-fingerprint`, without another test suite running.
+
 Run the offline `trx guide` UI integration matrix after installing the
 launcher dependencies and building `packages/trellage-guide-core`:
 

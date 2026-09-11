@@ -363,8 +363,8 @@ describe("node command runner regression coverage", () => {
       'process.on("SIGTERM", () => {})',
       'const chunk = "x".repeat(65536)',
       "const write = () => {",
-      "  for (let index = 0; index < 32; index += 1) process.stdout.write(chunk)",
-      "  setImmediate(write)",
+      "  while (process.stdout.write(chunk)) {}",
+      '  process.stdout.once("drain", write)',
       "}",
       "write()",
       "setInterval(() => {}, 1000)",
@@ -375,7 +375,9 @@ describe("node command runner regression coverage", () => {
     )
 
     expect(error).toBeInstanceOf(CommandRunnerError)
-    expect(error).toMatchObject({
+    expect(error, error instanceof CommandRunnerError ? JSON.stringify({
+      exitCode: error.exitCode, signal: error.signal, stderr: error.stderr,
+    }) : undefined).toMatchObject({
       kind: "output-limit",
       executable: process.execPath,
     })

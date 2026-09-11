@@ -326,6 +326,7 @@ cp "$pstack_home/config.toml" "$fixture_root/proxy-launch-config-before.toml"
 
 run_codex_with_tty() {
   python3 - "$fixture_launcher" "$@" <<'PY'
+import errno
 import os
 import pty
 import select
@@ -343,30 +344,49 @@ if pid == 0:
 output = bytearray()
 sent = False
 status = None
-deadline = time.monotonic() + 5
+phase = "startup"
+started = time.monotonic()
+# Preparation and cleanup run managed-state checks; only the terminal read
+# itself must complete within five seconds.
+deadline = started + 30
 while time.monotonic() < deadline:
     ready, _, _ = select.select([terminal], [], [], 0.05)
+    eof = False
     if ready:
         try:
             chunk = os.read(terminal, 4096)
-        except OSError:
+        except OSError as error:
+            if error.errno != errno.EIO:
+                raise
             chunk = b""
+        eof = not chunk
         output.extend(chunk)
         if not sent and b"TTY_READ_READY" in output:
             os.write(terminal, b"continue\n")
             sent = True
-    waited, wait_status = os.waitpid(pid, os.WNOHANG)
-    if waited:
-        status = os.waitstatus_to_exitcode(wait_status)
+            phase = "terminal read"
+            deadline = time.monotonic() + 5
+        if phase == "terminal read" and b"TTY_READ_DONE" in output:
+            phase = "cleanup"
+            deadline = time.monotonic() + 30
+    if status is None:
+        waited, wait_status = os.waitpid(pid, os.WNOHANG)
+        if waited:
+            status = os.waitstatus_to_exitcode(wait_status)
+    if status is not None and (eof or not ready):
         break
 
 if status is None:
-    os.kill(pid, signal.SIGKILL)
+    os.killpg(pid, signal.SIGKILL)
     os.waitpid(pid, 0)
+    os.close(terminal)
     sys.stderr.buffer.write(output)
+    print(f"Codex PTY timed out during {phase}: input_sent={sent}, read_done={b'TTY_READ_DONE' in output}", file=sys.stderr)
     raise SystemExit(1)
+os.close(terminal)
 if status != 0 or b"TTY_READ_DONE" not in output:
     sys.stderr.buffer.write(output)
+    print(f"Codex PTY exited: status={status}, input_sent={sent}, read_done={b'TTY_READ_DONE' in output}", file=sys.stderr)
     raise SystemExit(1)
 PY
 }
@@ -1171,6 +1191,29 @@ grep -F -- '"gpt-6-astra" = 1' "$pstack_home/config.toml" >/dev/null \
   || fail 'doctor lost a tui nux flag'
 cp "$proxy_config_before" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
+
+# A strict doctor failure must not prevent launch from repairing managed drift.
+awk '
+  /^model_reasoning_effort = / { print "model_reasoning_effort = \"low\""; next }
+  { print }
+' "$pstack_home/config.toml" >"$fixture_root/launch-config-drift.toml"
+mv "$fixture_root/launch-config-drift.toml" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+assert_command_fails doctor-managed-config-drift env HOME="$fixture_root/home" \
+  PATH="$fake_bin:$PATH" "$fixture_launcher" doctor pstack
+grep -F 'profile managed config does not match: pstack' \
+  "$fixture_root/doctor-managed-config-drift.out" >/dev/null \
+  || fail 'config drift did not reproduce the managed-config diagnostic'
+HOME="$fixture_root/home" fake_env "$fixture_launcher" pstack --version \
+  >"$fixture_root/launch-config-drift.out" 2>"$fixture_root/launch-config-drift.err" \
+  || fail 'launch did not repair managed config drift'
+cmp -s "$proxy_config_before" "$pstack_home/config.toml" \
+  || fail 'launch did not restore managed config'
+tail -n1 "$fixture_root/fake-codex.log" | jq -e '.args[-1] == "--version"' >/dev/null \
+  || fail 'auto-repaired launch did not continue with the requested arguments'
+HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
+  >"$fixture_root/doctor-after-launch-repair.out" \
+  || fail 'auto-repaired profile is not healthy'
 
 # Hooks state and tui nux content with no project trust stanza at all must be
 # accepted and left byte-for-byte unchanged (no stale content to recover).

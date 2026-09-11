@@ -92,6 +92,11 @@ export const createGuideTerminal = async (entry: string, onTestFailed: TestConte
         exit = status
       })
       await waitForText("What do you want to do?")
+      // The first render precedes Ink's input effects. Echo is not input acknowledgment.
+      await vi.waitFor(() => {
+        expect(exit, "Guide exited before enabling terminal input").toBeUndefined()
+        expect(output).toContain("\u001b[?2004h")
+      }, waitOptions)
     },
     async pressAndWait(keys: string, ...texts: ReadonlyArray<string>): Promise<void> {
       press(keys)

@@ -82,7 +82,16 @@ Each case has a new UI process, workspace, HOME, and temporary directory. The
 UI bundle is built once per suite, but no model artifact cache is used. Keep
 `interactive: true` and `FORCE_COLOR=1` in the child so CI retains interactive
 rendering and style-only queue-focus updates. Screen reads happen after the
-terminal emulator has processed the output. Waits require the expected profile,
+terminal emulator has processed the output.
+
+Before sending the first key, both the Guide and continuation UI drivers wait
+for the initial screen and Ink's bracketed-paste enable sequence (`ESC[?2004h`).
+The initial render can precede Ink's input effects. Without this readiness
+handshake, terminal echo can satisfy a text assertion even though the UI has
+not consumed the input. This startup check uses the existing 5-second wait
+bound; it does not increase test timeouts.
+
+Subsequent waits require the expected profile,
 prompt, menu selection, or single highlighted queue job ID. Receipt of terminal
 bytes alone is not a completed UI transition. There are no fixed sleeps.
 For an ignored key such as `L` on an empty queue, the fixture records stdin
@@ -92,4 +101,8 @@ Failures include keyboard input, the last screen, and recent raw terminal output
 These tests do not prove live provider compatibility, recommendation quality,
 harness startup, real Docker or Herdr behavior, or the outer `trx` shell
 router. They run on the existing Vitest `forks` pool; do not move `node-pty`
-tests into worker threads.
+tests into worker threads. `packages/trellage-launcher/vitest.config.ts` caps
+the launcher suite at two workers. Each PTY case starts another Node process,
+and `make test` already runs four targets in parallel by default. Keep this
+cap to limit nested process concurrency rather than increasing timing bounds
+to compensate for full-suite load.

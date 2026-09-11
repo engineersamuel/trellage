@@ -59,7 +59,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                 ready = "\\x1b[1mREA\\x1b[0mDY>"
                 prompt_number = 1
 
-                if profile in ("delayed-blocked", "submit-blocked", "triple-exit"):
+                if profile in ("submit-blocked", "triple-exit"):
                     attributes = termios.tcgetattr(sys.stdin.fileno())
                     attributes[3] &= ~(termios.ICANON | termios.ECHO | termios.ISIG)
                     termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, attributes)
@@ -72,10 +72,6 @@ class NativeTuiMatrixTest(unittest.TestCase):
 
                 if profile == "blocked":
                     print(f"{ready}\\nCONSENT REQUIRED", flush=True)
-                elif profile == "delayed-blocked":
-                    print(ready, flush=True)
-                    time.sleep(0.05)
-                    print("CONSENT REQUIRED", flush=True)
                 elif profile == "submit-blocked":
                     print(ready, flush=True)
                     time.sleep(0.15)
@@ -102,7 +98,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                         ),
                     ])
                     (log.parent / "descendant.pid").write_text(str(child.pid))
-                if profile in ("delayed-blocked", "submit-blocked"):
+                if profile == "submit-blocked":
                     data = os.read(sys.stdin.fileno(), 4096)
                     with log.open("a") as output:
                         output.write(f"BYTES:{data.hex()}\\n")
@@ -474,6 +470,9 @@ class NativeTuiMatrixTest(unittest.TestCase):
                         for offset in redraw_times
                     )
 
+            def poll(self) -> int | None:
+                return self.status
+
         return ControlledProcess()
 
     def test_live_mode_waits_for_active_turn_output_to_stop(self) -> None:
@@ -616,13 +615,25 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertTrue(Path(profile["rawOutput"]).is_file())
 
     def test_delayed_blocking_screen_fails_after_readiness(self) -> None:
-        result = self.run_matrix([self.profile("delayed-blocked")])
-        self.assertEqual(result.returncode, 1)
-        profile = json.loads(result.stdout)["profiles"][0]
-        self.assertEqual(profile["stages"]["ready"], "pass")
-        self.assertEqual(profile["stages"]["exit"], "fail")
-        self.assertIn("TUI blocked by: CONSENT REQUIRED", profile["errors"])
-        self.assertFalse((self.state / "input.log").exists())
+        namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
+        adapter = namespace["load_config"](self.config).adapters["fixture"]
+        process = self.controlled_turn_process(namespace, [])
+        process.pending_output = [(0.0, b"READY>"), (0.05, b"CONSENT REQUIRED")]
+        # Keep the blocker inside the settle window regardless of OS scheduling.
+        with patch.dict(
+            namespace["perform_exit"].__globals__,
+            {"time": SimpleNamespace(monotonic=lambda: process.now)},
+        ):
+            cursor = process.wait_for_event(
+                adapter.ready_patterns, adapter.blocked_patterns, 0, adapter.ready_timeout
+            )
+            self.assertEqual(cursor, len(b"READY>"))
+            with self.assertRaisesRegex(
+                namespace["MatrixFailure"], "TUI blocked by: CONSENT REQUIRED"
+            ):
+                namespace["perform_exit"](process, adapter, cursor)
+        self.assertAlmostEqual(process.now, 0.05)
+        self.assertEqual(process.sent, [])
 
     def test_live_submit_does_not_answer_delayed_blocker(self) -> None:
         result = self.run_matrix([self.profile("submit-blocked")], "--live")

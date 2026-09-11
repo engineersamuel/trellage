@@ -213,6 +213,10 @@ const createTerminal = async (onTestFailed: TestContext["onTestFailed"]) => {
       })
       processUnderTest.onExit((status) => { exit = status })
       await waitForText("TRX conversation next steps")
+      await vi.waitFor(() => {
+        expect(exit, "Continuation closed before enabling terminal input").toBeUndefined()
+        expect(output).toContain("\u001b[?2004h")
+      }, { timeout: 5000, interval: 20 })
     },
     async pressAndWait(keys: string, ...texts: ReadonlyArray<string>): Promise<void> {
       if (texts.every((text) => screen.includes(text))) {
