@@ -46,6 +46,11 @@ export const claudeDefaultSettings = {
 
 export const claudeDefaultUserSettings = {
   outputStyle: "Rundown",
+  statusLine: {
+    type: "command",
+    command: "bash /usr/local/share/trellage/statusline.sh",
+    refreshInterval: 15,
+  },
 } as const
 
 const graphEntrypointHookCommand = "python /opt/trellage/graph-of-loops/trellage_graph/hooks/graph_entrypoint.py"

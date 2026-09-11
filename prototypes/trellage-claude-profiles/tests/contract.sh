@@ -132,6 +132,13 @@ cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
 cmp -s "$runtime_root/lib/trellage-session-bridge.py" \
   "$root/../../scripts/trellage-session-bridge.py" \
   || fail 'installed runtime session bridge differs'
+[[ -f "$runtime_root/lib/trellage-statusline.sh" \
+  && ! -L "$runtime_root/lib/trellage-statusline.sh" \
+  && -x "$runtime_root/lib/trellage-statusline.sh" ]] \
+  || fail 'installer did not publish the statusline script'
+cmp -s "$runtime_root/lib/trellage-statusline.sh" \
+  "$root/../../scripts/trellage-statusline.sh" \
+  || fail 'installed runtime statusline differs'
 [[ -f "$runtime_root/lib/native-claude" \
   && ! -L "$runtime_root/lib/native-claude" \
   && -x "$runtime_root/lib/native-claude" ]] \
@@ -324,6 +331,16 @@ jq -e '
     | length) == 1
 ' "$settings" >/dev/null \
   || fail 'setup Claude output style differs'
+jq -e --arg home "$profile_home" '
+  .statusLine.type == "command"
+  and .statusLine.refreshInterval == 15
+  and .statusLine.command == ("bash " + $home + "/statusline.sh")
+' "$settings" >/dev/null || fail 'setup did not seed Claude statusLine'
+statusline="$profile_home/statusline.sh"
+[[ -f "$statusline" && ! -L "$statusline" && -x "$statusline" ]] \
+  || fail 'setup did not install statusline.sh'
+cmp -s "$statusline" "$root/../../scripts/trellage-statusline.sh" \
+  || fail 'installed statusline.sh differs from the shared script'
 session_bridge="$profile_home/.trellage/trellage-session-bridge.py"
 [[ -f "$session_bridge" && ! -L "$session_bridge" && -x "$session_bridge" ]] \
   || fail 'setup did not install a regular executable session bridge'
@@ -555,6 +572,8 @@ mv "$fixture_root/onboarding.json" "$profile_home/.claude.json"
 jq '.outputStyle = "Explanatory" | .theme = "light" | .preserve = "user-state"' \
   "$settings" >"$fixture_root/settings.json"
 mv "$fixture_root/settings.json" "$settings"
+jq '.statusLine = {"type":"command","command":"echo custom"}' \
+  "$settings" >"$settings.custom" && mv "$settings.custom" "$settings"
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
 jq -e '
   .hasCompletedOnboarding == true
@@ -573,6 +592,8 @@ jq -e '
       and (.command | contains(" native-hook --agent claude --profile default")))]
     | length) == 1
 ' "$settings" >/dev/null || fail 'repair did not preserve Claude settings'
+jq -e '.statusLine.command == "echo custom"' "$settings" >/dev/null \
+  || fail 'custom Claude statusLine was replaced'
 [[ "$(<"$profile_home/unrelated-state")" == preserve ]] \
   || fail 'repair changed unrelated profile state'
 settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"

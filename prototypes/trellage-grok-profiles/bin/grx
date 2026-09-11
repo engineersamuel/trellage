@@ -39,6 +39,10 @@ if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+statusline_source="$runtime_root/lib/trellage-statusline.sh"
+if [[ ! -f "$statusline_source" ]]; then
+  statusline_source="$runtime_root/../../scripts/trellage-statusline.sh"
+fi
 
 cleanup_auth_assets() {
   case "$auth_stage" in
@@ -586,6 +590,46 @@ write_policy() {
   else
     mv -f "$temporary" "$target"
   fi
+}
+
+install_statusline() {
+  local home="$1"
+  local dest="$home/statusline.sh"
+  local staged
+
+  [[ -f "$statusline_source" && -r "$statusline_source" && ! -L "$statusline_source" ]] \
+    || die "missing statusline script: $statusline_source"
+  [[ ! -L "$dest" && ( ! -e "$dest" || -f "$dest" ) ]] \
+    || die "unsafe statusline path: $dest"
+  staged="$(mktemp "$home/.statusline.sh.XXXXXX")" \
+    || die 'could not stage statusline script'
+  cat -- "$statusline_source" >"$staged" \
+    || die 'could not stage statusline script'
+  chmod 0755 "$staged"
+  mv -f "$staged" "$dest"
+}
+
+ensure_status_line_config() {
+  local home="$1"
+  local target="$home/config.toml"
+  local dest="$home/statusline.sh"
+  local table
+
+  table=$(printf '%s\n' \
+    '' \
+    '[ui.status_line]' \
+    'type = "command"' \
+    "command = \"$dest\"" \
+    'refresh_interval = 15')
+
+  if [[ ! -e "$target" ]]; then
+    printf '%s\n' "$table" | sed '1d' >"$target"
+    chmod 0600 "$target"
+    return
+  fi
+  [[ -f "$target" && ! -L "$target" ]] || die "unsafe Grok config: $target"
+  grep -Eq '^\[ui\.status_line\]' "$target" && return
+  printf '%s\n' "$table" >>"$target"
 }
 
 source_auth_is_readable() {
@@ -1882,6 +1926,8 @@ setup_profile() {
   preflight_profile "$profile"
   remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"
+  install_statusline "$(profile_home "$profile")"
+  ensure_status_line_config "$(profile_home "$profile")"
   ensure_floating_skills "$profile"
   ensure_plugin "$profile"
   doctor_profile "$profile" >/dev/null
@@ -1894,6 +1940,8 @@ repair_profile() {
   preflight_profile "$profile" repairable
   remove_forbidden_superpowers "$profile"
   prepare_profile "$profile"
+  install_statusline "$(profile_home "$profile")"
+  ensure_status_line_config "$(profile_home "$profile")"
   ensure_floating_skills "$profile"
   ensure_plugin "$profile"
   doctor_profile "$profile" >/dev/null

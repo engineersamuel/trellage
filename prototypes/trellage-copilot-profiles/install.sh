@@ -12,6 +12,8 @@ installed_catalog="$install_root/catalog.json"
 installed_assets="$install_root/assets/rundown"
 installed_session_bridge="$install_root/lib/trellage-session-bridge.py"
 session_bridge_source="$source_dir/../../scripts/trellage-session-bridge.py"
+installed_statusline="$install_root/lib/trellage-statusline.sh"
+statusline_source="$source_dir/../../scripts/trellage-statusline.sh"
 installed_model_settings="$install_root/lib/copilot-model-settings.py"
 model_settings_source="$source_dir/../trellage/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-profiles"
@@ -81,6 +83,9 @@ if [[ -e "$install_root" ]]; then
   [[ ! -L "$installed_session_bridge" \
     && ( ! -e "$installed_session_bridge" || -f "$installed_session_bridge" ) ]] \
     || refuse "refusing unsafe managed runtime path: $installed_session_bridge"
+  [[ ! -L "$installed_statusline" \
+    && ( ! -e "$installed_statusline" || -f "$installed_statusline" ) ]] \
+    || refuse "refusing unsafe managed runtime path: $installed_statusline"
   [[ ! -L "$installed_model_settings" \
     && ( ! -e "$installed_model_settings" || -f "$installed_model_settings" ) ]] \
     || refuse "refusing unsafe managed runtime path: $installed_model_settings"
@@ -98,6 +103,8 @@ fi
 
 [[ -f "$session_bridge_source" && ! -L "$session_bridge_source" ]] \
   || refuse "missing session bridge: $session_bridge_source"
+[[ -f "$statusline_source" && ! -L "$statusline_source" ]] \
+  || refuse "missing statusline: $statusline_source"
 [[ -f "$model_settings_source" && ! -L "$model_settings_source" ]] \
   || refuse "missing model settings helper: $model_settings_source"
 mkdir -p "$install_root/bin" "$install_root/lib" "$installed_assets" "$command_dir"
@@ -120,6 +127,7 @@ done
 printf '%s\n' "$ownership_value" >"$ownership_marker"
 install -m 0755 "$source_dir/bin/cpx" "$installed_launcher"
 install -m 0755 "$session_bridge_source" "$installed_session_bridge"
+install -m 0755 "$statusline_source" "$installed_statusline"
 install -m 0755 "$model_settings_source" "$installed_model_settings"
 install -m 0644 "$source_dir/catalog.json" "$installed_catalog"
 for asset in rundown.instructions.md NOTICE.md; do

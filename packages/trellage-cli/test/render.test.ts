@@ -284,6 +284,7 @@ const runtimePaths = {
   claudeBrowserAgent: path.join(runtimeRoot, "browser-agent.md"),
   claudeOutputStyleRundown: path.join(runtimeRoot, "output-style-rundown.md"),
   copilotInstructionRundown: path.join(runtimeRoot, "instruction-rundown.md"),
+  statusline: path.join(runtimeRoot, "trellage-statusline.sh"),
 }
 await Promise.all(Object.values(runtimePaths).map((file) => writeFile(file, file)))
 const codexRuntime = await Effect.runPromise(createRuntimeSupportSnapshot("codex", runtimePaths))
@@ -427,6 +428,9 @@ rename_exe = "copilot"`)
     expect(rendered).toContain(
       '"/usr/local/bin/trellage-session-bridge" = { source = ".runtime-support/trellage-session-bridge", mode = "copy" }',
     )
+    expect(rendered).toContain(
+      '"/usr/local/share/trellage/statusline.sh" = { source = ".runtime-support/trellage-statusline.sh", mode = "copy" }',
+    )
     expect(rendered).toContain('TRELLAGE_PROFILE_NAME = "copilot-hve"')
     expect(rendered).toContain('TRELLAGE_AGENT = "copilot"')
     expect(rendered).toContain('python = "3.13.14"')
@@ -499,6 +503,7 @@ rename_exe = "copilot"`)
       '[agents]\nenabled = true\nmax_concurrent_threads_per_session = 4\ndefault_subagent_model = "gpt-5.6-luna"\ndefault_subagent_reasoning_effort = "max"',
     )
     expect(config).toContain("[features.context_management]\nexperimental_mode = true")
+    expect(config).toContain('[tui]\nstatus_line = ["git-branch", "context-used", "model-with-reasoning"]')
     expect(config).toContain('plan_mode_reasoning_effort = "max"')
   })
 
@@ -540,6 +545,9 @@ rename_exe = "copilot"`)
 
       [features.context_management]
       experimental_mode = true
+
+      [tui]
+      status_line = ["git-branch", "context-used", "model-with-reasoning"]
       "
     `)
   })
@@ -627,6 +635,9 @@ rename_exe = "copilot"`)
     )
     expect(rendered).toContain(
       '"/usr/local/bin/trellage-session-bridge" = { source = ".runtime-support/trellage-session-bridge", mode = "copy" }',
+    )
+    expect(rendered).toContain(
+      '"/usr/local/share/trellage/statusline.sh" = { source = ".runtime-support/trellage-statusline.sh", mode = "copy" }',
     )
     expect(rendered).toContain('TRELLAGE_PROFILE_NAME = "claude-research"')
     expect(rendered).toContain('TRELLAGE_AGENT = "claude"')

@@ -9,6 +9,7 @@ installed_launcher="$install_root/bin/cpx"
 installed_catalog="$install_root/catalog.json"
 installed_assets="$install_root/assets/rundown"
 installed_session_bridge="$install_root/lib/trellage-session-bridge.py"
+installed_statusline="$install_root/lib/trellage-statusline.sh"
 installed_model_settings="$install_root/lib/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-profiles"
 ownership_value='trellage-profiles-v1'
@@ -83,6 +84,9 @@ fi
 [[ ! -L "$installed_session_bridge" \
   && ( ! -e "$installed_session_bridge" || -f "$installed_session_bridge" ) ]] \
   || refuse "refusing unsafe managed runtime path: $installed_session_bridge"
+[[ ! -L "$installed_statusline" \
+  && ( ! -e "$installed_statusline" || -f "$installed_statusline" ) ]] \
+  || refuse "refusing unsafe managed runtime path: $installed_statusline"
 [[ ! -L "$installed_model_settings" \
   && ( ! -e "$installed_model_settings" || -f "$installed_model_settings" ) ]] \
   || refuse "refusing unsafe managed runtime path: $installed_model_settings"
@@ -100,7 +104,7 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
 fi
 
 rm -f "$installed_launcher" "$installed_catalog" "$ownership_marker" "$install_root/native-skills.mjs"
-rm -f "$installed_session_bridge" "$installed_model_settings"
+rm -f "$installed_session_bridge" "$installed_statusline" "$installed_model_settings"
 rm -f "$installed_assets/rundown.instructions.md" "$installed_assets/NOTICE.md"
 rmdir "$installed_assets" "$install_root/assets" 2>/dev/null || true
 rmdir "$install_root/lib" "$install_root/bin" "$install_root" 2>/dev/null || true

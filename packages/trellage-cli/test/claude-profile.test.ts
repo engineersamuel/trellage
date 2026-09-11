@@ -37,6 +37,11 @@ describe("authored Claude Research profile", () => {
     expect(claudeDefaultSettings.skipDangerousModePermissionPrompt).toBe(true)
     expect(claudeDefaultSettings).not.toHaveProperty("outputStyle")
     expect(claudeDefaultUserSettings.outputStyle).toBe("Rundown")
+    expect(claudeDefaultUserSettings.statusLine).toEqual({
+      type: "command",
+      command: "bash /usr/local/share/trellage/statusline.sh",
+      refreshInterval: 15,
+    })
     expect(claudeDefaultOnboarding("2.1.222")).toEqual({
       hasCompletedOnboarding: true,
       lastOnboardingVersion: "2.1.222",
@@ -216,6 +221,9 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain('"hyperresearch-browser-fetcher.md"')
     expect(source).toContain("claudeOutputStyleRundown: path.join(")
     expect(source).toContain('"rundown.md"')
+    expect(source).toContain(
+      'statusline: path.join(repositoryRoot, "scripts", "trellage-statusline.sh")',
+    )
     expect(source).toContain(
       'finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.mjs")',
     )

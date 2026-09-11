@@ -1530,6 +1530,10 @@ const defaultRuntimeSupport: RuntimeSupport = {
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/assets/rundown/rundown.md",
   ),
+  statusline: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../scripts/trellage-statusline.sh",
+  ),
   copilotInstructionRundown: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../prototypes/trellage/assets/rundown/rundown.instructions.md",

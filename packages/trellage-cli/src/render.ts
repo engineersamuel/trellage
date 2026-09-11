@@ -80,6 +80,9 @@ default_subagent_reasoning_effort = "max"
 
 [features.context_management]
 experimental_mode = true
+
+[tui]
+status_line = ["git-branch", "context-used", "model-with-reasoning"]
 `
 }
 
@@ -118,6 +121,9 @@ const renderRuntimeDotfile = (options: MiseRenderOptions, role: string): string 
 
 const renderSessionBridgeDotfile = (options: MiseRenderOptions): string =>
   renderRuntimeDotfile(options, "session-bridge")
+
+const renderStatuslineDotfile = (options: MiseRenderOptions): string =>
+  renderRuntimeDotfile(options, "statusline")
 
 const sessionBridgeEnvironment = (profile: Profile): ReadonlyArray<string> => [
   `TRELLAGE_PROFILE_NAME = ${quote(profile.name)}`,
@@ -234,6 +240,7 @@ ${renderBootstrap(profile, options)}
 ${renderRuntimeDotfile(options, "runtime-copilot-entry")}
 ${renderRuntimeDotfile(options, "copilot-model-settings")}
 ${renderSessionBridgeDotfile(options)}
+${renderStatuslineDotfile(options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 
@@ -419,6 +426,7 @@ ${renderBootstrap(profile, options)}
 ${optionalMiseLines(claudeDotfilesBeforeSeed(profile))}"/usr/local/share/trellage/claude-seed" = { source = "claude-seed", mode = "copy" }
 ${optionalMiseLines(claudeDotfilesAfterSeed(profile, lock))}${renderRuntimeDotfile(options, "runtime-claude-entry")}
 ${renderSessionBridgeDotfile(options)}
+${renderStatuslineDotfile(options)}
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 

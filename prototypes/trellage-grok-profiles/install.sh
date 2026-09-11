@@ -27,6 +27,8 @@ runtime_bin="$install_root/bin"
 installed_launcher="$runtime_bin/grx"
 installed_catalog="$install_root/catalog.json"
 installed_native_skills="$install_root/native-skills.mjs"
+installed_statusline="$install_root/lib/trellage-statusline.sh"
+statusline_source="$source_dir/../../scripts/trellage-statusline.sh"
 ownership_marker="$install_root/.managed-by-trellage-grok-profiles"
 ownership_value='trellage-grok-profiles-v1'
 command_dir="$local_dir/bin"
@@ -89,13 +91,19 @@ if [ -e "$install_root" ]; then
   [ ! -L "$installed_native_skills" ] \
     && { [ ! -e "$installed_native_skills" ] || [ -f "$installed_native_skills" ]; } \
     || refuse "unsafe Native skills helper: $installed_native_skills"
+  [ ! -L "$install_root/lib" ] \
+    && { [ ! -e "$install_root/lib" ] || [ -d "$install_root/lib" ]; } \
+    || refuse "unsafe managed runtime lib: $install_root/lib"
+  [ ! -L "$installed_statusline" ] \
+    && { [ ! -e "$installed_statusline" ] || [ -f "$installed_statusline" ]; } \
+    || refuse "unsafe managed statusline: $installed_statusline"
   for entry in \
     "$install_root"/.[!.]* \
     "$install_root"/..?* \
     "$install_root"/*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     case "$entry" in
-      "$runtime_bin"|"$installed_catalog"|"$ownership_marker"|"$installed_native_skills") ;;
+      "$runtime_bin"|"$install_root/lib"|"$installed_catalog"|"$ownership_marker"|"$installed_native_skills") ;;
       *) refuse "refusing unexpected content in owned runtime: $entry" ;;
     esac
   done
@@ -109,6 +117,20 @@ if [ -e "$install_root" ]; then
       *) refuse "refusing unexpected content in owned runtime: $entry" ;;
     esac
   done
+  if [ -d "$install_root/lib" ]; then
+    [ -r "$install_root/lib" ] && [ -x "$install_root/lib" ] \
+      || refuse "refusing unreadable owned runtime directory: $install_root/lib"
+    for entry in \
+      "$install_root/lib"/.[!.]* \
+      "$install_root/lib"/..?* \
+      "$install_root/lib"/*; do
+      [ -e "$entry" ] || [ -L "$entry" ] || continue
+      case "$entry" in
+        "$installed_statusline") ;;
+        *) refuse "refusing unexpected content in owned runtime: $entry" ;;
+      esac
+    done
+  fi
   runtime_owned=true
 fi
 
@@ -134,6 +156,9 @@ create_parent_directory() {
   fi
 }
 
+[[ -f "$statusline_source" && ! -L "$statusline_source" ]] \
+  || refuse "missing statusline script: $statusline_source"
+
 create_parent_directory "$local_dir"
 create_parent_directory "$share_dir"
 create_parent_directory "$runtime_parent"
@@ -157,9 +182,11 @@ cleanup_runtime_staging() {
     "$staging_root/new-launcher" \
     "$staging_root/new-catalog" \
     "$staging_root/new-marker" \
+    "$staging_root/new-statusline" \
     "$staging_root/old-launcher" \
     "$staging_root/old-catalog" \
-    "$staging_root/old-marker"; do
+    "$staging_root/old-marker" \
+    "$staging_root/old-statusline"; do
     rm -f -- "$staged_file" || cleanup_ok=false
   done
   rmdir "$staging_root" 2>/dev/null || cleanup_ok=false
@@ -241,6 +268,7 @@ staging_root="$(mktemp -d "$runtime_parent/.grx-install.XXXXXX")" \
 chmod 0700 "$staging_root"
 install -m 0755 "$source_dir/bin/grx" "$staging_root/new-launcher"
 install -m 0644 "$source_dir/catalog.json" "$staging_root/new-catalog"
+install -m 0755 "$statusline_source" "$staging_root/new-statusline"
 printf '%s\n' "$ownership_value" >"$staging_root/new-marker"
 chmod 0644 "$staging_root/new-marker"
 
@@ -254,10 +282,12 @@ created_command_dir=false
 old_launcher_staged=false
 old_catalog_staged=false
 old_marker_staged=false
+old_statusline_staged=false
 old_command_staged=false
 new_launcher_published=false
 new_catalog_published=false
 new_marker_published=false
+new_statusline_published=false
 new_command_published=false
 install_root_mode=''
 runtime_bin_mode=''
@@ -316,6 +346,17 @@ rollback_publish() {
       rollback_ok=false
     fi
   fi
+  if [ "$new_statusline_published" = true ]; then
+    if [ -f "$installed_statusline" ] && [ ! -L "$installed_statusline" ] \
+      && [ ! -e "$staging_root/new-statusline" ] \
+      && [ ! -L "$staging_root/new-statusline" ]; then
+      mv "$installed_statusline" "$staging_root/new-statusline" || rollback_ok=false
+    elif [ ! -f "$staging_root/new-statusline" ] \
+      || [ -L "$staging_root/new-statusline" ] \
+      || [ -e "$installed_statusline" ] || [ -L "$installed_statusline" ]; then
+      rollback_ok=false
+    fi
+  fi
   if [ "$new_catalog_published" = true ]; then
     if [ -f "$installed_catalog" ] && [ ! -L "$installed_catalog" ] \
       && [ ! -e "$staging_root/new-catalog" ] \
@@ -366,6 +407,16 @@ rollback_publish() {
     elif [ ! -f "$ownership_marker" ] || [ -L "$ownership_marker" ] \
       || [ -e "$staging_root/old-marker" ] \
       || [ -L "$staging_root/old-marker" ]; then
+      rollback_ok=false
+    fi
+  fi
+  if [ "$old_statusline_staged" = true ]; then
+    if [ -f "$staging_root/old-statusline" ] && [ ! -L "$staging_root/old-statusline" ] \
+      && [ ! -e "$installed_statusline" ] && [ ! -L "$installed_statusline" ]; then
+      mv "$staging_root/old-statusline" "$installed_statusline" || rollback_ok=false
+    elif [ ! -f "$installed_statusline" ] || [ -L "$installed_statusline" ] \
+      || [ -e "$staging_root/old-statusline" ] \
+      || [ -L "$staging_root/old-statusline" ]; then
       rollback_ok=false
     fi
   fi
@@ -438,6 +489,10 @@ if [ ! -d "$install_root" ]; then
     kill -INT "$$"
   fi
 fi
+if [ ! -d "$install_root/lib" ]; then
+  mkdir -m 0755 "$install_root/lib" \
+    || publish_failure "could not create runtime lib: $install_root/lib"
+fi
 if [ ! -d "$runtime_bin" ]; then
   created_runtime_bin=true
   mkdir -m 0755 "$runtime_bin" \
@@ -473,6 +528,11 @@ if [ -f "$ownership_marker" ]; then
   mv "$ownership_marker" "$staging_root/old-marker" \
     || publish_failure "could not stage prior ownership marker: $ownership_marker"
   signal_after_move old-marker-stage
+fi
+if [ -f "$installed_statusline" ]; then
+  old_statusline_staged=true
+  mv "$installed_statusline" "$staging_root/old-statusline" \
+    || publish_failure "could not stage prior statusline: $installed_statusline"
 fi
 
 if [ "${GRX_INSTALL_TEST_FAIL_AT-}" = during-publish ]; then
@@ -511,6 +571,9 @@ signal_after_move new-marker-publish
 if [ "${GRX_INSTALL_TEST_FAIL_AT-}" = after-marker-publish ]; then
   publish_failure 'injected failure at after-marker-publish'
 fi
+new_statusline_published=true
+mv "$staging_root/new-statusline" "$installed_statusline" \
+  || publish_failure "could not publish statusline: $installed_statusline"
 
 if [ -L "$command_path" ]; then
   old_command_staged=true

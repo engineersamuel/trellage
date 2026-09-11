@@ -40,6 +40,7 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     claudeBrowserAgent: path.join(root, "hyperresearch-browser-fetcher.md"),
     claudeOutputStyleRundown: path.join(root, "output-style-rundown.md"),
     copilotInstructionRundown: path.join(root, "instruction-rundown.md"),
+    statusline: path.join(root, "trellage-statusline.sh"),
   }
   await Promise.all([
     writeFile(paths.codexEntry, "codex-entry\n"),
@@ -54,6 +55,7 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     writeFile(paths.claudeBrowserAgent, "browser-agent\n"),
     writeFile(paths.claudeOutputStyleRundown, "output-style\n"),
     writeFile(paths.copilotInstructionRundown, "instruction\n"),
+    writeFile(paths.statusline, "statusline\n"),
   ])
   return { root, paths }
 }
@@ -81,6 +83,7 @@ describe("runtime support snapshots", () => {
       "finalize-copilot-seed",
       "copilot-instruction-rundown",
       "session-bridge",
+      "statusline",
     ])
     expect(claude.files.map((file) => file.role)).toEqual([
       "runtime-claude-entry",
@@ -88,6 +91,7 @@ describe("runtime support snapshots", () => {
       "finalize-claude-seed",
       "claude-browser-agent",
       "session-bridge",
+      "statusline",
     ])
     expect(claude.files[3]?.destination).toBe(
       "/usr/local/share/trellage/claude-seed/agents/hyperresearch-browser-fetcher.md",
@@ -105,6 +109,7 @@ describe("runtime support snapshots", () => {
       "claude-output-style-rundown",
       "finalize-claude-seed",
       "session-bridge",
+      "statusline",
     ])
 
     const original = codex.hash
@@ -123,6 +128,7 @@ describe("runtime support snapshots", () => {
       "runtime-claude-entry",
       "claude-output-style-rundown",
       "session-bridge",
+      "statusline",
     ])
   })
 
@@ -195,11 +201,18 @@ describe("runtime support snapshots", () => {
       ["codex", ["codexEntry", "sessionBridge"]],
       [
         "copilot",
-        ["copilotEntry", "copilotModelSettings", "finalizeCopilotSeed", "copilotInstructionRundown", "sessionBridge"],
+        [
+          "copilotEntry",
+          "copilotModelSettings",
+          "finalizeCopilotSeed",
+          "copilotInstructionRundown",
+          "sessionBridge",
+          "statusline",
+        ],
       ],
       [
         "claude",
-        ["claudeEntry", "finalizeClaudeSeed", "claudeBrowserAgent", "claudeOutputStyleRundown", "sessionBridge"],
+        ["claudeEntry", "finalizeClaudeSeed", "claudeBrowserAgent", "claudeOutputStyleRundown", "sessionBridge", "statusline"],
       ],
       ["prime", ["primeEntry"]],
     ] as const

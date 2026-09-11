@@ -1173,8 +1173,9 @@ jq -s -e --arg home "$superpowers_home" --arg since "$calls_before_superpowers_s
     and .args == ["plugin","install","obra/superpowers","--trust"]
   )
 ' "$fake_grok_log" >/dev/null || fail 'setup did not install the exact trusted Superpowers source'
-if ! jq -s -e --arg since "$calls_before_superpowers_setup" '
+if ! jq -s -e --arg home "$superpowers_home" --arg since "$calls_before_superpowers_setup" '
   .[($since | tonumber):]
+  | map(select(.grokHome == $home and (.args[0] // "") != "plugin" and (.args[0] // "") != "mcp"))
   | all(.[];
     .modelsBaseUrl == ""
     and .defaultModel == ""
@@ -1216,7 +1217,12 @@ jq -e '
 mkdir -p "$superpowers_home/sessions" "$superpowers_home/mcp-state"
 printf 'session sentinel\n' >"$superpowers_home/sessions/keep"
 printf 'mcp sentinel\n' >"$superpowers_home/mcp-state/keep"
-printf 'profile config sentinel\n' >"$superpowers_home/config.toml"
+printf '%s\n' \
+  '[ui.status_line]' \
+  'type = "builtin"' \
+  'command = "profile config sentinel"' \
+  'refresh_interval = 99' \
+  >"$superpowers_home/config.toml"
 
 assert_auth_refresh_preserves_profile_state() {
   local label="$1"
@@ -1235,7 +1241,12 @@ assert_auth_refresh_preserves_profile_state() {
   assert_auth_marker "$expected_auth" "$superpowers_home/auth.json"
   assert_line 'session sentinel' "$superpowers_home/sessions/keep"
   assert_line 'mcp sentinel' "$superpowers_home/mcp-state/keep"
-  assert_line 'profile config sentinel' "$superpowers_home/config.toml"
+  cmp -s "$superpowers_home/config.toml" <(printf '%s\n' \
+    '[ui.status_line]' \
+    'type = "builtin"' \
+    'command = "profile config sentinel"' \
+    'refresh_interval = 99') \
+    || fail "$label changed existing [ui.status_line] config"
 }
 
 auth_marker_json 'refresh-launch' >"$HOME/.grok/auth.json"
@@ -2036,9 +2047,7 @@ assert_line 'superpowers: healthy (plugin superpowers, version 6.2.0)' \
   "$fixture_root/superpowers-after-live-doctor.out"
 jq -s -e '
   [ .[] | select(
-      .args == ["plugin","list","--json"]
-      or .args == ["mcp","list","--json"]
-      or .args == ["inspect","--json"]
+      .args == ["inspect","--json"]
     ) ]
   | all(.[];
       .modelsBaseUrl == ""
@@ -3391,6 +3400,16 @@ assert_line 'superpowers: healthy (plugin superpowers, version 6.2.0)' \
   "$fixture_root/profile-user-mcp-doctor.out"
 ./bin/grx setup superpowers >"$fixture_root/profile-user-mcp-setup.out"
 assert_line 'superpowers: ready' "$fixture_root/profile-user-mcp-setup.out"
+[[ -x "$superpowers_home/statusline.sh" ]] \
+  || fail 'setup did not install Grok statusline.sh'
+grep -Fqx '[ui.status_line]' "$profile_config" \
+  || fail 'setup did not write [ui.status_line]'
+grep -F "command = \"$superpowers_home/statusline.sh\"" "$profile_config" >/dev/null \
+  || fail 'Grok statusline command path differs'
+grep -Fqx '[mcp_servers.personal]' "$profile_config" \
+  || fail 'profile-local MCP table changed during setup'
+grep -Fqx 'command = "profile-local-mcp"' "$profile_config" \
+  || fail 'profile-local MCP command changed during setup'
 ./bin/grx repair superpowers >"$fixture_root/profile-user-mcp-repair.out"
 assert_line 'superpowers: repaired' "$fixture_root/profile-user-mcp-repair.out"
 ./bin/grx superpowers --profile-user-mcp >"$fixture_root/profile-user-mcp-launch.out"
@@ -3400,8 +3419,35 @@ jq -s -e --arg home "$superpowers_home" '
   and .args == ["--sandbox","workspace","--permission-mode","bypassPermissions","--always-approve","--profile-user-mcp"]
 ' "$fake_grok_log" >/dev/null \
   || fail 'launch did not allow the profile-local user MCP inventory'
-cmp -s "$profile_config" "$fixture_root/profile-config-before-lifecycle.toml" \
-  || fail 'profile-local MCP config changed during lifecycle operations'
+python3 - <<'PY' "$profile_config" "$fixture_root/profile-config-before-lifecycle.toml" "$superpowers_home/statusline.sh" || exit 1
+from pathlib import Path
+import sys
+
+after = Path(sys.argv[1]).read_text()
+before = Path(sys.argv[2]).read_text()
+statusline = sys.argv[3]
+expected_tail = (
+    '\n[ui.status_line]\n'
+    'type = "command"\n'
+    f'command = "{statusline}"\n'
+    'refresh_interval = 15\n'
+)
+if after != before + expected_tail:
+    raise SystemExit(1)
+PY
+rm "$profile_config"
+
+printf '%s\n' \
+  '[ui.status_line]' \
+  'type = "builtin"' \
+  'command = "custom-status"' \
+  'refresh_interval = 99' \
+  >"$profile_config"
+cp "$profile_config" "$fixture_root/profile-config-with-statusline-before.toml"
+./bin/grx setup superpowers >"$fixture_root/profile-existing-statusline-setup.out"
+assert_line 'superpowers: ready' "$fixture_root/profile-existing-statusline-setup.out"
+cmp -s "$profile_config" "$fixture_root/profile-config-with-statusline-before.toml" \
+  || fail 'existing [ui.status_line] config changed during setup'
 rm "$profile_config"
 export FAKE_GROK_MCP_JSON='[{"name":"project-native","scope":"project","enabled":true},{"name":"repository-native","scope":"repository","enabled":true},{"name":"built-in","scope":"native","enabled":true}]'
 ./bin/grx doctor superpowers >"$fixture_root/native-mcp-doctor.out"

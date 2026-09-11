@@ -100,6 +100,7 @@ const withRuntimeHelpers = (support: RuntimeSupportPaths): RuntimeSupportPaths =
   sessionBridge: support.sessionBridge ?? path.join(path.dirname(support.codexEntry), "trellage-session-bridge.py"),
   copilotModelSettings:
     support.copilotModelSettings ?? path.join(path.dirname(support.copilotEntry), "copilot-model-settings.py"),
+  statusline: support.statusline ?? path.join(path.dirname(support.codexEntry), "trellage-statusline.sh"),
 })
 const createRuntimeSupportSnapshot = (
   ...[kind, support, selection, claudeMode]: Parameters<typeof createRuntimeSupportSnapshotRaw>
@@ -116,6 +117,7 @@ const temporaryRoot = async (prefix: string): Promise<string> => {
   temporaryRoots.push(root)
   await writeFile(path.join(root, "trellage-session-bridge.py"), "#!/usr/bin/env python3\n")
   await writeFile(path.join(root, "copilot-model-settings.py"), "#!/usr/bin/env python3\n")
+  await writeFile(path.join(root, "trellage-statusline.sh"), "#!/usr/bin/env bash\n")
   return root
 }
 

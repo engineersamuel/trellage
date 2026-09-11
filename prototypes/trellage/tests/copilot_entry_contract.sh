@@ -390,6 +390,13 @@ jq -e '
   and .planModel == "gpt-6-astra" and .planEffortLevel == "max"
 ' "$runtime/settings.json" >/dev/null \
   || fail 'Copilot default and plan modes did not receive separate model settings'
+jq -e '
+  .statusLine.command == "bash /usr/local/share/trellage/statusline.sh"
+  and .statusLine.type == "command"
+  and .statusLine.refreshInterval == 15
+  and .footer.showCustom == true
+' "$runtime/settings.json" >/dev/null \
+  || fail 'Copilot runtime did not seed statusLine'
 INITIAL_CHECKS
 
 COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= run_entry new --allow-all
@@ -490,6 +497,33 @@ jq -e '
 ' "$runtime/settings.json" >/dev/null \
   || fail 'Copilot SessionStart bridge replaced an existing hook'
 REPEATED_LAUNCH_CHECKS
+
+mutate_home "$runtime/settings.json" <<'CUSTOM_STATUSLINE'
+cat >"$1" <<'EOF'
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash /custom/statusline.sh",
+    "refreshInterval": 5
+  }
+}
+EOF
+CUSTOM_STATUSLINE
+COPILOT_GITHUB_TOKEN= GH_TOKEN= GITHUB_TOKEN= \
+  run_entry prompt --allow-all -- 'custom statusline'
+inspect_home "$runtime/settings.json" <<'CUSTOM_STATUSLINE_CHECK'
+jq -e '
+  .statusLine.command == "bash /custom/statusline.sh"
+  and .statusLine.type == "command"
+  and .statusLine.refreshInterval == 5
+  and .footer.showCustom == true
+' "$1" >/dev/null \
+  || fail 'Copilot runtime did not preserve a custom statusLine while enabling footer.showCustom'
+CUSTOM_STATUSLINE_CHECK
+assert_no_transaction_temps 'custom statusLine preservation'
+mutate_home "$runtime/settings.json" <<'RESET_SETTINGS'
+printf '{"hooks":{"SessionStart":[{"type":"command","bash":"existing-session-start"}]}}\n' >"$1"
+RESET_SETTINGS
 
 mutate_home "$runtime" <<'COMMENTED_CONFIG'
 runtime="$1"
