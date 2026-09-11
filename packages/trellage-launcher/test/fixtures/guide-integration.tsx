@@ -8,6 +8,7 @@ import { parseProfileGuide } from "../../../trellage-guide-core/dist/index.js"
 import { defaultGuideModelRouting } from "../../src/guide-api.js"
 import { parseGuideCatalog } from "../../src/guide-catalog.js"
 import { executeGuideUiResult } from "../../src/guide-interactive-execution.js"
+import type { CommandRunner } from "../../src/guide-launch.js"
 import { checkSelectedProfileReadiness } from "../../src/guide-preflight.js"
 import type { GuideProvider } from "../../src/guide-provider.js"
 import { createInitialGuideRenderHandler } from "../../src/guide-terminal.js"
@@ -41,8 +42,11 @@ const record = async (event: FixtureEvent): Promise<void> => {
   events.push(event)
   await appendFile(eventPath, `${JSON.stringify(event)}\n`)
 }
+let releaseReadiness!: () => void
+const readinessGate = new Promise<void>((resolve) => { releaseReadiness = resolve })
 // Acknowledge consumed keys even when they intentionally produce no redraw.
 const recordInput = (input: Buffer | string): void => {
+  if (mode === FixtureMode.ParkedReadiness && input.toString() === "\u0012") releaseReadiness()
   void record({ kind: "input", input: input.toString() }).catch((error: unknown) => {
     console.error(error)
     process.exit(1)
@@ -226,7 +230,15 @@ const provider: GuideProvider = {
   },
 }
 
-const runner = createFixtureRunner(root, mode, record)
+const fixtureRunner = createFixtureRunner(root, mode, record)
+// Ctrl-R releases held inventory responses in the parked-readiness scenario.
+const runner: CommandRunner = mode === FixtureMode.ParkedReadiness ? {
+  async run(executable, args, options) {
+    const result = await fixtureRunner.run(executable, args, options)
+    if (args[0] === "inventory") await readinessGate
+    return result
+  },
+} : fixtureRunner
 const goalReadinessServices = createFixtureGoalReadinessServices(root, record)
 const writes: string[] = []
 const instance = render(

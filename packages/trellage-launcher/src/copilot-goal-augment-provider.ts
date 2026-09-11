@@ -284,23 +284,6 @@ interface GoalResources {
   unsubscribe?: () => void
 }
 
-const stopGoalClient = async (
-  client: GuideGoalModelClient,
-  timeoutMs: number,
-  errors: unknown[],
-): Promise<void> => {
-  let stopped = false
-  await runCleanupStep(errors, async () => {
-    const stopErrors = await boundedClose("client stop", timeoutMs, () => client.stop())
-    errors.push(...stopErrors)
-    stopped = stopErrors.length === 0
-  })
-  // A timeout releases our wait, not the SDK process. Terminate it before removing its files.
-  if (!stopped) {
-    await runCleanupStep(errors, () => boundedClose("client force stop", timeoutMs, () => client.forceStop()))
-  }
-}
-
 const closeResources = async (resources: GoalResources, timeoutMs: number): Promise<unknown[]> => {
   const errors: unknown[] = []
   const close = (label: string, operation: () => Promise<unknown>): Promise<void> =>
@@ -316,7 +299,8 @@ const closeResources = async (resources: GoalResources, timeoutMs: number): Prom
     if (resources.sessionId !== undefined) {
       await close("session deletion", () => resources.client!.deleteSession(resources.sessionId!))
     }
-    await stopGoalClient(resources.client, timeoutMs, errors)
+    // SDK stop() drops its child handle before exit, which defeats later forceStop().
+    await close("client force stop", () => resources.client!.forceStop())
   }
   if (resources.skills !== undefined) await close("skill staging", () => resources.skills!.dispose())
   return errors

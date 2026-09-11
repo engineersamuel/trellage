@@ -13108,7 +13108,7 @@ var require_backend = __commonJS({
                     }
                     throw Error("An unsupported type was passed to use(): " + String(usable));
                   },
-                  useCallback: function useCallback5(callback) {
+                  useCallback: function useCallback6(callback) {
                     var hook = nextHook();
                     hookLog.push({
                       displayName: null,
@@ -53993,7 +53993,7 @@ var GuideGoalInteractionController = class {
   }
   submit(runId, requestId, response) {
     const current = this.pending[0];
-    if (this.closed !== void 0 || current?.request.runId !== runId || current.request.requestId !== requestId) {
+    if (this.closed !== void 0 || this.approvalAccepted || current?.request.runId !== runId || current.request.requestId !== requestId) {
       return false;
     }
     if (current.request.kind === "question" && response.kind === "answer") {
@@ -54011,7 +54011,7 @@ var GuideGoalInteractionController = class {
       this.approvalAccepted = true;
     }
     this.options.onTurn({ request: current.request, response });
-    this.options.onRequest(this.pending[0]?.request);
+    this.options.onRequest(this.approvalAccepted ? void 0 : this.pending[0]?.request);
     current.resolve(response);
     this.acceptRecommendedAnswers();
     return true;
@@ -54028,7 +54028,7 @@ var GuideGoalInteractionController = class {
     if (this.closed !== void 0) return Promise.reject(this.closed);
     return new Promise((resolve2, reject) => {
       this.pending.push({ request, resolve: resolve2, reject });
-      if (this.pending.length === 1) this.options.onRequest(request);
+      if (this.pending.length === 1 && !this.approvalAccepted) this.options.onRequest(request);
       this.acceptRecommendedAnswers();
     });
   }
@@ -66119,17 +66119,6 @@ var proposalTool = (run, context2, skillContent, sessionId) => ({
     };
   })
 });
-var stopGoalClient = async (client, timeoutMs, errors) => {
-  let stopped = false;
-  await runCleanupStep(errors, async () => {
-    const stopErrors = await boundedClose("client stop", timeoutMs, () => client.stop());
-    errors.push(...stopErrors);
-    stopped = stopErrors.length === 0;
-  });
-  if (!stopped) {
-    await runCleanupStep(errors, () => boundedClose("client force stop", timeoutMs, () => client.forceStop()));
-  }
-};
 var closeResources = async (resources, timeoutMs) => {
   const errors = [];
   const close = (label, operation) => runCleanupStep(errors, () => boundedClose(label, timeoutMs, operation));
@@ -66144,7 +66133,7 @@ var closeResources = async (resources, timeoutMs) => {
     if (resources.sessionId !== void 0) {
       await close("session deletion", () => resources.client.deleteSession(resources.sessionId));
     }
-    await stopGoalClient(resources.client, timeoutMs, errors);
+    await close("client force stop", () => resources.client.forceStop());
   }
   if (resources.skills !== void 0) await close("skill staging", () => resources.skills.dispose());
   return errors;
@@ -71411,7 +71400,10 @@ var ForkWorker = ({
   forkId,
   dispatch
 }) => {
-  const deliver = (action) => dispatch({ type: "fork/deliver" /* ForkDeliver */, forkId, action });
+  const deliver = (0, import_react35.useCallback)(
+    (action) => dispatch({ type: "fork/deliver" /* ForkDeliver */, forkId, action }),
+    [dispatch, forkId]
+  );
   useGuideMatchEffect(props, state, deliver);
   useGuideGenerationEffect(props, state, deliver);
   useGuideRefinementEffect(props, state, deliver);

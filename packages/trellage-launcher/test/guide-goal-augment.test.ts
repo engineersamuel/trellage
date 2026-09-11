@@ -103,6 +103,23 @@ describe("goal interactions", () => {
     await later
   })
 
+  it.each(["queued", "late"] as const)("keeps a %s proposal from replacing the approved goal", async (timing) => {
+    const { controller, requests, history } = fixture()
+    const approved = renderGuideGoalProposal(goalMeSkill, goalDraft)
+    const other = renderGuideGoalProposal(goalMeSkill, { ...goalDraft, artifact: "A different design document." })
+    const first = controller.review(approved)
+    const enqueueOther = () => expect(controller.review(other)).rejects.toBeInstanceOf(GuideGoalCancelledError)
+    const queued = timing === "queued" ? enqueueOther() : undefined
+    expect(controller.submit(7, 1, { kind: "review", review: { decision: "use" } })).toBe(true)
+    const late = timing === "late" ? enqueueOther() : undefined
+    await expect(first).resolves.toEqual({ decision: "use" })
+    expect(requests).toEqual([{ kind: "review", runId: 7, requestId: 1, proposal: approved }, undefined])
+    expect(controller.submit(7, 2, { kind: "review", review: { decision: "use" } })).toBe(false)
+    expect(history).toHaveLength(1)
+    controller.close()
+    await Promise.all([queued, late])
+  })
+
   it("stops draining recommended answers immediately on cancellation", async () => {
     const abort = new AbortController()
     const history: GuideGoalTurn[] = []

@@ -12,7 +12,7 @@
  * The reducer (`guideUiReducer`) and every state-derived helper in this file
  * are pure and exported so they can be unit tested without rendering Ink.
  */
-import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
 
 import {
@@ -4951,8 +4951,10 @@ const ForkWorker = ({
   readonly forkId: number
   readonly dispatch: GuideUiDispatch
 }) => {
-  const deliver: GuideUiDispatch = (action) =>
-    dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction })
+  const deliver = useCallback<GuideUiDispatch>(
+    (action) => dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction }),
+    [dispatch, forkId],
+  )
   useGuideMatchEffect(props, state, deliver)
   useGuideGenerationEffect(props, state, deliver)
   useGuideRefinementEffect(props, state, deliver)

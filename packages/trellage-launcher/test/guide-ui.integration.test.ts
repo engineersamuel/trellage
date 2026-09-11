@@ -881,6 +881,24 @@ it.for([
   },
 )
 
+it("keeps one readiness probe alive while its fork is parked and the main selection changes", async ({ guide }) => {
+  await guide.start(FixtureMode.ParkedReadiness)
+  await enterIntent(guide)
+  await selectProfile(guide, "planner", 0)
+  await guide.pressAndWait(enter, "Checking profile readiness")
+  const current = await mainScreen(guide)
+  for (let step = 1; step <= 3; step += 1) {
+    const id = recommendationIds[(current + step) % recommendationIds.length]
+    assert(id !== undefined)
+    await guide.pressAndWait(down, `${fixtureProfile(id).ref} |`)
+  }
+  await guide.pressAndWait("1", "Checking profile readiness")
+  await guide.pressAndWait("\u0012", "Choose a destination")
+  const report = await guide.finish("q", 130)
+  expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
+  expect(commandEvents(report.events)).toEqual([readinessCommand(guide.root, "planner")])
+})
+
 it("queues all pinned lenses and launches them from the main screen with L", async ({ guide }) => {
   await guide.start(FixtureMode.Herdr)
   await enterIntent(guide)
@@ -1261,7 +1279,7 @@ it("interviews through p then a, revises, and protects a newer prompt and queued
   expect(guide.text()).not.toContain("**Keep failure evidence")
   const beforeApproval = (await guide.events()).filter((event) => event.kind === "match")
   expect(beforeApproval.map((event) => event.intent)).toEqual([fixtureIntent, fixtureIntent + change])
-  await guide.pressAndWait(down, "Revise")
+  await guide.pressAndWait(down, "\u276f Revise")
   await guide.pressAndWait(enter, "feedback")
   const revision = "Include a repeatable regression example."
   await guide.pressAndWait(revision, revision)

@@ -15,6 +15,7 @@ export enum FixtureMode {
   Herdr = "herdr",
   DirtyWorktree = "dirty-worktree",
   ExistingWorktree = "existing-worktree",
+  ParkedReadiness = "parked-readiness",
   GoalFailure = "goal-failure",
   GoalLongQuestion = "goal-long-question",
   GoalRecommended = "goal-recommended",

@@ -270,7 +270,7 @@ export class GuideGoalInteractionController implements GuideGoalInteractions {
 
   submit(runId: number, requestId: number, response: GuideGoalResponse): boolean {
     const current = this.pending[0]
-    if (this.closed !== undefined || current?.request.runId !== runId || current.request.requestId !== requestId) {
+    if (this.closed !== undefined || this.approvalAccepted || current?.request.runId !== runId || current.request.requestId !== requestId) {
       return false
     }
     if (current.request.kind === "question" && response.kind === "answer") {
@@ -288,7 +288,8 @@ export class GuideGoalInteractionController implements GuideGoalInteractions {
       this.approvalAccepted = true
     }
     this.options.onTurn({ request: current.request, response })
-    this.options.onRequest(this.pending[0]?.request)
+    // The provider must settle approval before it cancels queued callbacks.
+    this.options.onRequest(this.approvalAccepted ? undefined : this.pending[0]?.request)
     current.resolve(response)
     this.acceptRecommendedAnswers()
     return true
@@ -307,7 +308,7 @@ export class GuideGoalInteractionController implements GuideGoalInteractions {
     if (this.closed !== undefined) return Promise.reject(this.closed)
     return new Promise((resolve, reject) => {
       this.pending.push({ request, resolve, reject })
-      if (this.pending.length === 1) this.options.onRequest(request)
+      if (this.pending.length === 1 && !this.approvalAccepted) this.options.onRequest(request)
       this.acceptRecommendedAnswers()
     })
   }

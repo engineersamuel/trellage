@@ -61,7 +61,6 @@ const fakeSdk = () => {
   const allListeners: SessionEventHandler[] = []
   const sent = deferred<void>()
   const models = [workingModel]
-  const stopErrors: Error[] = []
   let runtimeAlive = false
   let config: SessionConfig | undefined
   const step = (name: Step): void => {
@@ -94,10 +93,10 @@ const fakeSdk = () => {
       return session
     }),
     deleteSession: vi.fn(async (_sessionId: string) => { step("delete") }),
-    stop: vi.fn(async () => {
+    stop: vi.fn(async (): Promise<Error[]> => {
       step("stop")
-      if (stopErrors.length === 0) runtimeAlive = false
-      return stopErrors
+      runtimeAlive = false
+      return []
     }),
     forceStop: vi.fn(async () => { step("force-stop"); runtimeAlive = false }),
   } satisfies GuideGoalModelClient
@@ -113,7 +112,7 @@ const fakeSdk = () => {
   const event = (type: SessionEvent["type"], data: unknown): SessionEvent =>
     ({ type, data, id: "event-1", parentId: null, timestamp: "2026-09-09T00:00:00Z" }) as SessionEvent
   return {
-    trace, failures, listeners, session, client, factory, models, stopErrors, sent: sent.promise, currentConfig,
+    trace, failures, listeners, session, client, factory, models, sent: sent.promise, currentConfig,
     get runtimeAlive() { return runtimeAlive },
     ask: (request: UserInputRequest) => track(Promise.resolve(
       currentConfig().onUserInputRequest!(request, { sessionId: session.sessionId }),
@@ -141,12 +140,13 @@ const harness = (overrides: {
   const abort = new AbortController()
   const activity: string[] = []
   const turns: GuideGoalTurn[] = []
+  const requests: Array<GuideGoalRequest | undefined> = []
   let pending: GuideGoalRequest | undefined
   let settled = false
   const controller = new GuideGoalInteractionController({
     runId: 7,
     signal: abort.signal,
-    onRequest: (request) => { pending = request },
+    onRequest: (request) => { pending = request; requests.push(request) },
     onTurn: (turn) => { turns.push(turn) },
   })
   const skills: GuideGoalSkills = {
@@ -165,7 +165,7 @@ const harness = (overrides: {
     ...overrides.provider,
   })
   return {
-    sdk, abort, skills, resolveSkills, activity, turns, controller,
+    sdk, abort, skills, resolveSkills, activity, turns, requests, controller,
     get pending() { return pending },
     get settled() { return settled },
     start(input: GuideGoalAugmentInput = { intent: "Specify bounded retries", history: [] }) {
@@ -218,6 +218,25 @@ describe("Copilot Goal me interview", () => {
     expect(h.turns).toHaveLength(4)
   })
 
+  it("returns the displayed approved goal when another SDK proposal is queued", async () => {
+    const h = harness()
+    const result = h.start()
+    await h.sdk.sent
+    const first = h.sdk.propose()
+    const second = h.sdk.propose({ ...goalDraft, artifact: "An unapproved second document." })
+    const closedSecond = expect(second).rejects.toThrow("interview is closed")
+    await flushCallbacks()
+    h.submit({ kind: "review", review: { decision: "use" } })
+    await expect(first).resolves.toMatchObject({ resultType: "success" })
+    const approved = renderGuideGoalProposal(goalMeSkill, goalDraft)
+    await expect(result).resolves.toBe(approved.prompt)
+    await closedSecond
+    expect(h.requests.filter((request) => request?.kind === "review"))
+      .toEqual([{ kind: "review", runId: 7, requestId: 1, proposal: approved }])
+    expect(h.turns).toHaveLength(1)
+    expect(h.pending).toBeUndefined()
+  })
+
   it("keeps the actual SDK callback flags and one session through questions, revision, and explicit approval", async () => {
     const content = goalMeSkill.replace("Begin.", "Begin.\nKeep this installed-template marker.")
     const h = harness({ skillContent: content })
@@ -260,8 +279,8 @@ describe("Copilot Goal me interview", () => {
     expect(h.sdk.session.send).toHaveBeenCalledTimes(1)
     expect(h.sdk.session.send.mock.calls[0]?.[0].prompt).toMatch(/^\/goal-me\n/u)
     expect(h.turns).toHaveLength(5)
-    expect(h.sdk.trace.slice(-6)).toEqual(["unsubscribe", "abort", "disconnect", "delete", "stop", "skills"])
-    expect(h.sdk.client.forceStop).not.toHaveBeenCalled()
+    expect(h.sdk.trace.slice(-6)).toEqual(["unsubscribe", "abort", "disconnect", "delete", "force-stop", "skills"])
+    expect(h.sdk.client.stop).not.toHaveBeenCalled()
     expect(h.activity.join("\n")).not.toMatch(/Only bounded API|deterministic jitter|Private draft|installed-template marker/u)
     await expect(h.sdk.propose()).rejects.toThrow("interview is closed")
     h.sdk.emitLate("session.error", { errorType: "query", message: "Late event" })
@@ -308,7 +327,7 @@ describe("Copilot Goal me interview", () => {
     h.sdk.models[0] = { ...workingModel, id: defaultGuideModelRouting.enrich.model }
     await expect(h.start()).rejects.toBeInstanceOf(GuideModelCapabilityError)
     expect(h.sdk.client.createSession).not.toHaveBeenCalled()
-    expect(h.sdk.client.stop).toHaveBeenCalledTimes(1)
+    expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)
     expect(h.skills.dispose).toHaveBeenCalledTimes(1)
   })
 
@@ -407,7 +426,7 @@ describe("Goal me waits and cancellation", () => {
     await expect(result).rejects.toThrow("one interview round")
     expect(h.sdk.session.abort).toHaveBeenCalledTimes(1)
     expect(h.sdk.session.disconnect).toHaveBeenCalledTimes(1)
-    expect(h.sdk.client.stop).toHaveBeenCalledTimes(1)
+    expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)
     expect(h.skills.dispose).toHaveBeenCalledTimes(1)
   })
 
@@ -465,7 +484,7 @@ describe("Goal me waits and cancellation", () => {
     await expect(callback).rejects.toBeInstanceOf(GuideGoalCancelledError)
     await expect(result).rejects.toBeInstanceOf(GuideGoalCancelledError)
     expect(h.sdk.listeners.size).toBe(0)
-    expect(h.sdk.client.stop).toHaveBeenCalledTimes(1)
+    expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)
     expect(h.skills.dispose).toHaveBeenCalledTimes(1)
     answer.resolve({ answer: "Late answer", wasFreeform: true })
     review.resolve({ decision: "use" })
@@ -549,10 +568,10 @@ describe("Goal me failures and cleanup", () => {
     const h = harness()
     const failure = new Error(`SDK ${step} failed`)
     h.sdk.failures[step] = failure
-    h.sdk.failures.stop = new Error("stop also failed")
+    h.sdk.failures["force-stop"] = new Error("force stop also failed")
     const result = h.start()
     await expect(result).rejects.toBe(failure)
-    expect(h.sdk.client.stop).toHaveBeenCalledTimes(1)
+    expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)
     expect(h.skills.dispose).toHaveBeenCalledTimes(1)
   })
 
@@ -561,7 +580,7 @@ describe("Goal me failures and cleanup", () => {
     h.sdk.models[0] = { ...workingModel, supportedReasoningEfforts: ["low", "medium", "high"] }
     await expect(h.start()).rejects.toBeInstanceOf(GuideModelCapabilityError)
     expect(h.sdk.client.createSession).not.toHaveBeenCalled()
-    expect(h.sdk.client.stop).toHaveBeenCalledTimes(1)
+    expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)
     expect(h.skills.dispose).toHaveBeenCalledTimes(1)
   })
 
@@ -574,7 +593,7 @@ describe("Goal me failures and cleanup", () => {
 
   it("keeps a session error primary when close operations also fail", async () => {
     const h = harness()
-    for (const step of ["unsubscribe", "abort", "disconnect", "delete", "stop"] as const) {
+    for (const step of ["unsubscribe", "abort", "disconnect", "delete", "force-stop"] as const) {
       h.sdk.failures[step] = new Error(`${step} failed`)
     }
     const result = h.start()
@@ -584,17 +603,17 @@ describe("Goal me failures and cleanup", () => {
     h.sdk.emit("session.error", { errorType: "authentication", message: "Authentication failed" })
     await expect(result).rejects.toThrow("Goal me model error: Authentication failed")
     await expect(callback).rejects.toThrow("Goal me model error: Authentication failed")
-    expect(h.sdk.trace.slice(-7)).toEqual(["unsubscribe", "abort", "disconnect", "delete", "stop", "force-stop", "skills"])
+    expect(h.sdk.trace.slice(-6)).toEqual(["unsubscribe", "abort", "disconnect", "delete", "force-stop", "skills"])
   })
 
   it("surfaces every cleanup failure after otherwise successful approval", async () => {
     const h = harness({ interactions: { ask: async () => ({ answer: "unused", wasFreeform: true }), review: async () => ({ decision: "use" }) } })
     const abortError = new Error("abort failed")
     const disconnectError = new Error("disconnect failed")
-    const stopError = new Error("stop returned a failure")
+    const stopError = new Error("force stop failed")
     h.sdk.failures.abort = abortError
     h.sdk.failures.disconnect = disconnectError
-    h.sdk.stopErrors.push(stopError)
+    h.sdk.failures["force-stop"] = stopError
     const result = h.start()
     await h.sdk.sent
     await h.sdk.propose()
@@ -604,7 +623,7 @@ describe("Goal me failures and cleanup", () => {
     expect(h.skills.dispose).toHaveBeenCalledTimes(1)
   })
 
-  it("bounds a stuck SDK close and continues deletion, client stop, and skill disposal", async () => {
+  it("bounds a stuck SDK close and continues deletion, runtime termination, and skill disposal", async () => {
     vi.useFakeTimers()
     const h = harness({
       provider: { cleanupTimeoutMs: 20 },
@@ -618,39 +637,58 @@ describe("Goal me failures and cleanup", () => {
     await expect(result).rejects.toBeInstanceOf(GuideModelCleanupError)
     expect(h.sdk.session.disconnect).toHaveBeenCalledTimes(1)
     expect(h.sdk.client.deleteSession).toHaveBeenCalledTimes(1)
-    expect(h.sdk.client.stop).toHaveBeenCalledTimes(1)
+    expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)
     expect(h.skills.dispose).toHaveBeenCalledTimes(1)
   })
 
-  it.each(["throws", "returns errors", "stalls"] as const)(
-    "force-stops the runtime before disposing staging when graceful stop %s",
-    async (failure) => {
-      vi.useFakeTimers()
-      const h = harness({ provider: { cleanupTimeoutMs: 20 } })
-      if (failure === "throws") h.sdk.failures.stop = new Error("Cannot close the runtime.")
-      else if (failure === "returns errors") h.sdk.stopErrors.push(new Error("Runtime still connected."))
-      else h.sdk.client.stop.mockImplementation(() => {
-        h.sdk.trace.push("stop")
-        return new Promise<Error[]>(() => {})
-      })
-      vi.mocked(h.skills.dispose).mockImplementation(async () => {
-        expect(h.sdk.runtimeAlive).toBe(false)
-        h.sdk.trace.push("skills")
-      })
-      const result = h.start()
-      const rejected = expect(result).rejects.toBeInstanceOf(GuideGoalCancelledError)
-      await h.sdk.sent
-      const answer = h.sdk.ask({ question: "Wait for a user answer." })
-      const cancelledAnswer = expect(answer).rejects.toBeInstanceOf(GuideGoalCancelledError)
-      await flushCallbacks()
-      expect(h.sdk.runtimeAlive).toBe(true)
-      h.abort.abort()
-      await vi.advanceTimersByTimeAsync(21)
-      await rejected
-      await cancelledAnswer
-      expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)
-      expect(h.sdk.trace.slice(-3)).toEqual(["stop", "force-stop", "skills"])
-      expect(h.sdk.runtimeAlive).toBe(false)
-    },
-  )
+  it("terminates the owned runtime before graceful SDK stop can discard its child handle", async () => {
+    vi.useFakeTimers()
+    const h = harness({
+      provider: { cleanupTimeoutMs: 20 },
+      interactions: { ask: async () => ({ answer: "unused", wasFreeform: true }), review: async () => ({ decision: "use" }) },
+    })
+    let handleAvailable = true
+    let aliveAtDisposal: boolean | undefined
+    const forceStop = h.sdk.client.forceStop.getMockImplementation()!
+    h.sdk.client.stop.mockImplementation(() => {
+      handleAvailable = false
+      return new Promise<Error[]>(() => {})
+    })
+    h.sdk.client.forceStop.mockImplementation(async () => {
+      if (handleAvailable) await forceStop()
+    })
+    vi.mocked(h.skills.dispose).mockImplementation(async () => {
+      aliveAtDisposal = h.sdk.runtimeAlive
+      h.sdk.trace.push("skills")
+    })
+    const result = h.start()
+    await h.sdk.sent
+    await h.sdk.propose()
+    await vi.advanceTimersByTimeAsync(21)
+    await expect(result).resolves.toBe(renderGuideGoalProposal(goalMeSkill, goalDraft).prompt)
+    expect(h.sdk.client.stop).not.toHaveBeenCalled()
+    expect(h.sdk.client.forceStop).toHaveBeenCalledTimes(1)
+    expect(aliveAtDisposal).toBe(false)
+    expect(h.sdk.runtimeAlive).toBe(false)
+  })
+
+  it("bounds a stalled runtime force stop and reports the cleanup failure", async () => {
+    vi.useFakeTimers()
+    const h = harness({
+      provider: { cleanupTimeoutMs: 20 },
+      interactions: { ask: async () => ({ answer: "unused", wasFreeform: true }), review: async () => ({ decision: "use" }) },
+    })
+    h.sdk.client.forceStop.mockImplementation(() => new Promise<void>(() => {}))
+    const result = h.start()
+    const rejected = expect(result).rejects.toMatchObject({
+      name: "GuideModelCleanupError",
+      causes: [expect.objectContaining({ message: "Goal me cleanup timed out: client force stop." })],
+    })
+    await h.sdk.sent
+    await h.sdk.propose()
+    await vi.advanceTimersByTimeAsync(21)
+    await rejected
+    expect(h.sdk.client.deleteSession).toHaveBeenCalledTimes(1)
+    expect(h.skills.dispose).toHaveBeenCalledTimes(1)
+  })
 })
