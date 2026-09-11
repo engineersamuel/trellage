@@ -33,6 +33,8 @@ import {
   type CommandSpec,
   type TimeController,
 } from "../src/guide-launch.js"
+import { goalTransportFixture } from "./fixtures/goal-transport.js"
+import { guideGoalActivationInput, guideGoalApproachBudget, guideGoalArgvMaximumBytes } from "../src/guide-goal-execution.js"
 
 interface PlannedCall {
   readonly executable: string
@@ -141,6 +143,78 @@ const linkedHead = "1111111111111111111111111111111111111111"
 const primaryHead = "2222222222222222222222222222222222222222"
 
 describe("guide launch command building", () => {
+  it("keeps Codex goal text out of both interactive startup and exec argv", () => {
+    const { profile, candidate } = goalTransportFixture()
+    expect(buildGuideLaunchCommand(profile, { mode: "argv", prompt: candidate.prompt }, candidate.goalExecution)).toEqual({
+      command: { executable: profile.commandPath, args: ["superpowers"] },
+      promptHandling: "manual-paste",
+    })
+    expect(buildHerdrGuideLaunch(profile, candidate.prompt, candidate.goalExecution)).toEqual({
+      command: { executable: profile.commandPath, args: ["superpowers"] },
+      promptDelivery: "manual",
+    })
+  })
+
+  it("uses Claude print goal dispatch but does not change an interactive Herdr session to print mode", () => {
+    const { profile, candidate } = goalTransportFixture("claude-goal")
+    expect(buildGuideLaunchCommand(profile, { mode: "argv", prompt: candidate.prompt }, candidate.goalExecution)).toEqual({
+      command: { executable: profile.commandPath, args: ["default", "-p", candidate.prompt] },
+      promptHandling: "argv",
+    })
+
+    expect(buildHerdrGuideLaunch(profile, candidate.prompt, candidate.goalExecution)).toEqual({
+      command: { executable: profile.commandPath, args: ["default"] },
+      promptDelivery: "manual",
+    })
+    const interactive = { ...profile, headlessPrompt: false }
+    expect(buildGuideLaunchCommand(interactive, { mode: "argv", prompt: candidate.prompt }, candidate.goalExecution).promptHandling).toBe("manual-paste")
+    const sandbox = parseSelectedProfile({
+      surface: "sandbox", profile: "claude-council", headlessPrompt: false,
+      commandPath: "/opt/trellage/bin/trellage", goalExecutionPolicy: profile.goalExecutionPolicy,
+    })
+    expect(buildHerdrGuideLaunch(sandbox, candidate.prompt, candidate.goalExecution)).toEqual({
+      command: { executable: sandbox.commandPath, args: ["--profile", "claude-council", candidate.prompt] },
+      promptDelivery: "command",
+    })
+  })
+
+  it("enforces Claude's condition bound even when delivery is manual", () => {
+    const { execution } = goalTransportFixture("claude-goal")
+    const budget = guideGoalApproachBudget(execution)
+    const atLimit = goalTransportFixture("claude-goal", { approach: "\u{1f333}".repeat(budget) })
+    expect([...guideGoalActivationInput(atLimit.execution, atLimit.candidate.prompt).body]).toHaveLength(4000)
+    expect(buildHerdrGuideLaunch(atLimit.profile, atLimit.candidate.prompt, atLimit.candidate.goalExecution).promptDelivery).toBe("manual")
+    expect(() => goalTransportFixture("claude-goal", { approach: "\u{1f333}".repeat(budget + 1) })).toThrow(/at most/u)
+  })
+
+  it("keeps Graph's authored entry point and checks the exact UTF-8 argv ceiling", () => {
+    const options = { task: "\u{1f333}".repeat(14_000), approach: "a".repeat(8000) }
+    const base = goalTransportFixture("graph-of-loops", options)
+    const padding = guideGoalArgvMaximumBytes - Buffer.byteLength(base.candidate.prompt, "utf8")
+    expect(padding).toBeGreaterThan(0)
+    const atLimit = goalTransportFixture("graph-of-loops", { ...options, task: `${options.task}${"x".repeat(padding)}` })
+    expect(Buffer.byteLength(atLimit.candidate.prompt, "utf8")).toBe(guideGoalArgvMaximumBytes)
+    expect(buildHerdrGuideLaunch(atLimit.profile, atLimit.candidate.prompt, atLimit.candidate.goalExecution).promptDelivery).toBe("command")
+    const overLimit = goalTransportFixture("graph-of-loops", { ...options, task: `${options.task}${"x".repeat(padding)}\u{1f333}` })
+    const built = buildHerdrGuideLaunch(overLimit.profile, overLimit.candidate.prompt, overLimit.candidate.goalExecution)
+    expect(built).toEqual({
+      command: { executable: overLimit.profile.commandPath, args: ["--profile", "claude-graph-of-loops"] },
+      promptDelivery: "manual",
+    })
+    expect(guideGoalActivationInput(overLimit.execution, overLimit.candidate.prompt).command).toBe("/graph-of-loops")
+    expect(overLimit.candidate.prompt).not.toContain("/goal ")
+  })
+
+  it("rejects changed goal composition, undeclared workflows, and unsupported profile/controller pairings", () => {
+    const { profile, candidate } = goalTransportFixture()
+    expect(() => buildHerdrGuideLaunch(profile, "Unprotected approach", candidate.goalExecution)).toThrow(/no longer matches/u)
+    expect(() => buildHerdrGuideLaunch({ ...profile, goalExecutionPolicy: { controller: "codex-goal", workflowIds: ["other"] } }, candidate.prompt, candidate.goalExecution)).toThrow(/does not declare/u)
+    expect(() => buildHerdrGuideLaunch(
+      parseSelectedProfile({ ...profile, launcher: "cpx", commandPath: "/opt/trellage/bin/cpx" }),
+      candidate.prompt, candidate.goalExecution,
+    )).toThrow(/supported launch path/u)
+  })
+
   it("builds native and sandbox argv without command text injection", () => {
     expect(buildGuideLaunchCommand(nativeProfile).command).toEqual({
       executable: "/opt/trellage/bin/cpx",
@@ -612,6 +686,7 @@ describe("current workspace handoff", () => {
     expect(result).toEqual({
       paneId: "wCN:p2",
       commandPreview: automatedBareCommandPreview,
+      status: "launched",
     })
     expect(runner.calls[4]?.options?.timeoutMs).toBe(6_000)
     expect(runner.calls.map((call) => call.args.join(" ")).join("\n")).not.toMatch(/close|--force/)
@@ -641,7 +716,7 @@ describe("current workspace handoff", () => {
       promptTimeoutMs: 5_000,
     })
 
-    expect(result).toEqual({ paneId: "w40:p7", commandPreview: automatedBareCommandPreview })
+    expect(result).toEqual({ paneId: "w40:p7", commandPreview: automatedBareCommandPreview, status: "launched" })
     runner.expectComplete()
   })
 
@@ -683,6 +758,20 @@ describe("current workspace handoff", () => {
 })
 
 describe("direct pane prompt delivery", () => {
+  it("returns a manual-needed outcome immediately after starting, without polling or terminal injection", async () => {
+    const { profile, candidate } = goalTransportFixture()
+    const built = buildHerdrGuideLaunch(profile, candidate.prompt, candidate.goalExecution)
+    const preview = "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx superpowers"
+    const runner = new FakeRunner([{ executable: "herdr", args: ["pane", "run", "w1:p2", preview] }])
+    const phases: string[] = []
+    await expect(launchInHerdrPaneAndPrompt(runner, {
+      paneId: "w1:p2", cwd: "/repo", command: built.command, prompt: candidate.prompt,
+      promptDelivery: built.promptDelivery, promptTimeoutMs: 1000, onPhase: (phase) => phases.push(phase),
+    })).resolves.toEqual({ paneId: "w1:p2", commandPreview: preview, status: "needs-input" })
+    expect(phases).toEqual(["starting"])
+    runner.expectComplete()
+  })
+
   it("maps Herdr blocked and timeout prompt failures", async () => {
     const blockedRunner = new FakeRunner([
       {
@@ -1071,6 +1160,7 @@ describe("worktree Herdr helpers", () => {
       checkoutPath: "/actual/worktree-created",
       paneId: "wD3:p1",
       commandPreview: automatedBareCommandPreview,
+      status: "launched",
     })
     expect(createRunner.calls[2]?.options?.cwd).toBe("/actual/worktree-created")
     expect(createRunner.calls[4]?.options?.cwd).toBe("/actual/worktree-created")
@@ -1128,6 +1218,7 @@ describe("worktree Herdr helpers", () => {
       checkoutPath: "/actual/worktree-opened",
       paneId: "wD4:p1",
       commandPreview: automatedBareCommandPreview,
+      status: "launched",
     })
     expect(openRunner.calls[1]?.options?.cwd).toBe("/actual/worktree-opened")
     expect(openRunner.calls[3]?.options?.cwd).toBe("/actual/worktree-opened")

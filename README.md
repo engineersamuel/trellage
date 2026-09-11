@@ -1012,11 +1012,14 @@ manage it from `prototypes/trellage-jcode-profiles`.
 Bare `trx` remains the fast, model-free profile search. `trx guide` is a
 separate Ink flow that matches an intent across both Trellage Native and
 Trellage Sandbox profiles, compares five recommendations, and creates three
-editable prompt candidates. By default, matching, Prompt Master optimization,
+editable prompt candidates. An approved goal instead gets one to five
+compatible recommendations and three editable execution approaches.
+By default, matching, Prompt Master optimization,
 and refinement use `gpt-5.6-sol` with medium reasoning; candidate drafting uses
-`gpt-5.6-luna` with medium reasoning. `--model` forces one model across every
-model-backed phase, while `--effort` applies one effort level across the phase
-route. Intent input accepts up to 60,000 characters:
+`gpt-5.6-luna` with medium reasoning. `--model` forces one model across these
+guide phases, while `--effort` applies one effort level across their routes.
+Neither override changes the Goal-me interview model. Intent input accepts
+up to 60,000 characters:
 
 ```bash
 trx guide --intent "Turn a technical outline into a LinkedIn post"
@@ -1054,9 +1057,13 @@ page (`p`) or after a failed match.
   signatures with comments removed. Only when the narrowest scope is still too
   large does it fail, and it then names `repomix.config.json` and running from a
   single package directory as the fix.
+- **Goal me** runs the installed `goal-me` skill in one Copilot SDK session.
+  Questions stay inside the guide. Select an answer or type your own, then
+  continue until the task and success criteria are clear. The completed goal
+  appears for explicit approval; no separate harness opens.
 
-Augmentation runs in the background. Choosing an augmenter gives the screen back
-at once and puts a one-line status bar above the tab bar:
+Research and Codebase run in the background. Choosing either gives the screen
+back at once and puts a one-line status bar above the tab bar:
 
 ```
 ⠋ Research · Reading the research note · p then a to watch
@@ -1076,7 +1083,7 @@ reading or what the research run is doing. The panel keeps the last few lines;
 it is progress, not a transcript. `Esc` leaves the watch screen and the run
 keeps going.
 
-When the run finishes it replaces the prompt itself, on the screen you started
+When Research or Codebase finishes it replaces the prompt itself, on the screen you started
 it from; enhancing the prompt is the point, so there is no approval step.
 Applying from the prompt page re-matches the profiles as soon as you leave that
 page with `Esc`.
@@ -1087,7 +1094,49 @@ draft belongs to the tab rather than to the main screen. Then the status bar
 reads ready and `p` then `a` takes it. A failed run offers `r` to retry.
 `x` on a running job stops the child process; so does quitting the guide.
 
-One augmentation runs at a time, because both rewrite the same prompt. Discard
+Goal me is an option in the existing menu: **`p` remains View prompt**, and
+**`a` remains Augment while viewing the prompt**. Select **Goal me** to open
+the interview. Arrow keys and Enter select an answer. Text answers support
+multiline paste; letters such as `q`, `a`, and `L` remain text in the answer
+editor. A question can restrict answers to its supplied choices.
+
+The question footer offers **`a` Accept all recommended answers**. This
+accepts the current and later choices marked `(Recommended)` or
+`(Recommended: reason)` in the same interview. Questions without exactly one
+marked recommendation still wait for your answer; the guide does not guess.
+Press `a` where **Stop automatic answers** is shown to return to manual
+answers. In text editors, `a` remains text. The setting survives parking and
+retry, but discard or a new interview clears it.
+
+Review the full goal as Markdown. Select **Use goal** to approve it, or
+**Revise** to give feedback in the same conversation. Only an approved goal
+replaces the prompt; automatic answers never approve it. If the source prompt
+changed while the interview was open, the guide requires a separate
+replacement decision. Existing queued
+jobs keep their own prompts.
+Unlike standalone `/goal-me`, this embedded interview returns goal text to the
+prompt editor: it writes no goal file and does not execute the goal loop.
+Approval also keeps the structured goal for the later recommendation and
+execution steps.
+
+`Esc` returns to the prompt without losing the interview or typed answer.
+`a` reopens it. Time spent answering does not count against the model's
+active-work timeout. Each completed answer (manual or automatic) or revision
+starts a new model round with a fresh three-minute limit. A long interview
+does not share one three-minute budget; a stalled round still times out.
+Discarding the interview or exiting the guide cancels
+pending questions without sending an answer. On failure, the guide keeps the
+source, completed answers, and last goal draft in memory; `r` starts an
+explicit retry with that context. Discard or exit clears it.
+
+Goal me always uses `gpt-6-astra` with `max` effort. The guide's general
+`--model` and `--effort` overrides do not change this interview model.
+Other guide phases keep their existing model routes. The skill loads only
+when selected, through the shared Native skill cache. If it is missing, run
+`trx skills update` and retry. Normal guide startup and the other augmenters
+do not require goal-me.
+
+One augmentation runs at a time, because all rewrite the same prompt. Discard
 the current one before you start another.
 
 The research note stays on disk at
@@ -1097,6 +1146,85 @@ committed. Researching the same intent twice resumes that same note rather than
 writing a second one, and the augmenter takes the resumed note. A run that
 writes nothing at all fails, and the failure quotes the run's own closing words
 and its last output so you can see why.
+
+#### Goal-aware recommendations and execution
+
+After **Use goal**, recommendations use the approved artifact, task, and
+success criteria. The screen shows **Goal: N approved criteria** and the
+selected controller. Only profiles with a compatible declared goal policy
+can execute the goal. The guide can show fewer than five recommendations;
+it does not fill empty places with ordinary prompt workflows.
+
+The profile's declared policy selects one controller:
+
+| Supported profile | Controller and delivery |
+| --- | --- |
+| Native Codex, including Superpowers | Native `/goal`; start the interactive profile, then use its command input as described below |
+| Supported Native Claude (`cldx default`) in this terminal | Native `/goal` through the launcher's documented `-p` prompt mode |
+| Sandbox Claude in prompt mode | Native `/goal` through the runtime's Claude `-p` path |
+| Native Claude in interactive Herdr | Native `/goal` with explicit manual command input; the session stays interactive |
+| Sandbox Claude Graph of Loops | The authored `/graph-of-loops` workflow; `trellage-graph` remains the only completion authority |
+
+Workflow discipline such as Superpowers TDD does not replace a declared goal
+controller. Every native-goal candidate has one explicit `/goal` frame.
+Graph candidates use `/graph-of-loops` without an outer `/goal`. The installed
+`goal-me` skill authors goals; it is not invoked again to execute an approved
+goal. The guide does not invent a `$goal` skill.
+
+All three candidates retain the exact approved task and criteria, with a
+minimum score of 8 on every criterion. They differ only in approach. The
+selected controller owns progress, continuation, and completion. The original
+Goal-me document stays available for review, but its generic LOOP PROTOCOL,
+SCOREBOARD, and progress-file rule do not become a second execution protocol.
+Graph keeps its existing review, proof, integration, and delivery gates.
+
+**Edit approach (goal fixed)** changes only the candidate's approach.
+The queued-job editor has the same restriction. Each fork and queued job
+keeps its own goal, controller, and approach; a later main goal cannot change
+an older job.
+
+If you change an approved main prompt, or replace it with Research or Codebase
+output, **Review goal changes** requires an explicit decision:
+`g` revises and reapproves a goal through Goal me; `n` uses the changed text as
+a normal prompt; `b` or `Esc` keeps the approved goal. Unchanged or cancelled
+edits keep the goal. A pinned workflow without a supported controller also
+requires a choice. Its `n` option opens an ordinary reference fork without
+changing the main goal or queued jobs; `b` or `Esc` returns to recommendations.
+
+**Native Codex does not activate `/goal` from a startup argument.** Trellage
+starts the selected interactive `cdx` profile without a goal prompt argument.
+In that session, type `/goal `, paste the supplied condition body after the
+space, then submit it. Do not rely on pasting a large slash-command block:
+Codex can replace large pastes with composer placeholders. Interactive Claude
+Herdr sessions also require explicit native command input. These jobs are
+marked as needing input, and their full condition and destination remain
+available in the handoff output. A started session is not proof of goal
+activation or completion.
+
+The approved document can contain up to 60,000 characters. The composed goal
+prompt has a separate 96,000-character limit. An approach can contain up to
+8,000 characters, except that Claude's complete `/goal` condition must fit
+within 4,000 characters, excluding the command prefix. The guide reduces only
+the approach budget. If the fixed goal and workflow cannot fit, choose another
+controller; the guide does not shorten the task or criteria. Manual paste does
+not remove Claude's condition limit. Prompt arguments also have a separate
+UTF-8 byte limit.
+
+Read-only readiness must confirm runtime support and settings before dispatch.
+Native `/goal` checks require stable Codex 0.153.4 or later with `goals`
+enabled, or Claude 2.1.139 or later. Codex uses
+`cdx inventory PROFILE --goal-features` to include the same project
+configuration as a launch. Older launchers without this probe or Claude goal
+runtime metadata report unknown readiness; refresh those launchers separately.
+
+If evidence is missing or a policy blocks the goal, the guide reports the
+reason and leaves it unlaunched. A supported transport form alone does not
+prove readiness, including for a Sandbox whose doctor output lacks goal
+runtime evidence. Disabled Codex goals, missing Claude
+workspace trust, or prohibited hooks must not be treated as successful goal
+activation. Trellage does not change those policies or create project goal
+files such as `.trellage/GOAL-xxxx.md`. Codex can store large goal input in its
+own native state. Existing guide model artifacts are not goal progress files.
 
 `trx guide --preview` renders the staged prompt basket composer overlay from
 fixture data. The preview is fixture-only: it makes no model call, reads no
@@ -1156,11 +1284,12 @@ declared skill keep the generated prompt unchanged.
 The guide shows the exact command and asks for confirmation before it starts a
 profile, creates a Herdr pane, or creates a Herdr worktree. A profile receives
 `-p` only when its published headless contract supports prompt input. For
-Copilot (`cpx`) and Codex (`cdx`) Herdr handoffs, the guide queues the prompt in
-the initial harness command. The harness keeps that prompt while you answer
+ordinary Copilot (`cpx`) and Codex (`cdx`) Herdr handoffs, the guide queues the
+prompt in the initial harness command. The harness keeps that prompt while you answer
 Copilot workspace-trust or Codex hook-trust requests; the guide does not
 approve trust automatically. Other Herdr profiles receive the prompt through
-the Herdr agent API after the agent is idle.
+the Herdr agent API after the agent is idle. Goal handoffs use the separate
+controller and native-input rules above.
 
 Agent Skills can use the side-effect-free JSON API:
 
@@ -1175,14 +1304,25 @@ printf '%s' \
 
 JSON mode does not require a TTY and never launches a profile or changes
 Herdr. The stdin object accepts `schemaVersion`, `intent`, and optional
-`profile`, `model`, and `effort` fields. Match responses contain
-`phase: "match"` and exactly three enriched `recommendations`. Generation
-responses contain `phase: "generation"`, the selected `profile`, and exactly
-three prompt `candidates` with path-free command previews. Interactive model
+`profile`, `model`, `effort`, `goal`, and `workflowId` fields. Structured goal
+mode is explicit: `goal` contains `artifact`, `task`, and a `criteria` array;
+`intent` retains the original document. The caller supplies this contract;
+the API does not run or claim a Goal-me approval. A `workflowId` requires a
+selected profile, supplied in JSON or through `--profile`.
+
+Match responses contain `phase: "match"` and enriched `recommendations`.
+Ordinary matching returns five recommendations. Goal matching returns one to
+five compatible recommendations, or reports why none can execute the goal.
+Generation responses contain `phase: "generation"`, the selected `profile`, and exactly
+three prompt `candidates` with path-free command previews. Goal candidates
+retain the chosen workflow, protected objective, controller, and delivery
+requirements. Manual `goalTransport` data includes the exact native-input
+instructions; JSON mode does not execute them. Interactive model
 failures can be retried or replaced with deterministic literal/template
-fallbacks. Model sessions have no tools, repository attachments, file
-tracking, skill loading, or persistent history. Guide content and user intent
-are sent only to the selected Copilot model.
+fallbacks. Matching and candidate drafting have no tools, repository
+attachments, file tracking, or persistent history. Prompt optimization loads
+only the configured Prompt Master skill. Guide content and the execution
+objective are sent only to the selected Copilot model.
 
 The native `prx` launcher runs Prime Agent against `copilot-proxy-rs`, pinning
 the provider and model to `copilot-proxy-rs` and `claude-opus-5` (Anthropic

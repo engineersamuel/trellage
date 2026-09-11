@@ -6,6 +6,7 @@ import {
   launchInHerdrPaneAndPrompt,
   openHerdrWorktree,
   parseSelectedProfile,
+  sameGuideCommand,
   splitHerdrPane,
   type CommandRunner,
   type CommandSpec,
@@ -14,7 +15,10 @@ import {
   type HerdrSplitDirection,
   type SelectedProfile,
 } from "./guide-launch.js"
-import { checkSelectedProfileReadiness, ProfileReadinessKind } from "./guide-preflight.js"
+import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "./guide-preflight.js"
+import { composeGuideGoalCandidate, guideGoalPromptMaximumLength, type GuideGoalCandidateContext } from "./guide-goal-execution.js"
+import { freezeGuideGoalCandidateContext, guideGoalInputInstructions } from "./guide-goal-transport.js"
+import { GuideGoalError } from "./guide-goal-augment.js"
 
 const startupTimeoutMs = 60_000
 const promptTimeoutMs = 60_000
@@ -39,6 +43,7 @@ export interface QueuedGuideJob {
   readonly promptDelivery: HerdrPromptDeliveryMode
   readonly placement: JobPlacement
   readonly privatePrompt?: boolean
+  readonly goalExecution?: GuideGoalCandidateContext
 }
 
 export interface GuideQueueState {
@@ -65,16 +70,26 @@ export interface GuideBatch {
   readonly context: GuideBatchContext
 }
 
+interface GuideBatchStartedEntry {
+  readonly job: QueuedGuideJob
+  readonly paneId: string
+  readonly workspaceId: string
+  readonly cwd: string
+}
+
 export type GuideBatchEntryResult =
+  | (GuideBatchStartedEntry & { readonly status: "launched" })
+  | (GuideBatchStartedEntry & { readonly status: "needs-input" })
+  | { readonly job: QueuedGuideJob; readonly status: "invalid"; readonly stage: "validation"; readonly message: string }
   | {
       readonly job: QueuedGuideJob
-      readonly status: "launched"
-      readonly paneId: string
-      readonly workspaceId: string
-      readonly cwd: string
+      readonly status: "not-ready"
+      readonly stage: "readiness"
+      readonly message: string
+      readonly paneId?: string
+      readonly workspaceId?: string
+      readonly cwd?: string
     }
-  | { readonly job: QueuedGuideJob; readonly status: "invalid"; readonly stage: "validation"; readonly message: string }
-  | { readonly job: QueuedGuideJob; readonly status: "not-ready"; readonly stage: "readiness"; readonly message: string }
   | {
       readonly job: QueuedGuideJob
       readonly status: "workspace-create-failed"
@@ -92,6 +107,8 @@ export type GuideBatchEntryResult =
       readonly status: "launch-failed"
       readonly stage: "launch"
       readonly paneId: string
+      readonly workspaceId?: string
+      readonly cwd?: string
       readonly message: string
     }
 
@@ -100,7 +117,7 @@ export interface GuideBatchExecutionResult {
 }
 
 /** One step of one queued job, so a caller can narrate the launch while it runs. */
-export type GuideBatchPhase = "checking" | "allocating" | "starting" | "waiting" | "prompting" | "done" | "failed"
+export type GuideBatchPhase = "checking" | "allocating" | "starting" | "waiting" | "prompting" | "done" | "needs-input" | "failed"
 
 export interface GuideBatchProgressEvent {
   readonly jobId: number
@@ -122,6 +139,7 @@ export interface GuideBatchExecutionServices {
   ) => Promise<void>
   readonly onResult?: (entry: GuideBatchEntryResult) => Promise<void>
   readonly launchPrivate?: typeof launchInHerdrPaneAndPrompt
+  readonly checkReadiness?: typeof checkSelectedProfileReadiness
 }
 
 export const emptyGuideQueue = (): GuideQueueState => ({ entries: [], nextId: 1, selectedIndex: 0 })
@@ -131,9 +149,20 @@ export const createQueuedGuideJob = (
   profile: SelectedProfile,
   prompt: string,
   placement: JobPlacement,
+  goalExecution?: GuideGoalCandidateContext,
 ): QueuedGuideJob => {
-  const built = buildHerdrGuideLaunch(profile, prompt)
-  return { id, profile, prompt, command: built.command, promptDelivery: built.promptDelivery, placement }
+  const selected = Object.freeze(parseSelectedProfile(profile))
+  const frozenGoal = goalExecution === undefined ? undefined : freezeGuideGoalCandidateContext(goalExecution)
+  const built = buildHerdrGuideLaunch(selected, prompt, frozenGoal)
+  return Object.freeze({
+    id,
+    profile: selected,
+    prompt,
+    command: Object.freeze({ ...built.command, args: Object.freeze([...built.command.args]) }),
+    promptDelivery: built.promptDelivery,
+    placement: Object.freeze({ ...placement }),
+    ...(frozenGoal === undefined ? {} : { goalExecution: frozenGoal }),
+  })
 }
 
 export const enqueueGuideJob = (
@@ -141,8 +170,9 @@ export const enqueueGuideJob = (
   profile: SelectedProfile,
   prompt: string,
   placement: JobPlacement,
+  goalExecution?: GuideGoalCandidateContext,
 ): GuideQueueState => ({
-  entries: [...queue.entries, createQueuedGuideJob(queue.nextId, profile, prompt, placement)],
+  entries: [...queue.entries, createQueuedGuideJob(queue.nextId, profile, prompt, placement, goalExecution)],
   nextId: queue.nextId + 1,
   selectedIndex: queue.entries.length,
 })
@@ -157,8 +187,18 @@ export const startQueuedGuidePromptEdit = (queue: GuideQueueState): GuideQueueSt
   return selected === undefined ? queue : { ...queue, editingId: selected.id }
 }
 
-export const replaceQueuedGuideJobPrompt = (job: QueuedGuideJob, prompt: string): QueuedGuideJob =>
-  createQueuedGuideJob(job.id, job.profile, prompt, job.placement)
+export const replaceQueuedGuideJobPrompt = (
+  job: QueuedGuideJob,
+  prompt: string,
+  goalExecution: GuideGoalCandidateContext | undefined = job.goalExecution,
+): QueuedGuideJob => {
+  if (job.goalExecution !== undefined && JSON.stringify(goalExecution) !== JSON.stringify(job.goalExecution)) {
+    throw new GuideGoalError("Editing a queued approach cannot change its approved goal or controller.")
+  }
+  if (goalExecution === undefined) return createQueuedGuideJob(job.id, job.profile, prompt, job.placement)
+  const candidate = composeGuideGoalCandidate(goalExecution, { title: "Queued goal", prompt, notes: "" })
+  return createQueuedGuideJob(job.id, job.profile, candidate.prompt, job.placement, candidate.goalExecution)
+}
 
 export const submitQueuedGuidePromptEdit = (queue: GuideQueueState, prompt: string): GuideQueueState => {
   if (queue.editingId === undefined || prompt.trim().length === 0) return queue
@@ -194,13 +234,14 @@ export const replaceQueuedGuideJob = (
   profile: SelectedProfile,
   prompt: string,
   placement: JobPlacement,
+  goalExecution?: GuideGoalCandidateContext,
 ): GuideQueueState => {
   const index = queue.entries.findIndex((job) => job.id === id)
   return index < 0
     ? queue
     : {
         ...queue,
-        entries: queue.entries.map((job) => (job.id === id ? createQueuedGuideJob(id, profile, prompt, placement) : job)),
+        entries: queue.entries.map((job) => (job.id === id ? createQueuedGuideJob(id, profile, prompt, placement, goalExecution) : job)),
         selectedIndex: index,
       }
 }
@@ -230,19 +271,21 @@ const validatePlacement = (placement: JobPlacement): string | undefined => {
 const validateQueuedJob = (job: QueuedGuideJob): string | undefined => {
   if (!Number.isSafeInteger(job.id) || job.id < 1) return "Queue entry ID must be a positive integer."
   if (job.prompt.trim().length === 0) return "Queued prompt must not be empty."
-  if ([...job.prompt].length > 8000) return "Queued prompt exceeds 8000 characters."
+  const maximumLength = job.goalExecution === undefined ? 8000 : guideGoalPromptMaximumLength
+  if ([...job.prompt].length > maximumLength) return `Queued prompt exceeds ${maximumLength} characters.`
   const placementMessage = validatePlacement(job.placement)
   if (placementMessage !== undefined) return placementMessage
   try {
     const profile = parseSelectedProfile(job.profile)
+    if (job.privatePrompt && job.goalExecution !== undefined) {
+      return "Private prompt delivery does not support goal execution."
+    }
     const built = job.privatePrompt
       ? { command: buildGuideLaunchCommand(profile).command, promptDelivery: "agent" }
-      : buildHerdrGuideLaunch(profile, job.prompt)
+      : buildHerdrGuideLaunch(profile, job.prompt, job.goalExecution)
     if (
       built.promptDelivery !== job.promptDelivery ||
-      built.command.executable !== job.command.executable ||
-      built.command.args.length !== job.command.args.length ||
-      built.command.args.some((arg, index) => arg !== job.command.args[index])
+      !sameGuideCommand(built.command, job.command)
     ) {
       return "Queued command does not match its profile and prompt."
     }
@@ -376,9 +419,14 @@ const checkReadiness = async (
     structurallyValid.map(async (item) => {
       report(services, item.job.id, "checking", "Checking profile readiness")
       try {
+        const cwd = item.job.goalExecution !== undefined && item.job.placement.kind === "existing-worktree"
+          ? item.job.placement.path
+          : context.cwd
         return {
           item,
-          result: await checkSelectedProfileReadiness(services.runner, item.job.profile, context.cwd),
+          result: await (services.checkReadiness ?? checkSelectedProfileReadiness)(
+            services.runner, item.job.profile, cwd, undefined, item.job.goalExecution,
+          ),
         }
       } catch (error) {
         return { item, error }
@@ -407,23 +455,60 @@ const checkReadiness = async (
   return launchable
 }
 
+const writeStartedJob = (
+  entry: Extract<GuideBatchEntryResult, { readonly status: "launched" | "needs-input" }>,
+  write: (text: string) => void,
+): void => {
+  write(`${entry.job.id}. ${entry.job.profile.profile}: ${entry.status} in pane ${entry.paneId} · ${entry.cwd}\n`)
+  if (entry.status !== "needs-input") return
+  write(`Workspace: ${entry.workspaceId}. The goal has not been activated.\n`)
+  write(entry.job.goalExecution === undefined
+    ? `Selected prompt:\n\n${entry.job.prompt}\n`
+    : `${guideGoalInputInstructions(entry.job.goalExecution, entry.job.prompt)}\n`)
+}
+
+const writeFailedJob = (
+  entry: Exclude<GuideBatchEntryResult, { readonly status: "launched" | "needs-input" }>,
+  write: (text: string) => void,
+): void => {
+  write(`${entry.job.id}. ${entry.job.profile.profile} (${describeJobPlacement(entry.job.placement)}): ${entry.stage} failed: ${entry.message}\n`)
+  if ("paneId" in entry && entry.paneId !== undefined) {
+    write(`Allocated pane: ${entry.paneId}; workspace: ${entry.workspaceId ?? "unknown"}; directory: ${entry.cwd ?? "unknown"}.\n`)
+  }
+  if (entry.job.goalExecution !== undefined && entry.status !== "invalid") {
+    write(`Resolve the error before native input.\n${guideGoalInputInstructions(entry.job.goalExecution, entry.job.prompt)}\n`)
+  } else {
+    write(`Selected prompt:\n\n${entry.job.prompt}\n`)
+  }
+}
+
 /** Prints the per-entry outcome. The interactive guide prints this after Ink exits. */
 export const writeGuideBatchSummary = (result: GuideBatchExecutionResult, write: (text: string) => void): void => {
   write(`Batch launch summary: ${result.entries.length} job${result.entries.length === 1 ? "" : "s"}\n`)
   for (const entry of result.entries) {
-    const identity = `${entry.job.id}. ${entry.job.profile.profile}`
-    if (entry.status === "launched") {
-      write(`${identity}: launched in pane ${entry.paneId} · ${entry.cwd}\n`)
-    } else {
-      write(
-        `${identity} (${describeJobPlacement(entry.job.placement)}): ${entry.stage} failed: ${entry.message}\nSelected prompt:\n\n${entry.job.prompt}\n`,
-      )
-    }
+    if (entry.status === "launched" || entry.status === "needs-input") writeStartedJob(entry, write)
+    else writeFailedJob(entry, write)
   }
 }
 
 export const guideBatchExitCode = (result: GuideBatchExecutionResult): number =>
-  result.entries.every((entry) => entry.status === "launched") ? 0 : 1
+  result.entries.some((entry) => entry.status !== "launched" && entry.status !== "needs-input")
+    ? 1
+    : result.entries.some((entry) => entry.status === "needs-input") ? 2 : 0
+
+const checkAllocatedGoalReadiness = async (
+  services: GuideBatchExecutionServices,
+  job: QueuedGuideJob,
+  cwd: string,
+): Promise<void> => {
+  if (job.goalExecution === undefined) return
+  const readiness = await (services.checkReadiness ?? checkSelectedProfileReadiness)(
+    services.runner, job.profile, cwd, undefined, job.goalExecution,
+  )
+  if (readiness.kind === ProfileReadinessKind.Blocked) {
+    throw new ProfilePreflightError(`${readiness.summary}. ${readiness.diagnostic}`)
+  }
+}
 
 export const executeGuideBatch = async (
   batch: GuideBatch,
@@ -466,6 +551,9 @@ export const executeGuideBatch = async (
         promptDelivery: item.job.promptDelivery,
         timeoutMs: startupTimeoutMs,
         promptTimeoutMs,
+        ...(item.job.goalExecution === undefined ? {} : {
+          beforeLaunch: (cwd: string) => checkAllocatedGoalReadiness(services, item.job, cwd),
+        }),
         onPhase: (phase) => report(services, item.job.id, phase, launchPhaseDetail[phase]),
       }),
     ),
@@ -474,23 +562,27 @@ export const executeGuideBatch = async (
     const item = allocated[launchIndex]
     if (item === undefined) return
     if (launch.status === "fulfilled") {
+      const status = launch.value.status === "needs-input" || item.job.promptDelivery === "manual" ? "needs-input" : "launched"
       entries[item.index] = {
         job: item.job,
-        status: "launched",
+        status,
         paneId: item.paneId,
         workspaceId: item.workspaceId,
         cwd: item.cwd,
       }
-      report(services, item.job.id, "done", `Launched in pane ${item.paneId}`)
+      report(
+        services, item.job.id, status === "needs-input" ? "needs-input" : "done",
+        `${status === "needs-input" ? "Needs input" : "Launched"} in pane ${item.paneId}`,
+      )
       return
     }
     const message = describeError(launch.reason)
     entries[item.index] = {
       job: item.job,
-      status: "launch-failed",
-      stage: "launch",
-      paneId: item.paneId,
-      message,
+      ...(launch.reason instanceof ProfilePreflightError
+        ? { status: "not-ready" as const, stage: "readiness" as const }
+        : { status: "launch-failed" as const, stage: "launch" as const }),
+      paneId: item.paneId, workspaceId: item.workspaceId, cwd: item.cwd, message,
     }
     report(services, item.job.id, "failed", message)
   })

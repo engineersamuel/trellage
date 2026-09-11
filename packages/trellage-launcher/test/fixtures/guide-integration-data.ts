@@ -1,4 +1,6 @@
+import type { ProfileGuideV1 } from "../../../trellage-guide-core/dist/index.js"
 import type { NativeSelectedProfile, CommandSpec } from "../../src/guide-launch.js"
+import type { PreparedGuideGoal } from "../../src/guide-goal-execution.js"
 import type {
   GuideEnrichInput,
   GuideGenerateCandidate,
@@ -6,12 +8,18 @@ import type {
   GuideOptimizeInput,
 } from "../../src/guide-provider.js"
 import type { GuideUiResult } from "../../src/guide-ui.js"
+import type { GuideGoalAnswer, GuideGoalProposal, GuideGoalReviewDecision } from "../../src/guide-goal-augment.js"
 
 export enum FixtureMode {
   Terminal = "terminal",
   Herdr = "herdr",
   DirtyWorktree = "dirty-worktree",
   ExistingWorktree = "existing-worktree",
+  GoalFailure = "goal-failure",
+  GoalLongQuestion = "goal-long-question",
+  GoalRecommended = "goal-recommended",
+  GoalReapproval = "goal-reapproval",
+  GoalGraph = "goal-graph",
 }
 
 export type FixtureProfileId =
@@ -23,6 +31,7 @@ export type FixtureProfileId =
   | "council"
   | "research"
   | "hve"
+  | "graph"
 
 export type FixtureProfile = {
   readonly id: FixtureProfileId
@@ -34,6 +43,7 @@ export type FixtureProfile = {
   readonly afterBody: string
   readonly skill?: string
   readonly key?: string
+  readonly goalExecution?: ProfileGuideV1["goalExecution"]
 } & (
   | { readonly surface: "native"; readonly launcher: NativeSelectedProfile["launcher"]; readonly agent?: string }
   | { readonly surface: "sandbox" }
@@ -50,6 +60,7 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     workflowId: "review",
     beforeBody: "",
     afterBody: "",
+    goalExecution: { controller: "codex-goal", workflowIds: ["review"] },
   },
   {
     id: "reviewer",
@@ -64,14 +75,15 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
   {
     id: "writer",
-    ref: "native:cldx/writer",
+    ref: "native:cldx/default",
     surface: "native",
     launcher: "cldx",
-    name: "writer",
+    name: "default",
     harness: "claude",
     workflowId: "review",
     beforeBody: "",
     afterBody: "",
+    goalExecution: { controller: "claude-goal", workflowIds: ["review"] },
   },
   {
     id: "builder",
@@ -133,6 +145,22 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
 ]
 
+const graphFixture: FixtureProfile = {
+  id: "graph",
+  ref: "sandbox:claude-graph-of-loops",
+  surface: "sandbox",
+  name: "claude-graph-of-loops",
+  harness: "claude",
+  workflowId: "start-goal",
+  skill: "graph-of-loops",
+  beforeBody: '/graph-of-loops OBJECTIVE="',
+  afterBody: '" CONSTRAINTS="Keep trellage-graph as the only completion authority. Require its review, proof, integration, and delivery gates."',
+  goalExecution: { controller: "graph-of-loops", workflowIds: ["start-goal"] },
+}
+
+export const fixtureProfilesForMode = (mode: FixtureMode): ReadonlyArray<FixtureProfile> =>
+  mode === FixtureMode.GoalGraph ? [...fixtureProfiles, graphFixture] : fixtureProfiles
+
 export const recommendationIds: ReadonlyArray<FixtureProfileId> = [
   "planner",
   "reviewer",
@@ -140,6 +168,7 @@ export const recommendationIds: ReadonlyArray<FixtureProfileId> = [
   "builder",
   "sandbox",
 ]
+export const goalRecommendationIds: ReadonlyArray<FixtureProfileId> = ["planner", "writer", "graph"]
 export const pinnedIds: ReadonlyArray<FixtureProfileId> = ["council", "research", "hve"]
 export const candidateTitles = ["Focused", "Thorough", "Minimal"] as const
 export const fixtureIntent = "Review the 'login flow' for regressions."
@@ -148,6 +177,7 @@ export const fixtureHead = "1234567890abcdef1234567890abcdef12345678"
 export const repositoryPack = "# Repository\n\nsrc/login.ts checks token expiry before refresh.\n"
 
 export const fixtureProfile = (id: FixtureProfileId): FixtureProfile => {
+  if (id === "graph") return graphFixture
   const profile = fixtureProfiles.find((entry) => entry.id === id)
   if (profile === undefined) throw new Error(`Unknown fixture profile: ${id}`)
   return profile
@@ -160,6 +190,7 @@ export const guideSource = (profile: FixtureProfile): string => {
     bestFor: ["Reviewing changes", "Tracing regressions"],
     avoidFor: ["Unrelated writing", "Long-running jobs"],
     prerequisites: [],
+    ...(profile.goalExecution === undefined ? {} : { goalExecution: profile.goalExecution }),
     workflows: [
       {
         id: profile.workflowId,
@@ -183,6 +214,13 @@ export const generatedCandidates = (profile: FixtureProfile, intent: string): Re
     }
   })
 
+export const generatedGoalApproaches = (profile: FixtureProfile): ReadonlyArray<GuideGenerateCandidate> =>
+  candidateTitles.map((title) => ({
+    title,
+    prompt: `Profile: ${profile.ref}\nApproach: ${title.toLowerCase()}.`,
+    notes: `${title} review`,
+  }))
+
 export const researchIntent = (intent: string): string =>
   `${intent}\nEvidence: cover expired tokens and repeated requests.`
 
@@ -197,15 +235,31 @@ export interface RecordedCommand {
 
 export type FixtureEvent =
   | { readonly kind: "input"; readonly input: string }
+  | { readonly kind: "goal-start"; readonly sessionId: number; readonly intent: string; readonly previousTurns: number }
+  | { readonly kind: "goal-answer"; readonly sessionId: number; readonly question: string; readonly answer: GuideGoalAnswer }
+  | { readonly kind: "goal-proposal"; readonly sessionId: number; readonly proposal: GuideGoalProposal }
+  | { readonly kind: "goal-review"; readonly sessionId: number; readonly review: GuideGoalReviewDecision }
+  | { readonly kind: "goal-stop"; readonly sessionId: number; readonly cancelled: boolean }
+  | {
+      readonly kind: "goal-readiness"
+      readonly operation: "read-json" | "realpath" | "read-directory" | "local-settings"
+      readonly path: string
+    }
+  | {
+      readonly kind: "goal-model-input"
+      readonly phase: "match" | "generate" | "optimize"
+      readonly input: Readonly<Record<string, unknown>>
+    }
   | {
       readonly kind: "match"
       readonly intent: string
+      readonly goal?: PreparedGuideGoal
       readonly profileRefs: ReadonlyArray<string>
       readonly recommendations: ReadonlyArray<string>
     }
   | {
       readonly kind: "generate"
-      readonly input: Pick<GuideGenerateInput, "intent" | "profileRef" | "workflowId">
+      readonly input: Pick<GuideGenerateInput, "intent" | "profileRef" | "workflowId" | "goal">
       readonly candidates: ReadonlyArray<GuideGenerateCandidate>
     }
   | {

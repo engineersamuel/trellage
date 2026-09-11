@@ -13,6 +13,16 @@ import {
   type GuideModelSession,
 } from "../src/copilot-guide-provider.js"
 import type { GuideMatchCatalogEntry } from "../src/guide-catalog.js"
+import {
+  composeGuideGoalCandidate,
+  guideGoalApproachBudget,
+  prepareGuideGoal,
+  resolveGuideGoalExecution,
+  type PreparedGuideGoal,
+} from "../src/guide-goal-execution.js"
+import { validateGuideGenerateResult } from "../src/guide-provider.js"
+import { record } from "../src/guide-text.js"
+import { goalDraft } from "./fixtures/goal-me-skill.js"
 import type {
   GuideGenerateInput,
   GuideMatchInput,
@@ -241,6 +251,29 @@ const optimizeInput: GuideOptimizeInput = {
     beforeBody: "/ce-compound mode:non-interactive ",
     afterBody: "",
   },
+}
+
+const goalGenerateInput = (
+  controller: "codex-goal" | "claude-goal" = "codex-goal",
+  task = goalDraft.task,
+): GuideGenerateInput & { readonly goal: PreparedGuideGoal } => ({
+  ...generateInput,
+  profileRef: controller === "codex-goal" ? "native:cdx/pstack" : "native:cldx/default",
+  goal: prepareGuideGoal({
+    draft: { ...goalDraft, task },
+    prompt: "Original authoring document. SCOREBOARD and LOOP PROTOCOL remain review text.",
+  }),
+  guide: {
+    ...generateInput.guide,
+    goalExecution: { controller, workflowIds: ["review"] },
+    workflows: [{ ...generateInput.guide.workflows[0]!, promptTemplate: "Use the trusted review discipline for {{intent}}." }],
+  },
+})
+
+const sentPayload = (client: FakeClient): Record<string, unknown> => {
+  const source = client.session?.prompts[0]?.match(/<untrusted-data>\n([\s\S]+)\n<\/untrusted-data>/u)?.[1]
+  if (source === undefined) throw new Error("The fake session received no model input.")
+  return record(JSON.parse(source), "model input")
 }
 
 describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
@@ -507,6 +540,102 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     await provider.generate(generateInput)
 
     expect(client.createSessionCalls[0]).toMatchObject({ model: "custom-model", reasoningEffort: "high" })
+  })
+})
+
+describe("CopilotGuideProvider goal boundaries", () => {
+  it("ranks a single eligible goal entry and repairs an unsupported model workflow", async () => {
+    const input = goalGenerateInput()
+    const candidate = {
+      profileRef: "native:cdx/pstack", workflowId: "review", confidence: 1,
+      reason: "Matches the approved objective.", tradeoff: "Requires a checkout.",
+    }
+    const client = new FakeClient([workingModel], [
+      message(JSON.stringify({ candidates: [{ ...candidate, workflowId: "unknown" }] })),
+      message(JSON.stringify({ candidates: [candidate] })),
+    ])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const result = await provider.match({
+      intent: input.goal.prompt,
+      goal: input.goal,
+      preferredProfileRefs: ["native:cdx/pstack"],
+      entries: [{ ...matchEntries[0]!, goalExecution: { controller: "codex-goal", workflowIds: ["review"] } }],
+    })
+    expect(result.candidates).toHaveLength(1)
+    expect(client.session?.prompts).toHaveLength(2)
+    expect(sentPayload(client).goal).toEqual({ ...input.goal.draft, minimumScore: 8 })
+    expect(sentPayload(client).intent).toBe(input.goal.draft.task)
+    expect(sentPayload(client).preferredProfileRefs).toEqual(["native:cdx/pstack"])
+    expect(client.session?.prompts[0]).not.toContain("LOOP PROTOCOL")
+  })
+
+  it("keeps host metadata out of generated results and projects only the protected objective", async () => {
+    const input = goalGenerateInput()
+    const bodies = validateGuideGenerateResult(JSON.parse(validGenerateResponse))
+    const client = new FakeClient([lunaModel], [
+      message(JSON.stringify({ candidates: bodies.candidates.map((candidate) => ({ ...candidate, goalExecution: { controller: "invented" } })) })),
+      message(validGenerateResponse),
+    ])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    const result = await provider.generate(input)
+    expect(result).toEqual(bodies)
+    expect(client.session?.prompts).toHaveLength(2)
+    expect(sentPayload(client)).toMatchObject({
+      goal: { ...input.goal.draft, minimumScore: 8 },
+      goalController: "codex-goal",
+      approachMaximumLength: 8000,
+      fixedFrame: { beforeBody: "Use the trusted review discipline for ", afterBody: "." },
+    })
+    expect(client.session?.prompts[0]).not.toContain(input.goal.prompt)
+  })
+
+  it("sends only a stored approach when refining a long composed candidate", async () => {
+    const input = goalGenerateInput("codex-goal", `Inspect this evidence:\n${"finding\n".repeat(2000)}`)
+    const body = validateGuideGenerateResult(JSON.parse(validGenerateResponse)).candidates[0]!
+    const candidate = composeGuideGoalCandidate(resolveGuideGoalExecution(input.goal, input.guide, input.workflowId), body)
+    expect([...candidate.prompt].length).toBeGreaterThan(8000)
+    const client = new FakeClient([workingModel], [message(validRefineResponse)])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    await provider.refine({ ...input, candidate, feedback: "Use direct evidence." })
+    expect(sentPayload(client).candidate).toEqual(body)
+    expect(sentPayload(client).goal).toEqual({ ...input.goal.draft, minimumScore: 8 })
+    expect(client.session?.prompts[0]).not.toContain(input.goal.prompt)
+  })
+
+  it("repairs a Claude approach that exceeds the remaining condition budget", async () => {
+    const input = goalGenerateInput("claude-goal")
+    const execution = resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
+    const budget = guideGoalApproachBudget(execution)
+    const bodies = validateGuideGenerateResult(JSON.parse(validGenerateResponse))
+    const oversized = { candidates: bodies.candidates.map((candidate, index) => ({ ...candidate, prompt: `${index}${"x".repeat(budget)}` })) }
+    const client = new FakeClient([lunaModel], [message(JSON.stringify(oversized)), message(validGenerateResponse)])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    expect(await provider.generate(input)).toEqual(bodies)
+    expect(sentPayload(client).approachMaximumLength).toBe(budget)
+    expect(client.session?.prompts[1]).toContain(`at most ${budget} characters`)
+  })
+
+  it("gives Prompt Master bounded bodies and a protected objective without another protocol", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-goal-prompt-master-test-"))
+    try {
+      await writeFile(path.join(root, "SKILL.md"), "---\nname: prompt-master\n---\n")
+      const input = goalGenerateInput()
+      const execution = resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
+      const bodies = validateGuideGenerateResult(JSON.parse(validGenerateResponse))
+      const client = new FakeClient([workingModel], [message(validGenerateResponse)])
+      const provider = new CopilotGuideProvider({ prompts, promptMasterSkillDirectory: root, clientFactory: () => client })
+      await provider.optimize({
+        targetTool: "codex", profileRef: input.profileRef,
+        candidates: bodies.candidates, goal: input.goal, goalExecution: execution,
+      })
+      expect(sentPayload(client).candidates).toEqual(bodies.candidates)
+      expect(sentPayload(client).goal).toEqual({ ...input.goal.draft, minimumScore: 8 })
+      expect(sentPayload(client).goalController).toBe("codex-goal")
+      expect(sentPayload(client)).not.toHaveProperty("goalExecution")
+      expect(client.session?.prompts[0]).not.toContain(input.goal.prompt)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 

@@ -1,5 +1,18 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: claude-goal
+  workflowIds:
+    - voice-builder
+    - post-writer
+    - post-scorer
+    - gemini-carousel
+    - niche-research
+    - content-matrix
+    - reels-scripting
+    - youtube-thumbnail
+    - pinned-comment
+    - humanize-draft
 capabilities:
 - voice-profile-building
 - linkedin-post-drafting

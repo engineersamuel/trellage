@@ -23,6 +23,10 @@ const flexibleWhitespacePattern = (value: string): string =>
 
 type GuideWorkflowModelStage = "generation" | "refinement" | "optimization"
 
+export interface GuideWorkflowBodyOptions {
+  readonly bodyOnly?: boolean
+}
+
 export class GuideWorkflowBodyError extends Error {
   readonly stage: GuideWorkflowModelStage
   readonly workflowId: string
@@ -137,14 +141,15 @@ const workflowBodyText = (workflow: ProfileGuideWorkflow, prompt: string): strin
   exactFramedBody(workflowPromptFrame(workflow), prompt) ?? prompt
 
 /**
- * Returns the body carried by a skill-workflow candidate. An exact authored
- * frame is removed. Any other text is a direct body edit and stays intact.
+ * Returns a skill-workflow body, or any workflow body when explicitly requested
+ * for goal composition. Only an exact authored frame is removed.
  */
 export const workflowBodyCandidate = (
   workflow: ProfileGuideWorkflow,
   candidate: GuideGenerateCandidate,
+  options: GuideWorkflowBodyOptions = {},
 ): GuideGenerateCandidate => {
-  if (workflow.skill === undefined) return candidate
+  if (!(options.bodyOnly ?? workflow.skill !== undefined)) return candidate
   return exactWorkflowBodyCandidate(workflow, candidate) ?? candidate
 }
 
@@ -732,7 +737,6 @@ const modelWorkflowBodyCandidate = (
   authorizedBody: string,
   candidate: GuideGenerateCandidate,
 ): GuideGenerateCandidate => {
-  if (workflow.skill === undefined) return candidate
   const frame = workflowPromptFrame(workflow)
   const invocation = selectedWorkflowInvocation(workflow)
   const normalizeRemainder = (bodyCandidate: GuideGenerateCandidate): GuideGenerateCandidate =>
@@ -744,7 +748,7 @@ const modelWorkflowBodyCandidate = (
       authorizedBody,
       bodyCandidate,
     )
-  const bodyCandidate = workflowBodyCandidate(workflow, candidate)
+  const bodyCandidate = workflowBodyCandidate(workflow, candidate, { bodyOnly: true })
   if (bodyCandidate !== candidate) return normalizeRemainder(bodyCandidate)
 
   const fullFrameBody = flexibleFramedBody(frame, candidate.prompt)
@@ -976,9 +980,9 @@ export const resolveWorkflowBodyCandidate = (
   workflow: ProfileGuideWorkflow,
   authorizedCandidate: GuideGenerateCandidate,
   proposedCandidate: GuideGenerateCandidate,
+  options: GuideWorkflowBodyOptions = {},
 ): GuideGenerateCandidate => {
-  const authorizedPromptCandidate =
-    workflow.skill === undefined ? authorizedCandidate : workflowBodyCandidate(workflow, authorizedCandidate)
+  const authorizedPromptCandidate = workflowBodyCandidate(workflow, authorizedCandidate, options)
   try {
     return resolveModelWorkflowBodyCandidate(
       guide,
@@ -986,6 +990,7 @@ export const resolveWorkflowBodyCandidate = (
       "optimization",
       authorizedPromptCandidate.prompt,
       proposedCandidate,
+      options,
     )
   } catch (cause) {
     if (cause instanceof GuideWorkflowBodyError) return authorizedPromptCandidate
@@ -999,8 +1004,9 @@ function resolveModelWorkflowBodyCandidate(
   stage: GuideWorkflowModelStage,
   authorizedPrompt: string,
   proposedCandidate: GuideGenerateCandidate,
+  options: GuideWorkflowBodyOptions = {},
 ): GuideGenerateCandidate {
-  const bodyOnly = workflow.skill !== undefined
+  const bodyOnly = options.bodyOnly ?? workflow.skill !== undefined
   const authorizedComparisonPrompt = bodyOnly
     ? workflowBodyText(workflow, authorizedPrompt)
     : authorizedPrompt
@@ -1031,15 +1037,17 @@ export const resolveGeneratedWorkflowBodyCandidate = (
   workflow: ProfileGuideWorkflow,
   intent: string,
   generatedCandidate: GuideGenerateCandidate,
+  options: GuideWorkflowBodyOptions = {},
 ): GuideGenerateCandidate =>
   resolveModelWorkflowBodyCandidate(
     guide,
     workflow,
     "generation",
-    workflow.skill === undefined
-      ? workflowAuthorizationPrompt(workflow, intent)
-      : workflowAuthorizationBody(workflow, intent),
+    (options.bodyOnly ?? workflow.skill !== undefined)
+      ? workflowAuthorizationBody(workflow, intent)
+      : workflowAuthorizationPrompt(workflow, intent),
     generatedCandidate,
+    options,
   )
 
 /** Normalizes and validates one model-refined body or complete prompt before optimization. */
@@ -1048,13 +1056,15 @@ export const resolveRefinedWorkflowBodyCandidate = (
   workflow: ProfileGuideWorkflow,
   authorizedCandidate: GuideGenerateCandidate,
   refinedCandidate: GuideGenerateCandidate,
+  options: GuideWorkflowBodyOptions = {},
 ): GuideGenerateCandidate =>
   resolveModelWorkflowBodyCandidate(
     guide,
     workflow,
     "refinement",
-    workflowBodyCandidate(workflow, authorizedCandidate).prompt,
+    workflowBodyCandidate(workflow, authorizedCandidate, options).prompt,
     refinedCandidate,
+    options,
   )
 
 /** Supplies Prompt Master with the fixed destination frame for skill bodies only. */

@@ -1,5 +1,10 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: claude-goal
+  workflowIds:
+    - rundown-status-and-handoff
+    - general-engineering-task
 capabilities:
   - claude-opus-5-proxy-routing
   - keyless-copilot-proxy-auth

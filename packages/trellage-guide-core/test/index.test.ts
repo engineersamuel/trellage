@@ -42,6 +42,16 @@ workflows:
 Use the profile for short public content.
 `
 
+const withGoalExecution = (policy: unknown, source = validGuide): string =>
+  source.replace("schemaVersion: 1\n", `schemaVersion: 1\ngoalExecution: ${JSON.stringify(policy)}\n`)
+
+const graphGuide = validGuide
+  .replace("skill: social-media-skills:post-writer", "skill: graph-of-loops")
+  .replace(
+    "/social-media-skills:post-writer {{intent}}",
+    '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Preserve the approved criteria and require evidence."',
+  )
+
 const temporaryRoots: string[] = []
 const temporaryRoot = async (): Promise<string> => {
   const root = await mkdtemp(path.join(tmpdir(), "trellage-guides-"))
@@ -158,6 +168,184 @@ describe("profile guide parser", () => {
     const custom = validGuide.replace("{{intent}}", "{{intent}} {{topic}}")
 
     expect(() => parseProfileGuide("social.md", custom)).toThrow("unsupported placeholder: {{topic}}")
+  })
+})
+
+describe("profile guide goal execution", () => {
+  it.each([
+    ["native/cdx/superpowers.md", "codex-goal"],
+    ["native/cldx/default.md", "claude-goal"],
+    ["sandbox/claude-social-media.md", "claude-goal"],
+  ])("preserves an optional policy for %s", (identity, controller) => {
+    const policy = { controller, workflowIds: ["post-writer"] }
+    const parsed = parseProfileGuide(`profile-guides/${identity}`, withGoalExecution(policy))
+
+    expect(parsed.guide.goalExecution).toEqual(policy)
+    expect(parsed.guide.workflows).toEqual(parseProfileGuide(identity, validGuide).guide.workflows)
+    expect(parsed.body).toBe(parseProfileGuide(identity, validGuide).body)
+  })
+
+  it("requires a known document identity when a policy is authored", () => {
+    expect(() =>
+      parseProfileGuide("unknown.md", withGoalExecution({ controller: "codex-goal", workflowIds: ["post-writer"] })),
+    ).toThrow(/goalExecution.*identity/)
+  })
+
+  it.each([
+    { name: "null", policy: null, problem: "must be an object" },
+    { name: "array", policy: [], problem: "must be an object" },
+    {
+      name: "missing controller",
+      policy: { workflowIds: ["post-writer"] },
+      problem: "missing required keys: controller",
+    },
+    { name: "missing workflows", policy: { controller: "codex-goal" }, problem: "missing required keys: workflowIds" },
+    {
+      name: "extra invocation template",
+      policy: { controller: "codex-goal", workflowIds: ["post-writer"], promptTemplate: "/goal {{intent}}" },
+      problem: "contains unsupported keys: promptTemplate",
+    },
+    {
+      name: "unknown controller",
+      policy: { controller: "pstack", workflowIds: ["post-writer"] },
+      problem: "must be one of: codex-goal, claude-goal, graph-of-loops",
+    },
+    {
+      name: "missing workflow array",
+      policy: { controller: "codex-goal", workflowIds: "post-writer" },
+      problem: "must be an array",
+    },
+    {
+      name: "empty workflow array",
+      policy: { controller: "codex-goal", workflowIds: [] },
+      problem: "must contain at least 1 entries",
+    },
+    {
+      name: "duplicate workflow binding",
+      policy: { controller: "codex-goal", workflowIds: ["post-writer", "post-writer"] },
+      problem: "must contain unique entries",
+    },
+    {
+      name: "unknown workflow",
+      policy: { controller: "codex-goal", workflowIds: ["not-authored"] },
+      problem: "references unknown workflow: not-authored",
+    },
+    {
+      name: "invalid workflow identifier",
+      policy: { controller: "codex-goal", workflowIds: ["Post Writer"] },
+      problem: "must be a lowercase kebab-case identifier",
+    },
+    {
+      name: "oversized workflow array",
+      policy: { controller: "codex-goal", workflowIds: Array.from({ length: 33 }, (_, index) => `workflow-${index}`) },
+      problem: "must contain at most 32 entries",
+    },
+  ])("rejects $name", ({ policy, problem }) => {
+    expect(() => parseProfileGuide("native/cdx/superpowers.md", withGoalExecution(policy))).toThrow(problem)
+  })
+
+  it.each([
+    ["native/cdx/superpowers.md", "claude-goal"],
+    ["native/cldx/default.md", "codex-goal"],
+    ["native/cpx/hve.md", "codex-goal"],
+    ["native/cpx/hve.md", "claude-goal"],
+    ["native/agx/trellage-azure.md", "claude-goal"],
+    ["native/fmx/pstack-workers.md", "codex-goal"],
+    ["native/picx/default.md", "claude-goal"],
+    ["native/cdx/superpowers.md", "graph-of-loops"],
+    ["sandbox/codex-superpowers.md", "codex-goal"],
+    ["sandbox/headlong.md", "claude-goal"],
+    ["sandbox/prime-agent.md", "claude-goal"],
+    ["sandbox/claude-blog.md", "graph-of-loops"],
+    ["sandbox/claude-graph-of-loops.md", "claude-goal"],
+  ])("rejects %s with controller %s", (identity, controller) => {
+    expect(() => parseProfileGuide(identity, withGoalExecution({ controller, workflowIds: ["post-writer"] }))).toThrow(
+      "is not supported by",
+    )
+  })
+
+  it.each(["/goal", "$goal", "/goal-me", "$goal-me", "/graph-of-loops"])(
+    "rejects a second controller or authoring command in a native workflow: %s",
+    (command) => {
+      const source = validGuide.replace("/social-media-skills:post-writer {{intent}}", `${command} {{intent}}`)
+      expect(() =>
+        parseProfileGuide(
+          "native/cdx/superpowers.md",
+          withGoalExecution({ controller: "codex-goal", workflowIds: ["post-writer"] }, source),
+        ),
+      ).toThrow("must leave goal invocation to codex-goal")
+    },
+  )
+
+  it.each(["goal-me", "engineersamuel:goal-me", "graph-of-loops"])(
+    "rejects a workflow skill that owns a different protocol: %s",
+    (skill) => {
+      const source = validGuide.replace("skill: social-media-skills:post-writer", `skill: ${skill}`)
+      expect(() =>
+        parseProfileGuide(
+          "native/cldx/default.md",
+          withGoalExecution({ controller: "claude-goal", workflowIds: ["post-writer"] }, source),
+        ),
+      ).toThrow("must leave goal invocation to claude-goal")
+    },
+  )
+
+  it("rejects an incompatible launch agent on an eligible workflow", () => {
+    const source = validGuide.replace(
+      "    skill: social-media-skills:post-writer\n",
+      "    launchAgent: hve-core:dt-coach\n",
+    )
+    expect(() =>
+      parseProfileGuide(
+        "native/cdx/superpowers.md",
+        withGoalExecution({ controller: "codex-goal", workflowIds: ["post-writer"] }, source),
+      ),
+    ).toThrow("uses launchAgent")
+  })
+
+  it("preserves the real Graph goal-start frame", () => {
+    const policy = { controller: "graph-of-loops", workflowIds: ["post-writer"] }
+    const parsed = parseProfileGuide("sandbox/claude-graph-of-loops.md", withGoalExecution(policy, graphGuide))
+
+    expect(parsed.guide.goalExecution).toEqual(policy)
+    expect(parsed.guide.workflows[0]?.promptTemplate).toBe(
+      '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Preserve the approved criteria and require evidence."',
+    )
+  })
+
+  it.each([
+    "/graph-of-loops {{intent}}. Inspect and resume the existing run.",
+    'Use /graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Require evidence."',
+    '/graph-of-loops OBJECTIVE="{{intent}}"',
+    '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS=""',
+    '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="   "',
+    '/graph-of-loops OBJECTIVE="A different task" CONSTRAINTS="{{intent}}"',
+    '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Require evidence." Then start another run.',
+  ])("rejects a Graph workflow without a real goal-start frame: %s", (promptTemplate) => {
+    const source = graphGuide.replace(
+      '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Preserve the approved criteria and require evidence."',
+      promptTemplate,
+    )
+    expect(() =>
+      parseProfileGuide(
+        "sandbox/claude-graph-of-loops.md",
+        withGoalExecution({ controller: "graph-of-loops", workflowIds: ["post-writer"] }, source),
+      ),
+    ).toThrow("goal-start frame")
+  })
+
+  it("rejects Graph frames bound to another skill or a second goal controller", () => {
+    for (const source of [
+      graphGuide.replace("skill: graph-of-loops", "skill: test-driven-development"),
+      graphGuide.replace("Preserve the approved criteria and require evidence.", "Run /goal for completion."),
+    ]) {
+      expect(() =>
+        parseProfileGuide(
+          "sandbox/claude-graph-of-loops.md",
+          withGoalExecution({ controller: "graph-of-loops", workflowIds: ["post-writer"] }, source),
+        ),
+      ).toThrow(ProfileGuideValidationError)
+    }
   })
 })
 

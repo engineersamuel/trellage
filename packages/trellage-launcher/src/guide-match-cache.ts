@@ -3,6 +3,12 @@ import { constants } from "node:fs"
 import { lstat, mkdir, open, readdir, rename, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 
+import type { ProfileGuideGoalController, ProfileGuideWorkflow } from "../../trellage-guide-core/dist/index.js"
+import {
+  assertPreparedGuideGoal,
+  type GuideGoalExecution,
+  type PreparedGuideGoal,
+} from "./guide-goal-execution.js"
 import type { GuideModelRouting } from "./guide-model-routing.js"
 import type { GuideModelPrompts } from "./guide-prompts.js"
 import type {
@@ -73,6 +79,13 @@ interface MatchCacheInput {
     readonly ref: string
     readonly guide: { readonly workflows: ReadonlyArray<{ readonly id: string }> }
   }>
+  readonly goal?: PreparedGuideGoal
+  readonly preferredProfileRefs?: ReadonlyArray<string>
+  readonly goalFraming?: ReadonlyArray<{
+    readonly ref: string
+    readonly controller: ProfileGuideGoalController
+    readonly workflows: ReadonlyArray<ProfileGuideWorkflow>
+  }>
 }
 
 interface GenerationCacheInput {
@@ -83,6 +96,7 @@ interface GenerationCacheInput {
   readonly guideBody: string
   readonly targetTool: string
   readonly fixedFrame?: unknown
+  readonly goalExecution?: GuideGoalExecution
 }
 
 interface RefinementCacheInput extends GenerationCacheInput {
@@ -90,6 +104,20 @@ interface RefinementCacheInput extends GenerationCacheInput {
   readonly candidateIndex: number
   readonly feedback: string
 }
+
+const goalCacheIdentity = (goal: PreparedGuideGoal) => {
+  assertPreparedGuideGoal(goal)
+  return { mode: "goal", fingerprint: goal.fingerprint, framingVersion: 1, deliveryVersion: 1 }
+}
+
+const goalExecutionCacheIdentity = (execution: GuideGoalExecution) => ({
+  ...goalCacheIdentity(execution.goal),
+  controller: execution.controller,
+  workflow: execution.workflow,
+})
+
+const artifactIntent = (intent: string, goal?: PreparedGuideGoal): string =>
+  goal === undefined ? `Intent: ${intent}` : `Goal: ${goal.draft.artifact}\nGoal fingerprint: ${goal.fingerprint}`
 
 const isMissing = (error: unknown): boolean => error instanceof Error && "code" in error && error.code === "ENOENT"
 
@@ -156,11 +184,16 @@ const parseArtifactEnvelope = (source: string, expectedKind: ArtifactKind): Arti
   return fields as unknown as ArtifactEnvelope
 }
 
-const renderMatch = (intent: string, routing: GuideModelRouting, result: GuideMatchResult): string =>
+const renderMatch = (
+  intent: string,
+  routing: GuideModelRouting,
+  result: GuideMatchResult,
+  goal?: PreparedGuideGoal,
+): string =>
   [
     "# Profile recommendations",
     "",
-    `Intent: ${intent}`,
+    artifactIntent(intent, goal),
     `Routing: ${routing.match.model} (${routing.match.effort})`,
     "",
     ...result.candidates.flatMap((candidate, index) => [
@@ -185,11 +218,12 @@ const renderCandidates = (
   [
     `# ${heading}`,
     "",
-    `Intent: ${input.intent}`,
+    artifactIntent(input.intent, input.goalExecution?.goal),
     `Profile: ${input.profileRef}`,
     `Workflow: ${input.workflowId}`,
     `Target tool: ${input.targetTool}`,
     `Routing: ${routing}`,
+    ...(input.goalExecution === undefined ? [] : [`Goal controller: ${input.goalExecution.controller}`]),
     ...(feedback === undefined ? [] : [`Feedback: ${feedback}`]),
     "",
     ...result.candidates.flatMap((candidate, index) => [
@@ -197,7 +231,7 @@ const renderCandidates = (
       "",
       candidate.prompt,
       "",
-      `Notes: ${candidate.notes}`,
+      ...(input.goalExecution === undefined ? [`Notes: ${candidate.notes}`] : []),
       "",
     ]),
   ].join("\n")
@@ -367,6 +401,13 @@ export class GuideArtifactCache {
       catalog: input.entries,
       prompt: this.options.prompts.match,
       routing: this.options.routing.match,
+      ...(input.goal === undefined
+        ? {}
+        : {
+            goal: goalCacheIdentity(input.goal),
+            goalFraming: input.goalFraming ?? null,
+            preferredProfileRefs: input.preferredProfileRefs ?? [],
+          }),
     })
     const workflows = new Map(
       input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]),
@@ -377,8 +418,8 @@ export class GuideArtifactCache {
         intent: input.intent,
         key,
         filename: "1-profile-recommendations.md",
-        render: (result) => renderMatch(input.intent, this.options.routing, result),
-        validate: (value) => validateGuideMatchResult(value, workflows),
+        render: (result) => renderMatch(input.intent, this.options.routing, result, input.goal),
+        validate: (value) => validateGuideMatchResult(value, workflows, input.goal, input.preferredProfileRefs),
       },
       produce,
     )
@@ -402,6 +443,7 @@ export class GuideArtifactCache {
       optimizationSkillDigest: await this.optimizationSkillDigest(),
       targetTool: input.targetTool,
       fixedFrame: input.fixedFrame ?? null,
+      ...(input.goalExecution === undefined ? {} : { goalExecution: goalExecutionCacheIdentity(input.goalExecution) }),
     })
     const label = filenameSlug(`${input.profileRef}-${input.workflowId}`, "profile-workflow")
     return await this.cached(
@@ -417,9 +459,11 @@ export class GuideArtifactCache {
             `${this.options.routing.generate.model} (${this.options.routing.generate.effort}) → ${this.options.routing.optimize.model} (${this.options.routing.optimize.effort})`,
             result,
           ),
-        validate: validateGuideGenerateResult,
+        validate: (value) => validateGuideGenerateResult(value, input.goalExecution),
       },
-      produce,
+      input.goalExecution === undefined
+        ? produce
+        : async () => validateGuideGenerateResult(await produce(), input.goalExecution),
     )
   }
 
@@ -441,6 +485,7 @@ export class GuideArtifactCache {
       optimizationSkillDigest: await this.optimizationSkillDigest(),
       targetTool: input.targetTool,
       fixedFrame: input.fixedFrame ?? null,
+      ...(input.goalExecution === undefined ? {} : { goalExecution: goalExecutionCacheIdentity(input.goalExecution) }),
     })
     const feedback = filenameSlug(input.feedback, sha256(input.feedback).slice(0, 7))
     return await this.cached(
@@ -457,9 +502,11 @@ export class GuideArtifactCache {
             { candidates: [result.candidate] },
             input.feedback,
           ),
-        validate: validateGuideRefineResult,
+        validate: (value) => validateGuideRefineResult(value, input.goalExecution),
       },
-      produce,
+      input.goalExecution === undefined
+        ? produce
+        : async () => validateGuideRefineResult(await produce(), input.goalExecution),
     )
   }
 }

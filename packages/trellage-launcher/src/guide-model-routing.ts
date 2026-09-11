@@ -15,6 +15,11 @@ export interface GuideModelRouting<Effort extends string = GuideReasoningEffort>
 
 export type GuideModelPhase = keyof GuideModelRouting
 
+export const guideGoalModelConfig = {
+  model: "gpt-6-astra",
+  effort: "max",
+} as const satisfies GuideModelConfig
+
 export const defaultGuideModelRouting = {
   match: { model: "gpt-5.6-sol", effort: "medium" },
   generate: { model: "gpt-5.6-luna", effort: "medium" },

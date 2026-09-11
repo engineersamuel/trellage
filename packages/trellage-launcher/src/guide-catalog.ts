@@ -20,7 +20,11 @@
  */
 import {
   isLaunchAgentIdentifier,
+  isProfileGuideGoalController,
+  profileGuideGoalExecutionProblem,
   profileGuideIdentityKey,
+  type ProfileGuideGoalExecution,
+  type ProfileGuideIdentity,
   type ProfileGuidePrerequisite,
   type ProfileGuideV1,
   type ProfileGuideWorkflow,
@@ -123,9 +127,38 @@ const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow =>
   }
 }
 
-export const validateProfileGuideV1 = (value: unknown, path: string): ProfileGuideV1 => {
+const validateGoalExecution = (
+  value: unknown,
+  path: string,
+  workflows: ReadonlyArray<ProfileGuideWorkflow>,
+  context?: { readonly identity: ProfileGuideIdentity; readonly harness: string },
+): ProfileGuideGoalExecution => {
   const fields = record(value, path)
-  exactKeys(fields, path, ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"])
+  exactKeys(fields, path, ["controller", "workflowIds"])
+  if (!isProfileGuideGoalController(fields.controller)) {
+    return fail(`${path}.controller`, "must be one of: codex-goal, claude-goal, graph-of-loops")
+  }
+  const execution: ProfileGuideGoalExecution = {
+    controller: fields.controller,
+    workflowIds: identifierArray(fields.workflowIds, `${path}.workflowIds`, { minimum: 1, maximumItems: 32 }),
+  }
+  const problem = profileGuideGoalExecutionProblem(execution, workflows, context?.identity, context?.harness)
+  if (problem !== undefined) fail(path, problem)
+  return execution
+}
+
+export const validateProfileGuideV1 = (
+  value: unknown,
+  path: string,
+  context?: { readonly identity: ProfileGuideIdentity; readonly harness: string },
+): ProfileGuideV1 => {
+  const fields = record(value, path)
+  exactKeys(
+    fields,
+    path,
+    ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"],
+    ["goalExecution"],
+  )
   if (fields.schemaVersion !== 1) fail(`${path}.schemaVersion`, "must equal 1")
   const prerequisites = array(fields.prerequisites, `${path}.prerequisites`, { maximum: 32 }).map((item, index) =>
     validatePrerequisite(item, `${path}.prerequisites[${index}]`),
@@ -143,6 +176,10 @@ export const validateProfileGuideV1 = (value: unknown, path: string): ProfileGui
     `${path}.workflows`,
     "workflow IDs",
   )
+  const goalExecution =
+    fields.goalExecution === undefined
+      ? undefined
+      : validateGoalExecution(fields.goalExecution, `${path}.goalExecution`, workflows, context)
   return {
     schemaVersion: 1,
     capabilities: identifierArray(fields.capabilities, `${path}.capabilities`, { minimum: 1, maximumItems: 64 }),
@@ -150,6 +187,7 @@ export const validateProfileGuideV1 = (value: unknown, path: string): ProfileGui
     avoidFor: stringArray(fields.avoidFor, `${path}.avoidFor`, { minimum: 2, maximumItems: 32, itemMaximum: 2000 }),
     prerequisites,
     workflows,
+    ...(goalExecution === undefined ? {} : { goalExecution }),
   }
 }
 
@@ -280,15 +318,21 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
     "guide",
     "commandPath",
   ])
+  const launcher = identifier(fields.launcher, `${path}.launcher`)
+  const harness = identifier(fields.harness, `${path}.harness`)
+  const name = identifier(fields.name, `${path}.name`)
   return {
-    launcher: identifier(fields.launcher, `${path}.launcher`),
-    harness: identifier(fields.harness, `${path}.harness`),
-    name: identifier(fields.name, `${path}.name`),
+    launcher,
+    harness,
+    name,
     description: text(fields.description, `${path}.description`, 2000),
     headless: validateHeadlessCapabilitiesV1(fields.headless, `${path}.headless`),
     sandbox: boolean(fields.sandbox, `${path}.sandbox`),
     herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path}.herdrCompatibility`),
-    guide: validateProfileGuideV1(fields.guide, `${path}.guide`),
+    guide: validateProfileGuideV1(fields.guide, `${path}.guide`, {
+      identity: { surface: "native", launcher, profile: name },
+      harness,
+    }),
     commandPath: absolutePath(fields.commandPath, `${path}.commandPath`, 4096),
   }
 }
@@ -322,34 +366,44 @@ export interface SandboxGuideCatalogEntry {
 
 const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalogEntry => {
   const fields = record(value, path)
-  exactKeys(fields, path, [
-    "name",
-    "description",
-    "guide",
-    "path",
-    "supportedPlatforms",
-    "harness",
-    "resolutionPolicy",
-    "locallyResolved",
-    "releaseLockAvailable",
-    "skillBundles",
-    "skillsMode",
-    "finalDigestLocked",
-    "skills",
-    "plugins",
-    "mcps",
-    "sandbox",
-    "headless",
-    "locked",
-    "herdrCompatibility",
-  ], ["resolvedVersion"])
+  exactKeys(
+    fields,
+    path,
+    [
+      "name",
+      "description",
+      "guide",
+      "path",
+      "supportedPlatforms",
+      "harness",
+      "resolutionPolicy",
+      "locallyResolved",
+      "releaseLockAvailable",
+      "skillBundles",
+      "skillsMode",
+      "finalDigestLocked",
+      "skills",
+      "plugins",
+      "mcps",
+      "sandbox",
+      "headless",
+      "locked",
+      "herdrCompatibility",
+    ],
+    ["resolvedVersion"],
+  )
   if (fields.sandbox !== true) fail(`${path}.sandbox`, "must equal true")
   const harness = record(fields.harness, `${path}.harness`)
   exactKeys(harness, `${path}.harness`, ["kind", "version"], ["model"])
+  const name = identifier(fields.name, `${path}.name`)
+  const harnessKind = identifier(harness.kind, `${path}.harness.kind`)
   return {
-    name: identifier(fields.name, `${path}.name`),
+    name,
     description: text(fields.description, `${path}.description`, 2000),
-    guide: validateProfileGuideV1(fields.guide, `${path}.guide`),
+    guide: validateProfileGuideV1(fields.guide, `${path}.guide`, {
+      identity: { surface: "sandbox", profile: name },
+      harness: harnessKind,
+    }),
     path: absolutePath(fields.path, `${path}.path`, 4096),
     supportedPlatforms: stringArray(fields.supportedPlatforms, `${path}.supportedPlatforms`, {
       minimum: 1,
@@ -357,7 +411,7 @@ const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalog
       itemMaximum: 64,
     }),
     harness: {
-      kind: identifier(harness.kind, `${path}.harness.kind`),
+      kind: harnessKind,
       version: text(harness.version, `${path}.harness.version`, 128),
       ...(harness.model === undefined ? {} : { model: text(harness.model, `${path}.harness.model`, 128) }),
     },
@@ -521,9 +575,13 @@ export interface GuideMatchCatalogEntry {
   readonly description: string
   readonly sandbox: boolean
   readonly guide: CompactProfileGuide
+  readonly goalExecution?: ProfileGuideGoalExecution
 }
 
-export const toGuideMatchCatalogEntry = (entry: GuideCatalogEntryRef): GuideMatchCatalogEntry => ({
+export const toGuideMatchCatalogEntry = (
+  entry: GuideCatalogEntryRef,
+  includeGoalExecution = false,
+): GuideMatchCatalogEntry => ({
   ref: entry.ref,
   surface: entry.surface,
   name: entry.name,
@@ -532,7 +590,13 @@ export const toGuideMatchCatalogEntry = (entry: GuideCatalogEntryRef): GuideMatc
   description: entry.description,
   sandbox: entry.sandbox,
   guide: compactProfileGuide(entry.guide),
+  ...(includeGoalExecution && entry.guide.goalExecution !== undefined
+    ? { goalExecution: entry.guide.goalExecution }
+    : {}),
 })
 
-export const guideMatchCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArray<GuideMatchCatalogEntry> =>
-  guideCatalogEntries(catalog).map(toGuideMatchCatalogEntry)
+export const guideMatchCatalogEntries = (
+  catalog: CombinedGuideCatalog,
+  includeGoalExecution = false,
+): ReadonlyArray<GuideMatchCatalogEntry> =>
+  guideCatalogEntries(catalog).map((entry) => toGuideMatchCatalogEntry(entry, includeGoalExecution))

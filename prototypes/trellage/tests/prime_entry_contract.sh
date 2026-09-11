@@ -11,7 +11,9 @@ source "$repo_root/tests/helpers/sandbox_entry_fixture.sh"
 
 cleanup() {
   local status=$?
+  trap - EXIT
   if ! sandbox_fixture_home_cleanup; then
+    printf 'Prime entry contract: fixture home cleanup failed\n' >&2
     [[ "$status" -ne 0 ]] || status=1
   fi
   if [[ "$fixture_source_pulled" == true ]]; then

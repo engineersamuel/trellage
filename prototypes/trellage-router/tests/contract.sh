@@ -936,6 +936,11 @@ if (process.argv[2] === "enrich-native-list") {
   process.stdout.write(`${JSON.stringify({
     guideRoot: process.argv[3],
     promptMasterSkillDirectory: process.argv[4],
+    goalSkills: {
+      managerPath: process.env.TRELLAGE_GUIDE_SKILLS_MANAGER,
+      catalogPath: process.env.TRELLAGE_GUIDE_SKILLS_CATALOG,
+      cachePath: process.env.TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE,
+    },
     args: process.argv.slice(5),
     catalog: JSON.parse(readFileSync(3, "utf8")),
   })}\n`)
@@ -1006,9 +1011,13 @@ chmod 0755 "$fixture_bin/trellage"
 jq -e \
   --arg guideRoot "$runtime_parent/trx/share/profile-guides" \
   --arg sandboxCommandPath "$fixture_bin/trellage" \
+  --arg goalCache "${XDG_DATA_HOME:-$fixture_home/.local/share}/trellage/common/skills" \
   --arg runtimeParent "$runtime_parent" '
     .guideRoot == $guideRoot
     and (.promptMasterSkillDirectory | endswith("/skills/prompt-master"))
+    and .goalSkills.managerPath == ($runtimeParent + "/common/floating-skills-runtime/floating-skills.mjs")
+    and .goalSkills.catalogPath == ($runtimeParent + "/common/floating-skills-runtime/skills.json")
+    and .goalSkills.cachePath == $goalCache
     and .args == ["--intent", "fixture intent", "--json"]
     and .catalog.schemaVersion == 1
     and .catalog.sandboxCommandPath == $sandboxCommandPath

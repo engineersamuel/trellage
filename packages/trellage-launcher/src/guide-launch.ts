@@ -1,6 +1,8 @@
 import path from "node:path"
 import { spawn } from "node:child_process"
-import { isLaunchAgentIdentifier } from "../../trellage-guide-core/dist/index.js"
+import { isLaunchAgentIdentifier, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
+import type { GuideGoalCandidateContext } from "./guide-goal-execution.js"
+import { guideGoalPromptFromContext, resolveGuideGoalTransport } from "./guide-goal-transport.js"
 
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u
 const safeLauncherAlias = /^[a-z][a-z0-9-]{0,63}$/u
@@ -44,7 +46,7 @@ const appendTruncatedChunk = (target: Array<Buffer>, buffer: Buffer, currentLeng
 export type GuideSurface = "native" | "sandbox"
 export type PromptDeliveryMode = "none" | "argv"
 export type PromptHandlingMode = "none" | "argv" | "manual-paste"
-export type HerdrPromptDeliveryMode = "command" | "agent"
+export type HerdrPromptDeliveryMode = "command" | "agent" | "manual"
 export type HerdrAgentStatus = "idle" | "working" | "blocked" | "done" | "unknown"
 export type HerdrSplitDirection = "right" | "down"
 export type HerdrInvocationSurface = "pane" | "popup"
@@ -61,6 +63,7 @@ export interface NativeSelectedProfile {
   readonly profile: string
   readonly headlessPrompt: boolean
   readonly agent?: string
+  readonly goalExecutionPolicy?: NonNullable<ProfileGuideV1["goalExecution"]>
 }
 
 export interface SandboxSelectedProfile {
@@ -69,6 +72,7 @@ export interface SandboxSelectedProfile {
   readonly profile: string
   readonly headlessPrompt: boolean
   readonly agent?: string
+  readonly goalExecutionPolicy?: NonNullable<ProfileGuideV1["goalExecution"]>
 }
 
 export type SelectedProfile = NativeSelectedProfile | SandboxSelectedProfile
@@ -170,6 +174,7 @@ export interface LaunchInHerdrPaneOptions extends WaitForIdleOptions {
   readonly promptDelivery: HerdrPromptDeliveryMode
   readonly promptTimeoutMs: number
   readonly onPhase?: (phase: HerdrLaunchPhase) => void
+  readonly beforeLaunch?: (cwd: string, paneId: string) => Promise<void>
 }
 
 export interface CurrentWorkspaceHandoffOptions extends Omit<LaunchInHerdrPaneOptions, "paneId"> {
@@ -212,6 +217,7 @@ export interface ExistingWorktreeHandoffOptions extends Omit<LaunchInHerdrPaneOp
 export interface HerdrPaneLaunchResult {
   readonly paneId: string
   readonly commandPreview: string
+  readonly status?: "launched" | "needs-input"
 }
 
 export interface HerdrWorktreeLaunchResult extends HerdrPaneLaunchResult {
@@ -352,6 +358,22 @@ const validateAgent = (value: unknown, launcher?: string): string | undefined =>
   }
   if (!isLaunchAgentIdentifier(agent)) throw new Error("selected profile agent must be a simple agent identifier")
   return agent
+}
+
+const validateGoalExecutionPolicy = (value: unknown): NonNullable<ProfileGuideV1["goalExecution"]> | undefined => {
+  if (value === undefined) return undefined
+  const policy = getRecord(value, "selected profile goalExecutionPolicy")
+  if (policy.controller !== "codex-goal" && policy.controller !== "claude-goal" && policy.controller !== "graph-of-loops") {
+    throw new Error("selected profile goalExecutionPolicy must use a supported controller")
+  }
+  if (!Array.isArray(policy.workflowIds) || policy.workflowIds.length === 0) {
+    throw new Error("selected profile goalExecutionPolicy must declare eligible workflows")
+  }
+  const workflowIds = policy.workflowIds.map((id) => validateProfileName(id))
+  if (new Set(workflowIds).size !== workflowIds.length) {
+    throw new Error("selected profile goalExecutionPolicy must not repeat a workflow")
+  }
+  return Object.freeze({ controller: policy.controller, workflowIds: Object.freeze(workflowIds) })
 }
 
 const normalizePromptDelivery = (delivery?: PromptDelivery): PromptDelivery => delivery ?? { mode: "none" }
@@ -505,12 +527,14 @@ export class CommandRunnerError extends Error {
 export class GuideLaunchError extends Error {
   readonly kind: GuideLaunchErrorKind
   readonly paneId?: string
+  readonly cwd?: string
   readonly stderr?: string
 
   constructor(options: {
     readonly kind: GuideLaunchErrorKind
     readonly message: string
     readonly paneId?: string
+    readonly cwd?: string
     readonly stderr?: string
     readonly cause?: unknown
   }) {
@@ -518,6 +542,7 @@ export class GuideLaunchError extends Error {
     this.name = "GuideLaunchError"
     this.kind = options.kind
     if (options.paneId !== undefined) this.paneId = options.paneId
+    if (options.cwd !== undefined) this.cwd = options.cwd
     if (options.stderr !== undefined) this.stderr = options.stderr
   }
 }
@@ -525,6 +550,7 @@ export class GuideLaunchError extends Error {
 export const parseSelectedProfile = (value: unknown): SelectedProfile => {
   if (!isRecord(value)) throw new Error("selected profile must be an object")
   const surface = getString(value.surface, "selected profile surface")
+  const goalExecutionPolicy = validateGoalExecutionPolicy(value.goalExecutionPolicy)
   if (surface === "native") {
     const launcher = validateLauncher(value.launcher)
     const agent = validateAgent(value.agent, launcher)
@@ -535,6 +561,7 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
       profile: validateProfileName(value.profile),
       headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
       ...(agent === undefined ? {} : { agent }),
+      ...(goalExecutionPolicy === undefined ? {} : { goalExecutionPolicy }),
     }
   }
   if (surface === "sandbox") {
@@ -545,6 +572,7 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
       profile: validateProfileName(value.profile),
       headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
       ...(agent === undefined ? {} : { agent }),
+      ...(goalExecutionPolicy === undefined ? {} : { goalExecutionPolicy }),
     }
   }
   throw new Error("selected profile surface must be native or sandbox")
@@ -560,15 +588,39 @@ const nativePromptArgs = (
   return [...baseArgs, selectedProfile.launcher === "cpx" ? "-i" : "-p", prompt]
 }
 
+const buildGoalLaunchCommand = (
+  selectedProfile: SelectedProfile,
+  baseArgs: ReadonlyArray<string>,
+  delivery: PromptDelivery,
+  execution: GuideGoalCandidateContext,
+): BuiltCommandSpec => {
+  const prompt = delivery.mode === "argv" ? delivery.prompt : guideGoalPromptFromContext(execution)
+  const transport = resolveGuideGoalTransport(selectedProfile, prompt, execution, "current-terminal")
+  if (delivery.mode === "none" || transport.mode === "manual") {
+    return { command: { executable: selectedProfile.commandPath, args: baseArgs }, promptHandling: "manual-paste" }
+  }
+  return {
+    command: {
+      executable: selectedProfile.commandPath,
+      args: selectedProfile.surface === "sandbox" ? [...baseArgs, prompt] : nativePromptArgs(selectedProfile, baseArgs, prompt),
+    },
+    promptHandling: "argv",
+  }
+}
+
 export const buildGuideLaunchCommand = (
   selectedProfile: SelectedProfile,
   delivery?: PromptDelivery,
+  goalExecution?: GuideGoalCandidateContext,
 ): BuiltCommandSpec => {
   const normalizedDelivery = normalizePromptDelivery(delivery)
   const baseArgs = [
     ...(selectedProfile.surface === "native" ? [selectedProfile.profile] : ["--profile", selectedProfile.profile]),
     ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
   ]
+  if (goalExecution !== undefined) {
+    return buildGoalLaunchCommand(selectedProfile, baseArgs, normalizedDelivery, goalExecution)
+  }
   if (normalizedDelivery.mode === "argv") {
     if (selectedProfile.surface === "sandbox") {
       return {
@@ -623,7 +675,17 @@ const nativeArgvPromptSeparator: Record<string, ReadonlyArray<string>> = {
  * prompt has no such handshake. Only launchers with no known prompt flag fall
  * back to the paste path.
  */
-export const buildHerdrGuideLaunch = (selectedProfile: SelectedProfile, prompt: string): BuiltHerdrGuideLaunch => {
+export const buildHerdrGuideLaunch = (
+  selectedProfile: SelectedProfile,
+  prompt: string,
+  goalExecution?: GuideGoalCandidateContext,
+): BuiltHerdrGuideLaunch => {
+  if (goalExecution !== undefined) {
+    const transport = resolveGuideGoalTransport(selectedProfile, prompt, goalExecution, "herdr")
+    return transport.mode === "manual"
+      ? { command: buildGuideLaunchCommand(selectedProfile).command, promptDelivery: "manual" }
+      : { command: buildGuideLaunchCommand(selectedProfile, { mode: "argv", prompt }, goalExecution).command, promptDelivery: "command" }
+  }
   if (selectedProfile.surface === "sandbox") {
     return {
       command: buildGuideLaunchCommand(selectedProfile, { mode: "argv", prompt }).command,
@@ -647,6 +709,11 @@ export const posixShellEscape = (value: string): string => {
 
 export const renderCommandPreview = (command: CommandSpec): string =>
   [command.executable, ...command.args].map(posixShellEscape).join(" ")
+
+export const sameGuideCommand = (left: CommandSpec, right: CommandSpec): boolean =>
+  left.executable === right.executable &&
+  left.args.length === right.args.length &&
+  left.args.every((arg, index) => arg === right.args[index])
 
 export const createNodeCommandRunner = (): CommandRunner => ({
   run: (executable, args, options) =>
@@ -1163,15 +1230,27 @@ export const launchInHerdrPaneAndPrompt = async (
   runner: CommandRunner,
   options: LaunchInHerdrPaneOptions,
 ): Promise<HerdrPaneLaunchResult> => {
+  await options.beforeLaunch?.(options.cwd, options.paneId)
   const commandPreview = `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview(options.command)}`
   options.onPhase?.("starting")
-  await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], {
-    cwd: options.cwd,
-  })
-  if (options.promptDelivery === "command") {
+  try {
+    await runner.run("herdr", ["pane", "run", options.paneId, commandPreview], {
+      cwd: options.cwd,
+    })
+  } catch (error) {
+    if (options.beforeLaunch !== undefined && error instanceof CommandRunnerError) {
+      throw new GuideLaunchError({
+        kind: "startup", message: error.message, paneId: options.paneId,
+        cwd: options.cwd, stderr: error.stderr, cause: error,
+      })
+    }
+    throw error
+  }
+  if (options.promptDelivery === "command" || options.promptDelivery === "manual") {
     return {
       paneId: options.paneId,
       commandPreview,
+      status: options.promptDelivery === "manual" ? "needs-input" : "launched",
     }
   }
   options.onPhase?.("waiting")
@@ -1193,6 +1272,7 @@ export const launchInHerdrPaneAndPrompt = async (
   return {
     paneId: options.paneId,
     commandPreview,
+    status: "launched",
   }
 }
 
@@ -1241,6 +1321,7 @@ export const handoffToCurrentHerdrWorkspace = async (
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.time === undefined ? {} : { time: options.time }),
+    ...(options.beforeLaunch === undefined ? {} : { beforeLaunch: options.beforeLaunch }),
   })
 }
 
@@ -1275,6 +1356,7 @@ export const handoffToNewHerdrTab = async (
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.time === undefined ? {} : { time: options.time }),
+    ...(options.beforeLaunch === undefined ? {} : { beforeLaunch: options.beforeLaunch }),
   })
 }
 
@@ -1459,6 +1541,7 @@ export const createHerdrWorktreeAndHandoff = async (
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.time === undefined ? {} : { time: options.time }),
+    ...(options.beforeLaunch === undefined ? {} : { beforeLaunch: options.beforeLaunch }),
   })
   return {
     workspaceId: handle.workspaceId,
@@ -1466,6 +1549,7 @@ export const createHerdrWorktreeAndHandoff = async (
     checkoutPath: handle.checkoutPath,
     paneId: launch.paneId,
     commandPreview: launch.commandPreview,
+    ...(launch.status === undefined ? {} : { status: launch.status }),
   }
 }
 
@@ -1487,6 +1571,7 @@ export const openHerdrWorktreeAndHandoff = async (
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.time === undefined ? {} : { time: options.time }),
+    ...(options.beforeLaunch === undefined ? {} : { beforeLaunch: options.beforeLaunch }),
   })
   return {
     workspaceId: handle.workspaceId,
@@ -1494,5 +1579,6 @@ export const openHerdrWorktreeAndHandoff = async (
     checkoutPath: handle.checkoutPath,
     paneId: launch.paneId,
     commandPreview: launch.commandPreview,
+    ...(launch.status === undefined ? {} : { status: launch.status }),
   }
 }

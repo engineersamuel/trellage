@@ -22,6 +22,9 @@ import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting
 import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.js"
 import { CopilotGuideProvider } from "./copilot-guide-provider.js"
 import { popupGuideIntentFileEnvironmentVariable, resolveInteractiveGuideIntent } from "./guide-interactive-intent.js"
+import { CopilotGoalAugmentProvider } from "./copilot-goal-augment-provider.js"
+import { createGuideGoalSkillResolver } from "./guide-goal-skills.js"
+import { GuideGoalError, type GuideGoalAugmentProvider } from "./guide-goal-augment.js"
 import { executeGuideUiResult } from "./guide-interactive-execution.js"
 import {
   createNodeCommandRunner,
@@ -623,6 +626,19 @@ const runInteractiveGuideMode = async (
   const prompts = await loadDefaultGuidePrompts()
   const provider = new CopilotGuideProvider({ routing, prompts, promptMasterSkillDirectory })
   const runner = createNodeCommandRunner()
+  const goalProvider: GuideGoalAugmentProvider = {
+    async augment(input, context) {
+      const managerPath = process.env.TRELLAGE_GUIDE_SKILLS_MANAGER
+      const catalogPath = process.env.TRELLAGE_GUIDE_SKILLS_CATALOG
+      const cachePath = process.env.TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE
+      if (!managerPath || !catalogPath || !cachePath) {
+        throw new GuideGoalError("Goal me runtime paths are missing. Reinstall trx, then reopen trx guide.")
+      }
+      return new CopilotGoalAugmentProvider({
+        resolveSkills: createGuideGoalSkillResolver({ managerPath, catalogPath, cachePath, runner }),
+      }).augment(input, context)
+    },
+  }
   const cwd = herdrContext?.cwd ?? process.cwd()
   const cache = new GuideArtifactCache({ cwd, routing, prompts, promptMasterSkillDirectory })
   const herdrAvailabilityProbe = await probeInteractiveHerdr(runner, herdrEnv, cwd)
@@ -641,6 +657,7 @@ const runInteractiveGuideMode = async (
         catalog={catalog}
         guideRoot={guideRoot}
         provider={provider}
+        goalProvider={goalProvider}
         cache={cache}
         routing={routing}
         runner={runner}

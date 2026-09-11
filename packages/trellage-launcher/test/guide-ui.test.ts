@@ -1,10 +1,14 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import stringWidth from "string-width"
 import { describe, expect, it } from "vitest"
 
 import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
 import { GuideAugmentKind, GuideAugmentPhase } from "../src/guide-augment.js"
+import { renderGuideGoalProposal } from "../src/guide-goal-augment.js"
+import { composeGuideGoalCandidate, prepareGuideGoal, resolveGuideGoalExecution } from "../src/guide-goal-execution.js"
+import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.js"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.js"
 import {
   GuideEffort,
@@ -27,7 +31,7 @@ import type {
 } from "../src/guide-provider.js"
 import type { SelectedGuideDocument } from "../src/guide-selected.js"
 import { GuideArtifactCache } from "../src/guide-match-cache.js"
-import type { GitInspectionReady, HerdrContext, SelectedProfile, WorktreeCollisionResult } from "../src/guide-launch.js"
+import { defaultWorktreeBranch, type GitInspectionReady, type HerdrContext, type SelectedProfile, type WorktreeCollisionResult } from "../src/guide-launch.js"
 import { ProfileReadinessKind, type ProfileReadinessResult } from "../src/guide-preflight.js"
 import {
   GuideGenerationPhase,
@@ -946,10 +950,11 @@ describe("guideUiReducer: intent and match", () => {
       let state = guideUiReducer(withDraft("fix the flaky test"), { type: GuideUiActionType.AugmentOpen })
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
       expect(state.augmentIndex).toBe(augmentOptions.length - 1)
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentConfirm })
       expect(state.stage).toBe(GuideUiStage.Intent)
       expect(state.augmentJob).toMatchObject({
-        kind: augmentOptions[augmentOptions.length - 1],
+        kind: GuideAugmentKind.Codebase,
         status: "running",
         source: "fix the flaky test",
         returnStage: GuideUiStage.Intent,
@@ -2945,12 +2950,47 @@ describe("markdownPromptLines", () => {
     ])
   })
 
-  it("does not split inline Markdown delimiters across wrapped lines", () => {
-    expect(markdownPromptLines("Use **important requirement** now", 12)).toEqual([
-      { text: "Use ", kind: "body" },
-      { text: "**important requirement**", kind: "body" },
-      { text: "now", kind: "body" },
-    ])
+  it("wraps long inline text without losing its content or style", () => {
+    const lines = markdownPromptLines("Use **important requirement** now", 12)
+    expect(lines.every((line) => stringWidth(line.text) <= 12)).toBe(true)
+    expect(lines.map((line) => line.text).join("")).toBe("Use important requirement now")
+    expect(lines.flatMap((line) => line.segments ?? [])
+      .filter((segment) => segment.kind === "bold")
+      .map((segment) => segment.text).join("")).toBe("important requirement")
+  })
+
+  it.each([4, 11, 32])("keeps complete commands and links at width %s", (width) => {
+    const command = "npm test  --workspace=packages/界👩🏽‍💻 -- --include=complete-command-tail"
+    const url = "https://example.com/guide/complete-link-destination"
+    for (const [source, text, kind] of [
+      [`\`${command}\``, command, "code"],
+      [`[Full guide](${url})`, `Full guide (${url})`, "link"],
+    ] as const) {
+      const lines = markdownPromptLines(source, width)
+      expect(lines.every((line) => stringWidth(line.text) <= width)).toBe(true)
+      expect(lines.map((line) => line.text).join("")).toBe(text)
+      expect(lines.flatMap((line) => line.segments ?? []).every((segment) => segment.kind === kind)).toBe(true)
+      expect(lines.flatMap((line) => line.segments ?? []).map((segment) => segment.text).join("")).toBe(text)
+    }
+  })
+
+  it("preserves ordered protocol numbers and indentation", () => {
+    const protocol = ["1. READ", "2. PLAN", "3. DO", "4. VERIFY", "5. DECIDE", "  12) Resume"]
+    expect(markdownPromptLines(protocol.join("\n"), 40)).toEqual(
+      protocol.map((text) => ({ text, kind: "list" })),
+    )
+  })
+
+  it("styles supplied section labels without rewriting code or similar prose", () => {
+    const lines = markdownPromptLines(
+      "TASK:\nTASK: details\n```text\nTASK:\n```\nRULES:\n-",
+      80,
+      new Set(["TASK:", "RULES:"]),
+    )
+    expect(lines.filter((line) => line.kind === "heading").map((line) => line.text)).toEqual(["TASK:", "RULES:"])
+    expect(lines).toContainEqual({ text: "TASK:", kind: "code" })
+    expect(lines).toContainEqual({ text: "TASK: details", kind: "body" })
+    expect(lines).toContainEqual({ text: "•", kind: "list" })
   })
 
   it("parses safe inline Markdown without evaluating MDX or HTML", () => {
@@ -3722,6 +3762,193 @@ describe("guideUiReducer: fork tabs", () => {
     })
     expect(forkIsBusy(done, 1)).toBe(false)
     expect(forkState(done, 1)?.stage).toBe(GuideUiStage.Candidates)
+  })
+})
+
+describe("guideUiReducer: prepared goal ownership", () => {
+  const goal = prepareGuideGoal(renderGuideGoalProposal(goalMeSkill, goalDraft))
+  const goalGuide: ProfileGuideV1 = {
+    ...guideReviewer,
+    goalExecution: { controller: "codex-goal", workflowIds: ["review"] },
+  }
+  const execution = resolveGuideGoalExecution(goal, goalGuide, "review")
+  const bodies = candidateTriple()
+  const candidates = [
+    composeGuideGoalCandidate(execution, bodies[0]),
+    composeGuideGoalCandidate(execution, bodies[1]),
+    composeGuideGoalCandidate(execution, bodies[2]),
+  ] as const
+
+  const matched = (): GuideUiState => guideUiReducer({
+    ...createInitialGuideUiState(goal.prompt),
+    goal,
+    matchedGoalFingerprint: goal.fingerprint,
+  }, { type: GuideUiActionType.MatchSucceeded, recommendations: recommendationTriple() })
+
+  const generated = (): GuideUiState => {
+    let state = guideUiReducer(matched(), {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: {
+        ...nativeSelectedProfile(true),
+        goalExecutionPolicy: { controller: "codex-goal", workflowIds: ["review"] },
+      },
+    })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateGuideLoaded,
+      guideDocument: { ref: "native:cdx/reviewer", guide: goalGuide, body: "Use the review workflow." },
+    })
+    return guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates })
+  }
+
+  it("keeps a fork's approved goal and source when the main goal changes", () => {
+    const initial = generated()
+    const main = guideUiReducer(initial, { type: GuideUiActionType.ForkMain })
+    const nextGoal = prepareGuideGoal(renderGuideGoalProposal(goalMeSkill, {
+      ...goalDraft, task: "Produce a different report for a different project.",
+    }))
+    const rematched = guideUiReducer({
+      ...main,
+      stage: GuideUiStage.PromptReview,
+      goal: nextGoal,
+      textDraft: nextGoal.prompt,
+      promptReviewAugmented: nextGoal.prompt,
+    }, { type: GuideUiActionType.PromptReviewSubmit })
+    expect(rematched.goal).toBe(nextGoal)
+    expect(rematched.stage).toBe(GuideUiStage.Matching)
+    expect(forkState(rematched, 1)?.selectedGoal).toBe(goal)
+    expect(forkState(rematched, 1)?.selectedIntent).toBe(goal.prompt)
+    expect(forkState(rematched, 1)?.candidates).toBe(candidates)
+    const resumed = guideUiReducer(rematched, { type: GuideUiActionType.ForkSelect, index: 0 })
+    const placed = guideUiReducer(resumed, { type: GuideUiActionType.CandidatesEnqueue })
+    const branch = guideUiReducer(placed, { type: GuideUiActionType.QueuePlacementStartWorktree })
+    expect(branch.textDraft).toBe(defaultWorktreeBranch(goalDraft.task))
+    expect(branch.textDraft).not.toContain("different")
+    expect(branch.textDraft).not.toContain("you-will-work")
+  })
+
+  it("reselects a queued fork's profile against its original goal and recommendations", () => {
+    let state = guideUiReducer(generated(), { type: GuideUiActionType.CandidatesEnqueue })
+    state = guideUiReducer(state, { type: GuideUiActionType.QueuePlacementHere })
+    const jobId = state.queue.entries[0]?.id
+    const nextGoal = prepareGuideGoal(renderGuideGoalProposal(goalMeSkill, {
+      ...goalDraft, task: "Produce a different report for a different project.",
+    }))
+    const mainRecommendations = [recommendation({ workflowId: "different-goal-workflow" })]
+    state = {
+      ...state,
+      goal: nextGoal,
+      intent: nextGoal.prompt,
+      recommendations: mainRecommendations,
+      recommendationIndex: 0,
+    }
+    state = guideUiReducer(state, { type: GuideUiActionType.ForkSelect, index: 0 })
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesBack })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: {
+        ...nativeSelectedProfile(true),
+        goalExecutionPolicy: { controller: "codex-goal", workflowIds: ["review"] },
+      },
+    })
+    expect(state.selectedGoal).toBe(goal)
+    expect(state.selectedIntent).toBe(goal.prompt)
+    expect(state.selectedRecommendation?.workflowId).toBe("review")
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.GenerateGuideLoaded,
+      guideDocument: { ref: "native:cdx/reviewer", guide: goalGuide, body: "Use the review workflow." },
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates })
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesEnqueue })
+    state = guideUiReducer(state, { type: GuideUiActionType.QueuePlacementHere })
+    expect(state.queue.entries).toHaveLength(1)
+    expect(state.queue.entries[0]?.id).toBe(jobId)
+    expect(state.queue.entries[0]?.goalExecution?.goal).toEqual(goal)
+    expect(state.queue.entries[0]?.prompt).not.toContain(nextGoal.draft.task)
+    expect(state.goal).toBe(nextGoal)
+    expect(state.recommendations).toBe(mainRecommendations)
+  })
+
+  it("keeps an ordinary reference fork ordinary when its profile is reselected", () => {
+    let state = guideUiReducer(matched(), {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+      recommendation: recommendation(),
+      goalUnavailableReason: "This research workflow has no goal controller.",
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.GoalChangeDetach })
+    const source = state.selectedIntent
+    state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
+    state = guideUiReducer(state, { type: GuideUiActionType.CandidatesBack })
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+    expect(state.goal).toBe(goal)
+    expect(state.selectedGoal).toBeUndefined()
+    expect(state.selectedIntent).toBe(source)
+    expect(state.selectedIntent).not.toContain("LOOP PROTOCOL")
+    expect(state.stage).toBe(GuideUiStage.Generating)
+  })
+
+  it("opens main prompt editing without changing a parked fork's source", () => {
+    let state = guideUiReducer(generated(), { type: GuideUiActionType.CandidatesBack })
+    state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewOpen })
+    expect(state.stage).toBe(GuideUiStage.PromptReview)
+    expect(state.activeForkId).toBeUndefined()
+    expect(state.textDraft).toBe(goal.prompt)
+    expect(forkState(state, 1)?.selectedGoal).toBe(goal)
+    expect(forkState(state, 1)?.selectedIntent).toBe(goal.prompt)
+  })
+
+  it("edits only a candidate's approach and reports attempts to start another controller", () => {
+    let editing = guideUiReducer(generated(), { type: GuideUiActionType.CandidatesDirectEditStart })
+    expect(editing.textDraft).toBe(bodies[0].prompt)
+    editing = guideUiReducer(editing, { type: GuideUiActionType.EditorChange, text: "Exercise the public API first." })
+    const updated = guideUiReducer(editing, { type: GuideUiActionType.DirectEditSubmit })
+    expect(updated.candidates?.[0].goalExecution?.goal).toBe(goal)
+    expect(updated.candidates?.[0].prompt).toMatch(/^\/goal /u)
+    expect(updated.candidates?.[0].prompt).toContain(goalDraft.task)
+    const invalid = guideUiReducer({
+      ...editing, textDraft: "/graph-of-loops Start a second controller.",
+    }, { type: GuideUiActionType.DirectEditSubmit })
+    expect(invalid.stage).toBe(GuideUiStage.DirectEditor)
+    expect(invalid.errorMessage).toContain("another goal controller")
+    expect(invalid.candidates).toBe(candidates)
+  })
+
+  it("requires an explicit ordinary flow for an unsupported pinned workflow", () => {
+    const selected = guideUiReducer(matched(), {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+      recommendation: recommendation(),
+      goalUnavailableReason: "This research workflow has no goal controller.",
+    })
+    expect(selected.stage).toBe(GuideUiStage.GoalChange)
+    expect(selected.forks).toHaveLength(0)
+    const kept = guideUiReducer(selected, { type: GuideUiActionType.GoalChangeKeep })
+    expect(kept.stage).toBe(GuideUiStage.Recommendations)
+    expect(kept.goal).toBe(goal)
+    const ordinary = guideUiReducer(selected, { type: GuideUiActionType.GoalChangeDetach })
+    expect(ordinary.goal).toBe(goal)
+    expect(ordinary.selectedGoal).toBeUndefined()
+    expect(ordinary.selectedIntent).toContain(goalDraft.task)
+    expect(ordinary.selectedIntent).not.toContain("LOOP PROTOCOL")
+    expect(ordinary.stage).toBe(GuideUiStage.Generating)
+  })
+
+  it("keeps a queued goal fixed when its approach changes", () => {
+    let state = guideUiReducer(generated(), { type: GuideUiActionType.CandidatesEnqueue })
+    state = guideUiReducer(state, { type: GuideUiActionType.QueuePlacementHere })
+    expect(state.queue.entries[0]?.goalExecution?.goal).toEqual(goal)
+    expect(Object.isFrozen(state.queue.entries[0]?.goalExecution?.goal.draft.criteria)).toBe(true)
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueEditStart })
+    expect(state.textDraft).toBe(bodies[0].prompt)
+    state = guideUiReducer(state, { type: GuideUiActionType.EditorChange, text: "Start with a regression for retries." })
+    state = guideUiReducer(state, { type: GuideUiActionType.QueueEditSubmit })
+    expect(state.queue.entries[0]?.goalExecution?.goal).toEqual(goal)
+    expect(state.queue.entries[0]?.goalExecution?.approach).toBe("Start with a regression for retries.")
+    expect(state.queue.entries[0]?.prompt).toContain(goalDraft.criteria[0])
+    expect(state.queue.entries[0]?.prompt).toMatch(/^\/goal /u)
   })
 })
 

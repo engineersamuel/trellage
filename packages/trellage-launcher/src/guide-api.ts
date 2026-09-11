@@ -19,6 +19,7 @@
  * selected profile's authored Markdown guide.
  */
 import type {
+  ProfileGuideGoalController,
   ProfileGuidePrerequisite,
   ProfileGuideV1,
   ProfileGuideWorkflow,
@@ -26,7 +27,9 @@ import type {
 import { profileGuideIdentityKey } from "../../trellage-guide-core/dist/index.js"
 import {
   compactProfileGuide,
+  guideCatalogEntries,
   guideMatchCatalogEntries,
+  toGuideMatchCatalogEntry,
   type CombinedGuideCatalog,
   type CompactProfileGuideWorkflow,
   type GuideMatchCatalogEntry,
@@ -36,6 +39,17 @@ import {
   type NativeGuideCatalogEntry,
   type SandboxGuideCatalogEntry,
 } from "./guide-catalog.js"
+import { GuideGoalError, validateGuideGoalDraft } from "./guide-goal-augment.js"
+import {
+  assertPreparedGuideGoal,
+  guideGoalControllerLabel,
+  prepareGuideGoal,
+  resolveGuideGoalExecution,
+  type GuideGoalCandidateContext,
+  type PreparedGuideGoal,
+} from "./guide-goal-execution.js"
+import { runGuideGoalGeneration, templateGuideGoalCandidates } from "./guide-goal-generation.js"
+import { resolveGuideGoalTransport, type GuideGoalTransport } from "./guide-goal-transport.js"
 import {
   buildGuideLaunchCommand,
   parseSelectedProfile,
@@ -50,9 +64,17 @@ import {
   type GuideModelRouting,
 } from "./guide-model-routing.js"
 import type { GuideArtifactCache } from "./guide-match-cache.js"
-import type { GuideGenerateCandidate, GuideMatchCandidate, GuideProvider } from "./guide-provider.js"
+import {
+  assertGuideMatchInput,
+  validateGuideGenerateResult,
+  validateGuideMatchResult,
+  validateGuideOptimizeResult,
+  type GuideGenerateCandidate,
+  type GuideMatchCandidate,
+  type GuideProvider,
+} from "./guide-provider.js"
 import { loadSelectedGuide } from "./guide-selected.js"
-import { exactKeys, fail, literal, record, text } from "./guide-text.js"
+import { exactKeys, fail, GuideValidationError, literal, record, text } from "./guide-text.js"
 import {
   GuideCandidatePromptCollisionError,
   GuideCandidatePromptStage,
@@ -398,10 +420,19 @@ export interface GuideServiceRequest {
   readonly profile?: string
   readonly model?: string
   readonly effort?: GuideEffort
+  readonly goal?: PreparedGuideGoal
+  readonly workflowId?: string
 }
 
-/** Strictly parses a noninteractive `{schemaVersion:1,intent,profile?,model?,effort?}` service request. */
-export const parseGuideServiceRequestJson = (source: string): GuideServiceRequest => {
+const parseRequestedGuideGoal = (value: unknown, intent: string): PreparedGuideGoal | undefined => {
+  if (value === undefined) return undefined
+  const draft = record(value, "request.goal")
+  exactKeys(draft, "request.goal", ["artifact", "task", "criteria"])
+  return prepareGuideGoal({ draft: validateGuideGoalDraft(draft), prompt: intent })
+}
+
+/** Structured goal fields are explicit caller input, not inferred Goal-me approval. */
+export const parseGuideServiceRequestJson = (source: string, defaultProfileRef?: string): GuideServiceRequest => {
   let payload: unknown
   try {
     payload = JSON.parse(source)
@@ -409,18 +440,24 @@ export const parseGuideServiceRequestJson = (source: string): GuideServiceReques
     return fail("request", "must contain valid JSON")
   }
   const fields = record(payload, "request")
-  exactKeys(fields, "request", ["schemaVersion", "intent"], ["profile", "model", "effort"])
+  exactKeys(fields, "request", ["schemaVersion", "intent"], ["profile", "model", "effort", "goal", "workflowId"])
   if (fields.schemaVersion !== 1) fail("request.schemaVersion", "must equal 1")
   const intent = validateGuideIntent(fields.intent, "request.intent")
-  const profile = fields.profile === undefined ? undefined : validateProfileRef(fields.profile, "request.profile")
+  const profileValue = fields.profile === undefined ? defaultProfileRef : fields.profile
+  const profile = profileValue === undefined ? undefined : validateProfileRef(profileValue, "request.profile")
   const model = fields.model === undefined ? undefined : validateModelId(fields.model, "request.model")
   const effort = fields.effort === undefined ? undefined : parseGuideEffort(fields.effort, "request.effort")
+  const workflowId = fields.workflowId === undefined ? undefined : text(fields.workflowId, "request.workflowId", 128)
+  const goal = parseRequestedGuideGoal(fields.goal, intent)
+  if (workflowId !== undefined && profile === undefined) fail("request.workflowId", "requires a selected profile")
   return {
     schemaVersion: 1,
     intent,
     ...(profile === undefined ? {} : { profile }),
     ...(model === undefined ? {} : { model }),
     ...(effort === undefined ? {} : { effort }),
+    ...(goal === undefined ? {} : { goal }),
+    ...(workflowId === undefined ? {} : { workflowId }),
   }
 }
 
@@ -542,9 +579,14 @@ const assertTriple = <T>(items: ReadonlyArray<T>, label: string): readonly [T, T
   return [first, second, third]
 }
 
-const assertRecommendationSet = <T>(items: ReadonlyArray<T>, label: string): ReadonlyArray<T> => {
-  if (items.length < 3 || items.length > 5) {
-    throw new GuideServiceError(`${label} must contain 3 to 5 items: got ${items.length}`)
+const assertRecommendationSet = <T>(
+  items: ReadonlyArray<T>,
+  label: string,
+  goal?: PreparedGuideGoal,
+): ReadonlyArray<T> => {
+  const minimum = goal === undefined ? 3 : 1
+  if (items.length < minimum || items.length > 5) {
+    throw new GuideServiceError(`${label} must contain ${minimum} to 5 items: got ${items.length}`)
   }
   return items
 }
@@ -552,6 +594,16 @@ const assertRecommendationSet = <T>(items: ReadonlyArray<T>, label: string): Rea
 // ---------------------------------------------------------------------------
 // Match service.
 // ---------------------------------------------------------------------------
+
+export interface GuideGoalPolicySummary {
+  readonly controller: ProfileGuideGoalController
+  readonly label: string
+}
+
+const goalPolicySummary = (controller: ProfileGuideGoalController): GuideGoalPolicySummary => ({
+  controller,
+  label: guideGoalControllerLabel(controller),
+})
 
 export interface GuideRecommendation {
   readonly profileRef: string
@@ -569,6 +621,7 @@ export interface GuideRecommendation {
   readonly prerequisites: ReadonlyArray<ProfileGuidePrerequisite>
   readonly headless: HeadlessCapabilitiesV1
   readonly herdrCompatibility: HerdrCompatibilityInfo
+  readonly goalExecution?: GuideGoalPolicySummary
 }
 
 export interface GuideMatchResponse {
@@ -584,9 +637,14 @@ export interface GuideMatchRequest {
   readonly intent: string
   readonly model: string
   readonly effort: GuideEffort
+  readonly goal?: PreparedGuideGoal
 }
 
-const enrichRecommendation = (catalog: CombinedGuideCatalog, candidate: GuideMatchCandidate): GuideRecommendation => {
+const enrichRecommendation = (
+  catalog: CombinedGuideCatalog,
+  candidate: GuideMatchCandidate,
+  goal?: PreparedGuideGoal,
+): GuideRecommendation => {
   const entry = findFullCatalogEntry(catalog, candidate.profileRef)
   if (entry === undefined) {
     throw new GuideServiceError(`Match result references an unknown profile: ${candidate.profileRef}`)
@@ -598,6 +656,7 @@ const enrichRecommendation = (catalog: CombinedGuideCatalog, candidate: GuideMat
     )
   }
   const native = isNativeEntry(entry)
+  const execution = goal === undefined ? undefined : resolveGuideGoalExecution(goal, entry.guide, candidate.workflowId)
   return {
     profileRef: candidate.profileRef,
     workflowId: candidate.workflowId,
@@ -613,13 +672,14 @@ const enrichRecommendation = (catalog: CombinedGuideCatalog, candidate: GuideMat
     prerequisites: entry.guide.prerequisites,
     headless: entry.headless,
     herdrCompatibility: entry.herdrCompatibility,
+    ...(execution === undefined ? {} : { goalExecution: goalPolicySummary(execution.controller) }),
   }
 }
 
 /**
  * Calls `provider.match` with the compact, path-free catalog projection and
- * returns a stable DTO of three to five enriched recommendations. Never
- * exposes `commandPath`, Sandbox `path`, prompt templates, absolute paths,
+ * returns three to five ordinary recommendations or one to five goal
+ * recommendations. Never exposes `commandPath`, Sandbox `path`, prompt templates, absolute paths,
  * or the full authored guide.
  */
 export const runGuideMatch = async (
@@ -628,12 +688,43 @@ export const runGuideMatch = async (
   request: GuideMatchRequest,
   cache?: GuideArtifactCache,
 ): Promise<GuideMatchResponse> => {
-  const entries = prefilterGuideMatchCatalogEntries(catalog, request.intent)
-  const input = { intent: request.intent, entries }
-  const result = await (cache === undefined ? provider.match(input) : cache.match(input, () => provider.match(input)))
+  const goalCatalog = request.goal === undefined ? undefined : goalMatchCatalog(catalog, request.intent, request.goal)
+  const rankingIntent = request.goal === undefined ? request.intent : goalMatchIntent(request.goal)
+  const entries = prefilterMatchEntries(
+    goalCatalog?.entries ?? guideMatchCatalogEntries(catalog),
+    rankingIntent,
+    request.goal === undefined ? undefined : request.intent,
+  )
+  const input = assertGuideMatchInput({
+    intent: request.intent,
+    entries,
+    ...(request.goal === undefined ? {} : { goal: request.goal }),
+    ...(goalCatalog === undefined || goalCatalog.explicitProfileRefs.length === 0
+      ? {}
+      : { preferredProfileRefs: goalCatalog.explicitProfileRefs }),
+  })
+  const workflowIndex = new Map(entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]))
+  const validate = (value: unknown) => {
+    let result
+    try {
+      result = validateGuideMatchResult(value, workflowIndex, request.goal, input.preferredProfileRefs)
+    } catch (error) {
+      if (!(error instanceof GuideValidationError)) throw error
+      throw new GuideServiceError(error.message, { cause: error })
+    }
+    return result
+  }
+  const produce = async () => validate(await provider.match(input))
+  const result = validate(await (cache === undefined
+    ? produce()
+    : cache.match(
+        { ...input, intent: request.intent, ...(goalCatalog === undefined ? {} : { goalFraming: goalCatalog.framing }) },
+        produce,
+      )))
   const recommendations = assertRecommendationSet(
-    result.candidates.map((candidate) => enrichRecommendation(catalog, candidate)),
+    result.candidates.map((candidate) => enrichRecommendation(catalog, candidate, request.goal)),
     "match recommendations",
+    request.goal,
   )
   return {
     schemaVersion: 1,
@@ -678,20 +769,48 @@ const selectBestWorkflowByTokenOverlap = (workflows: ReadonlyArray<ProfileGuideW
 // generation response. Never exposes an internal absolute commandPath.
 // ---------------------------------------------------------------------------
 
+/** Describes delivery only, not runtime readiness or goal activation. */
+export type PublicGuideGoalTransport = {
+  readonly controller: ProfileGuideGoalController
+  readonly reason: string
+} & (
+  | { readonly mode: "argv" }
+  | { readonly mode: "manual"; readonly commandInput: Pick<GuideGoalTransport, "command" | "body"> }
+)
+
 export interface PublicGuideCommand {
   readonly executable: string
   readonly args: ReadonlyArray<string>
   readonly preview: string
   readonly promptHandling: PromptHandlingMode
+  readonly goalTransport?: PublicGuideGoalTransport
 }
+
+const publicGoalTransport = (
+  controller: ProfileGuideGoalController,
+  transport: GuideGoalTransport,
+): PublicGuideGoalTransport =>
+  transport.mode === "manual"
+    ? {
+        controller,
+        mode: "manual",
+        reason: `Type '${transport.command} ' in the native command input, then paste only commandInput.body and submit. Starting the profile does not activate this goal.`,
+        commandInput: { command: transport.command, body: transport.body },
+      }
+    : {
+        controller,
+        mode: "argv",
+        reason: "The validated goal uses the selected launcher's existing argv prompt route.",
+      }
 
 /**
  * Builds the current-terminal command a user would run to launch the given
  * catalog profile with `prompt`, using the launcher alias (native) or
  * `trellage` (Sandbox) as the public executable — never the internal
- * absolute `commandPath`. Adds `-p <prompt>` only when the profile's
- * `headless.prompt` capability is true; otherwise returns the base
- * interactive command with `promptHandling: "manual-paste"`. Resolves the
+ * absolute `commandPath`. Ordinary prompts use `-p <prompt>` only when the
+ * profile's `headless.prompt` capability is true; otherwise they use manual
+ * paste. Goals use the declared controller transport and expose its input
+ * requirement through `goalTransport`. Resolves the
  * selected workflow's agent through the same launch state as the interactive UI.
  */
 export const publicGuideLaunchCommand = (
@@ -699,9 +818,24 @@ export const publicGuideLaunchCommand = (
   ref: string,
   prompt: string,
   workflowId: string,
+  goalExecution?: GuideGoalCandidateContext,
 ): PublicGuideCommand => {
   const selected = selectedProfileFromCatalogRef(catalog, ref, workflowId)
   const executable = selected.surface === "native" ? selected.launcher : "trellage"
+  if (goalExecution !== undefined) {
+    if (goalExecution.workflow.id !== workflowId) {
+      throw new GuideServiceError("The goal candidate does not belong to the selected workflow.")
+    }
+    const built = buildGuideLaunchCommand(selected, { mode: "argv", prompt }, goalExecution)
+    const command: CommandSpec = { executable, args: built.command.args }
+    const transport = resolveGuideGoalTransport(selected, prompt, goalExecution, "current-terminal")
+    return {
+      ...command,
+      preview: renderCommandPreview(command),
+      promptHandling: built.promptHandling,
+      goalTransport: publicGoalTransport(goalExecution.controller, transport),
+    }
+  }
   const baseArgs = buildGuideLaunchCommand(selected).command.args
   const headlessPrompt = selected.headlessPrompt
   const args = headlessPrompt ? [...baseArgs, "-p", prompt] : baseArgs
@@ -733,6 +867,7 @@ export const selectedProfileFromCatalogRef = (
       profile: entry.name,
       headlessPrompt: entry.headless.prompt,
       ...(agent === undefined ? {} : { agent }),
+      ...(entry.guide.goalExecution === undefined ? {} : { goalExecutionPolicy: entry.guide.goalExecution }),
     })
   }
   if (agent !== undefined && entry.harness.kind !== "copilot") {
@@ -744,6 +879,7 @@ export const selectedProfileFromCatalogRef = (
     profile: entry.name,
     headlessPrompt: entry.headless.prompt,
     ...(agent === undefined ? {} : { agent }),
+    ...(entry.guide.goalExecution === undefined ? {} : { goalExecutionPolicy: entry.guide.goalExecution }),
   })
 }
 
@@ -764,6 +900,7 @@ export interface GuideSelectedProfileSummary {
   readonly prerequisites: ReadonlyArray<ProfileGuidePrerequisite>
   readonly headless: HeadlessCapabilitiesV1
   readonly herdrCompatibility: HerdrCompatibilityInfo
+  readonly goalExecution?: GuideGoalPolicySummary
 }
 
 export interface GuidePromptCandidate {
@@ -771,6 +908,7 @@ export interface GuidePromptCandidate {
   readonly prompt: string
   readonly notes: string
   readonly command: PublicGuideCommand
+  readonly goalExecution?: GuideGoalPolicySummary
 }
 
 export interface GuideGenerationResponse {
@@ -786,6 +924,30 @@ export interface GuideGenerationResponse {
 export interface GuideGenerateRequest extends GuideMatchRequest {
   readonly profileRef: string
   readonly workflowId?: string
+}
+
+const selectGuideGenerationWorkflow = (guide: ProfileGuideV1, request: GuideGenerateRequest): string => {
+  if (request.workflowId !== undefined) {
+    if (request.goal !== undefined) {
+      try {
+        resolveGuideGoalExecution(request.goal, guide, request.workflowId)
+      } catch (error) {
+        if (!(error instanceof GuideGoalError || error instanceof GuideValidationError)) throw error
+        throw new GuideServiceError(
+          `Workflow ${request.profileRef}/${request.workflowId} cannot execute this goal: ${error.message}`,
+          { cause: error },
+        )
+      }
+    }
+    return request.workflowId
+  }
+  if (request.goal === undefined) return selectBestWorkflowByTokenOverlap(guide.workflows, request.intent)
+  assertPreparedGuideGoal(request.goal)
+  const compatibility = compatibleGoalWorkflows(guide, request.goal)
+  if (compatibility.workflows.length === 0) {
+    throw new GuideServiceError(`Profile ${request.profileRef} cannot execute this goal: ${compatibility.reason}`)
+  }
+  return selectBestWorkflowByTokenOverlap(compatibility.workflows, goalMatchIntent(request.goal))
 }
 
 const findGuideWorkflow = (guide: ProfileGuideV1, workflowId: string): ProfileGuideWorkflow => {
@@ -889,11 +1051,10 @@ export const applyRequiredProfilePromptTemplate = (
 }
 
 /**
- * Generates prompts for one exact profile reference. Honors an explicit
- * workflow; otherwise selects the best workflow by token overlap with `intent`, using
- * source order as the tie-break. This avoids a second model-ranking call when
- * a caller already chose a profile from match mode. Loads only the selected
- * profile's full guide (Markdown body included), then calls `provider.generate`.
+ * Generates prompts for one exact profile and preserves an explicit workflow
+ * selection. Otherwise selects the best eligible workflow by token overlap.
+ * Loads only that profile's full guide. Goal mode delegates approach drafting
+ * and protected composition to the same service used by the UI.
  */
 export const runGuideGenerate = async (
   provider: GuideProvider,
@@ -905,7 +1066,7 @@ export const runGuideGenerate = async (
   const entry = findFullCatalogEntry(catalog, request.profileRef)
   if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${request.profileRef}`)
 
-  const workflowId = request.workflowId ?? selectBestWorkflowByTokenOverlap(entry.guide.workflows, request.intent)
+  const workflowId = selectGuideGenerationWorkflow(entry.guide, request)
 
   const loaded = await loadSelectedGuide(catalog, guideRoot, request.profileRef)
 
@@ -914,6 +1075,9 @@ export const runGuideGenerate = async (
     throw new GuideServiceError(`Selected workflow is unknown for ${request.profileRef}: ${workflowId}`)
   }
   const authoredWorkflow = findGuideWorkflow(loaded.guide, workflowId)
+  const execution = request.goal === undefined
+    ? undefined
+    : resolveGuideGoalExecution(request.goal, loaded.guide, workflowId)
 
   const native = isNativeEntry(entry)
   const profile: GuideSelectedProfileSummary = {
@@ -928,18 +1092,19 @@ export const runGuideGenerate = async (
     prerequisites: entry.guide.prerequisites,
     headless: entry.headless,
     herdrCompatibility: entry.herdrCompatibility,
+    ...(execution === undefined ? {} : { goalExecution: goalPolicySummary(execution.controller) }),
   }
 
   const fixedFrame = workflowOptimizeFixedFrame(authoredWorkflow)
   const targetTool = isNativeEntry(entry) ? entry.harness : entry.harness.kind
   const produce = async () => {
-    const generated = await provider.generate({
+    const generated = validateGuideGenerateResult(await provider.generate({
       intent: request.intent,
       profileRef: request.profileRef,
       workflowId,
       guide: loaded.guide,
       guideBody: loaded.body,
-    })
+    }))
     let bodyCandidates: readonly [GuideGenerateCandidate, GuideGenerateCandidate, GuideGenerateCandidate]
     try {
       bodyCandidates = requireDistinctGuideCandidatePrompts(
@@ -957,12 +1122,12 @@ export const runGuideGenerate = async (
       }
       throw cause
     }
-    const optimized = await provider.optimize({
+    const optimized = validateGuideOptimizeResult(await provider.optimize({
       targetTool,
       profileRef: request.profileRef,
       candidates: bodyCandidates,
       ...(fixedFrame === undefined ? {} : { fixedFrame }),
-    })
+    }), 3)
     const [bodyFirst, bodySecond, bodyThird] = bodyCandidates
     const [optimizedFirst, optimizedSecond, optimizedThird] = assertTriple(
       optimized.candidates,
@@ -999,9 +1164,23 @@ export const runGuideGenerate = async (
     }
     return { candidates: renderedCandidates }
   }
-  const generated = await (cache === undefined
-    ? produce()
-    : cache.generation(
+  const generated = await (request.goal === undefined
+    ? cache === undefined
+      ? produce()
+      : cache.generation(
+          {
+            intent: request.intent,
+            profileRef: request.profileRef,
+            workflowId,
+            guide: loaded.guide,
+            guideBody: loaded.body,
+            targetTool,
+            ...(fixedFrame === undefined ? {} : { fixedFrame }),
+          },
+          produce,
+        )
+    : runGuideGoalGeneration(
+        provider,
         {
           intent: request.intent,
           profileRef: request.profileRef,
@@ -1009,9 +1188,9 @@ export const runGuideGenerate = async (
           guide: loaded.guide,
           guideBody: loaded.body,
           targetTool,
-          ...(fixedFrame === undefined ? {} : { fixedFrame }),
+          goal: request.goal,
         },
-        produce,
+        cache === undefined ? {} : { cache },
       ))
   const renderedCandidates = assertTriple(generated.candidates, "cached generation prompt candidates")
   const candidates = assertTriple(
@@ -1020,7 +1199,8 @@ export const runGuideGenerate = async (
         title: candidate.title,
         prompt: candidate.prompt,
         notes: candidate.notes,
-        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt, workflowId),
+        command: publicGuideLaunchCommand(catalog, request.profileRef, candidate.prompt, workflowId, candidate.goalExecution),
+        ...(candidate.goalExecution === undefined ? {} : { goalExecution: goalPolicySummary(candidate.goalExecution.controller) }),
       }),
     ),
     "generation prompt candidates",
@@ -1047,6 +1227,7 @@ export interface LiteralGuideCandidate {
   readonly confidence: number
   readonly reason: string
   readonly tradeoff: string
+  readonly goalExecution?: GuideGoalPolicySummary
 }
 
 const profileTokenOverlapScore = (
@@ -1104,9 +1285,10 @@ interface ScoredGuideEntry {
 const scoreGuideMatchEntries = (
   entries: ReadonlyArray<GuideMatchCatalogEntry>,
   intent: string,
+  explicitIntent = intent,
 ): ReadonlyArray<ScoredGuideEntry> => {
   const intentTokens = tokenize(intent)
-  const normalizedIntent = normalizeIdentityPhrase(intent)
+  const normalizedIntent = normalizeIdentityPhrase(explicitIntent)
   return entries
     .map((entry, index): ScoredGuideEntry => {
       const bestWorkflow = bestWorkflowForEntry(entry.guide.workflows, intentTokens)
@@ -1149,6 +1331,109 @@ const crossCuttingGuideProfileRefs: ReadonlyArray<string> = ["native:cdx/pstack"
 const guideMatchPrefilterTarget = 12
 const lowSignalMatchedTermMaximum = 2
 
+const goalMatchIntent = (goal: PreparedGuideGoal): string =>
+  [goal.draft.artifact, goal.draft.task, ...goal.draft.criteria].join("\n")
+
+const compatibleGoalWorkflows = (
+  guide: ProfileGuideV1,
+  goal: PreparedGuideGoal,
+): { readonly workflows: ReadonlyArray<ProfileGuideWorkflow>; readonly reason: string } => {
+  const workflows: ProfileGuideWorkflow[] = []
+  const reasons: string[] = []
+  for (const workflow of guide.workflows) {
+    try {
+      resolveGuideGoalExecution(goal, guide, workflow.id)
+      workflows.push(workflow)
+    } catch (error) {
+      if (!(error instanceof GuideGoalError || error instanceof GuideValidationError)) throw error
+      reasons.push(error.message)
+    }
+  }
+  return {
+    workflows,
+    reason: reasons[0] ?? "The profile has no supported workflow for this goal.",
+  }
+}
+
+const goalMatchCatalog = (catalog: CombinedGuideCatalog, intent: string, goal: PreparedGuideGoal) => {
+  assertPreparedGuideGoal(goal)
+  const fullEntries = guideCatalogEntries(catalog)
+  const identityIntent = `${intent}\n${goalMatchIntent(goal)}`
+  const knownRefs = new Set(fullEntries.map(({ ref }) => ref))
+  for (const match of identityIntent.matchAll(/\b(?:native:[a-z0-9-]+\/[a-z0-9._-]+|sandbox:[a-z0-9._-]+)\b/giu)) {
+    if (!knownRefs.has(match[0].toLocaleLowerCase("en"))) {
+      throw new GuideServiceError(`Unknown explicitly requested goal profile: ${match[0]}`)
+    }
+  }
+  const normalizedIntent = normalizeIdentityPhrase(identityIntent)
+  const entries: GuideMatchCatalogEntry[] = []
+  const explicitProfileRefs: string[] = []
+  const framing: Array<{
+    readonly ref: string
+    readonly controller: ProfileGuideGoalController
+    readonly workflows: ReadonlyArray<ProfileGuideWorkflow>
+  }> = []
+  for (const entry of fullEntries) {
+    const compact = toGuideMatchCatalogEntry(entry, true)
+    const explicit = profileTokenOverlapScore(compact, new Set(), normalizedIntent).explicitIdentity
+    const compatibility = compatibleGoalWorkflows(entry.guide, goal)
+    const policy = entry.guide.goalExecution
+    if (policy === undefined || compatibility.workflows.length === 0) {
+      if (explicit) {
+        throw new GuideServiceError(`Explicit profile ${entry.ref} cannot execute this goal: ${compatibility.reason}`)
+      }
+      continue
+    }
+    const ids = new Set(compatibility.workflows.map(({ id }) => id))
+    entries.push({
+      ...compact,
+      goalExecution: { controller: policy.controller, workflowIds: [...ids] },
+      guide: { ...compact.guide, workflows: compact.guide.workflows.filter(({ id }) => ids.has(id)) },
+    })
+    if (explicit) explicitProfileRefs.push(entry.ref)
+    framing.push({ ref: entry.ref, controller: policy.controller, workflows: compatibility.workflows })
+  }
+  if (entries.length === 0) {
+    throw new GuideServiceError(
+      "No goal-compatible workflows are available. Choose a declared goal controller that can fit the complete objective.",
+    )
+  }
+  if (explicitProfileRefs.length > 5) {
+    throw new GuideServiceError("A goal can recommend at most five explicitly selected profiles.")
+  }
+  return { entries, framing, explicitProfileRefs }
+}
+
+const prefilterMatchEntries = (
+  entries: ReadonlyArray<GuideMatchCatalogEntry>,
+  intent: string,
+  goalIdentityIntent?: string,
+): ReadonlyArray<GuideMatchCatalogEntry> => {
+  if (entries.length <= guideMatchPrefilterTarget) return entries
+
+  const ranked = scoreGuideMatchEntries(
+    entries,
+    intent,
+    goalIdentityIntent === undefined ? intent : `${goalIdentityIntent}\n${intent}`,
+  )
+  const explicitProfileRefs = new Set(
+    ranked.filter(({ explicitIdentity }) => explicitIdentity).map(({ entry }) => entry.ref),
+  )
+  if (explicitProfileRefs.size === 0 && (ranked[0]?.matchedTerms ?? 0) <= lowSignalMatchedTermMaximum) return entries
+
+  const crossCutting = goalIdentityIntent === undefined
+    ? crossCuttingGuideProfileRefs.filter((profileRef) => entries.some(({ ref }) => ref === profileRef))
+    : []
+  const retainedProfileRefs = new Set([...explicitProfileRefs, ...crossCutting])
+  for (const item of ranked) {
+    if (retainedProfileRefs.size >= guideMatchPrefilterTarget) break
+    if (!pinnedGuideProfileRefs.has(item.entry.ref) || item.explicitIdentity) {
+      retainedProfileRefs.add(item.entry.ref)
+    }
+  }
+  return entries.filter(({ ref }) => retainedProfileRefs.has(ref))
+}
+
 /**
  * Reduces a large match catalog before model ranking. Exact identities and the
  * two model-prompt cross-cutting profiles are retained. Low-signal intents keep
@@ -1157,27 +1442,11 @@ const lowSignalMatchedTermMaximum = 2
 export const prefilterGuideMatchCatalogEntries = (
   catalog: CombinedGuideCatalog,
   intent: string,
+  goal?: PreparedGuideGoal,
 ): ReadonlyArray<GuideMatchCatalogEntry> => {
-  const entries = guideMatchCatalogEntries(catalog)
-  if (entries.length <= guideMatchPrefilterTarget) return entries
-
-  const ranked = scoreGuideMatchEntries(entries, intent)
-  const explicitProfileRefs = new Set(
-    ranked.filter(({ explicitIdentity }) => explicitIdentity).map(({ entry }) => entry.ref),
-  )
-  if (explicitProfileRefs.size === 0 && (ranked[0]?.matchedTerms ?? 0) <= lowSignalMatchedTermMaximum) return entries
-
-  const retainedProfileRefs = new Set(explicitProfileRefs)
-  for (const profileRef of crossCuttingGuideProfileRefs) {
-    if (entries.some(({ ref }) => ref === profileRef)) retainedProfileRefs.add(profileRef)
-  }
-  for (const item of ranked) {
-    if (retainedProfileRefs.size >= guideMatchPrefilterTarget) break
-    if (!pinnedGuideProfileRefs.has(item.entry.ref) || item.explicitIdentity) {
-      retainedProfileRefs.add(item.entry.ref)
-    }
-  }
-  return entries.filter(({ ref }) => retainedProfileRefs.has(ref))
+  return goal === undefined
+    ? prefilterMatchEntries(guideMatchCatalogEntries(catalog), intent)
+    : prefilterMatchEntries(goalMatchCatalog(catalog, intent, goal).entries, goalMatchIntent(goal), intent)
 }
 
 /**
@@ -1190,12 +1459,20 @@ export const prefilterGuideMatchCatalogEntries = (
 export const literalGuideMatch = (
   catalog: CombinedGuideCatalog,
   intent: string,
+  goal?: PreparedGuideGoal,
 ): ReadonlyArray<LiteralGuideCandidate> => {
-  const entries = guideMatchCatalogEntries(catalog).filter(({ ref }) => !pinnedGuideProfileRefs.has(ref))
-  if (entries.length < 3) {
+  const goalCatalog = goal === undefined ? undefined : goalMatchCatalog(catalog, intent, goal)
+  const entries = (goalCatalog?.entries ?? guideMatchCatalogEntries(catalog)).filter(
+    ({ ref }) => !pinnedGuideProfileRefs.has(ref) || goalCatalog?.explicitProfileRefs.includes(ref),
+  )
+  if (goal === undefined && entries.length < 3) {
     throw new GuideServiceError(`Catalog must contain at least 3 profiles to rank literally: got ${entries.length}`)
   }
-  const top = scoreGuideMatchEntries(entries, intent).slice(0, 5)
+  if (entries.length === 0) {
+    throw new GuideServiceError("No goal-compatible execution profiles are available. Research lenses cannot execute this goal.")
+  }
+  const rankingIntent = goal === undefined ? intent : goalMatchIntent(goal)
+  const top = scoreGuideMatchEntries(entries, rankingIntent, `${intent}\n${rankingIntent}`).slice(0, 5)
   const maxScore = Math.max(1, ...top.map((item) => item.score))
   const candidates = top.map(
     (item): LiteralGuideCandidate => ({
@@ -1206,11 +1483,16 @@ export const literalGuideMatch = (
         ? `The intent explicitly names ${item.entry.ref}; its "${item.workflowId}" workflow is the closest fit.`
         : item.matchedTerms > 0
           ? `Matches ${item.matchedTerms} intent term(s) across normalized profile signals and the "${item.workflowId}" workflow.`
-          : `No strong term overlap with "${intent}" was found; offered as a fallback candidate.`,
+          : goal === undefined
+            ? `No strong term overlap with "${intent}" was found; offered as a fallback candidate.`
+            : "No strong objective term overlap was found; this workflow declares a compatible goal controller.",
       tradeoff: item.entry.guide.avoidFor[0] ?? "No specific tradeoffs recorded for this profile.",
+      ...(goal === undefined || item.entry.goalExecution === undefined
+        ? {}
+        : { goalExecution: goalPolicySummary(item.entry.goalExecution.controller) }),
     }),
   )
-  return assertRecommendationSet(candidates, "literal match candidates")
+  return assertRecommendationSet(candidates, "literal match candidates", goal)
 }
 
 /**
@@ -1227,7 +1509,9 @@ export const templatePromptCandidates = (
   guide: ProfileGuideV1,
   workflowId: string,
   intent: string,
+  goal?: PreparedGuideGoal,
 ): readonly [GuideGenerateCandidate, GuideGenerateCandidate, GuideGenerateCandidate] => {
+  if (goal !== undefined) return templateGuideGoalCandidates(guide, workflowId, goal)
   const workflow = guide.workflows.find(({ id }) => id === workflowId)
   if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`)
   const frame = workflowPromptFrame(workflow)

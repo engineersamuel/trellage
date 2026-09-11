@@ -1,6 +1,6 @@
 /**
- * The two out-of-band prompt augmenters offered from inside the `trx guide`
- * TUI. Both take the intent the user is editing and return a richer one:
+ * Prompt augmenters offered from inside the `trx guide` TUI.
+ * Each takes the intent the user is editing and returns a richer one:
  *
  * - `research` runs HVE Core's RPI research skill through the already
  *   installed `cpx hve` launcher and returns the durable research note it
@@ -10,6 +10,8 @@
  * - `codebase` packs the repository with `repomix` and asks the provider's
  *   `enrich` phase to restate the intent with that pack as reference. The
  *   pack travels as prompt content, so the provider stays locked down.
+ * - `goal-me` runs an interactive SDK interview through its dedicated
+ *   provider. Only an explicitly approved goal can replace the intent.
  *
  * No React here: `guide-ui.tsx` calls these from an effect and owns the
  * spinner, cancellation, and error presentation.
@@ -26,6 +28,7 @@ import { guideEnrichPackMaximumLength, type GuideProvider } from "./guide-provid
 export enum GuideAugmentKind {
   Research = "research",
   Codebase = "codebase",
+  GoalMe = "goal-me",
 }
 
 export enum GuideAugmentPhase {
@@ -33,6 +36,7 @@ export enum GuideAugmentPhase {
   ReadingNote = "reading-note",
   PackingRepository = "packing-repository",
   RewritingIntent = "rewriting-intent",
+  GoalInterview = "goal-interview",
 }
 
 export class GuideAugmentError extends Error {
@@ -44,7 +48,7 @@ export class GuideAugmentError extends Error {
 
 export interface GuideAugmentContext {
   readonly runner: CommandRunner
-  /** The repository the user launched `trx guide` in. Both augmenters read it; only research writes to it. */
+  /** The repository the user launched `trx guide` in. Only research writes to it. */
   readonly cwd: string
   readonly signal: AbortSignal
   readonly onPhase: (phase: GuideAugmentPhase) => void

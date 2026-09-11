@@ -11,9 +11,17 @@
  * catalog, and uniqueness constraints.
  */
 import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-// `guide-api.ts` imports this module type-only, so this value import adds no runtime cycle.
 import { guideIntentMaximumLength } from "./guide-api.js"
 import type { GuideMatchCatalogEntry } from "./guide-catalog.js"
+import {
+  assertPreparedGuideGoal,
+  guideGoalApproachBudget,
+  hasGuideGoalControllerCommand,
+  resolveGuideGoalExecution,
+  type GuideGoalCandidateContext,
+  type GuideGoalExecution,
+  type PreparedGuideGoal,
+} from "./guide-goal-execution.js"
 import { array, boundedNumber, exactKeys, fail, record, text, uniqueArray } from "./guide-text.js"
 
 export interface GuideMatchCandidate {
@@ -32,6 +40,7 @@ export interface GuideGenerateCandidate {
   readonly title: string
   readonly prompt: string
   readonly notes: string
+  readonly goalExecution?: GuideGoalCandidateContext
 }
 
 export interface GuideGenerateResult {
@@ -53,6 +62,8 @@ export interface GuideOptimizeInput {
   readonly candidates: ReadonlyArray<GuideGenerateCandidate>
   /** Present for body-only skill prompts; absent when candidates are complete prompts. Never returned publicly. */
   readonly fixedFrame?: GuideOptimizeFixedFrame
+  readonly goal?: PreparedGuideGoal
+  readonly goalExecution?: GuideGoalExecution
 }
 
 export interface GuideOptimizeResult {
@@ -72,6 +83,8 @@ export interface GuideEnrichResult {
 export interface GuideMatchInput {
   readonly intent: string
   readonly entries: ReadonlyArray<GuideMatchCatalogEntry>
+  readonly goal?: PreparedGuideGoal
+  readonly preferredProfileRefs?: ReadonlyArray<string>
 }
 
 export interface GuideGenerateInput {
@@ -81,6 +94,7 @@ export interface GuideGenerateInput {
   readonly guide: ProfileGuideV1
   /** The selected guide's authored Markdown body, loaded by the caller (never by the provider). Untrusted reference material for the model. */
   readonly guideBody: string
+  readonly goal?: PreparedGuideGoal
 }
 
 export interface GuideRefineInput extends GuideGenerateInput {
@@ -109,10 +123,30 @@ export const guideBodyMaximumLength = 128_000
  */
 export const guideEnrichPackMaximumLength = 400_000
 
-/** Fails closed unless `input` has at least three candidate entries to rank. */
+/** Goal matching can rank one eligible entry; ordinary matching still requires three. */
 export const assertGuideMatchInput = (input: GuideMatchInput): GuideMatchInput => {
-  if (input.entries.length < 3) {
-    fail("match input.entries", `must contain at least 3 entries to rank: got ${input.entries.length}`)
+  const minimum = input.goal === undefined ? 3 : 1
+  if (input.entries.length < minimum) {
+    fail("match input.entries", `must contain at least ${minimum} entries to rank: got ${input.entries.length}`)
+  }
+  if (input.goal !== undefined) {
+    assertPreparedGuideGoal(input.goal)
+    for (const entry of input.entries) {
+      const policy = entry.goalExecution
+      if (
+        policy === undefined ||
+        !["codex-goal", "claude-goal", "graph-of-loops"].includes(policy.controller) ||
+        entry.guide.workflows.length === 0 ||
+        entry.guide.workflows.some(({ id }) => !policy.workflowIds.includes(id))
+      ) {
+        fail("match input.entries", `must contain only goal-compatible workflows: ${entry.ref}`)
+      }
+    }
+    for (const ref of input.preferredProfileRefs ?? []) {
+      if (!input.entries.some((entry) => entry.ref === ref)) {
+        fail("match input.preferredProfileRefs", `must reference an eligible profile: ${ref}`)
+      }
+    }
   }
   return input
 }
@@ -129,6 +163,7 @@ export const assertGuideGenerateInput = <Input extends GuideGenerateInput>(input
     fail("generate input.workflowId", `must reference a known workflow of the supplied guide: ${input.workflowId}`)
   }
   text(input.guideBody, "generate input.guideBody", guideBodyMaximumLength, { multiline: true })
+  if (input.goal !== undefined) resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
   return input
 }
 
@@ -139,7 +174,16 @@ export const assertGuideOptimizeInput = (input: GuideOptimizeInput): GuideOptimi
   if (input.candidates.length < 1 || input.candidates.length > 3) {
     fail("optimize input.candidates", `must contain 1 to 3 entries: got ${input.candidates.length}`)
   }
-  input.candidates.forEach((candidate, index) => validateGenerateCandidate(candidate, `optimize input.candidates[${index}]`))
+  if (input.goalExecution !== undefined) assertPreparedGuideGoal(input.goalExecution.goal)
+  if (input.goal !== undefined) {
+    assertPreparedGuideGoal(input.goal)
+    if (input.goalExecution?.goal.fingerprint !== input.goal.fingerprint) {
+      fail("optimize input.goal", "must match the resolved goal execution")
+    }
+  }
+  input.candidates.forEach((candidate, index) =>
+    validateGenerateCandidate(candidate, `optimize input.candidates[${index}]`, input.goalExecution),
+  )
   if (input.fixedFrame !== undefined) {
     const fields = record(input.fixedFrame, "optimize input.fixedFrame")
     exactKeys(fields, "optimize input.fixedFrame", ["beforeBody", "afterBody"])
@@ -193,17 +237,23 @@ const validateMatchCandidate = (
 
 /**
  * Validates a raw model match response against the catalog's known refs and
- * workflow IDs. Requires three to five candidates with unique profile refs,
- * ordered by non-increasing confidence. Three remains accepted for cached
- * responses created before the five-recommendation UI.
+ * workflow IDs. Goal mode allows one to five candidates; ordinary mode
+ * requires three to five. References are unique, ordered by non-increasing
+ * confidence, and must include any explicit compatible preferences.
  */
 export const validateGuideMatchResult = (
   value: unknown,
   workflowIndex: ReadonlyMap<string, ReadonlySet<string>>,
+  goal?: PreparedGuideGoal,
+  preferredProfileRefs: ReadonlyArray<string> = [],
 ): GuideMatchResult => {
+  if (goal !== undefined) assertPreparedGuideGoal(goal)
   const fields = record(value, "match result")
   exactKeys(fields, "match result", ["candidates"])
-  const rawCandidates = array(fields.candidates, "match result.candidates", { minimum: 3, maximum: 5 })
+  const rawCandidates = array(fields.candidates, "match result.candidates", {
+    minimum: goal === undefined ? 3 : 1,
+    maximum: 5,
+  })
   const candidates = rawCandidates.map((item, index) =>
     validateMatchCandidate(item, `match result.candidates[${index}]`, workflowIndex),
   )
@@ -212,6 +262,11 @@ export const validateGuideMatchResult = (
     "match result.candidates",
     "profile refs",
   )
+  for (const ref of preferredProfileRefs) {
+    if (!candidates.some(({ profileRef }) => profileRef === ref)) {
+      fail("match result.candidates", `omitted the explicitly requested compatible profile: ${ref}`)
+    }
+  }
   for (let index = 1; index < candidates.length; index += 1) {
     const current = candidates[index]
     const previous = candidates[index - 1]
@@ -222,23 +277,39 @@ export const validateGuideMatchResult = (
   return { candidates }
 }
 
-const validateGenerateCandidate = (value: unknown, path: string): GuideGenerateCandidate => {
+const validateGenerateCandidate = (
+  value: unknown,
+  path: string,
+  goalExecution?: GuideGoalExecution,
+): GuideGenerateCandidate => {
   const fields = record(value, path)
   exactKeys(fields, path, ["title", "prompt", "notes"])
+  const prompt = text(
+    fields.prompt,
+    `${path}.prompt`,
+    goalExecution === undefined ? 8000 : guideGoalApproachBudget(goalExecution),
+    { multiline: true },
+  )
+  if (goalExecution !== undefined && hasGuideGoalControllerCommand(prompt)) {
+    fail(`${path}.prompt`, "must not add a goal controller or another Goal-me interview")
+  }
   return {
     title: text(fields.title, `${path}.title`, 200),
-    prompt: text(fields.prompt, `${path}.prompt`, 8000, { multiline: true }),
+    prompt,
     notes: text(fields.notes, `${path}.notes`, 1000, { multiline: true }),
   }
 }
 
 /** Validates a raw model generate response. Requires exactly three candidates with distinct prompt strings. */
-export const validateGuideGenerateResult = (value: unknown): GuideGenerateResult => {
+export const validateGuideGenerateResult = (
+  value: unknown,
+  goalExecution?: GuideGoalExecution,
+): GuideGenerateResult => {
   const fields = record(value, "generate result")
   exactKeys(fields, "generate result", ["candidates"])
   const rawCandidates = array(fields.candidates, "generate result.candidates", { minimum: 3, maximum: 3 })
   const candidates = rawCandidates.map((item, index) =>
-    validateGenerateCandidate(item, `generate result.candidates[${index}]`),
+    validateGenerateCandidate(item, `generate result.candidates[${index}]`, goalExecution),
   )
   uniqueArray(
     candidates.map(({ prompt }) => prompt),
@@ -249,10 +320,10 @@ export const validateGuideGenerateResult = (value: unknown): GuideGenerateResult
 }
 
 /** Validates a raw model refine response. Requires exactly one candidate. */
-export const validateGuideRefineResult = (value: unknown): GuideRefineResult => {
+export const validateGuideRefineResult = (value: unknown, goalExecution?: GuideGoalExecution): GuideRefineResult => {
   const fields = record(value, "refine result")
   exactKeys(fields, "refine result", ["candidate"])
-  return { candidate: validateGenerateCandidate(fields.candidate, "refine result.candidate") }
+  return { candidate: validateGenerateCandidate(fields.candidate, "refine result.candidate", goalExecution) }
 }
 
 /** Validates a raw model enrich response: one rewritten intent, bounded like a typed intent. */
@@ -263,7 +334,11 @@ export const validateGuideEnrichResult = (value: unknown): GuideEnrichResult => 
 }
 
 /** Validates a Prompt Master rewrite response and preserves the requested candidate count. */
-export const validateGuideOptimizeResult = (value: unknown, expectedCount: number): GuideOptimizeResult => {
+export const validateGuideOptimizeResult = (
+  value: unknown,
+  expectedCount: number,
+  goalExecution?: GuideGoalExecution,
+): GuideOptimizeResult => {
   const fields = record(value, "optimize result")
   exactKeys(fields, "optimize result", ["candidates"])
   const rawCandidates = array(fields.candidates, "optimize result.candidates", {
@@ -271,7 +346,7 @@ export const validateGuideOptimizeResult = (value: unknown, expectedCount: numbe
     maximum: expectedCount,
   })
   const candidates = rawCandidates.map((item, index) =>
-    validateGenerateCandidate(item, `optimize result.candidates[${index}]`),
+    validateGenerateCandidate(item, `optimize result.candidates[${index}]`, goalExecution),
   )
   uniqueArray(
     candidates.map(({ prompt }) => prompt),

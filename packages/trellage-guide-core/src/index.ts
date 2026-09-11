@@ -29,6 +29,13 @@ export interface ProfileGuideWorkflow {
   readonly promptTemplate: string
 }
 
+export type ProfileGuideGoalController = "codex-goal" | "claude-goal" | "graph-of-loops"
+
+export interface ProfileGuideGoalExecution {
+  readonly controller: ProfileGuideGoalController
+  readonly workflowIds: ReadonlyArray<string>
+}
+
 export interface ProfileGuideV1 {
   readonly schemaVersion: 1
   readonly capabilities: ReadonlyArray<string>
@@ -36,6 +43,7 @@ export interface ProfileGuideV1 {
   readonly avoidFor: ReadonlyArray<string>
   readonly prerequisites: ReadonlyArray<ProfileGuidePrerequisite>
   readonly workflows: ReadonlyArray<ProfileGuideWorkflow>
+  readonly goalExecution?: ProfileGuideGoalExecution
 }
 
 export interface ProfileGuideDocument {
@@ -70,6 +78,90 @@ const controls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u
 const singleLineControls = /[\u0000-\u001f\u007f-\u009f]/u
 
 export const isLaunchAgentIdentifier = (value: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)
+
+export const isProfileGuideGoalController = (value: unknown): value is ProfileGuideGoalController =>
+  value === "codex-goal" || value === "claude-goal" || value === "graph-of-loops"
+
+const goalCommandPattern = /(?:^|[^A-Za-z0-9_:/.-])([/$](?:goal(?:-me)?|graph-of-loops))(?=$|[^A-Za-z0-9_:/.-])/u
+const goalSkillPattern = /(?:^|[:/])(?:goal(?:-me)?|graph-of-loops)$/u
+const graphGoalFramePattern = /^\/graph-of-loops\s+OBJECTIVE="\{\{intent\}\}"\s+CONSTRAINTS="([^"]+)"$/u
+
+const goalControllerSupportsIdentity = (
+  controller: ProfileGuideGoalController,
+  identity: ProfileGuideIdentity,
+  harness?: string,
+): boolean => {
+  if (identity.surface === "native") {
+    return (
+      (controller === "codex-goal" && identity.launcher === "cdx") ||
+      (controller === "claude-goal" && identity.launcher === "cldx")
+    )
+  }
+  if (controller === "graph-of-loops") return identity.profile === "claude-graph-of-loops"
+  return (
+    controller === "claude-goal" &&
+    identity.profile !== "claude-graph-of-loops" &&
+    (harness === "claude" || identity.profile.startsWith("claude-"))
+  )
+}
+
+const goalExecutionSurfaceProblem = (
+  controller: ProfileGuideGoalController,
+  identity?: ProfileGuideIdentity,
+  harness?: string,
+): string | undefined => {
+  if (identity !== undefined && !goalControllerSupportsIdentity(controller, identity, harness)) {
+    return `${controller} is not supported by ${profileGuideIdentityKey(identity)}`
+  }
+  const requiredHarness = controller === "codex-goal" ? "codex" : "claude"
+  if (harness !== undefined && harness !== requiredHarness) {
+    return `${controller} requires the ${requiredHarness} harness, not ${harness}`
+  }
+  return undefined
+}
+
+const goalExecutionWorkflowProblem = (
+  controller: ProfileGuideGoalController,
+  workflow: ProfileGuideWorkflow,
+): string | undefined => {
+  if (workflow.launchAgent !== undefined) {
+    return `workflow ${workflow.id} uses launchAgent, which is not supported by ${controller}`
+  }
+  if (controller === "graph-of-loops") {
+    const frame = graphGoalFramePattern.exec(workflow.promptTemplate)
+    if (workflow.skill !== "graph-of-loops" || frame === null || frame[1]!.trim().length === 0) {
+      return `workflow ${workflow.id} must use the graph-of-loops skill and its /graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="..." goal-start frame`
+    }
+    if (goalCommandPattern.test(frame[1]!)) {
+      return `workflow ${workflow.id} must not add another goal controller or goal authoring command`
+    }
+  } else if (
+    (workflow.skill !== undefined && goalSkillPattern.test(workflow.skill)) ||
+    goalCommandPattern.test(workflow.promptTemplate)
+  ) {
+    return `workflow ${workflow.id} must leave goal invocation to ${controller}, not another controller or goal authoring command`
+  }
+  return undefined
+}
+
+/** Shared binding rules for authored guides and their independently validated JSON projections. */
+export const profileGuideGoalExecutionProblem = (
+  execution: ProfileGuideGoalExecution,
+  guideWorkflows: ReadonlyArray<ProfileGuideWorkflow>,
+  identity?: ProfileGuideIdentity,
+  harness?: string,
+): string | undefined => {
+  const surfaceProblem = goalExecutionSurfaceProblem(execution.controller, identity, harness)
+  if (surfaceProblem !== undefined) return surfaceProblem
+  const workflowsById = new Map(guideWorkflows.map((workflow) => [workflow.id, workflow]))
+  for (const id of execution.workflowIds) {
+    const workflow = workflowsById.get(id)
+    if (workflow === undefined) return `references unknown workflow: ${id}`
+    const workflowProblem = goalExecutionWorkflowProblem(execution.controller, workflow)
+    if (workflowProblem !== undefined) return workflowProblem
+  }
+  return undefined
+}
 
 const fail = (path: string, message: string): never => {
   throw new ProfileGuideValidationError(path, message)
@@ -211,6 +303,30 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
   return result
 }
 
+const goalExecution = (
+  value: unknown,
+  path: string,
+  guideWorkflows: ReadonlyArray<ProfileGuideWorkflow>,
+  identity: ProfileGuideIdentity,
+): ProfileGuideGoalExecution => {
+  const fields = record(value, path)
+  exactKeys(fields, path, ["controller", "workflowIds"])
+  if (!isProfileGuideGoalController(fields.controller)) {
+    return fail(`${path}.controller`, "must be one of: codex-goal, claude-goal, graph-of-loops")
+  }
+  const execution: ProfileGuideGoalExecution = {
+    controller: fields.controller,
+    workflowIds: stringArray(fields.workflowIds, `${path}.workflowIds`, {
+      minimum: 1,
+      maximumItems: 32,
+      identifiers: true,
+    }),
+  }
+  const problem = profileGuideGoalExecutionProblem(execution, guideWorkflows, identity)
+  if (problem !== undefined) fail(path, problem)
+  return execution
+}
+
 const parseFrontmatter = (path: string, source: string): { readonly value: unknown; readonly body: string } => {
   if (source.length > 128_000) fail(path, "must contain at most 128000 characters")
   const normalized = source.replace(/\r\n?/gu, "\n")
@@ -234,15 +350,30 @@ const parseFrontmatter = (path: string, source: string): { readonly value: unkno
 export const parseProfileGuide = (path: string, source: string): ProfileGuideDocument => {
   const parsed = parseFrontmatter(path, source)
   const fields = record(parsed.value, `${path} frontmatter`)
-  exactKeys(fields, `${path} frontmatter`, [
-    "schemaVersion",
-    "capabilities",
-    "bestFor",
-    "avoidFor",
-    "prerequisites",
-    "workflows",
-  ])
+  exactKeys(
+    fields,
+    `${path} frontmatter`,
+    ["schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites", "workflows"],
+    ["goalExecution"],
+  )
   if (fields.schemaVersion !== 1) fail(`${path} frontmatter.schemaVersion`, "must equal 1")
+  const guideWorkflows = workflows(fields.workflows, `${path} frontmatter.workflows`)
+  let execution: ProfileGuideGoalExecution | undefined
+  if (fields.goalExecution !== undefined) {
+    const identityPath = /(?:^|\/)((?:native\/[^/]+|sandbox)\/[^/]+\.md)$/u.exec(path.replaceAll("\\", "/"))?.[1]
+    if (identityPath === undefined) {
+      return fail(
+        `${path} frontmatter.goalExecution`,
+        "requires a native/<launcher>/<profile>.md or sandbox/<profile>.md identity",
+      )
+    }
+    execution = goalExecution(
+      fields.goalExecution,
+      `${path} frontmatter.goalExecution`,
+      guideWorkflows,
+      parseProfileGuideIdentity(identityPath),
+    )
+  }
   return {
     guide: {
       schemaVersion: 1,
@@ -262,7 +393,8 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
         itemMaximum: 2000,
       }),
       prerequisites: prerequisites(fields.prerequisites, `${path} frontmatter.prerequisites`),
-      workflows: workflows(fields.workflows, `${path} frontmatter.workflows`),
+      workflows: guideWorkflows,
+      ...(execution === undefined ? {} : { goalExecution: execution }),
     },
     body: parsed.body,
   }

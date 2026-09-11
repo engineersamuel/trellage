@@ -1,5 +1,10 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: claude-goal
+  workflowIds:
+    - vault-backed-research
+    - last-30-days-pulse
 capabilities:
 - bounded-factual-research
 - source-backed-comparisons

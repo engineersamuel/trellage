@@ -27,6 +27,7 @@ native-claude harness-update # updates the shared host Claude executable
 native-claude skills-update --home ABS --marker ABS --marker-value VALUE \
   [--mode --check|--sync]
 native-claude model-id     # prints the default model id (claude-opus-5)
+native-claude goal-runtime # read-only version, evaluator model, and model-inventory URL
 native-claude exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 ```
 
@@ -63,6 +64,21 @@ process), preserving PID/signal transparency for the calling launcher.
 `harness-update` takes no flags or profile arguments. It applies the shared
 provider/token scrub, resolves the host Claude executable, and execs the
 built-in updater without preparing a profile or requiring the proxy.
+
+`goal-runtime` reads the installed version and reports the runtime's actual
+goal evaluator model and model-inventory URL as JSON. It does not prepare a
+profile, change settings, or make a model request. `cldx harness-version`
+includes this evidence under `goalRuntime`, with its managed `profileHome`.
+Guide goal readiness uses that home to check workspace trust and hook policy,
+and verifies that the evaluator is in the existing proxy model inventory.
+These checks do not prove model execution or goal activation.
+
+The guide reads the starting-directory and primary-checkout local settings
+using the installed Claude version's scope rules. File-based managed policy
+includes non-hidden `managed-settings.d/*.json` files in alphabetical order.
+Server-managed policy, macOS managed preferences, Windows/WSL policy, and
+dynamic policy helpers remain explicit unknown states; the guide does not
+start an automatic goal or change policy to bypass them.
 
 `skills-update` requires an existing owned home and managed skills. It applies
 the same provider/token scrub and preserves `GH_CONFIG_DIR`. It copies only

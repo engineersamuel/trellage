@@ -58,6 +58,56 @@ not install agents, change prompt delivery, or select an agent for other
 workflows on the same profile. Omit it when no workflow-specific agent is
 required.
 
+## Goal execution policy
+
+Use optional `goalExecution` frontmatter to declare which existing workflows
+can execute an approved goal. A guide without this field declares no goal
+execution support. It remains available for ordinary prompts.
+
+```yaml
+goalExecution:
+  controller: codex-goal
+  workflowIds:
+    - test-driven-development
+    - plan-then-execute-branch
+```
+
+The policy accepts exactly `controller` and `workflowIds`. The workflow list
+must contain 1 to 32 unique IDs from that guide. The guide file's Native or
+Sandbox identity and the catalog's actual harness must support the controller.
+
+| Controller | Supported surface | Workflow rule |
+| --- | --- | --- |
+| `codex-goal` | Native `cdx` running Codex | Keep the existing workflow discipline inside the application-owned native `/goal` invocation. |
+| `claude-goal` | Native `cldx` or Sandbox Claude Code, except Graph of Loops | Keep the existing workflow frame inside the application-owned native `/goal` invocation. |
+| `graph-of-loops` | Sandbox `claude-graph-of-loops` only | Use the `graph-of-loops` skill and the authored `/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="..."` goal-start frame. |
+
+Graph's policy names its four goal-start workflows, not
+`inspect-or-resume-run`. Keep its authored constraints; `trellage-graph`
+remains the completion authority. Do not wrap it in native `/goal`.
+
+Do not add `/goal` to a native goal workflow template. The application adds
+that command once. Do not invent `$goal`, use `/goal-me` or `$goal-me` to
+execute an approved goal, or bind a goal workflow to a Copilot `launchAgent`.
+Goal me authors goals; it is not an execution controller. Superpowers TDD,
+Codex pstack, and other workflow disciplines remain subordinate to the
+declared controller. Firstmate, HVE, Pi, and other wrappers do not get a
+controller from their skill names or model routes.
+
+The full catalog and selected guide retain the policy. Ordinary matching
+does not receive it. Goal matching must call `guideMatchCatalogEntries` or
+`toGuideMatchCatalogEntry` with `true` as the second (`includeGoalExecution`)
+argument; the policy is then present on the compact entry, not
+duplicated inside its `guide`. `compactProfileGuide` keeps its ordinary
+projection.
+
+This metadata does not prove runtime readiness or authorize more work.
+Launch still requires compatible runtime versions, enabled goal support,
+trust, and permitted hooks. Codex needs native command input, not a
+positional startup prompt. Claude print mode and interactive sessions have
+different delivery requirements. Keep profile restrictions, workflow
+approval gates, and the approved goal's criteria intact.
+
 ## Exclude profile maintenance
 
 Workflows describe work that a user wants the agent to do. Do not add

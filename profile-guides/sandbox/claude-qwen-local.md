@@ -1,5 +1,10 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: claude-goal
+  workflowIds:
+    - bounded-local-edit
+    - quick-refactor
 capabilities:
 - offline-local-model-coding
 - cost-controlled-bounded-tasks
