@@ -1,4 +1,4 @@
-import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises"
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
@@ -336,27 +336,36 @@ describe("GuideArtifactCache", () => {
   })
 
   it("warns and treats corrupt, oversized, symlinked, and schema-invalid artifacts as misses", async () => {
-    const cwd = await temporaryRoot()
-    const warnings: string[] = []
-    await cacheFor(cwd, warnings).match(matchInput, async () => matchResult)
-    const guideRoot = path.join(cwd, ".trx-guide")
-    const session = (await readdir(guideRoot))[0]!
-    const artifact = path.join(guideRoot, session, "1-profile-recommendations.md")
-    await writeFile(artifact, "not an artifact", "utf8")
-    await cacheFor(cwd, warnings).match(matchInput, async () => matchResult)
-    await writeFile(artifact, "x".repeat(300_000), "utf8")
-    await cacheFor(cwd, warnings).match(matchInput, async () => matchResult)
-    await rm(artifact)
-    await symlink(path.join(cwd, "elsewhere"), artifact)
-    await cacheFor(cwd, warnings).match(matchInput, async () => matchResult)
-    await rm(artifact)
-    await writeFile(artifact, "<!-- trx-guide-artifact:v1:eyJzY2hlbWFWZXJzaW9uIjoyfQ -->\n", { mode: 0o600 })
-    await chmod(artifact, 0o600)
-    await cacheFor(cwd, warnings).match(matchInput, async () => matchResult)
-    expect(warnings.some((warning) => warning.includes("malformed"))).toBe(true)
-    expect(warnings.some((warning) => warning.includes("exceeds"))).toBe(true)
-    expect(warnings.some((warning) => warning.includes("regular file"))).toBe(true)
-    expect(warnings.some((warning) => warning.includes("schema"))).toBe(true)
+    const expectMiss = async (
+      mutate: (artifact: string, cwd: string) => Promise<void>,
+      warningFragment: string,
+    ): Promise<void> => {
+      const cwd = await temporaryRoot()
+      const warnings: string[] = []
+      await cacheFor(cwd).match(matchInput, async () => matchResult)
+      const guideRoot = path.join(cwd, ".trx-guide")
+      const session = (await readdir(guideRoot))[0]!
+      const artifact = path.join(guideRoot, session, "1-profile-recommendations.md")
+      await mutate(artifact, cwd)
+      let calls = 0
+      await cacheFor(cwd, warnings).match(matchInput, async () => {
+        calls += 1
+        return matchResult
+      })
+      expect(calls).toBe(1)
+      expect(warnings.some((warning) => warning.includes(warningFragment))).toBe(true)
+    }
+
+    await expectMiss((artifact) => writeFile(artifact, "not an artifact", "utf8"), "malformed")
+    await expectMiss((artifact) => writeFile(artifact, "x".repeat(300_000), "utf8"), "exceeds")
+    await expectMiss(async (artifact, cwd) => {
+      await rm(artifact)
+      await symlink(path.join(cwd, "elsewhere"), artifact)
+    }, "regular file")
+    await expectMiss(
+      (artifact) => writeFile(artifact, "<!-- trx-guide-artifact:v1:eyJzY2hlbWFWZXJzaW9uIjoyfQ -->\n", { mode: 0o600 }),
+      "schema",
+    )
   })
 
   it("rejects an artifact path swapped to a symlink immediately before open", async () => {
