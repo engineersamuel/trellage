@@ -169,6 +169,11 @@ plugin or managed skill bundle. Launch self-heals repairable managed policy,
 floating-skill, marketplace, plugin, and cache drift while preserving
 profile-local state. `doctor` remains a strict diagnostic for policy and the
 cataloged plugin or managed skills.
+For example, if `cdx doctor pstack` reports a managed-config mismatch,
+`cdx pstack` repairs that drift before starting Codex; a separate `repair`
+command is not required. Unsafe paths and authentication failures still stop
+the launch. A failed Codex session is not automatically replayed, because it
+may already have changed files or performed external actions.
 Doctor performs no native marketplace/plugin mutation, but may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
 `repair` restores
 managed policy and a missing cataloged plugin or managed skill while preserving profile-local

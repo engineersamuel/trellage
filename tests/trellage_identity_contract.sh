@@ -103,6 +103,15 @@ for target in native-codex-auth-config-launch native-codex-lifecycle native-grok
   grep -Eq "^TIMING_SENSITIVE_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not isolate ${target}"
 done
+grep -Fqx '.PHONY: profile-compiler-fingerprint' "$repo_root/Makefile" \
+  || fail 'Makefile does not declare the fingerprint performance contract phony'
+grep -Fqx $'\t$(MAKE) --no-print-directory -j1 profile-compiler-fingerprint' "$repo_root/Makefile" \
+  || fail 'Makefile does not run the fingerprint performance contract in a separate serial phase'
+if grep -Eq '^(PARALLEL_TEST_TARGETS|TIMING_SENSITIVE_TEST_TARGETS|FINAL_TEST_TARGETS) :=.* profile-compiler-fingerprint( |$)' "$repo_root/Makefile"; then
+  fail 'fingerprint performance contract must not share a parallel test phase'
+fi
+[[ "$(sed -n '/^launcher:/,/^$/p' "$repo_root/Makefile")" != *profile_compiler_fingerprint_contract.sh* ]] \
+  || fail 'parallel launcher target must not run the fingerprint performance contract'
 for block in auth-config-launch lifecycle catalog installation pstack; do
   grep -Fqx $'\tbash prototypes/trellage-codex-profiles/tests/blocks/'"$block"'.sh' \
     "$repo_root/Makefile" || fail "Makefile Codex ${block} target is stale"

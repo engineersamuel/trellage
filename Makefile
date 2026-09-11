@@ -1,5 +1,7 @@
 .PHONY: test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime trellage-host-headless trellage-host-headless-test azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-grok-profiles native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test graph-of-loops-runtime-contract graph-of-loops-image graph-of-loops-image-probe build compare compare-down clean
 
+.PHONY: profile-compiler-fingerprint
+
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
 NATIVE_TUI_MATRIX_ARGS ?=
@@ -13,6 +15,7 @@ TRELLAGE_GRAPH_OF_LOOPS_IMAGE ?= trellage-profile-claude-graph-of-loops-linux-ar
 
 test:
 	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(PARALLEL_TEST_TARGETS)
+	$(MAKE) --no-print-directory -j1 profile-compiler-fingerprint
 	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(TIMING_SENSITIVE_TEST_TARGETS)
 	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(FINAL_TEST_TARGETS)
 
@@ -55,6 +58,8 @@ profile-compiler: profile-guide-core
 
 launcher: profile-guide-core
 	cd packages/trellage-launcher && npm run check && npm run build && npm test
+
+profile-compiler-fingerprint:
 	bash tests/profile_compiler_fingerprint_contract.sh
 
 trellage-identity:

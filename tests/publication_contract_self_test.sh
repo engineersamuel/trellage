@@ -21,17 +21,22 @@ seed_fixture() {
   mkdir -p \
     "$fixture/scripts" \
     "$fixture/tests" \
+    "$fixture/prototypes/example/.contract-fixture.publication" \
+    "$fixture/prototypes/example/.contract-work" \
     "$fixture/packages/trellage-cli" \
     "$fixture/packages/trellage-guide-core"
   cp tests/publication_contract.sh "$fixture/tests/publication_contract.sh"
   cp .gitignore "$fixture/.gitignore"
+  cp prototypes/.npmignore "$fixture/prototypes/.npmignore"
+  printf 'temporary fixture\n' >"$fixture/prototypes/example/.contract-fixture.publication/marker"
+  printf 'temporary fixture\n' >"$fixture/prototypes/example/.contract-work/marker"
   cp LICENSE "$fixture/LICENSE"
   printf '%s\n' '{"name":"@trellage/profile-compiler","license":"MIT"}' \
     >"$fixture/packages/trellage-cli/package.json"
   printf '%s\n' '{"name":"@trellage/guide-core","private":true,"license":"MIT"}' \
     >"$fixture/packages/trellage-guide-core/package.json"
   printf '%s\n' \
-    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["scripts/trellage-session-bridge.py","scripts/floating-skills.mjs","scripts/install-floating-skills-runtime.sh","scripts/native-environment.mjs","scripts/install-native-environment-runtime.sh","skills.json"]}' \
+    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["prototypes","scripts/trellage-session-bridge.py","scripts/floating-skills.mjs","scripts/install-floating-skills-runtime.sh","scripts/native-environment.mjs","scripts/install-native-environment-runtime.sh","skills.json"]}' \
     >"$fixture/package.json"
   printf '%s\n' '#!/usr/bin/env python3' >"$fixture/scripts/trellage-session-bridge.py"
   printf '%s\n' '#!/usr/bin/env node' >"$fixture/scripts/floating-skills.mjs"
@@ -67,6 +72,14 @@ fixture_git -C "$tree_fixture" tag extra-tag
 fixture_git -C "$tree_fixture" remote add origin https://example.invalid/trellage.git
 run_contract "$tree_fixture" >/dev/null \
   || fail 'default tree mode rejected contributor or additional Git state'
+
+mv "$tree_fixture/prototypes/.npmignore" "$tree_fixture/prototypes/.npmignore.saved"
+if run_contract "$tree_fixture" >"$fixture_root/package-fixture-output" 2>&1; then
+  fail 'temporary contract fixtures were accepted in the npm package'
+fi
+grep -Fq 'npm package includes temporary contract fixtures' "$fixture_root/package-fixture-output" \
+  || fail 'temporary package fixture diagnostic changed'
+mv "$tree_fixture/prototypes/.npmignore.saved" "$tree_fixture/prototypes/.npmignore"
 
 printf 'RSU fixture\n' >"$tree_fixture/README.md"
 if run_contract "$tree_fixture" >"$fixture_root/content-output" 2>&1; then

@@ -51,6 +51,10 @@ jq -e '
     and any(.path == "skills.json")
 ' <<<"$package_manifest" >/dev/null \
   || fail 'npm package omits a required Trellage runtime helper'
+jq -e '
+  .[0].files | all(.path | test("(^|/)(\\.contract-fixture\\.[^/]+|\\.contract-work)(/|$)") | not)
+' <<<"$package_manifest" >/dev/null \
+  || fail 'npm package includes temporary contract fixtures'
 
 for required_ignore in \
   '/.claude/' '/.hyperresearch/' '/.scratch/' '/research/' '/evidence/' \
