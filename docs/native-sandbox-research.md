@@ -118,3 +118,22 @@ The statement "Trellage Native profiles isolate agent state but are not
 containers or security boundaries" now has one exception: `grx` enables its
 native OS-level sandbox. `cdx` uses Full Access by default; `cldx`, `cpx`,
 `jcx`, `omp`, `picx`, `prx`, and `fmx` remain unsandboxed as before.
+
+## 5. Grok GitHub authentication
+
+`grx` forwards the host's active `github.com` credential by default, using
+`GH_TOKEN` only at the final process boundary. Existing `GH_TOKEN` and
+`GITHUB_TOKEN` take precedence. `GRX_GH_AUTH_BRIDGE=0` disables automatic
+retrieval. See the [Grok launcher guide](../prototypes/trellage-grok-profiles/README.md#github-authentication).
+
+The bridge changes credential availability, not sandbox access. It adds no
+keychain exception, writable Git metadata path, SSH override, or sandbox flag,
+and preserves user shell environment filters. The launcher creates no
+credential file or secret-bearing command argument. Grok and its children can
+use the forwarded credential; automatic storage by an installed shell backend
+has not been independently verified.
+
+Host success with sandbox HTTP 401 is consistent with unavailable keychain
+access, but does not alone prove that cause. Check the effective `gh`
+configuration and API identity without printing credentials. An SSH key
+selecting another account and a denied `index.lock` write are separate issues.

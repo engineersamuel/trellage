@@ -5,6 +5,10 @@ cd "$(dirname "$0")/.."
 prototype_root="$PWD"
 . "$prototype_root/../../tests/helpers/floating_skills_fixture.sh"
 unset GRX_DISABLE_AUTH_CHECK GRX_CATALOG || true
+unset GRX_GH_AUTH_BRIDGE GH_TOKEN GITHUB_TOKEN GH_HOST GH_CONFIG_DIR
+unset GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
+# Unrelated profile fixtures do not need GitHub access.
+export GRX_GH_AUTH_BRIDGE=0
 
 fail() {
   printf 'trellage Grok profiles contract: FAIL: %s\n' "$1" >&2
@@ -335,6 +339,12 @@ fi
 : "${GROK_HOME:?GROK_HOME is required}"
 : "${FAKE_GROK_LOG:?FAKE_GROK_LOG is required}"
 
+if [ "${FAKE_GH_EXPECT_CLEAN_PREFLIGHT:-0}" = 1 ] \
+  && [ "${1:-}" != '--sandbox' ] && [ -n "${GH_TOKEN:-}" ]; then
+  printf 'GitHub credential reached profile preparation\n' >&2
+  exit 98
+fi
+
 case "$GROK_HOME" in
   "$HOME/.local/share/trellage/profiles/grok/"*/home)
     [ -f "$GROK_HOME/auth.json" ] && [ ! -L "$GROK_HOME/auth.json" ] || exit 92
@@ -380,6 +390,17 @@ if [ "${1:-}" = '--sandbox' ] \
   && [ "${4:-}" = 'bypassPermissions' ] \
   && [ "${5:-}" = '--always-approve' ]; then
   shift 5
+fi
+
+if [ "${1:-}" = '--fixture-gh-tool' ]; then
+  shift
+  export FAKE_GH_SANDBOX=1
+  exec /bin/bash -c '
+    if gh auth token --hostname github.com >/dev/null 2>&1; then
+      exit 95
+    fi
+    gh "$@"
+  ' fixture-gh-tool "$@"
 fi
 
 state_dir="$GROK_HOME/fake-state"
@@ -759,6 +780,41 @@ for arg in "$@"; do
 done
 FAKE_GROK
 chmod 0555 "$fake_bin/grok"
+
+cat >"$fake_bin/gh" <<'FAKE_GH'
+#!/bin/bash
+set -euo pipefail
+printf '%s:%s\n' "${FAKE_GH_SANDBOX:-0}" "$*" >>"$FAKE_GH_LOG"
+case "$*" in
+  'auth token --hostname github.com')
+    [ "${FAKE_GH_SANDBOX:-0}" = 0 ] || exit 1
+    [ "${GH_PROMPT_DISABLED:-}" = 1 ] || exit 96
+    if [ -n "${FAKE_GH_EXPECTED_CONFIG_DIR:-}" ]; then
+      [ "${GH_CONFIG_DIR:-}" = "$FAKE_GH_EXPECTED_CONFIG_DIR" ] || exit 99
+    fi
+    if [ "${FAKE_GH_NUL:-0}" = 1 ]; then
+      printf 'fixture-gh-key\000ring\n'
+    else
+      printf '%s\n' "${FAKE_GH_CREDENTIAL-fixture-gh-keyring}"
+    fi
+    printf '%s' "${FAKE_GH_STDERR:-}" >&2
+    exit "${FAKE_GH_STATUS:-0}"
+    ;;
+  'api user --jq .login'|'pr create --repo fixture/repo --title fixture'|'pr merge 123 --repo fixture/repo --squash')
+    if [ "${GH_TOKEN:-${GITHUB_TOKEN:-}}" != "${FAKE_GH_EXPECTED_CREDENTIAL:-fixture-gh-keyring}" ]; then
+      printf 'fixture GitHub HTTP 401\n' >&2
+      exit 22
+    fi
+    printf 'fixture-user\n'
+    [ "${FAKE_GH_TOOL_SIGNAL:-0}" != 1 ] || kill -TERM "$$"
+    exit "${FAKE_GH_TOOL_STATUS:-0}"
+    ;;
+  *) printf 'unexpected fixture gh command\n' >&2; exit 97 ;;
+esac
+FAKE_GH
+chmod 0555 "$fake_bin/gh"
+export FAKE_GH_LOG="$fixture_root/gh.log"
+: >"$FAKE_GH_LOG"
 
 cat >"$fake_bin/curl" <<'FAKE_CURL'
 #!/bin/bash
@@ -1750,6 +1806,170 @@ last_launch_json="$(tail -n 1 "$fake_grok_log")"
 [ "$last_launch_json" = "$expected_launch_json" ] \
   || fail 'launch did not set proxy routing while preserving profile home, HOME, cwd, and ordered arguments'
 assert_line "$expected_launch_tty" "$launch_tty_log"
+
+github_host_lookups() {
+  awk '/^0:auth token --hostname github.com$/ { count++ } END { print count+0 }' "$FAKE_GH_LOG"
+}
+
+[ "$(github_host_lookups)" -eq 0 ] || fail 'opted-out operations retrieved a GitHub credential'
+gh_probe=(superpowers --fixture-gh-tool api user --jq .login)
+(
+  unset GRX_GH_AUTH_BRIDGE
+  FAKE_GH_EXPECT_CLEAN_PREFLIGHT=1 ./bin/grx "${gh_probe[@]}"
+) >"$fixture_root/gh-bridge.out" 2>"$fixture_root/gh-bridge.err" \
+  || fail 'host GitHub credential did not reach the Grok tool shell'
+assert_line 'fixture-user' "$fixture_root/gh-bridge.out"
+[ "$(github_host_lookups)" -eq 1 ] || fail 'bridge did not retrieve exactly once'
+
+cat >"$fake_bin/env" <<'FAKE_ENV'
+#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$@" >>"$FAKE_GH_ARGV_LOG"
+exec /usr/bin/env "$@"
+FAKE_ENV
+chmod 0555 "$fake_bin/env"
+export FAKE_GH_ARGV_LOG="$fixture_root/gh-argv.log"
+: >"$FAKE_GH_ARGV_LOG"
+
+for bridge_mode in '' 0 1; do
+  GH_TOKEN=fixture-gh-explicit GITHUB_TOKEN=fixture-gh-secondary \
+    FAKE_GH_EXPECTED_CREDENTIAL=fixture-gh-explicit GRX_GH_AUTH_BRIDGE="$bridge_mode" \
+    ./bin/grx "${gh_probe[@]}" >"$fixture_root/gh-explicit.out"
+  assert_line 'fixture-user' "$fixture_root/gh-explicit.out"
+done
+GH_TOKEN='' GITHUB_TOKEN=fixture-gh-secondary \
+  FAKE_GH_EXPECTED_CREDENTIAL=fixture-gh-secondary GRX_GH_AUTH_BRIDGE=1 \
+  ./bin/grx "${gh_probe[@]}" >"$fixture_root/gh-secondary.out"
+assert_line 'fixture-user' "$fixture_root/gh-secondary.out"
+[ "$(github_host_lookups)" -eq 1 ] || fail 'explicit tokens caused a host lookup'
+
+gh_status=0
+GH_TOKEN=fixture-gh-rejected GRX_GH_AUTH_BRIDGE=1 ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-rejected.out" 2>"$fixture_root/gh-rejected.err" || gh_status=$?
+[ "$gh_status" -eq 22 ] || fail 'explicit token failure was not preserved'
+[ "$(github_host_lookups)" -eq 1 ] || fail 'rejected explicit token triggered a fallback'
+
+gh_status=0
+GRX_GH_AUTH_BRIDGE=0 ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-disabled.out" 2>"$fixture_root/gh-disabled.err" || gh_status=$?
+[ "$gh_status" -eq 22 ] || fail 'disabled bridge unexpectedly authenticated the tool'
+[ "$(github_host_lookups)" -eq 1 ] || fail 'disabled bridge retrieved a credential'
+
+for gh_credential in fixture-gh-rotated-one fixture-gh-rotated-two; do
+  GRX_GH_AUTH_BRIDGE='' GH_TOKEN='' GITHUB_TOKEN='' \
+    GH_CONFIG_DIR="$fixture_root/custom gh config" \
+    FAKE_GH_EXPECTED_CONFIG_DIR="$fixture_root/custom gh config" \
+    FAKE_GH_CREDENTIAL="$gh_credential" FAKE_GH_EXPECTED_CREDENTIAL="$gh_credential" \
+    ./bin/grx "${gh_probe[@]}" >"$fixture_root/gh-rotated.out"
+  assert_line 'fixture-user' "$fixture_root/gh-rotated.out"
+done
+[ "$(github_host_lookups)" -eq 3 ] || fail 'new launches did not retrieve fresh credentials'
+
+GRX_GH_AUTH_BRIDGE=1 bash -x ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-trace.out" 2>"$fixture_root/gh-trace.err"
+GH_TOKEN=fixture-gh-explicit FAKE_GH_EXPECTED_CREDENTIAL=fixture-gh-explicit \
+  GRX_GH_AUTH_BRIDGE=1 bash -x ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-explicit-trace.out" 2>"$fixture_root/gh-explicit-trace.err"
+
+for gh_credential in '' ' ' $'fixture-gh-keyring\nextra' $'fixture-gh-keyring\r' $'fixture-gh-keyring\n'; do
+  gh_launches_before="$(wc -l <"$fake_grok_log")"
+  gh_status=0
+  GRX_GH_AUTH_BRIDGE=1 FAKE_GH_CREDENTIAL="$gh_credential" \
+    ./bin/grx "${gh_probe[@]}" \
+    >"$fixture_root/gh-malformed.out" 2>"$fixture_root/gh-malformed.err" || gh_status=$?
+  [ "$gh_status" -eq 1 ] || fail 'malformed credential did not fail closed'
+  assert_line 'grx: host GitHub credential lookup returned an unusable value' "$fixture_root/gh-malformed.err"
+  tail -n +"$((gh_launches_before + 1))" "$fake_grok_log" \
+    >"$fixture_root/gh-failed-launch.log"
+  assert_not_contains '"--sandbox"' "$fixture_root/gh-failed-launch.log"
+done
+gh_status=0
+GRX_GH_AUTH_BRIDGE=1 FAKE_GH_NUL=1 ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-nul.out" 2>"$fixture_root/gh-nul.err" || gh_status=$?
+[ "$gh_status" -eq 1 ] || fail 'NUL credential did not fail closed'
+assert_line 'grx: host GitHub credential lookup returned an unusable value' "$fixture_root/gh-nul.err"
+
+gh_status=0
+GRX_GH_AUTH_BRIDGE=1 FAKE_GH_STATUS=23 FAKE_GH_STDERR=fixture-gh-keyring \
+  ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-lookup-failed.out" 2>"$fixture_root/gh-lookup-failed.err" || gh_status=$?
+[ "$gh_status" -eq 1 ] || fail 'failed lookup did not stop the launcher'
+assert_line 'grx: host GitHub credential lookup failed (exit 23); launch grx from an authenticated host terminal' \
+  "$fixture_root/gh-lookup-failed.err"
+
+gh_lookups_before="$(github_host_lookups)"
+for gh_bad_setting in flag host; do
+  gh_status=0
+  if [ "$gh_bad_setting" = flag ]; then
+    GRX_GH_AUTH_BRIDGE=invalid ./bin/grx "${gh_probe[@]}" \
+      >"$fixture_root/gh-invalid.out" 2>"$fixture_root/gh-invalid.err" || gh_status=$?
+    assert_line 'grx: GRX_GH_AUTH_BRIDGE must be 0 or 1' "$fixture_root/gh-invalid.err"
+  else
+    GRX_GH_AUTH_BRIDGE=1 GH_HOST=enterprise.example ./bin/grx "${gh_probe[@]}" \
+      >"$fixture_root/gh-invalid.out" 2>"$fixture_root/gh-invalid.err" || gh_status=$?
+    assert_line 'grx: GitHub auth bridge supports only github.com' "$fixture_root/gh-invalid.err"
+  fi
+  [ "$gh_status" -eq 1 ] || fail 'invalid bridge configuration was accepted'
+done
+
+cat >"$fixture_root/gh-missing.bash" <<'MISSING_GH'
+command() {
+  if [ "$#" -eq 2 ] && [ "$1" = -v ] && [ "$2" = gh ]; then
+    return 1
+  fi
+  builtin command "$@"
+}
+MISSING_GH
+gh_status=0
+BASH_ENV="$fixture_root/gh-missing.bash" GRX_GH_AUTH_BRIDGE=1 ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-missing.out" 2>"$fixture_root/gh-missing.err" || gh_status=$?
+[ "$gh_status" -eq 1 ] || fail 'missing gh did not fail closed'
+assert_line 'grx: required command not found: gh' "$fixture_root/gh-missing.err"
+[ "$(github_host_lookups)" -eq "$gh_lookups_before" ] \
+  || fail 'invalid configuration or missing gh attempted a lookup'
+
+for gh_operation in list inventory doctor setup repair update skills-update harness-version harness-update; do
+  case "$gh_operation" in
+    list|harness-version|harness-update) gh_operation_args=("$gh_operation") ;;
+    inventory) gh_operation_args=(inventory superpowers --json) ;;
+    *) gh_operation_args=("$gh_operation" superpowers) ;;
+  esac
+  GRX_GH_AUTH_BRIDGE=1 FAKE_GROK_HARNESS_LOG="$fixture_root/gh-harness.log" \
+    ./bin/grx "${gh_operation_args[@]}" >"$fixture_root/gh-lifecycle.out"
+done
+gh_status=0
+GRX_GH_AUTH_BRIDGE=1 ./bin/grx skills-check gh-fixture-missing \
+  >"$fixture_root/gh-skills-check.out" 2>"$fixture_root/gh-skills-check.err" || gh_status=$?
+[ "$gh_status" -eq 1 ] || fail 'skills-check accepted an unknown profile'
+assert_line 'grx: unknown profile: gh-fixture-missing' "$fixture_root/gh-skills-check.err"
+GRX_GH_AUTH_BRIDGE=invalid ./bin/grx doctor superpowers >"$fixture_root/gh-lifecycle.out"
+GRX_GH_AUTH_BRIDGE=1 ./bin/grx update --check superpowers >"$fixture_root/gh-lifecycle.out"
+[ "$(github_host_lookups)" -eq "$gh_lookups_before" ] || fail 'lifecycle operation retrieved a credential'
+
+GRX_GH_AUTH_BRIDGE=1 ./bin/grx superpowers --fixture-gh-tool \
+  pr create --repo fixture/repo --title fixture >"$fixture_root/gh-pr.out"
+GRX_GH_AUTH_BRIDGE=1 ./bin/grx superpowers --fixture-gh-tool \
+  pr merge 123 --repo fixture/repo --squash >"$fixture_root/gh-pr.out"
+gh_status=0
+GRX_GH_AUTH_BRIDGE=1 FAKE_GH_TOOL_STATUS=37 ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-exit.out" 2>"$fixture_root/gh-exit.err" || gh_status=$?
+[ "$gh_status" -eq 37 ] || fail 'bridged launch did not preserve the child exit status'
+gh_status=0
+GRX_GH_AUTH_BRIDGE=1 FAKE_GH_TOOL_SIGNAL=1 ./bin/grx "${gh_probe[@]}" \
+  >"$fixture_root/gh-signal.out" 2>"$fixture_root/gh-signal.err" || gh_status=$?
+[ "$gh_status" -eq 143 ] || fail 'bridged launch did not preserve child signal status'
+
+for gh_credential in fixture-gh-keyring fixture-gh-explicit fixture-gh-secondary \
+  fixture-gh-rotated-one fixture-gh-rotated-two fixture-gh-rejected; do
+  for gh_output in "$fixture_root"/gh-*.out "$fixture_root"/gh-*.err "$FAKE_GH_ARGV_LOG"; do
+    assert_not_contains "$gh_credential" "$gh_output"
+  done
+  if grep -RFl -- "$gh_credential" "$superpowers_home" >"$fixture_root/gh-persisted-paths"; then
+    fail 'GitHub credential was persisted in profile state'
+  fi
+done
+rm "$fake_bin/env"
+unset FAKE_GH_ARGV_LOG
 
 ./bin/grx superpowers -m 'gpt-5.2-codex' -p 'short model flag' \
   >"$fixture_root/short-model-launch.out"
@@ -3639,6 +3859,11 @@ if ! cmp -s "$fixture_root/installed-list.out" <(printf '%s\n' \
   $'superpowers\tsuperpowers'); then
   fail 'installed command list output does not match the catalog'
 fi
+(
+  unset GRX_GH_AUTH_BRIDGE
+  "$installed_command" "${gh_probe[@]}"
+) >"$fixture_root/gh-installed.out"
+assert_line 'fixture-user' "$fixture_root/gh-installed.out"
 "$installer" >"$fixture_root/repeat-install.out"
 if ! cmp -s "$fixture_root/repeat-install.out" \
   <(printf 'Installed grx at %s\n' "$installed_command"); then
