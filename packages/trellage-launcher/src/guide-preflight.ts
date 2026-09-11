@@ -4,6 +4,9 @@ import {
   type NativeSelectedProfile,
   type SelectedProfile,
 } from "./guide-launch.js"
+import type { GuideGoalExecution } from "./guide-goal-execution.js"
+import { checkGuideGoalReadiness, type GuideGoalReadinessServices } from "./guide-goal-readiness.js"
+import { assertGuideGoalProfile } from "./guide-goal-transport.js"
 
 export enum ProfileReadinessKind {
   Ready = "ready",
@@ -13,12 +16,14 @@ export enum ProfileReadinessKind {
 export interface ProfileReadyResult {
   readonly kind: ProfileReadinessKind.Ready
   readonly summary: string
+  readonly goalReadiness?: "checked"
 }
 
 export interface ProfileBlockedResult {
   readonly kind: ProfileReadinessKind.Blocked
   readonly summary: string
   readonly diagnostic: string
+  readonly goalReadiness?: "blocked" | "unknown"
 }
 
 export type ProfileReadinessResult = ProfileReadyResult | ProfileBlockedResult
@@ -100,6 +105,7 @@ const checkNativeReadiness = async (
   runner: CommandRunner,
   selected: NativeSelectedProfile,
   cwd: string,
+  signal?: AbortSignal,
 ): Promise<ProfileReadinessResult> => {
   let stdout: string
   try {
@@ -107,6 +113,7 @@ const checkNativeReadiness = async (
       await runner.run(selected.commandPath, ["inventory", selected.profile, "--json"], {
         cwd,
         timeoutMs: 30_000,
+        ...(signal === undefined ? {} : { signal }),
       })
     ).stdout
   } catch (cause) {
@@ -142,6 +149,7 @@ const checkSandboxReadiness = async (
   selected: Extract<SelectedProfile, { readonly surface: "sandbox" }>,
   cwd: string,
   signal?: AbortSignal,
+  allowRepair = true,
 ): Promise<ProfileReadinessResult> => {
   const options = (timeoutMs: number, outputOverflow?: "terminate" | "truncate") => ({
     cwd,
@@ -178,6 +186,13 @@ const checkSandboxReadiness = async (
       summary: `${selected.profile} is ready`,
     }
   }
+  if (!allowRepair) {
+    return {
+      kind: ProfileReadinessKind.Blocked,
+      summary: `${selected.profile} is not ready for a goal launch`,
+      diagnostic: `Development resolution: ${initial.developmentResolution}; image: ${initial.image}. Prepare the Sandbox separately, then retry. No automatic repair was run.`,
+    }
+  }
 
   try {
     await runner.run(selected.commandPath, ["build", selected.profile], {
@@ -207,12 +222,21 @@ const checkSandboxReadiness = async (
   }
 }
 
-export const checkSelectedProfileReadiness = (
+export const checkSelectedProfileReadiness = async (
   runner: CommandRunner,
   selected: SelectedProfile,
   cwd: string,
   signal?: AbortSignal,
-): Promise<ProfileReadinessResult> =>
-  selected.surface === "native"
-    ? checkNativeReadiness(runner, selected, cwd)
-    : checkSandboxReadiness(runner, selected, cwd, signal)
+  goalExecution?: GuideGoalExecution,
+  goalServices?: GuideGoalReadinessServices,
+): Promise<ProfileReadinessResult> => {
+  if (goalExecution !== undefined) assertGuideGoalProfile(selected, goalExecution)
+  const general = await (selected.surface === "native"
+    ? checkNativeReadiness(runner, selected, cwd, signal)
+    : checkSandboxReadiness(runner, selected, cwd, signal, goalExecution === undefined))
+  if (general.kind === ProfileReadinessKind.Blocked || goalExecution === undefined) return general
+  const goal = await checkGuideGoalReadiness(runner, selected, cwd, goalExecution, signal, goalServices)
+  return goal.kind === "checked"
+    ? { kind: ProfileReadinessKind.Ready, summary: `${goal.summary}. ${goal.diagnostic}`, goalReadiness: "checked" }
+    : { kind: ProfileReadinessKind.Blocked, summary: goal.summary, diagnostic: goal.diagnostic, goalReadiness: goal.kind }
+}

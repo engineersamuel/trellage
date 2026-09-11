@@ -1,5 +1,11 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: codex-goal
+  workflowIds:
+    - transcript-analysis
+    - youtube-topic-research
+    - channel-playlist-review
 capabilities:
   - youtube-transcript-analysis
   - youtube-topic-research

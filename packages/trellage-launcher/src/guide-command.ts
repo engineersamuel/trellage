@@ -38,16 +38,15 @@ export const resolveGuideRequest = (
   stdinRequest: string | undefined,
   env: Readonly<Record<string, string | undefined>>,
 ): ResolvedGuideRequest => {
-  const fromStdin =
+  const fromStdin: GuideServiceRequest =
     args.intent === undefined
-      ? parseGuideServiceRequestJson(stdinRequest ?? "")
+      ? parseGuideServiceRequestJson(stdinRequest ?? "", args.profile)
       : { schemaVersion: 1 as const, intent: args.intent }
   const request: GuideServiceRequest = {
-    schemaVersion: 1,
-    intent: fromStdin.intent,
-    ...((args.profile ?? fromStdin.profile) === undefined ? {} : { profile: args.profile ?? fromStdin.profile }),
-    ...((args.model ?? fromStdin.model) === undefined ? {} : { model: args.model ?? fromStdin.model }),
-    ...((args.effort ?? fromStdin.effort) === undefined ? {} : { effort: args.effort ?? fromStdin.effort }),
+    ...fromStdin,
+    ...(args.profile === undefined ? {} : { profile: args.profile }),
+    ...(args.model === undefined ? {} : { model: args.model }),
+    ...(args.effort === undefined ? {} : { effort: args.effort }),
   }
   const routing = resolveGuideModelRouting(
     {
@@ -93,6 +92,7 @@ export const runGuideJsonCommand = async (options: {
         {
           intent: resolved.request.intent,
           ...resolved.routing.match,
+          ...(resolved.request.goal === undefined ? {} : { goal: resolved.request.goal }),
         },
         cache,
       )
@@ -104,6 +104,8 @@ export const runGuideJsonCommand = async (options: {
           intent: resolved.request.intent,
           ...resolved.routing.generate,
           profileRef: resolved.request.profile,
+          ...(resolved.request.goal === undefined ? {} : { goal: resolved.request.goal }),
+          ...(resolved.request.workflowId === undefined ? {} : { workflowId: resolved.request.workflowId }),
         },
         cache,
       )

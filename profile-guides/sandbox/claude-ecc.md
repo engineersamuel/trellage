@@ -1,5 +1,12 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: claude-goal
+  workflowIds:
+    - discover-ecc-workflow
+    - plan-change
+    - tdd-implementation
+    - review-and-verify
 capabilities:
 - broad-software-engineering
 - workflow-discovery

@@ -1086,7 +1086,10 @@ if [[ "$mode" == guide ]]; then
     guide_command+=("${guide_args[@]}")
   fi
   guide_status=0
-  "${guide_command[@]}" 3<"$guide_catalog_tmp/combined.json" || guide_status=$?
+  TRELLAGE_GUIDE_SKILLS_MANAGER="$floating_skills_manager" \
+    TRELLAGE_GUIDE_SKILLS_CATALOG="$floating_skills_catalog" \
+    TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE="$native_common_root/skills" \
+    "${guide_command[@]}" 3<"$guide_catalog_tmp/combined.json" || guide_status=$?
   cleanup_guide_catalog_tmp
   trap - EXIT HUP INT TERM
   exit "$guide_status"

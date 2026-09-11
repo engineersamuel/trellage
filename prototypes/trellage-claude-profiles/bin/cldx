@@ -377,14 +377,19 @@ case "${1-}" in
   harness-version)
     shift
     [[ "$#" -eq 0 ]] || die 'harness-version accepts no arguments'
-    installed="$("$native_claude" version)"
-    jq -cn --arg installed "$installed" '{
+    goal_runtime="$("$native_claude" goal-runtime)"
+    jq -cn --argjson runtime "$goal_runtime" --arg profileHome "$profile_home" '{
       schemaVersion: 1,
       launcher: "cldx",
       harness: "claude",
-      installed: ($installed | if length > 0 then . else null end),
+      installed: $runtime.version,
       latest: null,
-      latestKnown: false
+      latestKnown: false,
+      goalRuntime: {
+        profileHome: $profileHome,
+        evaluatorModel: $runtime.evaluatorModel,
+        modelsUrl: $runtime.modelsUrl
+      }
     }'
     ;;
   harness-update)

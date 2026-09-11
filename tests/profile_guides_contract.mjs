@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import {
   discoverProfileGuideRelativePaths,
   loadProfileGuideRegistry,
+  profileGuideGoalExecutionProblem,
   validateProfileGuideCoverage,
 } from "../packages/trellage-guide-core/dist/index.js"
 
@@ -13,6 +14,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const guideRoot = path.join(root, "profile-guides")
 
 const expected = []
+const sandboxHarnesses = new Map()
 const prototypeEntries = await readdir(path.join(root, "prototypes"), { withFileTypes: true })
 const nativeFamilies = prototypeEntries
   .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
@@ -41,7 +43,14 @@ for (const family of nativeFamilies) {
 for (const entry of await readdir(path.join(root, "profiles"), { withFileTypes: true })) {
   if (!entry.isDirectory()) continue
   const profileDocument = path.join(root, "profiles", entry.name, "profile.toml")
-  if ((await stat(profileDocument)).isFile()) expected.push({ surface: "sandbox", profile: entry.name })
+  if ((await stat(profileDocument)).isFile()) {
+    expected.push({ surface: "sandbox", profile: entry.name })
+    const source = await readFile(profileDocument, "utf8")
+    const harnessSection = source.split(/^\[harness\][ \t]*\r?$/mu)[1]?.split(/^\[/mu)[0]
+    const harness = /^kind[ \t]*=[ \t]*"([a-z-]+)"[ \t]*(?:#.*)?$/mu.exec(harnessSection ?? "")?.[1]
+    if (harness === undefined) throw new Error(`${profileDocument} must declare its harness kind`)
+    sandboxHarnesses.set(entry.name, harness)
+  }
 }
 
 const actual = await discoverProfileGuideRelativePaths(guideRoot)
@@ -53,6 +62,19 @@ if (coverage.missing.length > 0 || coverage.unexpected.length > 0) {
 }
 
 const registry = await loadProfileGuideRegistry(guideRoot, expected)
+const nativeGoalSurfaces = new Map([
+  ["cdx", { controller: "codex-goal", harness: "codex" }],
+  ["cldx", { controller: "claude-goal", harness: "claude" }],
+])
+const expectedGoalSurface = (identity) => {
+  if (identity.surface === "native") return nativeGoalSurfaces.get(identity.launcher)
+  const harness = sandboxHarnesses.get(identity.profile)
+  if (harness !== "claude") return undefined
+  return {
+    controller: identity.profile === "claude-graph-of-loops" ? "graph-of-loops" : "claude-goal",
+    harness,
+  }
+}
 const operationalWorkflowId =
   /^(?:(?:doctor|health-check|inventory|readiness|setup|smoke-test)|(?:extension|launch|launcher|local|model|profile|proxy)-(?:doctor|health-check|inventory-check|readiness-check|repair|setup|smoke-test))$/u
 const operationalExamplePatterns = [
@@ -89,6 +111,22 @@ for (const example of [
 }
 
 for (const [profileRef, loaded] of registry) {
+  const expectedSurface = expectedGoalSurface(loaded.identity)
+  const policy = loaded.guide.goalExecution
+  if (policy?.controller !== expectedSurface?.controller) {
+    throw new Error(
+      `${profileRef} goal controller must be ${expectedSurface?.controller ?? "undeclared on this unproven surface"}`,
+    )
+  }
+  if (policy !== undefined) {
+    const problem = profileGuideGoalExecutionProblem(
+      policy,
+      loaded.guide.workflows,
+      loaded.identity,
+      expectedSurface.harness,
+    )
+    if (problem !== undefined) throw new Error(`${profileRef} goal policy: ${problem}`)
+  }
   for (const workflow of loaded.guide.workflows) {
     if (operationalWorkflowId.test(workflow.id)) {
       throw new Error(`${profileRef} guide contains maintenance-only workflow: ${workflow.id}`)
@@ -790,13 +828,21 @@ for (const phrase of [
 const graphGuide = registry.get("sandbox:claude-graph-of-loops")
 if (graphGuide === undefined) throw new Error("claude-graph-of-loops guide is missing")
 const graphWorkflowIds = new Set(graphGuide.guide.workflows.map(({ id }) => id))
-for (const workflow of [
+const graphGoalWorkflowIds = [
   "implement-complex-change",
   "debug-cross-cutting-failure",
   "research-then-implement",
   "validate-existing-implementation",
-  "inspect-or-resume-run",
-]) {
+]
+const graphGoalPolicy = graphGuide.guide.goalExecution
+if (
+  graphGoalPolicy?.controller !== "graph-of-loops"
+  || graphGoalPolicy.workflowIds.length !== graphGoalWorkflowIds.length
+  || graphGoalPolicy.workflowIds.some((id) => !graphGoalWorkflowIds.includes(id))
+) {
+  throw new Error("claude-graph-of-loops goal policy must bind exactly its four goal-start workflows, never inspect-or-resume-run")
+}
+for (const workflow of [...graphGoalWorkflowIds, "inspect-or-resume-run"]) {
   if (!graphWorkflowIds.has(workflow)) {
     throw new Error(`claude-graph-of-loops guide is missing workflow: ${workflow}`)
   }

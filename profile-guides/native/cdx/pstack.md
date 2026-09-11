@@ -1,5 +1,11 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: codex-goal
+  workflowIds:
+    - poteto-mode-entry-point
+    - targeted-single-skill
+    - review-and-polish
 capabilities:
   - pstack-poteto-mode-orchestration
   - explicit-skill-invocation-workflows

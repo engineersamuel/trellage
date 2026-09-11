@@ -46,9 +46,9 @@ export const createGuideTerminal = async (entry: string, onTestFailed: TestConte
     press,
     readScreen,
     waitForText,
-    async start(mode: FixtureMode, columns = terminal.cols): Promise<void> {
+    async start(mode: FixtureMode, columns = terminal.cols, rows = terminal.rows): Promise<void> {
       if (child !== undefined) throw new Error("Each integration scenario must use a fresh guide process")
-      terminal.resize(columns, terminal.rows)
+      terminal.resize(columns, rows)
       const home = path.join(root, "home")
       const temporary = path.join(root, "tmp")
       await mkdir(home)

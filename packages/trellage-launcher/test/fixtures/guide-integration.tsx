@@ -8,6 +8,8 @@ import { parseProfileGuide } from "../../../trellage-guide-core/dist/index.js"
 import { defaultGuideModelRouting } from "../../src/guide-api.js"
 import { parseGuideCatalog } from "../../src/guide-catalog.js"
 import { executeGuideUiResult } from "../../src/guide-interactive-execution.js"
+import type { CommandRunner } from "../../src/guide-launch.js"
+import { checkSelectedProfileReadiness } from "../../src/guide-preflight.js"
 import type { GuideProvider } from "../../src/guide-provider.js"
 import { createInitialGuideRenderHandler } from "../../src/guide-terminal.js"
 import { GuideApp, type GuideUiResult } from "../../src/guide-ui.js"
@@ -15,19 +17,24 @@ import {
   FixtureMode,
   codebaseIntent,
   fixtureProfile,
-  fixtureProfiles,
+  fixtureProfilesForMode,
   generatedCandidates,
+  generatedGoalApproaches,
+  goalRecommendationIds,
   guideSource,
   recommendationIds,
   repositoryPack,
   type FixtureEvent,
 } from "./guide-integration-data.js"
-import { createFixtureRunner } from "./guide-integration-runner.js"
+import { createFixtureGoalReadinessServices, createFixtureRunner } from "./guide-integration-runner.js"
+import { createFixtureGoalProvider } from "./guide-goal-provider.js"
+import { createFixtureGoalModelProvider } from "./guide-goal-model.js"
 
 const root = process.argv[2]
 if (root === undefined) throw new Error("guide integration fixture requires a workspace")
 const mode = Object.values(FixtureMode).find((value) => value === process.argv[3])
 if (mode === undefined) throw new Error("guide integration fixture requires a known mode")
+const fixtureProfiles = fixtureProfilesForMode(mode)
 const events: FixtureEvent[] = []
 const eventPath = path.join(root, "events.jsonl")
 await writeFile(eventPath, "", { mode: 0o600 })
@@ -35,8 +42,11 @@ const record = async (event: FixtureEvent): Promise<void> => {
   events.push(event)
   await appendFile(eventPath, `${JSON.stringify(event)}\n`)
 }
+let releaseReadiness!: () => void
+const readinessGate = new Promise<void>((resolve) => { releaseReadiness = resolve })
 // Acknowledge consumed keys even when they intentionally produce no redraw.
 const recordInput = (input: Buffer | string): void => {
+  if (mode === FixtureMode.ParkedReadiness && input.toString() === "\u0012") releaseReadiness()
   void record({ kind: "input", input: input.toString() }).catch((error: unknown) => {
     console.error(error)
     process.exit(1)
@@ -62,7 +72,15 @@ const headless = {
 }
 const guideRoot = path.join(root, "guides")
 const parsedGuides = new Map(
-  fixtureProfiles.map((profile) => [profile.ref, parseProfileGuide(`${profile.name}.md`, guideSource(profile))]),
+  fixtureProfiles.map((profile) => [
+    profile.ref,
+    parseProfileGuide(
+      profile.surface === "native"
+        ? `native/${profile.launcher}/${profile.name}.md`
+        : `sandbox/${profile.name}.md`,
+      guideSource(profile),
+    ),
+  ]),
 )
 const catalog = parseGuideCatalog(
   JSON.stringify({
@@ -115,13 +133,27 @@ for (const profile of fixtureProfiles) {
   await writeFile(path.join(directory, `${profile.name}.md`), guideSource(profile))
 }
 
+const goalModelProvider = await createFixtureGoalModelProvider(root, record)
 const provider: GuideProvider = {
   async match(input) {
-    deepStrictEqual(
-      input.entries.map((entry) => entry.ref).sort(),
-      fixtureProfiles.map((profile) => profile.ref).sort(),
-    )
-    const candidates = recommendationIds.map((id, index) => {
+    if (input.goal === undefined) {
+      deepStrictEqual(
+        input.entries.map((entry) => entry.ref).sort(),
+        fixtureProfiles.map((profile) => profile.ref).sort(),
+      )
+    } else {
+      assert(input.entries.length > 0, "Goal matching must supply eligible profiles")
+      for (const entry of input.entries) {
+        assert(
+          fixtureProfiles.find((profile) => profile.ref === entry.ref)?.goalExecution !== undefined,
+          `Unsupported profile supplied for goal matching: ${entry.ref}`,
+        )
+      }
+    }
+    const ids = input.goal === undefined
+      ? recommendationIds
+      : goalRecommendationIds.filter((id) => input.entries.some((entry) => entry.ref === fixtureProfile(id).ref))
+    const candidates = ids.map((id, index) => {
       const profile = fixtureProfile(id)
       return {
         profileRef: profile.ref,
@@ -134,10 +166,11 @@ const provider: GuideProvider = {
     await record({
       kind: "match",
       intent: input.intent,
+      ...(input.goal === undefined ? {} : { goal: input.goal }),
       profileRefs: input.entries.map((entry) => entry.ref),
       recommendations: candidates.map((candidate) => candidate.profileRef),
     })
-    return { candidates }
+    return input.goal === undefined ? { candidates } : goalModelProvider("match", { candidates }).match(input)
   },
   async generate(input) {
     const profile = fixtureProfiles.find((entry) => entry.ref === input.profileRef)
@@ -145,28 +178,46 @@ const provider: GuideProvider = {
     deepStrictEqual(input.workflowId, profile.workflowId)
     deepStrictEqual(input.guide, parsedGuides.get(profile.ref)?.guide)
     deepStrictEqual(input.guideBody, parsedGuides.get(profile.ref)?.body)
-    const candidates = generatedCandidates(profile, input.intent)
+    const candidates = input.goal === undefined
+      ? generatedCandidates(profile, input.intent)
+      : generatedGoalApproaches(profile)
     await record({
       kind: "generate",
-      input: { intent: input.intent, profileRef: input.profileRef, workflowId: input.workflowId },
+      input: {
+        intent: input.intent,
+        profileRef: input.profileRef,
+        workflowId: input.workflowId,
+        ...(input.goal === undefined ? {} : { goal: input.goal }),
+      },
       candidates,
     })
-    return { candidates }
+    return input.goal === undefined ? { candidates } : goalModelProvider("generate", { candidates }).generate(input)
   },
   async optimize(input) {
     const profile = fixtureProfiles.find((entry) => entry.ref === input.profileRef)
     assert(profile !== undefined, `Unexpected optimized profile: ${input.profileRef}`)
     deepStrictEqual(input.targetTool, profile.harness)
-    deepStrictEqual(
-      input.fixedFrame,
-      profile.skill === undefined ? undefined : { beforeBody: profile.beforeBody, afterBody: profile.afterBody },
-    )
+    if (input.goalExecution === undefined) {
+      deepStrictEqual(
+        input.fixedFrame,
+        profile.skill === undefined ? undefined : { beforeBody: profile.beforeBody, afterBody: profile.afterBody },
+      )
+    } else {
+      deepStrictEqual(input.candidates, generatedGoalApproaches(profile))
+      deepStrictEqual(input.goal, input.goalExecution.goal)
+      deepStrictEqual(input.fixedFrame, { beforeBody: profile.beforeBody, afterBody: profile.afterBody })
+      deepStrictEqual(input.goalExecution.controller, profile.goalExecution?.controller)
+      deepStrictEqual(
+        input.goalExecution.workflow,
+        parsedGuides.get(profile.ref)?.guide.workflows.find((workflow) => workflow.id === profile.workflowId),
+      )
+    }
     const candidates = input.candidates.map((candidate) => ({
       ...candidate,
       prompt: `${candidate.prompt}\nReport the findings.`,
     }))
     await record({ kind: "optimize", input, candidates })
-    return { candidates }
+    return input.goalExecution === undefined ? { candidates } : goalModelProvider("optimize", { candidates }).optimize(input)
   },
   async refine() {
     throw new Error("Unexpected refinement in the integration matrix")
@@ -179,13 +230,24 @@ const provider: GuideProvider = {
   },
 }
 
-const runner = createFixtureRunner(root, mode, record)
+const fixtureRunner = createFixtureRunner(root, mode, record)
+// Ctrl-R releases held inventory responses in the parked-readiness scenario.
+const runner: CommandRunner = mode === FixtureMode.ParkedReadiness ? {
+  async run(executable, args, options) {
+    const result = await fixtureRunner.run(executable, args, options)
+    if (args[0] === "inventory") await readinessGate
+    return result
+  },
+} : fixtureRunner
+const goalReadinessServices = createFixtureGoalReadinessServices(root, record)
 const writes: string[] = []
 const instance = render(
   <GuideApp
     catalog={catalog}
     guideRoot={guideRoot}
     provider={provider}
+    goalProvider={createFixtureGoalProvider(mode, record)}
+    goalReadinessServices={goalReadinessServices}
     routing={defaultGuideModelRouting}
     runner={runner}
     cwd={root}
@@ -207,6 +269,8 @@ try {
   const result = (await instance.waitUntilExit()) as GuideUiResult
   const exitCode = await executeGuideUiResult(result, {
     runner,
+    checkReadiness: (runner, profile, cwd, signal, goal) =>
+      checkSelectedProfileReadiness(runner, profile, cwd, signal, goal, goalReadinessServices),
     write: (text) => writes.push(text),
     runInteractive: async (command, options) => {
       await record({
@@ -218,6 +282,7 @@ try {
     },
   })
   await writeFile(path.join(root, "result.json"), JSON.stringify({ result, events, writes }), { mode: 0o600 })
+  if (exitCode === 1) console.error(writes.join(""))
   process.exitCode = exitCode
 } finally {
   process.stdin.off("data", recordInput)

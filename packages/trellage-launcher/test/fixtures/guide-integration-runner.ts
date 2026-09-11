@@ -1,6 +1,7 @@
 import assert, { deepStrictEqual } from "node:assert/strict"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
+import type { GuideGoalReadinessServices } from "../../src/guide-goal-readiness.js"
 import {
   CommandRunnerError,
   type CommandRunner,
@@ -11,13 +12,90 @@ import {
   FixtureMode,
   fixtureBranch,
   fixtureHead,
-  fixtureProfiles,
+  fixtureProfilesForMode,
   repositoryPack,
   researchIntent,
   type RecordFixtureEvent,
+  type FixtureProfile,
 } from "./guide-integration-data.js"
 
 const success = (stdout = ""): CommandRunResult => ({ stdout, stderr: "", exitCode: 0 })
+const claudeGoalHome = (root: string): string =>
+  path.join(root, "home", ".local", "share", "trellage", "profiles", "claude", "default", "home")
+const claudeGoalModelsUrl = "http://127.0.0.1:8080/v1/models"
+const claudeGoalEvaluator = "fixture-claude-goal-evaluator"
+
+export const createFixtureGoalReadinessServices = (
+  root: string,
+  record: RecordFixtureEvent,
+): GuideGoalReadinessServices => {
+  const home = claudeGoalHome(root)
+  const documents = new Map<string, Readonly<Record<string, unknown>> | undefined>([
+    [path.join(home, ".claude.json"), { projects: { [root]: { hasTrustDialogAccepted: true } } }],
+    [path.join(home, "settings.json"), { disableAllHooks: false }],
+    [path.join(root, ".claude", "settings.json"), undefined],
+    [path.join(root, ".claude", "settings.local.json"), undefined],
+    ["/etc/claude-code/managed-settings.json", undefined],
+  ])
+  return {
+    env: { HOME: path.join(root, "home") },
+    platform: "linux",
+    async readJson(file) {
+      assert(documents.has(file), `Unexpected fixture settings read: ${file}`)
+      await record({ kind: "goal-readiness", operation: "read-json", path: file })
+      return documents.get(file)
+    },
+    async realpath(directory) {
+      deepStrictEqual(directory, root)
+      await record({ kind: "goal-readiness", operation: "realpath", path: directory })
+      return directory
+    },
+    async readDirectory(directory) {
+      deepStrictEqual(directory, "/etc/claude-code/managed-settings.d")
+      await record({ kind: "goal-readiness", operation: "read-directory", path: directory })
+      return []
+    },
+    async localSettingsPaths(cwd, version) {
+      deepStrictEqual(cwd, root)
+      deepStrictEqual(version, "2.1.139")
+      await record({ kind: "goal-readiness", operation: "local-settings", path: cwd })
+      return [path.join(root, ".claude", "settings.local.json")]
+    },
+    async pathExists(file) {
+      throw new Error(`Unexpected fixture path probe: ${file}`)
+    },
+  }
+}
+
+const runClaudeGoalRuntime = (
+  root: string,
+  args: ReadonlyArray<string>,
+  options: CommandRunOptions | undefined,
+): CommandRunResult => {
+  deepStrictEqual(args, ["harness-version"])
+  deepStrictEqual(options?.cwd, root)
+  return success(JSON.stringify({
+    schemaVersion: 1,
+    launcher: "cldx",
+    harness: "claude",
+    installed: "2.1.139",
+    goalRuntime: {
+      profileHome: claudeGoalHome(root),
+      evaluatorModel: claudeGoalEvaluator,
+      modelsUrl: claudeGoalModelsUrl,
+    },
+  }))
+}
+
+const runClaudeGoalInventory = (
+  root: string,
+  args: ReadonlyArray<string>,
+  options: CommandRunOptions | undefined,
+): CommandRunResult => {
+  deepStrictEqual(args, ["--fail", "--silent", "--show-error", "--max-time", "5", claudeGoalModelsUrl])
+  deepStrictEqual(options?.cwd, root)
+  return success(JSON.stringify({ data: [{ id: claudeGoalEvaluator }] }))
+}
 
 const runResearch = async (
   root: string,
@@ -38,6 +116,7 @@ const runResearch = async (
 
 const runNative = (
   root: string,
+  profiles: ReadonlyArray<FixtureProfile>,
   executable: string,
   args: ReadonlyArray<string>,
   options: CommandRunOptions | undefined,
@@ -45,13 +124,19 @@ const runNative = (
   if (executable === path.join(root, "bin", "cpx") && args[0] === "hve" && args[1] === "-p") {
     return runResearch(root, args, options)
   }
-  const native = fixtureProfiles.find(
+  if (executable === path.join(root, "bin", "cldx") && args[0] === "harness-version") {
+    return runClaudeGoalRuntime(root, args, options)
+  }
+  const native = profiles.find(
     (profile) =>
       profile.surface === "native" &&
       executable === path.join(root, "bin", profile.launcher) &&
       args[1] === profile.name,
   )
   assert(native?.surface === "native", `Unexpected native profile: ${args[1]}`)
+  if (native.launcher === "cdx" && args[2] === "--goal-features") {
+    return runCodexGoalProbe(root, args, options, "features")
+  }
   deepStrictEqual(args, ["inventory", native.name, "--json"])
   deepStrictEqual(options?.cwd, root)
   return success(
@@ -66,10 +151,11 @@ const runNative = (
 
 const runSandbox = (
   root: string,
+  profiles: ReadonlyArray<FixtureProfile>,
   args: ReadonlyArray<string>,
   options: CommandRunOptions | undefined,
 ): CommandRunResult => {
-  const sandbox = fixtureProfiles.find((profile) => profile.surface === "sandbox" && profile.name === args[2])
+  const sandbox = profiles.find((profile) => profile.surface === "sandbox" && profile.name === args[2])
   assert(sandbox !== undefined, `Unexpected Sandbox profile: ${args[2]}`)
   deepStrictEqual(args, ["doctor", "--profile", sandbox.name])
   deepStrictEqual(options?.cwd, root)
@@ -92,6 +178,25 @@ const runRepomix = async (
   assert(outputPath !== undefined && path.resolve(outputPath).startsWith(`${root}${path.sep}`))
   await writeFile(outputPath, repositoryPack)
   return success("Packed the fixture repository.\n")
+}
+
+const runCodexGoalProbe = (
+  root: string,
+  args: ReadonlyArray<string>,
+  options: CommandRunOptions | undefined,
+  operation: "version" | "features",
+): CommandRunResult => {
+  deepStrictEqual(options?.cwd, root)
+  deepStrictEqual(
+    options?.env?.CODEX_HOME,
+    path.join(root, "home", ".local", "share", "trellage", "profiles", "codex", "planner", "home"),
+  )
+  if (operation === "version") {
+    deepStrictEqual(args, ["--version"])
+    return success("codex-cli 0.153.4\n")
+  }
+  deepStrictEqual(args, ["inventory", "planner", "--goal-features"])
+  return success("goals\tstable\ttrue\n")
 }
 
 const runGit = (
@@ -209,6 +314,7 @@ const herdrRunner = (root: string, mode: FixtureMode) => {
 
 export const createFixtureRunner = (root: string, mode: FixtureMode, record: RecordFixtureEvent): CommandRunner => {
   const bin = (name: string): string => path.join(root, "bin", name)
+  const fixtureProfiles = fixtureProfilesForMode(mode)
   const nativeCommands = new Set(
     fixtureProfiles.filter((profile) => profile.surface === "native").map((profile) => bin(profile.launcher)),
   )
@@ -224,10 +330,14 @@ export const createFixtureRunner = (root: string, mode: FixtureMode, record: Rec
           ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
         },
       })
-      if (nativeCommands.has(executable)) return runNative(root, executable, args, options)
+      if (nativeCommands.has(executable)) return runNative(root, fixtureProfiles, executable, args, options)
       switch (executable) {
+        case "codex":
+          return runCodexGoalProbe(root, args, options, "version")
+        case "curl":
+          return runClaudeGoalInventory(root, args, options)
         case bin("trellage"):
-          return runSandbox(root, args, options)
+          return runSandbox(root, fixtureProfiles, args, options)
         case "npx":
           return runRepomix(root, args, options)
         case "git":

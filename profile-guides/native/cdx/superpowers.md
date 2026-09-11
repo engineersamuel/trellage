@@ -1,5 +1,11 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: codex-goal
+  workflowIds:
+    - test-driven-development
+    - plan-then-execute-branch
+    - parallel-review-and-dispatch
 capabilities:
   - superpowers-tdd-and-debugging-workflows
   - subagent-dispatch-workflow

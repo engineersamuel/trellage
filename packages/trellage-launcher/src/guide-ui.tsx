@@ -12,9 +12,8 @@
  * The reducer (`guideUiReducer`) and every state-derived helper in this file
  * are pure and exported so they can be unit tested without rendering Ink.
  */
-import React, { createContext, useContext, useEffect, useReducer, useRef, useState } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
-import stringWidth from "string-width"
 
 import {
   profileGuideIdentityKey,
@@ -35,6 +34,38 @@ import {
   runResearchAugment,
   type GuideAugmentContext,
 } from "./guide-augment.js"
+import {
+  GuideGoalError,
+  GuideGoalInteractionController,
+  validateGuideGoalPrompt,
+  type GuideGoalAugmentProvider,
+  type GuideGoalProposal,
+  type GuideGoalRequest,
+  type GuideGoalResponse,
+  type GuideGoalTurn,
+} from "./guide-goal-augment.js"
+import {
+  createGuideGoalPanelState,
+  GuideGoalPanel,
+  goalAutoAcceptHelp,
+  guideGoalPanelReducer,
+  type GuideGoalPanelAction,
+  type GuideGoalPanelState,
+} from "./guide-goal-augment-ui.js"
+import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.js"
+import {
+  composeGuideGoalCandidate,
+  guideGoalApproachBudget,
+  guideGoalCandidateBody,
+  guideGoalControllerLabel,
+  prepareGuideGoal,
+  resolveGuideGoalExecution,
+  type GuideGoalCandidateContext,
+  type PreparedGuideGoal,
+} from "./guide-goal-execution.js"
+import { GuideValidationError } from "./guide-text.js"
+import { runGuideGoalGeneration, runGuideGoalRefinement } from "./guide-goal-generation.js"
+import type { GuideGoalReadinessServices } from "./guide-goal-readiness.js"
 import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
 import {
   applyRequiredProfilePromptTemplate,
@@ -49,6 +80,7 @@ import {
   templatePromptCandidates,
   type GuideEffort,
   type GuideMatchResponse,
+  type GuideMatchRequest,
   type GuideModelConfig,
   type GuideRecommendation,
   type GuideResolvedModelRouting,
@@ -108,6 +140,15 @@ import {
   type QueuedGuideJob,
   type JobPlacement,
 } from "./guide-batch.js"
+
+export {
+  MarkdownTextViewport,
+  markdownInlineSegments,
+  markdownPromptLines,
+  wrapGuideText,
+  type MarkdownDisplayLine,
+  type MarkdownInlineSegment,
+} from "./guide-markdown.js"
 
 // ---------------------------------------------------------------------------
 // Shared small helpers.
@@ -182,6 +223,7 @@ export enum GuideUiStage {
   MatchFailed = "match-failed",
   Recommendations = "recommendations",
   PromptReview = "prompt-review",
+  GoalChange = "goal-change",
   Generating = "generating",
   GenerateFailed = "generate-failed",
   Candidates = "candidates",
@@ -252,6 +294,7 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.MatchFailed]: GuideWizardStep.Profile,
   [GuideUiStage.Recommendations]: GuideWizardStep.Profile,
   [GuideUiStage.PromptReview]: GuideWizardStep.Profile,
+  [GuideUiStage.GoalChange]: GuideWizardStep.Profile,
   [GuideUiStage.Generating]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.GenerateFailed]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.Candidates]: GuideWizardStep.PromptCandidates,
@@ -316,18 +359,43 @@ export interface GuideAugmentJob {
   /** The augmented prompt, once the run is `ready`. */
   readonly text: string | undefined
   readonly errorMessage: string | undefined
+  readonly goalPanel: GuideGoalPanelState | undefined
+  readonly goalAutoAcceptRecommended: boolean
+  readonly goalHistory: ReadonlyArray<GuideGoalTurn>
+  readonly goalLastProposal: GuideGoalProposal | undefined
+  readonly goalApprovedPrompt: string | undefined
+}
+
+type GuideGoalChange =
+  | { readonly kind: "prompt"; readonly text: string; readonly returnStage: GuideUiStage.Intent | GuideUiStage.PromptReview }
+  | { readonly kind: "profile"; readonly recommendation: GuideRecommendation; readonly profile: SelectedProfile; readonly reason: string }
+
+interface GuideProfileSelection {
+  readonly recommendations: ReadonlyArray<GuideRecommendation> | undefined
+  readonly recommendationIndex: number
+  readonly usedLiteralFallback: boolean
 }
 
 export interface GuideUiState {
   readonly stage: GuideUiStage
   /** The confirmed intent used for match/generate calls; `undefined` until the intent editor is submitted. */
   readonly intent: string | undefined
+  readonly goal: PreparedGuideGoal | undefined
+  readonly goalRevision: number
+  readonly matchedGoalFingerprint: string | undefined
+  readonly matchedGoalRevision: number
+  readonly goalChange: GuideGoalChange | undefined
+  readonly selectedIntent: string | undefined
+  readonly selectedGoal: PreparedGuideGoal | undefined
+  readonly profileSelection: GuideProfileSelection | undefined
   /** Shared free-text editing buffer for the intent editor, refine feedback, direct edit, and worktree branch editors. */
   readonly textDraft: string
   readonly errorMessage: string | undefined
   readonly augmentIndex: number
   /** The augmentation running in the background, or waiting to be applied. */
   readonly augmentJob: GuideAugmentJob | undefined
+  /** Shared across forks and re-matches; a discarded run ID is never reused. */
+  readonly nextAugmentRunId: number
   /** Where `Esc` leaves the watch screen: the stage the user opened it from. */
   readonly augmentViewReturnStage: GuideUiStage | undefined
   readonly matchPhase: GuideMatchPhase | undefined
@@ -374,10 +442,19 @@ export interface GuideUiState {
 const emptyState: GuideUiState = {
   stage: GuideUiStage.Intent,
   intent: undefined,
+  goal: undefined,
+  goalRevision: 0,
+  matchedGoalFingerprint: undefined,
+  matchedGoalRevision: 0,
+  goalChange: undefined,
+  selectedIntent: undefined,
+  selectedGoal: undefined,
+  profileSelection: undefined,
   textDraft: "",
   errorMessage: undefined,
   augmentIndex: 0,
   augmentJob: undefined,
+  nextAugmentRunId: 1,
   augmentViewReturnStage: undefined,
   matchPhase: undefined,
   recommendations: undefined,
@@ -432,6 +509,22 @@ export const isWorktreeConfirmed = (confirmations: number, dirty: boolean): bool
 const worktreeDirtyWarningMessage =
   "Uncommitted changes in the current working tree will not be included in the new worktree."
 
+const guideBranchIntent = (state: GuideUiState): string | undefined =>
+  state.selectedGoal?.draft.task ?? state.selectedIntent ?? state.intent
+
+const guideProfileGoal = (state: GuideUiState): PreparedGuideGoal | undefined =>
+  state.activeForkId === undefined ? state.goal : state.selectedGoal
+
+const guideProfileIntent = (state: GuideUiState): string | undefined =>
+  state.activeForkId === undefined ? state.intent : state.selectedIntent
+
+const guideProfileSelection = (state: GuideUiState): GuideProfileSelection =>
+  state.profileSelection ?? {
+    recommendations: state.recommendations,
+    recommendationIndex: state.recommendationIndex,
+    usedLiteralFallback: state.usedLiteralFallback,
+  }
+
 /** Explicit consequence text for a dirty source working tree; `undefined` when clean (nothing to warn about). */
 export const worktreeDirtyWarning = (dirty: boolean): string | undefined =>
   dirty ? worktreeDirtyWarningMessage : undefined
@@ -447,7 +540,12 @@ export const worktreeDirtyWarning = (dirty: boolean): string | undefined =>
 /** The state the main screen and every fork share. Everything else is per fork. */
 type GuideForkSharedKey =
   | "intent"
+  | "goal"
+  | "goalRevision"
+  | "matchedGoalFingerprint"
+  | "matchedGoalRevision"
   | "augmentJob"
+  | "nextAugmentRunId"
   | "matchPhase"
   | "recommendations"
   | "recommendationIndex"
@@ -472,7 +570,12 @@ export interface GuideForkTab {
 /** Drops every shared field, so a parked fork can never overwrite the intent, the recommendations or the queue. */
 const forkSlice = ({
   intent: _intent,
+  goal: _goal,
+  goalRevision: _goalRevision,
+  matchedGoalFingerprint: _matchedGoalFingerprint,
+  matchedGoalRevision: _matchedGoalRevision,
   augmentJob: _augmentJob,
+  nextAugmentRunId: _nextAugmentRunId,
   matchPhase: _matchPhase,
   recommendations: _recommendations,
   recommendationIndex: _recommendationIndex,
@@ -597,6 +700,10 @@ export enum GuideUiActionType {
   AugmentApply = "augment/apply",
   AugmentDiscard = "augment/discard",
   AugmentBack = "augment/back",
+  AugmentGoalRequest = "augment/goal-request",
+  AugmentGoalTurn = "augment/goal-turn",
+  AugmentGoalPanel = "augment/goal-panel",
+  AugmentGoalAutoAccept = "augment/goal-auto-accept",
   MatchRetry = "match/retry",
   MatchProgress = "match/progress",
   MatchSucceeded = "match/succeeded",
@@ -611,6 +718,9 @@ export enum GuideUiActionType {
   PromptReviewBackspace = "prompt-review/backspace",
   PromptReviewSubmit = "prompt-review/submit",
   PromptReviewBack = "prompt-review/back",
+  GoalChangeRevise = "goal-change/revise",
+  GoalChangeDetach = "goal-change/detach",
+  GoalChangeKeep = "goal-change/keep",
   GenerateGuideLoaded = "generate/guide-loaded",
   GenerateProgress = "generate/progress",
   GenerateRetry = "generate/retry",
@@ -688,8 +798,26 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.AugmentFailed; readonly runId: number; readonly message: string }
   | { readonly type: GuideUiActionType.AugmentRetry }
   | { readonly type: GuideUiActionType.AugmentApply }
-  | { readonly type: GuideUiActionType.AugmentDiscard }
+  | { readonly type: GuideUiActionType.AugmentDiscard; readonly runId?: number }
   | { readonly type: GuideUiActionType.AugmentBack }
+  | {
+      readonly type: GuideUiActionType.AugmentGoalRequest
+      readonly runId: number
+      readonly request: GuideGoalRequest | undefined
+    }
+  | { readonly type: GuideUiActionType.AugmentGoalTurn; readonly runId: number; readonly turn: GuideGoalTurn }
+  | {
+      readonly type: GuideUiActionType.AugmentGoalAutoAccept
+      readonly runId: number
+      readonly requestId?: number
+      readonly enabled: boolean
+    }
+  | {
+      readonly type: GuideUiActionType.AugmentGoalPanel
+      readonly runId: number
+      readonly requestId: number
+      readonly action: GuideGoalPanelAction
+    }
   | { readonly type: GuideUiActionType.MatchRetry }
   | { readonly type: GuideUiActionType.MatchProgress; readonly phase: GuideMatchPhase }
   | { readonly type: GuideUiActionType.MatchSucceeded; readonly recommendations: ReadonlyArray<GuideRecommendation> }
@@ -701,6 +829,7 @@ export type GuideUiAction =
       readonly type: GuideUiActionType.RecommendationsConfirm
       readonly selectedProfile: SelectedProfile
       readonly recommendation?: GuideRecommendation
+      readonly goalUnavailableReason?: string
     }
   | { readonly type: GuideUiActionType.PromptReviewOpen }
   | { readonly type: GuideUiActionType.PromptReviewEdit; readonly editing: boolean }
@@ -708,6 +837,9 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.PromptReviewBackspace }
   | { readonly type: GuideUiActionType.PromptReviewSubmit }
   | { readonly type: GuideUiActionType.PromptReviewBack }
+  | { readonly type: GuideUiActionType.GoalChangeRevise }
+  | { readonly type: GuideUiActionType.GoalChangeDetach }
+  | { readonly type: GuideUiActionType.GoalChangeKeep }
   | { readonly type: GuideUiActionType.GenerateGuideLoaded; readonly guideDocument: SelectedGuideDocument }
   | { readonly type: GuideUiActionType.GenerateProgress; readonly phase: GuideGenerationPhase }
   | { readonly type: GuideUiActionType.GenerateRetry }
@@ -788,6 +920,35 @@ export type GuideUiAction =
  * so it stays trivially simple regardless of how many action types exist.
  */
 
+const beginGuideMatching = (state: GuideUiState, intent: string, goal: PreparedGuideGoal | undefined): GuideUiState => ({
+  ...emptyState,
+  queue: state.queue,
+  forks: parkActiveFork(state).forks,
+  nextForkId: state.nextForkId,
+  primaryCheckoutPath: state.primaryCheckoutPath,
+  augmentJob: state.augmentJob,
+  nextAugmentRunId: state.nextAugmentRunId,
+  stage: GuideUiStage.Matching,
+  intent,
+  goal,
+  goalRevision: state.goalRevision,
+  matchedGoalFingerprint: goal?.fingerprint,
+  matchedGoalRevision: state.goalRevision,
+  matchPhase: GuideMatchPhase.LoadingProfiles,
+})
+
+const changedGoalPrompt = (
+  state: GuideUiState,
+  text: string,
+  returnStage: GuideUiStage.Intent | GuideUiStage.PromptReview,
+): GuideUiState => ({
+  ...state,
+  stage: GuideUiStage.GoalChange,
+  goalChange: { kind: "prompt", text, returnStage },
+  promptReviewEditing: false,
+  errorMessage: undefined,
+})
+
 const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.IntentChange:
@@ -802,16 +963,10 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
       if (state.stage !== GuideUiStage.Intent) return state
       const trimmed = state.textDraft.trim()
       if (trimmed.length === 0) return state
-      // A background augmentation is shared state and outlives a re-match: the
-      // user started it to keep working, so submitting must not kill it.
-      return {
-        ...emptyState,
-        queue: state.queue,
-        augmentJob: state.augmentJob,
-        stage: GuideUiStage.Matching,
-        intent: trimmed,
-        matchPhase: GuideMatchPhase.LoadingProfiles,
+      if (state.goal !== undefined && trimmed !== state.goal.prompt.trim()) {
+        return changedGoalPrompt(state, trimmed, GuideUiStage.Intent)
       }
+      return beginGuideMatching(state, trimmed, state.goal)
     }
 
     default:
@@ -820,7 +975,7 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
 }
 
 /** The augmenters offered on the augment screen, in display order. */
-export const augmentOptions = [GuideAugmentKind.Research, GuideAugmentKind.Codebase] as const
+export const augmentOptions = [GuideAugmentKind.Research, GuideAugmentKind.Codebase, GuideAugmentKind.GoalMe] as const
 
 const augmentLabels: Readonly<Record<GuideAugmentKind, { readonly title: string; readonly detail: string }>> = {
   [GuideAugmentKind.Research]: {
@@ -830,6 +985,10 @@ const augmentLabels: Readonly<Record<GuideAugmentKind, { readonly title: string;
   [GuideAugmentKind.Codebase]: {
     title: "Codebase",
     detail: "Pack this repository with repomix and rewrite the draft",
+  },
+  [GuideAugmentKind.GoalMe]: {
+    title: "Goal me",
+    detail: "Answer questions here and approve a complete goal prompt",
   },
 }
 
@@ -873,6 +1032,7 @@ const augmentPhaseLabels: Readonly<Record<GuideAugmentPhase, string>> = {
   [GuideAugmentPhase.ReadingNote]: "Reading the research note",
   [GuideAugmentPhase.PackingRepository]: "Packing this repository with repomix",
   [GuideAugmentPhase.RewritingIntent]: "Rewriting the prompt against the pack",
+  [GuideAugmentPhase.GoalInterview]: "Developing your goal",
 }
 
 /** The running job, for screens that show it beside their own content. */
@@ -882,11 +1042,13 @@ const AugmentJobContext = createContext<GuideAugmentJob | undefined>(undefined)
 const augmentSourceLabels: Readonly<Record<GuideAugmentKind, string>> = {
   [GuideAugmentKind.Research]: "Live output · cpx hve",
   [GuideAugmentKind.Codebase]: "Live output · repomix",
+  [GuideAugmentKind.GoalMe]: "Goal me activity",
 }
 
 const augmentRunningLabels: Readonly<Record<GuideAugmentKind, string>> = {
   [GuideAugmentKind.Research]: "Researching your request",
   [GuideAugmentKind.Codebase]: "Reading your codebase",
+  [GuideAugmentKind.GoalMe]: "Preparing your goal",
 }
 
 /**
@@ -900,13 +1062,13 @@ const startAugmentJob = (
   kind: GuideAugmentKind,
   source: string,
   returnStage: GuideUiStage.Intent | GuideUiStage.PromptReview,
-  runId: number,
 ): GuideUiState => ({
   ...state,
-  stage: returnStage,
+  stage: kind === GuideAugmentKind.GoalMe ? GuideUiStage.Augmenting : returnStage,
+  nextAugmentRunId: state.nextAugmentRunId + 1,
   augmentJob: {
     kind,
-    runId,
+    runId: state.nextAugmentRunId,
     source,
     returnStage,
     status: "running",
@@ -914,8 +1076,13 @@ const startAugmentJob = (
     log: [],
     text: undefined,
     errorMessage: undefined,
+    goalPanel: undefined,
+    goalAutoAcceptRecommended: false,
+    goalHistory: [],
+    goalLastProposal: undefined,
+    goalApprovedPrompt: undefined,
   },
-  augmentViewReturnStage: undefined,
+  augmentViewReturnStage: kind === GuideAugmentKind.GoalMe ? returnStage : undefined,
   errorMessage: undefined,
 })
 
@@ -940,15 +1107,37 @@ const openAugmentChooser = (
  * the main screen.
  */
 const canAutoApplyAugment = (state: GuideUiState): boolean =>
-  state.activeForkId === undefined && !state.promptReviewEditing
+  state.activeForkId === undefined && !state.promptReviewEditing && state.stage !== GuideUiStage.GoalChange
+
+const goalSourceIsCurrent = (state: GuideUiState, job: GuideAugmentJob): boolean => {
+  const usesDraft =
+    state.stage === GuideUiStage.Intent || state.stage === GuideUiStage.PromptReview ||
+    (state.stage === GuideUiStage.Augmenting && state.augmentViewReturnStage === GuideUiStage.Intent)
+  const current =
+    usesDraft ? state.textDraft : state.promptReviewAugmented ?? state.intent ?? ""
+  return current.trim() === job.source.trim()
+}
 
 /** Puts the augmented text where the run was started from, and ends the job. */
-const applyAugmentJob = (state: GuideUiState, job: GuideAugmentJob, text: string): GuideUiState => ({
+const applyAugmentJob = (state: GuideUiState, job: GuideAugmentJob, text: string): GuideUiState => {
+  let goal = state.goal
+  if (job.kind === GuideAugmentKind.GoalMe) {
+    if (job.goalLastProposal?.prompt !== text || job.goalApprovedPrompt !== text) {
+      return {
+        ...state,
+        augmentJob: { ...job, status: "failed", errorMessage: "The approved goal context is missing. Review the goal again." },
+      }
+    }
+    goal = prepareGuideGoal(job.goalLastProposal)
+  }
+  const applied: GuideUiState = {
   // The augmented text is the main screen's prompt, not a fork's draft, so
   // applying from inside a tab parks that tab and comes back to the main screen.
   ...(state.activeForkId === undefined ? state : enterMainScreen(state)),
   stage: job.returnStage,
   textDraft: text,
+  goal,
+  goalRevision: job.kind === GuideAugmentKind.GoalMe ? state.goalRevision + 1 : state.goalRevision,
   // On the prompt page the augmented text is the new baseline: reverting an
   // edit returns to it, and leaving the page re-matches on it.
   ...(job.returnStage === GuideUiStage.PromptReview
@@ -956,8 +1145,13 @@ const applyAugmentJob = (state: GuideUiState, job: GuideAugmentJob, text: string
     : {}),
   augmentJob: undefined,
   augmentViewReturnStage: undefined,
+  goalChange: undefined,
   errorMessage: undefined,
-})
+  }
+  return job.kind !== GuideAugmentKind.GoalMe && goal !== undefined && text.trim() !== goal.prompt.trim()
+    ? changedGoalPrompt(applied, text, job.returnStage)
+    : applied
+}
 
 /** Only the run that is still current may write to the job. */
 const liveJob = (state: GuideUiState, runId: number): GuideAugmentJob | undefined =>
@@ -990,7 +1184,7 @@ const confirmAugment = (state: GuideUiState): GuideUiState => {
   if (kind === undefined || state.textDraft.trim().length === 0) return state
   const returnStage =
     state.augmentViewReturnStage === GuideUiStage.PromptReview ? GuideUiStage.PromptReview : GuideUiStage.Intent
-  return startAugmentJob(state, kind, state.textDraft, returnStage, 1)
+  return startAugmentJob(state, kind, state.textDraft, returnStage)
 }
 
 const reduceAugmentNavigation = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -1025,6 +1219,23 @@ const reduceAugmentNavigation = (state: GuideUiState, action: GuideUiAction): Gu
   }
 }
 
+const succeedAugment = (state: GuideUiState, runId: number, text: string): GuideUiState => {
+  const job = liveJob(state, runId)
+  if (job === undefined) return state
+  if (job.kind === GuideAugmentKind.GoalMe && job.goalApprovedPrompt !== text) {
+    return {
+      ...state,
+      augmentJob: { ...job, status: "failed", errorMessage: "Goal me finished without an approved goal. The prompt is unchanged." },
+    }
+  }
+  const canApplyGoal =
+    state.stage !== GuideUiStage.Launching && !editingStages.has(state.stage) && goalSourceIsCurrent(state, job)
+  if (canAutoApplyAugment(state) && (job.kind !== GuideAugmentKind.GoalMe || canApplyGoal)) {
+    return applyAugmentJob(state, job, text)
+  }
+  return { ...state, augmentJob: { ...job, status: "ready", phase: undefined, text } }
+}
+
 const reduceAugmentRun = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.AugmentProgress: {
@@ -1039,14 +1250,8 @@ const reduceAugmentRun = (state: GuideUiState, action: GuideUiAction): GuideUiSt
         : { ...state, augmentJob: { ...job, log: [...job.log, action.line].slice(-augmentLogLimit) } }
     }
 
-    case GuideUiActionType.AugmentSucceeded: {
-      const job = liveJob(state, action.runId)
-      if (job === undefined) return state
-      if (canAutoApplyAugment(state)) return applyAugmentJob(state, job, action.text)
-      // Applying here would destroy work in progress, so the result waits and
-      // the prompt page offers `a` to take it.
-      return { ...state, augmentJob: { ...job, status: "ready", phase: undefined, text: action.text } }
-    }
+    case GuideUiActionType.AugmentSucceeded:
+      return succeedAugment(state, action.runId, action.text)
 
     case GuideUiActionType.AugmentFailed: {
       const job = liveJob(state, action.runId)
@@ -1060,32 +1265,118 @@ const reduceAugmentRun = (state: GuideUiState, action: GuideUiAction): GuideUiSt
   }
 }
 
+const receiveGoalRequest = (
+  state: GuideUiState,
+  runId: number,
+  request: GuideGoalRequest | undefined,
+): GuideUiState => {
+  const job = liveJob(state, runId)
+  if (job?.kind !== GuideAugmentKind.GoalMe) return state
+  if (request !== undefined && request.runId !== job.runId) return state
+  if (request !== undefined && job.goalPanel?.request.requestId === request.requestId) return state
+  return {
+    ...state,
+    augmentJob: {
+      ...job,
+      goalPanel: request === undefined ? undefined : createGuideGoalPanelState(request),
+      goalLastProposal: request?.kind === "review" ? request.proposal : job.goalLastProposal,
+    },
+  }
+}
+
+const receiveGoalTurn = (state: GuideUiState, runId: number, turn: GuideGoalTurn): GuideUiState => {
+  const job = liveJob(state, runId)
+  if (
+    job?.kind !== GuideAugmentKind.GoalMe ||
+    turn.request.runId !== runId ||
+    job.goalPanel?.request.requestId !== turn.request.requestId
+  ) return state
+  const { request, response } = turn
+  return {
+    ...state,
+    augmentJob: {
+      ...job,
+      goalHistory: [...job.goalHistory, turn],
+      goalApprovedPrompt:
+        request.kind === "review" && response.kind === "review" && response.review.decision === "use"
+          ? request.proposal.prompt
+          : undefined,
+    },
+  }
+}
+
+const setGoalAutomaticAnswers = (
+  state: GuideUiState,
+  action: Extract<GuideUiAction, { readonly type: GuideUiActionType.AugmentGoalAutoAccept }>,
+): GuideUiState => {
+  const job = liveJob(state, action.runId)
+  if (job?.kind !== GuideAugmentKind.GoalMe) return state
+  const panel = job.goalPanel
+  if (action.requestId !== undefined && action.requestId !== panel?.request.requestId) return state
+  if (panel?.discardOpen || panel?.view === "answer" || panel?.view === "feedback") return state
+  if (panel?.request.kind === "review" && action.enabled) return state
+  return { ...state, augmentJob: { ...job, goalAutoAcceptRecommended: action.enabled } }
+}
+
+const reduceGoalInteraction = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  switch (action.type) {
+    case GuideUiActionType.AugmentGoalAutoAccept:
+      return setGoalAutomaticAnswers(state, action)
+    case GuideUiActionType.AugmentGoalRequest:
+      return receiveGoalRequest(state, action.runId, action.request)
+    case GuideUiActionType.AugmentGoalTurn:
+      return receiveGoalTurn(state, action.runId, action.turn)
+    case GuideUiActionType.AugmentGoalPanel: {
+      const job = liveJob(state, action.runId)
+      const panel = job?.goalPanel
+      if (job === undefined || panel === undefined || panel.request.requestId !== action.requestId) return state
+      return { ...state, augmentJob: { ...job, goalPanel: guideGoalPanelReducer(panel, action.action) } }
+    }
+    default:
+      return state
+  }
+}
+
+const retryAugmentJob = (state: GuideUiState): GuideUiState => {
+  const job = state.augmentJob
+  if (job === undefined || job.status !== "failed") return state
+  const restarted = startAugmentJob(state, job.kind, job.source, job.returnStage)
+  return {
+    ...restarted,
+    stage: state.stage,
+    augmentViewReturnStage: state.augmentViewReturnStage,
+    augmentJob: restarted.augmentJob === undefined ? undefined : {
+      ...restarted.augmentJob,
+      goalHistory: job.goalHistory,
+      goalAutoAcceptRecommended: job.goalAutoAcceptRecommended,
+      goalLastProposal: job.goalLastProposal,
+    },
+  }
+}
+
+const discardAugmentJob = (state: GuideUiState, runId: number | undefined): GuideUiState => {
+  if (state.augmentJob === undefined || (runId !== undefined && runId !== state.augmentJob.runId)) return state
+  return {
+    ...state,
+    stage: state.stage === GuideUiStage.Augmenting ? (state.augmentViewReturnStage ?? GuideUiStage.Intent) : state.stage,
+    augmentJob: undefined,
+    augmentViewReturnStage: undefined,
+  }
+}
+
 const reduceAugmentJob = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
-    case GuideUiActionType.AugmentRetry: {
-      const job = state.augmentJob
-      if (job === undefined || job.status !== "failed") return state
-      return {
-        ...startAugmentJob(state, job.kind, job.source, job.returnStage, job.runId + 1),
-        stage: state.stage,
-      }
-    }
+    case GuideUiActionType.AugmentRetry:
+      return retryAugmentJob(state)
 
     case GuideUiActionType.AugmentApply: {
       const job = state.augmentJob
+      if (job?.kind === GuideAugmentKind.GoalMe && job.goalApprovedPrompt !== job.text) return state
       return job?.status === "ready" && job.text !== undefined ? applyAugmentJob(state, job, job.text) : state
     }
 
-    case GuideUiActionType.AugmentDiscard: {
-      if (state.augmentJob === undefined) return state
-      return {
-        ...state,
-        stage:
-          state.stage === GuideUiStage.Augmenting ? (state.augmentViewReturnStage ?? GuideUiStage.Intent) : state.stage,
-        augmentJob: undefined,
-        augmentViewReturnStage: undefined,
-      }
-    }
+    case GuideUiActionType.AugmentDiscard:
+      return discardAugmentJob(state, action.runId)
 
     default:
       return state
@@ -1093,7 +1384,7 @@ const reduceAugmentJob = (state: GuideUiState, action: GuideUiAction): GuideUiSt
 }
 
 const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState =>
-  reduceAugmentJob(reduceAugmentRun(reduceAugmentNavigation(state, action), action), action)
+  reduceAugmentJob(reduceGoalInteraction(reduceAugmentRun(reduceAugmentNavigation(state, action), action), action), action)
 
 const recommendationsState = (
   state: GuideUiState,
@@ -1119,13 +1410,14 @@ const promptReviewSourceStage = (
 }
 
 const openPromptReview = (state: GuideUiState): GuideUiState => {
-  const returnStage = promptReviewSourceStage(state.stage)
-  return returnStage === undefined || state.intent === undefined
+  const source = state.activeForkId === undefined ? state : enterMainScreen(state)
+  const returnStage = promptReviewSourceStage(source.stage)
+  return returnStage === undefined || source.intent === undefined
     ? state
     : {
-        ...state,
+        ...source,
         stage: GuideUiStage.PromptReview,
-        textDraft: state.intent,
+        textDraft: source.intent,
         promptReviewReturnStage: returnStage,
         promptReviewEditing: false,
       }
@@ -1153,7 +1445,10 @@ const closePromptReview = (state: GuideUiState): GuideUiState => {
 const submitPromptReview = (state: GuideUiState): GuideUiState => {
   const intent = state.textDraft.trim()
   if (intent.length === 0) return state
-  if (intent === state.intent) {
+  if (state.goal !== undefined && intent !== state.goal.prompt.trim()) {
+    return changedGoalPrompt(state, intent, GuideUiStage.PromptReview)
+  }
+  if (intent === state.intent && state.goal?.fingerprint === state.matchedGoalFingerprint && state.goalRevision === state.matchedGoalRevision) {
     return {
       ...state,
       stage: state.promptReviewReturnStage ?? GuideUiStage.Matching,
@@ -1163,14 +1458,7 @@ const submitPromptReview = (state: GuideUiState): GuideUiState => {
       promptReviewAugmented: undefined,
     }
   }
-  return {
-    ...emptyState,
-    queue: state.queue,
-    augmentJob: state.augmentJob,
-    stage: GuideUiStage.Matching,
-    intent,
-    matchPhase: GuideMatchPhase.LoadingProfiles,
-  }
+  return beginGuideMatching(state, intent, state.goal)
 }
 
 const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -1235,42 +1523,117 @@ const reduceMatch = (state: GuideUiState, action: GuideUiAction): GuideUiState =
   }
 }
 
+const moveGuideRecommendation = (state: GuideUiState, delta: number): GuideUiState => {
+  const selection = guideProfileSelection(state)
+  if (selection.recommendations === undefined || selection.recommendations.length === 0) return state
+  const recommendationIndex =
+    (selection.recommendationIndex + delta + selection.recommendations.length) % selection.recommendations.length
+  return state.activeForkId === undefined
+    ? { ...state, recommendationIndex }
+    : { ...state, profileSelection: { ...selection, recommendationIndex } }
+}
+
+const confirmGuideRecommendation = (
+  state: GuideUiState,
+  action: Extract<GuideUiAction, { readonly type: GuideUiActionType.RecommendationsConfirm }>,
+): GuideUiState => {
+  const selection = guideProfileSelection(state)
+  if (selection.recommendations === undefined ||
+    (selection.recommendations.length === 0 && action.recommendation === undefined)) return state
+  const recommendation = action.recommendation ?? recommendationAt(selection.recommendations, selection.recommendationIndex)
+  const goal = guideProfileGoal(state)
+  if (goal !== undefined && action.goalUnavailableReason !== undefined) {
+    return {
+      ...state,
+      stage: GuideUiStage.GoalChange,
+      goalChange: { kind: "profile", recommendation, profile: action.selectedProfile, reason: action.goalUnavailableReason },
+    }
+  }
+  const slice: GuideForkSlice = {
+    ...forkSlice(state),
+    stage: GuideUiStage.Generating,
+    selectedRecommendation: recommendation,
+    selectedGoal: goal,
+    selectedIntent: guideProfileIntent(state),
+    profileSelection: selection,
+    selectedProfile: action.selectedProfile,
+    guideDocument: undefined,
+    generationPhase: GuideGenerationPhase.LoadingProfile,
+    candidates: undefined,
+    usedTemplateFallback: false,
+    errorMessage: undefined,
+  }
+  // Reselecting a profile changes its workflow, not the fork's source or queue identity.
+  return state.activeForkId === undefined ? openFork(state, slice) : { ...state, ...slice }
+}
+
 const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  if (state.stage !== GuideUiStage.Recommendations) return state
   switch (action.type) {
     case GuideUiActionType.RecommendationsMove:
-      return state.stage === GuideUiStage.Recommendations
-        ? {
-            ...state,
-            recommendationIndex:
-              state.recommendations === undefined
-                ? state.recommendationIndex
-                : (state.recommendationIndex + action.delta + state.recommendations.length) %
-                  state.recommendations.length,
-          }
-        : state
-
-    case GuideUiActionType.RecommendationsConfirm: {
-      if (state.stage !== GuideUiStage.Recommendations || state.recommendations === undefined) return state
-      const slice: GuideForkSlice = {
-        ...forkSlice(state),
-        stage: GuideUiStage.Generating,
-        selectedRecommendation:
-          action.recommendation ?? recommendationAt(state.recommendations, state.recommendationIndex),
-        selectedProfile: action.selectedProfile,
-        guideDocument: undefined,
-        generationPhase: GuideGenerationPhase.LoadingProfile,
-        candidates: undefined,
-        usedTemplateFallback: false,
-        errorMessage: undefined,
-      }
-      // From the main screen this starts a new fork; inside a fork it replaces
-      // that fork's profile, so `b` back from the candidates still works.
-      return state.activeForkId === undefined ? openFork(state, slice) : { ...state, ...slice }
-    }
-
+      return moveGuideRecommendation(state, action.delta)
+    case GuideUiActionType.RecommendationsConfirm:
+      return confirmGuideRecommendation(state, action)
     default:
       return state
   }
+}
+
+const keepPreparedGoal = (state: GuideUiState, change: GuideGoalChange): GuideUiState => ({
+  ...state,
+  stage: change.kind === "profile" ? GuideUiStage.Recommendations : change.returnStage,
+  textDraft: guideProfileGoal(state)?.prompt ?? guideProfileIntent(state) ?? "",
+  promptReviewAugmented: change.kind === "prompt" && state.goal?.prompt !== state.intent ? state.goal?.prompt : undefined,
+  goalChange: undefined,
+  errorMessage: undefined,
+})
+
+const openOrdinaryGoalReference = (
+  state: GuideUiState,
+  change: Extract<GuideGoalChange, { readonly kind: "profile" }>,
+): GuideUiState => {
+  const goal = guideProfileGoal(state)
+  const intent = goal === undefined ? guideProfileIntent(state) : [
+    `Artifact: ${goal.draft.artifact}`,
+    goal.draft.task,
+    "Success criteria:",
+    ...goal.draft.criteria.map((criterion) => `- ${criterion}`),
+  ].join("\n")
+  return openFork(keepPreparedGoal(state, change), {
+    ...mainForkSlice,
+    stage: GuideUiStage.Generating,
+    selectedRecommendation: change.recommendation,
+    selectedProfile: change.profile,
+    selectedGoal: undefined,
+    selectedIntent: intent,
+    profileSelection: guideProfileSelection(state),
+    generationPhase: GuideGenerationPhase.LoadingProfile,
+    goalChange: undefined,
+  })
+}
+
+const reduceGoalChange = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  const change = state.goalChange
+  if (state.stage !== GuideUiStage.GoalChange || change === undefined) return state
+  if (action.type === GuideUiActionType.GoalChangeKeep) {
+    return keepPreparedGoal(state, change)
+  }
+  if (action.type === GuideUiActionType.GoalChangeRevise && change.kind === "prompt") {
+    if (state.augmentJob !== undefined) {
+      return { ...state, errorMessage: "Finish or discard the active augmentation before starting another goal interview." }
+    }
+    return startAugmentJob({
+      ...state,
+      goalChange: undefined,
+      textDraft: change.text,
+      promptReviewAugmented: change.returnStage === GuideUiStage.PromptReview ? change.text : undefined,
+    }, GuideAugmentKind.GoalMe, change.text, change.returnStage)
+  }
+  if (action.type !== GuideUiActionType.GoalChangeDetach) return state
+  if (change.kind === "prompt") {
+    return beginGuideMatching({ ...state, goalChange: undefined }, change.text, undefined)
+  }
+  return openOrdinaryGoalReference(state, change)
 }
 
 const candidatesState = (
@@ -1399,6 +1762,7 @@ const candidateEditingWorkflow = (state: GuideUiState): ProfileGuideWorkflow | u
 const candidateDirectEditDraft = (state: GuideUiState): string => {
   if (state.candidates === undefined) throw new Error("Direct editing requires prompt candidates")
   const current = tripleAt(state.candidates, state.candidateIndex)
+  if (current.goalExecution !== undefined) return current.goalExecution.approach
   const workflow = candidateEditingWorkflow(state)
   return workflow === undefined ? current.prompt : workflowBodyCandidate(workflow, current).prompt
 }
@@ -1431,6 +1795,9 @@ const reduceCandidateSelection = (state: GuideUiState, action: GuideUiAction): G
 const directlyEditedCandidate = (state: GuideUiState): GuideGenerateCandidate => {
   if (state.candidates === undefined) throw new Error("Direct editing requires prompt candidates")
   const current = tripleAt(state.candidates, state.candidateIndex)
+  if (current.goalExecution !== undefined) {
+    return composeGuideGoalCandidate(current.goalExecution, { ...guideGoalCandidateBody(current), prompt: state.textDraft })
+  }
   const edited = { ...current, prompt: state.textDraft }
   const workflow = candidateEditingWorkflow(state)
   return workflow === undefined ? edited : renderWorkflowBodyCandidate(workflow, edited)
@@ -1438,16 +1805,23 @@ const directlyEditedCandidate = (state: GuideUiState): GuideGenerateCandidate =>
 
 const reduceDirectEdit = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
-    case GuideUiActionType.DirectEditSubmit:
-      return state.stage === GuideUiStage.DirectEditor &&
-        state.candidates !== undefined &&
-        state.textDraft.trim().length > 0
-        ? {
-            ...state,
-            stage: GuideUiStage.Candidates,
-            candidates: replaceCandidateAt(state.candidates, state.candidateIndex, directlyEditedCandidate(state)),
-          }
-        : state
+    case GuideUiActionType.DirectEditSubmit: {
+      if (state.stage !== GuideUiStage.DirectEditor || state.candidates === undefined || state.textDraft.trim().length === 0) return state
+      try {
+        return {
+          ...state,
+          stage: GuideUiStage.Candidates,
+          candidates: requireDistinctGuideCandidatePrompts(
+            replaceCandidateAt(state.candidates, state.candidateIndex, directlyEditedCandidate(state)),
+            GuideCandidatePromptStage.FinalRendering,
+          ),
+          errorMessage: undefined,
+        }
+      } catch (error) {
+        if (!(error instanceof GuideGoalError || error instanceof GuideValidationError || error instanceof GuideCandidatePromptCollisionError)) throw error
+        return { ...state, errorMessage: error.message }
+      }
+    }
 
     case GuideUiActionType.DirectEditBack:
       return state.stage === GuideUiStage.DirectEditor ? { ...state, stage: GuideUiStage.Candidates } : state
@@ -1566,7 +1940,7 @@ const reduceDestination = (state: GuideUiState, action: GuideUiAction): GuideUiS
         ? {
             ...state,
             stage: GuideUiStage.WorktreeBranchEditor,
-            textDraft: defaultWorktreeBranch(state.intent ?? ""),
+            textDraft: defaultWorktreeBranch(guideBranchIntent(state) ?? ""),
             worktreeInspection: undefined,
             errorMessage: undefined,
             worktreeReturnStage: GuideUiStage.Destination,
@@ -1617,12 +1991,17 @@ const reduceQueueEditing = (state: GuideUiState, action: GuideUiAction): GuideUi
       const job = queue.entries[queue.selectedIndex]
       return job === undefined
         ? state
-        : { ...state, stage: GuideUiStage.QueuePromptEditor, queue, textDraft: job.prompt }
+        : { ...state, stage: GuideUiStage.QueuePromptEditor, queue, textDraft: job.goalExecution?.approach ?? job.prompt }
     }
-    case GuideUiActionType.QueueEditSubmit:
-      return state.stage === GuideUiStage.QueuePromptEditor && state.textDraft.trim().length > 0
-        ? { ...state, stage: GuideUiStage.Queue, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft) }
-        : state
+    case GuideUiActionType.QueueEditSubmit: {
+      if (state.stage !== GuideUiStage.QueuePromptEditor || state.textDraft.trim().length === 0) return state
+      try {
+        return { ...state, stage: GuideUiStage.Queue, queue: submitQueuedGuidePromptEdit(state.queue, state.textDraft), errorMessage: undefined }
+      } catch (error) {
+        if (!(error instanceof GuideGoalError || error instanceof GuideValidationError)) throw error
+        return { ...state, errorMessage: error.message }
+      }
+    }
     default:
       return state
   }
@@ -1697,15 +2076,16 @@ const enqueueSelectedCandidate = (
 ): GuideUiState => {
   const profile = state.selectedProfile
   if (state.candidates === undefined || profile === undefined) return state
-  const prompt = tripleAt(state.candidates, state.candidateIndex).prompt
+  const candidate = tripleAt(state.candidates, state.candidateIndex)
+  const prompt = candidate.prompt
   const held = state.forks.find((fork) => fork.id === state.activeForkId)?.jobId
   return {
     ...bindActiveForkToJob(state, held ?? state.queue.nextId),
     stage: GuideUiStage.Queue,
     queue:
       held === undefined
-        ? enqueueGuideJob(state.queue, profile, prompt, placement)
-        : replaceQueuedGuideJob(state.queue, held, profile, prompt, placement),
+        ? enqueueGuideJob(state.queue, profile, prompt, placement, candidate.goalExecution)
+        : replaceQueuedGuideJob(state.queue, held, profile, prompt, placement, candidate.goalExecution),
     ...(primaryCheckoutPath === undefined ? {} : { primaryCheckoutPath }),
     errorMessage: undefined,
   }
@@ -1732,7 +2112,7 @@ const reduceQueuePlacement = (state: GuideUiState, action: GuideUiAction): Guide
         ? {
             ...state,
             stage: GuideUiStage.WorktreeBranchEditor,
-            textDraft: defaultWorktreeBranch(state.intent ?? "queue"),
+            textDraft: defaultWorktreeBranch(guideBranchIntent(state) ?? "queue"),
             worktreeInspection: undefined,
             worktreeReturnStage: GuideUiStage.QueuePlacement,
             errorMessage: undefined,
@@ -1897,6 +2277,10 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.AugmentApply]: reduceAugment,
   [GuideUiActionType.AugmentDiscard]: reduceAugment,
   [GuideUiActionType.AugmentBack]: reduceAugment,
+  [GuideUiActionType.AugmentGoalRequest]: reduceAugment,
+  [GuideUiActionType.AugmentGoalTurn]: reduceAugment,
+  [GuideUiActionType.AugmentGoalPanel]: reduceAugment,
+  [GuideUiActionType.AugmentGoalAutoAccept]: reduceAugment,
   [GuideUiActionType.MatchRetry]: reduceMatch,
   [GuideUiActionType.MatchProgress]: reduceMatchProgress,
   [GuideUiActionType.MatchSucceeded]: reduceMatch,
@@ -1911,6 +2295,9 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.PromptReviewBackspace]: reducePromptReview,
   [GuideUiActionType.PromptReviewSubmit]: reducePromptReview,
   [GuideUiActionType.PromptReviewBack]: reducePromptReview,
+  [GuideUiActionType.GoalChangeRevise]: reduceGoalChange,
+  [GuideUiActionType.GoalChangeDetach]: reduceGoalChange,
+  [GuideUiActionType.GoalChangeKeep]: reduceGoalChange,
   [GuideUiActionType.GenerateGuideLoaded]: reduceGenerate,
   [GuideUiActionType.GenerateProgress]: reduceGenerateProgress,
   [GuideUiActionType.GenerateRetry]: reduceGenerate,
@@ -1977,7 +2364,8 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
 
 export const guideUiReducer = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   const domainReducer = (domainReducerByActionType as Partial<Record<string, GuideUiDomainReducer>>)[action.type]
-  return domainReducer === undefined ? state : domainReducer(state, action)
+  const next = domainReducer === undefined ? state : domainReducer(state, action)
+  return next.nextAugmentRunId < state.nextAugmentRunId ? { ...next, nextAugmentRunId: state.nextAugmentRunId } : next
 }
 
 // ---------------------------------------------------------------------------
@@ -2008,6 +2396,23 @@ const findCombinedCatalogEntry = (
   return undefined
 }
 
+const goalRecommendationReason = (
+  catalog: CombinedGuideCatalog,
+  goal: PreparedGuideGoal | undefined,
+  recommendation: GuideRecommendation,
+): string | undefined => {
+  if (goal === undefined) return undefined
+  const found = findCombinedCatalogEntry(catalog, recommendation.profileRef)
+  if (found === undefined) return "The selected profile is no longer available."
+  try {
+    resolveGuideGoalExecution(goal, found.entry.guide, recommendation.workflowId)
+    return undefined
+  } catch (error) {
+    if (!(error instanceof GuideGoalError || error instanceof GuideValidationError)) throw error
+    return error.message
+  }
+}
+
 /** Enriches a deterministic literal-match candidate into the same `GuideRecommendation` shape the model-match path produces. */
 export const enrichLiteralCandidate = (
   catalog: CombinedGuideCatalog,
@@ -2017,6 +2422,7 @@ export const enrichLiteralCandidate = (
     readonly confidence: number
     readonly reason: string
     readonly tradeoff: string
+    readonly goalExecution?: NonNullable<GuideRecommendation["goalExecution"]>
   },
 ): GuideRecommendation => {
   const found = findCombinedCatalogEntry(catalog, candidate.profileRef)
@@ -2043,6 +2449,7 @@ export const enrichLiteralCandidate = (
     prerequisites: entry.guide.prerequisites,
     headless: entry.headless,
     herdrCompatibility: entry.herdrCompatibility,
+    ...(candidate.goalExecution === undefined ? {} : { goalExecution: candidate.goalExecution }),
   }
 }
 
@@ -2142,15 +2549,17 @@ export const selectedProfileForPinnedLens = (catalog: CombinedGuideCatalog, lens
 export const literalGuideRecommendations = (
   catalog: CombinedGuideCatalog,
   intent: string,
+  goal?: PreparedGuideGoal,
 ): ReadonlyArray<GuideRecommendation> =>
-  literalGuideMatch(catalog, intent).map((candidate) => enrichLiteralCandidate(catalog, candidate))
+  literalGuideMatch(catalog, intent, goal).map((candidate) => enrichLiteralCandidate(catalog, candidate))
 
 /** Computes deterministic template-based prompt candidates for the generate-failure fallback. */
 export const templateGuideCandidates = (
   guide: ProfileGuideV1,
   workflowId: string,
   intent: string,
-): Triple<GuideGenerateCandidate> => templatePromptCandidates(guide, workflowId, intent)
+  goal?: PreparedGuideGoal,
+): Triple<GuideGenerateCandidate> => templatePromptCandidates(guide, workflowId, intent, goal)
 
 // ---------------------------------------------------------------------------
 // Generation / refinement orchestration. Extracted as plain async functions
@@ -2167,7 +2576,7 @@ export interface GuideGenerationStepResult {
 export const runGuideMatchingStep = async (
   provider: GuideProvider,
   catalog: CombinedGuideCatalog,
-  request: { readonly intent: string; readonly model: string; readonly effort: GuideEffort },
+  request: GuideMatchRequest,
   onProgress?: (phase: GuideMatchPhase) => void,
   cache?: GuideArtifactCache,
 ): Promise<GuideMatchResponse> => {
@@ -2198,12 +2607,31 @@ export const runGuideGenerationStep = async (
   onGuideLoaded?: (guideDocument: SelectedGuideDocument) => void,
   onProgress?: (phase: GuideGenerationPhase) => void,
   cache?: GuideArtifactCache,
+  goal?: PreparedGuideGoal,
 ): Promise<GuideGenerationStepResult> => {
   const guideDocument = await loadSelectedGuide(catalog, guideRoot, recommendation.profileRef)
   onGuideLoaded?.(guideDocument)
   const workflow = selectedGuideWorkflow(guideDocument.guide, recommendation.workflowId)
   const fixedFrame = workflowOptimizeFixedFrame(workflow)
   const targetTool = guideTargetTool(catalog, recommendation.profileRef)
+  if (goal !== undefined) {
+    const result = await runGuideGoalGeneration(provider, {
+      intent,
+      profileRef: recommendation.profileRef,
+      workflowId: recommendation.workflowId,
+      guide: guideDocument.guide,
+      guideBody: guideDocument.body,
+      targetTool,
+      goal,
+    }, {
+      ...(cache === undefined ? {} : { cache }),
+      onPhase: (phase) => onProgress?.(
+        phase === "optimize" ? GuideGenerationPhase.OptimizingCandidates : GuideGenerationPhase.GeneratingCandidates,
+      ),
+    })
+    onProgress?.(GuideGenerationPhase.ApplyingWorkflow)
+    return { guideDocument, candidates: result.candidates }
+  }
   const produce = async () => {
     onProgress?.(GuideGenerationPhase.GeneratingCandidates)
     const generated = await provider.generate({
@@ -2318,12 +2746,34 @@ export const runGuideRefinementStep = async (
   candidateIndex: number,
   feedback: string,
   cache?: GuideArtifactCache,
+  goal?: PreparedGuideGoal,
 ): Promise<GuideGenerateCandidate> => {
   const workflow = selectedGuideWorkflow(guideDocument.guide, recommendation.workflowId)
   const candidate = tripleAt(candidates, candidateIndex)
   const bodyCandidate = workflowBodyCandidate(workflow, candidate)
   const fixedFrame = workflowOptimizeFixedFrame(workflow)
   const targetTool = guideTargetTool(catalog, recommendation.profileRef)
+  const preparedGoal = goal ?? candidate.goalExecution?.goal
+  if (preparedGoal !== undefined) {
+    const result = await runGuideGoalRefinement(provider, {
+      intent,
+      profileRef: recommendation.profileRef,
+      workflowId: recommendation.workflowId,
+      guide: guideDocument.guide,
+      guideBody: guideDocument.body,
+      targetTool,
+      goal: preparedGoal,
+      candidate,
+      candidates,
+      candidateIndex,
+      feedback,
+    }, cache === undefined ? {} : { cache })
+    requireDistinctGuideCandidatePrompts(
+      replaceCandidateAt(candidates, candidateIndex, result.candidate),
+      GuideCandidatePromptStage.FinalRendering,
+    )
+    return result.candidate
+  }
   const produce = async () => {
     const refined = await provider.refine({
       intent,
@@ -2397,12 +2847,16 @@ export interface GuideUiCancelResult {
   readonly exitCode: 130
 }
 
-export interface GuideUiPrintResult {
+interface GuideUiGoalResult {
+  readonly goalExecution?: GuideGoalCandidateContext
+}
+
+export interface GuideUiPrintResult extends GuideUiGoalResult {
   readonly action: "print"
   readonly prompt: string
 }
 
-export interface GuideUiCurrentTerminalResult {
+export interface GuideUiCurrentTerminalResult extends GuideUiGoalResult {
   readonly action: "current-terminal"
   readonly profile: SelectedProfile
   readonly command: CommandSpec
@@ -2411,7 +2865,7 @@ export interface GuideUiCurrentTerminalResult {
   readonly cwd: string
 }
 
-export interface GuideUiCurrentHerdrWorkspaceResult {
+export interface GuideUiCurrentHerdrWorkspaceResult extends GuideUiGoalResult {
   readonly action: "current-herdr-workspace"
   readonly profile: SelectedProfile
   readonly command: CommandSpec
@@ -2422,7 +2876,7 @@ export interface GuideUiCurrentHerdrWorkspaceResult {
   readonly direction: HerdrSplitDirection
 }
 
-export interface GuideUiNewHerdrWorktreeResult {
+export interface GuideUiNewHerdrWorktreeResult extends GuideUiGoalResult {
   readonly action: "herdr-worktree-create"
   readonly profile: SelectedProfile
   readonly command: CommandSpec
@@ -2433,7 +2887,7 @@ export interface GuideUiNewHerdrWorktreeResult {
   readonly baseRef: string
 }
 
-export interface GuideUiExistingHerdrWorktreeResult {
+export interface GuideUiExistingHerdrWorktreeResult extends GuideUiGoalResult {
   readonly action: "herdr-worktree-open"
   readonly profile: SelectedProfile
   readonly command: CommandSpec
@@ -2453,7 +2907,7 @@ export interface GuideUiBatchResult {
 }
 
 /** A new Herdr tab in this workspace, on this checkout. */
-export interface GuideUiNewHerdrTabResult {
+export interface GuideUiNewHerdrTabResult extends GuideUiGoalResult {
   readonly action: "new-herdr-tab"
   readonly profile: SelectedProfile
   readonly command: CommandSpec
@@ -2475,14 +2929,17 @@ export type GuideUiResult =
 
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
 
-export const buildPrintResult = (prompt: string): GuideUiPrintResult => ({ action: "print", prompt })
+export const buildPrintResult = (prompt: string, goalExecution?: GuideGoalCandidateContext): GuideUiPrintResult => ({
+  action: "print", prompt, ...(goalExecution === undefined ? {} : { goalExecution }),
+})
 
 export const buildCurrentTerminalResult = (
   profile: SelectedProfile,
   prompt: string,
   cwd: string,
+  goalExecution?: GuideGoalCandidateContext,
 ): GuideUiCurrentTerminalResult => {
-  const built = buildGuideLaunchCommand(profile, { mode: "argv", prompt })
+  const built = buildGuideLaunchCommand(profile, { mode: "argv", prompt }, goalExecution)
   return {
     action: "current-terminal",
     profile,
@@ -2490,6 +2947,7 @@ export const buildCurrentTerminalResult = (
     promptHandling: built.promptHandling,
     prompt,
     cwd,
+    ...(goalExecution === undefined ? {} : { goalExecution }),
   }
 }
 
@@ -2498,8 +2956,9 @@ export const buildNewHerdrTabResult = (
   prompt: string,
   cwd: string,
   herdrContext: HerdrContext,
+  goalExecution?: GuideGoalCandidateContext,
 ): GuideUiNewHerdrTabResult => {
-  const built = buildHerdrGuideLaunch(profile, prompt)
+  const built = buildHerdrGuideLaunch(profile, prompt, goalExecution)
   return {
     action: "new-herdr-tab",
     profile,
@@ -2508,6 +2967,7 @@ export const buildNewHerdrTabResult = (
     promptDelivery: built.promptDelivery,
     cwd,
     workspaceId: herdrContext.workspaceId,
+    ...(goalExecution === undefined ? {} : { goalExecution }),
   }
 }
 
@@ -2517,8 +2977,9 @@ export const buildCurrentHerdrWorkspaceResult = (
   cwd: string,
   herdrContext: HerdrContext,
   direction: HerdrSplitDirection = "right",
+  goalExecution?: GuideGoalCandidateContext,
 ): GuideUiCurrentHerdrWorkspaceResult => {
-  const built = buildHerdrGuideLaunch(profile, prompt)
+  const built = buildHerdrGuideLaunch(profile, prompt, goalExecution)
   return {
     action: "current-herdr-workspace",
     profile,
@@ -2528,6 +2989,7 @@ export const buildCurrentHerdrWorkspaceResult = (
     cwd,
     callerPaneId: herdrContext.paneId,
     direction,
+    ...(goalExecution === undefined ? {} : { goalExecution }),
   }
 }
 
@@ -2537,8 +2999,9 @@ export const buildNewHerdrWorktreeResult = (
   primaryCheckoutPath: string,
   branch: string,
   baseRef: string,
+  goalExecution?: GuideGoalCandidateContext,
 ): GuideUiNewHerdrWorktreeResult => {
-  const built = buildHerdrGuideLaunch(profile, prompt)
+  const built = buildHerdrGuideLaunch(profile, prompt, goalExecution)
   return {
     action: "herdr-worktree-create",
     profile,
@@ -2548,6 +3011,7 @@ export const buildNewHerdrWorktreeResult = (
     primaryCheckoutPath,
     branch,
     baseRef,
+    ...(goalExecution === undefined ? {} : { goalExecution }),
   }
 }
 
@@ -2556,8 +3020,9 @@ export const buildExistingHerdrWorktreeResult = (
   prompt: string,
   primaryCheckoutPath: string,
   path: string,
+  goalExecution?: GuideGoalCandidateContext,
 ): GuideUiExistingHerdrWorktreeResult => {
-  const built = buildHerdrGuideLaunch(profile, prompt)
+  const built = buildHerdrGuideLaunch(profile, prompt, goalExecution)
   return {
     action: "herdr-worktree-open",
     profile,
@@ -2566,6 +3031,7 @@ export const buildExistingHerdrWorktreeResult = (
     promptDelivery: built.promptDelivery,
     primaryCheckoutPath,
     path,
+    ...(goalExecution === undefined ? {} : { goalExecution }),
   }
 }
 
@@ -2577,6 +3043,8 @@ export interface GuideUiProps {
   readonly catalog: CombinedGuideCatalog
   readonly guideRoot: string
   readonly provider: GuideProvider
+  readonly goalProvider?: GuideGoalAugmentProvider
+  readonly goalReadinessServices?: GuideGoalReadinessServices
   readonly cache?: GuideArtifactCache
   readonly routing: GuideResolvedModelRouting
   readonly runner: CommandRunner
@@ -2729,39 +3197,6 @@ export const summarizeGenerationIntent = (intent: string, maximumLength = 100): 
     : `${takeTextCharacters(normalized, maximumLength - 1)}…`
 }
 
-const guideTextSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" })
-
-const wrapGuideTextLine = (sourceLine: string, lineWidth: number): ReadonlyArray<string> => {
-  if (sourceLine.length === 0) return [""]
-  const lines: Array<string> = []
-  let line = ""
-  let displayWidth = 0
-  let continuation = false
-  for (const { segment } of guideTextSegmenter.segment(sourceLine)) {
-    const segmentWidth = stringWidth(segment)
-    if (line.length > 0 && displayWidth + segmentWidth > lineWidth) {
-      lines.push(line)
-      line = ""
-      displayWidth = 0
-      continuation = true
-    }
-    if (continuation && line.length === 0 && segment === " ") continue
-    line += segment
-    displayWidth += segmentWidth
-    continuation = false
-  }
-  if (line.length > 0) lines.push(line)
-  return lines
-}
-
-export const wrapGuideText = (value: string, width: number): ReadonlyArray<string> => {
-  const lineWidth = Math.max(1, width)
-  return value
-    .replaceAll("\t", "    ")
-    .split("\n")
-    .flatMap((sourceLine) => wrapGuideTextLine(sourceLine, lineWidth))
-}
-
 export interface GuideTextViewport {
   readonly text: string
   readonly lines: ReadonlyArray<string>
@@ -2839,283 +3274,6 @@ const ScrollableTextViewport = ({
           </Text>
         )
       })}
-    </Box>
-  )
-}
-
-type MarkdownDisplayKind = "body" | "heading" | "list" | "quote" | "code" | "rule"
-type MarkdownInlineKind = "text" | "bold" | "italic" | "code" | "strikethrough" | "link"
-
-export interface MarkdownDisplayLine {
-  readonly text: string
-  readonly kind: MarkdownDisplayKind
-}
-
-export interface MarkdownInlineSegment {
-  readonly text: string
-  readonly kind: MarkdownInlineKind
-}
-
-const markdownInlineTokenPattern =
-  /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^\s)\n]+\))/u
-
-interface MarkdownInlineSourcePart {
-  readonly value: string
-  readonly token: boolean
-}
-
-const markdownInlineSourceParts = (value: string): ReadonlyArray<MarkdownInlineSourcePart> => {
-  const parts: Array<MarkdownInlineSourcePart> = []
-  let remaining = value
-  while (remaining.length > 0) {
-    const match = markdownInlineTokenPattern.exec(remaining)
-    if (match?.index === undefined || match[0] === undefined) {
-      parts.push({ value: remaining, token: false })
-      break
-    }
-    if (match.index > 0) parts.push({ value: remaining.slice(0, match.index), token: false })
-    parts.push({ value: match[0], token: true })
-    remaining = remaining.slice(match.index + match[0].length)
-  }
-  return parts
-}
-
-export const markdownInlineSegments = (value: string): ReadonlyArray<MarkdownInlineSegment> => {
-  const segments: Array<MarkdownInlineSegment> = []
-  for (const part of markdownInlineSourceParts(value)) {
-    if (!part.token) {
-      segments.push({ text: part.value, kind: "text" })
-      continue
-    }
-    const matched = part.value
-    if (matched.startsWith("`")) segments.push({ text: matched.slice(1, -1), kind: "code" })
-    else if (matched.startsWith("**") || matched.startsWith("__")) {
-      segments.push({ text: matched.slice(2, -2), kind: "bold" })
-    } else if (matched.startsWith("~~")) {
-      segments.push({ text: matched.slice(2, -2), kind: "strikethrough" })
-    } else if (matched.startsWith("[")) {
-      const labelEnd = matched.indexOf("](")
-      segments.push({
-        text: `${matched.slice(1, labelEnd)} (${matched.slice(labelEnd + 2, -1)})`,
-        kind: "link",
-      })
-    } else {
-      segments.push({ text: matched.slice(1, -1), kind: "italic" })
-    }
-  }
-  return segments
-}
-
-interface MarkdownWrapState {
-  line: string
-  displayWidth: number
-}
-
-const pushMarkdownWrapLine = (lines: Array<string>, state: MarkdownWrapState): void => {
-  lines.push(state.line)
-  state.line = ""
-  state.displayWidth = 0
-}
-
-const appendMarkdownToken = (
-  lines: Array<string>,
-  state: MarkdownWrapState,
-  token: string,
-  lineWidth: number,
-): void => {
-  const tokenWidth = stringWidth(
-    markdownInlineSegments(token)
-      .map(({ text }) => text)
-      .join(""),
-  )
-  if (state.line.length > 0 && state.displayWidth + tokenWidth > lineWidth) pushMarkdownWrapLine(lines, state)
-  state.line += token
-  state.displayWidth += tokenWidth
-  if (state.displayWidth >= lineWidth) pushMarkdownWrapLine(lines, state)
-}
-
-const appendMarkdownText = (lines: Array<string>, state: MarkdownWrapState, text: string, lineWidth: number): void => {
-  for (const { segment } of guideTextSegmenter.segment(text)) {
-    const segmentWidth = stringWidth(segment)
-    if (state.line.length > 0 && state.displayWidth + segmentWidth > lineWidth) {
-      pushMarkdownWrapLine(lines, state)
-    }
-    if (state.line.length === 0 && segment === " ") continue
-    state.line += segment
-    state.displayWidth += segmentWidth
-  }
-}
-
-const wrapMarkdownTextLine = (sourceLine: string, lineWidth: number): ReadonlyArray<string> => {
-  if (sourceLine.length === 0) return [""]
-  const lines: Array<string> = []
-  const state: MarkdownWrapState = { line: "", displayWidth: 0 }
-  for (const part of markdownInlineSourceParts(sourceLine)) {
-    if (part.token) appendMarkdownToken(lines, state, part.value, lineWidth)
-    else appendMarkdownText(lines, state, part.value, lineWidth)
-  }
-  if (state.line.length > 0) lines.push(state.line)
-  return lines
-}
-
-const classifyMarkdownListLine = (source: string): string | undefined => {
-  const taskItem = /^\s*[-*+]\s+\[([ xX])\]\s+(.+)$/u.exec(source)
-  if (taskItem?.[1] !== undefined && taskItem[2] !== undefined) {
-    return `${taskItem[1] === " " ? "☐" : "☒"} ${taskItem[2]}`
-  }
-  const unorderedItem = /^(\s*)[-*+]\s+(.+)$/u.exec(source)
-  if (unorderedItem?.[2] !== undefined) return `${unorderedItem[1] ?? ""}• ${unorderedItem[2]}`
-  const orderedItem = /^(\s*)\d+[.)]\s+(.+)$/u.exec(source)
-  if (orderedItem?.[2] !== undefined) return `${orderedItem[1] ?? ""}1. ${orderedItem[2]}`
-  return undefined
-}
-
-const classifyMarkdownLine = (
-  source: string,
-  inCode: boolean,
-): { readonly text: string; readonly kind: MarkdownDisplayKind; readonly inCode: boolean } => {
-  if (/^\s*```/u.test(source)) return { text: source.trim(), kind: "code", inCode: !inCode }
-  if (inCode) return { text: source, kind: "code", inCode }
-  const heading = /^\s*#{1,6}\s+(.+)$/u.exec(source)
-  if (heading?.[1] !== undefined) return { text: heading[1], kind: "heading", inCode }
-  const listLine = classifyMarkdownListLine(source)
-  if (listLine !== undefined) return { text: listLine, kind: "list", inCode }
-  const quote = /^\s*>\s?(.*)$/u.exec(source)
-  if (quote?.[1] !== undefined) return { text: `│ ${quote[1]}`, kind: "quote", inCode }
-  if (/^\s*(?:---+|\*\*\*+|___+)\s*$/u.test(source)) return { text: "─".repeat(24), kind: "rule", inCode }
-  return { text: source, kind: "body", inCode }
-}
-
-export const markdownPromptLines = (value: string, width: number): ReadonlyArray<MarkdownDisplayLine> => {
-  const lines: Array<MarkdownDisplayLine> = []
-  let inCode = false
-  for (const source of value.replaceAll("\t", "    ").split("\n")) {
-    const classified = classifyMarkdownLine(source, inCode)
-    inCode = classified.inCode
-    const previous = lines.at(-1)
-    if (classified.kind === "heading" && previous !== undefined && previous.text.length > 0) {
-      lines.push({ text: "", kind: "body" })
-    }
-    const wrapped =
-      classified.kind === "code"
-        ? wrapGuideTextLine(classified.text, Math.max(1, width))
-        : wrapMarkdownTextLine(classified.text, Math.max(1, width))
-    for (const text of wrapped) {
-      if (text.length > 0 || lines.at(-1)?.text.length !== 0) lines.push({ text, kind: classified.kind })
-    }
-    if (classified.kind === "heading") lines.push({ text: "", kind: "body" })
-  }
-  return lines
-}
-
-const MarkdownInline = ({ value }: { readonly value: string }) => (
-  <>
-    {markdownInlineSegments(value).map((segment, index) => {
-      const key = `${index}:${segment.kind}:${segment.text}`
-      switch (segment.kind) {
-        case "bold":
-          return (
-            <Text key={key} bold>
-              {segment.text}
-            </Text>
-          )
-        case "italic":
-          return (
-            <Text key={key} italic>
-              {segment.text}
-            </Text>
-          )
-        case "code":
-          return (
-            <Text key={key} color="yellow">
-              {segment.text}
-            </Text>
-          )
-        case "strikethrough":
-          return (
-            <Text key={key} strikethrough>
-              {segment.text}
-            </Text>
-          )
-        case "link":
-          return (
-            <Text key={key} color="blue" underline>
-              {segment.text}
-            </Text>
-          )
-        case "text":
-          return segment.text
-      }
-    })}
-  </>
-)
-
-const MarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) => {
-  switch (line.kind) {
-    case "heading":
-      return (
-        <Text bold color="cyan" wrap="truncate-end">
-          <MarkdownInline value={line.text} />
-        </Text>
-      )
-    case "list":
-      return (
-        <Text color="green" wrap="truncate-end">
-          <MarkdownInline value={line.text} />
-        </Text>
-      )
-    case "quote":
-      return (
-        <Text italic dimColor wrap="truncate-end">
-          <MarkdownInline value={line.text} />
-        </Text>
-      )
-    case "code":
-      return (
-        <Text color="yellow" wrap="truncate-end">
-          {line.text}
-        </Text>
-      )
-    case "rule":
-      return <Text dimColor>{line.text}</Text>
-    case "body":
-      return (
-        <Text wrap="truncate-end">
-          <MarkdownInline value={line.text} />
-        </Text>
-      )
-  }
-}
-
-export const MarkdownTextViewport = ({
-  value,
-  width,
-  height,
-  resetKey,
-}: {
-  readonly value: string
-  readonly width: number
-  readonly height: number
-  readonly resetKey?: string
-}) => {
-  const [requestedStartLine, setRequestedStartLine] = useState(0)
-  const lines = markdownPromptLines(value, width)
-  const viewportHeight = Math.max(1, height)
-  const maximumStartLine = Math.max(0, lines.length - viewportHeight)
-  const startLine = Math.min(maximumStartLine, requestedStartLine)
-  const pageSize = Math.max(1, viewportHeight - 1)
-  useEffect(() => {
-    setRequestedStartLine(0)
-  }, [resetKey])
-  useInput((_input, key) => {
-    if (key.pageUp) setRequestedStartLine(Math.max(0, startLine - pageSize))
-    else if (key.pageDown) setRequestedStartLine(Math.min(maximumStartLine, startLine + pageSize))
-  })
-  return (
-    <Box flexDirection="column" height={viewportHeight} overflowY="hidden">
-      {lines.slice(startLine, startLine + viewportHeight).map((line, index) => (
-        <MarkdownLine key={`${startLine + index}:${line.kind}:${line.text}`} line={line} />
-      ))}
     </Box>
   )
 }
@@ -3596,6 +3754,50 @@ const ErrorPanel = ({
 /** How many lines of a ready augmented prompt the watch screen previews. */
 const augmentPreviewLines = 12
 
+const goalRecoveryText = (job: GuideAugmentJob): string => {
+  const answers = job.goalHistory.map(({ request, response }) => {
+    if (request.kind === "question" && response.kind === "answer") {
+      return `${request.question.question}\nYour answer: ${response.answer.answer}`
+    }
+    if (response.kind === "review" && response.review.decision === "revise") {
+      return `Revision feedback: ${response.review.feedback}`
+    }
+    return "The previous draft was approved, but the run did not finish."
+  })
+  return [
+    `Original prompt:\n${job.source}`,
+    ...answers,
+    ...(job.goalLastProposal === undefined ? [] : [`Last goal draft:\n${job.goalLastProposal.prompt}`]),
+  ].join("\n\n")
+}
+
+const GoalAugmentResult = ({ job }: { readonly job: GuideAugmentJob }) => {
+  const { rows, columns } = useGuideWindowSize()
+  const failed = job.status === "failed"
+  const viewportProps = {
+    width: Math.max(1, columns - 2),
+    height: Math.max(1, rows - 7),
+    resetKey: `${job.runId}-${job.status}`,
+  }
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold color={failed ? "red" : "green"}>{failed ? "Goal me failed" : "Goal me is ready"}</Text>
+      <Text wrap="wrap">
+        {failed ? job.errorMessage : "The prompt changed or another operation is active. Enter replaces the current prompt with this approved goal."}
+      </Text>
+      {failed ? <Text dimColor>Saved interview context. Retry uses it in a new session.</Text> : null}
+      {failed ? (
+        <ScrollableTextViewport value={goalRecoveryText(job)} startAtEnd={false} {...viewportProps} />
+      ) : (
+        <MarkdownTextViewport value={job.text ?? ""} {...viewportProps} />
+      )}
+      <Text dimColor>
+        {failed ? "r retry" : "Enter replace current prompt"} · x discard interview · PgUp/PgDn scroll · Esc back
+      </Text>
+    </Box>
+  )
+}
+
 /**
  * The augment watch screen: one screen for all three states of a background
  * job. `Esc` always leaves it running, so this is somewhere you look, never
@@ -3603,6 +3805,7 @@ const augmentPreviewLines = 12
  */
 const AugmentWatch = ({ job }: { readonly job: GuideAugmentJob | undefined }) => {
   if (job === undefined) return null
+  if (job.kind === GuideAugmentKind.GoalMe && job.status !== "running") return <GoalAugmentResult job={job} />
   if (job.status === "failed") {
     return (
       <Box flexDirection="column">
@@ -3645,7 +3848,14 @@ const AugmentWatch = ({ job }: { readonly job: GuideAugmentJob | undefined }) =>
       />
       <Box flexDirection="column" paddingX={1}>
         <AugmentActivity title={augmentSourceLabels[job.kind]} lines={job.log} />
-        <Text dimColor>Esc back · x stop · q cancel</Text>
+        {job.kind === GuideAugmentKind.GoalMe ? (
+          <Text dimColor>{goalAutoAcceptHelp(job.goalAutoAcceptRecommended)}</Text>
+        ) : null}
+        <Text dimColor>
+          {job.kind === GuideAugmentKind.GoalMe
+            ? "Esc back · x discard interview · Ctrl-C exit and discard interview"
+            : "Esc back · x stop · q cancel"}
+        </Text>
       </Box>
     </Box>
   )
@@ -3676,6 +3886,15 @@ const AugmentStatusBar = ({ job }: { readonly job: GuideAugmentJob }) => {
     return () => clearInterval(timer)
   }, [])
   const title = augmentLabels[job.kind].title
+  if (job.status === "running" && job.goalPanel !== undefined) {
+    return (
+      <Box paddingX={1}>
+        <Text color="yellow" wrap="truncate-end">
+          {job.goalPanel.request.kind === "review" ? "Goal me needs review" : "Goal me needs an answer"} · p then a to continue
+        </Text>
+      </Box>
+    )
+  }
   if (job.status === "ready") {
     return (
       <Box paddingX={1}>
@@ -3698,7 +3917,8 @@ const AugmentStatusBar = ({ job }: { readonly job: GuideAugmentJob }) => {
     <Box paddingX={1}>
       <Text wrap="truncate-end">
         <Text color="cyan">{spinnerFrameAt(tick)}</Text> {title}
-        {job.phase === undefined ? "" : ` · ${augmentPhaseLabels[job.phase]}`} · p then a to watch
+        {job.phase === undefined ? "" : ` · ${augmentPhaseLabels[job.phase]}`}
+        {job.goalAutoAcceptRecommended ? " · auto answers on" : ""} · p then a to watch
       </Text>
     </Box>
   )
@@ -3710,7 +3930,7 @@ const augmentInlineLogLines = 6
 /** Rows the inline strip takes, so the prompt page shrinks by exactly that much. */
 const augmentInlineRows = (job: GuideAugmentJob | undefined): number =>
   // Margin, both borders and the heading, on top of the output lines themselves.
-  job === undefined ? 0 : job.status === "running" ? augmentInlineLogLines + 4 : 1
+  job === undefined ? 0 : job.status === "running" && job.goalPanel === undefined ? augmentInlineLogLines + 4 : 1
 
 /**
  * A running augmentation, shown on the prompt page itself. Without it the page
@@ -3724,6 +3944,13 @@ const AugmentInline = ({ job }: { readonly job: GuideAugmentJob | undefined }) =
   }, [])
   if (job === undefined) return null
   const title = augmentLabels[job.kind].title
+  if (job.status === "running" && job.goalPanel !== undefined) {
+    return (
+      <Text color="yellow">
+        {job.goalPanel.request.kind === "review" ? "Goal me needs review" : "Goal me needs an answer"} · a to continue
+      </Text>
+    )
+  }
   if (job.status === "ready") {
     return (
       <Box paddingX={1}>
@@ -3818,7 +4045,10 @@ const RecommendationRail = ({
   </Box>
 )
 
-const RecommendationDetail = ({ recommendation }: { readonly recommendation: GuideRecommendation }) => {
+const RecommendationDetail = ({ recommendation, controllerLabel }: {
+  readonly recommendation: GuideRecommendation
+  readonly controllerLabel?: string
+}) => {
   const harness = recommendationHarness(recommendation)
   return (
     <Box flexDirection="column" flexGrow={1} paddingLeft={2}>
@@ -3827,6 +4057,7 @@ const RecommendationDetail = ({ recommendation }: { readonly recommendation: Gui
       </Text>
       <Text dimColor>
         {recommendation.profileRef} | {harness} | {recommendationConfidence(recommendation)}
+        {controllerLabel === undefined ? "" : ` | ${controllerLabel}`}
       </Text>
       <Text wrap="wrap">{recommendation.reason}</Text>
       <Box flexDirection="column" marginTop={1}>
@@ -3882,6 +4113,8 @@ const RecommendationsView = ({
   recommendations,
   index,
   usedLiteralFallback,
+  goal,
+  controllerLabel,
 }: {
   readonly pinnedLenses: ReadonlyArray<GuidePinnedLens>
   readonly intent: string
@@ -3890,6 +4123,8 @@ const RecommendationsView = ({
   readonly recommendations: ReadonlyArray<GuideRecommendation>
   readonly index: number
   readonly usedLiteralFallback: boolean
+  readonly goal?: PreparedGuideGoal
+  readonly controllerLabel?: string
 }) => {
   const recommendation = recommendationAt(recommendations, index)
   const metrics = promptReviewMetrics(intent)
@@ -3899,14 +4134,16 @@ const RecommendationsView = ({
         Profile recommendations
       </Text>
       <Text dimColor>
-        Prompt: {metrics.characters.toLocaleString("en")} chars · {metrics.words.toLocaleString("en")} words · Model:{" "}
+        {goal === undefined
+          ? `Prompt: ${metrics.characters.toLocaleString("en")} chars · ${metrics.words.toLocaleString("en")} words`
+          : `Goal: ${goal.draft.criteria.length} approved criteria`} · Model:{" "}
         {model} · Effort: {effort}
       </Text>
       {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : null}
       <PinnedLenses lenses={pinnedLenses} />
       <Box marginTop={1}>
         <RecommendationRail recommendations={recommendations} index={index} />
-        <RecommendationDetail recommendation={recommendation} />
+        <RecommendationDetail recommendation={recommendation} {...(controllerLabel === undefined ? {} : { controllerLabel })} />
       </Box>
       <Text dimColor>
         ↑/↓ or j/k select · ↵ generate · p view prompt · c council · r research · h HVE RPI · q cancel
@@ -4033,7 +4270,7 @@ const CandidateDetail = ({
       </Text>
       <Box marginTop={1} marginBottom={1}>
         <Text bold color="cyan">
-          Prompt
+          Prompt{candidate.goalExecution === undefined ? "" : ` · ${guideGoalControllerLabel(candidate.goalExecution.controller)}`}
         </Text>
       </Box>
       <MarkdownTextViewport
@@ -4077,7 +4314,9 @@ const CandidatesView = ({
       </Box>
       <Text dimColor wrap="truncate-end">
         Command: {compactCommandPreview(command.preview)}
-        {command.promptHandling === "manual-paste" ? " (manual paste required)" : ""}
+        {command.promptHandling === "manual-paste"
+          ? candidate.goalExecution === undefined ? " (manual paste required)" : " (native goal input required)"
+          : ""}
       </Text>
       <Text dimColor wrap="truncate-end">
         ↑/↓ or j/k select · ↵ continue · b/Esc back · r refine · e edit · c print · q cancel
@@ -4090,21 +4329,27 @@ const TextEditor = ({
   title,
   textDraft,
   keys,
+  maximum,
+  errorMessage,
 }: {
   readonly title: string
   readonly textDraft: string
   readonly keys: string
+  readonly maximum?: number
+  readonly errorMessage?: string
 }) => {
   const { rows, columns } = useGuideWindowSize()
+  const errorRows = errorMessage === undefined ? 0 : wrapGuideText(errorMessage, Math.max(1, columns - 2)).length
   return (
     <Box flexDirection="column" height={Math.max(3, rows - 3)} overflowY="hidden" paddingX={1}>
       <Text bold color="cyan">
-        {title}
+        {title}{maximum === undefined ? "" : ` (${textCharacterLength(textDraft)}/${maximum})`}
       </Text>
+      {errorMessage === undefined ? null : <Text color="red">{errorMessage}</Text>}
       <ScrollableTextViewport
         value={textDraft}
         width={Math.max(1, columns - 2)}
-        height={Math.max(1, rows - 5)}
+        height={Math.max(1, rows - 5 - errorRows)}
         startAtEnd
         cursor
       />
@@ -4113,14 +4358,54 @@ const TextEditor = ({
   )
 }
 
+const goalChangeCopy = (change: GuideGoalChange | undefined): { readonly title: string; readonly message: string } =>
+  change?.kind === "profile"
+    ? {
+        title: "This workflow cannot execute the goal",
+        message: `${change.reason} You can use this profile as a normal prompt flow. The main goal and queued jobs stay unchanged.`,
+      }
+    : {
+        title: "Review goal changes",
+        message: "This text is not the approved goal. Revise and approve the goal, use the text as a normal prompt, or keep the approved goal.",
+      }
+
+const GoalChangeView = ({ state }: { readonly state: GuideUiState }) => {
+  const { rows, columns } = useGuideWindowSize()
+  const change = state.goalChange
+  const { title, message } = goalChangeCopy(change)
+  const messageRows = wrapGuideText(message, Math.max(1, columns - 2)).length
+  const errorRows = state.errorMessage === undefined ? 0 : wrapGuideText(state.errorMessage, Math.max(1, columns - 2)).length
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold color="yellow">{title}</Text>
+      <Text>{message}</Text>
+      {state.errorMessage === undefined ? null : <Text color="red">{state.errorMessage}</Text>}
+      <MarkdownTextViewport
+        value={change?.kind === "prompt" ? change.text : guideProfileGoal(state)?.prompt ?? ""}
+        width={Math.max(1, columns - 2)}
+        height={Math.max(1, rows - messageRows - errorRows - 5)}
+        resetKey={change?.kind ?? "goal-change"}
+      />
+      <Text dimColor>
+        {change?.kind === "prompt" ? "g revise goal · " : ""}n use normal prompt · b/Esc keep goal
+        {state.augmentJob === undefined ? "" : " · a view active augmentation"} · q cancel
+      </Text>
+    </Box>
+  )
+}
+
 const DestinationView = ({
   options,
   index,
   commandPreview,
+  manualGoal = false,
+  goalPrompt = false,
 }: {
   readonly options: ReadonlyArray<GuideUiDestination>
   readonly index: number
   readonly commandPreview: string
+  readonly manualGoal?: boolean
+  readonly goalPrompt?: boolean
 }) => (
   <Box flexDirection="column" paddingX={1}>
     <Text bold color="cyan">
@@ -4132,9 +4417,10 @@ const DestinationView = ({
         {destinationLabels[option]}
       </Text>
     ))}
-    <Text dimColor wrap="wrap">
-      Command: {commandPreview}
+    <Text dimColor wrap={goalPrompt ? "truncate-end" : "wrap"}>
+      Command: {goalPrompt ? compactCommandPreview(commandPreview) : commandPreview}
     </Text>
+    {manualGoal ? <Text color="yellow">Native goal input is required after the session starts.</Text> : null}
     <Text dimColor>↑/↓ or j/k select · ↵ queue it · L launch all · c print prompt · b back</Text>
   </Box>
 )
@@ -4158,6 +4444,10 @@ const QueuedJobBlock = ({
     <Text wrap="truncate-end">
       <Text inverse={selected}> {job.id} </Text>
       <Text color="cyan"> {describeJobRunner(job.profile)}</Text>
+      {job.goalExecution === undefined ? null : <Text color="yellow">
+        {" · "}{guideGoalControllerLabel(job.goalExecution.controller)}
+        {job.promptDelivery === "manual" ? " (needs input)" : ""}
+      </Text>}
       <Text dimColor>
         {" "}
         · {job.prompt.length}c · {countLabel(countTextLines(job.prompt), "line")}
@@ -4333,6 +4623,7 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
             intent: state.intent ?? "",
             model: props.routing.match.model,
             effort: props.routing.match.effort,
+            ...(state.goal === undefined ? {} : { goal: state.goal }),
           },
           (phase) => {
             if (!cancelled) dispatch({ type: GuideUiActionType.MatchProgress, phase })
@@ -4347,21 +4638,21 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
     return () => {
       cancelled = true
     }
-  }, [state.stage, state.intent])
+  }, [state.stage, state.intent, state.goal?.fingerprint, state.goalRevision])
 }
 
 const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
+  const intent = state.selectedIntent ?? state.intent
   useEffect(() => {
     if (
       state.stage !== GuideUiStage.Generating ||
       state.selectedRecommendation === undefined ||
-      state.intent === undefined
+      intent === undefined
     ) {
       return undefined
     }
     let cancelled = false
     const recommendation = state.selectedRecommendation
-    const intent = state.intent
     void (async () => {
       try {
         const { candidates } = await runGuideGenerationStep(
@@ -4377,6 +4668,7 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
             if (!cancelled) dispatch({ type: GuideUiActionType.GenerateProgress, phase })
           },
           props.cache,
+          state.selectedGoal,
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.GenerateSucceeded, candidates })
       } catch (error) {
@@ -4386,22 +4678,22 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
     return () => {
       cancelled = true
     }
-  }, [state.stage, state.selectedRecommendation, state.intent])
+  }, [state.stage, state.selectedRecommendation, intent, state.selectedGoal?.fingerprint])
 }
 
 const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
+  const intent = state.selectedIntent ?? state.intent
   useEffect(() => {
     if (
       state.stage !== GuideUiStage.Refining ||
       state.selectedRecommendation === undefined ||
       state.guideDocument === undefined ||
       state.candidates === undefined ||
-      state.intent === undefined
+      intent === undefined
     ) {
       return undefined
     }
     let cancelled = false
-    const intent = state.intent
     const recommendation = state.selectedRecommendation
     const guideDocument = state.guideDocument
     const candidates = state.candidates
@@ -4419,6 +4711,7 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
           candidateIndex,
           feedback,
           props.cache,
+          state.selectedGoal,
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.RefineSucceeded, candidate: refinedCandidate })
       } catch (error) {
@@ -4428,7 +4721,7 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
     return () => {
       cancelled = true
     }
-  }, [state.stage])
+  }, [state.stage, intent, state.selectedGoal?.fingerprint])
 }
 
 const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
@@ -4439,7 +4732,9 @@ const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispa
     const selectedProfile = state.selectedProfile
     void (async () => {
       try {
-        const result = await checkSelectedProfileReadiness(props.runner, selectedProfile, props.cwd, abort.signal)
+        const result = await checkSelectedProfileReadiness(
+          props.runner, selectedProfile, props.cwd, abort.signal, state.selectedCandidate?.goalExecution, props.goalReadinessServices,
+        )
         if (cancelled) return
         dispatch(
           result.kind === ProfileReadinessKind.Ready
@@ -4463,29 +4758,74 @@ const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispa
       cancelled = true
       abort.abort()
     }
-  }, [state.stage])
+  }, [
+    state.stage,
+    state.selectedProfile,
+    state.selectedCandidate?.goalExecution,
+    props.runner,
+    props.cwd,
+    props.goalReadinessServices,
+    dispatch,
+  ])
 }
 
-/**
- * Rewrites the draft with one of the augmenters. The abort controller is what
- * makes a multi-minute research run interruptible: `createNodeCommandRunner`
- * honours a mid-run signal, so leaving this stage kills the child process
- * instead of orphaning it.
- */
+type GuideGoalSubmit = (request: GuideGoalRequest, response: GuideGoalResponse) => void
+
+const runAugmentJob = async (
+  props: GuideUiProps,
+  job: GuideAugmentJob,
+  context: GuideAugmentContext,
+  interactions: GuideGoalInteractionController | undefined,
+): Promise<string> => {
+  switch (job.kind) {
+    case GuideAugmentKind.Research:
+      return runResearchAugment(job.source, props.catalog, context)
+    case GuideAugmentKind.Codebase:
+      return runCodebaseAugment(job.source, props.provider, context)
+    case GuideAugmentKind.GoalMe: {
+      if (props.goalProvider === undefined || interactions === undefined) {
+        throw new GuideGoalError("Goal me is not configured. Start the guide through an updated trx installation.")
+      }
+      context.onPhase(GuideAugmentPhase.GoalInterview)
+      const text = await props.goalProvider.augment(
+        {
+          intent: job.source,
+          history: job.goalHistory,
+          ...(job.goalLastProposal === undefined ? {} : { lastProposal: job.goalLastProposal }),
+        },
+        { signal: context.signal, interactions, onActivity: context.onActivity },
+      )
+      return validateGuideGoalPrompt(text)
+    }
+  }
+}
+
 /**
  * Runs the background augmentation. It is keyed on the job, not the stage, so
  * navigating away never abandons the child process; only discarding the job or
  * leaving the app aborts it.
  */
-const useGuideAugmentEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
+const useGuideAugmentEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): GuideGoalSubmit => {
+  const controllerRef = useRef<GuideGoalInteractionController | undefined>(undefined)
   const job = state.augmentJob
   const runId = job?.runId
   const running = job?.status === "running"
+  const autoAcceptRecommended = job?.goalAutoAcceptRecommended ?? false
   useEffect(() => {
     if (job === undefined || runId === undefined || !running) return undefined
     let cancelled = false
     const abort = new AbortController()
-    const { kind, source } = job
+    const controller = job.kind === GuideAugmentKind.GoalMe ? new GuideGoalInteractionController({
+      runId,
+      signal: abort.signal,
+      onRequest: (request) => {
+        if (!cancelled) dispatch({ type: GuideUiActionType.AugmentGoalRequest, runId, request })
+      },
+      onTurn: (turn) => {
+        if (!cancelled) dispatch({ type: GuideUiActionType.AugmentGoalTurn, runId, turn })
+      },
+    }) : undefined
+    controllerRef.current = controller
     void (async () => {
       const context: GuideAugmentContext = {
         runner: props.runner,
@@ -4499,21 +4839,38 @@ const useGuideAugmentEffect = (props: GuideUiProps, state: GuideUiState, dispatc
         },
       }
       try {
-        const text =
-          kind === GuideAugmentKind.Research
-            ? await runResearchAugment(source, props.catalog, context)
-            : await runCodebaseAugment(source, props.provider, context)
+        const text = await runAugmentJob(props, job, context, controller)
         if (!cancelled) dispatch({ type: GuideUiActionType.AugmentSucceeded, runId, text })
       } catch (error) {
         if (!cancelled)
           dispatch({ type: GuideUiActionType.AugmentFailed, runId, message: describeGuideUiError(error) })
+      } finally {
+        controller?.close()
+        if (controllerRef.current === controller) controllerRef.current = undefined
       }
     })()
     return () => {
       cancelled = true
       abort.abort()
+      controller?.close()
+      if (controllerRef.current === controller) controllerRef.current = undefined
     }
   }, [runId, running])
+  useEffect(() => {
+    if (runId !== undefined && running) controllerRef.current?.setAutoAcceptRecommended(runId, autoAcceptRecommended)
+  }, [runId, running, autoAcceptRecommended])
+  return (request, response) => {
+    try {
+      controllerRef.current?.submit(request.runId, request.requestId, response)
+    } catch (error) {
+      dispatch({
+        type: GuideUiActionType.AugmentGoalPanel,
+        runId: request.runId,
+        requestId: request.requestId,
+        action: { type: "error", message: describeGuideUiError(error) },
+      })
+    }
+  }
 }
 
 const worktreeInspectionAction = (inspection: Awaited<ReturnType<typeof inspectGitWorktreeIntent>>): GuideUiAction => {
@@ -4561,6 +4918,10 @@ const useGuideLaunchEffect = (
       const executed = await executeGuideBatch(batch, {
         runner: props.runner,
         write: () => {},
+        ...(props.goalReadinessServices === undefined ? {} : {
+          checkReadiness: (runner, profile, cwd, signal, goal) =>
+            checkSelectedProfileReadiness(runner, profile, cwd, signal, goal, props.goalReadinessServices),
+        }),
         onProgress: (event) => {
           if (!cancelled) dispatch({ type: GuideUiActionType.LaunchProgress, event })
         },
@@ -4590,8 +4951,10 @@ const ForkWorker = ({
   readonly forkId: number
   readonly dispatch: GuideUiDispatch
 }) => {
-  const deliver: GuideUiDispatch = (action) =>
-    dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction })
+  const deliver = useCallback<GuideUiDispatch>(
+    (action) => dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction }),
+    [dispatch, forkId],
+  )
   useGuideMatchEffect(props, state, deliver)
   useGuideGenerationEffect(props, state, deliver)
   useGuideRefinementEffect(props, state, deliver)
@@ -4642,11 +5005,34 @@ const handleAugmentInput: GuideInputHandler = ({ dispatch, cancel }, input, key)
  * The watch screen never blocks: every key here either leaves the job running
  * or ends it on purpose.
  */
+const goalAutomaticAnswerCommand = (state: GuideUiState, input: string, key: Key): GuideUiAction | undefined => {
+  if (input !== "a" || key.ctrl || key.meta || key.super || key.hyper || key.eventType === "release") return undefined
+  const job = state.augmentJob
+  return job?.kind === GuideAugmentKind.GoalMe && job.status === "running" ? {
+    type: GuideUiActionType.AugmentGoalAutoAccept,
+    runId: job.runId,
+    enabled: !job.goalAutoAcceptRecommended,
+  } : undefined
+}
+
 const handleAugmentingInput: GuideInputHandler = ({ state, dispatch, cancel }, input, key) => {
+  const automaticAnswer = goalAutomaticAnswerCommand(state, input, key)
+  if (automaticAnswer !== undefined) {
+    dispatch(automaticAnswer)
+    return
+  }
   if (key.escape || input === "b") dispatch({ type: GuideUiActionType.AugmentBack })
   else if (key.return && state.augmentJob?.status === "ready") dispatch({ type: GuideUiActionType.AugmentApply })
   else if (input === "r" && state.augmentJob?.status === "failed") dispatch({ type: GuideUiActionType.AugmentRetry })
   else if (input === "x") dispatch({ type: GuideUiActionType.AugmentDiscard })
+  else if (input === "q") cancel()
+}
+
+const handleGoalChangeInput: GuideInputHandler = ({ state, dispatch, cancel }, input, key) => {
+  if (input === "g") dispatch({ type: GuideUiActionType.GoalChangeRevise })
+  else if (input === "n") dispatch({ type: GuideUiActionType.GoalChangeDetach })
+  else if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.GoalChangeKeep })
+  else if (input === "a" && state.augmentJob !== undefined) dispatch({ type: GuideUiActionType.AugmentOpen })
   else if (input === "q") cancel()
 }
 
@@ -4671,7 +5057,7 @@ const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, can
   try {
     dispatch({
       type: GuideUiActionType.MatchLiteral,
-      recommendations: literalGuideRecommendations(props.catalog, state.intent),
+      recommendations: literalGuideRecommendations(props.catalog, state.intent, state.goal),
     })
   } catch (error) {
     dispatch({ type: GuideUiActionType.MatchLiteralFailed, message: describeGuideUiError(error) })
@@ -4685,18 +5071,22 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
   }
   const pinnedLens = pinnedGuideLenses(props.catalog).find(({ key: lensKey }) => lensKey === input)
   if (pinnedLens !== undefined) {
+    const goalUnavailableReason = goalRecommendationReason(props.catalog, guideProfileGoal(state), pinnedLens.recommendation)
     dispatch({
       type: GuideUiActionType.RecommendationsConfirm,
       selectedProfile: selectedProfileForPinnedLens(props.catalog, pinnedLens),
       recommendation: pinnedLens.recommendation,
+      ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
     })
     return
   }
 
+  const selection = guideProfileSelection(state)
   if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: -1 })
   else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.RecommendationsMove, delta: 1 })
-  else if (key.return && state.recommendations !== undefined) {
-    const recommendation = recommendationAt(state.recommendations, state.recommendationIndex)
+  else if (key.return && selection.recommendations !== undefined && selection.recommendations.length > 0) {
+    const recommendation = recommendationAt(selection.recommendations, selection.recommendationIndex)
+    const goalUnavailableReason = goalRecommendationReason(props.catalog, guideProfileGoal(state), recommendation)
     dispatch({
       type: GuideUiActionType.RecommendationsConfirm,
       selectedProfile: selectedProfileFromCatalogRef(
@@ -4704,6 +5094,7 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
         recommendation.profileRef,
         recommendation.workflowId,
       ),
+      ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
     })
   } else if (input === "q") cancel()
 }
@@ -4733,7 +5124,7 @@ const handleGenerateFailedInput: GuideInputHandler = ({ state, dispatch, cancel 
     input === "t" &&
     state.guideDocument !== undefined &&
     state.selectedRecommendation !== undefined &&
-    state.intent !== undefined
+    (state.selectedIntent ?? state.intent) !== undefined
   ) {
     try {
       dispatch({
@@ -4741,7 +5132,8 @@ const handleGenerateFailedInput: GuideInputHandler = ({ state, dispatch, cancel 
         candidates: templateGuideCandidates(
           state.guideDocument.guide,
           state.selectedRecommendation.workflowId,
-          state.intent,
+          state.selectedIntent ?? state.intent ?? "",
+          state.selectedGoal,
         ),
       })
     } catch (error) {
@@ -4818,7 +5210,8 @@ const handleCandidatesInput: GuideInputHandler = ({ state, dispatch, complete, c
     return
   }
   if (input === "c" && state.candidates !== undefined) {
-    complete(buildPrintResult(tripleAt(state.candidates, state.candidateIndex).prompt))
+    const candidate = tripleAt(state.candidates, state.candidateIndex)
+    complete(buildPrintResult(candidate.prompt, candidate.goalExecution))
   } else if (input === "q") cancel()
 }
 
@@ -4848,12 +5241,19 @@ const handleRefineEditorInput: GuideInputHandler = (context, input, key) =>
     { type: GuideUiActionType.RefineBack },
   )
 
+const goalEditorMaximum = (state: GuideUiState): number => {
+  const execution = state.stage === GuideUiStage.QueuePromptEditor
+    ? state.queue.entries.find(({ id }) => id === state.queue.editingId)?.goalExecution
+    : state.candidates === undefined ? undefined : tripleAt(state.candidates, state.candidateIndex).goalExecution
+  return execution === undefined ? promptMaxLength : guideGoalApproachBudget(execution)
+}
+
 const handleDirectEditorInput: GuideInputHandler = (context, input, key) =>
   handleTextEditorInput(
     context,
     input,
     key,
-    promptMaxLength,
+    goalEditorMaximum(context.state),
     { type: GuideUiActionType.DirectEditSubmit },
     { type: GuideUiActionType.DirectEditBack },
   )
@@ -4862,7 +5262,7 @@ const handleQueuePromptEditorInput: GuideInputHandler = ({ state, dispatch }, in
   if (key.escape) dispatch({ type: GuideUiActionType.QueueBack })
   else if (key.return) dispatch({ type: GuideUiActionType.QueueEditSubmit })
   else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.EditorBackspace })
-  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, promptMaxLength)) {
+  else if (isPrintableInput(input, key) && isWithinTextBound(state.textDraft, input, goalEditorMaximum(state))) {
     dispatch({ type: GuideUiActionType.EditorChange, text: state.textDraft + input })
   }
 }
@@ -4897,7 +5297,7 @@ const completeDestination = (context: GuideInputContext, option: GuideUiDestinat
   const { state, props, herdrContext, dispatch, complete } = context
   if (state.selectedProfile === undefined || state.selectedCandidate === undefined) return
   if (option === GuideUiDestination.CurrentTerminal) {
-    complete(buildCurrentTerminalResult(state.selectedProfile, state.selectedCandidate.prompt, props.cwd))
+    complete(buildCurrentTerminalResult(state.selectedProfile, state.selectedCandidate.prompt, props.cwd, state.selectedCandidate.goalExecution))
     return
   }
   if (herdrContext === null) return
@@ -4925,7 +5325,7 @@ const handleDestinationInput: GuideInputHandler = (context, input, key) => {
   else if (key.downArrow || input === "j")
     dispatch({ type: GuideUiActionType.DestinationMove, delta: 1, optionCount: options.length })
   else if (input === "c" && state.selectedCandidate !== undefined)
-    complete(buildPrintResult(state.selectedCandidate.prompt))
+    complete(buildPrintResult(state.selectedCandidate.prompt, state.selectedCandidate.goalExecution))
   else if (key.return) {
     const option = options[state.destinationIndex]
     if (option !== undefined) completeDestination(context, option)
@@ -5008,6 +5408,7 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.MatchFailed]: handleMatchFailedInput,
   [GuideUiStage.Recommendations]: handleRecommendationsInput,
   [GuideUiStage.PromptReview]: handlePromptReviewInput,
+  [GuideUiStage.GoalChange]: handleGoalChangeInput,
   [GuideUiStage.Generating]: handleNoInput,
   [GuideUiStage.GenerateFailed]: handleGenerateFailedInput,
   [GuideUiStage.Candidates]: handleCandidatesInput,
@@ -5037,6 +5438,7 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
 const acceptsGlobalKeys = (state: GuideUiState): boolean =>
   state.stage !== GuideUiStage.Intent &&
   state.stage !== GuideUiStage.Launching &&
+  state.stage !== GuideUiStage.GoalChange &&
   // The watch screen owns `x`: there it stops the job, never drops a fork tab.
   state.stage !== GuideUiStage.Augmenting &&
   !editingStages.has(state.stage) &&
@@ -5069,6 +5471,12 @@ const handleGuideInput = (context: GuideInputContext, input: string, key: Key): 
     context.cancel()
     return
   }
+  // The mounted goal panel owns all other keys, including letters in answers.
+  if (
+    context.state.stage === GuideUiStage.Augmenting &&
+    context.state.augmentJob?.status === "running" &&
+    context.state.augmentJob.goalPanel !== undefined
+  ) return
   if (acceptsGlobalKeys(context.state)) {
     if (input === "L" && context.state.queue.entries.length > 0) {
       launchQueue(context, input, key)
@@ -5092,8 +5500,7 @@ const pastedEditorMaximum = (state: GuideUiState): number | undefined => {
   if (state.stage === GuideUiStage.Intent) return guideIntentMaximumLength
   if (state.stage === GuideUiStage.PromptReview && state.promptReviewEditing) return guideIntentMaximumLength
   if (state.stage === GuideUiStage.RefineEditor) return feedbackMaxLength
-  if (state.stage === GuideUiStage.DirectEditor) return promptMaxLength
-  if (state.stage === GuideUiStage.QueuePromptEditor) return promptMaxLength
+  if (state.stage === GuideUiStage.DirectEditor || state.stage === GuideUiStage.QueuePromptEditor) return goalEditorMaximum(state)
   return undefined
 }
 
@@ -5118,9 +5525,56 @@ interface GuideRenderContext {
   readonly state: GuideUiState
   readonly herdrEnabled: boolean
   readonly herdrContext: HerdrContext | null
+  readonly dispatch: GuideUiDispatch
+  readonly submitGoal: GuideGoalSubmit
 }
 
 type GuideStageRenderer = (context: GuideRenderContext) => React.ReactElement
+
+const GoalInteractionStage = ({
+  panel,
+  autoAcceptRecommended,
+  dispatch,
+  submitGoal,
+}: {
+  readonly panel: GuideGoalPanelState
+  readonly autoAcceptRecommended: boolean
+  readonly dispatch: GuideUiDispatch
+  readonly submitGoal: GuideGoalSubmit
+}) => {
+  const { rows, columns } = useGuideWindowSize()
+  return (
+    <GuideGoalPanel
+      state={panel}
+      autoAcceptRecommended={autoAcceptRecommended}
+      onSetAutoAcceptRecommended={(enabled) => dispatch({
+        type: GuideUiActionType.AugmentGoalAutoAccept,
+        runId: panel.request.runId,
+        requestId: panel.request.requestId,
+        enabled,
+      })}
+      rows={rows}
+      columns={columns}
+      onAction={(action) => dispatch({
+        type: GuideUiActionType.AugmentGoalPanel,
+        runId: panel.request.runId,
+        requestId: panel.request.requestId,
+        action,
+      })}
+      onSubmit={(response) => submitGoal(panel.request, response)}
+      onPark={() => dispatch({ type: GuideUiActionType.AugmentBack })}
+      onDiscard={() => dispatch({ type: GuideUiActionType.AugmentDiscard, runId: panel.request.runId })}
+    />
+  )
+}
+
+const renderAugmentWatch: GuideStageRenderer = ({ state, dispatch, submitGoal }) => {
+  const job = state.augmentJob
+  const panel = job?.goalPanel
+  return job?.status === "running" && panel !== undefined
+    ? <GoalInteractionStage panel={panel} autoAcceptRecommended={job.goalAutoAcceptRecommended} dispatch={dispatch} submitGoal={submitGoal} />
+    : <AugmentWatch job={job} />
+}
 
 const matchingProgress = ({ props, state }: GuideRenderContext): React.ReactElement => (
   <MatchProgress
@@ -5132,20 +5586,29 @@ const matchingProgress = ({ props, state }: GuideRenderContext): React.ReactElem
   />
 )
 
-const renderRecommendations: GuideStageRenderer = (context) =>
-  context.state.recommendations === undefined ? (
-    matchingProgress(context)
-  ) : (
+const renderRecommendations: GuideStageRenderer = (context) => {
+  const { recommendations, recommendationIndex, usedLiteralFallback } = guideProfileSelection(context.state)
+  const goal = guideProfileGoal(context.state)
+  if (recommendations === undefined) return matchingProgress(context)
+  if (recommendations.length === 0) {
+    return <ErrorPanel title="No compatible profiles" message="Edit the goal or choose a normal prompt flow." keys="p view prompt · q cancel" />
+  }
+  const selected = recommendationAt(recommendations, recommendationIndex)
+  const controller = goal === undefined ? undefined : findCombinedCatalogEntry(context.props.catalog, selected.profileRef)?.entry.guide.goalExecution?.controller
+  return (
     <RecommendationsView
       pinnedLenses={pinnedGuideLenses(context.props.catalog)}
-      intent={context.state.intent ?? ""}
+      intent={guideProfileIntent(context.state) ?? ""}
       model={context.props.routing.match.model}
       effort={context.props.routing.match.effort}
-      recommendations={context.state.recommendations}
-      index={context.state.recommendationIndex}
-      usedLiteralFallback={context.state.usedLiteralFallback}
+      recommendations={recommendations}
+      index={recommendationIndex}
+      usedLiteralFallback={usedLiteralFallback}
+      {...(goal === undefined ? {} : { goal })}
+      {...(controller === undefined ? {} : { controllerLabel: guideGoalControllerLabel(controller) })}
     />
   )
+}
 
 const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
   if (state.candidates === undefined || state.selectedRecommendation === undefined) {
@@ -5164,7 +5627,13 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
   if (state.stage === GuideUiStage.RefineFailed)
     return <ErrorPanel title="Refinement failed" message={state.errorMessage} keys="r retry · b back" />
   if (state.stage === GuideUiStage.DirectEditor)
-    return <TextEditor title="Edit prompt" textDraft={state.textDraft} keys="↵ submit · Esc back" />
+    return <TextEditor
+      title={tripleAt(state.candidates, state.candidateIndex).goalExecution === undefined ? "Edit prompt" : "Edit approach (goal fixed)"}
+      textDraft={state.textDraft}
+      {...(tripleAt(state.candidates, state.candidateIndex).goalExecution === undefined ? {} : { maximum: goalEditorMaximum(state) })}
+      {...(state.errorMessage === undefined ? {} : { errorMessage: state.errorMessage })}
+      keys="↵ submit · Esc back"
+    />
   return (
     <CandidatesView
       candidates={state.candidates}
@@ -5175,6 +5644,7 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
         state.selectedRecommendation.profileRef,
         tripleAt(state.candidates, state.candidateIndex).prompt,
         state.selectedRecommendation.workflowId,
+        tripleAt(state.candidates, state.candidateIndex).goalExecution,
       )}
     />
   )
@@ -5183,20 +5653,26 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
 const renderDestination: GuideStageRenderer = ({ state, herdrEnabled, herdrContext }) => {
   const options = destinationOptions(herdrEnabled, herdrContext?.surface)
   const option = options[state.destinationIndex]
-  const command =
+  const built =
     state.selectedProfile === undefined
       ? undefined
       : option === GuideUiDestination.CurrentTerminal
         ? buildGuideLaunchCommand(state.selectedProfile, {
             mode: "argv",
             prompt: state.selectedCandidate?.prompt ?? "",
-          }).command
-        : buildGuideLaunchCommand(state.selectedProfile).command
+          }, state.selectedCandidate?.goalExecution)
+        : state.selectedCandidate?.goalExecution === undefined
+          ? buildGuideLaunchCommand(state.selectedProfile)
+          : buildHerdrGuideLaunch(state.selectedProfile, state.selectedCandidate.prompt, state.selectedCandidate.goalExecution)
+  const manualGoal = state.selectedCandidate?.goalExecution !== undefined && built !== undefined &&
+    ("promptHandling" in built ? built.promptHandling === "manual-paste" : built.promptDelivery === "manual")
   return (
     <DestinationView
       options={options}
       index={state.destinationIndex}
-      commandPreview={command === undefined ? "" : renderCommandPreview(command)}
+      commandPreview={built === undefined ? "" : renderCommandPreview(built.command)}
+      manualGoal={manualGoal}
+      goalPrompt={state.selectedCandidate?.goalExecution !== undefined}
     />
   )
 }
@@ -5229,6 +5705,7 @@ export const launchRowMarker = (event: GuideBatchProgressEvent | undefined, tick
   if (event === undefined) return "○"
   if (event.phase === "done") return "✔"
   if (event.phase === "failed") return "✖"
+  if (event.phase === "needs-input") return "!"
   return spinnerFrameAt(tick)
 }
 
@@ -5236,6 +5713,7 @@ const launchRowColor = (event: GuideBatchProgressEvent | undefined): string => {
   if (event === undefined) return "gray"
   if (event.phase === "done") return "green"
   if (event.phase === "failed") return "red"
+  if (event.phase === "needs-input") return "yellow"
   return "cyan"
 }
 
@@ -5246,7 +5724,9 @@ const LaunchProgress = ({ state }: { readonly state: GuideUiState }) => {
     return () => clearInterval(timer)
   }, [])
   const jobs = state.launchBatch?.jobs ?? []
-  const finished = state.launchProgress.filter((event) => event.phase === "done" || event.phase === "failed").length
+  const finished = state.launchProgress.filter((event) =>
+    event.phase === "done" || event.phase === "failed" || event.phase === "needs-input",
+  ).length
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold>
@@ -5270,7 +5750,7 @@ const LaunchProgress = ({ state }: { readonly state: GuideUiState }) => {
 const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
   [GuideUiStage.Augment]: ({ state }) => <AugmentChooser index={state.augmentIndex} />,
-  [GuideUiStage.Augmenting]: ({ state }) => <AugmentWatch job={state.augmentJob} />,
+  [GuideUiStage.Augmenting]: renderAugmentWatch,
   [GuideUiStage.Matching]: matchingProgress,
   [GuideUiStage.MatchFailed]: ({ state }) => (
     <ErrorPanel
@@ -5288,14 +5768,15 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
       job={state.augmentJob}
     />
   ),
+  [GuideUiStage.GoalChange]: ({ state }) => <GoalChangeView state={state} />,
   [GuideUiStage.Generating]: ({ props, state }) =>
-    state.selectedRecommendation === undefined || state.intent === undefined ? (
+    state.selectedRecommendation === undefined || (state.selectedIntent ?? state.intent) === undefined ? (
       <Spinner label="Preparing prompt candidates" />
     ) : (
       <GenerationProgress
         recommendation={state.selectedRecommendation}
         phase={state.generationPhase ?? GuideGenerationPhase.LoadingProfile}
-        intent={state.intent}
+        intent={state.selectedIntent ?? state.intent ?? ""}
         generateConfig={props.routing.generate}
         optimizeConfig={props.routing.optimize}
       />
@@ -5354,7 +5835,13 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   ),
   [GuideUiStage.QueueEntry]: ({ state }) => <QueueEntryView queue={state.queue} />,
   [GuideUiStage.QueuePromptEditor]: ({ state }) => (
-    <TextEditor title="Edit queued prompt" textDraft={state.textDraft} keys="↵ save · Esc back" />
+    <TextEditor
+      title={state.queue.entries.find(({ id }) => id === state.queue.editingId)?.goalExecution === undefined ? "Edit queued prompt" : "Edit queued approach (goal fixed)"}
+      textDraft={state.textDraft}
+      {...(state.queue.entries.find(({ id }) => id === state.queue.editingId)?.goalExecution === undefined ? {} : { maximum: goalEditorMaximum(state) })}
+      {...(state.errorMessage === undefined ? {} : { errorMessage: state.errorMessage })}
+      keys="↵ save · Esc back"
+    />
   ),
   [GuideUiStage.Launching]: ({ state }) => <LaunchProgress state={state} />,
   [GuideUiStage.QueuePlacement]: ({ state }) => (
@@ -5380,7 +5867,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   // The main screen owns only its own async work; each fork's runs in its own
   // ForkWorker below, so parking a fork never abandons the call it started.
   const mainState = state.activeForkId === undefined ? state : { ...state, ...mainForkSlice }
-  useGuideAugmentEffect(props, mainState, dispatch)
+  const submitGoal = useGuideAugmentEffect(props, mainState, dispatch)
   useGuideMatchEffect(props, mainState, dispatch)
   useGuideGenerationEffect(props, mainState, dispatch)
   useGuideRefinementEffect(props, mainState, dispatch)
@@ -5420,7 +5907,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
         value={(state.forks.length === 0 ? 0 : forkTabBarRows) + (showsAugmentStatusBar(state) ? augmentStatusRows : 0)}
       >
         {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
-        {stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext })}
+        {stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext, dispatch, submitGoal })}
       </ChromeRowsContext.Provider>
     </Box>
   )

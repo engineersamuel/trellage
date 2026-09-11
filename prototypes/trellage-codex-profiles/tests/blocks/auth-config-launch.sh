@@ -220,6 +220,7 @@ printf '%s\n' \
   '  list' \
   '  list --json' \
   '  inventory PROFILE --json' \
+  '  inventory PROFILE --goal-features' \
   '  setup PROFILE|--all' \
   '  doctor PROFILE' \
   '  update --check PROFILE|--all' \

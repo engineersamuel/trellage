@@ -1,5 +1,10 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: claude-goal
+  workflowIds:
+    - run-council-deliberation
+    - compressed-handoff-notes
 capabilities:
 - multi-perspective-deliberation
 - architecture-tradeoff-analysis

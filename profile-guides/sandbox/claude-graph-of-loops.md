@@ -1,5 +1,12 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: graph-of-loops
+  workflowIds:
+    - implement-complex-change
+    - debug-cross-cutting-failure
+    - research-then-implement
+    - validate-existing-implementation
 capabilities:
 - multi-node-coding-orchestration
 - dependency-aware-planning

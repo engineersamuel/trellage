@@ -1,5 +1,12 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: claude-goal
+  workflowIds:
+    - design-system-pass
+    - anti-slop-review
+    - motion-polish
+    - html-to-video
 capabilities:
 - landing-page-design
 - ui-design-system-generation

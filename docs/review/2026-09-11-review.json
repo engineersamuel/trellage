@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "runId": "local-2026-09-11-goal-finish",
+  "repository": "engineersamuel/trellage",
+  "pr": {
+    "number": 184,
+    "title": "Add interactive Goal me and explicit goal execution",
+    "url": "https://github.com/engineersamuel/trellage/pull/184",
+    "isDraft": true,
+    "author": "engineersamuel",
+    "baseRef": "main",
+    "headRef": "worktree/pinned-goal",
+    "baseSha": "a2ae386b70ce912687da4975671122998091be32",
+    "headSha": "6b0e135c3632685dd0000dac61bf98f284f02ed3"
+  },
+  "status": "complete",
+  "startedAt": "2026-09-11T14:04:57.192Z",
+  "completedAt": "2026-09-11T14:49:31.942Z",
+  "summary": "Six partitioned review areas found one High and two Medium defects in the reviewed head. All three are corrected and covered by behavioral regressions in the delivery follow-up. Final CI remains required before merge.",
+  "reportMarkdown": "# Code review: PR #184 - Interactive Goal me and explicit goal execution\n\n**PR:** https://github.com/engineersamuel/trellage/pull/184\n**Branch:** `worktree/pinned-goal` -> `main`\n**Author:** @engineersamuel\n**Review date:** 2026-09-11\n**Reviewed base:** `a2ae386b70ce912687da4975671122998091be32`\n**Reviewed head:** `6b0e135c3632685dd0000dac61bf98f284f02ed3`\n**Completeness:** Complete; all six review areas returned results.\n\n## Summary\n\nThe change adds an embedded Goal me interview, explicit approval, goal-aware\nrecommendations and candidates, frozen goal state, and native controller delivery.\nThe user chose inline goal text rather than a project goal file. Manual command\ninput for native Codex and interactive Claude is an intentional limit.\n\nThe six reviewers used distinct file groups across the complete change set.\nDependency contracts were read as needed, without duplicate review passes.\nThe findings below describe the reviewed head, before the delivery fixes.\nAll three findings have been corrected and covered by behavioral regressions in\nthe same PR. Final CI remains a merge requirement.\n\n## Issues summary\n\n| Severity | Count | Reported by |\n| --- | ---: | --- |\n| Critical | 0 | None |\n| High | 1 | Logic & Correctness / claude-opus-5 |\n| Medium | 2 | Resource Safety & Reliability / gpt-6-astra |\n| Low | 0 | None |\n\nThere are 3 confirmed findings and 0 omitted findings.\n\n## Critical issues\n\nNone.\n\n## High issues\n\n### F-001. Unrelated renders restart an active fork readiness probe\n\n**File:** `packages/trellage-launcher/src/guide-ui.tsx:4954-4955`\n**Introduced dependency:** `guide-ui.tsx:4761-4768`\n**Reported by:** Logic & Correctness / claude-opus-5\n**Problem:** The readiness effect now depends on `dispatch`, but `ForkWorker`\ncreates a new `deliver` function on every render. An unrelated main-screen or\naugmentation update therefore aborts and restarts an active fork probe.\nContinuous updates can prevent readiness from completing and repeatedly start\nprobe processes.\n**Evidence:** A real Ink/PTy regression held an inventory response, parked its\nfork, changed the main recommendation, and returned to the fork. The reviewed\nimplementation issued six inventory calls for one readiness operation.\n**Suggested fix:** Memoize the fork dispatch callback with `dispatch` and\n`forkId`. Keep the complete readiness-effect dependency list.\n**Fix confidence:** Exact replacement using the existing default React import.\n**Human judgment:** None.\n\n```diff\n-  const deliver: GuideUiDispatch = (action) =>\n-    dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction })\n+  const deliver = React.useCallback<GuideUiDispatch>(\n+    (action) => dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction }),\n+    [dispatch, forkId],\n+  )\n```\n\n**Resolution:** The delivery change uses the equivalent named `useCallback`\nimport. The same PTY scenario now records exactly one inventory call and no\nlaunch.\n\n## Medium issues\n\n### F-002. Approval exposes a queued, unapproved proposal\n\n**File:** `packages/trellage-launcher/src/guide-goal-augment.ts:291`\n**Reported by:** Resource Safety & Reliability / gpt-6-astra\n**Problem:** After accepting `Use goal`, the controller publishes the next\nqueued request. A second proposal replaces the UI's retained proposal before\nthe provider returns the approved first proposal. The application then rejects\nthe mismatched goal context instead of applying the valid approval.\n**Evidence:** Overlapping proposal callbacks returned the first approved prompt\nwhile leaving the second, unapproved proposal as the last displayed goal.\nController and SDK-adapter regressions reproduced this mismatch.\n**Suggested fix:** Stop request publication after final approval.\n**Fix confidence:** Exact replacement for the reported queued-proposal failure.\n**Human judgment:** None.\n\n```diff\n-    this.options.onRequest(this.pending[0]?.request)\n+    this.options.onRequest(this.approvalAccepted ? undefined : this.pending[0]?.request)\n```\n\n**Resolution:** The controller also suppresses late publication and further\nsubmissions after approval. Pending callbacks stay parked until the provider\nsettles the approved outcome; rejecting them earlier could race with approval.\nQueued and late proposal cases, plus overlapping SDK proposals, now retain the\ndisplayed approved goal.\n\n### F-003. Graceful SDK stop loses the handle needed for forced termination\n\n**File:** `packages/trellage-launcher/src/copilot-goal-augment-provider.ts:287-302`\n**Reported by:** Resource Safety & Reliability / gpt-6-astra\n**Problem:** The fallback calls `forceStop()` after a bounded `stop()`. Installed\nSDK 1.0.11 clears its child handle before sending SIGTERM and waiting for exit.\nIf the child survives, the provider times out but `forceStop()` no longer has a\nhandle to terminate it. Retries can leave owned runtimes running.\n**Evidence:** An in-memory reproduction of the installed SDK cleanup methods\nobserved a null handle, only SIGTERM sent, and a child still running. A provider\nregression modeled that handle loss and failed before the correction.\n**Suggested fix:** After bounded session abort, disconnect, and deletion,\nforce-stop the owned isolated runtime without first calling SDK `stop()`.\n**Fix confidence:** Exact replacement of the helper body after the ownership\ndecision stated here.\n**Human judgment:** Resolved: this is the interview's owned runtime, and graceful\nsession cleanup is already attempted before runtime termination.\n\n```diff\n-  let stopped = false\n-  await runCleanupStep(errors, async () => {\n-    const stopErrors = await boundedClose(\"client stop\", timeoutMs, () => client.stop())\n-    errors.push(...stopErrors)\n-    stopped = stopErrors.length === 0\n-  })\n-  // A timeout releases our wait, not the SDK process. Terminate it before removing its files.\n-  if (!stopped) {\n-    await runCleanupStep(errors, () => boundedClose(\"client force stop\", timeoutMs, () => client.forceStop()))\n-  }\n+  await runCleanupStep(errors, () => boundedClose(\"client force stop\", timeoutMs, () => client.forceStop()))\n```\n\n**Resolution:** The delivery change reuses the existing bounded cleanup helper\nand removes the redundant stop helper. Regressions cover termination before\nstaging disposal, force-stop timeout, error aggregation, cancellation, and\npreservation of the primary model error.\n\n## Low issues\n\nNone.\n\n## Reviewer agreement matrix\n\n| Finding | Permissions | Logic | Resources | Input | Isolation | SDK/API |\n| --- | --- | --- | --- | --- | --- | --- |\n| F-001 | - | Reported | - | - | - | - |\n| F-002 | - | - | Reported | - | - | - |\n| F-003 | - | - | Reported | - | - | - |\n\nThe file groups were distinct. A dash means that the reviewer did not report\nthe finding, not disagreement with it. No duplicate findings were reported.\n\n## Recommendations and delivery follow-up\n\n1. Keep the three corrected contracts and their behavioral regressions.\n2. Keep the PR in draft until the fixes, upstream integration, and CI are complete.\n3. Preserve native manual-input limits; process startup is not goal activation.\n\nThe initial CI run also exposed a terminal-test synchronization error: the\nrevision case waited for the already-visible word `Revise`, then could send\nEnter before the selection redraw. It now waits for the selected marker.\nA subsequent CI run exposed the same problem at goal replacement: the test\nmatched artifact text shared by both screens and sent another Enter too soon.\nThat transition now waits for the prompt editor's `e edit` control as well.\nBoth affected UI cases passed in five fresh runs, and the complete guide gate\npassed all 30 cases. The lifecycle/state group passed 299 cases. The full\nrepository suite had passed on the reviewed commit; updated-head CI must pass\nbefore merge. No live model or native activation proof is claimed.\n\n## Files changed\n\n| File | Additions | Deletions |\n| --- | ---: | ---: |\n| README.md | 158 | 18 |\n| docs/guide-ui-integration.md | 70 | 2 |\n| packages/trellage-guide-core/dist/index.d.ts | 9 | 0 |\n| packages/trellage-guide-core/dist/index.js | 91 | 9 |\n| packages/trellage-guide-core/dist/index.js.map | 1 | 1 |\n| packages/trellage-guide-core/src/index.ts | 141 | 9 |\n| packages/trellage-guide-core/test/index.test.ts | 188 | 0 |\n| packages/trellage-launcher/dist/launcher.mjs | 6771 | 3736 |\n| packages/trellage-launcher/prompts/generate.md | 18 | 3 |\n| packages/trellage-launcher/prompts/guide-goal-augment.md | 45 | 0 |\n| packages/trellage-launcher/prompts/match.md | 23 | 5 |\n| packages/trellage-launcher/prompts/optimize.md | 12 | 1 |\n| packages/trellage-launcher/prompts/refine.md | 17 | 3 |\n| packages/trellage-launcher/src/cli.tsx | 17 | 0 |\n| packages/trellage-launcher/src/copilot-goal-augment-provider.ts | 442 | 0 |\n| packages/trellage-launcher/src/copilot-guide-provider.ts | 79 | 23 |\n| packages/trellage-launcher/src/guide-api.ts | 338 | 54 |\n| packages/trellage-launcher/src/guide-augment.ts | 7 | 3 |\n| packages/trellage-launcher/src/guide-batch.ts | 127 | 35 |\n| packages/trellage-launcher/src/guide-catalog.ts | 97 | 33 |\n| packages/trellage-launcher/src/guide-command.ts | 9 | 7 |\n| packages/trellage-launcher/src/guide-goal-augment-ui.tsx | 533 | 0 |\n| packages/trellage-launcher/src/guide-goal-augment.ts | 330 | 0 |\n| packages/trellage-launcher/src/guide-goal-execution.ts | 195 | 0 |\n| packages/trellage-launcher/src/guide-goal-generation.ts | 295 | 0 |\n| packages/trellage-launcher/src/guide-goal-readiness.ts | 387 | 0 |\n| packages/trellage-launcher/src/guide-goal-skills.ts | 214 | 0 |\n| packages/trellage-launcher/src/guide-goal-transport.ts | 87 | 0 |\n| packages/trellage-launcher/src/guide-interactive-execution.ts | 144 | 60 |\n| packages/trellage-launcher/src/guide-launch.ts | 93 | 7 |\n| packages/trellage-launcher/src/guide-markdown.tsx | 303 | 0 |\n| packages/trellage-launcher/src/guide-match-cache.ts | 57 | 10 |\n| packages/trellage-launcher/src/guide-model-routing.ts | 5 | 0 |\n| packages/trellage-launcher/src/guide-preflight.ts | 29 | 5 |\n| packages/trellage-launcher/src/guide-provider.ts | 92 | 17 |\n| packages/trellage-launcher/src/guide-ui.tsx | 986 | 501 |\n| packages/trellage-launcher/src/guide-workflow-prompt.ts | 22 | 12 |\n| packages/trellage-launcher/test/fixtures/goal-me-skill.ts | 67 | 0 |\n| packages/trellage-launcher/test/fixtures/goal-transport.ts | 55 | 0 |\n| packages/trellage-launcher/test/fixtures/guide-goal-model.ts | 72 | 0 |\n| packages/trellage-launcher/test/fixtures/guide-goal-provider.ts | 91 | 0 |\n| packages/trellage-launcher/test/fixtures/guide-integration-data.ts | 57 | 3 |\n| packages/trellage-launcher/test/fixtures/guide-integration-runner.ts | 115 | 5 |\n| packages/trellage-launcher/test/fixtures/guide-integration.tsx | 70 | 17 |\n| packages/trellage-launcher/test/guide-batch.test.ts | 239 | 0 |\n| packages/trellage-launcher/test/guide-catalog.test.ts | 201 | 1 |\n| packages/trellage-launcher/test/guide-command.test.ts | 94 | 2 |\n| packages/trellage-launcher/test/guide-copilot-goal-provider.test.ts | 656 | 0 |\n| packages/trellage-launcher/test/guide-copilot-provider.test.ts | 129 | 0 |\n| packages/trellage-launcher/test/guide-goal-augment-ui.test.ts | 597 | 0 |\n| packages/trellage-launcher/test/guide-goal-augment.test.ts | 232 | 0 |\n| packages/trellage-launcher/test/guide-goal-execution.test.ts | 176 | 0 |\n| packages/trellage-launcher/test/guide-goal-services.test.ts | 710 | 0 |\n| packages/trellage-launcher/test/guide-goal-skills.test.ts | 215 | 0 |\n| packages/trellage-launcher/test/guide-goal-wiring.test.ts | 316 | 0 |\n| packages/trellage-launcher/test/guide-interactive-execution.test.ts | 119 | 0 |\n| packages/trellage-launcher/test/guide-launch.test.ts | 92 | 1 |\n| packages/trellage-launcher/test/guide-preflight.test.ts | 353 | 0 |\n| packages/trellage-launcher/test/guide-selected.test.ts | 126 | 1 |\n| packages/trellage-launcher/test/guide-ui.integration.test.ts | 765 | 2 |\n| packages/trellage-launcher/test/guide-ui.test.ts | 235 | 8 |\n| packages/trellage-launcher/test/helpers/guide-terminal.ts | 2 | 2 |\n| profile-guides/README.md | 50 | 0 |\n| profile-guides/native/cdx/pstack.md | 6 | 0 |\n| profile-guides/native/cdx/superpowers.md | 6 | 0 |\n| profile-guides/native/cdx/youtube.md | 6 | 0 |\n| profile-guides/native/cldx/default.md | 5 | 0 |\n| profile-guides/sandbox/claude-blog.md | 6 | 0 |\n| profile-guides/sandbox/claude-council.md | 5 | 0 |\n| profile-guides/sandbox/claude-ecc.md | 7 | 0 |\n| profile-guides/sandbox/claude-frontend-design.md | 7 | 0 |\n| profile-guides/sandbox/claude-graph-of-loops.md | 7 | 0 |\n| profile-guides/sandbox/claude-qwen-local.md | 5 | 0 |\n| profile-guides/sandbox/claude-research.md | 5 | 0 |\n| profile-guides/sandbox/claude-social-media.md | 13 | 0 |\n| prototypes/trellage-claude-common/README.md | 16 | 0 |\n| prototypes/trellage-claude-common/native-claude | 10 | 0 |\n| prototypes/trellage-claude-profiles/bin/cldx | 9 | 4 |\n| prototypes/trellage-codex-common/native-codex | 31 | 3 |\n| prototypes/trellage-codex-profiles/README.md | 8 | 0 |\n| prototypes/trellage-codex-profiles/tests/blocks/auth-config-launch.sh | 1 | 0 |\n| prototypes/trellage-router/bin/trx | 4 | 1 |\n| prototypes/trellage-router/tests/contract.sh | 9 | 0 |\n| prototypes/trellage/tests/prime_entry_contract.sh | 2 | 0 |\n| tests/profile_guides_contract.mjs | 50 | 4 |\n\n**Total:** +18,484 / -4,608 lines across 85 files at the reviewed head.\n\n## Review coverage\n\n| Agent | Model | Owned area | Status | Error |\n| --- | --- | --- | --- | --- |\n| Security & Permissions | gpt-5.6-sol | Native readiness, trust, hooks, skill isolation, adapter policy | Complete | None |\n| Logic & Correctness | claude-opus-5 | Main/fork UI state and terminal flows | Complete | None |\n| Resource Safety & Reliability | gpt-6-astra | Interview SDK lifecycle, approval, timeouts, cleanup, goal UI | Complete | None |\n| Network & Input Boundaries | gemini-3.8-flash | Input validation, composition, matching, caches, prompt limits | Complete | None |\n| Sandbox Isolation | claude-sonnet-5 | Native/Herdr transport, allocation, frozen jobs, recovery | Complete | None |\n| SDK/API Consistency & Maintainability | gpt-5.6-terra | Core schema, JSON/API forwarding, policies, docs, generated interfaces | Complete | None |\n\nGemini Pro was not available in this environment; the available Gemini Flash\nmodel was used. The tracked runtime bundles were rebuilt and compared with the\ncommitted output, rather than audited as duplicate copies of source.\n\n## Issue index\n\n| Issue | Severity | File | Comment location | Found by |\n| --- | --- | --- | --- | --- |\n| F-001 | High | guide-ui.tsx | 4954-4955; dependency at 4768 | Logic & Correctness |\n| F-002 | Medium | guide-goal-augment.ts | 291 | Resource Safety & Reliability |\n| F-003 | Medium | copilot-goal-augment-provider.ts | 287-302 | Resource Safety & Reliability |\n",
+  "agents": [
+    {
+      "name": "Security & Permissions",
+      "model": "gpt-5.6-sol",
+      "lens": "Authentication, authorization, trust, native readiness, and installed-skill isolation",
+      "status": "complete",
+      "error": ""
+    },
+    {
+      "name": "Logic & Correctness",
+      "model": "claude-opus-5",
+      "lens": "Main and fork UI control flow, state transitions, and terminal behavior",
+      "status": "complete",
+      "error": ""
+    },
+    {
+      "name": "Resource Safety & Reliability",
+      "model": "gpt-6-astra",
+      "lens": "Interview lifecycle, approval, per-round timeouts, and SDK cleanup",
+      "status": "complete",
+      "error": ""
+    },
+    {
+      "name": "Network & Input Boundaries",
+      "model": "gemini-3.8-flash",
+      "lens": "External input, goal composition, matching, caches, and payload limits",
+      "status": "complete",
+      "error": ""
+    },
+    {
+      "name": "Sandbox Isolation",
+      "model": "claude-sonnet-5",
+      "lens": "Native and Herdr transport, destinations, allocation, and recovery boundaries",
+      "status": "complete",
+      "error": ""
+    },
+    {
+      "name": "SDK/API Consistency & Maintainability",
+      "model": "gpt-5.6-terra",
+      "lens": "Core schema, JSON/API forwarding, profile policies, documentation, and generated interfaces",
+      "status": "complete",
+      "error": ""
+    }
+  ],
+  "counts": {
+    "critical": 0,
+    "high": 1,
+    "medium": 2,
+    "low": 0,
+    "confirmedTotal": 3
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "severity": "high",
+      "title": "Unrelated renders restart an active fork readiness probe",
+      "problem": "The new readiness-effect dependency on dispatch observes a different ForkWorker deliver function on every render. Unrelated updates abort and restart an active probe and can prevent readiness from completing.",
+      "evidence": "The reviewed head adds dispatch to the effect dependencies at guide-ui.tsx:4761-4768, while the callback at 4954-4955 is recreated each render. A real Ink/PTy regression recorded six inventory calls for one parked readiness operation; the memoized implementation records one.",
+      "path": "packages/trellage-launcher/src/guide-ui.tsx",
+      "lineStart": 4954,
+      "lineEnd": 4955,
+      "currentCode": "  const deliver: GuideUiDispatch = (action) =>\n    dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction })",
+      "suggestedCode": "  const deliver = React.useCallback<GuideUiDispatch>(\n    (action) => dispatch({ type: GuideUiActionType.ForkDeliver, forkId, action: action as GuideUiAction }),\n    [dispatch, forkId],\n  )",
+      "fixKind": "exact",
+      "judgmentNotes": "",
+      "reportedBy": [
+        "Logic & Correctness / claude-opus-5"
+      ]
+    },
+    {
+      "id": "F-002",
+      "severity": "medium",
+      "title": "Approval exposes a queued unapproved proposal",
+      "problem": "Publishing the next pending request after Use goal replaces the UI's retained proposal with an unapproved second draft before the provider returns the approved first draft. The application then rejects the approval-context mismatch.",
+      "evidence": "Controller and SDK-adapter regressions queued distinct proposals and observed the first prompt approved while the second remained the last displayed goal. Suppressing post-approval publication preserves the approved proposal and result.",
+      "path": "packages/trellage-launcher/src/guide-goal-augment.ts",
+      "lineStart": 291,
+      "lineEnd": 291,
+      "currentCode": "    this.options.onRequest(this.pending[0]?.request)",
+      "suggestedCode": "    this.options.onRequest(this.approvalAccepted ? undefined : this.pending[0]?.request)",
+      "fixKind": "exact",
+      "judgmentNotes": "",
+      "reportedBy": [
+        "Resource Safety & Reliability / gpt-6-astra"
+      ]
+    },
+    {
+      "id": "F-003",
+      "severity": "medium",
+      "title": "Graceful SDK stop loses the handle needed for forced termination",
+      "problem": "The provider bounds client.stop and then falls back to forceStop. Installed SDK 1.0.11 can clear its child handle before waiting for SIGTERM exit, leaving forceStop unable to terminate a surviving owned runtime.",
+      "evidence": "An in-memory reproduction of installed SDK cleanup observed a null handle, only SIGTERM sent, and a surviving child. The provider regression modeled that handle loss and failed before direct owned-runtime termination was applied after bounded session cleanup.",
+      "path": "packages/trellage-launcher/src/copilot-goal-augment-provider.ts",
+      "lineStart": 287,
+      "lineEnd": 302,
+      "currentCode": "const stopGoalClient = async (\n  client: GuideGoalModelClient,\n  timeoutMs: number,\n  errors: unknown[],\n): Promise<void> => {\n  let stopped = false\n  await runCleanupStep(errors, async () => {\n    const stopErrors = await boundedClose(\"client stop\", timeoutMs, () => client.stop())\n    errors.push(...stopErrors)\n    stopped = stopErrors.length === 0\n  })\n  // A timeout releases our wait, not the SDK process. Terminate it before removing its files.\n  if (!stopped) {\n    await runCleanupStep(errors, () => boundedClose(\"client force stop\", timeoutMs, () => client.forceStop()))\n  }\n}",
+      "suggestedCode": "const stopGoalClient = async (\n  client: GuideGoalModelClient,\n  timeoutMs: number,\n  errors: unknown[],\n): Promise<void> => {\n  await runCleanupStep(errors, () => boundedClose(\"client force stop\", timeoutMs, () => client.forceStop()))\n}",
+      "fixKind": "exact",
+      "judgmentNotes": "The ownership decision is resolved: force-stop this isolated interview runtime after bounded session abort, disconnect, and deletion. The implemented follow-up reuses the existing close helper and removes this redundant helper.",
+      "reportedBy": [
+        "Resource Safety & Reliability / gpt-6-astra"
+      ]
+    }
+  ]
+}

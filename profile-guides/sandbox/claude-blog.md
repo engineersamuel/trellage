@@ -1,5 +1,11 @@
 ---
 schemaVersion: 1
+goalExecution:
+  controller: claude-goal
+  workflowIds:
+    - write-new-post
+    - audit-existing-post
+    - content-brief
 capabilities:
 - blog-post-writing
 - seo-optimization

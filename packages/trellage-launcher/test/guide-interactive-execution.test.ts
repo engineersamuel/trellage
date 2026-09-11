@@ -11,6 +11,9 @@ import {
 } from "../src/guide-ui.js"
 import { CommandRunnerError } from "../src/guide-launch.js"
 import { createQueuedGuideJob } from "../src/guide-batch.js"
+import { goalTransportFixture } from "./fixtures/goal-transport.js"
+import { guideGoalActivationInput } from "../src/guide-goal-execution.js"
+import { ProfileReadinessKind } from "../src/guide-preflight.js"
 import type {
   CommandRunOptions,
   CommandRunResult,
@@ -68,6 +71,122 @@ const services = (
 })
 
 describe("interactive guide result execution", () => {
+  it("prints exact native command-prefix and body recovery without launching a goal", async () => {
+    const { candidate, execution } = goalTransportFixture()
+    const runner = new RecordingRunner()
+    const writes: string[] = []
+    await expect(executeGuideUiResult(
+      buildPrintResult(candidate.prompt, candidate.goalExecution), services(runner, writes),
+    )).resolves.toBe(0)
+    expect(writes.join("")).toContain("Selected goal (not launched)")
+    expect(writes.join("")).toContain("Type '/goal '")
+    expect(writes.join("")).toContain(guideGoalActivationInput(execution, candidate.prompt).body)
+    expect(writes.join("")).not.toContain(candidate.prompt)
+    expect(runner.calls).toEqual([])
+  })
+
+  it("starts Codex without a positional goal and gives native-input instructions before startup", async () => {
+    const { profile: selected, candidate } = goalTransportFixture()
+    const runner = new RecordingRunner()
+    const writes: string[] = []
+    const runInteractive = vi.fn(async () => {
+      expect(writes.join("")).toContain("Type '/goal '")
+      return undefined
+    })
+    await expect(executeGuideUiResult(
+      buildCurrentTerminalResult(selected, candidate.prompt, "/repo", candidate.goalExecution),
+      {
+        ...services(runner, writes, runInteractive),
+        checkReadiness: async () => ({ kind: ProfileReadinessKind.Ready, summary: "Fixture runtime checked." }),
+      },
+    )).resolves.toBe(0)
+    expect(runInteractive).toHaveBeenCalledWith(
+      { executable: selected.commandPath, args: ["superpowers"] },
+      { cwd: "/repo", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }) },
+    )
+    expect(writes.join("")).toContain("Startup does not activate it.")
+    expect(runner.calls).toEqual([])
+  })
+
+  it("uses Claude's documented print goal dispatch without adding manual instructions", async () => {
+    const { profile: selected, candidate } = goalTransportFixture("claude-goal")
+    const runner = new RecordingRunner()
+    const writes: string[] = []
+    const runInteractive = vi.fn(async () => undefined)
+    await expect(executeGuideUiResult(
+      buildCurrentTerminalResult(selected, candidate.prompt, "/repo", candidate.goalExecution),
+      {
+        ...services(runner, writes, runInteractive),
+        checkReadiness: async () => ({ kind: ProfileReadinessKind.Ready, summary: "Fixture runtime checked." }),
+      },
+    )).resolves.toBe(0)
+    expect(runInteractive).toHaveBeenCalledWith(
+      { executable: selected.commandPath, args: ["default", "-p", candidate.prompt] },
+      { cwd: "/repo", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }) },
+    )
+    expect(writes).toEqual([])
+  })
+
+  it("leaves native Claude Herdr interactive and returns needs-input without any agent paste", async () => {
+    const { profile: selected, candidate } = goalTransportFixture("claude-goal")
+    const runner = new RecordingRunner([
+      { stdout: '{"result":{"pane":{"pane_id":"2-3"}}}', stderr: "", exitCode: 0 },
+      { stdout: "", stderr: "", exitCode: 0 },
+    ])
+    const writes: string[] = []
+    await expect(executeGuideUiResult(
+      buildCurrentHerdrWorkspaceResult(selected, candidate.prompt, "/repo", { workspaceId: "2", paneId: "2-1", surface: "pane" }, "right", candidate.goalExecution),
+      {
+        ...services(runner, writes),
+        checkReadiness: async () => ({ kind: ProfileReadinessKind.Ready, summary: "Fixture runtime checked." }),
+      },
+    )).resolves.toBe(2)
+    expect(runner.calls).toHaveLength(2)
+    expect(runner.calls[1]?.args).toEqual(["pane", "run", "2-3", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cldx default"])
+    expect(writes.join("")).toContain("needs-input in pane 2-3")
+    expect(writes.join("")).toContain("The goal has not been activated.")
+    expect(writes.join("")).toContain("Type '/goal '")
+  })
+
+  it("blocks unknown or prohibited goal readiness and retains exact recovery before any terminal launch", async () => {
+    const { profile: selected, candidate } = goalTransportFixture()
+    const runner = new RecordingRunner()
+    const writes: string[] = []
+    const runInteractive = vi.fn(async () => undefined)
+    await expect(executeGuideUiResult(
+      buildCurrentTerminalResult(selected, candidate.prompt, "/repo", candidate.goalExecution),
+      {
+        ...services(runner, writes, runInteractive),
+        checkReadiness: async () => ({
+          kind: ProfileReadinessKind.Blocked, summary: "Goal activation is blocked",
+          diagnostic: "Managed goals are disabled.", goalReadiness: "blocked",
+        }),
+      },
+    )).rejects.toThrow("Managed goals are disabled.")
+    expect(runInteractive).not.toHaveBeenCalled()
+    expect(writes.join("")).toContain("Resolve the error before native input.")
+    expect(writes.join("")).toContain(guideGoalActivationInput(candidate.goalExecution, candidate.prompt).body)
+  })
+
+  it("keeps the actual goal pane and directory in recovery when Herdr startup fails", async () => {
+    const { profile: selected, candidate } = goalTransportFixture()
+    const runner = new RecordingRunner([
+      { stdout: '{"result":{"pane":{"pane_id":"2-3"}}}', stderr: "", exitCode: 0 },
+      new CommandRunnerError({ kind: "exited", executable: "herdr", args: ["pane", "run"], message: "pane startup failed", exitCode: 1 }),
+    ])
+    const writes: string[] = []
+    await expect(executeGuideUiResult(
+      buildCurrentHerdrWorkspaceResult(selected, candidate.prompt, "/exact/checkout", { workspaceId: "2", paneId: "2-1", surface: "pane" }, "right", candidate.goalExecution),
+      {
+        ...services(runner, writes),
+        checkReadiness: async () => ({ kind: ProfileReadinessKind.Ready, summary: "Fixture runtime checked." }),
+      },
+    )).rejects.toMatchObject({ kind: "startup", paneId: "2-3", cwd: "/exact/checkout", message: "pane startup failed" })
+    expect(writes.join("")).toContain("Pane: 2-3. Directory: /exact/checkout.")
+    expect(writes.join("")).toContain("Type '/goal '")
+    expect(writes.join("")).toContain(guideGoalActivationInput(candidate.goalExecution, candidate.prompt).body)
+  })
+
   it("prints the summary of a batch the guide already launched", async () => {
     const runner = new RecordingRunner()
     const writes: string[] = []

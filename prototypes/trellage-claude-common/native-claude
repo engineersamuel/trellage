@@ -968,6 +968,16 @@ case "${1-}" in
     [[ "$#" -eq 0 ]] || die 'model-id accepts no arguments'
     printf '%s\n' "$model_id"
     ;;
+  goal-runtime)
+    shift
+    [[ "$#" -eq 0 ]] || die 'goal-runtime accepts no arguments'
+    scrub_provider_environment
+    jq -cn \
+      --arg version "$(claude_version_if_available)" \
+      --arg evaluatorModel "$haiku_model_id" \
+      --arg modelsUrl "$proxy_origin/v1/models" \
+      '{version: ($version | if length > 0 then . else null end), evaluatorModel: $evaluatorModel, modelsUrl: $modelsUrl}'
+    ;;
   exec-clean)
     shift
     exec_clean_command "$@"

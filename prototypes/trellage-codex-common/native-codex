@@ -208,6 +208,7 @@ usage() {
     '  list' \
     '  list --json' \
     '  inventory PROFILE --json' \
+    '  inventory PROFILE --goal-features' \
     '  setup PROFILE|--all' \
     '  doctor PROFILE' \
     '  update --check PROFILE|--all' \
@@ -3372,6 +3373,29 @@ build_launch_hook_trust_codex_args() {
   hook_trust_codex_args+=(--dangerously-bypass-hook-trust)
 }
 
+goal_features_profile() {
+  local profile="$1" home target
+
+  require_profile "$profile"
+  require_profile_home_ready "$profile"
+  home="$(profile_home "$profile")"
+  target="$home/config.toml"
+  safe_config_target "$profile"
+  [ -f "$target" ] && [ "$(file_mode "$target")" = '600' ] \
+    || die "profile config must have mode 0600: $profile"
+  resolve_codex
+  # Reuse launch config layering, without setup, trust persistence, or hook execution.
+  build_launch_trust_codex_args
+  build_profile_codex_args "$profile"
+  CODEX_HOME="$home" "$codex_executable" \
+    -c sandbox_workspace_write.network_access=true \
+    --disable default_mode_request_user_input \
+    ${trust_codex_args[@]+"${trust_codex_args[@]}"} \
+    ${profile_codex_args[@]+"${profile_codex_args[@]}"} \
+    features list \
+    || die "could not read launch-configured goal features: $profile"
+}
+
 run_codex_child() {
   local profile="$1" native="$2"
   local home target
@@ -3559,9 +3583,13 @@ case "$command" in
     ;;
   inventory )
     validate_catalog
-    [ "$#" -eq 3 ] && [ "$3" = '--json' ] \
-      || die "usage: $launcher_name inventory PROFILE --json"
-    inventory_profile "$2"
+    [ "$#" -eq 3 ] \
+      || die "usage: $launcher_name inventory PROFILE --json|--goal-features"
+    case "$3" in
+      --json) inventory_profile "$2" ;;
+      --goal-features) goal_features_profile "$2" ;;
+      *) die "usage: $launcher_name inventory PROFILE --json|--goal-features" ;;
+    esac
     ;;
   setup )
     validate_catalog

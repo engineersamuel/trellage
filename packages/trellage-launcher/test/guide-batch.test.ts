@@ -8,6 +8,7 @@ import {
   enqueueGuideJob,
   executeGuideBatch,
   removeSelectedQueuedGuideJob,
+  replaceQueuedGuideJobPrompt,
   selectQueuedGuideJob,
   startQueuedGuidePromptEdit,
   submitQueuedGuidePromptEdit,
@@ -21,6 +22,9 @@ import {
   type CommandRunner,
   type SelectedProfile,
 } from "../src/guide-launch.js"
+import { goalTransportFixture } from "./fixtures/goal-transport.js"
+import { ProfileReadinessKind } from "../src/guide-preflight.js"
+import { guideGoalActivationInput } from "../src/guide-goal-execution.js"
 
 class BatchRunner implements CommandRunner {
   readonly calls: Array<{
@@ -211,6 +215,213 @@ describe("guide batch queue", () => {
     expect(result.result.entries[0]?.status).toBe("allocation-failed")
   })
 
+  it.each(["codex-goal", "claude-goal"] as const)(
+    "rejects private delivery that would bypass the %s transport",
+    async (controller) => {
+      const { profile, candidate } = goalTransportFixture(controller)
+      const job = {
+        ...createPrivateContinuationJob(1, profile, candidate.prompt, here),
+        goalExecution: candidate.goalExecution,
+      }
+      const runner = new BatchRunner()
+      let submissions = 0
+      const outcome = await executeGuideBatch(
+        { jobs: [job], context },
+        {
+          runner,
+          write: () => undefined,
+          launchPrivate: async (_, options) => {
+            submissions += 1
+            return { paneId: options.paneId, commandPreview: "" }
+          },
+        },
+      )
+      expect(outcome.exitCode).toBe(1)
+      expect(outcome.result.entries[0]).toMatchObject({
+        status: "invalid",
+        message: "Private prompt delivery does not support goal execution.",
+      })
+      expect(submissions).toBe(0)
+      expect(runner.calls).toEqual([])
+    },
+  )
+
+  it("freezes each goal, workflow, profile, and destination and edits only its stored approach", () => {
+    const { profile, candidate } = goalTransportFixture()
+    const sourceProfile = { ...profile }
+    const sourcePlacement = { ...here }
+    const source = {
+      ...candidate.goalExecution,
+      workflow: { ...candidate.goalExecution.workflow, examples: [...candidate.goalExecution.workflow.examples] },
+      goal: {
+        ...candidate.goalExecution.goal,
+        draft: { ...candidate.goalExecution.goal.draft, criteria: [...candidate.goalExecution.goal.draft.criteria] },
+      },
+    }
+    const job = createQueuedGuideJob(1, sourceProfile, candidate.prompt, sourcePlacement, source)
+    source.goal.draft.criteria[0] = "Changed after queueing."
+    source.workflow.examples[0] = "Changed workflow."
+    sourceProfile.profile = "another-profile"
+    sourcePlacement.direction = "down"
+    expect(job.profile.profile).toBe("superpowers")
+    expect(job.placement).toEqual(here)
+    expect(job.goalExecution?.goal.draft.criteria).toEqual(candidate.goalExecution.goal.draft.criteria)
+    expect(Object.isFrozen(job.goalExecution?.goal.draft.criteria)).toBe(true)
+    expect(Object.isFrozen(job.goalExecution?.workflow.examples)).toBe(true)
+    expect(Object.isFrozen(job.command.args)).toBe(true)
+    const edited = replaceQueuedGuideJobPrompt(job, "Begin with a focused regression case.")
+    expect(edited.goalExecution?.goal.fingerprint).toBe(job.goalExecution?.goal.fingerprint)
+    expect(edited.goalExecution?.approach).toBe("Begin with a focused regression case.")
+    expect(edited.prompt).toContain("Begin with a focused regression case.")
+    expect(edited.prompt).not.toContain(candidate.goalExecution.approach)
+    expect(edited.command.args).toEqual(["superpowers"])
+    expect(edited.promptDelivery).toBe("manual")
+    expect(() => replaceQueuedGuideJobPrompt(job, "/goal-me Start a different interview")).toThrow(/another goal controller/u)
+  })
+
+  it("keeps complete Unicode goals above 8000 characters and reports manual jobs as needs-input", async () => {
+    const { profile, candidate, execution } = goalTransportFixture("codex-goal", { task: `Complete this evidence:\n${"\u{1f333}".repeat(20_000)}` })
+    const queue = enqueueGuideJob(emptyGuideQueue(), profile, candidate.prompt, here, candidate.goalExecution)
+    const runner = new BatchRunner()
+    const writes: string[] = []
+    const progress: string[] = []
+    const result = await executeGuideBatch({ jobs: queue.entries, context }, {
+      runner,
+      write: (value) => writes.push(value),
+      onProgress: (event) => progress.push(event.phase),
+      checkReadiness: async () => ({ kind: ProfileReadinessKind.Ready, summary: "Fixture runtime checked." }),
+    })
+    expect(Buffer.byteLength(candidate.prompt, "utf8")).toBeGreaterThan(64 * 1024)
+    expect(result.exitCode).toBe(2)
+    expect(result.result.entries[0]).toMatchObject({
+      status: "needs-input", paneId: "9-1", cwd: "/repo", workspaceId: "9", job: queue.entries[0],
+    })
+    expect(progress.at(-1)).toBe("needs-input")
+    expect(queue.entries[0]?.goalExecution?.goal.prompt).toBe(candidate.goalExecution.goal.prompt)
+    expect(runner.calls.some(({ args }) => args[0] === "agent")).toBe(false)
+    expect(runner.calls.find(({ args }) => args[0] === "pane" && args[1] === "run")?.args[3]).toBe(
+      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx superpowers",
+    )
+    expect(writes.join("")).toContain("needs-input in pane 9-1")
+    expect(writes.join("")).toContain("Type '/goal '")
+    expect(writes.join("")).toContain(guideGoalActivationInput(execution, candidate.prompt).body)
+  })
+
+  it.each([false, true])("records mixed private and manual goal results with failure=%s", async (withFailure) => {
+    const codex = goalTransportFixture("codex-goal")
+    const claude = goalTransportFixture("claude-goal")
+    const jobs = [
+      createPrivateContinuationJob(1, native("cpx", "default"), "Synthetic private prompt", here),
+      createQueuedGuideJob(2, codex.profile, codex.candidate.prompt, here, codex.candidate.goalExecution),
+      createQueuedGuideJob(
+        3,
+        { ...claude.profile, headlessPrompt: false },
+        claude.candidate.prompt,
+        here,
+        claude.candidate.goalExecution,
+      ),
+    ]
+    if (withFailure) jobs.push(createQueuedGuideJob(4, native("cpx", "blocked"), "Blocked prompt", here))
+    const runner = new BatchRunner()
+    const allocated: number[] = []
+    const submissions: string[] = []
+    const results: string[] = []
+    const outcome = await executeGuideBatch(
+      { jobs, context },
+      {
+        runner,
+        write: () => undefined,
+        checkReadiness: async (_, profile) => profile.profile === "blocked"
+          ? { kind: ProfileReadinessKind.Blocked, summary: "Profile blocked", diagnostic: "Fixture readiness failure." }
+          : { kind: ProfileReadinessKind.Ready, summary: "Fixture runtime checked." },
+        onAllocated: async (job) => {
+          allocated.push(job.id)
+        },
+        launchPrivate: async (_, options) => {
+          expect(allocated).toEqual([1, 2, 3])
+          submissions.push(options.paneId)
+          return { paneId: options.paneId, commandPreview: "cpx default" }
+        },
+        onResult: async (entry) => {
+          results.push(`${entry.job.id}:${entry.status}`)
+        },
+      },
+    )
+    expect(outcome.exitCode).toBe(withFailure ? 1 : 2)
+    expect(allocated).toEqual([1, 2, 3])
+    expect(submissions).toEqual(["9-1"])
+    expect(results).toEqual([
+      "1:launched",
+      "2:needs-input",
+      "3:needs-input",
+      ...(withFailure ? ["4:not-ready"] : []),
+    ])
+    expect(
+      runner.calls.filter(({ args }) => args[0] === "pane" && args[1] === "run").map(({ args }) => args[3]),
+    ).toEqual([
+      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx superpowers",
+      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cldx default",
+    ])
+    expect(runner.calls.some(({ args }) => args[0] === "agent")).toBe(false)
+  })
+
+  it("rejects goal prompt, command, controller, and objective tampering before allocation", async () => {
+    const { profile, candidate } = goalTransportFixture()
+    const source = createQueuedGuideJob(1, profile, candidate.prompt, here, candidate.goalExecution)
+    const jobs = [
+      { ...source, prompt: "Only an approach." },
+      { ...source, command: { ...source.command, args: [...source.command.args, source.prompt] } },
+      { ...source, profile: { ...profile, launcher: "cpx", commandPath: "/opt/trellage/bin/cpx" } },
+      { ...source, goalExecution: { ...candidate.goalExecution, approach: "An unapproved edit." } },
+      { ...source, goalExecution: {
+        ...candidate.goalExecution,
+        goal: { ...candidate.goalExecution.goal, draft: { ...candidate.goalExecution.goal.draft, task: "A different task." } },
+      } },
+      { ...source, prompt: "x".repeat(96_001) },
+    ].map((job, index) => ({ ...job, id: index + 1 }))
+    const runner = new BatchRunner()
+    const result = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
+    expect(result.result.entries.map(({ status }) => status)).toEqual(jobs.map(() => "invalid"))
+    expect(runner.calls).toEqual([])
+  })
+
+  it("keeps the ordinary 8000-character queue limit without applying it to the frozen goal body", async () => {
+    const runner = new BatchRunner()
+    const job = createQueuedGuideJob(1, native("cdx", "reviewer"), "x".repeat(8001), here)
+    const result = await executeGuideBatch({ jobs: [job], context }, { runner, write: () => undefined })
+    expect(result.result.entries[0]).toMatchObject({ status: "invalid", message: "Queued prompt exceeds 8000 characters." })
+    expect(runner.calls).toEqual([])
+    const atLimit = createQueuedGuideJob(2, native("cdx", "reviewer"), "x".repeat(8000), here)
+    const valid = await executeGuideBatch({ jobs: [atLimit], context }, { runner: new BatchRunner(), write: () => undefined })
+    expect(valid.result.entries[0]).toMatchObject({ status: "launched", job: atLimit })
+  })
+
+  it("checks goal readiness at the actual allocated worktree and preserves blocked recovery there", async () => {
+    const { profile, candidate } = goalTransportFixture("claude-goal")
+    const runner = new BatchRunner()
+    const writes: string[] = []
+    const directories: string[] = []
+    const job = createQueuedGuideJob(1, profile, candidate.prompt, fresh("goal-work"), candidate.goalExecution)
+    const result = await executeGuideBatch({ jobs: [job], context }, {
+      runner, write: (value) => writes.push(value),
+      checkReadiness: async (_runner, _profile, cwd) => {
+        directories.push(cwd)
+        return cwd === "/repo"
+          ? { kind: ProfileReadinessKind.Ready, summary: "Original workspace trusted." }
+          : { kind: ProfileReadinessKind.Blocked, summary: "Goal activation is blocked", diagnostic: "New workspace trust is missing." }
+      },
+    })
+    expect(directories).toEqual(["/repo", "/repo/.worktrees/goal-work"])
+    expect(result.result.entries[0]).toMatchObject({
+      status: "not-ready", stage: "readiness", paneId: "12-1",
+      workspaceId: "12", cwd: "/repo/.worktrees/goal-work",
+    })
+    expect(runner.calls.some(({ args }) => args[0] === "pane" && args[1] === "run")).toBe(false)
+    expect(writes.join("")).toContain("Resolve the error before native input.")
+    expect(writes.join("")).toContain("Type '/goal '")
+    expect(writes.join("")).toContain("/repo/.worktrees/goal-work")
+  })
+
   it("preserves enqueue order, keeps each placement, and rebuilds prompt delivery per profile", () => {
     let queue = emptyGuideQueue()
     queue = enqueueGuideJob(queue, native("cpx", "council", "claude-council"), "/council First proposal", here)
@@ -296,6 +507,34 @@ describe("guide batch queue", () => {
     expect(runCommands.some((command) => command.includes("/council Compare the designs"))).toBe(true)
     expect(runCommands.some((command) => command.includes("Research the prior art"))).toBe(true)
     expect(runner.calls.some((call) => call.args[0] === "agent" && call.args[1] === "prompt")).toBe(false)
+  })
+
+  it.each(["plain", "goal"] as const)("keeps existing-worktree readiness scoped to %s jobs", async (mode) => {
+    const { profile, candidate } = goalTransportFixture()
+    const placement: JobPlacement = { kind: "existing-worktree", path: "/repo/.worktrees/review" }
+    const goalExecution = mode === "goal" ? candidate.goalExecution : undefined
+    const prompt = mode === "goal" ? candidate.prompt : "Review the changes."
+    const job = createQueuedGuideJob(1, profile, prompt, placement, goalExecution)
+    const expectedCwd = mode === "goal" ? placement.path : context.cwd
+    const checkedDirectories: string[] = []
+    const runner = new BatchRunner()
+    const outcome = await executeGuideBatch({ jobs: [job], context }, {
+      runner,
+      write: () => undefined,
+      checkReadiness: async (_runner, _profile, cwd) => {
+        checkedDirectories.push(cwd)
+        return cwd === expectedCwd
+          ? { kind: ProfileReadinessKind.Ready, summary: "Selected checkout is ready." }
+          : { kind: ProfileReadinessKind.Blocked, summary: "Unexpected readiness checkout", diagnostic: `Expected ${expectedCwd}.` }
+      },
+    })
+    expect(outcome.exitCode).toBe(mode === "goal" ? 2 : 0)
+    expect(checkedDirectories).toEqual(mode === "goal" ? [placement.path, placement.path] : [context.cwd])
+    expect(outcome.result.entries[0]).toMatchObject({
+      status: mode === "goal" ? "needs-input" : "launched",
+      cwd: placement.path,
+    })
+    expect(runner.calls.find(({ args }) => args[0] === "pane" && args[1] === "run")?.options?.cwd).toBe(placement.path)
   })
 
   it("routes each entry to its own placement in one batch", async () => {

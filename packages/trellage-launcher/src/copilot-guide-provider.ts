@@ -68,6 +68,13 @@ import {
 } from "./guide-model-routing.js"
 import type { GuideModelPrompts } from "./guide-prompts.js"
 import {
+  guideGoalApproachBudget,
+  guideGoalCandidateBody,
+  resolveGuideGoalExecution,
+  type GuideGoalExecution,
+} from "./guide-goal-execution.js"
+import { workflowPromptFrame } from "./guide-workflow-prompt.js"
+import {
   assertGuideEnrichInput,
   assertGuideGenerateInput,
   assertGuideMatchInput,
@@ -206,7 +213,9 @@ const applyGlobalModelOverrides = (
   effort: options.effort ?? config.effort,
 })
 
-const resolveProviderRouting = (options: CopilotGuideProviderOptions): GuideModelRouting => {
+export const resolveProviderRouting = (
+  options: Pick<CopilotGuideProviderOptions, "model" | "effort" | "routing">,
+): GuideModelRouting => {
   const routing = options.routing ?? defaultGuideModelRouting
   return {
     match: applyGlobalModelOverrides(routing.match, options),
@@ -217,7 +226,7 @@ const resolveProviderRouting = (options: CopilotGuideProviderOptions): GuideMode
   }
 }
 
-const findExecutableOnPath = (name: string, searchPath = process.env.PATH): string | undefined => {
+export const findExecutableOnPath = (name: string, searchPath = process.env.PATH): string | undefined => {
   if (searchPath === undefined) return undefined
   for (const directory of searchPath.split(path.delimiter)) {
     if (directory.length === 0) continue
@@ -250,7 +259,7 @@ const repairMessage = (cause: unknown): string => {
   ].join("\n")
 }
 
-const promptMasterMessage = (input: GuideOptimizeInput): string =>
+const promptMasterMessage = (input: Pick<GuideOptimizeInput, "targetTool" | "profileRef">): string =>
   [
     `/prompt-master Optimize these prompts for ${input.targetTool} in Trellage profile ${input.profileRef}.`,
     "Return only the JSON required by the system message.",
@@ -259,6 +268,18 @@ const promptMasterMessage = (input: GuideOptimizeInput): string =>
     JSON.stringify(input),
     "</untrusted-data>",
   ].join("\n")
+
+const goalModelContext = (execution: GuideGoalExecution) => ({
+  goal: { ...execution.goal.draft, minimumScore: 8 },
+  goalController: execution.controller,
+  approachMaximumLength: guideGoalApproachBudget(execution),
+  fixedFrame: workflowPromptFrame(execution.workflow),
+})
+
+const generationModelInput = (input: GuideGenerateInput, execution?: GuideGoalExecution) =>
+  execution === undefined
+    ? input
+    : { ...input, intent: execution.goal.draft.task, ...goalModelContext(execution) }
 
 const skillSessionPolicy = (
   skillDirectory: string | undefined,
@@ -288,7 +309,7 @@ const parseJson = (content: string): unknown => {
 }
 
 /** Runs `step`, appending any thrown error to `errors` instead of propagating it, so later cleanup steps still run. */
-const runCleanupStep = async (errors: unknown[], step: () => Promise<unknown>): Promise<void> => {
+export const runCleanupStep = async (errors: unknown[], step: () => Promise<unknown>): Promise<void> => {
   try {
     await step()
   } catch (error) {
@@ -304,6 +325,26 @@ const collectClientStopErrors = async (client: GuideModelClient, cleanupErrors: 
   }
 }
 
+export const assertGuideModelCapability = (
+  models: ReadonlyArray<ModelInfo>,
+  config: GuideModelRouting[GuideModelPhase],
+): void => {
+  const modelInfo = models.find((candidate) => candidate.id === config.model)
+  if (modelInfo === undefined) {
+    throw new GuideModelCapabilityError(`model is not available: ${config.model}`)
+  }
+  if (!modelInfo.capabilities.supports.reasoningEffort) {
+    throw new GuideModelCapabilityError(`model does not support reasoning effort: ${config.model}`)
+  }
+  const supportedEfforts = modelInfo.supportedReasoningEfforts ?? []
+  if (!supportedEfforts.includes(config.effort)) {
+    throw new GuideModelCapabilityError(
+      `model does not support effort "${config.effort}": ${config.model} supports: ${supportedEfforts.join(", ") || "(none)"}`,
+    )
+  }
+}
+
+/** The tool-denied baseline; interactive adapters must name each permitted tool. */
 export const restrictedGuideSessionConfig = (options: {
   readonly model: string
   readonly effort: GuideReasoningEffort
@@ -704,19 +745,44 @@ export class CopilotGuideProvider implements GuideProvider {
     const workflowIndex = new Map(
       input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]),
     )
-    return this.run("match", this.prompts.match, input, this.matchTimeoutMs, (value) =>
-      validateGuideMatchResult(value, workflowIndex),
+    const payload = input.goal === undefined
+      ? input
+      : {
+          intent: input.goal.draft.task,
+          entries: input.entries,
+          goal: { ...input.goal.draft, minimumScore: 8 },
+          ...(input.preferredProfileRefs === undefined ? {} : { preferredProfileRefs: input.preferredProfileRefs }),
+        }
+    return this.run("match", this.prompts.match, payload, this.matchTimeoutMs, (value) =>
+      validateGuideMatchResult(value, workflowIndex, input.goal, input.preferredProfileRefs),
     )
   }
 
   async generate(input: GuideGenerateInput): Promise<GuideGenerateResult> {
     assertGuideGenerateInput(input)
-    return this.run("generate", this.prompts.generate, input, this.generateTimeoutMs, validateGuideGenerateResult)
+    const execution = input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
+    return this.run(
+      "generate",
+      this.prompts.generate,
+      generationModelInput(input, execution),
+      this.generateTimeoutMs,
+      (value) => validateGuideGenerateResult(value, execution),
+    )
   }
 
   async refine(input: GuideRefineInput): Promise<GuideRefineResult> {
     assertGuideGenerateInput(input)
-    return this.run("refine", this.prompts.refine, input, this.refineTimeoutMs, validateGuideRefineResult)
+    const execution = input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
+    const payload = execution === undefined
+      ? input
+      : {
+          ...generationModelInput(input, execution),
+          candidate: validateGuideRefineResult({ candidate: guideGoalCandidateBody(input.candidate) }, execution).candidate,
+          feedback: input.feedback,
+        }
+    return this.run("refine", this.prompts.refine, payload, this.refineTimeoutMs, (value) =>
+      validateGuideRefineResult(value, execution),
+    )
   }
 
   async optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult> {
@@ -734,12 +800,14 @@ export class CopilotGuideProvider implements GuideProvider {
     if (!status.isFile() || status.isSymbolicLink()) {
       throw new GuideModelCapabilityError(`Prompt Master SKILL.md is not a regular file: ${skillDirectory}`)
     }
+    const { goalExecution, ...plainInput } = input
+    const payload = goalExecution === undefined ? input : { ...plainInput, ...goalModelContext(goalExecution) }
     return this.run(
       "optimize",
       this.prompts.optimize,
-      input,
+      payload,
       this.optimizeTimeoutMs,
-      (value) => validateGuideOptimizeResult(value, input.candidates.length),
+      (value) => validateGuideOptimizeResult(value, input.candidates.length, goalExecution),
       { message: promptMasterMessage, skillDirectory },
     )
   }
@@ -841,19 +909,7 @@ export class CopilotGuideProvider implements GuideProvider {
     try {
       await client.start()
       const models = await client.listModels()
-      const modelInfo = models.find((candidate) => candidate.id === config.model)
-      if (modelInfo === undefined) {
-        throw new GuideModelCapabilityError(`model is not available: ${config.model}`)
-      }
-      if (!modelInfo.capabilities.supports.reasoningEffort) {
-        throw new GuideModelCapabilityError(`model does not support reasoning effort: ${config.model}`)
-      }
-      const supportedEfforts = modelInfo.supportedReasoningEfforts ?? []
-      if (!supportedEfforts.includes(config.effort)) {
-        throw new GuideModelCapabilityError(
-          `model does not support effort "${config.effort}": ${config.model} supports: ${supportedEfforts.join(", ") || "(none)"}`,
-        )
-      }
+      assertGuideModelCapability(models, config)
 
       const sessionConfig = this.sessionConfig(phase, systemPrompt, options)
       session = await client.createSession(sessionConfig)

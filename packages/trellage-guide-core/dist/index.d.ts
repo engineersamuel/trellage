@@ -19,6 +19,11 @@ export interface ProfileGuideWorkflow {
     readonly examples: ReadonlyArray<string>;
     readonly promptTemplate: string;
 }
+export type ProfileGuideGoalController = "codex-goal" | "claude-goal" | "graph-of-loops";
+export interface ProfileGuideGoalExecution {
+    readonly controller: ProfileGuideGoalController;
+    readonly workflowIds: ReadonlyArray<string>;
+}
 export interface ProfileGuideV1 {
     readonly schemaVersion: 1;
     readonly capabilities: ReadonlyArray<string>;
@@ -26,6 +31,7 @@ export interface ProfileGuideV1 {
     readonly avoidFor: ReadonlyArray<string>;
     readonly prerequisites: ReadonlyArray<ProfileGuidePrerequisite>;
     readonly workflows: ReadonlyArray<ProfileGuideWorkflow>;
+    readonly goalExecution?: ProfileGuideGoalExecution;
 }
 export interface ProfileGuideDocument {
     readonly guide: ProfileGuideV1;
@@ -45,6 +51,9 @@ export declare class ProfileGuideValidationError extends Error {
     constructor(path: string, message: string);
 }
 export declare const isLaunchAgentIdentifier: (value: string) => boolean;
+export declare const isProfileGuideGoalController: (value: unknown) => value is ProfileGuideGoalController;
+/** Shared binding rules for authored guides and their independently validated JSON projections. */
+export declare const profileGuideGoalExecutionProblem: (execution: ProfileGuideGoalExecution, guideWorkflows: ReadonlyArray<ProfileGuideWorkflow>, identity?: ProfileGuideIdentity, harness?: string) => string | undefined;
 export declare const parseProfileGuide: (path: string, source: string) => ProfileGuideDocument;
 export declare const profileGuideIdentityKey: (identity: ProfileGuideIdentity) => string;
 export declare const profileGuideRelativePath: (identity: ProfileGuideIdentity) => string;

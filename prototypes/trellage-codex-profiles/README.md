@@ -133,6 +133,14 @@ skills are counted only beneath the selected plugin's validated cache paths.
 For skill-only profiles, the package count comes from the cataloged managed
 skills. Unrelated marketplace caches are never scanned.
 
+`cdx inventory PROFILE --goal-features` returns the Codex feature table with
+the same managed home, project-trust overrides, and profile config overrides
+as `cdx PROFILE`. Unlike a bare `codex features list`, this query includes
+project configuration that the launcher trusts. It does not run setup,
+repair, doctor, or a session, and it writes no settings or trust. Goal
+readiness requires this read-only adapter; an older installed launcher that
+does not support it reports unknown readiness and blocks goal startup.
+
 After installing the native launchers and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
 harness/profile picker. Remaining arguments are forwarded to `cdx` unchanged
