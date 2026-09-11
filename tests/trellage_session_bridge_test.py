@@ -609,6 +609,44 @@ class TrellageConversationBridgeTest(unittest.TestCase):
         result = self.export("codex")
         self.assertEqual([message["text"] for message in result["messages"]], ["human question", "Codex answer"])
 
+    def test_codex_discards_response_stranded_before_compaction_accounting(self):
+        self.write_transcript("codex", [
+            {"type": "response_item", "payload": {"type": "message", "role": "user",
+             "internal_chat_message_metadata_passthrough": {"content_item_kinds": ["user.text"]},
+             "content": [{"type": "input_text", "text": "question"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+             "phase": "final_answer", "content": [{"type": "output_text", "text": "private"}]}},
+            {"type": "token_usage_record", "payload": {"input_tokens": 1, "output_tokens": 1}},
+            {"type": "event_msg", "payload": {"type": "token_count", "total": 2}},
+            {"type": "compacted", "payload": {"type": "context_compacted"}},
+        ])
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "no unambiguous completed"):
+            self.export("codex")
+
+    def test_codex_preserves_response_after_visible_completion_before_compaction(self):
+        self.write_transcript("codex", [
+            {"type": "response_item", "payload": {"type": "message", "role": "user",
+             "internal_chat_message_metadata_passthrough": {"content_item_kinds": ["user.text"]},
+             "content": [{"type": "input_text", "text": "question"}]}},
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+             "phase": "final_answer", "content": [{"type": "output_text", "text": "visible"}]}},
+            {"type": "event_msg", "payload": {"type": "task_complete"}},
+            {"type": "token_usage_record", "payload": {"input_tokens": 1, "output_tokens": 1}},
+            {"type": "compacted", "payload": {"type": "context_compacted"}},
+        ])
+        self.assertEqual([message["text"] for message in self.export("codex")["messages"]], ["question", "visible"])
+
+    def test_codex_does_not_promote_pending_event_answer_across_compaction(self):
+        self.write_transcript("codex", [
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "question"}},
+            {"type": "event_msg", "payload": {"type": "agent_message", "message": "private"}},
+            {"type": "token_usage_record", "payload": {"input_tokens": 1, "output_tokens": 1}},
+            {"type": "event_msg", "payload": {"type": "token_count", "total": 2}},
+            {"type": "compacted", "payload": {"type": "context_compacted"}},
+        ])
+        with self.assertRaisesRegex(BRIDGE.BridgeError, "no unambiguous completed"):
+            self.export("codex")
+
     def test_codex_legacy_answer_waits_for_task_completion(self):
         self.write_transcript("codex", [
             {"type": "response_item", "payload": {"type": "message", "role": "user",
@@ -687,12 +725,56 @@ class TrellageConversationBridgeTest(unittest.TestCase):
         ])
         self.assertEqual([entry["text"] for entry in self.export("claude")["messages"]], ["question", "answer"])
 
-    def test_rejects_control_characters_in_visible_messages(self):
+    def test_sanitizes_control_characters_and_credentials_in_visible_messages(self):
         records = self.copilot_turns()
-        records[0]["data"]["content"] = "question\x1b[31m"
+        records[0]["data"]["content"] = "question\x1b[31m ghp_" + "abcdefghijklmnopqrstuvwxyz1234"
         self.write_transcript(records=records)
-        with self.assertRaisesRegex(BRIDGE.BridgeError, "unsupported control characters"):
-            self.export()
+        result = self.export()
+        self.assertEqual(result["messages"][0]["text"], "question [REDACTED credential]")
+        self.assertIn("Conversation credentials were redacted.", result["coverage"]["notices"])
+        self.assertIn("Terminal control sequences were removed.", result["coverage"]["notices"])
+
+    def test_export_never_persists_raw_credentials_or_controls(self):
+        records = self.copilot_turns()
+        records[0]["data"]["content"] = 'password="Abcd12345678!rest"\x1b]8;;https://secret.example\x07link'
+        records[1]["data"]["content"] = "-----BEGIN " + "PRIVATE KEY-----secret-----END PRIVATE KEY-----"
+        self.write_transcript(records=records)
+        result = self.export()
+        encoded = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("Abcd12345678", encoded)
+        self.assertNotIn("BEGIN " + "PRIVATE KEY", encoded)
+        self.assertNotIn("\x1b", encoded)
+
+    def test_export_redacts_escaped_quote_credentials_without_suffix_leaks(self):
+        records = self.copilot_turns()
+        records[0]["data"]["content"] = 'password="short\\"secretpasswordvalue-longprefix"'
+        self.write_transcript(records=records)
+        text = self.export()["messages"][0]["text"]
+        self.assertNotIn("secretpasswordvalue", text)
+        self.assertIn("[REDACTED credential]", text)
+
+    def test_export_preserves_nfkc_sensitive_prose_while_redacting_projected_tokens(self):
+        records = self.copilot_turns()
+        records[0]["data"]["content"] = "Use ﬀ as key; label ①; 令牌ghp_" + "abcdefghijklmnopqrstuvwxyz1234"
+        self.write_transcript(records=records)
+        text = self.export()["messages"][0]["text"]
+        self.assertIn("ﬀ", text)
+        self.assertIn("①", text)
+        self.assertIn("令牌[REDACTED credential]", text)
+
+    def test_export_redacts_assignments_adjacent_to_unicode_prose(self):
+        records = self.copilot_turns()
+        records[0]["data"]["content"] = '设置password="secretpasswordvalue" 和api_key=anothersecretvalue'
+        self.write_transcript(records=records)
+        self.assertEqual(self.export()["messages"][0]["text"],
+                         '设置password="[REDACTED credential]" 和api_key=[REDACTED credential]')
+
+    def test_internal_origin_cannot_be_overridden_by_public_source(self):
+        records = self.copilot_turns()
+        records.insert(1, {"type": "assistant.message", "origin": "internal",
+                           "data": {"source": "cli", "phase": "final_answer", "content": "private handoff"}})
+        self.write_transcript(records=records)
+        self.assertEqual([message["text"] for message in self.export()["messages"]], ["goal", "answer"])
 
     def test_preserves_repeated_human_text_and_deduplicates_only_event_identity(self):
         records = self.copilot_turns(2)

@@ -23,6 +23,8 @@ enum FixtureMode {
   Clarification = "clarification",
   NoAction = "no-action",
   LongEvidence = "long-evidence",
+  ManyMessages = "many-messages",
+  RedactedMessages = "redacted-messages",
   LongPrompt = "long-prompt",
   DirtySource = "dirty-source",
 }
@@ -56,6 +58,32 @@ if (mode === "long-evidence") initial = {
       text: ["LONG EVIDENCE START", ...Array.from({ length: 120 }, (_, n) => "Synthetic evidence line " + (n + 1)), "LONG EVIDENCE END"].join("\\n"),
     } : message),
   },
+}
+if (mode === "many-messages") initial = {
+  ...initial,
+  snapshot: {
+    ...initial.snapshot,
+    cutoff: { ...initial.snapshot.cutoff, messageId: "message-30", recordIndex: 30 },
+    messages: Array.from({ length: 30 }, (_, index) => ({
+      ...initial.snapshot.messages[index % initial.snapshot.messages.length],
+      id: "message-" + (index + 1), recordIndex: index + 1,
+      role: index % 2 === 0 ? "user" : "assistant",
+      text: "Message body " + (index + 1),
+    })),
+  },
+}
+if (mode === "redacted-messages") {
+  const credential = ["gh", "p_", "runtimeSyntheticCredentialValue123456"].join("")
+  const control = String.fromCodePoint(0x202e)
+  initial = {
+    ...initial,
+    snapshot: {
+      ...initial.snapshot,
+      messages: initial.snapshot.messages.map((message, index) => index === 0
+        ? { ...message, text: "api_key=" + credential + " " + control + "visible text" }
+        : message),
+    },
+  }
 }
 if (mode === "long-prompt") initial = {
   ...initial,
@@ -186,6 +214,10 @@ const createTerminal = async (onTestFailed: TestContext["onTestFailed"]) => {
   }
   return {
     press,
+    resize: (columns: number, rows: number): void => {
+      terminal.resize(columns, rows)
+      child?.resize(columns, rows)
+    },
     waitForText,
     events,
     text: () => screen,
@@ -262,6 +294,7 @@ const it = test.extend<{ ui: ContinuationTerminal }>({
 const enter = "\r"
 const escape = "\u001b"
 const down = "\u001b[B"
+const up = "\u001b[A"
 const right = "\u001b[C"
 const home = "\u001b[H"
 const end = "\u001b[F"
@@ -469,6 +502,102 @@ it("pages through complete evidence in a small terminal with bounded scrollback"
   expect(report.draft.snapshot.messages[1]?.text).toContain("LONG EVIDENCE START")
   expect(report.draft.snapshot.messages[1]?.text).toContain("LONG EVIDENCE END")
   expect(report.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Analyze)).toBe(false)
+})
+
+it("opens the full message browser, keeps the sidebar fixed while reading, and returns without effects", async ({ ui }) => {
+  await ui.start(FixtureMode.LongEvidence, 110, 24)
+  await ui.pressAndWait("r", "Continuation assessment")
+  await ui.pressAndWait("t", "Messages 1 of 2", "MESSAGES", "user")
+  expect(ui.text()).toContain("Make the synthetic export reliable.")
+  await ui.pressAndWait(right, "Messages 2 of 2", "assistant")
+  await ui.pressAndWait(end, "LONG EVIDENCE END", "assistant")
+  await ui.pressAndWait(home, "Lines 1-", "assistant")
+  ui.press("\u001b[6~")
+  await vi.waitFor(() => expect(ui.text()).not.toContain("Lines 1-"))
+  expect(ui.text()).toContain("Messages 2 of 2")
+  await ui.pressAndWait("\u001b[5~", "Lines 1-", "assistant")
+  await ui.pressAndWait(escape, "Continuation assessment")
+  const report = await ui.finish()
+  expect(report.events.filter(({ kind }) => kind !== ContinuationFixtureEventKind.Input)).toEqual([])
+  expect(report.draft.snapshot.messages[1]?.text).toContain("LONG EVIDENCE START")
+})
+
+it("keeps the selected role and message navigation usable in a narrow terminal", async ({ ui }) => {
+  await ui.start(FixtureMode.LongEvidence, 58, 19)
+  await ui.pressAndWait("r", "Continuation assessment")
+  await ui.pressAndWait("t", "Messages 1 of 2", "Message 1 of 2", "user")
+  await ui.pressAndWait("j", "Messages 2 of 2", "assistant")
+  await ui.pressAndWait("k", "Messages 1 of 2", "user")
+  await ui.pressAndWait("}", "Messages 2 of 2", "assistant")
+  await ui.pressAndWait(escape, "Continuation assessment")
+  const report = await ui.finish()
+  expect(report.events.filter(({ kind }) => kind !== ContinuationFixtureEventKind.Input)).toEqual([])
+})
+
+it("keeps message text reachable in a short terminal", async ({ ui }) => {
+  await ui.start(FixtureMode.LongEvidence, 58, 12)
+  await ui.pressAndWait("t", "Messages 1 of 2")
+  await ui.pressAndWait("]", "Messages 2 of 2")
+  await ui.pressAndWait(end, "LONG EVIDENCE END")
+  await ui.pressAndWait(home, "LONG EVIDENCE START")
+  expect(ui.text().split("\n")).toHaveLength(12)
+  const report = await ui.finish()
+  expect(report.events.filter(({ kind }) => kind !== ContinuationFixtureEventKind.Input)).toEqual([])
+})
+
+it("keeps first and last selections visible with more messages than the sidebar", async ({ ui }) => {
+  await ui.start(FixtureMode.ManyMessages, 110, 24)
+  await ui.pressAndWait("r", "Continuation assessment")
+  await ui.pressAndWait("t", "Messages 1 of 30", ">   1 user")
+  await ui.pressAndWait(down, "Messages 2 of 30", ">   2 assistant", "Message body 2")
+  await ui.pressAndWait("j", "Messages 3 of 30", ">   3 user", "Message body 3")
+  await ui.pressAndWait(up, "Messages 2 of 30", ">   2 assistant")
+  await ui.pressAndWait("k", "Messages 1 of 30", ">   1 user")
+  await ui.pressAndWait("}", "Messages 30 of 30", ">  30 assistant")
+  await ui.pressAndWait("{", "Messages 1 of 30", ">   1 user")
+  const report = await ui.finish()
+  expect(report.events.filter(({ kind }) => kind !== ContinuationFixtureEventKind.Input)).toEqual([])
+})
+
+it("preserves each message scroll position across navigation and terminal resize", async ({ ui }) => {
+  await ui.start(FixtureMode.LongEvidence, 110, 24)
+  await ui.pressAndWait("r", "Continuation assessment")
+  await ui.pressAndWait("t", "Messages 1 of 2", "MESSAGES")
+  await ui.pressAndWait("]", "Messages 2 of 2", "assistant")
+  await ui.pressAndWait(end, "LONG EVIDENCE END")
+  ui.resize(58, 19)
+  await ui.waitForText("Messages 2 of 2", "assistant")
+  ui.resize(110, 24)
+  await ui.waitForText("Messages 2 of 2", "MESSAGES")
+  await ui.pressAndWait("[", "Messages 1 of 2", "user")
+  await ui.pressAndWait("]", "Messages 2 of 2", "LONG EVIDENCE END")
+  const report = await ui.finish()
+  expect(report.events.filter(({ kind }) => kind !== ContinuationFixtureEventKind.Input)).toEqual([])
+})
+
+it("opens the full browser from filtered Evidence and preserves both return levels", async ({ ui }) => {
+  await ui.start(FixtureMode.Resume, 110, 24)
+  await ui.pressAndWait("r", "Continuation assessment")
+  await ui.pressAndWait("v", "Evidence 1 of 2")
+  await ui.pressAndWait("t", "Messages 1 of 2", "MESSAGES")
+  await ui.pressAndWait(escape, "Evidence 1 of 2", "message-1")
+  await ui.pressAndWait(escape, "Continuation assessment")
+  const report = await ui.finish()
+  expect(report.events.filter(({ kind }) => kind !== ContinuationFixtureEventKind.Input)).toEqual([])
+})
+
+it("redacts credentials and controls in display while preserving the original snapshot", async ({ ui }) => {
+  const credential = ["gh", "p_", "runtimeSyntheticCredentialValue123456"].join("")
+  const control = String.fromCodePoint(0x202e)
+  await ui.start(FixtureMode.RedactedMessages, 110, 24)
+  await ui.pressAndWait("r", "Continuation assessment")
+  await ui.pressAndWait("t", "Messages 1 of 2", "[REDACTED credential]", "visible text")
+  expect(ui.text()).not.toContain(credential)
+  expect(ui.text()).not.toContain(control)
+  const report = await ui.finish()
+  expect(report.draft.snapshot.messages[0]?.text).toContain(credential)
+  expect(report.draft.snapshot.messages[0]?.text).toContain(control)
+  expect(report.events.filter(({ kind }) => kind !== ContinuationFixtureEventKind.Input)).toEqual([])
 })
 
 it("views and edits a long full prompt while keeping the keyboard cursor in view", async ({ ui }) => {

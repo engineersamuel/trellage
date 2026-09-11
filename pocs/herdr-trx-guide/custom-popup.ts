@@ -4,15 +4,18 @@ import readline from "node:readline"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { readClipboard } from "./lib/clipboard.ts"
+import { readClipboard, readClipboardAsync } from "./lib/clipboard.ts"
 import { inspectCaptureOptions, selectedTextChoice } from "./lib/capture-options.ts"
-import { focusedConversationChoice } from "./lib/conversation-capture.ts"
-import { removeConversationChoice, writeConversationChoice } from "./lib/conversation-state.ts"
+import {
+  captureContextMenuRequest,
+  type ContextMenuRequest,
+} from "./lib/context-menu.ts"
 import {
   panelInvocationSource,
   parseCustomPopupContext,
   validateAnswer,
 } from "./lib/context.ts"
+import { invokeContextMenuChoice } from "./context-menu-action.ts"
 import { requestHerdr } from "./lib/herdr.ts"
 import {
   captureQueueIntent,
@@ -27,7 +30,17 @@ import { stringWidth, truncateToWidth, wrapText } from "./lib/terminal-text.ts"
 
 export { panelInvocationSource }
 const actionId = "trellage.guide-handoff.open"
-const conversationActionId = "trellage.guide-handoff.analyze-conversation"
+
+export const contextMenuSourceChoice = (request: ContextMenuRequest) => ({
+  kind: "rewrite",
+  label: "Rewrite output",
+  detail: request.kind === "rewrite-output"
+    ? `Rewrite the latest ${request.message?.source === "transcript" ? `${request.message?.role ?? "harness"} message from this conversation` : `visible ${request.message?.role ?? "harness"} message`} in a Herdr popup.`
+    : request.error?.message ?? "The active pane has no rewriteable harness or system message.",
+  preview: request.message?.text ?? request.error?.message ?? "No harness or system message is available.",
+  disabled: request.kind !== "rewrite-output",
+  request,
+})
 
 const out = (stream, value) => stream.write(value)
 
@@ -46,7 +59,8 @@ const selectionFromClipboard = (clipboard) => {
   }
 }
 
-export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueue) => [
+export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueue, rewriteChoice) => [
+  ...(rewriteChoice === undefined ? [] : [rewriteChoice]),
   ...(selectedText === undefined ? [] : [selectedTextChoice(selectedText)]),
   ...inspectedChoices,
   ...(captureQueue?.entries.length > 0
@@ -56,11 +70,26 @@ export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueu
         detail: "Opens all queued items in trx guide, then clears this capture queue.",
         preview: captureQueueIntent(captureQueue),
       }]
-    : []),
+  : []),
 ]
+
+export const initialSourceChoiceIndex = (choices) => {
+  const existingChoice = choices.findIndex((choice) => choice.kind !== "rewrite")
+  return existingChoice < 0 ? 0 : existingChoice
+}
 
 export const sourcePickerStatus = (initialStatus, notes, selectionError) =>
   initialStatus || notes.join(" ") || selectionError || ""
+
+export const sourceChoiceIdentity = (choice) => {
+  if (choice.kind === "selection") return "selection"
+  if (choice.kind === "queue") return "queue"
+  if (choice.kind === "rewrite") return "rewrite"
+  return `${choice.kind}:${choice.paneId ?? ""}:${choice.sessionId ?? ""}:${choice.stateChangeSeq ?? ""}`
+}
+
+export const sourcePickerHeader = (context) =>
+  `TRX actions · ${context.agent ?? "agent"} · ${context.paneId} · ${path.basename(context.cwd) || context.cwd}`
 
 export const captureQueueEntryLabel = (entry, index) => {
   const source =
@@ -101,39 +130,7 @@ const popupFooter = ({ busy, status, screen, queueOnly, choices }) => {
       ? "Enter open queue  x remove selected  c clear  q/Esc close"
       : "Enter open queue  x remove selected  c clear  a add another  b back  q/Esc close"
   }
-  if (choices.length === 0) return status || "Esc cancel"
   return "Enter open  a add selected  e edit queue  x clear queue  q/Esc close"
-}
-
-export const invokeConversationChoice = async ({
-  choice,
-  operation = "open",
-  context,
-  stateDir,
-  request = requestHerdr,
-  choiceWriter = writeConversationChoice,
-  choiceRemover = removeConversationChoice,
-}) => {
-  if (operation !== "open" || choice.disabled || choice.binding === undefined) {
-    throw new Error("Conversation analysis is available only for an explicit supported focused source; it cannot be queued.")
-  }
-  const token = await choiceWriter(stateDir, choice.binding)
-  try {
-    await request("plugin.action.invoke", {
-      action_id: conversationActionId,
-      context: {
-        workspace_id: context.workspaceId,
-        ...(context.tabId === undefined ? {} : { tab_id: context.tabId }),
-        focused_pane_id: context.paneId,
-        focused_pane_cwd: context.cwd,
-        invocation_source: panelInvocationSource,
-        selected_text: token,
-      },
-    })
-  } catch (error) {
-    await choiceRemover(stateDir, token)
-    throw error
-  }
 }
 
 export const invokeGuideChoice = async ({
@@ -145,9 +142,6 @@ export const invokeGuideChoice = async ({
   choiceWriter = writeChoice,
   choiceRemover = removeChoice,
 }) => {
-  if (choice.kind === "next-steps") {
-    return invokeConversationChoice({ choice, operation, context, stateDir, request })
-  }
   const choiceToken = await choiceWriter(
     stateDir,
     choice.kind === "queue"
@@ -197,29 +191,25 @@ export const main = async ({
   clipboardReader = readClipboard,
   request = requestHerdr,
   captureInspector = inspectCaptureOptions,
-  conversationInspector = focusedConversationChoice,
+  contextMenuCapture = captureContextMenuRequest,
+  queueReader = readCaptureQueue,
   initialStatus = "",
 } = {}) => {
   if (!input.isTTY || !output.isTTY) throw new Error("The guide source picker requires a terminal")
   const context = providedContext ?? parseCustomPopupContext(env)
   const stateDir = resolvePluginStateDirectory(env)
-  const conversationOption = queueOnly ? undefined : await conversationInspector(context, { env })
-  const selection = queueOnly ? {} : selectionFromClipboard(clipboardReader())
-  let captureQueue = await readCaptureQueue(stateDir)
+  let rewriteChoice
+  let selection = {}
+  let captureQueue = { schemaVersion: 1, entries: [] }
   let inspected = { choices: [], notes: [] }
-  if (!queueOnly) {
-    try {
-      inspected = await captureInspector(context)
-    } catch (error) {
-      inspected = { choices: [], notes: [error instanceof Error ? error.message : String(error)] }
-    }
-    if (conversationOption !== undefined) inspected.choices.unshift(conversationOption)
-  }
-  let choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
-  let selectedIndex = 0
+  let choices = []
+  let selectedIndex = initialSourceChoiceIndex(choices)
   let queueIndex = 0
   let screen = initialScreen
   let status = sourcePickerStatus(initialStatus, inspected.notes, selection.error)
+  const loading = new Set(["queue", ...(queueOnly ? [] : ["rewrite", "clipboard", "sources"])])
+  const sourceErrors = new Map()
+  const pendingQueueKeys = []
   let busy = false
   let finished = false
   let resolveRun
@@ -232,6 +222,7 @@ export const main = async ({
   }
 
   const render = () => {
+    if (finished) return
     const columns = Math.max(40, output.columns || 86)
     const rows = Math.max(14, output.rows || 18)
     const left = 3
@@ -243,9 +234,13 @@ export const main = async ({
     }))
     const visibleSet = screen === "queue" ? queueChoices : choices
     const activeIndex = screen === "queue" ? queueIndex : selectedIndex
-    const optionRows = Math.max(2, Math.min(6, visibleSet.length || 2))
-    const optionStart = rows - optionRows - 2
-    const previewRows = Math.max(2, optionStart - 7)
+    const sourceRows = ["queue", "clipboard", "sources", "rewrite"].filter(name => loading.has(name) || sourceErrors.has(name))
+    const statusRow = 4 + sourceRows.length
+    const previewHeading = statusRow + (status ? 1 : 0)
+    const previewStart = previewHeading + 1
+    const optionRows = Math.max(1, Math.min(6, visibleSet.length || 1, rows - previewStart - 3))
+    const optionStart = rows - optionRows - 1
+    const previewRows = Math.max(0, optionStart - previewStart - 1)
     const selected = visibleSet[activeIndex]
     const wrappedPreview = wrapText(
       selected?.preview ?? "No usable source is available. Highlight text or wait for an agent to finish.",
@@ -259,15 +254,19 @@ export const main = async ({
     const visibleChoices = visibleSet.slice(firstOption, firstOption + optionRows)
 
     out(output, "\x1b[2J\x1b[H\x1b[?25l")
-    writeAt(2, left, `\x1b[1m${screen === "queue" ? "Edit capture queue" : "Send to Trellage guide"}\x1b[0m`)
-    writeAt(3, left, `\x1b[2m${clipped(selected?.detail ?? status, width)}\x1b[0m`)
-    if (status) writeAt(4, left, `\x1b[33m${clipped(status, width)}\x1b[0m`)
-    writeAt(5, left, "\x1b[1mPreview\x1b[0m")
-    preview.forEach((line, index) => {
-      writeAt(6 + index, left, `\x1b[2m${clipped(line, width)}\x1b[0m`)
+    writeAt(2, left, `\x1b[1m${clipped(sourcePickerHeader(context), width)}\x1b[0m`)
+    writeAt(3, left, `\x1b[2m${clipped(screen === "queue" ? "Edit capture queue" : selected?.detail ?? status, width)}\x1b[0m`)
+    sourceRows.forEach((name, index) => {
+      if (loading.has(name)) writeAt(4 + index, left, `\x1b[36m${name}: loading…\x1b[0m`)
+      else if (sourceErrors.has(name)) writeAt(4 + index, left, `\x1b[33m${clipped(sourceErrors.get(name), width)}\x1b[0m`)
     })
-    if (wrappedPreview.length > previewRows) {
-      writeAt(5 + previewRows, left + Math.max(0, width - 3), "\x1b[2m...\x1b[0m")
+    if (status) writeAt(statusRow, left, `\x1b[33m${clipped(status, width)}\x1b[0m`)
+    writeAt(previewHeading, left, "\x1b[1mPreview\x1b[0m")
+    preview.forEach((line, index) => {
+      writeAt(previewStart + index, left, `\x1b[2m${clipped(line, width)}\x1b[0m`)
+    })
+    if (previewRows > 0 && wrappedPreview.length > previewRows) {
+      writeAt(previewStart + previewRows - 1, left + Math.max(0, width - 3), "\x1b[2m...\x1b[0m")
     }
 
     visibleChoices.forEach((choice, visibleIndex) => {
@@ -280,6 +279,65 @@ export const main = async ({
 
     const footer = popupFooter({ busy, status, screen, queueOnly, choices })
     writeAt(rows, left, `\x1b[2m${clipped(footer, width)}\x1b[0m`)
+  }
+
+  const refreshChoices = () => {
+    const selectedKey = sourceChoiceIdentity(choices[selectedIndex] ?? {})
+    choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice)
+    const nextIndex = choices.findIndex((choice) => sourceChoiceIdentity(choice) === selectedKey)
+    selectedIndex = nextIndex >= 0 ? nextIndex : initialSourceChoiceIndex(choices)
+  }
+
+  const finishSource = (name) => {
+    loading.delete(name)
+    render()
+    if (name === "queue" && pendingQueueKeys.length > 0) {
+      const queued = pendingQueueKeys.splice(0)
+      for (const [text, key] of queued) onQueueKeypress(text, key)
+    }
+  }
+
+  const loadSources = async () => {
+    const run = async (name, read, apply) => {
+      try {
+        const value = await read()
+        if (finished) return
+        apply(value)
+      } catch (error) {
+        if (finished) return
+        const message = error instanceof Error ? error.message : String(error)
+        sourceErrors.set(name, `${name}: ${message}`)
+        status = sourcePickerStatus(status, [], "")
+      } finally {
+        if (!finished) finishSource(name)
+      }
+    }
+    const tasks = [
+      run("queue", () => queueReader(stateDir), (value) => {
+        captureQueue = value
+        refreshChoices()
+      }),
+    ]
+    if (!queueOnly) {
+      tasks.push(
+        run("clipboard", async () => selectionFromClipboard(await Promise.resolve(clipboardReader === readClipboard ? readClipboardAsync() : clipboardReader())), (value) => {
+          selection = value
+          if (value.error) sourceErrors.set("clipboard", `clipboard: ${value.error}`)
+          refreshChoices()
+        }),
+        run("sources", () => captureInspector(context), (value) => {
+          if (value.notes?.length) sourceErrors.set("sources", `sources: ${value.notes.join(" ")}`)
+          inspected = { ...value, choices: [...value.choices] }
+          refreshChoices()
+        }),
+        run("rewrite", () => contextMenuCapture({ context, env }), (value) => {
+          rewriteChoice = contextMenuSourceChoice(value)
+          if (rewriteChoice.disabled) sourceErrors.set("rewrite", `rewrite: ${rewriteChoice.detail}`)
+          refreshChoices()
+        }),
+      )
+    }
+    await Promise.allSettled(tasks)
   }
 
   const cleanup = () => {
@@ -322,12 +380,12 @@ export const main = async ({
       return
     }
     try {
-      await invokeGuideChoice({
-        choice,
-        context,
-        stateDir,
-        request,
-      })
+      if (choice.kind === "rewrite") {
+        if (choice.request === undefined) throw new Error(choice.detail)
+        await invokeContextMenuChoice({ request: choice.request, context, stateDir, herdr: request })
+      } else {
+        await invokeGuideChoice({ choice, context, stateDir, request })
+      }
       exit(0)
     } catch (error) {
       busy = false
@@ -339,7 +397,7 @@ export const main = async ({
   const enqueueSelectedChoice = async () => {
     if (busy) return
     const choice = choices[selectedIndex]
-    if (choice === undefined || choice.kind === "queue" || choice.kind === "next-steps") {
+    if (choice === undefined || choice.kind === "queue" || choice.kind === "rewrite") {
       status = "Choose highlighted text, an exact result, or a terminal snapshot to add"
       render()
       return
@@ -351,7 +409,7 @@ export const main = async ({
       const previousLength = captureQueue.entries.length
       await invokeGuideChoice({ choice, operation: "enqueue", context, stateDir, request })
       captureQueue = await waitForCaptureQueueGrowth(stateDir, previousLength)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice)
       selectedIndex = choices.findIndex((candidate) => candidate.kind === "queue")
       busy = false
       status = `Added. ${captureQueue.entries.length} item${captureQueue.entries.length === 1 ? "" : "s"} queued. Enter opens the queue.`
@@ -401,7 +459,7 @@ export const main = async ({
     render()
     try {
       captureQueue = await removeCaptureQueueEntry(stateDir, entry.id)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice)
       queueIndex = Math.min(queueIndex, Math.max(0, captureQueue.entries.length - 1))
       busy = false
       status = `${captureQueue.entries.length} item${captureQueue.entries.length === 1 ? "" : "s"} queued`
@@ -426,8 +484,8 @@ export const main = async ({
     try {
       await clearCaptureQueue(stateDir)
       captureQueue = await readCaptureQueue(stateDir)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue)
-      selectedIndex = 0
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice)
+      selectedIndex = initialSourceChoiceIndex(choices)
       queueIndex = 0
       busy = false
       status = "Capture queue cleared"
@@ -453,6 +511,12 @@ export const main = async ({
   input.setRawMode(true)
   input.resume()
   const onQueueKeypress = (text, key) => {
+    if (loading.has("queue")) {
+      pendingQueueKeys.push([text, key])
+      status = "Loading capture queue…"
+      render()
+      return
+    }
     if (key.name === "x") {
       void removeSelectedQueuedChoice()
       return
@@ -502,9 +566,9 @@ export const main = async ({
   }
 
   const onKeypress = (text, key) => {
-    if (busy) return
     if (key.ctrl && key.name === "c") return exit(0)
     if (key.name === "escape" || key.name === "q") return exit(0)
+    if (busy) return
     if (screen === "queue") onQueueKeypress(text, key)
     else onSourceKeypress(text, key)
   }
@@ -512,12 +576,13 @@ export const main = async ({
 
   out(output, "\x1b[?1049h")
   render()
+  void loadSources()
   return result
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    process.exitCode = await main()
+    process.exit(await main())
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`Trellage guide source picker failed: ${message}`)

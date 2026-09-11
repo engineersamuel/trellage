@@ -13,6 +13,7 @@ const commandOutputLimitBytes = 1024 * 1024
 const forcedKillDelayMs = 1000
 const guideCaptureSources: ReadonlyArray<GuideCaptureSource> = [
   "selection",
+  "conversation-transcript",
   "transcript",
   "sandbox-transcript",
   "terminal",
@@ -50,7 +51,13 @@ export type HerdrPromptDeliveryMode = "command" | "agent" | "manual"
 export type HerdrAgentStatus = "idle" | "working" | "blocked" | "done" | "unknown"
 export type HerdrSplitDirection = "right" | "down"
 export type HerdrInvocationSurface = "pane" | "popup"
-export type GuideCaptureSource = "selection" | "transcript" | "sandbox-transcript" | "terminal" | "capture-queue"
+export type GuideCaptureSource =
+  | "selection"
+  | "conversation-transcript"
+  | "transcript"
+  | "sandbox-transcript"
+  | "terminal"
+  | "capture-queue"
 export type GuideCaptureConfidence = "user-selected" | "exact" | "snapshot" | "user-curated"
 export type GuideLaunchErrorKind = "blocked" | "timeout" | "startup" | "invalid-output"
 export type WorktreeCollisionKind = "branch-exists" | "branch-active" | "path-active"

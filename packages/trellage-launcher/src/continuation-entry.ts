@@ -76,7 +76,7 @@ export const openContinuationRequest = async (options: {
     throw new Error("--next-steps requires the focused-pane Herdr popup context.")
   }
   if (options.requestPath === undefined || !path.isAbsolute(options.requestPath)) {
-    throw new Error("Choose Analyze conversation for next steps in prefix+ctrl+b. A private request is required.")
+    throw new Error("--next-steps requires a private conversation request.")
   }
   const snapshot = await options.store.consumeRequest(options.requestPath)
   if (

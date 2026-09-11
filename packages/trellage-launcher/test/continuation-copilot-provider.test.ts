@@ -343,8 +343,45 @@ describe("restricted continuation SDK execution", () => {
 })
 
 describe("Copilot continuation model budgets and bounded repair", () => {
+  it("sends only sanitized evidence above 128 KiB when model metadata permits it", async () => {
+    const snapshot = conversationFixture(10, 20_000)
+    const token = "ghp_".concat("synthetic".repeat(4))
+    const supplied = { ...snapshot, messages: snapshot.messages.map((message, index) =>
+      index === 0 ? { ...message, text: `${message.text}\nToken: \u001b[31m${token}\u001b[0m\npassword="short\\"secretpasswordvalue"` } : message) }
+    const client = new FakeClient()
+    client.session.sendBehavior = (session) => session.reply(JSON.stringify(assessmentFixture()))
+    const provider = createCopilotContinuationProvider({
+      model: "fixture-model", effort: "medium", prompts: promises, clientFactory: () => client,
+    })
+
+    await analyzeConversation(supplied, continuationEntries, provider)
+    const prompt = client.session.prompts[0]!
+    expect(Buffer.byteLength(prompt)).toBeGreaterThan(128 * 1024)
+    expect(prompt).not.toContain(token)
+    expect(prompt).not.toContain("secretpasswordvalue")
+    expect(prompt).not.toContain("\\u001b")
+    const sent = JSON.parse(prompt).untrustedData
+    expect(sent.messages).toHaveLength(snapshot.messages.length)
+    expect(sent.messages[0].text).toContain("Token: [REDACTED credential]")
+    expect(sent.snapshot.coverage.notices).toContain("Conversation credentials were redacted.")
+
+    const smaller = new FakeClient()
+    smaller.models = [{ ...availableModel, capabilities: { ...availableModel.capabilities,
+      limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000 } } }]
+    await expect(analyzeConversation(supplied, continuationEntries, createCopilotContinuationProvider({
+      model: "fixture-model", effort: "medium", prompts: promises, clientFactory: () => smaller,
+    }))).rejects.toThrow("Choose a larger-context model")
+    expect(smaller.configs).toHaveLength(0)
+    expect(smaller.session.prompts).toHaveLength(0)
+  })
+
   it("accounts for both metadata limits and output/runtime reserves", () => {
-    expect(continuationModelInputBudget(availableModel)).toBe(continuationPolicy.maxInputBytes)
+    expect(continuationModelInputBudget(availableModel)).toBe(
+      Math.min(
+        availableModel.capabilities.limits.max_prompt_tokens!,
+        availableModel.capabilities.limits.max_context_window_tokens - continuationPolicy.outputReserveTokens,
+      ) - continuationPolicy.runtimeReserveTokens,
+    )
     expect(continuationModelInputBudget({
       ...availableModel,
       capabilities: { ...availableModel.capabilities, limits: { max_context_window_tokens: 100_000, max_prompt_tokens: 70_000 } },
@@ -494,7 +531,7 @@ describe("Copilot continuation model budgets and bounded repair", () => {
         return client
       },
     })
-    const result = analyzeConversation(conversationFixture(30, 6000), continuationEntries, provider, {
+    const result = analyzeConversation(conversationFixture(30, Math.ceil(continuationPolicy.maxInputBytes / 30)), continuationEntries, provider, {
       signal: controller.signal,
       onSummaries: async (summaries) => { saved.push(summaries.length) },
     }).catch((error: unknown) => error)

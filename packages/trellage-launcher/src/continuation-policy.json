@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "maxSnapshotBytes": 33554432,
   "maxMessages": 20000,
-  "maxInputBytes": 131072,
+  "maxInputBytes": 1048576,
   "maxSummaryInputBytes": 65536,
   "maxResponseBytes": 32768,
   "maxSummaryTextBytes": 4096,

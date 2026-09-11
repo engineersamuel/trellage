@@ -404,6 +404,18 @@ describe("capture source presentation", () => {
       detail: "Claude · session 87654321-432 · profile claude-research",
       color: "green",
     })
+    expect(
+      captureSourcePresentation({
+        source: "conversation-transcript",
+        confidence: "exact",
+        agent: "copilot",
+        sessionId: "abcdef12-3456-4789-8123-abcdef123456",
+      }),
+    ).toEqual({
+      label: "Exact conversation transcript",
+      detail: "Copilot · session abcdef12-345",
+      color: "green",
+    })
   })
 })
 

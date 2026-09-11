@@ -603,7 +603,11 @@ const selectGoalProfile = async (
   eligible: ReadonlyArray<FixtureProfileId> = ["planner", "writer"],
 ): Promise<void> => {
   await guide.waitForText("Profile recommendations", `Goal: ${goalCriteria.length} approved criteria`)
-  const current = eligible.findIndex((id) => guide.text().includes(`${fixtureProfile(id).ref} |`))
+  const current = await guide.readScreen((text) => {
+    const index = eligible.findIndex((id) => text.includes(`${fixtureProfile(id).ref} |`))
+    assert(index >= 0)
+    return index
+  })
   const target = eligible.indexOf(selection.profileId)
   assert(current >= 0 && target >= 0)
   const steps = (target - current + eligible.length) % eligible.length

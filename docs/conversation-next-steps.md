@@ -1,6 +1,9 @@
 # Conversation next steps
 
-Status: implemented; see the operating and validation notes below.
+Status: retained continuation implementation notes. The separate analysis
+action and popup have been removed from the Herdr plugin. Use **Open current
+<harness> conversation (9)** in `prefix+ctrl+b`; its message count and preview
+are read afresh on every opening.
 
 ## Purpose
 
@@ -15,7 +18,7 @@ needed, and request clarification rather than invent unsupported actions.
 
 ## Entry point and source
 
-- Add **Analyze conversation for next steps** to `prefix+ctrl+b`.
+- The former analysis action is no longer exposed in `prefix+ctrl+b`.
 - Leave TRX Guide Overlay and the latest-result shortcut unchanged.
 - Bind the source to the pane focused when the popup opens.
 - Use only that pane's exactly identified conversation. Do not offer another
@@ -31,9 +34,20 @@ needed, and request clarification rather than invent unsupported actions.
 ## Conversation snapshot
 
 Include human user messages and completed, user-visible assistant answers.
-Exclude system/developer instructions, reasoning, tool calls and results, and
-nested-agent traffic. Treat transcript content as evidence, not instructions
-that override the analyzer.
+Exclude system/developer instructions, reasoning, commentary, tool calls and
+results, nested-agent traffic, and internal compaction handoffs. Codex can label
+a compaction handoff as a final answer; the exporter excludes that presentation
+when the next substantive record is a compaction marker. A completed turn before
+a later compaction remains conversation evidence. Treat transcript content as
+evidence, not instructions that override the analyzer.
+
+Sanitize the extracted text before saving or exporting the snapshot. Remove
+terminal escape sequences and unsupported controls, and replace recognized
+credentials and private keys with visible redaction markers. Preserve the
+remaining wording and evidence IDs, and disclose sanitization in coverage
+notices. Attachment payloads and injected instruction blocks are excluded.
+Credential recognition is pattern-based; it is not a guarantee that arbitrary
+sensitive prose can be identified.
 
 An active harness may be analyzed without interruption. Capture through the
 last completed assistant response, exclude partial responses, and display the
@@ -70,6 +84,20 @@ analysis, not merely when the source picker opens.
 
 Analysis is cancellable. Disclose additional summarization calls when required
 for long conversations.
+
+The request policy allows up to 1 MiB of UTF-8 input, including the profile
+catalog and prompt reserves. This is a resource ceiling, not a model context
+window. Before sending, check the selected model's advertised prompt and context
+limits with output/runtime reserves, conservatively budgeting one byte per
+token. Models with smaller limits can reject a planned request before inference.
+The larger ceiling applies only to filtered, sanitized conversation evidence;
+raw transcripts are never sent. When summarization is needed, reserve room for
+its output and move older complete turns out of the verbatim tail as necessary,
+preserving the newest user turn and every included evidence ID.
+
+After an exporter update, use **Analyze latest** to recapture an existing draft.
+A saved snapshot cannot recover the raw record metadata needed to distinguish
+an old compaction handoff from a real final answer.
 
 ## Selection and handoff
 
@@ -115,9 +143,20 @@ failure.
 ## Using the feature
 
 Open `prefix+ctrl+b` while the source conversation is focused, then choose
-**Analyze conversation for next steps**. Check the source, cutoff, coverage,
-model, effort, and call estimate before choosing Analyze. Opening the picker,
-review screen, or an existing assessment makes no inference calls.
+**Open current <harness> conversation (9)** to use the regular guide. The
+separate continuation UI described below remains an internal implementation;
+it has no registered Herdr menu action or popup.
+
+Press **t** to view the extracted user messages and final assistant answers.
+Wide terminals show a message index beside the selected message; narrow
+terminals show the full message in a single reading pane. Use **Up/Down** or
+**k/j** to move between messages (**Left/Right** and **[ / ]** also work),
+**{ / }** to jump to the first or last message, **PgUp/PgDn** to scroll,
+and **Home/End** to reach the start or end of the selected message. **Esc**
+returns to the screen you came from. Browsing preserves redaction markers
+and makes no model calls or draft changes. An action's **v Evidence** view
+continues to show its referenced messages; **t** shows the full extracted
+conversation.
 
 Select the useful actions and edit each action's brief, profile, and workflow.
 Preparation generates and optimizes three prompt choices for that action.

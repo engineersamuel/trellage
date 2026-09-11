@@ -99,15 +99,18 @@ const panel = (
     onDiscard,
     ...dimensions,
   }), { columns: dimensions.columns }))
+  const pressRendered = (input: string, key: Partial<Key> = {}) => {
+    handlers.input?.(input, { ...emptyKey, ...key })
+  }
   const press = (input: string, key: Partial<Key> = {}) => {
     screen()
-    handlers.input?.(input, { ...emptyKey, ...key })
+    pressRendered(input, key)
   }
   const paste = (text: string) => {
     screen()
     handlers.paste?.(text)
   }
-  return { state: () => state, screen, press, paste, onAction, onSubmit, onPark, onDiscard, onSetAutoAcceptRecommended }
+  return { state: () => state, screen, press, pressRendered, paste, onAction, onSubmit, onPark, onDiscard, onSetAutoAcceptRecommended }
 }
 
 const readDocument = (ui: ReturnType<typeof panel>, inspect: (screen: string) => void): ReadonlyArray<string> => {
@@ -126,7 +129,7 @@ const readDocument = (ui: ReturnType<typeof panel>, inspect: (screen: string) =>
       document[start - 1 + index] = line.replace(/^ /u, "")
     })
     if (end === Number(range[3])) return document
-    ui.press("", { pageDown: true })
+    ui.pressRendered("", { pageDown: true })
   }
   throw new Error("Could not scroll to the end of the document")
 }

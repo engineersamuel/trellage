@@ -3,6 +3,7 @@ import { lstat, readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 
 export * from "./conversation.js"
+export * from "./conversation-sanitization.js"
 
 export type ProfileGuideIdentity =
   | {

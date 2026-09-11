@@ -189,6 +189,49 @@ are suppressed. An unrelated key dismisses the action row and passes through.
 During loading or result display, unrelated keys pass through. The panel
 dismisses when Kitty or the proven source window loses focus.
 
+## Contextual rewrite menu
+
+Link the Herdr plugin from the parent guide directory, then add this binding
+to `~/.config/herdr/config.toml`:
+
+```toml
+[[keys.command]]
+key = "prefix+ctrl+m"
+type = "plugin_action"
+command = "trellage.guide-handoff.context-menu"
+description = "Open TRX contextual actions"
+```
+
+Reload Herdr after saving the binding. The primary route is `prefix+ctrl+b`:
+open the source picker, which captures the exact active pane once, and choose
+**Rewrite output**. `prefix+ctrl+m` is a direct alias that captures and opens
+the same contextual action popup immediately. The menu reads the latest
+visible harness or system message in that exact pane, lets you choose from the
+[rewrite styles](../README.md) with short descriptions (TL&DR Rundown first), and shows the rewritten Markdown with
+a verified Copy action. The Herdr action refuses a missing, changed,
+truncated, or ambiguous pane context and reports the reason in the popup.
+
+The built-in Ponytail style adapts the terse senior-developer writing guidance
+from [dietrichgebert/ponytail](https://github.com/dietrichgebert/ponytail) and
+keeps the original technical facts, code, and Markdown structure.
+
+Set `TRELLAGE_GUIDE_REWRITE_CONFIG_JSON` in the plugin environment to replace
+the built-in styles or select a model. Each style can provide an absolute
+`skillPath` to a Markdown file or a directory containing `SKILL.md`:
+
+```sh
+export TRELLAGE_GUIDE_REWRITE_CONFIG_JSON='{"styles":[{"id":"plain","title":"Plain English","description":"Short direct sentences.","instruction":"Use short direct sentences and preserve Markdown."},{"id":"my-skill","title":"My skill","description":"Use the local style guide.","skillPath":"/absolute/path/to/style/SKILL.md"}]}'
+```
+
+The `styles` array replaces the defaults; include the built-in styles in the
+array when you want them alongside custom styles.
+
+Build `packages/trellage-launcher` from the same Trellage checkout before
+opening the popup. The plugin passes the private request over a pipe to that
+launcher, so the rewritten message never appears in argv or environment
+variables. The existing selection overlay remains available independently of
+the contextual action menu.
+
 ## Diagnostics
 
 The menu reports:

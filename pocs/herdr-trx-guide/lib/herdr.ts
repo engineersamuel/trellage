@@ -130,6 +130,30 @@ export const readAgent = async (paneId: string, options?: HerdrRequestOptions) =
   return result.read
 }
 
+/** Read only the text currently rendered in the target pane. */
+export const readVisibleAgent = async (paneId: string, options?: HerdrRequestOptions) => {
+  const result = await requestHerdr(
+    "agent.read",
+    { target: paneId, source: "visible", format: "text", strip_ansi: true },
+    options,
+  )
+  if (result.type !== "pane_read" || !isRecord(result.read)) {
+    throw new Error("Herdr agent.read returned an invalid visible result")
+  }
+  const text = result.read.text
+  if (typeof text !== "string") throw new Error("Herdr agent.read returned no visible text")
+  return {
+    paneId: typeof result.read.pane_id === "string" ? result.read.pane_id : undefined,
+    workspaceId: typeof result.read.workspace_id === "string" ? result.read.workspace_id : undefined,
+    tabId: typeof result.read.tab_id === "string" ? result.read.tab_id : undefined,
+    source: typeof result.read.source === "string" ? result.read.source : undefined,
+    format: typeof result.read.format === "string" ? result.read.format : undefined,
+    text,
+    ...(typeof result.read.truncated === "boolean" ? { truncated: result.read.truncated } : {}),
+    ...(typeof result.read.captured_at === "string" ? { capturedAt: result.read.captured_at } : {}),
+  }
+}
+
 export const getProcessInfo = async (paneId: string, options?: HerdrRequestOptions) => {
   const result = await requestHerdr("pane.process_info", { pane_id: paneId }, options)
   if (result.type !== "pane_process_info" || !isRecord(result.process_info)) {
