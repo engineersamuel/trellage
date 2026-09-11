@@ -1293,7 +1293,7 @@ it("interviews through p then a, revises, and protects a newer prompt and queued
   await guide.waitForText("Run npm test -- --runInBand.", "• Keep failure evidence.")
   expect(guide.text()).not.toContain("`npm test")
   expect(guide.text()).not.toContain("**Keep failure evidence")
-  await guide.pressAndWait(enter, "Artifact:", goalArtifact)
+  await guide.pressAndWait(enter, "Artifact:", goalArtifact, "e edit")
   await guide.pressAndWait(enter, "Profile recommendations")
   const intent = expectedGoalIntent(fixtureIntent, focus, revision)
   const events = await guide.events()
