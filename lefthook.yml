@@ -16,7 +16,7 @@ pre-push:
     - name: pushed whitespace
       run: git diff --check "refs/remotes/{1}/main...HEAD"
     - name: source workspace checks
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- package.json bun.lock bunfig.toml tsconfig.json tsconfig.base.json packages tests/bun-runtime.setup.ts || (bun run check && bun run test)
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- package.json bun.lock bunfig.toml tsconfig.json tsconfig.base.json packages tests/bun-runtime.setup.ts || (git_local_env=$(git rev-parse --local-env-vars) && unset $git_local_env && bun run check && bun run test)
     - name: profile compiler typecheck
       run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- packages/trellage-cli profiles || bun --cwd packages/trellage-cli run check
     - name: launcher shell syntax

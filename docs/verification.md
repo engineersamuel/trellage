@@ -84,6 +84,11 @@ bash scripts/install-lefthook-hook.sh
 npm ci --prefix tests/playwright
 ```
 
+The pre-push workspace checks clear Git's repository-local environment variables
+inside their test subshell. Nested Git fixtures must not inherit the hook's
+repository or index. `tests/source_startup_contract.sh` verifies this boundary
+and confirms that the caller repository remains unchanged.
+
 Each commit runs staged whitespace validation plus profile compiler lint,
 format, and type checks in parallel. Each push runs only changed-path checks:
 whitespace, launcher source tests and type checks, profile compiler typechecking, and
