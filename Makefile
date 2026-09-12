@@ -7,8 +7,8 @@ PROFILE_MATRIX_ARGS ?=
 NATIVE_TUI_MATRIX_ARGS ?=
 HEADLESS_MATRIX_ARGS ?=
 TEST_JOBS ?= 4
-PARALLEL_TEST_TARGETS := trellage-host-runtime native-copilot-profiles native-firstmate-profile native-prime-profile claude-entry copilot-entry native-claude-profile native-omp-profile launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness headlong-entry pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-agency-profile native-jcode-profile native-picx-profile native-tui-matrix-test manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract trellage-statusline
-TIMING_SENSITIVE_TEST_TARGETS := native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles
+PARALLEL_TEST_TARGETS := trellage-host-runtime native-copilot-profiles native-firstmate-profile native-prime-profile claude-entry copilot-entry native-claude-profile launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness headlong-entry pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-agency-profile native-jcode-profile native-picx-profile native-tui-matrix-test manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract trellage-statusline
+TIMING_SENSITIVE_TEST_TARGETS := native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles native-omp-profile
 FINAL_TEST_TARGETS := native-profile-router trellage-host-headless-test
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
 TRELLAGE_GRAPH_OF_LOOPS_IMAGE ?= trellage-profile-claude-graph-of-loops-linux-arm64:locked
@@ -16,7 +16,7 @@ TRELLAGE_GRAPH_OF_LOOPS_IMAGE ?= trellage-profile-claude-graph-of-loops-linux-ar
 test:
 	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(PARALLEL_TEST_TARGETS)
 	$(MAKE) --no-print-directory -j1 profile-compiler-fingerprint
-	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(TIMING_SENSITIVE_TEST_TARGETS)
+	$(MAKE) --no-print-directory -j1 $(TIMING_SENSITIVE_TEST_TARGETS)
 	$(MAKE) --no-print-directory -j$(TEST_JOBS) $(FINAL_TEST_TARGETS)
 
 dependency-bootstrap:
