@@ -382,6 +382,48 @@ unrelated_after = "keep"
     expect(normalized).not.toContain("hook_path.as_posix()")
   })
 
+  it("normalizes the current WebSearch-only project hook installer", async () => {
+    const root = await temporaryRoot("trellage-hyperresearch-current-hooks-")
+    const hooksPath = path.join(root, "hyperresearch", "core", "hooks.py")
+    await mkdir(path.dirname(hooksPath), { recursive: true })
+    await writeFile(
+      hooksPath,
+      `\
+    hook_path = hook_dir / "hook.js"
+    hooks = settings.setdefault("hooks", {})
+    pre_tool = hooks.setdefault("PreToolUse", [])
+
+    for entry in pre_tool:
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                if "hyperresearch" in h.get("command", ""):
+                    return None
+
+    # Web tools only. The reminder is "check the vault before you search the
+    # web"; on Glob and Grep it is noise, and now that the payload actually
+    # reaches the model (it was silently discarded before #94), every match
+    # costs context on every call.
+    pre_tool.append({
+        "matcher": "WebSearch|WebFetch",
+        "hooks": [{
+            "type": "command",
+            "command": f'node "{hook_path.as_posix()}"',
+        }],
+    })
+
+    settings_path.write_text(json.dumps(settings, indent=2) + "\\n", encoding="utf-8")`,
+    )
+
+    await Effect.runPromise(normalizeHyperresearchHookInstaller(root))
+
+    const normalized = await readFile(hooksPath, "utf8")
+    expect(normalized).toContain('hook_path = hook_dir / "hook.cjs"')
+    expect(normalized).toContain(`hook_command = 'node "$CLAUDE_PROJECT_DIR/.hyperresearch/hook.cjs"'`)
+    expect(normalized).toContain('"matcher": "WebSearch|WebFetch"')
+    expect(normalized).toContain('"command": hook_command,')
+    expect(normalized).not.toContain("hook_path.as_posix()")
+  })
+
   it("leaves an already-portable project hook installer byte-identical", async () => {
     const root = await temporaryRoot("trellage-hyperresearch-portable-hooks-")
     const hooksPath = path.join(root, "hyperresearch", "core", "hooks.py")
