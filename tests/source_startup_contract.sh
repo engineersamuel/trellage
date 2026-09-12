@@ -58,6 +58,28 @@ cmp -s "$hook_fixture/config-before" "$hook_fixture/caller/.git/config" \
 [[ -f "$hook_fixture/nested/HEAD" ]] || fail 'nested Git fixture was not initialized'
 printf 'source startup contract: PASS: pre-push isolates nested Git fixtures\n'
 
+mkdir -p "$hook_fixture/packages/trellage-cli" "$hook_fixture/git-bin" "$hook_fixture/home"
+cp "$hook_fixture/bin/git" "$hook_fixture/git-bin/git"
+cat >"$hook_fixture/packages/trellage-cli/package.json" <<'JSON'
+{"scripts":{"lint":"echo lint >> \"$HOOK_SCRIPT_CALLS\"","format:check":"echo format >> \"$HOOK_SCRIPT_CALLS\"","check":"echo check >> \"$HOOK_SCRIPT_CALLS\""}}
+JSON
+: >"$hook_fixture/script-calls"
+while IFS= read -r package_hook; do
+  (
+    cd "$hook_fixture"
+    HOME="$hook_fixture/home" PATH="$hook_fixture/git-bin:$(dirname "$bun_executable"):$PATH" \
+      HOOK_REAL_GIT="$(command -v git)" HOOK_SCRIPT_CALLS="$hook_fixture/script-calls" \
+      bash -c "$package_hook"
+  ) >"$hook_fixture/package-hook.out" 2>&1 || fail 'compiler package hook failed'
+done < <(awk '
+  /^[[:space:]]+run:.*packages\/trellage-cli/ {
+    sub(/^[[:space:]]+run: /, ""); print
+  }
+' "$repo_root/lefthook.yml")
+[[ "$(<"$hook_fixture/script-calls")" == $'lint\nformat\ncheck\ncheck' ]] \
+  || fail 'compiler package hooks did not execute all four Bun scripts'
+printf 'source startup contract: PASS: compiler hooks execute their Bun scripts\n'
+
 (
   cd "$repo_root"
   "$bun_executable" --no-install --no-env-file \
