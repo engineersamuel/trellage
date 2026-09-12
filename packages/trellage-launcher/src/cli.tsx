@@ -985,39 +985,43 @@ const runHarnessUpgradeMode = async (): Promise<void> => {
   }
 }
 
-export const main = async (): Promise<void> => {
-  if (process.argv[2] === "rewrite-context") {
-    if (process.argv[3] === "--worker") {
-      const controller = new AbortController()
-      const cancel = () => controller.abort()
-      process.once("SIGINT", cancel)
-      process.once("SIGTERM", cancel)
-      let workerInput: { readonly input: string; readonly close: () => void } | undefined
-      try {
-        workerInput = await readContextMenuWorkerInput(cancel)
-        await runContextMenuCommand({ input: workerInput.input, signal: controller.signal })
-      } finally {
-        workerInput?.close()
-        process.removeListener("SIGINT", cancel)
-        process.removeListener("SIGTERM", cancel)
-      }
-      return
-    }
-    if (process.argv[3] === "--interactive") {
-      const request = parseContextMenuUiRequest(await readInput(undefined))
-      await runContextMenuUi({ request })
-      return
-    }
+const runRewriteContextMode = async (): Promise<void> => {
+  if (process.argv[3] === "--worker") {
     const controller = new AbortController()
     const cancel = () => controller.abort()
     process.once("SIGINT", cancel)
     process.once("SIGTERM", cancel)
+    let workerInput: { readonly input: string; readonly close: () => void } | undefined
     try {
-      await runContextMenuCommand({ input: await readInput(undefined), signal: controller.signal })
+      workerInput = await readContextMenuWorkerInput(cancel)
+      await runContextMenuCommand({ input: workerInput.input, signal: controller.signal })
     } finally {
+      workerInput?.close()
       process.removeListener("SIGINT", cancel)
       process.removeListener("SIGTERM", cancel)
     }
+    return
+  }
+  if (process.argv[3] === "--interactive") {
+    const request = parseContextMenuUiRequest(await readInput(undefined))
+    await runContextMenuUi({ request })
+    return
+  }
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  process.once("SIGINT", cancel)
+  process.once("SIGTERM", cancel)
+  try {
+    await runContextMenuCommand({ input: await readInput(undefined), signal: controller.signal })
+  } finally {
+    process.removeListener("SIGINT", cancel)
+    process.removeListener("SIGTERM", cancel)
+  }
+}
+
+export const main = async (): Promise<void> => {
+  if (process.argv[2] === "rewrite-context") {
+    await runRewriteContextMode()
     return
   }
   if (process.argv[2] === "upgrade") {
@@ -1044,6 +1048,10 @@ export const main = async (): Promise<void> => {
     await runAdminMode()
     return
   }
+  await runLauncherMode()
+}
+
+const runLauncherMode = async (): Promise<void> => {
   const catalog = parseLaunchCatalog(await readInput(process.argv[2]))
   let outputFd: number | undefined
   let input: NodeJS.ReadStream

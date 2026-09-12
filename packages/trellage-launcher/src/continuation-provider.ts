@@ -496,6 +496,29 @@ const reduceNodes = (
   return result
 }
 
+const nextUserTurnStart = (snapshot: ConversationSnapshot, start: number): number => {
+  const nextStart = snapshot.messages.findIndex(({ role }, index) => index > start && role === ConversationRole.User)
+  if (nextStart < 0) fail("recent-history-or-catalog-exceeds-input-budget")
+  return nextStart
+}
+
+const reduceHistoryRoots = (
+  snapshot: ConversationSnapshot,
+  nodes: SummaryNode[],
+  fits: (roots: ReadonlyArray<SummaryNode>) => boolean,
+): ReadonlyArray<SummaryNode> => {
+  let roots: ReadonlyArray<SummaryNode> = [...nodes]
+  let reductions = 0
+  while (!fits(roots)) {
+    if (roots.length <= 1 || reductions >= continuationPolicy.maxReductionLevels) break
+    const reduced = reduceNodes(snapshot, roots, nodes)
+    if (reduced.length >= roots.length) break
+    roots = reduced
+    reductions += 1
+  }
+  return roots
+}
+
 const historyPlan = (snapshot: ConversationSnapshot, entries: ReadonlyArray<GuideMatchCatalogEntry>): HistoryPlan => {
   const fits = (messages: ReadonlyArray<ConversationMessage>, roots: ReadonlyArray<SummaryNode>): boolean =>
     jsonBytes(assessmentInput(snapshot, entries, messages, roots.map(placeholder))) <= bodyBudget
@@ -507,31 +530,18 @@ const historyPlan = (snapshot: ConversationSnapshot, entries: ReadonlyArray<Guid
   let recent = snapshot.messages.slice(start)
   let nodes: SummaryNode[] = []
   let roots: ReadonlyArray<SummaryNode> = []
-  let reductions = 0
   while (true) {
     if (!fits(recent, [])) {
-      const nextStart = snapshot.messages.findIndex(({ role }, index) => index > start && role === ConversationRole.User)
-      if (nextStart < 0) fail("recent-history-or-catalog-exceeds-input-budget")
-      start = nextStart
+      start = nextUserTurnStart(snapshot, start)
       recent = snapshot.messages.slice(start)
       continue
     }
     nodes = leafNodes(snapshot, snapshot.messages.slice(0, start))
-    roots = [...nodes]
-    reductions = 0
-    while (!fits(recent, roots)) {
-      if (roots.length <= 1 || reductions >= continuationPolicy.maxReductionLevels) break
-      const reduced = reduceNodes(snapshot, roots, nodes)
-      if (reduced.length >= roots.length) break
-      roots = reduced
-      reductions += 1
-    }
+    roots = reduceHistoryRoots(snapshot, nodes, (candidate) => fits(recent, candidate))
     if (fits(recent, roots)) break
     // Reserve room for at least one summary by moving the oldest complete
     // user turn into summarization. The newest user turn always stays verbatim.
-    const nextStart = snapshot.messages.findIndex(({ role }, index) => index > start && role === ConversationRole.User)
-    if (nextStart < 0) fail("recent-history-or-catalog-exceeds-input-budget")
-    start = nextStart
+    start = nextUserTurnStart(snapshot, start)
     recent = snapshot.messages.slice(start)
   }
   const maxCalls = (nodes.length + 1) * (1 + continuationPolicy.schemaRepairAttempts)

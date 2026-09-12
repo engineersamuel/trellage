@@ -1360,6 +1360,43 @@ export interface ContinuationAppProps {
   readonly onExit?: (code: number) => void
 }
 
+const continuationMessagePane = (state: ContinuationUiState, columns: number, width: number, height: number) => {
+  const showingMessages = state.screen === ContinuationScreen.Messages && state.operation === ContinuationOperation.Idle
+  const snapshot = showingMessages ? displaySnapshot(state.draft) : null
+  const sidebarWidth = showingMessages && columns >= 100 ? Math.min(40, Math.floor(width / 3)) : 0
+  const readerWidth = width - (sidebarWidth > 0 ? sidebarWidth + 2 : 0)
+  if (snapshot === null) return { snapshot, sidebarWidth, readerWidth, paneHeading: [], paneHeight: height }
+  const selectedMessage = snapshot.messages[state.messageIndex]
+  const paneHeading = wrapGuideText(terminalText([
+    `Message ${selectedMessage === undefined ? 0 : state.messageIndex + 1} of ${snapshot.messages.length} | ${selectedMessage?.role ?? "No message"}`,
+    `Coverage: ${snapshot.coverage.complete ? "complete" : "incomplete"} | Redactions marked`,
+  ].join("\n")), readerWidth).slice(0, Math.max(0, height - 1))
+  return { snapshot, sidebarWidth, readerWidth, paneHeading, paneHeight: Math.max(1, height - paneHeading.length) }
+}
+
+const ContinuationMessageSidebar = ({ snapshot, width, height, selectedIndex }: {
+  readonly snapshot: ReturnType<typeof displaySnapshot> | null
+  readonly width: number
+  readonly height: number
+  readonly selectedIndex: number
+}): React.ReactElement | null => {
+  if (width <= 0 || snapshot === null) return null
+  const sidebarHeight = Math.max(1, height - 1)
+  const start = Math.max(0, Math.min(
+    snapshot.messages.length - sidebarHeight,
+    selectedIndex - Math.floor(sidebarHeight / 2),
+  ))
+  return <Box flexDirection="column" width={width} marginRight={2} flexShrink={0}>
+    <Text bold>MESSAGES</Text>
+    {snapshot.messages.slice(start, start + sidebarHeight).map((message, index) => {
+      const ordinal = start + index
+      return <Text key={message.id} bold={ordinal === selectedIndex} wrap="truncate-end">
+        {`${ordinal === selectedIndex ? ">" : " "} ${String(ordinal + 1).padStart(3, " ")} ${message.role.padEnd(9, " ")} ${terminalText(message.text.slice(0, 200)).replace(/\s+/gu, " ").trim()}`}
+      </Text>
+    })}
+  </Box>
+}
+
 export const ContinuationApp = (props: ContinuationAppProps): React.ReactElement => {
   const { exit } = useApp()
   const ref = useRef<ContinuationUiController | null>(null)
@@ -1383,27 +1420,14 @@ export const ContinuationApp = (props: ContinuationAppProps): React.ReactElement
     ...(state.error === null ? [] : [`ERROR: ${state.error}`, ""]),
     ...(state.notice === null ? [] : [state.notice, ""]),
   ]
-  const showingMessages = state.screen === ContinuationScreen.Messages && state.operation === ContinuationOperation.Idle
-  const snapshot = showingMessages ? displaySnapshot(state.draft) : null
-  const selectedMessage = snapshot?.messages[state.messageIndex]
-  const sidebarWidth = showingMessages && columns >= 100 ? Math.min(40, Math.floor(width / 3)) : 0
-  const readerWidth = width - (sidebarWidth > 0 ? sidebarWidth + 2 : 0)
-  const paneHeading = showingMessages ? wrapGuideText(terminalText([
-    `Message ${selectedMessage === undefined ? 0 : state.messageIndex + 1} of ${snapshot!.messages.length} | ${selectedMessage?.role ?? "No message"}`,
-    `Coverage: ${snapshot!.coverage.complete ? "complete" : "incomplete"} | Redactions marked`,
-  ].join("\n")), readerWidth).slice(0, Math.max(0, height - 1)) : []
-  const paneHeight = Math.max(1, height - paneHeading.length)
+  const { snapshot, sidebarWidth, readerWidth, paneHeading, paneHeight } =
+    continuationMessagePane(state, columns, width, height)
   const body = terminalText([...bodyPrefix, document.body].join("\n"))
   const lines = useMemo(() => wrapGuideText(body, readerWidth), [body, readerWidth])
   const cursorLine = document.cursorPrefix === undefined
     ? null : wrapGuideText(terminalText([...bodyPrefix, document.cursorPrefix].join("\n")), width).length - 1
   const viewKey = continuationViewKey(state)
   const viewport = continuationTextViewport(lines, paneHeight, state.scroll[viewKey] ?? 0)
-  const sidebarHeight = Math.max(1, height - 1)
-  const sidebarStart = Math.max(0, Math.min(
-    (snapshot?.messages.length ?? 0) - sidebarHeight,
-    state.messageIndex - Math.floor(sidebarHeight / 2),
-  ))
   useContinuationCursor(controller, state.editor, cursorLine, width, { ...viewport, height: paneHeight })
 
   useEffect(() => () => controller.dispose(), [controller])
@@ -1423,15 +1447,7 @@ export const ContinuationApp = (props: ContinuationAppProps): React.ReactElement
     <Box flexDirection="column" width={Math.max(12, columns)} paddingX={1}>
       <Text bold>{header.join("\n")}</Text>
       <Box flexDirection="row" height={height} overflowY="hidden">
-        {sidebarWidth > 0 && <Box flexDirection="column" width={sidebarWidth} marginRight={2} flexShrink={0}>
-          <Text bold>MESSAGES</Text>
-          {snapshot!.messages.slice(sidebarStart, sidebarStart + sidebarHeight).map((message, index) => {
-            const ordinal = sidebarStart + index
-            return <Text key={message.id} bold={ordinal === state.messageIndex} wrap="truncate-end">
-              {`${ordinal === state.messageIndex ? ">" : " "} ${String(ordinal + 1).padStart(3, " ")} ${message.role.padEnd(9, " ")} ${terminalText(message.text.slice(0, 200)).replace(/\s+/gu, " ").trim()}`}
-            </Text>
-          })}
-        </Box>}
+        <ContinuationMessageSidebar snapshot={snapshot} width={sidebarWidth} height={height} selectedIndex={state.messageIndex} />
         <Box flexDirection="column" width={readerWidth} flexShrink={0}>
           {paneHeading.length > 0 && <Text bold>{paneHeading.join("\n")}</Text>}
           <Text>{viewport.text}</Text>
