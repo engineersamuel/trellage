@@ -50,6 +50,12 @@ fixture_root="$(mktemp -d "$fixture_parent/trellage-prx-contract.XXXXXX")" \
   || fail 'could not create fixture root'
 trap 'if [[ "${PRX_TEST_KEEP_FIXTURE:-0}" != 1 ]]; then rm -rf -- "$fixture_root"; rmdir "$fixture_parent" 2>/dev/null || true; else printf "fixture kept: %s\n" "$fixture_root" >&2; fi' EXIT HUP INT TERM
 
+fixture_registry="$(npm config get registry --workspaces=false)" \
+  || fail 'could not discover the host npm registry'
+[[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
+export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export npm_config_registry="$fixture_registry"
+
 fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
 mkdir -p "$fake_bin" "$home"
