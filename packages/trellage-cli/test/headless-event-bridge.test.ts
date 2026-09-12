@@ -11,7 +11,7 @@ import {
   type HeadlessEventBridgeRun,
   type TrellageResultEventV1,
   type TrellageSessionEventV1,
-} from "../src/headless-event-bridge.js"
+} from "../src/headless-event-bridge.ts"
 
 const rejectedMarker = path.join(process.cwd(), `.headless-event-bridge-rejected-${process.pid}`)
 const bridgeIdentity = {

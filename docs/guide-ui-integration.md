@@ -1,19 +1,29 @@
 # Guide UI integration matrix
 
-Run the matrix with mise:
+With Bun 1.3.3 and Python 3 available, prepare the source workspace and run the
+matrix from the repository root:
 
 ```bash
+scripts/install-source-runtime.sh --prepare
 mise run trx-guide-test
 ```
 
-This task keeps the full case list and uses a 60-second slow-test threshold
-because Vitest applies it to both individual
-cases and the file total. Expected timings stay green. Test timeouts, failure
-reporting, and the threshold for other launcher test commands are unchanged.
+Preparation installs frozen dependencies, validates source ownership and bin
+permissions, and records the readiness receipt. A raw Bun install is not
+equivalent. Native installation fixtures must use the same prepared-source
+contract; missing readiness must remain a refusal, not an implicit install.
 
-The tests send real keyboard input to `GuideApp` in a pseudo-terminal.
-`@xterm/headless` interprets the terminal output. Assertions use the visible
-screen and recorded command boundaries, not reducer calls or screen snapshots.
+This task keeps all 31 cases and uses a 60-second slow-test reporting threshold
+because Vitest applies it to both individual cases and the file total. That
+threshold does not change test timeouts or failure reporting.
+
+The tests send real keyboard input to `GuideApp` through the Python
+standard-library POSIX PTY bridge in `tests/helpers/posix-pty.py`. Both the
+Vitest workers and the TS/TSX fixture children run under Bun; Python provides
+terminal transport, not application execution. `@xterm/headless` interprets
+the terminal output. Assertions use the visible screen and recorded command
+boundaries, not reducer calls or screen snapshots. No `node-pty` addon,
+application bundle, or `dist` is required.
 
 The fixture offers five ranked recommendations and the three pinned lenses:
 Council, Research, and HVE RPI. Ranking currently permits at most five
@@ -31,7 +41,7 @@ Run only the goal PTY cases with the existing runner:
 
 ```bash
 cd packages/trellage-launcher
-FORCE_COLOR=1 npm test -- test/guide-ui.integration.test.ts -t 'goal|interview|long questions'
+FORCE_COLOR=1 bun run test test/guide-ui.integration.test.ts -t 'goal|interview|long questions'
 ```
 
 ## Implemented cases
@@ -42,6 +52,7 @@ Handoffs are recorded requests, not real harness launches.
 | Interaction | Cases | Generated candidates | Queued jobs | Handoffs | Required outcome |
 | --- | ---: | ---: | ---: | ---: | --- |
 | Select a Native or Sandbox profile and a non-default candidate; confirm this terminal | 2 | 3 | 0 | 1 | Exact launcher, prompt argument, cwd, and automation flag |
+| Park a pending readiness probe, change the main selection, and reopen the fork | 1 | 3 | 0 | 0 | Exactly one inventory request survives parking; release reaches destination selection; cancellation launches nothing |
 | Queue Council, Research, and HVE RPI; return to the main screen and press `L` | 1 | 9 | 3 | 3 | Correct skill frames and the HVE `--agent hve-core:rpi-agent` argument |
 | Visit all five recommendations in seeded order; choose seeded candidates and press `L` | 2 | 15 | 5 | 5 | Every selected profile appears once, with its own prompt and launcher arguments |
 | Queue all five recommendations and all three lenses; reopen a fork and press `L` | 1 | 24 | 8 | 8 | The global launch key dispatches the full queue, not only the active fork |
@@ -63,6 +74,7 @@ Handoffs are recorded requests, not real harness launches.
 | Edit one queued prompt with multiline paste and individually typed shortcut keys | 1 | 9 | 3 | 3 | Only that job changes; typed `L`, `x`, digits, and backticks do not trigger shortcuts; quoted shell expressions stay literal |
 | Reopen a queued fork and select another candidate | 1 | 3 | 1 | 1 | The existing job is replaced, with no duplicate job or extra generation |
 | Mix a current-workspace pane, a new tab, and a new worktree | 1 | 9 | 3 | 3 | Exact allocation commands, branch, base ref, returned pane IDs, and launch directories |
+| Queue HVE, Sandbox, and HVE again; reject a duplicate; correct and reopen | 1 | 9 | 3 | 3 | Exact profile names and `-2` suffix; duplicate causes no Git inspection or allocation and no open-existing offer; reopening preserves branch and job ID |
 | Confirm a dirty checkout or reuse an existing worktree | 2 | 3 | 1 | 1 | Both dirty-checkout confirmations are required; reuse opens rather than creates, and uses Herdr's returned canonical cwd |
 
 The recommendation cases use seeds `17` and `73`. Queue removal uses seed `41`
@@ -120,6 +132,13 @@ request occurs before confirmation or `L`. Final results must contain exactly
 the expected retained jobs and commands. Removed jobs must not launch.
 Unexpected external commands fail instead of falling through to a real tool.
 
+Worktree expectations are independent constants for each profile and numeric
+variant. The fixture accepts only those branches and records each allocation
+at its requested branch path. It does not call the production name formatter.
+Unit and reducer tests also cover the 40-character limit, long profile hashes,
+multi-digit suffixes, trimmed conflicts, replacement self-exclusion, released
+reservations, and the final queue check after inspection.
+
 ## Offline boundaries and maintenance
 
 The real UI, guide parsing, prompt pipeline, queue, readiness handling, command
@@ -144,18 +163,39 @@ ambiguous recommendations, queued requests, stopping automation, and
 cancellation.
 Neither layer makes a paid model call or writes a project goal file.
 
-Each case has a new UI process, workspace, HOME, and temporary directory. The
-UI bundle is built once per suite, but no model artifact cache is used. Keep
+Each case has a new Bun UI process, workspace, HOME, and temporary directory.
+The package script executes Vitest explicitly through Bun with
+`--configLoader native`; a Node shebang must not select the test runtime.
+The fixture runs TypeScript and TSX source directly; no UI bundle is built and
+no model artifact cache is used. The PTY adapter applies the public
+`sourceEnvironment()` helper before Python starts, preserving
+`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` in isolated child environments. Keep
 `interactive: true` and `FORCE_COLOR=1` in the child so CI retains interactive
 rendering and style-only queue-focus updates. Screen reads happen after the
 terminal emulator has processed the output.
 
 Before sending the first key, both the Guide and continuation UI drivers wait
-for the initial screen and Ink's bracketed-paste enable sequence (`ESC[?2004h`).
-The initial render can precede Ink's input effects. Without this readiness
-handshake, terminal echo can satisfy a text assertion even though the UI has
-not consumed the input. This startup check uses the existing 5-second wait
-bound; it does not increase test timeouts.
+for the initial screen and the terminal emulator's current
+`modes.bracketedPasteMode`. Ink enables it with `ESC[?2004h` and disables it
+with `ESC[?2004l`; finding an old enable marker in the output history is not
+enough. The initial render can precede Ink's input effects. Without this
+readiness check, terminal echo can satisfy a text assertion even though the
+UI has not consumed the input. This initial-editor check retains the existing
+5-second wait bound. It is not a requirement for later menus, where bracketed
+paste can legitimately be disabled.
+
+The native transport and readiness regressions run separately with:
+
+```bash
+cd packages/trellage-launcher
+bun run test test/source-pty.test.ts test/guide-terminal-readiness.test.ts
+```
+
+They verify real Bun and child process identity, raw Unicode and control
+input, terminal dimensions and resize, exit codes and signals, and refusal
+of revoked input readiness. Two isolated-environment cases import real guide
+source and require an empty temporary HOME with the transpiler cache disabled,
+even when the caller omits or overrides the cache setting.
 
 Subsequent waits require the expected profile,
 prompt, menu selection, or single highlighted queue job ID. Receipt of terminal
@@ -168,9 +208,9 @@ does not hide the failed operation's diagnostic.
 
 These tests do not prove live provider compatibility, recommendation quality,
 harness startup, real Docker or Herdr behavior, or the outer `trx` shell
-router. They run on the existing Vitest `forks` pool; do not move `node-pty`
-tests into worker threads. `packages/trellage-launcher/vitest.config.ts` caps
-the launcher suite at two workers. Each PTY case starts another Node process,
+router. They run on the existing Vitest `forks` pool.
+`packages/trellage-launcher/vitest.config.ts` caps
+the launcher suite at two workers. Each PTY case starts another Bun process,
 and `make test` already runs four targets in parallel by default. Keep this
 cap to limit nested process concurrency rather than increasing timing bounds
 to compensate for full-suite load.

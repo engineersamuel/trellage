@@ -3,7 +3,7 @@ import path from "node:path"
 
 import { Data, Effect, Schema } from "effect"
 
-import { assertNoDuplicateJsonKeys, DuplicateJsonKeyError } from "./copilot-plugin.js"
+import { assertNoDuplicateJsonKeys, DuplicateJsonKeyError } from "./copilot-plugin.ts"
 
 export class ClaudePluginError extends Data.TaggedError("ClaudePluginError")<{
   readonly message: string

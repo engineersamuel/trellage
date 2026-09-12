@@ -9,6 +9,10 @@ fail() {
   exit 1
 }
 
+contract_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-azure-contract.XXXXXX")"
+contract_root="$(cd "$contract_root" && pwd -P)"
+trap 'rm -rf -- "$contract_root"' EXIT
+
 [[ -x "$script" ]] || fail "script is missing or not executable: $script"
 bash -n "$script"
 
@@ -30,7 +34,7 @@ plan="$(
   TRELLAGE_AZURE_RESOURCE_GROUP_PREFIX=trellage-contract \
   TRELLAGE_AZURE_SSH_SOURCE=192.0.2.10/32 \
   TRELLAGE_AZURE_ATTEMPTS=2 \
-  XDG_STATE_HOME="$(mktemp -d)" \
+  XDG_STATE_HOME="$contract_root/state" \
   "$script" plan
 )"
 grep -Eq '^resource group: trellage-contract-[0-9]{14}-[0-9]+-[0-9]+$' <<<"$plan" \
@@ -66,22 +70,51 @@ grep -Fq 'git -C "$checkout" checkout --detach "$target"' "$script" \
   || fail 'bootstrap does not check out a deterministic fetched revision'
 grep -Fq 'TRELLAGE_AZURE_APPLY_LOCAL_CHANGES' "$script" \
   || fail 'workflow cannot test local unmerged runtime candidates'
-grep -Fq 'trellage-omp-catalog-candidate' "$script" \
-  || fail 'local candidate overlay does not include the certified OMP catalog'
-grep -Fq 'trellage-headless-capabilities-candidate' "$script" \
-  || fail 'local candidate overlay does not include compiler headless capabilities'
-grep -Fq 'trellage-application-candidate' "$script" \
-  || fail 'local candidate overlay does not include compiler builder fixes'
-grep -Fq 'trellage-materialize-candidate' "$script" \
-  || fail 'local candidate overlay does not include compiler materialization fixes'
-grep -Fq 'trellage-finalize-claude-seed-candidate' "$script" \
-  || fail 'local candidate overlay does not include Claude finalizer fixes'
-grep -Fq 'prototypes/trellage-claude-common' "$script" \
-  || fail 'local candidate overlay does not include the shared Claude runtime'
-grep -Fq 'prototypes/trellage-firstmate-profiles' "$script" \
-  || fail 'local candidate overlay does not include Firstmate'
-grep -Fq 'profile-guides/native/fmx' "$script" \
-  || fail 'local candidate overlay does not include Firstmate guides'
+grep -Fq 'mise use -g "bun@$bun_version"' "$script" \
+  || fail 'bootstrap does not install the exact Bun prerequisite'
+grep -Fq 'scripts/install-source-runtime.sh --prepare' "$script" \
+  || fail 'bootstrap does not prepare frozen source dependencies'
+grep -Fq 'import { copySources } from "@trellage/runtime/workspace"' "$script" \
+  || fail 'local candidate overlay does not use the complete shared source selector'
+if grep -Eq 'npm (ci|run build)' "$script"; then
+  fail 'bootstrap still compiles first-party application output'
+fi
+
+source "$repo_root/scripts/bun-runtime.sh"
+trellage_bun_runtime "$repo_root"
+candidate="$contract_root/candidate"
+mkdir "$candidate"
+(
+  cd "$repo_root"
+  "${trellage_bun[@]}" --eval \
+    'import { copySources } from "@trellage/runtime/workspace"; copySources(process.argv[1], process.argv[2]);' \
+    "$repo_root" "$candidate"
+)
+for asset in \
+  package.json bun.lock bunfig.toml tsconfig.base.json \
+  bin/trx.ts bin/trellage.ts \
+  packages/trellage-runtime/package.json \
+  packages/trellage-runtime/bunfig.toml \
+  packages/trellage-conversation-source/package.json \
+  packages/trellage-launcher/src/guide-ui.tsx \
+  packages/trellage-cli/src/application.ts \
+  packages/trellage-cli/src/materialize.ts \
+  packages/trellage-cli/src/headless-capabilities.ts \
+  packages/trellage-cli/src/runtime-support.ts \
+  prototypes/trellage/bun-runtime.json \
+  prototypes/trellage/claude-managed-files.ts \
+  prototypes/trellage/finalize-claude-seed.ts \
+  prototypes/trellage-omp-profiles/catalog.json \
+  prototypes/trellage-claude-common/native-claude \
+  prototypes/trellage-firstmate-profiles/bin/fmx \
+  profile-guides/native/fmx/default.md; do
+  [[ -f "$candidate/$asset" && ! -L "$candidate/$asset" ]] \
+    || fail "complete local candidate omitted a regular source asset: $asset"
+  cmp -s "$repo_root/$asset" "$candidate/$asset" \
+    || fail "local candidate changed source asset bytes: $asset"
+done
+[[ -z "$(find "$candidate" -type d \( -name node_modules -o -name dist \) -print -quit)" ]] \
+  || fail 'local candidate includes host dependencies or generated application output'
 grep -Fq 'GH_CONFIG_DIR="$gh_config" gh auth login --hostname github.com --with-token' "$script" \
   || fail 'acceptance does not create ephemeral GitHub CLI authentication'
 grep -Fq 'trap cleanup_gh_config EXIT' "$script" \

@@ -10,7 +10,7 @@
  * suggestion); untrusted captured output is only ever embedded as inert
  * prompt text, never interpolated into a shell command.
  */
-import type { DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.js"
+import type { DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.ts"
 import {
   createHerdrWorktreeAndHandoff,
   defaultWorktreeBranch,
@@ -23,7 +23,7 @@ import {
   type HerdrEnvironment,
   type HerdrPromptDeliveryMode,
   type HerdrWorktreeLaunchResult,
-} from "./guide-launch.js"
+} from "./guide-launch.ts"
 
 export interface HerdrForkRequest {
   readonly ref: string

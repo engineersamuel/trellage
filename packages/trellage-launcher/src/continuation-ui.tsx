@@ -5,12 +5,12 @@ import {
   ContinuationPlacementKind,
   type ContinuationDraft,
   type NextAction,
-} from "../../trellage-guide-core/dist/index.js"
-import { sanitizeConversationSnapshot } from "../../trellage-guide-core/dist/conversation-sanitization.js"
-import { GuideEffort } from "./guide-api.js"
-import { describeGuideUiError, wrapGuideText } from "./guide-ui.js"
-import { isSubmitInput } from "./input.js"
-import type { ContinuationServices, ContinuationSourceStatus } from "./continuation-services.js"
+} from "@trellage/guide-core"
+import { sanitizeConversationSnapshot } from "@trellage/guide-core"
+import { GuideEffort } from "./guide-api.ts"
+import { describeGuideUiError, wrapGuideText } from "./guide-ui.tsx"
+import { isSubmitInput } from "./input.ts"
+import type { ContinuationServices, ContinuationSourceStatus } from "./continuation-services.ts"
 import {
   changeContinuationAction,
   changeContinuationEditor,
@@ -41,7 +41,7 @@ import {
   type ContinuationActionChange,
   type ContinuationEditor,
   type ContinuationUiState,
-} from "./continuation-ui-state.js"
+} from "./continuation-ui-state.ts"
 
 // oxlint-disable-next-line no-control-regex -- Untrusted display text must not send terminal controls.
 const displayControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu

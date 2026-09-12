@@ -5,7 +5,7 @@ import { readFile, realpath } from "node:fs/promises"
 import { parse } from "smol-toml"
 import { Data, Effect, ParseResult, Schema } from "effect"
 
-import { githubRepositoryError } from "./github-repository.js"
+import { githubRepositoryError } from "./github-repository.ts"
 
 const NonEmpty = Schema.String.pipe(Schema.minLength(1))
 const RuntimeSize = Schema.String.pipe(Schema.pattern(/^[1-9][0-9]*(?:k|m|g)$/))

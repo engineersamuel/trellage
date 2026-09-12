@@ -11,13 +11,13 @@
  *
  * Skills in this architecture are a single git-commit-pinned bundle per
  * profile, not individually versioned packages (see
- * `scripts/floating-skills.mjs`), so `skills` only ever reports counts
+ * `scripts/floating-skills.ts`), so `skills` only ever reports counts
  * (`packageCount`/`visibleCount`), never a per-skill version. This view
  * intentionally reports exactly that — it does not fabricate a per-skill
  * version comparison the architecture cannot support.
  */
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { CommandSpec } from "./guide-launch.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { CommandSpec } from "./guide-launch.ts"
 
 export interface AdminInventoryPlugin {
   readonly name: string

@@ -3,15 +3,15 @@ import { describe, expect, it } from "vitest"
 import type {
   AdminHarnessVersionCacheEntry,
   AdminHarnessVersionCacheRecord,
-} from "../src/admin-harness-version-cache.js"
+} from "../src/admin-harness-version-cache.ts"
 import {
   harnessVersionRefFor,
   harnessVersionResultForOperation,
   runBatchedHarnessVersionChecks,
-} from "../src/admin-harness-version-scheduler.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import { AdminRunManager } from "../src/admin-run-manager.js"
-import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.js"
+} from "../src/admin-harness-version-scheduler.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { AdminRunManager } from "../src/admin-run-manager.ts"
+import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.ts"
 
 class DeferredRunner implements CommandRunner {
   readonly calls: Array<{ executable: string; args: ReadonlyArray<string> }> = []

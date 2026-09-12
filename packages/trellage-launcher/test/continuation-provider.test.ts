@@ -4,7 +4,7 @@ import {
   ContinuationOutcome,
   type ConversationSnapshot,
   type ConversationSummary,
-} from "../../trellage-guide-core/dist/conversation.js"
+} from "@trellage/guide-core/conversation"
 import {
   analyzeConversation,
   continuationCallPlan,
@@ -15,14 +15,14 @@ import {
   validateContinuationContent,
   validateContinuationPolicy,
   type ContinuationAnalysisError,
-} from "../src/continuation-provider.js"
+} from "../src/continuation-provider.ts"
 import {
   assessmentFixture,
   continuationEntries,
   conversationFixture,
   FakeContinuationProvider,
   summaryFixture,
-} from "./helpers/continuation-provider-fixtures.js"
+} from "./helpers/continuation-provider-fixtures.ts"
 
 const large = (): ConversationSnapshot => conversationFixture(100, 12_000)
 const rejected = async (promise: Promise<unknown>): Promise<ContinuationAnalysisError> => {
@@ -534,14 +534,14 @@ describe("continuation policy and authored prompts", () => {
     vi.resetModules()
     vi.doMock("../src/continuation-policy.json", () => ({ default: { ...continuationPolicy, requestTimeoutMs: 120001 } }))
     try {
-      const changed = await import("../src/continuation-provider.js")
+      const changed = await import("../src/continuation-provider.ts")
       const provider = new FakeContinuationProvider()
       const next = await changed.analyzeConversation(snapshot, continuationEntries, provider, { summaries: first.summaries })
       expect(next.summaries[0]?.key).not.toBe(first.summaries[0]?.key)
       expect(provider.summaryRequests).toHaveLength(next.summaries.length)
       vi.resetModules()
       vi.doMock("../src/continuation-policy.json", () => ({ default: { ...continuationPolicy, maxCalls: 2 } }))
-      const capped = await import("../src/continuation-provider.js")
+      const capped = await import("../src/continuation-provider.ts")
       const stopped = new FakeContinuationProvider()
       await expect(capped.analyzeConversation(snapshot, continuationEntries, stopped)).rejects.toThrow("model-call-cap")
       expect(stopped.summaryRequests).toHaveLength(0)

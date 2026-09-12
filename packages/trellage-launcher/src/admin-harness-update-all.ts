@@ -1,9 +1,9 @@
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { AdminRunManager } from "./admin-run-manager.js"
-import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.js"
-import type { AdminHarnessVersionResult } from "./admin-harness-version.js"
-import type { HarnessVersionSchedulerOptions } from "./admin-harness-version-scheduler.js"
-import { nativeSkillsUpdatePlanFor, type NativeSkillsUpdateOutcome, type NativeSkillsUpdatePlan } from "./admin-skills-update.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { AdminRunManager } from "./admin-run-manager.ts"
+import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.ts"
+import type { AdminHarnessVersionResult } from "./admin-harness-version.ts"
+import type { HarnessVersionSchedulerOptions } from "./admin-harness-version-scheduler.ts"
+import { nativeSkillsUpdatePlanFor, type NativeSkillsUpdateOutcome, type NativeSkillsUpdatePlan } from "./admin-skills-update.ts"
 import {
   harnessUpdatePlanFor,
   harnessUpdateRefreshTargets,
@@ -12,7 +12,7 @@ import {
   type HarnessUpdateManager,
   type HarnessUpdatePlan,
   type HarnessUpdateQueueOptions,
-} from "./admin-harness-update.js"
+} from "./admin-harness-update.ts"
 
 export interface UnsupportedHarnessUpdate {
   readonly entry: AdminProfileEntry

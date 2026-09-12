@@ -20,10 +20,10 @@ import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { guideIntentMaximumLength } from "./guide-api.js"
-import type { CombinedGuideCatalog } from "./guide-catalog.js"
-import { CommandRunnerError, type CommandRunner } from "./guide-launch.js"
-import { guideEnrichPackMaximumLength, type GuideProvider } from "./guide-provider.js"
+import { guideIntentMaximumLength } from "./guide-api.ts"
+import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import { CommandRunnerError, type CommandRunner } from "./guide-launch.ts"
+import { guideEnrichPackMaximumLength, type GuideProvider } from "./guide-provider.ts"
 
 export enum GuideAugmentKind {
   Research = "research",

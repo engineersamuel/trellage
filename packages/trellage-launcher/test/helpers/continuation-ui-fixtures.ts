@@ -10,8 +10,28 @@ import {
   validateContinuationDraft,
   type ContinuationAssessment,
   type ContinuationDraft,
-} from "../../../trellage-guide-core/dist/index.js"
-import type { ContinuationServices, ContinuationSourceStatus } from "../../src/continuation-services.js"
+} from "@trellage/guide-core"
+import type { ContinuationServices, ContinuationSourceStatus } from "../../src/continuation-services.ts"
+
+export enum ContinuationFixtureMode {
+  Fresh = "fresh",
+  Resume = "resume",
+  CancelAnalysis = "cancel-analysis",
+  CancelPreparation = "cancel-preparation",
+  CancelSaveFailure = "cancel-save-failure",
+  CancelCleanupFailure = "cancel-cleanup-failure",
+  SaveFailure = "save-failure",
+  Advanced = "advanced",
+  Different = "different",
+  Unknown = "unknown",
+  Clarification = "clarification",
+  NoAction = "no-action",
+  LongEvidence = "long-evidence",
+  ManyMessages = "many-messages",
+  RedactedMessages = "redacted-messages",
+  LongPrompt = "long-prompt",
+  DirtySource = "dirty-source",
+}
 
 export const continuationFixtureProfiles = [
   { ref: "native:cpx/reviewer", name: "Review specialist", workflows: [{ id: "review", description: "Review the reported changes" }, { id: "explain", description: "Explain the design" }] },

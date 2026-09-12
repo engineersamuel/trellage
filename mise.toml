@@ -1,7 +1,7 @@
 min_version = "2026.6.14"
 
 [settings]
-auto_install = true
+auto_install = false
 
 [env]
 _.path = "./prototypes/trellage"
@@ -17,7 +17,7 @@ run = "env TRELLAGE_TRX_SOURCE_ROOT=\"$MISE_PROJECT_ROOT/prototypes/trellage-rou
 [tasks.trx-guide-test]
 description = "Run the offline trx guide UI integration matrix"
 # Vitest also applies this threshold to the roughly 35-second file total.
-run = "npm --prefix packages/trellage-launcher test -- test/guide-ui.integration.test.ts --reporter=tree --slowTestThreshold=60000"
+run = "cd packages/trellage-launcher && bun run test test/guide-ui.integration.test.ts --reporter=tree --slowTestThreshold=60000"
 
 [tasks.trx-guide-overlay-build]
 description = "Build the local macOS TRX guide selection overlay"
@@ -72,5 +72,6 @@ description = "Create a fresh Azure ARM64 VM and prove Native + Sandbox Trellage
 run = "./scripts/azure-fresh-install.sh"
 
 [tools]
+bun = "1.3.3"
 "github:PrimeIntellect-ai/prime-agent" = "latest"
 uv = "latest"

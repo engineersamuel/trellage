@@ -27,8 +27,8 @@ import {
   countTextLines,
   previewBlockLines,
   type BasketBlockPreview,
-} from "./basket.js"
-import { wrapGuideText } from "./guide-ui.js"
+} from "./basket.ts"
+import { wrapGuideText } from "./guide-ui.tsx"
 
 // ---------------------------------------------------------------------------
 // Argument parsing.

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import "../bun-runtime.setup.ts";
 
 type Task = {
   id: string;

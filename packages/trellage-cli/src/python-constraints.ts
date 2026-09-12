@@ -6,8 +6,8 @@ import { promisify } from "node:util"
 import { parse } from "smol-toml"
 import { Data, Effect } from "effect"
 
-import type { Platform } from "./platform.js"
-import { discoverPypiIndex, sanitizePypiIndex } from "./package-feeds.js"
+import type { Platform } from "./platform.ts"
+import { discoverPypiIndex, sanitizePypiIndex } from "./package-feeds.ts"
 
 const execFilePromise = promisify(execFile)
 

@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "bin/**/*.ts",
+    "scripts/**/*.ts",
+    "prototypes/trellage/claude-managed-files.ts",
+    "prototypes/trellage/finalize-claude-seed.ts",
+    "prototypes/trellage/finalize-copilot-seed.ts",
+    "prototypes/trellage/tests/claude-managed-files.test.ts",
+    "prototypes/trellage/tests/finalizers.test.ts",
+    "prototypes/trellage/tests/fixtures/claude-managed-race.ts",
+    "prototypes/trellage/tests/fixtures/claude-entry-crash.ts",
+    "prototypes/trellage-claude-common/native-skills.ts",
+    "prototypes/trellage-claude-common/manual-skills.ts",
+    "prototypes/trellage-claude-common/tests/*.ts",
+    "prototypes/trellage-codex-common/codex-agents.ts",
+    "prototypes/trellage-jcode-profiles/config-manager.ts"
+  ]
+}

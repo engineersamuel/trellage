@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { GuideAugmentKind } from "../src/guide-augment.js"
-import { enqueueGuideJob } from "../src/guide-batch.js"
-import { renderGuideGoalProposal, type GuideGoalRequest } from "../src/guide-goal-augment.js"
+import { GuideAugmentKind } from "../src/guide-augment.ts"
+import { enqueueGuideJob } from "../src/guide-batch.ts"
+import { renderGuideGoalProposal, type GuideGoalRequest } from "../src/guide-goal-augment.ts"
 import {
   augmentOptions,
   createInitialGuideUiState,
@@ -9,8 +9,8 @@ import {
   GuideUiStage,
   guideUiReducer,
   type GuideUiState,
-} from "../src/guide-ui.js"
-import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.js"
+} from "../src/guide-ui.tsx"
+import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const intent = "Explain the API retry policy."
 const proposal = renderGuideGoalProposal(goalMeSkill, goalDraft)

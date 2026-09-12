@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { detailRows } from "../src/detail-layout.js"
-import type { LaunchEntry } from "../src/state.js"
+import { detailRows } from "../src/detail-layout.ts"
+import type { LaunchEntry } from "../src/state.ts"
 
 const entry: LaunchEntry = {
   id: "claude:blog",

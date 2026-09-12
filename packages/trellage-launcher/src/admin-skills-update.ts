@@ -1,6 +1,6 @@
-import { isKnownNativeLauncher, type AdminProfileEntry } from "./admin-model.js"
-import type { CommandRunner, CommandSpec } from "./guide-launch.js"
-import { runProfileUpdateStep, runUpdateCommand, type ProfileUpdateResult, type UpdateCommandResult } from "./admin-update-command.js"
+import { isKnownNativeLauncher, type AdminProfileEntry } from "./admin-model.ts"
+import type { CommandRunner, CommandSpec } from "./guide-launch.ts"
+import { runProfileUpdateStep, runUpdateCommand, type ProfileUpdateResult, type UpdateCommandResult } from "./admin-update-command.ts"
 
 export interface NativeSkillsUpdatePlan {
   readonly refresh: CommandSpec

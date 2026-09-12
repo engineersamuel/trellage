@@ -8,11 +8,11 @@
  * is the "initial discovery" data flow; `admin-run-manager.ts` is the
  * separate, user-triggered doctor-run orchestration.
  */
-import { toSelectedProfile } from "./admin-launch.js"
-import { aggregateAdminProfiles, type AdminProfileEntry, type AdminReadinessInput } from "./admin-model.js"
-import type { CombinedGuideCatalog } from "./guide-catalog.js"
-import type { CommandRunner } from "./guide-launch.js"
-import { checkSelectedProfileReadiness } from "./guide-preflight.js"
+import { toSelectedProfile } from "./admin-launch.ts"
+import { aggregateAdminProfiles, type AdminProfileEntry, type AdminReadinessInput } from "./admin-model.ts"
+import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CommandRunner } from "./guide-launch.ts"
+import { checkSelectedProfileReadiness } from "./guide-preflight.ts"
 
 /**
  * Runs one readiness check per doctor-supporting entry, in parallel,

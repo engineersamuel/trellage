@@ -6,21 +6,21 @@ description = "Open highlighted terminal text or a completed agent result in trx
 platforms = ["linux", "macos"]
 
 [[build]]
-command = ["npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]
+command = ["bash", "prepare.sh"]
 
 [[actions]]
 id = "open"
 title = "Open text in Trellage guide"
 description = "Open highlighted terminal text or the focused completed agent's final answer in trx guide."
 contexts = ["pane"]
-command = ["node", "action.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "action.ts", "--"]
 
 [[actions]]
 id = "source-picker"
 title = "Open TRX actions"
 description = "Open responsive TRX actions for the active Herdr pane."
 contexts = ["pane"]
-command = ["node", "source-picker-action.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "source-picker-action.ts", "--"]
 
 [[actions]]
 id = "queue-add-selection"
@@ -28,7 +28,7 @@ title = "Add selection to Trellage guide queue"
 description = "Add a private macOS overlay selection request to the Trellage guide queue."
 contexts = ["pane"]
 platforms = ["macos"]
-command = ["node", "overlay-action.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "overlay-action.ts", "--"]
 
 [[actions]]
 id = "context-menu"
@@ -36,7 +36,7 @@ title = "Open TRX contextual actions"
 description = "Open contextual actions for the active Herdr agent pane, including Rewrite output."
 contexts = ["pane"]
 platforms = ["macos"]
-command = ["node", "context-menu-action.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "context-menu-action.ts", "--"]
 
 [[actions]]
 id = "queue-add-selection-open"
@@ -44,15 +44,15 @@ title = "Add selection and open Trellage guide queue"
 description = "Add a private macOS overlay selection request and open the Trellage guide queue editor."
 contexts = ["pane"]
 platforms = ["macos"]
-command = ["node", "overlay-action.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "overlay-action.ts", "--"]
 
 [[events]]
 on = "pane.agent_status_changed"
-command = ["node", "event.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "event.ts", "--"]
 
 [[events]]
 on = "pane.closed"
-command = ["node", "event.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "event.ts", "--"]
 
 [[panes]]
 id = "guide"
@@ -60,7 +60,7 @@ title = "Trellage guide"
 placement = "popup"
 width = "90%"
 height = "90%"
-command = ["node", "popup.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "popup.ts", "--"]
 
 [[panes]]
 id = "source-picker"
@@ -68,7 +68,7 @@ title = "TRX actions"
 placement = "popup"
 width = 88
 height = 20
-command = ["node", "source-picker.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "source-picker.ts", "--"]
 
 [[panes]]
 id = "context-menu"
@@ -76,7 +76,7 @@ title = "Rewrite output"
 placement = "popup"
 width = "90%"
 height = "90%"
-command = ["node", "context-menu-popup.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "context-menu-popup.ts", "--"]
 
 [[panes]]
 id = "queue-editor"
@@ -84,4 +84,4 @@ title = "Trellage guide queue"
 placement = "popup"
 width = 88
 height = 20
-command = ["node", "queue-editor.ts"]
+command = ["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=/dev/null", "queue-editor.ts", "--"]

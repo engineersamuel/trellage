@@ -12,7 +12,7 @@ import {
   selectCommitFromLsRemote,
   type CachePublisher,
   type GitClient,
-} from "../src/github-cache.js"
+} from "../src/github-cache.ts"
 
 const cacheRoot = () =>
   import("node:fs/promises").then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), "harness-cache-")))

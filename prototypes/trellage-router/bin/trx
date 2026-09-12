@@ -12,14 +12,7 @@ if [[ "${TRANSCRIPT_API_KEY+x}" == x ]]; then
 fi
 unset TRANSCRIPT_API_KEY
 
-# Reuse V8's compiled bytecode across invocations. The launcher bundle and the
-# skills manager are re-compiled on every `node` call otherwise; a warm cache
-# measured 47-55ms against 68ms cold for the launcher. Node 22 ships this
-# natively, and an unwritable or stale cache directory degrades to a normal
-# cold start rather than failing.
-export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/trellage/node-compile-cache}"
-
-readonly ownership_value='trellage-router-v2'
+readonly ownership_value='trellage-router-v3'
 
 # Hand-maintained Herdr-compatibility ledger for native launcher/profile pairs,
 # merged into `trx list --json` as each profile's `herdrCompatibility` field.
@@ -544,7 +537,7 @@ build_combined_guide_catalog() {
     || die "trellage command is not an executable regular file: $sandbox_cli"
 
   printf '%s\n' "$profile_list" \
-    | node "$picker_path" enrich-native-list "$guide_root" \
+    | "${trellage_launcher[@]}" "$picker_path" enrich-native-list "$guide_root" \
       >"$out_dir/native-public.json" \
     || die 'could not enrich native profile list with guides'
   jq \
@@ -768,7 +761,7 @@ native_common_root="${XDG_DATA_HOME:-$canonical_home/.local/share}/trellage/comm
 script_path="$(resolve_file "${BASH_SOURCE[0]}")" || die 'cannot resolve trx runtime'
 script_dir="$(canonical_directory "$(dirname "$script_path")")" || die 'cannot resolve trx runtime'
 runtime="$(canonical_directory "$script_dir/..")" || die 'cannot resolve trx runtime'
-picker_path="$runtime/lib/launcher.mjs"
+source_workspace="$runtime/source"
 if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
   [[ "$TRELLAGE_TRX_SOURCE_ROOT" == /* ]] \
     || die "TRELLAGE_TRX_SOURCE_ROOT must be absolute: $TRELLAGE_TRX_SOURCE_ROOT"
@@ -778,7 +771,7 @@ if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
     || die "cannot resolve TRELLAGE_TRX_SOURCE_ROOT: $TRELLAGE_TRX_SOURCE_ROOT"
   [[ "$runtime" == "$source_root" ]] \
     || die "trx source runtime differs from TRELLAGE_TRX_SOURCE_ROOT: $runtime"
-  picker_path="$runtime/../../packages/trellage-launcher/dist/launcher.mjs"
+  source_workspace="$(canonical_directory "$runtime/../..")" || die 'cannot resolve source workspace'
   guide_root="$runtime/../../profile-guides"
   if [[ -n "${TRELLAGE_TRX_GUIDE_ROOT-}" ]]; then
     [[ "$TRELLAGE_TRX_GUIDE_ROOT" == /* ]] \
@@ -788,9 +781,6 @@ if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
     guide_root="$(canonical_directory "$TRELLAGE_TRX_GUIDE_ROOT")" \
       || die "cannot resolve TRELLAGE_TRX_GUIDE_ROOT: $TRELLAGE_TRX_GUIDE_ROOT"
   fi
-  dependency_bootstrap="$runtime/../../scripts/bootstrap-development-dependencies.sh"
-  floating_skills_manager="$runtime/../../scripts/floating-skills.mjs"
-  floating_skills_catalog="$runtime/../../skills.json"
 else
   [[ "$runtime" == "$canonical_home/.local/share/trellage/trx" ]] \
     || die "trx is not running from its owned runtime: $runtime"
@@ -798,60 +788,62 @@ else
     || die 'missing trx ownership marker'
   [[ "$(<"$runtime/.managed-by-trellage-router")" == "$ownership_value" ]] \
     || die 'invalid trx ownership marker'
-  dependency_bootstrap="$runtime/lib/bootstrap-development-dependencies.sh"
   guide_root="$runtime/share/profile-guides"
-  floating_skills_manager="$canonical_home/.local/share/trellage/common/floating-skills-runtime/floating-skills.mjs"
-  floating_skills_catalog="$canonical_home/.local/share/trellage/common/floating-skills-runtime/skills.json"
 fi
+require_source_runtime() {
+  [[ -f "$source_workspace/scripts/bun-runtime.sh" && ! -L "$source_workspace/scripts/bun-runtime.sh" ]] \
+    || die "source runtime is missing or unsafe; reinstall trx: $source_workspace"
+  . "$source_workspace/scripts/bun-runtime.sh"
+  trellage_require_source_runtime "$source_workspace" \
+    || die 'source runtime is not ready; reinstall trx or prepare worktree dependencies explicitly'
+}
+picker_path="$source_workspace/packages/trellage-launcher/src/cli.tsx"
+floating_skills_manager="$source_workspace/scripts/floating-skills.ts"
+floating_skills_catalog="$source_workspace/skills.json"
 router_command_path="$runtime/bin/trx"
 [[ "$script_path" == "$router_command_path" && -f "$router_command_path" \
     && -x "$router_command_path" && ! -L "$router_command_path" ]] \
   || die 'current router command is missing or unsafe'
-if [[ "$mode" != upgrade && "$mode" != skills && -x "$dependency_bootstrap" ]]; then
-  "$dependency_bootstrap" --background
-fi
-
 if [[ "$mode" == skills ]]; then
-  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  require_source_runtime
   [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
     || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die "floating-skills catalog is missing or unsafe: $floating_skills_catalog"
   if [[ "$skills_action" == check ]]; then
-    export NODE_DISABLE_COMPILE_CACHE=1
-    exec node "$floating_skills_manager" check-shared --catalog "$floating_skills_catalog"
+    exec "${trellage_bun[@]}" "$floating_skills_manager" check-shared --catalog "$floating_skills_catalog"
   fi
   if [[ "$skills_action" == update ]]; then
-    node "$floating_skills_manager" update \
+    "${trellage_bun[@]}" "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \
       --bundle native-common \
       || die 'failed to update native skills'
-    node "$floating_skills_manager" update \
+    "${trellage_bun[@]}" "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \
       --bundle native-common \
       --bundle codex-common \
       --cache "$native_common_root/cdx-skills" \
       || die 'failed to update native Codex skills'
-    node "$floating_skills_manager" update \
+    "${trellage_bun[@]}" "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \
       --bundle native-common \
       --bundle codex-common \
       --bundle youtube \
       --cache "$native_common_root/cdx-youtube-pro-skills" \
       || die 'failed to update native YouTube skills'
-    node "$floating_skills_manager" update \
+    "${trellage_bun[@]}" "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \
       --bundle omp-community \
       --cache "$canonical_home/.local/share/trellage/common/omp-community-skills" \
       || die 'failed to update OMP community skills'
-    node "$floating_skills_manager" update \
+    "${trellage_bun[@]}" "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \
       --bundle guide-prompt-master \
       --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
       || die 'failed to update guide Prompt Master skill'
     exit 0
   fi
-  exec node "$floating_skills_manager" "$skills_action" \
+  exec "${trellage_bun[@]}" "$floating_skills_manager" "$skills_action" \
     --catalog "$floating_skills_catalog" \
     --bundle native-common
 fi
@@ -863,14 +855,14 @@ if [[ "$mode" == guide ]] && ((${#guide_args[@]} > 0)); then
       # Fixture-only previews: they read no catalog, so short-circuit
       # before launcher discovery, the ten catalog reads, the Sandbox list,
       # and the floating-skills fetch below. None of them apply to fixtures.
-      command -v node >/dev/null 2>&1 || die 'required command not found: node'
+      require_source_runtime
       [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
       [[ -f "$picker_path" && ! -L "$picker_path" ]] \
         || die 'Ink launcher is missing or unsafe'
       if [[ "$guide_arg" == --forks* ]]; then
-        exec node "$picker_path" guide-forks "${guide_args[@]}"
+        exec "${trellage_launcher[@]}" "$picker_path" guide-forks "${guide_args[@]}"
       fi
-      exec node "$picker_path" guide-preview "${guide_args[@]}"
+      exec "${trellage_launcher[@]}" "$picker_path" guide-preview "${guide_args[@]}"
     fi
   done
 fi
@@ -965,7 +957,7 @@ picx_catalog="$(<"$catalog_tmp/picx")"
 prx_catalog="$(<"$catalog_tmp/prx")"
 agx_catalog="$(<"$catalog_tmp/agx")"
 if [[ "$mode" == upgrade ]]; then
-  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  require_source_runtime
   [[ -f "$picker_path" && ! -L "$picker_path" ]] \
     || die 'harness update CLI is missing or unsafe'
   [[ -d "$guide_root" && ! -L "$guide_root" ]] \
@@ -984,10 +976,10 @@ if [[ "$mode" == upgrade ]]; then
       kill -TERM "$upgrade_pid" 2>/dev/null || true
     fi
   }
-  # Forward signals while the Node child owns the queue, then wait for its cleanup.
+  # Forward signals while the Bun child owns the queue, then wait for its cleanup.
   trap cancel_harness_upgrade HUP INT TERM
   TRELLAGE_TRX_COMMAND_PATH="$router_command_path" \
-    node "$picker_path" upgrade "${upgrade_args[@]}" <"$catalog_tmp/combined.json" &
+    "${trellage_launcher[@]}" "$picker_path" upgrade "${upgrade_args[@]}" <"$catalog_tmp/combined.json" &
   upgrade_pid=$!
   [[ "$upgrade_cancelled" == 0 ]] || cancel_harness_upgrade
   while :; do
@@ -1036,13 +1028,13 @@ if [[ "$mode" == list ]]; then
     "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
     || die 'could not build profile list'
   if ((list_json)); then
-    command -v node >/dev/null 2>&1 || die 'required command not found: node'
+    require_source_runtime
     [[ -f "$picker_path" && ! -L "$picker_path" ]] \
       || die 'Ink launcher is missing or unsafe'
     [[ -d "$guide_root" && ! -L "$guide_root" ]] \
       || die 'profile guide registry is missing or unsafe'
     printf '%s\n' "$profile_list" \
-      | node "$picker_path" enrich-native-list "$guide_root" \
+      | "${trellage_launcher[@]}" "$picker_path" enrich-native-list "$guide_root" \
       || die 'could not enrich profile list with guides'
   else
     jq -r '.profiles[] | [(.launcher + "/" + .name), .description] | @tsv' \
@@ -1052,7 +1044,7 @@ if [[ "$mode" == list ]]; then
 fi
 
 if [[ "$mode" == guide ]]; then
-  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  require_source_runtime
   [[ -f "$picker_path" && ! -L "$picker_path" ]] \
     || die 'Ink launcher is missing or unsafe'
   [[ -d "$guide_root" && ! -L "$guide_root" ]] \
@@ -1069,7 +1061,7 @@ if [[ "$mode" == guide ]]; then
     || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die "floating-skills catalog is missing or unsafe: $floating_skills_catalog"
-  node "$floating_skills_manager" ensure \
+  "${trellage_bun[@]}" "$floating_skills_manager" ensure \
     --catalog "$floating_skills_catalog" \
     --bundle guide-prompt-master \
     --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
@@ -1081,7 +1073,7 @@ if [[ "$mode" == guide ]]; then
 
   build_combined_guide_catalog "$guide_catalog_tmp"
 
-  guide_command=(node "$picker_path" guide "$guide_root" "$guide_catalog_tmp/skills/prompt-master")
+  guide_command=("${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "$guide_catalog_tmp/skills/prompt-master")
   if ((${#guide_args[@]} > 0)); then
     guide_command+=("${guide_args[@]}")
   fi
@@ -1096,7 +1088,7 @@ if [[ "$mode" == guide ]]; then
 fi
 
 if [[ "$mode" == admin ]]; then
-  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  require_source_runtime
   [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
   [[ -f "$picker_path" && ! -L "$picker_path" ]] \
     || die 'Ink launcher is missing or unsafe'
@@ -1114,14 +1106,14 @@ if [[ "$mode" == admin ]]; then
 
   admin_status=0
   TRELLAGE_TRX_COMMAND_PATH="$router_command_path" \
-    node "$picker_path" admin "$guide_root" 3<"$admin_catalog_tmp/combined.json" \
+    "${trellage_launcher[@]}" "$picker_path" admin "$guide_root" 3<"$admin_catalog_tmp/combined.json" \
     || admin_status=$?
   cleanup_admin_catalog_tmp
   trap - EXIT HUP INT TERM
   exit "$admin_status"
 fi
 
-command -v node >/dev/null 2>&1 || die 'required command not found: node'
+require_source_runtime
 [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
 [[ -f "$picker_path" && ! -L "$picker_path" ]] \
   || die 'Ink launcher is missing or unsafe'
@@ -1139,7 +1131,7 @@ result_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-result.XXXXXX")" \
   || { rm -f -- "$choice_file"; die 'cannot create launcher result file'; }
 printf '%s\n' "$choices" >"$choice_file"
 picker_status=0
-node "$picker_path" "$choice_file" "$result_file" || picker_status=$?
+"${trellage_launcher[@]}" "$picker_path" "$choice_file" "$result_file" || picker_status=$?
 launch_intent="$(<"$result_file")"
 rm -f -- "$choice_file" "$result_file"
 if ((picker_status != 0)); then

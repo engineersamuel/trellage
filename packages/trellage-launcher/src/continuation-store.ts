@@ -14,7 +14,7 @@ import {
   type ContinuationLaunchReceipt,
   type ConversationSnapshot,
   type ConversationSource,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 
 export const continuationStateEnvironmentVariable = "HERDR_PLUGIN_STATE_DIR"
 export const continuationRequestDirectory = "continuations/requests"

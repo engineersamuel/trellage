@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import { AdminRunManager } from "../src/admin-run-manager.js"
-import { runBatchedDoctorChecks } from "../src/admin-batch-scheduler.js"
+import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { AdminRunManager } from "../src/admin-run-manager.ts"
+import { runBatchedDoctorChecks } from "../src/admin-batch-scheduler.ts"
 
 /** A controllable fake runner: each `run()` call gets its own deferred resolve/reject, released manually by the test. */
 class DeferredRunner implements CommandRunner {

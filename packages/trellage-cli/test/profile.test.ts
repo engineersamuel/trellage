@@ -5,7 +5,7 @@ import path from "node:path"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { profileHash } from "../src/lock.js"
+import { profileHash } from "../src/lock.ts"
 import {
   isClaudeProfile,
   isCodexProfile,
@@ -13,7 +13,7 @@ import {
   isHeadlongProfile,
   isPrimeProfile,
   parseProfile,
-} from "../src/profile.js"
+} from "../src/profile.ts"
 
 const profile = (extra = "") => `
 schema = 1

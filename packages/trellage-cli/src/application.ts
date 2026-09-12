@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url"
 
 import { Cause, Data, Effect, Exit } from "effect"
 import lockfile from "proper-lockfile"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
 
-import { resolveGitHubSource } from "./github-cache.js"
-import { resolveSandboxHeadlessCapabilities, sandboxHeadlessRuntimeAdapter } from "./headless-capabilities.js"
-import { parseLock, renderLock } from "./lock-file.js"
+import { resolveGitHubSource } from "./github-cache.ts"
+import { resolveSandboxHeadlessCapabilities, sandboxHeadlessRuntimeAdapter } from "./headless-capabilities.ts"
+import { parseLock, renderLock } from "./lock-file.ts"
 import {
   attachedSidecar,
   compileLock,
@@ -28,21 +29,21 @@ import {
   type HarnessPackageLock,
   type LockResolvers,
   type ProfileLock,
-} from "./lock.js"
-import { createBuildContext, type PluginGenerator, type RuntimeSupport } from "./materialize.js"
+} from "./lock.ts"
+import { createBuildContext, type PluginGenerator, type RuntimeSupport } from "./materialize.ts"
 import {
   claudePypiToolNames,
   isClaudeProfile,
   isGraphOfLoopsProfile,
   parseProfile,
   type ProfileDocument,
-} from "./profile.js"
-import { platformIdentity, platformLockPath, type Platform } from "./platform.js"
-import { productionResolvers } from "./resolvers.js"
-import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
-import { createRuntimeSupportSnapshot, type RuntimeSupportSnapshot } from "./runtime-support.js"
-import { dockerHostArguments, dockerSocketPath, verifyDockerTarget, type DockerTarget } from "./docker-target.js"
-import { managedClaudeFiles } from "./claude-materialize.js"
+} from "./profile.ts"
+import { platformIdentity, platformLockPath, type Platform } from "./platform.ts"
+import { productionResolvers } from "./resolvers.ts"
+import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.ts"
+import { createRuntimeSupportSnapshot, type RuntimeSupportSnapshot } from "./runtime-support.ts"
+import { dockerHostArguments, dockerSocketPath, verifyDockerTarget, type DockerTarget } from "./docker-target.ts"
+import { managedClaudeFiles } from "./claude-materialize.ts"
 import {
   loadResolutionReceipt,
   readResolutionReceiptBytes,
@@ -51,10 +52,12 @@ import {
   resolutionReceiptTransferBundle,
   writeResolutionReceipt,
   writeResolutionReceiptBytes,
-} from "./resolution-receipt.js"
-import { loadResolutionSidecar, writeResolutionSidecar } from "./resolution-sidecar-storage.js"
-import type { ResolutionSidecar } from "./resolution-sidecar.js"
-import { discoverPypiIndex, sanitizePypiIndex } from "./package-feeds.js"
+} from "./resolution-receipt.ts"
+import { loadResolutionSidecar, writeResolutionSidecar } from "./resolution-sidecar-storage.ts"
+import type { ResolutionSidecar } from "./resolution-sidecar.ts"
+import { discoverPypiIndex, sanitizePypiIndex } from "./package-feeds.ts"
+import { npmTarballUrl } from "./npm-artifact.ts"
+import bunRuntime from "../../../prototypes/trellage/bun-runtime.json" with { type: "json" }
 
 export {
   discoverPypiIndex,
@@ -63,15 +66,15 @@ export {
   sanitizeNpmRegistry,
   sanitizePypiIndex,
   type CommandOutputRunner,
-} from "./package-feeds.js"
-import { graphRustArtifactNames } from "./rust-release.js"
+} from "./package-feeds.ts"
+import { graphRustArtifactNames } from "./rust-release.ts"
 
 const execFilePromise = promisify(execFile)
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const compatibilityAdapter = path.join(repositoryRoot, "prototypes", "trellage", "adapt-agent-kit.sh")
-const floatingSkillsManager = path.join(repositoryRoot, "scripts", "floating-skills.mjs")
+const floatingSkillsManager = path.join(repositoryRoot, "scripts", "floating-skills.ts")
 const floatingSkillsCatalog = path.join(repositoryRoot, "skills.json")
-const skillsCli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../node_modules/skills/bin/cli.mjs")
+const skillsCli = fileURLToPath(import.meta.resolve("skills/bin/cli.mjs"))
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
   readonly message: string
@@ -100,6 +103,7 @@ const safeLockedVersionPattern =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 const sha256Pattern = /^sha256:[0-9a-f]{64}$/
 const sessionBridgePythonTool = "python@3.13.14"
+const builderBun = '"$bun_bin" --no-install --no-env-file --config=/dev/null'
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`
 
@@ -157,6 +161,24 @@ const impossibleBuilderInput = (message: string): never => {
 const requiredArtifact = (lock: ProfileLock, name: string): ArtifactLock => {
   const artifact = lock.packages.artifacts?.find((candidate) => candidate.name === name)
   return artifact ?? impossibleBuilderInput(`builder requires an exact locked artifact: ${name}`)
+}
+
+const bunBuilderCommands = (platform: Platform, npmRegistry = "https://registry.npmjs.org/"): ReadonlyArray<string> => {
+  const artifact = bunRuntime.platforms[platform]
+  const url = npmTarballUrl(npmRegistry, artifact.package, bunRuntime.version)
+  return [
+    "export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0",
+    'bun_directory="$(mktemp -d /tmp/trellage-bun.XXXXXXXX)"',
+    'bun_archive="$bun_directory/bun.tgz"',
+    `curl --fail --silent --show-error --location --retry 5 --proto '=https' --tlsv1.2 --max-filesize ${artifact.size} --output "$bun_archive" ${shellQuote(url)}`,
+    `[ "$(wc -c < "$bun_archive")" -eq ${artifact.size} ]`,
+    `printf '%s  %s\\n' ${shellQuote(artifact.sha256)} "$bun_archive" | sha256sum --check --strict -`,
+    'tar --no-same-owner --no-same-permissions -xzf "$bun_archive" -C "$bun_directory"',
+    'bun_bin="$bun_directory/package/bin/bun"',
+    'if [ ! -f "$bun_bin" ] || [ -L "$bun_bin" ] || [ ! -x "$bun_bin" ]; then printf "%s\\n" "trellage: Bun archive must supply a regular, non-symlink executable" >&2; exit 1; fi',
+    `if ! bun_version="$(${builderBun} --version)"; then printf "%s\\n" "trellage: Bun version probe failed" >&2; exit 1; fi`,
+    `if [ "$bun_version" != "${bunRuntime.version}" ]; then printf "%s\\n" "trellage: Bun ${bunRuntime.version} is required" >&2; exit 1; fi`,
+  ]
 }
 
 const validSizedArtifact = (artifact: ArtifactLock | undefined): artifact is ArtifactLock =>
@@ -374,7 +396,7 @@ const preferNpmLockCommand = (marketplaceRoot: string): string => {
   const yarnLock = `${marketplaceRoot}/yarn.lock`
   const detectModernYarn =
     'const fs=require("node:fs");try{const value=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).packageManager;process.exit(typeof value==="string"&&/^yarn@(?:[2-9]|[1-9][0-9]+)\\./.test(value)?0:1)}catch{process.exit(1)}'
-  return `if [ -f ${shellQuote(packageLock)} ] && [ -f ${shellQuote(yarnLock)} ] && "$node_bin" -e ${shellQuote(detectModernYarn)} ${shellQuote(packageManifest)}; then rm -f ${shellQuote(yarnLock)}; fi`
+  return `if [ -f ${shellQuote(packageLock)} ] && [ -f ${shellQuote(yarnLock)} ] && ${builderBun} --eval ${shellQuote(detectModernYarn)} ${shellQuote(packageManifest)}; then rm -f ${shellQuote(yarnLock)}; fi`
 }
 
 const claudeMarketplaceCommands = (
@@ -434,7 +456,7 @@ const hyperresearchBuilderScript = (
     `node_dir="$(mise where node@${node.version})"`,
     "rm -rf /src/playwright-mcp-prefix",
     `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 "$node_dir/bin/npm" install --global --prefix /src/playwright-mcp-prefix --ignore-scripts --omit=optional --offline --no-audit --no-fund --loglevel=error /src/npm-artifacts/playwright-mcp.tgz /src/npm-artifacts/playwright.tgz /src/npm-artifacts/playwright-core.tgz`,
-    `"$node_dir/bin/node" -e ${shellQuote(packageCheck)} ${shellQuote(
+    `${builderBun} --eval ${shellQuote(packageCheck)} ${shellQuote(
       JSON.stringify({
         "@playwright/mcp": mcp.version,
         playwright: playwright.version,
@@ -477,7 +499,7 @@ const claudeMarketplaceBuilderScript = (
     '[ -x "$node_bin" ]',
     normalizeClaudeMetadata,
     ...marketplaceCommands,
-    `"$node_bin" /src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json ${harnessVersion}`,
+    `${builderBun} /src/finalize-claude-seed.ts /src/claude-seed /src/claude-marketplaces.json ${harnessVersion}`,
     ...(extraPython
       ? [
           "mkdir -p /src/graph-tools-site",
@@ -537,7 +559,7 @@ const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool:
   )
 }
 
-const primeBuilderScript = (lock: ProfileLock, build: string): string => {
+const primeBuilderScript = (lock: ProfileLock, build: string, npmRegistry?: string): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "prime") return impossibleBuilderInput("Prime builder requires a Prime package")
   const node = requiredArtifact(lock, "node")
@@ -576,7 +598,8 @@ const primeBuilderScript = (lock: ProfileLock, build: string): string => {
     '[ -x "$prime_node_dir/bin/node" ]',
     '[ -x "$prime_node_dir/bin/npm" ]',
     `PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0 PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/npm" install --global --prefix /src/prime-agent-prefix --no-fund --no-audit --loglevel=error --progress=false "$prime_artifact"`,
-    `"$prime_node_dir/bin/node" -e ${shellQuote(packageCheck)} ${shellQuote(harness.version)}`,
+    ...bunBuilderCommands(lock.platform, npmRegistry),
+    `${builderBun} -e ${shellQuote(packageCheck)} ${shellQuote(harness.version)}`,
     `prime_kernel_home=${shellQuote(kernelHome)}`,
     `prime_kernel_seed=${shellQuote(kernelSeed)}`,
     'rm -rf "$prime_kernel_home" "$prime_kernel_seed"',
@@ -676,7 +699,13 @@ const copilotPluginDetails = (
   return { ...selection, version }
 }
 
-const copilotBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool: string, build: string): string => {
+const copilotBuilderScript = (
+  document: ProfileDocument,
+  lock: ProfileLock,
+  tool: string,
+  build: string,
+  npmRegistry?: string,
+): string => {
   const harness = lock.packages.harness
   if (harness.kind !== "copilot") return impossibleBuilderInput("Copilot builder requires a Copilot package")
   const node = requiredArtifact(lock, "node")
@@ -696,14 +725,13 @@ const copilotBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool
     `plugin_list="$(${nativeEnvironment} "$copilot_bin" plugin list)" || plugin_list_status=$?`,
     '[ "$plugin_list_status" -eq 0 ]',
     `printf '%s\\n' "$plugin_list" | awk -v expected='${expectedRow}' '$0 == expected || $0 == expected " (enabled)" { count++ } END { exit count == 1 ? 0 : 1 }'`,
-    `node_bin="$(mise where node@${node.version})/bin/node"`,
-    '[ -x "$node_bin" ]',
-    `"$node_bin" /src/finalize-copilot-seed.mjs /src/copilot-seed ${marketplace} ${selected} ${version}`,
+    ...bunBuilderCommands(lock.platform, npmRegistry),
+    `${builderBun} /src/finalize-copilot-seed.ts /src/copilot-seed ${marketplace} ${selected} ${version}`,
     build,
   ].join("; ")
 }
 
-export const builderScript = (document: ProfileDocument, lock: ProfileLock): string => {
+export const builderScript = (document: ProfileDocument, lock: ProfileLock, npmRegistry?: string): string => {
   const harness = lock.packages.harness
   if (document.profile.harness.kind !== harness.kind) {
     return impossibleBuilderInput("profile and lock harness packages do not match")
@@ -715,12 +743,20 @@ export const builderScript = (document: ProfileDocument, lock: ProfileLock): str
   }
   const tool = `http:${harness.kind}@${harness.version}`
   if (harness.kind === "codex") return codexBuilderScript(lock, tool, build)
-  if (harness.kind === "claude") return claudeBuilderScript(document, lock, tool, build)
+  if (harness.kind === "claude") {
+    return [
+      ...bunBuilderCommands(lock.platform, npmRegistry),
+      "mkdir -p /src/.runtime-support",
+      'cp "$bun_bin" /src/.runtime-support/bun',
+      "chmod 0755 /src/.runtime-support/bun",
+      claudeBuilderScript(document, lock, tool, build),
+    ].join("; ")
+  }
   if (harness.kind === "pi") {
     return `mise install --locked ${tool}; pi_dir=\"$(mise where ${tool})\"; rm -f \"$pi_dir/metadata.json\"; ${build}`
   }
-  if (harness.kind === "prime") return primeBuilderScript(lock, build)
-  return copilotBuilderScript(document, lock, tool, build)
+  if (harness.kind === "prime") return primeBuilderScript(lock, build, npmRegistry)
+  return copilotBuilderScript(document, lock, tool, build, npmRegistry)
 }
 
 const io = <A>(message: string, operation: () => Promise<A>): Effect.Effect<A, ApplicationError> =>
@@ -1122,7 +1158,7 @@ const buildOci = (
         "sh",
         builderImage,
         "-ceu",
-        builderScript(document, lock),
+        builderScript(document, lock, npmRegistry),
       ]),
       { stdio: "inherit" },
     )
@@ -1338,17 +1374,17 @@ const injectFloatingSkills = (
     yield* updateFloatingManagedManifests(document, context, snapshot, names)
   })
 
-const floatingStageArguments = (document: ProfileDocument, snapshot: string): ReadonlyArray<string> => [
-  floatingSkillsManager,
-  "stage",
-  "--catalog",
-  floatingSkillsCatalog,
-  ...document.profile.skill_bundles.flatMap((bundle) => ["--bundle", bundle]),
-  "--output",
-  snapshot,
-  "--skills-cli",
-  skillsCli,
-]
+const floatingStageArguments = (document: ProfileDocument, snapshot: string): ReadonlyArray<string> =>
+  bunArguments(floatingSkillsManager, [
+    "stage",
+    "--catalog",
+    floatingSkillsCatalog,
+    ...document.profile.skill_bundles.flatMap((bundle) => ["--bundle", bundle]),
+    "--output",
+    snapshot,
+    "--skills-cli",
+    skillsCli,
+  ])
 
 const cleanupBuildDirectory = (
   candidate: string | undefined,
@@ -1378,7 +1414,7 @@ const buildWithCurrentSkills = (
         mkdtemp(path.join(temporaryParent, "trellage-floating-skills-")),
       )
       snapshot = path.join(floatingRoot, "snapshot")
-      yield* run(process.execPath, floatingStageArguments(document, snapshot))
+      yield* run(bunExecutable(), floatingStageArguments(document, snapshot))
     }
     context = yield* createBuildContext(
       document,
@@ -1512,11 +1548,11 @@ const defaultRuntimeSupport: RuntimeSupport = {
   ),
   finalizeCopilotSeed: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../../../prototypes/trellage/finalize-copilot-seed.mjs",
+    "../../../prototypes/trellage/finalize-copilot-seed.ts",
   ),
   finalizeClaudeSeed: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "../../../prototypes/trellage/finalize-claude-seed.mjs",
+    "../../../prototypes/trellage/finalize-claude-seed.ts",
   ),
   claudeEntry: path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),

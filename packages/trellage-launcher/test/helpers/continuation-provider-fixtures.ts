@@ -8,15 +8,15 @@ import {
   type ContinuationAssessment,
   type ConversationSnapshot,
   type NextAction,
-} from "../../../trellage-guide-core/dist/conversation.js"
-import type { GuideMatchCatalogEntry } from "../../src/guide-catalog.js"
-import type { GuideReasoningEffort } from "../../src/guide-model-routing.js"
+} from "@trellage/guide-core/conversation"
+import type { GuideMatchCatalogEntry } from "../../src/guide-catalog.ts"
+import type { GuideReasoningEffort } from "../../src/guide-model-routing.ts"
 import type {
   ContinuationAssessmentInput,
   ContinuationProvider,
   ContinuationRequestOptions,
   ContinuationSummaryInput,
-} from "../../src/continuation-provider.js"
+} from "../../src/continuation-provider.ts"
 
 export const continuationEntries: GuideMatchCatalogEntry[] = [{
   ref: "native:cpx/default",

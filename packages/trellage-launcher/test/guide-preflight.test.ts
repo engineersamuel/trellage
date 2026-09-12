@@ -11,10 +11,10 @@ import {
   type CommandRunOptions,
   type CommandRunResult,
   type CommandRunner,
-} from "../src/guide-launch.js"
-import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "../src/guide-preflight.js"
-import type { GuideGoalReadinessServices } from "../src/guide-goal-readiness.js"
-import { goalTransportFixture } from "./fixtures/goal-transport.js"
+} from "../src/guide-launch.ts"
+import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "../src/guide-preflight.ts"
+import type { GuideGoalReadinessServices } from "../src/guide-goal-readiness.ts"
+import { goalTransportFixture } from "./fixtures/goal-transport.ts"
 
 class FakeRunner implements CommandRunner {
   readonly calls: Array<{
@@ -184,7 +184,7 @@ if (args.length === 1 && args[0] === "--version") {
         ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}`,
         FIXTURE_CWD: cwd, FIXTURE_REPOSITORY: repository, FIXTURE_PRIMARY: primary, FIXTURE_TRACE: trace,
       }
-      const beforeFiles = await readdir(home, { recursive: true })
+      const beforeFiles = (await readdir(home, { recursive: true })).sort()
       const beforeConfig = await stat(config)
       const actual = createNodeCommandRunner()
       const bare = await actual.run("codex", ["features", "list"], {
@@ -227,7 +227,7 @@ if (args.length === 1 && args[0] === "--version") {
       expect(await readFile(projectConfig, "utf8")).toBe("[features]\ngoals = false\n")
       expect((await stat(config)).mtimeMs).toBe(beforeConfig.mtimeMs)
       expect((await stat(config)).mode & 0o777).toBe(0o600)
-      expect(await readdir(home, { recursive: true })).toEqual(beforeFiles)
+      expect((await readdir(home, { recursive: true })).sort()).toEqual(beforeFiles)
     } finally {
       await rm(fixture, { recursive: true, force: true })
     }

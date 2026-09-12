@@ -5,16 +5,16 @@ import path from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { ClaudeReleaseClient } from "../src/claude-release.js"
-import type { CodexReleaseClient } from "../src/codex-release.js"
-import type { CopilotReleaseClient } from "../src/copilot-release.js"
-import type { GitClient } from "../src/github-cache.js"
-import type { PiReleaseClient } from "../src/pi-release.js"
-import type { PrimeReleaseClient } from "../src/prime-release.js"
-import type { loadProfile as loadProfileType, loadReleaseLock as loadReleaseLockType } from "../src/application.js"
-import type { lockIsReady as lockIsReadyType, ProfileLock } from "../src/lock.js"
-import type { loadResolutionReceipt as loadResolutionReceiptType } from "../src/resolution-receipt.js"
-import type { ProfileDocument } from "../src/profile.js"
+import type { ClaudeReleaseClient } from "../src/claude-release.ts"
+import type { CodexReleaseClient } from "../src/codex-release.ts"
+import type { CopilotReleaseClient } from "../src/copilot-release.ts"
+import type { GitClient } from "../src/github-cache.ts"
+import type { PiReleaseClient } from "../src/pi-release.ts"
+import type { PrimeReleaseClient } from "../src/prime-release.ts"
+import type { loadProfile as loadProfileType, loadReleaseLock as loadReleaseLockType } from "../src/application.ts"
+import type { lockIsReady as lockIsReadyType, ProfileLock } from "../src/lock.ts"
+import type { loadResolutionReceipt as loadResolutionReceiptType } from "../src/resolution-receipt.ts"
+import type { ProfileDocument } from "../src/profile.ts"
 
 const application = vi.hoisted(() => ({
   loadProfile: vi.fn<typeof loadProfileType>(),
@@ -23,20 +23,20 @@ const application = vi.hoisted(() => ({
 const resolutionReceipt = vi.hoisted(() => ({ loadResolutionReceipt: vi.fn<typeof loadResolutionReceiptType>() }))
 const lockModule = vi.hoisted(() => ({ lockIsReady: vi.fn<typeof lockIsReadyType>() }))
 
-vi.mock("../src/application.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/application.js")>()
+vi.mock("../src/application.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/application.ts")>()
   return { ...actual, loadProfile: application.loadProfile, loadReleaseLock: application.loadReleaseLock }
 })
-vi.mock("../src/resolution-receipt.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/resolution-receipt.js")>()
+vi.mock("../src/resolution-receipt.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/resolution-receipt.ts")>()
   return { ...actual, loadResolutionReceipt: resolutionReceipt.loadResolutionReceipt }
 })
-vi.mock("../src/lock.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/lock.js")>()
+vi.mock("../src/lock.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lock.ts")>()
   return { ...actual, lockIsReady: lockModule.lockIsReady }
 })
 
-const { harnessVersionReport } = await import("../src/harness-version-report.js")
+const { harnessVersionReport } = await import("../src/harness-version-report.ts")
 
 const claudeDocument = (): ProfileDocument =>
   ({ profile: { harness: { kind: "claude" } } }) as unknown as ProfileDocument

@@ -16,8 +16,8 @@ import {
   runCleanupStep,
   type CopilotGuideProviderOptions,
   type GuideModelClient,
-} from "./copilot-guide-provider.js"
-import { validateGuideIntent } from "./guide-api.js"
+} from "./copilot-guide-provider.ts"
+import { validateGuideIntent } from "./guide-api.ts"
 import {
   GuideGoalCancelledError,
   GuideGoalError,
@@ -27,9 +27,9 @@ import {
   type GuideGoalAugmentContext,
   type GuideGoalAugmentInput,
   type GuideGoalAugmentProvider,
-} from "./guide-goal-augment.js"
-import type { GuideGoalSkillResolver, GuideGoalSkills } from "./guide-goal-skills.js"
-import { guideGoalModelConfig } from "./guide-model-routing.js"
+} from "./guide-goal-augment.ts"
+import type { GuideGoalSkillResolver, GuideGoalSkills } from "./guide-goal-skills.ts"
+import { guideGoalModelConfig } from "./guide-model-routing.ts"
 
 export interface GuideGoalModelSession {
   readonly sessionId: string
@@ -330,7 +330,7 @@ export class CopilotGoalAugmentProvider implements GuideGoalAugmentProvider {
         resources.skills = loaded
         return loaded
       }))
-      const systemPrompt = this.options.systemPrompt ?? (await run.wait(() => import("../prompts/guide-goal-augment.md"))).default
+      const systemPrompt = this.options.systemPrompt ?? await run.wait(() => readFile(new URL("../prompts/guide-goal-augment.md", import.meta.url), "utf8"))
       await this.startSession(run, resources, context, skills, systemPrompt, prompt)
     } catch (error) {
       run.fail(error)
@@ -424,3 +424,4 @@ export class CopilotGoalAugmentProvider implements GuideGoalAugmentProvider {
     void session.send({ prompt }).catch((error: unknown) => run.fail(error))
   }
 }
+import { readFile } from "node:fs/promises"

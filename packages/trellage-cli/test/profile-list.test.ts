@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import { resolveSandboxHeadlessCapabilities } from "../src/headless-capabilities.js"
-import type { ProfileChoice } from "../src/profile-discovery.js"
-import { formatProfileListHuman, toFullList, toSimplifiedList } from "../src/profile-list.js"
+import { resolveSandboxHeadlessCapabilities } from "../src/headless-capabilities.ts"
+import type { ProfileChoice } from "../src/profile-discovery.ts"
+import { formatProfileListHuman, toFullList, toSimplifiedList } from "../src/profile-list.ts"
 
 const guide = {
   schemaVersion: 1 as const,

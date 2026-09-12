@@ -24,12 +24,13 @@ runtime_root="$(cd -P "$script_dir/.." && pwd)"
 catalog="${CPX_CATALOG:-$script_dir/../catalog.json}"
 instruction_asset="$script_dir/../assets/rundown/rundown.instructions.md"
 profiles_root="$HOME/.local/share/trellage/profiles/copilot"
-floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
 if [[ ! -f "$floating_skills_manager" ]]; then
-  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+bun_runner="${floating_skills_manager%/*}/run-source.sh"
 session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
 if [[ ! -f "$session_bridge_source" ]]; then
   session_bridge_source="$runtime_root/../../scripts/trellage-session-bridge.py"
@@ -77,8 +78,7 @@ ensure_floating_skills() {
     || die "invalid floating-skills manager: $floating_skills_manager"
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die "invalid floating-skills catalog: $floating_skills_catalog"
-  command -v node >/dev/null 2>&1 || die 'required command not found: node'
-  node "$floating_skills_manager" ensure \
+  "$bun_runner" "$floating_skills_manager" ensure \
     --catalog "$floating_skills_catalog" \
     --bundle native-common \
     --target "$(profile_home "$profile")/skills" \
@@ -87,7 +87,7 @@ ensure_floating_skills() {
 
 verify_floating_skills() {
   local profile="$1"
-  node "$floating_skills_manager" verify \
+  "$bun_runner" "$floating_skills_manager" verify \
     --catalog "$floating_skills_catalog" \
     --bundle native-common \
     --target "$(profile_home "$profile")/skills" \
@@ -95,7 +95,7 @@ verify_floating_skills() {
 }
 
 skills_update_profile() {
-  local profile="$1" helper="$runtime_root/native-skills.mjs"
+  local profile="$1" helper="$runtime_root/native-skills.ts"
   local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
   local skill_args=("${2:---sync}")
   [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
@@ -103,13 +103,12 @@ skills_update_profile() {
   require_profile "$profile"
   require_safe_profile_home "$profile"
   [[ -d "$(profile_home "$profile")" ]] || die "profile is not set up: $profile"
-  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.ts"
   [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
-  require_command node
   if [[ "${skill_args[0]}" == --fresh ]]; then
-    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills"
+    exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills"
   fi
-  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills" \
+  "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills" \
     || die "failed to update cached skills: $profile"
   [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile"
 }

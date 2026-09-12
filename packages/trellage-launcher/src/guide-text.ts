@@ -2,7 +2,7 @@
  * Shared strict-parsing primitives for the `trx guide` model-backed core.
  *
  * These mirror the validation style already used by `catalog.ts` and
- * `../../trellage-guide-core/dist/index.js` (exact keys, control-character
+ * `@trellage/guide-core` (exact keys, control-character
  * rejection, bounded lengths) so catalog parsing and model-output validation
  * fail closed the same way the rest of the launcher does.
  */

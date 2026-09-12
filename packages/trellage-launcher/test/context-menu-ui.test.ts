@@ -6,9 +6,9 @@ import {
   initialContextMenuUiState,
   startContextMenuRewriteTask,
   type ContextMenuUiRequest,
-} from "../src/context-menu-ui.js"
-import { markdownInlineSegments, markdownPromptLines } from "../src/guide-ui.js"
-import { RestrictedGuideModelError } from "../src/copilot-guide-provider.js"
+} from "../src/context-menu-ui.tsx"
+import { markdownInlineSegments, markdownPromptLines } from "../src/guide-ui.tsx"
+import { RestrictedGuideModelError } from "../src/copilot-guide-provider.ts"
 
 const style = {
   id: "ste-english",

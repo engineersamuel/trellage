@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { ProfileGuideGoalExecution, ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { GuideValidationError } from "../src/guide-text.js"
+import type { ProfileGuideGoalExecution, ProfileGuideV1 } from "@trellage/guide-core"
+import { GuideValidationError } from "../src/guide-text.ts"
 import {
   compactProfileGuide,
   guideCatalogEntries,
@@ -8,7 +8,7 @@ import {
   guideMatchCatalogEntries,
   parseGuideCatalog,
   toGuideMatchCatalogEntry,
-} from "../src/guide-catalog.js"
+} from "../src/guide-catalog.ts"
 
 const guide: ProfileGuideV1 = {
   schemaVersion: 1,

@@ -7,9 +7,9 @@
  * ownership of per-profile state, history, and single-in-flight-per-ref
  * guarantees (`admin-run-manager.ts`) — this scheduler never bypasses them.
  */
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { AdminRunManager } from "./admin-run-manager.js"
-import { buildDiagnosticCommand } from "./admin-launch.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { AdminRunManager } from "./admin-run-manager.ts"
+import { buildDiagnosticCommand } from "./admin-launch.ts"
 
 export interface BatchDoctorSchedulerOptions {
   readonly maxConcurrent?: number

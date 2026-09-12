@@ -1,8 +1,8 @@
-import type { ProfileChoice } from "./profile-discovery.js"
-import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { resolveSandboxHeadlessCapabilities, type HeadlessCapabilitiesV1 } from "./headless-capabilities.js"
-import type { HerdrCompatibilityEntry } from "./herdr-compatibility.js"
-import type { ProfileReadiness } from "./profile-readiness.js"
+import type { ProfileChoice } from "./profile-discovery.ts"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import { resolveSandboxHeadlessCapabilities, type HeadlessCapabilitiesV1 } from "./headless-capabilities.ts"
+import type { HerdrCompatibilityEntry } from "./herdr-compatibility.ts"
+import type { ProfileReadiness } from "./profile-readiness.ts"
 
 export interface SimplifiedProfileList {
   readonly schemaVersion: 1

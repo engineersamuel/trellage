@@ -1,5 +1,18 @@
 # syntax=docker/dockerfile:1
 
+FROM node:bookworm-slim AS comparison_source
+
+ARG TARGETPLATFORM
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl jq \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=bind,target=/context,readonly \
+    bash /context/scripts/provision-comparison-source.sh \
+      /context /opt/comparison-runtime "${TARGETPLATFORM}" "${NPM_CONFIG_REGISTRY}"
+
 FROM debian:bookworm-slim AS plugins
 
 ARG AWESOME_COPILOT_REF=main
@@ -53,8 +66,9 @@ RUN apt-get update \
 COPY --from=plugins /opt/awesome-plugins /opt/awesome-plugins
 COPY --from=plugins /opt/trellage/source-provenance.json /opt/trellage/source-provenance.json
 COPY --from=floating_skills / /opt/floating-skills
+COPY --from=comparison_source /opt/comparison-runtime/bun /usr/local/bin/bun
+COPY --from=comparison_source /opt/comparison-runtime/source /opt/trellage-source
 COPY --chmod=0555 scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh
-COPY --chmod=0555 scripts/floating-skills.mjs /usr/local/bin/floating-skills.mjs
 COPY --chmod=0444 skills.json /opt/floating-skills-catalog.json
 COPY scripts/copilot-agent-entrypoint.sh /usr/local/bin/copilot-agent-entrypoint.sh
 COPY --chmod=0555 prototypes/trellage/copilot-model-settings.py /usr/local/bin/trellage-copilot-model-settings
@@ -67,6 +81,8 @@ RUN chmod 0555 /usr/local/bin/copilot-agent-entrypoint.sh /usr/local/bin/run-cop
       /opt/floating-skills /opt/floating-skills-catalog.json
 
 ENV HOME=/home/agent \
+    TRELLAGE_BUN_EXECUTABLE=/usr/local/bin/bun \
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 \
     COPILOT_HOME=/workspace/.copilot-home \
     XDG_CACHE_HOME=/workspace/.cache \
     XDG_CONFIG_HOME=/workspace/.config \

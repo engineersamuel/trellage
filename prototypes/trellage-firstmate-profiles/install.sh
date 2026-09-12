@@ -35,7 +35,7 @@ command_dir="$local_dir/bin"
 command_path="$command_dir/fmx"
 
 native_claude_source="$repo_root/prototypes/trellage-claude-common/native-claude"
-native_skills_source="$repo_root/prototypes/trellage-claude-common/native-skills.mjs"
+native_skills_source="$repo_root/prototypes/trellage-claude-common/native-skills.ts"
 session_bridge_source="$repo_root/scripts/trellage-session-bridge.py"
 floating_runtime_installer="$repo_root/scripts/install-floating-skills-runtime.sh"
 prerequisite_helper_source="$source_dir/lib/fmx-prerequisites"
@@ -126,6 +126,9 @@ require_owned_runtime_contents() {
   if [[ -e "$install_root/native-skills.mjs" || -L "$install_root/native-skills.mjs" ]]; then
     require_runtime_file "$install_root/native-skills.mjs"
   fi
+  if [[ -e "$install_root/native-skills.ts" || -L "$install_root/native-skills.ts" ]]; then
+    require_runtime_file "$install_root/native-skills.ts"
+  fi
   require_runtime_file "$install_root/lib/trellage-session-bridge.py"
   require_runtime_file "$installed_catalog"
   require_runtime_file "$install_root/prerequisite-lock/manifest.json"
@@ -149,6 +152,7 @@ require_owned_runtime_contents() {
       "$install_root/lib/fmx-prerequisites"|\
       "$install_root/lib/native-claude"|\
       "$install_root/native-skills.mjs"|\
+      "$install_root/native-skills.ts"|\
       "$install_root/lib/trellage-session-bridge.py"|\
       "$installed_catalog"|\
       "$install_root/policies"|\
@@ -717,7 +721,7 @@ stage_file "$source_dir/lib/fmx-worker" "$staging_root/new-runtime/lib/fmx-worke
 stage_file "$source_dir/lib/fmx-overlay.py" "$staging_root/new-runtime/lib/fmx-overlay.py" 0755
 stage_file "$prerequisite_helper_source" "$staging_root/new-runtime/lib/fmx-prerequisites" 0755
 stage_file "$native_claude_source" "$staging_root/new-runtime/lib/native-claude" 0755
-stage_file "$native_skills_source" "$staging_root/new-runtime/native-skills.mjs" 0644
+stage_file "$native_skills_source" "$staging_root/new-runtime/native-skills.ts" 0644
 stage_file "$session_bridge_source" \
   "$staging_root/new-runtime/lib/trellage-session-bridge.py" 0755
 stage_file "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json" 0644

@@ -3,16 +3,16 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { parseGuideCatalog } from "../src/guide-catalog.js"
-import { ProfileReadinessKind } from "../src/guide-preflight.js"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import { parseGuideCatalog } from "../src/guide-catalog.ts"
+import { ProfileReadinessKind } from "../src/guide-preflight.ts"
 import {
   aggregateAdminProfiles,
   loadAdminProfileGuideBody,
   nativeLauncherCapabilities,
   toProfileGuideIdentity,
   type AdminReadinessInput,
-} from "../src/admin-model.js"
+} from "../src/admin-model.ts"
 
 const guide: ProfileGuideV1 = {
   schemaVersion: 1,

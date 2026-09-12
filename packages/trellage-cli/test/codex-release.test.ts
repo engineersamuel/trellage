@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { CodexReleaseError, resolveCodexRelease, type CodexReleaseClient } from "../src/codex-release.js"
+import { CodexReleaseError, resolveCodexRelease, type CodexReleaseClient } from "../src/codex-release.ts"
 
 const digest = "sha256:05de65ee7b6bd02038e720cc313941d5ec6794718e4261bd28fd83b93fe34d43"
 const codeModeHostDigest = "sha256:dfd4ff98ea4db30ed078af9c31b6f86e3da4836d0573aa87e225e5a5b54d3c7c"

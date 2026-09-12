@@ -2,9 +2,9 @@ import { createHash } from "node:crypto"
 
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { lockedArtifactError } from "../src/artifact-catalog.js"
-import { graphOfLoopsRuntimeAssetPath, graphOfLoopsRuntimeIntegrity } from "../src/graph-runtime.js"
-import { graphRustArtifactNames, graphRustArtifactUrl } from "../src/rust-release.js"
+import { lockedArtifactError } from "../src/artifact-catalog.ts"
+import { graphOfLoopsRuntimeAssetPath, graphOfLoopsRuntimeIntegrity } from "../src/graph-runtime.ts"
+import { graphRustArtifactNames, graphRustArtifactUrl } from "../src/rust-release.ts"
 
 import {
   attachedSidecar,
@@ -19,11 +19,11 @@ import {
   type LockResolvers,
   type ProfileLock,
   type ReleaseHarnessPackageLock,
-} from "../src/lock.js"
-import { parseLock, renderLock } from "../src/lock-file.js"
-import { parseProfile } from "../src/profile.js"
-import { runtimeIntegrities, runtimeVersions } from "./fixtures/runtime-packages.js"
-import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
+} from "../src/lock.ts"
+import { parseLock, renderLock } from "../src/lock-file.ts"
+import { parseProfile } from "../src/profile.ts"
+import { runtimeIntegrities, runtimeVersions } from "./fixtures/runtime-packages.ts"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.ts"
 
 const source = (model = "gpt-5.5") => `
 schema = 1

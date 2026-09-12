@@ -1,6 +1,6 @@
 import { Data, Effect, Schema } from "effect"
 
-import type { ArtifactLock, HarnessPackageLock } from "./lock.js"
+import type { ArtifactLock, HarnessPackageLock } from "./lock.ts"
 
 export interface CodexReleaseClient {
   readonly release: (selector: string) => Effect.Effect<unknown, unknown>

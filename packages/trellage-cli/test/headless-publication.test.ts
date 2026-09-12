@@ -9,7 +9,7 @@ import {
   sandboxHeadlessCapabilityDeclarations,
   type HeadlessCapabilitiesV1,
   type SandboxHeadlessRuntimeAdapter,
-} from "../src/headless-capabilities.js"
+} from "../src/headless-capabilities.ts"
 
 interface EvidenceReference {
   readonly path: string

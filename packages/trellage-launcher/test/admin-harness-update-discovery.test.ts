@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
-import { checkAdminHarnessUpdates } from "../src/admin-harness-update-discovery.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import type { CommandRunner, CommandRunResult } from "../src/guide-launch.js"
+import { checkAdminHarnessUpdates } from "../src/admin-harness-update-discovery.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import type { CommandRunner, CommandRunResult } from "../src/guide-launch.ts"
 
 const container = (name: string): AdminProfileEntry => ({
   ref: `sandbox:${name}`,

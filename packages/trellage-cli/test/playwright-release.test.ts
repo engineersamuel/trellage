@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const execFilePromise = promisify(execFile)
 const mocks = vi.hoisted(() => ({ coreArchive: "", playwrightDependency: "1.2.3" }))
 
-vi.mock("../src/npm-artifact.js", async () => {
+vi.mock("../src/npm-artifact.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveNpmArtifact: (request: { readonly name: string; readonly artifactName: string }) => {
@@ -39,7 +39,7 @@ vi.mock("../src/npm-artifact.js", async () => {
   }
 })
 
-vi.mock("../src/artifact-cache.js", async () => {
+vi.mock("../src/artifact-cache.ts", async () => {
   const { Effect } = await import("effect")
   return {
     cacheArtifact: (request: { readonly url: string }) =>
@@ -51,7 +51,7 @@ vi.mock("../src/artifact-cache.js", async () => {
   }
 })
 
-import { resolvePlaywrightRelease } from "../src/playwright-release.js"
+import { resolvePlaywrightRelease } from "../src/playwright-release.ts"
 
 describe("Playwright release resolution", () => {
   beforeEach(() => {

@@ -6,14 +6,14 @@ import {
   runAllHarnessUpdates,
   type HarnessUpdateAllOutcome,
   type HarnessUpdateAllPlan,
-} from "./admin-harness-update-all.js"
-import { HarnessUpdateManager, type HarnessUpdatePlan, type HarnessUpdateQueueEvent } from "./admin-harness-update.js"
-import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.js"
-import { aggregateAdminProfiles } from "./admin-model.js"
-import { AdminRunManager } from "./admin-run-manager.js"
-import { nativeSkillsUpdateCommand, type NativeSkillsUpdateEvent, type NativeSkillsUpdatePlan } from "./admin-skills-update.js"
-import type { CombinedGuideCatalog } from "./guide-catalog.js"
-import { renderCommandPreview, type CommandRunner } from "./guide-launch.js"
+} from "./admin-harness-update-all.ts"
+import { HarnessUpdateManager, type HarnessUpdatePlan, type HarnessUpdateQueueEvent } from "./admin-harness-update.ts"
+import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.ts"
+import { aggregateAdminProfiles } from "./admin-model.ts"
+import { AdminRunManager } from "./admin-run-manager.ts"
+import { nativeSkillsUpdateCommand, type NativeSkillsUpdateEvent, type NativeSkillsUpdatePlan } from "./admin-skills-update.ts"
+import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import { renderCommandPreview, type CommandRunner } from "./guide-launch.ts"
 
 export const harnessUpgradeHelpText = `Usage:
   trx upgrade all [--yes | --dry-run]

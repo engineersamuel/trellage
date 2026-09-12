@@ -3,23 +3,23 @@ import path from "node:path"
 
 import { Data, Effect } from "effect"
 
-import type { InventoryEntry } from "./inventory.js"
+import type { InventoryEntry } from "./inventory.ts"
 import {
   claudeHasSerena,
   claudePypiToolNames,
   isClaudeProfile,
   isGraphOfLoopsProfile,
   type ProfileDocument,
-} from "./profile.js"
-import { assertProductionPlatform, productionPlatforms, type Platform } from "./platform.js"
-import { extraClaudeMarketplaceArtifactNames, lockedArtifactError } from "./artifact-catalog.js"
-import { graphOfLoopsRuntimeAssetPath, graphOfLoopsRuntimeIntegrity } from "./graph-runtime.js"
+} from "./profile.ts"
+import { assertProductionPlatform, productionPlatforms, type Platform } from "./platform.ts"
+import { extraClaudeMarketplaceArtifactNames, lockedArtifactError } from "./artifact-catalog.ts"
+import { graphOfLoopsRuntimeAssetPath, graphOfLoopsRuntimeIntegrity } from "./graph-runtime.ts"
 import {
   createPythonConstraintsSidecar,
   resolutionSidecarReference,
   type ResolutionSidecar,
   type ResolutionSidecarReference,
-} from "./resolution-sidecar.js"
+} from "./resolution-sidecar.ts"
 
 const legacySourceProvenance = Symbol("legacySourceProvenance")
 const persistedLockProvenance = Symbol("persistedLockProvenance")

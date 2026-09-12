@@ -6,7 +6,7 @@
  * (the underlying runner already escalates SIGTERM -> SIGKILL on abort),
  * and a bounded, in-memory, session-scoped run history per profile.
  */
-import type { CommandRunner, CommandRunnerError } from "./guide-launch.js"
+import type { CommandRunner, CommandRunnerError } from "./guide-launch.ts"
 
 export type AdminRunTerminalState = "success" | "failure" | "cancelled" | "timed-out"
 export type AdminRunState = "idle" | "running" | AdminRunTerminalState

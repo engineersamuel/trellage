@@ -246,10 +246,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
+fixture_registry="$(npm config get registry --workspaces=false)" \
+  || fail 'failed to discover host npm registry'
+[[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
+export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export npm_config_registry="$fixture_registry"
+
 fixture_home="$fixture_root/home"
 fake_bin="$fixture_root/fake-bin"
 fake_grok_log="$fixture_root/fake-grok.log"
 mkdir -p "$fixture_home" "$fake_bin"
+
+remove_completed_case_home() {
+  local case_home="$1"
+  [[ "$fixture_root" == /* && -d "$fixture_root" && ! -L "$fixture_root" \
+    && "${case_home%/*}" == "$fixture_root" \
+    && -n "${case_home##*/}" \
+    && "${case_home##*/}" != . && "${case_home##*/}" != .. \
+    && "$case_home" != "$fixture_home" \
+    && -d "$case_home" && ! -L "$case_home" ]] \
+    || fail "refusing unsafe completed case home: $case_home"
+  rm -rf -- "$case_home"
+}
 : >"$fake_grok_log"
 
 HOME="$fixture_home" "$prototype_root/bin/grx" list >"$fixture_root/list.out" \
@@ -3813,6 +3831,7 @@ ancestor_uninstall_hash_after="$(profile_tree_hash "$ancestor_uninstall_target")
 [ "$(sha256_file "$installed_ancestor_launcher")" \
   = "$installed_ancestor_hash_before" ] \
   || fail 'uninstaller changed runtime state after finding a symlinked ancestor'
+remove_completed_case_home "$ancestor_uninstall_home"
 
 mkdir -p "$(dirname "$installed_command")"
 printf 'unrelated command\n' >"$installed_command"
@@ -4226,6 +4245,9 @@ for signal_case in $installer_signal_cases; do
     fi
   fi
   assert_line 'preserve installer signal user data' "$signal_home/user-sentinel"
+  if [ -z "$installer_signal_failures" ]; then
+    remove_completed_case_home "$signal_home"
+  fi
 done
 [ -z "$installer_signal_failures" ] \
   || fail "installer post-mutation signals were not recoverable:$installer_signal_failures"
@@ -4456,6 +4478,9 @@ for failure_point in $transaction_failure_points; do
       transaction_baseline_failures="$transaction_baseline_failures $failure_point:command"
     fi
   fi
+  if [ -z "$transaction_baseline_failures" ]; then
+    remove_completed_case_home "$transaction_home"
+  fi
 done
 [ -z "$transaction_baseline_failures" ] \
   || fail "uninstaller transaction failures were not recoverable:$transaction_baseline_failures"
@@ -4483,6 +4508,7 @@ HOME="$uninstall_signal_home" \
 [ -z "$(find "$(dirname "$uninstall_signal_command")" -maxdepth 1 \
   -name '.grx-uninstall-command.*' -print -quit)" ] \
   || fail 'INT-interrupted uninstaller left command staging debris'
+remove_completed_case_home "$uninstall_signal_home"
 
 rollback_failure_home="$fixture_root/uninstall-rollback-failure-home"
 mkdir "$rollback_failure_home"
@@ -4518,6 +4544,7 @@ assert_line "grx uninstall: rollback failed; runtime recovery: $uninstall_runtim
   || fail 'uninstall rollback failure lost the statusline recovery asset'
 assert_line 'preserve rollback-failure user data' \
   "$rollback_failure_home/user-sentinel"
+remove_completed_case_home "$rollback_failure_home"
 
 uninstall_cleanup_home="$fixture_root/uninstall-cleanup-failure-home"
 mkdir "$uninstall_cleanup_home"
@@ -4557,6 +4584,7 @@ assert_line "grx uninstall: failed to clean uninstall staging; runtime recovery:
   || fail 'uninstall cleanup failure left a partial live command'
 assert_line 'preserve cleanup-failure user data' \
   "$uninstall_cleanup_home/user-sentinel"
+remove_completed_case_home "$uninstall_cleanup_home"
 
 for unsafe_case in lib-symlink lib-file statusline-symlink statusline-directory unexpected hidden unreadable-lib unwritable-lib unreadable-statusline; do
   unsafe_home="$fixture_root/uninstall-$unsafe_case-home"
@@ -4609,6 +4637,7 @@ for unsafe_case in lib-symlink lib-file statusline-symlink statusline-directory 
     unreadable-lib|unwritable-lib) chmod 0755 "$unsafe_lib" ;;
     unreadable-statusline) chmod 0755 "$unsafe_statusline" ;;
   esac
+  remove_completed_case_home "$unsafe_home"
 done
 
 for legacy_case in no-lib empty-lib; do
@@ -4621,6 +4650,7 @@ for legacy_case in no-lib empty-lib; do
   HOME="$legacy_home" "$uninstaller" >/dev/null
   [ ! -e "$legacy_root" ] && [ ! -L "$legacy_home/.local/bin/grx" ] \
     || fail "uninstaller did not remove $legacy_case installation"
+  remove_completed_case_home "$legacy_home"
 done
 
 "$uninstaller" >"$fixture_root/uninstall.out"

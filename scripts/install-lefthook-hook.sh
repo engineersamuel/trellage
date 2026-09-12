@@ -27,17 +27,13 @@ case "$hook_name" in
     if [ ! -x "$lefthook" ]; then
       printf '%s\n' \
         "trellage ${hook_name}: Lefthook is missing or not executable at ${lefthook}" \
-        "Run 'npm ci' in ${active_root}/packages/trellage-cli and retry." >&2
+        "Run 'scripts/build-profile-compiler.sh' in ${active_root} and retry." >&2
       exit 1
     fi
     exec "$lefthook" run "$hook_name" --no-auto-install "$@"
     ;;
   post-merge|post-rewrite)
-    command -v npm >/dev/null 2>&1 || {
-      printf 'trellage %s: npm is unavailable; rebuild the profile compiler manually.\n' "$hook_name" >&2
-      exit 1
-    }
-    npm --prefix "${active_root}/packages/trellage-cli" run build
+    "${active_root}/scripts/build-profile-compiler.sh"
     branch="$(git branch --show-current)"
     if [ "$branch" != main ]; then
       exit 0

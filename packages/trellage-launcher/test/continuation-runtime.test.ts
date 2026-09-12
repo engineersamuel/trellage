@@ -6,15 +6,15 @@ import {
   ContinuationActionStatus as Status,
   ContinuationPlacementKind as Placement,
   type ContinuationDraft,
-} from "../../trellage-guide-core/dist/index.js"
-import * as provider from "../src/continuation-provider.js"
-import * as guide from "../src/guide-api.js"
-import * as launch from "../src/continuation-launch.js"
-import * as guideLaunch from "../src/guide-launch.js"
-import { createContinuationServices } from "../src/continuation-runtime.js"
-import { ContinuationStore } from "../src/continuation-store.js"
-import type { GuideProvider } from "../src/guide-provider.js"
-import { createContinuationFixtureRoot, runtimeAssessment, runtimeCatalog, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
+} from "@trellage/guide-core"
+import * as provider from "../src/continuation-provider.ts"
+import * as guide from "../src/guide-api.ts"
+import * as launch from "../src/continuation-launch.ts"
+import * as guideLaunch from "../src/guide-launch.ts"
+import { createContinuationServices } from "../src/continuation-runtime.ts"
+import { ContinuationStore } from "../src/continuation-store.ts"
+import type { GuideProvider } from "../src/guide-provider.ts"
+import { createContinuationFixtureRoot, runtimeAssessment, runtimeCatalog, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.ts"
 
 const roots: string[] = []
 afterEach(async () => {

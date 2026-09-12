@@ -4,13 +4,13 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { GuideArgsError, guideIntentMaximumLength, parseGuideHeadlessArgv } from "../src/guide-api.js"
+import { GuideArgsError, guideIntentMaximumLength, parseGuideHeadlessArgv } from "../src/guide-api.ts"
 import {
   consumePopupGuideIntentFile,
   popupGuideIntentFileEnvironmentVariable,
   resolveInteractiveGuideIntent,
-} from "../src/guide-interactive-intent.js"
-import type { HerdrContext } from "../src/guide-launch.js"
+} from "../src/guide-interactive-intent.ts"
+import type { HerdrContext } from "../src/guide-launch.ts"
 
 const temporaryRoots: string[] = []
 const popupContext: HerdrContext = {

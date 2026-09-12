@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto"
 import { cp, lstat, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { bunExecutable, sourceWorkspaceRoot } from "@trellage/runtime"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { GuideGoalCancelledError } from "../src/guide-goal-augment.js"
+import { GuideGoalCancelledError } from "../src/guide-goal-augment.ts"
 import {
   createGuideGoalSkillResolver,
   type GuideGoalSkills,
   type GuideGoalSkillResolverOptions,
-} from "../src/guide-goal-skills.js"
-import type { CommandRunOptions } from "../src/guide-launch.js"
-import { goalMeSkill } from "./fixtures/goal-me-skill.js"
+} from "../src/guide-goal-skills.ts"
+import type { CommandRunOptions } from "../src/guide-launch.ts"
+import { goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const result = { exitCode: 0 as const, stdout: "", stderr: "" }
 const grillSkill = "---\nname: grill-me\n---\nAsk frontier questions.\n"
@@ -43,7 +44,7 @@ const remainingStages = async (): Promise<string[]> =>
 beforeEach(async () => {
   root = path.resolve(`.guide-goal-skills-test-${randomUUID()}`)
   await mkdir(root, { mode: 0o700 })
-  const managerPath = path.join(root, "floating-skills.mjs")
+  const managerPath = path.join(root, "floating-skills.ts")
   const catalogPath = path.join(root, "skills.json")
   const cachePath = path.join(root, "native-cache")
   await writeFile(managerPath, "// Fake manager. Tests use the injected runner.\n")
@@ -74,15 +75,20 @@ describe("Goal me installed skill resolver", () => {
     const stageRoot = path.dirname(skills.workingDirectory)
 
     expect(options.runner.run).toHaveBeenCalledExactlyOnceWith(
-      process.execPath,
+      bunExecutable(),
       [
-        options.managerPath, "ensure",
+        "--no-install", "--no-env-file",
+        `--config=${path.join(sourceWorkspaceRoot(), "packages/trellage-runtime/bunfig.toml")}`,
+        options.managerPath, "--", "ensure",
         "--bundle", "native-common",
         "--catalog", options.catalogPath,
         "--cache", options.cachePath,
         "--target", path.join(stageRoot, "bundle"),
       ],
-      expect.objectContaining({ signal, cwd: stageRoot, timeoutMs: 180_000 }),
+      expect.objectContaining({
+        signal, cwd: stageRoot, timeoutMs: 180_000,
+        env: expect.objectContaining({ BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", TMPDIR: stageRoot }),
+      }),
     )
     expect(path.dirname(stageRoot)).toBe(path.dirname(options.cachePath))
     expect((await lstat(stageRoot)).mode & 0o777).toBe(0o700)
@@ -171,7 +177,7 @@ describe("Goal me installed skill resolver", () => {
   })
 
   it("does not infer missing runtime paths from cwd", async () => {
-    const resolver = createGuideGoalSkillResolver({ ...options, managerPath: "scripts/floating-skills.mjs" })
+    const resolver = createGuideGoalSkillResolver({ ...options, managerPath: "scripts/floating-skills.ts" })
     await expect(resolver(new AbortController().signal)).rejects.toThrow("must be absolute")
     expect(options.runner.run).not.toHaveBeenCalled()
   })

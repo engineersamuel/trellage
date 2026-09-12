@@ -69,8 +69,8 @@ case "$command_name" in
     cd "$repo_root"
     worktree="$(git rev-parse --show-toplevel)"
     git_common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
-    image_tag="$(node packages/trellage-cli/dist/cli.js metadata "$profile_path" | node -e \
-      'process.stdin.once("data", d => process.stdout.write(JSON.parse(d).image))')"
+    image_tag="$("$repo_root/scripts/run-source.sh" \
+      "$repo_root/packages/trellage-cli/src/cli.ts" metadata "$profile_path" | jq -er '.image')"
 
     mkdir -p "$state_dir"
     [[ -f "$ssh_key" ]] || ssh-keygen -t ed25519 -f "$ssh_key" -N "" -C "trellage-azure-spike" >/dev/null

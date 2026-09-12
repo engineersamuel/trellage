@@ -3,7 +3,7 @@ import { promisify } from "node:util"
 
 import { Data, Effect } from "effect"
 
-import { parseDockerPlatform, type Platform } from "./platform.js"
+import { parseDockerPlatform, type Platform } from "./platform.ts"
 
 const execFilePromise = promisify(execFile)
 

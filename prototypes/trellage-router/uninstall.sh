@@ -13,8 +13,10 @@ installed_share="$install_root/share"
 installed_guides="$installed_share/profile-guides"
 legacy_picker="$install_root/lib/terminal-picker.mjs"
 ownership_marker="$install_root/.managed-by-trellage-router"
-ownership_value='trellage-router-v2'
+ownership_value='trellage-router-v3'
+previous_ownership_value='trellage-router-v2'
 legacy_ownership_value='trellage-router-v1'
+installed_source="$install_root/source"
 
 refuse() {
   printf 'trx uninstall: %s\n' "$1" >&2
@@ -40,6 +42,14 @@ require_safe_directory() {
 
 require_owned_runtime_contents() {
   local path
+  if [[ "$(<"$ownership_marker")" == "$ownership_value" ]]; then
+    local repo_root
+    repo_root="$(canonical_directory "$(dirname "${BASH_SOURCE[0]}")/../..")"
+    . "$repo_root/scripts/bun-runtime.sh"
+    trellage_bun_runtime "$repo_root"
+    "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
+      validate-owned "$installed_source" || refuse "unsafe owned source workspace: $installed_source"
+  fi
 
   while IFS= read -r path; do
     case "$path" in
@@ -47,6 +57,10 @@ require_owned_runtime_contents() {
       "$install_root/lib"|"$install_root/lib/launcher.mjs"|\
       "$installed_dependency_bootstrap"|"$legacy_picker"|\
       "$installed_share"|"$installed_guides") ;;
+      "$installed_source"|"$installed_source"/*)
+        [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
+          || refuse "refusing unrelated runtime path: $path"
+        ;;
       "$installed_guides"/*)
         [[ ! -L "$path" ]] || refuse "refusing symlinked profile guide path: $path"
         if [[ -d "$path" ]]; then
@@ -86,6 +100,7 @@ fi
 [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
   || refuse "refusing unowned runtime root: $install_root"
 if [[ "$(<"$ownership_marker")" != "$ownership_value" ]] \
+  && [[ "$(<"$ownership_marker")" != "$previous_ownership_value" ]] \
   && [[ "$(<"$ownership_marker")" != "$legacy_ownership_value" ]]; then
   refuse "refusing unowned runtime root: $install_root"
 fi
@@ -103,7 +118,7 @@ for path in "$install_root/lib/launcher.mjs" "$installed_dependency_bootstrap" "
       || refuse "refusing unsafe managed launcher UI: $path"
   }
 done
-[[ -f "$install_root/lib/launcher.mjs" || -f "$legacy_picker" ]] \
+[[ -f "$install_root/lib/launcher.mjs" || -f "$legacy_picker" || -d "$installed_source" ]] \
   || refuse "refusing incomplete managed launcher UI"
 require_owned_runtime_contents
 if [[ -e "$installed_guides" ]]; then
@@ -116,6 +131,9 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
   [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
     || refuse "refusing to remove unrelated command: $command_path"
   rm "$command_path"
+fi
+if [[ -d "$installed_source" ]]; then
+  rm -rf -- "$installed_source"
 fi
 
 rm "$installed_launcher" "$ownership_marker"

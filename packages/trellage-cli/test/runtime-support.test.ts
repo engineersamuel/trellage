@@ -10,7 +10,7 @@ import {
   type RuntimeSupportPaths,
   type RuntimeSupportSnapshot,
   writeRuntimeSupportSnapshot,
-} from "../src/runtime-support.js"
+} from "../src/runtime-support.ts"
 
 const temporaryRoots = new Set<string>()
 
@@ -34,8 +34,8 @@ const fixtures = async (): Promise<{ readonly root: string; readonly paths: Runt
     sessionBridge: path.join(root, "trellage-session-bridge.py"),
     piEntry: path.join(root, "runtime-pi-entry.sh"),
     primeEntry: path.join(root, "runtime-prime-entry.sh"),
-    finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
-    finalizeClaudeSeed: path.join(root, "finalize-claude-seed.mjs"),
+    finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.ts"),
+    finalizeClaudeSeed: path.join(root, "finalize-claude-seed.ts"),
     claudeEntry: path.join(root, "runtime-claude-entry.sh"),
     claudeBrowserAgent: path.join(root, "hyperresearch-browser-fetcher.md"),
     claudeOutputStyleRundown: path.join(root, "output-style-rundown.md"),
@@ -78,6 +78,7 @@ describe("runtime support snapshots", () => {
       "codex-agents-notice",
     ])
     expect(copilot.files.map((file) => file.role)).toEqual([
+      "bun-runtime-pin",
       "runtime-copilot-entry",
       "copilot-model-settings",
       "finalize-copilot-seed",
@@ -88,16 +89,18 @@ describe("runtime support snapshots", () => {
     expect(claude.files.map((file) => file.role)).toEqual([
       "runtime-claude-entry",
       "claude-output-style-rundown",
+      "bun-runtime-pin",
+      "claude-managed-files",
       "finalize-claude-seed",
       "claude-browser-agent",
       "session-bridge",
       "statusline",
     ])
-    expect(claude.files[3]?.destination).toBe(
+    expect(claude.files.find((file) => file.role === "claude-browser-agent")?.destination).toBe(
       "/usr/local/share/trellage/claude-seed/agents/hyperresearch-browser-fetcher.md",
     )
     expect(pi.files.map((file) => file.role)).toEqual(["runtime-pi-entry"])
-    expect(prime.files.map((file) => file.role)).toEqual(["runtime-prime-entry"])
+    expect(prime.files.map((file) => file.role)).toEqual(["runtime-prime-entry", "bun-runtime-pin"])
     expect(codex.hash).toBe("sha256:5c33d15d46392fd516771d2974bb945dbde37ffcdb6b896537b37f9310695067")
     expect((await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))).hash).toBe(codex.hash)
 
@@ -107,6 +110,8 @@ describe("runtime support snapshots", () => {
     expect(claudeMarketplace.files.map((file) => file.role)).toEqual([
       "runtime-claude-entry",
       "claude-output-style-rundown",
+      "bun-runtime-pin",
+      "claude-managed-files",
       "finalize-claude-seed",
       "session-bridge",
       "statusline",
@@ -119,7 +124,7 @@ describe("runtime support snapshots", () => {
     expect((await Effect.runPromise(createRuntimeSupportSnapshot("codex", paths))).hash).not.toBe(original)
   })
 
-  it("captures only the Claude runtime entry in core mode", async () => {
+  it("captures core Claude source support without plugin finalizers", async () => {
     const { paths } = await fixtures()
 
     const core = await Effect.runPromise(createRuntimeSupportSnapshot("claude", paths, undefined, "core"))
@@ -129,6 +134,8 @@ describe("runtime support snapshots", () => {
       "claude-output-style-rundown",
       "session-bridge",
       "statusline",
+      "bun-runtime-pin",
+      "claude-managed-files",
     ])
   })
 
@@ -173,13 +180,13 @@ describe("runtime support snapshots", () => {
     snapshot.files[0]!.bytes.fill(0x78)
     expect(() => {
       ;(snapshot.files[0] as { role: string }).role = "forged-role"
-    }).toThrow(/read only|Cannot assign/)
+    }).toThrow(/read ?only|Cannot assign/)
     expect(() => {
       ;(snapshot.files as Array<unknown>).push({})
-    }).toThrow(/not extensible/)
+    }).toThrow(/not extensible|read ?only/)
     expect(() => {
       ;(snapshot as { hash: string }).hash = `sha256:${"0".repeat(64)}`
-    }).toThrow(/read only|Cannot assign/)
+    }).toThrow(/read ?only|Cannot assign/)
 
     const context = path.join(root, "captured-context")
     await Effect.runPromise(writeRuntimeSupportSnapshot(snapshot, context))

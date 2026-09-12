@@ -3,12 +3,12 @@ import path from "node:path"
 
 import { Effect } from "effect"
 
-import { adjacentLockPath, loadProfile, loadReleaseLock } from "./application.js"
-import { harnessPackageRevision, lockIsReady } from "./lock.js"
-import { productionPlatforms } from "./platform.js"
-import type { ProfileChoice } from "./profile-discovery.js"
-import { loadResolutionReceipt } from "./resolution-receipt.js"
-import { loadResolutionSidecar } from "./resolution-sidecar-storage.js"
+import { adjacentLockPath, loadProfile, loadReleaseLock } from "./application.ts"
+import { harnessPackageRevision, lockIsReady } from "./lock.ts"
+import { productionPlatforms } from "./platform.ts"
+import type { ProfileChoice } from "./profile-discovery.ts"
+import { loadResolutionReceipt } from "./resolution-receipt.ts"
+import { loadResolutionSidecar } from "./resolution-sidecar-storage.ts"
 
 export interface ProfileReadiness {
   readonly resolutionPolicy: "floating"

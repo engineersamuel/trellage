@@ -1,6 +1,7 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { bunExecutable } from "@trellage/runtime"
 
 import { bindFocusedConversation, captureFocusedConversation } from "./lib/conversation-capture.ts"
 import { panelInvocationSource, parseConversationInvocationContext } from "./lib/context.ts"
@@ -47,6 +48,7 @@ export const main = async ({
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
+    bunExecutable()
     await main()
   } catch (error) {
     const message = error instanceof ConversationSourceError

@@ -6,14 +6,14 @@
  * introduced here. The action only runs after explicit confirmation; it
  * never launches as a side effect of selection/navigation.
  */
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { AdminRunManager, AdminRunState } from "./admin-run-manager.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { AdminRunManager, AdminRunState } from "./admin-run-manager.ts"
 import {
   buildGuideLaunchCommand,
   runInteractiveCommand,
   type CommandSpec,
   type SelectedProfile,
-} from "./guide-launch.js"
+} from "./guide-launch.ts"
 
 export const toSelectedProfile = (entry: AdminProfileEntry): SelectedProfile =>
   entry.surface === "native"

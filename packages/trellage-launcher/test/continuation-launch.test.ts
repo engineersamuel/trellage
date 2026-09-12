@@ -7,8 +7,8 @@ import {
   createPrivateContinuationJob,
   launchPrivateContinuation,
   submitContinuationPrompt,
-} from "../src/continuation-launch.js"
-import type { CommandRunner } from "../src/guide-launch.js"
+} from "../src/continuation-launch.ts"
+import type { CommandRunner } from "../src/guide-launch.ts"
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {

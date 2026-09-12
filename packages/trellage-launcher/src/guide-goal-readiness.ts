@@ -2,9 +2,9 @@ import { constants } from "node:fs"
 import { lstat, open, readdir, realpath } from "node:fs/promises"
 import { homedir, userInfo } from "node:os"
 import path from "node:path"
-import { CommandRunnerError, parseGitWorktreeList, type CommandRunner, type NativeSelectedProfile, type SelectedProfile } from "./guide-launch.js"
-import type { GuideGoalExecution } from "./guide-goal-execution.js"
-import { assertGuideGoalProfile } from "./guide-goal-transport.js"
+import { CommandRunnerError, parseGitWorktreeList, type CommandRunner, type NativeSelectedProfile, type SelectedProfile } from "./guide-launch.ts"
+import type { GuideGoalExecution } from "./guide-goal-execution.ts"
+import { assertGuideGoalProfile } from "./guide-goal-transport.ts"
 
 type JsonObject = Readonly<Record<string, unknown>>
 

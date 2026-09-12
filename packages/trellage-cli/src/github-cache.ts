@@ -6,8 +6,8 @@ import path from "node:path"
 
 import { Data, Effect, Schema } from "effect"
 
-import { githubRepositoryError } from "./github-repository.js"
-import { inventoryDirectory, verifyInventory, type InventoryEntry, type InventoryPolicy } from "./inventory.js"
+import { githubRepositoryError } from "./github-repository.ts"
+import { inventoryDirectory, verifyInventory, type InventoryEntry, type InventoryPolicy } from "./inventory.ts"
 
 const execFilePromise = promisify(execFile)
 

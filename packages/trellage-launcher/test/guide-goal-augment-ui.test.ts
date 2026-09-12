@@ -10,7 +10,7 @@ import {
   guideGoalPanelReducer,
   type GuideGoalPanelAction,
   type GuideGoalPanelState,
-} from "../src/guide-goal-augment-ui.js"
+} from "../src/guide-goal-augment-ui.tsx"
 import {
   guideGoalAnswerMaximumLength,
   renderGuideGoalProposal,
@@ -18,8 +18,8 @@ import {
   type GuideGoalQuestion,
   type GuideGoalRequest,
   type GuideGoalResponse,
-} from "../src/guide-goal-augment.js"
-import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.js"
+} from "../src/guide-goal-augment.ts"
+import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const handlers = vi.hoisted(() => ({
   input: undefined as ((input: string, key: Key) => void) | undefined,

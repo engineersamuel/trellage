@@ -26,12 +26,25 @@ gh_log_dir="$fixture_root/gh-calls"
 skills_stage_log="$fixture_root/skills-stage.log"
 mkdir -p "$fake_bin" "$docker_log_dir" "$gh_log_dir"
 
-real_node="$(command -v node)"
-cat >"$fake_bin/node" <<'EOF'
+real_bun="$(command -v bun)"
+cat >"$fake_bin/bun" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${1-}" == */floating-skills.mjs && "${2-}" == stage ]]; then
+original_args=("$@")
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --no-install|--no-env-file|--bun|--config=*) shift ;;
+    --config) shift 2 ;;
+    *) break ;;
+  esac
+done
+if [[ "${1-}" == */floating-skills.ts && "${2-}" == -- ]]; then
+  entrypoint="$1"
+  shift 2
+  set -- "$entrypoint" "$@"
+fi
+if [[ "${1-}" == */floating-skills.ts && "${2-}" == stage ]]; then
   printf 'stage\n' >>"$FAKE_SKILLS_STAGE_LOG"
   output=''
   shift 2
@@ -51,7 +64,7 @@ if [[ "${1-}" == */floating-skills.mjs && "${2-}" == stage ]]; then
   exit 0
 fi
 
-exec "$REAL_NODE" "$@"
+exec "$REAL_BUN" "${original_args[@]}"
 EOF
 
 cat >"$fake_bin/docker" <<'EOF'
@@ -162,7 +175,7 @@ set -euo pipefail
 printf '%s\n' "$*" >>"$FAKE_CURL_LOG"
 EOF
 
-chmod 0555 "$fake_bin/node" "$fake_bin/docker" "$fake_bin/gh" "$fake_bin/playwright" "$fake_bin/curl"
+chmod 0555 "$fake_bin/bun" "$fake_bin/docker" "$fake_bin/gh" "$fake_bin/playwright" "$fake_bin/curl"
 
 runner_env=(
   env
@@ -181,7 +194,7 @@ runner_env=(
   FAKE_PLAYWRIGHT_LOG="$fixture_root/playwright.log"
   FAKE_CURL_LOG="$fixture_root/curl.log"
   FAKE_SKILLS_STAGE_LOG="$skills_stage_log"
-  REAL_NODE="$real_node"
+  REAL_BUN="$real_bun"
   HARNESS_PLAYWRIGHT_BIN="$fake_bin/playwright"
   HARNESS_STATE_ROOT="$fixture_root/state"
   HARNESS_RESULTS_ROOT="$fixture_root/results"

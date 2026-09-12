@@ -1,5 +1,5 @@
-import type { AdminHarnessVersionResult } from "./admin-harness-version.js"
-import type { AdminProfileEntry } from "./admin-model.js"
+import type { AdminHarnessVersionResult } from "./admin-harness-version.ts"
+import type { AdminProfileEntry } from "./admin-model.ts"
 
 interface UpgradeTargetVersion {
   readonly version?: string

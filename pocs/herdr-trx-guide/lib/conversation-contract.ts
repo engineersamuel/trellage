@@ -1,6 +1,6 @@
 export {
   ConversationAgent, ConversationRole, ConversationSurface,
-} from "../../../packages/trellage-guide-core/dist/conversation.js"
+} from "@trellage/guide-core/conversation"
 export type {
   ConversationMessage, ConversationSnapshot, ConversationSource,
-} from "../../../packages/trellage-guide-core/dist/conversation.js"
+} from "@trellage/guide-core/conversation"

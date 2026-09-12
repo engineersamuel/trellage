@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
 
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import { AdminRunManager } from "../src/admin-run-manager.js"
-import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.js"
-import { CommandRunnerError } from "../src/guide-launch.js"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { AdminRunManager } from "../src/admin-run-manager.ts"
+import type { CommandRunOptions, CommandRunner, CommandRunResult } from "../src/guide-launch.ts"
+import { CommandRunnerError } from "../src/guide-launch.ts"
 import {
   buildAdminLaunchCommand,
   buildDiagnosticCommand,
@@ -16,7 +16,7 @@ import {
   repairThenRecheckDoctor,
   setupRefFor,
   toSelectedProfile,
-} from "../src/admin-launch.js"
+} from "../src/admin-launch.ts"
 
 const nativeEntry: AdminProfileEntry = {
   ref: "native:cpx:default",

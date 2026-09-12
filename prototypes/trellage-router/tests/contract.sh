@@ -16,7 +16,16 @@ skills_update_log="$fixture_root/skills-update.log"
 skills_cache_log="$fixture_root/skills-cache.jsonl"
 discovery_log="$fixture_root/discovery.log"
 real_node="$(mise which node --tool=node@24 2>/dev/null || command -v node)"
+real_bun="$(command -v bun)"
 real_jq="$(command -v jq)"
+fixture_source="$runtime_parent/trx/source"
+fixture_picker="$fixture_source/packages/trellage-launcher/src/cli.tsx"
+
+refresh_fixture_source() {
+  "$real_bun" --no-install --no-env-file \
+    "--config=$prototype_root/../../packages/trellage-runtime/bunfig.toml" \
+    "$prototype_root/../../packages/trellage-runtime/test/refresh-fixture.ts" "${1:-$fixture_source}"
+}
 
 cleanup() {
   if [[ "${TRX_KEEP_FIXTURE-}" == 1 ]]; then
@@ -31,6 +40,12 @@ fail() {
   printf 'trx contract: FAIL: %s\n' "$1" >&2
   exit 1
 }
+
+fixture_registry="$(npm config get registry --workspaces=false)" \
+  || fail 'could not discover the host npm registry'
+[[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
+export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export npm_config_registry="$fixture_registry"
 
 assert_contains() {
   local expected="$1"
@@ -64,6 +79,7 @@ mkdir -p "$fixture_home" "$fixture_bin"
 export TMPDIR="$fixture_root"
 seed_floating_skills_cache "$fixture_home"
 ln -s "$real_node" "$fixture_bin/node"
+ln -s "$real_bun" "$fixture_bin/bun"
 ln -s "$real_jq" "$fixture_bin/jq"
 ln -s "$(command -v python3)" "$fixture_bin/python3"
 
@@ -478,7 +494,7 @@ export PATH="$fixture_bin:/usr/bin:/bin"
 [[ "$(readlink "$fixture_bin/trx")" == "$runtime_parent/trx/bin/trx" ]] \
   || fail 'installer published the wrong trx command target'
 cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
-  <(printf 'trellage-router-v2\n') \
+  <(printf 'trellage-router-v3\n') \
   || fail 'installer ownership marker differs'
 if cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
   <(printf 'trellage-router-v1\n'); then
@@ -488,8 +504,9 @@ assert_contains 'Installed trx' "$fixture_root/install.out"
 
 printf 'trellage-router-v1\n' \
   >"$runtime_parent/trx/.managed-by-trellage-router"
-mv "$runtime_parent/trx/lib/launcher.mjs" \
-  "$runtime_parent/trx/lib/terminal-picker.mjs"
+mv "$fixture_source" "$fixture_root/initial-source"
+printf 'legacy picker fixture\n' >"$runtime_parent/trx/lib/terminal-picker.mjs"
+chmod 0755 "$runtime_parent/trx/lib/terminal-picker.mjs"
 cat >"$runtime_parent/trx/bin/trx" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -527,18 +544,18 @@ cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
   || fail 'failed migration did not restore the legacy ownership marker'
 [[ "$("$fixture_bin/trx" --version)" == trx-v1-fixture ]] \
   || fail 'failed migration did not restore the usable legacy router'
-[[ ! -e "$runtime_parent/trx/lib/launcher.mjs" ]] \
-  || fail 'failed migration left a v2 launcher bundle in the legacy runtime'
+[[ ! -e "$fixture_source" ]] \
+  || fail 'failed migration left source runtime files in the legacy runtime'
 [[ -x "$runtime_parent/trx/lib/terminal-picker.mjs" ]] \
   || fail 'failed migration did not restore the legacy terminal picker'
 [[ ! -e "$runtime_parent/.trx-install.lock" ]] \
   || fail 'failed migration left the router install lock behind'
 "$prototype_root/install.sh" >"$fixture_root/reinstall.out"
 cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
-  <(printf 'trellage-router-v2\n') \
+  <(printf 'trellage-router-v3\n') \
   || fail 'installer did not migrate the legacy router ownership marker'
 [[ -x "$runtime_parent/trx/bin/trx" ]] || fail 'repeat install removed launcher'
-[[ -x "$runtime_parent/trx/lib/launcher.mjs" ]] \
+[[ -f "$fixture_picker" ]] \
   || fail 'upgrade did not install the Ink launcher'
 [[ -x "$runtime_parent/trx/lib/bootstrap-development-dependencies.sh" ]] \
   || fail 'upgrade did not install the dependency bootstrap'
@@ -682,16 +699,19 @@ jq -e '
   || fail 'skills status output differs'
 mv "$fixture_root/cpx-link" "$fixture_bin/cpx"
 
-rm "$fixture_bin/node"
-cat >"$fixture_bin/node" <<'EOF'
+rm "$fixture_bin/bun"
+cat >"$fixture_bin/bun" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1-}" == --version || "$*" == *workspace-cli.ts* ]]; then
+  exec "$TRX_REAL_BUN" "$@"
+fi
 printf '%s\n' --- "$@" >>"$TRX_NODE_LOG"
 EOF
-chmod 0755 "$fixture_bin/node"
+chmod 0755 "$fixture_bin/bun"
 : >"$fixture_root/skills-update.argv"
 XDG_DATA_HOME="$fixture_root/xdg-data" \
-  TRX_NODE_LOG="$fixture_root/skills-update.argv" "$fixture_bin/trx" skills update \
+  TRX_REAL_BUN="$real_bun" TRX_NODE_LOG="$fixture_root/skills-update.argv" "$fixture_bin/trx" skills update \
   || fail 'skills update did not delegate to the floating-skills manager'
 grep -Fxq native-common "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the native bundle'
@@ -717,8 +737,8 @@ grep -Fxq "$fixture_home/.local/share/trellage/common/guide-prompt-master-skills
   || fail 'skills update omitted the guide Prompt Master cache'
 [[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 5 ]] \
   || fail 'skills update did not invoke all bundle updates'
-rm "$fixture_bin/node"
-ln -s "$real_node" "$fixture_bin/node"
+rm "$fixture_bin/bun"
+ln -s "$real_bun" "$fixture_bin/bun"
 
 status=0
 "$fixture_bin/trx" skills refresh >"$fixture_root/skills-invalid.out" \
@@ -820,8 +840,9 @@ jq -e '
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list shape or ordering differs'
 
-TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
-  "$prototype_root/bin/trx" list --json >"$fixture_root/source-list.json" \
+TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
+  TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides" \
+  "$fixture_source/prototypes/trellage-router/bin/trx" list --json >"$fixture_root/source-list.json" \
   || fail 'worktree source JSON list failed'
 cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
   || fail 'worktree source list differs from installed router list'
@@ -905,8 +926,8 @@ rm -f "$fixture_root/trellage-codex-profiles/bin/cdx"
 mv "$fixture_root/trellage-codex-profiles/bin/cdx.real" \
   "$fixture_root/trellage-codex-profiles/bin/cdx"
 
-cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
-cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+cp "$fixture_picker" "$fixture_root/launcher.mjs"
+cat >"$fixture_picker" <<'EOF'
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "node:fs"
 
@@ -971,7 +992,8 @@ if (process.argv[2] === "enrich-native-list") {
   process.exitCode = 64
 }
 EOF
-chmod 0755 "$runtime_parent/trx/lib/launcher.mjs"
+chmod 0755 "$fixture_picker"
+refresh_fixture_source
 cat >"$fixture_bin/trellage" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1015,8 +1037,8 @@ jq -e \
   --arg runtimeParent "$runtime_parent" '
     .guideRoot == $guideRoot
     and (.promptMasterSkillDirectory | endswith("/skills/prompt-master"))
-    and .goalSkills.managerPath == ($runtimeParent + "/common/floating-skills-runtime/floating-skills.mjs")
-    and .goalSkills.catalogPath == ($runtimeParent + "/common/floating-skills-runtime/skills.json")
+    and .goalSkills.managerPath == ($runtimeParent + "/trx/source/scripts/floating-skills.ts")
+    and .goalSkills.catalogPath == ($runtimeParent + "/trx/source/skills.json")
     and .goalSkills.cachePath == $goalCache
     and .args == ["--intent", "fixture intent", "--json"]
     and .catalog.schemaVersion == 1
@@ -1147,10 +1169,11 @@ assert_contains 'this mode requires the Sandbox catalog' "$fixture_root/upgrade-
 
 source_upgrade_root="$fixture_root/upgrade-source"
 source_upgrade_router="$source_upgrade_root/prototypes/trellage-router"
-mkdir -p "$source_upgrade_router/bin" "$source_upgrade_root/packages/trellage-launcher/dist" "$source_upgrade_root/prototypes/trellage"
+cp -R "$fixture_source" "$source_upgrade_root"
 cp "$prototype_root/bin/trx" "$source_upgrade_router/bin/trx"
-cp "$runtime_parent/trx/lib/launcher.mjs" "$source_upgrade_root/packages/trellage-launcher/dist/launcher.mjs"
+cp "$fixture_picker" "$source_upgrade_root/packages/trellage-launcher/src/cli.tsx"
 cp "$fixture_bin/trellage" "$source_upgrade_root/prototypes/trellage/trellage"
+refresh_fixture_source "$source_upgrade_root"
 TRELLAGE_TRX_COMMAND_PATH="$fixture_bin/trx" TRELLAGE_TRX_SOURCE_ROOT="$source_upgrade_router" \
   "$source_upgrade_router/bin/trx" upgrade all --dry-run >"$fixture_root/upgrade-source-catalog.json" \
   || fail 'source router upgrade did not preserve its own executable'
@@ -1174,7 +1197,8 @@ if kill -0 "$upgrade_child_pid" 2>/dev/null; then
   fail 'early router cancellation left its Node child running'
 fi
 
-mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
+mv "$fixture_root/launcher.mjs" "$fixture_picker"
+refresh_fixture_source
 
 cp "$runtime_parent/trx/lib/bootstrap-development-dependencies.sh" "$fixture_root/bootstrap.saved"
 cat >"$runtime_parent/trx/lib/bootstrap-development-dependencies.sh" <<'EOF'
@@ -1183,7 +1207,7 @@ printf 'unexpected dependency bootstrap\n' >>"$TRX_UPGRADE_LOG"
 exit 65
 EOF
 
-fixture_skills_manager="$runtime_parent/common/floating-skills-runtime/floating-skills.mjs"
+fixture_skills_manager="$fixture_source/scripts/floating-skills.ts"
 mv "$fixture_skills_manager" "$fixture_root/floating-skills.saved"
 cat >"$fixture_skills_manager" <<'EOF'
 import { appendFileSync } from "node:fs"
@@ -1202,6 +1226,7 @@ if (process.env.TRX_SKILLS_CACHE_FAIL === "1") {
 }
 EOF
 chmod 0444 "$fixture_skills_manager"
+refresh_fixture_source
 export TRX_SKILLS_CACHE_LOG="$skills_cache_log"
 export TRX_SKILLS_UPDATE_LOG="$skills_update_log"
 reset_upgrade_logs
@@ -1359,6 +1384,7 @@ if grep -Fq 'trellage:upgrade' "$upgrade_log"; then
 fi
 [[ ! -s "$skills_cache_log" && ! -s "$skills_update_log" ]] || fail 'router cancellation started a later Native skills phase'
 mv -f "$fixture_root/floating-skills.saved" "$fixture_skills_manager"
+refresh_fixture_source
 unset TRX_SKILLS_CACHE_LOG TRX_SKILLS_UPDATE_LOG
 mv "$fixture_root/bootstrap.saved" "$runtime_parent/trx/lib/bootstrap-development-dependencies.sh"
 
@@ -1419,13 +1445,14 @@ status=0
 [[ "$status" == 1 ]] || fail "non-TTY invocation exited $status instead of 1"
 assert_contains 'an interactive terminal is required' "$fixture_root/non-tty.err"
 
-cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
-cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+cp "$fixture_picker" "$fixture_root/launcher.mjs"
+cat >"$fixture_picker" <<'EOF'
 import { readFileSync, writeFileSync } from "node:fs"
 
 writeFileSync(process.env.TRX_PICKER_INPUT, readFileSync(process.argv[2]))
 writeFileSync(process.argv[3], '{"id":"cpx:cpx-p","target":"current"}\n')
 EOF
+refresh_fixture_source
 selection_started="$(python3 -c 'import time; print(time.monotonic_ns())')"
 TRX_ARGUMENT_LOG="$argument_log" \
   TRX_INVENTORY_DELAY=4 \
@@ -1587,7 +1614,8 @@ status=0
 [[ "$status" == 1 ]] || fail "trx inventory without --json exited $status instead of 1"
 assert_contains 'inventory requires LAUNCHER PROFILE --json' "$fixture_root/inventory-missing-json.err"
 
-mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
+mv "$fixture_root/launcher.mjs" "$fixture_picker"
+refresh_fixture_source
 python3 - "$argument_log" <<'PY' || fail 'arguments were not forwarded unchanged'
 import pathlib
 import sys
@@ -1599,17 +1627,19 @@ PY
 
 # Selecting Prime without passthrough arguments must invoke PRX with only its
 # profile argument. This composes with the PRX argument-free launch contract.
-cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
-cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+cp "$fixture_picker" "$fixture_root/launcher.mjs"
+cat >"$fixture_picker" <<'EOF'
 import {writeFileSync} from "node:fs"
 writeFileSync(process.argv[3], '{"id":"prx:prx-p","target":"current"}\n')
 EOF
+refresh_fixture_source
 : >"$argument_log"
 TRX_ARGUMENT_LOG="$argument_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/prx-select.out" \
   '\r' '' "$fixture_bin/trx" \
   || fail 'argument-free Prime selection failed'
-mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
+mv "$fixture_root/launcher.mjs" "$fixture_picker"
+refresh_fixture_source
 python3 - "$argument_log" <<'PY' || fail 'argument-free Prime selection arguments differ'
 import pathlib
 import sys
@@ -1631,25 +1661,28 @@ if [[ "${1-} ${2-}" == 'pane split' ]]; then
 fi
 EOF
 chmod 0755 "$fixture_bin/herdr"
-cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
-cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+cp "$fixture_picker" "$fixture_root/launcher.mjs"
+cat >"$fixture_picker" <<'EOF'
 import {writeFileSync} from "node:fs"
 writeFileSync(process.argv[3], '{"id":"cdx:cdx-p","target":"herdr","model":"gpt-5.6-terra"}\n')
 EOF
+refresh_fixture_source
 HERDR_ENV=1 HERDR_PANE_ID=w1:p1 TRX_HERDR_LOG="$herdr_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/herdr-select.out" \
   'l' '' "$fixture_bin/trx" '--literal=herdr' \
   || fail 'Herdr profile launch failed'
-mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
+mv "$fixture_root/launcher.mjs" "$fixture_picker"
+refresh_fixture_source
 assert_contains 'pane split --current --direction right --cwd ' "$herdr_log"
 assert_contains 'pane run w1:p2 ' "$herdr_log"
 assert_contains '--model gpt-5.6-terra --literal=herdr' "$herdr_log"
 
-cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
-cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+cp "$fixture_picker" "$fixture_root/launcher.mjs"
+cat >"$fixture_picker" <<'EOF'
 import {writeFileSync} from "node:fs"
 writeFileSync(process.argv[3], '{"id":"cdx:youtube","target":"herdr"}\n')
 EOF
+refresh_fixture_source
 : >"$herdr_log"
 herdr_youtube_status=0
 TRANSCRIPT_API_KEY='router-herdr-contract-secret' \
@@ -1667,19 +1700,22 @@ if grep -F 'router-herdr-contract-secret' \
   "$fixture_root/herdr-youtube-select.out" "$herdr_log" >/dev/null; then
   fail 'rejected explicit-key Herdr launch disclosed the key'
 fi
-mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
+mv "$fixture_root/launcher.mjs" "$fixture_picker"
+refresh_fixture_source
 rm "$fixture_bin/herdr"
 
-cp "$runtime_parent/trx/lib/launcher.mjs" "$fixture_root/launcher.mjs"
-cat >"$runtime_parent/trx/lib/launcher.mjs" <<'EOF'
+cp "$fixture_picker" "$fixture_root/launcher.mjs"
+cat >"$fixture_picker" <<'EOF'
 import {writeFileSync} from "node:fs"
 writeFileSync(process.argv[3], '{"id":"omp:copilot","target":"current"}\n')
 EOF
+refresh_fixture_source
 TRX_ARGUMENT_LOG="$argument_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/omp-select.out" \
   '\r' '' "$fixture_bin/trx" '--native-copilot' \
   || fail 'OMP interactive selection failed'
-mv "$fixture_root/launcher.mjs" "$runtime_parent/trx/lib/launcher.mjs"
+mv "$fixture_root/launcher.mjs" "$fixture_picker"
+refresh_fixture_source
 python3 - "$argument_log" <<'PY' || fail 'OMP arguments were not forwarded unchanged'
 import pathlib
 import sys
@@ -1991,8 +2027,6 @@ assert_contains 'refusing symlinked profile guide path' \
 [[ -d "$runtime_parent/trx" ]] || fail 'symlinked guide uninstall removed trx runtime'
 rm "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
 
-mv "$runtime_parent/trx/lib/launcher.mjs" \
-  "$runtime_parent/trx/lib/terminal-picker.mjs"
 "$prototype_root/uninstall.sh" >"$fixture_root/uninstall.out"
 [[ ! -e "$runtime_parent/trx" ]] || fail 'uninstaller left trx runtime'
 [[ ! -e "$fixture_bin/trx" && ! -L "$fixture_bin/trx" ]] \

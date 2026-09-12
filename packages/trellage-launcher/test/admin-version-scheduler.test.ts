@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import { AdminRunManager } from "../src/admin-run-manager.js"
-import type { AdminVersionCacheRecord } from "../src/admin-version-cache.js"
-import { runBatchedVersionChecks, shouldAutoRetryMalformedVersion, updateCheckRefFor, versionCheckResultForEntry } from "../src/admin-version-scheduler.js"
-import { CommandRunnerError, type CommandRunOptions, type CommandRunner, type CommandRunResult } from "../src/guide-launch.js"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { AdminRunManager } from "../src/admin-run-manager.ts"
+import type { AdminVersionCacheRecord } from "../src/admin-version-cache.ts"
+import { runBatchedVersionChecks, shouldAutoRetryMalformedVersion, updateCheckRefFor, versionCheckResultForEntry } from "../src/admin-version-scheduler.ts"
+import { CommandRunnerError, type CommandRunOptions, type CommandRunner, type CommandRunResult } from "../src/guide-launch.ts"
 
 /** A controllable fake runner: each `run()` call gets its own deferred resolve/reject, released manually by the test. */
 class DeferredRunner implements CommandRunner {

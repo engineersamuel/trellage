@@ -23,8 +23,8 @@ import type {
   ProfileGuidePrerequisite,
   ProfileGuideV1,
   ProfileGuideWorkflow,
-} from "../../trellage-guide-core/dist/index.js"
-import { profileGuideIdentityKey } from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
+import { profileGuideIdentityKey } from "@trellage/guide-core"
 import {
   compactProfileGuide,
   guideCatalogEntries,
@@ -38,8 +38,8 @@ import {
   type HerdrCompatibilityInfo,
   type NativeGuideCatalogEntry,
   type SandboxGuideCatalogEntry,
-} from "./guide-catalog.js"
-import { GuideGoalError, validateGuideGoalDraft } from "./guide-goal-augment.js"
+} from "./guide-catalog.ts"
+import { GuideGoalError, validateGuideGoalDraft } from "./guide-goal-augment.ts"
 import {
   assertPreparedGuideGoal,
   guideGoalControllerLabel,
@@ -47,9 +47,9 @@ import {
   resolveGuideGoalExecution,
   type GuideGoalCandidateContext,
   type PreparedGuideGoal,
-} from "./guide-goal-execution.js"
-import { runGuideGoalGeneration, templateGuideGoalCandidates } from "./guide-goal-generation.js"
-import { resolveGuideGoalTransport, type GuideGoalTransport } from "./guide-goal-transport.js"
+} from "./guide-goal-execution.ts"
+import { runGuideGoalGeneration, templateGuideGoalCandidates } from "./guide-goal-generation.ts"
+import { resolveGuideGoalTransport, type GuideGoalTransport } from "./guide-goal-transport.ts"
 import {
   buildGuideLaunchCommand,
   parseSelectedProfile,
@@ -57,13 +57,13 @@ import {
   type CommandSpec,
   type PromptHandlingMode,
   type SelectedProfile,
-} from "./guide-launch.js"
+} from "./guide-launch.ts"
 import {
   defaultGuideModelRouting as baseDefaultGuideModelRouting,
   type GuideModelConfig as BaseGuideModelConfig,
   type GuideModelRouting,
-} from "./guide-model-routing.js"
-import type { GuideArtifactCache } from "./guide-match-cache.js"
+} from "./guide-model-routing.ts"
+import type { GuideArtifactCache } from "./guide-match-cache.ts"
 import {
   assertGuideMatchInput,
   validateGuideGenerateResult,
@@ -72,9 +72,9 @@ import {
   type GuideGenerateCandidate,
   type GuideMatchCandidate,
   type GuideProvider,
-} from "./guide-provider.js"
-import { loadSelectedGuide } from "./guide-selected.js"
-import { exactKeys, fail, GuideValidationError, literal, record, text } from "./guide-text.js"
+} from "./guide-provider.ts"
+import { loadSelectedGuide } from "./guide-selected.ts"
+import { exactKeys, fail, GuideValidationError, literal, record, text } from "./guide-text.ts"
 import {
   GuideCandidatePromptCollisionError,
   GuideCandidatePromptStage,
@@ -88,7 +88,7 @@ import {
   workflowHasAuthoredCommandSuffix,
   workflowOptimizeFixedFrame,
   workflowPromptFrame,
-} from "./guide-workflow-prompt.js"
+} from "./guide-workflow-prompt.ts"
 
 // ---------------------------------------------------------------------------
 // Errors

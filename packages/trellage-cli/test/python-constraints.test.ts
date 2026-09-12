@@ -5,7 +5,7 @@ import path from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { compilePythonConstraints } from "../src/python-constraints.js"
+import { compilePythonConstraints } from "../src/python-constraints.ts"
 
 const originalPath = process.env.PATH
 const originalUvIndex = process.env.UV_INDEX

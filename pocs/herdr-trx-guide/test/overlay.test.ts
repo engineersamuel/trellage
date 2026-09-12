@@ -542,7 +542,7 @@ test("direct queue editor navigates, removes, clears, closes, and opens the queu
 
 test("manifest registers both pane actions on one entrypoint and the queue editor pane", async () => {
   const manifest = await readFile(path.join(pluginRoot, "herdr-plugin.toml"), "utf8")
-  assert.match(manifest, /id = "queue-add-selection"[\s\S]*command = \["node", "overlay-action\.ts"\]/u)
-  assert.match(manifest, /id = "queue-add-selection-open"[\s\S]*command = \["node", "overlay-action\.ts"\]/u)
-  assert.match(manifest, /id = "queue-editor"[\s\S]*command = \["node", "queue-editor\.ts"\]/u)
+  assert.match(manifest, /id = "queue-add-selection"[\s\S]*command = \["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=\/dev\/null", "overlay-action\.ts", "--"\]/u)
+  assert.match(manifest, /id = "queue-add-selection-open"[\s\S]*command = \["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=\/dev\/null", "overlay-action\.ts", "--"\]/u)
+  assert.match(manifest, /id = "queue-editor"[\s\S]*command = \["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=\/dev\/null", "queue-editor\.ts", "--"\]/u)
 })

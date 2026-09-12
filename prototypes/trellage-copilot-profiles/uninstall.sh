@@ -95,6 +95,9 @@ fi
 [[ ! -L "$install_root/native-skills.mjs" \
   && ( ! -e "$install_root/native-skills.mjs" || -f "$install_root/native-skills.mjs" ) ]] \
   || refuse "unsafe Native skills helper: $install_root/native-skills.mjs"
+[[ ! -L "$install_root/native-skills.ts" \
+  && ( ! -e "$install_root/native-skills.ts" || -f "$install_root/native-skills.ts" ) ]] \
+  || refuse "unsafe Native skills helper: $install_root/native-skills.ts"
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   if [[ ! -L "$command_path" || "$(readlink "$command_path")" != "$installed_launcher" ]]; then
@@ -104,6 +107,7 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
 fi
 
 rm -f "$installed_launcher" "$installed_catalog" "$ownership_marker" "$install_root/native-skills.mjs"
+rm -f -- "$install_root/native-skills.ts"
 rm -f "$installed_session_bridge" "$installed_statusline" "$installed_model_settings"
 rm -f "$installed_assets/rundown.instructions.md" "$installed_assets/NOTICE.md"
 rmdir "$installed_assets" "$install_root/assets" 2>/dev/null || true

@@ -6,7 +6,7 @@ import {
   sanitizeConversationSnapshot,
   sanitizeConversationText,
   type ConversationSnapshot,
-} from "../src/index.js"
+} from "../src/index.ts"
 
 const token = "ghp_".concat("abcdefghijklmnopqrstuvwxyz1234")
 const pem = (label: string, body: string, complete = true) =>

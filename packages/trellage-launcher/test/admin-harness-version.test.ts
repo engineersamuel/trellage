@@ -11,8 +11,8 @@ import {
   reconcileHarnessVersionResults,
   refreshedSandboxInstalledState,
   type AdminHarnessVersionResult,
-} from "../src/admin-harness-version.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
+} from "../src/admin-harness-version.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
 
 const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
   ref: "native:omp/local",

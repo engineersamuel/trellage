@@ -6,7 +6,7 @@ import {
   setQuery,
   type LaunchEntry,
   type LauncherState,
-} from "./state.js"
+} from "./state.ts"
 import type { Dispatch, SetStateAction } from "react"
 
 export type StateSetter<T> = Dispatch<SetStateAction<T>>

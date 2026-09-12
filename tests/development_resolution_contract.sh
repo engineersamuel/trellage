@@ -65,7 +65,7 @@ done
 
 grep -Eq 'uv@[0-9]+([.][0-9]+)+' scripts/bootstrap-development-dependencies.sh \
   && fail 'development dependency bootstrap pins uv'
-grep -Eq 'skills@[0-9]+([.][0-9]+)+' scripts/floating-skills.mjs \
+grep -Eq 'skills@[0-9]+([.][0-9]+)+' scripts/floating-skills.ts \
   && fail 'floating skill materialization pins the skills CLI'
 
 jq -e '

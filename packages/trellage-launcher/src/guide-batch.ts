@@ -14,11 +14,11 @@ import {
   type HerdrPromptDeliveryMode,
   type HerdrSplitDirection,
   type SelectedProfile,
-} from "./guide-launch.js"
-import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "./guide-preflight.js"
-import { composeGuideGoalCandidate, guideGoalPromptMaximumLength, type GuideGoalCandidateContext } from "./guide-goal-execution.js"
-import { freezeGuideGoalCandidateContext, guideGoalInputInstructions } from "./guide-goal-transport.js"
-import { GuideGoalError } from "./guide-goal-augment.js"
+} from "./guide-launch.ts"
+import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "./guide-preflight.ts"
+import { composeGuideGoalCandidate, guideGoalPromptMaximumLength, type GuideGoalCandidateContext } from "./guide-goal-execution.ts"
+import { freezeGuideGoalCandidateContext, guideGoalInputInstructions } from "./guide-goal-transport.ts"
+import { GuideGoalError } from "./guide-goal-augment.ts"
 
 const startupTimeoutMs = 60_000
 const promptTimeoutMs = 60_000
@@ -144,6 +144,43 @@ export interface GuideBatchExecutionServices {
 
 export const emptyGuideQueue = (): GuideQueueState => ({ entries: [], nextId: 1, selectedIndex: 0 })
 
+export const reservedWorktreeBranches = (queue: GuideQueueState, excludedId?: number): ReadonlyArray<string> =>
+  queue.entries.flatMap((job) =>
+    job.id !== excludedId && job.placement.kind === "new-worktree" ? [job.placement.branch.trim()] : [],
+  )
+
+export class GuideQueueConflictError extends Error {
+  constructor(
+    readonly branch: string,
+    readonly job: QueuedGuideJob,
+  ) {
+    const launcher = job.profile.surface === "native" ? job.profile.launcher : "sandbox"
+    super(
+      `Branch "${branch}" is already queued by job ${job.id} (${launcher} ${job.profile.profile}). Choose another branch.`,
+    )
+    this.name = "GuideQueueConflictError"
+  }
+}
+
+export const findGuideQueueConflict = (
+  queue: GuideQueueState,
+  branch: string,
+  excludedId?: number,
+): GuideQueueConflictError | undefined => {
+  const key = branch.trim()
+  const job = queue.entries.find(
+    (entry) =>
+      entry.id !== excludedId && entry.placement.kind === "new-worktree" && entry.placement.branch.trim() === key,
+  )
+  return job === undefined ? undefined : new GuideQueueConflictError(key, job)
+}
+
+const guardQueuePlacement = (queue: GuideQueueState, placement: JobPlacement, excludedId?: number): void => {
+  if (placement.kind !== "new-worktree") return
+  const conflict = findGuideQueueConflict(queue, placement.branch, excludedId)
+  if (conflict !== undefined) throw conflict
+}
+
 export const createQueuedGuideJob = (
   id: number,
   profile: SelectedProfile,
@@ -171,11 +208,14 @@ export const enqueueGuideJob = (
   prompt: string,
   placement: JobPlacement,
   goalExecution?: GuideGoalCandidateContext,
-): GuideQueueState => ({
-  entries: [...queue.entries, createQueuedGuideJob(queue.nextId, profile, prompt, placement, goalExecution)],
-  nextId: queue.nextId + 1,
-  selectedIndex: queue.entries.length,
-})
+): GuideQueueState => {
+  guardQueuePlacement(queue, placement)
+  return {
+    entries: [...queue.entries, createQueuedGuideJob(queue.nextId, profile, prompt, placement, goalExecution)],
+    nextId: queue.nextId + 1,
+    selectedIndex: queue.entries.length,
+  }
+}
 
 export const selectQueuedGuideJob = (queue: GuideQueueState, delta: 1 | -1): GuideQueueState =>
   queue.entries.length === 0
@@ -237,6 +277,7 @@ export const replaceQueuedGuideJob = (
   goalExecution?: GuideGoalCandidateContext,
 ): GuideQueueState => {
   const index = queue.entries.findIndex((job) => job.id === id)
+  if (index >= 0) guardQueuePlacement(queue, placement, id)
   return index < 0
     ? queue
     : {

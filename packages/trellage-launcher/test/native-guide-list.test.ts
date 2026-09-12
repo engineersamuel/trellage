@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { enrichNativeProfileList } from "../src/native-guide-list.js"
+import { enrichNativeProfileList } from "../src/native-guide-list.ts"
 
 const guide = `---
 schemaVersion: 1

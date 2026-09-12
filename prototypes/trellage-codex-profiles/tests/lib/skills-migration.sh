@@ -22,6 +22,8 @@ for (const name of args.slice(args.indexOf('--skill') + 1, args.indexOf('--agent
   writeFileSync(`${directory}/SKILL.md`, `---\nname: ${name}\ndescription: Fixture skill\n---\n# ${name}\n`);
 }
 JS
+refresh_fixture_source "$fixture_skills_runtime" \
+  || fail 'could not prepare the synthetic skill migration runtime'
 mv "$fake_bin/git" "$fake_bin/git-before-skills-migration"
 cat >"$fake_bin/git" <<'SH'
 #!/usr/bin/env bash
@@ -70,3 +72,5 @@ unset FAKE_MIGRATION_OFFLINE FAKE_MIGRATION_FETCH_LOG
 mv "$fake_bin/git-before-skills-migration" "$fake_bin/git"
 cp "$fixture_root/skills-catalog-before-migration" "$fixture_skills_runtime/skills.json"
 chmod 0444 "$fixture_skills_runtime/skills.json"
+refresh_fixture_source "$fixture_skills_runtime" \
+  || fail 'could not restore skill runtime readiness after migration'

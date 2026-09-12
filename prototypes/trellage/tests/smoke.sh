@@ -752,6 +752,7 @@ probe_copilot_login_fallback() {
     "$prototype_dir" \
     "$copilot_profile" \
     /src/finalize-copilot-seed.mjs \
+    /src/finalize-copilot-seed.ts \
     /src/build-support \
     /src/oci \
     | docker run --rm --interactive --network none --read-only --user 10001:10001 \
@@ -926,6 +927,7 @@ probe_copilot_host_auth_and_resume() {
     "$prototype_dir" \
     "$copilot_profile" \
     /src/finalize-copilot-seed.mjs \
+    /src/finalize-copilot-seed.ts \
     /src/build-support \
     /src/oci \
     | docker run --rm --interactive --network none --read-only --user 10001:10001 \

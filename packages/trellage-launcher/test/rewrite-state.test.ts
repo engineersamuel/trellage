@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promise
 import os from "node:os"
 import path from "node:path"
 import { afterEach, expect, it } from "vitest"
-import { readPreferredStyle, readRewriteCache, rewriteCacheKey, writePreferredStyle, writeRewriteCache, type RewriteCacheKey } from "../src/rewrite-state.js"
+import { readPreferredStyle, readRewriteCache, rewriteCacheKey, writePreferredStyle, writeRewriteCache, type RewriteCacheKey } from "../src/rewrite-state.ts"
 const dirs: string[] = []
 const directory = async () => { const dir = await mkdtemp(path.join(os.tmpdir(), "rewrite-state-")); dirs.push(dir); return dir }
 const key = (value: string): RewriteCacheKey => ({ sourcePrompt: value, systemPrompt: "style", model: "model", effort: "high", version: "1" })

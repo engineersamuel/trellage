@@ -18,11 +18,11 @@ prepare a prompt, and hand the work to a Herdr workspace or worktree.
 ## Requirements
 
 - Herdr 0.8.2 or newer
-- Node.js 22.18 or newer
+- The repository's pinned Bun runtime
 - Python 3
 - `mise`
 - A local Trellage checkout with a trusted `mise.toml`
-- Built `trellage-guide-core` and `trellage-launcher` packages
+- Installed source workspace dependencies
 - Docker for Trellage Sandbox capture
 
 This plugin runs `mise run trx -- guide` from the Trellage checkout that
@@ -35,9 +35,8 @@ From the Trellage repository root:
 
 ```sh
 mise trust
-npm run build --prefix packages/trellage-guide-core
-npm run build --prefix packages/trellage-launcher
-npm ci --prefix pocs/herdr-trx-guide --omit=dev --ignore-scripts --no-audit --no-fund
+mise install
+bash pocs/herdr-trx-guide/prepare.sh
 herdr plugin link pocs/herdr-trx-guide --enabled
 herdr integration install copilot
 herdr integration install codex
@@ -48,13 +47,20 @@ The Herdr integrations apply only to direct harnesses in their normal default
 homes. Trellage Native profiles use separate display-only metadata hooks so
 Herdr does not cold-restore a scoped profile as a raw harness.
 
+The explicit preparation step installs the frozen source workspace and then
+the plugin's own frozen dependencies. Local package links retain the workspace
+layout required by conversation capture. Normal plugin launches never install
+dependencies or compile source.
+The link registry is private to `node_modules/.trellage-links`; preparation
+does not register packages in the user's global Bun installation.
+
 Add these bindings to `~/.config/herdr/config.toml`:
 
 ```toml
 [[keys.command]]
 key = "prefix+shift+h"
 type = "popup"
-command = "node /absolute/path/to/trellage/pocs/herdr-trx-guide/latest-popup.ts"
+command = "bun --no-install --no-env-file --config=/dev/null /absolute/path/to/trellage/pocs/herdr-trx-guide/latest-popup.ts"
 description = "Open latest agent result in Trellage guide"
 width = "90%"
 height = "90%"
@@ -465,9 +471,10 @@ HERDR_PLUGIN_STATE_DIR/continuations/requests/<uuid>.json
 All continuation directories must be owned, real, mode-`0700` directories.
 Files must be owned mode-`0600` regular files with one link. Writes are atomic
 and locked. Unsafe paths and permissions are rejected, not repaired. The
-shared validator and runtime enums come from the built `trellage-guide-core`
-package. Build it before loading the plugin; Node's native TypeScript
-stripping cannot execute the core source enums.
+shared validator and runtime enums come from the source exports of
+`@trellage/guide-core`. Production capture lives in
+`@trellage/conversation-source`; the plugin delegates to that package.
+Bun runs the TypeScript directly, including its enums.
 
 The former `analyze-conversation` action and `conversation` plugin pane are
 unregistered. The retained `conversation-popup.ts` adapter starts:
@@ -495,7 +502,7 @@ The root helper rechecks the original exact pane without changing the
 current focus:
 
 ```sh
-node pocs/herdr-trx-guide/conversation-source.ts --check /private/request.json
+bun --no-install --no-env-file --config=/dev/null pocs/herdr-trx-guide/conversation-source.ts --check /private/request.json
 ```
 
 It accepts only an owned `continuations/requests/<UUID>.json` file under
@@ -566,14 +573,14 @@ Run `mise trust` from this Trellage worktree.
 
 **The guide opens but does not accept keys**
 
-Rebuild the launcher and reload Herdr:
+Install the current source workspace dependencies and reload Herdr:
 
 ```sh
-npm run build --prefix packages/trellage-launcher
+bash prepare.sh
 herdr server reload-config
 ```
 
-The current plugin keeps popup stdin attached to the terminal. An older build
+The current plugin keeps popup stdin attached to the terminal. An older version
 that combines piped intent input with a separately opened `/dev/tty` can
 display the guide without receiving normal popup keys.
 
@@ -600,12 +607,14 @@ herdr plugin log list --plugin trellage.guide-handoff
 ## Development checks
 
 ```sh
-npm test --prefix pocs/herdr-trx-guide
-npm run check --prefix pocs/herdr-trx-guide
+bun run --cwd pocs/herdr-trx-guide test
+bun run --cwd pocs/herdr-trx-guide check
+bun run --cwd packages/trellage-conversation-source test
+bun run --cwd packages/trellage-conversation-source check
 python3 tests/trellage_session_bridge_test.py
-npm test --prefix packages/trellage-launcher
-npm run check --prefix packages/trellage-launcher
-npm run build --prefix packages/trellage-launcher
+bun run --cwd packages/trellage-launcher test
+bun run --cwd packages/trellage-launcher check
+mise run trx-guide-test
 make native-copilot-profiles native-claude-profile
 make native-codex-auth-config-launch native-codex-installation native-codex-pstack
 bash prototypes/trellage/tests/host_command_contract.sh

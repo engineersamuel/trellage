@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { ClaudeReleaseError, resolveClaudeRelease, type ClaudeReleaseClient } from "../src/claude-release.js"
+import { ClaudeReleaseError, resolveClaudeRelease, type ClaudeReleaseClient } from "../src/claude-release.ts"
 
 const digest = "sha256:68c8d31e3cf81d4e0f608900c866b8bb2f0e2645e89d0917ce8a23f2ec277587"
 

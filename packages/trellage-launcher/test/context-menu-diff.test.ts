@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { markdownDiffRows, diffDisplayLines } from "../src/context-menu-diff.js"
+import { markdownDiffRows, diffDisplayLines } from "../src/context-menu-diff.ts"
 
 describe("context menu Markdown diff", () => {
   it("aligns changed, added, and removed raw Markdown lines", () => {

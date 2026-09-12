@@ -5,7 +5,7 @@
  * Requirements). Doctor stdout/stderr is treated as opaque text elsewhere —
  * this module only labels *states*, never parses command output.
  */
-import type { AdminRunState } from "./admin-run-manager.js"
+import type { AdminRunState } from "./admin-run-manager.ts"
 
 /** Union of run-manager states plus the two admin-model-derived states that never have a runnable doctor action. */
 export type AdminStatus = AdminRunState | "unsupported" | "malformed-output"

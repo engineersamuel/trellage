@@ -10,13 +10,13 @@ import {
   type ContextMenuRewriteRequest,
   type ContextMenuRewriteResponse,
   type ContextMenuRewriteStyle,
-} from "./context-menu-command.js"
-import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.js"
-import { markdownDiffRows, diffDisplayLines, diffColumnWidth, type ContextMenuView } from "./context-menu-diff.js"
-import { readPreferredStyle, writePreferredStyle } from "./rewrite-state.js"
+} from "./context-menu-command.ts"
+import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.tsx"
+import { markdownDiffRows, diffDisplayLines, diffColumnWidth, type ContextMenuView } from "./context-menu-diff.ts"
+import { readPreferredStyle, writePreferredStyle } from "./rewrite-state.ts"
 
-export type { ContextMenuUiRequest } from "./context-menu-command.js"
-import type { ContextMenuUiRequest } from "./context-menu-command.js"
+export type { ContextMenuUiRequest } from "./context-menu-command.ts"
+import type { ContextMenuUiRequest } from "./context-menu-command.ts"
 
 export type ContextMenuUiState =
   | { readonly kind: "selecting"; readonly index: number; readonly status?: string }

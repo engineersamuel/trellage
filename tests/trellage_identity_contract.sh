@@ -81,7 +81,7 @@ scan_public_branding() {
 
 grep -Fqx '  "name": "@trellage/profile-compiler",' \
   "$repo_root/packages/trellage-cli/package.json" || fail 'npm package identity is stale'
-grep -Fq '"trellage-profile": "dist/cli.js"' \
+grep -Fq '"trellage-profile": "src/cli.ts"' \
   "$repo_root/packages/trellage-cli/package.json" || fail 'npm binary identity is stale'
 grep -Fq 'cd packages/trellage-cli' "$repo_root/Makefile" \
   || fail 'Makefile compiler path is stale'
@@ -91,18 +91,23 @@ grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/M
   || fail 'Makefile does not run the Claude entry contract'
 grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Prime entry contract'
-for target in native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-jcode-profile; do
+for target in native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-firstmate-profile native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
 done
-for target in native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles; do
+for target in native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles native-omp-profile native-claude-profile native-tui-matrix-test; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^TIMING_SENSITIVE_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not isolate ${target}"
+  if grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile"; then
+    fail "Makefile also runs timing-sensitive ${target} in parallel"
+  fi
 done
+grep -Fqx $'\t$(MAKE) --no-print-directory -j1 $(TIMING_SENSITIVE_TEST_TARGETS)' "$repo_root/Makefile" \
+  || fail 'Makefile does not run timing-sensitive contracts serially'
 grep -Fqx '.PHONY: profile-compiler-fingerprint' "$repo_root/Makefile" \
   || fail 'Makefile does not declare the fingerprint performance contract phony'
 grep -Fqx $'\t$(MAKE) --no-print-directory -j1 profile-compiler-fingerprint' "$repo_root/Makefile" \
@@ -180,7 +185,7 @@ scan_legacy_identity \
   "$repo_root/prototypes/trellage/runtime-copilot-entry.sh" \
   "$repo_root/prototypes/trellage/runtime-claude-entry.sh" \
   "$repo_root/prototypes/trellage/runtime-prime-entry.sh" \
-  "$repo_root/prototypes/trellage/finalize-copilot-seed.mjs" \
+  "$repo_root/prototypes/trellage/finalize-copilot-seed.ts" \
   "$repo_root/prototypes/trellage/mise.toml" \
   "$repo_root/prototypes/trellage-codex-profiles" \
   "$repo_root/prototypes/trellage-codex-common" \

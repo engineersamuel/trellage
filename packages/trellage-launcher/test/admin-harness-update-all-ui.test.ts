@@ -6,27 +6,27 @@ import React from "react"
 import { render } from "ink"
 import stringWidth from "string-width"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { AdminApp } from "../src/admin-ui.js"
-import { AdminRunManager } from "../src/admin-run-manager.js"
-import { launchAdminProfile } from "../src/admin-launch.js"
-import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.js"
-import { checkAdminSkillsUpdates } from "../src/admin-skills-check.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import type { CommandRunner, CommandRunOptions, CommandRunResult } from "../src/guide-launch.js"
+import { AdminApp } from "../src/admin-ui.tsx"
+import { AdminRunManager } from "../src/admin-run-manager.ts"
+import { launchAdminProfile } from "../src/admin-launch.ts"
+import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.ts"
+import { checkAdminSkillsUpdates } from "../src/admin-skills-check.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import type { CommandRunner, CommandRunOptions, CommandRunResult } from "../src/guide-launch.ts"
 
-vi.mock("../src/admin-harness-version-cache.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/admin-harness-version-cache.js")>()),
+vi.mock("../src/admin-harness-version-cache.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/admin-harness-version-cache.ts")>()),
   loadHarnessVersionCache: async () => ({ schemaVersion: 2, entries: {} }),
   defaultAdminHarnessVersionCachePath: () => "/unused/admin-cache.json",
   createHarnessVersionCacheSaveQueue: () => ({ enqueue: async () => {} }),
 }))
 
-vi.mock("../src/admin-launch.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/admin-launch.js")>()),
+vi.mock("../src/admin-launch.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/admin-launch.ts")>()),
   launchAdminProfile: vi.fn<typeof launchAdminProfile>(async () => {}),
 }))
 
-vi.mock("../src/admin-skills-check.js", () => ({
+vi.mock("../src/admin-skills-check.ts", () => ({
   checkAdminSkillsUpdates: vi.fn<typeof checkAdminSkillsUpdates>(
     async (entries: ReadonlyArray<AdminProfileEntry>) => new Map(entries.map((entry) => [entry.ref, { kind: "current" as const }])),
   ),

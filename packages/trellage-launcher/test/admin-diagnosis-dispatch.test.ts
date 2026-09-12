@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import type { AdminRunStatus } from "../src/admin-run-manager.js"
-import { selectPendingDiagnosisTargets, selectPendingRepairTargets, shouldStartBatch } from "../src/admin-diagnosis-dispatch.js"
+import type { AdminRunStatus } from "../src/admin-run-manager.ts"
+import { selectPendingDiagnosisTargets, selectPendingRepairTargets, shouldStartBatch } from "../src/admin-diagnosis-dispatch.ts"
 
 const status = (state: AdminRunStatus["state"]): AdminRunStatus => ({ ref: "r", state, history: [] })
 

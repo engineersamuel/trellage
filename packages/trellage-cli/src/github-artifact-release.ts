@@ -1,8 +1,8 @@
 import { Data, Effect, ParseResult, Schema } from "effect"
 
-import { cacheArtifact } from "./artifact-cache.js"
-import type { ArtifactLock } from "./lock.js"
-import type { Platform } from "./platform.js"
+import { cacheArtifact } from "./artifact-cache.ts"
+import type { ArtifactLock } from "./lock.ts"
+import type { Platform } from "./platform.ts"
 
 export class GitHubArtifactReleaseError extends Data.TaggedError("GitHubArtifactReleaseError")<{
   readonly message: string

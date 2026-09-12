@@ -13,8 +13,8 @@ import {
   type CopilotGoalAugmentProviderOptions,
   type GuideGoalModelClient,
   type GuideGoalModelSession,
-} from "../src/copilot-goal-augment-provider.js"
-import { GuideModelCapabilityError, GuideModelCleanupError } from "../src/copilot-guide-provider.js"
+} from "../src/copilot-goal-augment-provider.ts"
+import { GuideModelCapabilityError, GuideModelCleanupError } from "../src/copilot-guide-provider.ts"
 import {
   GuideGoalCancelledError,
   GuideGoalError,
@@ -27,10 +27,10 @@ import {
   type GuideGoalResponse,
   type GuideGoalReviewDecision,
   type GuideGoalTurn,
-} from "../src/guide-goal-augment.js"
-import type { GuideGoalSkills } from "../src/guide-goal-skills.js"
-import { defaultGuideModelRouting } from "../src/guide-model-routing.js"
-import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.js"
+} from "../src/guide-goal-augment.ts"
+import type { GuideGoalSkills } from "../src/guide-goal-skills.ts"
+import { defaultGuideModelRouting } from "../src/guide-model-routing.ts"
+import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const systemPrompt = await readFile(new URL("../prompts/guide-goal-augment.md", import.meta.url), "utf8")
 type UserInputRequest = Parameters<NonNullable<SessionConfig["onUserInputRequest"]>>[0]

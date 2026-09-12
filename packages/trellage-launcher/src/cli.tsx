@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { constants, openSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"
 import { createInterface } from "node:readline"
@@ -6,8 +6,8 @@ import tty from "node:tty"
 import path from "node:path"
 import React, { useMemo, useState } from "react"
 import { Box, Text, render, useApp, useInput, useWindowSize } from "ink"
-import { parseLaunchCatalog, type LaunchCatalog } from "./catalog.js"
-import { detailRows, type DetailRow } from "./detail-layout.js"
+import { parseLaunchCatalog, type LaunchCatalog } from "./catalog.ts"
+import { detailRows, type DetailRow } from "./detail-layout.ts"
 import {
   handleCommandInput,
   handleCustomModelInput,
@@ -15,53 +15,53 @@ import {
   handleModelInput,
   handleSearchInput,
   type LaunchTarget,
-} from "./input.js"
-import { tableColumns } from "./table-layout.js"
-import { enrichNativeProfileList } from "./native-guide-list.js"
-import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherState } from "./state.js"
-import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting } from "./guide-api.js"
-import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.js"
-import { CopilotGuideProvider } from "./copilot-guide-provider.js"
-import { popupGuideIntentFileEnvironmentVariable, resolveInteractiveGuideIntent } from "./guide-interactive-intent.js"
-import { CopilotGoalAugmentProvider } from "./copilot-goal-augment-provider.js"
-import { createGuideGoalSkillResolver } from "./guide-goal-skills.js"
-import { GuideGoalError, type GuideGoalAugmentProvider } from "./guide-goal-augment.js"
-import { executeGuideUiResult } from "./guide-interactive-execution.js"
+} from "./input.ts"
+import { tableColumns } from "./table-layout.ts"
+import { enrichNativeProfileList } from "./native-guide-list.ts"
+import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherState } from "./state.ts"
+import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting } from "./guide-api.ts"
+import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.ts"
+import { CopilotGuideProvider } from "./copilot-guide-provider.ts"
+import { popupGuideIntentFileEnvironmentVariable, resolveInteractiveGuideIntent } from "./guide-interactive-intent.ts"
+import { CopilotGoalAugmentProvider } from "./copilot-goal-augment-provider.ts"
+import { createGuideGoalSkillResolver } from "./guide-goal-skills.ts"
+import { GuideGoalError, type GuideGoalAugmentProvider } from "./guide-goal-augment.ts"
+import { executeGuideUiResult } from "./guide-interactive-execution.ts"
 import {
   createNodeCommandRunner,
   getHerdrContext,
   probeHerdrAvailability,
   type HerdrEnvironment,
-} from "./guide-launch.js"
-import { loadDefaultGuidePrompts } from "./guide-prompts.js"
-import { GuideArtifactCache } from "./guide-match-cache.js"
-import { createInitialGuideRenderHandler } from "./guide-terminal.js"
-import { GuideApp, type GuideUiResult } from "./guide-ui.js"
-import { ContinuationApp } from "./continuation-ui.js"
-import { ContinuationStore } from "./continuation-store.js"
-import { ContinuationSourceClient } from "./continuation-source-client.js"
-import { openContinuationRequest } from "./continuation-entry.js"
-import { createContinuationServices, resolveContinuationModelRouting } from "./continuation-runtime.js"
-import { createCopilotContinuationProvider } from "./continuation-provider.js"
+} from "./guide-launch.ts"
+import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
+import { GuideArtifactCache } from "./guide-match-cache.ts"
+import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
+import { GuideApp, type GuideUiResult } from "./guide-ui.tsx"
+import { ContinuationApp } from "./continuation-ui.tsx"
+import { ContinuationStore } from "./continuation-store.ts"
+import { ContinuationSourceClient } from "./continuation-source-client.ts"
+import { openContinuationRequest } from "./continuation-entry.ts"
+import { createContinuationServices, resolveContinuationModelRouting } from "./continuation-runtime.ts"
+import { createCopilotContinuationProvider } from "./continuation-provider.ts"
 import {
   BasketPreviewApp,
   basketPreviewHelpText,
   parseBasketPreviewArgv,
   type BasketPreviewResult,
-} from "./basket-preview.js"
-import { ForkPreviewApp, forkPreviewHelpText, parseForkPreviewArgv, type ForkPreviewResult } from "./fork-preview.js"
-import { AdminRoot } from "./admin-ui.js"
-import { AdminRunManager } from "./admin-run-manager.js"
-import { DoctorFailureDiagnosisProvider } from "./admin-diagnosis-provider.js"
+} from "./basket-preview.tsx"
+import { ForkPreviewApp, forkPreviewHelpText, parseForkPreviewArgv, type ForkPreviewResult } from "./fork-preview.tsx"
+import { AdminRoot } from "./admin-ui.tsx"
+import { AdminRunManager } from "./admin-run-manager.ts"
+import { DoctorFailureDiagnosisProvider } from "./admin-diagnosis-provider.ts"
 import {
   confirmHarnessUpgrade,
   InteractiveTerminalRequiredError,
   normalizeInteractiveTerminalError,
   runHarnessUpgradeCli,
   type HarnessUpgradeConfirmation,
-} from "./harness-upgrade-cli.js"
-import { parseContextMenuUiRequest, runContextMenuCommand } from "./context-menu-command.js"
-import { runContextMenuUi } from "./context-menu-ui.js"
+} from "./harness-upgrade-cli.ts"
+import { parseContextMenuUiRequest, runContextMenuCommand } from "./context-menu-command.ts"
+import { runContextMenuUi } from "./context-menu-ui.tsx"
 
 interface LaunchIntent {
   readonly id: string
@@ -985,7 +985,7 @@ const runHarnessUpgradeMode = async (): Promise<void> => {
   }
 }
 
-const main = async () => {
+export const main = async (): Promise<void> => {
   if (process.argv[2] === "rewrite-context") {
     if (process.argv[3] === "--worker") {
       const controller = new AbortController()
@@ -1090,9 +1090,11 @@ const main = async () => {
   }
 }
 
-try {
-  await main()
-} catch (error) {
-  process.stderr.write(`trellage-launcher: ${error instanceof Error ? error.message : String(error)}\n`)
-  process.exitCode = 2
+if (import.meta.main) {
+  try {
+    await main()
+  } catch (error) {
+    process.stderr.write(`trellage-launcher: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exitCode = 2
+  }
 }

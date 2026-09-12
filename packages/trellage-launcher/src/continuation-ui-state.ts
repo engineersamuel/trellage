@@ -6,8 +6,8 @@ import {
   type ContinuationDraft,
   type ContinuationPlacement,
   type NextAction,
-} from "../../trellage-guide-core/dist/index.js"
-import type { ContinuationProfileOption, ContinuationSourceStatus } from "./continuation-services.js"
+} from "@trellage/guide-core"
+import type { ContinuationProfileOption, ContinuationSourceStatus } from "./continuation-services.ts"
 
 // oxlint-disable-next-line no-control-regex -- Pasted terminal controls are removed, not interpreted.
 const pastedControls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu

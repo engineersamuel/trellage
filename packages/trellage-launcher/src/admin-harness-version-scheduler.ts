@@ -13,14 +13,14 @@ import {
   parseHarnessVersionOutput,
   type AdminHarnessVersionResult,
   type HarnessReleaseKey,
-} from "./admin-harness-version.js"
+} from "./admin-harness-version.ts"
 import {
   isHarnessVersionCacheStale,
   type AdminHarnessVersionCacheEntry,
   type AdminHarnessVersionCacheRecord,
-} from "./admin-harness-version-cache.js"
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { AdminRunManager } from "./admin-run-manager.js"
+} from "./admin-harness-version-cache.ts"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { AdminRunManager } from "./admin-run-manager.ts"
 
 export interface HarnessVersionSchedulerOptions {
   readonly maxConcurrent?: number

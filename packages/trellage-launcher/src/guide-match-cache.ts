@@ -3,21 +3,21 @@ import { constants } from "node:fs"
 import { lstat, mkdir, open, readdir, rename, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 
-import type { ProfileGuideGoalController, ProfileGuideWorkflow } from "../../trellage-guide-core/dist/index.js"
+import type { ProfileGuideGoalController, ProfileGuideWorkflow } from "@trellage/guide-core"
 import {
   assertPreparedGuideGoal,
   type GuideGoalExecution,
   type PreparedGuideGoal,
-} from "./guide-goal-execution.js"
-import type { GuideModelRouting } from "./guide-model-routing.js"
-import type { GuideModelPrompts } from "./guide-prompts.js"
+} from "./guide-goal-execution.ts"
+import type { GuideModelRouting } from "./guide-model-routing.ts"
+import type { GuideModelPrompts } from "./guide-prompts.ts"
 import type {
   GuideGenerateCandidate,
   GuideGenerateResult,
   GuideMatchResult,
   GuideRefineResult,
-} from "./guide-provider.js"
-import { validateGuideGenerateResult, validateGuideMatchResult, validateGuideRefineResult } from "./guide-provider.js"
+} from "./guide-provider.ts"
+import { validateGuideGenerateResult, validateGuideMatchResult, validateGuideRefineResult } from "./guide-provider.ts"
 
 const maximumArtifactBytes = 256 * 1024
 const maximumOptimizationSkillBytes = 1024 * 1024

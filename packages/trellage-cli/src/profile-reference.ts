@@ -4,10 +4,10 @@ import path from "node:path"
 
 import { Data, Effect } from "effect"
 
-import { platformIdentity, type Platform } from "./platform.js"
-import { parseLock } from "./lock-file.js"
-import { resolutionSidecarPath } from "./resolution-sidecar-storage.js"
-import { parseResolutionSidecar, verifyResolutionSidecarReference } from "./resolution-sidecar.js"
+import { platformIdentity, type Platform } from "./platform.ts"
+import { parseLock } from "./lock-file.ts"
+import { resolutionSidecarPath } from "./resolution-sidecar-storage.ts"
+import { parseResolutionSidecar, verifyResolutionSidecarReference } from "./resolution-sidecar.ts"
 
 export class ProfileReferenceError extends Data.TaggedError("ProfileReferenceError")<{
   readonly message: string

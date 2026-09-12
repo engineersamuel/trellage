@@ -29,6 +29,9 @@ installed_catalog="$install_root/catalog.json"
 installed_native_skills="$install_root/native-skills.mjs"
 installed_statusline="$install_root/lib/trellage-statusline.sh"
 statusline_source="$source_dir/../../scripts/trellage-statusline.sh"
+if [[ -e "$install_root/native-skills.ts" || -L "$install_root/native-skills.ts" ]]; then
+  installed_native_skills="$install_root/native-skills.ts"
+fi
 ownership_marker="$install_root/.managed-by-trellage-grok-profiles"
 ownership_value='trellage-grok-profiles-v1'
 command_dir="$local_dir/bin"
@@ -607,6 +610,10 @@ fi
 
 publication_completed=true
 publication_active=false
-node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
+  "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
+if [[ "$installed_native_skills" == *.mjs && -f "$installed_native_skills" ]]; then
+  rm -- "$installed_native_skills"
+fi
 printf 'Installed grx at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"

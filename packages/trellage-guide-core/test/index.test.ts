@@ -12,7 +12,7 @@ import {
   profileGuideRelativePath,
   ProfileGuideValidationError,
   validateProfileGuideCoverage,
-} from "../src/index.js"
+} from "../src/index.ts"
 
 const validGuide = `---
 schemaVersion: 1

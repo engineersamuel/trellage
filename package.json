@@ -4,63 +4,48 @@
   "description": "Rich launchers for Trellage Sandbox and Trellage Native agent profiles",
   "license": "MIT",
   "type": "module",
+  "packageManager": "bun@1.3.3",
+  "workspaces": [
+    "packages/*"
+  ],
   "bin": {
-    "trellage": "prototypes/trellage/trellage",
-    "trx": "bin/trx.mjs"
+    "trellage": "bin/trellage",
+    "trx": "bin/trx"
   },
   "files": [
     "bin",
-    "packages/trellage-cli/dist/**/*",
-    "packages/trellage-cli/package.json",
-    "packages/trellage-cli/package-lock.json",
-    "packages/trellage-cli/src",
-    "packages/trellage-cli/tsconfig.json",
-    "packages/trellage-cli/tsconfig.build.json",
-    "packages/trellage-cli/dist/.source-hash",
-    "packages/trellage-guide-core/dist/**/*",
-    "packages/trellage-guide-core/package.json",
-    "packages/trellage-guide-core/package-lock.json",
-    "packages/trellage-guide-core/src",
-    "packages/trellage-guide-core/tsconfig.json",
-    "packages/trellage-guide-core/tsconfig.build.json",
-    "packages/trellage-launcher/dist/**/*",
-    "packages/trellage-launcher/prompts",
+    "bun.lock",
+    "bunfig.toml",
+    "tsconfig.base.json",
+    "tsconfig.json",
+    "packages/*/package.json",
+    "packages/*/bunfig.toml",
+    "packages/*/tsconfig.json",
+    "packages/*/src/**",
+    "packages/*/assets/**",
+    "packages/*/prompts/**",
     "profile-guides",
     "profiles",
     "prototypes",
-    "scripts/build-profile-compiler.sh",
-    "scripts/floating-skills.mjs",
-    "scripts/install-floating-skills-runtime.sh",
-    "scripts/install-native-environment-runtime.sh",
-    "scripts/native-environment.mjs",
-    "scripts/profile-compiler-fingerprint.sh",
-    "scripts/trellage-session-bridge.py",
+    "scripts",
     "skills.json"
   ],
   "scripts": {
-    "build": "npm run build --prefix packages/trellage-guide-core && npm run build --prefix packages/trellage-launcher",
-    "prepare": "npm run build",
-    "test": "npm test --prefix packages/trellage-guide-core && npm test --prefix packages/trellage-launcher"
+    "package:source": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml ./packages/trellage-runtime/src/package-cli.ts",
+    "check": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run check:root && BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run --workspaces check",
+    "check:root": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run --workspaces test"
   },
   "dependencies": {
-    "@effect/cli": "0.76.0",
-    "@effect/platform": "0.97.1",
-    "@effect/platform-node": "0.108.0",
-    "@effect/printer": "0.50.0",
-    "@effect/printer-ansi": "0.50.0",
-    "@github/copilot-sdk": "1.0.11",
-    "effect": "3.22.1",
-    "esbuild": "0.27.0",
-    "ink": "7.1.1",
-    "proper-lockfile": "4.1.2",
-    "react": "19.2.4",
-    "react-devtools-core": "7.0.1",
+    "@trellage/guide-core": "workspace:*",
+    "@trellage/launcher": "workspace:*",
+    "@trellage/profile-compiler": "workspace:*",
+    "@trellage/runtime": "workspace:*",
     "skills": "1.5.19",
-    "smol-toml": "1.7.0",
-    "varlock": "1.13.0",
-    "yaml": "2.9.0"
+    "smol-toml": "1.7.0"
   },
   "engines": {
+    "bun": "1.3.3",
     "node": ">=22"
   },
   "repository": {
@@ -68,6 +53,8 @@
     "url": "git+https://github.com/engineersamuel/trellage.git"
   },
   "devDependencies": {
+    "@types/bun": "1.3.3",
+    "@types/node": "24.10.1",
     "typescript": "7.0.2"
   }
 }

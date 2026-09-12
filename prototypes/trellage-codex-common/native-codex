@@ -51,23 +51,24 @@ validated_profile=""
 # The exact catalog records the Superpowers marketplace repository, not the
 # plugin source repository. Keep that independently validated invariant here.
 superpowers_plugin_repository="https://github.com/obra/superpowers.git"
-floating_skills_manager="$script_dir/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_manager="$script_dir/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$script_dir/../common/floating-skills-runtime/skills.json"
 if [ ! -f "$floating_skills_manager" ]; then
-  floating_skills_manager="$script_dir/../../scripts/floating-skills.mjs"
+  floating_skills_manager="$script_dir/../../scripts/floating-skills.ts"
   floating_skills_catalog="$script_dir/../../skills.json"
 fi
+bun_runner="${floating_skills_manager%/*}/run-source.sh"
 session_bridge_source="$script_dir/lib/trellage-session-bridge.py"
 if [ ! -f "$session_bridge_source" ]; then
   session_bridge_source="$script_dir/../../scripts/trellage-session-bridge.py"
 fi
 
 codex_config_helper="$script_dir/lib/codex-config.py"
-codex_agents_helper="$script_dir/lib/codex-agents.mjs"
+codex_agents_helper="$script_dir/lib/codex-agents.ts"
 codex_agents_source="$script_dir/lib/agents"
 if [ ! -f "$codex_config_helper" ]; then
   codex_config_helper="$script_dir/../trellage-codex-common/codex-config.py"
-  codex_agents_helper="$script_dir/../trellage-codex-common/codex-agents.mjs"
+  codex_agents_helper="$script_dir/../trellage-codex-common/codex-agents.ts"
   codex_agents_source="$script_dir/../trellage-codex-common/agents"
 fi
 
@@ -81,7 +82,7 @@ build_floating_skills_args() {
     || die "invalid floating-skills manager: $floating_skills_manager"
   [ -f "$floating_skills_catalog" ] && [ ! -L "$floating_skills_catalog" ] \
     || die "invalid floating-skills catalog: $floating_skills_catalog"
-  command -v node >/dev/null 2>&1 || die 'required command not found: node'
+  command -v bun >/dev/null 2>&1 || die 'required command not found: bun'
   bundles="$(jq -r --arg profile "$profile" '.profiles[$profile].skillBundles[]' "$catalog")" \
     || die "invalid skill bundles: $profile"
   while IFS= read -r bundle; do
@@ -102,7 +103,7 @@ ensure_floating_skills() {
   local profile="$1"
 
   build_floating_skills_args "$profile"
-  node "$floating_skills_manager" ensure \
+  "$bun_runner" "$floating_skills_manager" ensure \
     "${floating_skills_args[@]}" \
     --target "$(profile_home "$profile")/skills" \
     || die "failed to install floating skills: $profile"
@@ -112,7 +113,7 @@ verify_floating_skills() {
   local profile="$1"
 
   build_floating_skills_args "$profile"
-  node "$floating_skills_manager" verify \
+  "$bun_runner" "$floating_skills_manager" verify \
     "${floating_skills_args[@]}" \
     --target "$(profile_home "$profile")/skills" \
     || die "floating skills are unhealthy: $profile"
@@ -122,7 +123,7 @@ verify_repairable_floating_skills() {
   local profile="$1"
 
   build_floating_skills_args "$profile"
-  node "$floating_skills_manager" verify-repairable \
+  "$bun_runner" "$floating_skills_manager" verify-repairable \
     "${floating_skills_args[@]}" \
     --target "$(profile_home "$profile")/skills" \
     || die "floating skills cannot be repaired safely: $profile"
@@ -132,16 +133,16 @@ check_floating_skills() {
   local profile="$1"
 
   build_floating_skills_args "$profile"
-  node "$floating_skills_manager" check "${floating_skills_args[@]}" >/dev/null
+  "$bun_runner" "$floating_skills_manager" check "${floating_skills_args[@]}" >/dev/null
 }
 
 update_floating_skills() {
   local profile="$1"
 
   build_floating_skills_args "$profile"
-  node "$floating_skills_manager" update "${floating_skills_args[@]}" \
+  "$bun_runner" "$floating_skills_manager" update "${floating_skills_args[@]}" \
     || die "failed to update floating skills: $profile"
-  node "$floating_skills_manager" ensure \
+  "$bun_runner" "$floating_skills_manager" ensure \
     "${floating_skills_args[@]}" \
     --target "$(profile_home "$profile")/skills" \
     || die "failed to sync updated floating skills: $profile"
@@ -175,7 +176,7 @@ scrub_skills_environment() {
 }
 
 skills_update_profile() {
-  local profile="$1" helper="$script_dir/native-skills.mjs"
+  local profile="$1" helper="$script_dir/native-skills.ts"
   local skill_args=("${2:---sync}")
   [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
 
@@ -183,13 +184,13 @@ skills_update_profile() {
   require_profile "$profile"
   require_profile_home_ready "$profile"
   build_floating_skills_args "$profile"
-  [[ -e "$helper" || -L "$helper" ]] || helper="$script_dir/../trellage-claude-common/native-skills.mjs"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$script_dir/../trellage-claude-common/native-skills.ts"
   [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
   if [[ "${skill_args[0]}" == --fresh ]]; then
-    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+    exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
       "$(floating_skills_cache "$profile")" "$(profile_home "$profile")/skills"
   fi
-  node "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+  "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
     "$(floating_skills_cache "$profile")" "$(profile_home "$profile")/skills" \
     || die "failed to update cached skills: $profile"
   [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile"
@@ -704,7 +705,7 @@ manage_profile_agents() {
   [ -f "$codex_agents_helper" ] && [ ! -L "$codex_agents_helper" ] \
     && [ ! -L "${codex_agents_helper%/*}" ] \
     || die "unsafe managed Codex agents helper: $codex_agents_helper"
-  node "$codex_agents_helper" "$mode" "$(profile_home "$profile")/agents" "$codex_agents_source" \
+  "$bun_runner" "$codex_agents_helper" "$mode" "$(profile_home "$profile")/agents" "$codex_agents_source" \
     || die "managed Codex agents are unhealthy: $profile"
 }
 

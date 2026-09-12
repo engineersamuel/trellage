@@ -8,8 +8,8 @@ import {
   isSubmitInput,
   type LaunchTarget,
   type StateSetter,
-} from "../src/input.js"
-import { createLauncherState, type LaunchEntry, type LauncherState } from "../src/state.js"
+} from "../src/input.ts"
+import { createLauncherState, type LaunchEntry, type LauncherState } from "../src/state.ts"
 
 const entries: ReadonlyArray<LaunchEntry> = [
   {

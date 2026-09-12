@@ -1081,7 +1081,8 @@ jq -e --arg cmd "$expected_spaced_hook_command" \
 [[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstaller left command'
 [[ -d "$profile_home" ]] || fail 'uninstaller removed profile state'
 
-node --test "$root/../trellage-claude-common/tests/native-skills.test.mjs" \
+bun --no-install --no-env-file "--config=$root/../../packages/trellage-runtime/bunfig.toml" \
+  test "$root/../trellage-claude-common/tests/native-skills.test.ts" \
   || fail 'Native skills-only contracts failed'
 
 printf 'cldx contract: PASS\n'

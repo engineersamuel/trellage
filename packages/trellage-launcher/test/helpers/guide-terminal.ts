@@ -2,16 +2,17 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Terminal } from "@xterm/headless"
-import { spawn, type IPty } from "node-pty"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { expect, vi, type TestContext } from "vitest"
-import type { FixtureEvent, FixtureMode, FixtureReport } from "../fixtures/guide-integration-data.js"
+import type { FixtureEvent, FixtureMode, FixtureReport } from "../fixtures/guide-integration-data.ts"
+import { spawnSourcePty, type SourcePty } from "./source-pty.ts"
 
 const waitOptions = { timeout: 5_000, interval: 20 }
 
 export const createGuideTerminal = async (entry: string, onTestFailed: TestContext["onTestFailed"]) => {
   const root = await mkdtemp(path.join(tmpdir(), "trellage guide integration-"))
   const terminal = new Terminal({ cols: 120, rows: 40, scrollback: 0, allowProposedApi: true })
-  let child: IPty | undefined
+  let child: SourcePty | undefined
   let exit: { readonly exitCode: number; readonly signal?: number } | undefined
   let output = ""
   let screen = ""
@@ -53,7 +54,7 @@ export const createGuideTerminal = async (entry: string, onTestFailed: TestConte
       const temporary = path.join(root, "tmp")
       await mkdir(home)
       await mkdir(temporary)
-      const processUnderTest = spawn(process.execPath, [entry, root, mode], {
+      const processUnderTest = spawnSourcePty(bunExecutable(), bunArguments(entry, [root, mode]), {
         name: "xterm-256color",
         cols: terminal.cols,
         rows: terminal.rows,
@@ -65,7 +66,7 @@ export const createGuideTerminal = async (entry: string, onTestFailed: TestConte
           TMPDIR: temporary,
           TMP: temporary,
           TEMP: temporary,
-          PATH: path.dirname(process.execPath),
+          PATH: path.dirname(bunExecutable()),
           TERM: "xterm-256color",
           CI: "true",
           // Queue focus changes use styling; keep those redraws enabled under CI.
@@ -95,7 +96,7 @@ export const createGuideTerminal = async (entry: string, onTestFailed: TestConte
       // The first render precedes Ink's input effects. Echo is not input acknowledgment.
       await vi.waitFor(() => {
         expect(exit, "Guide exited before enabling terminal input").toBeUndefined()
-        expect(output).toContain("\u001b[?2004h")
+        expect(terminal.modes.bracketedPasteMode, "Guide terminal input is not enabled").toBe(true)
       }, waitOptions)
     },
     async pressAndWait(keys: string, ...texts: ReadonlyArray<string>): Promise<void> {

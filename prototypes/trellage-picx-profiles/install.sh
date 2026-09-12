@@ -63,7 +63,6 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
     || refuse "unrelated command: $command_path"
 fi
 
-mkdir -p "$install_root/bin" "$command_dir"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/picx" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/picx/bin" 'runtime bin'
 [[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
@@ -76,6 +75,10 @@ for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
       || refuse "unsafe installed version receipt: $receipt"
   fi
 done
+"$source_dir/../../scripts/install-floating-skills-runtime.sh"
+mkdir -p "$install_root/bin" "$command_dir"
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/picx" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/picx/bin" 'runtime bin'
 launcher_stage="$(mktemp "$install_root/bin/.picx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
@@ -94,6 +97,6 @@ if [[ ! -L "$command_path" ]]; then
   mv "$command_stage" "$command_path"
 fi
 
-node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
+  "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
 printf 'Installed picx at %s\n' "$command_path"
-"$source_dir/../../scripts/install-floating-skills-runtime.sh"

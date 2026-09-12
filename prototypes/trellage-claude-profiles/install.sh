@@ -135,6 +135,7 @@ if [[ ! -L "$command_path" ]]; then
   mv "$command_stage" "$command_path"
 fi
 
-node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
+  "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
 printf 'Installed cldx at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"

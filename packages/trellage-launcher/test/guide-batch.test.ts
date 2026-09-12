@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest"
-import { createPrivateContinuationJob } from "../src/continuation-launch.js"
+import { createPrivateContinuationJob } from "../src/continuation-launch.ts"
 
 import {
   createQueuedGuideJob,
   describeJobPlacement,
   emptyGuideQueue,
   enqueueGuideJob,
+  replaceQueuedGuideJob,
+  findGuideQueueConflict,
+  GuideQueueConflictError,
+  reservedWorktreeBranches,
+  removeQueuedGuideJobById,
   executeGuideBatch,
   removeSelectedQueuedGuideJob,
   replaceQueuedGuideJobPrompt,
@@ -14,17 +19,57 @@ import {
   submitQueuedGuidePromptEdit,
   type GuideBatch,
   type JobPlacement,
-} from "../src/guide-batch.js"
+} from "../src/guide-batch.ts"
 import {
   CommandRunnerError,
   type CommandRunOptions,
   type CommandRunResult,
   type CommandRunner,
   type SelectedProfile,
-} from "../src/guide-launch.js"
-import { goalTransportFixture } from "./fixtures/goal-transport.js"
-import { ProfileReadinessKind } from "../src/guide-preflight.js"
-import { guideGoalActivationInput } from "../src/guide-goal-execution.js"
+} from "../src/guide-launch.ts"
+import { goalTransportFixture } from "./fixtures/goal-transport.ts"
+import { ProfileReadinessKind } from "../src/guide-preflight.ts"
+import { guideGoalActivationInput } from "../src/guide-goal-execution.ts"
+
+describe("queued worktree reservations", () => {
+  it("releases removed reservations and permits explicit existing-worktree reuse", () => {
+    const profile = native("cpx", "hve")
+    const placement = { kind: "new-worktree", branch: " branch ", baseRef: "HEAD" } as const
+    const queue = enqueueGuideJob(emptyGuideQueue(), profile, "first", placement)
+    expect(reservedWorktreeBranches(queue)).toEqual(["branch"])
+    expect(reservedWorktreeBranches(queue, 1)).toEqual([])
+    const conflict = findGuideQueueConflict(queue, "branch")
+    expect(conflict).toBeInstanceOf(GuideQueueConflictError)
+    expect(conflict?.job.id).toBe(1)
+    expect(conflict?.branch).toBe("branch")
+    const existing = { kind: "existing-worktree", path: "/repo/branch" } as const
+    const reused = enqueueGuideJob(enqueueGuideJob(queue, profile, "two", existing), profile, "three", existing)
+    expect(reused.entries).toHaveLength(3)
+    expect(reservedWorktreeBranches(removeQueuedGuideJobById(reused, 1))).toEqual([])
+    expect(findGuideQueueConflict(queue, "branch", 1)).toBeUndefined()
+  })
+  it("rejects trimmed duplicates without consuming IDs and permits self replacement", () => {
+    const profile = native("cpx", "hve")
+    const placement = { kind: "new-worktree", branch: "wt/cpx-hve-review", baseRef: "HEAD" } as const
+    const queue = enqueueGuideJob(emptyGuideQueue(), profile, "first", placement)
+    expect(() =>
+      enqueueGuideJob(queue, native("cdx", "default"), "second", {
+        ...placement,
+        branch: ` ${placement.branch} `,
+        baseRef: "main",
+      }),
+    ).toThrow("already queued by job 1 (cpx hve)")
+    expect(queue.nextId).toBe(2)
+    const two = enqueueGuideJob(queue, profile, "second", { ...placement, branch: "other" })
+    expect(() => replaceQueuedGuideJob(two, 2, profile, "changed", placement)).toThrow("already queued")
+    const replaced = replaceQueuedGuideJob(two, 1, profile, "changed", placement)
+    expect(replaced.entries.map((job) => job.id)).toEqual([1, 2])
+    expect(replaced.nextId).toBe(3)
+    expect(replaced.entries[0]?.prompt).toBe("changed")
+    const released = replaceQueuedGuideJob(two, 1, profile, "first", { kind: "new-tab" })
+    expect(enqueueGuideJob(released, profile, "third", placement).entries).toHaveLength(3)
+  })
+})
 
 class BatchRunner implements CommandRunner {
   readonly calls: Array<{

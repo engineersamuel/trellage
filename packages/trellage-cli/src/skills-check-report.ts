@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import { Cause, Effect } from "effect"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
 
-import { loadProfile, profileImage } from "./application.js"
-import { dockerHostArguments, verifyDockerTarget, type DockerTarget, type DockerTargetRunner } from "./docker-target.js"
-import type { ProfileDocument } from "./profile.js"
+import { loadProfile, profileImage } from "./application.ts"
+import { dockerHostArguments, verifyDockerTarget, type DockerTarget, type DockerTargetRunner } from "./docker-target.ts"
+import type { ProfileDocument } from "./profile.ts"
 
 export interface SkillsCheckReport {
   readonly kind: "current" | "available" | "unknown"
@@ -27,7 +28,7 @@ const liveRun: DockerTargetRunner = (command, args) =>
           encoding: "utf8",
           maxBuffer: 1024 * 1024,
           timeout: 5 * 60 * 1000,
-          env: { ...process.env, NODE_DISABLE_COMPILE_CACHE: "1" },
+          env: { ...process.env, NODE_DISABLE_COMPILE_CACHE: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
         })
       ).stdout,
     catch: (cause) => cause,
@@ -139,19 +140,21 @@ const extractAndCompare = (
           const extracted = path.join(stage, "baked")
           yield* io(() => mkdir(extracted, { mode: 0o700 }))
           yield* docker(["container", "cp", `${id}:${source}/.`, extracted])
-          const result = yield* run(process.execPath, [
-            path.join(root, "scripts/floating-skills.mjs"),
-            "check-container",
-            "--catalog",
-            path.join(root, "skills.json"),
-            ...document.profile.skill_bundles.flatMap((bundle) => ["--bundle", bundle]),
-            "--target",
-            extracted,
-            "--output",
-            stage,
-            "--skills-cli",
-            path.join(root, "packages/trellage-cli/node_modules/skills/bin/cli.mjs"),
-          ])
+          const result = yield* run(
+            bunExecutable(),
+            bunArguments(path.join(root, "scripts/floating-skills.ts"), [
+              "check-container",
+              "--catalog",
+              path.join(root, "skills.json"),
+              ...document.profile.skill_bundles.flatMap((bundle) => ["--bundle", bundle]),
+              "--target",
+              extracted,
+              "--output",
+              stage,
+              "--skills-cli",
+              fileURLToPath(import.meta.resolve("skills/bin/cli.mjs")),
+            ]),
+          )
           return yield* Effect.try(() => parseReport(result))
         }),
       () => remove().pipe(Effect.orDie),

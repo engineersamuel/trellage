@@ -1,4 +1,5 @@
 import { defineConfig, type PlaywrightTestConfig } from "@playwright/test";
+import "../bun-runtime.setup.ts";
 
 function harnessProjects(): NonNullable<PlaywrightTestConfig["projects"]> {
   const matrix = process.env.HARNESS_BASE_URLS;

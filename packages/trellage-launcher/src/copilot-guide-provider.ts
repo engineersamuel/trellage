@@ -65,15 +65,15 @@ import {
   type GuideModelPhase,
   type GuideModelRouting,
   type GuideReasoningEffort,
-} from "./guide-model-routing.js"
-import type { GuideModelPrompts } from "./guide-prompts.js"
+} from "./guide-model-routing.ts"
+import type { GuideModelPrompts } from "./guide-prompts.ts"
 import {
   guideGoalApproachBudget,
   guideGoalCandidateBody,
   resolveGuideGoalExecution,
   type GuideGoalExecution,
-} from "./guide-goal-execution.js"
-import { workflowPromptFrame } from "./guide-workflow-prompt.js"
+} from "./guide-goal-execution.ts"
+import { workflowPromptFrame } from "./guide-workflow-prompt.ts"
 import {
   assertGuideEnrichInput,
   assertGuideGenerateInput,
@@ -95,7 +95,7 @@ import {
   type GuideProvider,
   type GuideRefineInput,
   type GuideRefineResult,
-} from "./guide-provider.js"
+} from "./guide-provider.ts"
 
 /** A response message shape narrow enough to be satisfied by both `AssistantMessageEvent` and test fakes. */
 export interface GuideModelMessage {

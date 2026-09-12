@@ -5,18 +5,16 @@ import path from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { resolveGitHubArtifactRelease } from "../src/github-artifact-release.js"
-
-const originalFetch = globalThis.fetch
+import { resolveGitHubArtifactRelease } from "../src/github-artifact-release.ts"
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  vi.restoreAllMocks()
 })
 
 describe("GitHub artifact release resolution", () => {
   it("downloads and hashes an asset when GitHub omits its digest", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-github-artifact-"))
-    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input)
       if (url.endsWith("/releases/latest")) {
         return new Response(
@@ -36,7 +34,7 @@ describe("GitHub artifact release resolution", () => {
       }
       if (url.endsWith("/tool-linux-arm64")) return new Response("tool bytes")
       return new Response("missing", { status: 404 })
-    }) as typeof fetch
+    })
 
     const artifact = await Effect.runPromise(
       resolveGitHubArtifactRelease({

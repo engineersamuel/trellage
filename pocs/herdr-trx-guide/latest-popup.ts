@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // @ts-nocheck -- Legacy terminal UI adapter; capture modules are type-checked.
 import { fileURLToPath } from "node:url"
 

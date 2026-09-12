@@ -1,6 +1,6 @@
-import type { ArtifactLock, ProfileLock } from "./lock.js"
-import type { Platform } from "./platform.js"
-import { parseNpmArtifactIdentity } from "./npm-artifact.js"
+import type { ArtifactLock, ProfileLock } from "./lock.ts"
+import type { Platform } from "./platform.ts"
+import { parseNpmArtifactIdentity } from "./npm-artifact.ts"
 import {
   claudeGithubReleaseTools,
   claudeHasSerena,
@@ -8,8 +8,8 @@ import {
   isClaudeProfile,
   isGraphOfLoopsProfile,
   type ProfileDocument,
-} from "./profile.js"
-import { graphRustArtifactNames, graphRustUrlIdentity } from "./rust-release.js"
+} from "./profile.ts"
+import { graphRustArtifactNames, graphRustUrlIdentity } from "./rust-release.ts"
 
 export const extraClaudeMarketplaceArtifactNames = (document: ProfileDocument): ReadonlyArray<string> => {
   if (!isClaudeProfile(document.profile) || document.profile.plugins[0]?.adapter === "hyperresearch") return []

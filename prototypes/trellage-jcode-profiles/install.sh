@@ -25,7 +25,8 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/jcx"
 installed_launcher="$install_root/bin/jcx"
 installed_catalog="$install_root/catalog.json"
-installed_config_manager="$install_root/config-manager.mjs"
+installed_config_manager="$install_root/config-manager.ts"
+legacy_config_manager="$install_root/config-manager.mjs"
 installed_version_receipt="$install_root/installed-version"
 legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
@@ -71,8 +72,10 @@ require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellag
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
-[[ -f "$source_dir/config-manager.mjs" && ! -L "$source_dir/config-manager.mjs" ]] \
-  || refuse "invalid config manager: $source_dir/config-manager.mjs"
+[[ -f "$source_dir/config-manager.ts" && ! -L "$source_dir/config-manager.ts" ]] \
+  || refuse "invalid config manager: $source_dir/config-manager.ts"
+[[ ! -L "$legacy_config_manager" && ( ! -e "$legacy_config_manager" || -f "$legacy_config_manager" ) ]] \
+  || refuse "unsafe legacy config manager: $legacy_config_manager"
 [[ ! -L "$installed_config_manager" \
   && ( ! -e "$installed_config_manager" || -f "$installed_config_manager" ) ]] \
   || refuse "unsafe managed config manager: $installed_config_manager"
@@ -89,7 +92,7 @@ config_manager_stage="$(mktemp "$install_root/.config-manager.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
 install -m 0755 "$source_dir/bin/jcx" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
-install -m 0644 "$source_dir/config-manager.mjs" "$config_manager_stage"
+install -m 0644 "$source_dir/config-manager.ts" "$config_manager_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
 chmod 0600 "$marker_stage"
 mv -f "$launcher_stage" "$installed_launcher"
@@ -105,6 +108,8 @@ if [[ ! -L "$command_path" ]]; then
   mv "$command_stage" "$command_path"
 fi
 
-node "$source_dir/../trellage-claude-common/native-skills.mjs" --install-manual "$install_root"
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
+  "$source_dir/../trellage-claude-common/native-skills.ts" --install-manual "$install_root"
+[[ ! -f "$legacy_config_manager" ]] || rm -- "$legacy_config_manager"
 printf 'Installed jcx at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { execFile, spawn } from "node:child_process"
+import { execFile, spawn, type ChildProcess } from "node:child_process"
 import {
   chmod,
   cp,
@@ -24,13 +24,22 @@ import { promisify } from "node:util"
 import { fileURLToPath } from "node:url"
 
 import { Effect } from "effect"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { CopilotPluginError, readCopilotMarketplace } from "../src/copilot-plugin.js"
+import { CopilotPluginError, readCopilotMarketplace } from "../src/copilot-plugin.ts"
 
 const roots: Array<string> = []
 const execFilePromise = promisify(execFile)
-const finalizer = fileURLToPath(new URL("../../../prototypes/trellage/finalize-copilot-seed.mjs", import.meta.url))
+const finalizer = fileURLToPath(new URL("../../../prototypes/trellage/finalize-copilot-seed.ts", import.meta.url))
+
+const stopFinalizer = async (child: ChildProcess): Promise<void> => {
+  if (child.exitCode === null && child.signalCode === null) {
+    const exited = once(child, "exit")
+    child.kill("SIGKILL")
+    await exited
+  }
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -461,22 +470,18 @@ const nativeSeed = async (): Promise<NativeSeed> => {
 }
 
 const runFinalizer = (seed: string, ...args: ReadonlyArray<string>) =>
-  execFilePromise(process.execPath, [finalizer, seed, "hve-core", "hve-core", "3.3.101", ...args])
+  execFilePromise(bunExecutable(), bunArguments(finalizer, [seed, "hve-core", "hve-core", "3.3.101", ...args]))
 
 const runFinalizerVersion = (seed: string, version: string) =>
-  execFilePromise(process.execPath, [finalizer, seed, "hve-core", "hve-core", version])
+  execFilePromise(bunExecutable(), bunArguments(finalizer, [seed, "hve-core", "hve-core", version]))
 
 const runFinalizerWithUmask = (seed: string) =>
   execFilePromise("/bin/sh", [
     "-c",
     'umask 077; exec "$@"',
     "finalize-copilot-seed",
-    process.execPath,
-    finalizer,
-    seed,
-    "hve-core",
-    "hve-core",
-    "3.3.101",
+    bunExecutable(),
+    ...bunArguments(finalizer, [seed, "hve-core", "hve-core", "3.3.101"]),
   ])
 
 const exists = async (file: string): Promise<boolean> => {
@@ -612,19 +617,19 @@ const snapshotTree = async (root: string): Promise<ReadonlyArray<SnapshotEntry>>
       const relative = path.relative(root, absolute).split(path.sep).join("/")
       const status = await lstat(absolute)
       if (status.isSymbolicLink()) {
-        result.push({ path: relative, type: "symlink", mode: status.mode & 0o777, target: await readlink(absolute) })
+        result.push({ path: relative, type: "symlink", mode: status.mode & 0o7777, target: await readlink(absolute) })
       } else if (status.isDirectory()) {
-        result.push({ path: relative, type: "directory", mode: status.mode & 0o777 })
+        result.push({ path: relative, type: "directory", mode: status.mode & 0o7777 })
         await visit(absolute)
       } else if (status.isFile()) {
         result.push({
           path: relative,
           type: "file",
-          mode: status.mode & 0o777,
+          mode: status.mode & 0o7777,
           content: (await readFile(absolute)).toString("base64"),
         })
       } else {
-        result.push({ path: relative, type: "special", mode: status.mode & 0o777 })
+        result.push({ path: relative, type: "special", mode: status.mode & 0o7777 })
       }
     }
   }
@@ -917,7 +922,9 @@ describe("finalize-copilot-seed", () => {
     ],
   ])("rejects a %s without mutating the seed", async (_label, selectedPath, mode, expected) => {
     const fixture = await nativeSeed()
-    await chmod(selectedPath(fixture), mode)
+    const selected = selectedPath(fixture)
+    await execFilePromise("/bin/chmod", [mode.toString(8), selected])
+    expect((await lstat(selected)).mode & 0o7777).toBe(mode)
     const before = await snapshotTree(fixture.seed)
 
     await expect(runFinalizer(fixture.seed)).rejects.toThrow(expected)
@@ -1054,11 +1061,13 @@ describe("finalize-copilot-seed", () => {
     await expect(runFinalizer(fixture.seed)).rejects.toThrow(/symlink rejected/)
   })
 
-  it("rejects special files in the installed plugin", async () => {
+  it("rejects special files in the installed plugin", async ({ onTestFinished }) => {
     const fixture = await nativeSeed()
     await execFilePromise("mkfifo", [path.join(fixture.installed, "pipe")])
 
-    await expect(runFinalizer(fixture.seed)).rejects.toThrow(/special file rejected/)
+    const running = runFinalizer(fixture.seed)
+    onTestFinished(() => stopFinalizer(running.child))
+    await expect(running).rejects.toThrow(/special file rejected/)
   })
 
   it("rejects temporary build-root strings in managed content", async () => {
@@ -1091,7 +1100,7 @@ describe("finalize-copilot-seed", () => {
     )
   })
 
-  it.each(["/src/finalize-copilot-seed.mjs", "/src/build-support", "/src/oci"])(
+  it.each(["/src/finalize-copilot-seed.mjs", "/src/finalize-copilot-seed.ts", "/src/build-support", "/src/oci"])(
     "rejects known build-only path %s",
     async (buildPath) => {
       const fixture = await nativeSeed()
@@ -1194,50 +1203,28 @@ describe("finalize-copilot-seed", () => {
     await expectFinalSeed(fixture.seed)
   })
 
-  it("retries when a lock owner releases between open and validation", async () => {
+  it("retries when a lock owner releases between open and validation", async ({ onTestFinished }) => {
     const fixture = await nativeSeed()
     const owned = await ownedLockPair(fixture, "main", process.pid, "release-turnover")
     const marker = path.join(fixture.root, "release-turnover-observed")
-    const preload = path.join(fixture.root, "release-turnover-preload.mjs")
-    const publicPath = await realpath(owned.publicPath)
-    const privatePath = await realpath(owned.privatePath)
-    await writeFile(
-      preload,
-      `
-import fs from "node:fs"
-import fsPromises from "node:fs/promises"
-import { syncBuiltinESMExports } from "node:module"
-
-const originalOpen = fsPromises.open
-let released = false
-fsPromises.open = async (file, ...args) => {
-  const handle = await originalOpen(file, ...args)
-  if (!released && String(file) === process.env.TRELLAGE_TEST_RELEASE_PUBLIC) {
-    released = true
-    await fsPromises.rm(process.env.TRELLAGE_TEST_RELEASE_PUBLIC, { force: true })
-    await fsPromises.rm(process.env.TRELLAGE_TEST_RELEASE_PRIVATE, { force: true })
-    fs.writeFileSync(process.env.TRELLAGE_TEST_RELEASE_MARKER, "released\\n")
-  }
-  return handle
-}
-syncBuiltinESMExports()
-`,
-    )
-
-    await expect(
-      execFilePromise(
-        process.execPath,
-        ["--import", preload, finalizer, fixture.seed, "hve-core", "hve-core", "3.3.101"],
-        {
-          env: {
-            ...process.env,
-            TRELLAGE_TEST_RELEASE_PUBLIC: publicPath,
-            TRELLAGE_TEST_RELEASE_PRIVATE: privatePath,
-            TRELLAGE_TEST_RELEASE_MARKER: marker,
-          },
+    const preload = fileURLToPath(new URL("./fixtures/finalizer-lock-release-preload.ts", import.meta.url))
+    const publicPath = path.join(await realpath(path.dirname(owned.publicPath)), path.basename(owned.publicPath))
+    const privatePath = path.join(await realpath(path.dirname(owned.privatePath)), path.basename(owned.privatePath))
+    expect(publicPath).not.toBe(privatePath)
+    const running = execFilePromise(
+      bunExecutable(),
+      ["--preload", preload, ...bunArguments(finalizer, [fixture.seed, "hve-core", "hve-core", "3.3.101"])],
+      {
+        env: {
+          ...process.env,
+          TRELLAGE_TEST_RELEASE_PUBLIC: publicPath,
+          TRELLAGE_TEST_RELEASE_PRIVATE: privatePath,
+          TRELLAGE_TEST_RELEASE_MARKER: marker,
         },
-      ),
-    ).resolves.toBeDefined()
+      },
+    )
+    onTestFinished(() => stopFinalizer(running.child))
+    await expect(running).resolves.toBeDefined()
 
     await expect(readFile(marker, "utf8")).resolves.toBe("released\n")
     await expectFinalSeed(fixture.seed)
@@ -1267,7 +1254,11 @@ syncBuiltinESMExports()
 
   it("waits for a live recovery owner and proceeds after that owner dies", async () => {
     const fixture = await nativeSeed()
-    const owner = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })
+    const owner = spawn(
+      bunExecutable(),
+      ["--no-install", "--no-env-file", "--config=/dev/null", "-e", "setInterval(() => {}, 1000)"],
+      { stdio: "ignore" },
+    )
     const live = await ownedLockPair(fixture, "recovery", owner.pid!)
     const running = runFinalizer(fixture.seed)
     await new Promise((resolve) => setTimeout(resolve, 100))
@@ -1401,7 +1392,7 @@ syncBuiltinESMExports()
 
   it("recovers a real SIGKILL after authenticated private-stage publication before public rename", async () => {
     const fixture = await nativeSeed()
-    const child = spawn(process.execPath, [finalizer, fixture.seed, "hve-core", "hve-core", "3.3.101"], {
+    const child = spawn(bunExecutable(), bunArguments(finalizer, [fixture.seed, "hve-core", "hve-core", "3.3.101"]), {
       env: {
         ...process.env,
         NODE_ENV: "test",
@@ -1427,7 +1418,7 @@ syncBuiltinESMExports()
 
   it("rescans private stages after a waiter recovers a main lock from a stopped owner", async () => {
     const fixture = await nativeSeed()
-    const owner = spawn(process.execPath, [finalizer, fixture.seed, "hve-core", "hve-core", "3.3.101"], {
+    const owner = spawn(bunExecutable(), bunArguments(finalizer, [fixture.seed, "hve-core", "hve-core", "3.3.101"]), {
       env: {
         ...process.env,
         NODE_ENV: "test",
@@ -1439,7 +1430,7 @@ syncBuiltinESMExports()
       const privateStage = (await readdir(fixture.root)).find((name) => name.startsWith(".copilot-finalize-stage-"))
       return privateStage !== undefined && (await exists(path.join(fixture.root, privateStage, "state.json")))
     }, 1_000)
-    const waiter = spawn(process.execPath, [finalizer, fixture.seed, "hve-core", "hve-core", "3.3.101"], {
+    const waiter = spawn(bunExecutable(), bunArguments(finalizer, [fixture.seed, "hve-core", "hve-core", "3.3.101"]), {
       stdio: "ignore",
     })
     const ownerExited = once(owner, "exit")
@@ -1460,7 +1451,7 @@ syncBuiltinESMExports()
   it("recovers a real SIGKILL after main-lock publication and cleans its private hard link", async () => {
     const fixture = await nativeSeed()
     await writeFile(path.join(fixture.installed, "slow.bin"), Buffer.alloc(64 * 1024 * 1024, 0x61))
-    const child = spawn(process.execPath, [finalizer, fixture.seed, "hve-core", "hve-core", "3.3.101"], {
+    const child = spawn(bunExecutable(), bunArguments(finalizer, [fixture.seed, "hve-core", "hve-core", "3.3.101"]), {
       stdio: "ignore",
     })
     await waitFor(async () => exists(path.join(fixture.seed, ".finalize.lock")))
@@ -1514,10 +1505,10 @@ syncBuiltinESMExports()
 
     await expect(runFinalizer(fixture.seed, "extra")).rejects.toThrow(/expected exactly 4 arguments/)
     await expect(
-      execFilePromise(process.execPath, [finalizer, fixture.seed, "../hve", "hve-core", "3.3.101"]),
+      execFilePromise(bunExecutable(), bunArguments(finalizer, [fixture.seed, "../hve", "hve-core", "3.3.101"])),
     ).rejects.toThrow(/unsafe marketplace identifier/)
     await expect(
-      execFilePromise(process.execPath, [finalizer, "relative-seed", "hve-core", "hve-core", "3.3.101"]),
+      execFilePromise(bunExecutable(), bunArguments(finalizer, ["relative-seed", "hve-core", "hve-core", "3.3.101"])),
     ).rejects.toThrow(/seed path must be absolute/)
   })
 

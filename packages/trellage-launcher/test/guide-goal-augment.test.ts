@@ -9,8 +9,8 @@ import {
   validateGuideGoalQuestion,
   type GuideGoalRequest,
   type GuideGoalTurn,
-} from "../src/guide-goal-augment.js"
-import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.js"
+} from "../src/guide-goal-augment.ts"
+import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const fixture = () => {
   const abort = new AbortController()

@@ -1,16 +1,14 @@
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { resolveNodeRelease } from "../src/node-release.js"
-import { resolvePythonRelease } from "../src/python-release.js"
-import { graphRustVersion, resolveGraphRustToolchain, resolveRustToolchain } from "../src/rust-release.js"
-import { resolveToolArtifacts } from "../src/tool-artifacts.js"
-import { resolveUvRelease } from "../src/uv-release.js"
-
-const originalFetch = globalThis.fetch
+import { resolveNodeRelease } from "../src/node-release.ts"
+import { resolvePythonRelease } from "../src/python-release.ts"
+import { graphRustVersion, resolveGraphRustToolchain, resolveRustToolchain } from "../src/rust-release.ts"
+import { resolveToolArtifacts } from "../src/tool-artifacts.ts"
+import { resolveUvRelease } from "../src/uv-release.ts"
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  vi.restoreAllMocks()
 })
 
 describe("floating build tool resolution", () => {
@@ -22,7 +20,7 @@ describe("floating build tool resolution", () => {
       const assetName = `bv_${version}_linux_${architecture}.tar.gz`
       const url = `https://github.com/Dicklesworthstone/beads_viewer/releases/download/v${version}/${assetName}`
       const integrity = `sha256:${"a".repeat(64)}`
-      const fetchRelease = vi.fn<typeof fetch>(async () => {
+      const fetchRelease = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
         return new Response(
           JSON.stringify({
             tag_name: `v${version}`,
@@ -32,7 +30,6 @@ describe("floating build tool resolution", () => {
           }),
         )
       })
-      globalThis.fetch = fetchRelease
 
       await expect(Effect.runPromise(resolveToolArtifacts("cache", platform, ["bv"]))).resolves.toEqual([
         { name: "bv", version, integrity, url, size: 123 },
@@ -45,7 +42,7 @@ describe("floating build tool resolution", () => {
   )
 
   it("selects the newest stable Node LTS artifact and checksum", async () => {
-    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input)
       if (url.endsWith("/index.json")) {
         return new Response(
@@ -56,7 +53,7 @@ describe("floating build tool resolution", () => {
         )
       }
       return new Response(`${"a".repeat(64)}  node-v24.8.0-linux-arm64.tar.gz\n`)
-    }) as typeof fetch
+    })
 
     await expect(Effect.runPromise(resolveNodeRelease("linux/arm64"))).resolves.toEqual({
       name: "node",
@@ -67,7 +64,7 @@ describe("floating build tool resolution", () => {
   })
 
   it("selects an exact stable uv release asset", async () => {
-    globalThis.fetch = vi.fn<typeof fetch>(
+    vi.spyOn(globalThis, "fetch").mockImplementation(
       async () =>
         new Response(
           JSON.stringify({
@@ -85,7 +82,7 @@ describe("floating build tool resolution", () => {
             ],
           }),
         ),
-    ) as typeof fetch
+    )
 
     await expect(Effect.runPromise(resolveUvRelease("linux/arm64"))).resolves.toEqual({
       name: "uv",
@@ -97,7 +94,7 @@ describe("floating build tool resolution", () => {
   })
 
   it("selects the newest Python 3.13 standalone artifact", async () => {
-    globalThis.fetch = vi.fn<typeof fetch>(
+    vi.spyOn(globalThis, "fetch").mockImplementation(
       async () =>
         new Response(
           JSON.stringify({
@@ -115,7 +112,7 @@ describe("floating build tool resolution", () => {
             ],
           }),
         ),
-    ) as typeof fetch
+    )
 
     await expect(Effect.runPromise(resolvePythonRelease("linux/arm64"))).resolves.toEqual({
       name: "python",
@@ -127,7 +124,7 @@ describe("floating build tool resolution", () => {
   })
 
   it("selects exact stable Rust toolchain artifacts", async () => {
-    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input)
       if (init?.method === "HEAD") return new Response(null, { headers: { "content-length": "123" } })
       if (url.endsWith("channel-rust-stable.toml")) {
@@ -143,7 +140,7 @@ hash = "${"b".repeat(64)}"
 `)
       }
       return new Response("missing", { status: 404 })
-    }) as typeof fetch
+    })
 
     await expect(Effect.runPromise(resolveRustToolchain("cache", "linux/arm64"))).resolves.toEqual([
       {
@@ -164,7 +161,7 @@ hash = "${"b".repeat(64)}"
   })
 
   it("rejects Rust host and standard-library artifacts from different releases", async () => {
-    globalThis.fetch = vi.fn<typeof fetch>(
+    vi.spyOn(globalThis, "fetch").mockImplementation(
       async () =>
         new Response(`
 [pkg.rust]
@@ -176,7 +173,7 @@ hash = "${"a".repeat(64)}"
 url = "https://static.rust-lang.org/dist/2026-08-02/rust-std-1.97.0-aarch64-unknown-linux-musl.tar.gz"
 hash = "${"b".repeat(64)}"
 `),
-    ) as typeof fetch
+    )
 
     await expect(Effect.runPromise(resolveRustToolchain("cache", "linux/arm64"))).rejects.toThrow(
       /artifact pair is inconsistent/,
@@ -193,7 +190,7 @@ hash = "${"b".repeat(64)}"
       ["rust-std", "rust-std", "x86_64-unknown-linux-musl"],
       ["rust-std", "rust-std", "i686-unknown-linux-musl"],
     ] as const
-    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input)
       if (init?.method === "HEAD") return new Response(null, { headers: { "content-length": "123" } })
       if (!url.endsWith(`channel-rust-${graphRustVersion}.toml`)) return new Response("missing", { status: 404 })
@@ -209,7 +206,7 @@ hash = "${String(index + 1).repeat(64)}"`,
   )
   .join("\n")}
 `)
-    }) as typeof fetch
+    })
 
     const artifacts = await Effect.runPromise(resolveGraphRustToolchain("cache", "linux/arm64"))
 

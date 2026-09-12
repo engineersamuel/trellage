@@ -19,7 +19,7 @@ import {
   type ContinuationDraft,
   type ConversationSnapshot,
   type ConversationSource,
-} from "../src/conversation.js"
+} from "../src/conversation.ts"
 
 const snapshot = (): ConversationSnapshot => ({
   schemaVersion: 1,

@@ -1,0 +1,15 @@
+{
+  "version": "1.3.3",
+  "platforms": {
+    "linux/arm64": {
+      "package": "@oven/bun-linux-aarch64",
+      "sha256": "1021798148d98705e8a448a3c8ec698ec144c66eb1e0f287927f05dbc459cbc7",
+      "size": 39032147
+    },
+    "linux/amd64": {
+      "package": "@oven/bun-linux-x64-baseline",
+      "sha256": "38dd1abbdcd34305a99828ec4c4721da4d56852f84cb1ce082e3d5de8f6e2e8c",
+      "size": 40009655
+    }
+  }
+}

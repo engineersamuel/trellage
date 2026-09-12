@@ -229,7 +229,7 @@ test("source CLI rejects standalone snapshots, draft paths, and non-UUID request
 test("plugin manifest keeps the guide actions without a separate conversation action or pane", async () => {
   const source = await readFile(path.join(pluginRoot, "herdr-plugin.toml"), "utf8")
   assert.doesNotMatch(source, /analyze-conversation|conversation-popup\.ts/iu)
-  assert.match(source, /command = \["node", "action\.ts"\]/u)
-  assert.match(source, /command = \["node", "popup\.ts"\]/u)
-  assert.match(source, /command = \["node", "overlay-action\.ts"\]/u)
+  assert.match(source, /command = \["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=\/dev\/null", "action\.ts", "--"\]/u)
+  assert.match(source, /command = \["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=\/dev\/null", "popup\.ts", "--"\]/u)
+  assert.match(source, /command = \["env", "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0", "bun", "--no-install", "--no-env-file", "--config=\/dev\/null", "overlay-action\.ts", "--"\]/u)
 })

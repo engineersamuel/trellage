@@ -10,6 +10,7 @@ fail() {
 
 playwright_bin='tests/playwright/node_modules/.bin/playwright'
 [[ -x "$playwright_bin" ]] || fail 'Playwright dependencies are missing; run npm ci in tests/playwright'
+playwright=(bun --no-install --no-env-file "--config=$PWD/packages/trellage-runtime/bunfig.toml" "$playwright_bin")
 
 list_output="$(mktemp)"
 error_output="$(mktemp)"
@@ -19,7 +20,7 @@ cleanup() {
 trap cleanup EXIT
 
 HARNESS_BASE_URLS='codex-wshobson=http://127.0.0.1:4173,copilot-awesome=http://127.0.0.1:4174' \
-  "$playwright_bin" test --config tests/playwright/playwright.config.ts --list \
+  "${playwright[@]}" test --config tests/playwright/playwright.config.ts --list \
   >"$list_output"
 
 grep -Fq '[codex-wshobson]' "$list_output" \
@@ -32,7 +33,7 @@ grep -Fq '[copilot-awesome]' "$list_output" \
   || fail 'common persistence test is not listed once per contestant'
 
 if HARNESS_BASE_URLS='unsafe=https://example.com' \
-  "$playwright_bin" test --config tests/playwright/playwright.config.ts --list \
+  "${playwright[@]}" test --config tests/playwright/playwright.config.ts --list \
   >"$error_output" 2>&1; then
   fail 'non-loopback browser target was accepted'
 fi
@@ -40,7 +41,7 @@ grep -Fq 'HARNESS_BASE_URLS target must use http://127.0.0.1' "$error_output" \
   || fail 'non-loopback rejection was unclear'
 
 if HARNESS_BASE_URLS='duplicate=http://127.0.0.1:4173,duplicate=http://127.0.0.1:4174' \
-  "$playwright_bin" test --config tests/playwright/playwright.config.ts --list \
+  "${playwright[@]}" test --config tests/playwright/playwright.config.ts --list \
   >"$error_output" 2>&1; then
   fail 'duplicate browser project identifier was accepted'
 fi
@@ -48,7 +49,7 @@ grep -Fq 'duplicate HARNESS_BASE_URLS contestant id' "$error_output" \
   || fail 'duplicate-project rejection was unclear'
 
 if HARNESS_ACCEPTANCE_SPEC='../todo.spec.ts' \
-  "$playwright_bin" test --config tests/playwright/playwright.config.ts --list \
+  "${playwright[@]}" test --config tests/playwright/playwright.config.ts --list \
   >"$error_output" 2>&1; then
   fail 'unsafe browser acceptance spec was accepted'
 fi

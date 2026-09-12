@@ -21,7 +21,8 @@ docker info >/dev/null && echo "Docker is running"
 # 2. mise (task runner / tool version manager)
 brew install mise
 
-# 3. Node.js >= 22 (builds the profile compiler on first use)
+# 3. Bun (Trellage source runtime) and Node.js (external agent tools)
+mise use --global bun@1.3.3
 brew install node
 
 # 4. GitHub CLI, authenticated — Trellage forwards this token into containers
@@ -40,6 +41,20 @@ mkdir -p ~/.copilot
 ```
 
 ## Trellage Quick Start
+
+Prepare the locked source workspace once from the repository root:
+
+```bash
+mise trust
+mise install
+scripts/install-source-runtime.sh --prepare
+```
+
+Trellage runs TypeScript and TSX source through Bun. It does not need a generated
+launcher bundle, guide-core output, or a profile-compiler build. Type checking
+remains separate. Preparation installs frozen dependencies and records runtime
+readiness; a raw `bun install` alone does not prepare a usable runtime.
+See the [source-runtime decision](docs/adr/0005-bun-source-runtime.md).
 
 ```bash
 cd prototypes/trellage
@@ -97,6 +112,12 @@ The default VM is `Standard_D4ps_v5` in `westus2` with a 128 GiB Premium SSD.
 SSH is key-only and the network security group permits port 22 only from the
 detected public IPv4 address. Set `TRELLAGE_AZURE_SSH_SOURCE` to an explicit
 CIDR when automatic address detection is unsuitable.
+
+Bootstrap installs the pinned Bun runtime and prepares source dependencies on
+the VM; it does not build first-party JavaScript. To test unmerged changes, set
+`TRELLAGE_AZURE_APPLY_LOCAL_CHANGES=1`. This stages the complete selected source
+workspace, without host `node_modules` or `dist`, then prepares dependencies
+and installs the Native launchers from that source on the VM.
 
 The acceptance workflow requires an Azure CLI login,
 `COPILOT_GITHUB_TOKEN` (or `GH_TOKEN` / `gh auth token`) for Native Copilot
@@ -250,8 +271,8 @@ JSON or guide mode.
 
 The repository-root `mise.toml` prepends `prototypes/trellage` to `PATH`, so an
 activated mise shell resolves a worktree-local `trellage` without changing
-directories. Trust the root config once; mise shares that trust with linked Git
-worktrees:
+directories. Trust the config once per worktree; mise trust is keyed by its
+absolute path:
 
 ```bash
 mise trust
@@ -264,8 +285,10 @@ not refreshed its mise environment. The installed `trellage` symlink provides
 the non-mise fallback: inside a linked Trellage worktree it automatically uses
 that worktree's `prototypes/trellage/trellage` and reports the selected path on
 stderr. Outside linked Trellage worktrees, it continues to use its deployed
-source tree. The worktree launcher runs `npm ci` when compiler dependencies are
-missing and rebuilds missing or stale profile compiler output automatically.
+source tree. Prepare application dependencies explicitly with
+`scripts/install-source-runtime.sh --prepare` in that source workspace.
+Normal execution does not install missing application packages or build
+compiler output.
 
 The root mise config also installs missing declared tools when an activated shell enters the
 repository. Source-tree `trellage` and `trx` launches schedule the same dependency check in the
@@ -1291,6 +1314,24 @@ approve trust automatically. Other Herdr profiles receive the prompt through
 the Herdr agent API after the agent is idle. Goal handoffs use the separate
 controller and native-input rules above.
 
+Guide worktree suggestions use `wt/<profile-tag>-<topic>`, for example
+`wt/cpx-hve-review-my-pr` or `wt/sb-claude-council-review-my-pr`.
+Generated names contain at most 40 ASCII characters. Native tags include the
+launcher and profile; Sandbox tags use `sb-` and the profile. Tags longer than
+22 characters retain a readable prefix and a six-hex identity hash. Topics use
+at most 14 characters, shortened at a word boundary when possible.
+
+Suggestions skip branches already reserved by queued new-worktree jobs, using
+`-2`, `-3`, and later suffixes within the same length limit. A manually entered
+duplicate stays in the editor with the conflicting job and profile shown.
+The queue checks again at confirmation; a queued-only conflict does not offer
+to open an existing checkout. Reopening a queued job keeps its branch and ID.
+Removing the job or changing its placement releases its reservation.
+Manual names still use Git validation without the generated-name length cap.
+Existing branches, Admin repair names, dirty-checkout confirmation, and
+explicit reuse of existing worktrees are unchanged. Reservations cover the
+current queue only, not other guide sessions.
+
 Agent Skills can use the side-effect-free JSON API:
 
 ```bash
@@ -1404,7 +1445,8 @@ Sandbox and comparison images must be rebuilt.
 Prerequisites:
 
 - Docker Engine with Compose.
-- `jq`, `gh`, Node.js, and npm on the host.
+- `jq`, `gh`, and the pinned Bun runtime on the host; Node.js and npm remain
+  necessary for external agent and browser tooling.
 - A running `copilot-proxy-rs` Compose project whose network is named `copilot-proxy-rs_default`.
 - A GitHub account with Copilot access. Authenticate with `gh auth login`, or set `COPILOT_GITHUB_TOKEN` or `GH_TOKEN`.
 

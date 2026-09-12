@@ -7,17 +7,17 @@ import {
   refreshHarnessUpdateVersions,
   runHarnessUpdate,
   type HarnessUpdatePlan,
-} from "../src/admin-harness-update.js"
-import type { AdminHarnessVersionCacheEntry } from "../src/admin-harness-version-cache.js"
-import { harnessVersionRefFor } from "../src/admin-harness-version-scheduler.js"
+} from "../src/admin-harness-update.ts"
+import type { AdminHarnessVersionCacheEntry } from "../src/admin-harness-version-cache.ts"
+import { harnessVersionRefFor } from "../src/admin-harness-version-scheduler.ts"
 import {
   reconcileHarnessVersionResults,
   type AdminHarnessVersionResult,
   type AdminInstalledVersionState,
-} from "../src/admin-harness-version.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import { AdminRunManager } from "../src/admin-run-manager.js"
-import { CommandRunnerError, type CommandRunner, type CommandRunResult } from "../src/guide-launch.js"
+} from "../src/admin-harness-version.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { AdminRunManager } from "../src/admin-run-manager.ts"
+import { CommandRunnerError, type CommandRunner, type CommandRunResult } from "../src/guide-launch.ts"
 
 const sandboxEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
   ref: "sandbox:claude-blog",

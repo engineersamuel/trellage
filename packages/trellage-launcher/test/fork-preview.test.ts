@@ -25,7 +25,7 @@ import {
   type ForkPreviewAction,
   type ForkPreviewState,
   type ForkPreviewVariant,
-} from "../src/fork-preview.js"
+} from "../src/fork-preview.tsx"
 
 const emptyKey = {
   upArrow: false,

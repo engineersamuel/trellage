@@ -3,10 +3,10 @@ import {
   type CommandRunner,
   type NativeSelectedProfile,
   type SelectedProfile,
-} from "./guide-launch.js"
-import type { GuideGoalExecution } from "./guide-goal-execution.js"
-import { checkGuideGoalReadiness, type GuideGoalReadinessServices } from "./guide-goal-readiness.js"
-import { assertGuideGoalProfile } from "./guide-goal-transport.js"
+} from "./guide-launch.ts"
+import type { GuideGoalExecution } from "./guide-goal-execution.ts"
+import { checkGuideGoalReadiness, type GuideGoalReadinessServices } from "./guide-goal-readiness.ts"
+import { assertGuideGoalProfile } from "./guide-goal-transport.ts"
 
 export enum ProfileReadinessKind {
   Ready = "ready",

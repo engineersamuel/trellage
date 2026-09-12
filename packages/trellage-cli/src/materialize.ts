@@ -4,14 +4,14 @@ import path from "node:path"
 
 import { Data, Effect } from "effect"
 
-import { verifyInventory } from "./inventory.js"
-import { renderLock } from "./lock-file.js"
+import { verifyInventory } from "./inventory.ts"
+import { renderLock } from "./lock-file.ts"
 import {
   hasLegacySourceProvenance,
   type HarnessPackageLock,
   type ProfileLock,
   type ReleaseHarnessPackageLock,
-} from "./lock.js"
+} from "./lock.ts"
 import {
   claudeHasSerena,
   claudePypiToolNames,
@@ -21,8 +21,8 @@ import {
   type ClaudeProfile,
   type PrimeProfile,
   type ProfileDocument,
-} from "./profile.js"
-import { renderCodexConfig, renderCodexConfiguration, renderMiseConfig } from "./render.js"
+} from "./profile.ts"
+import { renderCodexConfig, renderCodexConfiguration, renderMiseConfig } from "./render.ts"
 import {
   claudeDefaultOnboarding,
   claudeDefaultSettings,
@@ -30,7 +30,7 @@ import {
   managedClaudeFiles,
   materializeClaudeAssets,
   materializeClaudeExtraRuntime,
-} from "./claude-materialize.js"
+} from "./claude-materialize.ts"
 import {
   createRuntimeSupportSnapshot,
   isRuntimeSupportSnapshot,
@@ -38,11 +38,11 @@ import {
   type RuntimeSupportPaths,
   type RuntimeSupportSnapshot,
   writeRuntimeSupportSnapshot,
-} from "./runtime-support.js"
-import { pythonConstraints, type ResolutionSidecar } from "./resolution-sidecar.js"
-import { cacheArtifact } from "./artifact-cache.js"
-import { graphOfLoopsRuntimeAssetPath } from "./graph-runtime.js"
-import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.js"
+} from "./runtime-support.ts"
+import { pythonConstraints, type ResolutionSidecar } from "./resolution-sidecar.ts"
+import { cacheArtifact } from "./artifact-cache.ts"
+import { graphOfLoopsRuntimeAssetPath } from "./graph-runtime.ts"
+import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.ts"
 
 export type PluginGenerator = (
   sourceDirectory: string,

@@ -10,8 +10,8 @@ import {
   type CommandRunner,
   type HerdrPaneLaunchResult,
   type SelectedProfile,
-} from "./guide-launch.js"
-import type { JobPlacement, QueuedGuideJob } from "./guide-batch.js"
+} from "./guide-launch.ts"
+import type { JobPlacement, QueuedGuideJob } from "./guide-batch.ts"
 
 enum HerdrResponseType {
   AgentPrompted = "agent_prompted",

@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+
+ARG COMPARISON_SOURCE_IMAGE=trellage-comparison-source:contract
+FROM ${COMPARISON_SOURCE_IMAGE} AS comparison_source
+
+FROM mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
+
+COPY --from=comparison_source /opt/comparison-runtime/bun /usr/local/bin/bun
+COPY --from=comparison_source /opt/comparison-runtime/source /opt/trellage-source
+COPY --from=comparison_source /opt/comparison-runtime/source/prototypes/trellage-codex-common /opt/codex-common
+COPY prototypes/trellage/tests/comparison-source-linux.sh /usr/local/bin/comparison-source-contract.sh
+
+RUN install -m 0555 /opt/trellage-source/scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh \
+    && install -m 0555 /opt/trellage-source/prototypes/trellage/copilot-model-settings.py /usr/local/bin/trellage-copilot-model-settings \
+    && mkdir -p /usr/local/share/trellage/copilot-instructions \
+    && install -m 0444 /opt/trellage-source/prototypes/trellage/assets/rundown/rundown.instructions.md \
+      /usr/local/share/trellage/copilot-instructions/rundown.instructions.md
+
+ENV TRELLAGE_BUN_EXECUTABLE=/usr/local/bin/bun \
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+WORKDIR /workspace

@@ -5,10 +5,33 @@ script_dir="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 project_root="$(cd -P -- "$script_dir/.." && pwd -P)"
 state_root="${TRELLAGE_BOOTSTRAP_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/trellage}"
 lock_dir="$state_root/dependency-bootstrap.lock"
-log_path="$state_root/dependency-bootstrap.log"
 
 log() {
   printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+}
+
+resolve_project_root() {
+  if [[ "$script_dir" == "$project_root/lib" ]]; then
+    local marker="$project_root/.managed-by-trellage-router"
+    if [[ ! -f "$marker" || -L "$marker" ]] \
+      || ! cmp -s -- "$marker" <(printf 'trellage-router-v3\n'); then
+      printf 'dependency bootstrap: missing or unsafe v3 router ownership marker: %s\n' "$marker" >&2
+      return 1
+    fi
+    if [[ ! -d "$project_root/source" || -L "$project_root/source" ]]; then
+      printf 'dependency bootstrap: missing or unsafe installed source workspace: %s\n' \
+        "$project_root/source" >&2
+      return 1
+    fi
+    project_root="$project_root/source"
+  fi
+
+  local preparer="$project_root/scripts/build-profile-compiler.sh"
+  if [[ ! -d "$project_root/scripts" || -L "$project_root/scripts" \
+    || ! -f "$preparer" || -L "$preparer" || ! -x "$preparer" ]]; then
+    printf 'dependency bootstrap: missing or unsafe source preparer: %s\n' "$preparer" >&2
+    return 1
+  fi
 }
 
 release_lock() {
@@ -40,11 +63,16 @@ acquire_lock() {
 }
 
 run_bootstrap() {
+  resolve_project_root
   command -v mise >/dev/null 2>&1 || {
-    log "mise is unavailable; skipping development dependency bootstrap"
-    return 0
+    log "mise is required for explicit development dependency bootstrap"
+    return 1
   }
-  acquire_lock || return 0
+  acquire_lock || {
+    log "development dependency bootstrap is locked"
+    return 1
+  }
+  "$project_root/scripts/build-profile-compiler.sh"
 
   local -a mise_exec
   if [[ -f "$project_root/mise.toml" && ! -L "$project_root/mise.toml" ]]; then
@@ -67,26 +95,10 @@ run_bootstrap() {
   fi
 }
 
-is_project_context() {
-  local mise_root
-  if [[ -n "${MISE_PROJECT_ROOT:-}" && -d "$MISE_PROJECT_ROOT" && ! -L "$MISE_PROJECT_ROOT" ]]; then
-    mise_root="$(cd -P -- "$MISE_PROJECT_ROOT" && pwd -P)" || return 1
-    [[ "$mise_root" != "$project_root" ]] || return 0
-  fi
-  [[ "$HOME" == /* ]] || return 1
-  case "$project_root/" in
-    "$HOME"/*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 case "${1:-}" in
   --background)
-    is_project_context || exit 0
-    command -v mise >/dev/null 2>&1 || exit 0
-    mkdir -p -- "$state_root"
-    nohup "$0" --run >>"$log_path" 2>&1 </dev/null &
-    exit 0
+    printf 'Automatic dependency installation is disabled; run bootstrap-development-dependencies.sh --run explicitly.\n' >&2
+    exit 1
     ;;
   --run)
     run_bootstrap

@@ -14,7 +14,7 @@ import type {
   AdminHarnessVersionResult,
   AdminInstalledVersionState,
   AdminLatestVersionState,
-} from "./admin-harness-version.js"
+} from "./admin-harness-version.ts"
 
 const maximumCacheBytes = 256 * 1024
 const maximumCacheEntries = 64

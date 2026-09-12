@@ -33,13 +33,13 @@ import {
   type ContinuationDraft,
   type ContinuationPromptCandidate,
   type ConversationSnapshot,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 import {
   ContinuationRevisionConflictError,
   ContinuationStore,
   ContinuationStoreErrorCode,
   type ContinuationLaunchEvent,
-} from "../src/continuation-store.js"
+} from "../src/continuation-store.ts"
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs/promises")>()
@@ -557,7 +557,8 @@ describe("private file ownership and containment", () => {
   it.each([0o644, 0o400, 0o660, 0o4600])("refuses unsafe request mode %i without repairing it", async (mode) => {
     const state = await fixture()
     const filename = await request(state.root, state.snapshot)
-    await chmod(filename, mode)
+    execFileSync("/bin/chmod", [mode.toString(8), filename])
+    expect((await lstat(filename)).mode & 0o7777).toBe(mode)
     await expect(state.store.consumeRequest(filename)).rejects.toThrow(/mode-0600/u)
     expect((await lstat(filename)).mode & 0o7777).toBe(mode)
   })

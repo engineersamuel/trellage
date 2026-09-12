@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { refreshAdminEntries } from "../src/admin-refresh.js"
-import { parseGuideCatalog } from "../src/guide-catalog.js"
-import { type CommandRunOptions, type CommandRunResult, type CommandRunner } from "../src/guide-launch.js"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import { refreshAdminEntries } from "../src/admin-refresh.ts"
+import { parseGuideCatalog } from "../src/guide-catalog.ts"
+import { type CommandRunOptions, type CommandRunResult, type CommandRunner } from "../src/guide-launch.ts"
 
 const guide: ProfileGuideV1 = {
   schemaVersion: 1,

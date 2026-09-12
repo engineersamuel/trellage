@@ -11,7 +11,9 @@ flat interactive list.
 Install the ten native launchers first. Their commands must resolve from
 `PATH` to their owned runtimes under `~/.local/share/trellage/`.
 
-Prerequisites: Bash, Node.js, and `jq`.
+Prerequisites: Bash, the pinned Bun runtime, and `jq`. External agent tools can
+also require Node.js. Install the root source workspace dependencies with
+`bun install --frozen-lockfile` before using a development checkout.
 
 ```sh
 (cd ../trellage-codex-profiles && ./install.sh)

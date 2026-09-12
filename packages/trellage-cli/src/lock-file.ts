@@ -7,7 +7,7 @@ import {
   markPersistedLock,
   markParsedLegacyProvenance,
   type ProfileLock,
-} from "./lock.js"
+} from "./lock.ts"
 
 const quote = (value: string): string => JSON.stringify(value)
 const strings = (values: ReadonlyArray<string>): string => `[${values.map(quote).join(", ")}]`

@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import * as guideApi from "../src/guide-api.js"
-import { defaultGuideModelRouting, GuideEffort, parseGuideHeadlessArgv } from "../src/guide-api.js"
-import { parseGuideCatalog } from "../src/guide-catalog.js"
-import { resolveGuideRequest, runGuideJsonCommand } from "../src/guide-command.js"
-import * as guidePrompts from "../src/guide-prompts.js"
-import { goalDraft } from "./fixtures/goal-me-skill.js"
+import * as guideApi from "../src/guide-api.ts"
+import { defaultGuideModelRouting, GuideEffort, parseGuideHeadlessArgv } from "../src/guide-api.ts"
+import { parseGuideCatalog } from "../src/guide-catalog.ts"
+import { resolveGuideRequest, runGuideJsonCommand } from "../src/guide-command.ts"
+import * as guidePrompts from "../src/guide-prompts.ts"
+import { goalDraft } from "./fixtures/goal-me-skill.ts"
 
 afterEach(() => vi.restoreAllMocks())
 

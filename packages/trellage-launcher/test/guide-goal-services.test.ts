@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeAll, describe, expect, it } from "vitest"
-import { loadProfileGuide, type LoadedProfileGuide, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
+import { loadProfileGuide, type LoadedProfileGuide, type ProfileGuideV1 } from "@trellage/guide-core"
 import {
   GuideEffort,
   defaultGuideModelRouting,
@@ -12,8 +12,8 @@ import {
   runGuideGenerate,
   runGuideMatch,
   templatePromptCandidates,
-} from "../src/guide-api.js"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.js"
+} from "../src/guide-api.ts"
+import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
 import {
   composeGuideGoalCandidate,
   guideGoalApproachBudget,
@@ -21,9 +21,9 @@ import {
   prepareGuideGoal,
   resolveGuideGoalExecution,
   type PreparedGuideGoal,
-} from "../src/guide-goal-execution.js"
-import { runGuideGoalGeneration, runGuideGoalRefinement } from "../src/guide-goal-generation.js"
-import { GuideArtifactCache } from "../src/guide-match-cache.js"
+} from "../src/guide-goal-execution.ts"
+import { runGuideGoalGeneration, runGuideGoalRefinement } from "../src/guide-goal-generation.ts"
+import { GuideArtifactCache } from "../src/guide-match-cache.ts"
 import type {
   GuideGenerateCandidate,
   GuideGenerateInput,
@@ -35,10 +35,10 @@ import type {
   GuideProvider,
   GuideRefineInput,
   GuideRefineResult,
-} from "../src/guide-provider.js"
-import { record } from "../src/guide-text.js"
-import { workflowPromptFrame } from "../src/guide-workflow-prompt.js"
-import { goalDraft } from "./fixtures/goal-me-skill.js"
+} from "../src/guide-provider.ts"
+import { record } from "../src/guide-text.ts"
+import { workflowPromptFrame } from "../src/guide-workflow-prompt.ts"
+import { goalDraft } from "./fixtures/goal-me-skill.ts"
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..")
 const guideRoot = path.join(repositoryRoot, "profile-guides")

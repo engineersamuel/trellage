@@ -4,16 +4,15 @@ import { access, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { build } from "esbuild"
-import { afterAll, beforeAll, expect, test } from "vitest"
-import type { JobPlacement, QueuedGuideJob } from "../src/guide-batch.js"
-import type { GuideGoalCandidateContext, PreparedGuideGoal } from "../src/guide-goal-execution.js"
-import type { SelectedProfile } from "../src/guide-launch.js"
+import { expect, test } from "vitest"
+import type { JobPlacement, QueuedGuideJob } from "../src/guide-batch.ts"
+import type { GuideGoalCandidateContext, PreparedGuideGoal } from "../src/guide-goal-execution.ts"
+import type { SelectedProfile } from "../src/guide-launch.ts"
 import {
   FixtureMode,
   candidateTitles,
   codebaseIntent,
-  fixtureBranch,
+  fixtureBranches,
   fixtureIntent,
   fixtureProfile,
   fixtureProfiles,
@@ -27,32 +26,12 @@ import {
   type FixtureProfileId,
   type FixtureReport,
   type RecordedCommand,
-} from "./fixtures/guide-integration-data.js"
-import { createGuideTerminal, type GuideTerminal } from "./helpers/guide-terminal.js"
-import { goalArtifact, goalArtifactQuestion, goalCriteria, revisedGoalIntent } from "./fixtures/guide-goal-provider.js"
-import { goalMeSkill } from "./fixtures/goal-me-skill.js"
+} from "./fixtures/guide-integration-data.ts"
+import { createGuideTerminal, type GuideTerminal } from "./helpers/guide-terminal.ts"
+import { goalArtifact, goalArtifactQuestion, goalCriteria, revisedGoalIntent } from "./fixtures/guide-goal-provider.ts"
+import { goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
-let bundleRoot: string
-let entry: string
-beforeAll(async () => {
-  bundleRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-ui-bundle-"))
-  entry = path.join(bundleRoot, "guide.mjs")
-  await build({
-    entryPoints: [fileURLToPath(new URL("./fixtures/guide-integration.tsx", import.meta.url))],
-    outfile: entry,
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    target: "node22",
-    banner: {
-      js: "import { createRequire as __trellageCreateRequire } from 'node:module'; const require = __trellageCreateRequire(import.meta.url);",
-    },
-    logLevel: "silent",
-  })
-})
-afterAll(async () => {
-  if (bundleRoot !== undefined) await rm(bundleRoot, { recursive: true, force: true })
-})
+const entry = fileURLToPath(new URL("./fixtures/guide-integration.tsx", import.meta.url))
 
 const it = test.extend<{ guide: GuideTerminal }>({
   guide: async ({ onTestFailed }, use) => {
@@ -224,12 +203,12 @@ const gitCommand = (root: string, ...args: ReadonlyArray<string>): RecordedComma
   args: ["--no-pager", "-C", root, ...args],
 })
 
-const inspectionCommands = (root: string): ReadonlyArray<RecordedCommand> => [
-  gitCommand(root, "check-ref-format", "--branch", fixtureBranch),
+const inspectionCommands = (root: string, branch: string): ReadonlyArray<RecordedCommand> => [
+  gitCommand(root, "check-ref-format", "--branch", branch),
   gitCommand(root, "rev-parse", "--show-toplevel"),
   gitCommand(root, "status", "--porcelain"),
   gitCommand(root, "rev-parse", "HEAD"),
-  gitCommand(root, "show-ref", "--verify", "--quiet", `refs/heads/${fixtureBranch}`),
+  gitCommand(root, "show-ref", "--verify", "--quiet", `refs/heads/${branch}`),
   gitCommand(root, "worktree", "list", "--porcelain"),
 ]
 
@@ -255,17 +234,17 @@ const expectedAllocation = (root: string, selection: Selection, index: number) =
   }
   const existing = placement.kind === "existing-worktree"
   return {
-    cwd: existing ? path.join(root, "worktrees", "existing-canonical") : path.join(root, "worktrees", fixtureBranch),
+    cwd: existing ? path.join(root, "worktrees", "existing-canonical") : path.join(root, "worktrees", placement.branch),
     workspaceId: String(20 + ordinal),
     paneId: `${20 + ordinal}-1`,
     commands: [
-      ...(existing ? [] : [gitCommand(root, "check-ref-format", "--branch", fixtureBranch)]),
+      ...(existing ? [] : [gitCommand(root, "check-ref-format", "--branch", placement.branch)]),
       {
         executable: "herdr",
         cwd: root,
         args: existing
           ? ["worktree", "open", "--cwd", root, "--path", placement.path, "--no-focus"]
-          : ["worktree", "create", "--cwd", root, "--branch", fixtureBranch, "--base", "HEAD", "--no-focus"],
+          : ["worktree", "create", "--cwd", root, "--branch", placement.branch, "--base", "HEAD", "--no-focus"],
       },
     ],
   }
@@ -1470,15 +1449,15 @@ it("replaces the candidate on an existing fork without adding a duplicate job", 
   assertDataflow(report, [original])
 }, 30_000)
 
-const queueWorktree = async (guide: GuideTerminal, count: number, mode: FixtureMode): Promise<void> => {
+const queueWorktree = async (guide: GuideTerminal, count: number, mode: FixtureMode, branch: string): Promise<void> => {
   await guide.pressAndWait("a", "Where does this queued job run?")
   await guide.pressAndWait(down, "\u276f Herdr worktree")
-  await guide.pressAndWait(enter, fixtureBranch)
+  await guide.pressAndWait(enter, branch)
   guide.press(enter)
   if (mode === FixtureMode.ExistingWorktree) {
     await guide.waitForText("Worktree collision:", "open existing worktree")
   } else {
-    await guide.waitForText("Create Herdr worktree", `Branch: ${fixtureBranch}`, "Base: HEAD")
+    await guide.waitForText("Create Herdr worktree", `Branch: ${branch}`, "Base: HEAD")
     if (mode === FixtureMode.DirtyWorktree) {
       await guide.waitForText("Source working tree: dirty", "Confirm 0/2")
       await guide.pressAndWait(enter, "Confirm 1/2")
@@ -1499,7 +1478,7 @@ it("launches a mixed queue into the correct pane, tab and new worktree", async (
   await guide.pressAndWait(down, "\u276f New tab in this Herdr worktree")
   await guide.pressAndWait(enter, queueText(2))
   await selectProfile(guide, "hve", 2)
-  await queueWorktree(guide, 3, FixtureMode.Herdr)
+  await queueWorktree(guide, 3, FixtureMode.Herdr, fixtureBranches.hve)
   const selections: ReadonlyArray<Selection> = [
     { id: 1, profileId: "reviewer", candidate: 0, intent: fixtureIntent, placement: panePlacement },
     { id: 2, profileId: "research", candidate: 1, intent: fixtureIntent, placement: { kind: "new-tab" } },
@@ -1508,12 +1487,79 @@ it("launches a mixed queue into the correct pane, tab and new worktree", async (
       profileId: "hve",
       candidate: 2,
       intent: fixtureIntent,
-      placement: { kind: "new-worktree", branch: fixtureBranch, baseRef: "HEAD" },
+      placement: { kind: "new-worktree", branch: fixtureBranches.hve, baseRef: "HEAD" },
     },
   ]
   await assertDeferredLaunch(guide)
   const report = await guide.finish("L")
-  assertBatch(guide, report, selections, [readinessCommand(guide.root, "research"), ...inspectionCommands(guide.root)])
+  assertBatch(guide, report, selections, [
+    readinessCommand(guide.root, "research"),
+    ...inspectionCommands(guide.root, fixtureBranches.hve),
+  ])
+  assertDataflow(report, selections)
+}, 30_000)
+
+it("keeps profile worktrees distinct, rejects queued duplicates, and preserves reopened names", async ({ guide }) => {
+  await guide.start(FixtureMode.Herdr)
+  await enterIntent(guide)
+  await selectProfile(guide, "hve", 0)
+  await queueWorktree(guide, 1, FixtureMode.Herdr, fixtureBranches.hve)
+  await selectProfile(guide, "sandbox", 1)
+  await queueWorktree(guide, 2, FixtureMode.Herdr, fixtureBranches.sandbox)
+  await selectProfile(guide, "hve", 2)
+  await guide.pressAndWait("a", "Where does this queued job run?")
+  await guide.pressAndWait(down, "\u276f Herdr worktree")
+  await guide.pressAndWait(enter, fixtureBranches.hveSecond)
+  await guide.pressAndWait("\u007f", `${fixtureBranches.hve}-`)
+  await guide.pressAndWait("\u007f", fixtureBranches.hve)
+  const beforeConflict = commandEvents(await guide.events())
+  await guide.pressAndWait(enter, "already queued by job 1 (cpx hve)", "Worktree branch")
+  expect(guide.text()).not.toContain("open existing worktree")
+  expect(commandEvents(await guide.events())).toEqual(beforeConflict)
+  await assertDeferredLaunch(guide)
+  await guide.pressAndWait("-2", fixtureBranches.hveSecond)
+  await guide.pressAndWait(enter, "Create Herdr worktree", `Branch: ${fixtureBranches.hveSecond}`)
+  await guide.pressAndWait(enter, queueText(3))
+  await guide.pressAndWait("1", "Create Herdr worktree", `Branch: ${fixtureBranches.hve}`)
+  await guide.pressAndWait("\u001b", "Where does this queued job run?")
+  await guide.pressAndWait(enter, "Worktree branch", fixtureBranches.hve)
+  expect(guide.text()).not.toContain(fixtureBranches.hveSecond)
+  await guide.pressAndWait(enter, "Create Herdr worktree", `Branch: ${fixtureBranches.hve}`)
+  await guide.pressAndWait(enter, queueText(3))
+  const selections: ReadonlyArray<Selection> = [
+    {
+      id: 1,
+      profileId: "hve",
+      candidate: 0,
+      intent: fixtureIntent,
+      placement: { kind: "new-worktree", branch: fixtureBranches.hve, baseRef: "HEAD" },
+    },
+    {
+      id: 2,
+      profileId: "sandbox",
+      candidate: 1,
+      intent: fixtureIntent,
+      placement: { kind: "new-worktree", branch: fixtureBranches.sandbox, baseRef: "HEAD" },
+    },
+    {
+      id: 3,
+      profileId: "hve",
+      candidate: 2,
+      intent: fixtureIntent,
+      placement: { kind: "new-worktree", branch: fixtureBranches.hveSecond, baseRef: "HEAD" },
+    },
+  ]
+  await selectQueueEntry(guide, selections, 0, 0)
+  await selectQueueEntry(guide, selections, 0, 1)
+  await selectQueueEntry(guide, selections, 1, 2)
+  await assertDeferredLaunch(guide)
+  const report = await guide.finish("L")
+  assertBatch(guide, report, selections, [
+    ...inspectionCommands(guide.root, fixtureBranches.hve),
+    ...inspectionCommands(guide.root, fixtureBranches.sandbox),
+    ...inspectionCommands(guide.root, fixtureBranches.hveSecond),
+    ...inspectionCommands(guide.root, fixtureBranches.hve),
+  ])
   assertDataflow(report, selections)
 }, 30_000)
 
@@ -1524,15 +1570,15 @@ it.for([FixtureMode.DirtyWorktree, FixtureMode.ExistingWorktree])(
     await guide.start(mode)
     await enterIntent(guide)
     await selectProfile(guide, "sandbox", 2)
-    await queueWorktree(guide, 1, mode)
+    await queueWorktree(guide, 1, mode, fixtureBranches.sandbox)
     const placement: JobPlacement =
       mode === FixtureMode.ExistingWorktree
         ? { kind: "existing-worktree", path: path.join(guide.root, "worktrees", "existing") }
-        : { kind: "new-worktree", branch: fixtureBranch, baseRef: "HEAD" }
+        : { kind: "new-worktree", branch: fixtureBranches.sandbox, baseRef: "HEAD" }
     const selection: Selection = { id: 1, profileId: "sandbox", candidate: 2, intent: fixtureIntent, placement }
     await assertDeferredLaunch(guide)
     const report = await guide.finish("L")
-    assertBatch(guide, report, [selection], inspectionCommands(guide.root))
+    assertBatch(guide, report, [selection], inspectionCommands(guide.root, fixtureBranches.sandbox))
     assertDataflow(report, [selection])
   },
 )

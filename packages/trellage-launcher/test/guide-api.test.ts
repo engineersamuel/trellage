@@ -3,8 +3,8 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 
-import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.js"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
 import type {
   GuideGenerateInput,
   GuideGenerateResult,
@@ -13,9 +13,9 @@ import type {
   GuideOptimizeInput,
   GuideOptimizeResult,
   GuideProvider,
-} from "../src/guide-provider.js"
-import { GuideValidationError } from "../src/guide-text.js"
-import { GuideArtifactCache } from "../src/guide-match-cache.js"
+} from "../src/guide-provider.ts"
+import { GuideValidationError } from "../src/guide-text.ts"
+import { GuideArtifactCache } from "../src/guide-match-cache.ts"
 import {
   applyRequiredProfilePromptTemplate,
   applyWorkflowPromptTemplate,
@@ -38,7 +38,7 @@ import {
   runGuideMatch,
   selectedProfileFromCatalogRef,
   templatePromptCandidates,
-} from "../src/guide-api.js"
+} from "../src/guide-api.ts"
 
 // ---------------------------------------------------------------------------
 // Shared catalog fixture: 4 profiles across native and Sandbox surfaces.

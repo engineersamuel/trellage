@@ -1,9 +1,10 @@
 {
   "name": "@trellage/playwright-tests",
   "private": true,
+  "type": "module",
   "version": "0.0.0",
   "scripts": {
-    "test": "playwright test"
+    "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../packages/trellage-runtime/bunfig.toml ./node_modules/@playwright/test/cli.js test"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1"

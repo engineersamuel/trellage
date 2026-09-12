@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 
 import { Data, Effect } from "effect"
 
-import type { Platform } from "./platform.js"
+import type { Platform } from "./platform.ts"
 
 export interface OciImageResolution {
   readonly reference: string

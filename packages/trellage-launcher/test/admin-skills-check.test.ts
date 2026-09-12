@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
-import { checkAdminSkillsUpdates } from "../src/admin-skills-check.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import { createNodeCommandRunner, type CommandRunner } from "../src/guide-launch.js"
+import { checkAdminSkillsUpdates } from "../src/admin-skills-check.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { createNodeCommandRunner, type CommandRunner } from "../src/guide-launch.ts"
 
 const entry = (name: string, surface: "native" | "sandbox" = "native"): AdminProfileEntry => ({
   ref: `${surface}:cpx/${name}`,

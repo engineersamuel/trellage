@@ -33,6 +33,14 @@ try:
     shutil.copyfile(root / "docker/codex-config.toml", codex_home / "config.toml")
     model_settings_helper = bin_dir / "trellage-copilot-model-settings"
     shutil.copyfile(root / "prototypes/trellage/copilot-model-settings.py", model_settings_helper)
+    source_workspace = opt / "trellage-source"
+    for relative in (
+        "scripts/bun-runtime.sh", "scripts/floating-skills.ts",
+        "packages/trellage-runtime/bunfig.toml",
+    ):
+        target = source_workspace / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(root / relative, target)
 
     # Execute the shipped scripts with only container filesystem roots remapped.
     for name in (
@@ -148,6 +156,30 @@ else:
     for name in ("node", "git"):
         (bin_dir / name).write_text("#!/bin/sh\nexit 0\n")
         (bin_dir / name).chmod(0o755)
+    fake_bun = '''\
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if args == ["--version"]:
+    print("1.3.3")
+    sys.exit(0)
+source = Path(os.environ["FIXTURE_ROOT"]) / "opt/trellage-source"
+opt = source.parent
+assert os.environ["BUN_RUNTIME_TRANSPILER_CACHE_PATH"] == "0"
+assert args == [
+    "--no-install", "--no-env-file",
+    f"--config={source}/packages/trellage-runtime/bunfig.toml",
+    f"{source}/scripts/floating-skills.ts", "--", "sync",
+    "--catalog", f"{opt}/floating-skills-catalog.json",
+    "--bundle", "comparison-common", "--exclude-skill", "astra-orchestrator",
+    "--output", f"{opt}/floating-skills",
+    "--target", f"{os.environ['COPILOT_HOME']}/skills",
+], args
+'''
+    (bin_dir / "bun").write_text(f"#!{sys.executable}\n{fake_bun}")
+    (bin_dir / "bun").chmod(0o755)
     (bin_dir / "find").write_text(
         f"#!{sys.executable}\n"
         "from pathlib import Path\nimport os\nimport sys\n"

@@ -1,11 +1,11 @@
 import { PassThrough } from "node:stream"
 import React from "react"
-import * as preferences from "../src/rewrite-state.js"
+import * as preferences from "../src/rewrite-state.ts"
 import { Terminal } from "@xterm/headless"
 import { render, type Instance } from "ink"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ContextMenuApp, type ContextMenuUiRequest } from "../src/context-menu-ui.js"
-import type { ContextMenuRewriteRequest, ContextMenuRewriteResponse } from "../src/context-menu-command.js"
+import { ContextMenuApp, type ContextMenuUiRequest } from "../src/context-menu-ui.tsx"
+import type { ContextMenuRewriteRequest, ContextMenuRewriteResponse } from "../src/context-menu-command.ts"
 
 const style = { id: "plain", title: "Plain English", description: "Short direct sentences.", instruction: "Be concise." } as const
 const source = "# Original\n\nKeep **facts** and the exact Markdown."

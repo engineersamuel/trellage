@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { GitHubSourceRequest } from "../src/github-cache.js"
+import type { GitHubSourceRequest } from "../src/github-cache.ts"
 
 const mocks = vi.hoisted(() => ({
   requests: [] as Array<GitHubSourceRequest>,
@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
   sourceDirectory: "/cache/source",
 }))
 
-vi.mock("../src/github-cache.js", async () => {
+vi.mock("../src/github-cache.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveGitHubSource: (_cache: string, request: GitHubSourceRequest) => {
@@ -43,7 +43,7 @@ vi.mock("../src/github-cache.js", async () => {
   }
 })
 
-vi.mock("../src/copilot-release.js", async () => {
+vi.mock("../src/copilot-release.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveCopilotRelease: (selector: string, platform: string) => {
@@ -60,7 +60,7 @@ vi.mock("../src/copilot-release.js", async () => {
   }
 })
 
-vi.mock("../src/pi-release.js", async () => {
+vi.mock("../src/pi-release.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolvePiRelease: (selector: string, platform: string) => {
@@ -77,7 +77,7 @@ vi.mock("../src/pi-release.js", async () => {
   }
 })
 
-vi.mock("../src/prime-release.js", async () => {
+vi.mock("../src/prime-release.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolvePrimeRelease: (selector: string, platform: string) => {
@@ -94,7 +94,7 @@ vi.mock("../src/prime-release.js", async () => {
   }
 })
 
-vi.mock("../src/claude-release.js", async () => {
+vi.mock("../src/claude-release.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveClaudeRelease: (selector: string, platform: string) => {
@@ -112,7 +112,7 @@ vi.mock("../src/claude-release.js", async () => {
   }
 })
 
-vi.mock("../src/codex-release.js", async () => {
+vi.mock("../src/codex-release.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveCodexRelease: (selector: string, platform: string) => {
@@ -141,7 +141,7 @@ vi.mock("../src/codex-release.js", async () => {
   }
 })
 
-vi.mock("../src/copilot-plugin.js", async () => {
+vi.mock("../src/copilot-plugin.ts", async () => {
   const { Effect } = await import("effect")
   return {
     readCopilotMarketplace: (directory: string, marketplace: string, selections: ReadonlyArray<string>) => {
@@ -151,9 +151,9 @@ vi.mock("../src/copilot-plugin.js", async () => {
   }
 })
 
-vi.mock("../src/claude-plugin.js", async () => {
+vi.mock("../src/claude-plugin.ts", async () => {
   const { Effect } = await import("effect")
-  const actual = await vi.importActual<typeof import("../src/claude-plugin.js")>("../src/claude-plugin.js")
+  const actual = await vi.importActual<typeof import("../src/claude-plugin.ts")>("../src/claude-plugin.js")
   return {
     ...actual,
     readClaudeMarketplace: (
@@ -175,7 +175,7 @@ vi.mock("../src/claude-plugin.js", async () => {
   }
 })
 
-vi.mock("../src/oci-image.js", async () => {
+vi.mock("../src/oci-image.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveOciImage: (reference: string) =>
@@ -190,7 +190,7 @@ vi.mock("../src/oci-image.js", async () => {
   }
 })
 
-vi.mock("../src/node-release.js", async () => {
+vi.mock("../src/node-release.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveNodeRelease: () =>
@@ -203,7 +203,7 @@ vi.mock("../src/node-release.js", async () => {
   }
 })
 
-vi.mock("../src/uv-release.js", async () => {
+vi.mock("../src/uv-release.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveUvRelease: () =>
@@ -217,7 +217,7 @@ vi.mock("../src/uv-release.js", async () => {
   }
 })
 
-vi.mock("../src/python-release.js", async () => {
+vi.mock("../src/python-release.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolvePythonRelease: () =>
@@ -231,14 +231,14 @@ vi.mock("../src/python-release.js", async () => {
   }
 })
 
-vi.mock("../src/python-constraints.js", async () => {
+vi.mock("../src/python-constraints.ts", async () => {
   const { Effect } = await import("effect")
   return {
     compilePythonConstraints: () => Effect.succeed(`example==1.0.0 \\\n    --hash=sha256:${"f".repeat(64)}\n`),
   }
 })
 
-vi.mock("../src/debian-packages.js", async () => {
+vi.mock("../src/debian-packages.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveDebianPackages: (packages: ReadonlyArray<string>) =>
@@ -256,7 +256,7 @@ vi.mock("../src/debian-packages.js", async () => {
   }
 })
 
-vi.mock("../src/tool-artifacts.js", async () => {
+vi.mock("../src/tool-artifacts.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveToolArtifacts: (_cacheHome: string, _platform: string, names: ReadonlyArray<string>) =>
@@ -293,7 +293,7 @@ vi.mock("../src/tool-artifacts.js", async () => {
   }
 })
 
-vi.mock("../src/rust-release.js", async () => {
+vi.mock("../src/rust-release.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveRustToolchain: () =>
@@ -316,7 +316,7 @@ vi.mock("../src/rust-release.js", async () => {
   }
 })
 
-vi.mock("../src/playwright-release.js", async () => {
+vi.mock("../src/playwright-release.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolvePlaywrightRelease: () =>
@@ -360,7 +360,7 @@ vi.mock("../src/playwright-release.js", async () => {
   }
 })
 
-import { productionResolvers } from "../src/resolvers.js"
+import { productionResolvers } from "../src/resolvers.ts"
 
 const hyperresearchFixtures = fileURLToPath(new URL("./fixtures/hyperresearch", import.meta.url))
 

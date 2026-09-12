@@ -28,7 +28,7 @@ import {
   type ProfileGuidePrerequisite,
   type ProfileGuideV1,
   type ProfileGuideWorkflow,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 import nodePath from "node:path"
 import {
   array,
@@ -41,7 +41,7 @@ import {
   stringArray,
   text,
   uniqueArray,
-} from "./guide-text.js"
+} from "./guide-text.ts"
 
 const identifierPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 

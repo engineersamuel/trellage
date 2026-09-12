@@ -106,7 +106,7 @@ proxy health response and confirm that `gpt-5.6-sol` is advertised. JCode can
 expand `config.toml` with its own defaults during normal use. The launcher
 preserves those normalized settings while strictly checking the managed
 provider, model, proxy URL, keyless authentication, catalog, pinning, and
-reasoning fields through a bundled structural TOML manager and JCode's own
+reasoning fields through a Bun source TOML manager and JCode's own
 parser. Launches and `repair` preserve valid JCode-owned values, including
 multiline arrays, while restoring managed fields. A missing or malformed config
 is replaced with the minimal managed config. Unsafe paths and unowned profile
@@ -127,13 +127,6 @@ process.
 make native-jcode-profile
 ```
 
-After changing `config-manager.source.mjs`, rebuild its standalone runtime copy:
-
-```bash
-packages/trellage-launcher/node_modules/.bin/esbuild \
-  prototypes/trellage-jcode-profiles/config-manager.source.mjs \
-  --bundle --platform=node --format=esm --target=node18 \
-  --alias:smol-toml=./packages/trellage-cli/node_modules/smol-toml/dist/index.js \
-  --legal-comments=inline \
-  --outfile=prototypes/trellage-jcode-profiles/config-manager.mjs
-```
+`config-manager.ts` is the authored runtime. Bun runs it directly with the
+locked `smol-toml` dependency. There is no generated manager or bundle to rebuild.
+Reinstall the Native launcher after changing its source.

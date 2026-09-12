@@ -20,11 +20,15 @@ seed_fixture() {
   fixture_git init -q -b main "$fixture"
   mkdir -p \
     "$fixture/scripts" \
+    "$fixture/bin" \
     "$fixture/tests" \
     "$fixture/prototypes/example/.contract-fixture.publication" \
     "$fixture/prototypes/example/.contract-work" \
-    "$fixture/packages/trellage-cli" \
-    "$fixture/packages/trellage-guide-core"
+    "$fixture/packages/trellage-cli/src" \
+    "$fixture/packages/trellage-guide-core/src" \
+    "$fixture/packages/trellage-launcher/src" \
+    "$fixture/packages/trellage-conversation-source/src" \
+    "$fixture/packages/trellage-runtime/src"
   cp tests/publication_contract.sh "$fixture/tests/publication_contract.sh"
   cp .gitignore "$fixture/.gitignore"
   cp prototypes/.npmignore "$fixture/prototypes/.npmignore"
@@ -36,13 +40,30 @@ seed_fixture() {
   printf '%s\n' '{"name":"@trellage/guide-core","private":true,"license":"MIT"}' \
     >"$fixture/packages/trellage-guide-core/package.json"
   printf '%s\n' \
-    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["prototypes","scripts/trellage-session-bridge.py","scripts/floating-skills.mjs","scripts/install-floating-skills-runtime.sh","scripts/native-environment.mjs","scripts/install-native-environment-runtime.sh","skills.json"]}' \
+    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["prototypes","bin","scripts","packages","bun.lock","bunfig.toml","tsconfig.base.json","skills.json"]}' \
     >"$fixture/package.json"
   printf '%s\n' '#!/usr/bin/env python3' >"$fixture/scripts/trellage-session-bridge.py"
-  printf '%s\n' '#!/usr/bin/env node' >"$fixture/scripts/floating-skills.mjs"
+  printf '%s\n' '#!/usr/bin/env bun' >"$fixture/scripts/floating-skills.ts"
   printf '%s\n' '#!/usr/bin/env bash' >"$fixture/scripts/install-floating-skills-runtime.sh"
-  printf '%s\n' '#!/usr/bin/env node' >"$fixture/scripts/native-environment.mjs"
+  printf '%s\n' '#!/usr/bin/env bun' >"$fixture/scripts/native-environment.ts"
   printf '%s\n' '#!/usr/bin/env bash' >"$fixture/scripts/install-native-environment-runtime.sh"
+  for script in bun-runtime install-source-runtime run-source; do
+    printf '%s\n' '#!/usr/bin/env bash' >"$fixture/scripts/$script.sh"
+  done
+  for source in \
+    bin/trellage.ts bin/trx.ts \
+    packages/trellage-cli/src/cli.ts \
+    packages/trellage-guide-core/src/index.ts packages/trellage-guide-core/src/conversation.ts \
+    packages/trellage-launcher/src/cli.tsx \
+    packages/trellage-conversation-source/src/cli.ts \
+    packages/trellage-runtime/src/index.ts packages/trellage-runtime/src/workspace.ts \
+    packages/trellage-runtime/src/workspace-cli.ts; do
+    printf 'export {}\n' >"$fixture/$source"
+  done
+  printf '{}\n' >"$fixture/bun.lock"
+  printf '{}\n' >"$fixture/tsconfig.base.json"
+  printf '[install]\nauto = "disable"\n' >"$fixture/bunfig.toml"
+  cp "$fixture/bunfig.toml" "$fixture/packages/trellage-runtime/bunfig.toml"
   printf '%s\n' '{"schemaVersion":1,"sources":{},"bundles":{}}' >"$fixture/skills.json"
   printf 'Generic fixture\n' >"$fixture/README.md"
 }
@@ -80,6 +101,13 @@ fi
 grep -Fq 'npm package includes temporary contract fixtures' "$fixture_root/package-fixture-output" \
   || fail 'temporary package fixture diagnostic changed'
 mv "$tree_fixture/prototypes/.npmignore.saved" "$tree_fixture/prototypes/.npmignore"
+rm "$tree_fixture/packages/trellage-runtime/bunfig.toml"
+if run_contract "$tree_fixture" >"$fixture_root/source-output" 2>&1; then
+  fail 'missing source runtime configuration was accepted'
+fi
+grep -Fq 'npm package omits required Trellage source' "$fixture_root/source-output" \
+  || fail 'source publication diagnostic changed'
+fixture_git -C "$tree_fixture" restore packages/trellage-runtime/bunfig.toml
 
 printf 'RSU fixture\n' >"$tree_fixture/README.md"
 if run_contract "$tree_fixture" >"$fixture_root/content-output" 2>&1; then

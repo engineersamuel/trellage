@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 
 import { Effect } from "effect"
 
-import { inventoryDirectory, type InventoryError } from "./inventory.js"
+import { inventoryDirectory, type InventoryError } from "./inventory.ts"
 
 export const isGeneratedPythonRuntimePath = (relativePath: string): boolean =>
   relativePath.split("/").includes("__pycache__") || /\.(?:pyc|pyo)$/.test(relativePath)

@@ -1,0 +1,41 @@
+{
+  "name": "@trellage/conversation-source",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cli": "./src/cli.ts",
+    "./capture": "./src/conversation-capture.ts",
+    "./parser": "./src/conversation-parser.ts",
+    "./policy": "./src/conversation-policy.ts",
+    "./reader": "./src/conversation-reader.ts",
+    "./state": "./src/conversation-state.ts",
+    "./validation": "./src/conversation-validation.ts",
+    "./herdr": "./src/herdr.ts",
+    "./sandbox-bridge": "./src/sandbox-bridge.ts",
+    "./source-context": "./src/source-context.ts",
+    "./transcripts": "./src/transcripts.ts",
+    "./transcript-format": "./src/transcript-format.ts",
+    "./trellage-root": "./src/trellage-root.ts",
+    "./trellage-session": "./src/trellage-session.ts"
+  },
+  "scripts": {
+    "check": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ./node_modules/typescript/bin/tsc --noEmit",
+    "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml test ./tests"
+  },
+  "dependencies": {
+    "@trellage/guide-core": "workspace:*",
+    "@trellage/runtime": "workspace:*",
+    "proper-lockfile": "4.1.2"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.3",
+    "@types/node": "24.10.1",
+    "@types/proper-lockfile": "4.1.4",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "bun": "1.3.3"
+  }
+}

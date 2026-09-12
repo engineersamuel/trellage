@@ -67,6 +67,7 @@ mkdir -p "$fake_bin" "$home" "$logs"
 real_jq="$(command -v jq)" || fail 'jq is required'
 real_python3="$(command -v python3)" || fail 'python3 is required'
 real_bash="$(command -v bash)" || fail 'bash is required'
+real_bun="$(command -v bun)" || fail 'Bun 1.3.3 is required'
 
 # ---------------------------------------------------------------------------
 # Fake host commands.
@@ -335,6 +336,17 @@ chmod 0755 "$fake_native_claude"
 ln -s "$real_jq" "$fake_bin/jq"
 ln -s "$real_python3" "$fake_bin/python3"
 ln -s "$real_bash" "$fake_bin/bash"
+fixture_registry="${npm_config_registry:-${NPM_CONFIG_REGISTRY:-}}"
+if [[ -z "$fixture_registry" ]]; then
+  fixture_registry="$(npm config get registry --workspaces=false)"
+fi
+{
+  printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+  printf 'export BUN_INSTALL_CACHE_DIR=%q\n' "$fixture_root/bun-cache"
+  printf 'export npm_config_registry=%q\n' "$fixture_registry"
+  printf 'exec %q "$@"\n' "$real_bun"
+} >"$fake_bin/bun"
+chmod 0755 "$fake_bin/bun"
 for tool in sh env sed grep find mktemp cat head tail cp mv rm rmdir mkdir chmod ln sort tr wc cmp \
   basename dirname sleep install readlink awk uname date ls touch expr id cut comm diff \
   node npm curl shasum sha256sum; do
@@ -412,8 +424,12 @@ chmod 0755 "$FAKE_GIT_SOURCE_TREE/bin/fm-bootstrap.sh"
 # Package mirror so install.sh can resolve its shared runtime dependencies.
 # ---------------------------------------------------------------------------
 
-mkdir -p "$mirror/prototypes/trellage-claude-common" "$mirror/scripts"
-cp -R "$root" "$mirror/prototypes/trellage-firstmate-profiles"
+BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache" HOME="$home" \
+  "$repo_root/scripts/install-source-runtime.sh" --stage "$mirror" \
+  >"$logs/source-install.log" 2>&1 || {
+  cat "$logs/source-install.log" >&2
+  fail 'could not stage complete fixture source workspace'
+}
 cat >"$mirror/prototypes/trellage-firstmate-profiles/lib/fmx-prerequisites" <<'FAKE_PREREQUISITE_HELPER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -482,12 +498,12 @@ esac
 FAKE_PREREQUISITE_HELPER
 chmod 0755 "$mirror/prototypes/trellage-firstmate-profiles/lib/fmx-prerequisites"
 cp "$fake_native_claude" "$mirror/prototypes/trellage-claude-common/native-claude"
-cp "$repo_root/prototypes/trellage-claude-common/native-skills.mjs" \
-  "$mirror/prototypes/trellage-claude-common/native-skills.mjs"
+cp "$repo_root/prototypes/trellage-claude-common/native-skills.ts" \
+  "$mirror/prototypes/trellage-claude-common/native-skills.ts"
 chmod 0755 "$mirror/prototypes/trellage-claude-common/native-claude"
 cp "$repo_root/scripts/trellage-session-bridge.py" "$mirror/scripts/trellage-session-bridge.py"
 cp "$repo_root/scripts/install-floating-skills-runtime.sh" "$mirror/scripts/"
-cp "$repo_root/scripts/floating-skills.mjs" "$mirror/scripts/"
+cp "$repo_root/scripts/floating-skills.ts" "$mirror/scripts/"
 cp "$repo_root/skills.json" "$mirror/skills.json"
 mirror_installer="$mirror/prototypes/trellage-firstmate-profiles/install.sh"
 mirror_uninstaller="$mirror/prototypes/trellage-firstmate-profiles/uninstall.sh"
@@ -971,7 +987,7 @@ assert_contains "Installed fmx at $command_path" "$logs/install.out"
 [[ -x "$install_root/lib/native-claude" ]] || fail 'the shared Claude helper was not installed'
 [[ -f "$install_root/lib/trellage-session-bridge.py" ]] \
   || fail 'the session bridge was not installed'
-[[ -f "$home/.local/share/trellage/common/floating-skills-runtime/floating-skills.mjs" ]] \
+[[ -f "$home/.local/share/trellage/common/floating-skills-runtime/scripts/floating-skills.ts" ]] \
   || fail 'the floating-skills runtime was not installed'
 [[ -f "$install_root/overlay/$pinned_commit/manifest.json" ]] \
   || fail 'the pinned overlay was not installed'

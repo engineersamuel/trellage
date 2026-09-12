@@ -2,9 +2,9 @@ import {
   renderGuideGoalProposal,
   type GuideGoalAugmentProvider,
   type GuideGoalAnswer,
-} from "../../src/guide-goal-augment.js"
-import { FixtureMode, type RecordFixtureEvent } from "./guide-integration-data.js"
-import { goalMeSkill } from "./goal-me-skill.js"
+} from "../../src/guide-goal-augment.ts"
+import { FixtureMode, type RecordFixtureEvent } from "./guide-integration-data.ts"
+import { goalMeSkill } from "./goal-me-skill.ts"
 
 export const goalArtifactQuestion = "What should this task produce?"
 export const goalArtifact = "A review report"

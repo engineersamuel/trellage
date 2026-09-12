@@ -6,18 +6,18 @@ import {
   loadProfileGuide,
   parseProfileGuideIdentity,
   type ProfileGuideIdentity,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 import { describe, expect, it } from "vitest"
 
-import { literalGuideMatch, prefilterGuideMatchCatalogEntries } from "../src/guide-api.js"
-import { guideCatalogEntries } from "../src/guide-catalog.js"
+import { literalGuideMatch, prefilterGuideMatchCatalogEntries } from "../src/guide-api.ts"
+import { guideCatalogEntries } from "../src/guide-catalog.ts"
 import type {
   CombinedGuideCatalog,
   HeadlessCapabilitiesV1,
   NativeGuideCatalogEntry,
   SandboxGuideCatalogEntry,
-} from "../src/guide-catalog.js"
-import { validateHeadlessCapabilitiesV1 } from "../src/guide-catalog.js"
+} from "../src/guide-catalog.ts"
+import { validateHeadlessCapabilitiesV1 } from "../src/guide-catalog.ts"
 
 interface ProfileGuideScenario {
   readonly id: string
@@ -41,7 +41,7 @@ interface LiveScenarioParserModule {
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const guideRoot = path.join(repositoryRoot, "profile-guides")
 const scenarioPath = path.join(repositoryRoot, "tests", "fixtures", "profile-guide-scenarios.json")
-const liveEvaluatorUrl = new URL("../../../scripts/evaluate-profile-guides.mjs", import.meta.url)
+const liveEvaluatorUrl = new URL("../../../scripts/evaluate-profile-guides.ts", import.meta.url)
 
 const text = (value: unknown, name: string): string => {
   if (typeof value !== "string" || value.trim().length === 0) throw new Error(`${name} must be text`)

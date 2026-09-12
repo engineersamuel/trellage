@@ -3,10 +3,10 @@ import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { getEventListeners, once } from "node:events"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { createRequire } from "node:module"
 import net from "node:net"
 import path from "node:path"
 import test from "node:test"
+import { validateContinuationDraft } from "@trellage/guide-core/conversation"
 
 import { checkConversationSource, main } from "../conversation-source.ts"
 import { captureFocusedConversation } from "../lib/conversation-capture.ts"
@@ -14,9 +14,6 @@ import { ConversationSurface } from "../lib/conversation-contract.ts"
 import { readConversationRequest, writeConversationRequest } from "../lib/conversation-state.ts"
 import { requestHerdr } from "../lib/herdr.ts"
 import { captureFixture } from "./helpers/conversation-fixtures.ts"
-
-const require = createRequire(import.meta.url)
-const { validateContinuationDraft } = require("../../../packages/trellage-guide-core/dist/conversation.js")
 
 test("source checks reject a pre-aborted operation without starting capture", async (t) => {
   const fixture = await captureFixture(t)

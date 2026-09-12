@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
-import { test } from "node:test"
-import { ConversationAgent, ConversationRole, ConversationSurface } from "../../../packages/trellage-guide-core/dist/conversation.js"
+import { afterEach, mock, spyOn, test } from "bun:test"
+import { ConversationAgent, ConversationRole, ConversationSurface } from "@trellage/guide-core/conversation"
 import { runConversationSourceCli } from "../conversation-source.ts"
 
 const snapshot = {
@@ -17,12 +17,14 @@ const snapshot = {
   coverage: { complete: true, notices: [] },
 }
 
+afterEach(() => mock.restore())
+
 for (const operation of ["--check", "--refresh"]) {
-  test(`${operation} preserves a cleanup failure under an aborted signal`, async (t) => {
+  test(`${operation} preserves a cleanup failure under an aborted signal`, async () => {
     const stderr: string[] = []
     const stdout: string[] = []
-    t.mock.method(process.stderr, "write", (text: string) => { stderr.push(String(text)); return true })
-    t.mock.method(process.stdout, "write", (text: string) => { stdout.push(String(text)); return true })
+    spyOn(console, "error").mockImplementation((text) => { stderr.push(String(text)) })
+    spyOn(process.stdout, "write").mockImplementation((text) => { stdout.push(String(text)); return true })
     const controller = new AbortController()
     const code = await runConversationSourceCli([operation, "/synthetic/request.json"], {
       env: { HERDR_PLUGIN_STATE_DIR: "/synthetic" },
@@ -39,10 +41,10 @@ for (const operation of ["--check", "--refresh"]) {
     assert.equal(stdout.join(""), "")
   })
 
-  test(`${operation} reports only confirmed clean cancellation as cancelled`, async (t) => {
+  test(`${operation} reports only confirmed clean cancellation as cancelled`, async () => {
     const output: string[] = []
-    t.mock.method(process.stderr, "write", (text: string) => { output.push(String(text)); return true })
-    t.mock.method(process.stdout, "write", (text: string) => { output.push(String(text)); return true })
+    spyOn(console, "error").mockImplementation((text) => { output.push(String(text)) })
+    spyOn(process.stdout, "write").mockImplementation((text) => { output.push(String(text)); return true })
     const controller = new AbortController()
     const code = await runConversationSourceCli([operation, "/synthetic/request.json"], {
       env: { HERDR_PLUGIN_STATE_DIR: "/synthetic" },

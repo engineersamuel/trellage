@@ -1,4 +1,4 @@
-import type { InventoryPolicy } from "./inventory.js"
+import type { InventoryPolicy } from "./inventory.ts"
 
 export interface SourceSelection {
   readonly kind: "plugin" | "harness"

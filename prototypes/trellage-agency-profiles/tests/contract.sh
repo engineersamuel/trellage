@@ -42,10 +42,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+fixture_registry="$(npm config get registry --workspaces=false)" \
+  || fail 'could not discover the host npm registry'
+[[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
+export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export npm_config_registry="$fixture_registry"
+
 mkdir -p "$fixture_home" "$fixture_bin" "$worktree" "$main_copilot"
 printf 'main state\n' >"$main_sentinel"
 seed_floating_skills_cache "$fixture_home"
 ln -s "$real_node" "$fixture_bin/node"
+install_fixture_bun "$fixture_bin"
 ln -s "$real_jq" "$fixture_bin/jq"
 ln -s "$(command -v git)" "$fixture_bin/git"
 git -C "$worktree" init -q

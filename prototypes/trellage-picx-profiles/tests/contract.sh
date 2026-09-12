@@ -15,6 +15,12 @@ fail() {
 
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-picx-contract.XXXXXX")"
 trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
+fixture_registry="$(npm config get registry --workspaces=false)" \
+  || fail 'could not discover the host npm registry'
+[[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
+export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export npm_config_registry="$fixture_registry"
+
 fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
 node_binary="$(node -p 'process.execPath')"
@@ -181,6 +187,7 @@ esac
 FAKE_CURL
 chmod 0755 "$fake_bin/curl"
 ln -s "$node_binary" "$fake_bin/node"
+install_fixture_bun "$fake_bin"
 
 export HOME="$home"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"

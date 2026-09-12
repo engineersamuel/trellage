@@ -6,12 +6,10 @@ import path from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { cacheArtifact } from "../src/artifact-cache.js"
-
-const originalFetch = globalThis.fetch
+import { cacheArtifact } from "../src/artifact-cache.ts"
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  vi.restoreAllMocks()
 })
 
 describe("artifact content cache", () => {
@@ -19,8 +17,7 @@ describe("artifact content cache", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-artifact-cache-"))
     const content = "verified artifact\n"
     const integrity = `sha256:${createHash("sha256").update(content).digest("hex")}`
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(content))
-    globalThis.fetch = fetchMock
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(content))
 
     const first = await Effect.runPromise(
       cacheArtifact({ cacheHome: root, url: "https://example.test/artifact.tar.gz" }),
@@ -41,7 +38,7 @@ describe("artifact content cache", () => {
 
   it("rejects downloaded bytes that do not match an expected digest", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-artifact-cache-mismatch-"))
-    globalThis.fetch = vi.fn<typeof fetch>(async () => new Response("wrong")) as typeof fetch
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("wrong"))
 
     await expect(
       Effect.runPromise(

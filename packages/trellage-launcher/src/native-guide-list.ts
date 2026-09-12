@@ -5,7 +5,7 @@ import {
   profileGuideIdentityKey,
   profileGuideRelativePath,
   type ProfileGuideIdentity,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 
 interface NativeProfileIdentity {
   readonly launcher: string

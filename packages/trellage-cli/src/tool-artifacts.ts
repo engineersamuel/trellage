@@ -1,9 +1,9 @@
 import { Effect } from "effect"
 
-import { resolveCodexRelease } from "./codex-release.js"
-import { resolveGitHubArtifactRelease } from "./github-artifact-release.js"
-import type { ArtifactLock } from "./lock.js"
-import type { Platform } from "./platform.js"
+import { resolveCodexRelease } from "./codex-release.ts"
+import { resolveGitHubArtifactRelease } from "./github-artifact-release.ts"
+import type { ArtifactLock } from "./lock.ts"
+import type { Platform } from "./platform.ts"
 
 const semverTag = (tag: string): string | undefined => {
   const match = /^v?(\d+\.\d+\.\d+)$/.exec(tag)

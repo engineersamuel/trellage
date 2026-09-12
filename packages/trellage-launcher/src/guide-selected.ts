@@ -5,8 +5,8 @@ import {
   type LoadedProfileGuide,
   type ProfileGuideIdentity,
   type ProfileGuideV1,
-} from "../../trellage-guide-core/dist/index.js"
-import type { CombinedGuideCatalog, NativeGuideCatalogEntry, SandboxGuideCatalogEntry } from "./guide-catalog.js"
+} from "@trellage/guide-core"
+import type { CombinedGuideCatalog, NativeGuideCatalogEntry, SandboxGuideCatalogEntry } from "./guide-catalog.ts"
 
 const controls = /[\u0000-\u001f\u007f-\u009f]/u
 

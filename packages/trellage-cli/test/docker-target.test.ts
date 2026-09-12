@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { captureDockerTarget, dockerHostArguments, dockerSocketPath, verifyDockerTarget } from "../src/docker-target.js"
+import { captureDockerTarget, dockerHostArguments, dockerSocketPath, verifyDockerTarget } from "../src/docker-target.ts"
 
 describe("Docker target", () => {
   it("prefers an explicit Unix DOCKER_HOST and captures one server identity", async () => {

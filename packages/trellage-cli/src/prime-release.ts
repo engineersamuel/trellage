@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 
 import { Data, Effect } from "effect"
 
-import type { HarnessPackageLock } from "./lock.js"
+import type { HarnessPackageLock } from "./lock.ts"
 
 export interface PrimeReleaseClient {
   readonly text: (url: string) => Effect.Effect<string, unknown>

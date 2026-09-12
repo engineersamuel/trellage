@@ -616,8 +616,7 @@ test("a maximum CJK panel selection uses a short standard context token", async 
   await assert.rejects(consumeChoice(root, choiceToken), { code: "ENOENT" })
 })
 
-test("panel capture choices survive Herdr's supported action context", async (t) => {
-  const scenarios = [
+const panelCaptureScenarios = [
     {
       name: "exact result from another pane",
       kind: "exact",
@@ -633,8 +632,8 @@ test("panel capture choices survive Herdr's supported action context", async (t)
     },
   ]
 
-  for (const scenario of scenarios) {
-    await t.test(scenario.name, async (subtest) => {
+  for (const scenario of panelCaptureScenarios) {
+    test(`panel capture choices survive Herdr's supported action context: ${scenario.name}`, async (subtest) => {
       const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-panel-source-"))
       subtest.after(() => rm(root, { recursive: true, force: true }))
       const capturePath = path.join(root, "herdr-call.json")
@@ -747,4 +746,3 @@ test("panel capture choices survive Herdr's supported action context", async (t)
       await assert.rejects(consumeChoice(root, choiceToken), { code: "ENOENT" })
     })
   }
-})

@@ -7,11 +7,13 @@ import { promisify } from "node:util"
 import { fileURLToPath } from "node:url"
 
 import { Cause, Effect, Exit } from "effect"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { GitHubSourceRequest } from "../src/github-cache.js"
-import { runtimeIntegrities, runtimeVersions } from "./fixtures/runtime-packages.js"
-import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
+import type { GitHubSourceRequest } from "../src/github-cache.ts"
+import { runtimeIntegrities, runtimeVersions } from "./fixtures/runtime-packages.ts"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.ts"
+import { BunFixtureFailure, BunFixtureMode, createBunBuilderFixture } from "./fixtures/bun-builder.ts"
 
 const mocks = vi.hoisted(() => ({
   requests: [] as Array<GitHubSourceRequest>,
@@ -41,7 +43,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   }
 })
 
-vi.mock("../src/github-cache.js", async () => {
+vi.mock("../src/github-cache.ts", async () => {
   const { Effect } = await import("effect")
   return {
     resolveGitHubSource: (_cache: string, request: GitHubSourceRequest) => {
@@ -61,7 +63,7 @@ vi.mock("../src/github-cache.js", async () => {
   }
 })
 
-vi.mock("../src/claude-release.js", async () => {
+vi.mock("../src/claude-release.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveClaudeRelease: (selector: string) => {
@@ -78,7 +80,7 @@ vi.mock("../src/claude-release.js", async () => {
   }
 })
 
-vi.mock("../src/codex-release.js", async () => {
+vi.mock("../src/codex-release.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveCodexRelease: (selector: string) => {
@@ -109,8 +111,8 @@ vi.mock("../src/codex-release.js", async () => {
   }
 })
 
-vi.mock("../src/resolvers.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/resolvers.js")>()
+vi.mock("../src/resolvers.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/resolvers.ts")>()
   const { Effect: EffectModule } = await import("effect")
   return {
     ...actual,
@@ -130,7 +132,7 @@ vi.mock("../src/resolvers.js", async (importOriginal) => {
   }
 })
 
-vi.mock("../src/oci-image.js", async () => {
+vi.mock("../src/oci-image.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveOciImage: (reference: string) =>
@@ -146,7 +148,7 @@ vi.mock("../src/oci-image.js", async () => {
   }
 })
 
-vi.mock("../src/node-release.js", async () => {
+vi.mock("../src/node-release.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveNodeRelease: () =>
@@ -159,7 +161,7 @@ vi.mock("../src/node-release.js", async () => {
   }
 })
 
-vi.mock("../src/uv-release.js", async () => {
+vi.mock("../src/uv-release.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveUvRelease: () =>
@@ -173,7 +175,7 @@ vi.mock("../src/uv-release.js", async () => {
   }
 })
 
-vi.mock("../src/python-release.js", async () => {
+vi.mock("../src/python-release.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolvePythonRelease: () =>
@@ -187,14 +189,14 @@ vi.mock("../src/python-release.js", async () => {
   }
 })
 
-vi.mock("../src/python-constraints.js", async () => {
+vi.mock("../src/python-constraints.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     compilePythonConstraints: () => EffectModule.succeed(`example==1.0.0 \\\n    --hash=sha256:${"f".repeat(64)}\n`),
   }
 })
 
-vi.mock("../src/debian-packages.js", async () => {
+vi.mock("../src/debian-packages.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveDebianPackages: (packages: ReadonlyArray<string>) =>
@@ -212,7 +214,7 @@ vi.mock("../src/debian-packages.js", async () => {
   }
 })
 
-vi.mock("../src/tool-artifacts.js", async () => {
+vi.mock("../src/tool-artifacts.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolveToolArtifacts: (_cacheHome: string, _platform: string, names: ReadonlyArray<string>) =>
@@ -228,8 +230,8 @@ vi.mock("../src/tool-artifacts.js", async () => {
   }
 })
 
-vi.mock("../src/rust-release.js", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../src/rust-release.js")>()
+vi.mock("../src/rust-release.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/rust-release.ts")>()
   const { Effect: EffectModule } = await import("effect")
   return {
     ...original,
@@ -253,7 +255,7 @@ vi.mock("../src/rust-release.js", async (importOriginal) => {
   }
 })
 
-vi.mock("../src/playwright-release.js", async () => {
+vi.mock("../src/playwright-release.ts", async () => {
   const { Effect: EffectModule } = await import("effect")
   return {
     resolvePlaywrightRelease: () =>
@@ -297,7 +299,7 @@ vi.mock("../src/playwright-release.js", async () => {
   }
 })
 
-vi.mock("../src/artifact-cache.js", async () => {
+vi.mock("../src/artifact-cache.ts", async () => {
   const { mkdir, writeFile } = await import("node:fs/promises")
   const path = await import("node:path")
   const { Effect: EffectModule } = await import("effect")
@@ -345,13 +347,13 @@ import {
   type CommandRunner,
   type DockerServices,
   type UpgradeServices,
-} from "../src/application.js"
-import { renderLock } from "../src/lock-file.js"
-import { profileHash, withAttachedSidecar, type ProfileLock } from "../src/lock.js"
-import { parseProfile } from "../src/profile.js"
-import { loadResolutionReceipt, resolutionReceiptPath, writeResolutionReceipt } from "../src/resolution-receipt.js"
-import { createPythonConstraintsSidecar, resolutionSidecarReference } from "../src/resolution-sidecar.js"
-import { resolutionSidecarPath } from "../src/resolution-sidecar-storage.js"
+} from "../src/application.ts"
+import { renderLock } from "../src/lock-file.ts"
+import { profileHash, withAttachedSidecar, type ProfileLock } from "../src/lock.ts"
+import { parseProfile } from "../src/profile.ts"
+import { loadResolutionReceipt, resolutionReceiptPath, writeResolutionReceipt } from "../src/resolution-receipt.ts"
+import { createPythonConstraintsSidecar, resolutionSidecarReference } from "../src/resolution-sidecar.ts"
+import { resolutionSidecarPath } from "../src/resolution-sidecar-storage.ts"
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
 const fixtureBaseDigest = digest("1")
@@ -441,8 +443,8 @@ const runtimeSupport = (root: string) => ({
   sessionBridge: fileURLToPath(new URL("../../../scripts/trellage-session-bridge.py", import.meta.url)),
   piEntry: path.join(root, "runtime-pi-entry.sh"),
   primeEntry: path.join(root, "runtime-prime-entry.sh"),
-  finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
-  finalizeClaudeSeed: path.join(root, "finalize-claude-seed.mjs"),
+  finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.ts"),
+  finalizeClaudeSeed: path.join(root, "finalize-claude-seed.ts"),
   claudeEntry: path.join(root, "runtime-claude-entry.sh"),
   claudeBrowserAgent: path.join(root, "hyperresearch-browser-fetcher.md"),
   claudeOutputStyleRundown: path.join(root, "output-style-rundown.md"),
@@ -1119,7 +1121,7 @@ describe("transactional profile upgrade", () => {
   })
 
   it("keeps lock file services private to the application transaction", async () => {
-    const application = await import("../src/application.js")
+    const application = await import("../src/application.ts")
     expect(application).not.toHaveProperty("LiveUpgradeFileServices")
   })
 
@@ -1908,11 +1910,19 @@ gear = "full"
       await mkdir(leasePath, { recursive: true })
       await utimes(leasePath, new Date(0), new Date(0))
 
-      const vitest = fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url))
+      const vitest = fileURLToPath(new URL("./vitest.mjs", import.meta.resolve("vitest/package.json")))
       const worker = (role: string) =>
         execFilePromise(
-          process.execPath,
-          [vitest, "run", "test/application.test.ts", "-t", "upgrade contention worker", "--reporter=dot"],
+          bunExecutable(),
+          bunArguments(vitest, [
+            "run",
+            "--configLoader",
+            "native",
+            "test/application.test.ts",
+            "-t",
+            "upgrade contention worker",
+            "--reporter=dot",
+          ]),
           {
             cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
             env: {
@@ -2140,9 +2150,16 @@ select = ["humanizer"]
     )
     expect(script).toContain("plugin install humanizer@humanizer --scope user")
     expect(script).not.toContain("plugin install humanizer@humanizer --scope user --config")
-    expect(script).toContain("/src/finalize-claude-seed.mjs /src/claude-seed /src/claude-marketplaces.json 2.1.218")
+    expect(script).toContain(
+      '"$bun_bin" --no-install --no-env-file --config=/dev/null /src/finalize-claude-seed.ts /src/claude-seed /src/claude-marketplaces.json 2.1.218',
+    )
+    expect(script).toContain('cp "$bun_bin" /src/.runtime-support/bun')
+    expect(script).toContain(
+      'if ! bun_version="$("$bun_bin" --no-install --no-env-file --config=/dev/null --version)"; then',
+    )
+    expect(script).toContain('if [ "$bun_version" != "1.3.3" ]; then')
     expect(script.indexOf("plugin install humanizer@humanizer")).toBeLessThan(script.indexOf(pluginConfigManifest))
-    expect(script.indexOf(pluginConfigManifest)).toBeLessThan(script.indexOf("/src/finalize-claude-seed.mjs"))
+    expect(script.indexOf(pluginConfigManifest)).toBeLessThan(script.indexOf("/src/finalize-claude-seed.ts"))
     expect(script).not.toMatch(/hyperresearch|playwright|obscura|APIFY_API_TOKEN|GOOGLE_AI_API_KEY/)
   })
 
@@ -2234,9 +2251,9 @@ select = ["example"]
       'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin marketplace add /src/hve-core',
       'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin install hve-core@hve-core',
       'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin list',
-      'node_bin="$(mise where node@24.8.0)/bin/node"',
-      '[ -x "$node_bin" ]',
-      '"$node_bin" /src/finalize-copilot-seed.mjs /src/copilot-seed hve-core hve-core 3.3.101',
+      'if ! bun_version="$("$bun_bin" --no-install --no-env-file --config=/dev/null --version)"; then',
+      'if [ "$bun_version" != "1.3.3" ]; then',
+      '"$bun_bin" --no-install --no-env-file --config=/dev/null /src/finalize-copilot-seed.ts /src/copilot-seed hve-core hve-core 3.3.101',
       'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
     ]
 
@@ -2250,6 +2267,12 @@ select = ["example"]
     expect(script).toContain("plugin_list_status=0")
     expect(script).toContain("|| plugin_list_status=$?")
     expect(script).toContain('[ "$plugin_list_status" -eq 0 ]')
+    expect(script).toContain("bun-linux-aarch64-1.3.3.tgz")
+    expect(script).toContain("39032147")
+    expect(script).toContain("1021798148d98705e8a448a3c8ec698ec144c66eb1e0f287927f05dbc459cbc7")
+    expect(script).toContain("export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0")
+    expect(script.indexOf("sha256sum --check --strict")).toBeLessThan(script.indexOf("--config=/dev/null --version"))
+    expect(script).not.toContain("/src/finalize-copilot-seed.mjs")
     expect(script).not.toMatch(
       /login|\/Users\/|\.copilot|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN|secret|profile-injection|latest/,
     )
@@ -2347,7 +2370,7 @@ select = ["example"]
       '[ -x "$prime_node_dir/bin/npm" ]',
       "PRIME_AGENT_BOOTSTRAP_TOOLS_ON_INSTALL=0 PRIME_AGENT_BOOTSTRAP_KERNEL_ON_INSTALL=0 PRIME_AGENT_INSTALL_UV=0",
       'PATH="$prime_node_dir/bin:$PATH" "$prime_node_dir/bin/npm" install --global --prefix /src/prime-agent-prefix',
-      '"$prime_node_dir/bin/node" -e',
+      '"$bun_bin" --no-install --no-env-file --config=/dev/null -e',
       "/src/prime-agent-prefix/lib/node_modules/prime-agent/package.json",
       'p.bin?.["prime-agent"]!=="dist/bundle/cli.js"',
       "prime_kernel_home='/home/agent/.trellage/prime-kernel'",
@@ -2387,15 +2410,15 @@ select = ["example"]
     }
   })
 
-  it("fails closed when Copilot reports a near-miss or duplicate plugin row", async () => {
+  it("fails closed when Copilot reports a near-miss or duplicate plugin row", async (context) => {
     const document = await Effect.runPromise(parseProfile(copilotSource, "/tmp/copilot/profile.toml"))
     const script = builderScript(document, copilotLock(profileHash(document)))
     const root = await mkdtemp(path.join(os.tmpdir(), "harness-builder-script-"))
+    context.onTestFinished(() => rm(root, { recursive: true, force: true }))
     const bin = path.join(root, "bin")
     const data = path.join(root, "mise-data")
     const trace = path.join(root, "trace")
     const copilotTemplate = path.join(root, "copilot-template")
-    const fakeNode = path.join(root, "node")
     await mkdir(bin)
     await Promise.all([
       writeFile(
@@ -2436,18 +2459,8 @@ esac
 `,
         { mode: 0o755 },
       ),
-      writeFile(
-        fakeNode,
-        `#!/bin/sh
-printf 'node:argv=%s\\n' "$*" >> "$TRACE_FILE"
-exit "$FINALIZER_STATUS"
-`,
-        { mode: 0o755 },
-      ),
     ])
-    const missingNode = path.join(root, "missing-node")
-    const nonExecutableNode = path.join(root, "non-executable-node")
-    await writeFile(nonExecutableNode, "#!/bin/sh\n", { mode: 0o644 })
+    const readyBun = await createBunBuilderFixture(root, script, {})
     const execute = async (options: {
       readonly pluginListOutput: string
       readonly addStatus?: number
@@ -2455,18 +2468,20 @@ exit "$FINALIZER_STATUS"
       readonly listStatus?: number
       readonly finalizerStatus?: number
       readonly binaryMode?: "ok" | "missing" | "non-executable"
-      readonly nodeMode?: "ok" | "missing" | "non-executable"
+      readonly bunMode?: BunFixtureMode
+      readonly bunFailure?: BunFixtureFailure
     }) => {
       await writeFile(trace, "")
-      const node =
-        options.nodeMode === "missing"
-          ? missingNode
-          : options.nodeMode === "non-executable"
-            ? nonExecutableNode
-            : fakeNode
-      const executableScript = script.replace('node_bin="$(mise where node@24.8.0)/bin/node"', `node_bin='${node}'`)
-      const result = await execFilePromise("/bin/sh", ["-ceu", executableScript], {
+      const fixture =
+        options.bunMode === undefined && options.bunFailure === undefined
+          ? readyBun
+          : await createBunBuilderFixture(root, script, {
+              ...(options.bunMode === undefined ? {} : { mode: options.bunMode }),
+              ...(options.bunFailure === undefined ? {} : { failure: options.bunFailure }),
+            })
+      const result = await execFilePromise("/bin/sh", ["-ceu", fixture.script], {
         env: {
+          ...fixture.environment,
           PATH: `${bin}:/usr/bin:/bin`,
           MISE_DATA_DIR: data,
           COPILOT_TEMPLATE: copilotTemplate,
@@ -2493,7 +2508,9 @@ exit "$FINALIZER_STATUS"
           "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin marketplace add /src/hve-core",
           "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin install hve-core@hve-core",
           "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin list",
-          "node:argv=/src/finalize-copilot-seed.mjs /src/copilot-seed hve-core hve-core 3.3.101",
+          "curl:download",
+          "bun:version",
+          "bun:argv=--no-install --no-env-file --config=/dev/null /src/finalize-copilot-seed.ts /src/copilot-seed hve-core hve-core 3.3.101",
           "mise:oci build --locked --output " + path.join(root, "oci") + " --tag trellage-profile-copilot:locked",
           "",
         ].join("\n"),
@@ -2502,7 +2519,7 @@ exit "$FINALIZER_STATUS"
     await expect(execute({ pluginListOutput: `Live plugins:\n${exact} (enabled)` })).resolves.toEqual(
       expect.objectContaining({
         trace: expect.stringContaining(
-          "node:argv=/src/finalize-copilot-seed.mjs /src/copilot-seed hve-core hve-core 3.3.101",
+          "bun:argv=--no-install --no-env-file --config=/dev/null /src/finalize-copilot-seed.ts /src/copilot-seed hve-core hve-core 3.3.101",
         ),
       }),
     )
@@ -2518,48 +2535,88 @@ exit "$FINALIZER_STATUS"
         name: "marketplace add",
         options: { addStatus: 21 },
         reached: "argv=plugin marketplace add",
-        forbidden: ["argv=plugin install", "argv=plugin list", "node:argv=", "mise:oci"],
+        forbidden: ["argv=plugin install", "argv=plugin list", "curl:", "bun:", "mise:oci"],
       },
       {
         name: "plugin install",
         options: { installStatus: 22 },
         reached: "argv=plugin install",
-        forbidden: ["argv=plugin list", "node:argv=", "mise:oci"],
+        forbidden: ["argv=plugin list", "curl:", "bun:", "mise:oci"],
       },
       {
         name: "plugin list",
         options: { listStatus: 23 },
         reached: "argv=plugin list",
-        forbidden: ["node:argv=", "mise:oci"],
+        forbidden: ["curl:", "bun:", "mise:oci"],
       },
-      { name: "finalizer", options: { finalizerStatus: 24 }, reached: "node:argv=", forbidden: ["mise:oci"] },
+      { name: "finalizer", options: { finalizerStatus: 24 }, reached: "bun:argv=", forbidden: ["mise:oci"] },
       {
         name: "missing locked binary",
         options: { binaryMode: "missing" as const },
         reached: "mise:where",
-        forbidden: ["copilot:", "node:argv=", "mise:oci"],
+        forbidden: ["copilot:", "curl:", "bun:", "mise:oci"],
       },
       {
         name: "non-executable locked binary",
         options: { binaryMode: "non-executable" as const },
         reached: "mise:where",
-        forbidden: ["copilot:", "node:argv=", "mise:oci"],
+        forbidden: ["copilot:", "curl:", "bun:", "mise:oci"],
       },
       {
-        name: "missing node",
-        options: { nodeMode: "missing" as const },
-        reached: "argv=plugin list",
-        forbidden: ["node:argv=", "mise:oci"],
+        name: "missing Bun",
+        options: { bunMode: BunFixtureMode.Missing },
+        reached: "curl:download",
+        forbidden: ["bun:", "mise:oci"],
       },
       {
-        name: "non-executable node",
-        options: { nodeMode: "non-executable" as const },
-        reached: "argv=plugin list",
-        forbidden: ["node:argv=", "mise:oci"],
+        name: "non-executable Bun",
+        options: { bunMode: BunFixtureMode.NonExecutable },
+        reached: "curl:download",
+        forbidden: ["bun:", "mise:oci"],
+      },
+      {
+        name: "symlinked Bun",
+        options: { bunMode: BunFixtureMode.Symlink },
+        reached: "curl:download",
+        forbidden: ["bun:", "mise:oci"],
+      },
+      {
+        name: "wrong Bun version",
+        options: { bunMode: BunFixtureMode.WrongVersion },
+        reached: "bun:version",
+        forbidden: ["bun:argv=", "mise:oci"],
+      },
+      {
+        name: "failed Bun version probe",
+        options: { bunMode: BunFixtureMode.VersionFailed },
+        reached: "bun:version",
+        forbidden: ["bun:argv=", "mise:oci"],
+      },
+      {
+        name: "wrong Bun archive size",
+        options: { bunFailure: BunFixtureFailure.Size },
+        reached: "curl:download",
+        forbidden: ["bun:", "mise:oci"],
+      },
+      {
+        name: "wrong Bun archive checksum",
+        options: { bunFailure: BunFixtureFailure.Checksum },
+        reached: "curl:download",
+        forbidden: ["bun:", "mise:oci"],
+      },
+      {
+        name: "Bun download failed",
+        options: { bunFailure: BunFixtureFailure.Download },
+        reached: "curl:download",
+        forbidden: ["bun:", "mise:oci"],
       },
     ]
     for (const failure of failures) {
-      await expect(execute({ pluginListOutput: exact, ...failure.options }), failure.name).rejects.toThrow()
+      try {
+        await expect(execute({ pluginListOutput: exact, ...failure.options }), failure.name).rejects.toThrow()
+      } catch (cause) {
+        throw new Error(`Builder did not stop correctly for ${failure.name}`, { cause })
+      }
       const failureTrace = await readFile(trace, "utf8")
       expect(failureTrace, failure.name).toContain(failure.reached)
       for (const forbidden of failure.forbidden) expect(failureTrace, failure.name).not.toContain(forbidden)

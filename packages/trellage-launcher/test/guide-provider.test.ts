@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { GuideValidationError } from "../src/guide-text.js"
+import { GuideValidationError } from "../src/guide-text.ts"
 import {
   assertGuideGenerateInput,
   assertGuideMatchInput,
@@ -9,8 +9,8 @@ import {
   validateGuideRefineResult,
   type GuideGenerateInput,
   type GuideMatchInput,
-} from "../src/guide-provider.js"
-import type { GuideMatchCatalogEntry } from "../src/guide-catalog.js"
+} from "../src/guide-provider.ts"
+import type { GuideMatchCatalogEntry } from "../src/guide-catalog.ts"
 
 const workflowIndex = new Map<string, ReadonlySet<string>>([
   ["native:cpx/plannotator", new Set(["visual-artifact"])],

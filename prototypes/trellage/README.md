@@ -9,15 +9,22 @@ floating-skill bundles. Exact locks are explicit release artifacts.
 
 ## Prerequisites and Setup
 
-Use an Apple Silicon host with Git, Docker, `gh`, `jq`, and mise. Authenticate `gh` with a repository-scoped credential before launching a profile. Codex, Claude, and Prime profiles require the existing `copilot-proxy-rs_default` network; Copilot and Pi profiles use Docker `bridge`. From `prototypes/trellage`:
+Use an Apple Silicon host with Git, Docker, `gh`, `jq`, mise, and the pinned Bun
+runtime. External agent tools can also require Node.js. Authenticate `gh` with a
+repository-scoped credential before launching a profile. Codex, Claude, and Prime
+profiles require the existing `copilot-proxy-rs_default` network; Copilot and Pi
+profiles use Docker `bridge`. From the repository root:
 
 ```bash
 mise trust
+mise install
+bun install --frozen-lockfile
 ```
 
-The worktree launcher bootstraps the profile compiler automatically. It runs
-`npm ci` when compiler dependencies are missing and runs `npm run build` when
-compiler output is missing or stale.
+The launcher executes the profile compiler's TypeScript source through Bun.
+Missing application dependencies are an explicit setup error. There is no
+compiler output to rebuild and no dependency installation during normal
+execution. The commands below run from `prototypes/trellage`.
 
 ## Development Receipts and Release Locks
 

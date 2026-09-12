@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from "react"
 import { Box, Text, useInput } from "ink"
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { AdminHarnessVersionResult } from "./admin-harness-version.js"
-import { harnessUpgradeVersionPreview } from "./admin-harness-update-preview.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { AdminHarnessVersionResult } from "./admin-harness-version.ts"
+import { harnessUpgradeVersionPreview } from "./admin-harness-update-preview.ts"
 import type {
   HarnessUpdateGroupReport,
   HarnessUpdateManager,
@@ -10,24 +10,24 @@ import type {
   HarnessUpdateQueueEvent,
   HarnessUpdateResult,
   HarnessUpdateStep,
-} from "./admin-harness-update.js"
+} from "./admin-harness-update.ts"
 import {
   harnessUpdateAllPlanFor,
   harnessUpdateAllSummary,
   runAllHarnessUpdates,
   type HarnessUpdateAllOutcome,
   type HarnessUpdateAllPlan,
-} from "./admin-harness-update-all.js"
-import { MarkdownTextViewport } from "./guide-ui.js"
-import type { NativeSkillsUpdateEvent } from "./admin-skills-update.js"
-import type { UpdateCommandResult } from "./admin-update-command.js"
-import type { AdminSkillsCheckResult } from "./admin-skills-check.js"
+} from "./admin-harness-update-all.ts"
+import { MarkdownTextViewport } from "./guide-ui.tsx"
+import type { NativeSkillsUpdateEvent } from "./admin-skills-update.ts"
+import type { UpdateCommandResult } from "./admin-update-command.ts"
+import type { AdminSkillsCheckResult } from "./admin-skills-check.ts"
 import {
   hasSelectedAdminUpdates,
   selectAvailableAdminUpdates,
   type AdminUpdateSelection,
   type UpdateCheckIssue,
-} from "./admin-update-selection.js"
+} from "./admin-update-selection.ts"
 
 interface AllUpdateViewBase {
   readonly plan: HarnessUpdateAllPlan

@@ -1,4 +1,4 @@
-import type { ConversationSnapshot } from "./conversation.js"
+import type { ConversationSnapshot } from "./conversation.ts"
 
 export interface ConversationTextSanitization {
   readonly text: string

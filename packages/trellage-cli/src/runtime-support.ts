@@ -4,7 +4,7 @@ import path from "node:path"
 
 import { Data, Effect } from "effect"
 
-import type { Profile } from "./profile.js"
+import type { Profile } from "./profile.ts"
 
 export interface RuntimeSupportPaths {
   readonly codexEntry: string
@@ -65,6 +65,22 @@ interface CapturedSnapshot {
 const capturedSnapshots = new WeakMap<RuntimeSupportSnapshot, CapturedSnapshot>()
 type ClaudeRuntimeAdapter = "claude-marketplace" | "hyperresearch"
 
+const bunRuntimePin: SelectedFile = {
+  source: path.resolve(import.meta.dirname, "../../../prototypes/trellage/bun-runtime.json"),
+  role: "bun-runtime-pin",
+  destination: "/usr/local/lib/trellage/bun-runtime.json",
+  buildContextPath: ".runtime-support/bun-runtime.json",
+  mode: 0o644,
+}
+
+const claudeManagedFiles: SelectedFile = {
+  source: path.resolve(import.meta.dirname, "../../../prototypes/trellage/claude-managed-files.ts"),
+  role: "claude-managed-files",
+  destination: "/usr/local/lib/trellage/claude-managed-files.ts",
+  buildContextPath: ".runtime-support/claude-managed-files.ts",
+  mode: 0o644,
+}
+
 const selectedFiles = (
   harnessKind: Profile["harness"]["kind"],
   claudeAdapter?: ClaudeRuntimeAdapter,
@@ -104,6 +120,7 @@ const selectedFiles = (
       ]
     case "copilot":
       return [
+        bunRuntimePin,
         {
           property: "copilotEntry",
           role: "runtime-copilot-entry",
@@ -121,8 +138,8 @@ const selectedFiles = (
         {
           property: "finalizeCopilotSeed",
           role: "finalize-copilot-seed",
-          destination: "/src/finalize-copilot-seed.mjs",
-          buildContextPath: "finalize-copilot-seed.mjs",
+          destination: "/src/finalize-copilot-seed.ts",
+          buildContextPath: "finalize-copilot-seed.ts",
           mode: 0o644,
         },
         {
@@ -186,15 +203,19 @@ const selectedFiles = (
         buildContextPath: ".runtime-support/trellage-statusline.sh",
         mode: 0o755,
       }
-      if (claudeMode === "core" && claudeAdapter === undefined) return [entry, outputStyle, sessionBridge, statusline]
+      if (claudeMode === "core" && claudeAdapter === undefined) {
+        return [entry, outputStyle, sessionBridge, statusline, bunRuntimePin, claudeManagedFiles]
+      }
       return [
         entry,
         outputStyle,
+        bunRuntimePin,
+        claudeManagedFiles,
         {
           property: "finalizeClaudeSeed",
           role: "finalize-claude-seed",
-          destination: "/src/finalize-claude-seed.mjs",
-          buildContextPath: "finalize-claude-seed.mjs",
+          destination: "/src/finalize-claude-seed.ts",
+          buildContextPath: "finalize-claude-seed.ts",
           mode: 0o644,
         },
         ...(claudeAdapter === "claude-marketplace"
@@ -230,6 +251,7 @@ const selectedFiles = (
           buildContextPath: "runtime-prime-entry.sh",
           mode: 0o755,
         },
+        bunRuntimePin,
       ]
   }
 }

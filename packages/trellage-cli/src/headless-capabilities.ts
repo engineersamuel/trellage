@@ -1,6 +1,6 @@
 import { Data, Effect, ParseResult, Schema } from "effect"
 
-import type { Profile } from "./profile.js"
+import type { Profile } from "./profile.ts"
 
 const NonEmpty = Schema.String.pipe(Schema.minLength(1))
 

@@ -8,15 +8,15 @@ import {
   runHarnessUpgradeCli,
   type HarnessUpgradeCliOptions,
   type HarnessUpgradeConfirmation,
-} from "../src/harness-upgrade-cli.js"
+} from "../src/harness-upgrade-cli.ts"
 import {
   parseGuideCatalog,
   type CombinedGuideCatalog,
   type HeadlessCapabilitiesV1,
   type NativeGuideCatalogEntry,
   type SandboxGuideCatalogEntry,
-} from "../src/guide-catalog.js"
-import { CommandRunnerError, type CommandRunner, type CommandRunResult } from "../src/guide-launch.js"
+} from "../src/guide-catalog.ts"
+import { CommandRunnerError, type CommandRunner, type CommandRunResult } from "../src/guide-launch.ts"
 
 const headless: HeadlessCapabilitiesV1 = {
   schemaVersion: 1,

@@ -129,7 +129,7 @@ done < <(jq -r '.contracts[].deterministicEvidence[].path' "$ledger" | sort -u)
 if [[ "${TRELLAGE_HEADLESS_SKIP_PUBLICATION_TEST-}" != 1 ]]; then
   (
     cd packages/trellage-cli
-    npm test -- --run test/headless-publication.test.ts
+    bun run test test/headless-publication.test.ts
   ) || fail 'publication gate test failed'
 fi
 

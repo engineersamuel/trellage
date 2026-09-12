@@ -3,9 +3,9 @@ import {
   ContinuationActionStatus,
   ContinuationPlacementKind,
   type ContinuationDraft,
-} from "../../trellage-guide-core/dist/index.js"
-import { ContinuationUiController } from "../src/continuation-ui.js"
-import { RestrictedGuideModelError } from "../src/copilot-guide-provider.js"
+} from "@trellage/guide-core"
+import { ContinuationUiController } from "../src/continuation-ui.tsx"
+import { RestrictedGuideModelError } from "../src/copilot-guide-provider.ts"
 import {
   continuationAction,
   ContinuationField,
@@ -13,12 +13,12 @@ import {
   ContinuationSaveState,
   ContinuationScreen,
   ContinuationTextCommand,
-} from "../src/continuation-ui-state.js"
+} from "../src/continuation-ui-state.ts"
 import {
   continuationFixtureDraft,
   createContinuationServiceFixture,
   ContinuationFixtureEventKind,
-} from "./helpers/continuation-ui-fixtures.js"
+} from "./helpers/continuation-ui-fixtures.ts"
 
 const deferred = <Value>() => {
   let resolve!: (value: Value) => void

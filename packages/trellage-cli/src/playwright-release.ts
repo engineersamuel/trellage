@@ -3,10 +3,10 @@ import { promisify } from "node:util"
 
 import { Data, Effect } from "effect"
 
-import { cacheArtifact } from "./artifact-cache.js"
-import type { ArtifactLock } from "./lock.js"
-import { resolveNpmArtifact } from "./npm-artifact.js"
-import type { Platform } from "./platform.js"
+import { cacheArtifact } from "./artifact-cache.ts"
+import type { ArtifactLock } from "./lock.ts"
+import { resolveNpmArtifact } from "./npm-artifact.ts"
+import type { Platform } from "./platform.ts"
 
 const execFilePromise = promisify(execFile)
 

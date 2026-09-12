@@ -17,9 +17,9 @@ import {
   type Mcp,
   type PrimeProfile,
   type Profile,
-} from "./profile.js"
-import type { ProfileLock } from "./lock.js"
-import type { RuntimeSupportSnapshot } from "./runtime-support.js"
+} from "./profile.ts"
+import type { ProfileLock } from "./lock.ts"
+import type { RuntimeSupportSnapshot } from "./runtime-support.ts"
 
 const quote = (value: string): string => JSON.stringify(value)
 const array = (values: ReadonlyArray<string>): string => `[${values.map(quote).join(", ")}]`
@@ -426,6 +426,9 @@ ${optionalMiseLines(claudeDotfilesBeforeSeed(profile))}"/usr/local/share/trellag
 ${optionalMiseLines(claudeDotfilesAfterSeed(profile, lock))}${renderRuntimeDotfile(options, "runtime-claude-entry")}
 ${renderSessionBridgeDotfile(options)}
 ${renderStatuslineDotfile(options)}
+"/usr/local/lib/trellage/bun" = { source = ".runtime-support/bun", mode = "copy" }
+"/usr/local/lib/trellage/bun-runtime.json" = { source = ".runtime-support/bun-runtime.json", mode = "copy" }
+"/usr/local/lib/trellage/claude-managed-files.ts" = { source = ".runtime-support/claude-managed-files.ts", mode = "copy" }
 "/workspace/.keep" = { source = "workspace.keep", mode = "copy" }
 ${profile.harness.initial_prompt ? '"/usr/local/share/trellage/initial-prompt.md" = { source = "initial-prompt.md", mode = "copy" }' : ""}
 

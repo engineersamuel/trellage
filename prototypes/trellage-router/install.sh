@@ -15,9 +15,9 @@ installed_share="$install_root/share"
 installed_guides="$installed_share/profile-guides"
 legacy_picker="$install_root/lib/terminal-picker.mjs"
 ownership_marker="$install_root/.managed-by-trellage-router"
-# v2 prevents an older router installer from replacing newer guide/catalog
-# support. This installer can migrate a validated v1 runtime once.
-ownership_value='trellage-router-v2'
+installed_source="$install_root/source"
+ownership_value='trellage-router-v3'
+previous_ownership_value='trellage-router-v2'
 legacy_ownership_value='trellage-router-v1'
 
 refuse() {
@@ -44,6 +44,10 @@ require_safe_directory() {
 
 require_owned_runtime_contents() {
   local path
+  if [[ "$(<"$ownership_marker")" == "$ownership_value" ]]; then
+    "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
+      validate-owned "$installed_source" || refuse "unsafe owned source workspace: $installed_source"
+  fi
 
   [[ -e "$install_root/bin" ]] \
     && [[ -d "$install_root/bin" && ! -L "$install_root/bin" ]] \
@@ -75,6 +79,10 @@ require_owned_runtime_contents() {
       "$install_root/lib"|"$install_root/lib/launcher.mjs"|\
       "$installed_dependency_bootstrap"|"$legacy_picker"|\
       "$installed_share"|"$installed_guides") ;;
+      "$installed_source"|"$installed_source"/*)
+        [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
+          || refuse "refusing unrelated runtime path: $path"
+        ;;
       "$installed_guides"/*)
         [[ ! -L "$path" ]] || refuse "refusing symlinked profile guide path: $path"
         if [[ -d "$path" ]]; then
@@ -104,12 +112,15 @@ require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/trx" 'runtime root'
 require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
 
-launcher_bundle="$source_dir/../../packages/trellage-launcher/dist/launcher.mjs"
+repo_root="$(canonical_directory "$source_dir/../..")"
+. "$repo_root/scripts/bun-runtime.sh"
+trellage_bun_runtime "$repo_root"
+source_installer="$repo_root/scripts/install-source-runtime.sh"
 dependency_bootstrap="$source_dir/../../scripts/bootstrap-development-dependencies.sh"
 source_guides="$source_dir/../../profile-guides"
 floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-runtime.sh"
-[[ -f "$launcher_bundle" && ! -L "$launcher_bundle" ]] \
-  || refuse "Ink launcher bundle is missing; run npm run build in packages/trellage-launcher"
+[[ -f "$source_installer" && -x "$source_installer" && ! -L "$source_installer" ]] \
+  || refuse "source runtime installer is missing or unsafe: $source_installer"
 [[ -f "$dependency_bootstrap" && -x "$dependency_bootstrap" && ! -L "$dependency_bootstrap" ]] \
   || refuse "dependency bootstrap is missing or unsafe: $dependency_bootstrap"
 [[ -d "$source_guides" && ! -L "$source_guides" ]] \
@@ -261,6 +272,7 @@ if [[ -e "$install_root" ]]; then
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "refusing unowned runtime root: $install_root"
   if [[ "$(<"$ownership_marker")" != "$ownership_value" ]] \
+    && [[ "$(<"$ownership_marker")" != "$previous_ownership_value" ]] \
     && [[ "$(<"$ownership_marker")" != "$legacy_ownership_value" ]]; then
     refuse "refusing unowned runtime root: $install_root"
   fi
@@ -285,7 +297,7 @@ chmod 0755 \
   "$staging_root/new-runtime/lib" \
   "$staging_root/new-runtime/share" \
   "$staging_root/new-runtime/share/profile-guides"
-install -m 0755 "$launcher_bundle" "$staging_root/new-runtime/lib/launcher.mjs"
+"$source_installer" --stage "$staging_root/new-runtime/source"
 install -m 0755 "$dependency_bootstrap" \
   "$staging_root/new-runtime/lib/bootstrap-development-dependencies.sh"
 install -m 0755 "$source_dir/bin/trx" "$staging_root/new-runtime/bin/trx"
@@ -298,8 +310,10 @@ while IFS= read -r guide_path; do
   install -m 0644 "$guide_path" \
     "$staging_root/new-runtime/share/profile-guides/$relative"
 done < <(find "$source_guides" -type f -name '*.md' -print)
-[[ -z "$(find "$staging_root/new-runtime" -type l -print -quit)" ]] \
-  || refuse 'staged router runtime contains a symlink'
+"${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
+  validate-owned "$staging_root/new-runtime/source"
+[[ -z "$(find "$staging_root/new-runtime" -path "$staging_root/new-runtime/source" -prune -o -type l -print)" ]] \
+  || refuse 'staged router shell contains a symlink'
 [[ "${TRX_INSTALL_TEST_FAIL_AT-}" != after-runtime-staging ]] \
   || refuse 'injected failure at after-runtime-staging'
 
@@ -326,7 +340,6 @@ fi
 [[ "${TRX_INSTALL_TEST_FAIL_AT-}" != after-command-publication ]] \
   || refuse 'injected failure at after-command-publication'
 
-"$floating_runtime_installer"
 publication_active=false
 cleanup_staging
 release_install_lock \

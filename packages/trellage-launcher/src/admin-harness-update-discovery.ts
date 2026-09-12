@@ -1,13 +1,13 @@
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { CommandRunner } from "./guide-launch.js"
-import { AdminRunManager } from "./admin-run-manager.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { CommandRunner } from "./guide-launch.ts"
+import { AdminRunManager } from "./admin-run-manager.ts"
 import {
   harnessVersionOperationKeyFor,
   reconcileHarnessVersionObservations,
   type AdminHarnessVersionResult,
   type AdminInstalledVersionState,
-} from "./admin-harness-version.js"
-import { runBatchedHarnessVersionChecks, type HarnessVersionSchedulerOptions } from "./admin-harness-version-scheduler.js"
+} from "./admin-harness-version.ts"
+import { runBatchedHarnessVersionChecks, type HarnessVersionSchedulerOptions } from "./admin-harness-version-scheduler.ts"
 
 const scopeKeyFor = (entry: AdminProfileEntry): string | undefined => {
   const operation = harnessVersionOperationKeyFor(entry)

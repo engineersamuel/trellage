@@ -4,11 +4,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { renderCodexConfig, renderMiseConfig } from "../src/render.js"
-import type { ProfileLock } from "../src/lock.js"
-import { parseProfile } from "../src/profile.js"
-import { createRuntimeSupportSnapshot } from "../src/runtime-support.js"
-import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
+import { renderCodexConfig, renderMiseConfig } from "../src/render.ts"
+import type { ProfileLock } from "../src/lock.ts"
+import { parseProfile } from "../src/profile.ts"
+import { createRuntimeSupportSnapshot } from "../src/runtime-support.ts"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.ts"
 
 const source = `
 schema = 1
@@ -278,8 +278,8 @@ const runtimePaths = {
   sessionBridge: path.join(runtimeRoot, "trellage-session-bridge.py"),
   piEntry: path.join(runtimeRoot, "runtime-pi-entry.sh"),
   primeEntry: path.join(runtimeRoot, "runtime-prime-entry.sh"),
-  finalizeCopilotSeed: path.join(runtimeRoot, "finalize-copilot-seed.mjs"),
-  finalizeClaudeSeed: path.join(runtimeRoot, "finalize-claude-seed.mjs"),
+  finalizeCopilotSeed: path.join(runtimeRoot, "finalize-copilot-seed.ts"),
+  finalizeClaudeSeed: path.join(runtimeRoot, "finalize-claude-seed.ts"),
   claudeEntry: path.join(runtimeRoot, "runtime-claude-entry.sh"),
   claudeBrowserAgent: path.join(runtimeRoot, "browser-agent.md"),
   claudeOutputStyleRundown: path.join(runtimeRoot, "output-style-rundown.md"),
@@ -632,6 +632,13 @@ rename_exe = "copilot"`)
     )
     expect(rendered).toContain(
       '"/usr/local/bin/trellage-claude-entry" = { source = "runtime-claude-entry.sh", mode = "copy" }',
+    )
+    expect(rendered).toContain('"/usr/local/lib/trellage/bun" = { source = ".runtime-support/bun", mode = "copy" }')
+    expect(rendered).toContain(
+      '"/usr/local/lib/trellage/bun-runtime.json" = { source = ".runtime-support/bun-runtime.json", mode = "copy" }',
+    )
+    expect(rendered).toContain(
+      '"/usr/local/lib/trellage/claude-managed-files.ts" = { source = ".runtime-support/claude-managed-files.ts", mode = "copy" }',
     )
     expect(rendered).toContain(
       '"/usr/local/bin/trellage-session-bridge" = { source = ".runtime-support/trellage-session-bridge", mode = "copy" }',

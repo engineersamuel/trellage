@@ -2,14 +2,14 @@ import React from "react"
 import { renderToString } from "ink"
 import { describe, expect, it, vi } from "vitest"
 
-import { AdminApp } from "../src/admin-ui.js"
-import { AdminRunManager } from "../src/admin-run-manager.js"
-import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import type { CommandRunner } from "../src/guide-launch.js"
+import { AdminApp } from "../src/admin-ui.tsx"
+import { AdminRunManager } from "../src/admin-run-manager.ts"
+import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import type { CommandRunner } from "../src/guide-launch.ts"
 
-vi.mock("../src/admin-harness-version-cache.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/admin-harness-version-cache.js")>()),
+vi.mock("../src/admin-harness-version-cache.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/admin-harness-version-cache.ts")>()),
   loadHarnessVersionCache: async () => ({ schemaVersion: 2, entries: {} }),
   defaultAdminHarnessVersionCachePath: () => "/unused/admin-cache.json",
 }))

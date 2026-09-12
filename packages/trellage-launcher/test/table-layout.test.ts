@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { tableColumns } from "../src/table-layout.js"
-import type { LaunchEntry } from "../src/state.js"
+import { tableColumns } from "../src/table-layout.ts"
+import type { LaunchEntry } from "../src/state.ts"
 
 const entries: ReadonlyArray<LaunchEntry> = [
   {

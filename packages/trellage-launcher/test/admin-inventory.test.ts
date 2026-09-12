@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import { buildInventoryCommand, parseInventoryOutput } from "../src/admin-inventory.js"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { buildInventoryCommand, parseInventoryOutput } from "../src/admin-inventory.ts"
 
 const entry: AdminProfileEntry = {
   ref: "native:cpx:hve",
