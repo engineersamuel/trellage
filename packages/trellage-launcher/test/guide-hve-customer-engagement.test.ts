@@ -7,17 +7,17 @@ import {
   parseProfileGuideIdentity,
   type ProfileGuideIdentity,
   type ProfileGuideWorkflow,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 
-import { workflowPromptFrame } from "../src/guide-workflow-prompt.js"
+import { workflowPromptFrame } from "../src/guide-workflow-prompt.ts"
 import {
   GuideEffort,
   runGuideGenerate,
   selectedProfileFromCatalogRef,
   templatePromptCandidates,
-} from "../src/guide-api.js"
-import { parseGuideCatalog, type CombinedGuideCatalog, type HeadlessCapabilitiesV1 } from "../src/guide-catalog.js"
-import { executeGuideUiResult } from "../src/guide-interactive-execution.js"
+} from "../src/guide-api.ts"
+import { parseGuideCatalog, type CombinedGuideCatalog, type HeadlessCapabilitiesV1 } from "../src/guide-catalog.ts"
+import { executeGuideUiResult } from "../src/guide-interactive-execution.ts"
 import {
   buildCurrentTerminalResult,
   buildCurrentHerdrWorkspaceResult,
@@ -26,10 +26,10 @@ import {
   buildExistingHerdrWorktreeResult,
   pinnedGuideLenses,
   selectedProfileForPinnedLens,
-} from "../src/guide-ui.js"
-import { createQueuedGuideJob, replaceQueuedGuideJobPrompt } from "../src/guide-batch.js"
-import { parseSelectedProfile, type CommandSpec, type HerdrContext } from "../src/guide-launch.js"
-import type { GuideProvider } from "../src/guide-provider.js"
+} from "../src/guide-ui.tsx"
+import { createQueuedGuideJob, replaceQueuedGuideJobPrompt } from "../src/guide-batch.ts"
+import { parseSelectedProfile, type CommandSpec, type HerdrContext } from "../src/guide-launch.ts"
+import type { GuideProvider } from "../src/guide-provider.ts"
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const guideRoot = path.join(repositoryRoot, "profile-guides")

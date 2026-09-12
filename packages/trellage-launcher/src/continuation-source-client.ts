@@ -1,8 +1,8 @@
-import path from "node:path"
-import { conversationSourceKey, type ConversationSnapshot } from "../../trellage-guide-core/dist/index.js"
-import { CommandRunnerError, type CommandRunner } from "./guide-launch.js"
-import type { ContinuationSourceStatus } from "./continuation-services.js"
-import type { ContinuationStore } from "./continuation-store.js"
+import { conversationSourceKey, type ConversationSnapshot } from "@trellage/guide-core/conversation"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
+import { CommandRunnerError, type CommandRunner } from "./guide-launch.ts"
+import type { ContinuationSourceStatus } from "./continuation-services.ts"
+import type { ContinuationStore } from "./continuation-store.ts"
 
 enum SourceOperation {
   Check = "--check",
@@ -39,11 +39,15 @@ export class ContinuationSourceClient {
     const requestPath = await this.options.store.stageRequest(snapshot)
     try {
       const response = await this.options.runner.run(
-        process.execPath,
-        [path.join(this.options.repoRoot, "pocs/herdr-trx-guide/conversation-source.ts"), operation, requestPath],
+        bunExecutable(),
+        bunArguments(new URL(import.meta.resolve("@trellage/conversation-source/cli")), [operation, requestPath]),
         {
           cwd: snapshot.source.cwd,
-          env: this.options.env,
+          env: {
+            ...this.options.env,
+            BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+            TRELLAGE_ROOT: this.options.env.TRELLAGE_ROOT ?? this.options.repoRoot,
+          },
           timeoutMs: 60_000,
           terminationGraceMs: 10_000,
           ...(signal === undefined ? {} : { signal }),

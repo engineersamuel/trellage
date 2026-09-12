@@ -19,21 +19,21 @@ import {
   profileGuideIdentityKey,
   type ProfileGuideV1,
   type ProfileGuideWorkflow,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 import {
   basketBlockPreview,
   basketVisibleRange,
   countLabel,
   countTextLines,
   type BasketBlockPreview,
-} from "./basket.js"
+} from "./basket.ts"
 import {
   GuideAugmentKind,
   GuideAugmentPhase,
   runCodebaseAugment,
   runResearchAugment,
   type GuideAugmentContext,
-} from "./guide-augment.js"
+} from "./guide-augment.ts"
 import {
   GuideGoalError,
   GuideGoalInteractionController,
@@ -43,7 +43,7 @@ import {
   type GuideGoalRequest,
   type GuideGoalResponse,
   type GuideGoalTurn,
-} from "./guide-goal-augment.js"
+} from "./guide-goal-augment.ts"
 import {
   createGuideGoalPanelState,
   GuideGoalPanel,
@@ -51,8 +51,8 @@ import {
   guideGoalPanelReducer,
   type GuideGoalPanelAction,
   type GuideGoalPanelState,
-} from "./guide-goal-augment-ui.js"
-import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.js"
+} from "./guide-goal-augment-ui.tsx"
+import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.tsx"
 import {
   composeGuideGoalCandidate,
   guideGoalApproachBudget,
@@ -62,11 +62,11 @@ import {
   resolveGuideGoalExecution,
   type GuideGoalCandidateContext,
   type PreparedGuideGoal,
-} from "./guide-goal-execution.js"
-import { GuideValidationError } from "./guide-text.js"
-import { runGuideGoalGeneration, runGuideGoalRefinement } from "./guide-goal-generation.js"
-import type { GuideGoalReadinessServices } from "./guide-goal-readiness.js"
-import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.js"
+} from "./guide-goal-execution.ts"
+import { GuideValidationError } from "./guide-text.ts"
+import { runGuideGoalGeneration, runGuideGoalRefinement } from "./guide-goal-generation.ts"
+import type { GuideGoalReadinessServices } from "./guide-goal-readiness.ts"
+import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.ts"
 import {
   applyRequiredProfilePromptTemplate,
   guideIntentMaximumLength,
@@ -85,10 +85,10 @@ import {
   type GuideRecommendation,
   type GuideResolvedModelRouting,
   type PublicGuideCommand,
-} from "./guide-api.js"
-import type { GuideArtifactCache } from "./guide-match-cache.js"
-import type { GuideGenerateCandidate, GuideProvider } from "./guide-provider.js"
-import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.js"
+} from "./guide-api.ts"
+import type { GuideArtifactCache } from "./guide-match-cache.ts"
+import type { GuideGenerateCandidate, GuideProvider } from "./guide-provider.ts"
+import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.ts"
 import {
   GuideCandidatePromptCollisionError,
   GuideCandidatePromptStage,
@@ -99,11 +99,11 @@ import {
   resolveWorkflowBodyCandidate,
   workflowBodyCandidate,
   workflowOptimizeFixedFrame,
-} from "./guide-workflow-prompt.js"
+} from "./guide-workflow-prompt.ts"
 import {
   buildGuideLaunchCommand,
   buildHerdrGuideLaunch,
-  defaultWorktreeBranch,
+  suggestWorktreeBranch,
   getHerdrContext,
   inspectGitWorktreeIntent,
   parseSelectedProfile,
@@ -120,12 +120,15 @@ import {
   type PromptHandlingMode,
   type SelectedProfile,
   type WorktreeCollisionResult,
-} from "./guide-launch.js"
-import { checkSelectedProfileReadiness, ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.js"
+} from "./guide-launch.ts"
+import { checkSelectedProfileReadiness, ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.ts"
 import {
   describeJobPlacement,
   emptyGuideQueue,
   enqueueGuideJob,
+  findGuideQueueConflict,
+  GuideQueueConflictError,
+  reservedWorktreeBranches,
   removeQueuedGuideJobById,
   removeSelectedQueuedGuideJob,
   replaceQueuedGuideJob,
@@ -139,7 +142,7 @@ import {
   type GuideQueueState,
   type QueuedGuideJob,
   type JobPlacement,
-} from "./guide-batch.js"
+} from "./guide-batch.ts"
 
 export {
   MarkdownTextViewport,
@@ -148,7 +151,7 @@ export {
   wrapGuideText,
   type MarkdownDisplayLine,
   type MarkdownInlineSegment,
-} from "./guide-markdown.js"
+} from "./guide-markdown.tsx"
 
 // ---------------------------------------------------------------------------
 // Shared small helpers.
@@ -1940,7 +1943,7 @@ const reduceDestination = (state: GuideUiState, action: GuideUiAction): GuideUiS
         ? {
             ...state,
             stage: GuideUiStage.WorktreeBranchEditor,
-            textDraft: defaultWorktreeBranch(guideBranchIntent(state) ?? ""),
+            textDraft: suggestedQueueBranch(state),
             worktreeInspection: undefined,
             errorMessage: undefined,
             worktreeReturnStage: GuideUiStage.Destination,
@@ -2078,18 +2081,47 @@ const enqueueSelectedCandidate = (
   if (state.candidates === undefined || profile === undefined) return state
   const candidate = tripleAt(state.candidates, state.candidateIndex)
   const prompt = candidate.prompt
-  const held = state.forks.find((fork) => fork.id === state.activeForkId)?.jobId
+  const held = heldQueueJobId(state)
+  let queue: GuideQueueState
+  try {
+    queue =
+      held === undefined
+        ? enqueueGuideJob(state.queue, profile, prompt, placement, candidate.goalExecution)
+        : replaceQueuedGuideJob(state.queue, held, profile, prompt, placement, candidate.goalExecution)
+  } catch (error) {
+    if (!(error instanceof GuideQueueConflictError)) throw error
+    const draft = state.textDraft.trim() === error.branch ? state.textDraft : error.branch
+    return queueConflictState(state, error, draft)
+  }
   return {
     ...bindActiveForkToJob(state, held ?? state.queue.nextId),
     stage: GuideUiStage.Queue,
-    queue:
-      held === undefined
-        ? enqueueGuideJob(state.queue, profile, prompt, placement, candidate.goalExecution)
-        : replaceQueuedGuideJob(state.queue, held, profile, prompt, placement, candidate.goalExecution),
+    queue,
     ...(primaryCheckoutPath === undefined ? {} : { primaryCheckoutPath }),
     errorMessage: undefined,
   }
 }
+
+const heldQueueJobId = (state: GuideUiState): number | undefined =>
+  state.forks.find((fork) => fork.id === state.activeForkId)?.jobId
+
+const suggestedQueueBranch = (state: GuideUiState): string => {
+  const held = heldQueueJobId(state)
+  const placement = state.queue.entries.find((job) => job.id === held)?.placement
+  if (placement?.kind === "new-worktree") return placement.branch
+  if (state.selectedProfile === undefined) throw new Error("A worktree suggestion requires a selected profile.")
+  return suggestWorktreeBranch(guideBranchIntent(state) ?? "", state.selectedProfile, reservedWorktreeBranches(state.queue, held))
+}
+
+const queueConflictState = (state: GuideUiState, error: GuideQueueConflictError, branch: string): GuideUiState => ({
+  ...state,
+  stage: GuideUiStage.WorktreeBranchEditor,
+  textDraft: branch,
+  worktreeBranch: undefined,
+  worktreeInspection: undefined,
+  worktreeConfirmations: 0,
+  errorMessage: error.message,
+})
 
 const reduceQueuePlacement = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
@@ -2112,7 +2144,7 @@ const reduceQueuePlacement = (state: GuideUiState, action: GuideUiAction): Guide
         ? {
             ...state,
             stage: GuideUiStage.WorktreeBranchEditor,
-            textDraft: defaultWorktreeBranch(guideBranchIntent(state) ?? "queue"),
+            textDraft: suggestedQueueBranch(state),
             worktreeInspection: undefined,
             worktreeReturnStage: GuideUiStage.QueuePlacement,
             errorMessage: undefined,
@@ -2127,7 +2159,11 @@ const reduceQueuePlacement = (state: GuideUiState, action: GuideUiAction): Guide
 
 const reduceWorktreeBranch = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
-    case GuideUiActionType.WorktreeSubmitBranch:
+    case GuideUiActionType.WorktreeSubmitBranch: {
+      if (state.stage === GuideUiStage.WorktreeBranchEditor) {
+        const conflict = findGuideQueueConflict(state.queue, state.textDraft, heldQueueJobId(state))
+        if (conflict !== undefined) return queueConflictState(state, conflict, state.textDraft)
+      }
       return state.stage === GuideUiStage.WorktreeBranchEditor && state.textDraft.trim().length > 0
         ? {
             ...state,
@@ -2136,6 +2172,7 @@ const reduceWorktreeBranch = (state: GuideUiState, action: GuideUiAction): Guide
             errorMessage: undefined,
           }
         : state
+    }
 
     case GuideUiActionType.WorktreeInvalidBranch:
       return state.stage === GuideUiStage.InspectingWorktree

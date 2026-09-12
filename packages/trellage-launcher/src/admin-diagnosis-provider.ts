@@ -26,8 +26,8 @@ import {
   GuideModelResponseError,
   type GuideModelClient,
   type GuideModelSession,
-} from "./copilot-guide-provider.js"
-import type { GuideReasoningEffort } from "./guide-model-routing.js"
+} from "./copilot-guide-provider.ts"
+import type { GuideReasoningEffort } from "./guide-model-routing.ts"
 
 export interface DoctorFailureDiagnosisRequest {
   readonly ref: string

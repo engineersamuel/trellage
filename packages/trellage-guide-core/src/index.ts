@@ -2,8 +2,8 @@ import { parse } from "yaml"
 import { lstat, readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 
-export * from "./conversation.js"
-export * from "./conversation-sanitization.js"
+export * from "./conversation.ts"
+export * from "./conversation-sanitization.ts"
 
 export type ProfileGuideIdentity =
   | {

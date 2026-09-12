@@ -8,11 +8,11 @@ import {
   type GuideHeadlessArgs,
   type GuideResolvedModelRouting,
   type GuideServiceRequest,
-} from "./guide-api.js"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.js"
-import { CopilotGuideProvider } from "./copilot-guide-provider.js"
-import { GuideArtifactCache } from "./guide-match-cache.js"
-import { loadDefaultGuidePrompts } from "./guide-prompts.js"
+} from "./guide-api.ts"
+import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.ts"
+import { CopilotGuideProvider } from "./copilot-guide-provider.ts"
+import { GuideArtifactCache } from "./guide-match-cache.ts"
+import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
 
 const maximumCatalogBytes = 8 * 1024 * 1024
 

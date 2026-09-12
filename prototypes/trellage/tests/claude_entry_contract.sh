@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${TRELLAGE_CLAUDE_FIXTURE_ACTIVE-}" != 1 ]]; then
+  exec bash "$(dirname "${BASH_SOURCE[0]}")/run-claude-entry-contract.sh"
+fi
+
+trap 'printf "Claude entry contract failed at line %s\n" "$LINENO" >&2' ERR
 root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-claude-entry.XXXXXX")"
 trap 'rm -rf "$root"' EXIT
 
@@ -109,6 +114,13 @@ fi
 exit "${CLAUDE_EXIT:-0}"
 SH
 chmod +x "$fake_bin/claude"
+
+cat >"$fake_bin/node" <<'SH'
+#!/usr/bin/env bash
+printf 'the Claude source runtime must not invoke Node\n' >&2
+exit 99
+SH
+chmod +x "$fake_bin/node"
 
 args_out="$root/args"
 config_out="$root/config"
@@ -605,33 +617,10 @@ printf '{"enabledPlugins":[]}\n' >"$core_seed/plugin-settings.json"
 printf '{"outputStyle":"Explanatory","preserve":"core-user-state"}\n' \
   >"$core_runtime/settings.json"
 cp "$core_runtime/settings.json" "$root/core-settings.before"
-rollback_race_hook="$root/rollback-race-hook.cjs"
-cat >"$rollback_race_hook" <<'JS'
-const fs = require('node:fs')
-const path = require('node:path')
-
-const target = path.resolve(process.env.TRELLAGE_TEST_ROLLBACK_RACE_PATH)
-const marker = path.resolve(process.env.TRELLAGE_TEST_ROLLBACK_RACE_MARKER)
-const originalRenameSync = fs.renameSync.bind(fs)
-
-fs.renameSync = (source, destination) => {
-  if (
-    path.resolve(source) === target &&
-    destination.includes(`${path.sep}rollback-removed${path.sep}`) &&
-    !fs.existsSync(marker)
-  ) {
-    const replacement = `${target}.concurrent-replacement`
-    fs.writeFileSync(replacement, 'concurrent rollback replacement\n')
-    originalRenameSync(replacement, target)
-    fs.writeFileSync(marker, '')
-  }
-  return originalRenameSync(source, destination)
-}
-JS
 if PATH="$fake_bin:$PATH" \
-  NODE_OPTIONS="--require=$rollback_race_hook" \
-  TRELLAGE_TEST_ROLLBACK_RACE_PATH="$core_runtime/output-styles/rundown.md" \
-  TRELLAGE_TEST_ROLLBACK_RACE_MARKER="$root/rollback-race-marker" \
+  TRELLAGE_TEST_MANAGED_RACE=rollback \
+  TRELLAGE_TEST_MANAGED_RACE_PATH="$core_runtime/output-styles/rundown.md" \
+  TRELLAGE_TEST_MANAGED_RACE_MARKER="$root/rollback-race-marker" \
   TRELLAGE_CLAUDE_SEED_HOME="$core_seed" TRELLAGE_CLAUDE_HOME="$core_runtime" \
   TRELLAGE_CLAUDE_MODE=core TRELLAGE_CLAUDE_RUNTIME_MODE=core \
   TRELLAGE_CLAUDE_AUTH_MODE=native \
@@ -668,31 +657,10 @@ printf 'pre-transaction snapshot\n' >"$snapshot_runtime/output-styles/rundown.md
 printf 'output-styles/rundown.md\n' >"$snapshot_runtime/.trellage-claude-managed"
 printf '{"outputStyle":"Explanatory","preserve":"snapshot-user-state"}\n' \
   >"$snapshot_runtime/settings.json"
-snapshot_race_hook="$root/snapshot-race-hook.cjs"
-cat >"$snapshot_race_hook" <<'JS'
-const fs = require('node:fs')
-const path = require('node:path')
-
-const target = path.resolve(process.env.TRELLAGE_TEST_SNAPSHOT_RACE_PATH)
-const marker = path.resolve(process.env.TRELLAGE_TEST_SNAPSHOT_RACE_MARKER)
-const originalRenameSync = fs.renameSync.bind(fs)
-
-fs.renameSync = (source, destination) => {
-  if (
-    path.resolve(source) === target &&
-    destination.includes(`${path.sep}prior-removed${path.sep}`) &&
-    !fs.existsSync(marker)
-  ) {
-    fs.writeFileSync(target, 'concurrent in-place edit\n')
-    fs.writeFileSync(marker, '')
-  }
-  return originalRenameSync(source, destination)
-}
-JS
 if PATH="$fake_bin:$PATH" \
-  NODE_OPTIONS="--require=$snapshot_race_hook" \
-  TRELLAGE_TEST_SNAPSHOT_RACE_PATH="$snapshot_runtime/output-styles/rundown.md" \
-  TRELLAGE_TEST_SNAPSHOT_RACE_MARKER="$root/snapshot-race-marker" \
+  TRELLAGE_TEST_MANAGED_RACE=snapshot \
+  TRELLAGE_TEST_MANAGED_RACE_PATH="$snapshot_runtime/output-styles/rundown.md" \
+  TRELLAGE_TEST_MANAGED_RACE_MARKER="$root/snapshot-race-marker" \
   TRELLAGE_CLAUDE_SEED_HOME="$snapshot_seed" TRELLAGE_CLAUDE_HOME="$snapshot_runtime" \
   TRELLAGE_CLAUDE_MODE=core TRELLAGE_CLAUDE_RUNTIME_MODE=core \
   TRELLAGE_CLAUDE_AUTH_MODE=native \
@@ -730,57 +698,17 @@ printf 'output-styles/rundown.md\n' >"$crash_seed/managed-paths.txt"
 printf '{"enabledPlugins":[]}\n' >"$crash_seed/plugin-settings.json"
 printf '{"outputStyle":"Explanatory","preserve":"crash-user-state"}\n' \
   >"$crash_runtime/settings.json"
-rollback_crash_hook="$root/rollback-crash-hook.cjs"
-cat >"$rollback_crash_hook" <<'JS'
-const fs = require('node:fs')
-const path = require('node:path')
-
-const target = path.resolve(process.env.TRELLAGE_TEST_ROLLBACK_CRASH_PATH)
-const marker = path.resolve(process.env.TRELLAGE_TEST_ROLLBACK_CRASH_MARKER)
-const originalRenameSync = fs.renameSync.bind(fs)
-
-fs.renameSync = (source, destination) => {
-  if (
-    path.resolve(source) === target &&
-    destination.includes(`${path.sep}rollback-removed${path.sep}`) &&
-    !fs.existsSync(marker)
-  ) {
-    const replacement = `${target}.concurrent-replacement`
-    fs.writeFileSync(replacement, 'crash-window replacement\n')
-    originalRenameSync(replacement, target)
-    originalRenameSync(target, destination)
-    fs.writeFileSync(marker, '')
-    process.kill(process.ppid, 'SIGKILL')
-    process.kill(process.pid, 'SIGKILL')
-  }
-  return originalRenameSync(source, destination)
-}
-JS
 if PATH="$fake_bin:$PATH" \
-  TRELLAGE_TEST_ROLLBACK_CRASH_PATH="$crash_runtime/output-styles/rundown.md" \
-  TRELLAGE_TEST_ROLLBACK_CRASH_MARKER="$root/rollback-crash-marker" \
+  TRELLAGE_TEST_MANAGED_RACE=crash \
+  TRELLAGE_TEST_MANAGED_RACE_PATH="$crash_runtime/output-styles/rundown.md" \
+  TRELLAGE_TEST_MANAGED_RACE_MARKER="$root/rollback-crash-marker" \
   TRELLAGE_CLAUDE_SEED_HOME="$crash_seed" TRELLAGE_CLAUDE_HOME="$crash_runtime" \
   TRELLAGE_CLAUDE_MODE=core TRELLAGE_CLAUDE_RUNTIME_MODE=core \
   TRELLAGE_CLAUDE_AUTH_MODE=native \
   CLAUDE_ARGS_OUT="$root/crash-args" CLAUDE_CONFIG_OUT="$root/crash-config" \
   CLAUDE_CONFIG_PATH_OUT="$root/crash-config-path" CLAUDE_ENV_OUT="$root/crash-env" \
-  node - \
-    "$entry" "$root/crash.out" "$root/crash.err" "$rollback_crash_hook" <<'NODE'
-const fs = require('node:fs')
-const { spawnSync } = require('node:child_process')
-
-const [entry, stdoutPath, stderrPath, hook] = process.argv.slice(2)
-const stdout = fs.openSync(stdoutPath, 'w')
-const stderr = fs.openSync(stderrPath, 'w')
-const result = spawnSync(entry, ['new', 'claude', '--print', 'hello'], {
-  env: { ...process.env, NODE_OPTIONS: `--require=${hook}` },
-  stdio: ['ignore', stdout, stderr],
-})
-fs.closeSync(stdout)
-fs.closeSync(stderr)
-if (result.error) throw result.error
-process.exit(result.signal === 'SIGKILL' ? 1 : (result.status ?? 1))
-NODE
+  /usr/local/lib/trellage/bun-real --no-install --no-env-file --config=/dev/null \
+    /fixture/tests/fixtures/claude-entry-crash.ts -- "$entry" "$root/crash.out" "$root/crash.err"
 then
   printf 'expected rollback crash injection to terminate the entrypoint\n' >&2
   exit 1

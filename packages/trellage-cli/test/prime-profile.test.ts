@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { profileMetadata } from "../src/application.js"
-import { isPrimeProfile, parseProfile } from "../src/profile.js"
+import { profileMetadata } from "../src/application.ts"
+import { isPrimeProfile, parseProfile } from "../src/profile.ts"
 
 const profilePath = fileURLToPath(new URL("../../../profiles/prime-agent/profile.toml", import.meta.url))
 

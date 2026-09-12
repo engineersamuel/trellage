@@ -44,13 +44,31 @@ package_manifest="$(npm pack --dry-run --ignore-scripts --json)" \
 jq -e '
   .[0].files
   | any(.path == "scripts/trellage-session-bridge.py")
-    and any(.path == "scripts/floating-skills.mjs")
+    and any(.path == "scripts/floating-skills.ts")
     and any(.path == "scripts/install-floating-skills-runtime.sh")
-    and any(.path == "scripts/native-environment.mjs")
+    and any(.path == "scripts/native-environment.ts")
     and any(.path == "scripts/install-native-environment-runtime.sh")
+    and any(.path == "scripts/bun-runtime.sh")
+    and any(.path == "scripts/install-source-runtime.sh")
+    and any(.path == "scripts/run-source.sh")
+    and any(.path == "bin/trellage.ts")
+    and any(.path == "bin/trx.ts")
+    and any(.path == "bun.lock")
+    and any(.path == "bunfig.toml")
+    and any(.path == "tsconfig.base.json")
+    and any(.path == "packages/trellage-cli/src/cli.ts")
+    and any(.path == "packages/trellage-guide-core/src/index.ts")
+    and any(.path == "packages/trellage-guide-core/src/conversation.ts")
+    and any(.path == "packages/trellage-launcher/src/cli.tsx")
+    and any(.path == "packages/trellage-conversation-source/src/cli.ts")
+    and any(.path == "packages/trellage-runtime/src/index.ts")
+    and any(.path == "packages/trellage-runtime/src/workspace.ts")
+    and any(.path == "packages/trellage-runtime/src/workspace-cli.ts")
+    and any(.path == "packages/trellage-runtime/bunfig.toml")
     and any(.path == "skills.json")
+    and all(.path | test("^packages/[^/]+/dist/") | not)
 ' <<<"$package_manifest" >/dev/null \
-  || fail 'npm package omits a required Trellage runtime helper'
+  || fail 'npm package omits required Trellage source or includes an application build'
 jq -e '
   .[0].files | all(.path | test("(^|/)(\\.contract-fixture\\.[^/]+|\\.contract-work)(/|$)") | not)
 ' <<<"$package_manifest" >/dev/null \

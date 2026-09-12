@@ -11,11 +11,11 @@ import {
   runCodebaseAugment,
   runResearchAugment,
   type GuideAugmentContext,
-} from "../src/guide-augment.js"
-import type { CombinedGuideCatalog } from "../src/guide-catalog.js"
-import { guideIntentMaximumLength } from "../src/guide-api.js"
-import type { CommandRunOptions, CommandRunResult, CommandRunner } from "../src/guide-launch.js"
-import type { GuideEnrichInput, GuideProvider } from "../src/guide-provider.js"
+} from "../src/guide-augment.ts"
+import type { CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import { guideIntentMaximumLength } from "../src/guide-api.ts"
+import type { CommandRunOptions, CommandRunResult, CommandRunner } from "../src/guide-launch.ts"
+import type { GuideEnrichInput, GuideProvider } from "../src/guide-provider.ts"
 
 interface RecordedCall {
   readonly executable: string

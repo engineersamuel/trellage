@@ -8,12 +8,12 @@ import {
   RestrictedGuideModelError,
   runRestrictedGuideModelRequest,
   type RestrictedGuideModelClient,
-} from "./copilot-guide-provider.js"
+} from "./copilot-guide-provider.ts"
 import type { CopilotClientOptions } from "@github/copilot-sdk"
-import type { GuideReasoningEffort } from "./guide-model-routing.js"
-import { readRewriteCache, writeRewriteCache, validateSavedRewrite, type RewriteCacheKey } from "./rewrite-state.js"
+import type { GuideReasoningEffort } from "./guide-model-routing.ts"
+import { readRewriteCache, writeRewriteCache, validateSavedRewrite, type RewriteCacheKey } from "./rewrite-state.ts"
 
-export { RestrictedGuideEventType, RestrictedGuideModelError } from "./copilot-guide-provider.js"
+export { RestrictedGuideEventType, RestrictedGuideModelError } from "./copilot-guide-provider.ts"
 
 const maximumInputBytes = 512 * 1024
 const maximumMessageCharacters = 60_000
@@ -452,9 +452,9 @@ export const runContextMenuRewriteInWorker = async (
   return new Promise<ContextMenuRewriteResponse>((resolve, reject) => {
     let child: ChildProcess
     try {
-      child = spawnProcess(process.execPath, [workerScript, "rewrite-context", "--worker"], {
+      child = spawnProcess(bunExecutable(), bunArguments(workerScript, ["rewrite-context", "--worker"]), {
         cwd: process.cwd(),
-        env: { ...process.env },
+        env: sourceEnvironment(process.env),
         shell: false,
         windowsHide: true,
         detached: true,
@@ -587,3 +587,4 @@ export const runContextMenuCommand = async ({
     throw error
   }
 }
+import { bunArguments, bunExecutable, sourceEnvironment } from "@trellage/runtime"

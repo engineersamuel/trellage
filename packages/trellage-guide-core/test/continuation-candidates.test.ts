@@ -13,7 +13,7 @@ import {
   validateContinuationDraft,
   type ContinuationDraft,
   type ContinuationPromptCandidate,
-} from "../src/conversation.js"
+} from "../src/conversation.ts"
 
 const candidates = (): ReadonlyArray<ContinuationPromptCandidate> => [
   {

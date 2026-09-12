@@ -9,10 +9,11 @@ fail() {
   exit 1
 }
 
-fixture="$(mktemp -d "${TMPDIR:-/tmp}/trellage-pstack-contract.XXXXXX")"
-case "$fixture" in "${TMPDIR:-/tmp}"/trellage-pstack-contract.*) ;; *) fail 'unsafe fixture root' ;; esac
+fixture_parent="$(CDPATH= cd -P -- "${TMPDIR:-/tmp}" && pwd -P)"
+fixture="$(mktemp -d "$fixture_parent/trellage-pstack-contract.XXXXXX")"
+case "$fixture" in "$fixture_parent"/trellage-pstack-contract.*) ;; *) fail 'unsafe fixture root' ;; esac
 cleanup() {
-  case "$fixture" in "${TMPDIR:-/tmp}"/trellage-pstack-contract.*) rm -rf -- "$fixture" ;; esac
+  case "$fixture" in "$fixture_parent"/trellage-pstack-contract.*) rm -rf -- "$fixture" ;; esac
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -23,20 +24,23 @@ state="$fixture/state"
 common_runtime="$fixture/common/floating-skills-runtime"
 shared_cache="$home/.local/share/trellage/common/cdx-skills"
 mkdir -p "$runtime/bin" "$runtime/lib" "$fake_bin" "$state" "$home" \
-  "$common_runtime" "$shared_cache/skills/fixture-personal"
+  "$fixture/common" "$shared_cache/skills/fixture-personal"
 cp "$root/bin/cdx" "$runtime/bin/cdx"
 cp "$root/catalog.json" "$runtime/catalog.json"
 cp "$root/../trellage-codex-common/native-codex" "$runtime/lib/native-codex"
 cp "$root/../trellage-codex-common/codex-config.py" "$runtime/lib/"
-cp "$root/../trellage-codex-common/codex-agents.mjs" "$runtime/lib/"
+cp "$root/../trellage-codex-common/codex-agents.ts" "$runtime/lib/"
+cp "$root/../trellage-claude-common/native-skills.ts" "$runtime/"
 cp -R "$root/../trellage-codex-common/agents" "$runtime/lib/"
 cp "$repository_root/scripts/trellage-session-bridge.py" \
   "$runtime/lib/trellage-session-bridge.py"
 chmod 0755 "$runtime/bin/cdx" "$runtime/lib/native-codex" \
   "$runtime/lib/trellage-session-bridge.py"
-install -m 0555 "$repository_root/scripts/floating-skills.mjs" \
-  "$common_runtime/floating-skills.mjs"
-install -m 0444 "$repository_root/skills.json" "$common_runtime/skills.json"
+HOME="$home" "$repository_root/scripts/install-source-runtime.sh" --stage "$common_runtime" \
+  >"$fixture/source-install.log" 2>&1 || {
+  cat "$fixture/source-install.log" >&2
+  fail 'could not stage source runtime fixture'
+}
 printf '%s\n' '# Fixture skill' >"$shared_cache/skills/fixture-personal/SKILL.md"
 printf '%s\n' fixture-personal >"$shared_cache/managed-skills.txt"
 : >"$shared_cache/always-on.md"

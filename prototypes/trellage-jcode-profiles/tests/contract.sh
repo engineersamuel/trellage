@@ -155,7 +155,7 @@ profile_home="$profile_root/home"
   || fail 'command symlink target differs'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
-cmp -s "$runtime_root/config-manager.mjs" "$root/config-manager.mjs" \
+cmp -s "$runtime_root/config-manager.ts" "$root/config-manager.ts" \
   || fail 'installer did not publish config manager'
 
 "$command_path" list --json >"$fixture_root/list.json" || fail 'JSON list failed'
@@ -633,7 +633,7 @@ HOME="$fixture_root/unrelated-home" "$runtime_root/bin/jcx" update \
 
 "$installer" >"$fixture_root/legacy-layout-install.out" \
   || fail 'legacy-layout reinstall failed'
-rm "$runtime_root/config-manager.mjs"
+rm "$runtime_root/config-manager.ts"
 "$uninstaller" >"$fixture_root/legacy-layout-uninstall.out" \
   || fail 'uninstaller rejected a legacy owned runtime'
 [[ ! -e "$runtime_root" ]] || fail 'legacy-layout uninstall left runtime'

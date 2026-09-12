@@ -99,7 +99,6 @@ if [[ -L "$legacy_command" ]]; then
   esac
 fi
 
-mkdir -p "$install_root/bin" "$installed_extensions_dir" "$command_dir"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prx" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/prx/bin" 'runtime bin'
 require_safe_directory "$install_root/assets" "$canonical_home/.local/share/trellage/prx/assets" 'runtime assets'
@@ -120,6 +119,12 @@ done
 [[ ! -L "$installed_extension" && ( ! -e "$installed_extension" || -f "$installed_extension" ) ]] \
   || refuse "unsafe managed extension: $installed_extension"
 
+"$source_dir/../../scripts/install-floating-skills-runtime.sh"
+mkdir -p "$install_root/bin" "$installed_extensions_dir" "$command_dir"
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prx" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/prx/bin" 'runtime bin'
+require_safe_directory "$installed_extensions_dir" \
+  "$canonical_home/.local/share/trellage/prx/assets/extensions" 'runtime extensions'
 launcher_stage="$(mktemp "$install_root/bin/.prx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
 extension_stage="$(mktemp "$installed_extensions_dir/.ask-user.XXXXXX")"
@@ -142,6 +147,6 @@ if [[ ! -L "$command_path" ]]; then
   mv "$command_stage" "$command_path"
 fi
 
-node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
+  "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
 printf 'Installed prx at %s\n' "$command_path"
-"$source_dir/../../scripts/install-floating-skills-runtime.sh"

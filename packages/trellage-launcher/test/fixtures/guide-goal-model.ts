@@ -2,11 +2,11 @@ import assert from "node:assert/strict"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { ModelInfo } from "@github/copilot-sdk"
-import { CopilotGuideProvider, type GuideModelClient } from "../../src/copilot-guide-provider.js"
-import { defaultGuideModelRouting } from "../../src/guide-model-routing.js"
-import type { GuideGenerateResult, GuideMatchResult } from "../../src/guide-provider.js"
-import { record as readRecord } from "../../src/guide-text.js"
-import type { FixtureEvent, RecordFixtureEvent } from "./guide-integration-data.js"
+import { CopilotGuideProvider, type GuideModelClient } from "../../src/copilot-guide-provider.ts"
+import { defaultGuideModelRouting } from "../../src/guide-model-routing.ts"
+import type { GuideGenerateResult, GuideMatchResult } from "../../src/guide-provider.ts"
+import { record as readRecord } from "../../src/guide-text.ts"
+import type { FixtureEvent, RecordFixtureEvent } from "./guide-integration-data.ts"
 
 type GoalModelPhase = Extract<FixtureEvent, { readonly kind: "goal-model-input" }>["phase"]
 

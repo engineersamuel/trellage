@@ -9,16 +9,16 @@ import {
   type RestrictedGuideModelClient,
   type RestrictedGuideModelRequest,
   type RestrictedGuideModelSession,
-} from "../src/copilot-guide-provider.js"
+} from "../src/copilot-guide-provider.ts"
 import {
   analyzeConversation,
   continuationModelInputBudget,
   continuationPolicy,
   createCopilotContinuationProvider,
   type ContinuationSummaryInput,
-} from "../src/continuation-provider.js"
-import type { GuideGenerateInput } from "../src/guide-provider.js"
-import { assessmentFixture, continuationEntries, conversationFixture, summaryFixture } from "./helpers/continuation-provider-fixtures.js"
+} from "../src/continuation-provider.ts"
+import type { GuideGenerateInput } from "../src/guide-provider.ts"
+import { assessmentFixture, continuationEntries, conversationFixture, summaryFixture } from "./helpers/continuation-provider-fixtures.ts"
 
 const deferred = <Value>() => {
   let resolve!: (value: Value) => void

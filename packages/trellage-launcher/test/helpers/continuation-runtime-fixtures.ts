@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdtemp, realpath } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseGuideCatalog } from "../../src/guide-catalog.js"
+import { parseGuideCatalog } from "../../src/guide-catalog.ts"
 import {
   ActionAccess,
   ActionImportance,
@@ -12,7 +12,7 @@ import {
   ConversationSurface,
   type ContinuationAssessment,
   type ConversationSnapshot,
-} from "../../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 
 export const createContinuationFixtureRoot = async (): Promise<string> => {
   // Match the store tests: shared temporary ancestors are intentionally rejected.

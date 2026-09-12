@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { selectProfilePath } from "../src/selection.js"
+import { selectProfilePath } from "../src/selection.ts"
 
 describe("profile precedence", () => {
   const paths = new Set([

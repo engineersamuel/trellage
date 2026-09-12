@@ -1,9 +1,9 @@
 import { parse } from "smol-toml"
 import { Data, Effect } from "effect"
 
-import { cacheArtifact } from "./artifact-cache.js"
-import type { ArtifactLock } from "./lock.js"
-import type { Platform } from "./platform.js"
+import { cacheArtifact } from "./artifact-cache.ts"
+import type { ArtifactLock } from "./lock.ts"
+import type { Platform } from "./platform.ts"
 
 export class RustReleaseError extends Data.TaggedError("RustReleaseError")<{
   readonly message: string

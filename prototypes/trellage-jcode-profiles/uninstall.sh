@@ -20,7 +20,9 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 install_root="$home/.local/share/trellage/jcx"
 installed_launcher="$install_root/bin/jcx"
 installed_catalog="$install_root/catalog.json"
-installed_config_manager="$install_root/config-manager.mjs"
+installed_config_manager="$install_root/config-manager.ts"
+[[ -e "$installed_config_manager" || -L "$installed_config_manager" ]] \
+  || installed_config_manager="$install_root/config-manager.mjs"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
 command_path="$home/.local/bin/jcx"
 

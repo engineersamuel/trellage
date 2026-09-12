@@ -3,13 +3,6 @@ set +x
 set -euo pipefail
 ulimit -c 0 2>/dev/null || true
 
-# Reuse V8's compiled bytecode across invocations. Every `node` call below pays
-# a compile cost for the profile compiler and the 3.5MB launcher bundle; a warm
-# cache measured 47-55ms against 68ms cold for the launcher. Node 22 ships this
-# natively, and an unwritable or stale cache directory degrades to a normal
-# cold start rather than failing.
-export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/trellage/node-compile-cache}"
-
 resolve_script_path() {
   local candidate="$1"
   local candidate_dir link_target
@@ -438,39 +431,31 @@ case "$mode" in
 esac
 
 prototype_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+source_workspace="$(cd -P "$prototype_dir/../.." && pwd -P)"
+[[ -f "$source_workspace/scripts/bun-runtime.sh" && ! -L "$source_workspace/scripts/bun-runtime.sh" ]] \
+  || fail "source runtime helper is missing or unsafe: $source_workspace"
+. "$source_workspace/scripts/bun-runtime.sh"
+trellage_bun_runtime "$source_workspace" || fail 'Bun source runtime is unavailable'
 if [[ "${1:-}" == skills-check ]]; then
-  compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
+  compiler="$prototype_dir/../../packages/trellage-cli/src/cli.ts"
   [[ -f "$compiler" && ! -L "$compiler" ]] || fail 'refresh the installed profile compiler for skills-check'
-  export NODE_DISABLE_COMPILE_CACHE=1
-  exec node "$compiler" "$@"
-fi
-dependency_bootstrap="$prototype_dir/../../scripts/bootstrap-development-dependencies.sh"
-if [[ "$mode" != session-bridge || "$session_command" == final-message ]]; then
-  [[ ! -x "$dependency_bootstrap" ]] || "$dependency_bootstrap" --background
+  trellage_require_source_runtime "$source_workspace" || fail 'source dependencies are not ready'
+  exec "${trellage_bun[@]}" "$compiler" "$@"
 fi
 compiler_package_dir="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)"
 guide_core_package_dir="$(cd "$prototype_dir/../../packages/trellage-guide-core" && pwd -P)"
-compiler="$compiler_package_dir/dist/cli.js"
-headless_event_bridge="$compiler_package_dir/dist/headless-event-bridge.js"
+compiler="$compiler_package_dir/src/cli.ts"
+headless_event_bridge="$compiler_package_dir/src/headless-event-bridge.ts"
 compiler_fingerprint="$prototype_dir/../../scripts/profile-compiler-fingerprint.sh"
-compiler_stamp="$compiler_package_dir/dist/.source-hash"
-varlock="$prototype_dir/../../packages/trellage-cli/node_modules/.bin/varlock"
-picker="$prototype_dir/../../packages/trellage-launcher/dist/launcher.mjs"
+varlock="$("${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" \
+  dependency "$source_workspace" varlock)/bin/cli.js"
+picker="$source_workspace/packages/trellage-launcher/src/cli.tsx"
 
 profile_compiler_is_fresh() {
-  local actual_fingerprint expected_fingerprint
-  [[ -f "$compiler" && -x "$compiler_fingerprint" ]] || return 1
-  [[ -f "$guide_core_package_dir/node_modules/yaml/package.json" \
-    || -f "$prototype_dir/../../packages/node_modules/yaml/package.json" \
-    || -f "$prototype_dir/../../node_modules/yaml/package.json" ]] || return 1
-  expected_fingerprint="$($compiler_fingerprint)" || return 1
-  actual_fingerprint="$(head -n 1 "$compiler_stamp" 2>/dev/null || true)"
-  [[ "$actual_fingerprint" == "$expected_fingerprint" ]]
+  trellage_require_source_runtime "$source_workspace"
 }
 
-# Host-side lifecycle commands (compiler bootstrap, profile lock refresh,
-# image builds) can run before the requested command owns stdout. Keep
-# machine-readable output streams free of npm and build status output.
+# Keep profile lock and image build output out of machine-readable streams.
 run_lifecycle_command() {
   if [[ "$output_format" == jsonl || "$mode" == session-bridge \
     || "$mode" == compiler && "${trellage_arguments[0]}" == list ]]; then
@@ -481,29 +466,8 @@ run_lifecycle_command() {
 }
 
 ensure_profile_compiler() {
-  profile_compiler_is_fresh && return 0
-  [[ -x "$compiler_fingerprint" ]] \
-    || fail "profile compiler fingerprint is unavailable: $compiler_fingerprint"
-  command -v npm >/dev/null 2>&1 \
-    || fail 'profile compiler bootstrap requires npm'
-
-  if [[ ! -x "$compiler_package_dir/node_modules/.bin/tsc" ]]; then
-    printf 'trellage: installing profile compiler dependencies\n' >&2
-    (cd "$compiler_package_dir" && run_lifecycle_command npm ci) \
-      || fail "profile compiler dependency installation failed in $compiler_package_dir"
-  fi
-  if [[ ! -x "$guide_core_package_dir/node_modules/.bin/tsc" \
-    || ! -f "$guide_core_package_dir/node_modules/yaml/package.json" ]]; then
-    printf 'trellage: installing profile guide dependencies\n' >&2
-    (cd "$guide_core_package_dir" && run_lifecycle_command npm ci) \
-      || fail "profile guide dependency installation failed in $guide_core_package_dir"
-  fi
-
-  printf 'trellage: building profile compiler\n' >&2
-  (cd "$compiler_package_dir" && run_lifecycle_command npm run build) \
-    || fail "profile compiler build failed in $compiler_package_dir"
-  [[ -f "$compiler" ]] || fail 'profile compiler build did not produce dist/cli.js'
-  profile_compiler_is_fresh || fail 'profile compiler remains stale after build'
+  profile_compiler_is_fresh \
+    || fail 'source runtime is not ready; run scripts/build-profile-compiler.sh explicitly'
 }
 
 is_https_package_feed_url() {
@@ -559,7 +523,7 @@ prepare_package_feed_environment() {
 }
 prepare_package_feed_environment
 
-clean_child_environment=(env -i "PATH=$PATH")
+clean_child_environment=(env -i "PATH=$PATH" BUN_RUNTIME_TRANSPILER_CACHE_PATH=0)
 # Keep proxy/TLS and UV package-index overrides so profile image builds can reach
 # alternate PyPI simple indexes when files.pythonhosted.org is blocked.
 for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE_HOME DOCKER_CONFIG \
@@ -578,7 +542,7 @@ environment_enabled=
 environment_source_present=
 environment_path=
 if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doctor ]]; then
-  environment_metadata="$("${clean_child_environment[@]}" node "$compiler" environment)" \
+  environment_metadata="$("${clean_child_environment[@]}" "${trellage_bun[@]}" "$compiler" environment)" \
     || fail 'environment configuration resolution failed'
   environment_enabled="$(jq -r '.enabled' <<<"$environment_metadata")" \
     || fail 'environment metadata has no enabled state'
@@ -595,7 +559,7 @@ if [[ "$mode" == new || "$mode" == prompt || "$mode" == resume || "$mode" == doc
     && "$environment_enabled" == true && "$environment_source_present" == true \
     && "${_TRELLAGE_VARLOCK_BOOTSTRAPPED:-}" != 1 ]]; then
     [[ -x "$varlock" ]] \
-      || fail "Varlock is unavailable; run: cd $prototype_dir/../../packages/trellage-cli && npm install"
+      || fail "Varlock is unavailable; run $source_workspace/scripts/build-profile-compiler.sh explicitly"
     [[ -z "$ambient_copilot_github_token" ]] || export COPILOT_GITHUB_TOKEN="$ambient_copilot_github_token"
     [[ -z "$ambient_gh_token" ]] || export GH_TOKEN="$ambient_gh_token"
     [[ -z "$ambient_github_token" ]] || export GITHUB_TOKEN="$ambient_github_token"
@@ -615,14 +579,14 @@ fi
 case "${1:-}" in
   validate|lock|build|upgrade|ci-verify|list|harness-version)
     discard_ambient_github_auth
-    exec "${clean_child_environment[@]}" node "$compiler" "$@"
+    exec "${clean_child_environment[@]}" "${trellage_bun[@]}" "$compiler" "$@"
     ;;
 esac
 
 if [[ "$interactive" == true ]]; then
   [[ -t 0 && -t 1 ]] || fail 'interactive profile selection requires an interactive terminal'
   [[ -f "$picker" ]] || fail "terminal picker is unavailable: $picker"
-  profile_choices="$("${clean_child_environment[@]}" node "$compiler" choices)" \
+  profile_choices="$("${clean_child_environment[@]}" "${trellage_bun[@]}" "$compiler" choices)" \
     || fail 'profile choices resolution failed'
   picker_input="$(jq -ce '
     {
@@ -656,7 +620,7 @@ if [[ "$interactive" == true ]]; then
     || { rm -f -- "$picker_input_file"; fail 'could not create launcher result file'; }
   printf '%s\n' "$picker_input" >"$picker_input_file"
   picker_status=0
-  node "$picker" "$picker_input_file" "$picker_result_file" || picker_status=$?
+  "${trellage_launcher[@]}" "$picker" "$picker_input_file" "$picker_result_file" || picker_status=$?
   launch_intent="$(<"$picker_result_file")"
   rm -f -- "$picker_input_file" "$picker_result_file"
   if [[ "$picker_status" -ne 0 ]]; then
@@ -756,7 +720,7 @@ verify_docker_server() {
     || fail 'Docker server changed during operation'
 }
 profile_metadata="$("${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
-  node "$compiler" "${metadata_args[@]}")" || fail 'profile metadata resolution failed'
+  "${trellage_bun[@]}" "$compiler" "${metadata_args[@]}")" || fail 'profile metadata resolution failed'
 harness_kind="$(jq -er '.harness_kind' <<<"$profile_metadata")" || fail 'profile metadata has no harness kind'
 if [[ "$harness_kind" != claude ]]; then
   [[ -z "$auth_mode_argument" ]] || fail '--auth-mode is supported only for Claude profiles'
@@ -1612,7 +1576,7 @@ run_agent_attachment() {
   fi
   [[ "${#child_command[@]}" -gt 0 ]] || fail 'Trellage event bridge has no child command'
   bridge_args=(
-    node "$headless_event_bridge"
+    "${trellage_bun[@]}" "$headless_event_bridge"
     --event-contract "$headless_event_contract"
     --profile "$profile_name"
     --harness "$harness_kind"
@@ -1631,150 +1595,14 @@ report_sandbox_metadata() {
   local full_container_id="$3"
   local pane_id="${HERDR_PANE_ID-}"
   local socket_path="${HERDR_SOCKET_PATH-}"
-  local node_executable
   [[ "${HERDR_ENV:-}" == 1 ]] || return 0
   if [[ -z "$pane_id" || -z "$socket_path" ]]; then
     printf 'trellage: Herdr metadata not reported: pane or socket context is missing\n' >&2
     return 1
   fi
   [[ -S "$socket_path" ]] || return 1
-  node_executable="$(command -v node)" || return 1
-  env -i "$node_executable" --input-type=module - \
-    "$socket_path" "$pane_id" "$agent" "$profile_name" "$full_container_id" "$invocation_id" 2>/dev/null <<'NODE'
-import net from "node:net"
-
-const [socketPath, paneId, agent, profile, containerId, invocationId] = process.argv.slice(2)
-const source = "trellage.guide-handoff"
-const permanentConnectionErrors = new Set([
-  "EACCES",
-  "ECONNREFUSED",
-  "ENOENT",
-  "ENOTDIR",
-  "ENOTSOCK",
-])
-let permanentConnectionFailure
-const requestHerdr = (request) =>
-  new Promise((resolve, reject) => {
-    const socket = net.createConnection(socketPath)
-    let sourceText = ""
-    let settled = false
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(new Error("Herdr metadata request timed out"))
-    }, 250)
-    const finish = (error, result) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      socket.destroy()
-      error === undefined ? resolve(result) : reject(error)
-    }
-    socket.setEncoding("utf8")
-    socket.once("connect", () => socket.write(`${JSON.stringify(request)}\n`))
-    socket.on("data", (chunk) => {
-      sourceText += chunk
-      const newline = sourceText.indexOf("\n")
-      if (newline < 0) return
-      let response
-      try {
-        response = JSON.parse(sourceText.slice(0, newline))
-      } catch {
-        finish(new Error("Herdr metadata response is not valid JSON"))
-        return
-      }
-      if (response?.id !== request.id) {
-        finish(new Error("Herdr metadata response ID does not match"))
-        return
-      }
-      if (response.error !== undefined) {
-        finish(new Error(`Herdr metadata error: ${JSON.stringify(response.error)}`))
-        return
-      }
-      finish(undefined, response.result)
-    })
-    socket.once("error", (error) => {
-      if (permanentConnectionErrors.has(error?.code)) {
-        permanentConnectionFailure = error
-      }
-      finish(error)
-    })
-    socket.once("close", () => {
-      if (sourceText.indexOf("\n") < 0) {
-        finish(new Error("Herdr metadata socket closed without a response"))
-      }
-    })
-  })
-
-const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
-try {
-  let stateChangeSeq
-  let processGroup
-  for (let attempt = 0; attempt < 300; attempt += 1) {
-    try {
-      const agentResult = await requestHerdr({
-        id: `${source}:agent-get:${invocationId}:${attempt}`,
-        method: "agent.get",
-        params: { target: paneId },
-      })
-      const agentInfo = agentResult?.agent
-      const processResult = await requestHerdr({
-        id: `${source}:process-info:${invocationId}:${attempt}`,
-        method: "pane.process_info",
-        params: { pane_id: paneId },
-      })
-      const processInfo = processResult?.process_info
-      const candidateSequence = agentInfo?.state_change_seq
-      const candidateProcessGroup = processInfo?.foreground_process_group_id
-      if (
-        agentInfo?.pane_id === paneId &&
-        agentInfo?.agent === agent &&
-        (agentInfo?.agent_status === "working" || agentInfo?.agent_status === "idle") &&
-        processInfo?.pane_id === paneId &&
-        Number.isSafeInteger(candidateSequence) &&
-        candidateSequence >= 0 &&
-        candidateSequence <= (Number.MAX_SAFE_INTEGER - 1) / 2 &&
-        Number.isSafeInteger(candidateProcessGroup) &&
-        candidateProcessGroup > 0
-      ) {
-        stateChangeSeq = candidateSequence
-        processGroup = candidateProcessGroup
-        break
-      }
-    } catch {
-      if (permanentConnectionFailure !== undefined) throw permanentConnectionFailure
-      // The tagged attachment can take a moment to become visible to Herdr.
-    }
-    await delay(50)
-  }
-  if (stateChangeSeq === undefined || processGroup === undefined) {
-    throw new Error("Herdr did not recognize the current Sandbox attachment")
-  }
-  const id = `${source}:report:${invocationId}`
-  const request = {
-    id,
-    method: "pane.report_metadata",
-    params: {
-      pane_id: paneId,
-      source,
-      agent,
-      tokens: {
-        trellage_surface: "sandbox",
-        trellage_agent: agent,
-        trellage_profile: profile,
-        trellage_container_id: containerId,
-        trellage_invocation_id: invocationId,
-        trellage_state_seq: String(stateChangeSeq),
-        trellage_pgrp: String(processGroup),
-      },
-      seq: stateChangeSeq * 2 + 1,
-    },
-  }
-
-  await requestHerdr(request)
-} catch {
-  process.exitCode = 1
-}
-NODE
+  env -i BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/herdr-metadata.ts" -- \
+    "$socket_path" "$pane_id" "$agent" "$profile_name" "$full_container_id" "$invocation_id" 2>/dev/null
 }
 
 sandbox_bridge_args=()
@@ -2600,7 +2428,7 @@ if [[ "$profile_locked" != true ]]; then
   verify_docker_server
   printf 'trellage: development resolution is unavailable; resolving and building: %s\n' "$build_command" >&2
   run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
-    node "$compiler" build "$profile_path" \
+    "${trellage_bun[@]}" "$compiler" build "$profile_path" \
     || fail "automatic profile build failed: $build_command"
   profile_locked=true
 fi
@@ -2615,7 +2443,7 @@ if ! inspect_profile_image; then
   verify_docker_server
   printf 'trellage: profile image is missing or stale; building automatically\n' >&2
   run_lifecycle_command "${clean_child_environment[@]}" "DOCKER_HOST=$docker_endpoint" \
-    node "$compiler" build "$profile_path" \
+    "${trellage_bun[@]}" "$compiler" build "$profile_path" \
     || fail "automatic profile image build failed: $build_command"
   inspect_profile_image \
     || fail "profile image remains missing or stale after automatic build: $image"

@@ -2,6 +2,7 @@ import path from "node:path"
 import type { ConversationSnapshot } from "./conversation-contract.ts"
 
 export { parseConversationBinding } from "./conversation-validation.ts"
+export { sourceWorkingDirectory } from "@trellage/conversation-source/source-context"
 
 export const guideIntentMaximumLength = 60_000
 
@@ -162,16 +163,6 @@ export const parseCustomPopupContext = (env = process.env) => {
     focused_pane_cwd: cwd,
   }
   return parseInvocationContext(JSON.stringify(record))
-}
-
-export const sourceWorkingDirectory = (context, agentInfo) => {
-  for (const value of [agentInfo.foreground_cwd, agentInfo.cwd, context.cwd]) {
-    if (typeof value === "string" && value.length > 0 && value.length <= 4096 && !identifierControls.test(value)) {
-      if (!path.isAbsolute(value)) continue
-      return value
-    }
-  }
-  throw new Error("The focused agent does not have an absolute working directory")
 }
 
 export const validateAnswer = (value, source) => {

@@ -3,7 +3,7 @@ import {
   ContinuationActionStatus,
   ContinuationPlacementKind,
   type ContinuationDraft,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 import {
   changeContinuationAction,
   changeContinuationEditor,
@@ -25,8 +25,8 @@ import {
   ContinuationTextCommand,
   continuationFieldLimit,
   type ContinuationEditor,
-} from "../src/continuation-ui-state.js"
-import { continuationFixtureDraft, continuationFixtureProfiles } from "./helpers/continuation-ui-fixtures.js"
+} from "../src/continuation-ui-state.ts"
+import { continuationFixtureDraft, continuationFixtureProfiles } from "./helpers/continuation-ui-fixtures.ts"
 
 const prepared = (draft: ContinuationDraft, id = "action-1"): ContinuationDraft =>
   changeContinuationAction(draft, id, { prompt: `Full prompt for ${id}`, selected: true })

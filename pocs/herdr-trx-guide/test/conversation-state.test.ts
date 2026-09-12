@@ -3,7 +3,7 @@ import { chmod, link, lstat, mkdir, readFile, symlink, truncate, writeFile } fro
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import test from "node:test"
-import * as Core from "../../../packages/trellage-guide-core/dist/conversation.js"
+import * as Core from "@trellage/guide-core/conversation"
 
 import { bindFocusedConversation, captureFocusedConversation } from "../lib/conversation-capture.ts"
 import { ConversationAgent, ConversationRole, ConversationSurface } from "../lib/conversation-contract.ts"
@@ -20,7 +20,7 @@ const snapshotFixture = async (t) => {
   return { ...fixture, snapshot }
 }
 
-test("conversation runtime enums are the compiled shared exports, not local copies", () => {
+test("conversation runtime enums are the shared source exports, not local copies", () => {
   assert.equal(ConversationAgent, Core.ConversationAgent)
   assert.equal(ConversationRole, Core.ConversationRole)
   assert.equal(ConversationSurface, Core.ConversationSurface)

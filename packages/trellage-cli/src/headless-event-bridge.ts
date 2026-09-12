@@ -1,17 +1,15 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { spawn } from "node:child_process"
 import os from "node:os"
-import path from "node:path"
 import type { Readable, Writable } from "node:stream"
-import { pathToFileURL } from "node:url"
 
 import {
   captureGitEvidenceSnapshot,
   compareGitEvidenceSnapshots,
   type GitChangedFilesEvidence,
   type GitEvidenceSnapshot,
-} from "./git-evidence.js"
+} from "./git-evidence.ts"
 
 export const claudeStreamJsonV1 = "claude-stream-json-v1" as const
 
@@ -594,7 +592,6 @@ export const headlessEventBridgeMain = async (
   }
 }
 
-const invokedPath = process.argv[1]
-if (invokedPath !== undefined && pathToFileURL(path.resolve(invokedPath)).href === import.meta.url) {
+if (import.meta.main) {
   void headlessEventBridgeMain()
 }

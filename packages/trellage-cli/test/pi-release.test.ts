@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { GitHubPiReleaseClient, PiReleaseError, resolvePiRelease, type PiReleaseClient } from "../src/pi-release.js"
+import { GitHubPiReleaseClient, PiReleaseError, resolvePiRelease, type PiReleaseClient } from "../src/pi-release.ts"
 
 const digest = "sha256:65cd7f5e7d537b0b41f277191c1b95b53d509f8147c3d1bd508503dc048f1453"
 

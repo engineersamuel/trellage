@@ -3,7 +3,7 @@ import path from "node:path"
 
 import { Data, Effect } from "effect"
 
-import type { ProfileLock } from "./lock.js"
+import type { ProfileLock } from "./lock.ts"
 import {
   parseResolutionSidecar,
   renderResolutionSidecar,
@@ -11,7 +11,7 @@ import {
   verifyResolutionSidecarReference,
   type ResolutionSidecar,
   type ResolutionSidecarReference,
-} from "./resolution-sidecar.js"
+} from "./resolution-sidecar.ts"
 
 export class ResolutionSidecarStorageError extends Data.TaggedError("ResolutionSidecarStorageError")<{
   readonly message: string

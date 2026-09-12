@@ -22,10 +22,14 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
 - Run profile compiler tests with `make profile-compiler`.
 - Run native profile matrix contracts with `make profile-matrix-test`.
 - Run static native profile verification with `make profile-matrix`.
-- Run Oxlint with `cd packages/trellage-cli && npm run lint`.
-- Check Oxfmt with `cd packages/trellage-cli && npm run format:check`.
-- Run the TypeScript compiler directly with `cd packages/trellage-cli && npm run check`.
-- Build the TypeScript package with `cd packages/trellage-cli && npm run build`.
+- Prepare the source workspace with `scripts/install-source-runtime.sh --prepare`
+  from the root. This installs frozen dependencies and records runtime readiness.
+  Do not substitute a raw Bun install for this preparation step.
+- Run Oxlint with `cd packages/trellage-cli && bun run lint`.
+- Check Oxfmt with `cd packages/trellage-cli && bun run format:check`.
+- Run no-emit TypeScript checks with `cd packages/trellage-cli && bun run check`.
+- Run first-party TypeScript and TSX source through the pinned Bun runtime;
+  do not generate or commit application bundles, declarations, or `dist`.
 - Live profile probes require explicit `PROFILE_MATRIX_ARGS=--live` opt-in because they may consume paid quota.
 - Validate locally: `mise run trellage -- validate <profile name>`.
 - Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
@@ -34,9 +38,10 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
   launchers (`agx`/`cdx`/`cpx`/`cldx`/`fmx`/`grx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
   runs a non-locked Sandbox `build` for each `profiles/*`. Use `--native-only`
   or `--sandbox-only` on the underlying script when you only need one side.
-  Installed `post-merge` and `post-rewrite` hooks rebuild the compiler and
+  Installed `post-merge` and `post-rewrite` hooks prepare the source runtime and
   refresh native launchers automatically when the local `main` worktree
-  receives merged commits.
+  receives merged commits. Application code runs from source; profile-image
+  rebuilding is a separate product operation.
 
 ## Fresh Azure integration test
 
@@ -88,6 +93,10 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
 ## Architecture
 
 - `packages/trellage-cli` contains the Effect-based TypeScript profile compiler and CLI.
+- `packages/trellage-guide-core` exposes shared source contracts; import its
+  public package exports, not private source paths or generated files.
+- `packages/trellage-conversation-source` contains production conversation capture.
+- `packages/trellage-runtime` contains shared Bun execution and source-runtime support.
 - `prototypes/trellage` contains the Trellage Sandbox launcher and container runtime entrypoints.
 - `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`agx`, `cdx`, `cpx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`, `picx`, `prx`).
 - `profiles` contains concrete locked profile definitions.
@@ -96,7 +105,9 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
 - `harnesses` contains comparison manifests consumed by `scripts/harness`.
 - `.agents` contains canonical cross-harness rules, hooks, and MCP configuration.
 - `.github` contains the GitHub Copilot instruction adapter and GitHub Actions workflow.
-- `pocs` contains standalone, self-contained proof-of-concept examples that are deliberately independent of the Trellage profile compiler and its contracts (each subfolder has its own README/Dockerfile/scripts and is not exercised by `make test`).
+- `pocs` contains standalone proof-of-concept examples. The Herdr guide plugin
+  delegates production capture to `packages/trellage-conversation-source`;
+  other experiments remain outside the production workspace.
 
 ## GitHub delivery
 

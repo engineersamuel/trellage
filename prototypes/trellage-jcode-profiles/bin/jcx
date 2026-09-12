@@ -67,38 +67,38 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
 readonly catalog="$runtime_root/catalog.json"
 readonly receipt_file="$runtime_root/installed-version"
 readonly legacy_version_file="$runtime_root/version"
-readonly config_manager="$runtime_root/config-manager.mjs"
 readonly profile_root="$HOME/.local/share/trellage/profiles/jcode/default"
 readonly profile_home="$profile_root/home"
 readonly profile_marker="$profile_root/.managed-by-trellage-jcode-profiles"
 readonly profile_config="$profile_home/config.toml"
 readonly setup_hints="$profile_home/setup_hints.json"
-floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
 if [[ ! -f "$floating_skills_manager" ]]; then
-  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+bun_runner="${floating_skills_manager%/*}/run-source.sh"
+readonly config_manager="${floating_skills_manager%/*}/../prototypes/trellage-jcode-profiles/config-manager.ts"
 
 manual_skill_operation() {
-  local command="$1" helper="$runtime_root/manual-skills.mjs"
+  local command="$1" helper="$runtime_root/manual-skills.ts"
   local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
   require_owned_profile
   [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
     || die "invalid floating-skills manager: $floating_skills_manager"
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die "invalid floating-skills catalog: $floating_skills_catalog"
-  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/manual-skills.mjs"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/manual-skills.ts"
   [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe manual skills helper: $helper"
-  require_command node
   local args=(
     "$floating_skills_manager" "$command" "$floating_skills_catalog" "$cache"
     "$profile_root/skill-library" "$profile_home/skills" i-have-adhd
   )
   if [[ "$command" == fresh ]]; then
-    exec node "$helper" "${args[@]}"
+    exec "$bun_runner" "$helper" "${args[@]}"
   fi
-  node "$helper" "${args[@]}"
+  "$bun_runner" "$helper" "${args[@]}"
 }
 
 ensure_floating_skills() {
@@ -305,7 +305,7 @@ managed_config_is_current() {
   local config_path="${1:-$profile_config}"
 
   require_config_manager
-  node "$config_manager" validate \
+  "$bun_runner" "$config_manager" validate \
     "$config_path" "$provider" "$model_id" "$reasoning_effort" "$proxy_base_url"
 }
 
@@ -313,7 +313,7 @@ merge_managed_config() {
   local config_path="$1"
 
   require_config_manager
-  node "$config_manager" repair \
+  "$bun_runner" "$config_manager" repair \
     "$config_path" "$provider" "$model_id" "$reasoning_effort" "$proxy_base_url"
 }
 

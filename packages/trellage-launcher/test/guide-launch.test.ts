@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { execFileSync } from "node:child_process"
 
 import {
   buildGuideLaunchCommand,
@@ -6,6 +7,7 @@ import {
   CommandRunnerError,
   createNodeCommandRunner,
   defaultWorktreeBranch,
+  suggestWorktreeBranch,
   getHerdrContext,
   GuideLaunchError,
   handoffToCurrentHerdrWorkspace,
@@ -32,9 +34,70 @@ import {
   type CommandRunner,
   type CommandSpec,
   type TimeController,
-} from "../src/guide-launch.js"
-import { goalTransportFixture } from "./fixtures/goal-transport.js"
-import { guideGoalActivationInput, guideGoalApproachBudget, guideGoalArgvMaximumBytes } from "../src/guide-goal-execution.js"
+} from "../src/guide-launch.ts"
+import { goalTransportFixture } from "./fixtures/goal-transport.ts"
+import { guideGoalActivationInput, guideGoalApproachBudget, guideGoalArgvMaximumBytes } from "../src/guide-goal-execution.ts"
+
+describe("profile worktree suggestions", () => {
+  const profile = {
+    surface: "native",
+    launcher: "cpx",
+    profile: "hve",
+    commandPath: "cpx",
+    headlessPrompt: true,
+  } as const
+  it("uses profile identity and a normalized bounded topic", () => {
+    expect(suggestWorktreeBranch("Review my PR", profile)).toBe("wt/cpx-hve-review-my-pr")
+    expect(suggestWorktreeBranch("!!!", profile)).toBe("wt/cpx-hve-task")
+    expect(suggestWorktreeBranch("Réview / my PR", profile)).toBe("wt/cpx-hve-review-my-pr")
+    expect(
+      suggestWorktreeBranch("Review my PR", {
+        surface: "sandbox",
+        profile: "claude-council",
+        commandPath: "trellage",
+        headlessPrompt: true,
+      }),
+    ).toBe("wt/sb-claude-council-review-my-pr")
+    expect(defaultWorktreeBranch("Review my PR")).toBe("worktree/review-my-pr")
+  })
+  it("keeps long identity hashes and suffixes within forty ASCII characters", () => {
+    const long = { ...profile, profile: "abcdefghijklmnopqrstuvwxyz" }
+    const reserved: string[] = []
+    for (let i = 1; i <= 12; i += 1) {
+      const branch = suggestWorktreeBranch("abcdefghijklmnopqrstuv", long, reserved)
+      expect(branch).toHaveLength(40)
+      expect(execFileSync("git", ["check-ref-format", "--branch", branch], { encoding: "utf8" }).trim()).toBe(branch)
+      expect(branch).toMatch(/^wt\/cpx-abcdefghijk-[a-f0-9]{6}-[a-z]+(?:-\d+)?$/u)
+      if (i > 1) expect(branch.endsWith(`-${i}`)).toBe(true)
+      reserved.push(branch)
+    }
+    expect(
+      suggestWorktreeBranch(
+        "abcdefghijklmnopqrstuv",
+        long,
+        reserved.filter((_, i) => i !== 1),
+      ),
+    ).toBe(reserved[1])
+  })
+  it("distinguishes launchers and long profile identities without truncating the tag", () => {
+    expect(suggestWorktreeBranch("review", { ...profile, profile: "default" })).toBe("wt/cpx-default-review")
+    expect(suggestWorktreeBranch("review", { ...profile, launcher: "cdx", profile: "default" })).toBe(
+      "wt/cdx-default-review",
+    )
+    const first = suggestWorktreeBranch("x".repeat(100), { ...profile, profile: "a".repeat(80) })
+    const second = suggestWorktreeBranch("x".repeat(100), { ...profile, profile: `${"a".repeat(79)}b` })
+    expect(first).not.toBe(second)
+    expect(first).toMatch(/^wt\/cpx-a{11}-[a-f0-9]{6}-x{14}$/u)
+    expect(suggestWorktreeBranch("x".repeat(100), { ...profile, profile: "a".repeat(80) })).toBe(first)
+  })
+  it("uses word boundaries and accepts trimmed reservations", () => {
+    expect(suggestWorktreeBranch("Review the login flow for regressions", profile)).toBe("wt/cpx-hve-review-the")
+    expect(suggestWorktreeBranch("", profile)).toBe("wt/cpx-hve-task")
+    expect(suggestWorktreeBranch("review", profile, [" wt/cpx-hve-review ", "wt/cpx-hve-review-3"])).toBe(
+      "wt/cpx-hve-review-2",
+    )
+  })
+})
 
 interface PlannedCall {
   readonly executable: string

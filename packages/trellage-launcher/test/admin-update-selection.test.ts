@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import type { AdminHarnessVersionResult } from "../src/admin-harness-version.js"
-import type { AdminSkillsCheckResult } from "../src/admin-skills-check.js"
-import { harnessUpdateAllPlanFor, harnessUpdateAllSummary, runAllHarnessUpdates } from "../src/admin-harness-update-all.js"
-import { HarnessUpdateManager } from "../src/admin-harness-update.js"
-import { hasSelectedAdminUpdates, selectAvailableAdminUpdates } from "../src/admin-update-selection.js"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import type { AdminHarnessVersionResult } from "../src/admin-harness-version.ts"
+import type { AdminSkillsCheckResult } from "../src/admin-skills-check.ts"
+import { harnessUpdateAllPlanFor, harnessUpdateAllSummary, runAllHarnessUpdates } from "../src/admin-harness-update-all.ts"
+import { HarnessUpdateManager } from "../src/admin-harness-update.ts"
+import { hasSelectedAdminUpdates, selectAvailableAdminUpdates } from "../src/admin-update-selection.ts"
 
 const container = (name: string, selector = "latest"): AdminProfileEntry => ({
   ref: `sandbox:${name}`,

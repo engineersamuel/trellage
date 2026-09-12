@@ -58,13 +58,14 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
 readonly catalog="$runtime_root/catalog.json"
 readonly receipt_file="$runtime_root/installed-version"
 readonly legacy_version_file="$runtime_root/version"
-floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
 if [[ ! -f "$floating_skills_manager" ]]; then
-  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
-readonly community_skills_cache="$runtime_root/../common/omp-community-skills"
+bun_runner="${floating_skills_manager%/*}/run-source.sh"
+readonly community_skills_cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/omp-community-skills"
 
 profile_key=''
 profile_kind=''
@@ -89,8 +90,7 @@ ensure_floating_skills() {
     || die "invalid floating-skills manager: $floating_skills_manager"
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die "invalid floating-skills catalog: $floating_skills_catalog"
-  command -v node >/dev/null 2>&1 || die 'required command not found: node'
-  node "$floating_skills_manager" ensure \
+  "$bun_runner" "$floating_skills_manager" ensure \
     --catalog "$floating_skills_catalog" \
     --bundle native-common \
     --target "$agent_root/skills" \
@@ -99,7 +99,7 @@ ensure_floating_skills() {
 
 ensure_community_skills() {
   [[ "$community_skills_enabled" == true ]] || return 0
-  node "$floating_skills_manager" ensure \
+  "$bun_runner" "$floating_skills_manager" ensure \
     --catalog "$floating_skills_catalog" \
     --bundle omp-community \
     --cache "$community_skills_cache" \
@@ -109,7 +109,7 @@ ensure_community_skills() {
 
 check_community_skills() {
   [[ "$community_skills_enabled" == true ]] || return 0
-  node "$floating_skills_manager" verify \
+  "$bun_runner" "$floating_skills_manager" verify \
     --catalog "$floating_skills_catalog" \
     --bundle omp-community \
     --cache "$community_skills_cache" \
@@ -118,20 +118,19 @@ check_community_skills() {
 }
 
 skills_update_profile() {
-  local helper="$runtime_root/native-skills.mjs"
+  local helper="$runtime_root/native-skills.ts"
   local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
   local skill_args=("${1:---sync}")
   [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
 
   require_owned_profile
-  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.ts"
   [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
-  require_command node
   if [[ "${skill_args[0]}" == --fresh ]]; then
-    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+    exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
       "$cache" "$agent_root/skills" "$community_skills_cache" "$agent_root/community-skills"
   fi
-  node "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+  "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
     "$cache" "$agent_root/skills" \
     "$community_skills_cache" "$agent_root/community-skills" \
     || die "failed to update cached skills: $profile_key"

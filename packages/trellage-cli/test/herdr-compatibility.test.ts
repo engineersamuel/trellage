@@ -8,7 +8,7 @@ import {
   containerHerdrCompatibility,
   loadHerdrCompatibilityLedger,
   nativeHerdrCompatibility,
-} from "../src/herdr-compatibility.js"
+} from "../src/herdr-compatibility.ts"
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)))
 

@@ -27,4 +27,16 @@ install_fixture_node() {
     return 1
   }
   ln -s "$node_path" "$destination/node"
+  install_fixture_bun "$destination"
+}
+
+install_fixture_bun() {
+  local destination="$1"
+  local bun_path
+
+  bun_path="$(command -v bun)" || {
+    printf 'floating skill fixture: Bun is required\n' >&2
+    return 1
+  }
+  ln -s "$bun_path" "$destination/bun"
 }

@@ -3,6 +3,18 @@ set -euo pipefail
 
 umask 077
 
+source_workspace=/opt/trellage-source
+runtime_helper="$source_workspace/scripts/bun-runtime.sh"
+[[ -f "$runtime_helper" && ! -L "$runtime_helper" ]] || {
+  printf 'copilot agent entrypoint: missing or unsafe source runtime helper: %s\n' "$runtime_helper" >&2
+  exit 1
+}
+. "$runtime_helper"
+trellage_bun_runtime "$source_workspace" || {
+  printf 'copilot agent entrypoint: pinned Bun source runtime is unavailable\n' >&2
+  exit 1
+}
+
 mkdir -p \
   "$COPILOT_HOME" \
   "$COPILOT_HOME/instructions" \
@@ -20,7 +32,7 @@ instructions_tmp="$(mktemp "$COPILOT_HOME/instructions/.rundown.instructions.md.
 cat -- "$managed_instructions" >"$instructions_tmp"
 chmod 0600 "$instructions_tmp"
 mv -f "$instructions_tmp" "$COPILOT_HOME/instructions/rundown.instructions.md"
-node /usr/local/bin/floating-skills.mjs sync \
+"${trellage_bun[@]}" "$source_workspace/scripts/floating-skills.ts" -- sync \
   --catalog /opt/floating-skills-catalog.json \
   --bundle comparison-common \
   --exclude-skill astra-orchestrator \

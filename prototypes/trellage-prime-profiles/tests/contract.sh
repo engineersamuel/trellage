@@ -9,6 +9,10 @@ real_node="$(command -v node)" || {
   printf 'prx contract failed: host node is required\n' >&2
   exit 1
 }
+real_bun="$(command -v bun)" || {
+  printf 'prx contract failed: Bun 1.3.3 is required\n' >&2
+  exit 1
+}
 launcher="$root/bin/prx"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
@@ -245,13 +249,27 @@ fi
 cli="${1-}"
 shift || true
 [[ -n "$cli" && -f "$cli" ]] || exit 97
-case "$cli" in
-  */floating-skills.mjs|*/native-skills.mjs) exec "$REAL_NODE" "$cli" "$@" ;;
-esac
 # Execute the fake CLI script directly (it is a bash stub, not JS).
 exec bash "$cli" "$@"
 FAKE_NODE
 chmod 0755 "$fake_bin/node"
+
+cat >"$fake_bin/bun" <<'FAKE_BUN'
+#!/usr/bin/env bash
+set -u
+original=("$@")
+[[ "${1-}" != --version ]] || exec "$REAL_BUN" "$@"
+while [[ "${1-}" == --* ]]; do shift; done
+script="${1-}"
+shift || true
+[[ "${1-}" != -- ]] || shift
+if [[ "$script" == */native-tools.ts && "${1-}" == socket-listening ]]; then
+  [[ -S "${2-}" && -f "${FAKE_DAEMON_MARKER-}" ]]
+  exit
+fi
+exec "$REAL_BUN" "${original[@]}"
+FAKE_BUN
+chmod 0755 "$fake_bin/bun"
 
 cat >"$fake_bin/curl" <<'FAKE_CURL'
 #!/usr/bin/env bash
@@ -340,6 +358,7 @@ seed_floating_skills_cache "$home"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
 export REAL_NODE="$real_node"
+export REAL_BUN="$real_bun"
 export FAKE_MISE_LOG="$fixture_root/mise.log"
 export FAKE_NPM_LOG="$fixture_root/npm.log"
 export FAKE_CURL_LOG="$fixture_root/curl.log"

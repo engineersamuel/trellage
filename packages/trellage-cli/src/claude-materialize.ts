@@ -7,17 +7,17 @@ import { promisify } from "node:util"
 
 import { Data, Effect } from "effect"
 
-import { verifyInventory } from "./inventory.js"
-import type { ArtifactLock, ProfileLock } from "./lock.js"
-import type { ClaudeMaterializeRequest } from "./materialize.js"
-import { renderGraphOfLoopsPolicy } from "./graph-of-loops.js"
-import { graphOfLoopsRuntimeIntegrity, isGeneratedPythonRuntimePath } from "./graph-runtime.js"
-import { claudeGithubReleaseTools, claudePypiToolNames, isGraphOfLoopsProfile, type ClaudeProfile } from "./profile.js"
-import { claudePluginRootForSource, isSafeClaudePluginSource } from "./claude-plugin.js"
-import { cachedArtifactPath } from "./artifact-cache.js"
-import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.js"
+import { verifyInventory } from "./inventory.ts"
+import type { ArtifactLock, ProfileLock } from "./lock.ts"
+import type { ClaudeMaterializeRequest } from "./materialize.ts"
+import { renderGraphOfLoopsPolicy } from "./graph-of-loops.ts"
+import { graphOfLoopsRuntimeIntegrity, isGeneratedPythonRuntimePath } from "./graph-runtime.ts"
+import { claudeGithubReleaseTools, claudePypiToolNames, isGraphOfLoopsProfile, type ClaudeProfile } from "./profile.ts"
+import { claudePluginRootForSource, isSafeClaudePluginSource } from "./claude-plugin.ts"
+import { cachedArtifactPath } from "./artifact-cache.ts"
+import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.ts"
 
-export { graphOfLoopsRuntimeIntegrity } from "./graph-runtime.js"
+export { graphOfLoopsRuntimeIntegrity } from "./graph-runtime.ts"
 
 const execFilePromise = promisify(execFile)
 

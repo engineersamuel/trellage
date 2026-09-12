@@ -1,4 +1,4 @@
-import { guideIntentMaximumLength } from "./guide-api.js"
+import { guideIntentMaximumLength } from "./guide-api.ts"
 
 export const guideGoalAnswerMaximumLength = 8000
 

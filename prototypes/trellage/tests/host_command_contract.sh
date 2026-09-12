@@ -3,6 +3,9 @@ set -euo pipefail
 
 prototype_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 real_node="$(mise which node --tool=node@24 2>/dev/null || command -v node)"
+real_bun="$(command -v bun)"
+source_bun=("$real_bun" --no-install --no-env-file --config=/dev/null)
+export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-codex-host-test.XXXXXX")"
 test_root="$(cd "$test_root" && pwd -P)"
 trap 'rm -rf -- "$test_root"' EXIT
@@ -22,10 +25,10 @@ profile_hash_for() {
   local profile="$1"
   (
     cd "$prototype_dir/../../packages/trellage-cli"
-    "$real_node" --input-type=module - "$profile" <<'NODE'
+    "${source_bun[@]}" --input-type=module - "$profile" <<'NODE'
 import { Effect } from "effect"
-import { loadProfile } from "./dist/application.js"
-import { profileHash } from "./dist/lock.js"
+import { loadProfile } from "./src/application.ts"
+import { profileHash } from "./src/lock.ts"
 
 const document = await Effect.runPromise(loadProfile(process.argv[2]))
 console.log(profileHash(document))
@@ -38,13 +41,13 @@ write_codex_resolution_fixture() {
   local lock="$2"
   (
     cd "$prototype_dir/../../packages/trellage-cli"
-    "$real_node" --input-type=module - "$profile" "$lock" "$HOME/.cache" <<'NODE'
+    "${source_bun[@]}" --input-type=module - "$profile" "$lock" "$HOME/.cache" <<'NODE'
 import { writeFile } from "node:fs/promises"
 import { Effect } from "effect"
-import { loadProfile } from "./dist/application.js"
-import { profileHash, requireResolvedLock, sha256Text } from "./dist/lock.js"
-import { parseLock, renderLock } from "./dist/lock-file.js"
-import { writeResolutionReceipt } from "./dist/resolution-receipt.js"
+import { loadProfile } from "./src/application.ts"
+import { profileHash, requireResolvedLock, sha256Text } from "./src/lock.ts"
+import { parseLock, renderLock } from "./src/lock-file.ts"
+import { writeResolutionReceipt } from "./src/resolution-receipt.ts"
 
 const document = await Effect.runPromise(loadProfile(process.argv[2]))
 const version = "9.9.9"
@@ -150,7 +153,7 @@ default_profile_path_raw="$prototype_dir/../../profiles/codex-superpowers/profil
 default_profile_path="$(cd "$prototype_dir/../../profiles/codex-superpowers" && pwd -P)/profile.toml"
 write_codex_resolution_fixture "$default_profile_path" "$test_root/default-profile-release.lock.toml"
 default_metadata="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
-  $real_node "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata \
+  "${source_bun[@]}" "$prototype_dir/../../packages/trellage-cli/src/cli.ts" metadata \
   "$default_profile_path")"
 default_profile_hash="$(jq -er '.profile_hash' <<<"$default_metadata")"
 runtime_hash="$(jq -er '.runtime_hash' <<<"$default_metadata")"
@@ -181,11 +184,35 @@ export FAKE_DOCKER_DEFAULT_PROFILE_HASH="$default_profile_hash"
 export FAKE_DOCKER_IMAGE_RUNTIME_HASH="$runtime_hash"
 export FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$runtime_hash"
 host_node_log="$test_root/host-node.log"
+printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+  "exec \"$real_bun\" --no-install --no-env-file --config=/dev/null \"\$@\"" \
+  >"$test_root/source-bun"
+chmod +x "$test_root/source-bun"
+cat >"$fake_bin/bun" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${4:-}" == */trellage-runtime/src/herdr-metadata.ts ]]; then
+  /usr/bin/env >"$test_root/sandbox-metadata-node.env"
+  if [[ -f "$test_root/sandbox-metadata-socket-swap" ]]; then
+    export TRELLAGE_TEST_ENOTSOCK_ATTEMPTS="$test_root/sandbox-metadata-socket.attempts"
+    exec "$real_bun" --preload="$test_root/sandbox-metadata-socket-preload.ts" "\$@"
+  fi
+  exec "$real_bun" "\$@"
+fi
+if [[ "\${4:-}" == */trellage-cli/src/cli.ts || "\${4:-}" == */trellage-launcher/src/cli.tsx ]]; then
+  [[ "\${1:-}" == --no-install && "\${2:-}" == --no-env-file && "\${3:-}" == --config=/* ]] || exit 64
+  shift 3
+  exec node "\$@"
+fi
+exec "$real_bun" "\$@"
+EOF
+chmod +x "$fake_bin/bun"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
   'fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"' \
   '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
+  "case \"\${1:-}\" in *.ts|*.tsx) FAKE_REAL_NODE=\"$test_root/source-bun\" ;; esac" \
   'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tGH_TOKEN=%s\n'\'' "${GH_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
@@ -243,10 +270,10 @@ printf '%s\n' \
   '  : >"$FAKE_DOCKER_LOG.image-built"' \
   '  exit 0' \
   'fi' \
-  'if [[ "${1:-}" == */launcher.mjs && "${FAKE_PICKER_CANCEL:-0}" == 1 ]]; then' \
+  'if [[ "${1:-}" == */trellage-launcher/src/cli.tsx && "${FAKE_PICKER_CANCEL:-0}" == 1 ]]; then' \
   '  exit 130' \
   'fi' \
-  'if [[ "${1:-}" == */launcher.mjs && "${FAKE_PICKER_AUTOSELECT:-0}" == 1 ]]; then' \
+  'if [[ "${1:-}" == */trellage-launcher/src/cli.tsx && "${FAKE_PICKER_AUTOSELECT:-0}" == 1 ]]; then' \
   '  cat "$2" >"$FAKE_PROFILE_CHOICES.input"' \
   '  printf '\''{"id":"0","target":"current"}\n'\'' >"$3"' \
   '  exit 0' \
@@ -268,18 +295,19 @@ copilot_node_log="$test_root/copilot-node.log"
 copilot_gh_log="$test_root/copilot-gh.log"
 sandbox_metadata_node_environment="$test_root/sandbox-metadata-node.env"
 sandbox_metadata_socket_attempts="$test_root/sandbox-metadata-socket.attempts"
-sandbox_metadata_socket_preload="$test_root/sandbox-metadata-socket-preload.cjs"
+sandbox_metadata_socket_preload="$test_root/sandbox-metadata-socket-preload.ts"
 sandbox_metadata_socket_swap="$test_root/sandbox-metadata-socket-swap"
 cat >"$sandbox_metadata_socket_preload" <<'NODE'
-const fs = require('node:fs')
-const net = require('node:net')
+import fs from 'node:fs'
+import net from 'node:net'
 
 const attempts = process.env.TRELLAGE_TEST_ENOTSOCK_ATTEMPTS
-net.createConnection = () => {
+if (attempts === undefined) throw new Error("Missing attempt log")
+net.Socket.prototype.connect = function () {
   fs.appendFileSync(attempts, 'attempt\n')
-  const connection = new net.Socket()
+  const connection = this
   connection.once('error', (error) => {
-    fs.appendFileSync(attempts, `error:${error.code}\n`)
+    fs.appendFileSync(attempts, `error:${"code" in error ? error.code : "unknown"}\n`)
   })
   process.nextTick(() => {
     const error = Object.assign(new Error('injected ENOTSOCK'), { code: 'ENOTSOCK' })
@@ -293,16 +321,9 @@ ln -s "$prototype_dir/tests/fakes/host-gh" "$copilot_fake_bin/gh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'set -euo pipefail' \
-  "if [[ \"\${1:-}\" == --input-type=module && \"\${2:-}\" == - && -z \"\${FAKE_NODE_LOG:-}\" ]]; then" \
-  "  if [[ -f \"$sandbox_metadata_socket_swap\" ]]; then" \
-  "    export NODE_OPTIONS=\"--require=$sandbox_metadata_socket_preload\"" \
-  "    export TRELLAGE_TEST_ENOTSOCK_ATTEMPTS=\"$sandbox_metadata_socket_attempts\"" \
-  '  fi' \
-  "  /usr/bin/env >\"$sandbox_metadata_node_environment\"" \
-  "  exec \"$real_node\" \"\$@\"" \
-  'fi' \
   'fixture_config="${TRELLAGE_TEST_FIXTURE_CONFIG:-$(dirname "$0")/.trellage-fixture-env}"' \
   '[[ ! -f "$fixture_config" ]] || source "$fixture_config"' \
+  "case \"\${1:-}\" in *.ts|*.tsx) FAKE_REAL_NODE=\"$test_root/source-bun\" ;; esac" \
   'printf '\''CALL\n'\'' >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tCOPILOT_GITHUB_TOKEN=%s\n'\'' "${COPILOT_GITHUB_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
   'printf '\''ENV\tGH_TOKEN=%s\n'\'' "${GH_TOKEN:+present}" >>"$FAKE_NODE_LOG"' \
@@ -2645,7 +2666,7 @@ test_doctor_reports_status_without_mutation_or_secrets() {
   local expected_environment_path
   mkdir -p "$worktree"
   expected_environment_path="$(
-    "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" environment \
+    "${source_bun[@]}" "$prototype_dir/../../packages/trellage-cli/src/cli.ts" environment \
       | jq -er '.path'
   )"
   container_name="$(resource_names "$worktree" | sed -n '1p')"
@@ -3059,8 +3080,8 @@ test_resource_identity_isolates_codex_and_copilot_profiles() {
     || fail 'Codex profiles collide on one worktree'
   state_one="$(resource_names "$worktree" one | tail -n 1)"
   profile_one_hash="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
-    "$real_node" \
-    "$prototype_dir/../../packages/trellage-cli/dist/cli.js" \
+    "${source_bun[@]}" \
+    "$prototype_dir/../../packages/trellage-cli/src/cli.ts" \
     metadata "$profile_one" | jq -r '.profile_hash')"
   write_codex_resolution_fixture "$profile_one" "$profile_one_lock"
 
@@ -3543,74 +3564,8 @@ test_jsonl_cold_launch_isolates_automatic_build_output() {
   printf 'Trellage host test: PASS: jsonl cold launch isolates automatic build output\n'
 }
 
-test_jsonl_cold_launch_isolates_compiler_bootstrap_output() {
-  local dist_dir="$prototype_dir/../../packages/trellage-cli/dist"
-  local stamp="$dist_dir/.source-hash"
-  local stamp_backup="$test_root/compiler-source-hash.backup"
-  local fake_npm_bin="$test_root/jsonl-fake-npm-bin"
-  local marker='FAKE_NPM_BUILD_MARKER_4a7d10'
-  local worktree="$test_root/jsonl-compiler-bootstrap-worktree"
-  local docker_log="$test_root/jsonl-compiler-bootstrap.docker.log"
-  local state_volume text_state_volume stdout_capture stderr_capture profile_hash runtime_hash
-
-  [[ -f "$stamp" ]] || fail 'profile compiler source-hash stamp is missing'
-  cp "$stamp" "$stamp_backup"
-  mkdir -p "$fake_npm_bin" "$worktree"
-  state_volume="$(resource_names "$worktree" claude-headless-test claude | tail -n 1)"
-  text_state_volume="$(resource_names "$worktree" | tail -n 1)"
-  profile_hash="$(jq -r '.profile_hash' "$claude_metadata")"
-  runtime_hash="$(jq -r '.runtime_hash' "$claude_metadata")"
-  cat >"$fake_npm_bin/npm" <<EOF
-#!/bin/sh
-set -eu
-printf '%s\n' '$marker'
-printf '%s\n' '$marker-stderr' >&2
-if [ "\$*" = 'run build' ]; then
-  cp '$stamp_backup' '$stamp'
-fi
-EOF
-  chmod +x "$fake_npm_bin/npm"
-
-  : >"$docker_log"
-  : >"$host_node_log"
-  printf 'stale-fingerprint\n' >"$stamp"
-  stdout_capture="$test_root/jsonl-compiler-bootstrap.jsonl.stdout"
-  stderr_capture="$test_root/jsonl-compiler-bootstrap.jsonl.stderr"
-  FAKE_PROFILE_METADATA="$claude_metadata" \
-    FAKE_DOCKER_IMAGE_PROFILE_HASH="$profile_hash" \
-    FAKE_DOCKER_CONTAINER_PROFILE_HASH="$profile_hash" \
-    FAKE_DOCKER_IMAGE_RUNTIME_HASH="$runtime_hash" \
-    FAKE_DOCKER_CONTAINER_RUNTIME_HASH="$runtime_hash" \
-    FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running FAKE_DOCKER_PROFILE=claude-headless-test \
-    FAKE_DOCKER_PROTOTYPE=trellage-claude \
-    run_non_tty "$worktree" "$docker_log" "$worktree" \
-      env PATH="$fake_npm_bin:$fake_bin:$PATH" \
-      "$prototype_dir/trellage" --profile claude-headless-test --output-format jsonl \
-      -p 'jsonl compiler bootstrap' \
-    >"$stdout_capture" 2>"$stderr_capture"
-  cp "$stamp_backup" "$stamp"
-  ! grep -Fq "$marker" "$stdout_capture" \
-    || fail 'jsonl mode leaked profile compiler bootstrap output onto the harness stream'
-  grep -Fq "$marker" "$stderr_capture" \
-    || fail 'jsonl mode dropped profile compiler bootstrap stdout instead of redirecting it to stderr'
-  grep -Fq "$marker-stderr" "$stderr_capture" \
-    || fail 'profile compiler bootstrap stderr output did not reach stderr'
-
-  : >"$docker_log"
-  : >"$host_node_log"
-  printf 'stale-fingerprint\n' >"$stamp"
-  stdout_capture="$test_root/jsonl-compiler-bootstrap.text.stdout"
-  stderr_capture="$test_root/jsonl-compiler-bootstrap.text.stderr"
-  FAKE_DOCKER_VOLUME_STATE=matching FAKE_DOCKER_STATE_VOLUME="$text_state_volume" \
-    FAKE_DOCKER_CONTAINER_STATE=matching-running \
-    run_tty "$worktree" "$docker_log" "$worktree" \
-      env PATH="$fake_npm_bin:$fake_bin:$PATH" "$prototype_dir/trellage" \
-    >"$stdout_capture" 2>"$stderr_capture"
-  cp "$stamp_backup" "$stamp"
-  grep -Fq "$marker" "$stdout_capture" \
-    || fail 'text output format stopped showing profile compiler bootstrap output on stdout'
-  printf 'Trellage host test: PASS: jsonl cold launch isolates compiler bootstrap output\n'
+test_jsonl_launch_refuses_unprepared_source() {
+  assert_source_readiness_refusal jsonl --output-format jsonl -p 'source readiness'
 }
 
 test_jsonl_launch_isolates_github_cli_auth_output() {
@@ -3884,15 +3839,16 @@ test_upgrade_delegates_to_effect_cli() {
   local fake_node_bin="$test_root/fake-node-bin"
   local node_log="$test_root/upgrade-node.log"
   local help_output
-  compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/dist/cli.js"
-  help_output="$($real_node "$compiler" --help)"
-  grep -Eq -- '- upgrade \[<profile>\]' <<<"$help_output" \
+  compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/src/cli.ts"
+  help_output="$("${source_bun[@]}" "$compiler" --help)"
+  grep -Fq -- '- upgrade [--strict-harness] [<profile>]' <<<"$help_output" \
     || fail 'Effect CLI help does not list upgrade'
   grep -Eq -- '- ci-verify \[<profile>\]' <<<"$help_output" \
     || fail 'Effect CLI help does not list ci-verify'
 
   mkdir -p "$fake_node_bin"
   ln -sf "$prototype_dir/tests/fakes/host-env" "$fake_node_bin/env"
+  ln -s "$fake_bin/bun" "$fake_node_bin/bun"
   cat >"$fake_node_bin/node" <<'EOF'
 #!/bin/sh
 set -eu
@@ -3946,13 +3902,14 @@ test_list_delegates_to_effect_cli() {
   local fake_node_bin="$test_root/fake-list-node-bin"
   local node_log="$test_root/list-node.log"
   local help_output
-  compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/dist/cli.js"
-  help_output="$($real_node "$compiler" --help)"
+  compiler="$(cd "$prototype_dir/../../packages/trellage-cli" && pwd -P)/src/cli.ts"
+  help_output="$("${source_bun[@]}" "$compiler" --help)"
   grep -Eq -- '- list' <<<"$help_output" \
     || fail 'Effect CLI help does not list list'
 
   mkdir -p "$fake_node_bin"
   ln -sf "$prototype_dir/tests/fakes/host-env" "$fake_node_bin/env"
+  ln -s "$fake_bin/bun" "$fake_node_bin/bun"
   cat >"$fake_node_bin/node" <<'EOF'
 #!/bin/sh
 set -eu
@@ -3986,89 +3943,56 @@ EOF
   printf 'Trellage host test: PASS: list delegates to Effect CLI\n'
 }
 
-test_profile_compiler_bootstraps_when_missing_or_stale() {
-  local fixture_root="$test_root/profile-compiler-bootstrap"
-  local fixture_launcher="$fixture_root/prototypes/trellage/trellage"
-  local fake_bin="$fixture_root/fake-bin"
-  local npm_log="$fixture_root/npm.log"
-  local output
-
-  mkdir -p \
-    "$fixture_root/prototypes/trellage" \
-    "$fixture_root/packages/trellage-cli" \
-    "$fixture_root/packages/trellage-guide-core" \
-    "$fixture_root/scripts" \
-    "$fake_bin"
-  cp "$prototype_dir/trellage" "$fixture_launcher"
-  printf '%s\n' '#!/bin/sh' "printf '%s\\n' fresh-fingerprint" \
-    >"$fixture_root/scripts/profile-compiler-fingerprint.sh"
-  cat >"$fake_bin/npm" <<'EOF'
-#!/bin/sh
-set -eu
-printf '%s\n' "$*" >>"$FAKE_NPM_LOG"
-case "$*" in
-  ci)
-    mkdir -p node_modules/.bin node_modules/yaml
-    : >node_modules/.bin/tsc
-    : >node_modules/yaml/package.json
-    chmod +x node_modules/.bin/tsc
-    ;;
-  'run build')
-    mkdir -p dist
-    cat >dist/cli.js <<'NODE'
-if (process.argv[2] === "list") {
-  process.stdout.write('{"schemaVersion":1,"profiles":[]}\n')
+test_profile_compiler_requires_explicit_preparation() {
+  assert_source_readiness_refusal compiler list --json-full
 }
-NODE
-    printf '%s\n' 'fresh-fingerprint' >dist/.source-hash
-    printf '%s\n' 'npm build output'
-    ;;
-  *)
-    exit 64
-    ;;
-esac
-EOF
-  chmod +x \
-    "$fixture_launcher" \
-    "$fixture_root/scripts/profile-compiler-fingerprint.sh" \
-    "$fake_bin/npm"
-  ln -s "$real_node" "$fake_bin/node"
 
-  output="$(FAKE_NPM_LOG="$npm_log" PATH="$fake_bin:$PATH" TRELLAGE_ENVIRONMENT=off \
-    "$fixture_launcher" upgrade all 2>&1)"
-  [[ "$(grep -Fxc 'ci' "$npm_log")" == 2 ]] \
-    || fail 'missing profile compiler and guide dependencies did not trigger npm ci'
-  grep -Fqx 'run build' "$npm_log" \
-    || fail 'missing profile compiler did not trigger npm run build'
-  grep -Fqx 'trellage: installing profile compiler dependencies' <<<"$output" \
-    || fail 'profile compiler dependency bootstrap was not reported'
-  grep -Fqx 'trellage: installing profile guide dependencies' <<<"$output" \
-    || fail 'profile guide dependency bootstrap was not reported'
-  grep -Fqx 'trellage: building profile compiler' <<<"$output" \
-    || fail 'profile compiler build was not reported'
-
-  printf '%s\n' 'stale-fingerprint' \
-    >"$fixture_root/packages/trellage-cli/dist/.source-hash"
-  : >"$npm_log"
-  output="$(FAKE_NPM_LOG="$npm_log" PATH="$fake_bin:$PATH" TRELLAGE_ENVIRONMENT=off \
-    "$fixture_launcher" upgrade all 2>&1)"
-  [[ "$(cat "$npm_log")" == 'run build' ]] \
-    || fail 'stale profile compiler did not rebuild without reinstalling dependencies'
-  grep -Fqx 'trellage: building profile compiler' <<<"$output" \
-    || fail 'stale profile compiler rebuild was not reported'
-
-  printf '%s\n' 'stale-fingerprint' \
-    >"$fixture_root/packages/trellage-cli/dist/.source-hash"
-  FAKE_NPM_LOG="$npm_log" PATH="$fake_bin:$PATH" TRELLAGE_ENVIRONMENT=off \
-    "$fixture_launcher" list --json-full \
-    >"$fixture_root/list.json" 2>"$fixture_root/list.stderr"
-  jq -e \
-    '.schemaVersion == 1 and .profiles == []' \
-    "$fixture_root/list.json" >/dev/null \
-    || fail 'compiler bootstrap polluted list JSON stdout'
-  grep -Fqx 'npm build output' "$fixture_root/list.stderr" \
-    || fail 'list compiler bootstrap did not preserve build output on stderr'
-  printf 'Trellage host test: PASS: profile compiler bootstraps when missing or stale\n'
+assert_source_readiness_refusal() {
+  local label="$1"
+  shift
+  local fixture_root="$test_root/source-readiness-$label"
+  "${source_bun[@]}" --input-type=module - "$prototype_dir/../.." "$fixture_root" <<'TS'
+import { cpSync, mkdirSync, writeFileSync } from "node:fs"
+import path from "node:path"
+const [source, root] = process.argv.slice(2)
+const write = (relative, value) => {
+  const target = path.join(root, relative)
+  mkdirSync(path.dirname(target), { recursive: true })
+  writeFileSync(target, value)
+}
+for (const directory of ["bin", "profile-guides", "profiles", "packages/trellage-guide-core"])
+  mkdirSync(path.join(root, directory), { recursive: true })
+for (const relative of ["scripts/bun-runtime.sh", "prototypes/trellage/trellage", "packages/trellage-runtime/src", "packages/trellage-runtime/bunfig.toml"])
+  cpSync(path.join(source, relative), path.join(root, relative), { recursive: true })
+for (const name of ["bun.lock", "bunfig.toml", "tsconfig.base.json", "skills.json"])
+  write(name, name === "bunfig.toml" ? "" : "{}")
+write("package.json", '{"name":"readiness-fixture","private":true}')
+write("packages/trellage-runtime/package.json", '{"name":"@trellage/runtime"}')
+write("packages/trellage-cli/package.json", '{"name":"@trellage/profile-compiler","dependencies":{"varlock":"1.0.0"}}')
+write("packages/trellage-cli/src/cli.ts", 'throw new Error("unprepared compiler executed")')
+write("node_modules/varlock/package.json", '{"name":"varlock","version":"1.0.0"}')
+TS
+  local state
+  for state in missing stale; do
+    if [[ "$state" == stale ]]; then
+      "${source_bun[@]}" --input-type=module - "$fixture_root" <<'TS'
+import { appendFileSync } from "node:fs"
+import { writeReadiness } from "@trellage/runtime/workspace"
+const root = process.argv[2]
+writeReadiness(root)
+appendFileSync(`${root}/packages/trellage-cli/src/cli.ts`, "\n// changed source\n")
+TS
+    fi
+    if TRELLAGE_BUN_EXECUTABLE="$real_bun" "$fixture_root/prototypes/trellage/trellage" "$@" \
+      >"$fixture_root/out" 2>"$fixture_root/err"; then
+      fail "$label accepted $state source readiness"
+    fi
+    [[ ! -s "$fixture_root/out" ]] || fail "$label polluted stdout on $state source refusal"
+    grep -Fq 'source runtime is not ready; run scripts/build-profile-compiler.sh explicitly' "$fixture_root/err" \
+      || fail "$label did not report explicit preparation for $state source"
+    [[ ! -e "$fixture_root/packages/trellage-cli/dist" ]] || fail "$label generated compiler output"
+  done
+  printf 'Trellage host test: PASS: %s refuses missing/stale source readiness without compilation\n' "$label"
 }
 
 test_interactive_profile_selection() {
@@ -4082,7 +4006,7 @@ test_interactive_profile_selection() {
   mkdir -p "$worktree"
   : >"$docker_log"
   FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
-    "$real_node" "$prototype_dir/../../packages/trellage-cli/dist/cli.js" metadata "$profile" \
+    "${source_bun[@]}" "$prototype_dir/../../packages/trellage-cli/src/cli.ts" metadata "$profile" \
     | jq '.locked = true | .image = "test/image:locked"' >"$metadata"
   jq -n --arg profile "$profile" --argjson headless "$default_headless" '[
     {
@@ -4231,9 +4155,9 @@ test_copilot_metadata_contract() {
     'ref = "main"' \
     'marketplace = "hve-core"' \
     'select = ["hve-core"]' >"$profile"
-  compiler="$prototype_dir/../../packages/trellage-cli/dist/cli.js"
+  compiler="$prototype_dir/../../packages/trellage-cli/src/cli.ts"
   profile_hash="$(FAKE_DOCKER_LOG="$metadata_docker_log" PATH="$fake_bin:$PATH" \
-    "$real_node" "$compiler" metadata "$profile" | jq -r '.profile_hash')"
+    "${source_bun[@]}" "$compiler" metadata "$profile" | jq -r '.profile_hash')"
   source_integrity="$(printf '%s' '[{"kind":"file","path":"plugins/hve-core/SKILL.md","sha256":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}]' | shasum -a 256 | awk '{print "sha256:" $1}')"
   printf '%s\n' \
     'schema = 1' \
@@ -4270,12 +4194,12 @@ test_copilot_metadata_contract() {
     'final_digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"' >"$lock"
   (
     cd "$prototype_dir/../../packages/trellage-cli"
-    "$real_node" --input-type=module - "$profile" "$lock" "$HOME/.cache" <<'NODE'
+    "${source_bun[@]}" --input-type=module - "$profile" "$lock" "$HOME/.cache" <<'NODE'
 import { readFile } from "node:fs/promises"
 import { Effect } from "effect"
-import { loadProfile } from "./dist/application.js"
-import { parseLock } from "./dist/lock-file.js"
-import { writeResolutionReceipt } from "./dist/resolution-receipt.js"
+import { loadProfile } from "./src/application.ts"
+import { parseLock } from "./src/lock-file.ts"
+import { writeResolutionReceipt } from "./src/resolution-receipt.ts"
 
 const document = await Effect.runPromise(loadProfile(process.argv[2]))
 const lock = await Effect.runPromise(parseLock(await readFile(process.argv[3], "utf8")))
@@ -5468,6 +5392,8 @@ PY
     || fail 'Herdr pane context reached the Sandbox container'
   [[ -f "$sandbox_metadata_node_environment" ]] \
     || fail 'Sandbox metadata reporter environment was not captured'
+  grep -Fqx 'BUN_RUNTIME_TRANSPILER_CACHE_PATH=0' "$sandbox_metadata_node_environment" \
+    || fail 'Sandbox metadata reporter enabled the Bun disk cache'
   ! grep -Eq '(^|_)(TOKEN|KEY|SECRET|HERDR_)' "$sandbox_metadata_node_environment" \
     || fail 'Sandbox metadata reporter inherited host credentials or Herdr context'
 
@@ -5988,6 +5914,14 @@ test_agent_overrides_reach_copilot_runtimes() {
   printf 'Trellage host test: PASS: Copilot workflow agents reach new, prompt, and resume runtimes\n'
 }
 
+if [[ "${TRELLAGE_HOST_SOURCE_ONLY:-}" == 1 ]]; then
+  test_profile_compiler_requires_explicit_preparation
+  test_jsonl_launch_refuses_unprepared_source
+  test_list_delegates_to_effect_cli
+  test_upgrade_delegates_to_effect_cli
+  exit 0
+fi
+
 if [[ "${TRELLAGE_HOST_AGENT_ONLY:-}" == 1 ]]; then
   test_agent_overrides_reach_copilot_runtimes
   test_portable_prompt_parser_contract
@@ -6015,7 +5949,7 @@ test_claude_core_injects_exact_metadata_routing_only_at_final_exec
 test_claude_model_override_routes_only_opus
 test_model_overrides_reach_each_runtime
 test_agent_overrides_reach_copilot_runtimes
-test_profile_compiler_bootstraps_when_missing_or_stale
+test_profile_compiler_requires_explicit_preparation
 test_list_delegates_to_effect_cli
 test_upgrade_delegates_to_effect_cli
 test_interactive_profile_selection
@@ -6083,7 +6017,7 @@ test_global_varlock_bootstrap_supplies_claude_browser_token
 test_stale_image_label_triggers_automatic_build
 test_stale_image_reuses_development_receipt
 test_jsonl_cold_launch_isolates_automatic_build_output
-test_jsonl_cold_launch_isolates_compiler_bootstrap_output
+test_jsonl_launch_refuses_unprepared_source
 test_jsonl_launch_isolates_github_cli_auth_output
 test_stale_runtime_labels_are_rejected_and_doctor_is_read_only
 test_rebuild_replaces_container_and_preserves_profile_state

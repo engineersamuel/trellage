@@ -1,9 +1,9 @@
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { AdminHarnessVersionResult } from "./admin-harness-version.js"
-import type { AdminSkillsCheckResult } from "./admin-skills-check.js"
-import type { HarnessUpdateAllPlan } from "./admin-harness-update-all.js"
-import type { HarnessUpdatePlan } from "./admin-harness-update.js"
-import { harnessUpgradeAvailability } from "./admin-harness-update-preview.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { AdminHarnessVersionResult } from "./admin-harness-version.ts"
+import type { AdminSkillsCheckResult } from "./admin-skills-check.ts"
+import type { HarnessUpdateAllPlan } from "./admin-harness-update-all.ts"
+import type { HarnessUpdatePlan } from "./admin-harness-update.ts"
+import { harnessUpgradeAvailability } from "./admin-harness-update-preview.ts"
 
 export interface UpdateCheckIssue {
   readonly ref: string

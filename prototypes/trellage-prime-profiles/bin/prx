@@ -86,20 +86,20 @@ readonly kernel_python="$kernel_venv/bin/python"
 readonly kernel_identity_stamp="$profile_home/kernel-runtime-identity.json"
 readonly runtime_identity_schema=1
 readonly kernel_spec_version=1
-floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
 if [[ ! -f "$floating_skills_manager" ]]; then
-  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+bun_runner="${floating_skills_manager%/*}/run-source.sh"
 
 ensure_floating_skills() {
   [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
     || die "invalid floating-skills manager: $floating_skills_manager"
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die "invalid floating-skills catalog: $floating_skills_catalog"
-  command -v node >/dev/null 2>&1 || die 'required command not found: node'
-  node "$floating_skills_manager" ensure \
+  "$bun_runner" "$floating_skills_manager" ensure \
     --catalog "$floating_skills_catalog" \
     --bundle native-common \
     --target "$profile_home/skills" \
@@ -107,19 +107,18 @@ ensure_floating_skills() {
 }
 
 skills_update_profile() {
-  local helper="$runtime_root/native-skills.mjs"
+  local helper="$runtime_root/native-skills.ts"
   local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
   local skill_args=("${1:---sync}")
   [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
 
   require_owned_profile
-  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.ts"
   [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
-  require_command node
   if [[ "${skill_args[0]}" == --fresh ]]; then
-    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$profile_home/skills"
+    exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$profile_home/skills"
   fi
-  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$profile_home/skills" \
+  "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$profile_home/skills" \
     || die 'failed to update cached skills: default'
   [[ "${skill_args[0]}" == --fresh ]] || printf 'default: skills updated from cache\n'
 }
@@ -677,43 +676,8 @@ read_installed_version() {
 
 runtime_tree_hash() {
   local runtime_source="$1"
-
-  require_node
-  PRX_RUNTIME_SOURCE="$runtime_source" node <<'NODE'
-const crypto = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
-
-const root = process.env.PRX_RUNTIME_SOURCE;
-const hash = crypto.createHash("sha256");
-
-function walk(directory, relative = "") {
-  const entries = fs.readdirSync(directory, { withFileTypes: true })
-    .sort((a, b) => Buffer.from(a.name).compare(Buffer.from(b.name)));
-  for (const entry of entries) {
-    const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
-    const child = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) {
-      throw new Error(`symlink in bundled runtime: ${childRelative}`);
-    }
-    if (entry.isDirectory()) {
-      hash.update(`D\0${Buffer.byteLength(childRelative)}\0${childRelative}\0`);
-      walk(child, childRelative);
-      continue;
-    }
-    if (!entry.isFile()) {
-      throw new Error(`unsupported entry in bundled runtime: ${childRelative}`);
-    }
-    const content = fs.readFileSync(child);
-    hash.update(`F\0${Buffer.byteLength(childRelative)}\0${childRelative}\0${content.length}\0`);
-    hash.update(content);
-    hash.update("\0");
-  }
-}
-
-walk(root);
-process.stdout.write(`${hash.digest("hex")}\n`);
-NODE
+  "$bun_runner" "${floating_skills_manager%/*}/../packages/trellage-runtime/src/native-tools.ts" \
+    tree-hash "$runtime_source"
 }
 
 validate_runtime_identity_file() {
@@ -1412,18 +1376,8 @@ daemon_socket_is_listening() {
     return 0
   fi
   [[ -S "$daemon_socket" ]] || return 1
-  PRX_DAEMON_SOCKET="$daemon_socket" node --input-type=module -e '
-import { createConnection } from "node:net";
-const socket = process.env.PRX_DAEMON_SOCKET;
-await new Promise((resolve) => {
-  const c = createConnection(socket);
-  const done = (code) => { try { c.destroy(); } catch {} resolve(code); };
-  c.setTimeout(250);
-  c.once("connect", () => done(0));
-  c.once("error", () => done(1));
-  c.once("timeout", () => done(1));
-}).then((code) => process.exit(code));
-' 2>/dev/null
+  "$bun_runner" "${floating_skills_manager%/*}/../packages/trellage-runtime/src/native-tools.ts" \
+    socket-listening "$daemon_socket" 2>/dev/null
 }
 
 stop_profile_daemon_socket() {

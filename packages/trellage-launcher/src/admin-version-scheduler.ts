@@ -10,11 +10,11 @@
  * profile's update-check failure or timeout is isolated exactly like every
  * other run and never affects any other profile's outcome.
  */
-import type { AdminProfileEntry, AdminUpdateCheckResult } from "./admin-model.js"
-import type { AdminRunManager } from "./admin-run-manager.js"
-import { buildUpdateCheckCommand, parseUpdateCheckOutput } from "./admin-version-check.js"
-import type { AdminVersionCacheEntry, AdminVersionCacheRecord } from "./admin-version-cache.js"
-import { isVersionCacheStale } from "./admin-version-cache.js"
+import type { AdminProfileEntry, AdminUpdateCheckResult } from "./admin-model.ts"
+import type { AdminRunManager } from "./admin-run-manager.ts"
+import { buildUpdateCheckCommand, parseUpdateCheckOutput } from "./admin-version-check.ts"
+import type { AdminVersionCacheEntry, AdminVersionCacheRecord } from "./admin-version-cache.ts"
+import { isVersionCacheStale } from "./admin-version-cache.ts"
 
 export interface VersionCheckSchedulerOptions {
   readonly maxConcurrent?: number

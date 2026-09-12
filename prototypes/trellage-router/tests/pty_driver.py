@@ -26,6 +26,7 @@ if pid == 0:
 output = bytearray()
 next_key_stage = 0
 next_key_stage_at = None
+key_stage_frame = 0
 sent_signal = False
 deadline = time.monotonic() + 10
 status = None
@@ -38,12 +39,19 @@ while time.monotonic() < deadline:
         except OSError:
             chunk = b""
         output.extend(chunk)
-        if next_key_stage == 0 and output:
+        # Entering the alternate screen precedes Ink's input subscription.
+        screen_ready = (
+            b"\x1b[?1049h" not in output
+            or b"\x1b[?2026l" in output
+            or b"Type yes to update" in output
+        )
+        if next_key_stage == 0 and output and screen_ready:
             time.sleep(0.1)
             try:
                 os.write(terminal, key_stages[next_key_stage])
                 next_key_stage += 1
                 next_key_stage_at = time.monotonic() + 0.1
+                key_stage_frame = output.count(b"\x1b[?2026l")
             except OSError:
                 pass
         if signal_marker and not sent_signal and signal_marker.encode() in output:
@@ -54,11 +62,16 @@ while time.monotonic() < deadline:
         next_key_stage_at is not None
         and next_key_stage < len(key_stages)
         and time.monotonic() >= next_key_stage_at
+        and (
+            key_stage_frame == 0
+            or output.count(b"\x1b[?2026l") > key_stage_frame
+        )
     ):
         try:
             os.write(terminal, key_stages[next_key_stage])
             next_key_stage += 1
             next_key_stage_at = time.monotonic() + 0.1
+            key_stage_frame = output.count(b"\x1b[?2026l")
         except OSError:
             pass
 

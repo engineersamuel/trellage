@@ -7,9 +7,9 @@ import {
   prepareGuideGoal,
   type GuideGoalCandidateContext,
   type GuideGoalExecution,
-} from "./guide-goal-execution.js"
-import { GuideGoalError } from "./guide-goal-augment.js"
-import type { SelectedProfile } from "./guide-launch.js"
+} from "./guide-goal-execution.ts"
+import { GuideGoalError } from "./guide-goal-augment.ts"
+import type { SelectedProfile } from "./guide-launch.ts"
 
 export interface GuideGoalTransport {
   readonly mode: "argv" | "manual"

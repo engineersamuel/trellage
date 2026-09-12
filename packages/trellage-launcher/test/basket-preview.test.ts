@@ -18,8 +18,8 @@ import {
   stagedCharacterCount,
   type BasketPreviewAction,
   type BasketPreviewState,
-} from "../src/basket-preview.js"
-import { basketBlockPreview, basketVisibleRange, countTextLines } from "../src/basket.js"
+} from "../src/basket-preview.tsx"
+import { basketBlockPreview, basketVisibleRange, countTextLines } from "../src/basket.ts"
 
 const emptyKey = {
   upArrow: false,

@@ -10,9 +10,10 @@
  * model), numeric bounds, profile/workflow reference checks against the
  * catalog, and uniqueness constraints.
  */
-import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { guideIntentMaximumLength } from "./guide-api.js"
-import type { GuideMatchCatalogEntry } from "./guide-catalog.js"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+// `guide-api.ts` imports this module type-only, so this value import adds no runtime cycle.
+import { guideIntentMaximumLength } from "./guide-api.ts"
+import type { GuideMatchCatalogEntry } from "./guide-catalog.ts"
 import {
   assertPreparedGuideGoal,
   guideGoalApproachBudget,
@@ -21,8 +22,8 @@ import {
   type GuideGoalCandidateContext,
   type GuideGoalExecution,
   type PreparedGuideGoal,
-} from "./guide-goal-execution.js"
-import { array, boundedNumber, exactKeys, fail, record, text, uniqueArray } from "./guide-text.js"
+} from "./guide-goal-execution.ts"
+import { array, boundedNumber, exactKeys, fail, record, text, uniqueArray } from "./guide-text.ts"
 
 export interface GuideMatchCandidate {
   readonly profileRef: string

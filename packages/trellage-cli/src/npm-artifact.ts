@@ -1,7 +1,7 @@
 import { Data, Effect } from "effect"
 
-import { cacheArtifact, type CachedArtifact } from "./artifact-cache.js"
-import type { ArtifactLock } from "./lock.js"
+import { cacheArtifact, type CachedArtifact } from "./artifact-cache.ts"
+import type { ArtifactLock } from "./lock.ts"
 
 export interface NpmArtifactResolution {
   readonly artifact: ArtifactLock

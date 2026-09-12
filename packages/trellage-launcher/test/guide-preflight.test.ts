@@ -11,10 +11,10 @@ import {
   type CommandRunOptions,
   type CommandRunResult,
   type CommandRunner,
-} from "../src/guide-launch.js"
-import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "../src/guide-preflight.js"
-import type { GuideGoalReadinessServices } from "../src/guide-goal-readiness.js"
-import { goalTransportFixture } from "./fixtures/goal-transport.js"
+} from "../src/guide-launch.ts"
+import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "../src/guide-preflight.ts"
+import type { GuideGoalReadinessServices } from "../src/guide-goal-readiness.ts"
+import { goalTransportFixture } from "./fixtures/goal-transport.ts"
 
 class FakeRunner implements CommandRunner {
   readonly calls: Array<{

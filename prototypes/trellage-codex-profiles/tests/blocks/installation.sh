@@ -98,6 +98,15 @@ assert_no_install_staging() {
     || fail "installation staging debris remains beneath $fixture_home: $staging_paths"
 }
 
+release_install_home() {
+  local completed_home="$1"
+  local name="${completed_home#"$fixture_root"/}"
+  [[ "$completed_home" == "$fixture_root/"* && -n "$name" && "$name" != */* \
+    && "$name" != . && "$name" != .. && -d "$completed_home" && ! -L "$completed_home" ]] \
+    || fail "refusing unsafe completed fixture cleanup: $completed_home"
+  rm -rf -- "$completed_home" || fail "could not remove completed fixture: $completed_home"
+}
+
 write_directory_topology() {
   topology_home="$1"
   topology_output="$2"
@@ -110,22 +119,8 @@ write_directory_topology() {
 write_owned_runtime_snapshot() {
   snapshot_root="$1"
   snapshot_output="$2"
-  (
-    CDPATH= cd -- "$snapshot_root"
-    find . -print | LC_ALL=C sort | while IFS= read -r entry; do
-      if [ -L "$entry" ]; then
-        printf 'l\t%s\t%s\t%s\n' \
-          "$(path_mode "$entry")" "$entry" "$(readlink "$entry")"
-      elif [ -f "$entry" ]; then
-        printf 'f\t%s\t%s\t%s\n' \
-          "$(path_mode "$entry")" "$entry" "$(sha256_file "$entry")"
-      elif [ -d "$entry" ]; then
-        printf 'd\t%s\t%s\n' "$(path_mode "$entry")" "$entry"
-      else
-        fail "unsupported runtime entry in snapshot: $entry"
-      fi
-    done
-  ) >"$snapshot_output" \
+  bun --no-install --no-env-file "--config=$root/../../packages/trellage-runtime/bunfig.toml" \
+    "$root/../../packages/trellage-runtime/test/refresh-fixture.ts" "$snapshot_root" snapshot >"$snapshot_output" \
     || fail "could not snapshot owned runtime: $snapshot_root"
 }
 
@@ -166,20 +161,27 @@ assert_install_published() {
     || fail 'installed session bridge bytes differ'
   [ -x "$installed/lib/trellage-session-bridge.py" ] \
     || fail 'installed session bridge is not executable'
-  cmp -s "$environment_runtime/.managed-by-trellage" \
-    <(printf 'trellage-native-environment-runtime-v1\n') \
+  cmp -s "$environment_runtime/.managed-by-trellage-source" \
+    <(printf 'trellage-source-runtime-v1\n') \
     || fail 'native environment runtime ownership marker differs'
-  cmp -s "$environment_runtime/native-environment.mjs" \
-    "$root/../../scripts/native-environment.mjs" \
+  cmp -s "$environment_runtime/scripts/native-environment.ts" \
+    "$root/../../scripts/native-environment.ts" \
     || fail 'installed native environment resolver bytes differ'
-  [ -f "$environment_runtime/node_modules/varlock/bin/cli.js" ] \
-    && [ ! -L "$environment_runtime/node_modules/varlock/bin/cli.js" ] \
+  varlock_directory="$("$environment_runtime/scripts/run-source.sh" \
+    "$environment_runtime/packages/trellage-runtime/src/workspace-cli.ts" \
+    dependency "$environment_runtime" varlock)" || fail 'could not resolve installed Varlock'
+  [ -f "$varlock_directory/bin/cli.js" ] \
+    && [ ! -L "$varlock_directory/bin/cli.js" ] \
     || fail 'installed Varlock CLI is missing or unsafe'
-  [ -f "$environment_runtime/node_modules/smol-toml/package.json" ] \
-    && [ ! -L "$environment_runtime/node_modules/smol-toml/package.json" ] \
+  toml_directory="$("$environment_runtime/scripts/run-source.sh" \
+    "$environment_runtime/packages/trellage-runtime/src/workspace-cli.ts" \
+    dependency "$environment_runtime" smol-toml)" || fail 'could not resolve installed TOML parser'
+  [ -f "$toml_directory/package.json" ] \
+    && [ ! -L "$toml_directory/package.json" ] \
     || fail 'installed TOML parser is missing or unsafe'
-  [ -z "$(find "$environment_runtime" -type l -print -quit)" ] \
-    || fail 'native environment runtime contains a symbolic link'
+  "$environment_runtime/scripts/run-source.sh" \
+    "$environment_runtime/packages/trellage-runtime/src/workspace-cli.ts" validate-owned "$environment_runtime" \
+    || fail 'native environment runtime contains an unowned path or unpermitted link'
   for safe_path in \
     "$fixture_home" \
     "$fixture_home/.local" \
@@ -284,9 +286,9 @@ assert_no_install_staging "$install_home"
 
 rm "$install_home/.local/share/trellage/cdx/lib/native-codex" \
   "$install_home/.local/share/trellage/cdx/lib/trellage-session-bridge.py" \
-  "$install_home/.local/share/trellage/cdx/native-skills.mjs"
+  "$install_home/.local/share/trellage/cdx/native-skills.ts"
 rm "$install_home/.local/share/trellage/cdx/lib/codex-config.py" \
-  "$install_home/.local/share/trellage/cdx/lib/codex-agents.mjs"
+  "$install_home/.local/share/trellage/cdx/lib/codex-agents.ts"
 rm -r "$install_home/.local/share/trellage/cdx/lib/agents"
 rmdir "$install_home/.local/share/trellage/cdx/lib"
 legacy_marketplace_dir="$install_home/.local/share/trellage/cdx/marketplaces/hve-core/.agents/plugins"
@@ -312,6 +314,7 @@ cmp -s "$fish_config" "$fixture_root/fish-before" || fail 'uninstall did not res
 assert_install_line 'preserved profile' \
   "$install_home/.local/share/trellage/profiles/codex/pstack/home/sentinel"
 assert_no_install_staging "$install_home"
+release_install_home "$install_home"
 
 absent_definition_home="$fixture_root/absent-definition-home"
 mkdir -p "$absent_definition_home"
@@ -371,6 +374,7 @@ cmp -s "$absent_fish" "$fixture_root/absent-definition.fish-before" \
   && [ ! -L "$absent_definition_home/.local/bin/cdx" ] \
   || fail 'absent-definition uninstall left managed command'
 assert_no_install_staging "$absent_definition_home"
+release_install_home "$absent_definition_home"
 
 absent_origin_home="$fixture_root/absent-origin-owned-reinstall-home"
 mkdir -p "$absent_origin_home"
@@ -416,6 +420,7 @@ cmp -s "$absent_origin_fish" "$fixture_root/absent-origin.original-fish" \
   && [ ! -L "$absent_origin_home/.local/bin/cdx" ] \
   || fail 'absent-origin uninstall left managed command'
 assert_no_install_staging "$absent_origin_home"
+release_install_home "$absent_origin_home"
 
 alias_origin_home="$fixture_root/alias-origin-owned-reinstall-home"
 mkdir -p "$alias_origin_home"
@@ -440,6 +445,7 @@ cmp -s "$alias_origin_home/.config/fish/config.fish" \
   "$fixture_root/alias-origin.original-fish" \
   || fail 'alias-origin owned reinstall lost legacy alias recovery metadata'
 assert_no_install_staging "$alias_origin_home"
+release_install_home "$alias_origin_home"
 
 for failure_point in \
   after-runtime-staging \
@@ -480,6 +486,7 @@ for failure_point in \
   cmp -s "$fixture_root/absent-definition-$failure_point.topology-before" \
     "$fixture_root/absent-definition-$failure_point.topology-after" \
     || fail "absent-definition install rollback changed topology: $failure_point"
+  release_install_home "$absent_failure_home"
 done
 
 for failure_point in \
@@ -516,6 +523,7 @@ for failure_point in \
   done
   assert_install_published "$absent_reinstall_home"
   assert_no_install_staging "$absent_reinstall_home"
+  release_install_home "$absent_reinstall_home"
 done
 
 for failure_point in \
@@ -546,6 +554,7 @@ for failure_point in \
     || fail "absent-definition uninstall rollback changed Fish mode: $failure_point"
   assert_install_published "$absent_uninstall_home"
   assert_no_install_staging "$absent_uninstall_home"
+  release_install_home "$absent_uninstall_home"
 done
 
 for conflict_kind in \
@@ -730,6 +739,7 @@ printf '%s\n' \
 HOME="$non_definition_home" /bin/bash "$install_script" >/dev/null \
   || fail 'install treated comment or quoted cdx text as a definition'
 assert_install_published "$non_definition_home"
+release_install_home "$non_definition_home"
 
 non_cdx_definition_home="$fixture_root/non-cdx-definitions"
 mkdir -p "$non_cdx_definition_home/.config/fish"
@@ -758,6 +768,7 @@ printf '%s\n' \
 HOME="$non_cdx_definition_home" /bin/bash "$install_script" >/dev/null \
   || fail 'install treated an option value or alias body as the cdx definition name'
 assert_install_published "$non_cdx_definition_home"
+release_install_home "$non_cdx_definition_home"
 
 for separator_kind in alias function alias-after-double-dash; do
   separator_home="$fixture_root/separator-conflict-$separator_kind"
@@ -823,6 +834,7 @@ for failure_point in \
   cmp -s "$fixture_root/$failure_point.topology-before" \
     "$fixture_root/$failure_point.topology-after" \
     || fail "directory topology changed after injected failure: $failure_point"
+  release_install_home "$failure_home"
 done
 
 preexisting_parent_home="$fixture_root/preexisting-parent-home"
@@ -884,6 +896,7 @@ for failure_point in \
   cmp -s "$fixture_root/reinstall-$failure_point.topology-before" \
     "$fixture_root/reinstall-$failure_point.topology-after" \
     || fail "reinstall rollback changed directory topology: $failure_point"
+  release_install_home "$reinstall_home"
 done
 
 signal_mv_bin="$fixture_root/signal-mv-bin"
@@ -972,6 +985,7 @@ for signal_boundary in \
   cmp -s "$fixture_root/$signal_boundary.topology-before" \
     "$fixture_root/$signal_boundary.topology-after" \
     || fail "signal-boundary install changed topology: $signal_boundary"
+  release_install_home "$signal_home"
 done
 
 for signal_boundary in \
@@ -1012,6 +1026,7 @@ for signal_boundary in \
   cmp -s "$fixture_root/$signal_boundary.topology-before" \
     "$fixture_root/$signal_boundary.topology-after" \
     || fail "signal-boundary uninstall changed topology: $signal_boundary"
+  release_install_home "$signal_home"
 done
 done
 
@@ -1040,6 +1055,7 @@ fi
 cmp -s "$edited_home/.config/fish/config.fish" "$fixture_root/edited-fish-before" \
   || fail 'refused uninstall changed edited Fish config'
 assert_install_published "$edited_home"
+release_install_home "$edited_home"
 
 for failure_point in \
   during-fish-publication \
@@ -1067,6 +1083,7 @@ for failure_point in \
     || fail "uninstall rollback changed Fish mode: $failure_point"
   assert_install_published "$uninstall_home"
   assert_no_install_staging "$uninstall_home"
+  release_install_home "$uninstall_home"
 done
 
 unrelated_command_home="$fixture_root/unrelated-command-home"
@@ -1096,14 +1113,16 @@ write_legacy_fish "$shared_rollback_home"
 HOME="$shared_rollback_home" /bin/bash "$install_script" >/dev/null \
   || fail 'shared-runtime rollback fixture install failed'
 shared_runtime_root="$shared_rollback_home/.local/share/trellage/common"
-chmod 0755 "$shared_runtime_root/native-environment-runtime/native-environment.mjs"
+chmod 0755 "$shared_runtime_root/native-environment-runtime/scripts/native-environment.ts"
 printf '%s\n' '# preserved native environment runtime' \
-  >"$shared_runtime_root/native-environment-runtime/native-environment.mjs"
-chmod 0555 "$shared_runtime_root/native-environment-runtime/native-environment.mjs"
-chmod 0755 "$shared_runtime_root/floating-skills-runtime/floating-skills.mjs"
+  >"$shared_runtime_root/native-environment-runtime/scripts/native-environment.ts"
+chmod 0555 "$shared_runtime_root/native-environment-runtime/scripts/native-environment.ts"
+chmod 0755 "$shared_runtime_root/floating-skills-runtime/scripts/floating-skills.ts"
 printf '%s\n' '# preserved floating skills runtime' \
-  >"$shared_runtime_root/floating-skills-runtime/floating-skills.mjs"
-chmod 0555 "$shared_runtime_root/floating-skills-runtime/floating-skills.mjs"
+  >"$shared_runtime_root/floating-skills-runtime/scripts/floating-skills.ts"
+chmod 0555 "$shared_runtime_root/floating-skills-runtime/scripts/floating-skills.ts"
+refresh_fixture_source "$shared_runtime_root/native-environment-runtime"
+refresh_fixture_source "$shared_runtime_root/floating-skills-runtime"
 write_owned_runtime_snapshot "$shared_runtime_root" \
   "$fixture_root/shared-runtime.before"
 for failure_point in \
@@ -1125,6 +1144,7 @@ for failure_point in \
     || fail "shared-runtime rollback changed the cdx launcher: $failure_point"
   assert_no_install_staging "$shared_rollback_home"
 done
+release_install_home "$shared_rollback_home"
 
 new_shared_failure_home="$fixture_root/new-shared-runtime-failure-home"
 write_legacy_fish "$new_shared_failure_home"
@@ -1201,5 +1221,6 @@ write_legacy_fish "$permissive_umask_home"
 ) || fail 'install failed with a permissive process umask'
 assert_install_published "$permissive_umask_home"
 assert_no_install_staging "$permissive_umask_home"
+release_install_home "$permissive_umask_home"
 
 printf 'trellage Codex installation contract: PASS\n'

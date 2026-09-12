@@ -9,29 +9,29 @@ import {
   type ContinuationDraft,
   type ContinuationPlacement,
   type NextAction,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 import {
   parseGuideHeadlessArgv,
   resolveGuideModelRouting,
   runGuideGenerate,
   selectedProfileFromCatalogRef,
   validateGuideIntent,
-} from "./guide-api.js"
-import { executeGuideBatch, type GuideBatchEntryResult, type JobPlacement, type QueuedGuideJob } from "./guide-batch.js"
-import { guideMatchCatalogEntries, type CombinedGuideCatalog } from "./guide-catalog.js"
-import { inspectGitWorktreeIntent, type CommandRunner, type HerdrContext } from "./guide-launch.js"
-import type { GuideProvider } from "./guide-provider.js"
+} from "./guide-api.ts"
+import { executeGuideBatch, type GuideBatchEntryResult, type JobPlacement, type QueuedGuideJob } from "./guide-batch.ts"
+import { guideMatchCatalogEntries, type CombinedGuideCatalog } from "./guide-catalog.ts"
+import { inspectGitWorktreeIntent, type CommandRunner, type HerdrContext } from "./guide-launch.ts"
+import type { GuideProvider } from "./guide-provider.ts"
 import {
   analyzeConversation,
   continuationCallPlan,
   validateContinuationContent,
   type ContinuationProvider,
-} from "./continuation-provider.js"
-import { createPrivateContinuationJob, launchPrivateContinuation } from "./continuation-launch.js"
-import type { ContinuationServices } from "./continuation-services.js"
-import type { ContinuationSourceClient } from "./continuation-source-client.js"
-import type { ContinuationStore } from "./continuation-store.js"
-import { appendContinuationLaunchEvent, recoverInterruptedContinuation } from "./continuation-entry.js"
+} from "./continuation-provider.ts"
+import { createPrivateContinuationJob, launchPrivateContinuation } from "./continuation-launch.ts"
+import type { ContinuationServices } from "./continuation-services.ts"
+import type { ContinuationSourceClient } from "./continuation-source-client.ts"
+import type { ContinuationStore } from "./continuation-store.ts"
+import { appendContinuationLaunchEvent, recoverInterruptedContinuation } from "./continuation-entry.ts"
 
 enum BatchStatus {
   Launched = "launched",

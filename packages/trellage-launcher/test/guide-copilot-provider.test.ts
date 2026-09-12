@@ -11,24 +11,24 @@ import {
   type GuideModelClient,
   type GuideModelMessage,
   type GuideModelSession,
-} from "../src/copilot-guide-provider.js"
-import type { GuideMatchCatalogEntry } from "../src/guide-catalog.js"
+} from "../src/copilot-guide-provider.ts"
+import type { GuideMatchCatalogEntry } from "../src/guide-catalog.ts"
 import {
   composeGuideGoalCandidate,
   guideGoalApproachBudget,
   prepareGuideGoal,
   resolveGuideGoalExecution,
   type PreparedGuideGoal,
-} from "../src/guide-goal-execution.js"
-import { validateGuideGenerateResult } from "../src/guide-provider.js"
-import { record } from "../src/guide-text.js"
-import { goalDraft } from "./fixtures/goal-me-skill.js"
+} from "../src/guide-goal-execution.ts"
+import { validateGuideGenerateResult } from "../src/guide-provider.ts"
+import { record } from "../src/guide-text.ts"
+import { goalDraft } from "./fixtures/goal-me-skill.ts"
 import type {
   GuideGenerateInput,
   GuideMatchInput,
   GuideOptimizeInput,
   GuideRefineInput,
-} from "../src/guide-provider.js"
+} from "../src/guide-provider.ts"
 
 const prompts = {
   match: "MATCH SYSTEM PROMPT",

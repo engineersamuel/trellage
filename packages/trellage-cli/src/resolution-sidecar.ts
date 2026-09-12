@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 
 import { Data, Effect, ParseResult, Schema } from "effect"
 
-import type { Platform } from "./platform.js"
+import type { Platform } from "./platform.ts"
 
 const sha256 = (value: string): string => `sha256:${createHash("sha256").update(value).digest("hex")}`
 

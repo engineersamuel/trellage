@@ -39,23 +39,23 @@
  */
 import { Effect } from "effect"
 
-import { ApplicationError, loadProfile } from "./application.js"
-import { GitHubClaudeReleaseClient, resolveClaudeRelease, type ClaudeReleaseClient } from "./claude-release.js"
-import { GitHubCodexReleaseClient, resolveCodexRelease, type CodexReleaseClient } from "./codex-release.js"
-import { GitHubCopilotReleaseClient, resolveCopilotRelease, type CopilotReleaseClient } from "./copilot-release.js"
-import { NodeGitClient, type GitClient } from "./github-cache.js"
+import { ApplicationError, loadProfile } from "./application.ts"
+import { GitHubClaudeReleaseClient, resolveClaudeRelease, type ClaudeReleaseClient } from "./claude-release.ts"
+import { GitHubCodexReleaseClient, resolveCodexRelease, type CodexReleaseClient } from "./codex-release.ts"
+import { GitHubCopilotReleaseClient, resolveCopilotRelease, type CopilotReleaseClient } from "./copilot-release.ts"
+import { NodeGitClient, type GitClient } from "./github-cache.ts"
 import {
   cachedLatestVersion,
   harnessLatestVersionCachePath,
   loadHarnessLatestVersionCache,
   recordLatestVersion,
-} from "./harness-latest-version-cache.js"
-import { harnessPackageRevision, lockIsReady, type ProfileLock } from "./lock.js"
-import { GitHubPiReleaseClient, resolvePiRelease, type PiReleaseClient } from "./pi-release.js"
-import type { Platform } from "./platform.js"
-import { PrimeReleaseHttpClient, resolvePrimeRelease, type PrimeReleaseClient } from "./prime-release.js"
-import type { ProfileDocument } from "./profile.js"
-import { loadResolutionReceipt } from "./resolution-receipt.js"
+} from "./harness-latest-version-cache.ts"
+import { harnessPackageRevision, lockIsReady, type ProfileLock } from "./lock.ts"
+import { GitHubPiReleaseClient, resolvePiRelease, type PiReleaseClient } from "./pi-release.ts"
+import type { Platform } from "./platform.ts"
+import { PrimeReleaseHttpClient, resolvePrimeRelease, type PrimeReleaseClient } from "./prime-release.ts"
+import type { ProfileDocument } from "./profile.ts"
+import { loadResolutionReceipt } from "./resolution-receipt.ts"
 
 export interface HarnessVersionReport {
   readonly schemaVersion: 1

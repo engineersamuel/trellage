@@ -1,8 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // @ts-nocheck -- Legacy process-launch adapter; intent/state modules are type-checked.
 import { spawn } from "node:child_process"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { bunExecutable } from "@trellage/runtime"
 
 import { parsePopupInvocation } from "./lib/context.ts"
 import {
@@ -120,6 +121,7 @@ export const main = async () => {
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
+    bunExecutable()
     await main()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

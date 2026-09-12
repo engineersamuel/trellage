@@ -4,19 +4,19 @@ import path from "node:path"
 import stringWidth from "string-width"
 import { describe, expect, it } from "vitest"
 
-import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { GuideAugmentKind, GuideAugmentPhase } from "../src/guide-augment.js"
-import { renderGuideGoalProposal } from "../src/guide-goal-augment.js"
-import { composeGuideGoalCandidate, prepareGuideGoal, resolveGuideGoalExecution } from "../src/guide-goal-execution.js"
-import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.js"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.js"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import { GuideAugmentKind, GuideAugmentPhase } from "../src/guide-augment.ts"
+import { renderGuideGoalProposal } from "../src/guide-goal-augment.ts"
+import { composeGuideGoalCandidate, prepareGuideGoal, resolveGuideGoalExecution } from "../src/guide-goal-execution.ts"
+import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
+import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
 import {
   GuideEffort,
   guideIntentMaximumLength,
   literalGuideMatch,
   templatePromptCandidates,
   type GuideRecommendation,
-} from "../src/guide-api.js"
+} from "../src/guide-api.ts"
 import type {
   GuideGenerateCandidate,
   GuideGenerateInput,
@@ -28,11 +28,11 @@ import type {
   GuideProvider,
   GuideRefineInput,
   GuideRefineResult,
-} from "../src/guide-provider.js"
-import type { SelectedGuideDocument } from "../src/guide-selected.js"
-import { GuideArtifactCache } from "../src/guide-match-cache.js"
-import { defaultWorktreeBranch, type GitInspectionReady, type HerdrContext, type SelectedProfile, type WorktreeCollisionResult } from "../src/guide-launch.js"
-import { ProfileReadinessKind, type ProfileReadinessResult } from "../src/guide-preflight.js"
+} from "../src/guide-provider.ts"
+import type { SelectedGuideDocument } from "../src/guide-selected.ts"
+import { GuideArtifactCache } from "../src/guide-match-cache.ts"
+import { defaultWorktreeBranch, type GitInspectionReady, type HerdrContext, type SelectedProfile, type WorktreeCollisionResult } from "../src/guide-launch.ts"
+import { ProfileReadinessKind, type ProfileReadinessResult } from "../src/guide-preflight.ts"
 import {
   GuideGenerationPhase,
   GuideMatchPhase,
@@ -90,7 +90,7 @@ import {
   worktreeDirtyWarning,
   type GuideUiAction,
   type GuideUiState,
-} from "../src/guide-ui.js"
+} from "../src/guide-ui.tsx"
 
 // ---------------------------------------------------------------------------
 // Shared fixtures: a 3-entry catalog (2 native, 1 sandbox), mirroring the
@@ -3423,7 +3423,7 @@ describe("guideUiReducer: destination", () => {
   it("destination/start-worktree seeds the branch editor with the default slug branch", () => {
     const state = guideUiReducer(destinationState(), { type: GuideUiActionType.DestinationStartWorktree })
     expect(state.stage).toBe(GuideUiStage.WorktreeBranchEditor)
-    expect(state.textDraft.startsWith("worktree/")).toBe(true)
+    expect(state.textDraft).toBe("wt/cdx-reviewer-review-my-pr")
   })
 })
 
@@ -3833,7 +3833,7 @@ describe("guideUiReducer: prepared goal ownership", () => {
     const resumed = guideUiReducer(rematched, { type: GuideUiActionType.ForkSelect, index: 0 })
     const placed = guideUiReducer(resumed, { type: GuideUiActionType.CandidatesEnqueue })
     const branch = guideUiReducer(placed, { type: GuideUiActionType.QueuePlacementStartWorktree })
-    expect(branch.textDraft).toBe(defaultWorktreeBranch(goalDraft.task))
+    expect(branch.textDraft).toBe("wt/cdx-reviewer-describe")
     expect(branch.textDraft).not.toContain("different")
     expect(branch.textDraft).not.toContain("you-will-work")
   })
@@ -3992,10 +3992,105 @@ describe("guideUiReducer: batch queue", () => {
       result: { kind: ProfileReadinessKind.Ready, summary: "ok" },
     })
 
+  it("reserves suggestions in both routes, rejects manual conflicts, and preserves a reopened job", () => {
+    const first = destinationState()
+    const branch = "wt/cdx-reviewer-review-my-pr"
+    const placement = { kind: "new-worktree", branch, baseRef: "HEAD" } as const
+    const queued = guideUiReducer(first, { type: GuideUiActionType.DestinationEnqueue, placement })
+    const next = candidatesFrom(guideUiReducer(queued, { type: GuideUiActionType.QueueAddAnother }))
+    const placing = guideUiReducer(next, { type: GuideUiActionType.CandidatesEnqueue })
+    const editor = guideUiReducer(placing, { type: GuideUiActionType.QueuePlacementStartWorktree })
+    expect(editor.textDraft).toBe(`${branch}-2`)
+    const normal = guideUiReducer(
+      { ...placing, stage: GuideUiStage.Destination },
+      {
+        type: GuideUiActionType.DestinationStartWorktree,
+      },
+    )
+    expect(normal.textDraft).toBe(`${branch}-2`)
+    const entered = guideUiReducer(editor, { type: GuideUiActionType.EditorChange, text: ` ${branch} ` })
+    const rejected = guideUiReducer(entered, { type: GuideUiActionType.WorktreeSubmitBranch })
+    expect(rejected.stage).toBe(GuideUiStage.WorktreeBranchEditor)
+    expect(rejected.textDraft).toBe(` ${branch} `)
+    expect(rejected.errorMessage).toContain("already queued by job 1 (cdx reviewer)")
+    expect(rejected.queue).toBe(queued.queue)
+    expect(rejected.forks).toBe(entered.forks)
+    expect(rejected.candidates).toBe(entered.candidates)
+    expect(rejected.selectedProfile).toBe(entered.selectedProfile)
+    const finalRejected = guideUiReducer(
+      { ...entered, stage: GuideUiStage.WorktreeReady, worktreeConfirmations: 2 },
+      {
+        type: GuideUiActionType.QueuePlacementWorktree,
+        placement,
+        primaryCheckoutPath: "/repo",
+      },
+    )
+    expect(finalRejected.stage).toBe(GuideUiStage.WorktreeBranchEditor)
+    expect(finalRejected.textDraft).toBe(` ${branch} `)
+    expect(finalRejected.queue).toBe(queued.queue)
+    expect(finalRejected.worktreeInspection).toBeUndefined()
+    expect(finalRejected.worktreeConfirmations).toBe(0)
+    expect(finalRejected.activeForkId).toBe(entered.activeForkId)
+    const reopened = guideUiReducer(queued, { type: GuideUiActionType.ForkSelect, index: 0 })
+    const kept = guideUiReducer(reopened, { type: GuideUiActionType.DestinationStartWorktree })
+    expect(kept.textDraft).toBe(branch)
+    expect(guideUiReducer(kept, { type: GuideUiActionType.WorktreeSubmitBranch }).stage).toBe(
+      GuideUiStage.InspectingWorktree,
+    )
+    const updated = guideUiReducer(kept, {
+      type: GuideUiActionType.QueuePlacementWorktree,
+      placement,
+      primaryCheckoutPath: "/repo",
+    })
+    expect(updated.queue.entries.map((job) => job.id)).toEqual([1])
+    const dropped = guideUiReducer(reopened, { type: GuideUiActionType.ForkDrop })
+    const fresh = candidatesFrom(dropped)
+    const released = guideUiReducer(guideUiReducer(fresh, { type: GuideUiActionType.CandidatesEnqueue }), {
+      type: GuideUiActionType.QueuePlacementStartWorktree,
+    })
+    expect(released.textDraft).toBe(branch)
+  })
+
   it("reaches the destination step with nothing queued yet", () => {
     const state = destinationState()
     expect(state.stage).toBe(GuideUiStage.Destination)
     expect(state.queue.entries).toEqual([])
+  })
+
+  it("rechecks the shared queue when a parked inspected fork is confirmed", () => {
+    const placement = { kind: "new-worktree", branch: "wt/cdx-reviewer-review-my-pr", baseRef: "main" } as const
+    const editing = guideUiReducer(destinationState(), { type: GuideUiActionType.DestinationStartWorktree })
+    const inspected = guideUiReducer(guideUiReducer(editing, { type: GuideUiActionType.WorktreeSubmitBranch }), {
+      type: GuideUiActionType.WorktreeReady,
+      inspection: { ...readyInspection(false), branch: placement.branch },
+    })
+    const peer = candidatesFrom(guideUiReducer(inspected, { type: GuideUiActionType.ForkMain }))
+    const queued = guideUiReducer(peer, {
+      type: GuideUiActionType.QueuePlacementWorktree,
+      placement,
+      primaryCheckoutPath: "/repo",
+    })
+    const resumed = guideUiReducer(queued, { type: GuideUiActionType.ForkSelect, index: 0 })
+    expect(resumed.stage).toBe(GuideUiStage.WorktreeReady)
+    const rejected = guideUiReducer(resumed, {
+      type: GuideUiActionType.QueuePlacementWorktree,
+      placement,
+      primaryCheckoutPath: "/repo",
+    })
+    expect(rejected.stage).toBe(GuideUiStage.WorktreeBranchEditor)
+    expect(rejected.queue).toBe(queued.queue)
+    expect(rejected.forks).toBe(resumed.forks)
+    expect(rejected.forks[0]?.jobId).toBeUndefined()
+    expect(rejected.textDraft).toBe(placement.branch)
+    expect(rejected.worktreeInspection).toBeUndefined()
+    expect(rejected.errorMessage).toContain("already queued by job 1")
+    const corrected = guideUiReducer(rejected, {
+      type: GuideUiActionType.EditorChange,
+      text: `${placement.branch}-2`,
+    })
+    expect(guideUiReducer(corrected, { type: GuideUiActionType.WorktreeSubmitBranch }).stage).toBe(
+      GuideUiStage.InspectingWorktree,
+    )
   })
 
   it("queues the destination instead of launching it, and shows the queue", () => {

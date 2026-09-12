@@ -4,17 +4,17 @@ import {
   type ProfileGuideGoalController,
   type ProfileGuideV1,
   type ProfileGuideWorkflow,
-} from "../../trellage-guide-core/dist/index.js"
+} from "@trellage/guide-core"
 import {
   GuideGoalError,
   validateGuideGoalDraft,
   validateGuideGoalPrompt,
   type GuideGoalDraft,
   type GuideGoalProposal,
-} from "./guide-goal-augment.js"
-import type { GuideGenerateCandidate } from "./guide-provider.js"
-import { workflowPromptFrame } from "./guide-workflow-prompt.js"
-import { text } from "./guide-text.js"
+} from "./guide-goal-augment.ts"
+import type { GuideGenerateCandidate } from "./guide-provider.ts"
+import { workflowPromptFrame } from "./guide-workflow-prompt.ts"
+import { text } from "./guide-text.ts"
 
 export const guideGoalPromptMaximumLength = 96_000
 export const guideGoalApproachMaximumLength = 8000

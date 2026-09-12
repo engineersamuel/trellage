@@ -4,10 +4,10 @@
  * `CommandRunner` — search/filter/sort must never re-run discovery or
  * doctor commands (see plan Functional Requirements).
  */
-import type { AdminVersionColumns } from "./admin-version-check.js"
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { AdminStatus } from "./admin-status.js"
-import { statusLabel } from "./admin-status.js"
+import type { AdminVersionColumns } from "./admin-version-check.ts"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { AdminStatus } from "./admin-status.ts"
+import { statusLabel } from "./admin-status.ts"
 
 export type AdminSortKey = "name" | "launcher" | "surface" | "health" | "install"
 export type AdminSortDirection = "asc" | "desc"

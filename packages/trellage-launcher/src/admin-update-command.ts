@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util"
-import type { AdminProfileEntry } from "./admin-model.js"
-import { CommandRunnerError, type CommandRunner, type CommandSpec } from "./guide-launch.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import { CommandRunnerError, type CommandRunner, type CommandSpec } from "./guide-launch.ts"
 
 export interface ProfileUpdateStep {
   readonly command: CommandSpec

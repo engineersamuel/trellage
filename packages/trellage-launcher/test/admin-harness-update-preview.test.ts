@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { harnessUpgradeVersionPreview } from "../src/admin-harness-update-preview.js"
-import type { AdminHarnessVersionResult } from "../src/admin-harness-version.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
+import { harnessUpgradeVersionPreview } from "../src/admin-harness-update-preview.ts"
+import type { AdminHarnessVersionResult } from "../src/admin-harness-version.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
 
 const entry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
   ref: "sandbox:claude",

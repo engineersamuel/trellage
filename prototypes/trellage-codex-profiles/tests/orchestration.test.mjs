@@ -1,6 +1,6 @@
 import { test } from 'node:test';
-import { createRequire } from 'node:module';
-const { parse } = createRequire(new URL('../../../packages/trellage-cli/package.json', import.meta.url))('smol-toml');
+import { parse } from 'smol-toml';
+import { bunArguments, bunExecutable, sourceEnvironment } from '@trellage/runtime';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, existsSync, readdirSync, writeFileSync, readFileSync, mkdirSync, realpathSync, symlinkSync, rmSync } from 'node:fs';
@@ -35,12 +35,14 @@ test('rejects conflicting inline table and duplicate syntax without producing ou
     assert.equal(result.stdout, '');
   }
 });
-const rolesHelper = resolve('prototypes/trellage-codex-common/codex-agents.mjs');
+const rolesHelper = resolve('prototypes/trellage-codex-common/codex-agents.ts');
 const source = resolve('prototypes/trellage-codex-common/agents');
 test('managed roles preserve custom agents and refuse collisions and unsafe paths', () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'codex-roles-')));
   const target = join(root, 'agents');
-  const run = (mode) => spawnSync(process.execPath, [rolesHelper, mode, target, source], { encoding: 'utf8' });
+  const run = (mode) => spawnSync(bunExecutable(), bunArguments(rolesHelper, [mode, target, source]), {
+    encoding: 'utf8', env: sourceEnvironment(process.env),
+  });
   try {
     mkdirSync(target); writeFileSync(join(target, 'personal.toml'), 'custom');
     writeFileSync(join(target, 'worker.toml'), 'user-owned');
@@ -84,18 +86,18 @@ test('failed role publication preserves prior bytes and cleans staging before re
   const preload = join(root, 'fail.mjs');
   writeFileSync(preload, `
 import fs from 'node:fs';
-import { syncBuiltinESMExports } from 'node:module';
+import { mock } from 'bun:test';
 const operation = process.env.FAIL_ROLE_OPERATION;
 const original = fs[operation];
-fs[operation] = (...args) => {
+const injected = (...args) => {
   if (args[1].endsWith('/worker.toml')) throw new Error('injected role publication failure');
   return original(...args);
 };
-syncBuiltinESMExports();
+mock.module('node:fs', () => ({ ...fs, [operation]: injected }));
 `);
-  const run = (operation) => spawnSync(process.execPath,
-    [...(operation ? ['--import', preload] : []), rolesHelper, 'install', target, source],
-    { encoding: 'utf8', env: { ...process.env, FAIL_ROLE_OPERATION: operation } });
+  const run = (operation) => spawnSync(bunExecutable(),
+    [...(operation ? ['--preload', preload] : []), ...bunArguments(rolesHelper, ['install', target, source])],
+    { encoding: 'utf8', env: sourceEnvironment({ ...process.env, FAIL_ROLE_OPERATION: operation }) });
   try {
     let result = run('linkSync');
     assert.notEqual(result.status, 0);

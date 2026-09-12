@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { ProfileGuideGoalController, ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { renderGuideGoalProposal } from "../src/guide-goal-augment.js"
+import type { ProfileGuideGoalController, ProfileGuideV1 } from "@trellage/guide-core"
+import { renderGuideGoalProposal } from "../src/guide-goal-augment.ts"
 import {
   assertGuideGoalCandidate,
   composeGuideGoalCandidate,
@@ -9,8 +9,8 @@ import {
   guideGoalApproachBudget,
   prepareGuideGoal,
   resolveGuideGoalExecution,
-} from "../src/guide-goal-execution.js"
-import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.js"
+} from "../src/guide-goal-execution.ts"
+import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const goal = prepareGuideGoal(renderGuideGoalProposal(goalMeSkill, goalDraft))
 

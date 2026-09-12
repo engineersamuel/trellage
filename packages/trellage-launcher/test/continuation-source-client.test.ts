@@ -1,10 +1,11 @@
-import { readdir, rm } from "node:fs/promises"
+import { readdir, realpath, rm } from "node:fs/promises"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ContinuationSourceClient } from "../src/continuation-source-client.js"
-import { ContinuationStore } from "../src/continuation-store.js"
-import { CommandRunnerError, type CommandRunner } from "../src/guide-launch.js"
-import { createContinuationFixtureRoot, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
+import { ContinuationSourceClient } from "../src/continuation-source-client.ts"
+import { ContinuationStore } from "../src/continuation-store.ts"
+import { CommandRunnerError, type CommandRunner } from "../src/guide-launch.ts"
+import { createContinuationFixtureRoot, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.ts"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -37,8 +38,14 @@ describe("continuation source subprocess boundary", () => {
     f.run.mockImplementation(async () => {
       controller.abort()
       throw new CommandRunnerError({
-        kind: "aborted", executable: process.execPath, args: [], message: "command aborted",
-        exitCode: 143, signal: null, stdout: "", stderr: "",
+        kind: "aborted",
+        executable: process.execPath,
+        args: [],
+        message: "command aborted",
+        exitCode: 143,
+        signal: null,
+        stdout: "",
+        stderr: "",
       })
     })
     await expect(f.client.check(f.snapshot, controller.signal)).rejects.toMatchObject({ name: "AbortError" })
@@ -51,10 +58,17 @@ describe("continuation source subprocess boundary", () => {
     const f = await setup()
     const controller = new AbortController()
     const error = new CommandRunnerError({
-      kind: "aborted", executable: process.execPath, args: [], message: "cleanup was not confirmed",
-      stdout: "", ...outcome,
+      kind: "aborted",
+      executable: process.execPath,
+      args: [],
+      message: "cleanup was not confirmed",
+      stdout: "",
+      ...outcome,
     })
-    f.run.mockImplementation(async () => { controller.abort(); throw error })
+    f.run.mockImplementation(async () => {
+      controller.abort()
+      throw error
+    })
     await expect(f.client.check(f.snapshot, controller.signal)).rejects.toBe(error)
   })
 
@@ -63,9 +77,21 @@ describe("continuation source subprocess boundary", () => {
     const status = await f.client.check(f.snapshot)
     expect(status.sameSource).toBe(true)
     const call = f.run.mock.calls[0]
-    expect(call?.[1][0]).toBe("/test/repo/pocs/herdr-trx-guide/conversation-source.ts")
-    expect(call?.[1][1]).toBe("--check")
-    expect(path.dirname(call?.[1][2] ?? "")).toBe(path.join(f.root, "continuations", "requests"))
+    expect(call?.[0]).toBe(await realpath(process.execPath))
+    expect(call?.[1]).toEqual([
+      "--no-install",
+      "--no-env-file",
+      expect.stringMatching(/^--config=\/.*\/trellage-runtime\/bunfig\.toml$/u),
+      fileURLToPath(import.meta.resolve("@trellage/conversation-source/cli")),
+      "--",
+      "--check",
+      expect.any(String),
+    ])
+    expect(call?.[2]).toMatchObject({
+      cwd: f.snapshot.source.cwd,
+      env: { TRELLAGE_ROOT: "/test/repo", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
+    })
+    expect(path.dirname(call?.[1][6] ?? "")).toBe(path.join(f.root, "continuations", "requests"))
     expect(JSON.stringify(f.run.mock.calls)).not.toContain("Implement the search flow")
     expect(await readdir(path.join(f.root, "continuations", "requests"))).toEqual([])
   })

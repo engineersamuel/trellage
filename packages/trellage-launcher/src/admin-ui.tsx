@@ -9,9 +9,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, useWindowSize } from "ink"
 
-import { aggregateAdminProfiles, loadAdminProfileGuideBody, toProfileGuideIdentity, type AdminProfileEntry } from "./admin-model.js"
-import { refreshAdminEntries } from "./admin-refresh.js"
-import { AdminRunManager, type AdminRunStatus } from "./admin-run-manager.js"
+import { aggregateAdminProfiles, loadAdminProfileGuideBody, toProfileGuideIdentity, type AdminProfileEntry } from "./admin-model.ts"
+import { refreshAdminEntries } from "./admin-refresh.ts"
+import { AdminRunManager, type AdminRunStatus } from "./admin-run-manager.ts"
 import {
   buildAdminLaunchCommand,
   buildDiagnosticCommand,
@@ -20,19 +20,19 @@ import {
   repairRefFor,
   repairThenRecheckDoctor,
   setupRefFor,
-} from "./admin-launch.js"
-import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "./admin-status.js"
-import type { AdminSortKey } from "./admin-table.js"
-import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.js"
-import { runBatchedDoctorChecks } from "./admin-batch-scheduler.js"
-import { selectPendingDiagnosisTargets, selectPendingRepairTargets, shouldStartBatch } from "./admin-diagnosis-dispatch.js"
-import { DoctorFailureDiagnosisProvider, type DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.js"
-import { forkFailureToHerdrWorktree, isForkToHerdrAvailable, type HerdrForkOutcome } from "./admin-herdr-fork.js"
-import type { CombinedGuideCatalog } from "./guide-catalog.js"
-import type { CommandRunner, HerdrEnvironment } from "./guide-launch.js"
-import { CommandRunnerError } from "./guide-launch.js"
-import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.js"
-import { type AdminVersionColumns } from "./admin-version-check.js"
+} from "./admin-launch.ts"
+import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "./admin-status.ts"
+import type { AdminSortKey } from "./admin-table.ts"
+import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.ts"
+import { runBatchedDoctorChecks } from "./admin-batch-scheduler.ts"
+import { selectPendingDiagnosisTargets, selectPendingRepairTargets, shouldStartBatch } from "./admin-diagnosis-dispatch.ts"
+import { DoctorFailureDiagnosisProvider, type DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.ts"
+import { forkFailureToHerdrWorktree, isForkToHerdrAvailable, type HerdrForkOutcome } from "./admin-herdr-fork.ts"
+import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CommandRunner, HerdrEnvironment } from "./guide-launch.ts"
+import { CommandRunnerError } from "./guide-launch.ts"
+import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.tsx"
+import { type AdminVersionColumns } from "./admin-version-check.ts"
 import {
   harnessVersionEntriesForForceResync,
   harnessVersionColumnsFor,
@@ -41,19 +41,19 @@ import {
   refreshedSandboxInstalledState,
   type AdminHarnessVersionResult,
   type AdminInstalledVersionState,
-} from "./admin-harness-version.js"
+} from "./admin-harness-version.ts"
 import {
   createHarnessVersionCacheSaveQueue,
   defaultAdminHarnessVersionCachePath,
   loadHarnessVersionCache,
   type AdminHarnessVersionCacheEntry,
   type AdminHarnessVersionCacheRecord,
-} from "./admin-harness-version-cache.js"
+} from "./admin-harness-version-cache.ts"
 import {
   harnessVersionRefFor,
   harnessVersionResultForOperation,
   runBatchedHarnessVersionChecks,
-} from "./admin-harness-version-scheduler.js"
+} from "./admin-harness-version-scheduler.ts"
 import {
   HarnessUpdateManager,
   harnessUpdateKeyFor,
@@ -61,12 +61,12 @@ import {
   refreshHarnessUpdateVersions,
   type HarnessUpdateOutcome,
   type HarnessUpdatePlan,
-} from "./admin-harness-update.js"
-import { buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.js"
-import { refreshHarnessUpdateGroupVersions } from "./admin-harness-update-all.js"
-import { HarnessUpdateAllOverlay, HarnessUpdateAllStatus, useHarnessUpdateAll } from "./admin-harness-update-all-ui.js"
-import { checkAdminHarnessUpdates } from "./admin-harness-update-discovery.js"
-import { checkAdminSkillsUpdates } from "./admin-skills-check.js"
+} from "./admin-harness-update.ts"
+import { buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.ts"
+import { refreshHarnessUpdateGroupVersions } from "./admin-harness-update-all.ts"
+import { HarnessUpdateAllOverlay, HarnessUpdateAllStatus, useHarnessUpdateAll } from "./admin-harness-update-all-ui.tsx"
+import { checkAdminHarnessUpdates } from "./admin-harness-update-discovery.ts"
+import { checkAdminSkillsUpdates } from "./admin-skills-check.ts"
 
 type DiagnosisState =
   | { readonly status: "diagnosing" }

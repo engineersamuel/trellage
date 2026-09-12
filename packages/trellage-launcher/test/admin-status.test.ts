@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "../src/admin-status.js"
+import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "../src/admin-status.ts"
 
 const allStatuses: ReadonlyArray<AdminStatus> = [
   "idle",

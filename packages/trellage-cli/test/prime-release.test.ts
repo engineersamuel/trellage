@@ -8,7 +8,7 @@ import {
   PrimeReleaseHttpClient,
   resolvePrimeRelease,
   type PrimeReleaseClient,
-} from "../src/prime-release.js"
+} from "../src/prime-release.ts"
 
 const version = "0.7.0"
 const stableUrl = "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/stable"

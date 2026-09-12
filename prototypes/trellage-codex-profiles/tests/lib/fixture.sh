@@ -27,16 +27,23 @@ if (exit 23) | :; then
   fail 'contract pipefail sensitivity check did not observe upstream failure'
 fi
 
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-cdx-contract.XXXXXX")" || {
+fixture_parent="$(CDPATH= cd -P -- "${TMPDIR:-/tmp}" && pwd -P)"
+fixture_root="$(mktemp -d "$fixture_parent/trellage-cdx-contract.XXXXXX")" || {
   printf 'could not create contract fixture\n' >&2
   exit 1
 }
 case "$fixture_root" in
-  "${TMPDIR:-/tmp}"/trellage-cdx-contract.*) ;;
+  "$fixture_parent"/trellage-cdx-contract.*) ;;
   *) printf 'refusing unsafe fixture root: %s\n' "$fixture_root" >&2; exit 1 ;;
 esac
 # Project-local fixtures must not discover the surrounding repository as their workspace.
 export GIT_CEILING_DIRECTORIES="$fixture_root"
+fixture_registry="${npm_config_registry:-${NPM_CONFIG_REGISTRY:-}}"
+if [[ -z "$fixture_registry" ]]; then
+  fixture_registry="$(npm config get registry --workspaces=false)"
+fi
+export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export npm_config_registry="$fixture_registry"
 
 tracked_async_pids=()
 tracked_async_pid_count=0
@@ -110,12 +117,17 @@ cleanup_tracked_async() {
 cleanup() {
   cleanup_tracked_async
   case "$fixture_root" in
-    "${TMPDIR:-/tmp}"/trellage-cdx-contract.*) rm -rf -- "$fixture_root" ;;
+    "$fixture_parent"/trellage-cdx-contract.*) rm -rf -- "$fixture_root" ;;
     *) printf 'refusing unsafe fixture cleanup: %s\n' "$fixture_root" >&2; exit 1 ;;
   esac
 }
 
 trap cleanup EXIT HUP INT TERM
+
+refresh_fixture_source() {
+  bun --no-install --no-env-file "--config=$root/../../packages/trellage-runtime/bunfig.toml" \
+    "$root/../../packages/trellage-runtime/test/refresh-fixture.ts" "$1"
+}
 
 # Copies the launcher, catalogs, and an offline floating-skill cache
 # into the fixture. Assignments here are deliberately global so callers see
@@ -133,7 +145,7 @@ fixture_youtube_skills_cache="$fixture_root/home/.local/share/trellage/common/cd
 mkdir -p \
   "$(dirname "$fixture_launcher")" \
   "$(dirname "$fixture_common_launcher")" \
-  "$fixture_skills_runtime" \
+  "$fixture_root/common" \
   "$fixture_skills_cache/skills/fixture-personal" \
   "$fixture_skills_cache/skills/show-me" \
   "$fixture_youtube_skills_cache/skills/fixture-personal" \
@@ -142,14 +154,17 @@ mkdir -p \
 cp "$launcher" "$fixture_launcher"
 cp "$common_launcher" "$fixture_common_launcher"
 cp "$root/../trellage-codex-common/codex-config.py" "$fixture_profiles/lib/"
-cp "$root/../trellage-codex-common/codex-agents.mjs" "$fixture_profiles/lib/"
+cp "$root/../trellage-codex-common/codex-agents.ts" "$fixture_profiles/lib/"
 cp -R "$root/../trellage-codex-common/agents" "$fixture_profiles/lib/"
-cp "$root/../trellage-claude-common/native-skills.mjs" "$fixture_profiles/native-skills.mjs"
+cp "$root/../trellage-claude-common/native-skills.ts" "$fixture_profiles/native-skills.ts"
 cp "$root/../../scripts/trellage-session-bridge.py" "$fixture_session_bridge"
 cp "$catalog" "$fixture_catalog"
-install -m 0555 "$root/../../scripts/floating-skills.mjs" \
-  "$fixture_skills_runtime/floating-skills.mjs"
-install -m 0444 "$root/../../skills.json" "$fixture_skills_runtime/skills.json"
+BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache" HOME="$fixture_root/home" \
+  "$root/../../scripts/install-source-runtime.sh" --stage "$fixture_skills_runtime" \
+  >"$fixture_root/source-install.log" 2>&1 || {
+  cat "$fixture_root/source-install.log" >&2
+  fail 'could not stage source runtime fixture'
+}
 printf '%s\n' '# Fixture personal skill' \
   >"$fixture_skills_cache/skills/fixture-personal/SKILL.md"
 printf '%s\n' '# Fixture show-me skill' \
@@ -169,16 +184,13 @@ chmod +x "$fixture_launcher" "$fixture_common_launcher" "$fixture_session_bridge
 }
 
 install_fixture_native_environment_runtime() {
-mkdir -p \
-  "$fixture_environment_runtime/node_modules" \
-  "$fixture_environment_runtime/node_modules/varlock/bin"
-install -m 0555 "$root/../../scripts/native-environment.mjs" \
-  "$fixture_environment_runtime/native-environment.mjs"
-cp -R "$root/../../packages/trellage-cli/node_modules/smol-toml" \
-  "$fixture_environment_runtime/node_modules/smol-toml"
-printf '%s\n' '{"type":"module"}' \
-  >"$fixture_environment_runtime/node_modules/varlock/package.json"
-cat >"$fixture_environment_runtime/node_modules/varlock/bin/cli.js" <<'EOF'
+cp -R "$fixture_skills_runtime" "$fixture_environment_runtime"
+refresh_fixture_source "$fixture_environment_runtime"
+fixture_varlock="$("$fixture_environment_runtime/scripts/run-source.sh" \
+  "$fixture_environment_runtime/packages/trellage-runtime/src/workspace-cli.ts" \
+  dependency "$fixture_environment_runtime" varlock)" || fail 'could not resolve fixture Varlock'
+chmod u+w "$fixture_varlock/bin/cli.js"
+cat >"$fixture_varlock/bin/cli.js" <<'EOF'
 import { readFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 
@@ -232,7 +244,8 @@ const result = spawnSync(args[separator + 1], args.slice(separator + 2), {
 if (result.error) throw result.error
 process.exit(result.status ?? 1)
 EOF
-chmod 0555 "$fixture_environment_runtime/node_modules/varlock/bin/cli.js"
+chmod 0555 "$fixture_varlock/bin/cli.js"
+refresh_fixture_source "$fixture_environment_runtime"
 }
 
 # Writes the fake `codex` and `curl` stubs the blocks drive, and the `fake_env`
@@ -244,6 +257,7 @@ REAL_ENV="$(command -v env)"
 REAL_GIT="$(command -v git)"
 REAL_JQ="$(command -v jq)"
 REAL_NODE="$(command -v node)"
+REAL_BUN="$(command -v bun)"
 mkdir -p "$fake_bin" "$fake_state" "$fixture_root/home"
 cat >"$fake_bin/jq" <<'EOF'
 #!/usr/bin/env bash
@@ -269,19 +283,41 @@ if [ -n "${FAKE_NODE_ENV_LOG:-}" ] \
     printf '%s\n' false >>"$FAKE_NODE_ENV_LOG"
   fi
 fi
-case "${1-}:${2-}" in
-  *floating-skills.mjs:check)
+exec "$REAL_NODE" "$@"
+EOF
+chmod +x "$fake_bin/node"
+{
+  printf '#!/usr/bin/env bash\nset -u\n'
+  printf 'export BUN_INSTALL_CACHE_DIR=%q\n' "$fixture_root/bun-cache"
+  printf 'export npm_config_registry=%q\n' "$fixture_registry"
+} >"$fake_bin/bun"
+cat >>"$fake_bin/bun" <<'EOF'
+original=("$@")
+[[ "${1-}" != --version ]] || exec "$REAL_BUN" "$@"
+if [ -n "${FAKE_NODE_ENV_LOG:-}" ]; then
+  if [ -n "${TRANSCRIPT_API_KEY:-}" ]; then
+    printf '%s\n' true >>"$FAKE_NODE_ENV_LOG"
+  else
+    printf '%s\n' false >>"$FAKE_NODE_ENV_LOG"
+  fi
+fi
+while [[ "${1-}" == --* ]]; do shift; done
+script="${1-}"
+shift || true
+[[ "${1-}" != -- ]] || shift
+case "$script:${1-}" in
+  *floating-skills.ts:check)
     printf '%s\n' "$@" >>"$FAKE_FLOATING_SKILLS_LOG"
     exit "${FAKE_FLOATING_SKILLS_CHECK_STATUS:-0}"
     ;;
-  *floating-skills.mjs:update)
+  *floating-skills.ts:update)
     printf '%s\n' "$@" >>"$FAKE_FLOATING_SKILLS_LOG"
     exit "${FAKE_FLOATING_SKILLS_UPDATE_STATUS:-0}"
     ;;
 esac
-exec "$REAL_NODE" "$@"
+exec "$REAL_BUN" "${original[@]}"
 EOF
-chmod +x "$fake_bin/node"
+chmod +x "$fake_bin/bun"
 cat >"$fake_bin/codex" <<'EOF'
 #!/usr/bin/env bash
 set -u
@@ -807,6 +843,7 @@ fake_env() {
     REAL_GIT="$REAL_GIT" \
     REAL_JQ="$REAL_JQ" \
     REAL_NODE="$REAL_NODE" \
+    REAL_BUN="$REAL_BUN" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     FAKE_CODEX_STATE="$fake_state" \
     FAKE_ENV_ENV_LOG="$fixture_root/fake-env-env.log" \
@@ -823,6 +860,7 @@ export REAL_ENV
 export REAL_GIT
 export REAL_JQ
 export REAL_NODE
+export REAL_BUN
 export FAKE_CODEX_MARKETPLACE_OVERRIDE="$fixture_root/no-marketplace-override"
 export FAKE_CODEX_PLUGIN_OVERRIDE="$fixture_root/no-plugin-override"
 export FAKE_CURL_LOG="$fixture_root/fake-curl.log"

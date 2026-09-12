@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { captureGitEvidenceSnapshot, compareGitEvidenceSnapshots } from "../src/git-evidence.js"
+import { captureGitEvidenceSnapshot, compareGitEvidenceSnapshots } from "../src/git-evidence.ts"
 
 const execFilePromise = promisify(execFile)
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))

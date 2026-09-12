@@ -9,39 +9,60 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Keep this legacy key because branch protection requires its status context.
   deterministic-contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
-      - name: Set up Node.js
+      - name: Set up Node.js for external tooling
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            packages/trellage-cli/package-lock.json
-            packages/trellage-guide-core/package-lock.json
-            packages/trellage-launcher/package-lock.json
-            pocs/herdr-trx-guide/package-lock.json
+          node-version: 26.3.0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.3
       - name: Install required system tools
         run: sudo apt-get install --yes --no-install-recommends fish ripgrep
       - name: Verify required system tools
-        run: for tool in jq curl git make fish rg; do command -v "$tool" >/dev/null; done
-      - name: Install profile compiler dependencies
-        run: npm ci --prefix packages/trellage-cli
-      - name: Install profile guide dependencies
-        run: npm ci --prefix packages/trellage-guide-core
-      - name: Install launcher dependencies
-        run: npm ci --prefix packages/trellage-launcher
-      - name: Install Herdr guide integration dependencies
-        run: npm ci --prefix pocs/herdr-trx-guide
+        run: for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done
+      - name: Prepare frozen source workspace dependencies
+        run: bash scripts/install-source-runtime.sh --prepare
       - name: Install browser contract dependencies
         run: npm ci --prefix tests/playwright
-      - name: Run full test and build suite
+      - name: Run full source and contract suite
         run: make test
+
+  macos-source-contracts:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - name: Set up Node.js for external tooling
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 26.3.0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.3
+      - name: Verify source test runtimes
+        run: for tool in bun node python3; do command -v "$tool" >/dev/null; done
+      - name: Prepare frozen source workspace dependencies
+        run: bash scripts/install-source-runtime.sh --prepare
+      - name: Run source checks and native PTY integration suites
+        run: make profile-compiler launcher conversation-source source-runtime profile-guide-contract

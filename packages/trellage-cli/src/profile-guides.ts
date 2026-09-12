@@ -2,8 +2,8 @@ import path from "node:path"
 
 import { Effect } from "effect"
 
-import { loadProfileGuide, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import type { ProfileChoice } from "./profile-discovery.js"
+import { loadProfileGuide, type ProfileGuideV1 } from "@trellage/guide-core"
+import type { ProfileChoice } from "./profile-discovery.ts"
 
 export class ProfileGuideError extends Error {
   readonly cause: unknown

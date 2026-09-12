@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { readFile } from "node:fs/promises"
 import type { CopilotClientOptions, ModelInfo } from "@github/copilot-sdk"
 import {
   ContinuationOutcome,
@@ -10,16 +11,16 @@ import {
   type ConversationMessage,
   type ConversationSnapshot,
   type ConversationSummary,
-} from "../../trellage-guide-core/dist/conversation.js"
-import { sanitizeConversationSnapshot } from "../../trellage-guide-core/dist/conversation-sanitization.js"
+} from "@trellage/guide-core/conversation"
+import { sanitizeConversationSnapshot } from "@trellage/guide-core"
 import {
   GuideModelCapabilityError,
   RestrictedGuideModelError,
   runRestrictedGuideModelRequest,
   type RestrictedGuideModelClient,
-} from "./copilot-guide-provider.js"
-import type { GuideMatchCatalogEntry } from "./guide-catalog.js"
-import { defaultGuideModelRouting, type GuideReasoningEffort } from "./guide-model-routing.js"
+} from "./copilot-guide-provider.ts"
+import type { GuideMatchCatalogEntry } from "./guide-catalog.ts"
+import { defaultGuideModelRouting, type GuideReasoningEffort } from "./guide-model-routing.ts"
 import rawPolicy from "./continuation-policy.json" with { type: "json" }
 
 export interface ContinuationPolicy {
@@ -249,10 +250,10 @@ export interface CopilotContinuationProviderOptions {
 
 const loadPrompts = async (): Promise<ContinuationModelPrompts> => {
   const [assess, summarize] = await Promise.all([
-    import("../prompts/continuation-assess.md"),
-    import("../prompts/continuation-summarize.md"),
+    readFile(new URL("../prompts/continuation-assess.md", import.meta.url), "utf8"),
+    readFile(new URL("../prompts/continuation-summarize.md", import.meta.url), "utf8"),
   ])
-  return { assess: assess.default, summarize: summarize.default }
+  return { assess, summarize }
 }
 
 const checkPrompts = (prompts: ContinuationModelPrompts): ContinuationModelPrompts => {

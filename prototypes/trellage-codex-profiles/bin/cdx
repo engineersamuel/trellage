@@ -112,11 +112,12 @@ maybe_load_native_environment() {
   local metadata=""
   local environment_path=""
   local environment_runtime="$runtime_root/../common/native-environment-runtime"
-  local resolver="$environment_runtime/native-environment.mjs"
+  local resolver="$environment_runtime/scripts/native-environment.ts"
   local varlock="$environment_runtime/node_modules/varlock/bin/cli.js"
-  local source_resolver="$runtime_root/../../scripts/native-environment.mjs"
-  local source_varlock="$runtime_root/../../packages/trellage-cli/node_modules/varlock/bin/cli.js"
-  local root_varlock="$runtime_root/../../node_modules/varlock/bin/cli.js"
+  local source_resolver="$runtime_root/../../scripts/native-environment.ts"
+  local source_runner="$runtime_root/../../scripts/run-source.sh"
+  local dependency_directory=""
+  local runtime_workspace=""
   local environment_name=""
   local runtime_parent=""
   local common_runtime_root=""
@@ -176,17 +177,19 @@ maybe_load_native_environment() {
     assert_native_runtime_path "$common_launcher" file
     assert_native_runtime_path "$common_runtime_root" directory
     assert_native_runtime_path "$environment_runtime" directory
-    assert_native_runtime_path "$environment_runtime/node_modules" directory
-    assert_native_runtime_path "$environment_runtime/node_modules/varlock" directory
-    assert_native_runtime_path "$environment_runtime/node_modules/varlock/bin" directory
-    assert_native_runtime_path "$environment_runtime/node_modules/smol-toml" directory
+    assert_native_runtime_path "$environment_runtime/scripts" directory
     assert_native_runtime_path "$resolver" file
-    assert_native_runtime_path "$varlock" file
+    source_runner="$environment_runtime/scripts/run-source.sh"
+    runtime_workspace="$environment_runtime"
   else
     resolver="$source_resolver"
-    varlock="$source_varlock"
-    [[ -f "$varlock" && ! -L "$varlock" ]] || varlock="$root_varlock"
+    runtime_workspace="$(CDPATH= cd -P -- "$runtime_root/../.." && pwd -P)"
   fi
+  dependency_directory="$("$source_runner" \
+    "$runtime_workspace/packages/trellage-runtime/src/workspace-cli.ts" \
+    dependency "$runtime_workspace" varlock)" \
+    || native_runtime_fail 'native environment source dependencies are not ready'
+  varlock="$dependency_directory/bin/cli.js"
   [[ -f "$resolver" && ! -L "$resolver" && -r "$resolver" ]] || {
     printf 'cdx: native environment resolver is missing or unsafe: %s\n' "$resolver" >&2
     exit 1
@@ -204,7 +207,7 @@ maybe_load_native_environment() {
     while IFS= read -r secret_name; do
       [[ -z "$secret_name" ]] || unset "$secret_name"
     done <<<"${required_environment//,/$'\n'}"
-    exec node "$resolver"
+    exec "$source_runner" "$resolver"
   )" || {
     printf 'cdx: automatic Varlock environment resolution failed\n' >&2
     exit 1

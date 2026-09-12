@@ -42,8 +42,8 @@ vi.mock("@effect/platform-node", async (importOriginal) => {
   }
 })
 
-vi.mock("../src/docker-target.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/docker-target.js")>()
+vi.mock("../src/docker-target.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/docker-target.ts")>()
   const { Effect: EffectModule } = await import("effect")
   return {
     ...actual,
@@ -56,8 +56,8 @@ vi.mock("../src/docker-target.js", async (importOriginal) => {
   }
 })
 
-vi.mock("../src/application.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/application.js")>()
+vi.mock("../src/application.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/application.ts")>()
   const { Effect } = await import("effect")
   return {
     ...actual,
@@ -87,8 +87,8 @@ vi.mock("../src/application.js", async (importOriginal) => {
   }
 })
 
-vi.mock("../src/harness-version-report.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/harness-version-report.js")>()
+vi.mock("../src/harness-version-report.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/harness-version-report.ts")>()
   const { Effect } = await import("effect")
   return {
     ...actual,
@@ -106,8 +106,8 @@ vi.mock("../src/harness-version-report.js", async (importOriginal) => {
   }
 })
 
-vi.mock("../src/profile-discovery.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/profile-discovery.js")>()
+vi.mock("../src/profile-discovery.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/profile-discovery.ts")>()
   const { Effect: EffectModule } = await import("effect")
   return {
     ...actual,
@@ -150,8 +150,8 @@ vi.mock("../src/profile-discovery.js", async (importOriginal) => {
   }
 })
 
-vi.mock("../src/profile-guides.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/profile-guides.js")>()
+vi.mock("../src/profile-guides.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/profile-guides.ts")>()
   const { Effect: EffectModule } = await import("effect")
   return {
     ...actual,
@@ -160,8 +160,8 @@ vi.mock("../src/profile-guides.js", async (importOriginal) => {
   }
 })
 
-import { ApplicationError } from "../src/application.js"
-import { formatCliCause } from "../src/cli.js"
+import { ApplicationError } from "../src/application.ts"
+import { formatCliCause } from "../src/cli.ts"
 
 const cliSource = readFileSync(fileURLToPath(new URL("../src/cli.ts", import.meta.url)), "utf8")
 
@@ -183,7 +183,8 @@ const runMetadata = async (
     cliHarness.main = undefined
     cliHarness.selected = []
     vi.resetModules()
-    await import("../src/cli.js")
+    const { main } = await import("../src/cli.ts")
+    main(process.argv)
     if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
     await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
     return [...cliHarness.selected]
@@ -208,13 +209,14 @@ const runUpgradeAll = async (
   const originalExitCode = process.exitCode
   try {
     process.argv = [process.execPath, "trellage-profile", "upgrade", ...args]
-    process.exitCode = undefined
+    process.exitCode = 0
     cliHarness.main = undefined
     cliHarness.upgraded = []
     cliHarness.registries = []
     cliHarness.strictHarness = []
     vi.resetModules()
-    await import("../src/cli.js")
+    const { main } = await import("../src/cli.ts")
+    main(process.argv)
     if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
     await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
     return {
@@ -225,7 +227,7 @@ const runUpgradeAll = async (
     }
   } finally {
     process.argv = originalArgv
-    process.exitCode = originalExitCode
+    process.exitCode = originalExitCode ?? 0
   }
 }
 
@@ -241,19 +243,20 @@ const runList = async (
   const originalLog = console.log
   try {
     process.argv = [process.execPath, "trellage-profile", "list", ...args]
-    process.exitCode = undefined
+    process.exitCode = 0
     cliHarness.main = undefined
     console.log = (...parts: Array<unknown>) => {
       logs.push(parts.map(String).join(" "))
     }
     vi.resetModules()
-    await import("../src/cli.js")
+    const { main } = await import("../src/cli.ts")
+    main(process.argv)
     if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
     await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
     return { logs, exitCode: process.exitCode }
   } finally {
     process.argv = originalArgv
-    process.exitCode = originalExitCode
+    process.exitCode = originalExitCode ?? 0
     console.log = originalLog
   }
 }
@@ -271,25 +274,33 @@ const runHarnessVersion = async (
   const originalLog = console.log
   try {
     process.argv = [process.execPath, "trellage-profile", "harness-version", ...args]
-    process.exitCode = undefined
+    process.exitCode = 0
     cliHarness.main = undefined
     cliHarness.harnessVersionSelected = []
     console.log = (...parts: Array<unknown>) => {
       logs.push(parts.map(String).join(" "))
     }
     vi.resetModules()
-    await import("../src/cli.js")
+    const { main } = await import("../src/cli.ts")
+    main(process.argv)
     if (cliHarness.main === undefined) throw new Error("CLI main effect was not captured")
     await Effect.runPromise(cliHarness.main as Effect.Effect<void, unknown, never>)
     return { selected: [...cliHarness.harnessVersionSelected], logs, exitCode: process.exitCode }
   } finally {
     process.argv = originalArgv
-    process.exitCode = originalExitCode
+    process.exitCode = originalExitCode ?? 0
     console.log = originalLog
   }
 }
 
 describe("CLI identity and failure reporting", () => {
+  it("does not execute the CLI when its source module is imported", async () => {
+    cliHarness.main = undefined
+    vi.resetModules()
+    await import("../src/cli.ts")
+    expect(cliHarness.main).toBeUndefined()
+  })
+
   it.each(["explicit.toml", "all"])("passes strict harness resolution through upgrade %s", async (profile) => {
     const result = await runUpgradeAll([profile, "--strict-harness"])
 

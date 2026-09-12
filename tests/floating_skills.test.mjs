@@ -6,6 +6,8 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { afterEach, test } from "node:test"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
+import "./bun-runtime.setup.ts"
 
 import {
   checkNative,
@@ -17,7 +19,7 @@ import {
   updateNative,
   verifyRepairableTarget,
   verifyTarget,
-} from "../scripts/floating-skills.mjs"
+} from "../scripts/floating-skills.ts"
 
 const execFilePromise = promisify(execFile)
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)))
@@ -55,9 +57,7 @@ const readNativeFamilyRuntime = async (prototypesRoot, family) => {
   const commonStatus = await lstat(commonRoot).catch(() => undefined)
   const commonSources = commonStatus?.isDirectory() ? await readRegularTextFiles(commonRoot) : []
   const surfaceSources = [launcher, installer, ...commonSources]
-  const sharedCommonNames = new Set(
-    surfaceSources.join("\n").match(/trellage-[a-z0-9-]+-common/gu) ?? [],
-  )
+  const sharedCommonNames = new Set(surfaceSources.join("\n").match(/trellage-[a-z0-9-]+-common/gu) ?? [])
   for (const sharedCommonName of sharedCommonNames) {
     if (sharedCommonName === path.basename(commonRoot)) continue
     const sharedCommonRoot = path.join(prototypesRoot, sharedCommonName)
@@ -70,10 +70,7 @@ const readNativeFamilyRuntime = async (prototypesRoot, family) => {
 }
 
 const assertNativeFamilyCommonBundle = async (prototypesRoot, family) => {
-  const { familyRoot, installer, launcher, runtimeSource } = await readNativeFamilyRuntime(
-    prototypesRoot,
-    family,
-  )
+  const { familyRoot, installer, launcher, runtimeSource } = await readNativeFamilyRuntime(prototypesRoot, family)
   if (family === "trellage-codex-profiles") {
     const catalog = JSON.parse(await readFile(path.join(familyRoot, "catalog.json"), "utf8"))
     assert.ok(
@@ -93,11 +90,7 @@ const assertNativeFamilyCommonBundle = async (prototypesRoot, family) => {
       `${family} installer must publish the native environment runtime`,
     )
   } else {
-    assert.match(
-      runtimeSource,
-      /--bundle native-common/u,
-      `${family} launcher runtime must select native-common`,
-    )
+    assert.match(runtimeSource, /--bundle native-common/u, `${family} launcher runtime must select native-common`)
   }
   assert.match(
     installer,
@@ -173,10 +166,7 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   assert.deepEqual(catalog.sources["prompt-master"].select, ["prompt-master"])
   assert.equal(catalog.sources["prompt-master"].repository, "https://github.com/nidhinjs/prompt-master.git")
   assert.deepEqual(catalog.sources["youtube-skills"].select, ["youtube-full"])
-  assert.equal(
-    catalog.sources["youtube-skills"].repository,
-    "https://github.com/ZeroPointRepo/youtube-skills.git",
-  )
+  assert.equal(catalog.sources["youtube-skills"].repository, "https://github.com/ZeroPointRepo/youtube-skills.git")
   assert.equal(catalog.sources["youtube-skills"].allowExecutables, false)
   assert.deepEqual(catalog.sources["i-have-adhd"].select, ["i-have-adhd"])
   assert.equal(catalog.sources["i-have-adhd"].repository, "https://github.com/ayghri/i-have-adhd.git")
@@ -367,11 +357,7 @@ test("all launcher and container surfaces consume their common skill bundle", as
   assert.ok(sandboxProfiles.length > 0)
   for (const profile of sandboxProfiles) {
     const source = await readFile(path.join(profilesRoot, profile, "profile.toml"), "utf8")
-    assert.match(
-      source,
-      /^skill_bundles = \[[^\n]*"sandbox-common"/mu,
-      `${profile} must select sandbox-common`,
-    )
+    assert.match(source, /^skill_bundles = \[[^\n]*"sandbox-common"/mu, `${profile} must select sandbox-common`)
   }
 
   for (const entrypoint of ["scripts/agent-entrypoint.sh", "scripts/copilot-agent-entrypoint.sh"]) {
@@ -588,10 +574,7 @@ test("legacy Pi ownership marker migrates show-me without weakening collision ch
   const targetShowMe = path.join(fixture.target, "show-me")
   await mkdir(targetShowMe, { recursive: true })
   await writeFile(path.join(targetShowMe, "SKILL.md"), "legacy\n")
-  await writeFile(
-    path.join(targetShowMe, ".managed-by-trellage-picx-profiles"),
-    "trellage-picx-profile-v2\n",
-  )
+  await writeFile(path.join(targetShowMe, ".managed-by-trellage-picx-profiles"), "trellage-picx-profile-v2\n")
   await writeFile(path.join(fixture.target, ".trellage-engineersamuel-skills"), `${"a".repeat(40)}\n`)
   await syncSnapshot(fixture.cache, fixture.target)
   assert.match(await readFile(path.join(targetShowMe, "SKILL.md"), "utf8"), /current/)
@@ -762,14 +745,18 @@ exec /bin/mv "$@"
   await chmod(fakeMv, 0o755)
 
   await assert.rejects(
-    execFilePromise("bash", [fileURLToPath(new URL("../scripts/install-floating-skills-runtime.sh", import.meta.url))], {
-      env: {
-        ...process.env,
-        HOME: home,
-        PATH: `${bin}:${process.env.PATH}`,
-        FLOATING_SKILLS_MV_COUNT: counter,
+    execFilePromise(
+      "bash",
+      [fileURLToPath(new URL("../scripts/install-floating-skills-runtime.sh", import.meta.url))],
+      {
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${bin}:${process.env.PATH}`,
+          FLOATING_SKILLS_MV_COUNT: counter,
+        },
       },
-    }),
+    ),
   )
   assert.equal(await readFile(path.join(destination, "previous"), "utf8"), "preserve\n")
 })
@@ -799,7 +786,6 @@ test("concurrent first use shares one cache and reclaims malformed locks", async
   assert.equal(await lstat(`${fixture.cache}.lock`).catch(() => undefined), undefined)
 })
 
-
 test("snapshot CLI excludes Codex-only skills and rejects discoverable collisions", async () => {
   const root = await temporaryRoot()
   const snapshot = path.join(root, "snapshot")
@@ -810,15 +796,24 @@ test("snapshot CLI excludes Codex-only skills and rejects discoverable collision
   }
   await writeFile(path.join(snapshot, "managed-skills.txt"), "astra-orchestrator\nshared\n")
   await writeFile(path.join(snapshot, "always-on.md"), "")
-  const cli = path.join(repositoryRoot, "scripts/floating-skills.mjs")
+  const cli = path.join(repositoryRoot, "scripts/floating-skills.ts")
   await syncSnapshot(snapshot, target)
-  await execFilePromise(process.execPath, [cli, "sync", "--output", snapshot, "--target", target,
-    "--exclude-skill", "astra-orchestrator"])
+  await execFilePromise(
+    bunExecutable(),
+    bunArguments(cli, ["sync", "--output", snapshot, "--target", target, "--exclude-skill", "astra-orchestrator"]),
+  )
   assert.equal(await lstat(path.join(target, "astra-orchestrator")).catch(() => undefined), undefined)
-  await execFilePromise(process.execPath, [cli, "verify", "--cache", snapshot, "--target", target,
-    "--exclude-skill", "astra-orchestrator"])
+  await execFilePromise(
+    bunExecutable(),
+    bunArguments(cli, ["verify", "--cache", snapshot, "--target", target, "--exclude-skill", "astra-orchestrator"]),
+  )
   await mkdir(path.join(target, "astra-orchestrator"))
   await writeFile(path.join(target, "astra-orchestrator", "SKILL.md"), "custom")
-  await assert.rejects(execFilePromise(process.execPath, [cli, "sync", "--output", snapshot, "--target", target,
-    "--exclude-skill", "astra-orchestrator"]), /excluded skill remains discoverable/)
+  await assert.rejects(
+    execFilePromise(
+      bunExecutable(),
+      bunArguments(cli, ["sync", "--output", snapshot, "--target", target, "--exclude-skill", "astra-orchestrator"]),
+    ),
+    /excluded skill remains discoverable/,
+  )
 })

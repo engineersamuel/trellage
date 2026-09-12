@@ -1,23 +1,23 @@
 import assert, { deepStrictEqual } from "node:assert/strict"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
-import type { GuideGoalReadinessServices } from "../../src/guide-goal-readiness.js"
+import type { GuideGoalReadinessServices } from "../../src/guide-goal-readiness.ts"
 import {
   CommandRunnerError,
   type CommandRunner,
   type CommandRunOptions,
   type CommandRunResult,
-} from "../../src/guide-launch.js"
+} from "../../src/guide-launch.ts"
 import {
   FixtureMode,
-  fixtureBranch,
+  fixtureBranches,
   fixtureHead,
   fixtureProfilesForMode,
   repositoryPack,
   researchIntent,
   type RecordFixtureEvent,
   type FixtureProfile,
-} from "./guide-integration-data.js"
+} from "./guide-integration-data.ts"
 
 const success = (stdout = ""): CommandRunResult => ({ stdout, stderr: "", exitCode: 0 })
 const claudeGoalHome = (root: string): string =>
@@ -209,9 +209,15 @@ const runGit = (
   deepStrictEqual(options?.cwd, undefined)
   const operation = args.slice(3)
   switch (operation[0]) {
-    case "check-ref-format":
-      deepStrictEqual(operation, ["check-ref-format", "--branch", fixtureBranch])
-      return success(`${fixtureBranch}\n`)
+    case "check-ref-format": {
+      const branch = operation[2]
+      assert(
+        Object.values(fixtureBranches).some((value) => value === branch),
+        `Unexpected branch: ${branch}`,
+      )
+      deepStrictEqual(operation, ["check-ref-format", "--branch", branch])
+      return success(`${branch}\n`)
+    }
     case "rev-parse": {
       const showRoot = operation[1] === "--show-toplevel"
       deepStrictEqual(operation, ["rev-parse", showRoot ? "--show-toplevel" : "HEAD"])
@@ -221,7 +227,8 @@ const runGit = (
       deepStrictEqual(operation, ["status", "--porcelain"])
       return success(mode === FixtureMode.DirtyWorktree ? " M src/login.ts\n" : "")
     case "show-ref":
-      deepStrictEqual(operation, ["show-ref", "--verify", "--quiet", `refs/heads/${fixtureBranch}`])
+      assert(Object.values(fixtureBranches).some((branch) => operation[3] === `refs/heads/${branch}`))
+      deepStrictEqual(operation, ["show-ref", "--verify", "--quiet", operation[3]])
       if (mode === FixtureMode.ExistingWorktree) return success()
       throw new CommandRunnerError({
         kind: "exited",
@@ -236,7 +243,7 @@ const runGit = (
       return success(
         primary +
           (mode === FixtureMode.ExistingWorktree
-            ? `worktree ${path.join(root, "worktrees", "existing")}\nHEAD ${fixtureHead}\nbranch refs/heads/${fixtureBranch}\n\n`
+            ? `worktree ${path.join(root, "worktrees", "existing")}\nHEAD ${fixtureHead}\nbranch refs/heads/${fixtureBranches.sandbox}\n\n`
             : ""),
       )
     }
@@ -261,18 +268,23 @@ const herdrRunner = (root: string, mode: FixtureMode) => {
     return success(JSON.stringify({ result: tab ? { root_pane: pane } : { pane } }))
   }
   const allocateWorktree = (args: ReadonlyArray<string>, existing: boolean): CommandRunResult => {
+    const branch = args[5]
+    assert(branch !== undefined)
+    if (!existing)
+      assert(
+        Object.values(fixtureBranches).some((value) => value === branch),
+        `Unexpected branch: ${branch}`,
+      )
     deepStrictEqual(existing, mode === FixtureMode.ExistingWorktree)
     deepStrictEqual(
       args,
       existing
         ? ["worktree", "open", "--cwd", root, "--path", existingWorktree, "--no-focus"]
-        : ["worktree", "create", "--cwd", root, "--branch", fixtureBranch, "--base", "HEAD", "--no-focus"],
+        : ["worktree", "create", "--cwd", root, "--branch", branch, "--base", "HEAD", "--no-focus"],
     )
     const workspaceId = String(20 + ++allocation)
     const paneId = `${workspaceId}-1`
-    const cwd = existing
-      ? path.join(root, "worktrees", "existing-canonical")
-      : path.join(root, "worktrees", fixtureBranch)
+    const cwd = existing ? path.join(root, "worktrees", "existing-canonical") : path.join(root, "worktrees", branch)
     panes.set(paneId, cwd)
     return success(
       JSON.stringify({

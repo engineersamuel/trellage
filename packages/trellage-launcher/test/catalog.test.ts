@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseLaunchCatalog } from "../src/catalog.js"
+import { parseLaunchCatalog } from "../src/catalog.ts"
 
 describe("launch catalog", () => {
   it("normalizes picker choices with model and harness metadata", () => {

@@ -5,7 +5,7 @@ import path from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { inventoryDirectory, verifyInventory } from "../src/inventory.js"
+import { inventoryDirectory, verifyInventory } from "../src/inventory.ts"
 
 const temporaryRoots = new Set<string>()
 

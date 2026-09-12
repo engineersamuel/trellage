@@ -4,22 +4,26 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "exports": {
+    "./cli": "./src/cli.ts",
+    "./headless-event-bridge": "./src/headless-event-bridge.ts"
+  },
   "bin": {
-    "trellage-profile": "dist/cli.js"
+    "trellage-profile": "src/cli.ts"
   },
   "scripts": {
-    "build": "bash ../../scripts/build-profile-compiler.sh",
-    "check": "tsc --noEmit",
+    "check": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ./node_modules/typescript/bin/tsc --noEmit",
     "format": "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --config .prettierrc.json 'packages/trellage-cli/src/*.ts' 'packages/trellage-cli/test/*.ts' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json",
     "format:check": "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --check --config .prettierrc.json 'packages/trellage-cli/src/*.ts' 'packages/trellage-cli/test/*.ts' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json",
     "lint": "oxlint -c ../../.eslintrc.json src test",
     "lint:fix": "oxlint -c ../../.eslintrc.json --fix src test",
-    "prepare": "bash ../../scripts/install-lefthook-hook.sh",
-    "test": "vitest run"
+    "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ./node_modules/vitest/vitest.mjs run --configLoader native"
   },
   "dependencies": {
     "@effect/cli": "0.76.0",
     "@effect/platform-node": "0.108.0",
+    "@trellage/guide-core": "workspace:*",
+    "@trellage/runtime": "workspace:*",
     "effect": "3.22.0",
     "proper-lockfile": "4.1.2",
     "skills": "1.5.19",
@@ -27,6 +31,7 @@
     "varlock": "1.13.0"
   },
   "devDependencies": {
+    "@types/bun": "1.3.3",
     "@types/node": "24.10.1",
     "@types/proper-lockfile": "4.1.4",
     "lefthook": "^2.1.10",
@@ -35,5 +40,9 @@
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "vitest": "4.1.11"
+  },
+  "engines": {
+    "bun": "1.3.3",
+    "node": ">=22"
   }
 }

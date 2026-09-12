@@ -1,5 +1,6 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // @ts-nocheck -- Legacy Herdr event adapter; state modules are type-checked.
+import { bunExecutable } from "@trellage/runtime"
 import {
   getAgent,
   getProcessInfo,
@@ -112,6 +113,7 @@ const main = async () => {
 }
 
 try {
+  bunExecutable()
   await main()
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))

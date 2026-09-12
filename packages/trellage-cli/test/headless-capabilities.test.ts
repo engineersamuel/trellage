@@ -9,8 +9,8 @@ import {
   decodeHeadlessCapabilitiesV1,
   resolveSandboxHeadlessCapabilities,
   sandboxHeadlessRuntimeAdapter,
-} from "../src/headless-capabilities.js"
-import { parseProfile } from "../src/profile.js"
+} from "../src/headless-capabilities.ts"
+import { parseProfile } from "../src/profile.ts"
 
 const researchProfilePath = fileURLToPath(new URL("../../../profiles/claude-research/profile.toml", import.meta.url))
 const marketplaceProfilePath = fileURLToPath(new URL("../../../profiles/claude-blog/profile.toml", import.meta.url))

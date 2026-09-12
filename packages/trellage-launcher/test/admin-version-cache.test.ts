@@ -13,7 +13,7 @@ import {
   versionCacheTtlMs,
   type AdminVersionCacheEntry,
   type AdminVersionCacheRecord,
-} from "../src/admin-version-cache.js"
+} from "../src/admin-version-cache.ts"
 
 const temporaryRoots: string[] = []
 

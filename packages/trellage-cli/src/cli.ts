@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { execFile } from "node:child_process"
 import { access } from "node:fs/promises"
 import os from "node:os"
@@ -20,20 +20,20 @@ import {
   upgradeProfile,
   type UpgradeOptions,
   verifyProfile,
-} from "./application.js"
-import { environmentMetadata } from "./environment.js"
-import { harnessVersionReport } from "./harness-version-report.js"
-import { skillsCheckReport } from "./skills-check-report.js"
-import { discoverProfileChoices } from "./profile-discovery.js"
-import { resolveSandboxHeadlessCapabilities } from "./headless-capabilities.js"
-import { formatProfileListHuman, toFullList, toSimplifiedList } from "./profile-list.js"
-import { loadSandboxProfileGuides } from "./profile-guides.js"
-import { resolveProfilesReadiness } from "./profile-readiness.js"
-import { containerHerdrCompatibility, loadHerdrCompatibilityLedger } from "./herdr-compatibility.js"
-import { selectProfilePath } from "./selection.js"
-import { captureDockerTarget, type DockerTarget } from "./docker-target.js"
-import { assertProductionPlatform, type Platform } from "./platform.js"
-import { resolveProfileReference, type ProfileReferenceMode } from "./profile-reference.js"
+} from "./application.ts"
+import { environmentMetadata } from "./environment.ts"
+import { harnessVersionReport } from "./harness-version-report.ts"
+import { skillsCheckReport } from "./skills-check-report.ts"
+import { discoverProfileChoices } from "./profile-discovery.ts"
+import { resolveSandboxHeadlessCapabilities } from "./headless-capabilities.ts"
+import { formatProfileListHuman, toFullList, toSimplifiedList } from "./profile-list.ts"
+import { loadSandboxProfileGuides } from "./profile-guides.ts"
+import { resolveProfilesReadiness } from "./profile-readiness.ts"
+import { containerHerdrCompatibility, loadHerdrCompatibilityLedger } from "./herdr-compatibility.ts"
+import { selectProfilePath } from "./selection.ts"
+import { captureDockerTarget, type DockerTarget } from "./docker-target.ts"
+import { assertProductionPlatform, type Platform } from "./platform.ts"
+import { resolveProfileReference, type ProfileReferenceMode } from "./profile-reference.ts"
 
 const execFilePromise = promisify(execFile)
 
@@ -46,8 +46,8 @@ const runtimeSupport = {
   headlongEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-headlong-entry.sh"),
   piEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-pi-entry.sh"),
   primeEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-prime-entry.sh"),
-  finalizeCopilotSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-copilot-seed.mjs"),
-  finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.mjs"),
+  finalizeCopilotSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-copilot-seed.ts"),
+  finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.ts"),
   claudeEntry: path.join(repositoryRoot, "prototypes", "trellage", "runtime-claude-entry.sh"),
   claudeBrowserAgent: path.join(
     repositoryRoot,
@@ -124,7 +124,7 @@ const configuredNpmRegistry = Effect.tryPromise({
   try: async () =>
     sanitizeNpmRegistry(
       (
-        await execFilePromise("npm", ["config", "get", "registry"], {
+        await execFilePromise("npm", ["config", "get", "registry", "--workspaces=false"], {
           encoding: "utf8",
         })
       ).stdout,
@@ -404,16 +404,20 @@ export const formatCliCause = (cause: Cause.Cause<unknown>): string => {
   return `trellage profile: ${messages.length === 0 ? Cause.pretty(cause) : messages.join("; ")}`
 }
 
-cli(process.argv).pipe(
-  Effect.catchAllCause((cause) =>
-    Console.error(formatCliCause(cause)).pipe(
-      Effect.zipRight(
-        Effect.sync(() => {
-          process.exitCode = 1
-        }),
+export const main = (argv: ReadonlyArray<string> = process.argv): void => {
+  cli(argv).pipe(
+    Effect.catchAllCause((cause) =>
+      Console.error(formatCliCause(cause)).pipe(
+        Effect.zipRight(
+          Effect.sync(() => {
+            process.exitCode = 1
+          }),
+        ),
       ),
     ),
-  ),
-  Effect.provide(NodeContext.layer),
-  NodeRuntime.runMain,
-)
+    Effect.provide(NodeContext.layer),
+    NodeRuntime.runMain,
+  )
+}
+
+if (import.meta.main) main()

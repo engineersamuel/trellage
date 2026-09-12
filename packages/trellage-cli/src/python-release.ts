@@ -1,7 +1,7 @@
 import { Data, Effect, ParseResult, Schema } from "effect"
 
-import type { ArtifactLock } from "./lock.js"
-import type { Platform } from "./platform.js"
+import type { ArtifactLock } from "./lock.ts"
+import type { Platform } from "./platform.ts"
 
 export class PythonReleaseError extends Data.TaggedError("PythonReleaseError")<{
   readonly message: string

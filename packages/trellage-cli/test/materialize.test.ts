@@ -34,26 +34,26 @@ import {
   stampClaudeMarketplaceVersions,
   trustedHostUvArguments,
   trustedHostUvVersionMatches,
-} from "../src/claude-materialize.js"
-import { inventoryDirectory, verifyInventory } from "../src/inventory.js"
-import { parseLock, renderLock } from "../src/lock-file.js"
+} from "../src/claude-materialize.ts"
+import { inventoryDirectory, verifyInventory } from "../src/inventory.ts"
+import { parseLock, renderLock } from "../src/lock-file.ts"
 import {
   createBuildContext as createBuildContextRaw,
   type ClaudeMaterializeRequest,
   type ClaudeMaterializer,
   type PluginGenerator,
   type RuntimeSupport,
-} from "../src/materialize.js"
-import { profileHash, type ProfileLock, type SourceLock } from "../src/lock.js"
+} from "../src/materialize.ts"
+import { profileHash, type ProfileLock, type SourceLock } from "../src/lock.ts"
 import {
   createRuntimeSupportSnapshot as createRuntimeSupportSnapshotRaw,
   isRuntimeSupportSnapshot,
   type RuntimeSupportPaths,
-} from "../src/runtime-support.js"
-import { parseProfile } from "../src/profile.js"
-import { createPythonConstraintsSidecar } from "../src/resolution-sidecar.js"
-import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
-import { cachedArtifactPath } from "../src/artifact-cache.js"
+} from "../src/runtime-support.ts"
+import { parseProfile } from "../src/profile.ts"
+import { createPythonConstraintsSidecar } from "../src/resolution-sidecar.ts"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.ts"
+import { cachedArtifactPath } from "../src/artifact-cache.ts"
 
 const temporaryRoots: Array<string> = []
 const execFilePromise = promisify(execFile)
@@ -180,7 +180,7 @@ describe("Hyperresearch seed normalization", () => {
   })
 
   it("defines the exact Claude settings used for first-launch initialization", async () => {
-    const module = (await import("../src/claude-materialize.js")) as Record<string, unknown>
+    const module = (await import("../src/claude-materialize.ts")) as Record<string, unknown>
 
     expect(module.claudeDefaultSettings).toEqual({
       permissions: {
@@ -1408,7 +1408,7 @@ gear = "full"
     const entry = path.join(root, "runtime-claude-entry.sh")
     const requirements = path.join(root, "requirements.lock")
     const browserAgent = path.join(root, "browser-agent.md")
-    const claudeFinalizer = path.join(root, "finalize-claude-seed.mjs")
+    const claudeFinalizer = path.join(root, "finalize-claude-seed.ts")
     await writeFile(entry, "#!/bin/sh\n")
     await writeFile(requirements, "pydantic==2.13.4 --hash=sha256:test\n")
     await writeFile(browserAgent, "browser adapter\n")
@@ -1782,7 +1782,7 @@ select = ["hve-core"]
           {
             codexEntry: path.join(root, "unused-codex-entry.sh"),
             copilotEntry: path.join(root, "runtime-copilot-entry.sh"),
-            finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.mjs"),
+            finalizeCopilotSeed: path.join(root, "finalize-copilot-seed.ts"),
           },
           root,
           unused,
@@ -2053,7 +2053,7 @@ select = ["hve-core"]
     }
     const unused = () => Effect.fail("unexpected generator call")
     const copilotEntry = path.join(root, "runtime-copilot-entry.sh")
-    const finalizer = path.join(root, "finalize-copilot-seed.mjs")
+    const finalizer = path.join(root, "finalize-copilot-seed.ts")
     await writeFile(copilotEntry, '#!/bin/sh\nexec copilot "$@"\n')
     await writeFile(finalizer, "// finalizer fixture\n")
     const instruction = path.join(root, "instruction-rundown.md")
@@ -2087,7 +2087,7 @@ select = ["hve-core"]
       readlink(path.join(context, "hve-core", "plugins", "hve-core", "commands", "current.md")),
     ).resolves.toBe("review.md")
     await expect(readFile(path.join(context, "runtime-copilot-entry.sh"), "utf8")).resolves.toContain("exec copilot")
-    await expect(readFile(path.join(context, "finalize-copilot-seed.mjs"), "utf8")).resolves.toBe(
+    await expect(readFile(path.join(context, "finalize-copilot-seed.ts"), "utf8")).resolves.toBe(
       "// finalizer fixture\n",
     )
     await expect(readFile(path.join(context, "initial-prompt.md"), "utf8")).resolves.toBe("Review this repository\n")
@@ -2192,7 +2192,7 @@ select = ["hve-core"]
       image: { base: document.profile.image.base, base_digest: `sha256:${"d".repeat(64)}` },
     }
     const copilotEntry = path.join(root, "runtime-copilot-entry.sh")
-    const finalizer = path.join(root, "finalize-copilot-seed.mjs")
+    const finalizer = path.join(root, "finalize-copilot-seed.ts")
     await writeFile(copilotEntry, "#!/bin/sh\n")
     await writeFile(finalizer, "// finalizer\n")
     const instruction = path.join(root, "instruction-rundown.md")

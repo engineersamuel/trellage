@@ -7,8 +7,8 @@ import {
   guideIntentMaximumLength,
   type GuideHeadlessArgs,
   validateGuideIntent,
-} from "./guide-api.js"
-import type { HerdrContext } from "./guide-launch.js"
+} from "./guide-api.ts"
+import type { HerdrContext } from "./guide-launch.ts"
 
 export const popupGuideIntentFileEnvironmentVariable = "TRELLAGE_GUIDE_HERDR_INTENT_FILE"
 

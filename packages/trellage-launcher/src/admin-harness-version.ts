@@ -5,9 +5,9 @@
  * sandbox rows can share latest without copying another row's installed
  * revision.
  */
-import { isKnownNativeLauncher, type AdminProfileEntry, type NativeLauncherAlias } from "./admin-model.js"
-import type { AdminVersionColumns } from "./admin-version-check.js"
-import type { CommandSpec } from "./guide-launch.js"
+import { isKnownNativeLauncher, type AdminProfileEntry, type NativeLauncherAlias } from "./admin-model.ts"
+import type { AdminVersionColumns } from "./admin-version-check.ts"
+import type { CommandSpec } from "./guide-launch.ts"
 
 export type HarnessReleaseKey =
   | "claude-code"

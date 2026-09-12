@@ -5,8 +5,8 @@ import path from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import type { ProfileChoice } from "../src/profile-discovery.js"
-import { loadSandboxProfileGuides } from "../src/profile-guides.js"
+import type { ProfileChoice } from "../src/profile-discovery.ts"
+import { loadSandboxProfileGuides } from "../src/profile-guides.ts"
 
 const roots: string[] = []
 

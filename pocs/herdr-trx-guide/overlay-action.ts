@@ -1,7 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // @ts-nocheck -- Legacy macOS overlay adapter; protocol modules are type-checked.
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { bunExecutable } from "@trellage/runtime"
 
 import { runHerdr } from "./lib/herdr.ts"
 import {
@@ -181,5 +182,6 @@ export const main = async (
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  bunExecutable()
   process.exitCode = await main()
 }

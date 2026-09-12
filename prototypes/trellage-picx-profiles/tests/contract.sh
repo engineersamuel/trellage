@@ -181,6 +181,7 @@ esac
 FAKE_CURL
 chmod 0755 "$fake_bin/curl"
 ln -s "$node_binary" "$fake_bin/node"
+install_fixture_bun "$fake_bin"
 
 export HOME="$home"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"

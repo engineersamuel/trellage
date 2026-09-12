@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { chmod, lstat, mkdir, open, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { GuideGoalCancelledError, GuideGoalError } from "./guide-goal-augment.js"
-import type { CommandRunner } from "./guide-launch.js"
+import { bunArguments, bunExecutable, sourceEnvironment } from "@trellage/runtime"
+import { GuideGoalCancelledError, GuideGoalError } from "./guide-goal-augment.ts"
+import type { CommandRunner } from "./guide-launch.ts"
 
 export interface GuideGoalSkills {
   readonly goalMeContent: string
@@ -122,19 +123,19 @@ const ensureBundle = async (
   const bundle = path.join(root, "bundle")
   try {
     await options.runner.run(
-      process.execPath,
-      [
-        options.managerPath, "ensure",
+      bunExecutable(),
+      bunArguments(options.managerPath, [
+        "ensure",
         "--bundle", "native-common",
         "--catalog", options.catalogPath,
         "--cache", options.cachePath,
         "--target", bundle,
-      ],
+      ]),
       {
         cwd: root,
         signal,
         timeoutMs: 180_000,
-        env: { ...process.env, TMPDIR: root, TEMP: root, TMP: root, NODE_DISABLE_COMPILE_CACHE: "1" },
+        env: sourceEnvironment({ ...process.env, TMPDIR: root, TEMP: root, TMP: root, NODE_DISABLE_COMPILE_CACHE: "1" }),
       },
     )
   } catch (cause) {

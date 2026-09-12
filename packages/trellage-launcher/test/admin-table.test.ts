@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import type { AdminStatus } from "../src/admin-status.js"
-import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "../src/admin-table.js"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import type { AdminStatus } from "../src/admin-status.ts"
+import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "../src/admin-table.ts"
 
 const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
   ref: overrides.ref ?? "native:cpx/hve",

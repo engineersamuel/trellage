@@ -1,9 +1,9 @@
 import { realpath, rm, stat } from "node:fs/promises"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ContinuationActionStatus, ContinuationPlacementKind } from "../../trellage-guide-core/dist/index.js"
-import { openContinuationRequest, recoverInterruptedContinuation } from "../src/continuation-entry.js"
-import { ContinuationStore } from "../src/continuation-store.js"
-import { createContinuationFixtureRoot, runtimeAssessment, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.js"
+import { ContinuationActionStatus, ContinuationPlacementKind } from "@trellage/guide-core"
+import { openContinuationRequest, recoverInterruptedContinuation } from "../src/continuation-entry.ts"
+import { ContinuationStore } from "../src/continuation-store.ts"
+import { createContinuationFixtureRoot, runtimeAssessment, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.ts"
 
 const roots: string[] = []
 afterEach(async () => {

@@ -11,15 +11,15 @@ import {
   parseContextMenuUiRequest,
   contextMenuErrorResponse,
   type ContextMenuRewriteRequest,
-} from "../src/context-menu-command.js"
+} from "../src/context-menu-command.ts"
 import type {
   RestrictedGuideModelClient,
   RestrictedGuideModelSession,
-} from "../src/copilot-guide-provider.js"
+} from "../src/copilot-guide-provider.ts"
 import {
   RestrictedGuideEventType,
   RestrictedGuideModelError,
-} from "../src/copilot-guide-provider.js"
+} from "../src/copilot-guide-provider.ts"
 
 const availableModel: ModelInfo = {
   id: "fixture-model",
@@ -288,8 +288,12 @@ describe("TRX context-menu launcher contract", () => {
   it("runs the SDK transport in a detached worker and preserves its result", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "trx-context-menu-worker-"))
     try {
-      const script = path.join(directory, "worker.mjs")
+      const script = path.join(directory, "worker.ts")
       await writeFile(script, [
+        "import assert from 'node:assert/strict'",
+        "assert.equal(process.versions.bun, '1.3.3')",
+        "assert.equal(process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH, '0')",
+        "assert.deepEqual(process.argv.slice(2), ['rewrite-context', '--worker'])",
         "process.stdin.setEncoding('utf8')",
         "let input = ''",
         "process.stdin.on('data', (chunk) => { input += chunk; if (input.includes('\\n')) { process.stdout.write(JSON.stringify({schemaVersion: 1, kind: 'rewrite-result', styleId: 'custom', markdown: '# Worker result', cache: 'hit', cacheStatus: 'fixture-status'}) + '\\n'); process.stdin.destroy(); } })",

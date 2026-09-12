@@ -7,7 +7,7 @@ import {
   setQuery,
   visibleEntries,
   type LaunchEntry,
-} from "../src/state.js"
+} from "../src/state.ts"
 
 const entries: ReadonlyArray<LaunchEntry> = [
   {

@@ -1,4 +1,4 @@
-import type { ContinuationDraft, ConversationSnapshot } from "../../trellage-guide-core/dist/index.js"
+import type { ContinuationDraft, ConversationSnapshot } from "@trellage/guide-core"
 
 export interface ContinuationProfileOption {
   readonly ref: string

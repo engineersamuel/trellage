@@ -48,12 +48,13 @@ readonly haiku_model_id='claude-haiku-4.5'
 readonly proxy_origin='http://127.0.0.1:8080'
 readonly proxy_token='trellage-local-proxy'
 
-floating_skills_manager="$runtime_root/../common/floating-skills-runtime/floating-skills.mjs"
+floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
 if [[ ! -f "$floating_skills_manager" ]]; then
-  floating_skills_manager="$runtime_root/../../scripts/floating-skills.mjs"
+  floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
   floating_skills_catalog="$runtime_root/../../skills.json"
 fi
+bun_runner="${floating_skills_manager%/*}/run-source.sh"
 session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
 if [[ ! -f "$session_bridge_source" ]]; then
   session_bridge_source="$runtime_root/../../scripts/trellage-session-bridge.py"
@@ -288,7 +289,7 @@ ensure_floating_skills() {
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die "invalid floating-skills catalog: $floating_skills_catalog"
   require_command node
-  node "$floating_skills_manager" ensure \
+  "$bun_runner" "$floating_skills_manager" ensure \
     --catalog "$floating_skills_catalog" \
     --bundle native-common \
     --target "$home/skills" \
@@ -296,18 +297,18 @@ ensure_floating_skills() {
 }
 
 sync_cached_skills() {
-  local mode="$1" home="$2" helper="$runtime_root/native-skills.mjs"
+  local mode="$1" home="$2" helper="$runtime_root/native-skills.ts"
   local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
   local skill_args=("$mode")
   [[ "$mode" != --fresh ]] || skill_args+=("$floating_skills_catalog")
 
-  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.mjs"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.ts"
   [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
   require_command node
   if [[ "$mode" == --fresh ]]; then
-    exec node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$home/skills"
+    exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$home/skills"
   fi
-  node "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$home/skills" \
+  "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$home/skills" \
     || die "failed to update cached skills: $home"
 }
 

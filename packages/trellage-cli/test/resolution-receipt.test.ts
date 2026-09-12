@@ -5,22 +5,22 @@ import path from "node:path"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { renderLock } from "../src/lock-file.js"
-import { attachedSidecar, profileHash, withAttachedSidecar, type ProfileLock } from "../src/lock.js"
-import { platformLockPath } from "../src/platform.js"
-import { parseProfile } from "../src/profile.js"
+import { renderLock } from "../src/lock-file.ts"
+import { attachedSidecar, profileHash, withAttachedSidecar, type ProfileLock } from "../src/lock.ts"
+import { platformLockPath } from "../src/platform.ts"
+import { parseProfile } from "../src/profile.ts"
 import {
   loadResolutionReceipt,
   resolutionReceiptPath,
   resolutionReceiptTransferBundle,
   writeResolutionReceipt,
-} from "../src/resolution-receipt.js"
+} from "../src/resolution-receipt.ts"
 import {
   createPythonConstraintsSidecar,
   pythonConstraints,
   resolutionSidecarReference,
-} from "../src/resolution-sidecar.js"
-import { resolutionSidecarPath, writeResolutionSidecar } from "../src/resolution-sidecar-storage.js"
+} from "../src/resolution-sidecar.ts"
+import { resolutionSidecarPath, writeResolutionSidecar } from "../src/resolution-sidecar-storage.ts"
 
 const source = (description: string) => `
 schema = 1

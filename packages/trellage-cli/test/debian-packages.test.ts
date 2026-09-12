@@ -5,7 +5,7 @@ import path from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { resolveDebianPackages } from "../src/debian-packages.js"
+import { resolveDebianPackages } from "../src/debian-packages.ts"
 
 const originalPath = process.env.PATH
 const originalLog = process.env.FAKE_DOCKER_LOG

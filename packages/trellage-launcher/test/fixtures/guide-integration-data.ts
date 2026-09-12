@@ -1,14 +1,14 @@
-import type { ProfileGuideV1 } from "../../../trellage-guide-core/dist/index.js"
-import type { NativeSelectedProfile, CommandSpec } from "../../src/guide-launch.js"
-import type { PreparedGuideGoal } from "../../src/guide-goal-execution.js"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import type { NativeSelectedProfile, CommandSpec } from "../../src/guide-launch.ts"
+import type { PreparedGuideGoal } from "../../src/guide-goal-execution.ts"
 import type {
   GuideEnrichInput,
   GuideGenerateCandidate,
   GuideGenerateInput,
   GuideOptimizeInput,
-} from "../../src/guide-provider.js"
-import type { GuideUiResult } from "../../src/guide-ui.js"
-import type { GuideGoalAnswer, GuideGoalProposal, GuideGoalReviewDecision } from "../../src/guide-goal-augment.js"
+} from "../../src/guide-provider.ts"
+import type { GuideUiResult } from "../../src/guide-ui.tsx"
+import type { GuideGoalAnswer, GuideGoalProposal, GuideGoalReviewDecision } from "../../src/guide-goal-augment.ts"
 
 export enum FixtureMode {
   Terminal = "terminal",
@@ -173,7 +173,11 @@ export const goalRecommendationIds: ReadonlyArray<FixtureProfileId> = ["planner"
 export const pinnedIds: ReadonlyArray<FixtureProfileId> = ["council", "research", "hve"]
 export const candidateTitles = ["Focused", "Thorough", "Minimal"] as const
 export const fixtureIntent = "Review the 'login flow' for regressions."
-export const fixtureBranch = "worktree/review-the-login-flow-for-regressions"
+export const fixtureBranches = {
+  hve: "wt/cpx-hve-review-the",
+  hveSecond: "wt/cpx-hve-review-the-2",
+  sandbox: "wt/sb-sandbox-reviewer-review-the",
+} as const
 export const fixtureHead = "1234567890abcdef1234567890abcdef12345678"
 export const repositoryPack = "# Repository\n\nsrc/login.ts checks token expiry before refresh.\n"
 

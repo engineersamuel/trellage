@@ -20,7 +20,7 @@
 import React, { useReducer } from "react"
 import { Box, Text, useApp, useInput, useWindowSize, type Key } from "ink"
 
-import { basketBlockPreview, countLabel } from "./basket.js"
+import { basketBlockPreview, countLabel } from "./basket.ts"
 
 // ---------------------------------------------------------------------------
 // Argument parsing.

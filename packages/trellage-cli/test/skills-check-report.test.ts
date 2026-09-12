@@ -5,9 +5,9 @@ import path from "node:path"
 import { Deferred, Effect, Fiber } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { loadProfile } from "../src/application.js"
-import type { DockerTargetRunner } from "../src/docker-target.js"
-import { checkContainerSkills } from "../src/skills-check-report.js"
+import { loadProfile } from "../src/application.ts"
+import type { DockerTargetRunner } from "../src/docker-target.ts"
+import { checkContainerSkills } from "../src/skills-check-report.ts"
 
 const roots: Array<string> = []
 const image = `sha256:${"a".repeat(64)}`
@@ -94,6 +94,12 @@ describe("read-only installed Container skills", () => {
     expect(commands.flat()).not.toContain("start")
     expect(commands.flat()).not.toContain("build")
     expect(commands.flat()).not.toContain("pull")
+    const compare = f.run.mock.calls.find(([command]) => command !== "docker")
+    expect(compare?.[0]).toBe(process.execPath)
+    expect(compare?.[1]).toContain(path.resolve("../../scripts/floating-skills.ts"))
+    expect(compare?.[1]).toContain("--no-install")
+    expect(compare?.[1]).toContain("--no-env-file")
+    expect(compare?.[1].some((argument) => argument.startsWith("--config="))).toBe(true)
     expect(f.exists()).toBe(false)
     expect(await readdir(f.root)).toEqual([])
   })

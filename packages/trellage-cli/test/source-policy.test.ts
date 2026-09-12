@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { sourceIncludes, sourceInventoryPolicy } from "../src/source-policy.js"
+import { sourceIncludes, sourceInventoryPolicy } from "../src/source-policy.ts"
 
 describe("source inclusion policy", () => {
   it("selects only the inputs required by each adapter", () => {

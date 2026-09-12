@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util"
-import { isKnownNativeLauncher, type AdminProfileEntry } from "./admin-model.js"
-import type { CommandRunner } from "./guide-launch.js"
-import { updateDiagnostic } from "./admin-update-command.js"
+import { isKnownNativeLauncher, type AdminProfileEntry } from "./admin-model.ts"
+import type { CommandRunner } from "./guide-launch.ts"
+import { updateDiagnostic } from "./admin-update-command.ts"
 
 export type AdminSkillsCheckResult = {
   readonly kind: "current" | "available" | "unknown"

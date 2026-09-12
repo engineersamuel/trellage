@@ -13,13 +13,17 @@ case "$home" in /*) ;; *) refuse "refusing unsafe HOME: HOME is not absolute: $h
 home="$(cd -L "$home" >/dev/null 2>&1 && pwd -L)" || refuse "refusing unsafe HOME: HOME is not a real directory: $home"
 [ "$home" != / ] || refuse 'refusing unsafe HOME: HOME resolves to /'
 
-source_dir="$(cd "$(dirname "$0")" && pwd)"
+source_dir="$(cd -P "$(dirname "$0")" && pwd -P)"
+repo_root="$(cd -P "$source_dir/../.." && pwd -P)"
+. "$repo_root/scripts/bun-runtime.sh"
+trellage_bun_runtime "$repo_root"
+source_runtime_cli="$repo_root/packages/trellage-runtime/src/workspace-cli.ts"
 common_launcher="$source_dir/../trellage-codex-common/native-codex"
-native_skills_source="$source_dir/../trellage-claude-common/native-skills.mjs"
+native_skills_source="$source_dir/../trellage-claude-common/native-skills.ts"
 session_bridge_source="$source_dir/../../scripts/trellage-session-bridge.py"
 floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-runtime.sh"
 environment_runtime_installer="$source_dir/../../scripts/install-native-environment-runtime.sh"
-floating_skills_manager="$source_dir/../../scripts/floating-skills.mjs"
+floating_skills_manager="$source_dir/../../scripts/floating-skills.ts"
 floating_skills_catalog="$source_dir/../../skills.json"
 for runtime_installer in "$floating_runtime_installer" "$environment_runtime_installer"; do
   [ -f "$runtime_installer" ] && [ ! -L "$runtime_installer" ] && [ -x "$runtime_installer" ] \
@@ -109,6 +113,11 @@ validate_environment_runtime_destination() {
   local destination="$1"
 
   assert_owned_safe_directory "$destination"
+  if [ -e "$destination/.managed-by-trellage-source" ] || [ -L "$destination/.managed-by-trellage-source" ]; then
+    "${trellage_bun[@]}" "$source_runtime_cli" validate-owned "$destination" \
+      || refuse "refusing unsafe native environment source runtime: $destination"
+    return
+  fi
   [ -f "$destination/.managed-by-trellage" ] \
     && [ ! -L "$destination/.managed-by-trellage" ] \
     || refuse "refusing unowned native environment runtime: $destination"
@@ -118,6 +127,8 @@ validate_environment_runtime_destination() {
     || refuse "refusing unowned native environment runtime: $destination"
   [ -z "$(find "$destination" -type l -print -quit)" ] \
     || refuse "refusing symlinked native environment runtime content: $destination"
+  "${trellage_bun[@]}" "$source_runtime_cli" validate-environment "$destination" \
+    || refuse "refusing unexpected native environment runtime content: $destination"
 }
 
 validate_floating_runtime_destination() {
@@ -127,6 +138,11 @@ validate_floating_runtime_destination() {
   local runtime_file
 
   assert_owned_safe_directory "$destination"
+  if [ -e "$destination/.managed-by-trellage-source" ] || [ -L "$destination/.managed-by-trellage-source" ]; then
+    "${trellage_bun[@]}" "$source_runtime_cli" validate-owned "$destination" \
+      || refuse "refusing unsafe floating-skills source runtime: $destination"
+    return
+  fi
   actual_entries="$(CDPATH= cd -- "$destination" && find . -print | LC_ALL=C sort)" \
     || refuse "cannot inspect floating-skills runtime: $destination"
   expected_entries="$(printf '%s\n' '.' './floating-skills.mjs' './skills.json')"
@@ -555,7 +571,9 @@ if [ -d "$install_root" ]; then
     './lib/agents/explorer.toml' './lib/agents/worker.toml' \
     './lib/agents/tester.toml' './lib/agents/researcher.toml' \
     './lib/agents/reviewer.toml' './lib/agents/LICENSE' './lib/agents/NOTICE' | LC_ALL=C sort)"
+  source_orchestration_entries="${orchestration_entries//.mjs/.ts}"
   [ "$actual_entries" = "$orchestration_entries" ] \
+    || [ "$actual_entries" = "$source_orchestration_entries" ] \
     || [ "$actual_entries" = "$expected_entries" ] \
     || [ "$actual_entries" = "$skills_entries" ] \
     || [ "$actual_entries" = "$legacy_lib_entries" ] \
@@ -591,6 +609,13 @@ if [ -d "$install_root" ]; then
   if [ "$actual_entries" = "$orchestration_entries" ]; then
     for path in "$install_root/lib/codex-config.py" "$install_root/lib/codex-agents.mjs" \
       "$install_root/lib/trellage-session-bridge.py" "$install_root/native-skills.mjs" \
+      "$install_root/lib/agents/"*; do
+      [ -f "$path" ] && [ ! -L "$path" ] || refuse "refusing unsafe managed runtime file: $path"
+    done
+  fi
+  if [ "$actual_entries" = "$source_orchestration_entries" ]; then
+    for path in "$install_root/lib/codex-config.py" "$install_root/lib/codex-agents.ts" \
+      "$install_root/lib/trellage-session-bridge.py" "$install_root/native-skills.ts" \
       "$install_root/lib/agents/"*; do
       [ -f "$path" ] && [ ! -L "$path" ] || refuse "refusing unsafe managed runtime file: $path"
     done
@@ -731,26 +756,12 @@ cleanup_created_parents() {
 
 rollback() {
   local ok=true
-  local shared_entries
   if [ "$floating_runtime_publish_intent" = true ]; then
     if [ "$floating_runtime_old_intent" = false ] \
       || [ -d "$staging_root/old-floating-skills-runtime" ]; then
       if [ -e "$floating_runtime_destination" ] || [ -L "$floating_runtime_destination" ]; then
-        shared_entries="$(
-          if [ -d "$floating_runtime_destination" ] && [ ! -L "$floating_runtime_destination" ]; then
-            CDPATH= cd -- "$floating_runtime_destination" \
-              && find . -print | LC_ALL=C sort
-          fi
-        )"
-        if [ "$shared_entries" = "$(printf '%s\n' '.' './floating-skills.mjs' './skills.json')" ] \
-          && [ -f "$floating_runtime_destination/floating-skills.mjs" ] \
-          && [ ! -L "$floating_runtime_destination/floating-skills.mjs" ] \
-          && [ -f "$floating_runtime_destination/skills.json" ] \
-          && [ ! -L "$floating_runtime_destination/skills.json" ] \
-          && cmp -s "$floating_runtime_destination/floating-skills.mjs" \
-            "$floating_skills_manager" \
-          && cmp -s "$floating_runtime_destination/skills.json" "$floating_skills_catalog"; then
-          rm -rf -- "$floating_runtime_destination" || ok=false
+        if "${trellage_bun[@]}" "$source_runtime_cli" validate-owned "$floating_runtime_destination"; then
+          mv "$floating_runtime_destination" "$staging_root/failed-floating-skills-runtime" || ok=false
         else
           ok=false
         fi
@@ -768,14 +779,8 @@ rollback() {
       || [ -d "$staging_root/old-native-environment-runtime" ]; then
       if [ -e "$environment_runtime_destination" ] \
         || [ -L "$environment_runtime_destination" ]; then
-        if [ -d "$environment_runtime_destination" ] \
-          && [ ! -L "$environment_runtime_destination" ] \
-          && [ -f "$environment_runtime_destination/.managed-by-trellage" ] \
-          && [ ! -L "$environment_runtime_destination/.managed-by-trellage" ] \
-          && cmp -s "$environment_runtime_destination/.managed-by-trellage" \
-            <(printf '%s\n' 'trellage-native-environment-runtime-v1') \
-          && [ -z "$(find "$environment_runtime_destination" -type l -print -quit)" ]; then
-          rm -rf -- "$environment_runtime_destination" || ok=false
+        if "${trellage_bun[@]}" "$source_runtime_cli" validate-owned "$environment_runtime_destination"; then
+          mv "$environment_runtime_destination" "$staging_root/failed-native-environment-runtime" || ok=false
         else
           ok=false
         fi
@@ -891,7 +896,7 @@ chmod 0700 "$staging_root/new-runtime/.fish-recovery"
 install -m 0755 "$source_dir/bin/cdx" "$staging_root/new-runtime/bin/cdx"
 install -m 0755 "$common_launcher" "$staging_root/new-runtime/lib/native-codex"
 install -m 0644 "$source_dir/../trellage-codex-common/codex-config.py" "$staging_root/new-runtime/lib/"
-install -m 0644 "$source_dir/../trellage-codex-common/codex-agents.mjs" "$staging_root/new-runtime/lib/"
+install -m 0644 "$source_dir/../trellage-codex-common/codex-agents.ts" "$staging_root/new-runtime/lib/"
 mkdir "$staging_root/new-runtime/lib/agents"
 for role_asset in explorer.toml worker.toml tester.toml researcher.toml reviewer.toml; do
   install -m 0644 "$source_dir/../trellage-codex-common/agents/$role_asset" "$staging_root/new-runtime/lib/agents/"
@@ -899,7 +904,7 @@ done
 for role_license in LICENSE NOTICE; do
   install -m 0644 "$source_dir/../trellage-codex-common/$role_license" "$staging_root/new-runtime/lib/agents/"
 done
-install -m 0644 "$native_skills_source" "$staging_root/new-runtime/native-skills.mjs"
+install -m 0644 "$native_skills_source" "$staging_root/new-runtime/native-skills.ts"
 install -m 0755 "$session_bridge_source" \
   "$staging_root/new-runtime/lib/trellage-session-bridge.py"
 install -m 0644 "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json"
@@ -949,6 +954,9 @@ command_staging="$(mktemp -d "$command_dir/.cdx-command.XXXXXX")" \
 chmod 0700 "$command_staging"
 ln -s "$installed_launcher" "$command_staging/new-command"
 
+"$environment_runtime_installer" --stage "$staging_root/new-native-environment-runtime"
+"$floating_runtime_installer" --stage "$staging_root/new-floating-skills-runtime"
+
 publication_active=true
 fish_old="$(mktemp "$fish_dir/.cdx-fish.XXXXXX")" || refuse 'could not stage original Fish config'
 rm -f -- "$fish_old"
@@ -981,11 +989,12 @@ mv "$command_staging/new-command" "$command_path"
   || refuse 'injected failure at after-command-publication'
 
 environment_runtime_publish_intent=true
+"${trellage_bun[@]}" "$source_runtime_cli" ensure-common "$(cd -P "$home" && pwd -P)" >/dev/null
 if [ "$environment_runtime_old_intent" = true ]; then
   mv "$environment_runtime_destination" \
     "$staging_root/old-native-environment-runtime"
 fi
-"$environment_runtime_installer"
+mv "$staging_root/new-native-environment-runtime" "$environment_runtime_destination"
 [ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-environment-runtime-publication ] \
   || refuse 'injected failure at after-environment-runtime-publication'
 
@@ -994,7 +1003,7 @@ if [ "$floating_runtime_old_intent" = true ]; then
   mv "$floating_runtime_destination" \
     "$staging_root/old-floating-skills-runtime"
 fi
-"$floating_runtime_installer"
+mv "$staging_root/new-floating-skills-runtime" "$floating_runtime_destination"
 [ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-floating-runtime-publication ] \
   || refuse 'injected failure at after-floating-runtime-publication'
 

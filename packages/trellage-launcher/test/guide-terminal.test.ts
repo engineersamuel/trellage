@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createInitialGuideRenderHandler } from "../src/guide-terminal.js"
+import { createInitialGuideRenderHandler } from "../src/guide-terminal.ts"
 
 describe("createInitialGuideRenderHandler", () => {
   it("clears and homes the alternate screen before the first frame only", () => {

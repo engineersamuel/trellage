@@ -6,7 +6,7 @@ import {
   GitHubCopilotReleaseClient,
   resolveCopilotRelease,
   type CopilotReleaseClient,
-} from "../src/copilot-release.js"
+} from "../src/copilot-release.ts"
 
 const digest = "sha256:0911f12dd816f612d27c4a360d4f00b62d933845a98d6c913e8d7400a69c6809"
 

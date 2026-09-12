@@ -22,11 +22,15 @@ for required in \
   .github/instructions/trellage-cli.instructions.md \
   .eslintrc.json \
   .prettierrc.json \
+  bun.lock \
+  bunfig.toml \
+  scripts/bun-runtime.sh \
   scripts/build-profile-compiler.sh \
-  scripts/floating-skills.mjs \
+  scripts/floating-skills.ts \
+  scripts/install-source-runtime.sh \
   scripts/install-floating-skills-runtime.sh \
   scripts/install-native-environment-runtime.sh \
-  scripts/native-environment.mjs \
+  scripts/native-environment.ts \
   scripts/profile-compiler-fingerprint.sh \
   skills.json \
   scripts/install-lefthook-hook.sh; do
@@ -35,13 +39,14 @@ done
 
 [[ -x .agents/hooks/guard-shell.sh ]] || fail "guard hook is not executable"
 [[ -x .agents/hooks/check-edit.sh ]] || fail "edit hook is not executable"
-[[ -x scripts/build-profile-compiler.sh ]] || fail "profile compiler build script is not executable"
-[[ -x scripts/floating-skills.mjs ]] || fail "floating skills manager is not executable"
+[[ -x scripts/build-profile-compiler.sh ]] || fail "source dependency preparation script is not executable"
+[[ -x scripts/floating-skills.ts ]] || fail "floating skills manager is not executable"
+[[ -x scripts/install-source-runtime.sh ]] || fail "source runtime installer is not executable"
 [[ -x scripts/install-floating-skills-runtime.sh ]] \
   || fail "floating skills runtime installer is not executable"
 [[ -x scripts/install-native-environment-runtime.sh ]] \
   || fail "native environment runtime installer is not executable"
-[[ -x scripts/native-environment.mjs ]] || fail "native environment resolver is not executable"
+[[ -x scripts/native-environment.ts ]] || fail "native environment resolver is not executable"
 [[ -x scripts/profile-compiler-fingerprint.sh ]] \
   || fail "profile compiler fingerprint script is not executable"
 [[ -x scripts/install-lefthook-hook.sh ]] || fail "Lefthook installer is not executable"
@@ -53,11 +58,23 @@ jq -e '
   .devDependencies.lefthook and
   (.scripts.lint | startswith("oxlint ")) and
   (.scripts["lint:fix"] | startswith("oxlint ")) and
-  .scripts.build == "bash ../../scripts/build-profile-compiler.sh" and
-  .scripts.prepare == "bash ../../scripts/install-lefthook-hook.sh" and
+  (.scripts.build | not) and
+  (.scripts.prepare | not) and
+  (.scripts.check | contains("--noEmit")) and
+  (.scripts.test | startswith("BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ")) and
+  (.scripts.test | contains("vitest")) and
   .scripts.format == "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --config .prettierrc.json '\''packages/trellage-cli/src/*.ts'\'' '\''packages/trellage-cli/test/*.ts'\'' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json" and
   .scripts["format:check"] == "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --check --config .prettierrc.json '\''packages/trellage-cli/src/*.ts'\'' '\''packages/trellage-cli/test/*.ts'\'' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json"
 ' packages/trellage-cli/package.json >/dev/null || fail "package scripts or dependencies do not use Oxc"
+
+jq -e '
+  .packageManager == "bun@1.3.3"
+  and .workspaces == ["packages/*"]
+  and (.scripts.build | not)
+  and (.scripts.prepare | not)
+  and (.scripts.check | contains("--workspaces check"))
+  and (.scripts.test | contains("--workspaces test"))
+' package.json >/dev/null || fail "root workspace does not preserve source-only Bun checks"
 
 jq -e '.mcpServers["codebase-memory"].command == "codebase-memory-mcp"' \
   .agents/mcp_config.json >/dev/null || fail "generic MCP configuration is invalid"
@@ -65,16 +82,17 @@ jq -e '.mcpServers["codebase-memory"].command == "codebase-memory-mcp"' \
 rg -q '\.agents/rules/trellage-cli\.md' .github/instructions/trellage-cli.instructions.md \
   || fail "GitHub instruction does not reference canonical generic rule"
 
-ci_tool_probe='for tool in jq curl git make fish rg; do command -v "$tool" >/dev/null; done'
+ci_tool_probe='for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done'
 for required_ci_line in \
   '          ref: ${{ github.event.pull_request.head.sha || github.sha }}' \
   '          fetch-depth: 2' \
   '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep' \
   "        run: ${ci_tool_probe}" \
-  '        run: npm ci --prefix packages/trellage-cli' \
-  '        run: npm ci --prefix packages/trellage-guide-core' \
-  '        run: npm ci --prefix packages/trellage-launcher' \
+  '          bun-version: 1.3.3' \
+  '        run: bash scripts/install-source-runtime.sh --prepare' \
   '        run: npm ci --prefix tests/playwright' \
+  '    runs-on: macos-latest' \
+  '        run: make profile-compiler launcher conversation-source source-runtime profile-guide-contract' \
   '        run: make test'; do
   grep -Fxq -- "$required_ci_line" .github/workflows/ci.yml \
     || fail "CI does not run the full deterministic contract: $required_ci_line"
@@ -82,7 +100,7 @@ done
 if (
   ci_tool_probe_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-ci-tool-probe.XXXXXX")"
   trap 'rm -rf -- "${ci_tool_probe_root}"' EXIT
-  for tool in jq git make fish rg; do
+  for tool in jq git make fish rg bun node python3; do
     ln -s /usr/bin/true "${ci_tool_probe_root}/${tool}"
   done
   PATH="${ci_tool_probe_root}" /bin/bash -e -c "${ci_tool_probe}"
@@ -151,11 +169,19 @@ unmatched_output="$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"Ba
 jq -e 'type == "object" and length == 0' <<<"${unmatched_output}" >/dev/null \
   || probe_failures+=("guard did not return neutral output for unmatched command: echo hello")
 
-temp_ts="packages/trellage-cli/.agent-harness-debugger-${BASHPID:-$$}-${RANDOM}.ts"
+# Keep the failing fixture outside production fingerprints and normal lint roots.
+probe_tests_root="packages/trellage-cli/tests"
+created_probe_tests_root=0
+if [[ ! -d "$probe_tests_root" ]]; then
+  mkdir "$probe_tests_root"
+  created_probe_tests_root=1
+fi
+temp_ts="$probe_tests_root/.agent-harness-debugger-${BASHPID:-$$}-${RANDOM}.ts"
 [[ ! -e "${temp_ts}" && ! -L "${temp_ts}" ]] || fail "temporary TypeScript probe path already exists"
 lefthook_regression_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-lefthook-contract.XXXXXX")"
 cleanup() {
   rm -f -- "${temp_ts}"
+  if ((created_probe_tests_root)); then rmdir "$probe_tests_root"; fi
   rm -rf -- "${lefthook_regression_root}"
 }
 trap cleanup EXIT HUP INT TERM
@@ -229,16 +255,14 @@ printf 'run\npre-push\n--no-auto-install\norigin\ngit@example.invalid:trellage.g
 cmp -s "${lefthook_regression_root}/expected-args" "${lefthook_args}" \
   || fail "installed pre-push hook did not forward Lefthook command and arguments"
 
-npm_fake_dir="${lefthook_regression_root}/fake-npm"
-npm_args="${lefthook_regression_root}/npm-args"
+source_args="${lefthook_regression_root}/source-args"
 native_args="${lefthook_regression_root}/native-args"
-mkdir -p "${npm_fake_dir}"
-cat >"${npm_fake_dir}/npm" <<'EOF'
-#!/bin/sh
-printf '%s\n' "$@" >"${NPM_CONTRACT_ARGS:?}"
-EOF
-chmod +x "${npm_fake_dir}/npm"
 mkdir -p "${lefthook_primary}/scripts"
+cat >"${lefthook_primary}/scripts/build-profile-compiler.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$PWD" "$@" >"${SOURCE_CONTRACT_ARGS:?}"
+EOF
+chmod +x "${lefthook_primary}/scripts/build-profile-compiler.sh"
 cat >"${lefthook_primary}/scripts/rebuild-profile-images.sh" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" >"${NATIVE_CONTRACT_ARGS:?}"
@@ -247,15 +271,13 @@ chmod +x "${lefthook_primary}/scripts/rebuild-profile-images.sh"
 for rebuild_hook in "${post_merge_hook}" "${post_rewrite_hook}"; do
   (
     cd "${lefthook_primary}"
-    PATH="${npm_fake_dir}:${PATH}" \
-      NPM_CONTRACT_ARGS="${npm_args}" \
+    SOURCE_CONTRACT_ARGS="${source_args}" \
       NATIVE_CONTRACT_ARGS="${native_args}" \
       "${rebuild_hook}"
   )
-  printf '%s\n' --prefix "${lefthook_primary}/packages/trellage-cli" run build \
-    >"${lefthook_regression_root}/expected-npm-args"
-  cmp -s "${lefthook_regression_root}/expected-npm-args" "${npm_args}" \
-    || fail "installed rebuild hook did not rebuild the active worktree compiler"
+  printf '%s\n' "${lefthook_primary}" >"${lefthook_regression_root}/expected-source-args"
+  cmp -s "${lefthook_regression_root}/expected-source-args" "${source_args}" \
+    || fail "installed rebuild hook did not prepare the active source worktree"
   printf '%s\n' --native-only >"${lefthook_regression_root}/expected-native-args"
   cmp -s "${lefthook_regression_root}/expected-native-args" "${native_args}" \
     || fail "installed rebuild hook did not refresh native launchers"
@@ -267,8 +289,8 @@ lefthook_missing_output="$(cd "${lefthook_primary}" && "${lefthook_hook}" 2>&1)"
 lefthook_missing_status=$?
 set -e
 ((lefthook_missing_status != 0)) || fail "installed pre-commit hook did not fail closed"
-if [[ "${lefthook_missing_output}" != *"npm ci"* ]] || \
-  [[ "${lefthook_missing_output}" != *"packages/trellage-cli/node_modules/.bin/lefthook"* ]]; then
+if [[ "${lefthook_missing_output}" != *"scripts/build-profile-compiler.sh"* ]] || \
+  [[ "${lefthook_missing_output}" != *"/node_modules/.bin/lefthook"* ]]; then
   fail "installed pre-commit hook missing actionable dependency diagnostic"
 fi
 

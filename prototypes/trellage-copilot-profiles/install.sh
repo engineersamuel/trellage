@@ -107,7 +107,6 @@ fi
   || refuse "missing statusline: $statusline_source"
 [[ -f "$model_settings_source" && ! -L "$model_settings_source" ]] \
   || refuse "missing model settings helper: $model_settings_source"
-mkdir -p "$install_root/bin" "$install_root/lib" "$installed_assets" "$command_dir"
 require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
@@ -124,6 +123,13 @@ for asset in rundown.instructions.md NOTICE.md; do
     && ( ! -e "$installed_assets/$asset" || -f "$installed_assets/$asset" ) ]] \
     || refuse "refusing unsafe managed runtime path: $installed_assets/$asset"
 done
+"$source_dir/../../scripts/install-floating-skills-runtime.sh"
+mkdir -p "$install_root/bin" "$install_root/lib" "$installed_assets" "$command_dir"
+require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
+require_safe_existing_directory "$install_root/bin" "$canonical_home/.local/share/trellage/cpx/bin" 'runtime bin'
+require_safe_existing_directory "$install_root/lib" "$canonical_home/.local/share/trellage/cpx/lib" 'runtime lib'
+require_safe_existing_directory "$installed_assets" \
+  "$canonical_home/.local/share/trellage/cpx/assets/rundown" 'runtime assets'
 printf '%s\n' "$ownership_value" >"$ownership_marker"
 install -m 0755 "$source_dir/bin/cpx" "$installed_launcher"
 install -m 0755 "$session_bridge_source" "$installed_session_bridge"
@@ -138,6 +144,6 @@ if [[ ! -L "$command_path" ]]; then
   ln -s "$installed_launcher" "$command_path"
 fi
 
-node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
+  "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
 printf 'Installed cpx at %s\n' "$command_path"
-"$source_dir/../../scripts/install-floating-skills-runtime.sh"

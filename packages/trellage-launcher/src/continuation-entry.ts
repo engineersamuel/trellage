@@ -1,8 +1,8 @@
 import path from "node:path"
-import { ContinuationActionStatus, type ContinuationDraft } from "../../trellage-guide-core/dist/index.js"
-import type { HerdrContext } from "./guide-launch.js"
-import type { ContinuationSourceClient } from "./continuation-source-client.js"
-import type { ContinuationStore } from "./continuation-store.js"
+import { ContinuationActionStatus, type ContinuationDraft } from "@trellage/guide-core"
+import type { HerdrContext } from "./guide-launch.ts"
+import type { ContinuationSourceClient } from "./continuation-source-client.ts"
+import type { ContinuationStore } from "./continuation-store.ts"
 
 enum InvocationSurface {
   Popup = "popup",

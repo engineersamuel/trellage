@@ -1,5 +1,5 @@
-import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import { GuideGoalError } from "./guide-goal-augment.js"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import { GuideGoalError } from "./guide-goal-augment.ts"
 import {
   assertGuideGoalCandidate,
   composeGuideGoalCandidate,
@@ -9,8 +9,8 @@ import {
   type GuideGoalCandidate,
   type GuideGoalExecution,
   type PreparedGuideGoal,
-} from "./guide-goal-execution.js"
-import type { GuideArtifactCache } from "./guide-match-cache.js"
+} from "./guide-goal-execution.ts"
+import type { GuideArtifactCache } from "./guide-match-cache.ts"
 import {
   assertGuideGenerateInput,
   validateGuideGenerateResult,
@@ -22,8 +22,8 @@ import {
   type GuideProvider,
   type GuideRefineInput,
   type GuideRefineResult,
-} from "./guide-provider.js"
-import { text } from "./guide-text.js"
+} from "./guide-provider.ts"
+import { text } from "./guide-text.ts"
 import {
   GuideCandidatePromptStage,
   requireDistinctGuideCandidatePrompts,
@@ -32,7 +32,7 @@ import {
   resolveWorkflowBodyCandidate,
   workflowPromptFrame,
   type GuideCandidatePromptTriple,
-} from "./guide-workflow-prompt.js"
+} from "./guide-workflow-prompt.ts"
 
 export interface GuideGoalGenerationInput extends GuideGenerateInput {
   readonly goal: PreparedGuideGoal

@@ -13,7 +13,7 @@ import {
   parseHarnessLatestVersionCacheRecord,
   recordLatestVersion,
   type HarnessLatestVersionCacheRecord,
-} from "../src/harness-latest-version-cache.js"
+} from "../src/harness-latest-version-cache.ts"
 
 const temporaryRoots: string[] = []
 

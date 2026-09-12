@@ -1,6 +1,6 @@
 import { Data, Effect, Schema } from "effect"
 
-import type { HarnessPackageLock } from "./lock.js"
+import type { HarnessPackageLock } from "./lock.ts"
 
 export interface ClaudeReleaseClient {
   readonly release: (selector: string) => Effect.Effect<unknown, unknown>

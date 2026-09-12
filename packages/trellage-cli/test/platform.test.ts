@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { assertProductionPlatform, parseDockerPlatform, platformLockPath } from "../src/platform.js"
+import { assertProductionPlatform, parseDockerPlatform, platformLockPath } from "../src/platform.ts"
 
 describe("Docker server platform", () => {
   it.each([

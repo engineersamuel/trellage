@@ -5,19 +5,17 @@ import path from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { npmTarballUrl, resolveNpmArtifact } from "../src/npm-artifact.js"
-
-const originalFetch = globalThis.fetch
+import { npmTarballUrl, resolveNpmArtifact } from "../src/npm-artifact.ts"
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  vi.restoreAllMocks()
 })
 
 describe("npm artifact resolution", () => {
   it("resolves metadata and hashes the exact tarball into XDG cache", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-npm-artifact-"))
     const requests: Array<string> = []
-    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input)
       requests.push(url)
       if (url === "https://packagefeedproxy.microsoft.io/npm/@playwright%2fmcp") {
@@ -40,7 +38,7 @@ describe("npm artifact resolution", () => {
         return new Response("package bytes")
       }
       return new Response("missing", { status: 404 })
-    }) as typeof fetch
+    })
 
     const resolved = await Effect.runPromise(
       resolveNpmArtifact({
@@ -68,7 +66,7 @@ describe("npm artifact resolution", () => {
 
   it("rejects prerelease versions from the stable channel", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-npm-prerelease-"))
-    globalThis.fetch = vi.fn<typeof fetch>(
+    vi.spyOn(globalThis, "fetch").mockImplementation(
       async () =>
         new Response(
           JSON.stringify({
@@ -84,7 +82,7 @@ describe("npm artifact resolution", () => {
             },
           }),
         ),
-    ) as typeof fetch
+    )
 
     await expect(
       Effect.runPromise(
@@ -103,7 +101,7 @@ describe("npm artifact resolution", () => {
   it("resolves an exact dependency-free package from a CFS-style full packument", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-npm-exact-"))
     const requests: Array<string> = []
-    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input)
       requests.push(url)
       if (url === "https://packagefeedproxy.microsoft.io/npm/playwright-core") {
@@ -125,7 +123,7 @@ describe("npm artifact resolution", () => {
         return new Response("core bytes")
       }
       return new Response("missing", { status: 404 })
-    }) as typeof fetch
+    })
 
     const resolved = await Effect.runPromise(
       resolveNpmArtifact({
@@ -150,7 +148,7 @@ describe("npm artifact resolution", () => {
 
   it("rejects present dependency maps with non-string requirements", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-npm-dependencies-"))
-    globalThis.fetch = vi.fn<typeof fetch>(
+    vi.spyOn(globalThis, "fetch").mockImplementation(
       async () =>
         new Response(
           JSON.stringify({
@@ -166,7 +164,7 @@ describe("npm artifact resolution", () => {
             },
           }),
         ),
-    ) as typeof fetch
+    )
 
     await expect(
       Effect.runPromise(

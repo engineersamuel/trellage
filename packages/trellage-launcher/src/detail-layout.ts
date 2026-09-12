@@ -1,4 +1,4 @@
-import type { LaunchEntry } from "./state.js"
+import type { LaunchEntry } from "./state.ts"
 
 export interface DetailRow {
   readonly label?:

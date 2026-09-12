@@ -1,7 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { spawn } from "node:child_process"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { bunExecutable } from "@trellage/runtime"
 
 import { bindFocusedConversation } from "./lib/conversation-capture.ts"
 import type { ConversationSnapshot } from "./lib/conversation-contract.ts"
@@ -67,6 +68,7 @@ export const main = async ({
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
+    bunExecutable()
     const status = await main()
     if (status !== 0 && status !== 130) await waitForDismissal(`Conversation guide exited with status ${status}.`)
     process.exitCode = status

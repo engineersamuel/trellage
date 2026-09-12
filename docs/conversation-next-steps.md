@@ -192,10 +192,12 @@ The outgoing action prompt is delivered through the owned Herdr Unix socket,
 not shell arguments. This mode requires the popup context and is not a
 standalone JSON/stdin guide mode.
 
-Rebuild `packages/trellage-guide-core` and the tracked launcher bundle after
-source changes. The linked plugin uses its checkout directly; the installed
-router must include `--next-steps` forwarding. Keep that checkout available
-while the shortcut commands point to it.
+Conversation capture uses the `@trellage/conversation-source` workspace package.
+Bun runs the shared contracts, capture helper, and launcher directly from
+source. Install the locked workspace dependencies and reinstall an installed
+router after source changes; there is no application bundle to rebuild.
+The linked plugin uses its checkout directly. Keep that checkout available
+while the shortcut commands point to it, and use Bun for the plugin commands.
 
 Sandbox conversation export uses `trellage session export-conversation`,
 `describe-conversation`, and `release-conversation`, through the same exact

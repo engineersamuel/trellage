@@ -4,15 +4,15 @@ import path from "node:path"
 import React from "react"
 import { render } from "ink"
 
-import { parseProfileGuide } from "../../../trellage-guide-core/dist/index.js"
-import { defaultGuideModelRouting } from "../../src/guide-api.js"
-import { parseGuideCatalog } from "../../src/guide-catalog.js"
-import { executeGuideUiResult } from "../../src/guide-interactive-execution.js"
-import type { CommandRunner } from "../../src/guide-launch.js"
-import { checkSelectedProfileReadiness } from "../../src/guide-preflight.js"
-import type { GuideProvider } from "../../src/guide-provider.js"
-import { createInitialGuideRenderHandler } from "../../src/guide-terminal.js"
-import { GuideApp, type GuideUiResult } from "../../src/guide-ui.js"
+import { parseProfileGuide } from "@trellage/guide-core"
+import { defaultGuideModelRouting } from "../../src/guide-api.ts"
+import { parseGuideCatalog } from "../../src/guide-catalog.ts"
+import { executeGuideUiResult } from "../../src/guide-interactive-execution.ts"
+import type { CommandRunner } from "../../src/guide-launch.ts"
+import { checkSelectedProfileReadiness } from "../../src/guide-preflight.ts"
+import type { GuideProvider } from "../../src/guide-provider.ts"
+import { createInitialGuideRenderHandler } from "../../src/guide-terminal.ts"
+import { GuideApp, type GuideUiResult } from "../../src/guide-ui.tsx"
 import {
   FixtureMode,
   codebaseIntent,
@@ -25,11 +25,12 @@ import {
   recommendationIds,
   repositoryPack,
   type FixtureEvent,
-} from "./guide-integration-data.js"
-import { createFixtureGoalReadinessServices, createFixtureRunner } from "./guide-integration-runner.js"
-import { createFixtureGoalProvider } from "./guide-goal-provider.js"
-import { createFixtureGoalModelProvider } from "./guide-goal-model.js"
+} from "./guide-integration-data.ts"
+import { createFixtureGoalReadinessServices, createFixtureRunner } from "./guide-integration-runner.ts"
+import { createFixtureGoalProvider } from "./guide-goal-provider.ts"
+import { createFixtureGoalModelProvider } from "./guide-goal-model.ts"
 
+assert(process.versions.bun, "Guide integration fixtures must execute with Bun")
 const root = process.argv[2]
 if (root === undefined) throw new Error("guide integration fixture requires a workspace")
 const mode = Object.values(FixtureMode).find((value) => value === process.argv[3])

@@ -383,12 +383,19 @@ CLOUDINIT
 }
 
 bootstrap_vm() {
+  local apply_local_changes bun_version
+  apply_local_changes="${TRELLAGE_AZURE_APPLY_LOCAL_CHANGES:-${TRELLAGE_AZURE_APPLY_LOCAL_TRX:-0}}"
+  [[ "$apply_local_changes" == 0 || "$apply_local_changes" == 1 ]] \
+    || fail 'TRELLAGE_AZURE_APPLY_LOCAL_CHANGES must be 0 or 1'
+  require_command jq
+  bun_version="$(jq -er '.engines.bun | select(type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$repo_root/package.json")" \
+    || fail 'the source package must declare an exact Bun version'
   load_state
   ssh_arguments
   printf 'azure-fresh-install: cloning and installing Trellage on %s\n' "$vm_ip" >&2
   ssh "${SSH_ARGUMENTS[@]}" "azureuser@$vm_ip" bash -s -- \
     "$repository" "$git_ref" "$checkout" "$copilot_version" \
-    "$proxy_repository" "$proxy_ref" "$proxy_checkout" <<'REMOTE'
+    "$proxy_repository" "$proxy_ref" "$proxy_checkout" "$apply_local_changes" "$bun_version" <<'REMOTE'
 set -euo pipefail
 
 repository="$1"
@@ -398,7 +405,10 @@ copilot_version="$4"
 proxy_repository="$5"
 proxy_ref="$6"
 proxy_checkout="$7"
-export PATH="$HOME/.local/bin:$PATH"
+apply_local_changes="$8"
+bun_version="$9"
+export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 
 missing_packages=()
 command -v bwrap >/dev/null 2>&1 || missing_packages+=(bubblewrap)
@@ -476,6 +486,12 @@ git -C "$proxy_checkout" checkout --detach "$proxy_target"
 
 curl -fsSL https://mise.run | sh
 eval "$(mise activate bash)"
+mise use -g "bun@$bun_version"
+installed_bun="$(bun --no-install --no-env-file --config=/dev/null --version)"
+[[ "$installed_bun" == "$bun_version" ]] || {
+  printf 'bootstrap: expected Bun %s, found %s\n' "$bun_version" "$installed_bun" >&2
+  exit 1
+}
 sudo npm install -g \
   "@github/copilot@$copilot_version" \
   @openai/codex \
@@ -487,124 +503,53 @@ printf '{}\n' >"$HOME/.copilot/models.json"
 cd "$checkout"
 mise trust
 mise use -g uv
-mise run trellage -- validate copilot-hve
-(
-  cd packages/trellage-launcher
-  npm ci
-  npm run build
-)
-scripts/rebuild-profile-images.sh --install --native-only
+if [[ "$apply_local_changes" == 0 ]]; then
+  scripts/install-source-runtime.sh --prepare
+  mise run trellage -- validate copilot-hve
+  scripts/rebuild-profile-images.sh --install --native-only
+  trellage validate copilot-hve
+  trx --help >/dev/null
+fi
 
 (
   cd "$proxy_checkout"
   HOST_UID="$(id -u)" HOST_GID="$(id -g)" docker compose build
 )
 docker run --rm hello-world >/dev/null
-trellage validate copilot-hve
-trx --help >/dev/null
-printf 'bootstrap: PASS\n'
 REMOTE
 
-  apply_local_changes="${TRELLAGE_AZURE_APPLY_LOCAL_CHANGES:-${TRELLAGE_AZURE_APPLY_LOCAL_TRX:-0}}"
   if [[ "$apply_local_changes" == 1 ]]; then
     require_command tar
-    local_trx="$repo_root/prototypes/trellage-router/bin/trx"
-    local_picx="$repo_root/prototypes/trellage-picx-profiles/bin/picx"
-    local_omp="$repo_root/prototypes/trellage-omp-profiles/bin/omp"
-    local_omp_catalog="$repo_root/prototypes/trellage-omp-profiles/catalog.json"
-    local_prx="$repo_root/prototypes/trellage-prime-profiles/bin/prx"
-    local_claude_common="$repo_root/prototypes/trellage-claude-common"
-    local_claude_profiles="$repo_root/prototypes/trellage-claude-profiles"
-    local_firstmate_profiles="$repo_root/prototypes/trellage-firstmate-profiles"
-    local_firstmate_guides="$repo_root/profile-guides/native/fmx"
-    local_guide_ui="$repo_root/packages/trellage-launcher/src/guide-ui.tsx"
-    local_application="$repo_root/packages/trellage-cli/src/application.ts"
-    local_materialize="$repo_root/packages/trellage-cli/src/materialize.ts"
-    local_headless_capabilities="$repo_root/packages/trellage-cli/src/headless-capabilities.ts"
-    local_finalize_claude_seed="$repo_root/prototypes/trellage/finalize-claude-seed.mjs"
-    [[ -f "$local_trx" && -x "$local_trx" && ! -L "$local_trx" ]] \
-      || fail "local trx candidate is missing or unsafe: $local_trx"
-    [[ -f "$local_picx" && -x "$local_picx" && ! -L "$local_picx" ]] \
-      || fail "local picx candidate is missing or unsafe: $local_picx"
-    [[ -f "$local_omp" && -x "$local_omp" && ! -L "$local_omp" ]] \
-      || fail "local omp candidate is missing or unsafe: $local_omp"
-    [[ -f "$local_omp_catalog" && ! -L "$local_omp_catalog" ]] \
-      || fail "local omp catalog candidate is missing or unsafe: $local_omp_catalog"
-    [[ -f "$local_prx" && -x "$local_prx" && ! -L "$local_prx" ]] \
-      || fail "local prx candidate is missing or unsafe: $local_prx"
-    [[ -d "$local_claude_common" && ! -L "$local_claude_common" ]] \
-      || fail "local shared Claude candidate is missing or unsafe: $local_claude_common"
-    [[ -d "$local_claude_profiles" && ! -L "$local_claude_profiles" ]] \
-      || fail "local Claude profile candidate is missing or unsafe: $local_claude_profiles"
-    [[ -d "$local_firstmate_profiles" && ! -L "$local_firstmate_profiles" ]] \
-      || fail "local Firstmate candidate is missing or unsafe: $local_firstmate_profiles"
-    [[ -d "$local_firstmate_guides" && ! -L "$local_firstmate_guides" ]] \
-      || fail "local Firstmate guide candidate is missing or unsafe: $local_firstmate_guides"
-    [[ -f "$local_guide_ui" && ! -L "$local_guide_ui" ]] \
-      || fail "local guide UI candidate is missing or unsafe: $local_guide_ui"
-    [[ -f "$local_application" && ! -L "$local_application" ]] \
-      || fail "local application candidate is missing or unsafe: $local_application"
-    [[ -f "$local_materialize" && ! -L "$local_materialize" ]] \
-      || fail "local materialize candidate is missing or unsafe: $local_materialize"
-    [[ -f "$local_headless_capabilities" && ! -L "$local_headless_capabilities" ]] \
-      || fail "local headless capabilities candidate is missing or unsafe: $local_headless_capabilities"
-    [[ -f "$local_finalize_claude_seed" && ! -L "$local_finalize_claude_seed" ]] \
-      || fail "local Claude finalizer candidate is missing or unsafe: $local_finalize_claude_seed"
-    printf 'azure-fresh-install: applying local unmerged runtime candidates\n' >&2
-    scp "${SSH_ARGUMENTS[@]}" "$local_trx" \
-      "azureuser@$vm_ip:/tmp/trellage-trx-candidate"
-    scp "${SSH_ARGUMENTS[@]}" "$local_picx" \
-      "azureuser@$vm_ip:/tmp/trellage-picx-candidate"
-    scp "${SSH_ARGUMENTS[@]}" "$local_omp" \
-      "azureuser@$vm_ip:/tmp/trellage-omp-candidate"
-    scp "${SSH_ARGUMENTS[@]}" "$local_omp_catalog" \
-      "azureuser@$vm_ip:/tmp/trellage-omp-catalog-candidate"
-    scp "${SSH_ARGUMENTS[@]}" "$local_prx" \
-      "azureuser@$vm_ip:/tmp/trellage-prx-candidate"
-    scp "${SSH_ARGUMENTS[@]}" "$local_application" \
-      "azureuser@$vm_ip:/tmp/trellage-application-candidate"
-    scp "${SSH_ARGUMENTS[@]}" "$local_materialize" \
-      "azureuser@$vm_ip:/tmp/trellage-materialize-candidate"
-    scp "${SSH_ARGUMENTS[@]}" "$local_headless_capabilities" \
-      "azureuser@$vm_ip:/tmp/trellage-headless-capabilities-candidate"
-    scp "${SSH_ARGUMENTS[@]}" "$local_finalize_claude_seed" \
-      "azureuser@$vm_ip:/tmp/trellage-finalize-claude-seed-candidate"
-    tar -C "$repo_root" -czf - \
-      prototypes/trellage-claude-common \
-      prototypes/trellage-claude-profiles \
-      prototypes/trellage-firstmate-profiles \
-      profile-guides/native/fmx \
-      packages/trellage-launcher/src/guide-ui.tsx \
-      | ssh "${SSH_ARGUMENTS[@]}" "azureuser@$vm_ip" \
-        "tar -xzf - -C '$checkout'"
-    ssh "${SSH_ARGUMENTS[@]}" "azureuser@$vm_ip" \
-      "install -m 0755 /tmp/trellage-trx-candidate '$checkout/prototypes/trellage-router/bin/trx' \
-        && install -m 0755 /tmp/trellage-picx-candidate '$checkout/prototypes/trellage-picx-profiles/bin/picx' \
-        && install -m 0755 /tmp/trellage-omp-candidate '$checkout/prototypes/trellage-omp-profiles/bin/omp' \
-        && install -m 0644 /tmp/trellage-omp-catalog-candidate '$checkout/prototypes/trellage-omp-profiles/catalog.json' \
-        && install -m 0755 /tmp/trellage-prx-candidate '$checkout/prototypes/trellage-prime-profiles/bin/prx' \
-        && install -m 0644 /tmp/trellage-application-candidate '$checkout/packages/trellage-cli/src/application.ts' \
-        && install -m 0644 /tmp/trellage-materialize-candidate '$checkout/packages/trellage-cli/src/materialize.ts' \
-        && install -m 0644 /tmp/trellage-headless-capabilities-candidate '$checkout/packages/trellage-cli/src/headless-capabilities.ts' \
-        && install -m 0644 /tmp/trellage-finalize-claude-seed-candidate '$checkout/prototypes/trellage/finalize-claude-seed.mjs' \
-        && rm -f /tmp/trellage-trx-candidate /tmp/trellage-picx-candidate /tmp/trellage-omp-candidate /tmp/trellage-omp-catalog-candidate /tmp/trellage-prx-candidate /tmp/trellage-application-candidate /tmp/trellage-materialize-candidate /tmp/trellage-headless-capabilities-candidate /tmp/trellage-finalize-claude-seed-candidate \
-        && cd '$checkout/packages/trellage-cli' \
-        && npm run build \
-        && cd '$checkout/packages/trellage-launcher' \
-        && npm run build \
-        && cd '$checkout/prototypes/trellage-claude-profiles' \
-        && ./install.sh \
-        && cd '$checkout/prototypes/trellage-firstmate-profiles' \
-        && ./install.sh \
-        && cd '$checkout/prototypes/trellage-picx-profiles' \
-        && ./install.sh \
-        && cd '$checkout/prototypes/trellage-omp-profiles' \
-        && ./install.sh \
-        && cd '$checkout/prototypes/trellage-prime-profiles' \
-        && ./install.sh \
-        && cd '$checkout/prototypes/trellage-router' \
-        && ./install.sh"
+    printf 'azure-fresh-install: applying the complete local source workspace\n' >&2
+    "$repo_root/scripts/install-source-runtime.sh" --prepare
+    (
+      source "$repo_root/scripts/bun-runtime.sh"
+      trellage_bun_runtime "$repo_root"
+      candidate_stage="$(mktemp -d "${TMPDIR:-/tmp}/trellage-azure-source.XXXXXX")"
+      candidate_stage="$(cd "$candidate_stage" && pwd -P)"
+      trap 'rm -rf -- "$candidate_stage"' EXIT
+      cd "$repo_root"
+      "${trellage_bun[@]}" --eval \
+        'import { copySources } from "@trellage/runtime/workspace"; copySources(process.argv[1], process.argv[2]);' \
+        "$repo_root" "$candidate_stage"
+      tar -C "$candidate_stage" -czf - . \
+        | ssh "${SSH_ARGUMENTS[@]}" "azureuser@$vm_ip" \
+          "tar -xzf - -C '$checkout'"
+    )
+    ssh "${SSH_ARGUMENTS[@]}" "azureuser@$vm_ip" bash -s -- "$checkout" <<'REMOTE'
+set -euo pipefail
+checkout="$1"
+export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+cd "$checkout"
+mise trust
+scripts/install-source-runtime.sh --prepare
+scripts/rebuild-profile-images.sh --install --native-only
+trellage validate copilot-hve
+trx --help >/dev/null
+REMOTE
   fi
+  printf 'bootstrap: PASS\n'
 }
 
 resolve_copilot_token() {

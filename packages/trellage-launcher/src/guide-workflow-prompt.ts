@@ -1,5 +1,5 @@
-import type { ProfileGuideV1, ProfileGuideWorkflow } from "../../trellage-guide-core/dist/index.js"
-import type { GuideGenerateCandidate, GuideOptimizeFixedFrame } from "./guide-provider.js"
+import type { ProfileGuideV1, ProfileGuideWorkflow } from "@trellage/guide-core"
+import type { GuideGenerateCandidate, GuideOptimizeFixedFrame } from "./guide-provider.ts"
 
 const intentPlaceholder = "{{intent}}"
 const authoredCommandToken = /^[/\$][a-z0-9][a-z0-9._:/-]*$/iu

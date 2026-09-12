@@ -1,12 +1,12 @@
-import type { ProfileGuideGoalController, ProfileGuideV1 } from "../../../trellage-guide-core/dist/index.js"
-import { renderGuideGoalProposal, type GuideGoalDraft } from "../../src/guide-goal-augment.js"
+import type { ProfileGuideGoalController, ProfileGuideV1 } from "@trellage/guide-core"
+import { renderGuideGoalProposal, type GuideGoalDraft } from "../../src/guide-goal-augment.ts"
 import {
   composeGuideGoalCandidate,
   prepareGuideGoal,
   resolveGuideGoalExecution,
-} from "../../src/guide-goal-execution.js"
-import { parseSelectedProfile } from "../../src/guide-launch.js"
-import { goalDraft, goalMeSkill } from "./goal-me-skill.js"
+} from "../../src/guide-goal-execution.ts"
+import { parseSelectedProfile } from "../../src/guide-launch.ts"
+import { goalDraft, goalMeSkill } from "./goal-me-skill.ts"
 
 export const goalTransportFixture = (
   controller: ProfileGuideGoalController = "codex-goal",

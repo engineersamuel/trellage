@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import { buildUpdateCheckCommand, parseUpdateCheckOutput, versionColumnsFor } from "../src/admin-version-check.js"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { buildUpdateCheckCommand, parseUpdateCheckOutput, versionColumnsFor } from "../src/admin-version-check.ts"
 
 const entry: AdminProfileEntry = {
   ref: "native:prx:default",

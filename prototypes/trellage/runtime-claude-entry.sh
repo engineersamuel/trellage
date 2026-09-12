@@ -241,93 +241,7 @@ copy_managed_files() {
     printf 'trellage-claude-entry: cannot stage managed Claude files\n' >&2
     return 1
   fi
-  if ! node - "$staging" "$destination_root" "$paths" "$ownership_root" <<'NODE'
-const fs = require('node:fs')
-const path = require('node:path')
-
-const [stagingRoot, destinationRoot, pathsFile, ownershipRoot] = process.argv.slice(2)
-const stagingPrefix = `${path.resolve(stagingRoot)}${path.sep}`
-const destinationPrefix = `${path.resolve(destinationRoot)}${path.sep}`
-const ownershipPrefix = ownershipRoot ? `${path.resolve(ownershipRoot)}${path.sep}` : undefined
-
-const syncDirectory = (directory) => {
-  const descriptor = fs.openSync(directory, 'r')
-  try {
-    fs.fsyncSync(descriptor)
-  } finally {
-    fs.closeSync(descriptor)
-  }
-}
-
-const ensureDirectory = (root, relativeDirectory) => {
-  let current = root
-  for (const segment of relativeDirectory.split(path.sep).filter(Boolean)) {
-    current = path.join(current, segment)
-    try {
-      const stat = fs.lstatSync(current)
-      if (!stat.isDirectory() || stat.isSymbolicLink()) {
-        throw new Error(`unsafe destination directory: ${current}`)
-      }
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-      fs.mkdirSync(current, { mode: 0o700 })
-      syncDirectory(path.dirname(current))
-    }
-  }
-}
-
-let failed = false
-
-try {
-  const destinationStat = fs.lstatSync(destinationRoot)
-  if (!destinationStat.isDirectory() || destinationStat.isSymbolicLink()) {
-    throw new Error(`unsafe destination root: ${destinationRoot}`)
-  }
-  if (ownershipRoot) {
-    const ownershipStat = fs.lstatSync(ownershipRoot)
-    if (!ownershipStat.isDirectory() || ownershipStat.isSymbolicLink()) {
-      throw new Error(`unsafe ownership root: ${ownershipRoot}`)
-    }
-  }
-  const managedPaths = fs
-    .readFileSync(pathsFile, 'utf8')
-    .split('\n')
-    .filter((managedPath) => managedPath.length > 0)
-  for (const managedPath of managedPaths) {
-    try {
-      const staged = path.resolve(stagingRoot, managedPath)
-      const destination = path.resolve(destinationRoot, managedPath)
-      if (!staged.startsWith(stagingPrefix) || !destination.startsWith(destinationPrefix)) {
-        throw new Error(`unsafe managed path: ${managedPath}`)
-      }
-      const stagedStat = fs.lstatSync(staged)
-      if (!stagedStat.isFile() || stagedStat.isSymbolicLink()) {
-        throw new Error(`unsafe staged file: ${managedPath}`)
-      }
-      if (ownershipRoot) {
-        const ownership = path.resolve(ownershipRoot, managedPath)
-        if (!ownership.startsWith(ownershipPrefix)) {
-          throw new Error(`unsafe ownership path: ${managedPath}`)
-        }
-        ensureDirectory(ownershipRoot, path.dirname(managedPath))
-        fs.linkSync(staged, ownership)
-      }
-      ensureDirectory(destinationRoot, path.dirname(managedPath))
-      fs.linkSync(staged, destination)
-      fs.unlinkSync(staged)
-    } catch (error) {
-      failed = true
-      process.stderr.write(
-        `trellage-claude-entry: atomic publication failed for ${managedPath}: ${error.message}\n`,
-      )
-    }
-  }
-} catch (error) {
-  failed = true
-  process.stderr.write(`trellage-claude-entry: atomic publication failed: ${error.message}\n`)
-}
-if (failed) process.exitCode = 1
-NODE
+  if ! managed_files publish "$staging" "$destination_root" "$paths" "$ownership_root"
   then
     rm -rf -- "$staging"
     return 1
@@ -345,292 +259,26 @@ remove_owned_files() {
   local strict_ownership="${7:-false}"
   local expected_metadata="${8:-}"
   [[ -s "$paths" ]] || return 0
-  node - \
+  managed_files remove-owned \
     "$destination_root" "$ownership_root" "$quarantine_root" "$recovery_root" \
-    "$retain_marker" "$paths" "$strict_ownership" "$expected_metadata" <<'NODE'
-const fs = require('node:fs')
-const crypto = require('node:crypto')
-const path = require('node:path')
-
-const [
-  destinationRoot,
-  ownershipRoot,
-  quarantineRoot,
-  recoveryRoot,
-  retainMarker,
-  pathsFile,
-  strictOwnershipValue,
-  expectedMetadataPath,
-] = process.argv.slice(2)
-const strictOwnership = strictOwnershipValue === 'true'
-const destinationPrefix = `${path.resolve(destinationRoot)}${path.sep}`
-const ownershipPrefix = `${path.resolve(ownershipRoot)}${path.sep}`
-const quarantinePrefix = `${path.resolve(quarantineRoot)}${path.sep}`
-const recoveryPrefix = `${path.resolve(recoveryRoot)}${path.sep}`
-const expectedMetadata =
-  strictOwnership && expectedMetadataPath
-    ? new Map(
-        JSON.parse(fs.readFileSync(expectedMetadataPath, 'utf8')).map((record) => [
-          record.path,
-          record,
-        ]),
-      )
-    : new Map()
-
-const syncDirectory = (directory) => {
-  const descriptor = fs.openSync(directory, 'r')
-  try {
-    fs.fsyncSync(descriptor)
-  } finally {
-    fs.closeSync(descriptor)
-  }
-}
-
-const ensureDirectory = (root, relativeDirectory) => {
-  let current = root
-  for (const segment of relativeDirectory.split(path.sep).filter(Boolean)) {
-    current = path.join(current, segment)
-    try {
-      const stat = fs.lstatSync(current)
-      if (!stat.isDirectory() || stat.isSymbolicLink()) {
-        throw new Error(`unsafe rollback directory: ${current}`)
-      }
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-      fs.mkdirSync(current, { mode: 0o700 })
-      syncDirectory(path.dirname(current))
-    }
-  }
-}
-
-const isOwnedRegularFile = (candidateStat, ownershipStat) =>
-  candidateStat.isFile() &&
-  !candidateStat.isSymbolicLink() &&
-  ownershipStat.isFile() &&
-  !ownershipStat.isSymbolicLink() &&
-  candidateStat.dev === ownershipStat.dev &&
-  candidateStat.ino === ownershipStat.ino
-
-const digest = (candidate) =>
-  crypto.createHash('sha256').update(fs.readFileSync(candidate)).digest('hex')
-
-const matchesExpectedMetadata = (
-  candidateStat,
-  candidate,
-  managedPath,
-  includeChangeTime,
-) => {
-  if (!strictOwnership) return true
-  const expected = expectedMetadata.get(managedPath)
-  return (
-    expected !== undefined &&
-    candidateStat.size.toString() === expected.size &&
-    candidateStat.mtimeNs.toString() === expected.mtimeNs &&
-    (!includeChangeTime || candidateStat.ctimeNs.toString() === expected.ctimeNs) &&
-    digest(candidate) === expected.sha256
-  )
-}
-
-const retainTransaction = (managedPath) => {
-  const descriptor = fs.openSync(retainMarker, 'a', 0o600)
-  try {
-    fs.writeFileSync(descriptor, `${managedPath}\n`)
-    fs.fsyncSync(descriptor)
-  } finally {
-    fs.closeSync(descriptor)
-  }
-  syncDirectory(path.dirname(retainMarker))
-}
-
-const preserveUnexpectedFile = (quarantined, destination, recovered, managedPath) => {
-  let restored = false
-  try {
-    fs.linkSync(quarantined, destination)
-    restored = true
-  } catch (error) {
-    if (error?.code !== 'EEXIST') {
-      process.stderr.write(
-        `trellage-claude-entry: could not restore concurrent path ${managedPath}: ${error.message}\n`,
-      )
-    }
-  }
-  try {
-    let recoveryStat
-    try {
-      recoveryStat = fs.lstatSync(recoveryRoot)
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-      fs.mkdirSync(recoveryRoot, { mode: 0o700 })
-      syncDirectory(path.dirname(recoveryRoot))
-      recoveryStat = fs.lstatSync(recoveryRoot)
-    }
-    if (!recoveryStat.isDirectory() || recoveryStat.isSymbolicLink()) {
-      throw new Error(`unsafe recovery root: ${recoveryRoot}`)
-    }
-    ensureDirectory(recoveryRoot, path.dirname(managedPath))
-    fs.renameSync(quarantined, recovered)
-    const recoveredStat = fs.lstatSync(recovered)
-    if (recoveredStat.isFile() && !recoveredStat.isSymbolicLink()) {
-      const descriptor = fs.openSync(recovered, 'r')
-      try {
-        fs.fsyncSync(descriptor)
-      } finally {
-        fs.closeSync(descriptor)
-      }
-    }
-    syncDirectory(path.dirname(recovered))
-    if (restored) syncDirectory(path.dirname(destination))
-    process.stderr.write(
-      `trellage-claude-entry: preserved concurrent path ${managedPath} at ${recovered}\n`,
-    )
-  } catch (error) {
-    retainTransaction(managedPath)
-    throw new Error(`cannot preserve concurrent path ${managedPath}: ${error.message}`)
-  }
-}
-
-let failed = false
-
-for (const managedPath of fs.readFileSync(pathsFile, 'utf8').split('\n').filter(Boolean)) {
-  let quarantined
-  try {
-    const destination = path.resolve(destinationRoot, managedPath)
-    const ownership = path.resolve(ownershipRoot, managedPath)
-    quarantined = path.resolve(quarantineRoot, managedPath)
-    const recovered = path.resolve(recoveryRoot, managedPath)
-    if (
-      !destination.startsWith(destinationPrefix) ||
-      !ownership.startsWith(ownershipPrefix) ||
-      !quarantined.startsWith(quarantinePrefix) ||
-      !recovered.startsWith(recoveryPrefix)
-    ) {
-      throw new Error(`unsafe managed path: ${managedPath}`)
-    }
-    const destinationStat = fs.lstatSync(destination, { bigint: true })
-    const ownershipStat = fs.lstatSync(ownership, { bigint: true })
-    if (
-      !isOwnedRegularFile(destinationStat, ownershipStat) ||
-      !matchesExpectedMetadata(destinationStat, destination, managedPath, true)
-    ) {
-      if (!strictOwnership) continue
-      retainTransaction(managedPath)
-      throw new Error(`managed path ownership changed: ${managedPath}`)
-    }
-
-    ensureDirectory(quarantineRoot, path.dirname(managedPath))
-    fs.renameSync(destination, quarantined)
-    syncDirectory(path.dirname(destination))
-    syncDirectory(path.dirname(quarantined))
-    const quarantinedStat = fs.lstatSync(quarantined, { bigint: true })
-    if (
-      !isOwnedRegularFile(quarantinedStat, ownershipStat) ||
-      !matchesExpectedMetadata(quarantinedStat, quarantined, managedPath, false)
-    ) {
-      preserveUnexpectedFile(quarantined, destination, recovered, managedPath)
-      if (strictOwnership) {
-        retainTransaction(managedPath)
-        failed = true
-      }
-    }
-  } catch (error) {
-    if (error?.code === 'ENOENT' && !strictOwnership) continue
-    if (quarantined && fs.existsSync(quarantined)) {
-      try {
-        retainTransaction(managedPath)
-      } catch {}
-    } else if (strictOwnership) {
-      try {
-        retainTransaction(managedPath)
-      } catch {}
-    }
-    failed = true
-    process.stderr.write(
-      `trellage-claude-entry: managed rollback failed for ${managedPath}: ${error.message}\n`,
-    )
-  }
-}
-if (failed) process.exitCode = 1
-NODE
+    "$retain_marker" "$paths" "$strict_ownership" "$expected_metadata"
 }
 
 create_transaction_journal() {
   local destination_root="$1"
   local transaction_root="$2"
   local journal_marker="$3"
-  node - "$destination_root" "$transaction_root" "$journal_marker" <<'NODE'
-const fs = require('node:fs')
-
-const [destinationRoot, transactionRoot, journalMarker] = process.argv.slice(2)
-const syncDirectory = (directory) => {
-  const descriptor = fs.openSync(directory, 'r')
-  try {
-    fs.fsyncSync(descriptor)
-  } finally {
-    fs.closeSync(descriptor)
-  }
-}
-
-let journalDescriptor
-try {
-  syncDirectory(destinationRoot)
-  journalDescriptor = fs.openSync(journalMarker, 'wx', 0o600)
-  fs.writeFileSync(journalDescriptor, 'managed-state transaction is active\n')
-  fs.fsyncSync(journalDescriptor)
-  syncDirectory(transactionRoot)
-} catch (error) {
-  process.stderr.write(
-    `trellage-claude-entry: cannot create transaction journal: ${error.message}\n`,
-  )
-  process.exitCode = 1
-} finally {
-  if (journalDescriptor !== undefined) fs.closeSync(journalDescriptor)
-}
-NODE
+  managed_files journal "$destination_root" "$transaction_root" "$journal_marker"
 }
 
 sync_regular_file() {
   local candidate="$1"
-  node - "$candidate" <<'NODE'
-const fs = require('node:fs')
-const path = require('node:path')
-
-const candidate = process.argv[2]
-const candidateStat = fs.lstatSync(candidate)
-if (!candidateStat.isFile() || candidateStat.isSymbolicLink()) {
-  throw new Error(`unsafe synchronization file: ${candidate}`)
-}
-let descriptor = fs.openSync(candidate, 'r')
-try {
-  fs.fsyncSync(descriptor)
-} finally {
-  fs.closeSync(descriptor)
-}
-descriptor = fs.openSync(path.dirname(candidate), 'r')
-try {
-  fs.fsyncSync(descriptor)
-} finally {
-  fs.closeSync(descriptor)
-}
-NODE
+  managed_files sync-file "$candidate"
 }
 
 sync_directory() {
   local candidate="$1"
-  node - "$candidate" <<'NODE'
-const fs = require('node:fs')
-
-const candidate = process.argv[2]
-const candidateStat = fs.lstatSync(candidate)
-if (!candidateStat.isDirectory() || candidateStat.isSymbolicLink()) {
-  throw new Error(`unsafe synchronization directory: ${candidate}`)
-}
-const descriptor = fs.openSync(candidate, 'r')
-try {
-  fs.fsyncSync(descriptor)
-} finally {
-  fs.closeSync(descriptor)
-}
-NODE
+  managed_files sync-directory "$candidate"
 }
 
 sync_filesystem() {
@@ -647,158 +295,15 @@ snapshot_managed_files() {
   local backup_root="$3"
   local paths="$4"
   local metadata="$5"
-  node - \
-    "$source_root" "$ownership_root" "$backup_root" "$paths" "$metadata" <<'NODE'
-const fs = require('node:fs')
-const crypto = require('node:crypto')
-const path = require('node:path')
-
-const [sourceRoot, ownershipRoot, backupRoot, pathsFile, metadata] =
-  process.argv.slice(2)
-const sourcePrefix = `${path.resolve(sourceRoot)}${path.sep}`
-const ownershipPrefix = `${path.resolve(ownershipRoot)}${path.sep}`
-const backupPrefix = `${path.resolve(backupRoot)}${path.sep}`
-const syncedDirectories = new Set()
-const records = []
-let failed = false
-
-const syncDirectory = (directory) => {
-  if (syncedDirectories.has(directory)) return
-  const descriptor = fs.openSync(directory, 'r')
-  try {
-    fs.fsyncSync(descriptor)
-    syncedDirectories.add(directory)
-  } finally {
-    fs.closeSync(descriptor)
-  }
-}
-
-const ensureDirectory = (root, relativeDirectory) => {
-  let current = root
-  for (const segment of relativeDirectory.split(path.sep).filter(Boolean)) {
-    current = path.join(current, segment)
-    try {
-      const stat = fs.lstatSync(current)
-      if (!stat.isDirectory() || stat.isSymbolicLink()) {
-        throw new Error(`unsafe snapshot directory: ${current}`)
-      }
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error
-      fs.mkdirSync(current, { mode: 0o700 })
-      syncDirectory(path.dirname(current))
-    }
-  }
-}
-
-const digest = (candidate) =>
-  crypto.createHash('sha256').update(fs.readFileSync(candidate)).digest('hex')
-
-for (const managedPath of fs.readFileSync(pathsFile, 'utf8').split('\n').filter(Boolean)) {
-  try {
-    const source = path.resolve(sourceRoot, managedPath)
-    const ownership = path.resolve(ownershipRoot, managedPath)
-    const backup = path.resolve(backupRoot, managedPath)
-    if (
-      !source.startsWith(sourcePrefix) ||
-      !ownership.startsWith(ownershipPrefix) ||
-      !backup.startsWith(backupPrefix)
-    ) {
-      throw new Error(`unsafe managed path: ${managedPath}`)
-    }
-    const sourceStat = fs.lstatSync(source, { bigint: true })
-    if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
-      throw new Error(`unsafe managed source: ${managedPath}`)
-    }
-    ensureDirectory(ownershipRoot, path.dirname(managedPath))
-    ensureDirectory(backupRoot, path.dirname(managedPath))
-    fs.linkSync(source, ownership)
-    const ownershipStat = fs.lstatSync(ownership, { bigint: true })
-    const linkedSourceStat = fs.lstatSync(source, { bigint: true })
-    if (
-      ownershipStat.dev !== sourceStat.dev ||
-      ownershipStat.ino !== sourceStat.ino ||
-      linkedSourceStat.dev !== sourceStat.dev ||
-      linkedSourceStat.ino !== sourceStat.ino
-    ) {
-      throw new Error(`managed source changed before snapshotting: ${managedPath}`)
-    }
-    fs.copyFileSync(ownership, backup, fs.constants.COPYFILE_FICLONE)
-    fs.chmodSync(backup, Number(ownershipStat.mode & 0o777n))
-    const currentSourceStat = fs.lstatSync(source, { bigint: true })
-    const sourceDigest = digest(ownership)
-    const backupDigest = digest(backup)
-    if (
-      currentSourceStat.dev !== ownershipStat.dev ||
-      currentSourceStat.ino !== ownershipStat.ino ||
-      currentSourceStat.size !== ownershipStat.size ||
-      currentSourceStat.mtimeNs !== ownershipStat.mtimeNs ||
-      currentSourceStat.ctimeNs !== ownershipStat.ctimeNs ||
-      backupDigest !== sourceDigest
-    ) {
-      throw new Error(`managed source changed while snapshotting: ${managedPath}`)
-    }
-    syncDirectory(path.dirname(ownership))
-    syncDirectory(path.dirname(backup))
-    records.push({
-      path: managedPath,
-      size: currentSourceStat.size.toString(),
-      mtimeNs: currentSourceStat.mtimeNs.toString(),
-      ctimeNs: currentSourceStat.ctimeNs.toString(),
-      sha256: sourceDigest,
-    })
-  } catch (error) {
-    failed = true
-    process.stderr.write(
-      `trellage-claude-entry: managed snapshot failed for ${managedPath}: ${error.message}\n`,
-    )
-  }
-}
-if (!failed) {
-  const descriptor = fs.openSync(metadata, 'wx', 0o600)
-  try {
-    fs.writeFileSync(descriptor, `${JSON.stringify(records)}\n`)
-    fs.fsyncSync(descriptor)
-  } finally {
-    fs.closeSync(descriptor)
-  }
-  syncDirectory(path.dirname(metadata))
-} else {
-  process.exitCode = 1
-}
-NODE
+  managed_files snapshot \
+    "$source_root" "$ownership_root" "$backup_root" "$paths" "$metadata"
 }
 
 validate_managed_files() {
   local root="$1"
   local paths="$2"
   [[ -s "$paths" ]] || return 0
-  node - "$root" "$paths" <<'NODE'
-const fs = require('node:fs')
-const path = require('node:path')
-
-const [root, pathsFile] = process.argv.slice(2)
-const rootPrefix = `${path.resolve(root)}${path.sep}`
-let failed = false
-
-for (const managedPath of fs.readFileSync(pathsFile, 'utf8').split('\n').filter(Boolean)) {
-  try {
-    const candidate = path.resolve(root, managedPath)
-    if (!candidate.startsWith(rootPrefix)) {
-      throw new Error(`unsafe managed path: ${managedPath}`)
-    }
-    const candidateStat = fs.lstatSync(candidate)
-    if (!candidateStat.isFile() || candidateStat.isSymbolicLink()) {
-      throw new Error(`unsafe managed file: ${managedPath}`)
-    }
-  } catch (error) {
-    failed = true
-    process.stderr.write(
-      `trellage-claude-entry: managed file validation failed for ${managedPath}: ${error.message}\n`,
-    )
-  }
-}
-if (failed) process.exitCode = 1
-NODE
+  managed_files validate "$root" "$paths"
 }
 
 verify_owned_files() {
@@ -806,47 +311,22 @@ verify_owned_files() {
   local ownership_root="$2"
   local paths="$3"
   [[ -s "$paths" ]] || return 0
-  node - "$destination_root" "$ownership_root" "$paths" <<'NODE'
-const fs = require('node:fs')
-const path = require('node:path')
-
-const [destinationRoot, ownershipRoot, pathsFile] = process.argv.slice(2)
-const destinationPrefix = `${path.resolve(destinationRoot)}${path.sep}`
-const ownershipPrefix = `${path.resolve(ownershipRoot)}${path.sep}`
-let failed = false
-
-for (const managedPath of fs.readFileSync(pathsFile, 'utf8').split('\n').filter(Boolean)) {
-  try {
-    const destination = path.resolve(destinationRoot, managedPath)
-    const ownership = path.resolve(ownershipRoot, managedPath)
-    if (!destination.startsWith(destinationPrefix) || !ownership.startsWith(ownershipPrefix)) {
-      throw new Error(`unsafe managed path: ${managedPath}`)
-    }
-    const destinationStat = fs.lstatSync(destination)
-    const ownershipStat = fs.lstatSync(ownership)
-    if (
-      !destinationStat.isFile() ||
-      destinationStat.isSymbolicLink() ||
-      !ownershipStat.isFile() ||
-      ownershipStat.isSymbolicLink() ||
-      destinationStat.dev !== ownershipStat.dev ||
-      destinationStat.ino !== ownershipStat.ino
-    ) {
-      throw new Error(`restored file ownership does not match: ${managedPath}`)
-    }
-  } catch (error) {
-    failed = true
-    process.stderr.write(
-      `trellage-claude-entry: managed restore verification failed for ${managedPath}: ${error.message}\n`,
-    )
-  }
+  managed_files verify-owned "$destination_root" "$ownership_root" "$paths"
 }
-if (failed) process.exitCode = 1
-NODE
+
+readonly managed_files_bun='/usr/local/lib/trellage/bun'
+readonly managed_files_helper='/usr/local/lib/trellage/claude-managed-files.ts'
+
+managed_files() {
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$managed_files_bun" \
+    --no-install --no-env-file --config=/dev/null "$managed_files_helper" -- "$@"
 }
 
 command -v tar >/dev/null 2>&1 || fail 'tar is required to synchronize Claude managed files'
-command -v node >/dev/null 2>&1 || fail 'node is required to synchronize Claude managed files'
+[[ -f "$managed_files_bun" && ! -L "$managed_files_bun" && -x "$managed_files_bun" ]] \
+  || fail 'the pinned Bun runtime is required to synchronize Claude managed files'
+[[ -f "$managed_files_helper" && ! -L "$managed_files_helper" ]] \
+  || fail 'the TypeScript managed-file helper is missing or unsafe'
 command -v mktemp >/dev/null 2>&1 || fail 'mktemp is required to synchronize Claude managed files'
 command -v sync >/dev/null 2>&1 || fail 'sync is required to synchronize Claude managed files'
 

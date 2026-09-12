@@ -19,8 +19,8 @@
  * fail-closed posture `admin-model.ts` already uses for malformed doctor
  * output.
  */
-import type { AdminProfileEntry, AdminUpdateCheckResult } from "./admin-model.js"
-import type { CommandSpec } from "./guide-launch.js"
+import type { AdminProfileEntry, AdminUpdateCheckResult } from "./admin-model.ts"
+import type { CommandSpec } from "./guide-launch.ts"
 
 /** Builds `update --check PROFILE` for a profile. Callers must check `entry.updateCheckSupported` first. */
 export const buildUpdateCheckCommand = (entry: AdminProfileEntry): CommandSpec => ({

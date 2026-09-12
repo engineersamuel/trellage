@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 
 import type { ModelInfo } from "@github/copilot-sdk"
-import { GuideModelCleanupError, GuideModelResponseError, type GuideModelClient, type GuideModelSession } from "../src/copilot-guide-provider.js"
-import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.js"
+import { GuideModelCleanupError, GuideModelResponseError, type GuideModelClient, type GuideModelSession } from "../src/copilot-guide-provider.ts"
+import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.ts"
 
 const model: ModelInfo = {
   id: "gpt-5.6-sol",

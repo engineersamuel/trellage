@@ -4,37 +4,37 @@ import path from "node:path"
 import { parse } from "smol-toml"
 import { Data, Effect } from "effect"
 
-import { resolveClaudeRelease } from "./claude-release.js"
+import { resolveClaudeRelease } from "./claude-release.ts"
 import {
   ClaudePluginError,
   pluginVersionFromCommit,
   pluginVersionFromRef,
   readClaudeMarketplace,
-} from "./claude-plugin.js"
-import { resolveCodexRelease } from "./codex-release.js"
-import { CopilotPluginError, readCopilotMarketplace } from "./copilot-plugin.js"
-import { resolveCopilotRelease } from "./copilot-release.js"
-import { resolveGitHubSource } from "./github-cache.js"
+} from "./claude-plugin.ts"
+import { resolveCodexRelease } from "./codex-release.ts"
+import { CopilotPluginError, readCopilotMarketplace } from "./copilot-plugin.ts"
+import { resolveCopilotRelease } from "./copilot-release.ts"
+import { resolveGitHubSource } from "./github-cache.ts"
 import {
   isExactSemver,
   pythonConstraintsFromPackages,
   sha256Text,
   withPythonConstraints,
   type LockResolvers,
-} from "./lock.js"
-import { resolvePiRelease } from "./pi-release.js"
-import { resolvePrimeRelease } from "./prime-release.js"
-import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.js"
-import { resolveOciImage } from "./oci-image.js"
-import { resolveNodeRelease } from "./node-release.js"
-import { resolvePythonRelease } from "./python-release.js"
-import { compilePythonConstraints, type PythonConstraintInput } from "./python-constraints.js"
-import { resolveUvRelease } from "./uv-release.js"
-import { resolveDebianPackages } from "./debian-packages.js"
-import { resolveToolArtifacts } from "./tool-artifacts.js"
-import { resolveGraphRustToolchain, resolveRustToolchain } from "./rust-release.js"
-import { resolvePlaywrightRelease } from "./playwright-release.js"
-import type { Platform } from "./platform.js"
+} from "./lock.ts"
+import { resolvePiRelease } from "./pi-release.ts"
+import { resolvePrimeRelease } from "./prime-release.ts"
+import { sourceIncludes, sourceInventoryPolicy } from "./source-policy.ts"
+import { resolveOciImage } from "./oci-image.ts"
+import { resolveNodeRelease } from "./node-release.ts"
+import { resolvePythonRelease } from "./python-release.ts"
+import { compilePythonConstraints, type PythonConstraintInput } from "./python-constraints.ts"
+import { resolveUvRelease } from "./uv-release.ts"
+import { resolveDebianPackages } from "./debian-packages.ts"
+import { resolveToolArtifacts } from "./tool-artifacts.ts"
+import { resolveGraphRustToolchain, resolveRustToolchain } from "./rust-release.ts"
+import { resolvePlaywrightRelease } from "./playwright-release.ts"
+import type { Platform } from "./platform.ts"
 
 export const developmentBuilderImage = "docker.io/jdxcode/mise:latest"
 export const developmentImporterImage = "quay.io/skopeo/stable:latest"

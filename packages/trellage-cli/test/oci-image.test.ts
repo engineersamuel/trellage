@@ -3,12 +3,10 @@ import { createHash } from "node:crypto"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { resolveOciImage } from "../src/oci-image.js"
-
-const originalFetch = globalThis.fetch
+import { resolveOciImage } from "../src/oci-image.ts"
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  vi.restoreAllMocks()
 })
 
 const digest = (body: string): string => `sha256:${createHash("sha256").update(body).digest("hex")}`
@@ -25,14 +23,14 @@ describe("OCI image resolution", () => {
       ],
     })
     const requests: Array<string> = []
-    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input)
       requests.push(url)
       if (url.startsWith("https://auth.docker.io/")) return new Response(JSON.stringify({ token: "token" }))
       if (url.endsWith("/manifests/bookworm-slim")) return new Response(index)
       if (url.endsWith(`/manifests/${encodeURIComponent(childDigest)}`)) return new Response(child)
       return new Response("missing", { status: 404 })
-    }) as typeof fetch
+    })
 
     await expect(Effect.runPromise(resolveOciImage("node:bookworm-slim", "linux/arm64"))).resolves.toEqual({
       reference: "node:bookworm-slim",
@@ -44,7 +42,7 @@ describe("OCI image resolution", () => {
   })
 
   it("rejects an index without the requested platform", async () => {
-    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input)
       if (url.startsWith("https://auth.docker.io/")) return new Response(JSON.stringify({ token: "token" }))
       return new Response(
@@ -53,7 +51,7 @@ describe("OCI image resolution", () => {
           manifests: [{ digest: `sha256:${"b".repeat(64)}`, platform: { os: "linux", architecture: "amd64" } }],
         }),
       )
-    }) as typeof fetch
+    })
 
     await expect(Effect.runPromise(resolveOciImage("node:bookworm-slim", "linux/arm64"))).rejects.toThrow(
       /OCI manifest is invalid/,

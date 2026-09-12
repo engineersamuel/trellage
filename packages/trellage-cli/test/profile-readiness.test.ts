@@ -6,15 +6,15 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { loadProfile, loadReleaseLock } from "../src/application.js"
-import type { ProfileChoice } from "../src/profile-discovery.js"
+import { loadProfile, loadReleaseLock } from "../src/application.ts"
+import type { ProfileChoice } from "../src/profile-discovery.ts"
 import {
   resolveProfileLocked,
   resolveProfileReadiness,
   resolveProfilesLocked,
   resolveProfilesReadiness,
-} from "../src/profile-readiness.js"
-import { writeResolutionReceipt } from "../src/resolution-receipt.js"
+} from "../src/profile-readiness.ts"
+import { writeResolutionReceipt } from "../src/resolution-receipt.ts"
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)))
 const fixtureProfile = path.join(repositoryRoot, "tests", "fixtures", "headless-live-claude", "profile.toml")

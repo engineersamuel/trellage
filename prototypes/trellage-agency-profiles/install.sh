@@ -66,14 +66,16 @@ fi
 [[ ! -L "$installed_model_settings" \
   && ( ! -e "$installed_model_settings" || -f "$installed_model_settings" ) ]] \
   || refuse "unsafe managed model settings helper: $installed_model_settings"
-mkdir -p "$runtime_bin" "$command_dir"
 for path in "$runtime_bin" "$install_root"; do
-  [[ -d "$path" && ! -L "$path" ]] || refuse "unsafe managed directory: $path"
+  [[ ! -L "$path" && ( ! -e "$path" || -d "$path" ) ]] || refuse "unsafe managed directory: $path"
 done
 for path in "$installed_launcher" "$installed_catalog" "$ownership_marker"; do
   [[ ! -L "$path" ]] || refuse "unsafe managed path: $path"
 done
 
+"$source_dir/../../scripts/install-floating-skills-runtime.sh"
+mkdir -p "$runtime_bin" "$command_dir"
+require_safe_directory "$runtime_bin" "$canonical_home/.local/share/trellage/agx/bin" 'runtime bin'
 launcher_stage="$(mktemp "$runtime_bin/.agx.XXXXXX")" || refuse 'cannot stage launcher'
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")" || {
   rm -f -- "$launcher_stage"
@@ -109,6 +111,6 @@ if [[ ! -L "$command_path" ]]; then
   trap - EXIT
 fi
 
-node "$source_dir/../trellage-claude-common/native-skills.mjs" --install "$install_root"
-"$source_dir/../../scripts/install-floating-skills-runtime.sh"
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
+  "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
 printf 'Installed agx at %s\n' "$command_path"

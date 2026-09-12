@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import type { ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import type { GuideGenerateCandidate } from "../src/guide-provider.js"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import type { GuideGenerateCandidate } from "../src/guide-provider.ts"
 import {
   GuideWorkflowBodyError,
   guideWorkflowCommandTokens,
@@ -13,7 +13,7 @@ import {
   workflowAuthorizationBody,
   workflowBodyCandidate,
   workflowPromptFrame,
-} from "../src/guide-workflow-prompt.js"
+} from "../src/guide-workflow-prompt.ts"
 
 const guide: ProfileGuideV1 = {
   schemaVersion: 1,

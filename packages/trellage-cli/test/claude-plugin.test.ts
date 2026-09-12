@@ -6,6 +6,7 @@ import { promisify } from "node:util"
 import { fileURLToPath } from "node:url"
 
 import { Effect } from "effect"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { afterEach, describe, expect, it } from "vitest"
 
 import {
@@ -13,11 +14,13 @@ import {
   pluginVersionFromCommit,
   pluginVersionFromRef,
   readClaudeMarketplace,
-} from "../src/claude-plugin.js"
+} from "../src/claude-plugin.ts"
 
 const roots: Array<string> = []
 const execFilePromise = promisify(execFile)
-const finalizer = fileURLToPath(new URL("../../../prototypes/trellage/finalize-claude-seed.mjs", import.meta.url))
+const finalizer = fileURLToPath(new URL("../../../prototypes/trellage/finalize-claude-seed.ts", import.meta.url))
+const runFinalizer = (seed: string, manifest: string, version: string) =>
+  execFilePromise(bunExecutable(), bunArguments(finalizer, [seed, manifest, version]))
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -139,7 +142,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])
+      await runFinalizer(seed, manifest, "2.1.222")
 
       const registry = await readFile(path.join(seed, "plugins", "installed_plugins.json"), "utf8")
       expect(registry).toContain("/home/agent/.claude/plugins/cache/social-media-skills/social-media-skills/1.0.0")
@@ -251,7 +254,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await expect(execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.251"])).rejects.toThrow(
+      await expect(runFinalizer(seed, manifest, "2.1.251")).rejects.toThrow(
         /generated Claude plugin config does not match profile/,
       )
     })
@@ -307,7 +310,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])
+      await runFinalizer(seed, manifest, "2.1.222")
 
       const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
       expect(managed).toContain("plugins/cache/council/council/1.2.0/skills/council/SKILL.md")
@@ -375,7 +378,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])
+      await runFinalizer(seed, manifest, "2.1.222")
 
       const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
       expect(managed).toContain("plugins/cache/beads-marketplace/beads/1.2.2/skills/beads/SKILL.md")
@@ -439,7 +442,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])
+      await runFinalizer(seed, manifest, "2.1.222")
 
       const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
       expect(managed).toContain("plugins/cache/beads-marketplace/beads/1.2.2/skills/beads/SKILL.md")
@@ -499,7 +502,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.251"])
+      await runFinalizer(seed, manifest, "2.1.251")
 
       const managed = await readFile(path.join(seed, "managed-paths.txt"), "utf8")
       expect(managed).toContain("plugins/cache/caveman/caveman/2.3.1/node_modules/.bin/cave")
@@ -552,7 +555,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await expect(execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.251"])).rejects.toThrow(
+      await expect(runFinalizer(seed, manifest, "2.1.251")).rejects.toThrow(
         /installed Claude plugin does not match locked marketplace source: beads@beads-marketplace/,
       )
     })
@@ -604,7 +607,7 @@ describe("readClaudeMarketplace", () => {
         })}\n`,
       )
 
-      await expect(execFilePromise(process.execPath, [finalizer, seed, manifest, "2.1.222"])).rejects.toThrow(
+      await expect(runFinalizer(seed, manifest, "2.1.222")).rejects.toThrow(
         /installed Claude plugin does not match locked marketplace source: beads@beads-marketplace/,
       )
     })

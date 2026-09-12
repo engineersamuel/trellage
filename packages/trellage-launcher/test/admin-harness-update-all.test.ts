@@ -5,11 +5,11 @@ import {
   harnessUpdateScopeKey,
   refreshHarnessUpdateGroupVersions,
   runAllHarnessUpdates,
-} from "../src/admin-harness-update-all.js"
-import { HarnessUpdateManager, type HarnessUpdatePlan, type HarnessUpdateQueueEvent } from "../src/admin-harness-update.js"
-import { AdminRunManager } from "../src/admin-run-manager.js"
-import type { AdminProfileEntry } from "../src/admin-model.js"
-import type { CommandRunner, CommandRunResult } from "../src/guide-launch.js"
+} from "../src/admin-harness-update-all.ts"
+import { HarnessUpdateManager, type HarnessUpdatePlan, type HarnessUpdateQueueEvent } from "../src/admin-harness-update.ts"
+import { AdminRunManager } from "../src/admin-run-manager.ts"
+import type { AdminProfileEntry } from "../src/admin-model.ts"
+import type { CommandRunner, CommandRunResult } from "../src/guide-launch.ts"
 
 const container = (name: string, harness = "claude", commandPath = "/fixture/trellage"): AdminProfileEntry => ({
   ref: `sandbox:${name}`,

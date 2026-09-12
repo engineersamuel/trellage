@@ -25,7 +25,7 @@ import path from "node:path"
 
 import lockfile from "proper-lockfile"
 
-import type { Platform } from "./platform.js"
+import type { Platform } from "./platform.ts"
 
 const maximumCacheBytes = 64 * 1024
 const maximumCacheEntries = 32

@@ -1,10 +1,10 @@
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { loadProfileGuide, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
+import { loadProfileGuide, type ProfileGuideV1 } from "@trellage/guide-core"
 
-import { parseGuideCatalog, type CombinedGuideCatalog, type HeadlessCapabilitiesV1 } from "../src/guide-catalog.js"
-import { loadSelectedGuide, SelectedGuideError, sandboxGuideRootFromProfilePath } from "../src/guide-selected.js"
-import { enrichNativeProfileList } from "../src/native-guide-list.js"
+import { parseGuideCatalog, type CombinedGuideCatalog, type HeadlessCapabilitiesV1 } from "../src/guide-catalog.ts"
+import { loadSelectedGuide, SelectedGuideError, sandboxGuideRootFromProfilePath } from "../src/guide-selected.ts"
+import { enrichNativeProfileList } from "../src/native-guide-list.ts"
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..")
 const guideRoot = path.join(repositoryRoot, "profile-guides")

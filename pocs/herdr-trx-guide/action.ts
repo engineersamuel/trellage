@@ -1,5 +1,6 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // @ts-nocheck -- Legacy Herdr entrypoint adapter; core capture modules are type-checked.
+import { bunExecutable } from "@trellage/runtime"
 import { captureAgentContent, captureProvenance } from "./lib/capture.ts"
 import {
   panelInvocationSource,
@@ -195,6 +196,7 @@ const main = async () => {
 }
 
 try {
+  bunExecutable()
   await main()
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error)

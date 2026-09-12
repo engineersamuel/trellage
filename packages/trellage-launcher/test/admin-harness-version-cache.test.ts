@@ -13,8 +13,8 @@ import {
   saveHarnessVersionCache,
   type AdminHarnessVersionCacheEntry,
   type AdminHarnessVersionCacheRecord,
-} from "../src/admin-harness-version-cache.js"
-import type { AdminHarnessVersionResult } from "../src/admin-harness-version.js"
+} from "../src/admin-harness-version-cache.ts"
+import type { AdminHarnessVersionResult } from "../src/admin-harness-version.ts"
 
 const roots: string[] = []
 

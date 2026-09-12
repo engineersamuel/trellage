@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { executeGuideUiResult, type GuideInteractiveExecutionServices } from "../src/guide-interactive-execution.js"
+import { executeGuideUiResult, type GuideInteractiveExecutionServices } from "../src/guide-interactive-execution.ts"
 import {
   buildCancelResult,
   buildCurrentHerdrWorkspaceResult,
@@ -8,19 +8,19 @@ import {
   buildNewHerdrWorktreeResult,
   buildPrintResult,
   type GuideUiResult,
-} from "../src/guide-ui.js"
-import { CommandRunnerError } from "../src/guide-launch.js"
-import { createQueuedGuideJob } from "../src/guide-batch.js"
-import { goalTransportFixture } from "./fixtures/goal-transport.js"
-import { guideGoalActivationInput } from "../src/guide-goal-execution.js"
-import { ProfileReadinessKind } from "../src/guide-preflight.js"
+} from "../src/guide-ui.tsx"
+import { CommandRunnerError } from "../src/guide-launch.ts"
+import { createQueuedGuideJob } from "../src/guide-batch.ts"
+import { goalTransportFixture } from "./fixtures/goal-transport.ts"
+import { guideGoalActivationInput } from "../src/guide-goal-execution.ts"
+import { ProfileReadinessKind } from "../src/guide-preflight.ts"
 import type {
   CommandRunOptions,
   CommandRunResult,
   CommandRunner,
   CommandSpec,
   SelectedProfile,
-} from "../src/guide-launch.js"
+} from "../src/guide-launch.ts"
 
 class RecordingRunner implements CommandRunner {
   readonly calls: Array<{

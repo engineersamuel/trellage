@@ -6,15 +6,15 @@ import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { builderScript, profileMetadata } from "../src/application.js"
-import { claudeDefaultOnboarding, claudeDefaultSettings, claudeDefaultUserSettings } from "../src/claude-materialize.js"
-import { graphOfLoopsRuntimeIntegrity } from "../src/graph-runtime.js"
-import { graphOfLoopsPolicy } from "../src/graph-of-loops.js"
-import type { ProfileLock } from "../src/lock.js"
-import { renderGraphCodexReviewerConfig } from "../src/materialize.js"
-import { isGraphOfLoopsProfile, parseProfile } from "../src/profile.js"
-import { graphRustArtifactNames, graphRustArtifactUrl } from "../src/rust-release.js"
-import { playwrightArtifacts } from "./fixtures/tool-artifacts.js"
+import { builderScript, profileMetadata } from "../src/application.ts"
+import { claudeDefaultOnboarding, claudeDefaultSettings, claudeDefaultUserSettings } from "../src/claude-materialize.ts"
+import { graphOfLoopsRuntimeIntegrity } from "../src/graph-runtime.ts"
+import { graphOfLoopsPolicy } from "../src/graph-of-loops.ts"
+import type { ProfileLock } from "../src/lock.ts"
+import { renderGraphCodexReviewerConfig } from "../src/materialize.ts"
+import { isGraphOfLoopsProfile, parseProfile } from "../src/profile.ts"
+import { graphRustArtifactNames, graphRustArtifactUrl } from "../src/rust-release.ts"
+import { playwrightArtifacts } from "./fixtures/tool-artifacts.ts"
 
 const profilePath = fileURLToPath(new URL("../../../profiles/claude-research/profile.toml", import.meta.url))
 const qwenProfilePath = fileURLToPath(new URL("../../../profiles/claude-qwen-local/profile.toml", import.meta.url))
@@ -223,7 +223,7 @@ describe("authored Claude Research profile", () => {
     expect(source).toContain('"rundown.md"')
     expect(source).toContain('statusline: path.join(repositoryRoot, "scripts", "trellage-statusline.sh")')
     expect(source).toContain(
-      'finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.mjs")',
+      'finalizeClaudeSeed: path.join(repositoryRoot, "prototypes", "trellage", "finalize-claude-seed.ts")',
     )
   })
 })

@@ -12,12 +12,12 @@ import {
   type CommandRunner,
   type CommandSpec,
   type HerdrPaneLaunchResult,
-} from "./guide-launch.js"
-import type { GuideUiResult } from "./guide-ui.js"
-import { guideBatchExitCode, writeGuideBatchSummary } from "./guide-batch.js"
-import { assertGuideGoalCandidate, type GuideGoalCandidateContext } from "./guide-goal-execution.js"
-import { guideGoalInputInstructions } from "./guide-goal-transport.js"
-import { checkSelectedProfileReadiness, ProfileReadinessKind } from "./guide-preflight.js"
+} from "./guide-launch.ts"
+import type { GuideUiResult } from "./guide-ui.tsx"
+import { guideBatchExitCode, writeGuideBatchSummary } from "./guide-batch.ts"
+import { assertGuideGoalCandidate, type GuideGoalCandidateContext } from "./guide-goal-execution.ts"
+import { guideGoalInputInstructions } from "./guide-goal-transport.ts"
+import { checkSelectedProfileReadiness, ProfileReadinessKind } from "./guide-preflight.ts"
 
 const startupTimeoutMs = 60_000
 const promptTimeoutMs = 60_000

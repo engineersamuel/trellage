@@ -2,9 +2,9 @@ import { readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
 
 import { Data, Effect, Option } from "effect"
-import { productionPlatforms, type Platform } from "./platform.js"
+import { productionPlatforms, type Platform } from "./platform.ts"
 
-import { sandboxHeadlessRuntimeAdapter, type SandboxHeadlessRuntimeAdapter } from "./headless-capabilities.js"
+import { sandboxHeadlessRuntimeAdapter, type SandboxHeadlessRuntimeAdapter } from "./headless-capabilities.ts"
 import {
   isClaudeProfile,
   isCodexProfile,
@@ -16,7 +16,7 @@ import {
   type Mcp,
   type Profile,
   type ProfileDocument,
-} from "./profile.js"
+} from "./profile.ts"
 
 export interface ProfileChoiceSource {
   readonly repository: string

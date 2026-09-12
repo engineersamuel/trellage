@@ -4,20 +4,20 @@ pre-commit:
     - name: staged whitespace
       run: git diff --cached --check
     - name: profile compiler oxlint
-      run: npm --prefix packages/trellage-cli run lint
+      run: bun --cwd packages/trellage-cli run lint
     - name: harness config oxfmt
-      run: npm --prefix packages/trellage-cli run format:check
+      run: bun --cwd packages/trellage-cli run format:check
     - name: profile compiler typecheck
-      run: npm --prefix packages/trellage-cli run check
+      run: bun --cwd packages/trellage-cli run check
 
 pre-push:
   parallel: true
   jobs:
     - name: pushed whitespace
       run: git diff --check "refs/remotes/{1}/main...HEAD"
-    - name: launcher checks
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- package.json package-lock.json packages/trellage-launcher || (npm --prefix packages/trellage-launcher run check && npm --prefix packages/trellage-launcher test && npm --prefix packages/trellage-launcher run build && git diff --exit-code -- packages/trellage-launcher/dist/launcher.mjs)
+    - name: source workspace checks
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- package.json bun.lock bunfig.toml tsconfig.json tsconfig.base.json packages tests/bun-runtime.setup.ts || (bun run check && bun run test)
     - name: profile compiler typecheck
-      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- packages/trellage-cli profiles || npm --prefix packages/trellage-cli run check
+      run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- packages/trellage-cli profiles || bun --cwd packages/trellage-cli run check
     - name: launcher shell syntax
       run: git diff --quiet "refs/remotes/{1}/main...HEAD" -- prototypes/trellage prototypes/trellage-*-profiles prototypes/trellage-router || bash -n prototypes/trellage/trellage prototypes/trellage-router/bin/trx prototypes/trellage-codex-common/native-codex prototypes/trellage-claude-common/native-claude prototypes/trellage-codex-profiles/bin/cdx prototypes/trellage-copilot-profiles/bin/cpx prototypes/trellage-claude-profiles/bin/cldx prototypes/trellage-firstmate-profiles/bin/fmx prototypes/trellage-firstmate-profiles/lib/fmx-worker prototypes/trellage-grok-profiles/bin/grx prototypes/trellage-jcode-profiles/bin/jcx prototypes/trellage-omp-profiles/bin/omp prototypes/trellage-picx-profiles/bin/picx prototypes/trellage-prime-profiles/bin/prx

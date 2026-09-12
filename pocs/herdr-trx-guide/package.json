@@ -4,17 +4,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit",
-    "test": "node --test test/*.test.ts"
+    "check": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ./node_modules/typescript/bin/tsc --noEmit",
+    "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml test ./test"
   },
   "engines": {
-    "node": ">=22.18"
+    "bun": "1.3.3"
   },
   "dependencies": {
+    "@trellage/conversation-source": "link:@trellage/conversation-source",
+    "@trellage/guide-core": "link:@trellage/guide-core",
+    "@trellage/runtime": "link:@trellage/runtime",
     "proper-lockfile": "4.1.2"
   },
   "devDependencies": {
+    "@types/bun": "1.3.3",
     "@types/node": "24.10.1",
+    "@types/proper-lockfile": "4.1.4",
     "typescript": "7.0.2"
   }
 }

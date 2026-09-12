@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { HerdrWorktreeLaunchResult } from "../src/guide-launch.js"
+import type { HerdrWorktreeLaunchResult } from "../src/guide-launch.ts"
 
 const createHerdrWorktreeAndHandoff = vi.fn()
 const probeHerdrAvailability = vi.fn()
@@ -8,8 +8,8 @@ const getHerdrContext = vi.fn()
 const inspectGitWorktreeIntent = vi.fn()
 const defaultWorktreeBranch = vi.fn((intent: string) => `worktree/${intent.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`)
 
-vi.mock("../src/guide-launch.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/guide-launch.js")>("../src/guide-launch.js")
+vi.mock("../src/guide-launch.ts", async () => {
+  const actual = await vi.importActual<typeof import("../src/guide-launch.ts")>("../src/guide-launch.js")
   return {
     ...actual,
     createHerdrWorktreeAndHandoff,
@@ -20,9 +20,9 @@ vi.mock("../src/guide-launch.js", async () => {
   }
 })
 
-const { forkFailureToHerdrWorktree, isForkToHerdrAvailable } = await import("../src/admin-herdr-fork.js")
+const { forkFailureToHerdrWorktree, isForkToHerdrAvailable } = await import("../src/admin-herdr-fork.ts")
 
-const fakeRunner = { run: vi.fn() } as unknown as import("../src/guide-launch.js").CommandRunner
+const fakeRunner = { run: vi.fn() } as unknown as import("../src/guide-launch.ts").CommandRunner
 const command = { executable: "/opt/trellage/cpx/bin/cpx", args: ["hve"] }
 
 const readyInspection = {

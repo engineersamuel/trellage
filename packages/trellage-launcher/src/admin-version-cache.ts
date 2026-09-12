@@ -21,7 +21,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 
-import type { AdminUpdateCheckResult } from "./admin-model.js"
+import type { AdminUpdateCheckResult } from "./admin-model.ts"
 
 const maximumCacheBytes = 256 * 1024
 const maximumCacheEntries = 512

@@ -28,6 +28,9 @@ installed_statusline="$runtime_lib/trellage-statusline.sh"
 installed_launcher="$runtime_bin/grx"
 installed_catalog="$install_root/catalog.json"
 installed_native_skills="$install_root/native-skills.mjs"
+if [[ -e "$install_root/native-skills.ts" || -L "$install_root/native-skills.ts" ]]; then
+  installed_native_skills="$install_root/native-skills.ts"
+fi
 ownership_marker="$install_root/.managed-by-trellage-grok-profiles"
 ownership_value='trellage-grok-profiles-v1'
 command_dir="$local_dir/bin"

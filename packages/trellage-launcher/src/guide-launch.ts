@@ -1,8 +1,9 @@
 import path from "node:path"
+import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
-import { isLaunchAgentIdentifier, type ProfileGuideV1 } from "../../trellage-guide-core/dist/index.js"
-import type { GuideGoalCandidateContext } from "./guide-goal-execution.js"
-import { guideGoalPromptFromContext, resolveGuideGoalTransport } from "./guide-goal-transport.js"
+import { isLaunchAgentIdentifier, type ProfileGuideV1 } from "@trellage/guide-core"
+import type { GuideGoalCandidateContext } from "./guide-goal-execution.ts"
+import { guideGoalPromptFromContext, resolveGuideGoalTransport } from "./guide-goal-transport.ts"
 
 const controlCharacters = /[\u0000-\u001f\u007f-\u009f]/u
 const safeLauncherAlias = /^[a-z][a-z0-9-]{0,63}$/u
@@ -1367,19 +1368,45 @@ export const handoffToNewHerdrTab = async (
   })
 }
 
-export const intentToSlug = (intent: string): string => {
-  const normalized = intent
+const normalizeWorktreeSlug = (intent: string): string =>
+  intent
     .normalize("NFKD")
     .replaceAll(/[\u0300-\u036f]/gu, "")
     .toLocaleLowerCase("en")
     .replaceAll(/[^a-z0-9]+/gu, "-")
     .replaceAll(/^-+|-+$/gu, "")
     .replaceAll(/-{2,}/gu, "-")
-  const slug = normalized.slice(0, 48).replace(/-+$/u, "")
+
+export const intentToSlug = (intent: string): string => {
+  const slug = normalizeWorktreeSlug(intent).slice(0, 48).replace(/-+$/u, "")
   return slug.length > 0 ? slug : "worktree"
 }
 
 export const defaultWorktreeBranch = (intent: string): string => `worktree/${intentToSlug(intent)}`
+
+export const suggestWorktreeBranch = (
+  intent: string,
+  profile: SelectedProfile,
+  reservedBranches: Iterable<string> = [],
+): string => {
+  const identity = `${profile.surface === "native" ? profile.launcher : "sb"}-${profile.profile}`
+  const normalized = normalizeWorktreeSlug(identity)
+  const tag =
+    normalized.length <= 22
+      ? normalized
+      : `${normalized.slice(0, 15).replace(/-+$/u, "")}-${createHash("sha256").update(identity).digest("hex").slice(0, 6)}`
+  const topic = normalizeWorktreeSlug(intent) || "task"
+  const reserved = new Set([...reservedBranches].map((branch) => branch.trim()))
+  for (let variant = 1; ; variant += 1) {
+    const suffix = variant === 1 ? "" : `-${variant}`
+    const budget = Math.min(14, 40 - 4 - tag.length - suffix.length)
+    const clipped = topic.slice(0, budget)
+    const boundary = topic.length > budget && topic[budget] !== "-" ? clipped.lastIndexOf("-") : -1
+    const shortTopic = (boundary > 0 ? clipped.slice(0, boundary) : clipped).replace(/-+$/u, "")
+    const branch = `wt/${tag}-${shortTopic}${suffix}`
+    if (!reserved.has(branch)) return branch
+  }
+}
 
 export const parseGitWorktreeList = (source: string): ReadonlyArray<GitWorktreeEntry> => {
   const trimmed = source.trim()

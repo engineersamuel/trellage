@@ -3,8 +3,8 @@ import { promisify } from "node:util"
 
 import { Data, Effect } from "effect"
 
-import type { OciImageLock, RuntimePackageLock } from "./lock.js"
-import type { Platform } from "./platform.js"
+import type { OciImageLock, RuntimePackageLock } from "./lock.ts"
+import type { Platform } from "./platform.ts"
 
 const execFilePromise = promisify(execFile)
 const packageNamePattern = /^[a-z0-9][a-z0-9+.-]*$/

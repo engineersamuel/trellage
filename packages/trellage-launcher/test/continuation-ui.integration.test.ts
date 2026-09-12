@@ -1,184 +1,19 @@
-import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Terminal } from "@xterm/headless"
-import { build } from "esbuild"
-import { spawn, type IPty } from "node-pty"
-import { afterAll, beforeAll, expect, test, vi, type TestContext } from "vitest"
-import { ContinuationActionStatus, ContinuationPlacementKind, type ContinuationDraft } from "../../trellage-guide-core/dist/index.js"
-import { ContinuationFixtureEventKind, type ContinuationFixtureEvent } from "./helpers/continuation-ui-fixtures.js"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
+import { expect, test, vi, type TestContext } from "vitest"
+import { spawnSourcePty, type SourcePty } from "./helpers/source-pty.ts"
+import { ContinuationActionStatus, ContinuationPlacementKind, type ContinuationDraft } from "@trellage/guide-core"
+import {
+  ContinuationFixtureEventKind,
+  ContinuationFixtureMode as FixtureMode,
+  type ContinuationFixtureEvent,
+} from "./helpers/continuation-ui-fixtures.ts"
 
-enum FixtureMode {
-  Fresh = "fresh",
-  Resume = "resume",
-  CancelAnalysis = "cancel-analysis",
-  CancelPreparation = "cancel-preparation",
-  CancelSaveFailure = "cancel-save-failure",
-  CancelCleanupFailure = "cancel-cleanup-failure",
-  SaveFailure = "save-failure",
-  Advanced = "advanced",
-  Different = "different",
-  Unknown = "unknown",
-  Clarification = "clarification",
-  NoAction = "no-action",
-  LongEvidence = "long-evidence",
-  ManyMessages = "many-messages",
-  RedactedMessages = "redacted-messages",
-  LongPrompt = "long-prompt",
-  DirtySource = "dirty-source",
-}
-
-const fixtureSource = `
-import React from "react"
-import { render } from "ink"
-import { appendFileSync, writeFileSync } from "node:fs"
-import path from "node:path"
-import { ContinuationApp } from "../src/continuation-ui.js"
-import { RestrictedGuideModelError } from "../src/copilot-guide-provider.js"
-import { createInitialGuideRenderHandler } from "../src/guide-terminal.js"
-import { ContinuationActionStatus, ContinuationOutcome, ContinuationPlacementKind } from "../../trellage-guide-core/dist/index.js"
-import { continuationFixtureDraft, createContinuationServiceFixture, ContinuationFixtureEventKind } from "./helpers/continuation-ui-fixtures.js"
-const root = process.argv[2]
-const mode = process.argv[3]
-const eventPath = path.join(root, "events.jsonl")
-writeFileSync(eventPath, "", { mode: 0o600 })
-const record = (event) => appendFileSync(eventPath, JSON.stringify(event) + "\\n")
-const recordInput = (input) => record({ kind: ContinuationFixtureEventKind.Input, input: input.toString() })
-process.stdin.on("data", recordInput)
-const outcome = mode === "clarification" ? ContinuationOutcome.NeedsClarification : mode === "no-action" ? ContinuationOutcome.NoFurtherAction : ContinuationOutcome.Recommendations
-const fresh = mode === "fresh" || mode === "cancel-analysis" || mode === "cancel-save-failure"
-let initial = continuationFixtureDraft(!fresh, outcome)
-if (mode === "long-evidence") initial = {
-  ...initial,
-  snapshot: {
-    ...initial.snapshot,
-    messages: initial.snapshot.messages.map((message, index) => index === 1 ? {
-      ...message,
-      text: ["LONG EVIDENCE START", ...Array.from({ length: 120 }, (_, n) => "Synthetic evidence line " + (n + 1)), "LONG EVIDENCE END"].join("\\n"),
-    } : message),
-  },
-}
-if (mode === "many-messages") initial = {
-  ...initial,
-  snapshot: {
-    ...initial.snapshot,
-    cutoff: { ...initial.snapshot.cutoff, messageId: "message-30", recordIndex: 30 },
-    messages: Array.from({ length: 30 }, (_, index) => ({
-      ...initial.snapshot.messages[index % initial.snapshot.messages.length],
-      id: "message-" + (index + 1), recordIndex: index + 1,
-      role: index % 2 === 0 ? "user" : "assistant",
-      text: "Message body " + (index + 1),
-    })),
-  },
-}
-if (mode === "redacted-messages") {
-  const credential = ["gh", "p_", "runtimeSyntheticCredentialValue123456"].join("")
-  const control = String.fromCodePoint(0x202e)
-  initial = {
-    ...initial,
-    snapshot: {
-      ...initial.snapshot,
-      messages: initial.snapshot.messages.map((message, index) => index === 0
-        ? { ...message, text: "api_key=" + credential + " " + control + "visible text" }
-        : message),
-    },
-  }
-}
-if (mode === "long-prompt") initial = {
-  ...initial,
-  actions: initial.actions.map((edit, index) => index === 0 ? {
-    ...edit,
-    status: ContinuationActionStatus.Prepared,
-    prompt: ["LONG PROMPT START", ...Array.from({ length: 120 }, (_, n) => "Full outgoing instruction line " + (n + 1)), "LONG PROMPT END"].join("\\n"),
-  } : edit),
-}
-const fixture = createContinuationServiceFixture(initial, record, { candidates: true })
-if (mode === "save-failure") {
-  const save = fixture.services.save
-  let failed = false
-  fixture.services.save = async (draft) => {
-    if (!failed) { failed = true; throw new Error("Fixture disk is full.") }
-    return save(draft)
-  }
-}
-if (mode === "advanced") fixture.setSource({ sameSource: true, advanced: true, revision: "source-revision-2" })
-if (mode === "different") fixture.setSource({ sameSource: false, advanced: true, revision: "different-session" })
-if (mode === "dirty-source") {
-  const launch = fixture.services.launch
-  fixture.services.launch = async (draft, acknowledgeAdvanced) => {
-    const unconfirmed = draft.actions.some((edit) => edit.selected && edit.status === ContinuationActionStatus.Prepared &&
-      edit.placement?.kind === ContinuationPlacementKind.NewWorktree && !edit.uncommittedChangesConfirmed)
-    if (unconfirmed) throw new Error("Dirty source: confirm exclusion of uncommitted changes before launching a new worktree.")
-    return launch(draft, acknowledgeAdvanced)
-  }
-}
-const waitForAbort = (draft, signal, progress, kind) => {
-  fixture.emit({ kind, draft })
-  if (mode === "cancel-save-failure") fixture.commit({
-    ...draft,
-    summaries: [{ key: "saved-summary", text: "A completed synthetic summary.", evidenceIds: ["message-1"] }],
-  })
-  progress("Synthetic provider is active and waits for cancellation.")
-  return new Promise((_resolve, reject) => {
-    signal.addEventListener("abort", () => {
-      fixture.emit({ kind: ContinuationFixtureEventKind.Abort })
-      if (mode === "cancel-save-failure") reject(new Error("Summary cache save failed."))
-      else if (mode === "cancel-cleanup-failure") reject(new RestrictedGuideModelError("cancelled", ["force-stop"]))
-      else reject(new DOMException("Synthetic provider aborted and cleaned up.", "AbortError"))
-    }, { once: true })
-  })
-}
-if (mode === "cancel-analysis" || mode === "cancel-save-failure") fixture.services.analyze = (draft, signal, progress) => waitForAbort(draft, signal, progress, ContinuationFixtureEventKind.Analyze)
-if (mode === "cancel-preparation" || mode === "cancel-cleanup-failure") fixture.services.prepare = (draft, _id, signal, progress) => waitForAbort(draft, signal, progress, ContinuationFixtureEventKind.Prepare)
-if (mode === "unknown") fixture.services.launch = async (draft, acknowledgeAdvanced) => {
-  fixture.emit({ kind: ContinuationFixtureEventKind.Launch, draft, acknowledgeAdvanced })
-  return fixture.commit({
-    ...draft,
-    actions: draft.actions.map((edit) => edit.selected ? {
-      ...edit,
-      status: ContinuationActionStatus.Unknown,
-      launch: { attemptId: "30000000-0000-4000-8000-000000000001", status: ContinuationActionStatus.Unknown, paneId: "already-created-pane", message: "Delivery acknowledgement was lost." },
-    } : edit),
-  })
-}
-const app = render(<ContinuationApp initialDraft={initial} services={fixture.services}
-  hasSavedDraft={!fresh}
-  onExit={(code) => {
-    writeFileSync(path.join(root, "result.json"), JSON.stringify({ draft: fixture.saved(), events: fixture.events, code }), { mode: 0o600 })
-    process.exitCode = code
-  }} />, {
-  interactive: true, exitOnCtrlC: false, alternateScreen: true,
-  kittyKeyboard: { mode: "disabled" }, maxFps: 30,
-  onRender: createInitialGuideRenderHandler((text) => process.stdout.write(text), true),
-})
-await app.waitUntilExit()
-process.stdin.off("data", recordInput)
-process.stdin.pause()
-`
-
-let artifactRoot: string
-let entry: string
-beforeAll(async () => {
-  artifactRoot = path.resolve(`test/.continuation-ui-artifacts-${randomUUID()}`)
-  await mkdir(artifactRoot, { recursive: true, mode: 0o700 })
-  entry = path.join(artifactRoot, "fixture.mjs")
-  await build({
-    stdin: { contents: fixtureSource, sourcefile: "continuation-fixture.tsx", loader: "tsx", resolveDir: path.dirname(fileURLToPath(import.meta.url)) },
-    outfile: entry,
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    target: "node22",
-    loader: { ".md": "text" },
-    banner: { js: "import { createRequire as __fixtureRequire } from 'node:module'; const require = __fixtureRequire(import.meta.url);" },
-    logLevel: "silent",
-  })
-})
-
-afterAll(async () => {
-  if (artifactRoot !== undefined) await rm(artifactRoot, { recursive: true, force: true })
-})
+const entry = fileURLToPath(new URL("./fixtures/continuation-integration.tsx", import.meta.url))
 
 interface FixtureReport {
   readonly draft: ContinuationDraft
@@ -187,21 +22,28 @@ interface FixtureReport {
 }
 
 const createTerminal = async (onTestFailed: TestContext["onTestFailed"]) => {
-  const root = path.join(artifactRoot, randomUUID())
+  const root = await mkdtemp(path.join(tmpdir(), "trellage-continuation-ui-"))
   await mkdir(path.join(root, "home"), { recursive: true, mode: 0o700 })
   await mkdir(path.join(root, "scratch"), { mode: 0o700 })
   const terminal = new Terminal({ cols: 110, rows: 38, scrollback: 0, allowProposedApi: true })
-  let child: IPty | undefined
+  let child: SourcePty | undefined
   let exit: { readonly exitCode: number; readonly signal?: number } | undefined
   let screen = ""
   let output = ""
   const inputs: string[] = []
-  onTestFailed(() => { console.error(`Continuation inputs: ${JSON.stringify(inputs)}\nScreen:\n${screen}\nPTY tail: ${JSON.stringify(output.slice(-2000))}`) })
+  onTestFailed(() => {
+    console.error(
+      `Continuation inputs: ${JSON.stringify(inputs)}\nScreen:\n${screen}\nPTY tail: ${JSON.stringify(output.slice(-2000))}`,
+    )
+  })
   const waitForText = async (...expected: ReadonlyArray<string>): Promise<void> => {
-    await vi.waitFor(() => {
-      expect(exit, "Continuation closed before the expected screen").toBeUndefined()
-      for (const text of expected) expect(screen).toContain(text)
-    }, { timeout: 5000, interval: 20 })
+    await vi.waitFor(
+      () => {
+        expect(exit, "Continuation closed before the expected screen").toBeUndefined()
+        for (const text of expected) expect(screen).toContain(text)
+      },
+      { timeout: 5000, interval: 20 },
+    )
   }
   const press = (keys: string): void => {
     if (child === undefined || exit !== undefined) throw new Error("Input requires a running continuation fixture.")
@@ -224,12 +66,21 @@ const createTerminal = async (onTestFailed: TestContext["onTestFailed"]) => {
     async start(mode: FixtureMode, columns = 110, rows = 38): Promise<void> {
       if (child !== undefined) throw new Error("Each test requires a fresh continuation process.")
       terminal.resize(columns, rows)
-      const processUnderTest = spawn(process.execPath, [entry, root, mode], {
-        name: "xterm-256color", cols: columns, rows, cwd: root,
+      const processUnderTest = spawnSourcePty(bunExecutable(), bunArguments(entry, [root, mode]), {
+        name: "xterm-256color",
+        cols: columns,
+        rows,
+        cwd: root,
         env: {
-          HOME: path.join(root, "home"), XDG_CONFIG_HOME: path.join(root, "home"), XDG_CACHE_HOME: path.join(root, "home"),
-          TMPDIR: path.join(root, "scratch"), TMP: path.join(root, "scratch"), TEMP: path.join(root, "scratch"),
-          PATH: path.dirname(process.execPath), TERM: "xterm-256color", CI: "true",
+          HOME: path.join(root, "home"),
+          XDG_CONFIG_HOME: path.join(root, "home"),
+          XDG_CACHE_HOME: path.join(root, "home"),
+          TMPDIR: path.join(root, "scratch"),
+          TMP: path.join(root, "scratch"),
+          TEMP: path.join(root, "scratch"),
+          PATH: path.dirname(bunExecutable()),
+          TERM: "xterm-256color",
+          CI: "true",
           // Ink still needs redraws for keyboard focus under CI.
           FORCE_COLOR: "1",
         },
@@ -240,27 +91,44 @@ const createTerminal = async (onTestFailed: TestContext["onTestFailed"]) => {
         output = (output + data).slice(-12000)
         terminal.write(data, () => {
           const buffer = terminal.buffer.active
-          screen = Array.from({ length: terminal.rows }, (_, row) => buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "").join("\n")
+          screen = Array.from(
+            { length: terminal.rows },
+            (_, row) => buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "",
+          ).join("\n")
         })
       })
-      processUnderTest.onExit((status) => { exit = status })
+      processUnderTest.onExit((status) => {
+        exit = status
+      })
       await waitForText("TRX conversation next steps")
-      await vi.waitFor(() => {
-        expect(exit, "Continuation closed before enabling terminal input").toBeUndefined()
-        expect(output).toContain("\u001b[?2004h")
-      }, { timeout: 5000, interval: 20 })
+      await vi.waitFor(
+        () => {
+          expect(exit, "Continuation closed before enabling terminal input").toBeUndefined()
+          expect(terminal.modes.bracketedPasteMode, "Continuation terminal input is not enabled").toBe(true)
+        },
+        { timeout: 5000, interval: 20 },
+      )
     },
     async pressAndWait(keys: string, ...texts: ReadonlyArray<string>): Promise<void> {
       if (texts.every((text) => screen.includes(text))) {
-        throw new Error(`Transition already matches before input ${JSON.stringify(keys)}. Wait for a changed screen, focus marker, or saved state.`)
+        throw new Error(
+          `Transition already matches before input ${JSON.stringify(keys)}. Wait for a changed screen, focus marker, or saved state.`,
+        )
       }
       press(keys)
       await waitForText(...texts)
     },
     async waitForInput(input: string): Promise<void> {
-      await vi.waitFor(async () => {
-        expect((await events()).some((event) => event.kind === ContinuationFixtureEventKind.Input && event.input === input)).toBe(true)
-      }, { timeout: 5000, interval: 20 })
+      await vi.waitFor(
+        async () => {
+          expect(
+            (await events()).some(
+              (event) => event.kind === ContinuationFixtureEventKind.Input && event.input === input,
+            ),
+          ).toBe(true)
+        },
+        { timeout: 5000, interval: 20 },
+      )
     },
     async finish(keys = "q"): Promise<FixtureReport> {
       press(keys)
@@ -287,7 +155,11 @@ type ContinuationTerminal = Awaited<ReturnType<typeof createTerminal>>
 const it = test.extend<{ ui: ContinuationTerminal }>({
   ui: async ({ onTestFailed }, use) => {
     const ui = await createTerminal(onTestFailed)
-    try { await use(ui) } finally { await ui.close() }
+    try {
+      await use(ui)
+    } finally {
+      await ui.close()
+    }
   },
 })
 
@@ -302,7 +174,13 @@ const clear = "\u0015"
 const controlC = "\u0003"
 const paste = (text: string): string => `\u001b[200~${text}\u001b[201~`
 
-const editField = async (ui: ContinuationTerminal, key: string, title: string, value: string, returnTitle: string): Promise<void> => {
+const editField = async (
+  ui: ContinuationTerminal,
+  key: string,
+  title: string,
+  value: string,
+  returnTitle: string,
+): Promise<void> => {
   await ui.pressAndWait(key, `Edit ${title}`)
   ui.press(clear)
   await ui.waitForInput(clear)
@@ -320,12 +198,24 @@ const prepareFirst = async (ui: ContinuationTerminal): Promise<void> => {
 
 it("opens model/call review with zero inference and explicitly analyzes five ranked actions", async ({ ui }) => {
   await ui.start(FixtureMode.Fresh)
-  await ui.waitForText("Review source before analysis", "fixture-pane", "Cutoff: message-2", "INCOMPLETE SOURCE HISTORY", "2 summary + 1 assessment")
+  await ui.waitForText(
+    "Review source before analysis",
+    "fixture-pane",
+    "Cutoff: message-2",
+    "INCOMPLETE SOURCE HISTORY",
+    "2 summary + 1 assessment",
+  )
   expect((await ui.events()).filter(({ kind }) => kind !== ContinuationFixtureEventKind.Input)).toEqual([])
   await editField(ui, "m", "Analysis and preparation model", "gpt-5.5", "Review source before analysis")
   await editField(ui, "e", "Reasoning effort", "xhigh", "Review source before analysis")
   await ui.pressAndWait("a", "Continuation assessment", "Reported progress - not independently verified")
-  for (const [index, title] of ["Review reported changes", "Visualize the design", "Check failure cases", "Compare alternatives", "Implement the checked next step"].entries()) {
+  for (const [index, title] of [
+    "Review reported changes",
+    "Visualize the design",
+    "Check failure cases",
+    "Compare alternatives",
+    "Implement the checked next step",
+  ].entries()) {
     const focused = `> [ ] ${index + 1}. ${title}`
     if (index === 0) await ui.waitForText(focused)
     else await ui.pressAndWait(String(index + 1), focused)
@@ -333,72 +223,99 @@ it("opens model/call review with zero inference and explicitly analyzes five ran
     await ui.pressAndWait(escape, "Continuation assessment")
   }
   const report = await ui.finish()
-  expect(report.events.filter(({ kind }) => kind === ContinuationFixtureEventKind.Analyze).map(({ draft }) => [draft?.model, draft?.effort])).toEqual([["gpt-5.5", "xhigh"]])
+  expect(
+    report.events
+      .filter(({ kind }) => kind === ContinuationFixtureEventKind.Analyze)
+      .map(({ draft }) => [draft?.model, draft?.effort]),
+  ).toEqual([["gpt-5.5", "xhigh"]])
   expect(report.draft.actions.every((edit) => !edit.selected)).toBe(true)
   expect(report.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toBe(false)
 })
 
-it("preserves independent briefs, profile/workflow, prompt edits and placements through explicit batch review", async ({ ui }) => {
-  await ui.start(FixtureMode.Resume)
-  await ui.pressAndWait("r", "Continuation assessment")
-  await ui.pressAndWait(" ", "[x] 1. Review reported changes")
-  await ui.pressAndWait(enter, "Action 1: Review reported changes")
-  await editField(ui, "b", "Action brief", "First independent edited brief.", "Action 1:")
-  await ui.pressAndWait("p", "Choose profile", "Implementation specialist")
-  await ui.pressAndWait(down, "> Implementation specialist")
-  await ui.pressAndWait(enter, "Action 1:", "native:cdx/builder")
-  await ui.pressAndWait("w", "Choose workflow", "verify")
-  await ui.pressAndWait(down, "> verify")
-  await ui.pressAndWait(enter, "Action 1:", "workflow: verify")
-  await ui.pressAndWait("g", "Prompt choice 1 of 3")
-  await ui.pressAndWait(right, "Prompt choice 2 of 3", "Evidence first")
-  await ui.pressAndWait(enter, "Full outgoing prompt - action 1", "Choice: Evidence first.")
-  await ui.pressAndWait("e", "Edit Full outgoing prompt")
-  await ui.pressAndWait(paste("\nq stays literal in the full prompt."), "q stays literal")
-  await ui.pressAndWait(enter, "Full outgoing prompt - action 1", "q stays literal", "Edited from candidate: candidate-2")
-  await ui.pressAndWait("c", "Prompt choice 2 of 3", "Edited from candidate: candidate-2")
-  await ui.pressAndWait(escape, "Action 1:")
-  await ui.pressAndWait("o", "Full outgoing prompt - action 1", "q stays literal", "Edited from candidate: candidate-2")
-  await ui.pressAndWait("d", "Destination - action 1")
-  await editField(ui, "b", "New worktree branch", "next/first-action", "Destination - action 1")
-  await editField(ui, "f", "Worktree base ref", "release", "Destination - action 1")
-  await ui.pressAndWait("t", "[x] New worktree uses committed files only")
-  await ui.pressAndWait(escape, "Action 1:")
-  await ui.pressAndWait(escape, "Continuation assessment")
-  await ui.pressAndWait("2", "> [ ] 2. Visualize the design")
-  await ui.pressAndWait(" ", "> [x] 2. Visualize the design")
-  await ui.pressAndWait(enter, "Action 2: Visualize the design")
-  await editField(ui, "b", "Action brief", "Second separate brief.", "Action 2:")
-  await ui.pressAndWait("g", "Prompt choice 1 of 3")
-  await ui.pressAndWait(enter, "Full outgoing prompt - action 2", "Second separate brief.")
-  await ui.pressAndWait("d", "Destination - action 2")
-  await ui.pressAndWait("3", "New tab: shared writable")
-  await ui.pressAndWait("s", "[x] I explicitly allow")
-  await ui.pressAndWait(escape, "Action 2:")
-  await ui.pressAndWait("l", "Confirm launch - nothing sent yet", "Ready to launch: 2")
-  expect((await ui.events()).some(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toBe(false)
-  await ui.pressAndWait(end, "END OF PROMPT", "Second separate brief.")
-  await ui.pressAndWait(enter, "Continuation assessment", "Launch results saved")
-  const report = await ui.finish()
-  expect(report.events.filter(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toHaveLength(1)
-  expect(report.draft.actions[0]).toMatchObject({
-    brief: "First independent edited brief.", profileRef: "native:cdx/builder", workflowId: "verify",
-    selectedCandidateId: "candidate-2",
-    prompt: expect.stringContaining("q stays literal in the full prompt."),
-    placement: { kind: ContinuationPlacementKind.NewWorktree, branch: "next/first-action", baseRef: "release" },
-    uncommittedChangesConfirmed: true, status: ContinuationActionStatus.Launched,
-  })
-  const delivered = report.events.find(({ kind }) => kind === ContinuationFixtureEventKind.Launch)?.draft?.actions[0]
-  expect(delivered).toMatchObject({
-    selectedCandidateId: "candidate-2",
-    prompt: report.draft.actions[0]?.prompt,
-    candidates: report.draft.actions[0]?.candidates,
-  })
-  expect(delivered?.prompt).not.toBe(delivered?.candidates?.[1]?.prompt)
-  expect(report.draft.actions[1]).toMatchObject({ brief: "Second separate brief.", profileRef: "native:cpx/reviewer", placement: { kind: ContinuationPlacementKind.NewTab }, sharedWriteConfirmed: true, status: ContinuationActionStatus.Launched })
-  expect(report.draft.actions.slice(2).every((edit) => !edit.selected)).toBe(true)
-  expect(report.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Analyze)).toBe(false)
-})
+it(
+  "preserves independent briefs, profile/workflow, prompt edits and placements through explicit batch review",
+  { timeout: 30_000 },
+  async ({ ui }) => {
+    await ui.start(FixtureMode.Resume)
+    await ui.pressAndWait("r", "Continuation assessment")
+    await ui.pressAndWait(" ", "[x] 1. Review reported changes")
+    await ui.pressAndWait(enter, "Action 1: Review reported changes")
+    await editField(ui, "b", "Action brief", "First independent edited brief.", "Action 1:")
+    await ui.pressAndWait("p", "Choose profile", "Implementation specialist")
+    await ui.pressAndWait(down, "> Implementation specialist")
+    await ui.pressAndWait(enter, "Action 1:", "native:cdx/builder")
+    await ui.pressAndWait("w", "Choose workflow", "verify")
+    await ui.pressAndWait(down, "> verify")
+    await ui.pressAndWait(enter, "Action 1:", "workflow: verify")
+    await ui.pressAndWait("g", "Prompt choice 1 of 3")
+    await ui.pressAndWait(right, "Prompt choice 2 of 3", "Evidence first")
+    await ui.pressAndWait(enter, "Full outgoing prompt - action 1", "Choice: Evidence first.")
+    await ui.pressAndWait("e", "Edit Full outgoing prompt")
+    await ui.pressAndWait(paste("\nq stays literal in the full prompt."), "q stays literal")
+    await ui.pressAndWait(
+      enter,
+      "Full outgoing prompt - action 1",
+      "q stays literal",
+      "Edited from candidate: candidate-2",
+    )
+    await ui.pressAndWait("c", "Prompt choice 2 of 3", "Edited from candidate: candidate-2")
+    await ui.pressAndWait(escape, "Action 1:")
+    await ui.pressAndWait(
+      "o",
+      "Full outgoing prompt - action 1",
+      "q stays literal",
+      "Edited from candidate: candidate-2",
+    )
+    await ui.pressAndWait("d", "Destination - action 1")
+    await editField(ui, "b", "New worktree branch", "next/first-action", "Destination - action 1")
+    await editField(ui, "f", "Worktree base ref", "release", "Destination - action 1")
+    await ui.pressAndWait("t", "[x] New worktree uses committed files only")
+    await ui.pressAndWait(escape, "Action 1:")
+    await ui.pressAndWait(escape, "Continuation assessment")
+    await ui.pressAndWait("2", "> [ ] 2. Visualize the design")
+    await ui.pressAndWait(" ", "> [x] 2. Visualize the design")
+    await ui.pressAndWait(enter, "Action 2: Visualize the design")
+    await editField(ui, "b", "Action brief", "Second separate brief.", "Action 2:")
+    await ui.pressAndWait("g", "Prompt choice 1 of 3")
+    await ui.pressAndWait(enter, "Full outgoing prompt - action 2", "Second separate brief.")
+    await ui.pressAndWait("d", "Destination - action 2")
+    await ui.pressAndWait("3", "New tab: shared writable")
+    await ui.pressAndWait("s", "[x] I explicitly allow")
+    await ui.pressAndWait(escape, "Action 2:")
+    await ui.pressAndWait("l", "Confirm launch - nothing sent yet", "Ready to launch: 2")
+    expect((await ui.events()).some(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toBe(false)
+    await ui.pressAndWait(end, "END OF PROMPT", "Second separate brief.")
+    await ui.pressAndWait(enter, "Continuation assessment", "Launch results saved")
+    const report = await ui.finish()
+    expect(report.events.filter(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toHaveLength(1)
+    expect(report.draft.actions[0]).toMatchObject({
+      brief: "First independent edited brief.",
+      profileRef: "native:cdx/builder",
+      workflowId: "verify",
+      selectedCandidateId: "candidate-2",
+      prompt: expect.stringContaining("q stays literal in the full prompt."),
+      placement: { kind: ContinuationPlacementKind.NewWorktree, branch: "next/first-action", baseRef: "release" },
+      uncommittedChangesConfirmed: true,
+      status: ContinuationActionStatus.Launched,
+    })
+    const delivered = report.events.find(({ kind }) => kind === ContinuationFixtureEventKind.Launch)?.draft?.actions[0]
+    expect(delivered).toMatchObject({
+      selectedCandidateId: "candidate-2",
+      prompt: report.draft.actions[0]?.prompt,
+      candidates: report.draft.actions[0]?.candidates,
+    })
+    expect(delivered?.prompt).not.toBe(delivered?.candidates?.[1]?.prompt)
+    expect(report.draft.actions[1]).toMatchObject({
+      brief: "Second separate brief.",
+      profileRef: "native:cpx/reviewer",
+      placement: { kind: ContinuationPlacementKind.NewTab },
+      sharedWriteConfirmed: true,
+      status: ContinuationActionStatus.Launched,
+    })
+    expect(report.draft.actions.slice(2).every((edit) => !edit.selected)).toBe(true)
+    expect(report.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Analyze)).toBe(false)
+  },
+)
 
 for (const mode of [FixtureMode.CancelAnalysis, FixtureMode.CancelPreparation]) {
   it(`cancels the real fake-service AbortSignal and returns to overview: ${mode}`, async ({ ui }) => {
@@ -408,7 +325,11 @@ for (const mode of [FixtureMode.CancelAnalysis, FixtureMode.CancelPreparation]) 
       await ui.pressAndWait(enter, "Action 1:")
       await ui.pressAndWait("g", "Synthetic provider is active")
     } else await ui.pressAndWait("a", "Synthetic provider is active")
-    await ui.pressAndWait(controlC, mode === FixtureMode.CancelPreparation ? "Continuation assessment" : "Continuation overview", "Cancelled")
+    await ui.pressAndWait(
+      controlC,
+      mode === FixtureMode.CancelPreparation ? "Continuation assessment" : "Continuation overview",
+      "Cancelled",
+    )
     const report = await ui.finish()
     expect(report.events.filter(({ kind }) => kind === ContinuationFixtureEventKind.Abort)).toHaveLength(1)
     expect(report.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toBe(false)
@@ -453,7 +374,9 @@ it("requires advanced-source acknowledgement and explicit launch", async ({ ui }
   await ui.pressAndWait("a", "[x] I acknowledge")
   await ui.pressAndWait("l", "Continuation assessment", "Launch results saved")
   const report = await ui.finish()
-  expect(report.events.filter(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toEqual([expect.objectContaining({ acknowledgeAdvanced: true })])
+  expect(report.events.filter(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toEqual([
+    expect.objectContaining({ acknowledgeAdvanced: true }),
+  ])
 })
 
 it("blocks changed source identity without launching or choosing another pane", async ({ ui }) => {
@@ -476,13 +399,19 @@ it("preserves unknown delivery receipts and never resends them", async ({ ui }) 
   await ui.waitForText("already-created-pane", "30000000-0000-4000-8000-000000000001")
   const report = await ui.finish()
   expect(report.events.filter(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toHaveLength(1)
-  expect(report.draft.actions[0]).toMatchObject({ status: ContinuationActionStatus.Unknown, launch: { paneId: "already-created-pane" } })
+  expect(report.draft.actions[0]).toMatchObject({
+    status: ContinuationActionStatus.Unknown,
+    launch: { paneId: "already-created-pane" },
+  })
 })
 
 for (const mode of [FixtureMode.Clarification, FixtureMode.NoAction]) {
   it(`shows a legitimate non-recommendation outcome without inventing cards: ${mode}`, async ({ ui }) => {
     await ui.start(mode)
-    await ui.pressAndWait("r", mode === FixtureMode.Clarification ? "Needs clarification" : "No further action is recommended")
+    await ui.pressAndWait(
+      "r",
+      mode === FixtureMode.Clarification ? "Needs clarification" : "No further action is recommended",
+    )
     if (mode === FixtureMode.Clarification) await ui.waitForText("Which export format is required?")
     const report = await ui.finish()
     expect(report.draft.actions).toEqual([])
@@ -504,7 +433,9 @@ it("pages through complete evidence in a small terminal with bounded scrollback"
   expect(report.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Analyze)).toBe(false)
 })
 
-it("opens the full message browser, keeps the sidebar fixed while reading, and returns without effects", async ({ ui }) => {
+it("opens the full message browser, keeps the sidebar fixed while reading, and returns without effects", async ({
+  ui,
+}) => {
   await ui.start(FixtureMode.LongEvidence, 110, 24)
   await ui.pressAndWait("r", "Continuation assessment")
   await ui.pressAndWait("t", "Messages 1 of 2", "MESSAGES", "user")
@@ -654,11 +585,16 @@ it("keeps a dependent action waiting and does not treat prerequisite delivery as
   await ui.pressAndWait(enter, "Continuation assessment", "Launch results saved")
   const report = await ui.finish()
   expect(report.draft.actions[0]?.status).toBe(ContinuationActionStatus.Launched)
-  expect(report.draft.actions[4]).toMatchObject({ status: ContinuationActionStatus.Waiting, prerequisitesConfirmed: false })
+  expect(report.draft.actions[4]).toMatchObject({
+    status: ContinuationActionStatus.Waiting,
+    prerequisitesConfirmed: false,
+  })
   expect(report.draft.actions[4]?.launch).toBeUndefined()
 })
 
-it("requires explicit committed-only confirmation for a dirty-source worktree and exposes it in prompt review", async ({ ui }) => {
+it("requires explicit committed-only confirmation for a dirty-source worktree and exposes it in prompt review", async ({
+  ui,
+}) => {
   await ui.start(FixtureMode.DirtySource)
   await prepareFirst(ui)
   await ui.waitForText("[ ] New worktree uses committed files only")

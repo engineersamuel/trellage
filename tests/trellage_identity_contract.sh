@@ -81,7 +81,7 @@ scan_public_branding() {
 
 grep -Fqx '  "name": "@trellage/profile-compiler",' \
   "$repo_root/packages/trellage-cli/package.json" || fail 'npm package identity is stale'
-grep -Fq '"trellage-profile": "dist/cli.js"' \
+grep -Fq '"trellage-profile": "src/cli.ts"' \
   "$repo_root/packages/trellage-cli/package.json" || fail 'npm binary identity is stale'
 grep -Fq 'cd packages/trellage-cli' "$repo_root/Makefile" \
   || fail 'Makefile compiler path is stale'
@@ -180,7 +180,7 @@ scan_legacy_identity \
   "$repo_root/prototypes/trellage/runtime-copilot-entry.sh" \
   "$repo_root/prototypes/trellage/runtime-claude-entry.sh" \
   "$repo_root/prototypes/trellage/runtime-prime-entry.sh" \
-  "$repo_root/prototypes/trellage/finalize-copilot-seed.mjs" \
+  "$repo_root/prototypes/trellage/finalize-copilot-seed.ts" \
   "$repo_root/prototypes/trellage/mise.toml" \
   "$repo_root/prototypes/trellage-codex-profiles" \
   "$repo_root/prototypes/trellage-codex-common" \

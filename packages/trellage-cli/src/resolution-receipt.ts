@@ -4,11 +4,11 @@ import path from "node:path"
 
 import { Data, Effect } from "effect"
 
-import { parseLock, renderLock } from "./lock-file.js"
-import { attachedSidecar, profileHash, withAttachedSidecar, type ProfileLock } from "./lock.js"
-import { platformIdentity, platformLockPath, type Platform } from "./platform.js"
-import type { ProfileDocument } from "./profile.js"
-import { loadResolutionSidecar, resolutionSidecarPath, writeResolutionSidecar } from "./resolution-sidecar-storage.js"
+import { parseLock, renderLock } from "./lock-file.ts"
+import { attachedSidecar, profileHash, withAttachedSidecar, type ProfileLock } from "./lock.ts"
+import { platformIdentity, platformLockPath, type Platform } from "./platform.ts"
+import type { ProfileDocument } from "./profile.ts"
+import { loadResolutionSidecar, resolutionSidecarPath, writeResolutionSidecar } from "./resolution-sidecar-storage.ts"
 
 export const developmentResolutionPolicy = "floating-stable" as const
 export type DevelopmentResolutionPolicy = typeof developmentResolutionPolicy

@@ -8,7 +8,7 @@
  * `Set`s with the returned refs. Fully unit-testable without any Ink
  * rendering.
  */
-import type { AdminRunStatus } from "./admin-run-manager.js"
+import type { AdminRunStatus } from "./admin-run-manager.ts"
 
 /**
  * Returns `true` exactly once per distinct, non-empty entry set: the batch

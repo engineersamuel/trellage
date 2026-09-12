@@ -5,12 +5,13 @@ import path from "node:path"
 import { promisify } from "node:util"
 
 import { Effect } from "effect"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { describe, expect, it } from "vitest"
 
-import { environmentMetadata } from "../src/environment.js"
+import { environmentMetadata } from "../src/environment.ts"
 
 const execFilePromise = promisify(execFile)
-const nativeResolver = path.resolve(import.meta.dirname, "../../../scripts/native-environment.mjs")
+const nativeResolver = path.resolve(import.meta.dirname, "../../../scripts/native-environment.ts")
 
 const withHome = async (run: (home: string, environment: NodeJS.ProcessEnv) => Promise<void>): Promise<void> => {
   const home = await mkdtemp(path.join(os.tmpdir(), "trellage-environment-"))
@@ -21,7 +22,7 @@ const nativeEnvironmentMetadata = async (
   home: string,
   environment: NodeJS.ProcessEnv,
 ): Promise<Record<string, unknown>> => {
-  const { stdout } = await execFilePromise(process.execPath, [nativeResolver], {
+  const { stdout } = await execFilePromise(bunExecutable(), bunArguments(nativeResolver), {
     env: { HOME: home, ...environment },
   })
   return JSON.parse(stdout) as Record<string, unknown>

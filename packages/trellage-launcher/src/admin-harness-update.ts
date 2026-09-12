@@ -1,20 +1,20 @@
-import type { AdminProfileEntry } from "./admin-model.js"
-import type { AdminRunManager } from "./admin-run-manager.js"
-import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.js"
+import type { AdminProfileEntry } from "./admin-model.ts"
+import type { AdminRunManager } from "./admin-run-manager.ts"
+import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.ts"
 import {
   harnessVersionRefFor,
   runBatchedHarnessVersionChecks,
   type HarnessVersionSchedulerOptions,
-} from "./admin-harness-version-scheduler.js"
-import { harnessVersionOperationKeyFor, harnessVersionReleaseKeyFor, type AdminHarnessVersionResult } from "./admin-harness-version.js"
-import type { CommandRunner, CommandSpec } from "./guide-launch.js"
-import { runProfileUpdateStep, updateDiagnostic, type ProfileUpdateResult, type ProfileUpdateStep } from "./admin-update-command.js"
+} from "./admin-harness-version-scheduler.ts"
+import { harnessVersionOperationKeyFor, harnessVersionReleaseKeyFor, type AdminHarnessVersionResult } from "./admin-harness-version.ts"
+import type { CommandRunner, CommandSpec } from "./guide-launch.ts"
+import { runProfileUpdateStep, updateDiagnostic, type ProfileUpdateResult, type ProfileUpdateStep } from "./admin-update-command.ts"
 import {
   runNativeSkillsUpdate,
   type NativeSkillsUpdateEvent,
   type NativeSkillsUpdateOutcome,
   type NativeSkillsUpdatePlan,
-} from "./admin-skills-update.js"
+} from "./admin-skills-update.ts"
 
 interface NativeHarnessUpdate {
   readonly command: "update" | "harness-update"

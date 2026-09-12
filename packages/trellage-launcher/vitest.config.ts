@@ -1,8 +1,10 @@
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
-    // Make already runs four targets; each PTY test also starts a Node process.
+    cache: false,
+    setupFiles: [fileURLToPath(new URL("../../tests/bun-runtime.setup.ts", import.meta.url))],
     maxWorkers: 2,
   },
 })

@@ -8,8 +8,8 @@ import {
   validateGuideGoalAnswer,
   type GuideGoalRequest,
   type GuideGoalResponse,
-} from "./guide-goal-augment.js"
-import { MarkdownLine, markdownPromptLines, type MarkdownDisplayLine } from "./guide-markdown.js"
+} from "./guide-goal-augment.ts"
+import { MarkdownLine, markdownPromptLines, type MarkdownDisplayLine } from "./guide-markdown.tsx"
 
 type PanelView = "choices" | "answer" | "review" | "feedback"
 

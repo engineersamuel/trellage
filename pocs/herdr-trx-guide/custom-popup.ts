@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // @ts-nocheck -- Legacy terminal UI adapter; source/capture modules are type-checked.
 import readline from "node:readline"
 import path from "node:path"

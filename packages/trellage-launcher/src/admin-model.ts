@@ -18,10 +18,10 @@ import {
   loadProfileGuide,
   profileGuideIdentityKey,
   type ProfileGuideIdentity,
-} from "../../trellage-guide-core/dist/index.js"
-import type { CombinedGuideCatalog, GuideCatalogEntryRef } from "./guide-catalog.js"
-import { guideCatalogEntries } from "./guide-catalog.js"
-import { ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.js"
+} from "@trellage/guide-core"
+import type { CombinedGuideCatalog, GuideCatalogEntryRef } from "./guide-catalog.ts"
+import { guideCatalogEntries } from "./guide-catalog.ts"
+import { ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.ts"
 
 /** Native launcher command aliases, matching `guide-catalog.ts` `launcher` values. */
 export type NativeLauncherAlias = "agx" | "cpx" | "cdx" | "cldx" | "fmx" | "grx" | "jcx" | "omp" | "picx" | "prx"

@@ -1,4 +1,4 @@
-import { isGraphOfLoopsProfile, type GraphOfLoopsProfile, type Profile } from "./profile.js"
+import { isGraphOfLoopsProfile, type GraphOfLoopsProfile, type Profile } from "./profile.ts"
 
 export interface GraphOfLoopsPolicy {
   readonly schema: 1

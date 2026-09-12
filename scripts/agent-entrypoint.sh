@@ -3,9 +3,21 @@ set -euo pipefail
 
 umask 077
 
+source_workspace=/opt/trellage-source
+runtime_helper="$source_workspace/scripts/bun-runtime.sh"
+[[ -f "$runtime_helper" && ! -L "$runtime_helper" ]] || {
+  printf 'agent entrypoint: missing or unsafe source runtime helper: %s\n' "$runtime_helper" >&2
+  exit 1
+}
+. "$runtime_helper"
+trellage_bun_runtime "$source_workspace" || {
+  printf 'agent entrypoint: pinned Bun source runtime is unavailable\n' >&2
+  exit 1
+}
+
 mkdir -p "$CODEX_HOME" /workspace/.harness /workspace/.npm /workspace/.cache /workspace/.config
 
-node /usr/local/bin/floating-skills.mjs sync \
+"${trellage_bun[@]}" "$source_workspace/scripts/floating-skills.ts" -- sync \
   --catalog /opt/floating-skills-catalog.json \
   --bundle comparison-common \
   --output /opt/floating-skills \
@@ -46,7 +58,7 @@ for agent_config in /workspace/.codex/agents/*.toml; do
   install -m 0600 "$agent_config" "$CODEX_HOME/agents/$(basename "$agent_config")"
 done
 
-node /opt/codex-common/codex-agents.mjs install "$CODEX_HOME/agents" /opt/codex-common/agents
+"${trellage_bun[@]}" /opt/codex-common/codex-agents.ts -- install "$CODEX_HOME/agents" /opt/codex-common/agents
 
 if ! git -C /workspace rev-parse --git-dir >/dev/null 2>&1; then
   git -C /workspace init -b main -q

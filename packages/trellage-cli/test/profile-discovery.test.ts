@@ -5,8 +5,8 @@ import path from "node:path"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { discoverProfileChoices, projectProfileChoice } from "../src/profile-discovery.js"
-import { parseProfile } from "../src/profile.js"
+import { discoverProfileChoices, projectProfileChoice } from "../src/profile-discovery.ts"
+import { parseProfile } from "../src/profile.ts"
 
 const codexProfile = (name: string, description: string, model = "gpt-5.5", extra = "") => `
 schema = 1
