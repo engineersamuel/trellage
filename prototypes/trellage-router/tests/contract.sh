@@ -41,6 +41,12 @@ fail() {
   exit 1
 }
 
+fixture_registry="$(npm config get registry --workspaces=false)" \
+  || fail 'could not discover the host npm registry'
+[[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
+export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export npm_config_registry="$fixture_registry"
+
 assert_contains() {
   local expected="$1"
   local file="$2"
