@@ -39,9 +39,9 @@ measurement. The contract still requires an unchanged SHA-256 digest and a
 cached-worktree fingerprint time strictly below 900 ms. Run it directly with
 `make profile-compiler-fingerprint`, without another test suite running.
 
-The timing-sensitive Native phase also runs serially. Codex, Grok, and OMP
-signal/readiness contracts retain their existing deadlines without competing
-with source installation and UI test workloads.
+The timing-sensitive Native phase also runs serially. Codex, Grok, OMP, Claude,
+and native TUI signal/readiness contracts retain their existing deadlines
+without competing with source installation and UI test workloads.
 
 `prototypes/.npmignore` excludes temporary `.contract-fixture.*` and
 `.contract-work` directories from npm packages. The publication contract checks
