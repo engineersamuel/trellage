@@ -438,7 +438,7 @@ run_entry attach
 # user attachment from reaching its login shell.
 in_fixture ': >/test-control/block-restore'
 rm -f "$output/restore.started"
-run_service_for 5 &
+run_service_for 15 &
 service_runner=$!
 for _ in $(seq 1 50); do
   [[ -f "$output/restore.started" ]] && break
@@ -446,14 +446,12 @@ for _ in $(seq 1 50); do
 done
 [[ -f "$output/restore.started" ]] \
   || fail 'blocked service restore fixture did not start'
-SECONDS=0
 run_entry attach
-attach_seconds=$SECONDS
+kill -0 "$service_runner" 2>/dev/null \
+  || fail 'slow service restore held the state lock and blocked an initialized attachment'
 wait "$service_runner"
 in_fixture 'rm -f /test-control/block-restore'
 rm -f "$output/restore.started"
-[[ "$attach_seconds" -lt 3 ]] \
-  || fail 'slow service restore held the state lock and blocked an initialized attachment'
 
 # .env must fail closed on a loosened mode (never silently re-secured) and
 # must reject unsafe path types outright, without ever being modified by
