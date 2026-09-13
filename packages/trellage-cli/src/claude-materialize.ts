@@ -736,6 +736,61 @@ const vulnerableHyperresearchHookCommand = '            "command": f"node {hook_
 const portableHyperresearchHookCommand = '            "command": hook_command,'
 const vulnerableHyperresearchHookScriptPath = '    hook_path = hook_dir / "hook.js"'
 const portableHyperresearchHookScriptPath = '    hook_path = hook_dir / "hook.cjs"'
+const currentHyperresearchHookWriter = '    hook_path = hook_dir / "hook.js"'
+const portableHyperresearchHookWriter = '    hook_path = hook_dir / "hook.cjs"'
+const currentHyperresearchHookInstallBody = `\
+    hooks = settings.setdefault("hooks", {})
+    pre_tool = hooks.setdefault("PreToolUse", [])
+
+    for entry in pre_tool:
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                if "hyperresearch" in h.get("command", ""):
+                    return None
+
+    # Web tools only. The reminder is "check the vault before you search the
+    # web"; on Glob and Grep it is noise, and now that the payload actually
+    # reaches the model (it was silently discarded before #94), every match
+    # costs context on every call.
+    pre_tool.append({
+        "matcher": "WebSearch|WebFetch",
+        "hooks": [{
+            "type": "command",
+            "command": f'node "{hook_path.as_posix()}"',
+        }],
+    })
+
+    settings_path.write_text(json.dumps(settings, indent=2) + "\\n", encoding="utf-8")`
+const portableHyperresearchHookInstallBody = `\
+    hooks = settings.setdefault("hooks", {})
+    pre_tool = hooks.setdefault("PreToolUse", [])
+    hook_command = 'node "$CLAUDE_PROJECT_DIR/.hyperresearch/hook.cjs"'
+
+    for entry in pre_tool:
+        if isinstance(entry, dict):
+            for h in entry.get("hooks", []):
+                command = h.get("command", "")
+                if "hyperresearch" not in command:
+                    continue
+                if command == hook_command:
+                    return None
+                h["command"] = hook_command
+                settings_path.write_text(json.dumps(settings, indent=2) + "\\n", encoding="utf-8")
+                return "Claude Code: .claude/settings.json (PreToolUse hook updated)"
+
+    # Web tools only. The reminder is "check the vault before you search the
+    # web"; on Glob and Grep it is noise, and now that the payload actually
+    # reaches the model (it was silently discarded before #94), every match
+    # costs context on every call.
+    pre_tool.append({
+        "matcher": "WebSearch|WebFetch",
+        "hooks": [{
+            "type": "command",
+            "command": hook_command,
+        }],
+    })
+
+    settings_path.write_text(json.dumps(settings, indent=2) + "\\n", encoding="utf-8")`
 
 const replaceExactlyOnce = (source: string, vulnerable: string, portable: string): string => {
   const first = source.indexOf(vulnerable)
@@ -752,6 +807,23 @@ export const normalizeHyperresearchHookInstaller = (
     try: async () => {
       const hooksPath = path.join(sitePackages, "hyperresearch", "core", "hooks.py")
       const source = await readFile(hooksPath, "utf8")
+      const currentHookWriter = source.includes(currentHyperresearchHookWriter)
+      const currentHookInstallBody = source.includes(currentHyperresearchHookInstallBody)
+      if (currentHookWriter && currentHookInstallBody) {
+        const normalizedWriter = replaceExactlyOnce(
+          source,
+          currentHyperresearchHookWriter,
+          portableHyperresearchHookWriter,
+        )
+        const normalized = replaceExactlyOnce(
+          normalizedWriter,
+          currentHyperresearchHookInstallBody,
+          portableHyperresearchHookInstallBody,
+        )
+        await writeFile(hooksPath, normalized)
+        return
+      }
+
       const portableFragments = [
         portableHyperresearchHookScriptPath,
         `hook_command = 'node "$CLAUDE_PROJECT_DIR/.hyperresearch/hook.cjs"'`,

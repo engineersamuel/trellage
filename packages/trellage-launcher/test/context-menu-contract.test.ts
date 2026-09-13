@@ -1,5 +1,5 @@
 import os from "node:os"
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import type { CopilotClientOptions, ModelInfo, SessionConfig } from "@github/copilot-sdk"
@@ -126,6 +126,62 @@ const runRequest = async (
 })
 
 describe("TRX context-menu launcher contract", () => {
+  const uiRequest = {
+    schemaVersion: 1,
+    kind: "context-menu-error",
+    source: { workspaceId: "workspace", tabId: "tab", paneId: "pane", cwd: "/repo" },
+    styles: [{ id: "custom" }],
+    error: { code: "missing", message: "No message" },
+  }
+
+  it.each([
+    { timeoutMs: 0 },
+    { timeoutMs: 300_001 },
+    { timeoutMs: 1.5 },
+    { timeoutMs: null },
+    { effort: "invalid" },
+    { bypassCache: "true" },
+    { model: "" },
+  ])("rejects invalid shared rewrite options %j", (options) => {
+    expect(() => parseContextMenuUiRequest(JSON.stringify({ ...uiRequest, ...options }))).toThrow()
+    expect(() => parseContextMenuRewriteRequest(JSON.stringify({ ...JSON.parse(rawRequest()), ...options }))).toThrow()
+  })
+
+  it("preserves optional UI fields and rewrite defaults", () => {
+    expect(parseContextMenuUiRequest(JSON.stringify(uiRequest))).toEqual({
+      ...uiRequest,
+      styles: [{ id: "custom", instruction: "Follow the selected style reference. Preserve the original meaning and Markdown." }],
+    })
+    expect(parseContextMenuUiRequest(JSON.stringify({ ...uiRequest, bypassCache: true }))).not.toHaveProperty("bypassCache")
+    const request = parseContextMenuRewriteRequest(JSON.stringify({
+      ...JSON.parse(rawRequest()), timeoutMs: undefined, model: undefined, effort: undefined,
+    }))
+    expect(request.timeoutMs).toBe(60_000)
+    expect(request).not.toHaveProperty("model")
+    expect(request).not.toHaveProperty("effort")
+  })
+
+  it("fingerprints nested skill resources and skips caching unresolved resources", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "trx-skill-fingerprint-"))
+    try {
+      const skillPath = path.join(directory, "skill")
+      await mkdir(path.join(skillPath, "references"), { recursive: true })
+      await writeFile(path.join(skillPath, "SKILL.md"), "Use concise prose.")
+      const resource = path.join(skillPath, "references", "example.md")
+      await writeFile(resource, "First example")
+      const request = parseContextMenuRewriteRequest(rawRequest({ style: { id: "custom", skillPath } }))
+      const options = { stateDir: path.join(directory, "state"), copilotCliPath: "/offline/copilot", clientFactory: () => new FakeClient() }
+      expect((await runContextMenuRewrite(request, options)).cache).toBe("miss")
+      expect((await runContextMenuRewrite(request, options)).cache).toBe("hit")
+      await writeFile(resource, "Second example")
+      expect((await runContextMenuRewrite(request, options)).cache).toBe("miss")
+      await symlink(resource, path.join(skillPath, "linked.md"))
+      expect(await runContextMenuRewrite(request, options)).toMatchObject({ cache: "miss", cacheStatus: "skill-cache-unavailable", markdown: "rewritten" })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it("accepts exact transcript provenance for the frozen UI source", () => {
     const request = parseContextMenuUiRequest(JSON.stringify({
       schemaVersion: 1,

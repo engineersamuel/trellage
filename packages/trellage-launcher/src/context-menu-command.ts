@@ -152,34 +152,71 @@ const parseUiStyle = (value: unknown): ContextMenuRewriteStyle => {
   }
 }
 
-/** Parses the private source snapshot consumed by the interactive contextual menu. */
-export const parseContextMenuUiRequest = (source: string): ContextMenuUiRequest => {
-  if (Buffer.byteLength(source, "utf8") > maximumInputBytes) throw new Error("context-menu request is too large")
+const parseRequestJson = (source: string, label: string): unknown => {
+  if (Buffer.byteLength(source, "utf8") > maximumInputBytes) throw new Error(`${label} request is too large`)
   let value: unknown
   try {
     value = JSON.parse(source)
   } catch {
-    throw new Error("context-menu request is not valid JSON")
+    throw new Error(`${label} request is not valid JSON`)
   }
+  return value
+}
+
+const parseUiStyles = (value: unknown): ReadonlyArray<ContextMenuRewriteStyle> => {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 32) throw new Error("context-menu styles are invalid")
+  const styles = value.map(parseUiStyle)
+  if (new Set(styles.map(({ id }) => id)).size !== styles.length) throw new Error("context-menu style identifiers must be unique")
+  return styles
+}
+
+const parseRewriteEffort = (value: unknown): GuideReasoningEffort | undefined => {
+  if (value === undefined) return undefined
+  const effort = text(value, "rewrite effort", 8)
+  if (effort !== "low" && effort !== "medium" && effort !== "high" && effort !== "xhigh" && effort !== "max") throw new Error("rewrite effort is invalid")
+  return effort
+}
+
+const parseRewriteTimeout = (value: unknown): number | undefined => {
+  if (value === undefined) return undefined
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0 || value > 300_000) throw new Error("rewrite timeout is invalid")
+  return value
+}
+
+const parseCacheBypass = (value: unknown): boolean | undefined => {
+  if (value !== undefined && typeof value !== "boolean") throw new Error("rewrite cache bypass is invalid")
+  return value
+}
+
+const parseRewriteOptions = (value: Record<string, unknown>) => {
+  const model = value.model === undefined ? undefined : text(value.model, "rewrite model", 128)
+  const effort = parseRewriteEffort(value.effort)
+  const timeoutMs = parseRewriteTimeout(value.timeoutMs)
+  const bypassCache = parseCacheBypass(value.bypassCache)
+  return {
+    ...(model === undefined ? {} : { model }),
+    ...(effort === undefined ? {} : { effort }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(bypassCache === undefined ? {} : { bypassCache }),
+  }
+}
+
+const parseUiError = (value: unknown): ContextMenuUiRequest["error"] => {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new Error("context-menu error is invalid")
+  return { code: uiText(value.code, "context-menu error code", 64), message: uiText(value.message, "context-menu error message", 512) }
+}
+
+/** Parses the private source snapshot consumed by the interactive contextual menu. */
+export const parseContextMenuUiRequest = (source: string): ContextMenuUiRequest => {
+  const value = parseRequestJson(source, "context-menu")
   if (!isRecord(value) || value.schemaVersion !== 1) throw new Error("context-menu request is invalid")
   if (value.kind !== "rewrite-output" && value.kind !== "context-menu-error") throw new Error("context-menu request kind is invalid")
   const sourceContext = parseUiSource(value.source)
-  if (!Array.isArray(value.styles) || value.styles.length === 0 || value.styles.length > 32) throw new Error("context-menu styles are invalid")
-  const styles = value.styles.map(parseUiStyle)
-  if (new Set(styles.map(({ id }) => id)).size !== styles.length) throw new Error("context-menu style identifiers must be unique")
-  const model = value.model === undefined ? undefined : uiText(value.model, "rewrite model", 128)
-  const effort = value.effort === undefined ? undefined : uiText(value.effort, "rewrite effort", 8)
-  if (effort !== undefined && !["low", "medium", "high", "xhigh", "max"].includes(effort)) throw new Error("rewrite effort is invalid")
-  const rawTimeoutMs = value.timeoutMs
-  if (rawTimeoutMs !== undefined && (typeof rawTimeoutMs !== "number" || !Number.isSafeInteger(rawTimeoutMs) || rawTimeoutMs <= 0 || rawTimeoutMs > 300_000)) throw new Error("rewrite timeout is invalid")
-  const timeoutMs = rawTimeoutMs as number | undefined
-  const bypassCache = value.bypassCache === undefined ? undefined : value.bypassCache
-  if (bypassCache !== undefined && typeof bypassCache !== "boolean") throw new Error("rewrite cache bypass is invalid")
+  const styles = parseUiStyles(value.styles)
+  const { bypassCache: _bypassCache, ...options } = parseRewriteOptions(value)
   const message = value.message === undefined ? undefined : parseUiMessage(value.message, sourceContext)
-  const error = value.error === undefined ? undefined : (() => {
-    if (!isRecord(value.error)) throw new Error("context-menu error is invalid")
-    return { code: uiText(value.error.code, "context-menu error code", 64), message: uiText(value.error.message, "context-menu error message", 512) }
-  })()
+  const error = parseUiError(value.error)
   if (value.kind === "rewrite-output" && message === undefined) throw new Error("harness message is missing")
   if (value.kind === "context-menu-error" && error === undefined) throw new Error("context-menu error is missing")
   return {
@@ -188,9 +225,7 @@ export const parseContextMenuUiRequest = (source: string): ContextMenuUiRequest 
     source: sourceContext,
     styles,
     ...(message === undefined ? {} : { message }),
-    ...(model === undefined ? {} : { model }),
-    ...(effort === undefined ? {} : { effort: effort as GuideReasoningEffort }),
-    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...options,
     ...(error === undefined ? {} : { error }),
   }
 }
@@ -213,26 +248,13 @@ const parseStyle = (value: unknown, styleId: string): ContextMenuRewriteStyle =>
 }
 
 export const parseContextMenuRewriteRequest = (source: string): ContextMenuRewriteRequest => {
-  if (Buffer.byteLength(source, "utf8") > maximumInputBytes) throw new Error("rewrite request is too large")
-  let value: unknown
-  try {
-    value = JSON.parse(source)
-  } catch {
-    throw new Error("rewrite request is not valid JSON")
-  }
+  const value = parseRequestJson(source, "rewrite")
   if (!isRecord(value) || value.schemaVersion !== 1 || value.kind !== "rewrite") throw new Error("rewrite request is invalid")
   const paneId = text(value.paneId, "rewrite pane id", 256)
   const styleId = text(value.styleId, "rewrite style id", 64)
   if (!identifier.test(styleId)) throw new Error("rewrite style id is invalid")
   const message = messageText(value.message)
-  const model = value.model === undefined ? undefined : text(value.model, "rewrite model", 128)
-  const effort = value.effort === undefined ? undefined : text(value.effort, "rewrite effort", 8)
-  if (effort !== undefined && !["low", "medium", "high", "xhigh", "max"].includes(effort)) throw new Error("rewrite effort is invalid")
-  const timeoutMs = value.timeoutMs === undefined ? 60_000 : value.timeoutMs
-  if (typeof timeoutMs !== "number") throw new Error("rewrite timeout is invalid")
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 300_000) throw new Error("rewrite timeout is invalid")
-  const bypassCache = value.bypassCache === undefined ? undefined : value.bypassCache
-  if (bypassCache !== undefined && typeof bypassCache !== "boolean") throw new Error("rewrite cache bypass is invalid")
+  const options = parseRewriteOptions(value)
   return {
     schemaVersion: 1,
     kind: "rewrite",
@@ -240,10 +262,8 @@ export const parseContextMenuRewriteRequest = (source: string): ContextMenuRewri
     styleId,
     style: parseStyle(value.style, styleId),
     message,
-    ...(model === undefined ? {} : { model }),
-    ...(effort === undefined ? {} : { effort: effort as GuideReasoningEffort }),
-    timeoutMs,
-    ...(bypassCache === undefined ? {} : { bypassCache }),
+    ...options,
+    timeoutMs: options.timeoutMs ?? 60_000,
   }
 }
 
@@ -269,37 +289,50 @@ const prompt = (request: ContextMenuRewriteRequest): string => [
 
 const validateRewrite = (markdown: string): void => { validateSavedRewrite(markdown) }
 
+interface FingerprintState {
+  readonly hash: ReturnType<typeof createHash>
+  files: number
+  bytes: number
+}
+
+const fingerprintFile = async (filename: string, name: string, state: FingerprintState): Promise<void> => {
+  const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const info = await handle.stat()
+    if (!info.isFile() || state.bytes + info.size > 4 * 1024 * 1024) throw new Error("Skill content too large")
+    const buffer = Buffer.alloc(info.size + 1)
+    let length = 0
+    while (length < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null)
+      if (!bytesRead) break
+      length += bytesRead
+    }
+    if (length !== info.size) throw new Error("Skill content changed")
+    state.bytes += length
+    state.hash.update(JSON.stringify([name, length])).update(buffer.subarray(0, length))
+  } finally { await handle.close() }
+}
+
+const fingerprintDirectory = async (current: string, relative: string, depth: number, state: FingerprintState): Promise<void> => {
+  if (depth > 16) throw new Error("Skill tree too deep")
+  const entries = await readdir(current, { withFileTypes: true })
+  if (entries.length + state.files > 1024) throw new Error("Skill tree too large")
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name, "en"))) {
+    state.files += 1
+    const name = path.join(relative, entry.name)
+    const filename = path.join(current, entry.name)
+    if (entry.isDirectory()) await fingerprintDirectory(filename, name, depth + 1, state)
+    else if (entry.isFile()) await fingerprintFile(filename, name, state)
+    else throw new Error("Skill tree contains an unresolved resource")
+  }
+}
+
 const directoryFingerprint = async (directory: string): Promise<string | undefined> => {
   // If a skill tree cannot be fully fingerprinted within these limits, skip
   // caching while still allowing the requested rewrite to run.
   try {
     const hash = createHash("sha256")
-    let files = 0, bytes = 0
-    const visit = async (current: string, relative: string, depth: number): Promise<void> => {
-      if (depth > 16) throw new Error("Skill tree too deep")
-      const entries = await readdir(current, { withFileTypes: true })
-      if (entries.length + files > 1024) throw new Error("Skill tree too large")
-      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name, "en"))) {
-        files += 1
-        const name = path.join(relative, entry.name)
-        const filename = path.join(current, entry.name)
-        if (entry.isDirectory()) await visit(filename, name, depth + 1)
-        else if (entry.isFile()) {
-          const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
-          try {
-            const info = await handle.stat()
-            if (!info.isFile() || bytes + info.size > 4 * 1024 * 1024) throw new Error("Skill content too large")
-            const buffer = Buffer.alloc(info.size + 1)
-            let length = 0
-            while (length < buffer.length) { const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null); if (!bytesRead) break; length += bytesRead }
-            if (length !== info.size) throw new Error("Skill content changed")
-            bytes += length
-            hash.update(JSON.stringify([name, length])).update(buffer.subarray(0, length))
-          } finally { await handle.close() }
-        } else throw new Error("Skill tree contains an unresolved resource")
-      }
-    }
-    await visit(directory, "", 0)
+    await fingerprintDirectory(directory, "", 0, { hash, files: 0, bytes: 0 })
     return hash.digest("hex")
   } catch { return undefined }
 }
@@ -331,18 +364,14 @@ const skill = async (request: ContextMenuRewriteRequest): Promise<{ readonly dir
   }
 }
 
-export const runContextMenuRewrite = async (
-  request: ContextMenuRewriteRequest,
-  options: {
+interface RewriteOptions {
     readonly signal?: AbortSignal
     readonly clientFactory?: (options: CopilotClientOptions) => RestrictedGuideModelClient
     readonly copilotCliPath?: string
     readonly stateDir?: string
-  } = {},
-): Promise<ContextMenuRewriteResponse> => {
-  options.signal?.throwIfAborted()
-  const skillReference = await skill(request)
-  options.signal?.throwIfAborted()
+}
+
+const rewriteCacheKey = (request: ContextMenuRewriteRequest, skillReference: Awaited<ReturnType<typeof skill>>): RewriteCacheKey => {
   const system = [
     systemPrompt(request),
     ...(skillReference.reference === undefined
@@ -351,55 +380,81 @@ export const runContextMenuRewrite = async (
   ].join("\n")
   const model = request.model ?? "gpt-5.6-sol"
   const effort = request.effort ?? "medium"
-  const cacheKey: RewriteCacheKey = {
+  return {
     sourcePrompt: prompt(request),
     systemPrompt: system,
     model,
     effort,
     version: `rewrite-v1${skillReference.directory === undefined ? "" : `:${skillReference.resources ?? "uncacheable"}`}`,
   }
-  let cacheStatus: string | undefined = skillReference.directory !== undefined && skillReference.resources === undefined ? "skill-cache-unavailable" : undefined
-  if (request.bypassCache !== true && (skillReference.directory === undefined || skillReference.resources !== undefined)) {
+}
+
+const readCachedRewrite = async (cacheKey: RewriteCacheKey, options: RewriteOptions): Promise<{ markdown?: string; cacheStatus?: string }> => {
+  try {
+    const cached = await readRewriteCache(cacheKey, options.stateDir)
+    if (cached === undefined) return {}
     try {
-      const cached = await readRewriteCache(cacheKey, options.stateDir)
-      if (cached !== undefined) {
-        try {
-          validateRewrite(cached)
-          options.signal?.throwIfAborted()
-          return { schemaVersion: 1, kind: "rewrite-result", styleId: request.styleId, markdown: cached, cache: "hit" }
-        } catch {
-          cacheStatus = "invalid-entry"
-        }
-      }
+      validateRewrite(cached)
+      options.signal?.throwIfAborted()
+      return { markdown: cached }
     } catch {
-      cacheStatus = "read-failed"
+      return { cacheStatus: "invalid-entry" }
     }
+  } catch {
+    return { cacheStatus: "read-failed" }
   }
-  options.signal?.throwIfAborted()
-  const markdown = await runRestrictedGuideModelRequest({
-    model,
-    effort,
-    systemPrompt: system,
+}
+
+const generateRewrite = (request: ContextMenuRewriteRequest, cacheKey: RewriteCacheKey, directory: string | undefined, options: RewriteOptions): Promise<string> =>
+  runRestrictedGuideModelRequest({
+    model: cacheKey.model,
+    effort: request.effort ?? "medium",
+    systemPrompt: cacheKey.systemPrompt,
     prompt: prompt(request),
     timeoutMs: request.timeoutMs ?? 60_000,
     cleanupTimeoutMs: 3_000,
     maximumResponseBytes: maximumOutputBytes,
     inspectModel: () => undefined,
-    ...(skillReference.directory === undefined ? {} : { skillDirectory: skillReference.directory }),
+    ...(directory === undefined ? {} : { skillDirectory: directory }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.clientFactory === undefined ? {} : { clientFactory: options.clientFactory }),
     ...(options.copilotCliPath === undefined ? {} : { copilotCliPath: options.copilotCliPath }),
     systemMessageMode: "append",
     clientName: "trellage-trx-overlay",
   })
+
+const saveCachedRewrite = async (cacheKey: RewriteCacheKey, markdown: string, options: RewriteOptions, cacheStatus: string | undefined): Promise<string | undefined> => {
+  try {
+    await writeRewriteCache(cacheKey, markdown, options.stateDir, options.signal)
+    return cacheStatus
+  } catch {
+    return "write-failed"
+  }
+}
+
+export const runContextMenuRewrite = async (
+  request: ContextMenuRewriteRequest,
+  options: RewriteOptions = {},
+): Promise<ContextMenuRewriteResponse> => {
+  options.signal?.throwIfAborted()
+  const skillReference = await skill(request)
+  options.signal?.throwIfAborted()
+  const cacheKey = rewriteCacheKey(request, skillReference)
+  const cacheable = skillReference.directory === undefined || skillReference.resources !== undefined
+  let cacheStatus: string | undefined = cacheable ? undefined : "skill-cache-unavailable"
+  if (request.bypassCache !== true && cacheable) {
+    const cached = await readCachedRewrite(cacheKey, options)
+    if (cached.markdown !== undefined) {
+      return { schemaVersion: 1, kind: "rewrite-result", styleId: request.styleId, markdown: cached.markdown, cache: "hit" }
+    }
+    cacheStatus = cached.cacheStatus
+  }
+  options.signal?.throwIfAborted()
+  const markdown = await generateRewrite(request, cacheKey, skillReference.directory, options)
   options.signal?.throwIfAborted()
   validateRewrite(markdown)
-  if (options.signal?.aborted !== true && (skillReference.directory === undefined || skillReference.resources !== undefined)) {
-    try {
-      await writeRewriteCache(cacheKey, markdown, options.stateDir, options.signal)
-    } catch {
-      cacheStatus = "write-failed"
-    }
+  if (options.signal?.aborted !== true && cacheable) {
+    cacheStatus = await saveCachedRewrite(cacheKey, markdown, options, cacheStatus)
   }
   options.signal?.throwIfAborted()
   return { schemaVersion: 1, kind: "rewrite-result", styleId: request.styleId, markdown, cache: "miss", ...(cacheStatus === undefined ? {} : { cacheStatus }) }
@@ -423,6 +478,17 @@ const signalWorkerGroup = (child: ChildProcess, signal: NodeJS.Signals): void =>
   child.kill(signal)
 }
 
+const parseWorkerResult = (value: Record<string, unknown>): ContextMenuRewriteResponse => {
+  if (typeof value.styleId !== "string" || typeof value.markdown !== "string") throw new Error("The rewrite worker returned an invalid result")
+  return { schemaVersion: 1, kind: "rewrite-result", styleId: value.styleId, markdown: value.markdown, ...(value.cache === "hit" || value.cache === "miss" ? { cache: value.cache } : {}), ...(typeof value.cacheStatus === "string" ? { cacheStatus: value.cacheStatus } : {}) }
+}
+
+const workerParseError = (error: unknown, stderr: string): Error =>
+  new Error(`${error instanceof Error ? error.message : String(error)}${stderr.trim().length === 0 ? "" : `: ${stderr.trim()}`}`)
+
+const workerExitError = (code: number | null, signalName: NodeJS.Signals | null): Error =>
+  new Error(`The rewrite worker stopped with ${signalName ?? `status ${code ?? "unknown"}`}`)
+
 const parseWorkerResponse = (output: string): ContextMenuRewriteResponse | ContextMenuRewriteError => {
   const line = output.trim().split("\n").find((value) => value.trim().length > 0)
   if (line === undefined) throw new Error("The rewrite worker returned no response")
@@ -436,8 +502,7 @@ const parseWorkerResponse = (output: string): ContextMenuRewriteResponse | Conte
     throw new Error("The rewrite worker returned an invalid response")
   }
   if (value.kind === "rewrite-result") {
-    if (typeof value.styleId !== "string" || typeof value.markdown !== "string") throw new Error("The rewrite worker returned an invalid result")
-    return { schemaVersion: 1, kind: "rewrite-result", styleId: value.styleId, markdown: value.markdown, ...(value.cache === "hit" || value.cache === "miss" ? { cache: value.cache } : {}), ...(typeof value.cacheStatus === "string" ? { cacheStatus: value.cacheStatus } : {}) }
+    return parseWorkerResult(value)
   }
   if (typeof value.code !== "string" || typeof value.message !== "string") throw new Error("The rewrite worker returned an invalid error")
   return { schemaVersion: 1, kind: "rewrite-error", code: value.code, message: value.message }
@@ -513,7 +578,7 @@ export const runContextMenuRewriteInWorker = async (
       try {
         response = parseWorkerResponse(stdout)
       } catch (error) {
-        finish(terminating ? new RestrictedGuideModelError("cancelled") : new Error(`${error instanceof Error ? error.message : String(error)}${stderr.trim().length === 0 ? "" : `: ${stderr.trim()}`}`))
+        finish(terminating ? new RestrictedGuideModelError("cancelled") : workerParseError(error, stderr))
         return
       }
       if (response.kind === "rewrite-error") {
@@ -521,7 +586,7 @@ export const runContextMenuRewriteInWorker = async (
         return
       }
       if (terminating || signalName !== null || (code !== null && code !== 0)) {
-        finish(terminating ? new RestrictedGuideModelError("cancelled") : new Error(`The rewrite worker stopped with ${signalName ?? `status ${code ?? "unknown"}`}`))
+        finish(terminating ? new RestrictedGuideModelError("cancelled") : workerExitError(code, signalName))
         return
       }
       finish(undefined, response)

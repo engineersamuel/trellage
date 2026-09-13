@@ -239,6 +239,24 @@ const candidate = async (
   return { agent, path: canonical, mtimeMs: stat.mtimeMs, id: metadata.id, cwd: metadata.cwd }
 }
 
+const readCopilotCandidate = async (
+  sessionRoot: string, id: string, roots: ReadonlyArray<string>, focused: boolean,
+): Promise<TranscriptCandidate | undefined> => {
+  if (!safeSessionId.test(id)) return undefined
+  const directory = path.join(sessionRoot, id)
+  const eventsPath = path.join(directory, "events.jsonl")
+  const workspacePath = path.join(directory, "workspace.yaml")
+  try {
+    const cwd = copilotWorkspaceCwd(await readHead(workspacePath, roots))
+    if (cwd === undefined) return undefined
+    return await candidate("copilot", eventsPath, roots, { id, cwd })
+  } catch (error) {
+    if (!hasErrorCode(error, "ENOENT") && focused) throw error
+    if (!hasErrorCode(error, "ENOENT")) console.error(`Skipping Copilot session ${id}: ${errorMessage(error)}`)
+    return undefined
+  }
+}
+
 const scanCopilot = async (root: string, roots: ReadonlyArray<string>, sessionId: string | undefined, focused = false) => {
   const sessionRoot = path.join(root, "session-state")
   if (!(await safeDirectory(sessionRoot))) return []
@@ -251,18 +269,8 @@ const scanCopilot = async (root: string, roots: ReadonlyArray<string>, sessionId
       : [sessionId]
   const candidates: TranscriptCandidate[] = []
   for (const id of sessionIds) {
-    if (!safeSessionId.test(id)) continue
-    const directory = path.join(sessionRoot, id)
-    const eventsPath = path.join(directory, "events.jsonl")
-    const workspacePath = path.join(directory, "workspace.yaml")
-    try {
-      const cwd = copilotWorkspaceCwd(await readHead(workspacePath, roots))
-      if (cwd === undefined) continue
-      candidates.push(await candidate("copilot", eventsPath, roots, { id, cwd }))
-    } catch (error) {
-      if (!hasErrorCode(error, "ENOENT") && focused) throw error
-      if (!hasErrorCode(error, "ENOENT")) console.error(`Skipping Copilot session ${id}: ${errorMessage(error)}`)
-    }
+    const item = await readCopilotCandidate(sessionRoot, id, roots, focused)
+    if (item !== undefined) candidates.push(item)
   }
   return candidates
 }
