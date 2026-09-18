@@ -129,6 +129,63 @@ test("explicit prepare recovers real Bun bin drift without remote dependencies",
   expect(() => requireReady(f.root)).not.toThrow();
 });
 
+test("automatic preparation repairs missing and stale readiness and skips ready workspaces", () => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  normalizeDependencyPermissions(f.root);
+  rmSync(path.join(f.root, "node_modules"), { recursive: true });
+  const cli = path.join(sourceWorkspaceRoot(), "packages/trellage-runtime/src/workspace-cli.ts");
+  const run = () => spawnSync(bunExecutable(), bunArguments(cli, ["ensure", f.root]), {
+    cwd: f.parent, encoding: "utf8", env: f.env,
+  });
+  const missing = run();
+  expect(missing.status, missing.stderr).toBe(0);
+  expect(missing.stderr).toContain("preparing worktree dependencies automatically");
+  expect(() => requireReady(f.root)).not.toThrow();
+  const ready = run();
+  expect(ready.status, ready.stderr).toBe(0);
+  expect(ready.stderr).toBe("");
+  writeFileSync(f.other, "export const changed = true;\n");
+  const stale = run();
+  expect(stale.status, stale.stderr).toBe(0);
+  expect(stale.stderr).toContain("preparing worktree dependencies automatically");
+  expect(() => requireReady(f.root)).not.toThrow();
+  expect(existsSync(`${f.root}.prepare.lock`)).toBe(false);
+});
+
+test("automatic preparation reports frozen install failure and releases its lock", () => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  normalizeDependencyPermissions(f.root);
+  writeFileSync(f.manifest, '{"name":"@fixture/renamed","version":"1.0.0"}');
+  rmSync(path.join(f.root, "node_modules"), { recursive: true });
+  const cli = path.join(sourceWorkspaceRoot(), "packages/trellage-runtime/src/workspace-cli.ts");
+  const result = spawnSync(bunExecutable(), bunArguments(cli, ["ensure", f.root]), {
+    cwd: f.parent, encoding: "utf8", env: f.env,
+  });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("frozen source dependency installation failed");
+  expect(existsSync(path.join(f.root, ".trellage-source-ready.json"))).toBe(false);
+  expect(existsSync(`${f.root}.prepare.lock`)).toBe(false);
+});
+
+test("automatic preparation refuses unsafe readiness without replacing its target", () => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  normalizeDependencyPermissions(f.root);
+  const target = path.join(f.parent, "external-ready");
+  writeFileSync(target, "untouched\n");
+  symlinkSync(target, path.join(f.root, ".trellage-source-ready.json"));
+  const cli = path.join(sourceWorkspaceRoot(), "packages/trellage-runtime/src/workspace-cli.ts");
+  const result = spawnSync(bunExecutable(), bunArguments(cli, ["ensure", f.root]), {
+    cwd: f.parent, encoding: "utf8", env: f.env,
+  });
+  expect(result.status).toBe(1);
+  expect(result.stderr).not.toContain("preparing worktree dependencies automatically");
+  expect(readFileSync(target, "utf8")).toBe("untouched\n");
+  expect(existsSync(`${f.root}.prepare.lock`)).toBe(false);
+});
+
 test("declared bin normalization works inside a global package source runtime", () => {
   const f = fixture("prefix/lib/node_modules/trellage/.trellage-runtime");
   expect(f.install().status).toBe(0);

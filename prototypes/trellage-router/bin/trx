@@ -830,6 +830,12 @@ require_source_runtime() {
   [[ -f "$source_workspace/scripts/bun-runtime.sh" && ! -L "$source_workspace/scripts/bun-runtime.sh" ]] \
     || die "source runtime is missing or unsafe; reinstall trx: $source_workspace"
   . "$source_workspace/scripts/bun-runtime.sh"
+  if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
+    trellage_bun_runtime "$source_workspace" || die 'source Bun runtime is unavailable'
+    "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" ensure "$source_workspace" \
+      || die 'automatic source runtime preparation failed'
+    return
+  fi
   trellage_require_source_runtime "$source_workspace" \
     || die 'source runtime is not ready; reinstall trx or prepare worktree dependencies explicitly'
 }

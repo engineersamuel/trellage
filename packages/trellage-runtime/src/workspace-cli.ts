@@ -28,6 +28,7 @@ import {
   sourceMarker,
   sourceOwnership,
   validateWorkspaceBinaries,
+  validateOwnedTreeAsync,
   writeReadiness,
 } from "./workspace.ts"
 
@@ -69,6 +70,27 @@ async function installDependencies(root: string): Promise<void> {
   cancellation.signal.throwIfAborted()
   normalizeDependencyPermissions(root)
   writeReadiness(root)
+}
+
+async function ensureDependencies(root: string): Promise<void> {
+  try {
+    await requireReadyAsync(root)
+    return
+  } catch (error) {
+    process.stderr.write(`trellage source runtime: ${error instanceof Error ? error.message : String(error)}\n`)
+  }
+  const lock = `${root}.prepare.lock`
+  mkdirSync(lock, { mode: 0o700 })
+  try {
+    const readiness = path.join(root, ".trellage-source-ready.json")
+    if (await present(readiness)) safePath(readiness, "file")
+    await validateOwnedTreeAsync(root, !(await present(path.join(root, sourceMarker))))
+    process.stderr.write("trellage source runtime: preparing worktree dependencies automatically\n")
+    await installDependencies(root)
+    await requireReadyAsync(root)
+  } finally {
+    rmdirSync(lock)
+  }
 }
 
 async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv): Promise<void> {
@@ -253,7 +275,7 @@ try {
   bunExecutable()
   if (suppliedRoot === undefined || !path.isAbsolute(suppliedRoot) || extra.length !== 0) {
     throw new Error(
-      "usage: workspace-cli.ts check|fingerprint|prepare|validate-owned ROOT; stage|install ROOT DESTINATION",
+      "usage: workspace-cli.ts check|fingerprint|prepare|ensure|validate-owned ROOT; stage|install ROOT DESTINATION",
     )
   }
   const root = safeDirectory(suppliedRoot)
@@ -269,6 +291,9 @@ try {
     }
     case "prepare":
       await installDependencies(root)
+      break
+    case "ensure":
+      await ensureDependencies(root)
       break
     case "validate-owned":
       requireOwnedWorkspace(root)

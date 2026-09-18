@@ -882,12 +882,15 @@ jq -e --slurpfile ledger "$prototype_root/../../docs/herdr-compatibility.json" '
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'Firstmate compatibility projection differs from its source evidence'
 
+rm "$fixture_source/.trellage-source-ready.json"
 TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
   TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides" \
   "$fixture_source/prototypes/trellage-router/bin/trx" list --json >"$fixture_root/source-list.json" \
   || fail 'worktree source JSON list failed'
 cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
   || fail 'worktree source list differs from installed router list'
+[[ -f "$fixture_source/.trellage-source-ready.json" ]] \
+  || fail 'worktree source launch did not restore readiness automatically'
 
 # --- TRELLAGE_TRX_NATIVE_SOURCE: opt-in dev-mode native launcher delegation.
 # Uses a self-contained fixture (a copy of trx plus fixture sibling
