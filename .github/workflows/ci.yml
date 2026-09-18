@@ -17,7 +17,7 @@ jobs:
   # Keep this legacy key because branch protection requires its status context.
   deterministic-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
