@@ -130,7 +130,7 @@ as_agent() {
     assert.deepEqual(JSON.parse(child.stdout), {
       bun: "1.4.2", argv: ["--", "child argument", ""], cache: "0", envFile: null,
     })
-    console.log("PUBLIC_EXPORTS_AND_CHILD_BUN_1_3_3_OK")
+    console.log("PUBLIC_EXPORTS_AND_CHILD_BUN_1_4_2_OK")
   '
 )
 

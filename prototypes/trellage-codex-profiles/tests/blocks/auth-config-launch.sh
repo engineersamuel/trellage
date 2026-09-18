@@ -764,11 +764,14 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
 overlap_first_pid=$!
 track_async_pid "$overlap_first_pid"
 overlap_wait=0
-while [ ! -f "$overlap_dir/first-started" ] && [ "$overlap_wait" -lt 100 ]; do
+while [ ! -f "$overlap_dir/first-started" ] \
+  && kill -0 "$overlap_first_pid" 2>/dev/null \
+  && [ "$overlap_wait" -lt 600 ]; do
   sleep 0.05
   overlap_wait=$((overlap_wait + 1))
 done
-[ -f "$overlap_dir/first-started" ] || fail 'first overlapping launch did not start'
+[ -f "$overlap_dir/first-started" ] \
+  || { cat "$fixture_root/overlap-first.out" >&2; fail 'first overlapping launch did not start within 30 seconds'; }
 overlap_first_group="$(cat "$overlap_dir/first-child.pid")"
 track_async_group "$overlap_first_group"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -778,7 +781,12 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
 overlap_second_pid=$!
 track_async_pid "$overlap_second_pid"
 overlap_wait=0
-while [ ! -f "$overlap_dir/second-started" ] && [ "$overlap_wait" -lt 40 ]; do
+# Startup includes managed-state validation. Keep the first session blocked
+# until the second starts so this checks overlap independently of startup speed.
+while [ ! -f "$overlap_dir/second-started" ] \
+  && kill -0 "$overlap_first_pid" 2>/dev/null \
+  && kill -0 "$overlap_second_pid" 2>/dev/null \
+  && [ "$overlap_wait" -lt 600 ]; do
   sleep 0.05
   overlap_wait=$((overlap_wait + 1))
 done
@@ -802,7 +810,7 @@ if [ -f "$overlap_dir/second-child.pid" ]; then
 fi
 wait "$overlap_second_pid" || overlap_second_status=$?
 [ "$overlap_entered_early" = yes ] \
-  || fail 'second overlapping launch did not run concurrently with the first'
+  || { cat "$fixture_root/overlap-second.out" >&2; fail 'second overlapping launch did not start within 30 seconds while the first remained blocked'; }
 [ "$overlap_first_status" -eq 0 ] || fail 'first overlapping launch failed'
 [ "$overlap_second_status" -eq 0 ] \
   || { cat "$fixture_root/overlap-second.out" >&2; fail 'second overlapping launch failed'; }
