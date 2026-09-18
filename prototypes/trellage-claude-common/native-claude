@@ -93,6 +93,7 @@ require_command() {
 firstmate_shared_guard() {
   local candidate
   for candidate in "$runtime_root/lib/fmx-registry.py" \
+    "$runtime_root/../common/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py" \
     "$runtime_root/../common/floating-skills-runtime/fmx-registry.py" \
     "$runtime_root/../trellage-firstmate-profiles/lib/fmx-registry.py"; do
     if [[ -f "$candidate" && ! -L "$candidate" ]]; then
