@@ -1079,7 +1079,8 @@ raise SystemExit("cancellation was lost")
                                 stderr=subprocess.PIPE, text=True, cwd=self.case)
 
     def wait_file(self, path, child):
-        deadline = time.monotonic() + 20
+        # Parallel CI can delay preparation; cancellation keeps its separate 10-second bound.
+        deadline = time.monotonic() + 60
         while not path.exists() and time.monotonic() < deadline and child.poll() is None:
             time.sleep(0.03)
         if not path.exists():
