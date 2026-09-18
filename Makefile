@@ -143,6 +143,7 @@ native-codex-harness-version:
 	bash prototypes/trellage-codex-profiles/tests/blocks/harness-version.sh
 
 native-copilot-profiles:
+	bash prototypes/trellage-copilot-profiles/tests/version_cache_contract.sh
 	bash prototypes/trellage-copilot-profiles/tests/contract.sh
 
 native-agency-profile:

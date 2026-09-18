@@ -521,7 +521,7 @@ export function writeReadiness(root: string): void {
   const inventory = validateOwnedTree(root, !existsSync(path.join(root, sourceMarker)))
   const value = {
     schema: 1,
-    bun: "1.3.3",
+    bun: "1.4.2",
     sources: sourceFingerprint(root),
     dependencies: digestFiles(root, dependencyManifests(root)),
     inventory,
@@ -541,7 +541,7 @@ function readinessInventory(root: string): string {
     !("schema" in value) ||
     value.schema !== 1 ||
     !("bun" in value) ||
-    value.bun !== "1.3.3" ||
+    value.bun !== "1.4.2" ||
     !("sources" in value) ||
     value.sources !== sourceFingerprint(root) ||
     !("dependencies" in value) ||

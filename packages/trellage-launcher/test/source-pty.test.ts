@@ -39,7 +39,7 @@ test("source PTYs preserve Bun, process identity, raw Unicode input, dimensions,
       { timeout: 2_000, interval: 20 },
     )
   try {
-    await waitFor('{"bun":"1.3.3","columns":117,"rows":39}')
+    await waitFor('{"bun":"1.4.2","columns":117,"rows":39}')
     const pidReport = output.match(/^\{"pid":(\d+)\}\r?$/mu)
     expect(pidReport).not.toBeNull()
     const pid = Number(pidReport?.[1])
@@ -52,7 +52,7 @@ test("source PTYs preserve Bun, process identity, raw Unicode input, dimensions,
     await waitFor(JSON.stringify({ input }))
     terminal.resize(83, 24)
     terminal.write("size\n")
-    await waitFor('{"bun":"1.3.3","columns":83,"rows":24}')
+    await waitFor('{"bun":"1.4.2","columns":83,"rows":24}')
     terminal.write("exit\n")
     await vi.waitFor(() => expect(exit).toEqual({ exitCode: 7, signal: 0 }))
   } finally {
@@ -86,7 +86,7 @@ test("source PTYs preserve the child signal instead of the transport exit code",
   try {
     await vi.waitFor(() => {
       expect(exit, output).toBeUndefined()
-      expect(output).toContain('"bun":"1.3.3"')
+      expect(output).toContain('"bun":"1.4.2"')
     })
     terminal.kill("SIGKILL")
     await vi.waitFor(() => expect(exit).toEqual({ exitCode: 0, signal: 9 }))
@@ -140,7 +140,7 @@ test.each([false, true])(
       await vi.waitFor(
         () => {
           expect(exit).toBeUndefined()
-          expect(output).toContain('{"bun":"1.3.3","columns":80,"rows":24}')
+          expect(output).toContain('{"bun":"1.4.2","columns":80,"rows":24}')
         },
         { timeout: 5_000, interval: 20 },
       )

@@ -9,7 +9,7 @@ import { afterEach, describe, it } from "node:test"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
-assert.equal(process.versions.bun, "1.3.3", "finalizer contracts require Bun 1.3.3")
+assert.equal(process.versions.bun, "1.4.2", "finalizer contracts require Bun 1.4.2")
 
 const execFilePromise = promisify(execFile)
 const roots: string[] = []

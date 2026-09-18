@@ -175,6 +175,9 @@ describe("guide command request resolution", () => {
         workflowId: "test-driven-development",
       }),
     })
+    const resolveCatalog = vi.fn(async () => parseGuideCatalog(JSON.stringify({
+      schemaVersion: 1, sandboxCommandPath: "/unused/trellage", native: [], sandbox: [],
+    })))
     await expect(runGuideJsonCommand({
       argv: ["--json"],
       catalog: parseGuideCatalog(JSON.stringify({
@@ -185,6 +188,7 @@ describe("guide command request resolution", () => {
       stdinRequest,
       env: {},
       cwd: import.meta.dirname,
+      resolveCatalog,
     })).rejects.toBe(intercepted)
     const forwarded = operation === "match" ? matching.mock.calls[0]?.[2] : generation.mock.calls[0]?.[3]
     expect(forwarded).toMatchObject({
@@ -197,5 +201,28 @@ describe("guide command request resolution", () => {
     })
     expect(matching).toHaveBeenCalledTimes(operation === "match" ? 1 : 0)
     expect(generation).toHaveBeenCalledTimes(operation === "generate" ? 1 : 0)
+    expect(resolveCatalog).toHaveBeenCalledTimes(operation === "generate" ? 1 : 0)
+    if (operation === "match") expect(matching.mock.calls[0]?.[4]).toHaveProperty("resolveCatalog")
+  })
+
+  it.each([
+    { name: "argv overrides", argv: ["--json", "--intent", "Review this", "--model", "override-model", "--effort", "high"], env: {} },
+    { name: "environment overrides", argv: ["--json", "--intent", "Review this"], env: { TRELLAGE_GUIDE_MODEL: "env-model", TRELLAGE_GUIDE_EFFORT: "low" } },
+  ])("still injects Jev before Copilot fallback with $name", async ({ argv, env }) => {
+    vi.spyOn(guidePrompts, "loadDefaultGuidePrompts").mockResolvedValue({
+      match: "Match.", generate: "Generate.", optimize: "Optimize.", refine: "Refine.", enrich: "Enrich.",
+    })
+    const matching = vi.spyOn(guideApi, "runGuideMatch").mockRejectedValue(new Error("stop at service boundary"))
+
+    await expect(runGuideJsonCommand({
+      argv,
+      catalog: parseGuideCatalog(JSON.stringify({ schemaVersion: 1, sandboxCommandPath: "/unused/trellage", native: [], sandbox: [] })),
+      guideRoot: "/unused/profile-guides",
+      promptMasterSkillDirectory: "/unused/prompt-master",
+      env,
+      cwd: import.meta.dirname,
+    })).rejects.toThrow("stop at service boundary")
+
+    expect(matching.mock.calls[0]?.[4]).toMatchObject({ matcher: { execution: { backend: "jev" } } })
   })
 })

@@ -3,7 +3,7 @@ import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { expect, it } from "vitest"
 
 it("executes the test worker with Bun", () => {
-  expect(process.versions.bun).toBe("1.3.3")
+  expect(process.versions.bun).toBe("1.4.2")
 })
 
 it("executes the requested source file and preserves arguments through the public Bun helper", () => {

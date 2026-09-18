@@ -261,7 +261,11 @@ read_catalog() {
   local executable="$3"
   local output
 
-  if ! output="$("$executable" list --json)"; then
+  local catalog_args=(list --json)
+  if [[ "$mode" == guide && "$launcher" == cpx && "${next_steps_seen:-false}" == false ]]; then
+    catalog_args+=(--cached-capabilities)
+  fi
+  if ! output="$("$executable" "${catalog_args[@]}")"; then
     die "$launcher catalog interface failed"
   fi
 

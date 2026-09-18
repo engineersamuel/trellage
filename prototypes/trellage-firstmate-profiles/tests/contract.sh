@@ -70,7 +70,7 @@ mkdir -p "$fake_bin" "$home" "$logs"
 real_jq="$(command -v jq)" || fail 'jq is required'
 real_python3="$(command -v python3)" || fail 'python3 is required'
 real_bash="$(command -v bash)" || fail 'bash is required'
-real_bun="$(command -v bun)" || fail 'Bun 1.3.3 is required'
+real_bun="$(command -v bun)" || fail 'Bun 1.4.2 is required'
 real_npm="$(command -v npm)" || fail 'npm is required'
 
 # ---------------------------------------------------------------------------

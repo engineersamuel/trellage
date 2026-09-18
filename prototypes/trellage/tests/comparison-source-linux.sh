@@ -13,7 +13,7 @@ source_root=/opt/trellage-source
 config="$source_root/packages/trellage-runtime/bunfig.toml"
 bun=(/usr/local/bin/bun --no-install --no-env-file "--config=$config")
 export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
-[[ "$("${bun[@]}" --version)" == 1.3.3 ]] || fail 'incorrect Bun runtime'
+[[ "$("${bun[@]}" --version)" == 1.4.2 ]] || fail 'incorrect Bun runtime'
 [[ ! -e /context && ! -e /opt/node_modules ]] || fail 'ancestor source or dependencies are exposed'
 
 platform=linux/arm64
@@ -128,7 +128,7 @@ as_agent() {
     })
     assert.equal(child.status, 0, child.stderr)
     assert.deepEqual(JSON.parse(child.stdout), {
-      bun: "1.3.3", argv: ["--", "child argument", ""], cache: "0", envFile: null,
+      bun: "1.4.2", argv: ["--", "child argument", ""], cache: "0", envFile: null,
     })
     console.log("PUBLIC_EXPORTS_AND_CHILD_BUN_1_3_3_OK")
   '
@@ -192,7 +192,7 @@ done
 
 cat >/tmp/failed-bun-version <<'EOF'
 #!/bin/sh
-printf '1.3.3\n'
+printf '1.4.2\n'
 exit 7
 EOF
 chmod 0755 /tmp/failed-bun-version

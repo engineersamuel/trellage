@@ -35,7 +35,7 @@ set -eu
 [ "$BUN_RUNTIME_TRANSPILER_CACHE_PATH" = 0 ]
 if [ "$4" = --version ]; then
   printf 'bun:version\\n' >> "$TRACE_FILE"
-  printf '%s\\n' '${mode === BunFixtureMode.WrongVersion ? "0.0.0" : "1.3.3"}'
+  printf '%s\\n' '${mode === BunFixtureMode.WrongVersion ? "0.0.0" : "1.4.2"}'
   exit ${mode === BunFixtureMode.VersionFailed ? "26" : "0"}
 fi
 printf 'bun:argv=%s\\n' "$*" >> "$TRACE_FILE"
@@ -79,14 +79,14 @@ cp "$BUN_FIXTURE_ARCHIVE" "$output"
     writeFile(path.join(bin, "sha256sum"), '#!/bin/sh\nset -eu\nexec shasum -a 256 "$@"\n', { mode: 0o755 }),
   ])
 
-  const productionSha = "1021798148d98705e8a448a3c8ec698ec144c66eb1e0f287927f05dbc459cbc7"
-  if (!script.includes(productionSha) || !script.includes("39032147")) {
+  const productionSha = "9ab3970a19660b5cd089f17fb021d900e1ca1b988dafd461d66d0a0ff4d6eac4"
+  if (!script.includes(productionSha) || !script.includes("37629062")) {
     throw new Error("the builder fixture requires the independently pinned Linux arm64 archive")
   }
   // Substitute only artifact data and its temporary root; run the real verification commands.
   return {
     script: script
-      .replaceAll("39032147", String(bytes.length + (options.failure === BunFixtureFailure.Size ? 1 : 0)))
+      .replaceAll("37629062", String(bytes.length + (options.failure === BunFixtureFailure.Size ? 1 : 0)))
       .replace(productionSha, options.failure === BunFixtureFailure.Checksum ? "0".repeat(64) : sha256)
       .replace("/tmp/trellage-bun.XXXXXXXX", path.join(root, "bun.XXXXXXXX")),
     environment: {

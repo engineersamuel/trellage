@@ -38,6 +38,18 @@ export interface GuideMatchResult {
   readonly candidates: ReadonlyArray<GuideMatchCandidate>
 }
 
+export interface GuideMatchExecution {
+  readonly backend: "jev" | "copilot"
+  readonly model: string
+  readonly effort?: string
+}
+
+export interface GuideMatchAdapter {
+  readonly execution: GuideMatchExecution
+  readonly revision: string
+  match(input: GuideMatchInput, signal?: AbortSignal): Promise<GuideMatchResult>
+}
+
 export interface GuideGenerateCandidate {
   readonly title: string
   readonly prompt: string

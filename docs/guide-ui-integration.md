@@ -1,6 +1,6 @@
 # Guide UI integration matrix
 
-With Bun 1.3.3 and Python 3 available, prepare the source workspace and run the
+With Bun 1.4.2 and Python 3 available, prepare the source workspace and run the
 matrix from the repository root:
 
 ```bash

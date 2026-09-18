@@ -12,7 +12,7 @@
  * The reducer (`guideUiReducer`) and every state-derived helper in this file
  * are exported so decisions can be tested without rendering Ink.
  */
-import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react"
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
 
 import {
@@ -90,7 +90,6 @@ import {
   guideTargetTool,
   GuideLongPromptVariant,
   literalGuideMatch,
-  prefilterGuideMatchCatalogEntries,
   publicGuideLaunchCommand,
   runGuideMatch,
   selectedProfileFromCatalogRef,
@@ -98,6 +97,9 @@ import {
   type GuideEffort,
   type GuideMatchResponse,
   type GuideMatchRequest,
+  type GuideMatchAdapter,
+  type GuideMatchExecution,
+  type GuideMatchOptions,
   type GuideModelConfig,
   type GuideRecommendation,
   type GuideResolvedModelRouting,
@@ -437,6 +439,7 @@ interface GuideProfileSelection {
   readonly recommendations: ReadonlyArray<GuideRecommendation> | undefined
   readonly recommendationIndex: number
   readonly usedLiteralFallback: boolean
+  readonly execution?: GuideMatchExecution | undefined
 }
 
 export type FirstmateReadinessOperation =
@@ -480,6 +483,8 @@ export interface GuideUiState {
   /** Where `Esc` leaves the watch screen: the stage the user opened it from. */
   readonly augmentViewReturnStage: GuideUiStage | undefined
   readonly matchPhase: GuideMatchPhase | undefined
+  readonly matchExecution: GuideMatchExecution | undefined
+  readonly matchProfileCount: number | undefined
   readonly recommendations: ReadonlyArray<GuideRecommendation> | undefined
   readonly recommendationIndex: number
   readonly usedLiteralFallback: boolean
@@ -559,6 +564,8 @@ const emptyState: GuideUiState = {
   nextAugmentRunId: 1,
   augmentViewReturnStage: undefined,
   matchPhase: undefined,
+  matchExecution: undefined,
+  matchProfileCount: undefined,
   recommendations: undefined,
   recommendationIndex: 0,
   usedLiteralFallback: false,
@@ -637,6 +644,7 @@ const guideProfileSelection = (state: GuideUiState): GuideProfileSelection =>
     recommendations: state.recommendations,
     recommendationIndex: state.recommendationIndex,
     usedLiteralFallback: state.usedLiteralFallback,
+    execution: state.matchExecution,
   }
 
 /** Explicit consequence text for a dirty source working tree; `undefined` when clean (nothing to warn about). */
@@ -662,6 +670,8 @@ type GuideForkSharedKey =
   | "augmentJob"
   | "nextAugmentRunId"
   | "matchPhase"
+  | "matchExecution"
+  | "matchProfileCount"
   | "recommendations"
   | "recommendationIndex"
   | "usedLiteralFallback"
@@ -693,6 +703,8 @@ const forkSlice = ({
   augmentJob: _augmentJob,
   nextAugmentRunId: _nextAugmentRunId,
   matchPhase: _matchPhase,
+  matchExecution: _matchExecution,
+  matchProfileCount: _matchProfileCount,
   recommendations: _recommendations,
   recommendationIndex: _recommendationIndex,
   usedLiteralFallback: _usedLiteralFallback,
@@ -831,6 +843,7 @@ export enum GuideUiActionType {
   AugmentGoalAutoAccept = "augment/goal-auto-accept",
   MatchRetry = "match/retry",
   MatchProgress = "match/progress",
+  MatchAttempt = "match/attempt",
   MatchSucceeded = "match/succeeded",
   MatchFailed = "match/failed",
   MatchLiteral = "match/literal",
@@ -973,7 +986,13 @@ export type GuideUiAction =
     }
   | { readonly type: GuideUiActionType.MatchRetry }
   | { readonly type: GuideUiActionType.MatchProgress; readonly phase: GuideMatchPhase }
-  | { readonly type: GuideUiActionType.MatchSucceeded; readonly recommendations: ReadonlyArray<GuideRecommendation> }
+  | { readonly type: GuideUiActionType.MatchAttempt; readonly execution: GuideMatchExecution; readonly profileCount: number }
+  | {
+      readonly type: GuideUiActionType.MatchSucceeded
+      readonly recommendations: ReadonlyArray<GuideRecommendation>
+      readonly execution?: GuideMatchExecution
+      readonly profileCount?: number
+    }
   | { readonly type: GuideUiActionType.MatchFailed; readonly message: string }
   | { readonly type: GuideUiActionType.MatchLiteral; readonly recommendations: ReadonlyArray<GuideRecommendation> }
   | { readonly type: GuideUiActionType.MatchLiteralFailed; readonly message: string }
@@ -1583,6 +1602,8 @@ const recommendationsState = (
   state: GuideUiState,
   recommendations: ReadonlyArray<GuideRecommendation>,
   usedLiteralFallback: boolean,
+  execution?: GuideMatchExecution,
+  profileCount?: number,
 ): GuideUiState => ({
   ...state,
   stage: GuideUiStage.Recommendations,
@@ -1590,6 +1611,8 @@ const recommendationsState = (
   recommendations,
   recommendationIndex: 0,
   usedLiteralFallback,
+  ...(execution === undefined ? {} : { matchExecution: execution }),
+  ...(profileCount === undefined ? {} : { matchProfileCount: profileCount }),
   errorMessage: undefined,
 })
 
@@ -1694,6 +1717,11 @@ const reduceMatchProgress = (state: GuideUiState, action: GuideUiAction): GuideU
     case GuideUiActionType.MatchProgress:
       return state.stage === GuideUiStage.Matching ? { ...state, matchPhase: action.phase } : state
 
+    case GuideUiActionType.MatchAttempt:
+      return state.stage === GuideUiStage.Matching
+        ? { ...state, matchExecution: action.execution, matchProfileCount: action.profileCount }
+        : state
+
     default:
       return state
   }
@@ -1712,7 +1740,15 @@ const reduceMatch = (state: GuideUiState, action: GuideUiAction): GuideUiState =
         : state
 
     case GuideUiActionType.MatchSucceeded:
-      return state.stage === GuideUiStage.Matching ? recommendationsState(state, action.recommendations, false) : state
+      return state.stage === GuideUiStage.Matching
+        ? recommendationsState(
+            state,
+            action.recommendations,
+            false,
+            action.execution ?? state.matchExecution,
+            action.profileCount ?? state.matchProfileCount,
+          )
+        : state
 
     case GuideUiActionType.MatchFailed:
       return state.stage === GuideUiStage.Matching
@@ -3222,6 +3258,7 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.AugmentGoalAutoAccept]: reduceAugment,
   [GuideUiActionType.MatchRetry]: reduceMatch,
   [GuideUiActionType.MatchProgress]: reduceMatchProgress,
+  [GuideUiActionType.MatchAttempt]: reduceMatchProgress,
   [GuideUiActionType.MatchSucceeded]: reduceMatch,
   [GuideUiActionType.MatchFailed]: reduceMatch,
   [GuideUiActionType.MatchLiteral]: reduceMatch,
@@ -3560,9 +3597,10 @@ export const runGuideMatchingStep = async (
   request: GuideMatchRequest,
   onProgress?: (phase: GuideMatchPhase) => void,
   cache?: GuideArtifactCache,
+  options?: GuideMatchOptions,
 ): Promise<GuideMatchResponse> => {
   onProgress?.(GuideMatchPhase.ComparingProfiles)
-  const response = await runGuideMatch(provider, catalog, request, cache)
+  const response = await runGuideMatch(provider, catalog, request, cache, options)
   onProgress?.(GuideMatchPhase.PreparingRecommendations)
   return response
 }
@@ -4063,8 +4101,11 @@ export const buildExistingHerdrWorktreeResult = (
 
 export interface GuideUiProps {
   readonly catalog: CombinedGuideCatalog
+  /** Refreshes runtime capability fields; production entrypoints inject this, fixtures do not. */
+  readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CombinedGuideCatalog>
   readonly guideRoot: string
   readonly provider: GuideProvider
+  readonly matcher?: GuideMatchAdapter
   readonly goalProvider?: GuideGoalAugmentProvider
   readonly goalReadinessServices?: GuideGoalReadinessServices
   readonly cache?: GuideArtifactCache
@@ -4379,15 +4420,20 @@ const MatchProgress = ({
   intent,
   model,
   effort,
+  execution,
+  profileCount,
 }: {
   readonly catalog: CombinedGuideCatalog
   readonly phase: GuideMatchPhase
   readonly intent: string
   readonly model: string
   readonly effort: GuideEffort
+  readonly execution: GuideMatchExecution | undefined
+  readonly profileCount: number | undefined
 }) => {
   const availableProfileCount = catalog.native.length + catalog.sandbox.length
-  const readProfileCount = prefilterGuideMatchCatalogEntries(catalog, intent).length
+  const readProfileCount = profileCount ?? availableProfileCount
+  const executionLabel = matchExecutionLabel(execution, model, effort)
   return (
     <Box flexDirection="column">
       <ProgressPipeline
@@ -4395,12 +4441,20 @@ const MatchProgress = ({
         intent={intent}
         items={matchProgressItems(readProfileCount, availableProfileCount)}
         activePhase={phase}
-        detail={`Copilot model: ${model} · Effort: ${effort}`}
+        detail={executionLabel}
       />
       <Text dimColor>p view prompt · q cancel</Text>
     </Box>
   )
 }
+
+export const matchExecutionLabel = (
+  execution: GuideMatchExecution | undefined,
+  model: string,
+  effort: GuideEffort,
+): string => execution?.backend === "jev"
+  ? `Jev model: ${execution.model}`
+  : `Copilot model: ${execution?.model ?? model} · Effort: ${execution?.effort ?? effort}`
 
 const GenerationProgress = ({
   recommendation,
@@ -5147,6 +5201,7 @@ const RecommendationsView = ({
   intent,
   model,
   effort,
+  execution,
   recommendations,
   index,
   usedLiteralFallback,
@@ -5157,6 +5212,7 @@ const RecommendationsView = ({
   readonly intent: string
   readonly model: string
   readonly effort: GuideEffort
+  readonly execution: GuideMatchExecution | undefined
   readonly recommendations: ReadonlyArray<GuideRecommendation>
   readonly index: number
   readonly usedLiteralFallback: boolean
@@ -5173,8 +5229,8 @@ const RecommendationsView = ({
       <Text dimColor>
         {goal === undefined
           ? `Prompt: ${metrics.characters.toLocaleString("en")} chars · ${metrics.words.toLocaleString("en")} words`
-          : `Goal: ${goal.draft.criteria.length} approved criteria`} · Model:{" "}
-        {model} · Effort: {effort}
+          : `Goal: ${goal.draft.criteria.length} approved criteria`} ·{" "}
+        {usedLiteralFallback ? "Literal matching" : matchExecutionLabel(execution, model, effort)}
       </Text>
       {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : null}
       <PinnedLenses lenses={pinnedLenses} />
@@ -5893,10 +5949,24 @@ const WorktreeCollisionView = ({ inspection }: { readonly inspection: WorktreeCo
 
 type GuideUiDispatch = React.Dispatch<GuideUiAction>
 
+const refreshCatalogAfterMatchFailure = async (
+  props: GuideUiProps,
+  signal: AbortSignal,
+): Promise<boolean> => {
+  if (props.resolveCatalog === undefined) return true
+  try {
+    await props.resolveCatalog(signal)
+    return true
+  } catch {
+    return !signal.aborted
+  }
+}
+
 const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   useEffect(() => {
     if (state.stage !== GuideUiStage.Matching) return undefined
     let cancelled = false
+    const controller = new AbortController()
     void (async () => {
       try {
         const response = await runGuideMatchingStep(
@@ -5912,16 +5982,33 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
             if (!cancelled) dispatch({ type: GuideUiActionType.MatchProgress, phase })
           },
           props.cache,
+          {
+            ...(props.matcher === undefined ? {} : { matcher: props.matcher }),
+            ...(props.resolveCatalog === undefined ? {} : { resolveCatalog: props.resolveCatalog }),
+            signal: controller.signal,
+            onAttempt: (attempt) => {
+              if (!cancelled) dispatch({ type: GuideUiActionType.MatchAttempt, ...attempt })
+            },
+          },
         )
-        if (!cancelled) dispatch({ type: GuideUiActionType.MatchSucceeded, recommendations: response.recommendations })
+        if (!cancelled) {
+          dispatch({
+            type: GuideUiActionType.MatchSucceeded,
+            recommendations: response.recommendations,
+            ...(response.execution === undefined ? {} : { execution: response.execution }),
+          })
+        }
       } catch (error) {
+        if (cancelled) return
+        if (!(await refreshCatalogAfterMatchFailure(props, controller.signal)) || cancelled) return
         if (!cancelled) dispatch({ type: GuideUiActionType.MatchFailed, message: describeGuideUiError(error) })
       }
     })()
     return () => {
       cancelled = true
+      controller.abort()
     }
-  }, [state.stage, state.intent, state.goal?.fingerprint, state.goalRevision])
+  }, [state.stage, state.intent, state.goal?.fingerprint, state.goalRevision, props.matcher, props.resolveCatalog])
 }
 
 const checkedGuideEntryCwd = (state: GuideUiState, cwd: string): string => {
@@ -7134,11 +7221,13 @@ const matchingProgress = ({ props, state }: GuideRenderContext): React.ReactElem
     intent={state.intent ?? ""}
     model={props.routing.match.model}
     effort={props.routing.match.effort}
+    execution={state.matchExecution}
+    profileCount={state.matchProfileCount}
   />
 )
 
 const renderRecommendations: GuideStageRenderer = (context) => {
-  const { recommendations, recommendationIndex, usedLiteralFallback } = guideProfileSelection(context.state)
+  const { recommendations, recommendationIndex, usedLiteralFallback, execution } = guideProfileSelection(context.state)
   const goal = guideProfileGoal(context.state)
   if (recommendations === undefined) return matchingProgress(context)
   if (recommendations.length === 0) {
@@ -7152,6 +7241,7 @@ const renderRecommendations: GuideStageRenderer = (context) => {
       intent={guideProfileIntent(context.state) ?? ""}
       model={context.props.routing.match.model}
       effort={context.props.routing.match.effort}
+      execution={execution}
       recommendations={recommendations}
       index={recommendationIndex}
       usedLiteralFallback={usedLiteralFallback}
@@ -7491,9 +7581,27 @@ const inlineErrorStages: ReadonlySet<GuideUiStage> = new Set([
  */
 export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   const { exit } = useApp()
+  const [catalog, setCatalog] = useState(props.catalog)
+  const resolveCatalog = useCallback(
+    async (signal?: AbortSignal): Promise<CombinedGuideCatalog> => {
+      const refreshed = props.resolveCatalog === undefined ? props.catalog : await props.resolveCatalog(signal)
+      signal?.throwIfAborted()
+      setCatalog(refreshed)
+      return refreshed
+    },
+    [props.catalog, props.resolveCatalog],
+  )
+  const effectiveProps = useMemo<GuideUiProps>(
+    () => ({
+      ...props,
+      catalog,
+      ...(props.resolveCatalog === undefined ? {} : { resolveCatalog }),
+    }),
+    [catalog, props, props.resolveCatalog, resolveCatalog],
+  )
   const [state, dispatch] = useReducer(guideUiReducer, props.initialIntent, createInitialGuideUiState)
-  const herdrContext = getHerdrContext(props.herdrEnv)
-  const herdrEnabled = herdrContext !== null && props.herdrAvailabilityProbe
+  const herdrContext = getHerdrContext(effectiveProps.herdrEnv)
+  const herdrEnabled = herdrContext !== null && effectiveProps.herdrAvailabilityProbe
   const { columns } = useWindowSize()
   const inlineError = inlineErrorStages.has(state.stage) ? state.errorMessage : undefined
   const inlineErrorRows = inlineError === undefined ? 0 : wrapGuideText(`Error: ${inlineError}`, Math.max(1, columns - 2)).length
@@ -7504,19 +7612,19 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   // The main screen owns only its own async work; each fork's runs in its own
   // ForkWorker below, so parking a fork never abandons the call it started.
   const mainState = state.activeForkId === undefined ? state : { ...state, ...mainForkSlice }
-  const submitGoal = useGuideAugmentEffect(props, mainState, dispatch)
-  useGuideMatchEffect(props, mainState, dispatch)
-  useGuideTargetEffect(props, mainState, dispatch)
-  useGuideGenerationEffect(props, mainState, dispatch)
-  useGuideRefinementEffect(props, mainState, dispatch)
-  useGuideReadinessEffect(props, mainState, dispatch)
-  useFirstmateReadinessEffect(props, mainState, dispatch)
-  useGuideInstanceEffect(props, mainState, dispatch)
-  useGuideWorktreeEffect(props, mainState, dispatch)
-  useGuideLaunchEffect(props, mainState, dispatch, complete)
+  const submitGoal = useGuideAugmentEffect(effectiveProps, mainState, dispatch)
+  useGuideMatchEffect(effectiveProps, mainState, dispatch)
+  useGuideTargetEffect(effectiveProps, mainState, dispatch)
+  useGuideGenerationEffect(effectiveProps, mainState, dispatch)
+  useGuideRefinementEffect(effectiveProps, mainState, dispatch)
+  useGuideReadinessEffect(effectiveProps, mainState, dispatch)
+  useFirstmateReadinessEffect(effectiveProps, mainState, dispatch)
+  useGuideInstanceEffect(effectiveProps, mainState, dispatch)
+  useGuideWorktreeEffect(effectiveProps, mainState, dispatch)
+  useGuideLaunchEffect(effectiveProps, mainState, dispatch, complete)
 
   const inputContext: GuideInputContext = {
-    props,
+    props: effectiveProps,
     state,
     dispatch,
     complete,
@@ -7536,7 +7644,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       {state.forks.map((fork) => {
         const slice = forkState(state, fork.id)
         return slice === undefined ? null : (
-          <ForkWorker key={fork.id} props={props} state={slice} forkId={fork.id} dispatch={dispatch} />
+          <ForkWorker key={fork.id} props={effectiveProps} state={slice} forkId={fork.id} dispatch={dispatch} />
         )
       })}
       {showsAugmentStatusBar(state) && state.augmentJob !== undefined ? (
@@ -7548,7 +7656,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       >
         {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
         {inlineError === undefined ? null : <Box paddingX={1}><Text color="yellow">Error: {inlineError}</Text></Box>}
-        {stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext, dispatch, submitGoal })}
+        {stageRenderer[state.stage]({ props: effectiveProps, state, herdrEnabled, herdrContext, dispatch, submitGoal })}
       </ChromeRowsContext.Provider>
     </Box>
   )

@@ -73,9 +73,14 @@ import {
   validateGuideMatchResult,
   validateGuideOptimizeResult,
   type GuideGenerateCandidate,
+  type GuideMatchAdapter,
   type GuideMatchCandidate,
+  type GuideMatchExecution,
+  type GuideMatchInput,
+  type GuideMatchResult,
   type GuideProvider,
 } from "./guide-provider.ts"
+export type { GuideMatchAdapter, GuideMatchExecution } from "./guide-provider.ts"
 import { loadSelectedGuide } from "./guide-selected.ts"
 import { exactKeys, fail, GuideValidationError, literal, record, text } from "./guide-text.ts"
 import {
@@ -657,6 +662,7 @@ export interface GuideMatchResponse {
   readonly model: string
   readonly effort: GuideEffort
   readonly recommendations: ReadonlyArray<GuideRecommendation>
+  readonly execution?: GuideMatchExecution
 }
 
 export interface GuideMatchRequest {
@@ -664,6 +670,111 @@ export interface GuideMatchRequest {
   readonly model: string
   readonly effort: GuideEffort
   readonly goal?: PreparedGuideGoal
+}
+
+export interface GuideMatchOptions {
+  readonly matcher?: GuideMatchAdapter
+  /** Refreshes runtime capability fields after matching and before enrichment. */
+  readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CombinedGuideCatalog>
+  readonly signal?: AbortSignal
+  readonly onAttempt?: (attempt: { readonly execution: GuideMatchExecution; readonly profileCount: number }) => void
+}
+
+interface PreparedMatchInputs {
+  readonly goalFraming?: ReadonlyArray<{
+    readonly ref: string
+    readonly controller: ProfileGuideGoalController
+    readonly workflows: ReadonlyArray<ProfileGuideWorkflow>
+  }>
+  readonly legacy: () => GuideMatchInput
+  readonly matcher: GuideMatchInput
+}
+
+const prepareMatchInputs = (catalog: CombinedGuideCatalog, request: GuideMatchRequest): PreparedMatchInputs => {
+  const goalCatalog = request.goal === undefined ? undefined : goalMatchCatalog(catalog, request.intent, request.goal)
+  const rankingIntent = request.goal === undefined ? request.intent : goalMatchIntent(request.goal)
+  const completeEntries = goalCatalog?.entries ?? guideMatchCatalogEntries(catalog)
+  const legacy = (): GuideMatchInput => assertGuideMatchInput({
+    intent: request.intent,
+    entries: prefilterMatchEntries(completeEntries, rankingIntent, request.goal === undefined ? undefined : request.intent),
+    ...(request.goal === undefined ? {} : { goal: request.goal }),
+    ...(goalCatalog === undefined || goalCatalog.explicitProfileRefs.length === 0
+      ? {}
+      : { preferredProfileRefs: goalCatalog.explicitProfileRefs }),
+  })
+  const preferred = request.goal === undefined
+    ? scoreGuideMatchEntries(completeEntries, request.intent).filter(({ explicitIdentity }) => explicitIdentity).map(({ entry }) => entry.ref)
+    : goalCatalog?.explicitProfileRefs ?? []
+  return {
+    legacy,
+    matcher: assertGuideMatchInput({
+      intent: request.intent,
+      entries: completeEntries,
+      ...(request.goal === undefined ? {} : { goal: request.goal }),
+      ...(preferred.length === 0 ? {} : { preferredProfileRefs: preferred }),
+    }),
+    ...(goalCatalog === undefined ? {} : { goalFraming: goalCatalog.framing }),
+  }
+}
+
+const matchValidator = (input: GuideMatchInput, goal: PreparedGuideGoal | undefined) => (value: unknown): GuideMatchResult => {
+  const workflowIndex = new Map(input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]))
+  try {
+    return validateGuideMatchResult(value, workflowIndex, goal, input.preferredProfileRefs)
+  } catch (error) {
+    if (!(error instanceof GuideValidationError)) throw error
+    throw new GuideServiceError(error.message, { cause: error })
+  }
+}
+
+const aborted = (signal: AbortSignal | undefined): void => {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("The operation was aborted", "AbortError")
+}
+
+const cancellationError = (error: unknown, signal: AbortSignal | undefined): boolean =>
+  signal?.aborted === true || (error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError"))
+
+const executeMatch = async (
+  provider: GuideProvider,
+  request: GuideMatchRequest,
+  inputs: PreparedMatchInputs,
+  cache: GuideArtifactCache | undefined,
+  options: GuideMatchOptions | undefined,
+): Promise<{ result: GuideMatchResult; execution: GuideMatchExecution }> => {
+  const signal = options?.signal
+  const attempt = async (
+    input: GuideMatchInput,
+    execution: GuideMatchExecution,
+    revision: string,
+    match: () => Promise<GuideMatchResult>,
+  ) => {
+    aborted(signal)
+    options?.onAttempt?.({ execution, profileCount: input.entries.length })
+    const validate = matchValidator(input, request.goal)
+    const produce = async () => {
+      aborted(signal)
+      const result = await match()
+      aborted(signal)
+      return validate(result)
+    }
+    const result = await (cache === undefined ? produce() : cache.match({
+      ...input, execution, matcherRevision: revision,
+      ...(inputs.goalFraming === undefined ? {} : { goalFraming: inputs.goalFraming }),
+    }, produce))
+    aborted(signal)
+    return { result: validate(result), execution }
+  }
+  aborted(signal)
+  const matcher = options?.matcher
+  if (matcher !== undefined) {
+    try {
+      return await attempt(inputs.matcher, matcher.execution, matcher.revision, () => matcher.match(inputs.matcher, signal))
+    } catch (error) {
+      if (cancellationError(error, signal)) throw error
+    }
+  }
+  const legacy = inputs.legacy()
+  return attempt(legacy, { backend: "copilot", model: request.model, effort: request.effort }, "copilot-v1", () => provider.match(legacy))
 }
 
 const enrichRecommendation = (
@@ -714,43 +825,21 @@ export const runGuideMatch = async (
   catalog: CombinedGuideCatalog,
   request: GuideMatchRequest,
   cache?: GuideArtifactCache,
+  options?: GuideMatchOptions,
 ): Promise<GuideMatchResponse> => {
-  const goalCatalog = request.goal === undefined ? undefined : goalMatchCatalog(catalog, request.intent, request.goal)
-  const rankingIntent = request.goal === undefined ? request.intent : goalMatchIntent(request.goal)
-  const entries = prefilterMatchEntries(
-    goalCatalog?.entries ?? guideMatchCatalogEntries(catalog),
-    rankingIntent,
-    request.goal === undefined ? undefined : request.intent,
-  )
-  const input = assertGuideMatchInput({
-    intent: request.intent,
-    entries,
-    ...(request.goal === undefined ? {} : { goal: request.goal }),
-    ...(goalCatalog === undefined || goalCatalog.explicitProfileRefs.length === 0
-      ? {}
-      : { preferredProfileRefs: goalCatalog.explicitProfileRefs }),
-  })
-  const workflowIndex = new Map(entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]))
-  const validate = (value: unknown) => {
-    let result
-    try {
-      result = validateGuideMatchResult(value, workflowIndex, request.goal, input.preferredProfileRefs)
-    } catch (error) {
-      if (!(error instanceof GuideValidationError)) throw error
-      throw new GuideServiceError(error.message, { cause: error })
-    }
-    return result
-  }
-  const produce = async () => validate(await provider.match(input))
-  const result = validate(await (cache === undefined
-    ? produce()
-    : cache.match(
-        { ...input, intent: request.intent, ...(goalCatalog === undefined ? {} : { goalFraming: goalCatalog.framing }) },
-        produce,
-      )))
+  const inputs = prepareMatchInputs(catalog, request)
+  const executed = await executeMatch(provider, request, inputs, cache, options)
+  const { result, execution: actualExecution } = executed
+  aborted(options?.signal)
+  const effectiveCatalog = options?.resolveCatalog === undefined
+    ? catalog
+    : await options.resolveCatalog(options.signal)
+  aborted(options?.signal)
   const recommendations = assertRecommendationSet(
-    prioritizeExplicitFirstmate(entries, request.intent, result.candidates)
-      .map((candidate) => enrichRecommendation(catalog, candidate, request.goal)),
+    (actualExecution.backend === "jev"
+      ? result.candidates
+      : prioritizeExplicitFirstmate(inputs.matcher.entries, request.intent, result.candidates))
+      .map((candidate) => enrichRecommendation(effectiveCatalog, candidate, request.goal)),
     "match recommendations",
     request.goal,
   )
@@ -760,6 +849,7 @@ export const runGuideMatch = async (
     intent: request.intent,
     model: request.model,
     effort: request.effort,
+    ...(actualExecution === undefined ? {} : { execution: actualExecution }),
     recommendations,
   }
 }

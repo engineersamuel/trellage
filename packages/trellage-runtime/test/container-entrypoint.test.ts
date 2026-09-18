@@ -42,7 +42,7 @@ function fixture(includeRuntime: boolean) {
   }
   const bun = write(
     "bin/bun",
-    '#!/bin/sh\nif [ "$1" = --version ]; then printf "1.3.3\\n"; exit; fi\nprintf "%s\\0" "$@" >>"$BUN_CALLS"\nprintf "\\0" >>"$BUN_CALLS"\n',
+    '#!/bin/sh\nif [ "$1" = --version ]; then printf "1.4.2\\n"; exit; fi\nprintf "%s\\0" "$@" >>"$BUN_CALLS"\nprintf "\\0" >>"$BUN_CALLS"\n',
     0o755,
   )
   write("bin/git", "#!/bin/sh\nexit 0\n", 0o755)

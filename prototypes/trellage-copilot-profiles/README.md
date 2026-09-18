@@ -84,6 +84,12 @@ version-gated `headless` object. Exact prompt/text-json, `--no-ask-user`
 hard-deny classification, and model-override publication are advertised only
 for GitHub Copilot CLI `1.0.81`. Other versions stay discoverable, but they
 fall back to conservative `headless` values instead of inferred support.
+The installed Copilot version is cached across invocations and rechecked when
+the executable or its package installation changes. `cpx list --json
+--cached-capabilities` reads only that cache and reports conservative capabilities
+on a miss. `trx guide` uses this mode at startup, then resolves current
+capabilities after matching and before preparing launch commands.
+
 These are catalog declarations, not proof that profile setup or installed
 plugin state is healthy. Use `cpx doctor PROFILE` for that validation.
 `cpx inventory PROFILE --json` is read-only. It reports readiness, installed

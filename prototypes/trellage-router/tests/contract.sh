@@ -348,6 +348,9 @@ runtime="$(cd -P "$(dirname "$0")/.." && pwd -P)"
     fi
   fi
   if [[ "${1-} ${2-}" == 'list --json' ]]; then
+  if [[ -n "${TRX_CATALOG_ARGS_LOG-}" ]]; then
+    printf '%s:%s\n' "$(basename "$0")" "$*" >>"$TRX_CATALOG_ARGS_LOG"
+  fi
   if [[ -n "${TRX_DISCOVERY_LOG-}" ]]; then
     printf '%s\n' "$(basename "$0")" >>"$TRX_DISCOVERY_LOG"
   fi
@@ -1072,9 +1075,13 @@ cat <<'JSON'
 JSON
 EOF
 chmod 0755 "$fixture_bin/trellage"
-"$fixture_bin/trx" guide --intent 'fixture intent' --json \
+TRX_CATALOG_ARGS_LOG="$fixture_root/guide-catalog-args.log" "$fixture_bin/trx" guide --intent 'fixture intent' --json \
   >"$fixture_root/guide-catalog.json" \
   || fail 'guide mode did not aggregate native and Sandbox catalogs'
+grep -Fxq 'cpx:list --json --cached-capabilities' "$fixture_root/guide-catalog-args.log" \
+  || fail 'guide startup did not defer Copilot capability probing'
+[[ "$(grep -c -- --cached-capabilities "$fixture_root/guide-catalog-args.log")" == 1 ]] \
+  || fail 'guide used the Copilot-only catalog flag for another launcher'
 jq -e \
   --arg guideRoot "$runtime_parent/trx/share/profile-guides" \
   --arg sandboxCommandPath "$fixture_bin/trellage" \
