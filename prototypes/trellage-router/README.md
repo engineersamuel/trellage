@@ -73,6 +73,11 @@ trx skills update
 From the repository root, run the current worktree router without replacing the
 installed `trx`:
 
+Source-mode launches prepare missing or stale worktree dependencies automatically
+with the pinned Bun runtime and frozen lockfile. Ready worktrees do not reinstall
+dependencies. Preparation errors and unsafe paths stop the launch. Installed
+`trx` runtimes still require an explicit reinstall when their contents change.
+
 ```sh
 mise run trx
 mise run trx -- --profile agency
