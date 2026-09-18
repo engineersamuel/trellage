@@ -1,0 +1,14 @@
+--- a/.agents/skills/updatefirstmate/SKILL.md
++++ b/.agents/skills/updatefirstmate/SKILL.md
+@@ -10,6 +10,11 @@
+ ---
+ 
+ # updatefirstmate
++
++**Trellage `fmx` runtimes:** when this home or code root carries a `.fmx-managed`
++marker, the runtime is pinned to an exact commit and this skill is disabled.
++`bin/fm-update.sh` refuses with that diagnostic. Do not bypass it:
++tell the user to run `fmx update <profile>` on the host and relaunch.
+ 
+ Self-update firstmate in place.
+ Firstmate is its own repo, behind the same no-mistakes gate as any project, so new tracked material (`AGENTS.md`, `bin/`, `.agents/skills/`, and public `skills/`) reaches `main` and then sits there until each running firstmate pulls it.

@@ -20,11 +20,14 @@
  */
 import type {
   ProfileGuideGoalController,
+  FirstmateOrchestrationV1,
+  GuideProjectTargetV1,
   ProfileGuidePrerequisite,
   ProfileGuideV1,
   ProfileGuideWorkflow,
 } from "@trellage/guide-core"
-import { profileGuideIdentityKey } from "@trellage/guide-core"
+import { parseGuideProjectTargetV1, profileGuideIdentityKey } from "@trellage/guide-core"
+import { assertGuidePromptDeliveryContext, completeSinglePromptArtifact, prepareGuidePrompt, validateGuideOriginalIntent, type GuideTaskContext } from "./guide-context.ts"
 import {
   compactProfileGuide,
   guideCatalogEntries,
@@ -88,6 +91,7 @@ import {
   workflowHasAuthoredCommandSuffix,
   workflowOptimizeFixedFrame,
   workflowPromptFrame,
+  validateFinalGuideCandidate,
 } from "./guide-workflow-prompt.ts"
 
 // ---------------------------------------------------------------------------
@@ -175,7 +179,7 @@ const modelIdentifierMaximumLength = 128
 const modelIdentifierPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/u
 
 export const validateGuideIntent = (value: unknown, path: string): string =>
-  text(value, path, guideIntentMaximumLength, { multiline: true })
+  text(value, path, guideIntentMaximumLength, { multiline: true, preserve: true })
 
 const validateProfileRef = (value: unknown, path: string): string => text(value, path, profileRefMaximumLength)
 
@@ -422,6 +426,8 @@ export interface GuideServiceRequest {
   readonly effort?: GuideEffort
   readonly goal?: PreparedGuideGoal
   readonly workflowId?: string
+  readonly projectTarget?: GuideProjectTargetV1 | null
+  readonly originalIntent?: string
 }
 
 const parseRequestedGuideGoal = (value: unknown, intent: string): PreparedGuideGoal | undefined => {
@@ -431,8 +437,25 @@ const parseRequestedGuideGoal = (value: unknown, intent: string): PreparedGuideG
   return prepareGuideGoal({ draft: validateGuideGoalDraft(draft), prompt: intent })
 }
 
-/** Structured goal fields are explicit caller input, not inferred Goal-me approval. */
-export const parseGuideServiceRequestJson = (source: string, defaultProfileRef?: string): GuideServiceRequest => {
+const parseGuideRequestContext = (
+  fields: Record<string, unknown>,
+  profile: string | undefined,
+): Pick<GuideServiceRequest, "workflowId" | "projectTarget" | "originalIntent"> => {
+  const workflowId = fields.workflowId === undefined ? undefined : text(fields.workflowId, "request.workflowId", 128)
+  if (workflowId !== undefined && profile === undefined) fail("request.workflowId", "requires a selected profile")
+  const projectTarget = fields.projectTarget === undefined
+    ? undefined
+    : fields.projectTarget === null ? null : parseGuideProjectTargetV1(fields.projectTarget)
+  const originalIntent = fields.originalIntent === undefined ? undefined : validateGuideOriginalIntent(fields.originalIntent)
+  return {
+    ...(workflowId === undefined ? {} : { workflowId }),
+    ...(projectTarget === undefined ? {} : { projectTarget }),
+    ...(originalIntent === undefined ? {} : { originalIntent }),
+  }
+}
+
+/** Parses the versioned match/generation request without granting launch authority. */
+export const parseGuideServiceRequestJson = (source: string, profileOverride?: string): GuideServiceRequest => {
   let payload: unknown
   try {
     payload = JSON.parse(source)
@@ -440,11 +463,13 @@ export const parseGuideServiceRequestJson = (source: string, defaultProfileRef?:
     return fail("request", "must contain valid JSON")
   }
   const fields = record(payload, "request")
-  exactKeys(fields, "request", ["schemaVersion", "intent"], ["profile", "model", "effort", "goal", "workflowId"])
+  exactKeys(fields, "request", ["schemaVersion", "intent"], [
+    "goal", "profile", "model", "effort", "workflowId", "projectTarget", "originalIntent",
+  ])
   if (fields.schemaVersion !== 1) fail("request.schemaVersion", "must equal 1")
   const intent = validateGuideIntent(fields.intent, "request.intent")
-  const profileValue = fields.profile === undefined ? defaultProfileRef : fields.profile
-  const profile = profileValue === undefined ? undefined : validateProfileRef(profileValue, "request.profile")
+  const stdinProfile = fields.profile === undefined ? undefined : validateProfileRef(fields.profile, "request.profile")
+  const profile = profileOverride === undefined ? stdinProfile : validateProfileRef(profileOverride, "--profile")
   const model = fields.model === undefined ? undefined : validateModelId(fields.model, "request.model")
   const effort = fields.effort === undefined ? undefined : parseGuideEffort(fields.effort, "request.effort")
   const workflowId = fields.workflowId === undefined ? undefined : text(fields.workflowId, "request.workflowId", 128)
@@ -457,7 +482,7 @@ export const parseGuideServiceRequestJson = (source: string, defaultProfileRef?:
     ...(model === undefined ? {} : { model }),
     ...(effort === undefined ? {} : { effort }),
     ...(goal === undefined ? {} : { goal }),
-    ...(workflowId === undefined ? {} : { workflowId }),
+    ...parseGuideRequestContext(fields, profile),
   }
 }
 
@@ -622,6 +647,7 @@ export interface GuideRecommendation {
   readonly headless: HeadlessCapabilitiesV1
   readonly herdrCompatibility: HerdrCompatibilityInfo
   readonly goalExecution?: GuideGoalPolicySummary
+  readonly orchestration?: FirstmateOrchestrationV1
 }
 
 export interface GuideMatchResponse {
@@ -673,6 +699,7 @@ const enrichRecommendation = (
     headless: entry.headless,
     herdrCompatibility: entry.herdrCompatibility,
     ...(execution === undefined ? {} : { goalExecution: goalPolicySummary(execution.controller) }),
+    ...(native && entry.orchestration !== undefined ? { orchestration: entry.orchestration } : {}),
   }
 }
 
@@ -722,7 +749,8 @@ export const runGuideMatch = async (
         produce,
       )))
   const recommendations = assertRecommendationSet(
-    result.candidates.map((candidate) => enrichRecommendation(catalog, candidate, request.goal)),
+    prioritizeExplicitFirstmate(entries, request.intent, result.candidates)
+      .map((candidate) => enrichRecommendation(catalog, candidate, request.goal)),
     "match recommendations",
     request.goal,
   )
@@ -868,6 +896,7 @@ export const selectedProfileFromCatalogRef = (
       headlessPrompt: entry.headless.prompt,
       ...(agent === undefined ? {} : { agent }),
       ...(entry.guide.goalExecution === undefined ? {} : { goalExecutionPolicy: entry.guide.goalExecution }),
+      ...(entry.orchestration === undefined ? {} : { orchestration: entry.orchestration }),
     })
   }
   if (agent !== undefined && entry.harness.kind !== "copilot") {
@@ -901,6 +930,7 @@ export interface GuideSelectedProfileSummary {
   readonly headless: HeadlessCapabilitiesV1
   readonly herdrCompatibility: HerdrCompatibilityInfo
   readonly goalExecution?: GuideGoalPolicySummary
+  readonly orchestration?: FirstmateOrchestrationV1
 }
 
 export interface GuidePromptCandidate {
@@ -919,9 +949,11 @@ export interface GuideGenerationResponse {
   readonly effort: GuideEffort
   readonly profile: GuideSelectedProfileSummary
   readonly candidates: readonly [GuidePromptCandidate, GuidePromptCandidate, GuidePromptCandidate]
+  readonly originalIntent?: string
+  readonly projectTarget?: GuideProjectTargetV1 | null
 }
 
-export interface GuideGenerateRequest extends GuideMatchRequest {
+export interface GuideGenerateRequest extends GuideMatchRequest, GuideTaskContext {
   readonly profileRef: string
   readonly workflowId?: string
 }
@@ -1039,6 +1071,7 @@ export const applyRequiredProfilePromptTemplate = (
   if (!requiredProfilePromptTemplateRefs.has(profileRef)) return candidate
   const workflow = guide.workflows.find(({ id }) => id === workflowId)
   if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`)
+  if (workflow.frame === "fixed") return renderWorkflowBodyCandidate(workflow, candidate)
   if (isCompleteWorkflowPrompt(workflow.promptTemplate, candidate.prompt)) return candidate
   const promptBody = removePartialTemplateBoundary(
     workflow.promptTemplate,
@@ -1050,12 +1083,61 @@ export const applyRequiredProfilePromptTemplate = (
   }
 }
 
+const prepareCatalogPrompt = (
+  entry: NativeGuideCatalogEntry | SandboxGuideCatalogEntry,
+  guide: ProfileGuideV1,
+  workflowId: string,
+  request: GuideGenerateRequest,
+) => {
+  const orchestration = isNativeEntry(entry) ? entry.orchestration : undefined
+  if (request.orchestration !== undefined && orchestration === undefined) {
+    throw new GuideServiceError("Orchestration controls must come from the selected profile catalog.")
+  }
+  const { orchestration: _requestedControls, ...input } = request
+  const prepared = prepareGuidePrompt(guide, workflowId, request.profileRef, request.intent, {
+    ...input,
+    ...(orchestration === undefined ? {} : { orchestration }),
+  })
+  assertGuidePromptDeliveryContext(prepared.context)
+  return prepared
+}
+
 /**
  * Generates prompts for one exact profile and preserves an explicit workflow
  * selection. Otherwise selects the best eligible workflow by token overlap.
  * Loads only that profile's full guide. Goal mode delegates approach drafting
  * and protected composition to the same service used by the UI.
  */
+const generationProfileSummary = (
+  entry: NonNullable<ReturnType<typeof findFullCatalogEntry>>,
+  request: GuideGenerateRequest,
+  workflowId: string,
+  workflow: GuideSelectedProfileSummary["workflow"],
+  execution: ReturnType<typeof resolveGuideGoalExecution> | undefined,
+): GuideSelectedProfileSummary => {
+  const native = isNativeEntry(entry)
+  return {
+    profileRef: request.profileRef,
+    workflowId,
+    surface: native ? "native" : "sandbox",
+    name: entry.name,
+    ...(native ? { launcher: entry.launcher } : { harness: entry.harness.kind }),
+    description: entry.description,
+    sandbox: entry.sandbox,
+    workflow,
+    prerequisites: entry.guide.prerequisites,
+    headless: entry.headless,
+    herdrCompatibility: entry.herdrCompatibility,
+    ...(execution === undefined ? {} : { goalExecution: goalPolicySummary(execution.controller) }),
+    ...(native && entry.orchestration !== undefined ? { orchestration: entry.orchestration } : {}),
+  }
+}
+
+const completeGeneratedCandidate = (
+  workflow: ProfileGuideWorkflow, candidate: GuideGenerateCandidate, context: GuideTaskContext,
+): GuideGenerateCandidate =>
+  candidate.goalExecution === undefined ? completeSinglePromptArtifact(workflow, candidate, context) : candidate
+
 export const runGuideGenerate = async (
   provider: GuideProvider,
   catalog: CombinedGuideCatalog,
@@ -1074,26 +1156,13 @@ export const runGuideGenerate = async (
   if (compactWorkflow === undefined) {
     throw new GuideServiceError(`Selected workflow is unknown for ${request.profileRef}: ${workflowId}`)
   }
-  const authoredWorkflow = findGuideWorkflow(loaded.guide, workflowId)
   const execution = request.goal === undefined
     ? undefined
     : resolveGuideGoalExecution(request.goal, loaded.guide, workflowId)
 
-  const native = isNativeEntry(entry)
-  const profile: GuideSelectedProfileSummary = {
-    profileRef: request.profileRef,
-    workflowId,
-    surface: native ? "native" : "sandbox",
-    name: entry.name,
-    ...(native ? { launcher: entry.launcher } : { harness: entry.harness.kind }),
-    description: entry.description,
-    sandbox: entry.sandbox,
-    workflow: compactWorkflow,
-    prerequisites: entry.guide.prerequisites,
-    headless: entry.headless,
-    herdrCompatibility: entry.herdrCompatibility,
-    ...(execution === undefined ? {} : { goalExecution: goalPolicySummary(execution.controller) }),
-  }
+  const prepared = prepareCatalogPrompt(entry, loaded.guide, workflowId, request)
+  const authoredWorkflow = prepared.workflow
+  const profile = generationProfileSummary(entry, request, workflowId, compactWorkflow, execution)
 
   const fixedFrame = workflowOptimizeFixedFrame(authoredWorkflow)
   const targetTool = isNativeEntry(entry) ? entry.harness : entry.harness.kind
@@ -1102,15 +1171,17 @@ export const runGuideGenerate = async (
       intent: request.intent,
       profileRef: request.profileRef,
       workflowId,
-      guide: loaded.guide,
+      guide: prepared.guide,
       guideBody: loaded.body,
+      ...prepared.context,
+      bodyBudget: prepared.bodyBudget,
     }))
     let bodyCandidates: readonly [GuideGenerateCandidate, GuideGenerateCandidate, GuideGenerateCandidate]
     try {
       bodyCandidates = requireDistinctGuideCandidatePrompts(
         assertTriple(
           generated.candidates.map((candidate) =>
-            resolveGeneratedWorkflowBodyCandidate(loaded.guide, authoredWorkflow, request.intent, candidate),
+            resolveGeneratedWorkflowBodyCandidate(prepared.guide, authoredWorkflow, request.intent, candidate),
           ),
           "workflow body candidates",
         ),
@@ -1126,6 +1197,8 @@ export const runGuideGenerate = async (
       targetTool,
       profileRef: request.profileRef,
       candidates: bodyCandidates,
+      ...prepared.context,
+      bodyBudget: prepared.bodyBudget,
       ...(fixedFrame === undefined ? {} : { fixedFrame }),
     }), 3)
     const [bodyFirst, bodySecond, bodyThird] = bodyCandidates
@@ -1134,9 +1207,9 @@ export const runGuideGenerate = async (
       "optimized prompt candidates",
     )
     const safeBodyCandidates = [
-      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyFirst, optimizedFirst),
-      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodySecond, optimizedSecond),
-      resolveWorkflowBodyCandidate(loaded.guide, authoredWorkflow, bodyThird, optimizedThird),
+      resolveWorkflowBodyCandidate(prepared.guide, authoredWorkflow, bodyFirst, optimizedFirst),
+      resolveWorkflowBodyCandidate(prepared.guide, authoredWorkflow, bodySecond, optimizedSecond),
+      resolveWorkflowBodyCandidate(prepared.guide, authoredWorkflow, bodyThird, optimizedThird),
     ] as const
     let renderedCandidates: readonly [GuideGenerateCandidate, GuideGenerateCandidate, GuideGenerateCandidate]
     try {
@@ -1150,9 +1223,9 @@ export const runGuideGenerate = async (
       )
       renderedCandidates = requireDistinctGuideCandidatePrompts(
         [
-          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[0]),
-          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[1]),
-          applyRequiredProfilePromptTemplate(request.profileRef, loaded.guide, workflowId, exactRenderedCandidates[2]),
+          validateFinalGuideCandidate(applyRequiredProfilePromptTemplate(request.profileRef, prepared.guide, workflowId, exactRenderedCandidates[0])),
+          validateFinalGuideCandidate(applyRequiredProfilePromptTemplate(request.profileRef, prepared.guide, workflowId, exactRenderedCandidates[1])),
+          validateFinalGuideCandidate(applyRequiredProfilePromptTemplate(request.profileRef, prepared.guide, workflowId, exactRenderedCandidates[2])),
         ],
         GuideCandidatePromptStage.FinalRendering,
       )
@@ -1162,12 +1235,16 @@ export const runGuideGenerate = async (
       }
       throw cause
     }
-    return { candidates: renderedCandidates }
+    return {
+      candidates: requireDistinctGuideCandidatePrompts(
+        assertTriple(renderedCandidates.map((candidate) =>
+          completeSinglePromptArtifact(authoredWorkflow, candidate, prepared.context)), "complete delivery candidates"),
+        GuideCandidatePromptStage.FinalRendering,
+      ),
+    }
   }
   const generated = await (request.goal === undefined
-    ? cache === undefined
-      ? produce()
-      : cache.generation(
+    ? (cache?.generation(
           {
             intent: request.intent,
             profileRef: request.profileRef,
@@ -1178,21 +1255,25 @@ export const runGuideGenerate = async (
             ...(fixedFrame === undefined ? {} : { fixedFrame }),
           },
           produce,
-        )
+        ) ?? produce())
     : runGuideGoalGeneration(
         provider,
         {
           intent: request.intent,
           profileRef: request.profileRef,
           workflowId,
-          guide: loaded.guide,
+          guide: prepared.guide,
           guideBody: loaded.body,
           targetTool,
           goal: request.goal,
+          ...prepared.context,
+          bodyBudget: prepared.bodyBudget,
+          ...(fixedFrame === undefined ? {} : { fixedFrame }),
         },
         cache === undefined ? {} : { cache },
       ))
-  const renderedCandidates = assertTriple(generated.candidates, "cached generation prompt candidates")
+  const renderedCandidates = assertTriple(generated.candidates.map((candidate) =>
+    completeGeneratedCandidate(authoredWorkflow, candidate, prepared.context)), "cached generation prompt candidates")
   const candidates = assertTriple(
     renderedCandidates.map(
       (candidate): GuidePromptCandidate => ({
@@ -1214,6 +1295,8 @@ export const runGuideGenerate = async (
     effort: request.effort,
     profile,
     candidates,
+    ...(request.originalIntent === undefined ? {} : { originalIntent: prepared.context.originalIntent }),
+    ...(request.projectTarget === undefined ? {} : { projectTarget: prepared.context.projectTarget }),
   }
 }
 
@@ -1230,6 +1313,61 @@ export interface LiteralGuideCandidate {
   readonly goalExecution?: GuideGoalPolicySummary
 }
 
+const profileIdentityAliases = (entry: GuideMatchCatalogEntry): ReadonlyArray<string> => {
+  if (entry.launcher === undefined) return [entry.ref, `sandbox/${entry.name}`, `sandbox ${entry.name}`]
+  const aliases = [entry.ref, `${entry.launcher}/${entry.name}`, `${entry.launcher} ${entry.name}`]
+  if (entry.launcher !== "fmx") return aliases
+  return [
+    ...aliases,
+    `firstmate ${entry.name}`,
+    ...(entry.name === "pstack-workers" ? ["fmx pstack-worker", "fmx/pstack-worker", "firstmate pstack-worker"] : []),
+  ]
+}
+
+const namesProfile = (entry: GuideMatchCatalogEntry, intent: string): boolean => {
+  const bounded = ` ${normalizeIdentityPhrase(intent)} `
+  return profileIdentityAliases(entry).some((alias) => bounded.includes(` ${normalizeIdentityPhrase(alias)} `))
+}
+
+const explicitlyChoosesProfile = (entry: GuideMatchCatalogEntry, intent: string): boolean => {
+  const statements = intent.match(/[^.!?;\n]+[.!?;]?/gu) ?? []
+  return statements.some((statement) => {
+    if (statement.trimEnd().endsWith("?")) return false
+    const normalized = ` ${normalizeIdentityPhrase(statement)} `
+    const label = /^(.+?):\s/u.exec(statement.trim())?.[1]
+    return profileIdentityAliases(entry).some((alias) => {
+      const name = normalizeIdentityPhrase(alias)
+      const index = normalized.indexOf(` ${name} `)
+      if (index < 0) return false
+      const prefix = normalized.slice(0, index).trim()
+      if (/^(?:please )?(?:use|run|choose|select|prefer|launch)(?: only| the)?$/u.test(prefix)) return true
+      if (/^i (?:want|need|would like)(?: to (?:use|run|choose|select))?$/u.test(prefix)) return true
+      return normalized.trim() === name || (label !== undefined && normalizeIdentityPhrase(label) === name)
+    })
+  })
+}
+
+export const prioritizeExplicitFirstmate = (
+  entries: ReadonlyArray<GuideMatchCatalogEntry>,
+  intent: string,
+  candidates: ReadonlyArray<GuideMatchCandidate>,
+): ReadonlyArray<GuideMatchCandidate> => {
+  const named = entries.filter((entry) => namesProfile(entry, intent))
+  const entry = named.length === 1 ? named[0] : undefined
+  if (entry?.launcher !== "fmx" || !explicitlyChoosesProfile(entry, intent)) return candidates
+  const existing = candidates.find(({ profileRef }) => profileRef === entry.ref)
+  const selected: GuideMatchCandidate = existing === undefined
+    ? {
+        profileRef: entry.ref,
+        workflowId: bestWorkflowForEntry(entry.guide.workflows, tokenize(intent)).id,
+        confidence: 1,
+        reason: "You explicitly selected this Firstmate profile.",
+        tradeoff: "Uses a persistent native fleet and supported Claude workers; it is not a sandbox.",
+      }
+    : { ...existing, confidence: 1, reason: "You explicitly selected this Firstmate profile." }
+  return [selected, ...candidates.filter(({ profileRef }) => profileRef !== entry.ref)].slice(0, candidates.length)
+}
+
 const profileTokenOverlapScore = (
   entry: GuideMatchCatalogEntry,
   intentTokens: ReadonlySet<string>,
@@ -1239,10 +1377,7 @@ const profileTokenOverlapScore = (
   readonly explicitIdentity: boolean
   readonly identitySignals: string
 } => {
-  const identityAliases =
-    entry.launcher === undefined
-      ? [entry.ref, `sandbox/${entry.name}`, `sandbox ${entry.name}`]
-      : [entry.ref, `${entry.launcher}/${entry.name}`, `${entry.launcher} ${entry.name}`]
+  const identityAliases = profileIdentityAliases(entry)
   const identitySignals = [...identityAliases, entry.name, entry.launcher ?? "", entry.harness ?? ""].join(" ")
   const boundedIntent = ` ${normalizedIntent} `
   const explicitIdentity = identityAliases.some((alias) => {
@@ -1330,6 +1465,20 @@ const pinnedGuideProfileRefs: ReadonlySet<string> = new Set([
 const crossCuttingGuideProfileRefs: ReadonlyArray<string> = ["native:cdx/pstack", "sandbox:headlong"]
 const guideMatchPrefilterTarget = 12
 const lowSignalMatchedTermMaximum = 2
+
+const hasFleetIntent = (intent: string): boolean =>
+  /\bfleet (?:status|backlog|supervision|workers|condition|watch)\b/iu.test(intent) ||
+  /\b(?:supervise|coordinate|orchestrate)\b.{0,100}\b(?:workers|ships|scouts)\b/iu.test(intent) ||
+  (/\bworktrees\b/iu.test(intent) && /\b(?:backlog|task graph|scouts|ships|supervision)\b/iu.test(intent))
+
+const retainFleetCandidates = (
+  entries: ReadonlyArray<GuideMatchCatalogEntry>,
+  intent: string,
+  retained: Set<string>,
+): void => {
+  if (!hasFleetIntent(intent)) return
+  for (const entry of entries) if (entry.launcher === "fmx") retained.add(entry.ref)
+}
 
 const goalMatchIntent = (goal: PreparedGuideGoal): string =>
   [goal.draft.artifact, goal.draft.task, ...goal.draft.criteria].join("\n")
@@ -1425,6 +1574,7 @@ const prefilterMatchEntries = (
     ? crossCuttingGuideProfileRefs.filter((profileRef) => entries.some(({ ref }) => ref === profileRef))
     : []
   const retainedProfileRefs = new Set([...explicitProfileRefs, ...crossCutting])
+  if (goalIdentityIntent === undefined) retainFleetCandidates(entries, intent, retainedProfileRefs)
   for (const item of ranked) {
     if (retainedProfileRefs.size >= guideMatchPrefilterTarget) break
     if (!pinnedGuideProfileRefs.has(item.entry.ref) || item.explicitIdentity) {
@@ -1505,6 +1655,34 @@ export const literalGuideMatch = (
  * This is a user-triggered fallback only; it is never called automatically by
  * `runGuideGenerate`.
  */
+const firstmateApproaches = (workflow: ProfileGuideWorkflow): ReadonlyArray<readonly [string, string]> => {
+  if (workflow.id === "review-fleet-status") return [
+    ["Blockers first", "Start with pending human decisions and blocked tasks. Relate each finding to current report evidence."],
+    ["Dependencies first", "Trace dependencies and identify which ready work can proceed independently. Report observations only."],
+    ["State reconciliation", "Compare task state, reports and live supervision. Separate stale observations from confirmed progress."],
+  ]
+  if (workflow.id === "watch-fleet-condition") return [
+    ["Single signal", "Choose the narrowest observable signal, a deadline and a notification destination. Notify only."],
+    ["Evidence conditions", "Specify the evidence that makes the condition true or false and how to report an inconclusive deadline. Notify only."],
+    ["Dependency observation", "Observe the named prerequisite without changing it. Notify the human or supervisor; do not attach dispatch or merge actions."],
+  ]
+  if (workflow.id === "maintain-project-memory") return [
+    ["Retrieve first", "Retrieve relevant ordinary Stow memory and identify the smallest explicitly authorized update."],
+    ["Resolve contradictions", "Compare existing memory with the supplied evidence. Surface contradictions before any authorized memory change."],
+    ["Preserve provenance", "Organize the authorized memory update around its sources and scope. Keep unrelated project memory unchanged."],
+  ]
+  if (/investigation|debugging/u.test(workflow.id)) return [
+    ["Hypotheses first", "Separate competing hypotheses and use the smallest independent evidence-gathering tasks."],
+    ["Reproduction first", "Establish a concrete reproduction, then investigate only uncertainties that can change the conclusion."],
+    ["Boundaries first", "Partition the investigation by system boundary and reconcile conflicting evidence before recommending a change."],
+  ]
+  return [
+    ["Interfaces first", "Define shared interfaces before independent implementation tasks. Keep ownership and integration boundaries explicit."],
+    ["Uncertainty first", "Resolve only uncertainty that changes the implementation plan before assigning implementation work."],
+    ["Small integration batches", "Deliver small useful increments and integrate them in dependency order while unrelated ready work continues."],
+  ]
+}
+
 export const templatePromptCandidates = (
   guide: ProfileGuideV1,
   workflowId: string,
@@ -1514,6 +1692,15 @@ export const templatePromptCandidates = (
   if (goal !== undefined) return templateGuideGoalCandidates(guide, workflowId, goal)
   const workflow = guide.workflows.find(({ id }) => id === workflowId)
   if (workflow === undefined) throw new GuideServiceError(`Unknown workflow reference: ${workflowId}`)
+  if (guide.capabilities.includes("firstmate-fleet-orchestration") && workflow.frame === "fixed") {
+    return assertTriple(firstmateApproaches(workflow).map(([title, approach]) =>
+      validateFinalGuideCandidate(renderWorkflowBodyCandidate(workflow, {
+        title,
+        prompt: `${intent}\n\n## Approach\n\n${approach}`,
+        notes: approach,
+      })),
+    ), "Firstmate template candidates")
+  }
   const frame = workflowPromptFrame(workflow)
   const authorizedBody = workflowAuthorizationBody(workflow, intent)
   const renderBody = (body: string): string => `${frame.beforeBody}${body}${frame.afterBody}`

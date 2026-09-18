@@ -1,5 +1,7 @@
 import type { ProfileGuideV1, ProfileGuideWorkflow } from "@trellage/guide-core"
 import type { GuideGenerateCandidate, GuideOptimizeFixedFrame } from "./guide-provider.ts"
+import { GUIDE_MAX_GENERATED_SPEC } from "@trellage/guide-core"
+import { text } from "./guide-text.ts"
 
 const intentPlaceholder = "{{intent}}"
 const authoredCommandToken = /^[/\$][a-z0-9][a-z0-9._:/-]*$/iu
@@ -13,6 +15,14 @@ const minimumMiddleSuffixFragmentTokenCount = 5
 const minimumMiddleSuffixFragmentCharacterCount = 24
 const minimumFixedProsePrefixTokenCount = 3
 const maximumProsePrefixNormalizationPasses = 32
+
+export const workflowUsesFixedFrame = (workflow: ProfileGuideWorkflow): boolean =>
+  workflow.skill !== undefined || workflow.frame === "fixed"
+
+export const validateFinalGuideCandidate = (candidate: GuideGenerateCandidate): GuideGenerateCandidate => {
+  text(candidate.prompt, "final generated specification", GUIDE_MAX_GENERATED_SPEC, { multiline: true, preserve: true, utf16: true })
+  return candidate
+}
 
 const escapeRegularExpression = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
 const flexibleWhitespacePattern = (value: string): string =>
@@ -63,7 +73,7 @@ export class GuideCandidatePromptCollisionError extends Error {
   }
 }
 
-type PromptCandidate = { readonly prompt: string }
+type PromptCandidate = { readonly prompt: string; readonly title?: string }
 
 export type GuideCandidatePromptTriple<Candidate extends PromptCandidate> = readonly [
   Candidate,
@@ -71,12 +81,26 @@ export type GuideCandidatePromptTriple<Candidate extends PromptCandidate> = read
   Candidate,
 ]
 
-/** Requires all three prompt strings to remain distinct at a generation pipeline boundary. */
+const candidateBodyFingerprint = ({ prompt, title }: PromptCandidate): string =>
+  prompt.split(/\r?\n/u)
+    .filter((line) =>
+      !/^\s{0,3}#{1,6}(?:\s|$)/u.test(line) &&
+      line.trim().replace(/^\*{1,2}(.*?)\*{1,2}$/u, "$1").toLowerCase() !== title?.trim().toLowerCase())
+    .join(" ").replace(/\s+/gu, " ").trim()
+
+/** Titles and section headings do not count as approach variation. */
 export const requireDistinctGuideCandidatePrompts = <Candidate extends PromptCandidate>(
   candidates: GuideCandidatePromptTriple<Candidate>,
   stage: GuideCandidatePromptStage,
 ): GuideCandidatePromptTriple<Candidate> => {
-  if (new Set(candidates.map(({ prompt }) => prompt)).size !== candidates.length) {
+  if (stage === GuideCandidatePromptStage.FinalRendering) {
+    for (const candidate of candidates) {
+      if ("goalExecution" in candidate && candidate.goalExecution !== undefined) continue
+      text(candidate.prompt, "final generated specification", GUIDE_MAX_GENERATED_SPEC, { multiline: true, preserve: true, utf16: true })
+    }
+  }
+  const bodies = candidates.map(candidateBodyFingerprint)
+  if (new Set(bodies).size !== candidates.length) {
     throw new GuideCandidatePromptCollisionError(stage)
   }
   return candidates
@@ -149,7 +173,7 @@ export const workflowBodyCandidate = (
   candidate: GuideGenerateCandidate,
   options: GuideWorkflowBodyOptions = {},
 ): GuideGenerateCandidate => {
-  if (!(options.bodyOnly ?? workflow.skill !== undefined)) return candidate
+  if (!(options.bodyOnly ?? workflowUsesFixedFrame(workflow))) return candidate
   return exactWorkflowBodyCandidate(workflow, candidate) ?? candidate
 }
 
@@ -157,12 +181,13 @@ export const workflowBodyCandidate = (
 export const renderWorkflowBodyCandidate = (
   workflow: ProfileGuideWorkflow,
   candidate: GuideGenerateCandidate,
+  options: { readonly preserveBody?: boolean } = {},
 ): GuideGenerateCandidate => {
-  if (workflow.skill === undefined) return candidate
-  const bodyCandidate = workflowBodyCandidate(workflow, candidate)
+  if (!workflowUsesFixedFrame(workflow)) return candidate
+  const bodyCandidate = workflowBodyCandidate(workflow, candidate, { bodyOnly: true })
   const frame = workflowPromptFrame(workflow)
   const renderedBody =
-    frame.afterBody.length > 0 && !unicodeLetterOrDigit.test(frame.afterBody)
+    !options.preserveBody && frame.afterBody.length > 0 && !unicodeLetterOrDigit.test(frame.afterBody)
       ? stripExactOptionalAuthoredSuffix(frame.afterBody, bodyCandidate.prompt.trimEnd())
       : bodyCandidate.prompt
   return {
@@ -1006,7 +1031,7 @@ function resolveModelWorkflowBodyCandidate(
   proposedCandidate: GuideGenerateCandidate,
   options: GuideWorkflowBodyOptions = {},
 ): GuideGenerateCandidate {
-  const bodyOnly = options.bodyOnly ?? workflow.skill !== undefined
+  const bodyOnly = options.bodyOnly ?? workflowUsesFixedFrame(workflow)
   const authorizedComparisonPrompt = bodyOnly
     ? workflowBodyText(workflow, authorizedPrompt)
     : authorizedPrompt
@@ -1043,7 +1068,7 @@ export const resolveGeneratedWorkflowBodyCandidate = (
     guide,
     workflow,
     "generation",
-    (options.bodyOnly ?? workflow.skill !== undefined)
+    (options.bodyOnly ?? workflowUsesFixedFrame(workflow))
       ? workflowAuthorizationBody(workflow, intent)
       : workflowAuthorizationPrompt(workflow, intent),
     generatedCandidate,
@@ -1067,6 +1092,6 @@ export const resolveRefinedWorkflowBodyCandidate = (
     options,
   )
 
-/** Supplies Prompt Master with the fixed destination frame for skill bodies only. */
+/** Supplies Prompt Master with the fixed destination frame for body-only candidates. */
 export const workflowOptimizeFixedFrame = (workflow: ProfileGuideWorkflow): GuideOptimizeFixedFrame | undefined =>
-  workflow.skill === undefined ? undefined : workflowPromptFrame(workflow)
+  workflowUsesFixedFrame(workflow) ? workflowPromptFrame(workflow) : undefined

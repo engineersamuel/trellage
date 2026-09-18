@@ -1,9 +1,10 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { constants } from "node:fs"
 import { spawn } from "node:child_process"
 import { access } from "node:fs/promises"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { bunArguments, bunExecutable, sourceEnvironment } from "@trellage/runtime"
 
 import { consumeInvocation } from "./lib/state.ts"
 import { parseContextMenuRequest, type ContextMenuRequest } from "./lib/context-menu.ts"
@@ -13,16 +14,17 @@ import { waitForDismissal } from "./popup.ts"
 const invocationEnvironment = "TRELLAGE_GUIDE_CONTEXT_MENU_INVOCATION_PATH"
 const launcherTerminationGraceMs = 30_000
 
-const launcherPath = async (env: NodeJS.ProcessEnv, root: string): Promise<{ readonly executable: string; readonly node: boolean }> => {
+const launcherPath = async (env: NodeJS.ProcessEnv, root: string): Promise<{ readonly executable: string; readonly source: boolean }> => {
   const configured = env.TRELLAGE_GUIDE_LAUNCHER
   const candidates = configured === undefined || configured.length === 0
-    ? [path.join(root, "packages/trellage-launcher/dist/launcher.mjs")]
+    ? [path.join(root, "packages/trellage-launcher/src/cli.tsx")]
     : [configured]
   for (const candidate of candidates) {
     if (!path.isAbsolute(candidate)) continue
     try {
-      await access(candidate, constants.X_OK)
-      return { executable: candidate, node: candidate.endsWith(".mjs") }
+      const source = /\.(?:ts|tsx)$/u.test(candidate)
+      await access(candidate, source ? constants.R_OK : constants.X_OK)
+      return { executable: candidate, source }
     } catch {}
   }
   throw new Error("The Trellage rewrite launcher is unavailable. Install trx or set TRELLAGE_GUIDE_LAUNCHER.")
@@ -51,16 +53,16 @@ export const runContextMenuLauncher = async (
   { env = process.env, root = process.cwd(), spawnProcess = spawn }: ContextMenuLauncherDependencies = {},
 ): Promise<number> => {
   const launcher = await launcherPath(env, root)
-  const command = launcher.node ? process.execPath : launcher.executable
-  const args = launcher.node
-    ? [launcher.executable, "rewrite-context", "--interactive"]
+  const command = launcher.source ? bunExecutable() : launcher.executable
+  const args = launcher.source
+    ? bunArguments(launcher.executable, ["rewrite-context", "--interactive"])
     : ["rewrite-context", "--interactive"]
   return new Promise<number>((resolve, reject) => {
     let child: ReturnType<typeof spawn>
     try {
       child = spawnProcess(command, args, {
         cwd: root,
-        env: { ...env },
+        env: sourceEnvironment(env),
         shell: false,
         windowsHide: true,
         stdio: ["pipe", "inherit", "inherit"],

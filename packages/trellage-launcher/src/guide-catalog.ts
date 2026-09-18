@@ -18,6 +18,7 @@
  * `promptTemplate` placeholders are validated with the same rules
  * `trellage-guide-core` applies to authored Markdown guides.
  */
+import { guideTaskOrchestration, type GuideTaskOrchestration } from "./guide-orchestration-context.ts"
 import {
   isLaunchAgentIdentifier,
   isProfileGuideGoalController,
@@ -25,6 +26,8 @@ import {
   profileGuideIdentityKey,
   type ProfileGuideGoalExecution,
   type ProfileGuideIdentity,
+  parseFirstmateOrchestrationV1,
+  type FirstmateOrchestrationV1,
   type ProfileGuidePrerequisite,
   type ProfileGuideV1,
   type ProfileGuideWorkflow,
@@ -93,7 +96,7 @@ const placeholderPattern = /\{\{([^{}]+)\}\}/gu
 
 const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow => {
   const fields = record(value, path)
-  exactKeys(fields, path, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent"])
+  exactKeys(fields, path, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent", "frame", "scope"])
   const skill =
     fields.skill === undefined ? undefined : text(fields.skill, `${path}.skill`, 256).toLocaleLowerCase("en")
   if (skill !== undefined && !portableIdentifierPattern.test(skill)) {
@@ -122,6 +125,8 @@ const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow =>
     description: text(fields.description, `${path}.description`, 2000),
     ...(skill === undefined ? {} : { skill }),
     ...(launchAgent === undefined ? {} : { launchAgent }),
+    ...(fields.frame === undefined ? {} : { frame: literal(fields.frame, `${path}.frame`, ["fixed"]) }),
+    ...(fields.scope === undefined ? {} : { scope: literal(fields.scope, `${path}.scope`, ["project", "fleet"]) }),
     examples: stringArray(fields.examples, `${path}.examples`, { minimum: 2, maximumItems: 32, itemMaximum: 2000 }),
     promptTemplate,
   }
@@ -303,6 +308,7 @@ export interface NativeGuideCatalogEntry {
   readonly herdrCompatibility: HerdrCompatibilityInfo
   readonly guide: ProfileGuideV1
   readonly commandPath: string
+  readonly orchestration?: FirstmateOrchestrationV1
 }
 
 const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEntry => {
@@ -317,7 +323,13 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
     "herdrCompatibility",
     "guide",
     "commandPath",
-  ])
+  ], ["orchestration"])
+  const orchestration = fields.orchestration === undefined
+    ? undefined
+    : parseFirstmateOrchestrationV1(fields.orchestration, `${path}.orchestration`)
+  if (orchestration !== undefined && (fields.launcher !== "fmx" || fields.harness !== "firstmate")) {
+    fail(`${path}.orchestration`, "is supported only for native Firstmate profiles")
+  }
   const launcher = identifier(fields.launcher, `${path}.launcher`)
   const harness = identifier(fields.harness, `${path}.harness`)
   const name = identifier(fields.name, `${path}.name`)
@@ -334,6 +346,7 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
       harness,
     }),
     commandPath: absolutePath(fields.commandPath, `${path}.commandPath`, 4096),
+    ...(orchestration === undefined ? {} : { orchestration }),
   }
 }
 
@@ -499,6 +512,7 @@ export interface GuideCatalogEntryRef {
   readonly description: string
   readonly sandbox: boolean
   readonly guide: ProfileGuideV1
+  readonly orchestration?: FirstmateOrchestrationV1
 }
 
 export const guideCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArray<GuideCatalogEntryRef> => [
@@ -512,6 +526,7 @@ export const guideCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArra
       description: entry.description,
       sandbox: entry.sandbox,
       guide: entry.guide,
+      ...(entry.orchestration === undefined ? {} : { orchestration: entry.orchestration }),
     }),
   ),
   ...catalog.sandbox.map(
@@ -540,6 +555,7 @@ export interface CompactProfileGuideWorkflow {
   readonly description: string
   readonly skill?: string
   readonly examples: ReadonlyArray<string>
+  readonly scope?: "project" | "fleet"
 }
 
 export interface CompactProfileGuide {
@@ -558,11 +574,12 @@ export const compactProfileGuide = (guide: ProfileGuideV1): CompactProfileGuide 
   bestFor: guide.bestFor,
   avoidFor: guide.avoidFor,
   prerequisites: guide.prerequisites,
-  workflows: guide.workflows.map(({ id, description, skill, examples }) => ({
+  workflows: guide.workflows.map(({ id, description, skill, examples, scope }) => ({
     id,
     description,
     ...(skill === undefined ? {} : { skill }),
     examples,
+    ...(scope === undefined ? {} : { scope }),
   })),
 })
 
@@ -576,6 +593,7 @@ export interface GuideMatchCatalogEntry {
   readonly sandbox: boolean
   readonly guide: CompactProfileGuide
   readonly goalExecution?: ProfileGuideGoalExecution
+  readonly orchestration?: GuideTaskOrchestration
 }
 
 export const toGuideMatchCatalogEntry = (
@@ -593,6 +611,7 @@ export const toGuideMatchCatalogEntry = (
   ...(includeGoalExecution && entry.guide.goalExecution !== undefined
     ? { goalExecution: entry.guide.goalExecution }
     : {}),
+  ...(entry.orchestration === undefined ? {} : { orchestration: guideTaskOrchestration(entry.orchestration) }),
 })
 
 export const guideMatchCatalogEntries = (

@@ -1240,6 +1240,7 @@ describe("runGuideGenerate", () => {
         {
           targetTool: "copilot",
           profileRef: "sandbox:prime-agent",
+          bodyBudget: 8000 - "Use the writing-plans skill:\n".length,
           candidates: genCandidates().candidates,
           fixedFrame: {
             beforeBody: "Use the writing-plans skill:\n",
@@ -1461,6 +1462,7 @@ describe("runGuideGenerate", () => {
         {
           targetTool: "jules",
           profileRef: "native:jcx/foo",
+          bodyBudget: 8000,
           candidates: genCandidates().candidates,
         },
       ])
@@ -1520,6 +1522,7 @@ describe("runGuideGenerate", () => {
       expect(optimizeInput).toEqual({
         targetTool: "jules",
         profileRef: "native:jcx/foo",
+        bodyBudget: 8000,
         candidates: generatedCandidates,
       })
       expect(response.candidates[0]?.prompt).toBe(
@@ -1855,6 +1858,7 @@ describe("runGuideGenerate", () => {
         {
           targetTool: "codex",
           profileRef: "native:cdx/pstack",
+          bodyBudget: 8000 - "/ce-compound mode:non-interactive ".length,
           candidates: [
             {
               title: "Echoed command",

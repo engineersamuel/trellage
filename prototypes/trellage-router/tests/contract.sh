@@ -223,6 +223,18 @@ EOF
     {
       "name": "default",
       "description": "Firstmate fleet orchestration",
+      "orchestration": {
+        "schemaVersion": 1,
+        "kind": "firstmate",
+        "sourceRevision": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
+        "taskIdPrefix": "fmd",
+        "workerPolicy": null,
+        "workerHarness": "claude",
+        "workerEfforts": ["low", "medium", "high", "xhigh", "max"],
+        "dispatchRules": "claude-single",
+        "submission": {"schemaVersion": 1, "maxRequestBytes": 524288},
+        "preparation": {"schemaVersion": 1}
+      },
       "headless": {
         "schemaVersion": 1,
         "prompt": false,
@@ -248,6 +260,20 @@ EOF
     {
       "name": "pstack-workers",
       "description": "Firstmate with a lean pstack worker policy",
+      "orchestration": {
+        "schemaVersion": 1,
+        "kind": "firstmate",
+        "sourceRevision": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
+        "taskIdPrefix": "fmp",
+        "workerPolicy": {
+          "name": "pstack-workers",
+          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "workerHarness": "claude",
+        "workerEfforts": ["low", "medium", "high", "xhigh", "max"],
+        "dispatchRules": "claude-single",
+        "submission": {"schemaVersion": 1, "maxRequestBytes": 524288}
+      },
       "headless": {
         "schemaVersion": 1,
         "prompt": false,
@@ -770,7 +796,8 @@ jq -e '
   type == "object"
   and keys == ["profiles", "schemaVersion"]
   and .schemaVersion == 1
-  and ([.profiles[] | keys] | all(. == ["description", "guide", "harness", "headless", "herdrCompatibility", "launcher", "name", "sandbox"]))
+  and all(.profiles[];
+    (keys - ["orchestration"]) == ["description", "guide", "harness", "headless", "herdrCompatibility", "launcher", "name", "sandbox"])
   and all(.profiles[];
     .guide.schemaVersion == 1
     and .guide.capabilities == ["fixture-delivery"]
@@ -829,16 +856,31 @@ jq -e '
   and (.profiles[] | select(.launcher == "picx" and .name == "default") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "cdx" and .name == "pstack") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "cdx" and .name == "youtube") | .herdrCompatibility.status) == "verified"
-  and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .herdrCompatibility.status) == "verified"
+  and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "fmx" and .name == "pstack-workers") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "agx" and .name == "trellage-azure") | .herdrCompatibility.status) == "untested"
   and all(.profiles[] | select(.launcher == "fmx"); .headless.prompt == false and .headless.modelOverride == false)
+  and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .orchestration.taskIdPrefix) == "fmd"
+  and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .orchestration.preparation) == {schemaVersion: 1}
+  and (.profiles[] | select(.launcher == "fmx" and .name == "pstack-workers") | .orchestration.workerPolicy.name) == "pstack-workers"
+  and (.profiles[] | select(.launcher == "fmx" and .name == "pstack-workers") | .orchestration | has("preparation") | not)
+  and all(.profiles[] | select(.launcher != "fmx"); has("orchestration") | not)
   and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
   and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .headless.questionToolControl) == "prompt-only"
   and (.profiles[] | select(.launcher == "cdx") | .headless.testedHarnessVersion) == "1.2.3"
   and all(.profiles[]; .description | type == "string" and length > 0)
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list shape or ordering differs'
+
+jq -e --slurpfile ledger "$prototype_root/../../docs/herdr-compatibility.json" '
+  all(.profiles[] | select(.launcher == "fmx");
+    . as $profile
+    | .herdrCompatibility == (
+        $ledger[0].entries[]
+        | select(.kind == "native" and .launcher == "fmx" and .profile == $profile.name)
+        | del(.kind, .launcher, .profile, .harness)))
+' "$fixture_root/list.json" >/dev/null \
+  || fail 'Firstmate compatibility projection differs from its source evidence'
 
 TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
   TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides" \
@@ -1956,6 +1998,58 @@ status=0
   || fail "unsupported Trellage event contract list exited $status instead of 1"
 assert_contains 'invalid catalog from cdx' "$fixture_root/list-invalid-trellage-event.err"
 mv "$fixture_root/cdx.headless.catalog" "$runtime_parent/cdx/catalog.json"
+
+cp "$runtime_parent/fmx/catalog.json" "$fixture_root/fmx.orchestration.catalog"
+jq '(.profiles[].orchestration.submission.maxRequestBytes) = 999999' \
+  "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
+status=0
+"$fixture_bin/trx" list --json >"$fixture_root/list-invalid-orchestration.out" \
+  2>"$fixture_root/list-invalid-orchestration.err" || status=$?
+[[ "$status" == 1 ]] || fail "unsafe Firstmate control bound exited $status instead of 1"
+assert_contains 'invalid catalog from fmx' "$fixture_root/list-invalid-orchestration.err"
+for preparation in '{"schemaVersion":2}' '{"schemaVersion":1,"command":"/bin/sh"}'; do
+  jq --argjson preparation "$preparation" '(.profiles[].orchestration.preparation) = $preparation' \
+    "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
+  status=0
+  "$fixture_bin/trx" list --json >"$fixture_root/list-invalid-preparation.out" \
+    2>"$fixture_root/list-invalid-preparation.err" || status=$?
+  [[ "$status" == 1 ]] || fail "unsupported Firstmate preparation capability exited $status instead of 1"
+  assert_contains 'invalid catalog from fmx' "$fixture_root/list-invalid-preparation.err"
+done
+jq '(.profiles[].orchestration.instances) = {"schemaVersion":1}' \
+  "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
+"$fixture_bin/trx" list --json >"$fixture_root/list-firstmate-instances.json" \
+  || fail 'supported Firstmate instance capability should retain static profile discovery'
+jq -e '
+  [.profiles[] | select(.launcher == "fmx")] as $profiles
+  | ($profiles | length) == 2
+    and all($profiles[]; .orchestration.instances == {schemaVersion: 1})
+' "$fixture_root/list-firstmate-instances.json" >/dev/null \
+  || fail 'Firstmate instance capability changed static profile discovery'
+for instances in '{"schemaVersion":2}' '{"schemaVersion":1,"command":"/bin/sh"}' 'null'; do
+  jq --argjson instances "$instances" '(.profiles[].orchestration.instances) = $instances' \
+    "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
+  status=0
+  "$fixture_bin/trx" list --json >"$fixture_root/list-invalid-instances.out" \
+    2>"$fixture_root/list-invalid-instances.err" || status=$?
+  [[ "$status" == 1 ]] || fail "unsupported Firstmate instance capability exited $status instead of 1"
+  assert_contains 'invalid catalog from fmx' "$fixture_root/list-invalid-instances.err"
+done
+jq 'del(.profiles[].orchestration.preparation)' \
+  "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
+"$fixture_bin/trx" list --json >"$fixture_root/list-inspect-only-firstmate.json" \
+  || fail 'Firstmate without preparation should retain its inbox capability'
+jq -e 'all(.profiles[] | select(.launcher == "fmx"); .orchestration.schemaVersion == 1 and (.orchestration | has("preparation") | not))' \
+  "$fixture_root/list-inspect-only-firstmate.json" >/dev/null \
+  || fail 'inspect-only Firstmate unexpectedly advertised automatic preparation'
+jq 'del(.profiles[].orchestration)' \
+  "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
+"$fixture_bin/trx" list --json >"$fixture_root/list-legacy-firstmate.json" \
+  || fail 'legacy Firstmate catalog should retain manual launch compatibility'
+jq -e 'all(.profiles[] | select(.launcher == "fmx"); (has("orchestration") | not) and .headless.prompt == false)' \
+  "$fixture_root/list-legacy-firstmate.json" >/dev/null \
+  || fail 'legacy Firstmate unexpectedly advertised inbox submission'
+mv "$fixture_root/fmx.orchestration.catalog" "$runtime_parent/fmx/catalog.json"
 
 rm "$fixture_bin/cpx"
 cp "$runtime_parent/cpx/bin/cpx" "$fixture_root/unrelated-cpx"

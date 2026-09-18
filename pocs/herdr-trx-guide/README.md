@@ -245,6 +245,23 @@ inside the selected profile home. Sandbox capture uses the exact validated
 container/invocation bridge and releases its sealed export after reading it.
 An old bridge reports that conversation export is unsupported.
 
+Firstmate bridge metadata keeps the profile name separate from the fleet UUID.
+Capture uses only that reference's captain Claude home, not another instance
+or the ordinary `cldx` profile home. An incomplete reference does not permit a
+home guess. The source-pane process and harness session must still match.
+
+Both popup paths pass Firstmate launch origin through the private Herdr
+context. They do not change the saved source cwd, task target, or destination
+pane. Guide revalidates that hint against the owned Native registry before
+instance selection. Inherited daemon-origin environment values are removed.
+Firstmate runtime paths and origin metadata are not added to ordinary
+conversation prompts; the task target still needs confirmation in Guide.
+These paths require the updated bridge and prepared guide source runtime. They do not
+install, create, migrate, or start a fleet during capture.
+
+`a` does not enqueue an analysis choice. Opening this mode does not consume
+the copied-text queue or change the Swift selection-overlay flow.
+
 ### Capture queue editor
 
 Press `e` to edit the capture queue on a separate screen. There, use `j`/`k`

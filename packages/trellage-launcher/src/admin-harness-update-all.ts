@@ -1,10 +1,12 @@
 import type { AdminProfileEntry } from "./admin-model.ts"
+import { adminFirstmateMutationBlockReason } from "./admin-firstmate.ts"
 import type { AdminRunManager } from "./admin-run-manager.ts"
 import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.ts"
 import type { AdminHarnessVersionResult } from "./admin-harness-version.ts"
 import type { HarnessVersionSchedulerOptions } from "./admin-harness-version-scheduler.ts"
 import { nativeSkillsUpdatePlanFor, type NativeSkillsUpdateOutcome, type NativeSkillsUpdatePlan } from "./admin-skills-update.ts"
 import {
+  harnessUpdateKeyFor,
   harnessUpdatePlanFor,
   harnessUpdateRefreshTargets,
   refreshHarnessUpdateVersions,
@@ -49,9 +51,16 @@ export interface HarnessUpdateAllSummary {
 }
 
 export const harnessUpdateScopeKey = (plan: HarnessUpdatePlan): string =>
-  JSON.stringify([plan.key, plan.steps.map((step) => step.command.executable)])
+  JSON.stringify([
+    plan.key,
+    plan.steps.map((step) => step.command.executable),
+    plan.targets.map((entry) => entry.ref),
+    plan.key === "native:fmx" ? plan.steps.map((step) => step.command.args) : null,
+  ])
 
 const unsupportedReason = (entry: AdminProfileEntry): string => {
+  const firstmateReason = adminFirstmateMutationBlockReason(entry)
+  if (firstmateReason !== undefined) return firstmateReason
   if (entry.commandPath.length === 0) return "The launcher command is unavailable."
   if (entry.harness === undefined) return "The harness identity is missing."
   const identity = entry.surface === "native" ? (entry.launcher ?? "unknown launcher") : entry.harness
@@ -63,25 +72,38 @@ export const harnessUpdateAllPlanFor = (
   versionResultFor: (entry: AdminProfileEntry) => AdminHarnessVersionResult | undefined = () => undefined,
   routerCommandPath = "trx",
 ): HarnessUpdateAllPlan => {
-  const profiles = [...new Map(entries.map((entry) => [entry.ref, entry])).values()].sort((left, right) =>
-    left.ref.localeCompare(right.ref),
-  )
-  const plans = new Map<string, HarnessUpdatePlan>()
+  const profilesByRef = new Map(entries.map((entry) => [entry.ref, entry]))
+  const profiles = [...profilesByRef.values()].sort((left, right) => left.ref.localeCompare(right.ref))
+  const skills = nativeSkillsUpdatePlanFor(profiles, routerCommandPath)
+  const capturedTargets = new Map(skills?.targets.map((entry) => [entry.ref, entry]))
+  const targetsByGroup = new Map<string, Array<AdminProfileEntry>>()
   const unsupported: Array<UnsupportedHarnessUpdate> = []
   for (const entry of profiles) {
-    const plan = harnessUpdatePlanFor(entry, profiles, versionResultFor(entry))
-    if (plan === undefined) {
+    const target = capturedTargets.get(entry.ref) ?? entry
+    const key = harnessUpdateKeyFor(target)
+    if (key === undefined) {
       unsupported.push({ entry, diagnostic: unsupportedReason(entry) })
-    } else {
-      const key = harnessUpdateScopeKey(plan)
-      if (!plans.has(key)) plans.set(key, plan)
+      continue
     }
+    const groupKey = JSON.stringify([key, target.commandPath])
+    const targets = targetsByGroup.get(groupKey)
+    if (targets === undefined) targetsByGroup.set(groupKey, [target])
+    else targets.push(target)
   }
-  const groups = [...plans.values()]
+  const groups: Array<HarnessUpdatePlan> = []
+  for (const targets of targetsByGroup.values()) {
+    const selected = targets[0]!
+    const plan = harnessUpdatePlanFor(selected, targets, versionResultFor(profilesByRef.get(selected.ref)!))
+    const plannedRefs = new Set(plan?.targets.map((entry) => entry.ref))
+    for (const target of targets) {
+      if (!plannedRefs.has(target.ref)) unsupported.push({ entry: target, diagnostic: unsupportedReason(target) })
+    }
+    if (plan !== undefined) groups.push(plan)
+  }
   return {
-    skills: nativeSkillsUpdatePlanFor(profiles, routerCommandPath),
+    skills,
     groups,
-    unsupported,
+    unsupported: unsupported.sort((left, right) => left.entry.ref.localeCompare(right.entry.ref)),
     profileCount: profiles.length,
     nativeUpdateCount: groups.filter((group) => group.surface === "native").reduce((count, group) => count + group.steps.length, 0),
     containerUpdateCount: groups.filter((group) => group.surface === "sandbox").reduce((count, group) => count + group.steps.length, 0),

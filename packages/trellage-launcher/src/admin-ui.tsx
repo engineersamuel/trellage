@@ -9,12 +9,22 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, useWindowSize } from "ink"
 
-import { aggregateAdminProfiles, loadAdminProfileGuideBody, toProfileGuideIdentity, type AdminProfileEntry } from "./admin-model.ts"
+import {
+  adminInstanceDetails,
+  adminProfileLabel,
+  aggregateAdminInstanceProfiles,
+  isAdminFirstmate,
+  loadAdminProfileGuideBody,
+  toProfileGuideIdentity,
+  type AdminProfileEntry,
+} from "./admin-model.ts"
+import { adminFirstmateMutationBlockReason, adminFirstmatePreparationBlockReason } from "./admin-firstmate.ts"
 import { refreshAdminEntries } from "./admin-refresh.ts"
 import { AdminRunManager, type AdminRunStatus } from "./admin-run-manager.ts"
 import {
   buildAdminLaunchCommand,
   buildDiagnosticCommand,
+  isAutoRepairSupported,
   isRepairSupported,
   launchAdminProfile,
   repairRefFor,
@@ -23,7 +33,7 @@ import {
 } from "./admin-launch.ts"
 import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "./admin-status.ts"
 import type { AdminSortKey } from "./admin-table.ts"
-import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.ts"
+import { adminProfileType, adminTableColumnWidths, adminVisibleRowRange, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.ts"
 import { runBatchedDoctorChecks } from "./admin-batch-scheduler.ts"
 import { selectPendingDiagnosisTargets, selectPendingRepairTargets, shouldStartBatch } from "./admin-diagnosis-dispatch.ts"
 import { DoctorFailureDiagnosisProvider, type DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.ts"
@@ -62,7 +72,7 @@ import {
   type HarnessUpdateOutcome,
   type HarnessUpdatePlan,
 } from "./admin-harness-update.ts"
-import { buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.ts"
+import { adminInventorySummary, buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.ts"
 import { refreshHarnessUpdateGroupVersions } from "./admin-harness-update-all.ts"
 import { HarnessUpdateAllOverlay, HarnessUpdateAllStatus, useHarnessUpdateAll } from "./admin-harness-update-all-ui.tsx"
 import { checkAdminHarnessUpdates } from "./admin-harness-update-discovery.ts"
@@ -76,11 +86,31 @@ type DiagnosisState =
 type HarnessUpdateState =
   | { readonly status: "running"; readonly targetCount: number; readonly surface: AdminProfileEntry["surface"] }
   | { readonly status: "done"; readonly outcome: HarnessUpdateOutcome }
-  | { readonly status: "error"; readonly message: string }
+  | { readonly status: "error"; readonly message: string; readonly targetRefs: ReadonlyArray<string> }
+
+const harnessUpdateStateForEntry = (
+  entry: AdminProfileEntry,
+  states: ReadonlyMap<string, HarnessUpdateState>,
+): HarnessUpdateState | undefined => {
+  const state = states.get(harnessUpdateKeyFor(entry) ?? "")
+  if (state?.status === "done" && !state.outcome.results.some((result) => result.ref === entry.ref)) return undefined
+  if (state?.status === "error" && !state.targetRefs.includes(entry.ref)) return undefined
+  return state
+}
 
 const sortCycle: ReadonlyArray<AdminSortKey> = ["name", "health", "install", "surface"]
 
+const instanceStatusBlocked = (entry: AdminProfileEntry): boolean => {
+  const descriptor = entry.firstmateInstanceDescriptor
+  if (descriptor !== undefined && descriptor.creationState !== "published") return true
+  if (descriptor?.mode === "named" && (descriptor.worktree.status !== "bound" || descriptor.runtime.state !== "verified")) return true
+  return entry.firstmateFleet?.runtime === "unsafe" || entry.firstmateFleet?.supervisor.state === "unsafe"
+}
+
 const runStatusOf = (entry: AdminProfileEntry, snapshot: AdminRunStatus): AdminStatus => {
+  if (entry.firstmateDiscovery === "pending") return "discovering"
+  if (entry.firstmateDiscovery === "failed") return "discovery-failed"
+  if (instanceStatusBlocked(entry) && snapshot.state !== "running") return "instance-blocked"
   if (!entry.doctorSupported) return "unsupported"
   if (snapshot.state === "idle" && entry.health === "malformed-output") return "malformed-output"
   return snapshot.state
@@ -196,7 +226,7 @@ const CompletedHarnessUpdate = ({ outcome }: { readonly outcome: HarnessUpdateOu
       {harnessUpdateSurfaceLabel(outcome.surface)} profiles.
       {failures.length === 0
         ? ""
-        : ` Failed: ${failures.map((result) => `${result.name}: ${result.diagnostic}`).join("; ")}.`}
+        : ` Failed: ${failures.map((result) => `${result.name} (${result.ref}): ${result.diagnostic}`).join("; ")}.`}
     </Text>
   )
 }
@@ -220,6 +250,24 @@ const HarnessUpdateStatus = ({ state, tick }: { readonly state: HarnessUpdateSta
   return <CompletedHarnessUpdate outcome={state.outcome} />
 }
 
+const FirstmateUpdateTargets = ({ targets }: { readonly targets: ReadonlyArray<AdminProfileEntry> }) => {
+  const { rows, columns } = useWindowSize()
+  const instances = targets.filter(isAdminFirstmate)
+  if (instances.length === 0) return null
+  const value = instances.flatMap((entry) => [
+    `### ${adminProfileLabel(entry)}`,
+    ...adminInstanceDetails(entry),
+    `Catalog pin: ${entry.orchestration?.sourceRevision ?? "reported by the legacy launcher"}`,
+    "",
+  ]).join("\n")
+  return (
+    <>
+      <MarkdownTextViewport value={value} width={Math.max(20, columns - 8)} height={Math.max(3, Math.min(8, rows - 16))} />
+      <Text dimColor>PageUp/PageDown: review all confirmed instance targets.</Text>
+    </>
+  )
+}
+
 const HarnessUpdateControl = ({
   plan,
   state,
@@ -238,13 +286,16 @@ const HarnessUpdateControl = ({
     <Box flexDirection="column">
       {canUpdate ? <ShortcutHints items={[{ key: "U", label: "update harness" }]} /> : null}
       {confirming && plan !== undefined ? (
-        <Text color="yellow" wrap="wrap">
-          Press [y] to update {plan.harness} for all {plan.targets.length} {harnessUpdateSurfaceLabel(plan.surface)} profiles,
-          or any other key to cancel.{" "}
-          {plan.latestVersion === undefined
-            ? "The update command will resolve the configured version."
-            : `Latest reported: ${plan.latestVersion}. Existing version pins are preserved.`}
-        </Text>
+        <Box flexDirection="column">
+          <Text color="yellow" wrap="wrap">
+            Press [y] to update {plan.harness} for these {plan.targets.length} {harnessUpdateSurfaceLabel(plan.surface)} targets,
+            or press Esc to cancel.{" "}
+            {plan.latestVersion === undefined
+              ? "Each update command uses its configured version."
+              : `Latest reported: ${plan.latestVersion}. Each profile keeps its own version pin.`}
+          </Text>
+          <FirstmateUpdateTargets targets={plan.targets} />
+        </Box>
       ) : null}
       <HarnessUpdateStatus state={state} tick={tick} />
     </Box>
@@ -265,10 +316,11 @@ const repairStatusNote = (
   repairState: AdminRunStatus["state"],
   setupState: AdminRunStatus["state"],
   doctorStatus: AdminStatus,
+  preparation: boolean,
 ): string | undefined => {
   if (repairMessage !== undefined) return repairMessage
   if (repairState === "idle") return undefined
-  if (setupState === "idle") return `Repair ${repairState} (recheck: ${statusLabel(doctorStatus)}).`
+  if (setupState === "idle") return `${preparation ? "Preparation" : "Repair"} ${repairState} (recheck: ${statusLabel(doctorStatus)}).`
   return `Repair ${repairState}, setup ${setupState} (recheck: ${statusLabel(doctorStatus)}).`
 }
 
@@ -285,13 +337,23 @@ const DetailSummary = ({
 }) => (
   <>
     <Text bold color="cyan">
-      {entry.name}{" "}
+      {adminProfileLabel(entry)}{" "}
       <Text dimColor>
         · {entry.surface}
         {entry.launcher === undefined ? "" : ` · ${entry.launcher}`}
       </Text>
     </Text>
     <Text wrap="wrap">{entry.description}</Text>
+    {entry.firstmateInstanceDescriptor === undefined ? null : (
+      <>
+        <Text wrap="wrap">UUID: {entry.firstmateInstance?.instanceId ?? "missing identity — recovery required"}</Text>
+        <Text wrap="truncate-end">
+          Association: {entry.firstmateInstanceDescriptor.worktree.status}
+          {entry.firstmateInstanceDescriptor.mode === "named" ? ` · ${entry.firstmateInstanceDescriptor.worktree.evidence.locators.worktree}` : " · shared legacy fleet"}
+        </Text>
+        <Text dimColor>Press i for the full instance root and association.</Text>
+      </>
+    )}
     <Text>
       Health: <Text bold>{entry.health}</Text> · Install: <Text bold>{entry.install}</Text>
     </Text>
@@ -309,6 +371,22 @@ const DetailSummary = ({
   </>
 )
 
+const doctorShortcutItems = (
+  entry: AdminProfileEntry,
+  controls: ReturnType<typeof controlsForStatus>,
+  actions: { readonly canFork: boolean; readonly canRepair: boolean; readonly canLaunch: boolean; readonly versionRunning: boolean },
+) => [
+  controls.canTrigger ? { key: "d", label: "run doctor" } : undefined,
+  controls.canCancel ? { key: "c", label: "cancel" } : undefined,
+  controls.canRetry ? { key: "r", label: "retry" } : undefined,
+  { key: "g", label: "view guide" },
+  entry.inventorySupported ? { key: "i", label: "view inventory" } : undefined,
+  actions.canLaunch ? { key: "l", label: "launch in terminal" } : undefined,
+  actions.canFork ? { key: "f", label: "fork to fix" } : undefined,
+  actions.canRepair ? { key: "p", label: isAdminFirstmate(entry) ? "prepare instance" : "repair profile" } : undefined,
+  entry.harnessVersionSupported && !actions.versionRunning ? { key: "u", label: "resync version" } : undefined,
+].filter((item): item is { readonly key: string; readonly label: string } => item !== undefined)
+
 const DoctorPanel = ({
   entry,
   snapshot,
@@ -316,6 +394,7 @@ const DoctorPanel = ({
   controls,
   canFork,
   canRepair,
+  canLaunch,
   versionRunning,
   tick,
 }: {
@@ -325,20 +404,11 @@ const DoctorPanel = ({
   readonly controls: ReturnType<typeof controlsForStatus>
   readonly canFork: boolean
   readonly canRepair: boolean
+  readonly canLaunch: boolean
   readonly versionRunning: boolean
   readonly tick: number
 }) => {
-  const shortcutItems = [
-    controls.canTrigger ? { key: "d", label: "run doctor" } : undefined,
-    controls.canCancel ? { key: "c", label: "cancel" } : undefined,
-    controls.canRetry ? { key: "r", label: "retry" } : undefined,
-    { key: "g", label: "view guide" },
-    entry.inventorySupported ? { key: "i", label: "view inventory" } : undefined,
-    { key: "l", label: "launch in terminal" },
-    canFork ? { key: "f", label: "fork to fix" } : undefined,
-    canRepair ? { key: "p", label: "repair profile" } : undefined,
-    entry.harnessVersionSupported && !versionRunning ? { key: "u", label: "resync version" } : undefined,
-  ].filter((item): item is { readonly key: string; readonly label: string } => item !== undefined)
+  const shortcutItems = doctorShortcutItems(entry, controls, { canFork, canRepair, canLaunch, versionRunning })
   return (
     <Box marginTop={1} flexDirection="column">
       <Text>
@@ -400,16 +470,28 @@ const ConfirmationPrompt = ({
   readonly entry: AdminProfileEntry
 }) => {
   if (confirmation === "launch") {
-    return <Text color="yellow">Press [y] to hand this terminal to {entry.name} now, or any other key to cancel.</Text>
+    return (
+      <Text color="yellow" wrap="wrap">
+        Press [y] to hand this terminal to {adminProfileLabel(entry)}{entry.firstmateInstance === undefined ? "" : ` (${entry.firstmateInstance.instanceId})`} now, or any other key to cancel.
+      </Text>
+    )
   }
   if (confirmation === "fork") {
     return (
       <Text color="yellow">
-        Press [y] to create a new Herdr worktree and hand it {entry.name}&apos;s suggested fix now, or any other key to cancel.
+        Press [y] to create a new Herdr worktree to diagnose {adminProfileLabel(entry)}{entry.firstmateInstance === undefined ? "" : ` (${entry.firstmateInstance.instanceId})`}, or any other key to cancel.
       </Text>
     )
   }
   if (confirmation === "repair") {
+    if (isAdminFirstmate(entry)) {
+      return (
+        <Text color="yellow" wrap="wrap">
+          Press [y] to prepare the existing {adminProfileLabel(entry)} instance ({entry.firstmateInstance?.instanceId ?? entry.firstmateFleet?.identity?.instanceId})
+          {" "}and recheck doctor, or any other key to cancel. No fleet creation, setup, installation, or rebinding is authorized.
+        </Text>
+      )
+    }
     return (
       <Text color="yellow">
         Press [y] to run {entry.name}&apos;s repair (and setup, if still needed) now and recheck doctor afterward, or any other key to
@@ -450,6 +532,7 @@ interface DetailInputOptions {
   readonly controls: ReturnType<typeof controlsForStatus>
   readonly canFork: boolean
   readonly canRepair: boolean
+  readonly canLaunch: boolean
   readonly versionRunning: boolean
   readonly confirmLaunch: () => void
   readonly confirmFork: () => void
@@ -465,8 +548,9 @@ interface DetailInputOptions {
   readonly onUpdateHarness: (plan: HarnessUpdatePlan) => void
 }
 
-const handleDetailConfirmation = (input: string, options: DetailInputOptions): boolean => {
+const handleDetailConfirmation = (input: string, options: DetailInputOptions, paging: boolean): boolean => {
   if (options.confirmation === undefined) return false
+  if (options.confirmation === "harness-update" && paging && isAdminFirstmate(options.entry)) return true
   if (input === "y") {
     if (options.confirmation === "launch") options.confirmLaunch()
     if (options.confirmation === "fork") options.confirmFork()
@@ -490,16 +574,20 @@ const handleDoctorInput = (input: string, options: DetailInputOptions): boolean 
   return false
 }
 
+const handleDetailMaintenanceShortcut = (input: string, options: DetailInputOptions): void => {
+  if (input === "p" && options.canRepair) options.setConfirmation("repair")
+  else if (input === "u" && options.entry.harnessVersionSupported && !options.versionRunning)
+    options.onForceResyncVersion(options.entry)
+  else if (input === "U" && options.harnessUpdatePlan !== undefined) options.setConfirmation("harness-update")
+}
+
 const handleDetailShortcut = (input: string, options: DetailInputOptions): void => {
   if (handleDoctorInput(input, options)) return
   if (input === "g") options.onOpenGuide(options.entry)
   else if (input === "i" && options.entry.inventorySupported) options.onOpenInventory(options.entry)
-  else if (input === "l") options.setConfirmation("launch")
+  else if (input === "l" && options.canLaunch) options.setConfirmation("launch")
   else if (input === "f" && options.canFork) options.setConfirmation("fork")
-  else if (input === "p" && options.canRepair) options.setConfirmation("repair")
-  else if (input === "u" && options.entry.harnessVersionSupported && !options.versionRunning)
-    options.onForceResyncVersion(options.entry)
-  else if (input === "U" && options.harnessUpdatePlan !== undefined) options.setConfirmation("harness-update")
+  else handleDetailMaintenanceShortcut(input, options)
 }
 
 const AdminDetailPanel = ({
@@ -542,6 +630,8 @@ const AdminDetailPanel = ({
   const [launchMessage, setLaunchMessage] = useState<string | undefined>(undefined)
   const [forkMessage, setForkMessage] = useState<string | undefined>(undefined)
   const [repairMessage, setRepairMessage] = useState<string | undefined>(undefined)
+  const confirmationEntry = useRef(entry)
+  const confirmationPlan = useRef(harnessUpdatePlan)
 
   useEffect(() => {
     setConfirmation(undefined)
@@ -550,9 +640,13 @@ const AdminDetailPanel = ({
     setForkMessage(undefined)
     setRepairMessage(undefined)
     return () => onConfirmationChange(false)
-  }, [entry.ref, onConfirmationChange])
+  }, [entry.ref, entry.firstmateInstanceDescriptor, entry.firstmateInstanceContext, onConfirmationChange])
 
   const updateConfirmation = (next: DetailConfirmation | undefined) => {
+    if (next !== undefined) {
+      confirmationEntry.current = entry
+      confirmationPlan.current = harnessUpdatePlan
+    }
     setConfirmation(next)
     onConfirmationChange(next !== undefined)
   }
@@ -563,7 +657,9 @@ const AdminDetailPanel = ({
   const repairSnapshot = runManager.status(repairRefFor(entry))
   const setupSnapshot = runManager.status(setupRefFor(entry))
   const canRepair = isRepairSupported(entry) && controls.canRetry && repairSnapshot.state !== "running" && setupSnapshot.state !== "running"
-  const repairNote = repairStatusNote(repairMessage, repairSnapshot.state, setupSnapshot.state, status)
+  const launchBlockReason = adminFirstmateMutationBlockReason(entry)
+  const canLaunch = launchBlockReason === undefined
+  const repairNote = repairStatusNote(repairMessage, repairSnapshot.state, setupSnapshot.state, status, isAdminFirstmate(entry))
 
   const runOrRetryDoctor = () => {
     const command = buildDiagnosticCommand(entry)
@@ -579,53 +675,45 @@ const AdminDetailPanel = ({
     forceRender((value) => value + 1)
   }
 
-  /**
-   * Runs the profile's existing `repair PROFILE` subcommand exactly once
-   * (the same real, documented action `omp repair`/`cldx repair`/etc.
-   * already expose), tracked under `repairRefFor(entry)` so it never
-   * overwrites the profile's own doctor history, then automatically
-   * re-triggers the doctor check to recheck. If that recheck is still not
-   * healthy, `repairThenRecheckDoctor` automatically escalates to the
-   * profile's `setup PROFILE` subcommand once as well (e.g. `omp`'s
-   * "installed version receipt is missing" case, which only `setup` can
-   * create) and rechecks doctor again. Shares `repairThenRecheckDoctor`
-   * with the on-load auto-repair dispatch in `AdminRoot` so a manual `[p]`
-   * press and an automatic repair behave identically. Never parses or
-   * executes the Copilot-suggested-fix text itself; this always runs the
-   * same fixed, safe commands the profile's own launcher already exposes.
-   */
   const confirmRepair = () => {
-    setRepairMessage(`Running ${entry.name}'s repair…`)
-    repairThenRecheckDoctor(entry, runManager)
+    const approved = confirmationEntry.current
+    const operation = isAdminFirstmate(approved) ? "Preparation" : "Repair"
+    setRepairMessage(`${operation}: ${adminProfileLabel(approved)}…`)
+    repairThenRecheckDoctor(approved, runManager)
       .then((outcome) => {
         const setupNote = outcome.setupState === undefined ? "" : ` Setup also attempted (${outcome.setupState}).`
-        setRepairMessage(`Repair attempted; doctor recheck: ${outcome.doctorState}.${setupNote}`)
+        const diagnostic = isAdminFirstmate(approved) ? runManager.status(repairRefFor(approved)).latest?.stderr.trim() : undefined
+        setRepairMessage(`${operation} ${outcome.repairState}; doctor recheck: ${outcome.doctorState}.${setupNote}${diagnostic ? ` ${diagnostic}` : ""}`)
       })
       .catch((error: unknown) => setRepairMessage(error instanceof Error ? error.message : String(error)))
       .finally(() => forceRender((value) => value + 1))
   }
 
   const confirmLaunch = () => {
-    launchAdminProfile(entry, true)
-      .then(() => setLaunchMessage(`Handed the terminal to ${entry.name}.`))
+    const approved = confirmationEntry.current
+    launchAdminProfile(approved, true)
+      .then(() => setLaunchMessage(`Handed the terminal to ${adminProfileLabel(approved)}.`))
       .catch((error: unknown) => setLaunchMessage(error instanceof Error ? error.message : String(error)))
   }
 
-  const canFork = diagnosis?.status === "done" && herdrAvailable === true
+  const canFork = canLaunch && herdrAvailable === true &&
+    (diagnosis?.status === "done" || (isAdminFirstmate(entry) && (status === "failure" || status === "timed-out")))
   const confirmFork = () => {
-    setForkMessage(`Creating a Herdr worktree to fix ${entry.name}…`)
-    onForkToFix(entry, diagnosis?.status === "done" ? diagnosis.result : undefined)
+    const approved = confirmationEntry.current
+    setForkMessage(`Creating a Herdr worktree to inspect ${adminProfileLabel(approved)}…`)
+    onForkToFix(approved, diagnosis?.status === "done" ? diagnosis.result : undefined)
       .then((outcome) => setForkMessage(forkOutcomeMessage(outcome)))
       .catch((error: unknown) => setForkMessage(error instanceof Error ? error.message : String(error)))
   }
 
-  useInput((input) => {
+  useInput((input, key) => {
     const options: DetailInputOptions = {
       confirmation,
       entry,
       controls,
       canFork,
       canRepair,
+      canLaunch,
       versionRunning,
       confirmLaunch,
       confirmFork,
@@ -637,10 +725,12 @@ const AdminDetailPanel = ({
       onOpenInventory,
       setConfirmation: updateConfirmation,
       onForceResyncVersion,
-      harnessUpdatePlan: harnessUpdateState?.status === "running" ? undefined : harnessUpdatePlan,
+      harnessUpdatePlan: harnessUpdateState?.status === "running"
+        ? undefined
+        : confirmation === "harness-update" ? confirmationPlan.current : harnessUpdatePlan,
       onUpdateHarness,
     }
-    if (!handleDetailConfirmation(input, options)) handleDetailShortcut(input, options)
+    if (!handleDetailConfirmation(input, options, key.pageUp || key.pageDown)) handleDetailShortcut(input, options)
   }, { isActive: inputActive })
 
   return (
@@ -653,14 +743,19 @@ const AdminDetailPanel = ({
         controls={controls}
         canFork={canFork}
         canRepair={canRepair}
+        canLaunch={canLaunch}
         versionRunning={versionRunning}
         tick={tick}
       />
       <DiagnosisPanel diagnosis={diagnosis} herdrAvailable={herdrAvailable} />
-      <ConfirmationPrompt confirmation={confirmation} entry={entry} />
+      {launchBlockReason === undefined ? null : <Text color="yellow" wrap="wrap">{launchBlockReason}</Text>}
+      {isAdminFirstmate(entry) && !isRepairSupported(entry) && launchBlockReason === undefined ? (
+        <Text color="yellow" wrap="wrap">{adminFirstmatePreparationBlockReason(entry)}</Text>
+      ) : null}
+      <ConfirmationPrompt confirmation={confirmation} entry={confirmationEntry.current} />
       <DetailMessages launchMessage={launchMessage} forkMessage={forkMessage} repairNote={repairNote} />
       <HarnessUpdateControl
-        plan={harnessUpdatePlan}
+        plan={confirmation === "harness-update" ? confirmationPlan.current : harnessUpdatePlan}
         state={harnessUpdateState}
         tick={tick}
         confirming={confirmation === "harness-update"}
@@ -696,7 +791,7 @@ const GuideOverlay = ({
   <Box flexDirection="column" paddingX={1}>
     <Box borderStyle="round" borderColor="cyan" paddingX={1} justifyContent="space-between">
       <Text bold color="cyan">
-        {entry.name} guide{" "}
+        {adminProfileLabel(entry)} guide{" "}
         <Text dimColor>
           · {entry.surface}
           {entry.launcher === undefined ? "" : ` · ${entry.launcher}`}
@@ -823,28 +918,56 @@ const InventoryOverlay = ({
   status,
   outcome,
   message,
+  columns,
+  rows,
 }: {
   readonly entry: AdminProfileEntry
   readonly status: "loading" | "done" | "error"
   readonly outcome: AdminInventoryOutcome | undefined
   readonly message: string | undefined
+  readonly columns: number
+  readonly rows: number
 }) => (
   <Box flexDirection="column" paddingX={1}>
     <Box borderStyle="round" borderColor="blue" paddingX={1} justifyContent="space-between">
       <Text bold color="blue">
-        {entry.name} inventory{" "}
+        {adminProfileLabel(entry)} inventory{" "}
         <Text dimColor>
           · {entry.surface}
           {entry.launcher === undefined ? "" : ` · ${entry.launcher}`}
         </Text>
       </Text>
     </Box>
-    <InventoryContent status={status} outcome={outcome} message={message} />
+    {entry.firstmateInstanceDescriptor === undefined ? (
+      <InventoryContent status={status} outcome={outcome} message={message} />
+    ) : (
+      <MarkdownTextViewport
+        value={firstmateInventoryText(entry, status, outcome, message)}
+        width={Math.max(20, columns - 4)}
+        height={Math.max(6, rows - 8)}
+        resetKey={entry.ref}
+      />
+    )}
     <Box marginTop={1} paddingX={1} borderStyle="round" borderColor="gray">
-      <ShortcutHints items={[{ key: "q/Esc", label: "back to list" }]} />
+      <ShortcutHints items={[
+        { key: "q/Esc", label: "back to list" },
+        ...(entry.firstmateInstanceDescriptor === undefined ? [] : [{ key: "PageUp/PageDown", label: "scroll" }]),
+      ]} />
     </Box>
   </Box>
 )
+
+const firstmateInventoryText = (
+  entry: AdminProfileEntry,
+  status: "loading" | "done" | "error",
+  outcome: AdminInventoryOutcome | undefined,
+  message: string | undefined,
+): string => {
+  const content = status === "loading"
+    ? "Loading inventory…"
+    : status === "error" || outcome === undefined ? `Inventory unavailable: ${message ?? "no result"}` : adminInventorySummary(outcome)
+  return [...adminInstanceDetails(entry), "", entry.healthDiagnostic ?? "", "", content].join("\n")
+}
 
 interface AdminInputKey {
   readonly ctrl: boolean
@@ -915,6 +1038,30 @@ const handleAdminListInput = (char: string, key: AdminInputKey, options: AdminLi
 
 const profileWorkIsRunning = (entry: AdminProfileEntry, manager: AdminRunManager): boolean =>
   [entry.ref, repairRefFor(entry), setupRefFor(entry)].some((ref) => manager.status(ref).state === "running")
+
+const maintenanceBlockReason = (entries: ReadonlyArray<AdminProfileEntry>, manager: AdminRunManager): string | undefined => {
+  if (entries.some((entry) => entry.firstmateDiscovery === "pending")) {
+    return "Wait for the complete Firstmate instance list before confirming maintenance."
+  }
+  return entries.some((entry) => profileWorkIsRunning(entry, manager))
+    ? "A profile check, preparation, repair, or setup is running. Wait for it to finish, then press y."
+    : undefined
+}
+
+const InstanceDiscoveryNotice = ({ entries }: { readonly entries: ReadonlyArray<AdminProfileEntry> }) => {
+  const pending = entries.some((entry) => entry.firstmateDiscovery === "pending")
+  const failed = entries.filter((entry) => entry.firstmateDiscovery === "failed")
+  return (
+    <>
+      {pending ? <Text color="yellow">Firstmate instance discovery is pending. Maintenance is disabled until it finishes.</Text> : null}
+      {failed.length === 0 ? null : (
+        <Text color="yellow" wrap="wrap">
+          Firstmate instance list incomplete: {failed.map((entry) => entry.name).join(", ")}. Select each failed row for details.
+        </Text>
+      )}
+    </>
+  )
+}
 
 const AdminListHeader = ({
   profileCount,
@@ -1059,7 +1206,7 @@ export const AdminApp = ({
         setInventoryOverlay((current) =>
           current === undefined || current.entry.ref !== entry.ref
             ? current
-            : { entry, status: "done", outcome: parseInventoryOutput(result.stdout), message: undefined },
+            : { entry, status: "done", outcome: parseInventoryOutput(result.stdout, entry), message: undefined },
         )
       })
       .catch((error: unknown) => {
@@ -1198,7 +1345,9 @@ export const AdminApp = ({
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
-        setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, { status: "error", message }))
+        setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, {
+          status: "error", message, targetRefs: plan.targets.map((entry) => entry.ref),
+        }))
       })
       .finally(() => setTick((value) => value + 1))
   }
@@ -1220,7 +1369,7 @@ export const AdminApp = ({
     const statusesByRef = new Map<string, AdminRunStatus>(
       entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)]),
     )
-    const repairSupportedRefs = new Set(entries.filter(isRepairSupported).map((entry) => entry.ref))
+    const repairSupportedRefs = new Set(entries.filter(isAutoRepairSupported).map((entry) => entry.ref))
     const targets = selectPendingRepairTargets(statusesByRef, repairSupportedRefs, repairAttemptedRefs.current)
     if (targets.length === 0) return
     repairAttemptedRefs.current = new Set([...repairAttemptedRefs.current, ...targets])
@@ -1251,7 +1400,7 @@ export const AdminApp = ({
 
   useEffect(() => {
     const statusesByRef = new Map<string, AdminRunStatus>(
-      entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)]),
+      entries.filter((entry) => entry.doctorSupported && !isAdminFirstmate(entry)).map((entry) => [entry.ref, runManager.status(entry.ref)]),
     )
     const targets = selectPendingDiagnosisTargets(statusesByRef, diagnosedRefs.current)
     if (targets.length === 0) return
@@ -1267,7 +1416,7 @@ export const AdminApp = ({
       const snapshot = statusesByRef.get(ref)
       const capturedOutput = `${snapshot?.latest?.stdout ?? ""}\n${snapshot?.latest?.stderr ?? ""}`.trim()
       diagnosisProvider
-        .diagnose({ ref, name: entry.name, capturedOutput })
+        .diagnose({ ref, name: adminProfileLabel(entry), capturedOutput, diagnosticCommand: buildDiagnosticCommand(entry) })
         .then((result) => {
           setDiagnosisByRef((previous) => new Map(previous).set(ref, { status: "done", result }))
         })
@@ -1280,13 +1429,20 @@ export const AdminApp = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   })
 
-  const onForkToFix = (entry: AdminProfileEntry, diagnosis: DoctorFailureDiagnosisResult | undefined): Promise<HerdrForkOutcome> => {
-    if (herdrAvailable !== true) return Promise.resolve({ kind: "unavailable" })
+  const onForkToFix = async (entry: AdminProfileEntry, diagnosis: DoctorFailureDiagnosisResult | undefined): Promise<HerdrForkOutcome> => {
+    if (herdrAvailable !== true) return { kind: "unavailable" }
     const snapshot = runManager.status(entry.ref)
     const capturedOutput = `${snapshot.latest?.stdout ?? ""}\n${snapshot.latest?.stderr ?? ""}`.trim()
     return forkFailureToHerdrWorktree(
       runner,
-      { ref: entry.ref, name: entry.name, capturedOutput, ...(diagnosis === undefined ? {} : { diagnosis }) },
+      {
+        ref: entry.ref,
+        name: adminProfileLabel(entry),
+        capturedOutput,
+        diagnosticCommand: buildDiagnosticCommand(entry),
+        ...(entry.firstmateInstanceDescriptor === undefined ? {} : { firstmateInstance: entry.firstmateInstanceDescriptor }),
+        ...(diagnosis === undefined ? {} : { diagnosis }),
+      },
       { cwd, command: buildAdminLaunchCommand(entry), promptDelivery: "agent" },
     )
   }
@@ -1299,6 +1455,8 @@ export const AdminApp = ({
   const viewState = resolveAdminViewState(entries, sorted, false)
   const boundedIndex = sorted.length === 0 ? 0 : Math.min(selectedIndex, sorted.length - 1)
   const selected = sorted[boundedIndex]
+  const instancesPending = entries.some((entry) => entry.firstmateDiscovery === "pending")
+  const visibleRows = adminVisibleRowRange(sorted, boundedIndex, rows)
   const versionResultsByRef = reconcileHarnessVersionResults(
     entries,
     (operationKey) =>
@@ -1314,9 +1472,7 @@ export const AdminApp = ({
     routerCommandPath,
     checkVersions: (signal) => checkAdminHarnessUpdates(entries, runner, cwd, signal, persistVersionResult),
     checkSkills: (signal) => checkAdminSkillsUpdates(entries, runner, cwd, routerCommandPath, signal),
-    blockReason: () => entries.some((entry) => profileWorkIsRunning(entry, runManager))
-      ? "A profile check, repair, or setup is running. Wait for it to finish, then press y."
-      : undefined,
+    blockReason: () => maintenanceBlockReason(entries, runManager),
   })
   const versionRunning = (entry: AdminProfileEntry) => {
     const operationKeys = new Set(
@@ -1371,7 +1527,7 @@ export const AdminApp = ({
     }
     handleAdminListInput(char, key, {
       exit,
-      openHarnessUpdates: allUpdates.open,
+      openHarnessUpdates: () => { if (!instancesPending) allUpdates.open() },
       sortedLength: sorted.length,
       setSearching,
       setSelectedIndex,
@@ -1404,6 +1560,8 @@ export const AdminApp = ({
         status={inventoryOverlay.status}
         outcome={inventoryOverlay.outcome}
         message={inventoryOverlay.message}
+        columns={columns}
+        rows={rows}
       />
     )
   }
@@ -1419,6 +1577,7 @@ export const AdminApp = ({
         updateAllRunning={allUpdates.running}
         versionCacheError={versionCacheError}
       />
+      <InstanceDiscoveryNotice entries={entries} />
       <HarnessUpdateAllStatus state={allUpdates.state} />
       {viewState === "discovering" ? <Text color="yellow">Discovering profiles…</Text> : null}
       {viewState === "empty-no-profiles" ? <Text color="yellow">No profiles were discovered.</Text> : null}
@@ -1436,7 +1595,7 @@ export const AdminApp = ({
             </Box>
             <Box width={widths.name}>
               <Text bold color="cyan">
-                PROFILE NAME
+                PROFILE / INSTANCE
               </Text>
             </Box>
             <Box width={widths.type}>
@@ -1460,8 +1619,8 @@ export const AdminApp = ({
               </Text>
             </Box>
           </Box>
-          {sorted.slice(0, Math.max(3, rows - 8)).map((entry, index) => {
-            const active = index === boundedIndex
+          {sorted.slice(visibleRows.start, visibleRows.start + visibleRows.count).map((entry, index) => {
+            const active = visibleRows.start + index === boundedIndex
             const status = runStatusOf(entry, runManager.status(entry.ref))
             const versionRunningNow = versionRunning(entry)
             const versionCols = versionColumnsByRef.get(entry.ref) ?? versionColumnsFor(entry)
@@ -1480,7 +1639,7 @@ export const AdminApp = ({
                 </Box>
                 <Box width={widths.name}>
                   <Text bold={active} color="cyan" dimColor={!active} wrap="truncate-end">
-                    {entry.name}
+                    {adminProfileLabel(entry)}
                   </Text>
                 </Box>
                 <Box width={widths.type}>
@@ -1509,6 +1668,7 @@ export const AdminApp = ({
       ) : null}
       {selected !== undefined ? (
         <AdminDetailPanel
+          key={selected.ref}
           entry={selected}
           runManager={runManager}
           diagnosis={diagnosisByRef.get(selected.ref)}
@@ -1521,7 +1681,7 @@ export const AdminApp = ({
           versionRunning={versionRunning(selected)}
           onForceResyncVersion={forceResyncVersion}
           harnessUpdatePlan={allUpdates.running ? undefined : harnessUpdatePlanFor(selected, entries, versionResultFor(selected))}
-          harnessUpdateState={harnessUpdateByKey.get(harnessUpdateKeyFor(selected) ?? "")}
+          harnessUpdateState={harnessUpdateStateForEntry(selected, harnessUpdateByKey)}
           onUpdateHarness={updateHarness}
           onConfirmationChange={setDetailConfirmationActive}
           inputActive={!searching && !allUpdates.running}
@@ -1557,12 +1717,13 @@ export const AdminRoot = ({
   readonly herdrEnv: HerdrEnvironment
   readonly routerCommandPath?: string
 }) => {
-  const [entries, setEntries] = useState<ReadonlyArray<AdminProfileEntry>>(() => aggregateAdminProfiles(catalog))
+  const [entries, setEntries] = useState<ReadonlyArray<AdminProfileEntry>>(() => aggregateAdminInstanceProfiles(catalog))
   const [refreshError, setRefreshError] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     let cancelled = false
-    refreshAdminEntries(runner, catalog, cwd)
+    const controller = new AbortController()
+    refreshAdminEntries(runner, catalog, cwd, () => Date.now(), { signal: controller.signal })
       .then((refreshed) => {
         if (!cancelled) setEntries(refreshed)
       })
@@ -1571,6 +1732,7 @@ export const AdminRoot = ({
       })
     return () => {
       cancelled = true
+      controller.abort()
     }
     // Refresh runs once per process lifetime; the catalog/runner/cwd are fixed for the session.
     // eslint-disable-next-line react-hooks/exhaustive-deps

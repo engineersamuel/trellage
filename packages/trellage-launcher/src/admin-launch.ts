@@ -1,12 +1,17 @@
 /**
- * Confirmed terminal-launch action for the Admin panel. Delegates entirely
- * to the existing launch-building (`buildGuideLaunchCommand`) and terminal
- * handoff (`runInteractiveCommand`, `spawn(...,{stdio:"inherit"})`)
- * functions in `guide-launch.ts` — no new process-spawning code is
- * introduced here. The action only runs after explicit confirmation; it
- * never launches as a side effect of selection/navigation.
+ * Confirmed Admin controls. Firstmate uses the shared instance selectors
+ * and context. Other profiles use the existing guide launch builder.
+ * Terminal handoff still uses runInteractiveCommand; selection never launches.
  */
-import type { AdminProfileEntry } from "./admin-model.ts"
+import { firstmateInstanceCli } from "@trellage/guide-core"
+import { adminProfileLabel, isAdminFirstmate, type AdminProfileEntry } from "./admin-model.ts"
+import {
+  adminFirstmatePreparationBlockReason,
+  adminFirstmatePreparationDiagnostic,
+  adminInstanceControlArgs,
+  adminInstanceSelectorArgs,
+  adminNativeSelectedProfile,
+} from "./admin-firstmate.ts"
 import type { AdminRunManager, AdminRunState } from "./admin-run-manager.ts"
 import {
   buildGuideLaunchCommand,
@@ -17,13 +22,7 @@ import {
 
 export const toSelectedProfile = (entry: AdminProfileEntry): SelectedProfile =>
   entry.surface === "native"
-    ? {
-        surface: "native",
-        launcher: entry.launcher ?? "",
-        commandPath: entry.commandPath,
-        profile: entry.name,
-        headlessPrompt: false,
-      }
+    ? adminNativeSelectedProfile(entry)
     : {
         surface: "sandbox",
         commandPath: entry.commandPath,
@@ -31,9 +30,11 @@ export const toSelectedProfile = (entry: AdminProfileEntry): SelectedProfile =>
         headlessPrompt: false,
       }
 
-/** Builds the exact command the existing single-profile picker would build for an equivalent profile — no new logic. */
+/** Firstmate control uses the confirmed instance context; other launchers retain the picker command. */
 export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =>
-  buildGuideLaunchCommand(toSelectedProfile(entry)).command
+  isAdminFirstmate(entry)
+    ? { executable: entry.commandPath, args: [entry.name, ...adminInstanceControlArgs(entry)] }
+    : buildGuideLaunchCommand(toSelectedProfile(entry)).command
 
 /**
  * Builds the capability-appropriate diagnostic command for a profile,
@@ -47,49 +48,48 @@ export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =
  */
 export const buildDiagnosticCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: entry.surface === "native" ? ["doctor", entry.name] : ["validate", entry.name],
+  args: entry.surface === "native" ? ["doctor", entry.name, ...adminInstanceSelectorArgs(entry)] : ["validate", entry.name],
 })
 
 /**
- * True only for native profiles whose launcher already exposes a doctor
- * check (`entry.doctorSupported`) — every native launcher that supports
- * `doctor PROFILE` also supports the identically-shaped `repair PROFILE`
- * and `setup PROFILE` subcommands (verified directly in each launcher's
- * `bin/*` source: cpx, cldx, grx, jcx, omp, picx, prx, and cdx via
- * `native-codex`). Sandbox profiles have no equivalent repair/setup
- * subcommand — a failing sandbox profile is fixed by rebuilding its locked
- * image, not by an in-place repair, so this is always `false` for
- * `entry.surface === "sandbox"`. This same gate is used before offering the
- * manual `[p]` action and before the automatic repair-then-setup escalation
- * in `repairThenRecheckDoctor`.
+ * Firstmate requires safe preparation and a published fleet identity.
+ * Ordinary Native repair support follows doctor support. Containers have
+ * no in-place repair command.
  */
-export const isRepairSupported = (entry: AdminProfileEntry): boolean => entry.surface === "native" && entry.doctorSupported
+export const isRepairSupported = (entry: AdminProfileEntry): boolean =>
+  entry.surface === "native" && entry.doctorSupported &&
+  (!isAdminFirstmate(entry) || adminFirstmatePreparationBlockReason(entry) === undefined)
+
+export const isAutoRepairSupported = (entry: AdminProfileEntry): boolean =>
+  !isAdminFirstmate(entry) && isRepairSupported(entry)
 
 /**
- * Builds the `repair PROFILE` command for a native profile, using the exact
- * same argument shape as `buildDiagnosticCommand`'s `doctor PROFILE` branch.
- * Callers must check `isRepairSupported(entry)` first — this never
- * fabricates a command for a sandbox profile or an unsupported launcher.
+ * Firstmate preparation has no package-install approval or setup fallback.
+ * Other Native profiles retain repair PROFILE.
  */
-export const buildRepairCommand = (entry: AdminProfileEntry): CommandSpec => ({
-  executable: entry.commandPath,
-  args: ["repair", entry.name],
-})
+export const buildRepairCommand = (entry: AdminProfileEntry): CommandSpec => {
+  if (isAdminFirstmate(entry)) {
+    const reason = adminFirstmatePreparationBlockReason(entry)
+    if (reason !== undefined) throw new Error(reason)
+    return {
+      executable: entry.commandPath,
+      args: [
+        "prepare", entry.name, ...adminInstanceControlArgs(entry), "--json",
+        firstmateInstanceCli.expectedSourceRevision, entry.orchestration!.sourceRevision,
+      ],
+    }
+  }
+  return { executable: entry.commandPath, args: ["repair", entry.name] }
+}
 
 /**
- * Builds the `setup PROFILE` command for a native profile, using the exact
- * same argument shape as `buildRepairCommand`. `setup` performs the same
- * install/repair steps as `repair` plus first-time state creation (e.g. an
- * `omp` profile whose installed-version receipt is missing entirely —
- * `omp repair` refuses to fabricate one and tells the operator to run
- * `omp setup PROFILE` instead, while `omp setup` resolves and installs a
- * version from scratch when no prior receipt exists). Callers must check
- * `isRepairSupported(entry)` first, the same gate `buildRepairCommand` uses.
+ * Only ordinary Native profiles can use setup. Firstmate creation is a
+ * separate approved operation and is never an Admin recovery fallback.
  */
-export const buildSetupCommand = (entry: AdminProfileEntry): CommandSpec => ({
-  executable: entry.commandPath,
-  args: ["setup", entry.name],
-})
+export const buildSetupCommand = (entry: AdminProfileEntry): CommandSpec => {
+  if (isAdminFirstmate(entry)) throw new Error("Admin does not create Firstmate fleets or escalate preparation to setup.")
+  return { executable: entry.commandPath, args: ["setup", entry.name] }
+}
 
 /**
  * `repair`/`setup` can perform real installs (e.g. `mise install`, `npm ci`,
@@ -116,20 +116,10 @@ export interface RepairAndRecheckOutcome {
 }
 
 /**
- * Runs the profile's existing `repair PROFILE` subcommand exactly once (the
- * same real, documented action `omp repair`/`cldx repair`/etc. already
- * expose), tracked under `repairRefFor(entry)` so it never overwrites the
- * profile's own doctor history, then re-triggers the doctor check to
- * recheck. If that recheck is still not a `success` (e.g. `omp`'s "OMP
- * installed version receipt is missing; run omp setup PROFILE" case, which
- * `repair` alone cannot fix because it refuses to fabricate a missing
- * receipt), automatically runs the profile's `setup PROFILE` subcommand
- * once as well — tracked under its own distinct `setupRefFor(entry)` ref —
- * and rechecks doctor again. Never parses or executes any Copilot-suggested
- * fix text; this always runs the same two fixed, safe, already-documented
- * commands the profile's own launcher already exposes. Shared by the
- * manual `[p]` action and the on-load auto-repair dispatch so both paths
- * behave identically.
+ * Keeps preparation/repair separate from doctor history. Firstmate returns
+ * after one prepare and one doctor, even on refusal or invalid output.
+ * Other Native profiles keep their existing repair → doctor → setup fallback.
+ * Only the confirmed manual action may call this for Firstmate.
  */
 export const repairThenRecheckDoctor = async (
   entry: AdminProfileEntry,
@@ -137,13 +127,18 @@ export const repairThenRecheckDoctor = async (
 ): Promise<RepairAndRecheckOutcome> => {
   const repairCommand = buildRepairCommand(entry)
   await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args, {
-    timeoutMs: repairOrSetupTimeoutMs,
+    timeoutMs: isAdminFirstmate(entry) ? 300_000 : repairOrSetupTimeoutMs,
+    ...(isAdminFirstmate(entry) ? {
+      terminationGraceMs: 10_000,
+      outputOverflow: "terminate" as const,
+      validateOutput: (stdout: string) => adminFirstmatePreparationDiagnostic(entry, stdout),
+    } : {}),
   })
   const repairState = runManager.status(repairRefFor(entry)).state
   const doctorCommand = buildDiagnosticCommand(entry)
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args)
   const doctorStateAfterRepair = runManager.status(entry.ref).state
-  if (doctorStateAfterRepair === "success") return { repairState, doctorState: doctorStateAfterRepair }
+  if (doctorStateAfterRepair === "success" || isAdminFirstmate(entry)) return { repairState, doctorState: doctorStateAfterRepair }
 
   const setupCommand = buildSetupCommand(entry)
   await runManager.trigger(setupRefFor(entry), setupCommand.executable, setupCommand.args, {
@@ -171,6 +166,6 @@ export const launchAdminProfile = async (
   confirmed: boolean,
   run: (command: CommandSpec) => Promise<void> = runInteractiveCommand,
 ): Promise<void> => {
-  if (!confirmed) throw new LaunchNotConfirmedError(entry.name)
+  if (!confirmed) throw new LaunchNotConfirmedError(adminProfileLabel(entry))
   await run(buildAdminLaunchCommand(entry))
 }

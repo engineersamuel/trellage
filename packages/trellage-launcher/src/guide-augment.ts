@@ -88,7 +88,6 @@ const researchSuffix = "-research.md"
 const researchSubagentDirectory = "subagents"
 /** How many closing lines of the run's own response a failure quotes. */
 const researchResponseTailLines = 12
-const truncationMarker = "\n\n[truncated: augmented prompt exceeded the intent limit]"
 
 const defaultResearchTimeoutMs = 900_000
 const repomixTimeoutMs = 600_000
@@ -103,10 +102,11 @@ const diagnostic = (error: unknown): string => {
 
 /** Keeps the augmented text within the same bound the intent editor enforces. */
 export const clampAugmentedIntent = (value: string): string => {
-  const characters = [...value.trim()]
-  if (characters.length <= guideIntentMaximumLength) return characters.join("")
-  const markerLength = [...truncationMarker].length
-  return characters.slice(0, guideIntentMaximumLength - markerLength).join("") + truncationMarker
+  if ([...value].length > guideIntentMaximumLength) {
+    throw new GuideAugmentError(`Augmented intent exceeds ${guideIntentMaximumLength} characters; the original intent is unchanged.`)
+  }
+  if (value.trim().length === 0) throw new GuideAugmentError("Augmented intent is empty; the original intent is unchanged.")
+  return value
 }
 
 const positiveInteger = (value: string | undefined, fallback: number): number => {

@@ -17,6 +17,8 @@
  * version comparison the architecture cannot support.
  */
 import type { AdminProfileEntry } from "./admin-model.ts"
+import { FIRSTMATE_MAX_RESPONSE_BYTES, type FirstmateFleetReadinessV1 } from "@trellage/guide-core"
+import { adminInstanceSelectorArgs, parseAdminFirstmateInventory } from "./admin-firstmate.ts"
 import type { CommandSpec } from "./guide-launch.ts"
 
 export interface AdminInventoryPlugin {
@@ -34,6 +36,7 @@ export interface AdminInventoryResult {
   readonly plugins: ReadonlyArray<AdminInventoryPlugin>
   readonly skills: AdminInventorySkills
   readonly mcps: ReadonlyArray<string>
+  readonly fleet?: FirstmateFleetReadinessV1
 }
 
 export type AdminInventoryOutcome = { readonly malformed: true; readonly diagnostic: string } | ({ readonly malformed?: false } & AdminInventoryResult)
@@ -41,7 +44,7 @@ export type AdminInventoryOutcome = { readonly malformed: true; readonly diagnos
 /** Builds `inventory PROFILE --json` for a profile. Callers must check `entry.inventorySupported` first. */
 export const buildInventoryCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: ["inventory", entry.name, "--json"],
+  args: ["inventory", entry.name, ...adminInstanceSelectorArgs(entry), "--json"],
 })
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -72,23 +75,12 @@ const parseMcps = (value: unknown): ReadonlyArray<string> | undefined => {
   return value.every((item): item is string => typeof item === "string") ? value : undefined
 }
 
-/**
- * Tolerantly parses `inventory --json` stdout. Any structural mismatch
- * (invalid JSON, wrong shape, unexpected identity) is reported as
- * `{malformed: true}` rather than guessed at — the same fail-closed
- * posture used by `admin-version-check.ts` and `guide-preflight.ts`.
- */
-export const parseInventoryOutput = (stdout: string): AdminInventoryOutcome => {
-  const trimmed = stdout.trim()
-  if (trimmed.length === 0) return { malformed: true, diagnostic: "inventory --json produced no output" }
-  let value: unknown
-  try {
-    value = JSON.parse(trimmed)
-  } catch {
-    return { malformed: true, diagnostic: "inventory --json did not return valid JSON" }
-  }
+const parseInventoryPayload = (value: unknown, entry: AdminProfileEntry | undefined): AdminInventoryOutcome => {
   if (!isPlainObject(value)) return { malformed: true, diagnostic: "inventory --json must return a JSON object" }
   if (value.schemaVersion !== 1) return { malformed: true, diagnostic: "inventory --json returned an unsupported schema version" }
+  if (entry !== undefined && (value.launcher !== entry.launcher || value.profile !== entry.name)) {
+    return { malformed: true, diagnostic: "inventory --json returned another profile's identity" }
+  }
   if (!isReadiness(value.readiness)) return { malformed: true, diagnostic: "inventory --json returned an unsupported readiness value" }
   const plugins = parsePlugins(value.plugins)
   const skills = parseSkills(value.skills)
@@ -97,4 +89,46 @@ export const parseInventoryOutput = (stdout: string): AdminInventoryOutcome => {
     return { malformed: true, diagnostic: "inventory --json returned an unrecognized plugins/skills/mcps shape" }
   }
   return { readiness: value.readiness, plugins, skills, mcps }
+}
+
+/** Read-only inventory must identify the selected instance, not only its template. */
+export const parseInventoryOutput = (stdout: string, entry?: AdminProfileEntry): AdminInventoryOutcome => {
+  if (entry?.orchestration !== undefined && Buffer.byteLength(stdout, "utf8") > FIRSTMATE_MAX_RESPONSE_BYTES) {
+    return { malformed: true, diagnostic: "Firstmate inventory exceeded its output limit." }
+  }
+  const trimmed = stdout.trim()
+  if (trimmed.length === 0) return { malformed: true, diagnostic: "inventory --json produced no output" }
+  let value: unknown
+  try {
+    value = JSON.parse(trimmed)
+  } catch {
+    return { malformed: true, diagnostic: "inventory --json did not return valid JSON" }
+  }
+
+  const inventory = parseInventoryPayload(value, entry)
+  if (inventory.malformed === true) return inventory
+  try {
+    const fleet = entry?.orchestration === undefined ? undefined : parseAdminFirstmateInventory(stdout, entry)
+    return { ...inventory, ...(fleet === undefined ? {} : { fleet }) }
+  } catch (error) {
+    return { malformed: true, diagnostic: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export const adminInventorySummary = (outcome: AdminInventoryOutcome): string => {
+  if (outcome.malformed === true) return `Inventory could not be verified: ${outcome.diagnostic}`
+  return [
+    `Readiness: ${outcome.readiness}`,
+    ...(outcome.fleet === undefined ? [] : [`Fleet runtime: ${outcome.fleet.runtime} · Supervisor: ${outcome.fleet.supervisor.state}`]),
+    "",
+    `### Plugins (${outcome.plugins.length})`,
+    ...(outcome.plugins.length === 0 ? ["None reported."] : outcome.plugins.map((plugin) => `- ${plugin.name}${plugin.version === undefined ? "" : ` (${plugin.version})`}`)),
+    "",
+    "### Skills",
+    `Visible: ${outcome.skills.visibleCount ?? "unknown"} · Packages: ${outcome.skills.packageCount ?? "unknown"}`,
+    "Skills are managed as one bundle, not individually versioned packages.",
+    "",
+    `### MCP servers (${outcome.mcps.length})`,
+    ...(outcome.mcps.length === 0 ? ["None reported."] : outcome.mcps.map((name) => `- ${name}`)),
+  ].join("\n")
 }

@@ -53,6 +53,7 @@
 import { accessSync, constants, lstatSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { guideTaskContext, guideTaskOrchestration } from "./guide-context.ts"
 import {
   CopilotClient,
   RuntimeConnection,
@@ -741,6 +742,11 @@ export class CopilotGuideProvider implements GuideProvider {
   }
 
   async match(input: GuideMatchInput): Promise<GuideMatchResult> {
+    input = {
+      ...input, entries: input.entries.map((entry) => ({
+        ...entry, ...(entry.orchestration === undefined ? {} : { orchestration: guideTaskOrchestration(entry.orchestration) }),
+      })),
+    }
     assertGuideMatchInput(input)
     const workflowIndex = new Map(
       input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]),
@@ -760,6 +766,7 @@ export class CopilotGuideProvider implements GuideProvider {
 
   async generate(input: GuideGenerateInput): Promise<GuideGenerateResult> {
     assertGuideGenerateInput(input)
+    input = { ...input, ...guideTaskContext(input.intent, input) }
     const execution = input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
     return this.run(
       "generate",
@@ -772,6 +779,7 @@ export class CopilotGuideProvider implements GuideProvider {
 
   async refine(input: GuideRefineInput): Promise<GuideRefineResult> {
     assertGuideGenerateInput(input)
+    input = { ...input, ...guideTaskContext(input.intent, input) }
     const execution = input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
     const payload = execution === undefined
       ? input
@@ -787,6 +795,7 @@ export class CopilotGuideProvider implements GuideProvider {
 
   async optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult> {
     assertGuideOptimizeInput(input)
+    input = { ...input, ...guideTaskContext(input.originalIntent ?? "", input) }
     const skillDirectory = this.promptMasterSkillDirectory
     if (skillDirectory === undefined) {
       throw new GuideModelCapabilityError("Prompt Master skill directory is not configured")

@@ -25,6 +25,25 @@ only. Its `beforeBody` and `afterBody` fields show the authored destination
 around that body. They are context only. The caller reapplies that exact fixed
 frame after optimization.
 
+The final specification has an 8000 UTF-16 code-unit limit, including `fixedFrame`
+when present. `bodyBudget`, when supplied, is the maximum UTF-16 code-unit length
+of each returned `prompt`. The caller has already reserved the exact frame,
+inserted target/context, and any restored original-input appendix. Keep each
+optimized prompt below that limit; do not subtract reserved text again. Without
+a supplied budget, leave room for those additions. With Firstmate `orchestration`,
+original intent is carried separately. Without orchestration, the renderer
+preserves any supplied `originalIntent` in the single delivered prompt.
+Never silently shorten the original or remove its requirements.
+
+The input may also include `originalIntent`, `projectTarget`, and
+`orchestration`. Preserve the original human scope; do not replace it with a
+model rewrite, change its target, or invent unsupported worker controls.
+Do not repeat these fields in the body; the renderer handles their delivery.
+Do not widen permission or drop requirements to make the body fit.
+For Firstmate, status/Bearings is observational, ordinary Stow is scoped
+memory work, and condition watches notify only. Preserve useful differences
+between the three approaches, not merely different titles.
+
 When `fixedFrame` is absent, each candidate `prompt` is the complete prompt.
 Optimize that complete prompt in place, preserve its authored workflow
 requirements and supported activation text, and do not assume the caller will

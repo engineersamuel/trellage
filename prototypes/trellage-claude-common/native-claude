@@ -12,6 +12,8 @@
 #   native-claude harness-update
 #   native-claude skills-update --home ABS --marker ABS --marker-value VALUE
 #   native-claude model-id
+#   native-claude model-map --json
+#   native-claude model-catalog --json
 #   native-claude exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 #
 # Callers select their own launcher identity via TRELLAGE_CLAUDE_LAUNCHER_NAME
@@ -78,12 +80,27 @@ Usage:
   $launcher_name skills-update --home ABS --marker ABS --marker-value VALUE
   $launcher_name skills-check --home ABS --marker ABS --marker-value VALUE
   $launcher_name model-id
+  $launcher_name model-map --json
+  $launcher_name model-catalog --json
   $launcher_name exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 EOF
 }
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+firstmate_shared_guard() {
+  local candidate
+  for candidate in "$runtime_root/lib/fmx-registry.py" \
+    "$runtime_root/../common/floating-skills-runtime/fmx-registry.py" \
+    "$runtime_root/../trellage-firstmate-profiles/lib/fmx-registry.py"; do
+    if [[ -f "$candidate" && ! -L "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+  die 'registry-aware Firstmate shared writer support is missing; install the coherent Native writer set'
 }
 
 canonical_directory() {
@@ -273,12 +290,13 @@ claude_version_if_available() {
 }
 
 harness_update_command() {
-  local executable
+  local executable guard
 
   [[ "$#" -eq 0 ]] || die 'harness-update accepts no arguments'
   scrub_provider_environment
   executable="$(claude_executable)"
-  exec "$executable" update
+  guard="$(firstmate_shared_guard)"
+  exec python3 "$guard" lease -- "$executable" update
 }
 
 ensure_floating_skills() {
@@ -797,6 +815,7 @@ skills_update_command() {
 prepare_command() {
   local home='' marker='' marker_value='' bridge='' profile=default require_existing=false
   local executable version
+  local -a original_arguments=("$@")
 
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
@@ -823,6 +842,24 @@ prepare_command() {
   done
   validate_common_arguments "$home" "$marker" "$marker_value" "$bridge"
   [[ -n "$profile" ]] || die 'invalid --profile: value must not be empty'
+  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills" guard parent_root
+  local -a lease_arguments=(lease)
+  if [[ ! -e "$cache" && ! -L "$cache" ]]; then
+    guard="$(firstmate_shared_guard)"
+    parent_root="${home%/captain/claude}"
+    case "$parent_root" in
+      "$HOME/.local/share/trellage/profiles/firstmate/instances/"*)
+        die 'named instance preparation requires existing shared skills; creation is not shared bootstrap consent' ;;
+      "$HOME/.local/share/trellage/profiles/firstmate/default" | \
+      "$HOME/.local/share/trellage/profiles/firstmate/pstack-workers")
+        lease_arguments+=(--parent-mutation "$parent_root") ;;
+    esac
+    if [[ -z "${FMX_SHARED_LEASE_FD-}" ]]; then
+      exec python3 "$guard" "${lease_arguments[@]}" -- "$BASH" "${BASH_SOURCE[0]}" \
+        prepare "${original_arguments[@]}"
+    fi
+    python3 "$guard" check-delegation || die 'shared skills bootstrap requires its owned writer lease'
+  fi
 
   if [[ "$require_existing" == true ]]; then
     require_owned_profile "$home" "$marker" "$marker_value"
@@ -1014,6 +1051,23 @@ case "${1-}" in
       --arg evaluatorModel "$haiku_model_id" \
       --arg modelsUrl "$proxy_origin/v1/models" \
       '{version: ($version | if length > 0 then . else null end), evaluatorModel: $evaluatorModel, modelsUrl: $modelsUrl}'
+    ;;
+  model-map)
+    shift
+    [[ "$#" -eq 1 && "$1" == --json ]] || die 'model-map requires --json'
+    printf '{"default":"%s","opus":"%s","sonnet":"%s","haiku":"%s"}\n' \
+      "$model_id" "$model_id" "$sonnet_model_id" "$haiku_model_id"
+    ;;
+  model-catalog)
+    shift
+    [[ "$#" -eq 1 && "$1" == --json ]] || die 'model-catalog requires --json'
+    scrub_provider_environment
+    require_command curl
+    require_command jq
+    check_proxy
+    curl -fsS --max-time 5 "$proxy_origin/v1/models" \
+      | jq -ce '[((.data // .models // [])[]) | (.id // .slug) |
+          select(type == "string" and startswith("claude-"))] | unique'
     ;;
   exec-clean)
     shift

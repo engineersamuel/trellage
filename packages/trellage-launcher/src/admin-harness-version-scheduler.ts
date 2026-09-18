@@ -89,7 +89,7 @@ export const harnessVersionOperations = (
     operations.set(key, {
       key,
       entry,
-      releaseKey: harnessVersionReleaseKeyFor(entry),
+      releaseKey: entry.launcher === "fmx" ? undefined : harnessVersionReleaseKeyFor(entry),
       latestLookupSupported: harnessVersionLatestLookupSupported(entry),
       requiresInstalled: entry.surface === "native",
     })

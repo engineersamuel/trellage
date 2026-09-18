@@ -1,36 +1,160 @@
 # Native Firstmate profiles (`fmx`)
 
 `fmx` is the Trellage Native launcher for [Firstmate](https://github.com/kunchenguid/firstmate),
-an agent distro that turns one coding agent into a fleet captain. `fmx` runs the
-captain from a **pinned, overlaid runtime** and gives the captain and every
+an agent distribution that uses one coding agent to supervise a fleet. `fmx` runs the
+supervisor from a **pinned, overlaid runtime** and gives the supervisor and every
 worker isolated Trellage-managed Claude state.
 
-`fmx` is state isolation, not a security boundary. Firstmate, its captain, and
-its workers run directly on the host.
+The captain is the human. The directory named `captain/claude` stores the
+Firstmate supervisor's state; it does not grant human approval authority.
+`fmx` is state isolation, not a security boundary. Its agents run on the host.
 
 ## Profiles
 
-| Profile | Task-id namespace | What it adds |
+| Profile | Legacy task-id namespace | What it adds |
 | --- | --- | --- |
-| `default` | `fmd-` | Firstmate as shipped, with isolated captain and worker state. No worker policy. |
-| `pstack-workers` | `fmp-` | The same fleet plus one small pstack-derived engineering policy inserted once into every ship and scout brief. |
+| `default` | `fmd-` | Firstmate as shipped, with isolated supervisor and worker state. No worker policy. |
+| `pstack-workers` | `fmp-` | The same configuration plus one small pstack-derived engineering policy inserted once into every ship and scout brief. |
 
 Both profiles are interactive. Neither publishes a headless prompt contract:
 `list --json` reports `prompt: false`, `outputFormats: ["text"]`, no resume, no
 session id, no usage or cost, and no model or effort override.
+The separate versioned `orchestration` capability describes the text inbox and
+supported worker controls. It does not add a headless agent contract.
+
+### Named worktree fleets
+
+Profiles select configuration; instance UUIDs identify fleets. When the
+installed backend advertises `orchestration.instances: {schemaVersion: 1}`,
+the interactive guide recommends the named instance associated with the entry
+Git worktree and asks for confirmation, or offers explicit creation. Two
+worktrees can use `default` with separate supervisors, homes, inboxes,
+receipts, worker state, and terminal targets.
+
+A new prompt in the same worktree uses its existing instance. A prior
+supervisor exit can require Recover rather than Start. Joining another
+instance is explicit and does not replace the worktree association.
+The associated worktree, confirmed task target, and supervisor pane location
+are separate. The supervisor still runs in its pinned runtime.
+
+Unqualified commands such as `fmx default`, `fmx repair default`, and
+`fmx update --all` retain their legacy scope. They do not select a fleet from
+the current directory or enumerate every named instance. Use
+`--instance UUID` for scoped operations; `--instance legacy` explicitly
+selects the shared legacy root for a profile. Names resolve to UUIDs once,
+before execution. A missing or mismatched selector never falls back to legacy.
+
+Named instances use a collision-reserved task namespace of `fi` followed by
+six lowercase hexadecimal digits. This is separate from `fmd-` and `fmp-`.
+Use the namespace from the verified owned runtime, not one derived from a
+profile, name, or UUID. Task IDs remain at most 64 characters, including the
+prefix and separator; a named-instance suffix can have at most 55 characters.
+
+Instance creation requires a reviewed plan with a stable UUID, name,
+destination, source/runtime requirements, and worktree evidence. Retrying an
+uncertain creation retains that UUID. Creation does not copy a legacy home,
+start a supervisor, save a task, or approve package installation.
+Tool installation still has its own exact plan and instance-bound approval.
+UUID reservations apply across both profiles. A conflicting plan cannot
+replace a pending reservation. Only the original reserved plan can finish
+an unpublished identity write; a missing published identity is never recreated.
+
+Worktree association uses private Git-directory and filesystem generation
+evidence, not branch names, basenames, or the shared Git directory alone.
+Commits and branch changes preserve the association. Recreated or ambiguous
+paths cannot inherit old state. A proved move can refresh recorded locators
+only with explicit confirmation, while the instance is idle; UUID, home,
+namespace, and saved requests remain unchanged. Missing generation evidence
+blocks new binding creation or automatic matching, not receipt inspection.
+No fleet identifiers are written into a target repository or Git config.
+
+Live use requires the Native launcher and shared Claude/skills writers to be
+updated together while affected fleets are idle. A new registry compatibility
+record makes old immediate-root scanners refuse, but older installers can
+recover files before scanning and some old shared writers ignore that record.
+One updated `fmx` binary is not sufficient. Do not bypass an upgrade diagnostic
+or delete the compatibility record as a stale lock.
+
+Shared writes must obtain admission before recovery, cleanup, or publication.
+Every active or ambiguous affected instance is considered. Verified cache
+reuse remains available without a shared write. These guards do not make
+unmodified, incompatible writer copies safe to use while fleets run.
+
+### Try two independent worktree fleets
+
+First complete the coordinated Native/shared-writer installation while all
+affected fleets are idle. These steps start real agent sessions and can use
+paid quota; they are not part of the offline repository proof.
+
+In two terminal panes, enter two different existing Git worktrees. Run this
+command in each pane:
+
+```sh
+trx guide "Use firstmate / default to inspect $PWD with one read-only scout. Report its structure. Do not edit project files, commit, push, or merge."
+```
+
+Confirm the instance for that worktree. If none exists, review and create a
+named instance, such as `inspect-a` in the first worktree and `inspect-b` in the
+second. Do not select the shared legacy fleet for this comparison. Keep the
+confirmed task target in its respective worktree. Each guide invocation can
+hand its own terminal to its one selected supervisor.
+
+In a third shell, inspect both associations with their actual absolute paths:
+
+```sh
+fmx instances resolve default --worktree /absolute/worktree-a --json
+fmx instances resolve default --worktree /absolute/worktree-b --json
+```
+
+Both results must be `matched`. Their descriptor UUIDs, roots, and task
+prefixes must differ. Use each UUID with
+`fmx inventory default --instance UUID --json` to inspect its own fleet.
+A later guide invocation in worktree A must recommend A's existing UUID,
+not a new instance or B's fleet. A saved request confirms inbox acceptance;
+use the supervisor and worker results to confirm task execution.
 
 ## Commands
 
+The unqualified commands below retain their legacy profile scope. Add
+`--instance UUID` to operate on an existing named instance. Use the guide's
+reviewed creation flow rather than `setup` to invent a new instance.
+
 ```
-fmx PROFILE [FIRSTMATE_ARGS...]     launch the captain
+fmx PROFILE [FIRSTMATE_ARGS...]     start or safely recover the supervisor
 fmx list [--json]                   static catalog; never probes anything
 fmx inventory PROFILE --json        live readiness and fleet state
+fmx prepare PROFILE --json --expected-source-revision COMMIT
+                                   safely prepare existing owned profile state
 fmx setup PROFILE|--all             install the pinned runtime and profile state
 fmx doctor PROFILE                  diagnose without changing anything
 fmx repair PROFILE                  restore managed state
 fmx skills-update PROFILE           copy refreshed cached skills only
 fmx update [--check] PROFILE|--all  move the runtime to the catalog pin
+fmx submit PROFILE --json           save a text request from bounded JSON stdin
+fmx receipt PROFILE --json          look up the same request ID from JSON stdin
 ```
+
+Instance discovery and creation are separate from the static profile catalog:
+
+```text
+fmx instances list PROFILE --json [--limit N] [--cursor CURSOR]
+fmx instances resolve PROFILE --worktree PATH --json
+fmx instances plan PROFILE --name NAME --worktree PATH --json --expected-source-revision COMMIT
+fmx instances create PROFILE --json --approve-creation PLAN_SHA256
+fmx instances refresh-locator PROFILE --instance UUID --worktree PATH --json --expected-binding-digest SHA256 --confirm
+```
+
+Creation receives the inner `plan` object from the planning response on stdin,
+not the response envelope. `PLAN_SHA256` is that plan's `approvalDigest`.
+Retain the same plan and UUID until an uncertain outcome is resolved.
+List results include a snapshot and cursor. Follow `page.nextCursor` until it
+is null; a `stale-cursor` response requires a new complete listing, not a
+combination of old and new pages. List/resolve/plan do not create a fleet.
+Control clients retain the selected instance and verified
+binding/runtime expectations separately from the unchanged V1 inbox payload.
+Guarded launch consumes those expectations before Claude argument handling;
+receipt lookup keeps the original UUID and fleet identity even if the worktree
+is no longer available.
 
 Network use, stated precisely:
 
@@ -40,9 +164,13 @@ Network use, stated precisely:
 - `update --check` never fetches. It is a purely offline receipt comparison.
 - `repair` fetches **only** when it must restage the runtime; otherwise it is
   local.
+- `prepare` can perform the same safe, idle runtime repair and reuse an
+  existing verified tool cache. It never starts a supervisor or worker.
+  Installing new managed tools requires separate approval of the exact
+  reported installation plan.
 - `skills-update PROFILE` never fetches. After `trx skills update`, it copies
   and verifies only managed `native-common` skills in that profile's existing
-  captain and known worker homes. It requires profile ownership and an idle
+  supervisor and known worker homes. It requires profile ownership and an idle
   fleet, and holds the existing mutation lock. Every home is checked before
   the first sync. Custom skills, authentication, source pins, receipts, and
   fleet configuration are preserved. Missing caches, invalid ownership,
@@ -51,27 +179,154 @@ Network use, stated precisely:
 - `doctor` never fetches Firstmate source, but it does run the GitHub identity
   check (`gh auth status`), local Firstmate prerequisite detection, and the
   shared Claude health checks (local proxy), so it is not fully offline.
+  Required tools that are not ready produce an incomplete diagnostic and a
+  nonzero result, not an `OK` line followed by a warning.
 - A launch that finds missing Firstmate-specific prerequisites asks for
   consent before it downloads anything. An accepted install uses the host's
   configured npm registry plus locked, checksum-verified GitHub release
   assets.
-- `list` and `list --json` are a pure projection of `catalog.json` and probe
-  nothing at all.
+- `list` and `list --json` project only the catalog and managed policy identity.
+  They do not probe profiles, the proxy, or host prerequisites.
 
 If a shell remains inside a profile runtime that was atomically replaced,
 its working directory inode can be deleted even though the same path exists
 again. `fmx` detects this before it runs prerequisite or Claude checks,
 continues from the validated home directory, and prints one recovery
-diagnostic. The parent shell still owns its own directory; after the captain
+diagnostic. The parent shell still owns its own directory; after the supervisor
 exits, run `cd ~` before the next command if the shell prompt reports `getcwd`
 or `Current directory does not exist`.
+
+## Fleet submission and recovery
+
+`inventory PROFILE --json` keeps the existing top-level readiness value and
+adds a `fleet` record. This record separates runtime health, host tools,
+installation consent, backend, supervisor state, and permissions to start,
+recover, or submit. A running owned fleet can accept a request even when the
+generic readiness value is `busy`. Missing prerequisites do not authorize a
+hidden install or an unattended consent prompt.
+
+A guarded guide start or recovery with no explicit Claude arguments supplies
+one canonical `session-start` operational message. The upstream SessionStart
+hook loads startup context, but does not initiate a model turn by itself.
+The message tells Firstmate to read its existing inbox under the saved
+requests' original authority. It contains no task body, creates no note and
+does not acknowledge or resubmit saved work. Plain Native launches and
+explicit Claude arguments retain their existing behavior.
+
+### Safe preparation
+
+The optional `orchestration.preparation` capability advertises the version-1
+preparation command. The guide uses it before selecting a fleet action for a
+new request, not after a request identity has been saved or may have been
+accepted. Older backends without that capability keep their inspection and
+manual maintenance flow.
+
+Preparation can repair safe, existing, owned idle state: runtime drift,
+permitted legacy metadata migration, and managed configuration. A named
+instance with missing published identity is not reinitialized as an empty
+fleet. Preparation does not take
+ownership of unrelated paths, remove ambiguous locks, change authentication,
+stop workers, or replace a runtime in use. A valid active fleet is inspected
+without maintenance; action-specific permission can still allow Send work.
+
+Worktree commands use the worktree's prerequisite lock and verify the owned
+installed tool cache against that exact lock. They do not treat the source
+directory as an installed runtime or copy toolchains into it. A healthy,
+matching cache is reused without another download. Resolver errors and
+genuinely missing tools have different diagnostics.
+
+Plain `inventory` stays read-only and keeps its existing wire shape. A
+`prepare` response adds `fleet.preparation`, with its state, diagnostic,
+completed repairs and an optional installation plan. Its prerequisite rows
+can distinguish `ready`, `blocked` and `not-checked`; a failed runtime check
+does not claim that all later checks failed.
+
+If managed tools are missing, the preparation state is `needs-consent`. The
+plan names all tool versions, the destination, network sources and other
+state paths. Approving that plan uses:
+
+```text
+fmx prepare PROFILE --json --expected-source-revision COMMIT --install-prerequisites PLAN_ID
+```
+
+`COMMIT` must still match the selected source revision, and `PLAN_ID` must
+still match the displayed installation plan, including its dependency lock,
+destination, effective package sources and side-state paths. These are
+checked again under the installation locks before mutation. The tool cache
+keeps its separate dependency-lock identity; a changed approval does not
+force a healthy matching cache to be reinstalled.
+Preparation keeps the original configuration directory, including a nested
+package directory. Refreshing worktree evidence is not a new path selection.
+An explicit change of configuration directory invalidates installation approval.
+Prior profile setup consent is not tool-install permission.
+Installation uses the existing locked installer and host package feeds,
+creates no global npm package or global agent hook, and remains forbidden
+while protected Firstmate work is active. Declining the plan installs
+nothing. A failure is reported; preparation does not fall back to starting a
+fleet or sending a request.
+
+### Inbox requests
+
+`submit` accepts schema-version-1 JSON with `requestId`, `expectedFleet`,
+`originalIntent`, `generatedSpec`, `workflowId`, and `projectTarget`.
+`expectedFleet` is the owned identity from inventory: profile, stable instance
+UUID, absolute home, and source revision. A request ID is a lowercase
+version-4 UUID. Project targets identify a registered project or an inspected
+source and base commit; they do not inherit the supervisor's runtime directory.
+Registered project names preserve case. `MyProject`, `my_project`, and
+`my.project` are distinct supported names; profile and workflow IDs remain
+lowercase kebab-case.
+
+The request limit is 512 KiB. Original intent can contain 60,000 characters;
+the complete specification can contain 8,000. Both text fields remain
+separate and are not truncated. `receipt` accepts `schemaVersion`,
+`requestId`, and the same `expectedFleet`.
+Text limits use UTF-16 lengths, as in the guide's JavaScript API.
+
+The native control API uses Firstmate's text inbox, not another queue or
+scheduler. Identical request ID and content return the existing receipt,
+including after Firstmate handles the note. Changed content under the same ID
+is rejected. The digest uses sorted, compact, ASCII-escaped JSON. Private
+transport journals must retain the confirmed payload and ID until an unknown
+outcome can be reconciled.
+
+| Result | Meaning |
+| --- | --- |
+| `saved`, announcement `sent` | The note is saved and its wake was queued; neither a running supervisor nor dispatch is proved. |
+| `saved`, announcement `pending` | The note is saved and waits for the confirmed supervisor start. |
+| `saved`, announcement `failed` | The note is saved, but notification failed. The command reports failure without discarding the receipt. |
+| `handled` | Firstmate acknowledged the note. This is not proof of task completion. |
+| `not-found` | Receipt lookup found no accepted note for that request ID. |
+| `rejected` | This payload was not accepted; an earlier request with the same ID can still exist. Inspect the structured error. |
+| No valid response | The outcome is unknown. Reconcile the same ID, not a new request. |
+
+An operational failure can exit nonzero with empty stdout. It supplies no
+receipt and does not prove rejection or absence. Only a successful receipt
+lookup under the mutation gate establishes `not-found`. Keep bound saved or
+handled evidence after a wake failure, lost acknowledgement, or conflicting
+payload rejection.
+
+For a stopped fleet, save the intended requests first and then start one
+supervisor. Do not also send those prompts through Herdr. For a running fleet,
+submit and notify without creating another pane. Concurrent startup may
+converge only on the same verified owned fleet, not on any `busy` result.
+Guide-driven startup supplies an internal expected-fleet identity guard so a
+source or home replacement cannot silently change the startup target.
+
+A dead owned supervisor can be recovered while its workers remain alive.
+Recovery requires the unchanged verified runtime and ready prerequisites.
+It preserves worker identities, worktrees, notes, pending decisions, and wake
+state. A live supervisor, unsafe paths, incomplete ownership, runtime drift,
+or required repair stops recovery. Updates, repair, installation, and managed
+prerequisite changes still require an idle fleet. Never use a source upgrade
+as a recovery shortcut.
 
 ## First-launch prerequisites
 
 `fmx setup` installs the pinned Firstmate runtime but does not silently change
-the host toolchain. On the first captain launch, `fmx` runs Firstmate's own
+the host toolchain. On the first supervisor launch, `fmx` runs Firstmate's own
 detect-only, network-disabled prerequisite check with the selected backend and
-the exact PATH that the captain and workers will receive.
+the exact PATH that the supervisor and workers will receive.
 
 If Firstmate-specific tools are missing, `fmx` shows:
 
@@ -100,14 +355,14 @@ is staged and verified before publication. The complete marker is written only
 after every exact version runs. Project initialization keeps ownership of
 `no-mistakes` daemon startup and readiness checks.
 
-The toolchain directory is added before the host PATH for the captain and every
+The toolchain directory is added before the host PATH for the supervisor and every
 worker. Existing global tools are not replaced. A later launcher can publish a
 different lock identity beside the old toolchain and does not delete the old
 identity. Installing a new identity requires every Firstmate fleet and profile
 mutation to be idle.
 
 Host integration requirements stay outside this managed directory: `git`,
-authenticated `gh`, `python3`, `jq`, Node 20+, npm, curl, and the selected
+authenticated `gh`, `python3`, `jq`, `ps`, Node 20+, npm, curl, and the selected
 session backend (`herdr` in a valid Herdr pane, otherwise `tmux`). A missing
 host requirement is reported but never installed through a package manager.
 
@@ -123,8 +378,8 @@ uses that tool.
 ```json
 "source": {
   "repository": "https://github.com/kunchenguid/firstmate.git",
-  "commit": "4ad8cbaeafc109a17c1af3911867b7fe9e04e801",
-  "overlay": "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+  "commit": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
+  "overlay": "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
 }
 ```
 
@@ -153,6 +408,10 @@ the catalog pin and never contacts the network. `update` without `--check`
 always fetches whenever the runtime must change or be reinstalled, and reports
 `is current` without fetching when the installed runtime already matches the
 pin. Either way it installs only the catalog pin; it is never a "latest" fetch.
+`fmx harness-version PROFILE` reports that profile's catalog pin as `latest`,
+not the current upstream default-branch commit.
+For named instances, include `--instance UUID`; installed-version evidence is
+instance-specific even when several instances use the same profile pin.
 
 ## What the overlay changes
 
@@ -166,18 +425,51 @@ The overlay is small, keyed by commit, and stored in `overlay/<commit>/`.
   Secondmate charters never receive it. The size bound is **fixed at 16384
   bytes by the overlay** and is deliberately not configurable from the
   environment. It also enforces the profile's task-id namespace.
+- **`bin/fm-dod-lib.sh`** and **`bin/fm-promote.sh`**: share the bounded policy
+  reader and retain the worker appendix when a scout becomes a ship.
 - **`bin/fm-spawn.sh`**: replaces the opaque shell launch string with
   **structured inputs** to `FMX_WORKER_LAUNCHER` — task, kind, backend, brief,
   worktree, operational-input helper, model, effort, trace-context decision,
   `FMX_GH_CONFIG_DIR`, `FMX_TASK_ID_PREFIX`, `FMX_WORKER_HOME`, and
-  `FMX_WORKER_PATH`, plus the captain's absolute `FMX_WORKER_BASH`. The pane
+  `FMX_WORKER_PATH`, plus the supervisor's absolute `FMX_WORKER_BASH`. The pane
   command is leading variable assignments followed by that absolute Bash and
   the absolute helper path, not `env …`, so neither interpreter nor helper
-  startup depends on the session daemon's `PATH`. It enforces Claude-only
-  crewmates **before** building the invocation, refuses secondmate spawns,
-  enforces the task-id namespace, and stops forwarding the captain's Claude
+  startup depends on the session daemon's `PATH`. Admission checks reject
+  unsupported kinds, harnesses, backends, namespaces, and worker controls
+  **before** remote dispatch or resource creation, including relaunch paths.
+  Secondmates remain unsupported. It stops forwarding the supervisor's Claude
   store to workers. With no `FMX_*` variables set, the upstream launch path is
   byte-for-byte unchanged.
+- **`bin/fm-inbox.sh`**: adds an optional stable request ID to the canonical
+  text producer. It deduplicates pending and handled notes, rejects conflicting
+  content, and permits notification retry without a second note. Normal
+  upstream note creation without this option remains available.
+- **`bin/fm-control.sh`**: validates recorded worker identity before control,
+  preserves explicit model/effort resets across relaunch, and reports the
+  effective controls. Interrupt and exit do not require a working model proxy.
+- **`bin/fm-home-seed.sh`**, **`bin/fm-remote-home-seed.sh`**,
+  **`bin/fm-remote-home-provision.sh`**, and
+  **`bin/fm-remote-secondmate-control.sh`**: refuse managed secondmate
+  provisioning and remote control before those helpers create resources.
+
+Named instances add the explicit `firstmate-instance-v1` runtime variant.
+Its record binds the source revision, base and supplement manifest digests,
+and effective content digest. The ordered layers must verify their inputs,
+allowed paths, modes, and final output hashes. A supplement touching a
+base-patched file must match that base result. Legacy roots keep their base
+overlay evidence; base-only evidence cannot admit a named instance.
+The instance variant uses scoped tmux/Herdr terminal targets and retains
+exact ownership checks instead of selecting the first matching label.
+Its `instance-overlay/<commit>/` manifest supplements five backend, spawn,
+and control files. The final runtime has a verified 15-path modified-file
+set; ignored or untracked additions are not permitted.
+Spawn waits up to 30 seconds for an owned worker startup record before it
+reports success and releases its operation lock. Existing tmux controls check
+the live session UUID and root, not only saved session and window names.
+Saved receipt lookup uses the trusted Native reader and the original fleet
+identity; it does not execute a missing or changed instance runtime.
+Shared command leases record the actual writer PID before allowing that writer
+to execute. A killed admission helper cannot release a still-running writer.
 
 ## Layout
 
@@ -186,14 +478,15 @@ Launcher runtime, removed by `uninstall.sh`:
 ```
 ~/.local/share/trellage/fmx/
   bin/fmx  catalog.json  policies/  overlay/<commit>/
+  instance-overlay/<commit>/     named-instance supplemental manifest and patches
   prerequisite-lock/{manifest.json,npm/{package.json,package-lock.json}}
   prerequisites/<lock-identity>/   consent-installed shared toolchain
-  lib/{fmx-worker,fmx-overlay.py,fmx-prerequisites,native-claude,trellage-session-bridge.py}
+  lib/              managed worker, control, registry, instance, overlay, prerequisite, and Claude helpers
 ~/.local/bin/fmx -> ...
 ```
 
 `uninstall.sh` removes the launcher runtime and these managed prerequisite
-toolchains. Both install and uninstall refuse while a Firstmate captain
+toolchains. Both install and uninstall refuse while a Firstmate supervisor
 session, worker, or profile mutation is active, or while one of those activity
 markers is incomplete. They do not remove `~/.no-mistakes` state or any
 profile root.
@@ -218,18 +511,35 @@ installation. If a launcher reinstall reports one, run
 `~/.local/share/trellage/fmx/lib/fmx-prerequisites install`, then retry
 `install.sh`.
 
-Profile roots, **never** removed by `uninstall.sh`:
+Legacy profile roots, **never** removed by `uninstall.sh`:
 
 ```
 ~/.local/share/trellage/profiles/firstmate/<profile>/
   runtime/          the published pinned checkout (FM_ROOT)
   home/             FM_HOME: data, state, config, projects, .tasks.toml, .fmx-managed
-  captain/claude/   the captain's Claude home
+  captain/claude/   the supervisor's Claude home
   workers/<task>/   one Claude home, record, and liveness marker per task
   policy/           the profile's managed worker policy, if any
   receipts/         the installed source pin
-  locks/            the captain session record
+  locks/            the supervisor session record
 ```
+
+Named instance roots are also preserved:
+
+```text
+~/.local/share/trellage/profiles/firstmate/instances/
+  locks/                       registry allocation and compatibility records
+  <instance-uuid>/
+    instance.json              owned name, association, namespace, and creation state
+    runtime/  home/  captain/claude/  workers/  policy/  receipts/  locks/
+    staging/  task-work/
+```
+
+The descriptor, directory, identity receipt, profile, and derived home must
+agree. Changing `FM_HOME` or copying a descriptor is not an instance selector.
+Saved notes and receipts stay in their original instance. The guide uses a
+separate journal namespace for each named instance and retains the flat
+legacy journal in place.
 
 ## Managed Firstmate configuration
 
@@ -255,14 +565,37 @@ legacy file to `home/data/backlog.md` only when the managed destination does not
 already exist. If both files exist, repair fails rather than guessing how to
 merge them.
 
-`doctor` keeps runtime health separate from fleet readiness. Missing
-prerequisites are printed as an advisory with the exact Firstmate diagnostics;
-`doctor` never installs them. The next interactive launch owns the consent
-prompt.
+`doctor` and inventory separate runtime integrity from action-specific fleet
+readiness. They report missing prerequisites and never install them.
+Installation consent must be resolved before an unattended guide handoff.
 
-`home/config/crew-dispatch.json` selects a harness per task and would bypass the
-fmx worker boundary entirely, so its **mere presence fails closed**, whether it
-is a regular file or a symlink. Remove it, then run `fmx doctor PROFILE`.
+An optional regular, safely owned `home/config/crew-dispatch.json` can select
+Claude worker models and effort:
+
+```json
+{
+  "rules": [
+    {
+      "when": "A narrow investigation with a clear evidence boundary",
+      "use": {"harness": "claude", "model": "sonnet", "effort": "high"}
+    }
+  ],
+  "default": {"harness": "claude", "model": "opus", "effort": "xhigh"}
+}
+```
+
+Firstmate judges which natural-language rule fits. Explicit worker controls
+take precedence, then a matching rule, the rule default, and the ordinary
+crew default. The file must contain only supported Claude single-object
+rules/defaults; mixed harnesses, command strings, quota arrays, and unsafe
+paths fail closed. Model aliases use the shared Claude runtime and must be
+available from the configured proxy. Supported efforts are `low`, `medium`,
+`high`, `xhigh`, and `max`. No file means the existing defaults remain in
+force. Repair preserves valid user rules instead of overwriting them.
+
+These are worker controls. They do not change `trx guide`'s own model route or
+advertise launcher-level model overrides. Claude through the Copilot proxy
+does not imply an Anthropic account quota.
 
 Everything else under `FM_HOME` — task records, project clones, watcher state,
 `config/backend`, and any operator files — is preserved untouched.
@@ -270,11 +603,11 @@ Everything else under `FM_HOME` — task records, project clones, watcher state,
 ## Runtime integrity
 
 `doctor`, a launch, and a `healthy` inventory verify the **whole checkout**, not
-only the four patched files. All of it is offline:
+only the overlay files. Source and receipt integrity checks are offline:
 
 1. `git -C runtime rev-parse HEAD` equals the catalog pin.
 2. `git status --porcelain --untracked-files=all --ignored=matching` contains
-   exactly the four manifest paths as modified tracked files — no other tracked
+   exactly the manifest paths as modified tracked files — no other tracked
    change, nothing staged, no untracked file, and no *ignored* file either, so
    a gitignored `.env`, `config/`, or executable cannot hide in the runtime.
 3. `git diff --raw HEAD` shows no file-mode change, so an added executable bit
@@ -295,8 +628,10 @@ unclean stage is never published and only then diagnosed.
 
 ## Mutation lock
 
-`setup`, `repair`, and `update` take a per-profile lock at `locks/mutation`.
-A captain launch takes the same mutation gate while it validates the runtime
+`setup`, `repair`, `update`, and short control operations use the per-profile
+mutation gate. Submission does not require an idle fleet, but cannot race
+runtime replacement.
+A supervisor launch takes the same mutation gate while it validates the runtime
 and claims `locks/session`, then releases the mutation gate before Claude
 starts. Both lock types are claimed with
 `mkdir`, which is exclusive creation and **never replaces anything**;
@@ -322,7 +657,7 @@ for an active, incomplete, or unowned lock.
 
 `setup` checks the fleet unconditionally after taking the lock, so a missing or
 unreadable receipt can never become a licence to replace a runtime under a live
-captain or worker. `inventory` checks for a live mutation **before** deciding a
+supervisor or worker. `inventory` checks for a live mutation **before** deciding a
 profile is `not-setup`, so a first setup in progress reports `busy`. A second mutation fails as busy, and `inventory` reports
 `readiness: "busy"` with `mutation: "active"`. Only an exact stale lock that fmx
 owns is reclaimed; an unowned lock directory is reported and left alone. The
@@ -340,13 +675,13 @@ is reported. If restoration itself fails, both preserved paths are named in the
 error. Lifecycle-gated commands also recover a preserved old pair or safe
 singleton after an abrupt process exit in any intermediate publication state.
 
-## Captain
+## Supervisor
 
 - Runs from `runtime/` with explicit `FM_HOME` and `FM_ROOT_OVERRIDE`.
 - Uses its own Claude home with the Trellage session bridge **enabled**.
 - Names the selected profile on every shared-runtime call (`prepare`, `doctor`,
   and `launch`). The shared runtime validates the *exact* per-profile bridge
-  hook, so a `pstack-workers` captain launched without `--profile` would be
+  hook, so a `pstack-workers` supervisor launched without `--profile` would be
   checked against the `default` profile's hook and refused.
 - Selects `FM_BACKEND=herdr` only when `HERDR_ENV=1` and `HERDR_PANE_ID` is
   non-empty. Otherwise `tmux` is required and used.
@@ -406,10 +741,10 @@ Firstmate semantics are preserved as inputs rather than reimplemented:
 
 Exactly one thing: a Herdr worker's **own** Herdr context, on the Herdr backend,
 because only the pane itself knows it. It is accepted only after the worker's
-`HERDR_PANE_ID` is validated as present and distinct from the captain's.
+`HERDR_PANE_ID` is validated as present and distinct from the supervisor's.
 
 Everything else is carried explicitly, including `HOME`, `PATH`, and Bash. The
-captain passes them as `FMX_WORKER_HOME`, `FMX_WORKER_PATH`, and
+supervisor passes them as `FMX_WORKER_HOME`, `FMX_WORKER_PATH`, and
 `FMX_WORKER_BASH`. The pane invokes that absolute Bash directly; `fmx-worker`
 then validates every PATH entry with shell builtins and exports the carrier PATH
 before the shared scrub needs an external utility. A wrong ambient pane `HOME`
@@ -425,8 +760,8 @@ Isolation rules:
 - tmux workers have **every** `HERDR_*` variable scrubbed, not a fixed list, and
   `TRELLAGE_GUIDE_HERDR_CONTEXT_JSON` is dropped on both backends. A Herdr worker
   keeps the Herdr context it was actually started in, but only after its own
-  `HERDR_PANE_ID` is validated as present and distinct from the captain's.
-- Inherited Firstmate captain controls are removed before the launch:
+  `HERDR_PANE_ID` is validated as present and distinct from the supervisor's.
+- Inherited Firstmate supervisor controls are removed before the launch:
   `FM_HOME`, `FM_ROOT_OVERRIDE`, `FM_STATE_OVERRIDE`, `FM_DATA_OVERRIDE`,
   `FM_PROJECTS_OVERRIDE`, `FM_CONFIG_OVERRIDE`,
   `FM_PUBLIC_FOLLOWUP_PRIMARY_HOME`, `FM_TRACE_CONTEXT`, `FM_SUPERVISION_MODEL`,
@@ -462,7 +797,7 @@ the boundary with an explicit diagnostic rather than started without its
   task record and no live process.
 - `orphaned`: a worker home with neither.
 
-`update` and `repair` refuse while the captain session or any worker is active.
+`update` and `repair` refuse while the supervisor session or any worker is active.
 `uninstall.sh` removes only the launcher runtime and its command symlink.
 
 ## Inventory evidence

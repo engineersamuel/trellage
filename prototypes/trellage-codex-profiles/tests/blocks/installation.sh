@@ -240,6 +240,19 @@ fish_before_mode="$(path_mode "$fish_config")"
 HOME="$install_home" /bin/bash "$install_script" >"$fixture_root/install.out" \
   || fail 'fixture install failed'
 assert_install_published "$install_home"
+installed_guard="$install_home/.local/share/trellage/common/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py"
+cmp -s "$installed_guard" "$root/../trellage-firstmate-profiles/lib/fmx-registry.py" \
+  || fail 'installer did not publish the shared Firstmate guard'
+legacy_floating="$install_home/.local/share/trellage/common/floating-skills-runtime"
+rm -rf "$legacy_floating"
+mkdir "$legacy_floating"
+printf 'legacy helper\n' >"$legacy_floating/floating-skills.mjs"
+cp "$root/../../skills.json" "$legacy_floating/skills.json"
+HOME="$install_home" /bin/bash "$install_script" \
+  >"$fixture_root/legacy-floating-migration-install.out" \
+  || fail 'installer did not migrate the legacy two-file floating runtime'
+cmp -s "$installed_guard" "$root/../trellage-firstmate-profiles/lib/fmx-registry.py" \
+  || fail 'legacy floating runtime migration omitted the shared Firstmate guard'
 if cmp -s "$install_home/.local/share/trellage/cdx/.managed-by-trellage-codex-profiles" \
   <(printf 'trellage-codex-profiles-v1\n'); then
   fail 'current ownership marker does not block a legacy installer'
@@ -1113,6 +1126,34 @@ write_legacy_fish "$shared_rollback_home"
 HOME="$shared_rollback_home" /bin/bash "$install_script" >/dev/null \
   || fail 'shared-runtime rollback fixture install failed'
 shared_runtime_root="$shared_rollback_home/.local/share/trellage/common"
+shared_guard="$shared_runtime_root/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py"
+for unsafe_guard in symlink directory writable extra; do
+  case "$unsafe_guard" in
+    symlink)
+      rm "$shared_guard"
+      ln -s "$root/../trellage-firstmate-profiles/lib/fmx-registry.py" "$shared_guard"
+      ;;
+    directory) rm "$shared_guard"; mkdir "$shared_guard" ;;
+    writable) chmod 0666 "$shared_guard" ;;
+    extra) printf 'preserve\n' >"$shared_runtime_root/floating-skills-runtime/keep" ;;
+  esac
+  write_owned_runtime_snapshot "$shared_runtime_root" "$fixture_root/unsafe-guard.before"
+  if HOME="$shared_rollback_home" /bin/bash "$install_script" \
+    >"$fixture_root/unsafe-guard-$unsafe_guard.out" 2>&1; then
+    fail "installer accepted unsafe shared guard content: $unsafe_guard"
+  fi
+  write_owned_runtime_snapshot "$shared_runtime_root" "$fixture_root/unsafe-guard.after"
+  cmp -s "$fixture_root/unsafe-guard.before" "$fixture_root/unsafe-guard.after" \
+    || fail "rejected shared guard changed runtime state: $unsafe_guard"
+  assert_no_install_staging "$shared_rollback_home"
+  case "$unsafe_guard" in
+    directory) rmdir "$shared_guard" ;;
+    extra) rm "$shared_runtime_root/floating-skills-runtime/keep" ;;
+    *) rm "$shared_guard" ;;
+  esac
+  install -m 0444 "$root/../trellage-firstmate-profiles/lib/fmx-registry.py" "$shared_guard"
+  refresh_fixture_source "$shared_runtime_root/floating-skills-runtime"
+done
 chmod 0755 "$shared_runtime_root/native-environment-runtime/scripts/native-environment.ts"
 printf '%s\n' '# preserved native environment runtime' \
   >"$shared_runtime_root/native-environment-runtime/scripts/native-environment.ts"
@@ -1121,6 +1162,9 @@ chmod 0755 "$shared_runtime_root/floating-skills-runtime/scripts/floating-skills
 printf '%s\n' '# preserved floating skills runtime' \
   >"$shared_runtime_root/floating-skills-runtime/scripts/floating-skills.ts"
 chmod 0555 "$shared_runtime_root/floating-skills-runtime/scripts/floating-skills.ts"
+chmod 0644 "$shared_guard"
+printf '%s\n' '# preserved shared Firstmate guard' >"$shared_guard"
+chmod 0444 "$shared_guard"
 refresh_fixture_source "$shared_runtime_root/native-environment-runtime"
 refresh_fixture_source "$shared_runtime_root/floating-skills-runtime"
 write_owned_runtime_snapshot "$shared_runtime_root" \

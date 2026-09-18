@@ -16,8 +16,8 @@ import type {
   AdminLatestVersionState,
 } from "./admin-harness-version.ts"
 
-const maximumCacheBytes = 256 * 1024
-const maximumCacheEntries = 64
+const maximumCacheBytes = 4 * 1024 * 1024
+const maximumCacheEntries = 4096
 const maximumDiagnosticLength = 500
 
 export const harnessVersionCacheTtlMs = 24 * 60 * 60 * 1000

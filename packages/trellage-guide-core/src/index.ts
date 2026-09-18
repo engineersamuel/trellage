@@ -1,9 +1,69 @@
 import { parse } from "yaml"
 import { lstat, readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
+import { exactKeys, fail, identifier, identityPart, record, text } from "./validation.ts"
 
 export * from "./conversation.ts"
 export * from "./conversation-sanitization.ts"
+export * from "./orchestration.ts"
+export {
+  FIRSTMATE_INSTANCE_DIAGNOSTIC_CODES,
+  firstmateInstanceLimits,
+  firstmateInstanceCli,
+  parseFirstmateInstanceName,
+  parseFirstmateInstanceTaskIdPrefix,
+  parseFirstmateInstanceReferenceV1,
+  sameFirstmateInstance,
+  firstmateInstanceKey,
+  validateFirstmateInstanceFleet,
+  parseFirstmateRuntimeVariantV1,
+  firstmateRuntimeVariantDigest,
+  parseFirstmateWorktreeGenerationV1,
+  firstmateWorktreeGenerationDigest,
+  parseFirstmateWorktreeEvidenceV1,
+  firstmateWorktreeBindingDigest,
+  sameFirstmateWorktreeGeneration,
+  parseFirstmateInstanceDescriptorV1,
+  parseFirstmateInstanceListCursorV1,
+  firstmateInstanceListCursor,
+  firstmateInstanceListSnapshotDigest,
+  parseFirstmateInstanceListResultV1,
+  parseFirstmateInstanceResolveResultV1,
+  firstmateInstanceCreationPlanDigest,
+  parseFirstmateInstanceCreationPlanV1,
+  parseFirstmateInstanceCreationPlanJson,
+  parseFirstmateInstancePlanResultV1,
+  parseFirstmateInstanceCreateResultV1,
+  parseFirstmateInstanceControlContextV1,
+  parseFirstmateInstanceControlContextJson,
+  validateFirstmateInstanceControlContextV1,
+  firstmateInstanceControlContextDigest,
+  parseFirstmateInstanceLocatorRefreshResultV1,
+  canonicalFirstmateInstanceJson,
+  type FirstmateInstanceDiagnosticCode,
+  type FirstmateInstanceDiagnosticV1,
+  type FirstmateInstanceReferenceV1,
+  type FirstmateNamedInstanceReferenceV1,
+  type FirstmateLegacyInstanceReferenceV1,
+  type FirstmateRuntimeVariantV1,
+  type FirstmateFilesystemGenerationV1,
+  type FirstmateWorktreeGenerationV1,
+  type FirstmateWorktreeEvidenceV1,
+  type FirstmateBoundWorktreeV1,
+  type FirstmateNamedRuntimeEvidenceV1,
+  type FirstmateNamedInstanceDescriptorV1,
+  type FirstmateLegacyInstanceDescriptorV1,
+  type FirstmateInstanceDescriptorV1,
+  type FirstmateInstanceListCursorV1,
+  type FirstmateInstanceListResultV1,
+  type FirstmateInstanceResolveResultV1,
+  type FirstmateInstanceCreationPlanBodyV1,
+  type FirstmateInstanceCreationPlanV1,
+  type FirstmateInstancePlanResultV1,
+  type FirstmateInstanceCreateResultV1,
+  type FirstmateInstanceControlContextV1,
+} from "./firstmate-instances.ts"
+export { ProfileGuideValidationError } from "./validation.ts"
 
 export type ProfileGuideIdentity =
   | {
@@ -26,6 +86,8 @@ export interface ProfileGuideWorkflow {
   readonly description: string
   readonly skill?: string
   readonly launchAgent?: string
+  readonly frame?: "fixed"
+  readonly scope?: "project" | "fleet"
   readonly examples: ReadonlyArray<string>
   readonly promptTemplate: string
 }
@@ -63,20 +125,7 @@ export interface ProfileGuideCoverage {
   readonly unexpected: ReadonlyArray<string>
 }
 
-export class ProfileGuideValidationError extends Error {
-  readonly path: string
-
-  constructor(path: string, message: string) {
-    super(`${path}: ${message}`)
-    this.name = "ProfileGuideValidationError"
-    this.path = path
-  }
-}
-
-const identityPart = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 const skillIdentifier = /^[a-z0-9][a-z0-9._:/-]*$/u
-const controls = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u
-const singleLineControls = /[\u0000-\u001f\u007f-\u009f]/u
 
 export const isLaunchAgentIdentifier = (value: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)
 
@@ -164,52 +213,6 @@ export const profileGuideGoalExecutionProblem = (
   return undefined
 }
 
-const fail = (path: string, message: string): never => {
-  throw new ProfileGuideValidationError(path, message)
-}
-
-const record = (value: unknown, path: string): Record<string, unknown> => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return fail(path, "must be an object")
-  }
-  return value as Record<string, unknown>
-}
-
-const exactKeys = (
-  value: Record<string, unknown>,
-  path: string,
-  required: ReadonlyArray<string>,
-  optional: ReadonlyArray<string> = [],
-): void => {
-  const allowed = new Set([...required, ...optional])
-  const missing = required.filter((key) => !(key in value))
-  const unexpected = Object.keys(value).filter((key) => !allowed.has(key))
-  if (missing.length > 0) fail(path, `missing required keys: ${missing.join(", ")}`)
-  if (unexpected.length > 0) fail(path, `contains unsupported keys: ${unexpected.join(", ")}`)
-}
-
-const text = (
-  value: unknown,
-  path: string,
-  maximum: number,
-  options: { readonly multiline?: boolean } = {},
-): string => {
-  if (typeof value !== "string") return fail(path, "must be a string")
-  const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ")
-  if (normalized.length === 0) return fail(path, "must not be empty")
-  if (normalized.length > maximum) return fail(path, `must contain at most ${maximum} characters`)
-  if ((options.multiline ? controls : singleLineControls).test(normalized)) {
-    return fail(path, "must not contain control characters")
-  }
-  return normalized
-}
-
-const identifier = (value: unknown, path: string): string => {
-  const result = text(value, path, 128)
-  if (!identityPart.test(result)) return fail(path, "must be a lowercase kebab-case identifier")
-  return result
-}
-
 const stringArray = (
   value: unknown,
   path: string,
@@ -252,6 +255,42 @@ const prerequisites = (value: unknown, path: string): ReadonlyArray<ProfileGuide
   return result
 }
 
+const workflowInvocationOptions = (
+  fields: Record<string, unknown>,
+  itemPath: string,
+): Pick<ProfileGuideWorkflow, "skill" | "launchAgent"> => {
+  const skill =
+    fields.skill === undefined ? undefined : text(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en")
+  if (skill !== undefined && !skillIdentifier.test(skill)) {
+    fail(`${itemPath}.skill`, "must be a portable skill or command identifier")
+  }
+  const launchAgent =
+    fields.launchAgent === undefined ? undefined : text(fields.launchAgent, `${itemPath}.launchAgent`, 128)
+  if (launchAgent !== undefined && !isLaunchAgentIdentifier(launchAgent)) {
+    fail(`${itemPath}.launchAgent`, "must be a portable agent identifier")
+  }
+  return {
+    ...(skill === undefined ? {} : { skill }),
+    ...(launchAgent === undefined ? {} : { launchAgent }),
+  }
+}
+
+const workflowFrameOptions = (
+  fields: Record<string, unknown>,
+  itemPath: string,
+): Pick<ProfileGuideWorkflow, "frame" | "scope"> => {
+  if (fields.frame !== undefined && fields.frame !== "fixed") {
+    fail(`${itemPath}.frame`, "must equal fixed")
+  }
+  if (fields.scope !== undefined && fields.scope !== "project" && fields.scope !== "fleet") {
+    fail(`${itemPath}.scope`, "must equal project or fleet")
+  }
+  return {
+    ...(fields.frame === "fixed" ? { frame: fields.frame } : {}),
+    ...(fields.scope === "project" || fields.scope === "fleet" ? { scope: fields.scope } : {}),
+  }
+}
+
 const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWorkflow> => {
   if (!Array.isArray(value)) return fail(path, "must be an array")
   if (value.length === 0) return fail(path, "must contain at least one workflow")
@@ -259,17 +298,9 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
   const result = value.map((item, index): ProfileGuideWorkflow => {
     const itemPath = `${path}[${index}]`
     const fields = record(item, itemPath)
-    exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent"])
-    const skill =
-      fields.skill === undefined ? undefined : text(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en")
-    if (skill !== undefined && !skillIdentifier.test(skill)) {
-      fail(`${itemPath}.skill`, "must be a portable skill or command identifier")
-    }
-    const launchAgent =
-      fields.launchAgent === undefined ? undefined : text(fields.launchAgent, `${itemPath}.launchAgent`, 128)
-    if (launchAgent !== undefined && !isLaunchAgentIdentifier(launchAgent)) {
-      fail(`${itemPath}.launchAgent`, "must be a portable agent identifier")
-    }
+    exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent", "frame", "scope"])
+    const invocation = workflowInvocationOptions(fields, itemPath)
+    const framing = workflowFrameOptions(fields, itemPath)
     const promptTemplate = text(fields.promptTemplate, `${itemPath}.promptTemplate`, 16000, {
       multiline: true,
     })
@@ -288,8 +319,8 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
     return {
       id: identifier(fields.id, `${itemPath}.id`),
       description: text(fields.description, `${itemPath}.description`, 2000),
-      ...(skill === undefined ? {} : { skill }),
-      ...(launchAgent === undefined ? {} : { launchAgent }),
+      ...invocation,
+      ...framing,
       examples: stringArray(fields.examples, `${itemPath}.examples`, {
         minimum: 2,
         maximumItems: 32,

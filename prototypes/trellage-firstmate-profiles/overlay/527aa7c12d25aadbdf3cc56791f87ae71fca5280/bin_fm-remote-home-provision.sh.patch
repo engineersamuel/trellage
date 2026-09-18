@@ -1,0 +1,14 @@
+--- a/bin/fm-remote-home-provision.sh
++++ b/bin/fm-remote-home-provision.sh
+@@ -18,6 +18,11 @@
+ # A newly created home is removed on failure. An existing matching seeded home
+ # is converged only through guarded ordinary-file updates and new project clones.
+ set -eu
++
++if [ -n "${FMX_WORKER_LAUNCHER:-}" ] || [ -e "${FM_HOME:-}/.fmx-managed" ]; then
++  echo "error: fmx does not manage secondmate homes or remote provisioning" >&2
++  exit 1
++fi
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"

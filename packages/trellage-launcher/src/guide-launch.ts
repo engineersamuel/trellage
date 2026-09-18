@@ -1,7 +1,20 @@
 import path from "node:path"
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
-import { isLaunchAgentIdentifier, type ProfileGuideV1 } from "@trellage/guide-core"
+import {
+  FIRSTMATE_MAX_REQUEST_BYTES,
+  type ProfileGuideV1,
+  isLaunchAgentIdentifier,
+  parseFirstmateInstanceControlContextV1,
+  parseFirstmateInstanceReferenceV1,
+  parseFirstmateOrchestrationV1,
+  parseGuideProjectTargetV1,
+  type FirstmateInstanceControlContextV1,
+  type FirstmateInstanceReferenceV1,
+  type FirstmateOrchestrationV1,
+  type GuideProjectTargetV1,
+} from "@trellage/guide-core"
+import { firstmateInstanceControlArgs, firstmateInstanceSelectorArgs } from "./guide-firstmate-instance-selection.ts"
 import type { GuideGoalCandidateContext } from "./guide-goal-execution.ts"
 import { guideGoalPromptFromContext, resolveGuideGoalTransport } from "./guide-goal-transport.ts"
 
@@ -72,6 +85,9 @@ export interface NativeSelectedProfile {
   readonly headlessPrompt: boolean
   readonly agent?: string
   readonly goalExecutionPolicy?: NonNullable<ProfileGuideV1["goalExecution"]>
+  readonly orchestration?: FirstmateOrchestrationV1
+  readonly firstmateInstance?: FirstmateInstanceReferenceV1
+  readonly firstmateInstanceContext?: FirstmateInstanceControlContextV1
 }
 
 export interface SandboxSelectedProfile {
@@ -119,6 +135,7 @@ export interface CommandRunOptions {
   readonly terminationGraceMs?: number
   readonly signal?: AbortSignal
   readonly outputOverflow?: "terminate" | "truncate"
+  readonly stdin?: string
   /**
    * Called with each raw chunk as the child writes it, before any buffering or
    * truncation, so a caller can show live progress. It must never throw.
@@ -149,6 +166,7 @@ export interface HerdrContext {
   readonly surface: HerdrInvocationSurface
   readonly cwd?: string
   readonly capture?: GuideCaptureProvenance
+  readonly launchOrigin?: FirstmateInstanceControlContextV1
 }
 
 export interface GuideCaptureProvenance {
@@ -555,24 +573,46 @@ export class GuideLaunchError extends Error {
   }
 }
 
-export const parseSelectedProfile = (value: unknown): SelectedProfile => {
-  if (!isRecord(value)) throw new Error("selected profile must be an object")
-  const surface = getString(value.surface, "selected profile surface")
+const parseNativeSelectedProfile = (value: Record<string, unknown>): NativeSelectedProfile => {
   const goalExecutionPolicy = validateGoalExecutionPolicy(value.goalExecutionPolicy)
-  if (surface === "native") {
     const launcher = validateLauncher(value.launcher)
     const agent = validateAgent(value.agent, launcher)
-    return {
-      surface,
+    const orchestration = value.orchestration === undefined
+      ? undefined
+      : parseFirstmateOrchestrationV1(value.orchestration)
+    if (orchestration !== undefined && (launcher !== "fmx" || value.headlessPrompt !== false)) {
+      throw new Error("Firstmate orchestration requires fmx with headless prompt disabled")
+    }
+    const selected: NativeSelectedProfile = {
+      surface: "native",
       launcher,
       commandPath: validateCommandPath(value.commandPath),
       profile: validateProfileName(value.profile),
       headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
       ...(agent === undefined ? {} : { agent }),
       ...(goalExecutionPolicy === undefined ? {} : { goalExecutionPolicy }),
+      ...(orchestration === undefined ? {} : { orchestration }),
+      ...(value.firstmateInstance === undefined ? {} : {
+        firstmateInstance: parseFirstmateInstanceReferenceV1(value.firstmateInstance),
+      }),
+      ...(value.firstmateInstanceContext === undefined ? {} : {
+        firstmateInstanceContext: parseFirstmateInstanceControlContextV1(value.firstmateInstanceContext),
+      }),
     }
-  }
+    firstmateInstanceSelectorArgs(selected)
+    if (selected.firstmateInstanceContext !== undefined) firstmateInstanceControlArgs(selected)
+    return selected
+}
+
+export const parseSelectedProfile = (value: unknown): SelectedProfile => {
+  if (!isRecord(value)) throw new Error("selected profile must be an object")
+  const surface = getString(value.surface, "selected profile surface")
+  const goalExecutionPolicy = validateGoalExecutionPolicy(value.goalExecutionPolicy)
+  if (surface === "native") return parseNativeSelectedProfile(value)
   if (surface === "sandbox") {
+    if (value.firstmateInstance !== undefined || value.firstmateInstanceContext !== undefined) {
+      throw new Error("Sandbox profiles cannot select a Firstmate instance.")
+    }
     const agent = validateAgent(value.agent)
     return {
       surface,
@@ -625,6 +665,7 @@ export const buildGuideLaunchCommand = (
   const baseArgs = [
     ...(selectedProfile.surface === "native" ? [selectedProfile.profile] : ["--profile", selectedProfile.profile]),
     ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
+    ...(selectedProfile.surface === "native" ? firstmateInstanceSelectorArgs(selectedProfile) : []),
   ]
   if (goalExecution !== undefined) {
     return buildGoalLaunchCommand(selectedProfile, baseArgs, normalizedDelivery, goalExecution)
@@ -723,18 +764,55 @@ export const sameGuideCommand = (left: CommandSpec, right: CommandSpec): boolean
   left.args.length === right.args.length &&
   left.args.every((arg, index) => arg === right.args[index])
 
+const commandInputFailure = (
+  executable: string,
+  args: ReadonlyArray<string>,
+  options?: CommandRunOptions,
+): CommandRunnerError | undefined => {
+  if (options?.signal?.aborted) {
+    return new CommandRunnerError({
+      kind: "aborted", executable, args, message: `command aborted before start: ${executable}`,
+    })
+  }
+  if (options?.stdin !== undefined && Buffer.byteLength(options.stdin, "utf8") > FIRSTMATE_MAX_REQUEST_BYTES) {
+    return new CommandRunnerError({
+      kind: "spawn-failed", executable, args,
+      message: `Command stdin exceeds ${FIRSTMATE_MAX_REQUEST_BYTES} bytes; the command was not started.`,
+    })
+  }
+  return undefined
+}
+
+const spawnGuideCommand = (executable: string, args: ReadonlyArray<string>, options?: CommandRunOptions) =>
+  spawn(executable, [...args], {
+    shell: false,
+    windowsHide: true,
+    stdio: [options?.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
+    ...(options?.env === undefined ? {} : { env: options.env }),
+  })
+
+const writeCommandInput = (
+  child: ReturnType<typeof spawn>,
+  input: string | undefined,
+  onError: (error: Error) => void,
+): void => {
+  if (input === undefined) return
+  if (child.stdin === null) {
+    onError(new Error("The requested command stdin pipe is unavailable."))
+    child.kill("SIGTERM")
+    return
+  }
+  child.stdin.once("error", onError)
+  child.stdin.end(input, "utf8")
+}
+
 export const createNodeCommandRunner = (): CommandRunner => ({
   run: (executable, args, options) =>
     new Promise<CommandRunResult>((resolve, reject) => {
-      if (options?.signal?.aborted) {
-        reject(
-          new CommandRunnerError({
-            kind: "aborted",
-            executable,
-            args,
-            message: `command aborted before start: ${executable}`,
-          }),
-        )
+      const inputFailure = commandInputFailure(executable, args, options)
+      if (inputFailure !== undefined) {
+        reject(inputFailure)
         return
       }
 
@@ -748,6 +826,7 @@ export const createNodeCommandRunner = (): CommandRunner => ({
       let child: ReturnType<typeof spawn>
       let timer: ReturnType<typeof setTimeout> | undefined
       let forceKillTimer: ReturnType<typeof setTimeout> | undefined
+      let stdinError: Error | undefined
 
       const snapshotOutput = (): { readonly stdout: string; readonly stderr: string } => ({
         stdout: Buffer.concat(stdoutChunks).toString("utf8"),
@@ -806,13 +885,7 @@ export const createNodeCommandRunner = (): CommandRunner => ({
       }
 
       try {
-        child = spawn(executable, [...args], {
-          shell: false,
-          windowsHide: true,
-          stdio: ["ignore", "pipe", "pipe"],
-          ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
-          ...(options?.env === undefined ? {} : { env: options.env }),
-        })
+        child = spawnGuideCommand(executable, args, options)
       } catch (error) {
         finalize({
           type: "reject",
@@ -927,6 +1000,18 @@ export const createNodeCommandRunner = (): CommandRunner => ({
           })
           return
         }
+        if (stdinError !== undefined) {
+          finalize({
+            type: "reject",
+            error: new CommandRunnerError({
+              kind: "exited", executable, args, exitCode, signal,
+              stdout: output.stdout, stderr: output.stderr,
+              message: `command stdin could not be written: ${executable}`,
+              cause: stdinError,
+            }),
+          })
+          return
+        }
         finalize({
           type: "resolve",
           value: {
@@ -944,6 +1029,7 @@ export const createNodeCommandRunner = (): CommandRunner => ({
           : setTimeout(() => {
               requestTermination("timed-out")
             }, options.timeoutMs)
+      writeCommandInput(child, options?.stdin, (error) => { stdinError = error })
     }),
 })
 
@@ -1064,7 +1150,7 @@ const parseGuideCaptureProvenance = (value: unknown): GuideCaptureProvenance | u
 
 const parsePopupHerdrContext = (source: string): HerdrContext => {
   const fields = parseJsonRecord(source, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON")
-  const allowedKeys = new Set(["schemaVersion", "surface", "workspaceId", "paneId", "cwd", "capture"])
+  const allowedKeys = new Set(["schemaVersion", "surface", "workspaceId", "paneId", "cwd", "capture", "launchOrigin"])
   const unexpectedKeys = Object.keys(fields).filter((key) => !allowedKeys.has(key))
   if (unexpectedKeys.length > 0) {
     throw new GuideLaunchError({
@@ -1102,6 +1188,9 @@ const parsePopupHerdrContext = (source: string): HerdrContext => {
     surface: "popup",
     cwd,
     ...(capture === undefined ? {} : { capture }),
+    ...(fields.launchOrigin === undefined ? {} : {
+      launchOrigin: parseFirstmateInstanceControlContextV1(fields.launchOrigin),
+    }),
   }
 }
 
@@ -1234,9 +1323,9 @@ export const waitForHerdrAgentIdle = async (
   })
 }
 
-export const launchInHerdrPaneAndPrompt = async (
+export const launchInHerdrPane = async (
   runner: CommandRunner,
-  options: LaunchInHerdrPaneOptions,
+  options: Pick<LaunchInHerdrPaneOptions, "paneId" | "cwd" | "command" | "onPhase" | "beforeLaunch">,
 ): Promise<HerdrPaneLaunchResult> => {
   await options.beforeLaunch?.(options.cwd, options.paneId)
   const commandPreview = `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview(options.command)}`
@@ -1254,6 +1343,14 @@ export const launchInHerdrPaneAndPrompt = async (
     }
     throw error
   }
+  return { paneId: options.paneId, commandPreview }
+}
+
+export const launchInHerdrPaneAndPrompt = async (
+  runner: CommandRunner,
+  options: LaunchInHerdrPaneOptions,
+): Promise<HerdrPaneLaunchResult> => {
+  const { commandPreview } = await launchInHerdrPane(runner, options)
   if (options.promptDelivery === "command" || options.promptDelivery === "manual") {
     return {
       paneId: options.paneId,
@@ -1431,6 +1528,30 @@ const invalidBranchResult = (branch: string): InvalidBranchResult => ({
   branch,
 })
 
+const inspectGitSource = async (runner: CommandRunner, cwd: string) => {
+  const currentCheckoutRoot = await resolveGitRoot(runner, cwd)
+  const status = await runGit(runner, currentCheckoutRoot, ["status", "--porcelain"])
+  const currentHeadSha = await resolveCurrentHeadSha(runner, currentCheckoutRoot)
+  return { currentCheckoutRoot, currentHeadSha, dirty: status.stdout.length > 0 }
+}
+
+export const inspectGuideProjectTarget = async (
+  runner: CommandRunner,
+  cwd: string,
+  source?: string,
+): Promise<GuideProjectTargetV1> => {
+  const inspected = await inspectGitSource(runner, source === undefined ? cwd : path.resolve(cwd, source))
+  return parseGuideProjectTargetV1({
+    schemaVersion: 1,
+    projectName: null,
+    source: { kind: "local", location: inspected.currentCheckoutRoot },
+    entryWorktree: inspected.currentCheckoutRoot,
+    baseRevision: inspected.currentHeadSha,
+    dirty: inspected.dirty,
+    dirtyChanges: "excluded",
+  })
+}
+
 const resolveGitInspectionBase = async (
   runner: CommandRunner,
   options: {
@@ -1439,9 +1560,7 @@ const resolveGitInspectionBase = async (
     readonly targetPath?: string
   },
 ): Promise<GitInspectionBase> => {
-  const currentCheckoutRoot = await resolveGitRoot(runner, options.cwd)
-  const status = await runGit(runner, currentCheckoutRoot, ["status", "--porcelain"])
-  const currentHeadSha = await resolveCurrentHeadSha(runner, currentCheckoutRoot)
+  const { currentCheckoutRoot, currentHeadSha, dirty } = await inspectGitSource(runner, options.cwd)
   const branchExists = await checkBranchExists(runner, currentCheckoutRoot, options.branch)
   const worktrees = parseGitWorktreeList(
     (await runGit(runner, currentCheckoutRoot, ["worktree", "list", "--porcelain"])).stdout,
@@ -1457,7 +1576,7 @@ const resolveGitInspectionBase = async (
     currentHeadSha,
     baseRef: currentCheckoutRoot === primaryCheckoutPath ? "HEAD" : currentHeadSha,
     branch: options.branch,
-    dirty: status.stdout.length > 0,
+    dirty,
     branchExists,
     activeBranchWorktree: worktrees.find((entry) => entry.branch === `${gitBranchPrefix}${options.branch}`) ?? null,
     activePathWorktree:

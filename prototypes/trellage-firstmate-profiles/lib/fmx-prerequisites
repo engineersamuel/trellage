@@ -21,7 +21,13 @@ Usage:
   fmx-prerequisites destination
   fmx-prerequisites path
   fmx-prerequisites verify
-  fmx-prerequisites install
+  fmx-prerequisites plan
+  fmx-prerequisites recoverable
+  fmx-prerequisites repair-cache --expected-identity SHA256 --expected-source-revision SHA40
+  fmx-prerequisites install [--expected-identity LOCK_SHA256 --expected-plan PLAN_SHA256 --expected-source-revision SHA40]
+
+identity and --expected-identity identify the raw artifact lock and cache.
+plan.identity and --expected-plan bind the reviewed destination and sources.
 EOF
 }
 
@@ -63,36 +69,86 @@ sha256_file() {
 }
 
 script_dir="$(resolve_script_dir)" || die 'could not resolve helper directory'
-runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+execution_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve fmx runtime root'
 home="${HOME-}"
 [[ "$home" == /* && "$home" != / && -d "$home" && ! -L "$home" ]] \
   || die "unsafe HOME: $home"
 canonical_home="$(canonical_directory "$home")" || die "cannot resolve HOME: $home"
-lock_root="$runtime_root/prerequisite-lock"
+runtime_root="$execution_root"
+lock_root="$execution_root/prerequisite-lock"
+source_mode=false
+# The executing helper and its lock remain in the checkout. Only the cache
+# belongs to the installed runtime; never execute that runtime's older helper.
+if [[ ! -e "$lock_root" && ! -L "$lock_root" \
+  && ! -e "$execution_root/$runtime_ownership_basename" \
+  && ! -L "$execution_root/$runtime_ownership_basename" \
+  && "$execution_root" != "$canonical_home/.local/share/trellage/fmx" ]]; then
+  source_mode=true
+  lock_root="$execution_root/prerequisites"
+  runtime_root="$canonical_home/.local/share/trellage/fmx"
+fi
 manifest="$lock_root/manifest.json"
 npm_source="$lock_root/npm"
 npm_package="$npm_source/package.json"
 npm_lock="$npm_source/package-lock.json"
 managed_root="$runtime_root/prerequisites"
 runtime_marker="$runtime_root/$runtime_ownership_basename"
-runtime_parent="$(CDPATH= cd -P -- "$runtime_root/.." && pwd)" \
-  || die 'could not resolve fmx runtime parent'
+runtime_parent="${runtime_root%/*}"
 runtime_operation_lock="$runtime_parent/.fmx-install.lock"
 
-validate_runtime() {
-  [[ -d "$runtime_root" && ! -L "$runtime_root" ]] \
-    || die "unsafe fmx runtime root: $runtime_root"
-  [[ -f "$runtime_marker" && ! -L "$runtime_marker" ]] \
-    || die "unowned fmx runtime root: $runtime_root"
-  [[ "$(<"$runtime_marker")" == "$runtime_ownership_value" ]] \
-    || die "unowned fmx runtime root: $runtime_root"
-  [[ -d "$lock_root" && ! -L "$lock_root" ]] \
+validate_paths() {
+  python3 - "$@" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
+
+for name in sys.argv[1:]:
+    path = Path(name)
+    if not path.is_absolute() or ":" in name or any(ord(c) < 32 for c in name):
+        raise SystemExit(f"fmx prerequisites: unsafe managed path: {name}")
+    for entry in (path, *path.parents):
+        if entry.is_symlink():
+            raise SystemExit(f"fmx prerequisites: unsafe managed path (symlink): {entry}")
+    if not path.exists():
+        continue
+    info = path.stat()
+    if info.st_uid != os.getuid() or info.st_mode & 0o022:
+        raise SystemExit(f"fmx prerequisites: managed path is not privately owned: {path}")
+    if not stat.S_ISDIR(info.st_mode) and not (stat.S_ISREG(info.st_mode) and info.st_nlink == 1):
+        raise SystemExit(f"fmx prerequisites: unsafe managed path: {path}")
+PY
+}
+
+validate_lock_paths() {
+  validate_paths "$execution_root" "$lock_root" "$npm_source" \
+    "$manifest" "$npm_package" "$npm_lock" || return 1
+  [[ -d "$lock_root" && -d "$npm_source" ]] \
     || die "missing prerequisite lock: $lock_root"
   for path in "$manifest" "$npm_package" "$npm_lock"; do
-    [[ -f "$path" && -r "$path" && ! -L "$path" ]] \
-      || die "unsafe prerequisite lock file: $path"
+    [[ -f "$path" && -r "$path" ]] || die "unsafe prerequisite lock file: $path"
   done
+}
+
+validate_runtime() {
+  if [[ "$source_mode" == true ]]; then
+    validate_paths "$canonical_home/.local" "$canonical_home/.local/share" \
+      "$canonical_home/.local/share/trellage" || return 1
+  fi
+  validate_paths "$runtime_parent" "$runtime_root" "$runtime_marker" "$managed_root" \
+    || return 1
+  [[ -d "$runtime_root" ]] || die "managed fmx runtime is missing: $runtime_root"
+  [[ -f "$runtime_marker" && "$(<"$runtime_marker")" == "$runtime_ownership_value" ]] \
+    || die "unowned fmx runtime root: $runtime_root"
+  [[ ! -e "$managed_root" || -d "$managed_root" ]] \
+    || die "unsafe managed prerequisite root: $managed_root"
+}
+
+validate_execution_lock() {
+  if [[ "$source_mode" == false ]]; then validate_runtime; fi
+  validate_lock_paths
+  validate_lock
 }
 
 validate_lock() {
@@ -194,7 +250,19 @@ version_from_output() {
 exact_version_matches() {
   local executable="$1" expected="$2" output actual
 
-  output="$("$executable" --version 2>&1)" || return 1
+  output="$(python3 - "$executable" <<'PY'
+import subprocess
+import sys
+try:
+    result = subprocess.run([sys.argv[1], "--version"], stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10, check=False)
+    if result.returncode or len(result.stdout) > 65536:
+        raise SystemExit(1)
+    sys.stdout.buffer.write(result.stdout)
+except (OSError, subprocess.SubprocessError):
+    raise SystemExit(1)
+PY
+  )" || return 1
   actual="$(printf '%s\n' "$output" | version_from_output)"
   [[ "$actual" == "$expected" ]]
 }
@@ -219,9 +287,14 @@ validate_destination_shape() {
   [[ "$(<"$destination/$complete_basename")" == "$identity" ]] || return 1
   [[ -f "$destination/receipt.json" && ! -L "$destination/receipt.json" ]] \
     || return 1
-  jq -e --arg identity "$identity" '
+  jq -e --arg identity "$identity" --slurpfile manifest "$manifest" '
     .schemaVersion == 1 and .identity == $identity
+    and .npm == $manifest[0].npm.tools
+    and .binaries == ($manifest[0].binaries | map_values(.version))
   ' "$destination/receipt.json" >/dev/null 2>&1 || return 1
+  validate_cache_paths "$destination" || return 1
+  cmp -s "$npm_package" "$destination/npm/package.json" || return 1
+  cmp -s "$npm_lock" "$destination/npm/package-lock.json" || return 1
   for tool in no-mistakes treehouse; do
     path="$destination/bin/$tool"
     [[ -f "$path" && -x "$path" && ! -L "$path" ]] || return 1
@@ -232,6 +305,59 @@ validate_destination_shape() {
     expected="$(jq -r --arg tool "$tool" '.npm.tools[$tool]' "$manifest")"
     [[ -n "$expected" ]] || return 1
   done
+}
+
+validate_cache_paths() {
+  local destination="$1"
+
+  validate_paths "$managed_root" "$destination" || return 1
+  python3 - "$destination" "$npm_lock" <<'PY'
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+
+root, lock = map(Path, sys.argv[1:])
+if not root.exists():
+    raise SystemExit(0)
+modules = root / "npm/node_modules"
+binary_names = {"no-mistakes", "treehouse"}
+commands = {}
+reserved = {"bash", "sh", "env", "python", "python3", "git", "gh", "node", "npm", "npx",
+            "jq", "curl", "tmux", "herdr", "fmx", "rm", "mv", "cp", "mkdir", "rmdir",
+            "chmod", "find", "head", "tail", "sed", "awk", "grep", "ps", "kill", "install"}
+for package, value in json.loads(lock.read_text())["packages"].items():
+    for name, target in value.get("bin", {}).items():
+        expected = root / "npm" / package / target
+        if "/" in name or not expected.is_relative_to(modules) or ".." in Path(target).parts:
+            raise SystemExit("fmx prerequisites: unsafe locked npm command")
+        if name in commands or name in binary_names or name in reserved:
+            raise SystemExit(f"fmx prerequisites: locked npm command collision: {name}")
+        commands[name] = expected
+for directory in (root / "bin", root / "npm", modules, modules / ".bin"):
+    if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+        raise SystemExit(f"fmx prerequisites: unsafe cache directory: {directory}")
+for directory, allowed in ((root / "bin", binary_names), (modules / ".bin", set(commands))):
+    if directory.exists() and {entry.name for entry in directory.iterdir()} - allowed:
+        raise SystemExit(f"fmx prerequisites: unexpected command in managed PATH: {directory}")
+for entry in (root, *root.rglob("*")):
+    info = entry.lstat()
+    if info.st_uid != os.getuid():
+        raise SystemExit(f"fmx prerequisites: unowned cache entry: {entry}")
+    if entry.is_symlink():
+        try:
+            resolved = entry.resolve(strict=True)
+        except (OSError, RuntimeError):
+            raise SystemExit(f"fmx prerequisites: invalid cache link: {entry}")
+        if not entry.is_relative_to(modules) or not resolved.is_relative_to(modules):
+            raise SystemExit(f"fmx prerequisites: cache link escapes node_modules: {entry}")
+        if entry.parent == modules / ".bin" and resolved != commands[entry.name].resolve():
+            raise SystemExit(f"fmx prerequisites: incorrect npm command link: {entry}")
+    elif (info.st_mode & 0o022 or
+          not (stat.S_ISDIR(info.st_mode) or (stat.S_ISREG(info.st_mode) and info.st_nlink == 1))):
+        raise SystemExit(f"fmx prerequisites: unsafe cache entry: {entry}")
+PY
 }
 
 verify_destination() {
@@ -249,75 +375,72 @@ verify_destination() {
   done
 }
 
-profile_lock_blocks_runtime_change() {
-  local lock="$1"
-  local pid
-
-  [[ -e "$lock" || -L "$lock" ]] || return 1
-  [[ -d "$lock" && ! -L "$lock" \
-    && -f "$lock/owner" && ! -L "$lock/owner" \
-    && "$(<"$lock/owner")" == "$runtime_ownership_value" \
-    && -f "$lock/pid" && ! -L "$lock/pid" ]] \
-    || return 0
-  pid="$(<"$lock/pid")"
-  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 0
-  kill -0 "$pid" 2>/dev/null
+verify_install_expectations() {
+  local actual plan
+  validate_execution_lock
+  actual="$(toolchain_identity)"
+  [[ -z "$expected_identity" || "$actual" == "$expected_identity" ]] \
+    || die 'prerequisite plan changed: the artifact lock differs; refresh preparation'
+  if [[ -n "$expected_source_revision" ]]; then
+    validate_paths "$execution_root/catalog.json"
+    [[ "$(jq -er '.source.commit' "$execution_root/catalog.json")" == "$expected_source_revision" ]] \
+      || die 'Firstmate source revision changed; refresh the profile catalog before preparation'
+  fi
+  if [[ -n "$expected_plan" ]]; then
+    plan="$(installation_plan)"
+    [[ "$(jq -er '.identity' <<<"$plan")" == "$expected_plan" ]] \
+      || die 'prerequisite installation plan changed; review the current destination and sources'
+  fi
 }
 
-parent_launch_mutation_lock() {
-  local lock="$1" pid
-
-  [[ -d "$lock" && ! -L "$lock" \
-    && -f "$lock/owner" && ! -L "$lock/owner" \
-    && "$(<"$lock/owner")" == "$runtime_ownership_value" \
-    && -f "$lock/action" && ! -L "$lock/action" \
-    && "$(<"$lock/action")" == launch \
-    && -f "$lock/pid" && ! -L "$lock/pid" ]] \
-    || return 1
-  pid="$(<"$lock/pid")"
-  [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" == "$PPID" ]]
+installation_plan() {
+  local destination
+  validate_runtime
+  destination="$(toolchain_destination)"
+  validate_install_destination "$destination"
+  require_command npm
+  validate_paths "$execution_root/lib/fmx-control.py"
+  python3 "$execution_root/lib/fmx-control.py" npm-plan \
+    "$manifest" "$(toolchain_identity)" "$destination" "$canonical_home" "$(platform_key)"
 }
 
-mutation_lock_blocks_runtime_change() {
-  local lock="$1"
+validate_install_destination() {
+  local destination="$1" marker="$1/$toolchain_ownership_basename"
+  validate_cache_paths "$destination" || return 1
+  if [[ -e "$destination" || -L "$destination" ]]; then
+    [[ -d "$destination" && -f "$marker" && ! -L "$marker" \
+      && "$(<"$marker")" == "$ownership_value" ]] \
+      || die "unowned existing prerequisite destination: $destination"
+  fi
+}
 
-  parent_launch_mutation_lock "$lock" && return 1
-  profile_lock_blocks_runtime_change "$lock"
+recoverable_destination() {
+  local identity destination candidate='' path
+  validate_runtime
+  identity="$(toolchain_identity)"
+  destination="$managed_root/$identity"
+  validate_install_destination "$destination"
+  # A live destination is never overwritten by automatic cache recovery.
+  [[ ! -e "$destination" ]] || return 3
+  for path in "$managed_root/.retired.$identity."*; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    [[ -z "$candidate" ]] || die 'multiple retired prerequisite caches require manual inspection'
+    candidate="$path"
+  done
+  [[ -n "$candidate" ]] || return 3
+  verify_destination "$candidate" "$identity" \
+    || die "the retired prerequisite cache failed verification: $candidate"
+  printf '%s\n' "$candidate"
 }
 
 active_fmx_fleet_or_mutation() {
-  local profile_root worker_root worker marker pid
-
-  for profile_root in "$canonical_home/.local/share/trellage/profiles/firstmate"/*; do
-    [[ -d "$profile_root" && ! -L "$profile_root" ]] || continue
-    if profile_lock_blocks_runtime_change "$profile_root/locks/session" \
-      || mutation_lock_blocks_runtime_change "$profile_root/locks/mutation"; then
-      printf '%s\n' "$profile_root"
-      return 0
-    fi
-    worker_root="$profile_root/workers"
-    if [[ -e "$worker_root" || -L "$worker_root" ]]; then
-      [[ -d "$worker_root" && ! -L "$worker_root" ]] || {
-        printf '%s\n' "$profile_root"
-        return 0
-      }
-      for worker in "$worker_root"/*; do
-        [[ -d "$worker" && ! -L "$worker" ]] || continue
-        marker="$worker/.active"
-        [[ -e "$marker" || -L "$marker" ]] || continue
-        if [[ ! -f "$marker" || -L "$marker" ]]; then
-          printf '%s\n' "$profile_root"
-          return 0
-        fi
-        pid="$(<"$marker")"
-        if [[ ! "$pid" =~ ^[1-9][0-9]*$ ]] || kill -0 "$pid" 2>/dev/null; then
-          printf '%s\n' "$profile_root"
-          return 0
-        fi
-      done
-    fi
-  done
-  return 1
+  local delegation=launch
+  if [[ "$identity_expectation_supplied" == true && -n "$expected_identity" \
+    && -n "$expected_source_revision" \
+    && ( "${operation-}" != install || "$plan_expectation_supplied" == true ) ]]; then
+    delegation=prepare
+  fi
+  ! python3 "${BASH_SOURCE[0]%/*}/fmx-registry.py" check-shared "$PPID" "$delegation"
 }
 
 install_lock=''
@@ -326,6 +449,47 @@ runtime_operation_lock_acquired=false
 stage=''
 backup=''
 published_destination=''
+install_child_pid=''
+
+run_install_command() {
+  local status=0
+  "$@" &
+  install_child_pid=$!
+  wait "$install_child_pid" || status=$?
+  install_child_pid=''
+  return "$status"
+}
+
+stop_install_child() {
+  [[ -n "$install_child_pid" ]] || return 0
+  python3 - "$install_child_pid" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+import time
+
+root = int(sys.argv[1])
+rows = subprocess.check_output(["ps", "-axo", "pid=,ppid="], text=True).splitlines()
+pairs = [tuple(map(int, row.split())) for row in rows]
+pids = {root}
+for _ in range(len(pairs)):
+    added = {pid for pid, parent in pairs if parent in pids} - pids
+    if not added:
+        break
+    pids |= added
+for sig in (signal.SIGTERM, signal.SIGKILL):
+    for pid in sorted(pids, reverse=True):
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            pass
+    if sig == signal.SIGTERM:
+        time.sleep(0.2)
+PY
+  wait "$install_child_pid" 2>/dev/null || true
+  install_child_pid=''
+}
 
 release_runtime_operation_lock() {
   local path
@@ -374,8 +538,9 @@ cleanup() {
 
 handle_signal() {
   trap - EXIT HUP INT TERM
+  stop_install_child
   cleanup
-  exit 1
+  exit 143
 }
 
 acquire_runtime_operation_lock() {
@@ -484,6 +649,10 @@ recover_install_artifacts() {
   while IFS= read -r path; do
     [[ -d "$path" && ! -L "$path" ]] \
       || die "unsafe interrupted prerequisite stage: $path"
+    name="${path##*/}"
+    [[ "$name" =~ ^\.stage\.[0-9a-f]{64}\.[A-Za-z0-9]+$ ]] \
+      || die "unowned interrupted prerequisite stage: $path"
+    validate_cache_paths "$path" || die "unsafe interrupted prerequisite stage: $path"
     rm -rf -- "$path"
   done < <(find "$managed_root" -mindepth 1 -maxdepth 1 \
     -name '.stage.*' -print)
@@ -495,6 +664,7 @@ recover_install_artifacts() {
     [[ "$name" =~ ^\.retired\.([0-9a-f]{64})\..+$ ]] \
       || die "invalid interrupted prerequisite retirement: $path"
     identity="${BASH_REMATCH[1]}"
+    validate_cache_paths "$path" || die "unsafe interrupted prerequisite retirement: $path"
     count="$(find "$managed_root" -mindepth 1 -maxdepth 1 \
       -name ".retired.$identity.*" -print | wc -l | tr -d ' ')"
     [[ "$count" == 1 ]] \
@@ -549,7 +719,8 @@ extract_release_binary() {
   printf 'Downloading %s %s from %s\n' \
     "$tool" "$(jq -r --arg tool "$tool" '.binaries[$tool].version' "$manifest")" \
     "$url"
-  if ! curl --proto '=https' --tlsv1.2 -fsSL \
+  if ! run_install_command curl --proto '=https' --tlsv1.2 -fsSL \
+    --connect-timeout 15 --max-time 120 \
     --max-filesize "$max_bytes" "$url" -o "$archive_path"; then
     rm -rf -- "$download_dir"
     die "download failed for $url"
@@ -605,12 +776,36 @@ PY
   rm -rf -- "$download_dir"
 }
 
+repair_cached_toolchain() {
+  local candidate destination
+  [[ -n "$expected_identity" && -n "$expected_source_revision" ]] \
+    || die 'cache repair requires current source and lock expectations'
+  verify_install_expectations
+  candidate="$(recoverable_destination)" || die 'no verified retired prerequisite cache can be restored'
+  destination="$(toolchain_destination)"
+  trap cleanup EXIT
+  trap handle_signal HUP INT TERM
+  acquire_runtime_operation_lock
+  verify_install_expectations
+  if active_fmx_fleet_or_mutation >/dev/null; then
+    die 'cannot repair shared prerequisites while a Firstmate fleet or profile mutation is active or indeterminate'
+  fi
+  acquire_install_lock
+  verify_install_expectations
+  candidate="$(recoverable_destination)" || die 'the recoverable prerequisite cache changed'
+  mv -- "$candidate" "$destination" || die 'could not restore the verified prerequisite cache'
+  verify_destination "$destination" "$expected_identity" \
+    || die 'the restored prerequisite cache failed verification'
+  printf 'Restored the verified prerequisite cache without downloads.\n'
+}
+
 install_toolchain() {
-  local identity destination minimum_node node_major npm_log receipt_stage
+  local identity destination minimum_node node_major receipt_stage plan
   local existing_owner=''
 
   require_command jq
   require_command python3
+  require_command ps
   require_command node
   require_command npm
   require_command curl
@@ -626,15 +821,28 @@ install_toolchain() {
   [[ "$node_major" =~ ^[0-9]+$ && "$node_major" -ge "$minimum_node" ]] \
     || die "Node.js $minimum_node+ is required to install the managed prerequisites"
 
+  verify_install_expectations
   identity="$(toolchain_identity)"
+  [[ -n "$expected_identity" ]] || expected_identity="$identity"
   destination="$managed_root/$identity"
+  validate_runtime
+  validate_install_destination "$destination"
+  if [[ -z "$expected_plan" ]]; then
+    plan="$(installation_plan)"
+    expected_plan="$(jq -er '.identity' <<<"$plan")"
+  fi
 
   trap cleanup EXIT
   trap handle_signal HUP INT TERM
   acquire_runtime_operation_lock
   validate_runtime
-  validate_lock
+  verify_install_expectations
+  validate_install_destination "$destination"
+  if active_fmx_fleet_or_mutation >/dev/null; then
+    die 'cannot install shared prerequisites while a Firstmate fleet or profile mutation is active or indeterminate'
+  fi
   acquire_install_lock
+  verify_install_expectations
   recover_install_artifacts
   [[ "${FMX_PREREQUISITE_TEST_FAIL_AT-}" != after-artifact-recovery ]] \
     || die 'injected failure at after-artifact-recovery'
@@ -648,20 +856,18 @@ install_toolchain() {
   [[ "${FMX_PREREQUISITE_TEST_FAIL_AT-}" != after-fleet-guard ]] \
     || die 'injected failure at after-fleet-guard'
 
-  stage="$(mktemp -d "$managed_root/.stage.$identity.XXXXXX")" \
+  stage="$(python3 -c 'import pathlib,sys,uuid; p=pathlib.Path(sys.argv[1])/(".stage."+sys.argv[2]+"."+uuid.uuid4().hex); p.mkdir(mode=0o700); print(p)' "$managed_root" "$identity")" \
     || die 'could not stage the managed prerequisite toolchain'
   chmod 0700 "$stage"
   mkdir -p "$stage/bin" "$stage/npm"
   chmod 0700 "$stage/bin" "$stage/npm"
   install -m 0644 "$npm_package" "$stage/npm/package.json"
   install -m 0644 "$npm_lock" "$stage/npm/package-lock.json"
-  npm_log="$stage/npm-install.log"
-  if ! npm ci --prefix "$stage/npm" --ignore-scripts --no-audit --no-fund \
-    --progress=false >"$npm_log" 2>&1; then
-    cat "$npm_log" >&2 || true
+  if ! run_install_command python3 "$execution_root/lib/fmx-control.py" npm-ci \
+    "$manifest" "$identity" "$destination" "$canonical_home" "$(platform_key)" \
+    "$stage/npm" "$expected_plan" "$expected_source_revision"; then
     die 'npm could not install the locked Firstmate prerequisites'
   fi
-  rm -f -- "$npm_log"
 
   extract_release_binary no-mistakes "$stage/bin/no-mistakes"
   extract_release_binary treehouse "$stage/bin/treehouse"
@@ -684,6 +890,7 @@ install_toolchain() {
     }
   ' >"$receipt_stage"
   chmod 0600 "$receipt_stage"
+  validate_cache_paths "$stage" || die 'the staged prerequisite PATH is unsafe'
 
   # The complete marker is published only after every installed command has
   # proved its exact version. Project initialization owns no-mistakes daemon
@@ -703,6 +910,7 @@ install_toolchain() {
       "$(jq -r --arg tool "$tool" '.npm.tools[$tool]' "$manifest")"
   done
 
+  verify_install_expectations
   if [[ -e "$destination" || -L "$destination" ]]; then
     [[ -d "$destination" && ! -L "$destination" ]] \
       || die "unsafe existing prerequisite destination: $destination"
@@ -712,7 +920,7 @@ install_toolchain() {
     fi
     [[ "$existing_owner" == "$ownership_value" ]] \
       || die "unowned existing prerequisite destination: $destination"
-    backup="$(mktemp -d "$managed_root/.retired.$identity.XXXXXX")" \
+    backup="$(python3 -c 'import pathlib,sys,uuid; p=pathlib.Path(sys.argv[1])/(".retired."+sys.argv[2]+"."+uuid.uuid4().hex); p.mkdir(mode=0o700); print(p)' "$managed_root" "$identity")" \
       || die "could not reserve prerequisite retirement path in: $managed_root"
     rmdir "$backup"
     mv "$destination" "$backup"
@@ -739,8 +947,12 @@ install_toolchain() {
 
 require_command jq
 require_command python3
-validate_runtime
-validate_lock
+expected_identity=''
+expected_source_revision=''
+expected_plan=''
+identity_expectation_supplied=false
+plan_expectation_supplied=false
+validate_execution_lock
 
 case "${1-}" in
   identity)
@@ -749,28 +961,71 @@ case "${1-}" in
     ;;
   destination)
     [[ "$#" -eq 1 ]] || die 'destination accepts no arguments'
+    validate_runtime
     toolchain_destination
     ;;
   path)
     [[ "$#" -eq 1 ]] || die 'path accepts no arguments'
+    validate_paths "$runtime_root" "$runtime_marker" "$managed_root"
+    if [[ ! -e "$runtime_root" ]]; then
+      printf 'fmx prerequisites: managed runtime is not installed: %s\n' "$runtime_root" >&2
+      exit 3
+    fi
+    validate_runtime
     identity="$(toolchain_identity)"
     destination="$managed_root/$identity"
-    validate_destination_shape "$destination" "$identity" \
-      || die "managed prerequisites are not installed at $destination"
+    if [[ ! -e "$destination" && ! -L "$destination" ]]; then
+      printf 'fmx prerequisites: no managed cache for lock %s at %s\n' "$identity" "$destination" >&2
+      exit 3
+    fi
+    verify_destination "$destination" "$identity" \
+      || die "managed prerequisites failed verification at $destination"
     printf '%s:%s\n' \
       "$destination/bin" "$destination/npm/node_modules/.bin"
     ;;
   verify)
     [[ "$#" -eq 1 ]] || die 'verify accepts no arguments'
+    validate_runtime
     identity="$(toolchain_identity)"
     destination="$managed_root/$identity"
     verify_destination "$destination" "$identity" \
       || die "managed prerequisites are unhealthy at $destination"
     printf 'Firstmate prerequisites: OK (%s)\n' "$destination"
     ;;
-  install)
-    [[ "$#" -eq 1 ]] || die 'install accepts no arguments'
-    install_toolchain
+  plan)
+    [[ "$#" -eq 1 ]] || die 'plan accepts no arguments'
+    installation_plan
+    ;;
+  recoverable)
+    [[ "$#" -eq 1 ]] || die 'recoverable accepts no arguments'
+    recoverable_destination
+    ;;
+  install | repair-cache)
+    operation="$1"
+    shift
+    while [[ "$#" -gt 0 ]]; do
+      [[ "$#" -ge 2 ]] || die 'install expectation requires a value'
+      case "$1" in
+        --expected-identity)
+          [[ -z "$expected_identity" && "$2" =~ ^[0-9a-f]{64}$ ]] || die 'invalid prerequisite artifact lock identity'
+          expected_identity="$2"
+          identity_expectation_supplied=true ;;
+        --expected-source-revision)
+          [[ -z "$expected_source_revision" && "$2" =~ ^[0-9a-f]{40}$ ]] || die 'invalid expected source revision'
+          expected_source_revision="$2" ;;
+        --expected-plan)
+          [[ -z "$expected_plan" && "$2" =~ ^[0-9a-f]{64}$ ]] || die 'invalid expected installation plan'
+          expected_plan="$2"
+          plan_expectation_supplied=true ;;
+        *) die "unknown install option: $1" ;;
+      esac
+      shift 2
+    done
+    if [[ "$operation" == repair-cache ]]; then
+      repair_cached_toolchain
+    else
+      install_toolchain
+    fi
     ;;
   help | -h | --help | '')
     usage

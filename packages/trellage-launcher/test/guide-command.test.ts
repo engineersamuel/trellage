@@ -59,6 +59,43 @@ describe("guide command request resolution", () => {
     })
   })
 
+  it.each([
+    ["omitted", undefined],
+    ["different", "native:cpx/awesome"],
+  ] as const)("uses the CLI profile for workflow selection when the stdin profile is %s", (_name, profile) => {
+    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:fmx/default"])
+    const request = {
+      schemaVersion: 1,
+      intent: "Review fleet status.",
+      workflowId: "review-fleet-status",
+      projectTarget: null,
+      originalIntent: "  Keep the exact fleet status request.  ",
+    }
+    expect(resolveGuideRequest(args, JSON.stringify({ ...request, profile }), {}).request).toEqual({
+      ...request,
+      profile: "native:fmx/default",
+    })
+  })
+
+  it("rejects a workflow without a profile in either input", () => {
+    const args = parseGuideHeadlessArgv(["--json"])
+    expect(() => resolveGuideRequest(args, JSON.stringify({
+      schemaVersion: 1,
+      intent: "Review fleet status.",
+      workflowId: "review-fleet-status",
+    }), {})).toThrow("requires a selected profile")
+  })
+
+  it("still validates an invalid stdin profile when CLI overrides it", () => {
+    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:fmx/default"])
+    expect(() => resolveGuideRequest(args, JSON.stringify({
+      schemaVersion: 1,
+      intent: "Review fleet status.",
+      profile: 42,
+      workflowId: "review-fleet-status",
+    }), {})).toThrow("request.profile")
+  })
+
   it("uses environment values when the request has no override", () => {
     const args = parseGuideHeadlessArgv(["--json", "--intent", "Plan this"])
     expect(

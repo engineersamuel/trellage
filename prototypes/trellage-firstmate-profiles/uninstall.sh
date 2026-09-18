@@ -28,6 +28,7 @@ ownership_marker="$install_root/.managed-by-trellage-firstmate-profiles"
 command_dir="$local_dir/bin"
 command_path="$command_dir/fmx"
 lock_acquired=false
+source_dir="$(CDPATH= cd -P -- "$(dirname "$0")" && pwd -P)"
 
 acquire_install_lock() {
   local owner=''
@@ -119,54 +120,8 @@ cleanup_abandoned_install_artifacts() {
   fi
 }
 
-profile_lock_blocks_runtime_change() {
-  local lock="$1"
-  local pid
-
-  [[ -e "$lock" || -L "$lock" ]] || return 1
-  [[ -d "$lock" && ! -L "$lock" \
-    && -f "$lock/owner" && ! -L "$lock/owner" \
-    && "$(<"$lock/owner")" == "$ownership_value" \
-    && -f "$lock/pid" && ! -L "$lock/pid" ]] \
-    || return 0
-  pid="$(<"$lock/pid")"
-  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 0
-  kill -0 "$pid" 2>/dev/null
-}
-
 active_fmx_fleet_or_mutation() {
-  local profile_root worker_root worker marker pid
-
-  for profile_root in "$canonical_home/.local/share/trellage/profiles/firstmate"/*; do
-    [[ -d "$profile_root" && ! -L "$profile_root" ]] || continue
-    if profile_lock_blocks_runtime_change "$profile_root/locks/session" \
-      || profile_lock_blocks_runtime_change "$profile_root/locks/mutation"; then
-      printf '%s\n' "$profile_root"
-      return 0
-    fi
-    worker_root="$profile_root/workers"
-    if [[ -e "$worker_root" || -L "$worker_root" ]]; then
-      [[ -d "$worker_root" && ! -L "$worker_root" ]] || {
-        printf '%s\n' "$profile_root"
-        return 0
-      }
-      for worker in "$worker_root"/*; do
-        [[ -d "$worker" && ! -L "$worker" ]] || continue
-        marker="$worker/.active"
-        [[ -e "$marker" || -L "$marker" ]] || continue
-        if [[ ! -f "$marker" || -L "$marker" ]]; then
-          printf '%s\n' "$profile_root"
-          return 0
-        fi
-        pid="$(<"$marker")"
-        if [[ ! "$pid" =~ ^[1-9][0-9]*$ ]] || kill -0 "$pid" 2>/dev/null; then
-          printf '%s\n' "$profile_root"
-          return 0
-        fi
-      done
-    fi
-  done
-  return 1
+  ! python3 "$source_dir/lib/fmx-registry.py" check-shared
 }
 
 if [[ -e "$runtime_parent" || -L "$runtime_parent" ]]; then
@@ -179,6 +134,9 @@ if [[ -e "$runtime_parent" || -L "$runtime_parent" ]]; then
   trap 'exit 130' INT
   trap 'exit 143' TERM
   acquire_install_lock
+  if active_fmx_fleet_or_mutation >/dev/null; then
+    refuse 'cannot uninstall fmx while a Firstmate fleet or profile mutation is active or indeterminate'
+  fi
   if find "$runtime_parent" -mindepth 1 -maxdepth 1 -name '.fmx-install.*' \
     ! -path "$install_lock" -print -quit | grep -q .; then
     refuse "interrupted fmx install exists; rerun install.sh before uninstalling"
@@ -208,9 +166,6 @@ fi
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ -f "$installed_catalog" && ! -L "$installed_catalog" ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
-if active_fmx_fleet_or_mutation >/dev/null; then
-  refuse 'cannot uninstall fmx while a Firstmate fleet or profile mutation is active or indeterminate'
-fi
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
   [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \

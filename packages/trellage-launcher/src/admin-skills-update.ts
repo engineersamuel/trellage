@@ -1,4 +1,5 @@
 import { isKnownNativeLauncher, type AdminProfileEntry } from "./admin-model.ts"
+import { adminFirstmateControlProfile, adminFirstmateMutationBlockReason, adminInstanceControlArgs } from "./admin-firstmate.ts"
 import type { CommandRunner, CommandSpec } from "./guide-launch.ts"
 import { runProfileUpdateStep, runUpdateCommand, type ProfileUpdateResult, type UpdateCommandResult } from "./admin-update-command.ts"
 
@@ -18,17 +19,28 @@ export type NativeSkillsUpdateEvent =
   | { readonly kind: "profile-started"; readonly entry: AdminProfileEntry }
   | { readonly kind: "profile-completed"; readonly result: ProfileUpdateResult }
 
+const captureSkillsTarget = (entry: AdminProfileEntry): AdminProfileEntry => {
+  if (entry.firstmateInstanceDescriptor === undefined) return entry
+  try {
+    const context = adminFirstmateControlProfile(entry).firstmateInstanceContext
+    return context === undefined ? entry : { ...entry, firstmateInstanceContext: context }
+  } catch {
+    return entry
+  }
+}
+
 export const nativeSkillsUpdatePlanFor = (
   entries: ReadonlyArray<AdminProfileEntry>,
   routerCommandPath: string,
 ): NativeSkillsUpdatePlan | undefined => {
-  const targets = entries.filter((entry) => entry.surface === "native")
+  const targets = entries.filter((entry) => entry.surface === "native").map(captureSkillsTarget)
   return targets.length === 0 ? undefined : { refresh: { executable: routerCommandPath, args: ["skills", "update"] }, targets }
 }
 
 export const nativeSkillsUpdateCommand = (entry: AdminProfileEntry): CommandSpec | undefined => {
   if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher) || entry.commandPath.length === 0) return undefined
-  return { executable: entry.commandPath, args: ["skills-update", entry.name] }
+  if (adminFirstmateMutationBlockReason(entry) !== undefined) return undefined
+  return { executable: entry.commandPath, args: ["skills-update", entry.name, ...adminInstanceControlArgs(entry)] }
 }
 
 export const runNativeSkillsUpdate = async (
@@ -48,7 +60,10 @@ export const runNativeSkillsUpdate = async (
     const command = nativeSkillsUpdateCommand(entry)
     const applied: ReadonlyArray<ProfileUpdateResult> =
       command === undefined
-        ? [{ ref: entry.ref, name: entry.name, state: "failure", diagnostic: `Skills update is not supported for ${entry.ref}.` }]
+        ? [{
+            ref: entry.ref, name: entry.displayName ?? entry.name, state: "failure",
+            diagnostic: adminFirstmateMutationBlockReason(entry) ?? `Skills update is not supported for ${entry.ref}.`,
+          }]
         : await runProfileUpdateStep({ command, targets: [entry] }, runner, cwd, options.signal)
     for (const result of applied) {
       results.push(result)

@@ -1,6 +1,7 @@
 import { constants, type Dirent } from "node:fs"
 import { lstat, open, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
+import type { FirstmateInstanceReferenceV1 } from "@trellage/guide-core"
 
 import {
   claudeSessionMetadata,
@@ -10,7 +11,7 @@ import {
   extractTranscriptConversation,
   type TranscriptMetadata,
 } from "./transcript-format.ts"
-import { trellageSessionIdentity } from "./trellage-session.ts"
+import { firstmateSessionReference, trellageSessionIdentity } from "./trellage-session.ts"
 import { assertNoConversationSymlinks } from "./conversation-reader.ts"
 import { errorMessage, hasErrorCode, isRecord, type JsonRecord } from "./records.ts"
 import { ConversationSurface } from "@trellage/guide-core/conversation"
@@ -100,21 +101,29 @@ const agentConfigDirectory = (agent: string) =>
 const homeDirectory = (env: NodeJS.ProcessEnv) =>
   typeof env.HOME === "string" && path.isAbsolute(env.HOME) ? env.HOME : undefined
 
-const nativeTranscriptRoots = async (agent: string, home: string, profile: string) => {
+const nativeHomePath = (agent: string, home: string, profile: string, firstmate?: FirstmateInstanceReferenceV1) => {
+  if (firstmate === undefined) return path.join(home, ".local", "share", "trellage", "profiles", agent, profile, "home")
+  if (agent !== "claude" || firstmate.profile !== profile) {
+    throw new Error("Firstmate transcript scope does not match the Native profile.")
+  }
+  const root = path.join(home, ".local", "share", "trellage", "profiles", "firstmate")
+  return firstmate.mode === "named"
+    ? path.join(root, "instances", firstmate.instanceId, "captain", "claude")
+    : path.join(root, profile, "captain", "claude")
+}
+
+const nativeTranscriptRoots = async (agent: string, home: string, profile: string, firstmate?: FirstmateInstanceReferenceV1) => {
   const roots: string[] = []
-  await addDirectory(
-    roots,
-    path.join(
-      home,
-      ".local",
-      "share",
-      "trellage",
-      "profiles",
-      agent,
-      profile,
-      "home",
-    ),
-  )
+  const directory = nativeHomePath(agent, home, profile, firstmate)
+  if (firstmate !== undefined) {
+    try {
+      await assertNoConversationSymlinks(directory)
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return roots
+      throw error
+    }
+  }
+  await addDirectory(roots, directory)
   return roots
 }
 
@@ -130,11 +139,11 @@ const defaultTranscriptRoots = async (agent: string, env: NodeJS.ProcessEnv, hom
   return roots
 }
 
-export const transcriptRoots = async (agent: string, env = process.env, nativeProfile?: string) => {
+export const transcriptRoots = async (agent: string, env = process.env, nativeProfile?: string, firstmate?: FirstmateInstanceReferenceV1) => {
   if (!supportedAgents.has(agent)) return []
   const home = homeDirectory(env)
   if (nativeProfile !== undefined) {
-    return home === undefined ? [] : nativeTranscriptRoots(agent, home, nativeProfile)
+    return home === undefined ? [] : nativeTranscriptRoots(agent, home, nativeProfile, firstmate)
   }
   return defaultTranscriptRoots(agent, env, home)
 }
@@ -446,7 +455,7 @@ export const sessionIdFromAgentSession = (agent: string, agentSession: unknown) 
   return agentSession.value
 }
 
-const exactSessionIdentity = ({ agentSessionId, processSessionId, nativeSessionId }: ExactSessionIdentifiers) => {
+export const exactSessionIdentity = ({ agentSessionId, processSessionId, nativeSessionId }: ExactSessionIdentifiers) => {
   const exactIds = new Set(
     [agentSessionId, processSessionId, nativeSessionId].filter((value) => value !== undefined),
   )
@@ -480,7 +489,7 @@ export const findTranscript = async (
   const trellageIdentity = trellageSessionIdentity({ agent, tokens, processInfo })
   if (trellageIdentity?.surface === ConversationSurface.Sandbox) return undefined
   const nativeProfile = trellageIdentity?.surface === ConversationSurface.Native ? trellageIdentity.profile : undefined
-  const roots = await transcriptRoots(agent, env, nativeProfile)
+  const roots = await transcriptRoots(agent, env, nativeProfile, firstmateSessionReference(trellageIdentity))
   if (roots.length === 0) return undefined
   const exactPath = await exactPathSession(agent, agentSession, roots, false)
   const agentSessionId = sessionIdFromAgentSession(agent, agentSession)
@@ -499,11 +508,11 @@ export const findTranscript = async (
   }
 }
 
-const focusedHomePaths = (agent: string, env: NodeJS.ProcessEnv, nativeProfile: string | undefined) => {
+const focusedHomePaths = (agent: string, env: NodeJS.ProcessEnv, nativeProfile: string | undefined, firstmate?: FirstmateInstanceReferenceV1) => {
   const home = homeDirectory(env)
   if (nativeProfile !== undefined) {
     return home === undefined ? [] : [
-      path.join(home, ".local", "share", "trellage", "profiles", agent, nativeProfile, "home"),
+      nativeHomePath(agent, home, nativeProfile, firstmate),
     ]
   }
   const explicit = agent === "copilot"
@@ -515,10 +524,10 @@ const focusedHomePaths = (agent: string, env: NodeJS.ProcessEnv, nativeProfile: 
   ]
 }
 
-export const focusedTranscriptRoots = async (agent: string, env = process.env, nativeProfile?: string) => {
+export const focusedTranscriptRoots = async (agent: string, env = process.env, nativeProfile?: string, firstmate?: FirstmateInstanceReferenceV1) => {
   if (!supportedAgents.has(agent)) return []
   const roots: string[] = []
-  for (const directory of focusedHomePaths(agent, env, nativeProfile)) {
+  for (const directory of focusedHomePaths(agent, env, nativeProfile, firstmate)) {
     if (!path.isAbsolute(directory)) throw new Error("The focused harness home must be an absolute path.")
     try {
       await assertNoConversationSymlinks(directory)
@@ -577,7 +586,7 @@ export const findFocusedTranscript = async ({
     nativeSessionId: identity?.surface === ConversationSurface.Native ? identity.sessionId : undefined,
   }
   const sessionId = exactSessionIdentity(identifiers)
-  const roots = await focusedTranscriptRoots(agent, env, nativeProfile)
+  const roots = await focusedTranscriptRoots(agent, env, nativeProfile, firstmateSessionReference(identity))
   if (roots.length === 0) throw new Error("The focused harness has no supported session root.")
   const transcript = await focusedCandidate(
     agent, agentSession, roots, sessionId, nativeProfile,
@@ -594,7 +603,9 @@ export const findFocusedTranscript = async ({
 export const captureStructuredFinalMessage = async (options: TranscriptLookupOptions) => {
   const transcript = await findTranscript(options)
   if (transcript === undefined) return undefined
-  const roots = await transcriptRoots(options.agent, options.env, transcript.profile)
+  const roots = await transcriptRoots(
+    options.agent, options.env, transcript.profile, firstmateSessionReference(trellageSessionIdentity(options)),
+  )
   const text = extractTranscriptFinalMessage(options.agent, await readTail(transcript.path, roots))
   return text === undefined
     ? undefined
@@ -640,7 +651,9 @@ export const captureStrictStructuredFinalMessage = async (options: TranscriptLoo
 export const captureStructuredConversation = async (options: TranscriptLookupOptions) => {
   const transcript = await findTranscript(options)
   if (transcript === undefined) return undefined
-  const roots = await transcriptRoots(options.agent, options.env, transcript.profile)
+  const roots = await transcriptRoots(
+    options.agent, options.env, transcript.profile, firstmateSessionReference(trellageSessionIdentity(options)),
+  )
   const messages = extractTranscriptConversation(options.agent, await readTail(transcript.path, roots))
   if (messages.length === 0) return undefined
   return {

@@ -1,0 +1,245 @@
+--- a/bin/fm-inbox.sh
++++ b/bin/fm-inbox.sh
+@@ -20,6 +20,8 @@
+ #
+ # Usage:
+ #   fm-inbox.sh note <text>...          | fm-inbox.sh note -   (body from stdin)
++#   fm-inbox.sh note --request-id <UUID> -   (retry-safe text producer)
++#   fm-inbox.sh receipt --request-id <UUID> --json   (read-only, no wake)
+ #   fm-inbox.sh say  [<file.wav>]       (default: audio on stdin)
+ #   fm-inbox.sh status
+ #   fm-inbox.sh ask  <question>...
+@@ -163,6 +165,177 @@
+   fm_wake_append check "inbox:$id" "check: captain inbox note $id - $summary"
+ }
+ 
++request_record() {
++  python3 -c '
++import datetime, fcntl, hashlib, json, os, re, stat, sys, uuid
++from pathlib import Path
++
++inbox, action, key = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
++if not re.fullmatch(r"[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}", key):
++    sys.exit("fm-inbox: request ID must be a lowercase version-4 UUID")
++
++def safe_directory(path, create=False):
++    for parent in reversed([path, *path.parents]):
++        if parent.is_symlink():
++            raise ValueError("unsafe inbox directory")
++        if not parent.exists():
++            if not create:
++                return False
++            try:
++                parent.mkdir(mode=0o700)
++            except FileExistsError:
++                pass
++        if parent.is_symlink() or not parent.is_dir():
++            raise ValueError("inbox path is not a directory")
++    if path.stat().st_uid != os.getuid():
++        raise ValueError("inbox directory is not owned")
++    return True
++
++def read(path, limit):
++    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    with os.fdopen(fd, "rb") as handle:
++        info = os.fstat(handle.fileno())
++        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
++            raise ValueError("inbox record is not an owned regular file")
++        data = handle.read(limit + 1)
++        if len(data) > limit:
++            raise ValueError("inbox record exceeds its size limit")
++        return data
++
++def publish(path, data):
++    stage = path.with_name(".staging-" + key + "-" + uuid.uuid4().hex)
++    fd = os.open(stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
++    try:
++        with os.fdopen(fd, "wb") as handle:
++            handle.write(data)
++            handle.flush()
++            os.fsync(handle.fileno())
++        os.replace(stage, path)
++        directory = os.open(path.parent, os.O_RDONLY)
++        try:
++            os.fsync(directory)
++        finally:
++            os.close(directory)
++    finally:
++        stage.unlink(missing_ok=True)
++
++def locate():
++    pending, handled = inbox / (key + ".note"), inbox / "handled" / (key + ".note")
++    if (inbox / "handled").exists() or (inbox / "handled").is_symlink():
++        safe_directory(inbox / "handled")
++    paths = [path for path in (pending, handled) if path.exists() or path.is_symlink()]
++    if len(paths) > 1:
++        raise ValueError("request has ambiguous pending and handled records")
++    if not paths:
++        return None, None, None
++    path = paths[0]
++    header, separator, payload = read(path, 525312).partition(b"\n--\n")
++    if not separator or not payload.endswith(b"\n"):
++        raise ValueError("request note is incomplete")
++    fields = {}
++    for line in header.decode("ascii").splitlines():
++        name, equals, value = line.partition("=")
++        if not equals or name in fields:
++            raise ValueError("request note header is ambiguous")
++        fields[name] = value
++    payload = payload[:-1]
++    digest = hashlib.sha256(payload).hexdigest()
++    if fields.get("id") != key or fields.get("source") != "text" or fields.get("request_sha256") != digest:
++        raise ValueError("request note identity or content differs")
++    return path, payload, digest
++
++result = dict(schemaVersion=1, state="not-found", noteId=None, digest=None, announcement="not-needed")
++try:
++    if not safe_directory(inbox, action == "save"):
++        print(json.dumps(result, separators=(",", ":")))
++        sys.exit(0)
++    registry = inbox / ".requests"
++    if not registry.exists() and not registry.is_symlink() and locate()[0] is not None:
++        raise ValueError("request registry is missing for an existing note")
++    if not safe_directory(registry, action == "save"):
++        if locate()[0] is not None:
++            raise ValueError("request registry is missing for an existing note")
++        print(json.dumps(result, separators=(",", ":")))
++        sys.exit(0)
++    lock = registry / (key + ".lock")
++    if not lock.exists() and not lock.is_symlink() and locate()[0] is not None:
++        raise ValueError("request lock is missing for an existing note")
++    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
++    if action == "save":
++        flags |= os.O_CREAT
++    try:
++        fd = os.open(lock, flags, 0o600)
++    except FileNotFoundError:
++        if (inbox / (key + ".note")).exists() or (inbox / "handled" / (key + ".note")).exists():
++            raise ValueError("request lock is missing for an existing note")
++        print(json.dumps(result, separators=(",", ":")))
++        sys.exit(0)
++    with os.fdopen(fd, "r+") as handle:
++        info = os.fstat(handle.fileno())
++        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
++            raise ValueError("request lock is not an owned regular file")
++        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
++        path, payload, digest = locate()
++        if action == "save":
++            body = sys.stdin.buffer.read(524289)
++            if not body.strip() or len(body) > 524288:
++                raise ValueError("request body must be nonempty and at most 524288 bytes")
++            if path is not None and body != payload:
++                raise ValueError("request ID already belongs to different content")
++            if path is None:
++                digest = hashlib.sha256(body).hexdigest()
++                at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
++                header = f"id={key}\nat={at}\nsource=text\nrequest_sha256={digest}\n--\n".encode("ascii")
++                path = inbox / (key + ".note")
++                publish(path, header + body + b"\n")
++        if path is not None:
++            if action == "ack" and path.parent == inbox:
++                safe_directory(inbox / "handled", True)
++                target = inbox / "handled" / path.name
++                os.replace(path, target)
++                path = target
++            state = "saved" if path.parent == inbox else "handled"
++            announcement = "pending"
++            signal = registry / (key + ".announcement")
++            if signal.exists() or signal.is_symlink():
++                data = json.loads(read(signal, 1024))
++                if data.get("digest") != digest or data.get("announcement") not in ("sent", "failed"):
++                    raise ValueError("request announcement does not match the saved note")
++                announcement = data["announcement"]
++            if action == "announce" and state == "saved":
++                requested = sys.argv[4]
++                if requested not in ("sent", "failed"):
++                    raise ValueError("invalid announcement state")
++                if announcement != "sent":
++                    announcement = requested
++                publish(signal, json.dumps(dict(digest=digest, announcement=announcement)).encode("ascii"))
++            result.update(state=state, noteId=key, digest=digest,
++                          announcement="not-needed" if state == "handled" else announcement)
++        print(json.dumps(result, separators=(",", ":")))
++except (OSError, ValueError) as error:
++    sys.exit("fm-inbox: " + str(error))
++' "$INBOX" "$@"
++}
++
++queue_request_note() {
++  local id=$1 body=$2 receipt state announcement summary
++  receipt=$(printf '%s' "$body" | request_record save "$id") || return 1
++  state=$(printf '%s' "$receipt" | jq -r '.state')
++  announcement=$(printf '%s' "$receipt" | jq -r '.announcement')
++  printf 'queued %s\n' "$id"
++  if [ "$state" = handled ] || [ "$announcement" = sent ]; then
++    return 0
++  fi
++  summary="saved request $id"
++  if wake_for "$id" "$summary"; then
++    request_record announce "$id" sent >/dev/null
++    printf '  firstmate will pick this up at its next check.\n'
++  else
++    request_record announce "$id" failed >/dev/null
++    die "note $id is saved at $INBOX/$id.note but firstmate was NOT woken"
++  fi
++}
++
+ queue_note() {
+   local source=$1 body=$2 extra=${3:-}
+   [ -n "${body//[[:space:]]/}" ] || die "refusing to queue an empty note"
+@@ -196,7 +369,12 @@
+ }
+ 
+ cmd_note() {
+-  local body
++  local body request_id=''
++  if [ "${1:-}" = --request-id ]; then
++    [ "$#" -ge 3 ] || die "usage: note --request-id <UUID> -"
++    request_id=$2
++    shift 2
++  fi
+   if [ "$#" -eq 0 ]; then
+     die "usage: fm-inbox.sh note <text>...   (or: note - to read stdin)"
+   elif [ "$1" = "-" ]; then
+@@ -204,7 +382,11 @@
+   else
+     body="$*"
+   fi
+-  queue_note text "$body"
++  if [ -n "$request_id" ]; then
++    queue_request_note "$request_id" "$body"
++  else
++    queue_note text "$body"
++  fi
+ }
+ 
+ # ---------------------------------------------------------------- say
+@@ -361,9 +543,14 @@
+   if [ "${1:-}" = "--ack" ]; then
+     shift
+     [ "$#" -gt 0 ] || die "usage: fm-inbox.sh drain --ack <id>..."
+-    mkdir -p "$INBOX/handled"
+     local id
+     for id in "$@"; do
++      if [[ "$id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$ ]]; then
++        request_record ack "$id" >/dev/null || return 1
++        printf 'acked %s\n' "$id"
++        continue
++      fi
++      mkdir -p "$INBOX/handled"
+       if [ -f "$INBOX/$id.note" ]; then
+         mv "$INBOX/$id.note" "$INBOX/handled/$id.note"
+         printf 'acked %s\n' "$id"
+@@ -381,6 +568,12 @@
+ 
+ case "${1:-}" in
+   note)   shift; cmd_note "$@" ;;
++  receipt)
++    shift
++    [ "$#" -eq 3 ] && [ "$1" = --request-id ] && [ "$3" = --json ] \
++      || die "usage: receipt --request-id <UUID> --json"
++    request_record status "$2"
++    ;;
+   say)    shift; cmd_say "$@" ;;
+   status) shift; cmd_status ;;
+   ask)    shift; cmd_ask "$@" ;;

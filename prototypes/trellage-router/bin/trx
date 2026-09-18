@@ -25,8 +25,8 @@ readonly ownership_value='trellage-router-v3'
 readonly trx_herdr_ledger='[
   { "launcher": "agx", "profile": "trellage-azure", "status": "untested", "notes": "Static launcher, state-isolation, Agency configuration, inventory, and router contracts pass; awaiting an end-to-end Agency and Azure MCP round trip." },
   { "launcher": "cldx", "profile": "default", "status": "verified" },
-  { "launcher": "fmx", "profile": "default", "status": "verified", "notes": "Verified in a real Herdr captain-and-scout round trip: consent-managed prerequisites installed, the scout used an isolated Treehouse worktree and worker home, all locked tools resolved, and teardown completed." },
-  { "launcher": "fmx", "profile": "pstack-workers", "status": "untested", "notes": "The shared Firstmate runtime passed the fmx/default Herdr fleet round trip, and static worker-policy contracts pass. Awaiting a profile-specific pstack-workers fleet round trip." },
+  { "launcher": "fmx", "profile": "default", "status": "untested", "notes": "The previous 4ad8cbae pin completed a real Herdr supervisor-and-scout round trip with consent-managed prerequisites, an isolated Treehouse worktree and worker home, and teardown. The 527aa7c1 source and retry-safe guide inbox flow still require a new live round trip." },
+  { "launcher": "fmx", "profile": "pstack-workers", "status": "untested", "notes": "The previous shared runtime had default-profile Herdr evidence, not a pstack-workers fleet proof. The 527aa7c1 source, worker policy, and guide inbox flow require a profile-specific live round trip." },
   { "launcher": "omp", "profile": "copilot", "status": "verified" },
   { "launcher": "picx", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
   { "launcher": "cdx", "profile": "pstack", "status": "untested", "notes": "Static profile, plugin inventory, and native launch contracts pass; awaiting an end-to-end Herdr round trip." },
@@ -312,6 +312,39 @@ read_catalog() {
       and (.effortOverride | type == "boolean")
       and (.testedHarnessVersion == null
         or (.testedHarnessVersion | type == "string" and length > 0));
+    def validOrchestration:
+      type == "object"
+      and ((keys - ["preparation", "instances"]) == [
+        "dispatchRules", "kind", "schemaVersion", "sourceRevision", "submission",
+        "taskIdPrefix", "workerEfforts", "workerHarness", "workerPolicy"
+      ])
+      and ((has("preparation") | not) or
+        (.preparation | type == "object" and keys == ["schemaVersion"] and .schemaVersion == 1))
+      and ((has("instances") | not) or
+        (.instances | type == "object" and keys == ["schemaVersion"] and .schemaVersion == 1))
+      and .schemaVersion == 1
+      and .kind == "firstmate"
+      and (.sourceRevision | type == "string" and test("^[a-f0-9]{40}$"))
+      and (.taskIdPrefix
+        | type == "string" and length <= 128 and test("^[a-z0-9]+(-[a-z0-9]+)*$"))
+      and (.workerPolicy == null or
+        (.workerPolicy
+          | type == "object"
+          and keys == ["digest", "name"]
+          and (.name | type == "string" and length <= 128 and test("^[a-z0-9]+(-[a-z0-9]+)*$"))
+          and (.digest | type == "string" and test("^[a-f0-9]{64}$"))))
+      and .workerHarness == "claude"
+      and (.workerEfforts
+        | type == "array"
+        and length > 0 and length <= 5 and length == (unique | length)
+        and all(.[]; . == "low" or . == "medium" or . == "high" or . == "xhigh" or . == "max"))
+      and .dispatchRules == "claude-single"
+      and (.submission
+        | type == "object"
+        and keys == ["maxRequestBytes", "schemaVersion"]
+        and .schemaVersion == 1
+        and (.maxRequestBytes
+          | type == "number" and . == floor and . >= 1024 and . <= 524288));
     type == "object"
     and keys == ["harness", "launcher", "profiles", "sandbox", "schemaVersion"]
     and .schemaVersion == 1
@@ -327,6 +360,9 @@ read_catalog() {
         and length > 0
         and (test("[\u0000-\u001f\u007f-\u009f]") | not))
       and (.headless | validHeadless)
+      and ((has("orchestration") | not) or
+        ($launcher == "fmx" and $harness == "firstmate"
+          and .headless.prompt == false and (.orchestration | validOrchestration)))
       and (.plugin == null or
         (.plugin
           | type == "string"
@@ -492,7 +528,7 @@ build_profile_list() {
         headless,
         sandbox: $catalog.sandbox,
         herdrCompatibility: herdrCompatibility($catalog.launcher; .name)
-      };
+      } + (if has("orchestration") then {orchestration} else {} end);
     {
       schemaVersion: 1,
       profiles: [

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "variant": "firstmate-instance-v1",
+  "commit": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
+  "files": [
+    {
+      "path": "bin/backends/herdr.sh",
+      "patch": "bin_backends_herdr.sh.patch",
+      "base": "1e177c4e11e9da3a6f7393a64f23586a5f3e9e93edbdc06ca574595c47ca9835",
+      "result": "6371563cb222fe93736925c7da3ab061b0f9a36cb9b0b053660acecb57f10a27",
+      "mode": "100644"
+    },
+    {
+      "path": "bin/backends/tmux.sh",
+      "patch": "bin_backends_tmux.sh.patch",
+      "base": "081e8c9114b50426631045c73314b18a35a56c123e17aa7d1bc265558e2cfdff",
+      "result": "c1ede281f8edee4be71d6dda8163ad51ff48ab30b93f9054eda11081af670211",
+      "mode": "100644"
+    },
+    {
+      "path": "bin/fm-backend.sh",
+      "patch": "bin_fm-backend.sh.patch",
+      "base": "6ce3c82eadbc00e92c5cdeffa0d29ef200148dc8c2ee0fcc032090314791f0cd",
+      "result": "d23bce25aceb1465820feb9da99f136354d3560cd8f50ca329ec48c12c18a3d9",
+      "mode": "100644"
+    },
+    {
+      "path": "bin/fm-control.sh",
+      "patch": "bin_fm-control.sh.patch",
+      "base": "736e08c98e17e126052880ca842830655db8b348899f645ee3468d1feb2c4607",
+      "result": "1276a42e66133224eb28fc2cafb73126676b9db2bc5120ecf260a61f2532f412",
+      "mode": "100755"
+    },
+    {
+      "path": "bin/fm-spawn.sh",
+      "patch": "bin_fm-spawn.sh.patch",
+      "base": "5a061a77e39b9c12adad0a730ef844f261eca60eace9d84a9210061a1bd3c70e",
+      "result": "62803be105f41a1900691606540ba7858053d93d2447dc89f69d8faaa3ec49cc",
+      "mode": "100755"
+    }
+  ]
+}

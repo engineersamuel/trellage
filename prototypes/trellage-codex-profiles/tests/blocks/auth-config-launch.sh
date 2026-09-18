@@ -2144,7 +2144,10 @@ assert_command_fails setup-superpowers-upgrade-failure env \
   "$fixture_launcher" setup superpowers
 grep -F -- 'cdx: failed to materialize selected Git marketplace: superpowers' \
   "$fixture_root/setup-superpowers-upgrade-failure.out" >/dev/null \
-  || fail 'failed fresh Superpowers materialization diagnostic differs'
+  || {
+    cat "$fixture_root/setup-superpowers-upgrade-failure.out" >&2
+    fail 'failed fresh Superpowers materialization diagnostic differs'
+  }
 if grep -F -- 'superpowers: ready' \
   "$fixture_root/setup-superpowers-upgrade-failure.out" >/dev/null; then
   fail 'failed fresh Superpowers materialization reported ready'

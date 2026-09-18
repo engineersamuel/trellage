@@ -140,10 +140,9 @@ describe("clampAugmentedIntent", () => {
     expect(clampAugmentedIntent("short")).toBe("short")
   })
 
-  it("clamps over-length text to the intent bound and marks the truncation", () => {
-    const clamped = clampAugmentedIntent("x".repeat(guideIntentMaximumLength + 500))
-    expect([...clamped]).toHaveLength(guideIntentMaximumLength)
-    expect(clamped).toContain("[truncated: augmented prompt exceeded the intent limit]")
+  it("rejects over-length text instead of dropping requirements", () => {
+    expect(() => clampAugmentedIntent("x".repeat(guideIntentMaximumLength + 500)))
+      .toThrow("original intent is unchanged")
   })
 })
 
@@ -269,15 +268,14 @@ describe("research augmentation", () => {
     expect(runner.calls[0]?.options?.signal).toBe(abort.signal)
   })
 
-  it("clamps an over-length note to the intent bound", async () => {
+  it("rejects an over-length research note without replacing the original intent", async () => {
     const runner = new FakeRunner(async () => {
       await writeNote("fresh", "y".repeat(guideIntentMaximumLength + 100))
       return ok()
     })
 
-    const result = await runResearchAugment("intent", researchCatalog, contextFor(runner))
-
-    expect([...result]).toHaveLength(guideIntentMaximumLength)
+    await expect(runResearchAugment("intent", researchCatalog, contextFor(runner)))
+      .rejects.toThrow("original intent is unchanged")
   })
 })
 

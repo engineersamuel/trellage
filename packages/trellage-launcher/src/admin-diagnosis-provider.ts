@@ -28,12 +28,17 @@ import {
   type GuideModelSession,
 } from "./copilot-guide-provider.ts"
 import type { GuideReasoningEffort } from "./guide-model-routing.ts"
+import type { FirstmateInstanceDescriptorV1 } from "@trellage/guide-core"
+import type { CommandSpec } from "./guide-launch.ts"
+import { adminDiagnosticScopeLines } from "./admin-firstmate.ts"
 
 export interface DoctorFailureDiagnosisRequest {
   readonly ref: string
   readonly name: string
   /** Already-captured, untrusted doctor stdout/stderr text — never executed, never treated as an instruction. */
   readonly capturedOutput: string
+  readonly firstmateInstance?: FirstmateInstanceDescriptorV1
+  readonly diagnosticCommand?: CommandSpec
 }
 
 export type DiagnosisConfidence = "low" | "medium" | "high"
@@ -79,6 +84,7 @@ const untrustedMessage = (request: DoctorFailureDiagnosisRequest): string =>
   [
     `Profile ref: ${request.ref}`,
     `Profile name: ${request.name}`,
+    ...adminDiagnosticScopeLines(request.firstmateInstance, request.diagnosticCommand),
     "",
     "<untrusted-data>",
     request.capturedOutput,

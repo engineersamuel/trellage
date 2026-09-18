@@ -106,6 +106,8 @@ export const runGuideJsonCommand = async (options: {
           profileRef: resolved.request.profile,
           ...(resolved.request.goal === undefined ? {} : { goal: resolved.request.goal }),
           ...(resolved.request.workflowId === undefined ? {} : { workflowId: resolved.request.workflowId }),
+          ...(resolved.request.projectTarget === undefined ? {} : { projectTarget: resolved.request.projectTarget }),
+          ...(resolved.request.originalIntent === undefined ? {} : { originalIntent: resolved.request.originalIntent }),
         },
         cache,
       )

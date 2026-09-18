@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react"
 import { Box, Text, useInput } from "ink"
-import type { AdminProfileEntry } from "./admin-model.ts"
+import { adminProfileLabel, type AdminProfileEntry } from "./admin-model.ts"
 import type { AdminHarnessVersionResult } from "./admin-harness-version.ts"
 import { harnessUpgradeVersionPreview } from "./admin-harness-update-preview.ts"
 import type {
@@ -291,7 +291,8 @@ type VersionResultFor = (entry: AdminProfileEntry) => AdminHarnessVersionResult 
 const profileResultLine = (entry: AdminProfileEntry, state: HarnessUpdateAllView, versionResultFor: VersionResultFor): string => {
   const result = state.results.get(entry.ref)
   const preview = harnessUpgradeVersionPreview(entry, versionResultFor(entry))
-  const profile = `\`${entry.ref}\`: ${preview.text}`
+  const instanceLabel = entry.firstmateInstanceDescriptor === undefined ? "" : `${adminProfileLabel(entry)} · `
+  const profile = `${instanceLabel}\`${entry.ref}\`: ${preview.text}`
   if (result?.state === "failure") return `- **Failed** ${profile}: ${result.diagnostic}`
   if (result?.state === "success") return `- **Updated** ${profile}`
   if (state.activeStep?.targets.some((target) => target.ref === entry.ref) === true) return `- **Running** ${profile}`
@@ -362,7 +363,7 @@ const currentOperation = (state: HarnessUpdateAllView): string | undefined => {
   if (state.stage === "skills") return skillsOperation(state.skillsEvent)
   if (state.activePlan === undefined) return undefined
   if (state.activeStep === undefined) return `Reading installed versions: ${state.activePlan.key}`
-  const targets = state.activeStep.targets.map((entry) => entry.name).join(", ")
+  const targets = state.activeStep.targets.map((entry) => `${adminProfileLabel(entry)}${entry.firstmateInstance === undefined ? "" : ` (${entry.firstmateInstance.instanceId})`}`).join(", ")
   return `${state.activePlan.key}: ${targets}`
 }
 

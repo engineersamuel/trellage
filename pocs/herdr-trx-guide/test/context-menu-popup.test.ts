@@ -1,10 +1,11 @@
 import { EventEmitter } from "node:events"
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { PassThrough } from "node:stream"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
+import { bunArguments, bunExecutable } from "@trellage/runtime"
 
 import {
   main,
@@ -41,11 +42,10 @@ class FakeLauncherChild extends EventEmitter {
 
 const executableLauncherRoot = async (): Promise<{ readonly root: string; readonly launcher: string }> => {
   const root = await mkdtemp(path.join(tmpdir(), "trx-context-popup-root-"))
-  const launcher = path.join(root, "packages", "trellage-launcher", "dist", "launcher.mjs")
+  const launcher = path.join(root, "packages", "trellage-launcher", "src", "cli.tsx")
   await mkdir(path.dirname(launcher), { recursive: true })
   await writeFile(path.join(root, "mise.toml"), "[env]\n", "utf8")
-  await writeFile(launcher, "#!/usr/bin/env node\n", { mode: 0o700 })
-  await chmod(launcher, 0o700)
+  await writeFile(launcher, "#!/usr/bin/env bun\n", { mode: 0o600 })
   return { root, launcher }
 }
 
@@ -68,8 +68,8 @@ test("resolves the launcher below the Trellage checkout and sends a private stdi
   })
 
   assert.equal(calls.length, 1)
-  assert.equal(calls[0]?.command, process.execPath)
-  assert.deepEqual(calls[0]?.args, [launcher, "rewrite-context", "--interactive"])
+  assert.equal(calls[0]?.command, bunExecutable())
+  assert.deepEqual(calls[0]?.args, bunArguments(launcher, ["rewrite-context", "--interactive"]))
   assert.equal(calls[0]?.options.detached, undefined)
   assert.deepEqual((calls[0]?.options.stdio as ReadonlyArray<unknown>).slice(0, 3), ["pipe", "inherit", "inherit"])
   assert.equal((calls[0]?.options.stdio as ReadonlyArray<unknown>)[0], "pipe")

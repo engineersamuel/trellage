@@ -1,13 +1,20 @@
 # Third-party test fixtures
 
 `firstmate/<commit>/` holds verbatim copies of the exact upstream Firstmate
-files the pinned `fmx` overlay edits, taken from
+files the pinned `fmx` overlay edits and their shell dependencies, taken from
 <https://github.com/kunchenguid/firstmate> at the commit named by the directory.
 
 They exist so the checked-in overlay can be proved offline: the contract test
 stages them through a fake `git`, verifies the recorded base digests, applies
 the real patches, and verifies the recorded result digests. Nothing here is
 executed as part of the Trellage product.
+
+The `4ad8cbaeafc109a17c1af3911867b7fe9e04e801` evidence is retained unchanged.
+The reviewed `527aa7c12d25aadbdf3cc56791f87ae71fca5280` files also support
+offline tests of real spawn, recovery, brief, promotion, and inbox entry points.
+External tools are replaced in the test environment; fixture files are not
+edited. `527aa7c12d25aadbdf3cc56791f87ae71fca5280.sha256.json` records every
+imported file digest.
 
 Do not edit these files. They must stay byte-identical to upstream, or the
 overlay base digests in `overlay/<commit>/manifest.json` stop matching.

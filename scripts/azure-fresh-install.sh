@@ -772,17 +772,21 @@ for pair in \
     and .readiness == "healthy"
   ' "$log_dir/inventory-$launcher-$profile.json" >/dev/null
   if [[ "$launcher" == fmx ]]; then
-    jq -e '
+    jq -e --arg profile "$profile" '
       .source.repository == "https://github.com/kunchenguid/firstmate.git"
-      and .source.pinnedCommit == "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
-      and .source.installedCommit == "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+      and .source.pinnedCommit == "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
+      and .source.installedCommit == "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
       and .source.commitMatchesPin == true
-      and .overlay.commit == "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+      and .overlay.commit == "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
       and .overlay.digestAlgorithm == "sha256"
-      and .overlay.manifestDigest == "38e643de4abebbeae177046cc0a6caaec7f27615752fbaf24bc65baafe8c1db6"
-      and .overlay.contentDigest == "4be7288cc1fade834f00cca3e5e17c147e01211ca37db52a1629a95547bfda56"
-      and .overlay.fileCount == 4
+      and .overlay.manifestDigest == "8b865df368a6ad01a8dc38dee66f01340bd707c2c1c74cbae5ac6b34aaee4cd7"
+      and .overlay.contentDigest == "dd3373bd80a3bdd7ed7761bb4c16c07e42e71a99b8d0de2e733774ad3f7d5b2b"
+      and .overlay.fileCount == 12
       and .overlay.verified == true
+      and .fleet.schemaVersion == 1
+      and .fleet.runtime == "ready"
+      and .fleet.identity.profile == $profile
+      and .fleet.identity.sourceRevision == .source.installedCommit
     ' "$log_dir/inventory-$launcher-$profile.json" >/dev/null
   fi
 done

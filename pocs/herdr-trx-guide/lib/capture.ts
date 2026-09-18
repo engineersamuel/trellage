@@ -2,7 +2,7 @@ import { assertCompletedAgent, sourceWorkingDirectory, validateAnswer } from "./
 import { readAgent } from "./herdr.ts"
 import { captureSandboxFinalMessage } from "./sandbox-bridge.ts"
 import { formatConversationIntent } from "./conversation.ts"
-import { trellageSessionIdentity } from "./trellage-session.ts"
+import { hasFirstmateSessionTokens, trellageSessionIdentity } from "./trellage-session.ts"
 import {
   captureStructuredFinalMessage,
   captureStructuredConversation,
@@ -61,7 +61,7 @@ const currentTrellageIdentity = ({
       processInfo,
     })
   } catch (error) {
-    if (!directIdentityReported) throw error
+    if (!directIdentityReported || hasFirstmateSessionTokens(agentInfo.tokens)) throw error
     diagnostic(onDiagnostic, error)
     return undefined
   }
@@ -107,6 +107,19 @@ const assertMatchingSandboxSession = (identity, structured, agentSessionId, proc
     throw new Error("The Sandbox bridge result conflicts with the reported harness session")
   }
 }
+
+const formattedCapturedConversation = ({ mode, agent, cwd, agentInfo, structured }) =>
+  mode === "conversation"
+    ? formatConversationIntent(
+        {
+          agent,
+          ...(hasFirstmateSessionTokens(agentInfo.tokens) ? {} : { cwd }),
+          sessionId: structured.sessionId,
+          ...(structured.profile === undefined ? {} : { profile: structured.profile }),
+        },
+        structured.messages,
+      )
+    : undefined
 
 const captureExactAnswer = async ({
   mode,
@@ -161,17 +174,7 @@ const captureExactAnswer = async ({
   if (context.expectedSessionId !== undefined && structured.sessionId !== context.expectedSessionId) {
     throw new Error("The selected agent session changed after the source picker opened")
   }
-  const formatted = mode === "conversation"
-    ? formatConversationIntent(
-        {
-          agent,
-          cwd,
-          sessionId: structured.sessionId,
-          ...(structured.profile === undefined ? {} : { profile: structured.profile }),
-        },
-        structured.messages,
-      )
-    : undefined
+  const formatted = formattedCapturedConversation({ mode, agent, cwd, agentInfo, structured })
   return {
     answer: validateAnswer(formatted?.text ?? structured.text, `${agent} transcript`),
     source: mode === "conversation" ? "conversation-transcript" : structured.source ?? "transcript",

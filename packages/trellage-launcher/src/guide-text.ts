@@ -55,14 +55,18 @@ export const text = (
   value: unknown,
   path: string,
   maximum: number,
-  options: { readonly multiline?: boolean } = {},
+  options: { readonly multiline?: boolean; readonly preserve?: boolean; readonly utf16?: boolean } = {},
 ): string => {
   if (typeof value !== "string") return fail(path, "must be a string")
-  const normalized = options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ")
-  if (normalized.length === 0) return fail(path, "must not be empty")
-  if ([...normalized].length > maximum) return fail(path, `must contain at most ${maximum} characters`)
+  const normalized = options.preserve ? value : options.multiline ? value.trim() : value.trim().replace(/\s+/gu, " ")
+  if (normalized.trim().length === 0) return fail(path, "must not be empty")
+  const length = options.utf16 ? normalized.length : [...normalized].length
+  if (length > maximum) return fail(path, `must contain at most ${maximum} ${options.utf16 ? "UTF-16 code units" : "characters"}`)
   if ((options.multiline ? multilineControls : singleLineControls).test(normalized)) {
     return fail(path, "must not contain control characters")
+  }
+  if (options.preserve && /[\uD800-\uDFFF]/u.test(normalized)) {
+    return fail(path, "must not contain unpaired Unicode surrogates")
   }
   return normalized
 }

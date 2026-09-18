@@ -188,6 +188,9 @@ export const fixtureProfile = (id: FixtureProfileId): FixtureProfile => {
   return profile
 }
 
+export const fixtureBodyBudget = (profile: FixtureProfile): number =>
+  8000 - (profile.skill === undefined ? 0 : profile.beforeBody.length + profile.afterBody.length)
+
 export const guideSource = (profile: FixtureProfile): string => {
   const metadata = {
     schemaVersion: 1,
@@ -264,7 +267,7 @@ export type FixtureEvent =
     }
   | {
       readonly kind: "generate"
-      readonly input: Pick<GuideGenerateInput, "intent" | "profileRef" | "workflowId" | "goal">
+      readonly input: Pick<GuideGenerateInput, "intent" | "profileRef" | "workflowId" | "goal" | "bodyBudget">
       readonly candidates: ReadonlyArray<GuideGenerateCandidate>
     }
   | {

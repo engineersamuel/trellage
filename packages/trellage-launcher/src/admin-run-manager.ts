@@ -34,6 +34,13 @@ export interface AdminRunManagerOptions {
   readonly now?: () => number
 }
 
+export interface AdminRunOptions {
+  readonly timeoutMs?: number
+  readonly terminationGraceMs?: number
+  readonly outputOverflow?: "truncate" | "terminate"
+  readonly validateOutput?: (stdout: string) => string | undefined
+}
+
 interface InFlightRun {
   readonly controller: AbortController
   readonly promise: Promise<void>
@@ -77,16 +84,16 @@ export class AdminRunManager {
   }
 
   /** Triggers a run for the profile. If one is already in flight, this attaches to it instead of spawning a second process. */
-  trigger(ref: string, executable: string, args: ReadonlyArray<string>, options?: { readonly timeoutMs?: number }): Promise<void> {
+  trigger(ref: string, executable: string, args: ReadonlyArray<string>, options?: AdminRunOptions): Promise<void> {
     const existing = this.inFlight.get(ref)
     if (existing !== undefined) return existing.promise
-    return this.startRun(ref, executable, args, options?.timeoutMs)
+    return this.startRun(ref, executable, args, options)
   }
 
   /** Re-issues a fresh, independent run for the profile, regardless of its previous terminal state. */
-  retry(ref: string, executable: string, args: ReadonlyArray<string>, options?: { readonly timeoutMs?: number }): Promise<void> {
+  retry(ref: string, executable: string, args: ReadonlyArray<string>, options?: AdminRunOptions): Promise<void> {
     if (this.inFlight.has(ref)) return this.inFlight.get(ref)!.promise
-    return this.startRun(ref, executable, args, options?.timeoutMs)
+    return this.startRun(ref, executable, args, options)
   }
 
   /** Cancels the in-flight run for the profile, if any. No-ops when nothing is running. */
@@ -99,14 +106,26 @@ export class AdminRunManager {
     return this.inFlight.get(ref)?.promise ?? Promise.resolve()
   }
 
-  private startRun(ref: string, executable: string, args: ReadonlyArray<string>, timeoutMsOverride?: number): Promise<void> {
+  private startRun(ref: string, executable: string, args: ReadonlyArray<string>, options?: AdminRunOptions): Promise<void> {
     const controller = new AbortController()
     const startedAt = this.now()
     this.states.set(ref, "running")
     const promise = this.runner
-      .run(executable, args, { timeoutMs: timeoutMsOverride ?? this.timeoutMs, signal: controller.signal })
+      .run(executable, args, {
+        timeoutMs: options?.timeoutMs ?? this.timeoutMs,
+        signal: controller.signal,
+        ...(options?.terminationGraceMs === undefined ? {} : { terminationGraceMs: options.terminationGraceMs }),
+        ...(options?.outputOverflow === undefined ? {} : { outputOverflow: options.outputOverflow }),
+      })
       .then((result) => {
-        this.record(ref, { state: "success", stdout: result.stdout, stderr: result.stderr, startedAt, endedAt: this.now() })
+        const diagnostic = options?.validateOutput?.(result.stdout)
+        this.record(ref, {
+          state: diagnostic === undefined ? "success" : "failure",
+          stdout: result.stdout,
+          stderr: diagnostic === undefined ? result.stderr : [result.stderr, diagnostic].filter(Boolean).join("\n"),
+          startedAt,
+          endedAt: this.now(),
+        })
       })
       .catch((error: unknown) => {
         const terminal = this.classifyFailure(error, controller.signal.aborted)
