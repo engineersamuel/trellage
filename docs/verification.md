@@ -13,6 +13,28 @@ dependency metadata changes. A raw `bun install --frozen-lockfile` is not a
 substitute: it does not record readiness and can leave declared bins with
 unsafe permissions.
 
+CI caches Bun and npm package downloads by runner platform, pinned runtime
+versions, and lockfile contents. The cache excludes installed dependencies and
+the readiness receipt, so each job still prepares its source workspace from the
+current checkout. Tests that explicitly override `BUN_INSTALL_CACHE_DIR` remain
+isolated from this CI cache by design. CI saves the download cache immediately
+after successful dependency installation, before the test suites run, so a
+later test failure does not discard a usable dependency cache.
+Pull requests run `make test-pr` on Linux and the source/PTY suites on macOS,
+with a 15-minute job timeout on each platform. The PR gate checks shell syntax,
+repository identity and harness configuration, compiler lint and formatting,
+all workspace TypeScript checks and tests, source startup, and profile guides.
+Its checks run sequentially and stop at the first failing command. This keeps
+the gate independent of slower installer, Docker, and native lifecycle suites.
+
+Pushes to `main` run the complete `make test` suite, including those integration
+contracts, with a 90-minute Linux timeout. The CI workflow can also be dispatched
+manually on a branch to run the full suite before merging a high-risk change.
+Browser contract dependencies are installed only for full-suite runs. Both
+lanes retain the `deterministic-contracts` check name required by branch protection.
+The fast gate reduces regression risk; it does not cover every integration
+failure that the full post-merge suite can detect.
+
 First-party source and test workers run under Bun. Type checks use `noEmit`;
 no application bundle or `dist` is required. External agent and browser tools
 can still require Node.js. Test reports and artifacts under `.vitest/` are
@@ -25,12 +47,24 @@ symlink, ownership, and unsafe-mode mutations after fixture setup when testing
 those refusals. Normal launches and read-only commands must still reject an
 unprepared or unsafe runtime without installing or repairing it implicitly.
 
-Run repository contracts without launching paid agents:
+Run the PR regression gate without launching paid agents:
+
+```bash
+make test-pr
+```
+
+Run the full repository contracts:
 
 ```bash
 make test
 git diff --check
 ```
+
+Each recipe in `make test` emits `[test-timing]` start and end records with its
+target name, elapsed seconds, and exit status. Targets with multiple recipe
+lines emit a pair for each line. Failed targets are reported immediately, even
+while Make waits for other parallel work to finish. To time a single target,
+run `make TEST_TIMING=1 <target>`.
 
 `make test` runs the compiler fingerprint performance contract in a separate
 serial phase after the parallel targets finish. It is not part of the parallel
@@ -39,9 +73,12 @@ measurement. The contract still requires an unchanged SHA-256 digest and a
 cached-worktree fingerprint time strictly below 900 ms. Run it directly with
 `make profile-compiler-fingerprint`, without another test suite running.
 
-The timing-sensitive Native phase also runs serially. Codex, Grok, OMP, Claude,
-and native TUI signal/readiness contracts retain their existing deadlines
-without competing with source installation and UI test workloads.
+The timing-sensitive phase also runs serially. Codex, Grok, OMP, Claude,
+Firstmate, native TUI, and Headlong entry contracts run without competing with
+source installation and UI test workloads. Fixture startup waits must be
+separate from the behavior being measured: cancellation deadlines start only
+after readiness, and blocked services stay blocked until the test explicitly
+releases them. A slow fixture must not look like a cancellation or lock failure.
 
 `prototypes/.npmignore` excludes temporary `.contract-fixture.*` and
 `.contract-work` directories from npm packages. The publication contract checks

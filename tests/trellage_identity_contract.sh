@@ -91,13 +91,13 @@ grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/M
   || fail 'Makefile does not run the Claude entry contract'
 grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Prime entry contract'
-for target in native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-firstmate-profile native-jcode-profile; do
+for target in native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
 done
-for target in native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles native-omp-profile native-claude-profile native-tui-matrix-test; do
+for target in native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-profile headlong-entry; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^TIMING_SENSITIVE_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
@@ -106,11 +106,11 @@ for target in native-codex-auth-config-launch native-codex-lifecycle native-grok
     fail "Makefile also runs timing-sensitive ${target} in parallel"
   fi
 done
-grep -Fqx $'\t$(MAKE) --no-print-directory -j1 $(TIMING_SENSITIVE_TEST_TARGETS)' "$repo_root/Makefile" \
+grep -Fqx $'\t$(MAKE) --no-print-directory TEST_TIMING=1 -j1 $(TIMING_SENSITIVE_TEST_TARGETS)' "$repo_root/Makefile" \
   || fail 'Makefile does not run timing-sensitive contracts serially'
 grep -Fqx '.PHONY: profile-compiler-fingerprint' "$repo_root/Makefile" \
   || fail 'Makefile does not declare the fingerprint performance contract phony'
-grep -Fqx $'\t$(MAKE) --no-print-directory -j1 profile-compiler-fingerprint' "$repo_root/Makefile" \
+grep -Fqx $'\t$(MAKE) --no-print-directory TEST_TIMING=1 -j1 profile-compiler-fingerprint' "$repo_root/Makefile" \
   || fail 'Makefile does not run the fingerprint performance contract in a separate serial phase'
 if grep -Eq '^(PARALLEL_TEST_TARGETS|TIMING_SENSITIVE_TEST_TARGETS|FINAL_TEST_TARGETS) :=.* profile-compiler-fingerprint( |$)' "$repo_root/Makefile"; then
   fail 'fingerprint performance contract must not share a parallel test phase'

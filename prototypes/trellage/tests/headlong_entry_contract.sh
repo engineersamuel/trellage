@@ -7,9 +7,30 @@ entry="$prototype_dir/runtime-headlong-entry.sh"
 root="$repo_root/.agent_work/headlong-entry-contract-$$"
 fixture_ref='mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af'
 home_volume=''
+control=''
+output=''
+service_runner=''
+attachment_runner=''
+service_container=''
+attachment_container=''
 
 cleanup() {
   local status=$?
+  [[ -z "$control" ]] || rm -f "$control/block-restore" "$control/release-restore" 2>/dev/null || true
+  if [[ -n "$attachment_container" ]]; then
+    docker rm -f "$attachment_container" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$service_container" ]]; then
+    docker rm -f "$service_container" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$attachment_runner" ]]; then
+    kill "$attachment_runner" 2>/dev/null || true
+    wait "$attachment_runner" 2>/dev/null || true
+  fi
+  if [[ -n "$service_runner" ]]; then
+    kill "$service_runner" 2>/dev/null || true
+    wait "$service_runner" 2>/dev/null || true
+  fi
   if [[ -d "$root" ]] && docker image inspect "$fixture_ref" >/dev/null 2>&1; then
     docker run --rm --network none --user '0:0' \
       --entrypoint /bin/chmod \
@@ -24,6 +45,12 @@ trap cleanup EXIT
 
 fail() {
   printf 'Headlong entry contract: FAIL: %s\n' "$1" >&2
+  if [[ -n "$output" && -s "$output/service.stderr" ]]; then
+    tail -n 5 "$output/service.stderr" >&2
+  fi
+  if [[ -n "$output" && -s "$output/stderr.log" ]]; then
+    tail -n 5 "$output/stderr.log" >&2
+  fi
   exit 1
 }
 
@@ -96,7 +123,10 @@ chmod 0666 "$TRELLAGE_TEST_OUTPUT/init.log" "$TRELLAGE_TEST_OUTPUT/proxy.log"
 [[ "$(command -v llm)" == /home/agent/.headlong/app/bin/llm ]]
 if [[ "${HEADLONG_NO_TTY-}" == 1 && -f /test-control/block-restore ]]; then
   : >"$TRELLAGE_TEST_OUTPUT/restore.started"
-  sleep 300
+  while [[ ! -f /test-control/release-restore ]]; do
+    sleep 0.1
+  done
+  : >"$TRELLAGE_TEST_OUTPUT/restore.released"
 fi
 mkdir -p \
   "$HEADLONG_APP_DIR/.identities/ada/skills" \
@@ -199,7 +229,14 @@ chmod 755 "$fake_bin/attach-shell"
 
 run_entry() {
   local status=0
-  docker run --rm \
+  local name=''
+  local docker_cmd=(docker run --rm)
+  if [[ "${1:-}" == --name ]]; then
+    name="$2"
+    docker_cmd+=(--name "$name")
+    shift 2
+  fi
+  "${docker_cmd[@]}" \
     --network none \
     --read-only \
     --user '10001:10001' \
@@ -438,19 +475,77 @@ run_entry attach
 # user attachment from reaching its login shell.
 in_fixture ': >/test-control/block-restore'
 rm -f "$output/restore.started"
-run_service_for 15 &
+rm -f "$output/restore.released"
+service_container="trellage-headlong-entry-contract-$$"
+docker run --rm --name "$service_container" \
+  --network none \
+  --read-only \
+  --user '10001:10001' \
+  --entrypoint /bin/bash \
+  --mount "type=bind,src=$entry,dst=/test/runtime-headlong-entry.sh,readonly" \
+  --mount "type=bind,src=$seed,dst=/usr/local/share/trellage/headlong-seed,readonly" \
+  --mount "type=bind,src=$seed_commit,dst=/usr/local/share/trellage/headlong-seed.commit,readonly" \
+  --mount "type=bind,src=$skill_seed,dst=/usr/local/share/trellage/headlong-skills,readonly" \
+  --mount "type=bind,src=$tui_binary,dst=/usr/local/share/trellage/headlong-tui,readonly" \
+  --mount "$home_mount" \
+  --mount "type=bind,src=$output,dst=/test-output" \
+  --mount "type=bind,src=$fake_bin,dst=/test-bin,readonly" \
+  --mount "type=bind,src=$control,dst=/test-control" \
+  --env 'PATH=/test-bin:/usr/local/bin:/usr/bin:/bin' \
+  --env 'TRELLAGE_TEST_OUTPUT=/test-output' \
+  "$fixture_ref" /test/runtime-headlong-entry.sh service \
+  >"$output/service.log" 2>"$output/service.stderr" &
 service_runner=$!
-for _ in $(seq 1 50); do
+for _ in $(seq 1 600); do
   [[ -f "$output/restore.started" ]] && break
+  kill -0 "$service_runner" 2>/dev/null \
+    || fail 'blocked service restore exited before signalling readiness'
   sleep 0.1
 done
 [[ -f "$output/restore.started" ]] \
-  || fail 'blocked service restore fixture did not start'
-run_entry attach
+  || fail 'blocked service restore fixture did not start within 60 seconds'
+
+attachment_container="trellage-headlong-attach-contract-$$"
+run_entry --name "$attachment_container" attach \
+  >"$output/attach.log" 2>"$output/attach.stderr" &
+attachment_runner=$!
+for _ in $(seq 1 300); do
+  kill -0 "$attachment_runner" 2>/dev/null || break
+  sleep 0.1
+done
+if kill -0 "$attachment_runner" 2>/dev/null; then
+  fail 'initialized attachment did not finish within 30 seconds while restore was blocked'
+fi
+attachment_status=0
+wait "$attachment_runner" || attachment_status=$?
+attachment_runner=''
+attachment_container=''
+[[ "$attachment_status" -eq 0 ]] \
+  || fail "initialized attachment failed while restore was blocked (status $attachment_status)"
 kill -0 "$service_runner" 2>/dev/null \
-  || fail 'slow service restore held the state lock and blocked an initialized attachment'
-wait "$service_runner"
-in_fixture 'rm -f /test-control/block-restore'
+  || fail 'blocked service restore exited before its release handshake'
+
+# Release the fixture only after attach has completed, then verify the
+# initializer observed the release before stopping the owned container.
+in_fixture ': >/test-control/release-restore'
+for _ in $(seq 1 300); do
+  [[ -f "$output/restore.released" ]] && break
+  kill -0 "$service_runner" 2>/dev/null \
+    || fail 'service restore exited before signalling release'
+  sleep 0.1
+done
+[[ -f "$output/restore.released" ]] \
+  || fail 'blocked service restore did not observe release within 30 seconds'
+docker stop --time 5 "$service_container" >/dev/null \
+  || fail 'owned blocked service container could not be stopped after release'
+wait "$service_runner" || service_status=$?
+service_runner=''
+service_container=''
+service_status=${service_status:-0}
+[[ "$service_status" -eq 0 ]] \
+  || [[ "$service_status" -eq 137 || "$service_status" -eq 143 ]] \
+  || fail "owned blocked service container did not exit after stop (status $service_status)"
+in_fixture 'rm -f /test-control/block-restore /test-control/release-restore'
 rm -f "$output/restore.started"
 
 # .env must fail closed on a loosened mode (never silently re-secured) and

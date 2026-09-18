@@ -32,9 +32,9 @@
   ],
   "scripts": {
     "package:source": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml ./packages/trellage-runtime/src/package-cli.ts",
-    "check": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run check:root && BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run --workspaces check",
+    "check": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run check:root && BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run --sequential --workspaces check",
     "check:root": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
-    "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run --workspaces test"
+    "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=./bunfig.toml run --sequential --workspaces test"
   },
   "dependencies": {
     "@trellage/guide-core": "workspace:*",
