@@ -1,0 +1,23 @@
+--- a/bin/fm-control.sh
++++ b/bin/fm-control.sh
+@@ -99,6 +99,10 @@
+ if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
+   python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" control "$@" >/dev/null || exit 1
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" operation-enter "$$" control >/dev/null || exit 1
++    trap 'python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" operation-leave "$$" >/dev/null 2>&1 || true' EXIT
++  fi
+ elif [ -e "${FM_HOME:-$FM_ROOT}/.fmx-managed" ]; then
+   echo "error: managed Firstmate control requires the fmx worker boundary" >&2
+   exit 1
+ fi
+@@ -174,6 +178,9 @@
+     fm_lease_guard_release || true
+   fi
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" operation-leave "$$" >/dev/null 2>&1 || true
++  fi
+   return "$status"
+ }
+ 
+ # --- argument parsing -------------------------------------------------------

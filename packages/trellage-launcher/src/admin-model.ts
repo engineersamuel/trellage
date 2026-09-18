@@ -1,9 +1,9 @@
 /**
  * Admin data model: aggregates the combined native + sandbox guide catalog
  * (`guide-catalog.ts`) with per-profile health/install readiness
- * (`guide-preflight.ts`, `profile-readiness.ts`-equivalent shapes) into one
- * `AdminProfileEntry` per profile for the Admin mode. Pure data-shaping only
- * — no subprocess execution happens here (see `admin-run-manager.ts`).
+ * (`guide-preflight.ts`, `profile-readiness.ts`-equivalent shapes) into static
+ * profile rows. Admin-only instance expansion adds separately discovered
+ * Firstmate rows without changing the catalog. No subprocesses run here.
  *
  * Doctor/inventory support is a static, per-launcher fact derived from the
  * concrete native launcher contracts (`prototypes/trellage-*-profiles/bin/*`
@@ -17,6 +17,11 @@
 import {
   loadProfileGuide,
   profileGuideIdentityKey,
+  type FirstmateFleetReadinessV1,
+  type FirstmateInstanceControlContextV1,
+  type FirstmateInstanceDescriptorV1,
+  type FirstmateInstanceReferenceV1,
+  type FirstmateOrchestrationV1,
   type ProfileGuideIdentity,
 } from "@trellage/guide-core"
 import type { CombinedGuideCatalog, GuideCatalogEntryRef } from "./guide-catalog.ts"
@@ -108,12 +113,22 @@ export type AdminInstallStatus = "installed" | "not-installed" | "unsupported" |
 
 export interface AdminProfileEntry {
   readonly ref: string
+  /** Static catalog identity. Runtime rows never enter the guide/model catalog. */
+  readonly templateRef?: string
   readonly surface: "native" | "sandbox"
   readonly launcher?: string
   readonly harness?: string
   readonly name: string
+  readonly displayName?: string
   readonly description: string
   readonly commandPath: string
+  readonly orchestration?: FirstmateOrchestrationV1
+  readonly firstmateInstance?: FirstmateInstanceReferenceV1
+  readonly firstmateInstanceDescriptor?: FirstmateInstanceDescriptorV1
+  readonly firstmateInstanceContext?: FirstmateInstanceControlContextV1
+  readonly firstmateFleet?: FirstmateFleetReadinessV1
+  readonly firstmateDiscovery?: "pending" | "complete" | "failed"
+  readonly firstmateDiscoveryDiagnostic?: string
   readonly doctorSupported: boolean
   readonly inventorySupported: boolean
   readonly health: AdminHealthStatus
@@ -137,6 +152,29 @@ export interface AdminProfileEntry {
   /** True until this entry's own health/install check has completed after the most recent refresh trigger. */
   readonly stale: boolean
   readonly lastCheckedAt?: number
+}
+
+export type AdminFirstmateInstancesInput = { readonly ref: string } & (
+  | { readonly state: "complete"; readonly instances: ReadonlyArray<FirstmateInstanceDescriptorV1> }
+  | { readonly state: "failed"; readonly diagnostic: string }
+)
+
+export const isAdminFirstmate = (entry: AdminProfileEntry): boolean =>
+  entry.surface === "native" && entry.launcher === "fmx"
+
+export const adminProfileLabel = (entry: AdminProfileEntry): string =>
+  entry.displayName ?? (isAdminFirstmate(entry) ? `${entry.name} / legacy` : entry.name)
+
+export const adminInstanceDetails = (entry: AdminProfileEntry): ReadonlyArray<string> => {
+  const descriptor = entry.firstmateInstanceDescriptor
+  if (descriptor === undefined) return entry.firstmateDiscoveryDiagnostic === undefined ? [] : [entry.firstmateDiscoveryDiagnostic]
+  return [
+    `Instance: ${descriptor.name} (${descriptor.mode})`,
+    `UUID: ${descriptor.reference?.instanceId ?? "missing identity — recovery required"}`,
+    `Association: ${descriptor.worktree.status}${descriptor.mode === "named" ? ` · ${descriptor.worktree.evidence.locators.worktree}` : " · shared legacy fleet"}`,
+    `Root: ${descriptor.root}`,
+    `Creation: ${descriptor.creationState} · Runtime: ${descriptor.runtime.state}`,
+  ]
 }
 
 /** Per-profile readiness input, keyed by the same `ref` used in `AdminProfileEntry`. */
@@ -288,6 +326,10 @@ const aggregateAdminProfile = (
   const derived =
     entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
   const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs))
+  const orchestration = entry.surface === "native"
+    ? catalog.native.find((native) => native.launcher === entry.launcher && native.name === entry.name)?.orchestration
+    : undefined
+  const fleet = readiness?.result !== undefined && !("malformed" in readiness.result) ? readiness.result.fleet : undefined
   return {
     ref: entry.ref,
     surface: entry.surface,
@@ -295,6 +337,8 @@ const aggregateAdminProfile = (
     name: entry.name,
     description: entry.description,
     commandPath: commandPathFor(entry, catalog),
+    ...(orchestration === undefined ? {} : { orchestration }),
+    ...(fleet === undefined ? {} : { firstmateFleet: fleet }),
     doctorSupported: capabilities.doctorSupported,
     inventorySupported: capabilities.inventorySupported,
     health: derived.health,
@@ -321,6 +365,102 @@ export const aggregateAdminProfiles = (
   updateCheckInputs: ReadonlyArray<AdminUpdateCheckInput> = [],
 ): ReadonlyArray<AdminProfileEntry> =>
   guideCatalogEntries(catalog).map((entry) => aggregateAdminProfile(entry, catalog, readinessInputs, updateCheckInputs))
+
+export const adminFirstmateInstanceRef = (templateRef: string, descriptor: FirstmateInstanceDescriptorV1): string =>
+  `${templateRef}::${descriptor.mode}:${descriptor.reference?.instanceId ?? "missing-identity"}`
+
+const undiscoveredFirstmateRow = (
+  template: AdminProfileEntry,
+  input: AdminFirstmateInstancesInput | undefined,
+): AdminProfileEntry => {
+  const failed = input?.state === "failed"
+  const diagnostic = failed
+    ? `Instance discovery failed; the fleet list is incomplete. ${input.diagnostic} Restart Admin to retry the complete discovery.`
+    : "Discovering Firstmate instances. Legacy and named operations are disabled until discovery completes."
+  return {
+    ...template,
+    ref: `${template.ref}::legacy:undiscovered`,
+    templateRef: template.ref,
+    displayName: `${template.name} / legacy`,
+    firstmateDiscovery: failed ? "failed" : "pending",
+    firstmateDiscoveryDiagnostic: diagnostic,
+    health: failed ? "malformed-output" : "unknown",
+    healthDiagnostic: diagnostic,
+    install: "unknown",
+    doctorSupported: false,
+    inventorySupported: false,
+    updateCheckSupported: false,
+    harnessVersionSupported: false,
+    updateCheckStale: false,
+    stale: !failed,
+  }
+}
+
+const descriptorHealthDiagnostic = (descriptor: FirstmateInstanceDescriptorV1): string | undefined => {
+  if (descriptor.creationState === "published" &&
+      (descriptor.mode === "legacy" || (descriptor.worktree.status === "bound" && descriptor.runtime.state === "verified"))) return undefined
+  return [
+    `Instance ${descriptor.name}: creation ${descriptor.creationState}, association ${descriptor.worktree.status}, runtime ${descriptor.runtime.state}.`,
+    ...descriptor.diagnostics.map(({ message }) => message),
+  ].join(" ")
+}
+
+const withInstanceDescriptorHealth = (entry: AdminProfileEntry): AdminProfileEntry => {
+  const descriptor = entry.firstmateInstanceDescriptor
+  if (descriptor === undefined) return entry
+  const diagnostic = descriptorHealthDiagnostic(descriptor)
+  if (diagnostic === undefined) return entry
+  return {
+    ...entry,
+    health: "unhealthy",
+    install: descriptor.creationState === "missing-identity" ? "not-installed" : entry.install,
+    healthDiagnostic: [diagnostic, entry.healthDiagnostic].filter(Boolean).join(" "),
+  }
+}
+
+/** Admin-only runtime expansion. Static aggregation retains the old CLI --all profile scope. */
+export const aggregateAdminInstanceProfiles = (
+  catalog: CombinedGuideCatalog,
+  instancesInputs: ReadonlyArray<AdminFirstmateInstancesInput> = [],
+  readinessInputs: ReadonlyArray<AdminReadinessInput> = [],
+  updateCheckInputs: ReadonlyArray<AdminUpdateCheckInput> = [],
+): ReadonlyArray<AdminProfileEntry> =>
+  guideCatalogEntries(catalog).flatMap((template) => {
+    const base = aggregateAdminProfile(template, catalog, readinessInputs, updateCheckInputs)
+    if (!isAdminFirstmate(base) || base.orchestration?.instances === undefined) return [base]
+    const input = instancesInputs.find((candidate) => candidate.ref === template.ref)
+    if (input?.state !== "complete") return [undiscoveredFirstmateRow(base, input)]
+    return input.instances.map((descriptor) => {
+      const ref = adminFirstmateInstanceRef(template.ref, descriptor)
+      const row = aggregateAdminProfile({ ...template, ref }, catalog, readinessInputs, updateCheckInputs)
+      return withInstanceDescriptorHealth({
+        ...row,
+        templateRef: template.ref,
+        displayName: `${template.name} / ${descriptor.name}`,
+        firstmateDiscovery: "complete" as const,
+        firstmateInstanceDescriptor: descriptor,
+        ...(descriptor.reference === null ? {} : { firstmateInstance: descriptor.reference }),
+      })
+    })
+  })
+
+export const mergeAdminReadiness = (
+  catalog: CombinedGuideCatalog,
+  entries: ReadonlyArray<AdminProfileEntry>,
+  readinessInputs: ReadonlyArray<AdminReadinessInput>,
+): ReadonlyArray<AdminProfileEntry> => {
+  const templates = new Map(guideCatalogEntries(catalog).map((entry) => [entry.ref, entry]))
+  return entries.map((entry) => {
+    if (entry.firstmateDiscovery === "pending" || entry.firstmateDiscovery === "failed") return entry
+    const template = templates.get(entry.templateRef ?? entry.ref)
+    if (template === undefined) throw new Error(`Admin entry has no catalog template: ${entry.ref}`)
+    const { healthDiagnostic: _diagnostic, firstmateFleet: _fleet, ...identity } = entry
+    return withInstanceDescriptorHealth({
+      ...identity,
+      ...aggregateAdminProfile({ ...template, ref: entry.ref }, catalog, readinessInputs, []),
+    })
+  })
+}
 
 /** Maps an admin entry back to the identity `loadProfileGuide` expects. Native entries always carry a `launcher`. */
 export const toProfileGuideIdentity = (entry: AdminProfileEntry): ProfileGuideIdentity =>

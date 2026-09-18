@@ -1,0 +1,152 @@
+--- a/bin/fm-spawn.sh
++++ b/bin/fm-spawn.sh
+@@ -348,6 +348,14 @@
+ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+ 
++if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++  FMX_SPAWN_ARGUMENTS=("$@")
++  FMX_SPAWN_CONTROLS=$(python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" spawn "$@") || exit 1
++elif [ -e "$FM_HOME/.fmx-managed" ]; then
++  echo "error: managed Firstmate spawning requires the fmx worker boundary" >&2
++  exit 1
++fi
++
+ # shellcheck source=bin/fm-tasks-axi-lib.sh
+ . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
+ # shellcheck source=bin/fm-backlog-transition-lib.sh
+@@ -508,6 +516,10 @@
+ [ "$MODE_SET" -eq 0 ] || [ -n "$MODE" ] || { echo "error: --mode requires a non-empty value" >&2; exit 1; }
+ [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
+ [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
++if [ -n "${FMX_SPAWN_CONTROLS:-}" ]; then
++  MODEL=$(printf '%s' "$FMX_SPAWN_CONTROLS" | jq -er '.model')
++  EFFORT=$(printf '%s' "$FMX_SPAWN_CONTROLS" | jq -r '.effort')
++fi
+ # A parent-delivered carrier replaces this home's own resolution, so it is
+ # refused unless it is a secondmate spawn carrying a strictly valid W3C value.
+ # Nothing else may reach the pane's TRACEPARENT export.
+@@ -1270,6 +1282,11 @@
+     echo "error: --relaunch refused after locking: $FM_BACKLOG_TRANSITION_ERROR" >&2
+     exit 1
+   }
++  if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++    FMX_SPAWN_CONTROLS=$(python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" spawn "${FMX_SPAWN_ARGUMENTS[@]}") || exit 1
++    MODEL=$(printf '%s' "$FMX_SPAWN_CONTROLS" | jq -er '.model')
++    EFFORT=$(printf '%s' "$FMX_SPAWN_CONTROLS" | jq -r '.effort')
++  fi
+   fm_backend_validate_task_endpoint "$RELAUNCH_META" "$ID" || exit 1
+   BACKEND=$FM_BACKEND_VALIDATED_BACKEND
+   RELAUNCH_TARGET=$FM_BACKEND_VALIDATED_TARGET
+@@ -3061,7 +3078,17 @@
+   fi
+   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
++  if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++    FMX_TREEHOUSE_BIN=$(PATH="${FMX_WORKER_PATH:?}" type -P treehouse 2>/dev/null || true)
++    case "$FMX_TREEHOUSE_BIN" in
++      /*) ;;
++      *) echo "error: treehouse is not available from FMX_WORKER_PATH" >&2; exit 1 ;;
++    esac
++    [ -f "$FMX_TREEHOUSE_BIN" ] && [ -x "$FMX_TREEHOUSE_BIN" ] || exit 1
++    spawn_send_text_line "$WT_TARGET" "$(shell_quote "$FMX_TREEHOUSE_BIN") get"
++  else
++    spawn_send_text_line "$WT_TARGET" 'treehouse get'
++  fi
+ 
+   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
+   # Target the stable window id, not the name: if the name is ever lost (e.g. an
+@@ -3140,7 +3167,10 @@
+ if [ "$KIND" != secondmate ]; then
+   case "$HARNESS" in
+     claude*)
+-      if ! "$FM_ROOT/bin/fm-claude-trust.sh" "$WT" "$PROJ_ABS" >/dev/null; then
++      if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++        # The shared fmx runtime owns each worker's separate Claude trust store.
++        :
++      elif ! "$FM_ROOT/bin/fm-claude-trust.sh" "$WT" "$PROJ_ABS" >/dev/null; then
+         echo "error: could not pre-register Claude workspace trust for $WT; refusing to launch a claude worker that would wedge on the trust dialog; inspect window $T" >&2
+         exit 1
+       fi
+@@ -3154,6 +3184,13 @@
+ # later, and teardown cleans one deterministic path. GOTMPDIR (not TMPDIR) is the
+ # targeted knob: TMPDIR is too broad (affects every program's temp, not just Go's).
+ TASK_TMP="/tmp/fm-$ID"
++if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++  TASK_TMP="${FMX_PROFILE_ROOT:?}/task-work/$ID"
++  [ ! -L "$FMX_PROFILE_ROOT/task-work" ] && [ ! -L "$TASK_TMP" ] || {
++    echo "error: unsafe fmx task work directory" >&2
++    exit 1
++  }
++fi
+ mkdir -p "$TASK_TMP/gotmp"
+ 
+ # Per-harness turn-end hook where enabled: a file that touches
+@@ -3631,14 +3668,20 @@
+   [ -z "$YOLO" ] || echo "yolo=$YOLO"
+   echo "tasktmp=$TASK_TMP"
+   echo "model=${MODEL:-default}"
+-  echo "effort=${EFFORT:-default}"
++  if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++    echo "effort=$EFFORT"
++  else
++    echo "effort=${EFFORT:-default}"
++  fi
+   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
+   echo "spawn_gen=$SPAWN_GEN"
+   # Default-off writes no traceparent= line.
+   # backend= is written only for a non-default (non-tmux) backend, so the
+   # default path's meta stays byte-identical (absent backend= means tmux;
+   # data/fm-backend-design-d7's P1 compatibility contract).
+-  [ "$BACKEND" = tmux ] || echo "backend=$BACKEND"
++  if [ -n "${FMX_WORKER_LAUNCHER:-}" ] || [ "$BACKEND" != tmux ]; then
++    echo "backend=$BACKEND"
++  fi
+   if [ "$BACKEND" = herdr ]; then
+     echo "herdr_session=$HERDR_SES"
+     echo "herdr_workspace_id=$HERDR_WORKSPACE_ID"
+@@ -3805,7 +3848,8 @@
+ # Forward firstmate's own resolved store onto the claude launch so the crewmate
+ # uses the same credential/config firstmate is authenticated with. Only when set;
+ # an unset value is the single-store default and needs no prefix.
+-if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
++if [ "$HARNESS" = claude ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ] \
++   && [ -z "${FMX_WORKER_LAUNCHER:-}" ]; then
+   LAUNCH="CLAUDE_CONFIG_DIR=$(shell_quote "$CLAUDE_CONFIG_DIR") $LAUNCH"
+ fi
+ if [ "$KIND" = secondmate ]; then
+@@ -3890,6 +3934,33 @@
+     LAUNCH="unset TRACEPARENT; $LAUNCH"
+   fi
+ fi
++if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++  FMX_TRACEPARENT_MODE=keep
++  case "$LAUNCH" in
++    'unset TRACEPARENT; '*) FMX_TRACEPARENT_MODE=unset ;;
++  esac
++  # Build this before the upstream environment filter. All carriers remain
++  # explicit assignments inside its /bin/sh boundary, not ambient inheritance.
++  LAUNCH="FMX_PROFILE=$(shell_quote "${FMX_PROFILE:-}")\
++ FMX_PROFILE_ROOT=$(shell_quote "${FMX_PROFILE_ROOT:-}")\
++ FMX_CAPTAIN_PANE_ID=$(shell_quote "${FMX_CAPTAIN_PANE_ID:-}")\
++ FMX_GH_CONFIG_DIR=$(shell_quote "${FMX_GH_CONFIG_DIR:-}")\
++ FMX_TASK_ID_PREFIX=$(shell_quote "${FMX_TASK_ID_PREFIX:-}")\
++ FMX_WORKER_HOME=$(shell_quote "${FMX_WORKER_HOME:-}")\
++ FMX_WORKER_PATH=$(shell_quote "${FMX_WORKER_PATH:-}")\
++ FMX_WORKER_BASH=$(shell_quote "${FMX_WORKER_BASH:-}")\
++ $(shell_quote "${FMX_WORKER_BASH:-}")\
++ $(shell_quote "$FMX_WORKER_LAUNCHER")\
++ --task $(shell_quote "$ID")\
++ --kind $(shell_quote "$KIND")\
++ --backend $(shell_quote "$BACKEND")\
++ --brief $sq_brief\
++ --worktree $sq_worktree\
++ --operational-input $sq_opinput\
++ --model $(shell_quote "$MODEL")\
++ --effort $(shell_quote "$EFFORT")\
++ --traceparent $(shell_quote "$FMX_TRACEPARENT_MODE")"
++fi
+ if [ "$LAUNCH_ENV_ENABLED" = 1 ]; then
+   LAUNCH_ENV_PREFIX='/usr/bin/env -i'
+   for env_name in HOME PATH USER LOGNAME SHELL TERM COLORTERM LANG LC_ALL LC_CTYPE \

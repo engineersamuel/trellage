@@ -12,6 +12,8 @@ import {
   reservedWorktreeBranches,
   removeQueuedGuideJobById,
   executeGuideBatch,
+  guideBatchRequiresHerdr,
+  queuedGuideJobEditText,
   removeSelectedQueuedGuideJob,
   replaceQueuedGuideJobPrompt,
   selectQueuedGuideJob,
@@ -70,6 +72,12 @@ describe("queued worktree reservations", () => {
     expect(enqueueGuideJob(released, profile, "third", placement).entries).toHaveLength(3)
   })
 })
+import { selectedProfileFromCatalogRef } from "../src/guide-api.ts"
+import { completeSinglePromptArtifact, prepareGuidePrompt } from "../src/guide-context.ts"
+import { renderWorkflowBodyCandidate } from "../src/guide-workflow-prompt.ts"
+import {
+  firstmateGuide, firstmateOriginalIntent, firstmateProjectC, legacyFirstmateCatalog,
+} from "./helpers/continuation-firstmate-fixtures.ts"
 
 class BatchRunner implements CommandRunner {
   readonly calls: Array<{
@@ -192,6 +200,7 @@ const context: GuideBatch["context"] = {
   callerPaneId: "9-0",
   primaryCheckoutPath: "/repo",
 }
+const { primaryCheckoutPath: _primaryCheckout, ...paneContext } = context
 
 const here: JobPlacement = { kind: "current-workspace-pane", direction: "right" }
 const fresh = (branch: string): JobPlacement => ({ kind: "new-worktree", branch, baseRef: "main" })
@@ -206,6 +215,160 @@ const worktreeCreates = (runner: BatchRunner): ReadonlyArray<string> =>
     .map((call) => call.args[call.args.indexOf("--branch") + 1] ?? "")
 
 describe("guide batch queue", () => {
+  it.each(["default", "pstack-workers"])("keeps complete legacy %s input through queue edits and the existing Herdr paste transport", async (name) => {
+    const profileRef = `native:fmx/${name}`
+    const profile = selectedProfileFromCatalogRef(legacyFirstmateCatalog(), profileRef, "review-project")
+    const prepared = prepareGuidePrompt(firstmateGuide, "review-project", profileRef, "Review the change.", {
+      originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(),
+    })
+    const guideContext = {
+      originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(), projectTargetConfirmed: true,
+      workflow: prepared.workflow, workflowId: "review-project",
+    }
+    const prompt = completeSinglePromptArtifact(prepared.workflow, renderWorkflowBodyCandidate(prepared.workflow, {
+      title: "Inspect changes", prompt: "Inspect error boundaries.", notes: "Focused review.",
+    }), prepared.context).prompt
+    let queue = enqueueGuideJob(emptyGuideQueue(), profile, prompt, here, guideContext)
+    expect(queuedGuideJobEditText(queue.entries[0]!)).toBe("Inspect error boundaries.")
+    queue = submitQueuedGuidePromptEdit(startQueuedGuidePromptEdit(queue), "Inspect the public callers.")
+    const job = queue.entries[0]!
+    expect(job.firstmate).toBeUndefined()
+    expect(job.prompt).toContain(firstmateOriginalIntent)
+    expect(job.prompt).toContain("Inspect the public callers.")
+    expect(job.prompt).toContain('"entryWorktree": "/fixture/project-c"')
+    expect(job.prompt.match(/## Original human intent \(unchanged\)/gu)).toHaveLength(1)
+    expect(job.command.args).toEqual([name])
+    const unused = async (): Promise<never> => { throw new Error("Legacy delivery must not use the inbox journal.") }
+    const runner = new BatchRunner()
+    const result = await executeGuideBatch({ jobs: [job], context: paneContext }, {
+      runner, write: () => undefined,
+      firstmateJournal: { prepare: unused, begin: unused, record: unused, get: unused, listPending: unused },
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.result.entries[0]?.status).toBe("launched")
+    expect(runner.calls.some(({ args }) => args.includes(job.prompt))).toBe(true)
+    expect(runner.calls.some(({ args }) => args[0] === "submit" || args[0] === "receipt")).toBe(false)
+    const bad = await executeGuideBatch({ jobs: [{ ...job, prompt: "The original input was removed." }], context },
+      { runner: new BatchRunner(), write: () => undefined })
+    expect(bad.result.entries[0]?.status).toBe("invalid")
+  })
+
+  it.each([
+    { profile: native("cpx", "default"), placement: here },
+    { profile: native("cdx", "default"), placement: newTab },
+    { profile: sandbox("claude-research"), placement: here },
+    { profile: sandbox("claude-research"), placement: newTab },
+  ])("does not require a primary checkout for a $profile.surface $placement.kind", async ({ profile, placement }) => {
+    const runner = new BatchRunner()
+    const job = createQueuedGuideJob(1, profile, "Review the project.", placement)
+    const result = await executeGuideBatch({ jobs: [job], context: paneContext }, { runner, write: () => undefined })
+    expect(result.exitCode).toBe(0)
+    expect(result.result.entries[0]).toMatchObject({ status: "launched", cwd: context.cwd, workspaceId: context.workspaceId })
+    expect(runner.calls.some(({ args }) => args[0] === "worktree")).toBe(false)
+  })
+
+  it.each([fresh("worktree/review"), { kind: "existing-worktree", path: "/repo/review" } as const])(
+    "requires a primary checkout only for $kind operations, before runtime I/O",
+    async (placement) => {
+      const runner = new BatchRunner()
+      const result = await executeGuideBatch({
+        jobs: [createQueuedGuideJob(1, native("cpx", "default"), "Review the project.", placement)], context: paneContext,
+      }, { runner, write: () => undefined })
+      expect(result.result.entries[0]).toMatchObject({ status: "invalid", message: expect.stringContaining("inspected absolute primary checkout") })
+      expect(runner.calls).toEqual([])
+    },
+  )
+
+  it("opens an existing destination with its own root without changing the checked root for new allocation", async () => {
+    const runner = new BatchRunner()
+    const jobs = [
+      createQueuedGuideJob(
+        1, native("cpx", "default"), "Review A.", fresh("review-a"), undefined, undefined, "/repo",
+      ),
+      createQueuedGuideJob(
+        2, native("cdx", "default"), "Review B.", { kind: "existing-worktree", path: "/other/review-b" },
+        undefined, undefined, "/other",
+      ),
+    ]
+    const result = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
+    expect(result.exitCode).toBe(0)
+    expect(result.result.entries.map(({ status }) => status)).toEqual(["launched", "launched"])
+    expect(runner.calls.filter(({ executable, args }) => executable === "herdr" && args[0] === "worktree")
+      .map(({ args, options }) => ({ args, cwd: options?.cwd }))).toEqual([
+      { args: ["worktree", "create", "--cwd", "/repo", "--branch", "review-a", "--base", "main", "--no-focus"], cwd: "/repo" },
+      { args: ["worktree", "open", "--cwd", "/other", "--path", "/other/review-b", "--no-focus"], cwd: "/other" },
+    ])
+  })
+
+  it("keeps the full original input in an ordinary queued command after specification edits", () => {
+    const originalIntent = "  Keep all existing behavior.\r\nDo not change public names.  "
+    const profile: SelectedProfile = {
+      surface: "native", launcher: "cpx", commandPath: "/fixture/cpx", profile: "default", headlessPrompt: true,
+    }
+    const guideContext = {
+      originalIntent, workflowId: "review", projectTarget: null,
+      workflow: { id: "review", description: "Review the change.", examples: ["Review."], promptTemplate: "{{intent}}" },
+    }
+    const queue = enqueueGuideJob(emptyGuideQueue(), profile, "Inspect call sites.", here, guideContext)
+    expect(queue.entries[0]?.prompt).toContain(originalIntent)
+    expect(queue.entries[0]?.command.args.at(-1)).toBe(queue.entries[0]?.prompt)
+    const edited = submitQueuedGuidePromptEdit(startQueuedGuidePromptEdit(queue), "Inspect failure paths.")
+    expect(edited.entries[0]?.prompt).toContain(originalIntent)
+    expect(edited.entries[0]?.command.args.at(-1)).toBe(edited.entries[0]?.prompt)
+    expect(edited.entries[0]?.guideContext?.originalIntent).toBe(originalIntent)
+  })
+
+  it("requires real Herdr context for normal allocation and does not use placeholder IDs", async () => {
+    const runner = new BatchRunner()
+    const job = createQueuedGuideJob(1, native("cpx", "default"), "Inspect the project.", here)
+    const result = await executeGuideBatch(
+      { jobs: [job], context: { cwd: "/repo" } },
+      { runner, write: () => undefined },
+    )
+    expect(result.result.entries[0]).toMatchObject({
+      status: "invalid", message: expect.stringContaining("real Herdr workspace"),
+    })
+    expect(runner.calls).toEqual([])
+  })
+
+  it("does not use the Firstmate journal for normal jobs", async () => {
+    const runner = new BatchRunner()
+    const unused = async (): Promise<never> => { throw new Error("Firstmate journal must not be used.") }
+    const result = await executeGuideBatch(
+      { jobs: [createQueuedGuideJob(1, native("cpx", "default"), "Inspect the project.", here)], context },
+      { runner, write: () => undefined, firstmateJournal: {
+        prepare: unused, begin: unused, record: unused, get: unused, listPending: unused,
+      } },
+    )
+    expect(result.exitCode).toBe(0)
+    expect(result.result.entries[0]?.status).toBe("launched")
+  })
+
+  it("rejects an existing-fleet placement for an ordinary profile without prompt fallback transport", async () => {
+    const runner = new BatchRunner()
+    const result = await executeGuideBatch(
+      { jobs: [createQueuedGuideJob(1, native("cpx", "default"), "Inspect the project.", { kind: "existing-fleet" })], context },
+      { runner, write: () => undefined },
+    )
+    expect(result.result.entries[0]?.status).toBe("invalid")
+    expect(runner.calls).toEqual([])
+  })
+
+  it.each([native("cpx", "default"), sandbox("claude-research")])(
+    "rejects queued current-terminal placement for an ordinary $surface profile",
+    async (profile) => {
+      const runner = new BatchRunner()
+      const job = createQueuedGuideJob(1, profile, "Inspect the project.", { kind: "current-terminal" })
+      const result = await executeGuideBatch({ jobs: [job], context }, { runner, write: () => undefined })
+      expect(result.result.entries[0]).toMatchObject({
+        status: "invalid", message: expect.stringContaining("inbox-capable Firstmate Start or Recover"),
+      })
+      expect(guideBatchRequiresHerdr([job])).toBe(true)
+      expect(result.result.firstmateTerminalHandoff).toBeUndefined()
+      expect(runner.calls).toEqual([])
+    },
+  )
+
   it("requires an explicit private launcher and records allocation before prompt submission", async () => {
     const job = createPrivateContinuationJob(1, native("cpx", "default"), "Synthetic private prompt", here)
     const rejectedRunner = new BatchRunner()

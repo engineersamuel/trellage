@@ -64,6 +64,9 @@ if [[ "${1-}" != --fmx-provider-environment-scrubbed ]]; then
     || die "worker launcher is outside an installed runtime: $worker_source"
   early_native_claude="$worker_lib/native-claude"
   early_runtime_root="${worker_lib%/lib}"
+  if [[ ! -f "$early_native_claude" ]]; then
+    early_native_claude="$early_runtime_root/../trellage-claude-common/native-claude"
+  fi
   [[ -f "$early_native_claude" && -x "$early_native_claude" \
     && ! -L "$early_native_claude" ]] \
     || die "missing shared native Claude helper: $early_native_claude"
@@ -240,8 +243,32 @@ script_dir="$(resolve_script_dir)" || die 'could not resolve the helper director
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve the fmx runtime root'
 native_claude="$script_dir/native-claude"
+if [[ ! -f "$native_claude" ]]; then
+  native_claude="$runtime_root/../trellage-claude-common/native-claude"
+fi
 [[ -f "$native_claude" && -x "$native_claude" && ! -L "$native_claude" ]] \
   || die "missing shared native Claude helper: $native_claude"
+
+unset FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE
+if [[ -n "${FMX_INSTANCE_ID-}" ]]; then
+  [[ "$operational_input" == "$profile_root/runtime/bin/fm-operational-input.sh" ]] \
+    || die 'named worker operational input must stay in its verified runtime'
+  python3 "$script_dir/fmx-controls.py" operation-enter "$$" worker "$task" >/dev/null \
+    || die 'named worker startup cannot overlap maintenance'
+  trap 'python3 "$script_dir/fmx-controls.py" operation-leave "$$" >/dev/null 2>&1 || true' EXIT
+fi
+controls="$(FM_HOME="$profile_home" python3 "$script_dir/fmx-controls.py" worker \
+  "$task" "$kind" "$backend" --model "${model:-default}" --effort "${effort:-default}")" \
+  || die 'worker controls failed admission'
+model="$(printf '%s' "$controls" | jq -er '.model')"
+effort="$(printf '%s' "$controls" | jq -r '.effort')"
+
+if [[ "$backend" == herdr ]]; then
+  [[ -n "${HERDR_PANE_ID-}" ]] \
+    || die 'a herdr worker requires its own HERDR_PANE_ID; refusing to inherit the captain identity'
+  [[ -z "$captain_pane_id" || "${HERDR_PANE_ID-}" != "$captain_pane_id" ]] \
+    || die "a herdr worker must not run in the captain pane: ${HERDR_PANE_ID-}"
+fi
 
 worker_root="$profile_root/workers/$task"
 worker_home="$worker_root/claude"
@@ -286,13 +313,7 @@ case "$backend" in
   tmux)
     scrub_herdr_context
     ;;
-  herdr)
-    # The worker's own Herdr context is retained after its pane id is validated.
-    [[ -n "${HERDR_PANE_ID-}" ]] \
-      || die 'a herdr worker requires its own HERDR_PANE_ID; refusing to inherit the captain identity'
-    [[ -z "$captain_pane_id" || "${HERDR_PANE_ID-}" != "$captain_pane_id" ]] \
-      || die "a herdr worker must not run in the captain pane: ${HERDR_PANE_ID-}"
-    ;;
+  herdr) ;;
 esac
 
 TRELLAGE_CLAUDE_LAUNCHER_NAME=fmx \
@@ -338,6 +359,16 @@ jq -n \
     effort: $effort
   }
 ' >"$meta_stage" || die 'could not create the worker record'
+if [[ -n "${FMX_INSTANCE_ID-}" ]]; then
+  python3 - "$meta_stage" "$FMX_INSTANCE_ID" "$profile_root" "$FMX_SPAWN_OPERATION_ID" "$$" <<'PY'
+import json,sys
+from pathlib import Path
+path = Path(sys.argv[1])
+value = json.loads(path.read_text())
+value.update(instanceId=sys.argv[2], profileRoot=sys.argv[3], spawnOperationId=sys.argv[4], startupPid=int(sys.argv[5]))
+path.write_text(json.dumps(value, separators=(",", ":")) + "\n")
+PY
+fi
 chmod 0600 "$meta_stage"
 mv -f "$meta_stage" "$worker_root/worker.json"
 
@@ -348,7 +379,7 @@ prompt="$("$operational_input" encode launch-brief <"$brief")" \
 
 # Firstmate's model and effort selection is preserved, using the same mapping
 # the pinned fm-spawn.sh applies to its claude adapter.
-claude_arguments=()
+claude_arguments=(--settings '{"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false}}')
 if [[ -n "$model" && "$model" != default ]]; then
   claude_arguments+=(--model "$model")
 fi
@@ -363,6 +394,11 @@ claude_arguments+=("$prompt")
 # prepare and launch must always name the same fmx profile. It is captured here
 # because the FMX carrier variables are scrubbed below.
 worker_profile="$profile"
+if [[ -n "${FMX_INSTANCE_ID-}" ]]; then
+  python3 "$script_dir/fmx-controls.py" operation-leave "$$" >/dev/null \
+    || die 'could not finish the owned worker startup operation'
+  trap - EXIT
+fi
 
 # The task worktree holds Firstmate's project-local turn-end hooks, so the
 # worker starts there, exactly where the pane would have been.
@@ -375,6 +411,7 @@ export FMX_WORKTREE="$worktree"
 # Upstream sets this on the claude adapter to disable interactive prompt
 # suggestions for a crewmate.
 export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false
+export CLAUDE_CODE_SEND_FEEDBACK=0
 unset CURSOR_AGENT CURSOR_INVOKED_AS
 # Firstmate captain controls describe the captain's home and fleet, not this
 # worker. A pane that inherited them would resolve state against the captain.
@@ -386,6 +423,7 @@ unset FM_TRACE_CONTEXT FM_SUPERVISION_MODEL FM_BACKEND
 unset FMX_PROFILE FMX_PROFILE_ROOT FMX_WORKER_LAUNCHER FMX_WORKER_POLICY_FILE
 unset FMX_CAPTAIN_PANE_ID FMX_GH_CONFIG_DIR FMX_TASK_ID_PREFIX
 unset FMX_WORKER_HOME FMX_WORKER_PATH FMX_WORKER_BASH
+unset FMX_INSTANCE_ID FMX_SELECTED_INSTANCE FMX_INSTANCE_CONTEXT_JSON FMX_LAUNCH_PROVENANCE_JSON
 
 # The shared runtime owns Claude executable resolution and verification, the
 # --dangerously-skip-permissions / --permission-mode bypassPermissions /

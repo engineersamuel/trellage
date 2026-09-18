@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "commit": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
+  "files": [
+    {
+      "path": ".agents/skills/updatefirstmate/SKILL.md",
+      "patch": "agents_skills_updatefirstmate_SKILL.md.patch",
+      "base": "81108aefcddbf932e3900d51b049eb719fa96cdaa10107315797e7973c0bb1d2",
+      "result": "d63773d563f96c7e2190d6ed7aaf55c7632f30b86f1714b279fdd9c2e0b39376"
+    },
+    {
+      "path": "bin/fm-brief.sh",
+      "patch": "bin_fm-brief.sh.patch",
+      "base": "720dbea57bb3fcdd352aa1cf82da4e7954cd0b53b73e22e7375687d3f9ee2a1c",
+      "result": "7a41532ebc9fc5fcf46e34390ac0361e6233bb861fada89db5a864f92252096d"
+    },
+    {
+      "path": "bin/fm-control.sh",
+      "patch": "bin_fm-control.sh.patch",
+      "base": "7fdf6aa40a7709291e08f4f5c6457301ceca9893504c252907b608ae29a0ed39",
+      "result": "736e08c98e17e126052880ca842830655db8b348899f645ee3468d1feb2c4607"
+    },
+    {
+      "path": "bin/fm-dod-lib.sh",
+      "patch": "bin_fm-dod-lib.sh.patch",
+      "base": "1745bd7cf9d79d158adbddf67d2a030bf046590b664e2de716177a645b57536b",
+      "result": "0148d219b9b9f48913a1e2a7cf58b715ffedb47a14fe2fd16c4235931173ec5a"
+    },
+    {
+      "path": "bin/fm-home-seed.sh",
+      "patch": "bin_fm-home-seed.sh.patch",
+      "base": "c40683200c21257c314024e1e20a11301140b7d77a253b16cc3c1dca07a1f61d",
+      "result": "dd90fcc84856d8dd6325dc49182957b9aae4beb611be131b7247a08c90e8e8d2"
+    },
+    {
+      "path": "bin/fm-inbox.sh",
+      "patch": "bin_fm-inbox.sh.patch",
+      "base": "d7df308c81518d7aea3dad8b178ac3dd54358dedf717a62779c2e84de6cf7b3b",
+      "result": "c2d691b1b20487675d7eaedb9c602b82f0ff1a9df77c06269217a73288551a05"
+    },
+    {
+      "path": "bin/fm-promote.sh",
+      "patch": "bin_fm-promote.sh.patch",
+      "base": "5d97bc9aa121e7b283a85fa1607c4c3bb49b64464847e8594bbf966cc7f3983c",
+      "result": "ea42cb657a1c1edc5fe91c4892b25b7265a5422d817f7da271808070efa3e36d"
+    },
+    {
+      "path": "bin/fm-remote-home-provision.sh",
+      "patch": "bin_fm-remote-home-provision.sh.patch",
+      "base": "252cb48cce930e16e93e62fd43bad4a388cab8a622baf331a23983e1213c904d",
+      "result": "363523a0940d70e413b34d4b834c373686cd4434874f224a869ea85564725d20"
+    },
+    {
+      "path": "bin/fm-remote-home-seed.sh",
+      "patch": "bin_fm-remote-home-seed.sh.patch",
+      "base": "0e756c62e25ab937611e9ee62f1a460f6edd78da3d02df5f78510c64426b70b4",
+      "result": "aaeb6ff398067fcdbd5749c06d61f689f5a51cb607815a1609613f56a0725f87"
+    },
+    {
+      "path": "bin/fm-remote-secondmate-control.sh",
+      "patch": "bin_fm-remote-secondmate-control.sh.patch",
+      "base": "037c1a12dd9c8edf83bb04ec04fbcecc339eab204a924e1decf87e107a853ec8",
+      "result": "f00c51459c86530b9392dad61a4017e294ea75e4c6354a94bf120627a7c0dc6e"
+    },
+    {
+      "path": "bin/fm-spawn.sh",
+      "patch": "bin_fm-spawn.sh.patch",
+      "base": "15be69520bf989b6245465bde382a471982d1a09700570e35c246767f8595083",
+      "result": "5a061a77e39b9c12adad0a730ef844f261eca60eace9d84a9210061a1bd3c70e"
+    },
+    {
+      "path": "bin/fm-update.sh",
+      "patch": "bin_fm-update.sh.patch",
+      "base": "4cb7e556cdeec0f07675b62ff0419c44f25e45be1b1bb9058b03deda097a593e",
+      "result": "13cc5512de6a264df6970aeded48c04c9eb896dc7132d1dc68fdab3eb837225e"
+    }
+  ]
+}

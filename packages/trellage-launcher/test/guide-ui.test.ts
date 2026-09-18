@@ -1991,6 +1991,7 @@ describe("runGuideGenerationStep", () => {
         {
           targetTool: "codex",
           profileRef: "native:cdx/reviewer",
+          bodyBudget: 8000,
           candidates: candidateTriple(),
         },
       ])
@@ -1998,6 +1999,7 @@ describe("runGuideGenerationStep", () => {
         intent: "Review my PR",
         profileRef: "native:cdx/reviewer",
         workflowId: "review",
+        bodyBudget: 8000,
         guide: guideReviewer,
         guideBody: expect.stringContaining("Use this profile to review diffs."),
       })
@@ -2063,6 +2065,7 @@ describe("runGuideGenerationStep", () => {
       expect(provider.optimizeCalls[0]).toEqual({
         targetTool: "codex",
         profileRef: "native:cdx/reviewer",
+        bodyBudget: 8000 - "/review-diff ".length,
         candidates: candidateTriple(),
         fixedFrame: {
           beforeBody: "/review-diff ",
@@ -2269,6 +2272,7 @@ describe("runGuideRefinementStep", () => {
       {
         targetTool: "codex",
         profileRef: "native:cdx/reviewer",
+        bodyBudget: 8000,
         candidates: [{ title: "Refined", prompt: "Do the focused thing.", notes: "Quick pass." }],
       },
     ])
@@ -2276,6 +2280,7 @@ describe("runGuideRefinementStep", () => {
       intent: "Review my PR",
       profileRef: "native:cdx/reviewer",
       workflowId: "review",
+      bodyBudget: 8000,
       guide: guideReviewer,
       guideBody: "guide body",
       candidate: prior,
@@ -2441,6 +2446,7 @@ describe("runGuideRefinementStep", () => {
     expect(provider.optimizeCalls[0]).toEqual({
       targetTool: "codex",
       profileRef: "native:cdx/reviewer",
+      bodyBudget: 8000 - "/social-media-skills:post-writer ".length,
       candidates: [
         {
           title: "Refined",

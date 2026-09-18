@@ -9,11 +9,15 @@ capabilities:
   - blast-radius-analysis
   - real-artifact-verification
   - consent-managed-firstmate-prerequisites
+  - retry-safe-fleet-inbox
+  - fleet-status-and-project-memory
+  - notify-only-condition-watches
 bestFor:
-  - Explicit requests for fmx pstack-workers, fmx pstack-worker, fmx/pstack-workers, or native:fmx/pstack-workers
+  - Explicit requests for fmx pstack-workers, fmx pstack-worker, fmx/pstack-workers, firstmate / pstack-workers, or native:fmx/pstack-workers
   - Substantial implementations, refactors, and debugging programs where Firstmate should coordinate the fleet and every worker should follow a concise pstack-derived engineering discipline
   - Parallel changes that need isolated worktrees plus explicit smallest-change, blast-radius, and real-artifact proof requirements
   - Complex work where workers should inspect architecture or history only when the task crosses a boundary or the reason for existing behavior affects the fix
+  - Reviewing the disciplined fleet's progress and decisions, retaining project findings, or receiving a condition notification without adding workers
 avoidFor:
   - Work that needs the complete Cursor or Codex pstack plugin, Poteto Mode router, pstack subagents, or mandatory multi-frontier review
   - Simple one-shot edits where the extra worker-policy section adds no value
@@ -21,7 +25,7 @@ avoidFor:
   - Untrusted repositories or tasks that require a container security boundary
 prerequisites:
   - id: fmx-pstack-setup
-    description: Run fmx setup pstack-workers so the pinned Firstmate runtime, isolated captain state, and managed worker policy are installed.
+    description: Select or create a pstack-workers fleet in the interactive guide when instance support is available. Unqualified fmx setup pstack-workers prepares only the shared legacy fleet.
   - id: managed-fleet-tools
     description: On first launch, fmx detects missing locked Firstmate tools and offers to install them into the displayed fmx-owned user-data path only after explicit consent.
   - id: github-auth
@@ -32,6 +36,8 @@ prerequisites:
     description: Run inside a Herdr pane or have tmux installed for the default backend.
 workflows:
   - id: disciplined-fleet-delivery
+    frame: fixed
+    scope: project
     description: Use Firstmate as the only fleet router while each worker receives a conditional pstack-derived inner loop for scope control and proof.
     examples:
       - Split this risky refactor in /path/to/repository across isolated workers, require the smallest safe changes, and prove each result with real commands
@@ -39,7 +45,8 @@ workflows:
     promptTemplate: |
       ## Firstmate pstack-worker operating contract
 
-      Keep Firstmate as the sole router and integration authority. Verify the
+      Keep Firstmate as the sole router and integration authority within the
+      human captain's explicit authorization. Verify the
       target repository path or registered project name rather than assuming
       registration. Until registration is confirmed, use the conservative
       unregistered posture: `no-mistakes` delivery with `yolo` off. If project
@@ -62,8 +69,9 @@ workflows:
       only for unfamiliar areas or shared boundaries, run a `why` history check
       only when history affects the decision, prove completion with a real
       artifact, and report verification gaps. Workers must not route, merge, or
-      assume captain authority. Do not invoke Poteto Mode, pstack subagents, or
-      a second router.
+      assume captain authority. Required no-mistakes reviewer and fix steps
+      remain allowed, but do not grant independent fleet routing or merge
+      permission. Do not invoke Poteto Mode, pstack subagents, or a second router.
 
       Confirm each spawned worker is processing its brief. Supervise durable
       status and wake events, steer blockers through the supported control path,
@@ -88,6 +96,8 @@ workflows:
 
       {{intent}}
   - id: disciplined-parallel-debugging
+    frame: fixed
+    scope: project
     description: Dispatch parallel debugging workers that reproduce first, inspect architecture or history only when needed, and return artifact-backed conclusions.
     examples:
       - Investigate these intermittent failures in /path/to/repository, reproduce them, and require artifact-backed conclusions
@@ -95,7 +105,8 @@ workflows:
     promptTemplate: |
       ## Firstmate pstack-worker investigation contract
 
-      Keep Firstmate as the sole router and decision authority. Verify the
+      Keep Firstmate as the sole router and decision authority for delegated
+      fleet work. The human captain retains approval authority. Verify the
       target and registration state first. If project intake is incomplete,
       keep `no-mistakes` delivery with `yolo` off until registration is
       confirmed, propose the exact source and local name with standing defaults
@@ -114,8 +125,10 @@ workflows:
       `how` walk only for unfamiliar areas or shared boundaries, run a `why`
       history check only when history affects the decision, prove conclusions
       with a real artifact, and report falsified alternatives and verification
-      gaps. Workers must not route, merge, or assume captain authority. Do not
-      invoke Poteto Mode, pstack subagents, or a second router.
+      gaps. Workers must not route, merge, or assume captain authority.
+      Required no-mistakes reviewer and fix steps remain allowed without
+      independent fleet routing or merge permission. Do not invoke Poteto
+      Mode, pstack subagents, or a second router.
 
       Compare competing explanations centrally. If implementation becomes
       authorized, promote the existing scout when possible instead of creating
@@ -128,13 +141,94 @@ workflows:
       ## Investigation
 
       {{intent}}
+  - id: review-fleet-status
+    frame: fixed
+    scope: fleet
+    description: Use Bearings to review the pstack-worker fleet's current tasks, reports, blockers, and human decisions without dispatching more work.
+    examples:
+      - Show the pstack-worker fleet's completed artifacts, verification gaps, and pending approval decisions
+      - Review my existing disciplined fleet after a disconnected supervisor session without starting replacement workers
+    promptTemplate: |
+      ## Firstmate pstack-worker fleet status contract
+
+      Review the selected fleet instance. Use the installed Bearings workflow
+      and `fm-fleet-snapshot.sh --json` for current task, report, and decision
+      evidence. Separate current state from the last event and process
+      liveness. Report stale or missing evidence and worker verification gaps.
+      The snapshot can refresh observation caches; do not call
+      `fm-session-start.sh` as a harmless status probe.
+
+      Report completed artifacts, active work, blockers, and pending human
+      decisions. A saved or acknowledged inbox note does not prove task
+      completion. Do not create projects or workers, approve held work, merge,
+      deploy, or tear down the fleet. Pstack remains an existing worker-brief
+      policy, not a new review fleet or another coordinator.
+
+      ## Status request
+
+      {{intent}}
+  - id: maintain-project-memory
+    frame: fixed
+    scope: project
+    description: Use ordinary Stow to retain evidence-backed findings, decisions, and verification gaps for the selected project.
+    examples:
+      - Save the disciplined fleet's confirmed architecture findings and remaining verification gaps for my registered project
+      - Correct stale project memory with the latest artifact evidence and keep the reasons for each decision
+    promptTemplate: |
+      ## Firstmate pstack-worker project memory contract
+
+      Confirm the project and requested memory write scope. Read existing
+      memory and artifact evidence first. Use ordinary Stow to retain
+      confirmed findings, decisions, unresolved questions, verification gaps,
+      and supporting references. Do not promote hypotheses to confirmed
+      outcomes or retain secrets.
+
+      Keep private memory and operational writes under `FM_HOME`. Do not
+      modify the pinned runtime, create a Git index or skill registry in the
+      home, or use advanced Stow skill offload. Ask before project
+      initialization or unrelated memory changes. Do not dispatch workers,
+      run another review fleet, merge, deploy, or expand the pstack policy.
+      Report the memory changes and remaining uncertainty.
+
+      ## Memory request
+
+      {{intent}}
+  - id: watch-fleet-condition
+    frame: fixed
+    scope: fleet
+    description: Watch a defined condition in the disciplined fleet and notify its supervisor or captain without automatic dispatch or merge.
+    examples:
+      - Notify me when the pstack-worker fleet's existing review gate finishes; ask for a deadline before arming the watch
+      - Watch a blocked worker's dependency and notify Firstmate when it is ready, without starting another agent
+    promptTemplate: |
+      ## Firstmate pstack-worker condition watch contract
+
+      Confirm the condition, observation scope, deadline, and notification
+      destination. Ask for missing values before arming the watch. Use the
+      installed condition-watch workflow and `fm-procevent-when.sh` with
+      supported observational checks. State the evidence that satisfies the
+      condition and the timeout report.
+
+      Use only Firstmate's normal notification path. A satisfied condition
+      does not authorize task dispatch, another worker or review fleet,
+      arbitrary shell actions, merge, deployment, or teardown. Keep human
+      approval holds intact. Report the watch identity and supported
+      inspection or cancellation path, then return control to Firstmate.
+
+      ## Watch request
+
+      {{intent}}
 ---
 
 # Native Firstmate (`fmx`) — `pstack-workers` profile
 
-`fmx pstack-workers` keeps Firstmate as the outer fleet router and injects one
-small worker-policy section into ship and scout briefs. The policy is derived
+`pstack-workers` is a configuration template for independently named worktree
+fleets when instance support is available. Unqualified `fmx pstack-workers`
+retains its shared legacy fleet. Firstmate is the router within each fleet,
+with one small worker-policy section in ship and scout briefs. The policy is derived
 from pstack's engineering principles, but it is not the full pstack runtime.
+The captain is the human. Firstmate is the supervisor, even though its state
+directory is named `captain/claude`.
 
 ## What The Worker Policy Adds
 
@@ -147,6 +241,8 @@ from pstack's engineering principles, but it is not the full pstack runtime.
 - State any remaining verification gap.
 - Stay a worker; never take over fleet routing, merge authority, or captain
   decisions.
+- Required no-mistakes reviewer and fix steps remain available. They do not
+  permit independent fleet workers or override human approval.
 
 ## What It Does Not Add
 
@@ -167,10 +263,30 @@ from pstack's engineering principles, but it is not the full pstack runtime.
   its expensive inspection steps only when the stated condition applies.
 - This profile has the same host-native security boundary and v1 backend and
   harness limits as `fmx default`.
+- The legacy fleet uses `fmp-`. Named instances use their owned runtime's
+  verified task namespace; do not derive it from a profile, name, or UUID.
+  Stop before creating tasks if that namespace cannot be verified.
+  Claude-only model/effort rules use the same validated
+  `home/config/crew-dispatch.json` contract as default; guide-provider
+  overrides do not set worker policy.
+- The supervisor runs in the pinned runtime, not the target repository.
+  Guide requests retain the confirmed target and base commit. Herdr pane
+  placement does not transfer staged, unstaged, or untracked changes.
+- A profile selects policy; an instance UUID identifies the fleet. With the
+  supported inbox API, queue items for one instance become saved requests in
+  that fleet, not separate supervisor launches. Other instances remain
+  independent. Retry an unknown outcome with the same request ID.
+- A new prompt in the same worktree reuses its existing fleet. Joining another
+  fleet requires confirmation and does not change the worktree association.
+  Shared tool or launcher changes must account for every active instance.
+- Safe supervisor recovery can retain live workers on an unchanged verified
+  runtime. Update, repair, and installation still require an idle fleet.
+- Status and notify-only watches do not create implementation tasks. Ordinary
+  Stow memory stays in `FM_HOME`; advanced skill offload is not supported.
 - Use `native:cdx/pstack` instead when you want one Codex agent running the
   complete Codex pstack skill catalog rather than a Firstmate fleet.
 - Include a repository path or registered Firstmate project name in the task;
-  the captain must not guess which repository the fleet should change.
+  the supervisor must not guess which repository the fleet should change.
 - Generated prompts cover the supported fleet lifecycle conditionally. They do
   not force secondmates, Relay, voice, Zellij, Orca, cmux, browser work, or
   other upstream features that the selected task and v1 profile do not need.

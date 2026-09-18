@@ -98,6 +98,9 @@ it does not infer headless support from launcher names. Both forms are
 non-interactive and work without a TTY. They validate all ten owned launchers
 and their catalogs before producing output, so missing, redirected, or invalid
 launchers fail closed.
+Firstmate entries can also contain validated `orchestration` metadata for
+their fixed source, task namespace, worker policy, and text-inbox protocol.
+This metadata is not a headless capability or a live readiness result.
 
 `trx guide` is separate from the search-first bare launcher. It loads the
 native and Sandbox JSON catalogs, uses `gpt-5.6-sol` with medium reasoning to
@@ -133,8 +136,11 @@ printf '%s' \
 
 Without `--profile`, JSON mode returns the match phase. With an exact profile
 reference, it returns the generation phase. The stdin object accepts
-`schemaVersion`, `intent`, and optional `profile`, `model`, and `effort`
-fields. Current match output has five enriched recommendations; older cached
+`schemaVersion`, `intent`, and optional `profile`, `model`, `effort`,
+`workflowId`, and `projectTarget` fields. A supplied workflow must belong to
+the selected profile. A confirmed Firstmate target identifies a registered
+project, or an explicit source with its entry worktree, resolved base commit,
+and excluded dirty changes. Current match output has five enriched recommendations; older cached
 responses can contain three. Generation
 output has the selected profile and exactly three prompt candidates with
 path-free command previews. JSON mode never launches a profile or changes
@@ -149,6 +155,99 @@ harness's initial interactive command. Copilot workspace-trust and Codex
 hook-trust requests cannot consume a later prompt injection. Trust decisions
 remain interactive.
 
+### Firstmate guide delivery
+
+The guide keeps the confirmed project and workflow separate from destination
+placement. `fmx` starts Firstmate in its pinned runtime, not in the caller's
+repository. A new Herdr worktree does not become a Firstmate worker worktree
+and does not transfer staged, unstaged, or untracked changes.
+
+Firstmate requests retain original intent separately from the generated
+specification. Fixed workflow frames remain intact through optimization,
+refinement, forks, editing, cache reuse, continuation, and queue delivery.
+The final specification is limited to 8,000 characters; the complete inbox
+request also has a byte bound. Oversized input is rejected, not truncated.
+
+When `orchestration.instances` advertises version 1, the guide selects a fleet
+instance before preparation or delivery. It recommends the named instance for
+the captured entry worktree, or offers explicit creation when none exists.
+Joining another instance or the shared legacy fleet requires confirmation.
+It does not replace the worktree association or the confirmed task target.
+Unqualified `fmx PROFILE` commands retain their legacy shared-fleet meaning.
+
+With a compatible installed inbox API, queue items for one owned Firstmate
+instance go to one fleet. Several instances can use the `default` template
+without sharing homes, supervisors, or task namespaces. A new prompt in the
+same worktree still reuses its existing fleet.
+The guide distinguishes **Start fleet**, **Recover Firstmate**, and
+**Send work**. A start saves requests first, then starts one supervisor without
+also sending those prompts through Herdr. Send work creates no pane and does
+not require Herdr for an existing tmux fleet.
+
+Guarded startup gives Claude one Firstmate operational instruction to begin
+its first turn and read the saved inbox. This applies to current-terminal,
+pane and worktree destinations. The original task bodies are not passed
+again, and startup never creates a second inbox request. A loaded SessionStart
+hook alone supplies context; it does not make an empty Claude session act.
+
+Readiness must permit the selected action. Source integrity alone is not
+enough, and a healthy running fleet is not an unconditional busy error.
+Resolve installation consent before unattended startup. Older installed
+launchers retain their manual launch path and do not acquire new capabilities
+from their names alone.
+The initial action focus follows readiness, so a valid Recover or Send action
+is highlighted instead of a blocked Start. Focus is not approval.
+Only one instance can claim the current terminal for startup or recovery;
+other instances need separate destinations or an existing fleet for Send.
+
+When the selected backend advertises preparation, entering or refreshing
+Firstmate action selection prepares a new request's confirmed owned instance
+automatically. Safe idle repairs and reuse of the matching installed tool
+cache do not require another terminal command. Preparation never starts or
+recovers a supervisor, sends an inbox note, or changes authentication. Live
+workers, unsafe ownership and ambiguous locks still block maintenance.
+When manual maintenance is required, the guide prints the selected
+launcher's absolute command path and instance selector. A worktree check must
+not send you to a different installed copy for setup or diagnosis.
+
+Genuinely missing managed tools have an in-menu installation plan with exact
+versions, destination, sources and side-state paths. Installation needs
+explicit approval of that plan; old setup consent does not approve new
+downloads, and approval for one instance cannot be used for another.
+The backend rejects a changed source revision or prerequisite
+lock, destination or effective package source before mutation. Cancellation
+keeps the prompt, workflow and target intact and does not select a fleet
+action. The guide reports skipped checks
+as not checked and names actual missing prerequisites rather than presenting
+one generic failure for every dependency.
+
+Preparation is not performed for frozen, accepted or uncertain requests, or
+as a receipt-reconciliation fallback. Those paths keep their original fleet
+identity and use read-only inspection. Matching and generation JSON commands
+also remain free of profile maintenance.
+
+Saved, announced, acknowledged, and completed are different states. Partial
+failure preserves receipts and queued work. The guide keeps a private
+transport journal and reuses the same request ID after an unknown result; it
+does not send a replacement prompt or start another supervisor as a fallback.
+That journal is not a task scheduler. Firstmate owns dispatch and execution.
+Named instances use separate journal namespaces. Legacy requests keep the
+existing journal and exact V1 payloads; instance selection never moves or
+replays them. A failure in one instance does not authorize delivery to another.
+Private instance state is not sent to recommendation/candidate providers or
+stored in their artifact caches.
+
+Live instance use requires compatible Native, Claude, and shared-skills writer
+components installed together while affected fleets are idle. An older
+installer or writer can mutate before checking a new registry; one updated
+`fmx` binary is not sufficient. Do not remove compatibility records or bypass
+the upgrade diagnostic.
+
+Both profiles also provide fleet-status, ordinary project-memory, and
+notify-only condition-watch workflows. These do not inherit implementation,
+merge, or teardown instructions. `--model` and `--effort` configure the guide
+provider, not Firstmate's Claude worker rules.
+
 The first sorted row is selected when the launcher opens. Start typing to filter
 by profile, harness, or description; no leading `/` is required. The arrow keys
 move within the filtered results. Enter launches the selected profile directly
@@ -161,6 +260,14 @@ status 130. Remaining arguments are forwarded unchanged after the selected
 launcher profile. The bare picker never runs setup, update, or repair.
 
 ### Admin harness updates
+
+Firstmate instances have separate Admin rows, with explicit legacy labels.
+Details show the UUID, associated worktree, and owned root. The profile
+catalog stays static. Instance discovery must finish before scoped actions
+are available; a failed list is not a complete legacy-only result.
+Refresh does not create, bind, repair, or install a Firstmate fleet.
+Explicit preparation can repair verified owned state, but missing identity
+does not permit a fallback to setup. Use the guide for reviewed creation.
 
 Press `A` in `trx admin` to preview **Update all harness versions and skills**,
 then confirm only the available updates. Discovery checks the full Native
@@ -209,14 +316,18 @@ and `cldx harness-update` once per shared host binary. Selecting either Codex
 `youtube` or `superpowers` updates the same Codex binary for all native Codex profiles.
 Grok updates the stable channel. Oh My Pi, jcode, Pi Coding Agent, and Prime
 use their launcher's `update` command once per shared runtime. Firstmate
-runs `fmx update PROFILE` for each profile to apply its catalog-pinned
-source and overlay. Native launchers without a harness update command
-do not offer this action; plugin updates are not used as a substitute.
+runs a scoped `fmx update PROFILE --instance UUID` for each confirmed named
+instance to apply its profile's catalog-pinned source and overlay. Legacy
+rows retain their legacy selector. The confirmation names the actual instance
+targets; filters do not change their identity. Native launchers without a
+harness update command do not offer this action; plugin updates are not used
+as a substitute.
 
 Updates run sequentially within a group and report each profile's result.
 A failed profile does not stop the remaining profiles. Version data is
 refreshed afterward, once per shared native runtime or per container and
-Firstmate profile. A running group cannot be started a second time.
+Firstmate instance. Installed-version results are not copied between two
+instances of the same profile. A running group cannot be started a second time.
 
 ### Global harness and skills update command
 
@@ -227,7 +338,9 @@ rather than a second update loop. The operation updates harness versions
 update counts before it asks you to type `yes` at a terminal. Piped input is
 not approval. The catalog input and confirmation terminal are separate.
 Unlike Admin's updates-only selection, this command remains a full maintenance
-run. Its dry-run does not fetch update availability.
+run. For instance-capable Firstmate, local read-only discovery adds the actual
+named fleet targets without turning them into profile catalog entries.
+Its dry-run may read that registry, but does not fetch update availability.
 
 ```sh
 trx upgrade all --dry-run  # Preview only; no updates or version checks.
@@ -237,14 +350,17 @@ trx upgrade all --yes     # Explicitly authorize non-interactive updates.
 
 `--yes` and `--dry-run` cannot be combined. Help and invalid arguments are
 handled before launcher discovery. Missing, invalid, or incomplete catalogs
-stop the operation before any update starts.
+stop the operation before any update starts. Incomplete, unsafe, or changing
+Firstmate instance discovery also stops the operation; a legacy-only subset
+is not presented as all instances.
 
 The shared queue runs Native harness updates first. It then runs the current
 router's `trx skills update` once, refreshing all five Native skill caches:
 `native-common`, Codex standard, Codex YouTube, Oh My Pi community, and guide Prompt Master.
 Every Native profile, including Agency, then receives `skills-update PROFILE`
-to copy and verify its configured skills. This final copy follows harness
-updates because some harness updaters rewrite skills. No `repair`, `setup`,
+to copy and verify its configured skills. Named Firstmate targets retain their
+instance selector and confirmed context for each operation. This final copy
+follows harness updates because some harness updaters rewrite skills. No `repair`, `setup`,
 or plugin update is substituted for a skills update. The router keeps its
 exact executable path, including when it runs from a source worktree.
 

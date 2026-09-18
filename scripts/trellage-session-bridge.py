@@ -12,6 +12,7 @@ import secrets
 import shlex
 import socket
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -212,6 +213,52 @@ def herdr_agent_context(agent):
     )
 
 
+def firstmate_provenance_helper():
+    helper = (Path(os.environ["HOME"]) / ".local/share/trellage/common/floating-skills-runtime"
+              / "prototypes/trellage-firstmate-profiles/lib/fmx-registry.py")
+    for path in (helper, *helper.parents):
+        if path.is_symlink():
+            raise BridgeError("unsafe Firstmate provenance verifier")
+    metadata = helper.stat()
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
+        or metadata.st_nlink != 1 or metadata.st_mode & 0o022):
+        raise BridgeError("unowned Firstmate provenance verifier")
+    return helper
+
+
+def firstmate_captain_context(raw, profile):
+    context = strict_json(raw)
+    if not isinstance(context, dict) or not isinstance(context.get("reference"), dict):
+        raise BridgeError("Firstmate provenance must contain one instance reference")
+    reference = context.get("reference", {})
+    instance_id = reference.get("instanceId", "")
+    mode = reference.get("mode")
+    if reference.get("profile") != profile or mode not in ("named", "legacy"):
+        raise BridgeError("Firstmate provenance does not match this supervisor profile")
+    root = Path(os.environ["HOME"]) / ".local/share/trellage/profiles/firstmate"
+    root = root / "instances" / instance_id if mode == "named" else root / profile
+    if (os.environ.get("CLAUDE_CONFIG_DIR") != str(root / "captain/claude")
+        or os.environ.get("FM_HOME") != str(root / "home")
+        or os.environ.get("FMX_PROFILE_ROOT") != str(root)):
+        raise BridgeError("Firstmate provenance does not match the captain home")
+    return instance_id if mode == "named" else "legacy"
+
+
+def firstmate_launch_origin(agent, profile):
+    raw = os.environ.get("FMX_LAUNCH_PROVENANCE_JSON", "")
+    if not raw:
+        return None
+    if agent != "claude" or len(raw.encode()) > 65536:
+        raise BridgeError("invalid Firstmate supervisor provenance")
+    helper = firstmate_provenance_helper()
+    selector = firstmate_captain_context(raw, profile)
+    result = subprocess.run([sys.executable, str(helper), "context", profile, selector, "false", raw],
+                            stdin=subprocess.DEVNULL, capture_output=True, timeout=20, check=False)
+    if result.returncode or len(result.stdout) > 65536:
+        raise BridgeError("Firstmate launch provenance failed owned binding validation")
+    return strict_json(result.stdout)
+
+
 def report_native_session(agent, profile, session):
     pane_id = os.environ.get("HERDR_PANE_ID")
     if not pane_id:
@@ -236,6 +283,10 @@ def report_native_session(agent, profile, session):
             "seq": state_change_seq * 2 + 1,
         },
     }
+    origin = firstmate_launch_origin(agent, profile)
+    if origin is not None:
+        request["params"]["tokens"]["trellage_firstmate_instance_id"] = origin["reference"]["instanceId"]
+        request["params"]["tokens"]["trellage_firstmate_launch_origin"] = json.dumps(origin, separators=(",", ":"), sort_keys=True)
     send_herdr_request(request)
 
 

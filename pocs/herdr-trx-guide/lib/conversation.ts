@@ -4,7 +4,7 @@ const defaultMaximumCharacters = 60_000
 
 export interface ConversationSource {
   readonly agent: string
-  readonly cwd: string
+  readonly cwd?: string
   readonly sessionId: string
   readonly profile?: string
 }
@@ -22,7 +22,7 @@ const header = (source: ConversationSource): string =>
   [
     "# Continue this Herdr conversation",
     "",
-    `Repository: ${source.cwd}`,
+    source.cwd === undefined ? "Repository target: select and confirm it in trx guide." : `Repository: ${source.cwd}`,
     `Harness: ${source.agent}`,
     ...(source.profile === undefined ? [] : [`Profile: ${source.profile}`]),
     `Session: ${source.sessionId}`,

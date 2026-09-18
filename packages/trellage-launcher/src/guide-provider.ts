@@ -10,7 +10,7 @@
  * model), numeric bounds, profile/workflow reference checks against the
  * catalog, and uniqueness constraints.
  */
-import type { ProfileGuideV1 } from "@trellage/guide-core"
+import { GUIDE_MAX_GENERATED_SPEC, type ProfileGuideV1 } from "@trellage/guide-core"
 // `guide-api.ts` imports this module type-only, so this value import adds no runtime cycle.
 import { guideIntentMaximumLength } from "./guide-api.ts"
 import type { GuideMatchCatalogEntry } from "./guide-catalog.ts"
@@ -23,6 +23,7 @@ import {
   type GuideGoalExecution,
   type PreparedGuideGoal,
 } from "./guide-goal-execution.ts"
+import { guideTaskContext, type GuideTaskContext } from "./guide-context.ts"
 import { array, boundedNumber, exactKeys, fail, record, text, uniqueArray } from "./guide-text.ts"
 
 export interface GuideMatchCandidate {
@@ -57,11 +58,16 @@ export interface GuideOptimizeFixedFrame {
   readonly afterBody: string
 }
 
-export interface GuideOptimizeInput {
+export interface GuidePromptBodyBudget {
+  /** Maximum model-authored body length in UTF-16 units after all fixed delivery text is reserved. */
+  readonly bodyBudget?: number
+}
+
+export interface GuideOptimizeInput extends GuideTaskContext, GuidePromptBodyBudget {
   readonly targetTool: string
   readonly profileRef: string
   readonly candidates: ReadonlyArray<GuideGenerateCandidate>
-  /** Present for body-only skill prompts; absent when candidates are complete prompts. Never returned publicly. */
+  /** Present for body-only fixed workflows; absent for complete prompts. Never returned publicly. */
   readonly fixedFrame?: GuideOptimizeFixedFrame
   readonly goal?: PreparedGuideGoal
   readonly goalExecution?: GuideGoalExecution
@@ -88,7 +94,7 @@ export interface GuideMatchInput {
   readonly preferredProfileRefs?: ReadonlyArray<string>
 }
 
-export interface GuideGenerateInput {
+export interface GuideGenerateInput extends GuideTaskContext, GuidePromptBodyBudget {
   readonly intent: string
   readonly profileRef: string
   readonly workflowId: string
@@ -152,6 +158,12 @@ export const assertGuideMatchInput = (input: GuideMatchInput): GuideMatchInput =
   return input
 }
 
+const assertGuideBodyBudget = (budget: number | undefined, path: string): void => {
+  if (budget === undefined) return
+  boundedNumber(budget, path, 1, GUIDE_MAX_GENERATED_SPEC)
+  if (!Number.isInteger(budget)) fail(path, "must be an integer count of UTF-16 code units")
+}
+
 /**
  * Fails closed unless `input.workflowId` names a workflow that actually
  * exists on `input.guide`, and unless `input.guideBody` is a non-empty,
@@ -165,11 +177,15 @@ export const assertGuideGenerateInput = <Input extends GuideGenerateInput>(input
   }
   text(input.guideBody, "generate input.guideBody", guideBodyMaximumLength, { multiline: true })
   if (input.goal !== undefined) resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
+  guideTaskContext(input.intent, input)
+  assertGuideBodyBudget(input.bodyBudget, "generate input.bodyBudget")
   return input
 }
 
 /** Fails closed unless Prompt Master receives one to three complete candidates and a known target label. */
 export const assertGuideOptimizeInput = (input: GuideOptimizeInput): GuideOptimizeInput => {
+  guideTaskContext(input.originalIntent ?? "", input)
+  assertGuideBodyBudget(input.bodyBudget, "optimize input.bodyBudget")
   text(input.targetTool, "optimize input.targetTool", 128)
   text(input.profileRef, "optimize input.profileRef", 256)
   if (input.candidates.length < 1 || input.candidates.length > 3) {
@@ -278,18 +294,26 @@ export const validateGuideMatchResult = (
   return { candidates }
 }
 
+interface GuideCandidateValidationOptions {
+  /** Rendered artifacts can contain exact human text; model drafts keep their existing normalization. */
+  readonly preservePrompt?: boolean
+  readonly goalExecution?: GuideGoalExecution
+}
+
 const validateGenerateCandidate = (
   value: unknown,
   path: string,
-  goalExecution?: GuideGoalExecution,
+  context: GuideCandidateValidationOptions | GuideGoalExecution = {},
 ): GuideGenerateCandidate => {
+  const options = "goal" in context ? { goalExecution: context } : context
+  const goalExecution = options.goalExecution
   const fields = record(value, path)
   exactKeys(fields, path, ["title", "prompt", "notes"])
   const prompt = text(
     fields.prompt,
     `${path}.prompt`,
     goalExecution === undefined ? 8000 : guideGoalApproachBudget(goalExecution),
-    { multiline: true },
+    { multiline: true, preserve: options.preservePrompt ?? false },
   )
   if (goalExecution !== undefined && hasGuideGoalControllerCommand(prompt)) {
     fail(`${path}.prompt`, "must not add a goal controller or another Goal-me interview")
@@ -304,13 +328,13 @@ const validateGenerateCandidate = (
 /** Validates a raw model generate response. Requires exactly three candidates with distinct prompt strings. */
 export const validateGuideGenerateResult = (
   value: unknown,
-  goalExecution?: GuideGoalExecution,
+  options: GuideCandidateValidationOptions | GuideGoalExecution = {},
 ): GuideGenerateResult => {
   const fields = record(value, "generate result")
   exactKeys(fields, "generate result", ["candidates"])
   const rawCandidates = array(fields.candidates, "generate result.candidates", { minimum: 3, maximum: 3 })
   const candidates = rawCandidates.map((item, index) =>
-    validateGenerateCandidate(item, `generate result.candidates[${index}]`, goalExecution),
+    validateGenerateCandidate(item, `generate result.candidates[${index}]`, options),
   )
   uniqueArray(
     candidates.map(({ prompt }) => prompt),
@@ -321,10 +345,13 @@ export const validateGuideGenerateResult = (
 }
 
 /** Validates a raw model refine response. Requires exactly one candidate. */
-export const validateGuideRefineResult = (value: unknown, goalExecution?: GuideGoalExecution): GuideRefineResult => {
+export const validateGuideRefineResult = (
+  value: unknown,
+  options: GuideCandidateValidationOptions | GuideGoalExecution = {},
+): GuideRefineResult => {
   const fields = record(value, "refine result")
   exactKeys(fields, "refine result", ["candidate"])
-  return { candidate: validateGenerateCandidate(fields.candidate, "refine result.candidate", goalExecution) }
+  return { candidate: validateGenerateCandidate(fields.candidate, "refine result.candidate", options) }
 }
 
 /** Validates a raw model enrich response: one rewritten intent, bounded like a typed intent. */

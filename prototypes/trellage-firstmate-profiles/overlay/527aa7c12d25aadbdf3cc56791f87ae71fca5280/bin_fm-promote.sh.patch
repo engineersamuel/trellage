@@ -1,0 +1,24 @@
+--- a/bin/fm-promote.sh
++++ b/bin/fm-promote.sh
+@@ -97,6 +97,13 @@
+ 
+ ID=${POS[0]}
+ fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
++if [ -n "${FMX_TASK_ID_PREFIX:-}" ]; then
++  case "$ID" in
++    "$FMX_TASK_ID_PREFIX"-*) ;;
++    *) echo "error: this fmx profile requires task ids to start with '$FMX_TASK_ID_PREFIX-'" >&2; exit 1 ;;
++  esac
++fi
++FMX_WORKER_POLICY_SECTION=$(fm_fmx_worker_policy) || exit 1
+ CONTROL_LOCK="$STATE/.control-$ID.lock"
+ CONTROL_LOCK_HELD=0
+ META_LOCK=
+@@ -188,6 +195,7 @@
+ EOF
+   printf '\n'
+   fm_dod_block "$MODE" "$ID"
++  printf '\n%s\n' "$FMX_WORKER_POLICY_SECTION"
+ } > "$TMP" || { echo "error: could not render ship instructions for mode=$MODE" >&2; exit 1; }
+ mv "$TMP" "$INSTRUCTIONS"
+ TMP=

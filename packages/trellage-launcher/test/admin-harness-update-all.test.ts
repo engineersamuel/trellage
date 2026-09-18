@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  canonicalFirstmateInstanceJson,
+  firstmateRuntimeVariantDigest,
+  parseFirstmateInstanceDescriptorV1,
+} from "@trellage/guide-core"
+import * as firstmateAdmin from "../src/admin-firstmate.ts"
+import {
   harnessUpdateAllPlanFor,
   harnessUpdateAllSummary,
   harnessUpdateScopeKey,
@@ -7,9 +13,15 @@ import {
   runAllHarnessUpdates,
 } from "../src/admin-harness-update-all.ts"
 import { HarnessUpdateManager, type HarnessUpdatePlan, type HarnessUpdateQueueEvent } from "../src/admin-harness-update.ts"
+import * as harnessUpdates from "../src/admin-harness-update.ts"
 import { AdminRunManager } from "../src/admin-run-manager.ts"
-import type { AdminProfileEntry } from "../src/admin-model.ts"
+import { aggregateAdminInstanceProfiles, type AdminProfileEntry } from "../src/admin-model.ts"
+import { discoverAdminInstanceEntries } from "../src/admin-refresh.ts"
+import * as instanceSelection from "../src/guide-firstmate-instance-selection.ts"
 import type { CommandRunner, CommandRunResult } from "../src/guide-launch.ts"
+import {
+  alpha, beta, firstmateCatalog, firstmatePin, instancePage, instanceRows, legacy, missingLegacy, namedInstanceRegistry,
+} from "./admin-firstmate-fixtures.ts"
 
 const container = (name: string, harness = "claude", commandPath = "/fixture/trellage"): AdminProfileEntry => ({
   ref: `sandbox:${name}`,
@@ -131,6 +143,106 @@ describe("all-harness update planning", () => {
     expect(plan.groups).toHaveLength(0)
     expect(plan.unsupported.map(({ entry }) => entry.ref).sort()).toEqual(entries.map((entry) => entry.ref).sort())
     expect(plan.unsupported.map(({ diagnostic }) => diagnostic)).toContain("The launcher command is unavailable.")
+  })
+
+  it("builds a large named registry group once and captures each approval once", async () => {
+    const descriptors = [legacy, ...namedInstanceRegistry(256)]
+    const pages = Array.from({ length: Math.ceil(descriptors.length / 32) }, (_, index) => instancePage(descriptors, index * 32))
+    expect(pages).toHaveLength(9)
+    expect(pages.every((page) => Buffer.byteLength(page) <= 64 * 1024)).toBe(true)
+    let pageIndex = 0
+    const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
+      expect(args.slice(0, 3)).toEqual(["instances", "list", "default"])
+      return { ...success, stdout: pages[pageIndex++]! }
+    })
+    const entries = await discoverAdminInstanceEntries({ run }, firstmateCatalog(), "/work/entry")
+    expect(entries).toHaveLength(descriptors.length)
+    expect(run).toHaveBeenCalledTimes(pages.length)
+    const buildPlan = vi.spyOn(harnessUpdates, "harnessUpdatePlanFor")
+    const createContext = vi.spyOn(instanceSelection, "createFirstmateInstanceContext")
+    const checkTarget = vi.spyOn(firstmateAdmin, "adminFirstmateMutationBlockReason")
+    try {
+      const versionResultFor = vi.fn(() => undefined)
+      const plan = harnessUpdateAllPlanFor([...entries].reverse(), versionResultFor)
+      expect(buildPlan).toHaveBeenCalledTimes(1)
+      expect(createContext).toHaveBeenCalledTimes(entries.length)
+      expect(checkTarget.mock.calls.length).toBeLessThanOrEqual(entries.length * 3)
+      expect(versionResultFor).toHaveBeenCalledTimes(1)
+      expect(plan.groups).toHaveLength(1)
+      expect(plan.unsupported).toEqual([])
+      expect(plan.profileCount).toBe(entries.length)
+      expect(plan.nativeUpdateCount).toBe(entries.length)
+      expect(plan.groups[0]?.targets.map((entry) => entry.ref)).toEqual(entries.map((entry) => entry.ref).sort())
+      const captured = new Map(plan.skills?.targets.map((entry) => [entry.ref, entry.firstmateInstanceContext]))
+      for (const step of plan.groups[0]!.steps) {
+        const target = step.targets[0]!
+        const context = captured.get(target.ref)
+        expect(context).toBeDefined()
+        expect(target.firstmateInstanceContext).toBe(context)
+        expect(step.command.args).toEqual([
+          "update", target.name, "--instance",
+          target.firstmateInstance?.mode === "legacy" ? "legacy" : target.firstmateInstance!.instanceId,
+          "--fmx-instance-context-json", canonicalFirstmateInstanceJson(context!),
+        ])
+      }
+      expect(run).toHaveBeenCalledTimes(pages.length)
+    } finally {
+      buildPlan.mockRestore()
+      createContext.mockRestore()
+      checkTarget.mockRestore()
+    }
+  })
+
+  it("keeps distinct executables, per-profile pins, and refused instances in a fixed ordered scope", () => {
+    const otherPin = "d".repeat(40)
+    const pstack = parseFirstmateInstanceDescriptorV1({
+      ...beta,
+      profile: "pstack-workers",
+      reference: { ...beta.reference, profile: "pstack-workers", instanceId: "44444444-4444-4444-8444-444444444444" },
+      root: "/state/firstmate/instances/44444444-4444-4444-8444-444444444444",
+      taskIdPrefix: "fi444abc",
+      runtime: { ...beta.runtime, required: { ...beta.runtime.required, sourceRevision: otherPin } },
+    })
+    if (pstack.mode !== "named") throw new Error("The pstack descriptor must be named.")
+    const pstackLegacy = parseFirstmateInstanceDescriptorV1({
+      ...missingLegacy, profile: "pstack-workers", root: "/state/firstmate/pstack-workers", taskIdPrefix: "fmp",
+    })
+    const catalog = firstmateCatalog(true, ["default", "pstack-workers"])
+    const entries = aggregateAdminInstanceProfiles({
+      ...catalog,
+      native: catalog.native.map((entry) => entry.name === "pstack-workers" ? {
+        ...entry, orchestration: { ...entry.orchestration!, sourceRevision: otherPin },
+      } : entry),
+    }, [
+      { ref: "native:fmx/default", state: "complete", instances: [missingLegacy, alpha, beta] },
+      { ref: "native:fmx/pstack-workers", state: "complete", instances: [pstackLegacy, pstack] },
+    ]).map((entry) => entry.firstmateInstance?.instanceId === beta.reference.instanceId && entry.name === "default"
+      ? { ...entry, commandPath: "/other/fmx" } : entry)
+    const originalContext = instanceSelection.createFirstmateInstanceContext(alpha, alpha.worktree.evidence, "entry-match")
+    const selected = entries.map((entry) => entry.firstmateInstance?.instanceId === alpha.reference.instanceId
+      ? { ...entry, firstmateInstanceContext: originalContext } : entry)
+    const versions = new Map(selected.map((entry) => [entry, {
+      installed: { kind: "known" as const, version: "earlier" },
+      latest: { kind: "known" as const, version: entry.orchestration!.sourceRevision },
+    }]))
+    const plan = harnessUpdateAllPlanFor([...selected].reverse(), (entry) => versions.get(entry))
+    expect(plan.groups).toHaveLength(2)
+    expect(plan.nativeUpdateCount).toBe(3)
+    expect(plan.profileCount).toBe(5)
+    expect(plan.unsupported.map(({ entry }) => entry.firstmateInstanceDescriptor)).toEqual([missingLegacy, pstackLegacy])
+    expect(plan.groups.map((group) => group.steps[0]?.command.executable)).toEqual(["/fixture/fmx", "/other/fmx"])
+    expect(plan.groups.map((group) => group.latestVersion)).toEqual([firstmatePin, firstmatePin])
+    const steps = plan.groups.flatMap((group) => group.steps)
+    expect(steps.map((step) => step.targets[0]?.name)).toEqual(["default", "pstack-workers", "default"])
+    const defaultContext = steps[0]!.targets[0]!.firstmateInstanceContext
+    expect(defaultContext).toBe(originalContext)
+    const pstackContext = steps[1]!.targets[0]!.firstmateInstanceContext
+    expect(pstackContext?.expectedRuntimeDigest).toBe(firstmateRuntimeVariantDigest(pstack.runtime.required))
+    expect(steps[1]!.command.args[1]).toBe("pstack-workers")
+    const before = plan.groups.map(harnessUpdateScopeKey)
+    selected.push(...instanceRows(namedInstanceRegistry(1)))
+    expect(plan.groups.map(harnessUpdateScopeKey)).toEqual(before)
+    expect(plan.nativeUpdateCount).toBe(3)
   })
 })
 

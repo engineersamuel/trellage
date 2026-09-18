@@ -14,7 +14,9 @@ import {
   type ContinuationLaunchReceipt,
   type ConversationSnapshot,
   type ConversationSource,
+  type FirstmateSubmissionReceiptV1,
 } from "@trellage/guide-core"
+import { firstmateAttemptProtected } from "./continuation-firstmate-state.ts"
 
 export const continuationStateEnvironmentVariable = "HERDR_PLUGIN_STATE_DIR"
 export const continuationRequestDirectory = "continuations/requests"
@@ -293,6 +295,45 @@ const protectedLaunchStates = new Set([
 
 const launchOutcomeStates = new Set([...protectedLaunchStates, ContinuationActionStatus.Failed])
 
+const firstmatePreparedIdentity = (action: ContinuationActionDraft): string => {
+  const {
+    selected: _selected, status: _status, firstmateDiagnostic: _diagnostic,
+    firstmateSubmission: submission, ...prepared
+  } = action
+  return JSON.stringify({ ...prepared, request: submission?.request })
+}
+
+const firstmateStatusTransitionAllowed = (current: ContinuationActionDraft, next: ContinuationActionDraft): boolean =>
+  current.status === ContinuationActionStatus.Accepted
+    ? next.status === ContinuationActionStatus.Accepted
+    : next.status === current.status ||
+      next.status === ContinuationActionStatus.SubmissionUnknown ||
+      next.status === ContinuationActionStatus.Accepted ||
+      (next.status === ContinuationActionStatus.SubmissionRejected && next.firstmateSubmission?.receipt?.state === "rejected")
+
+const protectFirstmateReceipt = (
+  receipt: FirstmateSubmissionReceiptV1 | null | undefined,
+  next: FirstmateSubmissionReceiptV1 | null | undefined,
+): void => {
+  if (receipt?.state === "handled" && next?.state !== "handled") {
+    fail(ContinuationStoreErrorCode.AttemptProtected, "a handled Firstmate receipt cannot lose its durable completion evidence.")
+  }
+  if (receipt?.state !== "saved" && receipt?.state !== "handled") return
+  if ((next?.state !== "saved" && next?.state !== "handled") || next.noteId !== receipt.noteId) {
+    fail(ContinuationStoreErrorCode.AttemptProtected, "a saved Firstmate note cannot lose or replace its acceptance evidence.")
+  }
+}
+
+const protectFirstmateAttempt = (current: ContinuationActionDraft, next: ContinuationActionDraft | undefined): void => {
+  if (next === undefined || firstmatePreparedIdentity(current) !== firstmatePreparedIdentity(next)) {
+    fail(ContinuationStoreErrorCode.AttemptProtected, "a submitting, accepted, or unknown Firstmate request and instance cannot be removed or edited.")
+  }
+  if (!firstmateStatusTransitionAllowed(current, next)) {
+    fail(ContinuationStoreErrorCode.AttemptProtected, "a saved Firstmate attempt cannot be reset, resent, or given a new request ID.")
+  }
+  protectFirstmateReceipt(current.firstmateSubmission?.receipt, next.firstmateSubmission?.receipt)
+}
+
 const preparedActionIdentity = (action: ContinuationActionDraft): string => {
   const { selected: _selected, status: _status, launch: _launch, ...prepared } = action
   return JSON.stringify(prepared)
@@ -329,7 +370,9 @@ const protectStartedAction = (current: ContinuationActionDraft, next: Continuati
 const protectSavedAttempts = (current: ContinuationDraft, next: ContinuationDraft): void => {
   for (const action of current.actions) {
     const updated = next.actions.find(({ actionId }) => actionId === action.actionId)
-    if (protectedLaunchStates.has(action.status)) {
+    if (firstmateAttemptProtected(action)) {
+      protectFirstmateAttempt(action, updated)
+    } else if (protectedLaunchStates.has(action.status)) {
       protectStartedAction(action, updated)
     } else if (
       updated?.status === ContinuationActionStatus.Launching &&

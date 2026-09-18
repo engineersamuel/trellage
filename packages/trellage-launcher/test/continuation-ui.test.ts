@@ -3,9 +3,13 @@ import {
   ContinuationActionStatus,
   ContinuationPlacementKind,
   type ContinuationDraft,
+  type GuideProjectTargetV1,
 } from "@trellage/guide-core"
 import { ContinuationUiController } from "../src/continuation-ui.tsx"
 import { RestrictedGuideModelError } from "../src/copilot-guide-provider.ts"
+import type { ContinuationServices } from "../src/continuation-services.ts"
+import { registeredGuideProjectTarget } from "../src/guide-context.ts"
+import { renderWorkflowBodyCandidate, workflowPromptFrame } from "../src/guide-workflow-prompt.ts"
 import {
   continuationAction,
   ContinuationField,
@@ -13,12 +17,24 @@ import {
   ContinuationSaveState,
   ContinuationScreen,
   ContinuationTextCommand,
+  invalidateContinuationPreparation,
 } from "../src/continuation-ui-state.ts"
 import {
   continuationFixtureDraft,
   createContinuationServiceFixture,
   ContinuationFixtureEventKind,
 } from "./helpers/continuation-ui-fixtures.ts"
+import {
+  firstmateFixtureDraft,
+  firstmateFleetReadiness,
+  firstmateOriginalIntent,
+  firstmatePreparedPrompt,
+  firstmateProfiles,
+  firstmateProjectC,
+  firstmateReceipt,
+  firstmateRequest,
+  preparedFirstmateFixtureDraft,
+} from "./helpers/continuation-firstmate-fixtures.ts"
 
 const deferred = <Value>() => {
   let resolve!: (value: Value) => void
@@ -42,6 +58,364 @@ const ready = async () => {
   await context.controller.changeAction("action-1", { selected: true })
   return context
 }
+
+const firstmateSetup = (initial = firstmateFixtureDraft()) => {
+  const fixture = createContinuationServiceFixture(initial)
+  const resolve = vi.fn<NonNullable<ContinuationServices["resolveProjectTarget"]>>().mockResolvedValue(firstmateProjectC())
+  const profile = initial.actions[0]?.profileRef === "native:fmx/pstack-workers" ? "pstack-workers" : "default"
+  const inspect = vi.fn<NonNullable<ContinuationServices["inspectFirstmate"]>>().mockResolvedValue(firstmateFleetReadiness(profile))
+  const confirm = vi.fn<NonNullable<ContinuationServices["confirmFirstmateAction"]>>().mockImplementation(
+    async (draft, actionId, action, expectedFleet, signal) => {
+      signal?.throwIfAborted()
+      const request = firstmateRequest(draft)
+      expect(request.expectedFleet).toEqual(expectedFleet)
+      return fixture.commit({
+        ...draft,
+        actions: draft.actions.map((edit) => edit.actionId !== actionId ? edit : {
+          ...edit, firstmateAction: action, status: ContinuationActionStatus.Prepared,
+          firstmateSubmission: { request, receipt: null },
+        }),
+      })
+    },
+  )
+  const services: ContinuationServices = {
+    ...fixture.services, profiles: firstmateProfiles, resolveProjectTarget: resolve,
+    inspectFirstmate: inspect, confirmFirstmateAction: confirm,
+  }
+  const prepare = vi.spyOn(services, "prepare").mockImplementation(async (draft, actionId, signal) => {
+    signal.throwIfAborted()
+    const { workflow } = firstmatePreparedPrompt(draft)
+    return fixture.commit({
+      ...draft,
+      actions: draft.actions.map((edit) => edit.actionId !== actionId ? edit : {
+        ...invalidateContinuationPreparation(edit),
+        originalIntent: edit.originalIntent ?? edit.brief,
+        candidates: ["Inspect boundaries.", "Trace failures.", "Check evidence."].map((body, index) => ({
+          id: `candidate-${index + 1}`,
+          ...renderWorkflowBodyCandidate(workflow, { title: `Choice ${index + 1}`, prompt: body, notes: "Synthetic guide preparation." }),
+        })),
+      }),
+    })
+  })
+  const controller = new ContinuationUiController(services, initial, true)
+  return { fixture, services, resolve, prepare, controller, inspect, confirm }
+}
+
+describe("Firstmate explicit action confirmation", () => {
+  test.each(["default", "pstack-workers"] as const)("persists %s Send work approval only after selection and confirmation", async (profile) => {
+    const { controller, fixture, services, inspect, confirm, prepare } = firstmateSetup(preparedFirstmateFixtureDraft(profile))
+    controller.resume()
+    await controller.confirmFirstmateAction()
+    expect(confirm).not.toHaveBeenCalled()
+    await controller.reviewFirstmateActions("action-1")
+    expect(inspect).toHaveBeenCalledOnce()
+    expect(controller.getSnapshot().screen).toBe(ContinuationScreen.FirstmateActions)
+    await controller.confirmFirstmateAction()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(controller.getSnapshot().error).toContain("Choose Start fleet")
+    controller.chooseFirstmateAction("submit")
+    expect(fixture.saved().actions[0]?.firstmateAction).toBeUndefined()
+    await controller.confirmFirstmateAction()
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(fixture.saved().actions[0]).toMatchObject({
+      firstmateAction: "submit", status: ContinuationActionStatus.Prepared,
+      firstmateSubmission: {
+        request: { originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(), workflowId: "review-project", expectedFleet: { profile } },
+        receipt: null,
+      },
+    })
+    expect(controller.getSnapshot().notice).toContain("saved locally, not sent")
+    expect(controller.getSnapshot().firstmateReadiness).toBeNull()
+    const resumed = new ContinuationUiController(services, fixture.saved(), true)
+    resumed.resume()
+    expect(resumed.getSnapshot().draft.actions[0]?.firstmateSubmission).toEqual(fixture.saved().actions[0]?.firstmateSubmission)
+    expect(fixture.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toBe(false)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  test("leaving the action confirmation screen does not approve the selected action", async () => {
+    const { controller, fixture, confirm } = firstmateSetup(preparedFirstmateFixtureDraft())
+    await controller.reviewFirstmateActions("action-1")
+    controller.chooseFirstmateAction("submit")
+    controller.view({ screen: ContinuationScreen.Action })
+    await controller.confirmFirstmateAction()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(fixture.saved().actions[0]?.firstmateSubmission).toBeUndefined()
+  })
+
+  test("blocks readiness inspection until the project and specification are confirmed", async () => {
+    const { controller, inspect, confirm } = firstmateSetup()
+    await controller.reviewFirstmateActions("action-1")
+    expect(controller.getSnapshot().error).toContain("confirm a project target")
+    expect(inspect).not.toHaveBeenCalled()
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  test("requires a running supervisor for Send work even when note saving is permitted", async () => {
+    const { controller, inspect, confirm } = firstmateSetup(preparedFirstmateFixtureDraft())
+    inspect.mockResolvedValue(firstmateFleetReadiness("default", "start"))
+    await controller.reviewFirstmateActions("action-1")
+    controller.chooseFirstmateAction("submit")
+    await controller.confirmFirstmateAction()
+    expect(controller.getSnapshot().firstmateChoice).toBeNull()
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  test("keeps a failed runtime reconfirmation unapproved and requires a new review", async () => {
+    const { controller, fixture, confirm } = firstmateSetup(preparedFirstmateFixtureDraft())
+    await controller.reviewFirstmateActions("action-1")
+    controller.chooseFirstmateAction("submit")
+    confirm.mockRejectedValue(new Error("The fleet identity changed after inspection."))
+    await controller.confirmFirstmateAction()
+    expect(fixture.saved().actions[0]?.firstmateSubmission).toBeUndefined()
+    expect(controller.getSnapshot()).toMatchObject({
+      screen: ContinuationScreen.Overview, firstmateReadiness: null,
+      error: expect.stringContaining("identity changed"),
+    })
+    await controller.confirmFirstmateAction()
+    expect(confirm).toHaveBeenCalledOnce()
+  })
+
+  test("clears approval and its request when the chosen specification changes", async () => {
+    const { controller, fixture } = firstmateSetup(preparedFirstmateFixtureDraft())
+    await controller.reviewFirstmateActions("action-1")
+    controller.chooseFirstmateAction("submit")
+    await controller.confirmFirstmateAction()
+    expect(fixture.saved().actions[0]?.firstmateAction).toBe("submit")
+    await controller.changeAction("action-1", { prompt: "Inspect an additional error path." })
+    expect(fixture.saved().actions[0]?.firstmateSubmission).toBeUndefined()
+    expect(fixture.saved().actions[0]?.firstmateAction).toBeUndefined()
+    expect(fixture.saved().actions[0]?.originalIntent).toBe(firstmateOriginalIntent)
+  })
+
+  test("cancels readiness inspection without saving action approval", async () => {
+    const { controller, fixture, inspect, confirm } = firstmateSetup(preparedFirstmateFixtureDraft())
+    const gate = deferred<Awaited<ReturnType<NonNullable<ContinuationServices["inspectFirstmate"]>>>>()
+    let signal: AbortSignal | undefined
+    inspect.mockImplementation((_draft, _id, received) => { signal = received; return gate.promise })
+    const pending = controller.reviewFirstmateActions("action-1")
+    controller.cancel()
+    expect(signal?.aborted).toBe(true)
+    gate.resolve(firstmateFleetReadiness())
+    await pending
+    expect(controller.getSnapshot()).toMatchObject({
+      operation: ContinuationOperation.Idle, firstmateReadiness: null, firstmateChoice: null,
+    })
+    expect(fixture.saved().actions[0]?.firstmateSubmission).toBeUndefined()
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  test("keeps legacy services without fleet actions closed to submission", async () => {
+    const initial = preparedFirstmateFixtureDraft()
+    const fixture = createContinuationServiceFixture(initial)
+    const controller = new ContinuationUiController({ ...fixture.services, profiles: firstmateProfiles }, initial)
+    await controller.reviewFirstmateActions("action-1")
+    expect(controller.getSnapshot().error).toContain("inspection is unavailable")
+    expect(fixture.events).toEqual([])
+  })
+})
+
+describe("Firstmate keyboard target and prompt controls", () => {
+  test("requires explicit inspection and confirmation, keeps C separate from source A, and persists consent through restart", async () => {
+    const { controller, fixture, services, resolve, prepare } = firstmateSetup()
+    controller.resume()
+    controller.openProjectTarget()
+    expect(resolve).not.toHaveBeenCalled()
+    await controller.prepare("action-1")
+    expect(prepare).not.toHaveBeenCalled()
+    expect(controller.getSnapshot()).toMatchObject({ screen: ContinuationScreen.Target, error: expect.stringContaining("confirm a project target") })
+    controller.edit(ContinuationField.ProjectPath)
+    expect(controller.getSnapshot().editor?.value).toBe("/fixture/source-a")
+    controller.text(ContinuationTextCommand.Clear)
+    controller.text(ContinuationTextCommand.Insert, "/fixture/project-c")
+    expect(await controller.commitEditor()).toBe(true)
+    expect(resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshot: expect.objectContaining({ source: expect.objectContaining({ cwd: "/fixture/source-a" }) }) }),
+      "action-1", { kind: "local", path: "/fixture/project-c" }, expect.any(AbortSignal),
+    )
+    expect(fixture.saved().actions[0]).toMatchObject({ projectTarget: firstmateProjectC(), projectTargetConfirmed: false })
+    await controller.prepare("action-1")
+    expect(prepare).not.toHaveBeenCalled()
+    expect(await controller.confirmProjectTarget("action-1")).toBe(true)
+    expect(fixture.saved().actions[0]?.projectTargetConfirmed).toBe(true)
+    const resumed = new ContinuationUiController(services, fixture.saved(), true)
+    resumed.resume()
+    expect(prepare).not.toHaveBeenCalled()
+    expect(resumed.getSnapshot().draft.actions[0]?.projectTarget).toEqual(firstmateProjectC())
+    await resumed.prepare("action-1")
+    expect(prepare.mock.calls[0]?.[0].actions[0]).toMatchObject({
+      originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(), projectTargetConfirmed: true,
+    })
+    expect(resumed.getSnapshot().screen).toBe(ContinuationScreen.Candidates)
+    expect(fixture.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toBe(false)
+  })
+
+  test("registered names use the human name editor without inventing Git facts", async () => {
+    const { controller, fixture, resolve } = firstmateSetup()
+    resolve.mockImplementation(async (_draft, _id, selection) => {
+      if (selection.kind !== "registered") throw new Error("Expected a registered project selection.")
+      return registeredGuideProjectTarget(selection.name)
+    })
+    controller.openProjectTarget()
+    controller.edit(ContinuationField.ProjectName)
+    controller.text(ContinuationTextCommand.Insert, "registered-c")
+    expect(await controller.commitEditor()).toBe(true)
+    expect(fixture.saved().actions[0]).toMatchObject({
+      projectTarget: { projectName: "registered-c", source: null, baseRevision: null, dirty: null },
+      projectTargetConfirmed: false,
+    })
+    expect(await controller.confirmProjectTarget("action-1")).toBe(true)
+  })
+
+  test("fleet target selection is blocked for project work before the resolver runs", async () => {
+    const { controller, fixture, resolve } = firstmateSetup()
+    controller.openProjectTarget()
+    expect(await controller.proposeProjectTarget("action-1", { kind: "fleet" })).toBe(false)
+    expect(resolve).not.toHaveBeenCalled()
+    expect(controller.getSnapshot().error).toContain("requires a project")
+    expect(await controller.changeAction("action-1", { workflowId: "review-fleet-status" })).toBe(true)
+    resolve.mockResolvedValue(null)
+    expect(await controller.proposeProjectTarget("action-1", { kind: "fleet" })).toBe(true)
+    expect(await controller.confirmProjectTarget("action-1")).toBe(true)
+    expect(fixture.saved().actions[0]).toMatchObject({ workflowId: "review-fleet-status", projectTarget: null, projectTargetConfirmed: true })
+  })
+
+  test("cancelling a target text edit preserves the old confirmed target and prompt", () => {
+    const initial = preparedFirstmateFixtureDraft()
+    const { controller, fixture, resolve } = firstmateSetup(initial)
+    controller.openProjectTarget()
+    controller.edit(ContinuationField.ProjectPath)
+    controller.text(ContinuationTextCommand.Clear)
+    controller.text(ContinuationTextCommand.Insert, "/fixture/another-project")
+    controller.cancelTargetEditor()
+    expect(controller.getSnapshot().editor).toBeNull()
+    expect(controller.getSnapshot().draft.actions[0]).toEqual(initial.actions[0])
+    expect(fixture.saved().actions[0]).toEqual(initial.actions[0])
+    expect(resolve).not.toHaveBeenCalled()
+    expect(fixture.events).toEqual([])
+  })
+
+  test("a failed target inspection keeps the edit buffer and does not clear confirmed context", async () => {
+    const initial = preparedFirstmateFixtureDraft()
+    const { controller, fixture, resolve } = firstmateSetup(initial)
+    resolve.mockRejectedValue(new Error("The chosen path is not a Git repository."))
+    controller.openProjectTarget()
+    controller.edit(ContinuationField.ProjectPath)
+    controller.text(ContinuationTextCommand.Clear)
+    controller.text(ContinuationTextCommand.Insert, "/fixture/not-a-repo")
+    expect(await controller.commitEditor()).toBe(false)
+    expect(controller.getSnapshot().editor?.value).toBe("/fixture/not-a-repo")
+    expect(fixture.saved().actions[0]).toEqual(initial.actions[0])
+    expect(controller.getSnapshot().error).toContain("not a Git repository")
+  })
+
+  test("a failed target save can be retried without losing the path buffer or confirming it", async () => {
+    const { controller, fixture, services, resolve, prepare } = firstmateSetup()
+    const save = services.save
+    services.save = vi.fn().mockRejectedValueOnce(new Error("Disk is full.")).mockImplementation(save)
+    controller.openProjectTarget()
+    controller.edit(ContinuationField.ProjectPath)
+    controller.text(ContinuationTextCommand.Clear)
+    controller.text(ContinuationTextCommand.Insert, "/fixture/project-c")
+    expect(await controller.commitEditor()).toBe(false)
+    expect(controller.getSnapshot()).toMatchObject({
+      saveState: ContinuationSaveState.Failed,
+      editor: { value: "/fixture/project-c" },
+      draft: { actions: [expect.objectContaining({ projectTarget: firstmateProjectC(), projectTargetConfirmed: false }), expect.anything(), expect.anything(), expect.anything(), expect.anything()] },
+    })
+    expect(fixture.saved().actions[0]?.projectTarget).toBeUndefined()
+    expect(await controller.save()).toBe(true)
+    expect(fixture.saved().actions[0]).toMatchObject({ projectTarget: firstmateProjectC(), projectTargetConfirmed: false })
+    expect(controller.getSnapshot().editor).toBeNull()
+    expect(resolve).toHaveBeenCalledTimes(2)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  test("cancels pending read-only target resolution before any proposal is saved", async () => {
+    const { controller, fixture, resolve } = firstmateSetup()
+    const gate = deferred<GuideProjectTargetV1 | null>()
+    let signal: AbortSignal | undefined
+    resolve.mockImplementation((_draft, _id, _selection, received) => { signal = received; return gate.promise })
+    controller.openProjectTarget()
+    const pending = controller.proposeProjectTarget("action-1", { kind: "current" })
+    expect(controller.getSnapshot().operation).toBe(ContinuationOperation.ResolveTarget)
+    controller.cancel()
+    expect(signal?.aborted).toBe(true)
+    gate.resolve(firstmateProjectC())
+    expect(await pending).toBe(false)
+    expect(fixture.saved().actions[0]?.projectTarget).toBeUndefined()
+    expect(fixture.events).toEqual([])
+    expect(controller.getSnapshot()).toMatchObject({ operation: ContinuationOperation.Idle, cancelling: false })
+  })
+
+  test("legacy services without target resolution fail closed without a model or launch call", async () => {
+    const initial = firstmateFixtureDraft()
+    const fixture = createContinuationServiceFixture(initial)
+    const services = { ...fixture.services, profiles: firstmateProfiles }
+    const controller = new ContinuationUiController(services, initial)
+    expect(await controller.proposeProjectTarget("action-1", { kind: "current" })).toBe(false)
+    expect(controller.getSnapshot().error).toContain("resolution is unavailable")
+    expect(fixture.events).toEqual([])
+  })
+
+  test("direct editing exposes only the fixed-frame body and preserves original intent and selected candidate across restart", async () => {
+    const initial = preparedFirstmateFixtureDraft()
+    const { controller, fixture, services, prepare } = firstmateSetup(initial)
+    controller.view({ screen: ContinuationScreen.Prompt })
+    controller.edit(ContinuationField.Prompt)
+    expect(controller.getSnapshot().editor?.value).toBe("Trace failure paths.")
+    const body = "Inspect only the committed error paths."
+    controller.text(ContinuationTextCommand.Clear)
+    controller.text(ContinuationTextCommand.Insert, body)
+    expect(await controller.commitEditor()).toBe(true)
+    const frame = workflowPromptFrame(firstmatePreparedPrompt(initial).workflow)
+    expect(fixture.saved().actions[0]).toMatchObject({
+      originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(), projectTargetConfirmed: true,
+      selectedCandidateId: "candidate-2", prompt: `${frame.beforeBody}${body}${frame.afterBody}`,
+    })
+    expect(prepare).not.toHaveBeenCalled()
+    const resumed = new ContinuationUiController(services, fixture.saved(), true)
+    resumed.edit(ContinuationField.Prompt)
+    expect(resumed.getSnapshot().editor?.value).toBe(body)
+    expect(fixture.events.some(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toBe(false)
+  })
+
+  test("an oversized body cannot bypass the final 8000-character limit through direct action changes", async () => {
+    const initial = preparedFirstmateFixtureDraft()
+    const { controller, fixture } = firstmateSetup(initial)
+    const frame = workflowPromptFrame(firstmatePreparedPrompt(initial).workflow)
+    const oversized = "x".repeat(8001 - frame.beforeBody.length - frame.afterBody.length)
+    expect(await controller.changeAction("action-1", { prompt: oversized })).toBe(false)
+    expect(controller.getSnapshot().error).toContain("8000")
+    expect(fixture.saved().actions[0]).toEqual(initial.actions[0])
+  })
+
+  test.each([
+    ContinuationActionStatus.Submitting,
+    ContinuationActionStatus.Accepted,
+    ContinuationActionStatus.SubmissionUnknown,
+  ])("keeps the payload and receipt immutable in %s", async (status) => {
+    const prepared = preparedFirstmateFixtureDraft()
+    const request = firstmateRequest(prepared)
+    const initial = {
+      ...prepared,
+      actions: prepared.actions.map((edit, index) => index > 0 ? edit : {
+        ...edit, status, firstmateSubmission: { request, receipt: status === ContinuationActionStatus.Accepted ? firstmateReceipt(request, "handled") : null },
+      }),
+    }
+    const { controller, fixture, resolve, prepare } = firstmateSetup(initial)
+    controller.edit(ContinuationField.Brief)
+    expect(controller.getSnapshot().editor).toBeNull()
+    await controller.prepare("action-1")
+    expect(prepare).not.toHaveBeenCalled()
+    controller.openProjectTarget()
+    expect(await controller.proposeProjectTarget("action-1", { kind: "current" })).toBe(false)
+    expect(resolve).not.toHaveBeenCalled()
+    expect(await controller.chooseCandidate("action-1", "candidate-1")).toBe(false)
+    expect(await controller.changeAction("action-1", { selected: false })).toBe(true)
+    expect(fixture.saved().actions[0]?.firstmateSubmission).toEqual(initial.actions[0]?.firstmateSubmission)
+  })
+})
 
 describe("explicit continuation effects", () => {
   test("opening, navigating, resuming and closing make zero inference calls", async () => {

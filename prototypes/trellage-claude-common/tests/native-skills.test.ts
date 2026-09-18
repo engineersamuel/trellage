@@ -898,6 +898,7 @@ test("Firstmate keeps both fleets idle and validates worker ownership before it 
   const before = await treeState(profile.targets[0].target)
   const lock = path.join(profile.root, "locks/session")
   await write(path.join(lock, "owner"), `${fixture.descriptor.owner}\n`)
+  await write(path.join(lock, "backend"), "tmux\n")
   await write(path.join(lock, "pid"), `${process.pid}\n`)
   fails(run(fixture, ["skills-update", profile.name]), /fleet is active/)
   assert.deepEqual(await treeState(profile.targets[0].target), before)

@@ -1,0 +1,14 @@
+--- a/bin/fm-remote-home-seed.sh
++++ b/bin/fm-remote-home-seed.sh
+@@ -23,6 +23,11 @@
+ # Known provisioning failure rolls the registry back. SSH status 255 preserves
+ # the route and any newly scaffolded brief because completion is unknown and a same-route rerun converges.
+ set -eu
++
++if [ -n "${FMX_WORKER_LAUNCHER:-}" ] || [ -e "${FM_HOME:-}/.fmx-managed" ]; then
++  echo "error: fmx does not manage secondmate homes or remote provisioning" >&2
++  exit 1
++fi
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"

@@ -1,7 +1,8 @@
 #!/usr/bin/env -S BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=/dev/null
 
-import { execFile, spawn } from "node:child_process"
-import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
+import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { AsyncLocalStorage } from "node:async_hooks"
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -90,6 +91,142 @@ const safeRepository = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+
 const maxSkills = 200
 const maxSnapshotBytes = 100 * 1024 * 1024
 export const readOnlyStageSupported = true
+const firstmateLease = new AsyncLocalStorage<boolean>()
+interface SkillOperation {
+  readonly controller: AbortController
+  readonly children: Set<number>
+}
+const skillOperation = new AsyncLocalStorage<SkillOperation>()
+
+const affectsFirstmateCache = async (destination: string) => {
+  const roots = [path.join(os.homedir(), ".local/share")]
+  if (process.env.XDG_DATA_HOME) roots.push(process.env.XDG_DATA_HOME)
+  const common = roots.map((root) => path.resolve(root, "trellage/common"))
+  const target = path.resolve(destination)
+  let ancestor = target
+  while (!(await lstat(ancestor).catch(() => undefined))) ancestor = path.dirname(ancestor)
+  const actual = path.join(await realpath(ancestor), path.relative(ancestor, target))
+  const affects = [target, actual].some((candidate) => common.some((root) =>
+    candidate === root || candidate.startsWith(`${root}${path.sep}`) || root.startsWith(`${candidate}${path.sep}`)))
+  if (affects && actual !== target) fail("shared skills mutation cannot use a redirected path")
+  return affects
+}
+
+const signalSkillChild = (pid: number | undefined, signal: NodeJS.Signals) => {
+  if (pid === undefined || !Number.isSafeInteger(pid) || pid < 1) return
+  try {
+    process.kill(-pid, signal)
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error
+  }
+}
+
+const trackSkillChild = (child: ChildProcess) => {
+  const scope = skillOperation.getStore()
+  if (!scope || !child.pid) return
+  scope.children.add(child.pid)
+  child.once("close", () => {
+    signalSkillChild(child.pid, "SIGKILL")
+    if (child.pid !== undefined) scope.children.delete(child.pid)
+  })
+  if (scope.controller.signal.aborted) signalSkillChild(child.pid, "SIGTERM")
+}
+
+const withSkillOperation = async <T>(operation: () => Promise<T>): Promise<T> => {
+  if (skillOperation.getStore()) return operation()
+  const scope: SkillOperation = { controller: new AbortController(), children: new Set() }
+  let killTimer: ReturnType<typeof setTimeout> | undefined
+  const abort = () => {
+    scope.controller.abort(new FloatingSkillsError("skills mutation cancelled"))
+    for (const pid of scope.children) signalSkillChild(pid, "SIGTERM")
+    killTimer ??= setTimeout(() => {
+      for (const pid of scope.children) signalSkillChild(pid, "SIGKILL")
+    }, 2000)
+  }
+  process.on("SIGTERM", abort)
+  process.on("SIGINT", abort)
+  process.on("SIGHUP", abort)
+  try {
+    return await skillOperation.run(scope, operation)
+  } finally {
+    clearTimeout(killTimer)
+    for (const pid of scope.children) signalSkillChild(pid, "SIGKILL")
+    process.removeListener("SIGTERM", abort)
+    process.removeListener("SIGINT", abort)
+    process.removeListener("SIGHUP", abort)
+  }
+}
+
+const firstmateGuard = async () => {
+  const candidates = [
+    path.join(scriptDirectory, "fmx-registry.py"),
+    path.resolve(scriptDirectory, "../prototypes/trellage-firstmate-profiles/lib/fmx-registry.py"),
+  ]
+  for (const candidate of candidates) {
+    const info = await lstat(candidate).catch(() => undefined)
+    if (info?.isFile() && !info.isSymbolicLink() && info.nlink === 1
+      && info.uid === process.getuid?.() && !(info.mode & 0o022) && await realpath(candidate) === path.resolve(candidate)) return candidate
+  }
+  fail("registry-aware Firstmate shared writer support is missing; install the complete Native writer set")
+}
+
+const delegatedFirstmateLease = async <T>(guard: string, operation: () => Promise<T>): Promise<T> => {
+  const fd = Number(process.env.FMX_SHARED_LEASE_FD)
+  if (!Number.isSafeInteger(fd) || fd < 3 || fd > 4096) fail("invalid inherited Firstmate lease")
+  const child = spawn("python3", [guard, "check-delegation"], {
+    env: { ...process.env, FMX_SHARED_LEASE_FD: "3" }, stdio: ["ignore", "pipe", "pipe", fd],
+  })
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject)
+    child.once("exit", (code) => code === 0 ? resolve() : reject(new FloatingSkillsError("Firstmate shared lease delegation failed")))
+  })
+  return firstmateLease.run(true, () => withSkillOperation(operation))
+}
+
+const withFirstmateLease = async <T>(destination: string, operation: () => Promise<T>): Promise<T> => {
+  if (firstmateLease.getStore()) return operation()
+  if (!(await affectsFirstmateCache(destination))) return withSkillOperation(operation)
+  const guard = await firstmateGuard()
+  if (process.env.FMX_SHARED_LEASE_FD) return delegatedFirstmateLease(guard, operation)
+  const child = spawn("python3", [guard, "lease-pipe"], { stdio: ["pipe", "pipe", "pipe"] })
+  let diagnostic = ""
+  let releasing = false
+  child.stderr.on("data", (data) => { diagnostic = (diagnostic + data.toString()).slice(0, 4000) })
+  child.stdin.on("error", () => {})
+  const completed = new Promise((resolve, reject) => {
+    child.once("error", reject)
+    child.once("exit", (code) => resolve(code))
+  })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let response = ""
+      child.stdout.on("data", (data) => {
+        response += data.toString()
+        if (response.length > 64) reject(new FloatingSkillsError("invalid Firstmate lease response"))
+        else if (response.includes("\n")) response === "ready\n"
+          ? resolve() : reject(new FloatingSkillsError("invalid Firstmate lease response"))
+      })
+      completed.then(() => reject(new FloatingSkillsError(diagnostic.trim() || "Firstmate shared maintenance refused")), reject)
+    })
+    return await firstmateLease.run(true, () => withSkillOperation(async () => {
+      const scope = skillOperation.getStore()
+      if (scope === undefined) return fail("Firstmate shared writer operation is missing")
+      completed.then(() => {
+        if (!releasing) {
+          scope.controller.abort(new FloatingSkillsError("Firstmate shared writer lease ended before publication"))
+          for (const pid of scope.children) signalSkillChild(pid, "SIGKILL")
+        }
+      })
+      const result = await operation()
+      scope.controller.signal.throwIfAborted()
+      return result
+    }))
+  } finally {
+    releasing = true
+    child.stdin.end()
+    await completed
+  }
+}
 
 export class FloatingSkillsError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -249,8 +386,43 @@ export const resolvePlan = (catalog: SkillCatalog, bundleIds: readonly string[])
   })
 }
 
+const runOwned = async (command: string, args: readonly string[], options: RunOptions) => {
+  const child = spawn(command, args, {
+    cwd: options.cwd, env: options.env, signal: options.signal, detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  })
+  trackSkillChild(child)
+  const closed = new Promise((resolve) => child.once("close", resolve))
+  const output: Record<"stdout" | "stderr", Buffer[]> = { stdout: [], stderr: [] }
+  const bytes = { stdout: 0, stderr: 0 }
+  try {
+    return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      for (const stream of ["stdout", "stderr"] as const) {
+        child[stream].on("data", (data: Buffer) => {
+          bytes[stream] += data.length
+          if (bytes[stream] > 50 * 1024 * 1024) reject(new FloatingSkillsError("skill command output exceeds its limit"))
+          else output[stream].push(data)
+        })
+      }
+      child.once("error", reject)
+      child.once("close", (code) => {
+        const result = {
+          stdout: Buffer.concat(output.stdout).toString("utf8"),
+          stderr: Buffer.concat(output.stderr).toString("utf8"),
+        }
+        if (code === 0) resolve(result)
+        else reject(Object.assign(new FloatingSkillsError("skill command did not complete"), result))
+      })
+    })
+  } finally {
+    signalSkillChild(child.pid, "SIGKILL")
+    await closed
+  }
+}
+
 const run = async (command: string, args: readonly string[], options: RunOptions = {}) => {
   try {
+    if (skillOperation.getStore()) return await runOwned(command, args, options)
     return await execFilePromise(command, args, {
       cwd: options.cwd,
       encoding: "utf8",
@@ -272,6 +444,7 @@ const runInteractive = (command: string, args: readonly string[], cwd: string) =
     const child = spawn(command, args, {
       cwd,
       stdio: "inherit",
+      detached: Boolean(skillOperation.getStore()),
       env: {
         ...process.env,
         CI: "1",
@@ -280,6 +453,7 @@ const runInteractive = (command: string, args: readonly string[], cwd: string) =
         npm_config_ignore_scripts: "true",
       },
     })
+    trackSkillChild(child)
     child.once("error", reject)
     child.once("exit", (code, signal) => {
       if (code === 0) resolve()
@@ -490,14 +664,13 @@ const materializeSource = async ({
   return { bytes, alwaysOn }
 }
 
-export const stageLatest = async ({
-  catalog,
-  bundleIds,
-  destination,
-  skillsCli,
-  readOnly = false,
-  signal,
-}: StageOptions) => {
+export const stageLatest = (options: StageOptions) =>
+  withFirstmateLease(options.destination, () => stageLatestOwned(options))
+
+const stageLatestOwned = async ({ catalog, bundleIds, destination, skillsCli, readOnly = false, signal }: StageOptions) => {
+  const cancellation = skillOperation.getStore()?.controller.signal
+  signal = signal && cancellation ? AbortSignal.any([signal, cancellation]) : signal ?? cancellation
+  signal?.throwIfAborted()
   const plan = resolvePlan(catalog, bundleIds)
   const parent = path.dirname(path.resolve(destination))
   await mkdir(parent, { recursive: true })
@@ -533,6 +706,7 @@ export const stageLatest = async ({
         .map(({ name, instructions }) => `# Trellage managed always-on skill: ${name}\n\n${instructions}\n`)
         .join(""),
     )
+    signal?.throwIfAborted()
     await publishDirectory(snapshot, path.resolve(destination))
     return sortedNames
   } finally {
@@ -826,6 +1000,7 @@ const syncSnapshotUnlocked = async (sourceSkills: string, sourceNames: readonly 
   await mkdir(backup)
   try {
     await stageTargetSkills(sourceSkills, sourceNames, staged)
+    skillOperation.getStore()?.controller.signal.throwIfAborted()
     await commitTargetSkills({
       targetPath,
       sourceNames,
@@ -875,7 +1050,10 @@ export const verifyTargetExclusions = async (target: string, excluded: readonly 
   await verifyExcludedSkills(targetPath, excluded, removable)
 }
 
-export const syncSnapshot = async (snapshot: string, target: string, excluded: readonly string[] = []) => {
+export const syncSnapshot = (snapshot: string, target: string, excluded: readonly string[] = []) =>
+  withFirstmateLease(target, () => syncSnapshotOwned(snapshot, target, excluded))
+
+const syncSnapshotOwned = async (snapshot: string, target: string, excluded: readonly string[]) => {
   const snapshotPath = path.resolve(snapshot)
   const targetPath = path.resolve(target)
   const sourceSkills = path.join(snapshotPath, "skills")
@@ -949,7 +1127,7 @@ const snapshotsMatch = async (left: string, right: string) => {
 }
 
 export const checkNative = ({ catalog, bundleIds, cache, skillsCli }: NativeOptions) =>
-  withLock(`${cache}.lock`, async () => {
+  withFirstmateLease(cache, () => withLock(`${cache}.lock`, async () => {
     const cachePath = path.resolve(cache)
     const cacheStatus = await lstat(cachePath).catch(() => undefined)
     if (cacheStatus === undefined) return false
@@ -969,7 +1147,7 @@ export const checkNative = ({ catalog, bundleIds, cache, skillsCli }: NativeOpti
     } finally {
       await rm(temporary, { recursive: true, force: true })
     }
-  })
+  }))
 
 const checkSharedVariant = async (
   catalog: SkillCatalog,
@@ -1242,37 +1420,26 @@ const ensureCommand = async (
   })
 }
 
-export const ensureNative = async ({
-  catalog,
-  bundleIds,
-  cache,
-  target,
-  skillsCli,
-}: NativeOptions & { target: string }) => {
-  await withLock(`${cache}.lock`, async () => {
-    const status = await lstat(cache).catch(() => undefined)
-    if (status === undefined) {
-      await stageLatest({
-        catalog,
-        bundleIds,
-        destination: cache,
-        skillsCli,
+export const ensureNative = async ({ catalog, bundleIds, cache, target, skillsCli }: NativeOptions & { target: string }) => {
+  const status = await lstat(cache).catch(() => undefined)
+  if (status === undefined) {
+    await withFirstmateLease(cache, () =>
+      withLock(`${cache}.lock`, async () => {
+        if (await lstat(cache).catch(() => undefined)) return
+        await stageLatest({ catalog, bundleIds, destination: cache, skillsCli })
       })
-    } else if (!status.isDirectory() || status.isSymbolicLink()) {
-      fail(`invalid skill cache: ${cache}`)
-    }
-  })
+    )
+  } else if (!status.isDirectory() || status.isSymbolicLink()) {
+    fail(`invalid skill cache: ${cache}`)
+  }
   await syncSnapshot(cache, target)
 }
 
 export const updateNative = ({ catalog, bundleIds, cache, skillsCli }: NativeOptions) =>
-  withLock(`${cache}.lock`, () =>
-    stageLatest({
-      catalog,
-      bundleIds,
-      destination: cache,
-      skillsCli,
-    }),
+  withFirstmateLease(cache, () =>
+    withLock(`${cache}.lock`, () =>
+      stageLatest({ catalog, bundleIds, destination: cache, skillsCli }),
+    ),
   )
 
 const updateCommand = (catalog: SkillCatalog, bundles: readonly string[], cache: string, options: CommandOptions) =>

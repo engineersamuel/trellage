@@ -560,12 +560,14 @@ describe("Owned source installation", () => {
     expect(existsSync(path.join(destination, "prototypes/example/.env.local"))).toBe(false)
   })
 
-  test.each(["floating", "environment"] as const)("migrates only the exact legacy %s layout", (legacy) => {
+  test.each(["floating", "floating-firstmate", "environment"] as const)("migrates only the exact legacy %s layout", (layout) => {
+    const legacy = layout === "floating-firstmate" ? "floating" : layout
     const { root, destination, home } = sourceFixture()
     mkdirSync(destination)
     if (legacy === "floating") {
       write(destination, "floating-skills.mjs", "legacy helper")
       write(destination, "skills.json", "{}")
+      if (layout === "floating-firstmate") write(destination, "fmx-registry.py", "# legacy shared writer guard\n")
     } else {
       write(destination, ".managed-by-trellage", "trellage-native-environment-runtime-v1\n")
       write(destination, "native-environment.mjs", "legacy helper")

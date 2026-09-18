@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { access, mkdtemp, rm } from "node:fs/promises"
+import { access, mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -13,6 +13,7 @@ import {
   candidateTitles,
   codebaseIntent,
   fixtureBranches,
+  fixtureBodyBudget,
   fixtureIntent,
   fixtureProfile,
   fixtureProfiles,
@@ -32,6 +33,11 @@ import { goalArtifact, goalArtifactQuestion, goalCriteria, revisedGoalIntent } f
 import { goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const entry = fileURLToPath(new URL("./fixtures/guide-integration.tsx", import.meta.url))
+import { preparationPlan, preparationRevision } from "./helpers/firstmate-preparation-fixtures.ts"
+import { alpha, beta, instanceOrchestration, instanceProfile } from "./helpers/firstmate-instance-flow.ts"
+import { canonicalFirstmateInstanceJson } from "@trellage/guide-core"
+
+const firstmateEntry = fileURLToPath(new URL("./fixtures/guide-firstmate-preparation.tsx", import.meta.url))
 
 const it = test.extend<{ guide: GuideTerminal }>({
   guide: async ({ onTestFailed }, use) => {
@@ -109,6 +115,8 @@ const expectedJob = (root: string, selection: Selection): QueuedGuideJob => {
     command: { executable: profile.commandPath, args: [...launchArguments[selection.profileId], prompt] },
     promptDelivery: "command",
     placement: selection.placement,
+    ...(selection.placement.kind === "new-worktree" || selection.placement.kind === "existing-worktree"
+      ? { primaryCheckoutPath: root } : {}),
   }
 }
 
@@ -162,7 +170,10 @@ const assertDataflow = (
       const profile = fixtureProfile(selection.profileId)
       return {
         kind: "generate",
-        input: { intent: selection.intent, profileRef: profile.ref, workflowId: profile.workflowId },
+        input: {
+          intent: selection.intent, profileRef: profile.ref, workflowId: profile.workflowId,
+          bodyBudget: fixtureBodyBudget(profile),
+        },
         candidates: generatedCandidates(profile, selection.intent),
       }
     }),
@@ -177,6 +188,7 @@ const assertDataflow = (
         input: {
           profileRef: profile.ref,
           targetTool: profile.harness,
+          bodyBudget: fixtureBodyBudget(profile),
           candidates,
           ...(profile.skill === undefined
             ? {}
@@ -232,6 +244,7 @@ const expectedAllocation = (root: string, selection: Selection, index: number) =
       ],
     }
   }
+  assert(placement.kind === "existing-worktree" || placement.kind === "new-worktree")
   const existing = placement.kind === "existing-worktree"
   return {
     cwd: existing ? path.join(root, "worktrees", "existing-canonical") : path.join(root, "worktrees", placement.branch),
@@ -1582,3 +1595,113 @@ it.for([FixtureMode.DirtyWorktree, FixtureMode.ExistingWorktree])(
     assertDataflow(report, [selection])
   },
 )
+
+test("Firstmate preparation reviews and installs only an approved plan in an 80x24 terminal", async ({ onTestFailed }) => {
+  const guide = await createGuideTerminal(firstmateEntry, onTestFailed)
+  const intent = "Review project C. Keep the prompt. Do not merge."
+  try {
+    await guide.start(FixtureMode.Terminal, 80, 24)
+    await enterIntent(guide, intent)
+    await guide.pressAndWait(enter, "Select the Firstmate project")
+    await guide.pressAndWait("n", "Registered Firstmate project name")
+    await guide.pressAndWait("project-c", "project-c")
+    await guide.pressAndWait(enter, "Confirm Firstmate target")
+    await guide.pressAndWait(enter, "Prompt candidates", "Command:")
+    expect(commandEvents(await guide.events())).toEqual([])
+    await guide.pressAndWait(enter, "Choose a Firstmate action", "i review tools", "PgUp/PgDn details")
+    expect(guide.text()).toContain("Missing managed tools: herdr 0.14.0, bv 0.9.3.")
+    expect(guide.text()).not.toContain("inventory never installs")
+    expect(commandEvents(await guide.events()).map(({ args }) => args)).toEqual([
+      ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
+    ])
+
+    await guide.pressAndWait("i", "Review managed-tool installation", "❯ Cancel", "b/Esc cancel")
+    for (const value of [
+      preparationPlan.identity, preparationPlan.destination, ...preparationPlan.sources, ...preparationPlan.statePaths,
+      ...preparationPlan.tools.map(({ name, version }) => `${name} ${version}`),
+    ]) expect(guide.text()).toContain(value)
+    await guide.pressAndWait("\u001b[6~", "Approval applies only", "No global npm packages, hooks, or authentication changes.", "Enter confirm")
+    await guide.pressAndWait("b", "Choose a Firstmate action", "i review tools")
+    expect(commandEvents(await guide.events())).toHaveLength(1)
+    await guide.pressAndWait("r", "Choose a Firstmate action")
+    await expect.poll(async () => commandEvents(await guide.events()).length).toBe(2)
+    await guide.pressAndWait("i", "Review managed-tool installation", "❯ Cancel")
+    await guide.pressAndWait("j", "❯ Install listed managed tools")
+    await guide.pressAndWait(enter, "Preparation: ready.", "Recover fleet · allowed", "PgUp/PgDn details")
+    expect(guide.text()).not.toContain("Batch queue.")
+    await guide.pressAndWait("b", "Prompt candidates", "Command:")
+    await guide.pressAndWait("e", "Edit prompt", "Check bounded failures.")
+    await guide.pressAndWait("\u001b", "Command:")
+    const report = await guide.finish("q", 130)
+    expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
+    expect(commandEvents(report.events).map(({ executable, args }) => ({ executable, args }))).toEqual([
+      { executable: path.join(guide.root, "bin", "fmx"), args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision] },
+      { executable: path.join(guide.root, "bin", "fmx"), args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision] },
+      {
+        executable: path.join(guide.root, "bin", "fmx"),
+        args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision, "--install-prerequisites", preparationPlan.identity],
+      },
+    ])
+    const generated = report.events.filter((event) => event.kind === "generate")
+    expect(generated).toHaveLength(1)
+    expect(generated[0]?.input).toMatchObject({ intent, profileRef: "native:fmx/default", workflowId: "review-project" })
+    expect(report.events.filter((event) => event.kind === "interactive-launch")).toEqual([])
+  } finally {
+    await guide.close()
+  }
+}, 30_000)
+
+test("Firstmate instance selection and refresh retain the request in an 80x24 terminal", async ({ onTestFailed }) => {
+  const guide = await createGuideTerminal(firstmateEntry, onTestFailed, { TRELLAGE_TEST_NAMED_INSTANCES: "1" })
+  const intent = "Review project C. Keep this request unchanged."
+  try {
+    await guide.start(FixtureMode.Terminal, 80, 24)
+    await enterIntent(guide, intent)
+    await guide.pressAndWait(enter, "Choose a Firstmate instance", "Focus: alpha", "Esc Back")
+    expect(commandEvents(await guide.events()).every(({ args }) => args[0] === "instances")).toBe(true)
+    await guide.pressAndWait(enter, "Confirm Firstmate instance", "Cancel selected")
+    await guide.pressAndWait(enter, "Choose a Firstmate instance", "Focus: alpha")
+    await guide.pressAndWait("j", "Focus: beta")
+    await guide.pressAndWait(enter, "Confirm Firstmate instance", "Cancel selected")
+    await guide.pressAndWait("j", "Use this instance selected")
+    await guide.pressAndWait(enter, "Select the Firstmate project")
+    await guide.pressAndWait("n", "Registered Firstmate project name")
+    await guide.pressAndWait("project-c", "project-c")
+    await guide.pressAndWait(enter, "Confirm Firstmate target")
+    await guide.pressAndWait(enter, "Prompt candidates", "Command:", "f instance")
+    await guide.pressAndWait(enter, "Choose a Firstmate action", "Send work to the existing owned fleet · allowed", "PgUp/PgDn details")
+    const prepared = () => guide.events().then((events) => commandEvents(events).filter(({ args }) => args[0] === "prepare"))
+    await expect.poll(async () => (await prepared()).length).toBe(1)
+    await guide.pressAndWait("r", "Preparing: checking")
+    await expect.poll(async () => (await prepared()).length).toBe(2)
+    await guide.pressAndWait("b", "Prompt candidates", "Command:")
+    expect(guide.text(), "Back must leave the Firstmate action page before Edit is sent").not.toContain("Choose a Firstmate action")
+    await guide.pressAndWait("e", "Edit prompt", "Check bounded failures.")
+    await guide.pressAndWait("\u001b", "Command:")
+    const report = await guide.finish("q", 130)
+    expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
+    const expected = [
+      "prepare", "default", "--json", "--expected-source-revision", instanceOrchestration.sourceRevision,
+      "--instance", beta.reference.instanceId, "--fmx-instance-context-json",
+      canonicalFirstmateInstanceJson(instanceProfile(beta).firstmateInstanceContext!),
+    ]
+    expect((await prepared()).map(({ args, cwd }) => ({ args, cwd }))).toEqual([
+      { args: expected, cwd: "/work/alpha" }, { args: expected, cwd: "/work/alpha" },
+    ])
+    expect(commandEvents(report.events).every(({ args }) => args[0] === "instances" || args[0] === "prepare")).toBe(true)
+    expect(report.events.filter((event) => event.kind === "generate")).toHaveLength(1)
+    const modelInputs = JSON.stringify(report.events.filter((event) => event.kind === "optimize"))
+    expect(modelInputs).not.toContain(alpha.reference.instanceId)
+    expect(modelInputs).not.toContain(beta.reference.instanceId)
+    expect(report.events.filter((event) => event.kind === "interactive-launch")).toEqual([])
+  } catch (cause) {
+    const received = await guide.events().then(
+      (events) => JSON.stringify(events.filter((event) => event.kind === "input").map((event) => event.input)),
+      () => "unavailable",
+    )
+    console.error("Firstmate received input:", received)
+    throw cause
+  } finally {
+    await guide.close()
+  }
+}, 30_000)

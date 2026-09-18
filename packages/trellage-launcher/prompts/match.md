@@ -11,10 +11,10 @@ The next user message contains a single JSON object with these fields:
 
 - `intent`: the user's stated goal, as free text.
 - `entries`: the candidate profile catalog, each entry shaped like
-  `{"ref", "surface", "name", "launcher"?, "harness"?, "description",
+  `{"ref", "surface", "name", "launcher"?, "harness"?, "orchestration"?, "description",
 "sandbox", "guide": {"schemaVersion", "capabilities", "bestFor",
 "avoidFor", "prerequisites", "workflows": [{"id", "description", "skill"?,
-"examples"}]}}`.
+"scope"?, "examples"}]}}`.
 - Optional `goal`: the explicit artifact, task, success criteria, and minimum
   score. In goal mode, each entry also has a host-validated `goalExecution`
   policy with `controller` and eligible `workflowIds`.
@@ -51,12 +51,33 @@ Start with workflow descriptions and examples that closely resemble the
 intent, then use `bestFor` and capabilities as supporting evidence. Treat
 `avoidFor` and unmet prerequisites as negative evidence.
 
-An explicit profile identity has priority. If the intent names an exact
+An explicit profile selection has priority. If the intent chooses an exact
 `profileRef` or a native launcher/profile pair, include that exact entry and
 normally rank it first. Accept normal punctuation, spacing, and
 singular/plural variants. Do not replace `native:fmx/pstack-workers` with
 `native:cdx/pstack` when the user asks for the Firstmate profile. The
 cross-cutting rules below must not displace an explicitly requested profile.
+A negated mention, a comparison, or a question about a profile is not an
+explicit selection. Do not treat a request to avoid a profile as a request
+to use it.
+
+Use Firstmate for an appropriate fleet outcome, including supervision of
+workers and task worktrees, status/Bearings, project memory through ordinary
+Stow, or notify-only condition watches. Choose the workflow for the actual
+outcome; do not turn a status, memory, or watch request into implementation
+or a full delivery lifecycle. Fleet-scope workflows do not require a project
+target; project-scope workflows require a separate human-confirmed target.
+Do not force Firstmate into unrelated single-agent work.
+
+Firstmate `default` and `pstack-workers` use the same supervisor and supported
+Claude workers. Prefer `default` when no worker-policy preference is stated.
+Use `pstack-workers` when the user wants its lean worker brief policy; it is
+not a pstack plugin, Poteto Mode, a second router, or a different fleet engine.
+Only select workflows and capabilities present in the supplied catalog.
+
+Static orchestration metadata is not live fleet readiness. Do not infer
+installed prerequisites, consent, an active supervisor, or a target project
+from it. The execution step checks these separately after user confirmation.
 
 When profiles share skills or broad capabilities, resolve the choice with
 their actual runtime differences: harness behavior, sandbox boundary,

@@ -52,7 +52,7 @@ done < <(git ls-files 'prototypes/trellage-*-profiles/**/PIN.txt')
 jq -e '
   .schemaVersion == 1
   and .source.repository == "https://github.com/kunchenguid/firstmate.git"
-  and .source.commit == "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+  and .source.commit == "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
   and .source.overlay == .source.commit
 ' prototypes/trellage-firstmate-profiles/catalog.json >/dev/null \
   || fail 'Native Firstmate catalog does not retain its reviewed source and overlay pin'

@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "source": {
     "repository": "https://github.com/kunchenguid/firstmate.git",
-    "commit": "4ad8cbaeafc109a17c1af3911867b7fe9e04e801",
-    "overlay": "4ad8cbaeafc109a17c1af3911867b7fe9e04e801"
+    "commit": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
+    "overlay": "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
   },
   "profiles": {
     "default": {
@@ -30,7 +30,20 @@
       "plugin": null,
       "standaloneMcps": [],
       "taskIdPrefix": "fmd",
-      "workerPolicy": null
+      "workerPolicy": null,
+      "orchestration": {
+        "schemaVersion": 1,
+        "kind": "firstmate",
+        "sourceRevision": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
+        "taskIdPrefix": "fmd",
+        "workerPolicy": null,
+        "workerHarness": "claude",
+        "workerEfforts": ["low", "medium", "high", "xhigh", "max"],
+        "dispatchRules": "claude-single",
+        "submission": {"schemaVersion": 1, "maxRequestBytes": 524288},
+        "preparation": {"schemaVersion": 1},
+        "instances": {"schemaVersion": 1}
+      }
     },
     "pstack-workers": {
       "description": "Native fmx/pstack-workers Firstmate fleet orchestration with a lean pstack-derived worker policy inserted once into every ship and scout brief.",
@@ -56,7 +69,23 @@
       "plugin": null,
       "standaloneMcps": [],
       "taskIdPrefix": "fmp",
-      "workerPolicy": "pstack-workers.md"
+      "workerPolicy": "pstack-workers.md",
+      "orchestration": {
+        "schemaVersion": 1,
+        "kind": "firstmate",
+        "sourceRevision": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
+        "taskIdPrefix": "fmp",
+        "workerPolicy": {
+          "name": "pstack-workers",
+          "digest": "6ed06a0776ae9d6d6095a2fd13a68039728d69b4bccc029704d4fbc8d8c70e6f"
+        },
+        "workerHarness": "claude",
+        "workerEfforts": ["low", "medium", "high", "xhigh", "max"],
+        "dispatchRules": "claude-single",
+        "submission": {"schemaVersion": 1, "maxRequestBytes": 524288},
+        "preparation": {"schemaVersion": 1},
+        "instances": {"schemaVersion": 1}
+      }
     }
   }
 }

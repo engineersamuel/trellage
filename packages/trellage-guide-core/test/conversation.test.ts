@@ -20,6 +20,13 @@ import {
   type ConversationSnapshot,
   type ConversationSource,
 } from "../src/conversation.ts"
+import {
+  firstmateSubmissionDigest,
+  parseFirstmateSubmissionReceiptV1,
+  parseFirstmateSubmissionRequestV1,
+  parseGuideProjectTargetV1,
+} from "../src/orchestration.ts"
+import { parseFirstmateInstanceReferenceV1 } from "../src/firstmate-instances.ts"
 
 const snapshot = (): ConversationSnapshot => ({
   schemaVersion: 1,
@@ -143,6 +150,7 @@ describe("conversation source identity", () => {
     { paneId: "pane\nsecret" },
     { sessionId: "x".repeat(conversationLimits.identifierChars + 1) },
     { command: "do not execute" },
+    { launchOrigin: { schemaVersion: 1 } },
   ])("rejects an invalid or ambiguous source %#", (change) => {
     expect(() => validateConversationSource({ ...snapshot().source, ...change })).toThrow(ConversationValidationError)
   })
@@ -397,6 +405,327 @@ describe("continuation draft", () => {
     expect(key).toHaveLength(145)
     expect(Buffer.byteLength(summary.text, "utf8")).toBe(4096)
     expect(validateContinuationDraft({ ...original, summaries: [summary] }).summaries).toEqual([summary])
+  })
+
+  const projectC = () => parseGuideProjectTargetV1({
+    schemaVersion: 1,
+    projectName: null,
+    source: { kind: "local", location: "/work/project-c" },
+    entryWorktree: "/work/project-c",
+    baseRevision: "c".repeat(40),
+    dirty: true,
+    dirtyChanges: "excluded",
+  })
+
+  const submissionRequest = () => parseFirstmateSubmissionRequestV1({
+    schemaVersion: 1,
+    requestId: "487921de-3110-44ae-9d7c-060ce10c07e0",
+    expectedFleet: {
+      profile: "default",
+      instanceId: "f5c86f7e-e66d-4bb7-b8e8-f24f9242398b",
+      home: "/state/firstmate/default",
+      sourceRevision: "b".repeat(40),
+    },
+    originalIntent: "  Review project C.\r\nDo not merge. 😀  ",
+    generatedSpec: "Inspect the committed project C revision and report defects. Do not copy dirty changes.",
+    workflowId: "review",
+    projectTarget: projectC(),
+  })
+
+  const submissionDraft = (
+    status = ContinuationActionStatus.Accepted,
+    receiptState: "saved" | "handled" | "rejected" | null = "saved",
+  ): ContinuationDraft => {
+    const original = draft()
+    const request = submissionRequest()
+    const receipt = receiptState === null ? null : parseFirstmateSubmissionReceiptV1({
+      schemaVersion: 1,
+      requestId: request.requestId,
+      digest: firstmateSubmissionDigest(request),
+      fleet: request.expectedFleet,
+      state: receiptState,
+      noteId: receiptState === "rejected" ? null : "captain-note-1",
+      announcement: receiptState === "rejected" ? "not-needed" : "failed",
+      supervisorState: "running",
+      error: { code: "synthetic-failure", message: "Synthetic control result; work is not verified." },
+    })
+    return {
+      ...original,
+      actions: original.actions.map((edit, index) => index > 0 ? edit : {
+        ...edit,
+        status,
+        originalIntent: request.originalIntent,
+        prompt: request.generatedSpec,
+        projectTarget: request.projectTarget,
+        projectTargetConfirmed: true,
+        profileRef: "native:fmx/default",
+        workflowId: request.workflowId,
+        placement: { kind: ContinuationPlacementKind.NewTab },
+        firstmateSubmission: { request, receipt },
+      }),
+    }
+  }
+
+  describe("continuation task context persistence", () => {
+    it.each([false, true])("round-trips exact intent and proposed/confirmed project C, independent of source A: %s", (confirmed) => {
+      const original = draft()
+      const intent = "  Human brief.\r\nKeep whitespace and Unicode 😀.\t"
+      const contextual = {
+        ...original,
+        snapshot: { ...original.snapshot, source: { ...original.snapshot.source, cwd: "/work/source-a" } },
+        actions: original.actions.map((edit, index) => index > 0 ? edit : {
+          ...edit, originalIntent: intent, projectTarget: projectC(), projectTargetConfirmed: confirmed,
+        }),
+      }
+      const loaded = validateContinuationDraft(JSON.parse(JSON.stringify(contextual)))
+      expect(loaded).toEqual(contextual)
+      expect(loaded.actions[0]?.originalIntent).toBe(intent)
+      expect(loaded.actions[0]?.projectTarget?.source?.location).toBe("/work/project-c")
+      expect(loaded.actions[0]?.projectTarget).toMatchObject({ dirty: true, dirtyChanges: "excluded", baseRevision: "c".repeat(40) })
+    })
+
+    it("preserves old preparations without inventing original intent or target consent", () => {
+      const original = draft()
+      const actions = original.actions.map((edit) => ({
+        ...edit,
+        profileRef: "native:fmx/default",
+        workflowId: "review",
+        status: ContinuationActionStatus.Prepared,
+        prompt: "Old saved Firstmate preparation.",
+        placement: { kind: ContinuationPlacementKind.NewTab },
+      }))
+      const loaded = validateContinuationDraft({ ...original, actions })
+      expect(loaded.actions).toEqual(actions)
+      expect(loaded.actions[0]).not.toHaveProperty("originalIntent")
+      expect(loaded.actions[0]).not.toHaveProperty("projectTargetConfirmed")
+    })
+
+    it.each([null, parseGuideProjectTargetV1({
+      schemaVersion: 1, projectName: "registered-c", source: null, entryWorktree: null,
+      baseRevision: null, dirty: null, dirtyChanges: "excluded",
+    })])("preserves explicit fleet scope and registered-only targets: %#", (target) => {
+      const original = draft()
+      const actions = original.actions.map((edit) => ({ ...edit, projectTarget: target, projectTargetConfirmed: true }))
+      expect(validateContinuationDraft({ ...original, actions }).actions).toEqual(actions)
+    })
+
+    it("accepts the exact 60000 UTF-16-unit original intent limit without trimming", () => {
+      const original = draft()
+      const originalIntent = ` ${"😀".repeat(29_999)} `
+      expect(originalIntent.length).toBe(60_000)
+      const actions = original.actions.map((edit) => ({ ...edit, originalIntent }))
+      expect(validateContinuationDraft({ ...original, actions }).actions[0]?.originalIntent).toBe(originalIntent)
+    })
+
+    it.each([
+      { originalIntent: "x".repeat(60_001) },
+      { originalIntent: " \n " },
+      { originalIntent: "Bad\u0000input" },
+      { originalIntent: "\ud800" },
+      { projectTargetConfirmed: true },
+      { projectTargetConfirmed: "yes", projectTarget: null },
+      { projectTarget: { ...projectC(), dirty: null } },
+      { projectTarget: { ...projectC(), source: { kind: "local", location: "relative" } } },
+      { projectTarget: { ...projectC(), baseRevision: null } },
+      { projectTarget: { ...projectC(), dirtyChanges: "copied" } },
+      { projectTarget: { ...projectC(), command: "must not execute" } },
+    ])("rejects invalid optional context without weakening legacy fields: %#", (change) => {
+      const original = draft()
+      expect(() => validateContinuationDraft({
+        ...original, actions: original.actions.map((edit, index) => index > 0 ? edit : { ...edit, ...change }),
+      })).toThrow(ConversationValidationError)
+    })
+
+    it("does not evaluate an accessor in shared target data", () => {
+      const original = draft()
+      const target = projectC()
+      Object.defineProperty(target, "source", { enumerable: true, get: () => { throw new Error("must not execute") } })
+      expect(() => validateContinuationDraft({
+        ...original, actions: original.actions.map((edit) => ({ ...edit, projectTarget: target })),
+      })).toThrow(/JSON fields/u)
+    })
+  })
+
+  describe("continuation Firstmate request and receipt persistence", () => {
+    it.each(["named", "legacy"])("persists a per-action %s reference without changing saved authority or source", (mode) => {
+      const original = submissionDraft()
+      const request = submissionRequest()
+      const firstmateInstance = parseFirstmateInstanceReferenceV1({
+        schemaVersion: 1, profile: request.expectedFleet.profile, instanceId: request.expectedFleet.instanceId, mode,
+      })
+      const selected = {
+        ...original,
+        actions: original.actions.map((edit, index) => index > 0 ? edit : { ...edit, firstmateInstance }),
+      }
+      const loaded = validateContinuationDraft(JSON.parse(JSON.stringify(selected)))
+      expect(loaded).toEqual(selected)
+      expect(loaded.snapshot.source).toEqual(original.snapshot.source)
+      expect(loaded.actions[0]?.firstmateSubmission).toEqual(original.actions[0]?.firstmateSubmission)
+      expect(firstmateSubmissionDigest(loaded.actions[0]!.firstmateSubmission!.request)).toBe(firstmateSubmissionDigest(request))
+      expect(validateContinuationDraft(original).actions[0]).not.toHaveProperty("firstmateInstance")
+    })
+
+    it("allows instance selection before preparation, but only for the selected static Firstmate profile", () => {
+      const original = draft()
+      const firstmateInstance = parseFirstmateInstanceReferenceV1({
+        schemaVersion: 1, profile: "default", instanceId: submissionRequest().expectedFleet.instanceId, mode: "named",
+      })
+      const actions = original.actions.map((edit, index) => index > 0 ? edit : {
+        ...edit, profileRef: "native:fmx/default", workflowId: "review", firstmateInstance,
+      })
+      expect(validateContinuationDraft({ ...original, actions }).actions).toEqual(actions)
+      for (const profileRef of ["native:fmx/pstack-workers", "native:cdx/default"]) {
+        expect(() => validateContinuationDraft({
+          ...original, actions: actions.map((edit, index) => index > 0 ? edit : { ...edit, profileRef }),
+        })).toThrow(/selected static profile/)
+      }
+      const inherited = {
+        ...original,
+        assessment: {
+          ...original.assessment!,
+          actions: original.assessment!.actions.map((action, index) => index > 0 ? action : { ...action, profileRef: "native:fmx/default" }),
+        },
+        actions: original.actions.map((edit, index) => index > 0 ? edit : { ...edit, firstmateInstance }),
+      }
+      expect(validateContinuationDraft(inherited)).toEqual(inherited)
+    })
+
+    it.each([
+      { instanceId: "aec37eab-d811-4d46-af45-8b6adf3e85c6" },
+      { profile: "pstack-workers" },
+      { instanceId: null },
+      { mode: "automatic" },
+      { schemaVersion: 2 },
+      { name: "mutable-label" },
+    ])("rejects invalid references or conflicts with a saved expectedFleet: %#", (change) => {
+      const original = submissionDraft()
+      const firstmateInstance = {
+        schemaVersion: 1, profile: "default", mode: "named",
+        instanceId: submissionRequest().expectedFleet.instanceId, ...change,
+      }
+      expect(() => validateContinuationDraft({
+        ...original,
+        actions: original.actions.map((edit, index) => index > 0 ? edit : { ...edit, firstmateInstance }),
+      })).toThrow(ConversationValidationError)
+    })
+
+    it.each(["start", "recover", "submit"] as const)("round-trips explicit %s approval without creating a pane receipt", (firstmateAction) => {
+      const original = submissionDraft(ContinuationActionStatus.Prepared, null)
+      const approved = {
+        ...original,
+        actions: original.actions.map((edit, index) => index > 0 ? edit : { ...edit, firstmateAction }),
+      }
+      expect(validateContinuationDraft(JSON.parse(JSON.stringify(approved)))).toEqual(approved)
+      expect(approved.actions[0]).not.toHaveProperty("launch")
+    })
+
+    it("allows send-only preparation without a Herdr placement, but not start or recovery", () => {
+      const original = submissionDraft(ContinuationActionStatus.Prepared, null)
+      const actions = original.actions.map((edit, index) => {
+        if (index > 0) return edit
+        const { placement: _placement, ...rest } = edit
+        return { ...rest, firstmateAction: "submit" as const }
+      })
+      expect(validateContinuationDraft({ ...original, actions }).actions).toEqual(actions)
+      for (const firstmateAction of ["start", "recover"]) {
+        expect(() => validateContinuationDraft({
+          ...original,
+          actions: actions.map((edit, index) => index > 0 ? edit : { ...edit, firstmateAction }),
+        })).toThrow(/destination/u)
+      }
+    })
+
+    it("keeps frontend delivery diagnostics separate from the native receipt", () => {
+      const original = submissionDraft()
+      const actions = original.actions.map((edit, index) => index > 0 ? edit : {
+        ...edit,
+        firstmateAction: "start" as const,
+        firstmateDiagnostic: "Supervisor startup failed.\nThe note is saved; no task completion is verified.",
+      })
+      const loaded = validateContinuationDraft({ ...original, actions })
+      expect(loaded.actions).toEqual(actions)
+      expect(loaded.actions[0]?.firstmateSubmission).toEqual(original.actions[0]?.firstmateSubmission)
+    })
+
+    it.each([
+      { firstmateAction: "install" },
+      { firstmateAction: "recover", firstmateSubmission: undefined },
+      { firstmateDiagnostic: "Diagnostic without a request.", firstmateSubmission: undefined },
+      { firstmateAction: "start", status: ContinuationActionStatus.Draft },
+      { firstmateDiagnostic: "x".repeat(64_001) },
+      { firstmateDiagnostic: "unsafe\u0000text" },
+    ])("rejects unsupported or unbound action approval data: %#", (change) => {
+      const original = submissionDraft(ContinuationActionStatus.Prepared, null)
+      expect(() => validateContinuationDraft({
+        ...original,
+        actions: original.actions.map((edit, index) => index > 0 ? edit : {
+          ...edit, ...change,
+        }),
+      })).toThrow(ConversationValidationError)
+    })
+
+    it.each(["saved", "handled"] as const)("retains %s evidence, including a failed announcement, without calling work completed", (state) => {
+      const original = submissionDraft(ContinuationActionStatus.Accepted, state)
+      expect(validateContinuationDraft(JSON.parse(JSON.stringify(original)))).toEqual(original)
+      expect(original.actions[0]?.status).toBe("accepted")
+      expect(original.actions[0]?.firstmateSubmission?.receipt?.announcement).toBe("failed")
+    })
+
+    it.each([ContinuationActionStatus.Submitting, ContinuationActionStatus.SubmissionUnknown])("keeps the immutable request for %s without inventing a receipt", (status) => {
+      const original = submissionDraft(status, null)
+      expect(validateContinuationDraft(original)).toEqual(original)
+      const actions = original.actions.map(({ firstmateSubmission: _submission, ...edit }) => edit)
+      expect(() => validateContinuationDraft({ ...original, actions })).toThrow(/saved Firstmate submission/u)
+    })
+
+    it.each([null, "rejected"] as const)("supports a rejected control result with receipt %s", (receipt) => {
+      const original = submissionDraft(ContinuationActionStatus.SubmissionRejected, receipt)
+      expect(validateContinuationDraft(original)).toEqual(original)
+    })
+
+    it("requires accepted evidence and rejects false rejection or mutable receipt states", () => {
+      expect(() => validateContinuationDraft(submissionDraft(ContinuationActionStatus.Accepted, null))).toThrow(/saved or handled/u)
+      expect(() => validateContinuationDraft(submissionDraft(ContinuationActionStatus.Accepted, "rejected"))).toThrow(/saved or handled/u)
+      expect(() => validateContinuationDraft(submissionDraft(ContinuationActionStatus.SubmissionRejected, "saved"))).toThrow(/rejected receipt/u)
+      expect(() => validateContinuationDraft(submissionDraft(ContinuationActionStatus.Prepared, "saved"))).toThrow(/submission status/u)
+      expect(validateContinuationDraft(submissionDraft(ContinuationActionStatus.Prepared, null)).actions[0]?.firstmateSubmission?.receipt).toBeNull()
+    })
+
+    it.each([
+      { requestId: "aec37eab-d811-4d46-af45-8b6adf3e85c6" },
+      { digest: "f".repeat(64) },
+      { fleet: { ...submissionRequest().expectedFleet, instanceId: "aec37eab-d811-4d46-af45-8b6adf3e85c6" } },
+      { fleet: { ...submissionRequest().expectedFleet, home: "/state/another-fleet" } },
+    ])("rejects a receipt not bound to the saved request: %#", (change) => {
+      const original = submissionDraft()
+      const actions = original.actions.map((edit, index) => index > 0 ? edit : {
+        ...edit, firstmateSubmission: {
+          request: edit.firstmateSubmission!.request,
+          receipt: { ...edit.firstmateSubmission!.receipt, ...change },
+        },
+      })
+      expect(() => validateContinuationDraft({ ...original, actions })).toThrow(/same request ID, digest, and fleet/u)
+    })
+
+    it.each([
+      { originalIntent: "Changed captain brief" },
+      { prompt: "Changed generated specification" },
+      { workflowId: "another-workflow" },
+      { profileRef: "native:fmx/pstack-workers" },
+      { projectTarget: null },
+      { projectTargetConfirmed: false },
+    ])("rejects persisted action content which contradicts its payload: %#", (change) => {
+      const original = submissionDraft()
+      expect(() => validateContinuationDraft({
+        ...original, actions: original.actions.map((edit, index) => index > 0 ? edit : { ...edit, ...change }),
+      })).toThrow(ConversationValidationError)
+    })
+
+    it("does not let sibling actions share a request ID", () => {
+      const original = submissionDraft()
+      const actions = original.actions.map((edit, index) => index !== 1 ? edit : { ...original.actions[0]!, actionId: edit.actionId })
+      expect(() => validateContinuationDraft({ ...original, actions })).toThrow(/requestId: must contain unique/u)
+    })
   })
 
   it("validates persisted assessment shape without trusting a catalog", () => {

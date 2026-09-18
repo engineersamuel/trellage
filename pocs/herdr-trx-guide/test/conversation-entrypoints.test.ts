@@ -9,6 +9,7 @@ import { promisify } from "node:util"
 import { bindFocusedConversation, captureFocusedConversation } from "../lib/conversation-capture.ts"
 import { readConversationRequest, writeConversationChoice, writeConversationRequest } from "../lib/conversation-state.ts"
 import { captureFixture, humanRecord, jsonl, repositoryRoot } from "./helpers/conversation-fixtures.ts"
+import { firstmateCaptureFixture, firstmateOrigin } from "./helpers/firstmate.ts"
 
 const execFileAsync = promisify(execFile)
 const pluginRoot = path.join(repositoryRoot, "pocs", "herdr-trx-guide")
@@ -58,14 +59,15 @@ fs.writeFileSync(${JSON.stringify(outputPath)}, JSON.stringify({
   context: process.env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON,
   paneId: process.env.HERDR_PANE_ID,
   pluginContext: process.env.HERDR_PLUGIN_CONTEXT_JSON,
-  legacyIntent: process.env.TRELLAGE_GUIDE_HERDR_INTENT_FILE
+  legacyIntent: process.env.TRELLAGE_GUIDE_HERDR_INTENT_FILE,
+  inheritedOrigin: process.env.FMX_LAUNCH_PROVENANCE_JSON
 }))
 `, { mode: 0o755 })
   return { binary, outputPath }
 }
 
-const executableFixture = async (t) => {
-  const fixture = await captureFixture(t)
+const executableFixture = async (t, firstmate = false) => {
+  const fixture = await (firstmate ? firstmateCaptureFixture(t) : captureFixture(t))
   const server = await socketServer(t, fixture)
   const herdr = await fakeCommand(fixture.root, "herdr")
   const env = {
@@ -147,6 +149,32 @@ test("conversation popup starts the guide with a trusted helper checkout and min
   assert.equal(call.legacyIntent, undefined)
   assert.doesNotMatch(JSON.stringify(call), /Original human goal|Completed visible answer|DO NOT FORWARD/u)
   assert.deepEqual(await readConversationRequest(fixture.root, requestPath), snapshot)
+})
+
+test("Firstmate conversation popup carries only private origin metadata and preserves the saved snapshot", async (t) => {
+  const fixture = await executableFixture(t, true)
+  const snapshot = await captureFocusedConversation(fixture.context, { env: fixture.env })
+  const requestPath = await writeConversationRequest(fixture.root, snapshot)
+  const before = await readFile(requestPath, "utf8")
+  const mise = await fakeCommand(fixture.root, "mise")
+  await execFileAsync(process.execPath, [entrypoint("conversation-popup.ts")], {
+    env: {
+      ...fixture.env, TRELLAGE_GUIDE_CONVERSATION_REQUEST_FILE: requestPath,
+      HERDR_PANE_ID: "popup-pane", FMX_LAUNCH_PROVENANCE_JSON: "untrusted daemon hint",
+    },
+  })
+  const call = JSON.parse(await readFile(mise.outputPath, "utf8"))
+  const context = JSON.parse(call.context)
+  assert.deepEqual(call.argv, ["run", "--raw", "trx", "--", "guide", "--next-steps"])
+  assert.deepEqual(context.launchOrigin, firstmateOrigin)
+  assert.equal(context.cwd, snapshot.source.cwd)
+  assert.equal(context.paneId, snapshot.source.paneId)
+  assert.notEqual(context.cwd, firstmateOrigin.entryWorktree.locators.worktree)
+  assert.equal(call.paneId, undefined)
+  assert.equal(call.inheritedOrigin, undefined)
+  assert.equal(await readFile(requestPath, "utf8"), before)
+  assert.equal(Object.hasOwn(snapshot.source, "launchOrigin"), false)
+  assert.doesNotMatch(JSON.stringify(call), /Original human goal|Completed visible answer/u)
 })
 
 test("source freshness CLI checks the original exact pane and prints no captured text", async (t) => {

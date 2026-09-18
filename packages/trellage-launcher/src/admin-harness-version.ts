@@ -6,6 +6,7 @@
  * revision.
  */
 import { isKnownNativeLauncher, type AdminProfileEntry, type NativeLauncherAlias } from "./admin-model.ts"
+import { adminInstanceSelectorArgs } from "./admin-firstmate.ts"
 import type { AdminVersionColumns } from "./admin-version-check.ts"
 import type { CommandSpec } from "./guide-launch.ts"
 
@@ -69,7 +70,7 @@ export const harnessVersionLatestLookupSupported = (entry: AdminProfileEntry): b
 }
 
 /**
- * Cache/run identity. Firstmate owns one installed receipt per profile;
+ * Cache/run identity. Firstmate owns one installed receipt per fleet instance;
  * ordinary native launchers own one host binary; sandbox operations own a
  * shared latest lookup per explicit release identity.
  */
@@ -80,7 +81,12 @@ export const harnessVersionOperationKeyFor = (entry: AdminProfileEntry): string 
     return releaseKey === undefined ? undefined : `sandbox:${releaseKey}`
   }
   if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher)) return undefined
-  return entry.launcher === "fmx" ? `native:fmx:${entry.name}` : `native:${entry.launcher}`
+  if (entry.launcher !== "fmx") return `native:${entry.launcher}`
+  const instance = entry.firstmateInstance
+  if (instance !== undefined) return `native:fmx:${entry.name}:${instance.mode}:${instance.instanceId}`
+  return entry.firstmateInstanceDescriptor?.reference === null
+    ? `native:fmx:${entry.name}:legacy:missing-identity`
+    : `native:fmx:${entry.name}`
 }
 
 export interface BuildHarnessVersionCommandOptions {
@@ -99,7 +105,7 @@ export const buildHarnessVersionCommand = (
   }
   return {
     executable: entry.commandPath,
-    args: entry.launcher === "fmx" ? ["harness-version", entry.name] : ["harness-version"],
+    args: entry.launcher === "fmx" ? ["harness-version", entry.name, ...adminInstanceSelectorArgs(entry)] : ["harness-version"],
   }
 }
 
@@ -219,6 +225,14 @@ const resultForEntry = (
 const shareableReleaseKeyFor = (entry: AdminProfileEntry): HarnessReleaseKey | undefined =>
   entry.surface === "native" && entry.launcher === "fmx" ? undefined : harnessVersionReleaseKeyFor(entry)
 
+const catalogPinnedObservation = (
+  entry: AdminProfileEntry,
+  observation: AdminHarnessVersionResult | undefined,
+): AdminHarnessVersionResult | undefined =>
+  entry.launcher === "fmx" && entry.orchestration !== undefined && observation !== undefined
+    ? { ...observation, latest: { kind: "known", version: entry.orchestration.sourceRevision } }
+    : observation
+
 /**
  * Produces one effective result per row. Conflicting latest values disable
  * cross-row promotion for that release identity rather than selecting an
@@ -231,7 +245,7 @@ export const reconcileHarnessVersionObservations = (
   const results = new Map<string, AdminHarnessVersionResult>()
   const latestByRelease = new Map<HarnessReleaseKey, Set<string>>()
   for (const entry of entries) {
-    const result = observationFor(entry)
+    const result = catalogPinnedObservation(entry, observationFor(entry))
     if (result === undefined) continue
     results.set(entry.ref, result)
     const releaseKey = shareableReleaseKeyFor(entry)

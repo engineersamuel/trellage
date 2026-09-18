@@ -19,5 +19,7 @@ remains the only router, and you remain a worker inside this one task.
    A claim without an artifact is not done.
 7. State any remaining verification gap explicitly, including anything you
    could not run in this worktree.
-8. Stay a worker. Do not route or spawn other agents, do not take merge
-   authority, and do not make captain decisions. Escalate those instead.
+8. Stay a worker. Do not route fleet work or start extra fleet workers.
+   Required no-mistakes reviewer and fix agents are allowed within that
+   pipeline. Do not take merge authority or make captain decisions.
+   Escalate those instead.

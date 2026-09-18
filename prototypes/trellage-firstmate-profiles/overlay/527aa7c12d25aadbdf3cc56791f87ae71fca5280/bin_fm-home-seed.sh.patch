@@ -1,0 +1,14 @@
+--- a/bin/fm-home-seed.sh
++++ b/bin/fm-home-seed.sh
+@@ -32,6 +32,11 @@
+ #       duplicate ids or homes, and nested or overlapping homes.
+ set -eu
+ 
++if [ -n "${FMX_WORKER_LAUNCHER:-}" ] || [ -e "${FM_HOME:-}/.fmx-managed" ]; then
++  echo "error: fmx does not manage secondmate homes or provisioning" >&2
++  exit 1
++fi
++
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"

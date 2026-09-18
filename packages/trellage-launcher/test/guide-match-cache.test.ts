@@ -194,7 +194,7 @@ describe("GuideArtifactCache", () => {
     let generationCalls = 0
     const generate = async () => {
       generationCalls += 1
-      return { candidates }
+      return { candidates: candidates.map((candidate) => ({ ...candidate, prompt: `/review ${candidate.prompt}` })) }
     }
     const cache = cacheFor(cwd)
     await cache.generation(base, generate)
@@ -216,7 +216,7 @@ describe("GuideArtifactCache", () => {
     let refinementCalls = 0
     const refine = async () => {
       refinementCalls += 1
-      return { candidate: candidates[0] }
+      return { candidate: { ...candidates[0], prompt: `/review ${candidates[0].prompt}` } }
     }
     const refinement = { ...base, candidates, candidateIndex: 0, feedback: "Shorter" }
     await cache.refinement(refinement, refine)

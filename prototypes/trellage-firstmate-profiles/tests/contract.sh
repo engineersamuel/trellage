@@ -2,9 +2,9 @@
 
 # Static, offline contract for the Native Firstmate (fmx) launcher package.
 #
-# Every external dependency is faked: git, gh, tmux, herdr, claude, and the
-# shared native-claude helper. Nothing here reaches the network, and the pinned
-# Firstmate source is staged from the checked-in fixture tree.
+# Network operations and provider actions are faked. Git and npm configuration
+# checks use the real local tools. The pinned Firstmate source is staged from
+# the checked-in fixture tree.
 
 set -euo pipefail
 
@@ -16,7 +16,8 @@ uninstaller="$root/uninstall.sh"
 worker_helper="$root/lib/fmx-worker"
 prerequisite_helper="$root/lib/fmx-prerequisites"
 overlay_tool="$root/lib/fmx-overlay.py"
-readonly pinned_commit='4ad8cbaeafc109a17c1af3911867b7fe9e04e801'
+readonly pinned_commit='527aa7c12d25aadbdf3cc56791f87ae71fca5280'
+readonly overlay_file_count=12
 readonly ownership_value='trellage-firstmate-profiles-v1'
 readonly install_lock_owner='trellage-firstmate-install-lock-v1'
 readonly prerequisite_install_lock_owner='trellage-firstmate-prerequisites-v1'
@@ -28,11 +29,13 @@ fail() {
   exit 1
 }
 
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-fmx-contract.XXXXXX")" \
+fixture_root="$(python3 -c 'import pathlib,uuid; p=pathlib.Path.cwd()/(".fmx-contract-"+uuid.uuid4().hex); p.mkdir(mode=0o700); print(p)')" \
   || fail 'could not create fixture root'
 # Canonical, so path assertions match the launcher's own resolved paths.
 fixture_root="$(CDPATH= cd -P -- "$fixture_root" && pwd -P)" \
   || fail 'could not resolve fixture root'
+mkdir "$fixture_root/scratch"
+export TMPDIR="$fixture_root/scratch"
 busy_pid=''
 cleanup() {
   if [[ "$busy_pid" =~ ^[1-9][0-9]*$ ]]; then
@@ -68,6 +71,7 @@ real_jq="$(command -v jq)" || fail 'jq is required'
 real_python3="$(command -v python3)" || fail 'python3 is required'
 real_bash="$(command -v bash)" || fail 'bash is required'
 real_bun="$(command -v bun)" || fail 'Bun 1.3.3 is required'
+real_npm="$(command -v npm)" || fail 'npm is required'
 
 # ---------------------------------------------------------------------------
 # Fake host commands.
@@ -123,7 +127,7 @@ case "\${1-}" in
     ;;
   rev-parse)
     if [[ "\${2-}" == HEAD ]]; then
-      printf '%s\n' "\${FAKE_GIT_HEAD:-4ad8cbaeafc109a17c1af3911867b7fe9e04e801}"
+      printf '%s\n' "\${FAKE_GIT_HEAD:-527aa7c12d25aadbdf3cc56791f87ae71fca5280}"
     else
       run_real "\$@"
     fi
@@ -191,50 +195,53 @@ FAKE_PREREQUISITE
   chmod 0755 "$fake_bin/$tool"
 done
 
-# Stand-in for prototypes/trellage-claude-common/native-claude. It implements
-# the published prepare/doctor/launch interface only.
+# Stub model/prepare/launch calls, but use the real exec-clean boundary.
 fake_native_claude="$fixture_root/native-claude"
-cat >"$fake_native_claude" <<'FAKE_NATIVE_CLAUDE'
-#!/usr/bin/env bash
+printf '#!/usr/bin/env bash\nreal_native_claude=%q\n' \
+  "$repo_root/prototypes/trellage-claude-common/native-claude" >"$fake_native_claude"
+cat >>"$fake_native_claude" <<'FAKE_NATIVE_CLAUDE'
 set -euo pipefail
 
 [[ "${TRELLAGE_CLAUDE_LAUNCHER_NAME-}" == fmx ]] \
   || { printf 'native-claude: TRELLAGE_CLAUDE_LAUNCHER_NAME is not fmx\n' >&2; exit 2; }
 [[ "${TRELLAGE_CLAUDE_RUNTIME_ROOT-}" == /* && -d "${TRELLAGE_CLAUDE_RUNTIME_ROOT-}" ]] \
   || { printf 'native-claude: TRELLAGE_CLAUDE_RUNTIME_ROOT is not an installed runtime root\n' >&2; exit 2; }
-[[ -f "$TRELLAGE_CLAUDE_RUNTIME_ROOT/lib/trellage-session-bridge.py" ]] \
-  || { printf 'native-claude: the session bridge is missing from the runtime root\n' >&2; exit 2; }
-
 mode="${1-}"
 shift || true
 if [[ "$mode" == exec-clean ]]; then
-  clean_interpreter=''
+  clean_arguments=("$@")
   if [[ "${1-}" == --interpreter ]]; then
-    clean_interpreter="$2"
     shift 2
   fi
   [[ "${1-}" == -- ]] || exit 2
   shift
-  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
-  unset ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
-  unset ANTHROPIC_CUSTOM_HEADERS ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL
-  unset CLAUDE_CODE_USE_FOUNDRY ANTHROPIC_FOUNDRY_API_KEY ANTHROPIC_FOUNDRY_BASE_URL
-  unset ANTHROPIC_FOUNDRY_RESOURCE ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_VERTEX_BASE_URL
-  unset CLAUDE_CODE_USE_BEDROCK AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-  unset AWS_PROFILE AWS_BEARER_TOKEN_BEDROCK AWS_REGION AWS_DEFAULT_REGION AWS_ROLE_ARN
-  unset AWS_WEB_IDENTITY_TOKEN_FILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE
-  unset CLAUDE_CODE_USE_VERTEX GOOGLE_APPLICATION_CREDENTIALS ANTHROPIC_VERTEX_PROJECT_ID
-  unset CLOUD_ML_REGION GOOGLE_CLOUD_PROJECT GOOGLE_CLOUD_QUOTA_PROJECT GOOGLE_CLOUD_REGION
-  unset VERTEX_PROJECT VERTEX_REGION
-  unset AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID OPENAI_API_KEY AZURE_API_KEY
-  unset AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT OPENAI_BASE_URL
-  unset COPILOT_GITHUB_TOKEN COPILOT_PROXY_GITHUB_TOKEN COPILOT_TOKEN
-  unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
-  if [[ -n "$clean_interpreter" ]]; then
-    exec "$clean_interpreter" "$@"
+  if [[ "${1-}" == */fm-inbox.sh ]]; then export NATIVE_CLAUDE_INBOX_PROBE=1; fi
+  if [[ "${1-}" == */fm-inbox.sh && "${2-}" == note ]]; then
+    case "${NATIVE_CLAUDE_INBOX_RESULT-}" in
+      lost-ack)
+        "$real_native_claude" exec-clean "${clean_arguments[@]}" >/dev/null
+        exit 75
+        ;;
+      unconfirmed) exit 0 ;;
+    esac
   fi
-  exec "$@"
+  exec "$real_native_claude" exec-clean "${clean_arguments[@]}"
 fi
+[[ -f "$TRELLAGE_CLAUDE_RUNTIME_ROOT/lib/trellage-session-bridge.py" ]] \
+  || { printf 'native-claude: the session bridge is missing from the runtime root\n' >&2; exit 2; }
+case "$mode" in
+  model-map)
+    printf '%s\n' '{"default":"claude-opus-5","opus":"claude-opus-5","sonnet":"claude-sonnet-5","haiku":"claude-haiku-4.5"}'
+    exit 0 ;;
+  model-catalog)
+    [[ "${NATIVE_CLAUDE_MODELS_STATUS:-0}" == 0 ]] || exit 1
+    printf '%s\n' '["claude-opus-5","claude-sonnet-5","claude-haiku-4.5"]'
+    exit 0 ;;
+  skills-check) printf 'online skills checks are forbidden in this fixture\n' >&2; exit 1 ;;
+  skills-update)
+    [[ "${1-}" == --mode && "${2-}" == --check ]] || exit 1
+    exit "${NATIVE_CLAUDE_SKILLS_STATUS:-0}" ;;
+esac
 config_home=''
 marker=''
 marker_value=''
@@ -294,6 +301,22 @@ case "$mode" in
     # so a caller that omits it silently checks the default profile's hook.
     [[ "$saw_profile" == true ]] \
       || { printf 'native-claude: launch requires --profile\n' >&2; exit 2; }
+    if [[ -n "${NATIVE_CLAUDE_INSTANCE_LOG-}" ]]; then
+      python3 - "$NATIVE_CLAUDE_INSTANCE_LOG" <<'PY'
+import json,os,sys
+keys = ("FMX_INSTANCE_ID", "FMX_LAUNCH_PROVENANCE_JSON", "FMX_PROFILE_ROOT", "FM_HOME",
+        "HERDR_PANE_ID", "HERDR_SESSION", "HERDR_WORKSPACE_ID")
+with open(sys.argv[1], "a") as stream:
+    stream.write(json.dumps({key: os.environ.get(key) for key in keys}) + "\n")
+PY
+    fi
+    if [[ -n "${NATIVE_CLAUDE_ARGV_LOG-}" ]]; then
+      python3 - "$NATIVE_CLAUDE_ARGV_LOG" "$@" <<'PY'
+import json, sys
+with open(sys.argv[1], "a") as handle:
+    handle.write(json.dumps(sys.argv[2:]) + "\n")
+PY
+    fi
     herdr_state=none
     for exported in $(compgen -e); do
       case "$exported" in
@@ -319,6 +342,11 @@ case "$mode" in
       "${FM_SUPERVISION_MODEL-unset}" \
       "$(pwd -P)" "$config_home" "$bridge" "$profile" "$*" \
       >>"$NATIVE_CLAUDE_LAUNCH_LOG"
+    if [[ -n "${FM_TEST_ALLOWLIST_LOG-}" ]]; then
+      printf 'KEPT_WORKER_VALUE=%s|REJECTED_WORKER_VALUE=%s\n' \
+        "${KEPT_WORKER_VALUE-unset}" "${REJECTED_WORKER_VALUE-unset}" \
+        >>"$FM_TEST_ALLOWLIST_LOG"
+    fi
     if [[ -n "${NATIVE_CLAUDE_LAUNCH_READY-}" ]]; then
       : >"$NATIVE_CLAUDE_LAUNCH_READY"
       while [[ ! -e "${NATIVE_CLAUDE_LAUNCH_RELEASE:?}" ]]; do sleep 0.01; done
@@ -334,7 +362,25 @@ FAKE_NATIVE_CLAUDE
 chmod 0755 "$fake_native_claude"
 
 ln -s "$real_jq" "$fake_bin/jq"
-ln -s "$real_python3" "$fake_bin/python3"
+printf '#!/usr/bin/env bash\nreal_python=%q\ninbox_log=%q\n' \
+  "$real_python3" "$logs/inbox-provider-boundary.log" >"$fake_bin/python3"
+cat >>"$fake_bin/python3" <<'PYTHON_PROBE'
+set -euo pipefail
+if [[ "${NATIVE_CLAUDE_INBOX_PROBE-}" == 1 ]]; then
+  for variable in $(compgen -e); do
+    case "$variable" in
+      GH_TOKEN|GITHUB_TOKEN|COPILOT_GITHUB_TOKEN|COPILOT_PROXY_GITHUB_TOKEN|\
+      ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|AWS_ACCESS_KEY_ID|AWS_SHARED_CREDENTIALS_FILE|\
+      GOOGLE_APPLICATION_CREDENTIALS|AZURE_CLIENT_SECRET|OPENAI_API_KEY)
+        printf 'provider variable reached the inbox: %s\n' "$variable" >&2
+        exit 1 ;;
+    esac
+  done
+  printf 'root=%s|home=%s|gh=%s\n' "$TRELLAGE_CLAUDE_RUNTIME_ROOT" "$FM_HOME" "$GH_CONFIG_DIR" >>"$inbox_log"
+fi
+exec "$real_python" "$@"
+PYTHON_PROBE
+chmod 0755 "$fake_bin/python3"
 ln -s "$real_bash" "$fake_bin/bash"
 fixture_registry="${npm_config_registry:-${NPM_CONFIG_REGISTRY:-}}"
 if [[ -z "$fixture_registry" ]]; then
@@ -349,12 +395,24 @@ fi
 chmod 0755 "$fake_bin/bun"
 for tool in sh env sed grep find mktemp cat head tail cp mv rm rmdir mkdir chmod ln sort tr wc cmp \
   basename dirname sleep install readlink awk uname date ls touch expr id cut comm diff \
-  node npm curl shasum sha256sum; do
+  node npm curl perl seq base64 shasum sha256sum ps; do
   target="$(command -v "$tool" 2>/dev/null || true)"
   if [[ -n "$target" && ! -e "$fake_bin/$tool" ]]; then
     ln -s "$target" "$fake_bin/$tool"
   fi
 done
+
+rm -f -- "$fake_bin/npm"
+printf '#!/usr/bin/env bash\nreal_npm=%q\n' "$real_npm" >"$fake_bin/npm"
+cat >>"$fake_bin/npm" <<'FAKE_NPM_CONFIG'
+case "${1-}" in
+  config | prefix)
+    exec env npm_config_userconfig="$HOME/.npmrc" \
+      npm_config_globalconfig="$HOME/global.npmrc" "$real_npm" "$@" ;;
+  *) printf 'npm mutation is forbidden in this fixture\n' >&2; exit 95 ;;
+esac
+FAKE_NPM_CONFIG
+chmod 0755 "$fake_bin/npm"
 
 export FAKE_GIT_LOG="$logs/git.log"
 export FAKE_GH_LOG="$logs/gh.log"
@@ -374,19 +432,6 @@ export FAKE_GIT_SOURCE_TREE="$fixture_root/source/$pinned_commit"
 mkdir -p "$fixture_root/source"
 cp -R "$root/tests/fixtures/firstmate/$pinned_commit" "$FAKE_GIT_SOURCE_TREE"
 
-# Minimal stand-ins for the upstream libraries the two executable fixtures load.
-cat >"$FAKE_GIT_SOURCE_TREE/bin/fm-marker-lib.sh" <<'STUB'
-FM_FROMFIRST_LABEL='[from-firstmate]'
-STUB
-cat >"$FAKE_GIT_SOURCE_TREE/bin/fm-classify-lib.sh" <<'STUB'
-FM_CLASSIFY_PAUSED_VERB_DEFAULT=paused
-STUB
-cat >"$FAKE_GIT_SOURCE_TREE/bin/fm-dod-lib.sh" <<'STUB'
-fm_dod_block() { printf '# Definition of done\nmode=%s id=%s\n' "$1" "$2"; }
-STUB
-cat >"$FAKE_GIT_SOURCE_TREE/bin/fm-ff-lib.sh" <<'STUB'
-ff_target() { FF_STATUS=up-to-date; FF_INSTR=''; }
-STUB
 # Upstream Firstmate gitignores its operational directories and local env, so
 # the staged fixture must too: an ignored file is exactly what a plain
 # --untracked-files=all status would hide.
@@ -457,8 +502,20 @@ case "${1-}" in
   destination)
     printf '%s\n' "$destination"
     ;;
+  plan)
+    jq -cn --slurpfile manifest "$runtime_root/prerequisite-lock/manifest.json" \
+      --arg destination "$destination" --arg home "$HOME" '
+      {
+        identity: ("b" * 64), destination: $destination,
+        tools: ([($manifest[0].binaries | to_entries[] | {name:.key,version:.value.version}),
+          ($manifest[0].npm.tools | to_entries[] | {name:.key,version:.value})] | sort_by(.name)),
+        sources: ["Configured host npm registry: https://packagefeedproxy.microsoft.io/npm/",
+          "Locked checksum-verified GitHub release assets"],
+        statePaths: [$home + "/.no-mistakes"]
+      }'
+    ;;
   path)
-    [[ -f "$destination/.complete" ]] || exit 1
+    [[ -f "$destination/.complete" ]] || exit 3
     printf '%s:%s\n' "$destination/bin" "$destination/npm/node_modules/.bin"
     ;;
   verify)
@@ -546,7 +603,11 @@ fmx() {
     "FAKE_GH_STATUS=${FAKE_GH_STATUS:-0}"
     "NATIVE_CLAUDE_LOG=$NATIVE_CLAUDE_LOG"
     "NATIVE_CLAUDE_LAUNCH_LOG=$NATIVE_CLAUDE_LAUNCH_LOG"
+    "NATIVE_CLAUDE_ARGV_LOG=${NATIVE_CLAUDE_ARGV_LOG-}"
     "NATIVE_CLAUDE_DOCTOR_STATUS=${NATIVE_CLAUDE_DOCTOR_STATUS:-0}"
+    "NATIVE_CLAUDE_SKILLS_STATUS=${NATIVE_CLAUDE_SKILLS_STATUS:-0}"
+    "NATIVE_CLAUDE_INBOX_RESULT=${NATIVE_CLAUDE_INBOX_RESULT-}"
+    "NATIVE_CLAUDE_MODELS_STATUS=${NATIVE_CLAUDE_MODELS_STATUS:-0}"
     "NATIVE_CLAUDE_DOCTOR_READY=${NATIVE_CLAUDE_DOCTOR_READY-}"
     "NATIVE_CLAUDE_DOCTOR_RELEASE=${NATIVE_CLAUDE_DOCTOR_RELEASE-}"
     "NATIVE_CLAUDE_LAUNCH_READY=${NATIVE_CLAUDE_LAUNCH_READY-}"
@@ -563,6 +624,13 @@ fmx() {
     GH_ENTERPRISE_TOKEN=fixture-enterprise-token
     GITHUB_ENTERPRISE_TOKEN=fixture-github-enterprise-token
     COPILOT_TOKEN=fixture-copilot-only-token
+    ANTHROPIC_API_KEY=fixture-anthropic-token
+    ANTHROPIC_AUTH_TOKEN=fixture-anthropic-auth
+    AWS_ACCESS_KEY_ID=fixture-aws-key
+    AWS_SHARED_CREDENTIALS_FILE=fixture-aws-file
+    GOOGLE_APPLICATION_CREDENTIALS=fixture-google-file
+    AZURE_CLIENT_SECRET=fixture-azure-secret
+    OPENAI_API_KEY=fixture-openai-token
     "$install_root/bin/fmx"
     "$@"
   )
@@ -571,6 +639,23 @@ fmx() {
     *) "${command[@]}" ;;
   esac
 }
+
+if [[ "${FMX_CONTRACT_ONLY-}" == instances ]]; then
+  python3 "$root/tests/instances-contract.py" "$fixture_root" "$root" "$repo_root" \
+    "$fake_bin" "$fake_native_claude" "$FAKE_GIT_SOURCE_TREE"
+  printf 'fmx instance contract: passed\n'
+  exit 0
+fi
+if [[ "${FMX_CONTRACT_ONLY-}" != legacy ]]; then
+  python3 "$root/tests/healing-contract.py" "$fixture_root" "$root" "$repo_root" \
+    "$fake_bin" "$fake_native_claude" "$FAKE_GIT_SOURCE_TREE"
+  if [[ "${FMX_CONTRACT_ONLY-}" == healing ]]; then
+    printf 'fmx healing contract: passed\n'
+    exit 0
+  fi
+  python3 "$root/tests/instances-contract.py" "$fixture_root" "$root" "$repo_root" \
+    "$fake_bin" "$fake_native_claude" "$FAKE_GIT_SOURCE_TREE"
+fi
 
 # ===========================================================================
 # 1. Package shape and static validity.
@@ -653,13 +738,21 @@ jq -e --arg commit "$pinned_commit" '
 
 manifest="$root/overlay/$pinned_commit/manifest.json"
 [[ -f "$manifest" ]] || fail "the pinned overlay manifest is missing: $manifest"
-jq -e --arg commit "$pinned_commit" '
+jq -e --arg commit "$pinned_commit" --argjson count "$overlay_file_count" '
   .schemaVersion == 1
   and .commit == $commit
-  and (.files | length == 4)
+  and (.files | length == $count)
   and ([.files[].path] | sort == [
     ".agents/skills/updatefirstmate/SKILL.md",
     "bin/fm-brief.sh",
+    "bin/fm-control.sh",
+    "bin/fm-dod-lib.sh",
+    "bin/fm-home-seed.sh",
+    "bin/fm-inbox.sh",
+    "bin/fm-promote.sh",
+    "bin/fm-remote-home-provision.sh",
+    "bin/fm-remote-home-seed.sh",
+    "bin/fm-remote-secondmate-control.sh",
     "bin/fm-spawn.sh",
     "bin/fm-update.sh"
   ])
@@ -689,6 +782,7 @@ helper_prerequisite_lock="$helper_runtime/prerequisites/.install-lock"
 mkdir -p "$helper_runtime/lib" "$helper_runtime/prerequisite-lock/npm" \
   "$helper_runtime/prerequisites"
 cp "$prerequisite_helper" "$helper_runtime/lib/fmx-prerequisites"
+cp "$root/lib/fmx-control.py" "$root/lib/fmx-controls.py" "$root/lib/fmx-registry.py" "$helper_runtime/lib/"
 cp "$root/prerequisites/manifest.json" "$helper_runtime/prerequisite-lock/manifest.json"
 cp "$root/prerequisites/npm/package.json" "$helper_runtime/prerequisite-lock/npm/package.json"
 cp "$root/prerequisites/npm/package-lock.json" \
@@ -804,8 +898,10 @@ assert_contains 'injected failure at after-artifact-recovery' \
 [[ ! -e "$helper_operation_lock" && ! -e "$helper_prerequisite_lock" ]] \
   || fail 'prerequisite artifact recovery retained a lock'
 rm -rf -- "$helper_destination"
-helper_incomplete_profile="$home/.local/share/trellage/profiles/firstmate/helper-incomplete"
+helper_incomplete_profile="$home/.local/share/trellage/profiles/firstmate/default"
 mkdir -p "$helper_incomplete_profile/locks/session"
+printf '%s\n' "$ownership_value" >"$helper_incomplete_profile/.managed-by-trellage-firstmate-profiles"
+chmod 0600 "$helper_incomplete_profile/.managed-by-trellage-firstmate-profiles"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   "$host_bash" "$helper_runtime/lib/fmx-prerequisites" install \
@@ -818,9 +914,11 @@ assert_contains 'cannot install shared prerequisites while a Firstmate fleet or 
   || fail 'incomplete-session prerequisite refusal retained a lock'
 rm -rf -- "$helper_incomplete_profile"
 
-helper_launch_profile="$home/.local/share/trellage/profiles/firstmate/helper-launch"
+helper_launch_profile="$home/.local/share/trellage/profiles/firstmate/default"
 helper_launch_lock="$helper_launch_profile/locks/mutation"
 mkdir -p "$helper_launch_lock"
+printf '%s\n' "$ownership_value" >"$helper_launch_profile/.managed-by-trellage-firstmate-profiles"
+chmod 0600 "$helper_launch_profile/.managed-by-trellage-firstmate-profiles"
 printf '%s\n' "$ownership_value" >"$helper_launch_lock/owner"
 printf 'launch\n' >"$helper_launch_lock/action"
 printf '%s\n' "$$" >"$helper_launch_lock/pid"
@@ -1260,6 +1358,7 @@ jq -e '
       "headless",
       "marketplace",
       "name",
+      "orchestration",
       "plugin",
       "source",
       "standaloneMcps"
@@ -1281,9 +1380,13 @@ jq -e '
     and .headless.eventContract == null
     and .headless.trellageEventContract == null)
 ' "$logs/list.json" >/dev/null || fail 'list --json is not the router generic shape'
-# `taskIdPrefix` and `workerPolicy` are source-catalog metadata only.
-assert_not_contains 'taskIdPrefix' "$logs/list.json"
-assert_not_contains 'workerPolicy' "$logs/list.json"
+jq -e --arg commit "$pinned_commit" '
+  all(.profiles[];
+    .orchestration.sourceRevision == $commit
+    and .orchestration.workerHarness == "claude"
+    and .orchestration.dispatchRules == "claude-single"
+    and .orchestration.submission.maxRequestBytes == 524288)
+' "$logs/list.json" >/dev/null || fail 'list did not expose the frozen orchestration contract'
 [[ -z "$(find "$pure_home" -mindepth 1 -print -quit)" ]] \
   || fail 'list --json created state in HOME'
 [[ ! -s "$FAKE_GIT_LOG" ]] || fail 'list --json invoked git'
@@ -1313,7 +1416,7 @@ jq -e --arg commit "$pinned_commit" '
   and .overlay.digestAlgorithm == "sha256"
   and (.overlay.manifestDigest | test("^[0-9a-f]{64}$"))
   and (.overlay.contentDigest | test("^[0-9a-f]{64}$"))
-  and .overlay.fileCount == 4
+  and .overlay.fileCount == 12
   and .overlay.verified == false
   and .session == "none"
   and .workers == []
@@ -1452,7 +1555,7 @@ for profile in default pstack-workers; do
 done
 
 # The overlay actually landed in the published runtime.
-assert_contains 'FMX_WORKER_POLICY_FILE' "$profiles_root/default/runtime/bin/fm-brief.sh"
+assert_contains 'fm_fmx_worker_policy' "$profiles_root/default/runtime/bin/fm-brief.sh"
 assert_contains 'FMX_WORKER_LAUNCHER' "$profiles_root/default/runtime/bin/fm-spawn.sh"
 assert_contains 'fmx update' "$profiles_root/default/runtime/bin/fm-update.sh"
 assert_contains 'Trellage `fmx` runtimes' \
@@ -1522,7 +1625,7 @@ jq -e --arg commit "$pinned_commit" '
   and .source.commitMatchesPin == true
   and .overlay.commit == $commit
   and .overlay.verified == true
-  and .overlay.fileCount == 4
+  and .overlay.fileCount == 12
   and .session == "none"
 ' "$logs/inventory-healthy.json" >/dev/null || fail 'inventory did not report healthy'
 
@@ -1657,7 +1760,7 @@ jq -e --arg commit "$pinned_commit" '
   || fail 'inventory did not expose a receipt that differs from the pin'
 fmx update --check default >"$logs/update-check-stale.out" 2>&1 \
   || fail 'update --check on a stale profile failed'
-assert_contains 'is stale (installed 111111111111, catalog pin 4ad8cbaeafc1' \
+assert_contains 'is stale (installed 111111111111, catalog pin 527aa7c12d25' \
   "$logs/update-check-stale.out"
 fmx harness-version default >"$logs/harness-version-stale.json" \
   || fail 'harness-version on a stale profile failed'
@@ -1668,7 +1771,7 @@ jq -e --arg latest "$pinned_commit" '
 ' "$logs/harness-version-stale.json" >/dev/null \
   || fail 'harness-version did not preserve the stale Firstmate installed commit'
 fmx update default >"$logs/update-stale.out" 2>&1 || fail 'update on a stale profile failed'
-assert_contains "fmx update: default 111111111111 -> 4ad8cbaeafc1 installed" \
+assert_contains "fmx update: default 111111111111 -> 527aa7c12d25 installed" \
   "$logs/update-stale.out"
 jq -e --arg commit "$pinned_commit" '.commit == $commit' "$stale_receipt" >/dev/null \
   || fail 'update installed something other than the catalog pin'
@@ -1770,12 +1873,12 @@ printf '{}\n' >"$dispatch"
 status=0
 fmx doctor default >/dev/null 2>"$logs/doctor-dispatch.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a crew dispatch profile exited $status instead of 1"
-assert_contains 'refusing to run with a crew dispatch profile' "$logs/doctor-dispatch.err"
+assert_contains 'invalid Claude-only crew dispatch rules' "$logs/doctor-dispatch.err"
 rm -rf -- "$profiles_root/default/locks/session"
 status=0
 fmx default >/dev/null 2>"$logs/launch-dispatch.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with a crew dispatch profile exited $status instead of 1"
-assert_contains 'refusing to run with a crew dispatch profile' "$logs/launch-dispatch.err"
+assert_contains 'invalid Claude-only crew dispatch rules' "$logs/launch-dispatch.err"
 fmx inventory default --json >"$logs/inventory-dispatch.json" || fail 'inventory failed'
 jq -e '.readiness == "unhealthy"' "$logs/inventory-dispatch.json" >/dev/null \
   || fail 'inventory did not report unhealthy for a crew dispatch profile'
@@ -1785,7 +1888,7 @@ status=0
 fmx doctor default >/dev/null 2>"$logs/doctor-dispatch-link.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "doctor with a symlinked crew dispatch profile exited $status instead of 1"
-assert_contains 'refusing to run with a crew dispatch profile' "$logs/doctor-dispatch-link.err"
+assert_contains 'invalid Claude-only crew dispatch rules' "$logs/doctor-dispatch-link.err"
 rm -- "$dispatch"
 fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after removing the dispatch profile'
 
@@ -1956,11 +2059,11 @@ for managed in home receipts; do
   fmx default >/dev/null 2>"$logs/launch-link-$managed.err" || status=$?
   [[ "$status" == 1 ]] || fail "launch with a symlinked $managed exited $status instead of 1"
   assert_contains 'unsafe managed path (symlink)' "$logs/launch-link-$managed.err"
-  status=0
-  fmx inventory default --json >/dev/null 2>"$logs/inventory-link-$managed.err" || status=$?
-  [[ "$status" == 1 ]] \
-    || fail "inventory with a symlinked $managed exited $status instead of 1"
-  assert_contains 'unsafe managed path (symlink)' "$logs/inventory-link-$managed.err"
+  fmx inventory default --json >"$logs/inventory-link-$managed.json" \
+    || fail "inventory with a symlinked $managed did not return structured readiness"
+  jq -e '.fleet.runtime == "unsafe" and .fleet.identity == null and (.fleet.actions | all(.allowed == false))' \
+    "$logs/inventory-link-$managed.json" >/dev/null \
+    || fail "inventory admitted an unsafe $managed path"
   rm -- "$profiles_root/default/$managed"
   mv "$fixture_root/$managed.real" "$profiles_root/default/$managed"
 done
@@ -2034,6 +2137,7 @@ mutation_lock="$profiles_root/default/locks/mutation"
 mkdir -p "$mutation_lock"
 printf '%s\n' "$ownership_value" >"$mutation_lock/owner"
 printf '%s\n' "$busy_pid" >"$mutation_lock/pid"
+printf 'repair\n' >"$mutation_lock/action"
 for command_name in setup repair update; do
   status=0
   fmx "$command_name" default >/dev/null 2>"$logs/$command_name-locked.err" || status=$?
@@ -2170,6 +2274,7 @@ wait "$first_pid"
 mkdir -p "$mutation_lock"
 printf '%s\n' "$ownership_value" >"$mutation_lock/owner"
 printf '999999\n' >"$mutation_lock/pid"
+printf 'repair\n' >"$mutation_lock/action"
 fmx inventory default --json >"$logs/inventory-stale-lock.json" || fail 'inventory failed'
 jq -e '.mutation == "stale" and .readiness == "healthy"' \
   "$logs/inventory-stale-lock.json" >/dev/null \
@@ -2457,10 +2562,11 @@ managed_destination="$install_root/prerequisites/$managed_identity"
 rm -rf -- "$install_root/prerequisites"
 rm -rf -- "$profiles_root/default/locks/session"
 : >"$FAKE_PREREQUISITE_LOG"
+status=0
 fmx doctor default >"$logs/prerequisite-doctor.out" \
-  2>"$logs/prerequisite-doctor.err" \
-  || fail 'doctor failed instead of reporting missing fleet prerequisites'
-assert_contains 'fmx doctor default: OK' "$logs/prerequisite-doctor.out"
+  2>"$logs/prerequisite-doctor.err" || status=$?
+[[ "$status" != 0 ]] || fail 'doctor reported success with missing fleet prerequisites'
+assert_not_contains 'fmx doctor default: OK' "$logs/prerequisite-doctor.out"
 assert_contains 'fleet prerequisites incomplete' "$logs/prerequisite-doctor.err"
 assert_contains 'managed by fmx after consent:' "$logs/prerequisite-doctor.err"
 assert_contains 'no-mistakes' "$logs/prerequisite-doctor.err"
@@ -2683,6 +2789,7 @@ rm -rf -- "$profiles_root/default/locks/session"
 mkdir -p "$profiles_root/default/locks/session"
 printf '%s\n' "$ownership_value" >"$profiles_root/default/locks/session/owner"
 printf '999999\n' >"$profiles_root/default/locks/session/pid"
+printf 'tmux\n' >"$profiles_root/default/locks/session/backend"
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 fmx default >/dev/null 2>"$logs/launch-stale-session.err" \
   || { cat "$logs/launch-stale-session.err" >&2; fail 'launch did not reclaim a stale session lock'; }
@@ -2792,8 +2899,10 @@ rm -rf -- "$session_lock"
 sleep 300 &
 busy_pid=$!
 mkdir -p "$profiles_root/default/workers/fmd-live"
+printf '%s\n' "$ownership_value" >"$profiles_root/default/workers/fmd-live/.managed-by-trellage-firstmate-profiles"
 printf '%s\n' "$busy_pid" >"$profiles_root/default/workers/fmd-live/.active"
 mkdir -p "$profiles_root/default/workers/fmd-dead"
+printf '%s\n' "$ownership_value" >"$profiles_root/default/workers/fmd-dead/.managed-by-trellage-firstmate-profiles"
 printf '999999\n' >"$profiles_root/default/workers/fmd-dead/.active"
 mkdir -p "$profiles_root/default/workers/fmd-orphan"
 
@@ -2881,12 +2990,12 @@ assert_contains '# Worker inner loop' "$scout_brief"
 [[ "$(grep -Fxc '# Worker inner loop' "$scout_brief")" == 1 ]] \
   || fail 'the worker policy heading is not present exactly once in a scout brief'
 
+status=0
 FM_SECONDMATE_CHARTER='own the docs domain' \
-  brief_env pstack-workers fmp-second --secondmate demo/repo >/dev/null \
-  || fail 'the patched fm-brief.sh could not scaffold a secondmate charter'
-charter="$profiles_root/pstack-workers/home/data/fmp-second/brief.md"
-assert_contains '# Charter' "$charter"
-assert_not_contains '# Worker inner loop' "$charter"
+  brief_env pstack-workers fmp-second --secondmate demo/repo \
+  >/dev/null 2>"$logs/brief-secondmate.err" || status=$?
+[[ "$status" == 1 && ! -e "$profiles_root/pstack-workers/home/data/fmp-second" ]] \
+  || fail 'the managed profile scaffolded a secondmate'
 
 # The default profile leaves the policy unset.
 brief_env default fmd-ship demo/repo --mode local-only >/dev/null \
@@ -3116,17 +3225,19 @@ jq -e '.model == "claude-sonnet-5" and .effort == "high"' \
   "$profiles_root/default/workers/fmd-beta/worker.json" >/dev/null \
   || fail 'the worker record does not preserve the model and effort selection'
 
-# A quote-bearing model or effort must not be able to break the record's JSON.
+# Unsupported controls must be rejected before a worker home exists.
 hostile_model='ev"il","injected":true,"x":"'
+status=0
 run_worker --task fmd-hostile --kind ship --backend tmux \
   --brief "$worker_brief" --worktree "$worker_worktree" \
   --operational-input "$opinput" --model "$hostile_model" --effort 'lo"w' \
-  --traceparent keep \
-  || fail 'the worker boundary failed with quote-bearing model and effort input'
-jq -e --arg model "$hostile_model" '
-  type == "object" and .model == $model and (has("injected") | not)
-' "$profiles_root/default/workers/fmd-hostile/worker.json" >/dev/null \
-  || fail 'a quote-bearing model broke the worker record JSON'
+  --traceparent keep >/dev/null 2>"$logs/worker-controls.err" || status=$?
+[[ "$status" == 1 && ! -e "$profiles_root/default/workers/fmd-hostile" ]] \
+  || fail 'invalid controls created a worker home'
+run_worker --task fmd-gamma --kind ship --backend tmux \
+  --brief "$worker_brief" --worktree "$worker_worktree" \
+  --operational-input "$opinput" --model haiku --effort max --traceparent keep \
+  || fail 'explicit supported alias and effort failed admission'
 
 # The task-id namespace is enforced inside the worker helper too.
 status=0
@@ -3151,10 +3262,10 @@ assert_not_contains "home=$profiles_root/default/captain/claude|bridge=disabled"
   "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains '<<launch-brief>>' "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains 'You are a crewmate' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'args=--model claude-sonnet-5 --effort high <<launch-brief>>' \
+assert_contains '--model claude-sonnet-5 --effort high <<launch-brief>>' \
   "$NATIVE_CLAUDE_LAUNCH_LOG"
-# No model or effort means no flag, exactly as upstream.
-assert_contains 'args=<<launch-brief>>' "$NATIVE_CLAUDE_LAUNCH_LOG"
+# An omitted model resolves through the shared Claude default; effort stays unset.
+assert_contains '--model claude-opus-5 <<launch-brief>>' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 # The worker environment reaching the shared runtime carries the explicit
 # GitHub configuration, no FMX carrier, and no Herdr context.
@@ -3299,11 +3410,10 @@ assert_not_contains '--launch-command' "$spawn_runtime"
 assert_contains '--operational-input $sq_opinput' "$spawn_runtime"
 assert_contains 'FMX_TASK_ID_PREFIX=$(shell_quote "${FMX_TASK_ID_PREFIX:-}")' "$spawn_runtime"
 assert_contains 'FMX_WORKER_BASH=$(shell_quote "${FMX_WORKER_BASH:-}")' "$spawn_runtime"
-assert_contains 'FMX_TREEHOUSE_BIN=$(PATH="$FMX_WORKER_PATH" type -P treehouse' "$spawn_runtime"
+assert_contains 'FMX_TREEHOUSE_BIN=$(PATH="${FMX_WORKER_PATH:?}" type -P treehouse' "$spawn_runtime"
 assert_contains 'spawn_send_text_line "$WT_TARGET" "$(shell_quote "$FMX_TREEHOUSE_BIN") get"' "$spawn_runtime"
 assert_contains "spawn_send_text_line \"\$WT_TARGET\" 'treehouse get'" "$spawn_runtime"
-assert_contains 'would start outside the fmx worker boundary' "$spawn_runtime"
-assert_contains 'does not manage secondmate homes' "$spawn_runtime"
+assert_contains 'fmx-controls.py" spawn "$@"' "$spawn_runtime"
 assert_not_contains 'sh -c' "$install_root/lib/fmx-worker"
 
 # ===========================================================================
@@ -3324,7 +3434,7 @@ if [[ -f "$repo_root/prototypes/trellage-claude-common/native-claude" ]]; then
 #!/usr/bin/env bash
 set -euo pipefail
 case "\${1-}" in
-  launch | exec-clean)
+  launch | exec-clean | model-map | model-catalog)
     exec "$repo_root/prototypes/trellage-claude-common/native-claude" "\$@"
     ;;
 esac
@@ -3634,6 +3744,12 @@ FAKE_CURL
 else
   printf 'fmx contract: skipping the real shared Claude runtime block (helper absent)\n'
 fi
+
+# ===========================================================================
+# 12c. Native fleet control, recovery, and real pinned entry points.
+# ===========================================================================
+
+. "$root/tests/fleet-contract.sh"
 
 # ===========================================================================
 # 13. Uninstall preserves every profile root.

@@ -6,13 +6,15 @@ import React from "react"
 import { render } from "ink"
 import stringWidth from "string-width"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { AdminApp } from "../src/admin-ui.tsx"
+import { AdminApp, AdminRoot } from "../src/admin-ui.tsx"
 import { AdminRunManager } from "../src/admin-run-manager.ts"
 import { launchAdminProfile } from "../src/admin-launch.ts"
 import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.ts"
 import { checkAdminSkillsUpdates } from "../src/admin-skills-check.ts"
 import type { AdminProfileEntry } from "../src/admin-model.ts"
 import type { CommandRunner, CommandRunOptions, CommandRunResult } from "../src/guide-launch.ts"
+import type { CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import { alpha, beta, firstmateCatalog, firstmatePin, instanceInventory, instancePage, instanceRows, missingLegacy } from "./admin-firstmate-fixtures.ts"
 
 vi.mock("../src/admin-harness-version-cache.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/admin-harness-version-cache.ts")>()),
@@ -108,7 +110,7 @@ const versionReport = (installed = "2.1.252", latest = "3.0.0"): CommandRunResul
   stdout: JSON.stringify({ schemaVersion: 1, installed, latest, latestKnown: true }),
 })
 const isUpdate = (args: ReadonlyArray<string>) =>
-  ["harness-update", "upgrade", "update", "skills", "skills-update", "repair", "setup"].includes(args[0] ?? "")
+  ["harness-update", "upgrade", "update", "skills", "skills-update", "repair", "setup", "prepare", "create"].includes(args[0] ?? "")
 const commandResult = (args: ReadonlyArray<string>): CommandRunResult => {
   if (args[0] === "--help")
     return { ...success, stdout: "usage: launcher harness-update\nlauncher skills-update PROFILE\ntrx skills update" }
@@ -130,6 +132,7 @@ const mountAdmin = async (
   onUpdate?: (options: CommandRunOptions | undefined, args: ReadonlyArray<string>) => Promise<CommandRunResult>,
   size = { columns: 140, rows: 48 },
   onVersion?: CommandRunner["run"],
+  extra: { readonly catalog?: CombinedGuideCatalog; readonly onCommand?: CommandRunner["run"] } = {},
 ) => {
   const stdin = new TestInput()
   const stdout = new TestOutput()
@@ -139,22 +142,25 @@ const mountAdmin = async (
   const run = vi.fn<CommandRunner["run"]>(async (executable, args, options) => {
     if (isUpdate(args) && onUpdate !== undefined) return onUpdate(options, args)
     if (args[0] === "harness-version" && onVersion !== undefined) return onVersion(executable, args, options)
+    if (extra.onCommand !== undefined) return extra.onCommand(executable, args, options)
     return commandResult(args)
   })
   const clientFactory = vi.fn<() => never>(() => {
     throw new Error("Model inference is not allowed")
   })
+  const props = {
+    runManager: new AdminRunManager({ runner: { run } }),
+    guideRoot: "/unused",
+    runner: { run },
+    diagnosisProvider: new DoctorFailureDiagnosisProvider({ clientFactory }),
+    herdrEnv: {},
+    cwd: "/fixture/worktree",
+    routerCommandPath: "/fixture/trx",
+  }
   const app = render(
-    React.createElement(AdminApp, {
-      entries,
-      runManager: new AdminRunManager({ runner: { run } }),
-      guideRoot: "/unused",
-      runner: { run },
-      diagnosisProvider: new DoctorFailureDiagnosisProvider({ clientFactory }),
-      herdrEnv: {},
-      cwd: "/fixture/worktree",
-      routerCommandPath: "/fixture/trx",
-    }),
+    extra.catalog === undefined
+      ? React.createElement(AdminApp, { ...props, entries })
+      : React.createElement(AdminRoot, { ...props, catalog: extra.catalog }),
     { stdin, stdout, stderr, debug: true, interactive: true, patchConsole: false },
   )
   // Subscribe before unmount so Ink can remove its beforeExit handler.
@@ -178,9 +184,128 @@ const mountAdmin = async (
     await app.waitUntilRenderFlush()
   }
   const updates = () => run.mock.calls.filter(([, args]) => isUpdate(args))
+  const replaceEntries = async (next: ReadonlyArray<AdminProfileEntry>) => {
+    app.rerender(React.createElement(AdminApp, { ...props, entries: next }))
+    await app.waitUntilRenderFlush()
+  }
   await vi.waitFor(() => expect(screen()).toContain("Trellage Admin"))
-  return { app, exited, screen, press, updates, run }
+  return { app, exited, screen, press, updates, run, replaceEntries }
 }
+
+const instanceForArgs = (args: ReadonlyArray<string>) => {
+  const selector = args[args.indexOf("--instance") + 1]
+  return selector === alpha.reference.instanceId ? alpha : selector === beta.reference.instanceId ? beta : missingLegacy
+}
+
+describe("Firstmate Admin instance controls", () => {
+  it("does not run Firstmate doctor, auto-repair, setup, or a model before or after delayed discovery", async () => {
+    let resolveList!: (result: CommandRunResult) => void
+    const listing = new Promise<CommandRunResult>((resolve) => { resolveList = resolve })
+    const tui = await mountAdmin([], undefined, { columns: 80, rows: 24 }, async () => versionReport("a".repeat(40), firstmatePin), {
+      catalog: firstmateCatalog(),
+      onCommand: async (_executable, args) => {
+        if (args[0] === "instances") return listing
+        if (args[0] === "inventory") return { ...success, stdout: instanceInventory(instanceForArgs(args)) }
+        if (args[0] === "doctor") throw new Error("The selected instance needs operator review.")
+        return commandResult(args)
+      },
+    })
+    await vi.waitFor(() => expect(tui.screen()).toContain("discovery is pending"))
+    for (const key of ["d", "p", "y", "l", "y", "A"]) await tui.press(key)
+    expect(tui.run.mock.calls.map(([, args]) => args[0])).toEqual(["instances"])
+    resolveList({ ...success, stdout: instancePage([missingLegacy, alpha, beta]) })
+    await vi.waitFor(() => expect(tui.screen()).toContain("default / alpha"))
+    await vi.waitFor(() => expect(tui.run.mock.calls.filter(([, args]) => args[0] === "doctor")).toHaveLength(3))
+    await vi.waitFor(() => expect(tui.screen()).toContain("prepare instance"))
+    expect(tui.updates()).toHaveLength(0)
+    expect(tui.screen()).toContain(alpha.reference.instanceId)
+  })
+
+  it("shows incomplete discovery instead of a healthy legacy-only catalog", async () => {
+    const tui = await mountAdmin([], undefined, undefined, undefined, {
+      catalog: firstmateCatalog(),
+      onCommand: async () => ({ ...success, stdout: "{broken-registry-json" }),
+    })
+    await vi.waitFor(() => expect(tui.screen()).toContain("Firstmate instance list incomplete"))
+    expect(tui.screen()).toContain("Instance discovery failed")
+    expect(tui.screen()).not.toContain("[p]")
+    await tui.press("A")
+    await vi.waitFor(() => expect(tui.screen()).toContain("No confirmed updates"))
+    expect(tui.screen()).toContain("Incomplete checks")
+    expect(tui.screen()).not.toContain("Everything is up to date")
+    await tui.press("y")
+    expect(tui.updates()).toHaveLength(0)
+    expect(tui.run.mock.calls.every(([, args]) => args[0] === "instances")).toBe(true)
+  })
+
+  it("requires truthful preparation consent and leaves a refused instance blocked without setup", async () => {
+    const row = instanceRows().find((entry) => entry.firstmateInstance?.instanceId === alpha.reference.instanceId)!
+    const tui = await mountAdmin([row], async (_options, args) => {
+      expect(args[0]).toBe("prepare")
+      return { ...success, stdout: instanceInventory(alpha, {
+        preparation: { schemaVersion: 1, state: "blocked", diagnostic: "Shared writer refused: beta is active.", repairs: [], installation: null },
+      }) }
+    }, undefined, async () => versionReport("a".repeat(40), firstmatePin), {
+      onCommand: async (_executable, args) => {
+        if (args[0] === "doctor") throw new Error("doctor blocked")
+        return commandResult(args)
+      },
+    })
+    await vi.waitFor(() => expect(tui.screen()).toContain("[p] prepare instance"))
+    expect(tui.updates()).toHaveLength(0)
+    await tui.press("p")
+    expect(tui.screen()).toContain("prepare the existing default / alpha")
+    expect(tui.screen()).toContain(alpha.reference.instanceId)
+    expect(tui.screen()).not.toContain("repair (and setup")
+    await tui.press("n")
+    expect(tui.updates()).toHaveLength(0)
+    await tui.press("p")
+    await tui.press("y")
+    await vi.waitFor(() => expect(tui.screen()).toContain("Preparation failure"))
+    expect(tui.screen()).toContain("Shared writer refused")
+    expect(tui.updates()).toHaveLength(1)
+    expect(tui.updates()[0]?.[1]).toContain(alpha.reference.instanceId)
+    expect(tui.updates()[0]?.[1]).toContain("--fmx-instance-context-json")
+    expect(tui.updates()[0]?.[1]).not.toContain("--install-prerequisites")
+  })
+
+  it("does not expand a confirmed UUID target set when another instance appears", async () => {
+    const first = instanceRows([missingLegacy, alpha])
+    const tui = await mountAdmin(first, undefined, undefined, async () => versionReport("a".repeat(40), firstmatePin))
+    await tui.press("U")
+    expect(tui.screen()).toContain("these 1 native targets")
+    expect(tui.screen()).toContain(alpha.reference.instanceId)
+    await tui.replaceEntries(instanceRows())
+    expect(tui.screen()).toContain("these 1 native targets")
+    await tui.press("y")
+    await vi.waitFor(() => expect(tui.updates()).toHaveLength(1))
+    expect(tui.updates()[0]?.[1]).toContain(alpha.reference.instanceId)
+    expect(tui.updates()[0]?.[1]).not.toContain(beta.reference.instanceId)
+    expect(tui.updates()[0]?.[1]).not.toContain("--all")
+  })
+
+  it("keeps names, UUIDs, and full association details available with keyboard input at 80 by 24", async () => {
+    const tui = await mountAdmin(instanceRows(), undefined, { columns: 80, rows: 24 }, async () => versionReport(firstmatePin, firstmatePin), {
+      onCommand: async (_executable, args) => args[0] === "inventory"
+        ? { ...success, stdout: instanceInventory(instanceForArgs(args)) }
+        : commandResult(args),
+    })
+    expect(tui.screen()).toContain("default / alpha")
+    expect(tui.screen()).toContain(alpha.reference.instanceId)
+    await tui.press("j")
+    expect(tui.screen()).toContain("default / beta")
+    expect(tui.screen()).toContain(beta.reference.instanceId)
+    await tui.press("i")
+    await vi.waitFor(() => expect(tui.screen()).toContain("beta inventory"))
+    const compact = tui.screen().replace(/\s+/gu, "")
+    expect(compact).toContain(beta.root)
+    expect(compact).toContain(beta.worktree.evidence.locators.worktree)
+    expect(tui.screen()).toContain("[q/Esc] back to list")
+    await tui.press("\u001b")
+    await vi.waitFor(() => expect(tui.screen()).toContain("Trellage Admin"))
+    expect(tui.updates()).toHaveLength(0)
+  })
+})
 
 describe("global Admin update keyboard ownership", () => {
   it("hides current harnesses and skills and disables confirmation when nothing is available", async () => {

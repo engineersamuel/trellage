@@ -1,0 +1,14 @@
+--- a/bin/fm-update.sh
++++ b/bin/fm-update.sh
+@@ -57,6 +57,11 @@
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
++for fmx_marker in "$FM_HOME/.fmx-managed" "$FM_ROOT/.fmx-managed"; do
++  [ -f "$fmx_marker" ] || continue
++  echo "error: firstmate self-update is disabled here: this runtime is managed by Trellage fmx and pinned to an exact commit (marker: $fmx_marker). Run 'fmx update <profile>' on the host, then relaunch." >&2
++  exit 1
++done
+ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+ SECONDMATES_MD="$FM_HOME/data/secondmates.md"
+ # shellcheck source=bin/fm-ff-lib.sh

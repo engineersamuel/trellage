@@ -662,7 +662,7 @@ test("generic materialization and sync preserve manual activation without enabli
   await initRepository(repository)
   await commit(repository, "initial generic skill")
 
-  const materializer = path.join(root, "fake-skills")
+  const materializer = path.join(root, "fake-skills.cjs")
   await writeFile(
     materializer,
     `#!/usr/bin/env node

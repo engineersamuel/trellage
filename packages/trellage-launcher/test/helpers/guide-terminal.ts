@@ -9,7 +9,11 @@ import { spawnSourcePty, type SourcePty } from "./source-pty.ts"
 
 const waitOptions = { timeout: 5_000, interval: 20 }
 
-export const createGuideTerminal = async (entry: string, onTestFailed: TestContext["onTestFailed"]) => {
+export const createGuideTerminal = async (
+  entry: string,
+  onTestFailed: TestContext["onTestFailed"],
+  fixtureEnvironment: Record<string, string> = {},
+) => {
   const root = await mkdtemp(path.join(tmpdir(), "trellage guide integration-"))
   const terminal = new Terminal({ cols: 120, rows: 40, scrollback: 0, allowProposedApi: true })
   let child: SourcePty | undefined
@@ -71,6 +75,7 @@ export const createGuideTerminal = async (entry: string, onTestFailed: TestConte
           CI: "true",
           // Queue focus changes use styling; keep those redraws enabled under CI.
           FORCE_COLOR: "1",
+          ...fixtureEnvironment,
         },
       })
       child = processUnderTest

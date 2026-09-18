@@ -25,6 +25,7 @@ floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-ru
 environment_runtime_installer="$source_dir/../../scripts/install-native-environment-runtime.sh"
 floating_skills_manager="$source_dir/../../scripts/floating-skills.ts"
 floating_skills_catalog="$source_dir/../../skills.json"
+floating_skills_guard="$source_dir/../trellage-firstmate-profiles/lib/fmx-registry.py"
 for runtime_installer in "$floating_runtime_installer" "$environment_runtime_installer"; do
   [ -f "$runtime_installer" ] && [ ! -L "$runtime_installer" ] && [ -x "$runtime_installer" ] \
     || refuse "required runtime installer is missing or unsafe: $runtime_installer"
@@ -147,10 +148,14 @@ validate_floating_runtime_destination() {
     || refuse "cannot inspect floating-skills runtime: $destination"
   expected_entries="$(printf '%s\n' '.' './floating-skills.mjs' './skills.json')"
   [ "$actual_entries" = "$expected_entries" ] \
+    || [ "$actual_entries" = "$(printf '%s\n' '.' './floating-skills.mjs' './fmx-registry.py' './skills.json')" ] \
     || refuse "refusing unexpected floating-skills runtime content: $destination"
   for runtime_file in "$destination/floating-skills.mjs" "$destination/skills.json"; do
     assert_owned_safe_file "$runtime_file"
   done
+  if [ -e "$destination/fmx-registry.py" ] || [ -L "$destination/fmx-registry.py" ]; then
+    assert_owned_safe_file "$destination/fmx-registry.py"
+  fi
 }
 
 sha256_file() {

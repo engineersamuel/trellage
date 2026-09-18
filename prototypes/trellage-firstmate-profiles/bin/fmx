@@ -25,9 +25,18 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  fmx PROFILE [FIRSTMATE_ARGS...]
+  fmx PROFILE [--instance UUID|NAME|legacy] [--join] [FIRSTMATE_ARGS...]
   fmx list [--json]
+  fmx instances list PROFILE --json [--limit 1..32] [--cursor CURSOR]
+  fmx instances resolve PROFILE --worktree PATH --json
+  fmx instances plan PROFILE --name NAME --worktree PATH --json --expected-source-revision SHA40
+  fmx instances create PROFILE --json --approve-creation SHA256  (approved plan on stdin)
+  fmx instances refresh-locator PROFILE --instance UUID --worktree PATH --json \
+    --expected-binding-digest SHA256 --confirm
   fmx inventory PROFILE --json
+  fmx prepare PROFILE --json --expected-source-revision SHA40 [--install-prerequisites SHA256]
+  fmx submit PROFILE --json       (bounded JSON on stdin)
+  fmx receipt PROFILE --json      (bounded JSON on stdin)
   fmx harness-version PROFILE
   fmx setup PROFILE|--all
   fmx doctor PROFILE
@@ -37,6 +46,9 @@ Usage:
   fmx update [--check] PROFILE|--all
 
 Profiles: default, pstack-workers.
+Management commands accept --instance UUID|NAME|legacy. Unqualified commands
+and --all retain their legacy profile scope. Named creation never starts work
+or approves tool installation.
 
 fmx runs a Firstmate captain from a pinned, overlaid runtime.
 
@@ -48,6 +60,8 @@ Network use:
   update --check       always offline: it compares the installed receipt to
                        the catalog pin and never fetches.
   repair               fetches only when it must restage the runtime.
+  prepare              repairs existing owned, idle state without starting a
+                       fleet. New tools require explicit lock-bound consent.
   skills-update        copies the refreshed shared skill cache into existing
                        captain and worker homes; requires an idle fleet.
   doctor               never fetch Firstmate source, but does run the GitHub
@@ -107,6 +121,11 @@ readonly overlay_root="$runtime_root/overlay"
 readonly policy_source_root="$runtime_root/policies"
 readonly overlay_tool="$runtime_root/lib/fmx-overlay.py"
 readonly worker_launcher="$runtime_root/lib/fmx-worker"
+readonly controls_helper="$runtime_root/lib/fmx-controls.py"
+readonly control_helper="$runtime_root/lib/fmx-control.py"
+readonly registry_helper="$runtime_root/lib/fmx-registry.py"
+readonly instances_helper="$runtime_root/lib/fmx-instances.py"
+readonly instance_overlay_root="$runtime_root/instance-overlay"
 # An installed runtime stages the shared helper at lib/native-claude. A
 # checked-out source tree (no install.sh run yet) has no lib/native-claude,
 # so fall back to the sibling trellage-claude-common source, matching cldx's
@@ -146,11 +165,23 @@ previous_runtime=''
 previous_receipt=''
 mutation_lock=''
 mutation_lock_held=''
+automatic_preparation=false
+automatic_staging_started=false
+automatic_publication_started=false
 task_id_prefix=''
 prerequisite_path=''
 prerequisite_diagnostics=''
 prerequisite_managed_missing=''
 prerequisite_host_missing=''
+instance_selector='legacy'
+instance_context=''
+instance_join=false
+instance_explicit=false
+instance_operation=''
+instance_descriptor=''
+instance_id=''
+unset FMX_SELECTED_INSTANCE FMX_INSTANCE_CONTEXT_JSON FMX_INSTANCE_ID
+unset FMX_LAUNCH_PROVENANCE_JSON
 
 # ---------------------------------------------------------------------------
 # Catalog. `list --json` is a pure projection of this file: it never probes the
@@ -209,6 +240,7 @@ validate_catalog() {
       and (.value | keys == [
         "description",
         "headless",
+        "orchestration",
         "plugin",
         "standaloneMcps",
         "taskIdPrefix",
@@ -219,6 +251,17 @@ validate_catalog() {
         and length > 0
         and (test("[\u0000-\u001f\u007f-\u009f]") | not))
       and (.value.headless | validHeadless)
+      and (.value.orchestration | type == "object"
+        and keys == ["dispatchRules","instances","kind","preparation","schemaVersion","sourceRevision",
+          "submission","taskIdPrefix","workerEfforts","workerHarness","workerPolicy"]
+        and .schemaVersion == 1 and .kind == "firstmate"
+        and .workerHarness == "claude" and .dispatchRules == "claude-single"
+        and .workerEfforts == ["low", "medium", "high", "xhigh", "max"]
+        and .submission == {"schemaVersion":1,"maxRequestBytes":524288}
+        and .preparation == {"schemaVersion":1}
+        and .instances == {"schemaVersion":1}
+        and (.sourceRevision | test("^[0-9a-f]{40}$")))
+      and .value.orchestration.taskIdPrefix == .value.taskIdPrefix
       and .value.plugin == null
       and .value.standaloneMcps == []
       and (.value.taskIdPrefix | type == "string" and test("^[a-z][a-z0-9]{1,7}$"))
@@ -269,6 +312,7 @@ list_profiles_json() {
             source: "kunchenguid/firstmate",
             marketplace: null,
             standaloneMcps: .value.standaloneMcps
+            ,orchestration: .value.orchestration
           }
       ]
     }
@@ -286,13 +330,14 @@ require_safe_home() {
     || die "unsafe HOME: ${HOME-}"
   canonical_home="$(canonical_directory "$HOME")" || die "cannot resolve HOME: $HOME"
   [[ "$canonical_home" != / ]] || die "unsafe HOME: $HOME"
+  export HOME="$canonical_home"
 }
 
 require_safe_profile_path() {
   local path="$HOME" component canonical_home canonical_path
 
   canonical_home="$(canonical_directory "$HOME")"
-  for component in .local share trellage profiles firstmate "$profile_key"; do
+  while IFS= read -r component; do
     path="$path/$component"
     [[ ! -L "$path" ]] || die "unsafe profile path: $path"
     if [[ -e "$path" ]]; then
@@ -304,16 +349,37 @@ require_safe_profile_path() {
         *) die "redirected profile path: $path" ;;
       esac
     fi
-  done
+  done < <(profile_path_components)
+}
+
+profile_path_components() {
+  printf '%s\n' .local share trellage profiles firstmate
+  if [[ "$instance_selector" == legacy ]]; then
+    printf '%s\n' "$profile_key"
+  else
+    printf '%s\n' instances "$instance_selector"
+  fi
 }
 
 select_profile() {
-  local name="$1"
+  local name="$1" resolved
 
   jq -e --arg name "$name" '.profiles | has($name)' "$catalog" >/dev/null 2>&1 \
     || die "unknown profile: $name"
   profile_key="$name"
   profile_root="$HOME/.local/share/trellage/profiles/firstmate/$name"
+  task_id_prefix="$(jq -r --arg name "$name" '.profiles[$name].taskIdPrefix' "$catalog")"
+  if [[ "$instance_selector" != legacy ]]; then
+    resolved="$(python3 "$registry_helper" resolve "$name" "$instance_selector")" \
+      || die 'instance selection refused; no legacy fallback was attempted'
+    profile_root="$(jq -er '.root' <<<"$resolved")"
+    task_id_prefix="$(jq -er '.taskIdPrefix' <<<"$resolved")"
+    instance_descriptor="$(jq -c '.descriptor' <<<"$resolved")"
+    instance_selector="$(jq -er '.descriptor.reference.instanceId' <<<"$resolved")"
+    instance_id="$instance_selector"
+  fi
+  export FMX_SELECTED_INSTANCE="$instance_selector"
+  export FMX_INSTANCE_CONTEXT_JSON="$instance_context"
   profile_marker="$profile_root/$ownership_basename"
   fm_runtime="$profile_root/runtime"
   fm_home="$profile_root/home"
@@ -328,11 +394,18 @@ select_profile() {
   previous_receipt="$profile_root/receipts.previous.json"
   mutation_lock="$profile_root/locks/mutation"
   mutation_generation="$profile_root/locks/generation"
-  task_id_prefix="$(jq -r --arg name "$name" '.profiles[$name].taskIdPrefix' "$catalog")"
   policy_file=''
   if [[ "$(jq -r --arg name "$name" '.profiles[$name].workerPolicy // ""' "$catalog")" != '' ]]; then
     policy_file="$profile_root/policy/worker-policy.md"
   fi
+}
+
+verify_instance_context() {
+  [[ "$instance_selector" != legacy || -n "$instance_context" ]] || return 0
+  instance_context="$(python3 "$instances_helper" _context "$profile_key" \
+    "$instance_selector" "$instance_join" "$instance_context")" \
+    || die 'instance context or worktree binding failed validation'
+  export FMX_INSTANCE_CONTEXT_JSON="$instance_context"
 }
 
 profile_is_owned_or_empty() {
@@ -374,11 +447,11 @@ prepare_profile_tree() {
   require_safe_profile_path
   profile_is_owned_or_empty \
     || die "refusing unrelated existing profile files: $profile_root"
-  for component in .local share trellage profiles firstmate "$profile_key"; do
+  while IFS= read -r component; do
     path="$path/$component"
     [[ -e "$path" ]] || mkdir "$path"
     [[ -d "$path" && ! -L "$path" ]] || die "unsafe profile path: $path"
-  done
+  done < <(profile_path_components)
   chmod 0700 "$profile_root"
   write_marker "$profile_marker"
   make_owned_directory "$fm_home"
@@ -406,6 +479,7 @@ managed_profile_subdirectories() {
     "$profile_root/receipts" \
     "$profile_root/locks" \
     "$profile_root/policy" \
+    "$profile_root/task-work" \
     "$fm_runtime"
 }
 
@@ -496,8 +570,9 @@ read_pid_file() {
   local path="$1" value
 
   [[ -f "$path" && ! -L "$path" ]] || return 1
-  value="$(head -c 32 -- "$path" 2>/dev/null | tr -d '[:space:]')" || return 1
-  [[ "$value" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ "$(wc -c <"$path" | tr -d '[:space:]')" -le 32 ]] || return 1
+  value="$(<"$path")"
+  [[ "$value" =~ ^[1-9][0-9]{0,9}$ && "$value" -le 2147483647 ]] || return 1
   printf '%s\n' "$value"
 }
 
@@ -511,12 +586,37 @@ read_pid_file() {
 #   stale       exactly ours, with a valid pid that is dead
 #   active      exactly ours, with a valid live pid
 lock_state() {
-  local lock="$1" pid
+  local lock="$1" pid entry
 
   [[ -e "$lock" || -L "$lock" ]] || { printf 'none\n'; return; }
   [[ -d "$lock" && ! -L "$lock" ]] || { printf 'incomplete\n'; return; }
   [[ -f "$lock/owner" && ! -L "$lock/owner" ]] || { printf 'incomplete\n'; return; }
   [[ "$(<"$lock/owner")" == "$ownership_value" ]] || { printf 'unowned\n'; return; }
+  for entry in "$lock"/* "$lock"/.[!.]*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    case "${entry##*/}" in
+      owner | pid) ;;
+      backend) [[ "$lock" == "$session_lock" ]] || { printf 'unowned\n'; return; } ;;
+      action) [[ "$lock" == "$mutation_lock" ]] || { printf 'unowned\n'; return; } ;;
+      *) printf 'unowned\n'; return ;;
+    esac
+    [[ -f "$entry" && ! -L "$entry" ]] || { printf 'incomplete\n'; return; }
+  done
+  if [[ "$lock" == "$session_lock" ]]; then
+    [[ -f "$lock/backend" && ! -L "$lock/backend" ]] \
+      || { printf 'incomplete\n'; return; }
+    case "$(<"$lock/backend")" in
+      tmux | herdr) ;;
+      *) printf 'unowned\n'; return ;;
+    esac
+  else
+    [[ -f "$lock/action" && ! -L "$lock/action" ]] \
+      || { printf 'incomplete\n'; return; }
+    case "$(<"$lock/action")" in
+      setup | repair | prepare | update | launch | submit | receipt | doctor | skills-update | refresh-locator) ;;
+      *) printf 'unowned\n'; return ;;
+    esac
+  fi
   pid="$(read_pid_file "$lock/pid")" || { printf 'incomplete\n'; return; }
   if pid_alive "$pid"; then
     printf 'active\n'
@@ -526,7 +626,18 @@ lock_state() {
 }
 
 session_state() {
-  lock_state "$session_lock"
+  local state pid upstream_pid
+  state="$(lock_state "$session_lock")"
+  if [[ -e "$fm_home/state/.lock" || -L "$fm_home/state/.lock" ]]; then
+    upstream_pid="$(read_pid_file "$fm_home/state/.lock")" \
+      || { printf 'incomplete\n'; return; }
+    if pid_alive "$upstream_pid"; then
+      pid="$(read_pid_file "$session_lock/pid" || printf '')"
+      [[ "$state" == active && "$pid" == "$upstream_pid" ]] \
+        || { printf 'unowned\n'; return; }
+    fi
+  fi
+  printf '%s\n' "$state"
 }
 
 require_safe_worker_entry() {
@@ -546,9 +657,16 @@ worker_states() {
   for entry in "$worker_root"/*; do
     [[ -e "$entry" || -L "$entry" ]] || continue
     require_safe_worker_entry "$entry" "$mode"
-    [[ -d "$entry" && ! -L "$entry" ]] || continue
     task="$(basename "$entry")"
-    if pid="$(read_pid_file "$entry/.active")" && pid_alive "$pid"; then
+    if [[ ! -d "$entry" || -L "$entry" || -L "$entry/.active" ]]; then
+      state=unsafe
+    elif [[ -e "$entry/.active" ]] && {
+      [[ ! -f "$entry/$ownership_basename" || -L "$entry/$ownership_basename" ]] \
+        || [[ "$(<"$entry/$ownership_basename")" != "$ownership_value" ]] \
+        || ! pid="$(read_pid_file "$entry/.active")"
+    }; then
+      state=unsafe
+    elif pid="$(read_pid_file "$entry/.active")" && pid_alive "$pid"; then
       state=active
     elif [[ -f "$entry/.active" && ! -L "$entry/.active" ]]; then
       state=stale
@@ -567,7 +685,7 @@ fleet_is_active() {
   [[ "$(session_state)" != active ]] || return 0
   while read -r line; do
     [[ -n "$line" ]] || continue
-    [[ "${line##* }" != active ]] || return 0
+    case "${line##* }" in active | unsafe) return 0 ;; esac
   done < <(worker_states)
   return 1
 }
@@ -684,27 +802,27 @@ exit_after_mutation_signal() {
   local status="$1"
 
   trap - HUP INT TERM
-  release_mutation_lock
+  if [[ "$automatic_preparation" == true ]]; then
+    cleanup_automatic_preparation
+  else
+    release_mutation_lock
+  fi
   exit "$status"
 }
 
 # Only an unambiguously stale lock is reclaimed: exact owner, valid pid, and
 # that pid dead. Anything else fails closed and is left in place.
 reclaim_stale_mutation_lock() {
-  local action="$1" stage="$profile_root/locks/.mutation-stale.$$"
-
-  [[ "$(mutation_state)" == stale ]] \
-    || die "$action refused: the mutation lock at $mutation_lock is not reclaimable"
-  [[ ! -e "$stage" && ! -L "$stage" ]] \
-    || die "$action refused: unsafe lock staging path: $stage"
-  atomic_rename "$mutation_lock" "$stage" \
+  local action="$1"
+  python3 "$control_helper" reclaim "$profile_root" "$profile_key" \
     || die "$action refused: another fmx mutation is running for $profile_key"
-  remove_lock_stage "$stage"
 }
 
 acquire_mutation_lock() {
   local action="$1" state
 
+  ! runtime_installation_busy \
+    || die "$action refused: the fmx launcher installation is active or incomplete"
   make_owned_directory "$profile_root/locks"
   if ! mkdir "$mutation_lock" 2>/dev/null; then
     state="$(mutation_state)"
@@ -732,9 +850,24 @@ acquire_mutation_lock() {
   trap 'exit_after_mutation_signal 143' TERM
   populate_lock_directory "$mutation_lock" \
     "owner=$ownership_value" "action=$action" "pid=$$"
+  ! runtime_installation_busy \
+    || die "$action refused: the fmx launcher installation is active"
+  if [[ "$instance_operation" != _create-owned ]]; then
+    case "$action" in
+      prepare | repair | update | launch | skills-update) verify_instance_context ;;
+    esac
+  fi
   case "$action" in
     setup | repair | update) advance_mutation_generation ;;
   esac
+}
+
+runtime_installation_busy() {
+  local lock
+  for lock in "$runtime_root/../.fmx-install.lock" "$HOME/.local/share/trellage/.fmx-install.lock"; do
+    if [[ -e "$lock" || -L "$lock" ]]; then return 0; fi
+  done
+  return 1
 }
 
 # A profile is busy when the fleet is running, when a mutation holds the lock,
@@ -755,6 +888,10 @@ profile_is_busy() {
 require_idle_fleet() {
   local action="$1" state
 
+  if [[ "$instance_selector" != legacy ]]; then
+    python3 "$registry_helper" check-operations "$profile_key" "$instance_selector" \
+      || die "$action refused: named task startup or control is active or unsafe"
+  fi
   state="$(session_state)"
   case "$state" in
     active)
@@ -789,6 +926,13 @@ verify_runtime_overlay() {
   local commit="$1" directory
 
   directory="$(overlay_directory "$commit")"
+  if [[ "$instance_selector" != legacy ]]; then
+    python3 "$overlay_tool" --manifest "$directory/manifest.json" \
+      --supplement "$instance_overlay_root/$commit/manifest.json" \
+      --root "$fm_runtime" --commit "$commit" --verify-only >/dev/null \
+      || die 'named runtime does not match its complete verified overlay variant'
+    return
+  fi
   python3 "$overlay_tool" \
     --manifest "$directory/manifest.json" \
     --root "$fm_runtime" \
@@ -804,6 +948,14 @@ verify_runtime_overlay() {
 runtime_checkout_report() {
   local commit="$1" root="${2:-$fm_runtime}"
   local head status expected actual raw old_mode new_mode
+  local GIT_OPTIONAL_LOCKS=0
+  export GIT_OPTIONAL_LOCKS
+  if [[ "$instance_selector" != legacy ]]; then
+    python3 "$overlay_tool" --manifest "$overlay_root/$commit/manifest.json" \
+      --supplement "$instance_overlay_root/$commit/manifest.json" \
+      --root "$root" --commit "$commit" --verify-only
+    return
+  fi
 
   [[ -d "$root" && ! -L "$root" ]] \
     || { printf 'the installed runtime is missing\n'; return 1; }
@@ -828,7 +980,7 @@ runtime_checkout_report() {
       "$(printf '%s\n' "$expected" | wc -l | tr -d '[:space:]')" "$actual"
     return 1
   fi
-  raw="$(git -C "$root" diff --raw HEAD 2>/dev/null)" \
+  raw="$(git -C "$root" -c diff.autoRefreshIndex=false diff --raw HEAD 2>/dev/null)" \
     || { printf 'the installed runtime diff could not be read\n'; return 1; }
   while read -r old_mode new_mode _rest; do
     [[ -n "$old_mode" ]] || continue
@@ -882,6 +1034,11 @@ overlay_evidence_json() {
 
   commit="$(catalog_overlay)"
   manifest="$overlay_root/$commit/manifest.json"
+  if [[ "$instance_selector" != legacy ]]; then
+    python3 "$overlay_tool" --manifest "$manifest" --root "$fm_runtime" --commit "$commit" \
+      --supplement "$instance_overlay_root/$commit/manifest.json" --evidence "${1-verify}"
+    return
+  fi
   manifest_digest=''
   content_digest=''
   file_count=''
@@ -889,7 +1046,7 @@ overlay_evidence_json() {
     manifest_digest="$(sha256_file "$manifest" || printf '')"
     content_digest="$(overlay_content_digest "$manifest" || printf '')"
     file_count="$(jq -r '.files | length' "$manifest" 2>/dev/null || printf '')"
-    if [[ -d "$fm_runtime" && ! -L "$fm_runtime" ]] \
+    if [[ "${1-verify}" == verify && -d "$fm_runtime" && ! -L "$fm_runtime" ]] \
       && python3 "$overlay_tool" \
         --manifest "$manifest" \
         --root "$fm_runtime" \
@@ -916,12 +1073,14 @@ overlay_evidence_json() {
 }
 
 stage_pinned_source() {
-  local commit="$1" repository="$2" overlay_commit="$3"
+  local commit="$1" repository="$2" overlay_commit="$3" stage_prepared="${4-false}"
   local directory checkout head report
 
   directory="$(overlay_directory "$overlay_commit")"
-  remove_owned_path "$staging_root"
-  make_owned_directory "$staging_root"
+  if [[ "$stage_prepared" == false ]]; then
+    remove_owned_path "$staging_root"
+    make_owned_directory "$staging_root"
+  fi
   checkout="$staging_root/firstmate"
   mkdir "$checkout" || die "could not create the staging checkout: $checkout"
 
@@ -943,6 +1102,11 @@ stage_pinned_source() {
     --root "$checkout" \
     --commit "$overlay_commit" >/dev/null \
     || die "the pinned Firstmate source does not match the checked-in overlay for $overlay_commit"
+  if [[ "$instance_selector" != legacy ]]; then
+    python3 "$overlay_tool" --manifest "$instance_overlay_root/$overlay_commit/manifest.json" \
+      --root "$checkout" --commit "$overlay_commit" >/dev/null \
+      || die 'named runtime supplement does not match the preceding overlay layer'
+  fi
 
   # The staged checkout is verified BEFORE it can become the live runtime, so
   # a bad stage is never published and then reported.
@@ -1081,6 +1245,9 @@ publish_runtime_and_receipt() {
         || die "a previously installed source receipt is preserved at $previous_receipt but could not be restored; move it to $receipt_file by hand before retrying"
     fi
   fi
+  if [[ "$automatic_preparation" == true ]]; then
+    automatic_publication_started=true
+  fi
   if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
     mv -- "$receipt_file" "$previous_receipt" \
       || die 'could not retire the previous receipt; the runtime and receipt were left unchanged'
@@ -1108,6 +1275,8 @@ publish_runtime_and_receipt() {
   remove_owned_path "$previous_runtime"
   remove_owned_path "$previous_receipt"
   remove_owned_path "$staging_root"
+  automatic_publication_started=false
+  automatic_staging_started=false
 }
 
 rollback_publication() {
@@ -1231,10 +1400,12 @@ verify_tasks_axi_config() {
     || die "the managed tasks-axi config differs: $config; run fmx repair $profile_key"
 }
 
-# The marker is evidence, not a flag: its exact two lines are what doctor and
-# launch verify.
+# Doctor and launch verify the complete identity marker, not just its presence.
 managed_runtime_marker_content() {
   printf 'managed-by=%s\nprofile=%s\n' "$ownership_value" "$profile_key"
+  if [[ "$instance_selector" != legacy ]]; then
+    printf 'instance-id=%s\ntask-prefix=%s\n' "$instance_selector" "$task_id_prefix"
+  fi
 }
 
 verify_managed_runtime_marker() {
@@ -1294,8 +1465,10 @@ verify_crew_harness_config() {
   local config="$fm_home/config" name path dispatch expected_bytes actual_bytes
 
   dispatch="$(crew_dispatch_path)"
-  [[ ! -e "$dispatch" && ! -L "$dispatch" ]] \
-    || die "refusing to run with a crew dispatch profile: $dispatch selects per-task harnesses and can bypass the fmx worker boundary; remove it, then run fmx doctor $profile_key"
+  if [[ -e "$dispatch" || -L "$dispatch" ]]; then
+    worker_controls config --offline >/dev/null \
+      || die "invalid Claude-only crew dispatch rules: $dispatch"
+  fi
   expected_bytes=$((${#managed_crew_harness} + 1))
   for name in "${managed_harness_files[@]}"; do
     path="$config/$name"
@@ -1389,6 +1562,46 @@ native_claude() {
 require_worker_launcher() {
   [[ -f "$worker_launcher" && -x "$worker_launcher" && ! -L "$worker_launcher" ]] \
     || die "missing fmx worker helper: $worker_launcher"
+  [[ -f "$controls_helper" && ! -L "$controls_helper" ]] \
+    || die "missing fmx worker admission helper: $controls_helper"
+  [[ -f "$control_helper" && ! -L "$control_helper" ]] \
+    || die "missing fmx control helper: $control_helper"
+}
+
+worker_controls() {
+  FMX_PROFILE="$profile_key" FMX_PROFILE_ROOT="$profile_root" \
+    FMX_TASK_ID_PREFIX="$task_id_prefix" FMX_INSTANCE_ID="$instance_id" FM_HOME="$fm_home" \
+    FM_STATE_OVERRIDE= FM_DATA_OVERRIDE= FM_CONFIG_OVERRIDE= FM_PROJECTS_OVERRIDE= \
+    python3 "$controls_helper" "$@"
+}
+
+ensure_fleet_identity() {
+  python3 "$control_helper" "${1-init}" "$profile_root" "$profile_key" \
+    || die 'could not initialize the owned fleet identity'
+}
+
+require_complete_publication() {
+  local path
+  for path in "$previous_runtime" "$previous_receipt" "$staging_root"; do
+    [[ ! -e "$path" && ! -L "$path" ]] \
+      || die "an interrupted runtime publication needs idle repair: $path"
+  done
+}
+
+verify_profile_runtime() {
+  local commit repository overlay_commit
+  require_owned_profile
+  require_complete_publication
+  commit="$(catalog_commit)"
+  repository="$(catalog_repository)"
+  overlay_commit="$(catalog_overlay)"
+  verify_receipt "$commit" "$repository" "$overlay_commit"
+  verify_runtime_overlay "$overlay_commit"
+  verify_runtime_checkout "$commit"
+  verify_managed_runtime_marker
+  verify_tasks_axi_config
+  verify_crew_harness_config
+  verify_worker_policy
 }
 
 # The host gh configuration is the only accepted GitHub identity. Token
@@ -1485,17 +1698,19 @@ append_missing_tool() {
 
 managed_prerequisite_path() {
   require_prerequisite_helper
-  "$prerequisite_helper" path 2>/dev/null
+  require_native_claude
+  native_claude exec-clean -- "$prerequisite_helper" path
 }
 
 effective_prerequisite_path() {
-  local managed_path=''
+  local managed_path='' status=0
 
-  if managed_path="$(managed_prerequisite_path)"; then
-    printf '%s:%s\n' "$managed_path" "$PATH"
-  else
-    printf '%s\n' "$PATH"
-  fi
+  managed_path="$(managed_prerequisite_path 2>&1)" || status=$?
+  case "$status" in
+    0) printf '%s:%s\n' "$managed_path" "$PATH" ;;
+    3) printf '%s\n' "$PATH" ;;
+    *) printf '%s\n' "$managed_path" >&2; return "$status" ;;
+  esac
 }
 
 detect_firstmate_prerequisites() {
@@ -1523,10 +1738,16 @@ detect_firstmate_prerequisites() {
       "$fm_runtime/bin/fm-bootstrap.sh" 2>&1
   )" || status=$?
   [[ "$status" -eq 0 ]] || {
-    [[ -z "$prerequisite_diagnostics" ]] \
-      || printf '%s\n' "$prerequisite_diagnostics" >&2
-    die "Firstmate prerequisite detection failed with status $status"
+    prerequisite_diagnostics="Firstmate prerequisite detection failed with status $status"
+    printf '%s\n' "$prerequisite_diagnostics" >&2
+    return 1
   }
+  for tool in python3 perl seq; do
+    if ! PATH="$effective_path" command -v "$tool" >/dev/null 2>&1; then
+      append_missing_tool host "$tool"
+      prerequisite_diagnostics+="${prerequisite_diagnostics:+$'\n'}MISSING: $tool (host runtime dependency)"
+    fi
+  done
 
   while IFS= read -r line; do
     case "$line" in
@@ -1549,6 +1770,27 @@ detect_firstmate_prerequisites() {
         ;;
     esac
   done <<<"$prerequisite_diagnostics"
+}
+
+fleet_tools_report() {
+  local backend="$1" effective_path description ready=false
+
+  prerequisite_managed_missing=''
+  prerequisite_host_missing=''
+  if ! effective_path="$(effective_prerequisite_path 2>&1)"; then
+    description="Managed prerequisite resolver failed: $effective_path"
+  elif ! detect_firstmate_prerequisites "$backend" "$effective_path" >/dev/null 2>&1; then
+    description="Firstmate tool check failed: $prerequisite_diagnostics"
+  elif [[ -n "$prerequisite_managed_missing" || -n "$prerequisite_host_missing" ]]; then
+    description="Missing Firstmate tools:"
+    [[ -z "$prerequisite_managed_missing" ]] || description+=" $prerequisite_managed_missing (managed; installation needs consent)."
+    [[ -z "$prerequisite_host_missing" ]] || description+=" $prerequisite_host_missing (host requirements)."
+  else
+    description='All required Firstmate tools are available; no installation was needed'
+    ready=true
+  fi
+  python3 "$control_helper" tool-report "$ready" "$description" \
+    "$prerequisite_managed_missing" "$prerequisite_host_missing"
 }
 
 require_prerequisite_install_host() {
@@ -1583,7 +1825,8 @@ print_prerequisite_diagnostics() {
 }
 
 confirm_prerequisite_install() {
-  local destination="$1" answer='' tool version
+  local plan="$1" destination answer='' tool version
+  destination="$(jq -er '.destination' <<<"$plan")"
 
   printf '\nFirstmate needs managed tools before it can dispatch workers:\n' >&2
   for tool in $prerequisite_managed_missing; do
@@ -1595,11 +1838,7 @@ confirm_prerequisite_install() {
   while IFS=$'\t' read -r tool version; do
     printf '  - %s %s\n' "$tool" "$version" >&2
   done < <(
-    jq -r '
-      (.binaries | to_entries[] | [.key, .value.version]),
-      (.npm.tools | to_entries[] | [.key, .value])
-      | @tsv
-    ' "$prerequisite_manifest" | sort
+    jq -r '.tools[] | [.name, .version] | @tsv' <<<"$plan"
   )
   cat >&2 <<EOF
 Network sources:
@@ -1609,6 +1848,7 @@ Other state:
   - no-mistakes can create daemon state under $HOME/.no-mistakes
   - no global npm packages or global agent hooks will be installed
 EOF
+  jq -r '.sources[], .statePaths[] | "  - " + .' <<<"$plan" >&2
   printf '\nInstall these prerequisites now? [y/N] ' >&2
   IFS= read -r answer || answer=''
   case "$answer" in
@@ -1619,18 +1859,20 @@ EOF
 
 install_managed_prerequisites() {
   local worker_bash="$1"
+  shift
 
   native_claude exec-clean \
     --interpreter "$worker_bash" \
-    -- "$prerequisite_helper" install
+    -- "$prerequisite_helper" install "$@"
 }
 
 ensure_launch_prerequisites() {
-  local backend="$1" worker_bash="$2" destination
+  local backend="$1" worker_bash="$2" plan artifact source_revision
 
   require_prerequisite_helper
   prerequisite_path="$(effective_prerequisite_path)"
-  detect_firstmate_prerequisites "$backend" "$prerequisite_path"
+  detect_firstmate_prerequisites "$backend" "$prerequisite_path" \
+    || die "$prerequisite_diagnostics"
   if [[ -n "$prerequisite_managed_missing" ]]; then
     require_prerequisite_install_host
     if [[ -n "$prerequisite_host_missing" ]]; then
@@ -1645,13 +1887,17 @@ ensure_launch_prerequisites() {
       done
       die 'install the host requirements above, then launch again'
     fi
-    destination="$("$prerequisite_helper" destination)"
-    if ! confirm_prerequisite_install "$destination"; then
+    source_revision="$(catalog_commit)"
+    artifact="$(native_claude exec-clean -- "$prerequisite_helper" identity)"
+    plan="$(native_claude exec-clean -- "$prerequisite_helper" plan)"
+    if ! confirm_prerequisite_install "$plan"; then
       die 'prerequisite installation declined; no prerequisite files were changed'
     fi
-    install_managed_prerequisites "$worker_bash"
+    install_managed_prerequisites "$worker_bash" --expected-identity "$artifact" \
+      --expected-plan "$(jq -er '.identity' <<<"$plan")" --expected-source-revision "$source_revision"
     prerequisite_path="$(effective_prerequisite_path)"
-    detect_firstmate_prerequisites "$backend" "$prerequisite_path"
+    detect_firstmate_prerequisites "$backend" "$prerequisite_path" \
+      || die "$prerequisite_diagnostics"
   fi
   if [[ -n "$prerequisite_managed_missing" || -n "$prerequisite_host_missing" ]]; then
     printf 'fmx: Firstmate prerequisites are still incomplete:\n' >&2
@@ -1660,15 +1906,25 @@ ensure_launch_prerequisites() {
   fi
 }
 
+require_existing_prerequisites() {
+  local backend="$1"
+  prerequisite_path="$(effective_prerequisite_path)"
+  detect_firstmate_prerequisites "$backend" "$prerequisite_path" \
+    || die "$prerequisite_diagnostics"
+  [[ -z "$prerequisite_managed_missing" && -z "$prerequisite_host_missing" ]] \
+    || die 'recovery requires existing prerequisites; installation and repair are forbidden while workers are live'
+}
+
 report_doctor_prerequisites() {
   local backend effective_path
 
   require_prerequisite_helper
   backend="$(resolve_backend)"
   effective_path="$(effective_prerequisite_path)"
-  detect_firstmate_prerequisites "$backend" "$effective_path"
+  detect_firstmate_prerequisites "$backend" "$effective_path" \
+    || die "$prerequisite_diagnostics"
   if [[ -n "$prerequisite_managed_missing" || -n "$prerequisite_host_missing" ]]; then
-    printf 'fmx doctor %s: fleet prerequisites incomplete; the next launch will offer managed installation where possible\n' \
+    printf 'fmx doctor %s: fleet prerequisites incomplete; managed installation requires explicit consent\n' \
       "$profile_key" >&2
     if [[ -n "$prerequisite_managed_missing" ]]; then
       printf '  managed by fmx after consent: %s\n' \
@@ -1677,6 +1933,7 @@ report_doctor_prerequisites() {
     if [[ -n "$prerequisite_host_missing" ]]; then
       printf '  host requirements: %s\n' "$prerequisite_host_missing" >&2
     fi
+    return 1
   fi
 }
 
@@ -1775,13 +2032,12 @@ setup_profile() {
     --bridge enabled \
     --profile "$profile_key" \
     || die "could not prepare the captain Claude home: $captain_home"
+  ensure_fleet_identity
   printf 'fmx setup %s: ready (firstmate %s, %s)\n' \
     "$profile_key" "${commit:0:12}" "$model_id"
 }
 
 repair_profile() {
-  local commit repository overlay_commit checkout installed staged_receipt
-
   require_command jq
   require_command git
   require_command python3
@@ -1790,41 +2046,176 @@ repair_profile() {
   require_owned_profile
   acquire_mutation_lock 'repair'
   require_idle_fleet 'repair'
-  recover_interrupted_publication
-  commit="$(catalog_commit)"
-  repository="$(catalog_repository)"
-  overlay_commit="$(catalog_overlay)"
-  prepare_profile_tree
-  installed="$(installed_commit || printf '')"
-  # Restaging needs the network. Everything else in repair is local.
-  if [[ "$installed" != "$commit" ]] \
-    || ! python3 "$overlay_tool" \
-      --manifest "$(overlay_directory "$overlay_commit")/manifest.json" \
-      --root "$fm_runtime" \
-      --commit "$overlay_commit" \
-      --verify-only >/dev/null 2>&1 \
-    || ! runtime_checkout_report "$commit" >/dev/null 2>&1; then
-    require_gh_authenticated
-    checkout="$(stage_pinned_source "$commit" "$repository" "$overlay_commit")"
-    staged_receipt="$(stage_receipt "$commit" "$repository" "$overlay_commit")"
-    publish_runtime_and_receipt "$checkout" "$staged_receipt"
-  else
-    staged_receipt="$(stage_receipt "$commit" "$repository" "$overlay_commit")"
-    mv -f "$staged_receipt" "$receipt_file" \
-      || die 'could not refresh the source receipt'
-  fi
-  ensure_managed_home
-  ensure_crew_harness_config
-  ensure_worker_policy
-  native_claude prepare \
-    --home "$captain_home" \
-    --marker "$captain_marker" \
-    --marker-value "$ownership_value" \
-    --bridge enabled \
-    --profile "$profile_key" \
-    || die "could not repair the captain Claude home: $captain_home"
+  repair_profile_contents explicit
   printf 'fmx repair %s: restored (firstmate %s, %s)\n' \
-    "$profile_key" "${commit:0:12}" "$model_id"
+    "$profile_key" "$(catalog_commit | cut -c 1-12)" "$model_id"
+}
+
+repair_profile_contents() {
+  local mode="$1" commit repository overlay_commit checkout installed staged_receipt
+  local core_ready=false identity_missing=false claude_ready=false
+
+  [[ "$mutation_lock_held" == "$mutation_lock" ]] || die 'repair requires the owning mutation lock'
+  if [[ "$mode" == automatic ]]; then
+    if (verify_profile_runtime >/dev/null 2>&1) && profile_setup_directories_ready; then core_ready=true; fi
+    [[ -e "$profile_root/receipts/instance.json" ]] || identity_missing=true
+  fi
+  if [[ "$core_ready" == false ]]; then
+    recover_interrupted_publication
+    commit="$(catalog_commit)"
+    repository="$(catalog_repository)"
+    overlay_commit="$(catalog_overlay)"
+    prepare_profile_tree
+    installed="$(installed_commit || printf '')"
+    # Restaging needs the network. Everything else in repair is local.
+    if [[ "$installed" != "$commit" ]] \
+      || ! (verify_runtime_overlay "$overlay_commit") >/dev/null 2>&1 \
+      || ! runtime_checkout_report "$commit" >/dev/null 2>&1; then
+      require_gh_authenticated
+      if [[ "$mode" == automatic ]]; then
+        remove_owned_path "$staging_root"
+        automatic_staging_started=true
+        make_owned_directory "$staging_root"
+        checkout="$(stage_pinned_source "$commit" "$repository" "$overlay_commit" true)"
+      else
+        checkout="$(stage_pinned_source "$commit" "$repository" "$overlay_commit")"
+      fi
+      staged_receipt="$(stage_receipt "$commit" "$repository" "$overlay_commit")"
+      publish_runtime_and_receipt "$checkout" "$staged_receipt"
+    elif [[ "$mode" == explicit ]] || ! (verify_receipt "$commit" "$repository" "$overlay_commit" >/dev/null 2>&1); then
+      staged_receipt="$(stage_receipt "$commit" "$repository" "$overlay_commit")"
+      mv -f "$staged_receipt" "$receipt_file" \
+        || die 'could not refresh the source receipt'
+    fi
+    ensure_managed_home
+    ensure_crew_harness_config
+    ensure_worker_policy
+    verify_receipt "$commit" "$repository" "$overlay_commit"
+    verify_runtime_overlay "$overlay_commit"
+    verify_runtime_checkout "$commit"
+    remove_owned_path "$previous_runtime"
+    remove_owned_path "$previous_receipt"
+    remove_owned_path "$staging_root"
+    if [[ "$mode" == automatic ]]; then
+      advance_mutation_generation
+      printf 'Restored the pinned Firstmate runtime and owned setup files.\n'
+    fi
+  fi
+  if [[ "$mode" == automatic ]]; then
+    if native_claude doctor --home "$captain_home" --marker "$captain_marker" \
+      --marker-value "$ownership_value" --bridge enabled --profile "$profile_key" >/dev/null 2>&1 \
+      && native_claude skills-update --mode --check --home "$captain_home" \
+      --marker "$captain_marker" --marker-value "$ownership_value" >/dev/null 2>&1; then
+      claude_ready=true
+    fi
+  fi
+  if [[ "$claude_ready" == false ]]; then
+    if [[ "$mode" == automatic ]]; then
+      python3 "$control_helper" cached-skills "$profile_root" "$profile_key" \
+        || die 'automatic Claude repair requires a safe existing skill cache; no skill tools were downloaded'
+    fi
+    native_claude prepare \
+      --home "$captain_home" \
+      --marker "$captain_marker" \
+      --marker-value "$ownership_value" \
+      --bridge enabled \
+      --profile "$profile_key" \
+      >&2 || die "could not repair the captain Claude home: $captain_home"
+    if [[ "$mode" == automatic ]]; then
+      advance_mutation_generation
+      printf 'Restored the managed Claude configuration and skills.\n'
+    fi
+  fi
+  if [[ "$mode" == automatic ]]; then
+    ensure_fleet_identity init-automatic
+    if [[ "$identity_missing" == true ]]; then
+      advance_mutation_generation
+      printf 'Initialized the owned fleet identity without granting setup or installation consent.\n'
+    fi
+  else
+    ensure_fleet_identity
+  fi
+}
+
+profile_setup_directories_ready() {
+  local path
+  for path in "$fm_home" "$fm_home/config" "$fm_home/state" "$fm_home/data" "$fm_home/projects" \
+    "$captain_root" "$captain_home" "$worker_root" "$profile_root/receipts" "$profile_root/locks"; do
+    [[ -d "$path" && ! -L "$path" ]] || return 1
+  done
+  [[ -f "$captain_marker" && ! -L "$captain_marker" \
+    && "$(<"$captain_marker")" == "$ownership_value" ]]
+}
+
+cleanup_automatic_preparation() {
+  [[ "$mutation_lock_held" == "$mutation_lock" ]] || return 0
+  if [[ "$automatic_publication_started" == true ]] \
+    && ! (recover_interrupted_publication) >/dev/null 2>&1; then
+    printf 'fmx prepare: owned runtime publication needs inspection before another repair\n' >&2
+  fi
+  if [[ "$automatic_staging_started" == true ]] \
+    && ! (remove_owned_path "$staging_root") >/dev/null 2>&1; then
+    printf 'fmx prepare: owned runtime staging needs inspection before another repair\n' >&2
+  fi
+  release_mutation_lock
+}
+
+verify_preparation_expectations() {
+  local expected_source="$1" expected_lock="$2" approved="${3-}" actual_lock plan
+
+  validate_catalog
+  [[ "$(catalog_commit)" == "$expected_source" ]] \
+    || die 'Firstmate source revision changed; refresh the profile catalog before preparation'
+  actual_lock="$(native_claude exec-clean -- "$prerequisite_helper" identity)"
+  [[ "$actual_lock" == "$expected_lock" ]] \
+    || die 'prerequisite plan changed: the artifact lock differs; refresh preparation'
+  if [[ -n "$approved" ]]; then
+    plan="$(native_claude exec-clean -- "$prerequisite_helper" plan)"
+    [[ "$(jq -er '.identity' <<<"$plan")" == "$approved" ]] \
+      || die 'prerequisite installation plan changed; review the current destination and sources'
+  fi
+}
+
+prepare_owned_profile() {
+  local expected_source="$1" expected_lock="$2" approved="$3" repair_cache="$4" worker_bash
+
+  [[ "$expected_source" =~ ^[0-9a-f]{40}$ && "$expected_lock" =~ ^[0-9a-f]{64}$ ]] \
+    || die 'invalid preparation expectations'
+  [[ -z "$approved" || "$approved" =~ ^[0-9a-f]{64}$ ]] \
+    || die 'invalid approved installation plan identity'
+  [[ "$repair_cache" == true || "$repair_cache" == false ]] || die 'invalid cache repair request'
+  require_native_claude
+  require_worker_launcher
+  require_prerequisite_helper
+  require_owned_profile
+  verify_preparation_expectations "$expected_source" "$expected_lock" "$approved"
+  python3 "$control_helper" prepare-safe "$profile_root" "$profile_key" \
+    || die 'automatic preparation refused unsafe profile state'
+  require_idle_fleet 'prepare'
+  acquire_mutation_lock 'prepare'
+  verify_preparation_expectations "$expected_source" "$expected_lock" "$approved"
+  require_idle_fleet 'prepare'
+  python3 "$control_helper" prepare-safe "$profile_root" "$profile_key" \
+    || die 'automatic preparation refused unsafe profile state'
+  worker_controls fleet --offline >/dev/null \
+    || die 'automatic preparation refused unsafe worker controls'
+  automatic_preparation=true
+  trap cleanup_automatic_preparation EXIT
+  repair_profile_contents automatic
+  if [[ "$repair_cache" == true ]]; then
+    verify_preparation_expectations "$expected_source" "$expected_lock" "$approved"
+    native_claude exec-clean -- "$prerequisite_helper" repair-cache \
+      --expected-identity "$expected_lock" --expected-source-revision "$expected_source" >&2
+    printf 'Restored the existing verified prerequisite cache without downloads.\n'
+  fi
+  if [[ -n "$approved" ]]; then
+    verify_preparation_expectations "$expected_source" "$expected_lock" "$approved"
+    worker_bash="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$BASH")"
+    install_managed_prerequisites "$worker_bash" \
+      --expected-identity "$expected_lock" --expected-plan "$approved" \
+      --expected-source-revision "$expected_source" >&2
+    printf 'Verified the approved managed prerequisite toolchain.\n'
+  fi
 }
 
 doctor_profile() {
@@ -1963,18 +2354,146 @@ update_profile() {
     "$profile_key" "${installed:0:12}" "${commit:0:12}"
 }
 
+fleet_readiness_json() {
+  local permitted_parent="${1-}" runtime=missing identity=null backend=null supervisor=stopped
+  local pid=null session=none workers='[]' active_workers=0 consent=true tools=false
+  local claude=false github=false rules=false skills=false backend_ready=false prerequisites
+  local commit reason start=false recover=false submit=false current_mutation tools_report
+  local tools_description='Not checked: the owned fleet runtime is not ready'
+
+  commit="$(catalog_commit)"
+  if ! (require_safe_managed_paths >/dev/null 2>&1); then
+    runtime=unsafe
+    supervisor=unsafe
+  elif [[ -d "$profile_root" ]]; then
+    session="$(session_state)"
+    case "$session" in
+      active) supervisor=running; pid="$(read_pid_file "$session_lock/pid")" ;;
+      stale) supervisor=stale; pid="$(read_pid_file "$session_lock/pid")" ;;
+      incomplete | unowned) supervisor=unsafe ;;
+    esac
+    workers="$(worker_states | jq -Rn '[inputs | split(" ") | {task:.[0],state:.[1]}]')"
+    active_workers="$(jq '[.[] | select(.state == "active")] | length' <<<"$workers")"
+    current_mutation="$(mutation_state)"
+    if [[ -n "$permitted_parent" && "$current_mutation" == active \
+      && "$(read_pid_file "$mutation_lock/pid")" == "$permitted_parent" ]]; then
+      case "$(<"$mutation_lock/action")" in submit | receipt) current_mutation=none ;; esac
+    fi
+    if [[ "$current_mutation" == active || "$current_mutation" == incomplete \
+      || "$current_mutation" == unowned ]]; then
+      runtime=busy
+    elif runtime_installation_busy; then
+      runtime=busy
+    elif ! (require_owned_profile >/dev/null 2>&1); then
+      runtime=unsafe
+    elif profile_is_set_up; then
+      runtime=drift
+      if (verify_profile_runtime >/dev/null 2>&1); then runtime=ready; fi
+    fi
+    if [[ "$supervisor" == unsafe ]] || jq -e 'any(.[]; .state == "unsafe")' <<<"$workers" >/dev/null; then
+      runtime=unsafe
+    fi
+    identity="$(python3 "$control_helper" identity "$profile_root" "$profile_key" "$commit" 2>/dev/null || printf 'null')"
+    if [[ "$runtime" == ready && "$identity" == null ]]; then runtime=unsafe; fi
+    if [[ "$runtime" == ready ]] && ! worker_controls fleet --offline >/dev/null 2>&1; then
+      runtime=unsafe
+    fi
+    if python3 "$control_helper" consent "$profile_root" "$profile_key" >/dev/null 2>&1; then consent=false; fi
+  fi
+
+  if [[ "$session" == active || "$session" == stale ]]; then
+    backend="$(<"$session_lock/backend")"
+  elif [[ "$supervisor" != unsafe ]]; then
+    backend="$(resolve_backend)"
+  fi
+  if [[ "$runtime" == ready ]]; then
+    (require_gh_authenticated >/dev/null 2>&1) && github=true
+    if native_claude doctor --home "$captain_home" --marker "$captain_marker" \
+      --marker-value "$ownership_value" --bridge enabled --profile "$profile_key" >/dev/null 2>&1; then
+      claude=true
+    fi
+    if worker_controls fleet >/dev/null 2>&1; then rules=true; fi
+    if native_claude skills-update --mode --check --home "$captain_home" \
+      --marker "$captain_marker" --marker-value "$ownership_value" >/dev/null 2>&1; then
+      skills=true
+    fi
+    tools_report="$(fleet_tools_report "$backend")"
+    tools="$(jq -r '.ready' <<<"$tools_report")"
+    tools_description="$(jq -r '.description' <<<"$tools_report")"
+    if [[ "$backend" == tmux ]] && command -v tmux >/dev/null 2>&1; then backend_ready=true; fi
+    if [[ "$backend" == herdr ]] && command -v herdr >/dev/null 2>&1; then
+      if [[ "$supervisor" == running || "$(resolve_backend)" == herdr ]]; then backend_ready=true; fi
+    fi
+  fi
+  prerequisites="$(jq -cn --argjson tools "$tools" --argjson claude "$claude" \
+    --argjson github "$github" --argjson rules "$rules" --argjson skills "$skills" \
+    --argjson backend "$backend_ready" --arg toolsDescription "$tools_description" \
+    --arg runtime "$runtime" '
+    def description($ready; $ok; $failed):
+      if $ready then $ok
+      elif $runtime != "ready" then "Not checked: the owned fleet runtime is " + $runtime
+      else $failed end;
+    [
+      {id:"fleet-tools",ready:$tools,description:$toolsDescription},
+      {id:"claude",ready:$claude,description:description($claude;"Owned Claude configuration and shared proxy";"Claude configuration or shared proxy check failed")},
+      {id:"github",ready:$github,description:description($github;"File-backed GitHub authentication";"File-backed GitHub authentication check failed; authentication was not changed")},
+      {id:"worker-controls",ready:$rules,description:description($rules;"Claude-only dispatch controls and available models";"Claude worker controls or available model check failed")},
+      {id:"skills",ready:$skills,description:description($skills;"Existing shared skill cache; no fetch or refresh";"Managed skills or the shared skill cache are missing or unsafe")},
+      {id:"backend",ready:$backend,description:description($backend;"The selected tmux or real Herdr backend";"The selected tmux or Herdr backend is unavailable")}
+    ]')"
+  reason="runtime is $runtime"
+  if [[ "$runtime" == ready && "$identity" != null && "$supervisor" != unsafe ]]; then
+    submit=true
+    reason='ready'
+    if [[ "$consent" == true ]]; then
+      reason='explicit idle setup or repair consent is required'
+    elif [[ "$tools" != true || "$claude" != true || "$github" != true \
+      || "$rules" != true || "$skills" != true || "$backend_ready" != true ]]; then
+      reason='existing tools, authentication, worker controls, or backend are not ready'
+    elif [[ "$supervisor" == running ]]; then
+      reason='the supervisor is already running'
+    elif [[ "$supervisor" == stale ]]; then
+      recover=true
+      reason='a stale owned supervisor requires recovery'
+    elif [[ "$active_workers" -gt 0 ]]; then
+      reason='live workers have no stale owned supervisor lock; inspect ownership'
+    else
+      start=true
+    fi
+  fi
+  jq -cn --argjson identity "$identity" --arg runtime "$runtime" --arg backend "$backend" \
+    --arg supervisor "$supervisor" --argjson pid "$pid" --argjson count "$active_workers" \
+    --argjson prerequisites "$prerequisites" --argjson consent "$consent" \
+    --argjson start "$start" --argjson recover "$recover" --argjson submit "$submit" --arg reason "$reason" '
+    def permission($allowed): {allowed:$allowed,reason:(if $allowed then null else $reason end)};
+    {schemaVersion:1,identity:$identity,runtime:$runtime,
+     backend:(if $backend == "null" then null else $backend end),
+     supervisor:{state:$supervisor,pid:$pid},activeWorkers:$count,
+     prerequisites:$prerequisites,consentRequired:$consent,
+     actions:{start:permission($start),recover:permission($recover),submit:permission($submit)}}
+  '
+}
+
 inventory_json() {
-  local readiness="$1" commit repository installed workers session overlay mutation
+  local readiness="$1" fleet="$2" commit repository installed workers session overlay mutation
 
   commit="$(catalog_commit)"
   repository="$(catalog_repository)"
-  installed="$(installed_commit || printf '')"
-  session="$(session_state)"
-  mutation="$(mutation_state)"
-  overlay="$(overlay_evidence_json)"
-  workers="$(worker_states | jq -Rn '
-    [inputs | select(length > 0) | split(" ") | {task: .[0], state: .[1]}]
-  ')"
+  if ! (require_safe_managed_paths >/dev/null 2>&1); then
+    installed=''
+    session=unowned
+    mutation=unowned
+    overlay="$(overlay_evidence_json static)"
+    workers='[]'
+  else
+    installed="$(installed_commit || printf '')"
+    session="$(session_state)"
+    mutation="$(mutation_state)"
+    overlay="$(overlay_evidence_json)"
+    workers="$(worker_states | jq -Rn '
+      [inputs | select(length > 0) | split(" ") | {task: .[0], state: .[1]}]
+    ')"
+  fi
   jq -cn \
     --arg profile "$profile_key" \
     --arg readiness "$readiness" \
@@ -1984,13 +2503,15 @@ inventory_json() {
     --arg pinned "$commit" \
     --arg installed "$installed" \
     --argjson overlay "$overlay" \
-    --argjson workers "$workers" '
+    --argjson workers "$workers" \
+    --argjson fleet "$fleet" '
     {
       schemaVersion: 1,
       launcher: "fmx",
       harness: "firstmate",
       profile: $profile,
       readiness: $readiness,
+      fleet: $fleet,
       source: {
         repository: $repository,
         pinnedCommit: $pinned,
@@ -2009,34 +2530,36 @@ inventory_json() {
 }
 
 inventory_profile() {
-  local attempt before after readiness output
+  local attempt before after readiness output fleet
 
-  require_safe_managed_paths
+  if ! (require_safe_managed_paths >/dev/null 2>&1); then
+    fleet="$(fleet_readiness_json)"
+    inventory_json unhealthy "$fleet"
+    return
+  fi
   for attempt in 1 2 3; do
-    before="$(mutation_generation_value)"
-    # Checked BEFORE not-setup: a first setup in progress is busy, not missing.
-    if profile_is_busy; then
-      inventory_json 'busy'
-      return
-    fi
-    if ! profile_is_set_up; then
+    before="$(mutation_generation_value 2>/dev/null || printf unsafe)"
+    fleet="$(fleet_readiness_json)"
+    if [[ "$(jq -r '.runtime' <<<"$fleet")" == busy ]] || profile_is_busy; then
+      readiness='busy'
+    elif [[ "$(jq -r '.runtime' <<<"$fleet")" == missing ]]; then
       readiness='not-setup'
-    elif ! (doctor_profile >/dev/null 2>&1); then
-      readiness='unhealthy'
-    else
+    elif jq -e '.runtime == "ready" and (.prerequisites | all(.ready)) and (.consentRequired | not)' <<<"$fleet" >/dev/null; then
       readiness='healthy'
+    else
+      readiness='unhealthy'
     fi
-    if ! output="$(inventory_json "$readiness")"; then
+    if ! output="$(inventory_json "$readiness" "$fleet")"; then
       output=''
     fi
-    after="$(mutation_generation_value)"
-    if [[ -n "$output" && "$before" == "$after" ]] \
-      && ! mutation_reader_blocked; then
+    after="$(mutation_generation_value 2>/dev/null || printf unsafe)"
+    if [[ -n "$output" && "$before" == "$after" ]]; then
       printf '%s\n' "$output"
       return
     fi
   done
-  inventory_json 'busy'
+  fleet="$(fleet_readiness_json)"
+  inventory_json 'busy' "$fleet"
 }
 
 # Captain-session acquisition uses the same mkdir claim, so two concurrent
@@ -2075,7 +2598,35 @@ acquire_session_lock() {
 }
 
 launch_profile() {
-  local commit overlay_commit repository backend gh_config worker_bash
+  local commit overlay_commit repository backend gh_config worker_bash state workers_live=false
+  local expected_fleet_json='' expected_fleet_set=false startup_message
+  local -a captain_arguments=()
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --fmx-expected-fleet-json | --fmx-expected-fleet-json=*)
+        [[ "$expected_fleet_set" == false ]] || die 'expected fleet identity was supplied more than once'
+        expected_fleet_set=true
+        if [[ "$1" == --fmx-expected-fleet-json ]]; then
+          [[ "$#" -ge 2 ]] || die '--fmx-expected-fleet-json requires a JSON identity'
+          expected_fleet_json="$2"
+          shift 2
+        else
+          expected_fleet_json="${1#*=}"
+          shift
+        fi
+        ;;
+      *)
+        captain_arguments+=("$1")
+        shift
+        ;;
+    esac
+  done
+  if [[ "${#captain_arguments[@]}" -gt 0 ]]; then
+    set -- "${captain_arguments[@]}"
+  else
+    set --
+  fi
 
   require_command jq
   require_command git
@@ -2089,10 +2640,32 @@ launch_profile() {
   require_native_claude
   require_worker_launcher
   require_owned_profile
+  verify_instance_context
   require_safe_managed_paths
   acquire_mutation_lock 'launch'
-  require_idle_fleet 'launch'
-  recover_interrupted_publication
+  if [[ "$expected_fleet_set" == true ]]; then
+    commit="$(catalog_commit)"
+    python3 "$control_helper" verify-expected "$profile_root" "$profile_key" "$commit" "$expected_fleet_json" \
+      || die 'launch refused: expected fleet identity could not be verified under the mutation gate'
+    require_complete_publication
+  fi
+  state="$(session_state)"
+  case "$state" in
+    active) die "launch refused: the $profile_key fleet is active; the captain session is already running" ;;
+    incomplete | unowned) die "launch refused: the captain session lock is $state; inspect it without changing worker state" ;;
+    none | stale) ;;
+    *) die "launch refused: unsafe captain session state: $state" ;;
+  esac
+  if fleet_is_active; then
+    workers_live=true
+    [[ "$state" == stale ]] \
+      || die 'live workers require a stale owned supervisor lock for recovery'
+    require_complete_publication
+    [[ "$(worker_states | awk '$2 == "unsafe" { print }')" == '' ]] \
+      || die 'worker state is unsafe; automatic recovery is refused'
+  elif [[ "$expected_fleet_set" == false ]]; then
+    recover_interrupted_publication
+  fi
   profile_is_set_up || die "profile is not set up; run fmx setup $profile_key"
   commit="$(catalog_commit)"
   repository="$(catalog_repository)"
@@ -2108,11 +2681,50 @@ launch_profile() {
   verify_tasks_axi_config
   verify_crew_harness_config
   verify_worker_policy
+  python3 "$control_helper" identity "$profile_root" "$profile_key" "$commit" >/dev/null \
+    || die "fleet identity is missing or unsafe; run fmx repair $profile_key while the fleet is idle"
+  python3 "$control_helper" consent "$profile_root" "$profile_key" >/dev/null \
+    || die "prior setup consent is required; run fmx repair $profile_key while the fleet is idle"
+  worker_controls fleet >/dev/null \
+    || die 'restored fleet worker controls failed admission'
   require_gh_authenticated
   gh_config="$(gh_config_directory)"
 
-  backend="$(resolve_backend)"
-  ensure_launch_prerequisites "$backend" "$worker_bash"
+  if [[ "$state" == stale ]]; then
+    backend="$(<"$session_lock/backend")"
+    if [[ "$backend" == herdr && "$(resolve_backend)" != herdr ]]; then
+      die 'Herdr recovery must start in a real Herdr pane'
+    fi
+  else
+    backend="$(resolve_backend)"
+  fi
+  if [[ "$workers_live" == true || "$expected_fleet_set" == true || "$instance_selector" != legacy ]]; then
+    require_existing_prerequisites "$backend"
+    native_claude skills-update --mode --check \
+      --home "$captain_home" --marker "$captain_marker" --marker-value "$ownership_value" \
+      || die 'launch requires the existing shared skills; stop the fleet before repair'
+  else
+    ensure_launch_prerequisites "$backend" "$worker_bash"
+  fi
+  native_claude doctor \
+    --home "$captain_home" --marker "$captain_marker" --marker-value "$ownership_value" \
+    --bridge enabled --profile "$profile_key" \
+    || die 'the existing captain configuration is not ready'
+  if [[ ( "$expected_fleet_set" == true || "$instance_selector" != legacy ) && "$#" -eq 0 ]]; then
+    # SessionStart supplies context, but Claude needs a first message to act on it.
+    startup_message="$(
+      printf '%s' \
+        'Continue Firstmate from the existing session-start digest.' \
+        ' Follow AGENTS.md if the digest is missing or incomplete; do not repeat completed startup.' \
+        ' Read pending captain notes with `bin/fm-inbox.sh drain`, then handle the saved requests' \
+        ' under their original intent, workflow, project target and authority.' \
+        ' This operational message is not a new captain request.' \
+        ' Do not create a note for this message or resubmit the saved requests.' |
+        "$worker_bash" "$fm_runtime/bin/fm-operational-input.sh" encode session-start
+    )" || die 'could not encode the Firstmate startup instruction'
+    [[ -n "$startup_message" ]] || die 'the Firstmate startup instruction is empty'
+    set -- "$startup_message"
+  fi
   acquire_session_lock "$backend"
   release_mutation_lock
   [[ ! -e "$mutation_lock" && ! -L "$mutation_lock" ]] \
@@ -2129,6 +2741,8 @@ launch_profile() {
     "FMX_WORKER_LAUNCHER=$worker_launcher"
     "FMX_CAPTAIN_PANE_ID=${HERDR_PANE_ID-}"
     "FMX_TASK_ID_PREFIX=$task_id_prefix"
+    "FMX_INSTANCE_ID=$(if [[ "$instance_selector" != legacy ]]; then printf '%s' "$instance_selector"; fi)"
+    "FMX_LAUNCH_PROVENANCE_JSON=$instance_context"
     # HOME and PATH are captured from the validated captain process here and
     # carried explicitly into every worker pane, because a session daemon's
     # environment is not the captain's.
@@ -2153,6 +2767,7 @@ launch_profile() {
 
   exec env \
     -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
+    -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE \
     -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN -u OPENAI_API_KEY \
     -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX \
     "TRELLAGE_CLAUDE_LAUNCHER_NAME=$launcher_name" \
@@ -2208,6 +2823,39 @@ run_over_selection() {
 
 require_command jq
 validate_catalog
+instance_operation="${1-}"
+if [[ "$instance_operation" != instances && "$instance_operation" != list ]]; then
+  filtered_arguments=()
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --instance=* | --fmx-instance-context-json=* | --join=*)
+        die 'reserved instance options require their documented separate-value form' ;;
+      --instance | --fmx-instance-context-json)
+        [[ "$#" -ge 2 && -n "$2" && "$2" != --* ]] || die "$1 requires a nonempty value"
+        if [[ "$1" == --instance ]]; then
+          [[ "$instance_explicit" == false ]] || die 'instance selector was supplied more than once'
+          instance_explicit=true
+          instance_selector="$2"
+        else
+          [[ -z "$instance_context" ]] || die 'instance context was supplied more than once'
+          instance_context="$2"
+        fi
+        shift 2 ;;
+      --join)
+        [[ "$instance_join" == false ]] || die '--join was supplied more than once'
+        instance_join=true
+        shift ;;
+      *) filtered_arguments+=("$1"); shift ;;
+    esac
+  done
+  if [[ "${#filtered_arguments[@]}" -gt 0 ]]; then set -- "${filtered_arguments[@]}"; else set --; fi
+  if [[ "$instance_explicit" == false && ( -n "$instance_context" || "$instance_join" == true ) ]]; then
+    die 'instance context and --join require an explicit --instance selector'
+  fi
+  if [[ "$instance_explicit" == true ]]; then
+    for argument in "$@"; do [[ "$argument" != --all ]] || die '--instance cannot expand legacy --all semantics'; done
+  fi
+fi
 
 case "${1-}" in
   help | -h | --help | '')
@@ -2223,12 +2871,92 @@ case "${1-}" in
       die 'list accepts only --json'
     fi
     ;;
+  instances)
+    shift
+    require_safe_home
+    exec python3 "$instances_helper" "$@"
+    ;;
   inventory)
     shift
-    [[ "$#" -eq 2 && "$2" == '--json' ]] || die 'inventory requires PROFILE --json'
+    [[ "$#" -eq 2 ]] || die 'inventory requires PROFILE --json'
+    if [[ "$1" == --json ]]; then set -- "$2" "$1"; fi
+    [[ "$2" == --json ]] || die 'inventory requires PROFILE --json'
     require_safe_home
     select_profile "$1"
     inventory_profile
+    ;;
+  prepare)
+    shift
+    [[ "$#" -ge 4 ]] || die 'prepare requires PROFILE --json --expected-source-revision SHA40 [--install-prerequisites SHA256]'
+    preparation_profile="$1"
+    shift
+    preparation_json=false
+    preparation_revision=''
+    preparation_install=''
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        --json)
+          [[ "$preparation_json" == false ]] || die '--json was supplied more than once'
+          preparation_json=true
+          shift ;;
+        --expected-source-revision)
+          [[ "$#" -ge 2 && -z "$preparation_revision" && "$2" =~ ^[0-9a-f]{40}$ ]] \
+            || die '--expected-source-revision requires one lowercase 40-character SHA'
+          preparation_revision="$2"
+          shift 2 ;;
+        --install-prerequisites)
+          [[ "$#" -ge 2 && -z "$preparation_install" && "$2" =~ ^[0-9a-f]{64}$ ]] \
+            || die '--install-prerequisites requires one lowercase SHA-256 reviewed plan identity'
+          preparation_install="$2"
+          shift 2 ;;
+        *) die "unknown prepare option: $1" ;;
+      esac
+    done
+    [[ "$preparation_json" == true && -n "$preparation_revision" ]] \
+      || die 'prepare requires --json and --expected-source-revision'
+    require_safe_home
+    select_profile "$preparation_profile"
+    verify_instance_context
+    exec python3 "$control_helper" prepare "$profile_key" "$preparation_revision" "$preparation_install"
+    ;;
+  _prepare-owned)
+    shift
+    [[ "$#" -eq 5 ]] || die 'invalid internal preparation request'
+    require_safe_home
+    select_profile "$1"
+    prepare_owned_profile "$2" "$3" "$4" "$5"
+    ;;
+  _preparation-tools)
+    shift
+    [[ "$#" -eq 1 ]] || die 'invalid internal prerequisite report request'
+    require_safe_home
+    select_profile "$1"
+    verify_profile_runtime
+    preparation_backend="$(resolve_backend)"
+    if [[ "$(session_state)" == stale || "$(session_state)" == active ]]; then
+      preparation_backend="$(<"$session_lock/backend")"
+    fi
+    fleet_tools_report "$preparation_backend"
+    ;;
+  submit | receipt)
+    control_operation="$1"
+    shift
+    [[ "$#" -eq 2 ]] || die "$control_operation requires PROFILE --json"
+    if [[ "$1" == --json ]]; then set -- "$2" "$1"; fi
+    [[ "$2" == --json ]] || die "$control_operation requires PROFILE --json"
+    require_safe_home
+    select_profile "$1"
+    if [[ "$control_operation" == submit ]]; then verify_instance_context; fi
+    FMX_CONTROL_BASH="$BASH" python3 "$control_helper" "$control_operation" "$1"
+    ;;
+  _control-readiness)
+    shift
+    [[ "$#" -eq 1 ]] || die 'invalid internal readiness request'
+    require_safe_home
+    select_profile "$1"
+    [[ "$(read_pid_file "$mutation_lock/pid")" == "$PPID" ]] \
+      || die 'internal readiness requires the parent control operation lock'
+    fleet_readiness_json "$PPID"
     ;;
   harness-version)
     shift
@@ -2242,7 +2970,25 @@ case "${1-}" in
     shift
     [[ "$#" -eq 1 ]] || die 'usage: fmx setup PROFILE|--all'
     require_safe_home
+    [[ "$instance_selector" == legacy ]] || die 'named instances require an approved instances create plan'
     run_over_selection setup_profile "$1"
+    ;;
+  _create-owned)
+    shift
+    [[ "$#" -eq 2 && "$instance_selector" != legacy ]] || die 'invalid owned instance creation request'
+    require_safe_home
+    select_profile "$1"
+    python3 "$instances_helper" _check-creation "$profile_key" "$instance_selector" "$2" \
+      || die 'creation requires the owning approved allocation operation'
+    require_owned_profile
+    acquire_mutation_lock prepare
+    python3 "$instances_helper" _check-creation "$profile_key" "$instance_selector" "$2" \
+      || die 'approved creation changed under its instance mutation gate'
+    require_idle_fleet create
+    automatic_preparation=true
+    trap cleanup_automatic_preparation EXIT
+    repair_profile_contents automatic
+    verify_profile_runtime
     ;;
   doctor)
     shift

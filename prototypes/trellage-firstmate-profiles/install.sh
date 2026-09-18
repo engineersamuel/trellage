@@ -116,12 +116,21 @@ require_owned_runtime_contents() {
   require_runtime_directory "$install_root/lib"
   require_runtime_directory "$install_root/policies"
   require_runtime_directory "$install_root/overlay"
+  if [[ -e "$install_root/instance-overlay" || -L "$install_root/instance-overlay" ]]; then
+    require_runtime_directory "$install_root/instance-overlay"
+  fi
   require_runtime_directory "$install_root/prerequisite-lock"
   require_runtime_directory "$install_root/prerequisite-lock/npm"
   require_runtime_file "$installed_launcher"
   require_runtime_file "$install_root/lib/fmx-worker"
   require_runtime_file "$install_root/lib/fmx-overlay.py"
   require_runtime_file "$install_root/lib/fmx-prerequisites"
+  for path in "$install_root/lib/fmx-controls.py" "$install_root/lib/fmx-control.py" \
+    "$install_root/lib/fmx-registry.py" "$install_root/lib/fmx-instances.py"; do
+    if [[ -e "$path" || -L "$path" ]]; then
+      require_runtime_file "$path"
+    fi
+  done
   require_runtime_file "$install_root/lib/native-claude"
   if [[ -e "$install_root/native-skills.mjs" || -L "$install_root/native-skills.mjs" ]]; then
     require_runtime_file "$install_root/native-skills.mjs"
@@ -150,6 +159,10 @@ require_owned_runtime_contents() {
       "$install_root/lib/fmx-worker"|\
       "$install_root/lib/fmx-overlay.py"|\
       "$install_root/lib/fmx-prerequisites"|\
+      "$install_root/lib/fmx-controls.py"|\
+      "$install_root/lib/fmx-control.py"|\
+      "$install_root/lib/fmx-registry.py"|\
+      "$install_root/lib/fmx-instances.py"|\
       "$install_root/lib/native-claude"|\
       "$install_root/native-skills.mjs"|\
       "$install_root/native-skills.ts"|\
@@ -157,6 +170,7 @@ require_owned_runtime_contents() {
       "$installed_catalog"|\
       "$install_root/policies"|\
       "$install_root/overlay"|\
+      "$install_root/instance-overlay"|\
       "$install_root/prerequisite-lock"|\
       "$install_root/prerequisite-lock/manifest.json"|\
       "$install_root/prerequisite-lock/npm"|\
@@ -170,8 +184,9 @@ require_owned_runtime_contents() {
           && -f "$path" && ! -L "$path" ]] \
           || refuse "unsafe managed policy path: $path"
         ;;
-      "$install_root/overlay/"*)
-        relative="${path#"$install_root/overlay/"}"
+      "$install_root/overlay/"*|"$install_root/instance-overlay/"*)
+        relative="${path#"$install_root/"}"
+        relative="${relative#*/}"
         commit="${relative%%/*}"
         [[ "$commit" =~ ^[0-9a-f]{40}$ ]] \
           || refuse "unsafe managed overlay path: $path"
@@ -256,6 +271,10 @@ require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command dire
 require_regular_file "$source_dir/bin/fmx" 'launcher'
 require_regular_file "$source_dir/lib/fmx-worker" 'worker helper'
 require_regular_file "$source_dir/lib/fmx-overlay.py" 'overlay helper'
+require_regular_file "$source_dir/lib/fmx-controls.py" 'worker admission helper'
+require_regular_file "$source_dir/lib/fmx-control.py" 'fleet control helper'
+require_regular_file "$source_dir/lib/fmx-registry.py" 'instance registry/shared writer helper'
+require_regular_file "$source_dir/lib/fmx-instances.py" 'instance command helper'
 require_regular_file "$prerequisite_helper_source" 'prerequisite helper'
 require_regular_file "$source_dir/catalog.json" 'catalog'
 require_regular_file "$native_claude_source" 'shared native Claude helper'
@@ -268,6 +287,8 @@ require_regular_file "$native_skills_source" 'Native skills helper'
   || refuse "missing or unsafe policy directory: $source_dir/policies"
 [[ -d "$source_dir/overlay" && ! -L "$source_dir/overlay" ]] \
   || refuse "missing or unsafe overlay directory: $source_dir/overlay"
+[[ -d "$source_dir/instance-overlay" && ! -L "$source_dir/instance-overlay" ]] \
+  || refuse "missing or unsafe instance overlay directory: $source_dir/instance-overlay"
 [[ -d "$prerequisite_lock_source" && ! -L "$prerequisite_lock_source" ]] \
   || refuse "missing or unsafe prerequisite lock: $prerequisite_lock_source"
 [[ -d "$prerequisite_lock_source/npm" && ! -L "$prerequisite_lock_source/npm" ]] \
@@ -515,54 +536,8 @@ cleanup_abandoned_install_artifacts() {
     -name '.fmx-command.*' -print)
 }
 
-profile_lock_blocks_runtime_change() {
-  local lock="$1"
-  local pid
-
-  [[ -e "$lock" || -L "$lock" ]] || return 1
-  [[ -d "$lock" && ! -L "$lock" \
-    && -f "$lock/owner" && ! -L "$lock/owner" \
-    && "$(<"$lock/owner")" == "$ownership_value" \
-    && -f "$lock/pid" && ! -L "$lock/pid" ]] \
-    || return 0
-  pid="$(<"$lock/pid")"
-  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 0
-  kill -0 "$pid" 2>/dev/null
-}
-
 active_fmx_fleet_or_mutation() {
-  local profile_root worker_root worker marker pid
-
-  for profile_root in "$canonical_home/.local/share/trellage/profiles/firstmate"/*; do
-    [[ -d "$profile_root" && ! -L "$profile_root" ]] || continue
-    if profile_lock_blocks_runtime_change "$profile_root/locks/session" \
-      || profile_lock_blocks_runtime_change "$profile_root/locks/mutation"; then
-      printf '%s\n' "$profile_root"
-      return 0
-    fi
-    worker_root="$profile_root/workers"
-    if [[ -e "$worker_root" || -L "$worker_root" ]]; then
-      [[ -d "$worker_root" && ! -L "$worker_root" ]] || {
-        printf '%s\n' "$profile_root"
-        return 0
-      }
-      for worker in "$worker_root"/*; do
-        [[ -d "$worker" && ! -L "$worker" ]] || continue
-        marker="$worker/.active"
-        [[ -e "$marker" || -L "$marker" ]] || continue
-        if [[ ! -f "$marker" || -L "$marker" ]]; then
-          printf '%s\n' "$profile_root"
-          return 0
-        fi
-        pid="$(<"$marker")"
-        if [[ ! "$pid" =~ ^[1-9][0-9]*$ ]] || kill -0 "$pid" 2>/dev/null; then
-          printf '%s\n' "$profile_root"
-          return 0
-        fi
-      done
-    fi
-  done
-  return 1
+  ! python3 "$source_dir/lib/fmx-registry.py" check-shared
 }
 
 rollback() {
@@ -656,12 +631,12 @@ require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage"
 require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
 
 acquire_install_lock
-recover_interrupted_install
-cleanup_abandoned_install_artifacts
-inject_test_point after-recovery
 if active_fmx_fleet_or_mutation >/dev/null; then
   refuse 'cannot install fmx while a Firstmate fleet or profile mutation is active or indeterminate'
 fi
+recover_interrupted_install
+cleanup_abandoned_install_artifacts
+inject_test_point after-recovery
 
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/fmx" 'runtime root'
@@ -719,6 +694,10 @@ chmod 0755 \
 stage_file "$source_dir/bin/fmx" "$staging_root/new-runtime/bin/fmx" 0755
 stage_file "$source_dir/lib/fmx-worker" "$staging_root/new-runtime/lib/fmx-worker" 0755
 stage_file "$source_dir/lib/fmx-overlay.py" "$staging_root/new-runtime/lib/fmx-overlay.py" 0755
+stage_file "$source_dir/lib/fmx-controls.py" "$staging_root/new-runtime/lib/fmx-controls.py" 0644
+stage_file "$source_dir/lib/fmx-control.py" "$staging_root/new-runtime/lib/fmx-control.py" 0644
+stage_file "$source_dir/lib/fmx-registry.py" "$staging_root/new-runtime/lib/fmx-registry.py" 0644
+stage_file "$source_dir/lib/fmx-instances.py" "$staging_root/new-runtime/lib/fmx-instances.py" 0644
 stage_file "$prerequisite_helper_source" "$staging_root/new-runtime/lib/fmx-prerequisites" 0755
 stage_file "$native_claude_source" "$staging_root/new-runtime/lib/native-claude" 0755
 stage_file "$native_skills_source" "$staging_root/new-runtime/native-skills.ts" 0644
@@ -743,6 +722,16 @@ for commit in "${overlay_commits[@]}"; do
     stage_file "$overlay_file" \
       "$staging_root/new-runtime/overlay/$commit/$(basename "$overlay_file")" 0644
   done < <(find "$source_dir/overlay/$commit" -mindepth 1 -maxdepth 1 -type f | sort)
+done
+mkdir "$staging_root/new-runtime/instance-overlay"
+for directory in "$source_dir/instance-overlay/"*; do
+  [[ -d "$directory" && ! -L "$directory" && "${directory##*/}" =~ ^[0-9a-f]{40}$ ]] \
+    || refuse "unsafe instance overlay directory: $directory"
+  target="$staging_root/new-runtime/instance-overlay/${directory##*/}"
+  mkdir "$target"
+  for path in "$directory/"*; do
+    stage_file "$path" "$target/${path##*/}" 0644
+  done
 done
 
 if [[ "$runtime_owned" == true \
@@ -775,7 +764,9 @@ runtime_publish_intent=true
 mv "$staging_root/new-runtime" "$install_root"
 inject_test_point after-runtime-publication
 
-"$floating_runtime_installer"
+exec 9<"$install_lock/owner"
+FMX_SHARED_LEASE_FD=9 "$floating_runtime_installer"
+exec 9<&-
 inject_test_point after-shared-runtime-installation
 
 if [[ ! -L "$command_path" ]]; then

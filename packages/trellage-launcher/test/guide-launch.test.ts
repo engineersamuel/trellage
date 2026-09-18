@@ -471,6 +471,32 @@ describe("shell preview escaping", () => {
 })
 
 describe("node command runner regression coverage", () => {
+  it("writes exact bounded stdin without placing request text in argv or a shell", async () => {
+    const runner = createNodeCommandRunner()
+    const stdin = JSON.stringify({ intent: "  Keep quotes, $(literal text), and Unicode: \u00e9.\n  " })
+    const script = 'process.stdin.setEncoding("utf8"); let data = ""; process.stdin.on("data", value => data += value); process.stdin.on("end", () => process.stdout.write(data))'
+    const result = await runner.run(process.execPath, ["-e", script], { stdin, timeoutMs: 5000 })
+    expect(result.stdout).toBe(stdin)
+    expect(result.stderr).toBe("")
+  })
+
+  it("preserves structured stdout after stdin delivery and a nonzero child exit", async () => {
+    const runner = createNodeCommandRunner()
+    const script = 'process.stdin.resume(); process.stdin.on("end", () => { process.stdout.write(\'{"state":"saved"}\'); process.stderr.write("wake failed"); process.exitCode = 23 })'
+    await expect(runner.run(process.execPath, ["-e", script], { stdin: "private request", timeoutMs: 5000 }))
+      .rejects.toMatchObject({
+        kind: "exited", exitCode: 23, stdout: '{"state":"saved"}', stderr: "wake failed",
+        args: ["-e", script],
+      })
+  })
+
+  it("rejects over-limit UTF-8 stdin before starting the child", async () => {
+    const runner = createNodeCommandRunner()
+    await expect(runner.run(process.execPath, ["-e", 'process.stdout.write("must not run")'], {
+      stdin: "\u00e9".repeat(262145), timeoutMs: 5000,
+    })).rejects.toMatchObject({ stdout: "", message: expect.stringContaining("not started") })
+  })
+
   it("rejects timed-out children that ignore SIGTERM without hanging", async () => {
     const runner = createNodeCommandRunner()
     const startedAt = Date.now()

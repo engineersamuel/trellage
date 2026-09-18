@@ -125,6 +125,13 @@ class FakeClient implements GuideModelClient {
   }
 }
 
+const submittedModelInput = (client: FakeClient): unknown => {
+  const prompt = client.session?.prompts[0] ?? ""
+  const encoded = /<untrusted-data>\n(.*)\n<\/untrusted-data>/u.exec(prompt)?.[1]
+  if (encoded === undefined) throw new Error("The model request did not contain its JSON input.")
+  return JSON.parse(encoded)
+}
+
 const matchEntries: ReadonlyArray<GuideMatchCatalogEntry> = [
   {
     ref: "native:cdx/pstack",
@@ -208,6 +215,7 @@ const generateInput: GuideGenerateInput = {
   intent: "Review my pull request",
   profileRef: "native:cdx/pstack",
   workflowId: "review",
+  bodyBudget: 4352,
   guide: {
     schemaVersion: 1,
     capabilities: ["code-review"],
@@ -246,6 +254,7 @@ const validRefineResponse = JSON.stringify({
 const optimizeInput: GuideOptimizeInput = {
   targetTool: "codex",
   profileRef: "native:cdx/hve",
+  bodyBudget: 4352,
   candidates: JSON.parse(validGenerateResponse).candidates,
   fixedFrame: {
     beforeBody: "/ce-compound mode:non-interactive ",
@@ -354,6 +363,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     const result = await provider.generate(generateInput)
 
     expect(result.candidates).toHaveLength(3)
+    expect(submittedModelInput(client)).toMatchObject({ bodyBudget: generateInput.bodyBudget })
     expect(client.createSessionCalls[0]).toMatchObject({
       model: "gpt-5.6-luna",
       reasoningEffort: "medium",
@@ -370,6 +380,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     const result = await provider.refine(refineInput)
 
     expect(result.candidate.title).toBe("Quick pass, with tests")
+    expect(submittedModelInput(client)).toMatchObject({ bodyBudget: refineInput.bodyBudget })
     expect(client.createSessionCalls[0]).toMatchObject({
       model: "gpt-5.6-sol",
       reasoningEffort: "medium",
@@ -377,6 +388,16 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     })
     expect(client.session?.disconnectCalls).toBe(1)
     expect(client.stopCalls).toBe(1)
+  })
+
+  it.each([0, 1.5, 8001, NaN, Infinity])("rejects an invalid body budget before model activity: %s", async (bodyBudget) => {
+    const client = new FakeClient([workingModel, lunaModel], [])
+    const provider = new CopilotGuideProvider({ prompts, clientFactory: () => client })
+    await expect(provider.generate({ ...generateInput, bodyBudget })).rejects.toThrow("bodyBudget")
+    await expect(provider.refine({ ...refineInput, bodyBudget })).rejects.toThrow("bodyBudget")
+    await expect(provider.optimize({ ...optimizeInput, bodyBudget })).rejects.toThrow("bodyBudget")
+    expect(client.startCalls).toBe(0)
+    expect(client.createSessionCalls).toEqual([])
   })
 
   it("enriches a thin intent with the packed repository as untrusted reference", async () => {
@@ -469,6 +490,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
       const result = await provider.optimize(optimizeInput)
 
       expect(result.candidates).toHaveLength(3)
+      expect(submittedModelInput(client)).toMatchObject({ bodyBudget: optimizeInput.bodyBudget })
       expect(client.createSessionCalls[0]).toMatchObject({
         model: "gpt-5.6-sol",
         reasoningEffort: "medium",

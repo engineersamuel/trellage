@@ -2210,6 +2210,7 @@ assert_contains $'hve-core@hve-core\t3.2.2' "$expected_hve_home/fake-state/plugi
 awesome_marketplace_add_count="$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")"
 awesome_missing_builtin_status=0
 mkdir -p "$fixture_root/awesome-decoy-home"
+seed_floating_skills_cache "$fixture_root/awesome-decoy-home"
 HOME="$fixture_root/awesome-decoy-home" FAKE_HIDE_AWESOME_MARKETPLACE=1 \
   "$launcher" setup awesome \
   >"$fixture_root/awesome-missing-built-in.out" \

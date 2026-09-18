@@ -1,5 +1,9 @@
 import path from "node:path"
 import type { ConversationSnapshot } from "./conversation-contract.ts"
+import {
+  parseFirstmateInstanceControlContextV1,
+  type FirstmateInstanceControlContextV1,
+} from "@trellage/guide-core"
 
 export { parseConversationBinding } from "./conversation-validation.ts"
 export { sourceWorkingDirectory } from "@trellage/conversation-source/source-context"
@@ -265,10 +269,14 @@ export const parseConversationInvocationContext = (source: string) => {
   return { ...focused, conversationChoiceToken: undefined }
 }
 
-export const conversationGuidePopupContext = (snapshot: ConversationSnapshot) => ({
+export const conversationGuidePopupContext = (
+  snapshot: ConversationSnapshot,
+  launchOrigin?: FirstmateInstanceControlContextV1,
+) => ({
   schemaVersion: 1,
   surface: "popup",
   workspaceId: snapshot.source.workspaceId,
   paneId: snapshot.source.paneId,
   cwd: snapshot.source.cwd,
+  ...(launchOrigin === undefined ? {} : { launchOrigin: parseFirstmateInstanceControlContextV1(launchOrigin) }),
 })

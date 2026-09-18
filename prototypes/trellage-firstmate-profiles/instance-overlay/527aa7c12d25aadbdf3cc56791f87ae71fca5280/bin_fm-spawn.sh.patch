@@ -1,0 +1,57 @@
+--- a/bin/fm-spawn.sh
++++ b/bin/fm-spawn.sh
+@@ -351,6 +351,12 @@
+ if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
+   FMX_SPAWN_ARGUMENTS=("$@")
+   FMX_SPAWN_CONTROLS=$(python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" spawn "$@") || exit 1
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" operation-enter "$$" spawn "$@" >/dev/null || exit 1
++    trap 'python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" operation-leave "$$" >/dev/null 2>&1 || true' EXIT
++    FMX_SPAWN_OPERATION_PID=$$
++    FMX_SPAWN_OPERATION_ID=$(jq -er .operationId "$FMX_PROFILE_ROOT/locks/operations/$$.json") || exit 1
++  fi
+ elif [ -e "$FM_HOME/.fmx-managed" ]; then
+   echo "error: managed Firstmate spawning requires the fmx worker boundary" >&2
+   exit 1
+@@ -1034,6 +1040,9 @@
+   if [ "$CONFIG_INHERIT_LOCK_HELD" = 1 ]; then
+     CONFIG_INHERIT_LOCK_HELD=0
+     fm_lock_release "$CONFIG_INHERIT_LOCK" || true
++  fi
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" operation-leave "$$" >/dev/null 2>&1 || true
+   fi
+   return "$status"
+ }
+@@ -3675,6 +3684,10 @@
+   fi
+   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
+   echo "spawn_gen=$SPAWN_GEN"
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    echo "fmx_instance_id=$FMX_INSTANCE_ID"
++    echo "fmx_profile_root=$FMX_PROFILE_ROOT"
++  fi
+   # Default-off writes no traceparent= line.
+   # backend= is written only for a non-default (non-tmux) backend, so the
+   # default path's meta stays byte-identical (absent backend= means tmux;
+@@ -3943,6 +3956,9 @@
+   # explicit assignments inside its /bin/sh boundary, not ambient inheritance.
+   LAUNCH="FMX_PROFILE=$(shell_quote "${FMX_PROFILE:-}")\
+  FMX_PROFILE_ROOT=$(shell_quote "${FMX_PROFILE_ROOT:-}")\
++ FMX_INSTANCE_ID=$(shell_quote "${FMX_INSTANCE_ID:-}")\
++ FMX_SPAWN_OPERATION_PID=$(shell_quote "${FMX_SPAWN_OPERATION_PID:-}")\
++ FMX_SPAWN_OPERATION_ID=$(shell_quote "${FMX_SPAWN_OPERATION_ID:-}")\
+  FMX_CAPTAIN_PANE_ID=$(shell_quote "${FMX_CAPTAIN_PANE_ID:-}")\
+  FMX_GH_CONFIG_DIR=$(shell_quote "${FMX_GH_CONFIG_DIR:-}")\
+  FMX_TASK_ID_PREFIX=$(shell_quote "${FMX_TASK_ID_PREFIX:-}")\
+@@ -4113,6 +4129,10 @@
+ fm_lock_release "$SPAWN_META_LOCK"
+ SPAWN_META_LOCK_HELD=0
+ 
++if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++  python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" operation-wait "$$" "$ID" >/dev/null || exit 1
++fi
++
+ SPAWN_DELIVERY=
+ [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
+ echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT"

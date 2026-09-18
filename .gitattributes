@@ -1,0 +1,5 @@
+# Unified patches require a space on blank context lines.
+prototypes/trellage-firstmate-profiles/overlay/*/*.patch whitespace=-blank-at-eol
+prototypes/trellage-firstmate-profiles/instance-overlay/*/*.patch whitespace=-blank-at-eol
+# Preserve the pinned upstream fixture byte-for-byte.
+prototypes/trellage-firstmate-profiles/tests/fixtures/firstmate/527aa7c12d25aadbdf3cc56791f87ae71fca5280/bin/fm-cursor-lib.sh whitespace=-blank-at-eof

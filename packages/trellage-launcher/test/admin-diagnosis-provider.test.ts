@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest"
 import type { ModelInfo } from "@github/copilot-sdk"
 import { GuideModelCleanupError, GuideModelResponseError, type GuideModelClient, type GuideModelSession } from "../src/copilot-guide-provider.ts"
 import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.ts"
+import { buildDiagnosticCommand } from "../src/admin-launch.ts"
+import { beta, instanceRows } from "./admin-firstmate-fixtures.ts"
 
 const model: ModelInfo = {
   id: "gpt-5.6-sol",
@@ -68,6 +70,20 @@ const buildProvider = (client: FakeClient): DoctorFailureDiagnosisProvider =>
   new DoctorFailureDiagnosisProvider({ clientFactory: () => client })
 
 describe("DoctorFailureDiagnosisProvider", () => {
+  it("keeps the instance UUID and read-only selector in an explicitly requested diagnosis", async () => {
+    const client = new FakeClient([okContent])
+    const row = instanceRows()[2]!
+    await buildProvider(client).diagnose({
+      ref: row.ref, name: "default / beta", capturedOutput: "Needs operator review.",
+      firstmateInstance: beta, diagnosticCommand: buildDiagnosticCommand(row),
+    })
+    const prompt = client.session.capturedPrompts[0]!
+    expect(prompt).toContain(beta.reference.instanceId)
+    expect(prompt).toContain(beta.worktree.evidence.locators.worktree)
+    expect(prompt).toContain('"doctor","default","--instance"')
+    expect(prompt).toContain("does not authorize fleet creation, setup, rebinding, or package installation")
+  })
+
   it("parses a successful, well-formed response", async () => {
     const client = new FakeClient([okContent])
     const provider = buildProvider(client)

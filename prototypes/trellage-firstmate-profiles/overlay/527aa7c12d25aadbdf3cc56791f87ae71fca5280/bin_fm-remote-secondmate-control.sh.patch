@@ -1,0 +1,14 @@
+--- a/bin/fm-remote-secondmate-control.sh
++++ b/bin/fm-remote-secondmate-control.sh
+@@ -49,6 +49,11 @@
+ # holds, including for an already-alive endpoint that was not relaunched, so the
+ # parent records the identity the agent really received rather than an intent.
+ set -eu
++
++if [ -n "${FMX_WORKER_LAUNCHER:-}" ] || [ -e "${FM_HOME:-}/.fmx-managed" ]; then
++  echo "error: fmx does not manage secondmate homes or remote recovery" >&2
++  exit 1
++fi
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"

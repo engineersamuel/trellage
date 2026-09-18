@@ -1,5 +1,6 @@
 import { stripVTControlCharacters } from "node:util"
 import { isKnownNativeLauncher, type AdminProfileEntry } from "./admin-model.ts"
+import { adminInstanceSelectorArgs } from "./admin-firstmate.ts"
 import type { CommandRunner } from "./guide-launch.ts"
 import { updateDiagnostic } from "./admin-update-command.ts"
 
@@ -47,6 +48,7 @@ const checkEntry = async (
     return unknown("This launcher has no supported read-only skills check.")
   }
   try {
+    const selector = adminInstanceSelectorArgs(entry)
     signal.throwIfAborted()
     let supported = helpChecks.get(entry.commandPath)
     if (supported === undefined) {
@@ -66,7 +68,7 @@ const checkEntry = async (
     }
     if (!(await supported)) return unknown("Refresh the installed Trellage launcher to enable read-only skills-check.")
     signal.throwIfAborted()
-    const output = await runner.run(entry.commandPath, ["skills-check", entry.name], {
+    const output = await runner.run(entry.commandPath, ["skills-check", entry.name, ...selector], {
       cwd,
       signal,
       timeoutMs: 5 * 60 * 1000,

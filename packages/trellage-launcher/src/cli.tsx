@@ -35,8 +35,9 @@ import {
 } from "./guide-launch.ts"
 import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
 import { GuideArtifactCache } from "./guide-match-cache.ts"
+import { firstmateLaunchOrigin } from "./guide-firstmate-instance-menu.ts"
 import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
-import { GuideApp, type GuideUiResult } from "./guide-ui.tsx"
+import { GuideApp, type GuideUiProps, type GuideUiResult } from "./guide-ui.tsx"
 import { ContinuationApp } from "./continuation-ui.tsx"
 import { ContinuationStore } from "./continuation-store.ts"
 import { ContinuationSourceClient } from "./continuation-source-client.ts"
@@ -640,6 +641,11 @@ const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
   }
 }
 
+const interactiveGuidePrivateOptions = (
+  launchOrigin: GuideUiProps["launchOrigin"], cacheOptions: ConstructorParameters<typeof GuideArtifactCache>[0],
+): Pick<GuideUiProps, "cache" | "launchOrigin"> =>
+  launchOrigin === undefined ? { cache: new GuideArtifactCache(cacheOptions) } : { launchOrigin }
+
 const runInteractiveGuideMode = async (
   argv: ReadonlyArray<string>,
   guideRoot: string,
@@ -652,6 +658,7 @@ const runInteractiveGuideMode = async (
   }
   const herdrEnv = herdrEnvironment()
   const herdrContext = getHerdrContext(herdrEnv)
+  const launchOrigin = firstmateLaunchOrigin(herdrContext?.launchOrigin, process.env.FMX_LAUNCH_PROVENANCE_JSON)
   const initialIntent = await resolveInteractiveGuideIntent({
     args,
     herdrContext,
@@ -683,7 +690,7 @@ const runInteractiveGuideMode = async (
     },
   }
   const cwd = herdrContext?.cwd ?? process.cwd()
-  const cache = new GuideArtifactCache({ cwd, routing, prompts, promptMasterSkillDirectory })
+  const privateOptions = interactiveGuidePrivateOptions(launchOrigin, { cwd, routing, prompts, promptMasterSkillDirectory })
   const herdrAvailabilityProbe = await probeInteractiveHerdr(runner, herdrEnv, cwd)
   if (herdrContext?.surface === "popup" && !herdrAvailabilityProbe) {
     throw new Error("Herdr is unavailable for this guide popup")
@@ -701,7 +708,7 @@ const runInteractiveGuideMode = async (
         guideRoot={guideRoot}
         provider={provider}
         goalProvider={goalProvider}
-        cache={cache}
+        {...privateOptions}
         routing={routing}
         runner={runner}
         cwd={cwd}
@@ -745,8 +752,10 @@ const runContinuationMode = async (
   if (process.env[popupGuideIntentFileEnvironmentVariable] !== undefined) {
     throw new Error("A conversation request cannot be combined with an ordinary guide intent file.")
   }
-  const context = getHerdrContext(herdrEnvironment())
-  if (context === null) throw new Error("Conversation next steps requires Herdr.")
+  const capturedContext = getHerdrContext(herdrEnvironment())
+  const launchOrigin = firstmateLaunchOrigin(capturedContext?.launchOrigin, process.env.FMX_LAUNCH_PROVENANCE_JSON)
+  if (capturedContext === null) throw new Error("Conversation next steps requires Herdr.")
+  const context = { ...capturedContext, ...(launchOrigin === undefined ? {} : { launchOrigin }) }
   const stateRoot = process.env.HERDR_PLUGIN_STATE_DIR
   if (stateRoot === undefined || !path.isAbsolute(stateRoot)) {
     throw new Error("Conversation next steps requires the private Herdr plugin state directory.")

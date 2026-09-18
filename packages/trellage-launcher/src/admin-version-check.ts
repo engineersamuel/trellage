@@ -20,12 +20,13 @@
  * output.
  */
 import type { AdminProfileEntry, AdminUpdateCheckResult } from "./admin-model.ts"
+import { adminInstanceSelectorArgs } from "./admin-firstmate.ts"
 import type { CommandSpec } from "./guide-launch.ts"
 
 /** Builds `update --check PROFILE` for a profile. Callers must check `entry.updateCheckSupported` first. */
 export const buildUpdateCheckCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: ["update", "--check", entry.name],
+  args: ["update", "--check", entry.name, ...adminInstanceSelectorArgs(entry)],
 })
 
 /** Each pattern's capture group 1, when present, is the installed version/commit/pin named in that family's own output text. */
@@ -107,13 +108,7 @@ export const versionColumnsFor = (
  * `updateAvailablePatterns`), and that freshly-parsed value is always
  * preferred so the version column reflects the live check result.
  */
-export const parseUpdateCheckOutput = (stdout: string, installedVersion: string | undefined): AdminUpdateCheckResult => {
-  const trimmed = stdout.trim()
-  if (trimmed.length === 0) return { malformed: true, diagnostic: "update --check produced no output" }
-
-  for (const pattern of notInstalledPatterns) {
-    if (pattern.test(trimmed)) return { malformed: true, diagnostic: trimmed.split("\n")[0] ?? trimmed }
-  }
+const availableVersion = (trimmed: string, installedVersion: string | undefined): AdminUpdateCheckResult | undefined => {
   for (const pattern of updateAvailablePatterns) {
     const match = pattern.exec(trimmed)
     if (match?.[2] !== undefined) {
@@ -121,6 +116,10 @@ export const parseUpdateCheckOutput = (stdout: string, installedVersion: string 
       return { current: false, latest: match[2], ...(installed === undefined ? {} : { installed }) }
     }
   }
+  return undefined
+}
+
+const currentVersion = (trimmed: string, installedVersion: string | undefined): AdminUpdateCheckResult | undefined => {
   for (const pattern of currentPatterns) {
     const match = pattern.exec(trimmed)
     if (match !== null) {
@@ -128,13 +127,21 @@ export const parseUpdateCheckOutput = (stdout: string, installedVersion: string 
       return { current: true, ...(installed === undefined ? {} : { installed }) }
     }
   }
-  for (const pattern of bareUpdateAvailablePatterns) {
-    if (pattern.test(trimmed)) {
-      return { current: false, latest: "—", ...(installedVersion === undefined ? {} : { installed: installedVersion }) }
-    }
+  return undefined
+}
+
+export const parseUpdateCheckOutput = (stdout: string, installedVersion: string | undefined): AdminUpdateCheckResult => {
+  const trimmed = stdout.trim()
+  if (trimmed.length === 0) return { malformed: true, diagnostic: "update --check produced no output" }
+  if (notInstalledPatterns.some((pattern) => pattern.test(trimmed))) {
+    return { malformed: true, diagnostic: trimmed.split("\n")[0] ?? trimmed }
+  }
+  const parsed = availableVersion(trimmed, installedVersion) ?? currentVersion(trimmed, installedVersion)
+  if (parsed !== undefined) return parsed
+  if (bareUpdateAvailablePatterns.some((pattern) => pattern.test(trimmed))) {
+    return { current: false, latest: "—", ...(installedVersion === undefined ? {} : { installed: installedVersion }) }
   }
   return {
-
     malformed: true,
     diagnostic: `unrecognized update --check output${installedVersion === undefined ? "" : ` (installed ${installedVersion})`}: ${trimmed.split("\n")[0] ?? trimmed}`,
   }

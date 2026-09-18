@@ -2,15 +2,22 @@ import { describe, expect, test } from "vitest"
 import {
   ContinuationActionStatus,
   ContinuationPlacementKind,
+  parseGuideProjectTargetV1,
   type ContinuationDraft,
 } from "@trellage/guide-core"
 import {
   changeContinuationAction,
   changeContinuationEditor,
   continuationAction,
+  continuationActionLocked,
   continuationDependenciesWaiting,
   continuationLaunchPlan,
   continuationStatusLabel,
+  continuationProjectTargetProblem,
+  continuationPromptEditText,
+  continuationRenderedPrompt,
+  describeContinuationProjectTarget,
+  describeContinuationSubmission,
   defaultContinuationPlacement,
   describeContinuationPlacement,
   describeContinuationPromptOrigin,
@@ -27,6 +34,17 @@ import {
   type ContinuationEditor,
 } from "../src/continuation-ui-state.ts"
 import { continuationFixtureDraft, continuationFixtureProfiles } from "./helpers/continuation-ui-fixtures.ts"
+import { workflowPromptFrame } from "../src/guide-workflow-prompt.ts"
+import {
+  firstmateFixtureDraft,
+  firstmateOriginalIntent,
+  firstmatePreparedPrompt,
+  firstmateProfiles,
+  firstmateProjectC,
+  firstmateReceipt,
+  firstmateRequest,
+  preparedFirstmateFixtureDraft,
+} from "./helpers/continuation-firstmate-fixtures.ts"
 
 const prepared = (draft: ContinuationDraft, id = "action-1"): ContinuationDraft =>
   changeContinuationAction(draft, id, { prompt: `Full prompt for ${id}`, selected: true })
@@ -204,6 +222,289 @@ describe("bounded keyboard editor", () => {
     expect(changeContinuationEditor(start, ContinuationTextCommand.Backspace)).toMatchObject({ value: "AZ", cursor: 1 })
     expect(changeContinuationEditor(start, ContinuationTextCommand.Delete)).toMatchObject({ value: "A🦊", cursor: 2 })
     expect(changeContinuationEditor(start, ContinuationTextCommand.Insert, "é")).toMatchObject({ value: "A🦊éZ", cursor: 3 })
+  })
+
+  describe("confirmed Firstmate continuation context", () => {
+    test("old Firstmate preparations remain visible but cannot be submitted or selected without a confirmed target", () => {
+      const prepared = preparedFirstmateFixtureDraft()
+      const old = {
+        ...prepared,
+        actions: prepared.actions.map(({ originalIntent: _intent, projectTarget: _target, projectTargetConfirmed: _confirmed, ...edit }) => edit),
+      }
+      expect(continuationLaunchPlan(old, firstmateProfiles).blocked).toEqual([expect.stringContaining("confirm a project target")])
+      expect(() => selectContinuationCandidate(old, "action-1", "candidate-1", firstmateProfiles)).toThrow(/confirm a project target/u)
+      expect(() => continuationPromptEditText(old, "action-1", firstmateProfiles)).toThrow(/confirm a project target/u)
+      expect(old.actions[0]?.prompt).toBe(prepared.actions[0]?.prompt)
+    })
+
+    test("proposed targets are not consent, and fleet scope is unavailable to project workflows", () => {
+      const initial = firstmateFixtureDraft()
+      const proposed = changeContinuationAction(initial, "action-1", { projectTarget: firstmateProjectC(), projectTargetConfirmed: false })
+      expect(continuationProjectTargetProblem(proposed, "action-1", firstmateProfiles)).toContain("confirm a project target")
+      const confirmed = changeContinuationAction(proposed, "action-1", { projectTargetConfirmed: true })
+      expect(continuationProjectTargetProblem(confirmed, "action-1", firstmateProfiles)).toBeNull()
+      const missingProject = changeContinuationAction(confirmed, "action-1", { projectTarget: null, projectTargetConfirmed: true })
+      expect(continuationProjectTargetProblem(missingProject, "action-1", firstmateProfiles)).toContain("requires a confirmed project")
+      const fleet = changeContinuationAction(missingProject, "action-1", { workflowId: "review-fleet-status" })
+      expect(fleet.actions[0]?.projectTargetConfirmed).toBe(false)
+      const fleetConfirmed = changeContinuationAction(fleet, "action-1", { projectTargetConfirmed: true })
+      expect(continuationProjectTargetProblem(fleetConfirmed, "action-1", firstmateProfiles)).toBeNull()
+    })
+
+    test.each([
+      { projectTarget: parseGuideProjectTargetV1({
+        ...firstmateProjectC(), source: { kind: "local", location: "/fixture/project-d" }, entryWorktree: "/fixture/project-d",
+      }) },
+      { profileRef: "native:fmx/pstack-workers" },
+      { workflowId: "review-fleet-status" },
+      { projectTargetConfirmed: false },
+    ])("invalidates unsubmitted choices, payloads and all approvals when context changes: %j", (change) => {
+      const prepared = preparedFirstmateFixtureDraft()
+      const initial = {
+        ...prepared,
+        actions: prepared.actions.map((edit, index) => index > 0 ? edit : {
+          ...edit, firstmateSubmission: { request: firstmateRequest(prepared), receipt: null },
+        }),
+      }
+      const changed = changeContinuationAction(initial, "action-1", change)
+      expect(changed.actions[0]).toMatchObject({
+        status: ContinuationActionStatus.Draft, originalIntent: firstmateOriginalIntent,
+        prerequisitesConfirmed: false, sharedWriteConfirmed: false, uncommittedChangesConfirmed: false,
+        projectTargetConfirmed: false,
+      })
+      expect(changed.actions[0]).not.toHaveProperty("prompt")
+      expect(changed.actions[0]).not.toHaveProperty("candidates")
+      expect(changed.actions[0]).not.toHaveProperty("selectedCandidateId")
+      expect(changed.actions[0]).not.toHaveProperty("firstmateSubmission")
+      expect(changed.actions.slice(1)).toEqual(initial.actions.slice(1))
+    })
+
+    test("reinspection requires fresh confirmation, including when the inspected root and revision are unchanged", () => {
+      const prepared = preparedFirstmateFixtureDraft()
+      const proposed = changeContinuationAction(prepared, "action-1", { projectTarget: firstmateProjectC() })
+      expect(proposed.actions[0]?.projectTargetConfirmed).toBe(false)
+      expect(proposed.actions[0]?.prompt).toBeUndefined()
+      const confirmed = changeContinuationAction(proposed, "action-1", { projectTargetConfirmed: true })
+      expect(confirmed.actions[0]?.prompt).toBeUndefined()
+      expect(() => selectContinuationCandidate(confirmed, "action-1", "candidate-2", firstmateProfiles)).toThrow(/saved prompt candidate/u)
+    })
+
+    test("a source-A destination edit cannot replace confirmed project C or its exact original intent", () => {
+      const prepared = preparedFirstmateFixtureDraft()
+      const moved = changeContinuationAction(prepared, "action-1", {
+        placement: { kind: ContinuationPlacementKind.ExistingWorktree, path: "/fixture/source-a/other-pane" },
+      })
+      expect(moved.snapshot.source.cwd).toBe("/fixture/source-a")
+      expect(moved.actions[0]).toMatchObject({
+        originalIntent: firstmateOriginalIntent,
+        projectTarget: firstmateProjectC(),
+        projectTargetConfirmed: true,
+        prompt: prepared.actions[0]?.prompt,
+      })
+      const target = describeContinuationProjectTarget(moved.actions[0]!)
+      expect(target).toContain("Exact base revision: " + "c".repeat(40))
+      expect(target).toContain("Dirty changes: excluded. No working files are copied.")
+      expect(target).toContain("Source: local /fixture/project-c")
+    })
+
+    test("only an explicit brief edit establishes new human intent", () => {
+      const original = preparedFirstmateFixtureDraft()
+      const chosen = selectContinuationCandidate(original, "action-1", "candidate-1", firstmateProfiles)
+      expect(chosen.actions[0]?.originalIntent).toBe(firstmateOriginalIntent)
+      const rendered = continuationRenderedPrompt(chosen, "action-1", "Inspect the error paths only.", firstmateProfiles)
+      const edited = changeContinuationAction(chosen, "action-1", { prompt: rendered })
+      expect(edited.actions[0]?.originalIntent).toBe(firstmateOriginalIntent)
+      expect(edited.actions[0]?.selectedCandidateId).toBe("candidate-1")
+      const humanBrief = "  New human scope.\r\nDo not deploy. 😀  "
+      const rebriefed = changeContinuationAction(edited, "action-1", { brief: humanBrief })
+      expect(rebriefed.actions[0]?.brief).toBe(humanBrief)
+      expect(rebriefed.actions[0]?.originalIntent).toBe(humanBrief)
+      expect(rebriefed.actions[0]?.projectTarget).toEqual(firstmateProjectC())
+      expect(rebriefed.actions[0]?.prompt).toBeUndefined()
+    })
+  })
+
+  describe("fixed-frame continuation prompt editing", () => {
+    test("exposes only the body and restores the confirmed target/workflow frame once", () => {
+      const draft = preparedFirstmateFixtureDraft()
+      expect(continuationPromptEditText(draft, "action-1", firstmateProfiles)).toBe("Trace failure paths.")
+      const body = "  Inspect committed evidence.\nKeep the original scope. 😀  "
+      const rendered = continuationRenderedPrompt(draft, "action-1", body, firstmateProfiles)
+      const frame = workflowPromptFrame(firstmatePreparedPrompt(draft).workflow)
+      expect(rendered).toBe(`${frame.beforeBody}${body}${frame.afterBody}`)
+      expect(continuationRenderedPrompt(draft, "action-1", rendered, firstmateProfiles)).toBe(rendered)
+      expect(rendered).toContain('"location": "/fixture/project-c"')
+      expect(rendered).toContain('"workflowId": "review-project"')
+      expect(rendered).not.toContain("/fixture/source-a")
+      expect(rendered).not.toContain(firstmateOriginalIntent)
+      expect(() => continuationRenderedPrompt(draft, "action-1", `${frame.beforeBody}${rendered}${frame.afterBody}`, firstmateProfiles))
+        .toThrow(/repeated fixed frame/u)
+    })
+
+    test("checks the 8000-character final frame boundary while retaining a 60000-character original intent", () => {
+      const prepared = preparedFirstmateFixtureDraft()
+      const originalIntent = ` ${"😀".repeat(29_999)} `
+      const draft = { ...prepared, actions: prepared.actions.map((edit, index) => index > 0 ? edit : { ...edit, originalIntent }) }
+      const frame = workflowPromptFrame(firstmatePreparedPrompt(draft).workflow)
+      const maximumBody = 8000 - frame.beforeBody.length - frame.afterBody.length
+      const rendered = continuationRenderedPrompt(draft, "action-1", "x".repeat(maximumBody), firstmateProfiles)
+      expect(rendered).toHaveLength(8000)
+      expect(draft.actions[0]?.originalIntent).toBe(originalIntent)
+      expect(() => continuationRenderedPrompt(draft, "action-1", "x".repeat(maximumBody + 1), firstmateProfiles)).toThrow(/8000/u)
+    })
+
+    test("rejects an outgoing candidate from an obsolete target frame rather than nesting it", () => {
+      const prepared = preparedFirstmateFixtureDraft()
+      const changed = {
+        ...prepared,
+        actions: prepared.actions.map((edit, index) => index > 0 ? edit : {
+          ...edit,
+          projectTarget: parseGuideProjectTargetV1({
+            ...firstmateProjectC(), source: { kind: "local", location: "/fixture/project-d" }, entryWorktree: "/fixture/project-d",
+          }),
+        }),
+      }
+      expect(() => selectContinuationCandidate(changed, "action-1", "candidate-2", firstmateProfiles)).toThrow(/repeated fixed frame|does not match/u)
+      expect(() => continuationRenderedPrompt(changed, "action-1", prepared.actions[0]!.prompt!, firstmateProfiles))
+        .toThrow(/repeated fixed frame/u)
+      expect(continuationLaunchPlan(changed, firstmateProfiles).blocked).toEqual([expect.stringContaining("fixed frame")])
+    })
+
+    test("leaves generic profile prompt editing unchanged", () => {
+      const draft = prepared(continuationFixtureDraft())
+      const prompt = continuationAction(draft, "action-1").edit.prompt!
+      expect(continuationPromptEditText(draft, "action-1", continuationFixtureProfiles)).toBe(prompt)
+      expect(continuationRenderedPrompt(draft, "action-1", "An entire authored prompt.", continuationFixtureProfiles)).toBe("An entire authored prompt.")
+    })
+
+    test("bounds keyboard paste by available body space without truncation", () => {
+      const editor: ContinuationEditor = {
+        field: ContinuationField.Prompt, value: "123", cursor: 3, returnScreen: ContinuationScreen.Prompt, maximumLength: 4,
+      }
+      expect(changeContinuationEditor(editor, ContinuationTextCommand.Insert, "4").value).toBe("1234")
+      expect(() => changeContinuationEditor(editor, ContinuationTextCommand.Insert, "45")).toThrow(/Nothing was truncated/u)
+      expect(editor.value).toBe("123")
+    })
+
+    test("does not accept an empty specification merely because its fixed frame is non-empty", () => {
+      expect(() => continuationRenderedPrompt(preparedFirstmateFixtureDraft(), "action-1", " \n ", firstmateProfiles))
+        .toThrow(/must not be empty/u)
+    })
+  })
+
+  describe("Firstmate submission state safety", () => {
+    test.each(["default", "pstack-workers"] as const)("requires explicit %s action approval after preparing a specification", (profile) => {
+      const draft = preparedFirstmateFixtureDraft(profile)
+      expect(continuationLaunchPlan(draft, firstmateProfiles).blocked).toEqual([expect.stringContaining("Explicitly confirm Start fleet")])
+      const actions = draft.actions.map((edit, index) => {
+        if (index > 0) return edit
+        const { placement: _placement, ...rest } = edit
+        return {
+          ...rest, firstmateAction: "submit" as const,
+          firstmateSubmission: { request: firstmateRequest(draft), receipt: null },
+        }
+      })
+      const approved = withContinuationPlacementDefaults({ ...draft, actions })
+      expect(approved.actions[0]).not.toHaveProperty("placement")
+      expect(continuationLaunchPlan(approved, firstmateProfiles).ready.map(({ actionId }) => actionId)).toEqual(["action-1"])
+    })
+
+    test("shows startup failure separately from a saved request and note ID", () => {
+      const draft = preparedFirstmateFixtureDraft()
+      const request = firstmateRequest(draft)
+      const edit = {
+        ...draft.actions[0]!,
+        status: ContinuationActionStatus.Accepted,
+        firstmateAction: "start" as const,
+        firstmateSubmission: { request, receipt: firstmateReceipt(request) },
+        firstmateDiagnostic: "Supervisor startup failed: the selected pane was unavailable.",
+      }
+      const lines = describeContinuationSubmission(edit)
+      expect(lines).toContain(`Firstmate request: ${request.requestId}`)
+      expect(lines).toContain("Receipt: saved; note captain-note-1")
+      expect(lines).toContain("Confirmed action: Start fleet")
+      expect(lines).toContain("Delivery diagnostic: Supervisor startup failed: the selected pane was unavailable.")
+      expect(continuationStatusLabel(draft, edit)).toBe("ACCEPTED - note saved; work not verified")
+    })
+
+    test.each([
+      ContinuationActionStatus.Submitting,
+      ContinuationActionStatus.Accepted,
+      ContinuationActionStatus.SubmissionUnknown,
+    ])("keeps request content immutable in %s and permits only selection changes", (status) => {
+      const prepared = preparedFirstmateFixtureDraft()
+      const request = firstmateRequest(prepared)
+      const receipt = status === ContinuationActionStatus.Accepted ? firstmateReceipt(request, "handled") : null
+      const draft = {
+        ...prepared,
+        actions: prepared.actions.map((edit, index) => index > 0 ? edit : { ...edit, status, firstmateSubmission: { request, receipt } }),
+      }
+      expect(continuationActionLocked(draft.actions[0]!)).toBe(true)
+      for (const change of [
+        { brief: "Changed intent" }, { prompt: "Changed specification" }, { projectTarget: null },
+        { projectTargetConfirmed: false }, { workflowId: "review-fleet-status" },
+      ]) expect(() => changeContinuationAction(draft, "action-1", change)).toThrow(/cannot be edited or resent/u)
+      const deselected = changeContinuationAction(draft, "action-1", { selected: false })
+      expect(deselected.actions[0]?.firstmateSubmission).toEqual({ request, receipt })
+      const plan = continuationLaunchPlan(draft, firstmateProfiles)
+      expect(plan.ready).toHaveLength(0)
+      const label = continuationStatusLabel(draft, draft.actions[0]!)
+      if (status === ContinuationActionStatus.Accepted) {
+        expect(label).toBe("ACCEPTED - note saved; work not verified")
+        expect(plan.blocked).toHaveLength(0)
+        expect(describeContinuationSubmission(draft.actions[0]!)).toContain("Announcement: failed")
+      } else expect(plan.blocked).toEqual([expect.stringContaining("needs reconciliation")])
+    })
+
+    test("shows waiting for start from a saved receipt snapshot even when its wake was sent", () => {
+      const draft = preparedFirstmateFixtureDraft()
+      const request = firstmateRequest(draft)
+      const receipt = {
+        ...firstmateReceipt(request), announcement: "sent" as const, supervisorState: "stopped" as const, error: null,
+      }
+      const edit = {
+        ...draft.actions[0]!, status: ContinuationActionStatus.Accepted,
+        firstmateSubmission: { request, receipt },
+        firstmateDiagnostic: "Latest observed fleet status: supervisor running.",
+      }
+      const lines = describeContinuationSubmission(edit)
+      expect(lines).toContain("Announcement: sent")
+      expect(lines).toContain("Fleet at receipt: waiting for supervisor start (receipt snapshot).")
+      expect(lines).toContain("Delivery diagnostic: Latest observed fleet status: supervisor running.")
+      expect(continuationStatusLabel(draft, edit)).toBe("ACCEPTED - note saved; work not verified")
+    })
+
+    test("acceptance does not release a dependent action without verified prerequisite results", () => {
+      const draft = preparedFirstmateFixtureDraft()
+      const request = firstmateRequest(draft)
+      const accepted = {
+        ...draft,
+        actions: draft.actions.map((edit, index) => index > 0 ? edit : {
+          ...edit, status: ContinuationActionStatus.Accepted, firstmateSubmission: { request, receipt: firstmateReceipt(request) },
+        }),
+      }
+      const dependent = changeContinuationAction(accepted, "action-5", { selected: true })
+      expect(continuationDependenciesWaiting(dependent, "action-5")).toBe(true)
+      expect(continuationLaunchPlan(dependent, firstmateProfiles).waiting.map(({ actionId }) => actionId)).toEqual(["action-5"])
+    })
+
+    test("a prepared unsent payload is invalidated by a direct prompt edit without changing original intent", () => {
+      const draft = preparedFirstmateFixtureDraft()
+      const unsent = {
+        ...draft,
+        actions: draft.actions.map((edit, index) => index > 0 ? edit : {
+          ...edit, firstmateAction: "submit" as const,
+          firstmateSubmission: { request: firstmateRequest(draft), receipt: null },
+        }),
+      }
+      const edited = changeContinuationAction(unsent, "action-1", {
+        prompt: continuationRenderedPrompt(unsent, "action-1", "Inspect only the selected revision.", firstmateProfiles),
+      })
+      expect(edited.actions[0]).not.toHaveProperty("firstmateSubmission")
+      expect(edited.actions[0]).not.toHaveProperty("firstmateAction")
+      expect(edited.actions[0]?.originalIntent).toBe(firstmateOriginalIntent)
+      expect(edited.actions[0]?.projectTarget).toEqual(firstmateProjectC())
+    })
   })
 
   test("normalizes pasted controls without treating paste as shortcuts", () => {

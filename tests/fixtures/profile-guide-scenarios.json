@@ -283,6 +283,27 @@
       "expectedProfiles": ["native:fmx/pstack-workers"],
       "maxRank": 1,
       "excludedProfiles": ["native:fmx/default", "native:cdx/pstack"]
+    },
+    {
+      "id": "fleet-status-without-new-workers",
+      "intent": "Review the current tasks, retained scout reports, blockers, and pending human decisions in my existing fleet. Do not dispatch new workers or approve held work.",
+      "expectedProfiles": ["native:fmx/default"],
+      "maxRank": 3,
+      "excludedProfiles": ["native:cdx/pstack"]
+    },
+    {
+      "id": "firstmate-ordinary-project-memory",
+      "intent": "Use fmx default and ordinary Stow to retain confirmed findings, decisions, and supporting references for my registered project without creating skills or implementation workers.",
+      "expectedProfiles": ["native:fmx/default"],
+      "maxRank": 1,
+      "excludedProfiles": ["native:fmx/pstack-workers", "native:cdx/pstack"]
+    },
+    {
+      "id": "firstmate-notify-only-condition",
+      "intent": "Use native:fmx/pstack-workers to watch my fleet's existing review gate. Confirm the condition and deadline, then notify me without dispatching another agent or merging anything.",
+      "expectedProfiles": ["native:fmx/pstack-workers"],
+      "maxRank": 1,
+      "excludedProfiles": ["native:fmx/default", "native:cdx/pstack"]
     }
   ]
 }

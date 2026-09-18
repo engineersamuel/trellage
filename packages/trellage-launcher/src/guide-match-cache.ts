@@ -16,8 +16,13 @@ import type {
   GuideGenerateResult,
   GuideMatchResult,
   GuideRefineResult,
+  GuideOptimizeFixedFrame,
+  GuidePromptBodyBudget,
 } from "./guide-provider.ts"
 import { validateGuideGenerateResult, validateGuideMatchResult, validateGuideRefineResult } from "./guide-provider.ts"
+import { guidePromptRendererVersion, guideTaskOrchestration, type GuideTaskContext } from "./guide-context.ts"
+import { fail } from "./guide-text.ts"
+import { validateFinalGuideCandidate } from "./guide-workflow-prompt.ts"
 
 const maximumArtifactBytes = 256 * 1024
 const maximumOptimizationSkillBytes = 1024 * 1024
@@ -88,14 +93,14 @@ interface MatchCacheInput {
   }>
 }
 
-interface GenerationCacheInput {
+interface GenerationCacheInput extends GuideTaskContext, GuidePromptBodyBudget {
   readonly intent: string
   readonly profileRef: string
   readonly workflowId: string
   readonly guide: unknown
   readonly guideBody: string
   readonly targetTool: string
-  readonly fixedFrame?: unknown
+  readonly fixedFrame?: GuideOptimizeFixedFrame
   readonly goalExecution?: GuideGoalExecution
 }
 
@@ -219,8 +224,10 @@ const renderCandidates = (
     `# ${heading}`,
     "",
     artifactIntent(input.intent, input.goalExecution?.goal),
+    ...(input.originalIntent === undefined ? [] : [`Original intent: ${input.originalIntent}`]),
     `Profile: ${input.profileRef}`,
     `Workflow: ${input.workflowId}`,
+    ...(input.projectTarget === undefined ? [] : [`Project target: ${JSON.stringify(input.projectTarget)}`]),
     `Target tool: ${input.targetTool}`,
     `Routing: ${routing}`,
     ...(input.goalExecution === undefined ? [] : [`Goal controller: ${input.goalExecution.controller}`]),
@@ -235,6 +242,27 @@ const renderCandidates = (
       "",
     ]),
   ].join("\n")
+
+const validateCachedCandidateFrame = (
+  candidate: GuideGenerateCandidate,
+  frame: GuideOptimizeFixedFrame | undefined,
+): GuideGenerateCandidate => {
+  validateFinalGuideCandidate(candidate)
+  if (frame !== undefined &&
+    (!candidate.prompt.startsWith(frame.beforeBody) || !candidate.prompt.endsWith(frame.afterBody) ||
+      candidate.prompt.length <= frame.beforeBody.length + frame.afterBody.length)) {
+    fail("cached specification", "does not retain its exact selected workflow and target frame")
+  }
+  return candidate
+}
+
+const contextCacheKey = (input: GenerationCacheInput) => ({
+  rendererVersion: guidePromptRendererVersion,
+  originalIntent: input.originalIntent ?? input.intent,
+  projectTarget: input.projectTarget ?? null,
+  orchestration: input.orchestration === undefined ? null : guideTaskOrchestration(input.orchestration),
+  bodyBudget: input.bodyBudget ?? null,
+})
 
 export class GuideArtifactCache {
   private readonly root: string
@@ -431,6 +459,7 @@ export class GuideArtifactCache {
   ): Promise<GuideGenerateResult> {
     const key = keyFor({
       schemaVersion: 1,
+      ...contextCacheKey(input),
       intent: input.intent,
       profileRef: input.profileRef,
       workflowId: input.workflowId,
@@ -459,7 +488,13 @@ export class GuideArtifactCache {
             `${this.options.routing.generate.model} (${this.options.routing.generate.effort}) → ${this.options.routing.optimize.model} (${this.options.routing.optimize.effort})`,
             result,
           ),
-        validate: (value) => validateGuideGenerateResult(value, input.goalExecution),
+        validate: (value) => {
+          const result = validateGuideGenerateResult(value, { preservePrompt: true, ...(input.goalExecution === undefined ? {} : { goalExecution: input.goalExecution }) })
+          if (input.goalExecution === undefined) {
+            result.candidates.forEach((candidate) => validateCachedCandidateFrame(candidate, input.fixedFrame))
+          }
+          return result
+        },
       },
       input.goalExecution === undefined
         ? produce
@@ -470,6 +505,7 @@ export class GuideArtifactCache {
   async refinement(input: RefinementCacheInput, produce: () => Promise<GuideRefineResult>): Promise<GuideRefineResult> {
     const key = keyFor({
       schemaVersion: 1,
+      ...contextCacheKey(input),
       intent: input.intent,
       profileRef: input.profileRef,
       workflowId: input.workflowId,
@@ -502,7 +538,11 @@ export class GuideArtifactCache {
             { candidates: [result.candidate] },
             input.feedback,
           ),
-        validate: (value) => validateGuideRefineResult(value, input.goalExecution),
+        validate: (value) => {
+          const result = validateGuideRefineResult(value, { preservePrompt: true, ...(input.goalExecution === undefined ? {} : { goalExecution: input.goalExecution }) })
+          if (input.goalExecution === undefined) validateCachedCandidateFrame(result.candidate, input.fixedFrame)
+          return result
+        },
       },
       input.goalExecution === undefined
         ? produce

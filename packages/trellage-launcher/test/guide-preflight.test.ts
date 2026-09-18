@@ -3,6 +3,11 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import {
+  parseFirstmateFleetReadinessV1,
+  parseFirstmateOrchestrationV1,
+  type FirstmateFleetReadinessV1,
+} from "@trellage/guide-core"
 
 import {
   CommandRunnerError,
@@ -11,10 +16,17 @@ import {
   type CommandRunOptions,
   type CommandRunResult,
   type CommandRunner,
+  type NativeSelectedProfile,
 } from "../src/guide-launch.ts"
-import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "../src/guide-preflight.ts"
 import type { GuideGoalReadinessServices } from "../src/guide-goal-readiness.ts"
 import { goalTransportFixture } from "./fixtures/goal-transport.ts"
+import {
+  checkSelectedProfileReadiness,
+  firstmateActionReadiness,
+  inspectFirstmateReadiness,
+  ProfilePreflightError,
+  ProfileReadinessKind,
+} from "../src/guide-preflight.ts"
 
 class FakeRunner implements CommandRunner {
   readonly calls: Array<{
@@ -162,7 +174,7 @@ case "$4" in
   *) exit 97 ;;
 esac
 `, { mode: 0o755 })
-      await writeFile(path.join(bin, "codex"), `#!/usr/bin/env node
+      await writeFile(path.join(bin, "codex"), `#!/usr/bin/env bun
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
@@ -414,6 +426,110 @@ describe("selected profile readiness", () => {
     })
   })
 
+    const firstmateProfile: NativeSelectedProfile = {
+      surface: "native", launcher: "fmx", profile: "default", commandPath: "/fixture/fmx", headlessPrompt: false,
+      orchestration: parseFirstmateOrchestrationV1({
+        schemaVersion: 1, kind: "firstmate", sourceRevision: "b".repeat(40), taskIdPrefix: "fmd",
+        workerPolicy: null, workerHarness: "claude", workerEfforts: ["low", "medium", "high"], dispatchRules: "claude-single",
+        submission: { schemaVersion: 1, maxRequestBytes: 524288 },
+      }),
+    }
+    const firstmateFleet = (state: "running" | "stopped" | "stale" = "running"): FirstmateFleetReadinessV1 =>
+      parseFirstmateFleetReadinessV1({
+        schemaVersion: 1,
+        identity: { profile: "default", instanceId: "00000000-0000-4000-8000-000000000001", home: "/fixture/owned-home", sourceRevision: "b".repeat(40) },
+        runtime: "ready", backend: "tmux", activeWorkers: state === "stopped" ? 0 : 12,
+        supervisor: { state, pid: state === "running" ? 1234 : null },
+        prerequisites: [{ id: "tmux", ready: true, description: "tmux is available." }],
+        consentRequired: false,
+        actions: {
+          start: { allowed: state === "stopped", reason: state === "stopped" ? null : "Use the current owned fleet." },
+          recover: { allowed: state === "stale", reason: state === "stale" ? null : "Recovery is not allowed." },
+          submit: { allowed: true, reason: null },
+        },
+      })
+    const firstmateInventory = (fleet: FirstmateFleetReadinessV1, readiness = "busy"): CommandRunResult =>
+      ok(JSON.stringify({ schemaVersion: 1, launcher: "fmx", profile: "default", readiness, fleet }))
+
+    describe("Firstmate action readiness", () => {
+      it("ignores conservative busy inventory when the owned tmux fleet permits send work with active workers", async () => {
+        const expected = firstmateFleet()
+        const runner = new FakeRunner([firstmateInventory(expected)])
+        const signal = new AbortController().signal
+        const observed = await inspectFirstmateReadiness(runner, firstmateProfile, "/fixture/caller", signal)
+        expect(observed).toEqual(expected)
+        expect(firstmateActionReadiness(firstmateProfile, observed, "submit")).toMatchObject({ kind: ProfileReadinessKind.Ready, fleet: expected })
+        expect(firstmateActionReadiness(firstmateProfile, observed, "start").kind).toBe(ProfileReadinessKind.Blocked)
+        expect(runner.calls).toEqual([{
+          executable: "/fixture/fmx", args: ["inventory", "default", "--json"],
+          options: { cwd: "/fixture/caller", signal, timeoutMs: 30000 },
+        }])
+      })
+
+      it("requires a running supervisor for Send, but preserves raw save-before-start permission", async () => {
+        const stopped = firstmateFleet("stopped")
+        const runner = new FakeRunner([firstmateInventory(stopped)])
+        const observed = await inspectFirstmateReadiness(runner, firstmateProfile, "/fixture/caller")
+        expect(observed.actions.submit.allowed).toBe(true)
+        expect(firstmateActionReadiness(firstmateProfile, observed, "submit")).toMatchObject({
+          kind: ProfileReadinessKind.Blocked, diagnostic: expect.stringContaining("Choose Start fleet or Recover fleet explicitly"),
+        })
+        expect(firstmateActionReadiness(firstmateProfile, observed, "start").kind).toBe(ProfileReadinessKind.Ready)
+        expect(runner.calls).toHaveLength(1)
+      })
+
+      it("permits explicit recovery with live workers without changing or repairing runtime state", () => {
+        const stale = firstmateFleet("stale")
+        expect(firstmateActionReadiness(firstmateProfile, stale, "recover").kind).toBe(ProfileReadinessKind.Ready)
+        expect(firstmateActionReadiness(firstmateProfile, stale, "start").kind).toBe(ProfileReadinessKind.Blocked)
+        expect(firstmateActionReadiness(firstmateProfile, stale, "submit").kind).toBe(ProfileReadinessKind.Blocked)
+      })
+
+      it.each(["runtime", "ownership"] as const)("blocks unsafe %s evidence even if submit permission claims true", (field) => {
+        const fleet = firstmateFleet()
+        const changed: FirstmateFleetReadinessV1 = {
+          ...fleet,
+          ...(field === "runtime" ? { runtime: "drift" }
+            : { supervisor: { state: "unsafe", pid: null } }),
+        }
+        expect(firstmateActionReadiness(firstmateProfile, changed, "submit").kind).toBe(ProfileReadinessKind.Blocked)
+      })
+
+      it.each(["backend", "prerequisite", "consent"] as const)("does not apply startup-only %s requirements to an allowed live-fleet submission", (field) => {
+        const observed = parseFirstmateFleetReadinessV1({
+          ...firstmateFleet(),
+          ...(field === "backend" ? { backend: null }
+            : field === "prerequisite" ? { prerequisites: [{ id: "claude", ready: false, description: "Worker startup is unavailable." }] }
+            : { consentRequired: true }),
+        })
+        expect(firstmateActionReadiness(firstmateProfile, observed, "submit").kind).toBe(ProfileReadinessKind.Ready)
+        expect(firstmateActionReadiness(firstmateProfile, observed, "start").kind).toBe(ProfileReadinessKind.Blocked)
+      })
+
+      it.each(["profile", "sourceRevision"] as const)("rejects inventory with mismatched fleet %s", async (field) => {
+        const fleet = firstmateFleet()
+        const runner = new FakeRunner([firstmateInventory({
+          ...fleet, identity: { ...fleet.identity!, [field]: field === "profile" ? "pstack-workers" : "c".repeat(40) },
+        })])
+        await expect(inspectFirstmateReadiness(runner, firstmateProfile, "/fixture/caller")).rejects.toThrow(/identity does not match/)
+      })
+
+      it("rejects an old backend without probing an unsupported control contract", async () => {
+        const runner = new FakeRunner([])
+        const { orchestration: _orchestration, ...oldProfile } = firstmateProfile
+        await expect(inspectFirstmateReadiness(runner, oldProfile, "/fixture/caller")).rejects.toThrow(ProfilePreflightError)
+        expect(runner.calls).toEqual([])
+      })
+
+      it("does not treat a generic busy process error as valid fleet evidence", async () => {
+        const runner = new FakeRunner([new CommandRunnerError({
+          kind: "exited", executable: "/fixture/fmx", args: ["inventory", "default", "--json"],
+          exitCode: 1, stdout: "busy", stderr: "Try again later.", message: "Inventory failed.",
+        })])
+        await expect(inspectFirstmateReadiness(runner, firstmateProfile, "/fixture/caller")).rejects.toThrow("Inventory failed")
+        expect(runner.calls).toHaveLength(1)
+      })
+    })
   it("blocks native profiles that are not set up", async () => {
     const runner = new FakeRunner([
       ok('{"schemaVersion":1,"launcher":"cpx","profile":"awesome","readiness":"not-setup"}'),

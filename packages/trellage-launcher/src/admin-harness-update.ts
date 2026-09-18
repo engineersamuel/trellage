@@ -1,4 +1,5 @@
 import type { AdminProfileEntry } from "./admin-model.ts"
+import { adminFirstmateMutationBlockReason, adminInstanceControlArgs } from "./admin-firstmate.ts"
 import type { AdminRunManager } from "./admin-run-manager.ts"
 import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.ts"
 import {
@@ -92,6 +93,7 @@ interface HarnessUpdateRunOptions {
 
 export const harnessUpdateKeyFor = (entry: AdminProfileEntry): string | undefined => {
   if (entry.harness === undefined || entry.commandPath.length === 0) return undefined
+  if (adminFirstmateMutationBlockReason(entry) !== undefined) return undefined
   if (entry.surface === "sandbox") {
     return harnessVersionReleaseKeyFor(entry) === undefined ? undefined : `sandbox:${entry.harness}`
   }
@@ -106,7 +108,7 @@ const buildHarnessUpdateCommand = (entry: AdminProfileEntry): CommandSpec => {
   if (update === undefined) throw new Error(`Harness update is not supported for ${entry.ref}`)
   return {
     executable: entry.commandPath,
-    args: update.command === "harness-update" ? ["harness-update"] : ["update", entry.name],
+    args: update.command === "harness-update" ? ["harness-update"] : ["update", entry.name, ...adminInstanceControlArgs(entry)],
   }
 }
 
@@ -196,12 +198,16 @@ const queueScopeKey = (plans: ReadonlyArray<HarnessUpdatePlan>, skills: NativeSk
         ? undefined
         : {
             refresh: skills.refresh,
-            targets: skills.targets.map((entry) => [entry.ref, entry.launcher, entry.name, entry.commandPath]),
+            targets: skills.targets.map((entry) => [
+              entry.ref, entry.launcher, entry.name, entry.commandPath,
+              entry.firstmateInstanceDescriptor, entry.firstmateInstanceContext,
+            ]),
           },
   })
 
 export class HarnessUpdateManager {
   private readonly inFlight = new Map<string, Promise<HarnessUpdateOutcome>>()
+  private readonly inFlightScopes = new Map<string, string>()
   private allRun: Promise<HarnessUpdateQueueOutcome> | undefined
   private allScopeKey: string | undefined
 
@@ -303,13 +309,22 @@ export class HarnessUpdateManager {
     options: HarnessUpdateRunOptions = {},
   ): Promise<HarnessUpdateOutcome> {
     const existing = this.inFlight.get(plan.key)
-    if (existing !== undefined) return existing
+    const scope = queueScopeKey([plan], undefined)
+    if (existing !== undefined) {
+      return this.inFlightScopes.get(plan.key) === scope
+        ? existing
+        : Promise.reject(new Error("A harness update with different instance targets or approvals is already running."))
+    }
     const run = runHarnessUpdate(plan, this.runner, this.cwd, options)
       .then(async (outcome) => {
         await refresh()
         return outcome
       })
-      .finally(() => this.inFlight.delete(plan.key))
+      .finally(() => {
+        this.inFlight.delete(plan.key)
+        this.inFlightScopes.delete(plan.key)
+      })
+    this.inFlightScopes.set(plan.key, scope)
     this.inFlight.set(plan.key, run)
     return run
   }

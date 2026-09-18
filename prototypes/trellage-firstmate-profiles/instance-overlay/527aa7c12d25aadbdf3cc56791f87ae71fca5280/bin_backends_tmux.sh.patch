@@ -1,0 +1,200 @@
+--- a/bin/backends/tmux.sh
++++ b/bin/backends/tmux.sh
+@@ -33,6 +33,10 @@
+ # `tmux list-windows -a ... | grep` pipeline that used to live inline in
+ # fm-send.sh's and fm-peek.sh's own (until now duplicated) resolve().
+ fm_backend_tmux_resolve_bare_selector() {  # <name>
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    echo "error: named fleets require an owned task selector" >&2
++    return 1
++  fi
+   local name=$1
+   tmux list-windows -a -F '#{session_name}:#{window_name}' | grep -m1 ":$name\$" \
+     || { echo "error: no window named $name" >&2; return 1; }
+@@ -40,7 +44,18 @@
+ 
+ # fm_backend_tmux_capture: bounded plain-text pane capture. Mirrors
+ # fm-peek.sh's and fm-watch.sh's `tmux capture-pane -p -t "$T" -S -"$N"`.
++fm_backend_tmux_owned_target() {  # <target> [target|window]
++  local controls
++  controls=$(python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" tmux-target "$1") || return 1
++  printf '%s' "$controls" | jq -er ".${2:-target}"
++}
++
+ fm_backend_tmux_capture() {  # <target> <lines>
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    local target
++    target=$(fm_backend_tmux_owned_target "$1") || return 1
++    set -- "$target" "${@:2}"
++  fi
+   tmux capture-pane -p -t "$1" -S -"$2"
+ }
+ 
+@@ -48,6 +63,11 @@
+ # `tmux display-message -p -t "$T" '#{pane_id}' >/dev/null`, then
+ # `tmux send-keys -t "$T" "$2"`.
+ fm_backend_tmux_send_key() {  # <target> <key>
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    local target
++    target=$(fm_backend_tmux_owned_target "$1") || return 1
++    set -- "$target" "${@:2}"
++  fi
+   tmux display-message -p -t "$1" '#{pane_id}' >/dev/null
+   tmux send-keys -t "$1" "$2"
+ }
+@@ -57,6 +77,11 @@
+ # clears. Re-exports fm_tmux_submit_core (bin/fm-tmux-lib.sh) verbatim; see
+ # that file for the composer-verification contract and echoed verdicts.
+ fm_backend_tmux_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle>
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    local target
++    target=$(fm_backend_tmux_owned_target "$1") || return 1
++    set -- "$target" "${@:2}"
++  fi
+   fm_tmux_submit_core "$@"
+ }
+ 
+@@ -65,6 +90,23 @@
+ # "firstmate" session exists. Mirrors fm-spawn.sh's container-ensure block;
+ # prints the resolved session name.
+ fm_backend_tmux_container_ensure() {
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    local namespace controls
++    controls=$(python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" namespace) || return 1
++    namespace=$(printf '%s' "$controls" | jq -er .namespace) || return 1
++    if ! tmux has-session -t "=$namespace" 2>/dev/null; then
++      tmux new-session -d -s "$namespace" \
++        -e "FMX_INSTANCE_ID=$FMX_INSTANCE_ID" -e "FMX_PROFILE_ROOT=$FMX_PROFILE_ROOT" \
++        || return 1
++    fi
++    if [ "$(tmux show-environment -t "=$namespace" FMX_INSTANCE_ID 2>/dev/null)" != "FMX_INSTANCE_ID=$FMX_INSTANCE_ID" ] \
++      || [ "$(tmux show-environment -t "=$namespace" FMX_PROFILE_ROOT 2>/dev/null)" != "FMX_PROFILE_ROOT=$FMX_PROFILE_ROOT" ]; then
++      echo "error: tmux session is not owned by this instance" >&2
++      return 1
++    fi
++    printf '%s\n' "$namespace"
++    return 0
++  fi
+   if [ -n "${TMUX:-}" ]; then
+     tmux display-message -p '#S'
+   else
+@@ -90,11 +132,19 @@
+ # lost, so worktree discovery cannot fall back to the active client's window.
+ fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs> -> prints window id
+   local ses=$1 wname=$2 proj_abs=$3 wid
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    ses="=$ses"
++  fi
+   if tmux list-windows -t "$ses" -F '#{window_name}' | grep -qx "$wname"; then
+     echo "error: window $ses:$wname already exists" >&2
+     return 1
+   fi
+   wid=$(tmux new-window -dP -F '#{window_id}' -t "$ses:" -n "$wname" -c "$proj_abs") || return 1
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    tmux set-window-option -t "$wid" @fmx_instance_id "$FMX_INSTANCE_ID" || return 1
++    tmux set-window-option -t "$wid" @fmx_profile_root "$FMX_PROFILE_ROOT" || return 1
++    tmux set-window-option -t "$wid" @fmx_task_id "${wname#fm-}" || return 1
++  fi
+   tmux set-window-option -t "$wid" automatic-rename off 2>/dev/null || true
+   tmux set-window-option -t "$wid" allow-rename off 2>/dev/null || true
+   printf '%s\n' "$wid"
+@@ -104,6 +154,11 @@
+ # empty on any tmux error. Mirrors fm-spawn.sh's worktree-discovery poll:
+ # `tmux display-message -p -t "$T" '#{pane_current_path}'`.
+ fm_backend_tmux_current_path() {  # <target>
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    local target
++    target=$(fm_backend_tmux_owned_target "$1") || return 1
++    set -- "$target" "${@:2}"
++  fi
+   tmux display-message -p -t "$1" '#{pane_current_path}' 2>/dev/null
+ }
+ 
+@@ -112,6 +167,11 @@
+ # (`treehouse get`, the GOTMPDIR export) that already ran this exact sequence
+ # inline in fm-spawn.sh. Mirrors `tmux send-keys -t "$T" "<text>" Enter`.
+ fm_backend_tmux_send_text_line() {  # <target> <text>
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    local target
++    target=$(fm_backend_tmux_owned_target "$1") || return 1
++    set -- "$target" "${@:2}"
++  fi
+   tmux send-keys -t "$1" "$2" Enter
+ }
+ 
+@@ -120,6 +180,11 @@
+ # send pauses between the literal send and Enter for the harness to settle).
+ # Mirrors `tmux send-keys -t "$T" -l "<text>"`.
+ fm_backend_tmux_send_literal() {  # <target> <text>
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    local target
++    target=$(fm_backend_tmux_owned_target "$1") || return 1
++    set -- "$target" "${@:2}"
++  fi
+   tmux send-keys -t "$1" -l "$2"
+ }
+ 
+@@ -128,6 +193,11 @@
+ # tmux can never interpret an empty target as the caller's current window.
+ fm_backend_tmux_kill() {  # <target>
+   local target=${1:-} session window
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    target=$(fm_backend_tmux_owned_target "$target" window) || return 1
++    tmux kill-window -t "$target"
++    return
++  fi
+   case "$target" in
+     *:*)
+       session=${target%%:*}
+@@ -151,6 +221,11 @@
+ # own name throughout; the value reverts to the shell's own name only once
+ # the foreground command actually exits). Empty on any tmux error.
+ fm_backend_tmux_current_command() {  # <target>
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    local target
++    target=$(fm_backend_tmux_owned_target "$1") || return 1
++    set -- "$target" "${@:2}"
++  fi
+   tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null
+ }
+ 
+@@ -226,6 +301,9 @@
+ # does, or they will describe some other pane entirely.
+ fm_backend_tmux_foreground_comms() {  # <target>
+   local target=$1 tty pid pgid tpgid comm
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    target=$(fm_backend_tmux_owned_target "$target") || return 1
++  fi
+   tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || return 0
+   [ -n "$tty" ] || return 0
+   LC_ALL=C ps -t "${tty#/dev/}" -o pid=,pgid=,tpgid=,comm= 2>/dev/null \
+@@ -241,6 +319,9 @@
+ # argv[0]; bin/fm-gemini-lib.sh owns what counts as evidence inside one.
+ fm_backend_tmux_foreground_args() {  # <target>
+   local target=$1 tty pid pgid tpgid comm args
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    target=$(fm_backend_tmux_owned_target "$target") || return 1
++  fi
+   tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || return 0
+   [ -n "$tty" ] || return 0
+   LC_ALL=C ps -t "${tty#/dev/}" -o pid=,pgid=,tpgid=,comm= 2>/dev/null \
+@@ -254,6 +335,9 @@
+ 
+ fm_backend_tmux_foreground_pids() {  # <target>
+   local target=$1 tty pid pgid tpgid comm
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    target=$(fm_backend_tmux_owned_target "$target") || return 1
++  fi
+   tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || return 0
+   [ -n "$tty" ] || return 0
+   LC_ALL=C ps -t "${tty#/dev/}" -o pid=,pgid=,tpgid=,comm= 2>/dev/null \
+@@ -266,6 +350,9 @@
+ 
+ fm_backend_tmux_foreground_argv0s() {  # <target>
+   local target=$1 tty pid pgid tpgid comm args argv0
++  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++    target=$(fm_backend_tmux_owned_target "$target") || return 1
++  fi
+   tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || return 0
+   [ -n "$tty" ] || return 0
+   LC_ALL=C ps -t "${tty#/dev/}" -o pid=,pgid=,tpgid=,comm= 2>/dev/null \

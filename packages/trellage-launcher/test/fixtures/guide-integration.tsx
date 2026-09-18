@@ -16,6 +16,7 @@ import { GuideApp, type GuideUiResult } from "../../src/guide-ui.tsx"
 import {
   FixtureMode,
   codebaseIntent,
+  fixtureBodyBudget,
   fixtureProfile,
   fixtureProfilesForMode,
   generatedCandidates,
@@ -179,6 +180,10 @@ const provider: GuideProvider = {
     deepStrictEqual(input.workflowId, profile.workflowId)
     deepStrictEqual(input.guide, parsedGuides.get(profile.ref)?.guide)
     deepStrictEqual(input.guideBody, parsedGuides.get(profile.ref)?.body)
+    if (input.goal === undefined) {
+      assert(typeof input.bodyBudget === "number")
+      deepStrictEqual(input.bodyBudget, fixtureBodyBudget(profile))
+    }
     const candidates = input.goal === undefined
       ? generatedCandidates(profile, input.intent)
       : generatedGoalApproaches(profile)
@@ -188,6 +193,7 @@ const provider: GuideProvider = {
         intent: input.intent,
         profileRef: input.profileRef,
         workflowId: input.workflowId,
+        ...(input.bodyBudget === undefined ? {} : { bodyBudget: input.bodyBudget }),
         ...(input.goal === undefined ? {} : { goal: input.goal }),
       },
       candidates,
@@ -199,6 +205,7 @@ const provider: GuideProvider = {
     assert(profile !== undefined, `Unexpected optimized profile: ${input.profileRef}`)
     deepStrictEqual(input.targetTool, profile.harness)
     if (input.goalExecution === undefined) {
+      deepStrictEqual(input.bodyBudget, fixtureBodyBudget(profile))
       deepStrictEqual(
         input.fixedFrame,
         profile.skill === undefined ? undefined : { beforeBody: profile.beforeBody, afterBody: profile.afterBody },

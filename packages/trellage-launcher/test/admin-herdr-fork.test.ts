@@ -9,7 +9,7 @@ const inspectGitWorktreeIntent = vi.fn()
 const defaultWorktreeBranch = vi.fn((intent: string) => `worktree/${intent.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`)
 
 vi.mock("../src/guide-launch.ts", async () => {
-  const actual = await vi.importActual<typeof import("../src/guide-launch.ts")>("../src/guide-launch.js")
+  const actual = await vi.importActual<typeof import("../src/guide-launch.ts")>("../src/guide-launch.ts")
   return {
     ...actual,
     createHerdrWorktreeAndHandoff,
@@ -21,6 +21,9 @@ vi.mock("../src/guide-launch.ts", async () => {
 })
 
 const { forkFailureToHerdrWorktree, isForkToHerdrAvailable } = await import("../src/admin-herdr-fork.ts")
+const { buildAdminLaunchCommand, buildDiagnosticCommand } = await import("../src/admin-launch.ts")
+const { adminProfileLabel } = await import("../src/admin-model.ts")
+const { beta, instanceRows } = await import("./admin-firstmate-fixtures.ts")
 
 const fakeRunner = { run: vi.fn() } as unknown as import("../src/guide-launch.ts").CommandRunner
 const command = { executable: "/opt/trellage/cpx/bin/cpx", args: ["hve"] }
@@ -76,6 +79,31 @@ describe("isForkToHerdrAvailable", () => {
 })
 
 describe("forkFailureToHerdrWorktree", () => {
+  it("keeps the exact named fleet in the remediation prompt, launch vector, and branch context", async () => {
+    inspectGitWorktreeIntent.mockResolvedValue(readyInspection)
+    createHerdrWorktreeAndHandoff.mockResolvedValue(launchResult)
+    const entry = instanceRows()[2]!
+    const scoped = buildAdminLaunchCommand(entry)
+    const outcome = await forkFailureToHerdrWorktree(fakeRunner, {
+      ref: entry.ref,
+      name: adminProfileLabel(entry),
+      capturedOutput: "The selected fleet needs review.",
+      firstmateInstance: beta,
+      diagnosticCommand: buildDiagnosticCommand(entry),
+    }, { cwd: "/repo", command: scoped, promptDelivery: "agent" })
+    expect(outcome.kind).toBe("launched")
+    const call = createHerdrWorktreeAndHandoff.mock.calls[0]?.[1] as { command: typeof command; prompt: string }
+    expect(call.command).toEqual(scoped)
+    expect(call.command.args).toContain(beta.reference.instanceId)
+    expect(call.command.args).toContain("--fmx-instance-context-json")
+    expect(call.prompt).toContain(beta.name)
+    expect(call.prompt).toContain(beta.reference.instanceId)
+    expect(call.prompt).toContain(beta.root)
+    expect(call.prompt).toContain('["/fixture/fmx","doctor","default","--instance","33333333-3333-4333-8333-333333333333"]')
+    expect(call.prompt).toContain("Do not replace it with an unqualified Firstmate profile")
+    expect(defaultWorktreeBranch).toHaveBeenCalledWith(expect.stringContaining(beta.reference.instanceId))
+  })
+
   it("builds a branch from the profile name and an argument-vector-only prompt/command, and reports launched", async () => {
     inspectGitWorktreeIntent.mockResolvedValue(readyInspection)
     createHerdrWorktreeAndHandoff.mockResolvedValue(launchResult)
