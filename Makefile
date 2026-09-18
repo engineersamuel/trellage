@@ -2,6 +2,7 @@
 
 .PHONY: profile-compiler-fingerprint
 .PHONY: test-command
+.PHONY: test-pr shell-syntax
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
@@ -23,6 +24,17 @@ test:
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 profile-compiler-fingerprint
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 $(TIMING_SENSITIVE_TEST_TARGETS)
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j$(TEST_JOBS) $(FINAL_TEST_TARGETS)
+
+test-pr:
+	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 shell-syntax test-command agent-harness trellage-identity manifest
+	cd packages/trellage-cli && bun run lint && bun run format:check
+	bun run check
+	bun run test
+	bash tests/source_startup_contract.sh
+	bun --no-install --no-env-file tests/profile_guides_contract.ts
+
+shell-syntax:
+	bash scripts/check-shell-syntax.sh
 
 test-command:
 	python3 tests/test_command.py

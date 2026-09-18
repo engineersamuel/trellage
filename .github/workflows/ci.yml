@@ -5,6 +5,7 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ jobs:
   # Keep this legacy key because branch protection requires its status context.
   deterministic-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 90 }}
     env:
       BUN_INSTALL_CACHE_DIR: /tmp/trellage-bun-cache
       npm_config_cache: /tmp/trellage-npm-cache
@@ -42,7 +43,7 @@ jobs:
           path: |
             /tmp/trellage-bun-cache
             /tmp/trellage-npm-cache/_cacache
-          key: ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-${{ hashFiles('bun.lock', 'tests/playwright/package-lock.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-${{ hashFiles('bun.lock', 'tests/playwright/package-lock.json') }}-${{ github.event_name == 'pull_request' && 'source' || 'full' }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-
       - name: Install required system tools
@@ -52,6 +53,7 @@ jobs:
       - name: Prepare frozen source workspace dependencies
         run: bash scripts/install-source-runtime.sh --prepare
       - name: Install browser contract dependencies
+        if: github.event_name != 'pull_request'
         run: npm ci --prefix tests/playwright
       - name: Save dependency download cache
         if: steps.dependency-cache.outputs.cache-hit != 'true'
@@ -61,12 +63,16 @@ jobs:
             /tmp/trellage-bun-cache
             /tmp/trellage-npm-cache/_cacache
           key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
-      - name: Run full source and contract suite
+      - name: Run fast PR regression checks
+        if: github.event_name == 'pull_request'
+        run: make test-pr
+      - name: Run full source and contract suite after merge or on demand
+        if: github.event_name != 'pull_request'
         run: make test
 
   macos-source-contracts:
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     env:
       BUN_INSTALL_CACHE_DIR: /tmp/trellage-bun-cache
       npm_config_cache: /tmp/trellage-npm-cache

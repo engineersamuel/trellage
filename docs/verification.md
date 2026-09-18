@@ -20,8 +20,20 @@ current checkout. Tests that explicitly override `BUN_INSTALL_CACHE_DIR` remain
 isolated from this CI cache by design. CI saves the download cache immediately
 after successful dependency installation, before the test suites run, so a
 later test failure does not discard a usable dependency cache.
-The Linux job allows 90 minutes for the complete suite, including serial
-contracts; individual readiness and cancellation deadlines remain separate.
+Pull requests run `make test-pr` on Linux and the source/PTY suites on macOS,
+with a 15-minute job timeout on each platform. The PR gate checks shell syntax,
+repository identity and harness configuration, compiler lint and formatting,
+all workspace TypeScript checks and tests, source startup, and profile guides.
+Its checks run sequentially and stop at the first failing command. This keeps
+the gate independent of slower installer, Docker, and native lifecycle suites.
+
+Pushes to `main` run the complete `make test` suite, including those integration
+contracts, with a 90-minute Linux timeout. The CI workflow can also be dispatched
+manually on a branch to run the full suite before merging a high-risk change.
+Browser contract dependencies are installed only for full-suite runs. Both
+lanes retain the `deterministic-contracts` check name required by branch protection.
+The fast gate reduces regression risk; it does not cover every integration
+failure that the full post-merge suite can detect.
 
 First-party source and test workers run under Bun. Type checks use `noEmit`;
 no application bundle or `dist` is required. External agent and browser tools
@@ -35,7 +47,13 @@ symlink, ownership, and unsafe-mode mutations after fixture setup when testing
 those refusals. Normal launches and read-only commands must still reject an
 unprepared or unsafe runtime without installing or repairing it implicitly.
 
-Run repository contracts without launching paid agents:
+Run the PR regression gate without launching paid agents:
+
+```bash
+make test-pr
+```
+
+Run the full repository contracts:
 
 ```bash
 make test

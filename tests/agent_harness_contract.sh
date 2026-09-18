@@ -93,9 +93,12 @@ for required_ci_line in \
   '        run: npm ci --prefix tests/playwright' \
   '    runs-on: macos-latest' \
   '        run: make profile-compiler launcher conversation-source source-runtime profile-guide-contract' \
+  "        if: github.event_name == 'pull_request'" \
+  "        if: github.event_name != 'pull_request'" \
+  '        run: make test-pr' \
   '        run: make test'; do
   grep -Fxq -- "$required_ci_line" .github/workflows/ci.yml \
-    || fail "CI does not run the full deterministic contract: $required_ci_line"
+    || fail "CI is missing a required regression check or setup: $required_ci_line"
 done
 if (
   ci_tool_probe_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-ci-tool-probe.XXXXXX")"
