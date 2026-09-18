@@ -13,6 +13,7 @@ import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.ts
 import { CopilotGuideProvider } from "./copilot-guide-provider.ts"
 import { GuideArtifactCache } from "./guide-match-cache.ts"
 import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
+import { JevGuideMatcher } from "./jev-guide-matcher.ts"
 
 const maximumCatalogBytes = 8 * 1024 * 1024
 
@@ -69,6 +70,8 @@ export const runGuideJsonCommand = async (options: {
   readonly stdinRequest?: string
   readonly env: Readonly<Record<string, string | undefined>>
   readonly cwd: string
+  /** Production entrypoints inject the capability refresh. Tests and static fixtures leave it unset. */
+  readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CombinedGuideCatalog>
 }): Promise<unknown> => {
   const args = parseGuideHeadlessArgv(options.argv)
   if (!args.json) throw new Error("guide JSON command requires --json")
@@ -85,6 +88,7 @@ export const runGuideJsonCommand = async (options: {
     prompts,
     promptMasterSkillDirectory: options.promptMasterSkillDirectory,
   })
+  const matcher = new JevGuideMatcher({ cwd: options.cwd, env: options.env })
   return resolved.request.profile === undefined
     ? runGuideMatch(
         provider,
@@ -95,10 +99,14 @@ export const runGuideJsonCommand = async (options: {
           ...(resolved.request.goal === undefined ? {} : { goal: resolved.request.goal }),
         },
         cache,
+        {
+          matcher,
+          ...(options.resolveCatalog === undefined ? {} : { resolveCatalog: options.resolveCatalog }),
+        },
       )
     : runGuideGenerate(
         provider,
-        options.catalog,
+        options.resolveCatalog === undefined ? options.catalog : await options.resolveCatalog(),
         options.guideRoot,
         {
           intent: resolved.request.intent,

@@ -10,7 +10,7 @@ real_node="$(command -v node)" || {
   exit 1
 }
 real_bun="$(command -v bun)" || {
-  printf 'prx contract failed: Bun 1.3.3 is required\n' >&2
+  printf 'prx contract failed: Bun 1.4.2 is required\n' >&2
   exit 1
 }
 launcher="$root/bin/prx"

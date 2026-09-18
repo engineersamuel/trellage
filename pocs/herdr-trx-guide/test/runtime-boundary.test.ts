@@ -73,7 +73,7 @@ process.stdout.write(JSON.stringify({
     assert.deepEqual(JSON.parse(result.stdout), {
       message: "owned-plugin-fixture",
       argv: forwarded,
-      bun: "1.3.3",
+      bun: "1.4.2",
       cache: "0",
       environmentLoaded: false,
     })

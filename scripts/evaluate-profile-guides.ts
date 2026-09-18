@@ -362,7 +362,22 @@ const validateExpectedWorkflowProfiles = (
   }
 }
 
-const validateResponseEnvelope = (response: Record<string, unknown>, scenario: Scenario): unknown[] => {
+const validateMatchExecution = (value: unknown, scenario: Scenario): void => {
+  const execution = record(value, `${scenario.id}.execution`)
+  exactKeys(execution, `${scenario.id}.execution`, ["backend", "model"], ["effort"])
+  text(execution.model, `${scenario.id}.execution.model`)
+  if (execution.backend === "jev") {
+    if (execution.effort !== undefined) throw new Error(`${scenario.id}.execution: Jev has no effort`)
+  } else if (execution.backend === "copilot") {
+    if (typeof execution.effort !== "string" || !["low", "medium", "high", "xhigh", "max"].includes(execution.effort)) {
+      throw new Error(`${scenario.id}.execution.effort is unsupported`)
+    }
+  } else {
+    throw new Error(`${scenario.id}.execution.backend is unsupported`)
+  }
+}
+
+export const validateProfileGuideMatchEnvelope = (response: Record<string, unknown>, scenario: Scenario): unknown[] => {
   exactKeys(response, `${scenario.id} response`, [
     "schemaVersion",
     "phase",
@@ -370,7 +385,7 @@ const validateResponseEnvelope = (response: Record<string, unknown>, scenario: S
     "model",
     "effort",
     "recommendations",
-  ])
+  ], ["execution"])
   if (
     response.schemaVersion !== 1 ||
     response.phase !== "match" ||
@@ -385,6 +400,7 @@ const validateResponseEnvelope = (response: Record<string, unknown>, scenario: S
   if (typeof response.effort !== "string" || !["low", "medium", "high", "xhigh", "max"].includes(response.effort)) {
     throw new Error(`${scenario.id}.effort is unsupported`)
   }
+  if (response.execution !== undefined) validateMatchExecution(response.execution, scenario)
   return response.recommendations
 }
 
@@ -472,7 +488,7 @@ const validateRecommendations = (
   scenario: Scenario,
   profiles: ReadonlyMap<string, CatalogProfile>,
 ) => {
-  const rawRecommendations = validateResponseEnvelope(response, scenario)
+  const rawRecommendations = validateProfileGuideMatchEnvelope(response, scenario)
   const recommendations: { profileRef: string; workflowId: string }[] = []
   let previousConfidence = 1
   for (const [index, rawRecommendation] of rawRecommendations.entries()) {

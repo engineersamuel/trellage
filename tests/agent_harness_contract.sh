@@ -68,7 +68,7 @@ jq -e '
 ' packages/trellage-cli/package.json >/dev/null || fail "package scripts or dependencies do not use Oxc"
 
 jq -e '
-  .packageManager == "bun@1.3.3"
+  .packageManager == "bun@1.4.2"
   and .workspaces == ["packages/*"]
   and (.scripts.build | not)
   and (.scripts.prepare | not)
@@ -88,7 +88,7 @@ for required_ci_line in \
   '          fetch-depth: 2' \
   '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep' \
   "        run: ${ci_tool_probe}" \
-  '          bun-version: 1.3.3' \
+  '          bun-version: 1.4.2' \
   '        run: bash scripts/install-source-runtime.sh --prepare' \
   '        run: npm ci --prefix tests/playwright' \
   '    runs-on: macos-latest' \

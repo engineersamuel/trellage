@@ -347,7 +347,7 @@ describe("TRX context-menu launcher contract", () => {
       const script = path.join(directory, "worker.ts")
       await writeFile(script, [
         "import assert from 'node:assert/strict'",
-        "assert.equal(process.versions.bun, '1.3.3')",
+        "assert.equal(process.versions.bun, '1.4.2')",
         "assert.equal(process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH, '0')",
         "assert.deepEqual(process.argv.slice(2), ['rewrite-context', '--worker'])",
         "process.stdin.setEncoding('utf8')",

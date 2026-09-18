@@ -22,7 +22,7 @@ docker info >/dev/null && echo "Docker is running"
 brew install mise
 
 # 3. Bun (Trellage source runtime) and Node.js (external agent tools)
-mise use --global bun@1.3.3
+mise use --global bun@1.4.2
 brew install node
 
 # 4. GitHub CLI, authenticated — Trellage forwards this token into containers
@@ -1037,11 +1037,19 @@ separate Ink flow that matches an intent across both Trellage Native and
 Trellage Sandbox profiles, compares five recommendations, and creates three
 editable prompt candidates. An approved goal instead gets one to five
 compatible recommendations and three editable execution approaches.
-By default, matching, Prompt Master optimization,
-and refinement use `gpt-5.6-sol` with medium reasoning; candidate drafting uses
-`gpt-5.6-luna` with medium reasoning. `--model` forces one model across these
-guide phases, while `--effort` applies one effort level across their routes.
-Neither override changes the Goal-me interview model. Intent input accepts
+Matching first uses TypeSafe Jev (`jev-1.13.0`) with the complete compact
+catalog. Export `TYPESAFE_API_KEY`, or put that key in `.env` in the guide's
+working directory. Only that key is read; the guide does not load other dotenv
+settings into its environment. Jev gets one three-second attempt with no
+retries. Missing credentials, service failures, or invalid responses fall back
+to the existing profile prefilter and Copilot matching. Low fit probabilities
+remain valid results; cancellation stops matching.
+
+By default, fallback matching, Prompt Master optimization, and refinement use
+`gpt-5.6-sol` with medium reasoning; candidate drafting uses `gpt-5.6-luna` with
+medium reasoning. `--model` or `TRELLAGE_GUIDE_MODEL` selects the LLM for these
+phases; Jev remains first. `--effort` applies to those LLM routes. Neither
+override changes Jev or the Goal-me interview model. Intent input accepts
 up to 60,000 characters:
 
 ```bash
@@ -1289,6 +1297,10 @@ UUID directory, avoiding the corresponding generation, optimization, or
 refinement model calls. Changes to relevant prompts, routing, catalog, guide,
 profile/workflow, target tool, Prompt Master skill content, candidates, or
 feedback miss independently and leave earlier artifacts available for review.
+Match caches also distinguish backend, model, and matcher/question revision.
+Jev cache keys exclude unrelated LLM settings. A cached Copilot fallback never
+prevents a new Jev attempt, and each successful backend is cached separately.
+Match artifacts report the backend and model that supplied the recommendations.
 Deterministic fallbacks and direct manual edits are not cached because they do
 not avoid model work.
 
@@ -1352,6 +1364,12 @@ the API does not run or claim a Goal-me approval. A `workflowId` requires a
 selected profile, supplied in JSON or through `--profile`.
 
 Match responses contain `phase: "match"` and enriched `recommendations`.
+Optional host-owned `execution` metadata identifies the actual matcher:
+`{"backend":"jev","model":"jev-1.13.0"}` or
+`{"backend":"copilot","model":"gpt-5.6-sol","effort":"medium"}`.
+The top-level `model` and `effort` retain the configured LLM route. Jev's
+`confidence` is the probability that the profile fits the task. Its explanations
+come from the selected authored workflow and profile limitations or prerequisites.
 Ordinary matching returns five recommendations. Goal matching returns one to
 five compatible recommendations, or reports why none can execute the goal.
 Generation responses contain `phase: "generation"`, the selected `profile`, and exactly
@@ -1363,7 +1381,8 @@ failures can be retried or replaced with deterministic literal/template
 fallbacks. Matching and candidate drafting have no tools, repository
 attachments, file tracking, or persistent history. Prompt optimization loads
 only the configured Prompt Master skill. Guide content and the execution
-objective are sent only to the selected Copilot model.
+objective are sent to TypeSafe for Jev matching and to the configured Copilot
+model for fallback matching and subsequent LLM phases.
 
 The native `prx` launcher runs Prime Agent against `copilot-proxy-rs`, pinning
 the provider and model to `copilot-proxy-rs` and `claude-opus-5` (Anthropic

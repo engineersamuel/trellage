@@ -11,7 +11,7 @@ trellage_bun_runtime() {
   executable="${TRELLAGE_BUN_EXECUTABLE-}"
   if [[ -z "$executable" ]]; then
     executable="$(command -v bun)" || {
-      printf 'trellage runtime: Bun 1.3.3 is required; install it explicitly\n' >&2
+      printf 'trellage runtime: Bun 1.4.2 is required; install it explicitly\n' >&2
       return 1
     }
   fi
@@ -20,8 +20,8 @@ trellage_bun_runtime() {
     return 1
   }
   version="$("$executable" --version)" || return 1
-  [[ "$version" == 1.3.3 ]] || {
-    printf 'trellage runtime: Bun 1.3.3 is required; found %s\n' "$version" >&2
+  [[ "$version" == 1.4.2 ]] || {
+    printf 'trellage runtime: Bun 1.4.2 is required; found %s\n' "$version" >&2
     return 1
   }
   local config="$root/packages/trellage-runtime/bunfig.toml"

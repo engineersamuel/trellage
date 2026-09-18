@@ -2157,7 +2157,7 @@ select = ["humanizer"]
     expect(script).toContain(
       'if ! bun_version="$("$bun_bin" --no-install --no-env-file --config=/dev/null --version)"; then',
     )
-    expect(script).toContain('if [ "$bun_version" != "1.3.3" ]; then')
+    expect(script).toContain('if [ "$bun_version" != "1.4.2" ]; then')
     expect(script.indexOf("plugin install humanizer@humanizer")).toBeLessThan(script.indexOf(pluginConfigManifest))
     expect(script.indexOf(pluginConfigManifest)).toBeLessThan(script.indexOf("/src/finalize-claude-seed.ts"))
     expect(script).not.toMatch(/hyperresearch|playwright|obscura|APIFY_API_TOKEN|GOOGLE_AI_API_KEY/)
@@ -2252,7 +2252,7 @@ select = ["example"]
       'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin install hve-core@hve-core',
       'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin list',
       'if ! bun_version="$("$bun_bin" --no-install --no-env-file --config=/dev/null --version)"; then',
-      'if [ "$bun_version" != "1.3.3" ]; then',
+      'if [ "$bun_version" != "1.4.2" ]; then',
       '"$bun_bin" --no-install --no-env-file --config=/dev/null /src/finalize-copilot-seed.ts /src/copilot-seed hve-core hve-core 3.3.101',
       'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
     ]
@@ -2267,9 +2267,9 @@ select = ["example"]
     expect(script).toContain("plugin_list_status=0")
     expect(script).toContain("|| plugin_list_status=$?")
     expect(script).toContain('[ "$plugin_list_status" -eq 0 ]')
-    expect(script).toContain("bun-linux-aarch64-1.3.3.tgz")
-    expect(script).toContain("39032147")
-    expect(script).toContain("1021798148d98705e8a448a3c8ec698ec144c66eb1e0f287927f05dbc459cbc7")
+    expect(script).toContain("bun-linux-aarch64-1.4.2.tgz")
+    expect(script).toContain("37629062")
+    expect(script).toContain("9ab3970a19660b5cd089f17fb021d900e1ca1b988dafd461d66d0a0ff4d6eac4")
     expect(script).toContain("export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0")
     expect(script.indexOf("sha256sum --check --strict")).toBeLessThan(script.indexOf("--config=/dev/null --version"))
     expect(script).not.toContain("/src/finalize-copilot-seed.mjs")

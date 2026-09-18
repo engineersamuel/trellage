@@ -72,6 +72,7 @@ import {
   markdownPromptLines,
   markdownInlineSegments,
   matchProgressItems,
+  matchExecutionLabel,
   pinnedGuideLenses,
   requiredWorktreeConfirmations,
   runGuideGenerationStep,
@@ -1258,6 +1259,25 @@ describe("guideUiReducer: intent and match", () => {
     expect(state.matchPhase).toBeUndefined()
   })
 
+  it("keeps the actual match execution and profile count on recommendation state", () => {
+    let state = createInitialGuideUiState("Review my PR")
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.MatchAttempt,
+      execution: { backend: "jev", model: "jev-test" },
+      profileCount: 7,
+    })
+    state = guideUiReducer(state, { type: GuideUiActionType.MatchSucceeded, recommendations: recommendationTriple() })
+    expect(state.matchExecution).toEqual({ backend: "jev", model: "jev-test" })
+    expect(state.matchProfileCount).toBe(7)
+  })
+
+  it("renders Jev execution without a Copilot effort label", () => {
+    expect(matchExecutionLabel({ backend: "jev", model: "jev-test" }, "fallback", GuideEffort.High)).toBe("Jev model: jev-test")
+    expect(matchExecutionLabel({ backend: "copilot", model: "copilot-test", effort: "high" }, "fallback", GuideEffort.Medium)).toBe(
+      "Copilot model: copilot-test · Effort: high",
+    )
+  })
+
   it("tracks high-level profile matching progress", () => {
     let state = createInitialGuideUiState("Review my PR")
     state = guideUiReducer(state, {
@@ -1918,6 +1938,48 @@ describe("runGuideMatchingStep", () => {
 
     expect(response.recommendations).toHaveLength(3)
     expect(phases).toEqual([GuideMatchPhase.ComparingProfiles, GuideMatchPhase.PreparingRecommendations])
+  })
+
+  it("routes matching through an injected adapter and reports its execution and attempted profile count", async () => {
+    const catalog = buildCatalog("/tmp-unused")
+    const attempts: Array<{ execution: { backend: "jev" | "copilot"; model: string; effort?: string }; profileCount: number }> = []
+    const matcher = {
+      execution: { backend: "jev" as const, model: "jev-test" },
+      revision: "fixture",
+      match: async () => ({ candidates: recommendationTriple().map(({ profileRef, workflowId, confidence, reason, tradeoff }) => ({
+        profileRef, workflowId, confidence, reason, tradeoff,
+      })) }),
+    }
+    const provider = new FakeGuideProvider()
+    const response = await runGuideMatchingStep(
+      provider,
+      catalog,
+      { intent: "Review my PR", model: "test-model", effort: GuideEffort.Medium },
+      undefined,
+      undefined,
+      { matcher, onAttempt: (attempt) => attempts.push(attempt) },
+    )
+
+    expect(response.execution).toEqual({ backend: "jev", model: "jev-test" })
+    expect(attempts).toEqual([{ execution: { backend: "jev", model: "jev-test" }, profileCount: 3 }])
+  })
+
+  it("stops an injected matcher before it starts when matching is cancelled", async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const matcher = {
+      execution: { backend: "jev" as const, model: "jev-test" },
+      revision: "fixture",
+      match: async () => { throw new Error("matcher should not start") },
+    }
+    await expect(runGuideMatchingStep(
+      new FakeGuideProvider(),
+      buildCatalog("/tmp-unused"),
+      { intent: "Review my PR", model: "test-model", effort: GuideEffort.Medium },
+      undefined,
+      undefined,
+      { matcher, signal: controller.signal },
+    )).rejects.toThrow()
   })
 
   it("reuses final matching results through the workflow artifact cache", async () => {

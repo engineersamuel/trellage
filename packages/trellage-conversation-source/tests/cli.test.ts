@@ -43,7 +43,7 @@ test("public CLI resolves to Bun source and import has no capture or entrypoint 
   assert.equal(result.error, undefined)
   assert.equal(result.status, 0, result.stderr)
   assert.equal(result.stderr, "")
-  assert.deepEqual(JSON.parse(result.stdout), { imported: true, bun: "1.3.3", environmentLoaded: false })
+  assert.deepEqual(JSON.parse(result.stdout), { imported: true, bun: "1.4.2", environmentLoaded: false })
   assert.deepEqual(await fixtureTree(fixture.root), before)
 })
 

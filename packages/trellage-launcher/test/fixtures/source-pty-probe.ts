@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 
-assert.equal(process.versions.bun, "1.3.3")
+assert.equal(process.versions.bun, "1.4.2")
 assert.equal(process.stdin.isTTY, true)
 assert.equal(process.stdout.isTTY, true)
 if (process.argv[2] === "source-cache") {

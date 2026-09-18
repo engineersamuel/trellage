@@ -36,6 +36,8 @@ import {
 import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
 import { GuideArtifactCache } from "./guide-match-cache.ts"
 import { firstmateLaunchOrigin } from "./guide-firstmate-instance-menu.ts"
+import { resolveGuideCapabilities } from "./guide-capabilities.ts"
+import { JevGuideMatcher } from "./jev-guide-matcher.ts"
 import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
 import { GuideApp, type GuideUiProps, type GuideUiResult } from "./guide-ui.tsx"
 import { ContinuationApp } from "./continuation-ui.tsx"
@@ -580,6 +582,7 @@ const runGuideJsonMode = async (
 ): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
   const catalog = readGuideCatalog()
+  const runner = createNodeCommandRunner()
   const stdinRequest = args.intent === undefined ? await readInput(undefined) : undefined
   const response = await runGuideJsonCommand({
     argv,
@@ -589,6 +592,7 @@ const runGuideJsonMode = async (
     ...(stdinRequest === undefined ? {} : { stdinRequest }),
     env: process.env,
     cwd: process.cwd(),
+    resolveCatalog: (signal) => resolveGuideCapabilities(catalog, runner, process.cwd(), signal),
   })
   process.stdout.write(`${JSON.stringify(response)}\n`)
 }
@@ -646,6 +650,10 @@ const interactiveGuidePrivateOptions = (
 ): Pick<GuideUiProps, "cache" | "launchOrigin"> =>
   launchOrigin === undefined ? { cache: new GuideArtifactCache(cacheOptions) } : { launchOrigin }
 
+const interactiveGuideMatcher = (
+  cwd: string,
+): JevGuideMatcher => new JevGuideMatcher({ cwd, env: process.env })
+
 const runInteractiveGuideMode = async (
   argv: ReadonlyArray<string>,
   guideRoot: string,
@@ -691,6 +699,7 @@ const runInteractiveGuideMode = async (
   }
   const cwd = herdrContext?.cwd ?? process.cwd()
   const privateOptions = interactiveGuidePrivateOptions(launchOrigin, { cwd, routing, prompts, promptMasterSkillDirectory })
+  const matcher = interactiveGuideMatcher(cwd)
   const herdrAvailabilityProbe = await probeInteractiveHerdr(runner, herdrEnv, cwd)
   if (herdrContext?.surface === "popup" && !herdrAvailabilityProbe) {
     throw new Error("Herdr is unavailable for this guide popup")
@@ -707,6 +716,8 @@ const runInteractiveGuideMode = async (
         catalog={catalog}
         guideRoot={guideRoot}
         provider={provider}
+        matcher={matcher}
+        resolveCatalog={(signal) => resolveGuideCapabilities(catalog, runner, cwd, signal)}
         goalProvider={goalProvider}
         {...privateOptions}
         routing={routing}

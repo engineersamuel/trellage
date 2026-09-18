@@ -42,7 +42,7 @@ for asset in "$pins" "$config" "$installer"; do
 done
 
 descriptor="$(jq -er --arg platform "$platform" '
-  select(.version == "1.3.3")
+  select(.version == "1.4.2")
   | .platforms[$platform]
   | select(
       (.package | type) == "string"
@@ -50,7 +50,7 @@ descriptor="$(jq -er --arg platform "$platform" '
       and (.size | type) == "number"
     )
   | [.package, .sha256, (.size | tostring)] | @tsv
-' "$pins")" || fail "invalid Bun 1.3.3 pin for $platform"
+' "$pins")" || fail "invalid Bun 1.4.2 pin for $platform"
 IFS=$'\t' read -r package digest size <<<"$descriptor"
 [[ "$package" =~ ^@oven/bun-linux-(aarch64|x64-baseline)$ \
   && "$digest" =~ ^[0-9a-f]{64}$ && "$size" =~ ^[1-9][0-9]*$ ]] \
@@ -66,7 +66,7 @@ if [[ -n "$supplied_archive" ]]; then
   cp -- "$supplied_archive" "$archive"
 else
   curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' \
-    "${registry%/}/${package}/-/${package##*/}-1.3.3.tgz" --output "$archive"
+    "${registry%/}/${package}/-/${package##*/}-1.4.2.tgz" --output "$archive"
 fi
 [[ "$(wc -c <"$archive" | tr -d '[:space:]')" == "$size" ]] || fail 'Bun archive size mismatch'
 printf '%s  %s\n' "$digest" "$archive" | sha256sum --check --status \
@@ -80,7 +80,7 @@ install -m 0555 "$extracted" "$destination/bun"
 export TRELLAGE_BUN_EXECUTABLE="$destination/bun"
 version="$("$TRELLAGE_BUN_EXECUTABLE" --no-install --no-env-file "--config=$config" --version)" \
   || fail 'Bun version command failed'
-[[ "$version" == 1.3.3 ]] || fail "expected Bun 1.3.3, found $version"
+[[ "$version" == 1.4.2 ]] || fail "expected Bun 1.4.2, found $version"
 export npm_config_registry="$registry" NPM_CONFIG_REGISTRY="$registry"
 export BUN_INSTALL_CACHE_DIR="$temporary/cache"
 bash "$installer" --stage "$destination/source"

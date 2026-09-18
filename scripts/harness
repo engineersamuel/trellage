@@ -423,7 +423,7 @@ run_browser_phase() {
   playwright_command=("$playwright_bin")
   if [[ -z "${HARNESS_PLAYWRIGHT_BIN:-}" ]]; then
     . "$repo_root/scripts/bun-runtime.sh"
-    trellage_bun_runtime "$repo_root" || fail 'Bun 1.3.3 source runtime is unavailable' 69
+    trellage_bun_runtime "$repo_root" || fail 'Bun 1.4.2 source runtime is unavailable' 69
     playwright_command=("${trellage_bun[@]}" "$playwright_bin" --)
   fi
 

@@ -1,6 +1,6 @@
 # Verification
 
-Use Bun 1.3.3 and prepare the source workspace from the repository root:
+Use Bun 1.4.2 and prepare the source workspace from the repository root:
 
 ```bash
 scripts/install-source-runtime.sh --prepare

@@ -251,7 +251,17 @@ const goalReadinessServices = createFixtureGoalReadinessServices(root, record)
 const writes: string[] = []
 const instance = render(
   <GuideApp
-    catalog={catalog}
+    catalog={{
+      ...catalog,
+      native: catalog.native.map((entry) => entry.launcher === "cpx"
+        ? { ...entry, headless: { ...entry.headless, prompt: false, testedHarnessVersion: null } }
+        : entry),
+    }}
+    resolveCatalog={async (signal) => {
+      await Promise.resolve()
+      signal?.throwIfAborted()
+      return { ...catalog, native: [...catalog.native] }
+    }}
     guideRoot={guideRoot}
     provider={provider}
     goalProvider={createFixtureGoalProvider(mode, record)}

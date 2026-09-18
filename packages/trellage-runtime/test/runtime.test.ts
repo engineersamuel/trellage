@@ -17,7 +17,7 @@ import {
 import os from "node:os"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
-import { bunArguments, bunExecutable, sourceWorkspaceRoot } from "../src/index.ts"
+import { bunArguments, bunExecutable, sourceEnvironment, sourceWorkspaceRoot } from "../src/index.ts"
 import {
   requireOwnedWorkspace,
   requireReady,
@@ -96,7 +96,7 @@ function run(action: string, root: string, destination?: string, env: NodeJS.Pro
   return spawnSync(
     bunExecutable(),
     bunArguments(workspaceCli, [action, root, ...(destination === undefined ? [] : [destination])]),
-    { encoding: "utf8", env: { ...process.env, ...env } },
+    { encoding: "utf8", env: sourceEnvironment({ ...process.env, ...env }) },
   )
 }
 
@@ -212,7 +212,7 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
     expect(path.basename(path.dirname(cache))).toStartWith(".trellage-package-cache.")
     expect(existsSync(cache)).toBe(false)
   }
-  expect(readdirSync(home)).toEqual(before)
+  expect(readdirSync(home), JSON.stringify(readdirSync(home, { recursive: true }))).toEqual(before)
 })
 
 test("parallel directory inventory preserves validation and rejects escaping links", async () => {
@@ -307,7 +307,7 @@ describe("Bun invocation", () => {
       env: { ...process.env, TRELLAGE_BUN_EXECUTABLE: node },
     })
     expect(wrong.status).toBe(1)
-    expect(wrong.stderr).toContain("is not Bun 1.3.3")
+    expect(wrong.stderr).toContain("is not Bun 1.4.2")
   })
 
   test.each(["trx", "trellage"])("preserves every public %s argument from a symlink and foreign cwd", (name) => {

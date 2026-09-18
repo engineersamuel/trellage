@@ -14,6 +14,7 @@ import type { GuideModelPrompts } from "./guide-prompts.ts"
 import type {
   GuideGenerateCandidate,
   GuideGenerateResult,
+  GuideMatchExecution,
   GuideMatchResult,
   GuideRefineResult,
   GuideOptimizeFixedFrame,
@@ -78,7 +79,7 @@ export interface GuideArtifactCacheOptions {
   readonly onWarning?: (message: string) => void
 }
 
-interface MatchCacheInput {
+export interface MatchCacheInput {
   readonly intent: string
   readonly entries: ReadonlyArray<{
     readonly ref: string
@@ -91,6 +92,8 @@ interface MatchCacheInput {
     readonly controller: ProfileGuideGoalController
     readonly workflows: ReadonlyArray<ProfileGuideWorkflow>
   }>
+  readonly execution?: GuideMatchExecution
+  readonly matcherRevision?: string
 }
 
 interface GenerationCacheInput extends GuideTaskContext, GuidePromptBodyBudget {
@@ -194,12 +197,15 @@ const renderMatch = (
   routing: GuideModelRouting,
   result: GuideMatchResult,
   goal?: PreparedGuideGoal,
+  execution?: GuideMatchExecution,
 ): string =>
   [
     "# Profile recommendations",
     "",
     artifactIntent(intent, goal),
-    `Routing: ${routing.match.model} (${routing.match.effort})`,
+    execution?.backend === "jev"
+      ? `Routing: Jev · ${execution.model}`
+      : `Routing: Copilot · ${execution?.model ?? routing.match.model} (${execution?.effort ?? routing.match.effort})`,
     "",
     ...result.candidates.flatMap((candidate, index) => [
       `## ${index + 1}. ${candidate.profileRef} · ${candidate.workflowId}`,
@@ -427,14 +433,21 @@ export class GuideArtifactCache {
       schemaVersion: 1,
       intent: input.intent,
       catalog: input.entries,
-      prompt: this.options.prompts.match,
-      routing: this.options.routing.match,
+      preferredProfileRefs: input.preferredProfileRefs ?? [],
+      ...(input.execution?.backend === "jev"
+        ? {}
+        : { prompt: this.options.prompts.match, routing: this.options.routing.match }),
       ...(input.goal === undefined
         ? {}
         : {
             goal: goalCacheIdentity(input.goal),
             goalFraming: input.goalFraming ?? null,
-            preferredProfileRefs: input.preferredProfileRefs ?? [],
+          }),
+      ...(input.execution === undefined
+        ? {}
+        : {
+            execution: input.execution,
+            matcherRevision: input.matcherRevision ?? null,
           }),
     })
     const workflows = new Map(
@@ -446,7 +459,7 @@ export class GuideArtifactCache {
         intent: input.intent,
         key,
         filename: "1-profile-recommendations.md",
-        render: (result) => renderMatch(input.intent, this.options.routing, result, input.goal),
+        render: (result) => renderMatch(input.intent, this.options.routing, result, input.goal, input.execution),
         validate: (value) => validateGuideMatchResult(value, workflows, input.goal, input.preferredProfileRefs),
       },
       produce,

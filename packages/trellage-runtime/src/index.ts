@@ -4,7 +4,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const configuration = fileURLToPath(new URL("../bunfig.toml", import.meta.url))
-const baseline = "1.3.3"
+const baseline = "1.4.2"
 
 export function sourceEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }
