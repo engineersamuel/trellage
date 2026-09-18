@@ -17,6 +17,8 @@ fail() {
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-jcx-contract.XXXXXX")" \
   || fail 'could not create fixture root'
 trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
+fixture_root="$(CDPATH= cd -P -- "$fixture_root" && pwd -P)" \
+  || fail 'could not resolve fixture root'
 
 fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
