@@ -129,6 +129,22 @@ test("explicit prepare recovers real Bun bin drift without remote dependencies",
   expect(() => requireReady(f.root)).not.toThrow();
 });
 
+test("automatic preparation normalizes existing dependency permissions before validation", () => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  expect(lstatSync(f.binary).mode & 0o777).toBe(0o777);
+  const cli = path.join(sourceWorkspaceRoot(), "packages/trellage-runtime/src/workspace-cli.ts");
+  const result = spawnSync(bunExecutable(), bunArguments(cli, ["ensure", f.root]), {
+    cwd: f.parent,
+    encoding: "utf8",
+    env: f.env,
+  });
+  expect(result.status, result.stderr).toBe(0);
+  expect(result.stderr).toContain("preparing worktree dependencies automatically");
+  expect(lstatSync(f.binary).mode & 0o777).toBe(0o755);
+  expect(() => requireReady(f.root)).not.toThrow();
+});
+
 test("automatic preparation repairs missing and stale readiness and skips ready workspaces", () => {
   const f = fixture();
   expect(f.install().status).toBe(0);

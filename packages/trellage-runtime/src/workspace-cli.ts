@@ -58,12 +58,15 @@ async function installDependencies(root: string): Promise<void> {
   cancellation.signal.throwIfAborted()
   validateWorkspaceBinaries(root)
   const cache = mkdtempSync(path.join(root, ".trellage-package-cache."))
+  const installHome = path.join(cache, "home")
+  mkdirSync(installHome, { mode: 0o700 })
   try {
     await installFrozenDependencies(root, {
       ...process.env,
       BUN_INSTALL_CACHE_DIR: process.env.BUN_INSTALL_CACHE_DIR ?? path.join(cache, "bun"),
       npm_config_cache: process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE ?? path.join(cache, "npm"),
-    })
+      XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? path.join(cache, "xdg"),
+    }, installHome)
   } finally {
     rmSync(cache, { recursive: true, force: true })
   }
@@ -84,6 +87,7 @@ async function ensureDependencies(root: string): Promise<void> {
   try {
     const readiness = path.join(root, ".trellage-source-ready.json")
     if (await present(readiness)) safePath(readiness, "file")
+    if (await present(path.join(root, "node_modules"))) normalizeDependencyPermissions(root)
     await validateOwnedTreeAsync(root, !(await present(path.join(root, sourceMarker))))
     process.stderr.write("trellage source runtime: preparing worktree dependencies automatically\n")
     await installDependencies(root)
@@ -93,7 +97,7 @@ async function ensureDependencies(root: string): Promise<void> {
   }
 }
 
-async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv): Promise<void> {
+async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv, installHome: string): Promise<void> {
   let registry = env.npm_config_registry ?? env.NPM_CONFIG_REGISTRY
   if (registry === undefined) {
     try {
@@ -121,7 +125,7 @@ async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv): 
         "--backend=copyfile",
         `--config=${path.join(root, "bunfig.toml")}`,
       ],
-      { cwd: root, env, stdio: ["ignore", 2, 2], signal: cancellation.signal },
+      { cwd: root, env: { ...env, HOME: installHome }, stdio: ["ignore", 2, 2], signal: cancellation.signal },
     )
     await new Promise<void>((resolve, reject) => {
       let failure: Error | undefined

@@ -186,8 +186,8 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
     "#!/bin/sh",
     "set -eu",
     'test "$*" = "config get registry --workspaces=false"',
-    'printf "%s\\n" "$BUN_INSTALL_CACHE_DIR" "$npm_config_cache" > "$CACHE_PROBE"',
-    'mkdir -p "$BUN_INSTALL_CACHE_DIR" "$npm_config_cache"',
+    'printf "%s\\n" "$BUN_INSTALL_CACHE_DIR" "$npm_config_cache" "$XDG_CACHE_HOME" > "$CACHE_PROBE"',
+    'mkdir -p "$BUN_INSTALL_CACHE_DIR" "$npm_config_cache" "$XDG_CACHE_HOME"',
     'printf "%s\\n" "https://registry.npmjs.org/"',
   ].join("\n"))
   chmodSync(path.join(fakeBin, "npm"), 0o755)
@@ -198,6 +198,7 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
     BUN_INSTALL_CACHE_DIR: undefined,
     npm_config_cache: undefined,
     NPM_CONFIG_CACHE: undefined,
+    XDG_CACHE_HOME: undefined,
     npm_config_registry: undefined,
     NPM_CONFIG_REGISTRY: undefined,
     TRELLAGE_SOURCE_INSTALL_TEST_FAIL_AT: failure,
@@ -207,7 +208,7 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
   expect(result.stderr).toContain("bun install v")
   if (failure !== undefined) expect(result.stderr).toContain(`injected failure ${failure}`)
   const cachePaths = readFileSync(probe, "utf8").trim().split("\n")
-  expect(cachePaths).toHaveLength(2)
+  expect(cachePaths).toHaveLength(3)
   for (const cache of cachePaths) {
     expect(path.basename(path.dirname(cache))).toStartWith(".trellage-package-cache.")
     expect(existsSync(cache)).toBe(false)

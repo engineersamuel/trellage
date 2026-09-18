@@ -1040,7 +1040,7 @@ const readManagedEntry = async (context: InventoryContext, directory: string, en
   registerManagedPath(context, relative, installedRelative)
   const status = await lstat(absolute)
   if (status.isSymbolicLink()) fail(`symlink rejected: ${relative}`)
-  // Bun 1.3.3 realpath can block on FIFOs.
+  // Bun 1.4.2 realpath can block on FIFOs.
   if (!status.isDirectory() && !status.isFile()) fail(`special file rejected: ${relative}`)
   if (!inside(context.installed, await realpath(absolute))) {
     fail(`managed path escapes installed plugin: ${relative}`)
