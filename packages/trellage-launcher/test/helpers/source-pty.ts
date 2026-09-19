@@ -59,7 +59,7 @@ const exitStatus = (code: number | null, stderr: string, failure?: string): Sour
   return { exitCode: parsed.exitCode, signal: parsed.signal }
 }
 
-// node-pty's native transport does not deliver PTY data under Bun 1.3.3 on macOS.
+// node-pty's native transport does not deliver PTY data under Bun 1.4.2 on macOS.
 export const spawnSourcePty = (executable: string, args: readonly string[], options: SourcePtyOptions) => {
   if (process.platform !== "darwin" && process.platform !== "linux") {
     throw new Error("Source PTY contracts require macOS or Linux.")

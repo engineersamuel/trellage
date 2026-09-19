@@ -171,7 +171,7 @@ const visitPluginChild = async (
     entries.push(await symlinkInventoryEntry(absolute, relative, resolvedRoot, prefix))
     return
   }
-  // Bun 1.3.3 realpath can block on FIFOs.
+  // Bun 1.4.2 realpath can block on FIFOs.
   if (!status.isDirectory() && !status.isFile()) fail(`unsupported plugin entry: ${relative}`)
   const resolved = await realpath(absolute)
   assertPathContained(resolvedRoot, resolved, relative, "plugin path escapes root")

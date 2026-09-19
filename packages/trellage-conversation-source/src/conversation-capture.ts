@@ -74,7 +74,7 @@ export const conversationServerId = async (env: NodeJS.ProcessEnv): Promise<stri
   }
   const status = await lstat(socket)
   checkedServerSocket(status)
-  // Bun 1.3.3 on macOS cannot realpath the verified socket leaf.
+  // Bun 1.4.2 on macOS cannot realpath the verified socket leaf.
   const canonicalSocket = path.join(await realpath(path.dirname(socket)), path.basename(socket))
   const current = await lstat(canonicalSocket)
   checkedServerSocket(current)

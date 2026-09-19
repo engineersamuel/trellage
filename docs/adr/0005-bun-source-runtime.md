@@ -80,7 +80,7 @@ Disabling environment-file loading alone does not prevent that. Apply an
 explicit configuration at the first process boundary, not after TypeScript
 code has started. A minimal Unix bootstrap can use `/dev/null` as an empty
 configuration before it selects the managed workspace configuration.
-Pass that option as one argument, `--config=/absolute/path`. Bun 1.3.3 can
+Pass that option as one argument, `--config=/absolute/path`. Bun 1.4.2 can
 accept a split `--config PATH` without executing the intended entrypoint.
 Set `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` at process boundaries, including
 children that replace their environment, to avoid emitted runtime cache files.
@@ -93,7 +93,7 @@ workspace dependencies being independently available from a registry.
 
 The supported workspace setup command is
 `scripts/install-source-runtime.sh --prepare`, not a raw Bun install. It owns
-dependency preparation and the readiness receipt. Bun 1.3.3 can make workspace
+dependency preparation and the readiness receipt. Bun 1.4.2 can make workspace
 bin source files group/world-writable during installation. Preparation must
 correct only validated, owned, declared bin targets; it must not weaken general
 ownership, symlink, or shared-write refusal.
