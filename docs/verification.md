@@ -13,6 +13,11 @@ dependency metadata changes. A raw `bun install --frozen-lockfile` is not a
 substitute: it does not record readiness and can leave declared bins with
 unsafe permissions.
 
+`mise run rebuild-profiles` prepares the worktree source runtime before building
+Sandbox images. The `--sandbox-only` path does this too. If preparation fails,
+the image builds do not start. Native-only refreshes do not prepare this runtime;
+their installers manage separate installed runtimes.
+
 CI caches Bun and npm package downloads by runner platform, pinned runtime
 versions, and lockfile contents. The cache excludes installed dependencies and
 the readiness receipt, so each job still prepares its source workspace from the
