@@ -3,6 +3,7 @@
 .PHONY: profile-compiler-fingerprint
 .PHONY: test-command
 .PHONY: test-pr shell-syntax
+.PHONY: rebuild-profiles-bun-runtime
 
 HARNESS ?= harnesses/todo-side-by-side/harness.json
 PROFILE_MATRIX_ARGS ?=
@@ -13,7 +14,7 @@ TEST_TIMING ?= 0
 ifeq ($(TEST_TIMING),1)
 %: SHELL = python3 scripts/test-command.py $@
 endif
-PARALLEL_TEST_TARGETS := test-command trellage-host-runtime native-copilot-profiles native-prime-profile claude-entry copilot-entry launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract remote-azure-contract publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-agency-profile native-jcode-profile native-picx-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract trellage-statusline
+PARALLEL_TEST_TARGETS := test-command trellage-host-runtime native-copilot-profiles native-prime-profile claude-entry copilot-entry launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract remote-azure-contract rebuild-profiles-bun-runtime publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-agency-profile native-jcode-profile native-picx-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract trellage-statusline
 TIMING_SENSITIVE_TEST_TARGETS := native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-profile headlong-entry
 FINAL_TEST_TARGETS := native-profile-router trellage-host-headless-test
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
@@ -47,6 +48,9 @@ development-resolution-contract:
 
 remote-azure-contract:
 	bash prototypes/trellage/tests/remote_azure_contract.sh
+
+rebuild-profiles-bun-runtime:
+	bash tests/rebuild_profiles_bun_runtime_contract.sh
 
 
 publication-contract:

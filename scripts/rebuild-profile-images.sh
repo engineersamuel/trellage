@@ -38,10 +38,12 @@ EOF
 }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+. "$repo_root/scripts/bun-runtime.sh"
 trellage="$repo_root/prototypes/trellage/trellage"
 installer="$repo_root/prototypes/trellage/install-trellage.sh"
 profiles_dir="$repo_root/profiles"
 prototypes_dir="$repo_root/prototypes"
+original_args=("$@")
 
 [[ -d "$prototypes_dir" ]] || fail "prototypes directory missing: $prototypes_dir"
 
@@ -105,6 +107,9 @@ fi
 if (( do_native == 0 && do_sandbox == 0 )); then
   fail "nothing to do (both native and sandbox disabled)"
 fi
+
+trellage_ensure_bun_runtime \
+  "$repo_root" "$repo_root/scripts/rebuild-profile-images.sh" "${original_args[@]}"
 
 if (( do_install == 1 )); then
   [[ -x "$installer" ]] || fail "installer missing or not executable: $installer"
