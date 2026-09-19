@@ -272,6 +272,12 @@ build_sandbox_images() {
 
   (( ${#profiles[@]} > 0 )) || fail "no profiles to rebuild under $profiles_dir"
 
+  printf 'rebuild-profile-images: preparing worktree source runtime\n' >&2
+  if ! "$repo_root/scripts/install-source-runtime.sh" --prepare; then
+    printf 'rebuild-profile-images: source runtime preparation failed; skipping sandbox builds\n' >&2
+    return 1
+  fi
+
   if (( use_locked == 1 )); then
     printf 'rebuild-profile-images: sandbox mode=release-locked\n' >&2
   else
