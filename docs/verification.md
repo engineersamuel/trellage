@@ -52,6 +52,28 @@ lanes retain the `deterministic-contracts` check name required by branch protect
 The fast gate reduces regression risk; it does not cover every integration
 failure that the full post-merge suite can detect.
 
+Keep `bun.lock` committed during development. Use normal `bun install`,
+`bun add`, `bun update`, and `bun remove` commands with the mise-pinned Bun.
+Root lifecycle hooks reject other package-manager versions and prepare source
+runtime readiness automatically; no separate dependency-management command is
+needed. Internal frozen preparation disables lifecycle scripts to avoid recursion.
+Do not bypass the hooks with `--ignore-scripts`.
+
+Bun runs lifecycle hooks after some dependency work, so the version check is
+not a guarantee against earlier writes by an unsupported package manager.
+The mise version pin and clean CI checks provide additional protection.
+Commit manifest and lockfile changes together. Do not share `node_modules`
+between worktrees.
+
+Both CI platforms require an empty dependency tree before frozen preparation
+and reject changes to the lockfile or workspace manifests after preparation.
+
+Source fingerprints and staging exclude generated Native profile state
+(`cache`, `mise`, `mise-config`, `npm-prefix`, `installed-version`, and
+`runtime-identity.json`) directly inside `prototypes/trellage-*-profiles`,
+plus JCode's generated `version` file. Tool installation links in those
+directories are not source inputs. Links in source files remain invalid.
+
 First-party source and test workers run under Bun. Type checks use `noEmit`;
 no application bundle or `dist` is required. External agent and browser tools
 can still require Node.js. Test reports and artifacts under `.vitest/` are
