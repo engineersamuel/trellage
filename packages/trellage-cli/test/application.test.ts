@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
-import { access, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
+import { access, chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -342,6 +342,7 @@ import {
   sanitizeNpmRegistry,
   sanitizePypiIndex,
   snapshotProfileReleaseLock,
+  stageBuildScript,
   upgradeProfile,
   verifyProfile,
   type CommandRunner,
@@ -424,7 +425,7 @@ const treeIntegrity = (files: ReadonlyArray<unknown>) =>
 const contentIntegrity = (content: string) => `sha256:${createHash("sha256").update(content).digest("hex")}`
 const testBuildLock = {
   builder: {
-    reference: "docker.io/jdxcode/mise:latest",
+    reference: "docker.io/jdxcode/mise:2026.9.10",
     digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   },
   importer: {
@@ -2052,6 +2053,34 @@ gear = "full"
 })
 
 describe("locked builder command", () => {
+  it.each([false, true])("stages build inputs and exports OCI only on success (failure=%s)", async (failure) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-build-stage-"))
+    const context = path.join(root, "context")
+    const source = path.join(root, "src")
+    try {
+      await mkdir(context)
+      await writeFile(path.join(context, ".input"), "original", { mode: 0o755 })
+      await symlink(".input", path.join(context, "linked"))
+      const script = stageBuildScript(
+        `printf changed > /src/.input; mkdir /src/oci; printf image > /src/oci/index.json${failure ? "; exit 1" : ""}`,
+      )
+        .replaceAll("/context", context)
+        .replaceAll("/src", source)
+      const exitCode = await execFilePromise("/bin/sh", ["-ceu", script]).then(
+        () => 0,
+        () => 1,
+      )
+      expect(exitCode).toBe(failure ? 1 : 0)
+      expect(await readFile(path.join(context, ".input"), "utf8")).toBe("original")
+      expect((await lstat(path.join(source, ".input"))).mode & 0o777).toBe(0o755)
+      expect((await lstat(path.join(source, "linked"))).isSymbolicLink()).toBe(true)
+      const exported = await readFile(path.join(context, "oci", "index.json"), "utf8").catch(() => undefined)
+      expect(exported).toBe(failure ? undefined : "image")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it("installs locked native Claude marketplace plugins before finalizing the seed", async () => {
     const source = `
 schema = 1
@@ -2136,7 +2165,66 @@ select = ["humanizer"]
     expect(script).toContain(
       'sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"',
     )
-    expect(script).toContain('find /mise/installs -name metadata.json -type f ! -path "$claude_metadata" -delete')
+    expect(script).toContain('if [ -f "$claude_metadata" ]; then grep -Eq')
+    expect(script).toContain(
+      'find "${MISE_DATA_DIR:-/mise}/installs" -name metadata.json -type f ! -path "$claude_metadata" -delete',
+    )
+
+    const cleanup =
+      'find "${MISE_DATA_DIR:-/mise}/installs" -name metadata.json -type f ! -path "$claude_metadata" -delete'
+    const cleanupEnd = script.indexOf(cleanup) + cleanup.length
+    const normalization = `claude_dir="$(mise where http:claude@2.1.218)"; ${script.slice(script.indexOf("claude_metadata="), cleanupEnd)}`
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-claude-metadata-"))
+    const miseData = path.join(root, "mise-data")
+    const claudeDir = path.join(miseData, "installs", "http-claude", "2.1.218")
+    const staleDir = path.join(miseData, "installs", "node", "24.8.0")
+    const bin = path.join(root, "bin")
+    await mkdir(bin, { recursive: true })
+    await mkdir(claudeDir, { recursive: true })
+    await mkdir(staleDir, { recursive: true })
+    await writeFile(
+      path.join(bin, "mise"),
+      `#!/bin/sh
+echo "$MISE_DATA_DIR/installs/http-claude/2.1.218"
+`,
+    )
+    await chmod(path.join(bin, "mise"), 0o755)
+    if (process.platform === "darwin") {
+      await writeFile(
+        path.join(bin, "sed"),
+        `#!/bin/sh
+[ "$1" = "-i" ] || exit 1
+shift
+exec /usr/bin/sed -i '' "$@"
+`,
+      )
+      await chmod(path.join(bin, "sed"), 0o755)
+    }
+    await writeFile(path.join(staleDir, "metadata.json"), "stale")
+    await expect(
+      execFilePromise("/bin/sh", ["-ceu", normalization], {
+        env: { PATH: `${bin}:/usr/bin:/bin`, MISE_DATA_DIR: miseData, SOURCE_DATE_EPOCH: "1784379906" },
+      }),
+    ).resolves.toBeDefined()
+    expect(
+      await access(path.join(staleDir, "metadata.json")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false)
+    await writeFile(path.join(claudeDir, "metadata.json"), '{\n  "extracted_at": 123,\n}\n')
+    await expect(
+      execFilePromise("/bin/sh", ["-ceu", normalization], {
+        env: { PATH: `${bin}:/usr/bin:/bin`, MISE_DATA_DIR: miseData, SOURCE_DATE_EPOCH: "1784379906" },
+      }),
+    ).resolves.toBeDefined()
+    expect(await readFile(path.join(claudeDir, "metadata.json"), "utf8")).toContain('"extracted_at": 1784379906,')
+    await writeFile(path.join(claudeDir, "metadata.json"), '{"extracted_at":"invalid"}\n')
+    await expect(
+      execFilePromise("/bin/sh", ["-ceu", normalization], {
+        env: { PATH: `${bin}:/usr/bin:/bin`, MISE_DATA_DIR: miseData, SOURCE_DATE_EPOCH: "1784379906" },
+      }),
+    ).rejects.toThrow()
     expect(script).toContain(
       "CLAUDE_CONFIG_DIR=/src/claude-seed DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
     )
@@ -2248,9 +2336,9 @@ select = ["example"]
       'copilot_bin="$copilot_dir/copilot"',
       '[ -x "$copilot_bin" ]',
       'rm -f "$copilot_dir/metadata.json"',
-      'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin marketplace add /src/hve-core',
-      'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin install hve-core@hve-core',
-      'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" plugin list',
+      'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" --log-dir /tmp/trellage-copilot-logs plugin marketplace add /src/hve-core',
+      'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" --log-dir /tmp/trellage-copilot-logs plugin install hve-core@hve-core',
+      'COPILOT_HOME=/src/copilot-seed COPILOT_AUTO_UPDATE=false NO_COLOR=1 TERM=dumb "$copilot_bin" --log-dir /tmp/trellage-copilot-logs plugin list',
       'if ! bun_version="$("$bun_bin" --no-install --no-env-file --config=/dev/null --version)"; then',
       'if [ "$bun_version" != "1.4.2" ]; then',
       '"$bun_bin" --no-install --no-env-file --config=/dev/null /src/finalize-copilot-seed.ts /src/copilot-seed hve-core hve-core 3.3.101',
@@ -2338,7 +2426,10 @@ select = ["example"]
       "rust-std-1.96.0-aarch64-unknown-linux-musl.tar.gz",
       "1c32fdbdc25f86cf62c8fe8d35ddd252e4ecf3d22efefb00d885bc86030318ea",
       "42333691",
+      "CARGO_TARGET_DIR='/tmp/trellage-headlong-target'",
       "cargo build --locked --release --target aarch64-unknown-linux-musl",
+      "cp '/tmp/trellage-headlong-target/aarch64-unknown-linux-musl/release/headlong-tui' /src/headlong-tui",
+      "cp -aL /src/headlong-seed '/tmp/trellage-headlong-seed'",
       "/src/headlong-seed/tui/headlong/Cargo.toml",
       "/src/headlong-tui",
       'PATH=/src/build-support:$PATH mise oci build --locked --output "$OUTPUT_DIR" --tag "$IMAGE_REF"',
@@ -2346,6 +2437,29 @@ select = ["example"]
       expect(script).toContain(expected)
     }
     expect(script).not.toContain("rustup")
+
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-headlong-seed-"))
+    const source = path.join(root, "headlong-seed")
+    const staged = path.join(root, "staged")
+    await mkdir(source, { recursive: true })
+    await writeFile(path.join(source, "payload.txt"), "headlong payload\n", { mode: 0o640 })
+    await symlink("payload.txt", path.join(source, "linked.txt"))
+    await mkdir(path.join(source, "scripts"))
+    await writeFile(path.join(source, "scripts", "run.sh"), "#!/bin/sh\necho headlong\n", { mode: 0o755 })
+    await symlink("scripts", path.join(source, "linked-scripts"))
+    const stagingStart = script.indexOf("rm -rf '/tmp/trellage-headlong-seed'")
+    const stagingEnd = script.indexOf("rm -rf '/tmp/trellage-headlong-target'")
+    const staging = script
+      .slice(stagingStart, stagingEnd)
+      .replaceAll("/src/headlong-seed", source)
+      .replaceAll("/tmp/trellage-headlong-seed", staged)
+    await execFilePromise("/bin/sh", ["-ceu", staging])
+    expect(await readFile(path.join(source, "linked.txt"), "utf8")).toBe("headlong payload\n")
+    expect((await lstat(path.join(source, "linked.txt"))).isSymbolicLink()).toBe(false)
+    expect((await lstat(path.join(source, "payload.txt"))).mode & 0o777).toBe(0o640)
+    expect((await lstat(path.join(source, "linked-scripts"))).isDirectory()).toBe(true)
+    expect(await readFile(path.join(source, "linked-scripts", "run.sh"), "utf8")).toBe("#!/bin/sh\necho headlong\n")
+    expect((await lstat(path.join(source, "linked-scripts", "run.sh"))).mode & 0o777).toBe(0o755)
   })
 
   it("verifies and installs only the exact locked Prime tarball before the OCI build", async () => {
@@ -2452,9 +2566,9 @@ esac
         `#!/bin/sh
 printf 'copilot:home=%s:auto=%s:no_color=%s:term=%s:argv=%s\\n' "$COPILOT_HOME" "$COPILOT_AUTO_UPDATE" "$NO_COLOR" "$TERM" "$*" >> "$TRACE_FILE"
 case "$*" in
-  "plugin marketplace add /src/hve-core") exit "$ADD_STATUS" ;;
-  "plugin install hve-core@hve-core") exit "$INSTALL_STATUS" ;;
-  "plugin list") printf '%s\\n' "$PLUGIN_LIST_OUTPUT"; exit "$LIST_STATUS" ;;
+  "--log-dir /tmp/trellage-copilot-logs plugin marketplace add /src/hve-core") exit "$ADD_STATUS" ;;
+  "--log-dir /tmp/trellage-copilot-logs plugin install hve-core@hve-core") exit "$INSTALL_STATUS" ;;
+  "--log-dir /tmp/trellage-copilot-logs plugin list") printf '%s\\n' "$PLUGIN_LIST_OUTPUT"; exit "$LIST_STATUS" ;;
 esac
 `,
         { mode: 0o755 },
@@ -2505,9 +2619,9 @@ esac
         trace: [
           "mise:install --locked node@24.8.0 python@3.13.14 http:copilot@1.0.75",
           "mise:where http:copilot@1.0.75",
-          "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin marketplace add /src/hve-core",
-          "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin install hve-core@hve-core",
-          "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=plugin list",
+          "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=--log-dir /tmp/trellage-copilot-logs plugin marketplace add /src/hve-core",
+          "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=--log-dir /tmp/trellage-copilot-logs plugin install hve-core@hve-core",
+          "copilot:home=/src/copilot-seed:auto=false:no_color=1:term=dumb:argv=--log-dir /tmp/trellage-copilot-logs plugin list",
           "curl:download",
           "bun:version",
           "bun:argv=--no-install --no-env-file --config=/dev/null /src/finalize-copilot-seed.ts /src/copilot-seed hve-core hve-core 3.3.101",
@@ -2534,19 +2648,25 @@ esac
       {
         name: "marketplace add",
         options: { addStatus: 21 },
-        reached: "argv=plugin marketplace add",
-        forbidden: ["argv=plugin install", "argv=plugin list", "curl:", "bun:", "mise:oci"],
+        reached: "argv=--log-dir /tmp/trellage-copilot-logs plugin marketplace add",
+        forbidden: [
+          "argv=--log-dir /tmp/trellage-copilot-logs plugin install",
+          "argv=--log-dir /tmp/trellage-copilot-logs plugin list",
+          "curl:",
+          "bun:",
+          "mise:oci",
+        ],
       },
       {
         name: "plugin install",
         options: { installStatus: 22 },
-        reached: "argv=plugin install",
-        forbidden: ["argv=plugin list", "curl:", "bun:", "mise:oci"],
+        reached: "argv=--log-dir /tmp/trellage-copilot-logs plugin install",
+        forbidden: ["argv=--log-dir /tmp/trellage-copilot-logs plugin list", "curl:", "bun:", "mise:oci"],
       },
       {
         name: "plugin list",
         options: { listStatus: 23 },
-        reached: "argv=plugin list",
+        reached: "argv=--log-dir /tmp/trellage-copilot-logs plugin list",
         forbidden: ["curl:", "bun:", "mise:oci"],
       },
       { name: "finalizer", options: { finalizerStatus: 24 }, reached: "bun:argv=", forbidden: ["mise:oci"] },
@@ -2649,9 +2769,11 @@ describe("development build receipt persistence", () => {
     const execute = (_command: string, args: ReadonlyArray<string>) =>
       Effect.promise(async () => {
         if (!args.includes("--user")) return
-        const mount = args.find((argument) => argument.startsWith("type=bind,src=") && argument.endsWith(",dst=/src"))
+        const mount = args.find(
+          (argument) => argument.startsWith("type=bind,src=") && argument.endsWith(",dst=/context"),
+        )
         if (mount === undefined) throw new Error("missing build context mount")
-        const context = mount.slice("type=bind,src=".length, -",dst=/src".length)
+        const context = mount.slice("type=bind,src=".length, -",dst=/context".length)
         await mkdir(path.join(context, "oci"))
         await writeFile(
           path.join(context, "oci", "index.json"),
@@ -2801,9 +2923,11 @@ describe("development build receipt persistence", () => {
     const execute = (_command: string, args: ReadonlyArray<string>) =>
       Effect.promise(async () => {
         if (!args.includes("--user")) return
-        const mount = args.find((argument) => argument.startsWith("type=bind,src=") && argument.endsWith(",dst=/src"))
+        const mount = args.find(
+          (argument) => argument.startsWith("type=bind,src=") && argument.endsWith(",dst=/context"),
+        )
         if (mount === undefined) throw new Error("missing build context mount")
-        const context = mount.slice("type=bind,src=".length, -",dst=/src".length)
+        const context = mount.slice("type=bind,src=".length, -",dst=/context".length)
         await mkdir(path.join(context, "oci"))
         await writeFile(
           path.join(context, "oci", "index.json"),
@@ -2944,9 +3068,11 @@ select = ["hve-core"]
         runnerOptions.push(options)
         if (!args.includes("--user")) return
         builderArgs.push(...args)
-        const mount = args.find((argument) => argument.startsWith("type=bind,src=") && argument.endsWith(",dst=/src"))
+        const mount = args.find(
+          (argument) => argument.startsWith("type=bind,src=") && argument.endsWith(",dst=/context"),
+        )
         if (mount === undefined) throw new Error("missing build context mount")
-        const context = mount.slice("type=bind,src=".length, -",dst=/src".length)
+        const context = mount.slice("type=bind,src=".length, -",dst=/context".length)
         expect.soft(context.startsWith(path.join(root, "trellage", "build", "trellage-build-"))).toBe(true)
         scripts.push(args.at(-1) ?? "")
         await mkdir(path.join(context, "oci"))
@@ -2982,7 +3108,7 @@ select = ["hve-core"]
     expect(builderArgs).toContain("npm_config_fetch_retries=5")
     expect(builderArgs).toContain("npm_config_fetch_retry_mintimeout=1000")
     expect(builderArgs).toContain("npm_config_fetch_retry_maxtimeout=10000")
-    expect(scripts[0]).toContain('"$copilot_bin" plugin install hve-core@hve-core')
+    expect(scripts[0]).toContain('"$copilot_bin" --log-dir /tmp/trellage-copilot-logs plugin install hve-core@hve-core')
     expect(mocks.requests).toEqual([
       expect.objectContaining({
         include: [],

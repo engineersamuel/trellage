@@ -44,4 +44,8 @@ describe("source inclusion policy", () => {
     expect(sourceInventoryPolicy({ kind: "plugin", adapter: "wshobson-agents", select: ["one"] })).toEqual({})
     expect(sourceInventoryPolicy({ kind: "plugin", adapter: "prime-extension", select: ["ask-user"] })).toEqual({})
   })
+
+  it("allows only inventory-validated in-tree symlinks for Headlong", () => {
+    expect(sourceInventoryPolicy({ kind: "harness", adapter: "headlong", select: [] })).toEqual({ allowSymlinks: true })
+  })
 })

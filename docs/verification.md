@@ -18,6 +18,18 @@ Sandbox images. The `--sandbox-only` path does this too. If preparation fails,
 the image builds do not start. Native-only refreshes do not prepare this runtime;
 their installers manage separate installed runtimes.
 
+Fresh development resolutions use the full Mise `2026.9.10` builder image and
+record its exact platform digest. Newer `latest` images omit the shell, while
+the `debian` variant omits the C linker needed to compile Headlong. Before
+updating the builder, verify shell tools, C linking, and an actual profile build.
+Existing development receipts and release locks keep their recorded builder;
+`trellage upgrade PROFILE` refreshes a development receipt.
+
+Image builds copy the prepared context into the container filesystem before
+running package installers. Only a successfully built OCI image is copied back
+to the host. This avoids directory visibility races on Docker Desktop bind
+mounts while preserving source modes and symlinks.
+
 CI caches Bun and npm package downloads by runner platform, pinned runtime
 versions, and lockfile contents. The cache excludes installed dependencies and
 the readiness receipt, so each job still prepares its source workspace from the

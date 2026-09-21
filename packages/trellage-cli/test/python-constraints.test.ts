@@ -30,6 +30,8 @@ describe("Python constraint generation", () => {
       mise,
       `#!/bin/sh
 set -eu
+[ "$1" = "--no-config" ]
+shift
 [ "$UV_DEFAULT_INDEX" = "https://feed.test/pypi/simple/" ]
 [ "$PIP_INDEX_URL" = "https://feed.test/pypi/simple/" ]
 [ -z "\${UV_INDEX-}" ]
