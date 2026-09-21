@@ -2451,8 +2451,8 @@ select = ["example"]
     const stagingEnd = script.indexOf("rm -rf '/tmp/trellage-headlong-target'")
     const staging = script
       .slice(stagingStart, stagingEnd)
-      .replaceAll("/src/headlong-seed", source)
       .replaceAll("/tmp/trellage-headlong-seed", staged)
+      .replaceAll("/src/headlong-seed", source)
     await execFilePromise("/bin/sh", ["-ceu", staging])
     expect(await readFile(path.join(source, "linked.txt"), "utf8")).toBe("headlong payload\n")
     expect((await lstat(path.join(source, "linked.txt"))).isSymbolicLink()).toBe(false)
