@@ -17,6 +17,13 @@ import {
   type LaunchTarget,
 } from "./input.ts"
 import { tableColumns } from "./table-layout.ts"
+import { resolveTerminalSymbol } from "./termcn/terminal-symbols.ts"
+import { hintText } from "./terminal-hint.ts"
+import { resolveBorderStyle } from "./termcn/terminal-style.ts"
+import { useTheme } from "./termcn/use-theme.ts"
+import { useUnicode } from "./termcn/use-unicode.ts"
+import { ThemeProvider } from "./termcn/theme-provider.tsx"
+import { trellageTheme } from "./termcn/theme-trellage.ts"
 import { enrichNativeProfileList } from "./native-guide-list.ts"
 import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherState } from "./state.ts"
 import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting } from "./guide-api.ts"
@@ -144,6 +151,19 @@ const detailColors: Record<
   Status: "gray",
 }
 
+/**
+ * The row pointer and the text caret. Both are purely decorative accents on
+ * top of a selection that is also carried by color and bold weight, so the
+ * ASCII substitutes only need to occupy the same single cell.
+ */
+const usePointer = (): string => resolveTerminalSymbol(useUnicode(), "❯", ">")
+const useCaret = (): string => resolveTerminalSymbol(useUnicode(), "█", "_")
+
+const useHint = (): ((hint: string) => string) => {
+  const unicode = useUnicode()
+  return (hint: string) => hintText(hint, unicode)
+}
+
 const DetailLine = ({ row }: { readonly row: DetailRow }) => (
   <Text wrap="wrap">
     {row.label === undefined ? (
@@ -169,10 +189,13 @@ const DetailsView = ({
   readonly visibleDetails: ReadonlyArray<DetailRow>
   readonly detailOffset: number
   readonly detailCapacity: number
-}) => (
+}) => {
+  const theme = useTheme()
+  const hint = useHint()
+  return (
   <Box flexDirection="column" paddingX={1}>
     <Box justifyContent="space-between">
-      <Text bold color="cyan">
+      <Text bold color={theme.colors.primary}>
         Profile details
       </Text>
       <Text dimColor>
@@ -180,7 +203,7 @@ const DetailsView = ({
       </Text>
     </Box>
     <Text>
-      <Text bold color="green">
+      <Text bold color={theme.colors.selection}>
         {selected.profile}
       </Text>{" "}
       <Text dimColor>· {selected.harness}</Text>
@@ -190,9 +213,10 @@ const DetailsView = ({
         <DetailLine key={`${detailOffset + index}:${row.label ?? "continuation"}`} row={row} />
       ))}
     </Box>
-    <Text dimColor>↑/↓ or j/k scroll · D/Esc/q back</Text>
+    <Text dimColor>{hint("↑/↓ or j/k scroll · D/Esc/q back")}</Text>
   </Box>
-)
+  )
+}
 
 type TableWidths = ReturnType<typeof tableColumns>
 
@@ -204,37 +228,40 @@ const ProfileTable = ({
   readonly shown: ReadonlyArray<LaunchEntry>
   readonly state: LauncherState
   readonly widths: TableWidths
-}) => (
+}) => {
+  const theme = useTheme()
+  const pointer = usePointer()
+  return (
   <Box flexDirection="column" marginTop={1}>
     <Box>
       <Box width={2}>
         <Text> </Text>
       </Box>
       <Box width={widths.harness}>
-        <Text bold color="yellow">
+        <Text bold color={theme.colors.warning}>
           HARNESS
         </Text>
       </Box>
       <Box width={widths.profile}>
-        <Text bold color="cyan">
+        <Text bold color={theme.colors.primary}>
           PROFILE
         </Text>
       </Box>
       <Box width={widths.sandbox}>
         {widths.sandbox === 0 ? null : (
-          <Text bold color="green">
+          <Text bold color={theme.colors.success}>
             SANDBOX
           </Text>
         )}
       </Box>
       <Box width={widths.model}>
-        <Text bold color="magenta">
+        <Text bold color={theme.colors.accent}>
           MODEL
         </Text>
       </Box>
     </Box>
     {shown.length === 0 ? (
-      <Text color="yellow">No matching profiles</Text>
+      <Text color={theme.colors.warning}>No matching profiles</Text>
     ) : (
       shown.map((entry) => {
         const active = entry.id === state.selectedId
@@ -245,29 +272,29 @@ const ProfileTable = ({
         return (
           <Box key={entry.id}>
             <Box width={2}>
-              <Text bold={active} {...(active ? { color: "green" as const } : {})}>
-                {active ? "❯ " : "  "}
+              <Text bold={active} {...(active ? { color: theme.colors.selection } : {})}>
+                {active ? `${pointer} ` : "  "}
               </Text>
             </Box>
             <Box width={widths.harness}>
-              <Text bold={active} color="yellow" dimColor={!active} wrap="truncate-end">
+              <Text bold={active} color={theme.colors.warning} dimColor={!active} wrap="truncate-end">
                 {entry.harness}
               </Text>
             </Box>
             <Box width={widths.profile}>
-              <Text bold={active} color="cyan" dimColor={!active} wrap="truncate-end">
+              <Text bold={active} color={theme.colors.primary} dimColor={!active} wrap="truncate-end">
                 {entry.profile}
               </Text>
             </Box>
             <Box width={widths.sandbox}>
               {widths.sandbox === 0 ? null : (
-                <Text bold={active} color="green" dimColor={!active} wrap="truncate-end">
+                <Text bold={active} color={theme.colors.success} dimColor={!active} wrap="truncate-end">
                   {sandboxLabel}
                 </Text>
               )}
             </Box>
             <Box width={widths.model}>
-              <Text bold={active} color="magenta" dimColor={!active} wrap="truncate-end">
+              <Text bold={active} color={theme.colors.accent} dimColor={!active} wrap="truncate-end">
                 {modelLabel}
               </Text>
             </Box>
@@ -276,7 +303,8 @@ const ProfileTable = ({
       })
     )}
   </Box>
-)
+  )
+}
 
 const SelectionSummary = ({
   selected,
@@ -286,26 +314,37 @@ const SelectionSummary = ({
   readonly selected: LaunchEntry | undefined
   readonly summaryRows: ReadonlyArray<DetailRow>
   readonly summaryTruncated: boolean
-}) => (
-  <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1}>
-    {selected === undefined ? (
-      <Text>Adjust the search to select a profile.</Text>
-    ) : (
-      <>
-        <Text>
-          <Text bold color="green">
-            {selected.profile}
-          </Text>{" "}
-          <Text dimColor>· {selected.harness}</Text>
-        </Text>
-        {summaryRows.map((row, index) => (
-          <DetailLine key={`${index}:${row.label ?? "continuation"}`} row={row} />
-        ))}
-        {summaryTruncated ? <Text color="yellow">More metadata available — press D for full details.</Text> : null}
-      </>
-    )}
-  </Box>
-)
+}) => {
+  const theme = useTheme()
+  return (
+    <Box
+      flexDirection="column"
+      marginTop={1}
+      borderStyle={resolveBorderStyle("round", useUnicode())}
+      borderColor={theme.colors.primary}
+      paddingX={1}
+    >
+      {selected === undefined ? (
+        <Text>Adjust the search to select a profile.</Text>
+      ) : (
+        <>
+          <Text>
+            <Text bold color={theme.colors.selection}>
+              {selected.profile}
+            </Text>{" "}
+            <Text dimColor>· {selected.harness}</Text>
+          </Text>
+          {summaryRows.map((row, index) => (
+            <DetailLine key={`${index}:${row.label ?? "continuation"}`} row={row} />
+          ))}
+          {summaryTruncated ? (
+            <Text color={theme.colors.warning}>More metadata available — press D for full details.</Text>
+          ) : null}
+        </>
+      )}
+    </Box>
+  )
+}
 
 const ModelChooser = ({
   selected,
@@ -317,26 +356,40 @@ const ModelChooser = ({
   readonly modelIndex: number
   readonly editingCustomModel: boolean
   readonly customModel: string
-}) => (
-  <Box flexDirection="column" borderStyle="double" borderColor="magenta" paddingX={1}>
-    <Text bold>Select model</Text>
-    {selected.models.map((candidate, index) => (
-      <Text key={candidate} {...(index === modelIndex ? { color: "magenta" as const } : {})}>
-        {index === modelIndex ? "❯ " : "  "}
-        {candidate}
-        {candidate === selected.defaultModel ? " (default)" : ""}
+}) => {
+  const theme = useTheme()
+  const pointer = usePointer()
+  const caret = useCaret()
+  return (
+    <Box
+      flexDirection="column"
+      borderStyle={resolveBorderStyle("double", useUnicode())}
+      borderColor={theme.colors.accent}
+      paddingX={1}
+    >
+      <Text bold>Select model</Text>
+      {selected.models.map((candidate, index) => (
+        <Text key={candidate} {...(index === modelIndex ? { color: theme.colors.accent } : {})}>
+          {index === modelIndex ? `${pointer} ` : "  "}
+          {candidate}
+          {candidate === selected.defaultModel ? " (default)" : ""}
+        </Text>
+      ))}
+      <Text {...(modelIndex === selected.models.length ? { color: theme.colors.accent } : {})}>
+        {modelIndex === selected.models.length ? `${pointer} ` : "  "}Custom…
       </Text>
-    ))}
-    <Text {...(modelIndex === selected.models.length ? { color: "magenta" as const } : {})}>
-      {modelIndex === selected.models.length ? "❯ " : "  "}Custom…
-    </Text>
-    {editingCustomModel ? (
-      <Text>
-        Model ID: <Text color="yellow">{customModel}█</Text>
-      </Text>
-    ) : null}
-  </Box>
-)
+      {editingCustomModel ? (
+        <Text>
+          Model ID:{" "}
+          <Text color={theme.colors.warning}>
+            {customModel}
+            {caret}
+          </Text>
+        </Text>
+      ) : null}
+    </Box>
+  )
+}
 
 const ShortcutHelp = ({
   searching,
@@ -346,13 +399,18 @@ const ShortcutHelp = ({
   readonly searching: boolean
   readonly herdrAvailable: boolean
   readonly remoteAvailable: boolean
-}) => (
-  <Text dimColor>
-    {searching
-      ? "Type to filter · ↑↓ move · ↵ launch · Esc commands · Ctrl-C cancel"
-      : `↑↓ move · / search · S sort · M model · D details · ↵ launch${herdrAvailable ? " · H Herdr" : ""}${remoteAvailable ? " · R Remote" : ""} · Esc`}
-  </Text>
-)
+}) => {
+  const hint = useHint()
+  return (
+    <Text dimColor>
+      {hint(
+        searching
+          ? "Type to filter · ↑↓ move · ↵ launch · Esc commands · Ctrl-C cancel"
+          : `↑↓ move · / search · S sort · M model · D details · ↵ launch${herdrAvailable ? " · H Herdr" : ""}${remoteAvailable ? " · R Remote" : ""} · Esc`,
+      )}
+    </Text>
+  )
+}
 
 const SelectionView = ({
   catalog,
@@ -384,10 +442,13 @@ const SelectionView = ({
   readonly modelIndex: number
   readonly editingCustomModel: boolean
   readonly customModel: string
-}) => (
+}) => {
+  const theme = useTheme()
+  const caret = useCaret()
+  return (
   <Box flexDirection="column" paddingX={1}>
     <Box justifyContent="space-between">
-      <Text bold color="cyan">
+      <Text bold color={theme.colors.primary}>
         {catalog.prompt}
       </Text>
       <Text dimColor>
@@ -397,15 +458,15 @@ const SelectionView = ({
     </Box>
     {catalog.description === undefined ? null : (
       <Text wrap="wrap">
-        <Text bold color="blue">
+        <Text bold color={theme.colors.info}>
           Context:{" "}
         </Text>
         {catalog.description}
       </Text>
     )}
-    <Text {...(searching ? { color: "yellow" as const } : {})}>
+    <Text {...(searching ? { color: theme.colors.warning } : {})}>
       Search: {state.query}
-      {searching ? "█" : ""}
+      {searching ? caret : ""}
     </Text>
     <ProfileTable shown={shown} state={state} widths={widths} />
     <SelectionSummary selected={selected} summaryRows={summaryRows} summaryTruncated={summaryTruncated} />
@@ -419,7 +480,8 @@ const SelectionView = ({
     ) : null}
     <ShortcutHelp searching={searching} herdrAvailable={herdrAvailable} remoteAvailable={remoteAvailable} />
   </Box>
-)
+  )
+}
 
 const Launcher = ({
   catalog,
@@ -1086,11 +1148,13 @@ const runLauncherMode = async (): Promise<void> => {
   }
   try {
     const instance = render(
-      <Launcher
-        catalog={catalog}
-        herdrAvailable={process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID)}
-        remoteAvailable={process.env.TRELLAGE_REMOTE_AVAILABLE === "true"}
-      />,
+      <ThemeProvider theme={trellageTheme}>
+        <Launcher
+          catalog={catalog}
+          herdrAvailable={process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID)}
+          remoteAvailable={process.env.TRELLAGE_REMOTE_AVAILABLE === "true"}
+        />
+      </ThemeProvider>,
       {
         stdin: input,
         stdout: output,

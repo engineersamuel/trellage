@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react"
 import { Box, Text, useInput } from "ink"
 import stringWidth from "string-width"
+import { toAsciiComponentText } from "./termcn/terminal-symbols.ts"
+import { useUnicode } from "./termcn/use-unicode.ts"
 
 const guideTextSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" })
 
@@ -250,9 +252,25 @@ const MarkdownInline = ({ segments }: { readonly segments: ReadonlyArray<Markdow
   </>
 )
 
+/**
+ * `markdownPromptLines` is pure and measures width, so it always emits the
+ * Unicode list, quote and rule glyphs. A terminal without Unicode would show
+ * replacement boxes for them, so the substitution happens here at render time
+ * and the wrapped line data stays unchanged. `☐` and `☒` have no entry in the
+ * shared table, so they are spelled out first.
+ */
+const asciiMarkdownText = (value: string): string =>
+  toAsciiComponentText(value.replaceAll("☐", "[ ]").replaceAll("☒", "[x]"))
+
 export const MarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) => {
+  const unicode = useUnicode()
   if (line.text.length === 0) return <Text> </Text>
-  const content = <MarkdownInline segments={line.segments ?? [{ text: line.text, kind: "text" }]} />
+  const segments = line.segments ?? [{ text: line.text, kind: "text" as const }]
+  const content = (
+    <MarkdownInline
+      segments={unicode ? segments : segments.map((segment) => ({ ...segment, text: asciiMarkdownText(segment.text) }))}
+    />
+  )
   switch (line.kind) {
     case "heading":
       return <Text bold color="cyan" wrap="truncate-end">{content}</Text>
@@ -261,9 +279,9 @@ export const MarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) =
     case "quote":
       return <Text italic dimColor wrap="truncate-end">{content}</Text>
     case "code":
-      return <Text color="yellow" wrap="truncate-end">{line.text}</Text>
+      return <Text color="yellow" wrap="truncate-end">{unicode ? line.text : asciiMarkdownText(line.text)}</Text>
     case "rule":
-      return <Text dimColor>{line.text}</Text>
+      return <Text dimColor>{unicode ? line.text : asciiMarkdownText(line.text)}</Text>
     case "body":
       return <Text wrap="truncate-end">{content}</Text>
   }

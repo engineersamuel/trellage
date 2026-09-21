@@ -12,6 +12,7 @@ import {
   type ContextMenuRewriteStyle,
 } from "./context-menu-command.ts"
 import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.tsx"
+import { hintText } from "./terminal-hint.ts"
 import { markdownDiffRows, diffDisplayLines, diffColumnWidth, type ContextMenuView } from "./context-menu-diff.ts"
 import { readPreferredStyle, writePreferredStyle } from "./rewrite-state.ts"
 
@@ -306,8 +307,8 @@ export const ContextMenuApp = ({ request, rewrite = (value, signal) => runContex
     </Box>
     {state.kind === "selecting" ? styles.slice(styleStart, styleStart + capacity).map((style, i) => <Text key={style.id} inverse={state.index === styleStart + i} wrap="truncate-end">{state.index === styleStart + i ? "› " : "  "}{styleTitle(style)} · {styleDescription(style)}</Text>) : null}
     <Text wrap="truncate-end">{copyFeedback || `c copy ${copyTarget}`}</Text>
-    <Text dimColor wrap="truncate-end">{state.kind === "selecting" ? "Enter rewrite · ↑/↓ choose · " : "g regenerate · r retry/styles · s styles · "}PgUp/PgDn scroll</Text>
-    <Text dimColor>o original · w rewritten · d diff · q/Esc {state.kind === "loading" ? "cancel" : "close"}</Text>
+    <Text dimColor wrap="truncate-end">{hintText(state.kind === "selecting" ? "Enter rewrite · ↑/↓ choose · " : "g regenerate · r retry/styles · s styles · ")}PgUp/PgDn scroll</Text>
+    <Text dimColor>{hintText("o original · w rewritten · d diff · q/Esc ")}{state.kind === "loading" ? "cancel" : "close"}</Text>
   </Box>
 }
 

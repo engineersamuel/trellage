@@ -58,6 +58,9 @@ import {
   type GuideGoalPanelState,
 } from "./guide-goal-augment-ui.tsx"
 import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.tsx"
+import { resolveStatusSymbol, resolveTerminalSymbol } from "./termcn/terminal-symbols.ts"
+import { resolveBorderStyle } from "./termcn/terminal-style.ts"
+import { isNoUnicode, useUnicode } from "./termcn/use-unicode.ts"
 import {
   composeGuideGoalCandidate,
   guideGoalApproachBudget,
@@ -4185,10 +4188,20 @@ const firstmateCaptureBannerRows = (stage: GuideUiStage, context: HerdrContext |
 
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
 
+/** Braille frames become replacement boxes without Unicode, so the ASCII bar spins in their place. */
+const asciiSpinnerFrames = ["-", "\\", "|", "/"] as const
+
 const cyclicItemAt = <T,>(items: ReadonlyArray<T>, index: number): T | undefined =>
   items.length === 0 ? undefined : items[index % items.length]
 
-export const spinnerFrameAt = (tick: number): string => cyclicItemAt(spinnerFrames, tick) ?? "•"
+/**
+ * Reads the terminal capability directly rather than through `useUnicode`,
+ * because the twelve call sites include plain helper functions where a hook
+ * cannot run. Nothing in this app mounts a `UnicodeProvider`, so the context
+ * and the environment always report the same capability.
+ */
+export const spinnerFrameAt = (tick: number): string =>
+  cyclicItemAt(isNoUnicode() ? asciiSpinnerFrames : spinnerFrames, tick) ?? "•"
 
 export const spinnerMessageAt = (messages: ReadonlyArray<string>, tick: number): string | undefined =>
   cyclicItemAt(messages, Math.floor(tick / 15))
@@ -4391,6 +4404,7 @@ const ProgressPipeline = ({
     const timer = setInterval(() => setTick((current) => current + 1), 80)
     return () => clearInterval(timer)
   }, [])
+  const unicode = useUnicode()
   const activeIndex = items.findIndex((item) => item.phase === activePhase)
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -4398,13 +4412,24 @@ const ProgressPipeline = ({
       <Text dimColor wrap="truncate-end">
         Request: {summarizeGenerationIntent(intent)}
       </Text>
-      <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1}>
+      <Box
+        flexDirection="column"
+        marginTop={1}
+        borderStyle={resolveBorderStyle("round", unicode)}
+        borderColor="cyan"
+        paddingX={1}
+      >
         {items.map((item, index) => {
           const complete = index < activeIndex
           const active = index === activeIndex
           return (
             <Text key={item.phase} color={complete ? "green" : active ? "cyan" : "gray"}>
-              {complete ? "✓" : active ? spinnerFrameAt(tick) : "○"} {item.label}
+              {complete
+                ? resolveStatusSymbol(unicode, "success")
+                : active
+                  ? spinnerFrameAt(tick)
+                  : resolveStatusSymbol(unicode, "pending")}{" "}
+              {item.label}
             </Text>
           )
         })}
@@ -4485,9 +4510,10 @@ const wizardSteps: ReadonlyArray<{ readonly step: GuideWizardStep; readonly labe
 ]
 
 export const wizardBreadcrumbLabel = (index: number, label: string, complete: boolean): string =>
-  `${complete ? "✓ " : ""}Step ${index + 1}: ${label}`
+  `${complete ? `${resolveStatusSymbol(!isNoUnicode(), "success")} ` : ""}Step ${index + 1}: ${label}`
 
 const WizardBreadcrumbs = ({ activeStep }: { readonly activeStep: GuideWizardStep }) => {
+  const unicode = useUnicode()
   const activeIndex = wizardSteps.findIndex(({ step }) => step === activeStep)
   return (
     <Box paddingX={1} marginBottom={1}>
@@ -4496,7 +4522,7 @@ const WizardBreadcrumbs = ({ activeStep }: { readonly activeStep: GuideWizardSte
         const complete = index < activeIndex
         return (
           <React.Fragment key={step}>
-            {index === 0 ? null : <Text dimColor> › </Text>}
+            {index === 0 ? null : <Text dimColor> {resolveTerminalSymbol(unicode, "›", ">")} </Text>}
             <Text bold={active} color={active ? "cyan" : complete ? "green" : "gray"}>
               {wizardBreadcrumbLabel(index, label, complete)}
             </Text>
