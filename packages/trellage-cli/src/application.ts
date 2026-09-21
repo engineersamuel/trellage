@@ -228,6 +228,8 @@ const headlongBuilderScript = (
   const stage = "/tmp/trellage-headlong-rust"
   const standardLibraryStage = "/tmp/trellage-headlong-rust-std"
   const toolchain = "/tmp/trellage-headlong-rust-toolchain"
+  const cargoTarget = "/tmp/trellage-headlong-target"
+  const seedStage = "/tmp/trellage-headlong-seed"
   return [
     "rm -f /mise/config.toml",
     "mise install --locked",
@@ -243,10 +245,15 @@ const headlongBuilderScript = (
     `tar --no-same-owner --no-same-permissions -xzf ${shellQuote(standardLibraryArchive)} -C ${shellQuote(standardLibraryStage)}`,
     `${shellQuote(`${stage}/rust-${rust.version}-aarch64-unknown-linux-gnu/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig --without=rust-docs`,
     `${shellQuote(`${standardLibraryStage}/rust-std-${rust.version}-${target}/install.sh`)} --prefix=${shellQuote(toolchain)} --disable-ldconfig`,
-    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH CARGO_HOME=/tmp/trellage-headlong-cargo RUSTC=${shellQuote(`${toolchain}/bin/rustc`)} RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= cargo build --locked --release --target ${target} --manifest-path /src/headlong-seed/tui/headlong/Cargo.toml`,
-    `cp /src/headlong-seed/tui/headlong/target/${target}/release/headlong-tui /src/headlong-tui`,
+    `rm -rf ${shellQuote(seedStage)}`,
+    `cp -aL /src/headlong-seed ${shellQuote(seedStage)}`,
+    `rm -rf /src/headlong-seed`,
+    `mv ${shellQuote(seedStage)} /src/headlong-seed`,
+    `rm -rf ${shellQuote(cargoTarget)}`,
+    `PATH=${shellQuote(`${toolchain}/bin`)}:$PATH CARGO_HOME=/tmp/trellage-headlong-cargo CARGO_TARGET_DIR=${shellQuote(cargoTarget)} RUSTC=${shellQuote(`${toolchain}/bin/rustc`)} RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER= cargo build --locked --release --target ${target} --manifest-path /src/headlong-seed/tui/headlong/Cargo.toml`,
+    `cp ${shellQuote(`${cargoTarget}/${target}/release/headlong-tui`)} /src/headlong-tui`,
     "chmod 0755 /src/headlong-tui",
-    "rm -rf /src/headlong-seed/tui/headlong/target",
+    `rm -rf ${shellQuote(cargoTarget)}`,
     `rm -f ${shellQuote(archive)} ${shellQuote(standardLibraryArchive)}`,
     build,
   ].join("; ")
@@ -516,13 +523,15 @@ const claudeBuilderScript = (document: ProfileDocument, lock: ProfileLock, tool:
   if (harness.kind !== "claude") return impossibleBuilderInput("Claude builder requires a Claude package")
   const graphRust = isGraphOfLoopsProfile(document.profile) ? graphRustBuilderCommands(lock) : []
   const claudeDirectory = `claude_dir="$(mise where ${tool})"`
+  const normalizeMetadataIfPresent = [
+    'if [ -f "$claude_metadata" ]; then grep -Eq \'^  "extracted_at": [0-9]+,$\' "$claude_metadata"',
+    `sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"`,
+    `grep -Fqx "  \\"extracted_at\\": $SOURCE_DATE_EPOCH," "$claude_metadata"; fi`,
+  ].join("; ")
   const normalizeClaudeMetadata = [
     'claude_metadata="$claude_dir/metadata.json"',
-    '[ -f "$claude_metadata" ]',
-    `grep -Eq '^  "extracted_at": [0-9]+,$' "$claude_metadata"`,
-    `sed -i -E "s/^  \\"extracted_at\\": [0-9]+,$/  \\"extracted_at\\": $SOURCE_DATE_EPOCH,/" "$claude_metadata"`,
-    `grep -Fqx "  \\"extracted_at\\": $SOURCE_DATE_EPOCH," "$claude_metadata"`,
-    `find /mise/installs -name metadata.json -type f ! -path "$claude_metadata" -delete`,
+    normalizeMetadataIfPresent,
+    'find "${MISE_DATA_DIR:-/mise}/installs" -name metadata.json -type f ! -path "$claude_metadata" -delete',
   ].join("; ")
   if (document.profile.plugins.length === 0) {
     const isolateCoreTools =
@@ -719,10 +728,10 @@ const copilotBuilderScript = (
     'copilot_bin="$copilot_dir/copilot"',
     '[ -x "$copilot_bin" ]',
     'rm -f "$copilot_dir/metadata.json"',
-    `${nativeEnvironment} "$copilot_bin" plugin marketplace add /src/hve-core`,
-    `${nativeEnvironment} "$copilot_bin" plugin install ${plugin}`,
+    `${nativeEnvironment} "$copilot_bin" --log-dir /tmp/trellage-copilot-logs plugin marketplace add /src/hve-core`,
+    `${nativeEnvironment} "$copilot_bin" --log-dir /tmp/trellage-copilot-logs plugin install ${plugin}`,
     "plugin_list_status=0",
-    `plugin_list="$(${nativeEnvironment} "$copilot_bin" plugin list)" || plugin_list_status=$?`,
+    `plugin_list="$(${nativeEnvironment} "$copilot_bin" --log-dir /tmp/trellage-copilot-logs plugin list)" || plugin_list_status=$?`,
     '[ "$plugin_list_status" -eq 0 ]',
     `printf '%s\\n' "$plugin_list" | awk -v expected='${expectedRow}' '$0 == expected || $0 == expected " (enabled)" { count++ } END { exit count == 1 ? 0 : 1 }'`,
     ...bunBuilderCommands(lock.platform, npmRegistry),
@@ -1081,6 +1090,9 @@ export interface DockerServices {
   readonly verify: (target: DockerTarget) => Effect.Effect<void, ApplicationError>
 }
 
+export const stageBuildScript = (build: string): string =>
+  ["mkdir -p /src", "cp -a /context/. /src/", build, "cp -a /src/oci /context/oci"].join("; ")
+
 const buildOci = (
   context: string,
   imageTag: string,
@@ -1148,17 +1160,14 @@ const buildOci = (
         "--env",
         `IMAGE_REF=${imageTag}`,
         "--mount",
-        `type=bind,src=${context},dst=/src`,
-        ...(document.profile.plugins.some((plugin) => plugin.adapter === "hyperresearch")
-          ? ["--mount", "type=tmpfs,dst=/src/hyperresearch-site"]
-          : []),
+        `type=bind,src=${context},dst=/context`,
         "--workdir",
         "/src",
         "--entrypoint",
         "sh",
         builderImage,
         "-ceu",
-        builderScript(document, lock, npmRegistry),
+        stageBuildScript(builderScript(document, lock, npmRegistry)),
       ]),
       { stdio: "inherit" },
     )

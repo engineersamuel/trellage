@@ -162,6 +162,7 @@ export const compilePythonConstraints = (
           await execFilePromise(
             "mise",
             [
+              "--no-config",
               "x",
               `uv@${request.uvVersion}`,
               "--",

@@ -620,6 +620,7 @@ rename_exe = "copilot"`)
 
     expect(rendered).toContain('node = "lts"')
     expect(rendered).toContain('python = "3.13"')
+    expect(rendered).toContain('uv = "latest"')
     expect(rendered).not.toContain('"npm:@playwright/mcp"')
     expect(rendered).toContain('[tools."http:claude"]')
     expect(rendered).toContain('rename_exe = "claude"')
@@ -652,9 +653,6 @@ rename_exe = "copilot"`)
     expect(rendered).toContain('"dev.trellage.hyperresearch.version" = "0.9.2"')
     expect(rendered).not.toContain('"dev.trellage.hyperresearch.version" = "0.9.1"')
     expect(rendered).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|PLAYWRIGHT_MCP_EXTENSION_TOKEN/)
-    // Claude mise locks have no uv entry; a uv tool declaration here would make
-    // `mise install --locked` fail against the Claude lock.
-    expect(rendered).not.toMatch(/^uv = /m)
   })
 
   it("renders native Claude marketplace images without Hyperresearch assets", () => {

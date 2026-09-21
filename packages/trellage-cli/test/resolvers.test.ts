@@ -388,7 +388,7 @@ describe("production package resolutions", () => {
     })
     await expect(Effect.runPromise(resolvers.resolveBuild({ platform: "linux/arm64" }))).resolves.toEqual({
       builder: {
-        reference: "docker.io/jdxcode/mise:latest",
+        reference: "docker.io/jdxcode/mise:2026.9.10",
         digest: `sha256:${"b".repeat(64)}`,
       },
       importer: {
@@ -682,7 +682,7 @@ describe("production package resolutions", () => {
         repository: "https://github.com/laude-institute/headlong.git",
         ref: "main",
         include: [],
-        inventoryPolicy: {},
+        inventoryPolicy: { allowSymlinks: true },
       }),
     ])
     expect(result.harness).toEqual({

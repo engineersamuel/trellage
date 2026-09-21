@@ -1133,6 +1133,53 @@ gear = "full"
     await expect(Effect.runPromise(requireLocked(claudeDocument, persisted))).rejects.toThrow(
       /artifact URL is invalid: obscura/,
     )
+
+    const validArtifacts = artifacts.map((artifact) => {
+      if (artifact.name === "obscura") return obscuraArtifact
+      if (artifact.name === "chromium") {
+        return {
+          ...artifact,
+          url: "https://cdn.playwright.dev/builds/cft/154.0.8037.0/linux-arm64/chrome-linux-arm64.zip",
+        }
+      }
+      if (artifact.name === "chromium-headless-shell") {
+        return {
+          ...artifact,
+          url: "https://cdn.playwright.dev/builds/cft/153.0.8010.12/linux-arm64/chrome-headless-shell-linux-arm64.zip",
+        }
+      }
+      return artifact
+    })
+    const mismatchedCft = await Effect.runPromise(
+      parseLock(
+        renderLock({
+          ...tampered,
+          packages: { ...tampered.packages, artifacts: validArtifacts },
+        }),
+      ),
+    )
+    await expect(Effect.runPromise(requireLocked(claudeDocument, mismatchedCft))).rejects.toThrow(
+      /Playwright browser versions do not match/,
+    )
+
+    const mixedLayout = await Effect.runPromise(
+      parseLock(
+        renderLock({
+          ...tampered,
+          packages: {
+            ...tampered.packages,
+            artifacts: validArtifacts.map((artifact) =>
+              artifact.name === "chromium-headless-shell"
+                ? playwrightArtifacts.find((candidate) => candidate.name === artifact.name)!
+                : artifact,
+            ),
+          },
+        }),
+      ),
+    )
+    await expect(Effect.runPromise(requireLocked(claudeDocument, mixedLayout))).rejects.toThrow(
+      /Playwright browser URL layouts do not match/,
+    )
   })
 
   it("rejects a Claude lock that predates the locked Chromium headless shell", async () => {

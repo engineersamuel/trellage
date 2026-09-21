@@ -43,6 +43,7 @@ import { pythonConstraints, type ResolutionSidecar } from "./resolution-sidecar.
 import { cacheArtifact } from "./artifact-cache.ts"
 import { graphOfLoopsRuntimeAssetPath } from "./graph-runtime.ts"
 import { npmTarballUrl, parseNpmArtifactIdentity } from "./npm-artifact.ts"
+import { sourceInventoryPolicy } from "./source-policy.ts"
 
 export type PluginGenerator = (
   sourceDirectory: string,
@@ -188,7 +189,7 @@ const verifySourceDirectories = (
         hasLegacySourceProvenance(lock, index) &&
         hasLegacyInventoryIntegrity(source)
       yield* verifyInventory(sourceDirectories[index]!, source.files, {
-        allowSymlinks: source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace",
+        ...sourceInventoryPolicy(source),
         verifyExecutableBits: !legacyCodexInventory,
       }).pipe(
         Effect.mapError(
@@ -262,7 +263,7 @@ const materializeHeadlongAssets = (
   return Effect.gen(function* () {
     const destination = path.join(context, "headlong-seed")
     yield* copy(sourceDirectories[0]!, destination)
-    yield* verifyInventory(destination, source.files).pipe(
+    yield* verifyInventory(destination, source.files, sourceInventoryPolicy(source)).pipe(
       Effect.mapError((cause) => new MaterializeError({ message: "copied Headlong source inventory mismatch", cause })),
     )
     yield* io("cannot write Headlong source revision", () =>

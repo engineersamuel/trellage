@@ -79,16 +79,54 @@ const playwrightArtifactUrlValid = (artifact: ArtifactLock): boolean => {
   if (artifact.name === "chromium") {
     return (
       artifact.url ===
-      `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${artifact.version}/chromium-linux-arm64.zip`
+        `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${artifact.version}/chromium-linux-arm64.zip` ||
+      /^https:\/\/cdn\.playwright\.dev\/builds\/cft\/\d+\.\d+\.\d+\.\d+\/linux-arm64\/chrome-linux-arm64\.zip$/.test(
+        artifact.url,
+      )
     )
   }
   if (artifact.name === "chromium-headless-shell") {
     return (
       artifact.url ===
-      `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${artifact.version}/chromium-headless-shell-linux-arm64.zip`
+        `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${artifact.version}/chromium-headless-shell-linux-arm64.zip` ||
+      /^https:\/\/cdn\.playwright\.dev\/builds\/cft\/\d+\.\d+\.\d+\.\d+\/linux-arm64\/chrome-headless-shell-linux-arm64\.zip$/.test(
+        artifact.url,
+      )
     )
   }
   return false
+}
+
+const playwrightBrowserUrlIdentity = (
+  artifact: ArtifactLock,
+): { readonly layout: "legacy" | "cft"; readonly browserVersion?: string } | undefined => {
+  if (artifact.name === "chromium") {
+    if (
+      artifact.url ===
+      `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${artifact.version}/chromium-linux-arm64.zip`
+    ) {
+      return { layout: "legacy" }
+    }
+    const match =
+      /^https:\/\/cdn\.playwright\.dev\/builds\/cft\/(\d+\.\d+\.\d+\.\d+)\/linux-arm64\/chrome-linux-arm64\.zip$/.exec(
+        artifact.url,
+      )
+    return match?.[1] === undefined ? undefined : { layout: "cft", browserVersion: match[1] }
+  }
+  if (artifact.name === "chromium-headless-shell") {
+    if (
+      artifact.url ===
+      `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${artifact.version}/chromium-headless-shell-linux-arm64.zip`
+    ) {
+      return { layout: "legacy" }
+    }
+    const match =
+      /^https:\/\/cdn\.playwright\.dev\/builds\/cft\/(\d+\.\d+\.\d+\.\d+)\/linux-arm64\/chrome-headless-shell-linux-arm64\.zip$/.exec(
+        artifact.url,
+      )
+    return match?.[1] === undefined ? undefined : { layout: "cft", browserVersion: match[1] }
+  }
+  return undefined
 }
 
 const githubToolArtifactUrlValid = (artifact: ArtifactLock): boolean => {
@@ -143,6 +181,19 @@ const dynamicArtifactUrlError = (
   }
 }
 
+const playwrightBrowserRelationshipError = (actual: ReadonlyArray<ArtifactLock>): string | undefined => {
+  const chromium = actual.find((artifact) => artifact.name === "chromium")
+  const headless = actual.find((artifact) => artifact.name === "chromium-headless-shell")
+  if (chromium === undefined || headless === undefined) return undefined
+  if (headless.version !== chromium.version) return "Playwright browser revisions do not match"
+  const chromiumUrl = playwrightBrowserUrlIdentity(chromium)
+  const headlessUrl = playwrightBrowserUrlIdentity(headless)
+  if (chromiumUrl?.layout !== headlessUrl?.layout) return "Playwright browser URL layouts do not match"
+  return chromiumUrl?.layout === "cft" && chromiumUrl.browserVersion !== headlessUrl?.browserVersion
+    ? "Playwright browser versions do not match"
+    : undefined
+}
+
 const dynamicArtifactRelationshipError = (actual: ReadonlyArray<ArtifactLock>): string | undefined => {
   const codex = actual.find((artifact) => artifact.name === "codex")
   const host = actual.find((artifact) => artifact.name === "codex-code-mode-host")
@@ -152,11 +203,8 @@ const dynamicArtifactRelationshipError = (actual: ReadonlyArray<ArtifactLock>): 
   if (playwright !== undefined && core?.version !== playwright.version) {
     return "Playwright package versions do not match"
   }
-  const chromium = actual.find((artifact) => artifact.name === "chromium")
-  const headless = actual.find((artifact) => artifact.name === "chromium-headless-shell")
-  if (chromium !== undefined && headless?.version !== chromium.version) {
-    return "Playwright browser revisions do not match"
-  }
+  const browserError = playwrightBrowserRelationshipError(actual)
+  if (browserError !== undefined) return browserError
   return graphRustRelationshipError(actual)
 }
 

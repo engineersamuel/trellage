@@ -264,7 +264,7 @@ const optionalMiseLines = (lines: ReadonlyArray<string>): string => (lines.lengt
 
 const claudeMiseTools = (profile: ClaudeProfile, hyperresearch: boolean, extraPython: boolean): string => {
   const tools: Array<string> = [hyperresearch || extraPython ? 'python = "3.13"' : 'python = "3.13.14"']
-  if (claudeHasSerena(profile)) tools.push('uv = "latest"')
+  if (hyperresearch || extraPython || claudeHasSerena(profile)) tools.push('uv = "latest"')
   return tools.join("\n")
 }
 

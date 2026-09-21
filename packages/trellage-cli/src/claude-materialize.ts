@@ -493,13 +493,13 @@ export const materializeChromiumArchives = (
         artifactName: "chromium",
         archiveName: "chromium.zip",
         destinationName: "chromium",
-        executable: "chrome-linux/chrome",
+        executables: ["chrome-linux/chrome", "chrome-linux-arm64/chrome"],
       },
       {
         artifactName: "chromium-headless-shell",
         archiveName: "chromium-headless-shell.zip",
         destinationName: "chromium-headless-shell",
-        executable: "chrome-linux/headless_shell",
+        executables: ["chrome-linux/headless_shell", "chrome-headless-shell-linux-arm64/chrome-headless-shell"],
       },
     ] as const
 
@@ -515,10 +515,11 @@ export const materializeChromiumArchives = (
           }),
         )
       }
-      if (!archiveEntries(listing).has(archive.executable)) {
+      const executable = archive.executables.find((candidate) => archiveEntries(listing).has(candidate))
+      if (executable === undefined) {
         return yield* Effect.fail(
           new ClaudeMaterializeError({
-            message: `${archive.artifactName} archive is missing ${archive.executable}`,
+            message: `${archive.artifactName} archive is missing an expected executable`,
           }),
         )
       }
@@ -526,7 +527,7 @@ export const materializeChromiumArchives = (
       yield* attempt(`cannot create ${archive.artifactName} destination`, () => mkdir(destination, { recursive: true }))
       yield* run("unzip", ["-q", archivePath, "-d", destination])
       yield* attempt(`cannot mark ${archive.artifactName} executable`, () =>
-        chmod(path.join(destination, archive.executable), 0o755),
+        chmod(path.join(destination, executable), 0o755),
       )
     }
   })

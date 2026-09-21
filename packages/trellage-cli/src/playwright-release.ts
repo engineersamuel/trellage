@@ -18,6 +18,8 @@ export class PlaywrightReleaseError extends Data.TaggedError("PlaywrightReleaseE
 interface BrowserEntry {
   readonly name?: unknown
   readonly revision?: unknown
+  readonly browserVersion?: unknown
+  readonly title?: unknown
 }
 
 const exactDependency = (dependencies: Readonly<Record<string, string>>, name: string): string => {
@@ -43,12 +45,44 @@ const readBrowsers = (archive: string): Effect.Effect<ReadonlyArray<BrowserEntry
     catch: (cause) => new PlaywrightReleaseError({ message: "Playwright browser metadata is invalid", cause }),
   })
 
-const browserRevision = (browsers: ReadonlyArray<BrowserEntry>, name: string): string => {
+const browserEntry = (browsers: ReadonlyArray<BrowserEntry>, name: string): BrowserEntry => {
   const entry = browsers.find((candidate) => candidate.name === name)
-  if (typeof entry?.revision !== "string" || !/^\d+$/.test(entry.revision)) {
+  if (entry === undefined || typeof entry.revision !== "string" || !/^\d+$/.test(entry.revision)) {
     throw new Error(`Playwright browser revision is missing: ${name}`)
   }
-  return entry.revision
+  return entry
+}
+
+const usesChromeForTestingUrls = (version: string): boolean => {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version)
+  if (match === null) return false
+  const [, major, minor] = match
+  return Number(major) > 1 || (Number(major) === 1 && Number(minor) >= 59)
+}
+
+const browserDownload = (
+  entry: BrowserEntry,
+  name: "chromium" | "chromium-headless-shell",
+  useChromeForTestingUrls: boolean,
+) => {
+  if (typeof entry.revision !== "string" || !/^\d+$/.test(entry.revision)) {
+    throw new Error(`Playwright browser revision is missing: ${name}`)
+  }
+  if (useChromeForTestingUrls) {
+    if (typeof entry.browserVersion !== "string" || !/^\d+\.\d+\.\d+\.\d+$/.test(entry.browserVersion)) {
+      throw new Error(`Playwright browser version is missing: ${name}`)
+    }
+    const archiveName = name === "chromium" ? "chrome-linux-arm64.zip" : "chrome-headless-shell-linux-arm64.zip"
+    return {
+      revision: entry.revision,
+      url: `https://cdn.playwright.dev/builds/cft/${entry.browserVersion}/linux-arm64/${archiveName}`,
+    }
+  }
+  const archiveName = name === "chromium" ? "chromium-linux-arm64.zip" : "chromium-headless-shell-linux-arm64.zip"
+  return {
+    revision: entry.revision,
+    url: `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${entry.revision}/${archiveName}`,
+  }
 }
 
 export const resolvePlaywrightRelease = (request: {
@@ -95,18 +129,30 @@ export const resolvePlaywrightRelease = (request: {
       requireStable: false,
     }).pipe(Effect.mapError((cause) => new PlaywrightReleaseError({ message: cause.message, cause })))
     const browsers = yield* readBrowsers(core.cached.path)
-    const revision = yield* Effect.try({
-      try: () => browserRevision(browsers, "chromium"),
+    const chromium = yield* Effect.try({
+      try: () => browserDownload(browserEntry(browsers, "chromium"), "chromium", usesChromeForTestingUrls(coreVersion)),
       catch: (cause) => new PlaywrightReleaseError({ message: "Chromium revision is invalid", cause }),
+    })
+    const headless = yield* Effect.try({
+      try: () =>
+        browserDownload(
+          browsers.find((candidate) => candidate.name === "chromium-headless-shell") ??
+            browserEntry(browsers, "chromium"),
+          "chromium-headless-shell",
+          usesChromeForTestingUrls(coreVersion),
+        ),
+      catch: (cause) => new PlaywrightReleaseError({ message: "Chromium headless shell revision is invalid", cause }),
     })
     const browserRequests = [
       {
         name: "chromium",
-        url: `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${revision}/chromium-linux-arm64.zip`,
+        url: chromium.url,
+        revision: chromium.revision,
       },
       {
         name: "chromium-headless-shell",
-        url: `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${revision}/chromium-headless-shell-linux-arm64.zip`,
+        url: headless.url,
+        revision: headless.revision,
       },
     ] as const
     const browserArtifacts = yield* Effect.forEach(
@@ -115,7 +161,7 @@ export const resolvePlaywrightRelease = (request: {
         cacheArtifact({ cacheHome: request.cacheHome, url: browser.url }).pipe(
           Effect.map((cached) => ({
             name: browser.name,
-            version: revision,
+            version: browser.revision,
             integrity: cached.integrity,
             url: browser.url,
             size: cached.size,

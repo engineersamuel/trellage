@@ -28,6 +28,7 @@ export const sourceIncludes = (source: SourceSelection): ReadonlyArray<string> =
 }
 
 export const sourceInventoryPolicy = (source: SourceSelection): InventoryPolicy =>
-  source.kind === "plugin" && (source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace")
+  (source.kind === "harness" && source.adapter === "headlong") ||
+  (source.kind === "plugin" && (source.adapter === "copilot-marketplace" || source.adapter === "claude-marketplace"))
     ? { allowSymlinks: true }
     : {}

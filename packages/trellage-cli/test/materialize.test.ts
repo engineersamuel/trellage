@@ -894,6 +894,76 @@ describe("locked Chromium materialization", () => {
       readFile(path.join(context, "chromium-headless-shell-1228", "chrome-linux", "headless_shell"), "utf8"),
     ).resolves.toBe("headless browser\n")
   })
+
+  it("extracts Chrome for Testing browser layouts", async () => {
+    const root = await temporaryRoot("trellage-cft-archives-")
+    const source = path.join(root, "source")
+    const context = path.join(root, "context")
+    const staging = path.join(root, "staging")
+    await mkdir(path.join(source, "chrome-linux-arm64"), { recursive: true })
+    await mkdir(context)
+    await mkdir(staging)
+
+    await writeFile(path.join(source, "chrome-linux-arm64", "chrome"), "full browser\n", { mode: 0o755 })
+    const chromiumArchive = path.join(root, "chromium-cft.zip")
+    await execFilePromise("zip", ["-q", "-r", chromiumArchive, "chrome-linux-arm64"], { cwd: source })
+    await rm(path.join(source, "chrome-linux-arm64"), { recursive: true })
+    await mkdir(path.join(source, "chrome-headless-shell-linux-arm64"), { recursive: true })
+    await writeFile(
+      path.join(source, "chrome-headless-shell-linux-arm64", "chrome-headless-shell"),
+      "headless browser\n",
+      { mode: 0o755 },
+    )
+    const headlessArchive = path.join(root, "headless-cft.zip")
+    await execFilePromise("zip", ["-q", "-r", headlessArchive, "chrome-headless-shell-linux-arm64"], { cwd: source })
+
+    const lockedArtifact = async (name: string, file: string) => ({
+      name,
+      version: "1246",
+      integrity: `sha256:${createHash("sha256")
+        .update(await readFile(file))
+        .digest("hex")}`,
+      url: `https://example.test/${name}.zip`,
+      size: (await readFile(file)).byteLength,
+    })
+    const artifacts = [
+      await lockedArtifact("chromium", chromiumArchive),
+      await lockedArtifact("chromium-headless-shell", headlessArchive),
+    ]
+    for (const [artifact, archive] of [
+      [artifacts[0]!, chromiumArchive],
+      [artifacts[1]!, headlessArchive],
+    ] as const) {
+      const cached = cachedArtifactPath(path.join(root, "cache"), artifact.integrity)
+      await mkdir(path.dirname(cached), { recursive: true })
+      await writeFile(cached, await readFile(archive))
+    }
+    const request = {
+      sourceDirectory: source,
+      context,
+      artifactCacheHome: path.join(root, "cache"),
+      requirementsPath: path.join(root, "unused-requirements.lock"),
+      browserAgentPath: path.join(root, "unused-browser-agent.md"),
+      lock: { packages: { artifacts } },
+    } as unknown as Parameters<typeof materializeChromiumArchives>[0]
+
+    await Effect.runPromise(materializeChromiumArchives(request, staging))
+
+    await expect(readFile(path.join(context, "chromium-1246", "chrome-linux-arm64", "chrome"), "utf8")).resolves.toBe(
+      "full browser\n",
+    )
+    await expect(
+      readFile(
+        path.join(
+          context,
+          "chromium-headless-shell-1246",
+          "chrome-headless-shell-linux-arm64",
+          "chrome-headless-shell",
+        ),
+        "utf8",
+      ),
+    ).resolves.toBe("headless browser\n")
+  })
 })
 
 describe("atomic build context", () => {
@@ -1001,9 +1071,10 @@ packages = ["curl"]
     await mkdir(path.join(headlongSource, "tools"), { recursive: true })
     await writeFile(path.join(headlongSource, "install.sh"), "#!/bin/bash\nset -euo pipefail\n")
     await writeFile(path.join(headlongSource, "tools", "headlong-init"), "#!/bin/bash\nexit 0\n")
+    await symlink("install.sh", path.join(headlongSource, "install-link.sh"))
     await chmod(path.join(headlongSource, "install.sh"), 0o755)
     await chmod(path.join(headlongSource, "tools", "headlong-init"), 0o755)
-    const files = await Effect.runPromise(inventoryDirectory(headlongSource))
+    const files = await Effect.runPromise(inventoryDirectory(headlongSource, { allowSymlinks: true }))
     const document = await Effect.runPromise(
       parseProfile(
         `
@@ -1069,6 +1140,7 @@ packages = ["bash"]
     await expect(readFile(path.join(context, "headlong-seed", "install.sh"), "utf8")).resolves.toContain(
       "set -euo pipefail",
     )
+    await expect(readlink(path.join(context, "headlong-seed", "install-link.sh"))).resolves.toBe("install.sh")
     await expect(readFile(path.join(context, "headlong-seed.commit"), "utf8")).resolves.toBe(`${"a".repeat(40)}\n`)
     await expect(readFile(path.join(context, "headlong-skills", "managed-skills.tsv"), "utf8")).resolves.toBe("")
     const miseConfig = await readFile(path.join(context, "mise.toml"), "utf8")

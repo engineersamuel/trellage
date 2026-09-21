@@ -36,7 +36,8 @@ import { resolveGraphRustToolchain, resolveRustToolchain } from "./rust-release.
 import { resolvePlaywrightRelease } from "./playwright-release.ts"
 import type { Platform } from "./platform.ts"
 
-export const developmentBuilderImage = "docker.io/jdxcode/mise:latest"
+// Newer images omit the shell (latest) or C linker (debian) required by our builders.
+export const developmentBuilderImage = "docker.io/jdxcode/mise:2026.9.10"
 export const developmentImporterImage = "quay.io/skopeo/stable:latest"
 const supportedBaseImage = /^node:(?:bookworm-slim|\d+\.\d+\.\d+-bookworm-slim)$/
 const supportedRuntimePackages = new Set([
