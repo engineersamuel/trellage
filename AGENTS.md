@@ -25,6 +25,11 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
 - Prepare the source workspace with `scripts/install-source-runtime.sh --prepare`
   from the root. This installs frozen dependencies and records runtime readiness.
   Do not substitute a raw Bun install for this preparation step.
+- Use the mise-pinned Bun for workspace dependency changes. Normal Bun
+  install/add/update/remove commands check the package-manager version and
+  prepare runtime readiness through lifecycle hooks. Do not bypass these
+  hooks with `--ignore-scripts`; the internal frozen preparer uses that flag
+  to avoid recursion. Commit manifest and lockfile changes together.
 - Run Oxlint with `cd packages/trellage-cli && bun run lint`.
 - Check Oxfmt with `cd packages/trellage-cli && bun run format:check`.
 - Run no-emit TypeScript checks with `cd packages/trellage-cli && bun run check`.

@@ -50,8 +50,16 @@ jobs:
         run: sudo apt-get install --yes --no-install-recommends fish ripgrep
       - name: Verify required system tools
         run: for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done
+      - name: Require a checkout without installed dependencies
+        run: |
+          if [[ -n "$(find . -name node_modules -print -quit)" ]]; then
+            echo "::error::Clean preparation requires a checkout without node_modules."
+            exit 1
+          fi
       - name: Prepare frozen source workspace dependencies
         run: bash scripts/install-source-runtime.sh --prepare
+      - name: Require an unchanged lockfile and workspace manifests
+        run: git diff --exit-code -- bun.lock package.json 'packages/*/package.json'
       - name: Install browser contract dependencies
         if: github.event_name != 'pull_request'
         run: npm ci --prefix tests/playwright
@@ -102,8 +110,16 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-node-26.3.0-bun-1.4.2-deps-v1-
       - name: Verify source test runtimes
         run: for tool in bun node python3; do command -v "$tool" >/dev/null; done
+      - name: Require a checkout without installed dependencies
+        run: |
+          if [[ -n "$(find . -name node_modules -print -quit)" ]]; then
+            echo "::error::Clean preparation requires a checkout without node_modules."
+            exit 1
+          fi
       - name: Prepare frozen source workspace dependencies
         run: bash scripts/install-source-runtime.sh --prepare
+      - name: Require an unchanged lockfile and workspace manifests
+        run: git diff --exit-code -- bun.lock package.json 'packages/*/package.json'
       - name: Save dependency download cache
         if: steps.dependency-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0

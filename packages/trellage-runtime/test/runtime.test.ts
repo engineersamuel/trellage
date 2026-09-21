@@ -19,6 +19,7 @@ import path from "node:path"
 import { spawnSync } from "node:child_process"
 import { bunArguments, bunExecutable, sourceEnvironment, sourceWorkspaceRoot } from "../src/index.ts"
 import {
+  copySources,
   requireOwnedWorkspace,
   requireReady,
   requireReadyAsync,
@@ -91,6 +92,34 @@ function hostileBunEnvironment(cwd: string): NodeJS.ProcessEnv {
     SOURCE_TEST_ENV: undefined,
   }
 }
+
+test("native profile state is excluded from source fingerprints and staging", async () => {
+  const { root } = sourceFixture()
+  const profile = "prototypes/trellage-jcode-profiles"
+  write(root, `${profile}/bin/jcx`, "#!/bin/sh\n")
+  const fingerprint = sourceFingerprint(root)
+  const prepared = run("prepare", root)
+  expect(prepared.status, prepared.stderr).toBe(0)
+  for (const directory of ["cache", "mise", "mise-config", "npm-prefix"]) {
+    write(root, `${profile}/${directory}/generated`, "local runtime state")
+    symlinkSync(fixture(), path.join(root, profile, directory, "0"))
+  }
+  for (const name of ["installed-version", "runtime-identity.json", "version"]) {
+    write(root, `${profile}/${name}`, "local runtime state")
+  }
+  expect(sourceFingerprint(root)).toBe(fingerprint)
+  expect(await sourceFingerprintAsync(root)).toBe(fingerprint)
+  await requireReadyAsync(root)
+  const staged = fixture()
+  copySources(root, staged)
+  expect(readdirSync(path.join(staged, profile))).toEqual(["bin"])
+  expect(sourceFingerprint(staged)).toBe(fingerprint)
+  write(root, `${profile}/bin/jcx`, "#!/bin/sh\nexit 1\n")
+  expect(sourceFingerprint(root)).not.toBe(fingerprint)
+  symlinkSync(fixture(), path.join(root, profile, "bin", "mise"))
+  expect(() => sourceFingerprint(root)).toThrow("source workspace contains a symlink")
+  await expect(sourceFingerprintAsync(root)).rejects.toThrow("source workspace contains a symlink")
+})
 
 function run(action: string, root: string, destination?: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync(

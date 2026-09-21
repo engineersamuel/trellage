@@ -31,7 +31,20 @@ import {
   repairThenRecheckDoctor,
   setupRefFor,
 } from "./admin-launch.ts"
-import { controlsForStatus, historyScopeLabel, statusLabel, type AdminStatus } from "./admin-status.ts"
+import {
+  controlsForStatus,
+  healthTone,
+  historyScopeLabel,
+  installTone,
+  statusLabel,
+  statusTone,
+  type AdminStatus,
+} from "./admin-status.ts"
+import { resolveStatusSymbol, type TerminalStatus } from "./termcn/terminal-symbols.ts"
+import { useTheme } from "./termcn/use-theme.ts"
+import { useUnicode } from "./termcn/use-unicode.ts"
+import { ThemeProvider } from "./termcn/theme-provider.tsx"
+import { trellageTheme } from "./termcn/theme-trellage.ts"
 import type { AdminSortKey } from "./admin-table.ts"
 import { adminProfileType, adminTableColumnWidths, adminVisibleRowRange, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.ts"
 import { runBatchedDoctorChecks } from "./admin-batch-scheduler.ts"
@@ -123,12 +136,65 @@ const runStatusOf = (entry: AdminProfileEntry, snapshot: AdminRunStatus): AdminS
  * status is never communicated by color/animation alone — it is a visual
  * accent, not a replacement for the text.
  */
-const StatusText = ({ status, tick, bold = false, dimColor = false }: { readonly status: AdminStatus; readonly tick: number; readonly bold?: boolean; readonly dimColor?: boolean }) => (
-  <Text bold={bold} dimColor={dimColor}>
-    {status === "running" ? <Text color="cyan">{spinnerFrameAt(tick)} </Text> : null}
-    {statusLabel(status)}
-  </Text>
-)
+const toneColor = (theme: ReturnType<typeof useTheme>, tone: TerminalStatus): string => {
+  switch (tone) {
+    case "success":
+      return theme.colors.success
+    case "error":
+      return theme.colors.error
+    case "warning":
+      return theme.colors.warning
+    case "info":
+      return theme.colors.info
+    case "pending":
+      return theme.colors.muted
+    default:
+      return theme.colors.secondary
+  }
+}
+
+/**
+ * Renders a tone's symbol followed by its plain-text label. The symbol and
+ * the color are two redundant accents on top of the label, which always
+ * carries the meaning on its own; `resolveStatusSymbol` substitutes an ASCII
+ * glyph where the terminal cannot draw the Unicode one.
+ */
+const ToneLabel = ({
+  tone,
+  label,
+  bold = false,
+  dimColor = false,
+}: {
+  readonly tone: TerminalStatus
+  readonly label: string
+  readonly bold?: boolean
+  readonly dimColor?: boolean
+}) => {
+  const theme = useTheme()
+  const unicode = useUnicode()
+  return (
+    <Text bold={bold} dimColor={dimColor}>
+      <Text color={toneColor(theme, tone)}>{resolveStatusSymbol(unicode, tone)} </Text>
+      {label}
+    </Text>
+  )
+}
+
+const StatusText = ({ status, tick, bold = false, dimColor = false }: { readonly status: AdminStatus; readonly tick: number; readonly bold?: boolean; readonly dimColor?: boolean }) => {
+  const theme = useTheme()
+  // `running` keeps the animated frame it already had in place of a static
+  // symbol: the animation is what distinguishes an in-flight run from a
+  // settled one, and the label still states the status on its own.
+  if (status === "running") {
+    return (
+      <Text bold={bold} dimColor={dimColor}>
+        <Text color={theme.colors.primary}>{spinnerFrameAt(tick)} </Text>
+        {statusLabel(status)}
+      </Text>
+    )
+  }
+  return <ToneLabel tone={statusTone(status)} label={statusLabel(status)} bold={bold} dimColor={dimColor} />
+}
 
 /**
  * Colors a `VERSION`/`LATEST VERSION` cell by comparison status: green when
@@ -355,7 +421,8 @@ const DetailSummary = ({
       </>
     )}
     <Text>
-      Health: <Text bold>{entry.health}</Text> · Install: <Text bold>{entry.install}</Text>
+      Health: <ToneLabel tone={healthTone(entry.health)} label={entry.health} bold /> · Install:{" "}
+      <ToneLabel tone={installTone(entry.install)} label={entry.install} bold />
     </Text>
     <HarnessVersionDetail
       supported={entry.harnessVersionSupported}
@@ -1739,22 +1806,24 @@ export const AdminRoot = ({
   }, [])
 
   return (
-    <Box flexDirection="column">
-      {refreshError === undefined ? null : (
-        <Text color="red" wrap="wrap">
-          Health/install refresh failed: {refreshError}. Showing last-known status.
-        </Text>
-      )}
-      <AdminApp
-        entries={entries}
-        runManager={runManager}
-        guideRoot={guideRoot}
-        runner={runner}
-        diagnosisProvider={diagnosisProvider}
-        herdrEnv={herdrEnv}
-        cwd={cwd}
-        routerCommandPath={routerCommandPath}
-      />
-    </Box>
+    <ThemeProvider theme={trellageTheme}>
+      <Box flexDirection="column">
+        {refreshError === undefined ? null : (
+          <Text color="red" wrap="wrap">
+            Health/install refresh failed: {refreshError}. Showing last-known status.
+          </Text>
+        )}
+        <AdminApp
+          entries={entries}
+          runManager={runManager}
+          guideRoot={guideRoot}
+          runner={runner}
+          diagnosisProvider={diagnosisProvider}
+          herdrEnv={herdrEnv}
+          cwd={cwd}
+          routerCommandPath={routerCommandPath}
+        />
+      </Box>
+    </ThemeProvider>
   )
 }

@@ -42,6 +42,7 @@ test-command:
 
 dependency-bootstrap:
 	bash tests/dependency_bootstrap_contract.sh
+	bash tests/manage_dependencies_contract.sh
 
 development-resolution-contract:
 	bash tests/development_resolution_contract.sh
