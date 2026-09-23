@@ -74,11 +74,18 @@ case "${1-}" in
     printf '%s\n' "${FAKE_MISE_LATEST:-0.7.0}"
     ;;
   install)
-    spec="${2-}"
-    version="${spec#"$tool"@}"
-    [[ "$spec" == "$tool@$version" && "$version" != "$spec" ]] || exit 91
+    shift
+    forced=false
+    if [[ "${1-}" == --force ]]; then forced=true; shift; fi
+    spec="${1-}"
+    version="${spec##*@}"
+    [[ "$spec" == "$tool[asset_pattern=prime-agent-$version.tgz]@$version" ]] || exit 91
     destination="$MISE_DATA_DIR/installs/$install_name/$version"
     mkdir -p "$destination"
+    if [[ "${FAKE_STANDALONE_CACHE:-0}" == 1 && "$forced" == false ]]; then
+      jq -n --arg version "$version" '{name:"@earendil-works/pi-coding-agent",version:$version}' >"$destination/package.json"
+      exit 0
+    fi
     jq -n --arg version "$version" '{name:"prime-agent",version:$version}' \
       >"$destination/package.json"
     # Marker file so tests can assert mise install ran.
@@ -320,6 +327,7 @@ cat >"$fake_bin/uv" <<'FAKE_UV'
 set -u
 
 printf '%s\n' "$*" >>"$FAKE_UV_LOG"
+printf '%s\n' "${UV_DEFAULT_INDEX-}" >>"$FAKE_UV_FEED_LOG"
 
 case "${1-}" in
   python)
@@ -369,6 +377,7 @@ export FAKE_MISE_LOG="$fixture_root/mise.log"
 export FAKE_NPM_LOG="$fixture_root/npm.log"
 export FAKE_CURL_LOG="$fixture_root/curl.log"
 export FAKE_UV_LOG="$fixture_root/uv.log"
+export FAKE_UV_FEED_LOG="$fixture_root/uv-feed.log"
 export FAKE_PRIME_LOG="$fixture_root/prime.log"
 export FAKE_PRIME_TEMPLATE="$fixture_root/fake-prime-template"
 export FAKE_FIXTURE_ROOT="$fixture_root"
@@ -521,7 +530,7 @@ grep -Fq 'prx setup: ready (0.7.0, claude-opus-5)' "$fixture_root/setup.out" \
   || fail 'setup output differs'
 [[ -f "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" ]] \
   || fail 'setup did not install prime-agent CLI'
-grep -Fq 'install github:PrimeIntellect-ai/prime-agent@0.7.0' "$FAKE_MISE_LOG" \
+grep -Fq 'install github:PrimeIntellect-ai/prime-agent[asset_pattern=prime-agent-0.7.0.tgz]@0.7.0' "$FAKE_MISE_LOG" \
   || fail 'setup did not ask mise to install the receipt-selected release'
 
 legacy_uv_calls_before="$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')"
@@ -1026,6 +1035,16 @@ grep -Fq 'prime-agent daemon-launch module missing' "$fixture_root/fallback-laun
 [[ ! -e "$FAKE_DAEMON_MARKER" ]] \
   || fail 'fallback daemon stop left the shared profile daemon marker in place'
 rm -rf "$other_runtime"
+
+: >"$FAKE_UV_FEED_LOG"
+UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/ FAKE_STANDALONE_CACHE=1 FAKE_MISE_LATEST=0.9.5 "$command_path" update >"$fixture_root/archive-update.out" 2>&1 \
+  || fail 'Prime update did not replace the cached standalone archive'
+grep -Fq 'install --force github:PrimeIntellect-ai/prime-agent[asset_pattern=prime-agent-0.9.5.tgz]@0.9.5' "$FAKE_MISE_LOG" \
+  || fail 'Prime did not force one reinstall of the npm archive'
+grep -Fxq 'https://packagefeedproxy.microsoft.io/pypi/simple/' "$FAKE_UV_FEED_LOG" \
+  || fail 'Prime bootstrap ignored the explicit host package feed'
+"$command_path" doctor >"$fixture_root/archive-doctor.out" 2>&1 \
+  || fail 'Prime doctor failed after archive recovery'
 
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'

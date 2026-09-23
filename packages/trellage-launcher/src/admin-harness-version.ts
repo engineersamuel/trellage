@@ -194,7 +194,7 @@ export const harnessVersionColumnsFor = (
 ): AdminVersionColumns => {
   if (!supported || result === undefined) return { installed: "—", latest: "—", status: "unknown" }
   const installed = result.installed.kind === "known" ? result.installed.version : "—"
-  const latest = result.latest.kind === "known" ? result.latest.version : "—"
+  const latest = result.latest.kind === "known" ? result.latest.version : result.latest.kind === "unsupported" ? "N/A" : "—"
   if (result.installed.kind !== "known" || result.latest.kind !== "known") {
     return { installed, latest, status: "unknown" }
   }

@@ -591,6 +591,7 @@ mise_env() {
     MISE_CONFIG_DIR="$runtime_root/mise-config" \
     MISE_GLOBAL_CONFIG_FILE=/dev/null \
     MISE_IGNORED_CONFIG_PATHS="$ignored_paths" \
+    MISE_NPM_PACKAGE_MANAGER=npm \
     mise "$@"
 }
 
@@ -662,11 +663,30 @@ verify_binary_version() {
 }
 
 install_exact_version() {
-  local version="$1" binary
+  local version="$1" binary prefix
 
   require_command mise
   require_command node
   mise_env install "$mise_tool@$version" || die "mise could not install Pi $version"
+  if ( binary="$(installed_binary "$version")" && verify_binary_version "$binary" "$version" ) 2>/dev/null; then
+    return
+  fi
+
+  prefix="$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent/$version"
+  [[ -d "$prefix" && ! -L "$prefix" ]] \
+    || die "refusing to force-reinstall Pi outside its managed installation: $prefix"
+  [[ ! -L "$runtime_root" && ! -L "$runtime_root/mise" \
+    && ! -L "$runtime_root/mise/installs" \
+    && ! -L "$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent" ]] \
+    || die "refusing to force-reinstall Pi through a symlinked managed installation: $prefix"
+  [[ -O "$runtime_root" && -O "$runtime_root/mise" \
+    && -O "$runtime_root/mise/installs" \
+    && -O "$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent" \
+    && -O "$prefix" ]] \
+    || die "refusing to force-reinstall Pi in an unowned managed installation: $prefix"
+  [[ "$(canonical_directory "$prefix")" == "$prefix" ]] \
+    || die "refusing to force-reinstall Pi through an unsafe managed installation: $prefix"
+  mise_env install --force "$mise_tool@$version" || die "mise could not force-reinstall Pi $version"
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
 }
@@ -946,15 +966,16 @@ check_for_update() {
 print_harness_version_json() {
   local installed='' latest=''
 
-  installed="$(read_installed_version 2>/dev/null || :)"
-  latest="$(resolve_latest_version 2>/dev/null || :)"
+  installed="$(read_installed_version 2>/dev/null)" || installed=''
+  latest="$(resolve_latest_version 2>/dev/null)" || latest=''
   jq -cn --arg installed "$installed" --arg latest "$latest" '{
     schemaVersion: 1,
     launcher: "picx",
     harness: "pi",
     installed: ($installed | if length > 0 then . else null end),
     latest: ($latest | if length > 0 then . else null end),
-    latestKnown: true
+    latestKnown: ($latest | length > 0),
+    latestDiagnostic: (if ($latest | length) > 0 then null else "Could not resolve the latest harness release; check mise and package feed connectivity." end)
   }'
 }
 

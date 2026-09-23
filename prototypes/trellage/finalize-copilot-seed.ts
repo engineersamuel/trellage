@@ -1,6 +1,6 @@
 #!/usr/bin/env -S BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-env-file --no-install --config=/dev/null
 
-import { createHash, randomUUID, type BinaryLike } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { constants, type Dirent, type Stats } from "node:fs"
 import {
   chmod,
@@ -241,7 +241,7 @@ const safeIdentifier = (value: string, label: string): void => {
   }
 }
 
-const sha256 = (content: BinaryLike): string => createHash("sha256").update(content).digest("hex")
+const sha256 = (content: string | Uint8Array): string => createHash("sha256").update(content).digest("hex")
 const json = (value: unknown): Buffer => Buffer.from(`${JSON.stringify(value, null, 2)}\n`)
 const lexical = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0)
 const modeString = (mode: number): string => (mode & 0o777).toString(8).padStart(4, "0")

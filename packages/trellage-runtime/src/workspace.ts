@@ -23,6 +23,7 @@ import { readFile, readdir as readdirAsync } from "node:fs/promises"
 import path from "node:path"
 
 export const sourceMarker = ".managed-by-trellage-source"
+export const preparationLockName = ".trellage-prepare.lock"
 export const sourceOwnership = "trellage-source-runtime-v1"
 const readyFile = ".trellage-source-ready.json"
 const distributionManifest = "package.source.json"
@@ -36,6 +37,7 @@ const nativeProfileState = new Set([
   "mise-config",
   "npm-prefix",
   "installed-version",
+  "version",
   "runtime-identity.json",
 ])
 const hiddenSourceAssets = new Set([
@@ -67,11 +69,20 @@ function sourceDirectoryNames(root: string): string[] {
 }
 
 function excludedSourceName(name: string, parent: string): boolean {
-  if (/^prototypes\/trellage-[^/]+-profiles$/.test(parent) && nativeProfileState.has(name)) return true
-  if (parent === "prototypes/trellage-jcode-profiles" && name === "version") return true
   const testDirectory =
     (name === "test" || name === "tests") && (parent === "scripts" || /^(?:packages|prototypes)\/[^/]+$/.test(parent))
-  return testDirectory || excludedDirectories.has(name) || (name.startsWith(".") && !hiddenSourceAssets.has(name))
+  return (
+    testDirectory ||
+    excludedDirectories.has(name) ||
+    generatedNativeState(name, parent) ||
+    (name.startsWith(".") && !hiddenSourceAssets.has(name))
+  )
+}
+
+function generatedNativeState(name: string, parent: string): boolean {
+  if (parent === "prototypes/common" && name === "omp-community-skills") return true
+  const profileRoot = /^prototypes\/trellage-[^/]+-profiles$/
+  return profileRoot.test(parent) && nativeProfileState.has(name)
 }
 
 export function sourcePackageManifest(root: string): string {
@@ -439,6 +450,16 @@ function inventoryIncludes(root: string, development: boolean) {
   return (directory: string, name: string): boolean => {
     const relative = path.relative(root, path.join(directory, name))
     if (relative === readyFile || relative === sourceMarker) return false
+    if (relative === preparationLockName) {
+      try {
+        const guard = safeDirectory(path.join(root, preparationLockName))
+        if (readdirSync(guard).length !== 0) throw new Error(`preparation lock must be empty: ${guard}`)
+      } catch (error) {
+        // Another preparation may release its guard after the directory was enumerated.
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
+      }
+      return false
+    }
     return !(
       development &&
       (directory === root

@@ -169,8 +169,6 @@ readonly kernel_pypi_packages=(
   pydantic
   tyro
 )
-# Prefer the public index; fall back when files.pythonhosted.org is unreachable.
-readonly pypi_fallback_index='https://mirrors.aliyun.com/pypi/simple'
 
 validate_catalog() {
   [[ -f "$catalog" && -r "$catalog" && ! -L "$catalog" ]] \
@@ -853,9 +851,20 @@ stage_exact_version() {
   require_command mise
   require_command npm
   require_node
-  mise_env install "$mise_tool@$version" \
+  local package_spec="$mise_tool[asset_pattern=prime-agent-$version.tgz]@$version"
+  mise_env install "$package_spec" \
     || die "mise could not install prime-agent $version"
-  package_source="$(resolve_package_source "$version")"
+  if ! package_source="$(resolve_package_source "$version" 2>/dev/null)"; then
+    # Older mise selections may have cached the standalone archive at this version.
+    local expected="$runtime_root/mise/installs/$mise_install_name/$version"
+    [[ -d "$expected" && ! -L "$expected" && -O "$expected" ]] \
+      || die "refusing to replace an unsafe Prime install: $expected"
+    [[ "$(canonical_directory "$expected")" == "$expected" ]] \
+      || die "refusing to replace a symlinked Prime install: $expected"
+    mise_env install --force "$package_spec" \
+      || die "mise could not repair prime-agent $version"
+    package_source="$(resolve_package_source "$version")"
+  fi
   [[ ! -L "$npm_prefix" ]] || die "unsafe npm prefix: $npm_prefix"
   if [[ -e "$npm_prefix" ]]; then
     [[ -d "$npm_prefix" ]] || die "unsafe npm prefix: $npm_prefix"
@@ -1167,17 +1176,19 @@ check_proxy() {
     || die "copilot-proxy-rs model is missing: $selected_model"
 }
 
-pypi_host_reachable() {
-  # Prime's uv bootstrap hits files.pythonhosted.org for wheels. Probe quickly.
-  curl -fsS --max-time 5 -o /dev/null https://files.pythonhosted.org/ 2>/dev/null
-}
-
 uv_with_index() {
-  # When the public files CDN is blocked, route uv to a reachable simple index.
-  if pypi_host_reachable; then
+  local registry
+  if [[ -n "${UV_DEFAULT_INDEX-}${UV_INDEX_URL-}" ]]; then
     uv "$@"
+  elif [[ -n "${PIP_INDEX_URL-}" ]]; then
+    UV_DEFAULT_INDEX="$PIP_INDEX_URL" uv "$@"
   else
-    UV_DEFAULT_INDEX="$pypi_fallback_index" UV_INDEX_URL="$pypi_fallback_index" uv "$@"
+    registry="$(npm config get registry --workspaces=false 2>/dev/null)" || registry=''
+    case "$registry" in
+      https://packagefeedproxy.microsoft.io/npm|https://packagefeedproxy.microsoft.io/npm/)
+        UV_DEFAULT_INDEX=https://packagefeedproxy.microsoft.io/pypi/simple/ uv "$@" ;;
+      *) uv "$@" ;;
+    esac
   fi
 }
 
@@ -1187,7 +1198,7 @@ kernel_runtime_ready() {
   # venv bin/python is typically a symlink to the real interpreter; that is OK.
   [[ -x "$python" ]] || return 1
   "$python" -c 'import ipykernel' >/dev/null 2>&1 || return 1
-  # Match prime-agent's runtime readiness gate (callable rlm + harness CRUD surface).
+  # Validate both the legacy callable API and the current spawn API.
   "$python" -c '
 import inspect
 import rlm
@@ -1200,8 +1211,13 @@ methods = [
   "create_prompt_note","update_prompt_note","delete_prompt_note",
   "record_refinement",
 ]
-assert hasattr(rlm, "run") and callable(rlm)
-assert hasattr(rlm, "rlm") and callable(rlm.rlm)
+if hasattr(rlm, "spawn"):
+  assert all(callable(getattr(api, method, None))
+             for api in (rlm, rlm.rlm)
+             for method in ("spawn", "collect", "list_subagents"))
+else:
+  assert hasattr(rlm, "run") and callable(rlm)
+  assert hasattr(rlm, "rlm") and callable(rlm.rlm)
 assert callable(rlm.host_request)
 assert callable(rlm.find_models) and callable(rlm.rlm.find_models)
 assert hasattr(rlm, "harness") and hasattr(rlm, "get_harness_state")
@@ -1255,10 +1271,6 @@ build_kernel_runtime() {
   runtime_source="$(resolve_runtime_source "$prefix")"
 
   printf 'prx: bootstrapping Prime IPython kernel (one-time; needs network)…\n' >&2
-  if ! pypi_host_reachable; then
-    printf 'prx: files.pythonhosted.org unreachable; using %s\n' \
-      "$pypi_fallback_index" >&2
-  fi
 
   # Drop a partial/broken venv so install is deterministic.
   if [[ -e "$kernel_venv" ]]; then
@@ -1575,16 +1587,16 @@ check_for_update() {
 print_harness_version_json() {
   local installed='' latest=''
 
-  require_command mise
-  installed="$(read_installed_version 2>/dev/null || :)"
-  latest="$(resolve_latest_version 2>/dev/null || :)"
+  installed="$(read_installed_version 2>/dev/null)" || installed=''
+  latest="$(resolve_latest_version 2>/dev/null)" || latest=''
   jq -cn --arg installed "$installed" --arg latest "$latest" '{
     schemaVersion: 1,
     launcher: "prx",
     harness: "prime",
     installed: ($installed | if length > 0 then . else null end),
     latest: ($latest | if length > 0 then . else null end),
-    latestKnown: true
+    latestKnown: ($latest | length > 0),
+    latestDiagnostic: (if ($latest | length) > 0 then null else "Could not resolve the latest harness release; check mise and package feed connectivity." end)
   }'
 }
 

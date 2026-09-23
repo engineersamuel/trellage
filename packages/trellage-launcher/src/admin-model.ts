@@ -71,11 +71,11 @@ const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeLauncherAlias> = new
 ])
 
 /**
- * Every listed native launcher except Agency exposes `harness-version`.
+ * Every listed native launcher exposes `harness-version`.
  * Firstmate's command is profile-scoped because installed receipts differ;
  * the others report one host harness binary shared by their profiles.
  */
-const launchersWithoutHarnessVersionSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>(["agx"])
+const launchersWithoutHarnessVersionSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([])
 
 export interface NativeLauncherCapabilities {
   readonly doctorSupported: boolean

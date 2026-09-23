@@ -851,16 +851,16 @@ check_for_update() {
 print_harness_version_json() {
   local installed='' latest=''
 
-  require_command mise
-  installed="$(read_installed_version 2>/dev/null || :)"
-  latest="$(resolve_latest_version 2>/dev/null || :)"
+  installed="$(read_installed_version 2>/dev/null)" || installed=''
+  latest="$(resolve_latest_version 2>/dev/null)" || latest=''
   jq -cn --arg installed "$installed" --arg latest "$latest" '{
     schemaVersion: 1,
     launcher: "omp",
     harness: "oh-my-pi",
     installed: ($installed | if length > 0 then . else null end),
     latest: ($latest | if length > 0 then . else null end),
-    latestKnown: true
+    latestKnown: ($latest | length > 0),
+    latestDiagnostic: (if ($latest | length) > 0 then null else "Could not resolve the latest harness release; check mise and package feed connectivity." end)
   }'
 }
 

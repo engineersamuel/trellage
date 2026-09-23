@@ -190,6 +190,20 @@ class ScriptedRunner implements CommandRunner {
 }
 
 describe("repairThenRecheckDoctor", () => {
+  it.each([false, true])("refreshes version observations after recovery finishes (setup=%s)", async (needsSetup) => {
+    const runner = new ScriptedRunner(needsSetup
+      ? [{ ok: true }, { ok: false }, { ok: true }, { ok: true }]
+      : [{ ok: true }, { ok: true }])
+    const manager = new AdminRunManager({ runner })
+    let observed: string | undefined
+    await repairThenRecheckDoctor(nativeEntry, manager, async () => {
+      observed = manager.status(nativeEntry.ref).state
+      expect(runner.calls.at(-1)?.args).toEqual(["doctor", "default"])
+      expect(runner.calls).toHaveLength(needsSetup ? 4 : 2)
+    })
+    expect(observed).toBe("success")
+  })
+
   it("runs repair then rechecks doctor, recording both under distinct refs, and reports success/success", async () => {
     const runner = new ScriptedRunner([{ ok: true, stdout: "repaired" }, { ok: true, stdout: "healthy" }])
     const manager = new AdminRunManager({ runner })

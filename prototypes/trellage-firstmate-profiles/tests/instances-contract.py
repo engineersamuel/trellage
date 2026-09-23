@@ -103,6 +103,7 @@ class InstanceContract(unittest.TestCase):
         shutil.copyfile(native_skills, self.runtime / "native-skills.ts")
         for target in (scripts / "trellage-session-bridge.py", self.runtime / "lib/trellage-session-bridge.py"):
             shutil.copyfile(REPO / "scripts/trellage-session-bridge.py", target)
+        shutil.copyfile(REPO / "scripts/trellage-statusline.sh", scripts / "trellage-statusline.sh")
         refresh = "const m=await import(process.argv[1]);m.writeReadiness(process.argv[2]);"
         result = subprocess.run(
             [*BUN_EVAL, refresh, (REPO / "packages/trellage-runtime/src/workspace.ts").as_uri(),
@@ -1114,6 +1115,10 @@ m.run_lease_command(['--',sys.executable,'-c','import pathlib,sys;pathlib.Path(s
         before = healing.snapshot(self.registry)
         installed = self.command([self.case / "bin/bash", self.package / "install.sh"])
         self.assertEqual(installed.returncode, 0, installed.stderr)
+        self.assertEqual(
+            (self.runtime / "lib/trellage-statusline.sh").read_bytes(),
+            (REPO / "scripts/trellage-statusline.sh").read_bytes(),
+        )
         self.assertEqual(before, healing.snapshot(self.registry))
         result = self.json_result(self.selected("inventory", a, "--json", context=False, installed=True))
         self.assertTrue(result["overlay"]["verified"])

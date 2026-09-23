@@ -43,10 +43,26 @@ case "${1-}" in
     printf '%s\n' "${FAKE_MISE_LATEST:-0.84.2}"
     ;;
   install)
+    [[ "${MISE_NPM_PACKAGE_MANAGER-}" == npm ]] || {
+      printf 'Pi installation must use an isolated npm global prefix\n' >&2
+      exit 96
+    }
+    force=0
+    if [[ "${2-}" == --force ]]; then
+      force=1
+      shift
+    fi
     version="${2#"$tool"@}"
     [[ "${FAKE_MISE_INSTALL_FAIL_VERSION-}" != "$version" ]] || exit 91
     destination="$MISE_DATA_DIR/installs/$install_name/$version"
+    if [[ -d "$destination" && "$force" == 0 ]]; then
+      exit 0
+    fi
     mkdir -p "$destination/bin" "$destination/lib"
+    if [[ "${FAKE_MISE_PERSIST_BAD-}" == 1 ]]; then
+      rm -f "$destination/bin/pi"
+      exit 0
+    fi
     sed "s/@VERSION@/$version/g" "$FAKE_PI_TEMPLATE" >"$destination/lib/pi"
     chmod 0755 "$destination/lib/pi"
     ln -sfn ../lib/pi "$destination/bin/pi"
@@ -196,6 +212,7 @@ export FAKE_EXTENSION_LOG="$fixture_root/extensions.log"
 export FAKE_LAUNCH_LOG="$fixture_root/launch.log"
 export FAKE_PROXY_LOG="$fixture_root/proxy.log"
 export FAKE_MISE_LOG="$fixture_root/mise.log"
+export MISE_NPM_PACKAGE_MANAGER=aube
 : >"$FAKE_EXTENSION_LOG"
 : >"$FAKE_LAUNCH_LOG"
 : >"$FAKE_PROXY_LOG"
@@ -263,6 +280,48 @@ jq -e '
   || fail 'setup catalog did not expose verified headless support'
 grep -Fqx 'legacy OMP state' "$HOME/.omp/profiles/trellage-picx-default/canary" \
   || fail 'setup altered the legacy OMP profile'
+cp "$FAKE_EXTENSION_LOG" "$fixture_root/setup-extension-log"
+
+pi_prefix="$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent/0.84.2"
+rm -f "$pi_prefix/bin/pi"
+force_log_start="$(wc -l <"$FAKE_MISE_LOG" | tr -d ' ')"
+"$command_path" repair >/dev/null
+[[ -x "$pi_prefix/bin/pi" ]] || fail 'repair did not force-reinstall an incomplete Pi prefix'
+sed -n "$((force_log_start + 1)),\$p" "$FAKE_MISE_LOG" \
+  | grep -Fqx 'install npm:@earendil-works/pi-coding-agent@0.84.2' \
+  || fail 'repair did not attempt the normal install for an incomplete Pi prefix'
+sed -n "$((force_log_start + 1)),\$p" "$FAKE_MISE_LOG" \
+  | grep -Fqx 'install --force npm:@earendil-works/pi-coding-agent@0.84.2' \
+  || fail 'repair did not attempt exactly the force reinstall for an incomplete Pi prefix'
+
+force_log_start="$(wc -l <"$FAKE_MISE_LOG" | tr -d ' ')"
+"$command_path" repair >/dev/null
+[[ "$(sed -n "$((force_log_start + 1)),\$p" "$FAKE_MISE_LOG" | grep -Fc 'install --force' || true)" == 0 ]] \
+  || fail 'repair force-reinstalled a healthy Pi prefix'
+
+mv "$pi_prefix" "$fixture_root/pi-prefix-real"
+mkdir "$fixture_root/external-prefix"
+printf '%s\n' 'external canary' >"$fixture_root/external-prefix/canary"
+ln -s "$fixture_root/external-prefix" "$pi_prefix"
+status=0
+"$command_path" repair >"$fixture_root/symlink-repair.out" 2>&1 || status=$?
+[[ "$status" == 1 ]] || fail "symlinked incomplete Pi install exited $status instead of 1"
+grep -Fq 'refusing to force-reinstall Pi' "$fixture_root/symlink-repair.out" \
+  || fail 'symlinked incomplete Pi install did not fail closed before force reinstall'
+grep -Fqx 'external canary' "$fixture_root/external-prefix/canary" \
+  || fail 'symlinked incomplete Pi install touched the external prefix'
+rm -f "$pi_prefix"
+mv "$fixture_root/pi-prefix-real" "$pi_prefix"
+
+rm -f "$pi_prefix/bin/pi"
+force_log_start="$(wc -l <"$FAKE_MISE_LOG" | tr -d ' ')"
+status=0
+FAKE_MISE_PERSIST_BAD=1 "$command_path" repair >/dev/null 2>&1 || status=$?
+[[ "$status" == 1 ]] || fail "persistent incomplete Pi install exited $status instead of 1"
+[[ "$(sed -n "$((force_log_start + 1)),\$p" "$FAKE_MISE_LOG" | grep -Fc 'install --force' || true)" == 1 ]] \
+  || fail 'persistent incomplete Pi install did not bound force reinstall to one retry'
+"$command_path" repair >/dev/null
+cp "$fixture_root/setup-extension-log" "$FAKE_EXTENSION_LOG"
 
 jq -e '
   .defaultProvider == "copilot-proxy-rs"

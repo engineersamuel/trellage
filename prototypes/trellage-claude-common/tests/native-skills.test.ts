@@ -219,6 +219,7 @@ const installSourceFixture = async (fixture: Fixture) => {
     "packages/trellage-runtime/src/workspace.ts",
     "packages/trellage-runtime/src/workspace-cli.ts",
     "packages/trellage-runtime/src/lock-transport.ts",
+    "packages/trellage-runtime/src/preparation-lock.ts",
   ])
     await copy(path.join(repository, file), path.join(workspace, file))
   await write(

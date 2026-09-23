@@ -74,6 +74,13 @@ and receipt. The extension set remains the cataloged ordered set. The bare Pi
 runtime does not require the former Oh My Pi source patches for
 `pi-context-view` or `pi-fff`.
 
+Pi tool installation uses Mise's npm backend with `npm install --global`
+and an owned installation prefix. The launcher selects npm explicitly:
+Mise's embedded installer can discover an enclosing workspace when a
+development runtime lives beneath it, rewriting that workspace's lockfile
+and dependencies during setup or repair. Host package-feed configuration
+still applies; the launcher does not change global Mise settings.
+
 Capability reporting remains version-gated. Pi `0.84.2` keeps its tested
 headless claims. Other installed versions remain usable but report
 conservative headless capability values until verified.

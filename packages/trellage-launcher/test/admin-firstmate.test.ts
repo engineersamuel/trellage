@@ -50,6 +50,30 @@ const bySelector = (args: ReadonlyArray<string>): FirstmateInstanceDescriptorV1 
   selectorOf(args) === alpha.reference.instanceId ? alpha : selectorOf(args) === beta.reference.instanceId ? beta : missingLegacy
 
 describe("read-only Admin instance discovery", () => {
+  it("publishes discovered instances before slow readiness probes finish", async () => {
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => { release = resolve })
+    let published: ReadonlyArray<AdminProfileEntry> | undefined
+    let readinessStarted!: () => void
+    const started = new Promise<void>((resolve) => { readinessStarted = resolve })
+    const run: CommandRunner["run"] = async (_executable, args) => {
+      if (args[0] === "instances") return output(instancePage([missingLegacy, alpha, beta]))
+      readinessStarted()
+      await waiting
+      return output(instanceInventory(bySelector(args)))
+    }
+    const refresh = refreshAdminEntries({ run }, firstmateCatalog(), "/work/entry", () => 100, {
+      onDiscovered: (rows) => { published = rows },
+    })
+    await started
+    try {
+      expect(published?.map((row) => row.ref)).toEqual(instanceRows().map((row) => row.ref))
+    } finally {
+      release()
+      await refresh
+    }
+  })
+
   it("returns all static surfaces plus named and legacy rows using listing alone", async () => {
     const catalog = mixedInstanceCatalog()
     const descriptors = [missingLegacy, alpha, beta]
