@@ -37,6 +37,7 @@ const nativeProfileState = new Set([
   "mise-config",
   "npm-prefix",
   "installed-version",
+  "version",
   "runtime-identity.json",
 ])
 const hiddenSourceAssets = new Set([
@@ -68,8 +69,6 @@ function sourceDirectoryNames(root: string): string[] {
 }
 
 function excludedSourceName(name: string, parent: string): boolean {
-  if (/^prototypes\/trellage-[^/]+-profiles$/.test(parent) && nativeProfileState.has(name)) return true
-  if (parent === "prototypes/trellage-jcode-profiles" && name === "version") return true
   const testDirectory =
     (name === "test" || name === "tests") && (parent === "scripts" || /^(?:packages|prototypes)\/[^/]+$/.test(parent))
   return (
@@ -83,18 +82,7 @@ function excludedSourceName(name: string, parent: string): boolean {
 function generatedNativeState(name: string, parent: string): boolean {
   if (parent === "prototypes/common" && name === "omp-community-skills") return true
   const profileRoot = /^prototypes\/trellage-[^/]+-profiles$/
-  if (profileRoot.test(parent)) {
-    return [
-      "cache",
-      "mise",
-      "mise-config",
-      "npm-prefix",
-      "installed-version",
-      "version",
-      "runtime-identity.json",
-    ].includes(name)
-  }
-  return false
+  return profileRoot.test(parent) && nativeProfileState.has(name)
 }
 
 export function sourcePackageManifest(root: string): string {
