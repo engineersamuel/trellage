@@ -669,6 +669,7 @@ const AdminDetailPanel = ({
   versionResult,
   versionRunning,
   onForceResyncVersion,
+  onRepairVersions,
   harnessUpdatePlan,
   harnessUpdateState,
   onUpdateHarness,
@@ -686,6 +687,7 @@ const AdminDetailPanel = ({
   readonly versionResult: AdminHarnessVersionResult | undefined
   readonly versionRunning: boolean
   readonly onForceResyncVersion: (entry: AdminProfileEntry) => void
+  readonly onRepairVersions: (entry: AdminProfileEntry) => Promise<void>
   readonly harnessUpdatePlan: HarnessUpdatePlan | undefined
   readonly harnessUpdateState: HarnessUpdateState | undefined
   readonly onUpdateHarness: (plan: HarnessUpdatePlan) => void
@@ -746,7 +748,7 @@ const AdminDetailPanel = ({
     const approved = confirmationEntry.current
     const operation = isAdminFirstmate(approved) ? "Preparation" : "Repair"
     setRepairMessage(`${operation}: ${adminProfileLabel(approved)}…`)
-    repairThenRecheckDoctor(approved, runManager)
+    repairThenRecheckDoctor(approved, runManager, () => onRepairVersions(approved))
       .then((outcome) => {
         const setupNote = outcome.setupState === undefined ? "" : ` Setup also attempted (${outcome.setupState}).`
         const diagnostic = isAdminFirstmate(approved) ? runManager.status(repairRefFor(approved)).latest?.stderr.trim() : undefined
@@ -1398,6 +1400,21 @@ export const AdminApp = ({
     setTick((value) => value + 1)
   }
 
+  const refreshRepairedVersions = async (entry: AdminProfileEntry): Promise<void> => {
+    const key = harnessVersionOperationKeyFor(entry)
+    if (key === undefined) return
+    try {
+      await versionRunManager.waitForIdle(harnessVersionRefFor(key))
+      await runBatchedHarnessVersionChecks([entry], versionRunManager, versionCache, {
+        forceResync: true,
+        selectedEntryRef: entry.ref,
+        onResult: persistVersionResult,
+      })
+    } catch (error) {
+      setVersionCacheError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   const updateHarness = (plan: HarnessUpdatePlan) => {
     if (harnessUpdateManager.isRunning(plan.key)) return
     setHarnessUpdateByKey((previous) => new Map(previous).set(plan.key, {
@@ -1443,7 +1460,7 @@ export const AdminApp = ({
     for (const ref of targets) {
       const entry = entries.find((candidate) => candidate.ref === ref)
       if (entry === undefined) continue
-      void repairThenRecheckDoctor(entry, runManager).finally(() => setTick((value) => value + 1))
+      void repairThenRecheckDoctor(entry, runManager, () => refreshRepairedVersions(entry)).finally(() => setTick((value) => value + 1))
     }
     // Runs each poll tick to observe newly terminal-failed refs from `AdminRunManager`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1747,6 +1764,7 @@ export const AdminApp = ({
           versionResult={versionResultFor(selected)}
           versionRunning={versionRunning(selected)}
           onForceResyncVersion={forceResyncVersion}
+          onRepairVersions={refreshRepairedVersions}
           harnessUpdatePlan={allUpdates.running ? undefined : harnessUpdatePlanFor(selected, entries, versionResultFor(selected))}
           harnessUpdateState={harnessUpdateStateForEntry(selected, harnessUpdateByKey)}
           onUpdateHarness={updateHarness}
@@ -1790,7 +1808,12 @@ export const AdminRoot = ({
   useEffect(() => {
     let cancelled = false
     const controller = new AbortController()
-    refreshAdminEntries(runner, catalog, cwd, () => Date.now(), { signal: controller.signal })
+    refreshAdminEntries(runner, catalog, cwd, () => Date.now(), {
+      signal: controller.signal,
+      onDiscovered: (discovered) => {
+        if (!cancelled) setEntries(discovered)
+      },
+    })
       .then((refreshed) => {
         if (!cancelled) setEntries(refreshed)
       })

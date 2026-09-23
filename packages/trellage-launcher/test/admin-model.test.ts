@@ -152,9 +152,9 @@ describe("nativeLauncherCapabilities", () => {
     expect(nativeLauncherCapabilities("cldx").updateCheckSupported).toBe(false)
   })
 
-  it("supports profile-scoped Firstmate harness versions but not Agency", () => {
+  it("supports Firstmate and Agency harness versions", () => {
     expect(nativeLauncherCapabilities("fmx").harnessVersionSupported).toBe(true)
-    expect(nativeLauncherCapabilities("agx").harnessVersionSupported).toBe(false)
+    expect(nativeLauncherCapabilities("agx").harnessVersionSupported).toBe(true)
   })
 
   it("fails closed for an unrecognized future native launcher", () => {

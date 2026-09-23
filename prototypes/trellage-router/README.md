@@ -75,7 +75,11 @@ installed `trx`:
 
 Source-mode launches prepare missing or stale worktree dependencies automatically
 with the pinned Bun runtime and frozen lockfile. Ready worktrees do not reinstall
-dependencies. Preparation errors and unsafe paths stop the launch. Installed
+dependencies. Concurrent launches wait for preparation of the same worktree and
+reuse its readiness result. Generated Native tool installations, caches and
+version receipts are excluded from the source fingerprint, so a profile repair
+does not invalidate the worktree runtime. Preparation errors and unsafe source
+paths stop the launch. Installed
 `trx` runtimes still require an explicit reinstall when their contents change.
 
 ```sh

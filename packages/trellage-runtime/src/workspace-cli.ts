@@ -13,11 +13,13 @@ import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import path from "node:path"
 import { bunExecutable } from "./index.ts"
+import { acquirePreparationLock } from "./preparation-lock.ts"
 import { withRegistryTransport } from "./lock-transport.ts"
 import {
   copySources,
   dependencyDirectory,
   normalizeDependencyPermissions,
+  preparationLockName,
   requireOwnedWorkspace,
   requireReady,
   requireReadyAsync,
@@ -75,25 +77,28 @@ async function installDependencies(root: string): Promise<void> {
   writeReadiness(root)
 }
 
-async function ensureDependencies(root: string): Promise<void> {
+async function prepareDependencies(root: string, alwaysInstall: boolean): Promise<void> {
+  const preparation = await acquirePreparationLock(path.join(root, preparationLockName), { signal: cancellation.signal })
   try {
-    await requireReadyAsync(root)
-    return
-  } catch (error) {
-    process.stderr.write(`trellage source runtime: ${error instanceof Error ? error.message : String(error)}\n`)
-  }
-  const lock = `${root}.prepare.lock`
-  mkdirSync(lock, { mode: 0o700 })
-  try {
-    const readiness = path.join(root, ".trellage-source-ready.json")
-    if (await present(readiness)) safePath(readiness, "file")
-    if (await present(path.join(root, "node_modules"))) normalizeDependencyPermissions(root)
-    await validateOwnedTreeAsync(root, !(await present(path.join(root, sourceMarker))))
-    process.stderr.write("trellage source runtime: preparing worktree dependencies automatically\n")
+    if (!alwaysInstall) {
+      try {
+        await requireReadyAsync(root)
+        return
+      } catch (error) {
+        process.stderr.write(`trellage source runtime: ${error instanceof Error ? error.message : String(error)}\n`)
+      }
+    }
+    if (!alwaysInstall) {
+      const readiness = path.join(root, ".trellage-source-ready.json")
+      if (await present(readiness)) safePath(readiness, "file")
+      if (await present(path.join(root, "node_modules"))) normalizeDependencyPermissions(root)
+      await validateOwnedTreeAsync(root, !(await present(path.join(root, sourceMarker))))
+      process.stderr.write("trellage source runtime: preparing worktree dependencies automatically\n")
+    }
     await installDependencies(root)
     await requireReadyAsync(root)
   } finally {
-    rmdirSync(lock)
+    await preparation.release()
   }
 }
 
@@ -294,10 +299,10 @@ try {
       break
     }
     case "prepare":
-      await installDependencies(root)
+      await prepareDependencies(root, true)
       break
     case "ensure":
-      await ensureDependencies(root)
+      await prepareDependencies(root, false)
       break
     case "validate-owned":
       requireOwnedWorkspace(root)

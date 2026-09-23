@@ -41,7 +41,9 @@ eligible under `mise` policy on first use, installs the release package into a
 managed npm prefix, and records the exact installed version in the local
 `installed-version` receipt. Ordinary launches reuse that version without a
 network request. Only explicit `prx update` resolves latest again. Updates
-stage and verify a complete npm prefix before publication.
+stage and verify a complete npm prefix before publication. The launcher selects
+the `prime-agent-VERSION.tgz` npm archive explicitly. If Mise cached a standalone
+archive at that version, repair replaces that owned cache once before retrying.
 
 `prx skills-update default` copies and verifies only the refreshed
 `native-common` cache after `trx skills update`. It requires an existing owned
@@ -105,10 +107,10 @@ previous state and leaves any stopped daemon stopped; the next launch starts a
 clean daemon lazily. Launch also stops the profile daemon before it replaces a
 stale or incomplete kernel venv.
 
-Kernel bootstrap needs network access to a PyPI simple index; if
-`files.pythonhosted.org` is unreachable, `prx` falls back to
-`https://mirrors.aliyun.com/pypi/simple`. Setup and repair refuse symlinked
-paths or unrelated existing profile files. Uninstall preserves this profile.
+Kernel bootstrap honors `UV_DEFAULT_INDEX`, `UV_INDEX_URL`, and `PIP_INDEX_URL`.
+When the host npm registry is CFS, it uses the CFS PyPI index; otherwise it
+preserves uv's host configuration. Setup and repair refuse symlinked paths or
+unrelated existing profile files. Uninstall preserves this profile.
 
 Bare and explicit launches are equivalent:
 

@@ -15,9 +15,9 @@
     "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ./node_modules/vitest/vitest.mjs run --configLoader native"
   },
   "dependencies": {
-    "@github/copilot-sdk": "1.0.11",
+    "@github/copilot-sdk": "1.0.14",
     "@typesafe-ai/sdk": "0.6.0",
-    "diff": "8.0.2",
+    "diff": "9.0.0",
     "@trellage/conversation-source": "workspace:*",
     "@trellage/guide-core": "workspace:*",
     "@trellage/runtime": "workspace:*",
@@ -29,13 +29,13 @@
   },
   "devDependencies": {
     "@types/bun": "1.4.2",
-    "@types/node": "24.10.1",
+    "@types/node": "26.5.1",
     "@types/proper-lockfile": "4.1.4",
     "@types/react": "19.2.14",
     "@xterm/headless": "6.0.0",
     "typescript": "7.0.2",
-    "vite": "8.2.2",
-    "vitest": "4.1.11"
+    "vite": "8.3.0",
+    "vitest": "5.0.0"
   },
   "engines": {
     "bun": "1.4.2",

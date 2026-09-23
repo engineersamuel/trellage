@@ -98,6 +98,13 @@ bin source files group/world-writable during installation. Preparation must
 correct only validated, owned, declared bin targets; it must not weaken general
 ownership, symlink, or shared-write refusal.
 
+Development Native launchers write tool installations, caches and version
+receipts beneath their prototype directories. These known generated paths are
+excluded from source fingerprints, development readiness inventories and source
+archives. They remain subject to their launcher's own validation. Symlinks in
+authored source and unexpected contents in installed source runtimes remain
+errors.
+
 For distribution, run `bun run package:source /absolute/path/trellage.tgz`.
 The archive contains authored sources, canonical `.agents` assets, the lock,
 and the original workspace manifest as `package.source.json`. Its publication
@@ -111,7 +118,13 @@ Packaging requires the host `tar` utility and refuses to overwrite an archive.
 Preparation reads the host HTTPS npm registry configuration. It temporarily
 fills empty lock transport URLs, without changing versions or integrity values,
 then restores the exact canonical lock bytes before publishing readiness.
-An exclusive `.trellage-install-lock` prevents concurrent preparation. Writes
+Worktree preparation takes an exclusive `.trellage-prepare.lock` inside the
+workspace, so it does not require write access to the workspace's parent.
+Concurrent preparation requests wait with a bounded, cancellable timeout;
+automatic preparation rechecks readiness after acquiring the lock so it can
+reuse another process's completed installation. Unsafe or abandoned locks are
+not removed automatically. The inner `.trellage-install-lock` protects the
+temporary registry transport changes. Writes
 are flushed before cleanup. If the lock inode changes during installation,
 preparation fails and retains the canonical backup in that directory; inspect
 the changed lock and restore the backup before removing the guard and retrying.

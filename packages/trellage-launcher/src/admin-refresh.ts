@@ -162,14 +162,20 @@ const refreshReadinessInputs = async (
  * Individual listing/probe failures stay visible on their own rows.
  * Cancellation and unexpected catalog failures are not converted into partial success.
  */
+export interface AdminRefreshOptions extends FirstmateInstanceCommandOptions {
+  readonly onDiscovered?: (entries: ReadonlyArray<AdminProfileEntry>) => void
+}
+
 export const refreshAdminEntries = async (
   runner: CommandRunner,
   catalog: CombinedGuideCatalog,
   cwd: string,
   now: () => number = () => Date.now(),
-  options: FirstmateInstanceCommandOptions = {},
+  options: AdminRefreshOptions = {},
 ): Promise<ReadonlyArray<AdminProfileEntry>> => {
   const initial = await discoveryRowsForRefresh(runner, catalog, cwd, options)
+  options.signal?.throwIfAborted()
+  options.onDiscovered?.(initial)
   const readinessInputs = await refreshReadinessInputs(runner, initial, cwd, now, options)
   options.signal?.throwIfAborted()
   return mergeAdminReadiness(catalog, initial, readinessInputs)

@@ -14,6 +14,10 @@ curl -sSfL https://aka.ms/InstallTool.sh | sh -s agency
 `agx` checks both `PATH` and Agency's standard install path,
 `~/.config/agency/CurrentVersion/agency`.
 
+`agx harness-version` reports the installed Agency version without checking
+Azure authentication. Agency does not expose an authoritative latest-version
+query here; Admin displays `N/A` for that column.
+
 The first profile is repository-local:
 
 ```bash

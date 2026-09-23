@@ -20,26 +20,26 @@
     "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ./node_modules/vitest/vitest.mjs run --configLoader native"
   },
   "dependencies": {
-    "@effect/cli": "0.76.0",
-    "@effect/platform-node": "0.108.0",
+    "@effect/cli": "0.77.1",
+    "@effect/platform-node": "0.108.2",
     "@trellage/guide-core": "workspace:*",
     "@trellage/runtime": "workspace:*",
-    "effect": "3.22.0",
+    "effect": "3.22.2",
     "proper-lockfile": "4.1.2",
-    "skills": "1.5.19",
-    "smol-toml": "1.7.0",
-    "varlock": "1.13.0"
+    "skills": "1.5.26",
+    "smol-toml": "1.8.0",
+    "varlock": "1.19.0"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",
-    "@types/node": "24.10.1",
+    "@types/node": "26.5.1",
     "@types/proper-lockfile": "4.1.4",
-    "lefthook": "^2.1.10",
-    "oxfmt": "0.60.0",
-    "oxlint": "1.75.0",
+    "lefthook": "^2.1.14",
+    "oxfmt": "0.68.0",
+    "oxlint": "1.83.0",
     "typescript": "7.0.2",
-    "vite": "8.2.2",
-    "vitest": "4.1.11"
+    "vite": "8.3.0",
+    "vitest": "5.0.0"
   },
   "engines": {
     "bun": "1.4.2",

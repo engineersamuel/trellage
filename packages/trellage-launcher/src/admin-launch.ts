@@ -124,6 +124,7 @@ export interface RepairAndRecheckOutcome {
 export const repairThenRecheckDoctor = async (
   entry: AdminProfileEntry,
   runManager: AdminRunManager,
+  refreshVersions?: () => Promise<void>,
 ): Promise<RepairAndRecheckOutcome> => {
   const repairCommand = buildRepairCommand(entry)
   await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args, {
@@ -138,7 +139,10 @@ export const repairThenRecheckDoctor = async (
   const doctorCommand = buildDiagnosticCommand(entry)
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args)
   const doctorStateAfterRepair = runManager.status(entry.ref).state
-  if (doctorStateAfterRepair === "success" || isAdminFirstmate(entry)) return { repairState, doctorState: doctorStateAfterRepair }
+  if (doctorStateAfterRepair === "success" || isAdminFirstmate(entry)) {
+    await refreshVersions?.()
+    return { repairState, doctorState: doctorStateAfterRepair }
+  }
 
   const setupCommand = buildSetupCommand(entry)
   await runManager.trigger(setupRefFor(entry), setupCommand.executable, setupCommand.args, {
@@ -147,6 +151,7 @@ export const repairThenRecheckDoctor = async (
   const setupState = runManager.status(setupRefFor(entry)).state
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args)
   const doctorState = runManager.status(entry.ref).state
+  await refreshVersions?.()
   return { repairState, setupState, doctorState }
 }
 

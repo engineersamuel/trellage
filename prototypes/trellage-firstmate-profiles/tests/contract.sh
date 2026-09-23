@@ -559,6 +559,7 @@ cp "$repo_root/prototypes/trellage-claude-common/native-skills.ts" \
   "$mirror/prototypes/trellage-claude-common/native-skills.ts"
 chmod 0755 "$mirror/prototypes/trellage-claude-common/native-claude"
 cp "$repo_root/scripts/trellage-session-bridge.py" "$mirror/scripts/trellage-session-bridge.py"
+cp "$repo_root/scripts/trellage-statusline.sh" "$mirror/scripts/trellage-statusline.sh"
 cp "$repo_root/scripts/install-floating-skills-runtime.sh" "$mirror/scripts/"
 cp "$repo_root/scripts/floating-skills.ts" "$mirror/scripts/"
 cp "$repo_root/skills.json" "$mirror/skills.json"

@@ -34,6 +34,7 @@ results/
 .beads/proxieddb/
 /.trx-guide/
 /.trellage-source-ready.json
+/.trellage-prepare.lock/
 /.trellage-runtime/
 /.trellage-runtime.lock/
 

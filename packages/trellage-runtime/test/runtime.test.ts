@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import {
   chmodSync,
   cpSync,
@@ -17,6 +17,7 @@ import {
 import os from "node:os"
 import path from "node:path"
 import { spawnSync } from "node:child_process"
+import * as fsPromises from "node:fs/promises"
 import { bunArguments, bunExecutable, sourceEnvironment, sourceWorkspaceRoot } from "../src/index.ts"
 import {
   copySources,
@@ -75,6 +76,88 @@ test("source archive preserves locked workspace and assets without registry work
   expect(existsSync(path.join(packaged, "packages/application/dist"))).toBe(false)
   expect(existsSync(path.join(packaged, "scripts/__pycache__"))).toBe(false)
   expect(sourceFingerprint(packaged)).toBe(sourceFingerprint(root))
+})
+
+test("ignores generated native profile state while retaining source link safety", () => {
+  const { root, destination } = sourceFixture(true)
+  write(root, "README.md", "Source fixture")
+  write(root, "LICENSE", "MIT")
+  const generated = path.join(root, "prototypes/trellage-jcode-profiles")
+  write(generated, "cache/metadata.json", "cache")
+  write(generated, "mise-config/config.toml", "config")
+  write(generated, "npm-prefix/lib/node_modules/tool.js", "tool")
+  write(generated, "installed-version", "0.86.0\n")
+  write(generated, "runtime-identity.json", "{}\n")
+  write(generated, ".installed-version.temporary", "temporary")
+  write(generated, ".npm-prefix-stage.temporary/marker", "temporary")
+  write(generated, ".runtime-identity.temporary", "temporary")
+  mkdirSync(path.join(generated, "mise/installs/github-1jehuang-jcode/0.86.0"), { recursive: true })
+  symlinkSync("./0.86.0", path.join(generated, "mise/installs/github-1jehuang-jcode/0"))
+  write(root, "prototypes/common/omp-community-skills/skill.md", "generated")
+
+  const fingerprint = sourceFingerprint(root)
+  const prepared = run("prepare", root)
+  expect(prepared.status, prepared.stderr).toBe(0)
+  expect(() => requireReady(root)).not.toThrow()
+  write(generated, "cache/metadata.json", "changed cache")
+  write(root, "prototypes/common/omp-community-skills/skill.md", "changed generated")
+  expect(sourceFingerprint(root)).toBe(fingerprint)
+  expect(() => requireReady(root)).not.toThrow()
+  const launched = spawnSync(
+    "/bin/bash",
+    [path.join(root, "scripts/run-source.sh"), path.join(root, "packages/application/src/cli.ts")],
+    { cwd: root, encoding: "utf8", env: { ...process.env, TRELLAGE_BUN_EXECUTABLE: bunExecutable() } },
+  )
+  expect(launched.status, launched.stderr).toBe(0)
+  expect(JSON.parse(launched.stdout)).toMatchObject({ value: "source" })
+
+  packageSources(root, destination)
+  const extracted = fixture()
+  expect(spawnSync("tar", ["-xzf", destination, "-C", extracted]).status).toBe(0)
+  const packaged = path.join(extracted, "package")
+  expect(existsSync(path.join(packaged, "prototypes/trellage-jcode-profiles/mise"))).toBe(false)
+  expect(existsSync(path.join(packaged, "prototypes/trellage-jcode-profiles/cache"))).toBe(false)
+  expect(existsSync(path.join(packaged, "prototypes/common/omp-community-skills"))).toBe(false)
+
+  write(root, "prototypes/example/mise/installs/version.txt", "source")
+  const included = sourceFingerprint(root)
+  expect(included).not.toBe(fingerprint)
+  symlinkSync("version.txt", path.join(root, "prototypes/example/mise/installs/link"))
+  expect(() => sourceFingerprint(root)).toThrow("source workspace contains a symlink")
+})
+
+test("installed readiness tolerates only a safe empty preparation guard", () => {
+  const { root, destination } = sourceFixture()
+  const installed = run("install", root, destination)
+  expect(installed.status, installed.stderr).toBe(0)
+  const guard = path.join(destination, ".trellage-prepare.lock")
+  mkdirSync(guard, { mode: 0o700 })
+  expect(() => requireReady(destination)).not.toThrow()
+  writeFileSync(path.join(guard, "unexpected"), "unrelated data")
+  expect(() => requireReady(destination)).toThrow("preparation lock must be empty")
+  rmSync(guard, { recursive: true })
+  symlinkSync(root, guard)
+  expect(() => requireReady(destination)).toThrow("unsafe directory")
+  unlinkSync(guard)
+  expect(() => requireOwnedWorkspace(destination)).not.toThrow()
+})
+
+test("readiness survives a preparation guard released after directory enumeration", async () => {
+  const { root } = sourceFixture()
+  expect(run("prepare", root).status).toBe(0)
+  const guard = path.join(root, ".trellage-prepare.lock")
+  mkdirSync(guard, { mode: 0o700 })
+  const readdir = fsPromises.readdir
+  const enumerate = spyOn(fsPromises, "readdir").mockImplementation(async (...args) => {
+    const names = await Reflect.apply(readdir, fsPromises, args)
+    if (args[0] === root && existsSync(guard)) rmSync(guard, { recursive: true })
+    return names
+  })
+  try {
+    await expect(requireReadyAsync(root)).resolves.toBeUndefined()
+  } finally {
+    enumerate.mockRestore()
+  }
 })
 
 function hostileBunEnvironment(cwd: string): NodeJS.ProcessEnv {

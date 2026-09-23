@@ -1,6 +1,6 @@
 #!/usr/bin/env -S BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-env-file --no-install --config=/dev/null
 
-import { createHash, type BinaryLike } from "node:crypto"
+import { createHash } from "node:crypto"
 import type { Dirent, Stats } from "node:fs"
 import { chmod, lstat, mkdir, readFile, readdir, realpath, rm, stat, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
@@ -71,7 +71,7 @@ const hasControlCharacter = (value: string): boolean =>
     return codePoint <= 0x1f || codePoint === 0x7f
   })
 const lexical = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0)
-const sha256 = (bytes: BinaryLike): string => `sha256:${createHash("sha256").update(bytes).digest("hex")}`
+const sha256 = (bytes: string | Uint8Array): string => `sha256:${createHash("sha256").update(bytes).digest("hex")}`
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
 
 const readJson = async (candidate: string, label: string): Promise<unknown> => {

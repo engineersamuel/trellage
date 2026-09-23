@@ -37,6 +37,7 @@ command_path="$command_dir/fmx"
 native_claude_source="$repo_root/prototypes/trellage-claude-common/native-claude"
 native_skills_source="$repo_root/prototypes/trellage-claude-common/native-skills.ts"
 session_bridge_source="$repo_root/scripts/trellage-session-bridge.py"
+statusline_source="$repo_root/scripts/trellage-statusline.sh"
 floating_runtime_installer="$repo_root/scripts/install-floating-skills-runtime.sh"
 prerequisite_helper_source="$source_dir/lib/fmx-prerequisites"
 prerequisite_lock_source="$source_dir/prerequisites"
@@ -139,6 +140,9 @@ require_owned_runtime_contents() {
     require_runtime_file "$install_root/native-skills.ts"
   fi
   require_runtime_file "$install_root/lib/trellage-session-bridge.py"
+  if [[ -e "$install_root/lib/trellage-statusline.sh" || -L "$install_root/lib/trellage-statusline.sh" ]]; then
+    require_runtime_file "$install_root/lib/trellage-statusline.sh"
+  fi
   require_runtime_file "$installed_catalog"
   require_runtime_file "$install_root/prerequisite-lock/manifest.json"
   require_runtime_file "$install_root/prerequisite-lock/npm/package.json"
@@ -167,6 +171,7 @@ require_owned_runtime_contents() {
       "$install_root/native-skills.mjs"|\
       "$install_root/native-skills.ts"|\
       "$install_root/lib/trellage-session-bridge.py"|\
+      "$install_root/lib/trellage-statusline.sh"|\
       "$installed_catalog"|\
       "$install_root/policies"|\
       "$install_root/overlay"|\
@@ -279,6 +284,7 @@ require_regular_file "$prerequisite_helper_source" 'prerequisite helper'
 require_regular_file "$source_dir/catalog.json" 'catalog'
 require_regular_file "$native_claude_source" 'shared native Claude helper'
 require_regular_file "$session_bridge_source" 'session bridge'
+require_regular_file "$statusline_source" 'Claude statusline'
 require_regular_file "$floating_runtime_installer" 'floating-skills runtime installer'
 require_regular_file "$native_skills_source" 'Native skills helper'
 [[ -x "$floating_runtime_installer" ]] \
@@ -703,6 +709,7 @@ stage_file "$native_claude_source" "$staging_root/new-runtime/lib/native-claude"
 stage_file "$native_skills_source" "$staging_root/new-runtime/native-skills.ts" 0644
 stage_file "$session_bridge_source" \
   "$staging_root/new-runtime/lib/trellage-session-bridge.py" 0755
+stage_file "$statusline_source" "$staging_root/new-runtime/lib/trellage-statusline.sh" 0755
 stage_file "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json" 0644
 stage_file "$prerequisite_lock_source/manifest.json" \
   "$staging_root/new-runtime/prerequisite-lock/manifest.json" 0644

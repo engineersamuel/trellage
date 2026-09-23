@@ -220,7 +220,7 @@ describe("harnessVersionColumnsFor", () => {
   it("renders each independently known value without fabricating its peer", () => {
     expect(harnessVersionColumnsFor(true, unsupported("1.0.82"))).toEqual({
       installed: "1.0.82",
-      latest: "—",
+      latest: "N/A",
       status: "unknown",
     })
     expect(
