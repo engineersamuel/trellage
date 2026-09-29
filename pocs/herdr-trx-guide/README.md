@@ -15,6 +15,10 @@ mouse selection to the system clipboard, then a compact popup previews the
 text and asks what to send. The guide can recommend a profile and workflow,
 prepare a prompt, and hand the work to a Herdr workspace or worktree.
 
+**Check the engagement (HVE next steps)** is also available without a selection
+or a completed agent. Press `g` to open repository-backed engagement guidance.
+This does not capture a conversation or start a model.
+
 ## Requirements
 
 - Herdr 0.8.2 or newer
@@ -80,7 +84,40 @@ description = "Open TRX contextual actions for the active agent pane"
 
 Reload the Herdr configuration after you save it.
 
+To test a different Trellage worktree without changing the linked plugin, use
+a direct popup binding for that checkout's `custom-popup.ts`. Run it with that
+checkout's pinned Bun executable, `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`,
+`--no-install --no-env-file --config=/dev/null`. The engagement action resolves
+`trx` from the checkout containing the popup code, not from the registered
+plugin or the first `trx` on `PATH`. It enables the checkout's Native launcher
+sources as well. Keep machine-specific absolute paths in your Herdr config.
+
 ## Use it
+
+### Check an engagement repository
+
+1. Focus a terminal in the local engagement repository.
+2. Press `prefix+ctrl+b`, then `g`, or select **Check the engagement (HVE next
+   steps)** and press Enter.
+3. Guide opens in a separate pane in that repository, using this Trellage
+   checkout's `trx guide --engagement`. It starts with "What's the next step in
+   this engagement?"
+4. Review the local source selection. Model use, saving an assignment, and
+   launching an HVE agent still require separate confirmation inside Guide.
+
+The action remains available while clipboard and transcript reads are pending
+or unavailable. It is not a capture-queue item. Highlighted text remains the
+preferred source when available and no choice has been made. Once you move the
+selection, later capture results do not change it.
+
+The source pane, terminal, and working directory are checked before allocating
+the new pane. The destination is checked again before sending the command.
+Guide must display its source-selection screen before focus moves. A startup
+failure reports the new pane ID for inspection; it does not close that pane or
+retry the command. See [engagement guidance](../../docs/trx-guide-engagement.md)
+for its repository, data-sharing, and review boundaries.
+
+### Open captured text
 
 To collect highlighted text before opening the guide:
 

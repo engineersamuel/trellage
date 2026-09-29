@@ -16,6 +16,7 @@ import {
   validateAnswer,
 } from "./lib/context.ts"
 import { invokeContextMenuChoice } from "./context-menu-action.ts"
+import { engagementSourceChoice, openEngagementGuide } from "./engagement-action.ts"
 import { requestHerdr } from "./lib/herdr.ts"
 import {
   captureQueueIntent,
@@ -59,8 +60,9 @@ const selectionFromClipboard = (clipboard) => {
   }
 }
 
-export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueue, rewriteChoice) => [
+export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueue, rewriteChoice, engagementChoice) => [
   ...(rewriteChoice === undefined ? [] : [rewriteChoice]),
+  ...(engagementChoice === undefined ? [] : [engagementChoice]),
   ...(selectedText === undefined ? [] : [selectedTextChoice(selectedText)]),
   ...inspectedChoices,
   ...(captureQueue?.entries.length > 0
@@ -74,8 +76,8 @@ export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueu
 ]
 
 export const initialSourceChoiceIndex = (choices) => {
-  const existingChoice = choices.findIndex((choice) => choice.kind !== "rewrite")
-  return existingChoice < 0 ? 0 : existingChoice
+  const existingChoice = choices.findIndex((choice) => choice.kind !== "rewrite" && choice.kind !== "engagement")
+  return existingChoice < 0 ? Math.max(0, choices.findIndex((choice) => choice.kind === "engagement")) : existingChoice
 }
 
 export const sourcePickerStatus = (initialStatus, notes, selectionError) =>
@@ -85,6 +87,7 @@ export const sourceChoiceIdentity = (choice) => {
   if (choice.kind === "selection") return "selection"
   if (choice.kind === "queue") return "queue"
   if (choice.kind === "rewrite") return "rewrite"
+  if (choice.kind === "engagement") return "engagement"
   return `${choice.kind}:${choice.paneId ?? ""}:${choice.sessionId ?? ""}:${choice.stateChangeSeq ?? ""}`
 }
 
@@ -130,7 +133,7 @@ const popupFooter = ({ busy, status, screen, queueOnly, choices }) => {
       ? "Enter open queue  x remove selected  c clear  q/Esc close"
       : "Enter open queue  x remove selected  c clear  a add another  b back  q/Esc close"
   }
-  return "Enter open  a add selected  e edit queue  x clear queue  q/Esc close"
+  return "Enter open  g engagement  a queue  e edit queue  x clear  Esc close"
 }
 
 export const invokeGuideChoice = async ({
@@ -192,18 +195,21 @@ export const main = async ({
   request = requestHerdr,
   captureInspector = inspectCaptureOptions,
   contextMenuCapture = captureContextMenuRequest,
+  engagementOpener = openEngagementGuide,
   queueReader = readCaptureQueue,
   initialStatus = "",
 } = {}) => {
   if (!input.isTTY || !output.isTTY) throw new Error("The guide source picker requires a terminal")
   const context = providedContext ?? parseCustomPopupContext(env)
   const stateDir = resolvePluginStateDirectory(env)
+  const engagementChoice = engagementSourceChoice(context)
   let rewriteChoice
   let selection = {}
   let captureQueue = { schemaVersion: 1, entries: [] }
   let inspected = { choices: [], notes: [] }
-  let choices = []
+  let choices = orderedSourceChoices([], undefined, captureQueue, undefined, engagementChoice)
   let selectedIndex = initialSourceChoiceIndex(choices)
+  let selectionTouched = false
   let queueIndex = 0
   let screen = initialScreen
   let status = sourcePickerStatus(initialStatus, inspected.notes, selection.error)
@@ -232,8 +238,9 @@ export const main = async ({
       detail: `Queued capture ${index + 1} of ${captureQueue.entries.length}`,
       preview: entry.answer,
     }))
-    const visibleSet = screen === "queue" ? queueChoices : choices
-    const activeIndex = screen === "queue" ? queueIndex : selectedIndex
+    const { visibleSet, activeIndex } = screen === "queue"
+      ? { visibleSet: queueChoices, activeIndex: queueIndex }
+      : { visibleSet: choices, activeIndex: selectedIndex }
     const sourceRows = ["queue", "clipboard", "sources", "rewrite"].filter(name => loading.has(name) || sourceErrors.has(name))
     const statusRow = 4 + sourceRows.length
     const previewHeading = statusRow + (status ? 1 : 0)
@@ -283,9 +290,9 @@ export const main = async ({
 
   const refreshChoices = () => {
     const selectedKey = sourceChoiceIdentity(choices[selectedIndex] ?? {})
-    choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice)
+    choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice)
     const nextIndex = choices.findIndex((choice) => sourceChoiceIdentity(choice) === selectedKey)
-    selectedIndex = nextIndex >= 0 ? nextIndex : initialSourceChoiceIndex(choices)
+    selectedIndex = selectionTouched && nextIndex >= 0 ? nextIndex : initialSourceChoiceIndex(choices)
   }
 
   const finishSource = (name) => {
@@ -380,7 +387,9 @@ export const main = async ({
       return
     }
     try {
-      if (choice.kind === "rewrite") {
+      if (choice.kind === "engagement") {
+        await engagementOpener({ context, env, request })
+      } else if (choice.kind === "rewrite") {
         if (choice.request === undefined) throw new Error(choice.detail)
         await invokeContextMenuChoice({ request: choice.request, context, stateDir, herdr: request })
       } else {
@@ -397,7 +406,7 @@ export const main = async ({
   const enqueueSelectedChoice = async () => {
     if (busy) return
     const choice = choices[selectedIndex]
-    if (choice === undefined || choice.kind === "queue" || choice.kind === "rewrite") {
+    if (choice === undefined || choice.kind === "queue" || choice.kind === "rewrite" || choice.kind === "engagement") {
       status = "Choose highlighted text, an exact result, or a terminal snapshot to add"
       render()
       return
@@ -409,7 +418,7 @@ export const main = async ({
       const previousLength = captureQueue.entries.length
       await invokeGuideChoice({ choice, operation: "enqueue", context, stateDir, request })
       captureQueue = await waitForCaptureQueueGrowth(stateDir, previousLength)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice)
       selectedIndex = choices.findIndex((candidate) => candidate.kind === "queue")
       busy = false
       status = `Added. ${captureQueue.entries.length} item${captureQueue.entries.length === 1 ? "" : "s"} queued. Enter opens the queue.`
@@ -459,7 +468,7 @@ export const main = async ({
     render()
     try {
       captureQueue = await removeCaptureQueueEntry(stateDir, entry.id)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice)
       queueIndex = Math.min(queueIndex, Math.max(0, captureQueue.entries.length - 1))
       busy = false
       status = `${captureQueue.entries.length} item${captureQueue.entries.length === 1 ? "" : "s"} queued`
@@ -484,7 +493,7 @@ export const main = async ({
     try {
       await clearCaptureQueue(stateDir)
       captureQueue = await readCaptureQueue(stateDir)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice)
       selectedIndex = initialSourceChoiceIndex(choices)
       queueIndex = 0
       busy = false
@@ -541,6 +550,12 @@ export const main = async ({
   }
 
   const onSourceKeypress = (text, key) => {
+    if (key.name === "g") {
+      selectionTouched = true
+      selectedIndex = choices.findIndex((choice) => choice.kind === "engagement")
+      void openSelectedChoice()
+      return
+    }
     if (key.name === "a") {
       void enqueueSelectedChoice()
       return
@@ -557,10 +572,13 @@ export const main = async ({
       return
     }
     if (key.name === "return") {
+      selectionTouched = true
       void openSelectedChoice()
       return
     }
-    selectedIndex = movedChoiceIndex(selectedIndex, choices.length, text, key)
+    const nextIndex = movedChoiceIndex(selectedIndex, choices.length, text, key)
+    if (nextIndex !== selectedIndex) selectionTouched = true
+    selectedIndex = nextIndex
     status = ""
     render()
   }
