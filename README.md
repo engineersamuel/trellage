@@ -1038,11 +1038,17 @@ Trellage Sandbox profiles, compares five recommendations, and creates three
 editable prompt candidates. An approved goal instead gets one to five
 compatible recommendations and three editable execution approaches.
 Matching first uses TypeSafe Jev (`jev-1.13.0`) with the complete compact
-catalog. Export `TYPESAFE_API_KEY`, or put that key in `.env` in the guide's
-working directory. Only that key is read; the guide does not load other dotenv
+catalog. The guide reads `TYPESAFE_API_KEY` from, in order: the shell
+environment, `.env` in the guide's working directory, then the Trellage user
+environment directory (`$XDG_CONFIG_HOME/trellage` or `~/.config/trellage`,
+file `.env.local` then `.env`). The user files must be private regular files
+(mode `0600`, not symlinks); plain values only, so Varlock function values
+such as encrypted secrets are skipped. `TRELLAGE_ENVIRONMENT=off` skips the
+user directory. Only that key is read; the guide does not load other dotenv
 settings into its environment. Jev gets one three-second attempt with no
 retries. Missing credentials, service failures, or invalid responses fall back
-to the existing profile prefilter and Copilot matching. Low fit probabilities
+to the existing profile prefilter and Copilot matching, and the guide shows a
+"Jev not in use" notice with the reason. Low fit probabilities
 remain valid results; cancellation stops matching.
 
 By default, fallback matching, Prompt Master optimization, and refinement use

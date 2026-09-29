@@ -1,11 +1,11 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, symlink, writeFile, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { JevGuideMatcher, type JevSystemOneClient } from "../src/jev-guide-matcher.ts"
 import { prepareGuideGoal } from "../src/guide-goal-execution.ts"
 import type { GuideMatchInput } from "../src/guide-provider.ts"
-import { validateGuideMatchResult } from "../src/guide-provider.ts"
+import { GuideMatcherFallbackReason, validateGuideMatchResult } from "../src/guide-provider.ts"
 
 const entry = (ref: string, workflows = ["one"]) => ({
   ref,
@@ -177,6 +177,70 @@ describe("JevGuideMatcher", () => {
     expect(received).toBe("from-file")
   })
 
+  describe("user environment directory", () => {
+    const sdk = () =>
+      client({ p0: { type: "noul", noul: 0.9 }, p1: { type: "noul", noul: 0.8 }, p2: { type: "noul", noul: 0.7 } })
+    const setup = async (content: string, mode = 0o600) => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "jev-user-env-"))
+      tempRoots.push(root)
+      const cwd = path.join(root, "worktree")
+      const directory = path.join(root, "home", ".config", "trellage")
+      await mkdir(cwd)
+      await mkdir(directory, { recursive: true, mode: 0o700 })
+      await writeFile(path.join(directory, ".env.local"), content, { mode })
+      await chmod(path.join(directory, ".env.local"), mode)
+      return { root, cwd, directory, home: path.join(root, "home") }
+    }
+    const keyFor = async (cwd: string, env: Record<string, string>): Promise<string | undefined> => {
+      let received: string | undefined
+      await new JevGuideMatcher({
+        cwd,
+        env,
+        clientFactory: (key) => {
+          received = key
+          return sdk()
+        },
+      })
+        .match(input())
+        .catch(() => undefined)
+      return received
+    }
+
+    it("reads the key from ~/.config/trellage/.env.local when no other source has it", async () => {
+      const { cwd, home } = await setup("TYPESAFE_API_KEY=user-key\n")
+      expect(await keyFor(cwd, { HOME: home })).toBe("user-key")
+    })
+
+    it("prefers the shell and worktree .env, and honors XDG_CONFIG_HOME", async () => {
+      const { root, cwd, home } = await setup("TYPESAFE_API_KEY=user-key\n")
+      expect(await keyFor(cwd, { HOME: home, TYPESAFE_API_KEY: "shell-key" })).toBe("shell-key")
+      await writeFile(path.join(cwd, ".env"), "TYPESAFE_API_KEY=worktree-key\n")
+      expect(await keyFor(cwd, { HOME: home })).toBe("worktree-key")
+      await rm(path.join(cwd, ".env"))
+      await mkdir(path.join(root, "xdg", "trellage"), { recursive: true })
+      await writeFile(path.join(root, "xdg", "trellage", ".env"), "TYPESAFE_API_KEY=xdg-key\n", { mode: 0o600 })
+      expect(await keyFor(cwd, { HOME: home, XDG_CONFIG_HOME: path.join(root, "xdg") })).toBe("xdg-key")
+    })
+
+    it("skips the directory when disabled, shared, symlinked, or holding a Varlock function", async () => {
+      const disabled = await setup("TYPESAFE_API_KEY=user-key\n")
+      await expect(
+        new JevGuideMatcher({ cwd: disabled.cwd, env: { HOME: disabled.home, TRELLAGE_ENVIRONMENT: "off" } }).match(
+          input(),
+        ),
+      ).rejects.toMatchObject({ reason: GuideMatcherFallbackReason.MissingCredentials })
+      const shared = await setup("TYPESAFE_API_KEY=user-key\n", 0o644)
+      expect(await keyFor(shared.cwd, { HOME: shared.home })).toBeUndefined()
+      const linked = await setup("")
+      await writeFile(path.join(linked.root, "target"), "TYPESAFE_API_KEY=linked\n", { mode: 0o600 })
+      await rm(path.join(linked.directory, ".env.local"))
+      await symlink(path.join(linked.root, "target"), path.join(linked.directory, ".env.local"))
+      expect(await keyFor(linked.cwd, { HOME: linked.home })).toBeUndefined()
+      const encrypted = await setup('TYPESAFE_API_KEY=varlock("encrypted")\n')
+      expect(await keyFor(encrypted.cwd, { HOME: encrypted.home })).toBeUndefined()
+    })
+  })
+
   it.each([
     ["wrong response type", null, "Jev match unavailable"],
     ["missing answers", {}, "Jev match unavailable"],
@@ -187,14 +251,19 @@ describe("JevGuideMatcher", () => {
     ],
   ])("rejects %s with the exact validation error", async (_name, response, message) => {
     const sdk: JevSystemOneClient = { systemOne: async () => response }
-    await expect(new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match(input())).rejects.toThrow(message)
+    const pending = new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match(input())
+    await expect(pending).rejects.toThrow(message)
+    await expect(pending).rejects.toMatchObject({ reason: GuideMatcherFallbackReason.InvalidResponse })
   })
 
   it("times out a client that never settles", async () => {
     vi.useFakeTimers()
     const sdk: JevSystemOneClient = { systemOne: async () => await new Promise(() => {}) }
     const pending = new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match(input())
-    const failure = expect(pending).rejects.toThrow("Jev match unavailable")
+    const failure = expect(pending).rejects.toMatchObject({
+      message: "Jev match unavailable",
+      reason: GuideMatcherFallbackReason.Timeout,
+    })
     await vi.advanceTimersByTimeAsync(3_001)
     await failure
   })
@@ -351,19 +420,22 @@ describe("JevGuideMatcher", () => {
           throw new Error("private")
         },
       }).match(input()),
-    ).rejects.toThrow("Jev match unavailable")
+    ).rejects.toMatchObject({
+      message: "Jev match unavailable",
+      reason: GuideMatcherFallbackReason.MissingCredentials,
+    })
     expect(created).toBe(false)
-    await expect(
-      new JevGuideMatcher({
-        cwd,
-        env: { TYPESAFE_API_KEY: "private" },
-        clientFactory: () => ({
-          systemOne: async () => {
-            throw new Error("private")
-          },
-        }),
-      }).match(input()),
-    ).rejects.toThrow(/^Jev match unavailable$/)
+    const failed = new JevGuideMatcher({
+      cwd,
+      env: { TYPESAFE_API_KEY: "private" },
+      clientFactory: () => ({
+        systemOne: async () => {
+          throw new Error("private")
+        },
+      }),
+    }).match(input())
+    await expect(failed).rejects.toThrow(/^Jev match unavailable$/)
+    await expect(failed).rejects.toMatchObject({ reason: GuideMatcherFallbackReason.RequestFailed })
   })
 
   it("bounds authored explanations and leaves unrelated dotenv variables untouched", async () => {

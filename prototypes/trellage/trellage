@@ -447,8 +447,6 @@ guide_core_package_dir="$(cd "$prototype_dir/../../packages/trellage-guide-core"
 compiler="$compiler_package_dir/src/cli.ts"
 headless_event_bridge="$compiler_package_dir/src/headless-event-bridge.ts"
 compiler_fingerprint="$prototype_dir/../../scripts/profile-compiler-fingerprint.sh"
-varlock="$("${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" \
-  dependency "$source_workspace" varlock)/bin/cli.js"
 picker="$source_workspace/packages/trellage-launcher/src/cli.tsx"
 
 profile_compiler_is_fresh() {
@@ -537,6 +535,9 @@ for environment_name in HOME USER LOGNAME SHELL TMPDIR XDG_CONFIG_HOME XDG_CACHE
 done
 
 ensure_profile_compiler
+# Resolve after ensure so a fresh worktree prepares its dependencies first.
+varlock="$("${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" \
+  dependency "$source_workspace" varlock)/bin/cli.js"
 environment_metadata=
 environment_enabled=
 environment_source_present=

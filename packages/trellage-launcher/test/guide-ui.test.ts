@@ -12,6 +12,7 @@ import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
 import {
   GuideEffort,
+  GuideMatcherFallbackReason,
   guideIntentMaximumLength,
   literalGuideMatch,
   templatePromptCandidates,
@@ -73,6 +74,7 @@ import {
   markdownInlineSegments,
   matchProgressItems,
   matchExecutionLabel,
+  matchFallbackNotice,
   pinnedGuideLenses,
   requiredWorktreeConfirmations,
   runGuideGenerationStep,
@@ -1276,6 +1278,40 @@ describe("guideUiReducer: intent and match", () => {
     expect(matchExecutionLabel({ backend: "copilot", model: "copilot-test", effort: "high" }, "fallback", GuideEffort.Medium)).toBe(
       "Copilot model: copilot-test · Effort: high",
     )
+  })
+
+  it("shows why Jev was skipped and clears the notice when a later attempt uses Jev", () => {
+    const missing = { backend: "jev" as const, reason: GuideMatcherFallbackReason.MissingCredentials }
+    expect(matchFallbackNotice(undefined)).toBeUndefined()
+    expect(matchFallbackNotice(missing)).toEqual({
+      summary: "Jev not in use: TYPESAFE_API_KEY is not set. Copilot matched instead (slower).",
+      hint: "For faster matching, add TYPESAFE_API_KEY to ~/.config/trellage/.env.local (mode 600).",
+    })
+    expect(matchFallbackNotice({ backend: "jev", reason: GuideMatcherFallbackReason.Timeout })?.hint).toBeUndefined()
+
+    let state = createInitialGuideUiState("Review my PR")
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.MatchAttempt,
+      execution: { backend: "copilot", model: "m", effort: "medium" },
+      profileCount: 3,
+      fallback: missing,
+    })
+    expect(state.matchFallback).toEqual(missing)
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.MatchSucceeded,
+      recommendations: recommendationTriple(),
+      execution: { backend: "copilot", model: "m", effort: "medium" },
+      fallback: missing,
+    })
+    expect(state.matchFallback).toEqual(missing)
+
+    let retry = createInitialGuideUiState("Review my PR")
+    retry = guideUiReducer({ ...retry, matchFallback: missing }, {
+      type: GuideUiActionType.MatchAttempt,
+      execution: { backend: "jev", model: "jev-test" },
+      profileCount: 3,
+    })
+    expect(retry.matchFallback).toBeUndefined()
   })
 
   it("tracks high-level profile matching progress", () => {

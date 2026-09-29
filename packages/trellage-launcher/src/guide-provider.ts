@@ -50,6 +50,27 @@ export interface GuideMatchAdapter {
   match(input: GuideMatchInput, signal?: AbortSignal): Promise<GuideMatchResult>
 }
 
+export enum GuideMatcherFallbackReason {
+  MissingCredentials = "missing-credentials",
+  Timeout = "timeout",
+  RequestFailed = "request-failed",
+  InvalidResponse = "invalid-response",
+}
+
+/** Why the fast matcher was skipped, so the UI can show that Copilot matched instead. */
+export interface GuideMatcherFallback {
+  readonly backend: "jev"
+  readonly reason: GuideMatcherFallbackReason
+}
+
+/** A sanitized matcher failure: the message and reason are host-owned and never carry request data. */
+export class GuideMatcherUnavailableError extends Error {
+  constructor(readonly reason: GuideMatcherFallbackReason) {
+    super("Jev match unavailable")
+    this.name = "GuideMatcherUnavailableError"
+  }
+}
+
 export interface GuideGenerateCandidate {
   readonly title: string
   readonly prompt: string

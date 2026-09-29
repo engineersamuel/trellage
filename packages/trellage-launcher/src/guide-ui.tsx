@@ -102,6 +102,8 @@ import {
   type GuideMatchRequest,
   type GuideMatchAdapter,
   type GuideMatchExecution,
+  type GuideMatcherFallback,
+  GuideMatcherFallbackReason,
   type GuideMatchOptions,
   type GuideModelConfig,
   type GuideRecommendation,
@@ -443,6 +445,7 @@ interface GuideProfileSelection {
   readonly recommendationIndex: number
   readonly usedLiteralFallback: boolean
   readonly execution?: GuideMatchExecution | undefined
+  readonly fallback?: GuideMatcherFallback | undefined
 }
 
 export type FirstmateReadinessOperation =
@@ -487,6 +490,8 @@ export interface GuideUiState {
   readonly augmentViewReturnStage: GuideUiStage | undefined
   readonly matchPhase: GuideMatchPhase | undefined
   readonly matchExecution: GuideMatchExecution | undefined
+  /** Why Jev was skipped for the current match; `undefined` when Jev matched or no matcher is configured. */
+  readonly matchFallback: GuideMatcherFallback | undefined
   readonly matchProfileCount: number | undefined
   readonly recommendations: ReadonlyArray<GuideRecommendation> | undefined
   readonly recommendationIndex: number
@@ -568,6 +573,7 @@ const emptyState: GuideUiState = {
   augmentViewReturnStage: undefined,
   matchPhase: undefined,
   matchExecution: undefined,
+  matchFallback: undefined,
   matchProfileCount: undefined,
   recommendations: undefined,
   recommendationIndex: 0,
@@ -648,6 +654,7 @@ const guideProfileSelection = (state: GuideUiState): GuideProfileSelection =>
     recommendationIndex: state.recommendationIndex,
     usedLiteralFallback: state.usedLiteralFallback,
     execution: state.matchExecution,
+    fallback: state.matchFallback,
   }
 
 /** Explicit consequence text for a dirty source working tree; `undefined` when clean (nothing to warn about). */
@@ -674,6 +681,7 @@ type GuideForkSharedKey =
   | "nextAugmentRunId"
   | "matchPhase"
   | "matchExecution"
+  | "matchFallback"
   | "matchProfileCount"
   | "recommendations"
   | "recommendationIndex"
@@ -707,6 +715,7 @@ const forkSlice = ({
   nextAugmentRunId: _nextAugmentRunId,
   matchPhase: _matchPhase,
   matchExecution: _matchExecution,
+  matchFallback: _matchFallback,
   matchProfileCount: _matchProfileCount,
   recommendations: _recommendations,
   recommendationIndex: _recommendationIndex,
@@ -989,11 +998,17 @@ export type GuideUiAction =
     }
   | { readonly type: GuideUiActionType.MatchRetry }
   | { readonly type: GuideUiActionType.MatchProgress; readonly phase: GuideMatchPhase }
-  | { readonly type: GuideUiActionType.MatchAttempt; readonly execution: GuideMatchExecution; readonly profileCount: number }
+  | {
+      readonly type: GuideUiActionType.MatchAttempt
+      readonly execution: GuideMatchExecution
+      readonly profileCount: number
+      readonly fallback?: GuideMatcherFallback
+    }
   | {
       readonly type: GuideUiActionType.MatchSucceeded
       readonly recommendations: ReadonlyArray<GuideRecommendation>
       readonly execution?: GuideMatchExecution
+      readonly fallback?: GuideMatcherFallback
       readonly profileCount?: number
     }
   | { readonly type: GuideUiActionType.MatchFailed; readonly message: string }
@@ -1607,6 +1622,7 @@ const recommendationsState = (
   usedLiteralFallback: boolean,
   execution?: GuideMatchExecution,
   profileCount?: number,
+  fallback?: GuideMatcherFallback,
 ): GuideUiState => ({
   ...state,
   stage: GuideUiStage.Recommendations,
@@ -1614,7 +1630,7 @@ const recommendationsState = (
   recommendations,
   recommendationIndex: 0,
   usedLiteralFallback,
-  ...(execution === undefined ? {} : { matchExecution: execution }),
+  ...(execution === undefined ? {} : { matchExecution: execution, matchFallback: fallback }),
   ...(profileCount === undefined ? {} : { matchProfileCount: profileCount }),
   errorMessage: undefined,
 })
@@ -1722,7 +1738,12 @@ const reduceMatchProgress = (state: GuideUiState, action: GuideUiAction): GuideU
 
     case GuideUiActionType.MatchAttempt:
       return state.stage === GuideUiStage.Matching
-        ? { ...state, matchExecution: action.execution, matchProfileCount: action.profileCount }
+        ? {
+            ...state,
+            matchExecution: action.execution,
+            matchFallback: action.fallback,
+            matchProfileCount: action.profileCount,
+          }
         : state
 
     default:
@@ -1750,6 +1771,7 @@ const reduceMatch = (state: GuideUiState, action: GuideUiAction): GuideUiState =
             false,
             action.execution ?? state.matchExecution,
             action.profileCount ?? state.matchProfileCount,
+            action.execution === undefined ? state.matchFallback : action.fallback,
           )
         : state
 
@@ -4446,6 +4468,7 @@ const MatchProgress = ({
   model,
   effort,
   execution,
+  fallback,
   profileCount,
 }: {
   readonly catalog: CombinedGuideCatalog
@@ -4454,6 +4477,7 @@ const MatchProgress = ({
   readonly model: string
   readonly effort: GuideEffort
   readonly execution: GuideMatchExecution | undefined
+  readonly fallback: GuideMatcherFallback | undefined
   readonly profileCount: number | undefined
 }) => {
   const availableProfileCount = catalog.native.length + catalog.sandbox.length
@@ -4468,6 +4492,9 @@ const MatchProgress = ({
         activePhase={phase}
         detail={executionLabel}
       />
+      <Box paddingX={1}>
+        <MatchFallbackNotice fallback={fallback} />
+      </Box>
       <Text dimColor>p view prompt · q cancel</Text>
     </Box>
   )
@@ -4480,6 +4507,37 @@ export const matchExecutionLabel = (
 ): string => execution?.backend === "jev"
   ? `Jev model: ${execution.model}`
   : `Copilot model: ${execution?.model ?? model} · Effort: ${execution?.effort ?? effort}`
+
+const jevFallbackReasons: Readonly<Record<GuideMatcherFallbackReason, string>> = {
+  [GuideMatcherFallbackReason.MissingCredentials]: "TYPESAFE_API_KEY is not set",
+  [GuideMatcherFallbackReason.Timeout]: "Jev did not answer within 3 seconds",
+  [GuideMatcherFallbackReason.RequestFailed]: "the Jev request failed",
+  [GuideMatcherFallbackReason.InvalidResponse]: "Jev returned an invalid result",
+}
+
+/** Encourages Jev without requiring it: Copilot still matches, but the user sees why the fast path was skipped. */
+export const matchFallbackNotice = (
+  fallback: GuideMatcherFallback | undefined,
+): { readonly summary: string; readonly hint: string | undefined } | undefined =>
+  fallback === undefined
+    ? undefined
+    : {
+        summary: `Jev not in use: ${jevFallbackReasons[fallback.reason]}. Copilot matched instead (slower).`,
+        hint: fallback.reason === GuideMatcherFallbackReason.MissingCredentials
+          ? "For faster matching, add TYPESAFE_API_KEY to ~/.config/trellage/.env.local (mode 600)."
+          : undefined,
+      }
+
+const MatchFallbackNotice = ({ fallback }: { readonly fallback: GuideMatcherFallback | undefined }) => {
+  const notice = matchFallbackNotice(fallback)
+  if (notice === undefined) return null
+  return (
+    <Box flexDirection="column">
+      <Text color="yellow" wrap="wrap">{notice.summary}</Text>
+      {notice.hint === undefined ? null : <Text dimColor wrap="wrap">{notice.hint}</Text>}
+    </Box>
+  )
+}
 
 const GenerationProgress = ({
   recommendation,
@@ -5228,6 +5286,7 @@ const RecommendationsView = ({
   model,
   effort,
   execution,
+  fallback,
   recommendations,
   index,
   usedLiteralFallback,
@@ -5239,6 +5298,7 @@ const RecommendationsView = ({
   readonly model: string
   readonly effort: GuideEffort
   readonly execution: GuideMatchExecution | undefined
+  readonly fallback: GuideMatcherFallback | undefined
   readonly recommendations: ReadonlyArray<GuideRecommendation>
   readonly index: number
   readonly usedLiteralFallback: boolean
@@ -5258,7 +5318,7 @@ const RecommendationsView = ({
           : `Goal: ${goal.draft.criteria.length} approved criteria`} ·{" "}
         {usedLiteralFallback ? "Literal matching" : matchExecutionLabel(execution, model, effort)}
       </Text>
-      {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : null}
+      {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : <MatchFallbackNotice fallback={fallback} />}
       <PinnedLenses lenses={pinnedLenses} />
       <Box marginTop={1}>
         <RecommendationRail recommendations={recommendations} index={index} />
@@ -6022,6 +6082,7 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
             type: GuideUiActionType.MatchSucceeded,
             recommendations: response.recommendations,
             ...(response.execution === undefined ? {} : { execution: response.execution }),
+            ...(response.fallback === undefined ? {} : { fallback: response.fallback }),
           })
         }
       } catch (error) {
@@ -7248,12 +7309,13 @@ const matchingProgress = ({ props, state }: GuideRenderContext): React.ReactElem
     model={props.routing.match.model}
     effort={props.routing.match.effort}
     execution={state.matchExecution}
+    fallback={state.matchFallback}
     profileCount={state.matchProfileCount}
   />
 )
 
 const renderRecommendations: GuideStageRenderer = (context) => {
-  const { recommendations, recommendationIndex, usedLiteralFallback, execution } = guideProfileSelection(context.state)
+  const { recommendations, recommendationIndex, usedLiteralFallback, execution, fallback } = guideProfileSelection(context.state)
   const goal = guideProfileGoal(context.state)
   if (recommendations === undefined) return matchingProgress(context)
   if (recommendations.length === 0) {
@@ -7268,6 +7330,7 @@ const renderRecommendations: GuideStageRenderer = (context) => {
       model={context.props.routing.match.model}
       effort={context.props.routing.match.effort}
       execution={execution}
+      fallback={fallback}
       recommendations={recommendations}
       index={recommendationIndex}
       usedLiteralFallback={usedLiteralFallback}

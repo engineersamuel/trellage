@@ -4,9 +4,9 @@ import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
 import { GuideArtifactCache } from "../src/guide-match-cache.ts"
-import { GuideEffort, runGuideMatch, prefilterGuideMatchCatalogEntries } from "../src/guide-api.ts"
+import { GuideEffort, GuideMatcherFallbackReason, runGuideMatch, prefilterGuideMatchCatalogEntries } from "../src/guide-api.ts"
 import { prepareGuideGoal } from "../src/guide-goal-execution.ts"
-import type { GuideMatchAdapter, GuideProvider } from "../src/guide-provider.ts"
+import { GuideMatcherUnavailableError, type GuideMatchAdapter, type GuideProvider } from "../src/guide-provider.ts"
 
 const guide = (goal = false) => ({
   schemaVersion: 1,
@@ -285,6 +285,35 @@ describe("guide match service", () => {
       matcher: { ...base, match: async () => ({ candidates: [] }) },
     })
     expect(invalid.execution).toEqual({ backend: "copilot", model: "override", effort: "high" })
+    expect(invalid.fallback).toEqual({ backend: "jev", reason: GuideMatcherFallbackReason.InvalidResponse })
+    expect(low.fallback).toBeUndefined()
+    expect(calls.legacy).toHaveLength(1)
+  })
+
+  it("reports why Jev was skipped on the attempt and response without changing the cache key", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "guide-match-fallback-"))
+    roots.push(root)
+    const cache = new GuideArtifactCache({ cwd: root, routing, prompts })
+    const calls = { legacy: [] as unknown[], matcher: [] as unknown[] }
+    const request = { intent: "Use sandbox:profile-0 to implement changes", model: "m", effort: GuideEffort.Medium }
+    const invoke = (reason: GuideMatcherFallbackReason, attempts: unknown[]) =>
+      runGuideMatch(provider(calls), catalog(), request, cache, {
+        matcher: { ...matcher(calls), match: async () => { throw new GuideMatcherUnavailableError(reason) } },
+        onAttempt: (attempt) => attempts.push(attempt),
+      })
+    const firstAttempts: unknown[] = []
+    const first = await invoke(GuideMatcherFallbackReason.MissingCredentials, firstAttempts)
+    expect(first.fallback).toEqual({ backend: "jev", reason: GuideMatcherFallbackReason.MissingCredentials })
+    expect(firstAttempts).toEqual([
+      { execution: { backend: "jev", model: "jev-1.13.0" }, profileCount: 16 },
+      {
+        execution: { backend: "copilot", model: "m", effort: GuideEffort.Medium },
+        profileCount: expect.any(Number),
+        fallback: { backend: "jev", reason: GuideMatcherFallbackReason.MissingCredentials },
+      },
+    ])
+    const second = await invoke(GuideMatcherFallbackReason.Timeout, [])
+    expect(second.fallback).toEqual({ backend: "jev", reason: GuideMatcherFallbackReason.Timeout })
     expect(calls.legacy).toHaveLength(1)
   })
 
