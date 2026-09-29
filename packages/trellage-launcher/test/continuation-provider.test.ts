@@ -16,6 +16,7 @@ import {
   validateContinuationPolicy,
   type ContinuationAnalysisError,
 } from "../src/continuation-provider.ts"
+import type { JevSystemOneClient } from "../src/jev-decisions.ts"
 import {
   assessmentFixture,
   continuationEntries,
@@ -42,6 +43,33 @@ describe("continuation call planning", () => {
       summarizationCalls: 0, assessmentCalls: 1, maxCalls: 2,
     })
     expect(clientFactory).not.toHaveBeenCalled()
+  })
+
+  it("skips the full assessment only for complete, small history with near-certain Jev completion", async () => {
+    const snapshot = conversationFixture()
+    const provider = new FakeContinuationProvider()
+    const jev: JevSystemOneClient = {
+      systemOne: async () => ({
+        answers: { decision: { type: "noul", noul: 0.999 } },
+      }),
+    }
+    const result = await analyzeConversation(snapshot, continuationEntries, provider, {
+      jevDecision: { cwd: "/tmp", client: jev },
+    })
+    expect(result.assessment.outcome).toBe(ContinuationOutcome.NoFurtherAction)
+    expect(provider.assessmentRequests).toHaveLength(0)
+  })
+
+  it("does not accept a Jev no-action result when source coverage is incomplete", async () => {
+    const snapshot = { ...conversationFixture(), coverage: { complete: false, notices: ["history truncated"] } }
+    const provider = new FakeContinuationProvider()
+    const jev: JevSystemOneClient = {
+      systemOne: async () => ({ answers: { decision: { type: "noul", noul: 1 } } }),
+    }
+    await analyzeConversation(snapshot, continuationEntries, provider, {
+      jevDecision: { cwd: "/tmp", client: jev },
+    })
+    expect(provider.assessmentRequests).toHaveLength(1)
   })
 
   it("keeps full history beyond the old 60,000-character tail when it fits", async () => {
@@ -71,8 +99,12 @@ describe("continuation call planning", () => {
     let high = continuationPolicy.maxInputBytes
     while (low + 1 < high) {
       const midpoint = Math.floor((low + high) / 2)
-      try { continuationCallPlan(withSize(midpoint), continuationEntries); low = midpoint }
-      catch { high = midpoint }
+      try {
+        continuationCallPlan(withSize(midpoint), continuationEntries)
+        low = midpoint
+      } catch {
+        high = midpoint
+      }
     }
     expect(continuationCallPlan(withSize(low), continuationEntries).maxCalls).toBe(2)
     expect(() => continuationCallPlan(withSize(high), continuationEntries)).toThrow("input-budget")
@@ -347,7 +379,10 @@ describe("continuation summary evidence and recovery", () => {
     const saved = new Promise<void>((resolve) => { release = resolve })
     const result = analyzeConversation(large(), continuationEntries, provider, {
       onSummaries: async (summaries) => {
-        if (summaries.length === 1) { entered(); await saved }
+        if (summaries.length === 1) {
+          entered()
+          await saved
+        }
       },
     })
     await saving

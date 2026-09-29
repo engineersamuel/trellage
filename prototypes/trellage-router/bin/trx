@@ -870,6 +870,69 @@ require_source_runtime() {
   trellage_require_source_runtime "$source_workspace" \
     || die 'source runtime is not ready; reinstall trx or prepare worktree dependencies explicitly'
 }
+skip_optional_jev_key() {
+  printf 'trx: Jev decisions stay off: %s\n' "$1" >&2
+}
+
+# Load the optional TYPESAFE_API_KEY from the Trellage Varlock environment.
+# An existing process value wins. The key goes to the launcher under a private
+# name, which the launcher removes from its environment, so agents launched from
+# the guide do not inherit it. A missing key is a silent no-op. A resolver or
+# Varlock failure never loads the key and never stops the guide.
+load_optional_jev_api_key() {
+  local resolver="$source_workspace/scripts/native-environment.ts"
+  local metadata environment_path dependency_directory varlock key
+  unset _TRELLAGE_JEV_API_KEY
+  [[ -z "${TYPESAFE_API_KEY-}" ]] || return 0
+  [[ -f "$resolver" && ! -L "$resolver" ]] || {
+    skip_optional_jev_key "environment resolver is missing or unsafe: $resolver"
+    return 0
+  }
+  metadata="$("${trellage_bun[@]}" "$resolver")" || {
+    skip_optional_jev_key 'environment resolution failed'
+    return 0
+  }
+  jq -e '
+    type == "object"
+    and (.enabled | type == "boolean")
+    and (.source_present | type == "boolean")
+    and (.path | type == "string" and length > 0)
+  ' <<<"$metadata" >/dev/null 2>&1 || {
+    skip_optional_jev_key 'environment resolver returned invalid metadata'
+    return 0
+  }
+  [[ "$(jq -r '.enabled and .source_present' <<<"$metadata")" == true ]] || return 0
+  environment_path="$(jq -r '.path' <<<"$metadata")"
+  dependency_directory="$("${trellage_bun[@]}" \
+    "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" \
+    dependency "$source_workspace" varlock)" || {
+    skip_optional_jev_key 'Varlock dependency is not ready'
+    return 0
+  }
+  varlock="$dependency_directory/bin/cli.js"
+  [[ -f "$varlock" && ! -L "$varlock" && -r "$varlock" ]] || {
+    skip_optional_jev_key "Varlock CLI is missing or unsafe: $varlock"
+    return 0
+  }
+  command -v node >/dev/null 2>&1 || {
+    skip_optional_jev_key 'required command not found: node'
+    return 0
+  }
+  # Varlock cannot wrap the guide: it does not pass fd 3 and it redacts piped
+  # output. Resolve only this key in a short child, then hand it over.
+  key="$(
+    unset TYPESAFE_API_KEY
+    node "$varlock" run --no-redact-stdout --path "$environment_path" --inject vars \
+      --filter TYPESAFE_API_KEY -- /bin/sh -c 'printf %s "${TYPESAFE_API_KEY-}"' 2>/dev/null
+  )" || {
+    skip_optional_jev_key "Varlock could not load $environment_path; run varlock load --path $environment_path"
+    return 0
+  }
+  [[ -n "$key" ]] || return 0
+  _TRELLAGE_JEV_API_KEY="$key"
+  export _TRELLAGE_JEV_API_KEY
+}
+
 picker_path="$source_workspace/packages/trellage-launcher/src/cli.tsx"
 floating_skills_manager="$source_workspace/scripts/floating-skills.ts"
 floating_skills_catalog="$source_workspace/skills.json"
@@ -1118,6 +1181,7 @@ fi
 
 if [[ "$mode" == guide ]]; then
   require_source_runtime
+  load_optional_jev_api_key
   [[ -f "$picker_path" && ! -L "$picker_path" ]] \
     || die 'Ink launcher is missing or unsafe'
   [[ -d "$guide_root" && ! -L "$guide_root" ]] \
@@ -1165,6 +1229,7 @@ fi
 if [[ "$mode" == admin ]]; then
   require_source_runtime
   [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
+  load_optional_jev_api_key
   [[ -f "$picker_path" && ! -L "$picker_path" ]] \
     || die 'Ink launcher is missing or unsafe'
   [[ -d "$guide_root" && ! -L "$guide_root" ]] \

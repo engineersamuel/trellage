@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { ModelInfo } from "@github/copilot-sdk"
 import { GuideModelCleanupError, GuideModelResponseError, type GuideModelClient, type GuideModelSession } from "../src/copilot-guide-provider.ts"
 import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.ts"
+import type { JevSystemOneClient } from "../src/jev-decisions.ts"
 import { buildDiagnosticCommand } from "../src/admin-launch.ts"
 import { beta, instanceRows } from "./admin-firstmate-fixtures.ts"
 
@@ -70,6 +71,76 @@ const buildProvider = (client: FakeClient): DoctorFailureDiagnosisProvider =>
   new DoctorFailureDiagnosisProvider({ clientFactory: () => client })
 
 describe("DoctorFailureDiagnosisProvider", () => {
+  it("uses a high-confidence Jev category and does not start the generation model", async () => {
+    let copilotStarted = false
+    const jev: JevSystemOneClient = {
+      systemOne: async () => ({
+        answers: {
+          decision: {
+            type: "choice",
+            choice: "network",
+            confidence: 0.98,
+            probabilities: {
+              authentication: 0.01,
+              dependency: 0.01,
+              network: 0.98,
+              permission: 0,
+              configuration: 0,
+              unknown: 0,
+            },
+          },
+        },
+      }),
+    }
+    const provider = new DoctorFailureDiagnosisProvider({
+      jev: { cwd: "/tmp", client: jev },
+      clientFactory: () => {
+        copilotStarted = true
+        return new FakeClient([okContent])
+      },
+    })
+    const result = await provider.diagnose({
+      ref: "native:cpx/hve",
+      name: "hve",
+      capturedOutput: "connect ECONNREFUSED",
+    })
+    expect(result).toMatchObject({
+      summary: "Jev classified the hve doctor output as a network or remote-service failure.",
+      confidence: "high",
+    })
+    expect(result.suggestedFix).toContain("No network action was taken.")
+    expect(copilotStarted).toBe(false)
+  })
+
+  it("uses the generation model when Jev is unsure or selects unknown", async () => {
+    const client = new FakeClient([okContent])
+    const jev: JevSystemOneClient = {
+      systemOne: async () => ({
+        answers: {
+          decision: {
+            type: "choice",
+            choice: "unknown",
+            confidence: 0.8,
+            probabilities: {
+              authentication: 0,
+              dependency: 0,
+              network: 0,
+              permission: 0,
+              configuration: 0,
+              unknown: 1,
+            },
+          },
+        },
+      }),
+    }
+    const result = await new DoctorFailureDiagnosisProvider({
+      jev: { cwd: "/tmp", client: jev },
+      clientFactory: () => client,
+    }).diagnose({ ref: "native:cpx/hve", name: "hve", capturedOutput: "unrecognized" })
+    expect(result.summary).toBe("restart the daemon")
+    expect(client.session.capturedPrompts).toHaveLength(1)
+  })
+
   it("keeps the instance UUID and read-only selector in an explicitly requested diagnosis", async () => {
     const client = new FakeClient([okContent])
     const row = instanceRows()[2]!

@@ -517,6 +517,7 @@ EOF
 
 export HOME="$fixture_home"
 export PATH="$fixture_bin:/usr/bin:/bin"
+unset XDG_CONFIG_HOME TRELLAGE_CONFIG TRELLAGE_ENVIRONMENT TYPESAFE_API_KEY _TRELLAGE_JEV_API_KEY
 
 "$prototype_root/install.sh" >"$fixture_root/install.out"
 [[ -L "$fixture_bin/trx" ]] || fail 'installer did not publish trx command symlink'
@@ -1012,6 +1013,10 @@ if (process.argv[2] === "enrich-native-list") {
       cachePath: process.env.TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE,
     },
     args: process.argv.slice(5),
+    jevKey: {
+      privateValue: process.env._TRELLAGE_JEV_API_KEY ?? null,
+      publicValue: process.env.TYPESAFE_API_KEY ?? null,
+    },
     catalog: JSON.parse(readFileSync(3, "utf8")),
   })}\n`)
 } else if (process.argv[2] === "admin") {
@@ -1144,6 +1149,50 @@ for conflicting_flag in --next-steps --next-steps=value --json --stdin --intent=
   [[ "$status" -ne 0 ]] || fail "guide next-steps accepted conflicting flag: $conflicting_flag"
   assert_contains '--next-steps' "$fixture_root/guide-next-steps-invalid.err"
 done
+
+# Optional Jev key: Varlock loads TYPESAFE_API_KEY from the Trellage config
+# directory and hands it to the launcher under a private name.
+jq -e '.jevKey == {"privateValue": null, "publicValue": null}' \
+  "$fixture_root/guide-no-args.json" >/dev/null \
+  || fail 'guide loaded a Jev key without a Trellage environment source'
+jev_environment="$fixture_home/.config/trellage"
+mkdir -p "$jev_environment"
+chmod 0700 "$fixture_home/.config" "$jev_environment"
+printf '# @sensitive\nOTHER_FIXTURE_KEY=\n' >"$jev_environment/.env.schema"
+chmod 0644 "$jev_environment/.env.schema"
+printf 'OTHER_FIXTURE_KEY=other\nTYPESAFE_API_KEY=fixture-jev-key\n' >"$jev_environment/.env.local"
+chmod 0600 "$jev_environment/.env.local"
+"$fixture_bin/trx" guide >"$fixture_root/guide-jev-key.json" 2>"$fixture_root/guide-jev-key.err" \
+  || fail 'guide failed with an optional Jev key source'
+jq -e '.jevKey == {"privateValue": "fixture-jev-key", "publicValue": null}' \
+  "$fixture_root/guide-jev-key.json" >/dev/null \
+  || fail 'guide did not hand the Varlock Jev key privately to the launcher'
+[[ ! -s "$fixture_root/guide-jev-key.err" ]] || fail 'guide Jev key loading wrote diagnostics'
+grep -Fq 'other' "$fixture_root/guide-jev-key.json" \
+  && fail 'guide exposed an unrelated Varlock value'
+TYPESAFE_API_KEY=ambient-jev-key "$fixture_bin/trx" guide >"$fixture_root/guide-jev-ambient.json" \
+  || fail 'guide failed with an ambient Jev key'
+jq -e '.jevKey == {"privateValue": null, "publicValue": "ambient-jev-key"}' \
+  "$fixture_root/guide-jev-ambient.json" >/dev/null \
+  || fail 'guide replaced an ambient Jev key with the Varlock value'
+TRELLAGE_ENVIRONMENT=off "$fixture_bin/trx" guide >"$fixture_root/guide-jev-off.json" \
+  || fail 'guide failed with the Trellage environment disabled'
+jq -e '.jevKey.privateValue == null' "$fixture_root/guide-jev-off.json" >/dev/null \
+  || fail 'guide loaded a Jev key with the Trellage environment disabled'
+printf 'OTHER_FIXTURE_KEY=other\n' >"$jev_environment/.env.local"
+"$fixture_bin/trx" guide >"$fixture_root/guide-jev-absent.json" 2>"$fixture_root/guide-jev-absent.err" \
+  || fail 'guide failed without an optional Jev key'
+jq -e '.jevKey.privateValue == null' "$fixture_root/guide-jev-absent.json" >/dev/null \
+  || fail 'guide invented a missing Jev key'
+[[ ! -s "$fixture_root/guide-jev-absent.err" ]] || fail 'guide reported a missing optional Jev key'
+printf 'TYPESAFE_API_KEY=unsafe-jev-key\n' >"$jev_environment/.env.local"
+chmod 0644 "$jev_environment/.env.local"
+"$fixture_bin/trx" guide >"$fixture_root/guide-jev-unsafe.json" 2>"$fixture_root/guide-jev-unsafe.err" \
+  || fail 'guide stopped for an unsafe optional Jev key source'
+jq -e '.jevKey.privateValue == null' "$fixture_root/guide-jev-unsafe.json" >/dev/null \
+  || fail 'guide loaded a Jev key from an unsafe environment file'
+assert_contains 'Jev decisions stay off' "$fixture_root/guide-jev-unsafe.err"
+rm -rf -- "$fixture_home/.config"
 
 status=0
 "$fixture_bin/trx" admin extra-arg >"$fixture_root/admin-invalid.out" \

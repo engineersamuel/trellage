@@ -1180,6 +1180,36 @@ describe("runGuideGenerate", () => {
     }
   })
 
+  it("skips Prompt Master when the Jev gate confirms all three candidates need no material change", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-jev-optimize-gate-"))
+    try {
+      await writeGuideFixtures(tmpRoot)
+      const provider = new FakeGuideProvider({ candidates: [] }, genCandidates())
+      const shouldSkipOptimize = async (input: GuideOptimizeInput): Promise<boolean> => {
+        expect(input.candidates).toHaveLength(3)
+        return true
+      }
+      const result = await runGuideGenerate(
+        provider,
+        buildCatalog(tmpRoot),
+        tmpRoot,
+        {
+          intent: "Add a parser",
+          profileRef: "sandbox:prime-agent",
+          workflowId: "plan",
+          model: "model-a",
+          effort: GuideEffort.Medium,
+        },
+        undefined,
+        { shouldSkipOptimize },
+      )
+      expect(result.candidates).toHaveLength(3)
+      expect(provider.optimizeCalls).toEqual([])
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
   it("selects the matching workflow without repeating the model match phase", async () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-"))
     try {

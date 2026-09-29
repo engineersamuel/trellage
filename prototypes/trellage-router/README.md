@@ -459,6 +459,21 @@ lock. `doctor` remains the full runtime health diagnostic.
 the permissions and safety behavior documented by each launcher. Use only
 trusted repositories, profiles, plugins, and arguments.
 
+### Optional Jev key
+
+`trx guide` and `trx admin` can load an optional `TYPESAFE_API_KEY` for Jev
+decisions from the Trellage Varlock environment (by default
+`~/.config/trellage`). Put the key in a mode-`0600` `.env.local` file there.
+You can declare it in `.env.schema` as `# @sensitive @optional`. The router
+resolves only this key and hands it to the launcher under a private name. The
+launcher removes that name from its environment, so agents that the guide
+launches do not inherit the key. This also resolves Varlock function values,
+such as encrypted secrets. A `TYPESAFE_API_KEY` in the process environment or
+the worktree `.env` wins. A missing key is a silent no-op. An unsafe source or a Varlock
+failure prints `Jev decisions stay off` and the guide continues without Jev.
+`TRELLAGE_ENVIRONMENT=off` disables the loading. See
+[the Guide UI integration notes](../../docs/guide-ui-integration.md#jev-decisions-and-llm-cost-gates).
+
 ### Package feeds (Microsoft-managed hosts)
 
 Native launchers inherit the host package-manager configuration. On

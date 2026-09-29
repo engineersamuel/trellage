@@ -24,6 +24,8 @@ import { guideIntentMaximumLength } from "./guide-api.ts"
 import type { CombinedGuideCatalog } from "./guide-catalog.ts"
 import { CommandRunnerError, type CommandRunner } from "./guide-launch.ts"
 import { guideEnrichPackMaximumLength, type GuideProvider } from "./guide-provider.ts"
+import { jevIntentNeedsRepositoryContext } from "./jev-guide-gates.ts"
+import type { JevDecisionOptions } from "./jev-decisions.ts"
 
 export enum GuideAugmentKind {
   Research = "research",
@@ -35,6 +37,7 @@ export enum GuideAugmentKind {
 export enum GuideAugmentPhase {
   RunningResearch = "running-research",
   ReadingNote = "reading-note",
+  CheckingRepositoryNeed = "checking-repository-need",
   PackingRepository = "packing-repository",
   RewritingIntent = "rewriting-intent",
   GoalInterview = "goal-interview",
@@ -326,9 +329,22 @@ export const runCodebaseAugment = async (
   intent: string,
   provider: GuideProvider,
   context: GuideAugmentContext,
+  options: { readonly jev?: JevDecisionOptions } = {},
 ): Promise<string> => {
   if (provider.enrich === undefined) {
     throw new GuideAugmentError("this guide provider does not support codebase augmentation")
+  }
+  context.onPhase(GuideAugmentPhase.CheckingRepositoryNeed)
+  if (
+    !(await jevIntentNeedsRepositoryContext(
+      intent,
+      options.jev ?? { cwd: context.cwd },
+      context.onActivity,
+      context.signal,
+    ))
+  ) {
+    context.onActivity("Jev found that the request is clear without repository context; keeping the original intent.")
+    return intent
   }
 
   // Outside the repository, so the pack is never mistaken for a tracked file.

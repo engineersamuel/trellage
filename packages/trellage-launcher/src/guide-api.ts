@@ -83,6 +83,7 @@ import {
   type GuideMatchExecution,
   type GuideMatchInput,
   type GuideMatchResult,
+  type GuideOptimizeInput,
   type GuideProvider,
 } from "./guide-provider.ts"
 export type { GuideMatchAdapter, GuideMatcherFallback, GuideMatchExecution } from "./guide-provider.ts"
@@ -1290,6 +1291,9 @@ export const runGuideGenerate = async (
   guideRoot: string,
   request: GuideGenerateRequest,
   cache?: GuideArtifactCache,
+  options: {
+    readonly shouldSkipOptimize?: (input: GuideOptimizeInput) => Promise<boolean>
+  } = {},
 ): Promise<GuideGenerationResponse> => {
   const entry = findFullCatalogEntry(catalog, request.profileRef)
   if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${request.profileRef}`)
@@ -1340,14 +1344,18 @@ export const runGuideGenerate = async (
       }
       throw cause
     }
-    const optimized = validateGuideOptimizeResult(await provider.optimize({
+    const optimizeInput: GuideOptimizeInput = {
       targetTool,
       profileRef: request.profileRef,
       candidates: bodyCandidates,
       ...prepared.context,
       bodyBudget: prepared.bodyBudget,
       ...(fixedFrame === undefined ? {} : { fixedFrame }),
-    }), 3)
+    }
+    const skipOptimize = request.goal === undefined && (await options.shouldSkipOptimize?.(optimizeInput)) === true
+    const optimized = skipOptimize
+      ? { candidates: bodyCandidates }
+      : validateGuideOptimizeResult(await provider.optimize(optimizeInput), 3)
     const [bodyFirst, bodySecond, bodyThird] = bodyCandidates
     const [optimizedFirst, optimizedSecond, optimizedThird] = assertTriple(
       optimized.candidates,

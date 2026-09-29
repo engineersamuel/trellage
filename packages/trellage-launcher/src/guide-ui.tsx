@@ -117,7 +117,8 @@ import {
   type PublicGuideCommand,
 } from "./guide-api.ts"
 import type { GuideArtifactCache } from "./guide-match-cache.ts"
-import type { GuideGenerateCandidate, GuideProvider } from "./guide-provider.ts"
+import type { GuideGenerateCandidate, GuideOptimizeInput, GuideProvider } from "./guide-provider.ts"
+import { jevShouldSkipPromptOptimization } from "./jev-guide-gates.ts"
 import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.ts"
 import {
   GuideCandidatePromptCollisionError,
@@ -1279,6 +1280,7 @@ const AugmentActivity = ({
 const augmentPhaseLabels: Readonly<Record<GuideAugmentPhase, string>> = {
   [GuideAugmentPhase.RunningResearch]: "Running HVE Core research",
   [GuideAugmentPhase.ReadingNote]: "Reading the research note",
+  [GuideAugmentPhase.CheckingRepositoryNeed]: "Checking whether repository context is needed",
   [GuideAugmentPhase.PackingRepository]: "Packing this repository with repomix",
   [GuideAugmentPhase.RewritingIntent]: "Rewriting the prompt against the pack",
   [GuideAugmentPhase.GoalInterview]: "Developing your goal",
@@ -3760,6 +3762,7 @@ export const runGuideGenerationStep = async (
   onProgress?: (phase: GuideGenerationPhase) => void,
   cache?: GuideArtifactCache,
   contextOrGoal: GuideTaskContext | PreparedGuideGoal = {},
+  shouldSkipOptimize?: (input: GuideOptimizeInput) => Promise<boolean>,
 ): Promise<GuideGenerationStepResult> => {
   const goal = "fingerprint" in contextOrGoal ? contextOrGoal : undefined
   const context = "fingerprint" in contextOrGoal ? {} : contextOrGoal
@@ -3819,15 +3822,17 @@ export const runGuideGenerationStep = async (
       ],
       GuideCandidatePromptStage.GeneratedBodyNormalization,
     )
-    onProgress?.(GuideGenerationPhase.OptimizingCandidates)
-    const optimized = await provider.optimize({
+    const optimizeInput: GuideOptimizeInput = {
       targetTool,
       profileRef: recommendation.profileRef,
       candidates: bodyCandidates,
       ...prepared.context,
       bodyBudget: prepared.bodyBudget,
       ...(fixedFrame === undefined ? {} : { fixedFrame }),
-    })
+    }
+    const skipOptimization = goal === undefined && (await shouldSkipOptimize?.(optimizeInput)) === true
+    if (!skipOptimization) onProgress?.(GuideGenerationPhase.OptimizingCandidates)
+    const optimized = skipOptimization ? { candidates: bodyCandidates } : await provider.optimize(optimizeInput)
     const [optimizedFirst, optimizedSecond, optimizedThird] = optimized.candidates
     if (optimizedFirst === undefined || optimizedSecond === undefined || optimizedThird === undefined) {
       throw new Error("Prompt Master must return exactly three prompt candidates")
@@ -3901,6 +3906,7 @@ export const runGuideRefinementStep = async (
   feedback: string,
   cache?: GuideArtifactCache,
   contextOrGoal: GuideTaskContext | PreparedGuideGoal = {},
+  shouldSkipOptimize?: (input: GuideOptimizeInput) => Promise<boolean>,
 ): Promise<GuideGenerateCandidate> => {
   const goal = "fingerprint" in contextOrGoal ? contextOrGoal : undefined
   const context = "fingerprint" in contextOrGoal ? {} : contextOrGoal
@@ -3951,14 +3957,16 @@ export const runGuideRefinementStep = async (
       bodyCandidate,
       refined.candidate,
     )
-    const optimized = await provider.optimize({
+    const optimizeInput: GuideOptimizeInput = {
       targetTool,
       profileRef: recommendation.profileRef,
       candidates: [refinedBodyCandidate],
       ...prepared.context,
       bodyBudget: prepared.bodyBudget,
       ...(fixedFrame === undefined ? {} : { fixedFrame }),
-    })
+    }
+    const skipOptimization = goal === undefined && (await shouldSkipOptimize?.(optimizeInput)) === true
+    const optimized = skipOptimization ? { candidates: [refinedBodyCandidate] } : await provider.optimize(optimizeInput)
     const optimizedCandidate = optimized.candidates[0]
     if (optimizedCandidate === undefined) throw new Error("Prompt Master must return one refined prompt candidate")
     const renderedCandidate = renderWorkflowBodyCandidate(
@@ -6283,6 +6291,7 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
           },
           props.cache,
           state.selectedGoal ?? guideUiTaskContext(state),
+          (input) => jevShouldSkipPromptOptimization(input, intent, { cwd: props.cwd }),
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.GenerateSucceeded, candidates })
       } catch (error) {
@@ -6326,6 +6335,7 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
           feedback,
           props.cache,
           state.selectedGoal ?? guideUiTaskContext(state),
+          (input) => jevShouldSkipPromptOptimization(input, intent, { cwd: props.cwd }),
         )
         if (!cancelled) dispatch({ type: GuideUiActionType.RefineSucceeded, candidate: refinedCandidate })
       } catch (error) {
