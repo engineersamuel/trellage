@@ -110,17 +110,21 @@ async function prepareDependencies(root: string, alwaysInstall: boolean): Promis
 }
 
 async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv, installHome: string): Promise<void> {
-  let registry = env.npm_config_registry ?? env.NPM_CONFIG_REGISTRY
+  // An empty setting or empty npm output means "no override"; keep the lockfile's registry URLs.
+  const configured = (value: string | undefined): string | undefined => value?.trim() || undefined
+  let registry = configured(env.npm_config_registry) ?? configured(env.NPM_CONFIG_REGISTRY)
   if (registry === undefined) {
     try {
-      registry = (
-        await promisify(execFile)("npm", ["config", "get", "registry", "--workspaces=false"], {
-          cwd: root,
-          env,
-          signal: cancellation.signal,
-          timeout: 10_000,
-        })
-      ).stdout.trim()
+      registry = configured(
+        (
+          await promisify(execFile)("npm", ["config", "get", "registry", "--workspaces=false"], {
+            cwd: root,
+            env,
+            signal: cancellation.signal,
+            timeout: 10_000,
+          })
+        ).stdout,
+      )
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
     }

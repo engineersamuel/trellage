@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises"
+import { lstat, readFile } from "node:fs/promises"
 import path from "node:path"
 import { parseEnv } from "node:util"
 import {
@@ -11,6 +11,8 @@ import {
 } from "@typesafe-ai/sdk"
 import {
   assertGuideMatchInput,
+  GuideMatcherFallbackReason,
+  GuideMatcherUnavailableError,
   validateGuideMatchResult,
   type GuideMatchAdapter,
   type GuideMatchInput,
@@ -54,14 +56,41 @@ const loadDefaultClient = (apiKey: string): JevSystemOneClient =>
     logLevel: "off",
   })
 
-const envKey = async (cwd: string, env: Readonly<Record<string, string | undefined>>): Promise<string | undefined> => {
-  if (env.TYPESAFE_API_KEY?.trim()) return env.TYPESAFE_API_KEY
+type Environment = Readonly<Record<string, string | undefined>>
+
+const fileKey = async (file: string, privateFile: boolean): Promise<string | undefined> => {
   try {
-    const value = parseEnv(await readFile(path.join(cwd, ".env"), "utf8")).TYPESAFE_API_KEY
-    return value?.trim() ? value : undefined
+    if (privateFile) {
+      const stats = await lstat(file)
+      // Same guard as the Varlock user environment: private regular files only.
+      if (!stats.isFile() || (stats.mode & 0o077) !== 0 || stats.uid !== process.getuid?.()) return undefined
+    }
+    const value = parseEnv(await readFile(file, "utf8")).TYPESAFE_API_KEY?.trim()
+    // Varlock function values such as encrypted secrets need Varlock itself; skip them.
+    return value && !/^[A-Za-z_]\w*\(/u.test(value) ? value : undefined
   } catch {
     return undefined
   }
+}
+
+/** Trellage user environment directory shared with Varlock-enabled launchers. */
+export const userEnvironmentDirectory = (env: Environment): string | undefined => {
+  if (env.TRELLAGE_ENVIRONMENT === "off") return undefined
+  if (env.XDG_CONFIG_HOME?.trim()) return path.resolve(env.XDG_CONFIG_HOME, "trellage")
+  return env.HOME?.trim() ? path.join(env.HOME, ".config", "trellage") : undefined
+}
+
+const envKey = async (cwd: string, env: Environment): Promise<string | undefined> => {
+  if (env.TYPESAFE_API_KEY?.trim()) return env.TYPESAFE_API_KEY
+  const local = await fileKey(path.join(cwd, ".env"), false)
+  if (local !== undefined) return local
+  const directory = userEnvironmentDirectory(env)
+  if (directory === undefined) return undefined
+  for (const name of [".env.local", ".env"]) {
+    const value = await fileKey(path.join(directory, name), true)
+    if (value !== undefined) return value
+  }
+  return undefined
 }
 
 const object = (value: unknown): Record<string, unknown> => {
@@ -195,7 +224,9 @@ export class JevGuideMatcher implements GuideMatchAdapter {
   private async execute(input: GuideMatchInput, signal: AbortSignal): Promise<GuideMatchResult> {
     const key = await envKey(this.options.cwd, this.options.env ?? process.env)
     if (signal.aborted) throw abortError()
-    if (this.options.client === undefined && key === undefined) throw new Error("Jev credentials unavailable")
+    if (this.options.client === undefined && key === undefined) {
+      throw new GuideMatcherUnavailableError(GuideMatcherFallbackReason.MissingCredentials)
+    }
     const client = this.options.client ?? (this.options.clientFactory ?? loadDefaultClient)(key!)
     const questions = buildQuestions(input)
     const objective =
@@ -214,8 +245,18 @@ export class JevGuideMatcher implements GuideMatchAdapter {
       },
       { timeout: ATTEMPT_MS, retry: { maxRetries: 0 }, signal },
     )
-    const answers = validateAnswers(raw, questions)
-    return resultFromSelection(input, selectEntries(input, rankedEntries(input, answers), answers))
+    const answers = (() => {
+      try {
+        return validateAnswers(raw, questions)
+      } catch {
+        throw new GuideMatcherUnavailableError(GuideMatcherFallbackReason.InvalidResponse)
+      }
+    })()
+    try {
+      return resultFromSelection(input, selectEntries(input, rankedEntries(input, answers), answers))
+    } catch {
+      throw new GuideMatcherUnavailableError(GuideMatcherFallbackReason.InvalidResponse)
+    }
   }
 
   async match(input: GuideMatchInput, signal?: AbortSignal): Promise<GuideMatchResult> {
@@ -232,15 +273,17 @@ export class JevGuideMatcher implements GuideMatchAdapter {
     }
     const timer = setTimeout(() => {
       controller.abort()
-      rejectInterrupted(new Error("Jev match unavailable"))
+      rejectInterrupted(new GuideMatcherUnavailableError(GuideMatcherFallbackReason.Timeout))
     }, ATTEMPT_MS)
     signal?.addEventListener("abort", cancel, { once: true })
     try {
       return await Promise.race([this.execute(input, controller.signal), interrupted])
-    } catch {
+    } catch (error) {
       if (signal?.aborted) throw abortError()
-      // SDK errors may carry request data. Only this host-owned message escapes.
-      throw new Error("Jev match unavailable")
+      // SDK errors may carry request data. Only this host-owned error escapes.
+      throw error instanceof GuideMatcherUnavailableError
+        ? error
+        : new GuideMatcherUnavailableError(GuideMatcherFallbackReason.RequestFailed)
     } finally {
       clearTimeout(timer)
       signal?.removeEventListener("abort", cancel)

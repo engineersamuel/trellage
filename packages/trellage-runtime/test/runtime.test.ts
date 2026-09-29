@@ -385,6 +385,26 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
   expect(readdirSync(home), JSON.stringify(readdirSync(home, { recursive: true }))).toEqual(before)
 })
 
+test.each([
+  ["empty npm output", undefined],
+  ["empty environment override", ""],
+])("treats an empty registry as no override (%s)", (_label, override) => {
+  const { root, home, parent } = sourceFixture()
+  const fakeBin = path.join(parent, "fake-bin")
+  write(parent, "fake-bin/npm", ["#!/bin/sh", "set -eu", 'test "$*" = "config get registry --workspaces=false"'].join("\n"))
+  chmodSync(path.join(fakeBin, "npm"), 0o755)
+  const canonical = readFileSync(path.join(root, "bun.lock"), "utf8")
+  const result = run("prepare", root, undefined, {
+    HOME: home,
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    npm_config_registry: override,
+    NPM_CONFIG_REGISTRY: override,
+  })
+  expect(result.status, result.stderr).toBe(0)
+  expect(result.stderr).not.toContain("Invalid URL")
+  expect(readFileSync(path.join(root, "bun.lock"), "utf8")).toBe(canonical)
+})
+
 test("parallel directory inventory preserves validation and rejects escaping links", async () => {
   const { root } = sourceFixture()
   const prepared = run("prepare", root)

@@ -69,18 +69,22 @@ import {
 import type { GuideArtifactCache } from "./guide-match-cache.ts"
 import {
   assertGuideMatchInput,
+  GuideMatcherFallbackReason,
+  GuideMatcherUnavailableError,
   validateGuideGenerateResult,
   validateGuideMatchResult,
   validateGuideOptimizeResult,
   type GuideGenerateCandidate,
   type GuideMatchAdapter,
   type GuideMatchCandidate,
+  type GuideMatcherFallback,
   type GuideMatchExecution,
   type GuideMatchInput,
   type GuideMatchResult,
   type GuideProvider,
 } from "./guide-provider.ts"
-export type { GuideMatchAdapter, GuideMatchExecution } from "./guide-provider.ts"
+export type { GuideMatchAdapter, GuideMatcherFallback, GuideMatchExecution } from "./guide-provider.ts"
+export { GuideMatcherFallbackReason } from "./guide-provider.ts"
 import { loadSelectedGuide } from "./guide-selected.ts"
 import { exactKeys, fail, GuideValidationError, literal, record, text } from "./guide-text.ts"
 import {
@@ -663,6 +667,8 @@ export interface GuideMatchResponse {
   readonly effort: GuideEffort
   readonly recommendations: ReadonlyArray<GuideRecommendation>
   readonly execution?: GuideMatchExecution
+  /** Present when the configured fast matcher was skipped and Copilot matched instead. */
+  readonly fallback?: GuideMatcherFallback
 }
 
 export interface GuideMatchRequest {
@@ -677,7 +683,11 @@ export interface GuideMatchOptions {
   /** Refreshes runtime capability fields after matching and before enrichment. */
   readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CombinedGuideCatalog>
   readonly signal?: AbortSignal
-  readonly onAttempt?: (attempt: { readonly execution: GuideMatchExecution; readonly profileCount: number }) => void
+  readonly onAttempt?: (attempt: {
+    readonly execution: GuideMatchExecution
+    readonly profileCount: number
+    readonly fallback?: GuideMatcherFallback
+  }) => void
 }
 
 interface PreparedMatchInputs {
@@ -734,22 +744,30 @@ const aborted = (signal: AbortSignal | undefined): void => {
 const cancellationError = (error: unknown, signal: AbortSignal | undefined): boolean =>
   signal?.aborted === true || (error instanceof Error && (error.name === "AbortError" || error.name === "CanceledError"))
 
+const matcherFallbackReason = (error: unknown): GuideMatcherFallbackReason => {
+  if (error instanceof GuideMatcherUnavailableError) return error.reason
+  return error instanceof GuideServiceError
+    ? GuideMatcherFallbackReason.InvalidResponse
+    : GuideMatcherFallbackReason.RequestFailed
+}
+
 const executeMatch = async (
   provider: GuideProvider,
   request: GuideMatchRequest,
   inputs: PreparedMatchInputs,
   cache: GuideArtifactCache | undefined,
   options: GuideMatchOptions | undefined,
-): Promise<{ result: GuideMatchResult; execution: GuideMatchExecution }> => {
+): Promise<{ result: GuideMatchResult; execution: GuideMatchExecution; fallback?: GuideMatcherFallback }> => {
   const signal = options?.signal
   const attempt = async (
     input: GuideMatchInput,
     execution: GuideMatchExecution,
     revision: string,
     match: () => Promise<GuideMatchResult>,
+    fallback?: GuideMatcherFallback,
   ) => {
     aborted(signal)
-    options?.onAttempt?.({ execution, profileCount: input.entries.length })
+    options?.onAttempt?.({ execution, profileCount: input.entries.length, ...(fallback === undefined ? {} : { fallback }) })
     const validate = matchValidator(input, request.goal)
     const produce = async () => {
       aborted(signal)
@@ -762,19 +780,27 @@ const executeMatch = async (
       ...(inputs.goalFraming === undefined ? {} : { goalFraming: inputs.goalFraming }),
     }, produce))
     aborted(signal)
-    return { result: validate(result), execution }
+    return { result: validate(result), execution, ...(fallback === undefined ? {} : { fallback }) }
   }
   aborted(signal)
   const matcher = options?.matcher
+  let fallback: GuideMatcherFallback | undefined
   if (matcher !== undefined) {
     try {
       return await attempt(inputs.matcher, matcher.execution, matcher.revision, () => matcher.match(inputs.matcher, signal))
     } catch (error) {
       if (cancellationError(error, signal)) throw error
+      fallback = { backend: "jev", reason: matcherFallbackReason(error) }
     }
   }
   const legacy = inputs.legacy()
-  return attempt(legacy, { backend: "copilot", model: request.model, effort: request.effort }, "copilot-v1", () => provider.match(legacy))
+  return attempt(
+    legacy,
+    { backend: "copilot", model: request.model, effort: request.effort },
+    "copilot-v1",
+    () => provider.match(legacy),
+    fallback,
+  )
 }
 
 const enrichRecommendation = (
@@ -829,7 +855,7 @@ export const runGuideMatch = async (
 ): Promise<GuideMatchResponse> => {
   const inputs = prepareMatchInputs(catalog, request)
   const executed = await executeMatch(provider, request, inputs, cache, options)
-  const { result, execution: actualExecution } = executed
+  const { result, execution: actualExecution, fallback } = executed
   aborted(options?.signal)
   const effectiveCatalog = options?.resolveCatalog === undefined
     ? catalog
@@ -850,6 +876,7 @@ export const runGuideMatch = async (
     model: request.model,
     effort: request.effort,
     ...(actualExecution === undefined ? {} : { execution: actualExecution }),
+    ...(fallback === undefined ? {} : { fallback }),
     recommendations,
   }
 }
