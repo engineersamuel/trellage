@@ -13,13 +13,68 @@ import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.ts
 import { CopilotGuideProvider } from "./copilot-guide-provider.ts"
 import { GuideArtifactCache } from "./guide-match-cache.ts"
 import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
+import { jevShouldSkipPromptOptimization } from "./jev-guide-gates.ts"
 import { JevGuideMatcher } from "./jev-guide-matcher.ts"
 
 const maximumCatalogBytes = 8 * 1024 * 1024
 
+const guideOptimizeGate = (cwd: string, env: Readonly<Record<string, string | undefined>>, intent: string) => ({
+  shouldSkipOptimize: (input: Parameters<typeof jevShouldSkipPromptOptimization>[0]) =>
+    jevShouldSkipPromptOptimization(input, intent, { cwd, env }),
+})
+
 export interface ResolvedGuideRequest {
   readonly request: GuideServiceRequest
   readonly routing: GuideResolvedModelRouting
+}
+
+const runResolvedGuideJsonRequest = async (
+  options: {
+    readonly catalog: CombinedGuideCatalog
+    readonly guideRoot: string
+    readonly cwd: string
+    readonly env: Readonly<Record<string, string | undefined>>
+    readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CombinedGuideCatalog>
+  },
+  resolved: ResolvedGuideRequest,
+  provider: CopilotGuideProvider,
+  cache: GuideArtifactCache,
+  matcher: JevGuideMatcher,
+): Promise<unknown> => {
+  const request = resolved.request
+  if (request.profile === undefined) {
+    return runGuideMatch(
+      provider,
+      options.catalog,
+      {
+        intent: request.intent,
+        ...resolved.routing.match,
+        ...(request.goal === undefined ? {} : { goal: request.goal }),
+      },
+      cache,
+      {
+        matcher,
+        ...(options.resolveCatalog === undefined ? {} : { resolveCatalog: options.resolveCatalog }),
+      },
+    )
+  }
+  const catalog = options.resolveCatalog === undefined ? options.catalog : await options.resolveCatalog()
+  return runGuideGenerate(
+    provider,
+    catalog,
+    options.guideRoot,
+    {
+      intent: request.intent,
+      ...resolved.routing.generate,
+      profileRef: request.profile,
+      ...(request.goal === undefined ? {} : { goal: request.goal }),
+      ...(request.workflowId === undefined ? {} : { workflowId: request.workflowId }),
+      ...(request.projectTarget === undefined ? {} : { projectTarget: request.projectTarget }),
+      ...(request.originalIntent === undefined ? {} : { originalIntent: request.originalIntent }),
+    },
+    cache,
+    guideOptimizeGate(options.cwd, options.env, request.intent),
+  )
 }
 
 export const readGuideCatalog = (descriptor = 3): CombinedGuideCatalog => {
@@ -89,34 +144,5 @@ export const runGuideJsonCommand = async (options: {
     promptMasterSkillDirectory: options.promptMasterSkillDirectory,
   })
   const matcher = new JevGuideMatcher({ cwd: options.cwd, env: options.env })
-  return resolved.request.profile === undefined
-    ? runGuideMatch(
-        provider,
-        options.catalog,
-        {
-          intent: resolved.request.intent,
-          ...resolved.routing.match,
-          ...(resolved.request.goal === undefined ? {} : { goal: resolved.request.goal }),
-        },
-        cache,
-        {
-          matcher,
-          ...(options.resolveCatalog === undefined ? {} : { resolveCatalog: options.resolveCatalog }),
-        },
-      )
-    : runGuideGenerate(
-        provider,
-        options.resolveCatalog === undefined ? options.catalog : await options.resolveCatalog(),
-        options.guideRoot,
-        {
-          intent: resolved.request.intent,
-          ...resolved.routing.generate,
-          profileRef: resolved.request.profile,
-          ...(resolved.request.goal === undefined ? {} : { goal: resolved.request.goal }),
-          ...(resolved.request.workflowId === undefined ? {} : { workflowId: resolved.request.workflowId }),
-          ...(resolved.request.projectTarget === undefined ? {} : { projectTarget: resolved.request.projectTarget }),
-          ...(resolved.request.originalIntent === undefined ? {} : { originalIntent: resolved.request.originalIntent }),
-        },
-        cache,
-      )
+  return runResolvedGuideJsonRequest(options, resolved, provider, cache, matcher)
 }

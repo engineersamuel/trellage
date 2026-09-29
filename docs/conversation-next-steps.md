@@ -85,6 +85,17 @@ analysis, not merely when the source picker opens.
 Analysis is cancellable. Disclose additional summarization calls when required
 for long conversations.
 
+When `TYPESAFE_API_KEY` is available in the environment or the worktree's
+`.env`, Jev may make a completion check before the final assessment call. It
+only runs for complete history whose filtered recent messages and retained
+summaries fit within 16 KB. A probability of at least 0.995 for "no useful
+follow-up" returns a no-action assessment; otherwise the selected LLM performs
+the normal assessment. Jev does not verify repository state or independently
+prove that reported work is complete. Summarization still uses the selected
+LLM when the history plan requires it. The filtered messages and retained
+summaries in that bounded check are sent to TypeSafe; the API key is not part
+of the request state.
+
 The request policy allows up to 1 MiB of UTF-8 input, including the profile
 catalog and prompt reserves. This is a resource ceiling, not a model context
 window. Before sending, check the selected model's advertised prompt and context

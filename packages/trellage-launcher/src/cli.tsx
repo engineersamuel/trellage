@@ -45,6 +45,7 @@ import { GuideArtifactCache } from "./guide-match-cache.ts"
 import { firstmateLaunchOrigin } from "./guide-firstmate-instance-menu.ts"
 import { resolveGuideCapabilities } from "./guide-capabilities.ts"
 import { JevGuideMatcher } from "./jev-guide-matcher.ts"
+import { adoptPrivateJevApiKey } from "./jev-decisions.ts"
 import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
 import { GuideApp, type GuideUiProps, type GuideUiResult } from "./guide-ui.tsx"
 import { ContinuationApp } from "./continuation-ui.tsx"
@@ -951,6 +952,7 @@ const runContinuationMode = async (
     context,
     socketPath: process.env.HERDR_SOCKET_PATH ?? "",
     initialDraft: draft,
+    jevDecision: { cwd: process.cwd() },
     assessmentProvider: (current) => createCopilotContinuationProvider(resolveContinuationModelRouting(current).match),
     preparationProvider: (current, signal) =>
       new CopilotGuideProvider({
@@ -1079,7 +1081,7 @@ const runAdminMode = async (): Promise<void> => {
   const catalog = readGuideCatalog()
   const runner = createNodeCommandRunner()
   const runManager = new AdminRunManager({ runner })
-  const diagnosisProvider = new DoctorFailureDiagnosisProvider()
+  const diagnosisProvider = new DoctorFailureDiagnosisProvider({ jev: { cwd: process.cwd() } })
   const terminal = openInteractiveTerminalStreams()
   const { input, output } = terminal
   try {
@@ -1184,6 +1186,7 @@ const runRewriteContextMode = async (): Promise<void> => {
 }
 
 export const main = async (): Promise<void> => {
+  adoptPrivateJevApiKey()
   if (process.argv[2] === "rewrite-context") {
     await runRewriteContextMode()
     return

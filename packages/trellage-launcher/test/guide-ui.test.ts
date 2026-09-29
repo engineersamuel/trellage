@@ -1979,7 +1979,10 @@ describe("runGuideMatchingStep", () => {
 
   it("routes matching through an injected adapter and reports its execution and attempted profile count", async () => {
     const catalog = buildCatalog("/tmp-unused")
-    const attempts: Array<{ execution: { backend: "jev" | "copilot"; model: string; effort?: string }; profileCount: number }> = []
+    const attempts: Array<{
+      execution: { backend: "jev" | "copilot"; model: string; effort?: string }
+      profileCount: number
+    }> = []
     const matcher = {
       execution: { backend: "jev" as const, model: "jev-test" },
       revision: "fixture",
@@ -2109,6 +2112,37 @@ describe("runGuideGenerationStep", () => {
         GuideGenerationPhase.ApplyingWorkflow,
         GuideGenerationPhase.OptimizingCandidates,
       ])
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("uses the Jev gate to skip Prompt Master for ordinary interactive generation", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-jev-generate-"))
+    try {
+      const catalog = buildCatalog(tmpRoot)
+      await writeGuideFixtures(tmpRoot)
+      const provider = new FakeGuideProvider()
+      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      let gatedCandidates = 0
+      const result = await runGuideGenerationStep(
+        catalog,
+        tmpRoot,
+        provider,
+        "Review my PR",
+        chosen,
+        undefined,
+        undefined,
+        undefined,
+        {},
+        async (input) => {
+          gatedCandidates = input.candidates.length
+          return true
+        },
+      )
+      expect(result.candidates).toEqual(candidateTriple())
+      expect(gatedCandidates).toBe(3)
+      expect(provider.optimizeCalls).toEqual([])
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
     }

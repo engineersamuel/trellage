@@ -16,6 +16,7 @@ import type { CombinedGuideCatalog } from "../src/guide-catalog.ts"
 import { guideIntentMaximumLength } from "../src/guide-api.ts"
 import type { CommandRunOptions, CommandRunResult, CommandRunner } from "../src/guide-launch.ts"
 import type { GuideEnrichInput, GuideProvider } from "../src/guide-provider.ts"
+import type { JevSystemOneClient } from "../src/jev-decisions.ts"
 
 interface RecordedCall {
   readonly executable: string
@@ -300,6 +301,22 @@ const temporaryPackDirectories = async (): Promise<ReadonlyArray<string>> =>
   (await readdir(os.tmpdir())).filter((entry) => entry.startsWith("trellage-guide-pack-"))
 
 describe("codebase augmentation", () => {
+  it("keeps a clear request unchanged and skips repository packing when Jev is confident", async () => {
+    const runner = new FakeRunner(async () => {
+      throw new Error("repository packing must not run")
+    })
+    const provider = providerWith(async () => ({ intent: "unexpected rewrite" }))
+    const jev: JevSystemOneClient = {
+      systemOne: async () => ({ answers: { decision: { type: "noul", noul: 0.01 } } }),
+    }
+    const result = await runCodebaseAugment("What is TypeSafe?", provider, contextFor(runner), {
+      jev: { cwd: workspace, client: jev },
+    })
+    expect(result).toBe("What is TypeSafe?")
+    expect(runner.calls).toEqual([])
+    expect(phases).toEqual([GuideAugmentPhase.CheckingRepositoryNeed])
+  })
+
   it("packs the repository, enriches the intent and removes the pack", async () => {
     const before = await temporaryPackDirectories()
     let seen: GuideEnrichInput | undefined
@@ -319,7 +336,11 @@ describe("codebase augmentation", () => {
     expect(seen?.pack).toContain("src/guide-ui.tsx")
     expect(runner.calls[0]?.executable).toBe("npx")
     expect(runner.calls[0]?.args).toContain("--compress")
-    expect(phases).toEqual([GuideAugmentPhase.PackingRepository, GuideAugmentPhase.RewritingIntent])
+    expect(phases).toEqual([
+      GuideAugmentPhase.CheckingRepositoryNeed,
+      GuideAugmentPhase.PackingRepository,
+      GuideAugmentPhase.RewritingIntent,
+    ])
     expect(await temporaryPackDirectories()).toEqual(before)
   })
 

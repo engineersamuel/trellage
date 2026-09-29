@@ -22,6 +22,7 @@ import {
 import type { GuideMatchCatalogEntry } from "./guide-catalog.ts"
 import { defaultGuideModelRouting, type GuideReasoningEffort } from "./guide-model-routing.ts"
 import rawPolicy from "./continuation-policy.json" with { type: "json" }
+import { askJevNoul, type JevDecisionOptions } from "./jev-decisions.ts"
 
 export interface ContinuationPolicy {
   readonly schemaVersion: 1
@@ -231,6 +232,7 @@ export interface ContinuationProvider {
 
 export interface AnalyzeConversationOptions {
   readonly signal?: AbortSignal
+  readonly jevDecision?: JevDecisionOptions
   /** Content-free status suitable for terminal progress displays. */
   readonly onProgress?: (message: string) => void
   readonly summaries?: ReadonlyArray<ConversationSummary>
@@ -802,6 +804,56 @@ const executeSummaries = async (
   return plan.roots.map(({ id }) => completed.get(id) ?? fail("missing-assessment-summary"))
 }
 
+const jevNoActionAssessment = async (
+  options: AnalyzeConversationOptions,
+  snapshot: ConversationSnapshot,
+  entries: ReadonlyArray<GuideMatchCatalogEntry>,
+  input: ContinuationAssessmentInput,
+): Promise<ContinuationAssessment | undefined> => {
+  if (options.jevDecision === undefined || !snapshot.coverage.complete) return undefined
+  const state = {
+    messages: [...input.messages, ...input.summaries.map(({ text }) => ({ role: "older-history-summary", text }))],
+  }
+  if (jsonBytes(state) > 16_000) return undefined
+  try {
+    const noFurtherAction = await askJevNoul(
+      options.jevDecision,
+      state,
+      "Does the complete conversation evidence show that the user's task is done and no useful follow-up action or clarification remains?",
+      {
+        true: "The user's requested work is explicitly complete, verified, and no next action is requested or useful.",
+        false: "Work is incomplete, evidence is insufficient, a result is unverified, or any useful follow-up remains.",
+      },
+      options.signal,
+    )
+    if (noFurtherAction < 0.995) return undefined
+    const goal =
+      [...input.messages]
+        .reverse()
+        .find(({ role }) => role === ConversationRole.User)
+        ?.text.slice(0, 4000) ?? "Complete the user's requested work."
+    options.onProgress?.("Jev found clear completion evidence; skipped the full LLM continuation assessment.")
+    return assessmentValue(
+      {
+        schemaVersion: 1,
+        outcome: ContinuationOutcome.NoFurtherAction,
+        goal,
+        reportedProgress: [],
+        unresolvedWork: [],
+        blockers: [],
+        actions: [],
+        questions: [],
+      },
+      snapshot,
+      entries,
+    )
+  } catch (error) {
+    throwIfAborted(options.signal)
+    options.onProgress?.("Jev completion check failed; using the full continuation assessment.")
+    return undefined
+  }
+}
+
 /**
  * No tail-only fallback is possible: the entire plan and its worst-case
  * repair budget are checked before the first call. Errors retain validated
@@ -834,6 +886,8 @@ export const analyzeConversation = async (
     throwIfAborted(options.signal)
     const input = assessmentInput(snapshot, entries, plan.recent, roots)
     if (jsonBytes(input) > bodyBudget) fail("assessment-input-budget")
+    const earlyAssessment = await jevNoActionAssessment(options, snapshot, entries, input)
+    if (earlyAssessment !== undefined) return { assessment: earlyAssessment, summaries }
     options.onProgress?.(
       `Assessing ${snapshot.messages.length} evidence messages: ${plan.recent.length} verbatim, ${roots.length} older-history summaries. Progress is reported, not verified; readiness is not checked.`,
     )

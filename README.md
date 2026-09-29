@@ -1042,8 +1042,10 @@ catalog. The guide reads `TYPESAFE_API_KEY` from, in order: the shell
 environment, `.env` in the guide's working directory, then the Trellage user
 environment directory (`$XDG_CONFIG_HOME/trellage` or `~/.config/trellage`,
 file `.env.local` then `.env`). The user files must be private regular files
-(mode `0600`, not symlinks); plain values only, so Varlock function values
-such as encrypted secrets are skipped. `TRELLAGE_ENVIRONMENT=off` skips the
+(mode `0600`, not symlinks); plain values only. Under `trx guide` and
+`trx admin`, the router first resolves the key through Varlock from that
+directory, so Varlock function values such as encrypted secrets also work
+(see `docs/guide-ui-integration.md`). `TRELLAGE_ENVIRONMENT=off` skips the
 user directory. Only that key is read; the guide does not load other dotenv
 settings into its environment. Jev gets one three-second attempt with no
 retries. Missing credentials, service failures, or invalid responses fall back

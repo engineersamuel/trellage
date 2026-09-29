@@ -49,6 +49,62 @@ The launch fixture also starts a harmless Bun child through redirected parent
 streams. The interactive transport must reconnect all child streams to the
 controlling terminal, so a piped Guide intent does not break HVE's TTY checks.
 
+## Jev decisions and LLM cost gates
+
+When `TYPESAFE_API_KEY` is available in the environment or the worktree's
+`.env`, Jev can make narrow decisions before expensive generation calls:
+
+- Guide checks all three generated prompt candidates in one request. It skips
+  Prompt Master only when every candidate has at most 0.03 probability of
+  needing a material improvement. Approved goals still use the full optimizer.
+- Codebase augmentation checks the intent before it packs the repository. It
+  keeps the original intent and skips both packing and rewriting only when
+  Jev assigns at most 0.02 probability that repository facts are needed.
+- Doctor diagnosis can return a fixed, non-executing category explanation when
+  Jev selects a known cause with at least 0.94 confidence, and the captured
+  output is at most 16 KB. Otherwise it uses the existing diagnosis model.
+- Conversation continuation can skip its final assessment only when the source
+  history is complete, the decision input is at most 16 KB, and Jev assigns at
+  least 0.995 probability to there being no useful follow-up. Long or incomplete
+  histories continue through the full assessment path.
+
+Each decision uses one TypeSafe request with retries disabled. If a decision
+request fails, Guide, augmentation, and diagnosis use their existing LLM path;
+continuation also uses its full assessment path. These checks do not run tools,
+change files, authorize repairs, verify completion, or bypass deterministic
+validation. Jev receives the prompt candidates for the optimization check, the
+intent for the repository-context check, and captured doctor output for the
+diagnosis check. The API key is not included in request state. Track quality,
+fallback rate, cost, and tail latency before changing the thresholds.
+
+Jev matching and these decision gates use one key loader. It reads the key
+from these sources, in this order:
+
+1. `TYPESAFE_API_KEY` in the process environment.
+2. `TYPESAFE_API_KEY` in the worktree's `.env`.
+3. The value that `trx guide` and `trx admin` resolve through Varlock from the
+   Trellage user environment.
+4. A plain value in the private `.env.local`, then `.env`, in
+   `$XDG_CONFIG_HOME/trellage` or `~/.config/trellage`.
+
+Source 3 also resolves Varlock function values, such as encrypted secrets,
+which source 4 skips. Put the key in `~/.config/trellage/.env.local` (or the
+`[environment] path` in `config.toml`) and set that file to mode `0600`. You can
+also declare it in `.env.schema` as an optional sensitive item:
+
+```dotenv
+# @sensitive @optional
+TYPESAFE_API_KEY=
+```
+
+The router resolves only this key and gives it to the launcher under a private
+name. The launcher removes that name from its environment at startup, so agents
+that the guide launches do not inherit the key. The key is optional: if it is
+absent, the guide runs without Jev and shows no message. If the environment
+source is unsafe or Varlock cannot load it, the router does not load the key,
+prints one `Jev decisions stay off` line, and the guide continues on its
+existing LLM paths. `TRELLAGE_ENVIRONMENT=off` disables this loading.
+
 Short approved goals instead have two eligible profiles: Native Codex
 `planner` and Native Claude `default`. The long Unicode goal excludes Claude
 when the fixed condition cannot fit its 4,000-character limit. A separate

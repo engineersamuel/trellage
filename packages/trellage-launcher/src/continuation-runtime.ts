@@ -52,6 +52,7 @@ import {
   validateContinuationContent,
   type ContinuationProvider,
 } from "./continuation-provider.ts"
+import type { JevDecisionOptions } from "./jev-decisions.ts"
 import { createPrivateContinuationJob, launchPrivateContinuation } from "./continuation-launch.ts"
 import type { ContinuationProfileOption, ContinuationProjectSelection, ContinuationServices } from "./continuation-services.ts"
 import type { ContinuationSourceClient } from "./continuation-source-client.ts"
@@ -92,6 +93,7 @@ export interface ContinuationRuntimeOptions {
   readonly firstmateCreationStore?: FirstmateCreationPlanStore
   readonly initialDraft: ContinuationDraft
   readonly assessmentProvider: (draft: ContinuationDraft) => ContinuationProvider
+  readonly jevDecision?: JevDecisionOptions
   readonly preparationProvider: (draft: ContinuationDraft, signal: AbortSignal) => GuideProvider
 }
 
@@ -1036,6 +1038,7 @@ export const createContinuationServices = (options: ContinuationRuntimeOptions):
       let working = draft
       const result = await analyzeConversation(draft.snapshot, entries, options.assessmentProvider(draft), {
         signal,
+        ...(options.jevDecision === undefined ? {} : { jevDecision: options.jevDecision }),
         onProgress,
         summaries: draft.summaries,
         onSummaries: async (summaries) => {

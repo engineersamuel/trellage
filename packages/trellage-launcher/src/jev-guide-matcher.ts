@@ -1,13 +1,8 @@
-import { lstat, readFile } from "node:fs/promises"
-import path from "node:path"
-import { parseEnv } from "node:util"
 import {
   TypeSafeClient,
   choice,
   noul,
   type Questions,
-  type SystemOneRequest,
-  type RequestOptions,
 } from "@typesafe-ai/sdk"
 import {
   assertGuideMatchInput,
@@ -19,6 +14,10 @@ import {
   type GuideMatchResult,
 } from "./guide-provider.ts"
 import { taskSpecificGuideMatchEntries, type GuideMatchCatalogEntry } from "./guide-catalog.ts"
+import { jevApiKey, type JevSystemOneClient } from "./jev-decisions.ts"
+
+export { userEnvironmentDirectory } from "./jev-decisions.ts"
+export type { JevSystemOneClient } from "./jev-decisions.ts"
 
 const MODEL = "jev-1.13.0"
 const ATTEMPT_MS = 3_000
@@ -29,10 +28,6 @@ const HEADLONG_POLICY =
   "Include Headlong for substantial investigation, research, implementation, maintenance, monitoring, or other open-ended work that benefits from progress between interactions. Exclude simple questions, quick lookups, small edits, and clearly one-shot tasks."
 const POTETO_POLICY =
   "Include Poteto Mode for substantial software-engineering investigation, feature work, bug fixes, refactors, comparisons, reviews, or other multi-stage tasks. Exclude simple questions, quick lookups, and small edits."
-
-export interface JevSystemOneClient {
-  systemOne(request: SystemOneRequest, options: RequestOptions): Promise<unknown>
-}
 
 export interface JevGuideMatcherOptions {
   readonly cwd: string
@@ -54,43 +49,6 @@ const loadDefaultClient = (apiKey: string): JevSystemOneClient =>
     timeout: ATTEMPT_MS,
     logLevel: "off",
   })
-
-type Environment = Readonly<Record<string, string | undefined>>
-
-const fileKey = async (file: string, privateFile: boolean): Promise<string | undefined> => {
-  try {
-    if (privateFile) {
-      const stats = await lstat(file)
-      // Same guard as the Varlock user environment: private regular files only.
-      if (!stats.isFile() || (stats.mode & 0o077) !== 0 || stats.uid !== process.getuid?.()) return undefined
-    }
-    const value = parseEnv(await readFile(file, "utf8")).TYPESAFE_API_KEY?.trim()
-    // Varlock function values such as encrypted secrets need Varlock itself; skip them.
-    return value && !/^[A-Za-z_]\w*\(/u.test(value) ? value : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/** Trellage user environment directory shared with Varlock-enabled launchers. */
-export const userEnvironmentDirectory = (env: Environment): string | undefined => {
-  if (env.TRELLAGE_ENVIRONMENT === "off") return undefined
-  if (env.XDG_CONFIG_HOME?.trim()) return path.resolve(env.XDG_CONFIG_HOME, "trellage")
-  return env.HOME?.trim() ? path.join(env.HOME, ".config", "trellage") : undefined
-}
-
-const envKey = async (cwd: string, env: Environment): Promise<string | undefined> => {
-  if (env.TYPESAFE_API_KEY?.trim()) return env.TYPESAFE_API_KEY
-  const local = await fileKey(path.join(cwd, ".env"), false)
-  if (local !== undefined) return local
-  const directory = userEnvironmentDirectory(env)
-  if (directory === undefined) return undefined
-  for (const name of [".env.local", ".env"]) {
-    const value = await fileKey(path.join(directory, name), true)
-    if (value !== undefined) return value
-  }
-  return undefined
-}
 
 const object = (value: unknown): Record<string, unknown> => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Jev response")
@@ -229,7 +187,7 @@ export class JevGuideMatcher implements GuideMatchAdapter {
     if (input.goal === undefined) {
       input = { ...input, entries: taskSpecificGuideMatchEntries(input.entries, input.preferredProfileRefs) }
     }
-    const key = await envKey(this.options.cwd, this.options.env ?? process.env)
+    const key = await jevApiKey(this.options.cwd, this.options.env ?? process.env)
     if (signal.aborted) throw abortError()
     if (this.options.client === undefined && key === undefined) {
       throw new GuideMatcherUnavailableError(GuideMatcherFallbackReason.MissingCredentials)
