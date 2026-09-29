@@ -204,6 +204,63 @@ test("native profile state is excluded from source fingerprints and staging", as
   await expect(sourceFingerprintAsync(root)).rejects.toThrow("source workspace contains a symlink")
 })
 
+test("source execution automatically prepares safe workspace drift", () => {
+  const { root } = sourceFixture(true)
+  expect(run("prepare", root).status).toBe(0)
+  write(root, "packages/library/src/index.ts", 'export const value: string = "changed";')
+  expect(() => requireReady(root)).toThrow("stale")
+
+  const launched = spawnSync(
+    "/bin/bash",
+    [path.join(root, "scripts/run-source.sh"), path.join(root, "packages/application/src/cli.ts")],
+    { cwd: root, encoding: "utf8", env: { ...process.env, TRELLAGE_BUN_EXECUTABLE: bunExecutable() } },
+  )
+
+  expect(launched.status, launched.stderr).toBe(0)
+  expect(launched.stderr).toContain("preparing worktree dependencies automatically")
+  expect(JSON.parse(launched.stdout)).toMatchObject({ value: "changed" })
+  expect(() => requireReady(root)).not.toThrow()
+})
+
+test("installed source execution heals inventory drift without accepting source or top-level changes", () => {
+  const { root, destination, home } = sourceFixture(true)
+  expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+  const runner = path.join(destination, "scripts/run-source.sh")
+  const entrypoint = path.join(destination, "packages/application/src/cli.ts")
+  const environment = { ...process.env, HOME: home, TRELLAGE_BUN_EXECUTABLE: bunExecutable() }
+  write(destination, "node_modules/inventory-drift", "managed drift")
+
+  const healed = spawnSync("/bin/bash", [runner, entrypoint], {
+    cwd: destination,
+    encoding: "utf8",
+    env: environment,
+  })
+
+  expect(healed.status, healed.stderr).toBe(0)
+  expect(healed.stderr).toContain("preparing worktree dependencies automatically")
+  expect(() => requireReady(destination)).not.toThrow()
+
+  const source = path.join(destination, "packages/library/src/index.ts")
+  writeFileSync(source, 'export const value = "changed";')
+  const changedSource = spawnSync("/bin/bash", [runner, entrypoint], {
+    cwd: destination,
+    encoding: "utf8",
+    env: environment,
+  })
+  expect(changedSource.status).toBe(1)
+  expect(changedSource.stderr).toContain("source runtime is stale")
+
+  cpSync(path.join(root, "packages/library/src/index.ts"), source)
+  write(destination, "unrelated", "keep")
+  const unrelated = spawnSync("/bin/bash", [runner, entrypoint], {
+    cwd: destination,
+    encoding: "utf8",
+    env: environment,
+  })
+  expect(unrelated.status).toBe(1)
+  expect(unrelated.stderr).toContain("refusing unrelated source runtime path")
+})
+
 function run(action: string, root: string, destination?: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync(
     bunExecutable(),
@@ -693,6 +750,20 @@ describe("Owned source installation", () => {
     unlinkSync(path.join(destination, "unrelated"))
     const migrated = run(`install-${legacy}`, root, destination, { HOME: home })
     expect(migrated.status, migrated.stderr).toBe(0)
+    expect(() => requireOwnedWorkspace(destination)).not.toThrow()
+  })
+
+  test("replaces a drifted owned floating runtime", () => {
+    const { root, destination, home } = sourceFixture()
+    expect(run("install-floating", root, destination, { HOME: home }).status).toBe(0)
+    const entrypoint = path.join(destination, "packages/library/src/index.ts")
+    writeFileSync(entrypoint, 'export const value = "drifted";')
+    write(root, "packages/library/src/index.ts", 'export const value: string = "next";')
+
+    const repaired = run("install-floating", root, destination, { HOME: home })
+
+    expect(repaired.status, repaired.stderr).toBe(0)
+    expect(readFileSync(entrypoint, "utf8")).toBe('export const value: string = "next";')
     expect(() => requireOwnedWorkspace(destination)).not.toThrow()
   })
 

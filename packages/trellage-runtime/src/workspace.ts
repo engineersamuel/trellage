@@ -586,6 +586,10 @@ function readinessInventory(root: string): string {
   return value.inventory
 }
 
+export function requireReadySourceIdentity(root: string): void {
+  readinessInventory(root)
+}
+
 function requireInventory(root: string, expected: string, actual: string): void {
   if (expected !== actual) {
     throw new Error(`refusing changed or unrelated source runtime contents: ${root}; prepare dependencies explicitly`)
@@ -602,15 +606,27 @@ export async function requireReadyAsync(root: string): Promise<void> {
   requireInventory(root, expected, await validateOwnedTreeAsync(root, !existsSync(path.join(root, sourceMarker))))
 }
 
-export function requireOwnedWorkspace(root: string): void {
+export function requireReplaceableOwnedWorkspace(root: string): void {
   safeDirectory(root)
   safePath(path.join(root, sourceMarker), "file")
   if (readFileSync(path.join(root, sourceMarker), "utf8") !== `${sourceOwnership}\n`) {
     throw new Error(`refusing unowned source runtime: ${root}`)
   }
-  const allowed = new Set([...rootFiles, ...sourceDirectoryNames(root), sourceMarker, readyFile, "node_modules"])
+  const allowed = new Set([
+    ...rootFiles,
+    ...sourceDirectoryNames(root),
+    sourceMarker,
+    readyFile,
+    preparationLockName,
+    "node_modules",
+  ])
   for (const name of readdirSync(root)) {
     if (!allowed.has(name)) throw new Error(`refusing unrelated source runtime path: ${path.join(root, name)}`)
   }
+  validateOwnedTree(root)
+}
+
+export function requireOwnedWorkspace(root: string): void {
+  requireReplaceableOwnedWorkspace(root)
   requireReady(root)
 }

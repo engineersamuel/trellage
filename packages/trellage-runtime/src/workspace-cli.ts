@@ -21,8 +21,10 @@ import {
   normalizeDependencyPermissions,
   preparationLockName,
   requireOwnedWorkspace,
+  requireReplaceableOwnedWorkspace,
   requireReady,
   requireReadyAsync,
+  requireReadySourceIdentity,
   safeDirectory,
   safePath,
   sourceFingerprint,
@@ -92,7 +94,12 @@ async function prepareDependencies(root: string, alwaysInstall: boolean): Promis
       const readiness = path.join(root, ".trellage-source-ready.json")
       if (await present(readiness)) safePath(readiness, "file")
       if (await present(path.join(root, "node_modules"))) normalizeDependencyPermissions(root)
-      await validateOwnedTreeAsync(root, !(await present(path.join(root, sourceMarker))))
+      if (await present(path.join(root, sourceMarker))) {
+        requireReplaceableOwnedWorkspace(root)
+        requireReadySourceIdentity(root)
+      } else {
+        await validateOwnedTreeAsync(root, true)
+      }
       process.stderr.write("trellage source runtime: preparing worktree dependencies automatically\n")
     }
     await installDependencies(root)
@@ -158,7 +165,7 @@ type LegacyRuntime = "floating" | "environment" | undefined
 
 async function requireReplaceable(destination: string, legacy: LegacyRuntime): Promise<boolean> {
   if (await present(path.join(destination, sourceMarker))) {
-    requireOwnedWorkspace(destination)
+    requireReplaceableOwnedWorkspace(destination)
     return true
   }
   safeDirectory(destination)

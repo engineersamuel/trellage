@@ -81,5 +81,5 @@ trellage_bun_runtime() {
 trellage_require_source_runtime() {
   local root="$1"
   trellage_bun_runtime "$root" || return 1
-  "${trellage_bun[@]}" "$root/packages/trellage-runtime/src/workspace-cli.ts" check "$root"
+  "${trellage_bun[@]}" "$root/packages/trellage-runtime/src/workspace-cli.ts" ensure "$root"
 }
