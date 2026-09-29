@@ -57,6 +57,48 @@ const doctor = (
 const inventory = (launcher: string, profile: string): CommandRunResult =>
   ok(JSON.stringify({ schemaVersion: 1, launcher, profile, readiness: "healthy" }))
 
+describe("customer workflow readiness", () => {
+  const selected: NativeSelectedProfile = {
+    surface: "native", launcher: "cpx", profile: "hve", commandPath: "/opt/bin/cpx", headlessPrompt: false,
+    agent: "hve-core:dt-coach", interaction: { mode: "interactive", requiredSkills: ["dt-methods"] },
+  }
+  const evidence = {
+    schemaVersion: 1, launcher: "cpx", profile: "hve", mode: "interactive", agent: selected.agent,
+    requiredSkills: ["dt-methods"], manifestSha256: "a".repeat(64), harnessVersion: "1.0.81",
+  }
+
+  it("requires exact installed workflow evidence after general inventory", async () => {
+    const runner = new FakeRunner([inventory("cpx", "hve"), ok(JSON.stringify(evidence))])
+    await expect(checkSelectedProfileReadiness(runner, selected, "/repo")).resolves.toMatchObject({
+      kind: ProfileReadinessKind.Ready, summary: expect.stringContaining("requires human decisions"),
+    })
+    expect(runner.calls.map(({ args }) => args)).toEqual([
+      ["inventory", "hve", "--json"], ["workflow-check", "hve", "--agent", selected.agent, "--require-skill", "dt-methods"],
+    ])
+  })
+
+  it.each([
+    { ...evidence, agent: "hve-core:rpi-agent" },
+    { ...evidence, requiredSkills: [] },
+    { ...evidence, mode: "autopilot" },
+    { ...evidence, manifestSha256: null },
+  ])("rejects mismatched capability evidence", async (response) => {
+    const runner = new FakeRunner([inventory("cpx", "hve"), ok(JSON.stringify(response))])
+    await expect(checkSelectedProfileReadiness(runner, selected, "/repo")).rejects.toThrow("does not match")
+  })
+
+  it("reports an old launcher or missing workflow without repair or success fallback", async () => {
+    const runner = new FakeRunner([inventory("cpx", "hve"), new CommandRunnerError({
+      kind: "exited", executable: selected.commandPath, args: [], exitCode: 1,
+      message: "Unavailable", stderr: "Unknown command: workflow-check",
+    })])
+    await expect(checkSelectedProfileReadiness(runner, selected, "/repo")).resolves.toMatchObject({
+      kind: ProfileReadinessKind.Blocked, diagnostic: expect.stringContaining("Unknown command: workflow-check"),
+    })
+    expect(runner.calls).toHaveLength(2)
+  })
+})
+
 const claudeHome = "/managed/.local/share/trellage/profiles/claude/default/home"
 const claudeRuntime = (evaluatorModel = "fixture-evaluator"): CommandRunResult => ok(JSON.stringify({
   schemaVersion: 1, launcher: "cldx", harness: "claude", installed: "2.1.233",

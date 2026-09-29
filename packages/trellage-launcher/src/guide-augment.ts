@@ -29,6 +29,7 @@ export enum GuideAugmentKind {
   Research = "research",
   Codebase = "codebase",
   GoalMe = "goal-me",
+  CustomerContext = "customer-context",
 }
 
 export enum GuideAugmentPhase {

@@ -427,6 +427,16 @@ case "${1-} ${2-}" in
       ]
       | map(select(.name != $omitted))
       | map(if .name == $disabled then .enabled = false else . end)'
+    elif [[ "$plugin" == 'hve-core@hve-core' \
+      && -f "$canonical_copilot_home/installed-plugins/hve-core/hve-core/plugin.json" ]]; then
+      jq -c --arg root "$canonical_copilot_home/installed-plugins/hve-core/hve-core/" \
+        --arg disabled "$disabled_skill" --arg omitted "${FAKE_COPILOT_OMITTED_SKILL-}" '
+        [.skills[] | {
+          name: (split("/") | last), source: "plugin", path: ($root + .), enabled: true
+        }]
+        | map(select(.name != $omitted))
+        | map(if .name == $disabled then .enabled = false else . end)
+      ' "$canonical_copilot_home/installed-plugins/hve-core/hve-core/plugin.json"
     else
       jq -cn --arg root "$canonical_copilot_home/installed-plugins/$marketplace_name/$plugin_name/" '[
         {name:"package-one",description:"Package skill",source:"plugin",path:($root + "skills/package-one"),enabled:true},
@@ -2436,6 +2446,106 @@ assert_contains $'plannotator\tplannotator-effective-html@effective-html' \
 assert_contains $'tufte-vdqi\ttufte-vdqi@tufte-vdqi-marketplace' \
   "$fixture_root/installed-list.out"
 "$installer"
+"$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
+  >"$fixture_root/workflow-missing.out" 2>"$fixture_root/workflow-missing.err" \
+  && fail 'workflow check accepted a plugin without registered customer capabilities'
+workflow_root="$expected_hve_home/installed-plugins/hve-core/hve-core"
+mkdir -p "$workflow_root/.github/agents/design-thinking" "$workflow_root/.github/skills/design-thinking/dt-methods"
+cat >"$workflow_root/plugin.json" <<'EOF'
+{"name":"hve-core","version":"3.2.2","agents":[".github/agents/design-thinking/dt-coach.agent.md"],"skills":[".github/skills/design-thinking/dt-methods"]}
+EOF
+printf '%s\n' 'Fixture DT Coach' >"$workflow_root/.github/agents/design-thinking/dt-coach.agent.md"
+printf '%s\n' 'Fixture dt-methods' >"$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md"
+workflow_before="$(profile_tree_hash "$expected_hve_home")"
+"$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
+  >"$fixture_root/workflow-check.json"
+jq -e '
+  .schemaVersion == 1 and .launcher == "cpx" and .profile == "hve"
+  and .mode == "interactive" and .agent == "hve-core:dt-coach"
+  and .requiredSkills == ["dt-methods"] and (.manifestSha256 | test("^[a-f0-9]{64}$"))
+' "$fixture_root/workflow-check.json" >/dev/null || fail 'workflow readiness lost capability identity'
+[[ "$(profile_tree_hash "$expected_hve_home")" == "$workflow_before" ]] \
+  || fail 'workflow check changed managed profile state'
+run_workflow_terminal() {
+  python3 - "$installed" interactive hve "$@" <<'PY'
+import errno
+import os
+import pty
+import select
+import signal
+import sys
+import time
+
+pid, master = pty.fork()
+if pid == 0:
+    os.execv(sys.argv[1], sys.argv[1:])
+deadline = time.monotonic() + 45
+while True:
+    if time.monotonic() >= deadline:
+        os.kill(pid, signal.SIGTERM)
+        os.waitpid(pid, 0)
+        raise SystemExit("Interactive fixture timed out")
+    if not select.select([master], [], [], 0.1)[0]:
+        continue
+    try:
+        output = os.read(master, 8192)
+    except OSError as error:
+        if error.errno != errno.EIO:
+            raise
+        break
+    if not output:
+        break
+    sys.stdout.buffer.write(output)
+os.close(master)
+_, status = os.waitpid(pid, 0)
+sys.exit(os.waitstatus_to_exitcode(status))
+PY
+}
+if "$installed" interactive hve --agent hve-core:dt-coach --require-skill dt-methods </dev/null \
+  >"$fixture_root/workflow-no-terminal.out" 2>&1; then
+  fail 'interactive workflow accepted unattended input'
+fi
+assert_contains 'require a terminal for your answers' "$fixture_root/workflow-no-terminal.out"
+run_workflow_terminal --agent hve-core:dt-coach --require-skill dt-methods -i 'Ask before proceeding.'
+jq -se '.[-1].args == ["--model","gpt-6-astra","--effort","low","--agent","hve-core:dt-coach","--interactive=Ask before proceeding."]' \
+  "$fake_copilot_argv_log" >/dev/null || fail 'interactive workflow inherited autonomous permissions or lost its prompt'
+run_workflow_terminal --agent hve-core:dt-coach --require-skill dt-methods -i --autopilot
+jq -se '.[-1].args[-1] == "--interactive=--autopilot" and (.[-1].args | index("--autopilot") == null)' \
+  "$fake_copilot_argv_log" >/dev/null || fail 'interactive prompt value was treated as an option'
+for forbidden in -p --prompt --autopilot --no-ask-user --allow-all --yolo --additional-mcp-config; do
+  if "$installed" interactive hve --agent hve-core:dt-coach --require-skill dt-methods "$forbidden" value \
+    >"$fixture_root/workflow-rejected.out" 2>&1; then
+    fail "interactive workflow accepted $forbidden"
+  fi
+done
+if run_workflow_terminal --agent hve-core:missing --require-skill dt-methods \
+  >"$fixture_root/workflow-agent-missing.out" 2>&1; then
+  fail 'interactive launch accepted a missing agent'
+fi
+assert_contains 'required agents entry is missing' "$fixture_root/workflow-agent-missing.out"
+mv "$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md" "$fixture_root/workflow-skill.md"
+ln -s "$fixture_root/workflow-skill.md" "$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md"
+if run_workflow_terminal --agent hve-core:dt-coach --require-skill dt-methods \
+  >"$fixture_root/workflow-symlink.out" 2>&1; then
+  fail 'interactive launch accepted a symlinked skill'
+fi
+assert_contains 'symlinked plugin reference' "$fixture_root/workflow-symlink.out"
+rm "$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md"
+mv "$fixture_root/workflow-skill.md" "$workflow_root/.github/skills/design-thinking/dt-methods/SKILL.md"
+if FAKE_COPILOT_DISABLED_SKILL=dt-methods "$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
+  >"$fixture_root/workflow-disabled.out" 2>&1; then
+  fail 'workflow check accepted a disabled skill'
+fi
+assert_contains 'not uniquely enabled by Copilot: dt-methods' "$fixture_root/workflow-disabled.out"
+if "$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods --require-skill dt-methods \
+  >"$fixture_root/workflow-duplicate.out" 2>&1; then
+  fail 'workflow check accepted duplicate skill requirements'
+fi
+assert_contains 'required skills must be unique' "$fixture_root/workflow-duplicate.out"
+if XDG_CACHE_HOME="$fixture_root/old-workflow-cache" FAKE_COPILOT_VERSION=1.0.80 "$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
+  >"$fixture_root/workflow-old-cli.out" 2>&1; then
+  fail 'workflow check accepted an unsupported CLI'
+fi
 "$uninstaller"
 [[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/bin/cpx behind'
 [[ ! -e "$runtime_root/assets" ]] || fail 'uninstaller left runtime assets behind'

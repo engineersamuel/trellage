@@ -267,6 +267,7 @@ const contextCacheKey = (input: GenerationCacheInput) => ({
   originalIntent: input.originalIntent ?? input.intent,
   projectTarget: input.projectTarget ?? null,
   orchestration: input.orchestration === undefined ? null : guideTaskOrchestration(input.orchestration),
+  customerContext: input.customerContext ?? null,
   bodyBudget: input.bodyBudget ?? null,
 })
 

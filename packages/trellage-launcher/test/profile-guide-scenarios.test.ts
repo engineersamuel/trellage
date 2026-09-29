@@ -406,7 +406,7 @@ describe("profile guide recommendation scenarios", () => {
 
   it("keeps expected profiles visible and known poor fits out of the literal top five", async () => {
     const [catalog, scenarios] = await Promise.all([loadCatalog(), loadScenarios()])
-    const pinnedProfiles = new Set(["native:cpx/hve", "sandbox:claude-council", "sandbox:claude-research"])
+    const pinnedProfiles = new Set(["sandbox:claude-council", "sandbox:claude-research"])
     const eligibleProfiles = guideCatalogEntries(catalog)
       .map(({ ref }) => ref)
       .filter((profileRef) => !pinnedProfiles.has(profileRef))
@@ -452,9 +452,15 @@ describe("profile guide recommendation scenarios", () => {
           ).toBeGreaterThan(expectedRank)
         }
       }
-      for (const profileRef of pinnedProfiles) {
-        expect(refs, `${scenario.id} must leave ${profileRef} to its pinned lens`).not.toContain(profileRef)
-      }
+      expect(candidates.map(({ profileRef, workflowId }) => `${profileRef}/${workflowId}`)).not.toEqual(
+        expect.arrayContaining(["native:cpx/hve/rpi-agent-cycle"]),
+      )
+      expect(candidates.map(({ workflowId }) => workflowId)).not.toEqual(
+        expect.arrayContaining(["run-council-deliberation"]),
+      )
+      expect(candidates.map(({ workflowId }) => workflowId)).not.toEqual(
+        expect.arrayContaining(["vault-backed-research"]),
+      )
     }
   })
 

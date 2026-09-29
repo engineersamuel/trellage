@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { access, mkdtemp, readFile, rm } from "node:fs/promises"
+import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -17,6 +17,7 @@ import {
   fixtureIntent,
   fixtureProfile,
   fixtureProfiles,
+  fixtureMatchProfiles,
   generatedCandidates,
   generatedGoalApproaches,
   pinnedIds,
@@ -38,6 +39,138 @@ import { alpha, beta, instanceOrchestration, instanceProfile } from "./helpers/f
 import { canonicalFirstmateInstanceJson } from "@trellage/guide-core"
 
 const firstmateEntry = fileURLToPath(new URL("./fixtures/guide-firstmate-preparation.tsx", import.meta.url))
+const engagementEntry = fileURLToPath(new URL("./fixtures/engagement-integration.tsx", import.meta.url))
+
+const engagementTerminal = async (onTestFailed: Parameters<typeof createGuideTerminal>[1], scenario = "agent") => {
+  const guide = await createGuideTerminal(engagementEntry, onTestFailed, {
+    PATH: process.env.PATH ?? "/usr/bin:/bin",
+    ENGAGEMENT_SCENARIO: scenario,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+  })
+  return {
+    ...guide,
+    pressAndWait: async (keys: string, ...texts: ReadonlyArray<string>) => {
+      await guide.pressAndWait(keys, ...texts)
+      await guide.waitForText("Local context;")
+    },
+  }
+}
+
+const engagementCounts = async (guide: GuideTerminal) =>
+  JSON.parse(await readFile(path.join(guide.root, "counts.json"), "utf8"))
+
+test("engagement opens locally, confirms one launch, returns for review, and reopens saved work", async ({ onTestFailed }) => {
+  const guide = await engagementTerminal(onTestFailed)
+  try {
+    await guide.start(FixtureMode.Terminal, 100, 30, "Engagement sources")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 0, launches: 0 })
+    await guide.pressAndWait("a", "Review source-use consent")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 0, launches: 0 })
+    await guide.pressAndWait("s", "Next engagement action", "Prepare a learning workshop")
+    await guide.pressAndWait("e", "Engagement evidence", "onboarding delays")
+    await guide.pressAndWait("\u001b", "Next engagement action")
+    await guide.pressAndWait("p", "Review one assignment", "prepared")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 1, launches: 0 })
+    await guide.pressAndWait("l", "Confirm current-terminal launch", "/fixture/cpx")
+    expect(await engagementCounts(guide)).toMatchObject({ launches: 0 })
+    await guide.pressAndWait("y", "Review the result", "returned")
+    expect(await engagementCounts(guide)).toMatchObject({ launches: 1 })
+    expect(await readFile(path.join(guide.root, "terminal-proof"), "utf8")).toBe("piped-parent-to-terminal-child")
+    await guide.pressAndWait("v", "View a result file")
+    guide.press("\u001b[200~docs/engagement/workshop.md\u001b[201~")
+    await guide.waitForText("docs/engagement/workshop.md")
+    await guide.pressAndWait(enter, "Engagement evidence", "Customer review is pending.")
+    await guide.pressAndWait("\u001b", "Review the result", "Record state: returned.")
+    await guide.pressAndWait("n", "Write result review")
+    guide.press("\u001b[200~Reviewed docs/engagement/workshop.md.\nCustomer approval is still unknown.\u001b[201~")
+    await guide.waitForText("Customer approval is still unknown.")
+    await guide.pressAndWait(enter, "Confirm result review")
+    await guide.pressAndWait("s", "Review the result", "reviewed")
+    await guide.pressAndWait("e", "Engagement sources", "3 source files selected")
+    await guide.pressAndWait("w", "Saved engagement work", "reviewed")
+    await guide.pressAndWait(enter, "Review one assignment", "reviewed")
+    await guide.pressAndWait("\u001b", "Engagement sources")
+    await guide.exit("\u001b")
+    const records = await readdir(path.join(guide.root, "engagement/work"))
+    expect(records.filter((filename) => filename.endsWith(".json"))).toHaveLength(1)
+    expect(records.filter((filename) => filename.endsWith(".md"))).toHaveLength(1)
+  } finally {
+    await guide.close()
+  }
+}, 20_000)
+
+test("engagement asks one material question and keeps pasted answers out of model calls until consent", async ({ onTestFailed }) => {
+  const guide = await engagementTerminal(onTestFailed, "clarification")
+  try {
+    await guide.start(FixtureMode.Terminal, 64, 20, "Engagement sources")
+    await guide.pressAndWait("a", "Review source-use consent")
+    await guide.pressAndWait("s", "Clarify the engagement")
+    await guide.pressAndWait("c", "Answer one question", "Which decision")
+    guide.press("\u001b[200~Choose the next customer interview.\nDo not approve implementation.\u001b[201~")
+    await guide.waitForText("Do not approve implementation.")
+    await guide.pressAndWait(enter, "Engagement sources")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 1, launches: 0 })
+    await guide.pressAndWait("a", "Review source-use consent")
+    await guide.pressAndWait("s", "Next engagement action")
+    expect(await engagementCounts(guide)).toMatchObject({
+      assessments: 2,
+      sentContexts: ["", expect.stringContaining("Do not approve implementation.")],
+      launches: 0,
+    })
+    await guide.pressAndWait("\u001b", "Engagement sources")
+    await guide.exit("\u001b")
+  } finally {
+    await guide.close()
+  }
+}, 15_000)
+
+test("engagement human actions remain launch-free and support explicit result rejection", async ({ onTestFailed }) => {
+  const guide = await engagementTerminal(onTestFailed, "human")
+  try {
+    await guide.start(FixtureMode.Terminal, 80, 24, "Engagement sources")
+    await guide.pressAndWait("a", "Review source-use consent")
+    await guide.pressAndWait("s", "Next engagement action")
+    await guide.pressAndWait("p", "Review one assignment", "Human action")
+    expect(guide.text()).not.toContain("l choose launch")
+    await guide.pressAndWait("r", "Review the result")
+    await guide.pressAndWait("n", "Write result review")
+    guide.press("\u001b[200~No customer evidence supports this proposed activity.\u001b[201~")
+    await guide.waitForText("No customer evidence")
+    await guide.pressAndWait(enter, "Confirm result review")
+    await guide.pressAndWait("x", "Review the result", "reviewed")
+    expect(await engagementCounts(guide)).toMatchObject({ launches: 0 })
+    await guide.pressAndWait("\u001b", "Review one assignment")
+    await guide.pressAndWait("\u001b", "Engagement sources")
+    await guide.exit("\u001b")
+  } finally {
+    await guide.close()
+  }
+}, 15_000)
+
+test("engagement keeps focused sources visible in a small terminal and excludes unchecked evidence", async ({ onTestFailed }) => {
+  const guide = await engagementTerminal(onTestFailed, "scope")
+  try {
+    await guide.start(FixtureMode.Terminal, 64, 20, "Engagement sources")
+    await guide.waitForText("2 source files selected", "docs/engagement/notes.md")
+    guide.press("\u001b[B")
+    await guide.readScreen((screen) => {
+      expect(screen).toContain("docs/engagement/overview.md")
+      expect(screen).not.toContain("docs/engagement/notes.md")
+    })
+    await guide.pressAndWait("\u001b[A", "docs/engagement/notes.md")
+    await guide.pressAndWait(" ", "1 source files selected")
+    await guide.pressAndWait("a", "Review source-use consent", "Repository:")
+    await guide.pressAndWait("s", "Next engagement action")
+    expect(await engagementCounts(guide)).toMatchObject({
+      assessments: 1, launches: 0, sentPaths: [["docs/engagement/overview.md"]],
+    })
+    await guide.pressAndWait("\u001b", "Engagement sources")
+    await guide.exit("\u001b")
+  } finally {
+    await guide.close()
+  }
+}, 15_000)
 
 const it = test.extend<{ guide: GuideTerminal }>({
   guide: async ({ onTestFailed }, use) => {
@@ -161,7 +294,7 @@ const assertDataflow = (
   const matches = report.events.filter((event) => event.kind === "match")
   expect(matches.map((event) => event.intent)).toEqual(matchedIntents)
   for (const match of matches) {
-    expect([...match.profileRefs].sort()).toEqual(fixtureProfiles.map((profile) => profile.ref).sort())
+    expect([...match.profileRefs].sort()).toEqual(fixtureMatchProfiles(fixtureProfiles).map((profile) => profile.ref).sort())
     expect(match.recommendations).toEqual(recommendationIds.map((id) => fixtureProfile(id).ref))
   }
   const generated = report.events.filter((event) => event.kind === "generate")
@@ -893,6 +1026,100 @@ it("keeps one readiness probe alive while its fork is parked and the main select
   const report = await guide.finish("q", 130)
   expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
   expect(commandEvents(report.events)).toEqual([readinessCommand(guide.root, "planner")])
+})
+
+it("reviews a local customer brief and launches the checked Discovery lens without batch execution", async ({ guide }) => {
+  await guide.start(FixtureMode.Customer, 88, 32)
+  const intent = "Understand repeated support work."
+  await guide.pressAndWait(intent, intent)
+  await guide.pressAndWait("\u0007", "Augment your prompt")
+  for (const title of ["Codebase", "Goal me", "Customer context and outcome"]) {
+    await guide.pressAndWait(down, `\u276f ${title}`)
+  }
+  await guide.pressAndWait(enter, "Problem and beneficiary")
+  await guide.pressAndWait("Support staff", "Support staff")
+  await guide.pressAndWait("\u001b", "What do you want to do?")
+  await guide.pressAndWait("\u0007", "Problem and beneficiary", "Support staff")
+  await guide.pressAndWait(enter, "Outcome and measurement")
+  await guide.pressAndWait(enter, "Evidence and sources")
+  const evidence = "Reported: note-12@r3. Sponsor says fast; observation says slow."
+  await guide.pressAndWait(`\u001b[200~${evidence}\u001b[201~`, "Reported: note-12@r3.")
+  await guide.pressAndWait(enter, "Decisions and authority")
+  await guide.pressAndWait(enter, "Scope and data handling")
+  await guide.pressAndWait(enter, "Handoff and customer ownership")
+  await guide.pressAndWait(enter, "Review customer context", "apply and allow Guide use")
+  await scrollUntil(guide, "note-12@r3")
+  expect((await guide.events()).every(({ kind }) => kind === "input")).toBe(true)
+  await guide.pressAndWait("a", "What do you want to do?")
+  await guide.pressAndWait(enter, "Profile recommendations", "Discover with the customer")
+  await guide.pressAndWait("d", "Prompt candidates", "Focused", "Thorough", "Minimal")
+  await guide.pressAndWait("a", "needs your answers")
+  expect((await guide.events()).some(({ kind }) => kind === "interactive-launch")).toBe(false)
+  await guide.pressAndWait(enter, "Choose a destination", "This terminal")
+  const report = await guide.finish(enter)
+  assert(report.result.action === "current-terminal")
+  expect(report.result.command.args.slice(0, -2)).toEqual([
+    "interactive", "hve", "--agent", "hve-core:dt-coach",
+    "--require-skill", "dt-coaching-foundation", "--require-skill", "dt-methods", "--require-skill", "dt-rpi-integration",
+  ])
+  expect(report.result.command.args.slice(-2)).toEqual(["-i", report.result.prompt])
+  expect(report.result.prompt).toContain(`## Original human intent (unchanged)\n\n${intent}`)
+  expect(report.result.prompt).toContain(`"evidence": "${evidence}"`)
+  expect(report.result.prompt).toContain('"outcome": "Unknown (not supplied)"')
+  expect(report.result.prompt.match(/## Customer context/g)).toHaveLength(1)
+  const generated = report.events.find((event) => event.kind === "generate")
+  assert(generated?.kind === "generate")
+  expect(generated.input.originalIntent).toBe(intent)
+  expect(generated.input.intent).toBe(intent)
+  expect(generated.input.customerContext?.fields.evidence).toBe(evidence)
+  const optimized = report.events.find((event) => event.kind === "optimize")
+  assert(optimized?.kind === "optimize")
+  expect(optimized.input.customerContext).toEqual(generated.input.customerContext)
+  expect(commandEvents(report.events).filter(({ args }) => args[0] === "workflow-check")).toHaveLength(2)
+  expect(report.events.filter(({ kind }) => kind === "interactive-launch")).toHaveLength(1)
+}, 30_000)
+
+it.for([
+  { steps: 1, action: "current-herdr-workspace", mode: FixtureMode.CustomerHerdr },
+  { steps: 2, action: "new-herdr-tab", mode: FixtureMode.CustomerHerdr },
+  { steps: 3, action: "herdr-worktree-create", mode: FixtureMode.CustomerHerdr },
+  { steps: 3, action: "herdr-worktree-open", mode: FixtureMode.CustomerExistingWorktree },
+])("hands customer Discovery directly to $action", { timeout: 30_000 }, async ({ steps, action, mode }, { guide }) => {
+  await guide.start(mode)
+  await enterIntent(guide)
+  await guide.pressAndWait("d", "Prompt candidates", "Focused", "Thorough", "Minimal")
+  await guide.pressAndWait(enter, "Choose a destination", "Enter launch directly")
+  const destinations = ["New pane in this Herdr workspace", "New tab in this Herdr worktree", "New Herdr worktree"]
+  for (const destination of destinations.slice(0, steps)) {
+    await guide.pressAndWait(down, `\u276f ${destination}`)
+  }
+  if (steps === 3) {
+    await guide.pressAndWait(enter, "Worktree branch", fixtureBranches.hve)
+    await guide.pressAndWait(enter, mode === FixtureMode.CustomerExistingWorktree
+      ? "open existing worktree" : "Create Herdr worktree")
+  }
+  await assertDeferredLaunch(guide)
+  const report = await guide.finish(enter)
+  expect(report.result.action).toBe(action)
+  assert("command" in report.result && "prompt" in report.result)
+  const command = report.result.command
+  const args = [
+    "interactive", "hve", "--agent", "hve-core:dt-coach",
+    "--require-skill", "dt-coaching-foundation", "--require-skill", "dt-methods", "--require-skill", "dt-rpi-integration",
+    "-i", report.result.prompt,
+  ]
+  expect(command).toEqual({ executable: path.join(guide.root, "bin", "cpx"), args })
+  const commands = commandEvents(report.events)
+  const run = commands.filter(({ args }) => args[0] === "pane" && args[1] === "run")
+  expect(run).toHaveLength(1)
+  expect(run[0]?.args[3]).toBe([
+    "env", "TRELLAGE_AUTOMATION=1", quoted(command.executable), ...args.slice(0, -1), quoted(report.result.prompt),
+  ].join(" "))
+  const finalCwd = action === "herdr-worktree-create" ? path.join(guide.root, "worktrees", fixtureBranches.hve)
+    : action === "herdr-worktree-open" ? path.join(guide.root, "worktrees", "existing-canonical") : guide.root
+  const checks = commands.filter(({ args }) => args[0] === "workflow-check")
+  expect(checks.map(({ cwd }) => cwd)).toEqual([guide.root, finalCwd])
+  expect(run[0]?.cwd).toBe(finalCwd)
 })
 
 it("queues all pinned lenses and launches them from the main screen with L", async ({ guide }) => {

@@ -56,6 +56,7 @@ export interface GuideQueuedContext {
   readonly projectTarget: GuideProjectTargetV1 | null
   readonly projectTargetConfirmed?: boolean
   readonly workflow: ProfileGuideWorkflow
+  readonly customerContext?: NonNullable<GuideTaskContext["customerContext"]>
 }
 
 export const legacyFirstmateQueuedContext = (
@@ -74,6 +75,7 @@ const queuedTaskContext = (profile: SelectedProfile, context: GuideQueuedContext
   originalIntent: context.originalIntent,
   projectTarget: context.projectTarget,
   ...(profile.surface === "native" && profile.orchestration !== undefined ? { orchestration: profile.orchestration } : {}),
+  ...(context.customerContext === undefined ? {} : { customerContext: context.customerContext }),
 })
 
 export type FirstmateGuideAction = keyof FirstmateFleetReadinessV1["actions"]
@@ -305,6 +307,9 @@ export const createQueuedGuideJob = (
   const guideContext = context !== undefined && !("goal" in context) ? context : undefined
   const goalExecution = context !== undefined && "goal" in context ? freezeGuideGoalCandidateContext(context) : undefined
   profile = Object.freeze(parseSelectedProfile(profile))
+  if (profile.interaction !== undefined) {
+    throw new Error("This workflow needs your answers. Launch it directly in a terminal or Herdr pane, not in a batch queue.")
+  }
   const deliveredPrompt = guideContext !== undefined
     ? completeSinglePromptArtifact(guideContext.workflow, {
         title: "Queued request", prompt, notes: "Preserve the complete original input.",
@@ -505,8 +510,15 @@ const validateQueuedJob = (job: QueuedGuideJob): string | undefined => {
   if ([...job.prompt].length > maximumLength) return `Queued prompt exceeds ${maximumLength} characters.`
   const placementMessage = validateQueuedPlacement(job)
   if (placementMessage !== undefined) return placementMessage
+  return validateQueuedCommand(job)
+}
+
+const validateQueuedCommand = (job: QueuedGuideJob): string | undefined => {
   try {
     const profile = parseSelectedProfile(job.profile)
+    if (profile.interaction !== undefined) {
+      return "Interactive customer workflows cannot run in an unattended batch queue. Launch this workflow directly."
+    }
     if (job.privatePrompt && job.goalExecution !== undefined) {
       return "Private prompt delivery does not support goal execution."
     }

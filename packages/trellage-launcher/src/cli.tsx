@@ -53,6 +53,12 @@ import { ContinuationSourceClient } from "./continuation-source-client.ts"
 import { openContinuationRequest } from "./continuation-entry.ts"
 import { createContinuationServices, resolveContinuationModelRouting } from "./continuation-runtime.ts"
 import { createCopilotContinuationProvider } from "./continuation-provider.ts"
+import { engagementDefaultIntent, inspectEngagementRepository } from "./engagement-context.ts"
+import { createEngagementAssessor } from "./engagement-assessment.ts"
+import { EngagementWorkStore, type EngagementWork } from "./engagement-work.ts"
+import { EngagementApp, type EngagementUiProps, type EngagementUiResult } from "./engagement-ui.tsx"
+import { executeEngagementWork } from "./engagement-execution.ts"
+import { text as guideText } from "./guide-text.ts"
 import {
   BasketPreviewApp,
   basketPreviewHelpText,
@@ -722,6 +728,10 @@ const runInteractiveGuideMode = async (
   promptMasterSkillDirectory: string,
 ): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
+  if (args.engagement) {
+    await runEngagementMode(argv, guideRoot)
+    return
+  }
   if (args.nextSteps) {
     await runContinuationMode(argv, guideRoot, promptMasterSkillDirectory)
     return
@@ -814,6 +824,78 @@ const runInteractiveGuideMode = async (
     runner,
     write: (text) => process.stdout.write(text),
   })
+}
+
+const renderEngagementUi = async (props: Omit<EngagementUiProps, "onResult">): Promise<EngagementUiResult> => {
+  const terminal = openInteractiveTerminalStreams()
+  const result: { current: EngagementUiResult } = { current: { action: "exit", exitCode: 130 } }
+  try {
+    const instance = render(<EngagementApp {...props} onResult={(value) => { result.current = value }} />, {
+      stdin: terminal.input, stdout: terminal.output, interactive: true,
+      exitOnCtrlC: false, kittyKeyboard: { mode: "disabled" }, alternateScreen: true,
+      onRender: createInitialGuideRenderHandler((value) => { terminal.output.write(value) }, process.env.INK_SCREEN_READER !== "true"),
+      maxFps: 30,
+    })
+    await instance.waitUntilExit()
+    return result.current
+  } finally {
+    terminal.close()
+  }
+}
+
+const runEngagementMode = async (argv: ReadonlyArray<string>, guideRoot: string): Promise<void> => {
+  const args = parseGuideHeadlessArgv(argv)
+  const context = getHerdrContext(herdrEnvironment())
+  if (context?.surface === "popup" || process.env[popupGuideIntentFileEnvironmentVariable] !== undefined) {
+    throw new Error("Engagement mode needs a normal terminal in the engagement worktree, not a conversation or prompt popup.")
+  }
+  const intent = guideText(args.intentStdin ? await readInput(undefined) : args.intent ?? engagementDefaultIntent,
+    "engagement intent", 8000, { multiline: true, preserve: true })
+  const runner = createNodeCommandRunner()
+  const repository = await inspectEngagementRepository(runner, context?.cwd ?? process.cwd())
+  const catalog = readGuideCatalog()
+  const routing = resolveGuideModelRouting({
+    ...(args.model === undefined ? {} : { model: args.model }),
+    ...(args.effort === undefined ? {} : { effort: args.effort }),
+  }, process.env)
+  const store = new EngagementWorkStore(repository.root, catalog, runner)
+  const assessor = createEngagementAssessor(catalog, routing.match)
+  await runEngagementSession({
+    repository, intent, runner, catalog, guideRoot, store, assessor,
+    modelLabel: `${routing.match.model} / ${routing.match.effort}`,
+  })
+}
+
+const runEngagementSession = async (
+  props: Omit<EngagementUiProps, "onResult" | "records" | "initialWork" | "notice">,
+): Promise<void> => {
+  const { repository, intent, runner, catalog, guideRoot, store } = props
+  let initialWork: EngagementWork | undefined
+  let notice: string | undefined
+  for (;;) {
+    const result = await renderEngagementUi({
+      ...props,
+      repository: await inspectEngagementRepository(runner, repository.root),
+      intent: initialWork?.request.intent ?? intent,
+      store, records: await store.list(),
+      ...(initialWork === undefined ? {} : { initialWork }),
+      ...(notice === undefined ? {} : { notice }),
+    })
+    if (result.action === "exit") {
+      process.exitCode = result.exitCode
+      return
+    }
+    try {
+      const returned = await executeEngagementWork(result.work, store, catalog, guideRoot, {
+        runner, write: (value) => { process.stdout.write(value) },
+      })
+      initialWork = returned.work
+      notice = returned.notice
+    } catch (cause) {
+      initialWork = await store.read(result.work.request.id)
+      notice = `Execution stopped: ${cause instanceof Error ? cause.message : String(cause)}`
+    }
+  }
 }
 
 const runContinuationMode = async (

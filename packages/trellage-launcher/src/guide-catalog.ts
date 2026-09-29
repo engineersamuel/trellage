@@ -21,6 +21,8 @@
 import { guideTaskOrchestration, type GuideTaskOrchestration } from "./guide-orchestration-context.ts"
 import {
   isLaunchAgentIdentifier,
+  parseProfileGuideInteraction,
+  type ProfileGuideInteraction,
   isProfileGuideGoalController,
   profileGuideGoalExecutionProblem,
   profileGuideIdentityKey,
@@ -94,9 +96,10 @@ const validatePrerequisite = (value: unknown, path: string): ProfileGuidePrerequ
 
 const placeholderPattern = /\{\{([^{}]+)\}\}/gu
 
-const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow => {
-  const fields = record(value, path)
-  exactKeys(fields, path, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent", "frame", "scope"])
+const validateWorkflowInvocation = (
+  fields: Record<string, unknown>,
+  path: string,
+): Pick<ProfileGuideWorkflow, "skill" | "launchAgent" | "interaction"> => {
   const skill =
     fields.skill === undefined ? undefined : text(fields.skill, `${path}.skill`, 256).toLocaleLowerCase("en")
   if (skill !== undefined && !portableIdentifierPattern.test(skill)) {
@@ -107,6 +110,21 @@ const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow =>
   if (launchAgent !== undefined && !isLaunchAgentIdentifier(launchAgent)) {
     fail(`${path}.launchAgent`, "must be a portable agent identifier")
   }
+  const interaction = fields.interaction === undefined
+    ? undefined
+    : parseProfileGuideInteraction(fields.interaction, `${path}.interaction`)
+  if (interaction !== undefined && launchAgent === undefined) fail(`${path}.interaction`, "requires launchAgent")
+  return {
+    ...(skill === undefined ? {} : { skill }),
+    ...(launchAgent === undefined ? {} : { launchAgent }),
+    ...(interaction === undefined ? {} : { interaction }),
+  }
+}
+
+const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow => {
+  const fields = record(value, path)
+  exactKeys(fields, path, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent", "interaction", "frame", "scope"])
+  const invocation = validateWorkflowInvocation(fields, path)
   const promptTemplate = text(fields.promptTemplate, `${path}.promptTemplate`, 16000, { multiline: true })
   const intentPlaceholderCount = promptTemplate.split("{{intent}}").length - 1
   if (intentPlaceholderCount === 0) {
@@ -123,8 +141,7 @@ const validateWorkflow = (value: unknown, path: string): ProfileGuideWorkflow =>
   return {
     id: identifier(fields.id, `${path}.id`),
     description: text(fields.description, `${path}.description`, 2000),
-    ...(skill === undefined ? {} : { skill }),
-    ...(launchAgent === undefined ? {} : { launchAgent }),
+    ...invocation,
     ...(fields.frame === undefined ? {} : { frame: literal(fields.frame, `${path}.frame`, ["fixed"]) }),
     ...(fields.scope === undefined ? {} : { scope: literal(fields.scope, `${path}.scope`, ["project", "fleet"]) }),
     examples: stringArray(fields.examples, `${path}.examples`, { minimum: 2, maximumItems: 32, itemMaximum: 2000 }),
@@ -176,6 +193,11 @@ export const validateProfileGuideV1 = (
   const workflows = array(fields.workflows, `${path}.workflows`, { minimum: 1, maximum: 32 }).map((item, index) =>
     validateWorkflow(item, `${path}.workflows[${index}]`),
   )
+  if (context !== undefined && workflows.some(({ interaction }) => interaction !== undefined) &&
+      (context.identity.surface !== "native" || context.identity.launcher !== "cpx" ||
+       context.identity.profile !== "hve" || context.harness !== "copilot")) {
+    fail(`${path}.workflows`, "interactive workflow checks currently require native:cpx/hve")
+  }
   uniqueArray(
     workflows.map(({ id }) => id),
     `${path}.workflows`,
@@ -556,6 +578,7 @@ export interface CompactProfileGuideWorkflow {
   readonly skill?: string
   readonly examples: ReadonlyArray<string>
   readonly scope?: "project" | "fleet"
+  readonly interaction?: ProfileGuideInteraction
 }
 
 export interface CompactProfileGuide {
@@ -567,6 +590,22 @@ export interface CompactProfileGuide {
   readonly workflows: ReadonlyArray<CompactProfileGuideWorkflow>
 }
 
+const crossCuttingPinnedWorkflows: Readonly<Record<string, string>> = {
+  "native:cpx/hve": "rpi-agent-cycle",
+  "sandbox:claude-council": "run-council-deliberation",
+  "sandbox:claude-research": "vault-backed-research",
+}
+
+export const taskSpecificGuideMatchEntries = (
+  entries: ReadonlyArray<GuideMatchCatalogEntry>,
+  preferredProfileRefs: ReadonlyArray<string> = [],
+): ReadonlyArray<GuideMatchCatalogEntry> => entries.flatMap((entry) => {
+  const pinned = crossCuttingPinnedWorkflows[entry.ref]
+  if (pinned === undefined || preferredProfileRefs.includes(entry.ref)) return [entry]
+  const workflows = entry.guide.workflows.filter(({ id }) => id !== pinned)
+  return workflows.length === 0 ? [] : [{ ...entry, guide: { ...entry.guide, workflows } }]
+})
+
 /** Strips `promptTemplate` (and, structurally, any Markdown body) from a guide for model matching input. */
 export const compactProfileGuide = (guide: ProfileGuideV1): CompactProfileGuide => ({
   schemaVersion: 1,
@@ -574,12 +613,13 @@ export const compactProfileGuide = (guide: ProfileGuideV1): CompactProfileGuide 
   bestFor: guide.bestFor,
   avoidFor: guide.avoidFor,
   prerequisites: guide.prerequisites,
-  workflows: guide.workflows.map(({ id, description, skill, examples, scope }) => ({
+  workflows: guide.workflows.map(({ id, description, skill, examples, scope, interaction }) => ({
     id,
     description,
     ...(skill === undefined ? {} : { skill }),
     examples,
     ...(scope === undefined ? {} : { scope }),
+    ...(interaction === undefined ? {} : { interaction }),
   })),
 })
 

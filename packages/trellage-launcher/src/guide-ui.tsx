@@ -35,10 +35,16 @@ import {
 import {
   GuideAugmentKind,
   GuideAugmentPhase,
+  clampAugmentedIntent,
   runCodebaseAugment,
   runResearchAugment,
   type GuideAugmentContext,
 } from "./guide-augment.ts"
+import {
+  createGuideCustomerPanel, customerPromptProjection, guideCustomerPanelReducer, reviewedCustomerContext, stripCustomerContext,
+  type ApprovedGuideCustomerContext, type GuideCustomerPanelAction, type GuideCustomerPanelState,
+} from "./guide-customer-context.ts"
+import { GuideCustomerPanel } from "./guide-customer-context-ui.tsx"
 import {
   GuideGoalError,
   GuideGoalInteractionController,
@@ -434,6 +440,7 @@ export interface GuideAugmentJob {
   readonly goalHistory: ReadonlyArray<GuideGoalTurn>
   readonly goalLastProposal: GuideGoalProposal | undefined
   readonly goalApprovedPrompt: string | undefined
+  readonly customerPanel?: GuideCustomerPanelState | undefined
 }
 
 type GuideGoalChange =
@@ -473,6 +480,8 @@ export interface GuideUiState {
   readonly originalIntent?: string | undefined
   /** A fork keeps the exact human text even when the main prompt is augmented later. */
   readonly selectedOriginalIntent?: string | undefined
+  readonly customerContext?: ApprovedGuideCustomerContext | undefined
+  readonly selectedCustomerContext?: ApprovedGuideCustomerContext | undefined
   readonly projectTarget?: GuideProjectTargetV1 | null | undefined
   readonly proposedProjectTarget?: GuideProjectTargetV1 | null | undefined
   readonly projectTargetConfirmed?: boolean
@@ -677,6 +686,7 @@ type GuideForkSharedKey =
   | "matchedGoalFingerprint"
   | "matchedGoalRevision"
   | "originalIntent"
+  | "customerContext"
   | "augmentJob"
   | "nextAugmentRunId"
   | "matchPhase"
@@ -711,6 +721,7 @@ const forkSlice = ({
   matchedGoalFingerprint: _matchedGoalFingerprint,
   matchedGoalRevision: _matchedGoalRevision,
   originalIntent: _originalIntent,
+  customerContext: _customerContext,
   augmentJob: _augmentJob,
   nextAugmentRunId: _nextAugmentRunId,
   matchPhase: _matchPhase,
@@ -853,6 +864,8 @@ export enum GuideUiActionType {
   AugmentGoalTurn = "augment/goal-turn",
   AugmentGoalPanel = "augment/goal-panel",
   AugmentGoalAutoAccept = "augment/goal-auto-accept",
+  AugmentCustomerPanel = "augment/customer-panel",
+  AugmentCustomerApprove = "augment/customer-approve",
   MatchRetry = "match/retry",
   MatchProgress = "match/progress",
   MatchAttempt = "match/attempt",
@@ -978,6 +991,8 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.AugmentApply }
   | { readonly type: GuideUiActionType.AugmentDiscard; readonly runId?: number }
   | { readonly type: GuideUiActionType.AugmentBack }
+  | { readonly type: GuideUiActionType.AugmentCustomerPanel; readonly runId: number; readonly action: GuideCustomerPanelAction }
+  | { readonly type: GuideUiActionType.AugmentCustomerApprove; readonly runId: number }
   | {
       readonly type: GuideUiActionType.AugmentGoalRequest
       readonly runId: number
@@ -1152,6 +1167,7 @@ const beginGuideMatching = (state: GuideUiState, intent: string, goal: PreparedG
   stage: GuideUiStage.Matching,
   intent,
   originalIntent: state.originalIntent ?? state.textDraft,
+  customerContext: state.customerContext,
   goal,
   goalRevision: state.goalRevision,
   matchedGoalFingerprint: goal?.fingerprint,
@@ -1175,12 +1191,12 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
   switch (action.type) {
     case GuideUiActionType.IntentChange:
       return state.stage === GuideUiStage.Intent
-        ? { ...state, textDraft: action.text, originalIntent: undefined, errorMessage: undefined }
+        ? { ...state, textDraft: action.text, originalIntent: undefined, customerContext: undefined, errorMessage: undefined }
         : state
 
     case GuideUiActionType.IntentBackspace:
       return state.stage === GuideUiStage.Intent
-        ? { ...state, textDraft: removeLastTextCharacter(state.textDraft), originalIntent: undefined, errorMessage: undefined }
+        ? { ...state, textDraft: removeLastTextCharacter(state.textDraft), originalIntent: undefined, customerContext: undefined, errorMessage: undefined }
         : state
 
     case GuideUiActionType.IntentSubmit: {
@@ -1204,7 +1220,7 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
 }
 
 /** The augmenters offered on the augment screen, in display order. */
-export const augmentOptions = [GuideAugmentKind.Research, GuideAugmentKind.Codebase, GuideAugmentKind.GoalMe] as const
+export const augmentOptions = [GuideAugmentKind.Research, GuideAugmentKind.Codebase, GuideAugmentKind.GoalMe, GuideAugmentKind.CustomerContext] as const
 
 const augmentLabels: Readonly<Record<GuideAugmentKind, { readonly title: string; readonly detail: string }>> = {
   [GuideAugmentKind.Research]: {
@@ -1218,6 +1234,10 @@ const augmentLabels: Readonly<Record<GuideAugmentKind, { readonly title: string;
   [GuideAugmentKind.GoalMe]: {
     title: "Goal me",
     detail: "Answer questions here and approve a complete goal prompt",
+  },
+  [GuideAugmentKind.CustomerContext]: {
+    title: "Customer context and outcome",
+    detail: "Prepare a local brief; review evidence, unknowns, and sharing before applying",
   },
 }
 
@@ -1272,13 +1292,18 @@ const augmentSourceLabels: Readonly<Record<GuideAugmentKind, string>> = {
   [GuideAugmentKind.Research]: "Live output · cpx hve",
   [GuideAugmentKind.Codebase]: "Live output · repomix",
   [GuideAugmentKind.GoalMe]: "Goal me activity",
+  [GuideAugmentKind.CustomerContext]: "Local customer preparation",
 }
 
 const augmentRunningLabels: Readonly<Record<GuideAugmentKind, string>> = {
   [GuideAugmentKind.Research]: "Researching your request",
   [GuideAugmentKind.Codebase]: "Reading your codebase",
   [GuideAugmentKind.GoalMe]: "Preparing your goal",
+  [GuideAugmentKind.CustomerContext]: "Preparing your customer brief",
 }
+
+const interactiveAugment = (kind: GuideAugmentKind): boolean =>
+  kind === GuideAugmentKind.GoalMe || kind === GuideAugmentKind.CustomerContext
 
 /**
  * The augment sub-flow. Confirming a choice starts a background job and hands
@@ -1294,7 +1319,7 @@ const startAugmentJob = (
 ): GuideUiState => ({
   ...state,
   originalIntent: state.originalIntent ?? source,
-  stage: kind === GuideAugmentKind.GoalMe ? GuideUiStage.Augmenting : returnStage,
+  stage: interactiveAugment(kind) ? GuideUiStage.Augmenting : returnStage,
   nextAugmentRunId: state.nextAugmentRunId + 1,
   augmentJob: {
     kind,
@@ -1311,8 +1336,9 @@ const startAugmentJob = (
     goalHistory: [],
     goalLastProposal: undefined,
     goalApprovedPrompt: undefined,
+    ...(kind === GuideAugmentKind.CustomerContext ? { customerPanel: createGuideCustomerPanel(state.customerContext) } : {}),
   },
-  augmentViewReturnStage: kind === GuideAugmentKind.GoalMe ? returnStage : undefined,
+  augmentViewReturnStage: interactiveAugment(kind) ? returnStage : undefined,
   errorMessage: undefined,
 })
 
@@ -1412,6 +1438,12 @@ const confirmAugment = (state: GuideUiState): GuideUiState => {
   if (state.stage !== GuideUiStage.Augment) return state
   const kind = augmentOptions[state.augmentIndex]
   if (kind === undefined || state.textDraft.trim().length === 0) return state
+  if (kind === GuideAugmentKind.CustomerContext && state.goal !== undefined) {
+    return { ...state, errorMessage: "An approved goal is active. Revise the goal or choose a normal prompt flow before adding customer context." }
+  }
+  if (kind === GuideAugmentKind.GoalMe && state.customerContext !== undefined) {
+    return { ...state, errorMessage: "Customer context is not an execution goal. Start a separate prompt for Goal me, or explicitly edit the main request to remove the brief." }
+  }
   const returnStage =
     state.augmentViewReturnStage === GuideUiStage.PromptReview ? GuideUiStage.PromptReview : GuideUiStage.Intent
   return startAugmentJob(state, kind, state.textDraft, returnStage)
@@ -1452,6 +1484,7 @@ const reduceAugmentNavigation = (state: GuideUiState, action: GuideUiAction): Gu
 const succeedAugment = (state: GuideUiState, runId: number, text: string): GuideUiState => {
   const job = liveJob(state, runId)
   if (job === undefined) return state
+  if (job.kind === GuideAugmentKind.CustomerContext) return state
   if (job.kind === GuideAugmentKind.GoalMe && job.goalApprovedPrompt !== text) {
     return {
       ...state,
@@ -1567,6 +1600,32 @@ const reduceGoalInteraction = (state: GuideUiState, action: GuideUiAction): Guid
   }
 }
 
+const approveCustomerBrief = (state: GuideUiState, job: GuideAugmentJob): GuideUiState => {
+  const panel = job.customerPanel
+  if (panel === undefined || !panel.reviewing) return state
+  try {
+    if (state.goal !== undefined) throw new Error("The approved goal is unchanged. Choose a normal prompt flow before applying customer context.")
+    if (!goalSourceIsCurrent(state, job)) throw new Error("The request changed. Discard this draft and start from the current prompt.")
+    const customerContext = reviewedCustomerContext(panel)
+    const prompt = clampAugmentedIntent(customerPromptProjection(job.source, customerContext, state.customerContext))
+    return applyAugmentJob({ ...state, customerContext }, job, prompt)
+  } catch (cause) {
+    return {
+      ...state,
+      augmentJob: { ...job, customerPanel: { ...panel, error: describeGuideUiError(cause) } },
+    }
+  }
+}
+
+const reduceCustomerInteraction = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  if (action.type !== GuideUiActionType.AugmentCustomerPanel && action.type !== GuideUiActionType.AugmentCustomerApprove) return state
+  const job = liveJob(state, action.runId)
+  if (state.stage !== GuideUiStage.Augmenting || job?.kind !== GuideAugmentKind.CustomerContext || job.customerPanel === undefined) return state
+  return action.type === GuideUiActionType.AugmentCustomerApprove
+    ? approveCustomerBrief(state, job)
+    : { ...state, augmentJob: { ...job, customerPanel: guideCustomerPanelReducer(job.customerPanel, action.action) } }
+}
+
 const retryAugmentJob = (state: GuideUiState): GuideUiState => {
   const job = state.augmentJob
   if (job === undefined || job.status !== "failed") return state
@@ -1601,6 +1660,7 @@ const reduceAugmentJob = (state: GuideUiState, action: GuideUiAction): GuideUiSt
 
     case GuideUiActionType.AugmentApply: {
       const job = state.augmentJob
+      if (job?.kind === GuideAugmentKind.CustomerContext) return state
       if (job?.kind === GuideAugmentKind.GoalMe && job.goalApprovedPrompt !== job.text) return state
       return job?.status === "ready" && job.text !== undefined ? applyAugmentJob(state, job, job.text) : state
     }
@@ -1614,7 +1674,7 @@ const reduceAugmentJob = (state: GuideUiState, action: GuideUiAction): GuideUiSt
 }
 
 const reduceAugment = (state: GuideUiState, action: GuideUiAction): GuideUiState =>
-  reduceAugmentJob(reduceGoalInteraction(reduceAugmentRun(reduceAugmentNavigation(state, action), action), action), action)
+  reduceAugmentJob(reduceCustomerInteraction(reduceGoalInteraction(reduceAugmentRun(reduceAugmentNavigation(state, action), action), action), action), action)
 
 const recommendationsState = (
   state: GuideUiState,
@@ -1684,6 +1744,11 @@ const confirmedPromptReviewIntent = (state: GuideUiState): string | undefined =>
     : state.originalIntent ?? state.intent
 }
 
+const confirmedCustomerContext = (state: GuideUiState): ApprovedGuideCustomerContext | undefined =>
+  state.promptReviewEditing && state.textDraft !== (state.promptReviewAugmented ?? state.intent)
+    ? undefined
+    : state.customerContext
+
 const submitPromptReview = (state: GuideUiState): GuideUiState => {
   const intent = state.textDraft.trim()
   if (intent.length === 0) return state
@@ -1704,10 +1769,14 @@ const submitPromptReview = (state: GuideUiState): GuideUiState => {
       promptReviewEditing: false,
       promptReviewAugmented: undefined,
       originalIntent: confirmedPromptReviewIntent(state),
+      customerContext: confirmedCustomerContext(state),
       errorMessage: undefined,
     }
   }
-  return beginGuideMatching({ ...state, originalIntent: confirmedPromptReviewIntent(state) ?? state.textDraft }, intent, state.goal)
+  return beginGuideMatching({
+    ...state, originalIntent: confirmedPromptReviewIntent(state) ?? state.textDraft,
+    customerContext: confirmedCustomerContext(state),
+  }, intent, state.goal)
 }
 
 const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -1896,6 +1965,7 @@ const openRecommendedProfile = (
     profileSelection: selection,
     selectedProfile: action.selectedProfile,
     selectedOriginalIntent: state.selectedOriginalIntent ?? state.originalIntent ?? state.intent,
+    selectedCustomerContext: state.activeForkId === undefined ? state.customerContext : state.selectedCustomerContext,
     guideDocument: undefined,
     generationPhase: GuideGenerationPhase.LoadingProfile,
     candidates: undefined,
@@ -2166,6 +2236,9 @@ const placeCandidate = (state: GuideUiState): GuideUiState => {
   if (state.stage !== GuideUiStage.Candidates || state.candidates === undefined || state.selectedProfile === undefined) {
     return state
   }
+  if (state.selectedProfile.interaction !== undefined) {
+    return { ...state, errorMessage: "This workflow needs your answers. Press Enter to launch it directly; it cannot use the batch queue." }
+  }
   return isFirstmateSelection(state.selectedProfile)
     ? firstmateActionState(state)
     : { ...state, stage: GuideUiStage.QueuePlacement, destinationIndex: 0, errorMessage: undefined }
@@ -2205,9 +2278,14 @@ const candidateEditingWorkflow = (state: GuideUiState): ProfileGuideWorkflow | u
   guideUiPrompt(state)?.workflow
 
 export const guideUiTaskContext = (state: GuideUiState): GuideTaskContext => {
-  if (!isFirstmateProfile(state.selectedProfile)) return {}
+  const customer = state.selectedCustomerContext === undefined ? {} : {
+    customerContext: state.selectedCustomerContext,
+    originalIntent: validateGuideOriginalIntent(state.selectedOriginalIntent ?? state.originalIntent ?? state.intent),
+  }
+  if (!isFirstmateProfile(state.selectedProfile)) return customer
   const { orchestration, profile } = state.selectedProfile
   return {
+    ...customer,
     profileRef: `native:fmx/${profile}`,
     originalIntent: validateGuideOriginalIntent(state.selectedOriginalIntent ?? state.originalIntent ?? state.intent),
     ...(state.projectTargetConfirmed ? { projectTarget: state.projectTarget ?? null } : {}),
@@ -2836,6 +2914,7 @@ const submitFirstmateQueueEdit = (state: GuideUiState, job: QueuedGuideJob): Gui
   return {
     ...invalidateFirstmateApproval(fork),
     selectedOriginalIntent: job.guideContext?.originalIntent ?? fork.selectedOriginalIntent,
+    selectedCustomerContext: job.guideContext?.customerContext,
     stage: GuideUiStage.Candidates,
     candidates: replaceCandidateAt(candidates, fork.candidateIndex, {
       ...tripleAt(candidates, fork.candidateIndex),
@@ -2912,11 +2991,12 @@ const reduceLaunch = (state: GuideUiState, action: GuideUiAction): GuideUiState 
  * one worktree per entry.
  */
 const selectedQueuedContext = (state: GuideUiState): GuideQueuedContext | undefined => {
-  if (!isFirstmateProfile(state.selectedProfile)) return undefined
-  if (!state.projectTargetConfirmed) throw new GuideValidationError("projectTarget", "requires explicit confirmation")
+  const firstmate = isFirstmateProfile(state.selectedProfile)
+  if (!firstmate && state.selectedCustomerContext === undefined) return undefined
+  if (firstmate && !state.projectTargetConfirmed) throw new GuideValidationError("projectTarget", "requires explicit confirmation")
   const prepared = guideUiPrompt(state)
-  if (prepared === undefined) throw new Error("Firstmate queue requires a loaded selected workflow")
-  if (prepared.workflow.scope !== "fleet" && state.projectTarget == null) {
+  if (prepared === undefined) throw new Error("Queue context requires a loaded selected workflow")
+  if (firstmate && prepared.workflow.scope !== "fleet" && state.projectTarget == null) {
     throw new GuideValidationError("projectTarget", "requires a real project target for this workflow")
   }
   return {
@@ -2925,6 +3005,7 @@ const selectedQueuedContext = (state: GuideUiState): GuideQueuedContext | undefi
     projectTarget: state.projectTarget ?? null,
     projectTargetConfirmed: true,
     workflow: prepared.workflow,
+    ...(state.selectedCustomerContext === undefined ? {} : { customerContext: state.selectedCustomerContext }),
   }
 }
 
@@ -3281,6 +3362,8 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.AugmentGoalTurn]: reduceAugment,
   [GuideUiActionType.AugmentGoalPanel]: reduceAugment,
   [GuideUiActionType.AugmentGoalAutoAccept]: reduceAugment,
+  [GuideUiActionType.AugmentCustomerPanel]: reduceAugment,
+  [GuideUiActionType.AugmentCustomerApprove]: reduceAugment,
   [GuideUiActionType.MatchRetry]: reduceMatch,
   [GuideUiActionType.MatchProgress]: reduceMatchProgress,
   [GuideUiActionType.MatchAttempt]: reduceMatchProgress,
@@ -3473,6 +3556,8 @@ export enum GuidePinnedLensKind {
   Council = "council",
   Research = "research",
   HveRpi = "hve-rpi",
+  Discovery = "discovery",
+  Experiment = "experiment",
 }
 
 export interface GuidePinnedLens {
@@ -3528,11 +3613,34 @@ const pinnedLensDefinitions: ReadonlyArray<
       "Use HVE Core's dedicated agent to carry the request through research, planning, implementation, and review.",
     tradeoff: "Adds a structured multi-stage process that is unnecessary for small changes.",
   },
+  {
+    kind: GuidePinnedLensKind.Discovery,
+    key: "d",
+    emoji: "💬",
+    label: "Discover with the customer",
+    description: "Clarify needs and evidence with DT Coach.",
+    profileRef: "native:cpx/hve",
+    workflowId: "customer-discovery",
+    reason: "Work with the customer on the problem and resume the method supported by the existing evidence.",
+    tradeoff: "Needs your answers and customer decisions; not an unattended engineering run.",
+  },
+  {
+    kind: GuidePinnedLensKind.Experiment,
+    key: "e",
+    emoji: "🧪",
+    label: "Test an assumption",
+    description: "Plan a bounded experiment before investment.",
+    profileRef: "native:cpx/hve",
+    workflowId: "test-assumption",
+    reason: "Define a falsifiable hypothesis and measurement criteria before approving an experiment.",
+    tradeoff: "Needs human approval before execution; a working demo does not establish the hypothesis.",
+  },
 ]
 
 export const pinnedGuideLenses = (catalog: CombinedGuideCatalog): ReadonlyArray<GuidePinnedLens> =>
   pinnedLensDefinitions.flatMap((definition) => {
-    if (findCombinedCatalogEntry(catalog, definition.profileRef) === undefined) return []
+    const found = findCombinedCatalogEntry(catalog, definition.profileRef)
+    if (!found?.entry.guide.workflows.some(({ id }) => id === definition.workflowId)) return []
     const { profileRef, workflowId, reason, tradeoff, ...lens } = definition
     return [
       {
@@ -3582,7 +3690,7 @@ export const templateGuideCandidates = (
   if (workflow === undefined) throw new Error(`Unknown workflow reference: ${workflowId}`)
   const fallbackIntent = context.profileRef?.startsWith("native:fmx/") && context.originalIntent !== undefined
     ? "Use the unchanged original human intent in this request. Follow the selected workflow and confirmed target without extending their scope."
-    : intent
+    : stripCustomerContext(intent, context.customerContext)
   const candidates = templatePromptCandidates(guide, workflowId, fallbackIntent)
   return [
     completeSinglePromptArtifact(workflow, candidates[0], context),
@@ -3659,6 +3767,7 @@ export const runGuideGenerationStep = async (
   onGuideLoaded?.(guideDocument)
   const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.profileRef, intent,
     catalogGuideTaskContext(catalog, recommendation.profileRef, context))
+  const subject = stripCustomerContext(intent, prepared.context.customerContext)
   assertGuidePromptDeliveryContext(prepared.context)
   const workflow = prepared.workflow
   const complete = (candidate: GuideGenerateCandidate): GuideGenerateCandidate =>
@@ -3689,7 +3798,7 @@ export const runGuideGenerationStep = async (
   const produce = async () => {
     onProgress?.(GuideGenerationPhase.GeneratingCandidates)
     const generated = await provider.generate({
-      intent,
+      intent: subject,
       profileRef: recommendation.profileRef,
       workflowId: recommendation.workflowId,
       guide: prepared.guide,
@@ -3704,9 +3813,9 @@ export const runGuideGenerationStep = async (
     onProgress?.(GuideGenerationPhase.ApplyingWorkflow)
     const bodyCandidates = requireDistinctGuideCandidatePrompts(
       [
-        resolveGeneratedWorkflowBodyCandidate(prepared.guide, workflow, intent, first),
-        resolveGeneratedWorkflowBodyCandidate(prepared.guide, workflow, intent, second),
-        resolveGeneratedWorkflowBodyCandidate(prepared.guide, workflow, intent, third),
+        resolveGeneratedWorkflowBodyCandidate(prepared.guide, workflow, subject, first),
+        resolveGeneratedWorkflowBodyCandidate(prepared.guide, workflow, subject, second),
+        resolveGeneratedWorkflowBodyCandidate(prepared.guide, workflow, subject, third),
       ],
       GuideCandidatePromptStage.GeneratedBodyNormalization,
     )
@@ -3826,7 +3935,7 @@ export const runGuideRefinementStep = async (
   }
   const produce = async () => {
     const refined = await provider.refine({
-      intent,
+      intent: stripCustomerContext(intent, prepared.context.customerContext),
       profileRef: recommendation.profileRef,
       workflowId: recommendation.workflowId,
       guide: prepared.guide,
@@ -4892,8 +5001,9 @@ const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => {
   )
 }
 
-const AugmentChooser = ({ index }: { readonly index: number }) => (
+const AugmentChooser = ({ index, error }: { readonly index: number; readonly error?: string | undefined }) => (
   <Box flexDirection="column" paddingX={1}>
+    {error === undefined ? null : <Text color="red">{error}</Text>}
     <Text bold color="cyan">
       Augment your prompt
     </Text>
@@ -5267,16 +5377,13 @@ const PinnedLenses = ({ lenses }: { readonly lenses: ReadonlyArray<GuidePinnedLe
   lenses.length === 0 ? null : (
     <Box flexDirection="column" marginTop={1}>
       <Text bold>PINNED LENSES</Text>
-      <Box gap={3}>
-        {lenses.map((lens) => (
-          <Text key={lens.kind}>
-            <Text bold color="magenta">
-              {lens.emoji} {lens.key} {lens.label}
-            </Text>
-            <Text dimColor> — {lens.description}</Text>
+      <Text>
+        {lenses.map((lens, index) => (
+          <Text key={lens.kind} bold color="magenta">
+            {index === 0 ? "" : " · "}{lens.emoji} {lens.key} {lens.label}
           </Text>
         ))}
-      </Box>
+      </Text>
     </Box>
   )
 
@@ -5325,7 +5432,7 @@ const RecommendationsView = ({
         <RecommendationDetail recommendation={recommendation} {...(controllerLabel === undefined ? {} : { controllerLabel })} />
       </Box>
       <Text dimColor>
-        ↑/↓ or j/k select · ↵ generate · p view prompt · c council · r research · h HVE RPI · q cancel
+        ↑/↓ or j/k select · ↵ generate · p view prompt{pinnedLenses.length === 0 ? "" : ` · ${pinnedLenses.map(({ key }) => key).join("/")} lenses`} · q cancel
       </Text>
     </Box>
   )
@@ -5592,13 +5699,19 @@ const DestinationView = ({
   commandPreview,
   manualGoal = false,
   goalPrompt = false,
+  customerPrompt = false,
+  interactiveWorkflow = false,
 }: {
   readonly options: ReadonlyArray<GuideUiDestination>
   readonly index: number
   readonly commandPreview: string
   readonly manualGoal?: boolean
   readonly goalPrompt?: boolean
-}) => (
+  readonly customerPrompt?: boolean
+  readonly interactiveWorkflow?: boolean
+}) => {
+  const { rows, columns } = useGuideWindowSize()
+  return (
   <Box flexDirection="column" paddingX={1}>
     <Text bold color="cyan">
       Choose a destination
@@ -5609,13 +5722,23 @@ const DestinationView = ({
         {destinationLabels[option]}
       </Text>
     ))}
-    <Text dimColor wrap={goalPrompt ? "truncate-end" : "wrap"}>
+    {customerPrompt ? <MarkdownTextViewport
+      value={`Command: ${commandPreview}`}
+      width={Math.max(1, columns - 2)}
+      height={Math.max(1, rows - options.length - 6)}
+      resetKey={commandPreview}
+    /> : <Text dimColor wrap={goalPrompt ? "truncate-end" : "wrap"}>
       Command: {goalPrompt ? compactCommandPreview(commandPreview) : commandPreview}
-    </Text>
+    </Text>}
     {manualGoal ? <Text color="yellow">Native goal input is required after the session starts.</Text> : null}
-    <Text dimColor>↑/↓ or j/k select · ↵ queue it · L launch all · c print prompt · b back</Text>
+    <Text dimColor>
+      {interactiveWorkflow
+        ? "↑/↓ select · Enter launch directly · PgUp/PgDn command · c print prompt · b back"
+        : "↑/↓ or j/k select · ↵ queue it · L launch all · c print prompt · b back"}
+    </Text>
   </Box>
-)
+  )
+}
 
 /** `cpx · council`, or `sandbox · claude-council`. */
 const describeJobRunner = (profile: SelectedProfile): string =>
@@ -6362,6 +6485,8 @@ const runAugmentJob = async (
   interactions: GuideGoalInteractionController | undefined,
 ): Promise<string> => {
   switch (job.kind) {
+    case GuideAugmentKind.CustomerContext:
+      throw new Error("Customer preparation is local and requires explicit review, not a background provider")
     case GuideAugmentKind.Research:
       return runResearchAugment(job.source, props.catalog, context)
     case GuideAugmentKind.Codebase:
@@ -6393,7 +6518,7 @@ const useGuideAugmentEffect = (props: GuideUiProps, state: GuideUiState, dispatc
   const controllerRef = useRef<GuideGoalInteractionController | undefined>(undefined)
   const job = state.augmentJob
   const runId = job?.runId
-  const running = job?.status === "running"
+  const running = job?.status === "running" && job.kind !== GuideAugmentKind.CustomerContext
   const autoAcceptRecommended = job?.goalAutoAcceptRecommended ?? false
   useEffect(() => {
     if (job === undefined || runId === undefined || !running) return undefined
@@ -6954,23 +7079,36 @@ const handleInstanceInput: GuideInputHandler = (context, input, key) => {
   if (event !== undefined) dispatch({ type: GuideUiActionType.FirstmateInstanceEvent, event })
 }
 
-/**
- * Every Herdr destination only marks the entry and returns to the queue, so a
- * batch of forks stays intact until `L` launches all of it. Ordinary and
- * legacy manual-paste terminal launches run now. Inbox Firstmate has its own
- * save-before-handoff queue route.
- */
+const completeCustomerDestination = (context: GuideInputContext, option: GuideUiDestination): boolean => {
+  const { state, props, herdrContext, dispatch, complete } = context
+  const profile = state.selectedProfile
+  const candidate = state.selectedCandidate
+  if (profile?.interaction === undefined || candidate === undefined || herdrContext === null ||
+      option === GuideUiDestination.NewHerdrWorktree) return false
+  try {
+    complete(option === GuideUiDestination.CurrentHerdrWorkspace
+      ? buildCurrentHerdrWorkspaceResult(profile, candidate.prompt, props.cwd, herdrContext)
+      : buildNewHerdrTabResult(profile, candidate.prompt, props.cwd, herdrContext))
+  } catch (error) {
+    dispatch({ type: GuideUiActionType.InputRejected, message: describeGuideUiError(error) })
+  }
+  return true
+}
+
+/** Ordinary Herdr work is queued; customer workflows use a direct handoff. */
 const completeDestination = (context: GuideInputContext, option: GuideUiDestination): void => {
   const { state, props, herdrContext, dispatch, complete } = context
-  if (state.selectedProfile === undefined || state.selectedCandidate === undefined) return
-  if (isFirstmateSelection(state.selectedProfile)) {
+  const profile = state.selectedProfile
+  const candidate = state.selectedCandidate
+  if (profile === undefined || candidate === undefined) return
+  if (isFirstmateSelection(profile)) {
     dispatch({ type: GuideUiActionType.InputRejected, message: "Choose a fleet action. Firstmate uses the inbox queue, not a terminal prompt." })
     return
   }
   if (option === GuideUiDestination.CurrentTerminal) {
     try {
       complete(buildCurrentTerminalResult(
-        state.selectedProfile, state.selectedCandidate.prompt, props.cwd, state.selectedCandidate.goalExecution ?? selectedLegacyFirstmateContext(state),
+        profile, candidate.prompt, props.cwd, candidate.goalExecution ?? selectedLegacyFirstmateContext(state),
       ))
     } catch (error) {
       dispatch({ type: GuideUiActionType.InputRejected, message: describeGuideUiError(error) })
@@ -6978,6 +7116,7 @@ const completeDestination = (context: GuideInputContext, option: GuideUiDestinat
     return
   }
   if (herdrContext === null) return
+  if (completeCustomerDestination(context, option)) return
   if (option === GuideUiDestination.CurrentHerdrWorkspace) {
     dispatch({
       type: GuideUiActionType.DestinationEnqueue,
@@ -7029,7 +7168,27 @@ const handleQueuePlacementInput: GuideInputHandler = ({ state, dispatch, herdrCo
   }
 }
 
-const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, cancel }, input, key) => {
+const completeCustomerWorktree = (
+  context: GuideInputContext,
+  placement: Extract<JobPlacement, { readonly kind: "new-worktree" | "existing-worktree" }>,
+  primaryCheckoutPath: string,
+): boolean => {
+  const { state, complete, dispatch } = context
+  const profile = state.selectedProfile
+  if (profile?.interaction === undefined) return false
+  try {
+    if (state.selectedCandidate === undefined) throw new Error("The customer prompt is missing; return to the candidate.")
+    complete(placement.kind === "new-worktree"
+      ? buildNewHerdrWorktreeResult(profile, state.selectedCandidate.prompt, primaryCheckoutPath, placement.branch, placement.baseRef)
+      : buildExistingHerdrWorktreeResult(profile, state.selectedCandidate.prompt, primaryCheckoutPath, placement.path))
+  } catch (error) {
+    dispatch({ type: GuideUiActionType.InputRejected, message: describeGuideUiError(error) })
+  }
+  return true
+}
+
+const handleWorktreeCollisionInput: GuideInputHandler = (context, input, key) => {
+  const { state, dispatch, cancel } = context
   if (input === "e") {
     dispatch({ type: GuideUiActionType.WorktreeEditBranch })
     return
@@ -7049,17 +7208,19 @@ const handleWorktreeCollisionInput: GuideInputHandler = ({ state, dispatch, canc
     if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.WorktreeBack })
     return
   }
+  const placement = { kind: "existing-worktree", path: inspection.collision.path } as const
+  if (completeCustomerWorktree(context, placement, inspection.primaryCheckoutPath)) return
   dispatch({
     type: GuideUiActionType.QueuePlacementWorktree,
-    placement: { kind: "existing-worktree", path: inspection.collision.path },
+    placement,
     primaryCheckoutPath: inspection.primaryCheckoutPath,
   })
 }
 
-/** The confirmed fresh worktree a queued entry will run in, once the dirty-checkout gate is cleared. */
+/** The fresh worktree after the dirty-checkout gate is cleared. */
 const confirmedQueueWorktree = (
   state: GuideUiState,
-): { readonly placement: JobPlacement; readonly primaryCheckoutPath: string } | undefined => {
+): { readonly placement: Extract<JobPlacement, { readonly kind: "new-worktree" }>; readonly primaryCheckoutPath: string } | undefined => {
   const inspection = state.worktreeInspection
   if (
     inspection === undefined ||
@@ -7074,7 +7235,8 @@ const confirmedQueueWorktree = (
   }
 }
 
-const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
+const handleWorktreeReadyInput: GuideInputHandler = (context, input, key) => {
+  const { state, dispatch } = context
   if (key.escape) {
     dispatch({ type: GuideUiActionType.WorktreeBack })
     return
@@ -7082,7 +7244,9 @@ const handleWorktreeReadyInput: GuideInputHandler = ({ state, dispatch }, input,
   if (!key.return && input !== "y") return
   const confirmed = confirmedQueueWorktree(state)
   if (confirmed === undefined) dispatch({ type: GuideUiActionType.WorktreeConfirm })
-  else dispatch({ type: GuideUiActionType.QueuePlacementWorktree, ...confirmed })
+  else if (!completeCustomerWorktree(context, confirmed.placement, confirmed.primaryCheckoutPath)) {
+    dispatch({ type: GuideUiActionType.QueuePlacementWorktree, ...confirmed })
+  }
 }
 
 const handleTargetInput: GuideInputHandler = ({ dispatch, cancel, props }, input, key) => {
@@ -7184,7 +7348,7 @@ const handleGuideInput = (context: GuideInputContext, input: string, key: Key): 
   if (
     context.state.stage === GuideUiStage.Augmenting &&
     context.state.augmentJob?.status === "running" &&
-    context.state.augmentJob.goalPanel !== undefined
+    (context.state.augmentJob.goalPanel !== undefined || context.state.augmentJob.customerPanel !== undefined)
   ) return
   if (acceptsGlobalKeys(context.state) && !isTargetStage(context.state.stage)) {
     if (input === "L" && context.state.queue.entries.length > 0) {
@@ -7295,10 +7459,30 @@ const GoalInteractionStage = ({
 
 const renderAugmentWatch: GuideStageRenderer = ({ state, dispatch, submitGoal }) => {
   const job = state.augmentJob
+  if (job?.kind === GuideAugmentKind.CustomerContext && job.customerPanel !== undefined) {
+    return <CustomerInteractionStage job={job} panel={job.customerPanel} dispatch={dispatch} />
+  }
   const panel = job?.goalPanel
   return job?.status === "running" && panel !== undefined
     ? <GoalInteractionStage panel={panel} autoAcceptRecommended={job.goalAutoAcceptRecommended} dispatch={dispatch} submitGoal={submitGoal} />
     : <AugmentWatch job={job} />
+}
+
+const CustomerInteractionStage = ({
+  job, panel, dispatch,
+}: {
+  readonly job: GuideAugmentJob
+  readonly panel: GuideCustomerPanelState
+  readonly dispatch: GuideUiDispatch
+}) => {
+  const { rows, columns } = useGuideWindowSize()
+  return <GuideCustomerPanel
+    state={panel} source={job.source} rows={rows} columns={columns}
+    onAction={(action) => dispatch({ type: GuideUiActionType.AugmentCustomerPanel, runId: job.runId, action })}
+    onApprove={() => dispatch({ type: GuideUiActionType.AugmentCustomerApprove, runId: job.runId })}
+    onDiscard={() => dispatch({ type: GuideUiActionType.AugmentDiscard, runId: job.runId })}
+    onPark={() => dispatch({ type: GuideUiActionType.AugmentBack })}
+  />
 }
 
 const matchingProgress = ({ props, state }: GuideRenderContext): React.ReactElement => (
@@ -7384,20 +7568,21 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
   )
 }
 
+const destinationLaunchPreview = (state: GuideUiState, option: GuideUiDestination | undefined) => {
+  const profile = state.selectedProfile
+  if (profile === undefined) return undefined
+  const candidate = state.selectedCandidate
+  if (option === GuideUiDestination.CurrentTerminal) {
+    return buildGuideLaunchCommand(profile, { mode: "argv", prompt: candidate?.prompt ?? "" }, candidate?.goalExecution)
+  }
+  return candidate?.goalExecution !== undefined || profile.interaction !== undefined
+    ? buildHerdrGuideLaunch(profile, candidate?.prompt ?? "", candidate?.goalExecution)
+    : buildGuideLaunchCommand(profile)
+}
+
 const renderDestination: GuideStageRenderer = ({ state, herdrEnabled, herdrContext }) => {
   const options = destinationOptions(herdrEnabled, herdrContext?.surface)
-  const option = options[state.destinationIndex]
-  const built =
-    state.selectedProfile === undefined
-      ? undefined
-      : option === GuideUiDestination.CurrentTerminal
-        ? buildGuideLaunchCommand(state.selectedProfile, {
-            mode: "argv",
-            prompt: state.selectedCandidate?.prompt ?? "",
-          }, state.selectedCandidate?.goalExecution)
-        : state.selectedCandidate?.goalExecution === undefined
-          ? buildGuideLaunchCommand(state.selectedProfile)
-          : buildHerdrGuideLaunch(state.selectedProfile, state.selectedCandidate.prompt, state.selectedCandidate.goalExecution)
+  const built = destinationLaunchPreview(state, options[state.destinationIndex])
   const manualGoal = state.selectedCandidate?.goalExecution !== undefined && built !== undefined &&
     ("promptHandling" in built ? built.promptHandling === "manual-paste" : built.promptDelivery === "manual")
   return (
@@ -7407,6 +7592,8 @@ const renderDestination: GuideStageRenderer = ({ state, herdrEnabled, herdrConte
       commandPreview={built === undefined ? "" : renderCommandPreview(built.command)}
       manualGoal={manualGoal}
       goalPrompt={state.selectedCandidate?.goalExecution !== undefined}
+      customerPrompt={state.selectedCustomerContext !== undefined || state.selectedProfile?.interaction !== undefined}
+      interactiveWorkflow={state.selectedProfile?.interaction !== undefined}
     />
   )
 }
@@ -7549,7 +7736,7 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.TargetInspecting]: () => <Spinner label="Inspecting the selected repository" />,
   [GuideUiStage.TargetConfirm]: ({ state }) => <TargetReview state={state} />,
   [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
-  [GuideUiStage.Augment]: ({ state }) => <AugmentChooser index={state.augmentIndex} />,
+  [GuideUiStage.Augment]: ({ state }) => <AugmentChooser index={state.augmentIndex} error={state.errorMessage} />,
   [GuideUiStage.Augmenting]: renderAugmentWatch,
   [GuideUiStage.Matching]: matchingProgress,
   [GuideUiStage.MatchFailed]: ({ state }) => (

@@ -20,6 +20,8 @@ import {
 } from "./guide-integration-data.ts"
 
 const success = (stdout = ""): CommandRunResult => ({ stdout, stderr: "", exitCode: 0 })
+const existingWorktreeMode = (mode: FixtureMode): boolean =>
+  mode === FixtureMode.ExistingWorktree || mode === FixtureMode.CustomerExistingWorktree
 const claudeGoalHome = (root: string): string =>
   path.join(root, "home", ".local", "share", "trellage", "profiles", "claude", "default", "home")
 const claudeGoalModelsUrl = "http://127.0.0.1:8080/v1/models"
@@ -134,11 +136,23 @@ const runNative = (
       args[1] === profile.name,
   )
   assert(native?.surface === "native", `Unexpected native profile: ${args[1]}`)
+  if (native.interaction !== undefined) {
+    assert([root, path.join(root, "worktrees", fixtureBranches.hve), path.join(root, "worktrees", "existing-canonical")]
+      .includes(options?.cwd ?? ""), "Customer readiness must use a known selected destination")
+  } else deepStrictEqual(options?.cwd, root)
   if (native.launcher === "cdx" && args[2] === "--goal-features") {
     return runCodexGoalProbe(root, args, options, "features")
   }
+  if (args[0] === "workflow-check") {
+    assert(native.interaction !== undefined)
+    deepStrictEqual(args, ["workflow-check", native.name, "--agent", native.agent,
+      ...native.interaction.requiredSkills.flatMap((skill) => ["--require-skill", skill])])
+    return success(JSON.stringify({
+      schemaVersion: 1, launcher: "cpx", profile: "hve", mode: "interactive", agent: native.agent,
+      requiredSkills: native.interaction.requiredSkills, manifestSha256: "a".repeat(64), harnessVersion: "1.0.81",
+    }))
+  }
   deepStrictEqual(args, ["inventory", native.name, "--json"])
-  deepStrictEqual(options?.cwd, root)
   return success(
     JSON.stringify({
       schemaVersion: 1,
@@ -229,7 +243,7 @@ const runGit = (
     case "show-ref":
       assert(Object.values(fixtureBranches).some((branch) => operation[3] === `refs/heads/${branch}`))
       deepStrictEqual(operation, ["show-ref", "--verify", "--quiet", operation[3]])
-      if (mode === FixtureMode.ExistingWorktree) return success()
+      if (existingWorktreeMode(mode)) return success()
       throw new CommandRunnerError({
         kind: "exited",
         executable: "git",
@@ -242,8 +256,8 @@ const runGit = (
       const primary = `worktree ${root}\nHEAD ${fixtureHead}\nbranch refs/heads/main\n\n`
       return success(
         primary +
-          (mode === FixtureMode.ExistingWorktree
-            ? `worktree ${path.join(root, "worktrees", "existing")}\nHEAD ${fixtureHead}\nbranch refs/heads/${fixtureBranches.sandbox}\n\n`
+          (existingWorktreeMode(mode)
+            ? `worktree ${path.join(root, "worktrees", "existing")}\nHEAD ${fixtureHead}\nbranch refs/heads/${mode === FixtureMode.CustomerExistingWorktree ? fixtureBranches.hve : fixtureBranches.sandbox}\n\n`
             : ""),
       )
     }
@@ -275,7 +289,7 @@ const herdrRunner = (root: string, mode: FixtureMode) => {
         Object.values(fixtureBranches).some((value) => value === branch),
         `Unexpected branch: ${branch}`,
       )
-    deepStrictEqual(existing, mode === FixtureMode.ExistingWorktree)
+    deepStrictEqual(existing, existingWorktreeMode(mode))
     deepStrictEqual(
       args,
       existing

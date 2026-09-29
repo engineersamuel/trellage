@@ -966,6 +966,7 @@ describe("guideUiReducer: intent and match", () => {
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
       expect(state.augmentIndex).toBe(augmentOptions.length - 1)
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentConfirm })
       expect(state.stage).toBe(GuideUiStage.Intent)
       expect(state.augmentJob).toMatchObject({

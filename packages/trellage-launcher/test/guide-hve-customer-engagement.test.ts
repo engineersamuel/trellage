@@ -1,22 +1,20 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-
-import {
-  loadProfileGuide,
-  parseProfileGuideIdentity,
-  type ProfileGuideIdentity,
-  type ProfileGuideWorkflow,
-} from "@trellage/guide-core"
-
-import { workflowPromptFrame } from "../src/guide-workflow-prompt.ts"
+import { loadProfileGuide } from "@trellage/guide-core"
 import {
   GuideEffort,
   runGuideGenerate,
   selectedProfileFromCatalogRef,
   templatePromptCandidates,
 } from "../src/guide-api.ts"
-import { parseGuideCatalog, type CombinedGuideCatalog, type HeadlessCapabilitiesV1 } from "../src/guide-catalog.ts"
+import { type CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import {
+  createQueuedGuideJob,
+  executeGuideBatch,
+  queuedGuideJobEditText,
+  replaceQueuedGuideJobPrompt,
+} from "../src/guide-batch.ts"
 import { executeGuideUiResult } from "../src/guide-interactive-execution.ts"
 import {
   buildCurrentTerminalResult,
@@ -26,330 +24,352 @@ import {
   buildExistingHerdrWorktreeResult,
   pinnedGuideLenses,
   selectedProfileForPinnedLens,
+  runGuideGenerationStep,
+  runGuideRefinementStep,
+  templateGuideCandidates,
+  createInitialGuideUiState,
+  guideUiReducer,
+  GuideUiActionType,
+  GuideUiStage,
 } from "../src/guide-ui.tsx"
-import { createQueuedGuideJob, replaceQueuedGuideJobPrompt } from "../src/guide-batch.ts"
-import { parseSelectedProfile, type CommandSpec, type HerdrContext } from "../src/guide-launch.ts"
+import { buildHerdrGuideLaunch, type CommandSpec } from "../src/guide-launch.ts"
+import { ProfileReadinessKind } from "../src/guide-preflight.ts"
 import type { GuideProvider } from "../src/guide-provider.ts"
+import {
+  customerPromptProjection,
+  parseApprovedCustomerContext,
+  renderCustomerContext,
+} from "../src/guide-customer-context.ts"
 
-const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
-const guideRoot = path.join(repositoryRoot, "profile-guides")
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
+const guideRoot = path.join(root, "profile-guides")
 
-const nativeHveIdentity: ProfileGuideIdentity = parseProfileGuideIdentity("native/cpx/hve.md")
-const sandboxHveIdentity: ProfileGuideIdentity = parseProfileGuideIdentity("sandbox/copilot-hve.md")
-
-const workflow = (workflows: ReadonlyArray<ProfileGuideWorkflow>, id: string): ProfileGuideWorkflow => {
-  const found = workflows.find((candidate) => candidate.id === id)
-  if (found === undefined) throw new Error(`workflow ${id} not found`)
-  return found
-}
-
-/** Collapses authored line wrapping so assertions do not depend on column width. */
-const normalizeWhitespace = (value: string): string => value.replace(/\s+/gu, " ").trim()
-
-// Every hve-core agent name referenced by the customer-engagement-lifecycle
-// workflow, matching each agent's verified `.agent.md` frontmatter `name`.
-const expectedLifecycleAgentNames = [
-  "DT Coach",
-  "Meeting Analyst",
-  "BRD Builder",
-  "PRD Builder",
-  "UX UI Designer",
-  "ADR Creator",
-  "Privacy Planner",
-  "RAI Planner",
-  "Security Planner",
-  "SSSC Planner",
-  "Functional Planner",
-  "Backlog Manager",
-]
-
-const headless = (prompt: boolean): HeadlessCapabilitiesV1 => ({
+const catalog = async (): Promise<CombinedGuideCatalog> => ({
   schemaVersion: 1,
-  prompt,
-  outputFormats: ["text"],
-  eventContract: null,
-  trellageEventContract: null,
-  sessionId: "native",
-  resume: false,
-  resumeWithPrompt: false,
-  questionToolControl: "hard-deny",
-  changedFiles: "none",
-  usage: false,
-  cost: false,
-  modelOverride: false,
-  effortOverride: false,
-  testedHarnessVersion: null,
+  sandboxCommandPath: "/opt/bin/trellage",
+  sandbox: [],
+  native: [
+    {
+      launcher: "cpx",
+      harness: "copilot",
+      name: "hve",
+      description: "Native HVE",
+      commandPath: "/opt/bin/cpx",
+      sandbox: false,
+      herdrCompatibility: { status: "untested" },
+      headless: {
+        schemaVersion: 1,
+        prompt: false,
+        outputFormats: [],
+        eventContract: null,
+        trellageEventContract: null,
+        sessionId: "none",
+        resume: false,
+        resumeWithPrompt: false,
+        questionToolControl: "none",
+        changedFiles: "none",
+        usage: false,
+        cost: false,
+        modelOverride: false,
+        effortOverride: false,
+        testedHarnessVersion: null,
+      },
+      guide: (await loadProfileGuide(guideRoot, { surface: "native", launcher: "cpx", profile: "hve" })).guide,
+    },
+  ],
 })
 
-const hveCatalog = async (): Promise<CombinedGuideCatalog> => {
-  const native = await loadProfileGuide(guideRoot, nativeHveIdentity)
-  const sandbox = await loadProfileGuide(guideRoot, sandboxHveIdentity)
-  return parseGuideCatalog(
-    JSON.stringify({
-      schemaVersion: 1,
-      sandboxCommandPath: "/opt/trellage/bin/trellage",
-      native: [
-        {
-          launcher: "cpx",
-          harness: "copilot",
-          name: "hve",
-          description: "Native HVE Core",
-          headless: headless(true),
-          sandbox: false,
-          herdrCompatibility: { status: "supported" },
-          guide: native.guide,
-          commandPath: "/opt/trellage/bin/cpx",
-        },
-      ],
-      sandbox: [
-        {
-          name: "copilot-hve",
-          description: "Sandbox HVE Core",
-          guide: sandbox.guide,
-          path: path.join(repositoryRoot, "profiles", "copilot-hve", "profile.toml"),
-          supportedPlatforms: ["linux/amd64"],
-          harness: { kind: "copilot", version: "1.0.82" },
-          resolutionPolicy: "floating",
-          locallyResolved: false,
-          releaseLockAvailable: false,
-          skillBundles: ["sandbox-common"],
-          skillsMode: "floating",
-          finalDigestLocked: false,
-          skills: [],
-          plugins: [],
-          mcps: [],
-          sandbox: true,
-          headless: headless(false),
-          locked: false,
-          herdrCompatibility: { status: "supported" },
-        },
-      ],
-    }),
-  )
-}
-
-const templateProvider: GuideProvider = {
+const provider: GuideProvider = {
   match: async () => {
-    throw new Error("Generation must not rematch the profile")
+    throw new Error("Generation must not rematch")
   },
   generate: async ({ guide, workflowId, intent }) => ({
     candidates: templatePromptCandidates(guide, workflowId, intent),
   }),
   optimize: async ({ candidates }) => ({ candidates }),
   refine: async () => {
-    throw new Error("This test does not refine prompts")
+    throw new Error("No refinement expected")
   },
 }
 
-describe("hve customer-engagement lifecycle workflows", () => {
-  it.each(["native:cpx/hve", "sandbox:copilot-hve"])(
-    "carries the selected lifecycle agent into all three actual terminal launches for %s",
-    async (profileRef) => {
-      const catalog = await hveCatalog()
-      const response = await runGuideGenerate(templateProvider, catalog, guideRoot, {
-        profileRef,
-        intent:
-          "We're starting discovery with a customer on a new capability and need to validate the problem before committing to a design",
-        model: "test-model",
+const customerWorkflows = [
+  ["customer-discovery", "hve-core:dt-coach", ["dt-coaching-foundation", "dt-methods", "dt-rpi-integration"]],
+  ["test-assumption", "hve-core:experiment-designer", ["experiment-design"]],
+  ["business-requirements", "hve-core:brd-builder", ["requirements-author"]],
+  ["product-requirements", "hve-core:prd-builder", ["requirements-author"]],
+  ["focused-ux-coaching", "hve-core:ux-ui-designer", ["ux-coaching"]],
+  ["review-architecture", "hve-core:system-architecture-reviewer", ["architecture-review"]],
+  ["functional-planning", "hve-core:functional-planner", ["functional-planner"]],
+] as const
+
+const approvedContext = (evidence = "Reported: note-1") =>
+  parseApprovedCustomerContext({
+    schemaVersion: 1,
+    approval: "guide-context-only",
+    fields: {
+      problem: "Support staff repeat work",
+      outcome: "Unknown",
+      evidence,
+      decisions: "No implementation approval",
+      constraints: "No publishing",
+      handoff: "Partner-owned",
+    },
+  })
+
+describe("HVE customer workflow delivery", () => {
+  it("preserves the approved brief through model rewriting, refinement, and template fallback", async () => {
+    const profiles = await catalog()
+    const lens = pinnedGuideLenses(profiles).find(({ kind }) => kind === "discovery")!
+    const context = { originalIntent: "Understand support work", customerContext: approvedContext() }
+    const intent = customerPromptProjection(context.originalIntent, context.customerContext)
+    const recorded: unknown[] = []
+    const rewriting: GuideProvider = {
+      ...provider,
+      generate: async (input) => {
+        recorded.push(input.customerContext)
+        expect(input.intent).toBe(context.originalIntent)
+        return {
+          candidates: [
+            "Understand support work by examining repeated tickets.",
+            "Understand support work by checking the claimed time savings.",
+            "Understand support work by interviewing the affected operators.",
+          ].map((prompt, index) => ({ title: `Approach ${index + 1}`, prompt, notes: "" })),
+        }
+      },
+      refine: async (input) => {
+        recorded.push(input.customerContext)
+        expect(input.candidate.prompt).not.toContain("Customer context")
+        expect(input.intent).toBe(context.originalIntent)
+        return {
+          candidate: {
+            ...input.candidate,
+            prompt: "Understand support work by checking each claim with its source owner.",
+          },
+        }
+      },
+      optimize: async (input) => {
+        recorded.push(input.customerContext)
+        return { candidates: input.candidates }
+      },
+    }
+    const generated = await runGuideGenerationStep(
+      profiles,
+      guideRoot,
+      rewriting,
+      intent,
+      lens.recommendation,
+      undefined,
+      undefined,
+      undefined,
+      context,
+    )
+    const refined = await runGuideRefinementStep(
+      profiles,
+      rewriting,
+      intent,
+      lens.recommendation,
+      generated.guideDocument,
+      generated.candidates,
+      0,
+      "Be brief.",
+      undefined,
+      context,
+    )
+    const fallback = templateGuideCandidates(
+      generated.guideDocument.guide,
+      lens.recommendation.workflowId,
+      intent,
+      context,
+    )
+    expect(refined.prompt).toContain("checking each claim with its source owner")
+    for (const candidate of [...generated.candidates, refined, ...fallback]) {
+      expect(candidate.prompt).toContain(renderCustomerContext(context.customerContext))
+      expect(candidate.prompt.match(/## Customer context/g)).toHaveLength(1)
+      expect(candidate.prompt).toContain(context.originalIntent)
+    }
+    expect(recorded).toEqual(Array.from({ length: 4 }, () => context.customerContext))
+  })
+
+  it("keeps a captured brief when a parked fork changes profile after main context changes", async () => {
+    const profiles = await catalog()
+    const lens = pinnedGuideLenses(profiles).find(({ kind }) => kind === "discovery")!
+    const initial = {
+      ...createInitialGuideUiState("Understand support work"),
+      stage: GuideUiStage.Recommendations,
+      recommendations: [lens.recommendation],
+      customerContext: approvedContext(),
+    }
+    const confirm = {
+      type: GuideUiActionType.RecommendationsConfirm as const,
+      selectedProfile: selectedProfileForPinnedLens(profiles, lens),
+      recommendation: lens.recommendation,
+    }
+    const opened = guideUiReducer(initial, confirm)
+    expect(opened.selectedCustomerContext).toEqual(initial.customerContext)
+    const main = guideUiReducer(opened, { type: GuideUiActionType.ForkMain })
+    const changed = { ...main, customerContext: approvedContext("Observed: a newer note") }
+    const reopened = guideUiReducer(changed, { type: GuideUiActionType.ForkSelect, index: 0 })
+    const selecting = { ...reopened, stage: GuideUiStage.Recommendations, selectedRecommendation: undefined }
+    const selected = guideUiReducer(selecting, confirm)
+    expect(selected.customerContext).toEqual(changed.customerContext)
+    expect(selected.selectedCustomerContext).toEqual(initial.customerContext)
+  })
+
+  it("protects the captured context when an ordinary queued prompt is edited", async () => {
+    const profiles = await catalog()
+    const profile = selectedProfileFromCatalogRef(profiles, "native:cpx/hve", "rpi-research")
+    const workflow = profiles.native[0]!.guide.workflows.find(({ id }) => id === "rpi-research")!
+    const context = {
+      originalIntent: "Research support work",
+      workflowId: workflow.id,
+      workflow,
+      projectTarget: null,
+      customerContext: approvedContext(),
+    }
+    const job = createQueuedGuideJob(1, profile, "A bounded research approach.", { kind: "new-tab" }, context)
+    expect(queuedGuideJobEditText(job)).toBe("A bounded research approach.")
+    const edited = replaceQueuedGuideJobPrompt(job, "Change only the approach.")
+    expect(edited.prompt).toContain("Change only the approach.")
+    expect(edited.prompt).toContain(renderCustomerContext(context.customerContext))
+    expect(edited.guideContext).toEqual(context)
+    expect(job.prompt).not.toContain("Change only the approach.")
+  })
+
+  it.each(customerWorkflows)(
+    "uses an interactive, checked agent for %s even without headless capability",
+    async (workflowId, agent, skills) => {
+      const profiles = await catalog()
+      const response = await runGuideGenerate(provider, profiles, guideRoot, {
+        profileRef: "native:cpx/hve",
+        workflowId,
+        intent: "Keep unverified claims unknown.",
+        model: "fixture",
         effort: GuideEffort.Medium,
       })
-      expect(response.profile.workflowId).toBe("customer-engagement-lifecycle")
-      expect(response.candidates).toHaveLength(3)
-
-      const selected = selectedProfileFromCatalogRef(catalog, profileRef, response.profile.workflowId)
-      const native = selected.surface === "native"
-      const baseArgs = [...(native ? ["hve"] : ["--profile", "copilot-hve"]), "--agent", "hve-core:dt-coach"]
-      for (const candidate of response.candidates) {
-        expect(candidate.command.args).toEqual([...baseArgs, ...(native ? ["-p", candidate.prompt] : [])])
-        const launches: CommandSpec[] = []
-        const writes: string[] = []
-        await expect(
-          executeGuideUiResult(buildCurrentTerminalResult(selected, candidate.prompt, repositoryRoot), {
-            runner: {
-              run: async () => {
-                throw new Error("No external command expected")
-              },
-            },
-            write: (text) => {
-              writes.push(text)
-            },
-            runInteractive: async (command) => {
-              launches.push(command)
-            },
-          }),
-        ).resolves.toBe(0)
-        expect(launches).toEqual([
-          {
-            executable: selected.commandPath,
-            args: [...baseArgs, ...(native ? ["-i", candidate.prompt] : [candidate.prompt])],
-          },
-        ])
-        expect(writes).toEqual([])
-      }
-    },
-  )
-
-  it.each(["native:cpx/hve", "sandbox:copilot-hve"])(
-    "retains the lifecycle agent through Herdr handoff and queued prompt edits for %s",
-    async (profileRef) => {
-      const catalog = await hveCatalog()
-      const selected = selectedProfileFromCatalogRef(catalog, profileRef, "customer-engagement-lifecycle")
-      const prompt = "Preserve the customer's '$HOME' wording.\nKeep unknown assumptions explicit."
+      const selected = selectedProfileFromCatalogRef(profiles, "native:cpx/hve", workflowId)
       const baseArgs = [
-        ...(selected.surface === "native" ? ["hve"] : ["--profile", "copilot-hve"]),
+        "interactive",
+        "hve",
         "--agent",
-        "hve-core:dt-coach",
+        agent,
+        ...skills.flatMap((skill) => ["--require-skill", skill]),
       ]
-      const context: HerdrContext = {
-        workspaceId: "1",
-        paneId: "1-1",
-        surface: "pane",
+      for (const candidate of response.candidates) {
+        expect(candidate.command.args).toEqual([...baseArgs, "-i", candidate.prompt])
+        expect(candidate.command.promptHandling).toBe("argv")
+        const launches: CommandSpec[] = []
+        let checked = 0
+        await executeGuideUiResult(buildCurrentTerminalResult(selected, candidate.prompt, root), {
+          runner: {
+            run: async () => {
+              throw new Error("No unmanaged operation expected")
+            },
+          },
+          write: () => {},
+          checkReadiness: async (_runner, profile) => {
+            expect(profile).toMatchObject({ agent, interaction: { mode: "interactive", requiredSkills: skills } })
+            checked++
+            return { kind: ProfileReadinessKind.Ready, summary: "Fixture ready" }
+          },
+          runInteractive: async (command) => {
+            launches.push(command)
+          },
+        })
+        expect(checked).toBe(1)
+        expect(launches).toEqual([{ executable: selected.commandPath, args: [...baseArgs, "-i", candidate.prompt] }])
       }
-      const handoffs = [
-        buildCurrentHerdrWorkspaceResult(selected, prompt, repositoryRoot, context),
-        buildNewHerdrTabResult(selected, prompt, repositoryRoot, context),
-        buildNewHerdrWorktreeResult(selected, prompt, repositoryRoot, "customer-discovery", "HEAD"),
-        buildExistingHerdrWorktreeResult(selected, prompt, repositoryRoot, repositoryRoot),
-      ]
-      for (const result of handoffs) {
-        expect(result.promptDelivery).toBe("command")
-        expect(result.command.args).toEqual([
-          ...baseArgs,
-          ...(selected.surface === "native" ? ["-i", prompt] : [prompt]),
-        ])
-      }
-      const edited = replaceQueuedGuideJobPrompt(
-        createQueuedGuideJob(1, selected, prompt, { kind: "new-tab" }),
-        `${prompt}\nDiscovery only.`,
-      )
-      expect(parseSelectedProfile(edited.profile)).toMatchObject({ agent: "hve-core:dt-coach" })
-      expect(edited.command.args).toEqual([
-        ...baseArgs,
-        ...(selected.surface === "native" ? ["-i", edited.prompt] : [edited.prompt]),
-      ])
     },
   )
 
-  it("does not apply DT Coach to existing workflows or replace the pinned RPI agent", async () => {
-    const catalog = await hveCatalog()
-    for (const entry of [...catalog.native, ...catalog.sandbox]) {
-      const ref = "launcher" in entry ? `native:${entry.launcher}/${entry.name}` : `sandbox:${entry.name}`
-      for (const candidate of entry.guide.workflows) {
-        if (candidate.id === "customer-engagement-lifecycle") continue
-        const selected = selectedProfileFromCatalogRef(catalog, ref, candidate.id)
-        expect(
-          buildCurrentTerminalResult(selected, "Keep the RPI workflow.", repositoryRoot).command.args,
-        ).not.toContain("--agent")
-      }
-    }
-    const lens = pinnedGuideLenses(catalog).find(({ kind }) => kind === "hve-rpi")
-    if (lens === undefined) throw new Error("Missing pinned HVE RPI lens")
-    expect(selectedProfileForPinnedLens(catalog, lens)).toMatchObject({ agent: "hve-core:rpi-agent" })
-  })
-
-  it("parses the native cpx/hve guide with the new lifecycle workflow", async () => {
-    const loaded = await loadProfileGuide(guideRoot, nativeHveIdentity)
-    const lifecycle = workflow(loaded.guide.workflows, "customer-engagement-lifecycle")
-    const normalized = normalizeWhitespace(lifecycle.promptTemplate)
-    for (const agentName of expectedLifecycleAgentNames) {
-      expect(normalized, `native lifecycle prompt should reference ${agentName}`).toContain(agentName)
-    }
-  })
-
-  it("parses the sandbox copilot-hve guide with the new lifecycle workflow", async () => {
-    const loaded = await loadProfileGuide(guideRoot, sandboxHveIdentity)
-    const lifecycle = workflow(loaded.guide.workflows, "customer-engagement-lifecycle")
-    const normalized = normalizeWhitespace(lifecycle.promptTemplate)
-    for (const agentName of expectedLifecycleAgentNames) {
-      expect(normalized, `sandbox lifecycle prompt should reference ${agentName}`).toContain(agentName)
+  it("retains the agent and questions across all direct Herdr destinations", async () => {
+    const profiles = await catalog()
+    const selected = selectedProfileFromCatalogRef(profiles, "native:cpx/hve", "test-assumption")
+    const prompt = "Keep '$HOME' literal.\nAsk before the experiment."
+    const context = { workspaceId: "1", paneId: "1-1", surface: "pane" as const }
+    const results = [
+      buildCurrentHerdrWorkspaceResult(selected, prompt, root, context),
+      buildNewHerdrTabResult(selected, prompt, root, context),
+      buildNewHerdrWorktreeResult(selected, prompt, root, "experiment", "HEAD"),
+      buildExistingHerdrWorktreeResult(selected, prompt, root, root),
+    ]
+    for (const result of results) {
+      expect(result.promptDelivery).toBe("command")
+      expect(result.command.args).toEqual([
+        "interactive",
+        "hve",
+        "--agent",
+        "hve-core:experiment-designer",
+        "--require-skill",
+        "experiment-design",
+        "-i",
+        prompt,
+      ])
     }
   })
 
-  it("preserves the DT confidence-marker vocabulary and never-skip-a-phase boundary", async () => {
-    for (const identity of [nativeHveIdentity, sandboxHveIdentity]) {
-      const loaded = await loadProfileGuide(guideRoot, identity)
-      const lifecycle = workflow(loaded.guide.workflows, "customer-engagement-lifecycle")
-      const normalized = normalizeWhitespace(lifecycle.promptTemplate)
-      expect(normalized).toContain("validated/assumed/unknown/conflicting")
-      expect(normalized).toContain("never skip a lifecycle phase or bypass evidence")
+  it("blocks failed readiness and altered commands before any customer launch", async () => {
+    const selected = selectedProfileFromCatalogRef(await catalog(), "native:cpx/hve", "customer-discovery")
+    const result = buildCurrentTerminalResult(selected, "Discover the problem.", root)
+    let launched = false
+    const services = {
+      runner: {
+        run: async () => {
+          throw new Error("Unexpected command")
+        },
+      },
+      write: () => {},
+      checkReadiness: async () => ({
+        kind: ProfileReadinessKind.Blocked as const,
+        summary: "Unavailable",
+        diagnostic: "Missing dt-methods",
+      }),
+      runInteractive: async () => {
+        launched = true
+      },
     }
+    await expect(executeGuideUiResult(result, services)).rejects.toThrow("Missing dt-methods")
+    await expect(
+      executeGuideUiResult({ ...result, command: { ...result.command, args: ["hve", "-p", result.prompt] } }, services),
+    ).rejects.toThrow("no longer matches")
+    expect(launched).toBe(false)
   })
 
-  it("gates functional planning and backlog management behind a requirements-maturity boundary", async () => {
-    for (const identity of [nativeHveIdentity, sandboxHveIdentity]) {
-      const loaded = await loadProfileGuide(guideRoot, identity)
-      const lifecycle = workflow(loaded.guide.workflows, "customer-engagement-lifecycle")
-      const normalized = normalizeWhitespace(lifecycle.promptTemplate)
-      expect(normalized).toContain(
-        "Use the Functional Planner and Backlog Manager agents only once requirements are sufficiently mature.",
-      )
-    }
-  })
-
-  it("hands off mature Design Thinking or requirements work into rpi-research", async () => {
-    for (const identity of [nativeHveIdentity, sandboxHveIdentity]) {
-      const loaded = await loadProfileGuide(guideRoot, identity)
-      const lifecycle = workflow(loaded.guide.workflows, "customer-engagement-lifecycle")
-      const normalized = normalizeWhitespace(lifecycle.promptTemplate)
-      expect(normalized).toContain("formal DT-to-RPI handoff into rpi-research")
-      // The existing rpi-research workflow (or, for Sandbox, /rpi) remains the
-      // formal RPI entry point the lifecycle workflow hands off into.
-      const rpiWorkflowId = identity.surface === "native" ? "rpi-research" : "rpi-agent-cycle"
-      expect(() => workflow(loaded.guide.workflows, rpiWorkflowId)).not.toThrow()
-    }
-  })
-
-  it("renders exactly one {{intent}} placeholder for the new lifecycle workflow", async () => {
-    for (const identity of [nativeHveIdentity, sandboxHveIdentity]) {
-      const loaded = await loadProfileGuide(guideRoot, identity)
-      const lifecycle = workflow(loaded.guide.workflows, "customer-engagement-lifecycle")
-      const frame = workflowPromptFrame(lifecycle)
-      const rendered = `${frame.beforeBody}Do the thing${frame.afterBody}`
-      expect(rendered).not.toContain("{{intent}}")
-      expect(rendered).toContain("Do the thing")
-    }
-  })
-
-  it("keeps the native RPI-only workflows unchanged", async () => {
-    const loaded = await loadProfileGuide(guideRoot, nativeHveIdentity)
-    expect(workflow(loaded.guide.workflows, "rpi-agent-cycle").promptTemplate).toBe(
-      "Take this request through a complete Research, Plan, Implement, and\n" +
-        "Review cycle. Keep durable evidence for each stage, challenge the plan\n" +
-        "before implementation, and verify the final result: {{intent}}",
+  it("blocks queue construction and forged queued interactive jobs before allocation", async () => {
+    const selected = selectedProfileFromCatalogRef(await catalog(), "native:cpx/hve", "customer-discovery")
+    expect(() => createQueuedGuideJob(1, selected, "Discovery", { kind: "new-tab" })).toThrow("needs your answers")
+    const built = buildHerdrGuideLaunch(selected, "Discovery")
+    const result = await executeGuideBatch(
+      {
+        jobs: [{ id: 1, profile: selected, prompt: "Discovery", ...built, placement: { kind: "new-tab" } }],
+        context: { cwd: root, workspaceId: "1", callerPaneId: "1-1" },
+      },
+      {
+        runner: {
+          run: async () => {
+            throw new Error("No allocation or launch permitted")
+          },
+        },
+        write: () => {},
+      },
     )
-    expect(workflow(loaded.guide.workflows, "rpi-research").promptTemplate).toBe(
-      "Use the rpi-research skill to investigate {{intent}} and produce a\n" +
-        "durable research note before any planning or implementation begins.",
-    )
-    expect(workflow(loaded.guide.workflows, "rpi-plan-and-critique").promptTemplate).toBe(
-      "Use the rpi-plan skill to draft a plan for {{intent}}, then use\n" +
-        "rpi-plan-critique to challenge it before implementation begins.",
-    )
-    expect(workflow(loaded.guide.workflows, "rpi-implement-and-review").promptTemplate).toBe(
-      "Use the rpi-implement skill to execute the approved plan for\n" +
-        "{{intent}}, then use rpi-review to record verification evidence.",
-    )
-    expect(loaded.guide.workflows.map(({ id }) => id)).toEqual([
-      "rpi-agent-cycle",
-      "rpi-research",
-      "rpi-plan-and-critique",
-      "rpi-implement-and-review",
-      "customer-engagement-lifecycle",
+    expect(result.result.entries).toEqual([
+      expect.objectContaining({ status: "invalid", message: expect.stringContaining("unattended") }),
     ])
   })
 
-  it("keeps the Sandbox RPI-only workflows unchanged", async () => {
-    const loaded = await loadProfileGuide(guideRoot, sandboxHveIdentity)
-    const rpiAgentCycle = workflow(loaded.guide.workflows, "rpi-agent-cycle")
-    expect(rpiAgentCycle.skill).toBe("rpi")
-    expect(rpiAgentCycle.promptTemplate).toBe("/rpi {{intent}}")
-    const adaptHvePatterns = workflow(loaded.guide.workflows, "adapt-hve-patterns")
-    expect(adaptHvePatterns.skill).toBe("hve-builder")
-    expect(adaptHvePatterns.promptTemplate).toBe("/hve-builder {{intent}}")
-    expect(loaded.guide.workflows.map(({ id }) => id)).toEqual([
-      "rpi-agent-cycle",
-      "adapt-hve-patterns",
-      "customer-engagement-lifecycle",
-    ])
+  it("pins only the new entry points and keeps ordinary RPI autonomous", async () => {
+    const profiles = await catalog()
+    const lenses = pinnedGuideLenses(profiles)
+    expect(lenses.map(({ kind }) => kind)).toEqual(["hve-rpi", "discovery", "experiment"])
+    for (const lens of lenses) {
+      const selected = selectedProfileForPinnedLens(profiles, lens)
+      expect(selected.interaction?.mode).toBe(lens.kind === "hve-rpi" ? undefined : "interactive")
+    }
+    const research = selectedProfileFromCatalogRef(profiles, "native:cpx/hve", "rpi-research")
+    expect(research.agent).toBeUndefined()
+    expect(research.interaction).toBeUndefined()
+    expect(buildHerdrGuideLaunch(research, "Research").command.args).toEqual(["hve", "-i", "Research"])
+    const sandbox = await loadProfileGuide(guideRoot, { surface: "sandbox", profile: "copilot-hve" })
+    expect(sandbox.guide.workflows.map(({ id }) => id)).toEqual(["rpi-agent-cycle", "adapt-hve-patterns"])
   })
 })

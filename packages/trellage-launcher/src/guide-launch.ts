@@ -1,10 +1,13 @@
 import path from "node:path"
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
+import { closeSync, constants, openSync } from "node:fs"
 import {
   FIRSTMATE_MAX_REQUEST_BYTES,
   type ProfileGuideV1,
   isLaunchAgentIdentifier,
+  parseProfileGuideInteraction,
+  type ProfileGuideInteraction,
   parseFirstmateInstanceControlContextV1,
   parseFirstmateInstanceReferenceV1,
   parseFirstmateOrchestrationV1,
@@ -84,6 +87,7 @@ export interface NativeSelectedProfile {
   readonly profile: string
   readonly headlessPrompt: boolean
   readonly agent?: string
+  readonly interaction?: ProfileGuideInteraction
   readonly goalExecutionPolicy?: NonNullable<ProfileGuideV1["goalExecution"]>
   readonly orchestration?: FirstmateOrchestrationV1
   readonly firstmateInstance?: FirstmateInstanceReferenceV1
@@ -96,6 +100,7 @@ export interface SandboxSelectedProfile {
   readonly profile: string
   readonly headlessPrompt: boolean
   readonly agent?: string
+  readonly interaction?: never
   readonly goalExecutionPolicy?: NonNullable<ProfileGuideV1["goalExecution"]>
 }
 
@@ -573,10 +578,22 @@ export class GuideLaunchError extends Error {
   }
 }
 
+const selectedInteraction = (
+  value: Record<string, unknown>, launcher: string, agent: string | undefined,
+): ProfileGuideInteraction | undefined => {
+  if (value.interaction === undefined) return undefined
+  const interaction = parseProfileGuideInteraction(value.interaction)
+  if (launcher !== "cpx" || value.profile !== "hve" || agent === undefined) {
+    throw new Error("Interactive workflows require native:cpx/hve and an explicit agent")
+  }
+  return interaction
+}
+
 const parseNativeSelectedProfile = (value: Record<string, unknown>): NativeSelectedProfile => {
   const goalExecutionPolicy = validateGoalExecutionPolicy(value.goalExecutionPolicy)
     const launcher = validateLauncher(value.launcher)
     const agent = validateAgent(value.agent, launcher)
+    const interaction = selectedInteraction(value, launcher, agent)
     const orchestration = value.orchestration === undefined
       ? undefined
       : parseFirstmateOrchestrationV1(value.orchestration)
@@ -590,6 +607,7 @@ const parseNativeSelectedProfile = (value: Record<string, unknown>): NativeSelec
       profile: validateProfileName(value.profile),
       headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
       ...(agent === undefined ? {} : { agent }),
+      ...(interaction === undefined ? {} : { interaction }),
       ...(goalExecutionPolicy === undefined ? {} : { goalExecutionPolicy }),
       ...(orchestration === undefined ? {} : { orchestration }),
       ...(value.firstmateInstance === undefined ? {} : {
@@ -610,6 +628,9 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
   const goalExecutionPolicy = validateGoalExecutionPolicy(value.goalExecutionPolicy)
   if (surface === "native") return parseNativeSelectedProfile(value)
   if (surface === "sandbox") {
+    if (value.interaction !== undefined) {
+      throw new Error("Verified interactive customer workflows require native:cpx/hve, not Sandbox")
+    }
     if (value.firstmateInstance !== undefined || value.firstmateInstanceContext !== undefined) {
       throw new Error("Sandbox profiles cannot select a Firstmate instance.")
     }
@@ -632,6 +653,7 @@ const nativePromptArgs = (
   prompt: string,
 ): ReadonlyArray<string> => {
   if (selectedProfile.launcher === "cdx") return [...baseArgs, "--", prompt]
+  if (selectedProfile.interaction !== undefined) return [...baseArgs, "-i", prompt]
   if (!selectedProfile.headlessPrompt) return baseArgs
   return [...baseArgs, selectedProfile.launcher === "cpx" ? "-i" : "-p", prompt]
 }
@@ -661,10 +683,14 @@ export const buildGuideLaunchCommand = (
   delivery?: PromptDelivery,
   goalExecution?: GuideGoalCandidateContext,
 ): BuiltCommandSpec => {
+  if (selectedProfile.interaction !== undefined) parseSelectedProfile(selectedProfile)
   const normalizedDelivery = normalizePromptDelivery(delivery)
   const baseArgs = [
-    ...(selectedProfile.surface === "native" ? [selectedProfile.profile] : ["--profile", selectedProfile.profile]),
+    ...(selectedProfile.surface === "native"
+      ? [...(selectedProfile.interaction === undefined ? [] : ["interactive"]), selectedProfile.profile]
+      : ["--profile", selectedProfile.profile]),
     ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
+    ...(selectedProfile.interaction?.requiredSkills.flatMap((skill) => ["--require-skill", skill]) ?? []),
     ...(selectedProfile.surface === "native" ? firstmateInstanceSelectorArgs(selectedProfile) : []),
   ]
   if (goalExecution !== undefined) {
@@ -685,7 +711,7 @@ export const buildGuideLaunchCommand = (
         executable: selectedProfile.commandPath,
         args: nativePromptArgs(selectedProfile, baseArgs, normalizedDelivery.prompt),
       },
-      promptHandling: selectedProfile.headlessPrompt || selectedProfile.launcher === "cdx" ? "argv" : "manual-paste",
+      promptHandling: selectedProfile.interaction !== undefined || selectedProfile.headlessPrompt || selectedProfile.launcher === "cdx" ? "argv" : "manual-paste",
     }
   }
   return {
@@ -1035,13 +1061,13 @@ export const createNodeCommandRunner = (): CommandRunner => ({
 
 export const runInteractiveCommand = async (
   command: CommandSpec,
-  options?: Pick<CommandRunOptions, "cwd" | "env">,
+  options?: Pick<CommandRunOptions, "cwd" | "env"> & { readonly stdio?: readonly [number, number, number] },
 ): Promise<void> =>
   new Promise((resolve, reject) => {
     const child = spawn(command.executable, [...command.args], {
       shell: false,
       windowsHide: true,
-      stdio: "inherit",
+      stdio: options?.stdio === undefined ? "inherit" : [...options.stdio],
       ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
       ...(options?.env === undefined ? {} : { env: options.env }),
     })
@@ -1078,6 +1104,18 @@ export const runInteractiveCommand = async (
       )
     })
   })
+
+export const runInteractiveTerminalCommand = async (
+  command: CommandSpec,
+  options?: Pick<CommandRunOptions, "cwd" | "env">,
+): Promise<void> => {
+  const terminal = openSync("/dev/tty", constants.O_RDWR)
+  try {
+    await runInteractiveCommand(command, { ...options, stdio: [terminal, terminal, terminal] })
+  } finally {
+    closeSync(terminal)
+  }
+}
 
 const optionalBoundedText = (value: unknown, name: string, maximum: number): string | undefined => {
   if (value === undefined) return undefined

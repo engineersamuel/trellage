@@ -64,6 +64,29 @@ afterEach(async () => {
 })
 
 describe("profile guide parser", () => {
+  const withInteraction = (interaction: unknown, agent = "hve-core:dt-coach"): string =>
+    validGuide.replace("    skill: social-media-skills:post-writer",
+      `    launchAgent: ${JSON.stringify(agent)}\n    interaction: ${JSON.stringify(interaction)}`)
+
+  it("requires a known interactive surface and exact, unique skill requirements", () => {
+    const interaction = { mode: "interactive", requiredSkills: ["dt-methods"] }
+    const source = withInteraction(interaction)
+    expect(parseProfileGuide("native/cpx/hve.md", source).guide.workflows[0]?.interaction).toEqual(interaction)
+    for (const identity of ["native/cpx/default.md", "sandbox/copilot-hve.md", "unknown.md"]) {
+      expect(() => parseProfileGuide(identity, source)).toThrow("require native/cpx/hve.md")
+    }
+    for (const invalid of [
+      { mode: "autopilot", requiredSkills: ["dt-methods"] },
+      { mode: "interactive", requiredSkills: [] },
+      { mode: "interactive", requiredSkills: ["dt-methods", "dt-methods"] },
+      { mode: "interactive", requiredSkills: ["../dt-methods"] },
+      { mode: "interactive", requiredSkills: ["dt-methods"], optional: true },
+    ]) {
+      expect(() => parseProfileGuide("native/cpx/hve.md", withInteraction(invalid))).toThrow(/interaction/u)
+    }
+    expect(() => parseProfileGuide("native/cpx/hve.md", source.replace('    launchAgent: "hve-core:dt-coach"\n', ""))).toThrow("launchAgent")
+  })
+
   it("parses a valid guide and preserves its Markdown body", () => {
     const parsed = parseProfileGuide("profile-guides/sandbox/social.md", validGuide)
 

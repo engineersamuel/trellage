@@ -54,6 +54,8 @@ usage() {
 Usage:
   cpx setup PROFILE|--all
   cpx PROFILE [COPILOT_ARGS...]
+  cpx interactive hve --agent AGENT --require-skill SKILL [--require-skill SKILL...] [-i PROMPT]
+  cpx workflow-check hve --agent AGENT --require-skill SKILL [--require-skill SKILL...]
   cpx list
   cpx list --json
   cpx list --json --cached-capabilities
@@ -786,6 +788,146 @@ launch_profile() {
   exec env COPILOT_HOME="$(profile_home "$profile")" \
     copilot --autopilot --allow-all --no-ask-user \
     --model gpt-6-astra --effort low "$@"
+}
+
+parse_workflow_arguments() {
+  local mode="$1" option value
+  shift
+  workflow_agent=''
+  workflow_skills=()
+  workflow_args=()
+  while (( $# > 0 )); do
+    option="$1"
+    [[ "$#" -ge 2 && -n "$2" ]] || die "$option requires a value"
+    value="$2"
+    case "$option" in
+      --agent)
+        [[ -z "$workflow_agent" ]] || die '--agent may be specified only once'
+        [[ "$value" =~ ^hve-core:[a-z0-9]+(-[a-z0-9]+)*$ ]] || die 'unsafe workflow agent'
+        workflow_agent="$value"
+        workflow_args+=(--agent "$value")
+        ;;
+      --require-skill)
+        [[ "$value" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || die 'unsafe required skill'
+        workflow_skills+=("$value")
+        ;;
+      -i)
+        [[ "$mode" == interactive ]] || die "$option is not supported by workflow-check"
+        workflow_args+=("--interactive=$value")
+        ;;
+      --model|--effort)
+        [[ "$mode" == interactive ]] || die "$option is not supported by workflow-check"
+        workflow_args+=("$option=$value")
+        ;;
+      *) die "unsupported interactive workflow argument: $option; headless and autonomous execution are not allowed" ;;
+    esac
+    shift 2
+  done
+  [[ -n "$workflow_agent" ]] || die 'interactive workflows require --agent'
+  (( ${#workflow_skills[@]} > 0 && ${#workflow_skills[@]} <= 16 )) \
+    || die 'interactive workflows require 1 to 16 --require-skill values'
+}
+
+check_interactive_workflow() {
+  local profile="$1" plugin plugin_root version inventory
+  [[ "$profile" == hve ]] || die 'verified interactive workflows currently require the hve profile'
+  require_safe_profile_home "$profile"
+  require_command python3
+  require_command copilot
+  plugin="$(profile_value "$profile" plugin)"
+  plugin_is_installed "$profile" "$plugin" || die 'the HVE plugin is not available; run cpx doctor hve'
+  plugin_root="$(active_plugin_root "$profile" "$plugin")" \
+    || die 'the HVE plugin root is missing or unsafe; run cpx doctor hve'
+  version="$(copilot_version_if_available)"
+  inventory="$(skill_inventory_snapshot "$profile")" || die 'failed to read HVE skill availability; run cpx doctor hve'
+  python3 - "$plugin_root" "$version" "$workflow_agent" "${workflow_skills[@]}" 3<<<"$inventory" <<'PY'
+import hashlib
+import json
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+version, agent = sys.argv[2:4]
+skills = sys.argv[4:]
+
+def stop(message):
+    raise ValueError(message)
+
+def readable_file(relative):
+    if not isinstance(relative, str):
+        stop("plugin paths must be strings")
+    parts = Path(relative).parts
+    if not parts or Path(relative).is_absolute() or ".." in parts:
+        stop("unsafe plugin reference")
+    current = root
+    for part in parts:
+        current = current / part
+        if current.is_symlink():
+            stop("symlinked plugin reference: " + relative)
+    status = current.stat()
+    if not stat.S_ISREG(status.st_mode) or status.st_size > 1024 * 1024:
+        stop("invalid plugin file: " + relative)
+    content = current.read_bytes()
+    if not content.strip():
+        stop("empty plugin file: " + relative)
+    return content
+
+def registered_path(manifest, kind, name):
+    paths = manifest.get(kind)
+    if not isinstance(paths, list) or not all(isinstance(item, str) for item in paths):
+        stop("unsupported HVE " + kind + " manifest")
+    suffix = ".agent.md" if kind == "agents" else ""
+    matches = [item for item in paths if Path(item).name == name + suffix]
+    if len(matches) != 1:
+        stop("required " + kind + " entry is missing or ambiguous: " + name)
+    return matches[0]
+
+try:
+    parsed_version = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
+    if parsed_version is None or tuple(map(int, parsed_version.groups())) < (1, 0, 81):
+        stop("interactive workflows require Copilot CLI 1.0.81 or later")
+    if len(set(skills)) != len(skills):
+        stop("required skills must be unique")
+    manifest_bytes = readable_file("plugin.json")
+    manifest = json.loads(manifest_bytes)
+    if not isinstance(manifest, dict) or manifest.get("name") != "hve-core":
+        stop("the installed HVE manifest has an unexpected identity")
+    readable_file(registered_path(manifest, "agents", agent.removeprefix("hve-core:")))
+    with os.fdopen(3) as source:
+        inventory = json.load(source)
+    for skill in skills:
+        skill_path = registered_path(manifest, "skills", skill)
+        readable_file(skill_path + "/SKILL.md")
+        matches = [
+            item for item in inventory
+            if item["name"] in (skill, "hve-core:" + skill) and item["source"] == "plugin"
+            and item["enabled"] is True and Path(item["path"]) in (root / skill_path, (root / skill_path).resolve())
+        ]
+        if len(matches) != 1:
+            stop("required skill is not uniquely enabled by Copilot: " + skill)
+    print(json.dumps({
+        "schemaVersion": 1, "launcher": "cpx", "profile": "hve",
+        "mode": "interactive", "agent": agent, "requiredSkills": skills,
+        "manifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "harnessVersion": version,
+    }))
+except (OSError, ValueError) as error:
+    print("cpx: workflow unavailable: " + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+launch_interactive_workflow() {
+  local profile="$1"
+  [[ -t 0 && -t 1 ]] || die 'interactive customer workflows require a terminal for your answers; do not pipe or batch them'
+  check_interactive_workflow "$profile" >/dev/null
+  ensure_profile_for_launch "$profile"
+  check_interactive_workflow "$profile" >/dev/null
+  exec env COPILOT_HOME="$(profile_home "$profile")" \
+    copilot --model gpt-6-astra --effort low "${workflow_args[@]}"
 }
 
 plugin_inventory_snapshot() {
@@ -1784,6 +1926,18 @@ command_name="${1-}"
 shift
 
 case "$command_name" in
+  interactive|workflow-check)
+    [[ "$#" -ge 1 ]] || die "$command_name requires a profile"
+    workflow_profile="$1"
+    shift
+    require_profile "$workflow_profile"
+    parse_workflow_arguments "$command_name" "$@"
+    if [[ "$command_name" == interactive ]]; then
+      launch_interactive_workflow "$workflow_profile"
+    else
+      check_interactive_workflow "$workflow_profile"
+    fi
+    ;;
   list)
     if [[ "$#" == 0 ]]; then
       list_profiles

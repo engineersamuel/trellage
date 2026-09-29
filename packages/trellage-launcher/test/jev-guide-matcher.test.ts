@@ -118,12 +118,12 @@ describe("JevGuideMatcher", () => {
     await expect(pending).rejects.toThrow()
   })
 
-  it("sends every catalog entry to Jev, including pinned entries supplied by the caller", async () => {
+  it("removes only cross-cutting workflows, not every workflow on a pinned profile", async () => {
     const entries = [
       entry("sandbox:ordinary-1"),
       entry("sandbox:ordinary-2"),
       entry("sandbox:ordinary-3"),
-      entry("sandbox:claude-council"),
+      entry("sandbox:claude-council", ["run-council-deliberation"]),
       entry("native:cpx/hve"),
       entry("sandbox:claude-research"),
     ]
@@ -131,7 +131,7 @@ describe("JevGuideMatcher", () => {
     const sdk = client(answers)
     await new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match({ intent: "Investigate", entries })
     const questions = (clientValue.request as { questions: Record<string, unknown> }).questions
-    expect(Object.keys(questions).filter((key) => key.startsWith("p"))).toHaveLength(entries.length)
+    expect(Object.keys(questions).filter((key) => key.startsWith("p"))).toHaveLength(entries.length - 1)
   })
 
   it("uses the direct environment key over a .env key and passes it only to the factory", async () => {
@@ -356,10 +356,10 @@ describe("JevGuideMatcher", () => {
       expect.arrayContaining(["sandbox:headlong", "native:cdx/pstack"]),
     )
   })
-  it("forces Poteto for an already-ranked profile and excludes unrequested pinned lenses", async () => {
+  it("forces Poteto for an already-ranked profile and excludes unrequested pinned workflows", async () => {
     const entries = [
       entry("native:cdx/pstack", ["other", "poteto-mode-entry-point"]),
-      entry("sandbox:claude-council"),
+      entry("sandbox:claude-council", ["run-council-deliberation"]),
       entry("sandbox:a"),
       entry("sandbox:b"),
       entry("sandbox:c"),
@@ -378,12 +378,42 @@ describe("JevGuideMatcher", () => {
       },
       policyPoteto: { type: "noul", noul: 0.9 },
     }
-    const matcher = new JevGuideMatcher({ cwd: "/tmp", client: client(answers) })
+    const sdk: JevSystemOneClient = {
+      systemOne: async (request) => {
+        const { entries: supplied } = JSON.parse(request.state as string) as { entries: Array<{ ref: string }> }
+        return { answers: {
+          ...answers,
+          ...Object.fromEntries(supplied.map(({ ref }, index) => [
+            `p${index}`, { type: "noul", noul: ref === "sandbox:claude-council" ? 1 : ref === "native:cdx/pstack" ? 0.99 : 0.5 },
+          ])),
+        } }
+      },
+    }
+    const matcher = new JevGuideMatcher({ cwd: "/tmp", client: sdk })
     const result = await matcher.match(input(entries))
     expect(result.candidates[0]?.workflowId).toBe("poteto-mode-entry-point")
     expect(result.candidates.some(({ profileRef }) => profileRef === "sandbox:claude-council")).toBe(false)
     const explicit = await matcher.match({ ...input(entries), preferredProfileRefs: ["sandbox:claude-council"] })
     expect(explicit.candidates[0]?.profileRef).toBe("sandbox:claude-council")
+  })
+
+  it("can rank an HVE customer workflow without exposing the generic RPI pin", async () => {
+    const entries = [
+      entry("native:cpx/hve", ["rpi-agent-cycle", "customer-discovery"]),
+      entry("sandbox:a"),
+      entry("sandbox:b"),
+    ]
+    const sdk: JevSystemOneClient = {
+      systemOne: async (request) => {
+        const { entries: supplied } = JSON.parse(request.state as string) as { entries: GuideMatchInput["entries"] }
+        expect(supplied[0]?.guide.workflows.map(({ id }) => id)).toEqual(["customer-discovery"])
+        return { answers: {
+          p0: { type: "noul", noul: 1 }, p1: { type: "noul", noul: 0.3 }, p2: { type: "noul", noul: 0.2 },
+        } }
+      },
+    }
+    const result = await new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match({ intent: "Discover customer needs", entries })
+    expect(result.candidates[0]).toMatchObject({ profileRef: "native:cpx/hve", workflowId: "customer-discovery" })
   })
 
   it("clears the deadline after success and aborts promptly when transport ignores cancellation", async () => {

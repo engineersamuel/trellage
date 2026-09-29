@@ -18,11 +18,10 @@ import {
   type GuideMatchInput,
   type GuideMatchResult,
 } from "./guide-provider.ts"
-import type { GuideMatchCatalogEntry } from "./guide-catalog.ts"
+import { taskSpecificGuideMatchEntries, type GuideMatchCatalogEntry } from "./guide-catalog.ts"
 
 const MODEL = "jev-1.13.0"
 const ATTEMPT_MS = 3_000
-const PINNED = new Set(["native:cpx/hve", "sandbox:claude-council", "sandbox:claude-research"])
 const HEADLONG = "sandbox:headlong"
 const POTETO = "native:cdx/pstack"
 const POTETO_WORKFLOW = "poteto-mode-entry-point"
@@ -103,6 +102,18 @@ const probability = (value: unknown): number => {
   return value
 }
 
+const validateChoice = (answer: Record<string, unknown>, criteria: Readonly<Record<string, unknown>>): string => {
+  const probabilities = object(answer.probabilities)
+  if (typeof answer.choice !== "string" || !Object.hasOwn(criteria, answer.choice)) {
+    throw new Error("Invalid Jev workflow")
+  }
+  probability(answer.confidence)
+  const labels = Object.keys(criteria)
+  if (Object.keys(probabilities).length !== labels.length) throw new Error("Invalid Jev choice probabilities")
+  for (const label of labels) probability(probabilities[label])
+  return answer.choice
+}
+
 const validateAnswers = (raw: unknown, questions: Questions): Record<string, number | string> => {
   const answers = object(object(raw).answers)
   const validated: Record<string, number | string> = {}
@@ -112,14 +123,7 @@ const validateAnswers = (raw: unknown, questions: Questions): Record<string, num
     if (question.type === "noul") {
       validated[key] = probability(answer.noul)
     } else if (question.type === "choice") {
-      const probabilities = object(answer.probabilities)
-      if (typeof answer.choice !== "string" || !Object.hasOwn(question.criteria, answer.choice))
-        throw new Error("Invalid Jev workflow")
-      probability(answer.confidence)
-      const labels = Object.keys(question.criteria)
-      if (Object.keys(probabilities).length !== labels.length) throw new Error("Invalid Jev choice probabilities")
-      for (const label of labels) probability(probabilities[label])
-      validated[key] = answer.choice
+      validated[key] = validateChoice(answer, question.criteria)
     }
   }
   return validated
@@ -181,7 +185,7 @@ const selectEntries = (
       if (((answers[key] as number | undefined) ?? 0) >= 0.5 && required.size < 5) required.add(ref)
     }
   }
-  const eligible = ranked.filter(({ entry }) => !PINNED.has(entry.ref) || preferred.has(entry.ref))
+  const eligible = ranked
   const selected = eligible.filter(({ entry }) => required.has(entry.ref))
   selected.push(...eligible.filter(({ entry }) => !required.has(entry.ref)).slice(0, Math.max(0, 5 - selected.length)))
   return selected
@@ -217,11 +221,14 @@ const abortError = (): DOMException => new DOMException("Guide matching cancelle
 
 export class JevGuideMatcher implements GuideMatchAdapter {
   readonly execution = { backend: "jev" as const, model: MODEL }
-  readonly revision = "jev-guide-matcher-v1"
+  readonly revision = "jev-guide-matcher-v2"
 
   constructor(private readonly options: JevGuideMatcherOptions) {}
 
   private async execute(input: GuideMatchInput, signal: AbortSignal): Promise<GuideMatchResult> {
+    if (input.goal === undefined) {
+      input = { ...input, entries: taskSpecificGuideMatchEntries(input.entries, input.preferredProfileRefs) }
+    }
     const key = await envKey(this.options.cwd, this.options.env ?? process.env)
     if (signal.aborted) throw abortError()
     if (this.options.client === undefined && key === undefined) {

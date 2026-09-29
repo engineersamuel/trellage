@@ -45,13 +45,18 @@ export const createGuideTerminal = async (
     const lines = (await readFile(path.join(root, "events.jsonl"), "utf8")).trimEnd()
     return lines.length === 0 ? [] : lines.split("\n").map((line) => JSON.parse(line) as FixtureEvent)
   }
+  const exitWith = async (keys: string, exitCode = 0): Promise<void> => {
+    press(keys)
+    await vi.waitFor(() => expect(exit).toMatchObject({ exitCode }), waitOptions)
+    expect(exit?.signal ?? 0).toBe(0)
+  }
   return {
     root,
     text: (): string => screen,
     press,
     readScreen,
     waitForText,
-    async start(mode: FixtureMode, columns = terminal.cols, rows = terminal.rows): Promise<void> {
+    async start(mode: FixtureMode, columns = terminal.cols, rows = terminal.rows, initialText = "What do you want to do?"): Promise<void> {
       if (child !== undefined) throw new Error("Each integration scenario must use a fresh guide process")
       terminal.resize(columns, rows)
       const home = path.join(root, "home")
@@ -97,7 +102,7 @@ export const createGuideTerminal = async (
       processUnderTest.onExit((status) => {
         exit = status
       })
-      await waitForText("What do you want to do?")
+      await waitForText(initialText)
       // The first render precedes Ink's input effects. Echo is not input acknowledgment.
       await vi.waitFor(() => {
         expect(exit, "Guide exited before enabling terminal input").toBeUndefined()
@@ -120,10 +125,9 @@ export const createGuideTerminal = async (
       }, waitOptions)
     },
     events,
+    exit: exitWith,
     async finish(keys: string, exitCode = 0): Promise<FixtureReport> {
-      press(keys)
-      await vi.waitFor(() => expect(exit).toMatchObject({ exitCode }), waitOptions)
-      expect(exit?.signal ?? 0).toBe(0)
+      await exitWith(keys, exitCode)
       return JSON.parse(await readFile(path.join(root, "result.json"), "utf8")) as FixtureReport
     },
     async close(): Promise<void> {

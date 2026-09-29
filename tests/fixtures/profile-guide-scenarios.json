@@ -87,12 +87,28 @@
       "excludedProfiles": ["native:cpx/hve"]
     },
     {
-      "id": "sandbox-hve-customer-engagement-lifecycle",
+      "id": "native-hve-customer-discovery",
       "intent": "We're starting discovery with a customer on a new capability and need to validate the problem with Design Thinking before we build anything.",
-      "expectedProfiles": ["sandbox:copilot-hve"],
-      "expectedWorkflows": { "sandbox:copilot-hve": "customer-engagement-lifecycle" },
+      "expectedProfiles": ["native:cpx/hve"],
+      "expectedWorkflows": { "native:cpx/hve": "customer-discovery" },
       "maxRank": 1,
-      "excludedProfiles": ["native:cpx/hve"]
+      "excludedProfiles": ["sandbox:copilot-hve"]
+    },
+    {
+      "id": "native-hve-assumption-test",
+      "intent": "Design a Minimum Viable Experiment with our customer to test a falsifiable feasibility assumption before investment. Agree on measurement criteria and independent partner replication, not a product demo.",
+      "expectedProfiles": ["native:cpx/hve"],
+      "expectedWorkflows": { "native:cpx/hve": "test-assumption" },
+      "maxRank": 1,
+      "excludedProfiles": ["sandbox:copilot-hve"]
+    },
+    {
+      "id": "native-hve-business-requirements",
+      "intent": "We understand the customer problem. Use BRD Builder to agree on solution-neutral business requirements, constraints, and explicit signoff with requirement IDs. Do not restart discovery or implement the product.",
+      "expectedProfiles": ["native:cpx/hve"],
+      "expectedWorkflows": { "native:cpx/hve": "business-requirements" },
+      "maxRank": 1,
+      "excludedProfiles": ["sandbox:copilot-hve"]
     },
     {
       "id": "grok-workspace-sandbox-tdd",

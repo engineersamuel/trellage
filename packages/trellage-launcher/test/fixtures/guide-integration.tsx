@@ -19,6 +19,7 @@ import {
   fixtureBodyBudget,
   fixtureProfile,
   fixtureProfilesForMode,
+  fixtureMatchProfiles,
   generatedCandidates,
   generatedGoalApproaches,
   goalRecommendationIds,
@@ -141,7 +142,7 @@ const provider: GuideProvider = {
     if (input.goal === undefined) {
       deepStrictEqual(
         input.entries.map((entry) => entry.ref).sort(),
-        fixtureProfiles.map((profile) => profile.ref).sort(),
+        fixtureMatchProfiles(fixtureProfiles).map((profile) => profile.ref).sort(),
       )
     } else {
       assert(input.entries.length > 0, "Goal matching must supply eligible profiles")
@@ -182,7 +183,8 @@ const provider: GuideProvider = {
     deepStrictEqual(input.guideBody, parsedGuides.get(profile.ref)?.body)
     if (input.goal === undefined) {
       assert(typeof input.bodyBudget === "number")
-      deepStrictEqual(input.bodyBudget, fixtureBodyBudget(profile))
+      if (input.customerContext === undefined) deepStrictEqual(input.bodyBudget, fixtureBodyBudget(profile))
+      else assert(input.bodyBudget > 0 && input.bodyBudget < fixtureBodyBudget(profile))
     }
     const candidates = input.goal === undefined
       ? generatedCandidates(profile, input.intent)
@@ -195,6 +197,9 @@ const provider: GuideProvider = {
         workflowId: input.workflowId,
         ...(input.bodyBudget === undefined ? {} : { bodyBudget: input.bodyBudget }),
         ...(input.goal === undefined ? {} : { goal: input.goal }),
+        ...(input.customerContext === undefined ? {} : {
+          customerContext: input.customerContext, originalIntent: input.originalIntent,
+        }),
       },
       candidates,
     })
@@ -205,7 +210,8 @@ const provider: GuideProvider = {
     assert(profile !== undefined, `Unexpected optimized profile: ${input.profileRef}`)
     deepStrictEqual(input.targetTool, profile.harness)
     if (input.goalExecution === undefined) {
-      deepStrictEqual(input.bodyBudget, fixtureBodyBudget(profile))
+      if (input.customerContext === undefined) deepStrictEqual(input.bodyBudget, fixtureBodyBudget(profile))
+      else assert(input.bodyBudget !== undefined && input.bodyBudget > 0 && input.bodyBudget < fixtureBodyBudget(profile))
       deepStrictEqual(
         input.fixedFrame,
         profile.skill === undefined ? undefined : { beforeBody: profile.beforeBody, afterBody: profile.afterBody },
@@ -269,8 +275,9 @@ const instance = render(
     routing={defaultGuideModelRouting}
     runner={runner}
     cwd={root}
-    herdrEnv={mode === FixtureMode.Terminal ? {} : { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "9", HERDR_PANE_ID: "9-0" }}
-    herdrAvailabilityProbe={mode !== FixtureMode.Terminal}
+    herdrEnv={mode === FixtureMode.Terminal || mode === FixtureMode.Customer
+      ? {} : { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "9", HERDR_PANE_ID: "9-0" }}
+    herdrAvailabilityProbe={mode !== FixtureMode.Terminal && mode !== FixtureMode.Customer}
   />,
   {
     stdin: process.stdin,
