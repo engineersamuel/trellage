@@ -142,6 +142,39 @@ const documentPath = (filename: string): boolean =>
   (!filename.startsWith("engagement/work/") || /^engagement\/work\/[a-f0-9-]+\.md$/u.test(filename)) &&
   !filename.split("/").some((part) => ["vendor", "dist", "build", ".agents", ".github"].includes(part))
 
+export const defaultEngagementSources = (files: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const preferred = files.filter(
+    (filename) =>
+      filename.startsWith("docs/engagement/") ||
+      filename.startsWith("engagement/work/") ||
+      filename.startsWith(".copilot-tracking/dt/") ||
+      filename.startsWith(".copilot-tracking/mve/"),
+  )
+  if (preferred.length > 0) return preferred
+
+  const ranked = files
+    .map((filename) => {
+      const basename = path.basename(filename).toLowerCase()
+      const lower = filename.toLowerCase()
+      const score = /^readme\.md$/iu.test(filename)
+        ? 100
+        : /^(?:open-questions|current-status|project-status|next-steps|roadmap)(?:[.-]|$)/u.test(basename)
+          ? 95
+          : lower.startsWith("docs/") &&
+              /(?:requirements|discovery|recommendations|clarification|decision|plan)/u.test(basename)
+            ? 80
+            : /^architecture\/readme\.md$/u.test(lower)
+              ? 60
+              : 0
+      return { filename, score }
+    })
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.filename.localeCompare(right.filename))
+    .slice(0, 5)
+    .map(({ filename }) => filename)
+  return ranked.length > 0 ? ranked : files.filter((filename) => /^readme\.md$/iu.test(filename))
+}
+
 const hveDocuments = async (root: string): Promise<ReadonlyArray<string>> => {
   const result: string[] = []
   let visited = 0
@@ -210,19 +243,7 @@ export const inspectEngagementRepository = async (
   if (files.length > engagementLimits.inventory) {
     throw new Error("Too many repository documents. Use engagement/guide.json to select explicit source paths.")
   }
-  const preferred = files.filter(
-    (filename) =>
-      filename.startsWith("docs/engagement/") ||
-      filename.startsWith("engagement/work/") ||
-      filename.startsWith(".copilot-tracking/dt/") ||
-      filename.startsWith(".copilot-tracking/mve/"),
-  )
-  const selected =
-    configured === undefined
-      ? preferred.length > 0
-        ? preferred
-        : files.filter((filename) => /^readme\.md$/iu.test(filename))
-      : files
+  const selected = configured === undefined ? defaultEngagementSources(files) : files
   return {
     root,
     files,

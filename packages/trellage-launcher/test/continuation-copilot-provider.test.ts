@@ -18,12 +18,20 @@ import {
   type ContinuationSummaryInput,
 } from "../src/continuation-provider.ts"
 import type { GuideGenerateInput } from "../src/guide-provider.ts"
-import { assessmentFixture, continuationEntries, conversationFixture, summaryFixture } from "./helpers/continuation-provider-fixtures.ts"
+import {
+  assessmentFixture,
+  continuationEntries,
+  conversationFixture,
+  summaryFixture,
+} from "./helpers/continuation-provider-fixtures.ts"
 
 const deferred = <Value>() => {
   let resolve!: (value: Value) => void
   let reject!: (error: Error) => void
-  const promise = new Promise<Value>((yes, no) => { resolve = yes; reject = no })
+  const promise = new Promise<Value>((yes, no) => {
+    resolve = yes
+    reject = no
+  })
   return { promise, resolve, reject }
 }
 
@@ -63,7 +71,10 @@ class FakeSession implements RestrictedGuideModelSession {
 
   on(handler: (event: Event) => void): () => void {
     this.handlers.add(handler)
-    return () => { this.unsubscribeCalls += 1; this.handlers.delete(handler) }
+    return () => {
+      this.unsubscribeCalls += 1
+      this.handlers.delete(handler)
+    }
   }
 
   async send(input: { readonly prompt: string }): Promise<string> {
@@ -102,7 +113,10 @@ class FakeClient implements RestrictedGuideModelClient {
   stopBehavior: () => ReadonlyArray<Error> | Promise<ReadonlyArray<Error>> = () => []
   forceStopBehavior: () => void | Promise<void> = () => undefined
 
-  async start(): Promise<void> { this.stages.push("start"); await this.startBehavior() }
+  async start(): Promise<void> {
+    this.stages.push("start")
+    await this.startBehavior()
+  }
   async listModels(): Promise<ReadonlyArray<ModelInfo>> {
     this.stages.push("models")
     await this.modelBehavior()
@@ -118,8 +132,14 @@ class FakeClient implements RestrictedGuideModelClient {
     this.deleted.push(id)
     await this.deleteBehavior()
   }
-  async stop(): Promise<ReadonlyArray<Error>> { this.stages.push("stop"); return this.stopBehavior() }
-  async forceStop(): Promise<void> { this.stages.push("force-stop"); await this.forceStopBehavior() }
+  async stop(): Promise<ReadonlyArray<Error>> {
+    this.stages.push("stop")
+    return this.stopBehavior()
+  }
+  async forceStop(): Promise<void> {
+    this.stages.push("force-stop")
+    await this.forceStopBehavior()
+  }
 }
 
 const request = (
@@ -145,27 +165,60 @@ describe("restricted continuation SDK execution", () => {
   it("uses empty runtime configuration, tools, hooks, discovery, persistence, and permissions", async () => {
     const client = new FakeClient()
     let options: CopilotClientOptions | undefined
-    const output = await runRestrictedGuideModelRequest(request(client, {
+    const output = await runRestrictedGuideModelRequest(
+      request(client, {
       copilotCliPath: "/offline/copilot",
-      clientFactory: (value) => { options = value; return client },
-    }))
+        clientFactory: (value) => {
+          options = value
+          return client
+        },
+      }),
+    )
     expect(output).toBe("{}")
-    expect(options).toMatchObject({ mode: "empty", builtinPluginDirectories: [], workingDirectory: os.homedir() })
+    expect(options).toMatchObject({
+      mode: "empty",
+      builtinPluginDirectories: [],
+      workingDirectory: os.homedir(),
+    })
     expect(options?.baseDirectory).not.toContain(process.cwd())
     const config = client.configs[0]!
     expect(config).toMatchObject({
-      model: "fixture-model", reasoningEffort: "medium", workingDirectory: os.homedir(),
+      model: "fixture-model",
+      reasoningEffort: "medium",
+      workingDirectory: os.homedir(),
+      streaming: true,
       enableConfigDiscovery: false,
-      tools: [], availableTools: [], mcpServers: {}, customAgents: [],
-      enableSkills: false, skillDirectories: [], pluginDirectories: [], instructionDirectories: [], hooks: {},
-      requestExtensions: false, requestCanvasRenderer: false, manageScheduleEnabled: false,
-      skipCustomInstructions: true, enableOnDemandInstructionDiscovery: false, enableFileHooks: false,
-      enableHostGitOperations: false, enableSessionStore: false, infiniteSessions: { enabled: false },
-      memory: { enabled: false }, skipEmbeddingRetrieval: true, embeddingCacheStorage: "in-memory",
-      enableFileChangeTracking: false, enableSessionTelemetry: false, remoteSession: "off",
+      tools: [],
+      availableTools: [],
+      mcpServers: {},
+      customAgents: [],
+      enableSkills: false,
+      skillDirectories: [],
+      pluginDirectories: [],
+      instructionDirectories: [],
+      hooks: {},
+      requestExtensions: false,
+      requestCanvasRenderer: false,
+      manageScheduleEnabled: false,
+      skipCustomInstructions: true,
+      enableOnDemandInstructionDiscovery: false,
+      enableFileHooks: false,
+      enableHostGitOperations: false,
+      enableSessionStore: false,
+      infiniteSessions: { enabled: false },
+      memory: { enabled: false },
+      skipEmbeddingRetrieval: true,
+      embeddingCacheStorage: "in-memory",
+      enableFileChangeTracking: false,
+      enableSessionTelemetry: false,
+      remoteSession: "off",
       systemMessage: { mode: "append", content: "Return raw JSON only." },
     })
-    expect(await config.onPermissionRequest?.({ kind: "read" } as never, { sessionId: "offline-session" })).toEqual({ kind: "reject" })
+    expect(
+      await config.onPermissionRequest?.({ kind: "read" } as never, {
+        sessionId: "offline-session",
+      }),
+    ).toEqual({ kind: "reject" })
     expect(client.session.sendAndWaitCalls).toBe(0)
     expect(client.session.abortCalls).toBe(0)
     expect(client.session.disconnectCalls).toBe(1)
@@ -177,7 +230,7 @@ describe("restricted continuation SDK execution", () => {
   it("uses only the final assistant answer, not commentary, reasoning, or tool events", async () => {
     const client = new FakeClient()
     client.session.sendBehavior = (session) => {
-      session.emit("assistant.reasoning", { content: "PRIVATE REASONING" })
+      session.emit(RestrictedGuideEventType.Reasoning, { content: "PRIVATE REASONING" })
       session.emit("tool.execution_complete", { content: "PRIVATE TOOL RESULT" })
       session.emit(RestrictedGuideEventType.Message, { content: '{"first":true}' })
       session.reply('{"last":true}')
@@ -186,12 +239,38 @@ describe("restricted continuation SDK execution", () => {
     expect(client.session.unsubscribeCalls).toBe(1)
   })
 
+  it("reports content-free SDK lifecycle and streaming activity", async () => {
+    const client = new FakeClient()
+    const progress: string[] = []
+    client.session.sendBehavior = (session) => {
+      session.emit(RestrictedGuideEventType.ReasoningDelta, { deltaContent: "PRIVATE REASONING" })
+      session.emit(RestrictedGuideEventType.MessageDelta, { deltaContent: "PRIVATE RESPONSE" })
+      session.reply("{}")
+    }
+    expect(
+      await runRestrictedGuideModelRequest(request(client, { onProgress: (message) => progress.push(message) })),
+    ).toBe("{}")
+    expect(progress).toEqual([
+      "Starting Copilot SDK runtime",
+      "Checking model availability",
+      "Opening a temporary tool-denied session",
+      "Submitting the selected evidence",
+      "Model is reasoning",
+      "Receiving the structured assessment",
+      "Received the completed assessment",
+      "Model response is complete",
+      "Closing the temporary model session",
+    ])
+    expect(progress.join("\n")).not.toContain("PRIVATE")
+  })
+
   it("does not create a client when already cancelled", async () => {
     const controller = new AbortController()
     controller.abort("private reason")
     const factory = vi.fn()
-    await expect(runRestrictedGuideModelRequest(request(new FakeClient(), { signal: controller.signal, clientFactory: factory })))
-      .rejects.toMatchObject({ name: "AbortError", code: "cancelled" })
+    await expect(
+      runRestrictedGuideModelRequest(request(new FakeClient(), { signal: controller.signal, clientFactory: factory })),
+    ).rejects.toMatchObject({ name: "AbortError", code: "cancelled" })
     expect(factory).not.toHaveBeenCalled()
   })
 
@@ -203,7 +282,11 @@ describe("restricted continuation SDK execution", () => {
     const caught = result.catch((error: unknown) => error)
     await client.session.started.promise
     controller.abort("private cancellation reason")
-    expect(await caught).toMatchObject({ name: "AbortError", code: "cancelled", cleanupFailures: [] })
+    expect(await caught).toMatchObject({
+      name: "AbortError",
+      code: "cancelled",
+      cleanupFailures: [],
+    })
     expect(client.session.abortCalls).toBe(1)
     expect(client.session.disconnectCalls).toBe(1)
     expect(client.deleted).toEqual(["offline-session"])
@@ -224,21 +307,28 @@ describe("restricted continuation SDK execution", () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it.each(["start", "metadata", "create", "send", "runtime"])("does not retry a %s failure and still cleans up", async (stage) => {
+  it.each(["start", "metadata", "create", "send", "runtime"])(
+    "does not retry a %s failure and still cleans up",
+    async (stage) => {
     const client = new FakeClient()
-    const fail = () => { throw new Error("PRIVATE TRANSPORT CONTENT") }
+      const fail = () => {
+        throw new Error("PRIVATE TRANSPORT CONTENT")
+      }
     if (stage === "start") client.startBehavior = fail
     if (stage === "metadata") client.modelBehavior = fail
     if (stage === "create") client.createBehavior = fail
     if (stage === "send") client.session.sendBehavior = fail
-    if (stage === "runtime") client.session.sendBehavior = (session) => session.emit(RestrictedGuideEventType.Error, { message: "PRIVATE TRANSPORT CONTENT" })
+      if (stage === "runtime")
+        client.session.sendBehavior = (session) =>
+          session.emit(RestrictedGuideEventType.Error, { message: "PRIVATE TRANSPORT CONTENT" })
     const error = await runRestrictedGuideModelRequest(request(client)).catch((value: unknown) => value)
     expect(error).toBeInstanceOf(Error)
     expect(String(error)).not.toContain("PRIVATE TRANSPORT CONTENT")
     expect(client.stages.filter((value) => value === "start")).toHaveLength(1)
     expect(client.session.prompts.length).toBeLessThanOrEqual(1)
     expect(client.stages).toContain("stop")
-  })
+    },
+  )
 
   it.each(["missing", "oversized", "malformed"])("rejects a %s assistant response without leaking it", async (kind) => {
     const client = new FakeClient()
@@ -259,19 +349,24 @@ describe("restricted continuation SDK execution", () => {
   it("reports all cleanup failures while preserving cancellation and invokes forceStop", async () => {
     const controller = new AbortController()
     const client = new FakeClient()
-    const fail = () => { throw new Error("PRIVATE CLEANUP DETAIL") }
+    const fail = () => {
+      throw new Error("PRIVATE CLEANUP DETAIL")
+    }
     client.session.sendBehavior = () => undefined
     client.session.abortBehavior = fail
     client.session.disconnectBehavior = fail
     client.deleteBehavior = fail
     client.stopBehavior = fail
     client.forceStopBehavior = fail
-    const result = runRestrictedGuideModelRequest(request(client, { signal: controller.signal })).catch((error: unknown) => error)
+    const result = runRestrictedGuideModelRequest(request(client, { signal: controller.signal })).catch(
+      (error: unknown) => error,
+    )
     await client.session.started.promise
     controller.abort()
     const error = await result
     expect(error).toMatchObject({
-      name: "AbortError", code: "cancelled",
+      name: "AbortError",
+      code: "cancelled",
       cleanupFailures: expect.arrayContaining(["abort", "disconnect", "delete-session", "stop", "force-stop"]),
     })
     expect(String(error)).toContain("cleanup failed")
@@ -288,12 +383,15 @@ describe("restricted continuation SDK execution", () => {
     client.session.sendBehavior = () => undefined
     client.session.abortBehavior = () => new Promise(() => undefined)
     client.stopBehavior = () => new Promise(() => undefined)
-    const result = runRestrictedGuideModelRequest(request(client, { signal: controller.signal })).catch((error: unknown) => error)
+    const result = runRestrictedGuideModelRequest(request(client, { signal: controller.signal })).catch(
+      (error: unknown) => error,
+    )
     await client.session.started.promise
     controller.abort()
     await vi.advanceTimersByTimeAsync(30)
     expect(await result).toMatchObject({
-      code: "cancelled", cleanupFailures: expect.arrayContaining(["abort", "stop"]),
+      code: "cancelled",
+      cleanupFailures: expect.arrayContaining(["abort", "stop"]),
     })
     expect(client.stages).toContain("force-stop")
     expect(client.deleted).toHaveLength(1)
@@ -304,7 +402,8 @@ describe("restricted continuation SDK execution", () => {
     const client = new FakeClient()
     client.stopBehavior = () => [new Error("private runtime path")]
     await expect(runRestrictedGuideModelRequest(request(client))).rejects.toMatchObject({
-      code: "cleanup-failed", cleanupFailures: ["stop"],
+      code: "cleanup-failed",
+      cleanupFailures: ["stop"],
     })
     expect(client.stages.at(-1)).toBe("force-stop")
   })
@@ -314,9 +413,14 @@ describe("restricted continuation SDK execution", () => {
     const client = new FakeClient()
     const started = deferred<void>()
     const pending = deferred<void>()
-    client.startBehavior = () => { started.resolve(); return pending.promise }
+    client.startBehavior = () => {
+      started.resolve()
+      return pending.promise
+    }
     client.forceStopBehavior = () => pending.reject(new Error("closed"))
-    const result = runRestrictedGuideModelRequest(request(client, { signal: controller.signal })).catch((error: unknown) => error)
+    const result = runRestrictedGuideModelRequest(request(client, { signal: controller.signal })).catch(
+      (error: unknown) => error,
+    )
     await started.promise
     controller.abort()
     expect(await result).toMatchObject({ code: "cancelled" })
@@ -329,9 +433,14 @@ describe("restricted continuation SDK execution", () => {
     const client = new FakeClient()
     const creating = deferred<void>()
     const pending = deferred<FakeSession>()
-    client.createBehavior = () => { creating.resolve(); return pending.promise }
+    client.createBehavior = () => {
+      creating.resolve()
+      return pending.promise
+    }
     client.forceStopBehavior = () => pending.resolve(client.session)
-    const result = runRestrictedGuideModelRequest(request(client, { signal: controller.signal })).catch((error: unknown) => error)
+    const result = runRestrictedGuideModelRequest(request(client, { signal: controller.signal })).catch(
+      (error: unknown) => error,
+    )
     await creating.promise
     controller.abort()
     expect(await result).toMatchObject({ code: "cancelled" })
@@ -346,12 +455,24 @@ describe("Copilot continuation model budgets and bounded repair", () => {
   it("sends only sanitized evidence above 128 KiB when model metadata permits it", async () => {
     const snapshot = conversationFixture(10, 20_000)
     const token = "ghp_".concat("synthetic".repeat(4))
-    const supplied = { ...snapshot, messages: snapshot.messages.map((message, index) =>
-      index === 0 ? { ...message, text: `${message.text}\nToken: \u001b[31m${token}\u001b[0m\npassword="short\\"secretpasswordvalue"` } : message) }
+    const supplied = {
+      ...snapshot,
+      messages: snapshot.messages.map((message, index) =>
+        index === 0
+          ? {
+              ...message,
+              text: `${message.text}\nToken: \u001b[31m${token}\u001b[0m\npassword="short\\"secretpasswordvalue"`,
+            }
+          : message,
+      ),
+    }
     const client = new FakeClient()
     client.session.sendBehavior = (session) => session.reply(JSON.stringify(assessmentFixture()))
     const provider = createCopilotContinuationProvider({
-      model: "fixture-model", effort: "medium", prompts: promises, clientFactory: () => client,
+      model: "fixture-model",
+      effort: "medium",
+      prompts: promises,
+      clientFactory: () => client,
     })
 
     await analyzeConversation(supplied, continuationEntries, provider)
@@ -366,11 +487,27 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     expect(sent.snapshot.coverage.notices).toContain("Conversation credentials were redacted.")
 
     const smaller = new FakeClient()
-    smaller.models = [{ ...availableModel, capabilities: { ...availableModel.capabilities,
-      limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000 } } }]
-    await expect(analyzeConversation(supplied, continuationEntries, createCopilotContinuationProvider({
-      model: "fixture-model", effort: "medium", prompts: promises, clientFactory: () => smaller,
-    }))).rejects.toThrow("Choose a larger-context model")
+    smaller.models = [
+      {
+        ...availableModel,
+        capabilities: {
+          ...availableModel.capabilities,
+          limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000 },
+        },
+      },
+    ]
+    await expect(
+      analyzeConversation(
+        supplied,
+        continuationEntries,
+        createCopilotContinuationProvider({
+          model: "fixture-model",
+          effort: "medium",
+          prompts: promises,
+          clientFactory: () => smaller,
+        }),
+      ),
+    ).rejects.toThrow("Choose a larger-context model")
     expect(smaller.configs).toHaveLength(0)
     expect(smaller.session.prompts).toHaveLength(0)
   })
@@ -382,25 +519,38 @@ describe("Copilot continuation model budgets and bounded repair", () => {
         availableModel.capabilities.limits.max_context_window_tokens - continuationPolicy.outputReserveTokens,
       ) - continuationPolicy.runtimeReserveTokens,
     )
-    expect(continuationModelInputBudget({
+    expect(
+      continuationModelInputBudget({
       ...availableModel,
-      capabilities: { ...availableModel.capabilities, limits: { max_context_window_tokens: 100_000, max_prompt_tokens: 70_000 } },
-    })).toBe(100_000 - continuationPolicy.outputReserveTokens - continuationPolicy.runtimeReserveTokens)
+        capabilities: {
+          ...availableModel.capabilities,
+          limits: { max_context_window_tokens: 100_000, max_prompt_tokens: 70_000 },
+        },
+      }),
+    ).toBe(100_000 - continuationPolicy.outputReserveTokens - continuationPolicy.runtimeReserveTokens)
     for (const value of [NaN, Infinity, 0, -1, 4.5]) {
-      expect(() => continuationModelInputBudget({
+      expect(() =>
+        continuationModelInputBudget({
         ...availableModel,
-        capabilities: { ...availableModel.capabilities, limits: { max_context_window_tokens: value } },
-      })).toThrow("metadata")
+          capabilities: {
+            ...availableModel.capabilities,
+            limits: { max_context_window_tokens: value },
+          },
+        }),
+      ).toThrow("metadata")
     }
   })
 
   it("uses the selected model and effort, and permits exactly one completed-response repair", async () => {
     const clients: FakeClient[] = []
     const provider = createCopilotContinuationProvider({
-      model: "fixture-model", effort: "high", prompts: promises,
+      model: "fixture-model",
+      effort: "high",
+      prompts: promises,
       clientFactory: () => {
         const client = new FakeClient()
-        client.session.sendBehavior = (session) => session.reply(clients.length === 1 ? "{ invalid" : JSON.stringify(assessmentFixture()))
+        client.session.sendBehavior = (session) =>
+          session.reply(clients.length === 1 ? "{ invalid" : JSON.stringify(assessmentFixture()))
         clients.push(client)
         return client
       },
@@ -408,42 +558,69 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     const result = await analyzeConversation(conversationFixture(), continuationEntries, provider)
     expect(result.assessment.actions).toHaveLength(5)
     expect(clients).toHaveLength(2)
-    expect(clients.every((client) => client.configs[0]?.model === "fixture-model" && client.configs[0]?.reasoningEffort === "high")).toBe(true)
+    expect(
+      clients.every(
+        (client) => client.configs[0]?.model === "fixture-model" && client.configs[0]?.reasoningEffort === "high",
+      ),
+    ).toBe(true)
     expect(JSON.parse(clients[1]!.session.prompts[0]!).repair).toBe("invalid-assessment")
     expect(clients.every((client) => client.deleted.length === 1 && client.stages.at(-1) === "stop")).toBe(true)
   })
 
-  it.each(["missing-model", "effort", "reasoning", "disabled", "budget"])("fails %s before any inference session", async (kind) => {
+  it.each(["missing-model", "effort", "reasoning", "disabled", "budget"])(
+    "fails %s before any inference session",
+    async (kind) => {
     const client = new FakeClient()
     if (kind === "missing-model") client.models = []
     if (kind === "effort") client.models = [{ ...availableModel, supportedReasoningEfforts: ["high"] }]
-    if (kind === "reasoning") client.models = [{
+      if (kind === "reasoning")
+        client.models = [
+          {
       ...availableModel,
-      capabilities: { ...availableModel.capabilities, supports: { vision: false, reasoningEffort: false } },
-    }]
+            capabilities: {
+              ...availableModel.capabilities,
+              supports: { vision: false, reasoningEffort: false },
+            },
+          },
+        ]
     if (kind === "disabled") client.models = [{ ...availableModel, policy: { state: "disabled", terms: "" } }]
-    if (kind === "budget") client.models = [{
+      if (kind === "budget")
+        client.models = [
+          {
       ...availableModel,
-      capabilities: { ...availableModel.capabilities, limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 9000 } },
-    }]
+            capabilities: {
+              ...availableModel.capabilities,
+              limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 9000 },
+            },
+          },
+        ]
     const provider = createCopilotContinuationProvider({
-      model: "fixture-model", effort: "medium", prompts: promises, clientFactory: () => client,
+        model: "fixture-model",
+        effort: "medium",
+        prompts: promises,
+        clientFactory: () => client,
     })
     await expect(analyzeConversation(conversationFixture(10, 8000), continuationEntries, provider)).rejects.toThrow()
     expect(client.configs).toHaveLength(0)
     expect(client.session.prompts).toHaveLength(0)
     expect(client.stages).toContain("stop")
-  })
+    },
+  )
 
   it("repairs a completed oversized SDK response only after its runtime is cleaned up", async () => {
     const clients: FakeClient[] = []
     const provider = createCopilotContinuationProvider({
-      model: "fixture-model", effort: "medium", prompts: promises,
+      model: "fixture-model",
+      effort: "medium",
+      prompts: promises,
       clientFactory: () => {
         const client = new FakeClient()
-        client.session.sendBehavior = (session) => session.reply(clients.length === 1
+        client.session.sendBehavior = (session) =>
+          session.reply(
+            clients.length === 1
           ? "x".repeat(continuationPolicy.maxResponseBytes + 1)
-          : JSON.stringify(assessmentFixture()))
+              : JSON.stringify(assessmentFixture()),
+          )
         clients.push(client)
         return client
       },
@@ -459,12 +636,19 @@ describe("Copilot continuation model budgets and bounded repair", () => {
   it("does not retry an oversized response when cleanup failed", async () => {
     const client = new FakeClient()
     client.session.sendBehavior = (session) => session.reply("x".repeat(continuationPolicy.maxResponseBytes + 1))
-    client.deleteBehavior = () => { throw new Error("private path") }
+    client.deleteBehavior = () => {
+      throw new Error("private path")
+    }
     const factory = vi.fn(() => client)
     const provider = createCopilotContinuationProvider({
-      model: "fixture-model", effort: "medium", prompts: promises, clientFactory: factory,
+      model: "fixture-model",
+      effort: "medium",
+      prompts: promises,
+      clientFactory: factory,
     })
-    await expect(analyzeConversation(conversationFixture(), continuationEntries, provider)).rejects.toThrow("cleanup failed")
+    await expect(analyzeConversation(conversationFixture(), continuationEntries, provider)).rejects.toThrow(
+      "cleanup failed",
+    )
     expect(factory).toHaveBeenCalledTimes(1)
     expect(client.stages).toContain("force-stop")
   })
@@ -474,7 +658,9 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     const clients: FakeClient[] = []
     const repairing = deferred<void>()
     const provider = createCopilotContinuationProvider({
-      model: "fixture-model", effort: "medium", prompts: promises,
+      model: "fixture-model",
+      effort: "medium",
+      prompts: promises,
       clientFactory: () => {
         const client = new FakeClient()
         client.session.sendBehavior = (session) => {
@@ -501,7 +687,10 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     client.session.sendBehavior = () => undefined
     const controller = new AbortController()
     const provider = createCopilotContinuationProvider({
-      model: "fixture-model", effort: "medium", prompts: promises, clientFactory: () => client,
+      model: "fixture-model",
+      effort: "medium",
+      prompts: promises,
+      clientFactory: () => client,
     })
     const result = analyzeConversation(conversationFixture(), continuationEntries, provider, {
       signal: controller.signal,
@@ -519,11 +708,16 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     const summarizing = deferred<void>()
     const saved: number[] = []
     const provider = createCopilotContinuationProvider({
-      model: "fixture-model", effort: "medium", prompts: promises,
+      model: "fixture-model",
+      effort: "medium",
+      prompts: promises,
       clientFactory: () => {
         const client = new FakeClient()
         client.session.sendBehavior = (session) => {
-          if (clients.length > 1) { summarizing.resolve(); return }
+          if (clients.length > 1) {
+            summarizing.resolve()
+            return
+          }
           const input = JSON.parse(session.prompts[0]!).untrustedData as ContinuationSummaryInput
           session.reply(JSON.stringify(summaryFixture(input)))
         }
@@ -531,13 +725,24 @@ describe("Copilot continuation model budgets and bounded repair", () => {
         return client
       },
     })
-    const result = analyzeConversation(conversationFixture(30, Math.ceil(continuationPolicy.maxInputBytes / 30)), continuationEntries, provider, {
+    const result = analyzeConversation(
+      conversationFixture(30, Math.ceil(continuationPolicy.maxInputBytes / 30)),
+      continuationEntries,
+      provider,
+      {
       signal: controller.signal,
-      onSummaries: async (summaries) => { saved.push(summaries.length) },
-    }).catch((error: unknown) => error)
+        onSummaries: async (summaries) => {
+          saved.push(summaries.length)
+        },
+      },
+    ).catch((error: unknown) => error)
     await summarizing.promise
     controller.abort()
-    expect(await result).toMatchObject({ name: "AbortError", code: "cancelled", summaries: [expect.objectContaining({ key: expect.any(String) })] })
+    expect(await result).toMatchObject({
+      name: "AbortError",
+      code: "cancelled",
+      summaries: [expect.objectContaining({ key: expect.any(String) })],
+    })
     expect(saved).toEqual([1])
     expect(clients).toHaveLength(2)
     expect(clients[1]?.session.abortCalls).toBe(1)
@@ -549,15 +754,36 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     client.session.sendBehavior = () => undefined
     const controller = new AbortController()
     const provider = new CopilotGuideProvider({
-      model: "fixture-model", effort: "medium", signal: controller.signal,
-      prompts: { match: "match", generate: "generate", refine: "refine", optimize: "optimize", enrich: "enrich" },
+      model: "fixture-model",
+      effort: "medium",
+      signal: controller.signal,
+      prompts: {
+        match: "match",
+        generate: "generate",
+        refine: "refine",
+        optimize: "optimize",
+        enrich: "enrich",
+      },
       clientFactory: () => client,
     })
     const input: GuideGenerateInput = {
-      intent: "Explain the design.", profileRef: "native:cpx/default", workflowId: "assist",
+      intent: "Explain the design.",
+      profileRef: "native:cpx/default",
+      workflowId: "assist",
       guide: {
-        schemaVersion: 1, capabilities: ["explanation"], bestFor: ["Design"], avoidFor: ["Unbounded work"], prerequisites: [],
-        workflows: [{ id: "assist", description: "Explain.", examples: ["Explain this."], promptTemplate: "{{intent}}" }],
+        schemaVersion: 1,
+        capabilities: ["explanation"],
+        bestFor: ["Design"],
+        avoidFor: ["Unbounded work"],
+        prerequisites: [],
+        workflows: [
+          {
+            id: "assist",
+            description: "Explain.",
+            examples: ["Explain this."],
+            promptTemplate: "{{intent}}",
+          },
+        ],
       },
       guideBody: "# Guide\nExplain the design.",
     }
@@ -579,16 +805,39 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     ]
     client.session.sendBehavior = (session) => session.reply(JSON.stringify({ candidates }))
     const provider = new CopilotGuideProvider({
-      model: "fixture-model", effort: "medium", signal: new AbortController().signal,
-      systemMessageMode: "replace", clientName: "custom-guide",
-      prompts: { match: "match", generate: "generate", refine: "refine", optimize: "optimize", enrich: "enrich" },
+      model: "fixture-model",
+      effort: "medium",
+      signal: new AbortController().signal,
+      systemMessageMode: "replace",
+      clientName: "custom-guide",
+      prompts: {
+        match: "match",
+        generate: "generate",
+        refine: "refine",
+        optimize: "optimize",
+        enrich: "enrich",
+      },
       clientFactory: () => client,
     })
     const result = await provider.generate({
-      intent: "Explain.", profileRef: "native:cpx/default", workflowId: "assist", guideBody: "# Guide",
+      intent: "Explain.",
+      profileRef: "native:cpx/default",
+      workflowId: "assist",
+      guideBody: "# Guide",
       guide: {
-        schemaVersion: 1, capabilities: ["explanation"], bestFor: ["Design"], avoidFor: ["Unbounded work"], prerequisites: [],
-        workflows: [{ id: "assist", description: "Explain.", examples: ["Explain this."], promptTemplate: "{{intent}}" }],
+        schemaVersion: 1,
+        capabilities: ["explanation"],
+        bestFor: ["Design"],
+        avoidFor: ["Unbounded work"],
+        prerequisites: [],
+        workflows: [
+          {
+            id: "assist",
+            description: "Explain.",
+            examples: ["Explain this."],
+            promptTemplate: "{{intent}}",
+          },
+        ],
       },
     })
     expect(result).toEqual({ candidates })

@@ -140,7 +140,10 @@ export const parseEngagementAssessment = (
   ])
   if (fields.schemaVersion !== 1) throw new Error("Unsupported engagement assessment version")
   const outcome = literal(fields.outcome, "outcome", ["recommendation", "needs-clarification", "no-action"])
-  const understanding = array(fields.understanding, "understanding", { minimum: 1, maximum: 8 }).map((value) => {
+  const understanding = array(fields.understanding, "understanding", {
+    minimum: 1,
+    maximum: 8,
+  }).map((value) => {
     const finding = record(value, "understanding")
     exactKeys(finding, "understanding", ["text", "basis", "citations"])
     return {
@@ -170,7 +173,10 @@ export const parseEngagementAssessment = (
     understanding,
     actions,
     question,
-    uncertainties: stringArray(fields.uncertainties, "uncertainties", { maximumItems: 10, itemMaximum: 1500 }),
+    uncertainties: stringArray(fields.uncertainties, "uncertainties", {
+      maximumItems: 10,
+      itemMaximum: 1500,
+    }),
   }
 }
 
@@ -192,7 +198,15 @@ export type EngagementAssessor = (
   snapshot: EngagementSnapshot,
   intent: string,
   signal: AbortSignal,
+  onProgress?: (message: string) => void,
 ) => Promise<EngagementAssessment>
+
+export class EngagementAssessmentResponseError extends Error {
+  constructor(cause: unknown) {
+    super("Model citations were invalid; no recommendation was accepted.", { cause })
+    this.name = "EngagementAssessmentResponseError"
+  }
+}
 
 export const createEngagementAssessor =
   (
@@ -200,7 +214,7 @@ export const createEngagementAssessor =
     config: GuideModelConfig,
     request: (options: RestrictedGuideModelRequest) => Promise<string> = runRestrictedGuideModelRequest,
   ): EngagementAssessor =>
-  async (snapshot, intent, signal) => {
+  async (snapshot, intent, signal, onProgress) => {
     signal.throwIfAborted()
     const workflows = engagementWorkflows(catalog)
     const systemPrompt = await readFile(new URL("../prompts/engagement-assess.md", import.meta.url), "utf8")
@@ -221,9 +235,17 @@ export const createEngagementAssessor =
       maximumResponseBytes: 24_000,
       clientName: "trellage-trx-engagement",
       inspectModel: (model) => inspectModelBudget(model, size),
+      ...(onProgress === undefined ? {} : { onProgress }),
     })
     if (Buffer.byteLength(response) > 24_000) throw new Error("Engagement assessment exceeded its response budget")
-    return parseEngagementAssessment(JSON.parse(response), snapshot, workflows)
+    try {
+      onProgress?.("Validating JSON, citations, and recommendation")
+      const assessment = parseEngagementAssessment(JSON.parse(response), snapshot, workflows)
+      onProgress?.("Assessment verified")
+      return assessment
+    } catch (cause) {
+      throw new EngagementAssessmentResponseError(cause)
+    }
   }
 
 export const engagementCitationText = (citations: ReadonlyArray<EngagementCitation>): string =>

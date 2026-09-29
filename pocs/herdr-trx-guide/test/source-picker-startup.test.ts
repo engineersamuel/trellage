@@ -68,16 +68,22 @@ test("invokes the capture inspector for each fresh popup and exposes no analysis
 
 test("opens engagement with g in an ordinary terminal while all capture sources are still loading", async () => {
   const opened = []
+  const requests = []
   const context = { workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1", cwd: "/customer/repository" }
   const ui = setup({
     context,
     engagementOpener: async (options) => { opened.push(options.context); return "w1:p2" },
+    request: async (method, params) => {
+      requests.push({ method, params })
+      return { type: "popup_closed" }
+    },
   })
   assert.match(ui.screen(), /Check the engagement \(HVE next steps\)/u)
   assert.match(ui.screen(), /g engagement/u)
   ui.input.emit("keypress", "g", { name: "g" })
   assert.equal(await ui.run, 0)
   assert.deepEqual(opened, [context])
+  assert.deepEqual(requests, [{ method: "popup.close", params: {} }])
 })
 
 test("does not enqueue an engagement action as captured conversation text", async () => {

@@ -14,14 +14,19 @@ Ordinary Guide, its pinned lenses, and its JSON service are unchanged.
 
 ## One reviewed action at a time
 
-1. **Select evidence.** Opening the view reads local file names and saved work,
-   not a model. Use arrows and Space to select files, `e` to read a file, `+` to
-   add a repository-relative path, `i` to change the question, and `c` to add
-   context or correct the understanding.
-2. **Allow model use.** Press `a` to capture the selected files locally. Review
-   the model, source paths, byte counts, tracking state, and additional context.
-   Press `s` to send that snapshot for assessment. Press Escape to cancel.
-   Prompt Master is not prepared for this mode.
+1. **Check the request.** Opening the view reads local file names and saved work,
+   not a model. It shows the question and the evidence selected by default.
+   Press Enter to continue, or press `s` to choose different evidence. In the
+   evidence picker, use arrows and Space to select files, `e` to read a file,
+   `+` to add a repository-relative path, `i` to change the question, and `c`
+   to add context or correct the understanding.
+2. **Allow model use.** Press Enter from the overview or evidence picker to
+   capture the selected files locally. Review the model, source paths, byte
+   counts, tracking state, and additional context. Press `s` to send that
+   snapshot for assessment. Press Escape to cancel. Prompt Master is not
+   prepared for this mode. While assessment runs, the consent view shows an
+   animated **Copilot SDK activity** panel with content-free lifecycle updates.
+   It does not display model reasoning, evidence text, or response content.
 3. **Review the next action.** Guide separates documented statements, inferences,
    unknowns, and conflicts. It shows one recommended action, its reason,
    expected result, source lines, and reviewer role. It can suggest alternatives,
@@ -63,9 +68,12 @@ directories, including ignored files:
 ```
 
 The initial selection prefers `docs/engagement/`, HVE artifacts, and recorded
-Guide review notes. If none exist, it selects a root `README.md`, when present.
-Selection is visible and can be changed before any model call. Discovery is
-not an assertion that these files contain the whole engagement.
+Guide review notes. If none exist, it selects up to five likely project-context
+documents: a root `README.md`, open-question or current-status documents, and
+relevant discovery, requirements, recommendation, clarification, decision, or
+plan documents under `docs/`. Selection is visible and can be changed before
+any model call. Discovery is not an assertion that these files contain the
+whole engagement.
 
 For an existing repository, optionally create `engagement/guide.json`:
 

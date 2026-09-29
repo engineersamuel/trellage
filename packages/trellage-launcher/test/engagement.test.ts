@@ -7,6 +7,7 @@ import type { RestrictedGuideModelRequest } from "../src/copilot-guide-provider.
 import {
   assertEngagementSnapshotCurrent,
   captureEngagementSnapshot,
+  defaultEngagementSources,
   engagementDefaultIntent,
   engagementLimits,
   engagementPath,
@@ -16,6 +17,7 @@ import {
 } from "../src/engagement-context.ts"
 import {
   createEngagementAssessor,
+  EngagementAssessmentResponseError,
   engagementWorkflows,
   parseEngagementAssessment,
 } from "../src/engagement-assessment.ts"
@@ -74,6 +76,27 @@ describe("repository engagement evidence", () => {
     expect((await inspectEngagementRepository(fixture.runner, root)).selected).toEqual(["ExistingNotes/customer.txt"])
     await writeFile(path.join(root, "engagement/guide.json"), JSON.stringify({ schemaVersion: 2, sources: [] }))
     await expect(inspectEngagementRepository(fixture.runner, root)).rejects.toThrow("schemaVersion")
+  })
+
+  it("prefers project status and decision documents when no engagement folder exists", () => {
+    expect(
+      defaultEngagementSources([
+        "AGENTS.md",
+        "README.md",
+        "architecture/README.md",
+        "architecture/decisions/ADR-0001-platform.md",
+        "docs/decision-intelligence-architecture-recommendations.md",
+        "docs/open-questions.md",
+        "docs/pfizer-case-lifecycle-clarification.md",
+        "docs/unrelated.md",
+      ]),
+    ).toEqual([
+      "README.md",
+      "docs/open-questions.md",
+      "docs/decision-intelligence-architecture-recommendations.md",
+      "docs/pfizer-case-lifecycle-clarification.md",
+      "architecture/README.md",
+    ])
   })
 
   it("rejects path escapes, symlinks, hard links, invalid UTF-8, and terminal control text", async () => {
@@ -265,7 +288,10 @@ describe("evidence-backed engagement assessment", () => {
     expect(await assessor(fixture.snapshot, engagementDefaultIntent, signal)).toEqual(engagementAssessment)
     expect(request.mock.calls[0]?.[0].signal).toBe(signal)
     request.mockImplementationOnce(async () => "not JSON")
-    await expect(assessor(fixture.snapshot, engagementDefaultIntent, signal)).rejects.toThrow(SyntaxError)
+    const invalidResponse = await assessor(fixture.snapshot, engagementDefaultIntent, signal).catch((error) => error)
+    expect(invalidResponse).toBeInstanceOf(EngagementAssessmentResponseError)
+    expect(invalidResponse).toHaveProperty("cause", expect.any(SyntaxError))
+    expect(invalidResponse).toHaveProperty("message", expect.stringContaining("no recommendation was accepted"))
     expect(request).toHaveBeenCalledTimes(2)
     request.mockImplementationOnce(async (options) => {
       options.inspectModel({

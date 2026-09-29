@@ -17,7 +17,7 @@ import {
 } from "./lib/context.ts"
 import { invokeContextMenuChoice } from "./context-menu-action.ts"
 import { engagementSourceChoice, openEngagementGuide } from "./engagement-action.ts"
-import { requestHerdr } from "./lib/herdr.ts"
+import { HerdrRequestError, requestHerdr } from "./lib/herdr.ts"
 import {
   captureQueueIntent,
   clearCaptureQueue,
@@ -115,6 +115,14 @@ export const waitForCaptureQueueGrowth = async (
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
   throw new Error("The capture queue did not update")
+}
+
+const closePopup = async (request) => {
+  try {
+    await request("popup.close", {})
+  } catch (error) {
+    if (!(error instanceof HerdrRequestError && error.code === "popup_not_open")) throw error
+  }
 }
 
 const movedChoiceIndex = (current, count, text, key) => {
@@ -389,6 +397,7 @@ export const main = async ({
     try {
       if (choice.kind === "engagement") {
         await engagementOpener({ context, env, request })
+        await closePopup(request)
       } else if (choice.kind === "rewrite") {
         if (choice.request === undefined) throw new Error(choice.detail)
         await invokeContextMenuChoice({ request: choice.request, context, stateDir, herdr: request })

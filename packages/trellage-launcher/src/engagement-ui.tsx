@@ -4,6 +4,7 @@ import type { CombinedGuideCatalog } from "./guide-catalog.ts"
 import type { CommandRunner } from "./guide-launch.ts"
 import { MarkdownTextViewport } from "./guide-markdown.tsx"
 import { text } from "./guide-text.ts"
+import { spinnerFrameAt } from "./guide-ui.tsx"
 import {
   assertEngagementSnapshotCurrent,
   captureEngagementSnapshot,
@@ -17,6 +18,7 @@ import {
   type EngagementSnapshot,
 } from "./engagement-context.ts"
 import {
+  EngagementAssessmentResponseError,
   engagementAssessmentDocument,
   type EngagementAssessment,
   type EngagementAssessor,
@@ -49,6 +51,7 @@ export interface EngagementUiProps {
 }
 
 type Screen =
+  | "overview"
   | "sources"
   | "consent"
   | "assessment"
@@ -76,7 +79,7 @@ export const EngagementApp = (props: EngagementUiProps) => {
   const [selected, setSelected] = useState<ReadonlyArray<string>>(props.repository.selected)
   const [intent, setIntent] = useState(props.intent)
   const [context, setContext] = useState(props.initialWork?.request.snapshot.context ?? "")
-  const [screen, setScreen] = useState<Screen>(props.initialWork === undefined ? "sources" : "review")
+  const [screen, setScreen] = useState<Screen>(props.initialWork === undefined ? "overview" : "review")
   const [returnScreen, setReturnScreen] = useState<Screen>("sources")
   const [cursor, setCursor] = useState(0)
   const [actionIndex, setActionIndex] = useState(0)
@@ -91,6 +94,8 @@ export const EngagementApp = (props: EngagementUiProps) => {
   const [evidence, setEvidence] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState("")
+  const [progress, setProgress] = useState<ReadonlyArray<string>>([])
+  const [tick, setTick] = useState(0)
   const operation = useRef<AbortController | null>(null)
   const leaveAfterOperation = useRef(false)
   const mounted = useRef(true)
@@ -101,6 +106,11 @@ export const EngagementApp = (props: EngagementUiProps) => {
       operation.current?.abort()
     }
   }, [])
+  useEffect(() => {
+    if (!busy || progress.length === 0) return
+    const timer = setInterval(() => setTick((value) => value + 1), 80)
+    return () => clearInterval(timer)
+  }, [busy, progress.length])
 
   const finish = (result: EngagementUiResult) => {
     props.onResult(result)
@@ -124,6 +134,9 @@ export const EngagementApp = (props: EngagementUiProps) => {
         }
       })
   }
+  const reportProgress = (message: string) => {
+    setProgress((previous) => (previous.at(-1) === message ? previous : [...previous, displayText(message)].slice(-7)))
+  }
   const edit = (kind: Editor, initial: string) => {
     setReturnScreen(screen)
     setEditor(kind)
@@ -134,7 +147,10 @@ export const EngagementApp = (props: EngagementUiProps) => {
   const append = (value: string) => {
     try {
       const next = draft + value.replace(/\r\n?/gu, "\n")
-      text(next, "your text", engagementLimits.contextCharacters, { multiline: true, preserve: true })
+      text(next, "your text", engagementLimits.contextCharacters, {
+        multiline: true,
+        preserve: true,
+      })
       setDraft(next)
       setError("")
     } catch (cause) {
@@ -164,7 +180,7 @@ export const EngagementApp = (props: EngagementUiProps) => {
     setSnapshot(undefined)
     setAssessment(undefined)
     setCursor(0)
-    setScreen("sources")
+    setScreen("overview")
   }
   const reload = () => run("Reading local source inventory", refreshSources)
   const saveContext = () => {
@@ -176,7 +192,7 @@ export const EngagementApp = (props: EngagementUiProps) => {
     setContext(next)
     setSnapshot(undefined)
     setAssessment(undefined)
-    setScreen("sources")
+    setScreen(editor === "answer" ? "sources" : returnScreen)
   }
   const editorSavers: Record<Editor, () => void> = {
     review: () => {
@@ -208,7 +224,7 @@ export const EngagementApp = (props: EngagementUiProps) => {
       setIntent(text(draft, "engagement question", 8000, { multiline: true, preserve: true }))
       setSnapshot(undefined)
       setAssessment(undefined)
-      setScreen("sources")
+      setScreen(returnScreen)
     },
     context: saveContext,
     answer: saveContext,
@@ -216,6 +232,17 @@ export const EngagementApp = (props: EngagementUiProps) => {
   usePaste((value) => {
     if (screen === "editor" && operation.current === null) append(value)
   })
+  const reviewSelectedEvidence = () =>
+    run("Capturing selected local evidence", async () => {
+      setSnapshot(await captureEngagementSnapshot(props.runner, repository.root, selected, context))
+      setScreen("consent")
+    })
+  const openRecords = () =>
+    run("Reading saved work", async () => {
+      setRecords(await props.store.list())
+      setCursor(0)
+      setScreen("records")
+    })
   const sourceCommands: Record<string, () => void> = {
     " ": () => {
       const filename = repository.files[cursor]
@@ -224,11 +251,7 @@ export const EngagementApp = (props: EngagementUiProps) => {
       setSnapshot(undefined)
       setAssessment(undefined)
     },
-    a: () =>
-      run("Capturing selected local evidence", async () => {
-        setSnapshot(await captureEngagementSnapshot(props.runner, repository.root, selected, context))
-        setScreen("consent")
-      }),
+    a: reviewSelectedEvidence,
     e: () =>
       run("Reading local evidence", async () => {
         const filename = repository.files[cursor]
@@ -239,12 +262,7 @@ export const EngagementApp = (props: EngagementUiProps) => {
     i: () => edit("intent", intent),
     "+": () => edit("source", ""),
     r: reload,
-    w: () =>
-      run("Reading saved work", async () => {
-        setRecords(await props.store.list())
-        setCursor(0)
-        setScreen("records")
-      }),
+    w: openRecords,
   }
   const evidenceDocument = (current: EngagementSnapshot) =>
     [...current.sources, ...(current.context ? [{ path: engagementContextSource, content: current.context }] : [])]
@@ -257,17 +275,34 @@ export const EngagementApp = (props: EngagementUiProps) => {
       )
       .join("\n\n")
   const handlers: Record<Screen, (input: string, key: Key) => void> = {
+    overview: (input, key) => {
+      if (key.return) reviewSelectedEvidence()
+      else if (input === "s") {
+        setCursor(0)
+        setScreen("sources")
+      } else if (input === "c") edit("context", context)
+      else if (input === "i") edit("intent", intent)
+      else if (input === "w") openRecords()
+    },
     sources: (input, key) => {
       if (key.upArrow) setCursor(Math.max(0, cursor - 1))
       else if (key.downArrow) setCursor(Math.min(repository.files.length - 1, cursor + 1))
+      else if (key.return) reviewSelectedEvidence()
       else sourceCommands[input]?.()
     },
     consent: (input) => {
       if (snapshot === undefined) return
       if (input === "s")
         run("Assessing the engagement; no agent tools are enabled", async (signal) => {
+          setProgress([])
           await assertEngagementSnapshotCurrent(props.runner, repository.root, snapshot)
-          const result = await props.assessor(snapshot, intent, signal)
+          let result: EngagementAssessment
+          try {
+            result = await props.assessor(snapshot, intent, signal, reportProgress)
+          } catch (cause) {
+            if (cause instanceof EngagementAssessmentResponseError) setScreen("overview")
+            throw cause
+          }
           if (signal.aborted) throw new Error("Engagement assessment cancelled; no assignment was saved.")
           setAssessment(result)
           setActionIndex(0)
@@ -347,8 +382,8 @@ export const EngagementApp = (props: EngagementUiProps) => {
     if (screen === "editor" || screen === "evidence") setScreen(returnScreen)
     else if (screen === "confirm-launch" || screen === "review") setScreen("assignment")
     else if (screen === "review-confirm") edit("review", reviewDraft)
-    else if (screen === "sources") finish({ action: "exit", exitCode: 0 })
-    else setScreen("sources")
+    else if (screen === "overview") finish({ action: "exit", exitCode: 0 })
+    else setScreen("overview")
   }
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
@@ -385,11 +420,16 @@ export const EngagementApp = (props: EngagementUiProps) => {
     draft,
     reviewDraft,
     modelLabel: props.modelLabel,
+    busy,
+    progress,
+    tick,
   })
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold>{view.title}</Text>
-      <Text>{busy || "Local context; model use and launch need separate confirmation."}</Text>
+      <Text>
+        {busy ? `${spinnerFrameAt(tick)} ${busy}` : "Local context; model use and launch need separate confirmation."}
+      </Text>
       {props.notice ? <Text wrap="truncate-end">{displayText(props.notice)}</Text> : null}
       {error ? (
         <Text color="red" wrap="truncate-end">
@@ -428,6 +468,9 @@ interface EngagementViewState {
   readonly draft: string
   readonly reviewDraft: string
   readonly modelLabel: string
+  readonly busy: string
+  readonly progress: ReadonlyArray<string>
+  readonly tick: number
 }
 
 interface EngagementView {
@@ -447,27 +490,60 @@ const visibleItems = <T,>(
 }
 
 const engagementViews: Record<Screen, (state: EngagementViewState) => EngagementView> = {
+  overview: (state) => {
+    const selectedPreview = state.selected.slice(0, 5)
+    const remaining = state.selected.length - selectedPreview.length
+    return {
+      title: "Check engagement",
+      content: [
+        "Find the next useful HVE step from the engagement evidence in this repository.",
+        `Question: ${state.intent}`,
+        `Evidence ready: ${state.selected.length} selected file${state.selected.length === 1 ? "" : "s"}.`,
+        ...(state.records.some((item) => item.status !== "reviewed")
+          ? [
+              `Saved work needing review: ${state.records.filter((item) => item.status !== "reviewed").length}. Press w to open it.`,
+            ]
+          : []),
+        ...(selectedPreview.length > 0
+          ? selectedPreview.map((filename) => `- ${filename}`)
+          : ["- No evidence selected"]),
+        ...(remaining > 0 ? [`- ${remaining} more selected file${remaining === 1 ? "" : "s"}`] : []),
+        "Press Enter to review what will be shared. No file content is sent to a model until you confirm on the next screen.",
+        ...(state.context ? ["## Your added context", state.context] : []),
+        `Repository: ${state.repository.root}`,
+      ].join("\n\n"),
+      hints: "Enter review evidence and continue | s choose evidence | c add context",
+      secondHints: "i edit question | w saved work | Esc exit",
+    }
+  },
   sources: (state) => ({
-    title: "Engagement sources",
+    title: "Choose engagement evidence",
     content: [
-      `${state.selected.length} source files selected. ${state.records.filter((item) => item.status !== "reviewed").length} saved assignments need review.`,
+      `Question: ${state.intent}`,
+      `Select only evidence that is relevant and permitted to share. ${state.selected.length} file${state.selected.length === 1 ? "" : "s"} selected.`,
       ...visibleItems(state.repository.files, state).map(
         ({ value, focused }) => `${focused ? ">" : " "} ${state.selected.includes(value) ? "[x]" : "[ ]"} ${value}`,
       ),
       ...(state.repository.files.length === 0
         ? ["No documents found. Add a repository-relative source path with +."]
         : []),
-      `Question: ${state.intent}`,
       `Repository: ${state.repository.root}`,
       ...state.repository.notices,
       ...(state.context ? ["## Your context (not yet sent)", state.context] : []),
     ].join("\n\n"),
-    hints: "Arrows select | Space include | a assess | e evidence | c context",
-    secondHints: "i question | + path | w saved work | r reload | Esc exit",
+    hints: "Arrows move | Space select | Enter review and continue | e read file",
+    secondHints: "c context | i question | + path | w saved work | r reload | Esc back",
   }),
-  consent: ({ snapshot, modelLabel, intent, repository }) => ({
+  consent: ({ snapshot, modelLabel, intent, repository, busy, progress, tick }) => ({
     title: "Review source-use consent",
     content: [
+      ...(busy && progress.length > 0
+        ? [
+            `## Copilot SDK activity\n${progress
+              .map((message, index) => `${index === progress.length - 1 ? spinnerFrameAt(tick) : "✓"} ${message}`)
+              .join("\n")}`,
+          ]
+        : []),
       `Model: ${modelLabel}`,
       `Repository: ${repository.root}`,
       `Question: ${intent}`,
@@ -546,7 +622,11 @@ const engagementViews: Record<Screen, (state: EngagementViewState) => Engagement
     hints: "s record observed result | x reject result | Esc edit review",
     secondHints: "The reviewed note becomes selectable repository evidence.",
   }),
-  evidence: ({ evidence }) => ({ title: "Engagement evidence", content: evidence, hints: "Esc return" }),
+  evidence: ({ evidence }) => ({
+    title: "Engagement evidence",
+    content: evidence,
+    hints: "Esc return",
+  }),
   editor: ({ editor, assessment, draft }) => {
     const labels: Record<Editor, string> = {
       context: "Correct engagement understanding",

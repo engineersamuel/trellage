@@ -5,6 +5,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { engagementDefaultIntent, inspectEngagementRepository } from "../../src/engagement-context.ts"
+import { EngagementAssessmentResponseError } from "../../src/engagement-assessment.ts"
 import { EngagementApp, type EngagementUiResult } from "../../src/engagement-ui.tsx"
 import { executeEngagementWork } from "../../src/engagement-execution.ts"
 import { EngagementWorkStore, type EngagementWork } from "../../src/engagement-work.ts"
@@ -44,11 +45,23 @@ for (;;) {
       records={await store.list()}
       {...(initialWork === undefined ? {} : { initialWork })}
       {...(notice === undefined ? {} : { notice })}
-      assessor={async (snapshot) => {
+      assessor={async (snapshot, _intent, _signal, onProgress) => {
         counts.assessments += 1
         counts.sentContexts.push(snapshot.context)
         counts.sentPaths.push(snapshot.sources.map((source) => source.path))
         await saveCounts()
+        if (scenario === "progress") {
+          onProgress?.("Starting Copilot SDK runtime")
+          await Bun.sleep(200)
+          onProgress?.("Checking model availability")
+          await Bun.sleep(200)
+          onProgress?.("Receiving the structured assessment")
+          await Bun.sleep(200)
+          onProgress?.("Assessment verified")
+        }
+        if (scenario === "invalid-response" && counts.assessments === 1) {
+          throw new EngagementAssessmentResponseError(new Error("Fixture citation mismatch"))
+        }
         if (scenario === "clarification" && !snapshot.context) {
           return {
             ...engagementAssessment,
@@ -58,7 +71,10 @@ for (;;) {
           }
         }
         if (scenario === "human") {
-          return { ...engagementAssessment, actions: [{ ...engagementAssessment.actions[0]!, workflow: null }] }
+          return {
+            ...engagementAssessment,
+            actions: [{ ...engagementAssessment.actions[0]!, workflow: null }],
+          }
         }
         return engagementAssessment
       }}
@@ -84,7 +100,10 @@ for (;;) {
   const executed = await executeEngagementWork(result.current.work, store, fixture.catalog, engagementGuideRoot, {
     runner: fixture.runner,
     write: () => {},
-    checkReadiness: async () => ({ kind: ProfileReadinessKind.Ready, summary: "Fixture readiness only" }),
+    checkReadiness: async () => ({
+      kind: ProfileReadinessKind.Ready,
+      summary: "Fixture readiness only",
+    }),
     runInteractive: async () => {
       counts.launches += 1
       await saveCounts()
