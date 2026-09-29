@@ -278,9 +278,7 @@ const goalModelContext = (execution: GuideGoalExecution) => ({
 })
 
 const generationModelInput = (input: GuideGenerateInput, execution?: GuideGoalExecution) =>
-  execution === undefined
-    ? input
-    : { ...input, intent: execution.goal.draft.task, ...goalModelContext(execution) }
+  execution === undefined ? input : { ...input, intent: execution.goal.draft.task, ...goalModelContext(execution) }
 
 const skillSessionPolicy = (
   skillDirectory: string | undefined,
@@ -289,10 +287,8 @@ const skillSessionPolicy = (
     ? { enableSkills: false, skillDirectories: [] }
     : { enableSkills: true, skillDirectories: [skillDirectory] }
 
-const requestMessage = <Input>(
-  input: Input,
-  message: ((input: Input) => string) | undefined,
-): string => (message === undefined ? untrustedMessage(JSON.stringify(input)) : message(input))
+const requestMessage = <Input>(input: Input, message: ((input: Input) => string) | undefined): string =>
+  message === undefined ? untrustedMessage(JSON.stringify(input)) : message(input)
 
 const parseJson = (content: string): unknown => {
   const byteLength = Buffer.byteLength(content, "utf8")
@@ -359,6 +355,7 @@ export const restrictedGuideSessionConfig = (options: {
   clientName: options.clientName,
   model: options.model,
   reasoningEffort: options.effort,
+  streaming: true,
   workingDirectory: options.workingDirectory,
   enableConfigDiscovery: false,
   tools: [],
@@ -390,6 +387,9 @@ export const restrictedGuideSessionConfig = (options: {
 })
 
 export enum RestrictedGuideEventType {
+  Reasoning = "assistant.reasoning",
+  ReasoningDelta = "assistant.reasoning_delta",
+  MessageDelta = "assistant.message_delta",
   Message = "assistant.message",
   Idle = "session.idle",
   Error = "session.error",
@@ -430,6 +430,8 @@ export interface RestrictedGuideModelRequest {
   readonly systemMessageMode?: "append" | "replace"
   readonly clientName?: string
   readonly onActivity?: (event: { readonly type: string }) => void
+  /** Content-free lifecycle updates. Never includes prompts, reasoning, source text, or response content. */
+  readonly onProgress?: (message: string) => void
 }
 
 export class RestrictedGuideModelError extends Error {
@@ -444,11 +446,7 @@ export class RestrictedGuideModelError extends Error {
   }
 }
 
-const within = async <Value>(
-  step: () => Promise<Value>,
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<Value> => {
+const within = async <Value>(step: () => Promise<Value>, timeoutMs: number, signal?: AbortSignal): Promise<Value> => {
   if (signal?.aborted) throw new RestrictedGuideModelError("cancelled")
   let timer: ReturnType<typeof setTimeout> | undefined
   let cancel: (() => void) | undefined
@@ -497,6 +495,10 @@ class RestrictedGuideRequest {
     })
   }
 
+  private progress(message: string): void {
+    this.options.onProgress?.(message)
+  }
+
   private tracked<Value>(step: () => Promise<Value>): Promise<Value> {
     const promise = Promise.resolve().then(step)
     this.pending.add(promise)
@@ -525,7 +527,8 @@ class RestrictedGuideRequest {
   private checkModel(models: ReadonlyArray<ModelInfo>): void {
     const model = models.find(({ id }) => id === this.options.model)
     if (model === undefined) throw new GuideModelCapabilityError(`model is not available: ${this.options.model}`)
-    if (model.policy?.state === "disabled") throw new GuideModelCapabilityError(`model is disabled by policy: ${model.id}`)
+    if (model.policy?.state === "disabled")
+      throw new GuideModelCapabilityError(`model is disabled by policy: ${model.id}`)
     if (!model.capabilities.supports.reasoningEffort) {
       throw new GuideModelCapabilityError(`model does not support reasoning effort: ${model.id}`)
     }
@@ -539,21 +542,28 @@ class RestrictedGuideRequest {
   }
 
   private async open(): Promise<RestrictedGuideModelSession> {
+    this.progress("Starting Copilot SDK runtime")
     await this.requestStep(() => this.client.start())
     this.stage = "model-metadata"
+    this.progress("Checking model availability")
     this.checkModel(await this.requestStep(() => this.client.listModels()))
     this.stage = "create-session"
+    this.progress("Opening a temporary tool-denied session")
     return this.requestStep(async () => {
-      const created = await this.client.createSession(restrictedGuideSessionConfig({
-        model: this.options.model,
-        effort: this.options.effort,
-        workingDirectory: this.workingDirectory,
-        clientName: this.options.clientName ?? "trellage-trx-continuation",
-        systemPrompt: this.options.systemPrompt,
-        ...(this.options.skillDirectory === undefined ? {} : { skillDirectory: this.options.skillDirectory }),
-        ...(this.options.systemMessageMode === undefined ? {} : { systemMessageMode: this.options.systemMessageMode }),
-        ...(this.options.onActivity === undefined ? {} : { onActivity: this.options.onActivity }),
-      }))
+      const created = await this.client.createSession(
+        restrictedGuideSessionConfig({
+          model: this.options.model,
+          effort: this.options.effort,
+          workingDirectory: this.workingDirectory,
+          clientName: this.options.clientName ?? "trellage-trx-continuation",
+          systemPrompt: this.options.systemPrompt,
+          ...(this.options.skillDirectory === undefined ? {} : { skillDirectory: this.options.skillDirectory }),
+          ...(this.options.systemMessageMode === undefined
+            ? {}
+            : { systemMessageMode: this.options.systemMessageMode }),
+          ...(this.options.onActivity === undefined ? {} : { onActivity: this.options.onActivity }),
+        }),
+      )
       this.session = created
       // A delayed create response must not resurrect a cancelled request.
       if (this.closing) {
@@ -587,14 +597,25 @@ class RestrictedGuideRequest {
     void idle.catch(() => undefined)
     this.unsubscribe = activeSession.on((event) => {
       try {
+        if (
+          event.type === RestrictedGuideEventType.Reasoning ||
+          event.type === RestrictedGuideEventType.ReasoningDelta
+        ) {
+          this.progress("Model is reasoning")
+        } else if (event.type === RestrictedGuideEventType.MessageDelta) {
+          this.progress("Receiving the structured assessment")
+        }
         switch (event.type) {
           case RestrictedGuideEventType.Message:
+            this.progress("Received the completed assessment")
             this.acceptMessage(event.data)
             break
           case RestrictedGuideEventType.Idle:
+            this.progress("Model response is complete")
             resolveIdle?.()
             break
           case RestrictedGuideEventType.Error:
+            this.progress("Model runtime reported an error")
             throw new RestrictedGuideModelError("runtime-error")
         }
       } catch (error) {
@@ -602,6 +623,7 @@ class RestrictedGuideRequest {
       }
     })
     this.stage = "send"
+    this.progress("Submitting the selected evidence")
     await this.requestStep(() => activeSession.send({ prompt: this.options.prompt }))
     this.stage = "response"
     await within(() => idle, Math.max(1, this.deadline - Date.now()), this.options.signal)
@@ -621,6 +643,7 @@ class RestrictedGuideRequest {
 
   private async cleanup(): Promise<void> {
     this.closing = true
+    this.progress("Closing the temporary model session")
     await this.abortFailedRequest()
     await this.cleanupStep("event-unsubscribe", async () => this.unsubscribe?.())
     if (this.session !== undefined) {
@@ -672,7 +695,8 @@ export const runRestrictedGuideModelRequest = async (options: RestrictedGuideMod
 }
 
 const cancellableClient = (client: GuideModelClient): RestrictedGuideModelClient => {
-  if (client.forceStop === undefined) throw new GuideModelCapabilityError("The model client does not support forceStop.")
+  if (client.forceStop === undefined)
+    throw new GuideModelCapabilityError("The model client does not support forceStop.")
   return {
     start: () => client.start(),
     listModels: () => client.listModels(),
@@ -685,7 +709,8 @@ const cancellableClient = (client: GuideModelClient): RestrictedGuideModelClient
         sessionId: session.sessionId,
         disconnect: () => session.disconnect(),
         abort: async () => {
-          if (session.abort === undefined) throw new GuideModelCapabilityError("The model session does not support abort.")
+          if (session.abort === undefined)
+            throw new GuideModelCapabilityError("The model session does not support abort.")
           await session.abort()
         },
         on: (handler) => {
@@ -743,15 +768,18 @@ export class CopilotGuideProvider implements GuideProvider {
 
   async match(input: GuideMatchInput): Promise<GuideMatchResult> {
     input = {
-      ...input, entries: input.entries.map((entry) => ({
-        ...entry, ...(entry.orchestration === undefined ? {} : { orchestration: guideTaskOrchestration(entry.orchestration) }),
+      ...input,
+      entries: input.entries.map((entry) => ({
+        ...entry,
+        ...(entry.orchestration === undefined ? {} : { orchestration: guideTaskOrchestration(entry.orchestration) }),
       })),
     }
     assertGuideMatchInput(input)
     const workflowIndex = new Map(
       input.entries.map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]),
     )
-    const payload = input.goal === undefined
+    const payload =
+      input.goal === undefined
       ? input
       : {
           intent: input.goal.draft.task,
@@ -767,7 +795,8 @@ export class CopilotGuideProvider implements GuideProvider {
   async generate(input: GuideGenerateInput): Promise<GuideGenerateResult> {
     assertGuideGenerateInput(input)
     input = { ...input, ...guideTaskContext(input.intent, input) }
-    const execution = input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
+    const execution =
+      input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
     return this.run(
       "generate",
       this.prompts.generate,
@@ -780,12 +809,15 @@ export class CopilotGuideProvider implements GuideProvider {
   async refine(input: GuideRefineInput): Promise<GuideRefineResult> {
     assertGuideGenerateInput(input)
     input = { ...input, ...guideTaskContext(input.intent, input) }
-    const execution = input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
-    const payload = execution === undefined
+    const execution =
+      input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
+    const payload =
+      execution === undefined
       ? input
       : {
           ...generationModelInput(input, execution),
-          candidate: validateGuideRefineResult({ candidate: guideGoalCandidateBody(input.candidate) }, execution).candidate,
+            candidate: validateGuideRefineResult({ candidate: guideGoalCandidateBody(input.candidate) }, execution)
+              .candidate,
           feedback: input.feedback,
         }
     return this.run("refine", this.prompts.refine, payload, this.refineTimeoutMs, (value) =>
@@ -804,7 +836,9 @@ export class CopilotGuideProvider implements GuideProvider {
     try {
       status = lstatSync(path.join(skillDirectory, "SKILL.md"))
     } catch (cause) {
-      throw new GuideModelCapabilityError(`Prompt Master skill is unavailable: ${skillDirectory}`, { cause })
+      throw new GuideModelCapabilityError(`Prompt Master skill is unavailable: ${skillDirectory}`, {
+        cause,
+      })
     }
     if (!status.isFile() || status.isSymbolicLink()) {
       throw new GuideModelCapabilityError(`Prompt Master SKILL.md is not a regular file: ${skillDirectory}`)
@@ -834,7 +868,11 @@ export class CopilotGuideProvider implements GuideProvider {
     })
   }
 
-  private sessionConfig<Input>(phase: GuideModelPhase, systemPrompt: string, options: GuideRunOptions<Input>): SessionConfig {
+  private sessionConfig<Input>(
+    phase: GuideModelPhase,
+    systemPrompt: string,
+    options: GuideRunOptions<Input>,
+  ): SessionConfig {
     const config = this.routing[phase]
     return restrictedGuideSessionConfig({
       clientName: this.clientName,
@@ -846,7 +884,9 @@ export class CopilotGuideProvider implements GuideProvider {
       ...(options.skillDirectory === undefined ? {} : { skillDirectory: options.skillDirectory }),
       ...(options.onActivity === undefined
         ? {}
-        : { onActivity: (event: { readonly type: string }) => options.onActivity?.(`${phase}: ${event.type}`) }),
+        : {
+            onActivity: (event: { readonly type: string }) => options.onActivity?.(`${phase}: ${event.type}`),
+          }),
     })
   }
 
@@ -860,8 +900,12 @@ export class CopilotGuideProvider implements GuideProvider {
   ): Promise<Output> {
     const config = this.routing[phase]
     const original = requestMessage(input, options.message)
-    const execute = (prompt: string): Promise<string> => runRestrictedGuideModelRequest({
-      ...config, systemPrompt, prompt, timeoutMs,
+    const execute = (prompt: string): Promise<string> =>
+      runRestrictedGuideModelRequest({
+        ...config,
+        systemPrompt,
+        prompt,
+        timeoutMs,
       cleanupTimeoutMs: 3_000,
       maximumResponseBytes,
       baseDirectory: this.baseDirectory,
@@ -879,14 +923,21 @@ export class CopilotGuideProvider implements GuideProvider {
     })
     options.onActivity?.(`${phase}: requesting`)
     const response = await execute(original).catch((error: unknown) => {
-      if (error instanceof RestrictedGuideModelError && error.code === "response-too-large" && error.cleanupFailures.length === 0) return undefined
+      if (
+        error instanceof RestrictedGuideModelError &&
+        error.code === "response-too-large" &&
+        error.cleanupFailures.length === 0
+      )
+        return undefined
       throw error
     })
     try {
       if (response === undefined) throw new GuideModelResponseError("completed response exceeded the byte limit")
       return validate(parseJson(response))
     } catch {
-      const repaired = await execute(`${original}\n\nThe previous completed response was invalid. Return corrected raw JSON matching the system schema exactly.`)
+      const repaired = await execute(
+        `${original}\n\nThe previous completed response was invalid. Return corrected raw JSON matching the system schema exactly.`,
+      )
       try {
         return validate(parseJson(repaired))
       } catch {

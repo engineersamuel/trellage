@@ -86,10 +86,32 @@ export interface ProfileGuideWorkflow {
   readonly description: string
   readonly skill?: string
   readonly launchAgent?: string
+  readonly interaction?: ProfileGuideInteraction
   readonly frame?: "fixed"
   readonly scope?: "project" | "fleet"
   readonly examples: ReadonlyArray<string>
   readonly promptTemplate: string
+}
+
+export interface ProfileGuideInteraction {
+  readonly mode: "interactive"
+  readonly requiredSkills: ReadonlyArray<string>
+}
+
+export const parseProfileGuideInteraction = (value: unknown, path = "interaction"): ProfileGuideInteraction => {
+  const fields = record(value, path)
+  exactKeys(fields, path, ["mode", "requiredSkills"])
+  if (fields.mode !== "interactive") fail(`${path}.mode`, "must equal interactive")
+  const requiredSkills = stringArray(fields.requiredSkills, `${path}.requiredSkills`, {
+    minimum: 1, maximumItems: 16, itemMaximum: 128,
+  })
+  if (requiredSkills.some((skill) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(skill))) {
+    fail(`${path}.requiredSkills`, "must contain lowercase kebab-case skill names")
+  }
+  if (new Set(requiredSkills).size !== requiredSkills.length) {
+    fail(`${path}.requiredSkills`, "must contain unique skill names")
+  }
+  return { mode: "interactive", requiredSkills }
 }
 
 export type ProfileGuideGoalController = "codex-goal" | "claude-goal" | "graph-of-loops"
@@ -258,7 +280,7 @@ const prerequisites = (value: unknown, path: string): ReadonlyArray<ProfileGuide
 const workflowInvocationOptions = (
   fields: Record<string, unknown>,
   itemPath: string,
-): Pick<ProfileGuideWorkflow, "skill" | "launchAgent"> => {
+): Pick<ProfileGuideWorkflow, "skill" | "launchAgent" | "interaction"> => {
   const skill =
     fields.skill === undefined ? undefined : text(fields.skill, `${itemPath}.skill`, 256).toLocaleLowerCase("en")
   if (skill !== undefined && !skillIdentifier.test(skill)) {
@@ -269,9 +291,16 @@ const workflowInvocationOptions = (
   if (launchAgent !== undefined && !isLaunchAgentIdentifier(launchAgent)) {
     fail(`${itemPath}.launchAgent`, "must be a portable agent identifier")
   }
+  const interaction = fields.interaction === undefined
+    ? undefined
+    : parseProfileGuideInteraction(fields.interaction, `${itemPath}.interaction`)
+  if (interaction !== undefined && launchAgent === undefined) {
+    fail(`${itemPath}.interaction`, "requires launchAgent")
+  }
   return {
     ...(skill === undefined ? {} : { skill }),
     ...(launchAgent === undefined ? {} : { launchAgent }),
+    ...(interaction === undefined ? {} : { interaction }),
   }
 }
 
@@ -298,7 +327,7 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
   const result = value.map((item, index): ProfileGuideWorkflow => {
     const itemPath = `${path}[${index}]`
     const fields = record(item, itemPath)
-    exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent", "frame", "scope"])
+    exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent", "interaction", "frame", "scope"])
     const invocation = workflowInvocationOptions(fields, itemPath)
     const framing = workflowFrameOptions(fields, itemPath)
     const promptTemplate = text(fields.promptTemplate, `${itemPath}.promptTemplate`, 16000, {
@@ -390,6 +419,10 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
   )
   if (fields.schemaVersion !== 1) fail(`${path} frontmatter.schemaVersion`, "must equal 1")
   const guideWorkflows = workflows(fields.workflows, `${path} frontmatter.workflows`)
+  if (guideWorkflows.some(({ interaction }) => interaction !== undefined) &&
+      !/(?:^|\/)native\/cpx\/hve\.md$/u.test(path.replaceAll("\\", "/"))) {
+    fail(`${path} frontmatter.workflows`, "verified interactive workflows require native/cpx/hve.md")
+  }
   let execution: ProfileGuideGoalExecution | undefined
   if (fields.goalExecution !== undefined) {
     const identityPath = /(?:^|\/)((?:native\/[^/]+|sandbox)\/[^/]+\.md)$/u.exec(path.replaceAll("\\", "/"))?.[1]

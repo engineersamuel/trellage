@@ -27,12 +27,14 @@ import type {
   ProfileGuideWorkflow,
 } from "@trellage/guide-core"
 import { parseGuideProjectTargetV1, profileGuideIdentityKey } from "@trellage/guide-core"
+import { stripCustomerContext } from "./guide-customer-context.ts"
 import { assertGuidePromptDeliveryContext, completeSinglePromptArtifact, prepareGuidePrompt, validateGuideOriginalIntent, type GuideTaskContext } from "./guide-context.ts"
 import {
   compactProfileGuide,
   guideCatalogEntries,
   guideMatchCatalogEntries,
   toGuideMatchCatalogEntry,
+  taskSpecificGuideMatchEntries,
   type CombinedGuideCatalog,
   type CompactProfileGuideWorkflow,
   type GuideMatchCatalogEntry,
@@ -238,6 +240,7 @@ export interface GuideHeadlessArgs {
   readonly effort: GuideEffort | undefined
   readonly uiVariant?: GuideLongPromptVariant
   readonly nextSteps?: boolean
+  readonly engagement?: boolean
 }
 
 const helpFlag = "--help"
@@ -250,8 +253,9 @@ const modelFlag = "--model"
 const effortFlag = "--effort"
 const uiVariantFlag = "--ui-variant"
 const nextStepsFlag = "--next-steps"
+const engagementFlag = "--engagement"
 
-const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag])
+const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag, engagementFlag])
 const valueFlags = new Set([intentFlag, profileFlag, modelFlag, effortFlag, uiVariantFlag])
 const knownFlags = new Set([...booleanFlags, ...valueFlags])
 
@@ -260,6 +264,7 @@ interface MutableGuideArgs {
   json: boolean
   intentStdin: boolean
   nextSteps: boolean
+  engagement: boolean
   intentFromFlag: string | undefined
   profile: string | undefined
   model: string | undefined
@@ -298,6 +303,10 @@ const consumeGuideFlag = (argv: ReadonlyArray<string>, index: number, state: Mut
     state.nextSteps = true
     return index
   }
+  if (token === engagementFlag) {
+    state.engagement = true
+    return index
+  }
   const value = argv[index + 1]
   if (value === undefined || value.startsWith("--")) {
     throw new GuideArgsError(`Missing value for flag: ${token}`)
@@ -327,7 +336,14 @@ const resolveGuideIntent = (state: MutableGuideArgs): string | undefined => {
   )
 }
 
+const validateEngagementModeFlags = (state: MutableGuideArgs): void => {
+  if (state.engagement && (state.json || state.nextSteps || state.profile !== undefined || state.uiVariant !== undefined)) {
+    throw new GuideArgsError("--engagement is interactive-only and cannot be combined with --json, --next-steps, --profile, or --ui-variant")
+  }
+}
+
 const validateGuideModeFlags = (state: MutableGuideArgs): void => {
+  validateEngagementModeFlags(state)
   if (
     state.nextSteps &&
     (state.json ||
@@ -357,12 +373,14 @@ const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
     effort: state.effort,
     ...(state.uiVariant === undefined ? {} : { uiVariant: state.uiVariant }),
     ...(state.nextSteps ? { nextSteps: true } : {}),
+    ...(state.engagement ? { engagement: true } : {}),
   }
 }
 
 export const guideHeadlessHelpText = [
   "Usage: trx guide [intent] [options]",
   "       trx guide --intent-stdin [options]",
+  "       trx guide --engagement [--intent <engagement question>]",
   "       trx guide --json --intent <text> [options]",
   "       trx guide --json <text> [options]",
   "",
@@ -373,6 +391,8 @@ export const guideHeadlessHelpText = [
   "                         May instead be given as a single positional argument.",
   "  --intent-stdin        Read the interactive guide intent as plain text from stdin.",
   "  --next-steps          Analyze the focused conversation from a private Herdr popup request.",
+  "  --engagement          Assess repository evidence for the next customer-engagement action.",
+  "                         Opens local source selection first; no model call or launch on open.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
   "                         reference instead of matching. Requires --json.",
   "  --model <id>            Override the configured model.",
@@ -396,6 +416,7 @@ export const parseGuideHeadlessArgv = (argv: ReadonlyArray<string>): GuideHeadle
     json: false,
     intentStdin: false,
     nextSteps: false,
+    engagement: false,
     intentFromFlag: undefined,
     profile: undefined,
     model: undefined,
@@ -703,7 +724,7 @@ interface PreparedMatchInputs {
 const prepareMatchInputs = (catalog: CombinedGuideCatalog, request: GuideMatchRequest): PreparedMatchInputs => {
   const goalCatalog = request.goal === undefined ? undefined : goalMatchCatalog(catalog, request.intent, request.goal)
   const rankingIntent = request.goal === undefined ? request.intent : goalMatchIntent(request.goal)
-  const completeEntries = goalCatalog?.entries ?? guideMatchCatalogEntries(catalog)
+  const completeEntries = goalCatalog?.entries ?? ordinaryMatchEntries(guideMatchCatalogEntries(catalog), request.intent)
   const legacy = (): GuideMatchInput => assertGuideMatchInput({
     intent: request.intent,
     entries: prefilterMatchEntries(completeEntries, rankingIntent, request.goal === undefined ? undefined : request.intent),
@@ -981,6 +1002,11 @@ export const publicGuideLaunchCommand = (
       goalTransport: publicGoalTransport(goalExecution.controller, transport),
     }
   }
+  if (selected.interaction !== undefined) {
+    const built = buildGuideLaunchCommand(selected, { mode: "argv", prompt })
+    const command = { executable, args: built.command.args }
+    return { ...command, preview: renderCommandPreview(command), promptHandling: built.promptHandling }
+  }
   const baseArgs = buildGuideLaunchCommand(selected).command.args
   const headlessPrompt = selected.headlessPrompt
   const args = headlessPrompt ? [...baseArgs, "-p", prompt] : baseArgs
@@ -1003,7 +1029,8 @@ export const selectedProfileFromCatalogRef = (
 ): SelectedProfile => {
   const entry = findFullCatalogEntry(catalog, ref)
   if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${ref}`)
-  const agent = findGuideWorkflow(entry.guide, workflowId).launchAgent
+  const workflow = findGuideWorkflow(entry.guide, workflowId)
+  const agent = workflow.launchAgent
   if (isNativeEntry(entry)) {
     return parseSelectedProfile({
       surface: "native",
@@ -1012,6 +1039,7 @@ export const selectedProfileFromCatalogRef = (
       profile: entry.name,
       headlessPrompt: entry.headless.prompt,
       ...(agent === undefined ? {} : { agent }),
+      ...(workflow.interaction === undefined ? {} : { interaction: workflow.interaction }),
       ...(entry.guide.goalExecution === undefined ? {} : { goalExecutionPolicy: entry.guide.goalExecution }),
       ...(entry.orchestration === undefined ? {} : { orchestration: entry.orchestration }),
     })
@@ -1025,6 +1053,7 @@ export const selectedProfileFromCatalogRef = (
     profile: entry.name,
     headlessPrompt: entry.headless.prompt,
     ...(agent === undefined ? {} : { agent }),
+    ...(workflow.interaction === undefined ? {} : { interaction: workflow.interaction }),
     ...(entry.guide.goalExecution === undefined ? {} : { goalExecutionPolicy: entry.guide.goalExecution }),
   })
 }
@@ -1278,6 +1307,7 @@ export const runGuideGenerate = async (
     : resolveGuideGoalExecution(request.goal, loaded.guide, workflowId)
 
   const prepared = prepareCatalogPrompt(entry, loaded.guide, workflowId, request)
+  const subject = stripCustomerContext(request.intent, prepared.context.customerContext)
   const authoredWorkflow = prepared.workflow
   const profile = generationProfileSummary(entry, request, workflowId, compactWorkflow, execution)
 
@@ -1285,7 +1315,7 @@ export const runGuideGenerate = async (
   const targetTool = isNativeEntry(entry) ? entry.harness : entry.harness.kind
   const produce = async () => {
     const generated = validateGuideGenerateResult(await provider.generate({
-      intent: request.intent,
+      intent: subject,
       profileRef: request.profileRef,
       workflowId,
       guide: prepared.guide,
@@ -1298,7 +1328,7 @@ export const runGuideGenerate = async (
       bodyCandidates = requireDistinctGuideCandidatePrompts(
         assertTriple(
           generated.candidates.map((candidate) =>
-            resolveGeneratedWorkflowBodyCandidate(prepared.guide, authoredWorkflow, request.intent, candidate),
+            resolveGeneratedWorkflowBodyCandidate(prepared.guide, authoredWorkflow, subject, candidate),
           ),
           "workflow body candidates",
         ),
@@ -1366,9 +1396,11 @@ export const runGuideGenerate = async (
             intent: request.intent,
             profileRef: request.profileRef,
             workflowId,
-            guide: loaded.guide,
+            guide: prepared.guide,
             guideBody: loaded.body,
             targetTool,
+            ...prepared.context,
+            bodyBudget: prepared.bodyBudget,
             ...(fixedFrame === undefined ? {} : { fixedFrame }),
           },
           produce,
@@ -1573,11 +1605,12 @@ const scoreGuideMatchEntries = (
     .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.index - b.index))
 }
 
-const pinnedGuideProfileRefs: ReadonlySet<string> = new Set([
-  "native:cpx/hve",
-  "sandbox:claude-council",
-  "sandbox:claude-research",
-])
+const ordinaryMatchEntries = (
+  entries: ReadonlyArray<GuideMatchCatalogEntry>, intent: string,
+): ReadonlyArray<GuideMatchCatalogEntry> => taskSpecificGuideMatchEntries(
+  entries,
+  scoreGuideMatchEntries(entries, intent).filter(({ explicitIdentity }) => explicitIdentity).map(({ entry }) => entry.ref),
+)
 
 const crossCuttingGuideProfileRefs: ReadonlyArray<string> = ["native:cdx/pstack", "sandbox:headlong"]
 const guideMatchPrefilterTarget = 12
@@ -1694,9 +1727,7 @@ const prefilterMatchEntries = (
   if (goalIdentityIntent === undefined) retainFleetCandidates(entries, intent, retainedProfileRefs)
   for (const item of ranked) {
     if (retainedProfileRefs.size >= guideMatchPrefilterTarget) break
-    if (!pinnedGuideProfileRefs.has(item.entry.ref) || item.explicitIdentity) {
-      retainedProfileRefs.add(item.entry.ref)
-    }
+    retainedProfileRefs.add(item.entry.ref)
   }
   return entries.filter(({ ref }) => retainedProfileRefs.has(ref))
 }
@@ -1712,7 +1743,7 @@ export const prefilterGuideMatchCatalogEntries = (
   goal?: PreparedGuideGoal,
 ): ReadonlyArray<GuideMatchCatalogEntry> => {
   return goal === undefined
-    ? prefilterMatchEntries(guideMatchCatalogEntries(catalog), intent)
+    ? prefilterMatchEntries(ordinaryMatchEntries(guideMatchCatalogEntries(catalog), intent), intent)
     : prefilterMatchEntries(goalMatchCatalog(catalog, intent, goal).entries, goalMatchIntent(goal), intent)
 }
 
@@ -1729,9 +1760,7 @@ export const literalGuideMatch = (
   goal?: PreparedGuideGoal,
 ): ReadonlyArray<LiteralGuideCandidate> => {
   const goalCatalog = goal === undefined ? undefined : goalMatchCatalog(catalog, intent, goal)
-  const entries = (goalCatalog?.entries ?? guideMatchCatalogEntries(catalog)).filter(
-    ({ ref }) => !pinnedGuideProfileRefs.has(ref) || goalCatalog?.explicitProfileRefs.includes(ref),
-  )
+  const entries = goalCatalog?.entries ?? ordinaryMatchEntries(guideMatchCatalogEntries(catalog), intent)
   if (goal === undefined && entries.length < 3) {
     throw new GuideServiceError(`Catalog must contain at least 3 profiles to rank literally: got ${entries.length}`)
   }

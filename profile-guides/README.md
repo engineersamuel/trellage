@@ -58,6 +58,32 @@ not install agents, change prompt delivery, or select an agent for other
 workflows on the same profile. Omit it when no workflow-specific agent is
 required.
 
+Use `interaction` only for verified customer workflows on `native:cpx/hve`:
+
+```yaml
+launchAgent: hve-core:dt-coach
+interaction:
+  mode: interactive
+  requiredSkills: [dt-coaching-foundation, dt-methods, dt-rpi-integration]
+frame: fixed
+```
+
+This metadata requires an explicit agent and 1 to 16 unique lowercase
+kebab-case skill names. It selects `cpx interactive hve --agent ...` with
+one `--require-skill` per entry and `-i` for the prompt. Guide checks the
+installed manifest and enabled skill files through `cpx workflow-check`
+before launch, including a recheck in the chosen Herdr destination.
+It does not use headless capability fallback or autonomous Copilot defaults.
+The new launcher requires a terminal; interactive workflows cannot use the
+batch queue. Other profiles, including Sandbox HVE, cannot declare this
+contract until they have equivalent checks.
+
+Keep the fixed frame bounded to one agent's purpose. Require the agent to
+load its applicable references and stop if they are unavailable. A successful
+static check does not prove that all upstream instructions were followed.
+Keep customer signoff, evidence quality, experiment outcomes, and permission
+to implement distinct.
+
 ## Goal execution policy
 
 Use optional `goalExecution` frontmatter to declare which existing workflows

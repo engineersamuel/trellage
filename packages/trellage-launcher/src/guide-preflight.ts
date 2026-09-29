@@ -470,6 +470,53 @@ const checkSandboxReadiness = async (
   }
 }
 
+const validateInteractiveCheck = (stdout: string, selected: NativeSelectedProfile): void => {
+  let value: unknown
+  try {
+    value = JSON.parse(stdout)
+  } catch (cause) {
+    throw new ProfilePreflightError("Workflow check did not return valid JSON", { cause })
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new ProfilePreflightError("Workflow check must return an object")
+  }
+  const check = value as Record<string, unknown>
+  const identity = [check.schemaVersion, check.launcher, check.profile, check.mode, check.agent, check.requiredSkills]
+  const expected = [1, selected.launcher, selected.profile, "interactive", selected.agent, selected.interaction?.requiredSkills]
+  if (JSON.stringify(identity) !== JSON.stringify(expected) ||
+      typeof check.manifestSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(check.manifestSha256)) {
+    throw new ProfilePreflightError("Workflow check does not match the selected interactive agent and skills")
+  }
+}
+
+const checkInteractiveReadiness = async (
+  runner: CommandRunner, selected: NativeSelectedProfile, cwd: string, signal?: AbortSignal,
+): Promise<ProfileReadinessResult> => {
+  const interaction = selected.interaction
+  if (interaction === undefined || selected.agent === undefined) {
+    throw new ProfilePreflightError("Interactive workflow requirements are missing")
+  }
+  let stdout: string
+  try {
+    stdout = (await runner.run(selected.commandPath, [
+      "workflow-check", selected.profile, "--agent", selected.agent,
+      ...interaction.requiredSkills.flatMap((skill) => ["--require-skill", skill]),
+    ], { cwd, timeoutMs: 30_000, ...(signal === undefined ? {} : { signal }) })).stdout
+  } catch (cause) {
+    if (!(cause instanceof CommandRunnerError)) throw cause
+    return {
+      kind: ProfileReadinessKind.Blocked,
+      summary: "This customer workflow is unavailable",
+      diagnostic: `${diagnosticFromError(cause)}\nUse an updated cpx launcher and an HVE installation with the required agent and skills. No workflow was started.`,
+    }
+  }
+  validateInteractiveCheck(stdout, selected)
+  return {
+    kind: ProfileReadinessKind.Ready,
+    summary: `${selected.agent} is available. This session asks questions and requires human decisions.`,
+  }
+}
+
 export const checkSelectedProfileReadiness = async (
   runner: CommandRunner,
   selected: SelectedProfile,
@@ -478,11 +525,16 @@ export const checkSelectedProfileReadiness = async (
   goalExecution?: GuideGoalExecution,
   goalServices?: GuideGoalReadinessServices,
 ): Promise<ProfileReadinessResult> => {
+  selected = parseSelectedProfile(selected)
   if (goalExecution !== undefined) assertGuideGoalProfile(selected, goalExecution)
   const general = await (selected.surface === "native"
     ? checkNativeReadiness(runner, selected, cwd, signal)
     : checkSandboxReadiness(runner, selected, cwd, signal, goalExecution === undefined))
-  if (general.kind === ProfileReadinessKind.Blocked || goalExecution === undefined) return general
+  if (general.kind === ProfileReadinessKind.Blocked) return general
+  if (selected.surface === "native" && selected.interaction !== undefined) {
+    return checkInteractiveReadiness(runner, selected, cwd, signal)
+  }
+  if (goalExecution === undefined) return general
   const goal = await checkGuideGoalReadiness(runner, selected, cwd, goalExecution, signal, goalServices)
   return goal.kind === "checked"
     ? { kind: ProfileReadinessKind.Ready, summary: `${goal.summary}. ${goal.diagnostic}`, goalReadiness: "checked" }

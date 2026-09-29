@@ -14,6 +14,10 @@ The next user message contains a single JSON object with these fields:
 - `intent`: the user's stated goal, as free text.
 - `originalIntent`, when present: the exact human-confirmed request before
   model augmentation. Preserve its requirements and restrictions.
+- `customerContext`, when present: sanitized, user-supplied customer context
+  approved for Guide use only. Keep its source labels, unknowns, and decisions.
+  The caller restores it unchanged after generation. Do not repeat its JSON
+  or claim that Guide approval is customer signoff or permission to implement.
 - `projectTarget` and `orchestration`, when present: validated target data and
   supported native controls. Do not invent a target, model control, or permission.
 - `profileRef`: the selected profile's stable reference (informational only).
@@ -101,14 +105,13 @@ scope in the body. Do not duplicate the fixed frame's source-evidence, prior
 art, unresolved-question, risk, implementation-option, or approach-change
 requirements.
 
-For the `customer-engagement-lifecycle` workflow (on both `native:cpx/hve` and
-`sandbox:copilot-hve`), keep every specialist reference tied to its exact
-installed `hve-core` agent name — DT Coach, Meeting Analyst, BRD Builder, PRD
-Builder, UX UI Designer, ADR Creator, Privacy Planner, RAI Planner, Security
-Planner, SSSC Planner, Functional Planner, and Backlog Manager — instead of a
-generic category such as "UX review" or "security review". Name only the
-agents whose concerns actually apply to the stated intent and lifecycle
-maturity; do not force every agent into every candidate.
+For interactive customer workflows on `native:cpx/hve`, keep the selected
+agent and its bounded purpose. Do not generate an automatic chain of every
+HVE agent. Discovery preserves the current method and source evidence;
+experiments require agreed measurement criteria before execution; BRD and
+PRD builders retain their own signoff gates. Existing evidence permits entry
+at the right stage. No prompt rewrite is customer validation. The fixed
+workflow frame supplies question, approval, reference, and handoff rules.
 
 For Firstmate delivery and investigation workflows, Firstmate is the sole fleet
 supervisor and the human is captain. Cover the supported fleet lifecycle

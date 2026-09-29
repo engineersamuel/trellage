@@ -13,7 +13,7 @@ permissions, and records the readiness receipt. A raw Bun install is not
 equivalent. Native installation fixtures must use the same prepared-source
 contract; missing readiness must remain a refusal, not an implicit install.
 
-This task keeps all 31 cases and uses a 60-second slow-test reporting threshold
+This task uses a 60-second slow-test reporting threshold
 because Vitest applies it to both individual cases and the file total. That
 threshold does not change test timeouts or failure reporting.
 
@@ -30,6 +30,24 @@ Council, Research, and HVE RPI. Ranking currently permits at most five
 recommendations. The mixed cases use all eight profiles without changing that
 limit. Each profile generation produces three prompt candidates. Queueing one
 of them creates one job, not three jobs.
+
+Separate customer fixtures replace the HVE RPI entry with checked Discovery.
+They drive the local brief, approval, protected generation context, direct
+launch, and queue refusal at 88 columns. Direct Herdr cases cover panes,
+tabs, new worktrees, and existing worktrees with a readiness recheck in each
+destination. They do not change the ordinary eight-profile matrix or execute
+a real HVE agent.
+
+Repository engagement cases use the separate `EngagementApp`, real temporary
+Git repositories, the production source reader and work store, and an injected
+assessment/agent boundary. They cover local-only opening, explicit source-use
+consent, one saved assignment, separate launch confirmation, return for result
+review, result-file inspection, persistent reopening, clarification with
+multiline paste at 64 columns, and human-only result rejection. They make no
+model calls and start no real coding agent.
+The launch fixture also starts a harmless Bun child through redirected parent
+streams. The interactive transport must reconnect all child streams to the
+controlling terminal, so a piped Guide intent does not break HVE's TTY checks.
 
 Short approved goals instead have two eligible profiles: Native Codex
 `planner` and Native Claude `default`. The long Unicode goal excludes Claude
@@ -51,8 +69,14 @@ Handoffs are recorded requests, not real harness launches.
 
 | Interaction | Cases | Generated candidates | Queued jobs | Handoffs | Required outcome |
 | --- | ---: | ---: | ---: | ---: | --- |
+| Assess repository evidence, prepare one assignment, confirm execution, review, and reopen it | 1 | 1 assignment | 0 | 1 | No assessment before source consent; no launch before a separate confirmation; exit zero still requires human review |
+| Answer one engagement question with multiline paste at 64 columns and 20 rows | 1 | 0 | 0 | 0 | The answer stays local until renewed consent and reaches the next assessment unchanged |
+| Prepare a human-only engagement action and reject its result | 1 | 1 assignment | 0 | 0 | No launch control; the explicit rejection is durable |
+| Select sources at 64 columns and 20 rows, then exclude one before assessment | 1 | 0 | 0 | 0 | The focused path stays visible; only checked files reach the model |
 | Select a Native or Sandbox profile and a non-default candidate; confirm this terminal | 2 | 3 | 0 | 1 | Exact launcher, prompt argument, cwd, and automation flag |
 | Park a pending readiness probe, change the main selection, and reopen the fork | 1 | 3 | 0 | 0 | Exactly one inventory request survives parking; release reaches destination selection; cancellation launches nothing |
+| Prepare customer context, pause, leave unknowns blank, review, apply, and choose Discovery | 1 | 3 | 0 | 1 | No model or command before approval; original request and exact source labels survive; queue entry is refused; both readiness checks retain the agent and required skills |
+| Send Discovery directly to a Herdr pane, tab, new worktree, or existing worktree | 4 | 3 | 0 | 1 | No batch queue; exact interactive command; installed requirements rechecked in the selected directory before launch |
 | Queue Council, Research, and HVE RPI; return to the main screen and press `L` | 1 | 9 | 3 | 3 | Correct skill frames and the HVE `--agent hve-core:rpi-agent` argument |
 | Visit all five recommendations in seeded order; choose seeded candidates and press `L` | 2 | 15 | 5 | 5 | Every selected profile appears once, with its own prompt and launcher arguments |
 | Queue all five recommendations and all three lenses; reopen a fork and press `L` | 1 | 24 | 8 | 8 | The global launch key dispatches the full queue, not only the active fork |
@@ -96,8 +120,9 @@ optimization.
 Goal records also carry the approved structured snapshot through matching,
 generation, and optimization. Fake model replies contain short approaches,
 not copies of the protected goal. Goal matching accepts only the supplied
-eligible profiles; ordinary matching still asserts the complete catalog and
-five ranked results. The goal cases page through each candidate's task,
+eligible profiles; ordinary matching asserts all task-specific workflows and
+five ranked results. Broad Council, Research, and HVE RPI workflows stay
+available as explicit lenses, not automatic matches. The goal cases page through each candidate's task,
 criteria, and approach, then compare the full selected prompt and frozen
 metadata with an independent expected value. They retain the exact original
 Goal-me document for review while excluding its generic execution protocol.
@@ -144,6 +169,10 @@ reservations, and the final queue check after inspection.
 The real UI, guide parsing, prompt pipeline, queue, readiness handling, command
 builders, and result execution run unchanged. Fixtures replace model replies,
 native inventory, Sandbox doctor output, Git inspection, and Herdr responses.
+Customer workflow checks use recorded manifest/skill evidence. The separate
+native `cpx` contract uses a fixture PTY and real argument/file validation,
+including missing, disabled, and symlinked skills, missing agents, rejected
+autonomous flags, literal leading-flag prompts, and non-terminal refusal.
 Native Codex version/features and Claude runtime/model-inventory checks also
 use the recording runner. The injected readiness services cover both UI
 preflight and result execution; they reject unexpected paths instead of

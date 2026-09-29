@@ -9,6 +9,9 @@ import {
   type ProfileGuideWorkflow,
 } from "@trellage/guide-core"
 import { GuideValidationError, text } from "./guide-text.ts"
+import {
+  parseApprovedCustomerContext, renderCustomerContext, type ApprovedGuideCustomerContext,
+} from "./guide-customer-context.ts"
 import type { GuideGenerateCandidate } from "./guide-provider.ts"
 import {
   renderWorkflowBodyCandidate,
@@ -18,7 +21,7 @@ import {
   workflowUsesFixedFrame,
 } from "./guide-workflow-prompt.ts"
 
-export const guidePromptRendererVersion = 6
+export const guidePromptRendererVersion = 7
 
 import { guideTaskOrchestration, type GuideTaskOrchestration } from "./guide-orchestration-context.ts"
 export { guideTaskOrchestration, type GuideTaskOrchestration } from "./guide-orchestration-context.ts"
@@ -28,6 +31,7 @@ export interface GuideTaskContext {
   readonly originalIntent?: string
   readonly projectTarget?: GuideProjectTargetV1 | null
   readonly orchestration?: GuideTaskOrchestration
+  readonly customerContext?: ApprovedGuideCustomerContext
 }
 
 export interface GuideLegacyFirstmateContext {
@@ -36,6 +40,7 @@ export interface GuideLegacyFirstmateContext {
   readonly projectTargetConfirmed: true
   readonly workflowId: string
   readonly workflow: ProfileGuideWorkflow
+  readonly customerContext?: ApprovedGuideCustomerContext
 }
 
 const isFirstmateRef = (profileRef: string | undefined): boolean => profileRef?.startsWith("native:fmx/") === true
@@ -55,10 +60,13 @@ export const assertGuidePromptDeliveryContext = (context: GuideTaskContext): voi
   }
 }
 
-const singlePromptOriginalAppendix = (context: GuideTaskContext): string =>
-  context.orchestration !== undefined || context.originalIntent === undefined
-    ? ""
-    : `\n\n## Original human intent (unchanged)\n\n${validateGuideOriginalIntent(context.originalIntent)}`
+const singlePromptOriginalAppendix = (context: GuideTaskContext): string => {
+  if (context.orchestration !== undefined) return ""
+  return [
+    ...(context.originalIntent === undefined ? [] : [`\n\n## Original human intent (unchanged)\n\n${validateGuideOriginalIntent(context.originalIntent)}`]),
+    ...(context.customerContext === undefined ? [] : [`\n\n${renderCustomerContext(context.customerContext)}`]),
+  ].join("")
+}
 
 export const guidePromptBodyBudget = (workflow: ProfileGuideWorkflow, context: GuideTaskContext): number => {
   assertGuidePromptDeliveryContext(context)
@@ -92,11 +100,14 @@ export const completeSinglePromptArtifact = (
   context: GuideTaskContext,
 ): GuideGenerateCandidate => {
   assertGuidePromptDeliveryContext(context)
-  if (context.orchestration !== undefined || context.originalIntent === undefined) return validateFinalGuideCandidate(candidate)
-  const original = validateGuideOriginalIntent(context.originalIntent)
+  if (context.orchestration !== undefined || (context.originalIntent === undefined && context.customerContext === undefined)) {
+    return validateFinalGuideCandidate(candidate)
+  }
   const body = workflowBodyCandidate(workflow, candidate)
   const appendix = singlePromptOriginalAppendix(context)
-  if (body.prompt.endsWith(appendix) || (!legacyFirstmateContext(context) && body.prompt.includes(original))) {
+  const includesOriginal = context.customerContext === undefined && context.originalIntent !== undefined &&
+    !legacyFirstmateContext(context) && body.prompt.includes(validateGuideOriginalIntent(context.originalIntent))
+  if (body.prompt.endsWith(appendix) || includesOriginal) {
     return validateFinalGuideCandidate(candidate)
   }
   const complete = renderWorkflowBodyCandidate(workflow, {
@@ -118,6 +129,7 @@ export const guideTaskContext = (intent: string, input: GuideTaskContext = {}): 
     ? {}
     : { projectTarget: input.projectTarget === null ? null : parseGuideProjectTargetV1(input.projectTarget) }),
   ...(input.orchestration === undefined ? {} : { orchestration: guideTaskOrchestration(input.orchestration) }),
+  ...(input.customerContext === undefined ? {} : { customerContext: parseApprovedCustomerContext(input.customerContext) }),
 })
 
 /** Compatibility for saved legacy requests; this changes validation context, never their bytes or authority. */
@@ -160,6 +172,7 @@ const firstmateContextFrame = (
     workflowId: workflow.id,
     scope,
     projectTarget: target,
+    ...(context.customerContext === undefined ? {} : { customerContext: parseApprovedCustomerContext(context.customerContext) }),
     ...(orchestration === undefined ? { delivery: "manual-paste" } : { orchestration }),
   }
   const targetRule = target !== null
@@ -264,6 +277,7 @@ export const validateLegacyFirstmateArtifact = (
   }
   const input = guideTaskContext(context.originalIntent, {
     profileRef, originalIntent: context.originalIntent, projectTarget: context.projectTarget,
+    ...(context.customerContext === undefined ? {} : { customerContext: context.customerContext }),
   })
   guidePromptBodyBudget(context.workflow, input)
   validateFirstmatePromptFrame(profileRef, context.workflow, prompt, input)

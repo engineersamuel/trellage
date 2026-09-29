@@ -104,7 +104,7 @@ After installing the native launchers and the
 harness/profile picker. Remaining arguments are forwarded to `cpx` unchanged
 after selection; the bare picker never performs setup, repair, or update.
 
-Profile launches always pass `--autopilot --allow-all --no-ask-user`, so
+Ordinary `cpx PROFILE` launches pass `--autopilot --allow-all --no-ask-user`, so
 Copilot runs autonomously without waiting for permission or user-input prompts.
 Every profile defaults to `--model gpt-6-astra --effort low`. Plan mode uses
 `gpt-6-astra` with `max` effort. Setup, repair, and launch refresh only the
@@ -114,6 +114,40 @@ session's default model and effort when you leave plan mode. Caller arguments
 follow these defaults, so `--model` and `--effort` (or `--reasoning-effort`)
 can select a different model or reasoning level for one launch. Lifecycle
 commands do not add model or reasoning arguments.
+
+### Interactive HVE customer workflows
+
+Use the explicit mode for workflows that need questions and human decisions:
+
+```sh
+cpx workflow-check hve --agent hve-core:dt-coach \
+  --require-skill dt-coaching-foundation --require-skill dt-methods \
+  --require-skill dt-rpi-integration
+cpx interactive hve --agent hve-core:dt-coach \
+  --require-skill dt-coaching-foundation --require-skill dt-methods \
+  --require-skill dt-rpi-integration -i "Help us discover the customer problem."
+```
+
+This mode requires Copilot CLI 1.0.81 or later, Python 3, a managed HVE profile,
+and a terminal for both input and output. It checks the installed `plugin.json`
+for a unique agent and each required skill, verifies safe nonempty entry files,
+and confirms that Copilot exposes each skill as enabled from that same plugin
+path. Missing, disabled, ambiguous, or symlinked entries block launch.
+`workflow-check` returns JSON evidence without preparing or changing the
+profile. It does not contact a model or prove the workflow ran successfully.
+
+`interactive` checks before and after normal managed-profile preparation.
+It uses the usual model and effort defaults but does **not** add `--autopilot`,
+`--allow-all`, or `--no-ask-user`. Copilot's normal permission settings still
+apply. It accepts only `--agent`, repeated `--require-skill`, `-i`, `--model`,
+and `--effort`; headless and autonomous options are rejected. Piped input and
+unattended batch use are rejected. Ordinary `cpx hve` remains autonomous.
+
+Use [the Native HVE guide](../../profile-guides/native/cpx/hve.md) for the
+Discovery, Experiment, BRD, PRD, UX, architecture, and planning mappings.
+Those agents retain their own references and approval rules. Meeting ingestion,
+publishing, tracker mutation, and automatic customer signoff are not part of
+this launch contract.
 
 `update --check` compares the installed plugin version reported by Copilot with
 the official marketplace manifest. Launch self-heals a missing cataloged plugin

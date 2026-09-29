@@ -977,7 +977,7 @@ mv "$fixture_root/trellage-codex-profiles/bin/cdx.real" \
 cp "$fixture_picker" "$fixture_root/launcher.mjs"
 cat >"$fixture_picker" <<'EOF'
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 
 const guide = {
   schemaVersion: 1,
@@ -1005,6 +1005,7 @@ if (process.argv[2] === "enrich-native-list") {
   process.stdout.write(`${JSON.stringify({
     guideRoot: process.argv[3],
     promptMasterSkillDirectory: process.argv[4],
+    promptMasterExists: existsSync(`${process.argv[4]}/SKILL.md`),
     goalSkills: {
       managerPath: process.env.TRELLAGE_GUIDE_SKILLS_MANAGER,
       catalogPath: process.env.TRELLAGE_GUIDE_SKILLS_CATALOG,
@@ -1107,6 +1108,23 @@ jq -e \
   || fail 'guide mode rejected an omitted interactive intent'
 jq -e '.args == []' "$fixture_root/guide-no-args.json" >/dev/null \
   || fail 'guide mode added arguments when the interactive intent was omitted'
+"$fixture_bin/trx" guide --engagement --intent "What's the next step in this engagement" \
+  >"$fixture_root/guide-engagement.json" \
+  || fail 'guide engagement mode was not forwarded'
+jq -e '.args == ["--engagement", "--intent", "What\u0027s the next step in this engagement"] and .promptMasterExists == false' \
+  "$fixture_root/guide-engagement.json" >/dev/null \
+  || fail 'engagement opening prepared an unused Prompt Master skill or changed its question'
+"$fixture_bin/trx" guide --intent --engagement --json >"$fixture_root/guide-engagement-literal.json" \
+  || fail 'guide treated a literal engagement intent as a mode flag'
+jq -e '.promptMasterExists == true' "$fixture_root/guide-engagement-literal.json" >/dev/null \
+  || fail 'ordinary guide skipped Prompt Master for a literal intent value'
+for conflicting_flag in --engagement --engagement=value --next-steps --json --profile=native:cpx/hve --ui-variant=pager --preview --forks; do
+  status=0
+  "$fixture_bin/trx" guide --engagement "$conflicting_flag" \
+    >"$fixture_root/guide-engagement-invalid.out" 2>"$fixture_root/guide-engagement-invalid.err" \
+    || status=$?
+  [[ "$status" -ne 0 ]] || fail "engagement accepted conflicting flag: $conflicting_flag"
+done
 "$fixture_bin/trx" guide --next-steps --model fixture-model --effort high \
   >"$fixture_root/guide-next-steps.json" \
   || fail 'guide next-steps mode was not forwarded'

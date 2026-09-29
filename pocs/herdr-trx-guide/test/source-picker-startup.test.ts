@@ -4,7 +4,7 @@ import { PassThrough } from "node:stream"
 import { main } from "../custom-popup.ts"
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 const tick = () => new Promise(resolve => setImmediate(resolve))
-const setup = () => {
+const setup = (overrides = {}) => {
   const input = new PassThrough(); Object.assign(input, { isTTY: true, setRawMode() {} })
   const output = new PassThrough(); Object.assign(output, { isTTY: true, columns: 88, rows: 20 })
   let rendered = ""
@@ -12,7 +12,7 @@ const setup = () => {
   const sources = Object.fromEntries(["queue", "clipboard", "capture", "rewrite"].map(name => [name, deferred()]))
   const started = []
   const read = name => () => { assert.match(rendered, /TRX actions/); assert.match(rendered, /loading/); started.push(name); return sources[name].promise }
-  const run = main({ input, output, context: { workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1", cwd: "/repo", agent: "copilot" }, env: { HERDR_PLUGIN_STATE_DIR: "/unused" }, queueReader: read("queue"), clipboardReader: read("clipboard"), captureInspector: read("capture"), contextMenuCapture: read("rewrite") })
+  const run = main({ input, output, context: { workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1", cwd: "/repo", agent: "copilot" }, env: { HERDR_PLUGIN_STATE_DIR: "/unused" }, queueReader: read("queue"), clipboardReader: read("clipboard"), captureInspector: read("capture"), contextMenuCapture: read("rewrite"), ...overrides })
   return { input, output, run, sources, started, screen: () => rendered.slice(rendered.lastIndexOf("\x1b[2J")), all: () => rendered }
 }
 test("paints before every read, shows incremental failures, and ignores completions after Escape", async () => {
@@ -64,4 +64,33 @@ test("invokes the capture inspector for each fresh popup and exposes no analysis
   assert.doesNotMatch(second.screen(), /conversation|next-steps|analysis/iu)
   second.input.emit("keypress", "", { name: "escape" })
   await second.run
+})
+
+test("opens engagement with g in an ordinary terminal while all capture sources are still loading", async () => {
+  const opened = []
+  const requests = []
+  const context = { workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1", cwd: "/customer/repository" }
+  const ui = setup({
+    context,
+    engagementOpener: async (options) => { opened.push(options.context); return "w1:p2" },
+    request: async (method, params) => {
+      requests.push({ method, params })
+      return { type: "popup_closed" }
+    },
+  })
+  assert.match(ui.screen(), /Check the engagement \(HVE next steps\)/u)
+  assert.match(ui.screen(), /g engagement/u)
+  ui.input.emit("keypress", "g", { name: "g" })
+  assert.equal(await ui.run, 0)
+  assert.deepEqual(opened, [context])
+  assert.deepEqual(requests, [{ method: "popup.close", params: {} }])
+})
+
+test("does not enqueue an engagement action as captured conversation text", async () => {
+  const ui = setup()
+  ui.input.emit("keypress", "a", { name: "a" })
+  assert.match(ui.screen(), /Choose highlighted text/u)
+  assert.match(ui.screen(), /Check the engagement/u)
+  ui.input.emit("keypress", "", { name: "escape" })
+  assert.equal(await ui.run, 0)
 })

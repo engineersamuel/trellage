@@ -130,10 +130,11 @@ Run the offline `trx guide` UI integration matrix after source preparation:
 mise run trx-guide-test
 ```
 
-The [guide UI integration matrix](guide-ui-integration.md) covers 31
+The [guide UI integration matrix](guide-ui-integration.md) covers
 keyboard-driven scenarios in the real Ink guide. It includes all five ranked
-recommendations, all three pinned lenses, seeded candidate choices and queue
-removals, both prompt augmentation paths, prompt edits, parked readiness,
+recommendations, the Council, Research, HVE RPI, and customer Discovery lenses,
+seeded candidate choices and queue removals, prompt augmentation, the local
+customer brief and approval boundary, prompt edits, parked readiness,
 approved-goal flows, and `L` batch launches.
 It checks complete rendered prompts, candidate and job counts, and exact
 Native, Sandbox, and Herdr commands, including arguments and working directories.

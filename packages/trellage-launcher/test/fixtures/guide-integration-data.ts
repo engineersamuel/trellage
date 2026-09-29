@@ -1,4 +1,4 @@
-import type { ProfileGuideV1 } from "@trellage/guide-core"
+import type { ProfileGuideV1, ProfileGuideWorkflow } from "@trellage/guide-core"
 import type { NativeSelectedProfile, CommandSpec } from "../../src/guide-launch.ts"
 import type { PreparedGuideGoal } from "../../src/guide-goal-execution.ts"
 import type {
@@ -21,6 +21,9 @@ export enum FixtureMode {
   GoalRecommended = "goal-recommended",
   GoalReapproval = "goal-reapproval",
   GoalGraph = "goal-graph",
+  Customer = "customer",
+  CustomerHerdr = "customer-herdr",
+  CustomerExistingWorktree = "customer-existing-worktree",
 }
 
 export type FixtureProfileId =
@@ -45,6 +48,7 @@ export type FixtureProfile = {
   readonly skill?: string
   readonly key?: string
   readonly goalExecution?: ProfileGuideV1["goalExecution"]
+  readonly interaction?: ProfileGuideWorkflow["interaction"]
 } & (
   | { readonly surface: "native"; readonly launcher: NativeSelectedProfile["launcher"]; readonly agent?: string }
   | { readonly surface: "sandbox" }
@@ -159,8 +163,25 @@ const graphFixture: FixtureProfile = {
   goalExecution: { controller: "graph-of-loops", workflowIds: ["start-goal"] },
 }
 
-export const fixtureProfilesForMode = (mode: FixtureMode): ReadonlyArray<FixtureProfile> =>
-  mode === FixtureMode.GoalGraph ? [...fixtureProfiles, graphFixture] : fixtureProfiles
+export const fixtureProfilesForMode = (mode: FixtureMode): ReadonlyArray<FixtureProfile> => {
+  if (mode === FixtureMode.GoalGraph) return [...fixtureProfiles, graphFixture]
+  if (![FixtureMode.Customer, FixtureMode.CustomerHerdr, FixtureMode.CustomerExistingWorktree].includes(mode)) return fixtureProfiles
+  return fixtureProfiles.map((profile) => profile.id !== "hve" ? profile : {
+    ...profile,
+    workflowId: "customer-discovery",
+    key: "d",
+    agent: "hve-core:dt-coach",
+    skill: "dt-methods",
+    interaction: { mode: "interactive", requiredSkills: ["dt-coaching-foundation", "dt-methods", "dt-rpi-integration"] },
+    beforeBody: "Discover the customer's problem:\n",
+    afterBody: "\nKeep human decisions with the customer.",
+  })
+}
+
+export const fixtureMatchProfiles = (profiles: ReadonlyArray<FixtureProfile>): ReadonlyArray<FixtureProfile> =>
+  profiles.filter(({ workflowId }) =>
+    !["run-council-deliberation", "vault-backed-research", "rpi-agent-cycle"].includes(workflowId),
+  )
 
 export const recommendationIds: ReadonlyArray<FixtureProfileId> = [
   "planner",
@@ -205,6 +226,8 @@ export const guideSource = (profile: FixtureProfile): string => {
         description: `Review with ${profile.name}.`,
         examples: ["Review this change", "Find regressions in this diff"],
         ...(profile.skill === undefined ? {} : { skill: profile.skill }),
+        ...(profile.surface !== "native" || profile.agent === undefined ? {} : { launchAgent: profile.agent }),
+        ...(profile.interaction === undefined ? {} : { interaction: profile.interaction }),
         promptTemplate: `${profile.beforeBody}{{intent}}${profile.afterBody}`,
       },
     ],
@@ -267,7 +290,7 @@ export type FixtureEvent =
     }
   | {
       readonly kind: "generate"
-      readonly input: Pick<GuideGenerateInput, "intent" | "profileRef" | "workflowId" | "goal" | "bodyBudget">
+      readonly input: Pick<GuideGenerateInput, "intent" | "profileRef" | "workflowId" | "goal" | "bodyBudget" | "originalIntent" | "customerContext">
       readonly candidates: ReadonlyArray<GuideGenerateCandidate>
     }
   | {

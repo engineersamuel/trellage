@@ -211,7 +211,18 @@ describe("GuideArtifactCache", () => {
       routing: { ...routing, optimize: { ...routing.optimize, model: "other" } },
       prompts,
     }).generation(base, generate)
-    expect(generationCalls).toBe(6)
+    const customerContext = {
+      schemaVersion: 1 as const, approval: "guide-context-only" as const,
+      fields: {
+        problem: "Reported problem", outcome: "Unknown", evidence: "Reported: note-1",
+        decisions: "Open", constraints: "No publishing", handoff: "Partner owns the work",
+      },
+    }
+    const revisedContext = { ...customerContext, fields: { ...customerContext.fields, evidence: "Observed: note-2" } }
+    await cache.generation({ ...base, customerContext }, generate)
+    await cache.generation({ ...base, customerContext }, generate)
+    await cache.generation({ ...base, customerContext: revisedContext }, generate)
+    expect(generationCalls).toBe(8)
 
     let refinementCalls = 0
     const refine = async () => {
@@ -231,7 +242,10 @@ describe("GuideArtifactCache", () => {
       refinement,
       refine,
     )
-    expect(refinementCalls).toBe(5)
+    await cache.refinement({ ...refinement, customerContext }, refine)
+    await cache.refinement({ ...refinement, customerContext }, refine)
+    await cache.refinement({ ...refinement, customerContext: revisedContext }, refine)
+    expect(refinementCalls).toBe(7)
   })
 
   it("misses generation and refinement when Prompt Master skill content changes", async () => {

@@ -8,6 +8,7 @@ import {
   handoffToNewHerdrTab,
   openHerdrWorktreeAndHandoff,
   runInteractiveCommand,
+  runInteractiveTerminalCommand,
   sameGuideCommand,
   type CommandRunner,
   type CommandSpec,
@@ -28,6 +29,7 @@ export interface GuideInteractiveExecutionServices {
   readonly runner: CommandRunner
   readonly write: (text: string) => void
   readonly checkReadiness?: typeof checkSelectedProfileReadiness
+  readonly beforeCurrentTerminalLaunch?: () => Promise<void>
   readonly runInteractive?: (
     command: CommandSpec,
     options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
@@ -48,7 +50,7 @@ type LaunchResult = Exclude<GuideUiResult, { readonly action: "cancel" | "print"
 type HerdrResult = Exclude<LaunchResult, { readonly action: "current-terminal" }>
 
 const validateGoalResult = (result: LaunchResult): void => {
-  if (result.goalExecution === undefined) return
+  if (result.goalExecution === undefined && result.profile.interaction === undefined) return
   const expected = result.action === "current-terminal"
     ? buildGuideLaunchCommand(result.profile, { mode: "argv", prompt: result.prompt }, result.goalExecution)
     : buildHerdrGuideLaunch(result.profile, result.prompt, result.goalExecution)
@@ -56,7 +58,7 @@ const validateGoalResult = (result: LaunchResult): void => {
     ? result.action === "current-terminal" && expected.promptHandling === result.promptHandling
     : result.action !== "current-terminal" && expected.promptDelivery === result.promptDelivery
   if (!handlingMatches || !sameGuideCommand(expected.command, result.command)) {
-    throw new GuideLaunchError({ kind: "blocked", message: "The selected goal command no longer matches its profile and delivery." })
+    throw new GuideLaunchError({ kind: "blocked", message: "The selected workflow command no longer matches its profile and delivery." })
   }
 }
 
@@ -66,7 +68,7 @@ const checkGoalReadiness = async (
   cwd: string,
   paneId?: string,
 ): Promise<void> => {
-  if (result.goalExecution === undefined) return
+  if (result.goalExecution === undefined && result.profile.interaction === undefined) return
   const readiness = await (services.checkReadiness ?? checkSelectedProfileReadiness)(
     services.runner, result.profile, cwd, undefined, result.goalExecution,
   )
@@ -104,7 +106,7 @@ const launchHerdrResult = async (
     promptDelivery: result.promptDelivery,
     timeoutMs: startupTimeoutMs,
     promptTimeoutMs,
-    ...(result.goalExecution === undefined ? {} : {
+    ...(result.goalExecution === undefined && result.profile.interaction === undefined ? {} : {
       beforeLaunch: (cwd: string, paneId: string) => checkGoalReadiness(result, services, cwd, paneId),
     }),
   }
@@ -186,11 +188,14 @@ const executeCurrentTerminalResult = async (
   validateGoalResult(result)
   try {
     await checkGoalReadiness(result, services, result.cwd)
+    await services.beforeCurrentTerminalLaunch?.()
     if (result.promptHandling === "manual-paste") {
       if (result.goalExecution === undefined) writePrompt(services.write, result.prompt, "Paste this prompt after the profile starts:")
       else writeGoalInput(services, result.prompt, result.goalExecution, "Goal needs-input after the profile starts. Startup does not activate it.")
     }
-    await (services.runInteractive ?? runInteractiveCommand)(result.command, {
+    const run = services.runInteractive ??
+      (result.profile.interaction === undefined ? runInteractiveCommand : runInteractiveTerminalCommand)
+    await run(result.command, {
       cwd: result.cwd,
       env: { ...process.env, TRELLAGE_AUTOMATION: "1" },
     })

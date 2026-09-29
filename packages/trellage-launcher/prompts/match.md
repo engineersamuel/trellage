@@ -85,12 +85,19 @@ authentication, model route, tool surface, persistence model, and process
 discipline. Do not reward a profile only because it lists more capabilities,
 workflows, examples, or implementation details.
 
-The interactive guide separately pins `sandbox:claude-council`,
-`sandbox:claude-research`, and `native:cpx/hve` as optional decision or
-execution lenses. Unless the intent explicitly names one of these profiles, do
-not include it in the ranked five. Use the five ranked positions for the
-strongest task-specific profiles instead. The explicit-identity rule above
-takes priority.
+The interactive guide pins the broad Council, Research, and HVE RPI workflows
+as optional lenses. The caller removes those specific workflows unless the
+intent names their profile. Do not exclude a whole profile because one of its
+workflows is pinned. HVE customer discovery, experiments, requirements, and
+other task-specific workflows can still rank, including the Discovery and
+Experiment entry lenses. Select only workflows in the supplied catalog.
+
+Customer workflows with `interaction.mode: interactive` need a human present.
+Do not choose them for unattended execution. An unclear customer problem calls
+for discovery, unclear business value calls for outcome framing, and a bounded
+falsifiable assumption calls for an experiment. Approved requirements or an
+accepted plan do not require restarting discovery. Runtime checks still decide
+whether the selected agent and skills are available.
 
 Treat Headlong as a cross-cutting persistence option. If the catalog contains
 `sandbox:headlong` and the intent describes a substantial investigation,

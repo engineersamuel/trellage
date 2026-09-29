@@ -62,6 +62,7 @@ Usage:
   trx run LAUNCHER PROFILE [-- ARGS...]
   trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx guide --next-steps [--model MODEL] [--effort LEVEL]
+  trx guide --engagement [--intent QUESTION] [--model MODEL] [--effort LEVEL]
   trx guide --preview
   trx guide --forks [VARIANT]
   trx inventory LAUNCHER PROFILE --json
@@ -130,6 +131,7 @@ Usage:
   trx guide [INTENT]
   trx guide --intent INTENT [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx guide --next-steps [--model MODEL] [--effort LEVEL]
+  trx guide --engagement [--intent QUESTION] [--model MODEL] [--effort LEVEL]
   trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
   trx guide --preview
   trx guide --forks [tabs|inline]
@@ -138,6 +140,10 @@ PROFILE_REF is native:<launcher>/<profile> or sandbox:<profile>. JSON mode
 uses schemaVersion 1, has no launch or Herdr side effects, and accepts a JSON
 request on stdin when --intent is omitted.
 INTENT can contain line breaks and accepts up to 60,000 characters.
+--engagement reads selected repository documents to recommend the next
+customer-engagement action. Its question is limited to 8,000 characters.
+It opens a local source view first; model use, saving, and interactive
+current-terminal launch require separate confirmation. No folder migration.
 Press p during matching or recommendations to view the prompt as Markdown.
 Press e in the prompt viewer to edit; Enter rematches a changed prompt.
 Interactive prompt viewers: pager, split, focus, bookends, dashboard.
@@ -660,6 +666,7 @@ case "${1-}" in
     fi
     guide_args=("$@")
     next_steps_seen=false
+    engagement_seen=false
     guide_value_expected=false
     for guide_arg in "$@"; do
       if [[ "$guide_value_expected" == true ]]; then
@@ -675,6 +682,11 @@ case "${1-}" in
           next_steps_seen=true
           ;;
         --next-steps=*) die '--next-steps does not accept a value' ;;
+        --engagement)
+          [[ "$engagement_seen" == false ]] || die '--engagement may be specified only once'
+          engagement_seen=true
+          ;;
+        --engagement=*) die '--engagement does not accept a value' ;;
       esac
     done
     if [[ "$next_steps_seen" == true ]]; then
@@ -685,12 +697,27 @@ case "${1-}" in
           continue
         fi
         case "$guide_arg" in
-          --json|--json=*|--intent|--intent=*|--stdin|--preview|--preview=*|--forks|--forks=*)
+          --engagement|--json|--json=*|--intent|--intent=*|--stdin|--preview|--preview=*|--forks|--forks=*)
             die '--next-steps cannot be combined with ordinary intent, JSON, stdin, or preview modes'
             ;;
           --model|--effort|--ui-variant|--profile|--*-model|--*-effort)
             guide_value_expected=true
             ;;
+        esac
+      done
+    fi
+    if [[ "$engagement_seen" == true ]]; then
+      guide_value_expected=false
+      for guide_arg in "$@"; do
+        if [[ "$guide_value_expected" == true ]]; then
+          guide_value_expected=false
+          continue
+        fi
+        case "$guide_arg" in
+          --json|--json=*|--profile|--profile=*|--ui-variant|--ui-variant=*|--preview|--preview=*|--forks|--forks=*)
+            die '--engagement cannot be combined with JSON, profile selection, or preview modes'
+            ;;
+          --intent|--model|--effort) guide_value_expected=true ;;
         esac
       done
     fi
@@ -1103,19 +1130,21 @@ if [[ "$mode" == guide ]]; then
   }
   trap cleanup_guide_catalog_tmp EXIT HUP INT TERM
 
-  [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
-    || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
-  [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
-    || die "floating-skills catalog is missing or unsafe: $floating_skills_catalog"
-  "${trellage_bun[@]}" "$floating_skills_manager" ensure \
-    --catalog "$floating_skills_catalog" \
-    --bundle guide-prompt-master \
-    --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
-    --target "$guide_catalog_tmp/skills" \
-    || die 'failed to prepare the guide Prompt Master skill'
-  [[ -f "$guide_catalog_tmp/skills/prompt-master/SKILL.md" \
-      && ! -L "$guide_catalog_tmp/skills/prompt-master/SKILL.md" ]] \
-    || die 'guide Prompt Master skill is missing or unsafe'
+  if [[ "$engagement_seen" == false ]]; then
+    [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
+      || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
+    [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
+      || die "floating-skills catalog is missing or unsafe: $floating_skills_catalog"
+    "${trellage_bun[@]}" "$floating_skills_manager" ensure \
+      --catalog "$floating_skills_catalog" \
+      --bundle guide-prompt-master \
+      --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
+      --target "$guide_catalog_tmp/skills" \
+      || die 'failed to prepare the guide Prompt Master skill'
+    [[ -f "$guide_catalog_tmp/skills/prompt-master/SKILL.md" \
+        && ! -L "$guide_catalog_tmp/skills/prompt-master/SKILL.md" ]] \
+      || die 'guide Prompt Master skill is missing or unsafe'
+  fi
 
   build_combined_guide_catalog "$guide_catalog_tmp"
 

@@ -1098,6 +1098,28 @@ page (`p`) or after a failed match.
   Questions stay inside the guide. Select an answer or type your own, then
   continue until the task and success criteria are clear. The completed goal
   appears for explicit approval; no separate harness opens.
+- **Customer context and outcome** asks six local questions about the problem,
+  business outcome, evidence, decisions, constraints, and customer ownership.
+  No model reads the draft answers. Enter saves each answer; a blank answer
+  stays **Unknown (not supplied)**. `Ctrl+B` returns to the previous answer.
+  `Esc` pauses without losing the draft. Review the complete brief, then use
+  `a` to apply and allow Guide use, `e` to edit, or `x` to discard.
+
+The customer brief is Trellage preparation, not a complete HVE workshop or
+customer signoff. Supply only sanitized material you may share. Applying it
+permits use by Guide models, its local `.trx-guide` cache, and the selected
+agent. Guide preserves the approved fields and original request through
+generation, refinement, and candidate edits. Existing forks and queued jobs
+keep their own context. Editing and submitting the main request clears its
+structured customer approval; cancelled edits do not. Reopen the augmentation
+to approve a new brief. Each answer is limited to 600 characters. If the full
+context and workflow cannot fit the final 8,000-character prompt, Guide reports
+the limit instead of removing evidence.
+
+Customer context and Goal me are separate approval paths. Do not attach a
+brief to an approved execution goal or silently turn a customer brief into
+one. Start a separate prompt for Goal me, or explicitly remove the brief by
+editing the main request.
 
 Research and Codebase run in the background. Choosing either gives the screen
 back at once and puts a one-line status bar above the tab bar:
@@ -1183,6 +1205,73 @@ committed. Researching the same intent twice resumes that same note rather than
 writing a second one, and the augmenter takes the resumed note. A run that
 writes nothing at all fails, and the failure quotes the run's own closing words
 and its last output so you can see why.
+
+#### Customer workflows and lenses
+
+HVE keeps human judgment with the customer. Use the smallest workflow that
+fits the evidence already available. Do not restart discovery when approved
+requirements already exist, and do not treat a successful demo as validated
+customer value.
+
+| Situation | Native HVE workflow and agent |
+| --- | --- |
+| The customer problem or proposed solution is not validated | `d` **Discover with the customer** — `customer-discovery`, DT Coach |
+| A specific assumption needs evidence before investment | `e` **Test an assumption** — `test-assumption`, Experiment Designer |
+| The problem is understood; business requirements need agreement | `business-requirements`, BRD Builder |
+| Product behavior and acceptance criteria need definition | `product-requirements`, PRD Builder |
+| One UX framing, critique, or stakeholder question needs help | `focused-ux-coaching`, UX UI Designer |
+| Architecture choices need review against agreed needs | `review-architecture`, System Architecture Reviewer |
+| Mature requirements need a reviewed work hierarchy | `functional-planning`, Functional Planner |
+
+Discovery can move backward and reuse evidence. Its formal exits from problem,
+solution, or implementation space go to scoped `rpi-research`, not directly to
+coding. An experiment agrees on measures and decision criteria before it runs.
+Disproving an assumption can be useful learning. Partner participation,
+ownership transfer, and independent repetition are part of experiment design.
+
+Discovery and Experiment remain eligible for normal recommendations even
+though they also have pinned shortcuts. The broad Council, Research, and HVE
+RPI workflows remain optional lenses unless explicitly requested. This
+exclusion applies to those workflows, not every workflow on their profiles.
+
+These seven customer workflows use `cpx interactive hve`, an explicit agent,
+and declared skill checks. They require a terminal and your answers; they
+cannot enter the batch queue. Guide rechecks readiness before a direct
+terminal or Herdr launch. An old launcher, missing registration, disabled
+skill, or unsafe file blocks launch with a diagnostic. Static checks do not
+prove a successful HVE session or customer approval.
+
+The initial verified customer routes are **Native only**. Sandbox HVE retains
+its RPI and HVE Builder routes. This feature does not ingest meetings, read
+customer files during brief preparation, manage data access or retention,
+publish reports, change a tracker, or authorize implementation. These actions
+need separate decisions and controls. See the
+[Native HVE guide](profile-guides/native/cpx/hve.md) for exact agents, skills,
+and workflow boundaries.
+
+#### Repository engagement guidance
+
+Ask what to do next using the engagement's existing repository knowledge:
+
+```sh
+trx guide --engagement
+trx guide --engagement --intent "Prepare the next customer workshop"
+```
+
+The first command defaults to "What's the next step in this engagement?"
+Guide opens a local source-selection view before any model call. After you
+approve model use, it recommends an evidence-backed next action, or asks one
+material question. The next action can be human work or waiting; an agent is
+not required.
+
+Prepare one assignment, review it, and separately confirm an interactive
+Native HVE launch in the current worktree. Guide returns for result review
+when the execution attempt ends. Assignments and reviewed notes stay under
+lowercase `engagement/work/` paths. HVE keeps its canonical method state; no
+folder migration or competing status file is required.
+
+See [engagement guidance](docs/trx-guide-engagement.md) for source mapping,
+consent, saved work, data limits, and supported launch boundaries.
 
 #### Goal-aware recommendations and execution
 

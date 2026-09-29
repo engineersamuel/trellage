@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { access, mkdtemp, readFile, rm } from "node:fs/promises"
+import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -17,6 +17,7 @@ import {
   fixtureIntent,
   fixtureProfile,
   fixtureProfiles,
+  fixtureMatchProfiles,
   generatedCandidates,
   generatedGoalApproaches,
   pinnedIds,
@@ -38,6 +39,185 @@ import { alpha, beta, instanceOrchestration, instanceProfile } from "./helpers/f
 import { canonicalFirstmateInstanceJson } from "@trellage/guide-core"
 
 const firstmateEntry = fileURLToPath(new URL("./fixtures/guide-firstmate-preparation.tsx", import.meta.url))
+const engagementEntry = fileURLToPath(new URL("./fixtures/engagement-integration.tsx", import.meta.url))
+
+const engagementTerminal = async (onTestFailed: Parameters<typeof createGuideTerminal>[1], scenario = "agent") => {
+  const guide = await createGuideTerminal(engagementEntry, onTestFailed, {
+    PATH: process.env.PATH ?? "/usr/bin:/bin",
+    ENGAGEMENT_SCENARIO: scenario,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+  })
+  return {
+    ...guide,
+    pressAndWait: async (keys: string, ...texts: ReadonlyArray<string>) => {
+      await guide.pressAndWait(keys, ...texts)
+      await guide.waitForText("Local context;")
+    },
+  }
+}
+
+const engagementCounts = async (guide: GuideTerminal) =>
+  JSON.parse(await readFile(path.join(guide.root, "counts.json"), "utf8"))
+
+test("engagement opens locally, confirms one launch, returns for review, and reopens saved work", async ({
+  onTestFailed,
+}) => {
+  const guide = await engagementTerminal(onTestFailed)
+  try {
+    await guide.start(FixtureMode.Terminal, 100, 30, "Check engagement")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 0, launches: 0 })
+    await guide.pressAndWait(enter, "Review source-use consent")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 0, launches: 0 })
+    await guide.pressAndWait("s", "Next engagement action", "Prepare a learning workshop")
+    await guide.pressAndWait("e", "Engagement evidence", "onboarding delays")
+    await guide.pressAndWait("\u001b", "Next engagement action")
+    await guide.pressAndWait("p", "Review one assignment", "prepared")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 1, launches: 0 })
+    await guide.pressAndWait("l", "Confirm current-terminal launch", "/fixture/cpx")
+    expect(await engagementCounts(guide)).toMatchObject({ launches: 0 })
+    await guide.pressAndWait("y", "Review the result", "returned")
+    expect(await engagementCounts(guide)).toMatchObject({ launches: 1 })
+    expect(await readFile(path.join(guide.root, "terminal-proof"), "utf8")).toBe("piped-parent-to-terminal-child")
+    await guide.pressAndWait("v", "View a result file")
+    guide.press("\u001b[200~docs/engagement/workshop.md\u001b[201~")
+    await guide.waitForText("docs/engagement/workshop.md")
+    await guide.pressAndWait(enter, "Engagement evidence", "Customer review is pending.")
+    await guide.pressAndWait("\u001b", "Review the result", "Record state: returned.")
+    await guide.pressAndWait("n", "Write result review")
+    guide.press("\u001b[200~Reviewed docs/engagement/workshop.md.\nCustomer approval is still unknown.\u001b[201~")
+    await guide.waitForText("Customer approval is still unknown.")
+    await guide.pressAndWait(enter, "Confirm result review")
+    await guide.pressAndWait("s", "Review the result", "reviewed")
+    await guide.pressAndWait("e", "Check engagement", "Evidence ready: 3 selected files")
+    await guide.pressAndWait("w", "Saved engagement work", "reviewed")
+    await guide.pressAndWait(enter, "Review one assignment", "reviewed")
+    await guide.pressAndWait("\u001b", "Check engagement")
+    await guide.exit("\u001b")
+    const records = await readdir(path.join(guide.root, "engagement/work"))
+    expect(records.filter((filename) => filename.endsWith(".json"))).toHaveLength(1)
+    expect(records.filter((filename) => filename.endsWith(".md"))).toHaveLength(1)
+  } finally {
+    await guide.close()
+  }
+}, 20_000)
+
+test("engagement asks one material question and keeps pasted answers out of model calls until consent", async ({
+  onTestFailed,
+}) => {
+  const guide = await engagementTerminal(onTestFailed, "clarification")
+  try {
+    await guide.start(FixtureMode.Terminal, 64, 20, "Check engagement")
+    await guide.pressAndWait(enter, "Review source-use consent")
+    await guide.pressAndWait("s", "Clarify the engagement")
+    await guide.pressAndWait("c", "Answer one question", "Which decision")
+    guide.press("\u001b[200~Choose the next customer interview.\nDo not approve implementation.\u001b[201~")
+    await guide.waitForText("Do not approve implementation.")
+    await guide.pressAndWait(enter, "Choose engagement evidence")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 1, launches: 0 })
+    await guide.pressAndWait(enter, "Review source-use consent")
+    await guide.pressAndWait("s", "Next engagement action")
+    expect(await engagementCounts(guide)).toMatchObject({
+      assessments: 2,
+      sentContexts: ["", expect.stringContaining("Do not approve implementation.")],
+      launches: 0,
+    })
+    await guide.pressAndWait("\u001b", "Check engagement")
+    await guide.exit("\u001b")
+  } finally {
+    await guide.close()
+  }
+}, 15_000)
+
+test("engagement human actions remain launch-free and support explicit result rejection", async ({ onTestFailed }) => {
+  const guide = await engagementTerminal(onTestFailed, "human")
+  try {
+    await guide.start(FixtureMode.Terminal, 80, 24, "Check engagement")
+    await guide.pressAndWait(enter, "Review source-use consent")
+    await guide.pressAndWait("s", "Next engagement action")
+    await guide.pressAndWait("p", "Review one assignment", "Human action")
+    expect(guide.text()).not.toContain("l choose launch")
+    await guide.pressAndWait("r", "Review the result")
+    await guide.pressAndWait("n", "Write result review")
+    guide.press("\u001b[200~No customer evidence supports this proposed activity.\u001b[201~")
+    await guide.waitForText("No customer evidence")
+    await guide.pressAndWait(enter, "Confirm result review")
+    await guide.pressAndWait("x", "Review the result", "reviewed")
+    expect(await engagementCounts(guide)).toMatchObject({ launches: 0 })
+    await guide.pressAndWait("\u001b", "Review one assignment")
+    await guide.pressAndWait("\u001b", "Check engagement")
+    await guide.exit("\u001b")
+  } finally {
+    await guide.close()
+  }
+}, 15_000)
+
+test("engagement keeps focused sources visible in a small terminal and excludes unchecked evidence", async ({
+  onTestFailed,
+}) => {
+  const guide = await engagementTerminal(onTestFailed, "scope")
+  try {
+    await guide.start(FixtureMode.Terminal, 64, 20, "Check engagement")
+    await guide.pressAndWait("s", "Choose engagement evidence")
+    await guide.waitForText("2 files selected", "docs/engagement/notes.md")
+    guide.press("\u001b[B")
+    await guide.readScreen((screen) => {
+      expect(screen).toContain("docs/engagement/overview.md")
+      expect(screen).not.toContain("docs/engagement/notes.md")
+    })
+    await guide.pressAndWait("\u001b[A", "docs/engagement/notes.md")
+    await guide.pressAndWait(" ", "1 file selected")
+    await guide.pressAndWait(enter, "Review source-use consent", "Repository:")
+    await guide.pressAndWait("s", "Next engagement action")
+    expect(await engagementCounts(guide)).toMatchObject({
+      assessments: 1,
+      launches: 0,
+      sentPaths: [["docs/engagement/overview.md"]],
+    })
+    await guide.pressAndWait("\u001b", "Check engagement")
+    await guide.exit("\u001b")
+  } finally {
+    await guide.close()
+  }
+}, 15_000)
+
+test("engagement recovers from an unverifiable assessment without accepting a recommendation", async ({
+  onTestFailed,
+}) => {
+  const guide = await engagementTerminal(onTestFailed, "invalid-response")
+  try {
+    await guide.start(FixtureMode.Terminal, 80, 24, "Check engagement")
+    await guide.pressAndWait(enter, "Review source-use consent")
+    await guide.pressAndWait("s", "Check engagement", "no recommendation was accepted")
+    expect(await engagementCounts(guide)).toMatchObject({ assessments: 1, launches: 0 })
+    await guide.pressAndWait("s", "Choose engagement evidence")
+    await guide.pressAndWait("\u001b", "Check engagement")
+    await guide.exit("\u001b")
+  } finally {
+    await guide.close()
+  }
+}, 10_000)
+
+test("engagement streams safe Copilot SDK activity while assessment is running", async ({ onTestFailed }) => {
+  const guide = await engagementTerminal(onTestFailed, "progress")
+  try {
+    await guide.start(FixtureMode.Terminal, 80, 24, "Check engagement")
+    await guide.pressAndWait(enter, "Review source-use consent")
+    guide.press("s")
+    await guide.waitForText("Copilot SDK activity", "Starting Copilot SDK runtime")
+    const first = guide.text()
+    await guide.waitForText("Receiving the structured assessment")
+    const later = guide.text()
+    expect(first).not.toContain("Receiving the structured assessment")
+    expect(later).toContain("✓ Starting Copilot SDK runtime")
+    expect(later).toContain("Assessing the engagement; no agent tools are enabled")
+    await guide.waitForText("Next engagement action")
+    await guide.pressAndWait("\u001b", "Check engagement")
+    await guide.exit("\u001b")
+  } finally {
+    await guide.close()
+  }
+}, 10_000)
 
 const it = test.extend<{ guide: GuideTerminal }>({
   guide: async ({ onTestFailed }, use) => {
@@ -112,11 +292,15 @@ const expectedJob = (root: string, selection: Selection): QueuedGuideJob => {
     id: selection.id,
     profile,
     prompt,
-    command: { executable: profile.commandPath, args: [...launchArguments[selection.profileId], prompt] },
+    command: {
+      executable: profile.commandPath,
+      args: [...launchArguments[selection.profileId], prompt],
+    },
     promptDelivery: "command",
     placement: selection.placement,
     ...(selection.placement.kind === "new-worktree" || selection.placement.kind === "existing-worktree"
-      ? { primaryCheckoutPath: root } : {}),
+      ? { primaryCheckoutPath: root }
+      : {}),
   }
 }
 
@@ -149,7 +333,9 @@ const assertDeferredLaunch = async (guide: GuideTerminal): Promise<void> => {
   const events = await guide.events()
   expect(commandEvents(events).filter((command) => command.executable === "herdr")).toEqual([])
   expect(events.filter((event) => event.kind === "interactive-launch")).toEqual([])
-  await expect(access(path.join(guide.root, "result.json"))).rejects.toMatchObject({ code: "ENOENT" })
+  await expect(access(path.join(guide.root, "result.json"))).rejects.toMatchObject({
+    code: "ENOENT",
+  })
 }
 
 const assertDataflow = (
@@ -161,7 +347,11 @@ const assertDataflow = (
   const matches = report.events.filter((event) => event.kind === "match")
   expect(matches.map((event) => event.intent)).toEqual(matchedIntents)
   for (const match of matches) {
-    expect([...match.profileRefs].sort()).toEqual(fixtureProfiles.map((profile) => profile.ref).sort())
+    expect([...match.profileRefs].sort()).toEqual(
+      fixtureMatchProfiles(fixtureProfiles)
+        .map((profile) => profile.ref)
+        .sort(),
+    )
     expect(match.recommendations).toEqual(recommendationIds.map((id) => fixtureProfile(id).ref))
   }
   const generated = report.events.filter((event) => event.kind === "generate")
@@ -171,7 +361,9 @@ const assertDataflow = (
       return {
         kind: "generate",
         input: {
-          intent: selection.intent, profileRef: profile.ref, workflowId: profile.workflowId,
+          intent: selection.intent,
+          profileRef: profile.ref,
+          workflowId: profile.workflowId,
           bodyBudget: fixtureBodyBudget(profile),
         },
         candidates: generatedCandidates(profile, selection.intent),
@@ -497,7 +689,11 @@ const expectedPreparedGoal = (intent: string, focus: string, revision = ""): Pre
     criteria: goalCriteria,
   }
   const prompt = expectedGoalIntent(intent, focus, revision)
-  return { draft, prompt, fingerprint: createHash("sha256").update(JSON.stringify({ draft, prompt })).digest("hex") }
+  return {
+    draft,
+    prompt,
+    fingerprint: createHash("sha256").update(JSON.stringify({ draft, prompt })).digest("hex"),
+  }
 }
 
 const expectedGoalContext = (selection: GoalSelection): GuideGoalCandidateContext => {
@@ -550,7 +746,14 @@ const goalSelection = (
   profileId: FixtureProfileId = "planner",
   candidate = 0,
   id = 1,
-): GoalSelection => ({ id, goal, profileId, candidate, intent: goal.prompt, placement: panePlacement })
+): GoalSelection => ({
+  id,
+  goal,
+  profileId,
+  candidate,
+  intent: goal.prompt,
+  placement: panePlacement,
+})
 
 const approveGoal = async (guide: GuideTerminal, focus: string): Promise<void> => {
   await guide.pressAndWait(enter, `What must ${goalArtifact} cover?`)
@@ -570,7 +773,8 @@ const authorGoal = async (guide: GuideTerminal, focus: string): Promise<Prepared
 
 const selectGoalCandidate = async (guide: GuideTerminal, selection: GoalSelection): Promise<void> => {
   const controller = expectedGoalContext(selection).controller
-  const label = controller === "graph-of-loops" ? "Graph of Loops" : controller === "claude-goal" ? "Claude /goal" : "Codex /goal"
+  const label =
+    controller === "graph-of-loops" ? "Graph of Loops" : controller === "claude-goal" ? "Claude /goal" : "Codex /goal"
   const prefix = controller === "graph-of-loops" ? "/graph-of-loops" : "/goal ARTIFACT:"
   for (let index = 0; index < 3; index += 1) {
     const title = candidateTitles[index]
@@ -617,7 +821,8 @@ const assertGoalModelInputs = (
   phase: Extract<FixtureEvent, { readonly kind: "goal-model-input" }>["phase"],
   goals: ReadonlyArray<PreparedGuideGoal>,
 ): void => {
-  const requests = report.events.filter((event) => event.kind === "goal-model-input")
+  const requests = report.events
+    .filter((event) => event.kind === "goal-model-input")
     .filter((event) => event.phase === phase)
   expect(requests).toHaveLength(goals.length)
   for (const [index, goal] of goals.entries()) {
@@ -647,19 +852,27 @@ const assertGoalDataflow = (
     expect([...match.profileRefs].sort()).toEqual(profiles.map((id) => fixtureProfile(id).ref).sort())
     expect(match.recommendations).toEqual(profiles.map((id) => fixtureProfile(id).ref))
   }
-  const generated = report.events.filter((event) => event.kind === "generate").filter((event) => event.input.goal !== undefined)
-  expect(generated.map(({ input, ...event }) => ({
+  const generated = report.events
+    .filter((event) => event.kind === "generate")
+    .filter((event) => event.input.goal !== undefined)
+  expect(
+    generated.map(({ input, ...event }) => ({
     ...event,
     input: { goal: input.goal, profileRef: input.profileRef, workflowId: input.workflowId },
-  }))).toEqual(selections.map(({ goal, profileId }) => {
+    })),
+  ).toEqual(
+    selections.map(({ goal, profileId }) => {
     const profile = fixtureProfile(profileId)
     return {
       kind: "generate",
       input: { profileRef: profile.ref, workflowId: profile.workflowId, goal },
       candidates: generatedGoalApproaches(profile),
     }
-  }))
-  const optimized = report.events.filter((event) => event.kind === "optimize").filter((event) => event.input.goalExecution !== undefined)
+    }),
+  )
+  const optimized = report.events
+    .filter((event) => event.kind === "optimize")
+    .filter((event) => event.input.goalExecution !== undefined)
   expect(optimized).toHaveLength(selections.length)
   for (const [index, selection] of selections.entries()) {
     const optimization = optimized[index]
@@ -673,13 +886,28 @@ const assertGoalDataflow = (
       targetTool: profile.harness,
       candidates: generatedGoalApproaches(profile),
     })
-    expect(optimization.candidates).toEqual(generatedGoalApproaches(profile).map((candidate) => ({
-      ...candidate, prompt: `${candidate.prompt}\nReport the findings.`,
-    })))
+    expect(optimization.candidates).toEqual(
+      generatedGoalApproaches(profile).map((candidate) => ({
+        ...candidate,
+        prompt: `${candidate.prompt}\nReport the findings.`,
+      })),
+    )
   }
-  assertGoalModelInputs(report, "match", matches.map(({ goal }) => goal))
-  assertGoalModelInputs(report, "generate", selections.map(({ goal }) => goal))
-  assertGoalModelInputs(report, "optimize", selections.map(({ goal }) => goal))
+  assertGoalModelInputs(
+    report,
+    "match",
+    matches.map(({ goal }) => goal),
+  )
+  assertGoalModelInputs(
+    report,
+    "generate",
+    selections.map(({ goal }) => goal),
+  )
+  assertGoalModelInputs(
+    report,
+    "optimize",
+    selections.map(({ goal }) => goal),
+  )
 }
 
 const plainDataflowReport = (report: FixtureReport): FixtureReport => ({
@@ -694,7 +922,11 @@ const plainDataflowReport = (report: FixtureReport): FixtureReport => ({
 
 const assertPrintedGoal = (report: FixtureReport, selection: GoalSelection): void => {
   const prompt = expectedGoalPrompt(selection)
-  expect(report.result).toEqual({ action: "print", prompt, goalExecution: expectedGoalContext(selection) })
+  expect(report.result).toEqual({
+    action: "print",
+    prompt,
+    goalExecution: expectedGoalContext(selection),
+  })
   expect(report.writes.join("")).toContain("Selected goal (not launched):")
   assertGoalInputInstructions(report.writes, selection)
   expect(commandEvents(report.events)).toEqual([])
@@ -729,7 +961,11 @@ const expectedGoalJob = (root: string, selection: GoalSelection): QueuedGuideJob
 const codexGoalReadinessCommands = (root: string): ReadonlyArray<RecordedCommand> => [
   readinessCommand(root, "planner"),
   { executable: "codex", args: ["--version"], cwd: root },
-  { executable: path.join(root, "bin", "cdx"), args: ["inventory", "planner", "--goal-features"], cwd: root },
+  {
+    executable: path.join(root, "bin", "cdx"),
+    args: ["inventory", "planner", "--goal-features"],
+    cwd: root,
+  },
 ]
 
 const goalReadinessCommands = (root: string, selection: GoalSelection): ReadonlyArray<RecordedCommand> => {
@@ -752,12 +988,28 @@ const assertClaudeReadinessFiles = (guide: GuideTerminal, report: FixtureReport)
   const expected: ReadonlyArray<Extract<FixtureEvent, { readonly kind: "goal-readiness" }>> = [
     { kind: "goal-readiness", operation: "realpath", path: guide.root },
     { kind: "goal-readiness", operation: "read-json", path: path.join(home, ".claude.json") },
-    { kind: "goal-readiness", operation: "read-directory", path: "/etc/claude-code/managed-settings.d" },
+    {
+      kind: "goal-readiness",
+      operation: "read-directory",
+      path: "/etc/claude-code/managed-settings.d",
+    },
     { kind: "goal-readiness", operation: "local-settings", path: guide.root },
     { kind: "goal-readiness", operation: "read-json", path: path.join(home, "settings.json") },
-    { kind: "goal-readiness", operation: "read-json", path: path.join(guide.root, ".claude", "settings.json") },
-    { kind: "goal-readiness", operation: "read-json", path: path.join(guide.root, ".claude", "settings.local.json") },
-    { kind: "goal-readiness", operation: "read-json", path: "/etc/claude-code/managed-settings.json" },
+    {
+      kind: "goal-readiness",
+      operation: "read-json",
+      path: path.join(guide.root, ".claude", "settings.json"),
+    },
+    {
+      kind: "goal-readiness",
+      operation: "read-json",
+      path: path.join(guide.root, ".claude", "settings.local.json"),
+    },
+    {
+      kind: "goal-readiness",
+      operation: "read-json",
+      path: "/etc/claude-code/managed-settings.json",
+    },
   ]
   expect(report.events.filter((event) => event.kind === "goal-readiness")).toEqual([...expected, ...expected])
 }
@@ -778,12 +1030,17 @@ const assertGoalBatch = (
     action: "batch",
     result: {
       entries: allocated.map(({ job, cwd, paneId, workspaceId }) => ({
-        job, status: job.promptDelivery === "manual" ? "needs-input" : "launched", cwd, paneId, workspaceId,
+        job,
+        status: job.promptDelivery === "manual" ? "needs-input" : "launched",
+        cwd,
+        paneId,
+        workspaceId,
       })),
     },
   })
   const commands = commandEvents(report.events)
-  const probes = selections.flatMap((selection) => hasGoal(selection)
+  const probes = selections.flatMap((selection) =>
+    hasGoal(selection)
     ? goalReadinessCommands(guide.root, selection)
     : [readinessCommand(guide.root, selection.profileId)],
   )
@@ -794,24 +1051,31 @@ const assertGoalBatch = (
   expect(commands.slice(probes.length, probes.length + allocations.length)).toEqual(allocations)
   const starting = commands.slice(probes.length + allocations.length)
   const finalProbes = selections.filter(hasGoal).flatMap((selection) => goalReadinessCommands(guide.root, selection))
-  expect(starting.filter((command) => command.executable !== "herdr").sort(commandOrder))
-    .toEqual([...finalProbes].sort(commandOrder))
+  expect(starting.filter((command) => command.executable !== "herdr").sort(commandOrder)).toEqual(
+    [...finalProbes].sort(commandOrder),
+  )
   // Per-job readiness runs concurrently, so pane starts need not follow queue order.
   expect(starting.filter((command) => command.executable === "herdr").sort(commandOrder)).toEqual(
-    allocated.map(({ selection, job, paneId, cwd }) => ({
+    allocated
+      .map(({ selection, job, paneId, cwd }) => ({
       executable: "herdr",
       args: [
-        "pane", "run", paneId,
+          "pane",
+          "run",
+          paneId,
         hasGoal(selection)
           ? `env TRELLAGE_AUTOMATION=1 ${quoted(job.command.executable)} ${job.profile.profile}`
           : expectedPaneCommand(guide.root, selection),
       ],
       cwd,
-    })).sort(commandOrder),
+      }))
+      .sort(commandOrder),
   )
   for (const { selection, paneId, cwd } of allocated) {
     if (!hasGoal(selection)) continue
-    expect(report.writes.join("")).toContain(`${selection.id}. ${fixtureProfile(selection.profileId).name}: needs-input in pane ${paneId}`)
+    expect(report.writes.join("")).toContain(
+      `${selection.id}. ${fixtureProfile(selection.profileId).name}: needs-input in pane ${paneId}`,
+    )
     expect(report.writes.join("")).toContain(cwd)
     assertGoalInputInstructions(report.writes, selection)
   }
@@ -871,7 +1135,13 @@ it.for([
     await guide.pressAndWait(enter, "Choose a destination", "This terminal")
     await assertDeferredLaunch(guide)
     const report = await guide.finish(enter)
-    const selection = { id: 1, profileId, candidate, intent: fixtureIntent, placement: panePlacement }
+    const selection = {
+      id: 1,
+      profileId,
+      candidate,
+      intent: fixtureIntent,
+      placement: panePlacement,
+    }
     assertCurrentTerminal(guide, report, selection)
     assertDataflow(report, [selection])
   },
@@ -893,6 +1163,131 @@ it("keeps one readiness probe alive while its fork is parked and the main select
   const report = await guide.finish("q", 130)
   expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
   expect(commandEvents(report.events)).toEqual([readinessCommand(guide.root, "planner")])
+})
+
+it("reviews a local customer brief and launches the checked Discovery lens without batch execution", async ({
+  guide,
+}) => {
+  await guide.start(FixtureMode.Customer, 88, 32)
+  const intent = "Understand repeated support work."
+  await guide.pressAndWait(intent, intent)
+  await guide.pressAndWait("\u0007", "Augment your prompt")
+  for (const title of ["Codebase", "Goal me", "Customer context and outcome"]) {
+    await guide.pressAndWait(down, `\u276f ${title}`)
+  }
+  await guide.pressAndWait(enter, "Problem and beneficiary")
+  await guide.pressAndWait("Support staff", "Support staff")
+  await guide.pressAndWait("\u001b", "What do you want to do?")
+  await guide.pressAndWait("\u0007", "Problem and beneficiary", "Support staff")
+  await guide.pressAndWait(enter, "Outcome and measurement")
+  await guide.pressAndWait(enter, "Evidence and sources")
+  const evidence = "Reported: note-12@r3. Sponsor says fast; observation says slow."
+  await guide.pressAndWait(`\u001b[200~${evidence}\u001b[201~`, "Reported: note-12@r3.")
+  await guide.pressAndWait(enter, "Decisions and authority")
+  await guide.pressAndWait(enter, "Scope and data handling")
+  await guide.pressAndWait(enter, "Handoff and customer ownership")
+  await guide.pressAndWait(enter, "Review customer context", "apply and allow Guide use")
+  await scrollUntil(guide, "note-12@r3")
+  expect((await guide.events()).every(({ kind }) => kind === "input")).toBe(true)
+  await guide.pressAndWait("a", "What do you want to do?")
+  await guide.pressAndWait(enter, "Profile recommendations", "Discover with the customer")
+  await guide.pressAndWait("d", "Prompt candidates", "Focused", "Thorough", "Minimal")
+  await guide.pressAndWait("a", "needs your answers")
+  expect((await guide.events()).some(({ kind }) => kind === "interactive-launch")).toBe(false)
+  await guide.pressAndWait(enter, "Choose a destination", "This terminal")
+  const report = await guide.finish(enter)
+  assert(report.result.action === "current-terminal")
+  expect(report.result.command.args.slice(0, -2)).toEqual([
+    "interactive",
+    "hve",
+    "--agent",
+    "hve-core:dt-coach",
+    "--require-skill",
+    "dt-coaching-foundation",
+    "--require-skill",
+    "dt-methods",
+    "--require-skill",
+    "dt-rpi-integration",
+  ])
+  expect(report.result.command.args.slice(-2)).toEqual(["-i", report.result.prompt])
+  expect(report.result.prompt).toContain(`## Original human intent (unchanged)\n\n${intent}`)
+  expect(report.result.prompt).toContain(`"evidence": "${evidence}"`)
+  expect(report.result.prompt).toContain('"outcome": "Unknown (not supplied)"')
+  expect(report.result.prompt.match(/## Customer context/g)).toHaveLength(1)
+  const generated = report.events.find((event) => event.kind === "generate")
+  assert(generated?.kind === "generate")
+  expect(generated.input.originalIntent).toBe(intent)
+  expect(generated.input.intent).toBe(intent)
+  expect(generated.input.customerContext?.fields.evidence).toBe(evidence)
+  const optimized = report.events.find((event) => event.kind === "optimize")
+  assert(optimized?.kind === "optimize")
+  expect(optimized.input.customerContext).toEqual(generated.input.customerContext)
+  expect(commandEvents(report.events).filter(({ args }) => args[0] === "workflow-check")).toHaveLength(2)
+  expect(report.events.filter(({ kind }) => kind === "interactive-launch")).toHaveLength(1)
+}, 30_000)
+
+it.for([
+  { steps: 1, action: "current-herdr-workspace", mode: FixtureMode.CustomerHerdr },
+  { steps: 2, action: "new-herdr-tab", mode: FixtureMode.CustomerHerdr },
+  { steps: 3, action: "herdr-worktree-create", mode: FixtureMode.CustomerHerdr },
+  { steps: 3, action: "herdr-worktree-open", mode: FixtureMode.CustomerExistingWorktree },
+])("hands customer Discovery directly to $action", { timeout: 30_000 }, async ({ steps, action, mode }, { guide }) => {
+  await guide.start(mode)
+  await enterIntent(guide)
+  await guide.pressAndWait("d", "Prompt candidates", "Focused", "Thorough", "Minimal")
+  await guide.pressAndWait(enter, "Choose a destination", "Enter launch directly")
+  const destinations = ["New pane in this Herdr workspace", "New tab in this Herdr worktree", "New Herdr worktree"]
+  for (const destination of destinations.slice(0, steps)) {
+    await guide.pressAndWait(down, `\u276f ${destination}`)
+  }
+  if (steps === 3) {
+    await guide.pressAndWait(enter, "Worktree branch", fixtureBranches.hve)
+    await guide.pressAndWait(
+      enter,
+      mode === FixtureMode.CustomerExistingWorktree ? "open existing worktree" : "Create Herdr worktree",
+    )
+  }
+  await assertDeferredLaunch(guide)
+  const report = await guide.finish(enter)
+  expect(report.result.action).toBe(action)
+  assert("command" in report.result && "prompt" in report.result)
+  const command = report.result.command
+  const args = [
+    "interactive",
+    "hve",
+    "--agent",
+    "hve-core:dt-coach",
+    "--require-skill",
+    "dt-coaching-foundation",
+    "--require-skill",
+    "dt-methods",
+    "--require-skill",
+    "dt-rpi-integration",
+    "-i",
+    report.result.prompt,
+  ]
+  expect(command).toEqual({ executable: path.join(guide.root, "bin", "cpx"), args })
+  const commands = commandEvents(report.events)
+  const run = commands.filter(({ args }) => args[0] === "pane" && args[1] === "run")
+  expect(run).toHaveLength(1)
+  expect(run[0]?.args[3]).toBe(
+    [
+      "env",
+      "TRELLAGE_AUTOMATION=1",
+      quoted(command.executable),
+      ...args.slice(0, -1),
+      quoted(report.result.prompt),
+    ].join(" "),
+  )
+  const finalCwd =
+    action === "herdr-worktree-create"
+      ? path.join(guide.root, "worktrees", fixtureBranches.hve)
+      : action === "herdr-worktree-open"
+        ? path.join(guide.root, "worktrees", "existing-canonical")
+        : guide.root
+  const checks = commands.filter(({ args }) => args[0] === "workflow-check")
+  expect(checks.map(({ cwd }) => cwd)).toEqual([guide.root, finalCwd])
+  expect(run[0]?.cwd).toBe(finalCwd)
 })
 
 it("queues all pinned lenses and launches them from the main screen with L", async ({ guide }) => {
@@ -990,7 +1385,13 @@ it.for(["research", "codebase"] as const)(
     await guide.pressAndWait(enter, "Profile recommendations")
     await selectProfile(guide, "reviewer", 2, intent)
     await enqueue(guide, 1)
-    const selection: Selection = { id: 1, profileId: "reviewer", candidate: 2, intent, placement: panePlacement }
+    const selection: Selection = {
+      id: 1,
+      profileId: "reviewer",
+      candidate: 2,
+      intent,
+      placement: panePlacement,
+    }
     await inspectQueueEntry(guide, selection, 1)
     await assertDeferredLaunch(guide)
     const before = augmentationCommand(guide, await guide.events(), kind, fixtureIntent)
@@ -1047,7 +1448,9 @@ it("prints three explicit Codex goal approaches and edits only the selected body
   assertPrintedGoal(report, { ...selection, appended: pasted + typed })
   assertGoalDataflow(report, [selection], [{ goal, profiles: ["planner", "writer"] }])
   assertDataflow(plainDataflowReport(report), [])
-  await expect(access(path.join(guide.root, ".trellage"))).rejects.toMatchObject({ code: "ENOENT" })
+  await expect(access(path.join(guide.root, ".trellage"))).rejects.toMatchObject({
+    code: "ENOENT",
+  })
 }, 30_000)
 
 it("requires a normal-flow choice for a pinned lens without detaching the main goal", async ({ guide }) => {
@@ -1073,15 +1476,23 @@ it("requires a normal-flow choice for a pinned lens without detaching the main g
   const report = await guide.finish("c")
   assertPrintedGoal(report, selection)
   assertGoalDataflow(report, [selection], [{ goal, profiles: ["planner", "writer"] }])
-  assertDataflow(plainDataflowReport(report), [{
-    id: 1, profileId: "research", candidate: 0, intent: referenceIntent, placement: panePlacement,
-  }])
+  assertDataflow(plainDataflowReport(report), [
+    {
+      id: 1,
+      profileId: "research",
+      candidate: 0,
+      intent: referenceIntent,
+      placement: panePlacement,
+    },
+  ])
 }, 30_000)
 
 it("keeps a long Unicode goal accessible and excludes Claude rather than shortening it", async ({ guide }) => {
   await guide.start(FixtureMode.Terminal, 88, 40)
   const focus = [
-    ...Array.from({ length: 40 }, (_, index) =>
+    ...Array.from(
+      { length: 40 },
+      (_, index) =>
       `Evidence ${index + 1}: Preserve caf\u00e9 output and \u{1f9ea} results exactly. Retain the complete regression example and affected source lines.`,
     ),
     "Unicode objective complete.",
@@ -1142,7 +1553,9 @@ it.for([
       { kind: "interactive-launch", command, cwd: guide.root, automation: "1" },
     ])
     if (manual) {
-      expect(report.writes.join("")).toContain("Goal needs-input after the profile starts. Startup does not activate it.")
+      expect(report.writes.join("")).toContain(
+        "Goal needs-input after the profile starts. Startup does not activate it.",
+      )
       assertGoalInputInstructions(report.writes, selection)
     } else {
       expect(report.writes).toEqual([])
@@ -1217,10 +1630,14 @@ it("keeps queued goals fixed through body edits, reapproval, and an explicit nor
   await assertDeferredLaunch(guide)
   const report = await guide.finish("L", 2)
   assertGoalBatch(guide, report, [{ ...original, appended: appended + typed }, next])
-  assertGoalDataflow(report, [original, next], [
+  assertGoalDataflow(
+    report,
+    [original, next],
+    [
     { goal, profiles: ["planner", "writer"] },
     { goal: nextGoal, profiles: ["planner", "writer"] },
-  ])
+    ],
+  )
   assertDataflow(plainDataflowReport(report), [], [fixtureIntent, nextGoal.prompt + ordinaryChange])
   expect(report.events.filter((event) => event.kind === "goal-start")).toEqual([
     { kind: "goal-start", sessionId: 1, intent: fixtureIntent, previousTurns: 0 },
@@ -1254,7 +1671,8 @@ it("interviews through p then a, revises, and protects a newer prompt and queued
   expect((await guide.events()).filter((event) => event.kind === "goal-start")).toHaveLength(0)
   await openGoalAugment(guide)
   await guide.pressAndWait(enter, `What must ${goalArtifact} cover?`)
-  const pasted = "Cover expired tokens.\nRun `npm test -- --runInBand`.\n- **Keep failure evidence.**\nKeep these keys as text: "
+  const pasted =
+    "Cover expired tokens.\nRun `npm test -- --runInBand`.\n- **Keep failure evidence.**\nKeep these keys as text: "
   await guide.pressAndWait(`\u001b[200~${pasted}\u001b[201~`, "Keep these keys as text:")
   let typed = ""
   for (const key of "Lx`19apq") {
@@ -1302,13 +1720,20 @@ it("interviews through p then a, revises, and protects a newer prompt and queued
     { answer: "Apply this change", wasFreeform: false },
   ])
   expect(events.filter((event) => event.kind === "goal-review").map((event) => event.review)).toEqual([
-    { decision: "revise", feedback: revision }, { decision: "use" },
+    { decision: "revise", feedback: revision },
+    { decision: "use" },
   ])
   const goal = expectedPreparedGoal(fixtureIntent, focus, revision)
   const goalJob = goalSelection(goal, "planner", 0, 2)
   await selectGoalProfile(guide, goalJob)
   await enqueue(guide, 2)
-  const queued: Selection = { id: 1, profileId: "planner", candidate: 0, intent: fixtureIntent, placement: panePlacement }
+  const queued: Selection = {
+    id: 1,
+    profileId: "planner",
+    candidate: 0,
+    intent: fixtureIntent,
+    placement: panePlacement,
+  }
   expect(goal.prompt).toBe(intent)
   await assertDeferredLaunch(guide)
   const report = await guide.finish("L", 2)
@@ -1317,7 +1742,9 @@ it("interviews through p then a, revises, and protects a newer prompt and queued
   assertGoalDataflow(report, [goalJob], [{ goal, profiles: ["planner", "writer"] }])
 }, 30_000)
 
-it("accepts current and future recommendations after a, but keeps manual questions and goal approval interactive", async ({ guide }) => {
+it("accepts current and future recommendations after a, but keeps manual questions and goal approval interactive", async ({
+  guide,
+}) => {
   await guide.start(FixtureMode.GoalRecommended)
   await enterIntent(guide)
   await guide.pressAndWait("p", fixtureIntent)
@@ -1340,8 +1767,9 @@ it("accepts current and future recommendations after a, but keeps manual questio
   const revision = "Add a regression example."
   await guide.pressAndWait(revision, revision)
   await guide.pressAndWait(enter, "Use goal", "a stop automatic answers")
-  expect((await guide.events()).filter((event) => event.kind === "goal-review").map((event) => event.review))
-    .toEqual([{ decision: "revise", feedback: revision }])
+  expect((await guide.events()).filter((event) => event.kind === "goal-review").map((event) => event.review)).toEqual([
+    { decision: "revise", feedback: revision },
+  ])
   await guide.pressAndWait("a", "Use goal")
   await expect.poll(() => guide.text()).not.toContain("a stop automatic answers")
   await guide.pressAndWait(enter, "Artifact:", goalArtifact, "e edit")
@@ -1358,7 +1786,8 @@ it("accepts current and future recommendations after a, but keeps manual questio
     { answer: "Apply this change (Recommended)", wasFreeform: false },
   ])
   expect(report.events.filter((event) => event.kind === "goal-review").map((event) => event.review)).toEqual([
-    { decision: "revise", feedback: revision }, { decision: "use" },
+    { decision: "revise", feedback: revision },
+    { decision: "use" },
   ])
   const finalProposal = report.events.filter((event) => event.kind === "goal-proposal").at(-1)?.proposal.prompt
   expect(finalProposal).toContain(`Audience: ${audience}`)
@@ -1401,9 +1830,11 @@ it("keeps long questions and answer controls usable, then discards without apply
   await guide.pressAndWait("\u0018", "Discard this interview?", "original prompt stays unchanged.")
   await guide.pressAndWait(down, "\u276f Discard interview")
   await guide.pressAndWait(enter, fixtureIntent)
-  await expect.poll(async () => (await guide.events()).filter((event) => event.kind === "goal-stop"), {
+  await expect
+    .poll(async () => (await guide.events()).filter((event) => event.kind === "goal-stop"), {
     timeout: 5000,
-  }).toEqual([{ kind: "goal-stop", sessionId: 1, cancelled: true }])
+    })
+    .toEqual([{ kind: "goal-stop", sessionId: 1, cancelled: true }])
   await openGoalAugment(guide)
   const report = await guide.finish("\u0003", 130)
   expect(report.events.filter((event) => event.kind === "goal-start").map((event) => event.sessionId)).toEqual([1, 2])
@@ -1494,7 +1925,13 @@ it("launches a mixed queue into the correct pane, tab and new worktree", async (
   await queueWorktree(guide, 3, FixtureMode.Herdr, fixtureBranches.hve)
   const selections: ReadonlyArray<Selection> = [
     { id: 1, profileId: "reviewer", candidate: 0, intent: fixtureIntent, placement: panePlacement },
-    { id: 2, profileId: "research", candidate: 1, intent: fixtureIntent, placement: { kind: "new-tab" } },
+    {
+      id: 2,
+      profileId: "research",
+      candidate: 1,
+      intent: fixtureIntent,
+      placement: { kind: "new-tab" },
+    },
     {
       id: 3,
       profileId: "hve",
@@ -1588,7 +2025,13 @@ it.for([FixtureMode.DirtyWorktree, FixtureMode.ExistingWorktree])(
       mode === FixtureMode.ExistingWorktree
         ? { kind: "existing-worktree", path: path.join(guide.root, "worktrees", "existing") }
         : { kind: "new-worktree", branch: fixtureBranches.sandbox, baseRef: "HEAD" }
-    const selection: Selection = { id: 1, profileId: "sandbox", candidate: 2, intent: fixtureIntent, placement }
+    const selection: Selection = {
+      id: 1,
+      profileId: "sandbox",
+      candidate: 2,
+      intent: fixtureIntent,
+      placement,
+    }
     await assertDeferredLaunch(guide)
     const report = await guide.finish("L")
     assertBatch(guide, report, [selection], inspectionCommands(guide.root, fixtureBranches.sandbox))
@@ -1596,7 +2039,9 @@ it.for([FixtureMode.DirtyWorktree, FixtureMode.ExistingWorktree])(
   },
 )
 
-test("Firstmate preparation reviews and installs only an approved plan in an 80x24 terminal", async ({ onTestFailed }) => {
+test("Firstmate preparation reviews and installs only an approved plan in an 80x24 terminal", async ({
+  onTestFailed,
+}) => {
   const guide = await createGuideTerminal(firstmateEntry, onTestFailed)
   const intent = "Review project C. Keep the prompt. Do not merge."
   try {
@@ -1617,10 +2062,19 @@ test("Firstmate preparation reviews and installs only an approved plan in an 80x
 
     await guide.pressAndWait("i", "Review managed-tool installation", "❯ Cancel", "b/Esc cancel")
     for (const value of [
-      preparationPlan.identity, preparationPlan.destination, ...preparationPlan.sources, ...preparationPlan.statePaths,
+      preparationPlan.identity,
+      preparationPlan.destination,
+      ...preparationPlan.sources,
+      ...preparationPlan.statePaths,
       ...preparationPlan.tools.map(({ name, version }) => `${name} ${version}`),
-    ]) expect(guide.text()).toContain(value)
-    await guide.pressAndWait("\u001b[6~", "Approval applies only", "No global npm packages, hooks, or authentication changes.", "Enter confirm")
+    ])
+      expect(guide.text()).toContain(value)
+    await guide.pressAndWait(
+      "\u001b[6~",
+      "Approval applies only",
+      "No global npm packages, hooks, or authentication changes.",
+      "Enter confirm",
+    )
     await guide.pressAndWait("b", "Choose a Firstmate action", "i review tools")
     expect(commandEvents(await guide.events())).toHaveLength(1)
     await guide.pressAndWait("r", "Choose a Firstmate action")
@@ -1635,16 +2089,34 @@ test("Firstmate preparation reviews and installs only an approved plan in an 80x
     const report = await guide.finish("q", 130)
     expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
     expect(commandEvents(report.events).map(({ executable, args }) => ({ executable, args }))).toEqual([
-      { executable: path.join(guide.root, "bin", "fmx"), args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision] },
-      { executable: path.join(guide.root, "bin", "fmx"), args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision] },
       {
         executable: path.join(guide.root, "bin", "fmx"),
-        args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision, "--install-prerequisites", preparationPlan.identity],
+        args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
+      },
+      {
+        executable: path.join(guide.root, "bin", "fmx"),
+        args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
+      },
+      {
+        executable: path.join(guide.root, "bin", "fmx"),
+        args: [
+          "prepare",
+          "default",
+          "--json",
+          "--expected-source-revision",
+          preparationRevision,
+          "--install-prerequisites",
+          preparationPlan.identity,
+        ],
       },
     ])
     const generated = report.events.filter((event) => event.kind === "generate")
     expect(generated).toHaveLength(1)
-    expect(generated[0]?.input).toMatchObject({ intent, profileRef: "native:fmx/default", workflowId: "review-project" })
+    expect(generated[0]?.input).toMatchObject({
+      intent,
+      profileRef: "native:fmx/default",
+      workflowId: "review-project",
+    })
     expect(report.events.filter((event) => event.kind === "interactive-launch")).toEqual([])
   } finally {
     await guide.close()
@@ -1652,7 +2124,9 @@ test("Firstmate preparation reviews and installs only an approved plan in an 80x
 }, 30_000)
 
 test("Firstmate instance selection and refresh retain the request in an 80x24 terminal", async ({ onTestFailed }) => {
-  const guide = await createGuideTerminal(firstmateEntry, onTestFailed, { TRELLAGE_TEST_NAMED_INSTANCES: "1" })
+  const guide = await createGuideTerminal(firstmateEntry, onTestFailed, {
+    TRELLAGE_TEST_NAMED_INSTANCES: "1",
+  })
   const intent = "Review project C. Keep this request unchanged."
   try {
     await guide.start(FixtureMode.Terminal, 80, 24)
@@ -1669,26 +2143,43 @@ test("Firstmate instance selection and refresh retain the request in an 80x24 te
     await guide.pressAndWait("project-c", "project-c")
     await guide.pressAndWait(enter, "Confirm Firstmate target")
     await guide.pressAndWait(enter, "Prompt candidates", "Command:", "f instance")
-    await guide.pressAndWait(enter, "Choose a Firstmate action", "Send work to the existing owned fleet · allowed", "PgUp/PgDn details")
-    const prepared = () => guide.events().then((events) => commandEvents(events).filter(({ args }) => args[0] === "prepare"))
+    await guide.pressAndWait(
+      enter,
+      "Choose a Firstmate action",
+      "Send work to the existing owned fleet · allowed",
+      "PgUp/PgDn details",
+    )
+    const prepared = () =>
+      guide.events().then((events) => commandEvents(events).filter(({ args }) => args[0] === "prepare"))
     await expect.poll(async () => (await prepared()).length).toBe(1)
     await guide.pressAndWait("r", "Preparing: checking")
     await expect.poll(async () => (await prepared()).length).toBe(2)
     await guide.pressAndWait("b", "Prompt candidates", "Command:")
-    expect(guide.text(), "Back must leave the Firstmate action page before Edit is sent").not.toContain("Choose a Firstmate action")
+    expect(guide.text(), "Back must leave the Firstmate action page before Edit is sent").not.toContain(
+      "Choose a Firstmate action",
+    )
     await guide.pressAndWait("e", "Edit prompt", "Check bounded failures.")
     await guide.pressAndWait("\u001b", "Command:")
     const report = await guide.finish("q", 130)
     expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
     const expected = [
-      "prepare", "default", "--json", "--expected-source-revision", instanceOrchestration.sourceRevision,
-      "--instance", beta.reference.instanceId, "--fmx-instance-context-json",
+      "prepare",
+      "default",
+      "--json",
+      "--expected-source-revision",
+      instanceOrchestration.sourceRevision,
+      "--instance",
+      beta.reference.instanceId,
+      "--fmx-instance-context-json",
       canonicalFirstmateInstanceJson(instanceProfile(beta).firstmateInstanceContext!),
     ]
     expect((await prepared()).map(({ args, cwd }) => ({ args, cwd }))).toEqual([
-      { args: expected, cwd: "/work/alpha" }, { args: expected, cwd: "/work/alpha" },
+      { args: expected, cwd: "/work/alpha" },
+      { args: expected, cwd: "/work/alpha" },
     ])
-    expect(commandEvents(report.events).every(({ args }) => args[0] === "instances" || args[0] === "prepare")).toBe(true)
+    expect(commandEvents(report.events).every(({ args }) => args[0] === "instances" || args[0] === "prepare")).toBe(
+      true,
+    )
     expect(report.events.filter((event) => event.kind === "generate")).toHaveLength(1)
     const modelInputs = JSON.stringify(report.events.filter((event) => event.kind === "optimize"))
     expect(modelInputs).not.toContain(alpha.reference.instanceId)
