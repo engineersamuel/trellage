@@ -1264,6 +1264,9 @@ awk -v marker='# trellage-managed-codex-provider-end' -v cwd="$original_cwd" '
     print "[hooks.state.\"" cwd "/.codex/hooks.json:post_tool_use:0:0\"]"
     print "trusted_hash = \"sha256:a044cd448bad32f8a34e7639e24f7aa40ba782ee3221fa3c510958986e26518f\""
     print ""
+    print "[tui]"
+    print "screen_reader_detection_done = true"
+    print ""
     print "[tui.model_availability_nux]"
     print "\"gpt-6-astra\" = 1"
     print ""
@@ -1278,6 +1281,18 @@ HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
   || fail 'doctor rejected hooks state and tui nux native content with no project trust'
 cmp -s "$fixture_root/hooks-nux-only-before.toml" "$pstack_home/config.toml" \
   || fail 'doctor changed hooks state and tui nux bytes with no project trust to recover'
+HOME="$fixture_root/home" fake_env "$fixture_launcher" repair pstack \
+  >"$fixture_root/repair-tui.out" \
+  || fail 'repair rejected Codex screen reader detection state'
+cmp -s "$fixture_root/hooks-nux-only-before.toml" "$pstack_home/config.toml" \
+  || fail 'repair changed native TUI state'
+for invalid_tui in 'screen_reader_detection_done = "true"' 'unknown_setting = true'; do
+  sed "s/screen_reader_detection_done = true/$invalid_tui/" \
+    "$fixture_root/hooks-nux-only-before.toml" >"$pstack_home/config.toml"
+  HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
+    >"$fixture_root/doctor-invalid-tui.out" 2>&1 \
+    && fail 'doctor accepted invalid native TUI state'
+done
 cp "$proxy_config_before" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 

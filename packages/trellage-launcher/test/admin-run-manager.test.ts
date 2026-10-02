@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { CommandRunnerError, type CommandRunOptions, type CommandRunner, type CommandRunResult } from "../src/guide-launch.ts"
-import { AdminRunManager } from "../src/admin-run-manager.ts"
+import { AdminRunManager, formatAdminRunOutput } from "../src/admin-run-manager.ts"
 
 /** A controllable fake runner: each `run()` call gets its own deferred resolve/reject, released manually by the test. */
 class DeferredRunner implements CommandRunner {
@@ -52,6 +52,34 @@ class DeferredRunner implements CommandRunner {
 const ok = (stdout = "healthy"): CommandRunResult => ({ stdout, stderr: "", exitCode: 0 })
 
 describe("AdminRunManager", () => {
+  it("exposes both output streams and earlier failures without truncation", async () => {
+    const runner = new DeferredRunner()
+    const manager = new AdminRunManager({ runner })
+    const ref = "native:cdx/superpowers::repair"
+    const failed = manager.trigger(ref, "cdx", ["repair", "superpowers"])
+    const stdout = `${"progress\n".repeat(600)}\`\`\`\nlast output`
+    runner.rejectNext(new CommandRunnerError({
+      kind: "exited",
+      executable: "cdx",
+      args: ["repair", "superpowers"],
+      message: "repair failed",
+      stdout,
+      stderr: "invalid config",
+    }))
+    await failed
+    const retry = manager.retry(ref, "cdx", ["repair", "superpowers"])
+    runner.resolveNext(ok("repaired"))
+    await retry
+    const output = formatAdminRunOutput("Repair", manager.status(ref))
+    expect(output).toContain(stdout)
+    expect(output).toContain("stderr:\ninvalid config")
+    expect(output).toContain("Run 1: failure")
+    expect(output).toContain("Run 2: success")
+    expect(output).toContain("````text")
+    expect(output).toContain("stderr:\n(empty)")
+    expect(formatAdminRunOutput("Setup", manager.status("unused"))).toContain("No runs recorded.")
+  })
+
   it("reports idle status before any trigger", () => {
     const manager = new AdminRunManager({ runner: new DeferredRunner() })
     expect(manager.status("native:cpx/hve")).toMatchObject({ state: "idle", history: [] })

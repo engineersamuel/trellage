@@ -20,7 +20,7 @@ import {
 } from "./admin-model.ts"
 import { adminFirstmateMutationBlockReason, adminFirstmatePreparationBlockReason } from "./admin-firstmate.ts"
 import { refreshAdminEntries } from "./admin-refresh.ts"
-import { AdminRunManager, type AdminRunStatus } from "./admin-run-manager.ts"
+import { AdminRunManager, formatAdminRunOutput, type AdminRunStatus } from "./admin-run-manager.ts"
 import {
   buildAdminLaunchCommand,
   buildDiagnosticCommand,
@@ -447,6 +447,7 @@ const doctorShortcutItems = (
   controls.canCancel ? { key: "c", label: "cancel" } : undefined,
   controls.canRetry ? { key: "r", label: "retry" } : undefined,
   { key: "g", label: "view guide" },
+  { key: "o", label: "view output" },
   entry.inventorySupported ? { key: "i", label: "view inventory" } : undefined,
   actions.canLaunch ? { key: "l", label: "launch in terminal" } : undefined,
   actions.canFork ? { key: "f", label: "fork to fix" } : undefined,
@@ -482,9 +483,10 @@ const DoctorPanel = ({
         Doctor status: <StatusText status={status} tick={tick} bold /></Text>
       {snapshot.latest === undefined ? null : (
         <Text dimColor wrap="wrap">
-          {(snapshot.latest.stdout || snapshot.latest.stderr || "").slice(0, 4000)}
+          {[snapshot.latest.stdout, snapshot.latest.stderr].filter(Boolean).join("\n").slice(0, 4000)}
         </Text>
       )}
+      <Text dimColor>Press o for doctor, repair, and setup output.</Text>
       {snapshot.history.length === 0 ? null : (
         <Text dimColor>
           {historyScopeLabel} ({snapshot.history.length} run{snapshot.history.length === 1 ? "" : "s"} recorded)
@@ -608,6 +610,7 @@ interface DetailInputOptions {
   readonly runOrRetryDoctor: () => void
   readonly cancelDoctor: () => void
   readonly onOpenGuide: (entry: AdminProfileEntry) => void
+  readonly onOpenOutput: (entry: AdminProfileEntry) => void
   readonly onOpenInventory: (entry: AdminProfileEntry) => void
   readonly setConfirmation: (confirmation: DetailConfirmation) => void
   readonly onForceResyncVersion: (entry: AdminProfileEntry) => void
@@ -651,6 +654,7 @@ const handleDetailMaintenanceShortcut = (input: string, options: DetailInputOpti
 const handleDetailShortcut = (input: string, options: DetailInputOptions): void => {
   if (handleDoctorInput(input, options)) return
   if (input === "g") options.onOpenGuide(options.entry)
+  else if (input === "o") options.onOpenOutput(options.entry)
   else if (input === "i" && options.entry.inventorySupported) options.onOpenInventory(options.entry)
   else if (input === "l" && options.canLaunch) options.setConfirmation("launch")
   else if (input === "f" && options.canFork) options.setConfirmation("fork")
@@ -664,6 +668,7 @@ const AdminDetailPanel = ({
   herdrAvailable,
   onForkToFix,
   onOpenGuide,
+  onOpenOutput,
   onOpenInventory,
   tick,
   versionResult,
@@ -682,6 +687,7 @@ const AdminDetailPanel = ({
   readonly herdrAvailable: boolean | undefined
   readonly onForkToFix: (entry: AdminProfileEntry, diagnosis: DoctorFailureDiagnosisResult | undefined) => Promise<HerdrForkOutcome>
   readonly onOpenGuide: (entry: AdminProfileEntry) => void
+  readonly onOpenOutput: (entry: AdminProfileEntry) => void
   readonly onOpenInventory: (entry: AdminProfileEntry) => void
   readonly tick: number
   readonly versionResult: AdminHarnessVersionResult | undefined
@@ -791,6 +797,7 @@ const AdminDetailPanel = ({
       runOrRetryDoctor,
       cancelDoctor,
       onOpenGuide,
+      onOpenOutput,
       onOpenInventory,
       setConfirmation: updateConfirmation,
       onForceResyncVersion,
@@ -850,17 +857,19 @@ const GuideOverlay = ({
   note,
   columns,
   rows,
+  title = "guide",
 }: {
   readonly entry: AdminProfileEntry
   readonly body: string | undefined
   readonly note: string | undefined
   readonly columns: number
   readonly rows: number
+  readonly title?: string
 }) => (
   <Box flexDirection="column" paddingX={1}>
     <Box borderStyle="round" borderColor="cyan" paddingX={1} justifyContent="space-between">
       <Text bold color="cyan">
-        {adminProfileLabel(entry)} guide{" "}
+        {adminProfileLabel(entry)} {title}{" "}
         <Text dimColor>
           · {entry.surface}
           {entry.launcher === undefined ? "" : ` · ${entry.launcher}`}
@@ -1204,7 +1213,7 @@ export const AdminApp = ({
   const [diagnosisByRef, setDiagnosisByRef] = useState<ReadonlyMap<string, DiagnosisState>>(new Map())
   const [herdrAvailable, setHerdrAvailable] = useState<boolean | undefined>(undefined)
   const [guideOverlay, setGuideOverlay] = useState<
-    { readonly entry: AdminProfileEntry; readonly body: string | undefined; readonly note: string | undefined } | undefined
+    { readonly entry: AdminProfileEntry; readonly body: string | undefined; readonly note: string | undefined; readonly title?: string } | undefined
   >(undefined)
   const [inventoryOverlay, setInventoryOverlay] = useState<
     | {
@@ -1256,6 +1265,16 @@ export const AdminApp = ({
   }
 
   const closeGuideOverlay = () => setGuideOverlay(undefined)
+
+  const openOutputOverlay = (entry: AdminProfileEntry) => {
+    const body = [
+      historyScopeLabel,
+      formatAdminRunOutput("Doctor", runManager.status(entry.ref)),
+      formatAdminRunOutput(isAdminFirstmate(entry) ? "Preparation" : "Repair", runManager.status(repairRefFor(entry))),
+      formatAdminRunOutput("Setup", runManager.status(setupRefFor(entry))),
+    ].join("\n\n")
+    setGuideOverlay({ entry, body, note: undefined, title: "output" })
+  }
 
   /**
    * Opens the full-screen inventory overlay immediately (showing a loading
@@ -1634,7 +1653,7 @@ export const AdminApp = ({
   }
 
   if (guideOverlay !== undefined) {
-    return <GuideOverlay entry={guideOverlay.entry} body={guideOverlay.body} note={guideOverlay.note} columns={columns} rows={rows} />
+    return <GuideOverlay entry={guideOverlay.entry} body={guideOverlay.body} note={guideOverlay.note} title={guideOverlay.title ?? "guide"} columns={columns} rows={rows} />
   }
 
   if (inventoryOverlay !== undefined) {
@@ -1759,6 +1778,7 @@ export const AdminApp = ({
           herdrAvailable={herdrAvailable}
           onForkToFix={onForkToFix}
           onOpenGuide={openGuideOverlay}
+          onOpenOutput={openOutputOverlay}
           onOpenInventory={openInventoryOverlay}
           tick={tick}
           versionResult={versionResultFor(selected)}

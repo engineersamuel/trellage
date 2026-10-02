@@ -27,6 +27,19 @@ export interface AdminRunStatus {
   readonly history: ReadonlyArray<AdminRunRecord>
 }
 
+export const formatAdminRunOutput = (label: string, snapshot: AdminRunStatus): string => {
+  const runs = snapshot.history.map((record, index) => {
+    const output = [
+      `Run ${index + 1}: ${record.state}`,
+      `stdout:\n${record.stdout.trim() || "(empty)"}`,
+      `stderr:\n${record.stderr.trim() || "(empty)"}`,
+    ].join("\n\n")
+    const fence = "`".repeat(Math.max(3, ...Array.from(output.matchAll(/`+/g), (match) => match[0].length + 1)))
+    return `${fence}text\n${output}\n${fence}`
+  })
+  return [`## ${label}: ${snapshot.state}`, ...runs, ...(runs.length === 0 ? ["No runs recorded."] : [])].join("\n\n")
+}
+
 export interface AdminRunManagerOptions {
   readonly runner: CommandRunner
   readonly timeoutMs?: number
