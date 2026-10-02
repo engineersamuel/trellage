@@ -313,6 +313,11 @@ is available for supported harnesses even when installed or latest-version
 data is missing, or the last check reported the harness as current.
 Lowercase `u` only refreshes version data.
 
+Press `o` to view doctor, repair, and setup output for the selected profile.
+The scrollable view includes both stdout and stderr for the retained runs.
+Use PageUp/PageDown to scroll and `q` or Esc to return to the list.
+Output history is kept only for the current Admin session, not in a log file.
+
 Container updates run `trellage upgrade PROFILE --strict-harness` for every discovered
 container profile with the same harness, including profiles hidden by the
 current filter. This covers Claude, Codex, Copilot, Oh My Pi (`pi`),

@@ -8,7 +8,7 @@ import stringWidth from "string-width"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { AdminApp, AdminRoot } from "../src/admin-ui.tsx"
 import { AdminRunManager } from "../src/admin-run-manager.ts"
-import { launchAdminProfile } from "../src/admin-launch.ts"
+import { launchAdminProfile, repairRefFor, setupRefFor } from "../src/admin-launch.ts"
 import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.ts"
 import { checkAdminSkillsUpdates } from "../src/admin-skills-check.ts"
 import type { AdminProfileEntry } from "../src/admin-model.ts"
@@ -189,7 +189,7 @@ const mountAdmin = async (
     await app.waitUntilRenderFlush()
   }
   await vi.waitFor(() => expect(screen()).toContain("Trellage Admin"))
-  return { app, exited, screen, press, updates, run, replaceEntries }
+  return { app, exited, screen, press, updates, run, replaceEntries, runManager: props.runManager }
 }
 
 const instanceForArgs = (args: ReadonlyArray<string>) => {
@@ -198,6 +198,31 @@ const instanceForArgs = (args: ReadonlyArray<string>) => {
 }
 
 describe("Firstmate Admin instance controls", () => {
+  it("opens operation output and returns to the list without exiting or running another command", async () => {
+    const entry = native()
+    const tui = await mountAdmin([entry], undefined, { columns: 100, rows: 48 }, undefined, {
+      onCommand: async (_executable, args) => ({
+        ...success,
+        stdout: `${args[0]} progress`,
+        stderr: `${args[0]} diagnostic`,
+      }),
+    })
+    for (const [ref, operation] of [[entry.ref, "doctor"], [repairRefFor(entry), "repair"], [setupRefFor(entry), "setup"]] as const) {
+      await tui.runManager.trigger(ref, entry.commandPath, [operation, entry.name])
+    }
+    await tui.press("o")
+    await vi.waitFor(() => expect(tui.screen()).toContain("default output"))
+    expect(tui.screen()).toContain("doctor progress")
+    expect(tui.screen()).toContain("doctor diagnostic")
+    expect(tui.screen()).toContain("repair diagnostic")
+    await tui.press("\u001b[6~")
+    await vi.waitFor(() => expect(tui.screen()).toContain("setup diagnostic"))
+    const calls = tui.run.mock.calls.length
+    await tui.press("q")
+    await vi.waitFor(() => expect(tui.screen()).toContain("Trellage Admin"))
+    expect(tui.run.mock.calls).toHaveLength(calls)
+  })
+
   it("does not run Firstmate doctor, auto-repair, setup, or a model before or after delayed discovery", async () => {
     let resolveList!: (result: CommandRunResult) => void
     const listing = new Promise<CommandRunResult>((resolve) => { resolveList = resolve })
