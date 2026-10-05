@@ -37,14 +37,8 @@ export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =
     : buildGuideLaunchCommand(toSelectedProfile(entry)).command
 
 /**
- * Builds the capability-appropriate diagnostic command for a profile,
- * mirroring the exact argument shapes `guide-preflight.ts` already uses:
- * native launchers accept `doctor PROFILE` (C12), sandbox profiles accept
- * `validate PROFILE` (`guide-preflight.ts:118`). Callers must check
- * `entry.doctorSupported` first — this never fabricates a command for a
- * native launcher that genuinely lacks doctor support (see
- * `admin-model.ts`'s `launchersWithoutDoctorSupport`; every current native
- * launcher, including `cdx`, supports it).
+ * Native launchers accept `doctor PROFILE`; Sandbox profiles accept
+ * `validate PROFILE`. Callers must check `entry.doctorSupported` first.
  */
 export const buildDiagnosticCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,

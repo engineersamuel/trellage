@@ -119,6 +119,8 @@ import {
 import type { GuideArtifactCache } from "./guide-match-cache.ts"
 import type { GuideGenerateCandidate, GuideOptimizeInput, GuideProvider } from "./guide-provider.ts"
 import { jevShouldSkipPromptOptimization } from "./jev-guide-gates.ts"
+import { createGuideOptimizeServices, type GuideOptimizeServices, type GuideOptimizeTerminalResult } from "./guide-optimize.ts"
+import { GuideOptimizeFlow } from "./guide-optimize-ui.tsx"
 import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.ts"
 import {
   GuideCandidatePromptCollisionError,
@@ -286,6 +288,7 @@ export enum GuideUiStage {
   Matching = "matching",
   MatchFailed = "match-failed",
   Recommendations = "recommendations",
+  Optimize = "optimize",
   TargetChoice = "target-choice",
   TargetEditor = "target-editor",
   TargetInspecting = "target-inspecting",
@@ -364,6 +367,7 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.Matching]: GuideWizardStep.Profile,
   [GuideUiStage.MatchFailed]: GuideWizardStep.Profile,
   [GuideUiStage.Recommendations]: GuideWizardStep.Profile,
+  [GuideUiStage.Optimize]: undefined,
   [GuideUiStage.TargetChoice]: GuideWizardStep.Profile,
   [GuideUiStage.TargetEditor]: GuideWizardStep.Profile,
   [GuideUiStage.TargetInspecting]: GuideWizardStep.Profile,
@@ -876,6 +880,8 @@ export enum GuideUiActionType {
   MatchLiteralFailed = "match/literal-failed",
   RecommendationsMove = "recommendations/move",
   RecommendationsConfirm = "recommendations/confirm",
+  OptimizeOpen = "optimize/open",
+  OptimizeBack = "optimize/back",
   TargetOpen = "target/open",
   TargetCurrent = "target/current",
   TargetEdit = "target/edit",
@@ -1031,6 +1037,8 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.MatchLiteral; readonly recommendations: ReadonlyArray<GuideRecommendation> }
   | { readonly type: GuideUiActionType.MatchLiteralFailed; readonly message: string }
   | { readonly type: GuideUiActionType.RecommendationsMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.OptimizeOpen }
+  | { readonly type: GuideUiActionType.OptimizeBack }
   | { readonly type: GuideUiActionType.TargetOpen }
   | { readonly type: GuideUiActionType.TargetCurrent }
   | { readonly type: GuideUiActionType.TargetEdit; readonly mode: "path" | "registered" }
@@ -1365,7 +1373,8 @@ const openAugmentChooser = (
  * the main screen.
  */
 const canAutoApplyAugment = (state: GuideUiState): boolean =>
-  state.activeForkId === undefined && !state.promptReviewEditing && state.stage !== GuideUiStage.GoalChange
+  state.activeForkId === undefined && !state.promptReviewEditing &&
+  state.stage !== GuideUiStage.GoalChange && state.stage !== GuideUiStage.Optimize
 
 const goalSourceIsCurrent = (state: GuideUiState, job: GuideAugmentJob): boolean => {
   const usesDraft =
@@ -1802,6 +1811,19 @@ const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUi
   }
 }
 
+const reduceOptimize = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  if (action.type === GuideUiActionType.OptimizeOpen) {
+    if (state.stage !== GuideUiStage.Recommendations) return state
+    const source = state.activeForkId === undefined ? state : enterMainScreen(state)
+    return { ...source, stage: GuideUiStage.Optimize, errorMessage: undefined }
+  }
+  if (state.stage !== GuideUiStage.Optimize || action.type !== GuideUiActionType.OptimizeBack) return state
+  const stage = state.recommendations === undefined
+    ? state.intent === undefined ? GuideUiStage.Intent : GuideUiStage.Matching
+    : GuideUiStage.Recommendations
+  return { ...state, stage, errorMessage: undefined }
+}
+
 const reduceMatchProgress = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.MatchProgress:
@@ -1822,6 +1844,21 @@ const reduceMatchProgress = (state: GuideUiState, action: GuideUiAction): GuideU
   }
 }
 
+const reduceMatchSucceeded = (
+  state: GuideUiState,
+  action: Extract<GuideUiAction, { readonly type: GuideUiActionType.MatchSucceeded }>,
+): GuideUiState => {
+  if (state.stage !== GuideUiStage.Matching) return state
+  return recommendationsState(
+    state,
+    action.recommendations,
+    false,
+    action.execution ?? state.matchExecution,
+    action.profileCount ?? state.matchProfileCount,
+    action.execution === undefined ? state.matchFallback : action.fallback,
+  )
+}
+
 const reduceMatch = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.MatchRetry:
@@ -1835,16 +1872,7 @@ const reduceMatch = (state: GuideUiState, action: GuideUiAction): GuideUiState =
         : state
 
     case GuideUiActionType.MatchSucceeded:
-      return state.stage === GuideUiStage.Matching
-        ? recommendationsState(
-            state,
-            action.recommendations,
-            false,
-            action.execution ?? state.matchExecution,
-            action.profileCount ?? state.matchProfileCount,
-            action.execution === undefined ? state.matchFallback : action.fallback,
-          )
-        : state
+      return reduceMatchSucceeded(state, action)
 
     case GuideUiActionType.MatchFailed:
       return state.stage === GuideUiStage.Matching
@@ -3375,6 +3403,8 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.MatchLiteralFailed]: reduceMatch,
   [GuideUiActionType.RecommendationsMove]: reduceRecommendations,
   [GuideUiActionType.RecommendationsConfirm]: reduceRecommendations,
+  [GuideUiActionType.OptimizeOpen]: reduceOptimize,
+  [GuideUiActionType.OptimizeBack]: reduceOptimize,
   [GuideUiActionType.PromptReviewOpen]: reducePromptReview,
   [GuideUiActionType.PromptReviewEdit]: reducePromptReview,
   [GuideUiActionType.PromptReviewChange]: reducePromptReview,
@@ -4105,6 +4135,8 @@ export type GuideUiResult =
   | GuideUiNewHerdrWorktreeResult
   | GuideUiExistingHerdrWorktreeResult
   | GuideUiBatchResult
+  | GuideOptimizeTerminalResult
+  | { readonly action: "optimize-submitted" }
 
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
 
@@ -4261,6 +4293,7 @@ export interface GuideUiProps {
   /** Whether a Herdr availability probe (e.g. `probeHerdrAvailability`) succeeded, checked before rendering. */
   readonly herdrAvailabilityProbe: boolean
   readonly initialIntent?: string
+  readonly optimizeServices?: GuideOptimizeServices
   readonly uiVariant?: GuideLongPromptVariant
 }
 
@@ -5026,6 +5059,34 @@ const AugmentChooser = ({ index, error }: { readonly index: number; readonly err
   </Box>
 )
 
+const optimizeTerminalBlockReason = (state: GuideUiState): string | undefined => {
+  if (state.queue.entries.length > 0 || state.forks.length > 0) {
+    return "A new agent in this terminal would close Guide. Finish or remove its queued jobs and forks first, or use a Herdr pane."
+  }
+  return undefined
+}
+
+const OptimizeStage = ({ props, state, dispatch }: {
+  readonly props: GuideUiProps
+  readonly state: GuideUiState
+  readonly dispatch: React.Dispatch<GuideUiAction>
+}) => {
+  const { rows, columns } = useGuideWindowSize()
+  const { exit } = useApp()
+  const services = useMemo(() => props.optimizeServices ?? createGuideOptimizeServices({
+    runner: props.runner, cwd: props.cwd, catalog: props.catalog,
+    routing: props.routing,
+    context: props.herdrAvailabilityProbe ? getHerdrContext(props.herdrEnv) : null,
+  }), [props.optimizeServices, props.runner, props.cwd, props.catalog, props.routing, props.herdrAvailabilityProbe, props.herdrEnv])
+  return <GuideOptimizeFlow
+    services={services} rows={rows} columns={columns} originalIntent={state.originalIntent ?? state.intent} intent={state.intent}
+    blockedReason={state.augmentJob === undefined ? undefined : "Finish or discard the pending augmentation first. Press Esc, then a."}
+    terminalBlockedReason={optimizeTerminalBlockReason(state)}
+    onBack={() => dispatch({ type: GuideUiActionType.OptimizeBack })}
+    onTerminal={(result) => exit(result)}
+  />
+}
+
 const ErrorPanel = ({
   title,
   message,
@@ -5312,26 +5373,32 @@ const recommendationConfidence = (recommendation: GuideRecommendation): string =
 const RecommendationRail = ({
   recommendations,
   index,
+  compact,
 }: {
   readonly recommendations: ReadonlyArray<GuideRecommendation>
   readonly index: number
+  readonly compact: boolean
 }) => (
   <Box flexDirection="column" width={30} borderStyle="single" borderColor="gray" paddingX={1}>
     <Text bold>RECOMMENDATIONS</Text>
     {recommendations.map((recommendation, itemIndex) => {
       const active = itemIndex === index
       return (
-        <Box key={recommendation.profileRef} flexDirection="column" marginTop={1}>
+        <Box key={recommendation.profileRef} flexDirection="column" marginTop={compact ? 0 : 1}>
           <Text bold={active} {...(active ? { color: "green" as const } : {})}>
             {active ? "❯ " : "  "}
             {recommendationLabel(recommendation)}
           </Text>
-          <Text dimColor>
-            {recommendationHarness(recommendation)} | {recommendationConfidence(recommendation)}
-          </Text>
-          <Text dimColor wrap="truncate-end">
-            {recommendation.workflow.id}
-          </Text>
+          {compact ? null : (
+            <>
+              <Text dimColor>
+                {recommendationHarness(recommendation)} | {recommendationConfidence(recommendation)}
+              </Text>
+              <Text dimColor wrap="truncate-end">
+                {recommendation.workflow.id}
+              </Text>
+            </>
+          )}
         </Box>
       )
     })}
@@ -5381,19 +5448,21 @@ const RecommendationDetail = ({ recommendation, controllerLabel }: {
   )
 }
 
-const PinnedLenses = ({ lenses }: { readonly lenses: ReadonlyArray<GuidePinnedLens> }) =>
-  lenses.length === 0 ? null : (
-    <Box flexDirection="column" marginTop={1}>
-      <Text bold>PINNED LENSES</Text>
-      <Text>
-        {lenses.map((lens, index) => (
-          <Text key={lens.kind} bold color="magenta">
-            {index === 0 ? "" : " · "}{lens.emoji} {lens.key} {lens.label}
-          </Text>
-        ))}
+const PinnedLenses = ({ lenses }: { readonly lenses: ReadonlyArray<GuidePinnedLens> }) => (
+  <Box flexDirection="column" marginTop={1}>
+    <Text bold>PINNED LENSES</Text>
+    <Text>
+      {lenses.map((lens, index) => (
+        <Text key={lens.kind} bold color="magenta">
+          {index === 0 ? "" : " · "}{lens.emoji} {lens.key} {lens.label}
+        </Text>
+      ))}
+      <Text bold color="magenta">
+        {lenses.length === 0 ? "" : " · "}o Optimize changes
       </Text>
-    </Box>
-  )
+    </Text>
+  </Box>
+)
 
 const RecommendationsView = ({
   pinnedLenses,
@@ -5420,6 +5489,8 @@ const RecommendationsView = ({
   readonly goal?: PreparedGuideGoal
   readonly controllerLabel?: string
 }) => {
+  const { rows } = useGuideWindowSize()
+  const compact = rows < 36
   const recommendation = recommendationAt(recommendations, index)
   const metrics = promptReviewMetrics(intent)
   return (
@@ -5436,11 +5507,13 @@ const RecommendationsView = ({
       {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : <MatchFallbackNotice fallback={fallback} />}
       <PinnedLenses lenses={pinnedLenses} />
       <Box marginTop={1}>
-        <RecommendationRail recommendations={recommendations} index={index} />
+        <RecommendationRail recommendations={recommendations} index={index} compact={compact} />
         <RecommendationDetail recommendation={recommendation} {...(controllerLabel === undefined ? {} : { controllerLabel })} />
       </Box>
       <Text dimColor>
-        ↑/↓ or j/k select · ↵ generate · p view prompt{pinnedLenses.length === 0 ? "" : ` · ${pinnedLenses.map(({ key }) => key).join("/")} lenses`} · q cancel
+        {compact
+          ? "↑/↓ or j/k select · ↵ generate · p view prompt · q cancel"
+          : `↑/↓ or j/k select · ↵ generate · p view prompt${pinnedLenses.length === 0 ? "" : ` · ${pinnedLenses.map(({ key }) => key).join("/")} lenses`} · o Optimize · q cancel`}
       </Text>
     </Box>
   )
@@ -6179,6 +6252,15 @@ const refreshCatalogAfterMatchFailure = async (
   }
 }
 
+const dispatchGuideMatchSuccess = (response: GuideMatchResponse, dispatch: GuideUiDispatch): void => {
+  dispatch({
+    type: GuideUiActionType.MatchSucceeded,
+    recommendations: response.recommendations,
+    ...(response.execution === undefined ? {} : { execution: response.execution }),
+    ...(response.fallback === undefined ? {} : { fallback: response.fallback }),
+  })
+}
+
 const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   useEffect(() => {
     if (state.stage !== GuideUiStage.Matching) return undefined
@@ -6208,18 +6290,11 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
             },
           },
         )
-        if (!cancelled) {
-          dispatch({
-            type: GuideUiActionType.MatchSucceeded,
-            recommendations: response.recommendations,
-            ...(response.execution === undefined ? {} : { execution: response.execution }),
-            ...(response.fallback === undefined ? {} : { fallback: response.fallback }),
-          })
-        }
+        if (!cancelled) dispatchGuideMatchSuccess(response, dispatch)
       } catch (error) {
         if (cancelled) return
         if (!(await refreshCatalogAfterMatchFailure(props, controller.signal)) || cancelled) return
-        if (!cancelled) dispatch({ type: GuideUiActionType.MatchFailed, message: describeGuideUiError(error) })
+        dispatch({ type: GuideUiActionType.MatchFailed, message: describeGuideUiError(error) })
       }
     })()
     return () => {
@@ -6805,6 +6880,10 @@ const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, can
 }
 
 const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input, key) => {
+  if (input === "o") {
+    dispatch({ type: GuideUiActionType.OptimizeOpen })
+    return
+  }
   if (input === "p") {
     dispatch({ type: GuideUiActionType.PromptReviewOpen })
     return
@@ -7288,6 +7367,7 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.Matching]: handleMatchingInput,
   [GuideUiStage.MatchFailed]: handleMatchFailedInput,
   [GuideUiStage.Recommendations]: handleRecommendationsInput,
+  [GuideUiStage.Optimize]: handleNoInput,
   [GuideUiStage.PromptReview]: handlePromptReviewInput,
   [GuideUiStage.GoalChange]: handleGoalChangeInput,
   [GuideUiStage.Generating]: handleNoInput,
@@ -7321,6 +7401,7 @@ const acceptsGlobalKeys = (state: GuideUiState): boolean =>
   state.stage !== GuideUiStage.Intent &&
   state.stage !== GuideUiStage.Launching &&
   state.stage !== GuideUiStage.GoalChange &&
+  state.stage !== GuideUiStage.Optimize &&
   // The watch screen owns `x`: there it stops the job, never drops a fork tab.
   state.stage !== GuideUiStage.Augmenting &&
   !editingStages.has(state.stage) &&
@@ -7349,17 +7430,19 @@ const forkCommand = (input: string, key: Key): GuideUiAction | undefined => {
     : undefined
 }
 
+const hasRunningAugmentPanel = (state: GuideUiState): boolean =>
+  state.stage === GuideUiStage.Augmenting &&
+  state.augmentJob?.status === "running" &&
+  (state.augmentJob.goalPanel !== undefined || state.augmentJob.customerPanel !== undefined)
+
 const handleGuideInput = (context: GuideInputContext, input: string, key: Key): void => {
+  if (context.state.stage === GuideUiStage.Optimize) return
   if (key.ctrl && input === "c") {
     context.cancel()
     return
   }
-  // The mounted goal panel owns all other keys, including letters in answers.
-  if (
-    context.state.stage === GuideUiStage.Augmenting &&
-    context.state.augmentJob?.status === "running" &&
-    (context.state.augmentJob.goalPanel !== undefined || context.state.augmentJob.customerPanel !== undefined)
-  ) return
+  // The mounted goal or customer panel owns ordinary keys, including answer text.
+  if (hasRunningAugmentPanel(context.state)) return
   if (acceptsGlobalKeys(context.state) && !isTargetStage(context.state.stage)) {
     if (input === "L" && context.state.queue.entries.length > 0) {
       launchQueue(context, input, key)
@@ -7513,7 +7596,7 @@ const renderRecommendations: GuideStageRenderer = (context) => {
   const goal = guideProfileGoal(context.state)
   if (recommendations === undefined) return matchingProgress(context)
   if (recommendations.length === 0) {
-    return <ErrorPanel title="No compatible profiles" message="Edit the goal or choose a normal prompt flow." keys="p view prompt · q cancel" />
+    return <ErrorPanel title="No compatible profiles" message="Edit the goal or choose a normal prompt flow." keys="o Optimize · p view prompt · q cancel" />
   }
   const selected = recommendationAt(recommendations, recommendationIndex)
   const controller = goal === undefined ? undefined : findCombinedCatalogEntry(context.props.catalog, selected.profileRef)?.entry.guide.goalExecution?.controller
@@ -7757,6 +7840,7 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
     />
   ),
   [GuideUiStage.Recommendations]: renderRecommendations,
+  [GuideUiStage.Optimize]: ({ props, state, dispatch }) => <OptimizeStage props={props} state={state} dispatch={dispatch} />,
   [GuideUiStage.PromptReview]: ({ props, state }) => (
     <PromptReviewStage
       textDraft={state.textDraft}
@@ -7926,7 +8010,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   const activeWizardStep = wizardStepForStage(state.stage)
   return (
     <Box flexDirection="column">
-      {herdrContext?.capture === undefined ? null : <CaptureSourceBanner capture={herdrContext.capture} />}
+      {herdrContext?.capture === undefined || state.stage === GuideUiStage.Optimize ? null : <CaptureSourceBanner capture={herdrContext.capture} />}
       {state.forks.map((fork) => {
         const slice = forkState(state, fork.id)
         return slice === undefined ? null : (

@@ -66,8 +66,8 @@ assert_no_upgrade_mutation() {
 
 assert_native_skills_refreshed() {
   jq -se --arg router "$runtime_parent/trx/bin/trx" '
-    length == 7 and all(.[]; .args[0] == "update" and .routerCommandPath == $router)
-  ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh all seven caches once through its own router'
+    length == 8 and all(.[]; .args[0] == "update" and .routerCommandPath == $router)
+  ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh all eight caches once through its own router'
   jq -r '.catalog.native[] | .launcher + ":skills-update " + .name' \
     "$fixture_root/guide-catalog.json" | sort >"$fixture_root/expected-skills-update.log"
   sort "$skills_update_log" >"$fixture_root/actual-skills-update.log"
@@ -765,7 +765,12 @@ grep -Fxq guide-prompt-master "$fixture_root/skills-update.argv" \
 grep -Fxq "$fixture_home/.local/share/trellage/common/guide-prompt-master-skills" \
   "$fixture_root/skills-update.argv" \
   || fail 'skills update omitted the guide Prompt Master cache'
-[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 7 ]] \
+grep -Fxq guide-optimize-architecture "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the guide architecture bundle'
+grep -Fxq "$fixture_home/.local/share/trellage/common/guide-optimize-architecture-skills" \
+  "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the guide architecture cache'
+[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 8 ]] \
   || fail 'skills update did not invoke all bundle updates'
 rm "$fixture_bin/bun"
 ln -s "$real_bun" "$fixture_bin/bun"
@@ -886,6 +891,8 @@ jq -e --slurpfile ledger "$prototype_root/../../docs/herdr-compatibility.json" '
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'Firstmate compatibility projection differs from its source evidence'
 
+# Model a source checkout, not an installed runtime with a missing receipt.
+mv "$fixture_source/.managed-by-trellage-source" "$fixture_root/source-ownership.saved"
 rm "$fixture_source/.trellage-source-ready.json"
 TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
   TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides" \
@@ -895,6 +902,7 @@ cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
   || fail 'worktree source list differs from installed router list'
 [[ -f "$fixture_source/.trellage-source-ready.json" ]] \
   || fail 'worktree source launch did not restore readiness automatically'
+mv "$fixture_root/source-ownership.saved" "$fixture_source/.managed-by-trellage-source"
 
 # --- TRELLAGE_TRX_NATIVE_SOURCE: opt-in dev-mode native launcher delegation.
 # Uses a self-contained fixture (a copy of trx plus fixture sibling
@@ -1123,12 +1131,46 @@ jq -e '.args == ["--engagement", "--intent", "What\u0027s the next step in this 
   || fail 'guide treated a literal engagement intent as a mode flag'
 jq -e '.promptMasterExists == true' "$fixture_root/guide-engagement-literal.json" >/dev/null \
   || fail 'ordinary guide skipped Prompt Master for a literal intent value'
-for conflicting_flag in --engagement --engagement=value --next-steps --json --profile=native:cpx/hve --ui-variant=pager --preview --forks; do
+for conflicting_flag in --engagement --engagement=value --optimize --next-steps --json --profile=native:cpx/hve --ui-variant=pager --preview --forks; do
   status=0
   "$fixture_bin/trx" guide --engagement "$conflicting_flag" \
     >"$fixture_root/guide-engagement-invalid.out" 2>"$fixture_root/guide-engagement-invalid.err" \
     || status=$?
   [[ "$status" -ne 0 ]] || fail "engagement accepted conflicting flag: $conflicting_flag"
+done
+optimize_skills_manager="$fixture_source/scripts/floating-skills.ts"
+mv "$optimize_skills_manager" "$fixture_root/optimize-floating-skills.saved"
+printf '%s\n' 'throw new Error("Optimize must not prepare Prompt Master or call the floating-skills manager.");' \
+  >"$optimize_skills_manager"
+refresh_fixture_source
+: >"$fixture_root/guide-optimize-discovery.log"
+TRX_SANDBOX_CATALOG_MODE=failed TRX_DISCOVERY_LOG="$fixture_root/guide-optimize-discovery.log" \
+  "$fixture_bin/trx" guide --optimize --base main --intent 'keep this original task' \
+  >"$fixture_root/guide-optimize.json" || fail 'guide Optimize required the unused Sandbox catalog'
+if grep -Fxq trellage "$fixture_root/guide-optimize-discovery.log"; then
+  fail 'guide Optimize attempted Sandbox discovery'
+fi
+jq -e --arg sandboxCommandPath "$fixture_source/prototypes/trellage/trellage" '
+  .args == ["--optimize", "--base", "main", "--intent", "keep this original task"]
+  and .catalog.sandboxCommandPath == $sandboxCommandPath
+  and .catalog.sandbox == []
+  and (.catalog.native | length == 14)
+' "$fixture_root/guide-optimize.json" >/dev/null || fail 'guide Optimize changed its task or Native-only catalog'
+mv "$fixture_bin/trellage" "$fixture_root/optimize-trellage.saved"
+"$fixture_bin/trx" guide --optimize >"$fixture_root/guide-optimize-no-sandbox.json" \
+  || fail 'guide Optimize required a separately installed Sandbox command'
+mv "$fixture_root/optimize-trellage.saved" "$fixture_bin/trellage"
+jq -e '.args == ["--optimize"] and .catalog.sandbox == [] and (.catalog.native | length == 14)' \
+  "$fixture_root/guide-optimize-no-sandbox.json" >/dev/null || fail 'guide Optimize lost its Native catalog'
+mv "$fixture_root/optimize-floating-skills.saved" "$optimize_skills_manager"
+refresh_fixture_source
+for conflicting_flag in --optimize --optimize=value --engagement --json --next-steps --preview --forks; do
+  status=0
+  "$fixture_bin/trx" guide --optimize "$conflicting_flag" \
+    >"$fixture_root/guide-optimize-invalid.out" 2>"$fixture_root/guide-optimize-invalid.err" \
+    || status=$?
+  [[ "$status" -ne 0 ]] || fail "guide Optimize accepted conflicting flag: $conflicting_flag"
+  assert_contains '--optimize' "$fixture_root/guide-optimize-invalid.err"
 done
 "$fixture_bin/trx" guide --next-steps --model fixture-model --effort high \
   >"$fixture_root/guide-next-steps.json" \
@@ -1351,7 +1393,7 @@ export TRX_SKILLS_UPDATE_LOG="$skills_update_log"
 reset_upgrade_logs
 TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" skills update >"$fixture_root/skills-without-bootstrap.out" 2>&1 \
   || fail 'skills update unexpectedly ran the development dependency bootstrap'
-[[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 7 ]] || fail 'standalone skills update did not refresh the seven caches'
+[[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 8 ]] || fail 'standalone skills update did not refresh the eight caches'
 [[ ! -s "$upgrade_log" && ! -s "$skills_update_log" ]] || fail 'standalone cache refresh changed profiles or ran bootstrap'
 reset_upgrade_logs
 : >"$discovery_log"

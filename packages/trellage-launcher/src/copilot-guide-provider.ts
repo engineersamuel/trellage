@@ -58,6 +58,7 @@ import {
   CopilotClient,
   RuntimeConnection,
   type CopilotClientOptions,
+  type CopilotSession,
   type ModelInfo,
   type SessionConfig,
 } from "@github/copilot-sdk"
@@ -397,6 +398,7 @@ export enum RestrictedGuideEventType {
 
 export interface RestrictedGuideModelSession {
   readonly sessionId: string
+  readonly rpc?: Pick<CopilotSession["rpc"], "send">
   send(options: { readonly prompt: string }): Promise<string>
   on(handler: (event: { readonly type: string; readonly data: unknown }) => void): () => void
   abort(): Promise<void>
@@ -432,6 +434,8 @@ export interface RestrictedGuideModelRequest {
   readonly onActivity?: (event: { readonly type: string }) => void
   /** Content-free lifecycle updates. Never includes prompts, reasoning, source text, or response content. */
   readonly onProgress?: (message: string) => void
+  readonly tools?: SessionConfig["tools"]
+  readonly responseFormat?: Parameters<CopilotSession["rpc"]["send"]>[0]["responseFormat"]
 }
 
 export class RestrictedGuideModelError extends Error {
@@ -548,10 +552,12 @@ class RestrictedGuideRequest {
     this.progress("Checking model availability")
     this.checkModel(await this.requestStep(() => this.client.listModels()))
     this.stage = "create-session"
-    this.progress("Opening a temporary tool-denied session")
+    this.progress(
+      this.options.tools?.length ? "Opening a restricted snapshot session" : "Opening a temporary tool-denied session",
+    )
     return this.requestStep(async () => {
-      const created = await this.client.createSession(
-        restrictedGuideSessionConfig({
+      const created = await this.client.createSession({
+        ...restrictedGuideSessionConfig({
           model: this.options.model,
           effort: this.options.effort,
           workingDirectory: this.workingDirectory,
@@ -563,7 +569,13 @@ class RestrictedGuideRequest {
             : { systemMessageMode: this.options.systemMessageMode }),
           ...(this.options.onActivity === undefined ? {} : { onActivity: this.options.onActivity }),
         }),
-      )
+        ...(this.options.tools === undefined
+          ? {}
+          : {
+              tools: this.options.tools,
+              availableTools: this.options.tools.map((tool) => `custom:${tool.name}`),
+            }),
+      })
       this.session = created
       // A delayed create response must not resurrect a cancelled request.
       if (this.closing) {
@@ -584,6 +596,15 @@ class RestrictedGuideRequest {
       throw new RestrictedGuideModelError("response-too-large")
     }
     this.content = data.content
+  }
+
+  private submit(session: RestrictedGuideModelSession): Promise<unknown> {
+    const prompt = this.options.prompt
+    if (this.options.responseFormat === undefined) return session.send({ prompt })
+    if (session.rpc === undefined)
+      throw new GuideModelCapabilityError("The model session does not support schema-controlled review output.")
+    // The pinned SDK's send helper omits responseFormat; its typed RPC preserves it.
+    return session.rpc.send({ prompt, responseFormat: this.options.responseFormat })
   }
 
   private async send(activeSession: RestrictedGuideModelSession): Promise<void> {
@@ -624,7 +645,7 @@ class RestrictedGuideRequest {
     })
     this.stage = "send"
     this.progress("Submitting the selected evidence")
-    await this.requestStep(() => activeSession.send({ prompt: this.options.prompt }))
+    await this.requestStep(() => this.submit(activeSession))
     this.stage = "response"
     await within(() => idle, Math.max(1, this.deadline - Date.now()), this.options.signal)
     if (this.content === undefined) throw new RestrictedGuideModelError("no-assistant-message")
@@ -780,13 +801,13 @@ export class CopilotGuideProvider implements GuideProvider {
     )
     const payload =
       input.goal === undefined
-      ? input
-      : {
-          intent: input.goal.draft.task,
-          entries: input.entries,
-          goal: { ...input.goal.draft, minimumScore: 8 },
-          ...(input.preferredProfileRefs === undefined ? {} : { preferredProfileRefs: input.preferredProfileRefs }),
-        }
+        ? input
+        : {
+            intent: input.goal.draft.task,
+            entries: input.entries,
+            goal: { ...input.goal.draft, minimumScore: 8 },
+            ...(input.preferredProfileRefs === undefined ? {} : { preferredProfileRefs: input.preferredProfileRefs }),
+          }
     return this.run("match", this.prompts.match, payload, this.matchTimeoutMs, (value) =>
       validateGuideMatchResult(value, workflowIndex, input.goal, input.preferredProfileRefs),
     )
@@ -813,13 +834,13 @@ export class CopilotGuideProvider implements GuideProvider {
       input.goal === undefined ? undefined : resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
     const payload =
       execution === undefined
-      ? input
-      : {
-          ...generationModelInput(input, execution),
+        ? input
+        : {
+            ...generationModelInput(input, execution),
             candidate: validateGuideRefineResult({ candidate: guideGoalCandidateBody(input.candidate) }, execution)
               .candidate,
-          feedback: input.feedback,
-        }
+            feedback: input.feedback,
+          }
     return this.run("refine", this.prompts.refine, payload, this.refineTimeoutMs, (value) =>
       validateGuideRefineResult(value, execution),
     )
@@ -906,21 +927,21 @@ export class CopilotGuideProvider implements GuideProvider {
         systemPrompt,
         prompt,
         timeoutMs,
-      cleanupTimeoutMs: 3_000,
-      maximumResponseBytes,
-      baseDirectory: this.baseDirectory,
-      workingDirectory: this.workingDirectory,
-      systemMessageMode: this.systemMessageMode,
-      clientName: this.clientName,
-      inspectModel: () => undefined,
-      clientFactory: (clientOptions) => cancellableClient(this.clientFactory(clientOptions)),
-      ...(this.signal === undefined ? {} : { signal: this.signal }),
-      ...(this.copilotCliPath === undefined ? {} : { copilotCliPath: this.copilotCliPath }),
-      ...(options.skillDirectory === undefined ? {} : { skillDirectory: options.skillDirectory }),
-      ...(options.onActivity === undefined
-        ? {}
-        : { onActivity: (event) => options.onActivity?.(`${phase}: ${event.type}`) }),
-    })
+        cleanupTimeoutMs: 3_000,
+        maximumResponseBytes,
+        baseDirectory: this.baseDirectory,
+        workingDirectory: this.workingDirectory,
+        systemMessageMode: this.systemMessageMode,
+        clientName: this.clientName,
+        inspectModel: () => undefined,
+        clientFactory: (clientOptions) => cancellableClient(this.clientFactory(clientOptions)),
+        ...(this.signal === undefined ? {} : { signal: this.signal }),
+        ...(this.copilotCliPath === undefined ? {} : { copilotCliPath: this.copilotCliPath }),
+        ...(options.skillDirectory === undefined ? {} : { skillDirectory: options.skillDirectory }),
+        ...(options.onActivity === undefined
+          ? {}
+          : { onActivity: (event) => options.onActivity?.(`${phase}: ${event.type}`) }),
+      })
     options.onActivity?.(`${phase}: requesting`)
     const response = await execute(original).catch((error: unknown) => {
       if (

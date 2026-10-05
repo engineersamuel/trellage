@@ -21,6 +21,10 @@
       "alwaysOn": true,
       "allowExecutables": true
     },
+    "mattpocock-optimize": {
+      "repository": "https://github.com/mattpocock/skills.git",
+      "select": ["improve-codebase-architecture", "codebase-design"]
+    },
     "show-me": {
       "repository": "https://github.com/humanlayer/skills.git",
       "select": ["show-me"],
@@ -206,6 +210,7 @@
       "antislop-addons"
     ],
     "native-common": ["engineersamuel", "show-me", "i-have-adhd", "antislop-core", "antislop-addons"],
+    "guide-optimize-architecture": ["mattpocock-optimize"],
     "comparison-common": [
       "engineersamuel",
       "show-me",

@@ -657,6 +657,36 @@ const genCandidates = (): GuideGenerateResult => ({
 // ---------------------------------------------------------------------------
 
 describe("parseGuideHeadlessArgv", () => {
+  it("starts the change-target flow without making the original task into an optimization preset", () => {
+    const intent = "  Preserve retries.\nDo not change the public API.  "
+    expect(parseGuideHeadlessArgv(["--optimize", "--base", "main", "--intent", intent])).toMatchObject({
+      optimize: true, optimizeBase: "main", intent, json: false,
+    })
+    expect(parseGuideHeadlessArgv(["--optimize"])).toMatchObject({ optimize: true, intent: undefined })
+    expect(parseGuideHeadlessArgv(["--optimize"]).optimizeBase).toBeUndefined()
+    expect(() => parseGuideHeadlessArgv(["--base", "main"])).toThrow("--base requires --optimize")
+    expect(() => parseGuideHeadlessArgv(["--optimize", "--base"])).toThrow("Missing value")
+    expect(() => parseGuideHeadlessArgv(["--optimize", "--base", "main", "--base", "HEAD"])).toThrow("Duplicate flag")
+    expect(() => parseGuideHeadlessArgv(["--optimize", "--base", ""])).toThrow()
+    for (const flags of [
+      ["--json"], ["--next-steps"], ["--profile", "native:cdx/default"], ["--optimize"],
+      ["--ui-variant", "pager"],
+    ]) {
+      expect(() => parseGuideHeadlessArgv(["--optimize", ...flags])).toThrow(GuideArgsError)
+    }
+    expect(parseGuideHeadlessArgv(["--optimize", "--model", "model-a", "--effort", "high"])).toMatchObject({
+      optimize: true, model: "model-a", effort: "high",
+    })
+  })
+
+  it.each([
+    ["--optimize", "--engagement"],
+    ["--engagement", "--optimize"],
+    ["--engagement", "--base", "main"],
+  ])("rejects mixed change-review and engagement scopes: %j", (...flags) => {
+    expect(() => parseGuideHeadlessArgv(flags)).toThrow(GuideArgsError)
+  })
+
   it("routes next steps independently while retaining model overrides", () => {
     expect(parseGuideHeadlessArgv(["--next-steps", "--model", "model-a", "--effort", "high"])).toMatchObject({
       nextSteps: true,

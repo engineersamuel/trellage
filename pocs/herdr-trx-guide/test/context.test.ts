@@ -7,6 +7,7 @@ import {
   guideIntentMaximumLength,
   parseInvocationContext,
   parsePanelChoice,
+  parsePopupInvocation,
   validateAnswer,
 } from "../lib/context.ts"
 
@@ -107,6 +108,15 @@ test("parses private source-picker choices", () => {
     }).operation,
     "enqueue",
   )
+})
+
+test("keeps Optimize source metadata separate from any captured prompt or queue operation", () => {
+  assert.deepEqual(parsePanelChoice({ schemaVersion: 1, kind: "optimize" }), { kind: "optimize" })
+  assert.throws(() => parsePanelChoice({ schemaVersion: 1, kind: "optimize", operation: "enqueue" }), /not a capture/u)
+  const invocation = { schemaVersion: 1, kind: "optimize", source: context }
+  assert.deepEqual(parsePopupInvocation(invocation), { kind: "optimize", source: context })
+  assert.throws(() => parsePopupInvocation({ ...invocation, answer: "Do not use this as the task." }), /captures its own source/u)
+  assert.throws(() => parsePopupInvocation({ ...invocation, source: { ...context, cwd: "relative" } }), /absolute/u)
 })
 
 test("accepts done or matching seen-idle completion state", () => {

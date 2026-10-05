@@ -150,6 +150,40 @@ This includes Copilot task-completion summaries and does not depend on scroll
 position. When exact capture is unavailable, the picker can use the latest
 complete visible harness or system message. Session identity and transcript
 access errors stop capture instead of triggering that fallback.
+
+Choose **Optimize changes** to act on repository changes instead of rewriting
+text. This opens `trx guide --optimize` with the original pane/worktree
+context, not the clipboard, latest answer, or capture queue as a substitute
+task. Optimize does not look up a source agent or capture a conversation.
+The capture queue is neither read nor consumed by this action.
+
+Choose committed and uncommitted changes to use the current worktree and branch
+immediately, or explicitly choose uncommitted-only review. Guide detects and
+shows the comparison base from local Git metadata; `b` lets you change it.
+If no base can be detected, Guide asks for one instead of hiding committed work.
+The shared flow confirms files and lets you choose independent read-only
+reviewers. **First principles** and **Behavior preservation** start selected;
+Matt Pocock's **Improve codebase architecture** skill is optional. Confirm
+model use, then read the saved reports, one challenge round, and the
+coordinator's decisions. No finding starts approved. Select useful
+recommendations yourself before choosing a Native implementation agent.
+Guide adapts the architecture skill to its read-only report; it does not
+open HTML, spawn nested agents, or write domain files during review.
+All eligible changed files, including
+untracked files, start selected. Use Space to exclude unrelated files and `b`
+to change the base. No source session ID, matching call, or prompt
+generation is required; the invoking pane can be an ordinary terminal.
+Models can read related tracked source text as well as the selected changes.
+Press `h` on the scope or target screen to reopen a saved review without
+another model call. Failed, cancelled, and interrupted reviews cannot approve
+implementation.
+
+Stop other editors and agents before confirming. Guide rechecks Git state and
+known active writers, then launches one fresh agent in a pane or tab in the
+same worktree with only the approved findings as its startup prompt.
+Existing conversations are not continued or
+copied, no new worktree is created, and uncertain launches are not retried.
+
 Choose **Rewrite output** to open
 the contextual action popup without recapturing a later pane state. Select
 one of the styles below; each choice includes a short description. The popup runs the Copilot SDK,

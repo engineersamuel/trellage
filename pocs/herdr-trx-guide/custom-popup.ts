@@ -65,6 +65,12 @@ export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueu
   ...(engagementChoice === undefined ? [] : [engagementChoice]),
   ...(selectedText === undefined ? [] : [selectedTextChoice(selectedText)]),
   ...inspectedChoices,
+  {
+    kind: "optimize",
+    label: "Optimize changes",
+    detail: "Review selected implementation changes in the invoking pane's worktree.",
+    preview: "Confirm changed files, choose an optimization approach, then start a fresh agent in the same worktree. No prompt rewriting and no new worktree.",
+  },
   ...(captureQueue?.entries.length > 0
     ? [{
         kind: "queue",
@@ -88,6 +94,7 @@ export const sourceChoiceIdentity = (choice) => {
   if (choice.kind === "queue") return "queue"
   if (choice.kind === "rewrite") return "rewrite"
   if (choice.kind === "engagement") return "engagement"
+  if (choice.kind === "optimize") return "optimize"
   return `${choice.kind}:${choice.paneId ?? ""}:${choice.sessionId ?? ""}:${choice.stateChangeSeq ?? ""}`
 }
 
@@ -144,6 +151,17 @@ const popupFooter = ({ busy, status, screen, queueOnly, choices }) => {
   return "Enter open  g engagement  a queue  e edit queue  x clear  Esc close"
 }
 
+const privateGuideChoice = (choice, operation) => {
+  if (choice.kind === "optimize" && operation !== "open") throw new Error("Optimize is an action, not a capture to enqueue.")
+  if (choice.kind === "queue" || choice.kind === "optimize") return { schemaVersion: 1, kind: choice.kind }
+  const base = { schemaVersion: 1, kind: choice.kind, ...(operation === "enqueue" ? { operation } : {}) }
+  if (choice.kind === "selection") return { ...base, selectedText: choice.preview }
+  return {
+    ...base, paneId: choice.paneId, stateChangeSeq: choice.stateChangeSeq,
+    ...(choice.sessionId === undefined ? {} : { sessionId: choice.sessionId }),
+  }
+}
+
 export const invokeGuideChoice = async ({
   choice,
   operation = "open",
@@ -153,26 +171,7 @@ export const invokeGuideChoice = async ({
   choiceWriter = writeChoice,
   choiceRemover = removeChoice,
 }) => {
-  const choiceToken = await choiceWriter(
-    stateDir,
-    choice.kind === "queue"
-      ? { schemaVersion: 1, kind: choice.kind }
-      : choice.kind === "selection"
-      ? {
-          schemaVersion: 1,
-          kind: choice.kind,
-          ...(operation === "enqueue" ? { operation } : {}),
-          selectedText: choice.preview,
-        }
-      : {
-          schemaVersion: 1,
-          kind: choice.kind,
-          ...(operation === "enqueue" ? { operation } : {}),
-          paneId: choice.paneId,
-          stateChangeSeq: choice.stateChangeSeq,
-          ...(choice.sessionId === undefined ? {} : { sessionId: choice.sessionId }),
-        },
-  )
+  const choiceToken = await choiceWriter(stateDir, privateGuideChoice(choice, operation))
   const invocationContext = {
     workspace_id: context.workspaceId,
     ...(context.tabId === undefined ? {} : { tab_id: context.tabId }),
@@ -235,6 +234,21 @@ export const main = async ({
     out(output, `\x1b[${row};${column}H${text}`)
   }
 
+  const renderPreview = ({ selected, left, width, heading, rows }) => {
+    const start = heading + 1
+    const wrapped = wrapText(
+      selected?.preview ?? "No usable source is available. Highlight text or wait for an agent to finish.",
+      width,
+    )
+    writeAt(heading, left, "\x1b[1mPreview\x1b[0m")
+    wrapped.slice(0, rows).forEach((line, index) => {
+      writeAt(start + index, left, `\x1b[2m${clipped(line, width)}\x1b[0m`)
+    })
+    if (rows > 0 && wrapped.length > rows) {
+      writeAt(start + rows - 1, left + Math.max(0, width - 3), "\x1b[2m...\x1b[0m")
+    }
+  }
+
   const render = () => {
     if (finished) return
     const columns = Math.max(40, output.columns || 86)
@@ -257,11 +271,6 @@ export const main = async ({
     const optionStart = rows - optionRows - 1
     const previewRows = Math.max(0, optionStart - previewStart - 1)
     const selected = visibleSet[activeIndex]
-    const wrappedPreview = wrapText(
-      selected?.preview ?? "No usable source is available. Highlight text or wait for an agent to finish.",
-      width,
-    )
-    const preview = wrappedPreview.slice(0, previewRows)
     const firstOption = Math.max(
       0,
       Math.min(activeIndex - Math.floor(optionRows / 2), Math.max(0, visibleSet.length - optionRows)),
@@ -276,13 +285,7 @@ export const main = async ({
       else if (sourceErrors.has(name)) writeAt(4 + index, left, `\x1b[33m${clipped(sourceErrors.get(name), width)}\x1b[0m`)
     })
     if (status) writeAt(statusRow, left, `\x1b[33m${clipped(status, width)}\x1b[0m`)
-    writeAt(previewHeading, left, "\x1b[1mPreview\x1b[0m")
-    preview.forEach((line, index) => {
-      writeAt(previewStart + index, left, `\x1b[2m${clipped(line, width)}\x1b[0m`)
-    })
-    if (previewRows > 0 && wrappedPreview.length > previewRows) {
-      writeAt(previewStart + previewRows - 1, left + Math.max(0, width - 3), "\x1b[2m...\x1b[0m")
-    }
+    renderPreview({ selected, left, width, heading: previewHeading, rows: previewRows })
 
     visibleChoices.forEach((choice, visibleIndex) => {
       const index = firstOption + visibleIndex
@@ -415,7 +418,8 @@ export const main = async ({
   const enqueueSelectedChoice = async () => {
     if (busy) return
     const choice = choices[selectedIndex]
-    if (choice === undefined || choice.kind === "queue" || choice.kind === "rewrite" || choice.kind === "engagement") {
+    if (choice === undefined || choice.kind === "queue" || choice.kind === "rewrite" ||
+      choice.kind === "engagement" || choice.kind === "optimize") {
       status = "Choose highlighted text, an exact result, or a terminal snapshot to add"
       render()
       return

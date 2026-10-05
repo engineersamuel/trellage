@@ -1234,6 +1234,11 @@ const checkSharedCommand = async (catalog: SkillCatalog) => {
       bundles: ["guide-prompt-master"],
       cache: path.join(common, "guide-prompt-master-skills"),
     },
+    {
+      name: "guide-optimize-architecture",
+      bundles: ["guide-optimize-architecture"],
+      cache: path.join(common, "guide-optimize-architecture-skills"),
+    },
   ]
   process.once("SIGTERM", abort)
   process.once("SIGINT", abort)

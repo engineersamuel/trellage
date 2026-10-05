@@ -595,6 +595,7 @@ test("router checks all shared caches, including guide-only changes, without pro
   const router = path.join(routerRoot, "bin/trx")
   await copy(path.join(repository, "prototypes/trellage-router/bin/trx"), router)
   const guideCache = path.join(fixture.home, ".local/share/trellage/common/guide-prompt-master-skills")
+  const architectureCache = path.join(fixture.home, ".local/share/trellage/common/guide-optimize-architecture-skills")
   const codexCache = path.join(fixture.home, ".local/share/trellage/common/cdx-skills")
   const caches = [
     fixture.cache,
@@ -604,6 +605,7 @@ test("router checks all shared caches, including guide-only changes, without pro
     guideCache,
     officeCache(fixture, "office"),
     officeCache(fixture, "office-charts"),
+    architectureCache,
   ]
   for (const cache of caches) await seedSnapshot(cache, ["fixture"], 1)
   await write(
@@ -621,6 +623,7 @@ test("router checks all shared caches, including guide-only changes, without pro
         "guide-prompt-master": ["fixture"],
         "claude-office": ["fixture"],
         "claude-office-charts": ["fixture"],
+        "guide-optimize-architecture": ["fixture"],
       },
     }),
   )
@@ -655,12 +658,15 @@ writeFileSync(".agents/skills/fixture/SKILL.md", "# fixture 1\\n")
   succeeds(current)
   assert.deepEqual(JSON.parse(current.stdout), { kind: "current" })
   assert.deepEqual(await treeState(fixture.home, true), before)
-  await seedSnapshot(guideCache, ["fixture"], 0)
-  const guideBefore = await treeState(fixture.home, true)
-  const available = check()
-  succeeds(available)
-  assert.deepEqual(JSON.parse(available.stdout), { kind: "available" })
-  assert.deepEqual(await treeState(fixture.home, true), guideBefore)
+  for (const cache of [guideCache, architectureCache]) {
+    await seedSnapshot(cache, ["fixture"], 0)
+    const guideBefore = await treeState(fixture.home, true)
+    const available = check()
+    succeeds(available)
+    assert.deepEqual(JSON.parse(available.stdout), { kind: "available" })
+    assert.deepEqual(await treeState(fixture.home, true), guideBefore)
+    await seedSnapshot(cache, ["fixture"], 1)
+  }
   await rm(guideCache, { recursive: true })
   const missing = check()
   succeeds(missing)

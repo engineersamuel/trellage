@@ -119,9 +119,13 @@ export const createGuideTerminal = async (
         expect(selectedQueueJobs).toEqual([id])
       })
     },
-    async waitForInput(input: string): Promise<void> {
+    async pressAndWaitForInput(input: string): Promise<void> {
+      const previousCount = (await events()).filter((event) => event.kind === "input" && event.input === input).length
+      press(input)
       await vi.waitFor(async () => {
-        expect((await events()).some((event) => event.kind === "input" && event.input === input)).toBe(true)
+        expect((await events()).filter((event) => event.kind === "input" && event.input === input).length).toBeGreaterThan(
+          previousCount,
+        )
       }, waitOptions)
     },
     events,

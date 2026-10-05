@@ -102,6 +102,7 @@ const resolvePanelChoice = async (context, stateDir) => {
   if (context.selectedText === undefined) throw new Error("The source picker choice token is missing")
   const choice = parsePanelChoice(await consumeChoice(stateDir, context.selectedText))
   const { selectedText: _choiceToken, ...base } = context
+  if (choice.kind === "optimize") return { ...base, optimize: true }
   if (choice.kind === "queue") return { ...base, captureQueue: true }
   if (choice.kind === "selection") return { ...base, operation: choice.operation, selectedText: choice.selectedText }
   return {
@@ -123,6 +124,20 @@ const closeSourcePicker = async (invocationSource) => {
   }
 }
 
+const openGuidePopup = async (context, stateDir, invocation) => {
+  const invocationPath = await writeInvocation(stateDir, invocation)
+  try {
+    await closeSourcePicker(context.invocationSource)
+    await runHerdr([
+      "plugin", "pane", "open", "--plugin", pluginId, "--entrypoint", "guide",
+      "--env", `TRELLAGE_GUIDE_INVOCATION_PATH=${invocationPath}`, "--focus",
+    ])
+  } catch (error) {
+    await removeInvocation(invocationPath)
+    throw error
+  }
+}
+
 const main = async () => {
   const contextSource = process.env.HERDR_PLUGIN_CONTEXT_JSON
   if (contextSource === undefined) throw new Error("HERDR_PLUGIN_CONTEXT_JSON is not set")
@@ -130,9 +145,17 @@ const main = async () => {
   if (stateDir === undefined) throw new Error("HERDR_PLUGIN_STATE_DIR is not set")
 
   const context = await resolvePanelChoice(parseInvocationContext(contextSource), stateDir)
+  if (context.optimize) {
+    await openGuidePopup(context, stateDir, {
+      schemaVersion: 1,
+      kind: "optimize",
+      source: { workspaceId: context.workspaceId, paneId: context.paneId, cwd: context.cwd },
+    })
+    return
+  }
   if (context.captureQueue) {
     const queue = await readCaptureQueue(stateDir)
-    const invocationPath = await writeInvocation(stateDir, {
+    await openGuidePopup(context, stateDir, {
       schemaVersion: 1,
       answer: captureQueueIntent(queue),
       capture: { source: "capture-queue", confidence: "user-curated" },
@@ -142,18 +165,8 @@ const main = async () => {
         cwd: context.cwd,
       },
     })
-    try {
-      await closeSourcePicker(context.invocationSource)
-      await runHerdr([
-        "plugin", "pane", "open", "--plugin", pluginId, "--entrypoint", "guide",
-        "--env", `TRELLAGE_GUIDE_INVOCATION_PATH=${invocationPath}`, "--focus",
-      ])
-      await removeCaptureQueueEntries(stateDir, queue.entries.map((entry) => entry.id))
-      return
-    } catch (error) {
-      await removeInvocation(invocationPath)
-      throw error
-    }
+    await removeCaptureQueueEntries(stateDir, queue.entries.map((entry) => entry.id))
+    return
   }
   const { captured, cwd, paneId } = await captureInvocation(context, stateDir)
   if (context.operation === "enqueue") {
@@ -165,7 +178,7 @@ const main = async () => {
     await notify("Added to Trellage capture queue", `${queue.entries.length} item${queue.entries.length === 1 ? "" : "s"} queued`)
     return
   }
-  const invocationPath = await writeInvocation(stateDir, {
+  await openGuidePopup(context, stateDir, {
     schemaVersion: 1,
     answer: captured.answer,
     capture: captureProvenance(captured),
@@ -175,24 +188,6 @@ const main = async () => {
       cwd,
     },
   })
-  try {
-    await closeSourcePicker(context.invocationSource)
-    await runHerdr([
-      "plugin",
-      "pane",
-      "open",
-      "--plugin",
-      pluginId,
-      "--entrypoint",
-      "guide",
-      "--env",
-      `TRELLAGE_GUIDE_INVOCATION_PATH=${invocationPath}`,
-      "--focus",
-    ])
-  } catch (error) {
-    await removeInvocation(invocationPath)
-    throw error
-  }
 }
 
 try {

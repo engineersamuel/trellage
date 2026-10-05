@@ -63,6 +63,7 @@ Usage:
   trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx guide --next-steps [--model MODEL] [--effort LEVEL]
   trx guide --engagement [--intent QUESTION] [--model MODEL] [--effort LEVEL]
+  trx guide --optimize [--base REF] [--intent INTENT] [--model MODEL] [--effort LEVEL]
   trx guide --preview
   trx guide --forks [VARIANT]
   trx inventory LAUNCHER PROFILE --json
@@ -132,6 +133,7 @@ Usage:
   trx guide --intent INTENT [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx guide --next-steps [--model MODEL] [--effort LEVEL]
   trx guide --engagement [--intent QUESTION] [--model MODEL] [--effort LEVEL]
+  trx guide --optimize [--base REF] [--intent INTENT] [--model MODEL] [--effort LEVEL]
   trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
   trx guide --preview
   trx guide --forks [tabs|inline]
@@ -144,6 +146,11 @@ INTENT can contain line breaks and accepts up to 60,000 characters.
 customer-engagement action. Its question is limited to 8,000 characters.
 It opens a local source view first; model use, saving, and interactive
 current-terminal launch require separate confirmation. No folder migration.
+--optimize coordinates read-only reviews of committed and current changes.
+Approve findings before one fresh Native agent can edit this worktree.
+The current worktree and branch are used automatically. Use --base REF to
+override the detected comparison base. Uncommitted-only review is an explicit
+alternative. No conversation capture or model calls during setup.
 Press p during matching or recommendations to view the prompt as Markdown.
 Press e in the prompt viewer to edit; Enter rematches a changed prompt.
 Interactive prompt viewers: pager, split, focus, bookends, dashboard.
@@ -557,12 +564,13 @@ build_profile_list() {
   '
 }
 
-# Builds the combined native+Sandbox profile-guide catalog shared by `guide`
+# Builds the profile-guide catalog shared by `guide`
 # `admin`, and `upgrade all`, writing it to "$1/combined.json". Requires guide_root,
-# runtime, picker_path, cpx/cdx/cldx/grx/jcx/omp/picx/prx (validated launcher
+# runtime, source_workspace, picker_path, cpx/cdx/cldx/grx/jcx/omp/picx/prx (validated launcher
 # paths), and the per-launcher *_catalog variables to already be in scope.
 build_combined_guide_catalog() {
   local out_dir="$1"
+  local native_only="${2:-false}"
   local profile_list
   profile_list="$(build_profile_list \
     "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
@@ -570,7 +578,10 @@ build_combined_guide_catalog() {
     || die 'could not build native profile list'
 
   local sandbox_cli
-  if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
+  if [[ "$native_only" == true ]]; then
+    # The shared schema still needs a command path, but Optimize never invokes it.
+    sandbox_cli="$source_workspace/prototypes/trellage/trellage"
+  elif [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
     sandbox_cli="$runtime/../trellage/trellage"
   else
     sandbox_cli="$(command -v trellage || true)"
@@ -616,8 +627,12 @@ build_combined_guide_catalog() {
       )
     ' "$out_dir/native-public.json" >"$out_dir/native.json" \
     || die 'could not add validated native launcher paths to the guide catalog'
-  "$sandbox_cli" list --json-full >"$out_dir/sandbox.json" \
-    || die 'could not load the Sandbox profile guide catalog'
+  if [[ "$native_only" == true ]]; then
+    printf '{"schemaVersion":2,"profiles":[]}\n' >"$out_dir/sandbox.json"
+  else
+    "$sandbox_cli" list --json-full >"$out_dir/sandbox.json" \
+      || die 'could not load the Sandbox profile guide catalog'
+  fi
   jq -n \
     --arg sandboxCommandPath "$sandbox_cli" \
     --slurpfile native "$out_dir/native.json" \
@@ -667,6 +682,7 @@ case "${1-}" in
     guide_args=("$@")
     next_steps_seen=false
     engagement_seen=false
+    optimize_seen=false
     guide_value_expected=false
     for guide_arg in "$@"; do
       if [[ "$guide_value_expected" == true ]]; then
@@ -674,7 +690,7 @@ case "${1-}" in
         continue
       fi
       case "$guide_arg" in
-        --intent|--model|--effort|--ui-variant|--profile|--*-model|--*-effort)
+        --intent|--base|--model|--effort|--ui-variant|--profile|--*-model|--*-effort)
           guide_value_expected=true
           ;;
         --next-steps)
@@ -687,8 +703,32 @@ case "${1-}" in
           engagement_seen=true
           ;;
         --engagement=*) die '--engagement does not accept a value' ;;
+        --optimize)
+          [[ "$optimize_seen" == false ]] || die '--optimize may be specified only once'
+          optimize_seen=true
+          ;;
+        --optimize=*) die '--optimize does not accept a value' ;;
       esac
     done
+    if [[ "$optimize_seen" == true ]]; then
+      [[ "$next_steps_seen" == false ]] || die '--optimize and --next-steps cannot be combined'
+      [[ "$engagement_seen" == false ]] || die '--optimize and --engagement cannot be combined'
+      guide_value_expected=false
+      for guide_arg in "$@"; do
+        if [[ "$guide_value_expected" == true ]]; then
+          guide_value_expected=false
+          continue
+        fi
+        case "$guide_arg" in
+          --json|--json=*|--preview|--preview=*|--forks|--forks=*)
+            die '--optimize cannot be combined with JSON or preview modes'
+            ;;
+          --intent|--base|--model|--effort|--ui-variant|--profile|--*-model|--*-effort)
+            guide_value_expected=true
+            ;;
+        esac
+      done
+    fi
     if [[ "$next_steps_seen" == true ]]; then
       guide_value_expected=false
       for guide_arg in "$@"; do
@@ -697,7 +737,7 @@ case "${1-}" in
           continue
         fi
         case "$guide_arg" in
-          --engagement|--json|--json=*|--intent|--intent=*|--stdin|--preview|--preview=*|--forks|--forks=*)
+          --engagement|--json|--json=*|--intent|--intent=*|--stdin|--preview|--preview=*|--forks|--forks=*|--optimize)
             die '--next-steps cannot be combined with ordinary intent, JSON, stdin, or preview modes'
             ;;
           --model|--effort|--ui-variant|--profile|--*-model|--*-effort)
@@ -985,6 +1025,11 @@ if [[ "$mode" == skills ]]; then
       --bundle guide-prompt-master \
       --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
       || die 'failed to update guide Prompt Master skill'
+    "${trellage_bun[@]}" "$floating_skills_manager" update \
+      --catalog "$floating_skills_catalog" \
+      --bundle guide-optimize-architecture \
+      --cache "$canonical_home/.local/share/trellage/common/guide-optimize-architecture-skills" \
+      || die 'failed to update guide architecture skills'
     exit 0
   fi
   exec "${trellage_bun[@]}" "$floating_skills_manager" "$skills_action" \
@@ -1202,7 +1247,7 @@ if [[ "$mode" == guide ]]; then
   }
   trap cleanup_guide_catalog_tmp EXIT HUP INT TERM
 
-  if [[ "$engagement_seen" == false ]]; then
+  if [[ "$engagement_seen" == false && "$optimize_seen" == false ]]; then
     [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
       || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
     [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
@@ -1218,7 +1263,7 @@ if [[ "$mode" == guide ]]; then
       || die 'guide Prompt Master skill is missing or unsafe'
   fi
 
-  build_combined_guide_catalog "$guide_catalog_tmp"
+  build_combined_guide_catalog "$guide_catalog_tmp" "$optimize_seen"
 
   guide_command=("${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "$guide_catalog_tmp/skills/prompt-master")
   if ((${#guide_args[@]} > 0)); then
@@ -1227,6 +1272,7 @@ if [[ "$mode" == guide ]]; then
   guide_status=0
   TRELLAGE_GUIDE_SKILLS_MANAGER="$floating_skills_manager" \
     TRELLAGE_GUIDE_SKILLS_CATALOG="$floating_skills_catalog" \
+    TRELLAGE_GUIDE_OPTIMIZE_SKILLS_CACHE="$canonical_home/.local/share/trellage/common/guide-optimize-architecture-skills" \
     TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE="$native_common_root/skills" \
     "${guide_command[@]}" 3<"$guide_catalog_tmp/combined.json" || guide_status=$?
   cleanup_guide_catalog_tmp

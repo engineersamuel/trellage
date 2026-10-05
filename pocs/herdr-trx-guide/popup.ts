@@ -18,9 +18,9 @@ import { findTrellageRoot } from "./lib/trellage-root.ts"
 
 export { findTrellageRoot }
 
-const launchGuide = (root, env) =>
+const launchGuide = (root, env, optimize) =>
   new Promise((resolve, reject) => {
-    const child = spawn("mise", ["run", "--raw", "trx", "--", "guide"], {
+    const child = spawn("mise", ["run", "--raw", "trx", "--", "guide", ...(optimize ? ["--optimize"] : [])], {
       cwd: root,
       env,
       shell: false,
@@ -65,24 +65,29 @@ const registerIntentSignalCleanup = (stateDir, intentPath) => {
   return dispose
 }
 
+const popupLaunchOrigin = (invocation) => {
+  if (invocation.kind === "optimize") return undefined
+  if (invocation.capture?.agent !== undefined && invocation.capture.agent !== "claude") return undefined
+  return readFirstmateLaunchOrigin(invocation.source, { expectedSessionId: invocation.capture?.sessionId })
+}
+
 export const runGuide = async (root, invocation) => {
-  const launchOrigin = invocation.capture.agent !== undefined && invocation.capture.agent !== "claude"
-    ? undefined
-    : await readFirstmateLaunchOrigin(invocation.source, { expectedSessionId: invocation.capture.sessionId })
+  const optimize = invocation.kind === "optimize"
+  const launchOrigin = await popupLaunchOrigin(invocation)
   const stateDir = resolvePluginStateDirectory()
-  const intentPath = await writeGuideIntent(stateDir, invocation.answer)
-  const disposeSignalCleanup = registerIntentSignalCleanup(stateDir, intentPath)
+  const intentPath = optimize ? undefined : await writeGuideIntent(stateDir, invocation.answer)
+  const disposeSignalCleanup = intentPath === undefined ? () => undefined : registerIntentSignalCleanup(stateDir, intentPath)
   const env = {
     ...process.env,
     HERDR_PLUGIN_STATE_DIR: stateDir,
-    TRELLAGE_GUIDE_HERDR_INTENT_FILE: intentPath,
+    ...(intentPath === undefined ? {} : { TRELLAGE_GUIDE_HERDR_INTENT_FILE: intentPath }),
     TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify({
       schemaVersion: 1,
       surface: "popup",
       workspaceId: invocation.source.workspaceId,
       paneId: invocation.source.paneId,
       cwd: invocation.source.cwd,
-      capture: invocation.capture,
+      ...(invocation.capture === undefined ? {} : { capture: invocation.capture }),
       ...(launchOrigin === undefined ? {} : { launchOrigin }),
     }),
   }
@@ -91,11 +96,12 @@ export const runGuide = async (root, invocation) => {
   }
   delete env.HERDR_PANE_ID
   delete env.FMX_LAUNCH_PROVENANCE_JSON
+  if (optimize) delete env.TRELLAGE_GUIDE_HERDR_INTENT_FILE
   try {
-    return await launchGuide(root, env)
+    return await launchGuide(root, env, optimize)
   } finally {
     disposeSignalCleanup()
-    await removeGuideIntent(stateDir, intentPath)
+    if (intentPath !== undefined) await removeGuideIntent(stateDir, intentPath)
   }
 }
 
