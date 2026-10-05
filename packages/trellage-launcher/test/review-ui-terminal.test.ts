@@ -6,7 +6,7 @@ import { Terminal } from "@xterm/headless"
 import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { describe, expect, it, vi } from "vitest"
 import { appendReviewOutput } from "../src/review-ui.tsx"
-import { spawnSourcePty } from "./helpers/source-pty.ts"
+import { spawnSourcePty, type SourcePtyExit } from "./helpers/source-pty.ts"
 
 const entry = fileURLToPath(new URL("./fixtures/review-ui-fixture.tsx", import.meta.url))
 
@@ -31,25 +31,31 @@ const createTerminal = async (
       REVIEW_FIXTURE_PARTIAL: partial ? "1" : "0",
       REVIEW_FIXTURE_DELAY_MS: delayMs?.toString() ?? "",
       REVIEW_FIXTURE_DIFF: diff ? "1" : "0",
+      // The PTY is interactive even when its test runner runs in CI.
+      CI: "false",
       FORCE_COLOR: "1",
       TERM: "xterm-256color",
     },
   })
   let screen = ""
-  let exited = false
+  let output = ""
+  let exit: SourcePtyExit | undefined
   terminal.onData((data) => child.write(data))
   child.onData((data) => {
+    output = (output + data).slice(-12_000)
     terminal.write(data, () => {
       screen = Array.from({ length: terminal.rows }, (_, row) =>
         terminal.buffer.active.getLine(terminal.buffer.active.viewportY + row)?.translateToString(true) ?? "",
       ).join("\n")
     })
   })
-  child.onExit(() => { exited = true })
+  child.onExit((status) => { exit = status })
   const waitFor = async (...texts: string[]): Promise<void> => {
     await vi.waitFor(() => {
-      expect(exited).toBe(false)
-      for (const text of texts) expect(screen).toContain(text)
+      expect(exit, `Review PTY exited before rendering: ${JSON.stringify(exit)}`).toBeUndefined()
+      for (const text of texts) {
+        expect(screen, `Review PTY output: ${JSON.stringify(output)}; child PID: ${child.pid}`).toContain(text)
+      }
     }, { timeout: 5_000, interval: 20 })
   }
   const events = async (): Promise<Array<{ kind: string; selected: string[] }>> => {
@@ -61,9 +67,15 @@ const createTerminal = async (
       throw error
     }
   }
-  await waitFor("Ponytail Review", "Fleet Review", "Matt Pocock Code Review",
-    "1 file · captured patch: 173,384 bytes (169.3 KiB)")
-  if (!clean) await waitFor("Included staged, unstaged, and untracked files")
+  try {
+    await waitFor("Ponytail Review", "Fleet Review", "Matt Pocock Code Review",
+      "1 file · captured patch: 173,384 bytes (169.3 KiB)")
+    if (!clean) await waitFor("Included staged, unstaged, and untracked files")
+  } catch (error) {
+    if (exit === undefined) child.kill("SIGKILL")
+    await rm(root, { recursive: true, force: true })
+    throw error
+  }
   return {
     press: (keys: string): void => child.write(keys),
     screen: (): string => screen,
@@ -78,7 +90,7 @@ const createTerminal = async (
     waitFor,
     events,
     close: async (): Promise<void> => {
-      if (!exited) child.kill()
+      if (exit === undefined) child.kill()
       await rm(root, { recursive: true })
     },
   }

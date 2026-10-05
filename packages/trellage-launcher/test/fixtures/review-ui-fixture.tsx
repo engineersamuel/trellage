@@ -4,6 +4,7 @@ import React from "react"
 import { render } from "ink"
 import { bunExecutable } from "@trellage/runtime"
 import { runInteractiveCommand } from "../../src/guide-launch.ts"
+import { createInitialGuideRenderHandler } from "../../src/guide-terminal.ts"
 import { reviewChoices } from "../../src/review-catalog.ts"
 import { ReviewApp, type ReviewContinuation, type ReviewUiProps } from "../../src/review-ui.tsx"
 
@@ -70,7 +71,12 @@ const instance = render(
     })}
     run={run}
   />,
-  { stdin: input, stdout: output, alternateScreen: true, exitOnCtrlC: false, kittyKeyboard: { mode: "disabled" } },
+  {
+    stdin: input, stdout: output, alternateScreen: true, exitOnCtrlC: false,
+    kittyKeyboard: { mode: "disabled" },
+    onRender: createInitialGuideRenderHandler((text) => output.write(text), process.env.INK_SCREEN_READER !== "true"),
+    maxFps: 30,
+  },
 )
 const result = await instance.waitUntilExit() as ReviewContinuation | undefined
 if (result !== undefined) await emit(result)
