@@ -1,6 +1,6 @@
 schema = 1
 name = "claude-research"
-description = "Claude Code (Opus via proxy) research for source-backed factual comparisons and recent cross-community signal, with a persistent research vault. Choose it for bounded evidence before implementation rather than content drafting or autonomous coding."
+description = "Claude Code (Sonnet via proxy) research for source-backed factual comparisons and recent cross-community signal, with a persistent research vault. Choose it for bounded evidence before implementation rather than content drafting or autonomous coding."
 skill_bundles = ["sandbox-common", "claude-research"]
 
 [harness]
@@ -9,8 +9,11 @@ version = "latest"
 
 [harness.claude]
 default_auth = "proxy"
-model = "claude-opus-5"
+model = "claude-sonnet-5.5"
+effort_level = "medium"
 gateway = "http://copilot-proxy-rs:8080"
+opus_model = "claude-opus-5.5"
+sonnet_model = "claude-sonnet-5.5"
 
 [runtime]
 memory_size = "4g"

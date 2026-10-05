@@ -44,9 +44,17 @@ resolved_runtime_root="$(CDPATH= cd -P -- "$runtime_root" && pwd)" \
 [[ "$resolved_runtime_root" == "$runtime_root" ]] \
   || die "redirected runtime root: $runtime_root"
 
-readonly model_id='claude-opus-5'
-readonly sonnet_model_id='claude-sonnet-5'
+# Claude Code has no separate plan-mode model setting. The `opusplan`
+# selector is the only supported way to pair one model with plan mode and
+# another with normal turns: it resolves plan turns through the Opus family
+# and every other turn through the Sonnet family. Max effort is session-only;
+# explicit plan-mode launches set it through --effort.
+readonly model_id='claude-sonnet-5.5'
+readonly plan_model_id='claude-opus-5.5'
 readonly haiku_model_id='claude-haiku-4.5'
+readonly model_selector='opusplan'
+readonly effort_level='medium'
+readonly plan_effort_level='max'
 readonly proxy_origin='http://127.0.0.1:8080'
 readonly proxy_token='trellage-local-proxy'
 
@@ -302,6 +310,15 @@ harness_update_command() {
 
 ensure_floating_skills() {
   local home="$1"
+  local bundle_args=(--bundle native-common)
+  case "${TRELLAGE_CLAUDE_PROFILE_SKILLS:-native-common}" in
+    native-common) ;;
+    office|office-charts)
+      bundle_args+=(--bundle "claude-${TRELLAGE_CLAUDE_PROFILE_SKILLS}"
+        --cache "${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cldx-${TRELLAGE_CLAUDE_PROFILE_SKILLS}-skills")
+      ;;
+    *) die 'invalid Native Claude skill bundle' ;;
+  esac
 
   [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
     || die "invalid floating-skills manager: $floating_skills_manager"
@@ -310,7 +327,7 @@ ensure_floating_skills() {
   require_command node
   "$bun_runner" "$floating_skills_manager" ensure \
     --catalog "$floating_skills_catalog" \
-    --bundle native-common \
+    "${bundle_args[@]}" \
     --target "$home/skills" \
     || die 'failed to install floating skills'
 }
@@ -318,6 +335,13 @@ ensure_floating_skills() {
 sync_cached_skills() {
   local mode="$1" home="$2" helper="$runtime_root/native-skills.ts"
   local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
+  case "${TRELLAGE_CLAUDE_PROFILE_SKILLS:-native-common}" in
+    native-common) ;;
+    office|office-charts)
+      cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cldx-${TRELLAGE_CLAUDE_PROFILE_SKILLS}-skills"
+      ;;
+    *) die 'invalid Native Claude skill bundle' ;;
+  esac
   local skill_args=("$mode")
   [[ "$mode" != --fresh ]] || skill_args+=("$floating_skills_catalog")
 
@@ -415,12 +439,22 @@ ensure_settings() {
   staged="$(mktemp "$home/.settings.json.XXXXXX")" \
     || die 'could not stage Claude settings'
   if [[ -e "$settings" ]]; then
-    if ! jq -s --arg home "$home" '
+    if ! jq -s --arg home "$home" \
+      --arg model "$model_id" --arg effort "$effort_level" \
+      --arg planModel "$plan_model_id" \
+      --arg selector "$model_selector" '
       if length != 1 or (.[0] | type) != "object"
       then error("settings must contain exactly one object")
       else .[0]
       end
       | .outputStyle = (.outputStyle // "Rundown")
+      | .model = $selector
+      | .effortLevel = $effort
+      | .modelOverrides = ((.modelOverrides // {}) + {
+          "claude-sonnet-5-5": $model,
+          "claude-opus-5-5": $planModel,
+          "claude-haiku-4-5": "claude-haiku-4.5"
+        })
       | if (.statusLine == null) then
           .statusLine = {
             type: "command",
@@ -429,17 +463,36 @@ ensure_settings() {
           }
         else .
         end
+      | .modelSettings = ((.modelSettings // {})
+          | .[$model] = ((.[$model] // {}) | .effortLevel = $effort)
+          | .[$planModel] = ((.[$planModel] // {}) | del(.effortLevel))
+          | .["claude-sonnet-5-5"] = ((.["claude-sonnet-5-5"] // {}) | .effortLevel = $effort)
+          | .["claude-opus-5-5"] = ((.["claude-opus-5-5"] // {}) | del(.effortLevel)))
     ' "$settings" >"$staged"; then
       rm -f -- "$staged"
       die "invalid Claude settings: $settings"
     fi
   else
-    jq -n --arg home "$home" '{
+    jq -n --arg home "$home" \
+      --arg model "$model_id" --arg effort "$effort_level" \
+      --arg planModel "$plan_model_id" \
+      --arg selector "$model_selector" '{
       outputStyle: "Rundown",
+      model: $selector,
+      effortLevel: $effort,
+      modelOverrides: {
+        "claude-sonnet-5-5": $model,
+        "claude-opus-5-5": $planModel,
+        "claude-haiku-4-5": "claude-haiku-4.5"
+      },
       statusLine: {
         type: "command",
         command: ("bash " + $home + "/statusline.sh"),
         refreshInterval: 15
+      },
+      modelSettings: {
+        ($model): {effortLevel: $effort},
+        "claude-sonnet-5-5": {effortLevel: $effort}
       }
     }' >"$staged" || die 'could not create Claude settings'
   fi
@@ -701,6 +754,10 @@ check_proxy() {
   jq -e --arg model "$model_id" '
     (.data // .models // []) | any((.id // .slug) == $model)
   ' <<<"$models" >/dev/null || die "copilot-proxy-rs model is missing: $model_id"
+  jq -e --arg model "$plan_model_id" '
+    (.data // .models // []) | any((.id // .slug) == $model)
+  ' <<<"$models" >/dev/null \
+    || die "copilot-proxy-rs model is missing: $plan_model_id"
 }
 
 validate_common_arguments() {
@@ -958,7 +1015,9 @@ launch_command() {
 
 cmd_launch() {
   local home="$1" marker="$2" marker_value="$3" bridge="$4" profile="$5"
-  local executable version arg has_model=false
+  local executable version arg has_model=false has_permission_mode=false
+  local previous='' permission_mode='' has_effort=false
+  local -a launch_args
   shift 5
 
   scrub_provider_environment
@@ -968,38 +1027,59 @@ cmd_launch() {
   [[ "$bridge" != enabled ]] || require_command python3
   doctor_bridge_state "$home" "$profile" "$bridge"
   ensure_trust "$home"
+  ensure_settings "$home"
   check_proxy
+  unset TRELLAGE_CLAUDE_PROFILE_SKILLS
 
   for arg in "$@"; do
+    if [[ "$previous" == --permission-mode ]]; then
+      permission_mode="$arg"
+    elif [[ "$arg" == --permission-mode=* ]]; then
+      permission_mode="${arg#*=}"
+    fi
     if [[ "$arg" == --model || "$arg" == --model=* ]]; then
       has_model=true
-      break
     fi
+    if [[ "$arg" == --permission-mode || "$arg" == --permission-mode=* ]]; then
+      has_permission_mode=true
+    fi
+    if [[ "$arg" == --effort || "$arg" == --effort=* ]]; then
+      has_effort=true
+    fi
+    previous="$arg"
   done
+
+  if [[ "$has_permission_mode" == true ]]; then
+    launch_args=(--allow-dangerously-skip-permissions)
+  else
+    launch_args=(--dangerously-skip-permissions --permission-mode bypassPermissions)
+  fi
+  # Claude accepts max only as a session effort, not in persisted modelSettings.
+  if [[ "$permission_mode" == plan && "$has_effort" == false ]]; then
+    launch_args+=(--effort "$plan_effort_level")
+  fi
 
   if [[ "$has_model" == true ]]; then
     exec env \
       CLAUDE_CONFIG_DIR="$home" \
       ANTHROPIC_AUTH_TOKEN="$proxy_token" \
       ANTHROPIC_BASE_URL="$proxy_origin" \
-      ANTHROPIC_DEFAULT_OPUS_MODEL="$model_id" \
-      ANTHROPIC_DEFAULT_SONNET_MODEL="$sonnet_model_id" \
+      ANTHROPIC_DEFAULT_OPUS_MODEL="$plan_model_id" \
+      ANTHROPIC_DEFAULT_SONNET_MODEL="$model_id" \
       ANTHROPIC_DEFAULT_HAIKU_MODEL="$haiku_model_id" \
-      "$executable" --dangerously-skip-permissions \
-      --permission-mode bypassPermissions \
+      "$executable" "${launch_args[@]}" \
       --disallowedTools AskUserQuestion "$@"
   fi
   exec env \
     CLAUDE_CONFIG_DIR="$home" \
     ANTHROPIC_AUTH_TOKEN="$proxy_token" \
     ANTHROPIC_BASE_URL="$proxy_origin" \
-    ANTHROPIC_DEFAULT_OPUS_MODEL="$model_id" \
-    ANTHROPIC_DEFAULT_SONNET_MODEL="$sonnet_model_id" \
+    ANTHROPIC_DEFAULT_OPUS_MODEL="$plan_model_id" \
+    ANTHROPIC_DEFAULT_SONNET_MODEL="$model_id" \
     ANTHROPIC_DEFAULT_HAIKU_MODEL="$haiku_model_id" \
-    "$executable" --dangerously-skip-permissions \
-    --permission-mode bypassPermissions \
+    "$executable" "${launch_args[@]}" \
     --disallowedTools AskUserQuestion \
-    --model "$model_id" "$@"
+    --model "$model_selector" "$@"
 }
 
 require_command jq
@@ -1030,6 +1110,25 @@ case "${1-}" in
     shift
     harness_update_command "$@"
     ;;
+  plugin)
+    shift
+    [[ "$#" -ge 8 && "$1" == --home && "$3" == --marker && "$5" == --marker-value && "$7" == -- ]] \
+      || die 'plugin requires --home HOME --marker MARKER --marker-value VALUE -- ARGS'
+    plugin_home="$2"
+    plugin_marker="$4"
+    plugin_marker_value="$6"
+    shift 7
+    validate_common_arguments "$plugin_home" "$plugin_marker" "$plugin_marker_value" disabled
+    case "${1-}:${2-}" in
+      list:*|install:*|enable:*|marketplace:add|marketplace:list) ;;
+      *) die 'unsupported plugin management command' ;;
+    esac
+    scrub_provider_environment
+    require_owned_profile "$plugin_home" "$plugin_marker" "$plugin_marker_value"
+    executable="$(claude_executable)"
+    unset TRELLAGE_CLAUDE_PROFILE_SKILLS
+    exec env CLAUDE_CONFIG_DIR="$plugin_home" "$executable" plugin "$@"
+    ;;
   skills-check)
     shift
     skills_update_command "$@" --mode --fresh
@@ -1056,8 +1155,10 @@ case "${1-}" in
   model-map)
     shift
     [[ "$#" -eq 1 && "$1" == --json ]] || die 'model-map requires --json'
-    printf '{"default":"%s","opus":"%s","sonnet":"%s","haiku":"%s"}\n' \
-      "$model_id" "$model_id" "$sonnet_model_id" "$haiku_model_id"
+    printf \
+      '{"default":"%s","plan":"%s","opus":"%s","sonnet":"%s","haiku":"%s"}\n' \
+      "$model_id" "$plan_model_id" "$plan_model_id" "$model_id" \
+      "$haiku_model_id"
     ;;
   model-catalog)
     shift

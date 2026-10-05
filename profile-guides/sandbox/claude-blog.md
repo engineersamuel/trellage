@@ -77,4 +77,4 @@ workflows:
 
 - `blog-chart` is an internal-only sub-skill, not a user-facing command — do not invoke it directly.
 - Hero images fall back through Banana MCP, direct Gemini API, premium stock APIs, then Openverse; if none are configured the delivery contract may block on Gate 2/5 until a hero image source resolves.
-- This profile is Opus-routed via `copilot-proxy-rs` and requires the same external `copilot-proxy-rs_default` Docker network as other proxy-backed Claude profiles.
+- This profile is Sonnet 5.5-routed via `copilot-proxy-rs` and requires the same external `copilot-proxy-rs_default` Docker network as other proxy-backed Claude profiles.

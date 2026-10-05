@@ -94,6 +94,52 @@ const validateConstraints = (content: string, requiredNames: ReadonlyArray<strin
   return packages !== undefined && requiredNames.every((name) => packages.has(name))
 }
 
+const constraintHashAlgorithm = (line: string): string | undefined => {
+  const match = /^\s+--hash=([A-Za-z0-9_]+):[0-9a-f]+$/.exec(line)
+  return match?.[1]
+}
+
+const withoutContinuation = (line: string): string => line.replace(/\s*\\$/, "")
+
+const renderConstraintBlock = (header: string, hashes: ReadonlyArray<string>): ReadonlyArray<string> =>
+  hashes.length === 0
+    ? [header]
+    : [`${header} \\`, ...hashes.map((hash, index) => (index === hashes.length - 1 ? hash : `${hash} \\`))]
+
+// Alternate Python indexes, including the Microsoft CFS package feed proxy,
+// advertise md5 digests beside sha256. `uv` emits every advertised digest and
+// pip accepts an artifact matching any listed hash, so the weak digests are
+// dropped rather than trusted. A package left without a sha256 digest then
+// fails validation instead of being installed unverified.
+const withStrongHashesOnly = (content: string): string => {
+  const output: Array<string> = []
+  let header: string | undefined
+  let hashes: Array<string> = []
+  const flush = () => {
+    if (header === undefined) return
+    output.push(...renderConstraintBlock(header, hashes))
+    header = undefined
+    hashes = []
+  }
+  for (const line of content.split("\n")) {
+    const bare = withoutContinuation(line)
+    if (line.length !== 0 && !line.startsWith("#") && constraintHeaderName(bare) !== undefined) {
+      flush()
+      header = bare
+      continue
+    }
+    const algorithm = header === undefined ? undefined : constraintHashAlgorithm(bare)
+    if (algorithm !== undefined) {
+      if (algorithm === "sha256") hashes.push(bare)
+      continue
+    }
+    flush()
+    output.push(line)
+  }
+  flush()
+  return output.join("\n")
+}
+
 const cleanIndexEnvironment = (index: string): NodeJS.ProcessEnv => {
   const environment = { ...process.env }
   for (const name of [
@@ -193,7 +239,7 @@ export const compilePythonConstraints = (
               env: cleanIndexEnvironment(pypiIndex),
             },
           )
-          const content = await readFile(output, "utf8")
+          const content = withStrongHashesOnly(await readFile(output, "utf8"))
           if (!validateConstraints(content, requiredNames)) {
             throw new Error("generated Python constraints are invalid")
           }

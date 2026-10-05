@@ -48,7 +48,8 @@ require_owned_runtime_contents() {
     . "$repo_root/scripts/bun-runtime.sh"
     trellage_bun_runtime "$repo_root"
     "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
-      validate-owned "$installed_source" || refuse "unsafe owned source workspace: $installed_source"
+      validate-replaceable-owned "$installed_source" \
+      || refuse "unsafe owned source workspace: $installed_source"
   fi
 
   while IFS= read -r path; do

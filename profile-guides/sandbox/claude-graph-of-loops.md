@@ -256,7 +256,7 @@ Git base; ask Graph to validate and repair the existing implementation instead.
   catalog, to avoid burning the context window and to keep role names unique.
 - Runtime allocates a 2g tmpfs; very large intermediate artifacts across
   multiple worktrees can still exhaust it.
-- This is an Opus-routed proxy profile and needs the external
+- This is a Sonnet 5.5-routed proxy profile and needs the external
   `copilot-proxy-rs_default` Docker network.
 - A late-discovered gate, review, or proof failure reopens the affected node
   Bead and the root Bead — do not treat an earlier `status` pass as final

@@ -12,6 +12,10 @@ common_launcher="$root/../trellage-codex-common/native-codex"
 
 fail() {
   printf 'contract failed: %s\n' "$1" >&2
+  if [ -n "${asserted_output_path:-}" ] && [ -f "${asserted_output_path:-}" ]; then
+    printf 'last captured command output (%s):\n' "$asserted_output_path" >&2
+    sed -n '1,40p' "$asserted_output_path" >&2
+  fi
   exit 1
 }
 
@@ -906,7 +910,8 @@ file_inode() {
 assert_command_fails() {
   local label="$1"
   shift
-  if "$@" >"$fixture_root/$label.out" 2>&1; then
+  asserted_output_path="$fixture_root/$label.out"
+  if "$@" >"$asserted_output_path" 2>&1; then
     fail "$label unexpectedly succeeded"
   else
     asserted_failure_status=$?

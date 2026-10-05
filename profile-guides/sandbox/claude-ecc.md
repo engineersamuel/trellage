@@ -105,4 +105,4 @@ workflows:
 - Hooks are enabled with `hook_profile=minimal`. Automatic tmux startup, formatting, type-checking, and strict reminders are intentionally not active.
 - ECC repository `rules/` and `contexts/` are not imported by this profile. Its root `.mcp.json` is explicitly excluded, so the unpinned sample Chrome DevTools MCP is not available at runtime.
 - The upstream source is large and floats on `main`; a Trellage release lock records the exact commit and plugin version used for a release.
-- This Opus-routed profile requires the external `copilot-proxy-rs_default` Docker network.
+- This Sonnet 5.5-routed profile requires the external `copilot-proxy-rs_default` Docker network.

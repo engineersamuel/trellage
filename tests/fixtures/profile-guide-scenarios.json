@@ -2,6 +2,22 @@
   "schemaVersion": 1,
   "scenarios": [
     {
+      "id": "office-document-editing",
+      "intent": "Create and edit Word documents and Excel workbooks with the Anthropic document skills in an isolated Claude office profile.",
+      "expectedProfiles": ["native:cldx/office"],
+      "expectedWorkflows": {"native:cldx/office": "office-documents"},
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
+      "id": "office-chart-heavy-deck",
+      "intent": "Build a chart-heavy presentation with many charts and data-heavy slide layouts using the optional slide-maker builder.",
+      "expectedProfiles": ["native:cldx/office-charts"],
+      "expectedWorkflows": {"native:cldx/office-charts": "chart-heavy-presentations"},
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
       "id": "bounded-private-local-edit",
       "intent": "Make a small bounded parser fix while keeping the code on a private local model. I do not need agents or a large workflow.",
       "expectedProfiles": ["sandbox:claude-qwen-local"],

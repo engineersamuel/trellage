@@ -9,6 +9,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  rmdirSync,
   symlinkSync,
   unlinkSync,
   utimesSync,
@@ -22,6 +23,7 @@ import { bunArguments, bunExecutable, sourceEnvironment, sourceWorkspaceRoot } f
 import {
   copySources,
   requireOwnedWorkspace,
+  requireReplaceableOwnedWorkspace,
   requireReady,
   requireReadyAsync,
   sourceFingerprint,
@@ -222,6 +224,38 @@ test("source execution automatically prepares safe workspace drift", () => {
   expect(() => requireReady(root)).not.toThrow()
 })
 
+test("installed source execution heals a removed or previously pinned readiness record", () => {
+  const { root, destination, home } = sourceFixture(true)
+  expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+  const runner = path.join(destination, "scripts/run-source.sh")
+  const entrypoint = path.join(destination, "packages/application/src/cli.ts")
+  const environment = { ...process.env, HOME: home, TRELLAGE_BUN_EXECUTABLE: bunExecutable() }
+  const readiness = path.join(destination, ".trellage-source-ready.json")
+
+  rmSync(readiness)
+  const restored = spawnSync("/bin/bash", [runner, entrypoint], {
+    cwd: destination,
+    encoding: "utf8",
+    env: environment,
+  })
+
+  expect(restored.status, restored.stderr).toBe(0)
+  expect(restored.stderr).toContain("preparing worktree dependencies automatically")
+  expect(() => requireReady(destination)).not.toThrow()
+
+  const recorded: Record<string, unknown> = JSON.parse(readFileSync(readiness, "utf8"))
+  writeFileSync(readiness, `${JSON.stringify({ ...recorded, bun: "previous-version" })}\n`)
+  const repinned = spawnSync("/bin/bash", [runner, entrypoint], {
+    cwd: destination,
+    encoding: "utf8",
+    env: environment,
+  })
+
+  expect(repinned.status, repinned.stderr).toBe(0)
+  expect(repinned.stderr).toContain("preparing worktree dependencies automatically")
+  expect(() => requireReady(destination)).not.toThrow()
+})
+
 test("installed source execution heals inventory drift without accepting source or top-level changes", () => {
   const { root, destination, home } = sourceFixture(true)
   expect(run("install", root, destination, { HOME: home }).status).toBe(0)
@@ -259,6 +293,34 @@ test("installed source execution heals inventory drift without accepting source 
   })
   expect(unrelated.status).toBe(1)
   expect(unrelated.stderr).toContain("refusing unrelated source runtime path")
+})
+
+test("replaceable owned validation accepts a previous Bun pin but rejects changed contents", () => {
+  const { root, destination, home } = sourceFixture(true)
+  expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+  const readiness = path.join(destination, ".trellage-source-ready.json")
+  const published: Record<string, unknown> = JSON.parse(readFileSync(readiness, "utf8"))
+  writeFileSync(readiness, `${JSON.stringify({ ...published, bun: "previous-version" })}\n`)
+
+  expect(() => requireReplaceableOwnedWorkspace(destination)).not.toThrow()
+  expect(run("validate-replaceable-owned", destination).status).toBe(0)
+  expect(() => requireOwnedWorkspace(destination)).toThrow("source runtime is stale")
+  expect(run("validate-owned", destination).status).toBe(1)
+
+  const guard = path.join(destination, "packages/library/src/index.ts")
+  const preserved = readFileSync(guard)
+  chmodSync(guard, 0o666)
+  expect(run("validate-replaceable-owned", destination).status).toBe(1)
+  chmodSync(guard, 0o444)
+  rmSync(guard)
+  mkdirSync(guard)
+  expect(run("validate-replaceable-owned", destination).status).toBe(1)
+  rmdirSync(guard)
+  writeFileSync(guard, preserved, { mode: 0o444 })
+
+  write(destination, "unrelated", "keep")
+  expect(() => requireReplaceableOwnedWorkspace(destination)).toThrow("refusing unrelated source runtime path")
+  expect(run("validate-replaceable-owned", destination).status).toBe(1)
 })
 
 function run(action: string, root: string, destination?: string, env: NodeJS.ProcessEnv = {}) {

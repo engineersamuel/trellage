@@ -586,8 +586,44 @@ function readinessInventory(root: string): string {
   return value.inventory
 }
 
-export function requireReadySourceIdentity(root: string): void {
-  readinessInventory(root)
+function publishedReadiness(root: string): Record<string, unknown> | undefined {
+  safeDirectory(root)
+  const readiness = path.join(root, readyFile)
+  if (!existsSync(readiness)) return undefined
+  safePath(readiness, "file")
+  const value: unknown = JSON.parse(readFileSync(readiness, "utf8"))
+  if (typeof value !== "object" || value === null || !("schema" in value) || value.schema !== 1) {
+    throw new Error(`refusing changed or unrelated source runtime contents: ${root}; prepare dependencies explicitly`)
+  }
+  if (
+    !("sources" in value) ||
+    value.sources !== sourceFingerprint(root) ||
+    !("dependencies" in value) ||
+    value.dependencies !== digestFiles(root, dependencyManifests(root))
+  ) {
+    throw new Error("source runtime is stale; run scripts/build-profile-compiler.sh explicitly")
+  }
+  return value as Record<string, unknown>
+}
+
+// Automatic repair must accept managed drift (a removed readiness record, or a
+// record written under a previous Bun pin) while still refusing a published
+// runtime whose first-party sources or dependency manifests were changed.
+// Re-preparation rewrites the record, so only identity is compared here.
+export function requirePublishedSourceIdentity(root: string): void {
+  publishedReadiness(root)
+}
+
+// Replacement must still refuse tampered or unrelated runtime contents. Only
+// the recorded Bun pin is ignored, so bumping that pin cannot strand an
+// otherwise intact installed runtime behind an unreplaceable readiness record.
+export function requireReplaceableSourceContents(root: string): void {
+  const value = publishedReadiness(root)
+  if (value === undefined) return
+  if (typeof value.inventory !== "string") {
+    throw new Error(`refusing changed or unrelated source runtime contents: ${root}; prepare dependencies explicitly`)
+  }
+  requireInventory(root, value.inventory, validateOwnedTree(root, !existsSync(path.join(root, sourceMarker))))
 }
 
 function requireInventory(root: string, expected: string, actual: string): void {

@@ -347,7 +347,7 @@ session event and one terminal evidence event. See
 
 ### Claude council
 
-`claude-council` runs Claude Opus 5 through `copilot-proxy-rs` with two Claude
+`claude-council` runs Claude Sonnet 5.5 through `copilot-proxy-rs` with two Claude
 Code marketplace plugins enabled by default:
 
 - [`0xNyk/council-of-high-intelligence`](https://github.com/0xNyk/council-of-high-intelligence) (`council`) for multi-persona deliberation (`/council`)
@@ -358,16 +358,17 @@ trellage --profile claude-council
 ```
 
 Claude profiles default their Opus, Sonnet, and Haiku routes to
-`claude-opus-5`, `claude-sonnet-5`, and `claude-haiku-4.5`. When the resolved
-headless inventory publishes `modelOverride: true`, `--model` overrides only
-the Opus route for that new, prompt, or resumed launch.
+`claude-opus-5.5`, `claude-sonnet-5.5`, and `claude-haiku-4.5`, and bake
+`claude-sonnet-5.5` at `medium` effort into the container session settings.
+When the resolved headless inventory publishes `modelOverride: true`, `--model`
+overrides only the Opus route for that new, prompt, or resumed launch.
 
 Requires the external `copilot-proxy-rs_default` Docker network, same as other
 proxy-backed Claude profiles.
 
 ### Claude ECC
 
-`claude-ecc` runs Claude Opus 5 through `copilot-proxy-rs` with the official
+`claude-ecc` runs Claude Sonnet 5.5 through `copilot-proxy-rs` with the official
 [`affaan-m/ECC`](https://github.com/affaan-m/ECC) marketplace plugin. It provides
 ECC's plugin-discovered engineering skills, commands, agents, and hooks for
 broad planning, implementation, debugging, review, and verification work.
@@ -894,16 +895,27 @@ cdx --native-auth superpowers exec "Review this repository"
 ```
 
 The native `cldx` launcher runs the host `claude` executable with isolated
-state and keyless `copilot-proxy-rs` at `http://127.0.0.1:8080`. It defaults to
-`claude-opus-5`; an explicit `--model` argument wins:
+state and keyless `copilot-proxy-rs` at `http://127.0.0.1:8080`. It launches
+the `opusplan` selector, so normal turns use `claude-sonnet-5.5` at `medium`
+effort and plan-mode turns use `claude-opus-5.5`. Start with
+`--permission-mode plan` for `max` effort. When changing modes in an existing
+session, set `/effort max` for planning and `/effort medium` for normal work;
+Claude Code cannot save per-model `max` effort. An explicit
+`--model` argument wins:
 
 ```bash
 cldx setup
 cldx doctor
 cldx -p "Reply exactly CLDX_OK"
-cldx --model claude-sonnet-5 -p "Reply exactly CLDX_SONNET_OK"
+cldx --model claude-sonnet-5.5 -p "Reply exactly CLDX_SONNET_OK"
 cldx repair
 ```
+
+For Office documents and academic presentations, use `cldx setup office`
+then `cldx office`. It includes Anthropic's `document-skills` plugin and
+`academic-pptx`. The optional chart-heavy builder is a separate
+`cldx office-charts` profile; run `cldx setup office-charts` to enable it.
+Both profiles retain the shared native skills and use isolated homes.
 
 No host model credentials are copied. Launch scrubs ambient provider and token
 variables before setting only the local proxy environment. See the

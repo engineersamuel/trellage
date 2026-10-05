@@ -118,6 +118,8 @@ const Claude = Schema.Struct({
   mode: Schema.optional(Schema.Literal("core", "hyperresearch")),
   default_auth: Schema.Literal("proxy"),
   model: NonEmpty,
+  // Claude Code rejects "minimal"; its own levels are low..max.
+  effort_level: Schema.optional(Schema.Literal("low", "medium", "high", "xhigh", "max")),
   gateway: NonEmpty,
   opus_model: Schema.optional(NonEmpty),
   sonnet_model: Schema.optional(NonEmpty),

@@ -98,6 +98,77 @@ printf '%s\\n' 'example==1.2.3 \\' '    --hash=sha256:${"a".repeat(64)}' >"$outp
     ).rejects.toThrow(/Python requirement input is invalid/)
   })
 
+  it("drops weak feed digests but keeps the sha256 constraints", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-python-constraints-md5-"))
+    const bin = path.join(root, "bin")
+    await mkdir(bin)
+    const mise = path.join(bin, "mise")
+    await writeFile(
+      mise,
+      `#!/bin/sh
+set -eu
+previous=
+for argument do
+  if [ "$previous" = "--output-file" ]; then output="$argument"; fi
+  previous="$argument"
+done
+printf '%s\\n' 'example==1.2.3 \\' '    --hash=md5:${"c".repeat(32)} \\' '    --hash=sha256:${"a".repeat(64)} \\' '    --hash=md5:${"d".repeat(32)}' 'other==2.0.0 \\' '    --hash=md5:${"e".repeat(32)} \\' '    --hash=sha256:${"b".repeat(64)}' >"$output"
+`,
+    )
+    await chmod(mise, 0o755)
+    process.env.PATH = `${bin}:${originalPath ?? ""}`
+
+    const constraints = await Effect.runPromise(
+      compilePythonConstraints({
+        cacheHome: root,
+        input: { kind: "requirements", requirements: ["example", "other"] },
+        uvVersion: "0.12.7",
+        pythonVersion: "3.13",
+        platform: "linux/arm64",
+        pypiIndex: "https://feed.test/pypi/simple/",
+      }),
+    )
+
+    expect(constraints).toBe(
+      `example==1.2.3 \\\n    --hash=sha256:${"a".repeat(64)}\nother==2.0.0 \\\n    --hash=sha256:${"b".repeat(64)}\n`,
+    )
+    expect(constraints).not.toContain("md5:")
+  })
+
+  it("rejects generated output whose package only carries weak digests", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "trellage-python-constraints-weak-"))
+    const bin = path.join(root, "bin")
+    await mkdir(bin)
+    const mise = path.join(bin, "mise")
+    await writeFile(
+      mise,
+      `#!/bin/sh
+set -eu
+previous=
+for argument do
+  if [ "$previous" = "--output-file" ]; then output="$argument"; fi
+  previous="$argument"
+done
+printf '%s\\n' 'example==1.2.3 \\' '    --hash=md5:${"c".repeat(32)}' >"$output"
+`,
+    )
+    await chmod(mise, 0o755)
+    process.env.PATH = `${bin}:${originalPath ?? ""}`
+
+    await expect(
+      Effect.runPromise(
+        compilePythonConstraints({
+          cacheHome: root,
+          input: { kind: "requirements", requirements: ["example"] },
+          uvVersion: "0.12.7",
+          pythonVersion: "3.13",
+          platform: "linux/arm64",
+          pypiIndex: "https://feed.test/pypi/simple/",
+        }),
+      ),
+    ).rejects.toThrow(/generated Python constraints are invalid/)
+  })
+
   it("rejects generated output that omits a declared requirement", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "trellage-python-constraints-missing-"))
     const bin = path.join(root, "bin")

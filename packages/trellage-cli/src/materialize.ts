@@ -25,7 +25,7 @@ import {
 import { renderCodexConfig, renderCodexConfiguration, renderMiseConfig } from "./render.ts"
 import {
   claudeDefaultOnboarding,
-  claudeDefaultSettings,
+  claudeProfileSettings,
   claudeDefaultUserSettings,
   managedClaudeFiles,
   materializeClaudeAssets,
@@ -66,6 +66,7 @@ export interface ClaudeMaterializeRequest {
   readonly browserAgentPath?: string
   readonly artifactCacheHome?: string
   readonly npmRegistry?: string
+  readonly defaultSettings?: Record<string, unknown>
 }
 
 export type ClaudeMaterializer = (request: ClaudeMaterializeRequest) => Effect.Effect<void, unknown>
@@ -364,11 +365,18 @@ const materializeCopilotProfileAssets = (
     )
   })
 
-const writeClaudeCoreSeed = (context: string, harnessVersion: string): Effect.Effect<void, MaterializeError> =>
+const writeClaudeCoreSeed = (
+  profile: ClaudeProfile,
+  context: string,
+  harnessVersion: string,
+): Effect.Effect<void, MaterializeError> =>
   io("cannot initialize Claude core seed", async () => {
     const seed = path.join(context, "claude-seed")
     await mkdir(seed, { recursive: true })
-    await writeFile(path.join(seed, "default-settings.json"), `${JSON.stringify(claudeDefaultSettings, null, 2)}\n`)
+    await writeFile(
+      path.join(seed, "default-settings.json"),
+      `${JSON.stringify(claudeProfileSettings(profile), null, 2)}\n`,
+    )
     await writeFile(
       path.join(seed, "default-user-settings.json"),
       `${JSON.stringify(claudeDefaultUserSettings, null, 2)}\n`,
@@ -410,6 +418,7 @@ const materializeClaudeMarketplacePlugins = (
     context,
     lock,
     marketplaceIncludeMcp: plugins.map((plugin) => plugin.include_mcp ?? true),
+    defaultSettings: claudeProfileSettings(profile),
     ...claudeMaterializeCacheOptions(artifactCacheHome, npmRegistry),
   }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))
 }
@@ -439,6 +448,7 @@ const materializeHyperresearchPlugin = (
     hyperresearchDefaultTier: plugin.select[0],
     ...(pythonRequirementsPath === undefined ? {} : { requirementsPath: pythonRequirementsPath }),
     browserAgentPath: path.join(context, browserAgent.buildContextPath),
+    defaultSettings: claudeProfileSettings(profile),
     ...claudeMaterializeCacheOptions(artifactCacheHome, npmRegistry),
   }).pipe(Effect.mapError((cause) => new MaterializeError({ message: "Claude asset materialization failed", cause })))
 }
@@ -511,7 +521,7 @@ const materializeClaudeProfileAssets = (
       npmRegistry,
     )
     if ((profile.harness.claude.mode ?? "hyperresearch") === "core") {
-      yield* writeClaudeCoreSeed(context, harness.version)
+      yield* writeClaudeCoreSeed(profile, context, harness.version)
     }
     const outputStyle = runtimeSupportFile(support, "claude-output-style-rundown")
     yield* copy(

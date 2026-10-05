@@ -1209,6 +1209,16 @@ const checkSharedCommand = async (catalog: SkillCatalog) => {
   const variants = [
     { name: "native-common", bundles: ["native-common"], cache: defaultCache() },
     {
+      name: "claude-office",
+      bundles: ["native-common", "claude-office"],
+      cache: path.join(path.dirname(defaultCache()), "cldx-office-skills"),
+    },
+    {
+      name: "claude-office-charts",
+      bundles: ["native-common", "claude-office-charts"],
+      cache: path.join(path.dirname(defaultCache()), "cldx-office-charts-skills"),
+    },
+    {
       name: "codex",
       bundles: ["native-common", "codex-common"],
       cache: path.join(path.dirname(defaultCache()), "cdx-skills"),

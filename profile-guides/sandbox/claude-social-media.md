@@ -153,4 +153,4 @@ workflows:
 
 - Skipping voice-builder produces generic, unvoiced drafts — every downstream skill degrades without `about-me.md`/`voice.md`.
 - `APIFY_API_TOKEN` and `GOOGLE_AI_API_KEY` are forwarded only when present in the environment; Trellage never stores them in the profile or lock.
-- This is an Opus-routed proxy profile and needs the external `copilot-proxy-rs_default` Docker network.
+- This is a Sonnet 5.5-routed proxy profile and needs the external `copilot-proxy-rs_default` Docker network.
