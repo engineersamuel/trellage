@@ -857,17 +857,17 @@ const assertGoalDataflow = (
     .filter((event) => event.input.goal !== undefined)
   expect(
     generated.map(({ input, ...event }) => ({
-    ...event,
-    input: { goal: input.goal, profileRef: input.profileRef, workflowId: input.workflowId },
+      ...event,
+      input: { goal: input.goal, profileRef: input.profileRef, workflowId: input.workflowId },
     })),
   ).toEqual(
     selections.map(({ goal, profileId }) => {
-    const profile = fixtureProfile(profileId)
-    return {
-      kind: "generate",
-      input: { profileRef: profile.ref, workflowId: profile.workflowId, goal },
-      candidates: generatedGoalApproaches(profile),
-    }
+      const profile = fixtureProfile(profileId)
+      return {
+        kind: "generate",
+        input: { profileRef: profile.ref, workflowId: profile.workflowId, goal },
+        candidates: generatedGoalApproaches(profile),
+      }
     }),
   )
   const optimized = report.events
@@ -1041,8 +1041,8 @@ const assertGoalBatch = (
   const commands = commandEvents(report.events)
   const probes = selections.flatMap((selection) =>
     hasGoal(selection)
-    ? goalReadinessCommands(guide.root, selection)
-    : [readinessCommand(guide.root, selection.profileId)],
+      ? goalReadinessCommands(guide.root, selection)
+      : [readinessCommand(guide.root, selection.profileId)],
   )
   const commandOrder = (left: RecordedCommand, right: RecordedCommand): number =>
     JSON.stringify(left).localeCompare(JSON.stringify(right))
@@ -1058,16 +1058,16 @@ const assertGoalBatch = (
   expect(starting.filter((command) => command.executable === "herdr").sort(commandOrder)).toEqual(
     allocated
       .map(({ selection, job, paneId, cwd }) => ({
-      executable: "herdr",
-      args: [
+        executable: "herdr",
+        args: [
           "pane",
           "run",
           paneId,
-        hasGoal(selection)
-          ? `env TRELLAGE_AUTOMATION=1 ${quoted(job.command.executable)} ${job.profile.profile}`
-          : expectedPaneCommand(guide.root, selection),
-      ],
-      cwd,
+          hasGoal(selection)
+            ? `env TRELLAGE_AUTOMATION=1 ${quoted(job.command.executable)} ${job.profile.profile}`
+            : expectedPaneCommand(guide.root, selection),
+        ],
+        cwd,
       }))
       .sort(commandOrder),
   )
@@ -1425,6 +1425,407 @@ it("rematches an augmented prompt without changing a job already in the queue", 
   assertDataflow(report, selections, [fixtureIntent, intent], [fixtureIntent])
 }, 30_000)
 
+const selectOptimizeBase = async (guide: GuideTerminal, base?: string): Promise<void> => {
+  await guide.waitForText("Choose review scope", "> Committed and uncommitted changes")
+  await guide.pressAndWait(enter, "Confirm target", "Branch base: main")
+  assert(!guide.text().includes("Choose comparison base"))
+  if (base === undefined) return
+  await guide.pressAndWait("b", "Choose comparison base", "main_")
+  guide.press("\u0015")
+  await guide.readScreen((screen) => assert(!screen.includes("main_")))
+  await guide.pressAndWait(base, `${base}_`)
+  await guide.pressAndWait(enter, "Confirm target", `Branch base: ${base}`)
+}
+
+const approveOptimizeReview = async (guide: GuideTerminal): Promise<void> => {
+  await guide.pressAndWait(enter, "Confirm read-only review")
+  const before = (await guide.events()).filter((event) => event.kind === "optimize-review").length
+  await guide.pressAndWait(enter, "Review complete", "Findings selected: 0", "[ ] recommended:")
+  assert.equal((await guide.events()).filter((event) => event.kind === "optimize-review").length, before + 1)
+  assert.deepEqual(
+    (await guide.events()).filter((event) => event.kind === "optimize-changes"),
+    [],
+  )
+  await guide.pressAndWait(enter, "Select a recommended finding with Space")
+  await guide.pressAndWait(" ", "Findings selected: 1", "[x] recommended:")
+  await guide.pressAndWait(enter, "Choose a fresh agent")
+}
+
+const confirmOptimizePane = async (guide: GuideTerminal): Promise<void> => {
+  await guide.pressAndWait(enter, "Choose destination", "> New Herdr pane")
+  await guide.pressAndWait(enter, "Confirm execution")
+}
+
+it("reviews around a saved standalone fork without taking over its terminal or regenerating it", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal, 120, 40)
+  await enterIntent(guide)
+  await selectProfile(guide, "planner", 0)
+  await mainScreen(guide)
+  const generated = (await guide.events()).filter((event) => event.kind === "generate" || event.kind === "optimize")
+  await guide.pressAndWait("o", "Choose review scope")
+  await selectOptimizeBase(guide)
+  await guide.pressAndWait(enter, "Choose reviewers")
+  await approveOptimizeReview(guide)
+  await guide.pressAndWait(enter, "Choose a fresh agent", "would close Guide", "forks first")
+  await guide.pressAndWait("q", "Profile recommendations")
+  await guide.pressAndWait("1", "Prompt candidates", "Approach: focused.")
+  const report = await guide.finish("q", 130)
+  assert.deepEqual(
+    report.events.filter((event) => event.kind === "generate" || event.kind === "optimize"),
+    generated,
+  )
+  assert.equal(report.events.filter((event) => event.kind === "optimize-review").length, 1)
+  assert.equal(report.events.filter((event) => event.kind === "optimize-changes").length, 0)
+  assert.deepEqual(commandEvents(report.events), [])
+}, 30_000)
+
+it.for([80, 120])(
+  "previews and cancels Optimize without changing the request at %i columns",
+  { timeout: 30_000 },
+  async (columns, { guide }) => {
+    await guide.start(FixtureMode.Terminal, columns, columns === 80 ? 24 : 40)
+    await enterIntent(guide)
+    await guide.waitForText("o Optimize")
+    await guide.pressAndWait("o", "Optimize changes", "Choose review scope")
+    await selectOptimizeBase(guide)
+    await guide.waitForText("2 of 2 files selected", '[x] "notes.txt"')
+    await guide.pressAndWait(
+      enter,
+      "Choose reviewers",
+      "[x] First principles",
+      "[x] Behavior preservation",
+      "[ ] Improve codebase architecture",
+      "Enter continue",
+    )
+    for (const key of [down, "\u001b[A", "j", "k", "\t", "\u001b[Z"]) {
+      guide.press(key)
+      await guide.waitForInput(key)
+      await guide.waitForText("Optimize", "Choose reviewers", "First principles", "Esc back")
+    }
+    await guide.pressAndWait(enter, "Confirm read-only review")
+    await scrollUntil(guide, "8 minutes.")
+    assert.deepEqual(
+      (await guide.events()).filter((event) => event.kind === "optimize-review"),
+      [],
+    )
+    await guide.pressAndWait("\u001b", "Choose reviewers")
+    await guide.pressAndWait("\u001b", "Confirm target", "2 of 2 files selected")
+    await guide.pressAndWait("\u001b", "Profile recommendations", "o Optimize")
+    await assertDeferredLaunch(guide)
+    const report = await guide.finish("q", 130)
+    assertCancelledQueue(report)
+    assertDataflow(report, [])
+  },
+)
+
+it("optimizes current changes without rematching the task or changing queued work", async ({ guide }) => {
+  await guide.start(FixtureMode.Herdr, 240, 40)
+  await enterIntent(guide)
+  await selectProfile(guide, "planner", 0)
+  await enqueue(guide, 1)
+  await mainScreen(guide)
+  await guide.pressAndWait("o", "Optimize changes", "Choose review scope")
+  await selectOptimizeBase(guide)
+  await guide.waitForText("2 of 2 files selected")
+  await guide.pressAndWait(down, '> [x] "notes.txt"')
+  await guide.pressAndWait(" ", "1 of 2 files selected", '[ ] "notes.txt"')
+  guide.press("L")
+  await guide.waitForInput("L")
+  await assertDeferredLaunch(guide)
+  await guide.pressAndWait(enter, "Choose reviewers", "First principles")
+  await guide.pressAndWait("\u001b", "Confirm target", "1 of 2 files selected", '[ ] "notes.txt"')
+  await guide.pressAndWait(enter, "Choose reviewers", "First principles")
+  await approveOptimizeReview(guide)
+  await confirmOptimizePane(guide)
+  await guide.waitForText("[ ] Confirm other agents")
+  await guide.pressAndWait(enter, "Press Space to confirm")
+  assert.deepEqual(
+    (await guide.events()).filter((event) => event.kind === "optimize-changes"),
+    [],
+  )
+  await guide.pressAndWait(" ", "[x] Confirm other agents")
+  await guide.pressAndWait(enter, "Handoff result", "Optimization launched")
+  await guide.pressAndWait("\u001b", "Profile recommendations")
+  const selections: ReadonlyArray<Selection> = [
+    { id: 1, profileId: "planner", candidate: 0, intent: fixtureIntent, placement: panePlacement },
+  ]
+  await guide.pressAndWait("v", queueText(1))
+  await selectQueueEntry(guide, selections, 0, 0)
+  await assertDeferredLaunch(guide)
+  const report = await guide.finish("q", 130)
+  assertCancelledQueue(report)
+  assertDataflow(report, selections)
+  const submissions = report.events.filter((event) => event.kind === "optimize-changes")
+  const [submission] = submissions
+  assert(submissions.length === 1 && submission !== undefined, "Expected exactly one optimization submission")
+  assert.equal(submission.request.originalIntent, fixtureIntent)
+  assert.equal(submission.request.intent, fixtureIntent)
+  assert.deepEqual(submission.request.paths, ["src/login.ts"])
+  assert.equal(submission.request.otherEditorsStopped, true)
+  assert.equal(submission.profileRef, "native:cdx/planner")
+  assert.deepEqual(submission.request.target.scope, { kind: "branch", baseRef: "main" })
+  assert(submission.prompt.includes("Implement only the explicitly approved"))
+  assert(submission.prompt.includes("Remove the redundant wrapper"))
+  assert.deepEqual(
+    submission.request.approval.findings.map((entry) => entry.id),
+    ["first-principles:1"],
+  )
+}, 30_000)
+
+it("sends the explicit branch scope with untracked files selected by default to a fresh same-worktree agent", async ({
+  guide,
+}) => {
+  await guide.start(FixtureMode.Herdr, 120, 40)
+  await enterIntent(guide)
+  await guide.pressAndWait("o", "Choose review scope")
+  await selectOptimizeBase(guide, "release")
+  await guide.waitForText("2 of 2 files selected", '[x] "src/login.ts"', '[x] "notes.txt"')
+  await guide.pressAndWait(enter, "Choose reviewers", "First principles")
+  await approveOptimizeReview(guide)
+  await guide.pressAndWait(down, "> cpx reviewer")
+  await confirmOptimizePane(guide)
+  await guide.waitForText("Destination: cpx reviewer")
+  await guide.pressAndWait("p", "Review context", "Implement only the explicitly approved")
+  await guide.pressAndWait("\u001b", "Confirm execution")
+  await guide.pressAndWait(" ", "[x] Confirm other agents")
+  await guide.pressAndWait(enter, "Handoff result", "Pane: 9-optimize")
+  await guide.pressAndWait("\u001b", "Profile recommendations")
+  const report = await guide.finish("q", 130)
+  assertCancelledQueue(report)
+  assertDataflow(report, [])
+  const submissions = report.events.filter((event) => event.kind === "optimize-changes")
+  const [submission] = submissions
+  assert(submissions.length === 1 && submission !== undefined, "Expected exactly one optimization submission")
+  assert.equal(submission.profileRef, "native:cpx/reviewer")
+  assert.equal(submission.request.originalIntent, fixtureIntent)
+  assert.equal(submission.request.intent, fixtureIntent)
+  assert.deepEqual(submission.request.paths, ["src/login.ts", "notes.txt"])
+  assert.equal(submission.request.target.cwd, guide.root)
+  assert.deepEqual(submission.request.target.scope, { kind: "branch", baseRef: "release" })
+  assert(submission.prompt.includes(fixtureIntent))
+  assert(!submission.prompt.includes("Conversation context"))
+}, 30_000)
+
+it("opens the current worktree directly without asking for a base or matching a prompt", async ({ guide }) => {
+  await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Optimize changes")
+  assert.deepEqual(
+    await guide.events().then((events) => events.filter((event) => event.kind === "optimize-target")),
+    [],
+  )
+  await selectOptimizeBase(guide)
+  await guide.waitForText("Confirm target", "2 of 2 files selected")
+  assert.deepEqual(
+    (await guide.events()).filter((event) => event.kind === "optimize-target"),
+    [{ kind: "optimize-target", scope: { kind: "current-branch" } }],
+  )
+  await guide.pressAndWait(enter, "Choose reviewers", "First principles")
+  await approveOptimizeReview(guide)
+  await confirmOptimizePane(guide)
+  await guide.pressAndWait(" ", "[x] Confirm other agents")
+  await guide.pressAndWait(enter, "Handoff result", "Optimization launched")
+  const report = await guide.finish("\u001b")
+  assert.deepEqual(report.result, { action: "optimize-submitted" })
+  assert.deepEqual(
+    report.events.filter((event) => ["match", "generate", "optimize"].includes(event.kind)),
+    [],
+  )
+  const submissions = report.events.filter((event) => event.kind === "optimize-changes")
+  assert.deepEqual(
+    submissions.map((event) => event.request.paths),
+    [["src/login.ts", "notes.txt"]],
+  )
+  assert.deepEqual(commandEvents(report.events), [])
+}, 30_000)
+
+it("keeps an invalid comparison base visible and accepts an explicit correction", async ({ guide }) => {
+  await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Choose review scope")
+  await selectOptimizeBase(guide)
+  await guide.pressAndWait("b", "Choose comparison base", "main_")
+  guide.press("\u0015")
+  await guide.readScreen((screen) => assert(!screen.includes("main_")))
+  await guide.pressAndWait("missing-base", "missing-base_")
+  await guide.pressAndWait(enter, "Setup blocked", "Comparison base missing-base")
+  await guide.waitForText("b change base", "r retry")
+  guide.press(enter)
+  await guide.waitForInput(enter)
+  await guide.waitForText("Setup blocked")
+  assert.equal((await guide.events()).filter((event) => event.kind === "optimize-target").length, 2)
+  await guide.pressAndWait("b", "Choose comparison base", "missing-base_")
+  guide.press("\u0015")
+  await guide.readScreen((screen) => assert(!screen.includes("missing-base")))
+  await guide.pressAndWait("base", "base_")
+  await guide.pressAndWait(enter, "Confirm target", "2 of 2 files selected")
+  const report = await guide.finish("\u001b", 130)
+  assert.equal(report.events.filter((event) => event.kind === "optimize-target").length, 3)
+  assert.deepEqual(
+    report.events.filter((event) => ["match", "generate", "optimize", "optimize-changes"].includes(event.kind)),
+    [],
+  )
+  assert.deepEqual(commandEvents(report.events), [])
+}, 30_000)
+
+it("does not expand an empty change set into repository-wide work", async ({ guide }) => {
+  await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Choose review scope")
+  await selectOptimizeBase(guide, "unchanged")
+  await guide.waitForText("No changes in this scope", "0 of 0 files selected")
+  guide.press(enter)
+  await guide.waitForInput(enter)
+  await guide.waitForText("Confirm target", "No changes in this scope")
+  const report = await guide.finish("q", 130)
+  assert.equal(report.events.filter((event) => event.kind === "optimize-changes").length, 0)
+  assert.deepEqual(commandEvents(report.events), [])
+}, 30_000)
+
+it("allows uncommitted-only review only after it is explicitly selected", async ({ guide }) => {
+  await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Choose review scope")
+  await guide.pressAndWait(down, "> Uncommitted changes only")
+  await guide.pressAndWait(enter, "Confirm target", "Scope: uncommitted changes", "2 of 2 files selected")
+  const report = await guide.finish("q", 130)
+  assert.deepEqual(
+    report.events.filter((event) => event.kind === "optimize-target"),
+    [{ kind: "optimize-target", scope: { kind: "uncommitted" } }],
+  )
+  assert.deepEqual(commandEvents(report.events), [])
+}, 30_000)
+
+test.for([FixtureMode.Terminal, FixtureMode.Herdr])(
+  "starts committed-work Optimize in %s without conversation access, Prompt Master, or model calls",
+  { timeout: 30_000 },
+  async (mode, { onTestFailed }) => {
+    const commandEntry = fileURLToPath(new URL("./fixtures/guide-optimize-entry.ts", import.meta.url))
+    const guide = await createGuideTerminal(commandEntry, onTestFailed, {
+      TRELLAGE_TEST_HOST_PATH: process.env.PATH ?? "",
+      ...(mode === FixtureMode.Herdr ? { TRELLAGE_TEST_OPTIMIZE_BASE: "base" } : {}),
+    })
+    try {
+      await guide.start(mode, 80, 24, "Optimize changes")
+      if (mode === FixtureMode.Terminal) await selectOptimizeBase(guide)
+      await guide.waitForText(
+        "Confirm target",
+        "3 of 4 files selected",
+        `Branch base: ${mode === FixtureMode.Terminal ? "main" : "base"}`,
+      )
+      assert(guide.text().includes('[x] "code.ts" (branch)'))
+      assert(guide.text().includes('[x] "dirty.ts" (staged, unstaged)'))
+      assert(guide.text().includes('[x] "notes.txt"'))
+      assert(guide.text().includes('[ ] "linked.ts"'))
+      assert(!guide.text().includes("ignored.txt"))
+      await guide.pressAndWait("p", "Review context")
+      await scrollUntil(guide, "Preserve the original task without rewriting it.")
+      await guide.pressAndWait("\u001b", "Confirm target")
+      await guide.pressAndWait(enter, "Choose reviewers", "First principles")
+      await guide.pressAndWait(enter, "Confirm read-only review")
+      const report = await guide.finish("q", 130)
+      assertCancelledQueue(report)
+      await expect(access(path.join(guide.root, "model-started"))).rejects.toMatchObject({ code: "ENOENT" })
+    } finally {
+      await guide.close()
+    }
+  },
+)
+
+it("includes the managed architecture option in a consented review, then requires explicit approval", async ({
+  guide,
+}) => {
+  await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Choose review scope")
+  await selectOptimizeBase(guide)
+  await guide.pressAndWait(enter, "Choose reviewers", "[ ] Improve codebase architecture")
+  await guide.pressAndWait(down, "> [x] Behavior preservation")
+  await guide.pressAndWait(down, "> [ ] Improve codebase architecture", "Matt Pocock")
+  await guide.pressAndWait(" ", "[x] Improve codebase architecture")
+  await approveOptimizeReview(guide)
+  await guide.pressAndWait("\u001b", "Optimize changes", "Review complete", "Findings selected: 0", "Summary continues")
+  await guide.pressAndWait("p", "Optimization review")
+  await scrollUntil(guide, "Architecture review tail:")
+  const report = await guide.finish("q", 130)
+  const reviews = report.events.filter((event) => event.kind === "optimize-review")
+  assert.deepEqual(
+    reviews.map((entry) => entry.input.reviewerIds),
+    [["first-principles", "behavior-preservation", "improve-codebase-architecture"]],
+  )
+  assert.equal(report.events.filter((entry) => entry.kind === "optimize-approval").length, 1)
+  assert.equal(report.events.filter((entry) => entry.kind === "optimize-changes").length, 0)
+}, 30_000)
+
+it("reopens a saved no-change review without new model calls or implementation", async ({ guide }) => {
+  await guide.start(FixtureMode.OptimizeNoChange, 120, 40, "Choose review scope")
+  await selectOptimizeBase(guide)
+  await guide.pressAndWait(enter, "Choose reviewers")
+  await guide.pressAndWait(enter, "Confirm read-only review")
+  await guide.waitForText("At most 10 model calls", "one correction attempt per invalid response")
+  await guide.pressAndWait(enter, "No change recommended.", "Findings selected: 0")
+  await guide.pressAndWait("p", "Optimization review")
+  await guide.pressAndWait("\u001b", "No change recommended.")
+  await guide.pressAndWait(enter, "Select a recommended finding")
+  await guide.pressAndWait("\u001b", "Confirm target")
+  await guide.pressAndWait("h", "Saved reviews", "Reopen without model calls.")
+  await guide.pressAndWait(enter, "No change recommended.")
+  const report = await guide.finish("q", 130)
+  assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 1)
+  assert.equal(report.events.filter((entry) => entry.kind === "optimize-history").length, 2)
+  assert.equal(
+    report.events.filter((entry) => entry.kind === "optimize-approval" || entry.kind === "optimize-changes").length,
+    0,
+  )
+}, 30_000)
+
+it(
+  "keeps a failed challenge report out of approval and requires consent before restarting",
+  { timeout: 30_000 },
+  async ({ guide }) => {
+    await guide.start(FixtureMode.OptimizeIncomplete, 80, 24, "Choose review scope")
+    await selectOptimizeBase(guide)
+    await guide.pressAndWait(enter, "Choose reviewers")
+    await guide.pressAndWait(enter, "Confirm read-only review")
+    await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1", "Challenge round")
+    expect(guide.text()).not.toContain("Enter approve selected")
+    expect(guide.text()).not.toContain("[ ]")
+    guide.press(" ")
+    await guide.waitForInput(" ")
+    guide.press(enter)
+    await guide.waitForInput(enter)
+    await guide.readScreen((screen) => {
+      expect(screen).toContain("Review failed")
+      expect(screen).not.toContain("Enter approve selected")
+      expect(screen).not.toContain("[ ]")
+    })
+    expect((await guide.events()).filter((entry) => entry.kind === "optimize-approval")).toHaveLength(0)
+    await guide.pressAndWait("p", "Optimization review")
+    await scrollUntil(guide, "Challenge round")
+    await guide.pressAndWait("\u001b", "Partial findings saved: 1")
+    await guide.pressAndWait("r", "Confirm target", "2 of 2 files selected")
+    expect((await guide.events()).filter((entry) => entry.kind === "optimize-target")).toHaveLength(2)
+    expect((await guide.events()).filter((entry) => entry.kind === "optimize-review")).toHaveLength(1)
+    await guide.pressAndWait(enter, "Choose reviewers")
+    await guide.pressAndWait(enter, "Confirm read-only review")
+    expect((await guide.events()).filter((entry) => entry.kind === "optimize-review")).toHaveLength(1)
+    await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1")
+    await guide.pressAndWait("\u001b", "Confirm target")
+    await guide.pressAndWait("h", "Saved reviews", "Reopen without model calls.")
+    await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1")
+    await guide.pressAndWait("\u001b", "Confirm target")
+    const report = await guide.finish("q", 130)
+    assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 2)
+    assert.equal(report.events.filter((entry) => entry.kind === "optimize-history").length, 2)
+    assert.equal(
+      report.events.filter((entry) => entry.kind === "optimize-approval" || entry.kind === "optimize-changes").length,
+      0,
+    )
+  },
+)
+
+it("cancels reviewers and leaves an inspectable incomplete record", async ({ guide }) => {
+  await guide.start(FixtureMode.OptimizeCancel, 80, 24, "Choose review scope")
+  await selectOptimizeBase(guide)
+  await guide.pressAndWait(enter, "Choose reviewers")
+  await guide.pressAndWait(enter, "Confirm read-only review")
+  await guide.pressAndWait(enter, "Read-only optimization in progress", "Esc cancel")
+  await guide.pressAndWait("\u001b", "Review cancelled", "No findings can be approved.")
+  const report = await guide.finish("q", 130)
+  assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 1)
+  assert.equal(report.events.filter((entry) => entry.kind === "optimize-changes").length, 0)
+}, 30_000)
+
 it("prints three explicit Codex goal approaches and edits only the selected body", async ({ guide }) => {
   await guide.start(FixtureMode.Terminal)
   const goal = await authorGoal(guide, "Cover expired tokens without changing the approved criteria.")
@@ -1493,7 +1894,7 @@ it("keeps a long Unicode goal accessible and excludes Claude rather than shorten
     ...Array.from(
       { length: 40 },
       (_, index) =>
-      `Evidence ${index + 1}: Preserve caf\u00e9 output and \u{1f9ea} results exactly. Retain the complete regression example and affected source lines.`,
+        `Evidence ${index + 1}: Preserve caf\u00e9 output and \u{1f9ea} results exactly. Retain the complete regression example and affected source lines.`,
     ),
     "Unicode objective complete.",
   ].join("\n")
@@ -1634,8 +2035,8 @@ it("keeps queued goals fixed through body edits, reapproval, and an explicit nor
     report,
     [original, next],
     [
-    { goal, profiles: ["planner", "writer"] },
-    { goal: nextGoal, profiles: ["planner", "writer"] },
+      { goal, profiles: ["planner", "writer"] },
+      { goal: nextGoal, profiles: ["planner", "writer"] },
     ],
   )
   assertDataflow(plainDataflowReport(report), [], [fixtureIntent, nextGoal.prompt + ordinaryChange])
@@ -1832,7 +2233,7 @@ it("keeps long questions and answer controls usable, then discards without apply
   await guide.pressAndWait(enter, fixtureIntent)
   await expect
     .poll(async () => (await guide.events()).filter((event) => event.kind === "goal-stop"), {
-    timeout: 5000,
+      timeout: 5000,
     })
     .toEqual([{ kind: "goal-stop", sessionId: 1, cancelled: true }])
   await openGoalAugment(guide)

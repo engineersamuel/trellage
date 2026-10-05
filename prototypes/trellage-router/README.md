@@ -132,6 +132,195 @@ viewer is `dashboard`; `--ui-variant` selects one of five layouts:
 All layouts use Page Up and Page Down for navigation. Press `e` to edit the
 raw prompt. Enter re-runs matching when the prompt changed.
 
+**Optimize changes** reviews the current body of work, not prompt wording
+or the repository's entire history. Run it from the worktree you want to review:
+
+```sh
+trx guide --optimize
+trx guide --optimize --base main --intent "Original task and constraints"
+```
+
+Choose **Committed and uncommitted changes** to go directly to the current
+worktree's files. Guide detects the comparison base from local Git metadata:
+the remote default branch (preferring `origin`), `origin/main` or `main`,
+`origin/master` or `master`, then the primary worktree's branch. It makes no
+network request and never compares a local branch with itself. The detected
+base is shown with the files; use `b` or `--base` to override it.
+
+The scope includes changes since the base's merge-base with HEAD, plus staged
+and unstaged edits. A clean working tree can therefore still have work to review.
+Only when no separate base can be detected does Guide require an explicit one.
+A new repository without commits shows its current files.
+**Uncommitted changes only** remains an explicit alternative. An empty scope
+never expands into repository-wide cleanup or silently selects the last commit.
+
+Confirm the files, choose reviewers, and approve model use for a **read-only
+review**. All eligible changed files, including
+untracked files, are selected initially. Use Space to exclude unrelated files
+or select them again. Ignored files, links, submodules, and special files remain
+excluded. Press `b` to change the base, `p` to inspect full paths and task context,
+`h` to reopen saved reviews, or `r` to refresh. Ctrl+U clears the base editor.
+Up/Down, `j`/`k`, and Tab/Shift-Tab navigate choices; Page Up/Page Down scroll
+the consent screen and full report.
+
+**First principles** and **Behavior preservation** start selected. The optional
+**Improve codebase architecture** reviewer uses Matt Pocock's
+[`improve-codebase-architecture`](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md)
+and its `codebase-design` vocabulary. It looks for useful module deepening,
+better locality, and removable shallow layers, while respecting `GLOSSARY.md`
+and relevant ADRs. Its current managed content is loaded only after review
+consent. First use can fetch the `guide-optimize-architecture` bundle;
+later runs reuse its cache. `trx skills update` refreshes it. No skill version
+is pinned or copied into the application.
+
+Guide adapts that skill's exploration, not its whole interactive workflow:
+it produces a structured review instead of HTML, browser launches, nested
+agents, interviews, or domain-file writes. Questions and ADR conflicts stay
+visible as risks or limitations. A Native Claude profile is not being run
+merely because a reviewer uses a Claude model through the SDK.
+
+Reviewers use independent, restricted Copilot SDK sessions. They inspect one
+frozen snapshot, then challenge every proposal in one bounded round. A
+coordinator reads the reports and replies; it must retain rejected proposals
+and unresolved disagreement rather than force consensus. There are at most
+`2 × (2 × reviewers + 1)` model requests, with a two-minute limit per request and an
+eight-minute review limit. A no-change result skips the challenge round.
+The consent screen shows each model, effort, sharing scope, and call limit.
+`--model` and `--effort` override the review models; they do not change the
+eventual Native profile.
+Every model request supplies its report, challenge, or decision JSON schema
+through the SDK's structured-output API. Challenge and decision requests list
+the required finding IDs and constrain the response count and allowed IDs.
+Local validation also checks that each finding appears exactly once; failures
+identify missing, repeated, or unexpected IDs and the failed review stage.
+An invalid response gets one correction attempt with its validation error.
+Only failed responses are repeated; valid reports and replies are retained.
+Corrections reread the frozen evidence and pass the same validation before
+they can be accepted. Runtime, cancellation, and evidence-budget failures
+are not retried. A second invalid response stops the review and blocks approval.
+
+The only model tools list, search, and read frozen text. They cannot execute
+commands, edit files, access the live filesystem, or use MCP, plugins, skill
+discovery, or other agents. The snapshot includes related tracked code across
+the repository as context, selected diffs, and selected untracked files.
+Other untracked files and credential-like paths are excluded. Binary,
+unsupported, or oversized context files are reported as exclusions; a selected
+file that cannot be captured blocks the review. The repository snapshot is
+bounded to 5,000 files, 1 MB per source file, and 32 MB total. Each request has
+at most 120 text-tool calls and a model-context-aware byte budget capped at
+768 KB. Definite budget failures stop before inference. Missing
+selected-source coverage, invalid citations, exhausted budgets, cancellation,
+or a failed reviewer prevents approval. No evidence is silently truncated.
+Models cite source IDs and line ranges, not retyped source text. Guide copies
+each exact quotation from those frozen lines and requires the model to have
+read every cited line. Saved quotations are still checked against the snapshot.
+Evidence quotations have no separate character or line-span limit. Line ranges
+must exist in the snapshot; reviewers read long ranges in pages. Each complete
+model response is limited to 32,000 bytes.
+Each source read gives absolute line numbers and the next unread required
+ranges. Reviewers must finish those ranges before reporting; only successfully
+delivered pages count toward coverage.
+
+Reviews and their snapshots are saved under
+`<absolute-worktree-git-directory>/trellage-optimize-reviews/`, outside tracked
+files, using private directories and atomic mode-0600 files. Press `h` from
+scope or target selection to reopen them without a model call. Interrupted
+runs retain their evidence; they do not resume automatically.
+
+A failed review opens a failure screen with no approval controls. Partial
+proposals have no final verdict. Press `p` to read the saved report or `r` to
+start a new review, which inspects the target again and returns through file
+selection, reviewer selection, and model consent. No model calls run merely
+from pressing `r`. The saved status `incomplete` means the process failed;
+`unresolved` is a finding decision from a completed review that could not
+resolve an objection.
+
+For a headless acceptance check from this checkout, run:
+
+```sh
+mise run trx-optimize-check -- --live
+```
+
+This requires explicit consent because it sends the selected changes and
+related source context to models and can consume paid quota. It uses all
+three reviewers, including the managed architecture skills, with the same
+capture, coordination, validation, and private store as the interface.
+First use may fetch the architecture skills. `--cwd PATH` selects a worktree;
+`--base REF` overrides the detected comparison base, and `--uncommitted`
+explicitly selects uncommitted changes only. The default includes committed
+and uncommitted changes. All eligible changed files are included.
+
+Progress goes to stderr; stdout is one JSON result. Exit `0` requires
+`passed: true`, a complete saved review that can be reopened, and an unchanged
+worktree. Empty scopes, invalid output, incomplete evidence, failed reviewers,
+or changed files fail. The check never approves findings or starts an editor.
+A no-change result is valid; it does not force suggestions or a challenge
+round. This checks review execution, not the correctness of each suggestion.
+It is not part of `make test`.
+
+Read the findings and full report (`p`), select recommended findings with
+Space, and press Enter to **approve only that selection**. No finding starts
+approved. Incomplete reviews and no-change outcomes cannot launch an editor.
+Then choose a Native Copilot, Codex, or Claude profile and separately confirm
+execution. Reviewer agreement is not proof that a proposal is correct or that
+checks have run.
+
+Guide's pinned `o` action and Herdr's `prefix+ctrl+b` → **Optimize changes**
+open this same flow. An ordinary shell targets its current Git worktree; the
+popup supplies the invoking worktree explicitly. Setup reads no conversation,
+requires no source agent or session identity, makes no model calls, and does
+not prepare Prompt Master or load the Sandbox catalog. Optimize uses a
+Native-only catalog and does not depend on a separate `trellage` command on
+`PATH`; a stale or unavailable Sandbox runtime cannot block it.
+There is no existing-conversation handoff.
+Supply unwritten requirements with `--intent`; existing Guide intent and
+approved constraints remain separate from the reviewers' instructions.
+
+The fresh agent runs in the **same worktree**, through the normal Native launch
+path: a new pane or tab in Herdr, or the current terminal outside a popup.
+Queued Guide work blocks taking over the current terminal. The request
+arrives as a startup prompt, not simulated keystrokes. No new worktree is
+created. Current-terminal launches reconnect all streams to the controlling
+terminal, including when the original intent came from stdin.
+On macOS, redirected streams reconnect to the actual terminal device rather
+than the `/dev/tty` proxy, which does not support `kqueue` input polling.
+Optimize uses the same interactive startup arguments in the current terminal
+and Herdr: `cpx PROFILE -i PROMPT`, `cdx PROFILE -- PROMPT`, and
+`cldx PROFILE -- PROMPT`. A profile's non-interactive (`headless.prompt`)
+capability does not disable these interactive launches.
+Herdr handoffs preserve backslashes and source quotations in both Fish and
+POSIX shells.
+Before launch, confirm other agents and editors have stopped. Guide
+checks the saved approval, file contents, related context, index, HEAD/base,
+profile readiness, and known active
+Herdr writers, including after preparation and pane allocation. An owned
+per-worktree lock serializes submissions. A failed or uncertain launch is
+never retried automatically and may leave its allocated pane open. A saved
+launch reservation also blocks duplicate delivery after a restart.
+Read-only profile checks can make Herdr temporarily label the Guide itself
+as an agent. A standalone Guide excludes its own pane only when Herdr confirms
+that this Guide process is in that pane's foreground process group. Popup
+source agents, borrowed pane IDs, and other active agents remain checked.
+
+The agent reads related repository code, instructions, documentation, and tests
+for context. Only approved findings and their paths reach the editor; broader changes must be
+reported instead of silently expanding scope. It must preserve behavior and
+unrelated work, and must not stage, commit, stash, reset, or discard changes.
+Selected paths constrain the request, not filesystem permissions; Native
+profile permissions are unchanged. A launch receipt is not completed or
+verified implementation work.
+
+Escape returns without rewriting the Guide request, approved goal, forks,
+or queue. Finish or discard a pending augmentation first. Saved forks and
+queued jobs do not block read-only review. They must be finished or removed
+before a new agent can take
+over the terminal. Symlinks, special files, and submodules cannot be selected.
+
+The first reviewer, **First principles**, challenges assumptions, prefers
+deletion over simplification, and permits only high-impact recommendations.
+Good code can remain unchanged. Built-in reviewer roles are defined in
+`packages/trellage-launcher/src/guide-optimize-prompts.ts`.
+
 The non-interactive API is side-effect-free:
 
 ```sh
@@ -369,8 +558,9 @@ Firstmate instance discovery also stops the operation; a legacy-only subset
 is not presented as all instances.
 
 The shared queue runs Native harness updates first. It then runs the current
-router's `trx skills update` once, refreshing all five Native skill caches:
-`native-common`, Codex standard, Codex YouTube, Oh My Pi community, and guide Prompt Master.
+router's `trx skills update` once, refreshing all eight shared skill caches:
+`native-common`, Codex standard, Codex YouTube, Oh My Pi community, Guide
+Prompt Master, Guide architecture, Claude Office, and Claude Office charts.
 Every Native profile, including Agency, then receives `skills-update PROFILE`
 to copy and verify its configured skills. Named Firstmate targets retain their
 instance selector and confirmed context for each operation. This final copy
@@ -385,7 +575,7 @@ mutation. All phases use the same exclusive queue as Admin's `A` action.
 The command preserves each profile's version and source pins. It reports
 progress, separate harness and Native skills results, and fresh installed
 versions. Independent updates continue after command or version-read
-failures. If any Native skill cache refresh fails, all Native profile
+failures. If any shared skill cache refresh fails, all Native profile
 copies are skipped; old cached skills are not reported as current. A
 per-profile copy or verification failure does not stop the other profiles
 or Container updates.
@@ -432,10 +622,10 @@ The first setup or launch through any native launcher fetches the
 `native-common` bundle from the approved repositories' current default
 branches. The shared snapshot is then reused without network access.
 `trx skills status` reports the installed names. `trx skills update` is the
-cache refresh used by the unified operation. It refreshes the five caches
+cache refresh used by the unified operation. It refreshes the eight caches
 listed above; a failed cache update keeps that cache's previous snapshot.
 It does not copy the refreshed skills into every profile on its own.
-`trx skills check --json` compares all five existing caches with freshly fetched
+`trx skills check --json` compares all eight existing caches with freshly fetched
 sources without publishing caches or copying profile skills. It returns
 `{"kind":"current"}`, `{"kind":"available"}`, or
 `{"kind":"unknown","diagnostic":"..."}`. A known difference returns `available`;
@@ -444,9 +634,9 @@ missing caches or failed checks return `unknown`, never `current`.
 The installed skills CLI is required; checks never install it. Disposable staging
 is under the working directory and is removed after the check.
 
-Admin exposes this result as `skills:shared`, including guide Prompt Master
-changes that need no Native profile copies. Older routers without this command
-need a normal launcher refresh.
+Admin exposes this result as `skills:shared`, including Guide Prompt Master
+and architecture changes that need no Native profile copies. Older routers
+without this command need a normal launcher refresh.
 
 These commands do not require launcher discovery, bootstrap development
 dependencies, or start an agent.

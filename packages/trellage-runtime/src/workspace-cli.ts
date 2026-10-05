@@ -23,7 +23,6 @@ import {
   requireOwnedWorkspace,
   requireReplaceableOwnedWorkspace,
   requireReplaceableSourceContents,
-  requireReady,
   requireReadyAsync,
   requirePublishedSourceIdentity,
   safeDirectory,
@@ -90,8 +89,6 @@ async function prepareDependencies(root: string, alwaysInstall: boolean): Promis
       } catch (error) {
         process.stderr.write(`trellage source runtime: ${error instanceof Error ? error.message : String(error)}\n`)
       }
-    }
-    if (!alwaysInstall) {
       const readiness = path.join(root, ".trellage-source-ready.json")
       if (await present(readiness)) safePath(readiness, "file")
       if (await present(path.join(root, "node_modules"))) normalizeDependencyPermissions(root)

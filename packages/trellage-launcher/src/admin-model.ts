@@ -44,45 +44,17 @@ const allNativeLaunchers: ReadonlyArray<NativeLauncherAlias> = [
   "prx",
 ]
 
-/**
- * Static capability table. Every current native launcher supports both
- * `doctor PROFILE` and `inventory PROFILE --json` (confirmed present in each
- * launcher's `bin/*` usage text and command dispatch, including `cdx`'s
- * shared `native-codex` implementation's `doctor)`/`inventory)`/`repair)`
- * cases). Kept as an explicit set — rather than assuming universal support
- * — so a future native launcher that genuinely lacks doctor support can be
- * added here without fabricating a healthy/unhealthy status for it.
- */
-const launchersWithoutDoctorSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([])
-
-/**
- * `cldx` (Claude native) is the one current native launcher whose `bin/cldx`
- * usage text never lists an `update`/`update --check` subcommand (verified
- * directly against `prototypes/trellage-claude-profiles/bin/cldx`) — every
- * other native launcher, including `cdx` via the shared `native-codex`
- * dispatch, implements `update --check PROFILE`. Kept as an explicit
- * exclusion set, matching `launchersWithoutDoctorSupport`, so a future
- * launcher without update-check support can be added here without
- * fabricating version data for it.
- */
 const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([
   "agx",
   "cldx",
 ])
-
-/**
- * Every listed native launcher exposes `harness-version`.
- * Firstmate's command is profile-scoped because installed receipts differ;
- * the others report one host harness binary shared by their profiles.
- */
-const launchersWithoutHarnessVersionSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([])
 
 export interface NativeLauncherCapabilities {
   readonly doctorSupported: boolean
   readonly inventorySupported: boolean
   /** Whether this launcher's `update --check PROFILE` (a read-only, non-mutating command) is safe to run in the background. */
   readonly updateCheckSupported: boolean
-  /** Whether this launcher's `harness-version` (a read-only, launcher-scoped, non-mutating command reporting the harness CLI's own version) is safe to run in the background. */
+  /** Whether read-only `harness-version` checks are supported. Firstmate reports per fleet; other native launchers report a shared host binary. */
   readonly harnessVersionSupported: boolean
 }
 
@@ -95,12 +67,11 @@ export const nativeLauncherCapabilities = (launcher: string): NativeLauncherCapa
       harnessVersionSupported: false,
     }
   }
-  const supported = !launchersWithoutDoctorSupport.has(launcher)
   return {
-    doctorSupported: supported,
-    inventorySupported: supported,
-    updateCheckSupported: supported && !launchersWithoutUpdateCheckSupport.has(launcher),
-    harnessVersionSupported: supported && !launchersWithoutHarnessVersionSupport.has(launcher),
+    doctorSupported: true,
+    inventorySupported: true,
+    updateCheckSupported: !launchersWithoutUpdateCheckSupport.has(launcher),
+    harnessVersionSupported: true,
   }
 }
 

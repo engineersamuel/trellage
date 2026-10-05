@@ -112,11 +112,17 @@ export const parseInvocationContext = (source: string): InvocationContext => {
   }
 }
 
+const optimizePanelChoice = (operation: unknown) => {
+  if (operation !== undefined) throw new Error("Optimize is an action, not a capture to enqueue.")
+  return { kind: "optimize" }
+}
+
 export const parsePanelChoice = (value) => {
   if (!isRecord(value) || value.schemaVersion !== 1) {
     throw new Error("The source picker choice is invalid")
   }
   const kind = requiredString(value, "kind", "source picker choice", 32)
+  if (kind === "optimize") return optimizePanelChoice(value.operation)
   const operation = value.operation === "enqueue" ? "enqueue" : undefined
   if (kind === "queue") return { kind }
   if (kind === "selection") {
@@ -246,13 +252,18 @@ export const parseCaptureProvenance = (value) => {
 
 export const parsePopupInvocation = (value) => {
   if (!isRecord(value) || value.schemaVersion !== 1) throw new Error("The guide invocation file is invalid")
-  const answer = validateAnswer(value.answer, "Captured answer")
-  const capture = parseCaptureProvenance(value.capture)
   if (!isRecord(value.source)) throw new Error("The guide invocation source is invalid")
   const workspaceId = requiredString(value.source, "workspaceId", "source workspace id", 256)
   const paneId = requiredString(value.source, "paneId", "source pane id", 256)
   const cwd = requiredString(value.source, "cwd", "source working directory")
   if (!path.isAbsolute(cwd)) throw new Error("source working directory must be absolute")
+  if (value.kind === "optimize") {
+    if (value.answer !== undefined || value.capture !== undefined) throw new Error("Optimize captures its own source; do not substitute captured text as the task.")
+    return { kind: "optimize", source: { workspaceId, paneId, cwd } }
+  }
+  if (value.kind !== undefined) throw new Error("The guide invocation kind is unsupported")
+  const answer = validateAnswer(value.answer, "Captured answer")
+  const capture = parseCaptureProvenance(value.capture)
   return { answer, capture, source: { workspaceId, paneId, cwd } }
 }
 

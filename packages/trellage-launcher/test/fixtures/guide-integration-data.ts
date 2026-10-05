@@ -8,6 +8,9 @@ import type {
   GuideOptimizeInput,
 } from "../../src/guide-provider.ts"
 import type { GuideUiResult } from "../../src/guide-ui.tsx"
+import type { GuideOptimizeRequest } from "../../src/guide-optimize.ts"
+import type { GuideOptimizeScope } from "../../src/guide-optimize-target.ts"
+import type { OptimizeReviewInput } from "../../src/guide-optimize-review.ts"
 import type { GuideGoalAnswer, GuideGoalProposal, GuideGoalReviewDecision } from "../../src/guide-goal-augment.ts"
 
 export enum FixtureMode {
@@ -24,6 +27,10 @@ export enum FixtureMode {
   Customer = "customer",
   CustomerHerdr = "customer-herdr",
   CustomerExistingWorktree = "customer-existing-worktree",
+  OptimizeDirect = "optimize-direct",
+  OptimizeIncomplete = "optimize-incomplete",
+  OptimizeNoChange = "optimize-no-change",
+  OptimizeCancel = "optimize-cancel",
 }
 
 export type FixtureProfileId =
@@ -266,6 +273,16 @@ export interface RecordedCommand {
 
 export type FixtureEvent =
   | { readonly kind: "input"; readonly input: string }
+  | { readonly kind: "optimize-target"; readonly scope: GuideOptimizeScope }
+  | { readonly kind: "optimize-review"; readonly input: OptimizeReviewInput }
+  | { readonly kind: "optimize-approval"; readonly reviewId: string; readonly ids: ReadonlyArray<string> }
+  | { readonly kind: "optimize-history"; readonly reviewId?: string }
+  | {
+      readonly kind: "optimize-changes"
+      readonly request: GuideOptimizeRequest
+      readonly profileRef: string
+      readonly prompt: string
+    }
   | { readonly kind: "goal-start"; readonly sessionId: number; readonly intent: string; readonly previousTurns: number }
   | { readonly kind: "goal-answer"; readonly sessionId: number; readonly question: string; readonly answer: GuideGoalAnswer }
   | { readonly kind: "goal-proposal"; readonly sessionId: number; readonly proposal: GuideGoalProposal }

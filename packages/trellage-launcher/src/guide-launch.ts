@@ -1,6 +1,6 @@
 import path from "node:path"
 import { createHash } from "node:crypto"
-import { spawn } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import { closeSync, constants, openSync } from "node:fs"
 import {
   FIRSTMATE_MAX_REQUEST_BYTES,
@@ -164,6 +164,13 @@ export interface HerdrEnvironment {
   readonly HERDR_PANE_ID?: string
   readonly TRELLAGE_GUIDE_HERDR_CONTEXT_JSON?: string
 }
+
+export const herdrEnvironment = (env: NodeJS.ProcessEnv = process.env): HerdrEnvironment => ({
+  ...(env.HERDR_ENV === undefined ? {} : { HERDR_ENV: env.HERDR_ENV }),
+  ...(env.HERDR_WORKSPACE_ID === undefined ? {} : { HERDR_WORKSPACE_ID: env.HERDR_WORKSPACE_ID }),
+  ...(env.HERDR_PANE_ID === undefined ? {} : { HERDR_PANE_ID: env.HERDR_PANE_ID }),
+  ...(env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON === undefined ? {} : { TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON }),
+})
 
 export interface HerdrContext {
   readonly workspaceId: string
@@ -779,7 +786,11 @@ export const buildHerdrGuideLaunch = (
 export const posixShellEscape = (value: string): string => {
   if (value.length === 0) return "''"
   if (safeShellText.test(value)) return value
-  return `'${value.replaceAll("'", `'"'"'`)}'`
+  // Fish decodes backslashes inside single quotes; escape them outside quotes instead.
+  return value
+    .split("\\")
+    .map((part) => `'${part.replaceAll("'", `'"'"'`)}'`)
+    .join("\\\\")
 }
 
 export const renderCommandPreview = (command: CommandSpec): string =>
@@ -1109,7 +1120,19 @@ export const runInteractiveTerminalCommand = async (
   command: CommandSpec,
   options?: Pick<CommandRunOptions, "cwd" | "env">,
 ): Promise<void> => {
-  const terminal = openSync("/dev/tty", constants.O_RDWR)
+  let filename = "/dev/tty"
+  if (process.platform === "darwin") {
+    // macOS cannot poll the /dev/tty proxy with kqueue.
+    const name = execFileSync("/bin/ps", ["-p", String(process.pid), "-o", "tty="], {
+      encoding: "utf8",
+      timeout: 5000,
+      maxBuffer: 4096,
+    }).trim()
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name))
+      throw new Error("an interactive controlling terminal is required")
+    filename = `/dev/${name}`
+  }
+  const terminal = openSync(filename, constants.O_RDWR)
   try {
     await runInteractiveCommand(command, { ...options, stdio: [terminal, terminal, terminal] })
   } finally {

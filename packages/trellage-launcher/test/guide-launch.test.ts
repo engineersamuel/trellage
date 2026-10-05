@@ -468,6 +468,40 @@ describe("shell preview escaping", () => {
       }),
     ).toBe("trellage --profile prime-agent -p 'say '\"'\"'$HOME'\"'\"'\nnext line' ''")
   })
+
+  for (const shell of [
+    { executable: "sh", args: [] },
+    { executable: "bash", args: ["--noprofile", "--norc"] },
+    { executable: "zsh", args: ["-f"] },
+    { executable: "fish", args: ["--no-config"] },
+  ]) {
+    it.skipIf(Bun.which(shell.executable) === null)(`preserves prompt arguments through ${shell.executable}`, () => {
+      const args = [
+        "",
+        "two words",
+        "$HOME",
+        "$(printf unexpected)",
+        "`printf unexpected`",
+        "a'b",
+        "line1\nline2\n",
+        "\u00e9",
+        JSON.stringify({ quote: 'const lines = source.content.split("\\n")\nreturn lines.join("\\n\\n")' }),
+        "\\",
+        "\\'",
+        "'\\",
+        "end\\",
+        "two\\\\slashes",
+      ]
+      const command = renderCommandPreview({ executable: "printf", args: ["%s\\0", ...args] })
+      expect(
+        execFileSync(shell.executable, [...shell.args, "-c", command], {
+          encoding: "utf8",
+          timeout: 5000,
+          env: { PATH: process.env.PATH },
+        }),
+      ).toBe(args.map((arg) => `${arg}\0`).join(""))
+    })
+  }
 })
 
 describe("node command runner regression coverage", () => {

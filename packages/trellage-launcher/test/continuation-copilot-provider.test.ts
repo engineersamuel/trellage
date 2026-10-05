@@ -50,6 +50,13 @@ type Event = { readonly type: string; readonly data: unknown }
 class FakeSession implements RestrictedGuideModelSession {
   readonly sessionId = "offline-session"
   readonly prompts: string[] = []
+  readonly structuredRequests: Array<Parameters<NonNullable<RestrictedGuideModelSession["rpc"]>["send"]>[0]> = []
+  rpc?: NonNullable<RestrictedGuideModelSession["rpc"]> = {
+    send: async (input) => {
+      this.structuredRequests.push(input)
+      return { messageId: await this.send({ prompt: input.prompt }) }
+    },
+  }
   readonly handlers = new Set<(event: Event) => void>()
   readonly started = deferred<void>()
   abortCalls = 0
@@ -162,12 +169,91 @@ const promises = { assess: "ASSESS raw JSON.", summarize: "SUMMARIZE raw JSON." 
 afterEach(() => vi.useRealTimers())
 
 describe("restricted continuation SDK execution", () => {
+  it("requests provider-native strict JSON output without changing ordinary text requests", async () => {
+    const client = new FakeClient()
+    const responseFormat = {
+      type: "json_schema",
+      jsonSchema: {
+        name: "fixture_review",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { summary: { type: "string" } },
+          required: ["summary"],
+        },
+      },
+    } satisfies NonNullable<RestrictedGuideModelRequest["responseFormat"]>
+    client.session.sendBehavior = (session) => {
+      expect(session.structuredRequests).toEqual([{ prompt: "Review fixture.", responseFormat }])
+      session.reply('{"summary":"Complete."}')
+    }
+    expect(await runRestrictedGuideModelRequest(request(client, { prompt: "Review fixture.", responseFormat }))).toBe(
+      '{"summary":"Complete."}',
+    )
+    expect(client.session.prompts).toEqual(["Review fixture."])
+    expect(client.deleted).toEqual(["offline-session"])
+    const ordinary = new FakeClient()
+    expect(await runRestrictedGuideModelRequest(request(ordinary))).toBe("{}")
+    expect(ordinary.session.structuredRequests).toEqual([])
+  })
+
+  it("refuses unsupported structured output rather than silently requesting free-form JSON", async () => {
+    const client = new FakeClient()
+    delete client.session.rpc
+    await expect(
+      runRestrictedGuideModelRequest(
+        request(client, {
+          responseFormat: {
+            type: "json_schema",
+            jsonSchema: { name: "fixture", strict: true, schema: { type: "object" } },
+          },
+        }),
+      ),
+    ).rejects.toThrow("does not support schema-controlled")
+    expect(client.session.prompts).toEqual([])
+    expect(client.deleted).toEqual(["offline-session"])
+  })
+
+  it("allows only supplied snapshot tools and keeps built-ins, discovery, skills, and permissions denied", async () => {
+    const client = new FakeClient()
+    const tool = {
+      name: "read_review_source",
+      description: "Read a frozen fixture.",
+      parameters: { type: "object" },
+      skipPermission: true as const,
+      handler: () => ({ resultType: "success" as const, textResultForLlm: "fixture" }),
+    }
+    expect(await runRestrictedGuideModelRequest(request(client, { tools: [tool] }))).toBe("{}")
+    expect(client.configs[0]).toMatchObject({
+      tools: [tool],
+      availableTools: ["custom:read_review_source"],
+      enableSkills: false,
+      skillDirectories: [],
+      enableConfigDiscovery: false,
+      mcpServers: {},
+      customAgents: [],
+      hooks: {},
+      enableHostGitOperations: false,
+      pluginDirectories: [],
+      instructionDirectories: [],
+    })
+    expect(
+      await client.configs[0]!.onPermissionRequest!(
+        { kind: "read", toolCallId: "denied", intention: "Read a live file", path: "/outside" },
+        { sessionId: "fixture" },
+      ),
+    ).toEqual({ kind: "reject" })
+    expect(client.deleted).toEqual(["offline-session"])
+    expect(client.session.disconnectCalls).toBe(1)
+  })
+
   it("uses empty runtime configuration, tools, hooks, discovery, persistence, and permissions", async () => {
     const client = new FakeClient()
     let options: CopilotClientOptions | undefined
     const output = await runRestrictedGuideModelRequest(
       request(client, {
-      copilotCliPath: "/offline/copilot",
+        copilotCliPath: "/offline/copilot",
         clientFactory: (value) => {
           options = value
           return client
@@ -310,23 +396,23 @@ describe("restricted continuation SDK execution", () => {
   it.each(["start", "metadata", "create", "send", "runtime"])(
     "does not retry a %s failure and still cleans up",
     async (stage) => {
-    const client = new FakeClient()
+      const client = new FakeClient()
       const fail = () => {
         throw new Error("PRIVATE TRANSPORT CONTENT")
       }
-    if (stage === "start") client.startBehavior = fail
-    if (stage === "metadata") client.modelBehavior = fail
-    if (stage === "create") client.createBehavior = fail
-    if (stage === "send") client.session.sendBehavior = fail
+      if (stage === "start") client.startBehavior = fail
+      if (stage === "metadata") client.modelBehavior = fail
+      if (stage === "create") client.createBehavior = fail
+      if (stage === "send") client.session.sendBehavior = fail
       if (stage === "runtime")
         client.session.sendBehavior = (session) =>
           session.emit(RestrictedGuideEventType.Error, { message: "PRIVATE TRANSPORT CONTENT" })
-    const error = await runRestrictedGuideModelRequest(request(client)).catch((value: unknown) => value)
-    expect(error).toBeInstanceOf(Error)
-    expect(String(error)).not.toContain("PRIVATE TRANSPORT CONTENT")
-    expect(client.stages.filter((value) => value === "start")).toHaveLength(1)
-    expect(client.session.prompts.length).toBeLessThanOrEqual(1)
-    expect(client.stages).toContain("stop")
+      const error = await runRestrictedGuideModelRequest(request(client)).catch((value: unknown) => value)
+      expect(error).toBeInstanceOf(Error)
+      expect(String(error)).not.toContain("PRIVATE TRANSPORT CONTENT")
+      expect(client.stages.filter((value) => value === "start")).toHaveLength(1)
+      expect(client.session.prompts.length).toBeLessThanOrEqual(1)
+      expect(client.stages).toContain("stop")
     },
   )
 
@@ -521,7 +607,7 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     )
     expect(
       continuationModelInputBudget({
-      ...availableModel,
+        ...availableModel,
         capabilities: {
           ...availableModel.capabilities,
           limits: { max_context_window_tokens: 100_000, max_prompt_tokens: 70_000 },
@@ -531,7 +617,7 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     for (const value of [NaN, Infinity, 0, -1, 4.5]) {
       expect(() =>
         continuationModelInputBudget({
-        ...availableModel,
+          ...availableModel,
           capabilities: {
             ...availableModel.capabilities,
             limits: { max_context_window_tokens: value },
@@ -570,40 +656,40 @@ describe("Copilot continuation model budgets and bounded repair", () => {
   it.each(["missing-model", "effort", "reasoning", "disabled", "budget"])(
     "fails %s before any inference session",
     async (kind) => {
-    const client = new FakeClient()
-    if (kind === "missing-model") client.models = []
-    if (kind === "effort") client.models = [{ ...availableModel, supportedReasoningEfforts: ["high"] }]
+      const client = new FakeClient()
+      if (kind === "missing-model") client.models = []
+      if (kind === "effort") client.models = [{ ...availableModel, supportedReasoningEfforts: ["high"] }]
       if (kind === "reasoning")
         client.models = [
           {
-      ...availableModel,
+            ...availableModel,
             capabilities: {
               ...availableModel.capabilities,
               supports: { vision: false, reasoningEffort: false },
             },
           },
         ]
-    if (kind === "disabled") client.models = [{ ...availableModel, policy: { state: "disabled", terms: "" } }]
+      if (kind === "disabled") client.models = [{ ...availableModel, policy: { state: "disabled", terms: "" } }]
       if (kind === "budget")
         client.models = [
           {
-      ...availableModel,
+            ...availableModel,
             capabilities: {
               ...availableModel.capabilities,
               limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 9000 },
             },
           },
         ]
-    const provider = createCopilotContinuationProvider({
+      const provider = createCopilotContinuationProvider({
         model: "fixture-model",
         effort: "medium",
         prompts: promises,
         clientFactory: () => client,
-    })
-    await expect(analyzeConversation(conversationFixture(10, 8000), continuationEntries, provider)).rejects.toThrow()
-    expect(client.configs).toHaveLength(0)
-    expect(client.session.prompts).toHaveLength(0)
-    expect(client.stages).toContain("stop")
+      })
+      await expect(analyzeConversation(conversationFixture(10, 8000), continuationEntries, provider)).rejects.toThrow()
+      expect(client.configs).toHaveLength(0)
+      expect(client.session.prompts).toHaveLength(0)
+      expect(client.stages).toContain("stop")
     },
   )
 
@@ -618,7 +704,7 @@ describe("Copilot continuation model budgets and bounded repair", () => {
         client.session.sendBehavior = (session) =>
           session.reply(
             clients.length === 1
-          ? "x".repeat(continuationPolicy.maxResponseBytes + 1)
+              ? "x".repeat(continuationPolicy.maxResponseBytes + 1)
               : JSON.stringify(assessmentFixture()),
           )
         clients.push(client)
@@ -730,7 +816,7 @@ describe("Copilot continuation model budgets and bounded repair", () => {
       continuationEntries,
       provider,
       {
-      signal: controller.signal,
+        signal: controller.signal,
         onSummaries: async (summaries) => {
           saved.push(summaries.length)
         },

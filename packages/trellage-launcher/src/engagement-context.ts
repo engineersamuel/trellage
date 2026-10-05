@@ -93,6 +93,7 @@ export const readEngagementFile = async (
   root: string,
   filename: string,
   maximum: number = engagementLimits.fileBytes,
+  options: { readonly allowBlank?: boolean } = {},
 ): Promise<string> => {
   const absolute = await checkEngagementParents(root, filename)
   const entry = await lstat(absolute)
@@ -122,7 +123,8 @@ export const readEngagementFile = async (
       throw new Error(`Engagement source changed while reading: ${filename}`)
     }
     const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buffer.subarray(0, size))
-    if (content.length > 0) text(content, filename, maximum, { multiline: true, preserve: true })
+    if (content.length > 0 && !(options.allowBlank && /^[ \t\r\n]*$/u.test(content)))
+      text(content, filename, maximum, { multiline: true, preserve: true })
     return content
   } finally {
     await handle.close()

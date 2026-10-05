@@ -37,6 +37,7 @@ import { executeGuideUiResult } from "./guide-interactive-execution.ts"
 import {
   createNodeCommandRunner,
   getHerdrContext,
+  herdrEnvironment,
   probeHerdrAvailability,
   type HerdrEnvironment,
 } from "./guide-launch.ts"
@@ -48,6 +49,8 @@ import { JevGuideMatcher } from "./jev-guide-matcher.ts"
 import { adoptPrivateJevApiKey } from "./jev-decisions.ts"
 import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
 import { GuideApp, type GuideUiProps, type GuideUiResult } from "./guide-ui.tsx"
+import { createGuideOptimizeServices } from "./guide-optimize.ts"
+import { GuideOptimizeApp } from "./guide-optimize-ui.tsx"
 import { ContinuationApp } from "./continuation-ui.tsx"
 import { ContinuationStore } from "./continuation-store.ts"
 import { ContinuationSourceClient } from "./continuation-source-client.ts"
@@ -666,15 +669,6 @@ const runGuideJsonMode = async (
   process.stdout.write(`${JSON.stringify(response)}\n`)
 }
 
-const herdrEnvironment = (): HerdrEnvironment => ({
-  ...(process.env.HERDR_ENV === undefined ? {} : { HERDR_ENV: process.env.HERDR_ENV }),
-  ...(process.env.HERDR_WORKSPACE_ID === undefined ? {} : { HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID }),
-  ...(process.env.HERDR_PANE_ID === undefined ? {} : { HERDR_PANE_ID: process.env.HERDR_PANE_ID }),
-  ...(process.env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON === undefined
-    ? {}
-    : { TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: process.env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON }),
-})
-
 const probeInteractiveHerdr = async (
   runner: ReturnType<typeof createNodeCommandRunner>,
   env: HerdrEnvironment,
@@ -731,6 +725,10 @@ const runInteractiveGuideMode = async (
   const args = parseGuideHeadlessArgv(argv)
   if (args.engagement) {
     await runEngagementMode(argv, guideRoot)
+    return
+  }
+  if (args.optimize) {
+    await runOptimizeMode(argv)
     return
   }
   if (args.nextSteps) {
@@ -897,6 +895,45 @@ const runEngagementSession = async (
       notice = `Execution stopped: ${cause instanceof Error ? cause.message : String(cause)}`
     }
   }
+}
+
+const runOptimizeMode = async (argv: ReadonlyArray<string>): Promise<void> => {
+  const args = parseGuideHeadlessArgv(argv)
+  const env = herdrEnvironment()
+  const context = getHerdrContext(env)
+  const originalIntent = await resolveInteractiveGuideIntent({
+    args, herdrContext: context, env: process.env, readStdin: () => readInput(undefined),
+  })
+  const runner = createNodeCommandRunner()
+  const cwd = context?.surface === "popup" ? context.cwd ?? process.cwd() : process.cwd()
+  const routing = resolveGuideModelRouting({
+    ...(args.model === undefined ? {} : { model: args.model }),
+    ...(args.effort === undefined ? {} : { effort: args.effort }),
+  }, process.env)
+  const services = createGuideOptimizeServices({ runner, cwd, context, catalog: readGuideCatalog(), routing })
+  const terminal = openInteractiveTerminalStreams()
+  let result: GuideUiResult
+  try {
+    const instance = render(<GuideOptimizeApp services={services} originalIntent={originalIntent} initialBase={args.optimizeBase} />, {
+      stdin: terminal.input,
+      stdout: terminal.output,
+      interactive: true,
+      exitOnCtrlC: false,
+      kittyKeyboard: { mode: "disabled" },
+      alternateScreen: true,
+      onRender: createInitialGuideRenderHandler((value) => terminal.output.write(value), process.env.INK_SCREEN_READER !== "true"),
+      maxFps: 30,
+    })
+    const resolved = await instance.waitUntilExit()
+    if (resolved === undefined) {
+      process.exitCode = 130
+      return
+    }
+    result = resolved as GuideUiResult
+  } finally {
+    terminal.close()
+  }
+  process.exitCode = await executeGuideUiResult(result, { runner, write: (value) => process.stdout.write(value) })
 }
 
 const runContinuationMode = async (

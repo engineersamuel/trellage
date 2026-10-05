@@ -38,9 +38,9 @@ test("puts highlighted text before exact results and the capture queue last", ()
     "Highlighted text",
     { schemaVersion: 1, entries: [{ id: "one", answer: "Previously queued text" }] },
   )
-  assert.deepEqual(choices.map((choice) => choice.kind), ["selection", "exact", "queue"])
+  assert.deepEqual(choices.map((choice) => choice.kind), ["selection", "exact", "optimize", "queue"])
   assert.equal(choices[0].preview, "Highlighted text")
-  assert.equal(choices[2].label, "Open capture queue in trx guide (1)")
+  assert.equal(choices[3].label, "Open capture queue in trx guide (1)")
 })
 
 test("keeps the existing first source selected when Rewrite output is added", () => {
@@ -51,8 +51,32 @@ test("keeps the existing first source selected when Rewrite output is added", ()
     { schemaVersion: 1, entries: [] },
     rewrite,
   )
-  assert.deepEqual(choices.map((choice) => choice.kind), ["rewrite", "exact"])
+  assert.deepEqual(choices.map((choice) => choice.kind), ["rewrite", "exact", "optimize"])
   assert.equal(initialSourceChoiceIndex(choices), 1)
+})
+
+test("opens Optimize against the invoking pane rather than substituting clipboard or conversation text", async () => {
+  const choices = orderedSourceChoices([], "Unrelated clipboard text", { schemaVersion: 1, entries: [] })
+  const choice = choices.find((entry) => entry.kind === "optimize")
+  assert.ok(choice)
+  const calls = []
+  let written
+  await invokeGuideChoice({
+    choice, context, stateDir: "/plugin-state",
+    choiceWriter: async (_directory, value) => {
+      written = value
+      return "trellage-guide-choice:v1:55555555-5555-4555-8555-555555555555"
+    },
+    request: async (method, params) => calls.push({ method, params }),
+  })
+  assert.deepEqual(written, { schemaVersion: 1, kind: "optimize" })
+  assert.equal(calls[0].params.context.focused_pane_id, context.paneId)
+  assert.equal(calls[0].params.context.focused_pane_cwd, context.cwd)
+  assert.equal(JSON.stringify(calls).includes("Unrelated clipboard text"), false)
+  await assert.rejects(
+    invokeGuideChoice({ choice, context, stateDir: "/plugin-state", operation: "enqueue" }),
+    /not a capture to enqueue/u,
+  )
 })
 
 test("marks a selected source for enqueue without putting text in action context", async () => {

@@ -153,7 +153,7 @@ test("quotes the source checkout, preserves the target cwd, and removes stale po
 test("keeps engagement visible without changing the preferred highlighted-text source", () => {
   const engagement = engagementSourceChoice(context)
   const choices = orderedSourceChoices([], "Selected text", { entries: [] }, { kind: "rewrite" }, engagement)
-  assert.deepEqual(choices.map((choice) => choice.kind), ["rewrite", "engagement", "selection"])
+  assert.deepEqual(choices.map((choice) => choice.kind), ["rewrite", "engagement", "selection", "optimize"])
   assert.equal(initialSourceChoiceIndex(choices), 2)
   assert.match(engagement.label, /HVE next steps/u)
   assert.match(engagement.preview, /No capture, model call, or HVE agent launch/u)

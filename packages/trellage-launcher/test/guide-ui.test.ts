@@ -4041,12 +4041,15 @@ describe("guideUiReducer: prepared goal ownership", () => {
     expect(state.stage).toBe(GuideUiStage.Generating)
   })
 
-  it("opens main prompt editing without changing a parked fork's source", () => {
+  it.each([
+    [GuideUiActionType.PromptReviewOpen, GuideUiStage.PromptReview],
+    [GuideUiActionType.OptimizeOpen, GuideUiStage.Optimize],
+  ] as const)("opens %s without changing a parked fork's source", (type, stage) => {
     let state = guideUiReducer(generated(), { type: GuideUiActionType.CandidatesBack })
-    state = guideUiReducer(state, { type: GuideUiActionType.PromptReviewOpen })
-    expect(state.stage).toBe(GuideUiStage.PromptReview)
+    state = guideUiReducer(state, { type })
+    expect(state.stage).toBe(stage)
     expect(state.activeForkId).toBeUndefined()
-    expect(state.textDraft).toBe(goal.prompt)
+    expect(state.textDraft).toBe(stage === GuideUiStage.PromptReview ? goal.prompt : "")
     expect(forkState(state, 1)?.selectedGoal).toBe(goal)
     expect(forkState(state, 1)?.selectedIntent).toBe(goal.prompt)
   })

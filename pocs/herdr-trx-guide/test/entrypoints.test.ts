@@ -205,6 +205,65 @@ test("action queues a selected source without opening the full guide", async (t)
   assert.deepEqual(notification.argv.slice(0, 3), ["notification", "show", "Added to Trellage capture queue"])
 })
 
+test("Optimize opens a target-aware popup without reading or consuming the capture queue", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-optimize-action-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const capturePath = path.join(root, "herdr-call.json")
+  const fakeHerdr = await writeCaptureExecutable(root, "herdr", capturePath)
+  const socketPath = await socketServer(t, (request) => {
+    assert.equal(request.method, "popup.close")
+    return { type: "popup_closed" }
+  })
+  await appendCaptureQueue(root, { answer: "Keep this queued capture unchanged." })
+  const token = await writeChoice(root, { schemaVersion: 1, kind: "optimize" })
+  await execFileAsync(process.execPath, [actionEntrypoint], {
+    env: {
+      ...process.env, HERDR_BIN_PATH: fakeHerdr, HERDR_SOCKET_PATH: socketPath, HERDR_PLUGIN_STATE_DIR: root,
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+        workspace_id: "w1", focused_pane_id: "w1:p1", focused_pane_cwd: "/repo",
+        invocation_source: "trellage-guide-panel", selected_text: token,
+      }),
+    },
+  })
+  const call = JSON.parse(await readFile(capturePath, "utf8"))
+  const invocationArgument = call.argv.find((argument) => argument.startsWith("TRELLAGE_GUIDE_INVOCATION_PATH="))
+  assert.ok(invocationArgument)
+  const invocation = await consumeInvocation(root, invocationArgument.slice("TRELLAGE_GUIDE_INVOCATION_PATH=".length))
+  assert.deepEqual(invocation, {
+    schemaVersion: 1, kind: "optimize", source: { workspaceId: "w1", paneId: "w1:p1", cwd: "/repo" },
+  })
+  assert.deepEqual((await readCaptureQueue(root)).entries.map((entry) => entry.answer), ["Keep this queued capture unchanged."])
+})
+
+test("Optimize popup requires no source lookup and scrubs an inherited prompt file", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "herdr-optimize-popup-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const bin = path.join(root, "bin")
+  await mkdir(bin)
+  const capturePath = path.join(root, "mise-call.json")
+  await writeCaptureExecutable(bin, "mise", capturePath)
+  const socketPath = path.join(root, "unavailable-source.sock")
+  const invocationPath = await writeInvocation(root, {
+    schemaVersion: 1, kind: "optimize", source: { workspaceId: "w1", paneId: "w1:p1", cwd: "/repo" },
+  })
+  await execFileWithInput(process.execPath, [popupEntrypoint], {
+    env: {
+      ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, HERDR_BIN_PATH: "",
+      HERDR_SOCKET_PATH: socketPath, HERDR_PLUGIN_ROOT: pluginRoot, HERDR_PLUGIN_STATE_DIR: root,
+      TRELLAGE_GUIDE_INVOCATION_PATH: invocationPath, TRELLAGE_GUIDE_HERDR_INTENT_FILE: "/do/not/read/inherited-intent",
+    },
+  }, "popup keyboard input")
+  const call = JSON.parse(await readFile(capturePath, "utf8"))
+  assert.deepEqual(call.argv, ["run", "--raw", "trx", "--", "guide", "--optimize"])
+  assert.equal(call.intentPath, undefined)
+  assert.equal(call.intent, undefined)
+  assert.equal(call.stdin, "popup keyboard input")
+  assert.deepEqual(JSON.parse(call.context), {
+    schemaVersion: 1, surface: "popup", workspaceId: "w1", paneId: "w1:p1", cwd: "/repo",
+  })
+  await assert.rejects(readFile(invocationPath, "utf8"), { code: "ENOENT" })
+})
+
 test("action opens and clears the persistent capture queue in insertion order", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "herdr-guide-action-open-queue-"))
   t.after(() => rm(root, { recursive: true, force: true }))
