@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react"
 import { Box, Text, useInput } from "ink"
 import stringWidth from "string-width"
 import { toAsciiComponentText } from "./termcn/terminal-symbols.ts"
+import { useTheme } from "./termcn/use-theme.ts"
 import { useUnicode } from "./termcn/use-unicode.ts"
 
 const guideTextSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" })
@@ -37,7 +38,8 @@ export const wrapGuideText = (value: string, width: number): ReadonlyArray<strin
     .flatMap((sourceLine) => wrapGuideTextLine(sourceLine, lineWidth))
 }
 
-type MarkdownDisplayKind = "body" | "heading" | "list" | "quote" | "code" | "rule"
+type MarkdownDisplayKind = "body" | "heading" | "list" | "quote" | "code" | "rule" |
+  "diff-add" | "diff-remove" | "diff-hunk" | "diff-context"
 type MarkdownInlineKind = "text" | "bold" | "italic" | "code" | "strikethrough" | "link"
 
 export interface MarkdownInlineSegment {
@@ -184,28 +186,67 @@ const classifyMarkdownLine = (
   return { text: source, kind: "body", inCode }
 }
 
+const diffLineKind = (source: string): MarkdownDisplayKind =>
+  source.startsWith("+") ? "diff-add" :
+    source.startsWith("-") ? "diff-remove" :
+      source.startsWith("@@") ? "diff-hunk" : "diff-context"
+
+const wrapDiffLine = (source: string, width: number): ReadonlyArray<string> => {
+  if (width <= 1 || (source[0] !== "+" && source[0] !== "-")) return wrapGuideTextLine(source, width)
+  return wrapGuideTextLine(source.slice(1), width - 1).map((line) => `${source[0]}${line}`)
+}
+
+const pushDisplayLine = (lines: Array<MarkdownDisplayLine>, line: MarkdownDisplayLine): void => {
+  if (line.text.length > 0 || lines.at(-1)?.text.length !== 0) lines.push(line)
+}
+
+const appendDiffLine = (lines: Array<MarkdownDisplayLine>, source: string, width: number): void => {
+  const kind = diffLineKind(source)
+  for (const text of wrapDiffLine(source, Math.max(1, width))) pushDisplayLine(lines, { text, kind })
+}
+
+const appendMarkdownLine = (lines: Array<MarkdownDisplayLine>, source: string, width: number,
+  inCode: boolean, sectionHeadings?: ReadonlySet<string>): boolean => {
+  const classified = classifyMarkdownLine(source, inCode, sectionHeadings)
+  if (classified.kind === "heading" && lines.at(-1)?.text) lines.push({ text: "", kind: "body" })
+  const wrapped = classified.kind === "code"
+    ? wrapGuideTextLine(classified.text, Math.max(1, width)).map((text) => ({ text }))
+    : wrapMarkdownTextLine(classified.text, Math.max(1, width))
+  for (const line of wrapped) pushDisplayLine(lines, { ...line, kind: classified.kind })
+  if (classified.kind === "heading") lines.push({ text: "", kind: "body" })
+  return classified.inCode
+}
+
+const openingDiffFenceLength = (source: string, inCode: boolean, renderDiffs: boolean): number =>
+  renderDiffs && !inCode ? /^\s*(`{3,})\s*diff\s*$/iu.exec(source)?.[1]?.length ?? 0 : 0
+
+const closesDiffFence = (source: string, length: number): boolean =>
+  (/^\s*(`{3,})\s*$/u.exec(source)?.[1]?.length ?? 0) >= length
+
 export const markdownPromptLines = (
   value: string,
   width: number,
   sectionHeadings?: ReadonlySet<string>,
+  renderDiffs = false,
 ): ReadonlyArray<MarkdownDisplayLine> => {
   const lines: Array<MarkdownDisplayLine> = []
   let inCode = false
+  let diffFenceLength = 0
   for (const source of value.replace(/\r\n?/gu, "\n").replaceAll("\t", "    ").split("\n")) {
-    const classified = classifyMarkdownLine(source, inCode, sectionHeadings)
-    inCode = classified.inCode
-    const previous = lines.at(-1)
-    if (classified.kind === "heading" && previous !== undefined && previous.text.length > 0) {
-      lines.push({ text: "", kind: "body" })
+    if (diffFenceLength > 0) {
+      if (closesDiffFence(source, diffFenceLength)) {
+        diffFenceLength = 0
+        lines.push({ text: "", kind: "body" })
+      } else appendDiffLine(lines, source, width)
+      continue
     }
-    const wrapped =
-      classified.kind === "code"
-        ? wrapGuideTextLine(classified.text, Math.max(1, width)).map((text) => ({ text }))
-        : wrapMarkdownTextLine(classified.text, Math.max(1, width))
-    for (const line of wrapped) {
-      if (line.text.length > 0 || lines.at(-1)?.text.length !== 0) lines.push({ ...line, kind: classified.kind })
+    const openingLength = openingDiffFenceLength(source, inCode, renderDiffs)
+    if (openingLength > 0) {
+      diffFenceLength = openingLength
+      if (lines.at(-1)?.text) lines.push({ text: "", kind: "body" })
+      continue
     }
-    if (classified.kind === "heading") lines.push({ text: "", kind: "body" })
+    inCode = appendMarkdownLine(lines, source, width, inCode, sectionHeadings)
   }
   return lines
 }
@@ -262,9 +303,21 @@ const MarkdownInline = ({ segments }: { readonly segments: ReadonlyArray<Markdow
 const asciiMarkdownText = (value: string): string =>
   toAsciiComponentText(value.replaceAll("☐", "[ ]").replaceAll("☒", "[x]"))
 
+const DiffMarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) => {
+  const theme = useTheme()
+  const color = line.kind === "diff-add" ? theme.colors.success :
+    line.kind === "diff-remove" ? theme.colors.error :
+      line.kind === "diff-hunk" ? theme.colors.info : undefined
+  return <Text {...(color ? { color } : {})} wrap="truncate-end">{line.text}</Text>
+}
+
+const diffDisplayKinds: ReadonlySet<MarkdownDisplayKind> =
+  new Set(["diff-add", "diff-remove", "diff-hunk", "diff-context"])
+
 export const MarkdownLine = ({ line }: { readonly line: MarkdownDisplayLine }) => {
   const unicode = useUnicode()
   if (line.text.length === 0) return <Text> </Text>
+  if (diffDisplayKinds.has(line.kind)) return <DiffMarkdownLine line={line} />
   const segments = line.segments ?? [{ text: line.text, kind: "text" as const }]
   const content = (
     <MarkdownInline
@@ -294,6 +347,7 @@ export const MarkdownTextViewport = ({
   resetKey,
   startLine: controlledStartLine,
   onStartLineChange,
+  renderDiffs = false,
 }: {
   readonly value: string
   readonly width: number
@@ -301,9 +355,10 @@ export const MarkdownTextViewport = ({
   readonly resetKey?: string
   readonly startLine?: number
   readonly onStartLineChange?: (startLine: number) => void
+  readonly renderDiffs?: boolean
 }) => {
   const [requestedStartLine, setRequestedStartLine] = useState(0)
-  const lines = markdownPromptLines(value, width)
+  const lines = markdownPromptLines(value, width, undefined, renderDiffs)
   const viewportHeight = Math.max(1, height)
   const maximumStartLine = Math.max(0, lines.length - viewportHeight)
   const startLine = Math.min(maximumStartLine, Math.max(0, controlledStartLine ?? requestedStartLine))

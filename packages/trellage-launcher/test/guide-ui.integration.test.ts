@@ -1147,6 +1147,23 @@ it.for([
   },
 )
 
+it("opens Review from an empty intent without starting profile matching", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal)
+  await guide.waitForText("Ctrl-R review committed and working-tree changes")
+  const report = await guide.finish("\u0012")
+  expect(report.result).toEqual({ action: "review" })
+  expect(report.events).toEqual([{ kind: "input", input: "\u0012" }])
+})
+
+it("does not discard a draft when Review is requested", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal)
+  await guide.pressAndWait("work", "work█")
+  await guide.pressAndWait("\u0012", "Clear the draft before opening Review.")
+  expect(guide.text()).toContain("work")
+  const report = await guide.finish("\u0003", 130)
+  expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
+})
+
 it("keeps one readiness probe alive while its fork is parked and the main selection changes", async ({ guide }) => {
   await guide.start(FixtureMode.ParkedReadiness)
   await enterIntent(guide)

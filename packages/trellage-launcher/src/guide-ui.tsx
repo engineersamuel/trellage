@@ -67,6 +67,7 @@ import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.tsx"
 import { resolveStatusSymbol, resolveTerminalSymbol } from "./termcn/terminal-symbols.ts"
 import { resolveBorderStyle } from "./termcn/terminal-style.ts"
 import { isNoUnicode, useUnicode } from "./termcn/use-unicode.ts"
+import { spinnerFrameAt } from "./guide-spinner.ts"
 import {
   composeGuideGoalCandidate,
   guideGoalApproachBudget,
@@ -207,6 +208,7 @@ import {
   type JobPlacement,
 } from "./guide-batch.ts"
 
+export { spinnerFrameAt } from "./guide-spinner.ts"
 export {
   MarkdownTextViewport,
   markdownInlineSegments,
@@ -4137,6 +4139,7 @@ export type GuideUiResult =
   | GuideUiBatchResult
   | GuideOptimizeTerminalResult
   | { readonly action: "optimize-submitted" }
+  | { readonly action: "review" }
 
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
 
@@ -4358,22 +4361,8 @@ const firstmateCaptureBannerRows = (stage: GuideUiStage, context: HerdrContext |
   return 3 + wrapGuideText(label, width).length + wrapGuideText(detail, width).length
 }
 
-const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
-
-/** Braille frames become replacement boxes without Unicode, so the ASCII bar spins in their place. */
-const asciiSpinnerFrames = ["-", "\\", "|", "/"] as const
-
 const cyclicItemAt = <T,>(items: ReadonlyArray<T>, index: number): T | undefined =>
   items.length === 0 ? undefined : items[index % items.length]
-
-/**
- * Reads the terminal capability directly rather than through `useUnicode`,
- * because the twelve call sites include plain helper functions where a hook
- * cannot run. Nothing in this app mounts a `UnicodeProvider`, so the context
- * and the environment always report the same capability.
- */
-export const spinnerFrameAt = (tick: number): string =>
-  cyclicItemAt(isNoUnicode() ? asciiSpinnerFrames : spinnerFrames, tick) ?? "•"
 
 export const spinnerMessageAt = (messages: ReadonlyArray<string>, tick: number): string | undefined =>
   cyclicItemAt(messages, Math.floor(tick / 15))
@@ -5033,11 +5022,12 @@ const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => {
       <ScrollableTextViewport
         value={textDraft}
         width={Math.max(1, columns - 2)}
-        height={Math.max(1, rows - 3)}
+        height={Math.max(1, rows - 4)}
         startAtEnd
         cursor
       />
       <Text dimColor>Type your intent · Ctrl-G augment · PgUp/PgDn scroll · ↵ submit · Ctrl-C cancel</Text>
+      <Text dimColor>Ctrl-R review committed and working-tree changes</Text>
     </Box>
   )
 }
@@ -6797,10 +6787,13 @@ const appendEditorInput = (
     : { type: GuideUiActionType.InputRejected, message: `Text exceeds ${maximum} characters. Nothing was added.` })
 }
 
-const handleIntentInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
+const handleIntentInput: GuideInputHandler = ({ state, dispatch, complete }, input, key) => {
   // Checked before the printable branch: every other key on this screen is
   // text, so only a Ctrl chord can be a shortcut here.
-  if (key.ctrl && input === "g") dispatch({ type: GuideUiActionType.AugmentOpen })
+  if (key.ctrl && input === "r") {
+    if (state.textDraft.length === 0) complete({ action: "review" })
+    else dispatch({ type: GuideUiActionType.InputRejected, message: "Clear the draft before opening Review." })
+  } else if (key.ctrl && input === "g") dispatch({ type: GuideUiActionType.AugmentOpen })
   else if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })
   else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.IntentBackspace })
   else if (isPrintableInput(input, key)) {

@@ -3144,6 +3144,51 @@ describe("markdownPromptLines", () => {
     expect(lines).toContainEqual({ text: "•", kind: "list" })
   })
 
+  it("renders fenced diffs with line kinds and visible +/- markers only when enabled", () => {
+    const source = [
+      "Before",
+      "```diff",
+      "diff --git a/src/file.ts b/src/file.ts",
+      "@@ -1 +1 @@",
+      "-const previous = 1",
+      "+const replacement = 2",
+      " unchanged",
+      "```",
+      "After",
+      "```ts",
+      "+literal code",
+      "```",
+    ].join("\n")
+    const lines = markdownPromptLines(source, 80, undefined, true)
+    expect(lines.map(({ text, kind }) => ({ text, kind }))).toEqual([
+      { text: "Before", kind: "body" },
+      { text: "", kind: "body" },
+      { text: "diff --git a/src/file.ts b/src/file.ts", kind: "diff-context" },
+      { text: "@@ -1 +1 @@", kind: "diff-hunk" },
+      { text: "-const previous = 1", kind: "diff-remove" },
+      { text: "+const replacement = 2", kind: "diff-add" },
+      { text: " unchanged", kind: "diff-context" },
+      { text: "", kind: "body" },
+      { text: "After", kind: "body" },
+      { text: "```ts", kind: "code" },
+      { text: "+literal code", kind: "code" },
+      { text: "```", kind: "code" },
+    ])
+    expect(markdownPromptLines(source, 80).some((line) => line.text === "```diff")).toBe(true)
+  })
+
+  it("repeats diff markers on wrapped lines without changing the source", () => {
+    const source = "````diff\n+added value spans lines\n-removed value spans lines\n```\n+still code\n````"
+    const lines = markdownPromptLines(source, 10, undefined, true)
+    expect(lines.filter((line) => line.kind === "diff-add").every((line) =>
+      line.text.startsWith("+") && stringWidth(line.text) <= 10)).toBe(true)
+    expect(lines.filter((line) => line.kind === "diff-remove").every((line) =>
+      line.text.startsWith("-") && stringWidth(line.text) <= 10)).toBe(true)
+    expect(lines.some((line) => line.text === "```" && line.kind === "diff-context")).toBe(true)
+    expect(lines.some((line) => line.text.startsWith("+still") && line.kind === "diff-add")).toBe(true)
+    expect(lines.some((line) => line.text === "````")).toBe(false)
+  })
+
   it("parses safe inline Markdown without evaluating MDX or HTML", () => {
     expect(
       markdownInlineSegments("Use **bold**, *italics*, `code`, ~~old~~, and [docs](https://example.com)."),

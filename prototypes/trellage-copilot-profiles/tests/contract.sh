@@ -835,6 +835,29 @@ actual_hve_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_lo
 [[ "$actual_hve_launch" == "$expected_hve_launch" ]] \
   || fail 'hve launch did not preserve the exact ordered argument vector'
 
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" hve --plan -i 'Plan fixes before editing.'
+) >"$fixture_root/plan-launch.out"
+expected_plan_launch="$(jq -cn \
+  --arg home "$expected_hve_home" \
+  --arg cwd "$worktree" \
+  '{home: $home, cwd: $cwd, args: ["--plan", "--model", "gpt-6-astra", "--effort", "low", "-i", "Plan fixes before editing."]}')"
+actual_plan_launch="$(jq -c 'select(.args[0] == "--plan")' "$fake_copilot_argv_log" | tail -n 1)"
+[[ "$actual_plan_launch" == "$expected_plan_launch" ]] \
+  || fail 'plan launch included Autopilot or automatic approval flags'
+
+(
+  cd "$worktree"
+  "$prototype_root/bin/cpx" hve --plan --mode autopilot --allow-all --no-ask-user -i 'Plan and implement verified fixes.'
+) >"$fixture_root/autopilot-plan-launch.out"
+expected_autopilot_plan_launch="$(jq -cn \
+  --arg home "$expected_hve_home" \
+  --arg cwd "$worktree" \
+  '{home: $home, cwd: $cwd, args: ["--plan", "--model", "gpt-6-astra", "--effort", "low", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", "Plan and implement verified fixes."]}')"
+[[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_autopilot_plan_launch" ]] \
+  || fail 'autopilot plan launch did not preserve the plan and permission arguments'
+
 expected_superpowers_home="$HOME/.local/share/trellage/profiles/copilot/superpowers/home"
 (
   cd "$worktree"
@@ -844,7 +867,7 @@ expected_superpowers_launch="$(jq -cn \
   --arg home "$expected_superpowers_home" \
   --arg cwd "$worktree" \
   '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--model", "gpt-5.5", "--effort", "high", "--prompt", "two words", "--", "--deny-tool"]}')"
-actual_superpowers_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '2p')"
+actual_superpowers_launch="$(jq -c 'select(.args[0] == "--autopilot")' "$fake_copilot_argv_log" | sed -n '2p')"
 [[ "$actual_superpowers_launch" == "$expected_superpowers_launch" ]] \
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
 
@@ -860,7 +883,7 @@ expected_awesome_launch="$(jq -cn \
   --arg home "$expected_awesome_home" \
   --arg cwd "$worktree" \
   '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "find useful skills", "--deny-url=example.com", "--model=gpt-5.5", "--reasoning-effort=low"]}')"
-actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '3p')"
+actual_awesome_launch="$(jq -c 'select(.args[0] == "--autopilot")' "$fake_copilot_argv_log" | sed -n '3p')"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
 

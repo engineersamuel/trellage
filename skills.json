@@ -34,6 +34,18 @@
       "repository": "https://github.com/ayghri/i-have-adhd.git",
       "select": ["i-have-adhd"]
     },
+    "ponytail-review": {
+      "repository": "https://github.com/DietrichGebert/ponytail.git",
+      "select": ["ponytail-review"]
+    },
+    "fleet-review": {
+      "repository": "https://github.com/jsturtevant/copilot-plugins.git",
+      "select": ["fleet-review"]
+    },
+    "mattpocock-code-review": {
+      "repository": "https://github.com/mattpocock/skills.git",
+      "select": ["code-review"]
+    },
     "superpowers": {
       "repository": "https://github.com/obra/superpowers.git",
       "select": [
@@ -209,7 +221,7 @@
       "antislop-core",
       "antislop-addons"
     ],
-    "native-common": ["engineersamuel", "show-me", "i-have-adhd", "antislop-core", "antislop-addons"],
+    "native-common": ["engineersamuel", "show-me", "i-have-adhd", "ponytail-review", "fleet-review", "mattpocock-code-review", "antislop-core", "antislop-addons"],
     "guide-optimize-architecture": ["mattpocock-optimize"],
     "comparison-common": [
       "engineersamuel",

@@ -39,6 +39,7 @@ import {
   getHerdrContext,
   herdrEnvironment,
   probeHerdrAvailability,
+  runInteractiveCommand,
   type HerdrEnvironment,
 } from "./guide-launch.ts"
 import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
@@ -51,6 +52,10 @@ import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
 import { GuideApp, type GuideUiProps, type GuideUiResult } from "./guide-ui.tsx"
 import { createGuideOptimizeServices } from "./guide-optimize.ts"
 import { GuideOptimizeApp } from "./guide-optimize-ui.tsx"
+import { ReviewApp } from "./review-ui.tsx"
+import { createReviewUiProps } from "./review-entry.ts"
+import { executeReviewContinuation, reviewContinuationProfile, reviewContinuationProfileFromPath } from "./review-continuation.ts"
+import type { ReviewContinuation } from "./review-ui.tsx"
 import { ContinuationApp } from "./continuation-ui.tsx"
 import { ContinuationStore } from "./continuation-store.ts"
 import { ContinuationSourceClient } from "./continuation-source-client.ts"
@@ -717,6 +722,21 @@ const interactiveGuideMatcher = (
   cwd: string,
 ): JevGuideMatcher => new JevGuideMatcher({ cwd, env: process.env })
 
+const completeInteractiveGuideResult = async (
+  result: GuideUiResult,
+  catalog: ReturnType<typeof readGuideCatalog>,
+  runner: ReturnType<typeof createNodeCommandRunner>,
+): Promise<void> => {
+  if (result.action === "review") {
+    await runGuideReviewMode(catalog)
+    return
+  }
+  process.exitCode = await executeGuideUiResult(result, {
+    runner,
+    write: (text) => process.stdout.write(text),
+  })
+}
+
 const runInteractiveGuideMode = async (
   argv: ReadonlyArray<string>,
   guideRoot: string,
@@ -819,10 +839,7 @@ const runInteractiveGuideMode = async (
   } finally {
     terminal.close()
   }
-  process.exitCode = await executeGuideUiResult(result, {
-    runner,
-    write: (text) => process.stdout.write(text),
-  })
+  await completeInteractiveGuideResult(result, catalog, runner)
 }
 
 const renderEngagementUi = async (props: Omit<EngagementUiProps, "onResult">): Promise<EngagementUiResult> => {
@@ -1047,6 +1064,39 @@ const runGuideMode = async (): Promise<void> => {
   await runInteractiveGuideMode(argv, guideRoot, promptMasterSkillDirectory)
 }
 
+const runGuideReviewMode = async (catalog?: ReturnType<typeof readGuideCatalog>): Promise<void> => {
+  const props = createReviewUiProps(process.cwd())
+  const runner = createNodeCommandRunner()
+  const herdrEnv = herdrEnvironment()
+  const context = getHerdrContext(herdrEnv)
+  const herdrAvailable = await probeInteractiveHerdr(runner, herdrEnv, process.cwd())
+  const terminal = openInteractiveTerminalStreams()
+  let result: ReviewContinuation | undefined
+  try {
+    const instance = render(<ThemeProvider theme={trellageTheme}><ReviewApp {...props} herdrAvailable={herdrAvailable} /></ThemeProvider>, {
+      stdin: terminal.input,
+      stdout: terminal.output,
+      interactive: true,
+      exitOnCtrlC: false,
+      kittyKeyboard: { mode: "disabled" },
+      alternateScreen: true,
+      onRender: createInitialGuideRenderHandler((text) => terminal.output.write(text), process.env.INK_SCREEN_READER !== "true"),
+      maxFps: 30,
+    })
+    result = await instance.waitUntilExit() as ReviewContinuation | undefined
+  } finally {
+    terminal.close()
+  }
+  if (result?.action === "continue") {
+    terminal.input.pause()
+    const profile = catalog === undefined
+      ? reviewContinuationProfileFromPath(process.env.TRELLAGE_GUIDE_REVIEW_CPX_PATH)
+      : reviewContinuationProfile(catalog)
+    await executeReviewContinuation(result, profile,
+      process.cwd(), herdrAvailable ? context : null, { runner, runInteractive: runInteractiveCommand })
+  }
+}
+
 /**
  * Renders one staged prompt basket layout from fixture data. It reads no
  * catalog, calls no provider, and runs no command, so it opens instantly and
@@ -1246,6 +1296,11 @@ export const main = async (): Promise<void> => {
   }
   if (process.argv[2] === "guide") {
     await runGuideMode()
+    return
+  }
+  if (process.argv[2] === "guide-review") {
+    if (process.argv.length !== 3) throw new Error("guide-review accepts no arguments")
+    await runGuideReviewMode()
     return
   }
   if (process.argv[2] === "admin") {
