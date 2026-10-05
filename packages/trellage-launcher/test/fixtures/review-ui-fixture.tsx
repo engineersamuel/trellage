@@ -4,7 +4,7 @@ import React from "react"
 import { render } from "ink"
 import { bunExecutable } from "@trellage/runtime"
 import { runInteractiveCommand } from "../../src/guide-launch.ts"
-import { reviewChoices } from "../../src/review-entry.ts"
+import { reviewChoices } from "../../src/review-catalog.ts"
 import { ReviewApp, type ReviewContinuation, type ReviewUiProps } from "../../src/review-ui.tsx"
 
 const root = process.argv[2]

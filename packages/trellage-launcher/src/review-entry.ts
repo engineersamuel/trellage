@@ -3,9 +3,11 @@ import { readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 import { createNodeCommandRunner } from "./guide-launch.ts"
-import { reviewCatalog, type ReviewDefinition } from "./review-catalog.ts"
+import { reviewChoices } from "./review-catalog.ts"
 import { captureReviewSnapshot, runReviews, type ReviewSnapshot as GitReviewSnapshot } from "./review-run.ts"
 import type { ReviewUiProps } from "./review-ui.tsx"
+
+export { reviewChoices } from "./review-catalog.ts"
 
 const exec = promisify(execFile)
 const baseRef = "refs/remotes/origin/main"
@@ -31,26 +33,6 @@ export const reviewFailureMessage = (cause: unknown, directory: string): string 
   return `Review stopped: ${detail}${/[.!?]$/u.test(detail) ? "" : "."} ` +
     `Inspect retained partial reports in ${directory}.`
 }
-
-const reviewLabel = (review: ReviewDefinition): string => {
-  if (review.kind === "fleet") return "Fleet Review"
-  if (review.kind === "two-axis") return "Matt Pocock Code Review"
-  return review.skill === "ponytail-review" ? "Ponytail Review" : review.id
-}
-
-const reviewPurpose = (review: ReviewDefinition): string => {
-  if (review.kind === "fleet") return "Six complementary code-review lenses"
-  if (review.kind === "two-axis") return "Standards review; no verified spec source"
-  return review.skill === "ponytail-review" ? "Find removable complexity" : `Run ${review.skill}`
-}
-
-export const reviewChoices: ReviewUiProps["choices"] = reviewCatalog.map((review) => ({
-  id: review.id,
-  label: reviewLabel(review),
-  purpose: reviewPurpose(review),
-  models: review.kind === "fleet" ? "Claude Opus 5.5 · GPT-6 Sol · Grok 4.7" : review.model,
-  workers: review.kind === "fleet" ? 6 : 1,
-}))
 
 export const createReviewUiProps = (cwd: string): ReviewUiProps => {
   let confirmedSnapshot: GitReviewSnapshot | undefined

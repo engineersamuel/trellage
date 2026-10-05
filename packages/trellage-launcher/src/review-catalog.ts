@@ -1,3 +1,5 @@
+import type { ReviewChoice } from "./review-ui.tsx"
+
 export const fleetLenses = [
   "Security & Permissions",
   "Logic & Correctness",
@@ -21,6 +23,26 @@ export const reviewCatalog: ReadonlyArray<ReviewDefinition> = Object.freeze([
   { id: "fleet", skill: "fleet-review", model: "gpt-6-sol", kind: "fleet" },
   { id: "matt-code-review", skill: "code-review", model: "gpt-6-sol", kind: "two-axis" },
 ])
+
+const reviewLabel = (review: ReviewDefinition): string => {
+  if (review.kind === "fleet") return "Fleet Review"
+  if (review.kind === "two-axis") return "Matt Pocock Code Review"
+  return review.skill === "ponytail-review" ? "Ponytail Review" : review.id
+}
+
+const reviewPurpose = (review: ReviewDefinition): string => {
+  if (review.kind === "fleet") return "Six complementary code-review lenses"
+  if (review.kind === "two-axis") return "Standards review; no verified spec source"
+  return review.skill === "ponytail-review" ? "Find removable complexity" : `Run ${review.skill}`
+}
+
+export const reviewChoices: ReadonlyArray<ReviewChoice> = reviewCatalog.map((review) => ({
+  id: review.id,
+  label: reviewLabel(review),
+  purpose: reviewPurpose(review),
+  models: review.kind === "fleet" ? "Claude Opus 5.5 · GPT-6 Sol · Grok 4.7" : review.model,
+  workers: review.kind === "fleet" ? 6 : 1,
+}))
 
 export const pinnedFleetModel = (lens: string): string | undefined => {
   const index = fleetLenses.findIndex((name) => name === lens)

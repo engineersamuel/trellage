@@ -67,6 +67,7 @@ import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.tsx"
 import { resolveStatusSymbol, resolveTerminalSymbol } from "./termcn/terminal-symbols.ts"
 import { resolveBorderStyle } from "./termcn/terminal-style.ts"
 import { isNoUnicode, useUnicode } from "./termcn/use-unicode.ts"
+import { spinnerFrameAt } from "./guide-spinner.ts"
 import {
   composeGuideGoalCandidate,
   guideGoalApproachBudget,
@@ -207,6 +208,7 @@ import {
   type JobPlacement,
 } from "./guide-batch.ts"
 
+export { spinnerFrameAt } from "./guide-spinner.ts"
 export {
   MarkdownTextViewport,
   markdownInlineSegments,
@@ -4359,22 +4361,8 @@ const firstmateCaptureBannerRows = (stage: GuideUiStage, context: HerdrContext |
   return 3 + wrapGuideText(label, width).length + wrapGuideText(detail, width).length
 }
 
-const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
-
-/** Braille frames become replacement boxes without Unicode, so the ASCII bar spins in their place. */
-const asciiSpinnerFrames = ["-", "\\", "|", "/"] as const
-
 const cyclicItemAt = <T,>(items: ReadonlyArray<T>, index: number): T | undefined =>
   items.length === 0 ? undefined : items[index % items.length]
-
-/**
- * Reads the terminal capability directly rather than through `useUnicode`,
- * because the twelve call sites include plain helper functions where a hook
- * cannot run. Nothing in this app mounts a `UnicodeProvider`, so the context
- * and the environment always report the same capability.
- */
-export const spinnerFrameAt = (tick: number): string =>
-  cyclicItemAt(isNoUnicode() ? asciiSpinnerFrames : spinnerFrames, tick) ?? "•"
 
 export const spinnerMessageAt = (messages: ReadonlyArray<string>, tick: number): string | undefined =>
   cyclicItemAt(messages, Math.floor(tick / 15))

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, useWindowSize, type Key } from "ink"
 import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.tsx"
-import { spinnerFrameAt } from "./guide-ui.tsx"
+import { spinnerFrameAt } from "./guide-spinner.ts"
 import type { ReviewOutput } from "./review-run.ts"
 import { useTheme } from "./termcn/use-theme.ts"
 
