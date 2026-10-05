@@ -1321,7 +1321,7 @@ cp "$proxy_config_before" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 
 real_cmp="$(command -v cmp)"
-sed 's/model = "gpt-6-astra"/model = "concurrent-launch-winner"/' \
+sed 's/model = "gpt-5.6-sol-fast"/model = "concurrent-launch-winner"/' \
   "$proxy_config_before" >"$fixture_root/concurrent-launch-config.toml"
 chmod 0600 "$fixture_root/concurrent-launch-config.toml"
 cat >"$fake_bin/cmp" <<'EOF'
@@ -1431,7 +1431,7 @@ fi
 expected_config="$fixture_root/expected-config.toml"
 cat >"$expected_config" <<EOF
 # trellage-managed-codex-config-begin
-model = "gpt-6-astra"
+model = "gpt-5.6-sol-fast"
 model_provider = "copilotproxy"
 model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "max"
@@ -1666,7 +1666,7 @@ jq -se --arg superpowers "$superpowers_home" '
 expected_youtube_config="$fixture_root/expected-youtube-config.toml"
 cat >"$expected_youtube_config" <<'EOF'
 # trellage-managed-codex-config-begin
-model = "gpt-6-astra"
+model = "gpt-5.6-sol-fast"
 model_provider = "copilotproxy"
 model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "max"
@@ -2410,7 +2410,7 @@ real_ln="$(command -v ln)"
 
 write_custom_main_config "$expected_config"
 sed \
-  -e 's/model = "gpt-6-astra"/model = "gpt-5.6-sol"/' \
+  -e 's/model = "gpt-5.6-sol-fast"/model = "gpt-5.6-sol"/' \
   -e 's/model_reasoning_effort = "medium"/model_reasoning_effort = "max"/' \
   -e '/^plan_mode_reasoning_effort = /d' \
   -e 's/hooks = true/hooks = false/' \
@@ -2547,7 +2547,7 @@ case "${2:-}" in
 esac
 EOF
 chmod +x "$fake_bin/cp"
-sed 's/model = "gpt-6-astra"/model = "snapshot-race-model"/' \
+sed 's/model = "gpt-5.6-sol-fast"/model = "snapshot-race-model"/' \
   "$custom_config" >"$pstack_home/config.toml"
 sed 's/2026-07-30T21:16:34Z/2026-07-30T21:16:35Z/' \
   "$pstack_home/config.toml" >"$fixture_root/config-snapshot-race-expected.toml"
@@ -2582,7 +2582,7 @@ for argument in "$@"; do
 done
 EOF
 chmod +x "$fake_bin/chmod"
-sed 's/model = "gpt-6-astra"/model = "publish-race-model"/' \
+sed 's/model = "gpt-5.6-sol-fast"/model = "publish-race-model"/' \
   "$custom_config" >"$pstack_home/config.toml"
 sed 's/2026-07-30T21:16:34Z/2026-07-30T21:16:36Z/' \
   "$pstack_home/config.toml" >"$fixture_root/config-publish-race-expected.toml"
@@ -2611,7 +2611,7 @@ fi
 exec "$CDX_TEST_REAL_CAT" "$@"
 EOF
 chmod +x "$fake_bin/cat"
-sed 's/model = "gpt-6-astra"/model = "write-failure-model"/' \
+sed 's/model = "gpt-5.6-sol-fast"/model = "write-failure-model"/' \
   "$custom_config" >"$pstack_home/config.toml"
 cp "$pstack_home/config.toml" "$fixture_root/config-write-failure-before.toml"
 assert_command_fails config-write-failure env HOME="$fixture_root/home" \
@@ -2840,7 +2840,7 @@ assert_invalid_markers_rejected bare-provider-assignment-before-marketplace
 cp "$fixture_root/config-valid" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 
-sed 's/model = "gpt-6-astra"/model = "publication-must-fail"/' \
+sed 's/model = "gpt-5.6-sol-fast"/model = "publication-must-fail"/' \
   "$fixture_root/config-valid" >"$pstack_home/config.toml"
 cp "$pstack_home/config.toml" "$fixture_root/config-before-publication-failure"
 config_inode="$(file_inode "$pstack_home/config.toml")"
@@ -2923,7 +2923,7 @@ cp "$fixture_root/config-valid" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 
 config_inode="$(file_inode "$pstack_home/config.toml")"
-sed 's/model = "gpt-6-astra"/model = "setup-must-not-replace"/' \
+sed 's/model = "gpt-5.6-sol-fast"/model = "setup-must-not-replace"/' \
   "$fixture_root/config-valid" >"$pstack_home/config.toml"
 cp "$pstack_home/config.toml" "$fixture_root/config-before-setup"
 assert_command_fails setup-does-not-replace env HOME="$fixture_root/home" \
@@ -3103,7 +3103,7 @@ import { createRequire } from 'node:module';
 const { parse } = createRequire(process.argv[3])('smol-toml');
 const home = process.argv[2];
 const config = parse(readFileSync(`${home}/config.toml`, 'utf8'));
-assert.equal(config.model, 'gpt-6-astra');
+assert.equal(config.model, 'gpt-5.6-sol-fast');
 assert.equal(config.model_reasoning_effort, 'medium');
 assert.equal(config.plan_mode_reasoning_effort, 'max');
 assert.equal(config.agents.enabled, true);

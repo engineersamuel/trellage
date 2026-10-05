@@ -46,7 +46,8 @@ require_owned_runtime_contents() {
   local path
   if [[ "$(<"$ownership_marker")" == "$ownership_value" ]]; then
     "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
-      validate-owned "$installed_source" || refuse "unsafe owned source workspace: $installed_source"
+      validate-replaceable-owned "$installed_source" \
+      || refuse "unsafe owned source workspace: $installed_source"
   fi
 
   [[ -e "$install_root/bin" ]] \

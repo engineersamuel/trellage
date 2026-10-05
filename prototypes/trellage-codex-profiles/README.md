@@ -3,8 +3,10 @@
 `cdx` runs the host Codex CLI with named, isolated user-state homes. The
 catalog contains `pstack`, `superpowers`, and the skill-only `youtube` profile.
 
-Every profile uses `gpt-6-astra` with `model_reasoning_effort = "medium"` by default.
-Plan mode uses the same model with `plan_mode_reasoning_effort = "max"`.
+Every profile uses `gpt-5.6-sol-fast` with
+`model_reasoning_effort = "medium"` by default. Plan mode uses the same model
+with `plan_mode_reasoning_effort = "max"` because Codex does not expose a
+separate plan-mode model setting.
 Setup, repair, and launch refresh these managed defaults while preserving
 profile-local settings. Pass `-m MODEL` and
 `-c 'model_reasoning_effort="LEVEL"'` to override the default mode for one launch.

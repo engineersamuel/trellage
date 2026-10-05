@@ -175,6 +175,16 @@
       "repository": "https://github.com/ZeroPointRepo/youtube-skills.git",
       "select": ["youtube-full"]
     },
+    "academic-pptx": {
+      "repository": "https://github.com/Gabberflast/academic-pptx-skill.git",
+      "select": ["academic-pptx"],
+      "allowExecutables": true
+    },
+    "slide-maker": {
+      "repository": "https://github.com/addsumtech/slides_maker.git",
+      "select": ["slide-maker"],
+      "allowExecutables": true
+    },
     "antislop-core": {
       "repository": "https://github.com/miqdadbadjuber/anti-slop.git",
       "select": ["antislop"],
@@ -208,6 +218,8 @@
     "codex-superpowers": ["superpowers"],
     "claude-frontend-design": ["impeccable", "emil-design", "hyperframes"],
     "claude-research": ["last30days"],
+    "claude-office": ["academic-pptx"],
+    "claude-office-charts": ["academic-pptx", "slide-maker"],
     "omp-community": ["dsebban-omp", "cursor-pstack"],
     "pi-oh-my-pi": ["omp-native"],
     "guide-prompt-master": ["prompt-master"],

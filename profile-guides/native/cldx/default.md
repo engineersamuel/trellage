@@ -6,7 +6,7 @@ goalExecution:
     - rundown-status-and-handoff
     - general-engineering-task
 capabilities:
-  - claude-opus-5-proxy-routing
+  - opusplan-sonnet-5-5-proxy-routing
   - keyless-copilot-proxy-auth
   - isolated-claude-profile-home
   - rundown-briefing-output-style
@@ -14,7 +14,7 @@ capabilities:
   - autonomous-no-prompt-launch
 bestFor:
   - One-shot or scripted Claude Code sessions that must not read or write a developer's personal ~/.claude state, theme, or credentials
-  - Teams standardizing on Claude Opus 5 through a shared keyless copilot-proxy-rs endpoint instead of individual Anthropic API keys
+  - Teams standardizing on Claude Sonnet 5.5 for normal turns and Opus 5.5 for plan mode through a shared keyless copilot-proxy-rs endpoint instead of individual Anthropic API keys
   - Status updates, standups, or PR summaries where the built-in Rundown TL;DR-plus-checklist output style should apply automatically
 avoidFor:
   - Tasks that require direct Anthropic, Bedrock, Vertex, AWS, Google, or Azure credentials, since launch strips those environment variables before starting Claude
@@ -24,7 +24,7 @@ prerequisites:
   - id: claude-code-cli
     description: Host `claude` (Claude Code) executable installed and resolvable on PATH.
   - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 and advertising claude-opus-5.
+    description: copilot-proxy-rs listening on http://127.0.0.1:8080 and advertising claude-sonnet-5.5 and claude-opus-5.5.
   - id: cldx-setup-complete
     description: cldx setup run once so first-run onboarding and the managed output style are staged.
   - id: cli-tools
@@ -39,7 +39,7 @@ workflows:
       Use the Rundown output style to provide a clear status and handoff for
       {{intent}}.
   - id: general-engineering-task
-    description: Delegate an implementation, debugging, or review task to Claude Opus 5, with the shared native-common skill bundle (engineersamuel skills, show-me, and manually activated i-have-adhd) available for repository hygiene, naming, and review support.
+    description: Delegate an implementation, debugging, or review task to Claude Sonnet 5.5 (Opus 5.5 in plan mode), with the shared native-common skill bundle (engineersamuel skills, show-me, and manually activated i-have-adhd) available for repository hygiene, naming, and review support.
     examples:
       - Review this PR diff for correctness and naming issues
       - Debug why this test intermittently fails
@@ -59,7 +59,7 @@ authoritative operational reference.
 
 - You want a clean, isolated Claude Code session (separate `CLAUDE_CONFIG_DIR`)
   that never touches a developer's real `~/.claude` state or credentials.
-- You want Claude Opus 5 without managing a personal Anthropic key, by routing
+- You want Claude Sonnet 5.5 and Opus 5.5 without managing a personal Anthropic key, by routing
   through the shared local proxy.
 - You want status-style output (TL;DR, checklist, "Your move:") to appear by
   default, since the profile installs a Rundown output style at setup.

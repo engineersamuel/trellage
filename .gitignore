@@ -49,3 +49,4 @@ results/
 /prototypes/trellage-*-profiles/runtime-identity.json
 /prototypes/trellage-*-profiles/.runtime-identity.*
 /prototypes/common/omp-community-skills/
+/prototypes/trellage-prime-profiles/.kernel-bootstrap.*

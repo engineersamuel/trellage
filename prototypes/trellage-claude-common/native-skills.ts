@@ -216,6 +216,10 @@ const bundlesForCache = (cache: string) => {
       return ["native-common", "codex-common"]
     case "cdx-youtube-pro-skills":
       return ["native-common", "codex-common", "youtube"]
+    case "cldx-office-skills":
+      return ["native-common", "claude-office"]
+    case "cldx-office-charts-skills":
+      return ["native-common", "claude-office-charts"]
     case "omp-community-skills":
       return ["omp-community"]
     case "guide-prompt-master-skills":

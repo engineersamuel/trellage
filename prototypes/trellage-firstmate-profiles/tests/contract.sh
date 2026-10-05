@@ -231,11 +231,11 @@ fi
   || { printf 'native-claude: the session bridge is missing from the runtime root\n' >&2; exit 2; }
 case "$mode" in
   model-map)
-    printf '%s\n' '{"default":"claude-opus-5","opus":"claude-opus-5","sonnet":"claude-sonnet-5","haiku":"claude-haiku-4.5"}'
+    printf '%s\n' '{"default":"claude-sonnet-5.5","plan":"claude-opus-5.5","opus":"claude-opus-5.5","sonnet":"claude-sonnet-5.5","haiku":"claude-haiku-4.5"}'
     exit 0 ;;
   model-catalog)
     [[ "${NATIVE_CLAUDE_MODELS_STATUS:-0}" == 0 ]] || exit 1
-    printf '%s\n' '["claude-opus-5","claude-sonnet-5","claude-haiku-4.5"]'
+    printf '%s\n' '["claude-opus-5.5","claude-sonnet-5.5","claude-sonnet-5","claude-haiku-4.5"]'
     exit 0 ;;
   skills-check) printf 'online skills checks are forbidden in this fixture\n' >&2; exit 1 ;;
   skills-update)
@@ -3266,7 +3266,7 @@ assert_contains 'You are a crewmate' "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains '--model claude-sonnet-5 --effort high <<launch-brief>>' \
   "$NATIVE_CLAUDE_LAUNCH_LOG"
 # An omitted model resolves through the shared Claude default; effort stays unset.
-assert_contains '--model claude-opus-5 <<launch-brief>>' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains '--model claude-sonnet-5.5 <<launch-brief>>' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 # The worker environment reaching the shared runtime carries the explicit
 # GitHub configuration, no FMX carrier, and no Herdr context.
@@ -3520,7 +3520,7 @@ for argument in "$@"; do
   case "$argument" in
     */health) printf '{"status":"ok"}
 '; exit 0 ;;
-    */v1/models) printf '{"data":[{"id":"claude-opus-5"}]}
+    */v1/models) printf '{"data":[{"id":"claude-sonnet-5.5"},{"id":"claude-opus-5.5"}]}
 '; exit 0 ;;
   esac
 done
@@ -3556,7 +3556,7 @@ FAKE_CURL
   assert_contains '--dangerously-skip-permissions' "$FAKE_CLAUDE_LOG"
   assert_contains '--permission-mode bypassPermissions' "$FAKE_CLAUDE_LOG"
   assert_contains '--disallowedTools AskUserQuestion' "$FAKE_CLAUDE_LOG"
-  assert_contains '--model claude-opus-5' "$FAKE_CLAUDE_LOG"
+  assert_contains '--model claude-sonnet-5.5' "$FAKE_CLAUDE_LOG"
   assert_contains '<<launch-brief>>' "$FAKE_CLAUDE_LOG"
 
   # The complete provider scrub, including everything the old partial scrub

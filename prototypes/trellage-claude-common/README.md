@@ -26,7 +26,7 @@ native-claude version      # prints the normalized semantic version (X.Y.Z)
 native-claude harness-update # updates the shared host Claude executable
 native-claude skills-update --home ABS --marker ABS --marker-value VALUE \
   [--mode --check|--sync]
-native-claude model-id     # prints the default model id (claude-opus-5)
+native-claude model-id     # prints the default model id (claude-sonnet-5.5)
 native-claude goal-runtime # read-only version, evaluator model, and model-inventory URL
 native-claude exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 ```

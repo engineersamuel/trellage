@@ -44,6 +44,16 @@ export const claudeDefaultSettings = {
   disableArtifact: true,
 } as const
 
+// Container Claude sessions deny EnterPlanMode/ExitPlanMode, so a profile has
+// exactly one routed model. Its id and effort are baked into the --settings
+// file instead of relying on Claude Code's own default model family.
+export const claudeProfileSettings = (profile: ClaudeProfile): Record<string, unknown> => {
+  const { model, effort_level: effortLevel } = profile.harness.claude
+  return effortLevel === undefined
+    ? { ...claudeDefaultSettings, model }
+    : { ...claudeDefaultSettings, model, effortLevel }
+}
+
 export const claudeDefaultUserSettings = {
   outputStyle: "Rundown",
   statusLine: {
@@ -55,8 +65,7 @@ export const claudeDefaultUserSettings = {
 
 const graphEntrypointHookCommand = "python /opt/trellage/graph-of-loops/trellage_graph/hooks/graph_entrypoint.py"
 
-const graphOfLoopsSettings = {
-  ...claudeDefaultSettings,
+const graphOfLoopsHooks = {
   hooks: {
     UserPromptSubmit: [
       {
@@ -85,6 +94,11 @@ const graphOfLoopsSettings = {
     ],
   },
 } as const
+
+const graphOfLoopsSettings = (profile: ClaudeProfile): Record<string, unknown> => ({
+  ...claudeProfileSettings(profile),
+  ...graphOfLoopsHooks,
+})
 
 /** Theme is a user preference in settings.json, not legacy onboarding state. */
 export const claudeDefaultOnboarding = (version: string) => ({
@@ -1009,9 +1023,11 @@ const materializeClaudeMarketplaceAssets = (
     yield* attempt("cannot create Claude marketplace seed", async () => {
       await mkdir(seed, { recursive: true })
       await Promise.all([
-        writeFile(path.join(seed, "default-settings.json"), `${JSON.stringify(claudeDefaultSettings, null, 2)}\n`, {
-          mode: 0o644,
-        }),
+        writeFile(
+          path.join(seed, "default-settings.json"),
+          `${JSON.stringify(request.defaultSettings ?? claudeDefaultSettings, null, 2)}\n`,
+          { mode: 0o644 },
+        ),
         writeFile(
           path.join(seed, "default-user-settings.json"),
           `${JSON.stringify(claudeDefaultUserSettings, null, 2)}\n`,
@@ -1155,7 +1171,7 @@ const materializeHyperresearchAssets = (
           await cp(browserAgentPath, browserAgent, { force: true })
           await writeFile(
             path.join(seed, "default-settings.json"),
-            `${JSON.stringify(claudeDefaultSettings, null, 2)}\n`,
+            `${JSON.stringify(request.defaultSettings ?? claudeDefaultSettings, null, 2)}\n`,
             { mode: 0o644 },
           )
           await writeFile(
@@ -1478,7 +1494,7 @@ const materializeGraphOfLoopsRuntime = (
     yield* attempt("cannot write Graph of Loops Claude hooks", () =>
       writeFile(
         path.join(context, "claude-seed", "default-settings.json"),
-        `${JSON.stringify(graphOfLoopsSettings, null, 2)}\n`,
+        `${JSON.stringify(graphOfLoopsSettings(profile), null, 2)}\n`,
         { mode: 0o644 },
       ),
     )

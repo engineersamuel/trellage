@@ -13,8 +13,8 @@ readonly managed_crew_harness='claude'
 readonly managed_gh_host='github.com'
 readonly proxy_origin='http://127.0.0.1:8080'
 readonly proxy_token='trellage-local-proxy'
-readonly model_id='claude-opus-5'
-readonly sonnet_model_id='claude-sonnet-5'
+readonly model_id='claude-opus-5.5'
+readonly sonnet_model_id='claude-sonnet-5.5'
 readonly haiku_model_id='claude-haiku-4.5'
 
 die() {

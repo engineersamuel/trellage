@@ -7,12 +7,17 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { builderScript, profileMetadata } from "../src/application.ts"
-import { claudeDefaultOnboarding, claudeDefaultSettings, claudeDefaultUserSettings } from "../src/claude-materialize.ts"
+import {
+  claudeDefaultOnboarding,
+  claudeDefaultSettings,
+  claudeDefaultUserSettings,
+  claudeProfileSettings,
+} from "../src/claude-materialize.ts"
 import { graphOfLoopsRuntimeIntegrity } from "../src/graph-runtime.ts"
 import { graphOfLoopsPolicy } from "../src/graph-of-loops.ts"
 import type { ProfileLock } from "../src/lock.ts"
 import { renderGraphCodexReviewerConfig } from "../src/materialize.ts"
-import { isGraphOfLoopsProfile, parseProfile } from "../src/profile.ts"
+import { isClaudeProfile, isGraphOfLoopsProfile, parseProfile } from "../src/profile.ts"
 import { graphRustArtifactNames, graphRustArtifactUrl } from "../src/rust-release.ts"
 import { playwrightArtifacts } from "./fixtures/tool-artifacts.ts"
 
@@ -47,6 +52,24 @@ describe("authored Claude Research profile", () => {
       lastOnboardingVersion: "2.1.222",
       shiftEnterKeyBindingInstalled: true,
     })
+  })
+
+  it("bakes the pinned container model and effort into the profile settings", async () => {
+    const document = await Effect.runPromise(parseProfile(await readFile(profilePath, "utf8"), profilePath))
+    if (!isClaudeProfile(document.profile)) throw new Error("expected a Claude harness")
+    const settings = claudeProfileSettings(document.profile)
+
+    expect(settings).toMatchObject({
+      model: "claude-sonnet-5.5",
+      effortLevel: "medium",
+      permissions: claudeDefaultSettings.permissions,
+    })
+    expect(settings).not.toHaveProperty("outputStyle")
+
+    const qwen = await Effect.runPromise(parseProfile(await readFile(qwenProfilePath, "utf8"), qwenProfilePath))
+    if (!isClaudeProfile(qwen.profile)) throw new Error("expected a Claude harness")
+    expect(claudeProfileSettings(qwen.profile)).toMatchObject({ model: "qwen3.6-35b-a3b-local" })
+    expect(claudeProfileSettings(qwen.profile)).not.toHaveProperty("effortLevel")
   })
 
   it("cites and selects the exact upstream adapter contract", async () => {
@@ -89,8 +112,8 @@ describe("authored Claude Research profile", () => {
       auth_policy: "claude-explicit",
       claude_mode: "hyperresearch",
       claude_gateway: "http://copilot-proxy-rs:8080",
-      claude_opus_model: "claude-opus-5",
-      claude_sonnet_model: "claude-sonnet-5",
+      claude_opus_model: "claude-opus-5.5",
+      claude_sonnet_model: "claude-sonnet-5.5",
       claude_haiku_model: "claude-haiku-4.5",
       resolved_version: null,
       headless: {
@@ -270,7 +293,7 @@ describe("authored Claude social media profile", () => {
 })
 
 describe("authored Claude Blog profile", () => {
-  it("routes Claude Opus 5 through copilot-proxy-rs and records the selected marketplace plugin", async () => {
+  it("routes Claude Sonnet 5.5 through copilot-proxy-rs and records the selected marketplace plugin", async () => {
     const source = await readFile(blogProfilePath, "utf8")
     const document = await Effect.runPromise(parseProfile(source, blogProfilePath))
 
@@ -282,7 +305,7 @@ describe("authored Claude Blog profile", () => {
     if (document.profile.harness.kind !== "claude") throw new Error("expected Claude harness")
     expect(document.profile.harness.claude).toMatchObject({
       default_auth: "proxy",
-      model: "claude-opus-5",
+      model: "claude-sonnet-5.5",
       gateway: "http://copilot-proxy-rs:8080",
     })
     expect(document.profile.plugins).toEqual([
@@ -298,7 +321,7 @@ describe("authored Claude Blog profile", () => {
 })
 
 describe("authored Claude council profile", () => {
-  it("routes Claude Opus 5 through copilot-proxy-rs with Caveman always on", async () => {
+  it("routes Claude Sonnet 5.5 through copilot-proxy-rs with Caveman always on", async () => {
     const source = await readFile(councilProfilePath, "utf8")
     const document = await Effect.runPromise(parseProfile(source, councilProfilePath))
 
@@ -308,7 +331,7 @@ describe("authored Claude council profile", () => {
     if (document.profile.harness.kind !== "claude") throw new Error("expected Claude harness")
     expect(document.profile.harness.claude).toMatchObject({
       default_auth: "proxy",
-      model: "claude-opus-5",
+      model: "claude-sonnet-5.5",
       gateway: "http://copilot-proxy-rs:8080",
     })
     expect(document.profile.skill_bundles).toEqual(["sandbox-common"])
@@ -343,7 +366,7 @@ describe("authored Claude ECC profile", () => {
       version: "latest",
       claude: {
         default_auth: "proxy",
-        model: "claude-opus-5",
+        model: "claude-sonnet-5.5",
         gateway: "http://copilot-proxy-rs:8080",
       },
     })
@@ -468,7 +491,7 @@ describe("authored Claude graph-of-loops profile", () => {
       runtime_integrity: "sha256:test-runtime",
       models: {
         supervisor: "claude-haiku-4.5",
-        specialist: "claude-opus-5",
+        specialist: "claude-sonnet-5.5",
         reviewer: "gpt-6-astra",
       },
       limits: {

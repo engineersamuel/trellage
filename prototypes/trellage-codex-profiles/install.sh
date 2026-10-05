@@ -115,7 +115,7 @@ validate_environment_runtime_destination() {
 
   assert_owned_safe_directory "$destination"
   if [ -e "$destination/.managed-by-trellage-source" ] || [ -L "$destination/.managed-by-trellage-source" ]; then
-    "${trellage_bun[@]}" "$source_runtime_cli" validate-owned "$destination" \
+    "${trellage_bun[@]}" "$source_runtime_cli" validate-replaceable-owned "$destination" \
       || refuse "refusing unsafe native environment source runtime: $destination"
     return
   fi
@@ -140,7 +140,7 @@ validate_floating_runtime_destination() {
 
   assert_owned_safe_directory "$destination"
   if [ -e "$destination/.managed-by-trellage-source" ] || [ -L "$destination/.managed-by-trellage-source" ]; then
-    "${trellage_bun[@]}" "$source_runtime_cli" validate-owned "$destination" \
+    "${trellage_bun[@]}" "$source_runtime_cli" validate-replaceable-owned "$destination" \
       || refuse "refusing unsafe floating-skills source runtime: $destination"
     return
   fi

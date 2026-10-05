@@ -22,9 +22,10 @@ import {
   preparationLockName,
   requireOwnedWorkspace,
   requireReplaceableOwnedWorkspace,
+  requireReplaceableSourceContents,
   requireReady,
   requireReadyAsync,
-  requireReadySourceIdentity,
+  requirePublishedSourceIdentity,
   safeDirectory,
   safePath,
   sourceFingerprint,
@@ -96,7 +97,7 @@ async function prepareDependencies(root: string, alwaysInstall: boolean): Promis
       if (await present(path.join(root, "node_modules"))) normalizeDependencyPermissions(root)
       if (await present(path.join(root, sourceMarker))) {
         requireReplaceableOwnedWorkspace(root)
-        requireReadySourceIdentity(root)
+        requirePublishedSourceIdentity(root)
       } else {
         await validateOwnedTreeAsync(root, true)
       }
@@ -295,7 +296,7 @@ try {
   bunExecutable()
   if (suppliedRoot === undefined || !path.isAbsolute(suppliedRoot) || extra.length !== 0) {
     throw new Error(
-      "usage: workspace-cli.ts check|fingerprint|prepare|ensure|validate-owned ROOT; stage|install ROOT DESTINATION",
+      "usage: workspace-cli.ts check|fingerprint|prepare|ensure|validate-owned|validate-replaceable-owned ROOT; stage|install ROOT DESTINATION",
     )
   }
   const root = safeDirectory(suppliedRoot)
@@ -317,6 +318,10 @@ try {
       break
     case "validate-owned":
       requireOwnedWorkspace(root)
+      break
+    case "validate-replaceable-owned":
+      requireReplaceableOwnedWorkspace(root)
+      requireReplaceableSourceContents(root)
       break
     case "validate-floating":
       await requireReplaceable(root, "floating")

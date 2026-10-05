@@ -258,11 +258,11 @@ esac
         if batch:
             self.entry("fm-spawn.sh", f"{task}={project}", *flags)
         else:
-            self.entry("fm-spawn.sh", task, project, *flags, "--model", "sonnet", "--effort", "xhigh")
+            self.entry("fm-spawn.sh", task, project, *flags, "--model", "opus", "--effort", "xhigh")
         assert run(["git", "-C", worktree, "rev-parse", "HEAD"], self.env).stdout == before
         assert not (project / ".git/FETCH_HEAD").exists()
         metadata = dict(line.split("=", 1) for line in (self.home / "state" / (task + ".meta")).read_text().splitlines() if "=" in line)
-        expected = ("claude", "claude-opus-5", "") if batch else ("claude", "claude-sonnet-5", "xhigh")
+        expected = ("claude", "claude-sonnet-5.5", "") if batch else ("claude", "claude-opus-5.5", "xhigh")
         assert (metadata["harness"], metadata["model"], metadata["effort"]) == expected
         run([sys.executable, self.install / "lib/fmx-controls.py", "fleet", "--offline"], self.env)
         launch = self.launch_log.read_text().strip()
@@ -303,9 +303,9 @@ esac
             FM_CONTROL_SETTLE_WAIT="0", FM_CONTROL_EXIT_WAIT="0.2", FM_CONTROL_LAUNCH_WAIT="0.2",
         )
         cases = [
-            ("both", ["--model", "default", "--effort", "default"], "claude-opus-5", ""),
-            ("model", ["--model", "default"], "claude-opus-5", "high"),
-            ("effort", ["--effort", "default"], "claude-sonnet-5", ""),
+            ("both", ["--model", "default", "--effort", "default"], "claude-sonnet-5.5", ""),
+            ("model", ["--model", "default"], "claude-sonnet-5.5", "high"),
+            ("effort", ["--effort", "default"], "claude-opus-5.5", ""),
         ]
         for name, flags, model, effort in cases:
             task = f"fmd-reset-{name}"
@@ -318,8 +318,8 @@ esac
                              .replace("{FIRSTMATE_SPEC}", "Reset only the requested controls."))
             self.launch_log.write_text("")
             self.entry("fm-spawn.sh", task, project, "--mode", "no-mistakes", "--yolo", "off",
-                       "--model", "sonnet", "--effort", "high")
-            self.control_worker(task, worktree, "claude-sonnet-5", "high")
+                       "--model", "opus", "--effort", "high")
+            self.control_worker(task, worktree, "claude-opus-5.5", "high")
             progress = worktree / "local-progress.txt"
             progress.write_text("Uncommitted progress must survive relaunch.\n")
             self.external_log.write_text("")
@@ -364,7 +364,7 @@ esac
             if condition == "proxy-offline":
                 self.env["NATIVE_CLAUDE_MODELS_STATUS"] = "1"
             elif condition == "retired-model":
-                meta.write_text(original.replace("model=claude-sonnet-5", "model=claude-retired"))
+                meta.write_text(original.replace("model=claude-opus-5.5", "model=claude-retired"))
             else:
                 dispatch.write_text('{"rules":[{"harness":"grok","when":"always"}]}\n')
             terminal_state.write_text("alive\n")

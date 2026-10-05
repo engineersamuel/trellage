@@ -303,7 +303,13 @@ const seedCaches = async (fixture: Fixture, version: number) => {
   await seedSnapshot(fixture.cache, [...names], version)
   await seedSnapshot(fixture.youtubeCache, [...names, "youtube-full"], version)
   await seedSnapshot(fixture.communityCache, names.map((name) => `omp-${name}`).concat("pstack-omp"), version)
+  for (const variant of ["office", "office-charts"]) {
+    await seedSnapshot(officeCache(fixture, variant), [...names], version)
+  }
 }
+
+const officeCache = (fixture: Fixture, name: string) =>
+  path.join(fixture.home, `.local/share/trellage/common/cldx-${name}-skills`)
 
 const firstProfileName = (fixture: Fixture) => {
   const [name] = Object.keys(fixture.catalog.profiles)
@@ -368,8 +374,19 @@ const seedProfile = async (fixture: Fixture, name: string) => {
     root,
     fixture.descriptor.alias === "fmx" ? "captain/claude" : (fixture.descriptor.leaf ?? "home"),
   )
-  const cache = name === "youtube" ? fixture.youtubeCache : fixture.cache
-  const profile: ProfileFixture = { name, root, home, targets: [await seedSkillTarget(cache, home)], guards: [] }
+  const cache =
+    fixture.descriptor.alias === "cldx" && name.startsWith("office")
+      ? officeCache(fixture, name)
+      : name === "youtube"
+        ? fixture.youtubeCache
+        : fixture.cache
+  const profile: ProfileFixture = {
+    name,
+    root,
+    home,
+    targets: [await seedSkillTarget(cache, home)],
+    guards: [],
+  }
   await markOwned(fixture, root)
   if (fixture.descriptor.alias === "jcx") {
     await syncSnapshot(cache, path.join(root, "skill-library"))
@@ -579,19 +596,31 @@ test("router checks all shared caches, including guide-only changes, without pro
   await copy(path.join(repository, "prototypes/trellage-router/bin/trx"), router)
   const guideCache = path.join(fixture.home, ".local/share/trellage/common/guide-prompt-master-skills")
   const codexCache = path.join(fixture.home, ".local/share/trellage/common/cdx-skills")
-  const caches = [fixture.cache, codexCache, fixture.youtubeCache, fixture.communityCache, guideCache]
+  const caches = [
+    fixture.cache,
+    codexCache,
+    fixture.youtubeCache,
+    fixture.communityCache,
+    guideCache,
+    officeCache(fixture, "office"),
+    officeCache(fixture, "office-charts"),
+  ]
   for (const cache of caches) await seedSnapshot(cache, ["fixture"], 1)
   await write(
     path.join(runtime, "skills.json"),
     JSON.stringify({
       schema: 1,
-      sources: { fixture: { repository: "https://github.com/fixture/skills.git", select: ["fixture"] } },
+      sources: {
+        fixture: { repository: "https://github.com/fixture/skills.git", select: ["fixture"] },
+      },
       bundles: {
         "native-common": ["fixture"],
         "codex-common": ["fixture"],
         youtube: ["fixture"],
         "omp-community": ["fixture"],
         "guide-prompt-master": ["fixture"],
+        "claude-office": ["fixture"],
+        "claude-office-charts": ["fixture"],
       },
     }),
   )
@@ -749,6 +778,9 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
       1,
     )
     await seedSnapshot(path.join(freshRoot, "omp-community"), ["omp-kept", "omp-retired", "pstack-omp"], 1)
+    for (const variant of ["office", "office-charts"]) {
+      await seedSnapshot(path.join(freshRoot, `native-common+claude-${variant}`), ["kept", "retired"], 1)
+    }
     const before = await Promise.all(profiles.map((profile) => treeState(profile.root, true)))
     const caches = await Promise.all(
       [fixture.cache, fixture.youtubeCache, fixture.communityCache].map((cache) => treeState(cache, true)),
@@ -775,6 +807,9 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
       ["kept", "retired", "youtube-full"],
       2,
     )
+    for (const variant of ["office", "office-charts"]) {
+      await seedSnapshot(path.join(freshRoot, `native-common+claude-${variant}`), ["kept", "retired"], 2)
+    }
     for (const profile of profiles) {
       const available = run(fixture, ["skills-check", profile.name])
       succeeds(available)

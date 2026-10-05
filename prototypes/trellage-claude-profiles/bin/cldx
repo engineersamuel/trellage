@@ -13,12 +13,12 @@ usage() {
   cat <<'EOF'
 Usage:
   cldx [CLAUDE_ARGS...]
-  cldx default [CLAUDE_ARGS...]
+  cldx {default|office|office-charts} [CLAUDE_ARGS...]
   cldx list [--json]
   cldx inventory PROFILE --json
-  cldx setup [default]
-  cldx doctor [default]
-  cldx repair [default]
+  cldx setup [PROFILE]
+  cldx doctor [PROFILE]
+  cldx repair [PROFILE]
   cldx skills-update PROFILE
   cldx skills-check PROFILE
   cldx harness-version
@@ -52,11 +52,12 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
 readonly output_style_asset="$runtime_root/assets/rundown/rundown.md"
-readonly profile_root="$HOME/.local/share/trellage/profiles/claude/default"
-readonly profile_home="$profile_root/home"
-readonly profile_marker="$profile_root/.managed-by-trellage-claude-profiles"
-readonly output_style_root="$profile_home/output-styles"
-readonly output_style="$output_style_root/rundown.md"
+profile_name=default
+profile_root="$HOME/.local/share/trellage/profiles/claude/default"
+profile_home="$profile_root/home"
+profile_marker="$profile_root/.managed-by-trellage-claude-profiles"
+output_style_root="$profile_home/output-styles"
+output_style="$output_style_root/rundown.md"
 
 # The shared native Claude runtime owns executable/version resolution, safe
 # profile path checks, onboarding, settings, floating skills, proxy/model
@@ -125,13 +126,15 @@ validate_catalog() {
     type == "object"
     and keys == ["profiles", "schemaVersion"]
     and .schemaVersion == 1
-    and (.profiles | type == "object" and keys == ["default"])
-    and (.profiles.default | type == "object")
-    and (.profiles.default | keys == ["description", "headless", "plugin", "standaloneMcps"])
-    and (.profiles.default.description | type == "string" and length > 0)
-    and (.profiles.default.headless | validHeadless)
+    and (.profiles | type == "object" and keys == ["default", "office", "office-charts"])
+    and (.profiles | all(.[]; type == "object"
+      and keys == ["description", "headless", "plugin", "standaloneMcps"]
+      and (.description | type == "string" and length > 0)
+      and (.headless | validHeadless)
+      and .standaloneMcps == []))
     and .profiles.default.plugin == null
-    and .profiles.default.standaloneMcps == []
+    and .profiles.office.plugin == "document-skills@anthropic-agent-skills"
+    and .profiles["office-charts"].plugin == "document-skills@anthropic-agent-skills"
   ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
 }
 
@@ -161,7 +164,14 @@ list_profiles_json() {
             headless: $headless[.key],
             plugin: .value.plugin,
             source: "anthropics/claude-code",
-            marketplace: null,
+            marketplace: (if .value.plugin == null then null else {
+              kind: "git",
+              source: "anthropics/skills",
+              name: "anthropic-agent-skills",
+              manifestUrl: "https://raw.githubusercontent.com/anthropics/skills/main/.claude-plugin/marketplace.json"
+            } end),
+            skillBundles: (if .key == "default" then ["native-common"]
+              else ["native-common", ("claude-" + .key)] end),
             standaloneMcps: .value.standaloneMcps
           }
       ]
@@ -169,8 +179,19 @@ list_profiles_json() {
   ' "$catalog"
 }
 
-require_default_profile() {
-  [[ "${1-default}" == default ]] || die "unknown profile: $1"
+select_profile() {
+  profile_name="${1-default}"
+  case "$profile_name" in
+    default|office|office-charts) ;;
+    *) die "unknown profile: $profile_name" ;;
+  esac
+  profile_root="$HOME/.local/share/trellage/profiles/claude/$profile_name"
+  profile_home="$profile_root/home"
+  profile_marker="$profile_root/.managed-by-trellage-claude-profiles"
+  output_style_root="$profile_home/output-styles"
+  output_style="$output_style_root/rundown.md"
+  export TRELLAGE_CLAUDE_PROFILE_SKILLS=native-common
+  [[ "$profile_name" == default ]] || export TRELLAGE_CLAUDE_PROFILE_SKILLS="$profile_name"
 }
 
 conservative_headless() {
@@ -202,7 +223,8 @@ projected_headless() {
   local profile="$1"
   local current_version expected_version
 
-  current_version="$("$native_claude" version)"
+  current_version="${2-}"
+  [[ "$#" -ge 2 ]] || current_version="$("$native_claude" version)"
   expected_version="$(jq -r --arg profile "$profile" \
     '.profiles[$profile].headless.testedHarnessVersion // empty' "$catalog")"
   if [[ -z "$current_version" || "$current_version" != "$expected_version" ]]; then
@@ -213,9 +235,110 @@ projected_headless() {
 }
 
 projected_headless_map_json() {
-  jq -cn --argjson defaultProfile "$(projected_headless default)" '
-    {default: $defaultProfile}
+  local current_version
+  current_version="$("$native_claude" version)"
+  jq -cn --argjson defaultProfile "$(projected_headless default "$current_version")" \
+    --argjson office "$(projected_headless office "$current_version")" \
+    --argjson charts "$(projected_headless office-charts "$current_version")" '
+    {default: $defaultProfile, office: $office, "office-charts": $charts}
   '
+}
+
+office_plugin() {
+  "$native_claude" plugin --home "$profile_home" --marker "$profile_marker" \
+    --marker-value "$profile_marker_value" -- "$@"
+}
+
+office_plugin_inventory() {
+  local registry="$profile_home/plugins/installed_plugins.json"
+  [[ ! -L "$profile_home/plugins" && ! -L "$registry" ]] || die 'unsafe Office plugin registry'
+  if [[ ! -e "$registry" ]]; then
+    printf '[]\n'
+    return
+  fi
+  [[ -f "$registry" && -f "$profile_home/settings.json" && ! -L "$profile_home/settings.json" ]] \
+    || die 'invalid Office plugin registry or settings'
+  # Claude's plugin list command rewrites settings; inspect its v2 registry instead.
+  jq -ce --slurpfile settings "$profile_home/settings.json" '
+    if .version != 2 or (.plugins | type) != "object"
+      or ($settings | length) != 1 or ($settings[0] | type) != "object"
+    then error("invalid plugin registry or settings")
+    else
+      (.plugins["document-skills@anthropic-agent-skills"] // [])
+      | if type != "array" then error("invalid document plugin entries") else . end
+      | map(. + {id: "document-skills@anthropic-agent-skills",
+          enabled: ($settings[0].enabledPlugins["document-skills@anthropic-agent-skills"] == true)})
+    end
+  ' "$registry" || die 'invalid Office plugin inventory'
+}
+
+require_office_plugin() {
+  [[ "$profile_name" != default ]] || return 0
+  local inventory
+  inventory="$(office_plugin_inventory)"
+  jq -e 'any(.[]; .id == "document-skills@anthropic-agent-skills"
+    and .scope == "user" and .enabled == true)' <<<"$inventory" >/dev/null \
+    || die "Office document plugin is missing or disabled; run cldx repair $profile_name"
+  local install_path ancestor skill
+  local required_skills=(academic-pptx)
+  [[ "$profile_name" != office-charts ]] || required_skills+=(slide-maker)
+  install_path="$(jq -r '[.[] | select(.scope == "user")][0].installPath // empty' <<<"$inventory")"
+  [[ "$install_path" == "$profile_home/plugins/cache/anthropic-agent-skills/document-skills/"* \
+    && "$install_path" != *'/../'* && "$install_path" != *'/./'* ]] \
+    || die 'unsafe Office plugin install path'
+  ancestor="$install_path"
+  while [[ "$ancestor" != "$profile_home" ]]; do
+    [[ -d "$ancestor" && ! -L "$ancestor" ]] || die "missing or unsafe Office plugin directory: $ancestor"
+    ancestor="${ancestor%/*}"
+  done
+  local manifest="$install_path/.claude-plugin/marketplace.json"
+  [[ -f "$manifest" && ! -L "$install_path/.claude-plugin" && ! -L "$manifest" ]] \
+    || die 'missing or unsafe Office marketplace manifest'
+  jq -e 'any(.plugins[]; .name == "document-skills" and .source == "./"
+    and (.skills | contains(["./skills/docx", "./skills/xlsx", "./skills/pptx", "./skills/pdf"])))' \
+    "$manifest" >/dev/null || die 'Office document plugin manifest is incomplete'
+  for skill in docx xlsx pptx pdf; do
+    [[ -d "$install_path/skills/$skill" && ! -L "$install_path/skills" \
+      && ! -L "$install_path/skills/$skill" && -f "$install_path/skills/$skill/SKILL.md" \
+      && ! -L "$install_path/skills/$skill/SKILL.md" ]] || die "missing or unsafe document plugin skill: $skill"
+  done
+  for skill in "${required_skills[@]}"; do
+    [[ -d "$profile_home/skills/$skill" && ! -L "$profile_home/skills" \
+      && ! -L "$profile_home/skills/$skill" && -f "$profile_home/skills/$skill/SKILL.md" \
+      && ! -L "$profile_home/skills/$skill/SKILL.md" ]] || die "missing or unsafe Office skill: $skill"
+  done
+}
+
+ensure_office_plugin() {
+  [[ "$profile_name" != default ]] || return 0
+  local inventory marketplaces changed=false
+  inventory="$(office_plugin_inventory)"
+  if ! jq -e 'any(.[]; .id == "document-skills@anthropic-agent-skills"
+    and .scope == "user")' <<<"$inventory" >/dev/null; then
+    marketplaces="$(office_plugin marketplace list --json)" || die 'could not read Office marketplaces'
+    jq -e 'type == "array"' <<<"$marketplaces" >/dev/null || die 'invalid Office marketplace inventory'
+    if ! jq -e 'any(.[]; .name == "anthropic-agent-skills")' <<<"$marketplaces" >/dev/null; then
+      office_plugin marketplace add anthropics/skills || die 'could not add Anthropic skills marketplace'
+    elif ! jq -e 'any(.[]; .name == "anthropic-agent-skills" and .repo == "anthropics/skills")' \
+      <<<"$marketplaces" >/dev/null; then
+      die 'Anthropic skills marketplace points to an unexpected repository'
+    fi
+    office_plugin install document-skills@anthropic-agent-skills --scope user \
+      || die 'could not install Office document plugin'
+    changed=true
+    inventory="$(office_plugin_inventory)"
+  fi
+  if ! jq -e 'any(.[]; .id == "document-skills@anthropic-agent-skills"
+    and .scope == "user" and .enabled == true)' <<<"$inventory" >/dev/null; then
+    office_plugin enable document-skills@anthropic-agent-skills --scope user \
+      || die 'could not enable Office document plugin'
+    changed=true
+  fi
+  if [[ "$changed" == true ]]; then
+    "$native_claude" prepare --home "$profile_home" --marker "$profile_marker" \
+      --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name" --require-existing
+  fi
+  require_office_plugin
 }
 
 ensure_output_style() {
@@ -243,8 +366,9 @@ setup_profile() {
 
   "$native_claude" prepare \
     --home "$profile_home" --marker "$profile_marker" \
-    --marker-value "$profile_marker_value" --bridge enabled --profile default
+    --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name"
   ensure_output_style
+  ensure_office_plugin
   version="$("$native_claude" version)"
   model="$("$native_claude" model-id)"
   printf 'cldx setup: ready (%s, %s)\n' "$version" "$model"
@@ -255,9 +379,10 @@ repair_profile() {
 
   "$native_claude" prepare \
     --home "$profile_home" --marker "$profile_marker" \
-    --marker-value "$profile_marker_value" --bridge enabled --profile default \
+    --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name" \
     --require-existing
   ensure_output_style
+  ensure_office_plugin
   version="$("$native_claude" version)"
   model="$("$native_claude" model-id)"
   printf 'cldx repair: restored (%s, %s)\n' "$version" "$model"
@@ -268,7 +393,8 @@ doctor_profile() {
 
   "$native_claude" doctor \
     --home "$profile_home" --marker "$profile_marker" \
-    --marker-value "$profile_marker_value" --bridge enabled --profile default
+    --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name"
+  require_office_plugin
   version="$("$native_claude" version)"
   model="$("$native_claude" model-id)"
   printf 'cldx doctor: OK (%s, %s)\n' "$version" "$model"
@@ -293,25 +419,30 @@ not_ready_inventory() {
 inventory_profile() {
   local profile="$1"
 
-  [[ "$profile" == default ]] || die "unknown profile: $1"
+  select_profile "$profile"
   if [[ ! -f "$profile_marker" || -L "$profile_marker" ]]; then
     not_ready_inventory "$profile" not-setup
     return
   fi
   if ! "$native_claude" doctor \
     --home "$profile_home" --marker "$profile_marker" \
-    --marker-value "$profile_marker_value" --bridge enabled --profile default \
+    --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name" \
     >/dev/null 2>&1; then
     not_ready_inventory "$profile" unhealthy
     return
   fi
-  jq -cn --arg profile "$profile" '{
+  if ! (require_office_plugin) >/dev/null 2>&1; then
+    not_ready_inventory "$profile" unhealthy
+    return
+  fi
+  jq -cn --arg profile "$profile" --argjson plugins \
+    "$(jq -c --arg profile "$profile" '[.profiles[$profile].plugin | select(. != null)]' "$catalog")" '{
     schemaVersion: 1,
     launcher: "cldx",
     harness: "claude",
     profile: $profile,
     readiness: "healthy",
-    plugins: [],
+    plugins: $plugins,
     skills: {packageCount: null, visibleCount: null},
     mcps: []
   }'
@@ -320,15 +451,17 @@ inventory_profile() {
 launch_profile() {
   "$native_claude" prepare \
     --home "$profile_home" --marker "$profile_marker" \
-    --marker-value "$profile_marker_value" --bridge enabled --profile default
+    --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name"
   ensure_output_style
+  ensure_office_plugin
   exec "$native_claude" launch \
     --home "$profile_home" --marker "$profile_marker" \
-    --marker-value "$profile_marker_value" --bridge enabled -- "$@"
+    --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name" -- "$@"
 }
 
 require_command jq
 validate_catalog
+select_profile default
 
 case "${1-}" in
   help|-h|--help)
@@ -352,14 +485,14 @@ case "${1-}" in
   setup|doctor|repair)
     command_name="$1"
     shift
-    [[ "$#" -le 1 ]] || die "usage: cldx $command_name [default]"
-    require_default_profile "${1-default}"
+    [[ "$#" -le 1 ]] || die "usage: cldx $command_name [PROFILE]"
+    select_profile "${1-default}"
     "${command_name}_profile"
     ;;
   skills-check)
     shift
     [[ "$#" -eq 1 ]] || die 'skills-check requires PROFILE'
-    require_default_profile "$1"
+    select_profile "$1"
     "$native_claude" --help | grep -q 'skills-check' || die 'refresh the Native Claude runtime for skills-check'
     exec "$native_claude" skills-check \
       --home "$profile_home" --marker "$profile_marker" \
@@ -368,11 +501,11 @@ case "${1-}" in
   skills-update)
     shift
     [[ "$#" -eq 1 ]] || die 'skills-update requires PROFILE'
-    require_default_profile "$1"
+    select_profile "$1"
     "$native_claude" skills-update \
       --home "$profile_home" --marker "$profile_marker" \
       --marker-value "$profile_marker_value"
-    printf 'default: skills updated from cache\n'
+    printf '%s: skills updated from cache\n' "$profile_name"
     ;;
   harness-version)
     shift
@@ -397,7 +530,8 @@ case "${1-}" in
     [[ "$#" -eq 0 ]] || die 'harness-update accepts no arguments'
     exec "$native_claude" harness-update
     ;;
-  default)
+  default|office|office-charts)
+    select_profile "$1"
     shift
     launch_profile "$@"
     ;;

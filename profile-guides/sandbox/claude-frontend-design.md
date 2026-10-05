@@ -79,5 +79,5 @@ workflows:
 
 ## Gotchas
 
-- This is an Opus-routed proxy profile and needs the external `copilot-proxy-rs_default` Docker network, same as other proxy-backed Claude profiles.
+- This is a Sonnet 5.5-routed proxy profile and needs the external `copilot-proxy-rs_default` Docker network, same as other proxy-backed Claude profiles.
 - HyperFrames HTML-to-video work depends on the HTML being finished first — expect a two-step flow (build the page, then convert it).

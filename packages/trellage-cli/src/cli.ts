@@ -397,9 +397,27 @@ const root = Command.make("trellage-profile", {}, () =>
 
 const cli = Command.run(root, { name: "Trellage profile compiler", version: "0.1.0" })
 
+// Resolver failures carry their real diagnostic in a nested `cause` value that
+// the default pretty printer drops, which leaves operators with an unactionable
+// summary such as "package resolution failed".
+const nestedCauseDetail = (error: unknown, depth = 0): string => {
+  if (depth > 6 || error === null || error === undefined) return ""
+  if (typeof error === "string") return error.trim()
+  if (typeof error !== "object") return String(error)
+  const record = error as { readonly message?: unknown; readonly cause?: unknown }
+  const own = typeof record.message === "string" ? record.message.trim() : ""
+  const nested = "cause" in record ? nestedCauseDetail(record.cause, depth + 1) : ""
+  if (nested.length === 0) return own
+  if (own.length === 0 || nested.includes(own)) return nested
+  return `${own}: ${nested}`
+}
+
 export const formatCliCause = (cause: Cause.Cause<unknown>): string => {
   const messages = Cause.prettyErrors(cause)
-    .map((error) => error.message.trim())
+    .map((error) => {
+      const detail = nestedCauseDetail(error)
+      return detail.length === 0 ? error.message.trim() : detail
+    })
     .filter((message) => message.length > 0)
   return `trellage profile: ${messages.length === 0 ? Cause.pretty(cause) : messages.join("; ")}`
 }

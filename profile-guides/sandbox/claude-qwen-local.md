@@ -14,7 +14,7 @@ bestFor:
 - Bounded private, offline-capable, or cost-controlled code changes on the local Qwen route
 - Small source-level fixes and refactors that do not need OMP local's host tools, subagents, or orchestration
 avoidFor:
-- Peak-quality UI or design work — use an Opus profile
+- Peak-quality UI or design work — use a proxy-routed Claude profile
 - Tool-rich host-native work or subagent fan-out — use native:omp/local
 - Deep research
 - High-stakes architecture decisions
@@ -48,8 +48,8 @@ workflows:
 
 ## Avoid This Profile When
 
-- The task needs peak quality on hard UI/design problems — use claude-frontend-design or another Opus profile.
-- The task needs multi-agent orchestration, deep research, or high-stakes architecture judgment — those need an Opus-routed profile.
+- The task needs peak quality on hard UI/design problems — use claude-frontend-design or another proxy-routed Claude profile.
+- The task needs multi-agent orchestration, deep research, or high-stakes architecture judgment — those need a proxy-routed Claude profile.
 
 ## Workflow Notes
 
@@ -58,5 +58,5 @@ workflows:
 
 ## Gotchas
 
-- Because every route resolves to the same local model, do not expect Opus-level reasoning quality even though the harness is Claude Code.
-- There is no proxy gateway dependency for this profile — it does not need the `copilot-proxy-rs_default` Docker network the way Opus-routed profiles do.
+- Because every route resolves to the same local model, do not expect frontier-model reasoning quality even though the harness is Claude Code.
+- There is no proxy gateway dependency for this profile — it does not need the `copilot-proxy-rs_default` Docker network the way proxy-routed profiles do.

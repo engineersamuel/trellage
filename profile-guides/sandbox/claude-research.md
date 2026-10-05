@@ -66,4 +66,4 @@ workflows:
 ## Gotchas
 
 - This profile allocates a 2g tmpfs and installs a large set of headless-browser shared libraries (needed for `last30days` source scraping) — expect a heavier image than a plain coding profile.
-- This is an Opus-routed proxy profile and needs the external `copilot-proxy-rs_default` Docker network.
+- This is a Sonnet 5.5-routed proxy profile and needs the external `copilot-proxy-rs_default` Docker network.

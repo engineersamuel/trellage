@@ -59,6 +59,61 @@ jq -cn \
   '$ARGS.named + {args:$ARGS.positional}' \
   --args -- "$@" >>"$FAKE_CLAUDE_LOG"
 
+if [[ "${1-}" == plugin ]]; then
+  [[ "${FAKE_CLAUDE_PLUGIN_FAIL:-0}" != 1 ]] || exit 81
+  case "${2-}:${3-}" in
+    list:--json)
+      if [[ "${FAKE_CLAUDE_PLUGIN_INVALID:-0}" == 1 ]]; then
+        printf '{}\n'
+      elif [[ -f "$CLAUDE_CONFIG_DIR/.fixture-document-plugin" ]]; then
+        enabled=true
+        [[ ! -f "$CLAUDE_CONFIG_DIR/.fixture-document-disabled" ]] || enabled=false
+        jq -cn --argjson enabled "$enabled" \
+          '[{id:"document-skills@anthropic-agent-skills",scope:"user",enabled:$enabled}]'
+      else
+        printf '[]\n'
+      fi
+      ;;
+    marketplace:list)
+      if [[ -f "$CLAUDE_CONFIG_DIR/.fixture-marketplace" ]]; then
+        printf '[{"name":"anthropic-agent-skills","repo":"anthropics/skills"}]\n'
+      else
+        printf '[]\n'
+      fi
+      ;;
+    marketplace:add)
+      [[ "${4-}" == anthropics/skills ]] || exit 82
+      : >"$CLAUDE_CONFIG_DIR/.fixture-marketplace"
+      ;;
+    install:document-skills@anthropic-agent-skills)
+      [[ "${4-}:${5-}" == --scope:user ]] || exit 83
+      : >"$CLAUDE_CONFIG_DIR/.fixture-document-plugin"
+      plugin_path="$CLAUDE_CONFIG_DIR/plugins/cache/anthropic-agent-skills/document-skills/fixture"
+      mkdir -p "$plugin_path/.claude-plugin"
+      printf '%s\n' '{"plugins":[{"name":"document-skills","source":"./","skills":["./skills/docx","./skills/xlsx","./skills/pptx","./skills/pdf"]}]}' \
+        >"$plugin_path/.claude-plugin/marketplace.json"
+      for skill in docx xlsx pptx pdf; do
+        mkdir -p "$plugin_path/skills/$skill"
+        printf '# Document fixture\n' >"$plugin_path/skills/$skill/SKILL.md"
+      done
+      jq -cn --arg path "$plugin_path" \
+        '{version:2,plugins:{"document-skills@anthropic-agent-skills":[{scope:"user",installPath:$path}]}}' \
+        >"$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json"
+      jq '.enabledPlugins["document-skills@anthropic-agent-skills"] = true' \
+        "$CLAUDE_CONFIG_DIR/settings.json" >"$CLAUDE_CONFIG_DIR/.fixture-settings.json"
+      mv "$CLAUDE_CONFIG_DIR/.fixture-settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
+      ;;
+    enable:document-skills@anthropic-agent-skills)
+      rm -f "$CLAUDE_CONFIG_DIR/.fixture-document-disabled"
+      jq '.enabledPlugins["document-skills@anthropic-agent-skills"] = true' \
+        "$CLAUDE_CONFIG_DIR/settings.json" >"$CLAUDE_CONFIG_DIR/.fixture-settings.json"
+      mv "$CLAUDE_CONFIG_DIR/.fixture-settings.json" "$CLAUDE_CONFIG_DIR/settings.json"
+      ;;
+    *) exit 84 ;;
+  esac
+  exit 0
+fi
+
 if [[ "${FAKE_CLAUDE_WAIT_FOR_SIGNAL-}" == 1 ]]; then
   trap 'printf "TERM\n" >>"$FAKE_CLAUDE_SIGNAL_LOG"; exit 143' TERM
   printf 'READY\n' >>"$FAKE_CLAUDE_SIGNAL_LOG"
@@ -94,7 +149,7 @@ case "$url" in
     ;;
   http://127.0.0.1:8080/v1/models)
     if [[ "${FAKE_PROXY_HAS_MODEL:-1}" == 1 ]]; then
-      printf '{"data":[{"id":"claude-opus-5"}]}\n'
+      printf '{"data":[{"id":"claude-sonnet-5.5"},{"id":"claude-opus-5.5"}]}\n'
     else
       printf '{"data":[{"id":"another-model"}]}\n'
     fi
@@ -107,6 +162,18 @@ chmod 0755 "$fake_bin/curl"
 ln -s "$(command -v jq)" "$fake_bin/jq"
 install_fixture_node "$fake_bin"
 seed_floating_skills_cache "$home"
+for office_variant in office office-charts; do
+  office_cache="$home/.local/share/trellage/common/cldx-$office_variant-skills"
+  cp -R "$home/.local/share/trellage/common/skills" "$office_cache"
+  mkdir "$office_cache/skills/academic-pptx"
+  printf '# Academic presentation fixture\n' >"$office_cache/skills/academic-pptx/SKILL.md"
+  printf '%s\n' academic-pptx fixture-personal show-me >"$office_cache/managed-skills.txt"
+  if [[ "$office_variant" == office-charts ]]; then
+    mkdir "$office_cache/skills/slide-maker"
+    printf '# Chart builder fixture\n' >"$office_cache/skills/slide-maker/SKILL.md"
+    printf '%s\n' academic-pptx fixture-personal show-me slide-maker >"$office_cache/managed-skills.txt"
+  fi
+done
 
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export HOME="$home"
@@ -162,7 +229,7 @@ cmp -s "$root/assets/rundown/NOTICE.md" \
 "$installer" >"$fixture_root/reinstall.out" || fail 'repeat install failed'
 
 "$command_path" list >"$fixture_root/list.out" || fail 'list failed'
-grep -Fqx $'default\tIsolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Opus 5 through the local proxy.' \
+grep -Fqx $'default\tIsolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Sonnet 5.5 with Opus 5.5 plan mode through the local proxy.' \
   "$fixture_root/list.out" || fail 'list output differs'
 
 "$command_path" list --json >"$fixture_root/list.json" || fail 'JSON list failed'
@@ -171,7 +238,14 @@ jq -e '
   and .launcher == "cldx"
   and .harness == "claude"
   and .sandbox == false
-  and [.profiles[].name] == ["default"]
+  and [.profiles[].name] == ["default", "office", "office-charts"]
+  and .profiles[1].marketplace.source == "anthropics/skills"
+  and .profiles[1].skillBundles == ["native-common", "claude-office"]
+  and .profiles[2].skillBundles == ["native-common", "claude-office-charts"]
+  and .profiles[1].headless.prompt == false
+  and .profiles[1].headless.testedHarnessVersion == null
+  and .profiles[2].headless.prompt == false
+  and .profiles[2].headless.testedHarnessVersion == null
   and .profiles[0].source == "anthropics/claude-code"
   and .profiles[0].headless == {
     "schemaVersion": 1,
@@ -331,6 +405,17 @@ jq -e '
     | length) == 1
 ' "$settings" >/dev/null \
   || fail 'setup Claude output style differs'
+jq -e '
+  .model == "opusplan"
+  and .effortLevel == "medium"
+  and .modelSettings["claude-sonnet-5.5"].effortLevel == "medium"
+  and .modelSettings["claude-opus-5.5"].effortLevel == null
+  and .modelOverrides["claude-sonnet-5-5"] == "claude-sonnet-5.5"
+  and .modelOverrides["claude-opus-5-5"] == "claude-opus-5.5"
+  and .modelSettings["claude-sonnet-5-5"].effortLevel == "medium"
+  and .modelSettings["claude-opus-5-5"].effortLevel == null
+' "$settings" >/dev/null \
+  || fail 'setup did not pin the managed per-model effort levels'
 jq -e --arg home "$profile_home" '
   .statusLine.type == "command"
   and .statusLine.refreshInterval == 15
@@ -356,7 +441,7 @@ settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
 
 "$command_path" || fail 'bare launch failed'
 jq -e '
-  .args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5"]
+  .args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'bare launch arguments differ'
 
 workspace="$(pwd -P)"
@@ -376,14 +461,14 @@ jq -s -e --arg home "$profile_home" '
   .[-1].configDir == $home
   and .[-1].authToken == "trellage-local-proxy"
   and .[-1].baseUrl == "http://127.0.0.1:8080"
-  and .[-1].opus == "claude-opus-5"
-  and .[-1].sonnet == "claude-sonnet-5"
+  and .[-1].opus == "claude-opus-5.5"
+  and .[-1].sonnet == "claude-sonnet-5.5"
   and .[-1].haiku == "claude-haiku-4.5"
   and .[-1].apiKey == "unset"
   and .[-1].oauth == "unset"
   and .[-1].openai == "unset"
   and .[-1].gh == "unset"
-  and .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5", "-p", "two words", "", "--literal=*"]
+  and .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "-p", "two words", "", "--literal=*"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'default launch environment or arguments differ'
 
 # --- provider/token scrub must cover the supported provider/token override
@@ -447,10 +532,28 @@ jq -s -e '
   .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-sonnet-5", "-p", "override"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model override was changed'
 
+"$command_path" --permission-mode plan -p planning \
+  || fail 'explicit plan mode launch failed'
+jq -s -e '
+  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "max", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode", "plan", "-p", "planning"]
+' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit plan mode was overridden by bypass permissions'
+
+"$command_path" --model opusplan --permission-mode=plan -p planning \
+  || fail 'explicit model and plan mode launch failed'
+jq -s -e '
+  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "max", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode=plan", "-p", "planning"]
+' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model and inline plan mode were changed'
+
+"$command_path" --permission-mode plan --effort=high -p planning \
+  || fail 'explicit plan effort override failed'
+jq -s -e '
+  .[-1].args == ["--allow-dangerously-skip-permissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode", "plan", "--effort=high", "-p", "planning"]
+' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit plan effort was changed'
+
 headless_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
 headless_initial_stream="$fixture_root/headless-initial.jsonl"
 printf '%s\n' \
-  '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-opus-5"}' \
+  '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-sonnet-5.5"}' \
   '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"CLDX_JSONL_OK","usage":{"input_tokens":9,"output_tokens":4},"total_cost_usd":0.01}' \
   >"$headless_initial_stream"
 FAKE_CLAUDE_STDOUT_FILE="$headless_initial_stream" \
@@ -477,12 +580,12 @@ jq -se --arg session "$headless_session_id" '
 ' "$fixture_root/headless-initial.out" >/dev/null \
   || fail 'Claude JSONL evidence differs'
 jq -s -e '
-  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5", "--output-format", "stream-json", "--verbose", "-p", "machine output"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--output-format", "stream-json", "--verbose", "-p", "machine output"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude JSONL argument vector differs'
 
 headless_resume_stream="$fixture_root/headless-resume.jsonl"
 printf '%s\n' \
-  '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-opus-5"}' \
+  '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-sonnet-5.5"}' \
   '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"CLDX_RESUME_OK","usage":{"input_tokens":5,"output_tokens":3},"total_cost_usd":0.006}' \
   >"$headless_resume_stream"
 FAKE_CLAUDE_STDOUT_FILE="$headless_resume_stream" \
@@ -497,7 +600,7 @@ jq -se --arg session "$headless_session_id" '
 ' "$fixture_root/headless-resume.out" >/dev/null \
   || fail 'Claude resume-with-prompt session evidence differs'
 jq -s -e --arg session "$headless_session_id" '
-  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-opus-5", "--resume", $session, "--output-format", "stream-json", "--verbose", "-p", "resume output"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--resume", $session, "--output-format", "stream-json", "--verbose", "-p", "resume output"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude resume-with-prompt argument vector differs'
 
 headless_malformed_stream="$fixture_root/headless-malformed.jsonl"
@@ -536,7 +639,7 @@ grep -Fqx TERM "$FAKE_CLAUDE_SIGNAL_LOG" \
   || fail 'Claude process did not receive TERM'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
-grep -Fq 'cldx doctor: OK (2.1.233, claude-opus-5)' "$fixture_root/doctor.out" \
+grep -Fq 'cldx doctor: OK (2.1.233, claude-sonnet-5.5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
 no_python_bin="$fixture_root/no-python-bin"
@@ -552,7 +655,7 @@ grep -Fq 'required command not found: python3' "$fixture_root/python.out" \
 
 FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/model.out" 2>&1 \
   && fail 'doctor accepted missing model'
-grep -Fq 'copilot-proxy-rs model is missing: claude-opus-5' "$fixture_root/model.out" \
+grep -Fq 'copilot-proxy-rs model is missing: claude-sonnet-5.5' "$fixture_root/model.out" \
   || fail 'missing model error differs'
 
 FAKE_PROXY_HEALTH=bad "$command_path" doctor >"$fixture_root/health.out" 2>&1 \
@@ -569,7 +672,8 @@ grep -Fq 'copilot-proxy-rs health response is invalid' "$fixture_root/health-jso
 jq '.theme = "light" | .preserve = "user-state" | .hasCompletedOnboarding = false' \
   "$profile_home/.claude.json" >"$fixture_root/onboarding.json"
 mv "$fixture_root/onboarding.json" "$profile_home/.claude.json"
-jq '.outputStyle = "Explanatory" | .theme = "light" | .preserve = "user-state"' \
+jq '.outputStyle = "Explanatory" | .theme = "light" | .preserve = "user-state"
+  | .model = "gpt-6-astra" | .effortLevel = "low"' \
   "$settings" >"$fixture_root/settings.json"
 mv "$fixture_root/settings.json" "$settings"
 jq '.statusLine = {"type":"command","command":"echo custom"}' \
@@ -592,6 +696,17 @@ jq -e '
       and (.command | contains(" native-hook --agent claude --profile default")))]
     | length) == 1
 ' "$settings" >/dev/null || fail 'repair did not preserve Claude settings'
+jq -e '
+  .model == "opusplan"
+  and .effortLevel == "medium"
+  and .modelSettings["claude-sonnet-5.5"].effortLevel == "medium"
+  and .modelSettings["claude-opus-5.5"].effortLevel == null
+  and .modelOverrides["claude-sonnet-5-5"] == "claude-sonnet-5.5"
+  and .modelOverrides["claude-opus-5-5"] == "claude-opus-5.5"
+  and .modelSettings["claude-sonnet-5-5"].effortLevel == "medium"
+  and .modelSettings["claude-opus-5-5"].effortLevel == null
+' "$settings" >/dev/null \
+  || fail 'repair did not restore the managed per-model effort levels'
 jq -e '.statusLine.command == "echo custom"' "$settings" >/dev/null \
   || fail 'custom Claude statusLine was replaced'
 [[ "$(<"$profile_home/unrelated-state")" == preserve ]] \
@@ -673,7 +788,7 @@ cp "$fixture_root/native-claude.real" "$native_claude"
 chmod 0755 "$native_claude"
 "$command_path" doctor >"$fixture_root/delegation-restored.out" \
   || fail 'doctor failed after restoring the shared native Claude runtime'
-grep -Fq 'cldx doctor: OK (2.1.233, claude-opus-5)' "$fixture_root/delegation-restored.out" \
+grep -Fq 'cldx doctor: OK (2.1.233, claude-sonnet-5.5)' "$fixture_root/delegation-restored.out" \
   || fail 'doctor output differs after restoring the shared native Claude runtime'
 
 # --- prepare/doctor must scrub the provider/token environment before
@@ -1076,6 +1191,61 @@ jq -e --arg cmd "$expected_spaced_hook_command" \
   "$spaced_settings" >/dev/null \
   || fail 'prepare --bridge disabled left the managed session bridge hook at a spaced-path home'
 
+office_home="$HOME/.local/share/trellage/profiles/claude/office/home"
+charts_home="$HOME/.local/share/trellage/profiles/claude/office-charts/home"
+"$command_path" inventory office --json | jq -e '.readiness == "not-setup"' >/dev/null \
+  || fail 'Office inventory did not report missing setup'
+"$command_path" setup office >"$fixture_root/office-setup.out" || fail 'Office setup failed'
+[[ -f "$office_home/skills/academic-pptx/SKILL.md"
+  && -f "$office_home/skills/show-me/SKILL.md"
+  && ! -e "$office_home/skills/slide-maker"
+  && ! -e "$profile_home/skills/academic-pptx"
+  && ! -e "$HOME/.claude/skills/academic-pptx" ]] \
+  || fail 'Office skills were missing, chart builder was enabled, or isolation failed'
+"$command_path" doctor office >"$fixture_root/office-doctor.out" || fail 'Office doctor failed'
+"$command_path" inventory office --json | jq -e \
+  '.readiness == "healthy" and .plugins == ["document-skills@anthropic-agent-skills"]' >/dev/null \
+  || fail 'Office inventory differs'
+: >"$FAKE_CLAUDE_LOG"
+ANTHROPIC_API_KEY=must-not-leak GH_TOKEN=must-not-leak \
+  FAKE_CLAUDE_ENV_DUMP="$fixture_root/office-launch.env" \
+  "$command_path" office -p 'Office contract' >/dev/null || fail 'Office launch failed'
+if grep -q '^TRELLAGE_CLAUDE_PROFILE_SKILLS=' "$fixture_root/office-launch.env"; then
+  fail 'Office skill selection leaked into child launchers'
+fi
+jq -se --arg home "$office_home" '
+  all(.[]; .configDir == $home and .apiKey == "unset" and .gh == "unset")
+  and all(.[]; .args[0] != "plugin")
+  and any(.[]; .args[-2:] == ["-p", "Office contract"])
+' "$FAKE_CLAUDE_LOG" >/dev/null \
+  || fail 'Office launch leaked credentials, reinstalled plugins, or used the wrong home'
+: >"$office_home/.fixture-document-disabled"
+jq '.enabledPlugins["document-skills@anthropic-agent-skills"] = false' \
+  "$office_home/settings.json" >"$fixture_root/office-disabled-settings.json"
+mv "$fixture_root/office-disabled-settings.json" "$office_home/settings.json"
+"$command_path" doctor office >"$fixture_root/office-disabled.out" 2>&1 \
+  && fail 'Office doctor accepted a disabled plugin'
+"$command_path" inventory office --json | jq -e '.readiness == "unhealthy"' >/dev/null \
+  || fail 'Office inventory accepted a disabled plugin'
+"$command_path" repair office >/dev/null || fail 'Office repair failed'
+[[ ! -e "$office_home/.fixture-document-disabled" ]] || fail 'Office repair did not enable plugin'
+cp "$office_home/plugins/installed_plugins.json" "$fixture_root/office-registry.json"
+printf '{}\n' >"$office_home/plugins/installed_plugins.json"
+"$command_path" office -p 'must not launch' \
+  >"$fixture_root/office-plugin-invalid.out" 2>&1 && fail 'Office accepted invalid plugin inventory'
+cp "$fixture_root/office-registry.json" "$office_home/plugins/installed_plugins.json"
+jq '.enabledPlugins["document-skills@anthropic-agent-skills"] = false' \
+  "$office_home/settings.json" >"$fixture_root/office-disabled-settings.json"
+mv "$fixture_root/office-disabled-settings.json" "$office_home/settings.json"
+FAKE_CLAUDE_PLUGIN_FAIL=1 "$command_path" office -p 'must not launch' \
+  >"$fixture_root/office-plugin-failure.out" 2>&1 && fail 'Office ignored plugin management failure'
+"$command_path" repair office >/dev/null || fail 'Office recovery after plugin failure failed'
+"$command_path" skills-update office >/dev/null || fail 'Office cached skills update failed'
+"$command_path" setup office-charts >"$fixture_root/charts-setup.out" || fail 'chart profile setup failed'
+[[ -f "$charts_home/skills/academic-pptx/SKILL.md"
+  && -f "$charts_home/skills/slide-maker/SKILL.md"
+  && ! -e "$office_home/skills/slide-maker" ]] || fail 'chart builder was not opt-in and isolated'
+"$command_path" doctor office-charts >/dev/null || fail 'chart profile doctor failed'
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'
 [[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstaller left command'

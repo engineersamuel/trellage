@@ -2,14 +2,11 @@
   "schemaVersion": 1,
   "profiles": {
     "default": {
-      "description": "Isolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Opus 5 through the local proxy.",
+      "description": "Isolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Sonnet 5.5 with Opus 5.5 plan mode through the local proxy.",
       "headless": {
         "schemaVersion": 1,
         "prompt": true,
-        "outputFormats": [
-          "text",
-          "jsonl"
-        ],
+        "outputFormats": ["text", "jsonl"],
         "eventContract": "claude-stream-json-v1",
         "trellageEventContract": null,
         "sessionId": "native",
@@ -24,6 +21,50 @@
         "testedHarnessVersion": "2.1.233"
       },
       "plugin": null,
+      "standaloneMcps": []
+    },
+    "office": {
+      "description": "Isolated Claude Code for Word, Excel, PDF, and presentation work with Anthropic document skills and academic presentation editing.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": ["text"],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
+      "plugin": "document-skills@anthropic-agent-skills",
+      "standaloneMcps": []
+    },
+    "office-charts": {
+      "description": "Office document profile with the optional slide-maker builder for chart-heavy presentations.",
+      "headless": {
+        "schemaVersion": 1,
+        "prompt": false,
+        "outputFormats": ["text"],
+        "eventContract": null,
+        "trellageEventContract": null,
+        "sessionId": "none",
+        "resume": false,
+        "resumeWithPrompt": false,
+        "questionToolControl": "none",
+        "changedFiles": "none",
+        "usage": false,
+        "cost": false,
+        "modelOverride": false,
+        "effortOverride": false,
+        "testedHarnessVersion": null
+      },
+      "plugin": "document-skills@anthropic-agent-skills",
       "standaloneMcps": []
     }
   }

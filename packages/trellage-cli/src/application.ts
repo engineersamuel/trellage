@@ -2247,8 +2247,8 @@ const harnessSpecificMetadata = (document: ProfileDocument): Readonly<Record<str
     return {
       claude_mode: harness.claude.mode ?? "hyperresearch",
       claude_gateway: harness.claude.gateway,
-      claude_opus_model: harness.claude.opus_model ?? "claude-opus-5",
-      claude_sonnet_model: harness.claude.sonnet_model ?? "claude-sonnet-5",
+      claude_opus_model: harness.claude.opus_model ?? "claude-opus-5.5",
+      claude_sonnet_model: harness.claude.sonnet_model ?? "claude-sonnet-5.5",
       claude_haiku_model: harness.claude.haiku_model ?? "claude-haiku-4.5",
     }
   }

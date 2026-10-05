@@ -967,6 +967,14 @@ if [[ "$mode" == skills ]]; then
       --bundle youtube \
       --cache "$native_common_root/cdx-youtube-pro-skills" \
       || die 'failed to update native YouTube skills'
+    for office_variant in office office-charts; do
+      "${trellage_bun[@]}" "$floating_skills_manager" update \
+        --catalog "$floating_skills_catalog" \
+        --bundle native-common \
+        --bundle "claude-$office_variant" \
+        --cache "$native_common_root/cldx-$office_variant-skills" \
+        || die "failed to update native Claude $office_variant skills"
+    done
     "${trellage_bun[@]}" "$floating_skills_manager" update \
       --catalog "$floating_skills_catalog" \
       --bundle omp-community \
