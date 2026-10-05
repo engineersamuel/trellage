@@ -1072,6 +1072,7 @@ chmod 0600 "$pstack_home/config.toml"
 # session while also persisting project trust. Cleanup must strip trust, keep
 # the session-live tables, and exit 0.
 awk -v marker='# trellage-managed-codex-provider-end' '
+  $0 == "[tui]" || /^status_line = / { next }
   $0 == marker {
     print ""
     print "[hooks.state]"
@@ -1095,6 +1096,8 @@ grep -F -- '"gpt-6-astra" = 2' "$pstack_home/config.toml" >/dev/null \
   || fail 'session-live launch cleanup dropped tui nux mutation'
 grep -F -- '[hooks.state]' "$pstack_home/config.toml" >/dev/null \
   || fail 'session-live launch cleanup dropped hooks.state'
+grep -Fx -- 'screen_reader_detection_done = true' "$pstack_home/config.toml" >/dev/null \
+  || fail 'session-live launch cleanup dropped screen-reader detection'
 cp "$proxy_config_before" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"
 
@@ -1292,6 +1295,63 @@ for invalid_tui in 'screen_reader_detection_done = "true"' 'unknown_setting = tr
   HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
     >"$fixture_root/doctor-invalid-tui.out" 2>&1 \
     && fail 'doctor accepted invalid native TUI state'
+done
+cp "$proxy_config_before" "$pstack_home/config.toml"
+chmod 0600 "$pstack_home/config.toml"
+
+# Codex persists screen-reader detection in the parent TUI table.
+for detection in true false; do
+  awk -v detection="$detection" '
+    $0 == "[tui]" || /^status_line = / { next }
+    $0 == "# trellage-managed-codex-provider-end" {
+      print ""
+      print "[tui]"
+      print "screen_reader_detection_done = " detection
+      print ""
+      print "[tui.model_availability_nux]"
+      print "\"gpt-5.6-sol\" = 4"
+    }
+    { print }
+  ' "$proxy_config_before" >"$pstack_home/config.toml"
+  chmod 0600 "$pstack_home/config.toml"
+  cp "$pstack_home/config.toml" "$fixture_root/tui-before.toml"
+  for operation in doctor repair; do
+    HOME="$fixture_root/home" fake_env "$fixture_launcher" "$operation" pstack \
+      >"$fixture_root/tui-$operation.out" \
+      || fail "$operation rejected Codex screen-reader state"
+    cmp -s "$fixture_root/tui-before.toml" "$pstack_home/config.toml" \
+      || fail "$operation changed Codex screen-reader state"
+  done
+  HOME="$fixture_root/home" fake_env "$fixture_launcher" pstack --version \
+    >"$fixture_root/tui-launch.out" \
+    || fail 'launch rejected Codex screen-reader state'
+  cmp -s "$fixture_root/tui-before.toml" "$pstack_home/config.toml" \
+    || fail 'launch changed Codex screen-reader state'
+  awk '
+    $0 == "[tui]" {
+      print "[projects.\"/generated/project\"]"
+      print "trust_level = \"trusted\""
+      print ""
+    }
+    { print }
+  ' "$fixture_root/tui-before.toml" >"$pstack_home/config.toml"
+  HOME="$fixture_root/home" fake_env "$fixture_launcher" doctor pstack \
+    >"$fixture_root/tui-recovery.out" \
+    || fail 'doctor rejected project trust followed by TUI state'
+  diff -u "$fixture_root/tui-before.toml" "$pstack_home/config.toml" \
+    || fail 'project trust recovery changed TUI state'
+done
+for field in 'screen_reader_detection_done = "true"' \
+  'screen_reader_detection_done = 1' 'unknown_setting = true'; do
+  awk -v field="$field" '
+    /^screen_reader_detection_done = / { print field; next }
+    { print }
+  ' "$fixture_root/tui-before.toml" >"$pstack_home/config.toml"
+  cp "$pstack_home/config.toml" "$fixture_root/tui-invalid-before.toml"
+  assert_command_fails invalid-tui-state env HOME="$fixture_root/home" \
+    PATH="$fake_bin:$PATH" "$fixture_launcher" doctor pstack
+  cmp -s "$fixture_root/tui-invalid-before.toml" "$pstack_home/config.toml" \
+    || fail 'doctor modified invalid TUI state'
 done
 cp "$proxy_config_before" "$pstack_home/config.toml"
 chmod 0600 "$pstack_home/config.toml"

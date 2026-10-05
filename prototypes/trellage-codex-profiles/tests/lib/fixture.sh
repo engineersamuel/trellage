@@ -694,6 +694,12 @@ case "$*" in
       staged="$CODEX_HOME/.fake-codex-config-nux.$$"
       awk -v marker='# trellage-managed-codex-provider-end' '
         $0 == marker {
+          if (!seen_tui) {
+            if (previous != "") print ""
+            print "[tui]"
+            print "screen_reader_detection_done = true"
+            print ""
+          }
           if (!seen_nux) {
             if (previous != "") print ""
             print "[tui.model_availability_nux]"
@@ -701,6 +707,7 @@ case "$*" in
             print ""
           }
         }
+        $0 == "[tui]" { seen_tui = 1 }
         $0 == "[tui.model_availability_nux]" { seen_nux = 1; in_nux = 1; print; next }
         in_nux && /^\[/ { in_nux = 0 }
         in_nux && $0 ~ /^"gpt-6-astra" = / {

@@ -4137,6 +4137,7 @@ export type GuideUiResult =
   | GuideUiBatchResult
   | GuideOptimizeTerminalResult
   | { readonly action: "optimize-submitted" }
+  | { readonly action: "review" }
 
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
 
@@ -5033,11 +5034,12 @@ const IntentEditor = ({ textDraft }: { readonly textDraft: string }) => {
       <ScrollableTextViewport
         value={textDraft}
         width={Math.max(1, columns - 2)}
-        height={Math.max(1, rows - 3)}
+        height={Math.max(1, rows - 4)}
         startAtEnd
         cursor
       />
       <Text dimColor>Type your intent · Ctrl-G augment · PgUp/PgDn scroll · ↵ submit · Ctrl-C cancel</Text>
+      <Text dimColor>Ctrl-R review committed and working-tree changes</Text>
     </Box>
   )
 }
@@ -6797,10 +6799,13 @@ const appendEditorInput = (
     : { type: GuideUiActionType.InputRejected, message: `Text exceeds ${maximum} characters. Nothing was added.` })
 }
 
-const handleIntentInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
+const handleIntentInput: GuideInputHandler = ({ state, dispatch, complete }, input, key) => {
   // Checked before the printable branch: every other key on this screen is
   // text, so only a Ctrl chord can be a shortcut here.
-  if (key.ctrl && input === "g") dispatch({ type: GuideUiActionType.AugmentOpen })
+  if (key.ctrl && input === "r") {
+    if (state.textDraft.length === 0) complete({ action: "review" })
+    else dispatch({ type: GuideUiActionType.InputRejected, message: "Clear the draft before opening Review." })
+  } else if (key.ctrl && input === "g") dispatch({ type: GuideUiActionType.AugmentOpen })
   else if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })
   else if (key.backspace || key.delete) dispatch({ type: GuideUiActionType.IntentBackspace })
   else if (isPrintableInput(input, key)) {

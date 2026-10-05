@@ -297,7 +297,7 @@ const instance = render(
 )
 try {
   const result = (await instance.waitUntilExit()) as GuideUiResult
-  const exitCode = await executeGuideUiResult(result, {
+  const exitCode = result.action === "review" ? 0 : await executeGuideUiResult(result, {
     runner,
     checkReadiness: (runner, profile, cwd, signal, goal) =>
       checkSelectedProfileReadiness(runner, profile, cwd, signal, goal, goalReadinessServices),

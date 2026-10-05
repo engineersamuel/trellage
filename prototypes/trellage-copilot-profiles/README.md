@@ -106,6 +106,9 @@ after selection; the bare picker never performs setup, repair, or update.
 
 Ordinary `cpx PROFILE` launches pass `--autopilot --allow-all --no-ask-user`, so
 Copilot runs autonomously without waiting for permission or user-input prompts.
+Pass `--plan` immediately after the profile name to start in approval-gated
+plan mode instead; this launch does not pass Autopilot or automatic approval
+flags. `trx guide --review` uses this option for Copilot review handoffs.
 Every profile defaults to `--model gpt-6-astra --effort low`. Plan mode uses
 `gpt-6-astra` with `max` effort. Setup, repair, and launch refresh only the
 managed `model`, `effortLevel`, `planModel`, and `planEffortLevel` keys in the

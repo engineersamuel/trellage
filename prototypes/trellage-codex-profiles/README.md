@@ -288,7 +288,9 @@ project-trust during the session, post-exit cleanup removes those generated
 stanzas.
 
 On exit, cleanup strips generated project-trust stanzas and keeps normal Codex
-session-live native writes (`hooks.state`, `tui.model_availability_nux`).
+session-live native writes (`hooks.state`, `tui.screen_reader_detection_done`,
+`tui.model_availability_nux`). Codex screen-reader detection is preserved by
+setup, doctor, repair, and launch; it does not require a profile reset.
 Marketplace/plugin/managed mutations still fail cleanup and leave live bytes
 unchanged so unexpected drift stays visible.
 

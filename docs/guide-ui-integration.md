@@ -13,7 +13,7 @@ permissions, and records the readiness receipt. A raw Bun install is not
 equivalent. Native installation fixtures must use the same prepared-source
 contract; missing readiness must remain a refusal, not an implicit install.
 
-This task uses a 60-second slow-test reporting threshold
+The matrix uses a 60-second slow-test reporting threshold
 because Vitest applies it to both individual cases and the file total. That
 threshold does not change test timeouts or failure reporting.
 
@@ -178,6 +178,82 @@ cd packages/trellage-launcher
 FORCE_COLOR=1 bun run test test/guide-ui.integration.test.ts -t 'goal|interview|long questions'
 ```
 
+`test/review-ui-terminal.test.ts` checks one-Enter review selection (including
+all three skills), empty selection, separate bounded live output at 80x18,
+result access, and cancellation without model calls. It checks confirmation before
+continuing in the current terminal or a Herdr tab, and uses a local child
+process to check that the Review screen exits before the child inherits
+terminal input. It blocks a new worktree for uncommitted changes.
+`test/review-continuation.test.ts` checks the
+Copilot plan-mode handoff prompt and arguments, selected destination, and clean-HEAD worktree guard
+without starting an agent. Enter during an active review cannot start
+another paid run. The fake SDK backend checks assistant
+text streaming, Fleet child progress, and suppression of duplicate final
+messages and master JSON. The Guide
+matrix also checks that Ctrl-R opens Review only from an empty intent and
+does not discard an existing draft. The direct `trx guide --review` router
+path avoids full profile discovery and Prompt Master preparation. It passes
+the verified `cpx` launcher path for continuation; unlike the main Guide
+path, direct Review has no fd 3 catalog to read.
+The current-terminal continuation launches through
+`mise run trx -- run cpx hve -- --plan -i` in a source worktree, or
+`trx run cpx hve -- --plan -i`
+for an installed router. The source router prepares stale runtime readiness
+before dispatch; neither route launches the saved absolute `cpx` path directly.
+The selection screen includes Matt Pocock Code Review as a separate option
+alongside Ponytail and Fleet. It shows one worker because the current Guide
+flow has no verified spec input. A missing spec must be shown as a skipped
+Spec axis, not a second worker
+or a completed Spec review.
+The Review terminal fixture checks an 80-column tab row: Overview stays
+selected while reviews run, Tab/Shift+Tab and arrows move between selected
+review panes, a running status animates instead of showing the word,
+PgUp/PgDn scroll the active pane, and a partial Fleet status
+remains visible after completion. The Synthesis tab opens by default when
+the run finishes; switching back displays each saved reviewer report.
+The saved-report viewport renders fenced `diff` lines with distinct
+added, removed, and hunk colors without changing saved Markdown or the
+ordinary prompt Markdown renderer. The PTY fixture checks the actual
+terminal colors and hidden fences.
+The backend also checks that a failed master retains each completed review
+and its raw reply, and that a failed-reviewer challenge is repaired
+without restarting Fleet. The master can challenge one original active reviewer
+per recipient per round using cited evidence from a different successful
+review. Guide sends the question to that reviewer's existing SDK session.
+There are at most two rounds; a second round needs new evidence from a
+first-round reply. Private `docs/review` evidence retains questions, replies,
+master decisions, and the final synthesis; unresolved challenges mark the
+combined review incomplete.
+Fleet's worker prompt explicitly covers
+uncommitted changes with equal base and HEAD; a fake SDK checks the
+15-minute Fleet budget including startup, the reserved two-minute recovery
+window, per-attempt limits, cancellation, and expiry without new requests.
+The entry point keeps the original error in the message
+alongside the retained workspace path.
+Snapshot tests also cover a worktree behind or diverged from main: only
+changes since the common ancestor and local edits enter the patch, and a
+changed main tip invalidates confirmation before model work. The review
+screen labels the main tip and the effective review base separately.
+Entry tests cover detached-HEAD labels without swallowing unrelated Git errors.
+Capture tests cover the 1,024-path cap, shared 60-second deadline, symlink
+patches without target reads, and unsupported entries. Skill tests cover
+entry/depth/byte limits, the 30-second freeze pass, refresh budget resets,
+and cooperative five-second cleanup with retained-path diagnostics.
+The Review PTY fixture uses production choices and IDs, so its 80-column
+compact-tab assertions exercise the same identifiers as the real selector.
+The fake SDK also verifies that Fleet JSON with `pr: null` and an abbreviated
+Markdown field is bound to the trusted base/HEAD, actual run timestamps,
+and saved full Markdown,
+while invalid worker or finding data remains rejected.
+Report-tool contracts route differing reviewer-suggested filenames to one
+owned pair, reject traversal and oversize content, and allow an identical
+Markdown or JSON retry without rewriting it; conflicting retries fail.
+The backend also prompts for an unread completed Fleet worker before saving,
+checks each lens's dispatched model, and rejects contradictory Markdown counts.
+Its SDK fixtures deliver `read_agent` tool events without post-tool hooks,
+as the live runtime can do, and distinguish a worker's result from a
+still-running or status-only reply.
+
 ## Implemented cases
 
 Counts apply to each case, including each seed of a parameterized case.
@@ -228,6 +304,7 @@ Handoffs are recorded requests, not real harness launches.
 | Mix a current-workspace pane, a new tab, and a new worktree | 1 | 9 | 3 | 3 | Exact allocation commands, branch, base ref, returned pane IDs, and launch directories |
 | Queue HVE, Sandbox, and HVE again; reject a duplicate; correct and reopen | 1 | 9 | 3 | 3 | Exact profile names and `-2` suffix; duplicate causes no Git inspection or allocation and no open-existing offer; reopening preserves branch and job ID |
 | Confirm a dirty checkout or reuse an existing worktree | 2 | 3 | 1 | 1 | Both dirty-checkout confirmations are required; reuse opens rather than creates, and uses Herdr's returned canonical cwd |
+| Open Review with Ctrl-R from an empty intent or preserve a typed draft | 2 | 0 | 0 | 0 | Empty intent opens the separate review screen without matching; a draft remains unchanged with an explicit error |
 
 The recommendation cases use seeds `17` and `73`. Queue removal uses seed `41`
 at 120 columns and seed `97` at 240 columns, both with 40 rows. The wide case

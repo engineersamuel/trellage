@@ -50,3 +50,6 @@ results/
 /prototypes/trellage-*-profiles/.runtime-identity.*
 /prototypes/common/omp-community-skills/
 /prototypes/trellage-prime-profiles/.kernel-bootstrap.*
+/prototypes/trellage-router/.contract-fixture.*/
+/docs/review/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-review*.md
+/docs/review/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-review*.json

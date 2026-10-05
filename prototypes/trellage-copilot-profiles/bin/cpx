@@ -785,6 +785,11 @@ launch_profile() {
   ensure_floating_skills "$profile"
 
   ensure_profile_for_launch "$profile"
+  if [[ "${1-}" == --plan ]]; then
+    shift
+    exec env COPILOT_HOME="$(profile_home "$profile")" \
+      copilot --plan --model gpt-6-astra --effort low "$@"
+  fi
   exec env COPILOT_HOME="$(profile_home "$profile")" \
     copilot --autopilot --allow-all --no-ask-user \
     --model gpt-6-astra --effort low "$@"

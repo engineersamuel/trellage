@@ -619,6 +619,7 @@ assert_contains 'trx list [--json]' "$fixture_root/help.out"
 assert_contains 'trx run LAUNCHER PROFILE [-- ARGS...]' "$fixture_root/help.out"
 assert_contains 'trx --profile agency [COPILOT_ARGS...]' "$fixture_root/help.out"
 assert_contains 'trx guide [INTENT]' "$fixture_root/help.out"
+assert_contains 'trx guide --review' "$fixture_root/help.out"
 assert_contains 'trx guide --preview' "$fixture_root/help.out"
 assert_contains 'trx skills status' "$fixture_root/help.out"
 assert_contains 'trx skills update' "$fixture_root/help.out"
@@ -678,6 +679,7 @@ assert_contains 'Interactive prompt viewers: pager, split, focus, bookends, dash
 assert_contains 'trx guide --preview' "$fixture_root/guide-help.out"
 assert_contains 'trx guide --forks' "$fixture_root/guide-help.out"
 assert_contains 'trx guide --next-steps' "$fixture_root/guide-help.out"
+assert_contains 'trx guide --review' "$fixture_root/guide-help.out"
 assert_contains 'It reads' "$fixture_root/guide-help.out"
 
 PATH=/usr/bin:/bin "$fixture_bin/trx" upgrade --help >"$fixture_root/upgrade-help.out"
@@ -717,6 +719,21 @@ assert_contains 'an interactive terminal is required' "$fixture_root/forks.out"
 if grep -Fq 'trellage command not found' "$fixture_root/forks.out"; then
   fail 'fork preview required the Sandbox catalog'
 fi
+
+# Review needs no profile or Sandbox discovery before opening its own UI.
+review_status=0
+"$fixture_bin/trx" guide --review </dev/null >"$fixture_root/review.out" 2>&1 \
+  || review_status=$?
+((review_status != 0)) || fail 'review mode ran without a terminal'
+assert_contains 'an interactive terminal is required' "$fixture_root/review.out"
+if grep -Fq 'trellage command not found' "$fixture_root/review.out"; then
+  fail 'review mode required the Sandbox catalog'
+fi
+review_profile_status=0
+python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/review-profile.out" '' '' \
+  "$fixture_bin/trx" guide --review || review_profile_status=$?
+((review_profile_status != 0)) || fail 'review started without a Copilot hve profile'
+assert_contains 'Copilot hve profile is unavailable' "$fixture_root/review-profile.out"
 
 mv "$fixture_bin/cpx" "$fixture_root/cpx-link"
 "$fixture_bin/trx" skills status >"$fixture_root/skills-status.json" \
@@ -903,6 +920,23 @@ cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
 [[ -f "$fixture_source/.trellage-source-ready.json" ]] \
   || fail 'worktree source launch did not restore readiness automatically'
 mv "$fixture_root/source-ownership.saved" "$fixture_source/.managed-by-trellage-source"
+
+: >"$fixture_source/node_modules/.trx-contract-drift-2"
+: >"$argument_log"
+TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
+  TRX_ARGUMENT_LOG="$argument_log" \
+  "$fixture_source/prototypes/trellage-router/bin/trx" run cpx cpx-p -- --plan -i 'Review report path' \
+  || fail 'worktree source trx run did not recover stale runtime readiness'
+[[ -f "$fixture_source/.trellage-source-ready.json" ]] \
+  || fail 'worktree source trx run did not restore runtime readiness'
+python3 - "$argument_log" <<'PY' || fail 'worktree source trx run changed plan-mode arguments'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+expected = [b"cpx", b"cpx-p", b"--plan", b"-i", b"Review report path", b""]
+raise SystemExit(0 if actual == expected else 1)
+PY
 
 # --- TRELLAGE_TRX_NATIVE_SOURCE: opt-in dev-mode native launcher delegation.
 # Uses a self-contained fixture (a copy of trx plus fixture sibling

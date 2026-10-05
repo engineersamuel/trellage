@@ -1045,6 +1045,7 @@ validate_native_provider_tail() {
       # only namespaces for nested subtables (hooks.state) or happen to have
       # no entries yet (tui nux flags).
       zero_field_ok["hooks-state-root"] = 1
+      zero_field_ok["tui"] = 1
       zero_field_ok["tui-nux"] = 1
       # Concurrent cdx sessions may leave ephemeral project-trust stanzas in the
       # shared native tail. Accept them here so prepare does not mutate live
@@ -1098,6 +1099,10 @@ validate_native_provider_tail() {
       if (!valid_basic_string(name)) exit 1
       if (length(name) > 512 || name !~ /:[0-9]+:[0-9]+$/) exit 1
       begin_table(name, "hooks-state-entry")
+      next
+    }
+    $0 == "[tui]" {
+      begin_table("tui", "tui")
       next
     }
     $0 == "[tui.model_availability_nux]" {
@@ -1213,6 +1218,7 @@ strip_generated_project_trust() {
         entry ~ /^\[plugins\".*"\]$/ ||
         entry == "[hooks.state]" ||
         entry ~ /^\[hooks\.state\.".*"\]$/ ||
+        entry == "[tui]" ||
         entry == "[tui.model_availability_nux]"
     }
     function generated_project_tail(separator, table, trust, trailing, count) {
@@ -2965,7 +2971,7 @@ config_has_native_project_trust_stanza() {
 }
 
 # Remove Codex session-live native tables for comparison only: hooks.state*
-# and tui.model_availability_nux. Marketplace/plugin/managed bytes stay so
+# and TUI detection/notices. Marketplace/plugin/managed bytes stay so
 # unexpected mutations still fail cleanup.
 strip_native_session_live_state() {
   local target="$1" output="$2"
@@ -2979,6 +2985,7 @@ strip_native_session_live_state() {
     function is_live_header(line) {
       return line == "[hooks.state]" ||
         line ~ /^\[hooks\.state\.".*"\]$/ ||
+        line == "[tui]" ||
         line == "[tui.model_availability_nux]"
     }
     {
