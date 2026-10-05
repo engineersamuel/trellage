@@ -1364,8 +1364,7 @@ it("removes every queued job and does not emit a command for an empty launch", a
   for (let remaining = selections.length - 1; remaining >= 0; remaining -= 1) {
     await guide.pressAndWait("x", queueText(remaining))
   }
-  guide.press("L")
-  await guide.waitForInput("L")
+  await guide.pressAndWaitForInput("L")
   await guide.pressAndWait(enter, "Batch queue is empty.")
   await assertDeferredLaunch(guide)
   const report = await guide.finish("q", 130)
@@ -1498,8 +1497,7 @@ it.for([80, 120])(
       "Enter continue",
     )
     for (const key of [down, "\u001b[A", "j", "k", "\t", "\u001b[Z"]) {
-      guide.press(key)
-      await guide.waitForInput(key)
+      await guide.pressAndWaitForInput(key)
       await guide.waitForText("Optimize", "Choose reviewers", "First principles", "Esc back")
     }
     await guide.pressAndWait(enter, "Confirm read-only review")
@@ -1529,8 +1527,7 @@ it("optimizes current changes without rematching the task or changing queued wor
   await guide.waitForText("2 of 2 files selected")
   await guide.pressAndWait(down, '> [x] "notes.txt"')
   await guide.pressAndWait(" ", "1 of 2 files selected", '[ ] "notes.txt"')
-  guide.press("L")
-  await guide.waitForInput("L")
+  await guide.pressAndWaitForInput("L")
   await assertDeferredLaunch(guide)
   await guide.pressAndWait(enter, "Choose reviewers", "First principles")
   await guide.pressAndWait("\u001b", "Confirm target", "1 of 2 files selected", '[ ] "notes.txt"')
@@ -1646,8 +1643,7 @@ it("keeps an invalid comparison base visible and accepts an explicit correction"
   await guide.pressAndWait("missing-base", "missing-base_")
   await guide.pressAndWait(enter, "Setup blocked", "Comparison base missing-base")
   await guide.waitForText("b change base", "r retry")
-  guide.press(enter)
-  await guide.waitForInput(enter)
+  await guide.pressAndWaitForInput(enter)
   await guide.waitForText("Setup blocked")
   assert.equal((await guide.events()).filter((event) => event.kind === "optimize-target").length, 2)
   await guide.pressAndWait("b", "Choose comparison base", "missing-base_")
@@ -1668,8 +1664,7 @@ it("does not expand an empty change set into repository-wide work", async ({ gui
   await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Choose review scope")
   await selectOptimizeBase(guide, "unchanged")
   await guide.waitForText("No changes in this scope", "0 of 0 files selected")
-  guide.press(enter)
-  await guide.waitForInput(enter)
+  await guide.pressAndWaitForInput(enter)
   await guide.waitForText("Confirm target", "No changes in this scope")
   const report = await guide.finish("q", 130)
   assert.equal(report.events.filter((event) => event.kind === "optimize-changes").length, 0)
@@ -1780,10 +1775,8 @@ it(
     await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1", "Challenge round")
     expect(guide.text()).not.toContain("Enter approve selected")
     expect(guide.text()).not.toContain("[ ]")
-    guide.press(" ")
-    await guide.waitForInput(" ")
-    guide.press(enter)
-    await guide.waitForInput(enter)
+    await guide.pressAndWaitForInput(" ")
+    await guide.pressAndWaitForInput(enter)
     await guide.readScreen((screen) => {
       expect(screen).toContain("Review failed")
       expect(screen).not.toContain("Enter approve selected")
