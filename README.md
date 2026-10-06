@@ -1557,8 +1557,9 @@ files use mode `0600`, with atomic writes and bounded, regular-file-only reads.
 Repeating an identical step reuses the newest valid matching artifact and its
 UUID directory, avoiding the corresponding generation, optimization, or
 refinement model calls. Changes to relevant prompts, routing, catalog, guide,
-profile/workflow, target tool, Prompt Master skill content, candidates, or
-feedback miss independently and leave earlier artifacts available for review.
+profile/workflow, target agent or model, Prompt Master skill content,
+candidates, or feedback miss independently and leave earlier artifacts
+available for review.
 Match caches also distinguish backend, model, and matcher/question revision.
 Jev cache keys exclude unrelated LLM settings. A cached Copilot fallback never
 prevents a new Jev attempt, and each successful backend is cached separately.
@@ -1641,10 +1642,16 @@ requirements. Manual `goalTransport` data includes the exact native-input
 instructions; JSON mode does not execute them. Interactive model
 failures can be retried or replaced with deterministic literal/template
 fallbacks. Matching and candidate drafting have no tools, repository
-attachments, file tracking, or persistent history. Prompt optimization loads
-only the configured Prompt Master skill. Guide content and the execution
-objective are sent to TypeSafe for Jev matching and to the configured Copilot
-model for fallback matching and subsequent LLM phases.
+attachments, file tracking, or persistent history. Candidate drafting writes
+complete agent prompts as short task briefs: objective, context, target state,
+scope, constraints, acceptance criteria, action boundaries, and progress
+evidence. It uses only supplied facts and omits sections without support.
+Prompt optimization loads only the configured Prompt Master skill. Guide names
+the target agent and, for Sandbox profiles, its configured model. Prompt
+Master cannot read its reference templates, and Guide disables its
+interactive output, question, warning, and stop-and-ask rules. Guide content
+and the execution objective are sent to TypeSafe for Jev matching and to the
+configured Copilot model for fallback matching and subsequent LLM phases.
 
 The native `prx` launcher runs Prime Agent against `copilot-proxy-rs`, pinning
 the provider and model to `copilot-proxy-rs` and `claude-opus-5` (Anthropic

@@ -14,6 +14,7 @@ import {
   GuideEffort,
   GuideMatcherFallbackReason,
   guideIntentMaximumLength,
+  guidePromptTarget,
   literalGuideMatch,
   templatePromptCandidates,
   type GuideRecommendation,
@@ -2091,7 +2092,7 @@ describe("runGuideGenerationStep", () => {
       expect(provider.generateCalls).toHaveLength(1)
       expect(provider.optimizeCalls).toEqual([
         {
-          targetTool: "codex",
+          targetTool: guidePromptTarget("codex"),
           profileRef: "native:cdx/reviewer",
           bodyBudget: 8000,
           candidates: candidateTriple(),
@@ -2196,7 +2197,7 @@ describe("runGuideGenerationStep", () => {
       const result = await runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)
 
       expect(provider.optimizeCalls[0]).toEqual({
-        targetTool: "codex",
+        targetTool: guidePromptTarget("codex"),
         profileRef: "native:cdx/reviewer",
         bodyBudget: 8000 - "/review-diff ".length,
         candidates: candidateTriple(),
@@ -2403,7 +2404,7 @@ describe("runGuideRefinementStep", () => {
     expect(provider.refineCalls).toHaveLength(1)
     expect(provider.optimizeCalls).toEqual([
       {
-        targetTool: "codex",
+        targetTool: guidePromptTarget("codex"),
         profileRef: "native:cdx/reviewer",
         bodyBudget: 8000,
         candidates: [{ title: "Refined", prompt: "Do the focused thing.", notes: "Quick pass." }],
@@ -2577,7 +2578,7 @@ describe("runGuideRefinementStep", () => {
 
     expect(provider.refineCalls[0]?.candidate.prompt).toBe("Do the focused thing.")
     expect(provider.optimizeCalls[0]).toEqual({
-      targetTool: "codex",
+      targetTool: guidePromptTarget("codex"),
       profileRef: "native:cdx/reviewer",
       bodyBudget: 8000 - "/social-media-skills:post-writer ".length,
       candidates: [

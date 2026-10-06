@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "vitest"
+import { guidePromptTarget } from "../src/guide-api.ts"
 import type { JobPlacement, QueuedGuideJob } from "../src/guide-batch.ts"
 import type { GuideGoalCandidateContext, PreparedGuideGoal } from "../src/guide-goal-execution.ts"
 import type { SelectedProfile } from "../src/guide-launch.ts"
@@ -379,7 +380,7 @@ const assertDataflow = (
         kind: "optimize",
         input: {
           profileRef: profile.ref,
-          targetTool: profile.harness,
+          targetTool: guidePromptTarget(profile.harness),
           bodyBudget: fixtureBodyBudget(profile),
           candidates,
           ...(profile.skill === undefined
@@ -883,7 +884,7 @@ const assertGoalDataflow = (
       goal,
       goalExecution: { goal, controller, workflow },
       profileRef: profile.ref,
-      targetTool: profile.harness,
+      targetTool: guidePromptTarget(profile.harness),
       candidates: generatedGoalApproaches(profile),
     })
     expect(optimization.candidates).toEqual(

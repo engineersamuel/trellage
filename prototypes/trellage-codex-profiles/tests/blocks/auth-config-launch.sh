@@ -1958,8 +1958,8 @@ jq -se '
 ' \
   "$fixture_root/fake-codex.log" >/dev/null \
   || fail 'native-auth Varlock key did not reach the final Codex child'
-cmp -s "$fixture_root/fake-codex-env.log" <(printf '%s\n' false true) \
-  || fail 'native-auth helper received the YouTube key'
+cmp -s "$fixture_root/fake-codex-env.log" <(printf '%s\n' false false true) \
+  || fail 'native-auth helper or version probe received the YouTube key'
 rm -f "$fixture_root/home/.codex/auth.json"
 if grep -F -- "$youtube_varlock_secret" \
   "$fixture_root/fake-codex.log" \
@@ -2203,6 +2203,55 @@ youtube native tty resume
 youtube native non-tty exec-resume
 EOF
 assert_isolation_snapshot_unchanged full-access-launches
+
+# Codex 0.156.0 added --no-daemon. Launch passes it only for a confirmed stable
+# runtime, and only when caller arguments cannot conflict with it.
+assert_daemon_launch() {
+  local label="$1" version="$2" auth_mode="$3" daemon="$4" expected
+  local -a launch_args prefix
+  shift 4
+  launch_args=(pstack "$@")
+  prefix=(--dangerously-bypass-approvals-and-sandbox --disable default_mode_request_user_input)
+  [ "$daemon" = omitted ] || prefix+=(--no-daemon)
+  prefix+=(--dangerously-bypass-hook-trust)
+  if [ "$auth_mode" = native ]; then
+    launch_args=(--native-auth "${launch_args[@]}")
+    prefix+=(-c 'model_provider="openai"')
+  fi
+  expected="$(jq -cn --args '$ARGS.positional' -- "${prefix[@]}" "$@")" \
+    || fail "$label could not encode expected arguments"
+  : >"$fixture_root/$label.log"
+  (
+    cd "$original_cwd" || exit 1
+    export HOME="$fixture_root/home" PATH="$fake_bin:$PATH"
+    export FAKE_CODEX_LOG="$fixture_root/$label.log" FAKE_CODEX_LOGIN_STATUS=0
+    export FAKE_CODEX_VERSION="$version"
+    unset CDX_HOOK_TRUST CI TRELLAGE_AUTOMATION CDX_AUTOMATION TRANSCRIPT_API_KEY
+    "$fixture_launcher" "${launch_args[@]}" </dev/null
+  ) >"$fixture_root/$label.out" 2>&1 || {
+    cat "$fixture_root/$label.out" >&2
+    fail "$label failed"
+  }
+  jq -se --argjson expected "$expected" "$(strip_project_trust_c_jq)"'
+    map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches
+    | ($launches | length) == 1
+    and ($launches[0].args | strip_project_trust_c) == $expected
+  ' "$fixture_root/$label.log" >/dev/null \
+    || fail "$label passed unexpected shared background server arguments"
+}
+
+assert_daemon_launch daemon-stable 0.160.0 proxy passed --version
+assert_daemon_launch daemon-native 0.160.0 native passed --version
+assert_daemon_launch daemon-minimum 0.156.0 proxy passed --version
+assert_daemon_launch daemon-older 0.155.0 proxy omitted --version
+assert_daemon_launch daemon-numeric 0.99.0 proxy omitted --version
+assert_daemon_launch daemon-prerelease 0.156.0-alpha.1 proxy omitted --version
+assert_daemon_launch daemon-caller 0.160.0 proxy omitted --no-daemon --version
+assert_daemon_launch daemon-agents 0.160.0 proxy omitted agents
+assert_daemon_launch daemon-queue 0.160.0 proxy omitted queue --thread t --message m
+assert_daemon_launch daemon-remote 0.160.0 proxy omitted --remote ws://127.0.0.1:9 --version
+assert_daemon_launch daemon-remote-inline 0.160.0 proxy omitted --remote=ws://127.0.0.1:9 --version
+
 for full_access_profile in pstack superpowers youtube; do
   full_access_auth="$fixture_root/home/.local/share/trellage/profiles/codex/$full_access_profile/home/auth.json"
   rm -f "$full_access_auth"

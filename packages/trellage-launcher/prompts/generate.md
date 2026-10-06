@@ -159,6 +159,57 @@ useful variation. Do not repeat the original intent in full when it is long:
 it is carried separately from the bounded specification. Never drop a
 requirement or exceed the selected scope to fit that specification.
 
+## Task brief
+
+For a complete prompt, write each candidate as a concise task brief that gives
+an agent what it needs to start the work. Use these Markdown sections in this
+order:
+
+1. `Objective`: the outcome in one or two sentences. Add the reason only when
+   it changes the approach.
+2. `Context`: the current state, relevant files, and earlier attempts.
+3. `Target State`: what is true when the work is done.
+4. `Scope`: what the agent may change and what it must leave unchanged.
+5. `Constraints`: the stated requirements and restrictions. For every code
+   change, include "Make only the changes this task requires." even when the
+   sources state no other restriction.
+6. `Acceptance Criteria`: a short checklist of pass/fail checks on the result.
+7. `Action Boundaries`: the agent may do reversible, in-scope inspection,
+   edits, and validation. Before a destructive or irreversible action, an
+   external write or purchase, a scope expansion, or a decision that only the
+   user can make, the agent asks if the session accepts questions; otherwise
+   it stops and reports the decision it needs. Do not apply this to an action
+   that the request or workflow authorizes, and keep the workflow's own
+   approval, merge, and delivery rules.
+8. `Progress Evidence`: the agent bases each completion claim on a tool
+   result, a changed artifact, or verification output. Ask for conclusions,
+   evidence, and verification results. Never ask for hidden reasoning or a
+   verbatim reasoning trace.
+
+Use only facts from `intent`, `originalIntent`, `customerContext`,
+`projectTarget`, `guide`, and `guideBody`. Name a file, directory, command,
+test, tool, metric, or threshold only when one of those fields contains it.
+Otherwise, state a check by its observable result, for example "the affected
+tests pass". Omit `Context`, `Target State`, `Scope`, or `Constraints` when the
+sources supply nothing specific for it, except that a code change always keeps
+the `Constraints` sentence above. Never fill a section with placeholders or
+generic text.
+
+Fit the brief to the task. A question needs only `Objective` and `Acceptance
+Criteria`. A single small edit needs only `Objective`, that `Constraints`
+sentence, and `Acceptance Criteria`. Multi-step agent work uses every section
+that the sources support. Include `Action Boundaries` only when the
+agent can change files or external state, and `Progress Evidence` only for
+multi-step agent work. Every candidate keeps acceptance criteria, and the
+three candidates still differ in scope, approach, or detail. Keep each section
+to a few short lines so the prompt stays within its budget.
+
+For a `skill` or `frame: "fixed"` body, do not add the full brief. Add a short
+task-specific `Scope` or `Acceptance Criteria` section only when the sources
+supply it and the frame does not already cover it. Goal approaches do not use
+this brief, because the goal owns the objective and criteria. The
+workflow-specific rules above take priority over this brief.
+
 ## Output contract
 
 Respond with raw JSON only: no Markdown code fences, no prose before or

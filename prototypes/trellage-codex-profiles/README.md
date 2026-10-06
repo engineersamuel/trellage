@@ -156,6 +156,14 @@ The default applies to `pstack`, `superpowers`, and `youtube`, with proxy or
 `--native-auth` authentication, in interactive and non-interactive sessions.
 New and resumed sessions use the same launch policy.
 
+With stable Codex 0.156.0 or later, launch also passes `--no-daemon`. The
+launch `-c` and `--disable` overrides already make Codex run without its
+shared background server, and Codex 0.160.0 shows a warning about this at
+every start. `--no-daemon` keeps the same mode and removes the warning.
+Launch omits the flag when the Codex arguments include `--no-daemon`,
+`agents`, `queue`, or `--remote`, because Codex rejects those combinations.
+Pre-release or unrecognized `codex --version` output also omits the flag.
+
 Codex does not request command approvals, and its native OS-level sandbox is
 disabled. Plugin code and Codex commands can read, write, and use the network
 with the host account's permissions. Isolated profile state is not a security
