@@ -97,6 +97,7 @@ export interface GuidePromptBodyBudget {
 }
 
 export interface GuideOptimizeInput extends GuideTaskContext, GuidePromptBodyBudget {
+  /** Descriptive target agent, plus its configured model when known. */
   readonly targetTool: string
   readonly profileRef: string
   readonly candidates: ReadonlyArray<GuideGenerateCandidate>
@@ -219,7 +220,7 @@ export const assertGuideGenerateInput = <Input extends GuideGenerateInput>(input
 export const assertGuideOptimizeInput = (input: GuideOptimizeInput): GuideOptimizeInput => {
   guideTaskContext(input.originalIntent ?? "", input)
   assertGuideBodyBudget(input.bodyBudget, "optimize input.bodyBudget")
-  text(input.targetTool, "optimize input.targetTool", 128)
+  text(input.targetTool, "optimize input.targetTool", 256)
   text(input.profileRef, "optimize input.profileRef", 256)
   if (input.candidates.length < 1 || input.candidates.length > 3) {
     fail("optimize input.candidates", `must contain 1 to 3 entries: got ${input.candidates.length}`)

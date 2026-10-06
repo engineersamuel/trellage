@@ -5,7 +5,7 @@ import React from "react"
 import { render } from "ink"
 
 import { parseProfileGuide } from "@trellage/guide-core"
-import { defaultGuideModelRouting } from "../../src/guide-api.ts"
+import { defaultGuideModelRouting, guidePromptTarget } from "../../src/guide-api.ts"
 import { parseGuideCatalog } from "../../src/guide-catalog.ts"
 import { executeGuideUiResult } from "../../src/guide-interactive-execution.ts"
 import type { CommandRunner } from "../../src/guide-launch.ts"
@@ -210,7 +210,7 @@ const provider: GuideProvider = {
   async optimize(input) {
     const profile = fixtureProfiles.find((entry) => entry.ref === input.profileRef)
     assert(profile !== undefined, `Unexpected optimized profile: ${input.profileRef}`)
-    deepStrictEqual(input.targetTool, profile.harness)
+    deepStrictEqual(input.targetTool, guidePromptTarget(profile.harness))
     if (input.goalExecution === undefined) {
       if (input.customerContext === undefined) deepStrictEqual(input.bodyBudget, fixtureBodyBudget(profile))
       else assert(input.bodyBudget !== undefined && input.bodyBudget > 0 && input.bodyBudget < fixtureBodyBudget(profile))

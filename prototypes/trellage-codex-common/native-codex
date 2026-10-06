@@ -51,6 +51,8 @@ validated_profile=""
 # The exact catalog records the Superpowers marketplace repository, not the
 # plugin source repository. Keep that independently validated invariant here.
 superpowers_plugin_repository="https://github.com/obra/superpowers.git"
+# First stable Codex release with the root --no-daemon flag.
+codex_no_daemon_minimum_version=0.156.0
 floating_skills_manager="$script_dir/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$script_dir/../common/floating-skills-runtime/skills.json"
 if [ ! -f "$floating_skills_manager" ]; then
@@ -246,6 +248,38 @@ codex_version_if_available() {
   version="$(printf '%s\n' "$output" | extract_semver)"
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
   printf '%s\n' "$version"
+}
+
+version_at_least() {
+  local actual="$1" minimum="$2"
+  local actual_major actual_minor actual_patch minimum_major minimum_minor minimum_patch
+
+  [[ "$actual" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
+  actual_major="${BASH_REMATCH[1]}"
+  actual_minor="${BASH_REMATCH[2]}"
+  actual_patch="${BASH_REMATCH[3]}"
+  [[ "$minimum" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
+  minimum_major="${BASH_REMATCH[1]}"
+  minimum_minor="${BASH_REMATCH[2]}"
+  minimum_patch="${BASH_REMATCH[3]}"
+
+  (( 10#$actual_major > 10#$minimum_major )) && return 0
+  (( 10#$actual_major < 10#$minimum_major )) && return 1
+  (( 10#$actual_minor > 10#$minimum_minor )) && return 0
+  (( 10#$actual_minor < 10#$minimum_minor )) && return 1
+  (( 10#$actual_patch >= 10#$minimum_patch ))
+}
+
+# Print the resolved Codex version only for exact stable output. Pre-release,
+# unknown, or failed output prints nothing, so callers treat it as unconfirmed.
+resolved_codex_stable_version() {
+  local home="$1" output pattern
+
+  pattern='^[[:space:]]*codex(-cli)? ([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$'
+  output="$(CODEX_HOME="$home" "$codex_executable" --version </dev/null 2>/dev/null)" \
+    || return 0
+  [[ "$output" =~ $pattern ]] || return 0
+  printf '%s\n' "${BASH_REMATCH[2]}"
 }
 
 resolve_latest_codex_version() {
@@ -3391,6 +3425,29 @@ build_launch_hook_trust_codex_args() {
   hook_trust_codex_args+=(--dangerously-bypass-hook-trust)
 }
 
+# Populate daemon_codex_args with optional --no-daemon. Codex 0.160.0 starts a
+# shared background server by default, but the launch -c and --disable
+# overrides already force embedded mode, and Codex warns about that at every
+# start. --no-daemon selects the same embedded mode without the warning.
+# Codex rejects a repeated root --no-daemon, and rejects --no-daemon with
+# `codex agents`, `codex queue`, or --remote, so those caller arguments keep
+# the Codex default.
+build_launch_daemon_codex_args() {
+  local home="$1" argument version
+  shift
+
+  daemon_codex_args=()
+  for argument; do
+    case "$argument" in
+      --no-daemon|agents|queue|--remote|--remote=*) return 0 ;;
+    esac
+  done
+  version="$(resolved_codex_stable_version "$home")"
+  [ -n "$version" ] || return 0
+  version_at_least "$version" "$codex_no_daemon_minimum_version" || return 0
+  daemon_codex_args+=(--no-daemon)
+}
+
 goal_features_profile() {
   local profile="$1" home target
 
@@ -3424,6 +3481,7 @@ run_codex_child() {
   # Bash 3.2-safe: builders fill these arrays.
   trust_codex_args=()
   hook_trust_codex_args=()
+  daemon_codex_args=()
   profile_codex_args=()
   shift 2
   ensure_floating_skills "$profile"
@@ -3437,6 +3495,7 @@ run_codex_child() {
   # strips those generated stanzas while keeping other live writes.
   build_launch_trust_codex_args
   build_launch_hook_trust_codex_args
+  build_launch_daemon_codex_args "$home" "$@"
   build_profile_codex_args "$profile"
 
   safe_config_target "$profile"
@@ -3472,6 +3531,7 @@ run_codex_child() {
     if [ "$native" = yes ]; then
       exec "$codex_executable" --dangerously-bypass-approvals-and-sandbox \
         --disable default_mode_request_user_input \
+        ${daemon_codex_args[@]+"${daemon_codex_args[@]}"} \
         ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
         -c 'model_provider="openai"' \
         ${trust_codex_args[@]+"${trust_codex_args[@]}"} \
@@ -3480,6 +3540,7 @@ run_codex_child() {
     else
       exec "$codex_executable" --dangerously-bypass-approvals-and-sandbox \
         --disable default_mode_request_user_input \
+        ${daemon_codex_args[@]+"${daemon_codex_args[@]}"} \
         ${hook_trust_codex_args[@]+"${hook_trust_codex_args[@]}"} \
         ${trust_codex_args[@]+"${trust_codex_args[@]}"} \
         ${profile_codex_args[@]+"${profile_codex_args[@]}"} \

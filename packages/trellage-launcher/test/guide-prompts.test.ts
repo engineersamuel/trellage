@@ -77,6 +77,36 @@ describe("default guide prompts", () => {
     expect(refinePrompt).toContain("Never\nadd a new workflow command")
   })
 
+  it("drafts grounded task briefs and limits Prompt Master to target-specific optimization", async () => {
+    const [generatePrompt, optimizePrompt, refinePrompt] = await Promise.all(
+      ["generate", "optimize", "refine"].map((name) =>
+        readFile(new URL(`../prompts/${name}.md`, import.meta.url), "utf8").then((text) => text.replace(/\s+/gu, " ")),
+      ),
+    )
+
+    expect(generatePrompt).toContain("write each candidate as a concise task brief")
+    for (const section of [
+      "Objective", "Context", "Target State", "Scope", "Constraints",
+      "Acceptance Criteria", "Action Boundaries", "Progress Evidence",
+    ]) expect(generatePrompt).toContain(`\`${section}\``)
+    expect(generatePrompt).toContain("only when one of those fields contains it")
+    expect(generatePrompt).toContain("include \"Make only the changes this task requires.\"")
+    expect(generatePrompt).toContain("except that a code change always keeps the `Constraints` sentence above")
+    expect(generatePrompt).toContain("Never fill a section with placeholders or generic text")
+    expect(generatePrompt).toContain("otherwise it stops and reports the decision it needs")
+    expect(generatePrompt).toContain("Never ask for hidden reasoning")
+    expect(generatePrompt).toContain("Goal approaches do not use this brief")
+    expect(generatePrompt).toContain("The workflow-specific rules above take priority over this brief")
+    expect(optimizePrompt).toContain("The skill's `references/` files are not available")
+    expect(optimizePrompt).toContain("`GitHub Copilot` route is for inline code completion and does not apply")
+    expect(optimizePrompt).toContain("do not ask which tool it is")
+    for (const rule of [
+      "the Memory Block", "the Agentic Output Warning", "\"✅ after each step\" progress lines",
+      "new \"Stop and ask\" gates", "escalation of wording to MUST, NEVER",
+    ]) expect(optimizePrompt).toContain(rule)
+    expect(refinePrompt).toContain("Keep its task-brief sections, acceptance criteria, and action boundaries")
+  })
+
   it("keeps the enrich prompt to restating the intent from the packed repository", async () => {
     const enrichPrompt = await readFile(new URL("../prompts/enrich.md", import.meta.url), "utf8")
 

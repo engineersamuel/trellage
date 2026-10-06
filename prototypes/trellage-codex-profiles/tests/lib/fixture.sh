@@ -335,7 +335,7 @@ if [ -n "${FAKE_CODEX_ENV_LOG:-}" ]; then
 fi
 
 if [ "${1-}" = '--version' ]; then
-  printf 'codex-cli 0.146.0\n'
+  printf 'codex-cli %s\n' "${FAKE_CODEX_VERSION:-0.146.0}"
   exit 0
 fi
 
@@ -789,13 +789,13 @@ case "$*" in
     fi
     if [ "$profile" = superpowers ] \
       && [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ]; then
-      # Skip cdx-injected flags to find the first caller argument. Full Access
-      # and hook-trust bypass flags do not consume a value.
+      # Skip cdx-injected flags to find the first caller argument. Full Access,
+      # hook-trust bypass, and no-daemon flags do not consume a value.
       launch_action=''
       while [ $# -gt 0 ]; do
         case "$1" in
           -c|--disable) shift 2 ;;
-          --dangerously-bypass-approvals-and-sandbox|--dangerously-bypass-hook-trust) shift ;;
+          --dangerously-bypass-approvals-and-sandbox|--dangerously-bypass-hook-trust|--no-daemon) shift ;;
           *) launch_action="$1"; break ;;
         esac
       done

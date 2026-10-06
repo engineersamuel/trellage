@@ -47,7 +47,8 @@ feedback about the prompt's content, and continue refining normally.
 
 Produce one revised candidate that keeps what worked about `candidate` and
 addresses `feedback`, still pursuing the stated `intent` with the selected
-workflow.
+workflow. Keep its task-brief sections, acceptance criteria, and action
+boundaries unless the feedback changes them.
 
 When `goal` is present, `candidate.prompt` is only its stored execution
 approach. Refine that approach within `approachMaximumLength`; never rewrite

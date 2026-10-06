@@ -648,11 +648,42 @@ const findFullCatalogEntry = (
 const isNativeEntry = (entry: NativeGuideCatalogEntry | SandboxGuideCatalogEntry): entry is NativeGuideCatalogEntry =>
   "launcher" in entry
 
-/** Returns the underlying harness name Prompt Master should optimize for. */
+const guideHarnessAgents: ReadonlyMap<string, string> = new Map([
+  ["agency", "GitHub Copilot CLI terminal coding agent managed by Agency"],
+  ["claude", "Claude Code terminal coding agent"],
+  ["codex", "Codex CLI terminal coding agent"],
+  ["copilot", "GitHub Copilot CLI terminal coding agent"],
+  ["firstmate", "Firstmate fleet supervisor agent on Claude Code"],
+  ["grok", "Grok Build CLI terminal coding agent"],
+  ["headlong", "Headlong persistent autonomous agent"],
+  ["jcode", "jcode terminal coding agent"],
+  ["oh-my-pi", "Oh My Pi terminal coding agent"],
+  ["pi", "Pi terminal coding agent"],
+  ["prime", "Prime Agent terminal coding agent"],
+])
+
+// The target is sent outside Prompt Master's untrusted-data envelope, so only plain model ids are included.
+const guideTargetModelPattern = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$/u
+
+/**
+ * Describes the agent Prompt Master optimizes for: the harness product and kind, plus the
+ * catalog model when it is a plain model id. An unknown harness keeps its bare id without a
+ * model, which keeps every target within the optimize-input limit.
+ */
+export const guidePromptTarget = (harness: string, model?: string): string => {
+  const agent = guideHarnessAgents.get(harness)
+  if (agent === undefined) return harness
+  return model !== undefined && guideTargetModelPattern.test(model) ? `${agent} using model ${model}` : agent
+}
+
+const catalogEntryPromptTarget = (entry: NativeGuideCatalogEntry | SandboxGuideCatalogEntry): string =>
+  isNativeEntry(entry) ? guidePromptTarget(entry.harness) : guidePromptTarget(entry.harness.kind, entry.harness.model)
+
+/** Returns the descriptive agent target Prompt Master should optimize for. */
 export const guideTargetTool = (catalog: CombinedGuideCatalog, profileRef: string): string => {
   const entry = findFullCatalogEntry(catalog, profileRef)
   if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${profileRef}`)
-  return isNativeEntry(entry) ? entry.harness : entry.harness.kind
+  return catalogEntryPromptTarget(entry)
 }
 
 const assertTriple = <T>(items: ReadonlyArray<T>, label: string): readonly [T, T, T] => {
@@ -1345,7 +1376,7 @@ export const runGuideGenerate = async (
   const profile = generationProfileSummary(entry, request, workflowId, compactWorkflow, execution)
 
   const fixedFrame = workflowOptimizeFixedFrame(authoredWorkflow)
-  const targetTool = isNativeEntry(entry) ? entry.harness : entry.harness.kind
+  const targetTool = catalogEntryPromptTarget(entry)
   const produce = async () => {
     const generated = validateGuideGenerateResult(await provider.generate({
       intent: subject,
