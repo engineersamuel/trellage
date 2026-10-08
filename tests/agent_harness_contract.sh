@@ -85,7 +85,7 @@ rg -q '\.agents/rules/trellage-cli\.md' .github/instructions/trellage-cli.instru
 ci_tool_probe='for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done'
 for required_ci_line in \
   '          ref: ${{ github.event.pull_request.head.sha || github.sha }}' \
-  '          fetch-depth: 2' \
+  '          fetch-depth: 0' \
   '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep' \
   "        run: ${ci_tool_probe}" \
   '          bun-version: 1.4.2' \
@@ -95,7 +95,9 @@ for required_ci_line in \
   '        run: make profile-compiler launcher conversation-source source-runtime profile-guide-contract' \
   "        if: github.event_name == 'pull_request'" \
   "        if: github.event_name != 'pull_request'" \
-  '        run: make test-pr' \
+  '          TEST_CHANGED_BASE: ${{ github.event.pull_request.base.sha }}' \
+  '          TEST_CHANGED_COMMITTED_ONLY: "1"' \
+  '        run: make test-changed' \
   '        run: make test'; do
   grep -Fxq -- "$required_ci_line" .github/workflows/ci.yml \
     || fail "CI is missing a required regression check or setup: $required_ci_line"

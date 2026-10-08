@@ -37,12 +37,12 @@ current checkout. Tests that explicitly override `BUN_INSTALL_CACHE_DIR` remain
 isolated from this CI cache by design. CI saves the download cache immediately
 after successful dependency installation, before the test suites run, so a
 later test failure does not discard a usable dependency cache.
-Pull requests run `make test-pr` on Linux and the source/PTY suites on macOS,
-with a 15-minute job timeout on each platform. The PR gate checks shell syntax,
-repository identity and harness configuration, compiler lint and formatting,
-all workspace TypeScript checks and tests, source startup, and profile guides.
-Its checks run sequentially and stop at the first failing command. This keeps
-the gate independent of slower installer, Docker, and native lifecycle suites.
+Pull requests run `make test-changed` on Linux and the source/PTY suites on macOS.
+The Linux job allows 90 minutes so the fail-closed full-suite fallback can
+finish; the macOS source job retains a 15-minute limit. The PR gate checks shell
+syntax, packages, launchers, profiles, and contracts selected by the PR diff.
+An unmapped source path falls back to the explicit full `make test` suite. This
+keeps mapped validation proportional to the changed surface while failing closed.
 
 Pushes to `main` run the complete `make test` suite, including those integration
 contracts, with a 90-minute Linux timeout. The CI workflow can also be dispatched
@@ -86,10 +86,46 @@ symlink, ownership, and unsafe-mode mutations after fixture setup when testing
 those refusals. Normal launches and read-only commands must still reject an
 unprepared or unsafe runtime without installing or repairing it implicitly.
 
-Run the PR regression gate without launching paid agents:
+Run the default change-aware validation:
+
+```bash
+make
+```
+
+Equivalent explicit command:
+
+```bash
+make test-changed
+```
+
+`make test-changed` compares committed changes with `origin/main` and includes
+staged, unstaged, and untracked files. Private Native launcher changes select
+only that launcher's contract. A private `profiles/<name>/` change selects only
+that Sandbox profile. Shared Native or Sandbox inputs expand to their known
+consumers. Profile changes also run static skill, guide, and manifest contracts.
+Sandbox image builds are opt-in through `make test-changed-build`;
+routine PR and pre-push validation does not build images. An unmapped source
+path falls back to the explicit full `make test` suite rather than silently
+skipping coverage. Changed shell files receive syntax checks without scanning
+every repository script. Use `TEST_CHANGED_BASE=<ref>` to select a different
+comparison base.
+
+Run the broader PR regression gate explicitly:
 
 ```bash
 make test-pr
+```
+
+Build only the Sandbox profiles selected by the current changes:
+
+```bash
+make test-changed-build
+```
+
+Inspect selection without running tests:
+
+```bash
+scripts/test-changed.sh --dry-run
 ```
 
 Run the full repository contracts:

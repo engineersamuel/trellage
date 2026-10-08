@@ -18,7 +18,7 @@ jobs:
   # Keep this legacy key because branch protection requires its status context.
   deterministic-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 15 || 90 }}
+    timeout-minutes: 90
     env:
       BUN_INSTALL_CACHE_DIR: /tmp/trellage-bun-cache
       npm_config_cache: /tmp/trellage-npm-cache
@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
       - name: Set up Node.js for external tooling
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -71,9 +71,12 @@ jobs:
             /tmp/trellage-bun-cache
             /tmp/trellage-npm-cache/_cacache
           key: ${{ steps.dependency-cache.outputs.cache-primary-key }}
-      - name: Run fast PR regression checks
+      - name: Run change-aware PR regression checks
         if: github.event_name == 'pull_request'
-        run: make test-pr
+        env:
+          TEST_CHANGED_BASE: ${{ github.event.pull_request.base.sha }}
+          TEST_CHANGED_COMMITTED_ONLY: "1"
+        run: make test-changed
       - name: Run full source and contract suite after merge or on demand
         if: github.event_name != 'pull_request'
         run: make test

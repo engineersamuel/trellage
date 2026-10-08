@@ -668,6 +668,6 @@ harness startup, real Docker or Herdr behavior, or the outer `trx` shell
 router. They run on the existing Vitest `forks` pool.
 `packages/trellage-launcher/vitest.config.ts` caps
 the launcher suite at two workers. Each PTY case starts another Bun process,
-and `make test` already runs four targets in parallel by default. Keep this
+and the explicit full `make test` suite runs four targets in parallel. Keep this
 cap to limit nested process concurrency rather than increasing timing bounds
 to compensate for full-suite load.

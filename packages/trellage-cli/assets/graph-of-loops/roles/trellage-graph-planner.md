@@ -47,7 +47,7 @@ target-evidence path must exist in the repository.
   deterministic validation evidence.
 - Include every repository-wide validation command required by grounded root
   instructions or build entrypoints. A crate-local full suite does not replace
-  a required repository-root suite such as `make test`.
+  an explicitly required deterministic repository-root suite such as `make test`.
 - Every covered `validation_matrix` entry must reference only gate names from
   the plan-level `graph_gates` array. Never reference a node-local red, green,
   or final gate from the validation matrix.

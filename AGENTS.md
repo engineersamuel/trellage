@@ -15,7 +15,10 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 
 ## Build and test
 
-- Run the full repository suite with `make test`.
+- Run change-aware local validation with `make test-changed`. Reserve the full
+  `make test` suite for `main`, manual high-risk verification, and CI.
+- Use `make test-changed-build` only when changed Sandbox profiles must also be
+  rebuilt. Routine PR and pre-push validation does not build OCI images.
 - When working on `trx guide` code, always run `mise run trx-guide-test` and
   ensure it passes before completing the work.
 - Run profile compiler tests with `make profile-compiler`.
@@ -75,7 +78,7 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   Always finish an abandoned run with `mise run azure-fresh-install -- down`.
 - This is a live, billable, quota-consuming integration test. Do not add it to
   `make test` or run it without explicit intent. Before delivery, run
-  `make test`; after merged launcher or compiler changes, also run
+  `make test-changed`; after merged launcher or compiler changes, also run
   `mise run rebuild-profiles`.
 
 ## Worktrees and mise trust
