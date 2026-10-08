@@ -15,6 +15,7 @@ import {
   newOptimizeReview,
   optimizeApproval,
   optimizeReviewDocument,
+  sharedReviewDocument,
   optimizeReviewersFor,
   parseOptimizeCitations,
   runOptimizeReview,
@@ -200,6 +201,69 @@ const expectCorrectionPayloads = (call: ReturnType<typeof vi.fn<OptimizeModelCal
 }
 
 describe("bounded read-only Optimize reviews", () => {
+  it("shows phase progress without forwarding structured response tokens", async () => {
+    const { initial, signal } = await fixture()
+    const progress: string[] = []
+    const review = await runOptimizeReview(initial, async () => {}, signal,
+      (message) => progress.push(message), async (request) => {
+        request.onProgress?.("Receiving the structured assessment")
+        for (const token of ['{"', "start", "Line", '":', "366", "}"]) request.onText?.(token)
+        return fixtureOptimizeModel(request)
+      })
+    expect(review.status).toBe("complete")
+    expect(progress.some((message) => message.includes("Receiving the structured assessment"))).toBe(true)
+    expect(progress.some((message) => message.endsWith(": 366") || message.endsWith(": start"))).toBe(false)
+  })
+
+  it("gives independent review requests eight minutes and final synthesis fifteen minutes", async () => {
+    const f = await fixture()
+    const requests: Array<{ name: string | undefined; timeoutMs: number }> = []
+    const review = await f.run(async (request) => {
+      requests.push({ name: request.responseFormat?.jsonSchema.name, timeoutMs: request.timeoutMs })
+      return fixtureOptimizeModel(request)
+    })
+    expect(review.status).toBe("complete")
+    expect(requests.filter((request) => request.name !== "optimize_verdict").every((request) =>
+      request.timeoutMs === 480_000)).toBe(true)
+    expect(requests.find((request) => request.name === "optimize_verdict")?.timeoutMs).toBe(900_000)
+  })
+
+  it("starts final synthesis with a fresh fifteen-minute phase deadline", async () => {
+    const f = await fixture()
+    const checked = await runOptimizeReview(
+      f.initial,
+      async () => {},
+      f.signal,
+      () => {},
+      fixtureOptimizeModel,
+      "checks",
+    )
+    expect(checked.status).toBe("running")
+    vi.useFakeTimers()
+    try {
+      let settled = false
+      const pending = runOptimizeReview(
+        checked,
+        async () => {},
+        f.signal,
+        () => {},
+        async (request) =>
+          new Promise<string>((_resolve, reject) =>
+            request.signal!.addEventListener("abort", () => reject(request.signal!.reason), { once: true }),
+          ),
+        "synthesis",
+      ).finally(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(480_001)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(419_999)
+      const review = await pending
+      expect(review.status).toBe("incomplete")
+      expect(review.error).toContain("Final synthesis")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("captures related tracked text and selected diffs, but excludes secrets, binary data, and other untracked files", async () => {
     const f = await fixture()
     expect(f.evidence.sources.map((entry) => entry.id)).toEqual([
@@ -538,6 +602,41 @@ describe("bounded read-only Optimize reviews", () => {
     expect(interruptedDocument).toContain("It will not resume automatically.")
   })
 
+  it("puts a shared failure phase and reason before the report summary", async () => {
+    const f = await fixture()
+    const document = sharedReviewDocument({
+        schemaVersion: 2,
+        policy: { maximumCalls: 20, maximumFindings: 8, maximumPeerRounds: 2, maximumQuestionsPerRound: 4 },
+        id: f.initial.id,
+        createdAt: f.initial.createdAt,
+        request: {
+          ...f.input,
+          checks: [{ id: "improve-codebase-architecture", model: f.initial.reviewers[0]!.model, workers: [] }],
+          coordinator: f.initial.coordinator,
+        },
+        evidence: { fingerprint: f.evidence.fingerprint, source: f.evidence },
+        status: "incomplete",
+        synthesisStatus: "not-run",
+        failure: {
+          kind: "request-timeout",
+          phase: "independent-reviews",
+          message: "Improve codebase architecture: restricted model request timed-out",
+        },
+        results: [{ id: "improve-codebase-architecture", status: "partial", reportId: "architecture:partial",
+          findings: [], limitations: [] }],
+        artifacts: [], challenges: [], decisions: [], summary: "Partial Architecture findings were preserved.",
+        error: "Review failed during Independent reviews: request timed-out", calls: 1, approvedIds: [],
+        execution: "not-started",
+    })
+    const phase = document.indexOf("Failure phase: Independent reviews")
+    const reason = document.indexOf("Failure reason: Request timeout")
+    const summary = document.indexOf("Partial Architecture findings were preserved.")
+    expect(phase).toBeGreaterThan(0)
+    expect(reason).toBeGreaterThan(phase)
+    expect(summary).toBeGreaterThan(reason)
+    expect(document).toContain("Architecture status: partial. Synthesis status: not-run.")
+  })
+
   it.each([
     ["challenge", "omitted", "missing: behavior-preservation:1"],
     ["challenge", "duplicate", "duplicate: first-principles:1"],
@@ -859,7 +958,7 @@ describe("private review records and approvals", () => {
       expect((await f.store.approved(approval)).approvedIds).toEqual(["first-principles:1"])
     }
     await expect(f.store.save({ ...complete, calls: expectedCalls + 1 })).rejects.toThrow(
-      noChange ? "invalid model request count" : "must be between",
+      "invalid model request count",
     )
   })
 
@@ -1020,7 +1119,8 @@ describe("headless Optimize acceptance", () => {
     ])
     expect(injected.modelCall).toHaveBeenCalledTimes(7)
     expect(injected.loadArchitecture).toHaveBeenCalledOnce()
-    expect(await f.store.read(result.reviewId)).toMatchObject({
+    const { SharedReviewStore } = await import("../src/review-store.ts")
+    expect(await new SharedReviewStore(f.target.gitDirectory).read(result.reviewId)).toMatchObject({
       status: "complete",
       approvedIds: [],
       execution: "not-started",

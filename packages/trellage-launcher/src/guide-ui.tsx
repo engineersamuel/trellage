@@ -122,6 +122,7 @@ import type { GuideGenerateCandidate, GuideOptimizeInput, GuideProvider } from "
 import { jevShouldSkipPromptOptimization } from "./jev-guide-gates.ts"
 import { createGuideOptimizeServices, type GuideOptimizeServices, type GuideOptimizeTerminalResult } from "./guide-optimize.ts"
 import { GuideOptimizeFlow } from "./guide-optimize-ui.tsx"
+import type { ReviewPlanTerminalResult } from "./review-planning.ts"
 import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.ts"
 import {
   GuideCandidatePromptCollisionError,
@@ -474,6 +475,7 @@ export interface FirstmateInstallationReview {
 }
 
 export interface GuideUiState {
+  readonly reviewReturnStage?: GuideUiStage | undefined
   readonly stage: GuideUiStage
   /** The confirmed intent used for match/generate calls; `undefined` until the intent editor is submitted. */
   readonly intent: string | undefined
@@ -1816,15 +1818,15 @@ const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUi
 
 const reduceOptimize = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   if (action.type === GuideUiActionType.OptimizeOpen) {
-    if (state.stage !== GuideUiStage.Recommendations) return state
+    if (state.stage !== GuideUiStage.Recommendations && state.stage !== GuideUiStage.Intent) return state
     const source = state.activeForkId === undefined ? state : enterMainScreen(state)
-    return { ...source, stage: GuideUiStage.Optimize, errorMessage: undefined }
+    return { ...source, stage: GuideUiStage.Optimize, reviewReturnStage: state.stage, errorMessage: undefined }
   }
   if (state.stage !== GuideUiStage.Optimize || action.type !== GuideUiActionType.OptimizeBack) return state
-  const stage = state.recommendations === undefined
+  const stage = state.reviewReturnStage ?? (state.recommendations === undefined
     ? state.intent === undefined ? GuideUiStage.Intent : GuideUiStage.Matching
-    : GuideUiStage.Recommendations
-  return { ...state, stage, errorMessage: undefined }
+    : GuideUiStage.Recommendations)
+  return { ...state, stage, reviewReturnStage: undefined, errorMessage: undefined }
 }
 
 const reduceMatchProgress = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -4164,6 +4166,7 @@ export type GuideUiResult =
   | GuideUiExistingHerdrWorktreeResult
   | GuideUiBatchResult
   | GuideOptimizeTerminalResult
+  | ReviewPlanTerminalResult
   | { readonly action: "optimize-submitted" }
   | { readonly action: "review" }
 
@@ -4314,6 +4317,7 @@ export interface GuideUiProps {
   readonly cache?: GuideArtifactCache
   readonly firstmateCreationStore?: FirstmateCreationPlanStore
   readonly routing: GuideResolvedModelRouting
+  readonly reviewModelOverrides?: Partial<GuideResolvedModelRouting["optimize"]>
   readonly runner: CommandRunner
   readonly cwd: string
   readonly launchOrigin?: FirstmateInstanceControlContextV1
@@ -5091,9 +5095,10 @@ const OptimizeStage = ({ props, state, dispatch }: {
   const { exit } = useApp()
   const services = useMemo(() => props.optimizeServices ?? createGuideOptimizeServices({
     runner: props.runner, cwd: props.cwd, catalog: props.catalog,
-    routing: props.routing,
+    routing: props.routing, entry: state.reviewReturnStage === GuideUiStage.Intent ? "review" : "optimize",
+    ...(props.reviewModelOverrides ? { modelOverrides: props.reviewModelOverrides } : {}),
     context: props.herdrAvailabilityProbe ? getHerdrContext(props.herdrEnv) : null,
-  }), [props.optimizeServices, props.runner, props.cwd, props.catalog, props.routing, props.herdrAvailabilityProbe, props.herdrEnv])
+  }), [props.optimizeServices, props.runner, props.cwd, props.catalog, props.routing, props.reviewModelOverrides, props.herdrAvailabilityProbe, props.herdrEnv, state.reviewReturnStage])
   return <GuideOptimizeFlow
     services={services} rows={rows} columns={columns} originalIntent={state.originalIntent ?? state.intent} intent={state.intent}
     blockedReason={state.augmentJob === undefined ? undefined : "Finish or discard the pending augmentation first. Press Esc, then a."}
@@ -6827,11 +6832,11 @@ const appendEditorInput = (
     : { type: GuideUiActionType.InputRejected, message: `Text exceeds ${maximum} characters. Nothing was added.` })
 }
 
-const handleIntentInput: GuideInputHandler = ({ state, dispatch, complete }, input, key) => {
+const handleIntentInput: GuideInputHandler = ({ state, dispatch }, input, key) => {
   // Checked before the printable branch: every other key on this screen is
   // text, so only a Ctrl chord can be a shortcut here.
   if (key.ctrl && input === "r") {
-    if (state.textDraft.length === 0) complete({ action: "review" })
+    if (state.textDraft.length === 0) dispatch({ type: GuideUiActionType.OptimizeOpen })
     else dispatch({ type: GuideUiActionType.InputRejected, message: "Clear the draft before opening Review." })
   } else if (key.ctrl && input === "g") dispatch({ type: GuideUiActionType.AugmentOpen })
   else if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })

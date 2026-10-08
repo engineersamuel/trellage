@@ -132,12 +132,13 @@ viewer is `dashboard`; `--ui-variant` selects one of five layouts:
 All layouts use Page Up and Page Down for navigation. Press `e` to edit the
 raw prompt. Enter re-runs matching when the prompt changed.
 
-**Optimize changes** reviews the current body of work, not prompt wording
+**Review changes** reviews the current body of work, not prompt wording
 or the repository's entire history. Run it from the worktree you want to review:
 
 ```sh
-trx guide --optimize
-trx guide --optimize --base main --intent "Original task and constraints"
+trx guide --review
+trx guide --review --base main --intent "Original task and constraints"
+trx guide --optimize # Same view, with two built-in checks selected
 ```
 
 Choose **Committed and uncommitted changes** to go directly to the current
@@ -157,13 +158,18 @@ never expands into repository-wide cleanup or silently selects the last commit.
 Confirm the files, choose reviewers, and approve model use for a **read-only
 review**. All eligible changed files, including
 untracked files, are selected initially. Use Space to exclude unrelated files
-or select them again. Ignored files, links, submodules, and special files remain
-excluded. Press `b` to change the base, `p` to inspect full paths and task context,
+or select them again. Ignored files, submodules, and special files remain
+excluded. Skill-only reviews can include binary patches and link-target metadata
+without following links. Built-in and architecture checks require supported text.
+Incompatible check/path selections must be changed explicitly. Press `b` to change the base, `p` to inspect full paths and task context,
 `h` to reopen saved reviews, or `r` to refresh. Ctrl+U clears the base editor.
 Up/Down, `j`/`k`, and Tab/Shift-Tab navigate choices; Page Up/Page Down scroll
 the consent screen and full report.
 
-**First principles** and **Behavior preservation** start selected. The optional
+Both flags show six independent checks: **First principles**, **Behavior preservation**,
+**Improve codebase architecture**, **Ponytail Review**, **Fleet Review**, and
+**Matt Pocock Code Review**. `--review` starts with none selected; `--optimize`
+retains the first two defaults. The flags cannot be combined. The optional
 **Improve codebase architecture** reviewer uses Matt Pocock's
 [`improve-codebase-architecture`](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md)
 and its `codebase-design` vocabulary. It looks for useful module deepening,
@@ -179,13 +185,32 @@ agents, interviews, or domain-file writes. Questions and ADR conflicts stay
 visible as risks or limitations. A Native Claude profile is not being run
 merely because a reviewer uses a Claude model through the SDK.
 
-Reviewers use independent, restricted Copilot SDK sessions. They inspect one
-frozen snapshot, then challenge every proposal in one bounded round. A
+Reviewers use independent, restricted Copilot SDK sessions. They inspect projections
+of one frozen target. Built-in checks challenge every built-in proposal in one bounded round. A
 coordinator reads the reports and replies; it must retain rejected proposals
-and unresolved disagreement rather than force consensus. There are at most
+and unresolved disagreement rather than force consensus. A built-in-only run has at most
 `2 × (2 × reviewers + 1)` model requests, with a two-minute limit per request and an
 eight-minute review limit. A no-change result skips the challenge round.
-The consent screen shows each model, effort, sharing scope, and call limit.
+Mixed runs use one run ID, one history record, and one combined synthesis, not two
+completed reviews followed by another synthesis. Ponytail and Matt reports have
+a structured extraction step; original reports remain available. Findings without
+checked source citations remain read-only. Fleet retains six guarded workers per batch,
+model verification, required result reads, and paired Markdown/JSON reports.
+Matt runs only Standards; task context is not a verified Spec.
+Fleet Review defaults to `gpt-6.1-sol` with high effort. Its six specialists
+retain their existing model assignments and low effort. The combined review
+coordinator defaults to `gpt-6-astra` with max effort.
+Ponytail Review defaults to `claude-opus-5.5` with high effort.
+After consent, all selected reviews appear as tabs with their current status.
+The first selected review opens immediately. Tab/Shift+Tab or Left/Right switch
+between reviews, Overview and Synthesis. PgUp/PgDn scroll the full-height content
+area. Fleet worker text stays in its review tab with source labels. Live text
+is unverified and bounded to the latest 8,192 characters per review; full reports remain
+saved privately. Selection and scroll positions remain when the run finishes.
+Press `p` to toggle full saved reports or `f` to open findings. Esc cancels a
+running review and saves partial evidence.
+The skill master can ask four peer questions in each of two rounds; round two
+requires new evidence. The consent screen shows models, workers and sharing scope.
 `--model` and `--effort` override the review models; they do not change the
 eventual Native profile.
 Every model request supplies its report, challenge, or decision JSON schema
@@ -199,16 +224,20 @@ Corrections reread the frozen evidence and pass the same validation before
 they can be accepted. Runtime, cancellation, and evidence-budget failures
 are not retried. A second invalid response stops the review and blocks approval.
 
-The only model tools list, search, and read frozen text. They cannot execute
+For built-in and architecture checks, the only model tools list, search, and read frozen text. They cannot execute
 commands, edit files, access the live filesystem, or use MCP, plugins, skill
 discovery, or other agents. The snapshot includes related tracked code across
 the repository as context, selected diffs, and selected untracked files.
 Other untracked files and credential-like paths are excluded. Binary,
 unsupported, or oversized context files are reported as exclusions; a selected
 file that cannot be captured blocks the review. The repository snapshot is
-bounded to 5,000 files, 1 MB per source file, and 32 MB total. Each request has
-at most 120 text-tool calls and a model-context-aware byte budget capped at
-768 KB. Definite budget failures stop before inference. Missing
+bounded to 5,000 files, 1 MB per source file, and 32 MB total. Each request
+reserves instructions, tool protocol, and output space from discovered model
+capacities. Serialized UTF-8 bytes provide a conservative token upper bound,
+not an exact token count. Large inputs use fresh complete-evidence batches,
+followed by cross-file consolidation; they are not subject to a fixed 768 KB
+model-input cap. Tool reads remain bounded per request. Definite budget
+failures stop before inference. Missing
 selected-source coverage, invalid citations, exhausted budgets, cancellation,
 or a failed reviewer prevents approval. No evidence is silently truncated.
 Models cite source IDs and line ranges, not retyped source text. Guide copies
@@ -221,11 +250,13 @@ Each source read gives absolute line numbers and the next unread required
 ranges. Reviewers must finish those ranges before reporting; only successfully
 delivered pages count toward coverage.
 
-Reviews and their snapshots are saved under
-`<absolute-worktree-git-directory>/trellage-optimize-reviews/`, outside tracked
+Version-2 reviews, full reports and snapshots are saved under
+`<absolute-worktree-git-directory>/trellage-reviews/`, outside tracked
 files, using private directories and atomic mode-0600 files. Press `h` from
 scope or target selection to reopen them without a model call. Interrupted
-runs retain their evidence; they do not resume automatically.
+runs retain their evidence; they do not resume automatically. Legacy Optimize records
+under `trellage-optimize-reviews` retain their original validation and approval path.
+Existing `.trx-review-*` reports are not migrated or treated as editing authority.
 
 A failed review opens a failure screen with no approval controls. Partial
 proposals have no final verdict. Press `p` to read the saved report or `r` to
@@ -265,13 +296,24 @@ Then choose a Native Copilot, Codex, or Claude profile and separately confirm
 execution. Reviewer agreement is not proof that a proposal is correct or that
 checks have run.
 
-Guide's pinned `o` action and Herdr's `prefix+ctrl+b` → **Optimize changes**
+Alternatively, press `l` to plan fixes with Copilot `hve`, without edit approval.
+Planning can use the current terminal or a clean new Herdr worktree at the
+unchanged reviewed HEAD. Incomplete reports stay incomplete. Dirty files are not copied.
+The explicit **Plan then implement approved findings** action uses Copilot `hve`
+with full access in a same-worktree Herdr tab. It requires saved finding approval
+and a separate automatic-execution confirmation. All editing actions share
+freshness, readiness, writer, lock and one-use delivery checks.
+Use Left/Right in live and saved report views to select Overview, checks or Synthesis.
+Live text is unverified; only its display buffer is limited.
+
+Guide's pinned `o` action, Ctrl-R from an empty intent, and Herdr's `prefix+ctrl+b` → **Review changes**
 open this same flow. An ordinary shell targets its current Git worktree; the
 popup supplies the invoking worktree explicitly. Setup reads no conversation,
 requires no source agent or session identity, makes no model calls, and does
-not prepare Prompt Master or load the Sandbox catalog. Optimize uses a
-Native-only catalog and does not depend on a separate `trellage` command on
-`PATH`; a stale or unavailable Sandbox runtime cannot block it.
+not prepare Prompt Master or load the Sandbox catalog. Direct Review changes
+entries defer optional Copilot, Codex, and Claude profile discovery until a
+handoff is requested. They do not depend on a separate `trellage` command on
+`PATH`; a stale or unavailable Sandbox runtime cannot block review.
 There is no existing-conversation handoff.
 Supply unwritten requirements with `--intent`; existing Guide intent and
 approved constraints remain separate from the reviewers' instructions.

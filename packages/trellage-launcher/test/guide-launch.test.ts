@@ -597,6 +597,20 @@ describe("node command runner regression coverage", () => {
     expect(result.stdout.endsWith(marker)).toBe(true)
   })
 
+  it("uses an explicit capture bound without changing the default and validates it before spawn", async () => {
+    const runner = createNodeCommandRunner()
+    const args = ["-e", 'process.stdout.write("x".repeat(1_100_000))']
+    expect((await runner.run(process.execPath, args, { outputLimitBytes: 1_200_000 })).stdout.length).toBe(1_100_000)
+    await expect(runner.run(process.execPath, args, { outputLimitBytes: 1000 })).rejects.toMatchObject({ kind: "output-limit" })
+    for (const outputLimitBytes of [0, -1, 1.5, 32_000_001, Infinity])
+      await expect(runner.run("must-not-start", [], { outputLimitBytes })).rejects.toBeInstanceOf(CommandRunnerError)
+    const result = await runner.run(process.execPath, ["-e", 'process.stdout.write("x".repeat(20_000) + "END")'], {
+      outputOverflow: "truncate", outputLimitBytes: 1000,
+    })
+    expect(result.stdout.length).toBeLessThanOrEqual(1000)
+    expect(result.stdout.endsWith("END")).toBe(true)
+  })
+
   it("runs interactive commands without a shell and reports non-zero exits", async () => {
     await expect(
       runInteractiveCommand({

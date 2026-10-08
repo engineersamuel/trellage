@@ -434,17 +434,68 @@ export interface RestrictedGuideModelRequest {
   readonly onActivity?: (event: { readonly type: string }) => void
   /** Content-free lifecycle updates. Never includes prompts, reasoning, source text, or response content. */
   readonly onProgress?: (message: string) => void
+  readonly onText?: (text: string) => void
   readonly tools?: SessionConfig["tools"]
   readonly responseFormat?: Parameters<CopilotSession["rpc"]["send"]>[0]["responseFormat"]
+}
+
+interface RestrictedGuideDiagnostic {
+  readonly stage: string
+  readonly model: string
+  readonly errorType: string
+  readonly errorCode?: string
+  readonly statusCode?: number
+  readonly validation?: "schema-unsupported-keyword" | "schema-type-required" | "schema-invalid" | "response-format-unsupported"
+}
+
+const validationDiagnostic = (message: unknown): RestrictedGuideDiagnostic["validation"] => {
+  if (typeof message !== "string") return undefined
+  const bounded = message.slice(0, 16_384)
+  if (/(?:unsupported|not supported|not permitted|not allowed).{0,100}(?:minimum|maximum|maxItems|minItems)|(?:minimum|maximum|maxItems|minItems).{0,100}(?:unsupported|not supported|not permitted|not allowed)/iu.test(bounded))
+    return "schema-unsupported-keyword"
+  if (/(?:schema|properties).{0,100}(?:type.{0,30}(?:required|missing)|(?:required|missing).{0,30}type)/iu.test(bounded))
+    return "schema-type-required"
+  if (/(?:response.?format|structured outputs?).{0,100}(?:unsupported|not supported)/iu.test(bounded))
+    return "response-format-unsupported"
+  if (/(?:invalid|malformed).{0,30}(?:json.?schema|schema)|(?:json.?schema|schema).{0,30}(?:invalid|malformed)/iu.test(bounded))
+    return "schema-invalid"
+  return undefined
+}
+
+const validationFields = (fields: object): Pick<RestrictedGuideDiagnostic, "validation"> => {
+  const validation = validationDiagnostic("message" in fields ? fields.message : undefined)
+  return validation ? { validation } : {}
+}
+
+const runtimeDiagnostic = (data: unknown, stage: string, model: string): RestrictedGuideDiagnostic => {
+  const fields = data !== null && typeof data === "object" ? data : {}
+  const category = "errorType" in fields ? fields.errorType : undefined
+  const code = "errorCode" in fields ? fields.errorCode : undefined
+  const status = "statusCode" in fields ? fields.statusCode : undefined
+  const categories = ["authentication", "authorization", "quota", "rate_limit", "context_limit", "query",
+    "network", "server_error", "invalid_request", "invalid_schema", "tool", "timeout"]
+  const codes = ["user_weekly_rate_limited", "user_global_rate_limited", "rate_limited",
+    "user_model_rate_limited", "integration_rate_limited", "quota_exceeded", "session_quota_exceeded",
+    "billing_not_configured", "invalid_json_schema", "invalid_request", "model_not_supported"]
+  return {
+    stage, model,
+    ...validationFields(fields),
+    errorType: typeof category === "string" && categories.includes(category) ? category : "unknown",
+    ...(typeof code === "string" && codes.includes(code) ? { errorCode: code } : {}),
+    ...(typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599
+      ? { statusCode: status } : {}),
+  }
 }
 
 export class RestrictedGuideModelError extends Error {
   constructor(
     readonly code: string,
     readonly cleanupFailures: ReadonlyArray<string> = [],
+    readonly diagnostic?: RestrictedGuideDiagnostic,
   ) {
     super(
-      `restricted model request ${code}${cleanupFailures.length === 0 ? "" : `; cleanup failed: ${cleanupFailures.join(", ")}`}`,
+      `restricted model request ${code}${diagnostic ? `; ${JSON.stringify(diagnostic)}` : ""}` +
+      `${cleanupFailures.length === 0 ? "" : `; cleanup failed: ${cleanupFailures.join(", ")}`}`,
     )
     this.name = code === "cancelled" ? "AbortError" : "RestrictedGuideModelError"
   }
@@ -484,6 +535,7 @@ class RestrictedGuideRequest {
   private unsubscribe: (() => void) | undefined
   private content: string | undefined
   private failure: unknown
+  private lastProgress: string | undefined
 
   constructor(private readonly options: RestrictedGuideModelRequest) {
     const baseDirectory = options.baseDirectory ?? path.join(os.homedir(), ".copilot", "trx-guide")
@@ -500,6 +552,8 @@ class RestrictedGuideRequest {
   }
 
   private progress(message: string): void {
+    if (message === this.lastProgress) return
+    this.lastProgress = message
     this.options.onProgress?.(message)
   }
 
@@ -607,7 +661,20 @@ class RestrictedGuideRequest {
     return session.rpc.send({ prompt, responseFormat: this.options.responseFormat })
   }
 
+  private streamText(data: unknown): boolean {
+    if (typeof data !== "object" || data === null || !("deltaContent" in data) ||
+      typeof data.deltaContent !== "string") return false
+    this.options.onText?.(data.deltaContent)
+    return true
+  }
+
+  private ignoreResponseEvent(failed: boolean): boolean {
+    return failed || this.closing || Boolean(this.options.signal?.aborted)
+  }
+
   private async send(activeSession: RestrictedGuideModelSession): Promise<void> {
+    let streamed = false
+    let failed = false
     let resolveIdle: (() => void) | undefined
     let rejectIdle: ((error: Error) => void) | undefined
     const idle = new Promise<void>((resolve, reject) => {
@@ -617,6 +684,7 @@ class RestrictedGuideRequest {
     // A synchronous fake, or an early runtime event, may arrive during send.
     void idle.catch(() => undefined)
     this.unsubscribe = activeSession.on((event) => {
+      if (this.ignoreResponseEvent(failed)) return
       try {
         if (
           event.type === RestrictedGuideEventType.Reasoning ||
@@ -625,11 +693,13 @@ class RestrictedGuideRequest {
           this.progress("Model is reasoning")
         } else if (event.type === RestrictedGuideEventType.MessageDelta) {
           this.progress("Receiving the structured assessment")
+          streamed = this.streamText(event.data) || streamed
         }
         switch (event.type) {
           case RestrictedGuideEventType.Message:
             this.progress("Received the completed assessment")
             this.acceptMessage(event.data)
+            if (!streamed && this.content !== undefined) this.options.onText?.(this.content)
             break
           case RestrictedGuideEventType.Idle:
             this.progress("Model response is complete")
@@ -637,9 +707,11 @@ class RestrictedGuideRequest {
             break
           case RestrictedGuideEventType.Error:
             this.progress("Model runtime reported an error")
-            throw new RestrictedGuideModelError("runtime-error")
+            throw new RestrictedGuideModelError("runtime-error", [],
+              runtimeDiagnostic(event.data, this.stage, this.options.model))
         }
       } catch (error) {
+        failed = true
         rejectIdle?.(error as Error)
       }
     })
@@ -695,13 +767,14 @@ class RestrictedGuideRequest {
       await this.cleanup()
     }
     if (this.failure instanceof RestrictedGuideModelError) {
-      throw new RestrictedGuideModelError(this.failure.code, this.cleanupFailures)
+      throw new RestrictedGuideModelError(this.failure.code, this.cleanupFailures, this.failure.diagnostic)
     }
     if (this.failure instanceof GuideModelCapabilityError) {
       if (this.cleanupFailures.length === 0) throw this.failure
       throw new RestrictedGuideModelError(this.failure.message, this.cleanupFailures)
     }
-    if (this.failure !== undefined) throw new RestrictedGuideModelError(`${this.stage}-failed`, this.cleanupFailures)
+    if (this.failure !== undefined) throw new RestrictedGuideModelError(`${this.stage}-failed`, this.cleanupFailures,
+      runtimeDiagnostic(this.failure, this.stage, this.options.model))
     if (this.cleanupFailures.length > 0) throw new RestrictedGuideModelError("cleanup-failed", this.cleanupFailures)
     return this.content!
   }

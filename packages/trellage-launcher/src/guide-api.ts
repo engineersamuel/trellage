@@ -244,6 +244,7 @@ export interface GuideHeadlessArgs {
   readonly nextSteps?: boolean
   readonly engagement?: boolean
   readonly optimize?: boolean
+  readonly review?: boolean
   readonly optimizeBase?: string
 }
 
@@ -259,9 +260,10 @@ const uiVariantFlag = "--ui-variant"
 const nextStepsFlag = "--next-steps"
 const engagementFlag = "--engagement"
 const optimizeFlag = "--optimize"
+const reviewFlag = "--review"
 const baseFlag = "--base"
 
-const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag, engagementFlag, optimizeFlag])
+const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag, engagementFlag, optimizeFlag, reviewFlag])
 const valueFlags = new Set([intentFlag, profileFlag, modelFlag, effortFlag, uiVariantFlag, baseFlag])
 const knownFlags = new Set([...booleanFlags, ...valueFlags])
 
@@ -272,6 +274,7 @@ interface MutableGuideArgs {
   nextSteps: boolean
   engagement: boolean
   optimize: boolean
+  review: boolean
   optimizeBase: string | undefined
   intentFromFlag: string | undefined
   profile: string | undefined
@@ -316,6 +319,10 @@ const consumeGuideFlag = (argv: ReadonlyArray<string>, index: number, state: Mut
     state.engagement = true
     return index
   }
+  if (token === reviewFlag) {
+    state.review = true
+    return index
+  }
   if (token === optimizeFlag) {
     state.optimize = true
     return index
@@ -356,9 +363,10 @@ const validateEngagementModeFlags = (state: MutableGuideArgs): void => {
 }
 
 const validateOptimizeMode = (state: MutableGuideArgs): void => {
-  if (state.optimizeBase !== undefined && !state.optimize)
-    throw new GuideArgsError("--base requires --optimize")
-  if (state.optimize && (state.json || state.nextSteps || state.engagement || state.profile !== undefined ||
+  if (state.review && state.optimize) throw new GuideArgsError("--review and --optimize cannot be combined")
+  if (state.optimizeBase !== undefined && !state.optimize && !state.review)
+    throw new GuideArgsError("--base requires --review or --optimize")
+  if ((state.optimize || state.review) && (state.json || state.nextSteps || state.engagement || state.profile !== undefined ||
     state.uiVariant !== undefined)) {
     throw new GuideArgsError("--optimize uses a confirmed change target, read-only reviews, and an approved Native handoff, not Guide matching or other modes")
   }
@@ -398,6 +406,7 @@ const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
     ...(state.nextSteps ? { nextSteps: true } : {}),
     ...(state.engagement ? { engagement: true } : {}),
     ...(state.optimize ? { optimize: true } : {}),
+    ...(state.review ? { review: true } : {}),
     ...(state.optimizeBase === undefined ? {} : { optimizeBase: state.optimizeBase }),
   }
 }
@@ -406,7 +415,7 @@ export const guideHeadlessHelpText = [
   "Usage: trx guide [intent] [options]",
   "       trx guide --intent-stdin [options]",
   "       trx guide --engagement [--intent <engagement question>]",
-  "       trx guide --optimize [--base <branch-or-commit>] [--intent <original task>]",
+  "       trx guide --review [--base <branch-or-commit>] [--intent <original task>]",
   "       trx guide --json --intent <text> [options]",
   "       trx guide --json <text> [options]",
   "",
@@ -419,7 +428,8 @@ export const guideHeadlessHelpText = [
   "  --next-steps          Analyze the focused conversation from a private Herdr popup request.",
   "  --engagement          Assess repository evidence for the next customer-engagement action.",
   "                         Opens local source selection first; no model call or launch on open.",
-  "  --optimize            Coordinate read-only reviews of committed and current changes.",
+  "  --review              Review changes; choose any compatible checks.",
+  "  --optimize            Review changes with First principles and Behavior preservation selected.",
   "                         Approve findings before one Native agent can edit.",
   "  --base <ref>          Override the detected comparison base for the current branch.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
@@ -447,6 +457,7 @@ export const parseGuideHeadlessArgv = (argv: ReadonlyArray<string>): GuideHeadle
     nextSteps: false,
     engagement: false,
     optimize: false,
+    review: false,
     optimizeBase: undefined,
     intentFromFlag: undefined,
     profile: undefined,

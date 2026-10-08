@@ -8,6 +8,7 @@ import { fleetLenses, reviewCatalog, selectReviews } from "../src/review-catalog
 import { captureReviewSnapshot, persistReviewResult, runReviews, validateFleetReport, type ReviewSnapshot } from "../src/review-run.ts"
 import { prepareReviewWorkspace, type ReviewWorkspace } from "../src/review-skills.ts"
 import type { ReviewResult } from "../src/copilot-review-provider.ts"
+import { captureIntermediateReviewArtifacts } from "../src/review-artifacts.ts"
 
 let root = path.resolve(`.review-backend-test-${randomUUID()}`)
 const snapshot: ReviewSnapshot = {
@@ -18,7 +19,8 @@ const snapshot: ReviewSnapshot = {
   changedFiles: ["a.ts"],
   workingTreeFiles: [],
 }
-const names = ["claude-opus-5.5", "gpt-6-sol", "grok-4.7"]
+const names = ["gpt-6.1-sol", "claude-opus-5.5", "gpt-6-sol", "grok-4.7"]
+const workerNames = ["claude-opus-5.5", "gpt-6-sol", "grok-4.7"]
 const emitAgentRead = (
   handler: (event: SessionEvent) => void, agentId: string, content: string,
 ): void => {
@@ -37,7 +39,7 @@ const report = (status: "complete" | "partial" = "complete", total = 0, target =
   startedAt: "2026-09-28T10:00:00Z", completedAt: "2026-09-28T10:01:00Z",
   pr: { baseSha: target.base, headSha: target.head },
   agents: fleetLenses.map((name, index) => ({
-    name, lens: name, model: names[index % 3], status: status === "partial" && index === 4 ? "failed" : "complete",
+    name, lens: name, model: workerNames[index % 3], status: status === "partial" && index === 4 ? "failed" : "complete",
     error: status === "partial" && index === 4 ? "failed" : "",
   })),
   counts: { critical: total, high: 0, medium: 0, low: 0, confirmedTotal: total },
@@ -45,7 +47,7 @@ const report = (status: "complete" | "partial" = "complete", total = 0, target =
     id: `F-${index + 1}`, severity: "critical", title: "Issue", problem: "Regression",
     evidence: "Branch diff", path: "a.ts", lineStart: 1, lineEnd: 1,
     currentCode: "old", suggestedCode: "new", fixKind: "exact", judgmentNotes: "",
-    reportedBy: [`${fleetLenses[0]} / ${names[0]}`],
+    reportedBy: [`${fleetLenses[0]} / ${workerNames[0]}`],
   })),
   reportMarkdown: `# Review ${target.base} ${target.head}\n${total > 50 ? `${total} total, ${total - 50} omitted` : ""}`,
 })
@@ -68,7 +70,7 @@ const masterResponse = (questions: unknown[] = [], challengeDecisions: unknown[]
 const peerHarness = async (masterAnswers: (prompt: string, index: number) => string,
   peerAnswer: string | null = "The new branch condition at a.ts:1 contains const fixed = true, but compatibility is disputed.",
   onOutput?: (id: string, output: { kind: "text" | "activity"; text: string; source?: string }) => void,
-  masterDelayMs = 0): Promise<{
+  masterDelayMs = 0, deadline: { timeoutMs?: number } = { timeoutMs: 1000 }): Promise<{
     provider: CopilotReviewProvider
     reports: ReviewResult[]
     prompts: Map<string, string[]>
@@ -118,7 +120,7 @@ const peerHarness = async (masterAnswers: (prompt: string, index: number) => str
     },
     deleteSession: async () => {}, forceStop: async () => {},
   })
-  const provider = new CopilotReviewProvider(workspace, snapshot, factory, 1000, onOutput)
+  const provider = new CopilotReviewProvider(workspace, snapshot, factory, deadline.timeoutMs, onOutput)
   const signal = new AbortController().signal
   const reports = await Promise.all([
     provider.review(reviewCatalog[0]!, signal),
@@ -194,14 +196,14 @@ exec "${realGit}" "$@"
     }
   })
 
-  it("bounds the complete framed patch at exactly 384 KiB", async () => {
+  it("bounds the complete framed patch at the 32 MB storage limit, not 384 KiB", async () => {
     const repo = await captureFixture()
     const file = path.join(repo, "untracked")
     await writeFile(file, "x")
     const first = await captureReviewSnapshot(repo, "refs/heads/main")
-    const length = 384 * 1024 - Buffer.byteLength(first.diff) + 1
+    const length = 32_000_000 - Buffer.byteLength(first.diff) + 1
     await writeFile(file, "x".repeat(length))
-    expect(Buffer.byteLength((await captureReviewSnapshot(repo, "refs/heads/main")).diff)).toBe(384 * 1024)
+    expect(Buffer.byteLength((await captureReviewSnapshot(repo, "refs/heads/main")).diff)).toBe(32_000_000)
     await writeFile(file, "x".repeat(length + 1))
     await expect(captureReviewSnapshot(repo, "refs/heads/main")).rejects.toThrow("too large")
   })
@@ -365,7 +367,7 @@ exec "${realGit}" "$@"
     const captured = await captureReviewSnapshot(repo, "refs/heads/main")
     expect(Buffer.byteLength(captured.diff)).toBeGreaterThan(340 * 1024)
     expect(captured.diff).toContain("x".repeat(340 * 1024))
-    await writeFile(path.join(repo, "large.txt"), "x".repeat(384 * 1024 + 1))
+    await writeFile(path.join(repo, "large.txt"), "x".repeat(32_000_001))
     await expect(captureReviewSnapshot(repo, "refs/heads/main")).rejects.toThrow("too large")
     const controller = new AbortController()
     controller.abort(new Error("Capture cancelled."))
@@ -1050,6 +1052,18 @@ describe("restricted SDK review workflow", () => {
     } finally { await provider.close() }
   })
 
+  it("allows fifteen minutes for synthesis by default without extending explicit deadlines", async () => {
+    const { provider, reports, masterTimeouts } = await peerHarness(
+      () => JSON.stringify(masterResponse()), undefined, undefined, 0, {},
+    )
+    try {
+      await provider.synthesize(reports, new AbortController().signal)
+      expect(masterTimeouts).toHaveLength(1)
+      expect(masterTimeouts[0]).toBeGreaterThan(890_000)
+      expect(masterTimeouts[0]).toBeLessThanOrEqual(900_000)
+    } finally { await provider.close() }
+  })
+
   it("routes a real opposing report to its original reviewer and retains unresolved evidence", async () => {
     const decision = { round: 1, reviewer: "ponytail", source: "ponytail", opposingSource: "peer",
       disposition: "unresolved", reason: "The peer and reviewer still disagree.", evidence: "" }
@@ -1176,7 +1190,7 @@ describe("restricted SDK review workflow", () => {
     "x".repeat(16 * 1024 + 1))
     try {
       const markdown = await provider.synthesize(reports, new AbortController().signal)
-      expect(markdown).toContain("Reviewer reply failed: Review response missing or too large.")
+      expect(markdown).toContain("Reviewer reply failed: Review response too large.")
       expect(markdown).toContain("Unresolved ponytail vs peer")
     } finally { await provider.close() }
   })
@@ -1316,6 +1330,52 @@ describe("restricted SDK review workflow", () => {
     await provider.close()
   })
 
+  it.each(["repaired", "generic-finding", "report-id", "missing-decision"] as const)(
+    "keeps normalized finding IDs distinct from review and report IDs: %s", async (outcome) => {
+      const response = (sources: string[], decisionSources: string[]) => JSON.stringify({
+        findings: [{ title: "Simplify A", sources, reason: "Remove duplicate abstraction." }],
+        decisions: decisionSources.map((source) => ({ source, disposition: "kept", reason: "Retain source." })),
+        disagreements: [], questions: [],
+      })
+      const replies = {
+        repaired: response(["ponytail:1"], ["ponytail", "ponytail:1"]),
+        "generic-finding": response(["ponytail", "ponytail:1"], ["ponytail", "ponytail:1"]),
+        "report-id": response(["ponytail:1"], ["ponytail:report", "ponytail:1"]),
+        "missing-decision": response(["ponytail:1"], ["ponytail:1"]),
+      }
+      const { provider, reports, prompts } = await peerHarness((_prompt, index) =>
+        index === 1 ? replies["generic-finding"] : replies[outcome])
+      const normalized: ReviewResult = {
+        ...reports[0]!,
+        sourceFindings: [{
+          id: "ponytail:1", checkId: "ponytail", reportId: "ponytail:report", sourceId: "1",
+          title: "Simplify A", paths: ["a.ts"], citations: [], grounded: false,
+        }],
+      }
+      try {
+        const result = await provider.synthesize([normalized], new AbortController().signal).then(
+          (markdown) => ({ complete: true, markdown }),
+          (error: unknown) => ({ complete: false, error: error instanceof Error ? error.message : String(error) }),
+        )
+        expect(result.complete).toBe(outcome === "repaired")
+        expect(provider.synthesisResult?.decisions.map((decision) => decision.source))
+          .toEqual(outcome === "repaired" ? ["ponytail", "ponytail:1"] : undefined)
+        const sent = prompts.get("master")!.map((prompt) => JSON.parse(prompt) as {
+          sourceContract: { decisionSources: string[]; findingSources: string[] };
+          error?: string;
+        })
+        expect(sent).toHaveLength(2)
+        expect(sent.map((prompt) => prompt.sourceContract)).toEqual(Array(2).fill({
+          decisionSources: ["ponytail", "ponytail:1"], findingSources: ["ponytail:1"],
+        }))
+        expect(sent[1]?.error).toBe("Master synthesis has invalid sources or cross-reviewer challenges.")
+        expect(await readFile(path.join(root, "work/docs/review/master-initial-response.txt"), "utf8"))
+          .toBe(replies["generic-finding"])
+        expect(await readFile(path.join(root, "work/docs/review/master-repair-response.txt"), "utf8"))
+          .toBe(replies[outcome])
+      } finally { await provider.close() }
+    })
+
   it.each(["complete", "partial"] as const)(
     "denies extra child tools and retains a valid %s Fleet report from six workers", async (status) => {
     const work = path.join(root, "work")
@@ -1345,7 +1405,7 @@ describe("restricted SDK review workflow", () => {
         })
         expect(decision?.permissionDecision).toBe("allow")
         expect(decision?.modifiedArgs).toMatchObject({
-          name: `fleet-worker-${index + 1}`, model: names[index % 3],
+          name: `fleet-worker-${index + 1}`, model: workerNames[index % 3],
           prompt: expect.stringContaining(localSnapshot.diff),
         })
         expect(decision?.modifiedArgs).toMatchObject({
@@ -1361,7 +1421,7 @@ describe("restricted SDK review workflow", () => {
         }
         handler({ type: "subagent.started", agentId: `child-${index}`,
           data: { agentType: "code-review", executionMode: "background",
-            agentDescription: fleetLenses[index], model: names[index % 3] } } as SessionEvent)
+            agentDescription: fleetLenses[index], model: workerNames[index % 3] } } as SessionEvent)
         if (index === 0) {
           handler({ type: "assistant.message_delta", agentId: "child-0",
             data: { messageId: "child-message", deltaContent: "Found a regression." } } as SessionEvent)
@@ -1373,9 +1433,17 @@ describe("restricted SDK review workflow", () => {
         if (index === 1) await readWorker(index)
         if (index === 2) await readWorker(index, "Agent is running. status: running")
         handler({ type: "subagent.completed", agentId: `child-${index}`,
-          data: { firstDispatchedModel: names[index % 3] } } as SessionEvent)
+          data: { firstDispatchedModel: workerNames[index % 3] } } as SessionEvent)
         if (index > 2) await readWorker(index)
       }
+    }
+    const checkWorkerPermissions = async () => {
+      expect((await use("builtin:skill", {}, "child"))?.permissionDecision).toBe("deny")
+      expect((await use("builtin:skill", { name: "fleet-review" }, "child"))?.permissionDecision).toBe("allow")
+      expect((await use("builtin:skill", { name: "unrelated" }, "child"))?.permissionDecision).toBe("deny")
+      expect((await use("builtin:task", { agent_type: "code-review" }, "child"))?.permissionDecision).toBe("deny")
+      expect((await use("custom:save_review", {}, "child"))?.permissionDecision).toBe("deny")
+      expect((await use("custom:read_reference", { name: "review-schema.md" }, "child"))?.permissionDecision).toBe("allow")
     }
     const session = {
       sessionId: "fake",
@@ -1383,7 +1451,7 @@ describe("restricted SDK review workflow", () => {
       abort: vi.fn(async () => {}), disconnect: vi.fn(async () => {}),
       sendAndWait: vi.fn(async () => {
         expect((await use("builtin:bash", {}))?.permissionDecision).toBe("deny")
-        expect((await use("builtin:skill", {}, "child"))?.permissionDecision).toBe("deny")
+        await checkWorkerPermissions()
         expect((await use("builtin:skill", { name: "unrelated" }))?.permissionDecision).toBe("deny")
         expect((await use("builtin:skill", { name: "fleet-review" }))?.permissionDecision).toBe("allow")
         config.hooks!.onPostToolUse!({
@@ -1396,8 +1464,8 @@ describe("restricted SDK review workflow", () => {
         const invocation = { sessionId: config.sessionId! } as Parameters<NonNullable<typeof reference.handler>>[1]
         expect(await reference.handler!({ name: "review-schema.md" }, invocation)).toBe("schema")
         expect(() => reference.handler!({ name: "../secret" }, invocation)).toThrow("Unknown Fleet report reference")
-        expect(() => reference.handler!({ name: "review-schema.md" },
-          { sessionId: "child" } as typeof invocation)).toThrow("Invalid reference request")
+        expect(await reference.handler!({ name: "review-schema.md" },
+          { sessionId: "child" } as typeof invocation)).toBe("schema")
         await launchWorkers()
         expect((await use("builtin:task", { agent_type: "code-review" }))?.permissionDecision).toBe("deny")
         const content = report(status, 0, localSnapshot)
@@ -1488,7 +1556,7 @@ describe("restricted SDK review workflow", () => {
     expect(session.disconnect).toHaveBeenCalled()
   })
 
-  it("reports why all six Fleet worker requests were denied instead of claiming a review", async () => {
+  it.each(["text", "empty"])("reports denied Fleet workers without recovery for %s output", async (output) => {
     const work = path.join(root, "work")
     await mkdir(work, { recursive: true })
     const workspace: ReviewWorkspace = {
@@ -1516,7 +1584,7 @@ describe("restricted SDK review workflow", () => {
               input("builtin:task", { agent_type: "general-purpose", mode: "background" }), context)
             expect(denied?.permissionDecision).toBe("deny")
           }
-          return { data: { content: "Workers denied." } }
+          return output === "empty" ? undefined : { data: { content: "Workers denied." } }
         },
       }),
       deleteSession: async () => {}, forceStop: async () => {},
@@ -1529,7 +1597,10 @@ describe("restricted SDK review workflow", () => {
     await provider.close()
   })
 
-  it.each(["slow-primary", "two-attempts", "expired", "cancelled", "default-cap"] as const)(
+  it.each(["slow-primary", "two-attempts", "expired", "cancelled", "default-cap",
+    "primary-timeout", "rejected-timeout", "pending-primary", "unrepaired",
+    "empty-pair", "empty-repaired", "empty-repeated", "oversized", "oversized-recovery",
+    "hook-evidence", "artifact-write-failure"] as const)(
     "shares the Fleet startup, primary and recovery budget: %s", async (scenario) => {
     const work = path.join(root, "work")
     await mkdir(work, { recursive: true })
@@ -1546,37 +1617,75 @@ describe("restricted SDK review workflow", () => {
     let handler!: (event: SessionEvent) => void
     let workers = 0
     const abort = vi.fn(async () => {})
+    const rejectReport = async (config: SessionConfig): Promise<void> => {
+      const save = config.tools!.find((tool) => tool.name === "save_review")!
+      const invocation = { sessionId: config.sessionId! } as Parameters<NonNullable<typeof save.handler>>[1]
+      const wrong = `${report().reportMarkdown}\n| Security & Permissions | wrong-model | scope | complete | |`
+      await save.handler!({ file: "report.md", content: wrong }, invocation)
+      expect(await save.handler!({ file: "report.json", content: JSON.stringify(report()) }, invocation))
+        .toMatchObject({ resultType: "failure" })
+      await save.handler!({ file: "report.md", content: report().reportMarkdown }, invocation)
+    }
+    const launch = async (config: SessionConfig): Promise<void> => {
+      const context = { sessionId: config.sessionId! }
+      const input = (toolName: string, toolArgs: unknown) => ({
+        toolName, toolArgs, sessionId: config.sessionId!, timestamp: new Date(), workingDirectory: work,
+      })
+      await config.hooks!.onPreToolUse!(input("skill", { name: "fleet-review" }), context)
+      config.hooks!.onPostToolUse!({
+        ...input("skill", { name: "fleet-review" }),
+        toolResult: { resultType: "success", textResultForLlm: "Loaded." },
+      }, context)
+      for (let index = 0; index < 6; index++) {
+        expect((await config.hooks!.onPreToolUse!(input("task", {
+          agent_type: "code-review", mode: "background",
+          description: fleetLenses[index], prompt: "Review the diff.",
+        }), context))?.permissionDecision).toBe("allow")
+        workers++
+        handler({ type: "subagent.started", agentId: `child-${index}`,
+          data: { agentType: "code-review", executionMode: "background",
+            agentDescription: fleetLenses[index], model: workerNames[index % 3] } } as SessionEvent)
+        handler({ type: "subagent.completed", agentId: `child-${index}`,
+          data: { firstDispatchedModel: workerNames[index % 3] } } as SessionEvent)
+        if (scenario === "hook-evidence") {
+          config.hooks!.onPostToolUse!({
+            ...input("read_agent", { agent_id: `child-${index}` }),
+            toolResult: { resultType: "success", textResultForLlm: "Worker findings." },
+          }, context)
+          emitAgentRead(handler, `child-${index}`, "Duplicate hook/event delivery.")
+        } else emitAgentRead(handler, `child-${index}`, "Worker findings.")
+      }
+    }
+    const savePair = async (config: SessionConfig): Promise<void> => {
+      const save = config.tools!.find((tool) => tool.name === "save_review")!
+      const invocation = { sessionId: config.sessionId! } as Parameters<NonNullable<typeof save.handler>>[1]
+      await save.handler!({ file: "report.md", content: report().reportMarkdown }, invocation)
+      await save.handler!({ file: "report.json", content: JSON.stringify(report()) }, invocation)
+    }
+    const primary = async (config: SessionConfig, timeout: number) => {
+      if (scenario === "artifact-write-failure") {
+        await mkdir(path.join(work, "docs", "review"), { recursive: true, mode: 0o700 })
+        await writeFile(path.join(work, "docs", "review", "fleet-worker-1.json"), "Do not overwrite.",
+          { mode: 0o600 })
+      }
+      await launch(config)
+      now += timeout - 1
+      if (["rejected-timeout", "unrepaired"].includes(scenario)) await rejectReport(config)
+      if (["primary-timeout", "rejected-timeout", "unrepaired"].includes(scenario))
+        throw new Error(`Timeout after ${timeout}ms waiting for session.idle`)
+      if (scenario === "pending-primary") return new Promise<undefined>(() => {})
+      if (scenario === "empty-pair" || scenario === "oversized") await savePair(config)
+      if (scenario === "oversized") return { data: { content: "x".repeat(512 * 1024 + 1) } }
+      if (scenario.startsWith("empty-")) return undefined
+      return { data: { content: "Workers complete; report pending." } }
+    }
     const createSession = vi.fn(async (config: SessionConfig) => ({
       sessionId: config.sessionId!, on: (listener: typeof handler) => { handler = listener; return () => {} },
       abort, disconnect: async () => {},
-      sendAndWait: async (_input: { readonly prompt: string }, timeout: number) => {
+      sendAndWait: async (request: { readonly prompt: string }, timeout: number) => {
         timeouts.push(timeout)
-        const context = { sessionId: config.sessionId! }
-        if (timeouts.length === 1) {
-          const input = (toolName: string, toolArgs: unknown) => ({
-            toolName, toolArgs, sessionId: config.sessionId!, timestamp: new Date(), workingDirectory: work,
-          })
-          await config.hooks!.onPreToolUse!(input("skill", { name: "fleet-review" }), context)
-          config.hooks!.onPostToolUse!({
-            ...input("skill", { name: "fleet-review" }),
-            toolResult: { resultType: "success", textResultForLlm: "Loaded." },
-          }, context)
-          for (let index = 0; index < 6; index++) {
-            expect((await config.hooks!.onPreToolUse!(input("task", {
-              agent_type: "code-review", mode: "background",
-              description: fleetLenses[index], prompt: "Review the diff.",
-            }), context))?.permissionDecision).toBe("allow")
-            workers++
-            handler({ type: "subagent.started", agentId: `child-${index}`,
-              data: { agentType: "code-review", executionMode: "background",
-                agentDescription: fleetLenses[index], model: names[index % 3] } } as SessionEvent)
-            handler({ type: "subagent.completed", agentId: `child-${index}`,
-              data: { firstDispatchedModel: names[index % 3] } } as SessionEvent)
-            emitAgentRead(handler, `child-${index}`, "Worker findings.")
-          }
-          now += timeout - 1
-          return { data: { content: "Workers complete; report pending." } }
-        }
+        if (timeouts.length === 1) return primary(config, timeout)
+        if (scenario === "oversized-recovery") return { data: { content: "x".repeat(512 * 1024 + 1) } }
         if (scenario === "expired") {
           now += timeout + 1
           return { data: { content: "Still pending." } }
@@ -1585,14 +1694,21 @@ describe("restricted SDK review workflow", () => {
           controller.abort(new Error("Fleet cancelled."))
           return { data: { content: "Still pending." } }
         }
-        if (timeouts.length === 2 && scenario !== "slow-primary") {
+        if (scenario === "unrepaired") return { data: { content: "Unable to repair." } }
+        if (scenario === "empty-repeated") return { data: { content: "  " } }
+        if (scenario === "rejected-timeout") {
+          expect(request.prompt).toContain("Fleet Markdown coverage differs from JSON for Security & Permissions.")
+          const directory = path.join(work, "docs", "review")
+          expect(await readFile(path.join(directory, "fleet-rejected-report-1.md"), "utf8")).toContain("wrong-model")
+          expect(await readFile(path.join(directory, "fleet-rejected-report-1-error.txt"), "utf8"))
+            .toContain("coverage differs")
+        }
+        if (timeouts.length === 2 && ["two-attempts", "default-cap"].includes(scenario)) {
           now += scenario === "default-cap" ? 59_999 : 10
           return { data: { content: "Markdown/JSON still pending." } }
         }
-        const save = config.tools!.find((tool) => tool.name === "save_review")!
-        const invocation = context as Parameters<NonNullable<typeof save.handler>>[1]
-        await save.handler!({ file: "report.md", content: report().reportMarkdown }, invocation)
-        await save.handler!({ file: "report.json", content: JSON.stringify(report()) }, invocation)
+        await savePair(config)
+        if (scenario === "empty-repaired") return undefined
         return { data: { content: "Report saved." } }
       },
     }))
@@ -1604,27 +1720,54 @@ describe("restricted SDK review workflow", () => {
     })
     const provider = new CopilotReviewProvider(workspace, snapshot, factory,
       scenario === "default-cap" ? undefined : 300)
+    const assertResult = async (result: ReviewResult): Promise<void> => {
+      const failures: Partial<Record<typeof scenario, string>> = {
+        "artifact-write-failure": "Fleet worker evidence could not be saved.",
+        oversized: "Review response too large.",
+        "oversized-recovery": "Review response too large.",
+        "empty-repeated": "Fleet report pair missing",
+        unrepaired: "Fleet report pair missing",
+        expired: "deadline exceeded",
+        "pending-primary": "deadline exceeded",
+      }
+      const failure = failures[scenario]
+      expect(result.error).toEqual(failure ? expect.stringContaining(failure) : undefined)
+      expect(result.fleet?.status).toBe(failure ? undefined : "complete")
+      expect(result).toMatchObject(scenario === "unrepaired" ? { raw: report().reportMarkdown } : {})
+      const artifacts = await captureIntermediateReviewArtifacts(work, "fleet")
+      expect(artifacts.length).toBeGreaterThanOrEqual(6)
+      expect(artifacts.every((entry) => entry.checkId === "fleet")).toBe(true)
+    }
+    const expectedTimeouts = (): number[] => {
+      if (["pending-primary", "empty-pair", "oversized"].includes(scenario)) return [220]
+      if (scenario === "default-cap") return [779_960, 60_000, 60_000]
+      if (scenario === "two-attempts") return [220, 40, 30]
+      return ["unrepaired", "empty-repeated"].includes(scenario) ? [220, 40, 40] : [220, 40]
+    }
     try {
       const pending = provider.review(reviewCatalog[1]!, controller.signal)
       if (scenario === "cancelled") {
         await expect(pending).rejects.toThrow("Fleet cancelled.")
       } else {
-        const result = await pending
-        if (scenario === "expired") {
-          expect(result.error).toContain("deadline exceeded")
-          expect(result.fleet).toBeUndefined()
-        } else {
-          expect(result.error).toBeUndefined()
-          expect(result.fleet?.status).toBe("complete")
-        }
+        await assertResult(await pending)
       }
       expect(createSession).toHaveBeenCalledOnce()
       expect(workers).toBe(6)
-      expect(timeouts).toEqual(scenario === "default-cap" ? [779_960, 60_000, 60_000]
-        : scenario === "two-attempts" ? [220, 40, 30] : [220, 40])
+      expect(timeouts).toEqual(expectedTimeouts())
+      const saved = (await captureIntermediateReviewArtifacts(work, "fleet")).filter((entry) => entry.name.startsWith("fleet-worker-"))
+      expect(saved).toHaveLength(6)
+      for (const [index, artifact] of saved.entries()) {
+        expect(artifact.checkId).toBe("fleet")
+        const collision = scenario === "artifact-write-failure" && index === 0
+        expect(collision ? artifact.content : JSON.parse(artifact.content)).toEqual(collision ? "Do not overwrite." : {
+          schemaVersion: 1, checkId: "fleet", agentId: `child-${index}`, lens: fleetLenses[index],
+          model: workerNames[index % 3], source: "read_agent", content: "Worker findings.",
+        })
+      }
       if (scenario === "expired" || scenario === "cancelled") expect(abort).toHaveBeenCalled()
     } finally {
-      await provider.close()
+      const closeError = await provider.close().then(() => undefined, (error: Error) => error.message)
+      expect(closeError).toEqual(scenario === "artifact-write-failure" ? expect.stringContaining("worker evidence") : undefined)
       clock.mockRestore()
       vi.useRealTimers()
     }
@@ -1714,10 +1857,10 @@ describe("restricted SDK review workflow", () => {
               expect((await config.hooks!.onPreToolUse!(task, context))?.permissionDecision).toBe("allow")
               handler({ type: "subagent.started", agentId: `child-${index}`,
                 data: { agentType: "code-review", executionMode: "background",
-                  agentDescription: fleetLenses[index], model: names[index % 3] } } as SessionEvent)
+                  agentDescription: fleetLenses[index], model: workerNames[index % 3] } } as SessionEvent)
               if (index < 5) {
                 handler({ type: "subagent.completed", agentId: `child-${index}`,
-                  data: { firstDispatchedModel: names[index % 3] } } as SessionEvent)
+                  data: { firstDispatchedModel: workerNames[index % 3] } } as SessionEvent)
                 if (index > 0) emitAgentRead(handler, `child-${index}`, "Worker findings.")
               }
             }
@@ -1727,7 +1870,7 @@ describe("restricted SDK review workflow", () => {
           expect(prompt).toContain("SDK/API Consistency & Maintainability (child-5): running")
           expect(prompt).toContain("Do not start new workers")
           handler({ type: "subagent.completed", agentId: "child-5",
-            data: { firstDispatchedModel: names[2] } } as SessionEvent)
+            data: { firstDispatchedModel: workerNames[2] } } as SessionEvent)
           emitAgentRead(handler, "child-5", "Worker findings.")
           emitAgentRead(handler, "child-0", "Security findings.")
           const save = config.tools!.find((tool) => tool.name === "save_review")!

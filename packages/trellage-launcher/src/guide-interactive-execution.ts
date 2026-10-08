@@ -47,7 +47,7 @@ const writeRecoveryPrompt = (services: GuideInteractiveExecutionServices, prompt
 const writeIncompleteLaunchPrompt = (services: GuideInteractiveExecutionServices, prompt: string): void =>
   writePrompt(services.write, prompt, "Profile launch did not complete. Selected prompt:")
 
-type LaunchResult = Exclude<GuideUiResult, { readonly action: "cancel" | "print" | "batch" | "optimize-terminal" | "optimize-submitted" | "review" }>
+type LaunchResult = Exclude<GuideUiResult, { readonly action: "cancel" | "print" | "batch" | "optimize-terminal" | "optimize-submitted" | "review" | "review-plan-terminal" }>
 type HerdrResult = Exclude<LaunchResult, { readonly action: "current-terminal" }>
 
 const validateGoalResult = (result: LaunchResult): void => {
@@ -313,6 +313,10 @@ export const executeGuideUiResult = async (
       })
     case "review":
       throw new Error("Review must open its own Guide screen, not execute as a profile launch.")
+    case "review-plan-terminal": {
+      const { executeReviewPlanTerminal } = await import("./review-planning.ts")
+      return executeReviewPlanTerminal(result, services.runner)
+    }
     default:
       return unexpectedGuideResult(result)
   }

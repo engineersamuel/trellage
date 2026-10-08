@@ -17,6 +17,8 @@ import {
 import { FixtureMode, fixtureHead, type RecordFixtureEvent } from "./guide-integration-data.ts"
 import { fixtureOptimizeModel, readReviewEvidence } from "./guide-optimize-model.ts"
 import { record as parseRecord } from "../../src/guide-text.ts"
+import { assignReviewModels } from "../../src/review-catalog.ts"
+import { displayReviewers, legacyReviewRun, legacyReviewApproval } from "../../src/review-view-model.ts"
 
 export const createFixtureOptimizeServices = (
   root: string,
@@ -25,7 +27,8 @@ export const createFixtureOptimizeServices = (
   record: RecordFixtureEvent,
 ): GuideOptimizeServices => {
   const reviews = new Map<string, OptimizeReview>()
-  const reviewers = optimizeReviewersFor(defaultGuideModelRouting)
+  const reviewers = [...optimizeReviewersFor(defaultGuideModelRouting),
+    ...displayReviewers(assignReviewModels(["ponytail", "fleet", "matt-code-review"]))]
   const coordinator = defaultGuideModelRouting.optimize
   const getReview = (id: string) => {
     const review = reviews.get(id)
@@ -46,7 +49,7 @@ export const createFixtureOptimizeServices = (
     async readReview(id, signal) {
       signal.throwIfAborted()
       await record({ kind: "optimize-history", reviewId: id })
-      return getReview(id)
+      return legacyReviewRun(getReview(id))
     },
     async approve(id, ids, signal) {
       signal.throwIfAborted()
@@ -54,10 +57,14 @@ export const createFixtureOptimizeServices = (
       const approval = optimizeApproval(review, ids)
       reviews.set(id, { ...review, approvedIds: ids })
       await record({ kind: "optimize-approval", reviewId: id, ids })
-      return approval
+      return legacyReviewApproval(review, approval)
     },
-    async review(input, signal, progress) {
+    async review(input, signal, progress, events) {
       await record({ kind: "optimize-review", input })
+      for (const id of input.reviewerIds) {
+        events?.({ kind: "status", checkId: id, status: "running" })
+        events?.({ kind: "text", checkId: id, text: `Unverified fixture output from ${id}.` })
+      }
       const sources = [
         ...input.paths.map((id) => ({ id, content: "return value\n" })),
         { id: "@diff/staged", content: "+return value\n" },
@@ -105,7 +112,7 @@ export const createFixtureOptimizeServices = (
           }
           return response
         },
-      )
+      ).then(legacyReviewRun)
     },
     async inspect(scope, signal) {
       signal.throwIfAborted()
@@ -151,7 +158,7 @@ export const createFixtureOptimizeServices = (
       signal.throwIfAborted()
       if (!request.otherEditorsStopped) throw new Error("Confirm that other editors have stopped.")
       const review = getReview(request.approval.reviewId)
-      if (optimizeDigest(request.approval) !== optimizeDigest(optimizeApproval(review, review.approvedIds)))
+      if (optimizeDigest(request.approval) !== optimizeDigest(legacyReviewApproval(review, optimizeApproval(review, review.approvedIds))))
         throw new Error("Approval does not match the saved fixture.")
       const prompt = buildGuideOptimizePrompt(request)
       await record({ kind: "optimize-changes", request, profileRef, prompt })

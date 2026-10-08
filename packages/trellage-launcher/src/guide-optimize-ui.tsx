@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
 import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.tsx"
 import { OptimizeHistory, OptimizeReviewPanel } from "./guide-optimize-review-ui.tsx"
-import type { OptimizeApproval, OptimizeReview, OptimizeReviewInput } from "./guide-optimize-review.ts"
+import type { OptimizeReviewInput } from "./guide-optimize-review.ts"
+import type { ReviewRun } from "./review-contracts.ts"
+import type { SharedReviewApproval } from "./review-store.ts"
 import {
-  selectedGuideOptimizeChanges,
   type GuideOptimizeScope,
   type GuideOptimizeTarget,
 } from "./guide-optimize-target.ts"
@@ -15,6 +16,7 @@ import {
   type GuideOptimizeTerminalResult,
 } from "./guide-optimize.ts"
 import { text } from "./guide-text.ts"
+import type { ReviewPlanTerminalResult } from "./review-planning.ts"
 
 type Stage =
   | "scope"
@@ -23,6 +25,9 @@ type Stage =
   | "review"
   | "history"
   | "profile"
+  | "action"
+  | "plan"
+  | "plan-confirm"
   | "destination"
   | "confirm"
   | "preview"
@@ -44,15 +49,15 @@ interface OptimizeProps {
   readonly blockedReason?: string | undefined
   readonly terminalBlockedReason?: string | undefined
   readonly onBack: (submitted: boolean) => void
-  readonly onTerminal: (result: GuideOptimizeTerminalResult) => void
+  readonly onTerminal: (result: GuideOptimizeTerminalResult | ReviewPlanTerminalResult) => void
 }
 
 const messageOf = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 const cycle = (index: number, delta: number, count: number): number =>
   count === 0 ? 0 : (index + delta + count) % count
-const reviewContextOf = (review: OptimizeReview): Pick<OptimizeReviewInput, "originalIntent" | "intent"> => ({
-  ...(review.input.originalIntent === undefined ? {} : { originalIntent: review.input.originalIntent }),
-  ...(review.input.intent === undefined ? {} : { intent: review.input.intent }),
+const reviewContextOf = (review: ReviewRun): Pick<OptimizeReviewInput, "originalIntent" | "intent"> => ({
+  ...(review.request.originalIntent === undefined ? {} : { originalIntent: review.request.originalIntent }),
+  ...(review.request.intent === undefined ? {} : { intent: review.request.intent }),
 })
 const movement = (input: string, key: Key): -1 | 1 | undefined => {
   if (key.upArrow || input === "k" || (key.tab && key.shift)) return -1
@@ -72,13 +77,16 @@ const useOptimizeFlow = (props: OptimizeProps) => {
   const [fileIndex, setFileIndex] = useState(0)
   const [profileIndex, setProfileIndex] = useState(0)
   const [destinationIndex, setDestinationIndex] = useState(0)
-  const [review, setReview] = useState<OptimizeReview | undefined>()
+  const [review, setReview] = useState<ReviewRun | undefined>()
   const [reviewContext, setReviewContext] = useState<
     Pick<OptimizeReviewInput, "originalIntent" | "intent"> | undefined
   >()
-  const [approval, setApproval] = useState<OptimizeApproval | undefined>()
+  const [approval, setApproval] = useState<SharedReviewApproval | undefined>()
   const [baseDraft, setBaseDraft] = useState(props.initialBase ?? "")
   const [otherEditorsStopped, setOtherEditorsStopped] = useState(false)
+  const [automatic, setAutomatic] = useState(false)
+  const [actionIndex, setActionIndex] = useState(0)
+  const [planDestination, setPlanDestination] = useState<"terminal" | "worktree">("terminal")
   const [error, setError] = useState<string | undefined>()
   const [preview, setPreview] = useState({ value: "", returnStage: "target" as Stage })
   const [result, setResult] = useState({ message: "", submitted: false })
@@ -126,6 +134,22 @@ const useOptimizeFlow = (props: OptimizeProps) => {
     if (profile === undefined) throw new Error("No eligible Native profile is installed.")
     return profile
   }
+  const openHandoff = async (next: "action" | "plan"): Promise<void> => {
+    if (submission.current) return
+    const controller = new AbortController()
+    submission.current = controller
+    setStage("sending")
+    setError(undefined)
+    try {
+      await props.services.refreshProfiles?.(controller.signal)
+      if (!controller.signal.aborted) setStage(next)
+    } catch (cause) {
+      setError(messageOf(cause))
+      setStage("review")
+    } finally {
+      submission.current = undefined
+    }
+  }
   const request = (): GuideOptimizeRequest => {
     if (review === undefined || approval === undefined)
       throw new Error("Approve saved review findings before continuing.")
@@ -134,13 +158,14 @@ const useOptimizeFlow = (props: OptimizeProps) => {
     if (destination === "terminal" && props.terminalBlockedReason !== undefined)
       throw new Error(props.terminalBlockedReason)
     return {
-      target: review.input.target,
-      paths: review.input.paths,
+      target: review.request.target,
+      paths: review.request.paths,
       approval,
       destination,
       otherEditorsStopped,
-      ...(review.input.originalIntent === undefined ? {} : { originalIntent: review.input.originalIntent }),
-      ...(review.input.intent === undefined ? {} : { intent: review.input.intent }),
+      ...(automatic ? { automatic: true } : {}),
+      ...(review.request.originalIntent === undefined ? {} : { originalIntent: review.request.originalIntent }),
+      ...(review.request.intent === undefined ? {} : { intent: review.request.intent }),
     }
   }
   const attempt = (action: () => void): void => {
@@ -167,6 +192,7 @@ const useOptimizeFlow = (props: OptimizeProps) => {
     setStage("base")
   }
   const execute = async (): Promise<void> => {
+    if (submission.current) return
     const controller = new AbortController()
     submission.current = controller
     setStage("sending")
@@ -194,6 +220,21 @@ const useOptimizeFlow = (props: OptimizeProps) => {
     }
     setStage("result")
   }
+  const plan = async (): Promise<void> => {
+    if (submission.current || !review || !props.services.plan) return
+    const controller = new AbortController()
+    submission.current = controller
+    setStage("sending")
+    try {
+      if (planDestination === "terminal" && props.terminalBlockedReason) throw new Error(props.terminalBlockedReason)
+      const result = await props.services.plan(review, planDestination, controller.signal)
+      if ("action" in result) { props.onTerminal(result); return }
+      setResult({ message: `${result.message}\nPane: ${result.paneId}`, submitted: true })
+    } catch (error) {
+      setResult({ message: `${messageOf(error)}\nNo automatic retry. Inspect the destination before another handoff.`, submitted: false })
+    }
+    setStage("result")
+  }
   const back = (): void => {
     setError(undefined)
     if (stage === "sending") {
@@ -205,8 +246,11 @@ const useOptimizeFlow = (props: OptimizeProps) => {
       review: "target",
       history: loaded.kind === "ready" ? "target" : "scope",
       profile: "review",
+      action: "review",
+      plan: "review",
+      "plan-confirm": "plan",
       destination: "profile",
-      confirm: props.services.destinations.length > 1 ? "destination" : "profile",
+      confirm: automatic ? "action" : props.services.destinations.length > 1 ? "destination" : "profile",
       preview: preview.returnStage,
     }
     const parent = previous[stage]
@@ -218,6 +262,13 @@ const useOptimizeFlow = (props: OptimizeProps) => {
   }
   return {
     props,
+    automatic,
+    setAutomatic,
+    actionIndex,
+    setActionIndex,
+    planDestination,
+    setPlanDestination,
+    plan,
     scopeIndex,
     setScopeIndex,
     loaded,
@@ -246,6 +297,7 @@ const useOptimizeFlow = (props: OptimizeProps) => {
     preview,
     result,
     selectedProfile,
+    openHandoff,
     request,
     attempt,
     appendBase,
@@ -258,6 +310,11 @@ const useOptimizeFlow = (props: OptimizeProps) => {
     refresh: () => {
       if (loaded.kind === "ready") setScope(loaded.target.scope)
       setRevision((value) => value + 1)
+    },
+    resetDelivery: () => {
+      submission.current = undefined
+      setAutomatic(false)
+      setActionIndex(0)
     },
   }
 }
@@ -284,7 +341,7 @@ const FileChoices = ({
         const selected = new Set(flow.paths)
         if (selected.has(entry.path)) selected.delete(entry.path)
         else {
-          if (entry.kind === "symlink" || entry.kind === "unsupported")
+          if (entry.kind === "unsupported")
             throw new Error("Links, submodules, and special files cannot be selected.")
           selected.add(entry.path)
         }
@@ -357,9 +414,10 @@ const targetCommand = (flow: Flow, input: string, key: Key): void => {
   else if (key.return)
     flow.attempt(() => {
       if (flow.loaded.kind !== "ready") throw new Error("Inspect the worktree first.")
-      selectedGuideOptimizeChanges(flow.loaded.target, [...flow.paths])
+      if (flow.paths.size === 0) throw new Error("Select one or more changed files.")
       flow.setReview(undefined)
       flow.setApproval(undefined)
+      flow.resetDelivery()
       flow.setStage("review")
     })
 }
@@ -448,6 +506,46 @@ const destinationLabels: Record<GuideOptimizeRequest["destination"], string> = {
   pane: "New Herdr pane",
   tab: "New Herdr tab",
 }
+const ActionChoices = ({ flow }: { readonly flow: Flow }) => {
+  useInput((input, key) => {
+    if (movement(input, key) !== undefined) flow.setActionIndex((index) => 1 - index)
+    else if (key.return) flow.attempt(() => {
+      flow.setAutomatic(flow.actionIndex === 1)
+      if (flow.actionIndex === 0) { flow.setStage("profile"); return }
+      const profile = flow.props.services.profiles.findIndex((entry) => entry.profile.launcher === "cpx" && entry.profile.profile === "hve")
+      const tab = flow.props.services.destinations.indexOf("tab")
+      if (profile < 0 || tab < 0) throw new Error("Automatic action unavailable: Copilot hve and a Herdr tab are required.")
+      flow.setProfileIndex(profile)
+      flow.setDestinationIndex(tab)
+      flow.setStage("confirm")
+    })
+  })
+  return <Box flexDirection="column" gap={1}>
+    <Text bold>Choose implementation action</Text>
+    <Text>{flow.actionIndex === 0 ? "> " : "  "}Implement approved findings with a Native agent</Text>
+    <Text>{flow.actionIndex === 1 ? "> " : "  "}Plan then implement approved findings with Copilot hve</Text>
+    <Text color="yellow">The automatic action uses full access in a same-worktree Herdr tab. It does not ask again before editing.</Text>
+  </Box>
+}
+const PlanChoices = ({ flow }: { readonly flow: Flow }) => {
+  useInput((input, key) => {
+    if (flow.stage === "plan-confirm") {
+      if (key.return) void flow.plan()
+    } else if (movement(input, key) !== undefined) flow.setPlanDestination((value) => value === "terminal" ? "worktree" : "terminal")
+    else if (key.return) flow.attempt(() => {
+      if (flow.planDestination === "worktree" && !flow.props.services.herdr) throw new Error("Herdr is unavailable.")
+      if (flow.planDestination === "terminal" && flow.props.terminalBlockedReason) throw new Error(flow.props.terminalBlockedReason)
+      flow.setStage("plan-confirm")
+    })
+  })
+  return <Box flexDirection="column" gap={1}>
+    <Text bold>{flow.stage === "plan-confirm" ? "Confirm planning-only Copilot hve" : "Choose planning destination"}</Text>
+    <Text>{flow.planDestination === "terminal" ? "> " : "  "}Current terminal</Text>
+    <Text>{flow.planDestination === "worktree" ? "> " : "  "}Clean new Herdr worktree</Text>
+    <Text>No implementation is approved. Copilot must stop after the plan. Missing coverage remains visible.</Text>
+    <Text>New worktrees require a clean, unchanged source at the reviewed HEAD. Dirty files are not transferred.</Text>
+  </Box>
+}
 const DestinationChoices = ({ flow }: { readonly flow: Flow }) => {
   const choices = flow.props.services.destinations
   useInput((input, key) => {
@@ -493,9 +591,11 @@ const Confirmation = ({ flow }: { readonly flow: Flow }) => {
       <Text bold> Approved findings to implement: {flow.approval?.findings.length ?? 0}</Text>
       <Text>Destination: {flow.props.services.profiles[flow.profileIndex]?.label} (fresh agent)</Text>
       <Text>Placement: {destinationLabels[flow.props.services.destinations[flow.destinationIndex] ?? "terminal"]}</Text>
-      <Text>Worktree: {JSON.stringify(flow.review?.input.target.cwd)}</Text>
+      <Text>Worktree: {JSON.stringify(flow.review?.request.target.cwd)}</Text>
       <Text>Context: repository files and any supplied task. No conversation is captured.</Text>
       <Text color="yellow">This action can change files. It will not stage or commit them.</Text>
+      <Text>Selected paths are instructions, not a filesystem sandbox. Native profile permissions still apply.</Text>
+      {flow.automatic ? <Text color="yellow">Automatic Copilot hve: plan then implement approved findings with full access and no further prompts.</Text> : null}
       <Text bold>
         [{flow.otherEditorsStopped ? "x" : " "}] Confirm other agents and editors have stopped changing this worktree.
       </Text>
@@ -510,6 +610,9 @@ const titles: Record<Stage, string> = {
   review: "Review",
   history: "Saved reviews",
   profile: "Choose a fresh agent",
+  action: "Choose implementation action",
+  plan: "Plan fixes",
+  "plan-confirm": "Confirm planning",
   destination: "Choose destination",
   confirm: "Confirm execution",
   preview: "Review context",
@@ -530,6 +633,9 @@ const footer = (flow: Flow): string => {
     review: "Read-only reviews do not authorize edits. Approval and execution are separate.",
     history: "↑/↓ j/k select · Enter reopen without model calls · Esc back",
     profile: "↑/↓ j/k select · Enter continue · Esc back",
+    action: "↑/↓ j/k select · Enter choose action · Esc back",
+    plan: "↑/↓ j/k select · Enter continue · Esc back",
+    "plan-confirm": "Enter start planning only · Esc back",
     destination: "↑/↓ j/k select · Enter choose destination · Esc back",
     confirm: "Space confirm editors stopped · p request · Enter run · Esc back",
     preview: "PgUp/PgDn read · Esc back",
@@ -561,8 +667,8 @@ const StageView = ({
           flow.setReview(review)
           flow.setReviewContext(reviewContextOf(review))
           flow.setApproval(undefined)
-          flow.setLoaded({ kind: "ready", target: review.input.target })
-          flow.setPaths(new Set(review.input.paths))
+          flow.setLoaded({ kind: "ready", target: review.request.target })
+          flow.setPaths(new Set(review.request.paths))
           flow.setStage("review")
         }}
       />
@@ -570,6 +676,14 @@ const StageView = ({
   if (flow.loaded.kind === "loading") return <Text>Inspecting committed and current worktree changes...</Text>
   if (flow.loaded.kind === "failed")
     return <MarkdownTextViewport value={flow.loaded.message} width={width} height={height} />
+  return <ReadyStageView flow={flow} height={height} width={width} />
+}
+
+const ReadyStageView = ({ flow, height, width }: {
+  readonly flow: Flow
+  readonly height: number
+  readonly width: number
+}) => {
   switch (flow.stage) {
     case "target":
       return <FileChoices flow={flow} height={height} width={width} />
@@ -577,6 +691,11 @@ const StageView = ({
       return <ReviewStage flow={flow} height={height} width={width} />
     case "profile":
       return <ProfileChoices flow={flow} height={height} />
+    case "action":
+      return <ActionChoices flow={flow} />
+    case "plan":
+    case "plan-confirm":
+      return <PlanChoices flow={flow} />
     case "destination":
       return <DestinationChoices flow={flow} />
     case "confirm":
@@ -606,7 +725,7 @@ const ReviewStage = ({
     originalIntent: flow.props.originalIntent,
     intent: flow.props.intent,
   }
-  const input: Omit<OptimizeReviewInput, "reviewerIds"> = flow.review?.input ?? {
+  const input: Omit<OptimizeReviewInput, "reviewerIds"> = flow.review?.request ?? {
     target: flow.loaded.target,
     paths: [...flow.paths],
     ...(context.originalIntent === undefined ? {} : { originalIntent: context.originalIntent }),
@@ -620,12 +739,13 @@ const ReviewStage = ({
       height={height}
       width={width}
       onReview={flow.setReview}
+      onPlan={() => { void flow.openHandoff("plan") }}
       onBack={flow.back}
       onQuit={() => flow.props.onBack(flow.result.submitted)}
       onApproved={(approval) => {
         flow.setApproval(approval)
         flow.setOtherEditorsStopped(false)
-        flow.setStage("profile")
+        void flow.openHandoff("action")
       }}
       onRestart={(savedReview) => {
         if (savedReview !== undefined) {
@@ -633,6 +753,7 @@ const ReviewStage = ({
         }
         flow.setReview(undefined)
         flow.setApproval(undefined)
+        flow.resetDelivery()
         flow.setOtherEditorsStopped(false)
         flow.setStage("target")
         flow.refresh()
@@ -664,7 +785,7 @@ export const GuideOptimizeFlow = (props: OptimizeProps) => {
   return (
     <Box flexDirection="column" paddingX={1} height={Math.max(1, props.rows - 1)}>
       <Text bold color="cyan">
-        Optimize changes · {flow.loaded.kind === "failed" ? "Setup blocked" : titles[flow.stage]}
+        Review changes · {flow.loaded.kind === "failed" ? "Setup blocked" : titles[flow.stage]}
       </Text>
       <Text dimColor wrap="truncate-end">
         {flow.loaded.kind === "ready"

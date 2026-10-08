@@ -1173,43 +1173,68 @@ trx guide --intent "Review this architecture" --model claude-opus-5 --effort med
 trx guide "$(cat /tmp/large-prompt.md)" --ui-variant pager
 ```
 
-For committed and working-tree changes, `trx guide --review` opens a separate review
-selector. Press Ctrl-R at the empty `trx guide` intent screen to open the
-same review flow without discarding a draft. The direct `--review` path does
-not use profile matching or Prompt Master. Choose Ponytail
-Review to find removable complexity, Fleet Review for six specialist passes,
-Matt Pocock Code Review for a Standards pass, or any combination.
+For committed and working-tree changes, `trx guide --review` opens **Review
+changes**. `trx guide --optimize` opens the same flow with **First principles**
+and **Behavior preservation** selected; `--review` starts with no checks selected.
+Both entries offer all six checks: those two built-in checks, **Improve codebase
+architecture**, **Ponytail Review**, **Fleet Review**, and **Matt Pocock Code
+Review**. Select any compatible combination. The two flags cannot be combined.
+Both accept `--base`, `--intent`, `--model`, and `--effort`; model overrides
+also apply to guarded Fleet workers, not to the eventual Native profile.
+
+Guide's pinned `o` action, Ctrl-R at an empty intent screen, and Herdr's
+**Review changes** popup open this same flow. Returning to Guide preserves its
+draft, goals, forks, and queued jobs. The popup uses the invoking worktree.
+Direct entries do not use profile matching, Prompt Master, or Sandbox discovery.
+Optional Native profiles are discovered only when a handoff is requested;
+a missing implementation profile does not block review.
+Opening setup or history makes no model calls and downloads no skills.
+
+Choose the scope and files, select checks, then confirm model use. Consent shows
+the effective models, workers, sharing scope, and bounded follow-up work.
+First principles and Behavior preservation use built-in prompts; architecture
+adapts managed architecture skills. Ponytail looks for removable complexity,
+Fleet runs six specialist passes, and Matt runs a Standards pass.
 The current Guide flow has no verified spec input, so Matt runs one Standards
 worker and explicitly marks the Spec axis unavailable. It does not invent
 requirements or claim two workers ran. If a selected skill is missing from an
 existing Native cache, Review refreshes the approved shared skill bundle once
 before it starts; unsafe cache content and refresh failures stop the run.
-Fleet uses Claude Opus 5.5, GPT-6 Sol, and Grok 4.7 (two reviewers per
+Fleet defaults to Claude Opus 5.5, GPT-6 Sol, and Grok 4.7 (two reviewers per
 model). Its guarded worker hook supplies each approved lens with the frozen
 diff and pins the selected model; unknown or duplicate workers are denied.
-The screen shows this worktree's local `origin/main` tracking ref, the common-ancestor review
-base, and HEAD, and counts changed files. If main moved ahead of or diverged
-from the worktree, review excludes commits that exist only on main; no
-rebase is needed. Review does not contact the remote or require a fresh fetch.
-The confirmed local tracking ref and working-tree snapshot are rechecked before model work.
-Detached HEAD is supported and displayed with the captured commit's short SHA;
-other Git failures still stop preparation.
-Changed files include staged, unstaged, and untracked (non-ignored) files. A branch with
-no new commits can still be reviewed if its working tree has changes. Select
-with Space and press Enter once to start the selected reviews. Enter with no
-selection does nothing. Escape cancels a running review. A master reviewer
-combines completed reports; a partial or failed review cannot become an
-all-clear. Reports are saved outside the checkout as Markdown and JSON.
+Choose committed plus uncommitted changes with a detected local comparison base,
+or uncommitted changes only. Press `b` to override the base. Comparisons use the
+merge base, so commits only on the base branch stay out of scope. No fetch or
+rebase is required. Detached HEAD and repositories without an initial commit
+are supported where the selected checks permit them.
+Staged, unstaged, deleted, and non-ignored untracked files can be selected.
+Use Space to include or exclude files. An empty scope does not expand to the
+repository or silently select the last commit. Skill-only reviews can include
+binary patches and link-target metadata without following links; built-in and
+architecture checks require supported text. Incompatible selections require an
+explicit change before starting.
+The confirmed target is rechecked before model work. Escape cancels a run.
+All checks use projections of one frozen target, with one run ID, one history
+record, and one combined synthesis. Built-in proposals receive a bounded
+challenge round. Ponytail and Matt reports receive structured extraction;
+their original reports remain available. Ungrounded findings stay read-only.
+A partial or failed review cannot become an all-clear or authorize edits.
 Matt's Standards pass uses documented standards from the review base, so
 committed or uncommitted changes under review cannot set their own rules.
-The target screen shows the captured patch size in bytes and KiB beside the
-changed-file count. This is the diff sent to each selected review, not the
-total size of the source files or the combined cost of parallel workers.
+Evidence limits depend on the selected checks. Built-in and architecture checks
+include related tracked source as context; skill-only checks do not acquire
+that broader source snapshot.
 Router contract fixtures are ignored so an interrupted test does not add a
-copied source tree to the review. Other untracked files remain in scope; a
-real diff above 384 KiB still stops rather than being truncated.
-Capture accepts at most 1,024 untracked paths and has a 60-second total deadline;
-each Git command also retains its 15-second ceiling. Untracked symlinks are
+copied source tree to the review. Other untracked files remain in scope.
+The former 384 KiB skill-patch limit is removed. Capture retains a 32 MB
+local storage bound, while model input follows discovered context, prompt,
+and output limits. Net and staged/unstaged views share frozen sources.
+Paged reads and fresh evidence batches cover larger inputs; cross-file checks
+combine the results. Missing coverage still blocks completion, without truncation.
+Large reviews can use more calls and time; consent shows the batch request ceiling.
+Skill evidence capture accepts at most 1,024 untracked paths and has a 60-second
+total deadline; each Git command also retains its 15-second ceiling. Untracked symlinks are
 captured as link-target text without following their targets. Unsupported
 special entries stop capture.
 Selected skills are frozen within a 30-second pass, with at most 1,024 entries
@@ -1258,24 +1283,26 @@ returned to the Fleet coordinator with the exact reason, and a failed run
 retains that reason even if a separate worker-policy error also occurred.
 Other Fleet fields, worker outcomes, counts, and findings must still pass
 validation. Up to two rejected JSON attempts are retained there for diagnosis.
-While reviews run, Overview shows the verified status of each selected
-workflow. Press Tab or Shift+Tab (or use the left/right arrows) to switch
-between Overview and each review's live output. PgUp/PgDn scroll the selected
-pane. Fleet's specialist events stay inside the Fleet tab. When synthesis
-starts, it gets its own tab; after completion, the default Synthesis tab
-shows the combined report. Each review tab then shows its saved full report.
+While reviews run, Overview shows the status of each selected check.
+Use Left/Right to switch between Overview, check reports, and Synthesis.
+PgUp/PgDn scroll the selected report. Output updates preserve the selected tab
+and scroll position. Fleet's specialist events stay inside the Fleet tab.
+After completion, inspect findings and open the full saved reports.
 Fenced `diff` blocks in saved Review reports display added lines in green,
 removed lines in red, and hunk headers in the info color; line prefixes
 remain visible, while the fence markers are hidden. Other fenced code and
 the saved Markdown files are unchanged.
-An animated spinner replaces the running label in the tab, Overview, and
-live-output heading. Status labels distinguish failed and partial reviews from complete ones;
-live model text is not a verified report. The master's structured JSON is
-not streamed to the screen. Each run gets a new private `.trx-review-<id>`
-directory beside the shared Native skill cache, outside the Git worktree.
-Earlier reports remain available but are never added to the next captured
-patch; no cleanup between runs is needed. Remove an old run directory only
-after you no longer need its evidence.
+Status labels distinguish failed and partial reviews from complete ones;
+live model text is not a verified report. Only the live display buffer is
+limited; saved reports retain full content. Version-2 records, reports, and
+frozen evidence are saved under
+`<absolute-worktree-git-directory>/trellage-reviews/`, outside tracked files,
+with private directories and atomic mode-0600 files. Press `h` from scope or
+target selection to reopen history without model calls. Interrupted runs remain
+inspectable but do not resume automatically.
+Legacy Optimize history under `trellage-optimize-reviews` retains its original
+validation and approval path. Existing `.trx-review-*` reports remain where
+they are; they are not migrated or treated as authority to edit.
 Untracked dated Fleet reports written manually under `docs/review/` are
 ignored as generated output too. Tracked reports and other untracked files
 remain part of the review.
@@ -1286,35 +1313,35 @@ allows at most two rounds; the second needs new evidence from the first.
 Questions, replies, master decisions, and unresolved disputes are saved beside
 the reports. An unresolved challenge makes the combined review incomplete;
 a failed reply cannot be marked resolved or become an all-clear.
-After the report, press `c` to start Copilot `hve` in plan mode in this terminal.
-Direct Review checks that this profile exists before running any reviews.
-The current-terminal handoff uses `mise run trx -- run copilot hve -- --plan -i`
+After the report, select recommended findings with Space and save approval
+before choosing **Implement approved findings**. Choose an eligible Native
+Copilot, Codex, or Claude profile, then confirm launch in the current terminal
+or a same-worktree Herdr pane/tab. Nothing starts approved. Every editing action
+checks saved approval, fresh target and context, profile readiness, other
+writers, the worktree lock, and a durable one-use launch reservation.
+
+Alternatively, press `l` for **Plan fixes** with Copilot `hve`, without edit
+approval. Planning can use the current terminal or a clean new Herdr worktree
+at the unchanged reviewed HEAD. Incomplete reports stay explicitly incomplete.
+Dirty files are not copied to a new worktree.
+The current-terminal planning handoff uses `mise run trx -- run copilot hve -- --plan -i`
 from a `mise run trx` worktree session, so the router repairs stale source
 runtime readiness before launch. Installed sessions use
 `trx run copilot hve -- --plan -i` instead of invoking the launcher path directly.
-When Guide has a working Herdr context, press `t` to start Copilot in a new
-tab on the same worktree. This handoff uses
-`trx run copilot hve --plan --mode autopilot --allow-all --no-ask-user`: Copilot starts
-with a plan, auto-approves it, and then implements verified fixes without
-asking for approval. It stops before editing if HEAD or the changed-file scope
-differs from the report.
-Press `w` for a new worktree from the reviewed HEAD; that handoff stays in
-plan mode. Each choice needs a second Enter confirmation; exiting the report
-does not launch anything. A new
-worktree is unavailable when the reviewed snapshot has uncommitted changes,
-because those changes would not follow it. A changed or dirty source
-worktree also blocks that handoff. Plan-mode continuations ask Copilot to check
+**Plan then implement approved findings** uses Copilot `hve` with full access
+in a same-worktree Herdr tab. It requires saved finding approval and a separate
+automatic-execution confirmation. It is not a planning-only action.
+Each handoff needs confirmation; exiting the report launches nothing.
+Queued Guide work can block taking over the current terminal without blocking
+read-only review or an eligible Herdr destination. Native execution is not
+restricted to selected files by a filesystem sandbox.
+Plan-mode continuations ask Copilot to check
 the reviewed snapshot against the current worktree, triage the findings, and
 propose prioritized fixes and checks without editing files.
-The live output is bounded; read the saved reports in the tabs or on disk for
-full findings. If a run stops, Review shows the underlying error and retains the
-workspace path. Each completed or failed reviewer has a
-`work/docs/review/<review-id>-result.json` file there; the master's raw reply
-is saved as `master-initial-response.txt` (and `master-final-response.txt`
-after clarification) when available. If the initial master reply fails
-validation, one corrected reply is saved as `master-repair-response.txt`.
-A failed master does not produce a
-combined report or an all-clear.
+If a run stops, Review shows the underlying error and retains partial reports
+and evidence in history. Restart returns through target selection and new
+consent. A failed synthesis cannot authorize implementation or produce an
+all-clear. An uncertain launch is never resent automatically.
 Selected skill content is frozen for a run. `trx skills update` refreshes the
 Native skill cache between runs; Review also refreshes it when a selected skill
 is missing from an otherwise valid cache.

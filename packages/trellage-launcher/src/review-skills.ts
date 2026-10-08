@@ -4,7 +4,18 @@ import { chmod, lstat, mkdir, open, opendir, realpath, rmdir, unlink, writeFile 
 import path from "node:path"
 import { bunArguments, bunExecutable, sourceEnvironment } from "@trellage/runtime"
 import type { CommandRunner } from "./guide-launch.ts"
-import type { ReviewDefinition } from "./review-catalog.ts"
+import { reviewCatalog, type ReviewCheckAssignment, type ReviewDefinition } from "./review-catalog.ts"
+import {
+  CopilotReviewProvider,
+  type ReviewClientFactory,
+  type ReviewResult,
+  type ReviewSynthesis,
+} from "./copilot-review-provider.ts"
+import { optimizeDigest } from "./guide-optimize-evidence.ts"
+import type { OptimizeModelCall } from "./guide-optimize-review.ts"
+import type { ReviewArtifact, ReviewCheckResult, ReviewEvent, ReviewRun } from "./review-contracts.ts"
+import { extractReviewFindings, normalizeFleet } from "./review-normalize.ts"
+import { planReviewEvidence } from "./review-evidence.ts"
 
 export interface ReviewSkillOptions {
   readonly managerPath: string
@@ -62,7 +73,13 @@ const bytes = async (file: string, checkBudget: () => void = () => {}): Promise<
   }
 }
 
-const freeze = async (source: string, target: string, signal: AbortSignal, budget: FreezeBudget, depth = 0): Promise<void> => {
+const freeze = async (
+  source: string,
+  target: string,
+  signal: AbortSignal,
+  budget: FreezeBudget,
+  depth = 0,
+): Promise<void> => {
   const guard = (): void => check(signal, budget, source)
   guard()
   if (++budget.entries > 1024) throw new Error(`Installed review skills exceed 1024 entries: ${source}`)
@@ -134,7 +151,10 @@ const dispose = async (root: string): Promise<void> => {
   try {
     await remove(root)
   } catch (error) {
-    throw new CleanupError(`Review cleanup failed; retained owned path ${root}: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+    throw new CleanupError(
+      `Review cleanup failed; retained owned path ${root}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    )
   }
 }
 
@@ -156,7 +176,8 @@ const stageRoot = async (options: ReviewSkillOptions, repository: string): Promi
     throw new Error("Review staging must be outside the reviewed repository.")
   }
   const cache = path.resolve(options.cachePath)
-  if (cache === repo || cache.startsWith(`${repo}${path.sep}`)) throw new Error("Review cache must be outside the repository.")
+  if (cache === repo || cache.startsWith(`${repo}${path.sep}`))
+    throw new Error("Review cache must be outside the repository.")
   return parent
 }
 
@@ -176,10 +197,12 @@ const stageSkill = async (
   const content = (await bytes(path.join(source, "SKILL.md"), guard)).toString("utf8")
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content)?.[1] ?? ""
   const names = [...frontmatter.matchAll(/^name:[ \t]*['"]?([a-z][a-z0-9-]*)['"]?[ \t]*$/gmu)]
-  if (names.length !== 1 || names[0]?.[1] !== review.skill) throw new Error(`Invalid installed review skill: ${review.skill}.`)
+  if (names.length !== 1 || names[0]?.[1] !== review.skill)
+    throw new Error(`Invalid installed review skill: ${review.skill}.`)
   const directory = path.join(skillsRoot, review.skill)
   await freeze(source, directory, signal, budget)
   const references = new Map<string, string>()
+  references.set(`${review.skill}/SKILL.md`, content)
   if (review.kind === "two-axis") {
     const frozen = (await bytes(path.join(directory, "SKILL.md"), guard)).toString("utf8")
     if (frozen !== content) throw new Error("Installed review skill changed during staging.")
@@ -237,14 +260,33 @@ export const prepareReviewWorkspace = async (
     if (signal.aborted) throw signal.reason
     const bundle = path.join(root, "bundle")
     const manage = async (command: "ensure" | "update"): Promise<void> => {
-      await options.runner.run(bunExecutable(), bunArguments(options.managerPath, [
-        command, "--bundle", "native-common", "--catalog", options.catalogPath,
-        "--cache", options.cachePath, ...(command === "ensure" ? ["--target", bundle] : []),
-      ]), {
-        cwd: root, signal, timeoutMs: 180_000,
-        env: sourceEnvironment({ ...process.env, TMPDIR: root, TEMP: root, TMP: root, NODE_DISABLE_COMPILE_CACHE: "1" }),
-      })
+      await options.runner.run(
+        bunExecutable(),
+        bunArguments(options.managerPath, [
+          command,
+          "--bundle",
+          "native-common",
+          "--catalog",
+          options.catalogPath,
+          "--cache",
+          options.cachePath,
+          ...(command === "ensure" ? ["--target", bundle] : []),
+        ]),
+        {
+          cwd: root,
+          signal,
+          timeoutMs: 180_000,
+          env: sourceEnvironment({
+            ...process.env,
+            TMPDIR: root,
+            TEMP: root,
+            TMP: root,
+            NODE_DISABLE_COMPILE_CACHE: "1",
+          }),
+        },
+      )
     }
+
     await manage("ensure")
     const skillsRoot = path.join(root, "skills")
     await mkdir(skillsRoot, { mode: 0o700 })
@@ -279,9 +321,208 @@ export const prepareReviewWorkspace = async (
     try {
       await dispose(root)
     } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError],
-        `Review skills unavailable or unsafe: ${String(error)}; ${String(cleanupError)}`)
+      throw new AggregateError(
+        [error, cleanupError],
+        `Review skills unavailable or unsafe: ${String(error)}; ${String(cleanupError)}`,
+      )
     }
-    throw new Error(`Review skills unavailable or unsafe: ${error instanceof Error ? error.message : String(error)}. Run \`trx skills update\` if needed.`, { cause: error })
+    throw new Error(
+      `Review skills unavailable or unsafe: ${error instanceof Error ? error.message : String(error)}. Run \`trx skills update\` if needed.`,
+      { cause: error },
+    )
+  }
+}
+
+export interface SkillReviewOperationOptions {
+  readonly run: ReviewRun
+  readonly skills: ReviewSkillOptions
+  readonly signal: AbortSignal
+  readonly clientFactory?: ReviewClientFactory
+  readonly call: OptimizeModelCall
+  readonly onCall: () => void
+  readonly onEvent: (event: ReviewEvent) => void
+  readonly retain: (artifacts: ReadonlyArray<ReviewArtifact>, result?: ReviewCheckResult) => Promise<void>
+  readonly externalReplies: ReadonlyMap<string, (prompt: string, signal: AbortSignal) => Promise<string>>
+  readonly onCleanup: () => void
+}
+
+const skillArtifact = (checkId: ReviewArtifact["checkId"], content: string, suffix = "report"): ReviewArtifact => ({
+  id: `${checkId}:${suffix}`,
+  checkId,
+  name: `${checkId}-${suffix}.md`,
+  content,
+  digest: optimizeDigest(content),
+})
+const skillError = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+/** Owns the provider and its files until every worker has settled and evidence is retained. */
+export class SkillReviewOperation {
+  private workspace: ReviewWorkspace | undefined
+  private provider: CopilotReviewProvider | undefined
+  private readonly reports: ReviewResult[] = []
+  readonly assignments: ReadonlyArray<ReviewCheckAssignment>
+
+  constructor(private readonly options: SkillReviewOperationOptions) {
+    this.assignments = options.run.request.checks.filter((check) =>
+      reviewCatalog.some((entry) => entry.id === check.id),
+    )
+  }
+
+  async execute(body: (operation: SkillReviewOperation) => Promise<void>): Promise<void> {
+    let failure: unknown
+    try {
+      await this.prepare()
+      await body(this)
+    } catch (error) {
+      failure = error
+    }
+    if (!failure) this.options.onCleanup()
+    failure = await this.finish(failure)
+    if (failure) throw failure
+  }
+
+  private async prepare(): Promise<void> {
+    const { run, signal } = this.options
+    const patch = run.evidence.patch
+    if (!patch?.sourceIds) throw new Error("Selected skill checks lack a frozen patch manifest.")
+    this.workspace = await prepareReviewWorkspace(
+      this.options.skills,
+      this.assignments.map((assignment) => reviewCatalog.find((entry) => entry.id === assignment.id)!),
+      run.request.target.cwd,
+      signal,
+    )
+    const references = [...this.workspace.references].map(([name, content]) => {
+      const check =
+        this.assignments.find((assignment) =>
+          name.startsWith(`${reviewCatalog.find((entry) => entry.id === assignment.id)!.skill}/`),
+        ) ?? this.assignments.find((assignment) => assignment.id === "fleet")
+      if (!check) throw new Error("Frozen skill reference lacks a selected check.")
+      return skillArtifact(check.id, content, `skill-${name.replaceAll("/", "-")}`)
+    })
+    await this.options.retain(references)
+    const projection = planReviewEvidence(run.request, run.evidence, this.assignments[0]!.id)
+    this.provider = new CopilotReviewProvider(
+      this.workspace,
+      patch,
+      this.options.clientFactory,
+      undefined,
+      (checkId, output) =>
+        this.options.onEvent({
+          kind: output.kind,
+          checkId,
+          text: output.text,
+          ...(output.source ? { source: output.source } : {}),
+        }),
+      {
+        assignments: run.request.checks,
+        coordinator: run.request.coordinator,
+        evidence: projection.evidence,
+        externalReplies: this.options.externalReplies,
+        onCall: this.options.onCall,
+      },
+    )
+  }
+
+  async review(assignment: ReviewCheckAssignment): Promise<void> {
+    const definition = reviewCatalog.find((entry) => entry.id === assignment.id)!
+    this.options.onEvent({ kind: "status", checkId: assignment.id, status: "running" })
+    const report = await this.provider!.review({ ...definition, model: assignment.model.model }, this.options.signal)
+    const saved = skillArtifact(assignment.id, report.fleet?.reportMarkdown ?? report.raw)
+    await this.options.retain([saved])
+    const result = await this.normalize(report, assignment, saved.id)
+    this.reports.push({ ...report, sourceFindings: result.findings, ...(result.error ? { error: result.error } : {}) })
+    await this.options.retain([], result)
+    this.options.onEvent({ kind: "status", checkId: assignment.id, status: result.status })
+  }
+
+  private async normalize(
+    report: ReviewResult,
+    assignment: ReviewCheckAssignment,
+    reportId: string,
+  ): Promise<ReviewCheckResult> {
+    const { run, signal } = this.options
+    const initial: ReviewCheckResult = {
+      id: assignment.id,
+      reportId,
+      status: report.error ? "failed" : "complete",
+      findings: [],
+      limitations:
+        assignment.id === "matt-code-review" ? ["Spec skipped — no verified spec available. Only Standards ran."] : [],
+      ...(report.error ? { error: report.error } : {}),
+    }
+    if (report.error) return initial
+    try {
+      if (report.fleet) {
+        const findings = normalizeFleet(report, assignment, run.request, run.evidence)
+        await this.options.retain([skillArtifact(assignment.id, JSON.stringify(report.fleet, null, 2), "json")])
+        return {
+          ...initial,
+          findings,
+          status:
+            report.fleet.status === "partial" || report.fleet.counts.confirmedTotal > report.fleet.findings.length
+              ? "partial"
+              : "complete",
+        }
+      }
+      const extraction = await extractReviewFindings(
+        report,
+        assignment,
+        run.request,
+        run.evidence,
+        signal,
+        (text) => this.options.onEvent({ kind: "activity", checkId: assignment.id, text }),
+        this.options.call,
+      )
+      return {
+        ...initial,
+        findings: extraction.findings,
+        status: extraction.complete ? "complete" : "partial",
+        limitations: [...initial.limitations, ...extraction.limitations],
+      }
+    } catch (error) {
+      return { ...initial, status: "failed", error: `Finding normalization failed: ${skillError(error)}` }
+    }
+  }
+
+  async synthesize(builtin: ReadonlyArray<ReviewResult>): Promise<{
+    markdown: string
+    result: ReviewSynthesis
+    debateIncomplete: boolean
+  }> {
+    await this.capture()
+    const markdown = await this.provider!.synthesize([...this.reports, ...builtin], this.options.signal)
+    const result = this.provider!.synthesisResult
+    if (!result) throw new Error("Missing structured synthesis.")
+    return { markdown, result, debateIncomplete: this.provider!.debateIncomplete }
+  }
+
+  private async capture(): Promise<void> {
+    if (this.provider) await this.options.retain(await this.provider.captureArtifacts())
+  }
+
+  private async finish(initialFailure: unknown): Promise<unknown> {
+    let failure = initialFailure
+    let closed = true
+    try {
+      await this.provider?.close()
+    } catch (error) {
+      closed = false
+      failure = new AggregateError(
+        [...(failure ? [failure] : []), error],
+        `Review cleanup failed: ${skillError(error)}`,
+      )
+    }
+    if (this.workspace) {
+      try {
+        await this.capture()
+        if (closed) await this.workspace.dispose()
+      } catch (error) {
+        failure = new AggregateError(
+          [...(failure ? [failure] : []), error],
+          `Report persistence failed: ${skillError(error)}`,
+        )
+      }
+    }
+    return failure
   }
 }

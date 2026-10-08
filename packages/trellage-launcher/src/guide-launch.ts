@@ -44,13 +44,14 @@ const guideCaptureConfidences: ReadonlyArray<GuideCaptureConfidence> = [
   "user-curated",
 ]
 
-const appendTruncatedChunk = (target: Array<Buffer>, buffer: Buffer, currentLength: number): number => {
+const appendTruncatedChunk = (target: Array<Buffer>, buffer: Buffer, currentLength: number,
+  limit = commandOutputLimitBytes): number => {
   target.push(buffer)
   let boundedLength = currentLength + buffer.length
-  while (boundedLength > commandOutputLimitBytes) {
+  while (boundedLength > limit) {
     const first = target[0]
     if (first === undefined) return 0
-    const excess = boundedLength - commandOutputLimitBytes
+    const excess = boundedLength - limit
     if (first.length <= excess) {
       target.shift()
       boundedLength -= first.length
@@ -141,6 +142,8 @@ export interface CommandRunOptions {
   readonly terminationGraceMs?: number
   readonly signal?: AbortSignal
   readonly outputOverflow?: "terminate" | "truncate"
+  /** Explicit resource bound for large read-only captures; the default remains 1 MiB. */
+  readonly outputLimitBytes?: number
   readonly stdin?: string
   /**
    * Called with each raw chunk as the child writes it, before any buffering or
@@ -815,6 +818,12 @@ const commandInputFailure = (
   args: ReadonlyArray<string>,
   options?: CommandRunOptions,
 ): CommandRunnerError | undefined => {
+  if (options?.outputLimitBytes !== undefined &&
+    (!Number.isSafeInteger(options.outputLimitBytes) || options.outputLimitBytes < 1 || options.outputLimitBytes > 32_000_000)) {
+    return new CommandRunnerError({
+      kind: "spawn-failed", executable, args, message: "Command output resource limit must be between 1 and 32000000 bytes.",
+    })
+  }
   if (options?.signal?.aborted) {
     return new CommandRunnerError({
       kind: "aborted", executable, args, message: `command aborted before start: ${executable}`,
@@ -911,12 +920,13 @@ export const createNodeCommandRunner = (): CommandRunner => ({
         if (terminationKind === "output-limit") return
         const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk
         const nextLength = (stream === "stdout" ? stdoutLength : stderrLength) + buffer.length
-        if (nextLength > commandOutputLimitBytes) {
+        if (nextLength > (options?.outputLimitBytes ?? commandOutputLimitBytes)) {
           if (options?.outputOverflow !== "truncate") {
             requestTermination("output-limit", stream)
             return
           }
-          const boundedLength = appendTruncatedChunk(target, buffer, stream === "stdout" ? stdoutLength : stderrLength)
+          const boundedLength = appendTruncatedChunk(target, buffer, stream === "stdout" ? stdoutLength : stderrLength,
+            options?.outputLimitBytes ?? commandOutputLimitBytes)
           if (stream === "stdout") stdoutLength = boundedLength
           else stderrLength = boundedLength
           return

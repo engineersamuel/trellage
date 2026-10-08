@@ -6,17 +6,24 @@ import { parseProfileGuide } from "@trellage/guide-core"
 import { parseGuideCatalog } from "../src/guide-catalog.ts"
 import { createNodeCommandRunner, type CommandRunner, type CommandSpec } from "../src/guide-launch.ts"
 import * as launchTransport from "../src/guide-launch.ts"
+import * as planningReadiness from "../src/guide-preflight.ts"
+import { executeReviewPlanTerminal, executeReviewPlanWorktree } from "../src/review-planning.ts"
 import {
   buildGuideOptimizePrompt,
   createGuideOptimizeServices,
   executeGuideOptimizeTerminal,
+  runGuideOptimizeReview,
   type GuideOptimizeDependencies,
   type GuideOptimizeRequest,
 } from "../src/guide-optimize.ts"
 import { ProfileReadinessKind } from "../src/guide-preflight.ts"
 import { fixtureProfile, guideSource } from "./fixtures/guide-integration-data.ts"
 import { fixtureOptimizeModel } from "./fixtures/guide-optimize-model.ts"
-import { OptimizeReviewStore } from "../src/guide-optimize-store.ts"
+import { SharedReviewStore as OptimizeReviewStore } from "../src/review-store.ts"
+import { OptimizeReviewStore as LegacyStore } from "../src/guide-optimize-store.ts"
+import { resolveGuideModelRouting } from "../src/guide-api.ts"
+import { optimizeApproval, optimizeReviewDocument, sharedReviewDocument } from "../src/guide-optimize-review.ts"
+import { reviewAuthority } from "../src/review-view-model.ts"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -60,7 +67,7 @@ const catalog = parseGuideCatalog(
   }),
 )
 
-const fixture = async () => {
+const fixture = async (namespace: "legacy" | "shared" = "shared") => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), "guide-optimize-execution-")))
   roots.push(root)
   const realRunner = createNodeCommandRunner()
@@ -135,7 +142,9 @@ const fixture = async () => {
       originalIntent: "  Preserve behavior.\r\nDo not remove the retry bound.  ",
       intent: "Approved goal: at most three attempts.",
     }
-    const review = await services.review(input, signal, () => {})
+    const review = namespace === "shared"
+      ? await services.review(input, signal, () => {})
+      : await runGuideOptimizeReview(options, resolveGuideModelRouting({}, {}), input, signal, () => {})
     if (review.status !== "complete") throw new Error(review.error ?? "Review did not complete.")
     const approval = await services.approve(review.id, ["first-principles:1"], signal)
     return { ...input, approval, destination: "pane", otherEditorsStopped: true }
@@ -161,6 +170,143 @@ const fixture = async () => {
 }
 
 describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
+  it.each(["legacy", "shared"] as const)(
+    "keeps %s history, display, planning and one-use execution bound to its saved authority", async (namespace) => {
+      const f = await fixture(namespace)
+      const id = f.request.approval.reviewId
+      const authority = await reviewAuthority(f.request.target.gitDirectory, id)
+      expect(authority.namespace).toBe(namespace)
+      expect(await f.services.history(f.signal)).toEqual(expect.arrayContaining([expect.objectContaining({ id })]))
+      const reopened = await f.services.readReview(id, f.signal)
+      expect(reopened.schemaVersion).toBe(2)
+      expect(reopened).not.toHaveProperty("shared")
+      expect(reopened).not.toHaveProperty("reports")
+      if (namespace === "legacy") {
+        const original = await new LegacyStore(f.request.target.gitDirectory).read(id)
+        expect(f.request.approval.reviewDigest).toBe(optimizeApproval(original, original.approvedIds).reviewDigest)
+        expect(sharedReviewDocument(reopened)).toBe(optimizeReviewDocument(original))
+      } else {
+        expect(reopened).toEqual(await new OptimizeReviewStore(f.request.target.gitDirectory).read(id))
+        expect(reopened.artifacts.some((artifact) => artifact.id === "synthesis:legacy-document")).toBe(false)
+      }
+      const services = createGuideOptimizeServices({
+        ...f.options, catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
+      })
+      const result = await services.plan!(reopened, "terminal", f.signal)
+      if (!("action" in result)) throw new Error("Expected terminal planning.")
+      expect(result.namespace).toBe(namespace)
+      const readiness = vi.spyOn(planningReadiness, "checkSelectedProfileReadiness").mockResolvedValue({
+        kind: ProfileReadinessKind.Ready, summary: "Ready",
+      })
+      const interactive = vi.spyOn(launchTransport, "runInteractiveTerminalCommand").mockResolvedValue()
+      try {
+        await executeReviewPlanTerminal(result, f.runner)
+        expect(interactive.mock.calls[0]![0].args.join(" "))
+          .toContain(namespace === "legacy" ? "trellage-optimize-reviews" : "trellage-reviews")
+      } finally { readiness.mockRestore(); interactive.mockRestore() }
+      const tampered = { ...f.request.approval,
+        findings: f.request.approval.findings.map((finding) => ({ ...finding, proposal: "Unauthorized change" })) }
+      await expect(f.services.execute({ ...f.request, approval: tampered }, "native:cpx/reviewer", f.signal))
+        .rejects.toThrow(/approval/iu)
+      expect(f.launch).not.toHaveBeenCalled()
+      await f.services.execute(f.request, "native:cpx/reviewer", f.signal)
+      await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow(/launch|execution/u)
+      expect(f.launch).toHaveBeenCalledOnce()
+      expect((await f.services.readReview(id, f.signal)).execution).toBe("launched")
+    },
+  )
+
+  it("rejects ambiguous record IDs and never falls back from a malformed shared record", async () => {
+    const f = await fixture("legacy")
+    const id = f.request.approval.reviewId
+    const directory = f.request.target.gitDirectory
+    const shared = await f.services.review({ ...f.request, reviewerIds: ["first-principles"] }, f.signal, () => {})
+    const sharedDirectory = path.join(directory, "trellage-reviews")
+    const store = new OptimizeReviewStore(directory)
+    await store.save({ ...shared, id, status: "running", results: [], artifacts: [], challenges: [],
+      decisions: [], approvedIds: [], execution: "not-started", synthesisStatus: "queued" })
+    await expect(f.services.readReview(id, f.signal)).rejects.toThrow("ambiguous")
+    expect((await new LegacyStore(directory).read(id)).schemaVersion).toBe(1)
+    await rm(path.join(directory, "trellage-optimize-reviews", `${id}.snapshot.json`))
+    await expect(f.services.readReview(id, f.signal)).rejects.toThrow("ambiguous")
+    await rm(path.join(sharedDirectory, `${id}.json`))
+    await expect(f.services.readReview(id, f.signal)).rejects.toMatchObject({ code: "ENOENT" })
+    await writeFile(path.join(sharedDirectory, `${shared.id}.json`), "{invalid", { mode: 0o600 })
+    await expect(f.services.readReview(shared.id, f.signal)).rejects.toThrow()
+  })
+
+  it("plans incomplete reports in the terminal but never copies dirty changes to a new worktree", async () => {
+    const f = await fixture()
+    const store = new OptimizeReviewStore(f.request.target.gitDirectory)
+    const saved = await store.read(f.request.approval.reviewId)
+    const incomplete = { ...saved, id: crypto.randomUUID(), status: "incomplete" as const, approvedIds: [],
+      error: "One check did not finish." }
+    await store.save({ ...incomplete, status: "running" })
+    await store.save(incomplete)
+    const services = createGuideOptimizeServices({
+      ...f.options, catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
+    })
+    const result = await services.plan!(incomplete, "terminal", f.signal)
+    if (!("action" in result)) throw new Error("Expected a terminal planning handoff.")
+    const readiness = vi.spyOn(planningReadiness, "checkSelectedProfileReadiness").mockResolvedValue({
+      kind: ProfileReadinessKind.Ready, summary: "Ready",
+    })
+    const interactive = vi.spyOn(launchTransport, "runInteractiveTerminalCommand").mockResolvedValue()
+    try {
+      await executeReviewPlanTerminal(result, f.runner)
+      const command = interactive.mock.calls[0]![0]
+      expect(command.args).toContain("--plan")
+      expect(command.args.join(" ")).toContain("Plan fixes only. Do not edit")
+      expect(command.args.join(" ")).toContain("incomplete")
+      expect(command.args).not.toContain("--allow-all")
+      await expect(executeReviewPlanWorktree(result, f.runner, f.options.context, f.signal))
+        .rejects.toThrow("clean source")
+      expect(f.calls.filter((call) => call.executable === "herdr")).toEqual([])
+      expect((await store.read(incomplete.id)).execution).toBe("not-started")
+    } finally {
+      readiness.mockRestore()
+      interactive.mockRestore()
+    }
+  })
+
+  it("does not discover optional Native profiles until a handoff is requested", async () => {
+    const discover = vi.fn<CommandRunner["run"]>(async () => ({
+      stdout: JSON.stringify(catalog), stderr: "", exitCode: 0,
+    }))
+    const services = createGuideOptimizeServices({
+      cwd: process.cwd(), context: null, runner: { run: discover },
+      catalog: { ...catalog, native: [] },
+      env: { TRELLAGE_REVIEW_PROFILE_COMMAND: "/fixture/trx" },
+    })
+    expect(services.profiles).toEqual([])
+    expect(discover).not.toHaveBeenCalled()
+    await services.refreshProfiles?.(new AbortController().signal)
+    expect(discover).toHaveBeenCalledWith("/fixture/trx", ["guide", "--review"],
+      expect.objectContaining({ env: expect.objectContaining({ TRELLAGE_REVIEW_PROFILES_ONLY: "1" }) }))
+    expect(services.profiles.map((entry) => entry.ref)).toEqual(["native:cpx/reviewer"])
+  })
+
+  it("requires saved approval for automatic hve and reserves its same-worktree tab once", async () => {
+    const f = await fixture()
+    const services = createGuideOptimizeServices({
+      ...f.options,
+      catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
+    })
+    const request = { ...f.request, automatic: true as const, destination: "tab" as const }
+    await expect(services.execute({ ...request, destination: "pane" }, "native:cpx/hve", f.signal))
+      .rejects.toThrow(/tab/u)
+    await expect(services.execute({ ...request, approval: { ...request.approval, reviewDigest: "0".repeat(64) } },
+      "native:cpx/hve", f.signal)).rejects.toThrow(/approval/iu)
+    expect(f.calls.filter((call) => call.executable === "herdr")).toEqual([])
+    await services.execute(request, "native:cpx/hve", f.signal)
+    const launch = f.calls.find((call) => call.executable === "herdr" && call.args[1] === "run")
+    expect(launch?.args.join(" ")).toContain("autopilot")
+    expect(launch?.args.join(" ")).toContain("--allow-all")
+    expect(launch?.args.join(" ")).toContain("approved findings")
+    await expect(services.execute(request, "native:cpx/hve", f.signal)).rejects.toThrow(/launch|execution/u)
+    expect(f.launch).toHaveBeenCalledTimes(1)
+  })
+
   it("binds the approved findings to committed and current work without source-session identity", async () => {
     const f = await fixture()
     expect(f.request.target.cwd).toBe(f.root)

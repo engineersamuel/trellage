@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { CopilotClientOptions, ModelInfo, SessionConfig } from "@github/copilot-sdk"
 import {
   CopilotGuideProvider,
+  RestrictedGuideModelError,
   RestrictedGuideEventType,
   runRestrictedGuideModelRequest,
   type GuideModelMessage,
@@ -169,6 +170,55 @@ const promises = { assess: "ASSESS raw JSON.", summarize: "SUMMARIZE raw JSON." 
 afterEach(() => vi.useRealTimers())
 
 describe("restricted continuation SDK execution", () => {
+  it.each([
+    ["schema properties severity: type is required PRIVATE", "schema-type-required"],
+    ["minimum is not supported PRIVATE", "schema-unsupported-keyword"],
+    ["Invalid JSON schema PRIVATE", "schema-invalid"],
+    ["response_format is not supported PRIVATE", "response-format-unsupported"],
+    ["PRIVATE unrecognized message", undefined],
+  ])("classifies validation errors without echoing messages: %s", async (message, validation) => {
+    const client = new FakeClient()
+    const progress: string[] = []
+    client.session.sendBehavior = (session) => {
+      session.emit(RestrictedGuideEventType.Error, { errorType: "query", statusCode: 400, message })
+      session.reply("Should be ignored.")
+    }
+    client.session.abortBehavior = () => client.session.emit(RestrictedGuideEventType.Idle)
+    const error = await runRestrictedGuideModelRequest(request(client, {
+      onProgress: (value) => progress.push(value),
+    })).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(RestrictedGuideModelError)
+    expect((error as RestrictedGuideModelError).diagnostic?.validation).toBe(validation)
+    expect(String(error)).not.toContain("PRIVATE")
+    expect(progress).toContain("Model runtime reported an error")
+    expect(progress).not.toContain("Model response is complete")
+    expect(progress).not.toContain("Received the completed assessment")
+  })
+
+  it("retains safe runtime diagnostics without storing provider messages or arbitrary fields", async () => {
+    const client = new FakeClient()
+    client.session.sendBehavior = (session) => {
+      session.emit(RestrictedGuideEventType.Error, {
+        errorType: "query", errorCode: "invalid_json_schema", statusCode: 400,
+        message: "PRIVATE PROMPT AND TOKEN", stack: "PRIVATE STACK", serviceRequestId: "PRIVATE ID",
+      })
+    }
+    const error = await runRestrictedGuideModelRequest(request(client)).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(RestrictedGuideModelError)
+    expect(error).toMatchObject({ diagnostic: {
+      stage: "send", model: "fixture-model", errorType: "query", errorCode: "invalid_json_schema", statusCode: 400,
+    } })
+    expect(String(error)).not.toContain("PRIVATE")
+    expect(client.deleted).toEqual(["offline-session"])
+    const unknown = new FakeClient()
+    unknown.session.sendBehavior = (session) => session.emit(RestrictedGuideEventType.Error, {
+      errorType: "PRIVATE CATEGORY", errorCode: "PRIVATE CODE", message: "PRIVATE MESSAGE",
+    })
+    await expect(runRestrictedGuideModelRequest(request(unknown))).rejects.toMatchObject({
+      diagnostic: { errorType: "unknown" },
+    })
+  })
+
   it("requests provider-native strict JSON output without changing ordinary text requests", async () => {
     const client = new FakeClient()
     const responseFormat = {
@@ -328,13 +378,17 @@ describe("restricted continuation SDK execution", () => {
   it("reports content-free SDK lifecycle and streaming activity", async () => {
     const client = new FakeClient()
     const progress: string[] = []
+    const streamed: string[] = []
     client.session.sendBehavior = (session) => {
       session.emit(RestrictedGuideEventType.ReasoningDelta, { deltaContent: "PRIVATE REASONING" })
+      session.emit(RestrictedGuideEventType.ReasoningDelta, { deltaContent: "MORE PRIVATE REASONING" })
       session.emit(RestrictedGuideEventType.MessageDelta, { deltaContent: "PRIVATE RESPONSE" })
+      session.emit(RestrictedGuideEventType.MessageDelta, { deltaContent: " CONTINUED" })
       session.reply("{}")
     }
     expect(
-      await runRestrictedGuideModelRequest(request(client, { onProgress: (message) => progress.push(message) })),
+      await runRestrictedGuideModelRequest(request(client, { onProgress: (message) => progress.push(message),
+        onText: (text) => streamed.push(text) })),
     ).toBe("{}")
     expect(progress).toEqual([
       "Starting Copilot SDK runtime",
@@ -348,6 +402,15 @@ describe("restricted continuation SDK execution", () => {
       "Closing the temporary model session",
     ])
     expect(progress.join("\n")).not.toContain("PRIVATE")
+    expect(streamed).toEqual(["PRIVATE RESPONSE", " CONTINUED"])
+  })
+
+  it("shows completed assistant text when the runtime did not send deltas", async () => {
+    const client = new FakeClient()
+    const streamed: string[] = []
+    client.session.sendBehavior = (session) => session.reply('{"assessment":"complete"}')
+    await runRestrictedGuideModelRequest(request(client, { onText: (text) => streamed.push(text) }))
+    expect(streamed).toEqual(['{"assessment":"complete"}'])
   })
 
   it("does not create a client when already cancelled", async () => {

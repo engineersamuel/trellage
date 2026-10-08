@@ -666,7 +666,7 @@ describe("parseGuideHeadlessArgv", () => {
     })
     expect(parseGuideHeadlessArgv(["--optimize"])).toMatchObject({ optimize: true, intent: undefined })
     expect(parseGuideHeadlessArgv(["--optimize"]).optimizeBase).toBeUndefined()
-    expect(() => parseGuideHeadlessArgv(["--base", "main"])).toThrow("--base requires --optimize")
+    expect(() => parseGuideHeadlessArgv(["--base", "main"])).toThrow("--base requires --review or --optimize")
     expect(() => parseGuideHeadlessArgv(["--optimize", "--base"])).toThrow("Missing value")
     expect(() => parseGuideHeadlessArgv(["--optimize", "--base", "main", "--base", "HEAD"])).toThrow("Duplicate flag")
     expect(() => parseGuideHeadlessArgv(["--optimize", "--base", ""])).toThrow()
