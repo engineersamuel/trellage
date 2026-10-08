@@ -99,15 +99,22 @@ add_all_codex_targets() {
   add_target native-codex-harness-version
 }
 
+add_all_firstmate_targets() {
+  add_target native-firstmate-overlays
+  add_target native-firstmate-healing
+  add_target native-firstmate-instances
+  add_target native-firstmate-lifecycle
+}
+
 add_all_native_targets() {
   add_all_codex_targets
   add_target native-copilot-profiles
   add_target native-agency-profile
   add_target native-claude-profile
-  add_target native-firstmate-profile
+  add_all_firstmate_targets
   add_target native-jcode-profile
   add_target native-omp-profile
-  add_target native-picx-profile
+  add_target native-pi-profile
   add_target native-prime-profile
   add_target native-profile-router
 }
@@ -213,6 +220,8 @@ add_test_file_target() {
     tests/azure_fresh_install_contract.sh) add_target azure-fresh-install-contract ;;
     tests/agent_harness_contract.sh) add_target agent-harness ;;
     tests/native-harness-version.sh) add_target native-harness-version ;;
+    tests/retire_native_backend_contract.sh) add_target native-backend-retirement ;;
+    tests/firstmate_overlay_contract.py) add_target native-firstmate-overlays ;;
     tests/manifest_contract.sh) add_target manifest ;;
     tests/harness_contract.sh) add_target contract ;;
     tests/agent_kit_adapter.sh) add_target adapter ;;
@@ -251,6 +260,7 @@ add_script_target() {
     scripts/trellage-session-bridge.py) add_target trellage-session-bridge ;;
     scripts/trellage-statusline.sh) add_target trellage-statusline ;;
     scripts/test-changed.sh) add_target test-changed-contract ;;
+    scripts/retire-native-backend.sh) add_target native-backend-retirement ;;
     *) add_target test ;;
   esac
 }
@@ -328,8 +338,27 @@ classify() {
     prototypes/trellage-claude-profiles/*)
       add_target native-claude-profile
       ;;
+    prototypes/trellage-firstmate-profiles/overlay/* | \
+      prototypes/trellage-firstmate-profiles/instance-overlay/* | \
+      prototypes/trellage-firstmate-profiles/tests/fixtures/* | \
+      prototypes/trellage-firstmate-profiles/lib/firstmate-overlay.py)
+      add_target native-firstmate-overlays
+      ;;
+    prototypes/trellage-firstmate-profiles/tests/healing-contract.py)
+      add_target native-firstmate-healing
+      ;;
+    prototypes/trellage-firstmate-profiles/tests/instances-contract.py)
+      add_target native-firstmate-instances
+      ;;
+    prototypes/trellage-firstmate-profiles/tests/pinned-contract.py | \
+      prototypes/trellage-firstmate-profiles/tests/fleet-contract.sh)
+      add_target native-firstmate-lifecycle
+      ;;
+    prototypes/trellage-firstmate-profiles/tests/contract.sh)
+      add_all_firstmate_targets
+      ;;
     prototypes/trellage-firstmate-profiles/*)
-      add_target native-firstmate-profile
+      add_all_firstmate_targets
       ;;
     prototypes/trellage-jcode-profiles/*)
       add_target native-jcode-profile
@@ -337,8 +366,8 @@ classify() {
     prototypes/trellage-omp-profiles/*)
       add_target native-omp-profile
       ;;
-    prototypes/trellage-picx-profiles/*)
-      add_target native-picx-profile
+    prototypes/trellage-pi-profiles/*)
+      add_target native-pi-profile
       ;;
     prototypes/trellage-prime-profiles/*)
       add_target native-prime-profile
@@ -350,7 +379,7 @@ classify() {
       add_all_codex_targets
       add_target floating-skills-contract
       add_target native-claude-profile
-      add_target native-firstmate-profile
+      add_all_firstmate_targets
       add_target native-jcode-profile
       ;;
     prototypes/trellage-codex-common/*)
@@ -491,9 +520,10 @@ fi
 
 for target in "${targets[@]-}"; do
   case "$target" in
-    profile-compiler-fingerprint | native-picx-profile | native-codex-auth-config-launch | \
+    profile-compiler-fingerprint | native-pi-profile | native-codex-auth-config-launch | \
       native-codex-lifecycle | native-omp-profile | native-claude-profile | native-tui-matrix-test | \
-      native-firstmate-profile | headlong-entry | test)
+      native-firstmate-healing | native-firstmate-instances | native-firstmate-lifecycle | \
+      headlong-entry | test)
       serial_targets+=("$target")
       ;;
     native-profile-router | trellage-host-headless-test)

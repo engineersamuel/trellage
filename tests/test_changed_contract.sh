@@ -40,6 +40,22 @@ output="$(select_files codex-lifecycle prototypes/trellage-codex-profiles/tests/
 grep -Fqx 'test-changed: make targets: native-codex-lifecycle' <<<"$output" \
   || fail "Codex lifecycle change selected unrelated Codex slices: $output"
 
+output="$(select_files firstmate-overlay prototypes/trellage-firstmate-profiles/overlay/527aa7c12d25aadbdf3cc56791f87ae71fca5280/bin_fm-spawn.sh.patch)"
+grep -Fqx 'test-changed: make targets: native-firstmate-overlays' <<<"$output" \
+  || fail "Firstmate overlay change selected unrelated slices: $output"
+
+output="$(select_files firstmate-healing prototypes/trellage-firstmate-profiles/tests/healing-contract.py)"
+grep -Fqx 'test-changed: make targets: native-firstmate-healing' <<<"$output" \
+  || fail "Firstmate healing change selected unrelated slices: $output"
+
+output="$(select_files firstmate-instances prototypes/trellage-firstmate-profiles/tests/instances-contract.py)"
+grep -Fqx 'test-changed: make targets: native-firstmate-instances' <<<"$output" \
+  || fail "Firstmate instance change selected unrelated slices: $output"
+
+output="$(select_files firstmate-core prototypes/trellage-firstmate-profiles/bin/firstmate)"
+grep -Fqx 'test-changed: make targets: native-firstmate-healing native-firstmate-instances native-firstmate-lifecycle native-firstmate-overlays' <<<"$output" \
+  || fail "Firstmate core change omitted a focused slice: $output"
+
 output="$(select_files runtime packages/trellage-runtime/src/workspace-cli.ts)"
 grep -Fqx 'test-changed: make targets: source-runtime' <<<"$output" \
   || fail "runtime change did not select source-runtime: $output"

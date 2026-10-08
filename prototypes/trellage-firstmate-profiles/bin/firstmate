@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
-readonly launcher_name='fmx'
+readonly launcher_name='firstmate'
 readonly harness_name='firstmate'
 readonly ownership_value='trellage-firstmate-profiles-v1'
 readonly ownership_basename='.managed-by-trellage-firstmate-profiles'
-readonly managed_runtime_marker='.fmx-managed'
-# v1 supports exactly one worker harness. The fmx worker boundary only wraps
+readonly managed_runtime_marker='.firstmate-managed'
+# v1 supports exactly one worker harness. The firstmate worker boundary only wraps
 # Claude launches, so any other crew harness would escape it entirely.
 readonly managed_crew_harness='claude'
 readonly managed_gh_host='github.com'
@@ -18,39 +19,39 @@ readonly sonnet_model_id='claude-sonnet-5.5'
 readonly haiku_model_id='claude-haiku-4.5'
 
 die() {
-  printf 'fmx: %s\n' "$1" >&2
+  printf 'firstmate: %s\n' "$1" >&2
   exit 1
 }
 
 usage() {
   cat <<'EOF'
 Usage:
-  fmx PROFILE [--instance UUID|NAME|legacy] [--join] [FIRSTMATE_ARGS...]
-  fmx list [--json]
-  fmx instances list PROFILE --json [--limit 1..32] [--cursor CURSOR]
-  fmx instances resolve PROFILE --worktree PATH --json
-  fmx instances plan PROFILE --name NAME --worktree PATH --json --expected-source-revision SHA40
-  fmx instances create PROFILE --json --approve-creation SHA256  (approved plan on stdin)
-  fmx instances refresh-locator PROFILE --instance UUID --worktree PATH --json \
+  firstmate PROFILE [--instance UUID|NAME|legacy] [--join] [FIRSTMATE_ARGS...]
+  firstmate list [--json]
+  firstmate instances list PROFILE --json [--limit 1..32] [--cursor CURSOR]
+  firstmate instances resolve PROFILE --worktree PATH --json
+  firstmate instances plan PROFILE --name NAME --worktree PATH --json --expected-source-revision SHA40
+  firstmate instances create PROFILE --json --approve-creation SHA256  (approved plan on stdin)
+  firstmate instances refresh-locator PROFILE --instance UUID --worktree PATH --json \
     --expected-binding-digest SHA256 --confirm
-  fmx inventory PROFILE --json
-  fmx prepare PROFILE --json --expected-source-revision SHA40 [--install-prerequisites SHA256]
-  fmx submit PROFILE --json       (bounded JSON on stdin)
-  fmx receipt PROFILE --json      (bounded JSON on stdin)
-  fmx harness-version PROFILE
-  fmx setup PROFILE|--all
-  fmx doctor PROFILE
-  fmx repair PROFILE
-  fmx skills-update PROFILE
-  fmx skills-check PROFILE
-  fmx update [--check] PROFILE|--all
+  firstmate inventory PROFILE --json
+  firstmate prepare PROFILE --json --expected-source-revision SHA40 [--install-prerequisites SHA256]
+  firstmate submit PROFILE --json       (bounded JSON on stdin)
+  firstmate receipt PROFILE --json      (bounded JSON on stdin)
+  firstmate harness-version PROFILE
+  firstmate setup PROFILE|--all
+  firstmate doctor PROFILE
+  firstmate repair PROFILE
+  firstmate skills-update PROFILE
+  firstmate skills-check PROFILE
+  firstmate update [--check] PROFILE|--all
 
 Profiles: default, pstack-workers.
 Management commands accept --instance UUID|NAME|legacy. Unqualified commands
 and --all retain their legacy profile scope. Named creation never starts work
 or approves tool installation.
 
-fmx runs a Firstmate captain from a pinned, overlaid runtime.
+firstmate runs a Firstmate captain from a pinned, overlaid runtime.
 
 Network use:
   setup                always fetches the pinned Firstmate source.
@@ -100,10 +101,10 @@ recover_inaccessible_working_directory() {
   [[ "${HOME-}" == /* && "$HOME" != / && -d "$HOME" && ! -L "$HOME" ]] \
     || die 'current working directory no longer exists and HOME is not a safe recovery directory; change directory and retry'
   builtin cd -P -- "$HOME" >/dev/null 2>&1 \
-    || die "current working directory no longer exists and fmx could not enter HOME: $HOME"
+    || die "current working directory no longer exists and firstmate could not enter HOME: $HOME"
   recovered="$(builtin pwd -P)" \
-    || die "current working directory no longer exists and fmx could not resolve HOME: $HOME"
-  printf 'fmx: current working directory no longer exists; continuing from %s\n' \
+    || die "current working directory no longer exists and firstmate could not resolve HOME: $HOME"
+  printf 'firstmate: current working directory no longer exists; continuing from %s\n' \
     "$recovered" >&2
 }
 
@@ -119,23 +120,23 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
 readonly catalog="$runtime_root/catalog.json"
 readonly overlay_root="$runtime_root/overlay"
 readonly policy_source_root="$runtime_root/policies"
-readonly overlay_tool="$runtime_root/lib/fmx-overlay.py"
-readonly worker_launcher="$runtime_root/lib/fmx-worker"
-readonly controls_helper="$runtime_root/lib/fmx-controls.py"
-readonly control_helper="$runtime_root/lib/fmx-control.py"
-readonly registry_helper="$runtime_root/lib/fmx-registry.py"
-readonly instances_helper="$runtime_root/lib/fmx-instances.py"
+readonly overlay_tool="$runtime_root/lib/firstmate-overlay.py"
+readonly worker_launcher="$runtime_root/lib/firstmate-worker"
+readonly controls_helper="$runtime_root/lib/firstmate-controls.py"
+readonly control_helper="$runtime_root/lib/firstmate-control.py"
+readonly registry_helper="$runtime_root/lib/firstmate-registry.py"
+readonly instances_helper="$runtime_root/lib/firstmate-instances.py"
 readonly instance_overlay_root="$runtime_root/instance-overlay"
 # An installed runtime stages the shared helper at lib/native-claude. A
 # checked-out source tree (no install.sh run yet) has no lib/native-claude,
-# so fall back to the sibling trellage-claude-common source, matching cldx's
-# resolution so fmx works uninstalled immediately after a merge/rebase.
+# so fall back to the sibling trellage-claude-common source, matching claude's
+# resolution so firstmate works uninstalled immediately after a merge/rebase.
 native_claude="$runtime_root/lib/native-claude"
 if [[ ! -f "$native_claude" ]]; then
   native_claude="$runtime_root/../trellage-claude-common/native-claude"
 fi
 readonly native_claude
-readonly prerequisite_helper="$runtime_root/lib/fmx-prerequisites"
+readonly prerequisite_helper="$runtime_root/lib/firstmate-prerequisites"
 # install.sh pins prerequisite-lock/manifest.json from the live
 # prerequisites/manifest.json at install time. A checked-out source tree has
 # no prerequisite-lock yet, so fall back to the live source manifest (the
@@ -180,8 +181,8 @@ instance_explicit=false
 instance_operation=''
 instance_descriptor=''
 instance_id=''
-unset FMX_SELECTED_INSTANCE FMX_INSTANCE_CONTEXT_JSON FMX_INSTANCE_ID
-unset FMX_LAUNCH_PROVENANCE_JSON
+unset TRELLAGE_FIRSTMATE_SELECTED_INSTANCE TRELLAGE_FIRSTMATE_INSTANCE_CONTEXT_JSON TRELLAGE_FIRSTMATE_INSTANCE_ID
+unset TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON
 
 # ---------------------------------------------------------------------------
 # Catalog. `list --json` is a pure projection of this file: it never probes the
@@ -295,9 +296,9 @@ list_profiles_json() {
   jq -S '
     {
       schemaVersion: 1,
-      launcher: "fmx",
+      launcher: "firstmate",
       harness: "firstmate",
-      # fmx runs Firstmate and its Claude workers directly on the host. No
+      # firstmate runs Firstmate and its Claude workers directly on the host. No
       # native OS-level sandbox is enabled; the isolation is state isolation
       # plus disposable Git worktrees, not a security boundary.
       sandbox: false,
@@ -378,8 +379,8 @@ select_profile() {
     instance_selector="$(jq -er '.descriptor.reference.instanceId' <<<"$resolved")"
     instance_id="$instance_selector"
   fi
-  export FMX_SELECTED_INSTANCE="$instance_selector"
-  export FMX_INSTANCE_CONTEXT_JSON="$instance_context"
+  export TRELLAGE_FIRSTMATE_SELECTED_INSTANCE="$instance_selector"
+  export TRELLAGE_FIRSTMATE_INSTANCE_CONTEXT_JSON="$instance_context"
   profile_marker="$profile_root/$ownership_basename"
   fm_runtime="$profile_root/runtime"
   fm_home="$profile_root/home"
@@ -405,7 +406,7 @@ verify_instance_context() {
   instance_context="$(python3 "$instances_helper" _context "$profile_key" \
     "$instance_selector" "$instance_join" "$instance_context")" \
     || die 'instance context or worktree binding failed validation'
-  export FMX_INSTANCE_CONTEXT_JSON="$instance_context"
+  export TRELLAGE_FIRSTMATE_INSTANCE_CONTEXT_JSON="$instance_context"
 }
 
 profile_is_owned_or_empty() {
@@ -462,7 +463,7 @@ prepare_profile_tree() {
   write_marker "$captain_marker"
 }
 
-# Every fmx-owned subdirectory a read path traverses, so a redirected `home`,
+# Every firstmate-owned subdirectory a read path traverses, so a redirected `home`,
 # `receipts`, `locks`, `captain`, `policy`, or `workers` cannot make a check
 # read somewhere else. Only directories that already exist are validated; a
 # missing one is reported by the specific check that needs it.
@@ -512,7 +513,7 @@ require_safe_managed_paths() {
 require_owned_profile() {
   require_safe_managed_paths
   [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
-    || die "profile is not set up; run fmx setup $profile_key"
+    || die "profile is not set up; run firstmate setup $profile_key"
   [[ "$(<"$profile_marker")" == "$ownership_value" ]] \
     || die "profile ownership marker differs: $profile_marker"
 }
@@ -526,7 +527,7 @@ profile_is_set_up() {
 }
 
 # ---------------------------------------------------------------------------
-# Owned-path removal. Only exact fmx-owned staged/runtime paths are removed,
+# Owned-path removal. Only exact firstmate-owned staged/runtime paths are removed,
 # and only after the prefix and ownership marker have been validated.
 # ---------------------------------------------------------------------------
 
@@ -576,7 +577,7 @@ read_pid_file() {
   printf '%s\n' "$value"
 }
 
-# One classifier for both fmx lock directories.
+# One classifier for both firstmate lock directories.
 #
 #   none        no lock directory
 #   incomplete  a lock directory whose owner or pid is missing or malformed;
@@ -647,8 +648,8 @@ require_safe_worker_entry() {
   [[ -d "$entry" && ! -L "$entry" ]] || die "unsafe worker home: $entry"
 }
 
-# Emits "<task-id> <active|stale|orphaned>" for every worker home fmx knows
-# about. Orphaned means an fmx worker home with no live marker and no Firstmate
+# Emits "<task-id> <active|stale|orphaned>" for every worker home firstmate knows
+# about. Orphaned means an firstmate worker home with no live marker and no Firstmate
 # task record; it is reported, never removed.
 worker_states() {
   local entry task pid state mode="${1-report}"
@@ -815,24 +816,24 @@ exit_after_mutation_signal() {
 reclaim_stale_mutation_lock() {
   local action="$1"
   python3 "$control_helper" reclaim "$profile_root" "$profile_key" \
-    || die "$action refused: another fmx mutation is running for $profile_key"
+    || die "$action refused: another firstmate mutation is running for $profile_key"
 }
 
 acquire_mutation_lock() {
   local action="$1" state
 
   ! runtime_installation_busy \
-    || die "$action refused: the fmx launcher installation is active or incomplete"
+    || die "$action refused: the firstmate launcher installation is active or incomplete"
   make_owned_directory "$profile_root/locks"
   if ! mkdir "$mutation_lock" 2>/dev/null; then
     state="$(mutation_state)"
     case "$state" in
       active)
-        die "$action refused: another fmx mutation is already running for $profile_key" ;;
+        die "$action refused: another firstmate mutation is already running for $profile_key" ;;
       incomplete)
-        die "$action refused: an incomplete mutation lock exists at $mutation_lock; another fmx process may be acquiring it right now. Confirm no fmx mutation is running, then remove it by hand" ;;
+        die "$action refused: an incomplete mutation lock exists at $mutation_lock; another firstmate process may be acquiring it right now. Confirm no firstmate mutation is running, then remove it by hand" ;;
       unowned)
-        die "$action refused: an unowned lock directory exists at $mutation_lock; remove it by hand after confirming no fmx mutation is running" ;;
+        die "$action refused: an unowned lock directory exists at $mutation_lock; remove it by hand after confirming no firstmate mutation is running" ;;
       stale)
         reclaim_stale_mutation_lock "$action" ;;
       none) ;;
@@ -840,7 +841,7 @@ acquire_mutation_lock() {
         die "$action refused: the mutation lock at $mutation_lock is in an unexpected state: $state" ;;
     esac
     mkdir "$mutation_lock" 2>/dev/null \
-      || die "$action refused: another fmx mutation is already running for $profile_key"
+      || die "$action refused: another firstmate mutation is already running for $profile_key"
   fi
   # Held from this point on, so a failure while publishing still releases it.
   mutation_lock_held="$mutation_lock"
@@ -851,7 +852,7 @@ acquire_mutation_lock() {
   populate_lock_directory "$mutation_lock" \
     "owner=$ownership_value" "action=$action" "pid=$$"
   ! runtime_installation_busy \
-    || die "$action refused: the fmx launcher installation is active"
+    || die "$action refused: the firstmate launcher installation is active"
   if [[ "$instance_operation" != _create-owned ]]; then
     case "$action" in
       prepare | repair | update | launch | skills-update) verify_instance_context ;;
@@ -864,7 +865,7 @@ acquire_mutation_lock() {
 
 runtime_installation_busy() {
   local lock
-  for lock in "$runtime_root/../.fmx-install.lock" "$HOME/.local/share/trellage/.fmx-install.lock"; do
+  for lock in "$runtime_root/../.firstmate-install.lock" "$HOME/.local/share/trellage/.firstmate-install.lock"; do
     if [[ -e "$lock" || -L "$lock" ]]; then return 0; fi
   done
   return 1
@@ -895,7 +896,7 @@ require_idle_fleet() {
   state="$(session_state)"
   case "$state" in
     active)
-      die "$action refused: the $profile_key fleet is active; stop the captain session and its workers first (fmx inventory $profile_key --json reports what is running)" ;;
+      die "$action refused: the $profile_key fleet is active; stop the captain session and its workers first (firstmate inventory $profile_key --json reports what is running)" ;;
     incomplete | unowned)
       die "$action refused: the captain session lock at $session_lock is $state; confirm no captain is running, then remove it by hand" ;;
     none | stale) ;;
@@ -904,7 +905,7 @@ require_idle_fleet() {
   esac
 
   if fleet_is_active; then
-    die "$action refused: the $profile_key fleet is active; stop the captain session and its workers first (fmx inventory $profile_key --json reports what is running)"
+    die "$action refused: the $profile_key fleet is active; stop the captain session and its workers first (firstmate inventory $profile_key --json reports what is running)"
   fi
 }
 
@@ -938,7 +939,7 @@ verify_runtime_overlay() {
     --root "$fm_runtime" \
     --commit "$commit" \
     --verify-only >/dev/null \
-    || die "the installed runtime does not match the pinned overlay for $commit; run fmx repair $profile_key"
+    || die "the installed runtime does not match the pinned overlay for $commit; run firstmate repair $profile_key"
 }
 
 # Full-checkout integrity. Offline: rev-parse, status, and diff read only the
@@ -998,7 +999,7 @@ verify_runtime_checkout() {
 
   require_command git
   if ! report="$(runtime_checkout_report "$commit")"; then
-    die "$report; run fmx repair $profile_key"
+    die "$report; run firstmate repair $profile_key"
   fi
 }
 
@@ -1328,7 +1329,7 @@ verify_receipt() {
   local commit="$1" repository="$2" overlay_commit="$3"
 
   [[ -f "$receipt_file" && -r "$receipt_file" && ! -L "$receipt_file" ]] \
-    || die "the source receipt is missing; run fmx repair $profile_key"
+    || die "the source receipt is missing; run firstmate repair $profile_key"
   jq -e \
     --arg profile "$profile_key" \
     --arg repository "$repository" \
@@ -1342,7 +1343,7 @@ verify_receipt() {
     and .commit == $commit
     and .overlay == $overlay
   ' "$receipt_file" >/dev/null 2>&1 \
-    || die "the source receipt does not match the catalog pin schema; run fmx repair $profile_key"
+    || die "the source receipt does not match the catalog pin schema; run firstmate repair $profile_key"
 }
 
 installed_commit() {
@@ -1373,7 +1374,7 @@ ensure_tasks_axi_config() {
     [[ -f "$legacy_backlog" ]] \
       || die "the legacy Firstmate backlog is not a regular file: $legacy_backlog"
     [[ ! -e "$managed_backlog" ]] \
-      || die "both $legacy_backlog and $managed_backlog exist; merge them before running fmx repair $profile_key"
+      || die "both $legacy_backlog and $managed_backlog exist; merge them before running firstmate repair $profile_key"
     mv -- "$legacy_backlog" "$managed_backlog" \
       || die "could not migrate the legacy Firstmate backlog to $managed_backlog"
   fi
@@ -1393,11 +1394,11 @@ verify_tasks_axi_config() {
   local legacy_backlog="$fm_home/backlog.md"
 
   [[ ! -e "$legacy_backlog" && ! -L "$legacy_backlog" ]] \
-    || die "a legacy Firstmate backlog remains at $legacy_backlog; run fmx repair $profile_key"
+    || die "a legacy Firstmate backlog remains at $legacy_backlog; run firstmate repair $profile_key"
   [[ -f "$config" && -r "$config" && ! -L "$config" ]] \
-    || die "the managed tasks-axi config is missing: $config; run fmx repair $profile_key"
+    || die "the managed tasks-axi config is missing: $config; run firstmate repair $profile_key"
   cmp -s -- "$config" <(tasks_axi_config_content) \
-    || die "the managed tasks-axi config differs: $config; run fmx repair $profile_key"
+    || die "the managed tasks-axi config differs: $config; run firstmate repair $profile_key"
 }
 
 # Doctor and launch verify the complete identity marker, not just its presence.
@@ -1412,13 +1413,14 @@ verify_managed_runtime_marker() {
   local path="$fm_home/$managed_runtime_marker"
 
   [[ -f "$path" && -r "$path" && ! -L "$path" ]] \
-    || die "the managed-runtime marker is missing; run fmx repair $profile_key"
+    || die "the managed-runtime marker is missing; run firstmate repair $profile_key"
   cmp -s -- "$path" <(managed_runtime_marker_content) \
-    || die "the managed-runtime marker content differs; run fmx repair $profile_key"
+    || die "the managed-runtime marker content differs; run firstmate repair $profile_key"
 }
 
 ensure_managed_home() {
   local component staged
+  local legacy_marker="$fm_home/.fmx-managed"
 
   make_owned_directory "$fm_home"
   for component in data state config projects; do
@@ -1427,15 +1429,22 @@ ensure_managed_home() {
   ensure_tasks_axi_config
   [[ ! -L "$fm_home/$managed_runtime_marker" ]] \
     || die "unsafe managed-runtime marker: $fm_home/$managed_runtime_marker"
-  staged="$(mktemp "$fm_home/.fmx-managed.XXXXXX")" \
+  if [[ -e "$legacy_marker" || -L "$legacy_marker" ]]; then
+    [[ -f "$legacy_marker" && ! -L "$legacy_marker" ]] \
+      || die "unsafe legacy managed-runtime marker: $legacy_marker"
+    cmp -s -- "$legacy_marker" <(managed_runtime_marker_content) \
+      || die "legacy managed-runtime marker content differs: $legacy_marker"
+  fi
+  staged="$(mktemp "$fm_home/.firstmate-managed.XXXXXX")" \
     || die 'could not stage the managed-runtime marker'
   managed_runtime_marker_content >"$staged"
   chmod 0600 "$staged"
   mv -f "$staged" "$fm_home/$managed_runtime_marker"
+  rm -f -- "$legacy_marker"
 }
 
 # v1 manages the tasks-axi root and exactly two worker-harness files in FM_HOME.
-# The harness files must read exactly "claude", because the fmx worker boundary
+# The harness files must read exactly "claude", because the firstmate worker boundary
 # only wraps Claude launches. config/crew-dispatch.json can select a different
 # harness per task, which would bypass that boundary entirely, so its mere
 # presence fails closed.
@@ -1473,10 +1482,10 @@ verify_crew_harness_config() {
   for name in "${managed_harness_files[@]}"; do
     path="$config/$name"
     [[ -f "$path" && -r "$path" && ! -L "$path" ]] \
-      || die "the managed Firstmate worker harness file is missing: $path; run fmx repair $profile_key"
+      || die "the managed Firstmate worker harness file is missing: $path; run firstmate repair $profile_key"
     actual_bytes="$(wc -c <"$path" | tr -d '[:space:]')"
     [[ "$actual_bytes" == "$expected_bytes" && "$(<"$path")" == "$managed_crew_harness" ]] \
-      || die "the managed Firstmate worker harness file must contain exactly '$managed_crew_harness': $path; run fmx repair $profile_key"
+      || die "the managed Firstmate worker harness file must contain exactly '$managed_crew_harness': $path; run firstmate repair $profile_key"
   done
 }
 
@@ -1503,12 +1512,12 @@ verify_worker_policy() {
   [[ -f "$source" && -r "$source" && ! -L "$source" ]] \
     || die "missing managed worker policy source: $source"
   [[ -f "$policy_file" && -r "$policy_file" && ! -L "$policy_file" ]] \
-    || die "the managed worker policy is missing; run fmx repair $profile_key"
+    || die "the managed worker policy is missing; run firstmate repair $profile_key"
   bytes="$(wc -c <"$policy_file" | tr -d '[:space:]')"
   [[ "$bytes" -ge 1 && "$bytes" -le "$worker_policy_max_bytes" ]] \
-    || die "the managed worker policy must be between 1 and $worker_policy_max_bytes bytes; run fmx repair $profile_key"
+    || die "the managed worker policy must be between 1 and $worker_policy_max_bytes bytes; run firstmate repair $profile_key"
   cmp -s -- "$source" "$policy_file" \
-    || die "the managed worker policy differs from the Trellage-owned source; run fmx repair $profile_key"
+    || die "the managed worker policy differs from the Trellage-owned source; run firstmate repair $profile_key"
 }
 
 ensure_worker_policy() {
@@ -1544,10 +1553,10 @@ require_native_claude() {
 require_prerequisite_helper() {
   [[ -f "$prerequisite_helper" && -x "$prerequisite_helper" \
     && ! -L "$prerequisite_helper" ]] \
-    || die "missing fmx prerequisite helper: $prerequisite_helper"
+    || die "missing firstmate prerequisite helper: $prerequisite_helper"
   [[ -f "$prerequisite_manifest" && -r "$prerequisite_manifest" \
     && ! -L "$prerequisite_manifest" ]] \
-    || die "missing fmx prerequisite manifest: $prerequisite_manifest"
+    || die "missing firstmate prerequisite manifest: $prerequisite_manifest"
 }
 
 # The shared helper resolves the session bridge and the floating-skills runtime
@@ -1561,16 +1570,16 @@ native_claude() {
 
 require_worker_launcher() {
   [[ -f "$worker_launcher" && -x "$worker_launcher" && ! -L "$worker_launcher" ]] \
-    || die "missing fmx worker helper: $worker_launcher"
+    || die "missing firstmate worker helper: $worker_launcher"
   [[ -f "$controls_helper" && ! -L "$controls_helper" ]] \
-    || die "missing fmx worker admission helper: $controls_helper"
+    || die "missing firstmate worker admission helper: $controls_helper"
   [[ -f "$control_helper" && ! -L "$control_helper" ]] \
-    || die "missing fmx control helper: $control_helper"
+    || die "missing firstmate control helper: $control_helper"
 }
 
 worker_controls() {
-  FMX_PROFILE="$profile_key" FMX_PROFILE_ROOT="$profile_root" \
-    FMX_TASK_ID_PREFIX="$task_id_prefix" FMX_INSTANCE_ID="$instance_id" FM_HOME="$fm_home" \
+  TRELLAGE_FIRSTMATE_PROFILE="$profile_key" TRELLAGE_FIRSTMATE_PROFILE_ROOT="$profile_root" \
+    TRELLAGE_FIRSTMATE_TASK_ID_PREFIX="$task_id_prefix" TRELLAGE_FIRSTMATE_INSTANCE_ID="$instance_id" FM_HOME="$fm_home" \
     FM_STATE_OVERRIDE= FM_DATA_OVERRIDE= FM_CONFIG_OVERRIDE= FM_PROJECTS_OVERRIDE= \
     python3 "$controls_helper" "$@"
 }
@@ -1722,7 +1731,7 @@ detect_firstmate_prerequisites() {
   [[ -f "$fm_runtime/bin/fm-bootstrap.sh" \
     && -x "$fm_runtime/bin/fm-bootstrap.sh" \
     && ! -L "$fm_runtime/bin/fm-bootstrap.sh" ]] \
-    || die "installed runtime has no safe prerequisite detector; run fmx repair $profile_key"
+    || die "installed runtime has no safe prerequisite detector; run firstmate repair $profile_key"
   prerequisite_diagnostics="$(
     env -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
       -u COPILOT_PROXY_GITHUB_TOKEN \
@@ -1876,7 +1885,7 @@ ensure_launch_prerequisites() {
   if [[ -n "$prerequisite_managed_missing" ]]; then
     require_prerequisite_install_host
     if [[ -n "$prerequisite_host_missing" ]]; then
-      printf 'fmx: managed prerequisites cannot be installed until these host requirements are ready:\n' >&2
+      printf 'firstmate: managed prerequisites cannot be installed until these host requirements are ready:\n' >&2
       print_prerequisite_diagnostics
       for tool in $prerequisite_host_missing; do
         case "$tool" in
@@ -1900,7 +1909,7 @@ ensure_launch_prerequisites() {
       || die "$prerequisite_diagnostics"
   fi
   if [[ -n "$prerequisite_managed_missing" || -n "$prerequisite_host_missing" ]]; then
-    printf 'fmx: Firstmate prerequisites are still incomplete:\n' >&2
+    printf 'firstmate: Firstmate prerequisites are still incomplete:\n' >&2
     print_prerequisite_diagnostics
     die 'Firstmate cannot dispatch workers until every required prerequisite is ready'
   fi
@@ -1924,10 +1933,10 @@ report_doctor_prerequisites() {
   detect_firstmate_prerequisites "$backend" "$effective_path" \
     || die "$prerequisite_diagnostics"
   if [[ -n "$prerequisite_managed_missing" || -n "$prerequisite_host_missing" ]]; then
-    printf 'fmx doctor %s: fleet prerequisites incomplete; managed installation requires explicit consent\n' \
+    printf 'firstmate doctor %s: fleet prerequisites incomplete; managed installation requires explicit consent\n' \
       "$profile_key" >&2
     if [[ -n "$prerequisite_managed_missing" ]]; then
-      printf '  managed by fmx after consent: %s\n' \
+      printf '  managed by firstmate after consent: %s\n' \
         "$prerequisite_managed_missing" >&2
     fi
     if [[ -n "$prerequisite_host_missing" ]]; then
@@ -1957,7 +1966,7 @@ skills_check_profile() {
   local roots root skills_check_pid
   require_native_claude
   require_owned_profile
-  profile_is_set_up || die "profile is not set up; run fmx setup $profile_key"
+  profile_is_set_up || die "profile is not set up; run firstmate setup $profile_key"
   native_claude --help | grep -q 'skills-check' || die 'refresh the Native Claude runtime for skills-check'
   roots="$(profile_skill_roots)" || die "cannot inspect profile skill homes: $profile_key"
   while IFS= read -r root; do
@@ -1977,7 +1986,7 @@ skills_update_profile() {
 
   require_native_claude
   require_owned_profile
-  profile_is_set_up || die "profile is not set up; run fmx setup $profile_key"
+  profile_is_set_up || die "profile is not set up; run firstmate setup $profile_key"
   acquire_mutation_lock 'skills-update'
   require_idle_fleet 'skills-update'
   roots="$(profile_skill_roots)" || die "cannot inspect profile skill homes: $profile_key"
@@ -2033,7 +2042,7 @@ setup_profile() {
     --profile "$profile_key" \
     || die "could not prepare the captain Claude home: $captain_home"
   ensure_fleet_identity
-  printf 'fmx setup %s: ready (firstmate %s, %s)\n' \
+  printf 'firstmate setup %s: ready (firstmate %s, %s)\n' \
     "$profile_key" "${commit:0:12}" "$model_id"
 }
 
@@ -2047,7 +2056,7 @@ repair_profile() {
   acquire_mutation_lock 'repair'
   require_idle_fleet 'repair'
   repair_profile_contents explicit
-  printf 'fmx repair %s: restored (firstmate %s, %s)\n' \
+  printf 'firstmate repair %s: restored (firstmate %s, %s)\n' \
     "$profile_key" "$(catalog_commit | cut -c 1-12)" "$model_id"
 }
 
@@ -2151,11 +2160,11 @@ cleanup_automatic_preparation() {
   [[ "$mutation_lock_held" == "$mutation_lock" ]] || return 0
   if [[ "$automatic_publication_started" == true ]] \
     && ! (recover_interrupted_publication) >/dev/null 2>&1; then
-    printf 'fmx prepare: owned runtime publication needs inspection before another repair\n' >&2
+    printf 'firstmate prepare: owned runtime publication needs inspection before another repair\n' >&2
   fi
   if [[ "$automatic_staging_started" == true ]] \
     && ! (remove_owned_path "$staging_root") >/dev/null 2>&1; then
-    printf 'fmx prepare: owned runtime staging needs inspection before another repair\n' >&2
+    printf 'firstmate prepare: owned runtime staging needs inspection before another repair\n' >&2
   fi
   release_mutation_lock
 }
@@ -2231,14 +2240,14 @@ doctor_profile() {
   repository="$(catalog_repository)"
   overlay_commit="$(catalog_overlay)"
   installed="$(installed_commit)" \
-    || die "profile is not set up; run fmx setup $profile_key"
+    || die "profile is not set up; run firstmate setup $profile_key"
   [[ "$installed" == "$commit" ]] \
-    || die "installed Firstmate commit $installed does not match the catalog pin $commit; run fmx update $profile_key"
+    || die "installed Firstmate commit $installed does not match the catalog pin $commit; run firstmate update $profile_key"
   verify_receipt "$commit" "$repository" "$overlay_commit"
   [[ -d "$fm_runtime" && ! -L "$fm_runtime" ]] \
-    || die "installed runtime is missing; run fmx repair $profile_key"
+    || die "installed runtime is missing; run firstmate repair $profile_key"
   [[ -f "$fm_runtime/bin/fm-spawn.sh" ]] \
-    || die "installed runtime is incomplete; run fmx repair $profile_key"
+    || die "installed runtime is incomplete; run firstmate repair $profile_key"
   verify_runtime_overlay "$overlay_commit"
   verify_runtime_checkout "$commit"
   verify_managed_runtime_marker
@@ -2253,9 +2262,9 @@ doctor_profile() {
     --marker-value "$ownership_value" \
     --bridge enabled \
     --profile "$profile_key" \
-    || die "the captain Claude home is unhealthy; run fmx repair $profile_key"
+    || die "the captain Claude home is unhealthy; run firstmate repair $profile_key"
   report_doctor_prerequisites
-  printf 'fmx doctor %s: OK (firstmate %s, %s)\n' \
+  printf 'firstmate doctor %s: OK (firstmate %s, %s)\n' \
     "$profile_key" "${commit:0:12}" "$model_id"
 }
 
@@ -2281,13 +2290,13 @@ check_update() {
     die "update --check could not get a stable snapshot for $profile_key; retry after the current mutation"
   fi
   if [[ -z "$installed" ]]; then
-    printf 'fmx update: %s is not set up (catalog pin %s)\n' "$profile_key" "${commit:0:12}"
+    printf 'firstmate update: %s is not set up (catalog pin %s)\n' "$profile_key" "${commit:0:12}"
     return
   fi
   if [[ "$installed" == "$commit" ]]; then
-    printf 'fmx update: %s is current (%s)\n' "$profile_key" "${commit:0:12}"
+    printf 'firstmate update: %s is current (%s)\n' "$profile_key" "${commit:0:12}"
   else
-    printf 'fmx update: %s is stale (installed %s, catalog pin %s)\n' \
+    printf 'firstmate update: %s is stale (installed %s, catalog pin %s)\n' \
       "$profile_key" "${installed:0:12}" "${commit:0:12}"
   fi
 }
@@ -2308,7 +2317,7 @@ print_harness_version_json() {
     --arg installed "$installed" \
     --arg latest "$commit" '{
       schemaVersion: 1,
-      launcher: "fmx",
+      launcher: "firstmate",
       harness: "firstmate",
       installed: ($installed | if length > 0 then . else null end),
       latest: $latest,
@@ -2332,7 +2341,7 @@ update_profile() {
   repository="$(catalog_repository)"
   overlay_commit="$(catalog_overlay)"
   installed="$(installed_commit)" \
-    || die "profile is not set up; run fmx setup $profile_key"
+    || die "profile is not set up; run firstmate setup $profile_key"
   if [[ "$installed" == "$commit" ]] \
     && python3 "$overlay_tool" \
       --manifest "$(overlay_directory "$overlay_commit")/manifest.json" \
@@ -2340,7 +2349,7 @@ update_profile() {
       --commit "$overlay_commit" \
       --verify-only >/dev/null 2>&1 \
     && runtime_checkout_report "$commit" >/dev/null 2>&1; then
-    printf 'fmx update: %s is current (%s)\n' "$profile_key" "${commit:0:12}"
+    printf 'firstmate update: %s is current (%s)\n' "$profile_key" "${commit:0:12}"
     return
   fi
   require_gh_authenticated
@@ -2350,7 +2359,7 @@ update_profile() {
   ensure_managed_home
   ensure_crew_harness_config
   ensure_worker_policy
-  printf 'fmx update: %s %s -> %s installed\n' \
+  printf 'firstmate update: %s %s -> %s installed\n' \
     "$profile_key" "${installed:0:12}" "${commit:0:12}"
 }
 
@@ -2507,7 +2516,7 @@ inventory_json() {
     --argjson fleet "$fleet" '
     {
       schemaVersion: 1,
-      launcher: "fmx",
+      launcher: "firstmate",
       harness: "firstmate",
       profile: $profile,
       readiness: $readiness,
@@ -2577,7 +2586,7 @@ acquire_session_lock() {
       incomplete)
         # A contender must never take a session directory that has been created
         # but whose pid is not published yet.
-        die "an incomplete captain session lock exists at $session_lock; another fmx launch may be acquiring it right now. Confirm no captain is running, then remove it by hand" ;;
+        die "an incomplete captain session lock exists at $session_lock; another firstmate launch may be acquiring it right now. Confirm no captain is running, then remove it by hand" ;;
       unowned)
         die "an unowned captain session lock exists at $session_lock; remove it by hand after confirming no captain is running" ;;
       stale)
@@ -2604,11 +2613,11 @@ launch_profile() {
 
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      --fmx-expected-fleet-json | --fmx-expected-fleet-json=*)
+      --firstmate-expected-fleet-json | --firstmate-expected-fleet-json=*)
         [[ "$expected_fleet_set" == false ]] || die 'expected fleet identity was supplied more than once'
         expected_fleet_set=true
-        if [[ "$1" == --fmx-expected-fleet-json ]]; then
-          [[ "$#" -ge 2 ]] || die '--fmx-expected-fleet-json requires a JSON identity'
+        if [[ "$1" == --firstmate-expected-fleet-json ]]; then
+          [[ "$#" -ge 2 ]] || die '--firstmate-expected-fleet-json requires a JSON identity'
           expected_fleet_json="$2"
           shift 2
         else
@@ -2666,15 +2675,15 @@ launch_profile() {
   elif [[ "$expected_fleet_set" == false ]]; then
     recover_interrupted_publication
   fi
-  profile_is_set_up || die "profile is not set up; run fmx setup $profile_key"
+  profile_is_set_up || die "profile is not set up; run firstmate setup $profile_key"
   commit="$(catalog_commit)"
   repository="$(catalog_repository)"
   overlay_commit="$(catalog_overlay)"
   [[ "$(installed_commit)" == "$commit" ]] \
-    || die "installed Firstmate commit differs from the catalog pin; run fmx update $profile_key"
+    || die "installed Firstmate commit differs from the catalog pin; run firstmate update $profile_key"
   verify_receipt "$commit" "$repository" "$overlay_commit"
   [[ -f "$fm_runtime/bin/fm-spawn.sh" ]] \
-    || die "installed runtime is incomplete; run fmx repair $profile_key"
+    || die "installed runtime is incomplete; run firstmate repair $profile_key"
   verify_runtime_overlay "$overlay_commit"
   verify_runtime_checkout "$commit"
   verify_managed_runtime_marker
@@ -2682,9 +2691,9 @@ launch_profile() {
   verify_crew_harness_config
   verify_worker_policy
   python3 "$control_helper" identity "$profile_root" "$profile_key" "$commit" >/dev/null \
-    || die "fleet identity is missing or unsafe; run fmx repair $profile_key while the fleet is idle"
+    || die "fleet identity is missing or unsafe; run firstmate repair $profile_key while the fleet is idle"
   python3 "$control_helper" consent "$profile_root" "$profile_key" >/dev/null \
-    || die "prior setup consent is required; run fmx repair $profile_key while the fleet is idle"
+    || die "prior setup consent is required; run firstmate repair $profile_key while the fleet is idle"
   worker_controls fleet >/dev/null \
     || die 'restored fleet worker controls failed admission'
   require_gh_authenticated
@@ -2736,23 +2745,23 @@ launch_profile() {
     "FM_HOME=$fm_home"
     "FM_ROOT_OVERRIDE=$fm_runtime"
     "FM_BACKEND=$backend"
-    "FMX_PROFILE=$profile_key"
-    "FMX_PROFILE_ROOT=$profile_root"
-    "FMX_WORKER_LAUNCHER=$worker_launcher"
-    "FMX_CAPTAIN_PANE_ID=${HERDR_PANE_ID-}"
-    "FMX_TASK_ID_PREFIX=$task_id_prefix"
-    "FMX_INSTANCE_ID=$(if [[ "$instance_selector" != legacy ]]; then printf '%s' "$instance_selector"; fi)"
-    "FMX_LAUNCH_PROVENANCE_JSON=$instance_context"
+    "TRELLAGE_FIRSTMATE_PROFILE=$profile_key"
+    "TRELLAGE_FIRSTMATE_PROFILE_ROOT=$profile_root"
+    "TRELLAGE_FIRSTMATE_WORKER_LAUNCHER=$worker_launcher"
+    "TRELLAGE_FIRSTMATE_CAPTAIN_PANE_ID=${HERDR_PANE_ID-}"
+    "TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=$task_id_prefix"
+    "TRELLAGE_FIRSTMATE_INSTANCE_ID=$(if [[ "$instance_selector" != legacy ]]; then printf '%s' "$instance_selector"; fi)"
+    "TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON=$instance_context"
     # HOME and PATH are captured from the validated captain process here and
     # carried explicitly into every worker pane, because a session daemon's
     # environment is not the captain's.
-    "FMX_WORKER_HOME=$HOME"
-    "FMX_WORKER_PATH=$prerequisite_path"
-    "FMX_WORKER_BASH=$worker_bash"
+    "TRELLAGE_FIRSTMATE_WORKER_HOME=$HOME"
+    "TRELLAGE_FIRSTMATE_WORKER_PATH=$prerequisite_path"
+    "TRELLAGE_FIRSTMATE_WORKER_BASH=$worker_bash"
     "TASKS_AXI_BACKEND=markdown"
     "TASKS_AXI_FILE=$fm_home/data/backlog.md"
     "GH_CONFIG_DIR=$gh_config"
-    "FMX_GH_CONFIG_DIR=$gh_config"
+    "TRELLAGE_FIRSTMATE_GH_CONFIG_DIR=$gh_config"
     "ANTHROPIC_AUTH_TOKEN=$proxy_token"
     "ANTHROPIC_BASE_URL=$proxy_origin"
     "ANTHROPIC_DEFAULT_OPUS_MODEL=$model_id"
@@ -2760,9 +2769,9 @@ launch_profile() {
     "ANTHROPIC_DEFAULT_HAIKU_MODEL=$haiku_model_id"
   )
   if [[ -n "$policy_file" ]]; then
-    environment+=("FMX_WORKER_POLICY_FILE=$policy_file")
+    environment+=("TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE=$policy_file")
   else
-    environment+=("FMX_WORKER_POLICY_FILE=")
+    environment+=("TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE=")
   fi
 
   exec env \
@@ -2828,9 +2837,9 @@ if [[ "$instance_operation" != instances && "$instance_operation" != list ]]; th
   filtered_arguments=()
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      --instance=* | --fmx-instance-context-json=* | --join=*)
+      --instance=* | --firstmate-instance-context-json=* | --join=*)
         die 'reserved instance options require their documented separate-value form' ;;
-      --instance | --fmx-instance-context-json)
+      --instance | --firstmate-instance-context-json)
         [[ "$#" -ge 2 && -n "$2" && "$2" != --* ]] || die "$1 requires a nonempty value"
         if [[ "$1" == --instance ]]; then
           [[ "$instance_explicit" == false ]] || die 'instance selector was supplied more than once'
@@ -2947,7 +2956,7 @@ case "${1-}" in
     require_safe_home
     select_profile "$1"
     if [[ "$control_operation" == submit ]]; then verify_instance_context; fi
-    FMX_CONTROL_BASH="$BASH" python3 "$control_helper" "$control_operation" "$1"
+    TRELLAGE_FIRSTMATE_CONTROL_BASH="$BASH" python3 "$control_helper" "$control_operation" "$1"
     ;;
   _control-readiness)
     shift
@@ -2960,15 +2969,15 @@ case "${1-}" in
     ;;
   harness-version)
     shift
-    [[ "$#" -eq 1 ]] || die 'usage: fmx harness-version PROFILE'
-    [[ "$1" != --all ]] || die 'usage: fmx harness-version PROFILE'
+    [[ "$#" -eq 1 ]] || die 'usage: firstmate harness-version PROFILE'
+    [[ "$1" != --all ]] || die 'usage: firstmate harness-version PROFILE'
     require_safe_home
     select_profile "$1"
     print_harness_version_json
     ;;
   setup)
     shift
-    [[ "$#" -eq 1 ]] || die 'usage: fmx setup PROFILE|--all'
+    [[ "$#" -eq 1 ]] || die 'usage: firstmate setup PROFILE|--all'
     require_safe_home
     [[ "$instance_selector" == legacy ]] || die 'named instances require an approved instances create plan'
     run_over_selection setup_profile "$1"
@@ -2992,16 +3001,16 @@ case "${1-}" in
     ;;
   doctor)
     shift
-    [[ "$#" -eq 1 ]] || die 'usage: fmx doctor PROFILE'
-    [[ "$1" != --all ]] || die 'usage: fmx doctor PROFILE'
+    [[ "$#" -eq 1 ]] || die 'usage: firstmate doctor PROFILE'
+    [[ "$1" != --all ]] || die 'usage: firstmate doctor PROFILE'
     require_safe_home
     select_profile "$1"
     doctor_profile_with_lifecycle_gate
     ;;
   repair)
     shift
-    [[ "$#" -eq 1 ]] || die 'usage: fmx repair PROFILE'
-    [[ "$1" != --all ]] || die 'usage: fmx repair PROFILE'
+    [[ "$#" -eq 1 ]] || die 'usage: firstmate repair PROFILE'
+    [[ "$1" != --all ]] || die 'usage: firstmate repair PROFILE'
     require_safe_home
     select_profile "$1"
     repair_profile
@@ -3027,7 +3036,7 @@ case "${1-}" in
       check_only=true
       shift
     fi
-    [[ "$#" -eq 1 ]] || die 'usage: fmx update [--check] PROFILE|--all'
+    [[ "$#" -eq 1 ]] || die 'usage: firstmate update [--check] PROFILE|--all'
     require_safe_home
     if [[ "$check_only" == true ]]; then
       run_over_selection check_update "$1"

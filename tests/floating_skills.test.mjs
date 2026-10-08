@@ -442,6 +442,24 @@ test("first use installs, later use is offline, and update observes the latest c
   assert.match(await readFile(path.join(fixture.target, "fixture", "SKILL.md"), "utf8"), /version two/)
 })
 
+test("native ensure excludes package-owned skills from the managed target", async () => {
+  const fixture = await createFixture()
+  const packageSkill = path.join(fixture.repository, ".omp/skills/package-owned")
+  await mkdir(packageSkill, { recursive: true })
+  await writeFile(path.join(packageSkill, "SKILL.md"), "---\nname: package-owned\n---\n\nPackage skill.\n")
+  await commit(fixture.repository, "add package-owned skill")
+  fixture.catalog.sources.fixture.select.push("package-owned")
+  await ensureNative({
+    catalog: fixture.catalog,
+    bundleIds: ["test"],
+    cache: fixture.cache,
+    target: fixture.target,
+    excluded: ["package-owned"],
+  })
+  assert.deepEqual(await verifyTarget(fixture.cache, fixture.target, ["package-owned"]), ["fixture"])
+  assert.equal(await lstat(path.join(fixture.target, "package-owned")).catch(() => undefined), undefined)
+})
+
 test("update checks compare the latest source without replacing the cache", async () => {
   const fixture = await createFixture()
   assert.equal(
@@ -602,12 +620,12 @@ test("legacy Pi ownership marker migrates show-me without weakening collision ch
   const targetShowMe = path.join(fixture.target, "show-me")
   await mkdir(targetShowMe, { recursive: true })
   await writeFile(path.join(targetShowMe, "SKILL.md"), "legacy\n")
-  await writeFile(path.join(targetShowMe, ".managed-by-trellage-picx-profiles"), "trellage-picx-profile-v2\n")
+  await writeFile(path.join(targetShowMe, ".managed-by-trellage-pi-profiles"), "trellage-pi-profile-v2\n")
   await writeFile(path.join(fixture.target, ".trellage-engineersamuel-skills"), `${"a".repeat(40)}\n`)
   await syncSnapshot(fixture.cache, fixture.target)
   assert.match(await readFile(path.join(targetShowMe, "SKILL.md"), "utf8"), /current/)
   assert.equal(
-    await lstat(path.join(targetShowMe, ".managed-by-trellage-picx-profiles")).catch(() => undefined),
+    await lstat(path.join(targetShowMe, ".managed-by-trellage-pi-profiles")).catch(() => undefined),
     undefined,
   )
 

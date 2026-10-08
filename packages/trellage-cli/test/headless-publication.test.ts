@@ -62,7 +62,7 @@ const nativeCatalogs = [
   "prototypes/trellage-firstmate-profiles/catalog.json",
   "prototypes/trellage-jcode-profiles/catalog.json",
   "prototypes/trellage-omp-profiles/catalog.json",
-  "prototypes/trellage-picx-profiles/catalog.json",
+  "prototypes/trellage-pi-profiles/catalog.json",
   "prototypes/trellage-prime-profiles/catalog.json",
 ] as const
 

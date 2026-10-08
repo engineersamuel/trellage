@@ -51,6 +51,61 @@ const derivedIdentity = (label: string): { readonly harness: string; readonly pr
   return { profile: parts[0]!, harness: parts[1]! }
 }
 
+const optionalBoolean = (value: unknown, name: string): boolean | undefined => {
+  if (value !== undefined && typeof value !== "boolean") throw new Error(`${name} must be a boolean`)
+  return value as boolean | undefined
+}
+
+const validateModels = (
+  index: number,
+  defaultModel: string | undefined,
+  models: ReadonlyArray<string>,
+  modelOverrideSupported: boolean,
+): void => {
+  if (modelOverrideSupported && models.length === 0)
+    throw new Error(`choice ${index} must advertise models when overrides are supported`)
+  if (defaultModel !== undefined && models.length > 0 && !models.includes(defaultModel))
+    throw new Error(`choice ${index} default model must be advertised`)
+}
+
+const parseChoice = (choice: unknown, index: number, ids: Set<string>): LaunchEntry => {
+  const item = record(choice, `choice ${index}`)
+  const id = text(item.id, `choice ${index} id`, 256)
+  if (ids.has(id)) throw new Error(`choice IDs must be unique: ${id}`)
+  ids.add(id)
+  const label = text(item.label, `choice ${index} label`, 1000)
+  const derived = derivedIdentity(label)
+  const harnessVersion = optionalText(item.harnessVersion, `choice ${index} harnessVersion`)
+  const commandName = optionalText(item.commandName, `choice ${index} commandName`)
+  const commandPath = optionalText(item.commandPath, `choice ${index} commandPath`)
+  const profileArgument = optionalText(item.profileArgument, `choice ${index} profileArgument`)
+  const defaultModel = optionalText(item.defaultModel, `choice ${index} defaultModel`)
+  const models = stringArray(item.models, `choice ${index} models`)
+  const modelOverrideSupported = item.modelOverrideSupported === true
+  const sandbox = optionalBoolean(item.sandbox, `choice ${index} sandbox`)
+  validateModels(index, defaultModel, models, modelOverrideSupported)
+  return {
+    id,
+    label,
+    harness: optionalText(item.harness, `choice ${index} harness`) ?? derived.harness,
+    profile: optionalText(item.profile, `choice ${index} profile`) ?? derived.profile,
+    description: optionalText(item.description, `choice ${index} description`) ?? "No description",
+    ...(harnessVersion === undefined ? {} : { harnessVersion }),
+    plugins: stringArray(item.plugins, `choice ${index} plugins`),
+    skills: stringArray(item.skills, `choice ${index} skills`),
+    mcps: stringArray(item.mcps, `choice ${index} mcps`),
+    ...(commandName === undefined ? {} : { commandName }),
+    ...(commandPath === undefined ? {} : { commandPath }),
+    ...(profileArgument === undefined ? {} : { profileArgument }),
+    passthroughArgs: argumentArray(item.passthroughArgs, `choice ${index} passthroughArgs`),
+    ...(item.details === undefined ? {} : { details: text(item.details, `choice ${index} details`) }),
+    ...(defaultModel === undefined ? {} : { defaultModel }),
+    models,
+    modelOverrideSupported,
+    ...(sandbox === undefined ? {} : { sandbox }),
+  }
+}
+
 export const parseLaunchCatalog = (source: string): LaunchCatalog => {
   let payload: unknown
   try {
@@ -66,57 +121,7 @@ export const parseLaunchCatalog = (source: string): LaunchCatalog => {
   }
 
   const ids = new Set<string>()
-  const entries = choices.map((choice, index): LaunchEntry => {
-    const item = record(choice, `choice ${index}`)
-    const id = text(item.id, `choice ${index} id`, 256)
-    if (ids.has(id)) throw new Error(`choice IDs must be unique: ${id}`)
-    ids.add(id)
-    const label = text(item.label, `choice ${index} label`, 1000)
-    const derived = derivedIdentity(label)
-    const harness = optionalText(item.harness, `choice ${index} harness`) ?? derived.harness
-    const profile = optionalText(item.profile, `choice ${index} profile`) ?? derived.profile
-    const harnessVersion = optionalText(item.harnessVersion, `choice ${index} harnessVersion`)
-    const plugins = stringArray(item.plugins, `choice ${index} plugins`)
-    const skills = stringArray(item.skills, `choice ${index} skills`)
-    const mcps = stringArray(item.mcps, `choice ${index} mcps`)
-    const commandAlias = optionalText(item.commandAlias, `choice ${index} commandAlias`)
-    const commandPath = optionalText(item.commandPath, `choice ${index} commandPath`)
-    const profileArgument = optionalText(item.profileArgument, `choice ${index} profileArgument`)
-    const passthroughArgs = argumentArray(item.passthroughArgs, `choice ${index} passthroughArgs`)
-    const defaultModel = optionalText(item.defaultModel, `choice ${index} defaultModel`)
-    const models = stringArray(item.models, `choice ${index} models`)
-    const modelOverrideSupported = item.modelOverrideSupported === true
-    if (item.sandbox !== undefined && typeof item.sandbox !== "boolean") {
-      throw new Error(`choice ${index} sandbox must be a boolean`)
-    }
-    const sandbox = item.sandbox as boolean | undefined
-    if (modelOverrideSupported && models.length === 0) {
-      throw new Error(`choice ${index} must advertise models when overrides are supported`)
-    }
-    if (defaultModel !== undefined && models.length > 0 && !models.includes(defaultModel)) {
-      throw new Error(`choice ${index} default model must be advertised`)
-    }
-    return {
-      id,
-      label,
-      harness,
-      profile,
-      description: optionalText(item.description, `choice ${index} description`) ?? "No description",
-      ...(harnessVersion === undefined ? {} : { harnessVersion }),
-      plugins,
-      skills,
-      mcps,
-      ...(commandAlias === undefined ? {} : { commandAlias }),
-      ...(commandPath === undefined ? {} : { commandPath }),
-      ...(profileArgument === undefined ? {} : { profileArgument }),
-      passthroughArgs,
-      ...(item.details === undefined ? {} : { details: text(item.details, `choice ${index} details`) }),
-      ...(defaultModel === undefined ? {} : { defaultModel }),
-      models,
-      modelOverrideSupported,
-      ...(sandbox === undefined ? {} : { sandbox }),
-    }
-  })
+  const entries = choices.map((choice, index) => parseChoice(choice, index, ids))
 
   const description = root === undefined ? undefined : optionalText(root.description, "description")
   return {

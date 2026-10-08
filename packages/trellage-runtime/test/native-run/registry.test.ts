@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { nativeHarnessRegistry, backendArguments, nativeHarness } from "../../src/native-run/registry.ts"
 
 describe("native backend registry", () => {
-  test("every legacy family has one canonical destination", () => {
-    expect(new Set(nativeHarnessRegistry.map((entry) => entry.legacyLauncher)).size).toBe(9)
+  test("every canonical harness has one backend registration", () => {
+    expect(new Set(nativeHarnessRegistry.map((entry) => entry.id)).size).toBe(9)
     expect(nativeHarness("agency")?.presets.azure).toBe("trellage-azure")
     expect(nativeHarness("omp")?.presets.default).toBe("copilot")
     expect(nativeHarness("omp")?.presets.local).toBe("local")

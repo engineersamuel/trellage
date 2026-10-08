@@ -14,7 +14,7 @@ const model: ModelInfo = {
   supportedReasoningEfforts: ["low", "medium", "high"],
 }
 
-const okContent = JSON.stringify({ summary: "restart the daemon", suggestedFix: "run `cpx repair hve`", confidence: "high" })
+const okContent = JSON.stringify({ summary: "restart the daemon", suggestedFix: "run `copilot repair hve`", confidence: "high" })
 
 class FakeSession implements GuideModelSession {
   readonly sessionId = "session-1"
@@ -159,7 +159,7 @@ describe("DoctorFailureDiagnosisProvider", () => {
     const client = new FakeClient([okContent])
     const provider = buildProvider(client)
     const result = await provider.diagnose({ ref: "native:copilot/hve", name: "hve", capturedOutput: "boom" })
-    expect(result).toMatchObject({ summary: "restart the daemon", suggestedFix: "run `cpx repair hve`", confidence: "high" })
+    expect(result).toMatchObject({ summary: "restart the daemon", suggestedFix: "run `copilot repair hve`", confidence: "high" })
     expect(client.session.disconnectCalls).toBe(1)
     expect(client.deletedSessionIds).toEqual(["session-1"])
     expect(client.stopCalls).toBe(1)

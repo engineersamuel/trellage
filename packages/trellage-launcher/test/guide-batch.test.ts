@@ -391,7 +391,7 @@ describe("guide batch queue", () => {
         launchPrivate: async (_, options) => {
           expect(options.command.args).toEqual(["run", "copilot", "default"])
           events.push(`submit:${options.paneId}`)
-          return { paneId: options.paneId, commandPreview: "cpx default" }
+          return { paneId: options.paneId, commandPreview: "copilot default" }
         },
         onResult: async (entry) => {
           events.push(entry.status)
@@ -548,7 +548,7 @@ describe("guide batch queue", () => {
         launchPrivate: async (_, options) => {
           expect(allocated).toEqual([1, 2, 3])
           submissions.push(options.paneId)
-          return { paneId: options.paneId, commandPreview: "cpx default" }
+          return { paneId: options.paneId, commandPreview: "copilot default" }
         },
         onResult: async (entry) => {
           results.push(`${entry.job.id}:${entry.status}`)

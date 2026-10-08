@@ -1,18 +1,18 @@
 # Native launcher sandboxing — research and decisions
 
-Status: **composed Grok is sandboxed natively; `cdx` uses Full Access by default.
-`cldx`/`cpx`/`fmx`/`jcx`/`omp`/`picx`/`prx` remain unsandboxed; clawk
+Status: **composed Grok is sandboxed natively; `codex` uses Full Access by default.
+`claude`/`copilot`/`firstmate`/`jcode`/`omp`/`pi`/`prime` remain unsandboxed; clawk
 evaluated and not adopted.** The original Codex sandbox decision is retained
 below as history, not as the current launch policy.
 
 Background: Trellage Sandbox profiles (compiled by `packages/trellage-cli`,
 built and run via `trellage build`) always execute inside a resolved, built
 Docker container, so they are implicitly sandboxed regardless of harness kind.
-Trellage Native launchers (`cdx`, `cpx`, `cldx`, `fmx`, `jcx`, `omp`,
-`picx`, `prx`) run the underlying harness CLI directly on the host. This
+Trellage Native launchers (`codex`, `copilot`, `claude`, `firstmate`, `jcode`, `omp`,
+`pi`, `prime`) run the underlying harness CLI directly on the host. This
 repo's own guidance previously stated flatly that "Trellage Native profiles isolate
 agent state but are not containers or security boundaries". The original
-sandbox rollout made two exceptions (`cdx`, Grok). Codex now defaults to Full
+sandbox rollout made two exceptions (`codex`, Grok). Codex now defaults to Full
 Access at the user's request, leaving Grok as the only native sandbox exception.
 
 `trellage list --json-full` (Trellage Sandbox) and every native launcher's
@@ -28,18 +28,18 @@ proved unreliable for some of the Grok config claims below.
 
 | Harness (launcher) | Native OS-level sandbox exists? | Invocation before the original rollout | Decision |
 |---|---|---|---|
-| Codex (`cdx`) | **Yes** — `--sandbox {read-only,workspace-write,danger-full-access}`, enforced by Seatbelt (macOS) / Landlock+bubblewrap (Linux). Confirmed via installed `codex-cli 0.147.0 --help` and https://developers.openai.com/codex/agent-approvals-security. | `cdx` passed `--dangerously-bypass-approvals-and-sandbox` (`prototypes/trellage-codex-profiles/bin/cdx`) — sandbox was actively disabled | Initially enabled; superseded by Full Access (section 2) |
-| Grok (`trx run grok`) | **Yes** — `--sandbox <PROFILE>` (`workspace`, `devbox`, `read-only`, `strict`), enforced by Landlock (Linux, network) / Seatbelt (macOS, filesystem). Confirmed against installed Grok CLI help and https://docs.x.ai/build/features/sandbox. | The retired `grx` launcher originally passed no sandbox-related flag | Enabled in the composed adapter |
-| Claude Code (`cldx`) | **Partial** — `/sandbox` mode exists (bubblewrap/Seatbelt-backed Bash sandboxing), but requires enabling per-session and doesn't compose with `--dangerously-skip-permissions` the way `cldx` invokes Claude today | `cldx` invokes `claude --dangerously-skip-permissions --permission-mode bypassPermissions` (full bypass) | Not flipped — see §3 |
-| Copilot CLI (`cpx`) | **No** — no built-in OS-level sandbox (seatbelt/seccomp/landlock/container); only a trust-directory + tool-approval prompt layer. Real isolation requires an external container. | No sandbox flags exist to pass | Not flippable natively — see §3 |
-| jcode (`jcx`), oh-my-pi (`omp`), Pi (`picx`), Prime (`prx`), Firstmate (`fmx`) | No evidence of built-in OS-level sandboxing found in vendor docs or this repo's invocation code | No sandbox flags | Treated as unsandboxed/unresearched-capability |
+| Codex (`codex`) | **Yes** — `--sandbox {read-only,workspace-write,danger-full-access}`, enforced by Seatbelt (macOS) / Landlock+bubblewrap (Linux). Confirmed via installed `codex-cli 0.147.0 --help` and https://developers.openai.com/codex/agent-approvals-security. | `codex` passed `--dangerously-bypass-approvals-and-sandbox` (`prototypes/trellage-codex-profiles/bin/codex`) — sandbox was actively disabled | Initially enabled; superseded by Full Access (section 2) |
+| Grok (`trx run grok`) | **Yes** — `--sandbox <PROFILE>` (`workspace`, `devbox`, `read-only`, `strict`), enforced by Landlock (Linux, network) / Seatbelt (macOS, filesystem). Confirmed against installed Grok CLI help and https://docs.x.ai/build/features/sandbox. | The earlier launcher passed no sandbox-related flag | Enabled in the composed adapter |
+| Claude Code (`claude`) | **Partial** — `/sandbox` mode exists (bubblewrap/Seatbelt-backed Bash sandboxing), but requires enabling per-session and doesn't compose with `--dangerously-skip-permissions` the way `claude` invokes Claude today | `claude` invokes `claude --dangerously-skip-permissions --permission-mode bypassPermissions` (full bypass) | Not flipped — see §3 |
+| Copilot CLI (`copilot`) | **No** — no built-in OS-level sandbox (seatbelt/seccomp/landlock/container); only a trust-directory + tool-approval prompt layer. Real isolation requires an external container. | No sandbox flags exist to pass | Not flippable natively — see §3 |
+| jcode (`jcode`), oh-my-pi (`omp`), Pi (`pi`), Prime (`prime`), Firstmate (`firstmate`) | No evidence of built-in OS-level sandboxing found in vendor docs or this repo's invocation code | No sandbox flags | Treated as unsandboxed/unresearched-capability |
 
 ## 2. Current defaults and the prior Codex policy
 
 Network access stays allowed for both launchers, but only Grok retains its
 native sandbox by default.
 
-- **`cdx`**, including `pstack`, `superpowers`, and `youtube`: uses
+- **`codex`**, including `pstack`, `superpowers`, and `youtube`: uses
   `--dangerously-bypass-approvals-and-sandbox`. This selects Full Access
   (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`) for
   both authentication paths and both interactive and non-interactive launches.
@@ -55,13 +55,13 @@ native sandbox by default.
   limits what an approved call can do"), so the existing bypass/auto-approve
   flags are unaffected by adding the sandbox restriction.
 
-`cdx list --json` reports `sandbox: false`; `trx run grok --dry-run` reports
+`trx list --json` reports `sandbox: false`; `trx run grok --dry-run` reports
 the composed Grok sandbox policy. Use Trellage Sandbox when Codex commands require isolation.
 Container and comparison Codex sessions keep their Docker boundary. Dedicated
 read-only Codex verification probes and the Graph of Loops reviewer retain
 their separate read-only policies.
 
-**Previous Codex default (superseded):** `cdx` used
+**Previous Codex default (superseded):** `codex` used
 `--sandbox workspace-write -c sandbox_workspace_write.network_access=true`.
 Interactive launches used `--ask-for-approval on-request` so the user could
 approve protected Git metadata writes; non-interactive launches used
@@ -82,16 +82,16 @@ not the process flags.
 
 **Fit assessment:**
 
-- **`cldx` (Claude)** is the one harness where clawk fits cleanly: `cldx`
+- **`claude` (Claude)** is the one harness where clawk fits cleanly: `claude`
   already invokes Claude exactly the way clawk expects to wrap it — no
   conflict, unlike trying to reconcile Claude's own `/sandbox` mode with the
   current bypass invocation.
-- **`cpx` (Copilot), `jcx` (jcode), `omp` (oh-my-pi), `picx` (Pi), `prx` (Prime)** are not
+- **`copilot` (Copilot), `jcode` (jcode), `omp` (oh-my-pi), `pi` (Pi), `prime` (Prime)** are not
   first-class clawk runners (only `claude`, `codex`, `opencode`, `shell`
   are). Integration would go through the generic `shell` runner, losing
   clawk's auth/state auto-wiring for these harnesses and effectively
   hand-rolling per-harness support.
-- **`fmx` (Firstmate)** depends on host worktrees plus tmux or Herdr pane
+- **`firstmate` (Firstmate)** depends on host worktrees plus tmux or Herdr pane
   control. Moving that orchestration into a microVM would be a separate
   contained harness design, not a drop-in Native launcher wrapper.
 - Costs that don't fit well here: clawk is **pre-1.0** ("expect breaking
@@ -103,21 +103,21 @@ not the process flags.
   doesn't even have first-class support.
 
 **Decision: forego clawk for now.** It only cleanly fits one harness
-(`cldx`), lacks first-class support for the other five single-agent
+(`claude`), lacks first-class support for the other five single-agent
 launchers, does not preserve Firstmate's host orchestration model, and is
 pre-1.0/platform-limited. Rely on the existing **Trellage Sandbox (Docker
 container) harness** for real isolation when
-`cldx`/`cpx`/`fmx`/`jcx`/`omp`/`picx`/`prx` need it — `sandbox: false` is
+`claude`/`copilot`/`firstmate`/`jcode`/`omp`/`pi`/`prime` need it — `sandbox: false` is
 reported for all seven in native `list --json`.
-A future revisit of clawk-for-`cldx` is reasonable once clawk reaches 1.0 and
+A future revisit of clawk-for-`claude` is reasonable once clawk reaches 1.0 and
 gets non-experimental Linux support, but is not scheduled work today.
 
 ## 4. Project guide update
 
 The statement "Trellage Native profiles isolate agent state but are not
 containers or security boundaries" now has one exception: composed Grok enables its
-native OS-level sandbox. `cdx` uses Full Access by default; `cldx`, `cpx`,
-`jcx`, `omp`, `picx`, `prx`, and `fmx` remain unsandboxed as before.
+native OS-level sandbox. `codex` uses Full Access by default; `claude`, `copilot`,
+`jcode`, `omp`, `pi`, `prime`, and `firstmate` remain unsandboxed as before.
 
 ## 5. Grok GitHub authentication
 

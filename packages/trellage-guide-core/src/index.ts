@@ -422,7 +422,7 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
   if (fields.schemaVersion !== 1) fail(`${path} frontmatter.schemaVersion`, "must equal 1")
   const guideWorkflows = workflows(fields.workflows, `${path} frontmatter.workflows`)
   if (guideWorkflows.some(({ interaction }) => interaction !== undefined) &&
-      !/(?:^|\/)native\/(?:cpx|copilot)\/hve\.md$/u.test(path.replaceAll("\\", "/"))) {
+      !/(?:^|\/)native\/(?:copilot|copilot)\/hve\.md$/u.test(path.replaceAll("\\", "/"))) {
     fail(`${path} frontmatter.workflows`, "verified interactive workflows require native/copilot/hve.md")
   }
   let execution: ProfileGuideGoalExecution | undefined

@@ -386,7 +386,7 @@ describe("upgrade CLI Firstmate instance scope", () => {
       ].sort())
       if (verb === "harness-version") continue
       for (const [, args] of calls.filter(([, args]) => args[args.indexOf("--instance") + 1] !== "legacy")) {
-        const context = parseFirstmateInstanceControlContextV1(JSON.parse(args[args.indexOf("--fmx-instance-context-json") + 1]!))
+        const context = parseFirstmateInstanceControlContextV1(JSON.parse(args[args.indexOf("--firstmate-instance-context-json") + 1]!))
         expect(context.reference.instanceId).toBe(args[args.indexOf("--instance") + 1])
         expect(context.selection).toBe("confirmed-join")
       }
@@ -551,7 +551,7 @@ describe("upgrade CLI shared queue execution", () => {
   it("fails closed on old wrappers instead of forwarding an unknown verb into an agent", async () => {
     const { invoke, run, lines } = fixture()
     run.mockImplementation(async (executable, args) =>
-      executable === "/fixture/trx" && args[0] === "--help" ? success("Usage: cldx PROFILE [AGENT_ARGS]") : successfulCommand(args),
+      executable === "/fixture/trx" && args[0] === "--help" ? success("Usage: claude PROFILE [AGENT_ARGS]") : successfulCommand(args),
     )
     expect(await invoke(["all", "--yes"])).toBe(1)
     expect(run.mock.calls.some(([, args]) => args.includes("--harness-only"))).toBe(false)

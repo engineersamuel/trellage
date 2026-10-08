@@ -1,6 +1,6 @@
 # Isolated Codex profiles
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run codex PROFILE` runs the host Codex CLI with named, isolated user-state homes. The
 catalog contains `pstack`, `superpowers`, and the skill-only `youtube` profile.
@@ -48,8 +48,8 @@ non-symlink `~/.config/fish/config.fish`. Install with:
 ./install.sh
 ```
 
-The installer keeps `cdx` as a private backend in the owned runtime at
-`~/.local/share/trellage/cdx/`. `~/.local/bin` must already be on `PATH`.
+The installer keeps `codex` as a private backend in the owned runtime at
+`~/.local/share/trellage/codex/`. `~/.local/bin` must already be on `PATH`.
 Successful installation migrates the managed runtime to ownership generation
 v2. Older v1 worktree installers then fail closed instead of removing newer
 profiles from the host catalog. Reinstall from a current worktree to update the
@@ -66,13 +66,13 @@ Trellage's three native profile roots are:
 Installation removes only this exact legacy Fish line when it is present:
 
 ```fish
-alias cdx="codex --dangerously-bypass-approvals-and-sandbox"
+alias codex="codex --dangerously-bypass-approvals-and-sandbox"
 ```
 
-If no explicit literal `cdx` alias or function exists, installation preserves
+If no explicit literal `codex` alias or function exists, installation preserves
 the Fish config bytes and mode and records that no line was removed. It
 syntax-checks the file without executing it and refuses any other explicit
-literal `cdx` alias or function in that file. Dynamic or escaped alias/function names
+literal `codex` alias or function in that file. Dynamic or escaped alias/function names
 following a literal `alias` or `function` command are fail-closed as ambiguous.
 Dynamic command names, `eval`, sourced files, and runtime function calls are outside
 the installer analysis boundary. Reload Fish after install; an existing shell may
@@ -115,8 +115,8 @@ update those installations with their original package manager.
 `trx upgrade codex PROFILE --skills-only` copies and verifies managed skills from an
 existing cache after `trx skills update`. Plugin profiles use `native-common`
 and `codex-common` at
-`${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cdx-skills`;
-`youtube` adds the `youtube` bundle in the separate `cdx-youtube-pro-skills` cache.
+`${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/codex-skills`;
+`youtube` adds the `youtube` bundle in the separate `codex-youtube-pro-skills` cache.
 Custom skills are preserved. Missing profiles or caches, invalid ownership,
 unsafe paths, and name collisions fail closed. This command never fetches,
 runs Codex, changes plugins or authentication, or loads the YouTube Varlock
@@ -147,7 +147,7 @@ does not support it reports unknown readiness and blocks goal startup.
 
 After installing the native launchers and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
-harness/profile picker. Remaining arguments are forwarded to `cdx` unchanged
+harness/profile picker. Remaining arguments are forwarded to `codex` unchanged
 after selection; the bare picker never performs setup, repair, or update.
 In `trx admin`, press `U`, then `y` to update the shared Codex harness.
 
@@ -177,9 +177,9 @@ Hook trust uses contextual `--dangerously-bypass-hook-trust`:
 
 | Mode | When |
 | --- | --- |
-| `auto` (default) | Bypass when stdin/stdout/stderr are not a full TTY, or when `CI`, `TRELLAGE_AUTOMATION`, or `CDX_AUTOMATION=1` is set. Full interactive TTY omits the flag so Codex can use persisted `[hooks.state]` trust (and prompt once for new/changed hooks). |
-| `bypass` | Always pass the flag (`CDX_HOOK_TRUST=bypass`). |
-| `prompt` | Never pass the flag (`CDX_HOOK_TRUST=prompt`). |
+| `auto` (default) | Bypass when stdin/stdout/stderr are not a full TTY, or when `CI`, `TRELLAGE_AUTOMATION`, or `TRELLAGE_CODEX_AUTOMATION=1` is set. Full interactive TTY omits the flag so Codex can use persisted `[hooks.state]` trust (and prompt once for new/changed hooks). |
+| `bypass` | Always pass the flag (`TRELLAGE_CODEX_HOOK_TRUST=bypass`). |
+| `prompt` | Never pass the flag (`TRELLAGE_CODEX_HOOK_TRUST=prompt`). |
 
 Automated/`trx`/non-TTY launches stay unblocked. Interactive humans avoid the
 permanent bypass warning when profile hook hashes are already trusted.
@@ -223,7 +223,7 @@ upstream email, OTP, account-creation, or key-persistence flow.
 
 ## Automatic Varlock Environment Loading
 
-`cdx` automatically uses the bundled Varlock runtime for profile launches that
+`codex` automatically uses the bundled Varlock runtime for profile launches that
 declare required environment variables. The current profile is `youtube`.
 Always run `trx run codex youtube` directly; do not prefix it with `varlock`.
 
@@ -243,7 +243,7 @@ TRANSCRIPT_API_KEY=replace-with-token
 ```
 
 The directory must have mode `0700`. Existing process environment values take
-precedence over file values. `cdx` filters Varlock injection to the selected
+precedence over file values. `codex` filters Varlock injection to the selected
 profile's cataloged environment names, so unrelated values in the same source
 do not enter the launcher.
 
@@ -274,7 +274,7 @@ only the selected profile's `auth.json`, and does not change managed proxy confi
 Missing or invalid native auth fails without proxy fallback. Sessions,
 configuration, and other profile state remain isolated.
 
-MCP servers are profile-local. `cdx` does not import host MCP definitions from
+MCP servers are profile-local. `codex` does not import host MCP definitions from
 `~/.codex/config.toml`, and one profile's MCPs are not shared with another.
 Configure MCPs by launching the selected profile explicitly.
 
@@ -284,7 +284,7 @@ is only held for brief prepare/cleanup windows and for lifecycle commands
 (`setup`, `doctor`, `update`, `repair`). Post-exit cleanup strips only
 Codex-generated project-trust stanzas from the live `config.toml` and keeps
 other concurrent writes (hooks, marketplace metadata, TUI notices). If a
-lifecycle command or brief prepare/cleanup must wait, `cdx` reports the
+lifecycle command or brief prepare/cleanup must wait, `codex` reports the
 blocking PID so a wait is never silent.
 
 Launch skips the Codex directory-trust prompt with one ephemeral
@@ -312,9 +312,9 @@ unchanged so unexpected drift stays visible.
 
 Uninstall restores the exact original Fish config only if the file still has
 the post-install hash recorded by the installer. When installation found no
-`cdx` definition, uninstall preserves that state and does not add a line. If
+`codex` definition, uninstall preserves that state and does not add a line. If
 the user edited Fish config, uninstall refuses and leaves both the runtime and
-recovery data intact. On success it removes only the Trellage-owned `cdx`
+recovery data intact. On success it removes only the Trellage-owned `codex`
 symlink/runtime and restores the original Fish bytes and mode.
 It preserves every Codex profile home, including authentication, configuration, MCPs, plugins,
 sessions, memory, and permissions. When the legacy alias was restored, reload

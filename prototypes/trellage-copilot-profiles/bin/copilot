@@ -21,7 +21,7 @@ resolve_script_dir() {
 
 script_dir="$(resolve_script_dir)"
 runtime_root="$(cd -P "$script_dir/.." && pwd)"
-catalog="${CPX_CATALOG:-$script_dir/../catalog.json}"
+catalog="${TRELLAGE_COPILOT_CATALOG:-$script_dir/../catalog.json}"
 instruction_asset="$script_dir/../assets/rundown/rundown.instructions.md"
 profiles_root="$HOME/.local/share/trellage/profiles/copilot"
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
@@ -45,29 +45,29 @@ if [[ ! -f "$model_settings_source" ]]; then
 fi
 
 die() {
-  printf 'cpx: %s\n' "$1" >&2
+  printf 'copilot: %s\n' "$1" >&2
   exit 1
 }
 
 usage() {
   cat <<'EOF'
 Usage:
-  cpx setup PROFILE|--all
-  cpx PROFILE [COPILOT_ARGS...]
-  cpx interactive hve --agent AGENT --require-skill SKILL [--require-skill SKILL...] [-i PROMPT]
-  cpx workflow-check hve --agent AGENT --require-skill SKILL [--require-skill SKILL...]
-  cpx list
-  cpx list --json
-  cpx list --json --cached-capabilities
-  cpx inventory PROFILE --json
-  cpx doctor PROFILE
-  cpx update --check PROFILE|--all
-  cpx update PROFILE|--all
-  cpx repair PROFILE
-  cpx skills-update PROFILE
-  cpx skills-check PROFILE
-  cpx harness-version
-  cpx harness-update
+  copilot setup PROFILE|--all
+  copilot PROFILE [COPILOT_ARGS...]
+  copilot interactive hve --agent AGENT --require-skill SKILL [--require-skill SKILL...] [-i PROMPT]
+  copilot workflow-check hve --agent AGENT --require-skill SKILL [--require-skill SKILL...]
+  copilot list
+  copilot list --json
+  copilot list --json --cached-capabilities
+  copilot inventory PROFILE --json
+  copilot doctor PROFILE
+  copilot update --check PROFILE|--all
+  copilot update PROFILE|--all
+  copilot repair PROFILE
+  copilot skills-update PROFILE
+  copilot skills-check PROFILE
+  copilot harness-version
+  copilot harness-update
 EOF
 }
 
@@ -75,32 +75,69 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
+required_package_skill_exclusions() {
+  jq -r --arg profile "$1" '.profiles[$profile].requiredPackageSkills[]? // empty' "$catalog"
+}
+
 ensure_floating_skills() {
   local profile="$1"
+  local skill
+  local exclusion_args=()
+  while IFS= read -r skill; do
+    [[ -z "$skill" ]] || exclusion_args+=(--exclude-skill "$skill")
+  done < <(required_package_skill_exclusions "$profile")
   [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
     || die "invalid floating-skills manager: $floating_skills_manager"
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die "invalid floating-skills catalog: $floating_skills_catalog"
-  "$bun_runner" "$floating_skills_manager" ensure \
-    --catalog "$floating_skills_catalog" \
-    --bundle native-common \
-    --target "$(profile_home "$profile")/skills" \
-    || die "failed to install floating skills: $profile"
+  if [[ "${#exclusion_args[@]}" -gt 0 ]]; then
+    "$bun_runner" "$floating_skills_manager" ensure \
+      --catalog "$floating_skills_catalog" \
+      --bundle native-common \
+      --target "$(profile_home "$profile")/skills" \
+      "${exclusion_args[@]}" \
+      || die "failed to install floating skills: $profile"
+  else
+    "$bun_runner" "$floating_skills_manager" ensure \
+      --catalog "$floating_skills_catalog" \
+      --bundle native-common \
+      --target "$(profile_home "$profile")/skills" \
+      || die "failed to install floating skills: $profile"
+  fi
 }
 
 verify_floating_skills() {
   local profile="$1"
-  "$bun_runner" "$floating_skills_manager" verify \
-    --catalog "$floating_skills_catalog" \
-    --bundle native-common \
-    --target "$(profile_home "$profile")/skills" \
-    || die "floating skills are unhealthy: $profile"
+  local skill
+  local exclusion_args=()
+  while IFS= read -r skill; do
+    [[ -z "$skill" ]] || exclusion_args+=(--exclude-skill "$skill")
+  done < <(required_package_skill_exclusions "$profile")
+  if [[ "${#exclusion_args[@]}" -gt 0 ]]; then
+    "$bun_runner" "$floating_skills_manager" verify \
+      --catalog "$floating_skills_catalog" \
+      --bundle native-common \
+      --target "$(profile_home "$profile")/skills" \
+      "${exclusion_args[@]}" \
+      || die "floating skills are unhealthy: $profile"
+  else
+    "$bun_runner" "$floating_skills_manager" verify \
+      --catalog "$floating_skills_catalog" \
+      --bundle native-common \
+      --target "$(profile_home "$profile")/skills" \
+      || die "floating skills are unhealthy: $profile"
+  fi
 }
 
 skills_update_profile() {
   local profile="$1" helper="$runtime_root/native-skills.ts"
   local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
   local skill_args=("${2:---sync}")
+  local skill
+  local exclusion_args=()
+  while IFS= read -r skill; do
+    [[ -z "$skill" ]] || exclusion_args+=(--exclude-skill "$skill")
+  done < <(required_package_skill_exclusions "$profile")
   [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
 
   require_profile "$profile"
@@ -109,10 +146,22 @@ skills_update_profile() {
   [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.ts"
   [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
   if [[ "${skill_args[0]}" == --fresh ]]; then
-    exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills"
+    if [[ "${#exclusion_args[@]}" -gt 0 ]]; then
+      exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+        "${exclusion_args[@]}" "$cache" "$(profile_home "$profile")/skills"
+    fi
+    exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+      "$cache" "$(profile_home "$profile")/skills"
   fi
-  "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" "$cache" "$(profile_home "$profile")/skills" \
-    || die "failed to update cached skills: $profile"
+  if [[ "${#exclusion_args[@]}" -gt 0 ]]; then
+    "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+      "${exclusion_args[@]}" "$cache" "$(profile_home "$profile")/skills" \
+      || die "failed to update cached skills: $profile"
+  else
+    "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
+      "$cache" "$(profile_home "$profile")/skills" \
+      || die "failed to update cached skills: $profile"
+  fi
   [[ "${skill_args[0]}" == --fresh ]] || printf '%s: skills updated from cache\n' "$profile"
 }
 
@@ -121,12 +170,12 @@ extract_semver() {
 }
 
 copilot_version_cache_path() {
-  printf '%s\n' "${CPX_COPILOT_VERSION_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/trellage/cpx/copilot-version.json}"
+  printf '%s\n' "${TRELLAGE_COPILOT_COPILOT_VERSION_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/trellage/copilot/copilot-version.json}"
 }
 
 copilot_version_cache_root() {
-  if [[ -n "${CPX_COPILOT_VERSION_CACHE:-}" ]]; then
-    printf '%s\n' "${CPX_COPILOT_VERSION_CACHE%/*}"
+  if [[ -n "${TRELLAGE_COPILOT_COPILOT_VERSION_CACHE:-}" ]]; then
+    printf '%s\n' "${TRELLAGE_COPILOT_COPILOT_VERSION_CACHE%/*}"
   else
     printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}"
   fi
@@ -840,11 +889,11 @@ check_interactive_workflow() {
   require_command python3
   require_command copilot
   plugin="$(profile_value "$profile" plugin)"
-  plugin_is_installed "$profile" "$plugin" || die 'the HVE plugin is not available; run cpx doctor hve'
+  plugin_is_installed "$profile" "$plugin" || die 'the HVE plugin is not available; run copilot doctor hve'
   plugin_root="$(active_plugin_root "$profile" "$plugin")" \
-    || die 'the HVE plugin root is missing or unsafe; run cpx doctor hve'
+    || die 'the HVE plugin root is missing or unsafe; run copilot doctor hve'
   version="$(copilot_version_if_available)"
-  inventory="$(skill_inventory_snapshot "$profile")" || die 'failed to read HVE skill availability; run cpx doctor hve'
+  inventory="$(skill_inventory_snapshot "$profile")" || die 'failed to read HVE skill availability; run copilot doctor hve'
   python3 - "$plugin_root" "$version" "$workflow_agent" "${workflow_skills[@]}" 3<<<"$inventory" <<'PY'
 import hashlib
 import json
@@ -914,13 +963,13 @@ try:
         if len(matches) != 1:
             stop("required skill is not uniquely enabled by Copilot: " + skill)
     print(json.dumps({
-        "schemaVersion": 1, "launcher": "cpx", "profile": "hve",
+        "schemaVersion": 1, "launcher": "copilot", "profile": "hve",
         "mode": "interactive", "agent": agent, "requiredSkills": skills,
         "manifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "harnessVersion": version,
     }))
 except (OSError, ValueError) as error:
-    print("cpx: workflow unavailable: " + str(error), file=sys.stderr)
+    print("copilot: workflow unavailable: " + str(error), file=sys.stderr)
     sys.exit(1)
 PY
 }
@@ -1188,7 +1237,7 @@ require_no_forbidden_superpowers() {
   [[ "$profile" != superpowers ]] || return 0
   forbidden_superpowers_plugins "$profile" >/dev/null || status=$?
   case "$status" in
-    0) die "forbidden Superpowers plugin is installed: $profile; run: cpx repair $profile" ;;
+    0) die "forbidden Superpowers plugin is installed: $profile; run: copilot repair $profile" ;;
     1) ;;
     *) die "failed to read installed plugins: $profile" ;;
   esac
@@ -1242,7 +1291,7 @@ require_no_retired_plugins() {
 
   retired_plugins "$profile" >/dev/null || status=$?
   case "$status" in
-    0) die "retired plugin is installed: $profile; run: cpx repair $profile" ;;
+    0) die "retired plugin is installed: $profile; run: copilot repair $profile" ;;
     1) ;;
     *) die "failed to read installed plugins: $profile" ;;
   esac
@@ -1378,7 +1427,7 @@ list_profiles_json() {
   jq -S --argjson headless "$headless_map" '
     {
       schemaVersion: 1,
-      launcher: "cpx",
+      launcher: "copilot",
       harness: "copilot",
       # Copilot CLI has no native OS-level sandbox (only trust-directory +
       # tool-approval prompts); real isolation requires Trellage Sandbox
@@ -1416,7 +1465,7 @@ not_ready_inventory() {
     --arg readiness "$readiness" \
     '{
       schemaVersion: 1,
-      launcher: "cpx",
+      launcher: "copilot",
       harness: "copilot",
       profile: $profile,
       readiness: $readiness,
@@ -1547,7 +1596,7 @@ inventory_profile() {
     --argjson mcps "$mcps" \
     '{
       schemaVersion: 1,
-      launcher: "cpx",
+      launcher: "copilot",
       harness: "copilot",
       profile: $profile,
       readiness: "healthy",
@@ -1818,7 +1867,7 @@ check_update_profile() {
   require_profile "$profile"
   plugin="$(profile_value "$profile" plugin)"
   if ! current_version="$(installed_version "$profile" "$plugin")"; then
-    printf 'cpx: failed to read installed plugin version for %s\n' "$profile" >&2
+    printf 'copilot: failed to read installed plugin version for %s\n' "$profile" >&2
     return 2
   fi
   if [[ -z "$current_version" ]]; then
@@ -1826,7 +1875,7 @@ check_update_profile() {
     return 1
   fi
   if ! available_version="$(manifest_version "$profile")"; then
-    printf 'cpx: failed to fetch or parse official manifest for %s\n' "$profile" >&2
+    printf 'copilot: failed to fetch or parse official manifest for %s\n' "$profile" >&2
     return 2
   fi
   if [[ "$current_version" == "$available_version" ]]; then
@@ -1912,7 +1961,7 @@ print_harness_version_json() {
   installed="$(copilot_version_if_available)"
   jq -cn --arg installed "$installed" '{
     schemaVersion: 1,
-    launcher: "cpx",
+    launcher: "copilot",
     harness: "copilot",
     installed: ($installed | if length > 0 then . else null end),
     latest: null,

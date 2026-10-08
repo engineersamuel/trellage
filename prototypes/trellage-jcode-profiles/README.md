@@ -1,6 +1,6 @@
 # Native jcode profile
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run jcode PROFILE` runs [jcode](https://github.com/1jehuang/jcode) directly on the host with
 an isolated profile. It uses keyless `copilot-proxy-rs` at
@@ -37,8 +37,8 @@ trx upgrade jcode default
 trx repair jcode default
 ```
 
-The installer keeps `jcx` as a private backend and owns its runtime beneath
-`~/.local/share/trellage/jcx`. `setup` resolves the latest jcode release
+The installer keeps `jcode` as a private backend and owns its runtime beneath
+`~/.local/share/trellage/jcode`. `setup` resolves the latest jcode release
 eligible under `mise` policy on first use, installs it into the managed
 runtime, and records the exact installed version in the local
 `installed-version` receipt. Ordinary launches reuse that version without a
@@ -55,7 +55,7 @@ checks or starts the proxy.
 ## Manual output skill
 
 The shared bundle includes `i-have-adhd`, but JCode does not honor its
-`disable-model-invocation` metadata. `jcx` keeps a complete managed skill library
+`disable-model-invocation` metadata. `jcode` keeps a complete managed skill library
 outside `JCODE_HOME` and excludes this skill from `home/skills`, where JCode
 discovers skills automatically. Other skills remain available as before.
 
@@ -113,7 +113,7 @@ multiline arrays, while restoring managed fields. A missing or malformed config
 is replaced with the minimal managed config. Unsafe paths and unowned profile
 state still fail closed.
 
-`jcx` adds no containment. jcode runs with all host access available to the
+`jcode` adds no containment. jcode runs with all host access available to the
 process.
 
 ## Uninstall

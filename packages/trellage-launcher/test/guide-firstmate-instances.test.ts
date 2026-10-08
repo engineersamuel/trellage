@@ -153,7 +153,7 @@ describe("Firstmate instance execution selection", () => {
   it("routes by UUID and binds control to the confirmed context", () => {
     expect(firstmateInstanceSelectorArgs(selected)).toEqual(["--instance", descriptor.reference.instanceId])
     expect(firstmateInstanceControlArgs(selected)).toEqual([
-      "--instance", descriptor.reference.instanceId, "--fmx-instance-context-json", canonicalFirstmateInstanceJson(context),
+      "--instance", descriptor.reference.instanceId, "--firstmate-instance-context-json", canonicalFirstmateInstanceJson(context),
     ])
     expect(() => firstmateInstanceControlArgs({
       ...selected, firstmateInstance: { ...descriptor.reference, instanceId: otherId },

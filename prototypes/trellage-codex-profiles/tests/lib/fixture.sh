@@ -7,7 +7,7 @@
 contract_lib_dir="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(CDPATH= cd -- "$contract_lib_dir/../.." && pwd)"
 catalog="$root/catalog.json"
-launcher="$root/bin/cdx"
+launcher="$root/bin/codex"
 common_launcher="$root/../trellage-codex-common/native-codex"
 
 fail() {
@@ -32,12 +32,12 @@ if (exit 23) | :; then
 fi
 
 fixture_parent="$(CDPATH= cd -P -- "${TMPDIR:-/tmp}" && pwd -P)"
-fixture_root="$(mktemp -d "$fixture_parent/trellage-cdx-contract.XXXXXX")" || {
+fixture_root="$(mktemp -d "$fixture_parent/trellage-codex-contract.XXXXXX")" || {
   printf 'could not create contract fixture\n' >&2
   exit 1
 }
 case "$fixture_root" in
-  "$fixture_parent"/trellage-cdx-contract.*) ;;
+  "$fixture_parent"/trellage-codex-contract.*) ;;
   *) printf 'refusing unsafe fixture root: %s\n' "$fixture_root" >&2; exit 1 ;;
 esac
 # Project-local fixtures must not discover the surrounding repository as their workspace.
@@ -121,7 +121,7 @@ cleanup_tracked_async() {
 cleanup() {
   cleanup_tracked_async
   case "$fixture_root" in
-    "$fixture_parent"/trellage-cdx-contract.*) rm -rf -- "$fixture_root" ;;
+    "$fixture_parent"/trellage-codex-contract.*) rm -rf -- "$fixture_root" ;;
     *) printf 'refusing unsafe fixture cleanup: %s\n' "$fixture_root" >&2; exit 1 ;;
   esac
 }
@@ -138,14 +138,14 @@ refresh_fixture_source() {
 # `fixture_launcher` and friends.
 build_fixture_profiles() {
 fixture_profiles="$fixture_root/profiles"
-fixture_launcher="$fixture_profiles/bin/cdx"
+fixture_launcher="$fixture_profiles/bin/codex"
 fixture_common_launcher="$fixture_profiles/lib/native-codex"
 fixture_session_bridge="$fixture_profiles/lib/trellage-session-bridge.py"
 fixture_catalog="$fixture_profiles/catalog.json"
 fixture_skills_runtime="$fixture_root/common/floating-skills-runtime"
 fixture_environment_runtime="$fixture_root/common/native-environment-runtime"
-fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/cdx-skills"
-fixture_youtube_skills_cache="$fixture_root/home/.local/share/trellage/common/cdx-youtube-pro-skills"
+fixture_skills_cache="$fixture_root/home/.local/share/trellage/common/codex-skills"
+fixture_youtube_skills_cache="$fixture_root/home/.local/share/trellage/common/codex-youtube-pro-skills"
 mkdir -p \
   "$(dirname "$fixture_launcher")" \
   "$(dirname "$fixture_common_launcher")" \
@@ -300,7 +300,7 @@ cat >"$fake_bin/jq" <<'EOF'
 #!/usr/bin/env bash
 set -u
 if [ -n "${FAKE_JQ_ENV_LOG:-}" ] && [ "${1-}" != -cn ]; then
-  if [ -n "${TRANSCRIPT_API_KEY:-}" ] || [[ "${cdx_transcript_api_key+x}" == x ]]; then
+  if [ -n "${TRANSCRIPT_API_KEY:-}" ] || [[ "${codex_transcript_api_key+x}" == x ]]; then
     printf '%s\n' true >>"$FAKE_JQ_ENV_LOG"
   else
     printf '%s\n' false >>"$FAKE_JQ_ENV_LOG"
@@ -822,7 +822,7 @@ case "$*" in
     fi
     if [ "$profile" = superpowers ] \
       && [ "${1:-}" = '--dangerously-bypass-approvals-and-sandbox' ]; then
-      # Skip cdx-injected flags to find the first caller argument. Full Access,
+      # Skip codex-injected flags to find the first caller argument. Full Access,
       # hook-trust bypass, and no-daemon flags do not consume a value.
       launch_action=''
       while [ $# -gt 0 ]; do

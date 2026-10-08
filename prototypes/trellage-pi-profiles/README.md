@@ -1,6 +1,6 @@
 # Trellage Native Pi extension profile
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run pi default` launches the Trellage Native Pi profile.
 It runs the latest stable upstream `@earendil-works/pi-coding-agent` release
@@ -22,11 +22,11 @@ The profile installs exactly this ordered extension set:
 10. `npm:@quintinshaw/pi-dynamic-workflows`
 
 The launcher owns
-`~/.local/share/trellage/profiles/pi/picx-default`. It sets
+`~/.local/share/trellage/profiles/pi/pi-default`. It sets
 `PI_CODING_AGENT_DIR` to the profile's `agent` directory, stores sessions in
 the profile's `sessions` directory, and does not use `~/.pi`, `~/.omp`, or the
 host Pi installation. The old
-`~/.omp/profiles/trellage-picx-default` profile is not used or deleted.
+`~/.omp/profiles/trellage-pi-default` profile is not used or deleted.
 
 Managed `settings.json` declares the ten packages and selects the proxy model.
 Pi owns and can update a string `lastChangelogVersion`; doctor accepts that UI
@@ -67,7 +67,7 @@ trx inventory pi default --json
 
 First setup resolves the latest stable Pi release through `mise`, installs it,
 and records the exact installed version in the local `installed-version`
-receipt under `~/.local/share/trellage/picx`. `trx run pi default` selects this profile. Ordinary launches reuse the receipt-selected version
+receipt under `~/.local/share/trellage/pi`. `trx run pi default` selects this profile. Ordinary launches reuse the receipt-selected version
 and installed extensions without a network request. Setup and explicit
 `trx upgrade pi default` resolve the current stable releases for unversioned npm extension
 specs. A failed update preserves the last good installed version, extensions,
@@ -91,5 +91,5 @@ exactly matches the profile catalog's `testedHarnessVersion`.
 Run the deterministic contract with:
 
 ```bash
-make native-picx-profile
+make native-pi-profile
 ```

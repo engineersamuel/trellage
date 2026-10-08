@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-ownership_value='trellage-picx-profiles-v1'
+ownership_value='trellage-pi-profiles-v1'
 
 refuse() {
-  printf 'picx install: %s\n' "$1" >&2
+  printf 'pi install: %s\n' "$1" >&2
   exit 1
 }
 
@@ -22,14 +22,19 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 local_dir="$home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
-install_root="$runtime_parent/picx"
-installed_launcher="$install_root/bin/picx"
+install_root="$runtime_parent/pi"
+installed_launcher="$install_root/bin/pi"
 installed_catalog="$install_root/catalog.json"
 installed_version_receipt="$install_root/installed-version"
 legacy_version_receipt="$install_root/version"
-ownership_marker="$install_root/.managed-by-trellage-picx-profiles"
+ownership_marker="$install_root/.managed-by-trellage-pi-profiles"
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/picx"
+command_path="$command_dir/pi"
+profiles_parent="$runtime_parent/profiles/pi"
+legacy_profile="$profiles_parent/picx-default"
+canonical_profile="$profiles_parent/pi-default"
+legacy_profile_marker="$legacy_profile/.managed-by-trellage-picx-profiles"
+canonical_profile_marker="$canonical_profile/.managed-by-trellage-pi-profiles"
 
 require_safe_directory() {
   local path="$1" expected="$2" description="$3" canonical_path
@@ -45,10 +50,26 @@ require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
+require_safe_directory "$runtime_parent/profiles" "$canonical_home/.local/share/trellage/profiles" 'profiles parent'
+require_safe_directory "$profiles_parent" "$canonical_home/.local/share/trellage/profiles/pi" 'Pi profiles parent'
+
+if [[ -e "$legacy_profile" || -L "$legacy_profile" ]]; then
+  require_safe_directory "$legacy_profile" "$canonical_home/.local/share/trellage/profiles/pi/picx-default" \
+    'legacy Pi profile'
+  [[ -f "$legacy_profile_marker" && ! -L "$legacy_profile_marker" ]] \
+    || refuse "unowned legacy Pi profile: $legacy_profile"
+  [[ "$(<"$legacy_profile_marker")" == trellage-picx-profile-v2 ]] \
+    || refuse "unowned legacy Pi profile: $legacy_profile"
+  [[ ! -e "$canonical_profile" && ! -L "$canonical_profile" ]] \
+    || refuse "both legacy and canonical Pi profiles exist; remove one after preserving its state"
+  mv "$legacy_profile" "$canonical_profile"
+  mv "$canonical_profile/.managed-by-trellage-picx-profiles" "$canonical_profile_marker"
+  printf '%s\n' 'trellage-pi-profile-v2' >"$canonical_profile_marker"
+fi
 
 runtime_owned=false
 if [[ -e "$install_root" || -L "$install_root" ]]; then
-  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/picx" 'runtime root'
+  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/pi" 'runtime root'
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "unowned runtime root: $install_root"
   [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
@@ -63,8 +84,8 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
     || refuse "unrelated command: $command_path"
 fi
 
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/picx" 'runtime root'
-require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/picx/bin" 'runtime bin'
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/pi" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/pi/bin" 'runtime bin'
 [[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
@@ -77,12 +98,12 @@ for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
 done
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
 mkdir -p "$install_root/bin" "$command_dir"
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/picx" 'runtime root'
-require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/picx/bin" 'runtime bin'
-launcher_stage="$(mktemp "$install_root/bin/.picx.XXXXXX")"
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/pi" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/pi/bin" 'runtime bin'
+launcher_stage="$(mktemp "$install_root/bin/.pi.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
-install -m 0755 "$source_dir/bin/picx" "$launcher_stage"
+install -m 0755 "$source_dir/bin/pi" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
 chmod 0600 "$marker_stage"
@@ -91,7 +112,7 @@ mv -f "$catalog_stage" "$installed_catalog"
 mv -f "$marker_stage" "$ownership_marker"
 
 if [[ ! -L "$command_path" ]]; then
-  command_stage="$command_dir/.picx-command.$$"
+  command_stage="$command_dir/.pi-command.$$"
   [[ ! -e "$command_stage" && ! -L "$command_stage" ]] || refuse "unsafe command staging path: $command_stage"
   ln -s "$installed_launcher" "$command_stage"
   mv "$command_stage" "$command_path"
@@ -99,7 +120,8 @@ fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
-printf 'Installed picx at %s\n' "$command_path"
+printf 'Installed pi at %s\n' "$command_path"
 
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" picx "$installed_launcher" "$ownership_marker" "$ownership_value"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" picx \
+  .managed-by-trellage-picx-profiles trellage-picx-profiles-v1
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" pi "$installed_launcher" "$ownership_marker" "$ownership_value"

@@ -106,7 +106,7 @@ for asset in \
   prototypes/trellage/finalize-claude-seed.ts \
   prototypes/trellage-omp-profiles/catalog.json \
   prototypes/trellage-claude-common/native-claude \
-  prototypes/trellage-firstmate-profiles/bin/fmx \
+  prototypes/trellage-firstmate-profiles/bin/firstmate \
   profile-guides/native/firstmate/default.md; do
   [[ -f "$candidate/$asset" && ! -L "$candidate/$asset" ]] \
     || fail "complete local candidate omitted a regular source asset: $asset"
@@ -137,7 +137,7 @@ grep -Fq '| map(. as $pair' "$script" \
   || fail 'trx list assertion does not use portable jq array predicates'
 grep -Fq 'and .data.content != ""' "$script" \
   || fail 'Copilot result assertion does not ignore trailing empty events'
-grep -Fq "jq -e '.text == \"OK\"' \"\$log_dir/native-jcx.json\"" "$script" \
+grep -Fq "jq -e '.text == \"OK\"' \"\$log_dir/native-jcode.json\"" "$script" \
   || fail 'JCode result does not require exact JSON text OK'
 grep -Fq 'scripts/rebuild-profile-images.sh --install --native-only' "$script" \
   || fail 'bootstrap does not install the Native stack and trx'

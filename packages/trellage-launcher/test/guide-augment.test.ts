@@ -162,7 +162,7 @@ describe("research augmentation", () => {
     expect(phases).toEqual([GuideAugmentPhase.RunningResearch, GuideAugmentPhase.ReadingNote])
   })
 
-  it("runs the catalog's own cpx path against the working directory", async () => {
+  it("runs the catalog's own copilot path against the working directory", async () => {
     const runner = new FakeRunner(async () => {
       await writeNote("fresh", "note")
       return ok()
@@ -247,9 +247,9 @@ describe("research augmentation", () => {
     )
   })
 
-  it("reports the failing command when cpx exits non-zero", async () => {
+  it("reports the failing command when copilot exits non-zero", async () => {
     const runner = new FakeRunner(async () => {
-      throw new Error("cpx hve exited with code 1")
+      throw new Error("copilot hve exited with code 1")
     })
 
     await expect(runResearchAugment("intent", researchCatalog, contextFor(runner))).rejects.toThrow(

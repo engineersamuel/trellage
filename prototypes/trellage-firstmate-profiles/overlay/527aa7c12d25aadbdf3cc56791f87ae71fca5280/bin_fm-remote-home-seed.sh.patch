@@ -5,8 +5,9 @@
  # the route and any newly scaffolded brief because completion is unknown and a same-route rerun converges.
  set -eu
 +
-+if [ -n "${FMX_WORKER_LAUNCHER:-}" ] || [ -e "${FM_HOME:-}/.fmx-managed" ]; then
-+  echo "error: fmx does not manage secondmate homes or remote provisioning" >&2
++if [ -n "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER:-}" ] \
++  || [ -e "${FM_HOME:-}/.firstmate-managed" ] || [ -e "${FM_HOME:-}/.fmx-managed" ]; then
++  echo "error: firstmate does not manage secondmate homes or remote provisioning" >&2
 +  exit 1
 +fi
  

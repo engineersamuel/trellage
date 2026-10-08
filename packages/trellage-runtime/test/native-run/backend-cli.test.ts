@@ -31,13 +31,31 @@ printf '%s' "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT" > "$HOME/snapshot"
   expect(JSON.parse(result.stdout)).toEqual({ launcher: "omp", harness: "omp", profile: "default", readiness: "not-setup" })
 })
 
-test("old private backends cannot receive unknown maintenance verbs", async () => {
-  const home = await tempRoot("old-backend")
-  const root = path.join(home, ".local/share/trellage/cdx")
+test("JSON translation preserves unrelated launcher fields and passes unsupported shapes through", async () => {
+  const home = await tempRoot("backend-json")
+  const root = path.join(home, ".local/share/trellage/codex")
   await mkdir(path.join(root, "bin"), { recursive: true })
   await writeFile(path.join(root, ".managed-by-trellage-codex-profiles"), "trellage-codex-profiles-v2\n")
-  await writeFile(path.join(root, "bin/cdx"), `#!/bin/sh
-if [ "$1" = --help ]; then printf 'Usage: cdx PROFILE\\n'; exit; fi
+  await writeFile(path.join(root, "bin/codex"), `#!/bin/sh
+if [ "$2" = unrelated ]; then printf '{"launcher":"upstream","profile":"%s"}\\n' "$2"; exit; fi
+printf '{"launcher":"codex","profiles":["unsupported"]}\\n'
+`, { mode: 0o755 })
+  const env = { HOME: home, PATH: "/usr/bin:/bin" }
+
+  const unrelated = await exec(process.execPath, [backend, "inventory", "codex", "unrelated", "--json"], { env })
+  expect(JSON.parse(unrelated.stdout)).toEqual({ launcher: "upstream", profile: "unrelated" })
+
+  const unsupported = await exec(process.execPath, [backend, "list", "codex", "--json"], { env })
+  expect(unsupported.stdout).toBe('{"launcher":"codex","profiles":["unsupported"]}\n')
+})
+
+test("old private backends cannot receive unknown maintenance verbs", async () => {
+  const home = await tempRoot("old-backend")
+  const root = path.join(home, ".local/share/trellage/codex")
+  await mkdir(path.join(root, "bin"), { recursive: true })
+  await writeFile(path.join(root, ".managed-by-trellage-codex-profiles"), "trellage-codex-profiles-v2\n")
+  await writeFile(path.join(root, "bin/codex"), `#!/bin/sh
+if [ "$1" = --help ]; then printf 'Usage: codex PROFILE\\n'; exit; fi
 printf '%s\\n' "$@" > "$HOME/unexpected-mutation"
 `, { mode: 0o755 })
   const env = { HOME: home, PATH: "/usr/bin:/bin" }
@@ -49,10 +67,10 @@ printf '%s\\n' "$@" > "$HOME/unexpected-mutation"
 
 test("maintenance cancellation stays nonzero when its backend handles TERM with a successful exit", async () => {
   const home = await tempRoot("backend-cancellation")
-  const root = path.join(home, ".local/share/trellage/cdx")
+  const root = path.join(home, ".local/share/trellage/codex")
   await mkdir(path.join(root, "bin"), { recursive: true })
   await writeFile(path.join(root, ".managed-by-trellage-codex-profiles"), "trellage-codex-profiles-v2\n")
-  await writeFile(path.join(root, "bin/cdx"), `#!/bin/sh
+  await writeFile(path.join(root, "bin/codex"), `#!/bin/sh
 trap 'exit 0' TERM
 printf 'ready\\n'
 sleep 30 &
@@ -72,10 +90,10 @@ wait
 
 test("attached runs cancel startup descendants without changing their terminal process group", async () => {
   const home = await tempRoot("backend-run-cancellation")
-  const root = path.join(home, ".local/share/trellage/cdx")
+  const root = path.join(home, ".local/share/trellage/codex")
   await mkdir(path.join(root, "bin"), { recursive: true })
   await writeFile(path.join(root, ".managed-by-trellage-codex-profiles"), "trellage-codex-profiles-v2\n")
-  await writeFile(path.join(root, "bin/cdx"), `#!/bin/sh
+  await writeFile(path.join(root, "bin/codex"), `#!/bin/sh
 sleep 30 &
 printf '%s\\n' "$!" > "$HOME/worker"
 printf 'ready\\n'

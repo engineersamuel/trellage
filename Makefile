@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := test-changed
 
-.PHONY: native-harness-version test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher conversation-source source-runtime trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime trellage-host-headless trellage-host-headless-test azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test graph-of-loops-runtime-contract graph-of-loops-image graph-of-loops-image-probe build compare compare-down clean trellage-statusline
+.PHONY: native-harness-version native-backend-retirement test dependency-bootstrap development-resolution-contract remote-azure-contract sandbox-entry-fixture publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation profile-compiler launcher conversation-source source-runtime trellage-identity trellage-session-bridge trellage-orphan-cleanup trellage-host-runtime trellage-host-headless trellage-host-headless-test azure-fresh-install-contract agent-harness claude-entry claude-ecc-image-probe copilot-entry headlong-entry pi-entry prime-entry native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-overlays native-firstmate-healing native-firstmate-instances native-firstmate-lifecycle native-firstmate-profile native-jcode-profile native-omp-profile native-pi-profile native-prime-profile native-profile-router copilot-hve-image copilot-hve-smoke manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test graph-of-loops-runtime-contract graph-of-loops-image graph-of-loops-image-probe build compare compare-down clean trellage-statusline
 
 .PHONY: profile-compiler-fingerprint
 .PHONY: test-command
@@ -16,8 +16,8 @@ TEST_TIMING ?= 0
 ifeq ($(TEST_TIMING),1)
 %: SHELL = python3 scripts/test-command.py $@
 endif
-PARALLEL_TEST_TARGETS := test-command test-changed-contract trellage-host-runtime native-copilot-profiles native-prime-profile claude-entry copilot-entry launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract remote-azure-contract rebuild-profiles-bun-runtime publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-harness-version native-agency-profile native-jcode-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract trellage-statusline
-TIMING_SENSITIVE_TEST_TARGETS := native-picx-profile native-codex-auth-config-launch native-codex-lifecycle native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-profile headlong-entry
+PARALLEL_TEST_TARGETS := test-command test-changed-contract trellage-host-runtime native-copilot-profiles native-prime-profile claude-entry copilot-entry launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract remote-azure-contract rebuild-profiles-bun-runtime publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge trellage-orphan-cleanup azure-fresh-install-contract agent-harness pi-entry prime-entry native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-harness-version native-backend-retirement native-agency-profile native-firstmate-overlays native-jcode-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test graph-of-loops-runtime-contract trellage-statusline
+TIMING_SENSITIVE_TEST_TARGETS := native-pi-profile native-codex-auth-config-launch native-codex-lifecycle native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-healing native-firstmate-instances native-firstmate-lifecycle headlong-entry
 FINAL_TEST_TARGETS := native-profile-router trellage-host-headless-test
 SANDBOX_ENTRY_FIXTURE_IMAGE := mcr.microsoft.com/devcontainers/javascript-node@sha256:0d29e5fdc64f8397cd502223e0c4679f1e60877ca0fd2db4f2e2e0028e4271af
 TRELLAGE_GRAPH_OF_LOOPS_IMAGE ?= trellage-profile-claude-graph-of-loops-linux-arm64:locked
@@ -50,6 +50,9 @@ shell-syntax:
 
 test-command:
 	python3 tests/test_command.py
+
+native-backend-retirement:
+	bash tests/retire_native_backend_contract.sh
 
 dependency-bootstrap:
 	bash tests/dependency_bootstrap_contract.sh
@@ -190,7 +193,22 @@ native-claude-profile:
 	bash prototypes/trellage-claude-profiles/tests/contract.sh
 
 native-firstmate-profile:
-	bash prototypes/trellage-firstmate-profiles/tests/contract.sh
+	$(MAKE) --no-print-directory native-firstmate-overlays
+	$(MAKE) --no-print-directory native-firstmate-healing
+	$(MAKE) --no-print-directory native-firstmate-instances
+	$(MAKE) --no-print-directory native-firstmate-lifecycle
+
+native-firstmate-overlays:
+	uv run python tests/firstmate_overlay_contract.py
+
+native-firstmate-healing:
+	TRELLAGE_FIRSTMATE_CONTRACT_ONLY=healing bash prototypes/trellage-firstmate-profiles/tests/contract.sh
+
+native-firstmate-instances:
+	TRELLAGE_FIRSTMATE_CONTRACT_ONLY=instances bash prototypes/trellage-firstmate-profiles/tests/contract.sh
+
+native-firstmate-lifecycle:
+	TRELLAGE_FIRSTMATE_CONTRACT_ONLY=lifecycle bash prototypes/trellage-firstmate-profiles/tests/contract.sh
 
 native-jcode-profile:
 	bun test prototypes/trellage-claude-common/tests/manual-skills.test.ts prototypes/trellage-claude-common/tests/source-helpers.test.ts
@@ -199,8 +217,8 @@ native-jcode-profile:
 native-omp-profile:
 	bash prototypes/trellage-omp-profiles/tests/contract.sh
 
-native-picx-profile:
-	bash prototypes/trellage-picx-profiles/tests/contract.sh
+native-pi-profile:
+	bash prototypes/trellage-pi-profiles/tests/contract.sh
 
 native-prime-profile:
 	bash prototypes/trellage-prime-profiles/tests/contract.sh

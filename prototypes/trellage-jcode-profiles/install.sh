@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ownership_value='trellage-jcode-profiles-v1'
 
 refuse() {
-  printf 'jcx install: %s\n' "$1" >&2
+  printf 'jcode install: %s\n' "$1" >&2
   exit 1
 }
 
@@ -22,8 +22,8 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 local_dir="$home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
-install_root="$runtime_parent/jcx"
-installed_launcher="$install_root/bin/jcx"
+install_root="$runtime_parent/jcode"
+installed_launcher="$install_root/bin/jcode"
 installed_catalog="$install_root/catalog.json"
 installed_config_manager="$install_root/config-manager.ts"
 legacy_config_manager="$install_root/config-manager.mjs"
@@ -31,7 +31,7 @@ installed_version_receipt="$install_root/installed-version"
 legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/jcx"
+command_path="$command_dir/jcode"
 
 require_safe_directory() {
   local path="$1" expected="$2" description="$3" canonical_path
@@ -50,7 +50,7 @@ require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.na
 
 runtime_owned=false
 if [[ -e "$install_root" || -L "$install_root" ]]; then
-  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/jcx" 'runtime root'
+  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/jcode" 'runtime root'
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "unowned runtime root: $install_root"
   [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
@@ -66,8 +66,8 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
 fi
 
 mkdir -p "$install_root/bin" "$command_dir"
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/jcx" 'runtime root'
-require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/jcx/bin" 'runtime bin'
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/jcode" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/jcode/bin" 'runtime bin'
 [[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
@@ -86,11 +86,11 @@ for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
   fi
 done
 
-launcher_stage="$(mktemp "$install_root/bin/.jcx.XXXXXX")"
+launcher_stage="$(mktemp "$install_root/bin/.jcode.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
 config_manager_stage="$(mktemp "$install_root/.config-manager.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
-install -m 0755 "$source_dir/bin/jcx" "$launcher_stage"
+install -m 0755 "$source_dir/bin/jcode" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
 install -m 0644 "$source_dir/config-manager.ts" "$config_manager_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
@@ -101,7 +101,7 @@ mv -f "$config_manager_stage" "$installed_config_manager"
 mv -f "$marker_stage" "$ownership_marker"
 
 if [[ ! -L "$command_path" ]]; then
-  command_stage="$command_dir/.jcx-command.$$"
+  command_stage="$command_dir/.jcode-command.$$"
   [[ ! -e "$command_stage" && ! -L "$command_stage" ]] \
     || refuse "unsafe command staging path: $command_stage"
   ln -s "$installed_launcher" "$command_stage"
@@ -111,8 +111,9 @@ fi
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install-manual "$install_root"
 [[ ! -f "$legacy_config_manager" ]] || rm -- "$legacy_config_manager"
-printf 'Installed jcx at %s\n' "$command_path"
+printf 'Installed jcode at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
 
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" jcx "$installed_launcher" "$ownership_marker" "$ownership_value"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" jcx \
+  .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" jcode "$installed_launcher" "$ownership_marker" "$ownership_value"

@@ -346,3 +346,5 @@ cleanup_staging
 release_install_lock \
   || refuse "could not release install lock: $install_lock"
 printf 'Installed trx at %s\n' "$command_path"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" grx \
+  .managed-by-trellage-grok-profiles trellage-grok-profiles-v1

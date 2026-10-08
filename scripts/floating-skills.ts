@@ -151,8 +151,8 @@ const withSkillOperation = async <T>(operation: () => Promise<T>): Promise<T> =>
 
 const firstmateGuard = async () => {
   const candidates = [
-    path.join(scriptDirectory, "fmx-registry.py"),
-    path.resolve(scriptDirectory, "../prototypes/trellage-firstmate-profiles/lib/fmx-registry.py"),
+    path.join(scriptDirectory, "firstmate-registry.py"),
+    path.resolve(scriptDirectory, "../prototypes/trellage-firstmate-profiles/lib/firstmate-registry.py"),
   ]
   for (const candidate of candidates) {
     const info = await lstat(candidate).catch(() => undefined)
@@ -163,10 +163,10 @@ const firstmateGuard = async () => {
 }
 
 const delegatedFirstmateLease = async <T>(guard: string, operation: () => Promise<T>): Promise<T> => {
-  const fd = Number(process.env.FMX_SHARED_LEASE_FD)
+  const fd = Number(process.env.TRELLAGE_FIRSTMATE_SHARED_LEASE_FD)
   if (!Number.isSafeInteger(fd) || fd < 3 || fd > 4096) fail("invalid inherited Firstmate lease")
   const child = spawn("python3", [guard, "check-delegation"], {
-    env: { ...process.env, FMX_SHARED_LEASE_FD: "3" }, stdio: ["ignore", "pipe", "pipe", fd],
+    env: { ...process.env, TRELLAGE_FIRSTMATE_SHARED_LEASE_FD: "3" }, stdio: ["ignore", "pipe", "pipe", fd],
   })
   await new Promise<void>((resolve, reject) => {
     child.once("error", reject)
@@ -179,7 +179,7 @@ const withFirstmateLease = async <T>(destination: string, operation: () => Promi
   if (firstmateLease.getStore()) return operation()
   if (!(await affectsFirstmateCache(destination))) return withSkillOperation(operation)
   const guard = await firstmateGuard()
-  if (process.env.FMX_SHARED_LEASE_FD) return delegatedFirstmateLease(guard, operation)
+  if (process.env.TRELLAGE_FIRSTMATE_SHARED_LEASE_FD) return delegatedFirstmateLease(guard, operation)
   const child = spawn("python3", [guard, "lease-pipe"], { stdio: ["pipe", "pipe", "pipe"] })
   let diagnostic = ""
   let releasing = false
@@ -654,11 +654,11 @@ const readLegacyManagedNames = async (file: string) => {
 }
 
 const readLegacyOwnedNames = async (targetPath: string) => {
-  const marker = path.join(targetPath, "show-me", ".managed-by-trellage-picx-profiles")
+  const marker = path.join(targetPath, "show-me", ".managed-by-trellage-pi-profiles")
   const status = await lstat(marker).catch(() => undefined)
   if (status === undefined) return []
   if (!status.isFile() || status.isSymbolicLink()) fail(`invalid legacy managed skill marker: ${marker}`)
-  if ((await readFile(marker, "utf8")) !== "trellage-picx-profile-v2\n") {
+  if ((await readFile(marker, "utf8")) !== "trellage-pi-profile-v2\n") {
     fail(`invalid legacy managed skill marker: ${marker}`)
   }
   const skill = path.dirname(marker)
@@ -1101,22 +1101,22 @@ const checkSharedCommand = async (catalog: SkillCatalog) => {
     {
       name: "claude-office",
       bundles: ["native-common", "claude-office"],
-      cache: path.join(path.dirname(defaultCache()), "cldx-office-skills"),
+      cache: path.join(path.dirname(defaultCache()), "claude-office-skills"),
     },
     {
       name: "claude-office-charts",
       bundles: ["native-common", "claude-office-charts"],
-      cache: path.join(path.dirname(defaultCache()), "cldx-office-charts-skills"),
+      cache: path.join(path.dirname(defaultCache()), "claude-office-charts-skills"),
     },
     {
       name: "codex",
       bundles: ["native-common", "codex-common"],
-      cache: path.join(path.dirname(defaultCache()), "cdx-skills"),
+      cache: path.join(path.dirname(defaultCache()), "codex-skills"),
     },
     {
       name: "youtube",
       bundles: ["native-common", "codex-common", "youtube"],
-      cache: path.join(path.dirname(defaultCache()), "cdx-youtube-pro-skills"),
+      cache: path.join(path.dirname(defaultCache()), "codex-youtube-pro-skills"),
     },
     { name: "omp-community", bundles: ["omp-community"], cache: path.join(common, "omp-community-skills") },
     {
@@ -1323,10 +1323,18 @@ const ensureCommand = async (
     cache,
     target: options.target,
     skillsCli: options.skills_cli,
+    excluded: options.excluded,
   })
 }
 
-export const ensureNative = async ({ catalog, bundleIds, cache, target, skillsCli }: NativeOptions & { target: string }) => {
+export const ensureNative = async ({
+  catalog,
+  bundleIds,
+  cache,
+  target,
+  skillsCli,
+  excluded = [],
+}: NativeOptions & { target: string; excluded?: readonly string[] }) => {
   try {
     await updateNative({ catalog, bundleIds, cache, skillsCli })
   } catch (error) {
@@ -1337,7 +1345,7 @@ export const ensureNative = async ({ catalog, bundleIds, cache, target, skillsCl
     if (await readFile(path.join(cache, "policy.json"), "utf8") !== JSON.stringify(resolvePlan(catalog, bundleIds))) fail("cached skill policy differs from requested configuration")
     process.stderr.write(`skills: refresh failed (${error instanceof Error ? error.message : String(error)}); using validated snapshot ${cache}\n`)
   }
-  await syncSnapshot(cache, target)
+  await syncSnapshot(cache, target, excluded)
 }
 
 export const updateNative = ({ catalog, bundleIds, cache, skillsCli }: NativeOptions) =>

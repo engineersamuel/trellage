@@ -1,6 +1,6 @@
 # Trellage Agency profiles
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run agency azure` starts Agency's managed GitHub Copilot CLI with a named Agency profile
 and an isolated `COPILOT_HOME`. It preserves the real `HOME`, current worktree,
@@ -13,7 +13,7 @@ Install Agency interactively with:
 curl -sSfL https://aka.ms/InstallTool.sh | sh -s agency
 ```
 
-`agx` checks both `PATH` and Agency's standard install path,
+`agency` checks both `PATH` and Agency's standard install path,
 `~/.config/agency/CurrentVersion/agency`.
 
 `trx harness-version agency azure` reports the installed Agency version without checking
@@ -29,7 +29,7 @@ trx inventory agency azure --json
 trx run agency azure
 ```
 
-Run it from this repository or one of its subdirectories. `agx` requires the
+Run it from this repository or one of its subdirectories. `agency` requires the
 current Git worktree root to contain the committed `agency.toml`; it never
 changes the working directory to discover that file.
 
@@ -67,13 +67,13 @@ current internal Agency source is the authority for those defaults. The profile
 does not claim a default is disabled unless `trx doctor agency azure` can validate that
 policy through the installed Agency build.
 
-Azure authentication is inherited, never copied. `agx` supports:
+Azure authentication is inherited, never copied. `agency` supports:
 
 - `EnvironmentCredential` when `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, and
   `AZURE_TENANT_ID` are all present.
 - `AzureCliCredential` when `az account show` succeeds.
 
-`agx` never runs `az login`, opens a browser, prints credential values, follows
+`agency` never runs `az login`, opens a browser, prints credential values, follows
 credential symlinks, or writes authentication data.
 
 On Microsoft-managed devices, `npx` inherits the host npm registry. Configure
@@ -92,8 +92,8 @@ when the exact package is not already available.
 Managed launcher files:
 
 ```text
-~/.local/share/trellage/agx/
-~/.local/share/trellage/agx/bin/agx
+~/.local/share/trellage/agency/
+~/.local/share/trellage/agency/bin/agency
 ```
 
 Profile state:

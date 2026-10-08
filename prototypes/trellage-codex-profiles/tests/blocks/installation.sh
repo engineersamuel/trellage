@@ -80,7 +80,7 @@ assert_install_text 'existing readable, writable, regular' "$readme"
 assert_install_text 'non-symlink `~/.config/fish/config.fish`' "$readme"
 assert_install_text 'Fish with' "$readme"
 assert_install_text '`fish_indent`' "$readme"
-assert_install_text 'explicit literal `cdx` alias or function' "$readme"
+assert_install_text 'explicit literal `codex` alias or function' "$readme"
 assert_install_text 'installation preserves' "$readme"
 assert_install_text 'records that no line was removed' "$readme"
 assert_install_text 'uninstall preserves that state and does not add a line' "$readme"
@@ -89,9 +89,9 @@ assert_install_text 'Dynamic command names, `eval`, sourced files, and runtime f
 
 assert_no_install_staging() {
   fixture_home="$1"
-  staging_paths="$(find "$fixture_home" \( -name '.cdx-install.*' -o -name '.cdx-command.*' \
-    -o -name '.cdx-fish.*' -o -name '.cdx-uninstall.*' \
-    -o -name '.cdx-uninstall-command.*' -o -name '.cdx-uninstall-fish.*' \
+  staging_paths="$(find "$fixture_home" \( -name '.codex-install.*' -o -name '.codex-command.*' \
+    -o -name '.codex-fish.*' -o -name '.codex-uninstall.*' \
+    -o -name '.codex-uninstall-command.*' -o -name '.codex-uninstall-fish.*' \
     -o -name '.native-environment-runtime.*' \
     \) -print)" || fail "could not inspect installation staging beneath $fixture_home"
   [ -z "$staging_paths" ] \
@@ -130,7 +130,7 @@ write_legacy_fish() {
   printf '%s\n' \
     '# preserved before' \
     'set -gx TRELLAGE_FISH_SENTINEL "sp ace"' \
-    'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
+    'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
     '# preserved after' >"$fixture_home/.config/fish/config.fish"
   chmod 0640 "$fixture_home/.config/fish/config.fish"
 }
@@ -139,22 +139,22 @@ write_absent_definition_fish() {
   fixture_home="$1"
   mkdir -p "$fixture_home/.config/fish"
   printf '%s\n' \
-    '# preserved without cdx before' \
-    'set -gx TRELLAGE_FISH_SENTINEL "no cdx definition"' \
-    '# preserved without cdx after' >"$fixture_home/.config/fish/config.fish"
+    '# preserved without codex before' \
+    'set -gx TRELLAGE_FISH_SENTINEL "no codex definition"' \
+    '# preserved without codex after' >"$fixture_home/.config/fish/config.fish"
   chmod 0640 "$fixture_home/.config/fish/config.fish"
 }
 
 assert_install_published() {
   fixture_home="$1"
-  installed="$fixture_home/.local/share/trellage/cdx"
-  command="$fixture_home/.local/share/trellage/.native-commands/cdx"
+  installed="$fixture_home/.local/share/trellage/codex"
+  command="$fixture_home/.local/share/trellage/.native-commands/codex"
   environment_runtime="$fixture_home/.local/share/trellage/common/native-environment-runtime"
   logical_home="$(CDPATH= cd -L -- "$fixture_home" && pwd -L)"
   [ -d "$installed" ] && [ ! -L "$installed" ] || fail 'managed runtime root was not published'
   cmp -s "$installed/.managed-by-trellage-codex-profiles" \
     <(printf 'trellage-codex-profiles-v2\n') || fail 'ownership marker differs'
-  cmp -s "$installed/bin/cdx" "$launcher" || fail 'installed launcher bytes differ'
+  cmp -s "$installed/bin/codex" "$launcher" || fail 'installed launcher bytes differ'
   cmp -s "$installed/catalog.json" "$catalog" || fail 'installed catalog bytes differ'
   cmp -s "$installed/lib/trellage-session-bridge.py" \
     "$root/../../scripts/trellage-session-bridge.py" \
@@ -192,7 +192,7 @@ assert_install_published() {
     assert_not_shared_writable "$safe_path"
   done
   [ -L "$command" ] || fail 'managed command is not a symlink'
-  [ "$(readlink "$command")" = "$logical_home/.local/share/trellage/cdx/bin/cdx" ] \
+  [ "$(readlink "$command")" = "$logical_home/.local/share/trellage/codex/bin/codex" ] \
     || fail 'managed command target differs'
 }
 
@@ -203,7 +203,7 @@ write_directory_topology "$clean_uninstall_home" \
 HOME="$clean_uninstall_home" /bin/bash "$uninstall_script" \
   >"$fixture_root/clean-uninstall.out" \
   || fail 'uninstall rejected a clean HOME'
-assert_install_line 'cdx is not installed; Codex profile homes were preserved.' \
+assert_install_line 'codex is not installed; Codex profile homes were preserved.' \
   "$fixture_root/clean-uninstall.out"
 write_directory_topology "$clean_uninstall_home" \
   "$fixture_root/clean-uninstall.topology-after"
@@ -213,12 +213,12 @@ cmp -s "$fixture_root/clean-uninstall.topology-before" \
 
 clean_collision_home="$fixture_root/clean-collision-home"
 mkdir -p "$clean_collision_home/.local/share/trellage/.native-commands"
-printf 'unrelated command\n' >"$clean_collision_home/.local/share/trellage/.native-commands/cdx"
+printf 'unrelated command\n' >"$clean_collision_home/.local/share/trellage/.native-commands/codex"
 if HOME="$clean_collision_home" /bin/bash "$uninstall_script" \
   >"$fixture_root/clean-collision.out" 2>&1; then
   fail 'uninstall treated an unrelated command collision as not installed'
 fi
-assert_install_line 'unrelated command' "$clean_collision_home/.local/share/trellage/.native-commands/cdx"
+assert_install_line 'unrelated command' "$clean_collision_home/.local/share/trellage/.native-commands/codex"
 
 clean_symlink_home="$fixture_root/clean-symlink-home"
 mkdir -p "$clean_symlink_home" "$fixture_root/clean-symlink-outside"
@@ -240,8 +240,8 @@ fish_before_mode="$(path_mode "$fish_config")"
 HOME="$install_home" /bin/bash "$install_script" >"$fixture_root/install.out" \
   || fail 'fixture install failed'
 assert_install_published "$install_home"
-installed_guard="$install_home/.local/share/trellage/common/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py"
-cmp -s "$installed_guard" "$root/../trellage-firstmate-profiles/lib/fmx-registry.py" \
+installed_guard="$install_home/.local/share/trellage/common/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/firstmate-registry.py"
+cmp -s "$installed_guard" "$root/../trellage-firstmate-profiles/lib/firstmate-registry.py" \
   || fail 'installer did not publish the shared Firstmate guard'
 legacy_floating="$install_home/.local/share/trellage/common/floating-skills-runtime"
 rm -rf "$legacy_floating"
@@ -251,33 +251,33 @@ printf '{"schemaVersion":1,"sources":{},"bundles":{}}\n' >"$legacy_floating/skil
 HOME="$install_home" /bin/bash "$install_script" \
   >"$fixture_root/legacy-floating-migration-install.out" \
   || fail 'installer did not migrate the legacy two-file floating runtime'
-cmp -s "$installed_guard" "$root/../trellage-firstmate-profiles/lib/fmx-registry.py" \
+cmp -s "$installed_guard" "$root/../trellage-firstmate-profiles/lib/firstmate-registry.py" \
   || fail 'legacy floating runtime migration omitted the shared Firstmate guard'
-if cmp -s "$install_home/.local/share/trellage/cdx/.managed-by-trellage-codex-profiles" \
+if cmp -s "$install_home/.local/share/trellage/codex/.managed-by-trellage-codex-profiles" \
   <(printf 'trellage-codex-profiles-v1\n'); then
   fail 'current ownership marker does not block a legacy installer'
 fi
 printf 'trellage-codex-profiles-v1\n' \
-  >"$install_home/.local/share/trellage/cdx/.managed-by-trellage-codex-profiles"
+  >"$install_home/.local/share/trellage/codex/.managed-by-trellage-codex-profiles"
 HOME="$install_home" /bin/bash "$install_script" \
   >"$fixture_root/legacy-marker-migration-install.out" \
   || fail 'installer did not migrate the legacy ownership marker'
 assert_install_published "$install_home"
-HOME="$install_home" "$install_home/.local/share/trellage/.native-commands/cdx" list \
+HOME="$install_home" "$install_home/.local/share/trellage/.native-commands/codex" list \
   >"$fixture_root/installed-list.out" 2>"$fixture_root/installed-list.err" \
-  || fail "installed cdx list failed: $(cat "$fixture_root/installed-list.err")"
+  || fail "installed codex list failed: $(cat "$fixture_root/installed-list.err")"
 cmp -s "$fixture_root/installed-list.out" <(printf '%s\n' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' \
   $'youtube\tyoutube-full') \
-  || fail 'installed cdx list output differs'
-ln -s cdx "$install_home/.local/share/trellage/.native-commands/cdx-relative"
-HOME="$install_home" "$install_home/.local/share/trellage/.native-commands/cdx-relative" list \
+  || fail 'installed codex list output differs'
+ln -s codex "$install_home/.local/share/trellage/.native-commands/codex-relative"
+HOME="$install_home" "$install_home/.local/share/trellage/.native-commands/codex-relative" list \
   >"$fixture_root/relative-list.out" 2>"$fixture_root/relative-list.err" \
-  || fail "relative symlink cdx list failed: $(cat "$fixture_root/relative-list.err")"
+  || fail "relative symlink codex list failed: $(cat "$fixture_root/relative-list.err")"
 cmp -s "$fixture_root/relative-list.out" "$fixture_root/installed-list.out" \
-  || fail 'relative symlink cdx list output differs'
-rm "$install_home/.local/share/trellage/.native-commands/cdx-relative"
+  || fail 'relative symlink codex list output differs'
+rm "$install_home/.local/share/trellage/.native-commands/codex-relative"
 printf '%s\n' \
   '# preserved before' \
   'set -gx TRELLAGE_FISH_SENTINEL "sp ace"' \
@@ -285,7 +285,7 @@ printf '%s\n' \
 cmp -s "$fish_config" "$fixture_root/fish-after-expected" \
   || fail 'install changed Fish bytes other than the legacy alias'
 [ "$(path_mode "$fish_config")" = "$fish_before_mode" ] || fail 'install changed Fish config mode'
-recovery="$install_home/.local/share/trellage/cdx/.fish-recovery"
+recovery="$install_home/.local/share/trellage/codex/.fish-recovery"
 [ "$(sed -n '1p' "$recovery/original-mode")" = "$fish_before_mode" ] \
   || fail 'Fish recovery did not record original mode'
 [ "$(sed -n '1p' "$recovery/sha256-before")" = "$fish_before_hash" ] \
@@ -293,18 +293,18 @@ recovery="$install_home/.local/share/trellage/cdx/.fish-recovery"
 [ "$(sed -n '1p' "$recovery/sha256-after")" = "$(sha256_file "$fish_config")" ] \
   || fail 'Fish recovery did not record the post-removal hash'
 cmp -s "$recovery/removed-line" \
-  <(printf 'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"\n') \
+  <(printf 'alias codex="codex --dangerously-bypass-approvals-and-sandbox"\n') \
   || fail 'Fish recovery did not record the exact removed line'
 assert_no_install_staging "$install_home"
 
-rm "$install_home/.local/share/trellage/cdx/lib/native-codex" \
-  "$install_home/.local/share/trellage/cdx/lib/trellage-session-bridge.py" \
-  "$install_home/.local/share/trellage/cdx/native-skills.ts"
-rm "$install_home/.local/share/trellage/cdx/lib/codex-config.py" \
-  "$install_home/.local/share/trellage/cdx/lib/codex-agents.ts"
-rm -r "$install_home/.local/share/trellage/cdx/lib/agents"
-rmdir "$install_home/.local/share/trellage/cdx/lib"
-legacy_marketplace_dir="$install_home/.local/share/trellage/cdx/marketplaces/hve-core/.agents/plugins"
+rm "$install_home/.local/share/trellage/codex/lib/native-codex" \
+  "$install_home/.local/share/trellage/codex/lib/trellage-session-bridge.py" \
+  "$install_home/.local/share/trellage/codex/native-skills.ts"
+rm "$install_home/.local/share/trellage/codex/lib/codex-config.py" \
+  "$install_home/.local/share/trellage/codex/lib/codex-agents.ts"
+rm -r "$install_home/.local/share/trellage/codex/lib/agents"
+rmdir "$install_home/.local/share/trellage/codex/lib"
+legacy_marketplace_dir="$install_home/.local/share/trellage/codex/marketplaces/hve-core/.agents/plugins"
 mkdir -p "$legacy_marketplace_dir"
 printf '%s\n' '{"legacy":"marketplace"}' >"$legacy_marketplace_dir/marketplace.json"
 chmod 0644 "$legacy_marketplace_dir/marketplace.json"
@@ -316,13 +316,13 @@ mkdir -p "$install_home/.local/share/trellage/profiles/codex/pstack/home"
 printf 'preserved profile\n' \
   >"$install_home/.local/share/trellage/profiles/codex/pstack/home/sentinel"
 printf 'trellage-codex-profiles-v1\n' \
-  >"$install_home/.local/share/trellage/cdx/.managed-by-trellage-codex-profiles"
+  >"$install_home/.local/share/trellage/codex/.managed-by-trellage-codex-profiles"
 HOME="$install_home" /bin/bash "$uninstall_script" >"$fixture_root/uninstall.out" \
   || fail 'fixture uninstall failed'
 cmp -s "$fish_config" "$fixture_root/fish-before" || fail 'uninstall did not restore exact Fish bytes'
 [ "$(path_mode "$fish_config")" = "$fish_before_mode" ] || fail 'uninstall did not restore Fish mode'
-[ ! -e "$install_home/.local/share/trellage/cdx" ] || fail 'uninstall left managed runtime'
-[ ! -e "$install_home/.local/share/trellage/.native-commands/cdx" ] && [ ! -L "$install_home/.local/share/trellage/.native-commands/cdx" ] \
+[ ! -e "$install_home/.local/share/trellage/codex" ] || fail 'uninstall left managed runtime'
+[ ! -e "$install_home/.local/share/trellage/.native-commands/codex" ] && [ ! -L "$install_home/.local/share/trellage/.native-commands/codex" ] \
   || fail 'uninstall left managed command'
 assert_install_line 'preserved profile' \
   "$install_home/.local/share/trellage/profiles/codex/pstack/home/sentinel"
@@ -344,7 +344,7 @@ cmp -s "$absent_fish" "$fixture_root/absent-definition.fish-before" \
   || fail 'absent-definition install changed Fish bytes'
 [ "$(path_mode "$absent_fish")" = "$absent_fish_mode" ] \
   || fail 'absent-definition install changed Fish mode'
-absent_recovery="$absent_definition_home/.local/share/trellage/cdx/.fish-recovery"
+absent_recovery="$absent_definition_home/.local/share/trellage/codex/.fish-recovery"
 cmp -s "$absent_recovery/config-before" "$fixture_root/absent-definition.fish-before" \
   || fail 'absent-definition recovery backup differs'
 [ "$(sed -n '1p' "$absent_recovery/original-mode")" = "$absent_fish_mode" ] \
@@ -381,10 +381,10 @@ cmp -s "$absent_fish" "$fixture_root/absent-definition.fish-before" \
   || fail 'absent-definition uninstall changed Fish bytes'
 [ "$(path_mode "$absent_fish")" = "$absent_fish_mode" ] \
   || fail 'absent-definition uninstall changed Fish mode'
-[ ! -e "$absent_definition_home/.local/share/trellage/cdx" ] \
+[ ! -e "$absent_definition_home/.local/share/trellage/codex" ] \
   || fail 'absent-definition uninstall left managed runtime'
-[ ! -e "$absent_definition_home/.local/share/trellage/.native-commands/cdx" ] \
-  && [ ! -L "$absent_definition_home/.local/share/trellage/.native-commands/cdx" ] \
+[ ! -e "$absent_definition_home/.local/share/trellage/.native-commands/codex" ] \
+  && [ ! -L "$absent_definition_home/.local/share/trellage/.native-commands/codex" ] \
   || fail 'absent-definition uninstall left managed command'
 assert_no_install_staging "$absent_definition_home"
 release_install_home "$absent_definition_home"
@@ -396,11 +396,11 @@ absent_origin_fish="$absent_origin_home/.config/fish/config.fish"
 cp "$absent_origin_fish" "$fixture_root/absent-origin.original-fish"
 HOME="$absent_origin_home" /bin/bash "$install_script" >/dev/null \
   || fail 'absent-origin fixture install failed'
-absent_origin_runtime="$absent_origin_home/.local/share/trellage/cdx"
+absent_origin_runtime="$absent_origin_home/.local/share/trellage/codex"
 write_owned_runtime_snapshot "$absent_origin_runtime" \
   "$fixture_root/absent-origin.runtime-before-refused-reinstall"
-absent_origin_command_target="$(readlink "$absent_origin_home/.local/share/trellage/.native-commands/cdx")"
-printf '%s\n' 'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
+absent_origin_command_target="$(readlink "$absent_origin_home/.local/share/trellage/.native-commands/codex")"
+printf '%s\n' 'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
   >>"$absent_origin_fish"
 cp "$absent_origin_fish" "$fixture_root/absent-origin.edited-fish"
 if HOME="$absent_origin_home" /bin/bash "$install_script" \
@@ -414,8 +414,8 @@ write_owned_runtime_snapshot "$absent_origin_runtime" \
 cmp -s "$fixture_root/absent-origin.runtime-before-refused-reinstall" \
   "$fixture_root/absent-origin.runtime-after-refused-reinstall" \
   || fail 'absent-origin refused reinstall changed runtime or recovery state'
-[ -L "$absent_origin_home/.local/share/trellage/.native-commands/cdx" ] \
-  && [ "$(readlink "$absent_origin_home/.local/share/trellage/.native-commands/cdx")" = \
+[ -L "$absent_origin_home/.local/share/trellage/.native-commands/codex" ] \
+  && [ "$(readlink "$absent_origin_home/.local/share/trellage/.native-commands/codex")" = \
     "$absent_origin_command_target" ] \
   || fail 'absent-origin refused reinstall changed managed command'
 assert_no_install_staging "$absent_origin_home"
@@ -427,10 +427,10 @@ HOME="$absent_origin_home" /bin/bash "$uninstall_script" \
   || fail 'absent-origin uninstall failed after restoring unchanged Fish state'
 cmp -s "$absent_origin_fish" "$fixture_root/absent-origin.original-fish" \
   || fail 'absent-origin uninstall added or restored a Fish definition'
-[ ! -e "$absent_origin_home/.local/share/trellage/cdx" ] \
+[ ! -e "$absent_origin_home/.local/share/trellage/codex" ] \
   || fail 'absent-origin uninstall left managed runtime'
-[ ! -e "$absent_origin_home/.local/share/trellage/.native-commands/cdx" ] \
-  && [ ! -L "$absent_origin_home/.local/share/trellage/.native-commands/cdx" ] \
+[ ! -e "$absent_origin_home/.local/share/trellage/.native-commands/codex" ] \
+  && [ ! -L "$absent_origin_home/.local/share/trellage/.native-commands/codex" ] \
   || fail 'absent-origin uninstall left managed command'
 assert_no_install_staging "$absent_origin_home"
 release_install_home "$absent_origin_home"
@@ -442,7 +442,7 @@ cp "$alias_origin_home/.config/fish/config.fish" \
   "$fixture_root/alias-origin.original-fish"
 HOME="$alias_origin_home" /bin/bash "$install_script" >/dev/null \
   || fail 'alias-origin fixture install failed'
-alias_origin_runtime="$alias_origin_home/.local/share/trellage/cdx"
+alias_origin_runtime="$alias_origin_home/.local/share/trellage/codex"
 write_owned_runtime_snapshot "$alias_origin_runtime" \
   "$fixture_root/alias-origin.runtime-before-reinstall"
 HOME="$alias_origin_home" /bin/bash "$install_script" >/dev/null \
@@ -475,7 +475,7 @@ for failure_point in \
   absent_failure_mode="$(path_mode "$absent_failure_home/.config/fish/config.fish")"
   write_directory_topology "$absent_failure_home" \
     "$fixture_root/absent-definition-$failure_point.topology-before"
-  if HOME="$absent_failure_home" CDX_INSTALL_TEST_FAIL_AT="$failure_point" \
+  if HOME="$absent_failure_home" TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT="$failure_point" \
     /bin/bash "$install_script" \
     >"$fixture_root/absent-definition-$failure_point.out" 2>&1; then
     fail "absent-definition injected install failure unexpectedly succeeded: $failure_point"
@@ -488,10 +488,10 @@ for failure_point in \
   [ "$(path_mode "$absent_failure_home/.config/fish/config.fish")" = \
     "$absent_failure_mode" ] \
     || fail "absent-definition install rollback changed Fish mode: $failure_point"
-  [ ! -e "$absent_failure_home/.local/share/trellage/cdx" ] \
+  [ ! -e "$absent_failure_home/.local/share/trellage/codex" ] \
     || fail "absent-definition install rollback left runtime: $failure_point"
-  [ ! -e "$absent_failure_home/.local/share/trellage/.native-commands/cdx" ] \
-    && [ ! -L "$absent_failure_home/.local/share/trellage/.native-commands/cdx" ] \
+  [ ! -e "$absent_failure_home/.local/share/trellage/.native-commands/codex" ] \
+    && [ ! -L "$absent_failure_home/.local/share/trellage/.native-commands/codex" ] \
     || fail "absent-definition install rollback left command: $failure_point"
   assert_no_install_staging "$absent_failure_home"
   write_directory_topology "$absent_failure_home" \
@@ -517,9 +517,9 @@ for failure_point in \
   cp "$absent_reinstall_home/.config/fish/config.fish" \
     "$fixture_root/absent-definition-reinstall-$failure_point.fish-before"
   mkdir "$fixture_root/absent-definition-reinstall-$failure_point.recovery"
-  cp "$absent_reinstall_home/.local/share/trellage/cdx/.fish-recovery/"* \
+  cp "$absent_reinstall_home/.local/share/trellage/codex/.fish-recovery/"* \
     "$fixture_root/absent-definition-reinstall-$failure_point.recovery/"
-  if HOME="$absent_reinstall_home" CDX_INSTALL_TEST_FAIL_AT="$failure_point" \
+  if HOME="$absent_reinstall_home" TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT="$failure_point" \
     /bin/bash "$install_script" \
     >"$fixture_root/absent-definition-reinstall-$failure_point.out" 2>&1; then
     fail "absent-definition injected reinstall failure unexpectedly succeeded: $failure_point"
@@ -530,7 +530,7 @@ for failure_point in \
     "$fixture_root/absent-definition-reinstall-$failure_point.fish-before" \
     || fail "absent-definition reinstall rollback changed Fish bytes: $failure_point"
   for name in config-before original-mode sha256-before sha256-after removed-line; do
-    cmp -s "$absent_reinstall_home/.local/share/trellage/cdx/.fish-recovery/$name" \
+    cmp -s "$absent_reinstall_home/.local/share/trellage/codex/.fish-recovery/$name" \
       "$fixture_root/absent-definition-reinstall-$failure_point.recovery/$name" \
       || fail "absent-definition reinstall rollback changed recovery $name: $failure_point"
   done
@@ -552,7 +552,7 @@ for failure_point in \
   cp "$absent_uninstall_home/.config/fish/config.fish" \
     "$fixture_root/absent-definition-uninstall-$failure_point.fish-before"
   absent_uninstall_mode="$(path_mode "$absent_uninstall_home/.config/fish/config.fish")"
-  if HOME="$absent_uninstall_home" CDX_UNINSTALL_TEST_FAIL_AT="$failure_point" \
+  if HOME="$absent_uninstall_home" TRELLAGE_CODEX_UNINSTALL_TEST_FAIL_AT="$failure_point" \
     /bin/bash "$uninstall_script" \
     >"$fixture_root/absent-definition-uninstall-$failure_point.out" 2>&1; then
     fail "absent-definition injected uninstall failure unexpectedly succeeded: $failure_point"
@@ -591,80 +591,80 @@ for conflict_kind in \
   conflict_home="$fixture_root/conflict-$conflict_kind"
   mkdir -p "$conflict_home/.config/fish"
   case "$conflict_kind" in
-    alias) printf '%s\n' 'alias cdx="codex --ask-for-approval"' \
+    alias) printf '%s\n' 'alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
-    function) printf '%s\n' 'function cdx; codex $argv; end' \
+    function) printf '%s\n' 'function codex; codex $argv; end' \
       >"$conflict_home/.config/fish/config.fish" ;;
     hash-in-token) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'echo foo#bar; alias cdx="codex --ask-for-approval"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'echo foo#bar; alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     continued-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
       'alias \' \
-      'cdx="codex --ask-for-approval"' \
+      'codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     and-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'true; and alias cdx="codex --ask-for-approval"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'true; and alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     or-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'false; or alias cdx="codex --ask-for-approval"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'false; or alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     not-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'not alias cdx="codex --ask-for-approval"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'not alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     repeated-prefix-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'true; and not not alias cdx="codex --ask-for-approval"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'true; and not not alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     andand-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'true && alias cdx="codex --ask-for-approval"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'true && alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     oror-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'false || alias cdx="codex --ask-for-approval"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'false || alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     time-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'time alias cdx="codex --ask-for-approval"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'time alias codex="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     and-function) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'true; and function cdx; codex $argv; end' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'true; and function codex; codex $argv; end' \
       >"$conflict_home/.config/fish/config.fish" ;;
     repeated-prefix-function) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-      'false; or not not function cdx; codex $argv; end' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'false; or not not function codex; codex $argv; end' \
       >"$conflict_home/.config/fish/config.fish" ;;
     escaped-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
       'alias c\dx="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     escaped-hex-alias) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
       'alias c\x64x="codex --ask-for-approval"' \
       >"$conflict_home/.config/fish/config.fish" ;;
     escaped-function) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
       'function c\dx; codex $argv; end' \
       >"$conflict_home/.config/fish/config.fish" ;;
     escaped-hex-function) printf '%s\n' \
-      'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
+      'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
       'function c\x64x; codex $argv; end' \
       >"$conflict_home/.config/fish/config.fish" ;;
   esac
   cp "$conflict_home/.config/fish/config.fish" "$fixture_root/conflict-$conflict_kind.before"
   if HOME="$conflict_home" /bin/bash "$install_script" \
     >"$fixture_root/conflict-$conflict_kind.out" 2>&1; then
-    fail "install accepted a different cdx $conflict_kind"
+    fail "install accepted a different codex $conflict_kind"
   fi
   cmp -s "$conflict_home/.config/fish/config.fish" \
     "$fixture_root/conflict-$conflict_kind.before" || fail "rejected $conflict_kind was changed"
-  [ ! -e "$conflict_home/.local/share/trellage/cdx" ] \
+  [ ! -e "$conflict_home/.local/share/trellage/codex" ] \
     || fail "rejected $conflict_kind published runtime"
   assert_no_install_staging "$conflict_home"
 done
@@ -715,13 +715,13 @@ for conflict_kind in alias-save alias-short-save alias-wraps function-descriptio
   conflict_home="$fixture_root/option-conflict-$conflict_kind"
   mkdir -p "$conflict_home/.config/fish"
   {
-    printf '%s\n' 'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"'
+    printf '%s\n' 'alias codex="codex --dangerously-bypass-approvals-and-sandbox"'
     case "$conflict_kind" in
-      alias-save) printf '%s\n' 'alias --save cdx="codex --ask-for-approval"' ;;
-      alias-short-save) printf '%s\n' 'alias -s cdx="codex --ask-for-approval"' ;;
-      alias-wraps) printf '%s\n' 'alias --wraps codex cdx="codex --ask-for-approval"' ;;
-      function-description) printf '%s\n' 'function cdx --description custom; codex $argv; end' ;;
-      function-wraps) printf '%s\n' 'function cdx --wraps codex; codex $argv; end' ;;
+      alias-save) printf '%s\n' 'alias --save codex="codex --ask-for-approval"' ;;
+      alias-short-save) printf '%s\n' 'alias -s codex="codex --ask-for-approval"' ;;
+      alias-wraps) printf '%s\n' 'alias --wraps codex codex="codex --ask-for-approval"' ;;
+      function-description) printf '%s\n' 'function codex --description custom; codex $argv; end' ;;
+      function-wraps) printf '%s\n' 'function codex --wraps codex; codex $argv; end' ;;
     esac
   } >"$conflict_home/.config/fish/config.fish"
   cp "$conflict_home/.config/fish/config.fish" \
@@ -730,7 +730,7 @@ for conflict_kind in alias-save alias-short-save alias-wraps function-descriptio
     "$fixture_root/option-conflict-$conflict_kind.topology"
   if HOME="$conflict_home" /bin/bash "$install_script" \
     >"$fixture_root/option-conflict-$conflict_kind.out" 2>&1; then
-    fail "install accepted option-bearing cdx definition: $conflict_kind"
+    fail "install accepted option-bearing codex definition: $conflict_kind"
   fi
   cmp -s "$conflict_home/.config/fish/config.fish" \
     "$fixture_root/option-conflict-$conflict_kind.before" \
@@ -742,46 +742,46 @@ for conflict_kind in alias-save alias-short-save alias-wraps function-descriptio
     || fail "rejected option-bearing definition changed topology: $conflict_kind"
 done
 
-non_definition_home="$fixture_root/non-definition-cdx-text"
+non_definition_home="$fixture_root/non-definition-codex-text"
 mkdir -p "$non_definition_home/.config/fish"
 printf '%s\n' \
-  '# alias --save cdx="not a definition"' \
-  'set -g cdx_note '\''alias --save cdx="not a definition"'\''' \
-  'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
+  '# alias --save codex="not a definition"' \
+  'set -g codex_note '\''alias --save codex="not a definition"'\''' \
+  'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
   >"$non_definition_home/.config/fish/config.fish"
 HOME="$non_definition_home" /bin/bash "$install_script" >/dev/null \
-  || fail 'install treated comment or quoted cdx text as a definition'
+  || fail 'install treated comment or quoted codex text as a definition'
 assert_install_published "$non_definition_home"
 release_install_home "$non_definition_home"
 
-non_cdx_definition_home="$fixture_root/non-cdx-definitions"
-mkdir -p "$non_cdx_definition_home/.config/fish"
+non_codex_definition_home="$fixture_root/non-codex-definitions"
+mkdir -p "$non_codex_definition_home/.config/fish"
 printf '%s\n' \
-  'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-  'alias foo cdx' \
-  'alias --wraps cdx foo="codex --ask-for-approval"' \
-  'alias --wraps=cdx bar="codex --ask-for-approval"' \
-  'alias --help cdx' \
-  'alias -h cdx' \
-  'alias -sh cdx' \
-  'alias -hs cdx' \
-  'function --help cdx' \
-  'function -h cdx' \
-  'function foo --description cdx; echo harmless; end' \
-  'function bar --description=cdx; echo harmless; end' \
-  'function baz --wraps cdx; echo harmless; end' \
+  'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+  'alias foo codex' \
+  'alias --wraps codex foo="codex --ask-for-approval"' \
+  'alias --wraps=codex bar="codex --ask-for-approval"' \
+  'alias --help codex' \
+  'alias -h codex' \
+  'alias -sh codex' \
+  'alias -hs codex' \
+  'function --help codex' \
+  'function -h codex' \
+  'function foo --description codex; echo harmless; end' \
+  'function bar --description=codex; echo harmless; end' \
+  'function baz --wraps codex; echo harmless; end' \
   'alias escaped-body="echo c\dx"' \
   'function escaped-body; echo c\dx; end' \
-  'echo and alias cdx="not a command"' \
-  'not echo alias cdx="not a command"' \
-  'true; and echo alias cdx="not a command"' \
-  'echo harmless\; alias cdx="not a command"' \
-  'echo '\''harmless; alias cdx="not a command"'\''' \
-  >"$non_cdx_definition_home/.config/fish/config.fish"
-HOME="$non_cdx_definition_home" /bin/bash "$install_script" >/dev/null \
-  || fail 'install treated an option value or alias body as the cdx definition name'
-assert_install_published "$non_cdx_definition_home"
-release_install_home "$non_cdx_definition_home"
+  'echo and alias codex="not a command"' \
+  'not echo alias codex="not a command"' \
+  'true; and echo alias codex="not a command"' \
+  'echo harmless\; alias codex="not a command"' \
+  'echo '\''harmless; alias codex="not a command"'\''' \
+  >"$non_codex_definition_home/.config/fish/config.fish"
+HOME="$non_codex_definition_home" /bin/bash "$install_script" >/dev/null \
+  || fail 'install treated an option value or alias body as the codex definition name'
+assert_install_published "$non_codex_definition_home"
+release_install_home "$non_codex_definition_home"
 
 for separator_kind in alias function alias-after-double-dash; do
   separator_home="$fixture_root/separator-conflict-$separator_kind"
@@ -789,20 +789,20 @@ for separator_kind in alias function alias-after-double-dash; do
   case "$separator_kind" in
     alias)
       printf '%s\n' \
-        'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-        'echo harmless; alias --save cdx="codex --ask-for-approval"' \
+        'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+        'echo harmless; alias --save codex="codex --ask-for-approval"' \
         >"$separator_home/.config/fish/config.fish"
       ;;
     function)
       printf '%s\n' \
-        'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-        'echo harmless; function cdx --wraps codex; codex $argv; end' \
+        'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+        'echo harmless; function codex --wraps codex; codex $argv; end' \
         >"$separator_home/.config/fish/config.fish"
       ;;
     alias-after-double-dash)
       printf '%s\n' \
-        'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
-        'echo harmless; alias --save -- cdx="codex --ask-for-approval"' \
+        'alias codex="codex --dangerously-bypass-approvals-and-sandbox"' \
+        'echo harmless; alias --save -- codex="codex --ask-for-approval"' \
         >"$separator_home/.config/fish/config.fish"
       ;;
   esac
@@ -810,7 +810,7 @@ for separator_kind in alias function alias-after-double-dash; do
     "$fixture_root/separator-conflict-$separator_kind.before"
   if HOME="$separator_home" /bin/bash "$install_script" \
     >"$fixture_root/separator-conflict-$separator_kind.out" 2>&1; then
-    fail "install accepted cdx definition after command separator: $separator_kind"
+    fail "install accepted codex definition after command separator: $separator_kind"
   fi
   cmp -s "$separator_home/.config/fish/config.fish" \
     "$fixture_root/separator-conflict-$separator_kind.before" \
@@ -830,7 +830,7 @@ for failure_point in \
   write_directory_topology "$failure_home" "$fixture_root/$failure_point.topology-before"
   cp "$failure_home/.config/fish/config.fish" "$fixture_root/$failure_point.fish-before"
   failure_mode="$(path_mode "$failure_home/.config/fish/config.fish")"
-  if HOME="$failure_home" CDX_INSTALL_TEST_FAIL_AT="$failure_point" \
+  if HOME="$failure_home" TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT="$failure_point" \
     /bin/bash "$install_script" >"$fixture_root/$failure_point.out" 2>&1; then
     fail "injected install failure unexpectedly succeeded: $failure_point"
   fi
@@ -838,9 +838,9 @@ for failure_point in \
     || fail "Fish bytes changed after injected failure: $failure_point"
   [ "$(path_mode "$failure_home/.config/fish/config.fish")" = "$failure_mode" ] \
     || fail "Fish mode changed after injected failure: $failure_point"
-  [ ! -e "$failure_home/.local/share/trellage/cdx" ] \
+  [ ! -e "$failure_home/.local/share/trellage/codex" ] \
     || fail "runtime remained after injected failure: $failure_point"
-  [ ! -e "$failure_home/.local/share/trellage/.native-commands/cdx" ] && [ ! -L "$failure_home/.local/share/trellage/.native-commands/cdx" ] \
+  [ ! -e "$failure_home/.local/share/trellage/.native-commands/codex" ] && [ ! -L "$failure_home/.local/share/trellage/.native-commands/codex" ] \
     || fail "command remained after injected failure: $failure_point"
   assert_no_install_staging "$failure_home"
   write_directory_topology "$failure_home" "$fixture_root/$failure_point.topology-after"
@@ -858,7 +858,7 @@ printf 'keep bin\n' >"$preexisting_parent_home/.local/bin/keep"
 printf 'keep runtime parent\n' >"$preexisting_parent_home/.local/share/trellage/keep"
 write_directory_topology "$preexisting_parent_home" \
   "$fixture_root/preexisting-parent.topology-before"
-if HOME="$preexisting_parent_home" CDX_INSTALL_TEST_FAIL_AT=after-fish-staging \
+if HOME="$preexisting_parent_home" TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT=after-fish-staging \
   /bin/bash "$install_script" >"$fixture_root/preexisting-parent.out" 2>&1; then
   fail 'pre-existing parent failure injection unexpectedly succeeded'
 fi
@@ -888,9 +888,9 @@ for failure_point in \
   cp "$reinstall_home/.config/fish/config.fish" \
     "$fixture_root/reinstall-$failure_point.fish-before"
   mkdir "$fixture_root/reinstall-$failure_point.recovery"
-  cp "$reinstall_home/.local/share/trellage/cdx/.fish-recovery/"* \
+  cp "$reinstall_home/.local/share/trellage/codex/.fish-recovery/"* \
     "$fixture_root/reinstall-$failure_point.recovery/"
-  if HOME="$reinstall_home" CDX_INSTALL_TEST_FAIL_AT="$failure_point" \
+  if HOME="$reinstall_home" TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT="$failure_point" \
     /bin/bash "$install_script" >"$fixture_root/reinstall-$failure_point.out" 2>&1; then
     fail "injected reinstall failure unexpectedly succeeded: $failure_point"
   fi
@@ -898,7 +898,7 @@ for failure_point in \
     "$fixture_root/reinstall-$failure_point.fish-before" \
     || fail "reinstall rollback changed Fish bytes: $failure_point"
   for name in config-before original-mode sha256-before sha256-after removed-line; do
-    cmp -s "$reinstall_home/.local/share/trellage/cdx/.fish-recovery/$name" \
+    cmp -s "$reinstall_home/.local/share/trellage/codex/.fish-recovery/$name" \
       "$fixture_root/reinstall-$failure_point.recovery/$name" \
       || fail "reinstall rollback changed recovery $name: $failure_point"
   done
@@ -921,22 +921,22 @@ set -u
 
 source_path="$1"
 destination_path="$2"
-"$CDX_TEST_REAL_MV" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_REAL_MV" "$@" || exit $?
 
-case "$CDX_TEST_SIGNAL_MV:$source_path:$destination_path" in
-  install-fish-old:*/.config/fish/config.fish:*/.config/fish/.cdx-fish.*|\
-  install-fish-new:*/.config/fish/.cdx-fish.*:*/.config/fish/config.fish|\
-  install-runtime-old:*/.local/share/trellage/cdx:*/.cdx-install.*/old-runtime|\
-  install-runtime-new:*/.cdx-install.*/new-runtime:*/.local/share/trellage/cdx|\
-  install-command-old:*/.local/share/trellage/.native-commands/cdx:*/.cdx-command.*/old-command|\
-  install-command-new:*/.cdx-command.*/new-command:*/.local/share/trellage/.native-commands/cdx|\
-  uninstall-fish-old:*/.config/fish/config.fish:*/.config/fish/.cdx-uninstall-fish.*|\
-  uninstall-fish-new:*/.config/fish/.cdx-uninstall-fish.*:*/.config/fish/config.fish|\
-  uninstall-command:*/.local/share/trellage/.native-commands/cdx:*/.cdx-uninstall-command.*/command|\
-  uninstall-runtime:*/.local/share/trellage/cdx:*/.cdx-uninstall.*/runtime)
-    if [ ! -e "$CDX_TEST_SIGNAL_ONCE" ]; then
-      : >"$CDX_TEST_SIGNAL_ONCE"
-      kill -s "$CDX_TEST_SIGNAL_NAME" "$PPID"
+case "$TRELLAGE_CODEX_TEST_SIGNAL_MV:$source_path:$destination_path" in
+  install-fish-old:*/.config/fish/config.fish:*/.config/fish/.codex-fish.*|\
+  install-fish-new:*/.config/fish/.codex-fish.*:*/.config/fish/config.fish|\
+  install-runtime-old:*/.local/share/trellage/codex:*/.codex-install.*/old-runtime|\
+  install-runtime-new:*/.codex-install.*/new-runtime:*/.local/share/trellage/codex|\
+  install-command-old:*/.local/share/trellage/.native-commands/codex:*/.codex-command.*/old-command|\
+  install-command-new:*/.codex-command.*/new-command:*/.local/share/trellage/.native-commands/codex|\
+  uninstall-fish-old:*/.config/fish/config.fish:*/.config/fish/.codex-uninstall-fish.*|\
+  uninstall-fish-new:*/.config/fish/.codex-uninstall-fish.*:*/.config/fish/config.fish|\
+  uninstall-command:*/.local/share/trellage/.native-commands/codex:*/.codex-uninstall-command.*/command|\
+  uninstall-runtime:*/.local/share/trellage/codex:*/.codex-uninstall.*/runtime)
+    if [ ! -e "$TRELLAGE_CODEX_TEST_SIGNAL_ONCE" ]; then
+      : >"$TRELLAGE_CODEX_TEST_SIGNAL_ONCE"
+      kill -s "$TRELLAGE_CODEX_TEST_SIGNAL_NAME" "$PPID"
     fi
     ;;
 esac
@@ -964,10 +964,10 @@ for signal_boundary in \
     "$fixture_root/$signal_boundary.fish-before"
   write_directory_topology "$signal_home" \
     "$fixture_root/$signal_boundary.topology-before"
-  if PATH="$signal_mv_bin:$PATH" CDX_TEST_REAL_MV="$real_mv" \
-    CDX_TEST_SIGNAL_MV="$signal_boundary" \
-    CDX_TEST_SIGNAL_NAME="$signal_name" \
-    CDX_TEST_SIGNAL_ONCE="$fixture_root/$signal_name-$signal_boundary.signaled" \
+  if PATH="$signal_mv_bin:$PATH" TRELLAGE_CODEX_TEST_REAL_MV="$real_mv" \
+    TRELLAGE_CODEX_TEST_SIGNAL_MV="$signal_boundary" \
+    TRELLAGE_CODEX_TEST_SIGNAL_NAME="$signal_name" \
+    TRELLAGE_CODEX_TEST_SIGNAL_ONCE="$fixture_root/$signal_name-$signal_boundary.signaled" \
     HOME="$signal_home" \
     /bin/bash "$install_script" >"$fixture_root/$signal_boundary.out" 2>&1; then
     fail "signal-boundary install unexpectedly succeeded: $signal_boundary"
@@ -986,9 +986,9 @@ for signal_boundary in \
       assert_install_published "$signal_home"
       ;;
     *)
-      [ ! -e "$signal_home/.local/share/trellage/cdx" ] \
+      [ ! -e "$signal_home/.local/share/trellage/codex" ] \
         || fail "signal-boundary install left runtime: $signal_boundary"
-      [ ! -e "$signal_home/.local/share/trellage/.native-commands/cdx" ] && [ ! -L "$signal_home/.local/share/trellage/.native-commands/cdx" ] \
+      [ ! -e "$signal_home/.local/share/trellage/.native-commands/codex" ] && [ ! -L "$signal_home/.local/share/trellage/.native-commands/codex" ] \
         || fail "signal-boundary install left command: $signal_boundary"
       ;;
   esac
@@ -1015,10 +1015,10 @@ for signal_boundary in \
     "$fixture_root/$signal_boundary.fish-before"
   write_directory_topology "$signal_home" \
     "$fixture_root/$signal_boundary.topology-before"
-  if PATH="$signal_mv_bin:$PATH" CDX_TEST_REAL_MV="$real_mv" \
-    CDX_TEST_SIGNAL_MV="$signal_boundary" \
-    CDX_TEST_SIGNAL_NAME="$signal_name" \
-    CDX_TEST_SIGNAL_ONCE="$fixture_root/$signal_name-$signal_boundary.signaled" \
+  if PATH="$signal_mv_bin:$PATH" TRELLAGE_CODEX_TEST_REAL_MV="$real_mv" \
+    TRELLAGE_CODEX_TEST_SIGNAL_MV="$signal_boundary" \
+    TRELLAGE_CODEX_TEST_SIGNAL_NAME="$signal_name" \
+    TRELLAGE_CODEX_TEST_SIGNAL_ONCE="$fixture_root/$signal_name-$signal_boundary.signaled" \
     HOME="$signal_home" \
     /bin/bash "$uninstall_script" >"$fixture_root/$signal_boundary.out" 2>&1; then
     fail "signal-boundary uninstall unexpectedly succeeded: $signal_boundary"
@@ -1050,7 +1050,7 @@ HOME="$edited_home" /bin/bash "$install_script" >/dev/null || fail 'edited fixtu
 printf '# user edit\n' >>"$edited_home/.config/fish/config.fish"
 cp "$edited_home/.config/fish/config.fish" "$fixture_root/edited-fish-before"
 mkdir "$fixture_root/edited-recovery-before-reinstall"
-cp "$edited_home/.local/share/trellage/cdx/.fish-recovery/"* \
+cp "$edited_home/.local/share/trellage/codex/.fish-recovery/"* \
   "$fixture_root/edited-recovery-before-reinstall/"
 HOME="$edited_home" /bin/bash "$install_script" \
   >"$fixture_root/edited-reinstall.out" \
@@ -1058,7 +1058,7 @@ HOME="$edited_home" /bin/bash "$install_script" \
 cmp -s "$edited_home/.config/fish/config.fish" "$fixture_root/edited-fish-before" \
   || fail 'reinstall changed unrelated Fish config edits'
 for name in config-before original-mode sha256-before sha256-after removed-line; do
-  cmp -s "$edited_home/.local/share/trellage/cdx/.fish-recovery/$name" \
+  cmp -s "$edited_home/.local/share/trellage/codex/.fish-recovery/$name" \
     "$fixture_root/edited-recovery-before-reinstall/$name" \
     || fail "reinstall changed Fish recovery metadata after unrelated edit: $name"
 done
@@ -1085,7 +1085,7 @@ for failure_point in \
   cp "$uninstall_home/.config/fish/config.fish" \
     "$fixture_root/uninstall-$failure_point.post-install"
   post_mode="$(path_mode "$uninstall_home/.config/fish/config.fish")"
-  if HOME="$uninstall_home" CDX_UNINSTALL_TEST_FAIL_AT="$failure_point" \
+  if HOME="$uninstall_home" TRELLAGE_CODEX_UNINSTALL_TEST_FAIL_AT="$failure_point" \
     /bin/bash "$uninstall_script" >"$fixture_root/uninstall-$failure_point.out" 2>&1; then
     fail "injected uninstall failure unexpectedly succeeded: $failure_point"
   fi
@@ -1102,23 +1102,23 @@ done
 unrelated_command_home="$fixture_root/unrelated-command-home"
 mkdir -p "$unrelated_command_home/.local/share/trellage/.native-commands"
 write_legacy_fish "$unrelated_command_home"
-printf 'unrelated command\n' >"$unrelated_command_home/.local/share/trellage/.native-commands/cdx"
+printf 'unrelated command\n' >"$unrelated_command_home/.local/share/trellage/.native-commands/codex"
 if HOME="$unrelated_command_home" /bin/bash "$install_script" \
   >"$fixture_root/unrelated-command.out" 2>&1; then
-  fail 'install replaced an unrelated cdx command'
+  fail 'install replaced an unrelated codex command'
 fi
-assert_install_line 'unrelated command' "$unrelated_command_home/.local/share/trellage/.native-commands/cdx"
+assert_install_line 'unrelated command' "$unrelated_command_home/.local/share/trellage/.native-commands/codex"
 
 symlink_runtime_home="$fixture_root/symlink-runtime-home"
 mkdir -p "$symlink_runtime_home/.local/share/trellage" "$symlink_runtime_home/outside"
 write_legacy_fish "$symlink_runtime_home"
 ln -s "$symlink_runtime_home/outside" \
-  "$symlink_runtime_home/.local/share/trellage/cdx"
+  "$symlink_runtime_home/.local/share/trellage/codex"
 if HOME="$symlink_runtime_home" /bin/bash "$install_script" \
   >"$fixture_root/symlink-runtime.out" 2>&1; then
   fail 'install followed a symlinked runtime root'
 fi
-[ -L "$symlink_runtime_home/.local/share/trellage/cdx" ] \
+[ -L "$symlink_runtime_home/.local/share/trellage/codex" ] \
   || fail 'rejected symlinked runtime was changed'
 
 shared_rollback_home="$fixture_root/shared-runtime-rollback-home"
@@ -1126,12 +1126,12 @@ write_legacy_fish "$shared_rollback_home"
 HOME="$shared_rollback_home" /bin/bash "$install_script" >/dev/null \
   || fail 'shared-runtime rollback fixture install failed'
 shared_runtime_root="$shared_rollback_home/.local/share/trellage/common"
-shared_guard="$shared_runtime_root/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py"
+shared_guard="$shared_runtime_root/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/firstmate-registry.py"
 for unsafe_guard in symlink directory writable extra; do
   case "$unsafe_guard" in
     symlink)
       rm "$shared_guard"
-      ln -s "$root/../trellage-firstmate-profiles/lib/fmx-registry.py" "$shared_guard"
+      ln -s "$root/../trellage-firstmate-profiles/lib/firstmate-registry.py" "$shared_guard"
       ;;
     directory) rm "$shared_guard"; mkdir "$shared_guard" ;;
     writable) chmod 0666 "$shared_guard" ;;
@@ -1151,7 +1151,7 @@ for unsafe_guard in symlink directory writable extra; do
     extra) rm "$shared_runtime_root/floating-skills-runtime/keep" ;;
     *) rm "$shared_guard" ;;
   esac
-  install -m 0444 "$root/../trellage-firstmate-profiles/lib/fmx-registry.py" "$shared_guard"
+  install -m 0444 "$root/../trellage-firstmate-profiles/lib/firstmate-registry.py" "$shared_guard"
   refresh_fixture_source "$shared_runtime_root/floating-skills-runtime"
 done
 chmod 0755 "$shared_runtime_root/native-environment-runtime/scripts/native-environment.ts"
@@ -1172,7 +1172,7 @@ write_owned_runtime_snapshot "$shared_runtime_root" \
 for failure_point in \
   after-environment-runtime-publication \
   after-floating-runtime-publication; do
-  if HOME="$shared_rollback_home" CDX_INSTALL_TEST_FAIL_AT="$failure_point" \
+  if HOME="$shared_rollback_home" TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT="$failure_point" \
     /bin/bash "$install_script" \
     >"$fixture_root/shared-runtime-$failure_point.out" 2>&1; then
     fail "shared-runtime injected install failure unexpectedly succeeded: $failure_point"
@@ -1184,8 +1184,8 @@ for failure_point in \
   cmp -s "$fixture_root/shared-runtime.before" \
     "$fixture_root/shared-runtime-$failure_point.after" \
     || fail "shared-runtime rollback changed prior runtime bytes: $failure_point"
-  cmp -s "$shared_rollback_home/.local/share/trellage/cdx/bin/cdx" "$launcher" \
-    || fail "shared-runtime rollback changed the cdx launcher: $failure_point"
+  cmp -s "$shared_rollback_home/.local/share/trellage/codex/bin/codex" "$launcher" \
+    || fail "shared-runtime rollback changed the codex launcher: $failure_point"
   assert_no_install_staging "$shared_rollback_home"
 done
 release_install_home "$shared_rollback_home"
@@ -1195,7 +1195,7 @@ write_legacy_fish "$new_shared_failure_home"
 cp "$new_shared_failure_home/.config/fish/config.fish" \
   "$fixture_root/new-shared-runtime.fish-before"
 if HOME="$new_shared_failure_home" \
-  CDX_INSTALL_TEST_FAIL_AT=after-environment-runtime-publication \
+  TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT=after-environment-runtime-publication \
   /bin/bash "$install_script" \
   >"$fixture_root/new-shared-runtime.out" 2>&1; then
   fail 'new install accepted a shared-runtime publication failure'
@@ -1203,8 +1203,8 @@ fi
 cmp -s "$new_shared_failure_home/.config/fish/config.fish" \
   "$fixture_root/new-shared-runtime.fish-before" \
   || fail 'new shared-runtime failure changed Fish bytes'
-[ ! -e "$new_shared_failure_home/.local/share/trellage/cdx" ] \
-  || fail 'new shared-runtime failure left the cdx runtime'
+[ ! -e "$new_shared_failure_home/.local/share/trellage/codex" ] \
+  || fail 'new shared-runtime failure left the codex runtime'
 [ ! -e "$new_shared_failure_home/.local/share/trellage/common" ] \
   || fail 'new shared-runtime failure left shared runtime state'
 assert_no_install_staging "$new_shared_failure_home"
@@ -1226,11 +1226,11 @@ assert_install_text 'refusing unowned native environment runtime' \
 cmp -s "$unowned_environment_home/.config/fish/config.fish" \
   "$fixture_root/unowned-environment.fish-before" \
   || fail 'native environment runtime failure changed Fish bytes'
-[ ! -e "$unowned_environment_home/.local/share/trellage/cdx" ] \
-  || fail 'native environment runtime failure left the cdx runtime'
-[ ! -e "$unowned_environment_home/.local/share/trellage/.native-commands/cdx" ] \
-  && [ ! -L "$unowned_environment_home/.local/share/trellage/.native-commands/cdx" ] \
-  || fail 'native environment runtime failure left the cdx command'
+[ ! -e "$unowned_environment_home/.local/share/trellage/codex" ] \
+  || fail 'native environment runtime failure left the codex runtime'
+[ ! -e "$unowned_environment_home/.local/share/trellage/.native-commands/codex" ] \
+  && [ ! -L "$unowned_environment_home/.local/share/trellage/.native-commands/codex" ] \
+  || fail 'native environment runtime failure left the codex command'
 assert_install_line 'preserve unowned runtime' \
   "$unowned_environment_home/.local/share/trellage/common/native-environment-runtime/keep"
 assert_no_install_staging "$unowned_environment_home"
@@ -1250,11 +1250,11 @@ assert_install_text 'must not be writable by group or other users' \
 cmp -s "$writable_environment_home/.config/fish/config.fish" \
   "$fixture_root/writable-environment.fish-before" \
   || fail 'writable native runtime parent failure changed Fish bytes'
-[ ! -e "$writable_environment_home/.local/share/trellage/cdx" ] \
-  || fail 'writable native runtime parent failure left the cdx runtime'
-[ ! -e "$writable_environment_home/.local/share/trellage/.native-commands/cdx" ] \
-  && [ ! -L "$writable_environment_home/.local/share/trellage/.native-commands/cdx" ] \
-  || fail 'writable native runtime parent failure left the cdx command'
+[ ! -e "$writable_environment_home/.local/share/trellage/codex" ] \
+  || fail 'writable native runtime parent failure left the codex runtime'
+[ ! -e "$writable_environment_home/.local/share/trellage/.native-commands/codex" ] \
+  && [ ! -L "$writable_environment_home/.local/share/trellage/.native-commands/codex" ] \
+  || fail 'writable native runtime parent failure left the codex command'
 assert_no_install_staging "$writable_environment_home"
 
 permissive_umask_home="$fixture_root/permissive-umask-home"

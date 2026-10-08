@@ -5,26 +5,26 @@ set -euo pipefail
 readonly profile_marker_value='trellage-claude-profile-v1'
 
 die() {
-  printf 'cldx: %s\n' "$1" >&2
+  printf 'claude: %s\n' "$1" >&2
   exit 1
 }
 
 usage() {
   cat <<'EOF'
 Usage:
-  cldx [CLAUDE_ARGS...]
-  cldx {default|office|office-charts} [CLAUDE_ARGS...]
-  cldx list [--json]
-  cldx inventory PROFILE --json
-  cldx setup [PROFILE]
-  cldx doctor [PROFILE]
-  cldx repair [PROFILE]
-  cldx skills-update PROFILE
-  cldx skills-check PROFILE
-  cldx harness-version
-  cldx harness-update
+  claude [CLAUDE_ARGS...]
+  claude {default|office|office-charts} [CLAUDE_ARGS...]
+  claude list [--json]
+  claude inventory PROFILE --json
+  claude setup [PROFILE]
+  claude doctor [PROFILE]
+  claude repair [PROFILE]
+  claude skills-update PROFILE
+  claude skills-check PROFILE
+  claude harness-version
+  claude harness-update
 
-Bare cldx invocations use the default profile.
+Bare claude invocations use the default profile.
 EOF
 }
 
@@ -62,7 +62,7 @@ output_style="$output_style_root/rundown.md"
 # The shared native Claude runtime owns executable/version resolution, safe
 # profile path checks, onboarding, settings, floating skills, proxy/model
 # checks, credential scrubbing, model defaulting, signal/exec behavior, and
-# optional session bridge installation. cldx only owns its own CLI surface,
+# optional session bridge installation. claude only owns its own CLI surface,
 # catalog schema, and the vendored output style asset.
 native_claude="$runtime_root/lib/native-claude"
 if [[ ! -f "$native_claude" ]]; then
@@ -70,7 +70,7 @@ if [[ ! -f "$native_claude" ]]; then
 fi
 [[ -f "$native_claude" && ! -L "$native_claude" && -x "$native_claude" ]] \
   || die "shared native Claude launcher is missing or unsafe: $native_claude"
-export TRELLAGE_CLAUDE_LAUNCHER_NAME=cldx
+export TRELLAGE_CLAUDE_LAUNCHER_NAME=claude
 export TRELLAGE_CLAUDE_RUNTIME_ROOT="$runtime_root"
 
 validate_catalog() {
@@ -149,9 +149,9 @@ list_profiles_json() {
   jq -S --argjson headless "$headless_map" '
     {
       schemaVersion: 1,
-      launcher: "cldx",
+      launcher: "claude",
       harness: "claude",
-      # cldx runs Claude Code directly on the host with
+      # claude runs Claude Code directly on the host with
       # --dangerously-skip-permissions; no native OS-level sandbox is
       # enabled today. See docs/native-sandbox-research.md.
       sandbox: false,
@@ -278,7 +278,7 @@ require_office_plugin() {
   inventory="$(office_plugin_inventory)"
   jq -e 'any(.[]; .id == "document-skills@anthropic-agent-skills"
     and .scope == "user" and .enabled == true)' <<<"$inventory" >/dev/null \
-    || die "Office document plugin is missing or disabled; run cldx repair $profile_name"
+    || die "Office document plugin is missing or disabled; run claude repair $profile_name"
   local install_path ancestor skill
   local required_skills=(academic-pptx)
   [[ "$profile_name" != office-charts ]] || required_skills+=(slide-maker)
@@ -371,7 +371,7 @@ setup_profile() {
   ensure_office_plugin
   version="$("$native_claude" version)"
   model="$("$native_claude" model-id)"
-  printf 'cldx setup: ready (%s, %s)\n' "$version" "$model"
+  printf 'claude setup: ready (%s, %s)\n' "$version" "$model"
 }
 
 repair_profile() {
@@ -385,7 +385,7 @@ repair_profile() {
   ensure_office_plugin
   version="$("$native_claude" version)"
   model="$("$native_claude" model-id)"
-  printf 'cldx repair: restored (%s, %s)\n' "$version" "$model"
+  printf 'claude repair: restored (%s, %s)\n' "$version" "$model"
 }
 
 doctor_profile() {
@@ -397,7 +397,7 @@ doctor_profile() {
   require_office_plugin
   version="$("$native_claude" version)"
   model="$("$native_claude" model-id)"
-  printf 'cldx doctor: OK (%s, %s)\n' "$version" "$model"
+  printf 'claude doctor: OK (%s, %s)\n' "$version" "$model"
 }
 
 not_ready_inventory() {
@@ -406,7 +406,7 @@ not_ready_inventory() {
 
   jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
     schemaVersion: 1,
-    launcher: "cldx",
+    launcher: "claude",
     harness: "claude",
     profile: $profile,
     readiness: $readiness,
@@ -438,7 +438,7 @@ inventory_profile() {
   jq -cn --arg profile "$profile" --argjson plugins \
     "$(jq -c --arg profile "$profile" '[.profiles[$profile].plugin | select(. != null)]' "$catalog")" '{
     schemaVersion: 1,
-    launcher: "cldx",
+    launcher: "claude",
     harness: "claude",
     profile: $profile,
     readiness: "healthy",
@@ -485,7 +485,7 @@ case "${1-}" in
   setup|doctor|repair)
     command_name="$1"
     shift
-    [[ "$#" -le 1 ]] || die "usage: cldx $command_name [PROFILE]"
+    [[ "$#" -le 1 ]] || die "usage: claude $command_name [PROFILE]"
     select_profile "${1-default}"
     "${command_name}_profile"
     ;;
@@ -513,7 +513,7 @@ case "${1-}" in
     goal_runtime="$("$native_claude" goal-runtime)"
     jq -cn --argjson runtime "$goal_runtime" --arg profileHome "$profile_home" '{
       schemaVersion: 1,
-      launcher: "cldx",
+      launcher: "claude",
       harness: "claude",
       installed: $runtime.version,
       latest: null,

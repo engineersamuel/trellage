@@ -5,16 +5,16 @@ set -o pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
-launcher="$root/bin/jcx"
+launcher="$root/bin/jcode"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
 
 fail() {
-  printf 'jcx contract failed: %s\n' "$1" >&2
+  printf 'jcode contract failed: %s\n' "$1" >&2
   exit 1
 }
 
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-jcx-contract.XXXXXX")" \
+fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-jcode-contract.XXXXXX")" \
   || fail 'could not create fixture root'
 trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
 fixture_root="$(CDPATH= cd -P -- "$fixture_root" && pwd -P)" \
@@ -147,13 +147,13 @@ export FAKE_JCODE_SIGNAL_LOG="$fixture_root/signal.log"
 : >"$FAKE_JCODE_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/share/trellage/.native-commands/jcx"
-runtime_root="$HOME/.local/share/trellage/jcx"
+command_path="$HOME/.local/share/trellage/.native-commands/jcode"
+runtime_root="$HOME/.local/share/trellage/jcode"
 profile_root="$HOME/.local/share/trellage/profiles/jcode/default"
 profile_home="$profile_root/home"
 
 [[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
-[[ "$(readlink "$command_path")" == "$runtime_root/bin/jcx" ]] \
+[[ "$(readlink "$command_path")" == "$runtime_root/bin/jcode" ]] \
   || fail 'command symlink target differs'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
@@ -163,7 +163,7 @@ cmp -s "$runtime_root/config-manager.ts" "$root/config-manager.ts" \
 "$command_path" list --json >"$fixture_root/list.json" || fail 'JSON list failed'
 jq -e '
   .schemaVersion == 1
-  and .launcher == "jcx"
+  and .launcher == "jcode"
   and .harness == "jcode"
   and .sandbox == false
   and [.profiles[].name] == ["default"]
@@ -195,7 +195,7 @@ mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
 if "$command_path" list --json >"$fixture_root/invalid-list.out" 2>"$fixture_root/invalid-list.err"; then
   fail 'list accepted invalid headless catalog'
 fi
-grep -Fq 'jcx: invalid catalog:' "$fixture_root/invalid-list.err" \
+grep -Fq 'jcode: invalid catalog:' "$fixture_root/invalid-list.err" \
   || fail 'invalid headless catalog diagnostic differs'
 jq '.profiles.default.headless.trellageEventContract = "unsupported-trellage-events-v1"' \
   "$fixture_root/catalog.saved" >"$fixture_root/catalog.invalid" \
@@ -206,7 +206,7 @@ if "$command_path" list --json \
   2>"$fixture_root/invalid-trellage-event-list.err"; then
   fail 'list accepted unsupported Trellage event contract'
 fi
-grep -Fq 'jcx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
+grep -Fq 'jcode: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
   || fail 'unsupported Trellage event contract diagnostic differs'
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
@@ -283,7 +283,7 @@ jq -e '
 ' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list differs'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
-grep -Fq 'jcx doctor: OK (0.67.1, gpt-5.6-sol, medium)' "$fixture_root/doctor.out" \
+grep -Fq 'jcode doctor: OK (0.67.1, gpt-5.6-sol, medium)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
 manual_file="$profile_root/skill-library/i-have-adhd/SKILL.md"
@@ -307,7 +307,7 @@ tail -n 1 "$FAKE_JCODE_LOG" | jq -e \
 if "$command_path" skill unknown task >"$fixture_root/invalid-skill.out" 2>&1; then
   fail 'manual invocation accepted an unsupported skill'
 fi
-grep -Fq 'usage: jcx skill i-have-adhd PROMPT' "$fixture_root/invalid-skill.out" \
+grep -Fq 'usage: jcode skill i-have-adhd PROMPT' "$fixture_root/invalid-skill.out" \
   || fail 'unsupported manual skill diagnostic differs'
 
 cat >"$profile_home/config.toml" <<'NORMALIZED_CONFIG'
@@ -374,7 +374,7 @@ while IFS='|' read -r label old new; do
   status=0
   "$command_path" doctor >"$fixture_root/$label-drift.out" 2>&1 || status=$?
   [[ "$status" == 1 ]] || fail "doctor accepted $label drift"
-  grep -Fq 'managed config differs; run jcx repair' \
+  grep -Fq 'managed config differs; run jcode repair' \
     "$fixture_root/$label-drift.out" \
     || fail "$label drift diagnostic differs"
 done <<'MANAGED_DRIFT_CASES'
@@ -405,7 +405,7 @@ while IFS='|' read -r label anchor addition; do
   status=0
   "$command_path" doctor >"$fixture_root/$label-override.out" 2>&1 || status=$?
   [[ "$status" == 1 ]] || fail "doctor accepted $label override"
-  grep -Fq 'managed config differs; run jcx repair' \
+  grep -Fq 'managed config differs; run jcode repair' \
     "$fixture_root/$label-override.out" \
     || fail "$label override diagnostic differs"
 done <<'MANAGED_OVERRIDE_CASES'
@@ -423,7 +423,7 @@ HEADER_OVERRIDE
 status=0
 "$command_path" doctor >"$fixture_root/header-override.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted managed provider headers'
-grep -Fq 'managed config differs; run jcx repair' \
+grep -Fq 'managed config differs; run jcode repair' \
   "$fixture_root/header-override.out" \
   || fail 'managed provider header diagnostic differs'
 
@@ -436,7 +436,7 @@ QUOTED_OVERRIDE
 status=0
 "$command_path" doctor >"$fixture_root/quoted-override.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted quoted managed provider override'
-grep -Fq 'managed config differs; run jcx repair' \
+grep -Fq 'managed config differs; run jcode repair' \
   "$fixture_root/quoted-override.out" \
   || fail 'quoted managed provider override diagnostic differs'
 
@@ -449,7 +449,7 @@ SPACED_OVERRIDE
 status=0
 "$command_path" doctor >"$fixture_root/spaced-override.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted spaced managed provider override'
-grep -Fq 'managed config differs; run jcx repair' \
+grep -Fq 'managed config differs; run jcode repair' \
   "$fixture_root/spaced-override.out" \
   || fail 'spaced managed provider override diagnostic differs'
 
@@ -462,7 +462,7 @@ COMMENTED_OVERRIDE
 status=0
 "$command_path" doctor >"$fixture_root/commented-override.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted commented managed provider override'
-grep -Fq 'managed config differs; run jcx repair' \
+grep -Fq 'managed config differs; run jcode repair' \
   "$fixture_root/commented-override.out" \
   || fail 'commented managed provider override diagnostic differs'
 "$command_path" run commented-override-repair-probe \
@@ -478,7 +478,7 @@ printf '\nvalue = [\n' >>"$profile_home/config.toml"
 status=0
 "$command_path" doctor >"$fixture_root/malformed-toml.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted malformed TOML'
-grep -Fq 'managed config differs; run jcx repair' \
+grep -Fq 'managed config differs; run jcode repair' \
   "$fixture_root/malformed-toml.out" \
   || fail 'malformed TOML diagnostic differs'
 
@@ -551,13 +551,13 @@ printf 'drift\n' >>"$profile_home/config.toml"
 status=0
 "$command_path" doctor >"$fixture_root/drift.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted modified managed config'
-grep -Fq 'managed config differs; run jcx repair' "$fixture_root/drift.out" \
+grep -Fq 'managed config differs; run jcode repair' "$fixture_root/drift.out" \
   || fail 'managed config drift error differs'
 "$command_path" run drift-repair-probe \
   || fail 'launch did not self-heal managed config'
 "$command_path" doctor >"$fixture_root/doctor-after-drift.out" \
   || fail 'doctor rejected launch-repaired managed config'
-grep -Fq 'jcx doctor: OK (0.67.1, gpt-5.6-sol, medium)' \
+grep -Fq 'jcode doctor: OK (0.67.1, gpt-5.6-sol, medium)' \
   "$fixture_root/doctor-after-drift.out" \
   || fail 'doctor output differs after launch repair'
 
@@ -612,7 +612,7 @@ mkdir -p "$fixture_root/unrelated-home/.local/share/trellage/profiles/jcode/defa
 printf 'unrelated\n' \
   >"$fixture_root/unrelated-home/.local/share/trellage/profiles/jcode/default/data"
 status=0
-HOME="$fixture_root/unrelated-home" "$runtime_root/bin/jcx" setup \
+HOME="$fixture_root/unrelated-home" "$runtime_root/bin/jcode" setup \
   >"$fixture_root/unrelated.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'setup accepted unrelated profile files'
 
@@ -620,7 +620,7 @@ unrelated_profile="$fixture_root/unrelated-home/.local/share/trellage/profiles/j
 mkdir -p "$unrelated_profile/home"
 seed_floating_skills_cache "$fixture_root/unrelated-home"
 status=0
-HOME="$fixture_root/unrelated-home" "$runtime_root/bin/jcx" update \
+HOME="$fixture_root/unrelated-home" "$runtime_root/bin/jcode" update \
   >"$fixture_root/unrelated-update.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'update accepted unrelated profile files'
 [[ ! -e "$unrelated_profile/skill-library" && ! -e "$unrelated_profile/home/skills" ]] \
@@ -643,4 +643,4 @@ rm "$runtime_root/config-manager.ts"
   || fail 'legacy-layout uninstall left command'
 [[ -d "$profile_home" ]] || fail 'legacy-layout uninstall removed profile state'
 
-printf 'jcx contract: PASS\n'
+printf 'jcode contract: PASS\n'

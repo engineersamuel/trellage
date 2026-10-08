@@ -319,7 +319,7 @@ An old bridge reports that conversation export is unsupported.
 
 Firstmate bridge metadata keeps the profile name separate from the fleet UUID.
 Capture uses only that reference's captain Claude home, not another instance
-or the ordinary `cldx` profile home. An incomplete reference does not permit a
+or the ordinary `claude` profile home. An incomplete reference does not permit a
 home guess. The source-pane process and harness session must still match.
 
 Both popup paths pass Firstmate launch origin through the private Herdr

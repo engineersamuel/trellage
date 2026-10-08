@@ -17,9 +17,9 @@ in a different codebase (the `herdr` binary's `driveLoop`, agent detection,
 
 ## What Trellage fixed (category G — broken profile environments)
 
-- **`cpx hve`**: was `unhealthy` (missing `hve-core-all@hve-core` skill
-  plugin). Repaired via `cpx repair hve`; `cpx doctor hve` and
-  `cpx inventory hve --json` now report `healthy`. Ledger status: `untested`
+- **`copilot hve`**: was `unhealthy` (missing `hve-core-all@hve-core` skill
+  plugin). Repaired via `copilot repair hve`; `copilot doctor hve` and
+  `copilot inventory hve --json` now report `healthy`. Ledger status: `untested`
   (repaired, awaiting a fresh Herdr verification run).
 - **`codex-superpowers` container**: `codex-code-mode-host` — a companion
   binary Codex's experimental `features.code_mode_host` tool (which the
@@ -88,15 +88,15 @@ address them. Recommend filing these directly against Herdr:
 5. **Scope/readiness resolution errors (category E, partial)** — the retired legacy Grok launcher with `hve`
    failed with "Agent is outside run scope" (`ScopedHerdr`/
    `createHerdrTrellageBackend` didn't recognize the spawned pane as
-   belonging to the current run) and `prx default` failed with
+   belonging to the current run) and `prime default` failed with
    "agent_not_ready: not an active named agent" (the pane never reached a
    ready state). Both fail fast and cleanly, but both native profiles are
-   completely undrivable today. On the Trellage side, `prx`'s readiness gate
+   completely undrivable today. On the Trellage side, `prime`'s readiness gate
    is now exposed via the standardized `not_ready_inventory` contract (see
    below), which should make it easier for Herdr to distinguish "not ready
    yet" from "never became ready."
 6. **Repo-context role confusion (category F)** — delegating to
-   `cpx copilot/awesome` from within this repository's own worktree caused
+   `copilot copilot/awesome` from within this repository's own worktree caused
    the delegate to load this repo's own docs (which describe
    `invoke_trellage` in detail) and mistake itself for the orchestrator,
    rather than completing the one-line task in `task.md`. This is a
@@ -108,10 +108,10 @@ address them. Recommend filing these directly against Herdr:
 
 ## What Trellage added to make future validation runs cheaper
 
-- **Standardized readiness** across the legacy native launchers (`cpx`, `cdx`,
-  `omp`, `jcx`, `cldx`, `prx`) — every launcher now exposes the same
+- **Standardized readiness** across the legacy native launchers (`copilot`, `codex`,
+  `omp`, `jcode`, `claude`, `prime`) — every launcher now exposes the same
   `not_ready_inventory` / `readiness: healthy | unhealthy | not-setup`
-  contract driven by its `doctor_profile` check, including `prx`'s "active
+  contract driven by its `doctor_profile` check, including `prime`'s "active
   named agent" gate, which used to be a launch-time failure rather than a
   queryable readiness signal.
 - **`trx list --json`** and **`trellage list --json-full`** now include a
@@ -135,8 +135,8 @@ convention) whenever a fresh Herdr-driven verification run changes a
 profile's known status.
 
 New native launchers are entered as `untested` before any live run.
-`fmx/default` and `fmx/pstack-workers` were first added this way and were not
-part of the original 22-profile RLM run. `fmx/default` has since completed a
+`firstmate/default` and `firstmate/pstack-workers` were first added this way and were not
+part of the original 22-profile RLM run. `firstmate/default` has since completed a
 real Herdr captain-and-scout round trip and is now `verified`.
-`fmx/pstack-workers` remains `untested` until its profile-specific worker
+`firstmate/pstack-workers` remains `untested` until its profile-specific worker
 policy completes the same round trip.

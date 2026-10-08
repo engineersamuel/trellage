@@ -279,7 +279,7 @@ describe("runBatchedHarnessVersionChecks", () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
     const now = Date.now()
-    const cpx = nativeEntry({
+    const copilot = nativeEntry({
       ref: "native:copilot/default",
       launcher: "copilot",
       harness: "copilot",
@@ -311,7 +311,7 @@ describe("runBatchedHarnessVersionChecks", () => {
       },
     }
 
-    await runBatchedHarnessVersionChecks([cpx, sandbox], manager, cache, { now: () => now })
+    await runBatchedHarnessVersionChecks([copilot, sandbox], manager, cache, { now: () => now })
     expect(runner.calls).toEqual([])
   })
 

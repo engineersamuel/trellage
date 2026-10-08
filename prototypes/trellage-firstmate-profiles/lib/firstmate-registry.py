@@ -187,7 +187,7 @@ def registry_root():
 
 
 def shared_lock():
-    return home() / ".local/share/trellage/.fmx-install.lock"
+    return home() / ".local/share/trellage/.firstmate-install.lock"
 
 
 def ensure_chain(path):
@@ -815,7 +815,7 @@ def parent_pid(pid):
 
 
 def inherited_lease():
-    value = os.environ.get("FMX_SHARED_LEASE_FD", "")
+    value = os.environ.get("TRELLAGE_FIRSTMATE_SHARED_LEASE_FD", "")
     if not value:
         return None
     if not re.fullmatch(r"[1-9][0-9]{0,3}", value) or not 3 <= int(value) <= 4096:
@@ -886,14 +886,14 @@ def run_lease_command(args):
                 child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "lease-exec",
                                           str(ready), *args[1:]],
                                          start_new_session=True, pass_fds=(fd, ready),
-                                         env=dict(os.environ, FMX_SHARED_LEASE_FD=str(fd)),
+                                         env=dict(os.environ, TRELLAGE_FIRSTMATE_SHARED_LEASE_FD=str(fd)),
                                          preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, set()))
                 os.close(ready)
                 ready = None
                 if inherited is None:
                     # The child cannot execute until its PID owns admission. If
                     # this guard dies in the launch window, EOF cancels the child.
-                    stage = shared_lock().parent / (".fmx-lease-pid-" + uuid.uuid4().hex)
+                    stage = shared_lock().parent / (".firstmate-lease-pid-" + uuid.uuid4().hex)
                     try:
                         handle = os.open(stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
                         with os.fdopen(handle, "w") as stream:
@@ -978,5 +978,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except (Refusal, OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
-        print("fmx registry: " + str(error), file=sys.stderr)
+        print("firstmate registry: " + str(error), file=sys.stderr)
         sys.exit(1)

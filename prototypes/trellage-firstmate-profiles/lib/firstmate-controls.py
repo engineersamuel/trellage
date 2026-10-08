@@ -53,8 +53,8 @@ def read_json(path: Path):
 
 
 def named_context(root, profile, prefix, instance_id, published, verify_runtime):
-    registry = importlib.import_module("fmx-registry")
-    overlay = importlib.import_module("fmx-overlay")
+    registry = importlib.import_module("firstmate-registry")
+    overlay = importlib.import_module("firstmate-overlay")
     try:
         if os.environ.get("FM_ROOT_OVERRIDE", "") not in ("", str(root / "runtime")):
             raise Refusal("FM_ROOT_OVERRIDE cannot redirect the managed instance")
@@ -89,14 +89,14 @@ def operational_paths(root):
 
 
 def context(published=False, verify_runtime=True) -> tuple[Path, str]:
-    root = Path(os.environ.get("FMX_PROFILE_ROOT", ""))
+    root = Path(os.environ.get("TRELLAGE_FIRSTMATE_PROFILE_ROOT", ""))
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
-        raise Refusal("FMX_PROFILE_ROOT must name an owned absolute profile directory")
+        raise Refusal("TRELLAGE_FIRSTMATE_PROFILE_ROOT must name an owned absolute profile directory")
     if regular(root / MARKER).decode().strip() != OWNER:
         raise Refusal("profile ownership differs")
-    profile = os.environ.get("FMX_PROFILE", "")
-    prefix = os.environ.get("FMX_TASK_ID_PREFIX", "")
-    instance_id = os.environ.get("FMX_INSTANCE_ID", "")
+    profile = os.environ.get("TRELLAGE_FIRSTMATE_PROFILE", "")
+    prefix = os.environ.get("TRELLAGE_FIRSTMATE_TASK_ID_PREFIX", "")
+    instance_id = os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_ID", "")
     if instance_id or root.parent.name == "instances" or prefix.startswith("fi"):
         named_context(root, profile, prefix, instance_id, published, verify_runtime)
     elif {"default": "fmd", "pstack-workers": "fmp"}.get(profile) != prefix:
@@ -110,7 +110,7 @@ def native_json(command: str):
     helper = package / "lib/native-claude"
     if not helper.exists():
         helper = package.parent / "trellage-claude-common/native-claude"
-    env = dict(os.environ, TRELLAGE_CLAUDE_LAUNCHER_NAME="fmx",
+    env = dict(os.environ, TRELLAGE_CLAUDE_LAUNCHER_NAME="firstmate",
                TRELLAGE_CLAUDE_RUNTIME_ROOT=str(package))
     result = subprocess.run(
         [str(helper), command, "--json"], env=env, stdin=subprocess.DEVNULL,
@@ -186,14 +186,14 @@ def metadata(home: Path, task: str) -> dict[str, str]:
             raise Refusal("task metadata is incomplete or ambiguous")
         fields[key] = value
     if any(fields.get(key) for key in ("remote_host", "remote_root", "remote_target")):
-        raise Refusal("remote secondmate recovery is not supported by fmx")
+        raise Refusal("remote secondmate recovery is not supported by firstmate")
     fields.setdefault("backend", "tmux")
-    instance_id = os.environ.get("FMX_INSTANCE_ID", "")
+    instance_id = os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_ID", "")
     if instance_id:
-        if fields.get("fmx_instance_id") != instance_id or fields.get("fmx_profile_root") != str(home.parent):
+        if fields.get("firstmate_instance_id") != instance_id or fields.get("firstmate_profile_root") != str(home.parent):
             raise Refusal("recorded worker belongs to another instance")
         if fields["backend"] == "tmux" and fields.get("window") != (
-            "firstmate-" + os.environ["FMX_TASK_ID_PREFIX"] + ":fm-" + task
+            "firstmate-" + os.environ["TRELLAGE_FIRSTMATE_TASK_ID_PREFIX"] + ":fm-" + task
         ):
             raise Refusal("recorded tmux endpoint is outside this instance namespace")
     return fields
@@ -231,19 +231,19 @@ def tmux_endpoint(prefix, target):
 
 def live_tmux_target(home, prefix, target):
     fields = tmux_endpoint(prefix, target)
-    for key, expected in (("FMX_INSTANCE_ID", os.environ["FMX_INSTANCE_ID"]),
-                          ("FMX_PROFILE_ROOT", str(home.parent))):
+    for key, expected in (("TRELLAGE_FIRSTMATE_INSTANCE_ID", os.environ["TRELLAGE_FIRSTMATE_INSTANCE_ID"]),
+                          ("TRELLAGE_FIRSTMATE_PROFILE_ROOT", str(home.parent))):
         if tmux_read("show-environment", "-t", "=" + fields[0], key) != key + "=" + expected:
             raise Refusal("live tmux session is not owned by this instance")
-    for key, expected in (("@fmx_instance_id", os.environ["FMX_INSTANCE_ID"]),
-                          ("@fmx_profile_root", str(home.parent)), ("@fmx_task_id", fields[1][3:])):
+    for key, expected in (("@firstmate_instance_id", os.environ["TRELLAGE_FIRSTMATE_INSTANCE_ID"]),
+                          ("@firstmate_profile_root", str(home.parent)), ("@firstmate_task_id", fields[1][3:])):
         if tmux_read("show-window-options", "-qv", "-t", fields[2], key) != expected:
             raise Refusal("live tmux window is not owned by this instance task")
     return {"target": fields[3], "window": fields[2]}
 
 
 def live_recorded_target(home, prefix, record):
-    if os.environ.get("FMX_INSTANCE_ID") and record["backend"] == "tmux":
+    if os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_ID") and record["backend"] == "tmux":
         live_tmux_target(home, prefix, record["window"])
 
 
@@ -298,7 +298,7 @@ def lifecycle_shape(mode: str, values: dict, positional: list[str]) -> bool:
 
 def spawn_shape(mode: str, values: dict, positional: list[str], prefix: str) -> tuple[bool, bool]:
     if values.get("secondmate"):
-        raise Refusal("fmx does not manage secondmate homes; use ship or scout")
+        raise Refusal("firstmate does not manage secondmate homes; use ship or scout")
     if not positional:
         raise Refusal("a task id is required")
     task = positional[0]
@@ -347,7 +347,7 @@ def selected_harness(home: Path, values: dict, positional: list[str],
             raise Refusal("crew dispatch rules require an explicit resolved --harness")
         harness = regular(home / "config/crew-harness").decode().strip()
     if harness != "claude":
-        raise Refusal("fmx manages Claude workers only; raw commands are not supported")
+        raise Refusal("firstmate manages Claude workers only; raw commands are not supported")
 
 
 def selected_controls(home: Path, values: dict, record: dict) -> dict:
@@ -382,9 +382,9 @@ def worker_record_schema(registry, record):
 
 
 def recorded_worker(home, task, kind, backend, idle=True):
-    if not os.environ.get("FMX_INSTANCE_ID"):
+    if not os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_ID"):
         return
-    registry = importlib.import_module("fmx-registry")
+    registry = importlib.import_module("firstmate-registry")
     root = home.parent / "workers" / task
     try:
         registry.safe(root, True, required=False, private=True)
@@ -394,8 +394,8 @@ def recorded_worker(home, task, kind, backend, idle=True):
             raise Refusal("existing named worker home is not owned")
         record = registry.read_json(root / "worker.json", private=True)
         worker_record_schema(registry, record)
-        expected = {"profile": os.environ["FMX_PROFILE"], "task": task, "kind": kind, "backend": backend,
-                    "harness": "claude", "instanceId": os.environ["FMX_INSTANCE_ID"], "profileRoot": str(home.parent)}
+        expected = {"profile": os.environ["TRELLAGE_FIRSTMATE_PROFILE"], "task": task, "kind": kind, "backend": backend,
+                    "harness": "claude", "instanceId": os.environ["TRELLAGE_FIRSTMATE_INSTANCE_ID"], "profileRoot": str(home.parent)}
         if any(record[key] != value for key, value in expected.items()):
             raise Refusal("existing worker home belongs to another instance or task")
         active = root / ".active"
@@ -474,7 +474,7 @@ def admit(mode: str, args: list[str]) -> dict:
             fleet_records(home, prefix, aliases, available)
         return {}
     if mode == "remote":
-        raise Refusal("fmx does not manage secondmate homes or remote provisioning")
+        raise Refusal("firstmate does not manage secondmate homes or remote provisioning")
     if mode not in ("worker", "spawn", "control"):
         raise Refusal("unknown worker admission mode")
     return admit_lifecycle(home, prefix, mode, args)
@@ -532,10 +532,10 @@ def locked_operation(registry, root, target, exclusive=False):
 
 @contextlib.contextmanager
 def worker_handoff(registry, root, task):
-    prefix = os.environ.get("FMX_TASK_ID_PREFIX", "")
+    prefix = os.environ.get("TRELLAGE_FIRSTMATE_TASK_ID_PREFIX", "")
     task_id(task, prefix)
-    pid = registry.pid_text(os.environ.get("FMX_SPAWN_OPERATION_PID", "").encode())
-    operation_id = os.environ.get("FMX_SPAWN_OPERATION_ID", "")
+    pid = registry.pid_text(os.environ.get("TRELLAGE_FIRSTMATE_SPAWN_OPERATION_PID", "").encode())
+    operation_id = os.environ.get("TRELLAGE_FIRSTMATE_SPAWN_OPERATION_ID", "")
     target = root / "locks/operations" / (str(pid) + ".json")
     with locked_operation(registry, root, target) as record:
         if (record["operation"] != "spawn" or record.get("operationId") != operation_id
@@ -582,11 +582,11 @@ def worker_owns_handoff(registry, root, operation_id, task):
 
 
 def wait_for_worker(registry, root, target, task):
-    task_id(task, os.environ.get("FMX_TASK_ID_PREFIX", ""))
+    task_id(task, os.environ.get("TRELLAGE_FIRSTMATE_TASK_ID_PREFIX", ""))
     record = registry.operation_record(target, root)
     if record["operation"] != "spawn" or "operationId" not in record or task not in record.get("taskIds", []):
         raise Refusal("worker handoff requires the owning spawn operation")
-    seconds = os.environ.get("FMX_WORKER_START_WAIT_SECONDS", "30")
+    seconds = os.environ.get("TRELLAGE_FIRSTMATE_WORKER_START_WAIT_SECONDS", "30")
     if not re.fullmatch(r"[1-9]|[12][0-9]|30", seconds):
         raise Refusal("worker startup wait must be 1 through 30 seconds")
     deadline = time.monotonic() + int(seconds)
@@ -601,7 +601,7 @@ def wait_for_worker(registry, root, target, task):
 
 def spawn_tasks(args):
     values, positional = arguments(list(args))
-    _, batch = spawn_shape("spawn", values, positional, os.environ.get("FMX_TASK_ID_PREFIX", ""))
+    _, batch = spawn_shape("spawn", values, positional, os.environ.get("TRELLAGE_FIRSTMATE_TASK_ID_PREFIX", ""))
     tasks = [pair.partition("=")[0] for pair in positional] if batch else positional[:1]
     if len(tasks) != len(set(tasks)):
         raise Refusal("spawn task authority is ambiguous")
@@ -609,8 +609,8 @@ def spawn_tasks(args):
 
 
 def instance_operation(mode, pid, operation="", *args):
-    registry = importlib.import_module("fmx-registry")
-    root, _, descriptor = registry.resolve(os.environ.get("FMX_PROFILE", ""), os.environ.get("FMX_INSTANCE_ID", ""), complete=True)
+    registry = importlib.import_module("firstmate-registry")
+    root, _, descriptor = registry.resolve(os.environ.get("TRELLAGE_FIRSTMATE_PROFILE", ""), os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_ID", ""), complete=True)
     if descriptor is None or not registry.is_published(root, descriptor) or str(os.getppid()) != pid:
         raise Refusal("instance activity requires the exact calling process and published UUID")
     target = root / "locks/operations" / (pid + ".json")
@@ -644,7 +644,7 @@ def instance_operation(mode, pid, operation="", *args):
 
 
 def safe_instance_operation(args):
-    registry = importlib.import_module("fmx-registry")
+    registry = importlib.import_module("firstmate-registry")
     try:
         return instance_operation(*args)
     except registry.Refusal as error:
@@ -661,7 +661,7 @@ def main() -> int:
         print(json.dumps(admit(sys.argv[1], sys.argv[2:]), separators=(",", ":")))
         return 0
     except (Refusal, OSError, ValueError, TypeError, subprocess.SubprocessError) as error:
-        print(f"fmx admission: {error}", file=sys.stderr)
+        print(f"firstmate admission: {error}", file=sys.stderr)
         return 1
 
 

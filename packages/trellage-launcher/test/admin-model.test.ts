@@ -138,13 +138,13 @@ const fixtureCatalogWithClaudeSandbox = () =>
   )
 
 describe("nativeLauncherCapabilities", () => {
-  it("marks every native launcher, including cdx, as supporting doctor/inventory", () => {
+  it("marks every native launcher, including codex, as supporting doctor/inventory", () => {
     for (const launcher of ["agency", "copilot", "codex", "claude", "firstmate", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher)).toMatchObject({ doctorSupported: true, inventorySupported: true })
     }
   })
 
-  it("marks every native launcher except agx and cldx as supporting update --check", () => {
+  it("marks every native launcher except agency and claude as supporting update --check", () => {
     for (const launcher of ["copilot", "codex", "firstmate", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher).updateCheckSupported).toBe(true)
     }
@@ -204,16 +204,16 @@ describe("aggregateAdminProfiles", () => {
     expect(entries[0]?.version).toBeUndefined()
   })
 
-  it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {
+  it("marks codex as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
-    const cdx = entries.find((entry) => entry.ref === "native:codex/pstack")
-    expect(cdx).toMatchObject({ health: "unknown", install: "unknown", doctorSupported: true, stale: true })
+    const codex = entries.find((entry) => entry.ref === "native:codex/pstack")
+    expect(codex).toMatchObject({ health: "unknown", install: "unknown", doctorSupported: true, stale: true })
   })
 
   it("marks profiles with no readiness input yet as unknown and stale", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
-    const cpx = entries.find((entry) => entry.ref === "native:copilot/hve")
-    expect(cpx).toMatchObject({ health: "unknown", install: "unknown", stale: true })
+    const copilot = entries.find((entry) => entry.ref === "native:copilot/hve")
+    expect(copilot).toMatchObject({ health: "unknown", install: "unknown", stale: true })
   })
 
   it("reflects a healthy readiness result and clears staleness", () => {
@@ -226,8 +226,8 @@ describe("aggregateAdminProfiles", () => {
       },
     ]
     const entries = aggregateAdminProfiles(fixtureCatalog(), readinessInputs)
-    const cpx = entries.find((entry) => entry.ref === "native:copilot/hve")
-    expect(cpx).toMatchObject({ health: "healthy", install: "installed", stale: false, version: "1.2.3" })
+    const copilot = entries.find((entry) => entry.ref === "native:copilot/hve")
+    expect(copilot).toMatchObject({ health: "healthy", install: "installed", stale: false, version: "1.2.3" })
   })
 
   it("isolates a malformed readiness result to only the affected profile", () => {
@@ -239,12 +239,12 @@ describe("aggregateAdminProfiles", () => {
       },
     ]
     const entries = aggregateAdminProfiles(fixtureCatalog(), readinessInputs)
-    const cpx = entries.find((entry) => entry.ref === "native:copilot/hve")
+    const copilot = entries.find((entry) => entry.ref === "native:copilot/hve")
     const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    const cdx = entries.find((entry) => entry.ref === "native:codex/pstack")
-    expect(cpx).toMatchObject({ health: "malformed-output", install: "malformed-output" })
+    const codex = entries.find((entry) => entry.ref === "native:codex/pstack")
+    expect(copilot).toMatchObject({ health: "malformed-output", install: "malformed-output" })
     expect(sandbox).toMatchObject({ health: "healthy", install: "installed" })
-    expect(cdx).toMatchObject({ health: "unknown", install: "unknown" })
+    expect(codex).toMatchObject({ health: "unknown", install: "unknown" })
   })
 
   it("marks a blocked native result as not-installed when its diagnostic mentions not-setup", () => {
@@ -254,7 +254,7 @@ describe("aggregateAdminProfiles", () => {
         result: {
           kind: ProfileReadinessKind.Blocked,
           summary: "copilot/hve is not-setup",
-          diagnostic: "Run cpx setup hve, then retry.",
+          diagnostic: "Run copilot setup hve, then retry.",
         },
       },
     ]

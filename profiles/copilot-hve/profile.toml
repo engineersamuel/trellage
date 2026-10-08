@@ -1,6 +1,6 @@
 schema = 1
 name = "copilot-hve"
-description = "Sandboxed GitHub Copilot with the pinned HVE Core RPI workflow for gated GitHub delivery of features, issues, and PRs. Choose its isolated reproducible environment over the separate host-native `native:cpx/hve` profile."
+description = "Sandboxed GitHub Copilot with the pinned HVE Core RPI workflow for gated GitHub delivery of features, issues, and PRs. Choose its isolated reproducible environment over the separate host-native `native:copilot/hve` profile."
 skill_bundles = ["sandbox-common"]
 
 [harness]

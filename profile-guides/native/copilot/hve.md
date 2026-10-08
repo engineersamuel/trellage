@@ -271,7 +271,7 @@ Implement) skill set. See
   explicit slash-command syntax for HVE Core skills in Copilot CLI, so
   prompts describe the skill by name rather than invoking a `/hve-core:...`
   command.
-- Customer workflows use `cpx interactive hve --agent <agent>` with the
+- Customer workflows use `copilot interactive hve --agent <agent>` with the
   authored `--require-skill` checks. This mode does not set `--autopilot`,
   `--allow-all`, or `--no-ask-user`. Default `trx run copilot hve` behavior is unchanged.
   A terminal is required for input and output; piped or batch use is refused.
@@ -300,6 +300,6 @@ Implement) skill set. See
   previously observed unhealthy (missing the `hve-core-all` plugin) and was
   repaired locally via `trx repair copilot hve`, but a fresh end-to-end Herdr
   verification run has not yet confirmed the full round trip.
-- `cpx list --json` only advertises the exact prompt/`--no-ask-user`
+- `trx list --json` only advertises the exact prompt/`--no-ask-user`
   hard-deny/model-override contract for Copilot CLI `1.0.81`; other versions
   report conservative `headless` values.

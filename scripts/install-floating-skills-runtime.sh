@@ -10,12 +10,12 @@ trellage_bun_runtime "$repo_root"
 }
 canonical_home="$(cd -P "$HOME" && pwd -P)"
 export HOME="$canonical_home"
-source_guard="$repo_root/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py"
+source_guard="$repo_root/prototypes/trellage-firstmate-profiles/lib/firstmate-registry.py"
 [[ -f "$source_guard" && ! -L "$source_guard" ]] || {
   printf 'install-floating-skills-runtime: shared Firstmate writer guard is missing\n' >&2
   exit 1
 }
-if [[ -z "${FMX_SHARED_LEASE_FD-}" ]]; then
+if [[ -z "${TRELLAGE_FIRSTMATE_SHARED_LEASE_FD-}" ]]; then
   exec python3 "$source_guard" lease -- "$BASH" "${BASH_SOURCE[0]}" "$@"
 fi
 python3 "$source_guard" check-delegation

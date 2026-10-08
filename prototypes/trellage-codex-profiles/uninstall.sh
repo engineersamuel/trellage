@@ -2,7 +2,7 @@
 set -euo pipefail
 
 refuse() {
-  printf 'cdx uninstall: %s\n' "$1" >&2
+  printf 'codex uninstall: %s\n' "$1" >&2
   exit 1
 }
 
@@ -14,13 +14,13 @@ home="$(cd -L "$home" >/dev/null 2>&1 && pwd -L)" || refuse "refusing unsafe HOM
 [ "$home" != / ] || refuse 'refusing unsafe HOME: HOME resolves to /'
 
 runtime_parent="$home/.local/share/trellage"
-install_root="$runtime_parent/cdx"
-installed_launcher="$install_root/bin/cdx"
+install_root="$runtime_parent/codex"
+installed_launcher="$install_root/bin/codex"
 marker="$install_root/.managed-by-trellage-codex-profiles"
 marker_value='trellage-codex-profiles-v2'
 legacy_marker_value='trellage-codex-profiles-v1'
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/cdx"
+command_path="$command_dir/codex"
 fish_dir="$home/.config/fish"
 fish_config="$fish_dir/config.fish"
 recovery="$install_root/.fish-recovery"
@@ -41,7 +41,7 @@ done
 if [ ! -e "$install_root" ] && [ ! -L "$install_root" ]; then
   [ ! -e "$command_path" ] && [ ! -L "$command_path" ] \
     || refuse "refusing unrelated command without managed runtime: $command_path"
-  printf 'cdx is not installed; Codex profile homes were preserved.\n'
+  printf 'codex is not installed; Codex profile homes were preserved.\n'
   exit 0
 fi
 for path in "$local_dir" "$share_dir" "$runtime_parent" "$command_dir" "$config_dir" "$fish_dir"; do
@@ -65,7 +65,7 @@ expected_entries="$(printf '%s\n' \
   './.fish-recovery/sha256-before' \
   './.managed-by-trellage-codex-profiles' \
   './bin' \
-  './bin/cdx' \
+  './bin/codex' \
   './catalog.json' \
   './lib' \
   './lib/native-codex' \
@@ -81,7 +81,7 @@ legacy_entries="$(printf '%s\n' \
   './.fish-recovery/sha256-before' \
   './.managed-by-trellage-codex-profiles' \
   './bin' \
-  './bin/cdx' \
+  './bin/codex' \
   './catalog.json' \
   './lib' \
   './lib/native-codex')"
@@ -145,7 +145,7 @@ done
 removed_legacy_alias=false
 if [ -s "$recovery/removed-line" ]; then
   cmp -s "$recovery/removed-line" \
-    <(printf 'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"\n') \
+    <(printf 'alias codex="codex --dangerously-bypass-approvals-and-sandbox"\n') \
     || refuse 'invalid Fish recovery alias'
   removed_legacy_alias=true
 fi
@@ -173,7 +173,7 @@ cleanup() {
     rmdir "$command_staging" 2>/dev/null || :
   fi
   if [ -n "$staging_root" ] && [ -d "$staging_root" ]; then
-    case "$staging_root" in "$runtime_parent"/.cdx-uninstall.*) rm -rf -- "$staging_root" ;; esac
+    case "$staging_root" in "$runtime_parent"/.codex-uninstall.*) rm -rf -- "$staging_root" ;; esac
   fi
 }
 
@@ -214,7 +214,7 @@ on_exit() {
     if rollback; then
       cleanup
     else
-      printf 'cdx uninstall: rollback failed; recovery may be required\n' >&2
+      printf 'codex uninstall: rollback failed; recovery may be required\n' >&2
     fi
   else
     cleanup
@@ -226,45 +226,45 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-staging_root="$(mktemp -d "$runtime_parent/.cdx-uninstall.XXXXXX")" \
+staging_root="$(mktemp -d "$runtime_parent/.codex-uninstall.XXXXXX")" \
   || refuse 'could not create uninstall staging'
 chmod 0700 "$staging_root"
-command_staging="$(mktemp -d "$command_dir/.cdx-uninstall-command.XXXXXX")" \
+command_staging="$(mktemp -d "$command_dir/.codex-uninstall-command.XXXXXX")" \
   || refuse 'could not create command staging'
 chmod 0700 "$command_staging"
-fish_new="$(mktemp "$fish_dir/.cdx-uninstall-fish.XXXXXX")" \
+fish_new="$(mktemp "$fish_dir/.codex-uninstall-fish.XXXXXX")" \
   || refuse 'could not stage restored Fish config'
 cp "$recovery/config-before" "$fish_new"
 chmod "$original_mode" "$fish_new"
 fish_staged_hash="$(sha256_file "$fish_new")"
 
 active=true
-fish_old="$(mktemp "$fish_dir/.cdx-uninstall-fish.XXXXXX")" || refuse 'could not stage current Fish config'
+fish_old="$(mktemp "$fish_dir/.codex-uninstall-fish.XXXXXX")" || refuse 'could not stage current Fish config'
 rm -f -- "$fish_old"
 fish_original_intent=true
 mv "$fish_config" "$fish_old"
-[ "${CDX_UNINSTALL_TEST_FAIL_AT-}" != during-fish-publication ] \
+[ "${TRELLAGE_CODEX_UNINSTALL_TEST_FAIL_AT-}" != during-fish-publication ] \
   || refuse 'injected failure at during-fish-publication'
 fish_publish_intent=true
 mv "$fish_new" "$fish_config"
 fish_new=''
-[ "${CDX_UNINSTALL_TEST_FAIL_AT-}" != after-fish-publication ] \
+[ "${TRELLAGE_CODEX_UNINSTALL_TEST_FAIL_AT-}" != after-fish-publication ] \
   || refuse 'injected failure at after-fish-publication'
 
 command_remove_intent=true
 mv "$command_path" "$command_staging/command"
-[ "${CDX_UNINSTALL_TEST_FAIL_AT-}" != after-command-removal ] \
+[ "${TRELLAGE_CODEX_UNINSTALL_TEST_FAIL_AT-}" != after-command-removal ] \
   || refuse 'injected failure at after-command-removal'
 
 runtime_remove_intent=true
 mv "$install_root" "$staging_root/runtime"
-[ "${CDX_UNINSTALL_TEST_FAIL_AT-}" != after-runtime-removal ] \
+[ "${TRELLAGE_CODEX_UNINSTALL_TEST_FAIL_AT-}" != after-runtime-removal ] \
   || refuse 'injected failure at after-runtime-removal'
 
 active=false
 cleanup
 if [ "$removed_legacy_alias" = true ]; then
-  printf 'Uninstalled cdx; Codex profile homes were preserved. Reload Fish to restore the legacy alias in existing shells.\n'
+  printf 'Uninstalled codex; Codex profile homes were preserved. Reload Fish to restore the legacy alias in existing shells.\n'
 else
-  printf 'Uninstalled cdx; Codex profile homes were preserved. Fish config had no cdx definition to restore.\n'
+  printf 'Uninstalled codex; Codex profile homes were preserved. Fish config had no codex definition to restore.\n'
 fi

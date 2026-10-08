@@ -3,11 +3,11 @@ import { parseProfileGuideIdentity, profileGuideIdentityKey } from "@trellage/gu
 import { buildGuideLaunchCommand, parseSelectedProfile } from "../src/guide-launch.ts"
 import { initialRunSelectorState, runSelectorReducer, runSelectorChoice } from "../src/run-select-state.ts"
 
-it("reads saved alias identities and writes canonical identities", () => {
-  expect(profileGuideIdentityKey(parseProfileGuideIdentity("native/agx/trellage-azure.md"))).toBe("native:agency/azure")
-  expect(profileGuideIdentityKey(parseProfileGuideIdentity("native/omp/copilot.md"))).toBe("native:omp/default")
+it("preserves canonical native identities", () => {
+  expect(profileGuideIdentityKey(parseProfileGuideIdentity("native/agency/azure.md"))).toBe("native:agency/azure")
+  expect(profileGuideIdentityKey(parseProfileGuideIdentity("native/omp/default.md"))).toBe("native:omp/default")
   expect(profileGuideIdentityKey(parseProfileGuideIdentity("native/omp/local.md"))).toBe("native:omp/local")
-  const selected = parseSelectedProfile({ surface: "native", launcher: "cdx", profile: "pstack", commandPath: "/bin/cdx", headlessPrompt: true })
+  const selected = parseSelectedProfile({ surface: "native", launcher: "codex", profile: "pstack", commandPath: "/bin/codex", headlessPrompt: true })
   expect(selected).toMatchObject({ launcher: "codex", commandPath: "/bin/trx" })
   expect(buildGuideLaunchCommand(selected).command).toEqual({ executable: "/bin/trx", args: ["run", "codex", "pstack"] })
 })

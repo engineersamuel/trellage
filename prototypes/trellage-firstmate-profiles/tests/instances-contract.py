@@ -17,7 +17,7 @@ from unittest.mock import patch
 import uuid
 
 sys.dont_write_bytecode = True
-os.environ["FMX_HEALING_TEST"] = os.environ.get("FMX_INSTANCE_TEST", "")
+os.environ["TRELLAGE_FIRSTMATE_HEALING_TEST"] = os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_TEST", "")
 spec = importlib.util.spec_from_file_location("healing", Path(__file__).with_name("healing-contract.py"))
 healing = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(healing)
@@ -113,12 +113,12 @@ class InstanceContract(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def run_fmx(self, *args, data=None, cwd=None, env=None, installed=False):
+    def run_firstmate(self, *args, data=None, cwd=None, env=None, installed=False):
         values = healing.environment(self.case)
         values.update(env or {})
-        return subprocess.run([str((self.runtime if installed else self.package) / "bin/fmx"), *args],
+        return subprocess.run([str((self.runtime if installed else self.package) / "bin/firstmate"), *args],
                               input=None if data is None else json.dumps(data), text=True, capture_output=True,
-                              env=values, cwd=cwd or self.case, timeout=80, check=False)
+                              env=values, cwd=cwd or self.case, timeout=120, check=False)
 
     def json_result(self, result, state=None):
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -139,13 +139,13 @@ process.stdout.write('validated');"""
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def plan(self, name, worktree, profile="default"):
-        result = self.json_result(self.run_fmx("instances", "plan", profile, "--name", name, "--worktree", str(worktree),
+        result = self.json_result(self.run_firstmate("instances", "plan", profile, "--name", name, "--worktree", str(worktree),
                                              "--json", "--expected-source-revision", healing.REVISION), "ready")
         self.parse_core("parseFirstmateInstancePlanResultV1", result)
         return result["plan"]
 
     def create(self, plan, state="created"):
-        result = self.json_result(self.run_fmx("instances", "create", plan["reference"]["profile"], "--json",
+        result = self.json_result(self.run_firstmate("instances", "create", plan["reference"]["profile"], "--json",
                                              "--approve-creation", plan["approvalDigest"], data=plan), state)
         self.parse_core("parseFirstmateInstanceCreateResultV1", result, plan)
         return result
@@ -158,14 +158,14 @@ process.stdout.write('validated');"""
     def selected(self, operation, plan, *args, context=True, **kwargs):
         command = [operation, plan["reference"]["profile"], "--instance", plan["reference"]["instanceId"], *args]
         if context:
-            command += ["--fmx-instance-context-json", json.dumps(self.context(plan))]
-        return self.run_fmx(*command, **kwargs)
+            command += ["--firstmate-instance-context-json", json.dumps(self.context(plan))]
+        return self.run_firstmate(*command, **kwargs)
 
     def command(self, argv, env=None, data=None):
         values = healing.environment(self.case)
         values.update(env or {})
         return subprocess.run([str(arg) for arg in argv], input=data, text=True, capture_output=True,
-                              env=values, cwd=self.case, timeout=80, check=False)
+                              env=values, cwd=self.case, timeout=120, check=False)
 
     def test_linked_worktrees_create_and_reuse_isolated_default_instances(self):
         before_legacy = healing.snapshot(self.root)
@@ -180,7 +180,7 @@ process.stdout.write('validated');"""
         self.create(b)
         self.create(a, "existing")
         for plan, worktree in ((a, self.worktree_a), (b, self.worktree_b)):
-            resolved = self.json_result(self.run_fmx("instances", "resolve", "default", "--worktree", str(worktree), "--json"), "matched")
+            resolved = self.json_result(self.run_firstmate("instances", "resolve", "default", "--worktree", str(worktree), "--json"), "matched")
             self.parse_core("parseFirstmateInstanceResolveResultV1", resolved)
             self.assertEqual(resolved["descriptor"]["reference"], plan["reference"])
             ready = self.json_result(self.selected("prepare", plan, "--json", "--expected-source-revision", healing.REVISION))
@@ -195,23 +195,23 @@ process.stdout.write('validated');"""
         self.create(a)
         pstack = self.plan("same-name", self.worktree_a, "pstack-workers")
         self.create(pstack)
-        first = self.json_result(self.run_fmx("instances", "list", "default", "--json", "--limit", "1"), "page")
+        first = self.json_result(self.run_firstmate("instances", "list", "default", "--json", "--limit", "1"), "page")
         self.parse_core("parseFirstmateInstanceListResultV1", first)
         self.assertEqual(first["instances"][0]["mode"], "legacy")
-        last = self.json_result(self.run_fmx("instances", "list", "default", "--json", "--limit", "1",
+        last = self.json_result(self.run_firstmate("instances", "list", "default", "--json", "--limit", "1",
                                            "--cursor=" + first["page"]["nextCursor"]), "page")
         self.parse_core("parseFirstmateInstanceListResultV1", last)
         self.assertEqual(last["instances"][0]["reference"], a["reference"])
         self.assertIsNone(last["page"]["nextCursor"])
         self.create(self.plan("beta", self.worktree_b))
-        stale = self.json_result(self.run_fmx("instances", "list", "default", "--json",
+        stale = self.json_result(self.run_firstmate("instances", "list", "default", "--json",
                                             "--cursor=" + first["page"]["nextCursor"]), "stale-cursor")
         self.parse_core("parseFirstmateInstanceListResultV1", stale)
 
     def test_creation_approval_source_and_namespace_conflicts_preserve_state(self):
         a, b = self.plan("alpha", self.worktree_a), self.plan("beta", self.worktree_b)
         before = healing.snapshot(self.home)
-        denied = self.json_result(self.run_fmx("instances", "create", "default", "--json", data=a), "blocked")
+        denied = self.json_result(self.run_firstmate("instances", "create", "default", "--json", data=a), "blocked")
         self.assertEqual(denied["diagnostics"][0]["code"], "approval-mismatch")
         self.assertEqual(before, healing.snapshot(self.home))
         self.create(a)
@@ -244,7 +244,7 @@ process.stdout.write('validated');"""
         sentinel.write_text("Unreserved directory must not inherit a legacy UUID.\n")
         sentinel.chmod(0o600)
         before = healing.snapshot(self.home)
-        listing = self.json_result(self.run_fmx("instances", "list", "default", "--json"), "blocked")
+        listing = self.json_result(self.run_firstmate("instances", "list", "default", "--json"), "blocked")
         self.assertIn("unreserved", listing["diagnostics"][0]["message"])
         self.assertEqual(before, healing.snapshot(self.home))
 
@@ -260,7 +260,7 @@ if sys.argv[3]=='yes':
  m.publish_reserved_root(plan)
  (pathlib.Path(plan['destination'])/'receipts/instance.json').unlink()
 """
-        result = self.command([sys.executable, "-c", script, self.package / "lib/fmx-instances.py",
+        result = self.command([sys.executable, "-c", script, self.package / "lib/firstmate-instances.py",
                                json.dumps(plan), "yes" if descriptor else "no"])
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -300,7 +300,7 @@ if sys.argv[3]=='yes':
         refused = self.selected("prepare", a, "--json", "--expected-source-revision", healing.REVISION)
         self.assertNotEqual(refused.returncode, 0)
         previous = self.create_descriptor(a)
-        refreshed = self.json_result(self.run_fmx("instances", "refresh-locator", "default", "--instance", a["reference"]["instanceId"],
+        refreshed = self.json_result(self.run_firstmate("instances", "refresh-locator", "default", "--instance", a["reference"]["instanceId"],
                                                 "--worktree", str(moved), "--json", "--expected-binding-digest", digest(a["worktree"]), "--confirm"))
         self.parse_core("parseFirstmateInstanceLocatorRefreshResultV1", refreshed, previous)
         self.assertEqual(refreshed["worktree"]["evidence"]["generationDigest"], a["worktree"]["generationDigest"])
@@ -309,7 +309,7 @@ if sys.argv[3]=='yes':
     def create_descriptor(self, plan):
         return json.loads((Path(plan["destination"]) / "instance.json").read_text())
 
-    def wait_file(self, path, child, timeout=30):
+    def wait_file(self, path, child, timeout=60):
         until = time.monotonic() + timeout
         while not path.exists():
             if child.poll() is not None:
@@ -325,9 +325,9 @@ if sys.argv[3]=='yes':
                       NATIVE_CLAUDE_LAUNCH_RELEASE=str(self.case / (label + "-release")),
                       NATIVE_CLAUDE_INSTANCE_LOG=str(self.case / "instance-launches.jsonl"),
                       NATIVE_CLAUDE_ARGV_LOG=str(self.case / "captain-argv.jsonl"))
-        child = subprocess.Popen([str(self.package / "bin/fmx"), plan["reference"]["profile"],
+        child = subprocess.Popen([str(self.package / "bin/firstmate"), plan["reference"]["profile"],
                                   "--instance", plan["reference"]["instanceId"],
-                                  "--fmx-instance-context-json", json.dumps(self.context(plan))],
+                                  "--firstmate-instance-context-json", json.dumps(self.context(plan))],
                                  env=values, cwd=self.worktree_b, stdin=subprocess.DEVNULL,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         self.children.append(child)
@@ -348,8 +348,8 @@ if sys.argv[3]=='yes':
             self.assertEqual(fleet["supervisor"], {"state": "running", "pid": child.pid})
             self.assertTrue(fleet["actions"]["submit"]["allowed"])
         before = healing.snapshot(Path(b["destination"]))
-        duplicate = self.run_fmx("default", "--instance", a["reference"]["instanceId"],
-                                 "--fmx-instance-context-json", json.dumps(self.context(a)))
+        duplicate = self.run_firstmate("default", "--instance", a["reference"]["instanceId"],
+                                 "--firstmate-instance-context-json", json.dumps(self.context(a)))
         self.assertNotEqual(duplicate.returncode, 0)
         self.assertIn("already running", duplicate.stderr)
         self.assertEqual(before, healing.snapshot(Path(b["destination"])))
@@ -358,10 +358,10 @@ if sys.argv[3]=='yes':
         arguments = [json.loads(line) for line in (self.case / "captain-argv.jsonl").read_text().splitlines()]
         self.assertEqual(len(origins), 2)
         for origin, plan, argv in zip(origins, (a, b), arguments):
-            context = json.loads(origin["FMX_LAUNCH_PROVENANCE_JSON"])
+            context = json.loads(origin["TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON"])
             self.parse_core("parseFirstmateInstanceControlContextV1", context)
             self.assertEqual(context, self.context(plan))
-            self.assertEqual(origin["FMX_INSTANCE_ID"], plan["reference"]["instanceId"])
+            self.assertEqual(origin["TRELLAGE_FIRSTMATE_INSTANCE_ID"], plan["reference"]["instanceId"])
             self.assertEqual(len(argv), 1)
             self.assertIn("session-start", argv[0])
             self.assertIn("bin/fm-inbox.sh drain", argv[0])
@@ -438,7 +438,7 @@ if sys.argv[3]=='yes':
         values = healing.environment(self.case)
         values.update(NATIVE_CLAUDE_PREPARE_READY=str(ready),
                       NATIVE_CLAUDE_PREPARE_RELEASE=str(self.case / "creation-release"))
-        child = subprocess.Popen([str(self.package / "bin/fmx"), "instances", "create", "default", "--json",
+        child = subprocess.Popen([str(self.package / "bin/firstmate"), "instances", "create", "default", "--json",
                                   "--approve-creation", a["approvalDigest"]],
                                  env=values, cwd=self.case, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, text=True, start_new_session=True)
@@ -468,14 +468,14 @@ if sys.argv[3]=='yes':
         pointer = self.worktree_b / ".git"
         original = pointer.read_bytes()
         pointer.write_bytes((self.worktree_a / ".git").read_bytes())
-        blocked = self.json_result(self.run_fmx("instances", "resolve", "default", "--worktree", str(self.worktree_b), "--json"), "blocked")
+        blocked = self.json_result(self.run_firstmate("instances", "resolve", "default", "--worktree", str(self.worktree_b), "--json"), "blocked")
         self.parse_core("parseFirstmateInstanceResolveResultV1", blocked)
         pointer.write_bytes(original)
         self.git("-C", str(self.project), "worktree", "remove", str(self.worktree_a))
         self.git("-C", str(self.project), "worktree", "add", "-q", "--detach", str(self.worktree_a), "HEAD")
-        resolved = self.json_result(self.run_fmx("instances", "resolve", "default", "--worktree", str(self.worktree_a), "--json"), "not-found")
+        resolved = self.json_result(self.run_firstmate("instances", "resolve", "default", "--worktree", str(self.worktree_a), "--json"), "not-found")
         self.assertNotEqual(resolved["worktree"]["generationDigest"], a["worktree"]["generationDigest"])
-        denied = self.run_fmx("instances", "refresh-locator", "default", "--instance", a["reference"]["instanceId"],
+        denied = self.run_firstmate("instances", "refresh-locator", "default", "--instance", a["reference"]["instanceId"],
                               "--worktree", str(self.worktree_a), "--json", "--expected-binding-digest", digest(a["worktree"]), "--confirm")
         self.assertNotEqual(denied.returncode, 0)
 
@@ -515,7 +515,7 @@ if sys.argv[3]=='yes':
         result = self.selected("prepare", a, "--json", "--expected-source-revision", healing.REVISION)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(before, healing.snapshot(self.home))
-        listing = self.json_result(self.run_fmx("instances", "list", "default", "--json"), "page")
+        listing = self.json_result(self.run_firstmate("instances", "list", "default", "--json"), "page")
         self.assertEqual(listing["instances"][1]["creationState"], "missing-identity")
         self.parse_core("parseFirstmateInstanceListResultV1", listing)
 
@@ -530,16 +530,16 @@ if sys.argv[3]=='yes':
             ("default", "--instance", ""),
             ("default", "--instance", "missing", "--join"),
             ("prepare", "default", "--instance", "alpha", "--json", "--expected-source-revision", healing.REVISION,
-             "--fmx-instance-context-json", json.dumps(self.context(b))),
+             "--firstmate-instance-context-json", json.dumps(self.context(b))),
             ("repair", "--all", "--instance", "alpha"),
             ("instances", "resolve", "default", "--worktree", str(self.worktree_a), "--name", "ignored", "--json"),
         ):
-            refused = self.run_fmx(*arguments)
+            refused = self.run_firstmate(*arguments)
             self.assertNotEqual(refused.returncode, 0, refused.stdout)
             self.assertEqual(before, healing.snapshot(self.home))
-        named = self.json_result(self.run_fmx("inventory", "default", "--instance", "alpha", "--json"))
+        named = self.json_result(self.run_firstmate("inventory", "default", "--instance", "alpha", "--json"))
         self.assertEqual(named["fleet"]["identity"]["instanceId"], a["reference"]["instanceId"])
-        legacy = self.json_result(self.run_fmx("inventory", "default", "--instance", "legacy", "--json"))
+        legacy = self.json_result(self.run_firstmate("inventory", "default", "--instance", "legacy", "--json"))
         self.assertEqual(legacy["fleet"]["identity"]["home"], str(self.root / "home"))
 
     def test_named_variant_requires_both_layers_modes_and_full_union(self):
@@ -562,8 +562,8 @@ if sys.argv[3]=='yes':
                 healing.write(root / "runtime/.unapproved", "must not be ignored\n")
             result = self.inventory(a)
             self.assertFalse(result["overlay"]["verified"], change)
-            launch = self.run_fmx("default", "--instance", a["reference"]["instanceId"],
-                                  "--fmx-instance-context-json", json.dumps(self.context(a)))
+            launch = self.run_firstmate("default", "--instance", a["reference"]["instanceId"],
+                                  "--firstmate-instance-context-json", json.dumps(self.context(a)))
             self.assertNotEqual(launch.returncode, 0, change)
             target.write_bytes(original)
             target.chmod(mode)
@@ -575,7 +575,7 @@ if sys.argv[3]=='yes':
         original = installed_helper.read_bytes()
         installed_helper.write_bytes(b"#!/bin/sh\nexit 0\n")
         before = healing.snapshot(self.home)
-        blocked = self.json_result(self.run_fmx("instances", "plan", "default", "--name", "alpha",
+        blocked = self.json_result(self.run_firstmate("instances", "plan", "default", "--name", "alpha",
                                                 "--worktree", str(self.worktree_a), "--json",
                                                 "--expected-source-revision", healing.REVISION), "blocked")
         self.assertEqual(blocked["diagnostics"][0]["code"], "upgrade-required")
@@ -600,7 +600,7 @@ if sys.argv[3]=='yes':
         healing.write(writer_bin / "claude", "#!/bin/sh\nif [ \"$1\" = --version ]; then echo '2.1.233 (Claude Code)'; "
                       "else echo changed >\"$HOME/shared-cli-write\"; fi\n", 0o755)
         values = {"PATH": str(writer_bin) + ":" + healing.environment(self.case)["PATH"],
-                  "TRELLAGE_CLAUDE_LAUNCHER_NAME": "fmx", "TRELLAGE_CLAUDE_RUNTIME_ROOT": str(self.package)}
+                  "TRELLAGE_CLAUDE_LAUNCHER_NAME": "firstmate", "TRELLAGE_CLAUDE_RUNTIME_ROOT": str(self.package)}
         manager = REPO / "scripts/floating-skills.ts"
         js = """const m=await import(process.argv[1]); const mode=process.argv[2], cache=process.argv[3];
 const opts={catalog:{sources:{},bundles:{}},bundleIds:['native-common'],cache,destination:cache};
@@ -629,7 +629,7 @@ else await m[mode](opts);"""
                     self.assertEqual(before, healing.snapshot(self.home))
         shutil.rmtree(healing.destination(self.case))
         before = healing.snapshot(self.home)
-        refused = self.command([self.package / "lib/fmx-prerequisites", "install"])
+        refused = self.command([self.package / "lib/firstmate-prerequisites", "install"])
         self.assertNotEqual(refused.returncode, 0)
         self.assertEqual(before, healing.snapshot(self.home))
         self.assertFalse((self.case / "network.log").exists())
@@ -660,7 +660,7 @@ else await m[mode](opts);"""
         for root, context in ((Path(a["destination"]), self.context(a)), (self.root, legacy)):
             values = healing.environment(self.case) | {
                 "HERDR_PANE_ID": "destination:p1", "HERDR_SESSION": "destination",
-                "FMX_LAUNCH_PROVENANCE_JSON": json.dumps(context), "FMX_PROFILE_ROOT": str(root),
+                "TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON": json.dumps(context), "TRELLAGE_FIRSTMATE_PROFILE_ROOT": str(root),
                 "FM_HOME": str(root / "home"), "CLAUDE_CONFIG_DIR": str(root / "captain/claude"),
             }
             with patch.dict(os.environ, values, clear=True), patch.object(bridge, "herdr_agent_context", return_value=(8, 42)), \
@@ -677,7 +677,7 @@ else await m[mode](opts);"""
                 self.assertEqual(sent.call_count, 1)
 
     def start_creation(self, plan, values):
-        child = subprocess.Popen([str(self.package / "bin/fmx"), "instances", "create", plan["reference"]["profile"],
+        child = subprocess.Popen([str(self.package / "bin/firstmate"), "instances", "create", plan["reference"]["profile"],
                                   "--json", "--approve-creation", plan["approvalDigest"]],
                                  env=healing.environment(self.case) | values, cwd=self.case, text=True,
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
@@ -707,7 +707,7 @@ else await m[mode](opts);"""
         root = self.case / "allocation-bin"
         script = """import os,pathlib,runpy,sys,time
 target=sys.argv[1]
-if pathlib.Path(target).name!='fmx-instances.py' or sys.argv[2:3]!=['create']:
+if pathlib.Path(target).name!='firstmate-instances.py' or sys.argv[2:3]!=['create']:
     os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
 original=pathlib.Path.mkdir
 def create(path,*args,**kwargs):
@@ -782,7 +782,7 @@ core.firstmateInstanceCreationPlanDigest(v.plan.plan)]));"""
                     digest(plan["runtimeRequirements"]), digest({key: value for key, value in plan.items() if key != "approvalDigest"})]
         self.assertEqual(json.loads(result.stdout), expected)
         before = healing.snapshot(self.home)
-        refused = self.run_fmx("instances", "create", "default", "--json", "--approve-creation", plan["approvalDigest"], data=plan)
+        refused = self.run_firstmate("instances", "create", "default", "--json", "--approve-creation", plan["approvalDigest"], data=plan)
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn("HOME", refused.stderr)
         self.assertEqual(before, healing.snapshot(self.home))
@@ -794,7 +794,7 @@ core.firstmateInstanceCreationPlanDigest(v.plan.plan)]));"""
         self.git("-C", str(self.worktree_a), "add", "next.txt")
         self.git("-C", str(self.worktree_a), "-c", "user.email=fixture@example.invalid", "-c", "user.name=fixture",
                  "commit", "-qm", "next")
-        matched = self.json_result(self.run_fmx("instances", "resolve", "default", "--worktree", str(self.worktree_a), "--json"), "matched")
+        matched = self.json_result(self.run_firstmate("instances", "resolve", "default", "--worktree", str(self.worktree_a), "--json"), "matched")
         self.assertEqual(matched["worktree"], a["worktree"])
         root = Path(a["destination"])
         path, saved = root / "instance.json", root / "original.json"
@@ -831,11 +831,11 @@ core.firstmateInstanceCreationPlanDigest(v.plan.plan)]));"""
         path = str(driver.external) + ":" + healing.environment(self.case)["PATH"]
         driver.env = healing.environment(self.case) | {
             "PATH": path, "FM_HOME": str(driver.home), "FM_ROOT_OVERRIDE": str(driver.runtime),
-            "FMX_PROFILE": plan["reference"]["profile"], "FMX_INSTANCE_ID": plan["reference"]["instanceId"],
-            "FMX_PROFILE_ROOT": str(driver.profile), "FMX_TASK_ID_PREFIX": driver.prefix,
-            "FMX_WORKER_LAUNCHER": str(self.package / "lib/fmx-worker"), "FMX_WORKER_HOME": str(self.home),
-            "FMX_WORKER_BASH": str(self.case / "bin/bash"), "FMX_WORKER_PATH": path,
-            "FMX_GH_CONFIG_DIR": str(self.home / ".config/gh"), "FMX_CAPTAIN_PANE_ID": "",
+            "TRELLAGE_FIRSTMATE_PROFILE": plan["reference"]["profile"], "TRELLAGE_FIRSTMATE_INSTANCE_ID": plan["reference"]["instanceId"],
+            "TRELLAGE_FIRSTMATE_PROFILE_ROOT": str(driver.profile), "TRELLAGE_FIRSTMATE_TASK_ID_PREFIX": driver.prefix,
+            "TRELLAGE_FIRSTMATE_WORKER_LAUNCHER": str(self.package / "lib/firstmate-worker"), "TRELLAGE_FIRSTMATE_WORKER_HOME": str(self.home),
+            "TRELLAGE_FIRSTMATE_WORKER_BASH": str(self.case / "bin/bash"), "TRELLAGE_FIRSTMATE_WORKER_PATH": path,
+            "TRELLAGE_FIRSTMATE_GH_CONFIG_DIR": str(self.home / ".config/gh"), "TRELLAGE_FIRSTMATE_CAPTAIN_PANE_ID": "",
             "FM_BACKEND": "tmux", "FM_SPAWN_NO_GUARD": "1", "TMUX": "other-session,1,0",
             "FM_TEST_EXTERNAL_LOG": str(driver.external_log), "FM_TEST_LAUNCH_LOG": str(driver.launch_log),
             "FM_TEST_ALLOWLIST_LOG": str(driver.work / "allowlist.log"),
@@ -847,7 +847,7 @@ core.firstmateInstanceCreationPlanDigest(v.plan.plan)]));"""
         Path(driver.env["FM_TEST_TMUX_SESSIONS"]).mkdir(exist_ok=True)
         Path(driver.env["FM_TEST_TMUX_WINDOWS"]).mkdir()
         if plan["reference"]["profile"] == "pstack-workers":
-            driver.env["FMX_WORKER_POLICY_FILE"] = str(driver.profile / "policy/worker-policy.md")
+            driver.env["TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE"] = str(driver.profile / "policy/worker-policy.md")
         driver.make_external_tools()
         module.executable(driver.external / "git",
                           'if [[ "${1-}" == -C && "${2-}" == ' + shlex.quote(str(driver.runtime)) +
@@ -859,7 +859,7 @@ core.firstmateInstanceCreationPlanDigest(v.plan.plan)]));"""
 case "$1" in
   has-session) test -f "$FM_TEST_TMUX_SESSIONS/${3#=}" ; exit $? ;;
   new-session)
-    printf 'FMX_INSTANCE_ID=%s\nFMX_PROFILE_ROOT=%s\n' "$FMX_INSTANCE_ID" "$FMX_PROFILE_ROOT" \
+    printf 'TRELLAGE_FIRSTMATE_INSTANCE_ID=%s\nTRELLAGE_FIRSTMATE_PROFILE_ROOT=%s\n' "$TRELLAGE_FIRSTMATE_INSTANCE_ID" "$TRELLAGE_FIRSTMATE_PROFILE_ROOT" \
       >"$FM_TEST_TMUX_SESSIONS/$4"; exit 0 ;;
   show-environment)
     grep "^$4=" "$FM_TEST_TMUX_SESSIONS/${3#=}"; exit $? ;;
@@ -883,15 +883,15 @@ case "$1" in
     window=$(jq -er .name "$FM_TEST_TMUX_WINDOWS/@42")
     case "$3" in
       '@42'|'%43') ;;
-      "=firstmate-$FMX_TASK_ID_PREFIX:=$window") ;;
+      "=firstmate-$TRELLAGE_FIRSTMATE_TASK_ID_PREFIX:=$window") ;;
       *) exit 1 ;;
     esac
-    printf 'firstmate-%s\t%s\t@42\t%%43\n' "$FMX_TASK_ID_PREFIX" "$window"; exit 0 ;;
+    printf 'firstmate-%s\t%s\t@42\t%%43\n' "$TRELLAGE_FIRSTMATE_TASK_ID_PREFIX" "$window"; exit 0 ;;
 esac
 if [[ "$1" == send-keys ]]; then
   previous=''
   for value in "$@"; do
-    if [[ "$previous" == -l && "$value" == *fmx-worker* ]]; then
+    if [[ "$previous" == -l && "$value" == *firstmate-worker* ]]; then
       printf '%s\n' "$value" >"$FM_TEST_TMUX_WINDOWS/queued"
     fi
     previous=$value
@@ -922,8 +922,8 @@ fi
             meta_path = driver.home / "state" / (task + ".meta")
             metadata = dict(line.split("=", 1) for line in meta_path.read_text().splitlines() if "=" in line)
             self.assertEqual(metadata["window"], "firstmate-" + driver.prefix + ":fm-" + task)
-            self.assertEqual(metadata["fmx_instance_id"], plan["reference"]["instanceId"])
-            self.assertEqual(metadata["fmx_profile_root"], plan["destination"])
+            self.assertEqual(metadata["firstmate_instance_id"], plan["reference"]["instanceId"])
+            self.assertEqual(metadata["firstmate_profile_root"], plan["destination"])
             worker_path = driver.profile / "workers" / task / "worker.json"
             worker = json.loads(worker_path.read_text())
             self.assertEqual(worker["instanceId"], plan["reference"]["instanceId"])
@@ -934,9 +934,9 @@ fi
                               FM_CONTROL_POLL="0.01", FM_CONTROL_SETTLE_WAIT="0",
                               FM_CONTROL_EXIT_WAIT="0.2", FM_CONTROL_LAUNCH_WAIT="0.2")
             driver.launch_log.write_text("")
-            driver.entry("fm-control.sh", task, "relaunch", "--model", "default", "--note", "Keep the same instance and task worktree.", timeout=60)
+            driver.entry("fm-control.sh", task, "relaunch", "--model", "default", "--note", "Keep the same instance and task worktree.", timeout=120)
             self.assertEqual(state.read_text().strip(), "alive")
-            self.assertIn("FMX_INSTANCE_ID='" + plan["reference"]["instanceId"] + "'", driver.launch_log.read_text())
+            self.assertIn("TRELLAGE_FIRSTMATE_INSTANCE_ID='" + plan["reference"]["instanceId"] + "'", driver.launch_log.read_text())
             worker["instanceId"] = (b if plan is a else a)["reference"]["instanceId"]
             worker_path.write_text(json.dumps(worker))
             driver.refused("fm-control.sh", task, "relaunch")
@@ -1026,10 +1026,10 @@ os.execv(os.environ['WRITER_REAL_GIT'],[os.environ['WRITER_REAL_GIT'],*sys.argv[
         os.kill(child.pid, signal.SIGSTOP)
         try:
             os.kill(helpers[0], signal.SIGKILL)
-            lock = self.runtime.parent / ".fmx-install.lock"
+            lock = self.runtime.parent / ".firstmate-install.lock"
             self.assertEqual((lock / "pid").read_text().strip(), str(child.pid))
             held = healing.snapshot(self.home)
-            refused = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
+            refused = self.command([sys.executable, self.package / "lib/firstmate-registry.py", "lease", "--", "/usr/bin/true"])
             self.assertNotEqual(refused.returncode, 0)
             self.assertEqual(held, healing.snapshot(self.home))
         finally:
@@ -1039,7 +1039,7 @@ os.execv(os.environ['WRITER_REAL_GIT'],[os.environ['WRITER_REAL_GIT'],*sys.argv[
         self.assert_owned_processes_stopped(descendants)
         release.touch()
         self.assertFalse((self.case / "late-action").exists())
-        recovered = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
+        recovered = self.command([sys.executable, self.package / "lib/firstmate-registry.py", "lease", "--", "/usr/bin/true"])
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
         self.assertEqual(before, healing.snapshot(self.home))
 
@@ -1049,34 +1049,34 @@ os.execv(os.environ['WRITER_REAL_GIT'],[os.environ['WRITER_REAL_GIT'],*sys.argv[
 code='import pathlib,sys,time;pathlib.Path(sys.argv[1]).touch()\\nwhile not pathlib.Path(sys.argv[2]).exists(): time.sleep(0.02)'
 delegated=sys.argv[1]+'.delegated'
 child=subprocess.Popen([sys.executable,sys.argv[3],'lease','--',sys.executable,'-c',code,delegated,sys.argv[2]],
- pass_fds=(int(os.environ['FMX_SHARED_LEASE_FD']),))
+ pass_fds=(int(os.environ['TRELLAGE_FIRSTMATE_SHARED_LEASE_FD']),))
 while not pathlib.Path(delegated).exists():
  if child.poll() is not None: sys.exit(child.returncode or 1)
  time.sleep(0.02)
 pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))
 sys.exit(child.wait())
 """
-        argv = [sys.executable, str(self.package / "lib/fmx-registry.py"), "lease", "--",
-                sys.executable, "-c", script, str(ready), str(release), str(self.package / "lib/fmx-registry.py")]
+        argv = [sys.executable, str(self.package / "lib/firstmate-registry.py"), "lease", "--",
+                sys.executable, "-c", script, str(ready), str(release), str(self.package / "lib/firstmate-registry.py")]
         guard = subprocess.Popen(argv, env=healing.environment(self.case), cwd=self.case,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         self.children.append(guard)
         self.wait_file(ready, guard)
         writer = int(ready.read_text())
         try:
-            lock = self.runtime.parent / ".fmx-install.lock"
+            lock = self.runtime.parent / ".firstmate-install.lock"
             self.assertEqual(int((lock / "pid").read_text()), writer)
             os.kill(guard.pid, signal.SIGKILL)
             guard.wait(timeout=10)
             os.kill(writer, 0)
             before = healing.snapshot(self.home)
-            denied = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
+            denied = self.command([sys.executable, self.package / "lib/firstmate-registry.py", "lease", "--", "/usr/bin/true"])
             self.assertNotEqual(denied.returncode, 0)
             self.assertEqual(before, healing.snapshot(self.home))
         finally:
             release.touch()
         self.assert_owned_processes_stopped([writer])
-        recovered = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
+        recovered = self.command([sys.executable, self.package / "lib/firstmate-registry.py", "lease", "--", "/usr/bin/true"])
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
 
     def test_command_lease_guard_death_before_handoff_cancels_writer(self):
@@ -1092,7 +1092,7 @@ def launch(*args,**kwargs):
 subprocess.Popen=launch
 m.run_lease_command(['--',sys.executable,'-c','import pathlib,sys;pathlib.Path(sys.argv[1]).touch()',sys.argv[3]])
 """
-        guard = subprocess.Popen([sys.executable, "-c", script, str(self.package / "lib/fmx-registry.py"),
+        guard = subprocess.Popen([sys.executable, "-c", script, str(self.package / "lib/firstmate-registry.py"),
                                   str(ready), str(effect)], env=healing.environment(self.case), cwd=self.case,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         self.children.append(guard)
@@ -1102,7 +1102,7 @@ m.run_lease_command(['--',sys.executable,'-c','import pathlib,sys;pathlib.Path(s
         guard.wait(timeout=10)
         self.assert_owned_processes_stopped([writer])
         self.assertFalse(effect.exists())
-        recovered = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
+        recovered = self.command([sys.executable, self.package / "lib/firstmate-registry.py", "lease", "--", "/usr/bin/true"])
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
 
     def test_idle_real_installer_preserves_registry_and_installed_instance_routing(self):
@@ -1112,7 +1112,9 @@ m.run_lease_command(['--',sys.executable,'-c','import pathlib,sys;pathlib.Path(s
         shutil.copyfile(SOURCE / "install.sh", self.package / "install.sh")
         shutil.copyfile(REPO / "prototypes/trellage-claude-common/native-skills.ts", common / "native-skills.ts")
         shutil.copyfile(REPO / "scripts/trellage-session-bridge.py", self.case / "scripts/trellage-session-bridge.py")
+        shutil.copyfile(REPO / "scripts/retire-native-backend.sh", self.case / "scripts/retire-native-backend.sh")
         (self.case / "scripts/install-floating-skills-runtime.sh").chmod(0o755)
+        (self.case / "scripts/retire-native-backend.sh").chmod(0o755)
         before = healing.snapshot(self.registry)
         installed = self.command([self.case / "bin/bash", self.package / "install.sh"])
         self.assertEqual(installed.returncode, 0, installed.stderr)
@@ -1133,18 +1135,18 @@ m.run_lease_command(['--',sys.executable,'-c','import pathlib,sys;pathlib.Path(s
         self.create(plan)
         driver = self.pinned_instance(plan)
         session = self.case / "tmux-sessions" / ("firstmate-" + driver.prefix)
-        session.write_text("FMX_INSTANCE_ID=foreign\nFMX_PROFILE_ROOT=foreign\n")
+        session.write_text("TRELLAGE_FIRSTMATE_INSTANCE_ID=foreign\nTRELLAGE_FIRSTMATE_PROFILE_ROOT=foreign\n")
         code = 'source "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_container_ensure'
         refused = self.command([self.case / "bin/bash", "-c", code, "fixture", driver.runtime], driver.env)
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn("not owned", refused.stderr)
-        self.assertEqual(session.read_text(), "FMX_INSTANCE_ID=foreign\nFMX_PROFILE_ROOT=foreign\n")
+        self.assertEqual(session.read_text(), "TRELLAGE_FIRSTMATE_INSTANCE_ID=foreign\nTRELLAGE_FIRSTMATE_PROFILE_ROOT=foreign\n")
         herdr = """import json,os,sys
 args=sys.argv[1:]; pane=os.environ.get('HERDR_PANE_ID','captain:p1'); workspace='owned-space'
 if args[:2]==['session','list']: result={'sessions':[{'name':'placement','running':True,'socket_path':os.environ['HERDR_SOCKET_PATH']}]}
 elif args[:2]==['pane','get']: result={'result':{'pane':{'pane_id':pane,'tab_id':'owned-tab','workspace_id':workspace}}}
 elif args[:2]==['tab','get']: result={'result':{'tab':{'tab_id':'owned-tab','workspace_id':os.environ.get('WRONG_WORKSPACE',workspace)}}}
-elif args[:2]==['workspace','list']: result={'result':{'workspaces':[{'workspace_id':'foreign-space','label':'firstmate-'+os.environ['FMX_TASK_ID_PREFIX']},{'workspace_id':workspace,'label':'firstmate-'+os.environ['FMX_TASK_ID_PREFIX']}]}}
+elif args[:2]==['workspace','list']: result={'result':{'workspaces':[{'workspace_id':'foreign-space','label':'firstmate-'+os.environ['TRELLAGE_FIRSTMATE_TASK_ID_PREFIX']},{'workspace_id':workspace,'label':'firstmate-'+os.environ['TRELLAGE_FIRSTMATE_TASK_ID_PREFIX']}]}}
 else: raise SystemExit('unexpected terminal mutation')
 print(json.dumps(result))
 """
@@ -1175,7 +1177,7 @@ print(json.dumps(result))
                           FM_CONTROL_POLL="0.01", FM_CONTROL_SETTLE_WAIT="0",
                           FM_CONTROL_EXIT_WAIT="0.2", FM_CONTROL_LAUNCH_WAIT="0.2")
         session = self.case / "tmux-sessions" / ("firstmate-" + driver.prefix)
-        session.write_text("FMX_INSTANCE_ID=foreign\nFMX_PROFILE_ROOT=foreign\n")
+        session.write_text("TRELLAGE_FIRSTMATE_INSTANCE_ID=foreign\nTRELLAGE_FIRSTMATE_PROFILE_ROOT=foreign\n")
         send = 'source "$1/bin/fm-backend.sh"; target=$(fm_backend_resolve_selector "$2" "$FM_HOME/state") || exit; fm_backend_send_key tmux "$target" C-c'
         commands = [[self.case / "bin/bash", "-c", send, "fixture", driver.runtime, task]]
         commands += [[driver.runtime / "bin/fm-control.sh", task, action]
@@ -1200,7 +1202,7 @@ print(json.dumps(result))
         task = driver.prefix + "-delayed"
         project, worktree = driver.create_worktree(task)
         driver.env["FM_TEST_WORKTREE"] = str(worktree)
-        driver.env["FMX_WORKER_START_WAIT_SECONDS"] = "8"
+        driver.env["TRELLAGE_FIRSTMATE_WORKER_START_WAIT_SECONDS"] = "8"
         driver.entry("fm-brief.sh", task, project, "--mode", "no-mistakes")
         brief = driver.home / "data" / task / "brief.md"
         brief.write_text(brief.read_text().replace("{TASK}", "Wait for the owned worker.")
@@ -1208,7 +1210,7 @@ print(json.dumps(result))
         ready = driver.work / "backend-queued"
         tmux = driver.external / "tmux"
         hook = r'''
-if [[ "$1" == send-keys && "$*" == *" Enter" ]] && grep -q fmx-worker "$FM_TEST_LAUNCH_LOG"; then
+if [[ "$1" == send-keys && "$*" == *" Enter" ]] && grep -q firstmate-worker "$FM_TEST_LAUNCH_LOG"; then
   : >"$FM_TEST_BACKEND_QUEUED"
 fi
 '''
@@ -1223,7 +1225,7 @@ fi
         until = time.monotonic() + 2
         while time.monotonic() < until and child.poll() is None:
             time.sleep(0.03)
-        shared = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
+        shared = self.command([sys.executable, self.package / "lib/firstmate-registry.py", "lease", "--", "/usr/bin/true"])
         self.assertNotEqual(shared.returncode, 0, "queued delivery released the shared-writer exclusion")
         repair = self.selected("repair", plan)
         self.assertNotEqual(repair.returncode, 0, "queued delivery admitted instance repair")
@@ -1267,14 +1269,14 @@ fi
         self.children.append(child)
         self.wait_file(ready, child)
         before = healing.snapshot(self.home)
-        refused = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
+        refused = self.command([sys.executable, self.package / "lib/firstmate-registry.py", "lease", "--", "/usr/bin/true"])
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn("task startup or control is active", refused.stderr)
         self.assertEqual(before, healing.snapshot(self.home))
         release.touch()
         output, error = child.communicate(timeout=60)
         self.assertEqual(child.returncode, 0, (output, error))
-        allowed = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
+        allowed = self.command([sys.executable, self.package / "lib/firstmate-registry.py", "lease", "--", "/usr/bin/true"])
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
 

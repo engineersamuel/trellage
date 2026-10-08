@@ -196,7 +196,11 @@ async function requireReplaceable(destination: string, legacy: LegacyRuntime): P
   }
   safeDirectory(destination)
   const entries = readdirSync(destination).sort()
-  const floatingLayouts = ["floating-skills.mjs,skills.json", "floating-skills.mjs,fmx-registry.py,skills.json"]
+  const floatingLayouts = [
+    "floating-skills.mjs,skills.json",
+    "firstmate-registry.py,floating-skills.mjs,skills.json",
+    "floating-skills.mjs,fmx-registry.py,skills.json",
+  ]
   if (legacy === "floating" && floatingLayouts.includes(entries.join(","))) {
     for (const entry of entries) safePath(path.join(destination, entry), "file")
     return false

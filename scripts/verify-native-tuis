@@ -397,7 +397,7 @@ def run_json(command: list[str], timeout: float) -> dict[str, Any]:
     return require_object(value, f"{' '.join(command)} output")
 
 
-LEGACY_HARNESSES = {"agx": "agency", "cdx": "codex", "cldx": "claude", "cpx": "copilot", "fmx": "firstmate", "jcx": "jcode", "picx": "pi", "prx": "prime"}
+LEGACY_HARNESSES = {"agency": "agency", "codex": "codex", "claude": "claude", "copilot": "copilot", "firstmate": "firstmate", "jcode": "jcode", "pi": "pi", "prime": "prime"}
 
 
 def canonical_identity(launcher: str, profile: str) -> tuple[str, str]:

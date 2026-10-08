@@ -31,27 +31,27 @@ export const buildUpdateCheckCommand = (entry: AdminProfileEntry): CommandSpec =
 
 /** Each pattern's capture group 1, when present, is the installed version/commit/pin named in that family's own output text. */
 const currentPatterns: ReadonlyArray<RegExp> = [
-  // fmx: "fmx update: default is current (abc123def456)"
-  // cpx: "default: current (1.2.3)"
+  // firstmate: "firstmate update: default is current (abc123def456)"
+  // copilot: "default: current (1.2.3)"
   /\bcurrent\s*\(([^)]+)\)/i,
-  // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
+  // prime/jcode/omp/pi: "prime update: 0.8.1 is current"
   /\b(\S+)\s+is current\b/i,
-  // cdx skill-only profiles with no marketplace version to name, e.g.
+  // codex skill-only profiles with no marketplace version to name, e.g.
   // "youtube: current" (native-codex's `update_check_skill_profile`).
   /:\s*current\s*$/i,
 ]
 
 /** Each pattern's capture group 1 is the installed version/commit/pin and group 2 is the latest available one. */
 const updateAvailablePatterns: ReadonlyArray<RegExp> = [
-  // prx/jcx/omp/picx: "prx update: 0.8.1 -> 0.9.0 available"
+  // prime/jcode/omp/pi: "prime update: 0.8.1 -> 0.9.0 available"
   /([^\s:][^\s]*)\s*->\s*([^\s]+?)\s+available/i,
-  // cpx: "default: update available (1.2.3 -> 1.3.0)"
+  // copilot: "default: update available (1.2.3 -> 1.3.0)"
   /update available\s*\(\s*([^\s]+?)\s*->\s*([^\s)]+?)\s*\)/i,
-  // fmx: "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)"
+  // firstmate: "firstmate update: default is stale (installed abc123def456, catalog pin 789abc012def)"
   /is stale\s*\(installed\s+([^\s,]+),\s*catalog pin\s+([^\s)]+)\)/i,
 ]
 
-/** No capture groups: cdx skill-only profiles report an update with no version to name at all, e.g. "youtube: update available". */
+/** No capture groups: codex skill-only profiles report an update with no version to name at all, e.g. "youtube: update available". */
 const bareUpdateAvailablePatterns: ReadonlyArray<RegExp> = [/:\s*update available\s*$/i]
 
 const notInstalledPatterns: ReadonlyArray<RegExp> = [

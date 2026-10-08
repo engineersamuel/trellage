@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 readonly ownership_value='trellage-firstmate-profiles-v1'
 readonly install_lock_owner='trellage-firstmate-install-lock-v1'
 
 refuse() {
-  printf 'fmx uninstall: %s\n' "$1" >&2
+  printf 'firstmate uninstall: %s\n' "$1" >&2
   exit 1
 }
 
@@ -20,13 +21,13 @@ home="${HOME-}"
 canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: $home"
 local_dir="$canonical_home/.local"
 runtime_parent="$local_dir/share/trellage"
-install_root="$runtime_parent/fmx"
-install_lock="$runtime_parent/.fmx-install.lock"
-installed_launcher="$install_root/bin/fmx"
+install_root="$runtime_parent/firstmate"
+install_lock="$runtime_parent/.firstmate-install.lock"
+installed_launcher="$install_root/bin/firstmate"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-firstmate-profiles"
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/fmx"
+command_path="$command_dir/firstmate"
 lock_acquired=false
 source_dir="$(CDPATH= cd -P -- "$(dirname "$0")" && pwd -P)"
 
@@ -37,7 +38,7 @@ acquire_install_lock() {
 
   if ! mkdir -m 0700 "$install_lock" 2>/dev/null; then
     [[ -d "$install_lock" && ! -L "$install_lock" ]] \
-      || refuse "unowned fmx install lock: $install_lock"
+      || refuse "unowned firstmate install lock: $install_lock"
     if [[ -f "$install_lock/owner" && ! -L "$install_lock/owner" ]]; then
       owner="$(<"$install_lock/owner")"
     fi
@@ -45,22 +46,22 @@ acquire_install_lock() {
       pid="$(<"$install_lock/pid")"
     fi
     [[ "$owner" == "$install_lock_owner" ]] \
-      || refuse "unowned fmx install lock: $install_lock"
+      || refuse "unowned firstmate install lock: $install_lock"
     [[ "$pid" =~ ^[1-9][0-9]*$ ]] \
-      || refuse "incomplete fmx install lock: $install_lock"
+      || refuse "incomplete firstmate install lock: $install_lock"
     if kill -0 "$pid" 2>/dev/null; then
-      refuse "another fmx runtime operation is active with pid $pid"
+      refuse "another firstmate runtime operation is active with pid $pid"
     fi
     while IFS= read -r path; do
       case "$path" in
         "$install_lock/owner"|"$install_lock/pid") ;;
-        *) refuse "unowned fmx install lock: $install_lock" ;;
+        *) refuse "unowned firstmate install lock: $install_lock" ;;
       esac
     done < <(find "$install_lock" -mindepth 1 -print)
     rm -- "$install_lock/owner" "$install_lock/pid"
     rmdir "$install_lock"
     mkdir -m 0700 "$install_lock" \
-      || refuse "could not reclaim stale fmx install lock: $install_lock"
+      || refuse "could not reclaim stale firstmate install lock: $install_lock"
   fi
   printf '%s\n' "$install_lock_owner" >"$install_lock/owner"
   printf '%s\n' "$$" >"$install_lock/pid"
@@ -94,7 +95,7 @@ on_exit() {
 
   trap - EXIT HUP INT TERM
   if ! release_install_lock; then
-    printf 'fmx uninstall: could not release runtime operation lock: %s\n' \
+    printf 'firstmate uninstall: could not release runtime operation lock: %s\n' \
       "$install_lock" >&2
     status=1
   fi
@@ -106,22 +107,22 @@ cleanup_abandoned_install_artifacts() {
 
   while IFS= read -r path; do
     [[ -d "$path" && ! -L "$path" ]] \
-      || refuse "unsafe retired fmx install artifact: $path"
+      || refuse "unsafe retired firstmate install artifact: $path"
     rm -rf -- "$path"
   done < <(find "$runtime_parent" -mindepth 1 -maxdepth 1 \
-    -name '.fmx-retired-install.*' -print)
+    -name '.firstmate-retired-install.*' -print)
   if [[ -d "$command_dir" && ! -L "$command_dir" ]]; then
     while IFS= read -r path; do
       [[ -d "$path" && ! -L "$path" ]] \
-        || refuse "unsafe fmx command staging artifact: $path"
+        || refuse "unsafe firstmate command staging artifact: $path"
       rm -rf -- "$path"
     done < <(find "$command_dir" -mindepth 1 -maxdepth 1 \
-      -name '.fmx-command.*' -print)
+      -name '.firstmate-command.*' -print)
   fi
 }
 
-active_fmx_fleet_or_mutation() {
-  ! python3 "$source_dir/lib/fmx-registry.py" check-shared
+active_firstmate_fleet_or_mutation() {
+  ! python3 "$source_dir/lib/firstmate-registry.py" check-shared
 }
 
 if [[ -e "$runtime_parent" || -L "$runtime_parent" ]]; then
@@ -134,12 +135,12 @@ if [[ -e "$runtime_parent" || -L "$runtime_parent" ]]; then
   trap 'exit 130' INT
   trap 'exit 143' TERM
   acquire_install_lock
-  if active_fmx_fleet_or_mutation >/dev/null; then
-    refuse 'cannot uninstall fmx while a Firstmate fleet or profile mutation is active or indeterminate'
+  if active_firstmate_fleet_or_mutation >/dev/null; then
+    refuse 'cannot uninstall firstmate while a Firstmate fleet or profile mutation is active or indeterminate'
   fi
-  if find "$runtime_parent" -mindepth 1 -maxdepth 1 -name '.fmx-install.*' \
+  if find "$runtime_parent" -mindepth 1 -maxdepth 1 -name '.firstmate-install.*' \
     ! -path "$install_lock" -print -quit | grep -q .; then
-    refuse "interrupted fmx install exists; rerun install.sh before uninstalling"
+    refuse "interrupted firstmate install exists; rerun install.sh before uninstalling"
   fi
   cleanup_abandoned_install_artifacts
 fi
@@ -150,13 +151,13 @@ if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
       || refuse "unowned command remains: $command_path"
     rm -- "$command_path"
   fi
-  printf 'fmx is not installed; Firstmate profile state was preserved.\n'
+  printf 'firstmate is not installed; Firstmate profile state was preserved.\n'
   exit 0
 fi
 
 [[ -d "$install_root" && ! -L "$install_root" ]] \
   || refuse "unsafe runtime root: $install_root"
-[[ "$(canonical_directory "$install_root")" == "$canonical_home/.local/share/trellage/fmx" ]] \
+[[ "$(canonical_directory "$install_root")" == "$canonical_home/.local/share/trellage/firstmate" ]] \
   || refuse "redirected runtime root: $install_root"
 [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
   || refuse "unowned runtime root: $install_root"
@@ -181,4 +182,4 @@ fi
 rm -rf -- "$install_root"
 release_install_lock \
   || refuse "could not release runtime operation lock: $install_lock"
-printf 'Uninstalled fmx and its managed prerequisites; Firstmate profile roots, homes, and worker state were preserved.\n'
+printf 'Uninstalled firstmate and its managed prerequisites; Firstmate profile roots, homes, and worker state were preserved.\n'

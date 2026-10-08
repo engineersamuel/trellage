@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ownership_value='trellage-prime-profiles-v1'
 
 refuse() {
-  printf 'prx uninstall: %s\n' "$1" >&2
+  printf 'prime uninstall: %s\n' "$1" >&2
   exit 1
 }
 
@@ -17,22 +17,22 @@ home="${HOME-}"
 [[ "$home" == /* && "$home" != / && -d "$home" && ! -L "$home" ]] \
   || refuse "unsafe HOME: $home"
 canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: $home"
-install_root="$home/.local/share/trellage/prx"
-installed_launcher="$install_root/bin/prx"
+install_root="$home/.local/share/trellage/prime"
+installed_launcher="$install_root/bin/prime"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-prime-profiles"
-command_path="$home/.local/share/trellage/.native-commands/prx"
+command_path="$home/.local/share/trellage/.native-commands/prime"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \
     || refuse "unowned command remains: $command_path"
-  printf 'prx is not installed; profile state was preserved.\n'
+  printf 'prime is not installed; profile state was preserved.\n'
   exit 0
 fi
 
 [[ -d "$install_root" && ! -L "$install_root" ]] \
   || refuse "unsafe runtime root: $install_root"
-[[ "$(canonical_directory "$install_root")" == "$canonical_home/.local/share/trellage/prx" ]] \
+[[ "$(canonical_directory "$install_root")" == "$canonical_home/.local/share/trellage/prime" ]] \
   || refuse "redirected runtime root: $install_root"
 [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
   || refuse "unowned runtime root: $install_root"
@@ -67,4 +67,4 @@ if [[ -d "$legacy_root" && ! -L "$legacy_root" ]] \
 fi
 
 rm -rf -- "$install_root"
-printf 'Uninstalled prx; Prime profile state and sessions were preserved.\n'
+printf 'Uninstalled prime; Prime profile state and sessions were preserved.\n'

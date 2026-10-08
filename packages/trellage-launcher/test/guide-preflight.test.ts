@@ -178,7 +178,7 @@ describe("goal-only read-only readiness", () => {
         kind: "exited", executable: profile.commandPath,
         args: ["inventory", "codex", "superpowers", "--goal-features"],
         message: "Unsupported inventory option", exitCode: 1,
-        stderr: "usage: cdx inventory PROFILE --json",
+        stderr: "usage: codex inventory PROFILE --json",
       }),
       ok("goals\tstable\ttrue\n"),
     ])
@@ -245,7 +245,7 @@ if (args.length === 1 && args[0] === "--version") {
         cwd, env: { ...env, CODEX_HOME: profileHome }, timeoutMs: 30_000,
       })
       expect(bare).toEqual(ok("goals\tstable\ttrue\n"))
-      const backend = fileURLToPath(new URL("../../../prototypes/trellage-codex-profiles/bin/cdx", import.meta.url))
+      const backend = fileURLToPath(new URL("../../../prototypes/trellage-codex-profiles/bin/codex", import.meta.url))
       const launcher = "/fixture/trx"
       const { profile, execution } = goalTransportFixture()
       const runner: CommandRunner = {
@@ -424,7 +424,7 @@ if (args.length === 1 && args[0] === "--version") {
       await mkdir(bin)
       await writeFile(path.join(bin, "claude"), "#!/bin/sh\n[ \"$#\" = 1 ] && [ \"$1\" = --version ] || exit 97\nprintf '2.1.233 (Claude Code)\\n'\n", { mode: 0o755 })
       const runner = createNodeCommandRunner()
-      const launcher = fileURLToPath(new URL("../../../prototypes/trellage-claude-profiles/bin/cldx", import.meta.url))
+      const launcher = fileURLToPath(new URL("../../../prototypes/trellage-claude-profiles/bin/claude", import.meta.url))
       const result = await runner.run(launcher, ["harness-version"], {
         cwd: fixture, env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}` }, timeoutMs: 30_000,
       })

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { parse, stringify } from "smol-toml"
 
 function fail(message: string): never {
-  process.stderr.write(`jcx config manager: ${message}\n`)
+  process.stderr.write(`jcode config manager: ${message}\n`)
   process.exit(1)
 }
 

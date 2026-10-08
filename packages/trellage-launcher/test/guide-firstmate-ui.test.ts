@@ -1235,7 +1235,7 @@ describe.each(profiles)("Firstmate %s keyboard flow", (profile) => {
     const output: string[] = []
     expect(await executeGuideUiResult(result, { runner: { run: tui.run }, runInteractive, write: (text) => output.push(text) })).toBe(0)
     expect(runInteractive).toHaveBeenCalledExactlyOnceWith({
-      executable: "/fixture/trx", args: ["run", "firstmate", profile, "--fmx-expected-fleet-json", JSON.stringify(readiness.identity)],
+      executable: "/fixture/trx", args: ["run", "firstmate", profile, "--firstmate-expected-fleet-json", JSON.stringify(readiness.identity)],
     }, { cwd: "/fixture/source-a", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }) })
     expect(tui.submissions).toHaveLength(1)
     expect(tui.run.mock.calls.some(([executable]) => executable === "herdr")).toBe(false)

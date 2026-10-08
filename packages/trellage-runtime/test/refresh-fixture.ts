@@ -10,7 +10,7 @@ const isFixture = (candidate: string) =>
     .some(
       (component) =>
         component.startsWith(".contract-fixture.") ||
-        /^trellage-(?:cdx|pstack|fmx)-contract\.[a-z0-9]+$/i.test(component),
+        /^trellage-(?:codex|pstack|firstmate)-contract\.[a-z0-9]+$/i.test(component),
     )
 if (root === undefined || !path.isAbsolute(root) || !isFixture(root) || rest.length !== 0) {
   throw new Error("Only an explicitly changed shell contract fixture can be refreshed")

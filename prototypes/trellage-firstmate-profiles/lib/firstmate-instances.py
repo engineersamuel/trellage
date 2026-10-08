@@ -15,9 +15,9 @@ import sys
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-registry = importlib.import_module("fmx-registry")
-control = importlib.import_module("fmx-control")
-overlay = importlib.import_module("fmx-overlay")
+registry = importlib.import_module("firstmate-registry")
+control = importlib.import_module("firstmate-control")
+overlay = importlib.import_module("firstmate-overlay")
 PACKAGE = Path(__file__).resolve().parent.parent
 
 
@@ -158,12 +158,12 @@ def shared_sources():
 
 
 def require_shared_support():
-    installed = registry.home() / ".local/share/trellage/fmx"
+    installed = registry.home() / ".local/share/trellage/firstmate"
     common = installed.parent / "common/floating-skills-runtime"
     if registry.read(installed / registry.MARKER).decode().strip() != registry.OWNER:
         registry.refuse("install the complete registry-aware Native/shared writer set while all fleets are idle", "upgrade-required")
-    for relative in ("bin/fmx", "lib/fmx-registry.py", "lib/fmx-instances.py", "lib/fmx-prerequisites",
-                     "lib/fmx-control.py", "lib/fmx-controls.py", "lib/fmx-worker", "lib/fmx-overlay.py", "catalog.json"):
+    for relative in ("bin/firstmate", "lib/firstmate-registry.py", "lib/firstmate-instances.py", "lib/firstmate-prerequisites",
+                     "lib/firstmate-control.py", "lib/firstmate-controls.py", "lib/firstmate-worker", "lib/firstmate-overlay.py", "catalog.json"):
         if registry.read(installed / relative, 1024 * 1024) != registry.read(PACKAGE / relative, 1024 * 1024):
             registry.refuse("installed Native writers differ; install the coherent candidate set while all fleets are idle", "upgrade-required")
     require_installed_overlays(installed)
@@ -181,7 +181,7 @@ def require_shared_support():
     if not writers or any(registry.read(path, 1024 * 1024) != expected for path in writers):
         registry.refuse("an installed shared-Claude writer is not registry-aware; upgrade all affected launchers while idle", "upgrade-required")
     if (registry.read(common / "scripts/floating-skills.ts", 1024 * 1024) != registry.read(manager, 1024 * 1024)
-        or registry.read(common / "prototypes/trellage-firstmate-profiles/lib/fmx-registry.py", 1024 * 1024) != registry.read(PACKAGE / "lib/fmx-registry.py", 1024 * 1024)):
+        or registry.read(common / "prototypes/trellage-firstmate-profiles/lib/firstmate-registry.py", 1024 * 1024) != registry.read(PACKAGE / "lib/firstmate-registry.py", 1024 * 1024)):
         registry.refuse("shared skills writer support is missing or differs; perform the complete idle upgrade", "upgrade-required")
 
 
@@ -322,7 +322,7 @@ def create_locked(plan, path):
         publish_reserved_root(plan)
         registry.atomic_json(path, {"schemaVersion": 1, "owner": registry.REGISTRY_OWNER, "phase": "creating", "plan": plan})
     result = control.preparation_process(
-        [str(PACKAGE / "bin/fmx"), "_create-owned", plan["reference"]["profile"], plan["approvalDigest"],
+        [str(PACKAGE / "bin/firstmate"), "_create-owned", plan["reference"]["profile"], plan["approvalDigest"],
          "--instance", plan["reference"]["instanceId"]], timeout=240)
     if result.returncode:
         registry.refuse("creation did not complete; reconcile this approved UUID: " + control.diagnostic(result.stderr), "creation-incomplete")
@@ -479,9 +479,9 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except control.PreparationCancelled as error:
-        print("fmx instances: cancelled; reconcile the same approved UUID", file=sys.stderr)
+        print("firstmate instances: cancelled; reconcile the same approved UUID", file=sys.stderr)
         sys.exit(128 + error.number)
     except (registry.Refusal, control.Failure, control.controls.Refusal, OSError, ValueError, TypeError,
             KeyError, overlay.OverlayError, subprocess.SubprocessError) as error:
-        print("fmx instances: " + str(error), file=sys.stderr)
+        print("firstmate instances: " + str(error), file=sys.stderr)
         sys.exit(1)

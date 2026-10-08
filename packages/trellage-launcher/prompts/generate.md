@@ -134,7 +134,7 @@ conditional `how` and `why` checks, artifact-backed completion, verification
 gaps, and workers that never assume routing, merge, or captain authority. Do
 not invoke Poteto Mode, a pstack plugin, pstack subagents, or a second router.
 
-For both `native:fmx` profiles, the authored operating-contract prefix is
+For both `native:firstmate` profiles, the authored operating-contract prefix is
 deterministically applied after optimization. Draft the task-specific content
 that belongs under that prefix. Do not add a second operating-contract section
 or repeat the template's generic fleet rules. Do not force unsupported or

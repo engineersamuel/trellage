@@ -4,7 +4,7 @@ set -euo pipefail
 readonly ownership_value='trellage-agency-profiles-v1'
 
 refuse() {
-  printf 'agx uninstall: %s\n' "$1" >&2
+  printf 'agency uninstall: %s\n' "$1" >&2
   exit 1
 }
 
@@ -16,18 +16,18 @@ home="${HOME-}"
 [[ -n "$home" && "$home" == /* && "$home" != / && -d "$home" && ! -L "$home" ]] \
   || refuse "unsafe HOME: ${home:-<empty>}"
 canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: $home"
-install_root="$canonical_home/.local/share/trellage/agx"
+install_root="$canonical_home/.local/share/trellage/agency"
 runtime_bin="$install_root/bin"
-installed_launcher="$runtime_bin/agx"
+installed_launcher="$runtime_bin/agency"
 installed_catalog="$install_root/catalog.json"
 installed_model_settings="$install_root/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-agency-profiles"
-command_path="$canonical_home/.local/share/trellage/.native-commands/agx"
+command_path="$canonical_home/.local/share/trellage/.native-commands/agency"
 
 if [[ ! -e "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \
     || refuse "refusing unowned command: $command_path"
-  printf 'agx is not installed; profile homes were preserved.\n'
+  printf 'agency is not installed; profile homes were preserved.\n'
   exit 0
 fi
 [[ -d "$install_root" && ! -L "$install_root" ]] || refuse "unsafe runtime root: $install_root"
@@ -58,4 +58,4 @@ rm -f -- "$installed_launcher" "$installed_catalog" "$installed_model_settings" 
 rm -f -- "$install_root/native-skills.ts"
 rmdir "$runtime_bin" "$install_root" 2>/dev/null \
   || refuse "managed runtime contains unrelated files: $install_root"
-printf 'Uninstalled agx; profile homes were preserved.\n'
+printf 'Uninstalled agency; profile homes were preserved.\n'

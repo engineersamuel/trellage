@@ -23,7 +23,7 @@
         "testedHarnessVersion": "0.84.2"
       },
       "kind": "local",
-      "piProfile": "picx-default",
+      "piProfile": "pi-default",
       "plugin": null,
       "standaloneMcps": [],
       "extensions": [

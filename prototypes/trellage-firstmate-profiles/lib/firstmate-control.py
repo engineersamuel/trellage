@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owned fleet identity and bounded text-inbox transport for fmx."""
+"""Owned fleet identity and bounded text-inbox transport for firstmate."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 sys.dont_write_bytecode = True
-controls = importlib.import_module("fmx-controls")
-registry = importlib.import_module("fmx-registry")
+controls = importlib.import_module("firstmate-controls")
+registry = importlib.import_module("firstmate-registry")
 OWNER = controls.OWNER
 MARKER = controls.MARKER
 MAX_REQUEST = 524288
@@ -316,8 +316,8 @@ def reclaim(lock):
 @contextlib.contextmanager
 def mutation(root, mode):
     owned_root(root)
-    package_locks = (PACKAGE.parent / ".fmx-install.lock",
-                     Path(os.environ["HOME"]) / ".local/share/trellage/.fmx-install.lock")
+    package_locks = (PACKAGE.parent / ".firstmate-install.lock",
+                     Path(os.environ["HOME"]) / ".local/share/trellage/.firstmate-install.lock")
     lock = root / "locks/mutation"
     if any(path.exists() or path.is_symlink() for path in package_locks):
         raise Failure("busy", "launcher installation is active or requires recovery")
@@ -343,26 +343,26 @@ def mutation(root, mode):
 
 
 def selected_root(profile):
-    selector = os.environ.get("FMX_SELECTED_INSTANCE", "legacy")
+    selector = os.environ.get("TRELLAGE_FIRSTMATE_SELECTED_INSTANCE", "legacy")
     if selector == "legacy":
         return registry.profiles_root() / registry.profile_name(profile)
     return registry.resolve(profile, selector)[0]
 
 
 def launcher_arguments(mode, profile, *args):
-    command = [str(PACKAGE / "bin/fmx"), mode, profile, *args]
-    selector = os.environ.get("FMX_SELECTED_INSTANCE", "legacy")
-    context = os.environ.get("FMX_INSTANCE_CONTEXT_JSON", "")
+    command = [str(PACKAGE / "bin/firstmate"), mode, profile, *args]
+    selector = os.environ.get("TRELLAGE_FIRSTMATE_SELECTED_INSTANCE", "legacy")
+    context = os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_CONTEXT_JSON", "")
     if selector != "legacy" or context:
         command += ["--instance", selector]
     if context and mode not in ("inventory", "_control-readiness"):
-        command += ["--fmx-instance-context-json", context]
+        command += ["--firstmate-instance-context-json", context]
     return command
 
 
 def selected_context(profile):
-    selector = os.environ.get("FMX_SELECTED_INSTANCE", "legacy")
-    raw = os.environ.get("FMX_INSTANCE_CONTEXT_JSON", "")
+    selector = os.environ.get("TRELLAGE_FIRSTMATE_SELECTED_INSTANCE", "legacy")
+    raw = os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_CONTEXT_JSON", "")
     if selector == "legacy" and not raw:
         return None
     value = registry.validate_context(profile, selector, raw)
@@ -373,7 +373,7 @@ def selected_context(profile):
 def require_runtime_context(value):
     if value is None or value["reference"]["mode"] != "named":
         return
-    overlay = importlib.import_module("fmx-overlay")
+    overlay = importlib.import_module("firstmate-overlay")
     revision = controls.read_json(PACKAGE / "catalog.json")["source"]["commit"]
     try:
         required = overlay.variant_requirement(PACKAGE / "overlay" / revision / "manifest.json",
@@ -400,15 +400,15 @@ def producer(root, args, body=None):
     if not helper.exists():
         helper = PACKAGE.parent / "trellage-claude-common/native-claude"
     runtime = root / "runtime"
-    env = {key: value for key, value in os.environ.items() if not key.startswith(("FM_", "FMX_"))}
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("FM_", "TRELLAGE_FIRSTMATE_"))}
     env.update(FM_HOME=str(root / "home"), FM_ROOT_OVERRIDE=str(runtime),
-               TRELLAGE_CLAUDE_LAUNCHER_NAME="fmx", TRELLAGE_CLAUDE_RUNTIME_ROOT=str(runtime))
+               TRELLAGE_CLAUDE_LAUNCHER_NAME="firstmate", TRELLAGE_CLAUDE_RUNTIME_ROOT=str(runtime))
     if root.parent.name == "instances":
         descriptor = registry.named_descriptor(root, identity_required=True)
-        env.update(FMX_PROFILE=descriptor["profile"], FMX_PROFILE_ROOT=str(root),
-                   FMX_INSTANCE_ID=root.name, FMX_TASK_ID_PREFIX=descriptor["taskIdPrefix"],
-                   FMX_WORKER_LAUNCHER=str(PACKAGE / "lib/fmx-worker"))
-    bash = str(Path(os.environ.get("FMX_CONTROL_BASH", "/bin/bash")).resolve())
+        env.update(TRELLAGE_FIRSTMATE_PROFILE=descriptor["profile"], TRELLAGE_FIRSTMATE_PROFILE_ROOT=str(root),
+                   TRELLAGE_FIRSTMATE_INSTANCE_ID=root.name, TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=descriptor["taskIdPrefix"],
+                   TRELLAGE_FIRSTMATE_WORKER_LAUNCHER=str(PACKAGE / "lib/firstmate-worker"))
+    bash = str(Path(os.environ.get("TRELLAGE_FIRSTMATE_CONTROL_BASH", "/bin/bash")).resolve())
     return subprocess.run(
         [str(helper), "exec-clean", "--interpreter", bash, "--", str(runtime / "bin/fm-inbox.sh"), *args],
         input=body, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=runtime,
@@ -587,7 +587,7 @@ def failure_receipt(mode, validated, receipt, error):
     if mode == "submit" and (invalid_payload or details["code"] == "request-conflict"):
         receipt.update(state="rejected", noteId=None, error=details)
         return True
-    print(f'fmx control: request {receipt["requestId"]} outcome unknown ({details["code"]}); '
+    print(f'firstmate control: request {receipt["requestId"]} outcome unknown ({details["code"]}); '
           f'inspect or retry this same request ID. {details["message"]}', file=sys.stderr)
     return False
 
@@ -636,7 +636,7 @@ def preparation_safety(root, profile):
                    "captain", "captain/claude", "workers", "receipts", "locks", "policy",
                    "runtime", "runtime.previous", "staging", "task-work"):
         safe_preparation_path(root / suffix, True)
-    for suffix in ("home/.fmx-managed", "home/.tasks.toml", "home/backlog.md",
+    for suffix in ("home/.firstmate-managed", "home/.tasks.toml", "home/backlog.md",
                    "home/data/backlog.md", "home/config/crew-harness", "home/config/secondmate-harness",
                    "home/config/crew-dispatch.json", "receipts/source.json", "receipts/instance.json",
                    "receipts.previous.json", "policy/worker-policy.md", "locks/generation"):
@@ -1057,9 +1057,9 @@ def prerequisite_plan(manifest_path, artifact, destination, home, platform):
     plan = dict(destination=destination, tools=sorted(tools, key=lambda entry: entry["name"]), sources=sources,
                 statePaths=list(dict.fromkeys([home + "/.no-mistakes", str(snapshot.cache)])))
     authority = dict(schemaVersion=1, artifactLock=artifact, plan=plan, npm=snapshot.fingerprint())
-    selector = os.environ.get("FMX_SELECTED_INSTANCE", "legacy")
+    selector = os.environ.get("TRELLAGE_FIRSTMATE_SELECTED_INSTANCE", "legacy")
     if selector != "legacy":
-        context = registry.control_context(registry.json_value(os.environ.get("FMX_INSTANCE_CONTEXT_JSON", "").encode()))
+        context = registry.control_context(registry.json_value(os.environ.get("TRELLAGE_FIRSTMATE_INSTANCE_CONTEXT_JSON", "").encode()))
         profile = context["reference"]["profile"]
         validated = registry.validate_context(profile, selector, canonical(context).decode())
         require_runtime_context(validated)
@@ -1070,7 +1070,7 @@ def prerequisite_plan(manifest_path, artifact, destination, home, platform):
 
 def require_npm_install_locks(destination, prefix):
     root = Path(destination).parent.parent
-    for lock, owner in ((root.parent / ".fmx-install.lock", "trellage-firstmate-install-lock-v1"),
+    for lock, owner in ((root.parent / ".firstmate-install.lock", "trellage-firstmate-install-lock-v1"),
                         (root / "prerequisites/.install-lock", "trellage-firstmate-prerequisites-v1")):
         if (controls.regular(lock / "owner").decode().strip() != owner
             or controls.regular(lock / "pid").decode().strip() != str(os.getppid())):
@@ -1107,8 +1107,8 @@ def preparation_helper(*arguments):
     if not helper.exists():
         helper = PACKAGE.parent / "trellage-claude-common/native-claude"
     return preparation_process([
-        "env", "TRELLAGE_CLAUDE_LAUNCHER_NAME=fmx", f"TRELLAGE_CLAUDE_RUNTIME_ROOT={PACKAGE}",
-        str(helper), "exec-clean", "--", str(PACKAGE / "lib/fmx-prerequisites"), *arguments,
+        "env", "TRELLAGE_CLAUDE_LAUNCHER_NAME=firstmate", f"TRELLAGE_CLAUDE_RUNTIME_ROOT={PACKAGE}",
+        str(helper), "exec-clean", "--", str(PACKAGE / "lib/firstmate-prerequisites"), *arguments,
     ])
 
 
@@ -1192,7 +1192,7 @@ def preparation_result(profile, inventory, repairs, failure, cache_status):
     if not report["ready"]:
         return preparation_tools_result(inventory, report, repairs, cache_status)
     if fleet["consentRequired"]:
-        return finish_preparation(inventory, "blocked", "The owned identity is ready, but explicit setup consent is missing. Run fmx repair " + profile + "; this does not approve tool installation.", repairs)
+        return finish_preparation(inventory, "blocked", "The owned identity is ready, but explicit setup consent is missing. Run firstmate repair " + profile + "; this does not approve tool installation.", repairs)
     missing = [row["description"] for row in fleet["prerequisites"] if not row["ready"]]
     if missing:
         return finish_preparation(inventory, "blocked", diagnostic("; ".join(missing)), repairs)
@@ -1278,10 +1278,10 @@ def main():
             return prepare(sys.argv[2], sys.argv[3], sys.argv[4])
         return helper_operation(mode, Path(sys.argv[2]), sys.argv[3])
     except PreparationCancelled as error:
-        print("fmx prepare: cancelled; owned child work was stopped", file=sys.stderr)
+        print("firstmate prepare: cancelled; owned child work was stopped", file=sys.stderr)
         return 128 + error.number
     except (Failure, controls.Refusal, registry.Refusal, OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
-        print(f"fmx control: {error}", file=sys.stderr)
+        print(f"firstmate control: {error}", file=sys.stderr)
         return 1
 if __name__ == "__main__":
     sys.exit(main())

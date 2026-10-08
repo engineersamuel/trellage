@@ -3,12 +3,12 @@ set +x
 set +a
 set -u
 
-unset cdx_transcript_api_key cdx_transcript_api_key_is_set
-cdx_transcript_api_key_is_set=false
-cdx_transcript_api_key=""
+unset codex_transcript_api_key codex_transcript_api_key_is_set
+codex_transcript_api_key_is_set=false
+codex_transcript_api_key=""
 if [[ "${TRANSCRIPT_API_KEY+x}" == x ]]; then
-  cdx_transcript_api_key_is_set=true
-  cdx_transcript_api_key="$TRANSCRIPT_API_KEY"
+  codex_transcript_api_key_is_set=true
+  codex_transcript_api_key="$TRANSCRIPT_API_KEY"
 fi
 unset TRANSCRIPT_API_KEY
 
@@ -28,12 +28,12 @@ resolve_script_dir() {
 }
 
 script_dir="$(resolve_script_dir)" || {
-  printf 'cdx: could not resolve launcher directory\n' >&2
+  printf 'codex: could not resolve launcher directory\n' >&2
   exit 1
 }
-launcher_path="$script_dir/cdx"
+launcher_path="$script_dir/codex"
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" || {
-  printf 'cdx: could not resolve runtime root\n' >&2
+  printf 'codex: could not resolve runtime root\n' >&2
   exit 1
 }
 common_launcher="$runtime_root/lib/native-codex"
@@ -41,7 +41,7 @@ if [[ ! -f "$common_launcher" ]]; then
   common_launcher="$runtime_root/../trellage-codex-common/native-codex"
 fi
 [[ -f "$common_launcher" && ! -L "$common_launcher" && -x "$common_launcher" ]] || {
-  printf 'cdx: shared native Codex launcher is missing or unsafe: %s\n' "$common_launcher" >&2
+  printf 'codex: shared native Codex launcher is missing or unsafe: %s\n' "$common_launcher" >&2
   exit 1
 }
 
@@ -49,7 +49,7 @@ native_runtime_system_name=""
 native_runtime_uid=""
 
 native_runtime_fail() {
-  printf 'cdx: %s\n' "$1" >&2
+  printf 'codex: %s\n' "$1" >&2
   exit 1
 }
 
@@ -125,8 +125,8 @@ maybe_load_native_environment() {
 
   if [[ "${_TRELLAGE_NATIVE_VARLOCK_ACTIVE-}" == 1 ]]; then
     unset _TRELLAGE_NATIVE_VARLOCK_ACTIVE
-    if [[ "$cdx_transcript_api_key_is_set" == true ]]; then
-      export TRANSCRIPT_API_KEY="$cdx_transcript_api_key"
+    if [[ "$codex_transcript_api_key_is_set" == true ]]; then
+      export TRANSCRIPT_API_KEY="$codex_transcript_api_key"
     fi
     return
   fi
@@ -149,7 +149,7 @@ maybe_load_native_environment() {
     case "$environment_name" in
       TRANSCRIPT_API_KEY) ;;
       *)
-        printf 'cdx: unsupported required environment variable: %s\n' "$environment_name" >&2
+        printf 'codex: unsupported required environment variable: %s\n' "$environment_name" >&2
         exit 1
         ;;
     esac
@@ -191,15 +191,15 @@ maybe_load_native_environment() {
     || native_runtime_fail 'native environment source dependencies are not ready'
   varlock="$dependency_directory/bin/cli.js"
   [[ -f "$resolver" && ! -L "$resolver" && -r "$resolver" ]] || {
-    printf 'cdx: native environment resolver is missing or unsafe: %s\n' "$resolver" >&2
+    printf 'codex: native environment resolver is missing or unsafe: %s\n' "$resolver" >&2
     exit 1
   }
   [[ -f "$varlock" && ! -L "$varlock" && -r "$varlock" ]] || {
-    printf 'cdx: bundled Varlock CLI is missing or unsafe: %s\n' "$varlock" >&2
+    printf 'codex: bundled Varlock CLI is missing or unsafe: %s\n' "$varlock" >&2
     exit 1
   }
   command -v node >/dev/null 2>&1 || {
-    printf 'cdx: required command not found: node\n' >&2
+    printf 'codex: required command not found: node\n' >&2
     exit 1
   }
 
@@ -209,7 +209,7 @@ maybe_load_native_environment() {
     done <<<"${required_environment//,/$'\n'}"
     exec "$source_runner" "$resolver"
   )" || {
-    printf 'cdx: automatic Varlock environment resolution failed\n' >&2
+    printf 'codex: automatic Varlock environment resolution failed\n' >&2
     exit 1
   }
   jq -e '
@@ -221,19 +221,19 @@ maybe_load_native_environment() {
     and (.required | type == "boolean")
     and (.strict_permissions | type == "boolean")
   ' <<<"$metadata" >/dev/null 2>&1 || {
-    printf 'cdx: native environment resolver returned invalid metadata\n' >&2
+    printf 'codex: native environment resolver returned invalid metadata\n' >&2
     exit 1
   }
   if [[ "$(jq -r '.source_present' <<<"$metadata")" != true ]]; then
-    if [[ "$cdx_transcript_api_key_is_set" == true ]]; then
-      export TRANSCRIPT_API_KEY="$cdx_transcript_api_key"
+    if [[ "$codex_transcript_api_key_is_set" == true ]]; then
+      export TRANSCRIPT_API_KEY="$codex_transcript_api_key"
     fi
     return
   fi
   environment_path="$(jq -r '.path' <<<"$metadata")"
 
-  if [[ "$cdx_transcript_api_key_is_set" == true ]]; then
-    export TRANSCRIPT_API_KEY="$cdx_transcript_api_key"
+  if [[ "$codex_transcript_api_key_is_set" == true ]]; then
+    export TRANSCRIPT_API_KEY="$codex_transcript_api_key"
   fi
   export _TRELLAGE_NATIVE_VARLOCK_ACTIVE=1
   exec node "$varlock" run \
@@ -245,7 +245,7 @@ maybe_load_native_environment() {
 
 maybe_load_native_environment "$@"
 
-export TRELLAGE_CODEX_LAUNCHER_NAME=cdx
+export TRELLAGE_CODEX_LAUNCHER_NAME=codex
 export TRELLAGE_CODEX_RUNTIME_ROOT="$runtime_root"
 export TRELLAGE_CODEX_PROFILE_STORAGE_KEY=
 # Source the implementation so the public launcher remains $0 for signal and

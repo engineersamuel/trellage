@@ -2,7 +2,7 @@
 set -euo pipefail
 
 refuse() {
-  printf 'cdx install: %s\n' "$1" >&2
+  printf 'codex install: %s\n' "$1" >&2
   exit 1
 }
 
@@ -25,7 +25,7 @@ floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-ru
 environment_runtime_installer="$source_dir/../../scripts/install-native-environment-runtime.sh"
 floating_skills_manager="$source_dir/../../scripts/floating-skills.ts"
 floating_skills_catalog="$source_dir/../../config.toml"
-floating_skills_guard="$source_dir/../trellage-firstmate-profiles/lib/fmx-registry.py"
+floating_skills_guard="$source_dir/../trellage-firstmate-profiles/lib/firstmate-registry.py"
 for runtime_installer in "$floating_runtime_installer" "$environment_runtime_installer"; do
   [ -f "$runtime_installer" ] && [ ! -L "$runtime_installer" ] && [ -x "$runtime_installer" ] \
     || refuse "required runtime installer is missing or unsafe: $runtime_installer"
@@ -40,19 +40,19 @@ runtime_parent="$share_dir/trellage"
 common_runtime_root="$runtime_parent/common"
 environment_runtime_destination="$common_runtime_root/native-environment-runtime"
 floating_runtime_destination="$common_runtime_root/floating-skills-runtime"
-install_root="$runtime_parent/cdx"
-installed_launcher="$install_root/bin/cdx"
+install_root="$runtime_parent/codex"
+installed_launcher="$install_root/bin/codex"
 ownership_marker="$install_root/.managed-by-trellage-codex-profiles"
 # v2 is an installation barrier: older v1 worktrees must not replace a newer
 # profile catalog. This installer can migrate a validated v1 runtime once.
 ownership_value='trellage-codex-profiles-v2'
 legacy_ownership_value='trellage-codex-profiles-v1'
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/cdx"
+command_path="$command_dir/codex"
 config_dir="$home/.config"
 fish_dir="$home/.config/fish"
 fish_config="$fish_dir/config.fish"
-legacy_alias='alias cdx="codex --dangerously-bypass-approvals-and-sandbox"'
+legacy_alias='alias codex="codex --dangerously-bypass-approvals-and-sandbox"'
 current_uid="$(id -u 2>/dev/null)" || refuse 'could not identify the current user'
 
 file_mode() {
@@ -148,13 +148,13 @@ validate_floating_runtime_destination() {
     || refuse "cannot inspect floating-skills runtime: $destination"
   expected_entries="$(printf '%s\n' '.' './floating-skills.mjs' './skills.json')"
   [ "$actual_entries" = "$expected_entries" ] \
-    || [ "$actual_entries" = "$(printf '%s\n' '.' './floating-skills.mjs' './fmx-registry.py' './skills.json')" ] \
+    || [ "$actual_entries" = "$(printf '%s\n' '.' './floating-skills.mjs' './firstmate-registry.py' './skills.json')" ] \
     || refuse "refusing unexpected floating-skills runtime content: $destination"
   for runtime_file in "$destination/floating-skills.mjs" "$destination/skills.json"; do
     assert_owned_safe_file "$runtime_file"
   done
-  if [ -e "$destination/fmx-registry.py" ] || [ -L "$destination/fmx-registry.py" ]; then
-    assert_owned_safe_file "$destination/fmx-registry.py"
+  if [ -e "$destination/firstmate-registry.py" ] || [ -L "$destination/firstmate-registry.py" ]; then
+    assert_owned_safe_file "$destination/firstmate-registry.py"
   fi
 }
 
@@ -167,7 +167,7 @@ sha256_file() {
 }
 
 IFS= read -r -d '' fish_definition_program <<'FISH_DEFINITION_AWK' || :
-# Parse fish_indent --html output and count explicit literal cdx definitions.
+# Parse fish_indent --html output and count explicit literal codex definitions.
 # The input is generated HTML, not user-authored HTML; fish_indent escapes source text.
 
 function fail_parse() {
@@ -296,7 +296,7 @@ function analyze_alias(position, value, parsing_options, definition_name) {
       }
     }
   }
-  if (definition_name == "cdx") definitions += 1
+  if (definition_name == "codex") definitions += 1
 }
 
 function function_option_takes_value(value) {
@@ -313,7 +313,7 @@ function analyze_function(position, value) {
     return
   }
   if (value == "--help" || short_option_has_help(value)) return
-  if (value != "cdx") return
+  if (value != "codex") return
   for (position = 2; position <= function_count; position += 1) {
     value = definition_token[position]
     if (value == "--") break
@@ -485,17 +485,17 @@ fish_indent_html() (
   local analysis_home=''
   cleanup_fish_analysis() {
     case "$analysis_home" in
-      "${TMPDIR:-/tmp}"/trellage-cdx-fish-analysis.*) rm -rf -- "$analysis_home" ;;
+      "${TMPDIR:-/tmp}"/trellage-codex-fish-analysis.*) rm -rf -- "$analysis_home" ;;
     esac
   }
   trap cleanup_fish_analysis EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  analysis_home="$(mktemp -d "${TMPDIR:-/tmp}/trellage-cdx-fish-analysis.XXXXXX")" \
+  analysis_home="$(mktemp -d "${TMPDIR:-/tmp}/trellage-codex-fish-analysis.XXXXXX")" \
     || return 1
   case "$analysis_home" in
-    "${TMPDIR:-/tmp}"/trellage-cdx-fish-analysis.*) ;;
+    "${TMPDIR:-/tmp}"/trellage-codex-fish-analysis.*) ;;
     *) analysis_home=''; return 1 ;;
   esac
   chmod 0700 "$analysis_home" || return 1
@@ -515,7 +515,7 @@ for path in "$source_dir" "$source_dir/bin"; do
   [ -d "$path" ] && [ ! -L "$path" ] || refuse "unsafe source adapter directory: $path"
 done
 for path in \
-  "$source_dir/bin/cdx" "$common_launcher" "$source_dir/catalog.json"; do
+  "$source_dir/bin/codex" "$common_launcher" "$source_dir/catalog.json"; do
   [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] \
     || refuse "unsafe source runtime file: $path"
 done
@@ -551,7 +551,7 @@ if [ -d "$install_root" ]; then
     './.fish-recovery/sha256-before' \
     './.managed-by-trellage-codex-profiles' \
     './bin' \
-    './bin/cdx' \
+    './bin/codex' \
     './catalog.json')"
   marketplace_entries="$(printf '%s\n' \
     './marketplaces' \
@@ -588,7 +588,7 @@ if [ -d "$install_root" ]; then
   [ -z "$(find "$install_root" -type l -print -quit)" ] \
     || refuse "refusing symlinked content in owned runtime: $install_root"
   for path in \
-    "$install_root/bin/cdx" "$install_root/catalog.json" \
+    "$install_root/bin/codex" "$install_root/catalog.json" \
     "$install_root/.fish-recovery/config-before" \
     "$install_root/.fish-recovery/original-mode" \
     "$install_root/.fish-recovery/removed-line" \
@@ -657,11 +657,11 @@ fi
 fish --no-config --no-execute "$fish_config" >/dev/null 2>&1 \
   || refuse 'Fish config has invalid syntax'
 
-fish_probe='echo "<& alias function cdx>"
-true && time not alias --save cdx="probe & value"
-false || function cdx --wraps codex
+fish_probe='echo "<& alias function codex>"
+true && time not alias --save codex="probe & value"
+false || function codex --wraps codex
 end
-echo alias function cdx'
+echo alias function codex'
 printf '%s\n' "$fish_probe" | fish --no-config --no-execute >/dev/null 2>&1 \
   || refuse 'installed Fish parser rejected the compatibility probe'
 probe_count="$(printf '%s\n' "$fish_probe" \
@@ -686,7 +686,7 @@ elif [ "$runtime_owned" = false ] && [ "$exact_count" -eq 0 ] \
   && [ "$definition_count" -eq 0 ]; then
   fish_cutover=fresh-absent
 else
-  refuse 'Fish config must contain no cdx definition or exactly the known legacy cdx alias'
+  refuse 'Fish config must contain no codex definition or exactly the known legacy codex alias'
 fi
 
 for shared_parent in "$home" "$local_dir" "$share_dir" "$runtime_parent"; do
@@ -739,7 +739,7 @@ cleanup_staging() {
     rmdir "$command_staging" 2>/dev/null || :
   fi
   if [ -n "$staging_root" ] && [ -d "$staging_root" ]; then
-    case "$staging_root" in "$runtime_parent"/.cdx-install.*) rm -rf -- "$staging_root" ;; esac
+    case "$staging_root" in "$runtime_parent"/.codex-install.*) rm -rf -- "$staging_root" ;; esac
   fi
 }
 
@@ -857,7 +857,7 @@ on_exit() {
     if rollback; then
       cleanup_staging
     else
-      printf 'cdx install: rollback failed; recovery may be required\n' >&2
+      printf 'codex install: rollback failed; recovery may be required\n' >&2
     fi
   else
     cleanup_staging
@@ -887,7 +887,7 @@ if [ ! -d "$command_dir" ]; then
   created_command_dir=true
 fi
 
-staging_root="$(mktemp -d "$runtime_parent/.cdx-install.XXXXXX")" \
+staging_root="$(mktemp -d "$runtime_parent/.codex-install.XXXXXX")" \
   || refuse "could not create runtime staging in: $runtime_parent"
 chmod 0700 "$staging_root"
 mkdir -p "$staging_root/new-runtime/bin" \
@@ -898,7 +898,7 @@ chmod 0755 \
   "$staging_root/new-runtime/bin" \
   "$staging_root/new-runtime/lib"
 chmod 0700 "$staging_root/new-runtime/.fish-recovery"
-install -m 0755 "$source_dir/bin/cdx" "$staging_root/new-runtime/bin/cdx"
+install -m 0755 "$source_dir/bin/codex" "$staging_root/new-runtime/bin/codex"
 install -m 0755 "$common_launcher" "$staging_root/new-runtime/lib/native-codex"
 install -m 0644 "$source_dir/../trellage-codex-common/codex-config.py" "$staging_root/new-runtime/lib/"
 install -m 0644 "$source_dir/../trellage-codex-common/codex-agents.ts" "$staging_root/new-runtime/lib/"
@@ -915,15 +915,15 @@ install -m 0755 "$session_bridge_source" \
 install -m 0644 "$source_dir/catalog.json" "$staging_root/new-runtime/catalog.json"
 printf '%s\n' "$ownership_value" >"$staging_root/new-runtime/.managed-by-trellage-codex-profiles"
 chmod 0644 "$staging_root/new-runtime/.managed-by-trellage-codex-profiles"
-[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-runtime-staging ] \
+[ "${TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT-}" != after-runtime-staging ] \
   || refuse 'injected failure at after-runtime-staging'
 
 fish_mode="$(file_mode "$fish_config")"
-fish_new="$(mktemp "$fish_dir/.cdx-fish.XXXXXX")" || refuse 'could not stage Fish config'
+fish_new="$(mktemp "$fish_dir/.codex-fish.XXXXXX")" || refuse 'could not stage Fish config'
 if [ "$fish_cutover" = fresh-alias ] || [ "$fish_cutover" = fresh-absent ]; then
   fish_before_hash="$(sha256_file "$fish_config")"
   if [ "$fish_cutover" = fresh-alias ]; then
-    sed '\|^alias cdx="codex --dangerously-bypass-approvals-and-sandbox"$|d' \
+    sed '\|^alias codex="codex --dangerously-bypass-approvals-and-sandbox"$|d' \
       "$fish_config" >"$fish_new"
   else
     cp "$fish_config" "$fish_new"
@@ -951,10 +951,10 @@ fish --no-config --no-execute "$fish_new" >/dev/null 2>&1 \
   || refuse 'staged Fish config has invalid syntax after legacy alias removal'
 chmod 0600 "$staging_root/new-runtime/.fish-recovery/"*
 fish_staged_hash="$(sha256_file "$fish_new")"
-[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-fish-staging ] \
+[ "${TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT-}" != after-fish-staging ] \
   || refuse 'injected failure at after-fish-staging'
 
-command_staging="$(mktemp -d "$command_dir/.cdx-command.XXXXXX")" \
+command_staging="$(mktemp -d "$command_dir/.codex-command.XXXXXX")" \
   || refuse "could not create command staging in: $command_dir"
 chmod 0700 "$command_staging"
 ln -s "$installed_launcher" "$command_staging/new-command"
@@ -963,16 +963,16 @@ ln -s "$installed_launcher" "$command_staging/new-command"
 "$floating_runtime_installer" --stage "$staging_root/new-floating-skills-runtime"
 
 publication_active=true
-fish_old="$(mktemp "$fish_dir/.cdx-fish.XXXXXX")" || refuse 'could not stage original Fish config'
+fish_old="$(mktemp "$fish_dir/.codex-fish.XXXXXX")" || refuse 'could not stage original Fish config'
 rm -f -- "$fish_old"
 fish_original_intent=true
 mv "$fish_config" "$fish_old"
-[ "${CDX_INSTALL_TEST_FAIL_AT-}" != during-fish-publication ] \
+[ "${TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT-}" != during-fish-publication ] \
   || refuse 'injected failure at during-fish-publication'
 fish_publish_intent=true
 mv "$fish_new" "$fish_config"
 fish_new=''
-[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-fish-publication ] \
+[ "${TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT-}" != after-fish-publication ] \
   || refuse 'injected failure at after-fish-publication'
 
 if [ -d "$install_root" ]; then
@@ -981,7 +981,7 @@ if [ -d "$install_root" ]; then
 fi
 runtime_publish_intent=true
 mv "$staging_root/new-runtime" "$install_root"
-[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-runtime-publication ] \
+[ "${TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT-}" != after-runtime-publication ] \
   || refuse 'injected failure at after-runtime-publication'
 
 if [ -L "$command_path" ]; then
@@ -990,7 +990,7 @@ if [ -L "$command_path" ]; then
 fi
 command_publish_intent=true
 mv "$command_staging/new-command" "$command_path"
-[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-command-publication ] \
+[ "${TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT-}" != after-command-publication ] \
   || refuse 'injected failure at after-command-publication'
 
 environment_runtime_publish_intent=true
@@ -1000,7 +1000,7 @@ if [ "$environment_runtime_old_intent" = true ]; then
     "$staging_root/old-native-environment-runtime"
 fi
 mv "$staging_root/new-native-environment-runtime" "$environment_runtime_destination"
-[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-environment-runtime-publication ] \
+[ "${TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT-}" != after-environment-runtime-publication ] \
   || refuse 'injected failure at after-environment-runtime-publication'
 
 floating_runtime_publish_intent=true
@@ -1009,12 +1009,13 @@ if [ "$floating_runtime_old_intent" = true ]; then
     "$staging_root/old-floating-skills-runtime"
 fi
 mv "$staging_root/new-floating-skills-runtime" "$floating_runtime_destination"
-[ "${CDX_INSTALL_TEST_FAIL_AT-}" != after-floating-runtime-publication ] \
+[ "${TRELLAGE_CODEX_INSTALL_TEST_FAIL_AT-}" != after-floating-runtime-publication ] \
   || refuse 'injected failure at after-floating-runtime-publication'
 
 publication_active=false
 cleanup_staging
-printf 'Installed cdx at %s. Reload Fish to clear the legacy alias from existing shells.\n' "$command_path"
+printf 'Installed codex at %s. Reload Fish to clear the legacy alias from existing shells.\n' "$command_path"
 
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" cdx "$installed_launcher" "$ownership_marker" "$ownership_value"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" cdx \
+  .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" codex "$installed_launcher" "$ownership_marker" "$ownership_value"

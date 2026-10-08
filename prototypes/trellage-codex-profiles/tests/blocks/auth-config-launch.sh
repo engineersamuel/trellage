@@ -13,7 +13,7 @@ blocks_dir="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 # Contract launches must not inherit user or runner environment policy.
 unset \
   BASH_ENV \
-  CDX_HOOK_TRUST \
+  TRELLAGE_CODEX_HOOK_TRUST \
   ENV \
   TRANSCRIPT_API_KEY \
   TRELLAGE_CONFIG \
@@ -72,7 +72,7 @@ HOME="$fixture_root/home" "$fixture_launcher" list --json >"$fixture_root/list.j
   || fail 'JSON list failed'
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cdx"
+  and .launcher == "codex"
   and .harness == "codex"
   and .sandbox == false
   and [.profiles[].name] == ["pstack", "superpowers", "youtube"]
@@ -122,10 +122,10 @@ jq -e '
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list output differs'
 
 if HOME="$fixture_root/home" "$fixture_launcher" >"$fixture_root/bare.out" 2>&1; then
-  fail 'bare cdx unexpectedly succeeded'
+  fail 'bare codex unexpectedly succeeded'
 else
   status=$?
-  [ "$status" -eq 2 ] || fail "bare cdx exit was $status, expected 2"
+  [ "$status" -eq 2 ] || fail "bare codex exit was $status, expected 2"
 fi
 
 write_fake_bin
@@ -201,7 +201,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   >"$fixture_root/native-unknown.out" 2>&1 || native_unknown_status=$?
 [ "$native_unknown_status" -eq 1 ] \
   || fail "native-unknown exit was $native_unknown_status, expected 1"
-grep -F -- 'cdx: unknown profile: unknown' "$fixture_root/native-unknown.out" >/dev/null \
+grep -F -- 'codex: unknown profile: unknown' "$fixture_root/native-unknown.out" >/dev/null \
   || fail 'native-unknown validation diagnostic differs'
 [ ! -s "$fixture_root/fake-codex.log" ] || fail 'native-unknown invoked Codex'
 rm -f "$fixture_root/fake-codex.log"
@@ -214,7 +214,7 @@ fi
 
 expected_help="$fixture_root/expected-help.out"
 printf '%s\n' \
-  'Usage: cdx COMMAND' \
+  'Usage: codex COMMAND' \
   '' \
   'Commands:' \
   '  list' \
@@ -424,7 +424,7 @@ PY
 }
 
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
-  CI= TRELLAGE_AUTOMATION= CDX_AUTOMATION= \
+  CI= TRELLAGE_AUTOMATION= TRELLAGE_CODEX_AUTOMATION= \
   FAKE_CODEX_LOG="$fixture_root/pty-fake-codex.log" \
   run_codex_with_tty pstack --version \
   || fail 'interactive Codex launch could not read from the foreground terminal'
@@ -461,44 +461,44 @@ jq -se --arg codexHome "$pstack_home" \
   ' "$fixture_root/fake-codex.log" >/dev/null || fail 'launch environment or arguments differ'
 
 # Non-TTY auto mode keeps hook-trust bypass so unattended launches cannot block.
-# CDX_HOOK_TRUST=prompt forces human review path (no bypass flag).
+# TRELLAGE_CODEX_HOOK_TRUST=prompt forces human review path (no bypass flag).
 : >"$fixture_root/fake-codex.log"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  CDX_HOOK_TRUST=prompt \
+  TRELLAGE_CODEX_HOOK_TRUST=prompt \
   "$fixture_launcher" pstack --version \
-  || fail 'CDX_HOOK_TRUST=prompt launch failed'
+  || fail 'TRELLAGE_CODEX_HOOK_TRUST=prompt launch failed'
 jq -se '
   map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
   ($launches | length) == 1
   and all($launches[0].args[]; . != "--dangerously-bypass-hook-trust")
 ' "$fixture_root/fake-codex.log" >/dev/null \
-  || fail 'CDX_HOOK_TRUST=prompt still passed hook-trust bypass'
+  || fail 'TRELLAGE_CODEX_HOOK_TRUST=prompt still passed hook-trust bypass'
 : >"$fixture_root/fake-codex.log"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  CDX_HOOK_TRUST=bypass \
+  TRELLAGE_CODEX_HOOK_TRUST=bypass \
   "$fixture_launcher" pstack --version \
-  || fail 'CDX_HOOK_TRUST=bypass launch failed'
+  || fail 'TRELLAGE_CODEX_HOOK_TRUST=bypass launch failed'
 jq -se '
   map(select(.args[0] == "--dangerously-bypass-approvals-and-sandbox")) as $launches |
   ($launches | length) == 1
   and any($launches[0].args[]; . == "--dangerously-bypass-hook-trust")
 ' "$fixture_root/fake-codex.log" >/dev/null \
-  || fail 'CDX_HOOK_TRUST=bypass omitted hook-trust bypass'
+  || fail 'TRELLAGE_CODEX_HOOK_TRUST=bypass omitted hook-trust bypass'
 : >"$fixture_root/fake-codex.log"
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  CDX_HOOK_TRUST=invalid-mode \
+  TRELLAGE_CODEX_HOOK_TRUST=invalid-mode \
   "$fixture_launcher" pstack --version \
   >"$fixture_root/hook-trust-invalid.out" 2>&1 \
-  && fail 'invalid CDX_HOOK_TRUST was accepted'
-grep -F 'CDX_HOOK_TRUST must be auto, bypass, or prompt' \
+  && fail 'invalid TRELLAGE_CODEX_HOOK_TRUST was accepted'
+grep -F 'TRELLAGE_CODEX_HOOK_TRUST must be auto, bypass, or prompt' \
   "$fixture_root/hook-trust-invalid.out" >/dev/null \
-  || fail 'invalid CDX_HOOK_TRUST diagnostic missing'
+  || fail 'invalid TRELLAGE_CODEX_HOOK_TRUST diagnostic missing'
 jq -se 'all(.[]; .args[0] != "--dangerously-bypass-approvals-and-sandbox")' \
   "$fixture_root/fake-codex.log" >/dev/null \
-  || fail 'invalid CDX_HOOK_TRUST started a Codex session'
+  || fail 'invalid TRELLAGE_CODEX_HOOK_TRUST started a Codex session'
 : >"$fixture_root/fake-codex.log"
 
 auth_is_absent "$pstack_home/auth.json" || fail 'launch copied host authentication'
@@ -513,14 +513,14 @@ worktree_trust_link="$fixture_root/git-trust-worktree"
 mkdir -p "$worktree_trust_main"
 git -C "$worktree_trust_main" init -b main >/dev/null \
   || fail 'could not init worktree trust main repository'
-git -C "$worktree_trust_main" config user.email 'cdx-contract@example.com'
-git -C "$worktree_trust_main" config user.name 'cdx contract'
+git -C "$worktree_trust_main" config user.email 'codex-contract@example.com'
+git -C "$worktree_trust_main" config user.name 'codex contract'
 printf 'seed\n' >"$worktree_trust_main/README"
 git -C "$worktree_trust_main" add README \
   || fail 'could not stage worktree trust seed'
 git -C "$worktree_trust_main" commit -m seed >/dev/null \
   || fail 'could not commit worktree trust seed'
-git -C "$worktree_trust_main" worktree add -b cdx-trust-wt "$worktree_trust_link" >/dev/null \
+git -C "$worktree_trust_main" worktree add -b codex-trust-wt "$worktree_trust_link" >/dev/null \
   || fail 'could not add linked worktree for trust override'
 worktree_trust_main_physical="$(CDPATH= cd -P -- "$worktree_trust_main" && pwd)"
 worktree_trust_link_physical="$(CDPATH= cd -P -- "$worktree_trust_link" && pwd)"
@@ -607,35 +607,35 @@ pending_signal_bash_env="$fixture_root/pending-launch-signal.bashenv"
 cat >"$pending_signal_bash_env" <<'EOF'
 set -T
 trap '
-  if [ "$0" = "$CDX_TEST_LAUNCHER_PATH" ] \
+  if [ "$0" = "$TRELLAGE_CODEX_TEST_LAUNCHER_PATH" ] \
     && [ "$BASH_COMMAND" = "launch_child_pid=\$!" ] \
-    && [ ! -f "$CDX_TEST_PENDING_SIGNAL_ARM" ]; then
-    cdx_test_pending_child_pid=$!
-    cdx_test_pending_child_stage="$CDX_TEST_PENDING_SIGNAL_CHILD_PID.$$"
-    printf "%s\n" "$cdx_test_pending_child_pid" \
-      >"$cdx_test_pending_child_stage" || {
-        kill -KILL -- "-$cdx_test_pending_child_pid" 2>/dev/null || :
+    && [ ! -f "$TRELLAGE_CODEX_TEST_PENDING_SIGNAL_ARM" ]; then
+    codex_test_pending_child_pid=$!
+    codex_test_pending_child_stage="$TRELLAGE_CODEX_TEST_PENDING_SIGNAL_CHILD_PID.$$"
+    printf "%s\n" "$codex_test_pending_child_pid" \
+      >"$codex_test_pending_child_stage" || {
+        kill -KILL -- "-$codex_test_pending_child_pid" 2>/dev/null || :
         exit 96
       }
-    mv -f "$cdx_test_pending_child_stage" \
-      "$CDX_TEST_PENDING_SIGNAL_CHILD_PID" || {
-        rm -f -- "$cdx_test_pending_child_stage" || :
-        kill -KILL -- "-$cdx_test_pending_child_pid" 2>/dev/null || :
+    mv -f "$codex_test_pending_child_stage" \
+      "$TRELLAGE_CODEX_TEST_PENDING_SIGNAL_CHILD_PID" || {
+        rm -f -- "$codex_test_pending_child_stage" || :
+        kill -KILL -- "-$codex_test_pending_child_pid" 2>/dev/null || :
         exit 96
       }
-    cdx_test_pending_ready_wait=0
-    while [ ! -f "$CDX_TEST_PENDING_SIGNAL_READY" ] \
-      && kill -0 "$cdx_test_pending_child_pid" 2>/dev/null \
-      && [ "$cdx_test_pending_ready_wait" -lt 200 ]; do
+    codex_test_pending_ready_wait=0
+    while [ ! -f "$TRELLAGE_CODEX_TEST_PENDING_SIGNAL_READY" ] \
+      && kill -0 "$codex_test_pending_child_pid" 2>/dev/null \
+      && [ "$codex_test_pending_ready_wait" -lt 200 ]; do
       sleep 0.01
-      cdx_test_pending_ready_wait=$((cdx_test_pending_ready_wait + 1))
+      codex_test_pending_ready_wait=$((codex_test_pending_ready_wait + 1))
     done
-    [ -f "$CDX_TEST_PENDING_SIGNAL_READY" ] || {
-      kill -KILL -- "-$cdx_test_pending_child_pid" 2>/dev/null || :
+    [ -f "$TRELLAGE_CODEX_TEST_PENDING_SIGNAL_READY" ] || {
+      kill -KILL -- "-$codex_test_pending_child_pid" 2>/dev/null || :
       exit 97
     }
-    : >"$CDX_TEST_PENDING_SIGNAL_ARM"
-    kill -s "$CDX_TEST_PENDING_SIGNAL_NAME" "$$"
+    : >"$TRELLAGE_CODEX_TEST_PENDING_SIGNAL_ARM"
+    kill -s "$TRELLAGE_CODEX_TEST_PENDING_SIGNAL_NAME" "$$"
   fi
 ' DEBUG
 EOF
@@ -645,11 +645,11 @@ while [ "$pending_signal_iteration" -le 3 ]; do
   mkdir "$pending_signal_dir"
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     BASH_ENV="$pending_signal_bash_env" \
-    CDX_TEST_LAUNCHER_PATH="$fixture_launcher" \
-    CDX_TEST_PENDING_SIGNAL_ARM="$pending_signal_dir/injected" \
-    CDX_TEST_PENDING_SIGNAL_CHILD_PID="$pending_signal_dir/known-child.pid" \
-    CDX_TEST_PENDING_SIGNAL_READY="$pending_signal_dir/ready" \
-    CDX_TEST_PENDING_SIGNAL_NAME=TERM \
+    TRELLAGE_CODEX_TEST_LAUNCHER_PATH="$fixture_launcher" \
+    TRELLAGE_CODEX_TEST_PENDING_SIGNAL_ARM="$pending_signal_dir/injected" \
+    TRELLAGE_CODEX_TEST_PENDING_SIGNAL_CHILD_PID="$pending_signal_dir/known-child.pid" \
+    TRELLAGE_CODEX_TEST_PENDING_SIGNAL_READY="$pending_signal_dir/ready" \
+    TRELLAGE_CODEX_TEST_PENDING_SIGNAL_NAME=TERM \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_TREE_DIR="$pending_signal_dir" \
     "$fixture_launcher" pstack --version \
@@ -875,10 +875,10 @@ set -T
 trap '
   case "$BASH_COMMAND" in
     owner=*read_launch_lock_owner*)
-      if [ "$0" = "$CDX_TEST_LAUNCHER_PATH" ] \
-        && [ ! -f "$CDX_TEST_RELEASE_RACE_DIR/injected" ]; then
-        : >"$CDX_TEST_RELEASE_RACE_DIR/injected"
-        rm -f -- "$CDX_TEST_RELEASE_RACE_LOCK"
+      if [ "$0" = "$TRELLAGE_CODEX_TEST_LAUNCHER_PATH" ] \
+        && [ ! -f "$TRELLAGE_CODEX_TEST_RELEASE_RACE_DIR/injected" ]; then
+        : >"$TRELLAGE_CODEX_TEST_RELEASE_RACE_DIR/injected"
+        rm -f -- "$TRELLAGE_CODEX_TEST_RELEASE_RACE_LOCK"
       fi
       ;;
   esac
@@ -887,9 +887,9 @@ EOF
 release_race_status=0
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   BASH_ENV="$release_race_bash_env" \
-  CDX_TEST_LAUNCHER_PATH="$fixture_launcher" \
-  CDX_TEST_RELEASE_RACE_DIR="$release_race_dir" \
-  CDX_TEST_RELEASE_RACE_LOCK="$pstack_home/.launch.lock" \
+  TRELLAGE_CODEX_TEST_LAUNCHER_PATH="$fixture_launcher" \
+  TRELLAGE_CODEX_TEST_RELEASE_RACE_DIR="$release_race_dir" \
+  TRELLAGE_CODEX_TEST_RELEASE_RACE_LOCK="$pstack_home/.launch.lock" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   FAKE_CODEX_RELEASE_RACE_DIR="$release_race_dir" \
@@ -918,11 +918,11 @@ set -T
 trap '
   case "$BASH_COMMAND" in
     ln\ \"\$lock\"\ \"\$reap\"*)
-      if [ "$0" = "$CDX_TEST_LAUNCHER_PATH" ] \
-        && [ ! -f "$CDX_TEST_TAKEOVER_DIR/injected" ]; then
-        : >"$CDX_TEST_TAKEOVER_DIR/injected"
-        rm -f -- "$CDX_TEST_TAKEOVER_LOCK"
-        mv "$CDX_TEST_TAKEOVER_DIR/active-owner" "$CDX_TEST_TAKEOVER_LOCK"
+      if [ "$0" = "$TRELLAGE_CODEX_TEST_LAUNCHER_PATH" ] \
+        && [ ! -f "$TRELLAGE_CODEX_TEST_TAKEOVER_DIR/injected" ]; then
+        : >"$TRELLAGE_CODEX_TEST_TAKEOVER_DIR/injected"
+        rm -f -- "$TRELLAGE_CODEX_TEST_TAKEOVER_LOCK"
+        mv "$TRELLAGE_CODEX_TEST_TAKEOVER_DIR/active-owner" "$TRELLAGE_CODEX_TEST_TAKEOVER_LOCK"
       fi
       ;;
   esac
@@ -930,9 +930,9 @@ trap '
 EOF
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   BASH_ENV="$takeover_bash_env" \
-  CDX_TEST_LAUNCHER_PATH="$fixture_launcher" \
-  CDX_TEST_TAKEOVER_DIR="$takeover_dir" \
-  CDX_TEST_TAKEOVER_LOCK="$pstack_home/.launch.lock" \
+  TRELLAGE_CODEX_TEST_LAUNCHER_PATH="$fixture_launcher" \
+  TRELLAGE_CODEX_TEST_TAKEOVER_DIR="$takeover_dir" \
+  TRELLAGE_CODEX_TEST_TAKEOVER_LOCK="$pstack_home/.launch.lock" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_TAKEOVER_DIR="$takeover_dir" \
   "$fixture_launcher" pstack --version >"$takeover_dir/contender.out" 2>&1 &
@@ -992,14 +992,14 @@ cat >"$fake_bin/cp" <<'EOF'
 #!/usr/bin/env bash
 case "${2:-}" in
   */.config-snapshot.*)
-    if [ -f "$CDX_TEST_RETRY_WAIT_DIR/child-signal-2" ]; then
-      : >"$CDX_TEST_RETRY_WAIT_DIR/cleanup-observed"
-      [ -f "$CDX_TEST_RETRY_WAIT_DIR/child-exited" ] \
-        || : >"$CDX_TEST_RETRY_WAIT_DIR/cleanup-before-child-exit"
+    if [ -f "$TRELLAGE_CODEX_TEST_RETRY_WAIT_DIR/child-signal-2" ]; then
+      : >"$TRELLAGE_CODEX_TEST_RETRY_WAIT_DIR/cleanup-observed"
+      [ -f "$TRELLAGE_CODEX_TEST_RETRY_WAIT_DIR/child-exited" ] \
+        || : >"$TRELLAGE_CODEX_TEST_RETRY_WAIT_DIR/cleanup-before-child-exit"
     fi
     ;;
 esac
-exec "$CDX_TEST_RETRY_WAIT_REAL_CP" "$@"
+exec "$TRELLAGE_CODEX_TEST_RETRY_WAIT_REAL_CP" "$@"
 EOF
 chmod +x "$fake_bin/cp"
 set -m
@@ -1007,8 +1007,8 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_TREE_DIR="$retry_wait_dir" \
   FAKE_CODEX_WAIT_SECOND_SIGNAL=1 \
-  CDX_TEST_RETRY_WAIT_DIR="$retry_wait_dir" \
-  CDX_TEST_RETRY_WAIT_REAL_CP="$retry_wait_real_cp" \
+  TRELLAGE_CODEX_TEST_RETRY_WAIT_DIR="$retry_wait_dir" \
+  TRELLAGE_CODEX_TEST_RETRY_WAIT_REAL_CP="$retry_wait_real_cp" \
   "$fixture_launcher" pstack --version >"$fixture_root/retry-wait-signal.out" 2>&1 &
 retry_wait_launcher_pid=$!
 track_async_pid "$retry_wait_launcher_pid"
@@ -1060,7 +1060,7 @@ assert_early_status 1 proxy-launch-unrelated-mutation env HOME="$fixture_root/ho
   FAKE_CODEX_APPEND_PROJECT_TRUST=1 \
   FAKE_CODEX_PROJECT_EXTRA_FIELD='unexpected = true' \
   "$fixture_launcher" pstack --version
-grep -F -- 'cdx: post-launch config cleanup refused unrelated mutation: pstack' \
+grep -F -- 'codex: post-launch config cleanup refused unrelated mutation: pstack' \
   "$fixture_root/proxy-launch-unrelated-mutation.out" >/dev/null \
   || fail 'unrelated launch mutation cleanup diagnostic differs'
 grep -F -- 'unexpected = true' "$pstack_home/config.toml" >/dev/null \
@@ -1386,14 +1386,14 @@ sed 's/model = "gpt-5.6-sol-fast"/model = "concurrent-launch-winner"/' \
 chmod 0600 "$fixture_root/concurrent-launch-config.toml"
 cat >"$fake_bin/cmp" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CMP" "$@"
+"$TRELLAGE_CODEX_TEST_REAL_CMP" "$@"
 status=$?
 case "${2:-}:${3:-}" in
   */.config-snapshot.*:*/config.toml|*/.config-snapshot.*:*/.config-cleanup-*)
-    if [ "$status" -eq 0 ] && [ -f "$CDX_TEST_CLEANUP_RACE_ARM" ]; then
-      rm "$CDX_TEST_CLEANUP_RACE_ARM" || exit $?
-      "$CDX_TEST_REAL_MV" "$CDX_TEST_CLEANUP_RACE_EXTERNAL" \
-        "$CDX_TEST_CLEANUP_RACE_TARGET" || exit $?
+    if [ "$status" -eq 0 ] && [ -f "$TRELLAGE_CODEX_TEST_CLEANUP_RACE_ARM" ]; then
+      rm "$TRELLAGE_CODEX_TEST_CLEANUP_RACE_ARM" || exit $?
+      "$TRELLAGE_CODEX_TEST_REAL_MV" "$TRELLAGE_CODEX_TEST_CLEANUP_RACE_EXTERNAL" \
+        "$TRELLAGE_CODEX_TEST_CLEANUP_RACE_TARGET" || exit $?
     fi
     ;;
 esac
@@ -1404,16 +1404,16 @@ chmod +x "$fake_bin/cmp"
 # bytes and fail the launch rather than clobbering them.
 assert_early_status 1 proxy-launch-cleanup-race env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_APPEND_PROJECT_TRUST=1 CDX_TEST_REAL_CMP="$real_cmp" \
+  FAKE_CODEX_APPEND_PROJECT_TRUST=1 TRELLAGE_CODEX_TEST_REAL_CMP="$real_cmp" \
   FAKE_CODEX_ARM_CLEANUP_RACE="$fixture_root/arm-launch-cleanup-race" \
-  CDX_TEST_REAL_MV="$(command -v mv)" \
-  CDX_TEST_CLEANUP_RACE_ARM="$fixture_root/arm-launch-cleanup-race" \
-  CDX_TEST_CLEANUP_RACE_EXTERNAL="$fixture_root/concurrent-launch-config.toml" \
-  CDX_TEST_CLEANUP_RACE_TARGET="$pstack_home/config.toml" \
+  TRELLAGE_CODEX_TEST_REAL_MV="$(command -v mv)" \
+  TRELLAGE_CODEX_TEST_CLEANUP_RACE_ARM="$fixture_root/arm-launch-cleanup-race" \
+  TRELLAGE_CODEX_TEST_CLEANUP_RACE_EXTERNAL="$fixture_root/concurrent-launch-config.toml" \
+  TRELLAGE_CODEX_TEST_CLEANUP_RACE_TARGET="$pstack_home/config.toml" \
   "$fixture_launcher" pstack --version
-if ! grep -F -- 'cdx: post-launch config cleanup refused unrelated mutation: pstack' \
+if ! grep -F -- 'codex: post-launch config cleanup refused unrelated mutation: pstack' \
   "$fixture_root/proxy-launch-cleanup-race.out" >/dev/null \
-  && ! grep -F -- 'cdx: post-launch config cleanup detected concurrent mutation: pstack' \
+  && ! grep -F -- 'codex: post-launch config cleanup detected concurrent mutation: pstack' \
   "$fixture_root/proxy-launch-cleanup-race.out" >/dev/null; then
   fail 'concurrent launch cleanup diagnostic differs'
 fi
@@ -1446,7 +1446,7 @@ root_write_blocker_bin="$fixture_root/root-write-blocker-bin"
 mkdir "$root_write_blocker_bin"
 cat >"$root_write_blocker_bin/write-blocker" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "$0 $*" >>"$CDX_TEST_ROOT_WRITE_LOG"
+printf '%s\n' "$0 $*" >>"$TRELLAGE_CODEX_TEST_ROOT_WRITE_LOG"
 exit 79
 EOF
 chmod +x "$root_write_blocker_bin/write-blocker"
@@ -1465,15 +1465,15 @@ assert_root_home_rejected() {
   local unsafe_home="$2"
   local expected_path="${unsafe_home%/}/.local/share/trellage/profiles/codex/pstack/home"
   assert_command_fails "root-home-doctor-$label" env HOME="$unsafe_home" \
-    PATH="$root_write_blocker_bin:$PATH" CDX_TEST_ROOT_WRITE_LOG="$root_write_log" \
+    PATH="$root_write_blocker_bin:$PATH" TRELLAGE_CODEX_TEST_ROOT_WRITE_LOG="$root_write_log" \
     "$fixture_launcher" doctor pstack
-  grep -F -- "cdx: unsafe profile home path: $expected_path" \
+  grep -F -- "codex: unsafe profile home path: $expected_path" \
     "$fixture_root/root-home-doctor-$label.out" >/dev/null \
     || fail "canonical root HOME doctor diagnostic differs for $label"
   assert_command_fails "root-home-setup-$label" env HOME="$unsafe_home" \
-    PATH="$root_write_blocker_bin:$PATH" CDX_TEST_ROOT_WRITE_LOG="$root_write_log" \
+    PATH="$root_write_blocker_bin:$PATH" TRELLAGE_CODEX_TEST_ROOT_WRITE_LOG="$root_write_log" \
     "$fixture_launcher" setup pstack
-  grep -F -- "cdx: unsafe profile home path: $expected_path" \
+  grep -F -- "codex: unsafe profile home path: $expected_path" \
     "$fixture_root/root-home-setup-$label.out" >/dev/null \
     || fail "canonical root HOME setup diagnostic differs for $label"
 }
@@ -1557,7 +1557,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     fail 'doctor accepted missing Python'
   fi
 )
-grep -F -- 'cdx: required command not found: python3' \
+grep -F -- 'codex: required command not found: python3' \
   "$fixture_root/doctor-pstack-python.out" >/dev/null \
   || fail 'missing Python error differs'
 : >"$fake_state/pstack/forbidden-superpowers"
@@ -1567,7 +1567,7 @@ if HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   2>"$fixture_root/doctor-pstack-superpowers.err"; then
   fail 'doctor accepted Superpowers in the pstack profile'
 fi
-grep -F -- 'cdx: forbidden Superpowers plugin is installed: pstack; run: cdx repair pstack' \
+grep -F -- 'codex: forbidden Superpowers plugin is installed: pstack; run: codex repair pstack' \
   "$fixture_root/doctor-pstack-superpowers.err" >/dev/null \
   || fail 'Codex forbidden-Superpowers diagnostic differs'
 HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
@@ -1612,7 +1612,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   >"$fixture_root/inventory-pstack.json" || fail 'inventory pstack failed'
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cdx"
+  and .launcher == "codex"
   and .harness == "codex"
   and .profile == "pstack"
   and .readiness == "healthy"
@@ -1791,7 +1791,7 @@ HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   >"$fixture_root/inventory-youtube.json" || fail 'inventory youtube failed'
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cdx"
+  and .launcher == "codex"
   and .harness == "codex"
   and .profile == "youtube"
   and .readiness == "healthy"
@@ -1828,7 +1828,7 @@ assert_command_fails youtube-missing-key env \
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" youtube --version
-grep -F -- 'cdx: required environment variable is not set: TRANSCRIPT_API_KEY' \
+grep -F -- 'codex: required environment variable is not set: TRANSCRIPT_API_KEY' \
   "$fixture_root/youtube-missing-key.out" >/dev/null \
   || fail 'missing YouTube key diagnostic differs'
 [ ! -s "$fixture_root/fake-codex.log" ] \
@@ -1998,7 +1998,7 @@ assert_command_fails youtube-varlock-disabled env \
   TRELLAGE_ENVIRONMENT=off \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" youtube --version
-grep -F -- 'cdx: required environment variable is not set: TRANSCRIPT_API_KEY' \
+grep -F -- 'codex: required environment variable is not set: TRANSCRIPT_API_KEY' \
   "$fixture_root/youtube-varlock-disabled.out" >/dev/null \
   || fail 'disabled YouTube Varlock diagnostic differs'
 [ ! -s "$fixture_root/fake-varlock.log" ] \
@@ -2107,7 +2107,7 @@ assert_full_access_launch() {
     cd "$original_cwd" || exit 1
     export HOME="$fixture_root/home" PATH="$fake_bin:$PATH"
     export FAKE_CODEX_LOG="$fixture_root/$label.log" FAKE_CODEX_LOGIN_STATUS=0
-    unset CDX_HOOK_TRUST CI TRELLAGE_AUTOMATION CDX_AUTOMATION TRANSCRIPT_API_KEY
+    unset TRELLAGE_CODEX_HOOK_TRUST CI TRELLAGE_AUTOMATION TRELLAGE_CODEX_AUTOMATION TRANSCRIPT_API_KEY
     [ "$profile" != youtube ] || export TRANSCRIPT_API_KEY="$youtube_secret"
     if [ "$terminal_mode" = tty ]; then
       run_codex_with_tty "${launch_args[@]}"
@@ -2226,7 +2226,7 @@ assert_daemon_launch() {
     export HOME="$fixture_root/home" PATH="$fake_bin:$PATH"
     export FAKE_CODEX_LOG="$fixture_root/$label.log" FAKE_CODEX_LOGIN_STATUS=0
     export FAKE_CODEX_VERSION="$version"
-    unset CDX_HOOK_TRUST CI TRELLAGE_AUTOMATION CDX_AUTOMATION TRANSCRIPT_API_KEY
+    unset TRELLAGE_CODEX_HOOK_TRUST CI TRELLAGE_AUTOMATION TRELLAGE_CODEX_AUTOMATION TRANSCRIPT_API_KEY
     "$fixture_launcher" "${launch_args[@]}" </dev/null
   ) >"$fixture_root/$label.out" 2>&1 || {
     cat "$fixture_root/$label.out" >&2
@@ -2274,7 +2274,7 @@ assert_command_fails setup-superpowers-upgrade-failure env \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_FAIL_MUTATION=marketplace-upgrade \
   "$fixture_launcher" setup superpowers
-grep -F -- 'cdx: failed to materialize selected Git marketplace: superpowers' \
+grep -F -- 'codex: failed to materialize selected Git marketplace: superpowers' \
   "$fixture_root/setup-superpowers-upgrade-failure.out" >/dev/null \
   || {
     cat "$fixture_root/setup-superpowers-upgrade-failure.out" >&2
@@ -2319,7 +2319,7 @@ assert_command_fails setup-superpowers-plugin-add-failure env \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_FAIL_MUTATION=plugin-add \
   "$fixture_launcher" setup superpowers
-grep -F -- 'cdx: failed to add selected plugin: superpowers' \
+grep -F -- 'codex: failed to add selected plugin: superpowers' \
   "$fixture_root/setup-superpowers-plugin-add-failure.out" >/dev/null \
   || fail 'failed fresh Superpowers plugin add diagnostic differs'
 [ ! -e "$plugin_add_failure_profile/plugins/.fake-installed-superpowers" ] \
@@ -2372,7 +2372,7 @@ assert_command_fails setup-fresh-unrelated-block env \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" setup superpowers
 grep -Fx -- \
-  'cdx: cannot prime selected Git marketplace with unrelated installed plugins: superpowers' \
+  'codex: cannot prime selected Git marketplace with unrelated installed plugins: superpowers' \
   "$fixture_root/setup-fresh-unrelated-block.out" >/dev/null \
   || fail 'fresh unrelated same-marketplace diagnostic differs'
 cmp -s "$fixture_root/fresh-unrelated-config-before.toml" \
@@ -2409,7 +2409,7 @@ cp "$superpowers_home/config.toml" "$fixture_root/superpowers-unprimed-before-fu
 assert_command_fails unprimed-full-app env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" superpowers 'bounded full app prompt while unprimed'
-grep -F -- 'cdx: post-launch config cleanup refused unrelated mutation: superpowers' \
+grep -F -- 'codex: post-launch config cleanup refused unrelated mutation: superpowers' \
   "$fixture_root/unprimed-full-app.out" >/dev/null \
   || fail 'unprimed full app cleanup diagnostic differs'
 grep -Eq -- '^last_revision = "[0-9a-f]{40}"$' \
@@ -2433,7 +2433,7 @@ assert_command_fails setup-selected-unprimed env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" setup superpowers
 grep -Fx -- \
-  'cdx: selected Git marketplace revision is unprimed: superpowers; run: cdx repair superpowers' \
+  'codex: selected Git marketplace revision is unprimed: superpowers; run: codex repair superpowers' \
   "$fixture_root/setup-selected-unprimed.out" >/dev/null \
   || fail 'selected-present unprimed setup diagnostic differs'
 assert_isolation_snapshot_unchanged setup-selected-unprimed
@@ -2453,7 +2453,7 @@ assert_command_fails setup-selected-invalid-revision env \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" setup superpowers
 grep -Fx -- \
-  'cdx: selected Git marketplace revision is unprimed: superpowers; run: cdx repair superpowers' \
+  'codex: selected Git marketplace revision is unprimed: superpowers; run: codex repair superpowers' \
   "$fixture_root/setup-selected-invalid-revision.out" >/dev/null \
   || fail 'invalid marketplace revision setup diagnostic differs'
 sed '/^last_revision = /d' "$superpowers_home/config.toml" \
@@ -2475,7 +2475,7 @@ assert_command_fails repair-unprimed-unrelated-block env \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" repair superpowers
 grep -Fx -- \
-  'cdx: cannot prime selected Git marketplace with unrelated installed plugins: superpowers' \
+  'codex: cannot prime selected Git marketplace with unrelated installed plugins: superpowers' \
   "$fixture_root/repair-unprimed-unrelated-block.out" >/dev/null \
   || fail 'unrelated same-marketplace repair diagnostic differs'
 assert_isolation_snapshot_unchanged repair-unprimed-unrelated-block
@@ -2492,7 +2492,7 @@ assert_command_fails repair-selected-unprimed-upgrade-failure env \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   FAKE_CODEX_FAIL_MUTATION=marketplace-upgrade \
   "$fixture_launcher" repair superpowers
-grep -Fx -- 'cdx: failed to materialize selected Git marketplace: superpowers' \
+grep -Fx -- 'codex: failed to materialize selected Git marketplace: superpowers' \
   "$fixture_root/repair-selected-unprimed-upgrade-failure.out" >/dev/null \
   || fail 'selected-present priming failure diagnostic differs'
 [ ! -e "$fake_state/superpowers/plugin" ] \
@@ -2645,13 +2645,13 @@ real_chmod="$(command -v chmod)"
 real_sed="$(command -v sed)"
 cat >"$fake_bin/cp" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CP" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_REAL_CP" "$@" || exit $?
 case "${2:-}" in
   */.config-snapshot.*)
-    "$CDX_TEST_REAL_SED" 's/2026-07-30T21:16:34Z/2026-07-30T21:16:35Z/' \
-      "$CDX_TEST_CONFIG_TARGET" >"$CDX_TEST_CONFIG_EXTERNAL" || exit $?
-    "$CDX_TEST_REAL_MV" "$CDX_TEST_CONFIG_EXTERNAL" \
-      "$CDX_TEST_CONFIG_TARGET" || exit $?
+    "$TRELLAGE_CODEX_TEST_REAL_SED" 's/2026-07-30T21:16:34Z/2026-07-30T21:16:35Z/' \
+      "$TRELLAGE_CODEX_TEST_CONFIG_TARGET" >"$TRELLAGE_CODEX_TEST_CONFIG_EXTERNAL" || exit $?
+    "$TRELLAGE_CODEX_TEST_REAL_MV" "$TRELLAGE_CODEX_TEST_CONFIG_EXTERNAL" \
+      "$TRELLAGE_CODEX_TEST_CONFIG_TARGET" || exit $?
     ;;
 esac
 EOF
@@ -2661,12 +2661,12 @@ sed 's/model = "gpt-5.6-sol-fast"/model = "snapshot-race-model"/' \
 sed 's/2026-07-30T21:16:34Z/2026-07-30T21:16:35Z/' \
   "$pstack_home/config.toml" >"$fixture_root/config-snapshot-race-expected.toml"
 assert_command_fails config-snapshot-race env HOME="$fixture_root/home" \
-  PATH="$fake_bin:$PATH" CDX_TEST_REAL_CP="$real_cp" \
-  CDX_TEST_REAL_SED="$real_sed" CDX_TEST_REAL_MV="$real_mv" \
-  CDX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
-  CDX_TEST_CONFIG_EXTERNAL="$fixture_root/config-snapshot-race-external.toml" \
+  PATH="$fake_bin:$PATH" TRELLAGE_CODEX_TEST_REAL_CP="$real_cp" \
+  TRELLAGE_CODEX_TEST_REAL_SED="$real_sed" TRELLAGE_CODEX_TEST_REAL_MV="$real_mv" \
+  TRELLAGE_CODEX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
+  TRELLAGE_CODEX_TEST_CONFIG_EXTERNAL="$fixture_root/config-snapshot-race-external.toml" \
   "$fixture_launcher" repair pstack
-grep -F -- 'cdx: profile config changed during snapshot: pstack' \
+grep -F -- 'codex: profile config changed during snapshot: pstack' \
   "$fixture_root/config-snapshot-race.out" >/dev/null \
   || fail 'snapshot-race diagnostic differs'
 cmp -s "$fixture_root/config-snapshot-race-expected.toml" \
@@ -2677,15 +2677,15 @@ rm "$fake_bin/cp"
 
 cat >"$fake_bin/chmod" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CHMOD" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_REAL_CHMOD" "$@" || exit $?
 for argument in "$@"; do
   case "$argument" in
     */.config-snapshot.*) ;;
     */.config.*)
-      "$CDX_TEST_REAL_SED" 's/2026-07-30T21:16:34Z/2026-07-30T21:16:36Z/' \
-        "$CDX_TEST_CONFIG_TARGET" >"$CDX_TEST_CONFIG_EXTERNAL" || exit $?
-      "$CDX_TEST_REAL_MV" "$CDX_TEST_CONFIG_EXTERNAL" \
-        "$CDX_TEST_CONFIG_TARGET" || exit $?
+      "$TRELLAGE_CODEX_TEST_REAL_SED" 's/2026-07-30T21:16:34Z/2026-07-30T21:16:36Z/' \
+        "$TRELLAGE_CODEX_TEST_CONFIG_TARGET" >"$TRELLAGE_CODEX_TEST_CONFIG_EXTERNAL" || exit $?
+      "$TRELLAGE_CODEX_TEST_REAL_MV" "$TRELLAGE_CODEX_TEST_CONFIG_EXTERNAL" \
+        "$TRELLAGE_CODEX_TEST_CONFIG_TARGET" || exit $?
       ;;
   esac
 done
@@ -2696,12 +2696,12 @@ sed 's/model = "gpt-5.6-sol-fast"/model = "publish-race-model"/' \
 sed 's/2026-07-30T21:16:34Z/2026-07-30T21:16:36Z/' \
   "$pstack_home/config.toml" >"$fixture_root/config-publish-race-expected.toml"
 assert_command_fails config-publish-race env HOME="$fixture_root/home" \
-  PATH="$fake_bin:$PATH" CDX_TEST_REAL_CHMOD="$real_chmod" \
-  CDX_TEST_REAL_SED="$real_sed" CDX_TEST_REAL_MV="$real_mv" \
-  CDX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
-  CDX_TEST_CONFIG_EXTERNAL="$fixture_root/config-publish-race-external.toml" \
+  PATH="$fake_bin:$PATH" TRELLAGE_CODEX_TEST_REAL_CHMOD="$real_chmod" \
+  TRELLAGE_CODEX_TEST_REAL_SED="$real_sed" TRELLAGE_CODEX_TEST_REAL_MV="$real_mv" \
+  TRELLAGE_CODEX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
+  TRELLAGE_CODEX_TEST_CONFIG_EXTERNAL="$fixture_root/config-publish-race-external.toml" \
   "$fixture_launcher" repair pstack
-grep -F -- 'cdx: profile config changed during repair: pstack' \
+grep -F -- 'codex: profile config changed during repair: pstack' \
   "$fixture_root/config-publish-race.out" >/dev/null \
   || fail 'publish-race diagnostic differs'
 cmp -s "$fixture_root/config-publish-race-expected.toml" \
@@ -2717,16 +2717,16 @@ cat >"$fake_bin/cat" <<'EOF'
 if [ "$#" -eq 0 ]; then
   exit 86
 fi
-exec "$CDX_TEST_REAL_CAT" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_CAT" "$@"
 EOF
 chmod +x "$fake_bin/cat"
 sed 's/model = "gpt-5.6-sol-fast"/model = "write-failure-model"/' \
   "$custom_config" >"$pstack_home/config.toml"
 cp "$pstack_home/config.toml" "$fixture_root/config-write-failure-before.toml"
 assert_command_fails config-write-failure env HOME="$fixture_root/home" \
-  PATH="$fake_bin:$PATH" CDX_TEST_REAL_CAT="$real_cat" \
+  PATH="$fake_bin:$PATH" TRELLAGE_CODEX_TEST_REAL_CAT="$real_cat" \
   "$fixture_launcher" repair pstack
-grep -F -- 'cdx: failed to write profile config' \
+grep -F -- 'codex: failed to write profile config' \
   "$fixture_root/config-write-failure.out" >/dev/null \
   || fail 'config write-failure diagnostic differs'
 cmp -s "$fixture_root/config-write-failure-before.toml" \
@@ -2957,24 +2957,24 @@ outside_config="$fixture_root/outside-config"
 : >"$outside_config"
 cat >"$fake_bin/chmod" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CHMOD" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_REAL_CHMOD" "$@" || exit $?
 for argument in "$@"; do
   case "$argument" in
     */.config.*)
-      "$CDX_TEST_REAL_MV" "$CDX_TEST_CONFIG_TARGET" "$CDX_TEST_CONFIG_SAVED" || exit $?
-      "$CDX_TEST_REAL_LN" -s "$CDX_TEST_CONFIG_OUTSIDE" "$CDX_TEST_CONFIG_TARGET" || exit $?
+      "$TRELLAGE_CODEX_TEST_REAL_MV" "$TRELLAGE_CODEX_TEST_CONFIG_TARGET" "$TRELLAGE_CODEX_TEST_CONFIG_SAVED" || exit $?
+      "$TRELLAGE_CODEX_TEST_REAL_LN" -s "$TRELLAGE_CODEX_TEST_CONFIG_OUTSIDE" "$TRELLAGE_CODEX_TEST_CONFIG_TARGET" || exit $?
       ;;
   esac
 done
 EOF
 chmod +x "$fake_bin/chmod"
 assert_command_fails config-post-stage-safety env HOME="$fixture_root/home" \
-  PATH="$fake_bin:$PATH" CDX_TEST_REAL_CHMOD="$real_chmod" \
-  CDX_TEST_REAL_MV="$real_mv" CDX_TEST_REAL_LN="$real_ln" \
-  CDX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
-  CDX_TEST_CONFIG_SAVED="$fixture_root/config-post-stage.saved" \
-  CDX_TEST_CONFIG_OUTSIDE="$outside_config" "$fixture_launcher" repair pstack
-grep -F -- "cdx: unsafe profile config path: $pstack_home/config.toml" \
+  PATH="$fake_bin:$PATH" TRELLAGE_CODEX_TEST_REAL_CHMOD="$real_chmod" \
+  TRELLAGE_CODEX_TEST_REAL_MV="$real_mv" TRELLAGE_CODEX_TEST_REAL_LN="$real_ln" \
+  TRELLAGE_CODEX_TEST_CONFIG_TARGET="$pstack_home/config.toml" \
+  TRELLAGE_CODEX_TEST_CONFIG_SAVED="$fixture_root/config-post-stage.saved" \
+  TRELLAGE_CODEX_TEST_CONFIG_OUTSIDE="$outside_config" "$fixture_launcher" repair pstack
+grep -F -- "codex: unsafe profile config path: $pstack_home/config.toml" \
   "$fixture_root/config-post-stage-safety.out" >/dev/null \
   || fail 'config post-stage safety diagnostic differs'
 rm "$pstack_home/config.toml"
@@ -2989,7 +2989,7 @@ rm "$fake_bin/chmod"
 
 cat >"$fake_bin/chmod" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CHMOD" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_REAL_CHMOD" "$@" || exit $?
 for argument in "$@"; do
   case "$argument" in
     */.config.*) kill -TERM "$PPID" ;;
@@ -2998,7 +2998,7 @@ done
 EOF
 chmod +x "$fake_bin/chmod"
 assert_command_fails config-stage-signal env HOME="$fixture_root/home" \
-  PATH="$fake_bin:$PATH" CDX_TEST_REAL_CHMOD="$real_chmod" \
+  PATH="$fake_bin:$PATH" TRELLAGE_CODEX_TEST_REAL_CHMOD="$real_chmod" \
   "$fixture_launcher" repair pstack
 cmp -s "$fixture_root/config-before-publication-failure" "$pstack_home/config.toml" \
   || fail 'config stage signal changed prior bytes'
@@ -3011,15 +3011,15 @@ rm "$fake_bin/chmod"
 cat >"$fake_bin/mv" <<'EOF'
 #!/usr/bin/env bash
 for argument in "$@"; do
-  case "${CDX_TEST_FAIL_MV:-}:$argument" in
+  case "${TRELLAGE_CODEX_TEST_FAIL_MV:-}:$argument" in
     config:*/.config.*) exit 74 ;;
   esac
 done
-exec "$CDX_TEST_REAL_MV" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_MV" "$@"
 EOF
 chmod +x "$fake_bin/mv"
 assert_command_fails config-publication-failure env HOME="$fixture_root/home" \
-  PATH="$fake_bin:$PATH" CDX_TEST_REAL_MV="$real_mv" CDX_TEST_FAIL_MV=config \
+  PATH="$fake_bin:$PATH" TRELLAGE_CODEX_TEST_REAL_MV="$real_mv" TRELLAGE_CODEX_TEST_FAIL_MV=config \
   "$fixture_launcher" repair pstack
 cmp -s "$fixture_root/config-before-publication-failure" "$pstack_home/config.toml" \
   || fail 'failed config publication changed prior bytes'
@@ -3067,23 +3067,23 @@ chmod 0640 "$race_source"
 race_source_inode="$(file_inode "$race_source")"
 cat >"$fake_bin/chmod" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CHMOD" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_REAL_CHMOD" "$@" || exit $?
 for argument in "$@"; do
   case "$argument" in
     */.config.*)
       target="${argument%/.config.*}/config.toml"
-      "$CDX_TEST_REAL_LN" "$CDX_TEST_RACE_SOURCE" "$target" || exit $?
+      "$TRELLAGE_CODEX_TEST_REAL_LN" "$TRELLAGE_CODEX_TEST_RACE_SOURCE" "$target" || exit $?
       ;;
   esac
 done
 EOF
 chmod +x "$fake_bin/chmod"
 assert_command_fails config-create-race env HOME="$race_home" PATH="$fake_bin:$PATH" \
-  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" CDX_TEST_REAL_CHMOD="$real_chmod" \
-  CDX_TEST_REAL_LN="$real_ln" CDX_TEST_RACE_SOURCE="$race_source" \
+  FAKE_CODEX_LOG="$fixture_root/fake-codex.log" TRELLAGE_CODEX_TEST_REAL_CHMOD="$real_chmod" \
+  TRELLAGE_CODEX_TEST_REAL_LN="$real_ln" TRELLAGE_CODEX_TEST_RACE_SOURCE="$race_source" \
   "$fixture_launcher" setup pstack
 race_config="$race_home/.local/share/trellage/profiles/codex/pstack/home/config.toml"
-grep -F -- 'cdx: failed to publish profile config without replacing existing file' \
+grep -F -- 'codex: failed to publish profile config without replacing existing file' \
   "$fixture_root/config-create-race.out" >/dev/null \
   || fail "config create race diagnostic differs: $(cat "$fixture_root/config-create-race.out")"
 cmp -s "$race_source" "$race_config" || fail 'config create race replaced concurrent bytes'

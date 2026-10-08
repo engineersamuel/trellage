@@ -26,7 +26,7 @@ export const conversationGuideEnvironment = (
   for (const key of [
     "HERDR_PANE_ID", "HERDR_PLUGIN_CONTEXT_JSON", "TRELLAGE_GUIDE_HERDR_INTENT_FILE",
     "TRELLAGE_GUIDE_INVOCATION_PATH",
-    "FMX_LAUNCH_PROVENANCE_JSON",
+    "TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON",
   ]) delete next[key]
   if (typeof env.HERDR_BIN_PATH === "string" && path.isAbsolute(env.HERDR_BIN_PATH)) {
     next.PATH = `${path.dirname(env.HERDR_BIN_PATH)}${path.delimiter}${next.PATH ?? ""}`

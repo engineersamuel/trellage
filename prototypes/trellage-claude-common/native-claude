@@ -100,10 +100,10 @@ require_command() {
 
 firstmate_shared_guard() {
   local candidate
-  for candidate in "$runtime_root/lib/fmx-registry.py" \
-    "$runtime_root/../common/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py" \
-    "$runtime_root/../common/floating-skills-runtime/fmx-registry.py" \
-    "$runtime_root/../trellage-firstmate-profiles/lib/fmx-registry.py"; do
+  for candidate in "$runtime_root/lib/firstmate-registry.py" \
+    "$runtime_root/../common/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/firstmate-registry.py" \
+    "$runtime_root/../common/floating-skills-runtime/firstmate-registry.py" \
+    "$runtime_root/../trellage-firstmate-profiles/lib/firstmate-registry.py"; do
     if [[ -f "$candidate" && ! -L "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return
@@ -315,7 +315,7 @@ ensure_floating_skills() {
     native-common) ;;
     office|office-charts)
       bundle_args+=(--bundle "claude-${TRELLAGE_CLAUDE_PROFILE_SKILLS}"
-        --cache "${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cldx-${TRELLAGE_CLAUDE_PROFILE_SKILLS}-skills")
+        --cache "${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/claude-${TRELLAGE_CLAUDE_PROFILE_SKILLS}-skills")
       ;;
     *) die 'invalid Native Claude skill bundle' ;;
   esac
@@ -338,7 +338,7 @@ sync_cached_skills() {
   case "${TRELLAGE_CLAUDE_PROFILE_SKILLS:-native-common}" in
     native-common) ;;
     office|office-charts)
-      cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cldx-${TRELLAGE_CLAUDE_PROFILE_SKILLS}-skills"
+      cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/claude-${TRELLAGE_CLAUDE_PROFILE_SKILLS}-skills"
       ;;
     *) die 'invalid Native Claude skill bundle' ;;
   esac
@@ -780,7 +780,7 @@ validate_common_arguments() {
 }
 
 # Explicit provider/token scrub covering the supported provider/token
-# override paths, so a stale tmux/Herdr daemon environment (the fmx
+# override paths, so a stale tmux/Herdr daemon environment (the firstmate
 # worker threat model) can never leak into any child process this runtime
 # spawns: claude --version, the floating-skills ensure (node), the
 # copilot-proxy-rs health/model probes (curl), session-bridge hook
@@ -790,7 +790,7 @@ validate_common_arguments() {
 # inherits the same clean environment established here. model-id starts
 # no child process and needs no scrub. Never wildcard this list; each
 # variable is named so removals are auditable. GH_CONFIG_DIR is
-# preserved, because fmx workers deliberately use file-backed gh auth.
+# preserved, because firstmate workers deliberately use file-backed gh auth.
 scrub_provider_environment() {
   unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   unset ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
@@ -912,7 +912,7 @@ prepare_command() {
       "$HOME/.local/share/trellage/profiles/firstmate/pstack-workers")
         lease_arguments+=(--parent-mutation "$parent_root") ;;
     esac
-    if [[ -z "${FMX_SHARED_LEASE_FD-}" ]]; then
+    if [[ -z "${TRELLAGE_FIRSTMATE_SHARED_LEASE_FD-}" ]]; then
       exec python3 "$guard" "${lease_arguments[@]}" -- "$BASH" "${BASH_SOURCE[0]}" \
         prepare "${original_arguments[@]}"
     fi

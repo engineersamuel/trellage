@@ -182,7 +182,7 @@ describe("all-harness update planning", () => {
         expect(step.command.args).toEqual([
           "upgrade", "firstmate", target.name, "--instance",
           target.firstmateInstance?.mode === "legacy" ? "legacy" : target.firstmateInstance!.instanceId,
-          "--fmx-instance-context-json", canonicalFirstmateInstanceJson(context!),
+          "--firstmate-instance-context-json", canonicalFirstmateInstanceJson(context!),
         ])
       }
       expect(run).toHaveBeenCalledTimes(pages.length)
@@ -482,7 +482,7 @@ describe("all-harness update queue", () => {
   it("reports an old skills launcher without forwarding the new management verb into a profile", async () => {
     const entry = native("claude", "claude")
     const run = vi.fn<CommandRunner["run"]>(async (executable, args) => {
-      if (args[0] === "--help") return executable === "trx" ? help : { ...help, stdout: "usage: cldx harness-update" }
+      if (args[0] === "--help") return executable === "trx" ? help : { ...help, stdout: "usage: claude harness-update" }
       return success
     })
     const outcome = await runAllHarnessUpdates(harnessUpdateAllPlanFor([entry]), new HarnessUpdateManager({ run }, "/worktree"), {

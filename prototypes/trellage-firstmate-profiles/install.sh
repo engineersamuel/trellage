@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 readonly ownership_value='trellage-firstmate-profiles-v1'
 readonly install_lock_owner='trellage-firstmate-install-lock-v1'
@@ -8,7 +9,7 @@ readonly prerequisite_install_lock_owner='trellage-firstmate-prerequisites-v1'
 readonly transaction_marker_name='.managed-by-trellage-firstmate-install-transaction'
 
 refuse() {
-  printf 'fmx install: %s\n' "$1" >&2
+  printf 'firstmate install: %s\n' "$1" >&2
   exit 1
 }
 
@@ -26,20 +27,20 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 local_dir="$canonical_home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
-install_root="$runtime_parent/fmx"
-install_lock="$runtime_parent/.fmx-install.lock"
-installed_launcher="$install_root/bin/fmx"
+install_root="$runtime_parent/firstmate"
+install_lock="$runtime_parent/.firstmate-install.lock"
+installed_launcher="$install_root/bin/firstmate"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-firstmate-profiles"
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/fmx"
+command_path="$command_dir/firstmate"
 
 native_claude_source="$repo_root/prototypes/trellage-claude-common/native-claude"
 native_skills_source="$repo_root/prototypes/trellage-claude-common/native-skills.ts"
 session_bridge_source="$repo_root/scripts/trellage-session-bridge.py"
 statusline_source="$repo_root/scripts/trellage-statusline.sh"
 floating_runtime_installer="$repo_root/scripts/install-floating-skills-runtime.sh"
-prerequisite_helper_source="$source_dir/lib/fmx-prerequisites"
+prerequisite_helper_source="$source_dir/lib/firstmate-prerequisites"
 prerequisite_lock_source="$source_dir/prerequisites"
 
 require_safe_directory() {
@@ -123,11 +124,11 @@ require_owned_runtime_contents() {
   require_runtime_directory "$install_root/prerequisite-lock"
   require_runtime_directory "$install_root/prerequisite-lock/npm"
   require_runtime_file "$installed_launcher"
-  require_runtime_file "$install_root/lib/fmx-worker"
-  require_runtime_file "$install_root/lib/fmx-overlay.py"
-  require_runtime_file "$install_root/lib/fmx-prerequisites"
-  for path in "$install_root/lib/fmx-controls.py" "$install_root/lib/fmx-control.py" \
-    "$install_root/lib/fmx-registry.py" "$install_root/lib/fmx-instances.py"; do
+  require_runtime_file "$install_root/lib/firstmate-worker"
+  require_runtime_file "$install_root/lib/firstmate-overlay.py"
+  require_runtime_file "$install_root/lib/firstmate-prerequisites"
+  for path in "$install_root/lib/firstmate-controls.py" "$install_root/lib/firstmate-control.py" \
+    "$install_root/lib/firstmate-registry.py" "$install_root/lib/firstmate-instances.py"; do
     if [[ -e "$path" || -L "$path" ]]; then
       require_runtime_file "$path"
     fi
@@ -150,7 +151,7 @@ require_owned_runtime_contents() {
 
   if [[ -e "$install_root/prerequisites" || -L "$install_root/prerequisites" ]]; then
     require_safe_directory "$install_root/prerequisites" \
-      "$canonical_home/.local/share/trellage/fmx/prerequisites" \
+      "$canonical_home/.local/share/trellage/firstmate/prerequisites" \
       'managed prerequisite cache'
     ensure_prerequisite_cache_idle
   fi
@@ -160,13 +161,13 @@ require_owned_runtime_contents() {
       "$ownership_marker"|\
       "$install_root/bin"|"$installed_launcher"|\
       "$install_root/lib"|\
-      "$install_root/lib/fmx-worker"|\
-      "$install_root/lib/fmx-overlay.py"|\
-      "$install_root/lib/fmx-prerequisites"|\
-      "$install_root/lib/fmx-controls.py"|\
-      "$install_root/lib/fmx-control.py"|\
-      "$install_root/lib/fmx-registry.py"|\
-      "$install_root/lib/fmx-instances.py"|\
+      "$install_root/lib/firstmate-worker"|\
+      "$install_root/lib/firstmate-overlay.py"|\
+      "$install_root/lib/firstmate-prerequisites"|\
+      "$install_root/lib/firstmate-controls.py"|\
+      "$install_root/lib/firstmate-control.py"|\
+      "$install_root/lib/firstmate-registry.py"|\
+      "$install_root/lib/firstmate-instances.py"|\
       "$install_root/lib/native-claude"|\
       "$install_root/native-skills.mjs"|\
       "$install_root/native-skills.ts"|\
@@ -215,6 +216,26 @@ require_owned_runtime_contents() {
   done < <(find "$install_root" -mindepth 1 -print)
 }
 
+remove_generated_python_cache() {
+  local cache="$install_root/lib/__pycache__"
+  local path name
+
+  [[ -e "$cache" || -L "$cache" ]] || return 0
+  require_safe_directory "$cache" \
+    "$canonical_home/.local/share/trellage/firstmate/lib/__pycache__" \
+    'generated Python cache'
+  while IFS= read -r path; do
+    [[ -f "$path" && ! -L "$path" ]] \
+      || refuse "unsafe generated Python cache entry: $path"
+    name="$(basename "$path")"
+    case "$name" in
+      firstmate-*.cpython-*.pyc) ;;
+      *) refuse "unrelated generated Python cache entry: $path" ;;
+    esac
+  done < <(find "$cache" -mindepth 1 -print)
+  rm -rf -- "$cache"
+}
+
 stage_file() {
   local source="$1"
   local destination="$2"
@@ -241,7 +262,7 @@ copy_prerequisite_cache() {
     fi
     case "$name" in
       .stage.*|.retired.*)
-        refuse "interrupted prerequisite installation requires recovery before fmx reinstall; run $install_root/lib/fmx-prerequisites install: $path"
+        refuse "interrupted prerequisite installation requires recovery before firstmate reinstall; run $install_root/lib/firstmate-prerequisites install: $path"
         ;;
       *)
         refuse "unsupported managed prerequisite cache path: $path"
@@ -252,17 +273,17 @@ copy_prerequisite_cache() {
 
 inject_test_point() {
   local point="$1"
-  local signal="${FMX_INSTALL_TEST_SIGNAL-TERM}"
+  local signal="${TRELLAGE_FIRSTMATE_INSTALL_TEST_SIGNAL-TERM}"
 
-  [[ "${FMX_INSTALL_TEST_FAIL_AT-}" != "$point" ]] \
+  [[ "${TRELLAGE_FIRSTMATE_INSTALL_TEST_FAIL_AT-}" != "$point" ]] \
     || refuse "injected failure at $point"
-  if [[ "${FMX_INSTALL_TEST_SIGNAL_AT-}" == "$point" ]]; then
+  if [[ "${TRELLAGE_FIRSTMATE_INSTALL_TEST_SIGNAL_AT-}" == "$point" ]]; then
     case "$signal" in
       HUP|INT|TERM) kill "-$signal" "$$" ;;
       *) refuse "unsupported injected signal: $signal" ;;
     esac
   fi
-  if [[ "${FMX_INSTALL_TEST_CRASH_AT-}" == "$point" ]]; then
+  if [[ "${TRELLAGE_FIRSTMATE_INSTALL_TEST_CRASH_AT-}" == "$point" ]]; then
     trap - EXIT HUP INT TERM
     exit 137
   fi
@@ -273,13 +294,13 @@ require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ance
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
-require_regular_file "$source_dir/bin/fmx" 'launcher'
-require_regular_file "$source_dir/lib/fmx-worker" 'worker helper'
-require_regular_file "$source_dir/lib/fmx-overlay.py" 'overlay helper'
-require_regular_file "$source_dir/lib/fmx-controls.py" 'worker admission helper'
-require_regular_file "$source_dir/lib/fmx-control.py" 'fleet control helper'
-require_regular_file "$source_dir/lib/fmx-registry.py" 'instance registry/shared writer helper'
-require_regular_file "$source_dir/lib/fmx-instances.py" 'instance command helper'
+require_regular_file "$source_dir/bin/firstmate" 'launcher'
+require_regular_file "$source_dir/lib/firstmate-worker" 'worker helper'
+require_regular_file "$source_dir/lib/firstmate-overlay.py" 'overlay helper'
+require_regular_file "$source_dir/lib/firstmate-controls.py" 'worker admission helper'
+require_regular_file "$source_dir/lib/firstmate-control.py" 'fleet control helper'
+require_regular_file "$source_dir/lib/firstmate-registry.py" 'instance registry/shared writer helper'
+require_regular_file "$source_dir/lib/firstmate-instances.py" 'instance command helper'
 require_regular_file "$prerequisite_helper_source" 'prerequisite helper'
 require_regular_file "$source_dir/catalog.json" 'catalog'
 require_regular_file "$native_claude_source" 'shared native Claude helper'
@@ -336,17 +357,17 @@ created_command_dir=false
 cleanup_staging() {
   if [[ -n "$command_stage_root" && -d "$command_stage_root" ]]; then
     case "$command_stage_root" in
-      "$command_dir"/.fmx-command.*) rm -rf -- "$command_stage_root" ;;
+      "$command_dir"/.firstmate-command.*) rm -rf -- "$command_stage_root" ;;
     esac
   fi
   if [[ -n "$staging_root" && -d "$staging_root" ]]; then
     case "$staging_root" in
-      "$runtime_parent"/.fmx-install.*) rm -rf -- "$staging_root" ;;
+      "$runtime_parent"/.firstmate-install.*) rm -rf -- "$staging_root" ;;
     esac
   fi
   if [[ -n "$retired_staging_root" && -d "$retired_staging_root" ]]; then
     case "$retired_staging_root" in
-      "$runtime_parent"/.fmx-retired-install.*) rm -rf -- "$retired_staging_root" ;;
+      "$runtime_parent"/.firstmate-retired-install.*) rm -rf -- "$retired_staging_root" ;;
     esac
   fi
 }
@@ -374,7 +395,7 @@ acquire_install_lock() {
 
   if ! mkdir -m 0700 "$install_lock" 2>/dev/null; then
     [[ -d "$install_lock" && ! -L "$install_lock" ]] \
-      || refuse "unowned fmx install lock: $install_lock"
+      || refuse "unowned firstmate install lock: $install_lock"
     if [[ -f "$install_lock/owner" && ! -L "$install_lock/owner" ]]; then
       owner="$(<"$install_lock/owner")"
     fi
@@ -382,22 +403,22 @@ acquire_install_lock() {
       pid="$(<"$install_lock/pid")"
     fi
     [[ "$owner" == "$install_lock_owner" ]] \
-      || refuse "unowned fmx install lock: $install_lock"
+      || refuse "unowned firstmate install lock: $install_lock"
     [[ "$pid" =~ ^[1-9][0-9]*$ ]] \
-      || refuse "incomplete fmx install lock: $install_lock"
+      || refuse "incomplete firstmate install lock: $install_lock"
     if kill -0 "$pid" 2>/dev/null; then
-      refuse "another fmx install is active with pid $pid"
+      refuse "another firstmate install is active with pid $pid"
     fi
     while IFS= read -r path; do
       case "$path" in
         "$install_lock/owner"|"$install_lock/pid") ;;
-        *) refuse "unowned fmx install lock: $install_lock" ;;
+        *) refuse "unowned firstmate install lock: $install_lock" ;;
       esac
     done < <(find "$install_lock" -mindepth 1 -print)
     rm -- "$install_lock/owner" "$install_lock/pid"
     rmdir "$install_lock"
     mkdir -m 0700 "$install_lock" \
-      || refuse "could not reclaim stale fmx install lock: $install_lock"
+      || refuse "could not reclaim stale firstmate install lock: $install_lock"
   fi
   printf '%s\n' "$install_lock_owner" >"$install_lock/owner"
   printf '%s\n' "$$" >"$install_lock/pid"
@@ -447,9 +468,9 @@ recover_interrupted_install() {
 
   while IFS= read -r path; do
     [[ "$path" == "$install_lock" ]] || interrupted+=("$path")
-  done < <(find "$runtime_parent" -mindepth 1 -maxdepth 1 -name '.fmx-install.*' -print | sort)
+  done < <(find "$runtime_parent" -mindepth 1 -maxdepth 1 -name '.firstmate-install.*' -print | sort)
   [[ "${#interrupted[@]}" -le 1 ]] \
-    || refuse "multiple interrupted fmx installs require manual recovery in: $runtime_parent"
+    || refuse "multiple interrupted firstmate installs require manual recovery in: $runtime_parent"
   [[ "${#interrupted[@]}" -eq 1 ]] || return 0
 
   interrupted_root="${interrupted[0]}"
@@ -457,23 +478,23 @@ recover_interrupted_install() {
     && -f "$interrupted_root/$transaction_marker_name" \
     && ! -L "$interrupted_root/$transaction_marker_name" \
     && "$(<"$interrupted_root/$transaction_marker_name")" == "$install_lock_owner" ]] \
-    || refuse "unowned interrupted fmx install: $interrupted_root"
+    || refuse "unowned interrupted firstmate install: $interrupted_root"
   [[ -f "$interrupted_root/had-runtime" && ! -L "$interrupted_root/had-runtime" ]] \
-    || refuse "incomplete interrupted fmx install: $interrupted_root"
+    || refuse "incomplete interrupted firstmate install: $interrupted_root"
   [[ -f "$interrupted_root/had-command" && ! -L "$interrupted_root/had-command" ]] \
-    || refuse "incomplete interrupted fmx install: $interrupted_root"
+    || refuse "incomplete interrupted firstmate install: $interrupted_root"
   had_runtime="$(<"$interrupted_root/had-runtime")"
   had_command="$(<"$interrupted_root/had-command")"
   case "$had_runtime:$had_command" in
     yes:yes|yes:no|no:yes|no:no) ;;
-    *) refuse "invalid interrupted fmx install state: $interrupted_root" ;;
+    *) refuse "invalid interrupted firstmate install state: $interrupted_root" ;;
   esac
 
   if [[ -f "$interrupted_root/committed" && ! -L "$interrupted_root/committed" ]]; then
     runtime_is_owned "$install_root" \
-      || refuse "committed fmx install has no owned runtime: $install_root"
+      || refuse "committed firstmate install has no owned runtime: $install_root"
     [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
-      || refuse "committed fmx install has no owned command: $command_path"
+      || refuse "committed firstmate install has no owned command: $command_path"
     rm -rf -- "$interrupted_root"
     return 0
   fi
@@ -487,10 +508,10 @@ recover_interrupted_install() {
 
   if [[ "$had_command" == yes ]]; then
     [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
-      || refuse "interrupted fmx install cannot restore the prior command: $command_path"
+      || refuse "interrupted firstmate install cannot restore the prior command: $command_path"
   elif [[ -e "$command_path" || -L "$command_path" ]]; then
     [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
-      || refuse "interrupted fmx install found an unrelated command: $command_path"
+      || refuse "interrupted firstmate install found an unrelated command: $command_path"
   fi
 
   if [[ "$had_runtime" == yes ]]; then
@@ -498,24 +519,24 @@ recover_interrupted_install() {
       if runtime_is_owned "$interrupted_root/old-runtime"; then
         if [[ -e "$install_root" || -L "$install_root" ]]; then
           runtime_is_owned "$install_root" \
-            || refuse "interrupted fmx install found an unrelated runtime: $install_root"
+            || refuse "interrupted firstmate install found an unrelated runtime: $install_root"
           [[ ! -e "$interrupted_root/interrupted-runtime" \
             && ! -L "$interrupted_root/interrupted-runtime" ]] \
-            || refuse "interrupted fmx recovery is ambiguous: $interrupted_root"
+            || refuse "interrupted firstmate recovery is ambiguous: $interrupted_root"
           mv "$install_root" "$interrupted_root/interrupted-runtime"
         fi
         mv "$interrupted_root/old-runtime" "$install_root"
       else
         runtime_is_owned "$install_root" \
-          || refuse "interrupted fmx install cannot restore its prior runtime: $interrupted_root"
+          || refuse "interrupted firstmate install cannot restore its prior runtime: $interrupted_root"
       fi
     else
       runtime_is_owned "$install_root" \
-        || refuse "interrupted fmx install lost its prior runtime: $install_root"
+        || refuse "interrupted firstmate install lost its prior runtime: $install_root"
     fi
   elif [[ -e "$install_root" || -L "$install_root" ]]; then
     runtime_is_owned "$install_root" \
-      || refuse "interrupted fmx install found an unrelated runtime: $install_root"
+      || refuse "interrupted firstmate install found an unrelated runtime: $install_root"
     mv "$install_root" "$interrupted_root/interrupted-runtime"
   fi
 
@@ -530,20 +551,20 @@ cleanup_abandoned_install_artifacts() {
 
   while IFS= read -r path; do
     [[ -d "$path" && ! -L "$path" ]] \
-      || refuse "unsafe retired fmx install artifact: $path"
+      || refuse "unsafe retired firstmate install artifact: $path"
     rm -rf -- "$path"
   done < <(find "$runtime_parent" -mindepth 1 -maxdepth 1 \
-    -name '.fmx-retired-install.*' -print)
+    -name '.firstmate-retired-install.*' -print)
   while IFS= read -r path; do
     [[ -d "$path" && ! -L "$path" ]] \
-      || refuse "unsafe fmx command staging artifact: $path"
+      || refuse "unsafe firstmate command staging artifact: $path"
     rm -rf -- "$path"
   done < <(find "$command_dir" -mindepth 1 -maxdepth 1 \
-    -name '.fmx-command.*' -print)
+    -name '.firstmate-command.*' -print)
 }
 
-active_fmx_fleet_or_mutation() {
-  ! python3 "$source_dir/lib/fmx-registry.py" check-shared
+active_firstmate_fleet_or_mutation() {
+  ! python3 "$source_dir/lib/firstmate-registry.py" check-shared
 }
 
 rollback() {
@@ -589,14 +610,14 @@ on_exit() {
       cleanup_staging
     else
       rollback_ok=false
-      printf 'fmx install: rollback failed; recovery may be required\n' >&2
+      printf 'firstmate install: rollback failed; recovery may be required\n' >&2
     fi
   else
     cleanup_staging
   fi
   if [[ "$rollback_ok" == true ]]; then
     if ! release_install_lock; then
-      printf 'fmx install: could not release install lock: %s\n' "$install_lock" >&2
+      printf 'firstmate install: could not release install lock: %s\n' "$install_lock" >&2
       if [[ "$status" -eq 0 ]]; then
         status=1
       fi
@@ -637,15 +658,15 @@ require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage"
 require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 acquire_install_lock
-if active_fmx_fleet_or_mutation >/dev/null; then
-  refuse 'cannot install fmx while a Firstmate fleet or profile mutation is active or indeterminate'
+if active_firstmate_fleet_or_mutation >/dev/null; then
+  refuse 'cannot install firstmate while a Firstmate fleet or profile mutation is active or indeterminate'
 fi
 recover_interrupted_install
 cleanup_abandoned_install_artifacts
 inject_test_point after-recovery
 
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/fmx" 'runtime root'
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/firstmate" 'runtime root'
 require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 runtime_owned=false
@@ -654,6 +675,7 @@ if [[ -e "$install_root" || -L "$install_root" ]]; then
     || refuse "unowned runtime root: $install_root"
   [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
     || refuse "unowned runtime root: $install_root"
+  remove_generated_python_cache
   require_owned_runtime_contents
   runtime_owned=true
 fi
@@ -664,8 +686,8 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
     || refuse "unrelated command: $command_path"
 fi
 
-staging_root="$(mktemp -d "$runtime_parent/.fmx-install.XXXXXX")" \
-  || refuse "cannot stage fmx runtime in: $runtime_parent"
+staging_root="$(mktemp -d "$runtime_parent/.firstmate-install.XXXXXX")" \
+  || refuse "cannot stage firstmate runtime in: $runtime_parent"
 chmod 0700 "$staging_root"
 printf '%s\n' "$install_lock_owner" >"$staging_root/$transaction_marker_name"
 if [[ "$runtime_owned" == true ]]; then
@@ -697,14 +719,14 @@ chmod 0755 \
   "$staging_root/new-runtime/prerequisite-lock" \
   "$staging_root/new-runtime/prerequisite-lock/npm"
 
-stage_file "$source_dir/bin/fmx" "$staging_root/new-runtime/bin/fmx" 0755
-stage_file "$source_dir/lib/fmx-worker" "$staging_root/new-runtime/lib/fmx-worker" 0755
-stage_file "$source_dir/lib/fmx-overlay.py" "$staging_root/new-runtime/lib/fmx-overlay.py" 0755
-stage_file "$source_dir/lib/fmx-controls.py" "$staging_root/new-runtime/lib/fmx-controls.py" 0644
-stage_file "$source_dir/lib/fmx-control.py" "$staging_root/new-runtime/lib/fmx-control.py" 0644
-stage_file "$source_dir/lib/fmx-registry.py" "$staging_root/new-runtime/lib/fmx-registry.py" 0644
-stage_file "$source_dir/lib/fmx-instances.py" "$staging_root/new-runtime/lib/fmx-instances.py" 0644
-stage_file "$prerequisite_helper_source" "$staging_root/new-runtime/lib/fmx-prerequisites" 0755
+stage_file "$source_dir/bin/firstmate" "$staging_root/new-runtime/bin/firstmate" 0755
+stage_file "$source_dir/lib/firstmate-worker" "$staging_root/new-runtime/lib/firstmate-worker" 0755
+stage_file "$source_dir/lib/firstmate-overlay.py" "$staging_root/new-runtime/lib/firstmate-overlay.py" 0755
+stage_file "$source_dir/lib/firstmate-controls.py" "$staging_root/new-runtime/lib/firstmate-controls.py" 0644
+stage_file "$source_dir/lib/firstmate-control.py" "$staging_root/new-runtime/lib/firstmate-control.py" 0644
+stage_file "$source_dir/lib/firstmate-registry.py" "$staging_root/new-runtime/lib/firstmate-registry.py" 0644
+stage_file "$source_dir/lib/firstmate-instances.py" "$staging_root/new-runtime/lib/firstmate-instances.py" 0644
+stage_file "$prerequisite_helper_source" "$staging_root/new-runtime/lib/firstmate-prerequisites" 0755
 stage_file "$native_claude_source" "$staging_root/new-runtime/lib/native-claude" 0755
 stage_file "$native_skills_source" "$staging_root/new-runtime/native-skills.ts" 0644
 stage_file "$session_bridge_source" \
@@ -755,7 +777,7 @@ chmod 0600 "$staging_root/new-runtime/.managed-by-trellage-firstmate-profiles"
   find "$staging_root/new-runtime" \
     -path "$staging_root/new-runtime/prerequisites" -prune -o \
     -type l -print -quit
-)" ]] || refuse 'staged fmx runtime contains an unexpected symlink'
+)" ]] || refuse 'staged firstmate runtime contains an unexpected symlink'
 inject_test_point after-runtime-staging
 
 publication_active=true
@@ -767,23 +789,23 @@ fi
 inject_test_point during-runtime-publication
 runtime_publish_intent=true
 [[ ! -e "$install_root" && ! -L "$install_root" ]] \
-  || refuse "fmx runtime changed during publication: $install_root"
+  || refuse "firstmate runtime changed during publication: $install_root"
 mv "$staging_root/new-runtime" "$install_root"
 inject_test_point after-runtime-publication
 
 exec 9<"$install_lock/owner"
-FMX_SHARED_LEASE_FD=9 "$floating_runtime_installer"
+TRELLAGE_FIRSTMATE_SHARED_LEASE_FD=9 "$floating_runtime_installer"
 exec 9<&-
 inject_test_point after-shared-runtime-installation
 
 if [[ ! -L "$command_path" ]]; then
   [[ ! -e "$command_path" ]] || refuse "unrelated command: $command_path"
-  command_stage_root="$(mktemp -d "$command_dir/.fmx-command.XXXXXX")" \
-    || refuse "cannot stage fmx command in: $command_dir"
+  command_stage_root="$(mktemp -d "$command_dir/.firstmate-command.XXXXXX")" \
+    || refuse "cannot stage firstmate command in: $command_dir"
   chmod 0700 "$command_stage_root"
-  ln -s "$installed_launcher" "$command_stage_root/fmx"
+  ln -s "$installed_launcher" "$command_stage_root/firstmate"
   command_publish_intent=true
-  mv "$command_stage_root/fmx" "$command_path"
+  mv "$command_stage_root/firstmate" "$command_path"
   rmdir "$command_stage_root"
   command_stage_root=''
 else
@@ -795,7 +817,7 @@ inject_test_point after-command-publication
 printf 'committed\n' >"$staging_root/committed"
 chmod 0600 "$staging_root/committed"
 publication_active=false
-retired_staging_root="$runtime_parent/.fmx-retired-install.${staging_root##*.}"
+retired_staging_root="$runtime_parent/.firstmate-retired-install.${staging_root##*.}"
 [[ ! -e "$retired_staging_root" && ! -L "$retired_staging_root" ]] \
   || refuse "unsafe retired transaction path: $retired_staging_root"
 mv "$staging_root" "$retired_staging_root"
@@ -803,7 +825,8 @@ staging_root=''
 release_install_lock \
   || refuse "could not release install lock: $install_lock"
 cleanup_staging
-printf 'Installed fmx at %s\n' "$command_path"
+printf 'Installed firstmate at %s\n' "$command_path"
 
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" fmx "$installed_launcher" "$ownership_marker" "$ownership_value"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" fmx \
+  .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" firstmate "$installed_launcher" "$ownership_marker" "$ownership_value"

@@ -12,7 +12,7 @@ bestFor:
   - Browser-driven tasks that benefit from jcode's Firefox automation instead of a headless-only tool
   - Multi-agent or coordinated-swarm work that jcode's own orchestration handles natively, without a separate plugin
 avoidFor:
-  - Tasks that need OS-level sandboxing or containment; jcx adds no containment and jcode runs with all host access available to the process
+  - Tasks that need OS-level sandboxing or containment; jcode adds no containment and jcode runs with all host access available to the process
   - Sessions that must avoid any telemetry surface; note that JCODE_NO_TELEMETRY=1 is set on every launch, but this is jcode's own opt-out flag, not a Trellage guarantee about upstream behavior
   - Work that requires native OpenAI-style credentials; no API key is written and the profile always routes through the local proxy
 prerequisites:
@@ -76,12 +76,12 @@ routed through keyless `copilot-proxy-rs` and defaulting to `gpt-5.6-sol` with
 
 ## Workflow Notes
 
-- Use `jcx skill i-have-adhd "PROMPT"` for a one-shot request with this output
+- Use `jcode skill i-have-adhd "PROMPT"` for a one-shot request with this output
   skill. Its managed copy stays outside JCode's automatic skill discovery;
   `/i-have-adhd` is not registered in JCode. See the native JCode README for
   explicit use in an existing interactive session.
 
-- Bare `jcode`, `trx run jcode default`, and `jcx run "..."` are equivalent entry points.
+- Bare `jcode`, `trx run jcode default`, and `jcode run "..."` are equivalent entry points.
 - Every launch sets `JCODE_NO_TELEMETRY=1` and passes `--no-update` before
   caller arguments; explicit jcode CLI flags can still override other
   launcher defaults.

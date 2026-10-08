@@ -2,7 +2,7 @@
 set -euo pipefail
 
 fail() {
-  printf 'agx live: %s\n' "$1" >&2
+  printf 'agency live: %s\n' "$1" >&2
   exit 1
 }
 
@@ -20,7 +20,7 @@ has_exact_version() {
   || fail 'set TRELLAGE_AGENCY_COPILOT_VERSION to the exact Agency-managed Copilot version'
 [[ -t 0 && -t 1 ]] || fail 'live proof requires an interactive terminal'
 
-for command_name in agency agx git; do
+for command_name in agency agency git; do
   command -v "$command_name" >/dev/null 2>&1 \
     || fail "required command not found: $command_name"
 done
@@ -38,17 +38,17 @@ agency_version="$(agency --version 2>&1)" \
 has_exact_version "$agency_version" "$TRELLAGE_AGENCY_VERSION" \
   || fail "Agency version does not match $TRELLAGE_AGENCY_VERSION"
 
-agx doctor trellage-azure
+agency doctor trellage-azure
 
-copilot_version="$(agx trellage-azure --version 2>&1)" \
+copilot_version="$(agency trellage-azure --version 2>&1)" \
   || fail 'could not read the Agency-managed Copilot version'
 has_exact_version "$copilot_version" "$TRELLAGE_AGENCY_COPILOT_VERSION" \
   || fail "Agency-managed Copilot version does not match $TRELLAGE_AGENCY_COPILOT_VERSION"
 
 main_copilot="$HOME/.copilot"
-main_before="$(mktemp "${TMPDIR:-/tmp}/agx-main-copilot-before.XXXXXX")" \
+main_before="$(mktemp "${TMPDIR:-/tmp}/agency-main-copilot-before.XXXXXX")" \
   || fail 'could not stage the main Copilot state snapshot'
-main_after="$(mktemp "${TMPDIR:-/tmp}/agx-main-copilot-after.XXXXXX")" \
+main_after="$(mktemp "${TMPDIR:-/tmp}/agency-main-copilot-after.XXXXXX")" \
   || {
     rm -f -- "$main_before"
     fail 'could not stage the main Copilot state snapshot'
@@ -82,7 +82,7 @@ Inside Copilot:
 7. Exit Copilot.
 EOF
 
-agx trellage-azure
+agency trellage-azure
 
 snapshot_main_copilot >"$main_after"
 cmp -s "$main_before" "$main_after" \
@@ -101,4 +101,4 @@ printf 'Confirm all requested MCP calls succeeded and were read-only [yes/no]: '
 read -r request_confirmation
 [[ "$request_confirmation" == yes ]] || fail 'read-only MCP requests were not confirmed'
 
-printf 'agx live: PASS\n'
+printf 'agency live: PASS\n'

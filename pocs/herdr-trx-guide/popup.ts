@@ -95,7 +95,7 @@ export const runGuide = async (root, invocation) => {
     env.PATH = `${path.dirname(process.env.HERDR_BIN_PATH)}${path.delimiter}${env.PATH ?? ""}`
   }
   delete env.HERDR_PANE_ID
-  delete env.FMX_LAUNCH_PROVENANCE_JSON
+  delete env.TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON
   if (optimize) delete env.TRELLAGE_GUIDE_HERDR_INTENT_FILE
   try {
     return await launchGuide(root, env, optimize)

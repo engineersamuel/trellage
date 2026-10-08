@@ -43,26 +43,26 @@ resolve_file() {
 }
 
 die() {
-  printf 'agx: %s\n' "$1" >&2
+  printf 'agency: %s\n' "$1" >&2
   exit 1
 }
 
 usage() {
   cat <<'EOF'
 Usage:
-  agx setup PROFILE
-  agx PROFILE [COPILOT_ARGS...]
-  agx list
-  agx list --json
-  agx harness-version
-  agx inventory PROFILE --json
-  agx doctor PROFILE
-  agx repair PROFILE
-  agx skills-update PROFILE
-  agx skills-check PROFILE
+  agency setup PROFILE
+  agency PROFILE [COPILOT_ARGS...]
+  agency list
+  agency list --json
+  agency harness-version
+  agency inventory PROFILE --json
+  agency doctor PROFILE
+  agency repair PROFILE
+  agency skills-update PROFILE
+  agency skills-check PROFILE
 
 Launcher updates are installed by re-running install.sh or the Trellage native
-rebuild. Agency and Azure MCP never auto-update during an agx launch.
+rebuild. Agency and Azure MCP never auto-update during an agency launch.
 EOF
 }
 
@@ -72,7 +72,7 @@ require_command() {
 
 script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
 runtime_root="$(canonical_directory "$script_dir/..")" || die 'could not resolve runtime root'
-catalog="${AGX_CATALOG:-$runtime_root/catalog.json}"
+catalog="${TRELLAGE_AGENCY_CATALOG:-$runtime_root/catalog.json}"
 profiles_root="$HOME/.local/share/trellage/profiles/agency"
 profile_marker_value='trellage-agency-profile-v1'
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
@@ -381,7 +381,7 @@ print_harness_version_json() {
   fi
   jq -cn --arg installed "$installed" '{
     schemaVersion: 1,
-    launcher: "agx",
+    launcher: "agency",
     harness: "agency",
     installed: ($installed | if length > 0 then . else null end),
     latest: null,
@@ -504,7 +504,7 @@ list_profiles_json() {
   jq -S '
     {
       schemaVersion: 1,
-      launcher: "agx",
+      launcher: "agency",
       harness: "agency",
       sandbox: false,
       profiles: [
@@ -545,7 +545,7 @@ inventory_json() {
     --argjson tools "$(jq -c --arg profile "$profile" '.profiles[$profile].tools' "$catalog")" '
     {
       schemaVersion: 1,
-      launcher: "agx",
+      launcher: "agency",
       harness: "agency",
       profile: $profile,
       readiness: $readiness,

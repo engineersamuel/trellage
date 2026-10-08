@@ -661,7 +661,7 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
 }
 
 export const canonicalNativeCommandPath = (commandPath: string): string => {
-  const aliases = ["agx", "cdx", "cpx", "cldx", "fmx", "jcx", "omp", "picx", "prx"]
+  const aliases = ["agency", "codex", "copilot", "claude", "firstmate", "jcode", "omp", "pi", "prime"]
   const parts = commandPath.split("/")
   if (aliases.includes(parts.at(-1) ?? "")) parts[parts.length - 1] = "trx"
   return parts.join("/")

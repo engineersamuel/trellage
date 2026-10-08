@@ -6,30 +6,30 @@ readonly provider='copilot-proxy-rs'
 readonly model_id='gpt-6-astra'
 readonly model_selector="$provider/$model_id:medium"
 readonly mise_tool='npm:@earendil-works/pi-coding-agent'
-readonly profile_marker_value='trellage-picx-profile-v2'
+readonly profile_marker_value='trellage-pi-profile-v2'
 
 die() {
-  printf 'picx: %s\n' "$1" >&2
+  printf 'pi: %s\n' "$1" >&2
   exit 1
 }
 
 usage() {
   cat <<'EOF'
 Usage:
-  picx [PI_ARGS...]
-  picx default [PI_ARGS...]
-  picx [default] --headless-policy no-user-input [PI_ARGS...]
-  picx list [--json]
-  picx inventory default --json
-  picx setup [default]
-  picx doctor [default]
-  picx repair [default]
-  picx skills-update PROFILE
-  picx skills-check PROFILE
-  picx update [--check] [default]
-  picx harness-version
+  pi [PI_ARGS...]
+  pi default [PI_ARGS...]
+  pi [default] --headless-policy no-user-input [PI_ARGS...]
+  pi list [--json]
+  pi inventory default --json
+  pi setup [default]
+  pi doctor [default]
+  pi repair [default]
+  pi skills-update PROFILE
+  pi skills-check PROFILE
+  pi update [--check] [default]
+  pi harness-version
 
-Bare picx invocations use the default profile.
+Bare pi invocations use the default profile.
 EOF
 }
 
@@ -180,7 +180,7 @@ validate_catalog() {
       and .value.kind == "local"
       and (.value.piProfile
         | type == "string"
-        and test("^picx-[a-z0-9]+(-[a-z0-9]+)*$"))
+        and test("^pi-[a-z0-9]+(-[a-z0-9]+)*$"))
       and .value.plugin == null
       and (.value.standaloneMcps | type == "array" and length == 0)
       and (.value.extensions
@@ -205,7 +205,7 @@ select_profile() {
   profile_name="$(jq -r --arg profile "$requested" '.profiles[$profile].piProfile' "$catalog")"
   profile_root="$HOME/.local/share/trellage/profiles/pi/$profile_name"
   agent_root="$profile_root/agent"
-  profile_marker="$profile_root/.managed-by-trellage-picx-profiles"
+  profile_marker="$profile_root/.managed-by-trellage-pi-profiles"
   profile_session_dir="$profile_root/sessions"
   profile_extensions="$profile_root/extensions.json"
   profile_models_catalog="$profile_root/.copilot-models.json"
@@ -222,7 +222,7 @@ list_profiles_json() {
   jq -S --argjson headless "$headless_map" '
     {
       schemaVersion: 1,
-      launcher: "picx",
+      launcher: "pi",
       harness: "pi",
       sandbox: false,
       profiles: [
@@ -288,7 +288,7 @@ profile_is_owned_or_empty() {
 require_owned_profile() {
   require_safe_profile_path
   [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
-    || die "profile is not managed; run picx setup $profile_key"
+    || die "profile is not managed; run pi setup $profile_key"
   [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] \
     || die "profile ownership marker differs: $profile_marker"
 }
@@ -616,7 +616,7 @@ read_installed_version() {
     publish_installed_version "$version"
   fi
   [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
-    || die "Pi installed version receipt is missing; run picx setup $profile_key"
+    || die "Pi installed version receipt is missing; run pi setup $profile_key"
   version="$(<"$receipt_file")"
   require_exact_version "$version"
   printf '%s\n' "$version"
@@ -637,7 +637,7 @@ installed_binary() {
   local version="$1" install_dir expected binary resolved
 
   install_dir="$(mise_env where "$mise_tool@$version")" \
-    || die "Pi $version is not installed; run picx repair $profile_key"
+    || die "Pi $version is not installed; run pi repair $profile_key"
   expected="$runtime_root/mise/installs/npm-earendil-works-pi-coding-agent/$version"
   [[ "$install_dir" == "$expected" ]] || die "mise returned unexpected Pi path: $install_dir"
   binary="$(mise_env x "$mise_tool@$version" -- which pi)" \
@@ -702,11 +702,11 @@ verify_managed_profile() {
   [[ -f "$agent_root/mcp.json" && ! -L "$agent_root/mcp.json" ]] \
     || die "managed MCP config is missing: $agent_root/mcp.json"
   managed_settings_are_current \
-    || die "managed settings differ; run picx repair $profile_key"
+    || die "managed settings differ; run pi repair $profile_key"
   cmp -s "$agent_root/models.json" <(managed_models) \
-    || die "managed models config differs; run picx repair $profile_key"
+    || die "managed models config differs; run pi repair $profile_key"
   cmp -s "$agent_root/mcp.json" <(managed_mcp) \
-    || die "managed MCP config differs; run picx repair $profile_key"
+    || die "managed MCP config differs; run pi repair $profile_key"
 }
 
 managed_profile_is_current() {
@@ -726,7 +726,7 @@ ensure_managed_profile() {
   require_owned_profile
   managed_profile_is_current "$version" && return 0
   publish_managed_profile "$version"
-  printf 'picx: managed Pi configuration restored\n' >&2
+  printf 'pi: managed Pi configuration restored\n' >&2
 }
 
 ensure_installed_binary() {
@@ -736,7 +736,7 @@ ensure_installed_binary() {
     printf '%s\n' "$binary"
     return 0
   fi
-  printf 'picx: Pi %s is not installed; installing\n' "$version" >&2
+  printf 'pi: Pi %s is not installed; installing\n' "$version" >&2
   install_exact_version "$version" >&2
   installed_binary "$version"
 }
@@ -813,11 +813,11 @@ verify_profile_assets() {
     && ! -L "$profile_models_catalog" ]] \
     || die "managed Copilot models catalog is missing: $profile_models_catalog"
   cmp -s "$profile_models_catalog" "$HOME/.copilot/models.json" \
-    || die 'managed Copilot models catalog differs; run picx repair default'
+    || die 'managed Copilot models catalog differs; run pi repair default'
   [[ -f "$profile_extensions" && ! -L "$profile_extensions" ]] \
     || die "managed extension manifest is missing: $profile_extensions"
   cmp -s "$profile_extensions" <(jq -S '.profiles.default.extensions' "$catalog") \
-    || die 'managed extension manifest differs; run picx repair default'
+    || die 'managed extension manifest differs; run pi repair default'
 
   while IFS=$'\t' read -r package install_spec; do
     path="$(package_path "$package" "$install_spec")"
@@ -837,10 +837,10 @@ verify_profile_assets() {
     || die 'managed pi-fff dependency is missing: @ff-labs/fff-node'
   [[ -f "$agent_root/skills/show-me/SKILL.md" \
     && ! -L "$agent_root/skills/show-me/SKILL.md" ]] \
-    || die 'managed show-me skill is missing; run picx repair default'
+    || die 'managed show-me skill is missing; run pi repair default'
   [[ -f "$agent_root/skills/.trellage-managed-skills" \
     && ! -L "$agent_root/skills/.trellage-managed-skills" ]] \
-    || die 'managed skill manifest is missing; run picx repair default'
+    || die 'managed skill manifest is missing; run pi repair default'
 }
 
 backup_profile_state() {
@@ -938,7 +938,7 @@ setup_profile() {
     version="$(resolve_latest_version)"
   fi
   publish_profile_version_atomically "$version"
-  printf 'picx setup %s: ready (Pi %s, %s, 10 extensions)\n' \
+  printf 'pi setup %s: ready (Pi %s, %s, 10 extensions)\n' \
     "$profile_key" "$version" "$(profile_ready_label)"
 }
 
@@ -947,7 +947,7 @@ repair_profile() {
 
   version="$(read_installed_version)"
   install_profile_version "$version"
-  printf 'picx repair %s: restored (Pi %s, %s, 10 extensions)\n' \
+  printf 'pi repair %s: restored (Pi %s, %s, 10 extensions)\n' \
     "$profile_key" "$version" "$(profile_ready_label)"
 }
 
@@ -957,9 +957,9 @@ check_for_update() {
   current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
-    printf 'picx update: %s is current\n' "$current"
+    printf 'pi update: %s is current\n' "$current"
   else
-    printf 'picx update: %s -> %s available\n' "$current" "$latest"
+    printf 'pi update: %s -> %s available\n' "$current" "$latest"
   fi
 }
 
@@ -970,7 +970,7 @@ print_harness_version_json() {
   latest="$(resolve_latest_version 2>/dev/null)" || latest=''
   jq -cn --arg installed "$installed" --arg latest "$latest" '{
     schemaVersion: 1,
-    launcher: "picx",
+    launcher: "pi",
     harness: "pi",
     installed: ($installed | if length > 0 then . else null end),
     latest: ($latest | if length > 0 then . else null end),
@@ -986,11 +986,11 @@ update_profile() {
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
     publish_profile_version_atomically "$current"
-    printf 'picx update: %s is current\n' "$current"
+    printf 'pi update: %s is current\n' "$current"
     return
   fi
   publish_profile_version_atomically "$latest"
-  printf 'picx update: %s -> %s installed\n' "$current" "$latest"
+  printf 'pi update: %s -> %s installed\n' "$current" "$latest"
 }
 
 doctor_local() {
@@ -1016,7 +1016,7 @@ doctor_profile() {
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
   doctor_local
-  printf 'picx doctor %s: OK (Pi %s, %s, 10 extensions, host MCP discovery off)\n' \
+  printf 'pi doctor %s: OK (Pi %s, %s, 10 extensions, host MCP discovery off)\n' \
     "$profile_key" "$version" "$(profile_ready_label)"
 }
 
@@ -1028,7 +1028,7 @@ not_ready_inventory() {
     --arg readiness "$readiness" '
     {
       schemaVersion: 1,
-      launcher: "picx",
+      launcher: "pi",
       profile: $profile,
       harness: "pi",
       ready: false,
@@ -1059,7 +1059,7 @@ inventory_profile() {
     --arg model "$model_selector" '
     {
       schemaVersion: 1,
-      launcher: "picx",
+      launcher: "pi",
       profile: $profile,
       harness: "pi",
       harnessVersion: $version,
@@ -1169,7 +1169,7 @@ launch_pi() {
   fi
   extension_context="$(
     jq -r '
-      "This picx profile has exactly these Pi extensions installed, in order:",
+      "This pi profile has exactly these Pi extensions installed, in order:",
       (.profiles.default.extensions
         | to_entries[]
         | "\(.key + 1). \(.value.name) (`\(.value.package)`)"),
@@ -1292,9 +1292,9 @@ case "$command_name" in
       check_only=true
       shift
     fi
-    [[ "$#" -le 1 ]] || die 'usage: picx update [--check] [default]'
+    [[ "$#" -le 1 ]] || die 'usage: pi update [--check] [default]'
     selection="${1-default}"
-    [[ "$selection" == default ]] || die 'usage: picx update [--check] [default]'
+    [[ "$selection" == default ]] || die 'usage: pi update [--check] [default]'
     select_profile default
     if [[ "$check_only" == true ]]; then
       check_for_update

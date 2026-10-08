@@ -85,7 +85,7 @@ export const isFirstmateBatchJob = (job: QueuedGuideJob): boolean =>
 const selectedFirstmateProfile = (job: QueuedGuideJob): NativeSelectedProfile => {
   const profile = parseSelectedProfile(job.profile)
   if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration === undefined) {
-    throw new Error("Firstmate queue delivery requires a native fmx profile with a supported orchestration contract.")
+    throw new Error("Firstmate queue delivery requires a native firstmate profile with a supported orchestration contract.")
   }
   return profile
 }

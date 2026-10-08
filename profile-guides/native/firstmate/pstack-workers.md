@@ -1,7 +1,7 @@
 ---
 schemaVersion: 1
 capabilities:
-  - fmx-pstack-workers-native-profile
+  - firstmate-pstack-workers-native-profile
   - firstmate-fleet-orchestration
   - lean-pstack-worker-policy
   - conditional-worker-briefs
@@ -13,7 +13,7 @@ capabilities:
   - fleet-status-and-project-memory
   - notify-only-condition-watches
 bestFor:
-  - Explicit requests for trx run firstmate pstack-workers, trx run firstmate pstack-worker, fmx/pstack-workers, firstmate / pstack-workers, or native:firstmate/pstack-workers
+  - Explicit requests for trx run firstmate pstack-workers, trx run firstmate pstack-worker, firstmate/pstack-workers, firstmate / pstack-workers, or native:firstmate/pstack-workers
   - Substantial implementations, refactors, and debugging programs where Firstmate should coordinate the fleet and every worker should follow a concise pstack-derived engineering discipline
   - Parallel changes that need isolated worktrees plus explicit smallest-change, blast-radius, and real-artifact proof requirements
   - Complex work where workers should inspect architecture or history only when the task crosses a boundary or the reason for existing behavior affects the fix
@@ -24,10 +24,10 @@ avoidFor:
   - Work that requires Firstmate secondmates, a non-Claude worker harness, or a backend other than Herdr or tmux
   - Untrusted repositories or tasks that require a container security boundary
 prerequisites:
-  - id: fmx-pstack-setup
+  - id: firstmate-pstack-setup
     description: Select or create a pstack-workers fleet in the interactive guide when instance support is available. Unqualified trx setup firstmate pstack-workers prepares only the shared legacy fleet.
   - id: managed-fleet-tools
-    description: On first launch, fmx detects missing locked Firstmate tools and offers to install them into the displayed fmx-owned user-data path only after explicit consent.
+    description: On first launch, firstmate detects missing locked Firstmate tools and offers to install them into the displayed firstmate-owned user-data path only after explicit consent.
   - id: github-auth
     description: GitHub CLI authenticated through the host gh configuration; token-only environment authentication is not forwarded.
   - id: proxy-health

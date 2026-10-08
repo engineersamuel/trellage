@@ -2625,7 +2625,7 @@ test("Firstmate instance selection and refresh retain the request in an 80x24 te
       instanceOrchestration.sourceRevision,
       "--instance",
       beta.reference.instanceId,
-      "--fmx-instance-context-json",
+      "--firstmate-instance-context-json",
       canonicalFirstmateInstanceJson(instanceProfile(beta).firstmateInstanceContext!),
     ]
     expect((await prepared()).map(({ args, cwd }) => ({ args, cwd }))).toEqual([

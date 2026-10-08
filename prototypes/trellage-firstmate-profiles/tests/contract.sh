@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Static, offline contract for the Native Firstmate (fmx) launcher package.
+# Static, offline contract for the Native Firstmate (firstmate) launcher package.
 #
 # Network operations and provider actions are faked. Git and npm configuration
 # checks use the real local tools. The pinned Firstmate source is staged from
@@ -10,12 +10,12 @@ set -euo pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 repo_root="$(CDPATH= cd -- "$root/../.." && pwd)"
-launcher="$root/bin/fmx"
+launcher="$root/bin/firstmate"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
-worker_helper="$root/lib/fmx-worker"
-prerequisite_helper="$root/lib/fmx-prerequisites"
-overlay_tool="$root/lib/fmx-overlay.py"
+worker_helper="$root/lib/firstmate-worker"
+prerequisite_helper="$root/lib/firstmate-prerequisites"
+overlay_tool="$root/lib/firstmate-overlay.py"
 readonly pinned_commit='527aa7c12d25aadbdf3cc56791f87ae71fca5280'
 readonly overlay_file_count=12
 readonly ownership_value='trellage-firstmate-profiles-v1'
@@ -25,11 +25,11 @@ readonly host_bash="$(python3 -c 'import os, sys; print(os.path.realpath(sys.arg
   "${BASH}")"
 
 fail() {
-  printf 'fmx contract failed: %s\n' "$1" >&2
+  printf 'firstmate contract failed: %s\n' "$1" >&2
   exit 1
 }
 
-fixture_root="$(python3 -c 'import pathlib,uuid; p=pathlib.Path.cwd()/(".fmx-contract-"+uuid.uuid4().hex); p.mkdir(mode=0o700); print(p)')" \
+fixture_root="$(python3 -c 'import pathlib,uuid; p=pathlib.Path.cwd()/(".firstmate-contract-"+uuid.uuid4().hex); p.mkdir(mode=0o700); print(p)')" \
   || fail 'could not create fixture root'
 # Canonical, so path assertions match the launcher's own resolved paths.
 fixture_root="$(CDPATH= cd -P -- "$fixture_root" && pwd -P)" \
@@ -48,7 +48,7 @@ trap cleanup EXIT HUP INT TERM
 
 assert_contains() {
   grep -Fq -- "$1" "$2" || {
-    printf 'fmx contract failed: %s did not contain: %s\n' "$2" "$1" >&2
+    printf 'firstmate contract failed: %s did not contain: %s\n' "$2" "$1" >&2
     sed -n 1,40p "$2" >&2
     exit 1
   }
@@ -56,7 +56,7 @@ assert_contains() {
 
 assert_not_contains() {
   if grep -Fq -- "$1" "$2"; then
-    printf 'fmx contract failed: %s unexpectedly contained: %s\n' "$2" "$1" >&2
+    printf 'firstmate contract failed: %s unexpectedly contained: %s\n' "$2" "$1" >&2
     exit 1
   fi
 }
@@ -202,8 +202,8 @@ printf '#!/usr/bin/env bash\nreal_native_claude=%q\n' \
 cat >>"$fake_native_claude" <<'FAKE_NATIVE_CLAUDE'
 set -euo pipefail
 
-[[ "${TRELLAGE_CLAUDE_LAUNCHER_NAME-}" == fmx ]] \
-  || { printf 'native-claude: TRELLAGE_CLAUDE_LAUNCHER_NAME is not fmx\n' >&2; exit 2; }
+[[ "${TRELLAGE_CLAUDE_LAUNCHER_NAME-}" == firstmate ]] \
+  || { printf 'native-claude: TRELLAGE_CLAUDE_LAUNCHER_NAME is not firstmate\n' >&2; exit 2; }
 [[ "${TRELLAGE_CLAUDE_RUNTIME_ROOT-}" == /* && -d "${TRELLAGE_CLAUDE_RUNTIME_ROOT-}" ]] \
   || { printf 'native-claude: TRELLAGE_CLAUDE_RUNTIME_ROOT is not an installed runtime root\n' >&2; exit 2; }
 mode="${1-}"
@@ -304,7 +304,7 @@ case "$mode" in
     if [[ -n "${NATIVE_CLAUDE_INSTANCE_LOG-}" ]]; then
       python3 - "$NATIVE_CLAUDE_INSTANCE_LOG" <<'PY'
 import json,os,sys
-keys = ("FMX_INSTANCE_ID", "FMX_LAUNCH_PROVENANCE_JSON", "FMX_PROFILE_ROOT", "FM_HOME",
+keys = ("TRELLAGE_FIRSTMATE_INSTANCE_ID", "TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON", "TRELLAGE_FIRSTMATE_PROFILE_ROOT", "FM_HOME",
         "HERDR_PANE_ID", "HERDR_SESSION", "HERDR_WORKSPACE_ID")
 with open(sys.argv[1], "a") as stream:
     stream.write(json.dumps({key: os.environ.get(key) for key in keys}) + "\n")
@@ -323,13 +323,13 @@ PY
         HERDR_*) herdr_state="leaked:$exported" ;;
       esac
     done
-    printf 'launch|FM_HOME=%s|FM_ROOT_OVERRIDE=%s|FM_BACKEND=%s|FMX_PROFILE=%s|FMX_PROFILE_ROOT=%s|FMX_WORKER_LAUNCHER=%s|FMX_TASK_ID_PREFIX=%s|FMX_WORKER_POLICY_FILE=%s|FMX_CAPTAIN_PANE_ID=%s|FMX_GH_CONFIG_DIR=%s|FMX_WORKER_HOME=%s|FMX_WORKER_PATH=%s|FMX_WORKER_BASH=%s|TASKS_AXI_BACKEND=%s|TASKS_AXI_FILE=%s|HOME=%s|GH_CONFIG_DIR=%s|ANTHROPIC_BASE_URL=%s|GH_TOKEN=%s|GITHUB_TOKEN=%s|COPILOT_GITHUB_TOKEN=%s|CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=%s|CURSOR_AGENT=%s|TRACEPARENT=%s|HERDR=%s|HERDR_PANE_ID=%s|TRELLAGE_GUIDE_HERDR_CONTEXT_JSON=%s|FM_STATE_OVERRIDE=%s|FM_DATA_OVERRIDE=%s|FM_PROJECTS_OVERRIDE=%s|FM_CONFIG_OVERRIDE=%s|FM_PUBLIC_FOLLOWUP_PRIMARY_HOME=%s|FM_TRACE_CONTEXT=%s|FM_SUPERVISION_MODEL=%s|cwd=%s|home=%s|bridge=%s|profile=%s|args=%s\n' \
+    printf 'launch|FM_HOME=%s|FM_ROOT_OVERRIDE=%s|FM_BACKEND=%s|TRELLAGE_FIRSTMATE_PROFILE=%s|TRELLAGE_FIRSTMATE_PROFILE_ROOT=%s|TRELLAGE_FIRSTMATE_WORKER_LAUNCHER=%s|TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=%s|TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE=%s|TRELLAGE_FIRSTMATE_CAPTAIN_PANE_ID=%s|TRELLAGE_FIRSTMATE_GH_CONFIG_DIR=%s|TRELLAGE_FIRSTMATE_WORKER_HOME=%s|TRELLAGE_FIRSTMATE_WORKER_PATH=%s|TRELLAGE_FIRSTMATE_WORKER_BASH=%s|TASKS_AXI_BACKEND=%s|TASKS_AXI_FILE=%s|HOME=%s|GH_CONFIG_DIR=%s|ANTHROPIC_BASE_URL=%s|GH_TOKEN=%s|GITHUB_TOKEN=%s|COPILOT_GITHUB_TOKEN=%s|CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=%s|CURSOR_AGENT=%s|TRACEPARENT=%s|HERDR=%s|HERDR_PANE_ID=%s|TRELLAGE_GUIDE_HERDR_CONTEXT_JSON=%s|FM_STATE_OVERRIDE=%s|FM_DATA_OVERRIDE=%s|FM_PROJECTS_OVERRIDE=%s|FM_CONFIG_OVERRIDE=%s|FM_PUBLIC_FOLLOWUP_PRIMARY_HOME=%s|FM_TRACE_CONTEXT=%s|FM_SUPERVISION_MODEL=%s|cwd=%s|home=%s|bridge=%s|profile=%s|args=%s\n' \
       "${FM_HOME-unset}" "${FM_ROOT_OVERRIDE-unset}" "${FM_BACKEND-unset}" \
-      "${FMX_PROFILE-unset}" "${FMX_PROFILE_ROOT-unset}" "${FMX_WORKER_LAUNCHER-unset}" \
-      "${FMX_TASK_ID_PREFIX-unset}" "${FMX_WORKER_POLICY_FILE-unset}" \
-      "${FMX_CAPTAIN_PANE_ID-unset}" "${FMX_GH_CONFIG_DIR-unset}" \
-      "${FMX_WORKER_HOME-unset}" "${FMX_WORKER_PATH-unset}" \
-      "${FMX_WORKER_BASH-unset}" "${TASKS_AXI_BACKEND-unset}" \
+      "${TRELLAGE_FIRSTMATE_PROFILE-unset}" "${TRELLAGE_FIRSTMATE_PROFILE_ROOT-unset}" "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER-unset}" \
+      "${TRELLAGE_FIRSTMATE_TASK_ID_PREFIX-unset}" "${TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE-unset}" \
+      "${TRELLAGE_FIRSTMATE_CAPTAIN_PANE_ID-unset}" "${TRELLAGE_FIRSTMATE_GH_CONFIG_DIR-unset}" \
+      "${TRELLAGE_FIRSTMATE_WORKER_HOME-unset}" "${TRELLAGE_FIRSTMATE_WORKER_PATH-unset}" \
+      "${TRELLAGE_FIRSTMATE_WORKER_BASH-unset}" "${TASKS_AXI_BACKEND-unset}" \
       "${TASKS_AXI_FILE-unset}" "${HOME-unset}" \
       "${GH_CONFIG_DIR-unset}" "${ANTHROPIC_BASE_URL-unset}" \
       "${GH_TOKEN-unset}" "${GITHUB_TOKEN-unset}" "${COPILOT_GITHUB_TOKEN-unset}" \
@@ -475,7 +475,7 @@ BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache" HOME="$home" \
   cat "$logs/source-install.log" >&2
   fail 'could not stage complete fixture source workspace'
 }
-cat >"$mirror/prototypes/trellage-firstmate-profiles/lib/fmx-prerequisites" <<'FAKE_PREREQUISITE_HELPER'
+cat >"$mirror/prototypes/trellage-firstmate-profiles/lib/firstmate-prerequisites" <<'FAKE_PREREQUISITE_HELPER'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -553,7 +553,7 @@ case "${1-}" in
     ;;
 esac
 FAKE_PREREQUISITE_HELPER
-chmod 0755 "$mirror/prototypes/trellage-firstmate-profiles/lib/fmx-prerequisites"
+chmod 0755 "$mirror/prototypes/trellage-firstmate-profiles/lib/firstmate-prerequisites"
 cp "$fake_native_claude" "$mirror/prototypes/trellage-claude-common/native-claude"
 cp "$repo_root/prototypes/trellage-claude-common/native-skills.ts" \
   "$mirror/prototypes/trellage-claude-common/native-skills.ts"
@@ -561,6 +561,7 @@ chmod 0755 "$mirror/prototypes/trellage-claude-common/native-claude"
 cp "$repo_root/scripts/trellage-session-bridge.py" "$mirror/scripts/trellage-session-bridge.py"
 cp "$repo_root/scripts/trellage-statusline.sh" "$mirror/scripts/trellage-statusline.sh"
 cp "$repo_root/scripts/install-floating-skills-runtime.sh" "$mirror/scripts/"
+cp "$repo_root/scripts/retire-native-backend.sh" "$mirror/scripts/"
 cp "$repo_root/scripts/floating-skills.ts" "$mirror/scripts/"
 cp "$repo_root/config.toml" "$mirror/config.toml"
 mirror_installer="$mirror/prototypes/trellage-firstmate-profiles/install.sh"
@@ -568,9 +569,9 @@ mirror_uninstaller="$mirror/prototypes/trellage-firstmate-profiles/uninstall.sh"
 export FAKE_PREREQUISITE_LOG="$logs/prerequisites.log"
 : >"$FAKE_PREREQUISITE_LOG"
 
-install_root="$home/.local/share/trellage/fmx"
-install_lock="$home/.local/share/trellage/.fmx-install.lock"
-command_path="$home/.local/share/trellage/.native-commands/fmx"
+install_root="$home/.local/share/trellage/firstmate"
+install_lock="$home/.local/share/trellage/.firstmate-install.lock"
+command_path="$home/.local/share/trellage/.native-commands/firstmate"
 profiles_root="$home/.local/share/trellage/profiles/firstmate"
 
 gh_config="$home/.config/gh"
@@ -581,7 +582,7 @@ github.com:
     oauth_token: fixture
 HOSTS
 
-fmx() {
+firstmate() {
   local -a command=(
     env -i
     "HOME=$home"
@@ -632,7 +633,7 @@ fmx() {
     GOOGLE_APPLICATION_CREDENTIALS=fixture-google-file
     AZURE_CLIENT_SECRET=fixture-azure-secret
     OPENAI_API_KEY=fixture-openai-token
-    "$install_root/bin/fmx"
+    "$install_root/bin/firstmate"
     "$@"
   )
   case "${1-}" in
@@ -641,17 +642,23 @@ fmx() {
   esac
 }
 
-if [[ "${FMX_CONTRACT_ONLY-}" == instances ]]; then
+contract_only="${TRELLAGE_FIRSTMATE_CONTRACT_ONLY-}"
+case "$contract_only" in
+  '' | healing | instances | lifecycle) ;;
+  *) fail "unsupported TRELLAGE_FIRSTMATE_CONTRACT_ONLY value: $contract_only" ;;
+esac
+
+if [[ "$contract_only" == instances ]]; then
   python3 "$root/tests/instances-contract.py" "$fixture_root" "$root" "$repo_root" \
     "$fake_bin" "$fake_native_claude" "$FAKE_GIT_SOURCE_TREE"
-  printf 'fmx instance contract: passed\n'
+  printf 'firstmate instance contract: passed\n'
   exit 0
 fi
-if [[ "${FMX_CONTRACT_ONLY-}" != legacy ]]; then
+if [[ "$contract_only" != lifecycle ]]; then
   python3 "$root/tests/healing-contract.py" "$fixture_root" "$root" "$repo_root" \
     "$fake_bin" "$fake_native_claude" "$FAKE_GIT_SOURCE_TREE"
-  if [[ "${FMX_CONTRACT_ONLY-}" == healing ]]; then
-    printf 'fmx healing contract: passed\n'
+  if [[ "$contract_only" == healing ]]; then
+    printf 'firstmate healing contract: passed\n'
     exit 0
   fi
   python3 "$root/tests/instances-contract.py" "$fixture_root" "$root" "$repo_root" \
@@ -668,10 +675,10 @@ for script in "$launcher" "$installer" "$uninstaller" "$worker_helper" \
     || fail "package script is missing or not executable: $script"
   bash -n "$script" || fail "package script has a syntax error: $script"
 done
-assert_contains 'runtime_operation_lock="$runtime_parent/.fmx-install.lock"' \
+assert_contains 'runtime_operation_lock="$runtime_parent/.firstmate-install.lock"' \
   "$prerequisite_helper"
 assert_contains 'acquire_runtime_operation_lock' "$prerequisite_helper"
-assert_contains 'install_lock="$runtime_parent/.fmx-install.lock"' "$uninstaller"
+assert_contains 'install_lock="$runtime_parent/.firstmate-install.lock"' "$uninstaller"
 [[ -f "$root/README.md" ]] || fail 'README.md is missing'
 [[ -f "$root/catalog.json" ]] || fail 'catalog.json is missing'
 [[ -f "$root/policies/pstack-workers.md" ]] || fail 'the pstack worker policy is missing'
@@ -777,13 +784,13 @@ done < <(jq -r '.files[] | [.path, .base] | @tsv' "$manifest")
 # The real prerequisite helper must honor both runtime-operation and
 # prerequisite-install locks without deleting a competitor's live lock.
 helper_runtime_parent="$fixture_root/prerequisite-helper-runtime"
-helper_runtime="$helper_runtime_parent/fmx"
-helper_operation_lock="$helper_runtime_parent/.fmx-install.lock"
+helper_runtime="$helper_runtime_parent/firstmate"
+helper_operation_lock="$helper_runtime_parent/.firstmate-install.lock"
 helper_prerequisite_lock="$helper_runtime/prerequisites/.install-lock"
 mkdir -p "$helper_runtime/lib" "$helper_runtime/prerequisite-lock/npm" \
   "$helper_runtime/prerequisites"
-cp "$prerequisite_helper" "$helper_runtime/lib/fmx-prerequisites"
-cp "$root/lib/fmx-control.py" "$root/lib/fmx-controls.py" "$root/lib/fmx-registry.py" "$helper_runtime/lib/"
+cp "$prerequisite_helper" "$helper_runtime/lib/firstmate-prerequisites"
+cp "$root/lib/firstmate-control.py" "$root/lib/firstmate-controls.py" "$root/lib/firstmate-registry.py" "$helper_runtime/lib/"
 cp "$root/prerequisites/manifest.json" "$helper_runtime/prerequisite-lock/manifest.json"
 cp "$root/prerequisites/npm/package.json" "$helper_runtime/prerequisite-lock/npm/package.json"
 cp "$root/prerequisites/npm/package-lock.json" \
@@ -796,11 +803,11 @@ printf '%s\n' "$$" >"$helper_operation_lock/pid"
 chmod 0600 "$helper_operation_lock/owner" "$helper_operation_lock/pid"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  "$helper_runtime/lib/fmx-prerequisites" install \
+  "$helper_runtime/lib/firstmate-prerequisites" install \
   >/dev/null 2>"$logs/prerequisite-runtime-lock.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "prerequisite helper with a live runtime lock exited $status instead of 1"
-assert_contains "another fmx runtime operation is active with pid $$" \
+assert_contains "another firstmate runtime operation is active with pid $$" \
   "$logs/prerequisite-runtime-lock.err"
 [[ "$(<"$helper_operation_lock/owner")" == "$install_lock_owner" \
   && "$(<"$helper_operation_lock/pid")" == "$$" ]] \
@@ -814,7 +821,7 @@ printf '%s\n' "$$" >"$helper_prerequisite_lock/pid"
 chmod 0600 "$helper_prerequisite_lock/owner" "$helper_prerequisite_lock/pid"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  "$helper_runtime/lib/fmx-prerequisites" install \
+  "$helper_runtime/lib/firstmate-prerequisites" install \
   >/dev/null 2>"$logs/prerequisite-install-lock.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "prerequisite helper with a live install lock exited $status instead of 1"
@@ -833,7 +840,7 @@ printf '%s\n' "$prerequisite_install_lock_owner" >"$helper_prerequisite_lock/own
 chmod 0600 "$helper_prerequisite_lock/owner"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  "$helper_runtime/lib/fmx-prerequisites" install \
+  "$helper_runtime/lib/firstmate-prerequisites" install \
   >/dev/null 2>"$logs/prerequisite-incomplete-lock.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "prerequisite helper with an incomplete lock exited $status instead of 1"
@@ -849,8 +856,8 @@ rmdir "$helper_prerequisite_lock"
 
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_PREREQUISITE_TEST_FAIL_AT=after-artifact-recovery \
-  "$host_bash" "$helper_runtime/lib/fmx-prerequisites" install \
+  TRELLAGE_FIRSTMATE_PREREQUISITE_TEST_FAIL_AT=after-artifact-recovery \
+  "$host_bash" "$helper_runtime/lib/firstmate-prerequisites" install \
   >/dev/null 2>"$logs/prerequisite-empty-recovery.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "empty prerequisite recovery probe exited $status instead of 1"
@@ -861,7 +868,7 @@ assert_contains 'injected failure at after-artifact-recovery' \
 
 helper_identity="$(
   env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-    "$host_bash" "$helper_runtime/lib/fmx-prerequisites" identity
+    "$host_bash" "$helper_runtime/lib/firstmate-prerequisites" identity
 )"
 [[ "$helper_identity" =~ ^[0-9a-f]{64}$ ]] \
   || fail 'the real prerequisite helper returned an invalid identity'
@@ -884,8 +891,8 @@ printf '{"schemaVersion":1,"identity":"%s"}\n' "$helper_recovery_identity" \
   >"$helper_retired/receipt.json"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_PREREQUISITE_TEST_FAIL_AT=after-artifact-recovery \
-  "$host_bash" "$helper_runtime/lib/fmx-prerequisites" install \
+  TRELLAGE_FIRSTMATE_PREREQUISITE_TEST_FAIL_AT=after-artifact-recovery \
+  "$host_bash" "$helper_runtime/lib/firstmate-prerequisites" install \
   >/dev/null 2>"$logs/prerequisite-artifact-recovery.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "prerequisite artifact recovery probe exited $status instead of 1"
@@ -905,7 +912,7 @@ printf '%s\n' "$ownership_value" >"$helper_incomplete_profile/.managed-by-trella
 chmod 0600 "$helper_incomplete_profile/.managed-by-trellage-firstmate-profiles"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  "$host_bash" "$helper_runtime/lib/fmx-prerequisites" install \
+  "$host_bash" "$helper_runtime/lib/firstmate-prerequisites" install \
   >/dev/null 2>"$logs/prerequisite-incomplete-session.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "prerequisite helper with an incomplete session exited $status instead of 1"
@@ -927,8 +934,8 @@ chmod 0600 "$helper_launch_lock/owner" "$helper_launch_lock/action" \
   "$helper_launch_lock/pid"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_PREREQUISITE_TEST_FAIL_AT=after-fleet-guard \
-  "$host_bash" "$helper_runtime/lib/fmx-prerequisites" install \
+  TRELLAGE_FIRSTMATE_PREREQUISITE_TEST_FAIL_AT=after-fleet-guard \
+  "$host_bash" "$helper_runtime/lib/firstmate-prerequisites" install \
   >/dev/null 2>"$logs/prerequisite-parent-launch.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "parent-launch prerequisite probe exited $status instead of 1"
@@ -942,7 +949,7 @@ assert_not_contains 'cannot install shared prerequisites' \
 printf 'setup\n' >"$helper_launch_lock/action"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  "$host_bash" "$helper_runtime/lib/fmx-prerequisites" install \
+  "$host_bash" "$helper_runtime/lib/firstmate-prerequisites" install \
   >/dev/null 2>"$logs/prerequisite-parent-setup.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "parent-setup prerequisite probe exited $status instead of 1"
@@ -958,18 +965,18 @@ rm -rf -- "$helper_launch_profile"
 
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_INSTALL_TEST_CRASH_AT=during-runtime-publication \
+  TRELLAGE_FIRSTMATE_INSTALL_TEST_CRASH_AT=during-runtime-publication \
   bash "$mirror_installer" >"$logs/install-crash.out" 2>"$logs/install-crash.err" \
   || status=$?
 [[ "$status" == 137 ]] \
   || fail "crashed fresh install exited $status instead of 137"
 [[ -d "$install_lock" ]] || fail 'crashed fresh install did not retain its stale lock'
 [[ "$(find "$home/.local/share/trellage" -mindepth 1 -maxdepth 1 \
-  -name '.fmx-install.*' ! -path "$install_lock" | wc -l | tr -d ' ')" == 1 ]] \
+  -name '.firstmate-install.*' ! -path "$install_lock" | wc -l | tr -d ' ')" == 1 ]] \
   || fail 'crashed fresh install did not retain one recovery transaction'
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_INSTALL_TEST_FAIL_AT=after-recovery \
+  TRELLAGE_FIRSTMATE_INSTALL_TEST_FAIL_AT=after-recovery \
   bash "$mirror_installer" >"$logs/install-recovery.out" 2>"$logs/install-recovery.err" \
   || status=$?
 [[ "$status" == 1 ]] || fail "fresh install recovery probe exited $status instead of 1"
@@ -981,7 +988,7 @@ assert_contains 'injected failure at after-recovery' "$logs/install-recovery.err
 [[ ! -e "$install_lock" && ! -L "$install_lock" ]] \
   || fail 'fresh crash recovery left its install lock'
 [[ -z "$(find "$home/.local/share/trellage" -mindepth 1 -maxdepth 1 \
-  -name '.fmx-install.*' -print -quit 2>/dev/null)" ]] \
+  -name '.firstmate-install.*' -print -quit 2>/dev/null)" ]] \
   || fail 'fresh crash recovery left a transaction directory'
 
 for signal_spec in HUP:129 INT:130 TERM:143; do
@@ -989,8 +996,8 @@ for signal_spec in HUP:129 INT:130 TERM:143; do
   expected_status="${signal_spec#*:}"
   status=0
   env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-    FMX_INSTALL_TEST_SIGNAL_AT=after-runtime-publication \
-    FMX_INSTALL_TEST_SIGNAL="$signal" \
+    TRELLAGE_FIRSTMATE_INSTALL_TEST_SIGNAL_AT=after-runtime-publication \
+    TRELLAGE_FIRSTMATE_INSTALL_TEST_SIGNAL="$signal" \
     bash "$mirror_installer" \
     >"$logs/install-signal-$signal.out" 2>"$logs/install-signal-$signal.err" \
     || status=$?
@@ -1008,30 +1015,30 @@ command_failure_home="$fixture_root/command-failure-home"
 mkdir "$command_failure_home"
 status=0
 env -i HOME="$command_failure_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_INSTALL_TEST_FAIL_AT=after-command-publication \
+  TRELLAGE_FIRSTMATE_INSTALL_TEST_FAIL_AT=after-command-publication \
   bash "$mirror_installer" \
   >"$logs/install-command-failure.out" 2>"$logs/install-command-failure.err" \
   || status=$?
 [[ "$status" == 1 ]] || fail "post-command failure exited $status instead of 1"
 assert_contains 'injected failure at after-command-publication' "$logs/install-command-failure.err"
-[[ ! -e "$command_failure_home/.local/share/trellage/fmx" \
-  && ! -L "$command_failure_home/.local/share/trellage/fmx" ]] \
+[[ ! -e "$command_failure_home/.local/share/trellage/firstmate" \
+  && ! -L "$command_failure_home/.local/share/trellage/firstmate" ]] \
   || fail 'post-command failure left a fresh runtime'
-[[ ! -e "$command_failure_home/.local/share/trellage/.native-commands/fmx" \
-  && ! -L "$command_failure_home/.local/share/trellage/.native-commands/fmx" ]] \
+[[ ! -e "$command_failure_home/.local/share/trellage/.native-commands/firstmate" \
+  && ! -L "$command_failure_home/.local/share/trellage/.native-commands/firstmate" ]] \
   || fail 'post-command failure left a fresh command'
-[[ ! -e "$command_failure_home/.local/share/trellage/.fmx-install.lock" ]] \
+[[ ! -e "$command_failure_home/.local/share/trellage/.firstmate-install.lock" ]] \
   || fail 'post-command failure left its install lock'
 
 foreign_command_home="$fixture_root/foreign-command-home"
 mkdir -p "$foreign_command_home/.local/share/trellage/.native-commands"
-printf 'foreign command\n' >"$foreign_command_home/.local/share/trellage/.native-commands/fmx"
+printf 'foreign command\n' >"$foreign_command_home/.local/share/trellage/.native-commands/firstmate"
 status=0
 env -i HOME="$foreign_command_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-foreign-command.err" || status=$?
 [[ "$status" == 1 ]] || fail "foreign command install exited $status instead of 1"
 assert_contains 'unrelated command' "$logs/install-foreign-command.err"
-[[ "$(<"$foreign_command_home/.local/share/trellage/.native-commands/fmx")" == 'foreign command' ]] \
+[[ "$(<"$foreign_command_home/.local/share/trellage/.native-commands/firstmate")" == 'foreign command' ]] \
   || fail 'installer changed a foreign command'
 
 canonical_parent="$fixture_root/canonical-home-parent"
@@ -1044,27 +1051,27 @@ env -i HOME="$linked_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-linked-home.err" \
   || { cat "$logs/install-linked-home.err" >&2; \
        fail 'install through a symlinked HOME ancestor failed'; }
-[[ -L "$canonical_linked_home/.local/share/trellage/.native-commands/fmx" \
-  && -d "$canonical_linked_home/.local/share/trellage/fmx" ]] \
+[[ -L "$canonical_linked_home/.local/share/trellage/.native-commands/firstmate" \
+  && -d "$canonical_linked_home/.local/share/trellage/firstmate" ]] \
   || fail 'install through a symlinked HOME ancestor used non-canonical paths'
 env -i HOME="$linked_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >/dev/null 2>"$logs/uninstall-linked-home.err" \
   || { cat "$logs/uninstall-linked-home.err" >&2; \
        fail 'uninstall through a symlinked HOME ancestor failed'; }
-[[ ! -e "$canonical_linked_home/.local/share/trellage/.native-commands/fmx" \
-  && ! -e "$canonical_linked_home/.local/share/trellage/fmx" ]] \
+[[ ! -e "$canonical_linked_home/.local/share/trellage/.native-commands/firstmate" \
+  && ! -e "$canonical_linked_home/.local/share/trellage/firstmate" ]] \
   || fail 'uninstall through a symlinked HOME ancestor left managed paths'
 
 dangling_home="$fixture_root/dangling-command-home"
-dangling_runtime="$dangling_home/.local/share/trellage/fmx"
-dangling_command="$dangling_home/.local/share/trellage/.native-commands/fmx"
+dangling_runtime="$dangling_home/.local/share/trellage/firstmate"
+dangling_command="$dangling_home/.local/share/trellage/.native-commands/firstmate"
 mkdir -p "$dangling_home/.local/share/trellage/.native-commands"
-ln -s "$dangling_runtime/bin/fmx" "$dangling_command"
+ln -s "$dangling_runtime/bin/firstmate" "$dangling_command"
 env -i HOME="$dangling_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-dangling-command.err" \
   || { cat "$logs/install-dangling-command.err" >&2; \
        fail 'install did not recover its dangling command symlink'; }
-[[ -x "$dangling_runtime/bin/fmx" && -L "$dangling_command" ]] \
+[[ -x "$dangling_runtime/bin/firstmate" && -L "$dangling_command" ]] \
   || fail 'install did not make its dangling command usable'
 rm -rf -- "$dangling_runtime"
 env -i HOME="$dangling_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
@@ -1077,11 +1084,11 @@ env -i HOME="$dangling_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >"$logs/install.out" 2>"$logs/install.err" \
   || { cat "$logs/install.err" >&2; fail 'install failed'; }
-assert_contains "Installed fmx at $command_path" "$logs/install.out"
-[[ -x "$install_root/bin/fmx" ]] || fail 'the launcher was not installed'
+assert_contains "Installed firstmate at $command_path" "$logs/install.out"
+[[ -x "$install_root/bin/firstmate" ]] || fail 'the launcher was not installed'
 [[ -f "$install_root/catalog.json" ]] || fail 'the catalog was not installed'
-[[ -x "$install_root/lib/fmx-worker" ]] || fail 'the worker helper was not installed'
-[[ -x "$install_root/lib/fmx-prerequisites" ]] \
+[[ -x "$install_root/lib/firstmate-worker" ]] || fail 'the worker helper was not installed'
+[[ -x "$install_root/lib/firstmate-prerequisites" ]] \
   || fail 'the prerequisite helper was not installed'
 [[ -x "$install_root/lib/native-claude" ]] || fail 'the shared Claude helper was not installed'
 [[ -f "$install_root/lib/trellage-session-bridge.py" ]] \
@@ -1096,15 +1103,15 @@ assert_contains "Installed fmx at $command_path" "$logs/install.out"
   || fail 'the prerequisite manifest was not installed'
 [[ -f "$install_root/prerequisite-lock/npm/package-lock.json" ]] \
   || fail 'the prerequisite npm lock was not installed'
-[[ -L "$command_path" && "$(readlink "$command_path")" == "$install_root/bin/fmx" ]] \
+[[ -L "$command_path" && "$(readlink "$command_path")" == "$install_root/bin/firstmate" ]] \
   || fail 'the command symlink is wrong'
 [[ "$(<"$install_root/.managed-by-trellage-firstmate-profiles")" == "$ownership_value" ]] \
   || fail 'the runtime ownership marker is wrong'
 [[ -z "$(find "$home/.local/share/trellage" -mindepth 1 -maxdepth 1 \
-  \( -name '.fmx-install.*' -o -name '.fmx-retired-install.*' \) -print -quit)" ]] \
+  \( -name '.firstmate-install.*' -o -name '.firstmate-retired-install.*' \) -print -quit)" ]] \
   || fail 'successful install left a runtime transaction artifact'
 [[ -z "$(find "$home/.local/share/trellage/.native-commands" -mindepth 1 -maxdepth 1 \
-  -name '.fmx-command.*' -print -quit)" ]] \
+  -name '.firstmate-command.*' -print -quit)" ]] \
   || fail 'successful install left a command transaction artifact'
 
 managed_cache="$install_root/prerequisites/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1129,7 +1136,7 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-active-session.err" || status=$?
 [[ "$status" == 1 ]] || fail "active-session install exited $status instead of 1"
-assert_contains 'cannot install fmx while a Firstmate fleet or profile mutation is active or indeterminate' \
+assert_contains 'cannot install firstmate while a Firstmate fleet or profile mutation is active or indeterminate' \
   "$logs/install-active-session.err"
 [[ -d "$install_root" && -L "$command_path" ]] \
   || fail 'active-session install changed the launcher runtime'
@@ -1141,7 +1148,7 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-incomplete-session.err" || status=$?
 [[ "$status" == 1 ]] || fail "incomplete-session install exited $status instead of 1"
-assert_contains 'cannot install fmx while a Firstmate fleet or profile mutation is active or indeterminate' \
+assert_contains 'cannot install firstmate while a Firstmate fleet or profile mutation is active or indeterminate' \
   "$logs/install-incomplete-session.err"
 [[ -d "$install_root" && -L "$command_path" ]] \
   || fail 'incomplete-session install changed the launcher runtime'
@@ -1154,7 +1161,7 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-worker-active.err" || status=$?
 [[ "$status" == 1 ]] || fail "active-worker install exited $status instead of 1"
-assert_contains 'cannot install fmx while a Firstmate fleet or profile mutation is active or indeterminate' \
+assert_contains 'cannot install firstmate while a Firstmate fleet or profile mutation is active or indeterminate' \
   "$logs/install-worker-active.err"
 [[ -d "$install_root" && -L "$command_path" ]] \
   || fail 'active-worker install changed the launcher runtime'
@@ -1168,7 +1175,7 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-mutation-active.err" || status=$?
 [[ "$status" == 1 ]] || fail "active-mutation install exited $status instead of 1"
-assert_contains 'cannot install fmx while a Firstmate fleet or profile mutation is active or indeterminate' \
+assert_contains 'cannot install firstmate while a Firstmate fleet or profile mutation is active or indeterminate' \
   "$logs/install-mutation-active.err"
 [[ -d "$install_root" && -L "$command_path" ]] \
   || fail 'active-mutation install changed the launcher runtime'
@@ -1183,17 +1190,17 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-locked.err" || status=$?
 [[ "$status" == 1 ]] || fail "install with an active lock exited $status instead of 1"
-assert_contains "another fmx install is active with pid $$" "$logs/install-locked.err"
-[[ -x "$install_root/bin/fmx" && -L "$command_path" ]] \
+assert_contains "another firstmate install is active with pid $$" "$logs/install-locked.err"
+[[ -x "$install_root/bin/firstmate" && -L "$command_path" ]] \
   || fail 'lock refusal changed the installed launcher'
 [[ -f "$managed_cache/bin/tool" ]] || fail 'lock refusal changed the prerequisite cache'
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >/dev/null 2>"$logs/uninstall-locked.err" || status=$?
 [[ "$status" == 1 ]] || fail "uninstall with an active lock exited $status instead of 1"
-assert_contains "another fmx runtime operation is active with pid $$" \
+assert_contains "another firstmate runtime operation is active with pid $$" \
   "$logs/uninstall-locked.err"
-[[ -x "$install_root/bin/fmx" && -L "$command_path" ]] \
+[[ -x "$install_root/bin/firstmate" && -L "$command_path" ]] \
   || fail 'locked uninstall changed the installed launcher'
 rm "$install_lock/owner" "$install_lock/pid"
 rmdir "$install_lock"
@@ -1205,27 +1212,27 @@ printf '99999999\n' >"$prerequisite_cache_lock/pid"
 chmod 0600 "$prerequisite_cache_lock/owner" "$prerequisite_cache_lock/pid"
 
 # A failed replacement restores the complete old runtime and command target.
-cat >"$install_root/bin/fmx" <<'LEGACY_FMX'
+cat >"$install_root/bin/firstmate" <<'LEGACY_TRELLAGE_FIRSTMATE'
 #!/usr/bin/env bash
-printf 'legacy-fmx\n'
-LEGACY_FMX
-chmod 0755 "$install_root/bin/fmx"
+printf 'legacy-firstmate\n'
+LEGACY_TRELLAGE_FIRSTMATE
+chmod 0755 "$install_root/bin/firstmate"
 printf 'rollback canary\n' >"$install_root/policies/rollback-canary.md"
-[[ "$("$command_path")" == legacy-fmx ]] || fail 'rollback command fixture is not usable'
+[[ "$("$command_path")" == legacy-firstmate ]] || fail 'rollback command fixture is not usable'
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_INSTALL_TEST_CRASH_AT=during-runtime-publication \
+  TRELLAGE_FIRSTMATE_INSTALL_TEST_CRASH_AT=during-runtime-publication \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-existing-crash.err" || status=$?
 [[ "$status" == 137 ]] || fail "crashed replacement exited $status instead of 137"
 [[ ! -e "$install_root" ]] || fail 'crashed replacement left a live runtime in the retirement window'
 [[ -L "$command_path" ]] || fail 'crashed replacement removed the prior command symlink'
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_INSTALL_TEST_FAIL_AT=after-recovery \
+  TRELLAGE_FIRSTMATE_INSTALL_TEST_FAIL_AT=after-recovery \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-existing-recovery.err" || status=$?
 [[ "$status" == 1 ]] || fail "existing recovery probe exited $status instead of 1"
 assert_contains 'injected failure at after-recovery' "$logs/install-existing-recovery.err"
-[[ "$("$command_path")" == legacy-fmx ]] \
+[[ "$("$command_path")" == legacy-firstmate ]] \
   || fail 'crash recovery did not restore the prior command behavior'
 [[ "$(<"$install_root/policies/rollback-canary.md")" == 'rollback canary' ]] \
   || fail 'crash recovery did not restore the prior runtime'
@@ -1233,11 +1240,11 @@ assert_contains 'injected failure at after-recovery' "$logs/install-existing-rec
   || fail 'reinstall did not reclaim the stale prerequisite lock'
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
-  FMX_INSTALL_TEST_FAIL_AT=after-runtime-publication \
+  TRELLAGE_FIRSTMATE_INSTALL_TEST_FAIL_AT=after-runtime-publication \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-rollback.err" || status=$?
 [[ "$status" == 1 ]] || fail "failed replacement exited $status instead of 1"
 assert_contains 'injected failure at after-runtime-publication' "$logs/install-rollback.err"
-[[ "$("$command_path")" == legacy-fmx ]] \
+[[ "$("$command_path")" == legacy-firstmate ]] \
   || fail 'failed replacement did not restore the prior command behavior'
 [[ "$(<"$install_root/policies/rollback-canary.md")" == 'rollback canary' ]] \
   || fail 'failed replacement did not restore the prior runtime'
@@ -1269,18 +1276,18 @@ printf 'injected shared-runtime failure\n' >&2
 exit 79
 FAILING_FLOATING_INSTALLER
 chmod 0755 "$floating_installer"
-cat >"$install_root/bin/fmx" <<'LEGACY_FMX'
+cat >"$install_root/bin/firstmate" <<'LEGACY_TRELLAGE_FIRSTMATE'
 #!/usr/bin/env bash
-printf 'shared-failure-fmx\n'
-LEGACY_FMX
-chmod 0755 "$install_root/bin/fmx"
+printf 'shared-failure-firstmate\n'
+LEGACY_TRELLAGE_FIRSTMATE
+chmod 0755 "$install_root/bin/firstmate"
 printf 'shared failure canary\n' >"$install_root/policies/shared-failure-canary.md"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-shared-failure.err" || status=$?
 [[ "$status" == 79 ]] || fail "shared-runtime failure exited $status instead of 79"
 assert_contains 'injected shared-runtime failure' "$logs/install-shared-failure.err"
-[[ "$("$command_path")" == shared-failure-fmx ]] \
+[[ "$("$command_path")" == shared-failure-firstmate ]] \
   || fail 'shared-runtime failure did not restore the prior command behavior'
 [[ "$(<"$install_root/policies/shared-failure-canary.md")" == 'shared failure canary' ]] \
   || fail 'shared-runtime failure did not restore the prior runtime'
@@ -1343,12 +1350,12 @@ done
 pure_home="$fixture_root/pure-home"
 mkdir -p "$pure_home"
 env -i HOME="$pure_home" PATH="$pure_bin" \
-  "$install_root/bin/fmx" list --json >"$logs/list.json" 2>"$logs/list.err" \
+  "$install_root/bin/firstmate" list --json >"$logs/list.json" 2>"$logs/list.err" \
   || { cat "$logs/list.err" >&2; fail 'list --json failed without host dependencies'; }
 jq -e '
   keys == ["harness", "launcher", "profiles", "sandbox", "schemaVersion"]
   and .schemaVersion == 1
-  and .launcher == "fmx"
+  and .launcher == "firstmate"
   and .harness == "firstmate"
   and .sandbox == false
   and (.profiles | length == 2)
@@ -1394,7 +1401,7 @@ jq -e --arg commit "$pinned_commit" '
 [[ ! -s "$FAKE_GH_LOG" ]] || fail 'list --json invoked gh'
 
 env -i HOME="$pure_home" PATH="$pure_bin" \
-  "$install_root/bin/fmx" list >"$logs/list.tsv" 2>&1 || fail 'list failed'
+  "$install_root/bin/firstmate" list >"$logs/list.tsv" 2>&1 || fail 'list failed'
 assert_contains 'default' "$logs/list.tsv"
 assert_contains 'pstack-workers' "$logs/list.tsv"
 
@@ -1402,10 +1409,10 @@ assert_contains 'pstack-workers' "$logs/list.tsv"
 # 4. Inventory before setup.
 # ===========================================================================
 
-fmx inventory default --json >"$logs/inventory-not-setup.json" \
+firstmate inventory default --json >"$logs/inventory-not-setup.json" \
   || fail 'inventory before setup failed'
 jq -e --arg commit "$pinned_commit" '
-  .launcher == "fmx"
+  .launcher == "firstmate"
   and .harness == "firstmate"
   and .profile == "default"
   and .readiness == "not-setup"
@@ -1433,7 +1440,7 @@ rm -f -- "$first_setup_done" "$first_setup_ready" "$first_setup_release"
 (
   NATIVE_CLAUDE_PREPARE_READY="$first_setup_ready" \
     NATIVE_CLAUDE_PREPARE_RELEASE="$first_setup_release" \
-    fmx setup default >/dev/null 2>&1
+    firstmate setup default >/dev/null 2>&1
   printf 'done\n' >"$first_setup_done"
 ) &
 first_setup_pid=$!
@@ -1444,7 +1451,7 @@ for _ in $(seq 1 200); do
 done
 [[ -f "$first_mutation_lock/pid" ]] || fail 'the first setup never published a lock'
 [[ -f "$first_setup_ready" ]] || fail 'the first setup never reached prepare'
-fmx inventory default --json >"$logs/inventory-first-setup.json" \
+firstmate inventory default --json >"$logs/inventory-first-setup.json" \
   || fail 'inventory failed during a first setup'
 jq -e '.readiness == "busy" and .mutation == "active"' \
   "$logs/inventory-first-setup.json" >/dev/null \
@@ -1455,7 +1462,7 @@ wait "$first_setup_pid"
 
 # Reset so the fail-closed staging cases below start from a clean profile.
 rm -rf -- "$profiles_root/default"
-fmx inventory default --json >"$logs/inventory-reset.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-reset.json" || fail 'inventory failed'
 jq -e '.readiness == "not-setup"' "$logs/inventory-reset.json" >/dev/null \
   || fail 'inventory did not report not-setup after a reset'
 
@@ -1465,7 +1472,7 @@ jq -e '.readiness == "not-setup"' "$logs/inventory-reset.json" >/dev/null \
 
 FAKE_GIT_HEAD='0000000000000000000000000000000000000000'
 status=0
-fmx setup default >"$logs/setup-wrong-head.out" 2>"$logs/setup-wrong-head.err" || status=$?
+firstmate setup default >"$logs/setup-wrong-head.out" 2>"$logs/setup-wrong-head.err" || status=$?
 [[ "$status" == 1 ]] || fail "setup with a wrong staged HEAD exited $status instead of 1"
 assert_contains 'does not match the pinned commit' "$logs/setup-wrong-head.err"
 [[ ! -d "$profiles_root/default/runtime" ]] \
@@ -1474,7 +1481,7 @@ FAKE_GIT_HEAD=''
 
 FAKE_GIT_TAMPER_FILE='bin/fm-brief.sh'
 status=0
-fmx setup default >"$logs/setup-tampered.out" 2>"$logs/setup-tampered.err" || status=$?
+firstmate setup default >"$logs/setup-tampered.out" 2>"$logs/setup-tampered.err" || status=$?
 [[ "$status" == 1 ]] || fail "setup with a tampered source exited $status instead of 1"
 assert_contains 'pinned source mismatch' "$logs/setup-tampered.err"
 [[ ! -d "$profiles_root/default/runtime" ]] \
@@ -1485,7 +1492,7 @@ FAKE_GIT_TAMPER_FILE=''
 # rejected BEFORE it can become the live runtime.
 FAKE_GIT_STAGE_EXTRA='bin/fm-stowaway.sh'
 status=0
-fmx setup default >/dev/null 2>"$logs/setup-dirty-stage.err" || status=$?
+firstmate setup default >/dev/null 2>"$logs/setup-dirty-stage.err" || status=$?
 [[ "$status" == 1 ]] || fail "setup with an unclean stage exited $status instead of 1"
 assert_contains 'staged Firstmate checkout is not clean' "$logs/setup-dirty-stage.err"
 [[ ! -d "$profiles_root/default/runtime" ]] \
@@ -1494,7 +1501,7 @@ FAKE_GIT_STAGE_EXTRA=''
 
 FAKE_GIT_FETCH_STATUS=1
 status=0
-fmx setup default >/dev/null 2>"$logs/setup-no-commit.err" || status=$?
+firstmate setup default >/dev/null 2>"$logs/setup-no-commit.err" || status=$?
 [[ "$status" == 1 ]] || fail "setup with an unavailable commit exited $status instead of 1"
 assert_contains 'is not available from' "$logs/setup-no-commit.err"
 FAKE_GIT_FETCH_STATUS=0
@@ -1503,10 +1510,10 @@ FAKE_GIT_FETCH_STATUS=0
 # 6. Setup, both profiles.
 # ===========================================================================
 
-fmx setup --all >"$logs/setup.out" 2>"$logs/setup.err" \
+firstmate setup --all >"$logs/setup.out" 2>"$logs/setup.err" \
   || { cat "$logs/setup.err" >&2; fail 'setup --all failed'; }
-assert_contains 'fmx setup default: ready' "$logs/setup.out"
-assert_contains 'fmx setup pstack-workers: ready' "$logs/setup.out"
+assert_contains 'firstmate setup default: ready' "$logs/setup.out"
+assert_contains 'firstmate setup pstack-workers: ready' "$logs/setup.out"
 [[ "$(grep -c ': ready' "$logs/setup.out")" -eq 2 ]] \
   || fail 'setup --all did not run every selected profile'
 for profile in default pstack-workers; do
@@ -1527,7 +1534,7 @@ for profile in default pstack-workers; do
     || fail "the $profile ownership marker is missing"
   [[ -x "$profile_root/runtime/bin/fm-spawn.sh" ]] \
     || fail "the $profile runtime was not published"
-  [[ -f "$profile_root/home/.fmx-managed" ]] \
+  [[ -f "$profile_root/home/.firstmate-managed" ]] \
     || fail "the $profile managed-runtime marker is missing"
   [[ -d "$profile_root/home/state" && -d "$profile_root/home/data" ]] \
     || fail "the $profile Firstmate home was not seeded"
@@ -1556,10 +1563,10 @@ for profile in default pstack-workers; do
 done
 
 # The overlay actually landed in the published runtime.
-assert_contains 'fm_fmx_worker_policy' "$profiles_root/default/runtime/bin/fm-brief.sh"
-assert_contains 'FMX_WORKER_LAUNCHER' "$profiles_root/default/runtime/bin/fm-spawn.sh"
-assert_contains 'fmx update' "$profiles_root/default/runtime/bin/fm-update.sh"
-assert_contains 'Trellage `fmx` runtimes' \
+assert_contains 'fm_firstmate_worker_policy' "$profiles_root/default/runtime/bin/fm-brief.sh"
+assert_contains 'TRELLAGE_FIRSTMATE_WORKER_LAUNCHER' "$profiles_root/default/runtime/bin/fm-spawn.sh"
+assert_contains 'firstmate update' "$profiles_root/default/runtime/bin/fm-update.sh"
+assert_contains 'Trellage `firstmate` runtimes' \
   "$profiles_root/default/runtime/.agents/skills/updatefirstmate/SKILL.md"
 
 # Only the pstack profile carries a worker policy, and the profiles are separate.
@@ -1602,23 +1609,23 @@ grep -F "prepare|home=$profiles_root/pstack-workers/captain/claude" "$NATIVE_CLA
 # ===========================================================================
 
 : >"$NATIVE_CLAUDE_LOG"
-fmx doctor default >"$logs/doctor.out" 2>"$logs/doctor.err" \
+firstmate doctor default >"$logs/doctor.out" 2>"$logs/doctor.err" \
   || { cat "$logs/doctor.err" >&2; fail 'doctor failed after setup'; }
-assert_contains 'fmx doctor default: OK' "$logs/doctor.out"
+assert_contains 'firstmate doctor default: OK' "$logs/doctor.out"
 grep -F "doctor|home=$profiles_root/default/captain/claude" "$NATIVE_CLAUDE_LOG" \
   | grep -Fq 'bridge=enabled|profile=default' \
   || fail 'doctor did not name the default profile to the shared runtime'
 
 : >"$NATIVE_CLAUDE_LOG"
-fmx doctor pstack-workers >"$logs/doctor-pstack.out" 2>"$logs/doctor-pstack.err" \
+firstmate doctor pstack-workers >"$logs/doctor-pstack.out" 2>"$logs/doctor-pstack.err" \
   || { cat "$logs/doctor-pstack.err" >&2; fail 'doctor failed for pstack-workers'; }
-assert_contains 'fmx doctor pstack-workers: OK' "$logs/doctor-pstack.out"
+assert_contains 'firstmate doctor pstack-workers: OK' "$logs/doctor-pstack.out"
 grep -F "doctor|home=$profiles_root/pstack-workers/captain/claude" "$NATIVE_CLAUDE_LOG" \
   | grep -Fq 'bridge=enabled|profile=pstack-workers' \
   || fail 'doctor did not name the pstack-workers profile to the shared runtime'
 assert_not_contains 'profile=default' "$NATIVE_CLAUDE_LOG"
 
-fmx inventory default --json >"$logs/inventory-healthy.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-healthy.json" || fail 'inventory failed'
 jq -e --arg commit "$pinned_commit" '
   .readiness == "healthy"
   and .source.installedCommit == $commit
@@ -1644,7 +1651,7 @@ jq -e --arg manifestDigest "$expected_manifest_digest" \
   and .overlay.contentDigest == $contentDigest
 ' "$logs/inventory-healthy.json" >/dev/null \
   || fail 'the reported overlay identity is not reproducible from the manifest'
-fmx inventory pstack-workers --json >"$logs/inventory-pstack.json" || fail 'inventory failed'
+firstmate inventory pstack-workers --json >"$logs/inventory-pstack.json" || fail 'inventory failed'
 jq -e --arg manifestDigest "$expected_manifest_digest" \
   --arg contentDigest "$expected_content_digest" --arg commit "$pinned_commit" '
   .readiness == "healthy"
@@ -1656,11 +1663,11 @@ jq -e --arg manifestDigest "$expected_manifest_digest" \
   || fail 'the second profile did not report the same overlay identity'
 
 for profile in default pstack-workers; do
-  fmx harness-version "$profile" >"$logs/harness-version-$profile.json" \
+  firstmate harness-version "$profile" >"$logs/harness-version-$profile.json" \
     || fail "harness-version failed for $profile"
   jq -e --arg commit "$pinned_commit" '
     .schemaVersion == 1
-    and .launcher == "fmx"
+    and .launcher == "firstmate"
     and .harness == "firstmate"
     and .installed == $commit
     and .latest == $commit
@@ -1678,7 +1685,7 @@ inventory_race_release="$fixture_root/inventory-race-release"
 rm -f -- "$inventory_race_ready" "$inventory_race_release"
 NATIVE_CLAUDE_DOCTOR_READY="$inventory_race_ready" \
   NATIVE_CLAUDE_DOCTOR_RELEASE="$inventory_race_release" \
-  fmx inventory default --json >"$logs/inventory-generation-race.json" \
+  firstmate inventory default --json >"$logs/inventory-generation-race.json" \
   2>"$logs/inventory-generation-race.err" &
 inventory_race_pid=$!
 for _ in $(seq 1 200); do
@@ -1694,7 +1701,7 @@ jq '.commit = "7777777777777777777777777777777777777777"' \
   "$profiles_root/default/receipts/source.json" >"$fixture_root/receipt.generation-race"
 mv "$fixture_root/receipt.generation-race" \
   "$profiles_root/default/receipts/source.json"
-fmx update default >/dev/null 2>"$logs/update-generation-race.err" \
+firstmate update default >/dev/null 2>"$logs/update-generation-race.err" \
   || { cat "$logs/update-generation-race.err" >&2; fail 'race publication failed'; }
 : >"$inventory_race_release"
 wait "$inventory_race_pid" \
@@ -1710,14 +1717,14 @@ jq -e --arg commit "$pinned_commit" '
   || fail 'inventory did not return a coherent post-publication snapshot'
 
 : >"$FAKE_GIT_LOG"
-fmx update --check --all >"$logs/update-check.out" 2>&1 || fail 'update --check failed'
+firstmate update --check --all >"$logs/update-check.out" 2>&1 || fail 'update --check failed'
 [[ ! -s "$FAKE_GIT_LOG" ]] || fail 'update --check touched git at all'
-assert_contains 'fmx update: default is current' "$logs/update-check.out"
-assert_contains 'fmx update: pstack-workers is current' "$logs/update-check.out"
-[[ "$(grep -c '^fmx update:' "$logs/update-check.out")" -eq 2 ]] \
+assert_contains 'firstmate update: default is current' "$logs/update-check.out"
+assert_contains 'firstmate update: pstack-workers is current' "$logs/update-check.out"
+[[ "$(grep -c '^firstmate update:' "$logs/update-check.out")" -eq 2 ]] \
   || fail 'update --check --all did not report every selected profile'
-fmx update --all >"$logs/update-all.out" 2>&1 || fail 'update --all failed'
-[[ "$(grep -c '^fmx update:' "$logs/update-all.out")" -eq 2 ]] \
+firstmate update --all >"$logs/update-all.out" 2>&1 || fail 'update --all failed'
+[[ "$(grep -c '^firstmate update:' "$logs/update-all.out")" -eq 2 ]] \
   || fail 'update --all did not run every selected profile'
 for profile in default pstack-workers; do
   [[ ! -e "$profiles_root/$profile/locks/mutation" ]] \
@@ -1725,8 +1732,8 @@ for profile in default pstack-workers; do
 done
 
 : >"$FAKE_GIT_LOG"
-fmx update default >"$logs/update-current.out" 2>&1 || fail 'update on a current profile failed'
-assert_contains 'fmx update: default is current' "$logs/update-current.out"
+firstmate update default >"$logs/update-current.out" 2>&1 || fail 'update on a current profile failed'
+assert_contains 'firstmate update: default is current' "$logs/update-current.out"
 assert_not_contains 'fetch' "$FAKE_GIT_LOG"
 assert_contains 'status --porcelain --untracked-files=all' "$FAKE_GIT_LOG"
 
@@ -1736,7 +1743,7 @@ cp "$profiles_root/default/receipts/source.json" "$fixture_root/receipt.clean"
 jq '.commit = "4444444444444444444444444444444444444444"' \
   "$fixture_root/receipt.clean" >"$profiles_root/default/receipts/source.json"
 status=0
-fmx update default >/dev/null 2>"$logs/update-dirty-stage.err" || status=$?
+firstmate update default >/dev/null 2>"$logs/update-dirty-stage.err" || status=$?
 [[ "$status" == 1 ]] || fail "update with an unclean stage exited $status instead of 1"
 assert_contains 'staged Firstmate checkout is not clean' "$logs/update-dirty-stage.err"
 [[ ! -e "$profiles_root/default/runtime/bin/fm-stowaway.sh" ]] \
@@ -1745,13 +1752,13 @@ assert_contains 'staged Firstmate checkout is not clean' "$logs/update-dirty-sta
   || fail 'the live runtime was disturbed by an unclean stage'
 FAKE_GIT_STAGE_EXTRA=''
 cp "$fixture_root/receipt.clean" "$profiles_root/default/receipts/source.json"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after an unclean stage was refused'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after an unclean stage was refused'
 
 # A stale receipt is what makes update act; only the catalog pin is installed.
 stale_receipt="$profiles_root/default/receipts/source.json"
 jq '.commit = "1111111111111111111111111111111111111111"' "$stale_receipt" \
   >"$stale_receipt.tmp" && mv "$stale_receipt.tmp" "$stale_receipt"
-fmx inventory default --json >"$logs/inventory-stale.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-stale.json" || fail 'inventory failed'
 jq -e --arg commit "$pinned_commit" '
   .source.installedCommit == "1111111111111111111111111111111111111111"
   and .source.pinnedCommit == $commit
@@ -1759,11 +1766,11 @@ jq -e --arg commit "$pinned_commit" '
   and .overlay.verified == true
 ' "$logs/inventory-stale.json" >/dev/null \
   || fail 'inventory did not expose a receipt that differs from the pin'
-fmx update --check default >"$logs/update-check-stale.out" 2>&1 \
+firstmate update --check default >"$logs/update-check-stale.out" 2>&1 \
   || fail 'update --check on a stale profile failed'
 assert_contains 'is stale (installed 111111111111, catalog pin 527aa7c12d25' \
   "$logs/update-check-stale.out"
-fmx harness-version default >"$logs/harness-version-stale.json" \
+firstmate harness-version default >"$logs/harness-version-stale.json" \
   || fail 'harness-version on a stale profile failed'
 jq -e --arg latest "$pinned_commit" '
   .installed == "1111111111111111111111111111111111111111"
@@ -1771,37 +1778,45 @@ jq -e --arg latest "$pinned_commit" '
   and .latestKnown == true
 ' "$logs/harness-version-stale.json" >/dev/null \
   || fail 'harness-version did not preserve the stale Firstmate installed commit'
-fmx update default >"$logs/update-stale.out" 2>&1 || fail 'update on a stale profile failed'
-assert_contains "fmx update: default 111111111111 -> 527aa7c12d25 installed" \
+firstmate update default >"$logs/update-stale.out" 2>&1 || fail 'update on a stale profile failed'
+assert_contains "firstmate update: default 111111111111 -> 527aa7c12d25 installed" \
   "$logs/update-stale.out"
 jq -e --arg commit "$pinned_commit" '.commit == $commit' "$stale_receipt" >/dev/null \
   || fail 'update installed something other than the catalog pin'
 
 # Unhealthy is reported, not repaired silently.
-mv "$profiles_root/default/home/.fmx-managed" "$profiles_root/default/home/.fmx-managed.away"
-fmx inventory default --json >"$logs/inventory-unhealthy.json" || fail 'inventory failed'
+mv "$profiles_root/default/home/.firstmate-managed" "$profiles_root/default/home/.firstmate-managed.away"
+firstmate inventory default --json >"$logs/inventory-unhealthy.json" || fail 'inventory failed'
 jq -e '.readiness == "unhealthy"' "$logs/inventory-unhealthy.json" >/dev/null \
   || fail 'inventory did not report unhealthy'
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-unhealthy.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-unhealthy.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor on a broken profile exited $status instead of 1"
 assert_contains 'managed-runtime marker is missing' "$logs/doctor-unhealthy.err"
-mv "$profiles_root/default/home/.fmx-managed.away" "$profiles_root/default/home/.fmx-managed"
+mv "$profiles_root/default/home/.firstmate-managed.away" "$profiles_root/default/home/.firstmate-managed"
 
-# A runtime edited behind fmx's back is detected by the overlay digests.
+# Repair migrates the historical managed-home marker without losing state.
+mv "$profiles_root/default/home/.firstmate-managed" "$profiles_root/default/home/.fmx-managed"
+firstmate repair default >"$logs/repair-legacy-marker.out" 2>"$logs/repair-legacy-marker.err" \
+  || { cat "$logs/repair-legacy-marker.err" >&2; fail 'repair did not migrate the legacy marker'; }
+[[ -f "$profiles_root/default/home/.firstmate-managed" \
+  && ! -e "$profiles_root/default/home/.fmx-managed" ]] \
+  || fail 'repair did not replace the legacy managed-runtime marker'
+
+# A runtime edited behind firstmate's back is detected by the overlay digests.
 printf '# drift\n' >>"$profiles_root/default/runtime/bin/fm-brief.sh"
-fmx inventory default --json >"$logs/inventory-drift.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-drift.json" || fail 'inventory failed'
 jq -e '.readiness == "unhealthy" and .overlay.verified == false' \
   "$logs/inventory-drift.json" >/dev/null \
   || fail 'inventory did not expose an unverified overlay after runtime drift'
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-drift.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-drift.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor on a drifted runtime exited $status instead of 1"
 assert_contains 'does not match the pinned overlay' "$logs/doctor-drift.err"
-fmx repair default >"$logs/repair.out" 2>"$logs/repair.err" \
+firstmate repair default >"$logs/repair.out" 2>"$logs/repair.err" \
   || { cat "$logs/repair.err" >&2; fail 'repair failed'; }
-assert_contains 'fmx repair default: restored' "$logs/repair.out"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after repair'
+assert_contains 'firstmate repair default: restored' "$logs/repair.out"
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after repair'
 
 # ===========================================================================
 # 7b. v1 Claude-only workers: managed FM_HOME configuration.
@@ -1812,23 +1827,23 @@ mkdir -p "$profiles_root/default/home/config" "$profiles_root/default/home/proje
 printf 'operator note\n' >"$profiles_root/default/home/config/operator-note"
 printf 'herdr\n' >"$profiles_root/default/home/config/backend"
 printf 'project state\n' >"$profiles_root/default/home/projects/keep-me"
-fmx repair default >/dev/null 2>"$logs/repair-preserve.err" \
+firstmate repair default >/dev/null 2>"$logs/repair-preserve.err" \
   || { cat "$logs/repair-preserve.err" >&2; fail 'repair failed'; }
 assert_contains 'operator note' "$profiles_root/default/home/config/operator-note"
 assert_contains 'herdr' "$profiles_root/default/home/config/backend"
 assert_contains 'project state' "$profiles_root/default/home/projects/keep-me"
 
 # The runtime/home split must retain Firstmate's data/backlog.md contract.
-# Repair migrates the one legacy path written by older fmx launches and
+# Repair migrates the one legacy path written by older firstmate launches and
 # restores the managed tasks-axi configuration.
 printf '# Backlog\n\n## Done\n' >"$profiles_root/default/home/backlog.md"
 rm -f -- "$profiles_root/default/home/data/backlog.md"
 printf 'broken\n' >"$profiles_root/default/home/.tasks.toml"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-tasks-config.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-tasks-config.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a broken tasks-axi config exited $status instead of 1"
 assert_contains 'legacy Firstmate backlog remains' "$logs/doctor-tasks-config.err"
-fmx repair default >/dev/null 2>"$logs/repair-tasks-config.err" \
+firstmate repair default >/dev/null 2>"$logs/repair-tasks-config.err" \
   || { cat "$logs/repair-tasks-config.err" >&2; fail 'repair did not migrate the legacy backlog'; }
 [[ ! -e "$profiles_root/default/home/backlog.md" ]] \
   || fail 'repair left the legacy root backlog in place'
@@ -1842,13 +1857,13 @@ for broken in 'codex' 'claude extra' 'claude '; do
     cp "$profiles_root/default/home/config/$name" "$fixture_root/$name.good"
     printf '%s\n' "$broken" >"$profiles_root/default/home/config/$name"
     status=0
-    fmx doctor default >/dev/null 2>"$logs/doctor-harness.err" || status=$?
+    firstmate doctor default >/dev/null 2>"$logs/doctor-harness.err" || status=$?
     [[ "$status" == 1 ]] \
       || fail "doctor with $name='$broken' exited $status instead of 1"
     assert_contains "must contain exactly 'claude'" "$logs/doctor-harness.err"
     rm -rf -- "$profiles_root/default/locks/session"
     status=0
-    fmx default >/dev/null 2>"$logs/launch-harness.err" || status=$?
+    firstmate default >/dev/null 2>"$logs/launch-harness.err" || status=$?
     [[ "$status" == 1 ]] \
       || fail "launch with $name='$broken' exited $status instead of 1"
     assert_contains "must contain exactly 'claude'" "$logs/launch-harness.err"
@@ -1860,87 +1875,87 @@ done
 mv "$profiles_root/default/home/config/crew-harness" "$fixture_root/crew-harness.real"
 ln -s "$fixture_root/crew-harness.real" "$profiles_root/default/home/config/crew-harness"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-harness-link.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-harness-link.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a symlinked harness file exited $status instead of 1"
 assert_contains 'worker harness file is missing' "$logs/doctor-harness-link.err"
 rm -- "$profiles_root/default/home/config/crew-harness"
 mv "$fixture_root/crew-harness.real" "$profiles_root/default/home/config/crew-harness"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after restoring the harness file'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after restoring the harness file'
 
 # A crew dispatch profile can select a non-Claude worker, so its presence
 # fails closed for both a regular file and a symlink.
 dispatch="$profiles_root/default/home/config/crew-dispatch.json"
 printf '{}\n' >"$dispatch"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-dispatch.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-dispatch.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a crew dispatch profile exited $status instead of 1"
 assert_contains 'invalid Claude-only crew dispatch rules' "$logs/doctor-dispatch.err"
 rm -rf -- "$profiles_root/default/locks/session"
 status=0
-fmx default >/dev/null 2>"$logs/launch-dispatch.err" || status=$?
+firstmate default >/dev/null 2>"$logs/launch-dispatch.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with a crew dispatch profile exited $status instead of 1"
 assert_contains 'invalid Claude-only crew dispatch rules' "$logs/launch-dispatch.err"
-fmx inventory default --json >"$logs/inventory-dispatch.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-dispatch.json" || fail 'inventory failed'
 jq -e '.readiness == "unhealthy"' "$logs/inventory-dispatch.json" >/dev/null \
   || fail 'inventory did not report unhealthy for a crew dispatch profile'
 rm -- "$dispatch"
 ln -s /dev/null "$dispatch"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-dispatch-link.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-dispatch-link.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "doctor with a symlinked crew dispatch profile exited $status instead of 1"
 assert_contains 'invalid Claude-only crew dispatch rules' "$logs/doctor-dispatch-link.err"
 rm -- "$dispatch"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after removing the dispatch profile'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after removing the dispatch profile'
 
 # ===========================================================================
 # 7c. Full-checkout integrity, offline.
 # ===========================================================================
 
-# An unrelated tracked file must not be modifiable behind fmx's back.
+# An unrelated tracked file must not be modifiable behind firstmate's back.
 printf '# unrelated drift\n' >>"$profiles_root/default/runtime/bin/fm-harness.sh" 2>/dev/null \
   || printf '# unrelated drift\n' >>"$profiles_root/default/runtime/README.md"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-tracked-drift.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-tracked-drift.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with an unrelated tracked change exited $status instead of 1"
 assert_contains 'unexpected Git changes' "$logs/doctor-tracked-drift.err"
 git -C "$profiles_root/default/runtime" checkout -- . 2>/dev/null || true
-fmx repair default >/dev/null 2>&1 || fail 'repair failed after tracked drift'
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after repairing tracked drift'
+firstmate repair default >/dev/null 2>&1 || fail 'repair failed after tracked drift'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after repairing tracked drift'
 
 # An untracked file is drift too.
 printf 'stowaway\n' >"$profiles_root/default/runtime/bin/fm-extra.sh"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-untracked.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-untracked.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with an untracked runtime file exited $status instead of 1"
 assert_contains 'unexpected Git changes' "$logs/doctor-untracked.err"
 rm -- "$profiles_root/default/runtime/bin/fm-extra.sh"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after removing the untracked file'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after removing the untracked file'
 
 # An IGNORED file is drift too: --untracked-files=all alone would hide it.
 printf 'SECRET=1\n' >"$profiles_root/default/runtime/.env"
 git -C "$profiles_root/default/runtime" check-ignore -q .env \
   || fail 'the ignored-file fixture is not actually ignored by the pinned repo'
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-ignored.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-ignored.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with an ignored runtime file exited $status instead of 1"
 assert_contains 'unexpected Git changes' "$logs/doctor-ignored.err"
 rm -- "$profiles_root/default/runtime/.env"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after removing the ignored file'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after removing the ignored file'
 
 # A runtime sitting at a different commit is refused.
 FAKE_GIT_HEAD='beefbeefbeefbeefbeefbeefbeefbeefbeefbeef'
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-head.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-head.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a foreign runtime HEAD exited $status instead of 1"
 assert_contains 'not the pinned commit' "$logs/doctor-head.err"
 rm -rf -- "$profiles_root/default/locks/session"
 status=0
-fmx default >/dev/null 2>"$logs/launch-head.err" || status=$?
+firstmate default >/dev/null 2>"$logs/launch-head.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with a foreign runtime HEAD exited $status instead of 1"
 assert_contains 'not the pinned commit' "$logs/launch-head.err"
 FAKE_GIT_HEAD=''
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after restoring HEAD'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after restoring HEAD'
 
 # ===========================================================================
 # 7d. Receipt schema.
@@ -1950,23 +1965,23 @@ cp "$profiles_root/default/receipts/source.json" "$fixture_root/receipt.good"
 jq '.repository = "https://example.invalid/other.git"' "$fixture_root/receipt.good" \
   >"$profiles_root/default/receipts/source.json"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-receipt.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-receipt.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a foreign receipt repository exited $status instead of 1"
 assert_contains 'does not match the catalog pin schema' "$logs/doctor-receipt.err"
 jq '.overlay = "0000000000000000000000000000000000000000"' "$fixture_root/receipt.good" \
   >"$profiles_root/default/receipts/source.json"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-receipt-overlay.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-receipt-overlay.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a foreign receipt overlay exited $status instead of 1"
 assert_contains 'does not match the catalog pin schema' "$logs/doctor-receipt-overlay.err"
 jq '. + {extra: 1}' "$fixture_root/receipt.good" \
   >"$profiles_root/default/receipts/source.json"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-receipt-extra.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-receipt-extra.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with an extended receipt exited $status instead of 1"
 assert_contains 'does not match the catalog pin schema' "$logs/doctor-receipt-extra.err"
 cp "$fixture_root/receipt.good" "$profiles_root/default/receipts/source.json"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after restoring the receipt'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after restoring the receipt'
 
 # ===========================================================================
 # 7e. GitHub identity is explicit.
@@ -1980,12 +1995,12 @@ env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   GH_CONFIG_DIR="$no_host_config" \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" FAKE_GIT_LOG="$FAKE_GIT_LOG" \
   FAKE_GH_LOG="$FAKE_GH_LOG" \
-  "$install_root/bin/fmx" doctor default >/dev/null 2>"$logs/doctor-gh-host.err" || status=$?
+  "$install_root/bin/firstmate" doctor default >/dev/null 2>"$logs/doctor-gh-host.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor without a github.com host exited $status instead of 1"
 assert_contains 'has no github.com entry' "$logs/doctor-gh-host.err"
 
 : >"$FAKE_GH_LOG"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed'
 assert_contains 'auth status --hostname github.com' "$FAKE_GH_LOG"
 assert_contains 'GH_TOKEN=unset|GITHUB_TOKEN=unset|COPILOT_GITHUB_TOKEN=unset|COPILOT_PROXY_GITHUB_TOKEN=unset|GH_ENTERPRISE_TOKEN=unset|GITHUB_ENTERPRISE_TOKEN=unset|COPILOT_TOKEN=unset' \
   "$FAKE_GH_LOG"
@@ -2012,10 +2027,10 @@ env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   FAKE_GIT_LOG="$FAKE_GIT_LOG" FAKE_GH_LOG="$FAKE_GH_LOG" \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" default >/dev/null 2>"$logs/launch-xdg.err" \
+  "$install_root/bin/firstmate" default >/dev/null 2>"$logs/launch-xdg.err" \
   || { cat "$logs/launch-xdg.err" >&2; fail 'launch failed with an XDG gh configuration'; }
 assert_contains "GH_CONFIG_DIR=$xdg_root/gh" "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains "FMX_GH_CONFIG_DIR=$xdg_root/gh" "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains "TRELLAGE_FIRSTMATE_GH_CONFIG_DIR=$xdg_root/gh" "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 # GH_CONFIG_DIR still wins over XDG_CONFIG_HOME.
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
@@ -2025,7 +2040,7 @@ env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   FAKE_GIT_LOG="$FAKE_GIT_LOG" FAKE_GH_LOG="$FAKE_GH_LOG" \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" default >/dev/null 2>&1 \
+  "$install_root/bin/firstmate" default >/dev/null 2>&1 \
   || fail 'launch failed with GH_CONFIG_DIR set alongside XDG_CONFIG_HOME'
 assert_contains "GH_CONFIG_DIR=$gh_config" "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_not_contains "GH_CONFIG_DIR=$xdg_root/gh" "$NATIVE_CLAUDE_LAUNCH_LOG"
@@ -2036,7 +2051,7 @@ rm -rf -- "$profiles_root/default/locks/session"
 rm -rf -- "$profiles_root/default/locks/session"
 FAKE_GH_STATUS=1
 status=0
-fmx default >/dev/null 2>"$logs/launch-gh-status.err" || status=$?
+firstmate default >/dev/null 2>"$logs/launch-gh-status.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with an unauthenticated gh exited $status instead of 1"
 assert_contains 'gh is not authenticated for github.com' "$logs/launch-gh-status.err"
 assert_contains 'auth status --hostname github.com' "$FAKE_GH_LOG"
@@ -2052,15 +2067,15 @@ for managed in home receipts; do
   mv "$profiles_root/default/$managed" "$fixture_root/$managed.real"
   ln -s "$fixture_root/$managed.real" "$profiles_root/default/$managed"
   status=0
-  fmx doctor default >/dev/null 2>"$logs/doctor-link-$managed.err" || status=$?
+  firstmate doctor default >/dev/null 2>"$logs/doctor-link-$managed.err" || status=$?
   [[ "$status" == 1 ]] || fail "doctor with a symlinked $managed exited $status instead of 1"
   assert_contains 'unsafe managed path (symlink)' "$logs/doctor-link-$managed.err"
   rm -rf -- "$profiles_root/default/locks/session"
   status=0
-  fmx default >/dev/null 2>"$logs/launch-link-$managed.err" || status=$?
+  firstmate default >/dev/null 2>"$logs/launch-link-$managed.err" || status=$?
   [[ "$status" == 1 ]] || fail "launch with a symlinked $managed exited $status instead of 1"
   assert_contains 'unsafe managed path (symlink)' "$logs/launch-link-$managed.err"
-  fmx inventory default --json >"$logs/inventory-link-$managed.json" \
+  firstmate inventory default --json >"$logs/inventory-link-$managed.json" \
     || fail "inventory with a symlinked $managed did not return structured readiness"
   jq -e '.fleet.runtime == "unsafe" and .fleet.identity == null and (.fleet.actions | all(.allowed == false))' \
     "$logs/inventory-link-$managed.json" >/dev/null \
@@ -2068,7 +2083,7 @@ for managed in home receipts; do
   rm -- "$profiles_root/default/$managed"
   mv "$fixture_root/$managed.real" "$profiles_root/default/$managed"
 done
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after restoring managed paths'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after restoring managed paths'
 
 # A managed subdirectory that resolves outside the profile root is refused.
 mv "$profiles_root/default/policy" "$fixture_root/policy.real" 2>/dev/null || true
@@ -2077,25 +2092,25 @@ if [[ -d "$fixture_root/policy.real" ]]; then
 fi
 
 # The managed-runtime marker is verified by exact content, not existence.
-printf 'managed-by=%s\n' "$ownership_value" >"$profiles_root/default/home/.fmx-managed"
+printf 'managed-by=%s\n' "$ownership_value" >"$profiles_root/default/home/.firstmate-managed"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-marker-short.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-marker-short.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a truncated marker exited $status instead of 1"
 assert_contains 'managed-runtime marker content differs' "$logs/doctor-marker-short.err"
 printf 'managed-by=%s\nprofile=pstack-workers\n' "$ownership_value" \
-  >"$profiles_root/default/home/.fmx-managed"
+  >"$profiles_root/default/home/.firstmate-managed"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-marker-profile.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-marker-profile.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a foreign marker profile exited $status instead of 1"
 assert_contains 'managed-runtime marker content differs' "$logs/doctor-marker-profile.err"
 printf 'managed-by=%s\nprofile=default\n\n' "$ownership_value" \
-  >"$profiles_root/default/home/.fmx-managed"
+  >"$profiles_root/default/home/.firstmate-managed"
 status=0
-fmx doctor default >/dev/null 2>"$logs/doctor-marker-trailing.err" || status=$?
+firstmate doctor default >/dev/null 2>"$logs/doctor-marker-trailing.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with trailing marker data exited $status instead of 1"
 assert_contains 'managed-runtime marker content differs' "$logs/doctor-marker-trailing.err"
-fmx repair default >/dev/null 2>&1 || fail 'repair failed after marker corruption'
-[[ "$(cat "$profiles_root/default/home/.fmx-managed")" \
+firstmate repair default >/dev/null 2>&1 || fail 'repair failed after marker corruption'
+[[ "$(cat "$profiles_root/default/home/.firstmate-managed")" \
   == "managed-by=$ownership_value
 profile=default" ]] || fail 'repair did not restore the exact marker content'
 
@@ -2105,15 +2120,15 @@ policy_installed="$profiles_root/pstack-workers/policy/worker-policy.md"
 cp "$policy_installed" "$fixture_root/policy.good"
 printf '\nsneaky addition\n' >>"$policy_installed"
 status=0
-fmx doctor pstack-workers >/dev/null 2>"$logs/doctor-policy-modified.err" || status=$?
+firstmate doctor pstack-workers >/dev/null 2>"$logs/doctor-policy-modified.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with a modified policy exited $status instead of 1"
 assert_contains 'differs from the Trellage-owned source' "$logs/doctor-policy-modified.err"
-fmx inventory pstack-workers --json >"$logs/inventory-policy.json" || fail 'inventory failed'
+firstmate inventory pstack-workers --json >"$logs/inventory-policy.json" || fail 'inventory failed'
 jq -e '.readiness == "unhealthy"' "$logs/inventory-policy.json" >/dev/null \
   || fail 'inventory did not report a modified policy as unhealthy'
 rm -rf -- "$profiles_root/pstack-workers/locks/session"
 status=0
-fmx pstack-workers >/dev/null 2>"$logs/launch-policy-modified.err" || status=$?
+firstmate pstack-workers >/dev/null 2>"$logs/launch-policy-modified.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with a modified policy exited $status instead of 1"
 assert_contains 'differs from the Trellage-owned source' "$logs/launch-policy-modified.err"
 
@@ -2122,11 +2137,11 @@ import sys
 sys.stdout.write("x" * 20000 + "\n")
 ' >"$policy_installed"
 status=0
-fmx doctor pstack-workers >/dev/null 2>"$logs/doctor-policy-oversize.err" || status=$?
+firstmate doctor pstack-workers >/dev/null 2>"$logs/doctor-policy-oversize.err" || status=$?
 [[ "$status" == 1 ]] || fail "doctor with an oversized policy exited $status instead of 1"
 assert_contains 'must be between 1 and 16384 bytes' "$logs/doctor-policy-oversize.err"
 cp "$fixture_root/policy.good" "$policy_installed"
-fmx doctor pstack-workers >/dev/null 2>&1 || fail 'doctor failed after restoring the policy'
+firstmate doctor pstack-workers >/dev/null 2>&1 || fail 'doctor failed after restoring the policy'
 
 # ===========================================================================
 # 7f. Per-profile mutation lock.
@@ -2141,16 +2156,16 @@ printf '%s\n' "$busy_pid" >"$mutation_lock/pid"
 printf 'repair\n' >"$mutation_lock/action"
 for command_name in setup repair update; do
   status=0
-  fmx "$command_name" default >/dev/null 2>"$logs/$command_name-locked.err" || status=$?
+  firstmate "$command_name" default >/dev/null 2>"$logs/$command_name-locked.err" || status=$?
   [[ "$status" == 1 ]] \
     || fail "$command_name during a live mutation exited $status instead of 1"
-  assert_contains 'another fmx mutation is already running' "$logs/$command_name-locked.err"
+  assert_contains 'another firstmate mutation is already running' "$logs/$command_name-locked.err"
 done
 status=0
-fmx default >/dev/null 2>"$logs/launch-mutation-locked.err" || status=$?
+firstmate default >/dev/null 2>"$logs/launch-mutation-locked.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch during a live mutation exited $status instead of 1"
-assert_contains 'another fmx mutation is already running' "$logs/launch-mutation-locked.err"
-fmx inventory default --json >"$logs/inventory-mutating.json" || fail 'inventory failed'
+assert_contains 'another firstmate mutation is already running' "$logs/launch-mutation-locked.err"
+firstmate inventory default --json >"$logs/inventory-mutating.json" || fail 'inventory failed'
 jq -e '.readiness == "busy" and .mutation == "active" and .session == "none"' \
   "$logs/inventory-mutating.json" >/dev/null \
   || fail 'inventory did not report a live mutation as busy'
@@ -2174,18 +2189,18 @@ for shape in empty owner-only bad-pid; do
   esac
   for command_name in setup repair update; do
     status=0
-    fmx "$command_name" default >/dev/null 2>"$logs/$command_name-$shape.err" || status=$?
+    firstmate "$command_name" default >/dev/null 2>"$logs/$command_name-$shape.err" || status=$?
     [[ "$status" == 1 ]] \
       || fail "$command_name against an $shape lock exited $status instead of 1"
     assert_contains 'incomplete mutation lock' "$logs/$command_name-$shape.err"
   done
   status=0
-  fmx default >/dev/null 2>"$logs/launch-mutation-$shape.err" || status=$?
+  firstmate default >/dev/null 2>"$logs/launch-mutation-$shape.err" || status=$?
   [[ "$status" == 1 ]] \
     || fail "launch against an $shape mutation lock exited $status instead of 1"
   assert_contains 'incomplete mutation lock' "$logs/launch-mutation-$shape.err"
   [[ -d "$mutation_lock" ]] || fail "an $shape lock was auto-reclaimed"
-  fmx inventory default --json >"$logs/inventory-$shape.json" || fail 'inventory failed'
+  firstmate inventory default --json >"$logs/inventory-$shape.json" || fail 'inventory failed'
   jq -e '.readiness == "busy" and .mutation == "incomplete"' \
     "$logs/inventory-$shape.json" >/dev/null \
     || fail "inventory did not report an $shape lock as busy"
@@ -2196,14 +2211,14 @@ rm -rf -- "$mutation_lock"
 # resume execution after the cleanup trap.
 status=0
 NATIVE_CLAUDE_PREPARE_SIGNAL_PARENT=TERM \
-  fmx repair default >"$logs/repair-signal.out" 2>"$logs/repair-signal.err" \
+  firstmate repair default >"$logs/repair-signal.out" 2>"$logs/repair-signal.err" \
   || status=$?
 [[ "$status" == 143 ]] \
   || fail "a TERM-interrupted repair exited $status instead of 143"
-assert_not_contains 'fmx repair default: restored' "$logs/repair-signal.out"
+assert_not_contains 'firstmate repair default: restored' "$logs/repair-signal.out"
 [[ ! -e "$mutation_lock" ]] \
   || fail 'a TERM-interrupted repair did not release its mutation lock'
-fmx doctor default >/dev/null 2>&1 \
+firstmate doctor default >/dev/null 2>&1 \
   || fail 'doctor failed after a TERM-interrupted repair'
 
 # The same rule for the captain session lock.
@@ -2219,13 +2234,13 @@ for shape in empty owner-only bad-pid; do
       ;;
   esac
   status=0
-  fmx default >/dev/null 2>"$logs/launch-session-$shape.err" || status=$?
+  firstmate default >/dev/null 2>"$logs/launch-session-$shape.err" || status=$?
   [[ "$status" == 1 ]] \
     || fail "launch against an $shape session lock exited $status instead of 1"
   assert_contains 'captain session lock' "$logs/launch-session-$shape.err"
   assert_contains 'incomplete' "$logs/launch-session-$shape.err"
   status=0
-  fmx repair default >/dev/null 2>"$logs/repair-session-$shape.err" || status=$?
+  firstmate repair default >/dev/null 2>"$logs/repair-session-$shape.err" || status=$?
   [[ "$status" == 1 ]] \
     || fail "repair against an $shape session lock exited $status instead of 1"
   assert_contains 'captain session lock' "$logs/repair-session-$shape.err"
@@ -2243,7 +2258,7 @@ rm -f -- "$mutation_first" "$mutation_ready" "$mutation_release"
 (
   NATIVE_CLAUDE_PREPARE_READY="$mutation_ready" \
     NATIVE_CLAUDE_PREPARE_RELEASE="$mutation_release" \
-    fmx repair default >/dev/null 2>&1
+    firstmate repair default >/dev/null 2>&1
   printf 'done\n' >"$mutation_first"
 ) &
 first_pid=$!
@@ -2256,13 +2271,13 @@ done
 [[ -f "$mutation_ready" ]] || fail 'the first mutation never reached prepare'
 for command_name in setup repair update; do
   status=0
-  fmx "$command_name" default >/dev/null 2>"$logs/$command_name-concurrent.err" || status=$?
+  firstmate "$command_name" default >/dev/null 2>"$logs/$command_name-concurrent.err" || status=$?
   [[ "$status" == 1 ]] \
     || fail "a concurrent $command_name exited $status instead of 1"
-  assert_contains 'another fmx mutation is already running' \
+  assert_contains 'another firstmate mutation is already running' \
     "$logs/$command_name-concurrent.err"
 done
-fmx inventory default --json >"$logs/inventory-concurrent.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-concurrent.json" || fail 'inventory failed'
 jq -e '.readiness == "busy" and .mutation == "active"' \
   "$logs/inventory-concurrent.json" >/dev/null \
   || fail 'inventory did not report a concurrent mutation as busy'
@@ -2276,11 +2291,11 @@ mkdir -p "$mutation_lock"
 printf '%s\n' "$ownership_value" >"$mutation_lock/owner"
 printf '999999\n' >"$mutation_lock/pid"
 printf 'repair\n' >"$mutation_lock/action"
-fmx inventory default --json >"$logs/inventory-stale-lock.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-stale-lock.json" || fail 'inventory failed'
 jq -e '.mutation == "stale" and .readiness == "healthy"' \
   "$logs/inventory-stale-lock.json" >/dev/null \
   || fail 'inventory did not report a stale mutation lock'
-fmx repair default >/dev/null 2>"$logs/repair-stale-lock.err" \
+firstmate repair default >/dev/null 2>"$logs/repair-stale-lock.err" \
   || { cat "$logs/repair-stale-lock.err" >&2; fail 'repair did not reclaim a stale owned lock'; }
 [[ ! -e "$mutation_lock" ]] || fail 'the mutation lock was not released'
 
@@ -2288,12 +2303,12 @@ mkdir -p "$mutation_lock"
 printf 'someone-else\n' >"$mutation_lock/owner"
 printf '999999\n' >"$mutation_lock/pid"
 status=0
-fmx repair default >/dev/null 2>"$logs/repair-foreign-lock.err" || status=$?
+firstmate repair default >/dev/null 2>"$logs/repair-foreign-lock.err" || status=$?
 [[ "$status" == 1 ]] || fail "repair against an unowned lock exited $status instead of 1"
 assert_contains 'an unowned lock directory exists' "$logs/repair-foreign-lock.err"
 [[ -f "$mutation_lock/owner" ]] || fail 'an unowned lock directory was removed'
 rm -rf -- "$mutation_lock"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after the lock tests'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after the lock tests'
 
 # ===========================================================================
 # 7g. Publication rollback.
@@ -2317,7 +2332,7 @@ exec "\$real_mv" "\$@"
 FAKE_MV
 chmod 0755 "$publish_bin/mv"
 
-printf 'sentinel\n' >"$profiles_root/default/runtime/.fmx-rollback-sentinel"
+printf 'sentinel\n' >"$profiles_root/default/runtime/.firstmate-rollback-sentinel"
 jq '.commit = "2222222222222222222222222222222222222222"' \
   "$profiles_root/default/receipts/source.json" >"$fixture_root/receipt.stale"
 cp "$fixture_root/receipt.stale" "$profiles_root/default/receipts/source.json"
@@ -2328,16 +2343,16 @@ env -i HOME="$home" PATH="$publish_bin" GH_CONFIG_DIR="$gh_config" \
   FAKE_GIT_SOURCE_TREE="$FAKE_GIT_SOURCE_TREE" FAKE_GIT_FETCH_STATUS=0 \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" update default >/dev/null 2>"$logs/update-rollback.err" || status=$?
+  "$install_root/bin/firstmate" update default >/dev/null 2>"$logs/update-rollback.err" || status=$?
 [[ "$status" == 1 ]] || fail "a failed publication exited $status instead of 1"
 assert_contains 'previously installed runtime and receipt were restored' "$logs/update-rollback.err"
-[[ -f "$profiles_root/default/runtime/.fmx-rollback-sentinel" ]] \
+[[ -f "$profiles_root/default/runtime/.firstmate-rollback-sentinel" ]] \
   || fail 'the previous runtime was not restored after a failed publication'
 [[ ! -e "$profiles_root/default/runtime.previous" ]] \
   || fail 'a retired runtime was left behind after rollback'
-rm -- "$profiles_root/default/runtime/.fmx-rollback-sentinel"
-fmx update default >/dev/null 2>&1 || fail 'update failed after a rollback'
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after a rollback'
+rm -- "$profiles_root/default/runtime/.firstmate-rollback-sentinel"
+firstmate update default >/dev/null 2>&1 || fail 'update failed after a rollback'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after a rollback'
 
 # The receipt is part of the same transaction: a failed receipt publication
 # restores both the previous runtime and the previous receipt.
@@ -2365,7 +2380,7 @@ exec "\$real_mv" "\$@"
 FAKE_MV
 chmod 0755 "$receipt_bin/mv"
 
-printf 'sentinel\n' >"$profiles_root/default/runtime/.fmx-receipt-sentinel"
+printf 'sentinel\n' >"$profiles_root/default/runtime/.firstmate-receipt-sentinel"
 cp "$profiles_root/default/receipts/source.json" "$fixture_root/receipt.before"
 jq '.commit = "3333333333333333333333333333333333333333"' \
   "$fixture_root/receipt.before" >"$profiles_root/default/receipts/source.json"
@@ -2378,19 +2393,19 @@ env -i HOME="$home" PATH="$receipt_bin" GH_CONFIG_DIR="$gh_config" \
   FAKE_MV_ONCE="$fixture_root/receipt-mv-failed" \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" update default >/dev/null 2>"$logs/receipt-rollback.err" || status=$?
+  "$install_root/bin/firstmate" update default >/dev/null 2>"$logs/receipt-rollback.err" || status=$?
 [[ "$status" == 1 ]] || fail "a failed receipt publication exited $status instead of 1"
 assert_contains 'the staged receipt' "$logs/receipt-rollback.err"
 assert_contains 'were restored' "$logs/receipt-rollback.err"
-[[ -f "$profiles_root/default/runtime/.fmx-receipt-sentinel" ]] \
+[[ -f "$profiles_root/default/runtime/.firstmate-receipt-sentinel" ]] \
   || fail 'the previous runtime was not restored after a failed receipt publication'
 cmp -s "$fixture_root/receipt.stale-before" "$profiles_root/default/receipts/source.json" \
   || fail 'the previous receipt was not restored after a failed receipt publication'
 [[ ! -e "$profiles_root/default/receipts.previous.json" ]] \
   || fail 'a retired receipt was left behind after rollback'
-rm -- "$profiles_root/default/runtime/.fmx-receipt-sentinel"
-fmx update default >/dev/null 2>&1 || fail 'update failed after a receipt rollback'
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after a receipt rollback'
+rm -- "$profiles_root/default/runtime/.firstmate-receipt-sentinel"
+firstmate update default >/dev/null 2>&1 || fail 'update failed after a receipt rollback'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after a receipt rollback'
 
 # Retiring the old receipt happens before the live runtime moves. If receipt
 # retirement fails, both live paths must remain unchanged.
@@ -2411,7 +2426,7 @@ exec "\$real_mv" "\$@"
 FAKE_MV
 chmod 0755 "$retire_receipt_bin/mv"
 
-printf 'sentinel\n' >"$profiles_root/default/runtime/.fmx-retire-receipt-sentinel"
+printf 'sentinel\n' >"$profiles_root/default/runtime/.firstmate-retire-receipt-sentinel"
 cp "$profiles_root/default/receipts/source.json" "$fixture_root/receipt.retire-before"
 jq '.commit = "4444444444444444444444444444444444444444"' \
   "$fixture_root/receipt.retire-before" >"$profiles_root/default/receipts/source.json"
@@ -2423,25 +2438,25 @@ env -i HOME="$home" PATH="$retire_receipt_bin" GH_CONFIG_DIR="$gh_config" \
   FAKE_GIT_SOURCE_TREE="$FAKE_GIT_SOURCE_TREE" FAKE_GIT_FETCH_STATUS=0 \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" update default \
+  "$install_root/bin/firstmate" update default \
   >/dev/null 2>"$logs/receipt-retirement.err" || status=$?
 [[ "$status" == 1 ]] || fail "a failed receipt retirement exited $status instead of 1"
 assert_contains 'runtime and receipt were left unchanged' "$logs/receipt-retirement.err"
-[[ -f "$profiles_root/default/runtime/.fmx-retire-receipt-sentinel" ]] \
+[[ -f "$profiles_root/default/runtime/.firstmate-retire-receipt-sentinel" ]] \
   || fail 'receipt retirement failure moved the live runtime'
 cmp -s "$fixture_root/receipt.retire-stale" \
   "$profiles_root/default/receipts/source.json" \
   || fail 'receipt retirement failure changed the live receipt'
 [[ ! -e "$profiles_root/default/runtime.previous" ]] \
   || fail 'receipt retirement failure left a retired runtime'
-rm -- "$profiles_root/default/runtime/.fmx-retire-receipt-sentinel"
-fmx update default >/dev/null 2>&1 || fail 'update failed after a receipt retirement failure'
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after a receipt retirement failure'
+rm -- "$profiles_root/default/runtime/.firstmate-retire-receipt-sentinel"
+firstmate update default >/dev/null 2>&1 || fail 'update failed after a receipt retirement failure'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after a receipt retirement failure'
 
 # Lifecycle-gated readers recover the crash window after receipt retirement.
 mv "$profiles_root/default/receipts/source.json" \
   "$profiles_root/default/receipts.previous.json"
-fmx doctor default >/dev/null 2>"$logs/doctor-recover-receipt.err" \
+firstmate doctor default >/dev/null 2>"$logs/doctor-recover-receipt.err" \
   || { cat "$logs/doctor-recover-receipt.err" >&2; fail 'doctor did not recover a retired receipt'; }
 [[ -f "$profiles_root/default/receipts/source.json" ]] \
   || fail 'doctor did not restore the retired receipt'
@@ -2452,12 +2467,12 @@ fmx doctor default >/dev/null 2>"$logs/doctor-recover-receipt.err" \
 # preserved. Recovery discards the incomplete new pair and restores the old one.
 mv "$profiles_root/default/runtime" "$profiles_root/default/runtime.previous"
 cp -R "$profiles_root/default/runtime.previous" "$profiles_root/default/runtime"
-printf 'incomplete\n' >"$profiles_root/default/runtime/.fmx-incomplete-publication"
+printf 'incomplete\n' >"$profiles_root/default/runtime/.firstmate-incomplete-publication"
 mv "$profiles_root/default/receipts/source.json" \
   "$profiles_root/default/receipts.previous.json"
-fmx doctor default >/dev/null 2>"$logs/doctor-recover-pair.err" \
+firstmate doctor default >/dev/null 2>"$logs/doctor-recover-pair.err" \
   || { cat "$logs/doctor-recover-pair.err" >&2; fail 'doctor did not recover an incomplete live pair'; }
-[[ ! -e "$profiles_root/default/runtime/.fmx-incomplete-publication" ]] \
+[[ ! -e "$profiles_root/default/runtime/.firstmate-incomplete-publication" ]] \
   || fail 'doctor kept the incompletely published runtime'
 [[ ! -e "$profiles_root/default/runtime.previous" ]] \
   || fail 'doctor left the recovered runtime retired'
@@ -2469,29 +2484,29 @@ fmx doctor default >/dev/null 2>"$logs/doctor-recover-pair.err" \
 mv "$profiles_root/default/runtime" "$profiles_root/default/runtime.previous"
 mv "$profiles_root/default/receipts/source.json" \
   "$fixture_root/receipt.singleton-runtime-away"
-fmx repair default >/dev/null 2>"$logs/repair-singleton-runtime.err" \
+firstmate repair default >/dev/null 2>"$logs/repair-singleton-runtime.err" \
   || { cat "$logs/repair-singleton-runtime.err" >&2; fail 'repair did not recover a singleton runtime'; }
 [[ ! -e "$profiles_root/default/runtime.previous" ]] \
   || fail 'repair left the singleton runtime retired'
-fmx doctor default >/dev/null 2>&1 \
+firstmate doctor default >/dev/null 2>&1 \
   || fail 'doctor failed after singleton runtime recovery'
 
 # The symmetric singleton receipt state is also recoverable.
 mv "$profiles_root/default/runtime" "$fixture_root/runtime.singleton-receipt-away"
 mv "$profiles_root/default/receipts/source.json" \
   "$profiles_root/default/receipts.previous.json"
-fmx repair default >/dev/null 2>"$logs/repair-singleton-receipt.err" \
+firstmate repair default >/dev/null 2>"$logs/repair-singleton-receipt.err" \
   || { cat "$logs/repair-singleton-receipt.err" >&2; fail 'repair did not recover a singleton receipt'; }
 [[ ! -e "$profiles_root/default/receipts.previous.json" ]] \
   || fail 'repair left the singleton receipt retired'
-fmx doctor default >/dev/null 2>&1 \
+firstmate doctor default >/dev/null 2>&1 \
   || fail 'doctor failed after singleton receipt recovery'
 
 # A preserved previous runtime is restored, never discarded, when the live
 # runtime is absent. Publication is then made to fail, so the preserved copy is
 # the only thing that can save the profile: it must still be there afterwards.
 mv "$profiles_root/default/runtime" "$profiles_root/default/runtime.previous"
-printf 'preserved\n' >"$profiles_root/default/runtime.previous/.fmx-preserved-sentinel"
+printf 'preserved\n' >"$profiles_root/default/runtime.previous/.firstmate-preserved-sentinel"
 jq '.commit = "5555555555555555555555555555555555555555"' \
   "$profiles_root/default/receipts/source.json" >"$fixture_root/receipt.preserve"
 cp "$fixture_root/receipt.preserve" "$profiles_root/default/receipts/source.json"
@@ -2502,17 +2517,17 @@ env -i HOME="$home" PATH="$publish_bin" GH_CONFIG_DIR="$gh_config" \
   FAKE_GIT_SOURCE_TREE="$FAKE_GIT_SOURCE_TREE" FAKE_GIT_FETCH_STATUS=0 \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" update default \
+  "$install_root/bin/firstmate" update default \
   >/dev/null 2>"$logs/update-preserved.err" || status=$?
 [[ "$status" == 1 ]] || fail "a failed publication over a preserved runtime exited $status"
-[[ -f "$profiles_root/default/runtime/.fmx-preserved-sentinel" ]] \
+[[ -f "$profiles_root/default/runtime/.firstmate-preserved-sentinel" ]] \
   || fail 'the only preserved runtime was discarded instead of restored'
-rm -- "$profiles_root/default/runtime/.fmx-preserved-sentinel"
-fmx repair default >/dev/null 2>"$logs/repair-preserved.err" \
+rm -- "$profiles_root/default/runtime/.firstmate-preserved-sentinel"
+firstmate repair default >/dev/null 2>"$logs/repair-preserved.err" \
   || { cat "$logs/repair-preserved.err" >&2; fail 'repair could not recover after preservation'; }
 [[ ! -e "$profiles_root/default/runtime.previous" ]] \
   || fail 'a preserved runtime was left behind after recovery'
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after preserved-runtime recovery'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after preserved-runtime recovery'
 
 # ===========================================================================
 # 8. Launch: offline, isolated, token-free.
@@ -2520,10 +2535,10 @@ fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after preserved-runtim
 
 : >"$FAKE_GIT_LOG"
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
-fmx default --resume-nothing >"$logs/launch1.out" 2>"$logs/launch1.err" \
+firstmate default --resume-nothing >"$logs/launch1.out" 2>"$logs/launch1.err" \
   || { cat "$logs/launch1.err" >&2; fail 'launch failed'; }
 rm -rf -- "$profiles_root/default/locks/session"
-fmx default >"$logs/launch2.out" 2>"$logs/launch2.err" \
+firstmate default >"$logs/launch2.out" 2>"$logs/launch2.err" \
   || { cat "$logs/launch2.err" >&2; fail 'repeat launch failed'; }
 assert_not_contains 'fetch' "$FAKE_GIT_LOG"
 assert_contains 'rev-parse HEAD' "$FAKE_GIT_LOG"
@@ -2532,13 +2547,13 @@ assert_contains 'rev-parse HEAD' "$FAKE_GIT_LOG"
 assert_contains "FM_HOME=$profiles_root/default/home" "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains "FM_ROOT_OVERRIDE=$profiles_root/default/runtime" "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains 'FM_BACKEND=tmux' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains "FMX_WORKER_LAUNCHER=$install_root/lib/fmx-worker" "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_TASK_ID_PREFIX=fmd' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains "TRELLAGE_FIRSTMATE_WORKER_LAUNCHER=$install_root/lib/firstmate-worker" "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains 'TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=fmd' "$NATIVE_CLAUDE_LAUNCH_LOG"
 # The captain publishes its validated HOME, PATH, and absolute Bash interpreter
 # for every worker pane.
-assert_contains "FMX_WORKER_HOME=$home" "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains "FMX_WORKER_PATH=$fake_bin" "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains "FMX_WORKER_BASH=$host_bash" "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains "TRELLAGE_FIRSTMATE_WORKER_HOME=$home" "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains "TRELLAGE_FIRSTMATE_WORKER_PATH=$fake_bin" "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains "TRELLAGE_FIRSTMATE_WORKER_BASH=$host_bash" "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains 'TASKS_AXI_BACKEND=markdown' "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains "TASKS_AXI_FILE=$profiles_root/default/home/data/backlog.md" \
   "$NATIVE_CLAUDE_LAUNCH_LOG"
@@ -2564,17 +2579,17 @@ rm -rf -- "$install_root/prerequisites"
 rm -rf -- "$profiles_root/default/locks/session"
 : >"$FAKE_PREREQUISITE_LOG"
 status=0
-fmx doctor default >"$logs/prerequisite-doctor.out" \
+firstmate doctor default >"$logs/prerequisite-doctor.out" \
   2>"$logs/prerequisite-doctor.err" || status=$?
 [[ "$status" != 0 ]] || fail 'doctor reported success with missing fleet prerequisites'
-assert_not_contains 'fmx doctor default: OK' "$logs/prerequisite-doctor.out"
+assert_not_contains 'firstmate doctor default: OK' "$logs/prerequisite-doctor.out"
 assert_contains 'fleet prerequisites incomplete' "$logs/prerequisite-doctor.err"
-assert_contains 'managed by fmx after consent:' "$logs/prerequisite-doctor.err"
+assert_contains 'managed by firstmate after consent:' "$logs/prerequisite-doctor.err"
 assert_contains 'no-mistakes' "$logs/prerequisite-doctor.err"
 [[ ! -s "$FAKE_PREREQUISITE_LOG" ]] \
   || fail 'doctor attempted to install prerequisites'
 status=0
-printf 'n\n' | fmx default >"$logs/prerequisite-decline.out" \
+printf 'n\n' | firstmate default >"$logs/prerequisite-decline.out" \
   2>"$logs/prerequisite-decline.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "declined prerequisite installation exited $status instead of 1"
@@ -2597,14 +2612,14 @@ assert_contains 'prerequisite installation declined' "$logs/prerequisite-decline
 rm -rf -- "$profiles_root/default/locks/session"
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 printf 'yes\n' | FAKE_EXPECT_LAUNCH_MUTATION_PROFILE=default \
-  fmx default >"$logs/prerequisite-install.out" \
+  firstmate default >"$logs/prerequisite-install.out" \
   2>"$logs/prerequisite-install.err" \
   || { cat "$logs/prerequisite-install.err" >&2; fail 'consented prerequisite installation failed'; }
 assert_contains 'Installed Firstmate prerequisites' "$logs/prerequisite-install.out"
 assert_contains "destination=$managed_destination" "$FAKE_PREREQUISITE_LOG"
 assert_contains 'GH_TOKEN=unset|GITHUB_TOKEN=unset|COPILOT_GITHUB_TOKEN=unset|COPILOT_PROXY_GITHUB_TOKEN=unset' \
   "$FAKE_PREREQUISITE_LOG"
-assert_contains "FMX_WORKER_PATH=$managed_destination/bin:$managed_destination/npm/node_modules/.bin:$fake_bin" \
+assert_contains "TRELLAGE_FIRSTMATE_WORKER_PATH=$managed_destination/bin:$managed_destination/npm/node_modules/.bin:$fake_bin" \
   "$NATIVE_CLAUDE_LAUNCH_LOG"
 [[ -f "$managed_destination/.complete" ]] \
   || fail 'the consented prerequisite install did not publish its completion marker'
@@ -2613,7 +2628,7 @@ assert_contains "FMX_WORKER_PATH=$managed_destination/bin:$managed_destination/n
 # again.
 rm -rf -- "$profiles_root/default/locks/session"
 install_count_before="$(wc -l <"$FAKE_PREREQUISITE_LOG" | tr -d '[:space:]')"
-fmx default </dev/null >"$logs/prerequisite-repeat.out" \
+firstmate default </dev/null >"$logs/prerequisite-repeat.out" \
   2>"$logs/prerequisite-repeat.err" \
   || { cat "$logs/prerequisite-repeat.err" >&2; fail 'repeat launch with managed prerequisites failed'; }
 install_count_after="$(wc -l <"$FAKE_PREREQUISITE_LOG" | tr -d '[:space:]')"
@@ -2638,7 +2653,7 @@ rm -rf -- "$profiles_root/pstack-workers/locks/session"
 (
   cd "$deleted_cwd"
   rmdir "$deleted_cwd"
-  fmx pstack-workers >"$logs/deleted-cwd-launch.out" \
+  firstmate pstack-workers >"$logs/deleted-cwd-launch.out" \
     2>"$logs/deleted-cwd-launch.err"
 ) || {
   cat "$logs/deleted-cwd-launch.err" >&2
@@ -2654,7 +2669,7 @@ rmdir "$deleted_cwd_parent"
 # namespace.
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 rm -rf -- "$profiles_root/pstack-workers/locks/session"
-fmx pstack-workers >/dev/null 2>"$logs/launch-pstack.err" \
+firstmate pstack-workers >/dev/null 2>"$logs/launch-pstack.err" \
   || { cat "$logs/launch-pstack.err" >&2; fail 'pstack-workers launch failed'; }
 assert_contains "FM_HOME=$profiles_root/pstack-workers/home" "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains "home=$profiles_root/pstack-workers/captain/claude|bridge=enabled|profile=pstack-workers" \
@@ -2662,21 +2677,21 @@ assert_contains "home=$profiles_root/pstack-workers/captain/claude|bridge=enable
 # The pstack-workers captain must never be launched under the default profile's
 # bridge-hook identity.
 assert_not_contains 'profile=default' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_TASK_ID_PREFIX=fmp' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains "FMX_WORKER_POLICY_FILE=$profiles_root/pstack-workers/policy/worker-policy.md" \
+assert_contains 'TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=fmp' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains "TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE=$profiles_root/pstack-workers/policy/worker-policy.md" \
   "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 # Herdr is chosen only from a real pane identity.
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 rm -rf -- "$profiles_root/default/locks/session"
-TEST_HERDR_ENV=1 TEST_HERDR_PANE=pane-captain fmx default >/dev/null 2>&1 \
+TEST_HERDR_ENV=1 TEST_HERDR_PANE=pane-captain firstmate default >/dev/null 2>&1 \
   || fail 'launch inside a Herdr pane failed'
 assert_contains 'FM_BACKEND=herdr' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_CAPTAIN_PANE_ID=pane-captain' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains 'TRELLAGE_FIRSTMATE_CAPTAIN_PANE_ID=pane-captain' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 rm -rf -- "$profiles_root/default/locks/session"
-TEST_HERDR_ENV=1 TEST_HERDR_PANE='' fmx default >/dev/null 2>&1 \
+TEST_HERDR_ENV=1 TEST_HERDR_PANE='' firstmate default >/dev/null 2>&1 \
   || fail 'launch with an empty Herdr pane id failed'
 assert_contains 'FM_BACKEND=tmux' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
@@ -2693,14 +2708,14 @@ env -i HOME="$home" PATH="$no_tmux_bin" GH_CONFIG_DIR="$gh_config" \
   TMPDIR="${TMPDIR:-/tmp}" NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
   FAKE_GIT_LOG="$FAKE_GIT_LOG" FAKE_GH_LOG="$FAKE_GH_LOG" \
-  "$install_root/bin/fmx" default >/dev/null 2>"$logs/launch-no-backend.err" || status=$?
+  "$install_root/bin/firstmate" default >/dev/null 2>"$logs/launch-no-backend.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch without a backend exited $status instead of 1"
 assert_contains 'MISSING: tmux' "$logs/launch-no-backend.err"
 assert_contains 'Firstmate cannot dispatch workers' "$logs/launch-no-backend.err"
 
 # A launch never repairs a profile that is not set up.
 status=0
-fmx not-a-profile >/dev/null 2>"$logs/launch-unknown.err" || status=$?
+firstmate not-a-profile >/dev/null 2>"$logs/launch-unknown.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch of an unknown profile exited $status instead of 1"
 assert_contains 'unknown profile: not-a-profile' "$logs/launch-unknown.err"
 
@@ -2729,7 +2744,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     status=0
     NATIVE_CLAUDE_LAUNCH_READY="$concurrent_launch_ready" \
       NATIVE_CLAUDE_LAUNCH_RELEASE="$concurrent_launch_release" \
-      fmx default \
+      firstmate default \
       >/dev/null 2>"$logs/concurrent-$attempt.err" || status=$?
     printf '%s\n' "$status" >"$concurrent_status/$attempt"
   ) &
@@ -2762,7 +2777,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
   if [[ "$(cat "$concurrent_status/$attempt")" == 0 ]]; then
     succeeded=$((succeeded + 1))
   else
-    grep -Eq 'fmx mutation|mutation lock|captain session' \
+    grep -Eq 'firstmate mutation|mutation lock|captain session' \
       "$logs/concurrent-$attempt.err" \
       || fail "concurrent launch $attempt did not fail at a lifecycle lock"
   fi
@@ -2772,7 +2787,7 @@ done
 
 # Concurrency is timing-dependent, so the structural guarantee is asserted
 # directly too: a lock directory must never be published empty and then filled.
-installed_launcher="$install_root/bin/fmx"
+installed_launcher="$install_root/bin/firstmate"
 # mkdir is the exclusive-creation arbiter and never replaces anything;
 # rename(2) is reserved for reclaiming an unambiguously stale lock, because it
 # WOULD replace an empty competitor directory.
@@ -2792,7 +2807,7 @@ printf '%s\n' "$ownership_value" >"$profiles_root/default/locks/session/owner"
 printf '999999\n' >"$profiles_root/default/locks/session/pid"
 printf 'tmux\n' >"$profiles_root/default/locks/session/backend"
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
-fmx default >/dev/null 2>"$logs/launch-stale-session.err" \
+firstmate default >/dev/null 2>"$logs/launch-stale-session.err" \
   || { cat "$logs/launch-stale-session.err" >&2; fail 'launch did not reclaim a stale session lock'; }
 [[ "$(grep -c '^launch|' "$NATIVE_CLAUDE_LAUNCH_LOG")" -eq 1 ]] \
   || fail 'a reclaimed stale session lock did not launch exactly once'
@@ -2801,17 +2816,17 @@ rm -rf -- "$profiles_root/default/locks/session"
 mkdir -p "$profiles_root/default/locks/session"
 printf 'someone-else\n' >"$profiles_root/default/locks/session/owner"
 printf '999999\n' >"$profiles_root/default/locks/session/pid"
-fmx inventory default --json >"$logs/inventory-foreign-session.json" \
+firstmate inventory default --json >"$logs/inventory-foreign-session.json" \
   || fail 'inventory failed for an unowned session lock'
 jq -e '.readiness == "busy" and .session == "unowned"' \
   "$logs/inventory-foreign-session.json" >/dev/null \
   || fail 'inventory did not fail closed for an unowned session lock'
 status=0
-fmx repair default >/dev/null 2>"$logs/repair-foreign-session.err" || status=$?
+firstmate repair default >/dev/null 2>"$logs/repair-foreign-session.err" || status=$?
 [[ "$status" == 1 ]] || fail "repair against an unowned session lock exited $status instead of 1"
 assert_contains 'captain session lock' "$logs/repair-foreign-session.err"
 status=0
-fmx default >/dev/null 2>"$logs/launch-foreign-session.err" || status=$?
+firstmate default >/dev/null 2>"$logs/launch-foreign-session.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch against an unowned session lock exited $status instead of 1"
 assert_contains 'captain session lock' "$logs/launch-foreign-session.err"
 assert_contains 'unowned' "$logs/launch-foreign-session.err"
@@ -2824,13 +2839,13 @@ rm -rf -- "$profiles_root/default/locks/session"
 # ===========================================================================
 
 # A failing profile must stop the selection, not continue and report success.
-mv "$profiles_root/default/home/.fmx-managed" "$fixture_root/marker.away"
-printf 'broken\n' >"$profiles_root/default/home/.fmx-managed"
+mv "$profiles_root/default/home/.firstmate-managed" "$fixture_root/marker.away"
+printf 'broken\n' >"$profiles_root/default/home/.firstmate-managed"
 status=0
-fmx repair --all >"$logs/repair-all-broken.out" 2>"$logs/repair-all-broken.err" || status=$?
-mv -f "$fixture_root/marker.away" "$profiles_root/default/home/.fmx-managed"
+firstmate repair --all >"$logs/repair-all-broken.out" 2>"$logs/repair-all-broken.err" || status=$?
+mv -f "$fixture_root/marker.away" "$profiles_root/default/home/.firstmate-managed"
 [[ "$status" != 0 ]] || fail 'repair --all reported success despite a failing profile'
-fmx repair default >/dev/null 2>&1 || fail 'repair failed while restoring after fail-fast'
+firstmate repair default >/dev/null 2>&1 || fail 'repair failed while restoring after fail-fast'
 
 # errexit must stay active inside the profile loop: a BARE failing command
 # (one with no explicit || die) must abort rather than continue to success.
@@ -2845,7 +2860,7 @@ cat >"$marker_bin/mv" <<FAKE_MV
 real_mv="$(command -v mv)"
 destination="\${@: -1}"
 case "\$destination" in
-  */.fmx-managed) exit 79 ;;
+  */.firstmate-managed) exit 79 ;;
 esac
 exec "\$real_mv" "\$@"
 FAKE_MV
@@ -2857,12 +2872,12 @@ env -i HOME="$home" PATH="$marker_bin" GH_CONFIG_DIR="$gh_config" \
   FAKE_GIT_SOURCE_TREE="$FAKE_GIT_SOURCE_TREE" FAKE_GIT_FETCH_STATUS=0 \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" setup default \
+  "$install_root/bin/firstmate" setup default \
   >"$logs/setup-bare-failure.out" 2>"$logs/setup-bare-failure.err" || status=$?
 [[ "$status" != 0 ]] \
   || fail 'a bare failing command inside a profile operation was swallowed'
-assert_not_contains 'fmx setup default: ready' "$logs/setup-bare-failure.out"
-fmx repair default >/dev/null 2>&1 || fail 'repair failed after the bare-failure check'
+assert_not_contains 'firstmate setup default: ready' "$logs/setup-bare-failure.out"
+firstmate repair default >/dev/null 2>&1 || fail 'repair failed after the bare-failure check'
 
 # ===========================================================================
 # 9. Active-fleet refusal and busy inventory.
@@ -2876,17 +2891,17 @@ printf '%s\n' "$ownership_value" >"$session_lock/owner"
 printf '%s\n' "$busy_pid" >"$session_lock/pid"
 printf 'tmux\n' >"$session_lock/backend"
 
-fmx inventory default --json >"$logs/inventory-busy.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-busy.json" || fail 'inventory failed'
 jq -e '.readiness == "busy" and .session == "active"' "$logs/inventory-busy.json" >/dev/null \
   || fail 'inventory did not report busy'
 for command_name in update repair; do
   status=0
-  fmx "$command_name" default >/dev/null 2>"$logs/$command_name-busy.err" || status=$?
+  firstmate "$command_name" default >/dev/null 2>"$logs/$command_name-busy.err" || status=$?
   [[ "$status" == 1 ]] || fail "$command_name on an active fleet exited $status instead of 1"
   assert_contains "$command_name refused" "$logs/$command_name-busy.err"
 done
 status=0
-fmx default >/dev/null 2>"$logs/launch-busy.err" || status=$?
+firstmate default >/dev/null 2>"$logs/launch-busy.err" || status=$?
 [[ "$status" == 1 ]] || fail "a second captain launch exited $status instead of 1"
 assert_contains 'launch refused' "$logs/launch-busy.err"
 assert_contains 'fleet is active' "$logs/launch-busy.err"
@@ -2907,7 +2922,7 @@ printf '%s\n' "$ownership_value" >"$profiles_root/default/workers/fmd-dead/.mana
 printf '999999\n' >"$profiles_root/default/workers/fmd-dead/.active"
 mkdir -p "$profiles_root/default/workers/fmd-orphan"
 
-fmx inventory default --json >"$logs/inventory-workers.json" || fail 'inventory failed'
+firstmate inventory default --json >"$logs/inventory-workers.json" || fail 'inventory failed'
 jq -e '
   .readiness == "busy"
   and ([.workers[] | select(.task == "fmd-live") | .state] == ["active"])
@@ -2916,7 +2931,7 @@ jq -e '
 ' "$logs/inventory-workers.json" >/dev/null \
   || fail 'inventory did not classify worker state'
 status=0
-fmx update default >/dev/null 2>"$logs/update-workers.err" || status=$?
+firstmate update default >/dev/null 2>"$logs/update-workers.err" || status=$?
 [[ "$status" == 1 ]] || fail "update with an active worker exited $status instead of 1"
 assert_contains 'update refused' "$logs/update-workers.err"
 
@@ -2941,7 +2956,7 @@ printf 'tmux\n' >"$active_session/backend"
 printf '%s\n' "$busy_pid" >"$active_session/pid"
 mv "$profiles_root/default/receipts/source.json" "$fixture_root/receipt.hidden"
 status=0
-fmx setup default >/dev/null 2>"$logs/setup-active-no-receipt.err" || status=$?
+firstmate setup default >/dev/null 2>"$logs/setup-active-no-receipt.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "setup with no receipt under an active captain exited $status instead of 1"
 assert_contains 'setup refused' "$logs/setup-active-no-receipt.err"
@@ -2952,7 +2967,7 @@ kill -TERM "$busy_pid" 2>/dev/null || true
 wait "$busy_pid" 2>/dev/null || true
 busy_pid=''
 rm -rf -- "$active_session"
-fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after the setup refusal check'
+firstmate doctor default >/dev/null 2>&1 || fail 'doctor failed after the setup refusal check'
 
 # ===========================================================================
 # 10. Overlay behavior: worker policy insertion.
@@ -2969,8 +2984,8 @@ brief_env() {
   env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
     FM_HOME="$profile_root/home" \
     FM_ROOT_OVERRIDE="$profile_root/runtime" \
-    FMX_WORKER_POLICY_FILE="$policy" \
-    FMX_TASK_ID_PREFIX="$(jq -r --arg p "$profile" '.profiles[$p].taskIdPrefix' \
+    TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE="$policy" \
+    TRELLAGE_FIRSTMATE_TASK_ID_PREFIX="$(jq -r --arg p "$profile" '.profiles[$p].taskIdPrefix' \
       "$root/catalog.json")" \
     bash "$profile_root/runtime/bin/fm-brief.sh" "$@"
 }
@@ -3005,27 +3020,27 @@ default_brief="$profiles_root/default/home/data/fmd-ship/brief.md"
 assert_not_contains '# Worker inner loop' "$default_brief"
 assert_contains '# Project memory' "$default_brief"
 
-# With no FMX_* variables at all, the overlaid scripts behave like upstream.
+# With no TRELLAGE_FIRSTMATE_* variables at all, the overlaid scripts behave like upstream.
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   FM_HOME="$profiles_root/default/home" \
   FM_ROOT_OVERRIDE="$profiles_root/default/runtime" \
   bash "$profiles_root/default/runtime/bin/fm-brief.sh" \
   any-unprefixed-id demo/repo --mode direct-PR >/dev/null \
-  || fail 'the overlaid fm-brief.sh changed upstream behavior without FMX variables'
+  || fail 'the overlaid fm-brief.sh changed upstream behavior without TRELLAGE_FIRSTMATE variables'
 assert_not_contains '# Worker inner loop' \
   "$profiles_root/default/home/data/any-unprefixed-id/brief.md"
 
 # Both overlaid shell scripts must still be valid bash, and the fm-spawn.sh
-# worker boundary must be inert without FMX_WORKER_LAUNCHER.
+# worker boundary must be inert without TRELLAGE_FIRSTMATE_WORKER_LAUNCHER.
 bash -n "$profiles_root/default/runtime/bin/fm-spawn.sh" \
   || fail 'the overlaid fm-spawn.sh is not valid bash'
 bash -n "$profiles_root/default/runtime/bin/fm-brief.sh" \
   || fail 'the overlaid fm-brief.sh is not valid bash'
 bash -n "$profiles_root/default/runtime/bin/fm-update.sh" \
   || fail 'the overlaid fm-update.sh is not valid bash'
-assert_contains 'if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then' \
+assert_contains 'if [ -n "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER:-}" ]; then' \
   "$profiles_root/default/runtime/bin/fm-spawn.sh"
-assert_contains '&& [ -z "${FMX_WORKER_LAUNCHER:-}" ]; then' \
+assert_contains '&& [ -z "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER:-}" ]; then' \
   "$profiles_root/default/runtime/bin/fm-spawn.sh"
 
 # Task-id namespaces cannot collide across profiles.
@@ -3047,8 +3062,8 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   FM_HOME="$profiles_root/default/home" \
   FM_ROOT_OVERRIDE="$profiles_root/default/runtime" \
-  FMX_WORKER_POLICY_FILE="$oversize_policy" \
-  FMX_WORKER_POLICY_MAX_BYTES=100000000 \
+  TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE="$oversize_policy" \
+  TRELLAGE_FIRSTMATE_WORKER_POLICY_MAX_BYTES=100000000 \
   bash "$profiles_root/default/runtime/bin/fm-brief.sh" \
   fmd-oversize demo/repo --mode direct-PR \
   >/dev/null 2>"$logs/brief-oversize.err" || status=$?
@@ -3062,7 +3077,7 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   FM_HOME="$profiles_root/default/home" \
   FM_ROOT_OVERRIDE="$profiles_root/default/runtime" \
-  FMX_WORKER_POLICY_FILE='relative/policy.md' \
+  TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE='relative/policy.md' \
   bash "$profiles_root/default/runtime/bin/fm-brief.sh" fmd-bad demo/repo --mode direct-PR \
   >/dev/null 2>"$logs/brief-bad-policy.err" || status=$?
 [[ "$status" == 1 ]] || fail "a relative policy path exited $status instead of 1"
@@ -3080,7 +3095,7 @@ env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   >/dev/null 2>"$logs/fm-update.err" || status=$?
 [[ "$status" == 1 ]] || fail "the managed self-update exited $status instead of 1"
 assert_contains 'self-update is disabled' "$logs/fm-update.err"
-assert_contains "fmx update <profile>" "$logs/fm-update.err"
+assert_contains "firstmate update <profile>" "$logs/fm-update.err"
 
 # An unmanaged clone keeps upstream behavior.
 unmanaged_home="$fixture_root/unmanaged-home"
@@ -3133,14 +3148,14 @@ run_worker() {
     FAKE_CLAUDE_DECOY_LOG="$logs/claude-decoy.log" \
     FAKE_CURL_LOG="$logs/curl.log" \
     OPINPUT_ENV_LOG="$logs/opinput-env.log" \
-    FMX_PROFILE=default \
-    FMX_PROFILE_ROOT="$profiles_root/default" \
-    FMX_CAPTAIN_PANE_ID="${WORKER_CAPTAIN_PANE-}" \
-    FMX_GH_CONFIG_DIR="${WORKER_GH_CONFIG_DIR:-$gh_config}" \
-    FMX_TASK_ID_PREFIX=fmd \
-    FMX_WORKER_HOME="${WORKER_CARRIER_HOME-$home}" \
-    FMX_WORKER_PATH="${WORKER_CARRIER_PATH-$fake_bin}" \
-    FMX_WORKER_BASH="${WORKER_CARRIER_BASH-$host_bash}" \
+    TRELLAGE_FIRSTMATE_PROFILE=default \
+    TRELLAGE_FIRSTMATE_PROFILE_ROOT="$profiles_root/default" \
+    TRELLAGE_FIRSTMATE_CAPTAIN_PANE_ID="${WORKER_CAPTAIN_PANE-}" \
+    TRELLAGE_FIRSTMATE_GH_CONFIG_DIR="${WORKER_GH_CONFIG_DIR:-$gh_config}" \
+    TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=fmd \
+    TRELLAGE_FIRSTMATE_WORKER_HOME="${WORKER_CARRIER_HOME-$home}" \
+    TRELLAGE_FIRSTMATE_WORKER_PATH="${WORKER_CARRIER_PATH-$fake_bin}" \
+    TRELLAGE_FIRSTMATE_WORKER_BASH="${WORKER_CARRIER_BASH-$host_bash}" \
     HERDR_ENV="${WORKER_HERDR_ENV-}" \
     HERDR_PANE_ID="${WORKER_PANE-}" \
     HERDR_SOCKET_PATH=/captain/socket \
@@ -3174,10 +3189,10 @@ run_worker() {
     AZURE_CLIENT_ID=leaked-azure AZURE_CLIENT_SECRET=leaked-azure-secret \
     AZURE_API_KEY=leaked-azure-api \
     AZURE_TENANT_ID=leaked-azure-tenant \
-    FMX_WORKER_LAUNCHER="$install_root/lib/fmx-worker" \
-    FMX_WORKER_POLICY_FILE="$profiles_root/pstack-workers/policy/worker-policy.md" \
+    TRELLAGE_FIRSTMATE_WORKER_LAUNCHER="$install_root/lib/firstmate-worker" \
+    TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE="$profiles_root/pstack-workers/policy/worker-policy.md" \
     "${WORKER_START_BASH:-$host_bash}" \
-    "${WORKER_HELPER:-$install_root/lib/fmx-worker}" "$@"
+    "${WORKER_HELPER:-$install_root/lib/firstmate-worker}" "$@"
 }
 
 export FAKE_CLAUDE_DECOY_LOG="$logs/claude-decoy.log"
@@ -3215,7 +3230,7 @@ done
 grep -F "prepare|home=$profiles_root/default/workers/fmd-alpha/claude" "$NATIVE_CLAUDE_LOG" \
   | grep -Fq 'bridge=disabled|profile=default' \
   || fail 'the worker Claude home was not prepared with the bridge disabled and its profile'
-# prepare and launch must name the same fmx profile even with the bridge
+# prepare and launch must name the same firstmate profile even with the bridge
 # disabled, so the shared runtime's hook accounting stays consistent.
 assert_contains "home=$profiles_root/default/workers/fmd-alpha/claude|bridge=disabled|profile=default" \
   "$NATIVE_CLAUDE_LAUNCH_LOG"
@@ -3269,11 +3284,11 @@ assert_contains '--model claude-sonnet-5 --effort high <<launch-brief>>' \
 assert_contains '--model claude-sonnet-5.5 <<launch-brief>>' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 # The worker environment reaching the shared runtime carries the explicit
-# GitHub configuration, no FMX carrier, and no Herdr context.
+# GitHub configuration, no TRELLAGE_FIRSTMATE carrier, and no Herdr context.
 assert_contains "GH_CONFIG_DIR=$gh_config" "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_PROFILE=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_WORKER_LAUNCHER=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_GH_CONFIG_DIR=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains 'TRELLAGE_FIRSTMATE_PROFILE=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains 'TRELLAGE_FIRSTMATE_WORKER_LAUNCHER=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains 'TRELLAGE_FIRSTMATE_GH_CONFIG_DIR=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false' "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains 'CURSOR_AGENT=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains 'HERDR=none' "$NATIVE_CLAUDE_LAUNCH_LOG"
@@ -3287,8 +3302,8 @@ for control in 'FM_HOME=unset' 'FM_ROOT_OVERRIDE=unset' 'FM_BACKEND=unset' \
   assert_contains "$control" "$NATIVE_CLAUDE_LAUNCH_LOG"
 done
 assert_not_contains '/captain/home' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_TASK_ID_PREFIX=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_WORKER_HOME=unset|FMX_WORKER_PATH=unset|FMX_WORKER_BASH=unset' \
+assert_contains 'TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains 'TRELLAGE_FIRSTMATE_WORKER_HOME=unset|TRELLAGE_FIRSTMATE_WORKER_PATH=unset|TRELLAGE_FIRSTMATE_WORKER_BASH=unset' \
   "$NATIVE_CLAUDE_LAUNCH_LOG"
 # The carrier decided the effective HOME, not the ambient pane environment.
 assert_contains "HOME=$home" "$NATIVE_CLAUDE_LAUNCH_LOG"
@@ -3366,7 +3381,7 @@ WORKER_GH_CONFIG_DIR="$custom_gh_config" \
   --operational-input "$opinput" --model '' --effort '' --traceparent keep \
   || fail 'the worker boundary failed with a custom GitHub CLI configuration'
 assert_contains "GH_CONFIG_DIR=$custom_gh_config" "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_contains 'FMX_GH_CONFIG_DIR=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_contains 'TRELLAGE_FIRSTMATE_GH_CONFIG_DIR=unset' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 status=0
 WORKER_GH_CONFIG_DIR="$fixture_root/gh-absent" \
@@ -3375,7 +3390,7 @@ WORKER_GH_CONFIG_DIR="$fixture_root/gh-absent" \
   --operational-input "$opinput" --model '' --effort '' --traceparent keep \
   >/dev/null 2>"$logs/worker-gh-missing.err" || status=$?
 [[ "$status" == 1 ]] || fail "a worker without a gh carrier exited $status instead of 1"
-assert_contains 'FMX_GH_CONFIG_DIR must be an existing absolute directory' \
+assert_contains 'TRELLAGE_FIRSTMATE_GH_CONFIG_DIR must be an existing absolute directory' \
   "$logs/worker-gh-missing.err"
 status=0
 WORKER_GH_CONFIG_DIR="$no_host_config" \
@@ -3392,36 +3407,36 @@ mkdir -p "$foreign_root"
 status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
-  FMX_PROFILE=default FMX_PROFILE_ROOT="$foreign_root" \
-  FMX_GH_CONFIG_DIR="$gh_config" FMX_TASK_ID_PREFIX=fmd \
-  FMX_WORKER_HOME="$home" FMX_WORKER_PATH="$fake_bin" \
-  FMX_WORKER_BASH="$host_bash" \
-  "$host_bash" "$install_root/lib/fmx-worker" \
+  TRELLAGE_FIRSTMATE_PROFILE=default TRELLAGE_FIRSTMATE_PROFILE_ROOT="$foreign_root" \
+  TRELLAGE_FIRSTMATE_GH_CONFIG_DIR="$gh_config" TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=fmd \
+  TRELLAGE_FIRSTMATE_WORKER_HOME="$home" TRELLAGE_FIRSTMATE_WORKER_PATH="$fake_bin" \
+  TRELLAGE_FIRSTMATE_WORKER_BASH="$host_bash" \
+  "$host_bash" "$install_root/lib/firstmate-worker" \
   --task fmd-zeta --kind ship --backend tmux \
   --brief "$worker_brief" --worktree "$worker_worktree" \
   --operational-input "$opinput" --model '' --effort '' --traceparent keep \
   >/dev/null 2>"$logs/worker-foreign.err" || status=$?
 [[ "$status" == 1 ]] || fail "a foreign profile root exited $status instead of 1"
-assert_contains 'is not an fmx profile' "$logs/worker-foreign.err"
+assert_contains 'is not an firstmate profile' "$logs/worker-foreign.err"
 
 # The pinned fm-spawn.sh overlay must hand over structured inputs only, never a
 # shell command, and must enforce Claude-only crewmates before building one.
 spawn_runtime="$profiles_root/default/runtime/bin/fm-spawn.sh"
 assert_not_contains '--launch-command' "$spawn_runtime"
 assert_contains '--operational-input $sq_opinput' "$spawn_runtime"
-assert_contains 'FMX_TASK_ID_PREFIX=$(shell_quote "${FMX_TASK_ID_PREFIX:-}")' "$spawn_runtime"
-assert_contains 'FMX_WORKER_BASH=$(shell_quote "${FMX_WORKER_BASH:-}")' "$spawn_runtime"
-assert_contains 'FMX_TREEHOUSE_BIN=$(PATH="${FMX_WORKER_PATH:?}" type -P treehouse' "$spawn_runtime"
-assert_contains 'spawn_send_text_line "$WT_TARGET" "$(shell_quote "$FMX_TREEHOUSE_BIN") get"' "$spawn_runtime"
+assert_contains 'TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=$(shell_quote "${TRELLAGE_FIRSTMATE_TASK_ID_PREFIX:-}")' "$spawn_runtime"
+assert_contains 'TRELLAGE_FIRSTMATE_WORKER_BASH=$(shell_quote "${TRELLAGE_FIRSTMATE_WORKER_BASH:-}")' "$spawn_runtime"
+assert_contains 'TRELLAGE_FIRSTMATE_TREEHOUSE_BIN=$(PATH="${TRELLAGE_FIRSTMATE_WORKER_PATH:?}" type -P treehouse' "$spawn_runtime"
+assert_contains 'spawn_send_text_line "$WT_TARGET" "$(shell_quote "$TRELLAGE_FIRSTMATE_TREEHOUSE_BIN") get"' "$spawn_runtime"
 assert_contains "spawn_send_text_line \"\$WT_TARGET\" 'treehouse get'" "$spawn_runtime"
-assert_contains 'fmx-controls.py" spawn "$@"' "$spawn_runtime"
-assert_not_contains 'sh -c' "$install_root/lib/fmx-worker"
+assert_contains 'firstmate-controls.py" spawn "$@"' "$spawn_runtime"
+assert_not_contains 'sh -c' "$install_root/lib/firstmate-worker"
 
 # ===========================================================================
 # 12b. The real shared Claude runtime performs the worker launch.
 # ===========================================================================
 #
-# The fake helper above proves the fmx side of the boundary. This block proves
+# The fake helper above proves the firstmate side of the boundary. This block proves
 # the other half: that routing through `native-claude launch` really does pick
 # one verified executable, apply the shared flag contract, and scrub every
 # provider variable. Only prepare is stubbed, because the real prepare needs
@@ -3533,7 +3548,7 @@ FAKE_CURL
   : >"$logs/opinput-env.log"
   WORKER_PATH="$early_bin:$real_bin" \
     WORKER_CARRIER_PATH="$early_bin:$real_bin" \
-    WORKER_HELPER="$real_runtime/lib/fmx-worker" \
+    WORKER_HELPER="$real_runtime/lib/firstmate-worker" \
     run_worker --task fmd-real --kind ship --backend tmux \
     --brief "$worker_brief" --worktree "$worker_worktree" \
     --operational-input "$opinput" --model '' --effort '' --traceparent keep \
@@ -3602,7 +3617,7 @@ FAKE_CURL
     WORKER_CARRIER_PATH="$early_bin:$real_bin" \
     WORKER_CARRIER_HOME="$home" \
     WORKER_AMBIENT_HOME="$wrong_home" \
-    WORKER_HELPER="$real_runtime/lib/fmx-worker" \
+    WORKER_HELPER="$real_runtime/lib/firstmate-worker" \
     run_worker --task fmd-carrier --kind ship --backend tmux \
     --brief "$worker_brief" --worktree "$worker_worktree" \
     --operational-input "$opinput" --model '' --effort '' --traceparent keep \
@@ -3622,8 +3637,8 @@ FAKE_CURL
   [[ ! -d "$wrong_home/.local" ]] \
     || fail 'the worker created state under the ambient pane HOME'
   # The carriers themselves never reach the harness.
-  assert_not_contains 'FMX_WORKER_HOME' "$FAKE_CLAUDE_LOG"
-  assert_not_contains 'FMX_WORKER_PATH' "$FAKE_CLAUDE_LOG"
+  assert_not_contains 'TRELLAGE_FIRSTMATE_WORKER_HOME' "$FAKE_CLAUDE_LOG"
+  assert_not_contains 'TRELLAGE_FIRSTMATE_WORKER_PATH' "$FAKE_CLAUDE_LOG"
 
   # Even an ambient PATH with no bash or utilities cannot affect startup: the
   # pane invokes the captain's absolute Bash and the worker applies the
@@ -3633,7 +3648,7 @@ FAKE_CURL
   WORKER_PATH="$empty_ambient_bin" \
     WORKER_CARRIER_PATH="$early_bin:$real_bin" \
     WORKER_CARRIER_HOME="$home" \
-    WORKER_HELPER="$real_runtime/lib/fmx-worker" \
+    WORKER_HELPER="$real_runtime/lib/firstmate-worker" \
     run_worker --task fmd-empty-ambient --kind ship --backend tmux \
     --brief "$worker_brief" --worktree "$worker_worktree" \
     --operational-input "$opinput" --model '' --effort '' --traceparent keep \
@@ -3649,8 +3664,8 @@ FAKE_CURL
       --brief "$worker_brief" --worktree "$worker_worktree" \
       --operational-input "$opinput" --model '' --effort '' --traceparent keep \
       >/dev/null 2>"$logs/worker-bad-home.err" || status=$?
-    [[ "$status" == 1 ]] || fail "an invalid FMX_WORKER_HOME exited $status instead of 1"
-    assert_contains 'FMX_WORKER_HOME' "$logs/worker-bad-home.err"
+    [[ "$status" == 1 ]] || fail "an invalid TRELLAGE_FIRSTMATE_WORKER_HOME exited $status instead of 1"
+    assert_contains 'TRELLAGE_FIRSTMATE_WORKER_HOME' "$logs/worker-bad-home.err"
   done
   status=0
   WORKER_CARRIER_PATH='' \
@@ -3658,8 +3673,8 @@ FAKE_CURL
     --brief "$worker_brief" --worktree "$worker_worktree" \
     --operational-input "$opinput" --model '' --effort '' --traceparent keep \
     >/dev/null 2>"$logs/worker-bad-path.err" || status=$?
-  [[ "$status" == 1 ]] || fail "an empty FMX_WORKER_PATH exited $status instead of 1"
-  assert_contains 'FMX_WORKER_PATH is required' "$logs/worker-bad-path.err"
+  [[ "$status" == 1 ]] || fail "an empty TRELLAGE_FIRSTMATE_WORKER_PATH exited $status instead of 1"
+  assert_contains 'TRELLAGE_FIRSTMATE_WORKER_PATH is required' "$logs/worker-bad-path.err"
   for bad_path in \
     "relative/bin" \
     "$fake_bin:relative/bin" \
@@ -3673,8 +3688,8 @@ FAKE_CURL
       --operational-input "$opinput" --model '' --effort '' --traceparent keep \
       >/dev/null 2>"$logs/worker-bad-path-entry.err" || status=$?
     [[ "$status" == 1 ]] \
-      || fail "an unsafe FMX_WORKER_PATH entry exited $status instead of 1"
-    assert_contains 'every FMX_WORKER_PATH entry' "$logs/worker-bad-path-entry.err"
+      || fail "an unsafe TRELLAGE_FIRSTMATE_WORKER_PATH entry exited $status instead of 1"
+    assert_contains 'every TRELLAGE_FIRSTMATE_WORKER_PATH entry' "$logs/worker-bad-path-entry.err"
   done
   for bad_bash in '' 'relative/bash' "$fixture_root/absent-bash"; do
     status=0
@@ -3684,18 +3699,18 @@ FAKE_CURL
       --operational-input "$opinput" --model '' --effort '' --traceparent keep \
       >/dev/null 2>"$logs/worker-bad-bash.err" || status=$?
     [[ "$status" == 1 ]] \
-      || fail "an invalid FMX_WORKER_BASH exited $status instead of 1"
-    assert_contains 'FMX_WORKER_BASH' "$logs/worker-bad-bash.err"
+      || fail "an invalid TRELLAGE_FIRSTMATE_WORKER_BASH exited $status instead of 1"
+    assert_contains 'TRELLAGE_FIRSTMATE_WORKER_BASH' "$logs/worker-bad-bash.err"
   done
 
   # The pane command uses leading assignments and the captain's absolute Bash,
   # so it never depends on the daemon PATH to find an interpreter or helper.
-  assert_contains 'LAUNCH="FMX_PROFILE=$(shell_quote "${FMX_PROFILE:-}")' "$spawn_runtime"
-  assert_contains 'FMX_WORKER_HOME=$(shell_quote "${FMX_WORKER_HOME:-}")' "$spawn_runtime"
-  assert_contains 'FMX_WORKER_PATH=$(shell_quote "${FMX_WORKER_PATH:-}")' "$spawn_runtime"
-  assert_contains 'FMX_WORKER_BASH=$(shell_quote "${FMX_WORKER_BASH:-}")' "$spawn_runtime"
-  assert_contains '$(shell_quote "${FMX_WORKER_BASH:-}")' "$spawn_runtime"
-  assert_not_contains 'LAUNCH="env FMX_PROFILE' "$spawn_runtime"
+  assert_contains 'LAUNCH="TRELLAGE_FIRSTMATE_PROFILE=$(shell_quote "${TRELLAGE_FIRSTMATE_PROFILE:-}")' "$spawn_runtime"
+  assert_contains 'TRELLAGE_FIRSTMATE_WORKER_HOME=$(shell_quote "${TRELLAGE_FIRSTMATE_WORKER_HOME:-}")' "$spawn_runtime"
+  assert_contains 'TRELLAGE_FIRSTMATE_WORKER_PATH=$(shell_quote "${TRELLAGE_FIRSTMATE_WORKER_PATH:-}")' "$spawn_runtime"
+  assert_contains 'TRELLAGE_FIRSTMATE_WORKER_BASH=$(shell_quote "${TRELLAGE_FIRSTMATE_WORKER_BASH:-}")' "$spawn_runtime"
+  assert_contains '$(shell_quote "${TRELLAGE_FIRSTMATE_WORKER_BASH:-}")' "$spawn_runtime"
+  assert_not_contains 'LAUNCH="env TRELLAGE_FIRSTMATE_PROFILE' "$spawn_runtime"
 
   # The captain runs with the bridge ENABLED, and the shared runtime validates
   # the exact per-profile hook. Prove directly against the real runtime that a
@@ -3722,7 +3737,7 @@ FAKE_CURL
   : >"$FAKE_CLAUDE_LOG"
   env -i HOME="$home" PATH="$early_bin:$real_bin" TMPDIR="${TMPDIR:-/tmp}" \
     FAKE_CLAUDE_LOG="$FAKE_CLAUDE_LOG" FAKE_CLAUDE_DECOY_LOG="$logs/claude-decoy.log" \
-    TRELLAGE_CLAUDE_LAUNCHER_NAME=fmx \
+    TRELLAGE_CLAUDE_LAUNCHER_NAME=firstmate \
     TRELLAGE_CLAUDE_RUNTIME_ROOT="$real_runtime" \
     "$real_native_claude" launch --home "$bridge_home" --marker "$bridge_marker" \
     --marker-value "$ownership_value" --bridge enabled --profile pstack-workers \
@@ -3734,7 +3749,7 @@ FAKE_CURL
   status=0
   env -i HOME="$home" PATH="$early_bin:$real_bin" TMPDIR="${TMPDIR:-/tmp}" \
     FAKE_CLAUDE_LOG="$FAKE_CLAUDE_LOG" FAKE_CLAUDE_DECOY_LOG="$logs/claude-decoy.log" \
-    TRELLAGE_CLAUDE_LAUNCHER_NAME=fmx \
+    TRELLAGE_CLAUDE_LAUNCHER_NAME=firstmate \
     TRELLAGE_CLAUDE_RUNTIME_ROOT="$real_runtime" \
     "$real_native_claude" launch --home "$bridge_home" --marker "$bridge_marker" \
     --marker-value "$ownership_value" --bridge enabled --profile default \
@@ -3743,7 +3758,7 @@ FAKE_CURL
     || fail "the shared runtime accepted a pstack-workers captain launched as default (exit $status)"
   assert_contains 'session bridge hook is missing' "$logs/bridge-wrong-profile.err"
 else
-  printf 'fmx contract: skipping the real shared Claude runtime block (helper absent)\n'
+  printf 'firstmate contract: skipping the real shared Claude runtime block (helper absent)\n'
 fi
 
 # ===========================================================================
@@ -3765,7 +3780,7 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >/dev/null 2>"$logs/uninstall-active.err" || status=$?
 [[ "$status" == 1 ]] || fail "active-session uninstall exited $status instead of 1"
-assert_contains 'cannot uninstall fmx while a Firstmate fleet or profile mutation is active or indeterminate' \
+assert_contains 'cannot uninstall firstmate while a Firstmate fleet or profile mutation is active or indeterminate' \
   "$logs/uninstall-active.err"
 [[ -d "$install_root" && -L "$command_path" ]] \
   || fail 'active-session uninstall changed the launcher runtime'
@@ -3777,7 +3792,7 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >/dev/null 2>"$logs/uninstall-incomplete.err" || status=$?
 [[ "$status" == 1 ]] || fail "incomplete-session uninstall exited $status instead of 1"
-assert_contains 'cannot uninstall fmx while a Firstmate fleet or profile mutation is active or indeterminate' \
+assert_contains 'cannot uninstall firstmate while a Firstmate fleet or profile mutation is active or indeterminate' \
   "$logs/uninstall-incomplete.err"
 [[ -d "$install_root" && -L "$command_path" ]] \
   || fail 'incomplete-session uninstall changed the launcher runtime'
@@ -3790,7 +3805,7 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >/dev/null 2>"$logs/uninstall-worker-active.err" || status=$?
 [[ "$status" == 1 ]] || fail "active-worker uninstall exited $status instead of 1"
-assert_contains 'cannot uninstall fmx while a Firstmate fleet or profile mutation is active or indeterminate' \
+assert_contains 'cannot uninstall firstmate while a Firstmate fleet or profile mutation is active or indeterminate' \
   "$logs/uninstall-worker-active.err"
 [[ -d "$install_root" && -L "$command_path" ]] \
   || fail 'active-worker uninstall changed the launcher runtime'
@@ -3802,26 +3817,26 @@ status=0
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >/dev/null 2>"$logs/uninstall-mutation-incomplete.err" || status=$?
 [[ "$status" == 1 ]] || fail "incomplete-mutation uninstall exited $status instead of 1"
-assert_contains 'cannot uninstall fmx while a Firstmate fleet or profile mutation is active or indeterminate' \
+assert_contains 'cannot uninstall firstmate while a Firstmate fleet or profile mutation is active or indeterminate' \
   "$logs/uninstall-mutation-incomplete.err"
 [[ -d "$install_root" && -L "$command_path" ]] \
   || fail 'incomplete-mutation uninstall changed the launcher runtime'
 rm -rf -- "$mutation_uninstall_profile"
 
-mkdir "$home/.local/share/trellage/.fmx-retired-install.uninstall-test"
+mkdir "$home/.local/share/trellage/.firstmate-retired-install.uninstall-test"
 printf 'retired install artifact\n' \
-  >"$home/.local/share/trellage/.fmx-retired-install.uninstall-test/canary"
-mkdir "$home/.local/share/trellage/.native-commands/.fmx-command.uninstall-test"
-ln -s "$install_root/bin/fmx" "$home/.local/share/trellage/.native-commands/.fmx-command.uninstall-test/fmx"
+  >"$home/.local/share/trellage/.firstmate-retired-install.uninstall-test/canary"
+mkdir "$home/.local/share/trellage/.native-commands/.firstmate-command.uninstall-test"
+ln -s "$install_root/bin/firstmate" "$home/.local/share/trellage/.native-commands/.firstmate-command.uninstall-test/firstmate"
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >"$logs/uninstall.out" 2>"$logs/uninstall.err" \
   || { cat "$logs/uninstall.err" >&2; fail 'uninstall failed'; }
 assert_contains 'profile roots, homes, and worker state were preserved' "$logs/uninstall.out"
 [[ ! -e "$install_root" ]] || fail 'the launcher runtime was not removed'
 [[ ! -e "$command_path" ]] || fail 'the command symlink was not removed'
-[[ ! -e "$home/.local/share/trellage/.fmx-retired-install.uninstall-test" ]] \
+[[ ! -e "$home/.local/share/trellage/.firstmate-retired-install.uninstall-test" ]] \
   || fail 'uninstall retained a retired transaction artifact'
-[[ ! -e "$home/.local/share/trellage/.native-commands/.fmx-command.uninstall-test" ]] \
+[[ ! -e "$home/.local/share/trellage/.native-commands/.firstmate-command.uninstall-test" ]] \
   || fail 'uninstall retained a command transaction artifact'
 [[ -f "$canary" ]] || fail 'uninstall removed profile state'
 [[ -x "$profiles_root/default/runtime/bin/fm-spawn.sh" ]] \
@@ -3834,11 +3849,11 @@ assert_contains 'profile roots, homes, and worker state were preserved' "$logs/u
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >"$logs/uninstall-again.out" 2>&1 \
   || fail 'a repeated uninstall failed'
-assert_contains 'fmx is not installed' "$logs/uninstall-again.out"
+assert_contains 'firstmate is not installed' "$logs/uninstall-again.out"
 
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>&1 || fail 'reinstall after uninstall failed'
-fmx inventory default --json >"$logs/inventory-reinstalled.json" \
+firstmate inventory default --json >"$logs/inventory-reinstalled.json" \
   || fail 'inventory after reinstall failed'
 jq -e '.readiness == "healthy"' "$logs/inventory-reinstalled.json" >/dev/null \
   || fail 'the preserved profile was not healthy after reinstall'
@@ -3853,7 +3868,7 @@ if [[ -f "$repo_root/prototypes/trellage-claude-common/native-claude" ]]; then
   env -i HOME="$real_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
     bash "$installer" >"$logs/install-real.out" 2>"$logs/install-real.err" \
     || { cat "$logs/install-real.err" >&2; fail 'install from the repository failed'; }
-  [[ -x "$real_home/.local/share/trellage/fmx/lib/native-claude" ]] \
+  [[ -x "$real_home/.local/share/trellage/firstmate/lib/native-claude" ]] \
     || fail 'the repository install did not stage the shared Claude helper'
 fi
 
@@ -3886,9 +3901,9 @@ env -i HOME="$uninstalled_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
 if grep -q 'missing shared native Claude helper' "$logs/uninstalled-setup.err"; then
   fail 'uninstalled setup could not resolve the shared native Claude helper from the repository'
 fi
-if grep -q 'missing fmx prerequisite manifest' "$logs/uninstalled-setup.err"; then
+if grep -q 'missing firstmate prerequisite manifest' "$logs/uninstalled-setup.err"; then
   fail 'uninstalled setup could not resolve the prerequisite manifest from the repository'
 fi
 assert_contains 'GitHub CLI' "$logs/uninstalled-setup.err"
 
-printf 'fmx contract: PASS\n'
+printf 'firstmate contract: PASS\n'

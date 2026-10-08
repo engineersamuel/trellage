@@ -236,7 +236,7 @@ describe("runHarnessUpdate", () => {
 
   it("does not forward an unsupported management verb to an old native launcher", async () => {
     const plan = requirePlan(nativeEntry("claude", "claude"))
-    const run = vi.fn<CommandRunner["run"]>().mockResolvedValue({ ...success, stdout: "usage: cldx [PROFILE] [ARGS]" })
+    const run = vi.fn<CommandRunner["run"]>().mockResolvedValue({ ...success, stdout: "usage: claude [PROFILE] [ARGS]" })
     const outcome = await runHarnessUpdate(plan, { run }, "/worktree")
     expect(run.mock.calls.map(([, args]) => args)).toEqual([["--help"]])
     expect(outcome.results).toEqual([

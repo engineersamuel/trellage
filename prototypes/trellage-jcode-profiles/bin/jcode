@@ -10,27 +10,27 @@ readonly mise_tool='github:1jehuang/jcode'
 readonly profile_marker_value='trellage-jcode-profile-v1'
 
 die() {
-  printf 'jcx: %s\n' "$1" >&2
+  printf 'jcode: %s\n' "$1" >&2
   exit 1
 }
 
 usage() {
   cat <<'EOF'
 Usage:
-  jcx [JCODE_ARGS...]
-  jcx default [JCODE_ARGS...]
-  jcx list [--json]
-  jcx inventory PROFILE --json
-  jcx setup [default]
-  jcx doctor [default]
-  jcx repair [default]
-  jcx skills-update PROFILE
-  jcx skills-check PROFILE
-  jcx skill i-have-adhd PROMPT
-  jcx update [--check] [default]
-  jcx harness-version
+  jcode [JCODE_ARGS...]
+  jcode default [JCODE_ARGS...]
+  jcode list [--json]
+  jcode inventory PROFILE --json
+  jcode setup [default]
+  jcode doctor [default]
+  jcode repair [default]
+  jcode skills-update PROFILE
+  jcode skills-check PROFILE
+  jcode skill i-have-adhd PROMPT
+  jcode update [--check] [default]
+  jcode harness-version
 
-Bare jcx invocations use the default profile.
+Bare jcode invocations use the default profile.
 EOF
 }
 
@@ -192,7 +192,7 @@ list_profiles_json() {
   jq -S --argjson headless "$headless_map" '
     {
       schemaVersion: 1,
-      launcher: "jcx",
+      launcher: "jcode",
       harness: "jcode",
       # jcode has no known native OS-level sandbox; runs directly on the
       # host. See docs/native-sandbox-research.md.
@@ -425,7 +425,7 @@ ensure_onboarding_skipped() {
 require_owned_profile() {
   require_safe_profile_path
   [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
-    || die 'profile is not managed; run jcx setup'
+    || die 'profile is not managed; run jcode setup'
   [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] \
     || die "profile ownership marker differs: $profile_marker"
 }
@@ -437,9 +437,9 @@ verify_managed_profile() {
   [[ -f "$profile_config" && ! -L "$profile_config" ]] \
     || die "managed config is missing: $profile_config"
   managed_config_is_current \
-    || die 'managed config differs; run jcx repair'
+    || die 'managed config differs; run jcode repair'
   parsed_managed_config_is_current "$binary" \
-    || die 'managed config is invalid; run jcx repair'
+    || die 'managed config is invalid; run jcode repair'
 }
 
 ensure_managed_profile_for_launch() {
@@ -495,7 +495,7 @@ read_installed_version() {
     publish_installed_version "$version"
   fi
   [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
-    || die 'jcode installed version receipt is missing; run jcx setup'
+    || die 'jcode installed version receipt is missing; run jcode setup'
   version="$(<"$receipt_file")"
   require_exact_version "$version"
   printf '%s\n' "$version"
@@ -505,7 +505,7 @@ installed_binary() {
   local version="$1" install_dir expected binary
 
   install_dir="$(mise_env where "$mise_tool@$version")" \
-    || die "jcode $version is not installed; run jcx repair"
+    || die "jcode $version is not installed; run jcode repair"
   expected="$runtime_root/mise/installs/github-1jehuang-jcode/$version"
   [[ "$install_dir" == "$expected" ]] \
     || die "mise returned unexpected jcode path: $install_dir"
@@ -641,7 +641,7 @@ setup_profile() {
   ensure_floating_skills
   ensure_onboarding_skipped
   publish_installed_version "$version"
-  printf 'jcx setup: ready (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
+  printf 'jcode setup: ready (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
 }
 
 repair_profile() {
@@ -654,7 +654,7 @@ repair_profile() {
   repair_managed_profile "$binary"
   ensure_floating_skills
   ensure_onboarding_skipped
-  printf 'jcx repair: restored (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
+  printf 'jcode repair: restored (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
 }
 
 check_for_update() {
@@ -664,9 +664,9 @@ check_for_update() {
   current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
-    printf 'jcx update: %s is current\n' "$current"
+    printf 'jcode update: %s is current\n' "$current"
   else
-    printf 'jcx update: %s -> %s available\n' "$current" "$latest"
+    printf 'jcode update: %s -> %s available\n' "$current" "$latest"
   fi
 }
 
@@ -678,7 +678,7 @@ print_harness_version_json() {
   latest="$(resolve_latest_version 2>/dev/null || :)"
   jq -cn --arg installed "$installed" --arg latest "$latest" '{
     schemaVersion: 1,
-    launcher: "jcx",
+    launcher: "jcode",
     harness: "jcode",
     installed: ($installed | if length > 0 then . else null end),
     latest: ($latest | if length > 0 then . else null end),
@@ -694,12 +694,12 @@ update_profile() {
   current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
-    printf 'jcx update: %s is current\n' "$current"
+    printf 'jcode update: %s is current\n' "$current"
     return
   fi
   install_exact_version "$latest"
   publish_installed_version "$latest"
-  printf 'jcx update: %s -> %s installed\n' "$current" "$latest"
+  printf 'jcode update: %s -> %s installed\n' "$current" "$latest"
 }
 
 doctor_profile() {
@@ -710,16 +710,16 @@ doctor_profile() {
   binary="$(installed_binary "$version")"
   verify_binary_version "$binary" "$version"
   verify_managed_profile "$binary"
-  manual_skill_operation verify || die 'floating skills are unhealthy; run jcx skills-update default'
+  manual_skill_operation verify || die 'floating skills are unhealthy; run jcode skills-update default'
   jq -e '
     type == "object"
     and (.launch_count | type == "number")
     and (.launch_count | floor == .)
     and .launch_count > 5
   ' "$setup_hints" >/dev/null 2>&1 \
-    || die 'onboarding skip state differs; run jcx repair'
+    || die 'onboarding skip state differs; run jcode repair'
   check_proxy
-  printf 'jcx doctor: OK (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
+  printf 'jcode doctor: OK (%s, %s, %s)\n' "$version" "$model_id" "$reasoning_effort"
 }
 
 not_ready_inventory() {
@@ -728,7 +728,7 @@ not_ready_inventory() {
 
   jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
     schemaVersion: 1,
-    launcher: "jcx",
+    launcher: "jcode",
     harness: "jcode",
     profile: $profile,
     readiness: $readiness,
@@ -752,7 +752,7 @@ inventory_profile() {
   fi
   jq -cn --arg profile "$profile" '{
     schemaVersion: 1,
-    launcher: "jcx",
+    launcher: "jcode",
     harness: "jcode",
     profile: $profile,
     readiness: "healthy",
@@ -838,7 +838,7 @@ case "${1-}" in
       check_only=true
       shift
     fi
-    [[ "$#" -le 1 ]] || die 'usage: jcx update [--check] [default]'
+    [[ "$#" -le 1 ]] || die 'usage: jcode update [--check] [default]'
     require_default_profile "${1-default}"
     if [[ "$check_only" == true ]]; then
       check_for_update
@@ -854,7 +854,7 @@ case "${1-}" in
   skill)
     shift
     [[ "$#" -eq 2 && "$1" == i-have-adhd && -n "$2" ]] \
-      || die 'usage: jcx skill i-have-adhd PROMPT'
+      || die 'usage: jcode skill i-have-adhd PROMPT'
     launch_jcode "$1" "$2"
     ;;
   default)

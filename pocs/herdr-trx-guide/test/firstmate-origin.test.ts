@@ -167,7 +167,7 @@ test("conversation origin remains private and leaves saved source and messages u
   assert.equal(Object.hasOwn(bound.binding, "launchOrigin"), false)
   const env = conversationGuideEnvironment(snapshot, "/private/request.json", {
     HERDR_PANE_ID: "popup-pane", HERDR_WORKSPACE_ID: "real-workspace",
-    FMX_LAUNCH_PROVENANCE_JSON: "untrusted daemon hint",
+    TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON: "untrusted daemon hint",
   }, bound.launchOrigin)
   const context = JSON.parse(env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON)
   assert.deepEqual(context.launchOrigin, firstmateOrigin)
@@ -175,7 +175,7 @@ test("conversation origin remains private and leaves saved source and messages u
   assert.equal(context.paneId, snapshot.source.paneId)
   assert.equal(env.HERDR_WORKSPACE_ID, "real-workspace")
   assert.equal(env.HERDR_PANE_ID, undefined)
-  assert.equal(env.FMX_LAUNCH_PROVENANCE_JSON, undefined)
+  assert.equal(env.TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON, undefined)
   assert.equal(JSON.stringify(snapshot), before)
   assert.equal(Object.hasOwn(snapshot.source, "launchOrigin"), false)
   assert.doesNotMatch(JSON.stringify(snapshot.messages), /33333333-3333/u)

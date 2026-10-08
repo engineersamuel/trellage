@@ -4,8 +4,8 @@
  }
  
  fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
-+  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
-+    python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" endpoint "$2" "$1" >/dev/null || return 1
++  if [ -n "${TRELLAGE_FIRSTMATE_INSTANCE_ID:-}" ]; then
++    python3 "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER%/*}/firstmate-controls.py" endpoint "$2" "$1" >/dev/null || return 1
 +  fi
    local meta=$1 id=$2 backend_count backend window worktree project binding_count binding
    local session pane recorded_session workspace tab terminal worktree_id surface
@@ -14,9 +14,9 @@
  #                      metadata, then treated as an ad hoc bare window name and
  #                      resolved by searching the legacy tmux live inventory.
  fm_backend_resolve_selector() {  # <raw-target> <state-dir>
-+  if [ -n "${FMX_INSTANCE_ID:-}" ]; then
++  if [ -n "${TRELLAGE_FIRSTMATE_INSTANCE_ID:-}" ]; then
 +    local controls
-+    controls=$(python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" selector "$1" "$2") || return 1
++    controls=$(python3 "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER%/*}/firstmate-controls.py" selector "$1" "$2") || return 1
 +    printf '%s' "$controls" | jq -er .target
 +    return
 +  fi

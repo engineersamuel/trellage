@@ -348,10 +348,10 @@ full profile discovery and Prompt Master preparation, and supplies an optional
 Native catalog on fd 3. Both flags, the embedded action and popup use the same flow.
 Ctrl-R stays inside Guide so intent, goals, forks and queued jobs survive returning.
 The current-terminal continuation launches through
-`mise run trx -- run cpx hve -- --plan -i` in a source worktree, or
-`trx run cpx hve -- --plan -i`
+`mise run trx -- run copilot hve -- --plan -i` in a source worktree, or
+`trx run copilot hve -- --plan -i`
 for an installed router. The source router prepares stale runtime readiness
-before dispatch; neither route launches the saved absolute `cpx` path directly.
+before dispatch; neither route launches the saved absolute `copilot` path directly.
 The selection screen includes Matt Pocock Code Review as a separate option
 alongside Ponytail and Fleet. It shows one worker because the current Guide
 flow has no verified spec input. A missing spec must be shown as a skipped
@@ -562,7 +562,7 @@ stays in `input.goal.prompt`, not the model payload. No SDK runtime starts.
 For each handoff, independent expected commands specify the executable,
 argument order, selected prompt, and destination. These expectations do not
 call the production launch or workflow builders. Coverage includes the
-different prompt arguments for `cdx`, `cpx`, `cldx`, `picx`, and Sandbox
+different prompt arguments for `codex`, `copilot`, `claude`, `pi`, and Sandbox
 `trellage`, plus the pinned HVE agent argument. Working-directory paths contain
 spaces, and prompts contain quotes and newlines. Herdr command strings must
 preserve them through shell quoting.
@@ -598,13 +598,13 @@ The real UI, guide parsing, prompt pipeline, queue, readiness handling, command
 builders, and result execution run unchanged. Fixtures replace model replies,
 native inventory, Sandbox doctor output, Git inspection, and Herdr responses.
 Customer workflow checks use recorded manifest/skill evidence. The separate
-native `cpx` contract uses a fixture PTY and real argument/file validation,
+native `copilot` contract uses a fixture PTY and real argument/file validation,
 including missing, disabled, and symlinked skills, missing agents, rejected
 autonomous flags, literal leading-flag prompts, and non-terminal refusal.
 Native Codex version/features and Claude runtime/model-inventory checks also
 use the recording runner. The injected readiness services cover both UI
 preflight and result execution; they reject unexpected paths instead of
-reading host configuration. No real `codex`, `cldx`, or `curl` process runs.
+reading host configuration. No real `codex`, `claude`, or `curl` process runs.
 Research writes a fixture note; Codebase writes a fixture repository pack and
 returns a fixed enriched intent. Neither path starts its external tool.
 Goal me uses a fake interview provider with the real request controller and

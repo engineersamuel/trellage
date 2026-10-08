@@ -12,13 +12,13 @@ bestFor:
   - Capturing exactly one verified, non-trivial solved problem with ce-compound so later agents reuse the root cause, fix, and prevention
   - Shipping requirements-ready software hands-off to an open pull request with lfg when commit, push, PR creation, and CI access are allowed
 avoidFor:
-  - Vague product discovery through a generated one-shot prompt; start a bare interactive cpx session and run ce-brainstorm
+  - Vague product discovery through a generated one-shot prompt; start a bare interactive copilot session and run ce-brainstorm
   - Generated implementation-only work that must stop before commit or push; no headless ce-work workflow is exposed, so use ce-work mode:return-to-caller from a conversational session
   - Evidence-heavy Research-Plan-Implement work that needs HVE artifacts - use trx run copilot hve instead
   - Strict test-first debugging, verification, and branch-finishing discipline - use trx run copilot superpowers instead
   - Finding or importing Copilot agents, instructions, or skills from Awesome Copilot - use trx run copilot awesome instead
   - Approval-required work; every launch uses --autopilot --allow-all --no-ask-user
-  - Work that needs OS isolation; this native cpx profile has host access, so use Trellage Sandbox or composed `trx run grok`
+  - Work that needs OS isolation; this native copilot profile has host access, so use Trellage Sandbox or composed `trx run grok`
 prerequisites:
   - id: copilot-cli
     description: GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host.
@@ -50,7 +50,7 @@ workflows:
     promptTemplate: |
       /lfg {{intent}}
   - id: capture-verified-repository-learning
-    description: After verified work, record exactly one non-trivial solved problem per run as repository-local solution knowledge, including the root cause, evidence, fix, and prevention. The fresh one-shot run does not inherit the earlier cpx conversation, so the intent must carry those facts and the solved change must be visible in the current tree. It can skip when no valid learning exists.
+    description: After verified work, record exactly one non-trivial solved problem per run as repository-local solution knowledge, including the root cause, evidence, fix, and prevention. The fresh one-shot run does not inherit the earlier copilot conversation, so the intent must carry those facts and the solved change must be visible in the current tree. It can skip when no valid learning exists.
     skill: ce-compound
     examples:
       - Capture the verified stale-permission-cache failure with its trigger, root cause, fix, proof, and prevention so later authorization work reuses it
@@ -113,8 +113,8 @@ For implementation-only work that must stop after local verification, use
 `/ce-work mode:return-to-caller <plan-path>`. That mode skips the standalone
 simplify, review, commit, push, PR, and CI tail.
 
-When `cpx list --json` advertises `headless.prompt: true` for the installed
-Copilot version, `trx guide` can use a headless one-shot `cpx -p` command.
+When `trx list --json` advertises `headless.prompt: true` for the installed
+Copilot version, `trx guide` can use a headless one-shot `copilot -p` command.
 Otherwise it returns a conversational launch with a prompt to paste. In both
 cases the selected prompt names exactly one skill, and Trellage does not chain
 skills. The `/ce-plan`, `/lfg`, and `/ce-compound` tokens are Copilot skill
@@ -156,7 +156,7 @@ Do not give `lfg` only a one-line feature idea when product choices are still
 open. Brainstorm first, or put the settled requirements and acceptance
 criteria directly in the intent.
 
-The generated `/ce-compound mode:non-interactive` run does not inherit the cpx
+The generated `/ce-compound mode:non-interactive` run does not inherit the copilot
 conversation that fixed the problem. Do not say only "capture what we just
 fixed." Put the symptom, root cause, fix, proof, and prevention in the intent,
 and make sure the solved change is visible in the current tree.
@@ -217,5 +217,5 @@ that cross-harness execution is intentional.
 - Health checks all 33 cataloged runtime skills. The catalog is the source of
   the exact health list.
 - The profile has no standalone MCPs.
-- `cpx list --json` advertises the exact headless contract for tested Copilot
+- `trx list --json` advertises the exact headless contract for tested Copilot
   CLI version `1.0.81`; other versions report conservative headless values.

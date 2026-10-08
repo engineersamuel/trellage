@@ -174,7 +174,7 @@ describe("continuation runtime", () => {
       ? { stdout: JSON.stringify({ schemaVersion: 1, launcher: "firstmate", profile: name, readiness: "healthy" }), stderr: "", exitCode: 0 }
       : originalRun(executable, args, options))
     const deliver = vi.spyOn(launch, "launchPrivateContinuation").mockImplementation(async (_socket, _runner, options) => ({
-      paneId: options.paneId, commandPreview: `fmx ${name}`,
+      paneId: options.paneId, commandPreview: `firstmate ${name}`,
     }))
     const result = await f.services.launch(saved, false)
     expect(result.actions[0]?.status).toBe(Status.Launched)
@@ -243,7 +243,7 @@ describe("continuation runtime", () => {
         }), prepared.context)
         return {
         ...completed,
-        command: { executable: "firstmate", args: [profile.name], preview: `fmx ${profile.name}`, promptHandling: "manual-paste" },
+        command: { executable: "firstmate", args: [profile.name], preview: `firstmate ${profile.name}`, promptHandling: "manual-paste" },
         }
       }
       return {
@@ -525,7 +525,7 @@ describe("continuation runtime", () => {
       command: {
         executable: "codex",
         args: [],
-        preview: "cdx default",
+        preview: "codex default",
         promptHandling: "manual-paste",
       },
     })
@@ -595,7 +595,7 @@ describe("continuation runtime", () => {
       .spyOn(launch, "launchPrivateContinuation")
       .mockImplementationOnce(async (_socket, _runner, options) => ({
         paneId: options.paneId,
-        commandPreview: "cdx default",
+        commandPreview: "codex default",
       }))
       .mockRejectedValueOnce(new Error("Delivery connection lost"))
     const result = await f.services.launch(draft, false)
@@ -628,7 +628,7 @@ describe("continuation runtime", () => {
       .spyOn(launch, "launchPrivateContinuation")
       .mockImplementation(async (_socket, _runner, options) => ({
         paneId: options.paneId,
-        commandPreview: "cdx default",
+        commandPreview: "codex default",
       }))
     const result = await f.services.launch(draft, false)
     expect(result.actions.slice(0, 2).map(({ status }) => status)).toEqual([Status.Launched, Status.Waiting])

@@ -2,7 +2,7 @@
 # Run against the established three-profile fixture before its final assertions.
 migration_common="$fixture_root/home/.local/share/trellage/common"
 migration_old="$migration_common/skills"
-migration_old_youtube="$migration_common/cdx-youtube-skills"
+migration_old_youtube="$migration_common/codex-youtube-skills"
 mv "$fixture_skills_cache" "$migration_old"
 mv "$fixture_youtube_skills_cache" "$migration_old_youtube"
 cp "$migration_old/managed-skills.txt" "$fixture_root/legacy-native-manifest"

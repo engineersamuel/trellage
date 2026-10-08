@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ownership_value='trellage-jcode-profiles-v1'
 
 refuse() {
-  printf 'jcx uninstall: %s\n' "$1" >&2
+  printf 'jcode uninstall: %s\n' "$1" >&2
   exit 1
 }
 
@@ -17,25 +17,25 @@ home="${HOME-}"
 [[ "$home" == /* && "$home" != / && -d "$home" && ! -L "$home" ]] \
   || refuse "unsafe HOME: $home"
 canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: $home"
-install_root="$home/.local/share/trellage/jcx"
-installed_launcher="$install_root/bin/jcx"
+install_root="$home/.local/share/trellage/jcode"
+installed_launcher="$install_root/bin/jcode"
 installed_catalog="$install_root/catalog.json"
 installed_config_manager="$install_root/config-manager.ts"
 [[ -e "$installed_config_manager" || -L "$installed_config_manager" ]] \
   || installed_config_manager="$install_root/config-manager.mjs"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
-command_path="$home/.local/share/trellage/.native-commands/jcx"
+command_path="$home/.local/share/trellage/.native-commands/jcode"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \
     || refuse "unowned command remains: $command_path"
-  printf 'jcx is not installed; profile state was preserved.\n'
+  printf 'jcode is not installed; profile state was preserved.\n'
   exit 0
 fi
 
 [[ -d "$install_root" && ! -L "$install_root" ]] \
   || refuse "unsafe runtime root: $install_root"
-[[ "$(canonical_directory "$install_root")" == "$canonical_home/.local/share/trellage/jcx" ]] \
+[[ "$(canonical_directory "$install_root")" == "$canonical_home/.local/share/trellage/jcode" ]] \
   || refuse "redirected runtime root: $install_root"
 [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
   || refuse "unowned runtime root: $install_root"
@@ -57,4 +57,4 @@ if [[ -e "$command_path" || -L "$command_path" ]]; then
 fi
 
 rm -rf -- "$install_root"
-printf 'Uninstalled jcx; jcode profile state and sessions were preserved.\n'
+printf 'Uninstalled jcode; jcode profile state and sessions were preserved.\n'

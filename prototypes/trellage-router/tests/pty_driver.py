@@ -27,8 +27,12 @@ output = bytearray()
 next_key_stage = 0
 next_key_stage_at = None
 key_stage_frame = 0
+key_stage_output_size = 0
+key_stage_response_at = None
+last_output_at = time.monotonic()
 sent_signal = False
-deadline = time.monotonic() + (60 if "upgrade" in command else 10)
+deadline_seconds = 60 if "upgrade" in command else 30 if "--source-mode" in command else 10
+deadline = time.monotonic() + deadline_seconds
 status = None
 
 while time.monotonic() < deadline:
@@ -39,6 +43,7 @@ while time.monotonic() < deadline:
         except OSError:
             chunk = b""
         output.extend(chunk)
+        last_output_at = time.monotonic()
         # Entering the alternate screen precedes Ink's input subscription.
         screen_ready = (
             b"\x1b[?1049h" not in output
@@ -52,6 +57,8 @@ while time.monotonic() < deadline:
                 next_key_stage += 1
                 next_key_stage_at = time.monotonic() + 0.1
                 key_stage_frame = output.count(b"\x1b[?2026l")
+                key_stage_output_size = len(output)
+                key_stage_response_at = None
             except OSError:
                 pass
         if signal_marker and not sent_signal and signal_marker.encode() in output:
@@ -65,6 +72,16 @@ while time.monotonic() < deadline:
         and (
             key_stage_frame == 0
             or output.count(b"\x1b[?2026l") > key_stage_frame
+            or (
+                len(output) > key_stage_output_size
+                and (
+                    time.monotonic() - last_output_at >= 0.1
+                    or (
+                        key_stage_response_at is not None
+                        and time.monotonic() - key_stage_response_at >= 0.5
+                    )
+                )
+            )
         )
     ):
         try:
@@ -72,8 +89,18 @@ while time.monotonic() < deadline:
             next_key_stage += 1
             next_key_stage_at = time.monotonic() + 0.1
             key_stage_frame = output.count(b"\x1b[?2026l")
+            key_stage_output_size = len(output)
+            key_stage_response_at = None
         except OSError:
             pass
+
+    if (
+        next_key_stage_at is not None
+        and next_key_stage < len(key_stages)
+        and len(output) > key_stage_output_size
+        and key_stage_response_at is None
+    ):
+        key_stage_response_at = time.monotonic()
 
     waited, wait_status = os.waitpid(pid, os.WNOHANG)
     if waited:

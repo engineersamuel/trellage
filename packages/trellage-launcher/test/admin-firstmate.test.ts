@@ -45,7 +45,7 @@ const selectorOf = (args: ReadonlyArray<string>): string | undefined => {
   const index = args.indexOf("--instance")
   return index < 0 ? undefined : args[index + 1]
 }
-const contextOf = (args: ReadonlyArray<string>): unknown => JSON.parse(args[args.indexOf("--fmx-instance-context-json") + 1]!)
+const contextOf = (args: ReadonlyArray<string>): unknown => JSON.parse(args[args.indexOf("--firstmate-instance-context-json") + 1]!)
 const bySelector = (args: ReadonlyArray<string>): FirstmateInstanceDescriptorV1 =>
   selectorOf(args) === alpha.reference.instanceId ? alpha : selectorOf(args) === beta.reference.instanceId ? beta : missingLegacy
 
@@ -274,7 +274,7 @@ describe("Firstmate Admin command and cache isolation", () => {
       expect(run.mock.calls.filter(([, args]) => args[0] === verb).map(([, args]) => selectorOf(args)))
         .toEqual([alpha.reference.instanceId, beta.reference.instanceId])
     }
-    expect(run.mock.calls.every(([, args]) => !args.includes("--fmx-instance-context-json"))).toBe(true)
+    expect(run.mock.calls.every(([, args]) => !args.includes("--firstmate-instance-context-json"))).toBe(true)
   })
 
   it("keeps two default installed versions, cached runs, and force refreshes separate", async () => {
@@ -333,7 +333,7 @@ describe("Firstmate Admin command and cache isolation", () => {
     const row = namedRows()[0]!
     const context = createFirstmateInstanceContext(alpha, null, "confirmed-join")
     const launch = buildAdminLaunchCommand(row)
-    expect(launch.args).toEqual(["run", "firstmate", "default", "--instance", alpha.reference.instanceId, "--fmx-instance-context-json", canonicalFirstmateInstanceJson(context)])
+    expect(launch.args).toEqual(["run", "firstmate", "default", "--instance", alpha.reference.instanceId, "--firstmate-instance-context-json", canonicalFirstmateInstanceJson(context)])
     const commands = [buildRepairCommand(row), nativeSkillsUpdateCommand(row)!, harnessUpdatePlanFor(row, [row], undefined)!.steps[0]!.command]
     for (const command of commands) {
       expect(selectorOf(command.args)).toBe(alpha.reference.instanceId)

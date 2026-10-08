@@ -6,7 +6,7 @@ repository_root="$(CDPATH= cd -P -- "$prototype_root/../.." && pwd -P)"
 . "$repository_root/tests/helpers/floating_skills_fixture.sh"
 
 fail() {
-  printf 'agx contract: FAIL: %s\n' "$1" >&2
+  printf 'agency contract: FAIL: %s\n' "$1" >&2
   exit 1
 }
 
@@ -108,7 +108,7 @@ unset AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID AZURE_TOKEN_CREDENTIAL
 : >"$agency_log"
 : >"$agency_command_log"
 
-launcher="$prototype_root/bin/agx"
+launcher="$prototype_root/bin/agency"
 bash -n "$launcher" "$prototype_root/install.sh" "$prototype_root/uninstall.sh" \
   "$prototype_root/tests/live.sh" \
   || fail 'shell syntax check failed'
@@ -119,7 +119,7 @@ if TRELLAGE_AGENCY_LIVE= "$prototype_root/tests/live.sh" \
   fail 'live proof ran without explicit opt-in'
 fi
 assert_line \
-  'agx live: set TRELLAGE_AGENCY_LIVE=1 to run the paid, authenticated live proof' \
+  'agency live: set TRELLAGE_AGENCY_LIVE=1 to run the paid, authenticated live proof' \
   "$fixture_root/live-disabled.err"
 [[ ! -s "$fixture_root/live-disabled.out" ]] || fail 'disabled live proof wrote stdout'
 
@@ -128,7 +128,7 @@ assert_line $'trellage-azure\ttrellage-azure' "$fixture_root/list"
 "$launcher" list --json >"$fixture_root/list.json"
 jq -e '
   .schemaVersion == 1
-  and .launcher == "agx"
+  and .launcher == "agency"
   and .harness == "agency"
   and .sandbox == false
   and (.profiles | length) == 1
@@ -207,7 +207,7 @@ jq -e \
   --arg config "$worktree/agency.toml" \
   --arg home "$expected_home" '
   .schemaVersion == 1
-  and .launcher == "agx"
+  and .launcher == "agency"
   and .harness == "agency"
   and .profile == "trellage-azure"
   and .readiness == "healthy"
@@ -298,7 +298,7 @@ if (
   fail 'doctor accepted a missing Agency installation'
 fi
 assert_line \
-  'agx: Agency is not installed; run: curl -sSfL https://aka.ms/InstallTool.sh | sh -s agency' \
+  'agency: Agency is not installed; run: curl -sSfL https://aka.ms/InstallTool.sh | sh -s agency' \
   "$fixture_root/missing-agency.err"
 mv "$fixture_bin/agency.absent" "$fixture_bin/agency"
 
@@ -322,7 +322,7 @@ if (
   fail 'doctor accepted unavailable Azure authentication'
 fi
 assert_line \
-  'agx: Azure authentication is unavailable; set environment credentials or run az login' \
+  'agency: Azure authentication is unavailable; set environment credentials or run az login' \
   "$fixture_root/no-auth.err"
 export FAKE_AZ_READY=1
 
@@ -380,15 +380,15 @@ mkdir -p "$install_home"
   export HOME="$install_home"
   "$prototype_root/install.sh"
 ) >"$fixture_root/install.out"
-assert_contains 'Installed agx at ' "$fixture_root/install.out"
-installed_root="$install_home/.local/share/trellage/agx"
-installed_command="$install_home/.local/share/trellage/.native-commands/agx"
-[[ -x "$installed_root/bin/agx" && -f "$installed_root/catalog.json" ]] \
+assert_contains 'Installed agency at ' "$fixture_root/install.out"
+installed_root="$install_home/.local/share/trellage/agency"
+installed_command="$install_home/.local/share/trellage/.native-commands/agency"
+[[ -x "$installed_root/bin/agency" && -f "$installed_root/catalog.json" ]] \
   || fail 'installer did not publish runtime files'
 cmp -s "$installed_root/copilot-model-settings.py" \
   "$repository_root/prototypes/trellage/copilot-model-settings.py" \
   || fail 'installer did not publish the shared model settings helper'
-[[ -L "$installed_command" && "$(readlink "$installed_command")" == "$installed_root/bin/agx" ]] \
+[[ -L "$installed_command" && "$(readlink "$installed_command")" == "$installed_root/bin/agency" ]] \
   || fail 'installer did not publish the exact command symlink'
 assert_line 'trellage-agency-profiles-v1' \
   "$installed_root/.managed-by-trellage-agency-profiles"
@@ -397,7 +397,7 @@ assert_line 'trellage-agency-profiles-v1' \
   export HOME="$install_home"
   "$prototype_root/install.sh"
 ) >"$fixture_root/reinstall.out"
-assert_contains 'Installed agx at ' "$fixture_root/reinstall.out"
+assert_contains 'Installed agency at ' "$fixture_root/reinstall.out"
 
 preserved_profile="$install_home/.local/share/trellage/profiles/agency/trellage-azure/home"
 mkdir -p "$preserved_profile"
@@ -406,23 +406,23 @@ printf 'preserve\n' >"$preserved_profile/session"
   export HOME="$install_home"
   "$prototype_root/uninstall.sh"
 ) >"$fixture_root/uninstall.out"
-assert_line 'Uninstalled agx; profile homes were preserved.' "$fixture_root/uninstall.out"
+assert_line 'Uninstalled agency; profile homes were preserved.' "$fixture_root/uninstall.out"
 [[ ! -e "$installed_root" && ! -L "$installed_command" ]] \
   || fail 'uninstaller left managed launcher files'
 assert_line 'preserve' "$preserved_profile/session"
 
 collision_home="$fixture_root/collision-home"
 mkdir -p "$collision_home/.local/share/trellage/.native-commands"
-printf '#!/usr/bin/env bash\nprintf unrelated\n' >"$collision_home/.local/share/trellage/.native-commands/agx"
-chmod 0755 "$collision_home/.local/share/trellage/.native-commands/agx"
+printf '#!/usr/bin/env bash\nprintf unrelated\n' >"$collision_home/.local/share/trellage/.native-commands/agency"
+chmod 0755 "$collision_home/.local/share/trellage/.native-commands/agency"
 if (
   export HOME="$collision_home"
   "$prototype_root/install.sh"
 ) >"$fixture_root/collision.out" 2>"$fixture_root/collision.err"; then
-  fail 'installer replaced an unrelated agx command'
+  fail 'installer replaced an unrelated agency command'
 fi
 assert_contains 'refusing to replace unrelated command' "$fixture_root/collision.err"
-assert_contains 'printf unrelated' "$collision_home/.local/share/trellage/.native-commands/agx"
+assert_contains 'printf unrelated' "$collision_home/.local/share/trellage/.native-commands/agency"
 
 if grep -Fq 'npx ' "$agency_command_log"; then
   fail 'static launcher commands invoked the Azure MCP executable'
@@ -431,4 +431,4 @@ if grep -Eiq 'login|browser' "$agency_command_log"; then
   fail 'static launcher commands attempted authentication'
 fi
 
-printf 'agx contract: PASS\n'
+printf 'agency contract: PASS\n'

@@ -1,13 +1,13 @@
 # Lightweight Copilot Profiles
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run copilot PROFILE` runs host-native GitHub Copilot CLI profiles with isolated `COPILOT_HOME`
 directories. It preserves the real `HOME`, working directory, terminal, Git,
 SSH, and Herdr environment. Profiles separate configuration and state; they are
 not a security boundary.
 
-Copilot authentication is inherited through the CLI native credential mechanism; cpx never copies ~/.copilot into a profile home.
+Copilot authentication is inherited through the CLI native credential mechanism; copilot never copies ~/.copilot into a profile home.
 
 ## Requirements
 
@@ -23,8 +23,8 @@ Copilot authentication is inherited through the CLI native credential mechanism;
 trx setup copilot --all
 ```
 
-The installer keeps `cpx` as a private backend and records ownership of its runtime
-under `~/.local/share/trellage/cpx`. Install and uninstall refuse unrelated or
+The installer keeps `copilot` as a private backend and records ownership of its runtime
+under `~/.local/share/trellage/copilot`. Install and uninstall refuse unrelated or
 symlinked runtime roots and unrelated commands. `./uninstall.sh` removes only
 owned command and runtime files; profile homes and their sessions, permissions,
 and authentication state remain.
@@ -87,8 +87,8 @@ hard-deny classification, and model-override publication are advertised only
 for GitHub Copilot CLI `1.0.81`. Other versions stay discoverable, but they
 fall back to conservative `headless` values instead of inferred support.
 The installed Copilot version is cached across invocations and rechecked when
-the executable or its package installation changes. `cpx list --json
---cached-capabilities` reads only that cache and reports conservative capabilities
+the executable or its package installation changes. `trx list --json` reads
+that cache and reports conservative capabilities
 on a miss. `trx guide` uses this mode at startup, then resolves current
 capabilities after matching and before preparing launch commands.
 
@@ -103,7 +103,7 @@ skill count.
 
 After installing the native launchers and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
-harness/profile picker. Remaining arguments are forwarded to `cpx` unchanged
+harness/profile picker. Remaining arguments are forwarded to `copilot` unchanged
 after selection; the bare picker never performs setup, repair, or update.
 
 Ordinary `trx run copilot PROFILE` launches pass `--autopilot --allow-all --no-ask-user`, so
@@ -148,7 +148,7 @@ apply. It accepts only `--agent`, repeated `--require-skill`, `-i`, `--model`,
 and `--effort`; headless and autonomous options are rejected. Piped input and
 unattended batch use are rejected. Ordinary `trx run copilot hve` remains autonomous.
 
-Use [the Native HVE guide](../../profile-guides/native/cpx/hve.md) for the
+Use [the Native HVE guide](../../profile-guides/native/copilot/hve.md) for the
 Discovery, Experiment, BRD, PRD, UX, architecture, and planning mappings.
 Those agents retain their own references and approval rules. Meeting ingestion,
 publishing, tracker mutation, and automatic customer signoff are not part of
@@ -161,7 +161,7 @@ Cataloged retired plugin identities are removed during setup, launch, update,
 and repair. Updates remain explicit and use native Copilot
 marketplace/plugin commands.
 
-`trx upgrade copilot hve --harness-only` updates the host Copilot CLI shared by all `cpx`
+`trx upgrade copilot hve --harness-only` updates the host Copilot CLI shared by all `copilot`
 profiles. It runs Copilot's own `update stable` command, preserves its
 output and exit status, and does not change profile homes or plugins.
 It is separate from `trx upgrade copilot PROFILE`, which updates plugins only.
@@ -179,7 +179,7 @@ The `plannotator` profile installs
 Its health check requires the six Effective HTML package skills:
 `design-artifact`, `html`, `html-diagram`, `html-plan`, `html-prototype`, and
 `html-wireframe`. The plugin does not print a version in `copilot plugin list`,
-so `cpx` reads its validated installed `.codex-plugin/plugin.json` for local
+so `copilot` reads its validated installed `.codex-plugin/plugin.json` for local
 version state and uses the matching upstream manifest for update checks.
 
 The opt-in `compound-engineering` profile installs
@@ -194,7 +194,7 @@ requirements or an implementation-ready plan instead of a one-line idea.
 Version checks read the validated installed `.codex-plugin/plugin.json`.
 Health requires all 33 upstream runtime skills to be present and enabled. The
 profile does not provision optional MCP integrations. It uses the existing
-`cpx` launcher and shared `native-common` skills, but the plugin itself is
+`copilot` launcher and shared `native-common` skills, but the plugin itself is
 opt-in and is not part of `native-common`.
 
 The `tufte-vdqi` profile installs
