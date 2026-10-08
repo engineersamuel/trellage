@@ -31,6 +31,13 @@ const distributionManifest = "package.source.json"
 const sourceDirectories = ["bin", "packages", "prototypes", "scripts", "profile-guides", "profiles"]
 const optionalSourceDirectories = [".agents"]
 const rootFiles = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.base.json", "config.toml"]
+function sourceRootFiles(root: string): string[] {
+  const legacy =
+    existsSync(path.join(root, sourceMarker)) &&
+    lstatSync(path.join(root, "config.toml"), { throwIfNoEntry: false }) === undefined &&
+    lstatSync(path.join(root, "skills.json"), { throwIfNoEntry: false }) !== undefined
+  return legacy ? rootFiles.map((name) => name === "config.toml" ? "skills.json" : name) : rootFiles
+}
 const excludedDirectories = new Set(["node_modules", "dist", "coverage", "__pycache__"])
 const nativeProfileState = new Set([
   "cache",
@@ -171,7 +178,7 @@ function sourceFiles(root: string): string[] {
       files.push(relative)
     }
   }
-  for (const file of rootFiles) {
+  for (const file of sourceRootFiles(root)) {
     safePath(sourceFilePath(root, file), "file")
     files.push(file)
   }
@@ -496,7 +503,7 @@ export function normalizeDependencyPermissions(root: string): void {
 }
 
 function inventoryIncludes(root: string, development: boolean) {
-  const roots = new Set([...rootFiles, ...sourceDirectoryNames(root), "node_modules"])
+  const roots = new Set([...sourceRootFiles(root), ...sourceDirectoryNames(root), "node_modules"])
   return (directory: string, name: string): boolean => {
     const relative = path.relative(root, path.join(directory, name))
     if (relative === readyFile || relative === sourceMarker) return false
@@ -747,7 +754,7 @@ export function requireReplaceableOwnedWorkspace(root: string): void {
     throw new Error(`refusing unowned source runtime: ${root}`)
   }
   const allowed = new Set([
-    ...rootFiles,
+    ...sourceRootFiles(root),
     ...sourceDirectoryNames(root),
     sourceMarker,
     readyFile,
