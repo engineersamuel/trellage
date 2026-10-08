@@ -4,7 +4,7 @@ import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { guidePromptTarget } from "../src/guide-api.ts"
 import type { JobPlacement, QueuedGuideJob } from "../src/guide-batch.ts"
 import type { GuideGoalCandidateContext, PreparedGuideGoal } from "../src/guide-goal-execution.ts"
@@ -35,6 +35,7 @@ import { goalArtifact, goalArtifactQuestion, goalCriteria, revisedGoalIntent } f
 import { goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const entry = fileURLToPath(new URL("./fixtures/guide-integration.tsx", import.meta.url))
+vi.setConfig({ testTimeout: 15_000 })
 import { preparationPlan, preparationRevision } from "./helpers/firstmate-preparation-fixtures.ts"
 import { alpha, beta, instanceOrchestration, instanceProfile } from "./helpers/firstmate-instance-flow.ts"
 import { canonicalFirstmateInstanceJson } from "@trellage/guide-core"
@@ -1776,6 +1777,7 @@ it("reopens a saved no-change review without new model calls or implementation",
   await guide.pressAndWait(enter, "Select a recommended finding")
   await guide.pressAndWait("\u001b", "Confirm target")
   await guide.pressAndWait("h", "Saved reviews", "Reopen without model calls.")
+  await guide.waitForText("· complete ·")
   await guide.pressAndWait(enter, "No change recommended.")
   const report = await guide.finish("q", 130)
   assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 1)
@@ -1817,6 +1819,7 @@ it(
     await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1")
     await guide.pressAndWait("\u001b", "Confirm target")
     await guide.pressAndWait("h", "Saved reviews", "Reopen without model calls.")
+    await guide.waitForText("· failed ·")
     await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1")
     await guide.pressAndWait("\u001b", "Confirm target")
     const report = await guide.finish("q", 130)

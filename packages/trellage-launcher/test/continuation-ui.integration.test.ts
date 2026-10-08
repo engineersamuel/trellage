@@ -14,6 +14,7 @@ import {
 } from "./helpers/continuation-ui-fixtures.ts"
 
 const entry = fileURLToPath(new URL("./fixtures/continuation-integration.tsx", import.meta.url))
+vi.setConfig({ testTimeout: 15_000 })
 
 interface FixtureReport {
   readonly draft: ContinuationDraft

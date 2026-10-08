@@ -5,6 +5,6 @@ export default defineConfig({
   test: {
     cache: false,
     setupFiles: [fileURLToPath(new URL("../../tests/bun-runtime.setup.ts", import.meta.url))],
-    maxWorkers: 1,
+    maxWorkers: 2,
   },
 })

@@ -745,7 +745,7 @@ describe("installed review skill staging", () => {
     } finally {
       clock.mockRestore()
     }
-  })
+  }, 15_000)
 
   it("refreshes a valid stale cache once when a selected skill is missing and freezes one current snapshot", async () => {
     const managerPath = path.join(root, "manager.ts")
