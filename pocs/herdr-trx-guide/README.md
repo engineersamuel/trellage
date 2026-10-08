@@ -151,7 +151,7 @@ position. When exact capture is unavailable, the picker can use the latest
 complete visible harness or system message. Session identity and transcript
 access errors stop capture instead of triggering that fallback.
 
-Choose **Optimize changes** to act on repository changes instead of rewriting
+Choose **Review changes** to act on repository changes instead of rewriting
 text. This opens `trx guide --optimize` with the original pane/worktree
 context, not the clipboard, latest answer, or capture queue as a substitute
 task. Optimize does not look up a source agent or capture a conversation.
@@ -162,8 +162,9 @@ immediately, or explicitly choose uncommitted-only review. Guide detects and
 shows the comparison base from local Git metadata; `b` lets you change it.
 If no base can be detected, Guide asks for one instead of hiding committed work.
 The shared flow confirms files and lets you choose independent read-only
-reviewers. **First principles** and **Behavior preservation** start selected;
-Matt Pocock's **Improve codebase architecture** skill is optional. Confirm
+reviewers. The serialized `optimize` action remains compatible.
+**First principles** and **Behavior preservation** start selected; Architecture,
+Ponytail, Fleet and Matt's Standards review are also available. Confirm
 model use, then read the saved reports, one challenge round, and the
 coordinator's decisions. No finding starts approved. Select useful
 recommendations yourself before choosing a Native implementation agent.

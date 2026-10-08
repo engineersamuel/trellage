@@ -1,19 +1,32 @@
 import { randomUUID } from "node:crypto"
 import type { ModelInfo } from "@github/copilot-sdk"
-import { runRestrictedGuideModelRequest, type RestrictedGuideModelRequest } from "./copilot-guide-provider.ts"
+import {
+  RestrictedGuideModelError,
+  runRestrictedGuideModelRequest,
+  type RestrictedGuideModelRequest,
+} from "./copilot-guide-provider.ts"
 import {
   optimizeDigest,
-  optimizeEvidenceLimits,
-  optimizeEvidenceTools,
   type OptimizeEvidence,
   type OptimizeSourceRange,
 } from "./guide-optimize-evidence.ts"
 import { guideOptimizeReviewers } from "./guide-optimize-prompts.ts"
 import { optimizeResponseFormats } from "./guide-optimize-schema.ts"
-import { optimizeArchitectureSkill } from "./guide-optimize-skills.ts"
 import { selectedGuideOptimizeChanges, type GuideOptimizeTarget } from "./guide-optimize-target.ts"
 import type { GuideModelConfig, GuideModelRouting } from "./guide-model-routing.ts"
 import { array, boundedNumber, exactKeys, literal, record, stringArray, text, uniqueArray } from "./guide-text.ts"
+import {
+  reviewFailureKindLabel,
+  reviewFailurePhaseLabel,
+  reviewSynthesisStatus,
+  type ReviewRun,
+} from "./review-contracts.ts"
+import {
+  reviewContextBudget, optimizeEvidenceTools, planReviewEvidence,
+  reviewLineRanges, reviewLineRangeBytes, reviewLineBatches,
+} from "./review-evidence.ts"
+import { selectReviewChecks, type ReviewCheckId } from "./review-catalog.ts"
+import { legacyReviewRun, legacyReviewState } from "./review-view-model.ts"
 
 export interface OptimizeReviewInput {
   readonly target: GuideOptimizeTarget
@@ -51,6 +64,13 @@ export interface OptimizeReport {
   readonly summary: string
   readonly limitations: ReadonlyArray<string>
   readonly findings: ReadonlyArray<OptimizeFinding>
+}
+
+export interface OptimizeBatchReport {
+  readonly reviewerId: string
+  readonly phase: "evidence" | "consolidation"
+  readonly index: number
+  readonly report: OptimizeReport
 }
 
 export interface OptimizeResponse {
@@ -98,8 +118,16 @@ export interface OptimizeApproval {
 }
 
 export type OptimizeModelCall = (request: RestrictedGuideModelRequest) => Promise<string>
-export const optimizeReviewLimits = { timeoutMs: 480_000, requestMs: 120_000, responseBytes: 32_000 } as const
-export const optimizeReviewCallLimit = (reviewerCount: number): number => (2 * reviewerCount + 1) * 2
+export const optimizeReviewLimits = {
+  requestMs: 480_000,
+  batchMs: 1_800_000,
+  synthesisRequestMs: 900_000,
+  synthesisMs: 900_000,
+  responseBytes: 32_000,
+  evidenceBatches: 128,
+} as const
+export const optimizeReviewCallLimit = (reviewerCount: number, evidenceBytes = 0): number =>
+  (2 * reviewerCount + 1) * 2 + Math.min(128, Math.ceil(evidenceBytes / 8000)) * 16
 
 export const optimizeReviewersFor = (routing: GuideModelRouting): ReadonlyArray<OptimizeReviewer> =>
   guideOptimizeReviewers.map((entry) => ({
@@ -170,7 +198,7 @@ const prose = (value: unknown, name: string, maximum = 800): string => text(valu
 export const parseOptimizeReport = (
   input: unknown,
   reviewerId: string,
-  context: OptimizeReviewInput,
+  context: Pick<OptimizeReviewInput, "target" | "paths">,
   evidence: OptimizeEvidence,
   citationMode: "model" | "stored" = "stored",
 ): OptimizeReport => {
@@ -200,15 +228,24 @@ export const parseOptimizeReport = (
   return {
     reviewerId,
     summary: prose(fields.summary, "summary"),
-    limitations: stringArray(fields.limitations, "limitations", { maximumItems: 6, itemMaximum: 400 }),
+    limitations:
+      citationMode === "model"
+        ? stringArray(fields.limitations, "limitations", { maximumItems: 6, itemMaximum: 400 })
+        : array(fields.limitations, "limitations", { maximum: 6 }).map((entry) =>
+            text(entry, "limitation", 400, { preserve: true }),
+          ),
     findings,
   }
 }
 
-const findingIds = (review: OptimizeReview): ReadonlyArray<string> =>
+type FindingContext = Pick<OptimizeReview, "evidence"> & {
+  readonly reports: ReadonlyArray<{ readonly findings: ReadonlyArray<{ readonly id: string }> }>
+}
+
+const findingIds = (review: FindingContext): ReadonlyArray<string> =>
   review.reports.flatMap((report) => report.findings.map((finding) => finding.id))
 
-const requireAllFindings = (ids: ReadonlyArray<string>, review: OptimizeReview): void => {
+const requireAllFindings = (ids: ReadonlyArray<string>, review: FindingContext): void => {
   const expected = findingIds(review)
   const expectedSet = new Set(expected)
   const seen = new Set<string>()
@@ -231,7 +268,7 @@ const requireAllFindings = (ids: ReadonlyArray<string>, review: OptimizeReview):
 export const parseOptimizeChallenge = (
   input: unknown,
   reviewerId: string,
-  review: OptimizeReview,
+  review: FindingContext,
   citationMode: "model" | "stored" = "stored",
 ): OptimizeChallenge => {
   const fields = record(input, "challenge")
@@ -257,7 +294,7 @@ export const parseOptimizeChallenge = (
 
 export const parseOptimizeVerdict = (
   input: unknown,
-  review: OptimizeReview,
+  review: FindingContext,
   citationMode: "model" | "stored" = "stored",
 ) => {
   const fields = record(input, "verdict")
@@ -320,49 +357,64 @@ const reviewPolicy = [
   "Prefer deletion, then simplification. Disagreement is not failure; agreement and model confidence are not proof.",
   "Return only JSON matching the supplied output schema. Citations contain only source, startLine, and endLine; Guide copies exact quotes from those frozen lines.",
   "Cite concise, relevant ranges you actually read from that exact source ID. Source reads map absolute line numbers to text. Diff line numbers belong to the @diff source, not to the current file.",
+  "Citation startLine and endLine are individual integer keys from the tool's lines object, never numeric values inside the source text. Check 1 <= startLine <= endLine <= totalLines for that exact source. Do not concatenate endpoints, line keys, or source values into one number.",
 ].join("\n")
 
-const inspectBudget = (model: ModelInfo, inputBytes: number): number => {
-  const limit = Math.min(
-    model.capabilities.limits.max_context_window_tokens,
-    model.capabilities.limits.max_prompt_tokens ?? Number.MAX_SAFE_INTEGER,
+const boundedResponseFormat = (
+  review: ReviewRun,
+  model: GuideModelConfig,
+  phase: keyof typeof optimizeResponseFormats,
+  ids: ReadonlyArray<string>,
+): NonNullable<RestrictedGuideModelRequest["responseFormat"]> => {
+  const format = phase === "report" ? optimizeResponseFormats.report : optimizeResponseFormats[phase](ids)
+  const schema = structuredClone(format.jsonSchema.schema)
+  const properties = record(record(schema, "review schema").properties, "review properties")
+  const rows = record(properties[phase === "report" ? "findings" : phase === "challenge" ? "responses" : "decisions"], "review rows")
+  const entry = record(record(rows.items, "review entry").properties, "entry properties")
+  const citation = record(record(entry.citations, "citations schema").items, "citation schema")
+  const coordinates = record(citation.properties, "citation properties")
+  const maximum = review.evidence.source.sources.reduce(
+    (largestLineCount, source) => Math.max(largestLineCount, source.content.split("\n").length),
+    1,
   )
-  const remaining = limit - inputBytes - optimizeReviewLimits.responseBytes - 16_000
-  if (!Number.isSafeInteger(limit) || remaining < 24_000)
-    throw new Error(
-      "The review model cannot hold this request and evidence budget. Choose a larger-context model; nothing was truncated.",
-    )
-  return Math.min(optimizeEvidenceLimits.toolBytes, remaining)
+  const numericBoundsSupported = /^gpt(?:[-\d])/iu.test(model.model)
+  for (const field of ["startLine", "endLine"]) {
+    const coordinate = record(coordinates[field], field)
+    coordinates[field] = {
+      ...coordinate,
+      ...(numericBoundsSupported ? { maximum } : {}),
+      description: `An integer line-map key actually read from this source, between 1 and its totalLines (never greater than ${maximum}). Do not concatenate line numbers or source values.`,
+    }
+  }
+  return {
+    ...format,
+    jsonSchema: {
+      ...format.jsonSchema,
+      schema: numericBoundsSupported ? schema : portableNumericSchema(schema),
+    },
+  }
 }
 
-const requiredReviewSources = (review: OptimizeReview, reviewerId: string): ReadonlyArray<string> => [
-  ...review.evidence.sources.filter((entry) => entry.id.startsWith("@diff/")).map((entry) => entry.id),
-  ...review.input.target.changes
-    .filter((entry) => entry.untracked && review.input.paths.includes(entry.path))
-    .map((entry) => entry.path),
-  ...(reviewerId === optimizeArchitectureSkill
-    ? [`@skill/${optimizeArchitectureSkill}`, "@skill/codebase-design"]
-    : []),
-]
+type ReviewSchema = NonNullable<RestrictedGuideModelRequest["responseFormat"]>["jsonSchema"]["schema"]
 
-const requiredEvidenceBytes = (review: OptimizeReview, ids: ReadonlyArray<string>): number => {
-  const sources = ids.map((id) => {
-    const source = review.evidence.sources.find((entry) => entry.id === id)
-    if (source === undefined) throw new Error(`Required review source is missing: ${id}.`)
-    return source
-  })
-  const minimumReads = sources.reduce(
-    (count, source) => count + Math.ceil(source.content.split("\n").length / optimizeEvidenceLimits.toolLines),
-    0,
+const portableNumericSchema = (schema: ReviewSchema): ReviewSchema => {
+  if (Array.isArray(schema)) return schema.map(portableNumericSchema)
+  if (typeof schema !== "object" || schema === null) return schema
+  return Object.fromEntries(
+    Object.entries(schema)
+      .filter(([key]) => !["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"].includes(key))
+      .map(([key, value]) => [key, portableNumericSchema(value)]),
   )
-  const bytes = sources.reduce((count, source) => count + Buffer.byteLength(source.content), 0)
-  if (minimumReads > optimizeEvidenceLimits.toolCalls || bytes > optimizeEvidenceLimits.toolBytes)
-    throw new Error(
-      "Selected evidence cannot fit the per-reviewer read budget. Select fewer files before starting a new review.",
-    )
-  return bytes
 }
 
+class OptimizeBatchRequired extends Error {
+  constructor(
+    readonly model: ModelInfo,
+    readonly evidenceBytes: number,
+  ) {
+    super("Selected evidence needs fresh model-context batches; nothing was truncated.")
+  }
+}
 interface OptimizeResponseCorrection {
   readonly rejectedResponse: string
   readonly validationDiagnostic: string
@@ -387,7 +439,7 @@ class OptimizeResponseValidationError extends Error {
 }
 
 interface OptimizeModelResponseRequest<T> {
-  readonly review: OptimizeReview
+  readonly review: ReviewRun
   readonly model: GuideModelConfig
   readonly instruction: string
   readonly phase: keyof typeof optimizeResponseFormats
@@ -398,7 +450,9 @@ interface OptimizeModelResponseRequest<T> {
   readonly signal: AbortSignal
   readonly progress: (message: string) => void
   readonly requiredSources?: ReadonlyArray<string>
+  readonly requiredRanges?: ReadonlyArray<OptimizeSourceRange>
   readonly correction?: OptimizeResponseCorrection
+  readonly saveBatchReport?: (entry: OptimizeBatchReport) => Promise<void>
 }
 
 const modelResponse = async <T>(request: OptimizeModelResponseRequest<T>): Promise<T> => {
@@ -417,22 +471,32 @@ const modelResponse = async <T>(request: OptimizeModelResponseRequest<T>): Promi
     requiredSources = [],
   } = request
   signal.throwIfAborted()
-  const minimumBytes = requiredEvidenceBytes(review, requiredSources)
-  const requiredFindingIds = phase === "report" ? [] : findingIds(review)
-  const requiredCitations = review.reports.flatMap((report) =>
-    report.findings.flatMap((finding) =>
-      finding.citations.map(({ source, startLine, endLine }) => ({ source, startLine, endLine })),
-    ),
-  )
+  const requiredFindingIds = phase === "report" ? [] : review.results.flatMap((result) => result.findings.map((finding) => finding.id))
+  const requiredCitations =
+    phase === "report"
+      ? []
+      : review.results.flatMap((report) =>
+          report.findings.flatMap((finding) =>
+            finding.citations.map(({ source, startLine, endLine }) => ({
+              source,
+              startLine,
+              endLine,
+            })),
+          ),
+        )
+  const requiredRanges = [...reviewLineRanges(review.evidence.source, requiredSources), ...(request.requiredRanges ?? [])]
+  const allRanges = [...requiredRanges, ...requiredCitations]
+  const minimumBytes = allRanges.reduce((bytes, range) => bytes + reviewLineRangeBytes(review.evidence.source, range), 0)
   const prompt = JSON.stringify({
-    selectedPaths: review.input.paths,
-    originalTask: review.input.originalIntent,
-    currentTask: review.input.intent,
+    selectedPaths: review.request.paths,
+    originalTask: review.request.originalIntent,
+    currentTask: review.request.intent,
     requiredSources,
+    requiredRanges,
     requiredFindingIds,
     requiredCitations,
-    sourceCount: review.evidence.sources.length,
-    excludedCount: review.evidence.excluded.length,
+    sourceCount: review.evidence.source.sources.length,
+    excludedCount: review.evidence.source.excluded.length,
     data,
     ...(correction === undefined ? {} : { correction }),
   })
@@ -440,46 +504,60 @@ const modelResponse = async <T>(request: OptimizeModelResponseRequest<T>): Promi
     phase === "challenge"
       ? "\nReturn exactly one response for every ID in requiredFindingIds, preserving each findingId exactly. Use uncertain when evidence is insufficient; do not omit findings or combine responses."
       : phase === "verdict"
-        ? "\nReturn exactly one decision for every ID in requiredFindingIds, preserving each findingId exactly. Use unresolved when evidence is insufficient and rejected for an evidenced duplicate or unnecessary proposal; do not omit findings or collapse IDs for duplicate proposals."
+        ? "\nReturn exactly one decision for every ID in requiredFindingIds, preserving each findingId exactly. Use unresolved when evidence is insufficient and rejected for an evidenced duplicate or unnecessary proposal; do not omit findings or collapse IDs for duplicate proposals. Independent reviews already inspected the selected changes. Verify all required citation ranges and inspect additional context needed to resolve concrete objections; do not restart the full repository review or reread entire bulk-data files without a specific unresolved question."
         : ""
   const correctionInstruction =
     correction === undefined
       ? ""
-      : "\nYour previous completed response failed local validation. Return a full corrected response to the original request, not a patch. Use the validationDiagnostic and rejectedResponse in the correction data. Read all requiredSources and requiredCitations again using the fresh tools provided in this request; earlier evidence reads do not carry over."
-  const systemPrompt = `${reviewPolicy}\nUse list_review_sources to find related code, instructions, and exclusions. Read every line of requiredSources and every requiredCitations range through the snapshot tools before reporting; incomplete coverage fails this review. Each read reports the next remainingRequired gaps: keep reading them until the list is empty. Do not accept another reviewer's quote without reading its source.\n${instruction}${completenessInstruction}${correctionInstruction}`
-  const responseFormat =
-    phase === "report" ? optimizeResponseFormats.report : optimizeResponseFormats[phase](requiredFindingIds)
-  const requiredRanges = requiredSources.flatMap((id): OptimizeSourceRange[] => {
-    const source = review.evidence.sources.find((entry) => entry.id === id)!
-    return source.content.length === 0 ? [] : [{ source: id, startLine: 1, endLine: source.content.split("\n").length }]
+      : "\nYour previous completed response failed local validation. Return a full corrected response to the original request, not a patch. Use the validationDiagnostic and rejectedResponse in the correction data only to identify what failed. The rejectedResponse is not evidence and its citation coordinates may be corrupt: rebuild each citation from the fresh tool's source, totalLines and integer keys in lines. Do not copy, extend, concatenate, or partially repair rejected line numbers. Read all requiredSources, requiredRanges and requiredCitations again using the fresh tools provided in this request; earlier evidence reads do not carry over. Verify both citation endpoints are keys you actually read from that source and are no greater than its totalLines."
+  const systemPrompt = `${reviewPolicy}\nUse list_review_sources to find related code, instructions, and exclusions. Read every line of requiredSources, requiredRanges and every requiredCitations range through the snapshot tools before reporting; incomplete coverage fails this review. Read full pages of up to 200 lines within the assigned range to avoid wasting context on repeated tool envelopes. Each read reports the next remainingRequired gaps: keep reading them until the list is empty. Do not accept another reviewer's quote without reading its source.\n${instruction}${completenessInstruction}${correctionInstruction}`
+  const responseFormat = boundedResponseFormat(review, model, phase, requiredFindingIds)
+  const evidenceTools = optimizeEvidenceTools(review.evidence.source, signal, allRanges, {
+    maximumCalls: Math.max(
+      120,
+      allRanges.reduce((count, range) => count + range.endLine - range.startLine + 1, 0) + 16,
+    ),
+    maximumBytes: Number.MAX_SAFE_INTEGER,
+    maximumResponseBytes: Number.MAX_SAFE_INTEGER,
   })
-  const evidenceTools = optimizeEvidenceTools(review.evidence, signal, [...requiredRanges, ...requiredCitations])
+  let batchPlan: OptimizeBatchRequired | undefined
   const response = await call({
     ...model,
     systemPrompt,
     prompt,
     signal,
-    timeoutMs: optimizeReviewLimits.requestMs,
+    timeoutMs: phase === "verdict" ? optimizeReviewLimits.synthesisRequestMs : optimizeReviewLimits.requestMs,
     cleanupTimeoutMs: 3000,
     maximumResponseBytes: optimizeReviewLimits.responseBytes,
     clientName: "trellage-trx-optimize-review",
     tools: [...evidenceTools.tools],
     responseFormat,
     inspectModel: (available) => {
-      const bytes = inspectBudget(
+      const { evidenceBytes } = reviewContextBudget(
         available,
-        Buffer.byteLength(prompt) + Buffer.byteLength(systemPrompt) + Buffer.byteLength(JSON.stringify(responseFormat)),
+        prompt + systemPrompt + JSON.stringify(responseFormat),
+        optimizeReviewLimits.responseBytes,
       )
-      if (minimumBytes > bytes)
-        throw new Error(
-          "Selected evidence cannot fit this model's context. Choose a larger-context model or fewer files; nothing was truncated.",
-        )
-      evidenceTools.setByteBudget(bytes)
+      if (minimumBytes > evidenceBytes) {
+        batchPlan = new OptimizeBatchRequired(available, evidenceBytes)
+        throw batchPlan
+      }
+      evidenceTools.setByteBudget(evidenceBytes)
     },
     onProgress: progress,
+  }).catch((cause: unknown) => {
+    signal.throwIfAborted()
+    if (
+      batchPlan !== undefined &&
+      cause instanceof RestrictedGuideModelError &&
+      cause.code === "model-metadata-failed" &&
+      cause.cleanupFailures.length === 0
+    )
+      throw batchPlan
+    throw cause
   })
   signal.throwIfAborted()
-  evidenceTools.assertComplete(requiredSources, requiredCitations)
+  evidenceTools.assertComplete(requiredSources, allRanges)
   if (Buffer.byteLength(response) > optimizeReviewLimits.responseBytes)
     throw new Error("Review response exceeded its byte budget.")
   let output: T
@@ -493,6 +571,144 @@ const modelResponse = async <T>(request: OptimizeModelResponseRequest<T>): Promi
 }
 
 type OptimizeResponseBatchJob<T> = (correction?: OptimizeResponseCorrection) => Promise<T>
+
+export const packOptimizeLimitations = (limitations: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const characters = [...[...new Set(limitations)].join(" | ")]
+  if (characters.length > 2000)
+    throw new Error("Batch limitation text exceeds the five 400-character stored slots; nothing was omitted.")
+  const packed: string[] = []
+  for (let index = 0; index < characters.length; index += 400)
+    packed.push(characters.slice(index, index + 400).join(""))
+  return packed
+}
+
+const consolidateReports = async (
+  request: OptimizeModelResponseRequest<OptimizeReport>,
+  initialReports: OptimizeReport[],
+  additionalCall: () => Promise<void>,
+  limitations: string[],
+): Promise<OptimizeReport> => {
+  let reports = initialReports
+  let round = 0
+  do {
+    const consolidated: OptimizeReport[] = []
+    for (let index = 0; index < reports.length; index += 2) {
+      const group = reports.slice(index, index + 2)
+      if (group.length === 1 && reports.length > 1) {
+        consolidated.push(group[0]!)
+        continue
+      }
+      await additionalCall()
+      const report = await correctedBatchResponse({
+        ...request,
+        requiredSources: (request.requiredSources ?? []).filter((source) => source.startsWith("@skill/")),
+        requiredRanges: group.flatMap((batchReport) => batchReport.findings.flatMap((finding) => finding.citations)),
+        instruction: `${request.instruction}\nCross-file consolidation round ${round + 1}. Compare every supplied batch report, including interactions, contradictions, and shared dependencies across files. Use frozen tools to check these relationships. Keep at most four high-impact findings. All retainedLimitations are preserved verbatim by the caller. Return only genuinely NEW limitations revealed by cross-file analysis, including unresolved conflicts or omitted distinct proposals; do not restate, summarize, or rephrase existing limitations. State routine duplicate consolidation in summary, not limitations. Do not treat a range assigned to another completed batch as unread. Never claim that one batch alone covers the full selection.`,
+        data: {
+          retainedLimitations: limitations,
+          reports: group.map((batchReport) => ({
+            ...batchReport,
+            findings: batchReport.findings.map((finding) => ({
+              ...finding,
+              citations: finding.citations.map(({ source, startLine, endLine }) => ({
+                source,
+                startLine,
+                endLine,
+              })),
+            })),
+          })),
+        },
+      }, additionalCall)
+      await request.saveBatchReport?.({
+        reviewerId: report.reviewerId,
+        phase: "consolidation",
+        index: round * initialReports.length + index + 1,
+        report,
+      })
+      limitations.push(...report.limitations)
+      packOptimizeLimitations(limitations)
+      consolidated.push(report)
+    }
+    reports = consolidated
+    round++
+  } while (reports.length > 1)
+  return reports[0]!
+}
+
+const correctedBatchResponse = async (
+  request: OptimizeModelResponseRequest<OptimizeReport>,
+  additionalCall: () => Promise<void>,
+): Promise<OptimizeReport> => {
+  try {
+    return await modelResponse(request)
+  } catch (cause) {
+    if (!(cause instanceof OptimizeResponseValidationError)) throw cause
+    request.progress(`Correcting this batch only: ${cause.message}`)
+    await additionalCall()
+    try {
+      return await modelResponse({
+        ...request,
+        correction: { rejectedResponse: cause.response, validationDiagnostic: cause.message },
+      })
+    } catch (correctionCause) {
+      throw new Error(
+        `Batch failed after its local correction: ${correctionCause instanceof Error ? correctionCause.message : String(correctionCause)}`,
+        { cause: correctionCause },
+      )
+    }
+  }
+}
+
+const batchedReport = async (
+  request: OptimizeModelResponseRequest<OptimizeReport>,
+  additionalCall: () => Promise<void>,
+): Promise<OptimizeReport> => {
+  let capacity: number
+  try {
+    return await modelResponse(request)
+  } catch (cause) {
+    if (!(cause instanceof OptimizeBatchRequired)) throw cause
+    // Reserve half the context for related source exploration and descriptors.
+    capacity = Math.floor(cause.evidenceBytes / 2)
+  }
+  const ranges = reviewLineRanges(request.review.evidence.source, request.requiredSources ?? [])
+  const sharedRanges = ranges.filter((range) => range.source.startsWith("@skill/"))
+  const sharedBytes = sharedRanges.reduce((bytes, range) => bytes + reviewLineRangeBytes(request.review.evidence.source, range), 0)
+  const batches = reviewLineBatches(
+    request.review.evidence.source,
+    ranges.filter((range) => !range.source.startsWith("@skill/")),
+    capacity - sharedBytes,
+  )
+  const reports: OptimizeReport[] = []
+  for (const [index, requiredRanges] of batches.entries()) {
+    request.signal.throwIfAborted()
+    request.progress(`Evidence batch ${index + 1}/${batches.length}`)
+    await additionalCall()
+    const report = await correctedBatchResponse({
+        ...request,
+        requiredSources: [],
+        requiredRanges: [...sharedRanges, ...requiredRanges],
+        instruction: `${request.instruction}\nThis is evidence batch ${index + 1}/${batches.length}. Review every assigned range. Inspect related frozen sources where needed. Later cross-file consolidation will compare every batch report.`,
+        data: { batch: index + 1, batches: batches.length },
+      }, additionalCall)
+    await request.saveBatchReport?.({
+      reviewerId: report.reviewerId,
+      phase: "evidence",
+      index: index + 1,
+      report,
+    })
+    reports.push(report)
+  }
+  const totalFindings = reports.reduce((count, report) => count + report.findings.length, 0)
+  const limitations = reports.flatMap((report) => report.limitations)
+  packOptimizeLimitations(limitations)
+  const report = await consolidateReports(request, reports, additionalCall, limitations)
+  const coverage = `All ${batches.length} evidence batches were read and consolidated across files. ${totalFindings} batch findings were considered; ${report.findings.length} high-impact findings retained (at most four).`
+  return {
+    ...report,
+    limitations: [...packOptimizeLimitations(limitations), coverage],
+  }
+}
 
 const runOptimizeResponseBatch = async <T>(
   jobs: ReadonlyArray<OptimizeResponseBatchJob<T>>,
@@ -526,130 +742,200 @@ const runOptimizeResponseBatch = async <T>(
   return combined
 }
 
-export const runOptimizeReview = async (
-  initial: OptimizeReview,
-  save: (review: OptimizeReview) => Promise<void>,
+const optimizeDeadline = (parent: AbortSignal, timeoutMs: number, label: string) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error(`${label} deadline exceeded.`)), timeoutMs)
+  timer.unref?.()
+  return {
+    signal: AbortSignal.any([parent, controller.signal]),
+    dispose: () => clearTimeout(timer),
+  }
+}
+
+export const builtinReport = (report: OptimizeReport) => {
+  const check = selectReviewChecks([report.reviewerId])[0]!
+  const reportId = `${check.id}:report`
+  const content = JSON.stringify(report, null, 2)
+  return {
+    result: {
+      id: check.id,
+      status: "complete" as const,
+      reportId,
+      limitations: report.limitations,
+      findings: report.findings.map((finding) => ({
+        ...finding, checkId: check.id, reportId, sourceId: finding.id.slice(check.id.length + 1), grounded: true,
+      })),
+    },
+    artifact: { id: reportId, checkId: check.id, name: `${check.id}-report.md`, content, digest: optimizeDigest(content) },
+  }
+}
+
+const builtinReviewers = (run: ReviewRun): ReadonlyArray<OptimizeReviewer> =>
+  run.request.checks.flatMap((assignment) => {
+    const definition = guideOptimizeReviewers.find((entry) => entry.id === assignment.id)
+    return definition ? [{ ...definition, model: assignment.model }] : []
+  })
+
+const findingContext = (run: ReviewRun): FindingContext => ({ evidence: run.evidence.source, reports: run.results })
+
+export const runBuiltinReview = async (
+  initial: ReviewRun,
+  save: (review: ReviewRun) => Promise<void>,
   signal: AbortSignal,
   onProgress: (message: string) => void,
   call: OptimizeModelCall = runRestrictedGuideModelRequest,
-): Promise<OptimizeReview> => {
+  stage: "all" | "checks" | "synthesis" = "all",
+  saveBatchReport?: (entry: OptimizeBatchReport) => Promise<void>,
+): Promise<ReviewRun> => {
   let review = initial
-  if (initial.status !== "running" || initial.calls !== 0)
+  const reviewers = builtinReviewers(initial)
+  if (initial.status !== "running" || (stage !== "synthesis" && initial.calls !== 0))
     throw new Error("Start a new review; saved runs are never resumed automatically.")
-  const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(optimizeReviewLimits.timeoutMs)])
   const progress = (label: string) => (message: string) => onProgress(`${label}: ${message}`)
-  const persistCalls = async (additionalCalls: number): Promise<void> => {
-    boundedSignal.throwIfAborted()
+  const persistCalls = async (activeSignal: AbortSignal, additionalCalls: number): Promise<void> => {
+    activeSignal.throwIfAborted()
     review = { ...review, calls: review.calls + additionalCalls }
     await save(review)
   }
   let phase = "Independent reviews"
   try {
-    onProgress("Independent reviews. No reviewer can edit files or see another initial report.")
-    const reportReview = review
-    const reportResults: (OptimizeReport | undefined)[] = Array(reportReview.reviewers.length).fill(undefined)
-    const reports = await runOptimizeResponseBatch(
-      reportReview.reviewers.map(
-        (reviewer): OptimizeResponseBatchJob<OptimizeReport> =>
-          (correction) =>
-            modelResponse({
-              review: reportReview,
-              model: reviewer.model,
-              instruction: `${reviewer.prompt}\nReturn at most four high-impact findings, with selected edit paths and source citations.`,
-              phase: "report",
-              data: {},
-              parse: (output) =>
-                parseOptimizeReport(output, reviewer.id, reportReview.input, reportReview.evidence, "model"),
-              citations: (report) => report.findings.flatMap((finding) => finding.citations),
-              call,
-              signal: boundedSignal,
-              progress: progress(correction === undefined ? reviewer.title : `${reviewer.title} correction`),
-              requiredSources: requiredReviewSources(reportReview, reviewer.id),
-              ...(correction === undefined ? {} : { correction }),
-            }),
-      ),
-      persistCalls,
-      async (indexes, results) => {
-        indexes.forEach((index, resultIndex) => {
-          const result = results[resultIndex]!
-          if (result.status === "fulfilled") reportResults[index] = result.value
-        })
-        review = { ...review, reports: reportResults.flatMap((report) => (report === undefined ? [] : [report])) }
-        await save(review)
-      },
-    )
-    requireSuccessfulRound(reports, reportReview.reviewers)
-    if (findingIds(review).length > 0) {
-      phase = "Challenge round"
-      onProgress("One challenge-and-reply round. Review every proposal against the same evidence.")
-      const challengeReview = review
-      const challengeResults: (OptimizeChallenge | undefined)[] = Array(challengeReview.reviewers.length).fill(
-        undefined,
-      )
-      const challenges = await runOptimizeResponseBatch(
-        challengeReview.reviewers.map(
-          (reviewer): OptimizeResponseBatchJob<OptimizeChallenge> =>
+    const checks = async (boundedSignal: AbortSignal): Promise<void> => {
+      const persistCheckCalls = (additionalCalls: number) => persistCalls(boundedSignal, additionalCalls)
+      onProgress("Independent reviews. No reviewer can edit files or see another initial report.")
+      const reportReview = review
+      const reportResults: (OptimizeReport | undefined)[] = Array(reviewers.length).fill(undefined)
+      const reports = await runOptimizeResponseBatch(
+        reviewers.map(
+          (reviewer): OptimizeResponseBatchJob<OptimizeReport> =>
             (correction) =>
-              modelResponse({
-                review: challengeReview,
-                model: reviewer.model,
-                instruction: `${reviewer.prompt}\nDefend or withdraw your findings and challenge the others.`,
-                phase: "challenge",
-                data: { reports: challengeReview.reports },
-                parse: (output) => parseOptimizeChallenge(output, reviewer.id, challengeReview, "model"),
-                citations: (challenge) => challenge.responses.flatMap((response) => response.citations),
-                call,
-                signal: boundedSignal,
-                progress:
-                  correction === undefined
-                    ? progress(`${reviewer.title} challenge`)
-                    : progress(`${reviewer.title} challenge correction`),
-                ...(correction === undefined ? {} : { correction }),
-              }),
+              batchedReport(
+                {
+                  review: reportReview,
+                  model: reviewer.model,
+                  instruction: `${reviewer.prompt}\nReturn at most four high-impact findings, with selected edit paths and source citations.`,
+                  phase: "report",
+                  data: {},
+                  parse: (output) =>
+                    parseOptimizeReport(output, reviewer.id, reportReview.request, reportReview.evidence.source, "model"),
+                  citations: (report) => report.findings.flatMap((finding) => finding.citations),
+                  call,
+                  signal: boundedSignal,
+                  progress: progress(correction === undefined ? reviewer.title : `${reviewer.title} correction`),
+                  requiredSources: planReviewEvidence(reportReview.request, reportReview.evidence, reviewer.id).requiredSources,
+                  ...(saveBatchReport === undefined ? {} : { saveBatchReport }),
+                  ...(correction === undefined ? {} : { correction }),
+                },
+                () => persistCheckCalls(1),
+              ),
         ),
-        persistCalls,
+        persistCheckCalls,
         async (indexes, results) => {
           indexes.forEach((index, resultIndex) => {
             const result = results[resultIndex]!
-            if (result.status === "fulfilled") challengeResults[index] = result.value
+            if (result.status === "fulfilled") reportResults[index] = result.value
           })
-          review = {
-            ...review,
-            challenges: challengeResults.flatMap((challenge) => (challenge === undefined ? [] : [challenge])),
+          const completed = reportResults.flatMap((report) => report === undefined ? [] : [builtinReport(report)])
+          const ids = new Set<ReviewCheckId>(completed.map((entry) => entry.result.id))
+          review = { ...review,
+            results: [...review.results.filter((result) => !ids.has(result.id)), ...completed.map((entry) => entry.result)],
+            artifacts: [...review.artifacts.filter((artifact) => !completed.some((entry) => entry.artifact.id === artifact.id)),
+              ...completed.map((entry) => entry.artifact)],
           }
           await save(review)
         },
       )
-      requireSuccessfulRound(challenges, challengeReview.reviewers)
+      requireSuccessfulRound(reports, reviewers)
+      if (findingIds(findingContext(review)).length > 0) {
+        phase = "Challenge round"
+        onProgress("One challenge-and-reply round. Review every proposal against the same evidence.")
+        const challengeReview = review
+        const challengeResults: (OptimizeChallenge | undefined)[] = Array(reviewers.length).fill(
+          undefined,
+        )
+        const challenges = await runOptimizeResponseBatch(
+          reviewers.map(
+            (reviewer): OptimizeResponseBatchJob<OptimizeChallenge> =>
+              (correction) =>
+                modelResponse({
+                  review: challengeReview,
+                  model: reviewer.model,
+                  instruction: `${reviewer.prompt}\nDefend or withdraw your findings and challenge the others.`,
+                  phase: "challenge",
+                  data: { reports: challengeReview.results },
+                  parse: (output) => parseOptimizeChallenge(output, reviewer.id, findingContext(challengeReview), "model"),
+                  citations: (challenge) => challenge.responses.flatMap((response) => response.citations),
+                  call,
+                  signal: boundedSignal,
+                  progress:
+                    correction === undefined
+                      ? progress(`${reviewer.title} challenge`)
+                      : progress(`${reviewer.title} challenge correction`),
+                  ...(correction === undefined ? {} : { correction }),
+                }),
+          ),
+          persistCheckCalls,
+          async (indexes, results) => {
+            indexes.forEach((index, resultIndex) => {
+              const result = results[resultIndex]!
+              if (result.status === "fulfilled") challengeResults[index] = result.value
+            })
+            review = {
+              ...review,
+              challenges: challengeResults.flatMap((challenge) => (challenge === undefined ? [] : [challenge])),
+            }
+            await save(review)
+          },
+        )
+        requireSuccessfulRound(challenges, reviewers)
+      }
+    }
+    if (stage !== "synthesis") {
+      const deadline = optimizeDeadline(signal, optimizeReviewLimits.batchMs, "Review batch phase")
+      try {
+        await checks(deadline.signal)
+      } finally {
+        deadline.dispose()
+      }
+    }
+    if (stage === "checks") {
+      await save(review)
+      return review
     }
     phase = "Final synthesis"
     onProgress("Coordinator: evaluating evidence, not counting votes.")
     const verdictReview = review
+    const deadline = optimizeDeadline(signal, optimizeReviewLimits.synthesisMs, "Review synthesis")
+    const persistSynthesisCalls = (additionalCalls: number) => persistCalls(deadline.signal, additionalCalls)
     const verdicts = await runOptimizeResponseBatch(
       [
         (correction) =>
           modelResponse({
             review: verdictReview,
-            model: verdictReview.coordinator,
+            model: verdictReview.request.coordinator,
             instruction:
               "Reconcile these reports and replies. Recommend only evidenced high-impact changes. Preserve unresolved objections; do not invent consensus or new proposals.",
             phase: "verdict",
-            data: { reports: verdictReview.reports, challenges: verdictReview.challenges },
-            parse: (output) => parseOptimizeVerdict(output, verdictReview, "model"),
+            data: { reports: verdictReview.results, challenges: verdictReview.challenges },
+            parse: (output) => parseOptimizeVerdict(output, findingContext(verdictReview), "model"),
             citations: (verdict) => verdict.decisions.flatMap((decision) => decision.citations),
             call,
-            signal: boundedSignal,
+            signal: deadline.signal,
             progress: progress(correction === undefined ? "Coordinator" : "Coordinator correction"),
             ...(correction === undefined ? {} : { correction }),
           }),
       ],
-      persistCalls,
+      persistSynthesisCalls,
       async () => {},
-    )
+    ).finally(deadline.dispose)
     const verdictResult = verdicts[0]!
     if (verdictResult.status === "rejected") throw verdictResult.reason
     const verdict = verdictResult.value
-    review = { ...review, ...verdict, status: "complete" }
+    const content = JSON.stringify(verdict)
+    review = { ...review, summary: verdict.summary,
+      decisions: verdict.decisions.map(({ findingId, disposition, reason }) => ({ findingId, disposition, reason })),
+      artifacts: [...review.artifacts, { id: "synthesis:builtin-verdict", checkId: "synthesis",
+        name: "builtin-verdict.json", content, digest: optimizeDigest(content) }],
+      status: "complete", synthesisStatus: "complete" }
   } catch (cause) {
     review = {
       ...review,
@@ -664,6 +950,20 @@ export const runOptimizeReview = async (
   }
   await save(review)
   return review
+}
+
+export const runOptimizeReview = async (
+  initial: OptimizeReview,
+  save: (review: OptimizeReview) => Promise<void>,
+  signal: AbortSignal,
+  onProgress: (message: string) => void,
+  call: OptimizeModelCall = runRestrictedGuideModelRequest,
+  stage: "all" | "checks" | "synthesis" = "all",
+  saveBatchReport?: (entry: OptimizeBatchReport) => Promise<void>,
+): Promise<OptimizeReview> => {
+  const run = await runBuiltinReview(legacyReviewRun(initial),
+    (current) => save(legacyReviewState(initial, current)), signal, onProgress, call, stage, saveBatchReport)
+  return legacyReviewState(initial, run)
 }
 
 const requireSuccessfulRound = (
@@ -707,6 +1007,27 @@ export const optimizeApproval = (review: OptimizeReview, ids: ReadonlyArray<stri
   }
 }
 
+const sharedResultLabel = (id: string): string => id === "improve-codebase-architecture" ? "Architecture" : id
+
+export const sharedReviewDocument = (run: ReviewRun): string => {
+  const legacy = run.artifacts.find((artifact) => artifact.id === "synthesis:legacy-document")
+  if (legacy) return legacy.content
+  const failure = run.failure
+  return [
+    `# Review changes ${run.id}`,
+    `Status: ${run.status}. Model calls: ${run.calls}.`,
+    `${run.results.map((result) => `${sharedResultLabel(result.id)} status: ${result.status}.`).join(" ")} Synthesis status: ${reviewSynthesisStatus(run)}.`,
+    ...(failure === undefined ? [] : [
+      `Failure phase: ${reviewFailurePhaseLabel(failure.phase)}.`,
+      `Failure reason: ${reviewFailureKindLabel(failure.kind)}: ${failure.message}`,
+    ]),
+    run.summary,
+    `## Target\n${JSON.stringify(run.request, null, 2)}`,
+    `## Findings and decisions\n${JSON.stringify({ results: run.results, decisions: run.decisions }, null, 2)}`,
+    ...run.artifacts.map((artifact) => `## ${artifact.name}\n${artifact.content}`),
+    ...(run.error ? [`## Error\n${run.error}`] : []),
+  ].join("\n\n")
+}
 export const optimizeReviewDocument = (review: OptimizeReview): string => {
   const status =
     review.status === "incomplete"

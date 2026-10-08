@@ -6,13 +6,15 @@ import { parseArgs } from "node:util"
 import { resolveGuideModelRouting } from "./guide-api.ts"
 import { createNodeCommandRunner } from "./guide-launch.ts"
 import { optimizeReviewersFor } from "./guide-optimize-review.ts"
-import { OptimizeReviewStore } from "./guide-optimize-store.ts"
+import { SharedReviewStore } from "./review-store.ts"
+import { runSharedReview } from "./review-coordinator.ts"
+import { assignReviewModels, reviewCoordinatorModel } from "./review-catalog.ts"
 import {
   assertGuideOptimizeTargetCurrent,
   inspectGuideOptimizeTarget,
   type GuideOptimizeScope,
 } from "./guide-optimize-target.ts"
-import { runGuideOptimizeReview, type GuideOptimizeDependencies } from "./guide-optimize.ts"
+import type { GuideOptimizeDependencies } from "./guide-optimize.ts"
 import { text } from "./guide-text.ts"
 
 interface OptimizeCheckInput {
@@ -82,14 +84,14 @@ export const checkGuideOptimization = async (
     throw new Error("No eligible changed files. The acceptance check cannot pass on an empty scope.")
   const routing = resolveGuideModelRouting({}, env)
   const reviewerIds = optimizeReviewersFor(routing).map((entry) => entry.id)
-  const completed = await runGuideOptimizeReview(
-    { runner, cwd: target.cwd, dependencies, env: await sourceSkillEnvironment(env) },
-    routing,
-    { target, paths, reviewerIds },
-    signal,
-    progress,
-  )
-  const store = new OptimizeReviewStore(target.gitDirectory)
+  const completed = await runSharedReview({
+    runner, env: await sourceSkillEnvironment(env), signal, confirmed: true,
+    request: { target, paths, checks: assignReviewModels(reviewerIds, routing), coordinator: reviewCoordinatorModel() },
+    ...(dependencies.modelCall ? { modelCall: dependencies.modelCall } : {}),
+    ...(dependencies.loadArchitecture ? { loadArchitecture: dependencies.loadArchitecture } : {}),
+    onEvent: (event) => { if (event.kind === "activity") progress(event.text) },
+  })
+  const store = new SharedReviewStore(target.gitDirectory)
   const review = await store.read(completed.id)
   const errors = review.error === null ? [] : [review.error]
   let worktreeUnchanged = false
@@ -109,11 +111,11 @@ export const checkGuideOptimization = async (
     worktree: target.cwd,
     scope: target.scope,
     selectedPaths: paths,
-    evidenceFingerprint: review.evidence.fingerprint,
-    reviewers: review.reviewers.map(({ id, model }) => ({ id, ...model })),
-    reports: review.reports.length,
+    evidenceFingerprint: review.evidence.source.fingerprint,
+    reviewers: review.request.checks.map(({ id, model }) => ({ id, ...model })),
+    reports: review.results.length,
     challenges: review.challenges.length,
-    findings: review.reports.reduce((count, report) => count + report.findings.length, 0),
+    findings: review.results.reduce((count, report) => count + report.findings.length, 0),
     decisions: review.decisions.length,
     calls: review.calls,
     approvedFindings: review.approvedIds.length,

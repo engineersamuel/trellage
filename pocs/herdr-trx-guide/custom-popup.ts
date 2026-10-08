@@ -67,9 +67,9 @@ export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueu
   ...inspectedChoices,
   {
     kind: "optimize",
-    label: "Optimize changes",
+    label: "Review changes",
     detail: "Review selected implementation changes in the invoking pane's worktree.",
-    preview: "Confirm changed files, choose an optimization approach, then start a fresh agent in the same worktree. No prompt rewriting and no new worktree.",
+    preview: "Confirm scope, select read-only checks and inspect reports. Plan fixes, or approve findings before a fresh agent edits the same worktree. A clean new worktree is planning-only.",
   },
   ...(captureQueue?.entries.length > 0
     ? [{

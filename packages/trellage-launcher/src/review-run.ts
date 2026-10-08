@@ -5,6 +5,7 @@ import path from "node:path"
 import { fleetLenses, pinnedFleetModel, reviewCatalog, type ReviewDefinition, selectReviews } from "./review-catalog.ts"
 import { prepareReviewWorkspace, type ReviewSkillOptions } from "./review-skills.ts"
 import { CopilotReviewProvider, type ReviewClientFactory, type ReviewResult } from "./copilot-review-provider.ts"
+import { reviewSnapshotBytes } from "./review-context.ts"
 
 const exec = promisify(execFile)
 const sha = /^[0-9a-f]{40,64}$/u
@@ -18,6 +19,9 @@ export interface ReviewSnapshot {
   readonly base: string
   readonly head: string
   readonly diff: string
+  /** New shared reviews store patch text once in frozen evidence, referenced here. */
+  readonly sourceIds?: ReadonlyArray<string>
+  readonly primarySourceIds?: ReadonlyArray<string>
   readonly changedFiles: ReadonlyArray<string>
   readonly workingTreeFiles: ReadonlyArray<string>
   readonly commitList?: string
@@ -59,7 +63,7 @@ const committedStandards = async (root: string, base: string, changedFiles: Read
 const git = async (cwd: string, budget: CaptureBudget, ...args: string[]): Promise<string> => {
   const timeout = Math.min(15_000, captureRemaining(budget))
   const result = await exec("git", ["-c", "core.pager=cat", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", ...args], {
-    cwd, signal: budget.signal, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, timeout,
+    cwd, signal: budget.signal, encoding: "utf8", maxBuffer: reviewSnapshotBytes, timeout,
     env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
   })
   captureRemaining(budget)
@@ -98,7 +102,7 @@ const resolveReviewBase = async (root: string, baseRef: string, signal: CaptureB
   return { baseRefSha, base, head }
 }
 
-const maximumDiffBytes = 384 * 1024
+const maximumDiffBytes = reviewSnapshotBytes
 const oversizedDiff = (): never => {
   throw new Error("The complete committed and working-tree diff is too large to review without truncation.")
 }
@@ -207,7 +211,8 @@ export interface FleetReport {
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 
-const validateFleetAgents = (agents: unknown, status: unknown): ReadonlyArray<Record<string, unknown>> => {
+const validateFleetAgents = (agents: unknown, status: unknown,
+  models: (lens: string) => string | undefined): ReadonlyArray<Record<string, unknown>> => {
   if (!Array.isArray(agents) || agents.length !== 6) throw new Error("Fleet must report six agents.")
   for (const name of fleetLenses) {
     if (agents.filter((agent) => object(agent) && agent.name === name).length !== 1) {
@@ -215,7 +220,7 @@ const validateFleetAgents = (agents: unknown, status: unknown): ReadonlyArray<Re
     }
   }
   if (agents.some((agent) => !object(agent) || typeof agent.model !== "string" ||
-    agent.model !== pinnedFleetModel(String(agent.name)) ||
+    agent.model !== models(String(agent.name)) ||
     !["complete", "failed", "timed_out"].includes(String(agent.status)) ||
     typeof agent.lens !== "string" || typeof agent.error !== "string" ||
     (agent.status !== "complete" && !agent.error))) throw new Error("Fleet agent status or model is invalid.")
@@ -316,16 +321,18 @@ const validFleetDates = (value: Record<string, unknown>): boolean =>
   typeof value.startedAt === "string" && isoTime.test(value.startedAt) &&
   typeof value.completedAt === "string" && isoTime.test(value.completedAt)
 
-function assertFleetReport(value: unknown, snapshot: ReviewSnapshot): asserts value is FleetReport {
+function assertFleetReport(value: unknown, snapshot: ReviewSnapshot,
+  models: (lens: string) => string | undefined): asserts value is FleetReport {
   assertFleetEnvelope(value, snapshot)
-  const agents = validateFleetAgents(value.agents, value.status)
+  const agents = validateFleetAgents(value.agents, value.status, models)
   validateFleetCounts(value.counts, value.findings, value.reportMarkdown)
   validateFleetFindings(value.findings, agents)
   validateFleetCoverage(value.reportMarkdown, agents)
 }
 
-export const validateFleetReport = (value: unknown, snapshot: ReviewSnapshot): FleetReport => {
-  assertFleetReport(value, snapshot)
+export const validateFleetReport = (value: unknown, snapshot: ReviewSnapshot,
+  models: (lens: string) => string | undefined = pinnedFleetModel): FleetReport => {
+  assertFleetReport(value, snapshot, models)
   return value
 }
 

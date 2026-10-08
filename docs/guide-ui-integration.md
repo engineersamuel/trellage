@@ -31,7 +31,7 @@ recommendations. The mixed cases use all eight profiles without changing that
 limit. Each profile generation produces three prompt candidates. Queueing one
 of them creates one job, not three jobs.
 
-The pinned Optimize changes action has a scope, target, reviewer selection,
+The shared Review changes action has a scope, target, six-check selection,
 model consent, saved report, explicit finding approval, and fresh-agent flow.
 Committed plus current work opens the current worktree directly with a
 detected comparison base; `b` provides an explicit override. Uncommitted-only
@@ -80,9 +80,11 @@ Live use requires explicit approval and can consume paid quota. Set the
 allowed number of runs before giving this goal to an agent; do not retry
 indefinitely, narrow the scope to pass, weaken evidence checks, or require a
 fixed number of suggestions. The command performs one review, with at most
-one correction request per invalid model response (14 total requests with all
-three reviewers). Corrections stay within the eight-minute review deadline;
-runtime and evidence-budget failures are not retried. Keep live use outside
+one correction request per invalid model response. The 14-request bound for all
+three built-in reviewers applies to a single evidence batch; larger snapshots
+have a saved, expanded call budget. Corrections stay within their request
+deadline. Model-capacity preflight can select fresh batches before inference;
+runtime and exhausted evidence-budget failures are not retried. Keep live use outside
 the offline test suite.
 
 ## Other Guide fixtures
@@ -178,6 +180,155 @@ cd packages/trellage-launcher
 FORCE_COLOR=1 bun run test test/guide-ui.integration.test.ts -t 'goal|interview|long questions'
 ```
 
+## Live review integration tests
+
+Review capture no longer uses a 384 KiB model-input limit. The shared service
+captures each Git layer once, keeps staged and unstaged evidence (including
+staged changes undone in the worktree), and identifies a net base-to-worktree
+view. When the net view equals an existing layer, it reuses that source.
+Saved patch projections contain source IDs, not a second copy of the patch.
+
+`review-evidence.ts` is the frozen-evidence entry point. The check catalog
+determines HEAD requirements, related-source versus patch projections, and
+required skill sources. Capture, stored-record validation, and per-check source
+plans use that same definition. Built-in line ranges and skill UTF-16 ranges
+keep their existing coordinates while sharing batch packing and a cumulative
+read ledger. Repeated reads consume budget; overlapping reads do not fill gaps.
+
+Shared review execution, display, planning, and approvals use `ReviewRun`
+directly. Only the legacy-record adapter converts schema-version-1 records,
+preserving their original approval digests and document rendering. Saved-record
+namespaces determine authority before adaptation; an ambiguous ID or malformed
+record cannot fall back to another namespace. Both authorities retain one-use
+execution reservations.
+
+Model budgets use discovered context, prompt, and output capacities. UTF-8
+bytes are used as a conservative token upper bound, not as an exact token
+count. Instructions, tool protocol, and output space are reserved. Missing or
+invalid capacity metadata fails before skill inference.
+
+Skill reviewers use a manifest and paged, read-only frozen snapshot tool.
+Ponytail must read every assigned range. Fleet and Standards workers receive
+the bounded assigned patch through the trusted task hook. A review that exceeds
+one context uses fresh batches and an additional cross-file check. Built-in
+checks also use complete evidence batches and cross-file consolidation.
+Synthesis receives reports and source IDs rather than another complete patch.
+Each batch must finish; missing reads or failed workers cannot produce a
+complete review. Batch reports and intermediate worker evidence are retained.
+Fleet workers have separate read budgets; their reads do not consume the
+coordinator's context allowance. Workers may load the selected Fleet skill and
+read its frozen report references, but cannot delegate, write reports, or access
+live files. Only the coordinator's skill invocation satisfies the required
+installed-skill check. If extraction cites unread lines, one fresh
+correction can read the range or select a smaller checked range. An ungrounded
+finding remains read-only, and a second coverage failure stops normalization.
+
+Local safety limits remain separate from model capacity: 32 MB of frozen
+evidence, 128 skill batches, 1 MiB per saved report artifact, 4096 intermediate
+artifacts (32 MB combined), and the existing per-check finding bounds. Built-in snapshots retain
+their per-file and file-count bounds. Exceeding a bound fails explicitly; no
+patch text is silently truncated. Large reviews can use more calls and time.
+Automatic model conversation compaction remains disabled.
+Combined synthesis has a 15-minute default deadline, including startup and
+repair, so high-reasoning coordinators can process multiple completed reports.
+Explicit caller deadlines remain unchanged. Peer debate retains its shorter
+deadline within the synthesis budget; no extra model calls are added.
+
+Run real reviews without a terminal UI:
+
+```sh
+mise run trx-review-test -- --live --fixture
+mise run trx-review-test -- --live --fixture --all
+mise run trx-review-test -- --live --fixture --fixture-bytes 420000 --check first-principles --check ponytail --check fleet
+mise run trx-review-test -- --live --cwd /absolute/worktree --uncommitted --check ponytail
+mise run trx-review-test -- --live --cwd /absolute/worktree --base main --check ponytail --check fleet
+```
+
+The first command creates a small, real Git repository with a committed baseline
+and an uncommitted complexity regression. Only this synthetic source is reviewed.
+`--fixture-bytes N` adds at least N bytes of synthetic source in files below the
+per-file snapshot limit (maximum 8,000,000). It works with isolated `--all`
+cases or a combined selection. Use 420000 to exceed the former patch limit,
+or 1200000 to also exercise capture above the default command-output limit.
+Only `--cwd` commands send the selected worktree's code to the models. `--live` and
+exactly one target (`--fixture` or `--cwd`) are required. These commands consume
+quota. They are not part of `make test`, the offline Guide matrix, or CI.
+
+The harness calls `createGuideOptimizeServices().inspect()` and `.review()`,
+the same service methods used by `trx guide --review`. It does not substitute
+SDK clients, model responses, prompts, skills, extraction schemas, or validators.
+The production coordinator captures frozen Git evidence, loads the installed
+floating skills, runs the selected checks, extracts findings, runs synthesis,
+closes sessions, and saves the normal private review record. The harness then
+reads that record through `SharedReviewStore` and compares it with the result
+returned to the TUI. Rendering, interactive consent, and implementation handoff
+are outside this test; `--live` supplies consent. No profile discovery is needed
+because this path never approves or launches implementation.
+
+Ponytail is selected by default. `--all` runs every check from the TUI catalog
+as a separate case, in sequence: First principles, Behavior preservation,
+Improve codebase architecture, Ponytail, Fleet, and Matt Pocock Code Review.
+Each case calls the same service with only its own reviewer selected and runs
+its normal synthesis. Fleet still runs its six real workers; Matt still runs
+Standards and explicitly skips Spec because Guide has no verified spec input.
+The fixture is recreated for each case. Each case gets its own evidence directory
+and `summary.json`; the parent `summary.json` records every case, total calls,
+and the aggregate result. A case failure does not skip later cases. Cancellation
+stops the matrix, marks remaining cases `notRun`, and cannot pass. The timeout
+applies per case. This sequential matrix can take much longer and use more quota
+than one Ponytail run.
+
+Repeat `--check ID` to use any combination from
+the shared review catalog. The usual review model defaults and
+`TRELLAGE_GUIDE_MODEL` / `TRELLAGE_GUIDE_EFFORT` overrides apply. Repeat
+`--path FILE` to select specific changed paths; otherwise all eligible regular
+and deleted files are selected. With `--cwd`, scope defaults to the current
+branch plus edits, as in Guide. The fixture always uses uncommitted scope.
+
+Each invocation runs once and returns one JSON summary on stdout. Exit `0`
+means all selected checks and synthesis completed, nonempty reports were saved,
+the saved result matches the service result, and the worktree stayed unchanged
+with no approval or implementation. Exit `1` means failure, including partial
+coverage; cancellation returns `130`. A report alone is not success. Finding
+counts are not fixed because model output varies. Grounded finding counts are
+reported separately; completion does not mean every finding can be approved.
+The production validators and approval rules remain unchanged.
+
+Evidence is retained in a fresh private `run-*` directory under
+`$XDG_STATE_HOME/trellage/review-live-tests` (default:
+`~/.local/state/trellage/review-live-tests`). `--output DIR` changes the parent;
+it must be outside the reviewed worktree. The harness prints the directory
+before starting. It stores:
+
+- `request.json`: target, selected paths, model assignments, and coordinator.
+- `events.ndjson`: timestamped production events, bounded to 16 MiB; artifact
+  events contain IDs and digests, not duplicate report bodies.
+- `review.json`: validated saved run, including frozen evidence, skill
+  references, reports, findings, and safe provider diagnostics, when returned.
+- `summary.json`: outcome, checks, call count, unchanged-worktree result, and
+  failures. Setup failures remain failures, not skips or empty passes.
+
+The fixture and its normal Git-private review record are retained with the
+evidence. For an existing worktree, the normal record stays in that worktree's
+Git directory. These files can contain source and model output; keep them
+private. `--timeout-seconds N` bounds one attempt (default 1800, maximum 7200).
+SIGINT, SIGTERM, and the deadline use the production cancellation/cleanup path.
+A goal loop can run the same command again after a code change, inspect the
+summary and saved review, and stop only on exit `0`. The harness neither retries
+whole reviews nor changes code. It retains each attempt separately.
+Use `--all` for independent per-reviewer acceptance; repeated `--check` values
+instead test those reviewers together in one review. Do not combine the two.
+
+Offline contracts for argument guards, outcome assertions, fixture capture,
+and cancellation run with:
+
+```sh
+cd packages/trellage-launcher
+bun run test test/review-live-test.test.ts
+```
+
+## Review terminal contracts
+
 `test/review-ui-terminal.test.ts` checks one-Enter review selection (including
 all three skills), empty selection, separate bounded live output at 80x18,
 result access, and cancellation without model calls. It checks confirmation before
@@ -192,9 +343,10 @@ text streaming, Fleet child progress, and suppression of duplicate final
 messages and master JSON. The Guide
 matrix also checks that Ctrl-R opens Review only from an empty intent and
 does not discard an existing draft. The direct `trx guide --review` router
-path avoids full profile discovery and Prompt Master preparation. It passes
-the verified `cpx` launcher path for continuation; unlike the main Guide
-path, direct Review has no fd 3 catalog to read.
+path accepts the same context/base/model arguments as `--optimize`, avoids required
+full profile discovery and Prompt Master preparation, and supplies an optional
+Native catalog on fd 3. Both flags, the embedded action and popup use the same flow.
+Ctrl-R stays inside Guide so intent, goals, forks and queued jobs survive returning.
 The current-terminal continuation launches through
 `mise run trx -- run cpx hve -- --plan -i` in a source worktree, or
 `trx run cpx hve -- --plan -i`
@@ -205,12 +357,68 @@ alongside Ponytail and Fleet. It shows one worker because the current Guide
 flow has no verified spec input. A missing spec must be shown as a skipped
 Spec axis, not a second worker
 or a completed Spec review.
-The Review terminal fixture checks an 80-column tab row: Overview stays
-selected while reviews run, Tab/Shift+Tab and arrows move between selected
-review panes, a running status animates instead of showing the word,
-PgUp/PgDn scroll the active pane, and a partial Fleet status
-remains visible after completion. The Synthesis tab opens by default when
-the run finishes; switching back displays each saved reviewer report.
+The shared reports view opens the first selected check. All selected checks,
+Overview and Synthesis have bordered tabs as soon as the run is queued.
+The active tab has a double border and a `›` marker; inactive tabs have neutral
+rounded borders. Friendly labels retain explicit queued, running, complete,
+partial or failed status. Short terminals show one row of tabs; tall terminals
+show up to two. The strip pages to keep the active tab visible, with its position
+shown as “Tab N/total” in the report header. All eight tabs remain reachable
+when all six checks are selected at 80×24. Tab/Shift+Tab
+and Left/Right switch tabs; PgUp/PgDn scroll the active report. The viewport
+is a full-width bordered panel with a title, status, source notice, and padded
+content. It uses the remaining terminal height after tab borders, header rows,
+and footer controls, including after a resize. The footer stays visible. Selection and
+each tab's scroll position survive streaming and completion. Fleet child
+messages stay in Fleet and show their source. Live text is unverified and
+limited to the latest 8,192 characters per check. Built-in checks show readable
+phase and batch progress, not raw structured-response tokens. Repeated SDK
+progress messages are shown once per phase; completed findings remain in the
+saved report. At completion, `p` toggles full saved
+reports and `f` opens findings; neither starts a new model call.
+Full saved artifacts, including partial
+reports and synthesis questions, remain in the private version-2 history record.
+Each new record saves synthesis status separately from overall completeness.
+A completed synthesis stays complete when a source check fails; approval remains
+blocked. Older records infer completed synthesis from their saved synthesis
+artifact. Failed source reports are labelled unvalidated and read-only.
+Intermediate reports are captured before synthesis and again after cleanup,
+without duplicate artifact IDs. Skill-review execution owns workspace preparation,
+normalization, artifact retention, provider shutdown, and workspace removal.
+Artifact ownership is supplied by the producing check, never inferred from a
+filename; Fleet, Ponytail, and Matt reports remain attached to their source tabs.
+Unregistered artifacts in a mixed-check workspace fail capture rather than
+being assigned to synthesis. Synthesis receives saved failed reports as unvalidated
+evidence, not accepted findings.
+
+Synthesis receives separate, explicit ID lists for source decisions and combined
+findings. These lists come from the same function used by the validator and are
+repeated in a repair request. Every review and normalized finding needs a
+decision, but a combined finding must cite the specific finding IDs when they
+exist, not the top-level review or report artifact ID. Invalid IDs still fail
+validation; repair does not invent or silently replace them.
+
+Ponytail and Standards finding extraction can retry once from the saved report,
+using the same selected model and frozen evidence. Each attempt has a two-minute
+limit and counts against the confirmed call budget. Cancellation, cleanup
+failure, known schema/authentication/quota errors, and malformed JSON or shape
+do not retry. A valid-shaped result with unread citations has one bounded
+coverage correction, as described above. The extraction schema represents optional severity as `anyOf` with a
+string enum and a separate null branch. Copilot's structured-output validator
+rejects the equivalent nullable type-array plus enum form with HTTP 400.
+The accepted severities and local validation are unchanged.
+Runtime diagnostics retain the stage, model, allowlisted error category
+and code, HTTP error status, and an allowlisted validation classification
+(unsupported schema keyword, missing schema type, invalid schema, or unsupported
+response format). Provider messages, stacks, and arbitrary diagnostic fields are
+not saved. Error and cleanup events cannot emit successful response progress.
+Extraction sends explicit nullable types and a strict shape-only schema.
+Numeric and array bounds are described in the wire schema and enforced locally,
+along with exact report excerpts, selected paths, and checked source citations.
+This follows the [Claude raw schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs).
+The pinned Copilot SDK forwards the RPC schema without the Anthropic SDK's
+constraint transformation. The saved HTTP 400 alone does not prove which schema
+field the provider rejected; no live model call is part of the regression tests.
 The saved-report viewport renders fenced `diff` lines with distinct
 added, removed, and hunk colors without changing saved Markdown or the
 ordinary prompt Markdown renderer. The PTY fixture checks the actual
@@ -228,6 +436,21 @@ Fleet's worker prompt explicitly covers
 uncommitted changes with equal base and HEAD; a fake SDK checks the
 15-minute Fleet budget including startup, the reserved two-minute recovery
 window, per-attempt limits, cancellation, and expiry without new requests.
+The recovery window also applies when the primary model request times out or
+reaches idle without final text. An existing report pair is validated even when
+final text is absent. Otherwise, at most two recovery requests use the same six
+workers, deadline, and call budget. Empty recovery replies consume an attempt;
+oversized replies, cancellation, and boundary failures are not recoverable.
+Timeout recovery first aborts the request and waits for the SDK call to settle; it
+never overlaps requests or starts new workers. Repair prompts include report
+validation errors. The first two rejected JSON submissions retain the matching
+Markdown revision and validation error in private artifacts. Corrected reports
+still pass the full schema, coverage, and worker-result checks.
+Completed `read_agent` results are saved once per approved worker in private
+mode-0600 `fleet-worker-N.json` artifacts. Each artifact records the worker ID,
+lens, pinned model, and read source. These writes must settle before report
+success, artifact capture, and workspace removal. Write failures block approval;
+saved worker text remains evidence, not a validated report or all-clear.
 The entry point keeps the original error in the message
 alongside the retained workspace path.
 Snapshot tests also cover a worktree behind or diverged from main: only

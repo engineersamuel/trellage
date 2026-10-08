@@ -4,6 +4,8 @@ import { lstat, mkdir, open, readdir, realpath, rename, unlink } from "node:fs/p
 import path from "node:path"
 import lockfile from "proper-lockfile"
 import { optimizeDigest, type OptimizeEvidence } from "./guide-optimize-evidence.ts"
+import { parseStoredOptimizeEvidence } from "./review-evidence.ts"
+export { parseStoredOptimizeEvidence } from "./review-evidence.ts"
 import { parseGuideOptimizeTarget, selectedGuideOptimizeChanges } from "./guide-optimize-target.ts"
 import {
   optimizeApproval,
@@ -24,12 +26,13 @@ export interface OptimizeReviewSummary {
   readonly summary: string
 }
 
-const uuid = (value: unknown): string => {
+export const reviewRecordId = (value: unknown): string => {
   const id = text(value, "review ID", 36)
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(id))
     throw new Error("Invalid review ID.")
   return id
 }
+const uuid = reviewRecordId
 const missing = (cause: unknown): boolean => cause instanceof Error && "code" in cause && cause.code === "ENOENT"
 const snapshotRecordBytes = 96_000_000
 const privateFile = (metadata: Stats): void => {
@@ -80,29 +83,7 @@ const parseInput = (input: unknown): OptimizeReviewInput => {
   }
 }
 
-const parseEvidence = (input: unknown): OptimizeEvidence => {
-  const fields = record(input, "evidence")
-  exactKeys(fields, "evidence", ["fingerprint", "sources", "excluded"])
-  const sources = array(fields.sources, "sources", { maximum: 5005 }).map((value) => {
-    const entry = record(value, "source")
-    exactKeys(entry, "source", ["id", "content"])
-    if (typeof entry.content !== "string") throw new Error("Source content must be text.")
-    return { id: text(entry.id, "id", 4096, { preserve: true }), content: entry.content }
-  })
-  uniqueArray(
-    sources.map((source) => source.id),
-    "sources",
-    "IDs",
-  )
-  const excluded = array(fields.excluded, "excluded", { maximum: 5000 }).map((value) => {
-    const entry = record(value, "excluded source")
-    exactKeys(entry, "excluded source", ["path", "reason"])
-    return { path: text(entry.path, "path", 4096, { preserve: true }), reason: text(entry.reason, "reason", 400) }
-  })
-  const fingerprint = text(fields.fingerprint, "fingerprint", 64)
-  if (fingerprint !== optimizeDigest({ sources, excluded })) throw new Error("Saved review evidence was changed.")
-  return { sources, excluded, fingerprint }
-}
+const parseEvidence = parseStoredOptimizeEvidence
 
 const parseReview = (serialized: unknown, evidence: OptimizeEvidence): OptimizeReview => {
   const fields = record(serialized, "saved review")
@@ -150,7 +131,8 @@ const parseReview = (serialized: unknown, evidence: OptimizeEvidence): OptimizeR
     "reports",
     "reviewers",
   )
-  const calls = boundedNumber(fields.calls, "calls", 0, optimizeReviewCallLimit(reviewers.length))
+  const bytes = evidence.sources.reduce((total, source) => total + Buffer.byteLength(source.content), 0)
+  const calls = boundedNumber(fields.calls, "calls", 0, optimizeReviewCallLimit(reviewers.length, bytes))
   if (!Number.isInteger(calls)) throw new Error("Invalid model call count.")
   let review: OptimizeReview = {
     schemaVersion: 1,
@@ -204,13 +186,13 @@ const validateCompletedReview = (review: OptimizeReview, input: unknown): Optimi
   return result
 }
 
-export class OptimizeReviewStore {
+export class PrivateReviewRecords {
   readonly directory: string
-  constructor(private readonly gitDirectory: string) {
-    this.directory = path.join(gitDirectory, "trellage-optimize-reviews")
+  constructor(protected readonly gitDirectory: string, namespace: "trellage-optimize-reviews" | "trellage-reviews") {
+    this.directory = path.join(gitDirectory, namespace)
   }
 
-  private async ensure(): Promise<void> {
+  protected async ensure(): Promise<void> {
     const git = await lstat(this.gitDirectory)
     if (
       !git.isDirectory() ||
@@ -234,7 +216,19 @@ export class OptimizeReviewStore {
       throw new Error("Optimize state directory must be owned, real, and mode 0700.")
   }
 
-  private async readData(filename: string, maximum = 2_000_000): Promise<unknown> {
+  async hasRecord(id: string): Promise<boolean> {
+    const filename = `${uuid(id)}.json`
+    await this.ensure()
+    try {
+      privateFile(await lstat(path.join(this.directory, filename)))
+      return true
+    } catch (cause) {
+      if (missing(cause)) return false
+      throw cause
+    }
+  }
+
+  protected async readData(filename: string, maximum = 2_000_000): Promise<unknown> {
     await this.ensure()
     const handle = await open(
       path.join(this.directory, filename),
@@ -275,7 +269,7 @@ export class OptimizeReviewStore {
     }
   }
 
-  private async writeData(filename: string, data: unknown, maximum = 2_000_000): Promise<void> {
+  protected async writeData(filename: string, data: unknown, maximum = 2_000_000): Promise<void> {
     await this.ensure()
     const encoded = `${JSON.stringify({ digest: optimizeDigest(data), data })}\n`
     if (Buffer.byteLength(encoded) > maximum)
@@ -314,7 +308,7 @@ export class OptimizeReviewStore {
     }
   }
 
-  private async locked<T>(operation: () => Promise<T>): Promise<T> {
+  protected async locked<T>(operation: () => Promise<T>): Promise<T> {
     await this.ensure()
     try {
       const info = await lstat(`${this.directory}.lock`)
@@ -329,6 +323,13 @@ export class OptimizeReviewStore {
     } finally {
       await release()
     }
+  }
+
+}
+
+export class OptimizeReviewStore extends PrivateReviewRecords {
+  constructor(gitDirectory: string) {
+    super(gitDirectory, "trellage-optimize-reviews")
   }
 
   async save(review: OptimizeReview): Promise<void> {

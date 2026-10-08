@@ -145,7 +145,8 @@ INTENT can contain line breaks and accepts up to 60,000 characters.
 customer-engagement action. Its question is limited to 8,000 characters.
 It opens a local source view first; model use, saving, and interactive
 current-terminal launch require separate confirmation. No folder migration.
---optimize coordinates read-only reviews of committed and current changes.
+--review opens Review changes with no checks selected; --optimize opens the same
+view with First principles and Behavior preservation selected. Both offer all six checks.
 Approve findings before one fresh Native agent can edit this worktree.
 The current worktree and branch are used automatically. Use --base REF to
 override the detected comparison base. Uncommitted-only review is an explicit
@@ -156,8 +157,8 @@ Interactive prompt viewers: pager, split, focus, bookends, dashboard.
 --preview renders the staged prompt basket composer overlay from fixture data.
 --forks renders two ways to fork the guide into parallel subflows.
 It reads no profile catalog, calls no model, and launches nothing.
---review opens the committed and working-tree review selector. It needs only Copilot and
-the selected review skills, not the full profile catalog.
+--review accepts --base, --intent, --intent-stdin, --model and --effort.
+It needs Copilot and selected review skills, not every Native launcher or Sandbox.
 EOF
 }
 
@@ -618,6 +619,8 @@ build_combined_guide_catalog() {
 }
 
 mode=''
+review_seen=false
+optimize_seen=false
 list_json=0
 inventory_launcher=''
 inventory_profile_arg=''
@@ -657,6 +660,7 @@ case "${1-}" in
     next_steps_seen=false
     engagement_seen=false
     optimize_seen=false
+    review_seen=false
     guide_value_expected=false
     for guide_arg in "$@"; do
       if [[ "$guide_value_expected" == true ]]; then
@@ -682,9 +686,15 @@ case "${1-}" in
           optimize_seen=true
           ;;
         --optimize=*) die '--optimize does not accept a value' ;;
+        --review)
+          [[ "$review_seen" == false ]] || die '--review may be specified only once'
+          review_seen=true
+          ;;
+        --review=*) die '--review does not accept a value' ;;
       esac
     done
-    if [[ "$optimize_seen" == true ]]; then
+    [[ "$review_seen" != true || "$optimize_seen" != true ]] || die '--review and --optimize cannot be combined'
+    if [[ "$optimize_seen" == true || "$review_seen" == true ]]; then
       [[ "$next_steps_seen" == false ]] || die '--optimize and --next-steps cannot be combined'
       [[ "$engagement_seen" == false ]] || die '--optimize and --engagement cannot be combined'
       guide_value_expected=false
@@ -981,23 +991,55 @@ if [[ "$mode" == skills ]]; then
     --bundle native-common
 fi
 
-if [[ "$mode" == guide && ${#guide_args[@]} -eq 1 && "${guide_args[0]}" == --review ]]; then
+if [[ "$mode" == guide && ( "$review_seen" == true || "$optimize_seen" == true ) ]]; then
   require_source_runtime
-  [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
   [[ -f "$picker_path" && ! -L "$picker_path" ]] || die 'Ink launcher is missing or unsafe'
   [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
     || die 'floating-skills manager is missing or unsafe'
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die 'floating-skills catalog is missing or unsafe'
-  review_cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1 '' trellage-copilot-profiles)"
-  "$review_cpx" list --json --cached-capabilities \
-    | jq -e '.launcher == "cpx" and any(.profiles[]; .name == "hve")' >/dev/null \
-    || die 'Copilot hve profile is unavailable; install it before starting Review'
-  TRELLAGE_GUIDE_SKILLS_MANAGER="$floating_skills_manager" \
-    TRELLAGE_GUIDE_SKILLS_CATALOG="$floating_skills_catalog" \
-    TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE="$native_common_root/skills" \
-    TRELLAGE_GUIDE_REVIEW_CPX_PATH="$review_cpx" \
-    exec "${trellage_launcher[@]}" "$picker_path" guide-review
+  if [[ "${TRELLAGE_REVIEW_PROFILES_ONLY:-}" != 1 ]]; then
+    review_catalog="$(jq -cn --arg sandbox "$source_workspace/prototypes/trellage/trellage" \
+      '{schemaVersion:1,sandboxCommandPath:$sandbox,sandbox:[],native:[]}')"
+    TRELLAGE_REVIEW_PROFILE_COMMAND="$script_path" \
+      TRELLAGE_GUIDE_SKILLS_MANAGER="$floating_skills_manager" \
+      TRELLAGE_GUIDE_SKILLS_CATALOG="$floating_skills_catalog" \
+      TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE="$native_common_root/skills" \
+      TRELLAGE_GUIDE_OPTIMIZE_SKILLS_CACHE="$canonical_home/.local/share/trellage/common/guide-optimize-architecture-skills" \
+      exec "${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "" "${guide_args[@]}" 3< <(printf '%s\n' "$review_catalog")
+  fi
+  review_profiles='[]'
+  for review_launcher in cpx cdx cldx; do
+    case "$review_launcher" in
+      cpx) review_command="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1 '' trellage-copilot-profiles 2>/dev/null)" || continue ;;
+      cdx) review_command="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1 trellage-codex-profiles 2>/dev/null)" || continue ;;
+      cldx) review_command="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 '' trellage-claude-profiles 2>/dev/null)" || continue ;;
+    esac
+    [[ -n "$review_command" && -f "$review_command" && -x "$review_command" ]] || continue
+    if review_inventory="$("$review_command" list --json --cached-capabilities 2>/dev/null)"; then
+      review_profiles="$(jq -cn --argjson previous "$review_profiles" --argjson inventory "$review_inventory" \
+        --arg launcher "$review_launcher" --arg commandPath "$router_command_path" '
+        $previous + [$inventory.profiles[] | {
+          launcher: ({cpx:"copilot",cdx:"codex",cldx:"claude"}[$launcher]),
+          commandPath: $commandPath, harness: $inventory.harness,
+          name, description, headless, sandbox: $inventory.sandbox,
+          herdrCompatibility: {status: "untested"}
+        } + (if has("orchestration") then {orchestration} else {} end)]')" \
+        || die 'invalid optional Native profile inventory'
+    fi
+  done
+  review_native="$(jq -cn --argjson profiles "$review_profiles" '{schemaVersion:1, profiles:$profiles}' \
+    | "${trellage_launcher[@]}" "$picker_path" enrich-native-list "$guide_root")" \
+    || die 'cannot read optional Native profiles'
+  review_catalog="$(jq -cn --argjson native "$review_native" --arg commandPath "$router_command_path" \
+    --arg sandbox "$source_workspace/prototypes/trellage/trellage" '{
+      schemaVersion:1, sandboxCommandPath:$sandbox, sandbox:[],
+      native: [$native.profiles[] as $entry | $entry + {
+        commandPath: $commandPath
+      }]
+    }')"
+  printf '%s\n' "$review_catalog"
+  exit 0
 fi
 
 if [[ "$mode" == guide ]] && ((${#guide_args[@]} > 0)); then

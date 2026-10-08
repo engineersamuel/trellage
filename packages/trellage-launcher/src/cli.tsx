@@ -39,7 +39,6 @@ import {
   getHerdrContext,
   herdrEnvironment,
   probeHerdrAvailability,
-  runInteractiveCommand,
   type HerdrEnvironment,
 } from "./guide-launch.ts"
 import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
@@ -52,10 +51,6 @@ import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
 import { GuideApp, type GuideUiProps, type GuideUiResult } from "./guide-ui.tsx"
 import { createGuideOptimizeServices } from "./guide-optimize.ts"
 import { GuideOptimizeApp } from "./guide-optimize-ui.tsx"
-import { ReviewApp } from "./review-ui.tsx"
-import { createReviewUiProps } from "./review-entry.ts"
-import { executeReviewContinuation, reviewContinuationProfile, reviewContinuationProfileFromPath } from "./review-continuation.ts"
-import type { ReviewContinuation } from "./review-ui.tsx"
 import { ContinuationApp } from "./continuation-ui.tsx"
 import { ContinuationStore } from "./continuation-store.ts"
 import { ContinuationSourceClient } from "./continuation-source-client.ts"
@@ -728,7 +723,7 @@ const completeInteractiveGuideResult = async (
   runner: ReturnType<typeof createNodeCommandRunner>,
 ): Promise<void> => {
   if (result.action === "review") {
-    await runGuideReviewMode(catalog)
+    await runOptimizeMode(["--review"], catalog)
     return
   }
   process.exitCode = await executeGuideUiResult(result, {
@@ -736,6 +731,14 @@ const completeInteractiveGuideResult = async (
     write: (text) => process.stdout.write(text),
   })
 }
+
+const isChangeReview = (args: ReturnType<typeof parseGuideHeadlessArgv>): boolean => Boolean(args.optimize || args.review)
+const reviewModelOverrides = (
+  args: ReturnType<typeof parseGuideHeadlessArgv>, routing: ReturnType<typeof resolveGuideModelRouting>,
+) => ({
+  ...(args.model ?? process.env.TRELLAGE_GUIDE_MODEL ? { model: routing.optimize.model } : {}),
+  ...(args.effort ?? process.env.TRELLAGE_GUIDE_EFFORT ? { effort: routing.optimize.effort } : {}),
+})
 
 const runInteractiveGuideMode = async (
   argv: ReadonlyArray<string>,
@@ -747,7 +750,7 @@ const runInteractiveGuideMode = async (
     await runEngagementMode(argv, guideRoot)
     return
   }
-  if (args.optimize) {
+  if (isChangeReview(args)) {
     await runOptimizeMode(argv)
     return
   }
@@ -812,6 +815,7 @@ const runInteractiveGuideMode = async (
         goalProvider={goalProvider}
         {...privateOptions}
         routing={routing}
+        reviewModelOverrides={reviewModelOverrides(args, routing)}
         runner={runner}
         cwd={cwd}
         herdrEnv={herdrEnv}
@@ -914,7 +918,7 @@ const runEngagementSession = async (
   }
 }
 
-const runOptimizeMode = async (argv: ReadonlyArray<string>): Promise<void> => {
+const runOptimizeMode = async (argv: ReadonlyArray<string>, catalog?: ReturnType<typeof readGuideCatalog>): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
   const env = herdrEnvironment()
   const context = getHerdrContext(env)
@@ -927,7 +931,10 @@ const runOptimizeMode = async (argv: ReadonlyArray<string>): Promise<void> => {
     ...(args.model === undefined ? {} : { model: args.model }),
     ...(args.effort === undefined ? {} : { effort: args.effort }),
   }, process.env)
-  const services = createGuideOptimizeServices({ runner, cwd, context, catalog: readGuideCatalog(), routing })
+  const services = createGuideOptimizeServices({ runner, cwd, context, catalog: catalog ?? readGuideCatalog(), routing,
+    entry: args.review ? "review" : "optimize",
+    modelOverrides: reviewModelOverrides(args, routing),
+  })
   const terminal = openInteractiveTerminalStreams()
   let result: GuideUiResult
   try {
@@ -1062,39 +1069,6 @@ const runGuideMode = async (): Promise<void> => {
     return
   }
   await runInteractiveGuideMode(argv, guideRoot, promptMasterSkillDirectory)
-}
-
-const runGuideReviewMode = async (catalog?: ReturnType<typeof readGuideCatalog>): Promise<void> => {
-  const props = createReviewUiProps(process.cwd())
-  const runner = createNodeCommandRunner()
-  const herdrEnv = herdrEnvironment()
-  const context = getHerdrContext(herdrEnv)
-  const herdrAvailable = await probeInteractiveHerdr(runner, herdrEnv, process.cwd())
-  const terminal = openInteractiveTerminalStreams()
-  let result: ReviewContinuation | undefined
-  try {
-    const instance = render(<ThemeProvider theme={trellageTheme}><ReviewApp {...props} herdrAvailable={herdrAvailable} /></ThemeProvider>, {
-      stdin: terminal.input,
-      stdout: terminal.output,
-      interactive: true,
-      exitOnCtrlC: false,
-      kittyKeyboard: { mode: "disabled" },
-      alternateScreen: true,
-      onRender: createInitialGuideRenderHandler((text) => terminal.output.write(text), process.env.INK_SCREEN_READER !== "true"),
-      maxFps: 30,
-    })
-    result = await instance.waitUntilExit() as ReviewContinuation | undefined
-  } finally {
-    terminal.close()
-  }
-  if (result?.action === "continue") {
-    terminal.input.pause()
-    const profile = catalog === undefined
-      ? reviewContinuationProfileFromPath(process.env.TRELLAGE_GUIDE_REVIEW_CPX_PATH)
-      : reviewContinuationProfile(catalog)
-    await executeReviewContinuation(result, profile,
-      process.cwd(), herdrAvailable ? context : null, { runner, runInteractive: runInteractiveCommand })
-  }
 }
 
 /**
@@ -1299,8 +1273,7 @@ export const main = async (): Promise<void> => {
     return
   }
   if (process.argv[2] === "guide-review") {
-    if (process.argv.length !== 3) throw new Error("guide-review accepts no arguments")
-    await runGuideReviewMode()
+    await runOptimizeMode(["--review", ...process.argv.slice(3)])
     return
   }
   if (process.argv[2] === "admin") {

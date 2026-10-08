@@ -1152,9 +1152,11 @@ it.for([
 it("opens Review from an empty intent without starting profile matching", async ({ guide }) => {
   await guide.start(FixtureMode.Terminal)
   await guide.waitForText("Ctrl-R review committed and working-tree changes")
-  const report = await guide.finish("\u0012")
-  expect(report.result).toEqual({ action: "review" })
-  expect(report.events).toEqual([{ kind: "input", input: "\u0012" }])
+  await guide.pressAndWait("\u0012", "Review changes", "Choose review scope")
+  await guide.pressAndWait("\u001b", "Ctrl-R review committed and working-tree changes")
+  const report = await guide.finish("\u0003", 130)
+  expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
+  expect(report.events.every((event) => event.kind === "input")).toBe(true)
 })
 
 it("does not discard a draft when Review is requested", async ({ guide }) => {
@@ -1165,6 +1167,36 @@ it("does not discard a draft when Review is requested", async ({ guide }) => {
   const report = await guide.finish("\u0003", 130)
   expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
 })
+
+it("shows all six checks and keeps mixed live tabs read-only at 80 columns", async ({ guide }) => {
+  await guide.start(FixtureMode.OptimizeCancel, 80, 24, "Choose review scope")
+  await selectOptimizeBase(guide)
+  await guide.pressAndWait(enter, "Choose reviewers")
+  await guide.pressAndWait(down, "> [x] Behavior preservation")
+  await guide.pressAndWait(down, "> [ ] Improve codebase architecture")
+  await guide.pressAndWait(" ", "[x] Improve codebase architecture")
+  await guide.pressAndWait(down, "> [ ] Ponytail Review")
+  await guide.pressAndWait(" ", "[x] Ponytail Review")
+  await guide.pressAndWait(down, "> [ ] Fleet Review")
+  await guide.pressAndWait(" ", "[x] Fleet Review")
+  await guide.pressAndWait(down, "> [ ] Matt Pocock Code Review")
+  await guide.pressAndWait(" ", "[x] Matt Pocock Code Review")
+  await guide.pressAndWait(enter, "Confirm read-only review")
+  await guide.pressAndWait(enter, "Live text is unverified")
+  await guide.waitForText("║ › First principles [running] ║", "Unverified fixture output from first-principles")
+  for (const [id, label] of [
+    ["behavior-preservation", "Behavior"], ["improve-codebase-architecture", "Architecture"],
+    ["ponytail", "Ponytail"], ["fleet", "Fleet"], ["matt-code-review", "Matt"],
+  ]) {
+    await guide.pressAndWait("\t", `║ › ${label} [running] ║`, `Unverified fixture output from ${id}`)
+  }
+  await guide.pressAndWait("\u001b", "Review cancelled")
+  const report = await guide.finish("q", 130)
+  const runs = report.events.filter((event) => event.kind === "optimize-review")
+  expect(runs).toHaveLength(1)
+  expect(runs[0]?.input.reviewerIds).toHaveLength(6)
+  expect(report.events.filter((event) => event.kind === "optimize-approval" || event.kind === "optimize-changes")).toEqual([])
+}, 30_000)
 
 it("keeps one readiness probe alive while its fork is parked and the main selection changes", async ({ guide }) => {
   await guide.start(FixtureMode.ParkedReadiness)
@@ -1470,6 +1502,7 @@ const approveOptimizeReview = async (guide: GuideTerminal): Promise<void> => {
   )
   await guide.pressAndWait(enter, "Select a recommended finding with Space")
   await guide.pressAndWait(" ", "Findings selected: 1", "[x] recommended:")
+  await guide.pressAndWait(enter, "Choose implementation action")
   await guide.pressAndWait(enter, "Choose a fresh agent")
 }
 
@@ -1508,7 +1541,7 @@ it.for([80, 120])(
     await guide.start(FixtureMode.Terminal, columns, columns === 80 ? 24 : 40)
     await enterIntent(guide)
     await guide.waitForText("o Optimize")
-    await guide.pressAndWait("o", "Optimize changes", "Choose review scope")
+    await guide.pressAndWait("o", "Review changes", "Choose review scope")
     await selectOptimizeBase(guide)
     await guide.waitForText("2 of 2 files selected", '[x] "notes.txt"')
     await guide.pressAndWait(
@@ -1521,7 +1554,7 @@ it.for([80, 120])(
     )
     for (const key of [down, "\u001b[A", "j", "k", "\t", "\u001b[Z"]) {
       await guide.pressAndWaitForInput(key)
-      await guide.waitForText("Optimize", "Choose reviewers", "First principles", "Esc back")
+      await guide.waitForText("Review changes", "Choose reviewers", "First principles", "Esc back")
     }
     await guide.pressAndWait(enter, "Confirm read-only review")
     await scrollUntil(guide, "8 minutes.")
@@ -1545,7 +1578,7 @@ it("optimizes current changes without rematching the task or changing queued wor
   await selectProfile(guide, "planner", 0)
   await enqueue(guide, 1)
   await mainScreen(guide)
-  await guide.pressAndWait("o", "Optimize changes", "Choose review scope")
+  await guide.pressAndWait("o", "Review changes", "Choose review scope")
   await selectOptimizeBase(guide)
   await guide.waitForText("2 of 2 files selected")
   await guide.pressAndWait(down, '> [x] "notes.txt"')
@@ -1627,7 +1660,7 @@ it("sends the explicit branch scope with untracked files selected by default to 
 }, 30_000)
 
 it("opens the current worktree directly without asking for a base or matching a prompt", async ({ guide }) => {
-  await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Optimize changes")
+  await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Review changes")
   assert.deepEqual(
     await guide.events().then((events) => events.filter((event) => event.kind === "optimize-target")),
     [],
@@ -1716,7 +1749,7 @@ test.for([FixtureMode.Terminal, FixtureMode.Herdr])(
       ...(mode === FixtureMode.Herdr ? { TRELLAGE_TEST_OPTIMIZE_BASE: "base" } : {}),
     })
     try {
-      await guide.start(mode, 80, 24, "Optimize changes")
+      await guide.start(mode, 80, 24, "Review changes")
       if (mode === FixtureMode.Terminal) await selectOptimizeBase(guide)
       await guide.waitForText(
         "Confirm target",
@@ -1752,7 +1785,7 @@ it("includes the managed architecture option in a consented review, then require
   await guide.pressAndWait(down, "> [ ] Improve codebase architecture", "Matt Pocock")
   await guide.pressAndWait(" ", "[x] Improve codebase architecture")
   await approveOptimizeReview(guide)
-  await guide.pressAndWait("\u001b", "Optimize changes", "Review complete", "Findings selected: 0", "Summary continues")
+  await guide.pressAndWait("\u001b", "Review changes", "Review complete", "Findings selected: 0", "Summary continues")
   await guide.pressAndWait("p", "Optimization review")
   await scrollUntil(guide, "Architecture review tail:")
   const report = await guide.finish("q", 130)
@@ -1770,7 +1803,7 @@ it("reopens a saved no-change review without new model calls or implementation",
   await selectOptimizeBase(guide)
   await guide.pressAndWait(enter, "Choose reviewers")
   await guide.pressAndWait(enter, "Confirm read-only review")
-  await guide.waitForText("At most 10 model calls", "one correction attempt per invalid response")
+  await guide.waitForText("One combined synthesis", "one correction")
   await guide.pressAndWait(enter, "No change recommended.", "Findings selected: 0")
   await guide.pressAndWait("p", "Optimization review")
   await guide.pressAndWait("\u001b", "No change recommended.")
@@ -1837,7 +1870,7 @@ it("cancels reviewers and leaves an inspectable incomplete record", async ({ gui
   await selectOptimizeBase(guide)
   await guide.pressAndWait(enter, "Choose reviewers")
   await guide.pressAndWait(enter, "Confirm read-only review")
-  await guide.pressAndWait(enter, "Read-only optimization in progress", "Esc cancel")
+  await guide.pressAndWait(enter, "Live text is unverified", "Esc cancel")
   await guide.pressAndWait("\u001b", "Review cancelled", "No findings can be approved.")
   const report = await guide.finish("q", 130)
   assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 1)

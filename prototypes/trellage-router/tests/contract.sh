@@ -688,15 +688,29 @@ review_status=0
 "$fixture_bin/trx" guide --review </dev/null >"$fixture_root/review.out" 2>&1 \
   || review_status=$?
 ((review_status != 0)) || fail 'review mode ran without a terminal'
-assert_contains 'an interactive terminal is required' "$fixture_root/review.out"
 if grep -Fq 'trellage command not found' "$fixture_root/review.out"; then
   fail 'review mode required the Sandbox catalog'
 fi
-review_profile_status=0
-python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/review-profile.out" '' '' \
-  "$fixture_bin/trx" guide --review || review_profile_status=$?
-((review_profile_status != 0)) || fail 'review started without a Copilot hve profile'
-assert_contains 'Copilot hve profile is unavailable' "$fixture_root/review-profile.out"
+cp "$fixture_picker" "$fixture_root/review-launcher.tsx"
+cat >"$fixture_picker" <<'EOF'
+import { readFileSync, writeFileSync } from "node:fs"
+writeFileSync(process.env.TRX_REVIEW_INPUT, JSON.stringify({
+  catalog: JSON.parse(readFileSync(3, "utf8")),
+  args: process.argv.slice(2),
+  profileCommand: process.env.TRELLAGE_REVIEW_PROFILE_COMMAND,
+}))
+EOF
+refresh_fixture_source
+TRX_REVIEW_INPUT="$fixture_root/review-input.json" \
+  python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/review-profile.out" '' '' \
+  "$fixture_bin/trx" guide --review --base main --intent "Preserve behavior" \
+  || { cat "$fixture_root/review-profile.out" >&2; fail 'review setup required an optional implementation profile'; }
+jq -e '.catalog.native == [] and .catalog.sandbox == [] and
+  (.args | index("--review")) != null and (.args | index("Preserve behavior")) != null and
+  (.profileCommand | startswith("/"))' "$fixture_root/review-input.json" >/dev/null \
+  || fail 'review setup did not defer profile discovery or preserve its arguments'
+mv "$fixture_root/review-launcher.tsx" "$fixture_picker"
+refresh_fixture_source
 
 mv "$fixture_bin/cpx" "$fixture_root/cpx-link"
 "$fixture_bin/trx" skills status >"$fixture_root/skills-status.json" \
@@ -1101,17 +1115,23 @@ jq -e --arg sandboxCommandPath "$fixture_source/prototypes/trellage/trellage" '
   .args == ["--optimize", "--base", "main", "--intent", "keep this original task"]
   and .catalog.sandboxCommandPath == $sandboxCommandPath
   and .catalog.sandbox == []
-  and (.catalog.native | length == 13)
-' "$fixture_root/guide-optimize.json" >/dev/null || fail 'guide Optimize changed its task or Native-only catalog'
+  and .catalog.native == []
+' "$fixture_root/guide-optimize.json" >/dev/null || fail 'guide Optimize changed its task or discovered profiles during setup'
+[[ ! -s "$fixture_root/guide-optimize-discovery.log" ]] || fail 'review setup discovered an optional Native profile'
+TRELLAGE_REVIEW_PROFILES_ONLY=1 "$fixture_bin/trx" guide --review >"$fixture_root/review-handoff-catalog.json" \
+  || fail 'review handoff could not discover optional Native profiles'
+jq -e '.sandbox == [] and (.native | length > 0) and
+  all(.native[]; .launcher == "copilot" or .launcher == "codex" or .launcher == "claude")' \
+  "$fixture_root/review-handoff-catalog.json" >/dev/null || fail 'review handoff catalog contains unsupported profiles'
 mv "$fixture_bin/trellage" "$fixture_root/optimize-trellage.saved"
 "$fixture_bin/trx" guide --optimize >"$fixture_root/guide-optimize-no-sandbox.json" \
   || fail 'guide Optimize required a separately installed Sandbox command'
 mv "$fixture_root/optimize-trellage.saved" "$fixture_bin/trellage"
-jq -e '.args == ["--optimize"] and .catalog.sandbox == [] and (.catalog.native | length == 13)' \
-  "$fixture_root/guide-optimize-no-sandbox.json" >/dev/null || fail 'guide Optimize lost its Native catalog'
+jq -e '.args == ["--optimize"] and .catalog.sandbox == [] and .catalog.native == []' \
+  "$fixture_root/guide-optimize-no-sandbox.json" >/dev/null || fail 'guide Optimize did not defer its Native catalog'
 mv "$fixture_root/optimize-floating-skills.saved" "$optimize_skills_manager"
 refresh_fixture_source
-for conflicting_flag in --optimize --optimize=value --engagement --json --next-steps --preview --forks; do
+for conflicting_flag in --optimize --review --optimize=value --engagement --json --next-steps --preview --forks; do
   status=0
   "$fixture_bin/trx" guide --optimize "$conflicting_flag" \
     >"$fixture_root/guide-optimize-invalid.out" 2>"$fixture_root/guide-optimize-invalid.err" \
@@ -1497,7 +1517,7 @@ TRX_ARGUMENT_LOG="$argument_log" \
   TRELLAGE_TRX_SOURCE_ROOT="$prototype_root" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/source-select.out" \
   'codex\x1e\r' '' "$prototype_root/bin/trx" '--source-mode' \
-  || fail 'worktree source type-to-filter selection failed'
+  || { cat "$fixture_root/source-select.out" >&2; fail 'worktree source type-to-filter selection failed'; }
 python3 - "$argument_log" <<'PY' || fail 'worktree source arguments were not forwarded'
 import pathlib
 import sys

@@ -10,11 +10,12 @@ import {
   type GuideOptimizeTarget,
 } from "./guide-optimize-target.ts"
 import { boundedNumber, exactKeys, GuideValidationError, record, text } from "./guide-text.ts"
+import { ReviewReadLedger, reviewSnapshotBytes } from "./review-context.ts"
 
 export const optimizeEvidenceLimits = {
   files: 5000,
   fileBytes: 1_000_000,
-  totalBytes: 32_000_000,
+  totalBytes: reviewSnapshotBytes,
   toolCalls: 120,
   toolLines: 200,
   toolBytes: 768_000,
@@ -70,6 +71,7 @@ const snapshotGit = async (
       signal,
       timeoutMs: 30_000,
       outputOverflow: "terminate",
+      outputLimitBytes: optimizeEvidenceLimits.totalBytes,
       env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
     })
   ).stdout
@@ -113,11 +115,29 @@ const addCurrentSource = async (
   }
 }
 
+const captureDiffSources = async (
+  runner: CommandRunner, target: GuideOptimizeTarget, paths: ReadonlyArray<string>, signal: AbortSignal,
+): Promise<ReadonlyArray<OptimizeSource>> => {
+  const flags = ["--no-ext-diff", "--no-textconv", "--no-renames", "--unified=5"]
+  const literalPaths = paths.map((filename) => `:(literal)${filename}`)
+  const diffs: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
+    ["@diff/staged", ["diff", "--cached", ...flags, "--", ...literalPaths]],
+    ["@diff/unstaged", ["diff", ...flags, "--", ...literalPaths]],
+    ...(target.base === undefined ? [] : [
+      ["@diff/committed", ["diff", ...flags, target.base.mergeBase, target.head!, "--", ...literalPaths]] as const,
+    ]),
+  ]
+  return Promise.all(diffs.map(async ([id, args]) => ({
+    id, content: await snapshotGit(runner, target, args, signal),
+  })))
+}
+
 export const captureOptimizeEvidence = async (
   runner: CommandRunner,
   target: GuideOptimizeTarget,
   paths: ReadonlyArray<string>,
   signal: AbortSignal,
+  patchSources?: ReadonlyArray<OptimizeSource>,
 ): Promise<OptimizeEvidence> => {
   const changes = selectedGuideOptimizeChanges(target, paths)
   for (const filename of paths) {
@@ -146,17 +166,8 @@ export const captureOptimizeEvidence = async (
     if (bytes > optimizeEvidenceLimits.totalBytes)
       throw new Error("Repository snapshot exceeds 32 MB; review is blocked, not truncated.")
   }
-  const flags = ["--no-ext-diff", "--no-textconv", "--no-renames", "--unified=5"]
-  const literalPaths = paths.map((filename) => `:(literal)${filename}`)
-  const diffs: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
-    ["@diff/staged", ["diff", "--cached", ...flags, "--", ...literalPaths]],
-    ["@diff/unstaged", ["diff", ...flags, "--", ...literalPaths]],
-    ...(target.base === undefined
-      ? []
-      : [["@diff/committed", ["diff", ...flags, target.base.mergeBase, target.head!, "--", ...literalPaths]] as const]),
-  ]
-  for (const [id, args] of diffs) {
-    const content = await snapshotGit(runner, target, args, signal)
+  const captured = patchSources ?? await captureDiffSources(runner, target, paths, signal)
+  for (const { id, content } of captured) {
     bytes += Buffer.byteLength(content)
     if (bytes > optimizeEvidenceLimits.totalBytes)
       throw new Error("Review evidence exceeds 32 MB; nothing was truncated.")
@@ -214,46 +225,27 @@ export const optimizeEvidenceTools = (
   evidence: OptimizeEvidence,
   signal: AbortSignal,
   requiredRanges: ReadonlyArray<OptimizeSourceRange> = [],
+  limits: { readonly maximumCalls?: number; readonly maximumBytes?: number; readonly maximumResponseBytes?: number } = {},
 ) => {
-  let calls = 0
-  let bytes = 0
-  let byteBudget: number = optimizeEvidenceLimits.toolBytes
-  let fatal: Error | undefined
-  const readLines = new Map<string, Set<number>>()
+  const ledger = new ReviewReadLedger(limits.maximumBytes ?? optimizeEvidenceLimits.toolBytes, signal,
+    "Review evidence budget exhausted. Reduce the selected scope.", limits.maximumCalls ?? optimizeEvidenceLimits.toolCalls)
   const firstUnreadRange = (
     range: OptimizeSourceRange,
     delivered?: OptimizeSourceRange,
   ): OptimizeSourceRange | undefined => {
-    const seen = readLines.get(range.source)
-    const isRead = (line: number): boolean =>
-      seen?.has(line) === true ||
-      (delivered?.source === range.source && line >= delivered.startLine && line <= delivered.endLine)
-    let startLine = range.startLine
-    while (startLine <= range.endLine && isRead(startLine)) startLine += 1
-    if (startLine > range.endLine) return undefined
-    let endLine = startLine
-    while (endLine < range.endLine && !isRead(endLine + 1)) endLine += 1
-    return { source: range.source, startLine, endLine }
-  }
-  const failBudget = (message: string): never => {
-    fatal = new Error(message)
-    throw fatal
+    const gap = ledger.firstGap({ source: range.source, start: range.startLine, end: range.endLine + 1 },
+      delivered ? { source: delivered.source, start: delivered.startLine, end: delivered.endLine + 1 } : undefined)
+    return gap ? { source: gap.source, startLine: gap.start, endLine: gap.end - 1 } : undefined
   }
   const handle =
     (operation: (input: unknown) => unknown, after?: (input: unknown) => void) =>
     (input: unknown): ToolResultObject => {
-      signal.throwIfAborted()
-      if (fatal !== undefined) throw fatal
-      if (++calls > optimizeEvidenceLimits.toolCalls)
-        failBudget("Review tool-call budget exhausted. Reduce the selected scope.")
-      bytes += Buffer.byteLength(JSON.stringify(input)) + 256
-      if (bytes > byteBudget) failBudget("Review evidence budget exhausted. Reduce the selected scope.")
+      ledger.request(Buffer.byteLength(JSON.stringify(input)) + 256)
       const output = JSON.stringify(operation(input))
       const size = Buffer.byteLength(output)
-      if (size > optimizeEvidenceLimits.toolResponseBytes)
-        throw new Error("Read fewer lines; this response exceeds 16000 bytes.")
-      bytes += size
-      if (bytes > byteBudget) failBudget("Review evidence budget exhausted. Reduce the selected scope.")
+      if (size > (limits.maximumResponseBytes ?? optimizeEvidenceLimits.toolResponseBytes))
+        throw new Error(`Read fewer lines; this response exceeds ${limits.maximumResponseBytes ?? optimizeEvidenceLimits.toolResponseBytes} bytes.`)
+      ledger.charge(size)
       after?.(input)
       return { resultType: "success", textResultForLlm: output }
     }
@@ -275,7 +267,7 @@ export const optimizeEvidenceTools = (
         if (typeof fields.pathContains !== "string" || fields.pathContains.length > 200)
           throw new Error("Invalid path filter.")
         const filter = fields.pathContains
-        const offset = integer(fields.offset, "offset", 0, optimizeEvidenceLimits.files + 5)
+        const offset = integer(fields.offset, "offset", 0, optimizeEvidenceLimits.files * 2 + 8)
         const sources = evidence.sources.filter((entry) => entry.id.includes(filter))
         const excluded = evidence.excluded.filter((entry) => entry.path.includes(filter))
         return {
@@ -320,9 +312,7 @@ export const optimizeEvidenceTools = (
           const source = evidence.sources.find((entry) => entry.id === id)!
           const start = integer(fields.startLine, "startLine", 1, source.content.split("\n").length)
           const count = integer(fields.lineCount, "lineCount", 1, optimizeEvidenceLimits.toolLines)
-          const lines = readLines.get(id) ?? new Set<number>()
-          for (let line = start; line < start + count; line++) lines.add(line)
-          readLines.set(id, lines)
+          ledger.record({ source: id, start, end: Math.min(start + count, source.content.split("\n").length + 1) })
         },
       ),
     },
@@ -347,15 +337,14 @@ export const optimizeEvidenceTools = (
   return {
     tools,
     setByteBudget: (value: number) => {
-      byteBudget = Math.min(optimizeEvidenceLimits.toolBytes, value)
+      ledger.setBudget(value)
     },
     assertComplete: (
       requiredSources: ReadonlyArray<string>,
       citations: ReadonlyArray<OptimizeSourceRange> = [],
     ): void => {
-      signal.throwIfAborted()
-      if (fatal !== undefined) throw fatal
-      if (readLines.size === 0) throw new Error("Reviewer did not read any snapshot evidence.")
+      ledger.assertHealthy()
+      if (!ledger.hasReads) throw new Error("Reviewer did not read any snapshot evidence.")
       for (const id of requiredSources) {
         const source = evidence.sources.find((entry) => entry.id === id)
         if (source === undefined) throw new Error(`Required review source is missing: ${id}.`)

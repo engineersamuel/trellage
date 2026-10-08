@@ -24,9 +24,14 @@ describe("Optimize change-flow isolation", () => {
     expect(returned).toEqual(state)
   })
 
-  it("does not treat Optimize actions as shortcuts in the intent editor", () => {
+  it("opens shared review from an empty intent editor and returns without matching", () => {
     const state = createInitialGuideUiState()
-    expect(guideUiReducer(state, { type: GuideUiActionType.OptimizeOpen })).toBe(state)
+    const review = guideUiReducer(state, { type: GuideUiActionType.OptimizeOpen })
+    expect(review.stage).toBe(GuideUiStage.Optimize)
+    const returned = guideUiReducer(review, { type: GuideUiActionType.OptimizeBack })
+    expect(returned.stage).toBe(GuideUiStage.Intent)
+    expect(returned.intent).toBe(state.intent)
+    expect(returned.recommendations).toBe(state.recommendations)
     expect(guideUiReducer(state, { type: GuideUiActionType.OptimizeBack })).toBe(state)
   })
 

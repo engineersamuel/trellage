@@ -4,14 +4,9 @@ import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.tsx"
 import { spinnerFrameAt } from "./guide-spinner.ts"
 import type { ReviewOutput } from "./review-run.ts"
 import { useTheme } from "./termcn/use-theme.ts"
+import type { ReviewChoice } from "./review-catalog.ts"
 
-export interface ReviewChoice {
-  readonly id: string
-  readonly label: string
-  readonly purpose: string
-  readonly models: string
-  readonly workers: number
-}
+export type { ReviewChoice } from "./review-catalog.ts"
 
 export interface ReviewSnapshot {
   readonly branch: string
@@ -83,7 +78,7 @@ interface ReviewLog {
   readonly source: string
 }
 
-const safeOutput = (value: string): string => value
+export const safeOutput = (value: string): string => value
   .replaceAll(/\x1b\[[0-?]*[ -/]*[@-~]/gu, "")
   .replaceAll(/\r\n?/gu, "\n")
   .replaceAll("\t", "    ")
