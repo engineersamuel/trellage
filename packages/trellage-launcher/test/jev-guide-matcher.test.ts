@@ -271,9 +271,14 @@ describe("JevGuideMatcher", () => {
   it("cancels a hanging client without invoking fallback behavior", async () => {
     const controller = new AbortController()
     let aborted = false
+    let markStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
     const sdk: JevSystemOneClient = {
-      systemOne: async (_request, options) =>
-        await new Promise((_resolve, reject) =>
+      systemOne: async (_request, options) => {
+        markStarted()
+        return await new Promise((_resolve, reject) =>
           options.signal?.addEventListener(
             "abort",
             () => {
@@ -282,10 +287,11 @@ describe("JevGuideMatcher", () => {
             },
             { once: true },
           ),
-        ),
+        )
+      },
     }
     const pending = new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match(input(), controller.signal)
-    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    await started
     controller.abort()
     await expect(pending).rejects.toThrow()
     expect(aborted).toBe(true)
