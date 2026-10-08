@@ -85,6 +85,11 @@ interface SkillOperation {
 }
 const skillOperation = new AsyncLocalStorage<SkillOperation>()
 
+export const isUnavailableSkillProcessError = (error: unknown): boolean =>
+  error instanceof Error
+  && "code" in error
+  && (error.code === "ESRCH" || error.code === "EPERM")
+
 const affectsFirstmateCache = async (destination: string) => {
   const roots = [path.join(os.homedir(), ".local/share")]
   if (process.env.XDG_DATA_HOME) roots.push(process.env.XDG_DATA_HOME)
@@ -104,7 +109,7 @@ const signalSkillChild = (pid: number | undefined, signal: NodeJS.Signals) => {
   try {
     process.kill(-pid, signal)
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error
+    if (!isUnavailableSkillProcessError(error)) throw error
   }
 }
 

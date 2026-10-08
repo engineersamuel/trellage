@@ -12,6 +12,7 @@ import "./bun-runtime.setup.ts"
 import {
   checkNative,
   ensureNative,
+  isUnavailableSkillProcessError,
   parseCatalog,
   readCatalog,
   stageLatest,
@@ -24,6 +25,12 @@ import {
 const execFilePromise = promisify(execFile)
 const repositoryRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)))
 const temporaryRoots = []
+
+test("unavailable process groups do not fail completed child cleanup", () => {
+  assert.equal(isUnavailableSkillProcessError(Object.assign(new Error("gone"), { code: "ESRCH" })), true)
+  assert.equal(isUnavailableSkillProcessError(Object.assign(new Error("inaccessible"), { code: "EPERM" })), true)
+  assert.equal(isUnavailableSkillProcessError(Object.assign(new Error("bad signal"), { code: "EINVAL" })), false)
+})
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((candidate) => rm(candidate, { recursive: true, force: true })))
