@@ -90,11 +90,11 @@ export const firstmateCatalog = (instances = true, names: ReadonlyArray<string> 
   schemaVersion: 1,
   sandboxCommandPath: "/fixture/trellage",
   native: names.map((name) => ({
-    launcher: "fmx",
+    launcher: "firstmate",
     harness: "firstmate",
     name,
     description: "Firstmate fleet template.",
-    commandPath: "/fixture/fmx",
+    commandPath: "/fixture/trx",
     sandbox: false,
     herdrCompatibility: { status: "supported" },
     headless: {
@@ -128,7 +128,7 @@ export const firstmateCatalog = (instances = true, names: ReadonlyArray<string> 
 export const instanceRows = (
   descriptors: ReadonlyArray<FirstmateInstanceDescriptorV1> = [missingLegacy, alpha, beta],
 ): ReadonlyArray<AdminProfileEntry> => aggregateAdminInstanceProfiles(firstmateCatalog(), [{
-  ref: "native:fmx/default", state: "complete", instances: descriptors,
+  ref: "native:firstmate/default", state: "complete", instances: descriptors,
 }])
 
 export const mixedInstanceCatalog = (instances = true): CombinedGuideCatalog => {
@@ -137,7 +137,7 @@ export const mixedInstanceCatalog = (instances = true): CombinedGuideCatalog => 
   return {
     ...catalog,
     native: [
-      { ...template, launcher: "cpx", harness: "copilot", commandPath: "/fixture/cpx" },
+      { ...template, launcher: "copilot", harness: "copilot", commandPath: "/fixture/trx" },
       ...catalog.native,
     ],
     sandbox: [{
@@ -211,7 +211,7 @@ export const instanceInventory = (
   descriptor: FirstmateInstanceDescriptorV1,
   overrides: Partial<FirstmateFleetReadinessV1> = {},
 ): string => JSON.stringify({
-  schemaVersion: 1, launcher: "fmx", harness: "firstmate", profile: descriptor.profile,
+  schemaVersion: 1, launcher: "firstmate", harness: "firstmate", profile: descriptor.profile,
   readiness: descriptor.reference === null ? "not-setup" : "healthy",
   plugins: [], skills: { packageCount: 1, visibleCount: 2 }, mcps: [],
   fleet: instanceFleet(descriptor, overrides),

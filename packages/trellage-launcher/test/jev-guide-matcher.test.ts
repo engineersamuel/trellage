@@ -124,7 +124,7 @@ describe("JevGuideMatcher", () => {
       entry("sandbox:ordinary-2"),
       entry("sandbox:ordinary-3"),
       entry("sandbox:claude-council", ["run-council-deliberation"]),
-      entry("native:cpx/hve"),
+      entry("native:copilot/hve"),
       entry("sandbox:claude-research"),
     ]
     const answers = Object.fromEntries(entries.map((_, index) => [`p${index}`, { type: "noul", noul: 0.9 }]))
@@ -325,9 +325,9 @@ describe("JevGuideMatcher", () => {
       },
     }
     const poteto = {
-      ...entry("native:cdx/pstack", ["poteto-mode-entry-point", "other"]),
+      ...entry("native:codex/pstack", ["poteto-mode-entry-point", "other"]),
       guide: {
-        ...entry("native:cdx/pstack", ["poteto-mode-entry-point", "other"]).guide,
+        ...entry("native:codex/pstack", ["poteto-mode-entry-point", "other"]).guide,
         workflows: [
           { id: "poteto-mode-entry-point", description: "Multi-stage engineering", examples: ["build"] },
           { id: "other", description: "Other", examples: ["other"] },
@@ -353,12 +353,12 @@ describe("JevGuideMatcher", () => {
       entries,
     })
     expect(result.candidates.map(({ profileRef }) => profileRef)).toEqual(
-      expect.arrayContaining(["sandbox:headlong", "native:cdx/pstack"]),
+      expect.arrayContaining(["sandbox:headlong", "native:codex/pstack"]),
     )
   })
   it("forces Poteto for an already-ranked profile and excludes unrequested pinned workflows", async () => {
     const entries = [
-      entry("native:cdx/pstack", ["other", "poteto-mode-entry-point"]),
+      entry("native:codex/pstack", ["other", "poteto-mode-entry-point"]),
       entry("sandbox:claude-council", ["run-council-deliberation"]),
       entry("sandbox:a"),
       entry("sandbox:b"),
@@ -384,7 +384,7 @@ describe("JevGuideMatcher", () => {
         return { answers: {
           ...answers,
           ...Object.fromEntries(supplied.map(({ ref }, index) => [
-            `p${index}`, { type: "noul", noul: ref === "sandbox:claude-council" ? 1 : ref === "native:cdx/pstack" ? 0.99 : 0.5 },
+            `p${index}`, { type: "noul", noul: ref === "sandbox:claude-council" ? 1 : ref === "native:codex/pstack" ? 0.99 : 0.5 },
           ])),
         } }
       },
@@ -399,7 +399,7 @@ describe("JevGuideMatcher", () => {
 
   it("can rank an HVE customer workflow without exposing the generic RPI pin", async () => {
     const entries = [
-      entry("native:cpx/hve", ["rpi-agent-cycle", "customer-discovery"]),
+      entry("native:copilot/hve", ["rpi-agent-cycle", "customer-discovery"]),
       entry("sandbox:a"),
       entry("sandbox:b"),
     ]
@@ -413,7 +413,7 @@ describe("JevGuideMatcher", () => {
       },
     }
     const result = await new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match({ intent: "Discover customer needs", entries })
-    expect(result.candidates[0]).toMatchObject({ profileRef: "native:cpx/hve", workflowId: "customer-discovery" })
+    expect(result.candidates[0]).toMatchObject({ profileRef: "native:copilot/hve", workflowId: "customer-discovery" })
   })
 
   it("clears the deadline after success and aborts promptly when transport ignores cancellation", async () => {

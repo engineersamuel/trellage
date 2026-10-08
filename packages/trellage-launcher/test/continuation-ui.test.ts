@@ -62,7 +62,7 @@ const ready = async () => {
 const firstmateSetup = (initial = firstmateFixtureDraft()) => {
   const fixture = createContinuationServiceFixture(initial)
   const resolve = vi.fn<NonNullable<ContinuationServices["resolveProjectTarget"]>>().mockResolvedValue(firstmateProjectC())
-  const profile = initial.actions[0]?.profileRef === "native:fmx/pstack-workers" ? "pstack-workers" : "default"
+  const profile = initial.actions[0]?.profileRef === "native:firstmate/pstack-workers" ? "pstack-workers" : "default"
   const inspect = vi.fn<NonNullable<ContinuationServices["inspectFirstmate"]>>().mockResolvedValue(firstmateFleetReadiness(profile))
   const confirm = vi.fn<NonNullable<ContinuationServices["confirmFirstmateAction"]>>().mockImplementation(
     async (draft, actionId, action, expectedFleet, signal) => {

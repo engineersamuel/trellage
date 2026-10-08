@@ -243,7 +243,7 @@ describe("continuation assessment contracts", () => {
 
   const invalidAssessments: Array<[string, () => unknown]> = [
     ["invented evidence", () => ({ ...assessmentFixture(), actions: assessmentFixture().actions.map((a) => ({ ...a, evidenceIds: ["not-in-snapshot"] })) })],
-    ["invented profile", () => ({ ...assessmentFixture(), actions: assessmentFixture().actions.map((a) => ({ ...a, profileRef: "native:cpx/missing" })) })],
+    ["invented profile", () => ({ ...assessmentFixture(), actions: assessmentFixture().actions.map((a) => ({ ...a, profileRef: "native:copilot/missing" })) })],
     ["wrong workflow", () => ({ ...assessmentFixture(), actions: assessmentFixture().actions.map((a) => ({ ...a, workflowId: "absent" })) })],
     ["model-authored command", () => ({ ...assessmentFixture(), command: "do-not-run" })],
     ["action argv", () => ({ ...assessmentFixture(), actions: assessmentFixture().actions.map((a) => ({ ...a, argv: ["do-not-run"] })) })],

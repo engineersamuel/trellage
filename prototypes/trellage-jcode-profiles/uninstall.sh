@@ -24,7 +24,7 @@ installed_config_manager="$install_root/config-manager.ts"
 [[ -e "$installed_config_manager" || -L "$installed_config_manager" ]] \
   || installed_config_manager="$install_root/config-manager.mjs"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
-command_path="$home/.local/bin/jcx"
+command_path="$home/.local/share/trellage/.native-commands/jcx"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \

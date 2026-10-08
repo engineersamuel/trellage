@@ -10,7 +10,12 @@ import {
   type GuideGoalRequest,
   type GuideGoalTurn,
 } from "../src/guide-goal-augment.ts"
-import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
+import {
+  expandedGoalDraft,
+  expandedGoalMeSkill,
+  goalDraft,
+  goalMeSkill,
+} from "./fixtures/goal-me-skill.ts"
 
 const fixture = () => {
   const abort = new AbortController()
@@ -217,6 +222,24 @@ describe("goal interactions", () => {
 })
 
 describe("goal completion", () => {
+  it("fills every authored block in the expanded installed template and preserves its loop", () => {
+    const { prompt, draft } = renderGuideGoalProposal(expandedGoalMeSkill, expandedGoalDraft)
+    expect(draft).toEqual(expandedGoalDraft)
+    expect(prompt).toContain(`TASK:\nArtifact: ${expandedGoalDraft.artifact}\n${expandedGoalDraft.task}`)
+    expect(prompt).toContain(`INPUTS AND ARTIFACTS:\n${expandedGoalDraft.inputsAndArtifacts}`)
+    expect(prompt).toContain(`CONSTRAINTS:\n${expandedGoalDraft.constraints}`)
+    for (const [index, criterion] of expandedGoalDraft.criteria.entries()) {
+      expect(prompt).toContain(`| C${index + 1} | ${criterion} | ${expandedGoalDraft.criterionVerifications[index]} |`)
+      expect(prompt).toContain(`| C${index + 1} | _ | _ | _ |`)
+    }
+    expect(prompt).toContain("REQUIRED CHECKS:\n- The repository test command passes.")
+    expect(prompt).toContain("| Write and verify the retry design. | C1, C2, C3 | Satisfies the complete retry contract. | None. | Apply each criterion rubric and run the required check. |")
+    expect(prompt).not.toMatch(/\[(?:target|command or evidence-based rubric|concrete improvement|IDs|impact estimate|dependencies or none|method)\]/u)
+    expect(prompt.slice(prompt.indexOf("LOOP PROTOCOL:"))).toBe(
+      expandedGoalMeSkill.slice(expandedGoalMeSkill.indexOf("LOOP PROTOCOL:"), expandedGoalMeSkill.lastIndexOf("\n```")),
+    )
+  })
+
   it("fills only the mutable template blocks and keeps the installed protocol intact", () => {
     const { prompt, draft } = renderGuideGoalProposal(goalMeSkill, goalDraft)
     expect(draft).toEqual(goalDraft)
@@ -237,6 +260,27 @@ describe("goal completion", () => {
     expect(() => validateGuideGoalDraft({ ...goalDraft, artifact: "One\nTwo" })).toThrow()
     expect(() => renderGuideGoalProposal(goalMeSkill.replace("TASK:", "WORK:"), goalDraft)).toThrow()
     expect(() => renderGuideGoalProposal("No template", goalDraft)).toThrow()
+  })
+
+  it("rejects expanded template drift instead of leaving new authored work unresolved", () => {
+    expect(() => renderGuideGoalProposal(
+      expandedGoalMeSkill.replace("LOOP PROTOCOL:", "EXECUTION PROTOCOL:"),
+      expandedGoalDraft,
+    )).toThrow(/template has changed/u)
+    expect(() => renderGuideGoalProposal(
+      expandedGoalMeSkill.replace(
+        "\nEXECUTION LIMITS:",
+        "\nNEW SECTION:\n[Fill the new required section.]\n\nEXECUTION LIMITS:",
+      ),
+      expandedGoalDraft,
+    )).toThrow(/template has changed/u)
+    expect(() => renderGuideGoalProposal(
+      expandedGoalMeSkill.replace(
+        "[Scope, exclusions, project rules, existing authorization, and resources.]",
+        "[Scope, exclusions, project rules, existing authorization, and resources.]\n[Specify the required execution environment\nand runtime dependencies.]",
+      ),
+      expandedGoalDraft,
+    )).toThrow(/template has changed/u)
   })
 
   it("rejects an oversized complete goal rather than cutting off its rules", () => {

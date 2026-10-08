@@ -72,7 +72,7 @@ export const firstmateGuide: ProfileGuideV1 = {
 }
 
 export const firstmateProfile: ContinuationProfileOption = {
-  ref: "native:fmx/default",
+  ref: "native:firstmate/default",
   name: "Firstmate",
   guide: firstmateGuide,
   orchestration: firstmateOrchestration,
@@ -83,7 +83,7 @@ export type ContinuationFirstmateProfile = "default" | "pstack-workers"
 
 export const firstmatePstackProfile: ContinuationProfileOption = {
   ...firstmateProfile,
-  ref: "native:fmx/pstack-workers",
+  ref: "native:firstmate/pstack-workers",
   name: "Firstmate pstack workers",
   orchestration: parseFirstmateOrchestrationV1({
     ...firstmateOrchestration,
@@ -189,7 +189,7 @@ export const firstmateRuntimeCatalog = () => {
   return parseGuideCatalog(JSON.stringify({
     ...catalog,
     native: [...catalog.native, ...([firstmateProfile, firstmatePstackProfile].map((profile) => ({
-      ...base, name: profile.ref.split("/")[1], launcher: "fmx", harness: "firstmate", commandPath: "/profiles/fmx",
+      ...base, name: profile.ref.split("/")[1], launcher: "firstmate", harness: "firstmate", commandPath: "/profiles/trx",
       headless: { ...base.headless, prompt: false }, guide: firstmateGuide, orchestration: profile.orchestration,
     })))],
   }))
@@ -198,7 +198,7 @@ export const firstmateRuntimeCatalog = () => {
 export const legacyFirstmateCatalog = (catalog: CombinedGuideCatalog = firstmateRuntimeCatalog()): CombinedGuideCatalog => ({
   ...catalog,
   native: catalog.native.map((entry) => {
-    if (entry.launcher !== "fmx") return entry
+    if (entry.launcher !== "firstmate") return entry
     const { orchestration: _orchestration, ...legacy } = entry
     return legacy
   }),

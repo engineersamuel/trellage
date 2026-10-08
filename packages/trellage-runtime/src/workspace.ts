@@ -19,7 +19,8 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs"
-import { readFile, readdir as readdirAsync } from "node:fs/promises"
+import { lstat as lstatAsync, readFile, readdir as readdirAsync } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 
 export const sourceMarker = ".managed-by-trellage-source"
@@ -29,7 +30,7 @@ const readyFile = ".trellage-source-ready.json"
 const distributionManifest = "package.source.json"
 const sourceDirectories = ["bin", "packages", "prototypes", "scripts", "profile-guides", "profiles"]
 const optionalSourceDirectories = [".agents"]
-const rootFiles = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.base.json", "skills.json"]
+const rootFiles = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.base.json", "config.toml"]
 const excludedDirectories = new Set(["node_modules", "dist", "coverage", "__pycache__"])
 const nativeProfileState = new Set([
   "cache",
@@ -185,14 +186,63 @@ function updateDigest(hash: Hash, file: string, contents: Uint8Array): void {
   hash.update(file).update("\0").update(contents).update("\0")
 }
 
-function digestFiles(root: string, files: readonly string[]): string {
+const digestMemoLimit = 64
+
+function digestMemoPath(): string {
+  const cache = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache")
+  return path.join(cache, "trellage", "source-digest-memo.json")
+}
+
+// A digest is reused only while every file keeps its inode, size, mtime and ctime; any change recomputes from the bytes.
+function statSignature(root: string, files: readonly string[]): string {
+  const hash = createHash("sha256")
+  for (const file of files) {
+    const status = lstatSync(sourceFilePath(root, file), { bigint: true })
+    hash.update([sourceFilePath(root, file), status.dev, status.ino, status.size, status.mtimeNs, status.ctimeNs].join("\0")).update("\0")
+  }
+  return hash.digest("hex")
+}
+
+function readDigestMemo(): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(readFileSync(digestMemoPath(), "utf8"))
+    return typeof value === "object" && value !== null ? (value as Record<string, string>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeDigestMemo(memo: Record<string, string>): void {
+  try {
+    const target = digestMemoPath()
+    mkdirSync(path.dirname(target), { recursive: true })
+    const temporary = `${target}.${process.pid}`
+    writeFileSync(temporary, JSON.stringify(Object.fromEntries(Object.entries(memo).slice(-digestMemoLimit))), { mode: 0o600 })
+    renameSync(temporary, target)
+  } catch {
+    // The memo only speeds up checks; a write failure changes nothing else.
+  }
+}
+
+function digestFiles(root: string, files: readonly string[], memoized = false): string {
+  if (!memoized || process.env.TRELLAGE_READINESS_MEMO !== "1") return computeDigest(root, files)
+  const signature = statSignature(root, files)
+  const memo = readDigestMemo()
+  const remembered = memo[signature]
+  if (remembered) return remembered
+  const digest = computeDigest(root, files)
+  writeDigestMemo({ ...memo, [signature]: digest })
+  return digest
+}
+
+function computeDigest(root: string, files: readonly string[]): string {
   const hash = createHash("sha256")
   for (const file of files) updateDigest(hash, file, readFileSync(sourceFilePath(root, file)))
   return hash.digest("hex")
 }
 
-export function sourceFingerprint(root: string): string {
-  return digestFiles(root, sourceFiles(root))
+export function sourceFingerprint(root: string, memoized = false): string {
+  return digestFiles(root, sourceFiles(root), memoized)
 }
 
 export async function sourceFingerprintAsync(root: string): Promise<string> {
@@ -475,6 +525,7 @@ function inventoryHash(
   root: string,
   development: boolean,
   directories?: ReadonlyMap<string, readonly string[]>,
+  statuses?: ReadonlyMap<string, BigIntStats>,
 ): string {
   safeDirectory(root)
   const hash = createHash("sha256")
@@ -486,7 +537,7 @@ function inventoryHash(
       if (!include(directory, name)) continue
       const candidate = path.join(directory, name)
       const relative = path.relative(root, candidate)
-      const status = lstatSync(candidate, { bigint: true })
+      const status = statuses?.get(candidate) ?? lstatSync(candidate, { bigint: true })
       hash
         .update(relative)
         .update("\0")
@@ -522,22 +573,23 @@ export async function validateOwnedTreeAsync(root: string, development = false):
   const include = inventoryIncludes(root, development)
   const pending = [root]
   const directories = new Map<string, readonly string[]>()
+  const statuses = new Map<string, BigIntStats>()
   let offset = 0
   while (offset < pending.length) {
     const batch = pending.slice(offset, offset + 16)
     offset += batch.length
     const loaded = await Promise.all(
-      batch.map(async (directory) => ({
-        directory,
-        names: (await readdirAsync(directory)).sort(),
-      })),
+      batch.map(async (directory) => {
+        const names = (await readdirAsync(directory)).sort()
+        const included = names.filter((name) => include(directory, name)).map((name) => path.join(directory, name))
+        const found = await Promise.all(included.map(async (candidate) => [candidate, await lstatAsync(candidate, { bigint: true })] as const))
+        return { directory, names, found }
+      }),
     )
-    for (const { directory, names } of loaded) {
+    for (const { directory, names, found } of loaded) {
       directories.set(directory, names)
-      for (const name of names) {
-        if (!include(directory, name)) continue
-        const candidate = path.join(directory, name)
-        const status = lstatSync(candidate)
+      for (const [candidate, status] of found) {
+        statuses.set(candidate, status)
         if (status.isDirectory()) {
           requireSafeStatus(candidate, "directory", status)
           pending.push(candidate)
@@ -545,7 +597,42 @@ export async function validateOwnedTreeAsync(root: string, development = false):
       }
     }
   }
-  return inventoryHash(root, development, directories)
+  return inventoryHash(root, development, directories, statuses)
+}
+
+// Cheap top-level signature: identity and change time of the owned root
+// entries and of the top-level node_modules entries. It does not descend into
+// packages; it is only a fast path that a full inventory check backs up.
+async function quickSignature(root: string, development: boolean): Promise<string> {
+  const include = inventoryIncludes(root, development)
+  const hash = createHash("sha256")
+  const level = async (directory: string) => {
+    const names = (await readdirAsync(directory)).sort().filter((name) => include(directory, name))
+    const found = await Promise.all(
+      names.map(async (name) => [name, await lstatAsync(path.join(directory, name), { bigint: true })] as const),
+    )
+    for (const [name, status] of found) {
+      hash
+        .update(path.relative(root, path.join(directory, name)))
+        .update("\0")
+        .update([status.mode, status.dev, status.ino, status.size, status.mtimeNs, status.ctimeNs].join("\0"))
+        .update("\0")
+    }
+  }
+  await level(root)
+  const modules = path.join(root, "node_modules")
+  if (existsSync(modules)) await level(modules)
+  return hash.digest("hex")
+}
+
+function readinessRecord(root: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(path.join(root, readyFile), "utf8")) as Record<string, unknown>
+}
+
+function persistReadiness(root: string, value: Record<string, unknown>): void {
+  const temporary = path.join(root, `${readyFile}.${process.pid}`)
+  writeFileSync(temporary, `${JSON.stringify(value)}\n`, { flag: "wx", mode: 0o644 })
+  renameSync(temporary, path.join(root, readyFile))
 }
 
 export function writeReadiness(root: string): void {
@@ -557,9 +644,20 @@ export function writeReadiness(root: string): void {
     dependencies: digestFiles(root, dependencyManifests(root)),
     inventory,
   }
-  const temporary = path.join(root, `${readyFile}.${process.pid}`)
-  writeFileSync(temporary, `${JSON.stringify(value)}\n`, { flag: "wx", mode: 0o644 })
-  renameSync(temporary, path.join(root, readyFile))
+  persistReadiness(root, value)
+}
+
+// Fast path for launches: source and manifest digests are still verified, but
+// the full inventory walk is skipped while the top-level signature matches.
+// Any mismatch falls back to the full check, which then refreshes the signature.
+export async function requireReadyQuickAsync(root: string): Promise<void> {
+  const development = !existsSync(path.join(root, sourceMarker))
+  const expected = readinessInventory(root)
+  const recorded = readinessRecord(root).quick
+  const current = await quickSignature(root, development)
+  if (recorded === current) return
+  requireInventory(root, expected, await validateOwnedTreeAsync(root, development))
+  persistReadiness(root, { ...readinessRecord(root), quick: current })
 }
 
 function readinessInventory(root: string): string {
@@ -574,9 +672,9 @@ function readinessInventory(root: string): string {
     !("bun" in value) ||
     value.bun !== "1.4.2" ||
     !("sources" in value) ||
-    value.sources !== sourceFingerprint(root) ||
+    value.sources !== sourceFingerprint(root, true) ||
     !("dependencies" in value) ||
-    value.dependencies !== digestFiles(root, dependencyManifests(root))
+    value.dependencies !== digestFiles(root, dependencyManifests(root), true)
   ) {
     throw new Error("source runtime is stale; run scripts/build-profile-compiler.sh explicitly")
   }

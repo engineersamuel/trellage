@@ -29,21 +29,21 @@ const boundaryProvider = () => ({
 
 describe("remaining guide prompt body budget", () => {
   it.each(["default", "pstack-workers"])("fits every authored %s workflow at its exact API and interactive body boundary", async (profile) => {
-    const loaded = await loadProfileGuide(guideRoot, { surface: "native", launcher: "fmx", profile })
+    const loaded = await loadProfileGuide(guideRoot, { surface: "native", launcher: "firstmate", profile })
     const base = firstmateRuntimeCatalog()
     const catalog = {
       ...base,
-      native: base.native.map((entry) => entry.launcher === "fmx" && entry.name === profile
+      native: base.native.map((entry) => entry.launcher === "firstmate" && entry.name === profile
         ? { ...entry, guide: loaded.guide, herdrCompatibility: { status: "untested" } }
         : entry),
     }
-    const entry = catalog.native.find((candidate) => candidate.launcher === "fmx" && candidate.name === profile)!
+    const entry = catalog.native.find((candidate) => candidate.launcher === "firstmate" && candidate.name === profile)!
     const location = "/fixture/project-\u{1f600}"
     const target = parseGuideProjectTargetV1({
       ...firstmateProjectC(), source: { kind: "local", location }, entryWorktree: location,
     })
     const originalIntent = "\u{1f600}".repeat(30_000)
-    const profileRef = `native:fmx/${profile}`
+    const profileRef = `native:firstmate/${profile}`
     for (const workflow of loaded.guide.workflows) {
       const context = {
         originalIntent, projectTarget: workflow.scope === "fleet" ? null : target, orchestration: entry.orchestration!,
@@ -60,7 +60,7 @@ describe("remaining guide prompt body budget", () => {
       })
       for (const candidate of generated.candidates) {
         expect(candidate.prompt.length).toBe(8000)
-        expect(candidate.command.args).toEqual([profile])
+        expect(candidate.command.args).toEqual(["run", "firstmate", profile])
       }
       expect(generated.profile.herdrCompatibility.status).toBe("untested")
       expect(api.generate.mock.calls[0]?.[0].bodyBudget).toBe(expectedBudget)
@@ -90,7 +90,7 @@ describe("remaining guide prompt body budget", () => {
 
   it("also reserves the unchanged original appendix for one-prompt delivery", () => {
     const context = { originalIntent: "  Keep this exact scope.\r\n\u{1f600}  " }
-    const prepared = prepareGuidePrompt(firstmateGuide, "review-project", "native:cdx/default", "Review.", context)
+    const prepared = prepareGuidePrompt(firstmateGuide, "review-project", "native:codex/default", "Review.", context)
     const frame = workflowPromptFrame(prepared.workflow)
     const appendix = `\n\n## Original human intent (unchanged)\n\n${context.originalIntent}`
     expect(prepared.bodyBudget).toBe(8000 - frame.beforeBody.length - frame.afterBody.length - appendix.length)
@@ -106,22 +106,22 @@ describe("remaining guide prompt body budget", () => {
       ...firstmateGuide.workflows[0]!, promptTemplate: `${"F".repeat(8000)}{{intent}}`,
     }] }
     const provider = boundaryProvider()
-    const prepared = () => prepareGuidePrompt(oversized, "review-project", "native:fmx/default", "Review.", {
+    const prepared = () => prepareGuidePrompt(oversized, "review-project", "native:firstmate/default", "Review.", {
       originalIntent: "Do not lose this input.", projectTarget: firstmateProjectC(), orchestration: firstmateOrchestration,
     })
     expect(prepared).toThrow("leave no body space")
-    const loaded = await loadProfileGuide(guideRoot, { surface: "native", launcher: "fmx", profile: "default" })
+    const loaded = await loadProfileGuide(guideRoot, { surface: "native", launcher: "firstmate", profile: "default" })
     const catalog = {
       ...base,
       native: base.native.map((entry) => {
-        if (entry.launcher !== "fmx" || entry.name !== "default") return entry
+        if (entry.launcher !== "firstmate" || entry.name !== "default") return entry
         const { orchestration: _orchestration, ...legacy } = entry
         return { ...legacy, guide: loaded.guide }
       }),
     }
     const oversizedIntent = "x".repeat(7990)
     await expect(runGuideGenerate(provider, catalog, guideRoot, {
-      intent: "Review.", originalIntent: oversizedIntent, profileRef: "native:fmx/default",
+      intent: "Review.", originalIntent: oversizedIntent, profileRef: "native:firstmate/default",
       workflowId: loaded.guide.workflows[0]!.id, model: "synthetic-model", effort: GuideEffort.Low,
     })).rejects.toThrow("leave no body space")
     expect(provider.generate).not.toHaveBeenCalled()

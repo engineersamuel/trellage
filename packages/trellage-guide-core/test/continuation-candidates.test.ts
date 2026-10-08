@@ -46,7 +46,7 @@ const draft = (): ContinuationDraft => {
     expectedOutput: `${title} results for the export.`,
     evidenceIds: ["message-1", "message-2"],
     importance: ActionImportance.Optional,
-    profileRef: "native:cdx/default",
+    profileRef: "native:codex/default",
     workflowId: "review",
     dependsOn: [],
     access: ActionAccess.Unknown,

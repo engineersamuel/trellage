@@ -19,10 +19,10 @@ import type {
 } from "../../src/continuation-provider.ts"
 
 export const continuationEntries: GuideMatchCatalogEntry[] = [{
-  ref: "native:cpx/default",
+  ref: "native:copilot/default",
   surface: "native",
   name: "default",
-  launcher: "cpx",
+  launcher: "copilot",
   description: "An assistant for scoped development and explanation.",
   sandbox: false,
   guide: {
@@ -65,7 +65,7 @@ const action = (index: number, title: string, brief: string, output: string): Ne
   whyNow: "The conversation asks for this scoped follow-up.",
   evidenceIds: ["message-0", "message-1"],
   importance: ActionImportance.Optional,
-  profileRef: "native:cpx/default",
+  profileRef: "native:copilot/default",
   workflowId: "assist",
   dependsOn: [],
   access: ActionAccess.ReadOnly,

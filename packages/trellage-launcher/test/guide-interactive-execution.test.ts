@@ -54,12 +54,12 @@ class RecordingRunner implements CommandRunner {
 }
 
 const command: CommandSpec = {
-  executable: "/opt/trellage/bin/cpx",
-  args: ["hve-core"],
+  executable: "/opt/trellage/bin/trx",
+  args: ["run", "copilot", "hve-core"],
 }
 const profile = (headlessPrompt: boolean): SelectedProfile => ({
   surface: "native",
-  launcher: "cpx",
+  launcher: "copilot",
   commandPath: command.executable,
   profile: "hve-core",
   headlessPrompt,
@@ -68,8 +68,8 @@ const profile = (headlessPrompt: boolean): SelectedProfile => ({
 // launcher still on Herdr's paste path.
 const agentPromptProfile: SelectedProfile = {
   surface: "native",
-  launcher: "jcx",
-  commandPath: "/opt/trellage/bin/jcx",
+  launcher: "jcode",
+  commandPath: "/opt/trellage/bin/trx",
   profile: "reviewer",
   headlessPrompt: false,
 }
@@ -86,7 +86,7 @@ const services = (
 
 const firstmateFixture = (name: "default" | "pstack-workers") => {
   const selected: SelectedProfile = {
-    surface: "native", launcher: "fmx", commandPath: "/fixture/fmx", profile: name, headlessPrompt: false,
+    surface: "native", launcher: "firstmate", commandPath: "/fixture/trx", profile: name, headlessPrompt: false,
     orchestration: parseFirstmateOrchestrationV1({
       schemaVersion: 1, kind: "firstmate", sourceRevision: "b".repeat(40),
       taskIdPrefix: name === "default" ? "fmd" : "fmp",
@@ -121,7 +121,7 @@ const firstmateFixture = (name: "default" | "pstack-workers") => {
 }
 
 const legacyFixture = (name: "default" | "pstack-workers") => {
-  const profileRef = `native:fmx/${name}`
+  const profileRef = `native:firstmate/${name}`
   const profile = selectedProfileFromCatalogRef(legacyFirstmateCatalog(), profileRef, "review-project")
   const prepared = prepareGuidePrompt(firstmateGuide, "review-project", profileRef, "Review the change.", {
     originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(),
@@ -137,7 +137,7 @@ const legacyFixture = (name: "default" | "pstack-workers") => {
 }
 
 const legacyInventory = (profile: string, readiness = "healthy"): CommandRunResult => ({
-  exitCode: 0, stderr: "", stdout: JSON.stringify({ schemaVersion: 1, launcher: "fmx", profile, readiness }),
+  exitCode: 0, stderr: "", stdout: JSON.stringify({ schemaVersion: 1, launcher: "firstmate", profile, readiness }),
 })
 
 describe("interactive guide result execution", () => {
@@ -171,7 +171,7 @@ describe("interactive guide result execution", () => {
       },
     )).resolves.toBe(0)
     expect(runInteractive).toHaveBeenCalledWith(
-      { executable: selected.commandPath, args: ["superpowers"] },
+      { executable: selected.commandPath, args: ["run", "codex", "superpowers"] },
       { cwd: "/repo", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }) },
     )
     expect(writes.join("")).toContain("Startup does not activate it.")
@@ -191,7 +191,7 @@ describe("interactive guide result execution", () => {
       },
     )).resolves.toBe(0)
     expect(runInteractive).toHaveBeenCalledWith(
-      { executable: selected.commandPath, args: ["default", "-p", candidate.prompt] },
+      { executable: selected.commandPath, args: ["run", "claude", "default", "-p", candidate.prompt] },
       { cwd: "/repo", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }) },
     )
     expect(writes).toEqual([])
@@ -212,7 +212,7 @@ describe("interactive guide result execution", () => {
       },
     )).resolves.toBe(2)
     expect(runner.calls).toHaveLength(2)
-    expect(runner.calls[1]?.args).toEqual(["pane", "run", "2-3", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cldx default"])
+    expect(runner.calls[1]?.args).toEqual(["pane", "run", "2-3", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run claude default"])
     expect(writes.join("")).toContain("needs-input in pane 2-3")
     expect(writes.join("")).toContain("The goal has not been activated.")
     expect(writes.join("")).toContain("Type '/goal '")
@@ -270,10 +270,10 @@ describe("interactive guide result execution", () => {
     const result = buildCurrentTerminalResult(profile, prompt, "/fixture/caller-a", context)
     await expect(executeGuideUiResult(result, services(runner, writes, runInteractive))).resolves.toBe(0)
     expect(runInteractive).toHaveBeenCalledExactlyOnceWith(
-      { executable: "/profiles/fmx", args: [name] },
+      { executable: "/profiles/trx", args: ["run", "firstmate", name] },
       { cwd: "/fixture/caller-a", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }) },
     )
-    expect(runner.calls.map(({ args }) => args)).toEqual([["inventory", name, "--json"]])
+    expect(runner.calls.map(({ args }) => args)).toEqual([["inventory", "firstmate", name, "--json"]])
     expect(writes.join("")).toContain("No inbox receipt or atomic fleet identity guard")
     expect(prompt.length).toBeLessThanOrEqual(8000)
     expect(JSON.stringify(result.command)).not.toContain("expected-fleet")
@@ -503,8 +503,8 @@ describe("interactive guide result execution", () => {
     expect(writes).toHaveLength(0)
     expect(runInteractive).toHaveBeenCalledWith(
       {
-        executable: "/opt/trellage/bin/cpx",
-        args: ["hve-core", "-i", "Draft the post."],
+        executable: "/opt/trellage/bin/trx",
+        args: ["run", "copilot", "hve-core", "-i", "Draft the post."],
       },
       {
         cwd: "/repo",
@@ -520,8 +520,8 @@ describe("interactive guide result execution", () => {
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
-        launcher: "cdx",
-        commandPath: "/opt/trellage/bin/cdx",
+        launcher: "codex",
+        commandPath: "/opt/trellage/bin/trx",
         profile: "pstack",
         headlessPrompt: false,
       },
@@ -533,8 +533,8 @@ describe("interactive guide result execution", () => {
     expect(writes).toHaveLength(0)
     expect(runInteractive).toHaveBeenCalledWith(
       {
-        executable: "/opt/trellage/bin/cdx",
-        args: ["pstack", "--", "Run the full workflow."],
+        executable: "/opt/trellage/bin/trx",
+        args: ["run", "codex", "pstack", "--", "Run the full workflow."],
       },
       {
         cwd: "/repo",
@@ -656,7 +656,7 @@ describe("interactive guide result execution", () => {
     expect(runner.calls).toHaveLength(2)
     expect(runner.calls[1]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "2-3", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cpx hve-core -i 'Draft the post.'"],
+      args: ["pane", "run", "2-3", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run copilot hve-core -i 'Draft the post.'"],
     })
     expect(writes).toHaveLength(0)
   })
@@ -669,8 +669,8 @@ describe("interactive guide result execution", () => {
     const writes: string[] = []
     const cdxProfile: SelectedProfile = {
       surface: "native",
-      launcher: "cdx",
-      commandPath: "/opt/trellage/bin/cdx",
+      launcher: "codex",
+      commandPath: "/opt/trellage/bin/trx",
       profile: "pstack",
       headlessPrompt: false,
     }
@@ -693,7 +693,7 @@ describe("interactive guide result execution", () => {
         "pane",
         "run",
         "2-4",
-        "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx pstack -- 'Run the full workflow.'",
+        "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run codex pstack -- 'Run the full workflow.'",
       ],
     })
     expect(writes).toHaveLength(0)
@@ -750,7 +750,7 @@ describe("interactive guide result execution", () => {
     await expect(executeGuideUiResult(result, services(runner, writes))).rejects.toThrow("pane launch failed")
     expect(runner.calls[2]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "3-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/jcx reviewer"],
+      args: ["pane", "run", "3-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run jcode reviewer"],
       options: { cwd: "/actual/path" },
     })
     expect(writes).toEqual(["Profile launch did not complete. Selected prompt:\n\nDraft the post.\n"])
@@ -783,7 +783,7 @@ describe("interactive guide result execution", () => {
     })
     expect(runner.calls[1]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "4-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/jcx reviewer"],
+      args: ["pane", "run", "4-1", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run jcode reviewer"],
       options: { cwd: "/returned/path" },
     })
     expect(writes).toHaveLength(0)

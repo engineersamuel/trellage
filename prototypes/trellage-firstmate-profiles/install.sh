@@ -31,7 +31,7 @@ install_lock="$runtime_parent/.fmx-install.lock"
 installed_launcher="$install_root/bin/fmx"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-firstmate-profiles"
-command_dir="$local_dir/bin"
+command_dir="$runtime_parent/.native-commands"
 command_path="$command_dir/fmx"
 
 native_claude_source="$repo_root/prototypes/trellage-claude-common/native-claude"
@@ -271,7 +271,7 @@ inject_test_point() {
 require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 require_regular_file "$source_dir/bin/fmx" 'launcher'
 require_regular_file "$source_dir/lib/fmx-worker" 'worker helper'
@@ -634,7 +634,7 @@ fi
 require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 acquire_install_lock
 if active_fmx_fleet_or_mutation >/dev/null; then
@@ -646,7 +646,7 @@ inject_test_point after-recovery
 
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/fmx" 'runtime root'
-require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 runtime_owned=false
 if [[ -e "$install_root" || -L "$install_root" ]]; then
@@ -804,3 +804,6 @@ release_install_lock \
   || refuse "could not release install lock: $install_lock"
 cleanup_staging
 printf 'Installed fmx at %s\n' "$command_path"
+
+# Retire only the old public symlink; retain the installed backend and runtime.
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" fmx "$installed_launcher" "$ownership_marker" "$ownership_value"

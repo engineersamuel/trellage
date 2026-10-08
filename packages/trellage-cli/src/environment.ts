@@ -1,21 +1,9 @@
-import { lstat, readFile, readdir } from "node:fs/promises"
+import { lstat, readdir } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-import { parse } from "smol-toml"
-import { Data, Effect, ParseResult, Schema } from "effect"
-
-const NonEmpty = Schema.String.pipe(Schema.minLength(1))
-
-const EnvironmentConfig = Schema.Struct({
-  provider: Schema.optionalWith(Schema.Literal("varlock"), { default: () => "varlock" as const }),
-  enabled: Schema.optionalWith(Schema.Boolean, { default: () => true }),
-  path: Schema.optional(NonEmpty),
-  required: Schema.optionalWith(Schema.Boolean, { default: () => false }),
-  strict_permissions: Schema.optionalWith(Schema.Boolean, { default: () => true }),
-})
-
-type EnvironmentConfig = Schema.Schema.Type<typeof EnvironmentConfig>
+import { Data, Effect } from "effect"
+import { expandTrellagePath, loadTrellageConfig } from "@trellage/runtime/native-config"
 
 export interface EnvironmentMetadata {
   readonly config_path: string
@@ -35,16 +23,7 @@ export class EnvironmentConfigError extends Data.TaggedError("EnvironmentConfigE
 const fail = (message: string): Effect.Effect<never, EnvironmentConfigError> =>
   Effect.fail(new EnvironmentConfigError({ message }))
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
 const isMissing = (cause: unknown): boolean => cause instanceof Error && "code" in cause && cause.code === "ENOENT"
-
-const expandPath = (candidate: string, home: string, base: string): string => {
-  if (candidate === "~") return home
-  if (candidate.startsWith("~/")) return path.join(home, candidate.slice(2))
-  return path.resolve(base, candidate)
-}
 
 const isEnvironmentFile = (name: string): boolean => name === ".env" || name.startsWith(".env.")
 
@@ -130,56 +109,19 @@ const inspectEnvironmentSource = (
     return true
   })
 
-const decodeEnvironment = (raw: unknown): Effect.Effect<EnvironmentConfig, EnvironmentConfigError> =>
-  Schema.decodeUnknown(EnvironmentConfig)(raw, { onExcessProperty: "error" }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EnvironmentConfigError({
-          message: `invalid [environment] configuration: ${ParseResult.TreeFormatter.formatErrorSync(cause)}`,
-        }),
-    ),
-  )
-
 export const environmentMetadata = (
   environment: NodeJS.ProcessEnv = process.env,
   home: string = os.homedir(),
 ): Effect.Effect<EnvironmentMetadata, EnvironmentConfigError> =>
   Effect.gen(function* () {
-    const configDirectory = environment.XDG_CONFIG_HOME
-      ? path.resolve(environment.XDG_CONFIG_HOME, "trellage")
-      : path.join(home, ".config", "trellage")
-    const configPath = environment.TRELLAGE_CONFIG
-      ? expandPath(environment.TRELLAGE_CONFIG, home, process.cwd())
-      : path.join(configDirectory, "config.toml")
-
-    const configStats = yield* Effect.tryPromise({
-      try: async () => {
-        try {
-          return await lstat(configPath)
-        } catch (cause) {
-          if (isMissing(cause)) return undefined
-          throw cause
-        }
-      },
-      catch: () => new EnvironmentConfigError({ message: `cannot inspect Trellage config: ${configPath}` }),
-    })
-    const configPresent = configStats !== undefined
-
-    let decoded: EnvironmentConfig
-    if (configPresent) {
-      yield* assertSafePath(configPath, "Trellage config", false, true)
-      const source = yield* Effect.tryPromise({
-        try: () => readFile(configPath, "utf8"),
-        catch: () => new EnvironmentConfigError({ message: `cannot read Trellage config: ${configPath}` }),
-      })
-      const raw = yield* Effect.try({
-        try: () => parse(source),
-        catch: (cause) => new EnvironmentConfigError({ message: `invalid Trellage config: ${String(cause)}` }),
-      })
-      decoded = yield* decodeEnvironment(isRecord(raw) && Object.hasOwn(raw, "environment") ? raw.environment : {})
-    } else {
-      decoded = yield* decodeEnvironment({})
-    }
+    const {
+      path: configPath,
+      present: configPresent,
+      config,
+    } = yield* loadTrellageConfig({ environment, home }).pipe(
+      Effect.mapError((cause) => new EnvironmentConfigError({ message: cause.message })),
+    )
+    const decoded = config.environment
 
     const override = environment.TRELLAGE_ENVIRONMENT
     if (override !== undefined && override !== "on" && override !== "off") {
@@ -187,7 +129,7 @@ export const environmentMetadata = (
     }
     const enabled = override === undefined ? decoded.enabled : override === "on"
     const configuredPath = decoded.path ?? path.dirname(configPath)
-    const environmentPath = expandPath(configuredPath, home, path.dirname(configPath))
+    const environmentPath = expandTrellagePath(configuredPath, home, path.dirname(configPath))
     const sourcePresent = enabled
       ? yield* inspectEnvironmentSource(environmentPath, decoded.required, decoded.strict_permissions)
       : false

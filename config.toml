@@ -1,0 +1,428 @@
+# Trellage skill and Native profile defaults. User configuration lives at ~/.config/trellage/config.toml.
+# Sources without tag or commit refresh on every profile load.
+schema_version = 1
+
+[skills]
+schema = 1
+
+[skills.sources.engineersamuel]
+repository = "https://github.com/engineersamuel/skills.git"
+select = [ "*" ]
+exclude = [ "deja-history" ]
+required = [ "ui-guidelines" ]
+allowWildcard = true
+allowExecutables = true
+
+[skills.sources.caveman]
+repository = "https://github.com/JuliusBrussee/caveman.git"
+select = [ "caveman" ]
+alwaysOn = true
+allowExecutables = true
+
+[skills.sources.mattpocock]
+repository = "https://github.com/mattpocock/skills.git"
+select = [ "grill-with-docs", "improve-codebase-architecture" ]
+alwaysOn = true
+allowExecutables = true
+
+[skills.sources.mattpocock-optimize]
+repository = "https://github.com/mattpocock/skills.git"
+select = [ "improve-codebase-architecture", "codebase-design" ]
+
+[skills.sources.show-me]
+repository = "https://github.com/humanlayer/skills.git"
+select = [ "show-me" ]
+allowExecutables = true
+
+[skills.sources.i-have-adhd]
+repository = "https://github.com/ayghri/i-have-adhd.git"
+select = [ "i-have-adhd" ]
+
+[skills.sources.ponytail-review]
+repository = "https://github.com/DietrichGebert/ponytail.git"
+select = [ "ponytail-review" ]
+
+[skills.sources.fleet-review]
+repository = "https://github.com/jsturtevant/copilot-plugins.git"
+select = [ "fleet-review" ]
+
+[skills.sources.mattpocock-code-review]
+repository = "https://github.com/mattpocock/skills.git"
+select = [ "code-review" ]
+
+[skills.sources.superpowers]
+repository = "https://github.com/obra/superpowers.git"
+select = [ "brainstorming", "dispatching-parallel-agents", "executing-plans", "finishing-a-development-branch", "receiving-code-review", "requesting-code-review", "subagent-driven-development", "systematic-debugging", "test-driven-development", "using-git-worktrees", "using-superpowers", "verification-before-completion", "writing-plans", "writing-skills" ]
+allowExecutables = true
+
+[skills.sources.impeccable]
+repository = "https://github.com/pbakaus/impeccable.git"
+select = [ "impeccable" ]
+allowExecutables = true
+
+[skills.sources.emil-design]
+repository = "https://github.com/emilkowalski/skills.git"
+select = [ "animate", "animation-vocabulary", "apple-design", "emil-design-eng", "find-animation-opportunities", "improve-animations", "pick-ui-library", "prototype", "review-animations" ]
+allowExecutables = true
+
+[skills.sources.hyperframes]
+repository = "https://github.com/heygen-com/hyperframes.git"
+select = [ "embedded-captions", "faceless-explainer", "figma", "general-video", "hyperframes", "hyperframes-animation", "hyperframes-cli", "hyperframes-core", "hyperframes-creative", "hyperframes-keyframes", "hyperframes-registry", "media-use", "motion-graphics", "music-to-video", "pr-to-video", "product-launch-video", "remotion-to-hyperframes", "slideshow", "talking-head-recut" ]
+allowExecutables = true
+
+[skills.sources.last30days]
+repository = "https://github.com/mvanhorn/last30days-skill.git"
+select = [ "last30days" ]
+allowExecutables = true
+
+[skills.sources.dsebban-omp]
+repository = "https://github.com/dsebban/skills.git"
+select = [ "orchestrate-omp", "poteto-mode", "pstack-omp" ]
+allowExecutables = true
+
+[skills.sources.pstack-portable]
+repository = "https://github.com/Aqua-123/pstack-for-codex.git"
+select = [ "bro", "make-bot-ui", "principle-attack-the-premise", "principle-boundary-discipline", "principle-build-the-lever", "principle-encode-lessons-in-structure", "principle-exhaust-the-design-space", "principle-experience-first", "principle-explain-the-number", "principle-fix-root-causes", "principle-foundational-thinking", "principle-guard-the-context-window", "principle-laziness-protocol", "principle-make-operations-idempotent", "principle-migrate-callers-then-delete-legacy-apis", "principle-minimize-reader-load", "principle-model-the-domain", "principle-never-block-on-the-human", "principle-outcome-oriented-execution", "principle-prove-it-works", "principle-redesign-from-first-principles", "principle-separate-before-serializing-shared-state", "principle-sequence-verifiable-units", "principle-subtract-before-you-add", "principle-test-behavior-not-implementation", "principle-type-system-discipline", "tdd", "teach", "technical-writing", "typescript-best-practices", "unslop" ]
+allowExecutables = true
+
+[skills.sources.omp-native]
+repository = "https://github.com/can1357/oh-my-pi.git"
+adapter = "omp-native"
+select = [ "semantic-compression", "system-prompts", "tool-prompt-optimization" ]
+allowExecutables = true
+
+[skills.sources.prompt-master]
+repository = "https://github.com/nidhinjs/prompt-master.git"
+select = [ "prompt-master" ]
+
+[skills.sources.astra-orchestrator]
+repository = "https://github.com/donvito/codex-astra-luna-orchestrator.git"
+select = [ "astra-orchestrator" ]
+
+[skills.sources.youtube-skills]
+repository = "https://github.com/ZeroPointRepo/youtube-skills.git"
+select = [ "youtube-full" ]
+
+[skills.sources.academic-pptx]
+repository = "https://github.com/Gabberflast/academic-pptx-skill.git"
+select = [ "academic-pptx" ]
+allowExecutables = true
+
+[skills.sources.slide-maker]
+repository = "https://github.com/addsumtech/slides_maker.git"
+select = [ "slide-maker" ]
+allowExecutables = true
+
+[skills.sources.antislop-core]
+repository = "https://github.com/miqdadbadjuber/anti-slop.git"
+select = [ "antislop" ]
+alwaysOn = true
+
+[skills.sources.antislop-addons]
+repository = "https://github.com/miqdadbadjuber/anti-slop.git"
+select = [ "antislop-ui", "antislop-copywriting", "antislop-human", "antislop-layoutmobile", "antislop-code" ]
+
+[skills.bundles]
+sandbox-common = [ "engineersamuel", "caveman", "mattpocock", "show-me", "i-have-adhd", "antislop-core", "antislop-addons" ]
+native-common = [ "engineersamuel", "show-me", "i-have-adhd", "ponytail-review", "fleet-review", "mattpocock-code-review", "antislop-core", "antislop-addons" ]
+guide-optimize-architecture = [ "mattpocock-optimize" ]
+comparison-common = [ "engineersamuel", "show-me", "i-have-adhd", "astra-orchestrator", "antislop-core", "antislop-addons" ]
+codex-common = [ "astra-orchestrator" ]
+codex-superpowers = [ "superpowers" ]
+claude-frontend-design = [ "impeccable", "emil-design", "hyperframes" ]
+claude-research = [ "last30days" ]
+claude-office = [ "academic-pptx" ]
+claude-office-charts = [ "academic-pptx", "slide-maker" ]
+omp-community = [ "dsebban-omp", "pstack-portable" ]
+pi-oh-my-pi = [ "omp-native" ]
+guide-prompt-master = [ "prompt-master" ]
+youtube = [ "youtube-skills" ]
+
+[native.sources.anti-slop]
+repository = "miqdadbadjuber/anti-slop"
+
+[native.sources.anthropic-skills]
+repository = "anthropics/skills"
+
+[native.sources.compound-engineering]
+repository = "everyinc/compound-engineering-plugin"
+
+[native.sources.hve-core]
+repository = "microsoft/hve-core"
+
+[native.sources.awesome-copilot]
+repository = "github/awesome-copilot"
+
+[native.sources.effective-html]
+repository = "plannotator/effective-html"
+
+[native.sources.tufte-vdqi]
+repository = "gnurio/tufte-vdqi-plugin"
+
+[native.sources.pstack]
+repository = "aqua-123/pstack-for-codex"
+
+[native.sources.ponytail]
+repository = "dietrichgebert/ponytail"
+
+[native.profiles.base]
+label = "Configured Native defaults"
+always = true
+
+[[native.profiles.base.skills]]
+source = "engineersamuel"
+names = [ "*" ]
+
+[[native.profiles.base.skills]]
+source = "show-me"
+names = [ "show-me" ]
+
+[[native.profiles.base.skills]]
+source = "i-have-adhd"
+names = [ "i-have-adhd" ]
+
+[[native.profiles.base.skills]]
+source = "ponytail-review"
+names = [ "ponytail-review" ]
+
+[[native.profiles.base.skills]]
+source = "fleet-review"
+names = [ "fleet-review" ]
+
+[[native.profiles.base.skills]]
+source = "mattpocock-code-review"
+names = [ "code-review" ]
+
+[[native.profiles.base.skills]]
+source = "antislop-core"
+names = [ "antislop" ]
+
+[[native.profiles.base.skills]]
+source = "antislop-addons"
+names = [ "antislop-ui", "antislop-copywriting", "antislop-human", "antislop-layoutmobile", "antislop-code" ]
+
+[native.profiles.superpowers]
+label = "Superpowers"
+
+[[native.profiles.superpowers.skills]]
+source = "superpowers"
+names = [ "brainstorming", "writing-plans", "executing-plans", "test-driven-development", "systematic-debugging", "verification-before-completion", "requesting-code-review", "receiving-code-review", "using-git-worktrees", "finishing-a-development-branch", "subagent-driven-development", "dispatching-parallel-agents", "writing-skills", "using-superpowers" ]
+
+[native.profiles.office]
+label = "Office documents and academic presentations"
+
+[[native.profiles.office.skills]]
+source = "anthropic-skills"
+names = [ "docx", "xlsx", "pptx", "pdf" ]
+
+[[native.profiles.office.skills]]
+source = "academic-pptx"
+names = [ "academic-pptx" ]
+
+[native.profiles.office-charts]
+label = "Office plus chart-heavy slide builder"
+
+[[native.profiles.office-charts.skills]]
+source = "anthropic-skills"
+names = [ "docx", "xlsx", "pptx", "pdf" ]
+
+[[native.profiles.office-charts.skills]]
+source = "academic-pptx"
+names = [ "academic-pptx" ]
+
+[[native.profiles.office-charts.skills]]
+source = "slide-maker"
+names = [ "slide-maker" ]
+
+[native.profiles.compound-engineering]
+label = "Compound Engineering"
+
+[[native.profiles.compound-engineering.skills]]
+source = "compound-engineering"
+names = [ "ce-brainstorm", "ce-plan", "ce-work", "ce-code-review", "ce-debug", "ce-compound", "ce-compound-refresh", "ce-commit", "ce-commit-push-pr", "ce-ideate", "ce-doc-review", "ce-optimize", "ce-polish", "ce-simplify-code", "ce-worktree", "ce-resolve-pr-feedback", "ce-babysit-pr", "lfg" ]
+
+[native.profiles.hve]
+label = "HVE Core RPI"
+
+[[native.profiles.hve.skills]]
+source = "hve-core"
+names = [ "rpi-research", "rpi-plan", "rpi-implement", "rpi-review", "rpi-challenger", "rpi-plan-critique", "rpi-walkthrough", "code-review", "pull-request" ]
+
+[native.profiles.plannotator]
+label = "Effective HTML artifacts"
+
+[[native.profiles.plannotator.skills]]
+source = "effective-html"
+names = [ "html", "html-plan", "html-diagram", "html-wireframe", "html-prototype", "design-artifact" ]
+
+[native.profiles.awesome]
+label = "Awesome Copilot essentials"
+
+[[native.profiles.awesome.skills]]
+source = "awesome-copilot"
+names = [ "git-commit", "code-tour", "breakdown-plan", "update-specification" ]
+
+[native.profiles.pstack]
+label = "pstack poteto-mode"
+
+[[native.profiles.pstack.skills]]
+source = "pstack"
+names = [ "poteto-mode", "tdd", "interrogate", "architect", "swarm", "reflect", "show-me-your-work" ]
+
+[native.profiles.youtube]
+label = "YouTube transcripts and research"
+
+[[native.profiles.youtube.skills]]
+source = "youtube-skills"
+names = [ "youtube-full" ]
+
+[native.profiles.ponytail]
+label = "Ponytail review"
+
+[[native.profiles.ponytail.skills]]
+source = "ponytail"
+names = [ "ponytail", "ponytail-review", "ponytail-audit" ]
+
+[native.profiles.tufte-vdqi]
+label = "Tufte visual display of quantitative information"
+
+[[native.profiles.tufte-vdqi.skills]]
+source = "tufte-vdqi"
+names = [ "tufte-chart", "tufte-critique" ]
+
+# Harness-scoped launch presets. Their runtime policy is provided by the registry.
+[native.profiles.preset-agency-azure]
+label = "agency / azure"
+harnesses = [ "agency" ]
+
+[native.profiles.preset-codex-pstack]
+label = "codex / pstack"
+harnesses = [ "codex" ]
+
+[[native.profiles.preset-codex-pstack.skills]]
+source = "pstack"
+names = [ "poteto-mode", "tdd", "interrogate", "architect", "swarm", "reflect", "show-me-your-work" ]
+
+[native.profiles.preset-codex-superpowers]
+label = "codex / superpowers"
+harnesses = [ "codex" ]
+
+[[native.profiles.preset-codex-superpowers.skills]]
+source = "superpowers"
+names = [ "brainstorming", "writing-plans", "executing-plans", "test-driven-development", "systematic-debugging", "verification-before-completion", "requesting-code-review", "receiving-code-review", "using-git-worktrees", "finishing-a-development-branch", "subagent-driven-development", "dispatching-parallel-agents", "writing-skills", "using-superpowers" ]
+
+[native.profiles.preset-codex-youtube]
+label = "codex / youtube"
+harnesses = [ "codex" ]
+
+[[native.profiles.preset-codex-youtube.skills]]
+source = "youtube-skills"
+names = [ "youtube-full" ]
+
+[native.profiles.preset-claude-default]
+label = "claude / default"
+harnesses = [ "claude" ]
+
+[native.profiles.preset-claude-office]
+label = "claude / office"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-office.skills]]
+source = "anthropic-skills"
+names = [ "docx", "xlsx", "pptx", "pdf" ]
+
+[[native.profiles.preset-claude-office.skills]]
+source = "academic-pptx"
+names = [ "academic-pptx" ]
+
+[native.profiles.preset-claude-office-charts]
+label = "claude / office-charts"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-office-charts.skills]]
+source = "anthropic-skills"
+names = [ "docx", "xlsx", "pptx", "pdf" ]
+
+[[native.profiles.preset-claude-office-charts.skills]]
+source = "academic-pptx"
+names = [ "academic-pptx" ]
+
+[[native.profiles.preset-claude-office-charts.skills]]
+source = "slide-maker"
+names = [ "slide-maker" ]
+
+[native.profiles.preset-copilot-awesome]
+label = "copilot / awesome"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-awesome.skills]]
+source = "awesome-copilot"
+names = [ "git-commit", "code-tour", "breakdown-plan", "update-specification" ]
+
+[native.profiles.preset-copilot-compound-engineering]
+label = "copilot / compound-engineering"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-compound-engineering.skills]]
+source = "compound-engineering"
+names = [ "ce-brainstorm", "ce-plan", "ce-work", "ce-code-review", "ce-debug", "ce-compound", "ce-compound-refresh", "ce-commit", "ce-commit-push-pr", "ce-ideate", "ce-doc-review", "ce-optimize", "ce-polish", "ce-simplify-code", "ce-worktree", "ce-resolve-pr-feedback", "ce-babysit-pr", "lfg" ]
+
+[native.profiles.preset-copilot-hve]
+label = "copilot / hve"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-hve.skills]]
+source = "hve-core"
+names = [ "rpi-research", "rpi-plan", "rpi-implement", "rpi-review", "rpi-challenger", "rpi-plan-critique", "rpi-walkthrough", "code-review", "pull-request" ]
+
+[native.profiles.preset-copilot-plannotator]
+label = "copilot / plannotator"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-plannotator.skills]]
+source = "effective-html"
+names = [ "html", "html-plan", "html-diagram", "html-wireframe", "html-prototype", "design-artifact" ]
+
+[native.profiles.preset-copilot-superpowers]
+label = "copilot / superpowers"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-superpowers.skills]]
+source = "superpowers"
+names = [ "brainstorming", "writing-plans", "executing-plans", "test-driven-development", "systematic-debugging", "verification-before-completion", "requesting-code-review", "receiving-code-review", "using-git-worktrees", "finishing-a-development-branch", "subagent-driven-development", "dispatching-parallel-agents", "writing-skills", "using-superpowers" ]
+
+[native.profiles.preset-copilot-tufte-vdqi]
+label = "copilot / tufte-vdqi"
+harnesses = [ "copilot" ]
+
+[[native.profiles.preset-copilot-tufte-vdqi.skills]]
+source = "tufte-vdqi"
+names = [ "tufte-chart", "tufte-critique" ]
+
+[native.profiles.preset-firstmate-default]
+label = "firstmate / default"
+harnesses = [ "firstmate" ]
+
+[native.profiles.preset-firstmate-pstack-workers]
+label = "firstmate / pstack-workers"
+harnesses = [ "firstmate" ]
+
+[native.profiles.preset-jcode-default]
+label = "jcode / default"
+harnesses = [ "jcode" ]
+
+[native.profiles.preset-omp-default]
+label = "omp / default"
+harnesses = [ "omp" ]
+
+[native.profiles.preset-omp-local]
+label = "omp / local"
+harnesses = [ "omp" ]
+
+[native.profiles.preset-pi-default]
+label = "pi / default"
+harnesses = [ "pi" ]
+
+[native.profiles.preset-prime-default]
+label = "prime / default"
+harnesses = [ "prime" ]

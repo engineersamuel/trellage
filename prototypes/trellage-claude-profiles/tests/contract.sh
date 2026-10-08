@@ -15,6 +15,7 @@ fail() {
 
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-cldx-contract.XXXXXX")" \
   || fail 'could not create fixture root'
+fixture_root="$(CDPATH= cd -P -- "$fixture_root" && pwd -P)"
 signal_pid=''
 cleanup() {
   if [[ "$signal_pid" =~ ^[1-9][0-9]*$ ]]; then
@@ -182,7 +183,7 @@ export FAKE_CLAUDE_SIGNAL_LOG="$fixture_root/signal.log"
 : >"$FAKE_CLAUDE_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/bin/cldx"
+command_path="$HOME/.local/share/trellage/.native-commands/cldx"
 runtime_root="$HOME/.local/share/trellage/cldx"
 profile_root="$HOME/.local/share/trellage/profiles/claude/default"
 profile_home="$profile_root/home"
@@ -759,8 +760,8 @@ cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
   || fail 'repair did not refresh the output style'
 
 unrelated_home="$fixture_root/unrelated-home"
-mkdir -p "$unrelated_home/.local/bin"
-printf 'unrelated\n' >"$unrelated_home/.local/bin/cldx"
+mkdir -p "$unrelated_home/.local/share/trellage/.native-commands"
+printf 'unrelated\n' >"$unrelated_home/.local/share/trellage/.native-commands/cldx"
 HOME="$unrelated_home" "$installer" >"$fixture_root/unrelated.out" 2>&1 \
   && fail 'installer replaced unrelated command'
 grep -Fq 'unrelated command' "$fixture_root/unrelated.out" \

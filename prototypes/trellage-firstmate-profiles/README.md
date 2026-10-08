@@ -1,7 +1,9 @@
-# Native Firstmate profiles (`fmx`)
+# Native Firstmate profiles
 
-`fmx` is the Trellage Native launcher for [Firstmate](https://github.com/kunchenguid/firstmate),
-an agent distribution that uses one coding agent to supervise a fleet. `fmx` runs the
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run firstmate PROFILE` launches [Firstmate](https://github.com/kunchenguid/firstmate),
+an agent distribution that uses one coding agent to supervise a fleet. `trx run firstmate PROFILE` runs the
 supervisor from a **pinned, overlaid runtime** and gives the supervisor and every
 worker isolated Trellage-managed Claude state.
 
@@ -37,8 +39,8 @@ instance is explicit and does not replace the worktree association.
 The associated worktree, confirmed task target, and supervisor pane location
 are separate. The supervisor still runs in its pinned runtime.
 
-Unqualified commands such as `fmx default`, `fmx repair default`, and
-`fmx update --all` retain their legacy scope. They do not select a fleet from
+Unqualified commands such as `trx run firstmate default`, `trx repair firstmate default`, and
+`trx upgrade firstmate --all` retain their legacy scope. They do not select a fleet from
 the current directory or enumerate every named instance. Use
 `--instance UUID` for scoped operations; `--instance legacy` explicitly
 selects the shared legacy root for a profile. Names resolve to UUIDs once,
@@ -102,13 +104,13 @@ hand its own terminal to its one selected supervisor.
 In a third shell, inspect both associations with their actual absolute paths:
 
 ```sh
-fmx instances resolve default --worktree /absolute/worktree-a --json
-fmx instances resolve default --worktree /absolute/worktree-b --json
+trx instances firstmate resolve default --worktree /absolute/worktree-a --json
+trx instances firstmate resolve default --worktree /absolute/worktree-b --json
 ```
 
 Both results must be `matched`. Their descriptor UUIDs, roots, and task
 prefixes must differ. Use each UUID with
-`fmx inventory default --instance UUID --json` to inspect its own fleet.
+`trx inventory firstmate default --instance UUID --json` to inspect its own fleet.
 A later guide invocation in worktree A must recommend A's existing UUID,
 not a new instance or B's fleet. A saved request confirms inbox acceptance;
 use the supervisor and worker results to confirm task execution.
@@ -120,28 +122,28 @@ The unqualified commands below retain their legacy profile scope. Add
 reviewed creation flow rather than `setup` to invent a new instance.
 
 ```
-fmx PROFILE [FIRSTMATE_ARGS...]     start or safely recover the supervisor
-fmx list [--json]                   static catalog; never probes anything
-fmx inventory PROFILE --json        live readiness and fleet state
-fmx prepare PROFILE --json --expected-source-revision COMMIT
+trx run firstmate PROFILE [FIRSTMATE_ARGS...]     start or safely recover the supervisor
+trx list [--json]                   static catalog; never probes anything
+trx inventory firstmate PROFILE --json        live readiness and fleet state
+trx prepare firstmate PROFILE --json --expected-source-revision COMMIT
                                    safely prepare existing owned profile state
-fmx setup PROFILE|--all             install the pinned runtime and profile state
-fmx doctor PROFILE                  diagnose without changing anything
-fmx repair PROFILE                  restore managed state
-fmx skills-update PROFILE           copy refreshed cached skills only
-fmx update [--check] PROFILE|--all  move the runtime to the catalog pin
-fmx submit PROFILE --json           save a text request from bounded JSON stdin
-fmx receipt PROFILE --json          look up the same request ID from JSON stdin
+trx setup firstmate PROFILE|--all             install the pinned runtime and profile state
+trx doctor firstmate PROFILE                  diagnose without changing anything
+trx repair firstmate PROFILE                  restore managed state
+trx upgrade firstmate PROFILE --skills-only   copy refreshed cached skills only
+trx upgrade firstmate [--check] PROFILE|--all  move the runtime to the catalog pin
+trx submit firstmate PROFILE --json           save a text request from bounded JSON stdin
+trx receipt firstmate PROFILE --json          look up the same request ID from JSON stdin
 ```
 
 Instance discovery and creation are separate from the static profile catalog:
 
 ```text
-fmx instances list PROFILE --json [--limit N] [--cursor CURSOR]
-fmx instances resolve PROFILE --worktree PATH --json
-fmx instances plan PROFILE --name NAME --worktree PATH --json --expected-source-revision COMMIT
-fmx instances create PROFILE --json --approve-creation PLAN_SHA256
-fmx instances refresh-locator PROFILE --instance UUID --worktree PATH --json --expected-binding-digest SHA256 --confirm
+trx instances firstmate list PROFILE --json [--limit N] [--cursor CURSOR]
+trx instances firstmate resolve PROFILE --worktree PATH --json
+trx instances firstmate plan PROFILE --name NAME --worktree PATH --json --expected-source-revision COMMIT
+trx instances firstmate create PROFILE --json --approve-creation PLAN_SHA256
+trx instances firstmate refresh-locator PROFILE --instance UUID --worktree PATH --json --expected-binding-digest SHA256 --confirm
 ```
 
 Creation receives the inner `plan` object from the planning response on stdin,
@@ -246,7 +248,7 @@ plan names all tool versions, the destination, network sources and other
 state paths. Approving that plan uses:
 
 ```text
-fmx prepare PROFILE --json --expected-source-revision COMMIT --install-prerequisites PLAN_ID
+trx prepare firstmate PROFILE --json --expected-source-revision COMMIT --install-prerequisites PLAN_ID
 ```
 
 `COMMIT` must still match the selected source revision, and `PLAN_ID` must
@@ -323,8 +325,8 @@ as a recovery shortcut.
 
 ## First-launch prerequisites
 
-`fmx setup` installs the pinned Firstmate runtime but does not silently change
-the host toolchain. On the first supervisor launch, `fmx` runs Firstmate's own
+`trx setup firstmate default` installs the pinned Firstmate runtime but does not silently change
+the host toolchain. On the first supervisor launch, `trx run firstmate PROFILE` runs Firstmate's own
 detect-only, network-disabled prerequisite check with the selected backend and
 the exact PATH that the supervisor and workers will receive.
 
@@ -408,7 +410,7 @@ the catalog pin and never contacts the network. `update` without `--check`
 always fetches whenever the runtime must change or be reinstalled, and reports
 `is current` without fetching when the installed runtime already matches the
 pin. Either way it installs only the catalog pin; it is never a "latest" fetch.
-`fmx harness-version PROFILE` reports that profile's catalog pin as `latest`,
+`trx harness-version firstmate PROFILE` reports that profile's catalog pin as `latest`,
 not the current upstream default-branch commit.
 For named instances, include `--instance UUID`; installed-version evidence is
 instance-specific even when several instances use the same profile pin.
@@ -419,7 +421,7 @@ The overlay is small, keyed by commit, and stored in `overlay/<commit>/`.
 
 - **`bin/fm-update.sh`** and the `updatefirstmate` skill: firstmate self-update
   is refused whenever a `.fmx-managed` marker is present, with a diagnostic that
-  points at `fmx update <profile>`. Unmanaged clones are untouched.
+  points at `trx upgrade firstmate <profile>`. Unmanaged clones are untouched.
 - **`bin/fm-brief.sh`**: reads one worker-policy file from
   `FMX_WORKER_POLICY_FILE` and inserts it once into ship and scout briefs.
   Secondmate charters never receive it. The size bound is **fixed at 16384
@@ -482,7 +484,7 @@ Launcher runtime, removed by `uninstall.sh`:
   prerequisite-lock/{manifest.json,npm/{package.json,package-lock.json}}
   prerequisites/<lock-identity>/   consent-installed shared toolchain
   lib/              managed worker, control, registry, instance, overlay, prerequisite, and Claude helpers
-~/.local/bin/fmx -> ...
+
 ```
 
 `uninstall.sh` removes the launcher runtime and these managed prerequisite
@@ -802,7 +804,7 @@ the boundary with an explicit diagnostic rather than started without its
 
 ## Inventory evidence
 
-`fmx inventory PROFILE --json` is the machine-readable acceptance surface.
+`trx inventory firstmate PROFILE --json` is the machine-readable acceptance surface.
 Source and overlay evidence reads local files only. A healthy readiness verdict
 also runs `doctor`, including its local proxy and GitHub authentication checks.
 
@@ -834,7 +836,7 @@ the GitHub identity check and the shared Claude health checks, so producing
 `.readiness` is **not** an offline operation. Assert `.readiness` when you want
 the live verdict; assert the digest fields when you want the offline identity.
 
-`fmx list [--json]` stays a pure projection of `catalog.json`: it never reads a
+`trx list [--json]` stays a pure projection of `catalog.json`: it never reads a
 profile root, never hashes a runtime, and never touches the network.
 
 ## Tests

@@ -129,7 +129,7 @@ export interface BasketDestination {
 
 export const previewDestination: BasketDestination = {
   session: "profile-match",
-  launcher: "cldx",
+  launcher: "claude",
   harness: "claude",
   profile: "default",
   model: "claude-opus-5",

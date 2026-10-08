@@ -797,13 +797,19 @@ class NativeTuiMatrixTest(unittest.TestCase):
                 self.assertFalse((self.state / "events.log").exists())
                 self.write_config()
 
+    def test_legacy_discovery_generates_canonical_launch_commands(self) -> None:
+        namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
+        adapter = namespace["load_config"](PRODUCTION_CONFIG).adapters["codex"]
+        profile = namespace["parse_profile"]({"launcher": "cdx", "harness": "codex", "name": "pstack"})
+        self.assertEqual(namespace["prepare_command"]("trx", profile, adapter), ["trx", "run", "codex", "pstack"])
+
     def test_production_config_covers_every_router_launcher(self) -> None:
         config = json.loads(PRODUCTION_CONFIG.read_text())
-        router = (REPOSITORY_ROOT / "prototypes" / "trellage-router" / "bin" / "trx").read_text()
-        discovered = set(re.findall(r"discover_launcher ([a-z0-9]+) ", router))
+        registry = (REPOSITORY_ROOT / "packages" / "trellage-runtime" / "src" / "native-run" / "registry.ts").read_text()
+        discovered = set(re.findall(r'register\("([a-z0-9]+)"', registry)) | {"grok"}
         self.assertEqual(set(config["launchers"]), discovered)
         self.assertTrue(all(adapter in config["adapters"] for adapter in config["launchers"].values()))
-        for adapter_name in ("agency-copilot", "copilot"):
+        for adapter_name in ("agency", "copilot"):
             self.assertNotIn("--mode", config["adapters"][adapter_name]["launchArgs"])
         self.assertEqual(len(config["adapters"]["grok"]["exitSteps"]), 2)
         self.assertTrue(
@@ -839,8 +845,8 @@ class NativeTuiMatrixTest(unittest.TestCase):
         for command in (
             "scripts/verify-native-tuis",
             "make native-tui-matrix",
-            "scripts/verify-native-tuis --launcher cldx --profile default",
-            "scripts/verify-native-tuis --live --launcher cldx --profile default",
+            "scripts/verify-native-tuis --launcher claude --profile default",
+            "scripts/verify-native-tuis --live --launcher claude --profile default",
             "make native-tui-matrix-test",
         ):
             self.assertIn(command, readme)

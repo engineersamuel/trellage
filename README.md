@@ -130,9 +130,9 @@ path read-only, binds its host port to `127.0.0.1`, and disables failed
 request-body logging. No host credential file is copied.
 
 The workflow verifies one exact `OK` response from each Native pair through
-`trx run`: `cpx/hve`, `cdx/pstack`, `cldx/default`, `grx/superpowers`,
-`jcx/default`, `omp/copilot`, `picx/default`, and `prx/default`. It then builds
-and verifies `trellage --profile claude-council`. For `fmx`, it avoids a
+`trx run`: `copilot/hve`, `codex/pstack`, `claude/default`, composed `grok/superpowers`,
+`jcode/default`, `omp/default`, `pi/default`, and `prime/default`. It then builds
+and verifies `trellage --profile claude-council`. For Firstmate, it avoids a
 vacuous paid fleet prompt and instead verifies setup, doctor, healthy routed
 inventory, the exact Firstmate source pin, and the managed overlay for both
 profiles. `trx run` performs the same owned-runtime and catalog validation as
@@ -176,7 +176,7 @@ Four resolution commands, four different jobs:
   lock and install the complete Prime npm and Python bootstrap closures
   offline.
 
-Skill sources and bundles are approved in [`skills.json`](skills.json).
+Skill sources and bundles are approved in [`config.toml`](config.toml).
 Profiles select bundle names with `skill_bundles`; they do not store skill
 refs or digests. Wildcard sources may declare an `exclude` list for skills
 that must never enter any consuming bundle and a `required` list that makes
@@ -211,9 +211,9 @@ explicitly ask the agent to read and apply the profile's
 `skills/i-have-adhd/SKILL.md` file instead of using its `skill` tool. Keep the
 manual-only metadata; removing it would permit automatic activation.
 
-JCode does not enforce the upstream manual-only metadata. `jcx` therefore keeps
+JCode does not enforce the upstream manual-only metadata. Its adapter therefore keeps
 this skill outside JCode's automatic discovery paths. Use
-`jcx skill i-have-adhd "PROMPT"` for a one-shot request with the skill applied.
+`trx skill jcode i-have-adhd "PROMPT"` for a one-shot request with the skill applied.
 See the [JCode manual skill instructions](prototypes/trellage-jcode-profiles/README.md#manual-output-skill)
 for use in an existing interactive session. After explicit activation, the
 upstream mode lasts for that session until you request `stop adhd mode` or
@@ -426,11 +426,11 @@ the isolated container.
 
 Trellage bundles Varlock and uses it automatically for Sandbox new, prompt,
 and resume launches and for Native profile launches that declare required
-environment variables. Always invoke `trellage`, `cdx`, or `trx` directly:
+environment variables. Invoke `trellage` or `trx` directly:
 
 ```bash
 trellage --profile claude-research
-cdx youtube
+trx run codex youtube
 trx
 trellage list --json --full
 ```
@@ -473,7 +473,7 @@ chmod 600 ~/.config/trellage/.env.local
 
 On launch, Trellage resolves the Varlock source before it captures host credentials. The resolved `PLAYWRIGHT_MCP_EXTENSION_TOKEN` is then forwarded only to the final Claude process, allowing the profile to expose both Playwright and Obscura. Existing process environment values take precedence over file values, so explicit credentials supplied by automation remain authoritative.
 
-The Native `cdx youtube` profile uses the same source and policy. Add
+The Native `trx run codex youtube` profile uses the same source and policy. Add
 `TRANSCRIPT_API_KEY` to the schema and value file:
 
 ```dotenv
@@ -487,10 +487,9 @@ TRANSCRIPT_API_KEY=
 TRANSCRIPT_API_KEY=replace-with-token
 ```
 
-`cdx` asks Varlock to inject only the environment names required by the
+The Codex adapter asks Varlock to inject only the environment names required by the
 selected profile. It then removes the key from the launcher environment before
-setup, skill, Git, Node, inventory, and other helper subprocesses run. `trx`
-gets the same behavior because it starts the installed `cdx` launcher.
+setup, skill, Git, Node, inventory, and other helper subprocesses run.
 
 ### Configuration
 
@@ -521,6 +520,97 @@ trellage doctor --profile claude-research
 ```
 
 Doctor reports `environment: varlock (ready)` when `.env.local` is available and secure. See the [prototype guide](prototypes/trellage/README.md#automatic-environment-loading) for the complete runtime details.
+
+### Native runtime composition (`trx run`)
+
+```fish
+trx run                                   # selector: harness, profiles, model, effort
+trx run pi superpowers office             # stack profiles on top of the always-on ones
+trx run pi --no-always                    # clean harness without always-on profiles
+trx run claude superpowers --model NAME --effort high
+trx run claude superpowers --continue     # resume the latest conversation
+trx run claude superpowers --resume       # pick a conversation (--resume=ID for one)
+trx run grok superpowers                    # defaults to grok-4.7 with medium effort
+trx run pi superpowers --dry-run          # prepare and show the launch plan only
+```
+
+Each launch composes the selected skills into a clean, content-addressed
+generation under `~/.local/share/trellage/native-run` and points the harness at
+it. Unpinned sources are checked every launch; a failed refresh warns and uses
+the last good cache, and no cache plus no network stops the launch. Selections
+are remembered per worktree, then repository, then globally.
+Launch presets backed by persistent homes allow one active composed session per
+harness/preset, across all worktrees. Other presets remain independent. Setup,
+repair, skill updates, and runtime upgrades reject a busy preset so they cannot
+replace skills used by a running session. Finish the owning operation or shut
+down its session, then retry; `trx shutdown prime default` remains available.
+Firstmate retains its existing per-instance fleet admission, so distinct instance
+UUIDs can run concurrently while fleet and shared-resource mutations remain guarded.
+Only Pi has proven selected-only isolation; Copilot, Claude, Codex, and Grok launch by
+default even though unselected repository or host skills may load; pass
+`--require-proven-isolation` to refuse instead. Grok still uses its native
+`workspace` OS sandbox even though repository resource discovery remains visible.
+
+Resume: conversations live in a per-composition `state/` folder that every new
+generation links to, so `--continue`, `--resume` and `--resume=ID` keep working
+across skill updates. Use the same harness and profiles (model and effort may
+differ). After the harness exits, `trx` prints the exact resume command.
+The model picker lists Frontier models first, from `http://127.0.0.1:8080/v1/models`
+(override with `TRELLAGE_MODELS_URL`), cached in `~/.cache/trellage/native-run/models.json`.
+
+Profiles with `always = true` join every run (optionally limited with
+`harnesses = ["pi"]`), so one profile such as `base` holds the default skills.
+A profile can also list `instructions = ["rundown"]`; each id maps to a Markdown
+file declared under `[native.instructions.ID]` (`file` is relative to the config
+directory). The text is written to the harness's user-instruction file: Pi
+`APPEND_SYSTEM.md`, Copilot `copilot-instructions.md`, Claude `CLAUDE.md`, Codex
+`AGENTS.md`, Grok `Agents.md`. See `docs/examples/trellage-config.toml`.
+
+Grok uses `grok` from `PATH`; set `TRELLAGE_GROK_BIN` to an alternate binary.
+The adapter routes model requests to `copilot-proxy-rs`, pins API-key
+authentication in generated `config.toml`, and supplies a non-secret local
+proxy token through `XAI_API_KEY`. It does not create, copy, or require
+`auth.json`. Before launch, it records the exact canonical worktree as trusted
+inside the generated Grok home and passes `--trust`; folder trust remains
+enabled and other directories remain untrusted. It forwards the current `github.com` `gh`
+credential immediately before launch when no explicit GitHub token is set.
+Set `TRELLAGE_GROK_GH_AUTH_BRIDGE=0` to disable that bridge.
+Grok does not expose a separate plan-mode effort setting. Enter plan mode with
+`/plan`, then use `/effort xhigh`; normal mode defaults to `medium`.
+
+### Native capability catalog
+
+The shared config reader accepts `schema_version = 1` and a Native catalog
+alongside `[environment]`. Existing environment-only files need no migration.
+This is the configuration layer for `trx run` composition above. The
+[Native discovery gate](docs/native-sandbox-research.md#6-runtime-composition-discovery-gate)
+must pass before launch behavior or command ownership changes.
+
+```toml
+schema_version = 1
+
+[native.sources.superpowers]
+repository = "obra/superpowers"
+
+[native.profiles.planning]
+label = "Planning"
+skills = [{ source = "superpowers", names = ["brainstorming", "writing-plans"] }]
+```
+
+Sources accept a GitHub `owner/repository` identity, plus an optional exact
+`tag` or full 40-character `commit`, but not both. Repository and commit
+identities are normalized to lowercase; tag spelling is preserved. Omitting a
+pin declares default-branch tracking. The reader validates this intent but
+fetching and caching happen in `trx run`.
+
+Profiles list explicit skill names; no wildcard or common baseline is added.
+Plugin declarations use
+`plugins = [{ source = "declared-source", harness = "claude", path = "." }]`.
+This records a target-specific contribution, not cross-harness plugin
+compatibility. Undeclared sources, unsafe paths, unknown Native keys, and
+unsupported schema versions fail config loading in both the compiler and
+Native environment helper, even when environment loading is disabled.
+The reader does not rewrite the user's file.
 
 Profile source files are architecture-neutral editable intent. Development
 receipts and release locks currently support native ARM64 only. `trellage`
@@ -660,34 +750,34 @@ host.
 
 ### Fresh-machine onboarding
 
-Each native launcher wraps a real, already-installed agent CLI; `trx` itself
-is just a picker over whichever launchers are installed. On a brand-new
-machine:
+`trx` provides a static catalog and routes each harness to its private backend.
+Install the dependencies for the harnesses you use. On a brand-new machine:
 
-1. **Confirm `~/.local/bin` is on `PATH`.** Every installer places its command
-   there. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile if
+1. **Confirm `~/.local/bin` is on `PATH`.** The router installer places `trx`
+   there; harness installers register private backends. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile if
    it is missing, then reload the shell.
 2. **Install only the underlying agent CLIs you actually use**, each launcher
    only needs its own dependency:
-   - `cdx` (Codex) needs the `codex` CLI (`npm install -g @openai/codex`),
+   - Codex needs the `codex` CLI (`npm install -g @openai/codex`),
      Node.js 22+, npm, and `python3`.
-   - `cpx` (GitHub Copilot) needs `copilot` (`gh extension install
+   - GitHub Copilot needs `copilot` (`gh extension install
      github/gh-copilot` or the standalone Copilot CLI) already authenticated,
      plus `jq` and `python3`.
-   - `agx` (Agency) needs Microsoft Agency on `PATH` or at
+   - Agency needs Microsoft Agency on `PATH` or at
      `~/.config/agency/CurrentVersion/agency`, Node.js, npm, npx, and either
      complete Azure environment credentials or an existing `az login`.
-   - `cldx` (Claude Code) needs the `claude` CLI (`npm install -g
+   - Claude Code needs the `claude` CLI (`npm install -g
      @anthropic-ai/claude-code`) and `python3`.
-   - `grx` (Grok) needs the `grok` CLI already logged in
-     (`~/.grok/auth.json` present).
-   - `jcx` (jcode), `omp` (Oh My Pi), and `picx` (Pi) need `mise` and `curl`.
+   - composed Grok needs the `grok` CLI. `trx run grok` uses
+     `copilot-proxy-rs`, generated API-key-only configuration, and Grok's
+     native workspace sandbox; it does not require or copy an xAI login.
+   - JCode, OMP, and Pi need `mise` and `curl`.
      First use resolves the latest stable runtime and records the installed
      version locally for offline reuse.
-   - `prx` (Prime Agent) needs `mise`, Node 22+, `npm`, `curl`, `jq`, **and
+   - Prime Agent needs `mise`, Node 22+, `npm`, `curl`, `jq`, **and
      `uv`** (`mise use -g uv` if it is not already on `PATH`) to bootstrap its
      Python kernel venv.
-   - `fmx` (Firstmate) needs the `claude` CLI (`npm install -g
+   - Firstmate needs the `claude` CLI (`npm install -g
      @anthropic-ai/claude-code`), `git`, `gh`, `jq`, `python3`, authenticated
      host `gh` configuration, and either a Herdr pane or `tmux` for its
      backend. On first launch it detects the remaining Firstmate-specific
@@ -695,13 +785,10 @@ machine:
      consent before installing them under
      `~/.local/share/trellage/fmx/prerequisites/`. It does not install global
      npm packages or global agent hooks.
-3. **`trx` requires every one of the ten launchers to be installed** before
-   it will list or launch anything — it errors with `required launcher not
-   found on PATH: <name>` otherwise. If you only use a subset of harnesses,
-   skip `trx` and run that launcher's binary (`cpx`, `grx`, …) directly
-   instead of installing agent CLIs you don't need.
-4. Several profiles (`cldx`, `fmx`, `jcx`, `prx`, and `omp`'s `copilot` profile) talk
-   to a keyless `copilot-proxy-rs` service at `http://127.0.0.1:8080`. Start
+3. **Browse with `trx list`.** Listing does not require every harness to be
+   installed. Launch with `trx run HARNESS PROFILE`.
+4. Claude, Firstmate, JCode, Prime, Pi, Grok, and the default Codex provider use
+   the keyless `copilot-proxy-rs` service at `http://127.0.0.1:8080`. Start
    that proxy and make sure it has a valid GitHub Copilot device-flow login
    before using those launchers. A `401` or `GitHub OAuth device flow is not
    available in this non-interactive process` error means the proxy has no
@@ -726,11 +813,11 @@ machine:
    Copilot API rejects it with "Copilot token request denied" because it
    lacks the Copilot OAuth app's scope.
 
-Once `copilot-proxy-rs` is authenticated, `omp`'s keyless `local` profile
+OMP default uses native Copilot authentication. Its keyless `local` profile
 (routed to a self-hosted Qwen model, not GitHub Copilot) is a separate setup
 and is not fixed by the device-flow login above.
 
-Install the native agent launchers and optional profile router from the
+Install the private harness backends and the `trx` router from the
 repository root:
 
 ```bash
@@ -739,7 +826,6 @@ repository root:
 (cd prototypes/trellage-agency-profiles && ./install.sh)
 (cd prototypes/trellage-claude-profiles && ./install.sh)
 (cd prototypes/trellage-firstmate-profiles && ./install.sh)
-(cd prototypes/trellage-grok-profiles && ./install.sh)
 (cd prototypes/trellage-jcode-profiles && ./install.sh)
 (cd prototypes/trellage-omp-profiles && ./install.sh)
 (cd prototypes/trellage-picx-profiles && ./install.sh)
@@ -751,22 +837,21 @@ Then set up each profile you plan to use and confirm it's healthy before
 launching, for example:
 
 ```bash
-cpx setup --all
-agx setup trellage-azure
-grx setup --all
-jcx setup
-omp setup
-picx setup
-cdx setup pstack
-prx setup
-fmx setup default
-cpx doctor awesome
+trx setup copilot --all
+trx setup agency azure
+trx setup jcode
+trx setup omp default
+trx setup pi
+trx setup codex pstack
+trx setup prime
+trx setup firstmate default
+trx doctor copilot awesome
 trx list
 ```
 
-An explicit `setup` step is not strictly required for `agx`, `cdx`, `cpx`, `cldx`,
-`grx`, `jcx`, `omp`, `picx`, or `prx`; those launchers self-heal on first
-launch. `fmx` is intentionally different: run `fmx setup PROFILE` first so
+An explicit `setup` step is not required for Agency, Codex, Copilot, Claude,
+JCode, OMP, Pi, or Prime; those backends self-heal on first
+launch. Firstmate requires explicit setup: run `trx setup firstmate PROFILE` first so
 the pinned Firstmate source and overlay are installed as an explicit,
 reviewable step. Running `setup`/`doctor` ahead of time is recommended for
 every launcher so missing prerequisites are reported before a session starts.
@@ -797,41 +882,51 @@ source pins are preserved. Unsupported profiles and failures are reported;
 independent updates continue. This does not install Trellage or restart
 sessions. `trellage upgrade all` remains Container-only.
 
-The first native setup or launch fetches `native-common` from the approved
-default branches and publishes one shared cache. Later launches use that cache
-without network access. Refresh it only when you choose:
+`config.toml` is the skill source of truth for Native, Sandbox, and comparison
+profiles. Sources with an explicit commit or tag stay pinned during launch.
+Unpinned sources attempt a default-branch refresh on every profile load.
+A failed refresh warns and reuses a validated matching cache; without one,
+the launch fails. Each running session retains its selected snapshot.
 
 ```bash
 trx skills status
-trx skills update
+trx skills update                 # Refresh latest sources and verify pins.
+trx skills update --check         # Report available changes.
+trx skills update --upgrade-pins  # Persist newer pinned versions atomically.
 ```
 
-An update is atomic. If fetch or validation fails, the previous cache and
-profile skills remain available.
-
-`trx skills update` remains a cache-only maintenance command. Use the unified
-`trx upgrade all` operation to update harnesses and deployed skill copies together.
+An unsuccessful update preserves the previous cache and configuration.
+Use `trx upgrade all` to update harnesses and deployed skill copies together.
 
 Reinstall the Native launchers before refreshing skills after a catalog or
 shared-helper change. For `i-have-adhd`, the updated JCode adapter must be
 installed before `trx skills update`; publishing only the catalog is not enough.
-Then copy the refreshed cache with each launcher's `skills-update PROFILE`
-command, or let its next normal launch sync the cache. Existing Sandbox and
+Then synchronize the refreshed skills with `trx upgrade HARNESS PROFILE --skills-only`, or let its next normal launch sync the cache. Existing Sandbox and
 comparison images must be rebuilt with the updated Trellage compiler and runtime.
 
-The installers publish these commands and managed runtimes:
+The public command is `trx` (`~/.local/bin/trx`). Native installers retain
+private backend runtimes under `~/.local/share/trellage/` and register them
+outside PATH. Successful installation removes only an owned legacy launcher
+symlink; unrelated executables, authentication, sessions, and profile homes stay
+in place.
 
-- `cdx`: `~/.local/bin/cdx` and `~/.local/share/trellage/cdx/`
-- `cpx`: `~/.local/bin/cpx` and `~/.local/share/trellage/cpx/`
-- `agx`: `~/.local/bin/agx` and `~/.local/share/trellage/agx/`
-- `cldx`: `~/.local/bin/cldx` and `~/.local/share/trellage/cldx/`
-- `grx`: `~/.local/bin/grx` and `~/.local/share/trellage/grx/`
-- `jcx`: `~/.local/bin/jcx` and `~/.local/share/trellage/jcx/`
-- `omp`: `~/.local/bin/omp` and `~/.local/share/trellage/omp/`
-- `picx`: `~/.local/bin/picx` and `~/.local/share/trellage/picx/`
-- `prx`: `~/.local/bin/prx` and `~/.local/share/trellage/prx/`
-- `fmx`: `~/.local/bin/fmx` and `~/.local/share/trellage/fmx/`
-- `trx`: `~/.local/bin/trx` and `~/.local/share/trellage/trx/`
+| Former command | Canonical command |
+| --- | --- |
+| `agx trellage-azure` | `trx run agency azure` |
+| `cdx PROFILE` | `trx run codex PROFILE` |
+| `cldx PROFILE` | `trx run claude PROFILE` |
+| `cpx PROFILE` | `trx run copilot PROFILE` |
+| `fmx PROFILE` | `trx run firstmate PROFILE` |
+| `jcx` | `trx run jcode default` |
+| `omp copilot` | `trx run omp default` |
+| `omp` (local Qwen) | `trx run omp local` |
+| `picx` | `trx run pi default` |
+| `prx` | `trx run prime default` |
+| `grx PROFILE` | `trx run grok PROFILE` |
+
+Native lifecycle commands use the same identity, for example
+`trx setup agency azure`, `trx doctor omp default`, and
+`trx inventory firstmate default --json`.
 
 Their isolated profile homes are rooted at:
 
@@ -840,7 +935,6 @@ Their isolated profile homes are rooted at:
 ~/.local/share/trellage/profiles/copilot/<profile>/home/
 ~/.local/share/trellage/profiles/agency/<profile>/home/
 ~/.local/share/trellage/profiles/claude/default/home/
-~/.local/share/trellage/profiles/grok/<profile>/home/
 ~/.local/share/trellage/profiles/jcode/default/home/
 ~/.local/share/trellage/profiles/prime/default/home/
 ~/.omp/profiles/trellage-qwen-local/
@@ -853,7 +947,7 @@ It reuses a locally recorded `mise`-resolved Oh My Pi release and provides two
 isolated profiles:
 `local` routes every built-in model role to keyless
 `copilot-proxy-rs/qwen3.6-35b-a3b-local` on
-`http://127.0.0.1:8080/v1`, while `copilot` uses OMP's native GitHub Copilot
+`http://127.0.0.1:8080/v1`, while `default` uses OMP's native GitHub Copilot
 authentication and discovered models. It uses the same host-auth precedence as
 the container profile (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then
 `gh auth token`) and on macOS additionally falls back to the existing
@@ -861,40 +955,40 @@ the container profile (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then
 `github-copilot/gpt-5.6-sol:medium`:
 
 ```bash
-omp setup
-omp setup copilot
-omp doctor
-omp doctor copilot
-omp models copilot-proxy-rs
-omp -p "Reply exactly OMP_LOCAL_OK"
-omp copilot -p "Reply exactly OMP_COPILOT_OK"
-omp update --check
-omp update
-omp repair
+trx setup omp local
+trx setup omp default
+trx doctor omp local
+trx doctor omp default
+trx models omp copilot-proxy-rs
+trx run omp local -- -p "Reply exactly OMP_LOCAL_OK"
+trx run omp default -p "Reply exactly OMP_COPILOT_OK"
+trx upgrade omp --check
+trx upgrade omp default
+trx repair omp default
 ```
 
-Bare `omp` remains an alias for the `local` profile. `trx` includes both
-`oh-my-pi / local` and `oh-my-pi / copilot`.
+`trx run omp default` uses native Copilot. `trx run omp local` preserves the
+former bare-`omp` local Qwen setup and its separate state.
 
 See the [native OMP guide](prototypes/trellage-omp-profiles/README.md) for
 ownership, update, repair, and uninstall behavior.
 
-The standalone `picx` launcher provides one `default` Pi profile with the
+The native `pi` backend provides one `default` Pi profile with the
 ordered ten-extension daily-coding set on the latest stable upstream Pi
 release. Setup and explicit update resolve current stable extension packages;
 ordinary launches reuse the installed profile. The launcher also provides
-isolated user-scope package data, the shared floating `native-common` skills,
-disabled host-MCP discovery, and `copilot-proxy-rs/gpt-5.6-sol:medium`. See
+isolated user-scope package data, the configured TOML skills,
+disabled host-MCP discovery, and `copilot-proxy-rs/gpt-6-astra:medium`. See
 the [native picx guide](prototypes/trellage-picx-profiles/README.md).
 
 Managed Codex profiles use the local proxy by default. Native OpenAI authentication
 is an explicit per-launch opt-in:
 
 ```sh
-cdx --native-auth superpowers exec "Review this repository"
+trx run codex superpowers --native-auth -- exec "Review this repository"
 ```
 
-The native `cldx` launcher runs the host `claude` executable with isolated
+The native `claude` backend runs the host `claude` executable with isolated
 state and keyless `copilot-proxy-rs` at `http://127.0.0.1:8080`. It launches
 the `opusplan` selector, so normal turns use `claude-sonnet-5.5` at `medium`
 effort and plan-mode turns use `claude-opus-5.5`. Start with
@@ -904,27 +998,27 @@ Claude Code cannot save per-model `max` effort. An explicit
 `--model` argument wins:
 
 ```bash
-cldx setup
-cldx doctor
-cldx -p "Reply exactly CLDX_OK"
-cldx --model claude-sonnet-5.5 -p "Reply exactly CLDX_SONNET_OK"
-cldx repair
+trx setup claude
+trx doctor claude
+trx run claude default -- -p "Reply exactly CLDX_OK"
+trx run claude default -- --model claude-sonnet-5.5 -p "Reply exactly CLDX_SONNET_OK"
+trx repair claude
 ```
 
-For Office documents and academic presentations, use `cldx setup office`
-then `cldx office`. It includes Anthropic's `document-skills` plugin and
+For Office documents and academic presentations, use `trx setup claude office`
+then `trx run claude office`. It includes Anthropic's `document-skills` plugin and
 `academic-pptx`. The optional chart-heavy builder is a separate
-`cldx office-charts` profile; run `cldx setup office-charts` to enable it.
+`trx run claude office-charts` profile; run `trx setup claude office-charts` to enable it.
 Both profiles retain the shared native skills and use isolated homes.
 
 No host model credentials are copied. Launch scrubs ambient provider and token
 variables before setting only the local proxy environment. See the
 [native Claude guide](prototypes/trellage-claude-profiles/README.md).
 
-The native `fmx` launcher runs [Firstmate](https://github.com/kunchenguid/firstmate)
+The native `firstmate` backend runs [Firstmate](https://github.com/kunchenguid/firstmate)
 fleet orchestration directly on the host, pinned to a fixed upstream commit
 (`4ad8cbaeafc109a17c1af3911867b7fe9e04e801`); ordinary launches never update
-that pin, and only `fmx update` installs a newer catalog pin. The integration
+that pin, and only `trx upgrade firstmate` installs a newer catalog pin. The integration
 is experimental while Firstmate has no immutable tagged release. v1 uses
 Claude Code for the captain and every worker, with tmux and Herdr as its two
 backends (Herdr when launched inside a valid Herdr pane, tmux otherwise).
@@ -936,13 +1030,13 @@ before asking for consent. Accepted installs stay under the fmx runtime rather
 than using global npm. Two profiles are available:
 
 ```bash
-fmx setup default
-fmx doctor default
-fmx default
-fmx setup pstack-workers
-fmx pstack-workers
-fmx update --check default
-fmx update default
+trx setup firstmate default
+trx doctor firstmate default
+trx run firstmate default
+trx setup firstmate pstack-workers
+trx run firstmate pstack-workers
+trx upgrade firstmate --check default
+trx upgrade firstmate default
 ```
 
 `default` keeps Firstmate's standard ship/scout brief behavior within the v1
@@ -957,7 +1051,7 @@ OS-level security boundary. See
 [`docs/herdr-compatibility.json`](docs/herdr-compatibility.json) for their
 current Herdr round-trip status.
 
-The native `cdx pstack` profile runs Codex with
+The native `trx run codex pstack` profile runs Codex with
 [pstack for Codex](https://github.com/Aqua-123/pstack-for-codex), created and
 maintained by Aqua-123. It installs only the upstream marketplace plugin in
 `~/.local/share/trellage/profiles/codex/pstack/home/`. Codex exposes its skills
@@ -966,25 +1060,25 @@ with the plugin namespace, such as `$pstack-for-codex:poteto-mode`; the shorter
 installed skill identity. Poteto prompts use both forms. Optional pstack agent
 profiles, Poteto Mode cross-turn activation, and Benny automations are not
 enabled automatically.
-Its Trellage identity is launcher `cdx`, harness `codex`, and profile
+Its Trellage identity is harness `codex` and profile
 `pstack`.
 
 ```bash
-cdx setup pstack
-cdx doctor pstack
-cdx pstack
-cdx update --check pstack
-cdx update pstack
+trx setup codex pstack
+trx doctor codex pstack
+trx run codex pstack
+trx upgrade codex --check pstack
+trx upgrade codex pstack
 ```
 
-Like all `cdx` profiles, it uses Full Access by default: no command approval
+Like all managed Codex profiles, it uses Full Access by default: no command approval
 prompts and no Codex OS sandbox. Commands run with the host account's
 permissions. Use Trellage Sandbox when isolation is required. Authentication
 policy is unchanged. Node.js is required by upstream hooks and validation.
 Bun is optional. Pstack is a Codex profile, so Trellage does not install a
 `pstack` executable and does not shadow the Unix debugger with that name.
 
-The opt-in `cdx youtube` profile adds only the `youtube-full` Agent Skill from
+The opt-in `trx run codex youtube` profile adds only the `youtube-full` Agent Skill from
 [`ZeroPointRepo/youtube-skills`](https://github.com/ZeroPointRepo/youtube-skills)
 to the shared native skill set. It requires an existing
 `TRANSCRIPT_API_KEY` at launch and can consume paid TranscriptAPI credits.
@@ -993,14 +1087,14 @@ does not create accounts, handle OTP signup, or persist the key outside the
 user-managed Varlock source.
 
 ```bash
-cdx setup youtube
-cdx doctor youtube
-cdx update --check youtube
-cdx youtube
+trx setup codex youtube
+trx doctor codex youtube
+trx upgrade codex --check youtube
+trx run codex youtube
 ```
 
-After the ten native profile launchers and `trx` are installed, list the
-available launcher/profile pairs or use one flat picker:
+After installing `trx` and the desired harness backends, list the available
+harness/profile pairs or use the picker:
 
 ```bash
 trx
@@ -1016,29 +1110,30 @@ replacing the installed native command:
 
 ```bash
 mise run trx
-mise run trx -- --profile agency
+mise run trx -- run agency azure
 mise run trx -- list
 mise run trx -- list --json
 mise run trx -- guide "Write a LinkedIn post about AI agents"
 ```
 
-`mise run trx -- --profile agency` bypasses the picker and launches
-`agx/trellage-azure`. Arguments after `agency` pass unchanged to the
+`mise run trx -- run agency azure` bypasses the picker and launches
+`agency/azure`. Arguments after `agency` pass unchanged to the
 Agency-managed Copilot CLI.
 
-`trx list` prints `launcher/profile` plus the catalog description; `--json`
+`trx list` prints `harness/profile` plus the catalog description; `--json`
 returns the same discovery data with launcher and harness identity plus a
 nested guide projected from `profile-guides/native/*/*.md`. `trx` reads
-the launchers' declared catalogs before listing or opening the picker. Picker
-rows show `harness / profile`; the detail pane shows the resolved launcher alias,
+the static harness registry before listing or opening the picker. Picker
+rows show `harness / profile`; the detail pane shows the canonical harness,
 absolute binary path, exact JSON argument vector, catalog metadata, and readiness
 status. After selection, it validates that profile's read-only installed
 inventory before launching. Package counts come only from launcher-validated
 selected plugin roots
 or cache paths; `visibleCount` preserves each native CLI's broader inventory
-semantics. `trx` requires a TTY; Escape or Ctrl-C returns `130`. It does not set
+semantics. `trx` requires a TTY; Escape or Ctrl-C returns `130`. Browsing does not set
 up, repair, update, call a model, use the network, or mutate profile state.
-The native `jcx` launcher runs jcode against `copilot-proxy-rs`, defaulting to
+Launching prepares the selected profile and attempts to refresh floating skills.
+The native `jcode` backend runs jcode against `copilot-proxy-rs`, defaulting to
 `gpt-5.6-sol` with `medium` reasoning in an isolated `JCODE_HOME`. Install and
 manage it from `prototypes/trellage-jcode-profiles`.
 
@@ -1193,13 +1288,13 @@ the reports. An unresolved challenge makes the combined review incomplete;
 a failed reply cannot be marked resolved or become an all-clear.
 After the report, press `c` to start Copilot `hve` in plan mode in this terminal.
 Direct Review checks that this profile exists before running any reviews.
-The current-terminal handoff uses `mise run trx -- run cpx hve -- --plan -i`
+The current-terminal handoff uses `mise run trx -- run copilot hve -- --plan -i`
 from a `mise run trx` worktree session, so the router repairs stale source
 runtime readiness before launch. Installed sessions use
-`trx run cpx hve -- --plan -i` instead of invoking the launcher path directly.
+`trx run copilot hve -- --plan -i` instead of invoking the launcher path directly.
 When Guide has a working Herdr context, press `t` to start Copilot in a new
 tab on the same worktree. This handoff uses
-`cpx hve --plan --mode autopilot --allow-all --no-ask-user`: Copilot starts
+`trx run copilot hve --plan --mode autopilot --allow-all --no-ask-user`: Copilot starts
 with a plan, auto-approves it, and then implements verified fixes without
 asking for approval. It stops before editing if HEAD or the changed-file scope
 differs from the report.
@@ -1224,7 +1319,7 @@ Selected skill content is frozen for a run. `trx skills update` refreshes the
 Native skill cache between runs; Review also refreshes it when a selected skill
 is missing from an otherwise valid cache.
 
-To add a leaf review, declare its exact skill in `skills.json` and
+To add a leaf review, declare its exact skill in `config.toml` and
 `native-common`, then add its ID, skill name, and model to
 `packages/trellage-launcher/src/review-catalog.ts`. The existing runner loads
 selected leaf skills without new orchestration code. A skill that starts its
@@ -1245,10 +1340,10 @@ to rewrite the prompt: press `Ctrl-G` on the intent screen, or `a` on the prompt
 page (`p`) or after a failed match.
 
 - **Research** runs HVE Core's `rpi-research` skill through the installed native
-  `cpx hve` profile and replaces the draft with the research note it writes. It
+  `trx run copilot hve` profile and replaces the draft with the research note it writes. It
   runs out of process because that skill needs the `hve-core` plugin, file-write
   tools, and this repository as its working directory; the guide's own model
-  sessions deny all three. It fails with `cpx setup hve` guidance when the
+  sessions deny all three. It fails with `trx setup copilot hve` guidance when the
   profile is not installed. Set `TRELLAGE_GUIDE_RESEARCH_TIMEOUT_MS` to change
   the 15-minute limit.
 - **Codebase** packs this repository with `repomix` and asks the guide's
@@ -1401,7 +1496,7 @@ though they also have pinned shortcuts. The broad Council, Research, and HVE
 RPI workflows remain optional lenses unless explicitly requested. This
 exclusion applies to those workflows, not every workflow on their profiles.
 
-These seven customer workflows use `cpx interactive hve`, an explicit agent,
+These seven customer workflows use `trx run copilot hve --interactive`, an explicit agent,
 and declared skill checks. They require a terminal and your answers; they
 cannot enter the batch queue. Guide rechecks readiness before a direct
 terminal or Herdr launch. An old launcher, missing registration, disabled
@@ -1413,7 +1508,7 @@ its RPI and HVE Builder routes. This feature does not ingest meetings, read
 customer files during brief preparation, manage data access or retention,
 publish reports, change a tracker, or authorize implementation. These actions
 need separate decisions and controls. See the
-[Native HVE guide](profile-guides/native/cpx/hve.md) for exact agents, skills,
+[Native HVE guide](profile-guides/native/copilot/hve.md) for exact agents, skills,
 and workflow boundaries.
 
 #### Repository engagement guidance
@@ -1453,7 +1548,7 @@ The profile's declared policy selects one controller:
 | Supported profile | Controller and delivery |
 | --- | --- |
 | Native Codex, including Superpowers | Native `/goal`; start the interactive profile, then use its command input as described below |
-| Supported Native Claude (`cldx default`) in this terminal | Native `/goal` through the launcher's documented `-p` prompt mode |
+| Supported Native Claude (`trx run claude default`) in this terminal | Native `/goal` through the launcher's documented `-p` prompt mode |
 | Sandbox Claude in prompt mode | Native `/goal` through the runtime's Claude `-p` path |
 | Native Claude in interactive Herdr | Native `/goal` with explicit manual command input; the session stays interactive |
 | Sandbox Claude Graph of Loops | The authored `/graph-of-loops` workflow; `trellage-graph` remains the only completion authority |
@@ -1485,7 +1580,7 @@ requires a choice. Its `n` option opens an ordinary reference fork without
 changing the main goal or queued jobs; `b` or `Esc` returns to recommendations.
 
 **Native Codex does not activate `/goal` from a startup argument.** Trellage
-starts the selected interactive `cdx` profile without a goal prompt argument.
+starts the selected interactive Codex profile without a goal prompt argument.
 In that session, type `/goal `, paste the supplied condition body after the
 space, then submit it. Do not rely on pasting a large slash-command block:
 Codex can replace large pastes with composer placeholders. Interactive Claude
@@ -1506,7 +1601,7 @@ UTF-8 byte limit.
 Read-only readiness must confirm runtime support and settings before dispatch.
 Native `/goal` checks require stable Codex 0.153.4 or later with `goals`
 enabled, or Claude 2.1.139 or later. Codex uses
-`cdx inventory PROFILE --goal-features` to include the same project
+`trx inventory codex PROFILE --goal-features` to include the same project
 configuration as a launch. Older launchers without this probe or Claude goal
 runtime metadata report unknown readiness; refresh those launchers separately.
 
@@ -1582,7 +1677,7 @@ declared skill keep the generated prompt unchanged.
 The guide shows the exact command and asks for confirmation before it starts a
 profile, creates a Herdr pane, or creates a Herdr worktree. A profile receives
 `-p` only when its published headless contract supports prompt input. For
-ordinary Copilot (`cpx`) and Codex (`cdx`) Herdr handoffs, the guide queues the
+ordinary Copilot and Codex Herdr handoffs, the guide queues the
 prompt in the initial harness command. The harness keeps that prompt while you answer
 Copilot workspace-trust or Codex hook-trust requests; the guide does not
 approve trust automatically. Other Herdr profiles receive the prompt through
@@ -1653,19 +1748,19 @@ interactive output, question, warning, and stop-and-ask rules. Guide content
 and the execution objective are sent to TypeSafe for Jev matching and to the
 configured Copilot model for fallback matching and subsequent LLM phases.
 
-The native `prx` launcher runs Prime Agent against `copilot-proxy-rs`, pinning
+The native `prime` backend runs Prime Agent against `copilot-proxy-rs`, pinning
 the provider and model to `copilot-proxy-rs` and `claude-opus-5` (Anthropic
 Messages API at `http://127.0.0.1:8080`). It is independent of the Docker
 `prime-agent` profile. Install and manage it from
 `prototypes/trellage-prime-profiles`:
 
 ```bash
-prx setup
-prx doctor
-prx -p "Reply exactly PRX_OK"
-prx update --check
-prx update
-prx repair
+trx setup prime
+trx doctor prime
+trx run prime default -- -p "Reply exactly PRX_OK"
+trx upgrade prime --check
+trx upgrade prime
+trx repair prime
 ```
 
 `PRIME_AGENT_CODING_AGENT_DIR` isolates configuration and sessions under
@@ -1673,14 +1768,14 @@ prx repair
 the managed `models.json` provider and selected model so persisted edits cannot
 redirect the endpoint. No host model credentials are copied.
 
-The native `agx` launcher runs Microsoft Agency's managed Copilot CLI with the
+The native `agency` backend runs Microsoft Agency's managed Copilot CLI with the
 repository-local `trellage-azure` Agency profile:
 
 ```bash
-agx setup trellage-azure
-agx doctor trellage-azure
-agx inventory trellage-azure --json
-agx trellage-azure
+trx setup agency azure
+trx doctor agency azure
+trx inventory agency azure --json
+trx run agency azure
 ```
 
 It preserves the real `HOME` and current worktree, but sets
@@ -1762,7 +1857,7 @@ Open the live apps:
 
 ## Native Agent Profile Matrix
 
-Prerequisites are the installed commands `cdx`, `codex`, `cpx`, `grx`, and `jq`; profiles provisioned for each launcher; and authenticated CLI sessions. The standalone `agx`, `cldx`, `fmx`, and `jcx` launchers have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Live verification also requires paid model access.
+Prerequisites are the installed commands `trx`, `codex`, and `jq`; provisioned Codex/Copilot profiles; and authenticated CLI sessions. The Agency, Claude, Firstmate, and JCode backends have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Composed Grok is verified by the Native runtime tests rather than this legacy profile matrix. Live verification also requires paid model access.
 
 Run native non-inference verification in static mode:
 
@@ -1790,11 +1885,11 @@ Run the focused contract with:
 make profile-matrix-test
 ```
 
-Codex discovery and static checks require the managed `cdx` launcher and isolated profile roots under `~/.local/share/trellage/profiles/codex/`.
+Codex discovery and static checks require the managed Codex backend and isolated profile roots under `~/.local/share/trellage/profiles/codex/`.
 
-Codex live checks bypass managed `cdx` and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.
+Codex live checks bypass the managed Codex backend and invoke raw `codex` with the validated isolated `CODEX_HOME` plus ephemeral, read-only, approval-never arguments.
 
-Static verification performs no native marketplace, plugin, or managed-skill mutation and no live prompt. It never runs setup, repair, update, install, uninstall, login, or logout, but `cdx doctor` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
+Static verification performs no native marketplace, plugin, or managed-skill mutation and no live prompt. It never runs setup, repair, update, install, uninstall, login, or logout, but `trx doctor codex` may atomically remove only exact Codex-generated project-trust stanzas during stale recovery.
 
 Exit statuses:
 
@@ -1821,7 +1916,7 @@ make native-tui-matrix
 Filter a run without changing discovery:
 
 ```bash
-scripts/verify-native-tuis --launcher cldx --profile default
+scripts/verify-native-tuis --launcher claude --profile default
 ```
 
 The runner still validates adapter coverage for the complete discovered
@@ -1840,8 +1935,8 @@ matrix does not answer or persist those decisions.
 Live mode is an explicit paid probe:
 
 ```bash
-scripts/verify-native-tuis --live --launcher cldx --profile default
-make native-tui-matrix-live NATIVE_TUI_MATRIX_ARGS='--launcher cldx --profile default'
+scripts/verify-native-tuis --live --launcher claude --profile default
+make native-tui-matrix-live NATIVE_TUI_MATRIX_ARGS='--launcher claude --profile default'
 ```
 
 For every selected profile, live mode enters text through the real TUI and
@@ -1869,7 +1964,7 @@ TRELLAGE_TRX_SOURCE_ROOT="$PWD/prototypes/trellage-router" \
 TRELLAGE_TRX_NATIVE_SOURCE=1 \
 scripts/verify-native-tuis \
   --trx "$PWD/prototypes/trellage-router/bin/trx" \
-  --launcher cldx --profile default
+  --launcher claude --profile default
 ```
 
 Exit statuses:
@@ -2058,3 +2153,19 @@ duplicated, unaccounted, or does not match the contestant's single package.
 receipt.
 
 See [docs/verification.md](docs/verification.md) for the current live proof and audit commands.
+
+### Installing Pi from GitHub releases
+
+Package feeds can lag the upstream Pi release. `scripts/install-pi-release.sh [TAG]`
+downloads the latest release asset with `gh`, verifies its `SHA256SUMS` entry,
+installs it under `~/.local/share/pi-release/<version>`, and links
+`~/.local/bin/pi` to it. Re-run it to upgrade. `TRELLAGE_PI_BIN` overrides the
+binary `trx run pi` launches.
+
+`trx run pi` runs this installer before every launch (a no-op when current). A
+failed update warns and keeps the installed Pi. Set `TRELLAGE_PI_AUTO_UPDATE=0`
+to skip it; `TRELLAGE_PI_BIN` also skips it.
+
+`trx run` checks each floating default-branch skill source with `git ls-remote`.
+Every profile load attempts this check; there is no freshness TTL. Pinned
+sources reuse their validated resolved content until explicitly upgraded.

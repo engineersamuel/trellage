@@ -36,7 +36,9 @@ for package do
   fi
 done
 apt-get --simulate --no-install-recommends install "$@" \
-  | sed -n 's/^Inst \\([^ ]*\\) (\\([^ ]*\\).*/\\1\\t\\2/p' \
+  | sed -n \
+      -e 's/^Inst \\([^ ]*\\) \\[[^]]*\\] (\\([^ ]*\\).*/\\1\\t\\2/p' \
+      -e 's/^Inst \\([^ ]*\\) (\\([^ ]*\\).*/\\1\\t\\2/p' \
   | while IFS="$(printf '\\t')" read -r resolved version; do
   package="\${resolved%%:*}"
   [ -n "$version" ] && [ "$version" != "(none)" ]

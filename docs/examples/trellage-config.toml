@@ -1,0 +1,142 @@
+# Seed for ~/.config/trellage/config.toml, adapted from the Native launcher
+# catalogs and composed harnesses. Install with: cp docs/examples/trellage-config.toml ~/.config/trellage/config.toml
+# Unpinned sources track the default branch and refresh on every `trx run`.
+# Pin with tag = "v1.2.3" or commit = "<40-hex>" to install once and reuse the cache.
+# Each profile lists skills only; plugin-only content (hooks, MCP, agents) is not composed yet.
+schema_version = 1
+
+# Always-on profiles apply to every `trx run`; skip them with --no-always.
+# Add skills or whole profiles here. `harnesses = [...]` limits a profile to some harnesses,
+# and `always = false` (default) keeps a profile opt-in: `trx run pi PROFILE`.
+# Instruction files are Markdown paths relative to this directory (the style/output rules
+# each harness reads as user instructions: Pi APPEND_SYSTEM.md, Copilot copilot-instructions.md,
+# Claude CLAUDE.md, Codex AGENTS.md, Grok Agents.md).
+[native.sources.engineersamuel]
+repository = "engineersamuel/skills"
+
+[native.sources.show-me]
+repository = "humanlayer/skills"
+
+[native.sources.i-have-adhd]
+repository = "ayghri/i-have-adhd"
+
+[native.sources.anti-slop]
+repository = "miqdadbadjuber/anti-slop"
+
+[native.instructions.rundown]
+file = "styles/rundown.md"
+
+[native.profiles.base]
+label = "Always-on defaults"
+always = true
+instructions = ["rundown"]
+skills = [
+  { source = "engineersamuel", names = ["finish", "goal-me", "justify"] },
+  { source = "show-me", names = ["show-me"] },
+  { source = "i-have-adhd", names = ["i-have-adhd"] },
+  { source = "anti-slop", names = ["antislop"] },
+]
+
+[native.sources.superpowers]
+repository = "obra/superpowers"
+
+[native.sources.anthropic-skills]
+repository = "anthropics/skills"
+
+[native.sources.academic-pptx]
+repository = "gabberflast/academic-pptx-skill"
+
+[native.sources.slide-maker]
+repository = "addsumtech/slides_maker"
+
+[native.sources.compound-engineering]
+repository = "everyinc/compound-engineering-plugin"
+
+[native.sources.hve-core]
+repository = "microsoft/hve-core"
+
+[native.sources.awesome-copilot]
+repository = "github/awesome-copilot"
+
+[native.sources.effective-html]
+repository = "plannotator/effective-html"
+
+[native.sources.tufte-vdqi]
+repository = "gnurio/tufte-vdqi-plugin"
+
+[native.sources.pstack]
+repository = "aqua-123/pstack-for-codex"
+
+[native.sources.youtube-skills]
+repository = "zeropointrepo/youtube-skills"
+
+[native.sources.ponytail]
+repository = "dietrichgebert/ponytail"
+
+[native.profiles.superpowers]
+label = "Superpowers"
+skills = [{ source = "superpowers", names = [
+  "brainstorming", "writing-plans", "executing-plans", "test-driven-development",
+  "systematic-debugging", "verification-before-completion", "requesting-code-review",
+  "receiving-code-review", "using-git-worktrees", "finishing-a-development-branch",
+  "subagent-driven-development", "dispatching-parallel-agents", "writing-skills", "using-superpowers",
+] }]
+
+[native.profiles.office]
+label = "Office documents and academic presentations"
+skills = [
+  { source = "anthropic-skills", names = ["docx", "xlsx", "pptx", "pdf"] },
+  { source = "academic-pptx", names = ["academic-pptx"] },
+]
+
+[native.profiles.office-charts]
+label = "Office plus chart-heavy slide builder"
+skills = [
+  { source = "anthropic-skills", names = ["docx", "xlsx", "pptx", "pdf"] },
+  { source = "academic-pptx", names = ["academic-pptx"] },
+  { source = "slide-maker", names = ["slide-maker"] },
+]
+
+[native.profiles.compound-engineering]
+label = "Compound Engineering"
+skills = [{ source = "compound-engineering", names = [
+  "ce-brainstorm", "ce-plan", "ce-work", "ce-code-review", "ce-debug", "ce-compound",
+  "ce-compound-refresh", "ce-commit", "ce-commit-push-pr", "ce-ideate", "ce-doc-review",
+  "ce-optimize", "ce-polish", "ce-simplify-code", "ce-worktree", "ce-resolve-pr-feedback",
+  "ce-babysit-pr", "lfg",
+] }]
+
+[native.profiles.hve]
+label = "HVE Core RPI"
+skills = [{ source = "hve-core", names = [
+  "rpi-research", "rpi-plan", "rpi-implement", "rpi-review", "rpi-challenger",
+  "rpi-plan-critique", "rpi-walkthrough", "code-review", "pull-request",
+] }]
+
+[native.profiles.plannotator]
+label = "Effective HTML artifacts"
+skills = [{ source = "effective-html", names = [
+  "html", "html-plan", "html-diagram", "html-wireframe", "html-prototype", "design-artifact",
+] }]
+
+[native.profiles.tufte]
+label = "Tufte visual display of quantitative information"
+skills = [{ source = "tufte-vdqi", names = ["tufte-chart", "tufte-critique"] }]
+
+[native.profiles.awesome]
+label = "Awesome Copilot essentials"
+skills = [{ source = "awesome-copilot", names = ["git-commit", "code-tour", "breakdown-plan", "update-specification"] }]
+
+[native.profiles.pstack]
+label = "pstack poteto-mode"
+skills = [{ source = "pstack", names = [
+  "poteto-mode", "tdd", "interrogate", "architect", "swarm", "reflect", "show-me-your-work",
+] }]
+
+[native.profiles.youtube]
+label = "YouTube transcripts and research"
+skills = [{ source = "youtube-skills", names = ["youtube-full"] }]
+
+[native.profiles.ponytail]
+label = "Ponytail review"
+skills = [{ source = "ponytail", names = ["ponytail", "ponytail-review", "ponytail-audit"] }]

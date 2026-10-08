@@ -54,7 +54,7 @@ function sourceFixture(): {
   )
   writeFileSync(path.join(root, "bunfig.toml"), '[install]\nauto = "disable"\nlinker = "isolated"\n')
   writeFileSync(path.join(root, "tsconfig.base.json"), '{"compilerOptions":{"noEmit":true}}')
-  writeFileSync(path.join(root, "skills.json"), "{}")
+  writeFileSync(path.join(root, "config.toml"), "{}")
   mkdirSync(path.join(root, "packages/tool"), { recursive: true })
   writeFileSync(path.join(root, "packages/tool/package.json"), '{"name":"@fixture/tool","version":"1.0.0"}')
   const realBun = bunExecutable()

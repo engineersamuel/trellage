@@ -1,6 +1,7 @@
 import path from "node:path"
 import {
   loadProfileGuide,
+  canonicalProfileRef,
   profileGuideIdentityKey,
   type LoadedProfileGuide,
   type ProfileGuideIdentity,
@@ -81,12 +82,12 @@ const findSelectedGuideSource = (
         surface: "native",
         launcher: entry.launcher,
         profile: entry.name,
-      }) === ref,
+      }) === canonicalProfileRef(ref),
   )
   if (native !== undefined) return nativeSource(native, guideRoot)
 
   const sandbox = catalog.sandbox.find(
-    (entry) => profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }) === ref,
+    (entry) => profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }) === canonicalProfileRef(ref),
   )
   if (sandbox !== undefined) return sandboxSource(sandbox)
   throw new SelectedGuideError(`Unknown profile reference: ${ref}`)

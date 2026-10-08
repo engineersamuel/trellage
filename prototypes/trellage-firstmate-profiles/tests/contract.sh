@@ -562,7 +562,7 @@ cp "$repo_root/scripts/trellage-session-bridge.py" "$mirror/scripts/trellage-ses
 cp "$repo_root/scripts/trellage-statusline.sh" "$mirror/scripts/trellage-statusline.sh"
 cp "$repo_root/scripts/install-floating-skills-runtime.sh" "$mirror/scripts/"
 cp "$repo_root/scripts/floating-skills.ts" "$mirror/scripts/"
-cp "$repo_root/skills.json" "$mirror/skills.json"
+cp "$repo_root/config.toml" "$mirror/config.toml"
 mirror_installer="$mirror/prototypes/trellage-firstmate-profiles/install.sh"
 mirror_uninstaller="$mirror/prototypes/trellage-firstmate-profiles/uninstall.sh"
 export FAKE_PREREQUISITE_LOG="$logs/prerequisites.log"
@@ -570,7 +570,7 @@ export FAKE_PREREQUISITE_LOG="$logs/prerequisites.log"
 
 install_root="$home/.local/share/trellage/fmx"
 install_lock="$home/.local/share/trellage/.fmx-install.lock"
-command_path="$home/.local/bin/fmx"
+command_path="$home/.local/share/trellage/.native-commands/fmx"
 profiles_root="$home/.local/share/trellage/profiles/firstmate"
 
 gh_config="$home/.config/gh"
@@ -1017,21 +1017,21 @@ assert_contains 'injected failure at after-command-publication' "$logs/install-c
 [[ ! -e "$command_failure_home/.local/share/trellage/fmx" \
   && ! -L "$command_failure_home/.local/share/trellage/fmx" ]] \
   || fail 'post-command failure left a fresh runtime'
-[[ ! -e "$command_failure_home/.local/bin/fmx" \
-  && ! -L "$command_failure_home/.local/bin/fmx" ]] \
+[[ ! -e "$command_failure_home/.local/share/trellage/.native-commands/fmx" \
+  && ! -L "$command_failure_home/.local/share/trellage/.native-commands/fmx" ]] \
   || fail 'post-command failure left a fresh command'
 [[ ! -e "$command_failure_home/.local/share/trellage/.fmx-install.lock" ]] \
   || fail 'post-command failure left its install lock'
 
 foreign_command_home="$fixture_root/foreign-command-home"
-mkdir -p "$foreign_command_home/.local/bin"
-printf 'foreign command\n' >"$foreign_command_home/.local/bin/fmx"
+mkdir -p "$foreign_command_home/.local/share/trellage/.native-commands"
+printf 'foreign command\n' >"$foreign_command_home/.local/share/trellage/.native-commands/fmx"
 status=0
 env -i HOME="$foreign_command_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-foreign-command.err" || status=$?
 [[ "$status" == 1 ]] || fail "foreign command install exited $status instead of 1"
 assert_contains 'unrelated command' "$logs/install-foreign-command.err"
-[[ "$(<"$foreign_command_home/.local/bin/fmx")" == 'foreign command' ]] \
+[[ "$(<"$foreign_command_home/.local/share/trellage/.native-commands/fmx")" == 'foreign command' ]] \
   || fail 'installer changed a foreign command'
 
 canonical_parent="$fixture_root/canonical-home-parent"
@@ -1044,21 +1044,21 @@ env -i HOME="$linked_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-linked-home.err" \
   || { cat "$logs/install-linked-home.err" >&2; \
        fail 'install through a symlinked HOME ancestor failed'; }
-[[ -L "$canonical_linked_home/.local/bin/fmx" \
+[[ -L "$canonical_linked_home/.local/share/trellage/.native-commands/fmx" \
   && -d "$canonical_linked_home/.local/share/trellage/fmx" ]] \
   || fail 'install through a symlinked HOME ancestor used non-canonical paths'
 env -i HOME="$linked_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >/dev/null 2>"$logs/uninstall-linked-home.err" \
   || { cat "$logs/uninstall-linked-home.err" >&2; \
        fail 'uninstall through a symlinked HOME ancestor failed'; }
-[[ ! -e "$canonical_linked_home/.local/bin/fmx" \
+[[ ! -e "$canonical_linked_home/.local/share/trellage/.native-commands/fmx" \
   && ! -e "$canonical_linked_home/.local/share/trellage/fmx" ]] \
   || fail 'uninstall through a symlinked HOME ancestor left managed paths'
 
 dangling_home="$fixture_root/dangling-command-home"
 dangling_runtime="$dangling_home/.local/share/trellage/fmx"
-dangling_command="$dangling_home/.local/bin/fmx"
-mkdir -p "$dangling_home/.local/bin"
+dangling_command="$dangling_home/.local/share/trellage/.native-commands/fmx"
+mkdir -p "$dangling_home/.local/share/trellage/.native-commands"
 ln -s "$dangling_runtime/bin/fmx" "$dangling_command"
 env -i HOME="$dangling_home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_installer" >/dev/null 2>"$logs/install-dangling-command.err" \
@@ -1103,7 +1103,7 @@ assert_contains "Installed fmx at $command_path" "$logs/install.out"
 [[ -z "$(find "$home/.local/share/trellage" -mindepth 1 -maxdepth 1 \
   \( -name '.fmx-install.*' -o -name '.fmx-retired-install.*' \) -print -quit)" ]] \
   || fail 'successful install left a runtime transaction artifact'
-[[ -z "$(find "$home/.local/bin" -mindepth 1 -maxdepth 1 \
+[[ -z "$(find "$home/.local/share/trellage/.native-commands" -mindepth 1 -maxdepth 1 \
   -name '.fmx-command.*' -print -quit)" ]] \
   || fail 'successful install left a command transaction artifact'
 
@@ -3811,8 +3811,8 @@ rm -rf -- "$mutation_uninstall_profile"
 mkdir "$home/.local/share/trellage/.fmx-retired-install.uninstall-test"
 printf 'retired install artifact\n' \
   >"$home/.local/share/trellage/.fmx-retired-install.uninstall-test/canary"
-mkdir "$home/.local/bin/.fmx-command.uninstall-test"
-ln -s "$install_root/bin/fmx" "$home/.local/bin/.fmx-command.uninstall-test/fmx"
+mkdir "$home/.local/share/trellage/.native-commands/.fmx-command.uninstall-test"
+ln -s "$install_root/bin/fmx" "$home/.local/share/trellage/.native-commands/.fmx-command.uninstall-test/fmx"
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   bash "$mirror_uninstaller" >"$logs/uninstall.out" 2>"$logs/uninstall.err" \
   || { cat "$logs/uninstall.err" >&2; fail 'uninstall failed'; }
@@ -3821,7 +3821,7 @@ assert_contains 'profile roots, homes, and worker state were preserved' "$logs/u
 [[ ! -e "$command_path" ]] || fail 'the command symlink was not removed'
 [[ ! -e "$home/.local/share/trellage/.fmx-retired-install.uninstall-test" ]] \
   || fail 'uninstall retained a retired transaction artifact'
-[[ ! -e "$home/.local/bin/.fmx-command.uninstall-test" ]] \
+[[ ! -e "$home/.local/share/trellage/.native-commands/.fmx-command.uninstall-test" ]] \
   || fail 'uninstall retained a command transaction artifact'
 [[ -f "$canary" ]] || fail 'uninstall removed profile state'
 [[ -x "$profiles_root/default/runtime/bin/fm-spawn.sh" ]] \

@@ -63,7 +63,7 @@ export const versionCheckResultForEntry = (
   if (latest === undefined) return undefined
   if (latest.state === "success") return parseUpdateCheckOutput(latest.stdout, entry.version)
   if (latest.state === "failure") {
-    // Some launchers (verified for cpx, grx, and cdx's shared native-codex
+    // Some launchers (verified for cpx and cdx's shared native-codex
     // implementation) exit non-zero specifically to signal "update available"
     // as a normal business outcome rather than a genuine run failure — their
     // stdout is the same parseable `update --check` text every other

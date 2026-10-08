@@ -8,15 +8,12 @@ root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 launcher="$root/bin/omp"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
-skills_catalog="$root/../../skills.json"
+skills_catalog="$root/../../config.toml"
 community_skill_names=()
 while IFS= read -r skill_name; do
   community_skill_names+=("$skill_name")
 done < <(
-  jq -r '
-    .bundles["omp-community"][] as $source
-    | .sources[$source].select[]
-  ' "$skills_catalog"
+  bun --no-env-file -e 'const catalog = Bun.TOML.parse(await Bun.file(process.argv[1]).text()).skills; for (const source of catalog.bundles["omp-community"]) for (const name of catalog.sources[source].select) console.log(name)' "$skills_catalog"
 )
 
 fail() {
@@ -30,8 +27,8 @@ assert_community_skills() {
   [[ -d "$target" && ! -L "$target" ]] \
     || fail "$label community skill directory is missing"
   skill_count="$(find "$target" -mindepth 1 -maxdepth 1 -type d ! -name '.trellage-*' | wc -l | tr -d ' ')"
-  [[ "$skill_count" == 49 ]] \
-    || fail "$label community skill count was $skill_count, expected 49"
+  [[ "$skill_count" == 34 ]] \
+    || fail "$label community skill count was $skill_count, expected 34"
   for skill_name in "${community_skill_names[@]}"; do
     grep -Fqx "# Fixture $skill_name" "$target/$skill_name/SKILL.md" \
       || fail "$label community skill differs: $skill_name"
@@ -48,23 +45,26 @@ seed_community_skills_cache() {
   done
   printf '%s\n' "${community_skill_names[@]}" | LC_ALL=C sort >"$target/managed-skills.txt"
   : >"$target/always-on.md"
+  seal_floating_skills_cache "$target" "$skills_catalog" omp-community
 }
 
 for source_file in "$launcher" "$installer" "$uninstaller" "$root/README.md"; do
   [[ -f "$source_file" ]] || fail "missing source file: $source_file"
 done
-[[ "${#community_skill_names[@]}" -eq 49 ]] \
-  || fail "OMP community skill count was ${#community_skill_names[@]}, expected 49"
-[[ "$(printf '%s\n' "${community_skill_names[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')" == 49 ]] \
+[[ "${#community_skill_names[@]}" -eq 34 ]] \
+  || fail "OMP community skill count was ${#community_skill_names[@]}, expected 34"
+[[ "$(printf '%s\n' "${community_skill_names[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')" == 34 ]] \
   || fail 'OMP community skill catalog contains duplicate names'
-jq -e '
+bun --no-env-file -e 'console.log(JSON.stringify(Bun.TOML.parse(await Bun.file(process.argv[1]).text()).skills))' "$skills_catalog" | jq -e '
   .sources["dsebban-omp"].repository == "https://github.com/dsebban/skills.git"
   and .sources["dsebban-omp"].select == ["orchestrate-omp", "poteto-mode", "pstack-omp"]
-  and .sources["cursor-pstack"].repository == "https://github.com/cursor/plugins.git"
-  and (.sources["cursor-pstack"].select | length) == 46
-  and (.sources["cursor-pstack"].select | index("poteto-mode")) == null
-  and .bundles["omp-community"] == ["dsebban-omp", "cursor-pstack"]
-' "$skills_catalog" >/dev/null || fail 'OMP community skill catalog differs'
+  and .sources["pstack-portable"].repository == "https://github.com/Aqua-123/pstack-for-codex.git"
+  and (.sources["pstack-portable"].select | length) == 31
+  and (.sources["pstack-portable"].select | index("poteto-mode")) == null
+  and (.sources["pstack-portable"].select | index("setup-pstack")) == null
+  and (.sources["pstack-portable"].select | index("setup-benny")) == null
+  and .bundles["omp-community"] == ["dsebban-omp", "pstack-portable"]
+' >/dev/null || fail 'OMP community skill catalog differs'
 
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-omp-contract.XXXXXX")" \
   || fail 'could not create fixture root'
@@ -72,6 +72,7 @@ case "$fixture_root" in
   "${TMPDIR:-/tmp}"/trellage-omp-contract.*) ;;
   *) fail "unsafe fixture root: $fixture_root" ;;
 esac
+fixture_root="$(cd -P -- "$fixture_root" && pwd)"
 trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
 fixture_registry="$(npm config get registry --workspaces=false)" \
   || fail 'could not discover the host npm registry'
@@ -303,7 +304,7 @@ unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
 : >"$FAKE_GH_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/bin/omp"
+command_path="$HOME/.local/share/trellage/.native-commands/omp"
 runtime_root="$HOME/.local/share/trellage/omp"
 installed_catalog="$runtime_root/catalog.json"
 installed_ownership="$runtime_root/.managed-by-trellage-omp-profiles"
@@ -790,21 +791,21 @@ find "$agent_root" "$profile_root/.managed-by-trellage-omp-profiles" \
 cmp -s "$fixture_root/update-state.before" "$fixture_root/update-state.after" \
   || fail 'receipt publication failure did not restore the prior OMP profile state'
 
-rm -rf -- "$agent_root/community-skills/architect"
+rm -rf -- "$agent_root/community-skills/bro"
 FAKE_MISE_LATEST=18.0.11 "$command_path" update >"$fixture_root/update.out" \
   || fail 'update failed'
 [[ "$(<"$runtime_root/installed-version")" == '18.0.11' ]] \
   || fail 'update did not publish new installed version receipt'
-[[ -f "$agent_root/community-skills/architect/SKILL.md" ]] \
+[[ -f "$agent_root/community-skills/bro/SKILL.md" ]] \
   || fail 'update did not restore managed community skills'
-mv "$agent_root/community-skills/architect" "$fixture_root/architect.missing"
+mv "$agent_root/community-skills/bro" "$fixture_root/bro.missing"
 if "$command_path" doctor >"$fixture_root/doctor-community-missing.out" 2>&1; then
   fail 'doctor accepted a missing managed community skill'
 fi
 grep -Fq 'failed to validate OMP community skills: local' \
   "$fixture_root/doctor-community-missing.out" \
   || fail 'doctor community skill diagnostic differs'
-mv "$fixture_root/architect.missing" "$agent_root/community-skills/architect"
+mv "$fixture_root/bro.missing" "$agent_root/community-skills/bro"
 "$command_path" doctor >"$fixture_root/doctor-community-restored.out" \
   || fail 'doctor rejected restored local community skills'
 grep -Fqx 'omp doctor: OK (18.0.11, qwen3.6-35b-a3b-local)' \
@@ -922,7 +923,7 @@ printf 'user-owned\n' >"$unsafe_home/.omp/profiles/trellage-qwen-local/agent/con
 if HOME="$unsafe_home" "$installer" >/dev/null \
   && HOME="$unsafe_home" PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
     FAKE_MISE_LOG="$FAKE_MISE_LOG" FAKE_OMP_TEMPLATE="$FAKE_OMP_TEMPLATE" \
-    "$unsafe_home/.local/bin/omp" setup >"$fixture_root/unsafe.out" 2>&1; then
+    "$unsafe_home/.local/share/trellage/.native-commands/omp" setup >"$fixture_root/unsafe.out" 2>&1; then
   fail 'setup replaced unrelated profile config'
 fi
 grep -Fqx 'user-owned' "$unsafe_home/.omp/profiles/trellage-qwen-local/agent/config.yml" \
@@ -934,7 +935,7 @@ ln -s "$fixture_root/symlink-target" "$symlink_home/.omp/profiles/trellage-qwen-
 HOME="$symlink_home" "$installer" >/dev/null || fail 'symlink fixture install failed'
 if HOME="$symlink_home" PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
   FAKE_MISE_LOG="$FAKE_MISE_LOG" FAKE_OMP_TEMPLATE="$FAKE_OMP_TEMPLATE" \
-  "$symlink_home/.local/bin/omp" setup >"$fixture_root/symlink.out" 2>&1; then
+  "$symlink_home/.local/share/trellage/.native-commands/omp" setup >"$fixture_root/symlink.out" 2>&1; then
   fail 'setup accepted symlinked profile path'
 fi
 [[ ! -e "$fixture_root/symlink-target/agent/config.yml" ]] \
@@ -959,12 +960,12 @@ grep -Fqx 'copilot session state' "$copilot_profile_root/session-canary" \
   || fail 'uninstall removed Copilot profile state'
 
 unowned_home="$fixture_root/unowned-home"
-mkdir -p "$unowned_home/.local/bin"
-printf 'unrelated\n' >"$unowned_home/.local/bin/omp"
+mkdir -p "$unowned_home/.local/share/trellage/.native-commands"
+printf 'unrelated\n' >"$unowned_home/.local/share/trellage/.native-commands/omp"
 if HOME="$unowned_home" "$installer" >"$fixture_root/unowned.out" 2>&1; then
   fail 'installer replaced unrelated command'
 fi
-grep -Fqx 'unrelated' "$unowned_home/.local/bin/omp" || fail 'installer changed unrelated command'
+grep -Fqx 'unrelated' "$unowned_home/.local/share/trellage/.native-commands/omp" || fail 'installer changed unrelated command'
 
 bash -n "$launcher" "$installer" "$uninstaller" "$0" || fail 'bash syntax check failed'
 printf 'OMP native launcher contract: PASS\n'

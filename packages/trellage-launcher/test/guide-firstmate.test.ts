@@ -25,8 +25,8 @@ import {
 const sourceRevision = "a".repeat(40)
 const profile: NativeSelectedProfile = {
   surface: "native",
-  launcher: "fmx",
-  commandPath: "/opt/trellage/bin/fmx",
+  launcher: "firstmate",
+  commandPath: "/opt/trellage/bin/trx",
   profile: "default",
   headlessPrompt: false,
   orchestration: parseFirstmateOrchestrationV1({
@@ -78,7 +78,7 @@ const failure = (
 ): CommandRunnerError => new CommandRunnerError({
   kind,
   executable: profile.commandPath,
-  args: ["submit", profile.profile, "--json"],
+  args: ["submit", "firstmate", profile.profile, "--json"],
   message: "The fake transport did not exit successfully.",
   exitCode: 1,
   stdout,
@@ -118,7 +118,7 @@ describe("Firstmate native submission transport", () => {
     expect(runner.calls).toHaveLength(1)
     const call = runner.calls[0]!
     expect(call.executable).toBe(profile.commandPath)
-    expect(call.args).toEqual(["submit", "default", "--json"])
+    expect(call.args).toEqual(["submit", "firstmate", "default", "--json"])
     expect(call.options).toMatchObject({
       cwd: "/work/project",
       stdin: canonicalFirstmateJson(original),
@@ -235,8 +235,8 @@ describe("Firstmate native submission transport", () => {
     expect(runner.calls).toHaveLength(1)
     expect((await client.receipt(original)).status).toBe("accepted")
     expect(runner.calls.map(({ args }) => args)).toEqual([
-      ["submit", "default", "--json"],
-      ["receipt", "default", "--json"],
+      ["submit", "firstmate", "default", "--json"],
+      ["receipt", "firstmate", "default", "--json"],
     ])
     const lookup = parseFirstmateReceiptRequestV1({
       schemaVersion: 1,
@@ -294,8 +294,8 @@ describe("Firstmate native submission transport", () => {
     expect(runner.calls).toHaveLength(1)
     expect(await client.receipt(original)).toMatchObject({ status: "not-found", receipt: missing })
     expect(runner.calls.map(({ args }) => args)).toEqual([
-      ["receipt", "default", "--json"],
-      ["receipt", "default", "--json"],
+      ["receipt", "firstmate", "default", "--json"],
+      ["receipt", "firstmate", "default", "--json"],
     ])
   })
 
@@ -354,7 +354,7 @@ describe("Firstmate submission request validation", () => {
   it("requires an fmx profile with orchestration and public headless disabled", () => {
     const runner = new FakeRunner([])
     const { orchestration: _orchestration, ...noOrchestration } = profile
-    for (const invalid of [noOrchestration, { ...profile, launcher: "cpx" }, { ...profile, headlessPrompt: true }]) {
+    for (const invalid of [noOrchestration, { ...profile, launcher: "copilot" }, { ...profile, headlessPrompt: true }]) {
       expect(() => new FirstmateSubmissionClient(runner, invalid, "/work/project")).toThrow()
     }
     expect(() => new FirstmateSubmissionClient(runner, profile, "relative")).toThrow(/absolute/u)

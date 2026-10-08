@@ -1,6 +1,8 @@
 # Trellage Agency profiles
 
-`agx` starts Agency's managed GitHub Copilot CLI with a named Agency profile
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run agency azure` starts Agency's managed GitHub Copilot CLI with a named Agency profile
 and an isolated `COPILOT_HOME`. It preserves the real `HOME`, current worktree,
 terminal, Git, SSH, Azure, and package-manager environment. This is state
 isolation, not a container or security boundary.
@@ -14,17 +16,17 @@ curl -sSfL https://aka.ms/InstallTool.sh | sh -s agency
 `agx` checks both `PATH` and Agency's standard install path,
 `~/.config/agency/CurrentVersion/agency`.
 
-`agx harness-version` reports the installed Agency version without checking
+`trx harness-version agency azure` reports the installed Agency version without checking
 Azure authentication. Agency does not expose an authoritative latest-version
 query here; Admin displays `N/A` for that column.
 
 The first profile is repository-local:
 
 ```bash
-agx setup trellage-azure
-agx doctor trellage-azure
-agx inventory trellage-azure --json
-agx trellage-azure
+trx setup agency azure
+trx doctor agency azure
+trx inventory agency azure --json
+trx run agency azure
 ```
 
 Run it from this repository or one of its subdirectories. `agx` requires the
@@ -62,7 +64,7 @@ subscription value. It uses `--profile-only`, so base Agency configuration and
 ambient Copilot, VS Code, and repository MCP discovery are excluded as
 documented by Agency. Agency can still add compile-time default MCPs; the
 current internal Agency source is the authority for those defaults. The profile
-does not claim a default is disabled unless `agx doctor` can validate that
+does not claim a default is disabled unless `trx doctor agency azure` can validate that
 policy through the installed Agency build.
 
 Azure authentication is inherited, never copied. `agx` supports:
@@ -91,7 +93,7 @@ Managed launcher files:
 
 ```text
 ~/.local/share/trellage/agx/
-~/.local/bin/agx
+~/.local/share/trellage/agx/bin/agx
 ```
 
 Profile state:
@@ -109,7 +111,7 @@ homes and Agency-managed state outside Trellage are preserved.
 
 ## Skills-only updates
 
-After `trx skills update`, run `agx skills-update trellage-azure` to copy and
+After `trx skills update`, run `trx upgrade agency azure --skills-only` to copy and
 verify the refreshed `native-common` cache in the existing owned profile.
 Custom skills are preserved. Missing caches, unowned state, and unsafe paths
 fail without starting Agency, checking Azure authentication, or changing
@@ -132,7 +134,7 @@ TRELLAGE_AGENCY_COPILOT_VERSION='<exact managed Copilot version>' \
   tests/live.sh
 ```
 
-The driver checks the installed versions and `agx doctor`, then gives the
+The driver checks the installed versions and `trx doctor agency azure`, then gives the
 operator a fixed `/env`, `/mcp`, and read-only request checklist. After exit it
 fails if the main `~/.copilot` changed, the isolated profile has no state, or
 the operator does not confirm the expected MCP composition and successful

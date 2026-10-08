@@ -360,10 +360,40 @@ const guideResearch: ProfileGuideV1 = {
       description: "Research evidence before implementation.",
       skill: "hyperresearch",
       examples: ["Research this implementation approach", "Compare these options with sources"],
-      promptTemplate: "/hyperresearch Research this request before implementation: {{intent}}",
+      promptTemplate:
+        "/hyperresearch Research the evidence that should inform this request before implementation: {{intent}}\n\n" +
+        "Find relevant prior art and source-backed evidence, identify unresolved questions and risks,\n" +
+        "compare implementation options, and explain how the findings should change the approach.",
     },
   ],
 }
+
+const researchGuideMarkdown = `---
+schemaVersion: 1
+capabilities:
+  - bounded-factual-research
+bestFor:
+  - Source-backed research
+  - Comparing implementation options
+avoidFor:
+  - Pure implementation
+  - One-line code fixes
+prerequisites: []
+workflows:
+  - id: vault-backed-research
+    description: Research evidence before implementation.
+    skill: hyperresearch
+    examples:
+      - Research this implementation approach
+      - Compare these options with sources
+    promptTemplate: |
+      /hyperresearch Research the evidence that should inform this request before implementation: {{intent}}
+
+      Find relevant prior art and source-backed evidence, identify unresolved questions and risks,
+      compare implementation options, and explain how the findings should change the approach.
+---
+# Claude Research
+`
 
 describe("capture source presentation", () => {
   it("labels exact and terminal sources without relying on color alone", () => {
@@ -573,7 +603,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
       sandboxCommandPath: "/opt/trellage/bin/trellage",
       native: [
         {
-          launcher: "cdx",
+          launcher: "codex",
           harness: "codex",
           name: "reviewer",
           description: "Codex host-native launcher.",
@@ -581,10 +611,10 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide: guideReviewer,
-          commandPath: "/opt/trellage/cdx/bin/cdx",
+          commandPath: "/opt/trellage/codex/bin/trx",
         },
         {
-          launcher: "jcx",
+          launcher: "jcode",
           harness: "jules",
           name: "writer",
           description: "Jules code-native launcher.",
@@ -592,7 +622,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide: guideWriter,
-          commandPath: "/opt/trellage/jcx/bin/jcx",
+          commandPath: "/opt/trellage/jcode/bin/trx",
         },
       ],
       sandbox: [
@@ -625,7 +655,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
 const buildFirstmateCatalog = (tmpRoot: string): CombinedGuideCatalog => {
   const catalog = buildCatalog(tmpRoot)
   const firstmateEntry = (name: "default" | "pstack-workers"): CombinedGuideCatalog["native"][number] => ({
-    launcher: "fmx",
+    launcher: "firstmate",
     harness: "firstmate",
     name,
     description: `Firstmate ${name} profile.`,
@@ -633,7 +663,7 @@ const buildFirstmateCatalog = (tmpRoot: string): CombinedGuideCatalog => {
     sandbox: false,
     herdrCompatibility: { status: "supported" },
     guide: firstmateGuide(name === "pstack-workers"),
-    commandPath: "/opt/trellage/fmx/bin/fmx",
+    commandPath: "/opt/trellage/firstmate/bin/trx",
   })
   return {
     ...catalog,
@@ -646,7 +676,7 @@ const buildCatalogWithSkillReviewer = (tmpRoot: string): CombinedGuideCatalog =>
   return {
     ...catalog,
     native: catalog.native.map((entry) =>
-      entry.launcher === "cdx" && entry.name === "reviewer" ? { ...entry, guide: guideSkillReviewer } : entry,
+      entry.launcher === "codex" && entry.name === "reviewer" ? { ...entry, guide: guideSkillReviewer } : entry,
     ),
   }
 }
@@ -700,7 +730,7 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
     native: [
       ...catalog.native,
       {
-        launcher: "cpx",
+        launcher: "copilot",
         harness: "copilot",
         name: "hve",
         description: "Copilot with HVE Core.",
@@ -708,7 +738,7 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
         sandbox: false,
         herdrCompatibility: { status: "supported" },
         guide: guideHve,
-        commandPath: "/opt/trellage/cpx/bin/cpx",
+        commandPath: "/opt/trellage/copilot/bin/trx",
       },
     ],
     sandbox: [
@@ -719,24 +749,24 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
   }
 }
 
-/** Writes the selected native "cdx/reviewer" guide Markdown fixture under `root`. */
+/** Writes the selected native "codex/reviewer" guide Markdown fixture under `root`. */
 const writeGuideFixtures = async (root: string, reviewerMarkdown: string = reviewerGuideMarkdown): Promise<void> => {
-  await mkdir(path.join(root, "native", "cdx"), { recursive: true })
-  await writeFile(path.join(root, "native", "cdx", "reviewer.md"), reviewerMarkdown)
+  await mkdir(path.join(root, "native", "codex"), { recursive: true })
+  await writeFile(path.join(root, "native", "codex", "reviewer.md"), reviewerMarkdown)
 }
 
 const writeFirstmateGuideFixture = async (root: string, profile: "default" | "pstack-workers"): Promise<void> => {
-  await mkdir(path.join(root, "native", "fmx"), { recursive: true })
+  await mkdir(path.join(root, "native", "firstmate"), { recursive: true })
   await writeFile(
-    path.join(root, "native", "fmx", `${profile}.md`),
+    path.join(root, "native", "firstmate", `${profile}.md`),
     profile === "pstack-workers" ? firstmatePstackGuideMarkdown : firstmateDefaultGuideMarkdown,
   )
 }
 
 const nativeSelectedProfile = (headlessPrompt: boolean): SelectedProfile => ({
   surface: "native",
-  launcher: "cdx",
-  commandPath: "/opt/trellage/cdx/bin/cdx",
+  launcher: "codex",
+  commandPath: "/opt/trellage/codex/bin/trx",
   profile: "reviewer",
   headlessPrompt,
 })
@@ -763,14 +793,14 @@ const refinementCandidateTriple = (
 ]
 
 const recommendation = (overrides: Partial<GuideRecommendation> = {}): GuideRecommendation => ({
-  profileRef: "native:cdx/reviewer",
+  profileRef: "native:codex/reviewer",
   workflowId: "review",
   confidence: 0.9,
   reason: "Best match for reviewing a diff.",
   tradeoff: "Slower than a quick fix.",
   surface: "native",
   name: "reviewer",
-  launcher: "cdx",
+  launcher: "codex",
   description: "Codex host-native launcher.",
   sandbox: false,
   workflow: { id: "review", description: "Review a diff.", examples: ["Review my last commit"] },
@@ -781,13 +811,13 @@ const recommendation = (overrides: Partial<GuideRecommendation> = {}): GuideReco
 })
 
 const recommendationTriple = (): readonly [GuideRecommendation, GuideRecommendation, GuideRecommendation] => [
-  recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" }),
+  recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" }),
   recommendation({
-    profileRef: "native:jcx/writer",
+    profileRef: "native:jcode/writer",
     workflowId: "draft",
     surface: "native",
     name: "writer",
-    launcher: "jcx",
+    launcher: "jcode",
   }),
   recommendation({
     profileRef: "sandbox:planner",
@@ -1446,7 +1476,7 @@ describe("guideUiReducer: recommendations and generation", () => {
     expect(state.errorMessage).toBe("model unavailable")
   })
 
-  it("generate/template-fallback moves GenerateFailed -> Candidates with usedTemplateFallback true", () => {
+  it("generate/template-fallback moves GenerateFailed -> Candidates with the original failure reason", () => {
     let state = recommendationsState()
     state = guideUiReducer(state, {
       type: GuideUiActionType.RecommendationsConfirm,
@@ -1456,7 +1486,21 @@ describe("guideUiReducer: recommendations and generation", () => {
     const candidates = candidateTriple()
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateTemplateFallback, candidates })
     expect(state.stage).toBe(GuideUiStage.Candidates)
-    expect(state.usedTemplateFallback).toBe(true)
+    expect(state.templateFallback?.kind).toBe("manual")
+    expect(state.candidates).toBe(candidates)
+    expect(state.templateFallback?.reason).toBe("model unavailable")
+  })
+
+  it("generate/template-fallback moves Generating -> Candidates for an automatic safe fallback", () => {
+    let state = recommendationsState()
+    state = guideUiReducer(state, {
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: nativeSelectedProfile(true),
+    })
+    const candidates = candidateTriple()
+    state = guideUiReducer(state, { type: GuideUiActionType.GenerateTemplateFallback, candidates, reason: "Model changed required workflow text" })
+    expect(state.stage).toBe(GuideUiStage.Candidates)
+    expect(state.templateFallback).toEqual({ kind: "validation", reason: "Model changed required workflow text" })
     expect(state.candidates).toBe(candidates)
   })
 
@@ -1474,7 +1518,7 @@ describe("guideUiReducer: recommendations and generation", () => {
     expect(state.guideDocument).toBeUndefined()
   })
 
-  it("generate/succeeded moves Generating -> Candidates with usedTemplateFallback false", () => {
+  it("generate/succeeded moves Generating -> Candidates without a template fallback", () => {
     let state = recommendationsState()
     state = guideUiReducer(state, {
       type: GuideUiActionType.RecommendationsConfirm,
@@ -1483,7 +1527,7 @@ describe("guideUiReducer: recommendations and generation", () => {
     const candidates = candidateTriple()
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates })
     expect(state.stage).toBe(GuideUiStage.Candidates)
-    expect(state.usedTemplateFallback).toBe(false)
+    expect(state.templateFallback).toBeUndefined()
     expect(state.candidates).toBe(candidates)
   })
 
@@ -1495,13 +1539,13 @@ describe("guideUiReducer: recommendations and generation", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateFailed, message: "model unavailable" })
     expect(state.stage).toBe(GuideUiStage.GenerateFailed)
     expect(state.errorMessage).toBe("model unavailable")
     // The guide document must remain available so `t` template fallback works.
-    expect(state.guideDocument).toEqual({ ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" })
+    expect(state.guideDocument).toEqual({ ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" })
   })
 
   it("generate/template-fallback-failed replaces the error message with the fallback's own error, staying on GenerateFailed (no silent catch)", () => {
@@ -1512,7 +1556,7 @@ describe("guideUiReducer: recommendations and generation", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateFailed, message: "model unavailable" })
     state = guideUiReducer(state, {
@@ -1552,7 +1596,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
     return state
@@ -1639,7 +1683,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
       guideDocument: {
-        ref: "native:cdx/reviewer",
+        ref: "native:codex/reviewer",
         guide: guideSkillReviewer,
         body: "guide body",
       },
@@ -1676,7 +1720,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
       state.selectedCandidate?.prompt ?? "",
       "/repo",
     )
-    expect(result.command.args).toEqual(["reviewer", "--", "/review-diff /different-command Keep this full user edit."])
+    expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "/review-diff /different-command Keep this full user edit."])
     const serialized = JSON.stringify(result)
     expect(serialized).not.toContain("promptTemplate")
     expect(serialized).not.toContain("fixedFrame")
@@ -1713,7 +1757,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
       guideDocument: {
-        ref: "native:cdx/reviewer",
+        ref: "native:codex/reviewer",
         guide: pstackGuide,
         body: "guide body",
       },
@@ -1779,7 +1823,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
       guideDocument: {
-        ref: "native:cdx/reviewer",
+        ref: "native:codex/reviewer",
         guide: punctuationGuide,
         body: "guide body",
       },
@@ -2075,7 +2119,7 @@ describe("runGuideGenerationStep", () => {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
       const provider = new FakeGuideProvider()
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
 
       const phases: GuideGenerationPhase[] = []
       const result = await runGuideGenerationStep(
@@ -2093,14 +2137,14 @@ describe("runGuideGenerationStep", () => {
       expect(provider.optimizeCalls).toEqual([
         {
           targetTool: guidePromptTarget("codex"),
-          profileRef: "native:cdx/reviewer",
+          profileRef: "native:codex/reviewer",
           bodyBudget: 8000,
           candidates: candidateTriple(),
         },
       ])
       expect(provider.generateCalls[0]).toEqual({
         intent: "Review my PR",
-        profileRef: "native:cdx/reviewer",
+        profileRef: "native:codex/reviewer",
         workflowId: "review",
         bodyBudget: 8000,
         guide: guideReviewer,
@@ -2124,7 +2168,7 @@ describe("runGuideGenerationStep", () => {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
       const provider = new FakeGuideProvider()
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
       let gatedCandidates = 0
       const result = await runGuideGenerationStep(
         catalog,
@@ -2155,7 +2199,7 @@ describe("runGuideGenerationStep", () => {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
       const provider = new FakeGuideProvider()
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
       const cache = new GuideArtifactCache({
         cwd: tmpRoot,
         routing: {
@@ -2192,13 +2236,13 @@ describe("runGuideGenerationStep", () => {
           })),
         }),
       })
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
 
       const result = await runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)
 
       expect(provider.optimizeCalls[0]).toEqual({
         targetTool: guidePromptTarget("codex"),
-        profileRef: "native:cdx/reviewer",
+        profileRef: "native:codex/reviewer",
         bodyBudget: 8000 - "/review-diff ".length,
         candidates: candidateTriple(),
         fixedFrame: {
@@ -2211,6 +2255,59 @@ describe("runGuideGenerationStep", () => {
         prompt: "/review-diff Prompt Master: Do the focused thing.",
         notes: "Quick pass. Optimized.",
       })
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("uses the authored template fallback when Research generation alters its fixed prose frame", async () => {
+    const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-research-frame-"))
+    try {
+      const catalog = buildCatalogWithPinnedLenses(tmpRoot)
+      await mkdir(path.join(tmpRoot, "profile-guides", "sandbox"), { recursive: true })
+      await writeFile(path.join(tmpRoot, "profile-guides", "sandbox", "claude-research.md"), researchGuideMarkdown)
+      const intent = "Migrate trx guide to the composed profile runtime."
+      const provider = new FakeGuideProvider({
+        generateResult: {
+          candidates: [
+            candidate({
+              title: "Architecture",
+              prompt: `Research the evidence that should inform this migration before implementation: ${intent}`,
+            }),
+            candidate({
+              title: "Compatibility",
+              prompt: `Research the evidence that should inform this transition before implementation: ${intent}`,
+            }),
+            candidate({
+              title: "Rollout",
+              prompt: `Research the evidence that should inform this rollout before implementation: ${intent}`,
+            }),
+          ],
+        },
+        optimizeResult: () => {
+          throw new Error("optimize must not run after unsafe fixed-frame generation")
+        },
+      })
+      const researchWorkflow = guideResearch.workflows.find(({ id }) => id === "vault-backed-research")
+      if (researchWorkflow === undefined) throw new Error("Missing Research workflow fixture")
+      const { launcher: _launcher, ...chosen } = recommendation({
+        profileRef: "sandbox:claude-research",
+        workflowId: "vault-backed-research",
+        surface: "sandbox",
+        name: "claude-research",
+        description: "Claude Research container.",
+        sandbox: true,
+        workflow: researchWorkflow,
+        prerequisites: [],
+      })
+
+      const result = await runGuideGenerationStep(catalog, tmpRoot, provider, intent, chosen)
+
+      expect(result.templateFallback?.kind).toBe("validation")
+      expect(result.templateFallback?.reason).toContain("materially altered authored prose frame")
+      expect(provider.generateCalls).toHaveLength(1)
+      expect(result.candidates).toEqual(templateGuideCandidates(guideResearch, "vault-backed-research", intent))
+      expect(provider.optimizeCalls).toHaveLength(0)
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
     }
@@ -2244,7 +2341,7 @@ describe("runGuideGenerationStep", () => {
           throw new Error("optimize must not be called after a body collision")
         },
       })
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
 
       expect(new Set(rawCandidates.map(({ prompt }) => prompt)).size).toBe(3)
       await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
@@ -2282,7 +2379,7 @@ describe("runGuideGenerationStep", () => {
           ],
         }),
       })
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
 
       await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
         /no longer distinct after optimization resolution and exact rendering.*template fallback/u,
@@ -2299,7 +2396,7 @@ describe("runGuideGenerationStep", () => {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
       const provider = new FakeGuideProvider({ generateResult: { candidates: [candidate()] } })
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
 
       await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
         /exactly three/u,
@@ -2321,9 +2418,9 @@ describe("runGuideGenerationStep", () => {
         await writeFirstmateGuideFixture(tmpRoot, profile)
         const provider = new FakeGuideProvider()
         const chosen = recommendation({
-          profileRef: `native:fmx/${profile}`,
+          profileRef: `native:firstmate/${profile}`,
           workflowId: "orchestrate",
-          launcher: "fmx",
+          launcher: "firstmate",
           name: profile,
         })
 
@@ -2351,7 +2448,7 @@ describe("runGuideGenerationStep", () => {
     try {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
       const failingProvider: GuideProvider = {
         match: () => Promise.reject(new Error("match must not be called during generation")),
         generate: () => Promise.reject(new Error("model unavailable")),
@@ -2380,9 +2477,9 @@ describe("runGuideGenerationStep", () => {
 describe("runGuideRefinementStep", () => {
   it("calls provider.refine constrained by the same intent/profile/workflow/guide/body plus the prior candidate and feedback", async () => {
     const provider = new FakeGuideProvider()
-    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
-      ref: "native:cdx/reviewer",
+      ref: "native:codex/reviewer",
       guide: guideReviewer,
       body: "guide body",
     }
@@ -2405,14 +2502,14 @@ describe("runGuideRefinementStep", () => {
     expect(provider.optimizeCalls).toEqual([
       {
         targetTool: guidePromptTarget("codex"),
-        profileRef: "native:cdx/reviewer",
+        profileRef: "native:codex/reviewer",
         bodyBudget: 8000,
         candidates: [{ title: "Refined", prompt: "Do the focused thing.", notes: "Quick pass." }],
       },
     ])
     expect(provider.refineCalls[0]).toEqual({
       intent: "Review my PR",
-      profileRef: "native:cdx/reviewer",
+      profileRef: "native:codex/reviewer",
       workflowId: "review",
       bodyBudget: 8000,
       guide: guideReviewer,
@@ -2427,7 +2524,7 @@ describe("runGuideRefinementStep", () => {
     const cwd = await mkdtemp(path.join(tmpdir(), "guide-ui-refine-cache-"))
     try {
       const provider = new FakeGuideProvider()
-      const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
       const guideDocument: SelectedGuideDocument = { ref: chosen.profileRef, guide: guideReviewer, body: "guide body" }
       const prior = refinementCandidateTriple(
         candidate({ title: "Focused", prompt: "Do the focused thing.", notes: "Quick pass." }),
@@ -2478,9 +2575,9 @@ describe("runGuideRefinementStep", () => {
         throw new Error("optimize must not run after unsafe refinement")
       },
     })
-    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
-      ref: "native:cdx/reviewer",
+      ref: "native:codex/reviewer",
       guide: guideReviewer,
       body: "guide body",
     }
@@ -2508,9 +2605,9 @@ describe("runGuideRefinementStep", () => {
       refineResult: { candidate: duplicate },
       optimizeResult: (input) => ({ candidates: input.candidates }),
     })
-    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
-      ref: "native:cdx/reviewer",
+      ref: "native:codex/reviewer",
       guide: guideReviewer,
       body: "guide body",
     }
@@ -2558,9 +2655,9 @@ describe("runGuideRefinementStep", () => {
           : workflow,
       ),
     }
-    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
-      ref: "native:cdx/reviewer",
+      ref: "native:codex/reviewer",
       guide: skillGuide,
       body: "guide body",
     }
@@ -2579,7 +2676,7 @@ describe("runGuideRefinementStep", () => {
     expect(provider.refineCalls[0]?.candidate.prompt).toBe("Do the focused thing.")
     expect(provider.optimizeCalls[0]).toEqual({
       targetTool: guidePromptTarget("codex"),
-      profileRef: "native:cdx/reviewer",
+      profileRef: "native:codex/reviewer",
       bodyBudget: 8000 - "/social-media-skills:post-writer ".length,
       candidates: [
         {
@@ -2622,9 +2719,9 @@ describe("runGuideRefinementStep", () => {
         },
       },
     })
-    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "plan" })
+    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "plan" })
     const guideDocument: SelectedGuideDocument = {
-      ref: "native:cdx/reviewer",
+      ref: "native:codex/reviewer",
       guide: proseGuide,
       body: "guide body",
     }
@@ -2669,9 +2766,9 @@ describe("runGuideRefinementStep", () => {
         })),
       }),
     })
-    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
-      ref: "native:cdx/reviewer",
+      ref: "native:codex/reviewer",
       guide: guideSkillReviewer,
       body: "guide body",
     }
@@ -2742,11 +2839,11 @@ describe("runGuideRefinementStep", () => {
       },
     })
     const chosen = recommendation({
-      profileRef: "native:cdx/reviewer",
+      profileRef: "native:codex/reviewer",
       workflowId: "compound",
     })
     const guideDocument: SelectedGuideDocument = {
-      ref: "native:cdx/reviewer",
+      ref: "native:codex/reviewer",
       guide: compoundGuide,
       body: "guide body",
     }
@@ -2836,9 +2933,9 @@ describe("runGuideRefinementStep", () => {
         },
       },
     })
-    const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
-      ref: "native:cdx/reviewer",
+      ref: "native:codex/reviewer",
       guide: guideSkillReviewer,
       body: "guide body",
     }
@@ -2872,14 +2969,14 @@ describe("runGuideRefinementStep", () => {
     "reapplies the canonical Firstmate contract after interactive refinement for %s",
     async (profile, expectedHeading, expectsWorkerContract) => {
       const chosen = recommendation({
-        profileRef: `native:fmx/${profile}`,
+        profileRef: `native:firstmate/${profile}`,
         workflowId: "orchestrate",
-        launcher: "fmx",
+        launcher: "firstmate",
         name: profile,
       })
       const guide = firstmateGuide(profile === "pstack-workers")
       const guideDocument: SelectedGuideDocument = {
-        ref: `native:fmx/${profile}`,
+        ref: `native:firstmate/${profile}`,
         guide,
         body: "guide body",
       }
@@ -2973,7 +3070,7 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
           kind: "hve-rpi",
           key: "h",
           emoji: "🔄",
-          profileRef: "native:cpx/hve",
+          profileRef: "native:copilot/hve",
           workflowId: "rpi-agent-cycle",
         },
       ])
@@ -2987,8 +3084,8 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
 
       expect(selectedProfileForPinnedLens(catalog, lens)).toEqual({
         surface: "native",
-        launcher: "cpx",
-        commandPath: "/opt/trellage/cpx/bin/cpx",
+        launcher: "copilot",
+        commandPath: "/opt/trellage/copilot/bin/trx",
         profile: "hve",
         headlessPrompt: true,
         agent: "hve-core:rpi-agent",
@@ -3258,7 +3355,7 @@ describe("destinationOptions", () => {
       })
 
       it("describes generation as concise user-facing processing steps", () => {
-        const chosen = recommendation({ profileRef: "native:cdx/reviewer", workflowId: "review" })
+        const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
         expect(generationProgressItems(chosen)).toEqual([
           { phase: GuideGenerationPhase.LoadingProfile, label: "Read Reviewer guidance" },
           {
@@ -3356,8 +3453,8 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
-        launcher: "cpx",
-        commandPath: "/opt/trellage/cpx/bin/cpx",
+        launcher: "copilot",
+        commandPath: "/opt/trellage/copilot/bin/trx",
         profile: "plannotator",
         headlessPrompt: true,
       },
@@ -3365,7 +3462,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
       "/repo",
     )
     expect(result.action).toBe("current-terminal")
-    expect(result.command.args).toEqual(["plannotator", "-i", "Do the thing."])
+    expect(result.command.args).toEqual(["run", "copilot", "plannotator", "-i", "Do the thing."])
     expect(result.promptHandling).toBe("argv")
   })
 
@@ -3373,8 +3470,8 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
-        launcher: "cpx",
-        commandPath: "/opt/trellage/cpx/bin/cpx",
+        launcher: "copilot",
+        commandPath: "/opt/trellage/copilot/bin/trx",
         profile: "hve",
         headlessPrompt: true,
         agent: "hve-core:rpi-agent",
@@ -3383,7 +3480,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
       "/repo",
     )
     expect(result.command.args).toEqual([
-      "hve",
+      "run", "copilot", "hve",
       "--agent",
       "hve-core:rpi-agent",
       "-i",
@@ -3394,7 +3491,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
 
   it("passes a cdx prompt positionally even when conservative headless support is false", () => {
     const result = buildCurrentTerminalResult(nativeSelectedProfile(false), "Do the thing.", "/repo")
-    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
+    expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])
     expect(result.promptHandling).toBe("argv")
   })
 
@@ -3402,15 +3499,15 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
-        launcher: "grx",
-        commandPath: "/opt/trellage/grx/bin/grx",
+        launcher: "unknown",
+        commandPath: "/opt/trellage/unknown/bin/unknown",
         profile: "reviewer",
         headlessPrompt: false,
       },
       "Do the thing.",
       "/repo",
     )
-    expect(result.command.args).toEqual(["reviewer"])
+    expect(result.command.args).toEqual(["run", "unknown", "reviewer"])
     expect(result.promptHandling).toBe("manual-paste")
   })
 
@@ -3437,8 +3534,8 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
     const result = buildCurrentHerdrWorkspaceResult(
       {
         surface: "native",
-        launcher: "cpx",
-        commandPath: "/opt/trellage/cpx/bin/cpx",
+        launcher: "copilot",
+        commandPath: "/opt/trellage/copilot/bin/trx",
         profile: "hve",
         headlessPrompt: false,
         agent: "hve-core:rpi-agent",
@@ -3447,14 +3544,14 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
       "/repo",
       herdrContext,
     )
-    expect(result.command.args).toEqual(["hve", "--agent", "hve-core:rpi-agent", "-i", "Run the complete RPI cycle."])
+    expect(result.command.args).toEqual(["run", "copilot", "hve", "--agent", "hve-core:rpi-agent", "-i", "Run the complete RPI cycle."])
     expect(result.promptDelivery).toBe("command")
   })
 
   it("queues a cdx positional prompt so hook trust cannot consume later prompt injection", () => {
     const result = buildCurrentHerdrWorkspaceResult(nativeSelectedProfile(true), "Do the thing.", "/repo", herdrContext)
     expect(result.action).toBe("current-herdr-workspace")
-    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
+    expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])
     expect(result.promptDelivery).toBe("command")
     expect(result.callerPaneId).toBe("pane-1")
     expect(result.direction).toBe("right")
@@ -3465,7 +3562,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
     expect(result.action).toBe("new-herdr-tab")
     expect(result.workspaceId).toBe("workspace-1")
     expect(result.cwd).toBe("/repo")
-    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
+    expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])
     expect(result.promptDelivery).toBe("command")
   })
 
@@ -3478,7 +3575,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
       "main",
     )
     expect(result.action).toBe("herdr-worktree-create")
-    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
+    expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])
     expect(result.promptDelivery).toBe("command")
     expect(result.branch).toBe("worktree/do-the-thing")
     expect(result.baseRef).toBe("main")
@@ -3493,7 +3590,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
       "/repo-worktrees/existing",
     )
     expect(result.action).toBe("herdr-worktree-open")
-    expect(result.command.args).toEqual(["reviewer", "--", "Do the thing."])
+    expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])
     expect(result.promptDelivery).toBe("command")
     expect(result.path).toBe("/repo-worktrees/existing")
   })
@@ -3523,7 +3620,7 @@ describe("guideUiReducer: readiness", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesConfirm })
@@ -3581,7 +3678,7 @@ describe("guideUiReducer: destination", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesConfirm })
@@ -3608,7 +3705,7 @@ describe("guideUiReducer: destination", () => {
   it("destination/start-worktree seeds the branch editor with the default slug branch", () => {
     const state = guideUiReducer(destinationState(), { type: GuideUiActionType.DestinationStartWorktree })
     expect(state.stage).toBe(GuideUiStage.WorktreeBranchEditor)
-    expect(state.textDraft).toBe("wt/cdx-reviewer-review-my-pr")
+    expect(state.textDraft).toBe("wt/codex-reviewer-review-my-pr")
   })
 })
 
@@ -3622,7 +3719,7 @@ describe("guideUiReducer: worktree branch, invalid branch, and inspection failur
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesConfirm })
@@ -3681,7 +3778,7 @@ describe("guideUiReducer: worktree collision handling", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesConfirm })
@@ -3748,7 +3845,7 @@ describe("guideUiReducer: worktree ready and confirmation counts", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesConfirm })
@@ -3940,13 +4037,13 @@ describe("guideUiReducer: fork tabs", () => {
       forkId: 1,
       action: {
         type: GuideUiActionType.GenerateGuideLoaded,
-        guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+        guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
       },
     })
     expect(delivered.activeForkId).toBe(2)
     expect(delivered.stage).toBe(GuideUiStage.Generating)
     expect(delivered.guideDocument).toBeUndefined()
-    expect(forkState(delivered, 1)?.guideDocument?.ref).toBe("native:cdx/reviewer")
+    expect(forkState(delivered, 1)?.guideDocument?.ref).toBe("native:codex/reviewer")
   })
 
   it("reports a fork as busy until its own work lands", () => {
@@ -3992,7 +4089,7 @@ describe("guideUiReducer: prepared goal ownership", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: goalGuide, body: "Use the review workflow." },
+      guideDocument: { ref: "native:codex/reviewer", guide: goalGuide, body: "Use the review workflow." },
     })
     return guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates })
   }
@@ -4018,7 +4115,7 @@ describe("guideUiReducer: prepared goal ownership", () => {
     const resumed = guideUiReducer(rematched, { type: GuideUiActionType.ForkSelect, index: 0 })
     const placed = guideUiReducer(resumed, { type: GuideUiActionType.CandidatesEnqueue })
     const branch = guideUiReducer(placed, { type: GuideUiActionType.QueuePlacementStartWorktree })
-    expect(branch.textDraft).toBe("wt/cdx-reviewer-describe")
+    expect(branch.textDraft).toBe("wt/codex-reviewer-describe")
     expect(branch.textDraft).not.toContain("different")
     expect(branch.textDraft).not.toContain("you-will-work")
   })
@@ -4052,7 +4149,7 @@ describe("guideUiReducer: prepared goal ownership", () => {
     expect(state.selectedRecommendation?.workflowId).toBe("review")
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: goalGuide, body: "Use the review workflow." },
+      guideDocument: { ref: "native:codex/reviewer", guide: goalGuide, body: "Use the review workflow." },
     })
     state = guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates })
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesEnqueue })
@@ -4161,7 +4258,7 @@ describe("guideUiReducer: batch queue", () => {
     })
     state = guideUiReducer(state, {
       type: GuideUiActionType.GenerateGuideLoaded,
-      guideDocument: { ref: "native:cdx/reviewer", guide: guideReviewer, body: "guide body" },
+      guideDocument: { ref: "native:codex/reviewer", guide: guideReviewer, body: "guide body" },
     })
     return guideUiReducer(state, { type: GuideUiActionType.GenerateSucceeded, candidates: candidateTriple() })
   }
@@ -4182,7 +4279,7 @@ describe("guideUiReducer: batch queue", () => {
 
   it("reserves suggestions in both routes, rejects manual conflicts, and preserves a reopened job", () => {
     const first = destinationState()
-    const branch = "wt/cdx-reviewer-review-my-pr"
+    const branch = "wt/codex-reviewer-review-my-pr"
     const placement = { kind: "new-worktree", branch, baseRef: "HEAD" } as const
     const queued = guideUiReducer(first, { type: GuideUiActionType.DestinationEnqueue, placement })
     const next = candidatesFrom(guideUiReducer(queued, { type: GuideUiActionType.QueueAddAnother }))
@@ -4200,7 +4297,7 @@ describe("guideUiReducer: batch queue", () => {
     const rejected = guideUiReducer(entered, { type: GuideUiActionType.WorktreeSubmitBranch })
     expect(rejected.stage).toBe(GuideUiStage.WorktreeBranchEditor)
     expect(rejected.textDraft).toBe(` ${branch} `)
-    expect(rejected.errorMessage).toContain("already queued by job 1 (cdx reviewer)")
+    expect(rejected.errorMessage).toContain("already queued by job 1 (codex reviewer)")
     expect(rejected.queue).toBe(queued.queue)
     expect(rejected.forks).toBe(entered.forks)
     expect(rejected.candidates).toBe(entered.candidates)
@@ -4246,7 +4343,7 @@ describe("guideUiReducer: batch queue", () => {
   })
 
   it("rechecks the shared queue when a parked inspected fork is confirmed", () => {
-    const placement = { kind: "new-worktree", branch: "wt/cdx-reviewer-review-my-pr", baseRef: "main" } as const
+    const placement = { kind: "new-worktree", branch: "wt/codex-reviewer-review-my-pr", baseRef: "main" } as const
     const editing = guideUiReducer(destinationState(), { type: GuideUiActionType.DestinationStartWorktree })
     const inspected = guideUiReducer(guideUiReducer(editing, { type: GuideUiActionType.WorktreeSubmitBranch }), {
       type: GuideUiActionType.WorktreeReady,

@@ -74,7 +74,7 @@ const assessment = (): ContinuationAssessment => ({
     expectedOutput: `A ${title.toLowerCase()} result.`,
     evidenceIds: ["message-1", "message-4"],
     importance: index === 0 ? ActionImportance.Required : ActionImportance.Optional,
-    profileRef: "native:cdx/default",
+    profileRef: "native:codex/default",
     workflowId: "review",
     dependsOn: index === 4 ? ["action-1"] : [],
     access: ActionAccess.Unknown,
@@ -82,7 +82,7 @@ const assessment = (): ContinuationAssessment => ({
   questions: [],
 })
 
-const catalog = new Map([["native:cdx/default", new Set(["review"])]])
+const catalog = new Map([["native:codex/default", new Set(["review"])]])
 
 const draft = (): ContinuationDraft => {
   const result = assessment()
@@ -322,7 +322,7 @@ describe("continuation assessment", () => {
     { evidenceIds: [] },
     { evidenceIds: ["invented-message"] },
     { evidenceIds: ["message-1", "message-1"] },
-    { profileRef: "native:cdx/invented" },
+    { profileRef: "native:codex/invented" },
     { profileRef: "cdx default; do-something" },
     { workflowId: "invented" },
     { dependsOn: ["action-1"] },
@@ -458,7 +458,7 @@ describe("continuation draft", () => {
         prompt: request.generatedSpec,
         projectTarget: request.projectTarget,
         projectTargetConfirmed: true,
-        profileRef: "native:fmx/default",
+        profileRef: "native:firstmate/default",
         workflowId: request.workflowId,
         placement: { kind: ContinuationPlacementKind.NewTab },
         firstmateSubmission: { request, receipt },
@@ -488,7 +488,7 @@ describe("continuation draft", () => {
       const original = draft()
       const actions = original.actions.map((edit) => ({
         ...edit,
-        profileRef: "native:fmx/default",
+        profileRef: "native:firstmate/default",
         workflowId: "review",
         status: ContinuationActionStatus.Prepared,
         prompt: "Old saved Firstmate preparation.",
@@ -571,10 +571,10 @@ describe("continuation draft", () => {
         schemaVersion: 1, profile: "default", instanceId: submissionRequest().expectedFleet.instanceId, mode: "named",
       })
       const actions = original.actions.map((edit, index) => index > 0 ? edit : {
-        ...edit, profileRef: "native:fmx/default", workflowId: "review", firstmateInstance,
+        ...edit, profileRef: "native:firstmate/default", workflowId: "review", firstmateInstance,
       })
       expect(validateContinuationDraft({ ...original, actions }).actions).toEqual(actions)
-      for (const profileRef of ["native:fmx/pstack-workers", "native:cdx/default"]) {
+      for (const profileRef of ["native:firstmate/pstack-workers", "native:codex/default"]) {
         expect(() => validateContinuationDraft({
           ...original, actions: actions.map((edit, index) => index > 0 ? edit : { ...edit, profileRef }),
         })).toThrow(/selected static profile/)
@@ -583,7 +583,7 @@ describe("continuation draft", () => {
         ...original,
         assessment: {
           ...original.assessment!,
-          actions: original.assessment!.actions.map((action, index) => index > 0 ? action : { ...action, profileRef: "native:fmx/default" }),
+          actions: original.assessment!.actions.map((action, index) => index > 0 ? action : { ...action, profileRef: "native:firstmate/default" }),
         },
         actions: original.actions.map((edit, index) => index > 0 ? edit : { ...edit, firstmateInstance }),
       }
@@ -711,7 +711,7 @@ describe("continuation draft", () => {
       { originalIntent: "Changed captain brief" },
       { prompt: "Changed generated specification" },
       { workflowId: "another-workflow" },
-      { profileRef: "native:fmx/pstack-workers" },
+      { profileRef: "native:firstmate/pstack-workers" },
       { projectTarget: null },
       { projectTargetConfirmed: false },
     ])("rejects persisted action content which contradicts its payload: %#", (change) => {
@@ -762,7 +762,7 @@ describe("continuation draft", () => {
     { status: "complete" },
     { status: ContinuationActionStatus.Launching },
     { status: ContinuationActionStatus.Prepared },
-    { profileRef: "native:cdx/default" },
+    { profileRef: "native:codex/default" },
     { prerequisitesConfirmed: 1 },
     { sharedWriteConfirmed: "yes" },
     { prompt: "x".repeat(conversationLimits.promptChars + 1) },
@@ -795,7 +795,7 @@ describe("continuation draft", () => {
             status: ContinuationActionStatus.Prepared,
             prompt: "Review this selected action.",
             placement,
-            profileRef: "native:cdx/default",
+            profileRef: "native:codex/default",
             workflowId: "review",
             prerequisitesConfirmed: true,
             sharedWriteConfirmed: false,

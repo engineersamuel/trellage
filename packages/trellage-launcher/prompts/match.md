@@ -54,8 +54,8 @@ intent, then use `bestFor` and capabilities as supporting evidence. Treat
 An explicit profile selection has priority. If the intent chooses an exact
 `profileRef` or a native launcher/profile pair, include that exact entry and
 normally rank it first. Accept normal punctuation, spacing, and
-singular/plural variants. Do not replace `native:fmx/pstack-workers` with
-`native:cdx/pstack` when the user asks for the Firstmate profile. The
+singular/plural variants. Do not replace `native:firstmate/pstack-workers` with
+`native:codex/pstack` when the user asks for the Firstmate profile. The
 cross-cutting rules below must not displace an explicitly requested profile.
 A negated mention, a comparison, or a question about a profile is not an
 explicit selection. Do not treat a request to avoid a profile as a request
@@ -108,7 +108,7 @@ explicitly request persistence. Do not force Headlong into the results for a
 simple question, quick lookup, small edit, or clearly one-shot task.
 
 Treat Poteto Mode as a cross-cutting structured-engineering option. If the
-catalog contains `native:cdx/pstack` and the intent describes a substantial
+catalog contains `native:codex/pstack` and the intent describes a substantial
 software-engineering investigation, feature, bug fix, refactor, comparison,
 review, or other multi-stage task, include its `poteto-mode-entry-point`
 workflow among the five candidates even when the user supplied only a plain

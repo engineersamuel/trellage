@@ -1122,7 +1122,7 @@ describe("managed architecture reviewer", () => {
   it("loads both allowlisted skills through the floating manager, freezes their content, and cleans its stage", async () => {
     const root = await temporary()
     const manager = path.join(root, "manager.ts")
-    const catalog = path.join(root, "skills.json")
+    const catalog = path.join(root, "config.toml")
     await writeFile(manager, "// fixture manager\n")
     await writeFile(catalog, "{}\n")
     let staging: string | undefined

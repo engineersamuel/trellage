@@ -27,7 +27,7 @@ const sandboxTargetFor = (selector: string | undefined, result: AdminHarnessVers
 const targetFor = (entry: AdminProfileEntry, result: AdminHarnessVersionResult | undefined): UpgradeTargetVersion =>
   entry.surface === "sandbox"
     ? sandboxTargetFor(entry.harnessVersionSelector, result)
-    : latestTargetFor(result, entry.launcher === "fmx" ? " (catalog pin)" : "")
+    : latestTargetFor(result, entry.launcher === "firstmate" ? " (catalog pin)" : "")
 
 export const harnessUpgradeAvailability = (
   entry: AdminProfileEntry,

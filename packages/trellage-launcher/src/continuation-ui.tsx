@@ -460,7 +460,7 @@ export class ContinuationUiController {
     if (!this.canEdit()) return
     const selected = focusedAction(this.state)
     if (selected === null) return
-    if (!(selected.edit.profileRef ?? selected.action.profileRef).startsWith("native:fmx/")) {
+    if (!(selected.edit.profileRef ?? selected.action.profileRef).startsWith("native:firstmate/")) {
       this.fail(new Error("Project target selection is available for Firstmate profiles."))
       return
     }
@@ -543,7 +543,7 @@ export class ContinuationUiController {
   private requireFirstmateSpecification(actionId: string): ContinuationActionDraft {
     const { action, edit } = continuationAction(this.state.draft, actionId)
     const profile = continuationProfile(this.state.draft, actionId, this.services.profiles)
-    if (!(edit.profileRef ?? action.profileRef).startsWith("native:fmx/") || profile?.orchestration === undefined) {
+    if (!(edit.profileRef ?? action.profileRef).startsWith("native:firstmate/") || profile?.orchestration === undefined) {
       throw new Error("Fleet actions require an inbox-capable Firstmate profile. Legacy profiles use the complete manual-paste prompt.")
     }
     if (continuationActionLocked(edit)) throw new Error("This request is accepted or uncertain. Reload its receipt; do not create another request.")
@@ -1112,7 +1112,7 @@ const overviewDocument = (state: ContinuationUiState): ContinuationDocument => {
 }
 
 const savedProjectTargetLines = (edit: ContinuationActionDraft, profileRef: string): ReadonlyArray<string> =>
-  edit.projectTarget === undefined ? [] : describeContinuationProjectTarget(edit, profileRef.startsWith("native:fmx/"))
+  edit.projectTarget === undefined ? [] : describeContinuationProjectTarget(edit, profileRef.startsWith("native:firstmate/"))
 
 const actionContextLines = (edit: ContinuationActionDraft, profileRef: string): ReadonlyArray<string> => [
   ...(edit.firstmateInstance === undefined ? [] : [
@@ -1120,17 +1120,17 @@ const actionContextLines = (edit: ContinuationActionDraft, profileRef: string): 
     "The instance binding is separate from the confirmed project and destination.",
   ]),
   ...(edit.originalIntent === undefined ? [] : [
-    profileRef.startsWith("native:fmx/")
+    profileRef.startsWith("native:firstmate/")
       ? "Original human intent - kept separate from the specification:"
       : "Original human intent - included in the complete launch prompt:",
     edit.originalIntent, "",
   ]),
-  ...(profileRef.startsWith("native:fmx/") || edit.projectTarget !== undefined
-    ? [...describeContinuationProjectTarget(edit, profileRef.startsWith("native:fmx/")), "Herdr placement is not the Firstmate project target.", ""] : []),
+  ...(profileRef.startsWith("native:firstmate/") || edit.projectTarget !== undefined
+    ? [...describeContinuationProjectTarget(edit, profileRef.startsWith("native:firstmate/")), "Herdr placement is not the Firstmate project target.", ""] : []),
 ]
 
 const actionControls = (profileRef: string, instances: boolean): ReadonlyArray<string> => {
-  const firstmate = profileRef.startsWith("native:fmx/")
+  const firstmate = profileRef.startsWith("native:firstmate/")
   return [
     `b Brief | p Profile | w Workflow | ${firstmate ? "t Target | " : ""}g Prepare`,
     `o Full prompt | d Destination | ${firstmate ? "f Fleet action | " : ""}v Evidence`,
@@ -1220,7 +1220,7 @@ const promptTransportDetails = (
   action: NextAction,
   edit: ContinuationActionDraft,
 ): { readonly lines: ReadonlyArray<string>; readonly controls: string } => {
-  if (!(edit.profileRef ?? action.profileRef).startsWith("native:fmx/")) return { lines: [], controls: "" }
+  if (!(edit.profileRef ?? action.profileRef).startsWith("native:firstmate/")) return { lines: [], controls: "" }
   const inbox = continuationProfile(state.draft, action.id, services.profiles)?.orchestration !== undefined
   return inbox
     ? { lines: firstmatePromptLines(edit), controls: " | r Project target | f Fleet action | i Instance" }
@@ -1294,7 +1294,7 @@ const placementDocument = (state: ContinuationUiState, services: ContinuationSer
         : `[${selected.edit.sharedWriteConfirmed ? "x" : " "}] I explicitly allow this action to write in this shared destination.`,
       "No automatic stash, commit, merge, or copying of dirty files.",
       "Changing the destination clears shared writable confirmation.",
-      ...((selected.edit.profileRef ?? selected.action.profileRef).startsWith("native:fmx/") ? [
+      ...((selected.edit.profileRef ?? selected.action.profileRef).startsWith("native:firstmate/") ? [
         "This is the supervisor destination, not the project target.",
         ...(continuationProfile(state.draft, selected.action.id, services.profiles)?.orchestration === undefined
           ? ["Legacy delivery uses the complete manual-paste prompt, not an inbox control operation."]

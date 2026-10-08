@@ -33,7 +33,7 @@ report_error() {
   status=1
 }
 
-for required_command in jq cdx codex cpx grx; do
+for required_command in jq trx codex; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     report_error "required command not found: $required_command"
   fi
@@ -42,6 +42,25 @@ done
 if ! command -v jq >/dev/null 2>&1; then
   exit "$status"
 fi
+
+native_profile_command() {
+  local launcher="$1"
+  local operation="$2"
+  shift 2
+  local harness
+  case "$launcher" in
+    cdx) harness=codex ;;
+    cpx) harness=copilot ;;
+    *) report_error "unknown profile verifier harness: $launcher"; return 1 ;;
+  esac
+  if [ "$operation" = run ]; then
+    local profile="$1"
+    shift
+    trx run "$harness" "$profile" -- "$@"
+  else
+    trx "$operation" "$harness" "$@"
+  fi
+}
 
 live_timeout_seconds=60
 if [ "$live_mode" -eq 1 ] \
@@ -578,7 +597,7 @@ probe_cpx_live() {
   prepare_live_probe cpx "$profile" "$package" "$source_skills"
   prompt="$(<"$live_prompt_file")"
   run_live_process /dev/null "$events_file" "$error_file" \
-    cpx "$profile" \
+    trx run copilot "$profile" -- \
       --prompt "$prompt" \
       --output-format json \
       --no-ask-user \
@@ -614,42 +633,6 @@ probe_cpx_live() {
   fi
 }
 
-probe_grx_live() {
-  local profile="$1"
-  local package="$2"
-  local source_skills="$3"
-  local result_file="$temp_dir/live-grx-$profile-result.json"
-  local error_file="$temp_dir/live-grx-$profile.stderr"
-  local prompt
-  local schema
-  local command_status=0
-
-  prepare_live_probe grx "$profile" "$package" "$source_skills"
-  prompt="$(<"$live_prompt_file")"
-  schema="$(<"$live_schema")"
-  run_live_process /dev/null "$result_file" "$error_file" \
-    grx "$profile" \
-      --single "$prompt" \
-      --json-schema "$schema" \
-      --output-format json \
-      --no-subagents \
-      --tools '' \
-      --deny MCPTool \
-      --disable-web-search \
-      --max-turns 1 \
-      --no-memory \
-      --permission-mode dontAsk || command_status=$?
-  if [ "$live_process_timed_out" -eq 1 ]; then
-    report_error "grx live probe timed out for $profile"
-    set_live_failure 'timeout'
-  elif [ "$command_status" -ne 0 ]; then
-    report_error "grx live probe failed for $profile (exit $command_status)"
-    set_live_failure 'command'
-  else
-    validate_live_result grx "$profile" "$live_expected_file" "$result_file"
-  fi
-}
-
 verify_codex_profiles() {
   local launcher="$1"
   local list_output="$temp_dir/$launcher-list"
@@ -668,7 +651,7 @@ verify_codex_profiles() {
   local command_status
   local inventory_valid
 
-  command -v "$launcher" >/dev/null 2>&1 || return 0
+  command -v trx >/dev/null 2>&1 || return 0
   command -v codex >/dev/null 2>&1 || return 0
   discover_catalog "$launcher" "$list_output" "$inventory" || return 0
   if awk -F '\t' '
@@ -697,7 +680,7 @@ verify_codex_profiles() {
     row_live='not run'
 
     command_status=0
-    "$launcher" doctor "$profile" >"$temp_dir/$launcher-$profile-doctor" \
+    native_profile_command "$launcher" doctor "$profile" >"$temp_dir/$launcher-$profile-doctor" \
       2>"$temp_dir/$launcher-$profile-doctor.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
       report_error "$launcher doctor failed for $profile (exit $command_status)"
@@ -707,10 +690,10 @@ verify_codex_profiles() {
     if [ "$profile" = 'youtube' ]; then
       TRELLAGE_ENVIRONMENT=off \
         TRANSCRIPT_API_KEY='trellage-static-profile-verification' \
-        "$launcher" "$profile" debug prompt-input 'profile verification' \
+        native_profile_command "$launcher" run "$profile" debug prompt-input 'profile verification' \
         >"$json_file" 2>"$temp_dir/$launcher-$profile.stderr" || command_status=$?
     else
-      "$launcher" "$profile" debug prompt-input 'profile verification' \
+      native_profile_command "$launcher" run "$profile" debug prompt-input 'profile verification' \
         >"$json_file" 2>"$temp_dir/$launcher-$profile.stderr" || command_status=$?
     fi
     if [ "$command_status" -ne 0 ]; then
@@ -782,7 +765,7 @@ discover_catalog() {
   local command_status=0
   : >"$inventory_file"
 
-  "$launcher" list >"$output_file" 2>"$temp_dir/$launcher-list.stderr" || command_status=$?
+  native_profile_command "$launcher" list >"$output_file" 2>"$temp_dir/$launcher-list.stderr" || command_status=$?
   if [ "$command_status" -ne 0 ]; then
     report_error "$launcher list failed (exit $command_status)"
     return 1
@@ -836,7 +819,7 @@ verify_cpx_profiles() {
   local row_live
   local command_status
 
-  command -v cpx >/dev/null 2>&1 || return 0
+  command -v trx >/dev/null 2>&1 || return 0
   discover_catalog cpx "$list_output" "$inventory" || return 0
   while IFS=$'\t' read -r profile package; do
     row_static='pass'
@@ -851,14 +834,14 @@ verify_cpx_profiles() {
     package_skill_names="$temp_dir/cpx-$profile-package-skills"
 
     command_status=0
-    cpx doctor "$profile" >"$temp_dir/cpx-$profile-doctor" \
+    native_profile_command cpx doctor "$profile" >"$temp_dir/cpx-$profile-doctor" \
       2>"$temp_dir/cpx-$profile-doctor.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
       report_error "cpx doctor failed for $profile (exit $command_status)"
       set_row_failure 'doctor command'
     fi
     command_status=0
-    cpx "$profile" plugin list >"$plugin_output" \
+    native_profile_command cpx run "$profile" plugin list >"$plugin_output" \
       2>"$temp_dir/cpx-$profile-plugin.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
       report_error "cpx plugin list failed for $profile (exit $command_status)"
@@ -879,7 +862,7 @@ verify_cpx_profiles() {
       fi
     fi
     command_status=0
-    cpx "$profile" skill list --json >"$skills_json" \
+    native_profile_command cpx run "$profile" skill list --json >"$skills_json" \
       2>"$temp_dir/cpx-$profile-skills.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
       report_error "cpx skill list failed for $profile (exit $command_status)"
@@ -917,102 +900,6 @@ verify_cpx_profiles() {
   done <"$inventory"
 }
 
-verify_grx_profiles() {
-  local list_output="$temp_dir/grx-list"
-  local inventory="$temp_dir/grx-inventory"
-  local profile
-  local package
-  local inspect_json
-  local package_skill_names
-  local package_count
-  local visible_count
-  local sample
-  local row_static
-  local row_live
-  local command_status
-
-  command -v grx >/dev/null 2>&1 || return 0
-  discover_catalog grx "$list_output" "$inventory" || return 0
-  while IFS=$'\t' read -r profile package; do
-    row_static='pass'
-    package_count='?'
-    visible_count='?'
-    sample=''
-    row_live='not run'
-    inspect_json="$temp_dir/grx-$profile-inspect.json"
-    package_skill_names="$temp_dir/grx-$profile-package-skills"
-
-    command_status=0
-    grx doctor "$profile" >"$temp_dir/grx-$profile-doctor" \
-      2>"$temp_dir/grx-$profile-doctor.stderr" || command_status=$?
-    if [ "$command_status" -ne 0 ]; then
-      report_error "grx doctor failed for $profile (exit $command_status)"
-      set_row_failure 'doctor command'
-    fi
-    command_status=0
-    grx "$profile" inspect --json >"$inspect_json" \
-      2>"$temp_dir/grx-$profile-inspect.stderr" || command_status=$?
-    if [ "$command_status" -ne 0 ]; then
-      report_error "grx inspect failed for $profile (exit $command_status)"
-      set_row_failure 'inspect command'
-    elif ! jq -se --arg package "$package" '
-      length == 1 and (.[0]
-        | type == "object"
-        and (.plugins | type == "array")
-        and (.skills | type == "array")
-        and all(.plugins[];
-          type == "object"
-          and (.name | type == "string" and length > 0)
-          and (.enabled | type == "boolean")
-        )
-        and all(.skills[];
-          type == "object"
-          and (.name | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
-          and (.source | type == "object")
-          and (.source.type | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$"))
-          and (
-            .source.type != "plugin"
-            or (.source.plugin_name | type == "string" and length > 0)
-          )
-        )
-      )
-    ' "$inspect_json" >/dev/null 2>&1; then
-      report_error "grx inspect validation failed for $profile: expected one JSON object with plugin and skill arrays"
-      set_row_failure 'invalid inspect JSON'
-    elif ! jq -e --arg package "$package" \
-      '([.plugins[] | select(.name == $package and .enabled == true)] | length) == 1' \
-      "$inspect_json" >/dev/null 2>&1; then
-      report_error "grx package validation failed for $profile: cataloged package is not enabled exactly once"
-      set_row_failure 'unexpected package'
-    else
-      visible_count="$(jq -r '.skills | length' "$inspect_json")"
-      jq -r --arg package "$package" '
-        .skills[]
-        | select(.source.type == "plugin" and .source.plugin_name == $package)
-        | .name
-      ' "$inspect_json" >"$package_skill_names"
-      package_count="$(line_count "$package_skill_names")"
-      if [ "$package_count" -gt 0 ]; then
-        if ! valid_skill_file "$package_skill_names"; then
-          report_error "grx package skill validation failed for $profile: package skill names are invalid"
-          set_row_failure 'invalid skill inventory'
-          package_count='?'
-        else
-          sample="$(sample_skills "$package_skill_names")"
-        fi
-      fi
-    fi
-    if [ "$live_mode" -eq 1 ] && [ "$row_static" = 'pass' ]; then
-      probe_grx_live "$profile" "$package" "$package_skill_names"
-      if [ "$row_live" = 'not run' ]; then
-        row_live='pass'
-      fi
-    fi
-    emit_row grx "$profile" "$package" "$package_count" "$visible_count" "$sample" "$row_static" "$row_live"
-  done <"$inventory"
-}
-
 verify_codex_profiles cdx
 verify_cpx_profiles
-verify_grx_profiles
 exit "$status"

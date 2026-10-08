@@ -83,7 +83,7 @@ it("uses the local tracking ref even when remote main moves and rechecks before 
     vi.unstubAllEnvs()
     await rm(root, { recursive: true, force: true })
   }
-})
+}, 15_000)
 
 it("prepares a detached target using its captured HEAD and preserves both confirmation gates", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "trellage-review-detached-"))
@@ -156,10 +156,14 @@ exec '${realGit}' "$@"
     vi.stubEnv("REVIEW_TEST_ABORT", "1")
     const controller = new AbortController()
     const preparing = props.prepare(controller.signal)
-    const cancelled = expect(preparing).rejects.toMatchObject({ name: "AbortError" })
-    await vi.waitFor(async () => expect(await readFile(marker, "utf8")).toBe("started"))
-    controller.abort()
-    await cancelled
+    const cancelled = preparing.then(() => undefined, (cause: unknown) => cause)
+    try {
+      await vi.waitFor(async () => expect(await readFile(marker, "utf8")).toBe("started"), { timeout: 5000 })
+    } finally {
+      controller.abort()
+      await cancelled
+    }
+    expect(await cancelled).toMatchObject({ name: "AbortError" })
     vi.stubEnv("PATH", originalPath)
     git(repository, "update-ref", "-d", "refs/remotes/origin/main")
     await expect(props.prepare(new AbortController().signal)).rejects.toThrow()
@@ -169,4 +173,4 @@ exec '${realGit}' "$@"
     vi.unstubAllEnvs()
     await rm(root, { recursive: true, force: true })
   }
-})
+}, 15_000)

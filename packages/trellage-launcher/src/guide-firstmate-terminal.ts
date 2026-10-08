@@ -44,8 +44,8 @@ const describeError = (error: unknown): string =>
 
 const firstmateProfile = (selected: SelectedProfile): NativeSelectedProfile => {
   const profile = parseSelectedProfile(selected)
-  if (profile.surface !== "native" || profile.launcher !== "fmx" || profile.orchestration === undefined) {
-    throw new Error("Firstmate supervisor startup requires an inbox-capable native fmx profile.")
+  if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration === undefined) {
+    throw new Error("Firstmate supervisor startup requires an inbox-capable native firstmate profile.")
   }
   return profile
 }
@@ -140,7 +140,7 @@ const terminalGroupEntries = (
     throw new Error("The terminal handoff must name every saved request in one fleet group exactly once, in queue order.")
   }
   if (entries.some((entry) => entry.job.placement?.kind === "current-terminal" &&
-      entry.job.profile.surface === "native" && entry.job.profile.launcher === "fmx" && !members.includes(entry))) {
+      entry.job.profile.surface === "native" && entry.job.profile.launcher === "firstmate" && !members.includes(entry))) {
     throw new Error("Different Firstmate fleets cannot share the current terminal.")
   }
   return members

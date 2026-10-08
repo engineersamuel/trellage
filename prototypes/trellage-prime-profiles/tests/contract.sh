@@ -392,7 +392,7 @@ export PRX_TEST_DAEMON_MARKER="$FAKE_DAEMON_MARKER"
 : >"$FAKE_DAEMON_STOP_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/bin/prx"
+command_path="$HOME/.local/share/trellage/.native-commands/prx"
 runtime_root="$HOME/.local/share/trellage/prx"
 profile_root="$HOME/.local/share/trellage/profiles/prime/default"
 profile_home="$profile_root/home"

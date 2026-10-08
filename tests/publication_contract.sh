@@ -65,7 +65,7 @@ jq -e '
     and any(.path == "packages/trellage-runtime/src/workspace.ts")
     and any(.path == "packages/trellage-runtime/src/workspace-cli.ts")
     and any(.path == "packages/trellage-runtime/bunfig.toml")
-    and any(.path == "skills.json")
+    and any(.path == "config.toml")
     and all(.path | test("^packages/[^/]+/dist/") | not)
 ' <<<"$package_manifest" >/dev/null \
   || fail 'npm package omits required Trellage source or includes an application build'

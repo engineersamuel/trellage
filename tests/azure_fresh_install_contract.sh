@@ -107,7 +107,7 @@ for asset in \
   prototypes/trellage-omp-profiles/catalog.json \
   prototypes/trellage-claude-common/native-claude \
   prototypes/trellage-firstmate-profiles/bin/fmx \
-  profile-guides/native/fmx/default.md; do
+  profile-guides/native/firstmate/default.md; do
   [[ -f "$candidate/$asset" && ! -L "$candidate/$asset" ]] \
     || fail "complete local candidate omitted a regular source asset: $asset"
   cmp -s "$repo_root/$asset" "$candidate/$asset" \
@@ -141,13 +141,13 @@ grep -Fq "jq -e '.text == \"OK\"' \"\$log_dir/native-jcx.json\"" "$script" \
   || fail 'JCode result does not require exact JSON text OK'
 grep -Fq 'scripts/rebuild-profile-images.sh --install --native-only' "$script" \
   || fail 'bootstrap does not install the Native stack and trx'
-grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx setup default' "$script" \
+grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx setup firstmate default' "$script" \
   || fail 'acceptance does not set up the default Firstmate profile without token variables'
-grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx setup pstack-workers' "$script" \
+grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx setup firstmate pstack-workers' "$script" \
   || fail 'acceptance does not set up the pstack worker profile without token variables'
-grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx doctor default' "$script" \
+grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx doctor firstmate default' "$script" \
   || fail 'acceptance does not diagnose the default Firstmate profile without token variables'
-grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx doctor pstack-workers' "$script" \
+grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx doctor firstmate pstack-workers' "$script" \
   || fail 'acceptance does not diagnose the pstack worker profile without token variables'
 grep -Fq 'COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \' "$script" \
   || fail 'routed Firstmate inventory does not remove the proxy token variable'
@@ -200,18 +200,18 @@ fi
 grep -Fq 'deleted resource group' "$script" \
   || fail 'all does not delete the successful resource group'
 for pair in \
-  'cpx hve' \
-  'cdx pstack' \
-  'cldx default' \
-  'grx superpowers' \
-  'jcx default' \
-  'omp copilot' \
-  'picx default' \
-  'prx default'; do
+  'copilot hve' \
+  'codex pstack' \
+  'claude default' \
+  'grok superpowers' \
+  'jcode default' \
+  'omp default' \
+  'pi default' \
+  'prime default'; do
   grep -Fq "trx run $pair --" "$script" \
     || fail "acceptance does not route $pair through trx run"
 done
-if grep -Fq 'trx run fmx ' "$script"; then
+if grep -Fq 'trx run firstmate ' "$script"; then
   fail 'acceptance starts a paid Firstmate fleet instead of checking readiness'
 fi
 grep -Fq 'trellage --profile claude-council' "$script" \

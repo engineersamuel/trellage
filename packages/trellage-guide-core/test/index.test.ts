@@ -71,9 +71,9 @@ describe("profile guide parser", () => {
   it("requires a known interactive surface and exact, unique skill requirements", () => {
     const interaction = { mode: "interactive", requiredSkills: ["dt-methods"] }
     const source = withInteraction(interaction)
-    expect(parseProfileGuide("native/cpx/hve.md", source).guide.workflows[0]?.interaction).toEqual(interaction)
-    for (const identity of ["native/cpx/default.md", "sandbox/copilot-hve.md", "unknown.md"]) {
-      expect(() => parseProfileGuide(identity, source)).toThrow("require native/cpx/hve.md")
+    expect(parseProfileGuide("native/copilot/hve.md", source).guide.workflows[0]?.interaction).toEqual(interaction)
+    for (const identity of ["native/copilot/default.md", "sandbox/copilot-hve.md", "unknown.md"]) {
+      expect(() => parseProfileGuide(identity, source)).toThrow("require native/copilot/hve.md")
     }
     for (const invalid of [
       { mode: "autopilot", requiredSkills: ["dt-methods"] },
@@ -82,9 +82,9 @@ describe("profile guide parser", () => {
       { mode: "interactive", requiredSkills: ["../dt-methods"] },
       { mode: "interactive", requiredSkills: ["dt-methods"], optional: true },
     ]) {
-      expect(() => parseProfileGuide("native/cpx/hve.md", withInteraction(invalid))).toThrow(/interaction/u)
+      expect(() => parseProfileGuide("native/copilot/hve.md", withInteraction(invalid))).toThrow(/interaction/u)
     }
-    expect(() => parseProfileGuide("native/cpx/hve.md", source.replace('    launchAgent: "hve-core:dt-coach"\n', ""))).toThrow("launchAgent")
+    expect(() => parseProfileGuide("native/copilot/hve.md", source.replace('    launchAgent: "hve-core:dt-coach"\n', ""))).toThrow("launchAgent")
   })
 
   it("parses a valid guide and preserves its Markdown body", () => {
@@ -196,8 +196,8 @@ describe("profile guide parser", () => {
 
 describe("profile guide goal execution", () => {
   it.each([
-    ["native/cdx/superpowers.md", "codex-goal"],
-    ["native/cldx/default.md", "claude-goal"],
+    ["native/codex/superpowers.md", "codex-goal"],
+    ["native/claude/default.md", "claude-goal"],
     ["sandbox/claude-social-media.md", "claude-goal"],
   ])("preserves an optional policy for %s", (identity, controller) => {
     const policy = { controller, workflowIds: ["post-writer"] }
@@ -264,18 +264,18 @@ describe("profile guide goal execution", () => {
       problem: "must contain at most 32 entries",
     },
   ])("rejects $name", ({ policy, problem }) => {
-    expect(() => parseProfileGuide("native/cdx/superpowers.md", withGoalExecution(policy))).toThrow(problem)
+    expect(() => parseProfileGuide("native/codex/superpowers.md", withGoalExecution(policy))).toThrow(problem)
   })
 
   it.each([
-    ["native/cdx/superpowers.md", "claude-goal"],
-    ["native/cldx/default.md", "codex-goal"],
-    ["native/cpx/hve.md", "codex-goal"],
-    ["native/cpx/hve.md", "claude-goal"],
-    ["native/agx/trellage-azure.md", "claude-goal"],
-    ["native/fmx/pstack-workers.md", "codex-goal"],
-    ["native/picx/default.md", "claude-goal"],
-    ["native/cdx/superpowers.md", "graph-of-loops"],
+    ["native/codex/superpowers.md", "claude-goal"],
+    ["native/claude/default.md", "codex-goal"],
+    ["native/copilot/hve.md", "codex-goal"],
+    ["native/copilot/hve.md", "claude-goal"],
+    ["native/agency/trellage-azure.md", "claude-goal"],
+    ["native/firstmate/pstack-workers.md", "codex-goal"],
+    ["native/pi/default.md", "claude-goal"],
+    ["native/codex/superpowers.md", "graph-of-loops"],
     ["sandbox/codex-superpowers.md", "codex-goal"],
     ["sandbox/headlong.md", "claude-goal"],
     ["sandbox/prime-agent.md", "claude-goal"],
@@ -293,7 +293,7 @@ describe("profile guide goal execution", () => {
       const source = validGuide.replace("/social-media-skills:post-writer {{intent}}", `${command} {{intent}}`)
       expect(() =>
         parseProfileGuide(
-          "native/cdx/superpowers.md",
+          "native/codex/superpowers.md",
           withGoalExecution({ controller: "codex-goal", workflowIds: ["post-writer"] }, source),
         ),
       ).toThrow("must leave goal invocation to codex-goal")
@@ -306,7 +306,7 @@ describe("profile guide goal execution", () => {
       const source = validGuide.replace("skill: social-media-skills:post-writer", `skill: ${skill}`)
       expect(() =>
         parseProfileGuide(
-          "native/cldx/default.md",
+          "native/claude/default.md",
           withGoalExecution({ controller: "claude-goal", workflowIds: ["post-writer"] }, source),
         ),
       ).toThrow("must leave goal invocation to claude-goal")
@@ -320,7 +320,7 @@ describe("profile guide goal execution", () => {
     )
     expect(() =>
       parseProfileGuide(
-        "native/cdx/superpowers.md",
+        "native/codex/superpowers.md",
         withGoalExecution({ controller: "codex-goal", workflowIds: ["post-writer"] }, source),
       ),
     ).toThrow("uses launchAgent")
@@ -374,11 +374,11 @@ describe("profile guide goal execution", () => {
 
 describe("profile guide identities", () => {
   it("round-trips native and Sandbox paths", () => {
-    const native = parseProfileGuideIdentity("native/cpx/hve.md")
+    const native = parseProfileGuideIdentity("native/copilot/hve.md")
     const sandbox = parseProfileGuideIdentity("sandbox/claude-social-media.md")
 
-    expect(profileGuideIdentityKey(native)).toBe("native:cpx/hve")
-    expect(profileGuideRelativePath(native)).toBe("native/cpx/hve.md")
+    expect(profileGuideIdentityKey(native)).toBe("native:copilot/hve")
+    expect(profileGuideRelativePath(native)).toBe("native/copilot/hve.md")
     expect(profileGuideIdentityKey(sandbox)).toBe("sandbox:claude-social-media")
     expect(profileGuideRelativePath(sandbox)).toBe("sandbox/claude-social-media.md")
   })
@@ -386,10 +386,10 @@ describe("profile guide identities", () => {
   it("reports missing and unexpected guide identities", () => {
     const coverage = validateProfileGuideCoverage(
       [
-        { surface: "native", launcher: "cpx", profile: "hve" },
+        { surface: "native", launcher: "copilot", profile: "hve" },
         { surface: "sandbox", profile: "claude-social-media" },
       ],
-      ["native/cpx/hve.md", "sandbox/unknown.md"],
+      ["native/copilot/hve.md", "sandbox/unknown.md"],
     )
 
     expect(coverage).toEqual({
@@ -401,31 +401,31 @@ describe("profile guide identities", () => {
   describe("profile guide filesystem", () => {
     it("loads exact profile identities and discovers coverage paths", async () => {
       const root = await temporaryRoot()
-      await mkdir(path.join(root, "native", "cpx"), { recursive: true })
+      await mkdir(path.join(root, "native", "copilot"), { recursive: true })
       await mkdir(path.join(root, "sandbox"), { recursive: true })
-      await writeFile(path.join(root, "native", "cpx", "hve.md"), validGuide)
+      await writeFile(path.join(root, "native", "copilot", "hve.md"), validGuide)
       await writeFile(path.join(root, "sandbox", "social.md"), validGuide)
 
-      const loaded = await loadProfileGuide(root, { surface: "native", launcher: "cpx", profile: "hve" })
+      const loaded = await loadProfileGuide(root, { surface: "native", launcher: "copilot", profile: "hve" })
       const registry = await loadProfileGuideRegistry(root, [
-        { surface: "native", launcher: "cpx", profile: "hve" },
+        { surface: "native", launcher: "copilot", profile: "hve" },
         { surface: "sandbox", profile: "social" },
       ])
 
-      expect(loaded.key).toBe("native:cpx/hve")
+      expect(loaded.key).toBe("native:copilot/hve")
       expect(registry.size).toBe(2)
-      await expect(discoverProfileGuideRelativePaths(root)).resolves.toEqual(["native/cpx/hve.md", "sandbox/social.md"])
+      await expect(discoverProfileGuideRelativePaths(root)).resolves.toEqual(["native/copilot/hve.md", "sandbox/social.md"])
     })
 
     it("rejects symlinked guides", async () => {
       const root = await temporaryRoot()
       const outside = path.join(root, "outside.md")
-      await mkdir(path.join(root, "native", "cpx"), { recursive: true })
+      await mkdir(path.join(root, "native", "copilot"), { recursive: true })
       await mkdir(path.join(root, "sandbox"), { recursive: true })
       await writeFile(outside, validGuide)
-      await symlink(outside, path.join(root, "native", "cpx", "hve.md"))
+      await symlink(outside, path.join(root, "native", "copilot", "hve.md"))
 
-      await expect(loadProfileGuide(root, { surface: "native", launcher: "cpx", profile: "hve" })).rejects.toThrow(
+      await expect(loadProfileGuide(root, { surface: "native", launcher: "copilot", profile: "hve" })).rejects.toThrow(
         "non-symlink regular file",
       )
     })

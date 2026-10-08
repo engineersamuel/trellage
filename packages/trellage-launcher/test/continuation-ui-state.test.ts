@@ -255,7 +255,7 @@ describe("bounded keyboard editor", () => {
       { projectTarget: parseGuideProjectTargetV1({
         ...firstmateProjectC(), source: { kind: "local", location: "/fixture/project-d" }, entryWorktree: "/fixture/project-d",
       }) },
-      { profileRef: "native:fmx/pstack-workers" },
+      { profileRef: "native:firstmate/pstack-workers" },
       { workflowId: "review-fleet-status" },
       { projectTargetConfirmed: false },
     ])("invalidates unsubmitted choices, payloads and all approvals when context changes: %j", (change) => {

@@ -58,7 +58,7 @@ const sourceSkillEnvironment = async (env: NodeJS.ProcessEnv): Promise<NodeJS.Pr
   return {
     ...env,
     TRELLAGE_GUIDE_SKILLS_MANAGER: path.join(root, "scripts/floating-skills.ts"),
-    TRELLAGE_GUIDE_SKILLS_CATALOG: path.join(root, "skills.json"),
+    TRELLAGE_GUIDE_SKILLS_CATALOG: path.join(root, "config.toml"),
     TRELLAGE_GUIDE_OPTIMIZE_SKILLS_CACHE: path.join(
       home,
       ".local/share/trellage/common/guide-optimize-architecture-skills",

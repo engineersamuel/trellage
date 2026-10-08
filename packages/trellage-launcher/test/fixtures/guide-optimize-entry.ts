@@ -76,14 +76,14 @@ await writeFile(
     sandbox: [],
     native: [
       {
-        launcher: "cpx",
+        launcher: "copilot",
         name: "reviewer",
         harness: "copilot",
         description: "Fixture reviewer",
-        commandPath: path.join(bin, "cpx"),
+        commandPath: path.join(bin, "copilot"),
         sandbox: false,
         herdrCompatibility: { status: "supported" },
-        guide: parseProfileGuide("native/cpx/reviewer.md", guideSource(fixtureProfile("reviewer"))).guide,
+        guide: parseProfileGuide("native/copilot/reviewer.md", guideSource(fixtureProfile("reviewer"))).guide,
         headless: {
           schemaVersion: 1,
           prompt: true,

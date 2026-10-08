@@ -31,6 +31,21 @@ export interface GuideGoalDraft {
   readonly artifact: string
   readonly task: string
   readonly criteria: ReadonlyArray<string>
+  readonly inputsAndArtifacts?: string
+  readonly constraints?: string
+  readonly criterionVerifications?: ReadonlyArray<string>
+  readonly requiredChecks?: ReadonlyArray<string>
+  readonly actions?: ReadonlyArray<GuideGoalAction>
+  readonly maxIterations?: number
+  readonly maxConsecutiveNoProgressAttempts?: number
+}
+
+export interface GuideGoalAction {
+  readonly action: string
+  readonly criterionIds: ReadonlyArray<string>
+  readonly expectedBenefit: string
+  readonly prerequisites: string
+  readonly verification: string
 }
 
 export interface GuideGoalProposal {
@@ -146,6 +161,73 @@ export const recommendedGuideGoalAnswer = (question: GuideGoalQuestion): GuideGo
   return answer === undefined ? undefined : { answer, wasFreeform: false }
 }
 
+const positiveInteger = (candidate: unknown, label: string): number => {
+  if (!Number.isSafeInteger(candidate) || (candidate as number) < 1 || (candidate as number) > 10_000) {
+    throw new GuideGoalError(`${label} must be an integer from 1 through 10000.`)
+  }
+  return candidate as number
+}
+
+const validateGoalActions = (
+  value: unknown,
+  criteria: ReadonlyArray<string>,
+): ReadonlyArray<GuideGoalAction> => {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 32) {
+    throw new GuideGoalError("An expanded goal needs 1-32 action catalog entries.")
+  }
+  const criterionIds = new Set(criteria.map((_criterion, index) => `C${index + 1}`))
+  return value.map((entry: unknown): GuideGoalAction => {
+    const action = objectValue(entry)
+    if (!Array.isArray(action.criterionIds) || action.criterionIds.length < 1) {
+      throw new GuideGoalError("Each action must name at least one criterion ID.")
+    }
+    const ids = action.criterionIds.map((id: unknown) => requiredText(id, "An action criterion ID", 16, true).trim())
+    if (new Set(ids).size !== ids.length || ids.some((id) => !criterionIds.has(id))) {
+      throw new GuideGoalError("Action criterion IDs must be distinct IDs from this goal.")
+    }
+    return {
+      action: requiredText(action.action, "An action", 4000, true).trim(),
+      criterionIds: ids,
+      expectedBenefit: requiredText(action.expectedBenefit, "An expected benefit", 4000, true).trim(),
+      prerequisites: requiredText(action.prerequisites, "Action prerequisites", 4000, true).trim(),
+      verification: requiredText(action.verification, "Action verification", 4000, true).trim(),
+    }
+  })
+}
+
+const validateExpandedGuideGoalDraft = (
+  record: Record<string, unknown>,
+  base: Pick<GuideGoalDraft, "artifact" | "task" | "criteria">,
+): GuideGoalDraft => {
+  const inputsAndArtifacts = requiredText(record.inputsAndArtifacts, "INPUTS AND ARTIFACTS", 30_000).trim()
+  const constraints = requiredText(record.constraints, "CONSTRAINTS", 30_000).trim()
+  if (!Array.isArray(record.criterionVerifications) || record.criterionVerifications.length !== base.criteria.length) {
+    throw new GuideGoalError("Each success criterion needs one verification and score mapping.")
+  }
+  const criterionVerifications = record.criterionVerifications.map((verification: unknown) =>
+    requiredText(verification, "A criterion verification", 4000, true).trim(),
+  )
+  if (!Array.isArray(record.requiredChecks) || record.requiredChecks.length < 1 || record.requiredChecks.length > 32) {
+    throw new GuideGoalError("An expanded goal needs 1-32 required-check entries, including an explicit None entry when applicable.")
+  }
+  const requiredChecks = record.requiredChecks.map((check: unknown) =>
+    requiredText(check, "A required check", 4000, true).trim(),
+  )
+  return {
+    ...base,
+    inputsAndArtifacts,
+    constraints,
+    criterionVerifications,
+    requiredChecks,
+    actions: validateGoalActions(record.actions, base.criteria),
+    maxIterations: positiveInteger(record.maxIterations, "Max iterations"),
+    maxConsecutiveNoProgressAttempts: positiveInteger(
+      record.maxConsecutiveNoProgressAttempts,
+      "Max consecutive no-progress attempts",
+    ),
+  }
+}
+
 export const validateGuideGoalDraft = (value: unknown): GuideGoalDraft => {
   const record = objectValue(value)
   const artifact = requiredText(record.artifact, "The artifact", 1000, true).trim()
@@ -161,19 +243,161 @@ export const validateGuideGoalDraft = (value: unknown): GuideGoalDraft => {
   if ([artifact, task, ...criteria].some((text) => /^\[(?:criterion \d+|describe exactly what you want produced)\]$/iu.test(text))) {
     throw new GuideGoalError("Fill the goal placeholders before requesting approval.")
   }
-  return { artifact, task, criteria }
+  const expandedFields = [
+    record.inputsAndArtifacts,
+    record.constraints,
+    record.criterionVerifications,
+    record.requiredChecks,
+    record.actions,
+    record.maxIterations,
+    record.maxConsecutiveNoProgressAttempts,
+  ]
+  const expanded = expandedFields.some((field) => field !== undefined)
+  if (!expanded) return { artifact, task, criteria }
+  if (expandedFields.some((field) => field === undefined)) {
+    throw new GuideGoalError("An expanded goal proposal must fill every expanded template section.")
+  }
+  return validateExpandedGuideGoalDraft(record, { artifact, task, criteria })
 }
 
 export const validateGuideGoalPrompt = (prompt: string): string =>
   requiredText(prompt, "The complete goal", guideIntentMaximumLength)
 
-/** Use the installed skill's template, not a second copy of its fixed protocol. */
-export const renderGuideGoalProposal = (skillContent: string, value: unknown): GuideGoalProposal => {
-  const draft = validateGuideGoalDraft(value)
-  const template = /^## Goal prompt[ \t]*\n+```(?:text|markdown|md)?[ \t]*\n([\s\S]+?)\n```/mu.exec(
+const installedGoalTemplate = (skillContent: string): string | undefined =>
+  /^## Goal prompt[ \t]*\n+```(?:text|markdown|md)?[ \t]*\n([\s\S]+?)\n```/mu.exec(
     skillContent.replace(/\r\n/gu, "\n"),
   )?.[1]
-  if (template === undefined) throw new GuideGoalError("The installed goal-me skill has no supported goal template.")
+
+export const guideGoalTemplateKind = (skillContent: string): "legacy" | "expanded" | undefined => {
+  const template = installedGoalTemplate(skillContent)
+  if (template?.includes("\nINPUTS AND ARTIFACTS:\n") === true && template.includes("\nACTION CATALOG:\n")) {
+    return "expanded"
+  }
+  return template?.includes("\n\nSUCCESS CRITERIA (be strict):\n") === true ? "legacy" : undefined
+}
+
+const replaceTemplateMarker = (template: string, marker: string, replacement: string): string => {
+  const offset = template.indexOf(marker)
+  if (offset === -1 || template.indexOf(marker, offset + marker.length) !== -1) {
+    throw new GuideGoalError("The installed goal-me template has changed. Update the guide before using it.")
+  }
+  return `${template.slice(0, offset)}${replacement}${template.slice(offset + marker.length)}`
+}
+
+const tableCell = (value: string): string => value.replace(/\|/gu, "\\|")
+
+const expandedTemplateHeadings = [
+  "TASK",
+  "INPUTS AND ARTIFACTS",
+  "CONSTRAINTS",
+  "SUCCESS CRITERIA",
+  "REQUIRED CHECKS",
+  "ACTION CATALOG",
+  "EXECUTION LIMITS",
+  "SCOREBOARD",
+  "RECENT ATTEMPTS",
+  "LEARNINGS",
+] as const
+
+const expandedCriteriaPlaceholder =
+  "| C1 | [target] | [command or evidence-based rubric] |\n| C2 | [target] | [command or evidence-based rubric] |\n| C3 | [target] | [command or evidence-based rubric] |"
+
+const expandedRequiredChecksMarkers = [
+  "[Each check's ID, command or inspection method, and pass condition.\nWrite \"None\" explicitly only if no required checks apply.]",
+  "[Each check's ID, command or inspection method, and pass condition.]",
+] as const
+
+const validateExpandedTemplateStructure = (template: string): string => {
+  const boundary = "\nLOOP PROTOCOL:\n"
+  const protocolOffset = template.indexOf(boundary)
+  if (protocolOffset === -1 || template.indexOf(boundary, protocolOffset + boundary.length) !== -1) {
+    throw new GuideGoalError("The installed goal-me template has changed. Update the guide before using it.")
+  }
+  const authored = template.slice(0, protocolOffset)
+  const headings = [...authored.matchAll(/^([A-Z][A-Z ]+):$/gmu)].map((match) => match[1])
+  if (headings.length !== expandedTemplateHeadings.length || headings.some((heading, index) => heading !== expandedTemplateHeadings[index])) {
+    throw new GuideGoalError("The installed goal-me template has changed. Update the guide before using it.")
+  }
+  const requiredChecksMarker = expandedRequiredChecksMarkers.find((marker) => authored.includes(marker))
+  if (requiredChecksMarker === undefined) {
+    throw new GuideGoalError("The installed goal-me template has changed. Update the guide before using it.")
+  }
+  const authoredWithoutKnownPlaceholders = [
+    "[One coherent outcome and its intended use.]",
+    "[Input locations, output paths, relevant context, and how to inspect them.]",
+    "[Scope, exclusions, project rules, existing authorization, and resources.]",
+    expandedCriteriaPlaceholder,
+    requiredChecksMarker,
+    "| [concrete improvement] | [IDs] | [impact estimate] | [dependencies or none] | [method] |",
+  ].reduce((current, marker) => replaceTemplateMarker(current, marker, ""), authored)
+  if (/\[[^\]]+\]/u.test(authoredWithoutKnownPlaceholders)) {
+    throw new GuideGoalError("The installed goal-me template has changed. Update the guide before using it.")
+  }
+  return requiredChecksMarker
+}
+
+const renderExpandedGuideGoalProposal = (template: string, draft: GuideGoalDraft): string => {
+  const {
+    inputsAndArtifacts,
+    constraints,
+    criterionVerifications,
+    requiredChecks,
+    actions,
+    maxIterations,
+    maxConsecutiveNoProgressAttempts,
+  } = draft
+  if (
+    inputsAndArtifacts === undefined || constraints === undefined || criterionVerifications === undefined ||
+    requiredChecks === undefined || actions === undefined || maxIterations === undefined ||
+    maxConsecutiveNoProgressAttempts === undefined
+  ) {
+    throw new GuideGoalError("The installed goal-me template requires an expanded goal proposal.")
+  }
+  const criterionRows = draft.criteria.map((criterion, index) =>
+    `| C${index + 1} | ${tableCell(criterion)} | ${tableCell(criterionVerifications[index]!)} |`,
+  ).join("\n")
+  const scoreboardRows = draft.criteria.map((_criterion, index) => `| C${index + 1} | _ | _ | _ |`).join("\n")
+  const actionRows = actions.map((action) =>
+    `| ${tableCell(action.action)} | ${action.criterionIds.join(", ")} | ${tableCell(action.expectedBenefit)} | ${tableCell(action.prerequisites)} | ${tableCell(action.verification)} |`,
+  ).join("\n")
+  const requiredChecksMarker = validateExpandedTemplateStructure(template)
+  let prompt = template
+  prompt = replaceTemplateMarker(prompt, "[One coherent outcome and its intended use.]", `Artifact: ${draft.artifact}\n${draft.task}`)
+  prompt = replaceTemplateMarker(
+    prompt,
+    "[Input locations, output paths, relevant context, and how to inspect them.]",
+    inputsAndArtifacts,
+  )
+  prompt = replaceTemplateMarker(
+    prompt,
+    "[Scope, exclusions, project rules, existing authorization, and resources.]",
+    constraints,
+  )
+  prompt = replaceTemplateMarker(
+    prompt,
+    expandedCriteriaPlaceholder,
+    criterionRows,
+  )
+  prompt = replaceTemplateMarker(prompt, requiredChecksMarker, requiredChecks.map((check) => `- ${check}`).join("\n"))
+  prompt = replaceTemplateMarker(
+    prompt,
+    "| [concrete improvement] | [IDs] | [impact estimate] | [dependencies or none] | [method] |",
+    actionRows,
+  )
+  prompt = replaceTemplateMarker(
+    prompt,
+    "Max iterations: 20\nMax consecutive no-progress attempts: 5",
+    `Max iterations: ${maxIterations}\nMax consecutive no-progress attempts: ${maxConsecutiveNoProgressAttempts}`,
+  )
+  prompt = replaceTemplateMarker(
+    prompt,
+    "| C1 | _ | _ | _ |\n| C2 | _ | _ | _ |\n| C3 | _ | _ | _ |",
+    scoreboardRows,
+  )
+  return prompt
+}
+
+const renderLegacyGuideGoalProposal = (template: string, draft: GuideGoalDraft): string => {
   const markers = [
     "TASK:\n",
     "\n\nSUCCESS CRITERIA (be strict):\n",
@@ -199,7 +423,7 @@ export const renderGuideGoalProposal = (skillContent: string, value: unknown): G
   const criteriaStart = template.indexOf(criteriaMarker)
   const scoreboardStart = template.indexOf(scoreboardMarker)
   const weakestStart = template.indexOf(weakestMarker)
-  const prompt = [
+  return [
     template.slice(0, taskStart),
     `Artifact: ${draft.artifact}\n${draft.task}`,
     template.slice(criteriaStart, criteriaStart + criteriaMarker.length),
@@ -208,6 +432,18 @@ export const renderGuideGoalProposal = (skillContent: string, value: unknown): G
     draft.criteria.map((criterion) => `- ${criterion}: _`).join("\n"),
     template.slice(weakestStart),
   ].join("")
+}
+
+/** Use the installed skill's template, not a second copy of its fixed protocol. */
+export const renderGuideGoalProposal = (skillContent: string, value: unknown): GuideGoalProposal => {
+  const draft = validateGuideGoalDraft(value)
+  const template = installedGoalTemplate(skillContent)
+  if (template === undefined) throw new GuideGoalError("The installed goal-me skill has no supported goal template.")
+  const kind = guideGoalTemplateKind(skillContent)
+  if (kind === undefined) throw new GuideGoalError("The installed goal-me template has changed. Update the guide before using it.")
+  const prompt = kind === "expanded"
+    ? renderExpandedGuideGoalProposal(template, draft)
+    : renderLegacyGuideGoalProposal(template, draft)
   return { draft, prompt: validateGuideGoalPrompt(prompt) }
 }
 

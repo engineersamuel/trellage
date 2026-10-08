@@ -1,3 +1,4 @@
+import { canonicalProfileRef } from "./native-identity.ts"
 import { createHash } from "node:crypto"
 import path from "node:path"
 import {
@@ -344,7 +345,7 @@ const absolutePath = (value: unknown, field: string): string => {
 const profileRef = (value: unknown, field: string): string => {
   const result = string(value, field, conversationLimits.identifierChars)
   if (!profilePattern.test(result)) return invalid(field, "must be a native or Sandbox profile reference")
-  return result
+  return canonicalProfileRef(result)
 }
 
 const workflowId = (value: unknown, field: string): string => {
@@ -1052,13 +1053,13 @@ const validateSubmissionSelection = (
   for (const edit of actions) {
     const action = assessment?.actions.find(({ id }) => id === edit.actionId)
     if (edit.firstmateInstance !== undefined &&
-      (edit.profileRef ?? action?.profileRef) !== `native:fmx/${edit.firstmateInstance.profile}`) {
+      (edit.profileRef ?? action?.profileRef) !== `native:firstmate/${edit.firstmateInstance.profile}`) {
       invalid("draft.actions.firstmateInstance", "instance must match the selected static profile")
     }
     if (edit.firstmateSubmission === undefined) continue
     const { request } = edit.firstmateSubmission
     if (
-      (edit.profileRef ?? action?.profileRef) !== `native:fmx/${request.expectedFleet.profile}` ||
+      (edit.profileRef ?? action?.profileRef) !== `native:firstmate/${request.expectedFleet.profile}` ||
       (edit.workflowId ?? action?.workflowId) !== request.workflowId
     ) {
       invalid("draft.actions.firstmateSubmission", "submission must match the selected profile and workflow")

@@ -890,6 +890,18 @@ else
   unset PLAYWRIGHT_MCP_EXTENSION_TOKEN
 fi
 
+prepare_interactive_tty() {
+  case "$mode" in
+    new|resume) ;;
+    *) return 0 ;;
+  esac
+  [[ -t 0 && -t 1 ]] || return 0
+  command -v stty >/dev/null 2>&1 \
+    || fail 'stty is required for an interactive Claude terminal'
+  stty -echo -icanon -icrnl -inlcr -igncr min 1 time 0 2>/dev/null </dev/tty \
+    || fail 'cannot prepare the interactive Claude terminal'
+}
+
 export CLAUDE_CONFIG_DIR="$runtime_home"
 managed_args=(--dangerously-skip-permissions --settings "$default_settings")
 if [[ "$output_format" == jsonl ]]; then
@@ -909,6 +921,7 @@ if [[ "$runtime_mode" == hyperresearch ]]; then
 elif [[ -f /usr/local/share/trellage/claude-mcp.json ]]; then
   managed_args+=(--mcp-config /usr/local/share/trellage/claude-mcp.json)
 fi
+prepare_interactive_tty
 set +e
 "$claude_command" "${managed_args[@]}" "${claude_args[@]}"
 claude_status=$?

@@ -957,7 +957,7 @@ printf '%s\n' \
 cmp -s "$valid_json_stream" "$fixture_root/headless-valid.out" \
   || fail 'JSON headless launch changed native stdout'
 [[ ! -s "$fixture_root/headless-valid.err" ]] \
-  || fail 'JSON headless launch wrote unexpected stderr'
+  || { cat "$fixture_root/headless-valid.err" >&2; fail 'JSON headless launch wrote unexpected stderr'; }
 jq -se 'length == 2 and all(.[]; type == "object")' \
   "$fixture_root/headless-valid.out" >/dev/null \
   || fail 'JSON headless launch did not produce machine-only stdout'
@@ -2412,7 +2412,7 @@ fi
 assert_contains 'unknown profile: not-a-profile' "$fixture_root/unknown.err"
 
 runtime_root="$HOME/.local/share/trellage/cpx"
-installed="$HOME/.local/bin/cpx"
+installed="$HOME/.local/share/trellage/.native-commands/cpx"
 mkdir -p "$(dirname "$installed")"
 ln -s "$runtime_root/bin/cpx" "$installed"
 if "$installer" >"$fixture_root/dangling-command-install.out" 2>"$fixture_root/dangling-command-install.err"; then
@@ -2441,7 +2441,7 @@ assert_contains 'unrelated catalog' "$runtime_root/catalog.json"
 rm -rf "$runtime_root"
 
 "$installer"
-[[ -x "$installed" ]] || fail 'installer did not create ~/.local/bin/cpx'
+[[ -x "$installed" ]] || fail 'installer did not create ~/.local/share/trellage/.native-commands/cpx'
 assert_contains 'trellage-profiles-v1' "$runtime_root/.managed-by-trellage-profiles"
 [[ -f "$runtime_root/lib/trellage-session-bridge.py" \
   && ! -L "$runtime_root/lib/trellage-session-bridge.py" \
@@ -2570,7 +2570,7 @@ if XDG_CACHE_HOME="$fixture_root/old-workflow-cache" FAKE_COPILOT_VERSION=1.0.80
   fail 'workflow check accepted an unsupported CLI'
 fi
 "$uninstaller"
-[[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/bin/cpx behind'
+[[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/share/trellage/.native-commands/cpx behind'
 [[ ! -e "$runtime_root/assets" ]] || fail 'uninstaller left runtime assets behind'
 [[ ! -e "$runtime_root/lib" ]] || fail 'uninstaller left runtime helpers behind'
 [[ -d "$HOME/.local/share/trellage/profiles/copilot/hve/home" ]] \
@@ -2616,10 +2616,10 @@ assert_contains 'redirected catalog sentinel' "$redirected_share/trellage/cpx/ca
 
 original_command_dir="$fixture_root/original-command-dir"
 redirected_command_dir="$fixture_root/redirected-command-dir"
-mv "$HOME/.local/bin" "$original_command_dir"
+mv "$HOME/.local/share/trellage/.native-commands" "$original_command_dir"
 mkdir -p "$redirected_command_dir"
 printf 'command ancestor sentinel\n' >"$redirected_command_dir/sentinel"
-ln -s "$redirected_command_dir" "$HOME/.local/bin"
+ln -s "$redirected_command_dir" "$HOME/.local/share/trellage/.native-commands"
 command_ancestor_install_status=0
 "$installer" \
   >"$fixture_root/command-ancestor-install.out" \
@@ -2632,8 +2632,8 @@ command_ancestor_install_created_runtime=false
 [[ -e "$runtime_root" || -L "$runtime_root" ]] \
   && command_ancestor_install_created_runtime=true
 rm -f "$redirected_command_dir/cpx"
-rm "$HOME/.local/bin"
-mv "$original_command_dir" "$HOME/.local/bin"
+rm "$HOME/.local/share/trellage/.native-commands"
+mv "$original_command_dir" "$HOME/.local/share/trellage/.native-commands"
 rm -rf "$runtime_root"
 [[ "$command_ancestor_install_status" -ne 0 ]] \
   || fail 'installer accepted a symlinked command ancestor'
@@ -2647,9 +2647,9 @@ mkdir -p "$runtime_root/bin"
 printf 'trellage-profiles-v1\n' >"$runtime_root/.managed-by-trellage-profiles"
 printf 'owned launcher sentinel\n' >"$runtime_root/bin/cpx"
 printf 'owned catalog sentinel\n' >"$runtime_root/catalog.json"
-mv "$HOME/.local/bin" "$original_command_dir"
+mv "$HOME/.local/share/trellage/.native-commands" "$original_command_dir"
 ln -s "$runtime_root/bin/cpx" "$redirected_command_dir/cpx"
-ln -s "$redirected_command_dir" "$HOME/.local/bin"
+ln -s "$redirected_command_dir" "$HOME/.local/share/trellage/.native-commands"
 command_ancestor_uninstall_status=0
 "$uninstaller" \
   >"$fixture_root/command-ancestor-uninstall.out" \
@@ -2662,8 +2662,8 @@ command_ancestor_uninstall_preserved_runtime=false
 [[ -f "$runtime_root/bin/cpx" && -f "$runtime_root/catalog.json" ]] \
   && command_ancestor_uninstall_preserved_runtime=true
 rm -f "$redirected_command_dir/cpx"
-rm "$HOME/.local/bin"
-mv "$original_command_dir" "$HOME/.local/bin"
+rm "$HOME/.local/share/trellage/.native-commands"
+mv "$original_command_dir" "$HOME/.local/share/trellage/.native-commands"
 rm -rf "$runtime_root"
 [[ "$command_ancestor_uninstall_status" -ne 0 ]] \
   || fail 'uninstaller accepted a symlinked command ancestor'
@@ -2688,7 +2688,7 @@ assert_contains 'refusing unsafe symlinked runtime root' "$fixture_root/symlink-
 assert_contains 'symlink sentinel' "$symlink_runtime_target/bin/cpx"
 rm "$runtime_root"
 
-mkdir -p "$HOME/.local/bin"
+mkdir -p "$HOME/.local/share/trellage/.native-commands"
 printf '%s\n' '#!/usr/bin/env bash' 'printf unrelated' >"$installed"
 chmod 0755 "$installed"
 if "$installer" >"$fixture_root/collision.out" 2>"$fixture_root/collision.err"; then

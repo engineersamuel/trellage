@@ -63,7 +63,7 @@ export const legacyFirstmateQueuedContext = (
   profile: SelectedProfile,
   context: GuideQueuedContext | undefined,
 ): GuideLegacyFirstmateContext | undefined => {
-  if (profile.surface !== "native" || profile.launcher !== "fmx" || profile.orchestration !== undefined) return undefined
+  if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration !== undefined) return undefined
   if (context?.projectTargetConfirmed !== true) {
     throw new Error("Legacy Firstmate delivery requires confirmed original intent, project target, and workflow.")
   }
@@ -316,7 +316,7 @@ export const createQueuedGuideJob = (
       }, queuedTaskContext(profile, guideContext)).prompt
     : prompt
   const legacy = legacyFirstmateQueuedContext(profile, guideContext)
-  if (legacy !== undefined) validateLegacyFirstmateArtifact(`native:fmx/${profile.profile}`, deliveredPrompt, legacy)
+  if (legacy !== undefined) validateLegacyFirstmateArtifact(`native:firstmate/${profile.profile}`, deliveredPrompt, legacy)
   const built = buildHerdrGuideLaunch(profile, deliveredPrompt, goalExecution)
   return Object.freeze({
     id, profile, prompt: deliveredPrompt, command: Object.freeze({ ...built.command, args: Object.freeze([...built.command.args]) }), promptDelivery: built.promptDelivery, placement: Object.freeze({ ...placement }),
@@ -523,7 +523,7 @@ const validateQueuedCommand = (job: QueuedGuideJob): string | undefined => {
       return "Private prompt delivery does not support goal execution."
     }
     const legacy = legacyFirstmateQueuedContext(profile, job.guideContext)
-    if (legacy !== undefined) validateLegacyFirstmateArtifact(`native:fmx/${profile.profile}`, job.prompt, legacy)
+    if (legacy !== undefined) validateLegacyFirstmateArtifact(`native:firstmate/${profile.profile}`, job.prompt, legacy)
     const built = job.privatePrompt
       ? { command: buildGuideLaunchCommand(profile).command, promptDelivery: "agent" }
       : buildHerdrGuideLaunch(profile, job.prompt, job.goalExecution)
@@ -591,7 +591,7 @@ const collidingEntryMessage = (
   if (
     job.profile.surface === "native" && previous.profile.surface === "native" &&
     isFirstmateBatchJob(job) && isFirstmateBatchJob(previous) &&
-    job.profile.launcher === "fmx" && previous.profile.launcher === "fmx" &&
+    job.profile.launcher === "firstmate" && previous.profile.launcher === "firstmate" &&
     sameFirstmateJobInstance(job, previous)
   ) return undefined
   return `Two queued jobs would both create branch ${branch}.`

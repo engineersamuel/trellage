@@ -31,7 +31,7 @@ afterEach(async () => {
 const draft = (): ContinuationDraft => {
   const original = preparedFirstmateFixtureDraft()
   const template = original.actions[0]!
-  const prepared = prepareGuidePrompt(firstmateGuide, "review-project", "native:fmx/default", template.brief, {
+  const prepared = prepareGuidePrompt(firstmateGuide, "review-project", "native:firstmate/default", template.brief, {
     originalIntent: template.originalIntent ?? template.brief, projectTarget: template.projectTarget!, orchestration: instanceOrchestration,
   })
   const candidates = [1, 2, 3].map((index) => ({
@@ -44,7 +44,7 @@ const draft = (): ContinuationDraft => {
     assessment: {
       ...original.assessment!,
       actions: original.assessment!.actions.map((action, index) => ({
-        ...action, profileRef: index < 2 ? "native:fmx/default" : "native:cdx/default",
+        ...action, profileRef: index < 2 ? "native:firstmate/default" : "native:codex/default",
         workflowId: index < 2 ? "review-project" : "review", dependsOn: [],
       })),
     },
@@ -53,7 +53,7 @@ const draft = (): ContinuationDraft => {
       selectedCandidateId: candidates[index]!.id,
     } : {
       actionId: edit.actionId, brief: edit.brief, selected: false, status: Status.Draft,
-      profileRef: "native:cdx/default", workflowId: "review",
+      profileRef: "native:codex/default", workflowId: "review",
     }),
   })
 }
@@ -97,7 +97,7 @@ const legacyDraft = (): ContinuationDraft => {
   const initial = draft()
   const edit = initial.actions[0]!
   const { instances: _instances, preparation: _preparation, ...legacy } = instanceOrchestration
-  const prepared = prepareGuidePrompt(firstmateGuide, "review-project", "native:fmx/default", edit.brief, {
+  const prepared = prepareGuidePrompt(firstmateGuide, "review-project", "native:firstmate/default", edit.brief, {
     originalIntent: edit.originalIntent!, projectTarget: edit.projectTarget!, orchestration: legacy,
   })
   const candidates = [1, 2, 3].map((index) => ({
@@ -216,9 +216,9 @@ describe("instance-bound continuation delivery", () => {
     const f = setup(legacyDraft())
     const request = structuredClone(f.saved().actions[0]!.firstmateSubmission!.request)
     f.runner.reply = async ({ args, options }) => {
-      expect(args).toEqual([args[0], "default", "--json"])
+      expect(args).toEqual([args[0], "firstmate", "default", "--json"])
       if (args[0] === "inventory") return f.runner.ok({
-        schemaVersion: 1, launcher: "fmx", profile: "default", readiness: "healthy",
+        schemaVersion: 1, launcher: "firstmate", profile: "default", readiness: "healthy",
         fleet: { ...instanceFleet(alpha), identity: request.expectedFleet },
       })
       if (args[0] !== "submit") throw new Error("No instance discovery, preparation, or identity migration is allowed.")
@@ -309,7 +309,7 @@ describe("instance-bound continuation delivery", () => {
     f.runner.calls.length = 0
     f.runner.reply = async ({ args, options }) => {
       if (args[0] !== "receipt") throw new Error("Reconciliation must not inspect, repair, bind, or submit.")
-      expect(args).toEqual(["receipt", "default", "--json", "--instance", alpha.reference.instanceId])
+      expect(args).toEqual(["receipt", "firstmate", "default", "--json", "--instance", alpha.reference.instanceId])
       expect(JSON.parse(options?.stdin ?? "null")).toMatchObject({ requestId: request.requestId, expectedFleet: request.expectedFleet })
       return f.runner.ok(firstmateReceipt(request, "handled"))
     }
@@ -539,7 +539,7 @@ describe("Firstmate rejection evidence", () => {
     })
     f.runner.calls.length = 0
     f.runner.reply = async ({ args, options }) => {
-      expect(args).toEqual(["receipt", "default", "--json", "--instance", alpha.reference.instanceId])
+      expect(args).toEqual(["receipt", "firstmate", "default", "--json", "--instance", alpha.reference.instanceId])
       expect(JSON.parse(options?.stdin ?? "null")).toMatchObject({ requestId: request.requestId, expectedFleet: request.expectedFleet })
       return f.runner.ok(firstmateReceipt(request, "handled"))
     }

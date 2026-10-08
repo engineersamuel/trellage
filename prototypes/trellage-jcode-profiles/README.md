@@ -1,6 +1,8 @@
 # Native jcode profile
 
-`jcx` runs [jcode](https://github.com/1jehuang/jcode) directly on the host with
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run jcode PROFILE` runs [jcode](https://github.com/1jehuang/jcode) directly on the host with
 an isolated profile. It uses keyless `copilot-proxy-rs` at
 `http://127.0.0.1:8080/v1` and defaults to `gpt-5.6-sol` with `medium`
 reasoning.
@@ -28,22 +30,22 @@ other setup preferences, so guided onboarding and setup hints do not appear.
 
 ```bash
 ./install.sh
-jcx setup
-jcx doctor
-jcx update --check
-jcx update
-jcx repair
+trx setup jcode default
+trx doctor jcode default
+trx upgrade jcode default --check
+trx upgrade jcode default
+trx repair jcode default
 ```
 
-The installer publishes `~/.local/bin/jcx` and owns its runtime beneath
+The installer keeps `jcx` as a private backend and owns its runtime beneath
 `~/.local/share/trellage/jcx`. `setup` resolves the latest jcode release
 eligible under `mise` policy on first use, installs it into the managed
 runtime, and records the exact installed version in the local
 `installed-version` receipt. Ordinary launches reuse that version without a
-network request. Only explicit `jcx update` resolves latest again, and a failed
+network request. Only explicit `trx upgrade jcode default` resolves latest again, and a failed
 update preserves the last good installed version and receipt.
 
-`jcx skills-update default` copies and verifies only the refreshed
+`trx upgrade jcode default --skills-only` copies and verifies only the refreshed
 `native-common` cache after `trx skills update`. It requires an existing owned
 profile and managed skill state. Custom skills, configuration, authentication,
 and runtime receipts are preserved. Missing caches, invalid ownership, unsafe
@@ -60,7 +62,7 @@ discovers skills automatically. Other skills remain available as before.
 Apply the skill to one explicit request:
 
 ```bash
-jcx skill i-have-adhd "Summarize the current branch"
+trx skill jcode i-have-adhd "Summarize the current branch"
 ```
 
 This command uses JCode's `run` command and exits after the response. It does not
@@ -92,12 +94,11 @@ used rather than jcode's generic compatibility-provider fallback. Setup and
 repair refuse symlinked paths or unrelated existing profile files. Uninstall
 preserves this profile.
 
-Bare and explicit launches are equivalent:
+Launch the profile explicitly:
 
 ```bash
-jcx
-jcx default
-jcx run "Reply exactly JCODE_OK"
+trx run jcode default
+trx run jcode default -- run "Reply exactly JCODE_OK"
 ```
 
 The launcher passes `--no-update` before caller arguments; explicit jcode CLI

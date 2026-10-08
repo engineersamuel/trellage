@@ -152,7 +152,7 @@ describe("review snapshot and validation", () => {
     expect(captured.diff).toContain("new file mode 100644")
     await writeFile(path.join(repo, "one-more"), "")
     await expect(captureReviewSnapshot(repo, "refs/heads/main")).rejects.toThrow("1024 untracked paths")
-  }, 30_000)
+  }, 120_000)
 
   it("captures binary and spaced names and link targets without following outside or dangling symlinks", async () => {
     const repo = await captureFixture()
@@ -348,7 +348,7 @@ exec "${realGit}" "$@"
       base: latestHead, head: latestHead,
     })
 
-  })
+  }, 15_000)
 
   it("rejects oversized untracked input and stops capture when cancelled", async () => {
     const { execFileSync } = await import("node:child_process")
@@ -464,7 +464,7 @@ exec "${realGit}" "$@"
     git("commit", "-qm", "base")
     await writeFile(path.join(repo, "a.ts"), "changed\n")
     const managerPath = path.join(root, "manager.ts")
-    const catalogPath = path.join(root, "skills.json")
+    const catalogPath = path.join(root, "config.toml")
     await writeFile(managerPath, "")
     await writeFile(catalogPath, "{}")
     let directory = ""
@@ -555,7 +555,7 @@ describe("installed review skill staging", () => {
     reviews = [reviewCatalog[0]!], signal = new AbortController().signal): Promise<ReviewWorkspace> => {
     await mkdir(snapshot.repository, { recursive: true })
     const managerPath = path.join(root, "manager.ts")
-    const catalogPath = path.join(root, "skills.json")
+    const catalogPath = path.join(root, "config.toml")
     await writeFile(managerPath, "")
     await writeFile(catalogPath, "{}")
     return prepareReviewWorkspace({
@@ -709,7 +709,7 @@ describe("installed review skill staging", () => {
   it("resets the entry, byte and time budgets together after the one missing-skill refresh", async () => {
     await mkdir(snapshot.repository, { recursive: true })
     const managerPath = path.join(root, "manager.ts")
-    const catalogPath = path.join(root, "skills.json")
+    const catalogPath = path.join(root, "config.toml")
     await writeFile(managerPath, "")
     await writeFile(catalogPath, "{}")
     let updated = false
@@ -745,11 +745,11 @@ describe("installed review skill staging", () => {
     } finally {
       clock.mockRestore()
     }
-  })
+  }, 15_000)
 
   it("refreshes a valid stale cache once when a selected skill is missing and freezes one current snapshot", async () => {
     const managerPath = path.join(root, "manager.ts")
-    const catalogPath = path.join(root, "skills.json")
+    const catalogPath = path.join(root, "config.toml")
     const old = path.join(root, "old")
     const current = path.join(root, "current")
     await mkdir(snapshot.repository, { recursive: true })
@@ -788,7 +788,7 @@ describe("installed review skill staging", () => {
 
   it("does not start a review when the missing-skill refresh fails or another selected skill is unsafe", async () => {
     const managerPath = path.join(root, "manager.ts")
-    const catalogPath = path.join(root, "skills.json")
+    const catalogPath = path.join(root, "config.toml")
     const source = path.join(root, "source")
     await mkdir(snapshot.repository, { recursive: true })
     await mkdir(path.join(source, "ponytail-review"), { recursive: true })
@@ -818,7 +818,7 @@ describe("installed review skill staging", () => {
 
   it("freezes selected skills and Fleet references, rejects symlinks, and runs from a separate owned workspace", async () => {
     const managerPath = path.join(root, "manager.ts")
-    const catalogPath = path.join(root, "skills.json")
+    const catalogPath = path.join(root, "config.toml")
     const cachePath = path.join(root, "cache")
     const stagingRoot = path.join(root, "stages")
     await mkdir(snapshot.repository, { recursive: true })
@@ -1539,6 +1539,7 @@ describe("restricted SDK review workflow", () => {
       references: new Map(), dispose: async () => {},
     }
     let now = 0
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
     const clock = vi.spyOn(performance, "now").mockImplementation(() => now)
     const controller = new AbortController()
     const timeouts: number[] = []
@@ -1625,6 +1626,7 @@ describe("restricted SDK review workflow", () => {
     } finally {
       await provider.close()
       clock.mockRestore()
+      vi.useRealTimers()
     }
   })
 

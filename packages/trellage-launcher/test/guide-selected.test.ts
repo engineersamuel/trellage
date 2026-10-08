@@ -32,11 +32,11 @@ const authoredCatalog = async (): Promise<CombinedGuideCatalog> => {
       schemaVersion: 1,
       profiles: [
         {
-          launcher: "cdx",
+          launcher: "codex",
           harness: "codex",
           name: "superpowers",
           description: "Native Codex Superpowers",
-          commandPath: "/opt/trellage/cdx/bin/cdx",
+          commandPath: "/opt/trellage/codex/bin/trx",
           headless,
           sandbox: true,
           herdrCompatibility: { status: "supported" },
@@ -105,7 +105,7 @@ describe("sandbox guide root derivation", () => {
 describe("selected guide goal policy", () => {
   it("retains the authored policy through native list enrichment, JSON catalog parsing, and selected guide loading", async () => {
     const catalog = await authoredCatalog()
-    const selected = await loadSelectedGuide(catalog, guideRoot, "native:cdx/superpowers")
+    const selected = await loadSelectedGuide(catalog, guideRoot, "native:codex/superpowers")
 
     expect(selected.guide).toEqual(catalog.native[0]?.guide)
     expect(selected.guide.goalExecution).toEqual({
@@ -145,7 +145,7 @@ describe("selected guide goal policy", () => {
 
     for (const guide of projections) {
       await expect(
-        loadSelectedGuide({ ...catalog, native: [{ ...entry, guide }] }, guideRoot, "native:cdx/superpowers"),
+        loadSelectedGuide({ ...catalog, native: [{ ...entry, guide }] }, guideRoot, "native:codex/superpowers"),
       ).rejects.toThrow("Profile guide changed after catalog collection")
     }
   })

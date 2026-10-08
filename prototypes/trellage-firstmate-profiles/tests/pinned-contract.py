@@ -17,10 +17,10 @@ COMMIT = "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
 OWNER = "trellage-firstmate-profiles-v1"
 
 
-def run(argv, env, cwd=None, data=None, success=True):
+def run(argv, env, cwd=None, data=None, success=True, timeout=30):
     result = subprocess.run(
         [str(value) for value in argv], env=env, cwd=cwd, input=data,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False,
     )
     if success is not None:
         assert (result.returncode == 0) == success, (
@@ -169,8 +169,8 @@ esac
         if profile == "pstack-workers":
             self.env["FMX_WORKER_POLICY_FILE"] = str(self.profile / "policy/worker-policy.md")
 
-    def entry(self, script, *args, success=True, data=None):
-        return run([self.runtime / "bin" / script, *args], self.env, self.runtime, data, success)
+    def entry(self, script, *args, success=True, data=None, timeout=30):
+        return run([self.runtime / "bin" / script, *args], self.env, self.runtime, data, success, timeout)
 
     def refused(self, script, *args):
         self.external_log.write_text("")

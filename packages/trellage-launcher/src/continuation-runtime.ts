@@ -223,7 +223,7 @@ const continuationProfileOptions = (catalog: CombinedGuideCatalog): ReadonlyArra
     ref: entry.ref,
     name: entry.name,
     workflows: entry.guide.workflows.map(({ id, description }) => ({ id, description })),
-    ...(entry.launcher === "fmx" ? { guide: entry.guide } : {}),
+    ...(entry.launcher === "firstmate" ? { guide: entry.guide } : {}),
     ...(entry.orchestration === undefined ? {} : { orchestration: entry.orchestration }),
   }))
 
@@ -298,7 +298,7 @@ const buildContinuationJob = async (
   const guideContext = continuationQueuedContext(draft, edit.actionId, options.catalog)
   const profile = instances.profile(draft, edit.actionId, true)
   instances.requireActionApproval(draft, edit.actionId)
-  if (profile.surface === "native" && profile.launcher === "fmx" && profile.orchestration !== undefined) {
+  if (profile.surface === "native" && profile.launcher === "firstmate" && profile.orchestration !== undefined) {
     const { action: fleetAction, request } = continuationConfirmedFirstmateSubmission(
       draft, edit.actionId, continuationProfileOptions(options.catalog),
     )
@@ -598,7 +598,7 @@ const resolveContinuationProjectTarget = async (
   const { action, edit } = findAction(draft, actionId)
   if (continuationActionLocked(edit)) throw new Error("A saved or uncertain submission cannot be retargeted.")
   const profile = guideCatalogEntries(options.catalog).find(({ ref }) => ref === (edit.profileRef ?? action.profileRef))
-  if (profile?.launcher !== "fmx") throw new Error("Project target selection is available for Firstmate profiles.")
+  if (profile?.launcher !== "firstmate") throw new Error("Project target selection is available for Firstmate profiles.")
   const workflow = profile.guide.workflows.find(({ id }) => id === (edit.workflowId ?? action.workflowId))
   if (workflow === undefined) throw new Error("Choose a known Firstmate workflow.")
   if (selection.kind === "fleet") {
@@ -631,7 +631,7 @@ const continuationFirstmateSelection = (
     throw new Error("Prepare and choose the full specification before confirming a Firstmate action.")
   }
   const profile = instances.profile(draft, actionId, true)
-  if (profile.surface !== "native" || profile.launcher !== "fmx" || profile.orchestration === undefined) {
+  if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration === undefined) {
     throw new Error("This action requires a Firstmate profile with a supported control contract.")
   }
   const guideContext = continuationQueuedContext(draft, actionId, options.catalog)
@@ -728,7 +728,7 @@ const continuationReceiptProfile = (
   edit: ContinuationActionDraft,
 ): NativeSelectedProfile => {
   const entry = options.catalog.native.find(({ launcher, name }) =>
-    launcher === "fmx" && name === request.expectedFleet.profile)
+    launcher === "firstmate" && name === request.expectedFleet.profile)
   if (entry === undefined || entry.orchestration === undefined) {
     throw new Error("The saved Firstmate profile is unavailable. Its request remains immutable; no receipt lookup or resend was attempted.")
   }
@@ -789,7 +789,7 @@ const continuationReconciliationFailure = (edit: ContinuationActionDraft, cause:
   return {
     ...edit,
     firstmateDiagnostic: [
-      `Receipt check failed for fmx/${request.expectedFleet.profile} instance ${request.expectedFleet.instanceId}: ${message}`,
+      `Receipt check failed for firstmate/${request.expectedFleet.profile} instance ${request.expectedFleet.instanceId}: ${message}`,
       `Original request ${request.requestId} and its saved evidence were kept. No resend was attempted.`,
     ].join("\n"),
   }

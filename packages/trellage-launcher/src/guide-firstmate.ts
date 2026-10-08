@@ -146,8 +146,8 @@ export class FirstmateSubmissionClient {
     private readonly cwd: string,
   ) {
     const selected = parseSelectedProfile(profile)
-    if (selected.surface !== "native" || selected.launcher !== "fmx" || selected.orchestration === undefined) {
-      throw new Error("Firstmate submission requires a native fmx profile with static orchestration.")
+    if (selected.surface !== "native" || selected.launcher !== "firstmate" || selected.orchestration === undefined) {
+      throw new Error("Firstmate submission requires a native firstmate profile with static orchestration.")
     }
     if (!path.isAbsolute(cwd) || /[\u0000-\u001f\u007f-\u009f]/u.test(cwd)) {
       throw new Error("Firstmate submission requires an absolute working directory without control characters.")
@@ -192,7 +192,7 @@ export class FirstmateSubmissionClient {
         return rejected("Firstmate request fleet does not match the selected profile and source revision. Nothing was sent.")
       }
       selectedFirstmateInstance(this.profile, request.expectedFleet)
-      args = [operation, this.profileName, "--json", ...(operation === "submit"
+      args = [operation, "firstmate", this.profileName, "--json", ...(operation === "submit"
         ? firstmateInstanceControlArgs(this.profile) : firstmateInstanceSelectorArgs(this.profile))]
       stdin = operation === "submit"
         ? serialized

@@ -21,7 +21,7 @@ const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEn
   harness: "oh-my-pi",
   name: "local",
   description: "Oh My Pi native profile.",
-  commandPath: "/usr/local/bin/omp",
+  commandPath: "/usr/local/bin/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -65,8 +65,8 @@ const unsupported = (installed: string): AdminHarnessVersionResult => ({
 describe("buildHarnessVersionCommand", () => {
   it("builds a launcher-scoped native command", () => {
     expect(buildHarnessVersionCommand(nativeEntry())).toEqual({
-      executable: "/usr/local/bin/omp",
-      args: ["harness-version"],
+      executable: "/usr/local/bin/trx",
+      args: ["harness-version", "omp", "local"],
     })
   })
 
@@ -74,16 +74,16 @@ describe("buildHarnessVersionCommand", () => {
     expect(
       buildHarnessVersionCommand(
         nativeEntry({
-          ref: "native:fmx/pstack-workers",
-          launcher: "fmx",
+          ref: "native:firstmate/pstack-workers",
+          launcher: "firstmate",
           harness: "firstmate",
           name: "pstack-workers",
-          commandPath: "/usr/local/bin/fmx",
+          commandPath: "/usr/local/bin/trx",
         }),
       ),
     ).toEqual({
-      executable: "/usr/local/bin/fmx",
-      args: ["harness-version", "pstack-workers"],
+      executable: "/usr/local/bin/trx",
+      args: ["harness-version", "firstmate", "pstack-workers"],
     })
   })
 
@@ -242,9 +242,9 @@ describe("operation and release identities", () => {
     expect(harnessVersionOperationKeyFor(nativeEntry())).toBe("native:omp")
     expect(
       harnessVersionOperationKeyFor(
-        nativeEntry({ ref: "native:fmx/default", launcher: "fmx", harness: "firstmate", name: "default" }),
+        nativeEntry({ ref: "native:firstmate/default", launcher: "firstmate", harness: "firstmate", name: "default" }),
       ),
-    ).toBe("native:fmx:default")
+    ).toBe("native:firstmate:default")
     expect(harnessVersionOperationKeyFor(sandboxEntry())).toBe("sandbox:claude-code")
     expect(harnessVersionOperationKeyFor(sandboxEntry({ ref: "sandbox:claude-docs", name: "claude-docs" }))).toBe(
       "sandbox:claude-code",
@@ -255,7 +255,7 @@ describe("operation and release identities", () => {
     expect(harnessVersionReleaseKeyFor(nativeEntry())).toBe("oh-my-pi")
     expect(harnessVersionReleaseKeyFor(sandboxEntry({ harness: "pi" }))).toBe("oh-my-pi")
     expect(
-      harnessVersionReleaseKeyFor(nativeEntry({ launcher: "picx", harness: "pi", ref: "native:picx/default" })),
+      harnessVersionReleaseKeyFor(nativeEntry({ launcher: "pi", harness: "pi", ref: "native:pi/default" })),
     ).toBe("pi-coding-agent")
   })
 
@@ -263,15 +263,15 @@ describe("operation and release identities", () => {
     expect(harnessVersionLatestLookupSupported(nativeEntry())).toBe(true)
     expect(
       harnessVersionLatestLookupSupported(
-        nativeEntry({ launcher: "cpx", harness: "copilot", ref: "native:cpx/default" }),
+        nativeEntry({ launcher: "copilot", harness: "copilot", ref: "native:copilot/default" }),
       ),
     ).toBe(false)
     expect(
       harnessVersionOperationKeyFor(
         nativeEntry({
-          launcher: "agx",
+          launcher: "agency",
           harness: "agency",
-          ref: "native:agx/default",
+          ref: "native:agency/default",
           harnessVersionSupported: false,
         }),
       ),
@@ -282,8 +282,8 @@ describe("operation and release identities", () => {
 describe("reconcileHarnessVersionResults", () => {
   it("shares only latest while preserving native and sandbox installed versions", () => {
     const cpx = nativeEntry({
-      ref: "native:cpx/default",
-      launcher: "cpx",
+      ref: "native:copilot/default",
+      launcher: "copilot",
       harness: "copilot",
       name: "default",
     })
@@ -294,7 +294,7 @@ describe("reconcileHarnessVersionResults", () => {
       version: "1.0.70",
     })
     const raw = new Map<string, AdminHarnessVersionResult>([
-      ["native:cpx", unsupported("1.0.82")],
+      ["native:copilot", unsupported("1.0.82")],
       [
         "sandbox:copilot-cli",
         {
@@ -323,10 +323,10 @@ describe("reconcileHarnessVersionResults", () => {
   })
 
   it("never substitutes another Firstmate profile's catalog pin for an unavailable target", () => {
-    const first = nativeEntry({ ref: "native:fmx/default", launcher: "fmx", harness: "firstmate", name: "default" })
+    const first = nativeEntry({ ref: "native:firstmate/default", launcher: "firstmate", harness: "firstmate", name: "default" })
     const second = nativeEntry({
-      ref: "native:fmx/pstack-workers",
-      launcher: "fmx",
+      ref: "native:firstmate/pstack-workers",
+      launcher: "firstmate",
       harness: "firstmate",
       name: "pstack-workers",
     })
@@ -335,8 +335,8 @@ describe("reconcileHarnessVersionResults", () => {
       latest: { kind: "failed", diagnostic: "catalog pin unavailable" },
     }
     const raw = new Map<string, AdminHarnessVersionResult>([
-      ["native:fmx:default", known("a".repeat(40), "c".repeat(40))],
-      ["native:fmx:pstack-workers", unavailable],
+      ["native:firstmate:default", known("a".repeat(40), "c".repeat(40))],
+      ["native:firstmate:pstack-workers", unavailable],
     ])
 
     const results = reconcileHarnessVersionResults([first, second], (key) => raw.get(key))
@@ -373,16 +373,16 @@ describe("reconcileHarnessVersionResults", () => {
 
 describe("harnessVersionEntriesForForceResync", () => {
   it("refreshes an equivalent native/sandbox release group", () => {
-    const cpx = nativeEntry({ ref: "native:cpx/default", launcher: "cpx", harness: "copilot" })
+    const cpx = nativeEntry({ ref: "native:copilot/default", launcher: "copilot", harness: "copilot" })
     const sandbox = sandboxEntry({ ref: "sandbox:copilot", harness: "copilot" })
     expect(harnessVersionEntriesForForceResync(cpx, [cpx, sandbox])).toEqual([cpx, sandbox])
   })
 
   it("keeps Firstmate force refresh profile-scoped", () => {
-    const first = nativeEntry({ ref: "native:fmx/default", launcher: "fmx", harness: "firstmate", name: "default" })
+    const first = nativeEntry({ ref: "native:firstmate/default", launcher: "firstmate", harness: "firstmate", name: "default" })
     const second = nativeEntry({
-      ref: "native:fmx/pstack-workers",
-      launcher: "fmx",
+      ref: "native:firstmate/pstack-workers",
+      launcher: "firstmate",
       harness: "firstmate",
       name: "pstack-workers",
     })

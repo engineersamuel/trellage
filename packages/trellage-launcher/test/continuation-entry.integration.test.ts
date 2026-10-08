@@ -156,7 +156,7 @@ const createFixture = async (onTestFailed: TestContext["onTestFailed"]) => {
     await expect(stat(path.join(path.dirname(guideRoot), "pocs"))).rejects.toMatchObject({ code: "ENOENT" })
     await writeFile(path.join(root, "package.json"), '{"type":"commonjs"}\n', { mode: 0o600 })
     await writeFile(deniedCallsPath, "", { mode: 0o600 })
-    for (const command of ["copilot", "cpx", "codex", "cdx", "claude", "cldx", "trellage", "trx", "herdr"]) {
+    for (const command of ["copilot", "copilot", "codex", "codex", "claude", "claude", "trellage", "trx", "herdr"]) {
       await writeFile(
         path.join(bin, command),
         `#!${bunExecutable()}

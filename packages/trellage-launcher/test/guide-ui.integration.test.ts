@@ -4,7 +4,7 @@ import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { guidePromptTarget } from "../src/guide-api.ts"
 import type { JobPlacement, QueuedGuideJob } from "../src/guide-batch.ts"
 import type { GuideGoalCandidateContext, PreparedGuideGoal } from "../src/guide-goal-execution.ts"
@@ -35,6 +35,7 @@ import { goalArtifact, goalArtifactQuestion, goalCriteria, revisedGoalIntent } f
 import { goalMeSkill } from "./fixtures/goal-me-skill.ts"
 
 const entry = fileURLToPath(new URL("./fixtures/guide-integration.tsx", import.meta.url))
+vi.setConfig({ testTimeout: 15_000 })
 import { preparationPlan, preparationRevision } from "./helpers/firstmate-preparation-fixtures.ts"
 import { alpha, beta, instanceOrchestration, instanceProfile } from "./helpers/firstmate-instance-flow.ts"
 import { canonicalFirstmateInstanceJson } from "@trellage/guide-core"
@@ -75,7 +76,7 @@ test("engagement opens locally, confirms one launch, returns for review, and reo
     await guide.pressAndWait("\u001b", "Next engagement action")
     await guide.pressAndWait("p", "Review one assignment", "prepared")
     expect(await engagementCounts(guide)).toMatchObject({ assessments: 1, launches: 0 })
-    await guide.pressAndWait("l", "Confirm current-terminal launch", "/fixture/cpx")
+    await guide.pressAndWait("l", "Confirm current-terminal launch", "/fixture/trx")
     expect(await engagementCounts(guide)).toMatchObject({ launches: 0 })
     await guide.pressAndWait("y", "Review the result", "returned")
     expect(await engagementCounts(guide)).toMatchObject({ launches: 1 })
@@ -250,14 +251,14 @@ interface GoalSelection extends Selection {
 
 // Independent command oracles: do not call the production launch or workflow builders.
 const launchArguments: Record<FixtureProfileId, ReadonlyArray<string>> = {
-  planner: ["planner", "--"],
-  reviewer: ["reviewer", "-i"],
-  writer: ["default", "--"],
-  builder: ["builder"],
+  planner: ["run", "codex", "planner", "--"],
+  reviewer: ["run", "copilot", "reviewer", "-i"],
+  writer: ["run", "claude", "default", "--"],
+  builder: ["run", "pi", "builder"],
   sandbox: ["--profile", "sandbox-reviewer"],
   council: ["--profile", "claude-council"],
   research: ["--profile", "claude-research"],
-  hve: ["hve", "--agent", "hve-core:rpi-agent", "-i"],
+  hve: ["run", "copilot", "hve", "--agent", "hve-core:rpi-agent", "-i"],
   graph: ["--profile", "claude-graph-of-loops"],
 }
 
@@ -280,7 +281,7 @@ const expectedProfile = (root: string, id: FixtureProfileId): SelectedProfile =>
         ...common,
         surface: "native",
         launcher: profile.launcher,
-        commandPath: path.join(root, "bin", profile.launcher),
+        commandPath: path.join(root, "bin", "trx"),
         ...(profile.agent === undefined ? {} : { agent: profile.agent }),
       }
     : { ...common, surface: "sandbox", commandPath: path.join(root, "bin", "trellage") }
@@ -321,7 +322,7 @@ const readinessCommand = (root: string, id: FixtureProfileId): RecordedCommand =
     executable: profile.commandPath,
     args:
       profile.surface === "native"
-        ? ["inventory", profile.profile, "--json"]
+        ? ["inventory", profile.launcher, profile.profile, "--json"]
         : ["doctor", "--profile", profile.profile],
     cwd: root,
   }
@@ -951,7 +952,7 @@ const expectedGoalJob = (root: string, selection: GoalSelection): QueuedGuideJob
     prompt,
     command: {
       executable: profile.commandPath,
-      args: profile.surface === "native" ? [profile.profile] : ["--profile", profile.profile, prompt],
+      args: profile.surface === "native" ? ["run", profile.launcher, profile.profile] : ["--profile", profile.profile, prompt],
     },
     promptDelivery: profile.surface === "native" ? "manual" : "command",
     placement: selection.placement,
@@ -963,8 +964,8 @@ const codexGoalReadinessCommands = (root: string): ReadonlyArray<RecordedCommand
   readinessCommand(root, "planner"),
   { executable: "codex", args: ["--version"], cwd: root },
   {
-    executable: path.join(root, "bin", "cdx"),
-    args: ["inventory", "planner", "--goal-features"],
+    executable: path.join(root, "bin", "trx"),
+    args: ["inventory", "codex", "planner", "--goal-features"],
     cwd: root,
   },
 ]
@@ -975,7 +976,7 @@ const goalReadinessCommands = (root: string, selection: GoalSelection): Readonly
   assert.equal(controller, "claude-goal")
   return [
     readinessCommand(root, selection.profileId),
-    { executable: path.join(root, "bin", "cldx"), args: ["harness-version"], cwd: root },
+    { executable: path.join(root, "bin", "trx"), args: ["harness-version", "claude", "default"], cwd: root },
     {
       executable: "curl",
       args: ["--fail", "--silent", "--show-error", "--max-time", "5", "http://127.0.0.1:8080/v1/models"],
@@ -1065,7 +1066,7 @@ const assertGoalBatch = (
           "run",
           paneId,
           hasGoal(selection)
-            ? `env TRELLAGE_AUTOMATION=1 ${quoted(job.command.executable)} ${job.profile.profile}`
+            ? `env TRELLAGE_AUTOMATION=1 ${quoted(job.command.executable)} ${job.command.args.join(" ")}`
             : expectedPaneCommand(guide.root, selection),
         ],
         cwd,
@@ -1097,15 +1098,15 @@ const augmentationCommand = (
   kind: "research" | "codebase",
   intent: string,
 ): RecordedCommand => {
-  const commands = commandEvents(events).filter((command) => command.executable === "npx" || command.args[0] === "hve")
+  const commands = commandEvents(events).filter((command) => command.executable === "npx" || command.args[0] === "run" && command.args[1] === "copilot")
   expect(commands).toHaveLength(1)
   const command = commands[0]
   assert(command !== undefined)
   expect(command.cwd).toBe(guide.root)
   if (kind === "research") {
-    expect(command.executable).toBe(path.join(guide.root, "bin", "cpx"))
-    expect(command.args).toEqual(["hve", "-p", expect.stringContaining(`\n<request>\n${intent}\n</request>`)])
-    expect(command.args[2]).toContain("rpi-research")
+    expect(command.executable).toBe(path.join(guide.root, "bin", "trx"))
+    expect(command.args).toEqual(["run", "copilot", "hve", "-p", expect.stringContaining(`\n<request>\n${intent}\n</request>`)])
+    expect(command.args[4]).toContain("rpi-research")
   } else {
     expect(command.executable).toBe("npx")
     expect(command.args).toEqual([
@@ -1216,8 +1217,10 @@ it("reviews a local customer brief and launches the checked Discovery lens witho
   const report = await guide.finish(enter)
   assert(report.result.action === "current-terminal")
   expect(report.result.command.args.slice(0, -2)).toEqual([
-    "interactive",
+    "run",
+    "copilot",
     "hve",
+    "--interactive",
     "--agent",
     "hve-core:dt-coach",
     "--require-skill",
@@ -1271,8 +1274,10 @@ it.for([
   assert("command" in report.result && "prompt" in report.result)
   const command = report.result.command
   const args = [
-    "interactive",
+    "run",
+    "copilot",
     "hve",
+    "--interactive",
     "--agent",
     "hve-core:dt-coach",
     "--require-skill",
@@ -1284,7 +1289,7 @@ it.for([
     "-i",
     report.result.prompt,
   ]
-  expect(command).toEqual({ executable: path.join(guide.root, "bin", "cpx"), args })
+  expect(command).toEqual({ executable: path.join(guide.root, "bin", "trx"), args })
   const commands = commandEvents(report.events)
   const run = commands.filter(({ args }) => args[0] === "pane" && args[1] === "run")
   expect(run).toHaveLength(1)
@@ -1577,7 +1582,7 @@ it("optimizes current changes without rematching the task or changing queued wor
   assert.equal(submission.request.intent, fixtureIntent)
   assert.deepEqual(submission.request.paths, ["src/login.ts"])
   assert.equal(submission.request.otherEditorsStopped, true)
-  assert.equal(submission.profileRef, "native:cdx/planner")
+  assert.equal(submission.profileRef, "native:codex/planner")
   assert.deepEqual(submission.request.target.scope, { kind: "branch", baseRef: "main" })
   assert(submission.prompt.includes("Implement only the explicitly approved"))
   assert(submission.prompt.includes("Remove the redundant wrapper"))
@@ -1597,9 +1602,9 @@ it("sends the explicit branch scope with untracked files selected by default to 
   await guide.waitForText("2 of 2 files selected", '[x] "src/login.ts"', '[x] "notes.txt"')
   await guide.pressAndWait(enter, "Choose reviewers", "First principles")
   await approveOptimizeReview(guide)
-  await guide.pressAndWait(down, "> cpx reviewer")
+  await guide.pressAndWait(down, "> copilot reviewer")
   await confirmOptimizePane(guide)
-  await guide.waitForText("Destination: cpx reviewer")
+  await guide.waitForText("Destination: copilot reviewer")
   await guide.pressAndWait("p", "Review context", "Implement only the explicitly approved")
   await guide.pressAndWait("\u001b", "Confirm execution")
   await guide.pressAndWait(" ", "[x] Confirm other agents")
@@ -1611,7 +1616,7 @@ it("sends the explicit branch scope with untracked files selected by default to 
   const submissions = report.events.filter((event) => event.kind === "optimize-changes")
   const [submission] = submissions
   assert(submissions.length === 1 && submission !== undefined, "Expected exactly one optimization submission")
-  assert.equal(submission.profileRef, "native:cpx/reviewer")
+  assert.equal(submission.profileRef, "native:copilot/reviewer")
   assert.equal(submission.request.originalIntent, fixtureIntent)
   assert.equal(submission.request.intent, fixtureIntent)
   assert.deepEqual(submission.request.paths, ["src/login.ts", "notes.txt"])
@@ -1772,6 +1777,7 @@ it("reopens a saved no-change review without new model calls or implementation",
   await guide.pressAndWait(enter, "Select a recommended finding")
   await guide.pressAndWait("\u001b", "Confirm target")
   await guide.pressAndWait("h", "Saved reviews", "Reopen without model calls.")
+  await guide.waitForText("· complete ·")
   await guide.pressAndWait(enter, "No change recommended.")
   const report = await guide.finish("q", 130)
   assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 1)
@@ -1813,6 +1819,7 @@ it(
     await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1")
     await guide.pressAndWait("\u001b", "Confirm target")
     await guide.pressAndWait("h", "Saved reviews", "Reopen without model calls.")
+    await guide.waitForText("· failed ·")
     await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1")
     await guide.pressAndWait("\u001b", "Confirm target")
     const report = await guide.finish("q", 130)
@@ -1944,9 +1951,10 @@ it.for([
     const report = await guide.finish(enter)
     const profile = expectedProfile(guide.root, profileId)
     const prompt = expectedGoalPrompt(selection)
+    assert(profile.surface === "native")
     const command = {
       executable: profile.commandPath,
-      args: manual ? [profile.profile] : [profile.profile, "-p", prompt],
+      args: manual ? ["run", profile.launcher, profile.profile] : ["run", profile.launcher, profile.profile, "-p", prompt],
     }
     expect(report.result).toEqual({
       action: "current-terminal",
@@ -2375,7 +2383,7 @@ it("keeps profile worktrees distinct, rejects queued duplicates, and preserves r
   await guide.pressAndWait("\u007f", `${fixtureBranches.hve}-`)
   await guide.pressAndWait("\u007f", fixtureBranches.hve)
   const beforeConflict = commandEvents(await guide.events())
-  await guide.pressAndWait(enter, "already queued by job 1 (cpx hve)", "Worktree branch")
+  await guide.pressAndWait(enter, "already queued by job 1 (copilot hve)", "Worktree branch")
   expect(guide.text()).not.toContain("open existing worktree")
   expect(commandEvents(await guide.events())).toEqual(beforeConflict)
   await assertDeferredLaunch(guide)
@@ -2469,7 +2477,7 @@ test("Firstmate preparation reviews and installs only an approved plan in an 80x
     expect(guide.text()).toContain("Missing managed tools: herdr 0.14.0, bv 0.9.3.")
     expect(guide.text()).not.toContain("inventory never installs")
     expect(commandEvents(await guide.events()).map(({ args }) => args)).toEqual([
-      ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
+      ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision],
     ])
 
     await guide.pressAndWait("i", "Review managed-tool installation", "❯ Cancel", "b/Esc cancel")
@@ -2502,17 +2510,18 @@ test("Firstmate preparation reviews and installs only an approved plan in an 80x
     expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
     expect(commandEvents(report.events).map(({ executable, args }) => ({ executable, args }))).toEqual([
       {
-        executable: path.join(guide.root, "bin", "fmx"),
-        args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
+        executable: path.join(guide.root, "bin", "trx"),
+        args: ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision],
       },
       {
-        executable: path.join(guide.root, "bin", "fmx"),
-        args: ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
+        executable: path.join(guide.root, "bin", "trx"),
+        args: ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision],
       },
       {
-        executable: path.join(guide.root, "bin", "fmx"),
+        executable: path.join(guide.root, "bin", "trx"),
         args: [
           "prepare",
+          "firstmate",
           "default",
           "--json",
           "--expected-source-revision",
@@ -2526,7 +2535,7 @@ test("Firstmate preparation reviews and installs only an approved plan in an 80x
     expect(generated).toHaveLength(1)
     expect(generated[0]?.input).toMatchObject({
       intent,
-      profileRef: "native:fmx/default",
+      profileRef: "native:firstmate/default",
       workflowId: "review-project",
     })
     expect(report.events.filter((event) => event.kind === "interactive-launch")).toEqual([])
@@ -2576,6 +2585,7 @@ test("Firstmate instance selection and refresh retain the request in an 80x24 te
     expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
     const expected = [
       "prepare",
+      "firstmate",
       "default",
       "--json",
       "--expected-source-revision",
@@ -2607,4 +2617,23 @@ test("Firstmate instance selection and refresh retain the request in an 80x24 te
   } finally {
     await guide.close()
   }
+}, 30_000)
+
+
+it("explains automatic template fallback after a model attempt", async ({ guide }) => {
+  await guide.start(FixtureMode.GenerationInvalid, 80, 30)
+  await enterIntent(guide)
+  await guide.pressAndWait("r", "Using template candidates: generated output failed workflow validation.", "changed required", "workflow text", "Direct", "Scoped", "Verified")
+  expect(guide.text().replace(/\s+/gu, " ")).toContain("changed required workflow text")
+  expect(guide.text()).not.toContain("no model call")
+  expect((await guide.events()).filter((event) => event.kind === "generate")).toHaveLength(1)
+  expect((await guide.events()).filter((event) => event.kind === "optimize")).toHaveLength(0)
+}, 30_000)
+
+it("preserves the failure when the user selects template fallback", async ({ guide }) => {
+  await guide.start(FixtureMode.GenerationUnavailable, 80, 30)
+  await enterIntent(guide)
+  await guide.pressAndWait("r", "Fixture provider unavailable", "t template fallback")
+  await guide.pressAndWait("t", "Using template candidates you selected after generation failed.", "Fixture provider unavailable", "Direct", "Scoped", "Verified")
+  expect(guide.text()).not.toContain("no model call")
 }, 30_000)

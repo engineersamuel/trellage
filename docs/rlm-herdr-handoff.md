@@ -85,7 +85,7 @@ address them. Recommend filing these directly against Herdr:
    something about these two profiles' screen state specifically evades the
    stuck-frame detector. Recommend comparing captured frames across all three
    to find the discriminating difference.
-5. **Scope/readiness resolution errors (category E, partial)** — `grx hve`
+5. **Scope/readiness resolution errors (category E, partial)** — the retired legacy Grok launcher with `hve`
    failed with "Agent is outside run scope" (`ScopedHerdr`/
    `createHerdrTrellageBackend` didn't recognize the spawned pane as
    belonging to the current run) and `prx default` failed with
@@ -108,8 +108,8 @@ address them. Recommend filing these directly against Herdr:
 
 ## What Trellage added to make future validation runs cheaper
 
-- **Standardized readiness** across all native launchers (`cpx`, `cdx`,
-  `grx`, `omp`, `jcx`, `cldx`, `prx`) — every launcher now exposes the same
+- **Standardized readiness** across the legacy native launchers (`cpx`, `cdx`,
+  `omp`, `jcx`, `cldx`, `prx`) — every launcher now exposes the same
   `not_ready_inventory` / `readiness: healthy | unhealthy | not-setup`
   contract driven by its `doctor_profile` check, including `prx`'s "active
   named agent" gate, which used to be a launch-time failure rather than a

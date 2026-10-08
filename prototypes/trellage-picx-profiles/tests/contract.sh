@@ -26,7 +26,7 @@ home="$fixture_root/home"
 node_binary="$(node -p 'process.execPath')"
 mkdir -p "$fake_bin" "$home/.copilot" "$home/.omp/profiles/trellage-picx-default"
 seed_floating_skills_cache "$home"
-printf '%s\n' '{"models":[{"id":"gpt-5.6-sol"}]}' >"$home/.copilot/models.json"
+printf '%s\n' '{"models":[{"id":"gpt-6-astra"}]}' >"$home/.copilot/models.json"
 printf '%s\n' '{"mcpServers":{"plan":{"url":"https://agent-native.example.test/mcp"}}}' \
   >"$home/.claude.json"
 printf 'legacy OMP state\n' >"$home/.omp/profiles/trellage-picx-default/canary"
@@ -194,7 +194,7 @@ case "${!#}" in
     printf '%s\n' '{"status":"ok"}'
     ;;
   http://127.0.0.1:8080/v1/models)
-    printf '%s\n' '{"data":[{"id":"gpt-5.6-sol"}]}'
+    printf '%s\n' '{"data":[{"id":"gpt-6-astra"}]}'
     ;;
   *)
     exit 22
@@ -219,7 +219,7 @@ export MISE_NPM_PACKAGE_MANAGER=aube
 : >"$FAKE_MISE_LOG"
 
 "$installer" >/dev/null
-command_path="$HOME/.local/bin/picx"
+command_path="$HOME/.local/share/trellage/.native-commands/picx"
 runtime_root="$HOME/.local/share/trellage/picx"
 profile_root="$HOME/.local/share/trellage/profiles/pi/picx-default"
 agent_root="$profile_root/agent"
@@ -325,7 +325,7 @@ cp "$fixture_root/setup-extension-log" "$FAKE_EXTENSION_LOG"
 
 jq -e '
   .defaultProvider == "copilot-proxy-rs"
-  and .defaultModel == "gpt-5.6-sol"
+  and .defaultModel == "gpt-6-astra"
   and .defaultThinkingLevel == "medium"
   and .defaultProjectTrust == "never"
   and .enableInstallTelemetry == false
@@ -362,7 +362,7 @@ jq -e '
   and .providers["copilot-proxy-rs"].api == "openai-responses"
   and .providers["copilot-proxy-rs"].apiKey == "none"
   and .providers["copilot-proxy-rs"].authHeader == false
-  and .providers["copilot-proxy-rs"].models[0].id == "gpt-5.6-sol"
+  and .providers["copilot-proxy-rs"].models[0].id == "gpt-6-astra"
 ' "$agent_root/models.json" >/dev/null || fail 'managed proxy model differs'
 jq -e '
   .settings.hostConfigDiscovery == "off"
@@ -471,7 +471,7 @@ jq -e '
   .readiness == "healthy"
   and .harness == "pi"
   and .harnessVersion == "0.84.2"
-  and .model == "copilot-proxy-rs/gpt-5.6-sol:medium"
+  and .model == "copilot-proxy-rs/gpt-6-astra:medium"
   and (.extensions | length) == 10
 ' "$fixture_root/inventory.json" >/dev/null || fail 'ready inventory differs'
 grep -Fqx -- '-fsS --max-time 5 http://127.0.0.1:8080/health' \
@@ -506,7 +506,7 @@ cmp -s <(jq -r '.[].name' "$profile_root/extensions.json") "$fixture_root/live.o
   || fail 'non-interactive extension report differs'
 grep -Fq "$agent_root|$profile_root/.copilot-models.json|copilot=|gh=|github=|openai=|openai_base=|azure=|" \
   "$FAKE_LAUNCH_LOG" || fail 'launch isolation environment differs'
-grep -Fq -- '--provider copilot-proxy-rs --model gpt-5.6-sol --thinking medium' \
+grep -Fq -- '--provider copilot-proxy-rs --model gpt-6-astra --thinking medium' \
   "$FAKE_LAUNCH_LOG" || fail 'launch model selection differs'
 grep -Fq 'This picx profile has exactly these Pi extensions installed, in order:' \
   "$FAKE_LAUNCH_LOG" || fail 'launch omitted extension inventory context'

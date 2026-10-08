@@ -71,7 +71,7 @@ const prompts = {
 }
 const matchResult: GuideMatchResult = {
   candidates: ["one", "two", "three"].map((name, index) => ({
-    profileRef: `native:cdx/${name}`,
+    profileRef: `native:codex/${name}`,
     workflowId: "review",
     confidence: 0.9 - index * 0.1,
     reason: `${name} matches the request.`,
@@ -88,9 +88,9 @@ const cacheFor = (cwd: string, warnings: string[] = []) =>
 const matchInput = {
   intent: "Review the architecture",
   entries: [
-    { ref: "native:cdx/one", guide: { workflows: [{ id: "review" }] } },
-    { ref: "native:cdx/two", guide: { workflows: [{ id: "review" }] } },
-    { ref: "native:cdx/three", guide: { workflows: [{ id: "review" }] } },
+    { ref: "native:codex/one", guide: { workflows: [{ id: "review" }] } },
+    { ref: "native:codex/two", guide: { workflows: [{ id: "review" }] } },
+    { ref: "native:codex/three", guide: { workflows: [{ id: "review" }] } },
   ],
 }
 
@@ -131,7 +131,7 @@ describe("GuideArtifactCache", () => {
     const markdown = await readFile(artifact, "utf8")
     expect(markdown).toContain("# Profile recommendations")
     expect(markdown).toContain("Review the architecture")
-    expect(markdown).toContain("native:cdx/one")
+    expect(markdown).toContain("native:codex/one")
     expect(markdown).toContain("match-model")
     expect(markdown).not.toContain('"schemaVersion":1')
     expect((await lstat(path.join(guideRoot, sessions[0]!))).mode & 0o777).toBe(0o700)
@@ -150,16 +150,16 @@ describe("GuideArtifactCache", () => {
       targetTool: "codex",
       fixedFrame: { beforeBody: "/review ", afterBody: "" },
     }
-    await cache.generation({ ...generationBase, profileRef: "native:cdx/one" }, async () => ({ candidates }))
-    await cache.generation({ ...generationBase, profileRef: "native:cdx/two" }, async () => ({ candidates }))
+    await cache.generation({ ...generationBase, profileRef: "native:codex/one" }, async () => ({ candidates }))
+    await cache.generation({ ...generationBase, profileRef: "native:codex/two" }, async () => ({ candidates }))
     await cache.refinement(
-      { ...generationBase, profileRef: "native:cdx/one", candidates, candidateIndex: 0, feedback: "Make it shorter" },
+      { ...generationBase, profileRef: "native:codex/one", candidates, candidateIndex: 0, feedback: "Make it shorter" },
       async () => ({ candidate: { ...candidates[0], prompt: "Review the code." } }),
     )
     await cache.refinement(
       {
         ...generationBase,
-        profileRef: "native:cdx/one",
+        profileRef: "native:codex/one",
         candidates,
         candidateIndex: 1,
         feedback: "Add security concerns",
@@ -184,7 +184,7 @@ describe("GuideArtifactCache", () => {
     const cwd = await temporaryRoot()
     const base = {
       intent: matchInput.intent,
-      profileRef: "native:cdx/one",
+      profileRef: "native:codex/one",
       workflowId: "review",
       guide: { schemaVersion: 1, workflows: [{ id: "review", promptTemplate: "{{intent}}" }] },
       guideBody: "# Reviewer\nUse this guide.",
@@ -255,7 +255,7 @@ describe("GuideArtifactCache", () => {
     await writeFile(path.join(skillDirectory, "SKILL.md"), "version one\n")
     const base = {
       intent: matchInput.intent,
-      profileRef: "native:cdx/one",
+      profileRef: "native:codex/one",
       workflowId: "review",
       guide: { schemaVersion: 1, workflows: [{ id: "review", promptTemplate: "{{intent}}" }] },
       guideBody: "# Reviewer\nUse this guide.",
@@ -310,7 +310,7 @@ describe("GuideArtifactCache", () => {
     await cacheFor(cwd).match(
       {
         ...matchInput,
-        entries: [...matchInput.entries, { ref: "native:cdx/four", guide: { workflows: [{ id: "review" }] } }],
+        entries: [...matchInput.entries, { ref: "native:codex/four", guide: { workflows: [{ id: "review" }] } }],
       },
       produce,
     )
@@ -335,7 +335,7 @@ describe("GuideArtifactCache", () => {
     await cache.match(
       {
         ...matchInput,
-        entries: [...matchInput.entries, { ref: "native:cdx/four", guide: { workflows: [{ id: "review" }] } }],
+        entries: [...matchInput.entries, { ref: "native:codex/four", guide: { workflows: [{ id: "review" }] } }],
       },
       async () => matchResult,
     )

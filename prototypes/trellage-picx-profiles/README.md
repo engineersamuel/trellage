@@ -1,9 +1,11 @@
 # Trellage Native Pi extension profile
 
-`picx` is a standalone Trellage Native launcher with one profile, `default`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run pi default` launches the Trellage Native Pi profile.
 It runs the latest stable upstream `@earendil-works/pi-coding-agent` release
 resolved on first use and routes
-`copilot-proxy-rs/gpt-5.6-sol:medium` through the local
+`copilot-proxy-rs/gpt-6-astra:medium` through the local
 `http://127.0.0.1:8080/v1` OpenAI Responses endpoint.
 
 The profile installs exactly this ordered extension set:
@@ -38,7 +40,7 @@ Setup installs the shared floating `native-common` skill bundle into the
 isolated Pi profile and snapshots `~/.copilot/models.json` as read-only
 `.copilot-models.json`. The first native setup fetches the bundle; later
 launches reuse the shared cache until `trx skills update` refreshes it.
-Run `picx skills-update default` after that refresh to copy and verify only
+Run `trx upgrade pi default --skills-only` after that refresh to copy and verify only
 managed skills in the existing owned profile. Custom skills, extensions,
 configuration, and authentication are preserved. Missing caches, invalid
 ownership, unsafe paths, and name collisions fail closed. This command never
@@ -47,28 +49,27 @@ Launches remove host Copilot, OpenAI, and Azure OpenAI credential variables
 because the managed proxy provider uses no API key.
 
 The local `copilot-proxy-rs` service must be healthy and advertise
-`gpt-5.6-sol` from `/v1/models`. `picx doctor` checks both conditions.
-`picx inventory default --json` applies the same readiness checks without
+`gpt-6-astra` from `/v1/models`. `trx doctor pi default` checks both conditions.
+`trx inventory pi default --json` applies the same readiness checks without
 changing profile state. It returns structured `healthy`, `unhealthy`, or
-`not-setup` readiness; use `picx doctor` when a profile is unhealthy and the
+`not-setup` readiness; use `trx doctor pi default` when a profile is unhealthy and the
 detailed diagnostic is needed.
 
 ```bash
 ./install.sh
-picx setup
-picx doctor
-picx update --check
-picx update
-picx -p "what extensions are installed"
-picx inventory default --json
+trx setup pi default
+trx doctor pi default
+trx upgrade pi default --check
+trx upgrade pi default
+trx run pi default -p "what extensions are installed"
+trx inventory pi default --json
 ```
 
 First setup resolves the latest stable Pi release through `mise`, installs it,
 and records the exact installed version in the local `installed-version`
-receipt under `~/.local/share/trellage/picx`. Bare `picx` and `picx default`
-select the same profile. Ordinary launches reuse the receipt-selected version
+receipt under `~/.local/share/trellage/picx`. `trx run pi default` selects this profile. Ordinary launches reuse the receipt-selected version
 and installed extensions without a network request. Setup and explicit
-`picx update` resolve the current stable releases for unversioned npm extension
+`trx upgrade pi default` resolve the current stable releases for unversioned npm extension
 specs. A failed update preserves the last good installed version, extensions,
 and receipt. The extension set remains the cataloged ordered set. The bare Pi
 runtime does not require the former Oh My Pi source patches for

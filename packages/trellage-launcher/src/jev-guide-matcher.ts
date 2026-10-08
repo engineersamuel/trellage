@@ -22,7 +22,7 @@ export type { JevSystemOneClient } from "./jev-decisions.ts"
 const MODEL = "jev-1.13.0"
 const ATTEMPT_MS = 3_000
 const HEADLONG = "sandbox:headlong"
-const POTETO = "native:cdx/pstack"
+const POTETO = "native:codex/pstack"
 const POTETO_WORKFLOW = "poteto-mode-entry-point"
 const HEADLONG_POLICY =
   "Include Headlong for substantial investigation, research, implementation, maintenance, monitoring, or other open-ended work that benefits from progress between interactions. Exclude simple questions, quick lookups, small edits, and clearly one-shot tasks."

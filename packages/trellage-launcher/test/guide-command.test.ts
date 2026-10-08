@@ -31,7 +31,7 @@ describe("guide command request resolution", () => {
     const args = parseGuideHeadlessArgv([
       "--json",
       "--profile",
-      "native:cpx/awesome",
+      "native:copilot/awesome",
       "--model",
       "mai-code-1.1-flash",
       "--effort",
@@ -46,7 +46,7 @@ describe("guide command request resolution", () => {
     ).toMatchObject({
       request: {
         intent: "Find a skill",
-        profile: "native:cpx/awesome",
+        profile: "native:copilot/awesome",
         model: "mai-code-1.1-flash",
         effort: GuideEffort.High,
       },
@@ -61,9 +61,9 @@ describe("guide command request resolution", () => {
 
   it.each([
     ["omitted", undefined],
-    ["different", "native:cpx/awesome"],
+    ["different", "native:copilot/awesome"],
   ] as const)("uses the CLI profile for workflow selection when the stdin profile is %s", (_name, profile) => {
-    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:fmx/default"])
+    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:firstmate/default"])
     const request = {
       schemaVersion: 1,
       intent: "Review fleet status.",
@@ -73,7 +73,7 @@ describe("guide command request resolution", () => {
     }
     expect(resolveGuideRequest(args, JSON.stringify({ ...request, profile }), {}).request).toEqual({
       ...request,
-      profile: "native:fmx/default",
+      profile: "native:firstmate/default",
     })
   })
 
@@ -87,7 +87,7 @@ describe("guide command request resolution", () => {
   })
 
   it("still validates an invalid stdin profile when CLI overrides it", () => {
-    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:fmx/default"])
+    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:firstmate/default"])
     expect(() => resolveGuideRequest(args, JSON.stringify({
       schemaVersion: 1,
       intent: "Review fleet status.",
@@ -120,14 +120,14 @@ describe("guide command request resolution", () => {
         schemaVersion: 1,
         intent: "The approved retry goal.",
         goal: goalDraft,
-        profile: "native:cdx/superpowers",
+        profile: "native:codex/superpowers",
         workflowId: "test-driven-development",
       }),
       {},
     )
     expect(resolved.request).toMatchObject({
       model: "gpt-6-astra",
-      profile: "native:cdx/superpowers",
+      profile: "native:codex/superpowers",
       workflowId: "test-driven-development",
       goal: { draft: goalDraft, prompt: "The approved retry goal." },
     })
@@ -144,7 +144,7 @@ describe("guide command request resolution", () => {
 
   it("accepts a stdin workflow when the selected profile is supplied in argv", () => {
     const resolved = resolveGuideRequest(
-      parseGuideHeadlessArgv(["--json", "--profile", "native:cdx/superpowers"]),
+      parseGuideHeadlessArgv(["--json", "--profile", "native:codex/superpowers"]),
       JSON.stringify({
         schemaVersion: 1,
         intent: "The approved retry goal.",
@@ -153,7 +153,7 @@ describe("guide command request resolution", () => {
       }),
       {},
     )
-    expect(resolved.request.profile).toBe("native:cdx/superpowers")
+    expect(resolved.request.profile).toBe("native:codex/superpowers")
     expect(resolved.request.workflowId).toBe("test-driven-development")
     expect(resolved.request.goal?.draft).toEqual(goalDraft)
   })
@@ -171,7 +171,7 @@ describe("guide command request resolution", () => {
       intent: "The approved retry goal.",
       goal: goalDraft,
       ...(operation === "match" ? {} : {
-        profile: "native:cdx/superpowers",
+        profile: "native:codex/superpowers",
         workflowId: "test-driven-development",
       }),
     })
@@ -195,7 +195,7 @@ describe("guide command request resolution", () => {
       intent: "The approved retry goal.",
       goal: guideApi.parseGuideServiceRequestJson(stdinRequest).goal,
       ...(operation === "match" ? {} : {
-        profileRef: "native:cdx/superpowers",
+        profileRef: "native:codex/superpowers",
         workflowId: "test-driven-development",
       }),
     })

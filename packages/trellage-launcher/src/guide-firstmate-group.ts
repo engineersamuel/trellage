@@ -18,7 +18,7 @@ export const firstmateProfileInstanceKey = (
 }
 
 export const firstmateJobInstanceKey = (job: QueuedGuideJob): string | undefined =>
-  job.profile.surface === "native" && job.profile.launcher === "fmx"
+  job.profile.surface === "native" && job.profile.launcher === "firstmate"
     ? firstmateProfileInstanceKey(job.profile, job.firstmate?.expectedFleet)
     : undefined
 

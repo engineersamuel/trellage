@@ -1,3 +1,4 @@
+import { canonicalNativeIdentity } from "@trellage/guide-core"
 import path from "node:path"
 import { createHash } from "node:crypto"
 import { execFileSync, spawn } from "node:child_process"
@@ -391,8 +392,8 @@ const validateHeadlessPrompt = (value: unknown): boolean => {
 const validateAgent = (value: unknown, launcher?: string): string | undefined => {
   if (value === undefined) return undefined
   const agent = getString(value, "selected profile agent")
-  if (launcher !== undefined && launcher !== "cpx") {
-    throw new Error("selected profile agent is supported only by the cpx launcher")
+  if (launcher !== undefined && launcher !== "copilot") {
+    throw new Error("selected profile agent is supported only by the Copilot harness")
   }
   if (!isLaunchAgentIdentifier(agent)) throw new Error("selected profile agent must be a simple agent identifier")
   return agent
@@ -590,22 +591,24 @@ const selectedInteraction = (
 ): ProfileGuideInteraction | undefined => {
   if (value.interaction === undefined) return undefined
   const interaction = parseProfileGuideInteraction(value.interaction)
-  if (launcher !== "cpx" || value.profile !== "hve" || agent === undefined) {
-    throw new Error("Interactive workflows require native:cpx/hve and an explicit agent")
+  if (launcher !== "copilot" || value.profile !== "hve" || agent === undefined) {
+    throw new Error("Interactive workflows require native:copilot/hve and an explicit agent")
   }
   return interaction
 }
 
 const parseNativeSelectedProfile = (value: Record<string, unknown>): NativeSelectedProfile => {
   const goalExecutionPolicy = validateGoalExecutionPolicy(value.goalExecutionPolicy)
-    const launcher = validateLauncher(value.launcher)
+    const identity = canonicalNativeIdentity(validateLauncher(value.launcher), validateProfileName(value.profile))
+    const launcher = identity.launcher
+    value = { ...value, profile: identity.profile, commandPath: canonicalNativeCommandPath(validateCommandPath(value.commandPath)) }
     const agent = validateAgent(value.agent, launcher)
     const interaction = selectedInteraction(value, launcher, agent)
     const orchestration = value.orchestration === undefined
       ? undefined
       : parseFirstmateOrchestrationV1(value.orchestration)
-    if (orchestration !== undefined && (launcher !== "fmx" || value.headlessPrompt !== false)) {
-      throw new Error("Firstmate orchestration requires fmx with headless prompt disabled")
+    if (orchestration !== undefined && (launcher !== "firstmate" || value.headlessPrompt !== false)) {
+      throw new Error("Firstmate orchestration requires firstmate with headless prompt disabled")
     }
     const selected: NativeSelectedProfile = {
       surface: "native",
@@ -636,7 +639,7 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
   if (surface === "native") return parseNativeSelectedProfile(value)
   if (surface === "sandbox") {
     if (value.interaction !== undefined) {
-      throw new Error("Verified interactive customer workflows require native:cpx/hve, not Sandbox")
+      throw new Error("Verified interactive customer workflows require native:copilot/hve, not Sandbox")
     }
     if (value.firstmateInstance !== undefined || value.firstmateInstanceContext !== undefined) {
       throw new Error("Sandbox profiles cannot select a Firstmate instance.")
@@ -654,15 +657,22 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
   throw new Error("selected profile surface must be native or sandbox")
 }
 
+export const canonicalNativeCommandPath = (commandPath: string): string => {
+  const aliases = ["agx", "cdx", "cpx", "cldx", "fmx", "jcx", "omp", "picx", "prx"]
+  const parts = commandPath.split("/")
+  if (aliases.includes(parts.at(-1) ?? "")) parts[parts.length - 1] = "trx"
+  return parts.join("/")
+}
+
 const nativePromptArgs = (
   selectedProfile: NativeSelectedProfile,
   baseArgs: ReadonlyArray<string>,
   prompt: string,
 ): ReadonlyArray<string> => {
-  if (selectedProfile.launcher === "cdx") return [...baseArgs, "--", prompt]
+  if (selectedProfile.launcher === "codex") return [...baseArgs, "--", prompt]
   if (selectedProfile.interaction !== undefined) return [...baseArgs, "-i", prompt]
   if (!selectedProfile.headlessPrompt) return baseArgs
-  return [...baseArgs, selectedProfile.launcher === "cpx" ? "-i" : "-p", prompt]
+  return [...baseArgs, selectedProfile.launcher === "copilot" ? "-i" : "-p", prompt]
 }
 
 const buildGoalLaunchCommand = (
@@ -690,11 +700,11 @@ export const buildGuideLaunchCommand = (
   delivery?: PromptDelivery,
   goalExecution?: GuideGoalCandidateContext,
 ): BuiltCommandSpec => {
-  if (selectedProfile.interaction !== undefined) parseSelectedProfile(selectedProfile)
+  selectedProfile = parseSelectedProfile(selectedProfile)
   const normalizedDelivery = normalizePromptDelivery(delivery)
   const baseArgs = [
     ...(selectedProfile.surface === "native"
-      ? [...(selectedProfile.interaction === undefined ? [] : ["interactive"]), selectedProfile.profile]
+      ? ["run", selectedProfile.launcher, selectedProfile.profile, ...(selectedProfile.interaction === undefined ? [] : ["--interactive"])]
       : ["--profile", selectedProfile.profile]),
     ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
     ...(selectedProfile.interaction?.requiredSkills.flatMap((skill) => ["--require-skill", skill]) ?? []),
@@ -718,7 +728,7 @@ export const buildGuideLaunchCommand = (
         executable: selectedProfile.commandPath,
         args: nativePromptArgs(selectedProfile, baseArgs, normalizedDelivery.prompt),
       },
-      promptHandling: selectedProfile.interaction !== undefined || selectedProfile.headlessPrompt || selectedProfile.launcher === "cdx" ? "argv" : "manual-paste",
+      promptHandling: selectedProfile.interaction !== undefined || selectedProfile.headlessPrompt || selectedProfile.launcher === "codex" ? "argv" : "manual-paste",
     }
   }
   return {
@@ -740,13 +750,12 @@ export const buildGuideLaunchCommand = (
  * paste path.
  */
 const nativeArgvPromptSeparator: Record<string, ReadonlyArray<string>> = {
-  cpx: ["-i"],
-  cdx: ["--"],
-  cldx: ["--"],
-  grx: ["--"],
+  copilot: ["-i"],
+  codex: ["--"],
+  claude: ["--"],
   omp: ["--"],
-  picx: [],
-  prx: [],
+  pi: [],
+  prime: [],
 }
 
 /**

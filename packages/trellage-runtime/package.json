@@ -5,7 +5,13 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./workspace": "./src/workspace.ts"
+    "./native-config": "./src/native-config.ts",
+    "./native-run": "./src/native-run/index.ts",
+    "./workspace": "./src/workspace.ts",
+    "./skill-config": "./src/skill-config.ts",
+    "./skill-update": "./src/skill-update.ts",
+    "./native-run/source": "./src/native-run/source.ts",
+    "./native-run/paths": "./src/native-run/paths.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
@@ -13,6 +19,10 @@
   },
   "engines": {
     "bun": "1.4.2"
+  },
+  "dependencies": {
+    "effect": "3.22.2",
+    "smol-toml": "1.8.0"
   },
   "devDependencies": {
     "@types/bun": "1.4.2"

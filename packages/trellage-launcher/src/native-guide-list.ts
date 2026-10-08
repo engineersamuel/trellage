@@ -1,3 +1,4 @@
+import { canonicalNativeIdentity } from "@trellage/guide-core"
 import { lstat } from "node:fs/promises"
 import path from "node:path"
 import {
@@ -47,8 +48,7 @@ const parseNativeProfileList = (source: string): NativeProfileList => {
     const profile = record(value, `native profile ${index}`)
     return {
       ...profile,
-      launcher: identifier(profile.launcher, `native profile ${index} launcher`),
-      name: identifier(profile.name, `native profile ${index} name`),
+      ...(() => { const identity = canonicalNativeIdentity(identifier(profile.launcher, `native profile ${index} launcher`), identifier(profile.name, `native profile ${index} name`)); return { launcher: identity.launcher, name: identity.profile } })(),
     }
   })
   const keys = profiles.map(({ launcher, name }) => `${launcher}/${name}`)

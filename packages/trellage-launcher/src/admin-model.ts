@@ -9,7 +9,7 @@
  * concrete native launcher contracts (`prototypes/trellage-*-profiles/bin/*`
  * and the shared implementations they source, e.g.
  * `prototypes/trellage-codex-common/native-codex`). Every native launcher,
- * including `cdx` (Codex, which delegates its `doctor`/`inventory --json`/
+ * including `codex` (Codex, which delegates its `doctor`/`inventory --json`/
  * `repair` dispatch to `native-codex`), implements `doctor PROFILE` and
  * `inventory PROFILE --json`. Capabilities fail closed for aliases not
  * listed below.
@@ -29,24 +29,23 @@ import { guideCatalogEntries } from "./guide-catalog.ts"
 import { ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.ts"
 
 /** Native launcher command aliases, matching `guide-catalog.ts` `launcher` values. */
-export type NativeLauncherAlias = "agx" | "cpx" | "cdx" | "cldx" | "fmx" | "grx" | "jcx" | "omp" | "picx" | "prx"
+export type NativeLauncherAlias = "agency" | "copilot" | "codex" | "claude" | "firstmate" | "jcode" | "omp" | "pi" | "prime"
 
 const allNativeLaunchers: ReadonlyArray<NativeLauncherAlias> = [
-  "agx",
-  "cpx",
-  "cdx",
-  "cldx",
-  "fmx",
-  "grx",
-  "jcx",
+  "agency",
+  "copilot",
+  "codex",
+  "claude",
+  "firstmate",
+  "jcode",
   "omp",
-  "picx",
-  "prx",
+  "pi",
+  "prime",
 ]
 
 const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([
-  "agx",
-  "cldx",
+  "agency",
+  "claude",
 ])
 
 export interface NativeLauncherCapabilities {
@@ -131,7 +130,7 @@ export type AdminFirstmateInstancesInput = { readonly ref: string } & (
 )
 
 export const isAdminFirstmate = (entry: AdminProfileEntry): boolean =>
-  entry.surface === "native" && entry.launcher === "fmx"
+  entry.surface === "native" && entry.launcher === "firstmate"
 
 export const adminProfileLabel = (entry: AdminProfileEntry): string =>
   entry.displayName ?? (isAdminFirstmate(entry) ? `${entry.name} / legacy` : entry.name)

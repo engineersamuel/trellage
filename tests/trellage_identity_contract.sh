@@ -70,7 +70,7 @@ scan_public_branding() {
   || fail 'Firstmate profiles prototype path is missing'
 [[ ! -e "$repo_root/prototypes/trellage-profiles" ]] \
   || fail 'ambiguous legacy Copilot profiles prototype path remains'
-[[ -d "$repo_root/prototypes/trellage-grok-profiles" ]] || fail 'Grok profiles prototype path is missing'
+[[ ! -e "$repo_root/prototypes/trellage-grok-profiles" ]] || fail 'legacy Grok profiles prototype path remains'
 [[ -d "$repo_root/prototypes/trellage-jcode-profiles" ]] || fail 'jcode profile prototype path is missing'
 [[ ! -e "$repo_root/prototypes/harness-profiles" ]] || fail 'legacy Copilot profiles prototype path remains'
 [[ ! -e "$repo_root/prototypes/harness-grok-profiles" ]] || fail 'legacy Grok profiles prototype path remains'
@@ -97,7 +97,7 @@ for target in native-codex-catalog native-codex-installation native-codex-pstack
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
 done
-for target in native-codex-auth-config-launch native-codex-lifecycle native-grok-profiles native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-profile headlong-entry; do
+for target in native-codex-auth-config-launch native-codex-lifecycle native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-profile headlong-entry; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^TIMING_SENSITIVE_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
@@ -129,8 +129,6 @@ grep -Fqx $'\tbash prototypes/trellage-claude-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Claude profile target is stale'
 grep -Fqx $'\tbash prototypes/trellage-firstmate-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Firstmate profile target is stale'
-grep -Fqx $'\tbash prototypes/trellage-grok-profiles/tests/contract.sh' \
-  "$repo_root/Makefile" || fail 'Makefile Grok profiles target is stale'
 grep -Fqx $'\tbash prototypes/trellage-jcode-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile jcode profile target is stale'
 
@@ -194,7 +192,6 @@ scan_legacy_identity \
   "$repo_root/prototypes/trellage-claude-common" \
   "$repo_root/prototypes/trellage-claude-profiles" \
   "$repo_root/prototypes/trellage-firstmate-profiles" \
-  "$repo_root/prototypes/trellage-grok-profiles" \
   "$repo_root/prototypes/trellage-jcode-profiles" \
   "$repo_root/Makefile" \
   || fail 'legacy product identity remains or the operational audit failed'

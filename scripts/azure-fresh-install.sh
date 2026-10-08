@@ -40,10 +40,10 @@ Authentication:
   safe ~/.config/copilot-proxy-rs/github_token. Both values are streamed over
   SSH and written only to VM tmpfs.
 
-The automated Native matrix invokes `cpx/hve`, `cdx/pstack`, `cldx/default`,
-`grx/superpowers`, `jcx/default`, `omp/copilot`, `picx/default`, and
-`prx/default` through `trx run`. It verifies `fmx/default` and
-`fmx/pstack-workers` with setup, doctor, inventory, source-pin, and overlay
+The automated Native matrix invokes `copilot/hve`, `codex/pstack`, `claude/default`,
+composed `grok/superpowers`, `jcode/default`, `omp/default`, `pi/default`, and
+`prime/default` through `trx run`. It verifies `firstmate/default` and
+`firstmate/pstack-workers` with setup, doctor, inventory, source-pin, and overlay
 evidence without starting a paid fleet.
 Bare `trx` is an interactive TTY picker.
 The Sandbox check invokes `trellage --profile claude-council`.
@@ -697,44 +697,41 @@ run_text_probe() {
 }
 
 printf 'acceptance: setting up Native profiles\n'
-cpx setup hve
-cdx setup pstack
-cldx setup
-GRX_DISABLE_AUTH_CHECK=1 grx setup superpowers
-jcx setup
-omp setup copilot
-picx setup
-prx setup
-env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx setup default
-env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx setup pstack-workers
+trx setup copilot hve
+trx setup codex pstack
+trx setup claude
+trx setup jcode
+trx setup omp default
+trx setup pi
+trx setup prime
+env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx setup firstmate default
+env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx setup firstmate pstack-workers
 
 printf 'acceptance: checking Native profiles\n'
-cpx doctor hve
-cdx doctor pstack
-cldx doctor
-GRX_DISABLE_AUTH_CHECK=1 grx doctor superpowers
-jcx doctor
-omp doctor copilot
-picx doctor
-prx doctor
-env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx doctor default
-env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN fmx doctor pstack-workers
+trx doctor copilot hve
+trx doctor codex pstack
+trx doctor claude
+trx doctor jcode
+trx doctor omp default
+trx doctor pi
+trx doctor prime
+env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx doctor firstmate default
+env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx doctor firstmate pstack-workers
 
 trx list --json >"$log_dir/trx-list.json"
 jq -e '
   .profiles as $profiles
   |
   [
-    ["cpx", "hve"],
-    ["cdx", "pstack"],
-    ["cldx", "default"],
-    ["fmx", "default"],
-    ["fmx", "pstack-workers"],
-    ["grx", "superpowers"],
-    ["jcx", "default"],
-    ["omp", "copilot"],
-    ["picx", "default"],
-    ["prx", "default"]
+    ["copilot", "hve"],
+    ["codex", "pstack"],
+    ["claude", "default"],
+    ["firstmate", "default"],
+    ["firstmate", "pstack-workers"],
+    ["jcode", "default"],
+    ["omp", "default"],
+    ["pi", "default"],
+    ["prime", "default"]
   ] as $expected
   | $expected
   | map(. as $pair
@@ -744,21 +741,17 @@ jq -e '
   | all
 ' "$log_dir/trx-list.json" >/dev/null
 for pair in \
-  'cpx hve' \
-  'cdx pstack' \
-  'cldx default' \
-  'fmx default' \
-  'fmx pstack-workers' \
-  'grx superpowers' \
-  'jcx default' \
-  'omp copilot' \
-  'picx default' \
-  'prx default'; do
+  'copilot hve' \
+  'codex pstack' \
+  'claude default' \
+  'firstmate default' \
+  'firstmate pstack-workers' \
+  'jcode default' \
+  'omp default' \
+  'pi default' \
+  'prime default'; do
   read -r launcher profile <<<"$pair"
-  if [[ "$launcher" == grx ]]; then
-    GRX_DISABLE_AUTH_CHECK=1 trx inventory "$launcher" "$profile" --json \
-      >"$log_dir/inventory-$launcher-$profile.json"
-  elif [[ "$launcher" == fmx ]]; then
+  if [[ "$launcher" == firstmate ]]; then
     env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
       trx inventory "$launcher" "$profile" --json \
       >"$log_dir/inventory-$launcher-$profile.json"
@@ -771,7 +764,7 @@ for pair in \
     and .profile == $profile
     and .readiness == "healthy"
   ' "$log_dir/inventory-$launcher-$profile.json" >/dev/null
-  if [[ "$launcher" == fmx ]]; then
+  if [[ "$launcher" == firstmate ]]; then
     jq -e --arg profile "$profile" '
       .source.repository == "https://github.com/kunchenguid/firstmate.git"
       and .source.pinnedCommit == "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
@@ -792,7 +785,7 @@ for pair in \
 done
 
 timeout --signal=TERM --kill-after=30s 15m \
-  trx run cpx hve -- \
+  trx run copilot hve -- \
   --prompt 'Reply exactly OK. Do not use tools.' \
   --output-format json \
   --disable-builtin-mcps \
@@ -814,10 +807,10 @@ jq -Rse '
 
 run_text_probe native-cdx \
   env TRELLAGE_AUTOMATION=1 \
-  trx run cdx pstack -- exec 'Reply exactly OK. Do not use tools.'
+  trx run codex pstack -- exec 'Reply exactly OK. Do not use tools.'
 
 timeout --signal=TERM --kill-after=30s 15m \
-  trx run cldx default -- \
+  trx run claude default -- \
   --model claude-opus-5 \
   --tools '' \
   --output-format stream-json \
@@ -831,12 +824,11 @@ jq -Rse '
     and $result.result == "OK"
 ' "$log_dir/native-cldx.jsonl" >/dev/null
 
-run_text_probe native-grx \
-  env GRX_DISABLE_AUTH_CHECK=1 \
-  trx run grx superpowers -- -p 'Reply exactly OK. Do not use tools.'
+run_text_probe native-grok \
+  trx run grok superpowers -- -p 'Reply exactly OK. Do not use tools.'
 
 timeout --signal=TERM --kill-after=30s 15m \
-  trx run jcx default -- run \
+  trx run jcode default -- run \
   --json \
   --quiet \
   --tool-profile none \
@@ -845,16 +837,16 @@ timeout --signal=TERM --kill-after=30s 15m \
 jq -e '.text == "OK"' "$log_dir/native-jcx.json" >/dev/null
 
 run_text_probe native-omp \
-  trx run omp copilot -- \
+  trx run omp default -- \
   --headless-policy no-user-input \
   -p 'Reply exactly OK. Do not use tools.'
 
 run_text_probe native-picx \
-  trx run picx default -- -p 'Reply exactly OK. Do not use tools.'
+  trx run pi default -- -p 'Reply exactly OK. Do not use tools.'
 
 run_text_probe native-prx \
-  trx run prx default -- --single-turn -p 'Reply exactly OK. Do not use tools.'
-prx shutdown >"$log_dir/native-prx-shutdown.stdout" \
+  trx run prime default -- --single-turn -p 'Reply exactly OK. Do not use tools.'
+trx shutdown prime >"$log_dir/native-prx-shutdown.stdout" \
   2>"$log_dir/native-prx-shutdown.stderr"
 
 timeout --signal=TERM --kill-after=30s 45m \

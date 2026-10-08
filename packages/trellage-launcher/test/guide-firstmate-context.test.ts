@@ -85,9 +85,9 @@ describe("Firstmate guide context", () => {
     }
     const catalog = {
       ...base,
-      native: base.native.map((entry) => entry.launcher === "fmx" ? { ...entry, guide: oldGuide } : entry),
+      native: base.native.map((entry) => entry.launcher === "firstmate" ? { ...entry, guide: oldGuide } : entry),
     }
-    const profileRef = "native:fmx/default"
+    const profileRef = "native:firstmate/default"
     const originalIntent = `  ${"Keep every requirement. ".repeat(150)}\r\n  `
     const context = { originalIntent, projectTarget: registeredGuideProjectTarget("MyProject") }
     const prepared = prepareGuidePrompt(oldGuide, "review-project", profileRef, "Review the project.", context)
@@ -136,7 +136,7 @@ describe("Firstmate guide context", () => {
 
   it.each(["default", "pstack-workers"])("keeps complete legacy %s input through generation, cache, refinement and fallback", async (name) => {
     const catalog = legacyFirstmateCatalog()
-    const profileRef = `native:fmx/${name}`
+    const profileRef = `native:firstmate/${name}`
     const provider = providerFor()
     const context = { originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC() }
     const recommendation = enrichLiteralCandidate(catalog, {
@@ -190,13 +190,13 @@ describe("Firstmate guide context", () => {
   it("supports old generation requests as drafts, but does not authorize an unconfirmed legacy target", async () => {
     const provider = providerFor()
     const result = await runGuideGenerate(provider, legacyFirstmateCatalog(), "/unused", {
-      intent: "Review the implementation.", profileRef: "native:fmx/default",
+      intent: "Review the implementation.", profileRef: "native:firstmate/default",
       model: "fixture-model", effort: GuideEffort.Low,
     })
     expect(result.candidates.every(({ prompt }) => prompt.includes("Review the implementation."))).toBe(true)
     expect(result.candidates[0]?.prompt).toContain("The project target is not confirmed")
-    expect(result.candidates[0]?.command.args).toEqual(["default"])
-    expect(() => validateLegacyFirstmateArtifact("native:fmx/default", result.candidates[0]!.prompt, undefined))
+    expect(result.candidates[0]?.command.args).toEqual(["run", "firstmate", "default"])
+    expect(() => validateLegacyFirstmateArtifact("native:firstmate/default", result.candidates[0]!.prompt, undefined))
       .toThrow("requires confirmed")
   })
 
@@ -204,7 +204,7 @@ describe("Firstmate guide context", () => {
     const provider = providerFor()
     await expect(runGuideGenerate(provider, legacyFirstmateCatalog(), "/unused", {
       intent: "Review the project.", originalIntent: "x".repeat(length), projectTarget: firstmateProjectC(),
-      profileRef: "native:fmx/default", model: "fixture-model", effort: GuideEffort.Low,
+      profileRef: "native:firstmate/default", model: "fixture-model", effort: GuideEffort.Low,
     })).rejects.toThrow("cannot carry the complete original intent")
     expect(provider.generate).not.toHaveBeenCalled()
   })
@@ -217,7 +217,7 @@ describe("Firstmate guide context", () => {
         promptTemplate: "Review only this project.\n{{intent}}\n",
       }],
     }
-    const profileRef = "native:fmx/default"
+    const profileRef = "native:firstmate/default"
     const originalIntent = " \r\nKeep every byte.\r\n  "
     const prepared = prepareGuidePrompt(guide, "old-workflow", profileRef, "Inspect code.", {
       originalIntent, projectTarget: firstmateProjectC(),
@@ -240,11 +240,11 @@ describe("Firstmate guide context", () => {
   it.each(["MyProject", "my_project", "my.project"])("preserves registered project %s through JSON and model context", async (projectName) => {
     const provider = providerFor()
     const request = parseGuideServiceRequestJson(JSON.stringify({
-      schemaVersion: 1, intent: "Review the registered project.", profile: "native:fmx/default",
+      schemaVersion: 1, intent: "Review the registered project.", profile: "native:firstmate/default",
       workflowId: "review-project", projectTarget: registeredGuideProjectTarget(projectName),
     }))
     const result = await runGuideGenerate(provider, firstmateRuntimeCatalog(), "/unused-guide-root", {
-      ...request, profileRef: "native:fmx/default", model: "synthetic-model", effort: GuideEffort.Low,
+      ...request, profileRef: "native:firstmate/default", model: "synthetic-model", effort: GuideEffort.Low,
     })
     expect(result.projectTarget?.projectName).toBe(projectName)
     expect(provider.generate.mock.calls[0]?.[0].projectTarget?.projectName).toBe(projectName)
@@ -270,7 +270,7 @@ describe("Firstmate guide context", () => {
     const provider = providerFor()
     const originalIntent = "  Preserve this exact scope.\r\nDo not remove any checks.  "
     const result = await runGuideGenerate(provider, catalog, "/unused-guide-root", {
-      intent: "Prepare a focused review.", originalIntent, profileRef: "native:cdx/default",
+      intent: "Prepare a focused review.", originalIntent, profileRef: "native:codex/default",
       workflowId: "review", model: "fixture-model", effort: GuideEffort.High,
     })
     for (const candidate of result.candidates) {
@@ -285,7 +285,7 @@ describe("Firstmate guide context", () => {
     const provider = providerFor()
     await expect(runGuideGenerate(provider, firstmateRuntimeCatalog(), "/unused-guide-root", {
       intent: "Prepare a focused review.", originalIntent: "x".repeat(8001),
-      profileRef: "native:cdx/default", workflowId: "review", model: "fixture-model", effort: GuideEffort.High,
+      profileRef: "native:codex/default", workflowId: "review", model: "fixture-model", effort: GuideEffort.High,
     })).rejects.toThrow("cannot carry the complete original intent")
     expect(provider.generate).not.toHaveBeenCalled()
   })
@@ -295,7 +295,7 @@ describe("Firstmate guide context", () => {
     const provider = providerFor()
     const originalIntent = "  Review every caller.\r\nKeep the command API unchanged.  "
     const recommendation = enrichLiteralCandidate(catalog, {
-      profileRef: "native:cdx/default", workflowId: "review", confidence: 0.9,
+      profileRef: "native:codex/default", workflowId: "review", confidence: 0.9,
       reason: "Review this change.", tradeoff: "Single-agent review.",
     })
     const generated = await runGuideGenerationStep(
@@ -320,7 +320,7 @@ describe("Firstmate guide context", () => {
     const provider = providerFor()
     await expect(runGuideGenerate(provider, firstmateRuntimeCatalog(), "/unused-guide-root", {
       intent: "Review the change.", originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(),
-      profileRef: "native:cdx/default", workflowId: "review", model: "fixture-model", effort: GuideEffort.High,
+      profileRef: "native:codex/default", workflowId: "review", model: "fixture-model", effort: GuideEffort.High,
     })).rejects.toThrow("requires an inbox-capable Firstmate profile")
     expect(provider.generate).not.toHaveBeenCalled()
   })
@@ -348,17 +348,17 @@ describe("Firstmate guide context", () => {
   })
 
   it("validates optimization context before an adapter can send it to a model", () => {
-    const legacyInput = { targetTool: "firstmate", profileRef: "native:fmx/default", candidates }
+    const legacyInput = { targetTool: "firstmate", profileRef: "native:firstmate/default", candidates }
     expect(assertGuideOptimizeInput(legacyInput)).toBe(legacyInput)
     const base = {
-      targetTool: "firstmate", profileRef: "native:fmx/default", candidates,
+      targetTool: "firstmate", profileRef: "native:firstmate/default", candidates,
       originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(),
     }
     expect(assertGuideOptimizeInput(base)).toBe(base)
     expect(() => assertGuideOptimizeInput({
       ...base, projectTarget: { ...firstmateProjectC(), source: { kind: "local", location: "/relative" }, baseRevision: "HEAD" },
     })).toThrow("baseRevision")
-    const entry = firstmateRuntimeCatalog().native.find(({ launcher }) => launcher === "fmx")!
+    const entry = firstmateRuntimeCatalog().native.find(({ launcher }) => launcher === "firstmate")!
     expect(() => assertGuideOptimizeInput({
       ...base, orchestration: { ...entry.orchestration!, ...{ home: "/private-runtime" } },
     })).toThrow("unsupported")
@@ -368,10 +368,10 @@ describe("Firstmate guide context", () => {
     const catalog = legacyFirstmateCatalog()
     const provider = providerFor()
     const recommendation = enrichLiteralCandidate(catalog, {
-      profileRef: "native:fmx/default", workflowId: "review-project", confidence: 0.9,
+      profileRef: "native:firstmate/default", workflowId: "review-project", confidence: 0.9,
       reason: "Review a project.", tradeoff: "Manual-paste delivery.",
     })
-    const controls = firstmateRuntimeCatalog().native.find(({ launcher }) => launcher === "fmx")!.orchestration!
+    const controls = firstmateRuntimeCatalog().native.find(({ launcher }) => launcher === "firstmate")!.orchestration!
     await expect(runGuideGenerationStep(
       catalog, "/unused", provider, "Review the project.", recommendation, undefined, undefined, undefined,
       { originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(), orchestration: controls },
@@ -382,7 +382,7 @@ describe("Firstmate guide context", () => {
   it.each(["default", "pstack-workers"])("preserves %s workflow, target, and original intent through generation and optimization", async (profile) => {
     const catalog = firstmateRuntimeCatalog()
     const provider = providerFor()
-    const profileRef = `native:fmx/${profile}`
+    const profileRef = `native:firstmate/${profile}`
     const selected = selectedProfileFromCatalogRef(catalog, profileRef, "review-project")
     const originalIntent = `${firstmateOriginalIntent}\n${"Requirement. ".repeat(4000)}`
     const request = parseGuideServiceRequestJson(JSON.stringify({
@@ -416,7 +416,7 @@ describe("Firstmate guide context", () => {
       expect(candidate.prompt).toContain('"dirtyChanges": "excluded"')
       expect(candidate.prompt).not.toContain(originalIntent)
       expect([...candidate.prompt].length).toBeLessThanOrEqual(8000)
-      expect(candidate.command.args).toEqual([profile])
+      expect(candidate.command.args).toEqual(["run", "firstmate", profile])
       expect(candidate.command.promptHandling).toBe("manual-paste")
     }
     expect(JSON.stringify(provider.generate.mock.calls)).not.toContain("instanceId")
@@ -424,8 +424,8 @@ describe("Firstmate guide context", () => {
   })
 
   it("retains a fleet-scope null target and avoids project-delivery fallback instructions", () => {
-    const selected = firstmateRuntimeCatalog().native.find((entry) => entry.launcher === "fmx")!
-    const prepared = prepareGuidePrompt(firstmateGuide, "review-fleet-status", "native:fmx/default", "Report fleet status.", {
+    const selected = firstmateRuntimeCatalog().native.find((entry) => entry.launcher === "firstmate")!
+    const prepared = prepareGuidePrompt(firstmateGuide, "review-fleet-status", "native:firstmate/default", "Report fleet status.", {
       originalIntent: firstmateOriginalIntent, projectTarget: null, orchestration: selected.orchestration!,
     })
     const result = templatePromptCandidates(prepared.guide, prepared.workflow.id, "Report fleet status.")
@@ -456,10 +456,10 @@ describe("Firstmate guide context", () => {
         cwd, routing: defaultGuideModelRouting,
         prompts: { match: "match", generate: "generate", refine: "refine", optimize: "optimize", enrich: "enrich" },
       })
-      const entry = firstmateRuntimeCatalog().native.find((profile) => profile.launcher === "fmx")!
+      const entry = firstmateRuntimeCatalog().native.find((profile) => profile.launcher === "firstmate")!
       const base = {
         intent: "Review this project.", originalIntent: firstmateOriginalIntent,
-        profileRef: "native:fmx/default", workflowId: "review-project",
+        profileRef: "native:firstmate/default", workflowId: "review-project",
         projectTarget: firstmateProjectC(), orchestration: entry.orchestration!,
         guide: firstmateGuide, guideBody: "Firstmate controls.", targetTool: "firstmate",
       }
@@ -496,10 +496,10 @@ describe("Firstmate guide context", () => {
 
 describe("explicit Firstmate routing", () => {
   it.each([
-    ["Use fmx/default to review this repository. Do not merge.", "native:fmx/default"],
-    ["Please select firstmate pstack-workers to supervise this work.", "native:fmx/pstack-workers"],
-    ["I want to use fmx/pstack-worker to deliver this task.", "native:fmx/pstack-workers"],
-    ["native:fmx/default: deliver the queued work.", "native:fmx/default"],
+    ["Use firstmate/default to review this repository. Do not merge.", "native:firstmate/default"],
+    ["Please select firstmate pstack-workers to supervise this work.", "native:firstmate/pstack-workers"],
+    ["I want to use firstmate/pstack-worker to deliver this task.", "native:firstmate/pstack-workers"],
+    ["native:firstmate/default: deliver the queued work.", "native:firstmate/default"],
   ])("places an unambiguous choice first: %s", (intent, expected) => {
     const catalog = firstmateRuntimeCatalog()
     const result = prioritizeExplicitFirstmate(guideMatchCatalogEntries(catalog), intent, modelMatches(catalog))
@@ -508,11 +508,11 @@ describe("explicit Firstmate routing", () => {
   })
 
   it.each([
-    "Do not use fmx/default. Explain the current code.",
+    "Do not use firstmate/default. Explain the current code.",
     "Avoid firstmate pstack-workers for this task.",
-    "Compare fmx/default with another approach.",
-    "Should I use fmx/default?",
-    "Compare fmx/default and fmx/pstack-workers.",
+    "Compare firstmate/default with another approach.",
+    "Should I use firstmate/default?",
+    "Compare firstmate/default and firstmate/pstack-workers.",
     "Render a static documentation page.",
   ])("does not force a Firstmate choice for: %s", (intent) => {
     const catalog = firstmateRuntimeCatalog()
@@ -522,14 +522,14 @@ describe("explicit Firstmate routing", () => {
 
   it("retains both profiles for unnamed fleet supervision in a large prefilter", () => {
     const base = firstmateRuntimeCatalog()
-    const other = base.native.find((entry) => entry.launcher !== "fmx")!
+    const other = base.native.find((entry) => entry.launcher !== "firstmate")!
     const catalog = { ...base, native: [
       ...Array.from({ length: 18 }, (_, index) => ({ ...other, name: `alternative-${index}` })),
-      ...base.native.filter(({ launcher }) => launcher === "fmx"),
+      ...base.native.filter(({ launcher }) => launcher === "firstmate"),
     ] }
     const entries = prefilterGuideMatchCatalogEntries(catalog, "Coordinate workers across worktrees; review fleet status, project backlog, and the task graph.")
     expect(entries.length).toBeLessThanOrEqual(12)
-    expect(entries.map(({ ref }) => ref)).toEqual(expect.arrayContaining(["native:fmx/default", "native:fmx/pstack-workers"]))
+    expect(entries.map(({ ref }) => ref)).toEqual(expect.arrayContaining(["native:firstmate/default", "native:firstmate/pstack-workers"]))
     expect(JSON.stringify(entries)).not.toContain("instanceId")
   })
 })

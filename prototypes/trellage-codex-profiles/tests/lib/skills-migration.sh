@@ -7,34 +7,45 @@ mv "$fixture_skills_cache" "$migration_old"
 mv "$fixture_youtube_skills_cache" "$migration_old_youtube"
 cp "$migration_old/managed-skills.txt" "$fixture_root/legacy-native-manifest"
 cp "$migration_old_youtube/managed-skills.txt" "$fixture_root/legacy-youtube-manifest"
-cp "$fixture_skills_runtime/skills.json" "$fixture_root/skills-catalog-before-migration"
-chmod 0644 "$fixture_skills_runtime/skills.json"
-cat >"$fixture_skills_runtime/skills.json" <<'JSON'
-{"schema":1,"sources":{"common":{"repository":"https://github.com/fixture/common.git","select":["fixture-personal","show-me"]},"astra":{"repository":"https://github.com/fixture/astra.git","select":["astra-orchestrator"]},"youtube":{"repository":"https://github.com/fixture/youtube.git","select":["youtube-full"]}},"bundles":{"native-common":["common"],"codex-common":["astra"],"youtube":["youtube"]}}
-JSON
-mkdir -p "$fixture_skills_runtime/node_modules/skills/bin"
-cat >"$fixture_skills_runtime/node_modules/skills/bin/cli.mjs" <<'JS'
-import { mkdirSync, writeFileSync } from 'node:fs';
-const args = process.argv.slice(2);
-for (const name of args.slice(args.indexOf('--skill') + 1, args.indexOf('--agent'))) {
-  const directory = `.agents/skills/${name}`;
-  mkdirSync(directory, { recursive: true });
-  writeFileSync(`${directory}/SKILL.md`, `---\nname: ${name}\ndescription: Fixture skill\n---\n# ${name}\n`);
-}
-JS
+cp "$fixture_skills_runtime/config.toml" "$fixture_root/skills-catalog-before-migration"
+chmod 0644 "$fixture_skills_runtime/config.toml"
+mkdir -p "$fixture_skill_sources/astra/.omp/skills/astra-orchestrator"
+printf '%s\n' '---' 'name: astra-orchestrator' 'description: Fixture skill' '---' '# Astra orchestrator' \
+  >"$fixture_skill_sources/astra/.omp/skills/astra-orchestrator/SKILL.md"
+git -C "$fixture_skill_sources/astra" init -q
+git -C "$fixture_skill_sources/astra" add .
+git -C "$fixture_skill_sources/astra" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm 'Seed migration skills'
+cat >"$fixture_skills_runtime/config.toml" <<'TOML'
+[skills]
+schema = 1
+[skills.sources.common]
+repository = "https://github.com/trellage-fixture/migration-common.git"
+select = ["fixture-personal", "show-me"]
+adapter = "omp-native"
+[skills.sources.astra]
+repository = "https://github.com/trellage-fixture/astra.git"
+select = ["astra-orchestrator"]
+adapter = "omp-native"
+[skills.sources.youtube]
+repository = "https://github.com/trellage-fixture/migration-youtube.git"
+select = ["youtube-full"]
+adapter = "omp-native"
+[skills.bundles]
+native-common = ["common"]
+codex-common = ["astra"]
+youtube = ["youtube"]
+TOML
 refresh_fixture_source "$fixture_skills_runtime" \
   || fail 'could not prepare the synthetic skill migration runtime'
 mv "$fake_bin/git" "$fake_bin/git-before-skills-migration"
 cat >"$fake_bin/git" <<'SH'
 #!/usr/bin/env bash
-case "$*" in
-  *'.trellage-floating-skills.'*)
-    if [[ " $* " == *' fetch '* ]]; then
-      [ "${FAKE_MIGRATION_OFFLINE:-0}" = 0 ] || exit 99
-      printf '%s\n' fetch >>"$FAKE_MIGRATION_FETCH_LOG"
-    fi
-    exit 0 ;;
-esac
+for argument in "$@"; do
+  if [ "$argument" = fetch ]; then
+    [ "${FAKE_MIGRATION_OFFLINE:-0}" = 0 ] || exit 99
+    printf '%s\n' fetch >>"$FAKE_MIGRATION_FETCH_LOG"
+  fi
+done
 exec "$(dirname "$0")/git-before-skills-migration" "$@"
 SH
 chmod 0755 "$fake_bin/git"
@@ -55,8 +66,8 @@ for migration_profile in pstack superpowers youtube; do
   grep -Fxq 'Preserve custom skill bytes' "$migration_home/skills/personal-migration-skill/SKILL.md" \
     || fail "migration changed custom skill: $migration_profile"
 done
-[ "$(wc -l <"$FAKE_MIGRATION_FETCH_LOG" | tr -d ' ')" = 5 ] \
-  || fail 'migration must fetch standard bundle once and YouTube bundle once'
+[ "$(wc -l <"$FAKE_MIGRATION_FETCH_LOG" | tr -d ' ')" = 3 ] \
+  || fail 'migration must fetch each of the three sources once across both bundles'
 export FAKE_MIGRATION_OFFLINE=1
 for migration_profile in pstack superpowers youtube; do
   HOME="$fixture_root/home" TRANSCRIPT_API_KEY=fixture-token fake_env \
@@ -70,7 +81,7 @@ cmp -s "$migration_old_youtube/managed-skills.txt" "$fixture_root/legacy-youtube
   || fail 'migration changed legacy YouTube cache'
 unset FAKE_MIGRATION_OFFLINE FAKE_MIGRATION_FETCH_LOG
 mv "$fake_bin/git-before-skills-migration" "$fake_bin/git"
-cp "$fixture_root/skills-catalog-before-migration" "$fixture_skills_runtime/skills.json"
-chmod 0444 "$fixture_skills_runtime/skills.json"
+cp "$fixture_root/skills-catalog-before-migration" "$fixture_skills_runtime/config.toml"
+chmod 0444 "$fixture_skills_runtime/config.toml"
 refresh_fixture_source "$fixture_skills_runtime" \
   || fail 'could not restore skill runtime readiness after migration'

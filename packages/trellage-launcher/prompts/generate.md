@@ -105,7 +105,7 @@ scope in the body. Do not duplicate the fixed frame's source-evidence, prior
 art, unresolved-question, risk, implementation-option, or approach-change
 requirements.
 
-For interactive customer workflows on `native:cpx/hve`, keep the selected
+For interactive customer workflows on `native:copilot/hve`, keep the selected
 agent and its bounded purpose. Do not generate an automatic chain of every
 HVE agent. Discovery preserves the current method and source evidence;
 experiments require agreed measurement criteria before execution; BRD and
@@ -127,7 +127,7 @@ use the selected delivery path; preserve captain merge authority and durable
 holds; and finish with safe teardown plus one integrated report. Do not make
 the user coordinate individual workers.
 
-For `native:fmx/pstack-workers` delivery and investigation, preserve the selected fleet requirements
+For `native:firstmate/pstack-workers` delivery and investigation, preserve the selected fleet requirements
 and explicitly use the profile's lean pstack-derived worker policy. Every
 candidate must require the smallest logical change, a stated blast radius,
 conditional `how` and `why` checks, artifact-backed completion, verification

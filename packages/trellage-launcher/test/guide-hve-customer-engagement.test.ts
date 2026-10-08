@@ -50,11 +50,11 @@ const catalog = async (): Promise<CombinedGuideCatalog> => ({
   sandbox: [],
   native: [
     {
-      launcher: "cpx",
+      launcher: "copilot",
       harness: "copilot",
       name: "hve",
       description: "Native HVE",
-      commandPath: "/opt/bin/cpx",
+      commandPath: "/opt/bin/trx",
       sandbox: false,
       herdrCompatibility: { status: "untested" },
       headless: {
@@ -74,7 +74,7 @@ const catalog = async (): Promise<CombinedGuideCatalog> => ({
         effortOverride: false,
         testedHarnessVersion: null,
       },
-      guide: (await loadProfileGuide(guideRoot, { surface: "native", launcher: "cpx", profile: "hve" })).guide,
+      guide: (await loadProfileGuide(guideRoot, { surface: "native", launcher: "copilot", profile: "hve" })).guide,
     },
   ],
 })
@@ -217,7 +217,7 @@ describe("HVE customer workflow delivery", () => {
 
   it("protects the captured context when an ordinary queued prompt is edited", async () => {
     const profiles = await catalog()
-    const profile = selectedProfileFromCatalogRef(profiles, "native:cpx/hve", "rpi-research")
+    const profile = selectedProfileFromCatalogRef(profiles, "native:copilot/hve", "rpi-research")
     const workflow = profiles.native[0]!.guide.workflows.find(({ id }) => id === "rpi-research")!
     const context = {
       originalIntent: "Research support work",
@@ -240,16 +240,18 @@ describe("HVE customer workflow delivery", () => {
     async (workflowId, agent, skills) => {
       const profiles = await catalog()
       const response = await runGuideGenerate(provider, profiles, guideRoot, {
-        profileRef: "native:cpx/hve",
+        profileRef: "native:copilot/hve",
         workflowId,
         intent: "Keep unverified claims unknown.",
         model: "fixture",
         effort: GuideEffort.Medium,
       })
-      const selected = selectedProfileFromCatalogRef(profiles, "native:cpx/hve", workflowId)
+      const selected = selectedProfileFromCatalogRef(profiles, "native:copilot/hve", workflowId)
       const baseArgs = [
-        "interactive",
+        "run",
+        "copilot",
         "hve",
+        "--interactive",
         "--agent",
         agent,
         ...skills.flatMap((skill) => ["--require-skill", skill]),
@@ -283,7 +285,7 @@ describe("HVE customer workflow delivery", () => {
 
   it("retains the agent and questions across all direct Herdr destinations", async () => {
     const profiles = await catalog()
-    const selected = selectedProfileFromCatalogRef(profiles, "native:cpx/hve", "test-assumption")
+    const selected = selectedProfileFromCatalogRef(profiles, "native:copilot/hve", "test-assumption")
     const prompt = "Keep '$HOME' literal.\nAsk before the experiment."
     const context = { workspaceId: "1", paneId: "1-1", surface: "pane" as const }
     const results = [
@@ -295,8 +297,10 @@ describe("HVE customer workflow delivery", () => {
     for (const result of results) {
       expect(result.promptDelivery).toBe("command")
       expect(result.command.args).toEqual([
-        "interactive",
+        "run",
+        "copilot",
         "hve",
+        "--interactive",
         "--agent",
         "hve-core:experiment-designer",
         "--require-skill",
@@ -308,7 +312,7 @@ describe("HVE customer workflow delivery", () => {
   })
 
   it("blocks failed readiness and altered commands before any customer launch", async () => {
-    const selected = selectedProfileFromCatalogRef(await catalog(), "native:cpx/hve", "customer-discovery")
+    const selected = selectedProfileFromCatalogRef(await catalog(), "native:copilot/hve", "customer-discovery")
     const result = buildCurrentTerminalResult(selected, "Discover the problem.", root)
     let launched = false
     const services = {
@@ -335,7 +339,7 @@ describe("HVE customer workflow delivery", () => {
   })
 
   it("blocks queue construction and forged queued interactive jobs before allocation", async () => {
-    const selected = selectedProfileFromCatalogRef(await catalog(), "native:cpx/hve", "customer-discovery")
+    const selected = selectedProfileFromCatalogRef(await catalog(), "native:copilot/hve", "customer-discovery")
     expect(() => createQueuedGuideJob(1, selected, "Discovery", { kind: "new-tab" })).toThrow("needs your answers")
     const built = buildHerdrGuideLaunch(selected, "Discovery")
     const result = await executeGuideBatch(
@@ -365,10 +369,10 @@ describe("HVE customer workflow delivery", () => {
       const selected = selectedProfileForPinnedLens(profiles, lens)
       expect(selected.interaction?.mode).toBe(lens.kind === "hve-rpi" ? undefined : "interactive")
     }
-    const research = selectedProfileFromCatalogRef(profiles, "native:cpx/hve", "rpi-research")
+    const research = selectedProfileFromCatalogRef(profiles, "native:copilot/hve", "rpi-research")
     expect(research.agent).toBeUndefined()
     expect(research.interaction).toBeUndefined()
-    expect(buildHerdrGuideLaunch(research, "Research").command.args).toEqual(["hve", "-i", "Research"])
+    expect(buildHerdrGuideLaunch(research, "Research").command.args).toEqual(["run", "copilot", "hve", "-i", "Research"])
     const sandbox = await loadProfileGuide(guideRoot, { surface: "sandbox", profile: "copilot-hve" })
     expect(sandbox.guide.workflows.map(({ id }) => id)).toEqual(["rpi-agent-cycle", "adapt-hve-patterns"])
   })

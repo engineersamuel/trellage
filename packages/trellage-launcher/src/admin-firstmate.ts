@@ -133,7 +133,7 @@ const firstmateInventoryPayload = (stdout: string, entry: AdminProfileEntry): un
   }
   const value: unknown = JSON.parse(stdout)
   if (typeof value !== "object" || value === null || !("schemaVersion" in value) || value.schemaVersion !== 1 ||
-      !("launcher" in value) || value.launcher !== "fmx" || !("profile" in value) || value.profile !== entry.name ||
+      !("launcher" in value) || value.launcher !== "firstmate" || !("profile" in value) || value.profile !== entry.name ||
       !("fleet" in value)) {
     throw new Error("Firstmate inventory does not identify the selected profile and fleet.")
   }

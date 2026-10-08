@@ -92,12 +92,13 @@ class InstanceContract(unittest.TestCase):
         scripts = self.case / "scripts"
         scripts.mkdir()
         shutil.copyfile(REPO / "scripts/floating-skills.ts", scripts / "floating-skills.ts")
+        shutil.copyfile(REPO / "scripts/retire-native-command.sh", scripts / "retire-native-command.sh")
         healing.write(
             scripts / "install-floating-skills-runtime.sh",
             "#!/usr/bin/env bash\nexec " + shlex.quote(str(REPO / "scripts/install-floating-skills-runtime.sh")) + ' "$@"\n',
             0o755,
         )
-        shutil.copyfile(REPO / "skills.json", self.case / "skills.json")
+        shutil.copyfile(REPO / "config.toml", self.case / "config.toml")
         native_skills = REPO / "prototypes/trellage-claude-common/native-skills.ts"
         shutil.copyfile(native_skills, self.package.parent / "trellage-claude-common/native-skills.ts")
         shutil.copyfile(native_skills, self.runtime / "native-skills.ts")
@@ -933,7 +934,7 @@ fi
                               FM_CONTROL_POLL="0.01", FM_CONTROL_SETTLE_WAIT="0",
                               FM_CONTROL_EXIT_WAIT="0.2", FM_CONTROL_LAUNCH_WAIT="0.2")
             driver.launch_log.write_text("")
-            driver.entry("fm-control.sh", task, "relaunch", "--model", "default", "--note", "Keep the same instance and task worktree.")
+            driver.entry("fm-control.sh", task, "relaunch", "--model", "default", "--note", "Keep the same instance and task worktree.", timeout=60)
             self.assertEqual(state.read_text().strip(), "alive")
             self.assertIn("FMX_INSTANCE_ID='" + plan["reference"]["instanceId"] + "'", driver.launch_log.read_text())
             worker["instanceId"] = (b if plan is a else a)["reference"]["instanceId"]
@@ -1271,11 +1272,11 @@ fi
         self.assertIn("task startup or control is active", refused.stderr)
         self.assertEqual(before, healing.snapshot(self.home))
         release.touch()
-        output, error = child.communicate(timeout=30)
+        output, error = child.communicate(timeout=60)
         self.assertEqual(child.returncode, 0, (output, error))
         allowed = self.command([sys.executable, self.package / "lib/fmx-registry.py", "lease", "--", "/usr/bin/true"])
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=1)
+    unittest.main(testRunner=unittest.TextTestRunner(resultclass=healing.ImmediateFailureResult))

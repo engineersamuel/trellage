@@ -59,7 +59,7 @@ const request = (descriptor = alpha, id = "00000000-0000-4000-8000-000000000001"
 const job = (descriptor = alpha, id = 1, action: "submit" | "start" = "submit"): QueuedGuideJob => {
   const profile = instanceProfile(descriptor)
   const originalIntent = `Inspect independent request ${id}.`
-  const prepared = prepareGuidePrompt(firstmateGuide, "review-fleet-status", "native:fmx/default", originalIntent, {
+  const prepared = prepareGuidePrompt(firstmateGuide, "review-fleet-status", "native:firstmate/default", originalIntent, {
     originalIntent, projectTarget: null, orchestration: profile.orchestration!,
   })
   const candidate = renderWorkflowBodyCandidate(prepared.workflow, { title: "Inspect", prompt: `Inspect request ${id}.`, notes: "No code changes." })
@@ -166,7 +166,7 @@ describe("explicit instance selection and creation", () => {
     state = reduceFirstmateInstanceMenu(state, { type: "confirm" })
     expect(state.screen).toBe("list")
     expect(f.creationStore.saved).toEqual([])
-    expect(f.runner.calls.some(({ args }) => args[1] === "create")).toBe(false)
+    expect(f.runner.calls.some(({ args }) => args[2] === "create")).toBe(false)
   })
 
   it("durably retains an uncertain creation and retries the original plan after reopening", async () => {
@@ -175,7 +175,7 @@ describe("explicit instance selection and creation", () => {
     let state = await f.run(initialFirstmateInstanceMenu(f.env.cwd))
     state = await f.run(reduceFirstmateInstanceMenu(reduceFirstmateInstanceMenu(state, { type: "name" }), { type: "confirm" }))
     f.runner.reply = async ({ executable, args }) => {
-      if (args[1] !== "create") return undefined
+      if (args[2] !== "create") return undefined
       throw new CommandRunnerError({
         kind: "exited", executable, args, message: "Fixture creation interrupted.", exitCode: 1,
         stderr: "fixture interrupted", stdout: JSON.stringify(instanceExample("createIncomplete")),
@@ -193,7 +193,7 @@ describe("explicit instance selection and creation", () => {
     state = await f.run(reduceFirstmateInstanceMenu(state, { type: "refresh" }))
     expect(state.accepted).toBeUndefined()
     expect(state.screen).toBe("review")
-    const calls = f.runner.calls.filter(({ args }) => args[1] === "create")
+    const calls = f.runner.calls.filter(({ args }) => args[2] === "create")
     expect(calls).toHaveLength(2)
     expect(calls[0]?.options?.stdin).toBe(canonicalFirstmateInstanceJson(instancePlan()))
     expect(calls[1]?.options?.stdin).toBe(calls[0]?.options?.stdin)
@@ -224,7 +224,7 @@ describe("explicit instance selection and creation", () => {
     state = await f.run(reduceFirstmateInstanceMenu(reduceFirstmateInstanceMenu(state, { type: "name" }), { type: "confirm" }))
     expect(state.confirm).toBe(false)
     expect(state.approvedPlan).toBeUndefined()
-    expect(f.runner.calls.some(({ args }) => args[1] === "create")).toBe(false)
+    expect(f.runner.calls.some(({ args }) => args[2] === "create")).toBe(false)
     expect(f.creationStore.saved).toEqual([])
   })
 
@@ -243,17 +243,17 @@ describe("explicit instance selection and creation", () => {
     }
     state = reduceFirstmateInstanceMenu(state, { type: "locator" })
     state = reduceFirstmateInstanceMenu(state, { type: "confirm" })
-    expect(f.runner.calls.some(({ args }) => args[1] === "refresh-locator")).toBe(false)
+    expect(f.runner.calls.some(({ args }) => args[2] === "refresh-locator")).toBe(false)
     state = reduceFirstmateInstanceMenu(state, { type: "locator" })
     state = reduceFirstmateInstanceMenu(reduceFirstmateInstanceMenu(state, { type: "move", delta: 1 }), { type: "confirm" })
-    f.runner.reply = async ({ args }) => args[1] === "refresh-locator" ? f.runner.ok(moved) : undefined
+    f.runner.reply = async ({ args }) => args[2] === "refresh-locator" ? f.runner.ok(moved) : undefined
     state = await f.run(state)
     expect(state.descriptor?.reference).toEqual(alpha.reference)
     expect(state.entry?.locators.worktree).toBe("/work/alpha-moved")
     expect(state.configurationCwd).toBe("/work/alpha-moved/packages/api")
     expect(state.accepted).toBeUndefined()
     expect(f.runner.calls.at(-1)?.args).toEqual([
-      "instances", "refresh-locator", "default", "--instance", alpha.reference.instanceId,
+      "instances", "firstmate", "refresh-locator", "default", "--instance", alpha.reference.instanceId,
       "--worktree", "/work/alpha-moved", "--json", "--expected-binding-digest",
       firstmateWorktreeBindingDigest(alpha.worktree.evidence), "--confirm",
     ])
@@ -336,7 +336,7 @@ describe("instance-bound control and batches", () => {
     expect(runner.calls).toEqual([])
     await prepareFirstmateReadiness(runner, profile, "/work/alpha", { approval })
     expect(runner.calls[0]?.args).toEqual([
-      "prepare", "default", "--json", "--expected-source-revision", profile.orchestration!.sourceRevision,
+      "prepare", "firstmate", "default", "--json", "--expected-source-revision", profile.orchestration!.sourceRevision,
       ...firstmateInstanceControlArgs(profile), "--install-prerequisites", preparationPlan.identity,
     ])
   })
@@ -347,7 +347,7 @@ describe("instance-bound control and batches", () => {
     expect(await client.submit(request(beta))).toMatchObject({ status: "rejected" })
     expect(runner.calls).toEqual([])
     runner.reply = async () => runner.ok({
-      schemaVersion: 1, launcher: "fmx", profile: "default", readiness: "healthy", fleet: instanceFleet(beta),
+      schemaVersion: 1, launcher: "firstmate", profile: "default", readiness: "healthy", fleet: instanceFleet(beta),
     })
     await expect(inspectFirstmateReadiness(runner, instanceProfile(alpha), "/work/alpha")).rejects.toThrow(/fleet|instance/i)
   })
@@ -405,7 +405,7 @@ describe("instance-bound control and batches", () => {
     const profile = instanceProfile(alpha)
     let changed = second
     if (change === "home") changed = { ...second, firstmate: { ...second.firstmate!, expectedFleet: { ...second.firstmate!.expectedFleet!, home: `${beta.root}/home` } } }
-    if (change === "command") changed = { ...second, profile: { ...profile, commandPath: "/another/fmx" } }
+    if (change === "command") changed = { ...second, profile: { ...profile, commandPath: "/another/trx" } }
     if (change === "source") changed = { ...second, profile: { ...profile, orchestration: { ...profile.orchestration!, sourceRevision: "c".repeat(40) } } }
     if (change === "context") changed = { ...second, profile: { ...profile, firstmateInstanceContext: {
       ...profile.firstmateInstanceContext!, expectedRuntimeDigest: "f".repeat(64),
@@ -471,7 +471,7 @@ describe("instance-bound control and batches", () => {
 describe("unbound model context and private origin", () => {
   it("keeps instance namespaces out of model catalog entries and fixed frames", () => {
     const catalog = instanceCatalog()
-    const entry = guideMatchCatalogEntries(catalog).find(({ ref }) => ref === "native:fmx/default")!
+    const entry = guideMatchCatalogEntries(catalog).find(({ ref }) => ref === "native:firstmate/default")!
     expect(entry.orchestration).not.toHaveProperty("taskIdPrefix")
     const first = job(alpha)
     const second = job(beta)

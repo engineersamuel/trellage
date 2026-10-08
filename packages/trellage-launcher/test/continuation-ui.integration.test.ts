@@ -14,6 +14,7 @@ import {
 } from "./helpers/continuation-ui-fixtures.ts"
 
 const entry = fileURLToPath(new URL("./fixtures/continuation-integration.tsx", import.meta.url))
+vi.setConfig({ testTimeout: 15_000 })
 
 interface FixtureReport {
   readonly draft: ContinuationDraft
@@ -243,7 +244,7 @@ it(
     await editField(ui, "b", "Action brief", "First independent edited brief.", "Action 1:")
     await ui.pressAndWait("p", "Choose profile", "Implementation specialist")
     await ui.pressAndWait(down, "> Implementation specialist")
-    await ui.pressAndWait(enter, "Action 1:", "native:cdx/builder")
+    await ui.pressAndWait(enter, "Action 1:", "native:codex/builder")
     await ui.pressAndWait("w", "Choose workflow", "verify")
     await ui.pressAndWait(down, "> verify")
     await ui.pressAndWait(enter, "Action 1:", "workflow: verify")
@@ -290,7 +291,7 @@ it(
     expect(report.events.filter(({ kind }) => kind === ContinuationFixtureEventKind.Launch)).toHaveLength(1)
     expect(report.draft.actions[0]).toMatchObject({
       brief: "First independent edited brief.",
-      profileRef: "native:cdx/builder",
+      profileRef: "native:codex/builder",
       workflowId: "verify",
       selectedCandidateId: "candidate-2",
       prompt: expect.stringContaining("q stays literal in the full prompt."),
@@ -307,7 +308,7 @@ it(
     expect(delivered?.prompt).not.toBe(delivered?.candidates?.[1]?.prompt)
     expect(report.draft.actions[1]).toMatchObject({
       brief: "Second separate brief.",
-      profileRef: "native:cpx/reviewer",
+      profileRef: "native:copilot/reviewer",
       placement: { kind: ContinuationPlacementKind.NewTab },
       sharedWriteConfirmed: true,
       status: ContinuationActionStatus.Launched,

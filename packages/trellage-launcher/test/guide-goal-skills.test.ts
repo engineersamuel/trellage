@@ -45,7 +45,7 @@ beforeEach(async () => {
   root = path.resolve(`.guide-goal-skills-test-${randomUUID()}`)
   await mkdir(root, { mode: 0o700 })
   const managerPath = path.join(root, "floating-skills.ts")
-  const catalogPath = path.join(root, "skills.json")
+  const catalogPath = path.join(root, "config.toml")
   const cachePath = path.join(root, "native-cache")
   await writeFile(managerPath, "// Fake manager. Tests use the injected runner.\n")
   await writeFile(catalogPath, "{}\n")

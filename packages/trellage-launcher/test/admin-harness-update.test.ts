@@ -64,7 +64,7 @@ const requirePlan = (
 }
 
 const success: CommandRunResult = { stdout: "updated", stderr: "", exitCode: 0 }
-const help: CommandRunResult = { stdout: "usage: launcher harness-update", stderr: "", exitCode: 0 }
+const help: CommandRunResult = { stdout: "usage: trx upgrade HARNESS PROFILE", stderr: "", exitCode: 0 }
 const successfulRun = () => vi.fn<CommandRunner["run"]>(async (_executable, args) => (args[0] === "--help" ? help : success))
 
 describe("harnessUpdatePlanFor", () => {
@@ -74,7 +74,7 @@ describe("harnessUpdatePlanFor", () => {
       const selected = sandboxEntry({ harness, ref: `sandbox:${harness}-a`, name: `${harness}-a` })
       const peer = sandboxEntry({ harness, ref: `sandbox:${harness}-b`, name: `${harness}-b` })
       const other = sandboxEntry({ harness: "other", ref: "sandbox:other", name: "other" })
-      const native = nativeEntry("cpx", harness)
+      const native = nativeEntry("copilot", harness)
       const plan = requirePlan(selected, [peer, other, native, selected, peer])
 
       expect(plan.key).toBe(`sandbox:${harness}`)
@@ -87,16 +87,15 @@ describe("harnessUpdatePlanFor", () => {
   )
 
   it.each([
-    ["cpx", "copilot", "hve", ["harness-update"]],
-    ["cdx", "codex", "youtube", ["harness-update"]],
-    ["cdx", "codex", "superpowers", ["harness-update"]],
-    ["grx", "grok", "superpowers", ["harness-update"]],
-    ["cldx", "claude", "default", ["harness-update"]],
-    ["omp", "oh-my-pi", "copilot", ["update", "copilot"]],
-    ["jcx", "jcode", "default", ["update", "default"]],
-    ["picx", "pi", "default", ["update", "default"]],
-    ["prx", "prime", "default", ["update", "default"]],
-    ["fmx", "firstmate", "pstack-workers", ["update", "pstack-workers"]],
+    ["copilot", "copilot", "hve", ["upgrade", "copilot", "hve", "--harness-only"]],
+    ["codex", "codex", "youtube", ["upgrade", "codex", "youtube", "--harness-only"]],
+    ["codex", "codex", "superpowers", ["upgrade", "codex", "superpowers", "--harness-only"]],
+    ["claude", "claude", "default", ["upgrade", "claude", "default", "--harness-only"]],
+    ["omp", "oh-my-pi", "copilot", ["upgrade", "omp", "copilot"]],
+    ["jcode", "jcode", "default", ["upgrade", "jcode", "default"]],
+    ["pi", "pi", "default", ["upgrade", "pi", "default"]],
+    ["prime", "prime", "default", ["upgrade", "prime", "default"]],
+    ["firstmate", "firstmate", "pstack-workers", ["upgrade", "firstmate", "pstack-workers"]],
   ] as const)("uses %s's harness command, not a plugin update or container rebuild", (launcher, harness, name, args) => {
     const selected = nativeEntry(launcher, harness, name)
     const container = sandboxEntry({ harness })
@@ -113,7 +112,7 @@ describe("harnessUpdatePlanFor", () => {
     { installed: { kind: "known", version: "2.1.252" }, latest: { kind: "failed", diagnostic: "offline" } },
     { installed: { kind: "known", version: "2.1.252" }, latest: { kind: "unsupported" } },
   ])("allows explicit updates regardless of cached version availability: %j", (result) => {
-    for (const selected of [sandboxEntry(), nativeEntry("cpx", "copilot", "hve")]) {
+    for (const selected of [sandboxEntry(), nativeEntry("copilot", "copilot", "hve")]) {
       const plan = requirePlan(selected, [selected], result)
       expect(plan.targets).toEqual([selected])
       expect(plan.latestVersion).toBe(result?.latest.kind === "known" ? result.latest.version : undefined)
@@ -121,36 +120,34 @@ describe("harnessUpdatePlanFor", () => {
   })
 
   it("keeps native Pi Coding Agent, native Oh My Pi, and container Oh My Pi in separate update groups", () => {
-    const pi = nativeEntry("picx", "pi")
+    const pi = nativeEntry("pi", "pi")
     const omp = nativeEntry("omp", "oh-my-pi", "local")
     const container = sandboxEntry({ harness: "pi", ref: "sandbox:pi", name: "pi" })
     const entries = [pi, omp, container]
     const plans = entries.map((selected) => requirePlan(selected, entries))
 
-    expect(plans.map(({ key }) => key)).toEqual(["native:picx", "native:omp", "sandbox:pi"])
+    expect(plans.map(({ key }) => key)).toEqual(["native:pi", "native:omp", "sandbox:pi"])
     expect(plans.map(({ targets }) => targets)).toEqual([[pi], [omp], [container]])
   })
 
   it("does not select another runtime executable with the same harness label", () => {
-    const selected = nativeEntry("cpx", "copilot", "hve")
-    const otherRuntime = { ...nativeEntry("cpx", "copilot", "awesome"), commandPath: "/different/cpx" }
+    const selected = nativeEntry("copilot", "copilot", "hve")
+    const otherRuntime = { ...nativeEntry("copilot", "copilot", "awesome"), commandPath: "/different/trx" }
     expect(requirePlan(selected, [selected, otherRuntime]).targets).toEqual([selected])
   })
 
-  it("groups native Codex profiles without including Grok superpowers or Codex containers", () => {
-    const youtube = nativeEntry("cdx", "codex", "youtube")
-    const superpowers = nativeEntry("cdx", "codex", "superpowers")
-    const grok = nativeEntry("grx", "grok", "superpowers")
+  it("groups native Codex profiles without including Codex containers", () => {
+    const youtube = nativeEntry("codex", "codex", "youtube")
+    const superpowers = nativeEntry("codex", "codex", "superpowers")
     const container = sandboxEntry({ harness: "codex", ref: "sandbox:codex", name: "codex" })
-    const entries = [youtube, superpowers, grok, container]
+    const entries = [youtube, superpowers, container]
 
     for (const selected of [youtube, superpowers]) {
       const plan = requirePlan(selected, entries)
-      expect(plan.key).toBe("native:cdx")
+      expect(plan.key).toBe("native:codex")
       expect(plan.targets).toEqual([superpowers, youtube])
       expect(plan.steps).toHaveLength(1)
     }
-    expect(requirePlan(grok, entries).targets).toEqual([grok])
     expect(requirePlan(container, entries).targets).toEqual([container])
   })
 
@@ -166,10 +163,9 @@ describe("harnessUpdatePlanFor", () => {
 
 describe("runHarnessUpdate", () => {
   it.each([
-    ["cpx", "copilot", ["awesome", "hve"]],
-    ["cdx", "codex", ["youtube", "superpowers", "pstack"]],
-    ["grx", "grok", ["superpowers"]],
-    ["cldx", "claude", ["default"]],
+    ["copilot", "copilot", ["awesome", "hve"]],
+    ["codex", "codex", ["youtube", "superpowers", "pstack"]],
+    ["claude", "claude", ["default"]],
     ["omp", "oh-my-pi", ["local", "copilot"]],
   ] as const)("updates %s's shared harness once for all of its profiles", async (launcher, harness, names) => {
     const entries = names.map((name) => nativeEntry(launcher, harness, name))
@@ -193,7 +189,7 @@ describe("runHarnessUpdate", () => {
   })
 
   it("reports a failed shared native update for all affected profiles", async () => {
-    const entries = ["awesome", "hve"].map((name) => nativeEntry("cpx", "copilot", name))
+    const entries = ["awesome", "hve"].map((name) => nativeEntry("copilot", "copilot", name))
     const plan = requirePlan(entries[0]!, entries)
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
       if (args[0] === "--help") return help
@@ -207,7 +203,7 @@ describe("runHarnessUpdate", () => {
 
   it.each(["sandbox", "firstmate"])("updates %s profiles sequentially and continues after failures", async (kind) => {
     const entries = ["a", "b", "c"].map((name) =>
-      kind === "sandbox" ? sandboxEntry({ ref: `sandbox:claude-${name}`, name: `claude-${name}` }) : nativeEntry("fmx", "firstmate", name),
+      kind === "sandbox" ? sandboxEntry({ ref: `sandbox:claude-${name}`, name: `claude-${name}` }) : nativeEntry("firstmate", "firstmate", name),
     )
     const plan = requirePlan(entries[0]!, entries)
     let active = 0
@@ -217,7 +213,7 @@ describe("runHarnessUpdate", () => {
       peak = Math.max(peak, active)
       await Promise.resolve()
       active -= 1
-      if (args[1] === entries[1]!.name) {
+      if (args[kind === "sandbox" ? 1 : 2] === entries[1]!.name) {
         throw new CommandRunnerError({
           kind: "exited",
           executable,
@@ -233,13 +229,13 @@ describe("runHarnessUpdate", () => {
     const outcome = await runHarnessUpdate(plan, { run }, "/worktree")
 
     expect(peak).toBe(1)
-    expect(run.mock.calls.map(([, args]) => args[1])).toEqual(entries.map(({ name }) => name))
+    expect(run.mock.calls.map(([, args]) => args[kind === "sandbox" ? 1 : 2])).toEqual(entries.map(({ name }) => name))
     expect(outcome.results.map(({ state }) => state)).toEqual(["success", "failure", "success"])
     expect(outcome.results[1]).toMatchObject({ diagnostic: "registry unavailable" })
   })
 
   it("does not forward an unsupported management verb to an old native launcher", async () => {
-    const plan = requirePlan(nativeEntry("cldx", "claude"))
+    const plan = requirePlan(nativeEntry("claude", "claude"))
     const run = vi.fn<CommandRunner["run"]>().mockResolvedValue({ ...success, stdout: "usage: cldx [PROFILE] [ARGS]" })
     const outcome = await runHarnessUpdate(plan, { run }, "/worktree")
     expect(run.mock.calls.map(([, args]) => args)).toEqual([["--help"]])
@@ -270,10 +266,9 @@ describe("runHarnessUpdate", () => {
 describe("harness update version refresh", () => {
   it.each([
     ["omp", "oh-my-pi", 1],
-    ["cdx", "codex", 1],
-    ["grx", "grok", 1],
-    ["cldx", "claude", 1],
-    ["fmx", "firstmate", 2],
+    ["codex", "codex", 1],
+    ["claude", "claude", 1],
+    ["firstmate", "firstmate", 2],
     ["sandbox", "claude", 2],
   ] as const)("refreshes the correct installed scopes for %s", async (launcher, harness, expectedReads) => {
     const entries = ["a", "b"].map((name) => {
@@ -337,7 +332,7 @@ describe("harness update version refresh", () => {
 
 describe("HarnessUpdateManager", () => {
   it("deduplicates group updates until installed-version refresh also completes", async () => {
-    const entries = ["awesome", "hve"].map((name) => nativeEntry("cpx", "copilot", name))
+    const entries = ["awesome", "hve"].map((name) => nativeEntry("copilot", "copilot", name))
     const firstPlan = requirePlan(entries[0]!, entries)
     const peerPlan = requirePlan(entries[1]!, entries)
     const run = successfulRun()
@@ -366,7 +361,7 @@ describe("HarnessUpdateManager", () => {
   })
 
   it("does not block container updates while the equivalent native harness is updating", async () => {
-    const nativePlan = requirePlan(nativeEntry("cpx", "copilot", "hve"))
+    const nativePlan = requirePlan(nativeEntry("copilot", "copilot", "hve"))
     const containerPlan = requirePlan(sandboxEntry({ harness: "copilot" }))
     const run = successfulRun()
     const manager = new HarnessUpdateManager({ run }, "/worktree")
@@ -376,7 +371,7 @@ describe("HarnessUpdateManager", () => {
         .filter(([, args]) => args[0] !== "--help")
         .map(([, args]) => args)
         .sort(),
-    ).toEqual([["harness-update"], ["upgrade", "claude-blog", "--strict-harness"]])
+    ).toEqual([["upgrade", "claude-blog", "--strict-harness"], ["upgrade", "copilot", "hve", "--harness-only"]])
   })
 
   it("surfaces refresh failures and releases the group so a later retry is possible", async () => {

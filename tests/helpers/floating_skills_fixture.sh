@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+seal_floating_skills_cache() {
+  local cache="$1" catalog="$2"
+  shift 2
+  local repo_root="$(CDPATH= cd -P -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+  bun --no-env-file -e '
+    const [managerPath, sourcePath, cache, catalogPath, ...bundles] = process.argv.slice(1);
+    const { readCatalog, resolvePlan } = await import(managerPath);
+    const { digestDirectory } = await import(sourcePath);
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(`${cache}/policy.json`, JSON.stringify(resolvePlan(await readCatalog(catalogPath), bundles)));
+    await writeFile(`${cache}/.trellage-receipt`, await digestDirectory(cache));
+  ' "$repo_root/scripts/floating-skills.ts" "$repo_root/packages/trellage-runtime/src/native-run/source.ts" "$cache" "$catalog" "$@"
+}
+
 seed_floating_skills_cache() {
   local home="$1"
   local cache="$home/.local/share/trellage/common/skills"
@@ -16,6 +30,9 @@ seed_floating_skills_cache() {
     >"$guide_cache/skills/prompt-master/SKILL.md"
   printf '%s\n' prompt-master >"$guide_cache/managed-skills.txt"
   : >"$guide_cache/always-on.md"
+  local repo_root="$(CDPATH= cd -P -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+  seal_floating_skills_cache "$cache" "$repo_root/config.toml" native-common
+  seal_floating_skills_cache "$guide_cache" "$repo_root/config.toml" guide-prompt-master
 }
 
 install_fixture_node() {

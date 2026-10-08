@@ -5,6 +5,7 @@ import path from "node:path"
 import {
   checkFreshSkills,
   loadSkillsManager,
+  publishCompositionInstructions,
   requireDirectory,
   requireFile,
   statusIfPresent,
@@ -72,10 +73,12 @@ const publishManualSkills = async (
   { managerPath, catalogPath, cache, library, target, skill, command }: ManualSkillOptions,
 ) => {
   await manager.verifyTargetExclusions(target, [skill], true)
-  if (command === "ensure") {
-    await requireFile(catalogPath)
+  if (command === "ensure" && process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT !== undefined) {
+    await manager.syncSnapshot(cache, library)
+  } else if (command === "ensure") {
+    if (typeof manager.readNativeSkillCatalog !== "function") fail("refresh the floating-skills runtime to enable effective skill configuration")
     await manager.ensureNative({
-      catalog: await manager.readCatalog(catalogPath),
+      catalog: await manager.readNativeSkillCatalog(catalogPath),
       bundleIds: ["native-common"],
       cache,
       target: library,
@@ -87,6 +90,7 @@ const publishManualSkills = async (
     await manager.syncSnapshot(cache, library)
   }
   await manager.syncSnapshot(cache, target, [skill])
+  await publishCompositionInstructions(await manager.resolveComposedSkillSnapshot(cache, target), target)
 }
 
 const readManualPrompt = async (library: string, skill: string) => {
@@ -100,14 +104,15 @@ const readManualPrompt = async (library: string, skill: string) => {
 }
 
 export const manageManualSkill = async (options: ManualSkillOptions) => {
-  const { managerPath, catalogPath, cache, library, target, skill, command, signal } = options
   const manager = await loadManualSkillsManager(options)
+  const effective = { ...options, cache: await manager.resolveComposedSkillSnapshot(options.cache, options.target) }
+  const { managerPath, catalogPath, cache, library, target, skill, command, signal } = effective
   const pairs: SkillPair[] = [
     [cache, library],
     [cache, target, [skill]],
   ]
   if (command === "fresh") return checkFreshSkills(managerPath, catalogPath, pairs, signal)
-  if (command === "ensure" || command === "sync") await publishManualSkills(manager, options)
+  if (command === "ensure" || command === "sync") await publishManualSkills(manager, effective)
   await manager.verifyTarget(cache, library)
   await manager.verifyTarget(cache, target, [skill])
   if (command === "prompt") return readManualPrompt(library, skill)

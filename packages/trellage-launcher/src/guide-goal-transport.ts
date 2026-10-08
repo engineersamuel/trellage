@@ -30,11 +30,11 @@ export const freezeGuideGoalCandidateContext = (
 }
 
 const compatibleGoalSurface = (profile: SelectedProfile, controller: GuideGoalExecution["controller"]): boolean => {
-  if (controller === "codex-goal") return profile.surface === "native" && profile.launcher === "cdx"
+  if (controller === "codex-goal") return profile.surface === "native" && profile.launcher === "codex"
   if (controller === "graph-of-loops") return profile.surface === "sandbox" && profile.profile === "claude-graph-of-loops"
   if (controller !== "claude-goal") return false
   return profile.surface === "native"
-    ? profile.launcher === "cldx" && profile.profile === "default"
+    ? profile.launcher === "claude" && profile.profile === "default"
     : profile.profile.startsWith("claude-") && profile.profile !== "claude-graph-of-loops"
 }
 

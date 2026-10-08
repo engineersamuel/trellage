@@ -59,10 +59,10 @@ readonly proxy_origin='http://127.0.0.1:8080'
 readonly proxy_token='trellage-local-proxy'
 
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
-floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
-  floating_skills_catalog="$runtime_root/../../skills.json"
+  floating_skills_catalog="$runtime_root/../../config.toml"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 session_bridge_source="$runtime_root/lib/trellage-session-bridge.py"
@@ -1053,6 +1053,10 @@ cmd_launch() {
     launch_args=(--allow-dangerously-skip-permissions)
   else
     launch_args=(--dangerously-skip-permissions --permission-mode bypassPermissions)
+  fi
+  if [[ -n "${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}" ]]; then
+    [[ -f "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" && ! -L "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" ]] || die 'unsafe selected instructions'
+    launch_args+=(--append-system-prompt "$(cat "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md")")
   fi
   # Claude accepts max only as a session effort, not in persisted modelSettings.
   if [[ "$permission_mode" == plan && "$has_effort" == false ]]; then

@@ -25,7 +25,7 @@ install_lock="$runtime_parent/.fmx-install.lock"
 installed_launcher="$install_root/bin/fmx"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-firstmate-profiles"
-command_dir="$local_dir/bin"
+command_dir="$runtime_parent/.native-commands"
 command_path="$command_dir/fmx"
 lock_acquired=false
 source_dir="$(CDPATH= cd -P -- "$(dirname "$0")" && pwd -P)"

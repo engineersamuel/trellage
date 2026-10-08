@@ -22,7 +22,7 @@ install_root="$home/.local/share/trellage/omp"
 installed_launcher="$install_root/bin/omp"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-omp-profiles"
-command_path="$home/.local/bin/omp"
+command_path="$home/.local/share/trellage/.native-commands/omp"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \

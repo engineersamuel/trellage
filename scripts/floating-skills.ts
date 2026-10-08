@@ -8,28 +8,16 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { bunArguments, bunExecutable } from "@trellage/runtime"
+import { readTrellageConfig } from "@trellage/runtime/native-config"
+import { digestDirectory, createSourceResolver, type ResolvedSource } from "@trellage/runtime/native-run/source"
+import { resolveNativeRunPaths } from "@trellage/runtime/native-run/paths"
+import { readEffectiveSkillCatalog, assertStringArray, SkillAdapter, FloatingSkillsError, parseCatalog, readCatalog, type SkillSource, type SkillCatalog } from "@trellage/runtime/skill-config"
+export { SkillAdapter, FloatingSkillsError, parseCatalog, readCatalog, type SkillSource, type SkillCatalog } from "@trellage/runtime/skill-config"
 
-export enum SkillAdapter {
-  Generic = "generic",
-  OmpNative = "omp-native",
+function fail(message: string, cause?: unknown): never {
+  throw new FloatingSkillsError(message, cause === undefined ? undefined : { cause })
 }
-
-export interface SkillSource {
-  readonly id: string
-  readonly repository: string
-  readonly select: readonly string[]
-  readonly exclude: readonly string[]
-  readonly required: readonly string[]
-  readonly adapter: SkillAdapter
-  readonly alwaysOn: boolean
-  readonly allowExecutables: boolean
-}
-
-export interface SkillCatalog {
-  readonly schema: 1
-  readonly sources: Readonly<Record<string, SkillSource>>
-  readonly bundles: Readonly<Record<string, readonly string[]>>
-}
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
 
 interface SkillOptions {
   readonly catalog: SkillCatalog
@@ -87,7 +75,6 @@ interface AlwaysOnSkill {
 const execFilePromise = promisify(execFile)
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const safeName = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-const safeRepository = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/
 const maxSkills = 200
 const maxSnapshotBytes = 100 * 1024 * 1024
 export const readOnlyStageSupported = true
@@ -228,143 +215,6 @@ const withFirstmateLease = async <T>(destination: string, operation: () => Promi
   }
 }
 
-export class FloatingSkillsError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
-    this.name = "FloatingSkillsError"
-  }
-}
-
-function fail(message: string, cause?: unknown): never {
-  throw new FloatingSkillsError(message, cause === undefined ? undefined : { cause })
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
-const assertStringArray = (value: unknown, label: string): string[] => {
-  if (!Array.isArray(value) || value.length === 0 || value.some((entry) => typeof entry !== "string")) {
-    fail(`${label} must be a non-empty string array`)
-  }
-  if (new Set(value).size !== value.length) fail(`${label} contains duplicates`)
-  return value
-}
-
-const parseBooleanPolicy = (candidate: Record<string, unknown>, key: string, id: string) => {
-  const value = candidate[key]
-  if (value !== undefined && typeof value !== "boolean") fail(`invalid ${key} policy: ${id}`)
-  return value === true
-}
-
-const parseOptionalSkillNames = (
-  candidate: Record<string, unknown>,
-  key: string,
-  label: string,
-  id: string,
-): string[] => {
-  const names = candidate[key] ?? []
-  if (!Array.isArray(names) || names.some((name) => typeof name !== "string" || !safeName.test(name))) {
-    fail(`${label} must be a string array: ${id}`)
-  }
-  if (new Set(names).size !== names.length) fail(`${label} contain duplicates: ${id}`)
-  return names
-}
-
-const assertKnownSourcePolicy = (id: string, candidate: Record<string, unknown>) => {
-  const allowedKeys = new Set([
-    "repository",
-    "select",
-    "exclude",
-    "required",
-    "adapter",
-    "alwaysOn",
-    "allowExecutables",
-    "allowWildcard",
-  ])
-  const unknownKey = Object.keys(candidate).find((key) => !allowedKeys.has(key))
-  if (unknownKey !== undefined) fail(`unknown skill source policy ${unknownKey}: ${id}`)
-}
-
-const parseSourceSelections = (id: string, candidate: Record<string, unknown>) => {
-  const select = assertStringArray(candidate.select, `skill source selections: ${id}`)
-  if (select.some((name) => name !== "*" && !safeName.test(name))) fail(`unsafe selected skill: ${id}`)
-  const exclude = parseOptionalSkillNames(candidate, "exclude", "skill source exclusions", id)
-  const required = parseOptionalSkillNames(candidate, "required", "required skills", id)
-  const allowWildcard = parseBooleanPolicy(candidate, "allowWildcard", id)
-  if (select.includes("*") && !allowWildcard) fail(`wildcard selection is not allowed: ${id}`)
-  if (select.includes("*") && select.length !== 1) fail(`wildcard selection must be the only selection: ${id}`)
-  if (exclude.length > 0 && !select.includes("*")) fail(`skill exclusions require wildcard selection: ${id}`)
-  if (required.length > 0 && !select.includes("*")) fail(`required skills require wildcard selection: ${id}`)
-  const excludedRequired = required.find((name) => exclude.includes(name))
-  if (excludedRequired !== undefined) fail(`required skill is excluded: ${id}/${excludedRequired}`)
-  return { select, exclude, required }
-}
-
-const parseSource = (id: string, candidate: unknown): SkillSource => {
-  if (!safeName.test(id) || !isRecord(candidate)) fail(`invalid skill source: ${id}`)
-  assertKnownSourcePolicy(id, candidate)
-  if (typeof candidate.repository !== "string" || !safeRepository.test(candidate.repository)) {
-    fail(`invalid skill repository: ${id}`)
-  }
-  const { select, exclude, required } = parseSourceSelections(id, candidate)
-  const allowExecutables = parseBooleanPolicy(candidate, "allowExecutables", id)
-  const alwaysOn = parseBooleanPolicy(candidate, "alwaysOn", id)
-  const adapter = candidate.adapter ?? SkillAdapter.Generic
-  if (adapter !== SkillAdapter.Generic && adapter !== SkillAdapter.OmpNative) fail(`invalid skill adapter: ${id}`)
-  if (adapter !== SkillAdapter.Generic && alwaysOn) fail(`always-on is supported only for generic skills: ${id}`)
-  return Object.freeze({
-    id,
-    repository: candidate.repository,
-    select: Object.freeze([...select]),
-    exclude: Object.freeze([...exclude]),
-    required: Object.freeze([...required]),
-    adapter,
-    alwaysOn,
-    allowExecutables,
-  })
-}
-
-const parseSources = (raw: Record<string, unknown>) =>
-  Object.freeze(Object.fromEntries(Object.entries(raw).map(([id, candidate]) => [id, parseSource(id, candidate)])))
-
-const parseBundles = (raw: Record<string, unknown>, sources: SkillCatalog["sources"]) => {
-  const bundles: Record<string, readonly string[]> = {}
-  for (const [id, candidate] of Object.entries(raw)) {
-    if (!safeName.test(id)) fail(`invalid skill bundle: ${id}`)
-    const sourceIds = assertStringArray(candidate, `skill bundle sources: ${id}`)
-    const unknown = sourceIds.find((sourceId) => sources[sourceId] === undefined)
-    if (unknown !== undefined) fail(`unknown skill source in bundle ${id}: ${unknown}`)
-    bundles[id] = Object.freeze([...sourceIds])
-  }
-  return Object.freeze(bundles)
-}
-
-export const parseCatalog = (source: string): SkillCatalog => {
-  let raw: unknown
-  try {
-    raw = JSON.parse(source)
-  } catch (cause) {
-    fail("skill catalog is not valid JSON", cause)
-  }
-  if (!isRecord(raw) || raw.schema !== 1 || !isRecord(raw.sources) || !isRecord(raw.bundles)) {
-    fail("skill catalog must contain schema 1, sources, and bundles")
-  }
-  if (Object.keys(raw).some((key) => !["schema", "sources", "bundles"].includes(key))) {
-    fail("skill catalog contains an unknown field")
-  }
-  const sources = parseSources(raw.sources)
-  return Object.freeze({ schema: 1, sources, bundles: parseBundles(raw.bundles, sources) })
-}
-
-export const readCatalog = async (catalogPath: string) => {
-  try {
-    return parseCatalog(await readFile(catalogPath, "utf8"))
-  } catch (cause) {
-    if (cause instanceof FloatingSkillsError) throw cause
-    fail(`cannot read skill catalog: ${catalogPath}`, cause)
-  }
-}
-
 export const resolvePlan = (catalog: SkillCatalog, bundleIds: readonly string[]) => {
   if (bundleIds.length === 0) fail("at least one skill bundle is required")
   const sourceIds: string[] = []
@@ -439,28 +289,6 @@ const run = async (command: string, args: readonly string[], options: RunOptions
   }
 }
 
-const runInteractive = (command: string, args: readonly string[], cwd: string) =>
-  new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      stdio: "inherit",
-      detached: Boolean(skillOperation.getStore()),
-      env: {
-        ...process.env,
-        CI: "1",
-        DISABLE_TELEMETRY: "1",
-        DO_NOT_TRACK: "1",
-        npm_config_ignore_scripts: "true",
-      },
-    })
-    trackSkillChild(child)
-    child.once("error", reject)
-    child.once("exit", (code, signal) => {
-      if (code === 0) resolve()
-      else reject(new FloatingSkillsError(`skills generator failed (${signal ?? code ?? "unknown"})`))
-    })
-  })
-
 const localSkillsCli = async () => {
   let candidate: string
   try {
@@ -514,27 +342,14 @@ const generateGenericSkills = async (
     })
     return path.join(destination, ".agents", "skills")
   }
-  await runInteractive(bunExecutable(), bunArguments(local, args), destination)
+  await run(bunExecutable(), bunArguments(local, args), {
+    cwd: destination,
+    signal,
+    env: { ...process.env, CI: "1", DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1", npm_config_ignore_scripts: "true" },
+  })
   return path.join(destination, ".agents", "skills")
 }
 
-const checkoutLatest = async (
-  repository: string,
-  destination: string,
-  signal: AbortSignal | undefined,
-  readOnly: boolean,
-) => {
-  const options = readOnly
-    ? { signal, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", TMPDIR: path.dirname(destination) } }
-    : { signal }
-  const gitOptions = readOnly ? ["-c", "credential.helper=", "-c", "core.askPass="] : []
-  await mkdir(destination)
-  await run("git", [...gitOptions, "init", "--quiet", destination], options)
-  await run("git", [...gitOptions, "-C", destination, "remote", "add", "origin", repository], options)
-  await run("git", [...gitOptions, "-C", destination, "fetch", "--quiet", "--depth", "1", "origin", "HEAD"], options)
-  await run("git", [...gitOptions, "-C", destination, "checkout", "--quiet", "--detach", "FETCH_HEAD"], options)
-  await rm(path.join(destination, ".git"), { recursive: true, force: true })
-}
 
 const validateSkillDirectory = async (skillRoot: string, name: string, allowExecutables: boolean) => {
   if (!safeName.test(name)) fail(`unsafe generated skill name: ${name}`)
@@ -632,8 +447,10 @@ const materializeSource = async ({
   skillsCli,
   readOnly,
   signal,
+  resolved,
 }: {
   source: SkillSource
+  resolved: ResolvedSource
   temporary: string
   snapshotSkills: string
   names: Set<string>
@@ -642,7 +459,8 @@ const materializeSource = async ({
   signal: AbortSignal | undefined
 }) => {
   const sourceRoot = path.join(temporary, `source-${source.id}`)
-  await checkoutLatest(source.repository, sourceRoot, signal, readOnly)
+  await cp(resolved.directory, sourceRoot, { recursive: true })
+  await rm(path.join(sourceRoot, ".trellage-receipt"), { force: true })
   const generatedRoot = await generatedSkillRoot(source, sourceRoot, temporary, skillsCli, readOnly, signal)
   const actual = await selectedSkillNames(source, generatedRoot)
   let bytes = 0
@@ -681,11 +499,44 @@ const stageLatestOwned = async ({ catalog, bundleIds, destination, skillsCli, re
   const names = new Set<string>()
   const alwaysOn: AlwaysOnSkill[] = []
   let totalBytes = 0
+  const sharedPaths = plan.some((source) => path.isAbsolute(source.repository))
+    ? { cache: path.join(temporary, ".source-cache"), data: path.join(temporary, ".source-data"), state: path.join(temporary, ".source-state") }
+    : resolveNativeRunPaths()
+  const paths = readOnly ? { ...sharedPaths, cache: path.join(temporary, "cache") } : sharedPaths
+  const gitOptions = readOnly ? ["-c", "credential.helper=", "-c", "core.askPass="] : []
+  const repositoryUrl = (repository: string) => path.isAbsolute(repository) ? repository : `https://github.com/${repository}.git`
+  const resolver = createSourceResolver({ paths, readOnly, transport: {
+    resolveRef: async (repository, ref) => {
+      const refs = ref === "HEAD" ? ["HEAD"] : [`refs/tags/${ref}`, `refs/tags/${ref}^{}`]
+      const output = await run("git", [...gitOptions, "ls-remote", repositoryUrl(repository), ...refs], { signal })
+      const rows = output.stdout.trim().split("\n")
+      const commit = (rows.find((row) => row.endsWith("^{}")) ?? rows[0] ?? "").split(/\s+/)[0]!
+      if (!/^[a-f0-9]{40}$/.test(commit)) fail(`ref ${ref} not found`)
+      return commit
+    },
+    fetchCommit: async (repository, commit, destination) => {
+      await run("git", [...gitOptions, "init", "--quiet", destination], { signal })
+      await run("git", [...gitOptions, "-C", destination, "fetch", "--quiet", "--depth", "1", repositoryUrl(repository), commit], { signal })
+      await run("git", [...gitOptions, "-C", destination, "checkout", "--quiet", "--detach", "FETCH_HEAD"], { signal })
+      await rm(path.join(destination, ".git"), { recursive: true, force: true })
+    },
+  } })
+  const resolvedSources = new Map<string, ResolvedSource>()
   try {
+    await Promise.all(plan.map(async (source) => {
+      const resolved = await resolver.resolve(source.id, {
+        repository: source.repository.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, ""),
+        ...(source.tag === undefined ? {} : { tag: source.tag }),
+        ...(source.commit === undefined ? {} : { commit: source.commit }),
+      })
+      if (resolved.warning) fail(resolved.warning)
+      resolvedSources.set(source.id, resolved)
+    }))
     for (const source of plan) {
       signal?.throwIfAborted()
       const materialized = await materializeSource({
         source,
+        resolved: resolvedSources.get(source.id)!,
         temporary,
         snapshotSkills,
         names,
@@ -707,7 +558,11 @@ const stageLatestOwned = async ({ catalog, bundleIds, destination, skillsCli, re
         .join(""),
     )
     signal?.throwIfAborted()
+    await writeFile(path.join(snapshot, "sources.json"), JSON.stringify([...resolvedSources.values()].map(({ sourceId, repository, selector, commit }) => ({ sourceId, repository, selector, commit }))))
+    await writeFile(path.join(snapshot, "policy.json"), JSON.stringify(plan))
+    await writeFile(path.join(snapshot, ".trellage-receipt"), await digestDirectory(snapshot))
     await publishDirectory(snapshot, path.resolve(destination))
+    if (!readOnly) for (const resolved of resolvedSources.values()) await resolver.markGood(resolved)
     return sortedNames
   } finally {
     await rm(temporary, { recursive: true, force: true })
@@ -725,6 +580,36 @@ const readManagedNames = async (file: string, label: string) => {
   return names
 }
 
+export const isComposedSkillSnapshot = async (snapshot: string): Promise<boolean> => {
+  const marker = path.join(snapshot, ".trellage-composition-snapshot")
+  const status = await lstat(marker).catch((error) => {
+    if (error.code === "ENOENT") return undefined
+    throw error
+  })
+  if (!status) return false
+  const root = await lstat(snapshot)
+  if (!root.isDirectory() || root.isSymbolicLink() || root.uid !== process.getuid?.() ||
+      !status.isFile() || status.isSymbolicLink() || status.nlink !== 1 ||
+      status.uid !== process.getuid?.() || (status.mode & 0o022) !== 0 ||
+      (root.mode & 0o022) !== 0 || await readFile(marker, "utf8") !== "1\n") {
+    fail(`invalid composed skill snapshot: ${snapshot}`)
+  }
+  return true
+}
+
+export const resolveComposedSkillSnapshot = async (fallback: string, target?: string): Promise<string> => {
+  const selected = process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
+  if (selected === undefined) return fallback
+  if (!path.isAbsolute(selected) || !(await isComposedSkillSnapshot(selected))) {
+    fail(`invalid composed skill snapshot: ${selected}`)
+  }
+  const auxiliary = path.basename(fallback) === "omp-community-skills" ||
+    (target !== undefined && path.basename(target) === "community-skills")
+  const snapshot = auxiliary ? path.join(selected, ".empty") : selected
+  if (!(await isComposedSkillSnapshot(snapshot))) fail(`invalid composed skill snapshot: ${snapshot}`)
+  return snapshot
+}
+
 const validateSnapshot = async (snapshotPath: string) => {
   const sourceSkills = path.join(snapshotPath, "skills")
   const sourceStatus = await lstat(sourceSkills).catch(() => undefined)
@@ -732,7 +617,7 @@ const validateSnapshot = async (snapshotPath: string) => {
     fail(`invalid skill snapshot: ${snapshotPath}`)
   }
   const sourceNames = await readManagedNames(path.join(snapshotPath, "managed-skills.txt"), "snapshot manifest")
-  if (sourceNames.length === 0) fail(`skill snapshot is empty: ${snapshotPath}`)
+  if (sourceNames.length === 0 && !(await isComposedSkillSnapshot(snapshotPath))) fail(`skill snapshot is empty: ${snapshotPath}`)
   const sortedNames = [...sourceNames].sort((left, right) => left.localeCompare(right, "en"))
   if (JSON.stringify(sourceNames) !== JSON.stringify(sortedNames)) {
     fail(`skill snapshot manifest is not sorted: ${snapshotPath}`)
@@ -1023,10 +908,10 @@ const validateExcludedSkills = (excluded: readonly string[]) => {
   if (excluded.some((name) => !safeName.test(name))) fail("unsafe excluded target skill")
 }
 
-export const selectTargetSkills = (names: readonly string[], excluded: readonly string[] = []) => {
+export const selectTargetSkills = (names: readonly string[], excluded: readonly string[] = [], allowEmpty = false) => {
   validateExcludedSkills(excluded)
   const selected = names.filter((name) => !excluded.includes(name))
-  if (selected.length === 0) fail("skill target would be empty")
+  if (selected.length === 0 && !allowEmpty) fail("skill target would be empty")
   return selected
 }
 
@@ -1057,7 +942,7 @@ const syncSnapshotOwned = async (snapshot: string, target: string, excluded: rea
   const snapshotPath = path.resolve(snapshot)
   const targetPath = path.resolve(target)
   const sourceSkills = path.join(snapshotPath, "skills")
-  const sourceNames = selectTargetSkills(await validateSnapshot(snapshotPath), excluded)
+  const sourceNames = selectTargetSkills(await validateSnapshot(snapshotPath), excluded, await isComposedSkillSnapshot(snapshotPath))
   await mkdir(targetPath, { recursive: true, mode: 0o700 })
   const targetStatus = await lstat(targetPath)
   if (!targetStatus.isDirectory() || targetStatus.isSymbolicLink()) fail(`invalid skill target: ${targetPath}`)
@@ -1095,7 +980,7 @@ const compareManagedTree = async (source: string, target: string, skillName: str
 export const verifyTarget = async (snapshot: string, target: string, excluded: readonly string[] = []) => {
   const snapshotPath = path.resolve(snapshot)
   const targetPath = path.resolve(target)
-  const expected = selectTargetSkills(await validateSnapshot(snapshotPath), excluded)
+  const expected = selectTargetSkills(await validateSnapshot(snapshotPath), excluded, await isComposedSkillSnapshot(snapshotPath))
   await verifyExcludedSkills(targetPath, excluded)
   const managed = await readManagedNames(path.join(targetPath, ".trellage-managed-skills"), "managed skill manifest")
   if (JSON.stringify(managed) !== JSON.stringify(expected)) {
@@ -1343,8 +1228,9 @@ const checkContainerCommand = async (catalog: SkillCatalog, bundles: readonly st
 
 const defaultCatalogPath = async () => {
   for (const candidate of [
-    path.join(scriptDirectory, "skills.json"),
-    path.join(scriptDirectory, "..", "skills.json"),
+    ...(process.env.TRELLAGE_CONFIG ? [process.env.TRELLAGE_CONFIG] : []),
+    path.join(scriptDirectory, "config.toml"),
+    path.join(scriptDirectory, "..", "config.toml"),
   ]) {
     try {
       const status = await lstat(candidate)
@@ -1353,7 +1239,7 @@ const defaultCatalogPath = async () => {
       // Continue to the repository layout.
     }
   }
-  fail("cannot locate skills.json")
+  fail("cannot locate config.toml")
 }
 
 const defaultCache = () =>
@@ -1436,16 +1322,15 @@ const ensureCommand = async (
 }
 
 export const ensureNative = async ({ catalog, bundleIds, cache, target, skillsCli }: NativeOptions & { target: string }) => {
-  const status = await lstat(cache).catch(() => undefined)
-  if (status === undefined) {
-    await withFirstmateLease(cache, () =>
-      withLock(`${cache}.lock`, async () => {
-        if (await lstat(cache).catch(() => undefined)) return
-        await stageLatest({ catalog, bundleIds, destination: cache, skillsCli })
-      })
-    )
-  } else if (!status.isDirectory() || status.isSymbolicLink()) {
-    fail(`invalid skill cache: ${cache}`)
+  try {
+    await updateNative({ catalog, bundleIds, cache, skillsCli })
+  } catch (error) {
+    if (!(await lstat(cache).catch(() => undefined))) throw error
+    await validateSnapshot(cache)
+    const recorded = await readFile(path.join(cache, ".trellage-receipt"), "utf8").catch(() => "")
+    if (recorded !== await digestDirectory(cache)) fail(`skill snapshot integrity check failed: ${cache}`)
+    if (await readFile(path.join(cache, "policy.json"), "utf8") !== JSON.stringify(resolvePlan(catalog, bundleIds))) fail("cached skill policy differs from requested configuration")
+    process.stderr.write(`skills: refresh failed (${error instanceof Error ? error.message : String(error)}); using validated snapshot ${cache}\n`)
   }
   await syncSnapshot(cache, target)
 }
@@ -1516,10 +1401,26 @@ const dispatch = (
   fail("usage: floating-skills.ts <stage|ensure|check|update|status|sync|verify|verify-repairable>")
 }
 
+export const readNativeSkillCatalog = async (starterPath: string, environment: NodeJS.ProcessEnv = process.env): Promise<SkillCatalog> => {
+  const effective = await readTrellageConfig({ environment })
+  return readEffectiveSkillCatalog({
+    configPath: effective.path,
+    starterPath: path.resolve(starterPath),
+    explicit: Boolean(environment.TRELLAGE_CONFIG),
+  })
+}
+
 const main = async () => {
   const { command, options } = parseArguments(process.argv.slice(2))
-  const catalogPath = path.resolve(options.catalog ?? (await defaultCatalogPath()))
-  const catalog = await readCatalog(catalogPath)
+  if (process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT !== undefined &&
+      ["ensure", "sync", "verify", "status"].includes(command ?? "")) {
+    const snapshot = await resolveComposedSkillSnapshot(options.cache ?? options.output ?? defaultCache(), options.target)
+    if (command === "status") return statusCommand([], snapshot)
+    if (options.target === undefined) fail(`${command} requires --target`)
+    if (command === "verify") return verifyTarget(snapshot, options.target, options.excluded)
+    return syncSnapshot(snapshot, options.target, options.excluded)
+  }
+  const catalog = await readNativeSkillCatalog(options.catalog ?? (await defaultCatalogPath()))
   const bundles = options.bundles.length > 0 ? options.bundles : ["native-common"]
   const cache = path.resolve(options.cache ?? defaultCache())
   await dispatch(command, catalog, bundles, cache, options)

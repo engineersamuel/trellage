@@ -59,7 +59,7 @@ const identity = (profile: ProfileName): FirstmateFleetIdentityV1 => ({
   home: `/fixture/fleets/${profile}/home`, sourceRevision,
 })
 const selected = (profile: ProfileName): NativeSelectedProfile => ({
-  surface: "native", launcher: "fmx", commandPath: "/fixture/bin/fmx", profile, headlessPrompt: false,
+  surface: "native", launcher: "firstmate", commandPath: "/fixture/bin/trx", profile, headlessPrompt: false,
   orchestration: parseFirstmateOrchestrationV1({
     schemaVersion: 1, kind: "firstmate", sourceRevision,
     taskIdPrefix: profile === "default" ? "fmd" : "fmp",
@@ -129,7 +129,7 @@ const queued = (id: number, options: {
   const projectTarget = options.target ?? null
   const workflowId = projectTarget === null ? "fleet-status" : "project-review"
   const originalIntent = options.originalIntent ?? `  Inspect request ${id}.\r\nKeep every restriction. 😀  `
-  const prepared = prepareGuidePrompt(guide, workflowId, `native:fmx/${profile.profile}`, originalIntent, {
+  const prepared = prepareGuidePrompt(guide, workflowId, `native:firstmate/${profile.profile}`, originalIntent, {
     originalIntent, projectTarget, orchestration: profile.orchestration!,
   })
   const candidate = renderWorkflowBodyCandidate(prepared.workflow, {
@@ -235,7 +235,7 @@ class FleetRunner implements CommandRunner {
   constructor(readonly events: string[] = []) {}
 
   private inventory(profile: string): CommandRunResult {
-    return ok({ schemaVersion: 1, launcher: "fmx", profile, readiness: "busy", fleet: this.inventories.get(profile) })
+    return ok({ schemaVersion: 1, launcher: "firstmate", profile, readiness: "busy", fleet: this.inventories.get(profile) })
   }
 
   private submit(call: Call): CommandRunResult {
@@ -261,7 +261,7 @@ class FleetRunner implements CommandRunner {
   private herdr(call: Call): CommandRunResult {
     const { args } = call
     if (args[0] === "pane" && args[1] === "run") {
-      const match = /^env TRELLAGE_AUTOMATION=1 \/fixture\/bin\/fmx (default|pstack-workers) --fmx-expected-fleet-json '(.+)'$/u.exec(args[3]!)
+      const match = /^env TRELLAGE_AUTOMATION=1 \/fixture\/bin\/trx run firstmate (default|pstack-workers) --fmx-expected-fleet-json '(.+)'$/u.exec(args[3]!)
       if (match === null) throw new Error("Fixture supervisor launch requires an explicit identity guard.")
       const encoded = match[2]!.replaceAll("'\"'\"'", "'")
       expect(Buffer.byteLength(encoded, "utf8")).toBeLessThanOrEqual(65_536)
@@ -301,7 +301,7 @@ class FleetRunner implements CommandRunner {
     if (executable === "herdr") return this.herdr(call)
     if (executable === "git") return ok()
     switch (args[0]) {
-      case "inventory": return this.inventory(args[1]!)
+      case "inventory": return this.inventory(args[2]!)
       case "submit": return this.submit(call)
       case "receipt": return this.receipt(call)
       default: throw new Error(`Unexpected profile operation: ${args[0]}`)
@@ -343,8 +343,8 @@ const paneRuns = (runner: FleetRunner): ReadonlyArray<Call> =>
   runner.calls.filter(({ args }) => args[0] === "pane" && args[1] === "run")
 const expectedSupervisorCommand = (profile: ProfileName): string =>
   `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview({
-    executable: "/fixture/bin/fmx",
-    args: [profile, "--fmx-expected-fleet-json", JSON.stringify(identity(profile))],
+    executable: "/fixture/bin/trx",
+    args: ["run", "firstmate", profile, "--fmx-expected-fleet-json", JSON.stringify(identity(profile))],
   })}`
 const submissionIds = (runner: FleetRunner) =>
   commands(runner, "submit").map(({ options }) => JSON.parse(options!.stdin!).requestId)
@@ -424,17 +424,17 @@ describe("Firstmate current-terminal handoff", () => {
     expect(events.indexOf(`callback:prepared:${uuid(2)}`)).toBeLessThan(events.indexOf(`command:submit:${uuid(1)}`))
     expect(events.indexOf(`callback:accepted:${uuid(1)}`)).toBeLessThan(events.indexOf(`command:submit:${uuid(2)}`))
     expect(onAllocated).not.toHaveBeenCalled()
-    expect(runner.calls.every(({ executable }) => executable === "/fixture/bin/fmx")).toBe(true)
+    expect(runner.calls.every(({ executable }) => executable === "/fixture/bin/trx")).toBe(true)
     expect(paneRuns(runner)).toEqual([])
     expect(result.time.sleeps).toEqual([])
     const frozen = JSON.stringify(result.result)
     const finished = await finishTerminalBatch(result, async (command, options) => {
       events.push("terminal-launch")
       expect(command).toEqual({
-        executable: "/fixture/bin/fmx",
-        args: [name, "--fmx-expected-fleet-json", JSON.stringify(identity(name))],
+        executable: "/fixture/bin/trx",
+        args: ["run", "firstmate", name, "--fmx-expected-fleet-json", JSON.stringify(identity(name))],
       })
-      expect(Buffer.byteLength(command.args[2]!, "utf8")).toBeLessThanOrEqual(65_536)
+      expect(Buffer.byteLength(command.args[4]!, "utf8")).toBeLessThanOrEqual(65_536)
       expect(options).toEqual({
         cwd: "/fixture/caller-a", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }),
       })
@@ -453,7 +453,7 @@ describe("Firstmate current-terminal handoff", () => {
     expect(finished.output).toContain("Saved request bodies stay in the inbox")
     expect(finished.output).toContain("Dispatch and task completion are not confirmed")
     for (const job of jobs) {
-      expect(job.command.args).toEqual([name])
+      expect(job.command.args).toEqual(["run", "firstmate", name])
       expect(finished.output).not.toContain(job.prompt)
       expect(finished.output).not.toContain(job.guideContext!.originalIntent)
     }
@@ -500,7 +500,7 @@ describe("Firstmate current-terminal handoff", () => {
     expect(finished.runInteractive).not.toHaveBeenCalled()
     expect(submissionIds(runner)).toEqual([uuid(1), uuid(2)])
     expect(commands(runner, "receipt")).toHaveLength(1)
-    expect(runner.calls.every(({ executable }) => executable === "/fixture/bin/fmx")).toBe(true)
+    expect(runner.calls.every(({ executable }) => executable === "/fixture/bin/trx")).toBe(true)
     expect(finished.output).toContain("reconcile the same request ID and payload")
   })
 
@@ -575,7 +575,7 @@ describe("Firstmate current-terminal handoff", () => {
     const finished = await finishTerminalBatch(result, async (command) => {
       if (observed === undefined) {
         result.runner.intercept = ({ args }) => args[0] === "inventory" ? ok({
-          schemaVersion: 1, launcher: "fmx", profile: "default", readiness: "busy",
+          schemaVersion: 1, launcher: "firstmate", profile: "default", readiness: "busy",
         }) : undefined
       } else result.runner.inventories.set("default", observed)
       throw new CommandRunnerError({
@@ -624,7 +624,7 @@ describe("Firstmate current-terminal handoff", () => {
     { label: "different action", patch: { action: "recover" } },
     { label: "different cwd", patch: { cwd: "/other/project" } },
     { label: "different fleet", patch: { expectedFleet: { ...identity("default"), home: "/replacement/home" } } },
-    { label: "different launcher path", patch: { profile: { ...selected("default"), commandPath: "/other/bin/fmx" } } },
+    { label: "different launcher path", patch: { profile: { ...selected("default"), commandPath: "/other/bin/trx" } } },
   ] satisfies ReadonlyArray<{ label: string; patch: Partial<FirstmateTerminalHandoff> }>)(
     "refuses a handoff descriptor with $label before inventory or launch",
     async ({ patch }) => {
@@ -680,10 +680,10 @@ describe("Firstmate queue delivery", () => {
     expect(result.result.entries[0]).toMatchObject({ status: "accepted", supervisor: "running", receipt: { announcement: "sent" } })
     expect(commands(runner, "submit")).toHaveLength(1)
     expect(commands(runner, "submit")[0]).toMatchObject({
-      executable: "/fixture/bin/fmx", args: ["submit", name, "--json"],
+      executable: "/fixture/bin/trx", args: ["submit", "firstmate", name, "--json"],
       options: { cwd: "/fixture/caller-a", stdin: canonicalFirstmateJson(requestFor(job)) },
     })
-    expect(runner.calls.every(({ executable }) => executable === "/fixture/bin/fmx")).toBe(true)
+    expect(runner.calls.every(({ executable }) => executable === "/fixture/bin/trx")).toBe(true)
     expect(runner.calls.every(({ args }) => !args.includes(job.prompt))).toBe(true)
     expect(JSON.stringify(job)).toBe(snapshot)
     expect(result.output).toContain(job.firstmate!.requestId)
@@ -791,8 +791,8 @@ describe("Firstmate queue delivery", () => {
     const result = await run(jobs, { runner })
     expect(result.exitCode).toBe(0)
     expect(result.result.entries.map(({ job }) => job.id)).toEqual([1, 2, 3, 4])
-    expect(commands(runner, "submit").filter(({ args }) => args[1] === "default").map(({ options }) => JSON.parse(options!.stdin!).requestId)).toEqual([uuid(1), uuid(3)])
-    expect(commands(runner, "submit").filter(({ args }) => args[1] === "pstack-workers").map(({ options }) => JSON.parse(options!.stdin!).requestId)).toEqual([uuid(2), uuid(4)])
+    expect(commands(runner, "submit").filter(({ args }) => args[2] === "default").map(({ options }) => JSON.parse(options!.stdin!).requestId)).toEqual([uuid(1), uuid(3)])
+    expect(commands(runner, "submit").filter(({ args }) => args[2] === "pstack-workers").map(({ options }) => JSON.parse(options!.stdin!).requestId)).toEqual([uuid(2), uuid(4)])
     expect(paneRuns(runner).map(({ args }) => args[3]).sort()).toEqual([
       expectedSupervisorCommand("default"),
       expectedSupervisorCommand("pstack-workers"),
@@ -813,7 +813,7 @@ describe("Firstmate queue delivery", () => {
   it.each(["command path", "source pin", "policy"] as const)("rejects mixed %s metadata for one profile instead of creating separate fleets", async (change) => {
     const profile = selected("default")
     const changed: NativeSelectedProfile = change === "command path"
-      ? { ...profile, commandPath: "/different/bin/fmx" }
+      ? { ...profile, commandPath: "/different/bin/trx" }
       : {
           ...profile,
           orchestration: {
@@ -850,7 +850,7 @@ describe("Firstmate queue delivery", () => {
     const { orchestration: _orchestration, ...oldProfile } = selected("default")
     const invalid = kind === "missing action" ? withoutAction
       : kind === "old backend" ? { ...job, profile: oldProfile }
-      : { ...job, profile: { ...oldProfile, launcher: "cpx" } }
+      : { ...job, profile: { ...oldProfile, launcher: "copilot" } }
     const result = await run([invalid])
     expect(result.result.entries[0]?.status).toBe("invalid")
     expect(result.runner.calls).toEqual([])
@@ -1030,10 +1030,10 @@ describe("Firstmate queue delivery", () => {
     const jobs = [queued(1), queued(2), queued(3)]
     const request = requestFor(jobs[1]!)
     runner.intercept = ({ executable, args, options }) => {
-      if (executable === "/fixture/cpx") return ok({
-        schemaVersion: 1, launcher: "cpx", profile: args[1], readiness: "healthy",
+      if (executable === "/fixture/trx") return ok({
+        schemaVersion: 1, launcher: "copilot", profile: args[2], readiness: "healthy",
       })
-      if (args[0] === "pane" && args[1] === "run" && args[3]!.includes("/fixture/cpx")) return ok()
+      if (args[0] === "pane" && args[1] === "run" && args[3]!.includes("/fixture/trx")) return ok()
       if (args[0] !== "submit" || JSON.parse(options!.stdin!).requestId !== request.requestId) return undefined
       return ok(receiptFor(request, {
         state: "rejected", noteId: null, announcement: "not-needed",
@@ -1041,7 +1041,7 @@ describe("Firstmate queue delivery", () => {
       }))
     }
     const normal = createQueuedGuideJob(4, {
-      surface: "native", launcher: "cpx", commandPath: "/fixture/cpx", profile: "default", headlessPrompt: true,
+      surface: "native", launcher: "copilot", commandPath: "/fixture/trx", profile: "default", headlessPrompt: true,
     }, "An independent ordinary task.", here)
     const result = await run([...jobs, normal], { runner })
     expect(result.result.entries.map(({ status }) => status)).toEqual(["accepted", "submission-rejected", "not-submitted", "launched"])
@@ -1205,7 +1205,7 @@ describe("Firstmate queue delivery", () => {
       status: "accepted", supervisor: "unknown", startupError: expect.stringContaining("identity"),
       request: { expectedFleet: identity("default") },
     })
-    expect(job.command.args).toEqual(["default"])
+    expect(job.command.args).toEqual(["run", "firstmate", "default"])
   })
 
   it.each([
@@ -1220,7 +1220,7 @@ describe("Firstmate queue delivery", () => {
     const result = await run([job], { runner })
     expect(result.exitCode).toBe(0)
     expect(runner.supervisorStarts).toEqual([expected])
-    expect(job.command.args).toEqual(["default"])
+    expect(job.command.args).toEqual(["run", "firstmate", "default"])
     expect(job.prompt).not.toContain(expected.home)
     expect(paneRuns(runner)[0]?.args[3]).not.toContain(job.prompt)
     expect(paneRuns(runner)[0]?.args[3]).not.toContain(job.guideContext!.originalIntent)

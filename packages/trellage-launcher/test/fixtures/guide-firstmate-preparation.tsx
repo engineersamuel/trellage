@@ -59,18 +59,18 @@ const headless = {
   changedFiles: "none", usage: false, cost: false, modelOverride: false, effortOverride: false,
   testedHarnessVersion: null,
 }
-const commandPath = path.join(root, "bin", "fmx")
+const commandPath = path.join(root, "bin", "trx")
 const catalog = parseGuideCatalog(JSON.stringify({
   schemaVersion: 1, sandbox: [], sandboxCommandPath: path.join(root, "bin", "trellage"),
   native: [
     ...["default", "pstack-workers"].map((profile) => ({
-      launcher: "fmx", harness: "firstmate", name: profile, description: `Firstmate ${profile}`,
+      launcher: "firstmate", harness: "firstmate", name: profile, description: `Firstmate ${profile}`,
       commandPath, guide, headless, sandbox: false, herdrCompatibility: { status: "supported" },
       orchestration: namedInstances && profile === "default" ? instanceOrchestration : preparationProfile(profile).orchestration,
     })),
     {
-      launcher: "cdx", harness: "codex", name: "reviewer", description: "Review the project.",
-      commandPath: path.join(root, "bin", "cdx"), guide, headless, sandbox: false,
+      launcher: "codex", harness: "codex", name: "reviewer", description: "Review the project.",
+      commandPath: path.join(root, "bin", "trx"), guide, headless, sandbox: false,
       herdrCompatibility: { status: "supported" },
     },
   ],
@@ -136,14 +136,14 @@ const runner: CommandRunner = {
       }
       return instanceRunner.run(executable, args, options)
     }
-    assert.deepEqual(args.slice(0, 5), ["prepare", "default", "--json", "--expected-source-revision", preparationRevision])
+    assert.deepEqual(args.slice(0, 6), ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision])
     assert.equal(options?.stdin, undefined)
     assert.equal(options?.signal?.aborted, false)
-    if (args.length === 7) {
-      assert.deepEqual(args.slice(5), ["--install-prerequisites", preparationPlan.identity])
+    if (args.length === 8) {
+      assert.deepEqual(args.slice(6), ["--install-prerequisites", preparationPlan.identity])
       installed = true
     } else {
-      assert.equal(args.length, 5)
+      assert.equal(args.length, 6)
     }
     return { stdout: preparationInventory(installed ? preparedFleet() : missingToolsFleet()), stderr: "", exitCode: 0 }
   },

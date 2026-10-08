@@ -24,7 +24,7 @@ session_bridge_source="$source_dir/../../scripts/trellage-session-bridge.py"
 floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-runtime.sh"
 environment_runtime_installer="$source_dir/../../scripts/install-native-environment-runtime.sh"
 floating_skills_manager="$source_dir/../../scripts/floating-skills.ts"
-floating_skills_catalog="$source_dir/../../skills.json"
+floating_skills_catalog="$source_dir/../../config.toml"
 floating_skills_guard="$source_dir/../trellage-firstmate-profiles/lib/fmx-registry.py"
 for runtime_installer in "$floating_runtime_installer" "$environment_runtime_installer"; do
   [ -f "$runtime_installer" ] && [ ! -L "$runtime_installer" ] && [ -x "$runtime_installer" ] \
@@ -47,7 +47,7 @@ ownership_marker="$install_root/.managed-by-trellage-codex-profiles"
 # profile catalog. This installer can migrate a validated v1 runtime once.
 ownership_value='trellage-codex-profiles-v2'
 legacy_ownership_value='trellage-codex-profiles-v1'
-command_dir="$local_dir/bin"
+command_dir="$runtime_parent/.native-commands"
 command_path="$command_dir/cdx"
 config_dir="$home/.config"
 fish_dir="$home/.config/fish"
@@ -1015,3 +1015,6 @@ mv "$staging_root/new-floating-skills-runtime" "$floating_runtime_destination"
 publication_active=false
 cleanup_staging
 printf 'Installed cdx at %s. Reload Fish to clear the legacy alias from existing shells.\n' "$command_path"
+
+# Retire only the old public symlink; retain the installed backend and runtime.
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" cdx "$installed_launcher" "$ownership_marker" "$ownership_value"

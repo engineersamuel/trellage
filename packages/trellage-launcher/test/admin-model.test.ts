@@ -55,7 +55,7 @@ const fixtureCatalog = () =>
       sandboxCommandPath: "/opt/trellage/bin/trellage",
       native: [
         {
-          launcher: "cpx",
+          launcher: "copilot",
           harness: "copilot",
           name: "hve",
           description: "Copilot native launcher.",
@@ -63,10 +63,10 @@ const fixtureCatalog = () =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide,
-          commandPath: "/opt/trellage/cpx/bin/cpx",
+          commandPath: "/opt/trellage/copilot/bin/trx",
         },
         {
-          launcher: "cdx",
+          launcher: "codex",
           harness: "codex",
           name: "pstack",
           description: "Codex native launcher.",
@@ -74,7 +74,7 @@ const fixtureCatalog = () =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide,
-          commandPath: "/opt/trellage/cdx/bin/cdx",
+          commandPath: "/opt/trellage/codex/bin/trx",
         },
       ],
       sandbox: [
@@ -139,22 +139,22 @@ const fixtureCatalogWithClaudeSandbox = () =>
 
 describe("nativeLauncherCapabilities", () => {
   it("marks every native launcher, including cdx, as supporting doctor/inventory", () => {
-    for (const launcher of ["agx", "cpx", "cdx", "cldx", "fmx", "grx", "jcx", "omp", "picx", "prx"]) {
+    for (const launcher of ["agency", "copilot", "codex", "claude", "firstmate", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher)).toMatchObject({ doctorSupported: true, inventorySupported: true })
     }
   })
 
   it("marks every native launcher except agx and cldx as supporting update --check", () => {
-    for (const launcher of ["cpx", "cdx", "fmx", "grx", "jcx", "omp", "picx", "prx"]) {
+    for (const launcher of ["copilot", "codex", "firstmate", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher).updateCheckSupported).toBe(true)
     }
-    expect(nativeLauncherCapabilities("agx").updateCheckSupported).toBe(false)
-    expect(nativeLauncherCapabilities("cldx").updateCheckSupported).toBe(false)
+    expect(nativeLauncherCapabilities("agency").updateCheckSupported).toBe(false)
+    expect(nativeLauncherCapabilities("claude").updateCheckSupported).toBe(false)
   })
 
   it("supports Firstmate and Agency harness versions", () => {
-    expect(nativeLauncherCapabilities("fmx").harnessVersionSupported).toBe(true)
-    expect(nativeLauncherCapabilities("agx").harnessVersionSupported).toBe(true)
+    expect(nativeLauncherCapabilities("firstmate").harnessVersionSupported).toBe(true)
+    expect(nativeLauncherCapabilities("agency").harnessVersionSupported).toBe(true)
   })
 
   it("fails closed for an unrecognized future native launcher", () => {
@@ -171,7 +171,7 @@ describe("aggregateAdminProfiles", () => {
   it("produces one entry per catalog entry with no duplicates or omissions", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
     expect(entries).toHaveLength(3)
-    expect(entries.map((entry) => entry.ref)).toEqual(["native:cpx/hve", "native:cdx/pstack", "sandbox:prime-agent"])
+    expect(entries.map((entry) => entry.ref)).toEqual(["native:copilot/hve", "native:codex/pstack", "sandbox:prime-agent"])
   })
 
   it("marks a sandbox profile as not supporting inventory (the sandbox launcher has no `inventory` subcommand)", () => {
@@ -206,42 +206,42 @@ describe("aggregateAdminProfiles", () => {
 
   it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
-    const cdx = entries.find((entry) => entry.ref === "native:cdx/pstack")
+    const cdx = entries.find((entry) => entry.ref === "native:codex/pstack")
     expect(cdx).toMatchObject({ health: "unknown", install: "unknown", doctorSupported: true, stale: true })
   })
 
   it("marks profiles with no readiness input yet as unknown and stale", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
-    const cpx = entries.find((entry) => entry.ref === "native:cpx/hve")
+    const cpx = entries.find((entry) => entry.ref === "native:copilot/hve")
     expect(cpx).toMatchObject({ health: "unknown", install: "unknown", stale: true })
   })
 
   it("reflects a healthy readiness result and clears staleness", () => {
     const readinessInputs: ReadonlyArray<AdminReadinessInput> = [
       {
-        ref: "native:cpx/hve",
-        result: { kind: ProfileReadinessKind.Ready, summary: "cpx/hve is healthy" },
+        ref: "native:copilot/hve",
+        result: { kind: ProfileReadinessKind.Ready, summary: "copilot/hve is healthy" },
         version: "1.2.3",
         checkedAt: 1000,
       },
     ]
     const entries = aggregateAdminProfiles(fixtureCatalog(), readinessInputs)
-    const cpx = entries.find((entry) => entry.ref === "native:cpx/hve")
+    const cpx = entries.find((entry) => entry.ref === "native:copilot/hve")
     expect(cpx).toMatchObject({ health: "healthy", install: "installed", stale: false, version: "1.2.3" })
   })
 
   it("isolates a malformed readiness result to only the affected profile", () => {
     const readinessInputs: ReadonlyArray<AdminReadinessInput> = [
-      { ref: "native:cpx/hve", result: { malformed: true, diagnostic: "unexpected inventory shape" } },
+      { ref: "native:copilot/hve", result: { malformed: true, diagnostic: "unexpected inventory shape" } },
       {
         ref: "sandbox:prime-agent",
         result: { kind: ProfileReadinessKind.Ready, summary: "prime-agent is valid" },
       },
     ]
     const entries = aggregateAdminProfiles(fixtureCatalog(), readinessInputs)
-    const cpx = entries.find((entry) => entry.ref === "native:cpx/hve")
+    const cpx = entries.find((entry) => entry.ref === "native:copilot/hve")
     const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    const cdx = entries.find((entry) => entry.ref === "native:cdx/pstack")
+    const cdx = entries.find((entry) => entry.ref === "native:codex/pstack")
     expect(cpx).toMatchObject({ health: "malformed-output", install: "malformed-output" })
     expect(sandbox).toMatchObject({ health: "healthy", install: "installed" })
     expect(cdx).toMatchObject({ health: "unknown", install: "unknown" })
@@ -250,16 +250,16 @@ describe("aggregateAdminProfiles", () => {
   it("marks a blocked native result as not-installed when its diagnostic mentions not-setup", () => {
     const readinessInputs: ReadonlyArray<AdminReadinessInput> = [
       {
-        ref: "native:cpx/hve",
+        ref: "native:copilot/hve",
         result: {
           kind: ProfileReadinessKind.Blocked,
-          summary: "cpx/hve is not-setup",
+          summary: "copilot/hve is not-setup",
           diagnostic: "Run cpx setup hve, then retry.",
         },
       },
     ]
     const entries = aggregateAdminProfiles(fixtureCatalog(), readinessInputs)
-    expect(entries.find((entry) => entry.ref === "native:cpx/hve")).toMatchObject({
+    expect(entries.find((entry) => entry.ref === "native:copilot/hve")).toMatchObject({
       health: "unhealthy",
       install: "not-installed",
     })
@@ -278,18 +278,18 @@ describe("loadAdminProfileGuideBody", () => {
   })
 
   it("returns the exact on-disk Markdown body for a native identity", async () => {
-    await mkdir(path.join(root, "native", "cpx"), { recursive: true })
+    await mkdir(path.join(root, "native", "copilot"), { recursive: true })
     await writeFile(
-      path.join(root, "native", "cpx", "hve.md"),
+      path.join(root, "native", "copilot", "hve.md"),
       "---\nschemaVersion: 1\ncapabilities: [code-review]\nbestFor: [A, B]\navoidFor: [C, D]\nprerequisites: []\nworkflows:\n  - id: review\n    description: Review a diff.\n    examples: [one, two]\n    promptTemplate: 'Review: {{intent}}'\n---\nHello from the hve guide.\n",
       "utf8",
     )
-    const result = await loadAdminProfileGuideBody(root, { surface: "native", launcher: "cpx", profile: "hve" })
+    const result = await loadAdminProfileGuideBody(root, { surface: "native", launcher: "copilot", profile: "hve" })
     expect(result).toMatchObject({ available: true, body: "Hello from the hve guide." })
   })
 
   it("returns an explicit unavailable result, not a thrown exception, for a missing guide file", async () => {
-    const result = await loadAdminProfileGuideBody(root, { surface: "native", launcher: "cpx", profile: "missing" })
+    const result = await loadAdminProfileGuideBody(root, { surface: "native", launcher: "copilot", profile: "missing" })
     expect(result.available).toBe(false)
     if (!result.available) expect(result.reason).toContain("guide unavailable")
   })
@@ -299,12 +299,12 @@ describe("toProfileGuideIdentity", () => {
   it("builds a native identity, defaulting launcher to empty string when missing", () => {
     expect(
       toProfileGuideIdentity({
-        ref: "native:cpx/hve",
+        ref: "native:copilot/hve",
         surface: "native",
-        launcher: "cpx",
+        launcher: "copilot",
         name: "hve",
         description: "d",
-        commandPath: "/bin/cpx",
+        commandPath: "/bin/trx",
         doctorSupported: true,
         inventorySupported: true,
         health: "healthy",
@@ -314,7 +314,7 @@ describe("toProfileGuideIdentity", () => {
         harnessVersionSupported: true,
         updateCheckStale: false,
       }),
-    ).toEqual({ surface: "native", launcher: "cpx", profile: "hve" })
+    ).toEqual({ surface: "native", launcher: "copilot", profile: "hve" })
   })
 
   it("builds a sandbox identity", () => {

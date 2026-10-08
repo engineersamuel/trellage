@@ -36,7 +36,6 @@ readonly trx_herdr_ledger='[
   { "launcher": "cpx", "profile": "awesome", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrator\u0027s own repo/worktree; never finished." },
   { "launcher": "cpx", "profile": "superpowers", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
   { "launcher": "cdx", "profile": "superpowers", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
-  { "launcher": "grx", "profile": "superpowers", "status": "known-issue", "issue": "B", "notes": "Stuck on an unrecognized Grok first-run data-retention consent screen." },
   { "launcher": "jcx", "profile": "default", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
   { "launcher": "omp", "profile": "local", "status": "known-issue", "issue": "G", "notes": "No local Qwen inference backend is registered with the running copilot-proxy-rs instance; out-of-repo infrastructure provisioning, not a Trellage code defect. driveLoop also masked the real error as an empty submind-answerer response." },
   { "launcher": "prx", "profile": "default", "status": "known-issue", "issue": "E", "notes": "\"agent_not_ready: not an active named agent\"; pane never reached a ready state." }
@@ -57,9 +56,8 @@ usage() {
   cat <<'EOF'
 Usage:
   trx
-  trx --profile agency [COPILOT_ARGS...]
   trx list [--json]
-  trx run LAUNCHER PROFILE [-- ARGS...]
+  trx run HARNESS PROFILE [-- ARGS...]
   trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx guide --next-steps [--model MODEL] [--effort LEVEL]
   trx guide --engagement [--intent QUESTION] [--model MODEL] [--effort LEVEL]
@@ -75,10 +73,9 @@ Usage:
   trx skills update
 
 Select an installed native harness/profile interactively, or list available
-profiles. Bare trx opens the launcher. `--profile agency` directly launches
-`agx/trellage-azure`. `trx run` validates an exact installed
-launcher/profile pair and executes it without the picker. For example:
-`trx run cpx tufte-vdqi`. The picker shows this exact command for each row.
+profiles. Bare trx opens the launcher. `trx run` composes selected profiles
+and launches their canonical harness. For example:
+`trx run copilot tufte-vdqi`. The picker shows this exact command for each row.
 `trx guide`
 recommends a profile and builds prompt candidates; its JSON mode is
 non-interactive and has no launch or Herdr side effects. `trx inventory`
@@ -248,12 +245,14 @@ discover_launcher() {
     return 0
   fi
 
-  discovered="$(command -v "$launcher" 2>/dev/null)" \
-    || die "required launcher not found on PATH: $launcher"
-  [[ "$discovered" == */* ]] || die "unsafe launcher discovered on PATH: $launcher"
-  resolved="$(resolve_file "$discovered")" || die "cannot resolve launcher: $launcher"
-  [[ "$resolved" == "$expected" ]] \
-    || die "launcher is not the owned Trellage runtime: $launcher ($resolved)"
+  # Backends are private installed assets; public aliases are never discovered on PATH.
+  if [[ ! -f "$expected" ]]; then
+    dev_source="$source_workspace/prototypes/$package_dir/bin/$launcher"
+    [[ -f "$dev_source" && -x "$dev_source" && ! -L "$dev_source" ]] \
+      || die "native backend unavailable: $launcher; reinstall trx"
+    printf '%s\n' "$dev_source"
+    return 0
+  fi
 
   require_safe_directory "$runtime" "$runtime" "$launcher runtime"
   require_safe_directory "$runtime/bin" "$runtime/bin" "$launcher runtime bin"
@@ -278,13 +277,15 @@ read_catalog() {
   local executable="$3"
   local output
 
-  local catalog_args=(list --json)
-  if [[ "$mode" == guide && "$launcher" == cpx && "${next_steps_seen:-false}" == false ]]; then
-    catalog_args+=(--cached-capabilities)
-  fi
-  if ! output="$("$executable" "${catalog_args[@]}")"; then
-    die "$launcher catalog interface failed"
-  fi
+  local catalog_path="$(dirname "$(dirname "$executable")")/catalog.json"
+  [[ -f "$catalog_path" && ! -L "$catalog_path" ]] || die "missing private catalog: $launcher"
+  output="$(jq --arg launcher "$launcher" --arg harness "$harness" '
+    {schemaVersion: 1, launcher: $launcher, harness: $harness, sandbox: false,
+     profiles: [.profiles | (if type == "array" then .[] else to_entries[] | .value + {name: .key} end)
+       | .plugin //= null | .source //= null | .standaloneMcps //= []
+       | if .kind == "plugin" or .kind == "skills" then . else del(.kind) end
+       | .marketplace = (if (.marketplace | type) == "string" then {repository: .marketplace} else .marketplace end)]}
+  ' "$catalog_path")" || die "invalid catalog from $launcher"
 
   jq -e --arg launcher "$launcher" --arg harness "$harness" '
     def validHeadless:
@@ -430,24 +431,23 @@ build_choices() {
     --argjson cpxCatalog "$1" \
     --argjson cdxCatalog "$2" \
     --argjson cldxCatalog "$3" \
-    --argjson grxCatalog "$4" \
-    --argjson jcxCatalog "$5" \
-    --argjson ompCatalog "$6" \
-    --argjson picxCatalog "$7" \
-    --argjson prxCatalog "$8" \
-    --argjson fmxCatalog "$9" \
-    --argjson agxCatalog "${10}" \
-    --arg cpxPath "${11}" \
-    --arg cdxPath "${12}" \
-    --arg cldxPath "${13}" \
-    --arg grxPath "${14}" \
-    --arg jcxPath "${15}" \
-    --arg ompPath "${16}" \
-    --arg picxPath "${17}" \
-    --arg prxPath "${18}" \
-    --arg fmxPath "${19}" \
-    --arg agxPath "${20}" \
-    --argjson passthroughArgs "${21}" '
+    --argjson jcxCatalog "$4" \
+    --argjson ompCatalog "$5" \
+    --argjson picxCatalog "$6" \
+    --argjson prxCatalog "$7" \
+    --argjson fmxCatalog "$8" \
+    --argjson agxCatalog "$9" \
+    --arg cpxPath "${10}" \
+    --arg cdxPath "${11}" \
+    --arg cldxPath "${12}" \
+    --arg jcxPath "${13}" \
+    --arg ompPath "${14}" \
+    --arg picxPath "${15}" \
+    --arg prxPath "${16}" \
+    --arg fmxPath "${17}" \
+    --arg agxPath "${18}" \
+    --arg trxPath "$router_command_path" \
+    --argjson passthroughArgs "${19}" '
     def models($catalog; $profile):
       if $catalog.launcher == "cpx" or $catalog.launcher == "cdx" then
         {defaultModel:"gpt-6-astra",models:["gpt-6-astra","gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
@@ -456,11 +456,9 @@ build_choices() {
       elif $catalog.launcher == "omp" and $profile.name == "copilot" then
         {defaultModel:"github-copilot/gpt-5.6-sol:medium",models:["github-copilot/gpt-5.6-sol:medium","github-copilot/gpt-5.6-terra:medium"],modelOverrideSupported:true}
       elif $catalog.launcher == "picx" then
-        {defaultModel:"copilot-proxy-rs/gpt-5.6-sol:medium",models:["copilot-proxy-rs/gpt-5.6-sol:medium"],modelOverrideSupported:false}
+        {defaultModel:"copilot-proxy-rs/gpt-6-astra:medium",models:["copilot-proxy-rs/gpt-6-astra:medium"],modelOverrideSupported:false}
       elif $catalog.launcher == "omp" then
         {defaultModel:"copilot-proxy-rs/qwen3.6-35b-a3b-local",models:["copilot-proxy-rs/qwen3.6-35b-a3b-local"],modelOverrideSupported:false}
-      elif $catalog.launcher == "grx" then
-        {defaultModel:"grok-4.6",models:["grok-4.6"],modelOverrideSupported:true}
       elif $catalog.launcher == "jcx" then
         {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol"],modelOverrideSupported:true}
       elif $catalog.launcher == "prx" then
@@ -476,7 +474,6 @@ build_choices() {
       elif $catalog.launcher == "cdx" then $cdxPath
       elif $catalog.launcher == "cldx" then $cldxPath
       elif $catalog.launcher == "fmx" then $fmxPath
-      elif $catalog.launcher == "grx" then $grxPath
       elif $catalog.launcher == "jcx" then $jcxPath
       elif $catalog.launcher == "omp" then $ompPath
       elif $catalog.launcher == "picx" then $picxPath
@@ -493,7 +490,7 @@ build_choices() {
         harness: $harness,
         profile: $displayProfile,
         commandAlias: $catalog.launcher,
-        commandPath: binary_path($catalog),
+        commandPath: $trxPath,
         profileArgument: $profile.name,
         passthroughArgs: $passthroughArgs,
         description: $profile.description,
@@ -505,13 +502,12 @@ build_choices() {
       } + models($catalog; $profile));
     {
       prompt: "Select a Trellage harness/profile",
-      description: "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) uses Full Access without a native sandbox. Grok (grx) enables its native sandbox; other native profiles are not security boundaries.",
+      description: "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) uses Full Access without a native sandbox; other legacy native profiles are not security boundaries.",
       choices: [
         pair($cpxCatalog),
         pair($cdxCatalog),
         pair($cldxCatalog),
         pair($fmxCatalog),
-        pair($grxCatalog),
         pair($jcxCatalog),
         pair($ompCatalog),
         pair($picxCatalog),
@@ -527,13 +523,12 @@ build_profile_list() {
     --argjson cpxCatalog "$1" \
     --argjson cdxCatalog "$2" \
     --argjson cldxCatalog "$3" \
-    --argjson grxCatalog "$4" \
-    --argjson jcxCatalog "$5" \
-    --argjson ompCatalog "$6" \
-    --argjson picxCatalog "$7" \
-    --argjson prxCatalog "$8" \
-    --argjson fmxCatalog "$9" \
-    --argjson agxCatalog "${10}" \
+    --argjson jcxCatalog "$4" \
+    --argjson ompCatalog "$5" \
+    --argjson picxCatalog "$6" \
+    --argjson prxCatalog "$7" \
+    --argjson fmxCatalog "$8" \
+    --argjson agxCatalog "$9" \
     --argjson herdrLedger "$trx_herdr_ledger" '
     def herdrCompatibility($launcher; $name):
       ([$herdrLedger[] | select(.launcher == $launcher and .profile == $name)] | .[0]) as $entry
@@ -542,9 +537,9 @@ build_profile_list() {
         end;
     def profiles($catalog):
       $catalog.profiles[] | {
-        launcher: $catalog.launcher,
-        harness: $catalog.harness,
-        name,
+        launcher: (if $catalog.launcher == "omp" then "omp" else $catalog.harness end),
+        harness: (if $catalog.launcher == "omp" then "omp" else $catalog.harness end),
+        name: (if $catalog.launcher == "agx" then "azure" elif $catalog.launcher == "omp" and .name == "copilot" then "default" else .name end),
         description,
         headless,
         sandbox: $catalog.sandbox,
@@ -557,7 +552,6 @@ build_profile_list() {
         profiles($cdxCatalog),
         profiles($cldxCatalog),
         profiles($fmxCatalog),
-        profiles($grxCatalog),
         profiles($jcxCatalog),
         profiles($ompCatalog),
         profiles($picxCatalog),
@@ -570,14 +564,14 @@ build_profile_list() {
 
 # Builds the profile-guide catalog shared by `guide`
 # `admin`, and `upgrade all`, writing it to "$1/combined.json". Requires guide_root,
-# runtime, source_workspace, picker_path, cpx/cdx/cldx/grx/jcx/omp/picx/prx (validated launcher
+# runtime, source_workspace, picker_path, cpx/cdx/cldx/jcx/omp/picx/prx (validated launcher
 # paths), and the per-launcher *_catalog variables to already be in scope.
 build_combined_guide_catalog() {
   local out_dir="$1"
   local native_only="${2:-false}"
   local profile_list
   profile_list="$(build_profile_list \
-    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
+    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" \
     "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
     || die 'could not build native profile list'
 
@@ -601,36 +595,9 @@ build_combined_guide_catalog() {
     | "${trellage_launcher[@]}" "$picker_path" enrich-native-list "$guide_root" \
       >"$out_dir/native-public.json" \
     || die 'could not enrich native profile list with guides'
-  jq \
-    --arg cpxPath "$cpx" \
-    --arg cdxPath "$cdx" \
-    --arg cldxPath "$cldx" \
-    --arg fmxPath "$fmx" \
-    --arg grxPath "$grx" \
-    --arg jcxPath "$jcx" \
-    --arg ompPath "$omp" \
-    --arg picxPath "$picx" \
-    --arg prxPath "$prx" \
-    --arg agxPath "$agx" '
-      .profiles |= map(
-        . + {
-          commandPath:
-            (if .launcher == "cpx" then $cpxPath
-             elif .launcher == "cdx" then $cdxPath
-             elif .launcher == "cldx" then $cldxPath
-             elif .launcher == "fmx" then $fmxPath
-             elif .launcher == "grx" then $grxPath
-             elif .launcher == "jcx" then $jcxPath
-             elif .launcher == "omp" then $ompPath
-             elif .launcher == "picx" then $picxPath
-             elif .launcher == "prx" then $prxPath
-             elif .launcher == "agx" then $agxPath
-             else error("unknown native launcher")
-             end)
-        }
-      )
-    ' "$out_dir/native-public.json" >"$out_dir/native.json" \
-    || die 'could not add validated native launcher paths to the guide catalog'
+  jq --arg trxPath "$router_command_path" '.profiles |= map(. + {commandPath: $trxPath})' \
+    "$out_dir/native-public.json" >"$out_dir/native.json" \
+    || die 'could not add router command path to the guide catalog'
   if [[ "$native_only" == true ]]; then
     printf '{"schemaVersion":2,"profiles":[]}\n' >"$out_dir/sandbox.json"
   else
@@ -672,6 +639,9 @@ case "${1-}" in
       :
     elif [[ "$#" -eq 1 && "$1" == --json ]]; then
       list_json=1
+    elif [[ "$#" -ge 1 && "$#" -le 2 && "$1" != -* ]]; then
+      mode='backend'
+      backend_args=(list "$@")
     else
       die 'list accepts only --json'
     fi
@@ -766,55 +736,41 @@ case "${1-}" in
       done
     fi
     ;;
+  models|setup|doctor|repair|workflow-check|harness-version|instances|prepare|submit|receipt|shutdown|skill|skills-update|skills-check|harness-update)
+    mode='backend'
+    backend_args=("$@")
+    ;;
   inventory)
     mode='inventory'
     shift
-    [[ "$#" -eq 3 && "$3" == --json ]] \
+    [[ "$#" -ge 3 && ( "$3" == --json || "$3" == --goal-features ) ]] \
       || die 'inventory requires LAUNCHER PROFILE --json'
     inventory_launcher="$1"
     inventory_profile_arg="$2"
+    case "$1" in agency|codex|claude|copilot|firstmate|jcode|omp|pi|prime) mode='backend'; backend_args=(inventory "$@") ;; esac
     ;;
   run)
-    mode='run'
     shift
-    [[ "$#" -ge 2 ]] || die 'run requires LAUNCHER PROFILE [-- ARGS...]'
-    run_launcher="$1"
-    run_profile="$2"
-    shift 2
-    if [[ "$#" -gt 0 ]]; then
-      [[ "$1" == -- ]] || die 'run arguments must follow --'
-      shift
-    fi
-    [[ "$run_launcher" =~ ^[a-z0-9]+$ ]] || die "invalid launcher: $run_launcher"
-    [[ "$run_profile" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || die "invalid profile: $run_profile"
-    run_args=("$@")
-    ;;
-  --profile)
-    mode='run'
-    shift
-    [[ "$#" -ge 1 ]] || die '--profile requires a profile name'
-    case "$1" in
-      agency)
-        run_launcher='agx'
-        run_profile='trellage-azure'
+    case "${1-}" in
+      '')
+        mode='compose-select'
+        compose_args=()
         ;;
-      *) die "unknown profile alias: $1; use: trx run LAUNCHER PROFILE" ;;
-    esac
-    shift
-    run_args=("$@")
-    ;;
-  --profile=*)
-    mode='run'
-    case "${1#--profile=}" in
-      agency)
-        run_launcher='agx'
-        run_profile='trellage-azure'
+      --dry-run|--no-always|--allow-unproven-isolation|--require-proven-isolation)
+        mode='compose-select'
+        compose_args=("$@")
         ;;
-      '') die '--profile requires a profile name' ;;
-      *) die "unknown profile alias: ${1#--profile=}; use: trx run LAUNCHER PROFILE" ;;
+      pi|copilot|claude|codex|grok|agency|firstmate|jcode|omp|prime|-h|--help|help)
+        mode='compose'
+        compose_args=("$@")
+        [[ "${1-}" == pi || "${1-}" == copilot || "${1-}" == claude || "${1-}" == codex || "${1-}" == grok || "${1-}" == agency || "${1-}" == firstmate || "${1-}" == jcode || "${1-}" == omp || "${1-}" == prime ]] \
+          || compose_args=(--help)
+        ;;
+      *) die "unknown harness: $1; use: trx run copilot|codex|claude|agency|firstmate|jcode|omp|pi|prime|grok PROFILE" ;;
     esac
-    shift
-    run_args=("$@")
+    ;;
+  --profile|--profile=*)
+    die '--profile aliases are retired; use: trx run agency azure [-- ARGS...]'
     ;;
   admin)
     mode='admin'
@@ -828,6 +784,11 @@ case "${1-}" in
       upgrade_usage
       exit 0
     fi
+    if [[ "${1-}" != all ]]; then
+      case "${1-}" in agency|codex|claude|copilot|firstmate|jcode|omp|pi|prime) ;; *) die 'upgrade requires all [--yes | --dry-run] or HARNESS [PROFILE]' ;; esac
+      mode='backend'
+      backend_args=(upgrade "$@")
+    else
     [[ "${1-}" == all && "$#" -le 2 ]] \
       || die 'upgrade requires all [--yes | --dry-run]; use trx upgrade --help'
     if [[ "$#" -eq 2 ]]; then
@@ -838,14 +799,20 @@ case "${1-}" in
       esac
     fi
     upgrade_args=("$@")
+    fi
     ;;
   skills)
     mode='skills'
     shift
-    [[ ("$#" -eq 1 && ("$1" == status || "$1" == update)) \
-      || ("$#" -eq 2 && "$1" == check && "$2" == --json) ]] \
-      || die 'skills requires status, update, or check --json'
-    skills_action="$1"
+    skills_action="${1-}"
+    skills_update_args=()
+    if [[ "$skills_action" == update ]]; then
+      shift
+      [[ "$#" -le 1 && ( "$#" -eq 0 || "$1" == --check || "$1" == --upgrade-pins ) ]] || die 'skills update accepts --check or --upgrade-pins'
+      skills_update_args=("$@")
+    else
+      [[ ( "$#" -eq 1 && "$1" == status ) || ( "$#" -eq 2 && "$1" == check && "$2" == --json ) ]] || die 'skills requires status, update, or check --json'
+    fi
     ;;
   -i|--interactive|--interactive=*)
     die '-i and --interactive have been removed; run trx with no arguments'
@@ -907,7 +874,7 @@ require_source_runtime() {
   . "$source_workspace/scripts/bun-runtime.sh"
   if [[ -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
     trellage_bun_runtime "$source_workspace" || die 'source Bun runtime is unavailable'
-    "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" ensure "$source_workspace" \
+    TRELLAGE_READINESS_MEMO=1 "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/workspace-cli.ts" ensure "$source_workspace" \
       || die 'automatic source runtime preparation failed'
     return
   fi
@@ -979,11 +946,24 @@ load_optional_jev_api_key() {
 
 picker_path="$source_workspace/packages/trellage-launcher/src/cli.tsx"
 floating_skills_manager="$source_workspace/scripts/floating-skills.ts"
-floating_skills_catalog="$source_workspace/skills.json"
+floating_skills_catalog="$source_workspace/config.toml"
 router_command_path="$runtime/bin/trx"
 [[ "$script_path" == "$router_command_path" && -f "$router_command_path" \
     && -x "$router_command_path" && ! -L "$router_command_path" ]] \
   || die 'current router command is missing or unsafe'
+if [[ "$mode" == backend ]]; then
+  require_source_runtime
+  exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/native-run/backend-cli.ts" "${backend_args[@]}"
+fi
+if [[ "$mode" == compose-select ]]; then
+  require_source_runtime
+  exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-launcher/src/run-select-cli.tsx" ${compose_args[@]+"${compose_args[@]}"}
+fi
+if [[ "$mode" == compose ]]; then
+  if [[ "${compose_args[0]-}" == codex && "${compose_args[1]-}" == youtube ]]; then restore_transcript_api_key cdx youtube; fi
+  require_source_runtime
+  exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/native-run/cli.ts" ${compose_args[@]+"${compose_args[@]}"}
+fi
 if [[ "$mode" == skills ]]; then
   require_source_runtime
   [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
@@ -994,47 +974,7 @@ if [[ "$mode" == skills ]]; then
     exec "${trellage_bun[@]}" "$floating_skills_manager" check-shared --catalog "$floating_skills_catalog"
   fi
   if [[ "$skills_action" == update ]]; then
-    "${trellage_bun[@]}" "$floating_skills_manager" update \
-      --catalog "$floating_skills_catalog" \
-      --bundle native-common \
-      || die 'failed to update native skills'
-    "${trellage_bun[@]}" "$floating_skills_manager" update \
-      --catalog "$floating_skills_catalog" \
-      --bundle native-common \
-      --bundle codex-common \
-      --cache "$native_common_root/cdx-skills" \
-      || die 'failed to update native Codex skills'
-    "${trellage_bun[@]}" "$floating_skills_manager" update \
-      --catalog "$floating_skills_catalog" \
-      --bundle native-common \
-      --bundle codex-common \
-      --bundle youtube \
-      --cache "$native_common_root/cdx-youtube-pro-skills" \
-      || die 'failed to update native YouTube skills'
-    for office_variant in office office-charts; do
-      "${trellage_bun[@]}" "$floating_skills_manager" update \
-        --catalog "$floating_skills_catalog" \
-        --bundle native-common \
-        --bundle "claude-$office_variant" \
-        --cache "$native_common_root/cldx-$office_variant-skills" \
-        || die "failed to update native Claude $office_variant skills"
-    done
-    "${trellage_bun[@]}" "$floating_skills_manager" update \
-      --catalog "$floating_skills_catalog" \
-      --bundle omp-community \
-      --cache "$canonical_home/.local/share/trellage/common/omp-community-skills" \
-      || die 'failed to update OMP community skills'
-    "${trellage_bun[@]}" "$floating_skills_manager" update \
-      --catalog "$floating_skills_catalog" \
-      --bundle guide-prompt-master \
-      --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
-      || die 'failed to update guide Prompt Master skill'
-    "${trellage_bun[@]}" "$floating_skills_manager" update \
-      --catalog "$floating_skills_catalog" \
-      --bundle guide-optimize-architecture \
-      --cache "$canonical_home/.local/share/trellage/common/guide-optimize-architecture-skills" \
-      || die 'failed to update guide architecture skills'
-    exit 0
+    exec "${trellage_bun[@]}" "$source_workspace/scripts/skills-update.ts" ${skills_update_args[@]+"${skills_update_args[@]}"}
   fi
   exec "${trellage_bun[@]}" "$floating_skills_manager" "$skills_action" \
     --catalog "$floating_skills_catalog" \
@@ -1079,15 +1019,12 @@ if [[ "$mode" == guide ]] && ((${#guide_args[@]} > 0)); then
   done
 fi
 
-if [[ "$mode" == run && -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
-  require_source_runtime
-fi
+
 
 cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1 '' trellage-copilot-profiles)"
 cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1 trellage-codex-profiles)"
 cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 '' trellage-claude-profiles)"
 fmx="$(discover_launcher fmx .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1 '' trellage-firstmate-profiles)"
-grx="$(discover_launcher grx .managed-by-trellage-grok-profiles trellage-grok-profiles-v1 '' trellage-grok-profiles)"
 jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1 '' trellage-jcode-profiles)"
 omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v2 '' trellage-omp-profiles)"
 picx="$(discover_launcher picx .managed-by-trellage-picx-profiles trellage-picx-profiles-v1 '' trellage-picx-profiles)"
@@ -1100,7 +1037,6 @@ if [[ "$mode" == inventory ]]; then
     cdx) inventory_executable="$cdx" ;;
     cldx) inventory_executable="$cldx" ;;
     fmx) inventory_executable="$fmx" ;;
-    grx) inventory_executable="$grx" ;;
     jcx) inventory_executable="$jcx" ;;
     omp) inventory_executable="$omp" ;;
     picx) inventory_executable="$picx" ;;
@@ -1133,8 +1069,6 @@ read_catalog cldx claude "$cldx" >"$catalog_tmp/cldx" 2>"$catalog_tmp/cldx.err" 
 cldx_catalog_pid=$!
 read_catalog fmx firstmate "$fmx" >"$catalog_tmp/fmx" 2>"$catalog_tmp/fmx.err" &
 fmx_catalog_pid=$!
-read_catalog grx grok "$grx" >"$catalog_tmp/grx" 2>"$catalog_tmp/grx.err" &
-grx_catalog_pid=$!
 read_catalog jcx jcode "$jcx" >"$catalog_tmp/jcx" 2>"$catalog_tmp/jcx.err" &
 jcx_catalog_pid=$!
 read_catalog omp oh-my-pi "$omp" >"$catalog_tmp/omp" 2>"$catalog_tmp/omp.err" &
@@ -1148,13 +1082,13 @@ agx_catalog_pid=$!
 
 catalog_status=0
 for catalog_pid in \
-  "$cpx_catalog_pid" "$cdx_catalog_pid" "$cldx_catalog_pid" "$grx_catalog_pid" \
+  "$cpx_catalog_pid" "$cdx_catalog_pid" "$cldx_catalog_pid" \
   "$fmx_catalog_pid" "$jcx_catalog_pid" "$omp_catalog_pid" "$picx_catalog_pid" \
   "$prx_catalog_pid" "$agx_catalog_pid"; do
   wait "$catalog_pid" || catalog_status=1
 done
 if ((catalog_status != 0)); then
-  for launcher in cpx cdx cldx fmx grx jcx omp picx prx agx; do
+  for launcher in cpx cdx cldx fmx jcx omp picx prx agx; do
     while IFS= read -r diagnostic; do
       printf '%s\n' "$diagnostic" >&2
     done <"$catalog_tmp/$launcher.err"
@@ -1166,7 +1100,6 @@ cpx_catalog="$(<"$catalog_tmp/cpx")"
 cdx_catalog="$(<"$catalog_tmp/cdx")"
 cldx_catalog="$(<"$catalog_tmp/cldx")"
 fmx_catalog="$(<"$catalog_tmp/fmx")"
-grx_catalog="$(<"$catalog_tmp/grx")"
 jcx_catalog="$(<"$catalog_tmp/jcx")"
 omp_catalog="$(<"$catalog_tmp/omp")"
 picx_catalog="$(<"$catalog_tmp/picx")"
@@ -1213,34 +1146,11 @@ fi
 cleanup_catalog_tmp
 trap - EXIT HUP INT TERM
 
-if [[ "$mode" == run ]]; then
-  case "$run_launcher" in
-    cpx) run_executable="$cpx"; run_catalog="$cpx_catalog" ;;
-    cdx) run_executable="$cdx"; run_catalog="$cdx_catalog" ;;
-    cldx) run_executable="$cldx"; run_catalog="$cldx_catalog" ;;
-    fmx) run_executable="$fmx"; run_catalog="$fmx_catalog" ;;
-    grx) run_executable="$grx"; run_catalog="$grx_catalog" ;;
-    jcx) run_executable="$jcx"; run_catalog="$jcx_catalog" ;;
-    omp) run_executable="$omp"; run_catalog="$omp_catalog" ;;
-    picx) run_executable="$picx"; run_catalog="$picx_catalog" ;;
-    prx) run_executable="$prx"; run_catalog="$prx_catalog" ;;
-    agx) run_executable="$agx"; run_catalog="$agx_catalog" ;;
-    *) die "unknown launcher: $run_launcher" ;;
-  esac
-  jq -e --arg profile "$run_profile" \
-    '.profiles | map(.name) | index($profile) != null' \
-    <<<"$run_catalog" >/dev/null \
-    || die "unknown profile for $run_launcher: $run_profile"
-  restore_transcript_api_key "$run_launcher" "$run_profile"
-  if (( ${#run_args[@]} > 0 )); then
-    exec "$run_executable" "$run_profile" "${run_args[@]}"
-  fi
-  exec "$run_executable" "$run_profile"
-fi
+
 
 if [[ "$mode" == list ]]; then
   profile_list="$(build_profile_list \
-    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" \
+    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" \
     "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
     || die 'could not build profile list'
   if ((list_json)); then
@@ -1342,8 +1252,8 @@ require_source_runtime
 passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
   || die 'could not encode launcher arguments'
 choices="$(build_choices \
-  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$grx_catalog" "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog" \
-  "$cpx" "$cdx" "$cldx" "$grx" "$jcx" "$omp" "$picx" "$prx" "$fmx" "$agx" "$passthrough_args")" \
+  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog" \
+  "$cpx" "$cdx" "$cldx" "$jcx" "$omp" "$picx" "$prx" "$fmx" "$agx" "$passthrough_args")" \
   || die 'could not build profile choices'
 
 choice_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-choices.XXXXXX")" \
@@ -1383,10 +1293,6 @@ case "$launcher" in
   fmx)
     selected_launcher="$fmx"
     selected_catalog="$fmx_catalog"
-    ;;
-  grx)
-    selected_launcher="$grx"
-    selected_catalog="$grx_catalog"
     ;;
   jcx)
     selected_launcher="$jcx"

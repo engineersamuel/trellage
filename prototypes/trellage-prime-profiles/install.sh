@@ -32,7 +32,7 @@ installed_extensions_dir="$install_root/assets/extensions"
 installed_extension="$installed_extensions_dir/${managed_extension_name}.ts"
 source_extension="$source_dir/assets/extensions/${managed_extension_name}.ts"
 ownership_marker="$install_root/.managed-by-trellage-prime-profiles"
-command_dir="$local_dir/bin"
+command_dir="$runtime_parent/.native-commands"
 command_path="$command_dir/prx"
 
 require_safe_directory() {
@@ -48,7 +48,7 @@ require_safe_directory() {
 require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 # One-time rename from the short-lived `pax` launcher (collided with macOS
 # /bin/pax). Preserve npm/mise/kernel caches under the new runtime root.
@@ -150,3 +150,6 @@ fi
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
 printf 'Installed prx at %s\n' "$command_path"
+
+# Retire only the old public symlink; retain the installed backend and runtime.
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" prx "$installed_launcher" "$ownership_marker" "$ownership_value"

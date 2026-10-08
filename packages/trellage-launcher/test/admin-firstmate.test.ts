@@ -78,19 +78,19 @@ describe("read-only Admin instance discovery", () => {
     const catalog = mixedInstanceCatalog()
     const descriptors = [missingLegacy, alpha, beta]
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
-      expect(args.slice(0, 3)).toEqual(["instances", "list", "default"])
+      expect(args.slice(0, 4)).toEqual(["instances", "firstmate", "list", "default"])
       return output(instancePage(descriptors, args.includes("--cursor") ? 1 : 0, args.includes("--cursor") ? 2 : 1))
     })
     const rows = await discoverAdminInstanceEntries({ run }, catalog, "/work/entry", undefined, 1500)
     const templates = aggregateAdminProfiles(catalog)
-    expect(rows.map(({ ref }) => ref)).toEqual(["native:cpx/default", ...instanceRows().map(({ ref }) => ref), "sandbox:container"])
+    expect(rows.map(({ ref }) => ref)).toEqual(["native:copilot/default", ...instanceRows().map(({ ref }) => ref), "sandbox:container"])
     expect(rows[0]).toEqual(templates[0])
     expect(rows.at(-1)).toEqual(templates.at(-1))
     expect(rows.every((row) => row.lastCheckedAt === undefined && row.firstmateFleet === undefined)).toBe(true)
     expect(rows.find((row) => row.firstmateInstance?.instanceId === alpha.reference.instanceId)?.health).toBe("unknown")
     expect(catalog.native).toHaveLength(2)
     expect(run).toHaveBeenCalledTimes(2)
-    expect(run.mock.calls.every(([executable, , options]) => executable === "/fixture/fmx" && options?.timeoutMs === 1500 && options.cwd === "/work/entry")).toBe(true)
+    expect(run.mock.calls.every(([executable, , options]) => executable === "/fixture/trx" && options?.timeoutMs === 1500 && options.cwd === "/work/entry")).toBe(true)
   })
 
   it("returns unchanged static coverage without a command when instance support is absent", async () => {
@@ -148,15 +148,15 @@ describe("Firstmate Admin runtime rows", () => {
   it("keeps templates static and gives every instance its own row, label, and guide lookup", () => {
     const catalog = firstmateCatalog()
     const rows = instanceRows()
-    expect(aggregateAdminProfiles(catalog).map(({ ref }) => ref)).toEqual(["native:fmx/default"])
+    expect(aggregateAdminProfiles(catalog).map(({ ref }) => ref)).toEqual(["native:firstmate/default"])
     expect(catalog.native.map(({ name }) => name)).toEqual(["default"])
     expect(rows).toHaveLength(3)
     expect(new Set(rows.map(({ ref }) => ref)).size).toBe(3)
     for (const row of rows) {
       expect(row.name).toBe("default")
-      expect(row.templateRef).toBe("native:fmx/default")
+      expect(row.templateRef).toBe("native:firstmate/default")
       expect(toSelectedProfile(row).profile).toBe("default")
-      expect(toProfileGuideIdentity(row)).toEqual({ surface: "native", launcher: "fmx", profile: "default" })
+      expect(toProfileGuideIdentity(row)).toEqual({ surface: "native", launcher: "firstmate", profile: "default" })
     }
     expect(rows[0]?.firstmateInstance).toBeUndefined()
     expect(rows[0]?.firstmateInstanceDescriptor?.reference).toBeNull()
@@ -164,7 +164,7 @@ describe("Firstmate Admin runtime rows", () => {
     expect(sortAdminProfiles(rows, "name", "asc").map(adminProfileLabel)).toEqual(["default / alpha", "default / beta", "default / legacy"])
     expect(filterAdminProfiles(rows, beta.reference.instanceId).map(({ ref }) => ref)).toEqual([rows[2]!.ref])
     expect(filterAdminProfiles(rows, "/work/alpha")).toEqual([rows[1]])
-    expect(adminFirstmateInstanceRef("native:fmx/default", { ...alpha, name: "renamed" })).toBe(rows[1]?.ref)
+    expect(adminFirstmateInstanceRef("native:firstmate/default", { ...alpha, name: "renamed" })).toBe(rows[1]?.ref)
     const range = adminVisibleRowRange([...rows, ...rows], 5, 24)
     expect(range.start + range.count).toBe(6)
   })
@@ -195,7 +195,7 @@ describe("Firstmate Admin runtime rows", () => {
     expect(rows[0]).toMatchObject({ firstmateDiscovery: "complete", health: "unhealthy", install: "not-installed", stale: false })
     expect(rows.slice(1).map(({ health }) => health)).toEqual(["healthy", "healthy"])
     expect(run.mock.calls.map(([, args]) => args[0])).toEqual(["instances", "instances", "inventory", "inventory", "inventory"])
-    expect(run.mock.calls[0]?.[1]).toEqual(["instances", "list", "default", "--json", "--limit", "32"])
+    expect(run.mock.calls[0]?.[1]).toEqual(["instances", "firstmate", "list", "default", "--json", "--limit", "32"])
     expect(run.mock.calls.slice(2).map(([, args]) => selectorOf(args))).toEqual(["legacy", alpha.reference.instanceId, beta.reference.instanceId])
   })
 
@@ -203,7 +203,7 @@ describe("Firstmate Admin runtime rows", () => {
     const pstackLegacy = parseFirstmateInstanceDescriptorV1({ ...missingLegacy, profile: "pstack-workers", root: "/state/firstmate/pstack-workers", taskIdPrefix: "fmp" })
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
       if (args[0] === "inventory") return output(instanceInventory(pstackLegacy))
-      if (args[2] === "pstack-workers") return output(instancePage([pstackLegacy]))
+      if (args[3] === "pstack-workers") return output(instancePage([pstackLegacy]))
       if (failure === "invalid") return output("{not-json")
       if (failure === "unsafe") return output(JSON.stringify({
         schemaVersion: 1, profile: "default", state: "blocked", instances: [], page: null,
@@ -216,7 +216,7 @@ describe("Firstmate Admin runtime rows", () => {
     expect(failed).toMatchObject({ firstmateDiscovery: "failed", health: "malformed-output", doctorSupported: false })
     expect(failed.healthDiagnostic).toMatch(/list is incomplete/)
     expect(rows.find(({ name }) => name === "pstack-workers")?.firstmateDiscovery).toBe("complete")
-    expect(run.mock.calls.some(([, args]) => args[0] === "inventory" && args[1] === "default")).toBe(false)
+    expect(run.mock.calls.some(([, args]) => args[0] === "inventory" && args[2] === "default")).toBe(false)
     expect(harnessUpdateAllPlanFor(rows).unsupported.map(({ entry }) => entry.ref)).toContain(failed.ref)
   })
 
@@ -243,14 +243,14 @@ describe("Firstmate Admin runtime rows", () => {
     const catalog = firstmateCatalog(false)
     const run = vi.fn<CommandRunner["run"]>().mockResolvedValue(output(instanceInventory(legacy)))
     const rows = await refreshAdminEntries({ run }, catalog, "/work/entry")
-    expect(run.mock.calls.map(([, args]) => args)).toEqual([["inventory", "default", "--json"]])
-    expect(rows[0]).toMatchObject({ ref: "native:fmx/default", name: "default", health: "healthy" })
+    expect(run.mock.calls.map(([, args]) => args)).toEqual([["inventory", "firstmate", "default", "--json"]])
+    expect(rows[0]).toMatchObject({ ref: "native:firstmate/default", name: "default", health: "healthy" })
     expect(rows[0]?.firstmateDiscovery).toBeUndefined()
-    expect(buildAdminLaunchCommand(rows[0]!).args).toEqual(["default"])
-    expect(buildDiagnosticCommand(rows[0]!).args).toEqual(["doctor", "default"])
-    expect(buildHarnessVersionCommand(rows[0]!).args).toEqual(["harness-version", "default"])
-    expect(harnessVersionOperationKeyFor(rows[0]!)).toBe("native:fmx:default")
-    expect(harnessUpdateAllPlanFor(aggregateAdminProfiles(firstmateCatalog())).groups[0]?.steps[0]?.command.args).toEqual(["update", "default"])
+    expect(buildAdminLaunchCommand(rows[0]!).args).toEqual(["run", "firstmate", "default"])
+    expect(buildDiagnosticCommand(rows[0]!).args).toEqual(["doctor", "firstmate", "default"])
+    expect(buildHarnessVersionCommand(rows[0]!).args).toEqual(["harness-version", "firstmate", "default"])
+    expect(harnessVersionOperationKeyFor(rows[0]!)).toBe("native:firstmate:default")
+    expect(harnessUpdateAllPlanFor(aggregateAdminProfiles(firstmateCatalog())).groups[0]?.steps[0]?.command.args).toEqual(["upgrade", "firstmate", "default"])
   })
 })
 
@@ -259,18 +259,18 @@ describe("Firstmate Admin command and cache isolation", () => {
     const rows = namedRows()
     for (const row of rows) {
       const selector = ["--instance", row.firstmateInstance!.instanceId]
-      expect(buildDiagnosticCommand(row).args).toEqual(["doctor", "default", ...selector])
-      expect(buildInventoryCommand(row).args).toEqual(["inventory", "default", ...selector, "--json"])
-      expect(buildUpdateCheckCommand(row).args).toEqual(["update", "--check", "default", ...selector])
-      expect(buildHarnessVersionCommand(row).args).toEqual(["harness-version", "default", ...selector])
+      expect(buildDiagnosticCommand(row).args).toEqual(["doctor", "firstmate", "default", ...selector])
+      expect(buildInventoryCommand(row).args).toEqual(["inventory", "firstmate", "default", ...selector, "--json"])
+      expect(buildUpdateCheckCommand(row).args).toEqual(["upgrade", "firstmate", "default", "--check", ...selector])
+      expect(buildHarnessVersionCommand(row).args).toEqual(["harness-version", "firstmate", "default", ...selector])
     }
-    expect(buildInventoryCommand(instanceRows()[0]!).args).toEqual(["inventory", "default", "--instance", "legacy", "--json"])
+    expect(buildInventoryCommand(instanceRows()[0]!).args).toEqual(["inventory", "firstmate", "default", "--instance", "legacy", "--json"])
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => output(args[0] === "--help"
       ? "launcher skills-check PROFILE\ntrx skills check --json"
-      : args[0] === "update" ? `default is current (${firstmatePin})` : '{"kind":"current"}'))
+      : args[0] === "upgrade" ? `default is current (${firstmatePin})` : '{"kind":"current"}'))
     await checkAdminSkillsUpdates(rows, { run }, "/work/entry", "/fixture/trx", new AbortController().signal)
     await runBatchedVersionChecks(rows, new AdminRunManager({ runner: { run } }), { schemaVersion: 2, entries: {} })
-    for (const verb of ["skills-check", "update"]) {
+    for (const verb of ["skills-check", "upgrade"]) {
       expect(run.mock.calls.filter(([, args]) => args[0] === verb).map(([, args]) => selectorOf(args)))
         .toEqual([alpha.reference.instanceId, beta.reference.instanceId])
     }
@@ -319,8 +319,8 @@ describe("Firstmate Admin command and cache isolation", () => {
       ...missingLegacy, profile: "pstack-workers", root: "/state/firstmate/pstack-workers", taskIdPrefix: "fmp",
     })
     const rows = aggregateAdminInstanceProfiles(catalog, [
-      { ref: "native:fmx/default", state: "complete", instances: [missingLegacy, alpha] },
-      { ref: "native:fmx/pstack-workers", state: "complete", instances: [pstackLegacy, pstack] },
+      { ref: "native:firstmate/default", state: "complete", instances: [missingLegacy, alpha] },
+      { ref: "native:firstmate/pstack-workers", state: "complete", instances: [pstackLegacy, pstack] },
     ]).filter((row) => row.firstmateInstance?.mode === "named")
     const results = reconcileHarnessVersionResults(rows, () => ({
       installed: { kind: "known", version: "a".repeat(40) }, latest: { kind: "known", version: "d".repeat(40) },
@@ -333,12 +333,12 @@ describe("Firstmate Admin command and cache isolation", () => {
     const row = namedRows()[0]!
     const context = createFirstmateInstanceContext(alpha, null, "confirmed-join")
     const launch = buildAdminLaunchCommand(row)
-    expect(launch.args).toEqual(["default", "--instance", alpha.reference.instanceId, "--fmx-instance-context-json", canonicalFirstmateInstanceJson(context)])
+    expect(launch.args).toEqual(["run", "firstmate", "default", "--instance", alpha.reference.instanceId, "--fmx-instance-context-json", canonicalFirstmateInstanceJson(context)])
     const commands = [buildRepairCommand(row), nativeSkillsUpdateCommand(row)!, harnessUpdatePlanFor(row, [row], undefined)!.steps[0]!.command]
     for (const command of commands) {
       expect(selectorOf(command.args)).toBe(alpha.reference.instanceId)
       expect(contextOf(command.args)).toEqual(context)
-      expect(command.args[1]).toBe("default")
+      expect(command.args[2]).toBe("default")
     }
     expect(commands[0]?.args).toContain("--expected-source-revision")
     expect(commands[0]?.args).toContain(firstmatePin)
@@ -415,7 +415,7 @@ describe("Firstmate safe Admin preparation and bulk maintenance", () => {
     expect(isRepairSupported(row)).toBe(false)
     expect(() => buildAdminLaunchCommand(row)).toThrow(/unsafe fleet state/)
     expect(harnessUpdatePlanFor(row, refreshed, undefined)).toBeUndefined()
-    expect(run.mock.calls.every(([, args]) => ["instances", "inventory"].includes(args[0]!))).toBe(true)
+    expect(run.mock.calls.every(([, args]) => ["instances", "firstmate", "inventory"].includes(args[0]!))).toBe(true)
   })
 
   it.each(["creating", "incomplete", "missing-identity", "unsafe"] as const)("keeps %s creation inspectable without offering preparation or setup", (creationState) => {
@@ -447,7 +447,7 @@ describe("Firstmate safe Admin preparation and bulk maintenance", () => {
     expect(outcome.reports[0]?.outcome.results.map(({ ref, state }) => [ref, state])).toEqual([[rows[1]!.ref, "failure"], [rows[2]!.ref, "success"]])
     expect(outcome.skills?.cache).toMatchObject({ state: "failure", diagnostic: expect.stringContaining("another fleet is active") })
     expect(harnessUpdateAllSummary(outcome)).toMatchObject({ updated: 1, failed: 1, unsupported: 1, skillsCacheFailed: true, success: false })
-    expect(run.mock.calls.filter(([, args]) => args[0] === "update")).toHaveLength(2)
+    expect(run.mock.calls.filter(([, args]) => args[0] === "upgrade")).toHaveLength(2)
     expect(run.mock.calls.every(([, args]) => !args.includes("--all") && !["setup", "create", "repair"].includes(args[0] ?? ""))).toBe(true)
   })
 

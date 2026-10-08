@@ -23,7 +23,7 @@ installed_catalog="$install_root/catalog.json"
 installed_version_receipt="$install_root/installed-version"
 legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-picx-profiles"
-command_path="$home/.local/bin/picx"
+command_path="$home/.local/share/trellage/.native-commands/picx"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \

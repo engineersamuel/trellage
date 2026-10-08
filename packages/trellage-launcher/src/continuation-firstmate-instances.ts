@@ -45,7 +45,7 @@ export class ContinuationFirstmateInstances {
   profile(draft: ContinuationDraft, actionId: string, control = false): SelectedProfile {
     const { action, edit } = continuationAction(draft, actionId)
     const raw = selectedProfileFromCatalogRef(this.options.catalog, edit.profileRef ?? action.profileRef, edit.workflowId ?? action.workflowId)
-    if (raw.surface !== "native" || raw.launcher !== "fmx" || raw.orchestration === undefined) return raw
+    if (raw.surface !== "native" || raw.launcher !== "firstmate" || raw.orchestration === undefined) return raw
     const compatible = edit.firstmateInstance === undefined && edit.firstmateSubmission !== undefined
       ? { ...raw, orchestration: savedLegacyFirstmateOrchestration(edit.firstmateSubmission.request.generatedSpec, raw.orchestration) } : raw
     const selected = this.boundProfile(compatible, draft, actionId)
@@ -89,7 +89,7 @@ export class ContinuationFirstmateInstances {
     const { edit } = continuationAction(draft, actionId)
     if (continuationActionLocked(edit)) throw new Error("An accepted or uncertain request cannot select or create another instance.")
     const profile = this.discoveryProfile(draft, actionId)
-    if (profile.surface !== "native" || profile.launcher !== "fmx" || profile.orchestration?.instances === undefined) {
+    if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration?.instances === undefined) {
       throw new Error("This backend does not advertise instance selection. Keep the legacy workflow.")
     }
     return {

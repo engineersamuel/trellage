@@ -45,11 +45,11 @@ const runtimeDraft = (profile: ContinuationFirstmateProfile = "default"): Contin
     assessment: {
       ...draft.assessment,
       actions: draft.assessment.actions.map((action, index) => index === 0 ? action : {
-        ...action, profileRef: "native:cdx/default", workflowId: "review",
+        ...action, profileRef: "native:codex/default", workflowId: "review",
       }),
     },
     actions: draft.actions.map((edit, index) => index === 0 ? edit : {
-      ...edit, profileRef: "native:cdx/default", workflowId: "review",
+      ...edit, profileRef: "native:codex/default", workflowId: "review",
     }),
   })
 }
@@ -85,12 +85,12 @@ const setup = (options: {
   }
   const run = vi.fn<CommandRunner["run"]>(async (executable, args, commandOptions) => {
     if (commandOptions === undefined) throw new Error("Command options are required for fixture control I/O.")
-    expect(executable).toBe("/profiles/fmx")
-    expect(args[1]).toBe(profile)
+    expect(executable).toBe("/profiles/trx")
+    expect(args.slice(1, 3)).toEqual(["firstmate", profile])
     expect(commandOptions.cwd).toBe(saved.snapshot.source.cwd)
     if (args[0] === "inventory") {
       return { exitCode: 0, stderr: "", stdout: JSON.stringify({
-        schemaVersion: 1, launcher: "fmx", profile, readiness: "busy", fleet,
+        schemaVersion: 1, launcher: "firstmate", profile, readiness: "busy", fleet,
       }) }
     }
     if (args[0] === "submit") {
@@ -260,13 +260,13 @@ describe("Firstmate continuation admission and durable updates", () => {
     const catalog = firstmateRuntimeCatalog()
     const limited = parseGuideCatalog(JSON.stringify({
       ...catalog,
-      native: catalog.native.map((entry) => entry.launcher !== "fmx" ? entry : {
+      native: catalog.native.map((entry) => entry.launcher !== "firstmate" ? entry : {
         ...entry, orchestration: { ...entry.orchestration, submission: { schemaVersion: 1, maxRequestBytes: 16_384 } },
       }),
     }))
     const originalIntent = "é".repeat(16_000)
-    const profile = limited.native.find(({ launcher, name }) => launcher === "fmx" && name === "default")!
-    const prepared = prepareGuidePrompt(profile.guide, "review-project", "native:fmx/default", originalIntent, {
+    const profile = limited.native.find(({ launcher, name }) => launcher === "firstmate" && name === "default")!
+    const prepared = prepareGuidePrompt(profile.guide, "review-project", "native:firstmate/default", originalIntent, {
       originalIntent, projectTarget: firstmateProjectC(), orchestration: profile.orchestration!,
     })
     const prompt = renderWorkflowBodyCandidate(prepared.workflow, {
@@ -395,7 +395,7 @@ describe("Firstmate continuation admission and durable updates", () => {
     const request = f.request()
     await seedJournal(f, "unknown")
     f.run.mockImplementation(async (_executable, args) => {
-      expect(args).toEqual(["receipt", "default", "--json"])
+      expect(args).toEqual(["receipt", "firstmate", "default", "--json"])
       const base = firstmateReceipt(request)
       const receipt = kind === "foreign" ? { ...base, fleet: { ...base.fleet, home: "/fixture/foreign-home" } }
         : kind === "refused" ? { ...base, state: "rejected", noteId: null, announcement: "not-needed", error: { code: "unsafe", message: "Lookup refused." } }
@@ -434,7 +434,7 @@ describe("Firstmate continuation admission and durable updates", () => {
     if (initial.assessment === undefined) throw new Error("The fixture needs an assessment.")
     const target = registeredGuideProjectTarget("separate-project")
     const brief = "Inspect the separately registered project. Do not merge."
-    const workflow = prepareGuidePrompt(firstmateGuide, "review-project", "native:fmx/default", brief, {
+    const workflow = prepareGuidePrompt(firstmateGuide, "review-project", "native:firstmate/default", brief, {
       originalIntent: brief, projectTarget: target, orchestration: firstmateOrchestration,
     }).workflow
     const prompt = renderWorkflowBodyCandidate(workflow, { title: "Second project", prompt: "Inspect its failure paths.", notes: "Independent project." }).prompt
@@ -443,14 +443,14 @@ describe("Firstmate continuation admission and durable updates", () => {
       assessment: {
         ...initial.assessment,
         actions: initial.assessment.actions.map((action, index) => index !== 1 ? action : {
-          ...action, brief, profileRef: "native:fmx/default", workflowId: "review-project",
+          ...action, brief, profileRef: "native:firstmate/default", workflowId: "review-project",
         }),
       },
       actions: initial.actions.map((edit, index) => index > 1 ? edit : {
         ...edit, placement: { kind: Placement.NewTab }, sharedWriteConfirmed: true,
         ...(index === 0 ? {} : {
           brief, originalIntent: brief, prompt, projectTarget: target, projectTargetConfirmed: true,
-          selected: true, status: Status.Prepared, profileRef: "native:fmx/default", workflowId: "review-project",
+          selected: true, status: Status.Prepared, profileRef: "native:firstmate/default", workflowId: "review-project",
         }),
       }),
     } })
@@ -502,12 +502,12 @@ describe("Firstmate continuation admission and durable updates", () => {
       }),
     } })
     f.run.mockImplementation(async (executable, args, options) => {
-      expect(executable).toBe("/profiles/fmx")
-      const name = args[1]
+      expect(executable).toBe("/profiles/trx")
+      const name = args[2]
       if (name !== "default" && name !== "pstack-workers") throw new Error("Unknown fleet fixture.")
       if (args[0] === "inventory") return {
         exitCode: 0, stderr: "", stdout: JSON.stringify({
-          schemaVersion: 1, launcher: "fmx", profile: name, readiness: "busy", fleet: firstmateFleetReadiness(name),
+          schemaVersion: 1, launcher: "firstmate", profile: name, readiness: "busy", fleet: firstmateFleetReadiness(name),
         }),
       }
       if (args[0] !== "submit") throw new Error("Unexpected fleet fixture command.")

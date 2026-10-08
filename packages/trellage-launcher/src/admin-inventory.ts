@@ -44,7 +44,7 @@ export type AdminInventoryOutcome = { readonly malformed: true; readonly diagnos
 /** Builds `inventory PROFILE --json` for a profile. Callers must check `entry.inventorySupported` first. */
 export const buildInventoryCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: ["inventory", entry.name, ...adminInstanceSelectorArgs(entry), "--json"],
+  args: ["inventory", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry), "--json"],
 })
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>

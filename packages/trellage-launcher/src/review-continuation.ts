@@ -11,7 +11,7 @@ import type { ReviewContinuation } from "./review-ui.tsx"
 const continuationProfile = "hve"
 
 export const reviewContinuationProfile = (catalog: CombinedGuideCatalog): NativeSelectedProfile => {
-  const entry = catalog.native.find((candidate) => candidate.launcher === "cpx" && candidate.name === continuationProfile)
+  const entry = catalog.native.find((candidate) => candidate.launcher === "copilot" && candidate.name === continuationProfile)
   if (!entry) throw new Error("Copilot hve is unavailable in the Guide catalog.")
   return {
     surface: "native", launcher: entry.launcher, commandPath: entry.commandPath,
@@ -23,7 +23,7 @@ export const reviewContinuationProfileFromPath = (commandPath: string | undefine
   if (!commandPath || !path.isAbsolute(commandPath)) {
     throw new Error("Review Copilot launcher is missing. Open Review through trx guide --review.")
   }
-  return { surface: "native", launcher: "cpx", commandPath, profile: continuationProfile, headlessPrompt: false }
+  return { surface: "native", launcher: "copilot", commandPath, profile: continuationProfile, headlessPrompt: false }
 }
 
 export const reviewContinuationPrompt = (result: ReviewContinuation): string => [
@@ -43,7 +43,7 @@ export const reviewContinuationPrompt = (result: ReviewContinuation): string => 
 ].join("\n")
 
 const currentTerminalReviewCommand = (profile: NativeSelectedProfile, prompt: string, cwd: string): CommandSpec => {
-  const routerArgs = ["run", "cpx", profile.profile, "--", "--plan", "-i", prompt]
+  const routerArgs = ["run", "copilot", profile.profile, "--", "--plan", "-i", prompt]
   const sourceWorktree = process.env.TRELLAGE_TRX_NATIVE_SOURCE === "1" &&
     !!process.env.MISE_PROJECT_ROOT &&
     path.resolve(process.env.MISE_PROJECT_ROOT) === path.resolve(cwd)
@@ -66,14 +66,14 @@ export const executeReviewContinuation = async (
 ): Promise<void> => {
   const prompt = reviewContinuationPrompt(result)
   const launch = buildHerdrGuideLaunch(profile, prompt)
-  if (profile.launcher !== "cpx" || launch.promptDelivery !== "command" ||
-    launch.command.args.length !== 3 || launch.command.args[0] !== profile.profile ||
-    launch.command.args[1] !== "-i" || launch.command.args[2] !== prompt) {
+  if (profile.launcher !== "copilot" || launch.promptDelivery !== "command" ||
+    launch.command.args.length !== 5 || launch.command.args[0] !== "run" || launch.command.args[1] !== "copilot" || launch.command.args[2] !== profile.profile ||
+    launch.command.args[3] !== "-i" || launch.command.args[4] !== prompt) {
     throw new Error("Copilot review continuation needs the selected profile and an argv prompt.")
   }
   const command: CommandSpec = {
     executable: launch.command.executable,
-    args: [profile.profile, "--plan", ...(result.destination === "new-herdr-tab"
+    args: ["run", "copilot", profile.profile, "--plan", ...(result.destination === "new-herdr-tab"
       ? ["--mode", "autopilot", "--allow-all", "--no-ask-user"] : []), "-i", prompt],
   }
   if (result.destination === "current-terminal") {

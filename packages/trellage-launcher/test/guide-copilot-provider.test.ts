@@ -134,10 +134,10 @@ const submittedModelInput = (client: FakeClient): unknown => {
 
 const matchEntries: ReadonlyArray<GuideMatchCatalogEntry> = [
   {
-    ref: "native:cdx/pstack",
+    ref: "native:codex/pstack",
     surface: "native",
     name: "pstack",
-    launcher: "cdx",
+    launcher: "codex",
     description: "Codex host-native launcher.",
     sandbox: false,
     guide: {
@@ -188,7 +188,7 @@ const matchInput: GuideMatchInput = { intent: "Review my pull request", entries:
 const validMatchResponse = JSON.stringify({
   candidates: [
     {
-      profileRef: "native:cdx/pstack",
+      profileRef: "native:codex/pstack",
       workflowId: "review",
       confidence: 0.9,
       reason: "Best fit.",
@@ -213,7 +213,7 @@ const validMatchResponse = JSON.stringify({
 
 const generateInput: GuideGenerateInput = {
   intent: "Review my pull request",
-  profileRef: "native:cdx/pstack",
+  profileRef: "native:codex/pstack",
   workflowId: "review",
   bodyBudget: 4352,
   guide: {
@@ -253,7 +253,7 @@ const validRefineResponse = JSON.stringify({
 
 const optimizeInput: GuideOptimizeInput = {
   targetTool: "codex",
-  profileRef: "native:cdx/hve",
+  profileRef: "native:codex/hve",
   bodyBudget: 4352,
   candidates: JSON.parse(validGenerateResponse).candidates,
   fixedFrame: {
@@ -267,7 +267,7 @@ const goalGenerateInput = (
   task = goalDraft.task,
 ): GuideGenerateInput & { readonly goal: PreparedGuideGoal } => ({
   ...generateInput,
-  profileRef: controller === "codex-goal" ? "native:cdx/pstack" : "native:cldx/default",
+  profileRef: controller === "codex-goal" ? "native:codex/pstack" : "native:claude/default",
   goal: prepareGuideGoal({
     draft: { ...goalDraft, task },
     prompt: "Original authoring document. SCOREBOARD and LOOP PROTOCOL remain review text.",
@@ -302,7 +302,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
 
     expect(result.candidates).toHaveLength(3)
     expect(result.candidates.map((c) => c.profileRef)).toEqual([
-      "native:cdx/pstack",
+      "native:codex/pstack",
       "sandbox:prime-agent",
       "sandbox:other",
     ])
@@ -524,7 +524,7 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
       })
       const completePromptInput: GuideOptimizeInput = {
         targetTool: "jules",
-        profileRef: "native:jcx/foo",
+        profileRef: "native:jcode/foo",
         candidates: JSON.parse(validGenerateResponse).candidates,
       }
 
@@ -569,7 +569,7 @@ describe("CopilotGuideProvider goal boundaries", () => {
   it("ranks a single eligible goal entry and repairs an unsupported model workflow", async () => {
     const input = goalGenerateInput()
     const candidate = {
-      profileRef: "native:cdx/pstack", workflowId: "review", confidence: 1,
+      profileRef: "native:codex/pstack", workflowId: "review", confidence: 1,
       reason: "Matches the approved objective.", tradeoff: "Requires a checkout.",
     }
     const client = new FakeClient([workingModel], [
@@ -580,14 +580,14 @@ describe("CopilotGuideProvider goal boundaries", () => {
     const result = await provider.match({
       intent: input.goal.prompt,
       goal: input.goal,
-      preferredProfileRefs: ["native:cdx/pstack"],
+      preferredProfileRefs: ["native:codex/pstack"],
       entries: [{ ...matchEntries[0]!, goalExecution: { controller: "codex-goal", workflowIds: ["review"] } }],
     })
     expect(result.candidates).toHaveLength(1)
     expect(client.session?.prompts).toHaveLength(2)
     expect(sentPayload(client).goal).toEqual({ ...input.goal.draft, minimumScore: 8 })
     expect(sentPayload(client).intent).toBe(input.goal.draft.task)
-    expect(sentPayload(client).preferredProfileRefs).toEqual(["native:cdx/pstack"])
+    expect(sentPayload(client).preferredProfileRefs).toEqual(["native:codex/pstack"])
     expect(client.session?.prompts[0]).not.toContain("LOOP PROTOCOL")
   })
 

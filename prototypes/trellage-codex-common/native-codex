@@ -54,10 +54,10 @@ superpowers_plugin_repository="https://github.com/obra/superpowers.git"
 # First stable Codex release with the root --no-daemon flag.
 codex_no_daemon_minimum_version=0.156.0
 floating_skills_manager="$script_dir/../common/floating-skills-runtime/scripts/floating-skills.ts"
-floating_skills_catalog="$script_dir/../common/floating-skills-runtime/skills.json"
+floating_skills_catalog="$script_dir/../common/floating-skills-runtime/config.toml"
 if [ ! -f "$floating_skills_manager" ]; then
   floating_skills_manager="$script_dir/../../scripts/floating-skills.ts"
-  floating_skills_catalog="$script_dir/../../skills.json"
+  floating_skills_catalog="$script_dir/../../config.toml"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 session_bridge_source="$script_dir/lib/trellage-session-bridge.py"
@@ -1628,27 +1628,39 @@ build_profile_codex_args() {
   local names
 
   profile_codex_args=()
+  local selected_instructions="" instructions_file="${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}/always-on.md"
+  if [[ -n "${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}" ]]; then
+    [[ -f "$instructions_file" && ! -L "$instructions_file" ]] || die 'unsafe selected instructions'
+    selected_instructions="$(cat "$instructions_file")"
+  fi
+  if [[ "$profile" == youtube ]]; then
+    if [[ -n "$selected_instructions" ]]; then
+      selected_instructions="$youtube_developer_instructions"$'\n\n'"$selected_instructions"
+    else
+      selected_instructions="$youtube_developer_instructions"
+    fi
+  fi
   names="$(jq -r --arg profile "$profile" '.profiles[$profile].requiredEnvironment[]' "$catalog")" \
     || die "invalid required environment: $profile"
-  [ -n "$names" ] || return 0
-  include_only='["PATH","SHELL","HOME","USER","LOGNAME","TMPDIR","TEMP","TMP","LANG","LC_*","TERM","COLORTERM","NO_COLOR","HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","NO_PROXY","http_proxy","https_proxy","all_proxy","no_proxy","SSL_CERT_FILE","SSL_CERT_DIR","CURL_CA_BUNDLE","XDG_CONFIG_HOME","XDG_CACHE_HOME","XDG_DATA_HOME"'
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    include_only="${include_only},\"${name}\""
-  done <<EOF
+  if [ -n "$names" ]; then
+    include_only='["PATH","SHELL","HOME","USER","LOGNAME","TMPDIR","TEMP","TMP","LANG","LC_*","TERM","COLORTERM","NO_COLOR","HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","NO_PROXY","http_proxy","https_proxy","all_proxy","no_proxy","SSL_CERT_FILE","SSL_CERT_DIR","CURL_CA_BUNDLE","XDG_CONFIG_HOME","XDG_CACHE_HOME","XDG_DATA_HOME"'
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      include_only="${include_only},\"${name}\""
+    done <<EOF
 $names
 EOF
-  include_only="${include_only}]"
-  profile_codex_args=(
-    -c shell_environment_policy.inherit=all
-    -c shell_environment_policy.ignore_default_excludes=true
-    -c "shell_environment_policy.include_only=${include_only}"
-  )
-  if [ "$profile" = youtube ]; then
+    include_only="${include_only}]"
     profile_codex_args+=(
-      -c "developer_instructions=\"$(toml_escape_basic_string "$youtube_developer_instructions")\""
+      -c shell_environment_policy.inherit=all
+      -c shell_environment_policy.ignore_default_excludes=true
+      -c "shell_environment_policy.include_only=${include_only}"
     )
   fi
+  if [[ -n "$selected_instructions" ]]; then
+    profile_codex_args+=(-c "developer_instructions=\"$(toml_escape_basic_string "$selected_instructions")\"")
+  fi
+
 }
 
 plugin_name() {
@@ -3311,6 +3323,9 @@ toml_escape_basic_string() {
   local value="$1"
   value="${value//\\/\\\\}"
   value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
   printf '%s' "$value"
 }
 

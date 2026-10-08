@@ -100,7 +100,7 @@ describe("DoctorFailureDiagnosisProvider", () => {
       },
     })
     const result = await provider.diagnose({
-      ref: "native:cpx/hve",
+      ref: "native:copilot/hve",
       name: "hve",
       capturedOutput: "connect ECONNREFUSED",
     })
@@ -136,7 +136,7 @@ describe("DoctorFailureDiagnosisProvider", () => {
     const result = await new DoctorFailureDiagnosisProvider({
       jev: { cwd: "/tmp", client: jev },
       clientFactory: () => client,
-    }).diagnose({ ref: "native:cpx/hve", name: "hve", capturedOutput: "unrecognized" })
+    }).diagnose({ ref: "native:copilot/hve", name: "hve", capturedOutput: "unrecognized" })
     expect(result.summary).toBe("restart the daemon")
     expect(client.session.capturedPrompts).toHaveLength(1)
   })
@@ -151,14 +151,14 @@ describe("DoctorFailureDiagnosisProvider", () => {
     const prompt = client.session.capturedPrompts[0]!
     expect(prompt).toContain(beta.reference.instanceId)
     expect(prompt).toContain(beta.worktree.evidence.locators.worktree)
-    expect(prompt).toContain('"doctor","default","--instance"')
+    expect(prompt).toContain('"doctor","firstmate","default","--instance"')
     expect(prompt).toContain("does not authorize fleet creation, setup, rebinding, or package installation")
   })
 
   it("parses a successful, well-formed response", async () => {
     const client = new FakeClient([okContent])
     const provider = buildProvider(client)
-    const result = await provider.diagnose({ ref: "native:cpx/hve", name: "hve", capturedOutput: "boom" })
+    const result = await provider.diagnose({ ref: "native:copilot/hve", name: "hve", capturedOutput: "boom" })
     expect(result).toMatchObject({ summary: "restart the daemon", suggestedFix: "run `cpx repair hve`", confidence: "high" })
     expect(client.session.disconnectCalls).toBe(1)
     expect(client.deletedSessionIds).toEqual(["session-1"])

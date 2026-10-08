@@ -49,7 +49,7 @@ const validCatalog = {
   sandboxCommandPath: "/opt/trellage/bin/trellage",
   native: [
     {
-      launcher: "cdx",
+      launcher: "codex",
       harness: "codex",
       name: "pstack",
       description: "Codex host-native launcher.",
@@ -57,7 +57,7 @@ const validCatalog = {
       sandbox: false,
       herdrCompatibility: { status: "supported", kind: "native", harness: "codex" },
       guide,
-      commandPath: "/opt/trellage/cdx/bin/cdx",
+      commandPath: "/opt/trellage/codex/bin/trx",
     },
   ],
   sandbox: [
@@ -146,8 +146,8 @@ describe("parseGuideCatalog", () => {
     const entries = guideCatalogEntries(catalog)
 
     expect(entries).toHaveLength(2)
-    expect(entries.map((entry) => entry.ref)).toEqual(["native:cdx/pstack", "sandbox:prime-agent"])
-    expect(entries[0]).toMatchObject({ surface: "native", launcher: "cdx", harness: "codex", name: "pstack" })
+    expect(entries.map((entry) => entry.ref)).toEqual(["native:codex/pstack", "sandbox:prime-agent"])
+    expect(entries[0]).toMatchObject({ surface: "native", launcher: "codex", harness: "codex", name: "pstack" })
     expect(entries[1]).toMatchObject({
       surface: "sandbox",
       harness: "copilot",
@@ -182,7 +182,7 @@ describe("parseGuideCatalog", () => {
     const catalog = parseGuideCatalog(JSON.stringify(validCatalog))
     const index = guideCatalogWorkflowIndex(catalog)
 
-    expect(index.get("native:cdx/pstack")).toEqual(new Set(["review"]))
+    expect(index.get("native:codex/pstack")).toEqual(new Set(["review"]))
     expect(index.get("sandbox:prime-agent")).toEqual(new Set(["review"]))
     expect(index.get("sandbox:unknown")).toBeUndefined()
   })
@@ -323,7 +323,7 @@ describe("parseGuideCatalog", () => {
   it("rejects a non-absolute native commandPath", () => {
     const broken = {
       ...validCatalog,
-      native: [{ ...validCatalog.native[0], commandPath: "cdx/bin/cdx" }],
+      native: [{ ...validCatalog.native[0], commandPath: "codex/bin/trx" }],
     }
     expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
   })
@@ -422,10 +422,10 @@ describe("goal execution catalog validation", () => {
           ...goalCatalog.native,
           {
             ...validCatalog.native[0],
-            launcher: "cldx",
+            launcher: "claude",
             harness: "claude",
             name: "default",
-            commandPath: "/opt/trellage/cldx/bin/cldx",
+            commandPath: "/opt/trellage/claude/bin/trx",
             guide: { ...guide, goalExecution: claudePolicy },
           },
         ],
@@ -465,13 +465,13 @@ describe("goal execution catalog validation", () => {
   })
 
   it.each([
-    ["cdx", "codex", "claude-goal"],
-    ["cldx", "claude", "codex-goal"],
-    ["cdx", "claude", "codex-goal"],
-    ["cldx", "copilot", "claude-goal"],
-    ["cpx", "copilot", "claude-goal"],
-    ["agx", "claude", "claude-goal"],
-    ["fmx", "firstmate", "codex-goal"],
+    ["codex", "codex", "claude-goal"],
+    ["claude", "claude", "codex-goal"],
+    ["codex", "claude", "codex-goal"],
+    ["claude", "copilot", "claude-goal"],
+    ["copilot", "copilot", "claude-goal"],
+    ["agency", "claude", "claude-goal"],
+    ["firstmate", "firstmate", "codex-goal"],
     ["omp", "pi", "claude-goal"],
   ])("rejects an unsupported Native runtime binding: %s / %s / %s", (launcher, harness, controller) => {
     const source = {
@@ -575,7 +575,7 @@ describe("compactProfileGuide / guideMatchCatalogEntries", () => {
     expect(matchEntries).toHaveLength(2)
     expect(matchEntries).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ ref: "native:cdx/pstack", harness: "codex" }),
+        expect.objectContaining({ ref: "native:codex/pstack", harness: "codex" }),
         expect.objectContaining({ ref: "sandbox:prime-agent", harness: "copilot" }),
       ]),
     )

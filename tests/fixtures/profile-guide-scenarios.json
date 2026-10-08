@@ -4,16 +4,16 @@
     {
       "id": "office-document-editing",
       "intent": "Create and edit Word documents and Excel workbooks with the Anthropic document skills in an isolated Claude office profile.",
-      "expectedProfiles": ["native:cldx/office"],
-      "expectedWorkflows": {"native:cldx/office": "office-documents"},
+      "expectedProfiles": ["native:claude/office"],
+      "expectedWorkflows": {"native:claude/office": "office-documents"},
       "maxRank": 3,
       "excludedProfiles": []
     },
     {
       "id": "office-chart-heavy-deck",
       "intent": "Build a chart-heavy presentation with many charts and data-heavy slide layouts using the optional slide-maker builder.",
-      "expectedProfiles": ["native:cldx/office-charts"],
-      "expectedWorkflows": {"native:cldx/office-charts": "chart-heavy-presentations"},
+      "expectedProfiles": ["native:claude/office-charts"],
+      "expectedWorkflows": {"native:claude/office-charts": "chart-heavy-presentations"},
       "maxRank": 3,
       "excludedProfiles": []
     },
@@ -41,30 +41,30 @@
     {
       "id": "visual-html-prototype",
       "intent": "Create a self-contained interactive HTML wireframe and architecture diagram that I can review in a browser.",
-      "expectedProfiles": ["native:cpx/plannotator"],
+      "expectedProfiles": ["native:copilot/plannotator"],
       "maxRank": 3,
       "excludedProfiles": []
     },
     {
       "id": "tufte-quantitative-chart",
       "intent": "Critique this misleading quantitative chart with Tufte principles, then rebuild it as a static SVG with direct labels and minimal chartjunk.",
-      "expectedProfiles": ["native:cpx/tufte-vdqi"],
+      "expectedProfiles": ["native:copilot/tufte-vdqi"],
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/plannotator", "sandbox:claude-frontend-design"]
+      "excludedProfiles": ["native:copilot/plannotator", "sandbox:claude-frontend-design"]
     },
     {
       "id": "tufte-inflation-adjusted-series",
       "intent": "Adjust this multi-year revenue series with real CPI values, then create a Tufte time-series SVG labeled in constant dollars.",
-      "expectedProfiles": ["native:cpx/tufte-vdqi"],
+      "expectedProfiles": ["native:copilot/tufte-vdqi"],
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/plannotator", "sandbox:claude-frontend-design"]
+      "excludedProfiles": ["native:copilot/plannotator", "sandbox:claude-frontend-design"]
     },
     {
       "id": "tufte-small-multiples",
       "intent": "Compare many regional series with shared-scale small multiples instead of an unreadable overplotted chart.",
-      "expectedProfiles": ["native:cpx/tufte-vdqi"],
+      "expectedProfiles": ["native:copilot/tufte-vdqi"],
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/plannotator", "sandbox:claude-frontend-design"]
+      "excludedProfiles": ["native:copilot/plannotator", "sandbox:claude-frontend-design"]
     },
     {
       "id": "voice-first-social-post",
@@ -85,7 +85,7 @@
       "intent": "Design and polish a product landing page with one clear CTA, strong typography, and GSAP motion while avoiding generic AI design.",
       "expectedProfiles": ["sandbox:claude-frontend-design"],
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/plannotator"]
+      "excludedProfiles": ["native:copilot/plannotator"]
     },
     {
       "id": "containerized-claude-ecc-delivery",
@@ -100,127 +100,120 @@
       "expectedProfiles": ["sandbox:copilot-hve"],
       "expectedWorkflows": { "sandbox:copilot-hve": "rpi-agent-cycle" },
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/hve"]
+      "excludedProfiles": ["native:copilot/hve"]
     },
     {
       "id": "native-hve-customer-discovery",
       "intent": "We're starting discovery with a customer on a new capability and need to validate the problem with Design Thinking before we build anything.",
-      "expectedProfiles": ["native:cpx/hve"],
-      "expectedWorkflows": { "native:cpx/hve": "customer-discovery" },
+      "expectedProfiles": ["native:copilot/hve"],
+      "expectedWorkflows": { "native:copilot/hve": "customer-discovery" },
       "maxRank": 1,
       "excludedProfiles": ["sandbox:copilot-hve"]
     },
     {
       "id": "native-hve-assumption-test",
       "intent": "Design a Minimum Viable Experiment with our customer to test a falsifiable feasibility assumption before investment. Agree on measurement criteria and independent partner replication, not a product demo.",
-      "expectedProfiles": ["native:cpx/hve"],
-      "expectedWorkflows": { "native:cpx/hve": "test-assumption" },
+      "expectedProfiles": ["native:copilot/hve"],
+      "expectedWorkflows": { "native:copilot/hve": "test-assumption" },
       "maxRank": 1,
       "excludedProfiles": ["sandbox:copilot-hve"]
     },
     {
       "id": "native-hve-business-requirements",
       "intent": "We understand the customer problem. Use BRD Builder to agree on solution-neutral business requirements, constraints, and explicit signoff with requirement IDs. Do not restart discovery or implement the product.",
-      "expectedProfiles": ["native:cpx/hve"],
-      "expectedWorkflows": { "native:cpx/hve": "business-requirements" },
+      "expectedProfiles": ["native:copilot/hve"],
+      "expectedWorkflows": { "native:copilot/hve": "business-requirements" },
       "maxRank": 1,
       "excludedProfiles": ["sandbox:copilot-hve"]
     },
     {
-      "id": "grok-workspace-sandbox-tdd",
-      "intent": "Use Grok with network access and an OS-level workspace-write sandbox to debug this failure test-first with Superpowers.",
-      "expectedProfiles": ["native:grx/superpowers"],
-      "maxRank": 3,
-      "excludedProfiles": ["native:cpx/superpowers"]
-    },
-    {
       "id": "codex-native-superpowers",
       "intent": "Use host-native Codex with Full Access and the Codex-adapted Superpowers workflow to plan, implement with TDD, review, and finish this branch.",
-      "expectedProfiles": ["native:cdx/superpowers"],
+      "expectedProfiles": ["native:codex/superpowers"],
       "maxRank": 3,
       "excludedProfiles": ["sandbox:codex-superpowers"]
     },
     {
       "id": "youtube-transcript-research",
       "intent": "Search YouTube for this topic, compare evidence from several video transcripts, and review the related channel and playlist for recurring claims.",
-      "expectedProfiles": ["native:cdx/youtube"],
+      "expectedProfiles": ["native:codex/youtube"],
       "maxRank": 3,
       "excludedProfiles": ["sandbox:claude-social-media"]
     },
     {
       "id": "copilot-superpowers-tdd",
       "intent": "Use GitHub Copilot CLI with Superpowers to reproduce this bug, implement the fix with TDD, review it, and finish the branch.",
-      "expectedProfiles": ["native:cpx/superpowers"],
+      "expectedProfiles": ["native:copilot/superpowers"],
       "maxRank": 3,
-      "excludedProfiles": ["native:grx/superpowers"]
+      "excludedProfiles": []
     },
     {
       "id": "copilot-implement-only-no-publish",
       "intent": "Use GitHub Copilot CLI to implement the approved migration plan test-first, verify it locally, and stop before committing or pushing anything.",
-      "expectedProfiles": ["native:cpx/superpowers"],
+      "expectedProfiles": ["native:copilot/superpowers"],
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/compound-engineering"]
+      "excludedProfiles": ["native:copilot/compound-engineering"]
     },
     {
       "id": "copilot-compound-autonomous-lfg-delivery",
       "intent": "The approved requirements are in docs/plans/tenant-api-keys-plan.md. Implement them without check-ins, simplify the code, review and fix it, browser test it, commit, push, open the pull request, watch CI, and stop before merge.",
-      "expectedProfiles": ["native:cpx/compound-engineering"],
+      "expectedProfiles": ["native:copilot/compound-engineering"],
       "expectedWorkflows": {
-        "native:cpx/compound-engineering": "autonomous-lfg-plan-to-pr"
+        "native:copilot/compound-engineering": "autonomous-lfg-plan-to-pr"
       },
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/superpowers"]
+      "excludedProfiles": ["native:copilot/superpowers"]
     },
     {
       "id": "copilot-compound-repository-learning",
       "intent": "Capture one verified root cause/prevention pattern as repository-local solution knowledge so future plans can reuse the learning.",
-      "expectedProfiles": ["native:cpx/compound-engineering"],
+      "expectedProfiles": ["native:copilot/compound-engineering"],
       "expectedWorkflows": {
-        "native:cpx/compound-engineering": "capture-verified-repository-learning"
+        "native:copilot/compound-engineering": "capture-verified-repository-learning"
       },
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/hve", "native:cpx/superpowers"]
+      "excludedProfiles": ["native:copilot/hve", "native:copilot/superpowers"]
     },
     {
       "id": "copilot-compound-earlier-solutions-plan",
       "intent": "Turn the requirements-only plan at docs/plans/webhook-retries-plan.md into an implementation-ready plan by reusing relevant solutions from earlier work in this codebase.",
-      "expectedProfiles": ["native:cpx/compound-engineering"],
+      "expectedProfiles": ["native:copilot/compound-engineering"],
       "expectedWorkflows": {
-        "native:cpx/compound-engineering": "plan-with-compound-knowledge"
+        "native:copilot/compound-engineering": "plan-with-compound-knowledge"
       },
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/hve", "native:cpx/superpowers"]
+      "excludedProfiles": ["native:copilot/hve", "native:copilot/superpowers"]
     },
     {
       "id": "copilot-compound-past-bugs-plan",
       "intent": "Use what we learned from past bugs to plan this change.",
-      "expectedProfiles": ["native:cpx/compound-engineering"],
+      "expectedProfiles": ["native:copilot/compound-engineering"],
       "expectedWorkflows": {
-        "native:cpx/compound-engineering": "plan-with-compound-knowledge"
+        "native:copilot/compound-engineering": "plan-with-compound-knowledge"
       },
       "maxRank": 3,
-      "excludedProfiles": ["native:cpx/hve", "native:cpx/superpowers"]
+      "excludedProfiles": ["native:copilot/hve", "native:copilot/superpowers"]
     },
     {
       "id": "isolated-claude-rundown",
       "intent": "Use an isolated host-native Claude Opus session for this code review, then give me a concise Rundown-style status summary with a checklist.",
-      "expectedProfiles": ["native:cldx/default"],
+      "expectedProfiles": ["native:claude/default"],
       "maxRank": 3,
       "excludedProfiles": []
     },
     {
       "id": "awesome-copilot-assets",
       "intent": "Inspect this repository and recommend curated GitHub Copilot agents, instruction files, and skills that we should import from Awesome Copilot.",
-      "expectedProfiles": ["native:cpx/awesome"],
+      "expectedProfiles": ["native:copilot/awesome"],
       "maxRank": 3,
       "excludedProfiles": []
     },
     {
       "id": "agency-read-only-azure-inventory",
       "intent": "Use Agency-managed Copilot in this Trellage worktree to inspect Azure subscriptions, resource groups, registries, storage accounts, and resource health without changing anything.",
-      "expectedProfiles": ["native:agx/trellage-azure"],
+      "expectedProfiles": ["native:agency/azure"],
       "expectedWorkflows": {
-        "native:agx/trellage-azure": "inspect-azure-inventory"
+        "native:agency/azure": "inspect-azure-inventory"
       },
       "maxRank": 3,
       "excludedProfiles": []
@@ -228,7 +221,7 @@
     {
       "id": "omp-copilot-model-catalog",
       "intent": "Use OMP with native GitHub Copilot authentication, choose from its full model catalog, and fan this refactor out to typed subagents with debugger support.",
-      "expectedProfiles": ["native:omp/copilot"],
+      "expectedProfiles": ["native:omp/default"],
       "maxRank": 3,
       "excludedProfiles": ["native:omp/local"]
     },
@@ -237,26 +230,26 @@
       "intent": "Run OMP without a GitHub credential on the local Qwen route, while keeping its debugger, browser, and typed subagent orchestration.",
       "expectedProfiles": ["native:omp/local"],
       "maxRank": 3,
-      "excludedProfiles": ["native:omp/copilot"]
+      "excludedProfiles": ["native:omp/default"]
     },
     {
       "id": "jcode-semantic-memory",
       "intent": "Recall decisions from earlier sessions with semantic memory, then use a real Firefox browser and a coordinated agent swarm to continue the work.",
-      "expectedProfiles": ["native:jcx/default"],
+      "expectedProfiles": ["native:jcode/default"],
       "maxRank": 3,
       "excludedProfiles": []
     },
     {
       "id": "pi-extension-guided-coding",
       "intent": "Use Pi's goal tracking, plan annotation, fast context tools, and dynamic subagents to coordinate this daily coding task.",
-      "expectedProfiles": ["native:picx/default"],
+      "expectedProfiles": ["native:pi/default"],
       "maxRank": 3,
       "excludedProfiles": ["sandbox:pi-oh-my-pi"]
     },
     {
       "id": "native-prime-clarifying-analysis",
       "intent": "Run Prime Agent directly on the host, ask me questions instead of guessing, and keep a persistent IPython RLM analysis session across turns.",
-      "expectedProfiles": ["native:prx/default"],
+      "expectedProfiles": ["native:prime/default"],
       "maxRank": 3,
       "excludedProfiles": ["sandbox:prime-agent"]
     },
@@ -279,63 +272,63 @@
       "intent": "Use container-isolated Codex for a multi-day implementation marathon with brainstorm, plan, TDD, debugging, review, and parallel full-stack agent roles.",
       "expectedProfiles": ["sandbox:codex-superpowers"],
       "maxRank": 3,
-      "excludedProfiles": ["native:cdx/superpowers"]
+      "excludedProfiles": ["native:codex/superpowers"]
     },
     {
       "id": "poteto-mode-structured-engineering",
       "intent": "Drive a substantial multi-stage engineering change with Poteto Mode playbook selection, controlled delegation, verification checkpoints, and a decision trail.",
-      "expectedProfiles": ["native:cdx/pstack"],
+      "expectedProfiles": ["native:codex/pstack"],
       "maxRank": 3,
       "excludedProfiles": []
     },
     {
       "id": "firstmate-fleet-delivery",
       "intent": "Coordinate several related engineering tasks across isolated Git worktrees, supervise the workers, and return the integrated delivery outcome without making me manage each agent.",
-      "expectedProfiles": ["native:fmx/default"],
+      "expectedProfiles": ["native:firstmate/default"],
       "maxRank": 3,
-      "excludedProfiles": ["native:fmx/pstack-workers"]
+      "excludedProfiles": ["native:firstmate/pstack-workers"]
     },
     {
       "id": "firstmate-default-explicit",
       "intent": "Use fmx default to orchestrate work in my named Firstmate project.",
-      "expectedProfiles": ["native:fmx/default"],
+      "expectedProfiles": ["native:firstmate/default"],
       "maxRank": 1,
-      "excludedProfiles": ["native:fmx/pstack-workers", "native:cdx/pstack"]
+      "excludedProfiles": ["native:firstmate/pstack-workers", "native:codex/pstack"]
     },
     {
       "id": "firstmate-lean-pstack-workers",
       "intent": "Run a Firstmate fleet for a risky refactor and require every worker to make the smallest safe change, name its blast radius, and prove the result with real artifacts without starting a second router.",
-      "expectedProfiles": ["native:fmx/pstack-workers"],
+      "expectedProfiles": ["native:firstmate/pstack-workers"],
       "maxRank": 3,
-      "excludedProfiles": ["native:cdx/pstack"]
+      "excludedProfiles": ["native:codex/pstack"]
     },
     {
       "id": "firstmate-pstack-worker-explicit-singular",
       "intent": "Use fmx pstack-worker to orchestrate one measured repository optimization with explicit blast radius and verification evidence.",
-      "expectedProfiles": ["native:fmx/pstack-workers"],
+      "expectedProfiles": ["native:firstmate/pstack-workers"],
       "maxRank": 1,
-      "excludedProfiles": ["native:fmx/default", "native:cdx/pstack"]
+      "excludedProfiles": ["native:firstmate/default", "native:codex/pstack"]
     },
     {
       "id": "fleet-status-without-new-workers",
       "intent": "Review the current tasks, retained scout reports, blockers, and pending human decisions in my existing fleet. Do not dispatch new workers or approve held work.",
-      "expectedProfiles": ["native:fmx/default"],
+      "expectedProfiles": ["native:firstmate/default"],
       "maxRank": 3,
-      "excludedProfiles": ["native:cdx/pstack"]
+      "excludedProfiles": ["native:codex/pstack"]
     },
     {
       "id": "firstmate-ordinary-project-memory",
       "intent": "Use fmx default and ordinary Stow to retain confirmed findings, decisions, and supporting references for my registered project without creating skills or implementation workers.",
-      "expectedProfiles": ["native:fmx/default"],
+      "expectedProfiles": ["native:firstmate/default"],
       "maxRank": 1,
-      "excludedProfiles": ["native:fmx/pstack-workers", "native:cdx/pstack"]
+      "excludedProfiles": ["native:firstmate/pstack-workers", "native:codex/pstack"]
     },
     {
       "id": "firstmate-notify-only-condition",
-      "intent": "Use native:fmx/pstack-workers to watch my fleet's existing review gate. Confirm the condition and deadline, then notify me without dispatching another agent or merging anything.",
-      "expectedProfiles": ["native:fmx/pstack-workers"],
+      "intent": "Use native:firstmate/pstack-workers to watch my fleet's existing review gate. Confirm the condition and deadline, then notify me without dispatching another agent or merging anything.",
+      "expectedProfiles": ["native:firstmate/pstack-workers"],
       "maxRank": 1,
-      "excludedProfiles": ["native:fmx/default", "native:cdx/pstack"]
+      "excludedProfiles": ["native:firstmate/default", "native:codex/pstack"]
     }
   ]
 }

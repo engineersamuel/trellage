@@ -329,7 +329,7 @@ export const sameFirstmateInstance = (
 
 /** Mode/home/source/runtime conflicts within this key must be rejected, not split into another group. */
 export const firstmateInstanceKey = (reference: FirstmateInstanceReferenceV1): string =>
-  `native:fmx/${reference.profile}:${reference.instanceId}`
+  `native:firstmate/${reference.profile}:${reference.instanceId}`
 
 export const validateFirstmateInstanceFleet = (
   reference: FirstmateInstanceReferenceV1, fleet: FirstmateFleetIdentityV1, field = "instance reference",

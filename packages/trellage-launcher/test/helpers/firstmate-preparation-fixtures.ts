@@ -19,9 +19,9 @@ export const preparationPlan = parseFirstmatePrerequisiteInstallPlanV1({
 
 export const preparationProfile = (profile = "default"): NativeSelectedProfile => ({
   surface: "native",
-  launcher: "fmx",
+  launcher: "firstmate",
   profile,
-  commandPath: "/fixture/managed launchers/fmx",
+  commandPath: "/fixture/managed launchers/trx",
   headlessPrompt: false,
   orchestration: parseFirstmateOrchestrationV1({
     schemaVersion: 1, kind: "firstmate", sourceRevision: preparationRevision,
@@ -90,5 +90,5 @@ export const missingToolsFleet = (
 }
 
 export const preparationInventory = (fleet: FirstmateFleetReadinessV1): string => JSON.stringify({
-  schemaVersion: 1, launcher: "fmx", profile: fleet.identity?.profile ?? "default", readiness: "unhealthy", fleet,
+  schemaVersion: 1, launcher: "firstmate", profile: fleet.identity?.profile ?? "default", readiness: "unhealthy", fleet,
 })

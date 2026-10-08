@@ -60,7 +60,7 @@ describe("harness version cache schema", () => {
     const cache: AdminHarnessVersionCacheRecord = {
       schemaVersion: 2,
       entries: {
-        "native:grx": {
+        "native:codex": {
           checkedAt: 1000,
           result: {
             installed: { kind: "known", version: "1.0.3" },

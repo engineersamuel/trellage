@@ -42,7 +42,7 @@ export const engagementAssessment: EngagementAssessment = {
       expectedOutput: "A draft workshop brief with a learning objective, participant roles, and unresolved questions.",
       reviewer: "Engagement lead and customer sponsor",
       citations: [engagementCitation],
-      workflow: { profileRef: "native:cpx/hve", workflowId: "customer-discovery" },
+      workflow: { profileRef: "native:copilot/hve", workflowId: "customer-discovery" },
     },
   ],
 }
@@ -58,11 +58,11 @@ export const createEngagementFixture = async (directory: string) => {
     sandbox: [],
     native: [
       {
-        launcher: "cpx",
+        launcher: "copilot",
         harness: "copilot",
         name: "hve",
         description: "Native HVE",
-        commandPath: "/fixture/cpx",
+        commandPath: "/fixture/trx",
         sandbox: false,
         herdrCompatibility: { status: "untested" },
         headless: {
@@ -82,7 +82,7 @@ export const createEngagementFixture = async (directory: string) => {
           effortOverride: false,
           testedHarnessVersion: null,
         },
-        guide: (await loadProfileGuide(engagementGuideRoot, { surface: "native", launcher: "cpx", profile: "hve" }))
+        guide: (await loadProfileGuide(engagementGuideRoot, { surface: "native", launcher: "copilot", profile: "hve" }))
           .guide,
       },
     ],

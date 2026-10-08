@@ -30,14 +30,14 @@ const catalog = parseGuideCatalog(
     sandbox: [],
     native: [
       {
-        launcher: "cpx",
+        launcher: "copilot",
         name: "reviewer",
         harness: "copilot",
         description: "Fixture reviewer",
-        commandPath: "/fixture/cpx",
+        commandPath: "/fixture/trx",
         sandbox: false,
         herdrCompatibility: { status: "supported" },
-        guide: parseProfileGuide("native/cpx/reviewer.md", guideSource(fixtureProfile("reviewer"))).guide,
+        guide: parseProfileGuide("native/copilot/reviewer.md", guideSource(fixtureProfile("reviewer"))).guide,
         headless: {
           schemaVersion: 1,
           prompt: true,
@@ -184,7 +184,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
   it("starts a fresh agent through normal argv delivery in the same worktree and preserves staging", async () => {
     const f = await fixture()
     const index = await f.git("diff", "--cached")
-    const receipt = await f.services.execute(f.request, "native:cpx/reviewer", f.signal)
+    const receipt = await f.services.execute(f.request, "native:copilot/reviewer", f.signal)
     expect(receipt.paneId).toBe("w1:new")
     const commands = f.calls.filter((call) => call.executable === "herdr")
     expect(commands[0]).toEqual({
@@ -195,7 +195,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     expect(commands).toHaveLength(2)
     expect(commands[1]?.cwd).toBe(f.root)
     expect(commands[1]?.args.slice(0, 3)).toEqual(["pane", "run", "w1:new"])
-    expect(commands[1]?.args[3]).toContain("env TRELLAGE_AUTOMATION=1 /fixture/cpx reviewer -i ")
+    expect(commands[1]?.args[3]).toContain("env TRELLAGE_AUTOMATION=1 /fixture/trx run copilot reviewer -i ")
     expect(commands[1]?.args[3]).toContain('"selectedPaths"')
     expect(commands[1]?.args[3]).toContain("Do not remove the retry bound.")
     expect(await f.git("diff", "--cached")).toBe(index)
@@ -205,12 +205,12 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
   it("requires confirmation and refuses another active writer without allocating a pane", async () => {
     const f = await fixture()
     await expect(
-      f.services.execute({ ...f.request, otherEditorsStopped: false }, "native:cpx/reviewer", f.signal),
+      f.services.execute({ ...f.request, otherEditorsStopped: false }, "native:copilot/reviewer", f.signal),
     ).rejects.toThrow("Confirm")
     f.list.mockResolvedValue([{ pane_id: "other", agent: "copilot", agent_status: "working", cwd: f.root }])
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("Stop or finish")
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("Stop or finish")
     f.list.mockResolvedValue([{ pane_id: "other", agent: "copilot", agent_status: "working" }])
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
       "no verified working directory",
     )
     expect(f.split).not.toHaveBeenCalled()
@@ -227,7 +227,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       ...f.options,
       context: { ...f.options.context, surface: "pane" },
     })
-    expect((await services.execute(f.request, "native:cpx/reviewer", f.signal)).paneId).toBe("w1:new")
+    expect((await services.execute(f.request, "native:copilot/reviewer", f.signal)).paneId).toBe("w1:new")
     expect(f.processReader).toHaveBeenCalledWith("w1:origin", {
       socketPath: "/fixture/unavailable-socket",
       signal: f.signal,
@@ -245,14 +245,14 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       ...f.options,
       context: { ...f.options.context, surface: "pane" },
     })
-    await expect(services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("w1:other")
+    await expect(services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("w1:other")
     expect(f.split).not.toHaveBeenCalled()
   })
 
   it("does not exempt a borrowed pane or the agent underneath a popup", async () => {
     const f = await fixture()
     f.list.mockResolvedValue([{ pane_id: "w1:origin", agent: "copilot", agent_status: "working", cwd: f.root }])
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("Stop or finish")
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("Stop or finish")
     expect(f.processReader).not.toHaveBeenCalled()
     f.processReader.mockResolvedValue({
       pane_id: "w1:origin",
@@ -262,7 +262,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       ...f.options,
       context: { ...f.options.context, surface: "pane" },
     })
-    await expect(services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("Stop or finish")
+    await expect(services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("Stop or finish")
     expect(f.split).not.toHaveBeenCalled()
   })
 
@@ -276,11 +276,11 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       pane_id: "w1:other",
       foreground_processes: [{ pid: process.pid }],
     })
-    await expect(services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("different Guide pane")
+    await expect(services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("different Guide pane")
     f.processReader.mockResolvedValueOnce({ pane_id: "w1:origin" })
-    await expect(services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("must be an array")
+    await expect(services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("must be an array")
     f.processReader.mockRejectedValueOnce(new Error("Process metadata unavailable"))
-    await expect(services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+    await expect(services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
       "Process metadata unavailable",
     )
     expect(f.split).not.toHaveBeenCalled()
@@ -289,14 +289,14 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
   it("preserves metadata lookup failures instead of treating writer status as safe", async () => {
     const f = await fixture()
     f.list.mockRejectedValue(new Error("Herdr unavailable"))
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("Herdr unavailable")
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("Herdr unavailable")
     expect(f.split).not.toHaveBeenCalled()
   })
 
   it("rejects stale files, index, or base before launching", async () => {
     const f = await fixture()
     await writeFile(path.join(f.root, "code.ts"), "changed after confirmation\n")
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
       "worktree or comparison base changed",
     )
     expect(f.launch).not.toHaveBeenCalled()
@@ -308,7 +308,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       await writeFile(path.join(f.root, "code.ts"), "changed during preparation\n")
       return { kind: ProfileReadinessKind.Ready, summary: "Ready" }
     })
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
       "worktree or comparison base changed",
     )
     expect(f.split).not.toHaveBeenCalled()
@@ -316,7 +316,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     f.split.mockImplementationOnce(async () => {
       await writeFile(path.join(f.root, "code.ts"), "changed during allocation\n")
     })
-    await expect(f.services.execute(request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+    await expect(f.services.execute(request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
       "New agent pane w1:new remains open",
     )
     expect(f.split).toHaveBeenCalledOnce()
@@ -325,9 +325,9 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
 
   it("does not allocate a pane for an invalid profile or changed approval context", async () => {
     const f = await fixture()
-    await expect(f.services.execute(f.request, "native:fmx/default", f.signal)).rejects.toThrow("no longer available")
+    await expect(f.services.execute(f.request, "native:firstmate/default", f.signal)).rejects.toThrow("no longer available")
     await expect(
-      f.services.execute({ ...f.request, originalIntent: "x".repeat(60_000) }, "native:cpx/reviewer", f.signal),
+      f.services.execute({ ...f.request, originalIntent: "x".repeat(60_000) }, "native:copilot/reviewer", f.signal),
     ).rejects.toThrow(/prompt limit|context differs/u)
     expect(f.split).not.toHaveBeenCalled()
   })
@@ -336,7 +336,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     const f = await fixture()
     const lock = path.join(f.request.target.gitDirectory, "trellage-optimize.lock")
     await symlink("/does/not/exist/foreign-lock", lock)
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("lock path is unsafe")
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("lock path is unsafe")
     expect(await readlink(lock)).toBe("/does/not/exist/foreign-lock")
   })
 
@@ -354,35 +354,35 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       entered()
       return waiting
     })
-    const first = f.services.execute(f.request, "native:cpx/reviewer", f.signal)
+    const first = f.services.execute(f.request, "native:copilot/reviewer", f.signal)
     try {
       await Promise.race([started, first])
       expect(f.launch).toHaveBeenCalledOnce()
-      await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+      await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
         /already|held|unlaunched/u,
       )
     } finally {
       release()
       await first
     }
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("unlaunched")
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("unlaunched")
     const another = await f.approve()
     f.launch.mockRejectedValueOnce(new Error("Launch acknowledgment lost"))
-    await expect(f.services.execute(another, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+    await expect(f.services.execute(another, "native:copilot/reviewer", f.signal)).rejects.toThrow(
       "Inspect it before retrying; no automatic resend",
     )
-    await expect(f.services.execute(another, "native:cpx/reviewer", f.signal)).rejects.toThrow("unlaunched")
+    await expect(f.services.execute(another, "native:copilot/reviewer", f.signal)).rejects.toThrow("unlaunched")
     expect((await f.services.readReview(another.approval.reviewId, f.signal)).execution).toBe("unknown")
     expect(f.launch).toHaveBeenCalledTimes(2)
   })
 
   it.each([
-    ["cpx", false, "-i"],
-    ["cpx", true, "-i"],
-    ["cdx", false, "--"],
-    ["cdx", true, "--"],
-    ["cldx", false, "--"],
-    ["cldx", true, "--"],
+    ["copilot", false, "-i"],
+    ["copilot", true, "-i"],
+    ["codex", false, "--"],
+    ["codex", true, "--"],
+    ["claude", false, "--"],
+    ["claude", true, "--"],
   ] as const)(
     "starts %s interactively with headlessPrompt=%s and preserves the scope and index",
     async (launcher, headlessPrompt, promptFlag) => {
@@ -420,7 +420,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
           {
             command: {
               executable: `/fixture/${launcher}`,
-              args: ["reviewer", promptFlag, buildGuideOptimizePrompt(f.request)],
+              args: ["run", launcher, "reviewer", promptFlag, buildGuideOptimizePrompt(f.request)],
             },
             cwd: f.root,
           },
@@ -448,7 +448,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
         findings: f.request.approval.findings.map((entry) => ({ ...entry, proposal: "Do unrelated work." })),
       },
     }
-    await expect(f.services.execute(altered, "native:cpx/reviewer", f.signal)).rejects.toThrow("Approval differs")
+    await expect(f.services.execute(altered, "native:copilot/reviewer", f.signal)).rejects.toThrow("Approval differs")
     expect(saved.approvedIds).toEqual(["first-principles:1"])
     expect(f.launch).not.toHaveBeenCalled()
   })
@@ -460,20 +460,20 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       await chmod(store.directory, 0o500)
     })
     try {
-      await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+      await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
         "New agent pane w1:new remains open",
       )
     } finally {
       await chmod(store.directory, 0o700)
     }
     expect((await store.read(f.request.approval.reviewId)).execution).toBe("launching")
-    await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow("unlaunched")
+    await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow("unlaunched")
     expect(f.launch).toHaveBeenCalledOnce()
   })
 
   it("supports a same-worktree Herdr tab without making a clean worktree copy", async () => {
     const f = await fixture()
-    const receipt = await f.services.execute({ ...f.request, destination: "tab" }, "native:cpx/reviewer", f.signal)
+    const receipt = await f.services.execute({ ...f.request, destination: "tab" }, "native:copilot/reviewer", f.signal)
     expect(receipt.paneId).toBe("w1:tab")
     expect(f.calls.filter((entry) => entry.executable === "herdr").map((entry) => entry.args.slice(0, 2))).toEqual([
       ["tab", "create"],
@@ -493,7 +493,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       await writeFile(path.join(f.root, "context.ts"), "unreviewed context\n")
     })
     const paneId = destination === "pane" ? "w1:new" : "w1:tab"
-    await expect(f.services.execute(request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+    await expect(f.services.execute(request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
       `New agent pane ${paneId} remains open. Review context changed. Run a new review before implementation. Inspect it before retrying; no automatic resend.`,
     )
     expect(f.split).toHaveBeenCalledOnce()
@@ -512,7 +512,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     const request = await f.approve()
     await f.git("update-index", "--assume-unchanged", "context.ts")
     await writeFile(path.join(f.root, "context.ts"), "unreviewed context\n")
-    await expect(f.services.execute(request, "native:cpx/reviewer", f.signal)).rejects.toThrow(
+    await expect(f.services.execute(request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
       /Review context changed|worktree or comparison base changed/u,
     )
     expect(f.launch).not.toHaveBeenCalled()

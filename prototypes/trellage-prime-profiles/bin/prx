@@ -87,10 +87,10 @@ readonly kernel_identity_stamp="$profile_home/kernel-runtime-identity.json"
 readonly runtime_identity_schema=1
 readonly kernel_spec_version=1
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
-floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
-  floating_skills_catalog="$runtime_root/../../skills.json"
+  floating_skills_catalog="$runtime_root/../../config.toml"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 
@@ -1759,6 +1759,10 @@ launch_prime() {
     command_args+=(--autonomous)
   fi
   command_args+=(--daemon-socket "$daemon_socket")
+  if [[ -n "${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}" ]]; then
+    [[ -f "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" && ! -L "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" ]] || die 'unsafe selected instructions'
+    command_args+=(--append-system-prompt "$(cat "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md")")
+  fi
   # Bash 3.2 treats an empty array expansion as unbound under `set -u`.
   if (( ${#prime_args[@]} > 0 )); then
     command_args+=("${prime_args[@]}")

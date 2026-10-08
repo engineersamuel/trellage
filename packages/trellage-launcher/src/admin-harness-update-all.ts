@@ -55,7 +55,7 @@ export const harnessUpdateScopeKey = (plan: HarnessUpdatePlan): string =>
     plan.key,
     plan.steps.map((step) => step.command.executable),
     plan.targets.map((entry) => entry.ref),
-    plan.key === "native:fmx" ? plan.steps.map((step) => step.command.args) : null,
+    plan.key === "native:firstmate" ? plan.steps.map((step) => step.command.args) : null,
   ])
 
 const unsupportedReason = (entry: AdminProfileEntry): string => {

@@ -53,7 +53,7 @@ platform today. AMD64 is recognized for future selection but rejected before
 downloads or Docker mutation until its artifact support is complete. Resolved
 source content is integrity-checked under `$XDG_CACHE_HOME` and is safe to
 delete. Approved skill repositories are declared without revisions in the root
-`skills.json` and are not stored in release locks. Credentials never enter
+`config.toml` and are not stored in release locks. Credentials never enter
 build inputs.
 
 ```bash
@@ -99,7 +99,7 @@ mise run rebuild-profiles
 That:
 
 1. Installs the worktree `trellage` into `~/.local/bin`
-2. Reinstalls every native launcher (`agx`, `cdx`, `cpx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`, `picx`, `prx`) then `trx`
+2. Reinstalls every native launcher (`agx`, `cdx`, `cpx`, `cldx`, `fmx`, `jcx`, `omp`, `picx`, `prx`) then `trx`
    from `prototypes/trellage-*-profiles` and `prototypes/trellage-router`
 3. Runs `trellage build` for every `profiles/*/profile.toml` and resolves
    current approved development inputs

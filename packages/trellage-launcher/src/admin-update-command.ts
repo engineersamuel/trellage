@@ -23,6 +23,7 @@ export const updateDiagnostic = (error: unknown): string => {
 
 const managementVerb = (command: CommandSpec): string | undefined => {
   const verb = command.args[0]
+  if (verb === "upgrade" && (command.args.includes("--harness-only") || command.args.includes("--skills-only"))) return "upgrade"
   if (verb === "harness-update" || verb === "skills-update") return verb
   return verb === "skills" && command.args[1] === "update" ? "skills update" : undefined
 }

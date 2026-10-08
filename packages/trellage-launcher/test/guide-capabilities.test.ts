@@ -11,9 +11,9 @@ const headless = {
 }
 const catalog = () => parseGuideCatalog(JSON.stringify({
   schemaVersion: 1, sandboxCommandPath: "/bin/trellage", sandbox: [],
-  native: ["cpx", "cdx"].map((launcher) => ({
-    launcher, harness: launcher === "cpx" ? "copilot" : "codex", name: "review",
-    description: "Review code", sandbox: false, commandPath: `/bin/${launcher}`, headless,
+  native: ["copilot", "codex"].map((launcher) => ({
+    launcher, harness: launcher === "copilot" ? "copilot" : "codex", name: "review",
+    description: "Review code", sandbox: false, commandPath: "/bin/trx", headless,
     herdrCompatibility: { status: "supported" },
     guide: {
       schemaVersion: 1, capabilities: ["review"], bestFor: ["Code review", "Bug checks"],
@@ -23,7 +23,7 @@ const catalog = () => parseGuideCatalog(JSON.stringify({
   })),
 }))
 const response = (profiles: unknown = [{ name: "review", headless }]) => ({
-  stdout: JSON.stringify({ schemaVersion: 1, launcher: "cpx", harness: "copilot", profiles }),
+  stdout: JSON.stringify({ schemaVersion: 1, launcher: "copilot", harness: "copilot", profiles }),
   stderr: "", exitCode: 0 as const,
 })
 
@@ -33,10 +33,10 @@ describe("deferred guide capabilities", () => {
     const run = vi.fn(async () => response())
     const signal = new AbortController().signal
     const result = await resolveGuideCapabilities(input, { run }, "/work", signal)
-    expect(run).toHaveBeenCalledWith("/bin/cpx", ["list", "--json"], expect.objectContaining({ cwd: "/work", signal, timeoutMs: 5000 }))
+    expect(run).toHaveBeenCalledWith("/bin/trx", ["list", "--json"], expect.objectContaining({ cwd: "/work", signal, timeoutMs: 5000 }))
     expect(result.native[1]).toBe(input.native[1])
     expect(result.native[0]?.guide).toBe(input.native[0]?.guide)
-    expect(publicGuideLaunchCommand(result, "native:cpx/review", "Check changes", "review").promptHandling).toBe("argv")
+    expect(publicGuideLaunchCommand(result, "native:copilot/review", "Check changes", "review").promptHandling).toBe("argv")
   })
 
   it.each(["malformed", "missing", "duplicate", "wrong launcher", "failed"]) (
@@ -47,20 +47,20 @@ describe("deferred guide capabilities", () => {
         if (failure === "malformed") return response([{ name: "review", headless: { prompt: true } }])
         if (failure === "missing") return response([])
         if (failure === "duplicate") return response([{ name: "review", headless }, { name: "review", headless }])
-        return { ...response(), stdout: response().stdout.replace('"cpx"', '"cdx"') }
+        return { ...response(), stdout: response().stdout.replace('"copilot"', '"codex"') }
       })
       const result = await resolveGuideCapabilities(input, { run }, "/work")
       expect(result.native[0]?.headless.prompt).toBe(false)
       expect(result.native[0]?.headless.modelOverride).toBe(false)
       expect(result.native[0]?.headless.testedHarnessVersion).toBeNull()
       expect(result.native[1]).toBe(input.native[1])
-      expect(publicGuideLaunchCommand(result, "native:cpx/review", "Check changes", "review").promptHandling).toBe("manual-paste")
+      expect(publicGuideLaunchCommand(result, "native:copilot/review", "Check changes", "review").promptHandling).toBe("manual-paste")
       expect(input.native[0]?.headless.prompt).toBe(true)
     },
   )
 
   it("does no work for catalogs without Copilot", async () => {
-    const input = { ...catalog(), native: catalog().native.filter(({ launcher }) => launcher !== "cpx") }
+    const input = { ...catalog(), native: catalog().native.filter(({ launcher }) => launcher !== "copilot") }
     const run = vi.fn()
     expect(await resolveGuideCapabilities(input, { run }, "/work")).toBe(input)
     expect(run).not.toHaveBeenCalled()

@@ -11,10 +11,10 @@ export const verifiedFirstmateOriginCwd = async (
   runner: CommandRunner, catalog: CombinedGuideCatalog, cwd: string,
   origin: FirstmateInstanceControlContextV1, signal?: AbortSignal,
 ): Promise<string> => {
-  const entry = catalog.native.find(({ launcher, name }) => launcher === "fmx" && name === origin.reference.profile)
+  const entry = catalog.native.find(({ launcher, name }) => launcher === "firstmate" && name === origin.reference.profile)
   if (entry?.orchestration?.instances === undefined) throw new Error("The captured Firstmate origin cannot be verified. Choose an explicit existing worktree.")
   const profile = parseSelectedProfile({
-    surface: "native", launcher: "fmx", commandPath: entry.commandPath, profile: entry.name,
+    surface: "native", launcher: "firstmate", commandPath: entry.commandPath, profile: entry.name,
     headlessPrompt: entry.headless.prompt, orchestration: entry.orchestration,
   })
   if (profile.surface !== "native") throw new Error("Firstmate origin requires a Native profile.")
