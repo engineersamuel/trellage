@@ -25,8 +25,8 @@ const instanceReference = (profile: NativeSelectedProfile): FirstmateInstanceRef
     }
     return undefined
   }
-  if (profile.surface !== "native" || profile.launcher !== "fmx" || profile.orchestration === undefined) {
-    throw new Error("Firstmate instance selection requires a supported Native fmx profile.")
+  if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration === undefined) {
+    throw new Error("Firstmate instance selection requires a supported Native firstmate profile.")
   }
   const capability = parseFirstmateOrchestrationV1(profile.orchestration)
   const reference = parseFirstmateInstanceReferenceV1(profile.firstmateInstance)
@@ -87,7 +87,7 @@ export const selectedFirstmateInstance = (
   profile: NativeSelectedProfile,
   expectedFleet: FirstmateFleetIdentityV1,
 ): FirstmateInstanceReferenceV1 => {
-  if (profile.launcher !== "fmx") throw new Error("Only Firstmate profiles can select a fleet instance.")
+  if (profile.launcher !== "firstmate") throw new Error("Only Firstmate profiles can select a fleet instance.")
   const fleet = parseFirstmateFleetIdentityV1(expectedFleet)
   const reference = instanceReference(profile) ?? parseFirstmateInstanceReferenceV1({
     schemaVersion: 1,

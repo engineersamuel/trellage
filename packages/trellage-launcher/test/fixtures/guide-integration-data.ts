@@ -15,6 +15,8 @@ import type { GuideGoalAnswer, GuideGoalProposal, GuideGoalReviewDecision } from
 
 export enum FixtureMode {
   Terminal = "terminal",
+  GenerationInvalid = "generation-invalid",
+  GenerationUnavailable = "generation-unavailable",
   Herdr = "herdr",
   DirtyWorktree = "dirty-worktree",
   ExistingWorktree = "existing-worktree",
@@ -64,9 +66,9 @@ export type FixtureProfile = {
 export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   {
     id: "planner",
-    ref: "native:cdx/planner",
+    ref: "native:codex/planner",
     surface: "native",
-    launcher: "cdx",
+    launcher: "codex",
     name: "planner",
     harness: "codex",
     workflowId: "review",
@@ -76,9 +78,9 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
   {
     id: "reviewer",
-    ref: "native:cpx/reviewer",
+    ref: "native:copilot/reviewer",
     surface: "native",
-    launcher: "cpx",
+    launcher: "copilot",
     name: "reviewer",
     harness: "copilot",
     workflowId: "review",
@@ -87,9 +89,9 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
   {
     id: "writer",
-    ref: "native:cldx/default",
+    ref: "native:claude/default",
     surface: "native",
-    launcher: "cldx",
+    launcher: "claude",
     name: "default",
     harness: "claude",
     workflowId: "review",
@@ -99,9 +101,9 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
   {
     id: "builder",
-    ref: "native:picx/builder",
+    ref: "native:pi/builder",
     surface: "native",
-    launcher: "picx",
+    launcher: "pi",
     name: "builder",
     harness: "pi",
     workflowId: "review",
@@ -144,9 +146,9 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
   {
     id: "hve",
-    ref: "native:cpx/hve",
+    ref: "native:copilot/hve",
     surface: "native",
-    launcher: "cpx",
+    launcher: "copilot",
     name: "hve",
     harness: "copilot",
     workflowId: "rpi-agent-cycle",
@@ -202,8 +204,8 @@ export const pinnedIds: ReadonlyArray<FixtureProfileId> = ["council", "research"
 export const candidateTitles = ["Focused", "Thorough", "Minimal"] as const
 export const fixtureIntent = "Review the 'login flow' for regressions."
 export const fixtureBranches = {
-  hve: "wt/cpx-hve-review-the",
-  hveSecond: "wt/cpx-hve-review-the-2",
+  hve: "wt/copilot-hve-review-the",
+  hveSecond: "wt/copilot-hve-review-the-2",
   sandbox: "wt/sb-sandbox-reviewer-review-the",
 } as const
 export const fixtureHead = "1234567890abcdef1234567890abcdef12345678"

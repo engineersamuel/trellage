@@ -11,7 +11,7 @@ import type { CommandRunner, CommandSpec, HerdrContext, NativeSelectedProfile } 
 import type { ReviewContinuation } from "../src/review-ui.tsx"
 
 const profile: NativeSelectedProfile = {
-  surface: "native", launcher: "cpx", commandPath: "/fixture/cpx",
+  surface: "native", launcher: "copilot", commandPath: "/fixture/trx",
   profile: "hve", headlessPrompt: false,
 }
 const context: HerdrContext = { workspaceId: "ws-1", paneId: "pane-1", surface: "pane" }
@@ -47,9 +47,9 @@ const services = () => {
 
 describe("review continuation", () => {
   it("uses the router's verified Copilot path without reading a Guide catalog", () => {
-    expect(reviewContinuationProfileFromPath("/fixture/cpx")).toEqual(profile)
+    expect(reviewContinuationProfileFromPath("/fixture/trx")).toEqual(profile)
     expect(() => reviewContinuationProfileFromPath(undefined)).toThrow("launcher is missing")
-    expect(() => reviewContinuationProfileFromPath("./cpx")).toThrow("launcher is missing")
+    expect(() => reviewContinuationProfileFromPath("./trx")).toThrow("launcher is missing")
   })
 
   it("routes current-terminal Copilot through trx with plan mode and a report handoff", async () => {
@@ -58,7 +58,7 @@ describe("review continuation", () => {
     expect(service.runInteractive).toHaveBeenCalledOnce()
     const [command, options] = service.runInteractive.mock.calls[0]!
     expect(command.executable).toBe("trx")
-    expect(command.args.slice(0, 6)).toEqual(["run", "cpx", "hve", "--", "--plan", "-i"])
+    expect(command.args.slice(0, 6)).toEqual(["run", "copilot", "hve", "--", "--plan", "-i"])
     expect(command.args.at(-1)).toContain(result.outcome.markdownPath)
     expect(options.cwd).toBe("/checkout")
     expect(service.commands).toEqual([])
@@ -76,7 +76,7 @@ describe("review continuation", () => {
       const [command] = service.runInteractive.mock.calls[0]!
       expect(command.executable).toBe("mise")
       expect(command.args.slice(0, 9)).toEqual([
-        "run", "trx", "--", "run", "cpx", "hve", "--", "--plan", "-i",
+        "run", "trx", "--", "run", "copilot", "hve", "--", "--plan", "-i",
       ])
       expect(command.args.at(-1)).toContain(result.outcome.markdownPath)
       const other = services()

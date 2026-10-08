@@ -269,7 +269,7 @@ describe("Goal me augmentation wiring", () => {
   it("preserves an unsaved queued-prompt edit while an approved goal finishes", () => {
     const approved = approveGoal(started())
     const queue = enqueueGuideJob(approved.queue, {
-      surface: "native", launcher: "cpx", profile: "default", commandPath: "/fake/cpx", headlessPrompt: true,
+      surface: "native", launcher: "copilot", profile: "default", commandPath: "/fake/trx", headlessPrompt: true,
     }, "Previously queued prompt.", { kind: "current-workspace-pane", direction: "right" })
     let state = guideUiReducer({ ...approved, queue }, { type: GuideUiActionType.AugmentBack })
     state = guideUiReducer(state, { type: GuideUiActionType.CandidatesViewQueue })

@@ -94,7 +94,7 @@ export interface GuideOptimizeDependencies {
   readonly loadArchitecture?: typeof loadOptimizeArchitecture
 }
 
-const nativeLaunchers = new Set(["cpx", "cdx", "cldx"])
+const nativeLaunchers = new Set(["copilot", "codex", "claude"])
 const readyStatus = (value: unknown): boolean => value === "idle" || value === "done"
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 

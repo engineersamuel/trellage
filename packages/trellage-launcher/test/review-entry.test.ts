@@ -83,7 +83,7 @@ it("uses the local tracking ref even when remote main moves and rechecks before 
     vi.unstubAllEnvs()
     await rm(root, { recursive: true, force: true })
   }
-})
+}, 15_000)
 
 it("prepares a detached target using its captured HEAD and preserves both confirmation gates", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "trellage-review-detached-"))

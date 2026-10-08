@@ -25,10 +25,10 @@ const container = (name: string, selector = "latest"): AdminProfileEntry => ({
 })
 const native = (name = "default"): AdminProfileEntry => ({
   ...container(name),
-  ref: `native:cldx/${name}`,
+  ref: `native:claude/${name}`,
   surface: "native",
-  launcher: "cldx",
-  commandPath: "/fixture/cldx",
+  launcher: "claude",
+  commandPath: "/fixture/trx",
 })
 const known = (installed = "2.0.0", latest = "3.0.0"): AdminHarnessVersionResult => ({
   installed: { kind: "known", version: installed },
@@ -135,7 +135,7 @@ describe("updates-only Admin selection", () => {
       {
         run: async (_executable, args) => {
           commands.push(args)
-          return { stdout: args[0] === "--help" ? "trx skills update\ncldx skills-update PROFILE" : "done", stderr: "", exitCode: 0 }
+          return { stdout: args[0] === "--help" ? "trx skills update\ntrx upgrade HARNESS PROFILE" : "done", stderr: "", exitCode: 0 }
         },
       },
       "/fixture",
@@ -144,7 +144,7 @@ describe("updates-only Admin selection", () => {
     expect(harnessUpdateAllSummary(outcome)).toMatchObject({ success: true, updated: 0, notRun: 0, nativeSkillsUpdated: 1 })
     expect(commands.filter((args) => args[0] !== "--help")).toEqual([
       ["skills", "update"],
-      ["skills-update", "default"],
+      ["upgrade", "claude", "default", "--skills-only"],
     ])
   })
 })

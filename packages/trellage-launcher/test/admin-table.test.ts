@@ -5,13 +5,13 @@ import type { AdminStatus } from "../src/admin-status.ts"
 import { adminProfileType, adminTableColumnWidths, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "../src/admin-table.ts"
 
 const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
-  ref: overrides.ref ?? "native:cpx/hve",
+  ref: overrides.ref ?? "native:copilot/hve",
   surface: "native",
-  launcher: "cpx",
+  launcher: "copilot",
   harness: "copilot",
   name: "hve",
   description: "Copilot native launcher.",
-  commandPath: "/opt/trellage/cpx/bin/cpx",
+  commandPath: "/opt/trellage/copilot/bin/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -24,7 +24,7 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
 })
 
 const fixture: ReadonlyArray<AdminProfileEntry> = [
-  entry({ ref: "native:cpx/hve", name: "hve", launcher: "cpx", health: "healthy" }),
+  entry({ ref: "native:copilot/hve", name: "hve", launcher: "copilot", health: "healthy" }),
   entry({
     ref: "native:example-unsupported/pstack",
     name: "pstack",
@@ -45,7 +45,7 @@ const fixture: ReadonlyArray<AdminProfileEntry> = [
 
 describe("filterAdminProfiles", () => {
   it("is a pure, case-insensitive substring match with no false positives or negatives", () => {
-    expect(filterAdminProfiles(fixture, "hve").map((e) => e.ref)).toEqual(["native:cpx/hve"])
+    expect(filterAdminProfiles(fixture, "hve").map((e) => e.ref)).toEqual(["native:copilot/hve"])
     expect(filterAdminProfiles(fixture, "PSTACK").map((e) => e.ref)).toEqual(["native:example-unsupported/pstack"])
     expect(filterAdminProfiles(fixture, "sandbox").map((e) => e.ref)).toEqual(["sandbox:prime-agent"])
     expect(filterAdminProfiles(fixture, "nonexistent")).toEqual([])
@@ -119,7 +119,7 @@ describe("adminTableColumnWidths", () => {
   })
 
   it("widens a column to fit its longest value plus the header", () => {
-    const wide = entry({ ref: "native:cpx/very-long-harness-name", harness: "an-unusually-long-harness-name" })
+    const wide = entry({ ref: "native:copilot/very-long-harness-name", harness: "an-unusually-long-harness-name" })
     const widths = adminTableColumnWidths([wide], statuses([[wide.ref, "idle"]]), 200)
     expect(widths.harness).toBeGreaterThan("an-unusually-long-harness-name".length)
   })
@@ -132,7 +132,7 @@ describe("adminTableColumnWidths", () => {
   })
 
   it("widens the version and latest-version columns to fit a longer checked value", () => {
-    const checked = entry({ ref: "native:cpx/hve" })
+    const checked = entry({ ref: "native:copilot/hve" })
     const widths = adminTableColumnWidths(
       [checked],
       statuses([[checked.ref, "idle"]]),

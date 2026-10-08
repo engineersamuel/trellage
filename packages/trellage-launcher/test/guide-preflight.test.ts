@@ -59,21 +59,21 @@ const inventory = (launcher: string, profile: string): CommandRunResult =>
 
 describe("customer workflow readiness", () => {
   const selected: NativeSelectedProfile = {
-    surface: "native", launcher: "cpx", profile: "hve", commandPath: "/opt/bin/cpx", headlessPrompt: false,
+    surface: "native", launcher: "copilot", profile: "hve", commandPath: "/opt/bin/trx", headlessPrompt: false,
     agent: "hve-core:dt-coach", interaction: { mode: "interactive", requiredSkills: ["dt-methods"] },
   }
   const evidence = {
-    schemaVersion: 1, launcher: "cpx", profile: "hve", mode: "interactive", agent: selected.agent,
+    schemaVersion: 1, launcher: "copilot", profile: "hve", mode: "interactive", agent: selected.agent,
     requiredSkills: ["dt-methods"], manifestSha256: "a".repeat(64), harnessVersion: "1.0.81",
   }
 
   it("requires exact installed workflow evidence after general inventory", async () => {
-    const runner = new FakeRunner([inventory("cpx", "hve"), ok(JSON.stringify(evidence))])
+    const runner = new FakeRunner([inventory("copilot", "hve"), ok(JSON.stringify(evidence))])
     await expect(checkSelectedProfileReadiness(runner, selected, "/repo")).resolves.toMatchObject({
       kind: ProfileReadinessKind.Ready, summary: expect.stringContaining("requires human decisions"),
     })
     expect(runner.calls.map(({ args }) => args)).toEqual([
-      ["inventory", "hve", "--json"], ["workflow-check", "hve", "--agent", selected.agent, "--require-skill", "dt-methods"],
+      ["inventory", "copilot", "hve", "--json"], ["workflow-check", "copilot", "hve", "--agent", selected.agent, "--require-skill", "dt-methods"],
     ])
   })
 
@@ -83,12 +83,12 @@ describe("customer workflow readiness", () => {
     { ...evidence, mode: "autopilot" },
     { ...evidence, manifestSha256: null },
   ])("rejects mismatched capability evidence", async (response) => {
-    const runner = new FakeRunner([inventory("cpx", "hve"), ok(JSON.stringify(response))])
+    const runner = new FakeRunner([inventory("copilot", "hve"), ok(JSON.stringify(response))])
     await expect(checkSelectedProfileReadiness(runner, selected, "/repo")).rejects.toThrow("does not match")
   })
 
   it("reports an old launcher or missing workflow without repair or success fallback", async () => {
-    const runner = new FakeRunner([inventory("cpx", "hve"), new CommandRunnerError({
+    const runner = new FakeRunner([inventory("copilot", "hve"), new CommandRunnerError({
       kind: "exited", executable: selected.commandPath, args: [], exitCode: 1,
       message: "Unavailable", stderr: "Unknown command: workflow-check",
     })])
@@ -101,7 +101,7 @@ describe("customer workflow readiness", () => {
 
 const claudeHome = "/managed/.local/share/trellage/profiles/claude/default/home"
 const claudeRuntime = (evaluatorModel = "fixture-evaluator"): CommandRunResult => ok(JSON.stringify({
-  schemaVersion: 1, launcher: "cldx", harness: "claude", installed: "2.1.233",
+  schemaVersion: 1, launcher: "claude", harness: "claude", installed: "2.1.233",
   latest: null, latestKnown: false,
   goalRuntime: { profileHome: claudeHome, evaluatorModel, modelsUrl: "http://127.0.0.1:8080/v1/models" },
 }))
@@ -125,15 +125,15 @@ const claudeSettings = (changes: Readonly<Record<string, Readonly<Record<string,
 describe("goal-only read-only readiness", () => {
   it("uses Codex's actual managed home and effective features instead of a help-text search", async () => {
     const { profile, execution } = goalTransportFixture()
-    const runner = new FakeRunner([inventory("cdx", "superpowers"), ok("codex-cli 0.153.4\n"), ok("goals\tstable\ttrue\n")])
+    const runner = new FakeRunner([inventory("codex", "superpowers"), ok("codex-cli 0.153.4\n"), ok("goals\tstable\ttrue\n")])
     const result = await checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution, { env: { HOME: "/managed" } })
     expect(result).toMatchObject({ kind: ProfileReadinessKind.Ready, goalReadiness: "checked" })
     expect(result.summary).toContain("manual native input is required")
     expect(result.summary).toContain("Model execution and goal activation are not confirmed")
     expect(runner.calls.map(({ executable, args }) => [executable, args])).toEqual([
-      [profile.commandPath, ["inventory", "superpowers", "--json"]],
+      [profile.commandPath, ["inventory", "codex", "superpowers", "--json"]],
       ["codex", ["--version"]],
-      [profile.commandPath, ["inventory", "superpowers", "--goal-features"]],
+      [profile.commandPath, ["inventory", "codex", "superpowers", "--goal-features"]],
     ])
     expect(runner.calls[2]?.options?.env?.CODEX_HOME).toBe("/managed/.local/share/trellage/profiles/codex/superpowers/home")
   })
@@ -143,7 +143,7 @@ describe("goal-only read-only readiness", () => {
     { features: "hooks\tstable\ttrue\n", status: "unknown", message: "did not report" },
   ])("does not call a $status Codex goal ready", async ({ features, status, message }) => {
     const { profile, execution } = goalTransportFixture()
-    const runner = new FakeRunner([inventory("cdx", "superpowers"), ok("codex-cli 0.153.4\n"), ok(features)])
+    const runner = new FakeRunner([inventory("codex", "superpowers"), ok("codex-cli 0.153.4\n"), ok(features)])
     const result = await checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution)
     expect(result).toMatchObject({ kind: ProfileReadinessKind.Blocked, goalReadiness: status, diagnostic: expect.stringContaining(message) })
     expect(runner.calls).toHaveLength(3)
@@ -151,7 +151,7 @@ describe("goal-only read-only readiness", () => {
 
   it.each(["codex-cli 0.153.3", "codex-cli 0.153.4-beta.1", "unrecognized version"])("does not probe feature subcommands on an unconfirmed runtime: %s", async (version) => {
     const { profile, execution } = goalTransportFixture()
-    const runner = new FakeRunner([inventory("cdx", "superpowers"), ok(version)])
+    const runner = new FakeRunner([inventory("codex", "superpowers"), ok(version)])
     await expect(checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution)).resolves.toMatchObject({
       kind: ProfileReadinessKind.Blocked, goalReadiness: "unknown",
     })
@@ -161,7 +161,7 @@ describe("goal-only read-only readiness", () => {
   it("does not treat an ignored workspace configuration as confirmed effective Codex readiness", async () => {
     const { profile, execution } = goalTransportFixture()
     const runner = new FakeRunner([
-      inventory("cdx", "superpowers"), ok("codex-cli 0.153.4"),
+      inventory("codex", "superpowers"), ok("codex-cli 0.153.4"),
       { stdout: "goals stable true\n", stderr: "Workspace config was skipped because it is not trusted.", exitCode: 0 },
     ])
     await expect(checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution)).resolves.toMatchObject({
@@ -173,10 +173,10 @@ describe("goal-only read-only readiness", () => {
   it("blocks an older Codex adapter instead of falling back to a bare feature probe", async () => {
     const { profile, execution } = goalTransportFixture()
     const runner = new FakeRunner([
-      inventory("cdx", "superpowers"), ok("codex-cli 0.153.4"),
+      inventory("codex", "superpowers"), ok("codex-cli 0.153.4"),
       new CommandRunnerError({
         kind: "exited", executable: profile.commandPath,
-        args: ["inventory", "superpowers", "--goal-features"],
+        args: ["inventory", "codex", "superpowers", "--goal-features"],
         message: "Unsupported inventory option", exitCode: 1,
         stderr: "usage: cdx inventory PROFILE --json",
       }),
@@ -187,7 +187,7 @@ describe("goal-only read-only readiness", () => {
       diagnostic: expect.stringContaining("inventory PROFILE --goal-features"),
     })
     expect(runner.calls).toHaveLength(3)
-    expect(runner.calls[2]?.args).toEqual(["inventory", "superpowers", "--goal-features"])
+    expect(runner.calls[2]?.args).toEqual(["inventory", "codex", "superpowers", "--goal-features"])
   })
 
   it("loads a silently skipped Codex project layer with launch trust without persisting trust", async () => {
@@ -245,19 +245,20 @@ if (args.length === 1 && args[0] === "--version") {
         cwd, env: { ...env, CODEX_HOME: profileHome }, timeoutMs: 30_000,
       })
       expect(bare).toEqual(ok("goals\tstable\ttrue\n"))
-      const launcher = fileURLToPath(new URL("../../../prototypes/trellage-codex-profiles/bin/cdx", import.meta.url))
+      const backend = fileURLToPath(new URL("../../../prototypes/trellage-codex-profiles/bin/cdx", import.meta.url))
+      const launcher = "/fixture/trx"
       const { profile, execution } = goalTransportFixture()
       const runner: CommandRunner = {
         async run(executable, args, options) {
-          if (executable === launcher && args.join(" ") === "inventory superpowers --json") {
-            return inventory("cdx", "superpowers")
+          if (executable === launcher && args.join(" ") === "inventory codex superpowers --json") {
+            return inventory("codex", "superpowers")
           }
           expect([
             ["codex", ["--version"]],
             ["codex", ["features", "list"]],
-            [launcher, ["inventory", "superpowers", "--goal-features"]],
+            [launcher, ["inventory", "codex", "superpowers", "--goal-features"]],
           ]).toContainEqual([executable, args])
-          return actual.run(executable, args, options)
+          return actual.run(executable === launcher ? backend : executable, executable === launcher ? [args[0]!, ...args.slice(2)] : args, options)
         },
       }
       await expect(checkSelectedProfileReadiness(runner, { ...profile, commandPath: launcher }, cwd, undefined, execution, { env })).resolves.toMatchObject({
@@ -290,16 +291,16 @@ if (args.length === 1 && args[0] === "--version") {
   it("requires the configured Claude evaluator, not just the main model", async () => {
     const { profile, execution } = goalTransportFixture("claude-goal")
     const runner = new FakeRunner([
-      inventory("cldx", "default"), claudeRuntime("small-model-from-managed-runtime"),
+      inventory("claude", "default"), claudeRuntime("small-model-from-managed-runtime"),
       ok('{"data":[{"id":"claude-opus-5"},{"id":"small-model-from-managed-runtime"}]}'),
     ])
     await expect(checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution, claudeSettings())).resolves.toMatchObject({
       kind: ProfileReadinessKind.Ready, goalReadiness: "checked",
       summary: expect.stringContaining("Model execution and goal activation are not confirmed"),
     })
-    expect(runner.calls[1]?.args).toEqual(["harness-version"])
+    expect(runner.calls[1]?.args).toEqual(["harness-version", "claude", "default"])
     expect(runner.calls[2]?.args).toEqual(["--fail", "--silent", "--show-error", "--max-time", "5", "http://127.0.0.1:8080/v1/models"])
-    const missing = new FakeRunner([inventory("cldx", "default"), claudeRuntime(), ok('{"data":[{"id":"claude-opus-5"}]}')])
+    const missing = new FakeRunner([inventory("claude", "default"), claudeRuntime(), ok('{"data":[{"id":"claude-opus-5"}]}')])
     await expect(checkSelectedProfileReadiness(missing, profile, "/repo", undefined, execution, claudeSettings())).resolves.toMatchObject({
       kind: ProfileReadinessKind.Blocked, goalReadiness: "blocked",
       diagnostic: expect.stringContaining("fixture-evaluator is unavailable"),
@@ -313,7 +314,7 @@ if (args.length === 1 && args[0] === "--version") {
     { name: "malformed hook settings", file: `${claudeHome}/settings.json`, value: { disableAllHooks: "false" }, message: "not a boolean" },
   ])("blocks $name without changing policy or making a model request", async ({ file, value, message }) => {
     const { profile, execution } = goalTransportFixture("claude-goal")
-    const runner = new FakeRunner([inventory("cldx", "default"), claudeRuntime()])
+    const runner = new FakeRunner([inventory("claude", "default"), claudeRuntime()])
     await expect(checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution, claudeSettings({ [file]: value }))).resolves.toMatchObject({
       kind: ProfileReadinessKind.Blocked, goalReadiness: "blocked", diagnostic: expect.stringContaining(message),
     })
@@ -322,7 +323,7 @@ if (args.length === 1 && args[0] === "--version") {
 
   it("applies Claude's file precedence without overriding a managed hook prohibition", async () => {
     const { profile, execution } = goalTransportFixture("claude-goal")
-    const runner = new FakeRunner([inventory("cldx", "default"), claudeRuntime()])
+    const runner = new FakeRunner([inventory("claude", "default"), claudeRuntime()])
     await expect(checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution, claudeSettings({
       [`${claudeHome}/settings.json`]: { disableAllHooks: true },
       "/repo/.claude/settings.local.json": { disableAllHooks: false },
@@ -332,7 +333,7 @@ if (args.length === 1 && args[0] === "--version") {
 
   it("reports legacy Claude runtime evidence as unknown instead of assuming evaluator availability", async () => {
     const { profile, execution } = goalTransportFixture("claude-goal")
-    const runner = new FakeRunner([inventory("cldx", "default"), ok('{"schemaVersion":1,"launcher":"cldx","harness":"claude","installed":"2.1.233"}')])
+    const runner = new FakeRunner([inventory("claude", "default"), ok('{"schemaVersion":1,"launcher":"claude","harness":"claude","installed":"2.1.233"}')])
     await expect(checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution, claudeSettings())).resolves.toMatchObject({
       kind: ProfileReadinessKind.Blocked, goalReadiness: "unknown", diagnostic: expect.stringContaining("does not expose its goal evaluator runtime"),
     })
@@ -340,11 +341,11 @@ if (args.length === 1 && args[0] === "--version") {
 
   it("reports macOS managed preferences and dynamic policy helpers as unknown without executing them", async () => {
     const { profile, execution } = goalTransportFixture("claude-goal")
-    const managed = new FakeRunner([inventory("cldx", "default"), claudeRuntime()])
+    const managed = new FakeRunner([inventory("claude", "default"), claudeRuntime()])
     await expect(checkSelectedProfileReadiness(managed, profile, "/repo", undefined, execution, {
       ...claudeSettings(), platform: "darwin", pathExists: async () => true,
     })).resolves.toMatchObject({ kind: ProfileReadinessKind.Blocked, goalReadiness: "unknown", diagnostic: expect.stringContaining("macOS managed preferences") })
-    const dynamic = new FakeRunner([inventory("cldx", "default"), claudeRuntime()])
+    const dynamic = new FakeRunner([inventory("claude", "default"), claudeRuntime()])
     await expect(checkSelectedProfileReadiness(dynamic, profile, "/repo", undefined, execution, claudeSettings({
       "/etc/claude-code/managed-settings.json": { policyHelper: "/policy/resolve" },
     }))).resolves.toMatchObject({ kind: ProfileReadinessKind.Blocked, goalReadiness: "unknown", diagnostic: expect.stringContaining("no helper was executed") })
@@ -354,7 +355,7 @@ if (args.length === 1 && args[0] === "--version") {
 
   it("merges visible managed fragments in order and ignores hidden files", async () => {
     const { profile, execution } = goalTransportFixture("claude-goal")
-    const runner = new FakeRunner([inventory("cldx", "default"), claudeRuntime(), ok('{"data":[{"id":"fixture-evaluator"}]}')])
+    const runner = new FakeRunner([inventory("claude", "default"), claudeRuntime(), ok('{"data":[{"id":"fixture-evaluator"}]}')])
     await expect(checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution, {
       ...claudeSettings({
         "/etc/claude-code/managed-settings.json": { allowManagedHooksOnly: true },
@@ -376,7 +377,7 @@ if (args.length === 1 && args[0] === "--version") {
       await mkdir(cwd)
       const { profile, execution } = goalTransportFixture("claude-goal")
       const runner = new FakeRunner([
-        inventory("cldx", "default"), claudeRuntime(), ok(`${linked}\n`),
+        inventory("claude", "default"), claudeRuntime(), ok(`${linked}\n`),
         ok(`worktree ${primary}\nHEAD ${"a".repeat(40)}\nbranch refs/heads/main\n\nworktree ${linked}\nHEAD ${"b".repeat(40)}\nbranch refs/heads/goal\n`),
       ])
       const { localSettingsPaths: _paths, ...settings } = claudeSettings({
@@ -388,7 +389,7 @@ if (args.length === 1 && args[0] === "--version") {
         kind: ProfileReadinessKind.Blocked, goalReadiness: "blocked", diagnostic: expect.stringContaining("disable all hooks"),
       })
       expect(runner.calls.map(({ args }) => args)).toEqual([
-        ["inventory", "default", "--json"], ["harness-version"],
+        ["inventory", "claude", "default", "--json"], ["harness-version", "claude", "default"],
         ["rev-parse", "--show-toplevel"], ["worktree", "list", "--porcelain"],
       ])
     } finally {
@@ -443,15 +444,15 @@ if (args.length === 1 && args[0] === "--version") {
 
 describe("selected profile readiness", () => {
   it("uses native inventory and accepts only a matching healthy identity", async () => {
-    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"cpx","profile":"hve","readiness":"healthy"}')])
+    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"copilot","profile":"hve","readiness":"healthy"}')])
 
     await expect(
       checkSelectedProfileReadiness(
         runner,
         {
           surface: "native",
-          launcher: "cpx",
-          commandPath: "/opt/trellage/bin/cpx",
+          launcher: "copilot",
+          commandPath: "/opt/trellage/bin/trx",
           profile: "hve",
           headlessPrompt: false,
         },
@@ -459,17 +460,17 @@ describe("selected profile readiness", () => {
       ),
     ).resolves.toEqual({
       kind: ProfileReadinessKind.Ready,
-      summary: "cpx/hve is healthy",
+      summary: "copilot/hve is healthy",
     })
     expect(runner.calls[0]).toMatchObject({
-      executable: "/opt/trellage/bin/cpx",
-      args: ["inventory", "hve", "--json"],
+      executable: "/opt/trellage/bin/trx",
+      args: ["inventory", "copilot", "hve", "--json"],
       options: { cwd: "/repo", timeoutMs: 30_000 },
     })
   })
 
     const firstmateProfile: NativeSelectedProfile = {
-      surface: "native", launcher: "fmx", profile: "default", commandPath: "/fixture/fmx", headlessPrompt: false,
+      surface: "native", launcher: "firstmate", profile: "default", commandPath: "/fixture/trx", headlessPrompt: false,
       orchestration: parseFirstmateOrchestrationV1({
         schemaVersion: 1, kind: "firstmate", sourceRevision: "b".repeat(40), taskIdPrefix: "fmd",
         workerPolicy: null, workerHarness: "claude", workerEfforts: ["low", "medium", "high"], dispatchRules: "claude-single",
@@ -491,7 +492,7 @@ describe("selected profile readiness", () => {
         },
       })
     const firstmateInventory = (fleet: FirstmateFleetReadinessV1, readiness = "busy"): CommandRunResult =>
-      ok(JSON.stringify({ schemaVersion: 1, launcher: "fmx", profile: "default", readiness, fleet }))
+      ok(JSON.stringify({ schemaVersion: 1, launcher: "firstmate", profile: "default", readiness, fleet }))
 
     describe("Firstmate action readiness", () => {
       it("ignores conservative busy inventory when the owned tmux fleet permits send work with active workers", async () => {
@@ -503,7 +504,7 @@ describe("selected profile readiness", () => {
         expect(firstmateActionReadiness(firstmateProfile, observed, "submit")).toMatchObject({ kind: ProfileReadinessKind.Ready, fleet: expected })
         expect(firstmateActionReadiness(firstmateProfile, observed, "start").kind).toBe(ProfileReadinessKind.Blocked)
         expect(runner.calls).toEqual([{
-          executable: "/fixture/fmx", args: ["inventory", "default", "--json"],
+          executable: "/fixture/trx", args: ["inventory", "firstmate", "default", "--json"],
           options: { cwd: "/fixture/caller", signal, timeoutMs: 30000 },
         }])
       })
@@ -565,7 +566,7 @@ describe("selected profile readiness", () => {
 
       it("does not treat a generic busy process error as valid fleet evidence", async () => {
         const runner = new FakeRunner([new CommandRunnerError({
-          kind: "exited", executable: "/fixture/fmx", args: ["inventory", "default", "--json"],
+          kind: "exited", executable: "/fixture/trx", args: ["inventory", "firstmate", "default", "--json"],
           exitCode: 1, stdout: "busy", stderr: "Try again later.", message: "Inventory failed.",
         })])
         await expect(inspectFirstmateReadiness(runner, firstmateProfile, "/fixture/caller")).rejects.toThrow("Inventory failed")
@@ -574,15 +575,15 @@ describe("selected profile readiness", () => {
     })
   it("blocks native profiles that are not set up", async () => {
     const runner = new FakeRunner([
-      ok('{"schemaVersion":1,"launcher":"cpx","profile":"awesome","readiness":"not-setup"}'),
+      ok('{"schemaVersion":1,"launcher":"copilot","profile":"awesome","readiness":"not-setup"}'),
     ])
 
     const result = await checkSelectedProfileReadiness(
       runner,
       {
         surface: "native",
-        launcher: "cpx",
-        commandPath: "/opt/trellage/bin/cpx",
+        launcher: "copilot",
+        commandPath: "/opt/trellage/bin/trx",
         profile: "awesome",
         headlessPrompt: false,
       },
@@ -591,20 +592,20 @@ describe("selected profile readiness", () => {
 
     expect(result).toMatchObject({
       kind: ProfileReadinessKind.Blocked,
-      summary: "cpx/awesome is not-setup",
+      summary: "copilot/awesome is not-setup",
     })
   })
 
   it("blocks busy native profiles with a retry diagnostic", async () => {
-    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"prx","profile":"default","readiness":"busy"}')])
+    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"prime","profile":"default","readiness":"busy"}')])
 
     await expect(
       checkSelectedProfileReadiness(
         runner,
         {
           surface: "native",
-          launcher: "prx",
-          commandPath: "/opt/trellage/bin/prx",
+          launcher: "prime",
+          commandPath: "/opt/trellage/bin/trx",
           profile: "default",
           headlessPrompt: false,
         },
@@ -612,21 +613,21 @@ describe("selected profile readiness", () => {
       ),
     ).resolves.toEqual({
       kind: ProfileReadinessKind.Blocked,
-      summary: "prx/default is busy",
-      diagnostic: "Wait for the current prx operation to finish, then retry.",
+      summary: "prime/default is busy",
+      diagnostic: "Wait for the current prime operation to finish, then retry.",
     })
   })
 
   it("rejects mismatched native inventory output", async () => {
-    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"cpx","profile":"other","readiness":"healthy"}')])
+    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"copilot","profile":"other","readiness":"healthy"}')])
 
     await expect(
       checkSelectedProfileReadiness(
         runner,
         {
           surface: "native",
-          launcher: "cpx",
-          commandPath: "/opt/trellage/bin/cpx",
+          launcher: "copilot",
+          commandPath: "/opt/trellage/bin/trx",
           profile: "hve",
           headlessPrompt: false,
         },

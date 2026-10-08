@@ -98,10 +98,10 @@ const container = (name: string, harness = "claude"): AdminProfileEntry => ({
 
 const native = (name = "default"): AdminProfileEntry => ({
   ...container(name),
-  ref: `native:cldx/${name}`,
+  ref: `native:claude/${name}`,
   surface: "native",
-  launcher: "cldx",
-  commandPath: "/fixture/cldx",
+  launcher: "claude",
+  commandPath: "/fixture/trx",
 })
 
 const success: CommandRunResult = { stdout: "updated", stderr: "", exitCode: 0 }
@@ -113,7 +113,7 @@ const isUpdate = (args: ReadonlyArray<string>) =>
   ["harness-update", "upgrade", "update", "skills", "skills-update", "repair", "setup", "prepare", "create"].includes(args[0] ?? "")
 const commandResult = (args: ReadonlyArray<string>): CommandRunResult => {
   if (args[0] === "--help")
-    return { ...success, stdout: "usage: launcher harness-update\nlauncher skills-update PROFILE\ntrx skills update" }
+    return { ...success, stdout: "usage: trx upgrade HARNESS PROFILE --harness-only --skills-only\ntrx skills update" }
   if (args[0] === "harness-version") return versionReport()
   return success
 }
@@ -336,10 +336,10 @@ describe("global Admin update keyboard ownership", () => {
   it("hides current harnesses and skills and disables confirmation when nothing is available", async () => {
     const nativeProfiles = ["pstack", "superpowers"].map((name) => ({
       ...native(name),
-      ref: `native:cdx/${name}`,
-      launcher: "cdx",
+      ref: `native:codex/${name}`,
+      launcher: "codex",
       harness: "codex",
-      commandPath: "/fixture/cdx",
+      commandPath: "/fixture/trx",
     }))
     const profiles = [...nativeProfiles, { ...container("codex-current", "codex"), version: "0.153.4" }]
     const tui = await mountAdmin(profiles, undefined, undefined, async () => versionReport("0.153.4", "0.153.4"))
@@ -375,10 +375,10 @@ describe("global Admin update keyboard ownership", () => {
       })),
     ]
     const tui = await mountAdmin(entries, undefined, undefined, async (_executable, args) =>
-      versionReport(installed.get(args[1] ?? "") ?? "2.1.259", "2.1.260"),
+      versionReport(installed.get(args[1] === "claude" ? args[2] ?? "" : args[1] ?? "") ?? "2.1.259", "2.1.260"),
     )
     await tui.press("A")
-    await vi.waitFor(() => expect(tui.screen()).toContain("native:cldx/default: 2.1.259 -> 2.1.260"))
+    await vi.waitFor(() => expect(tui.screen()).toContain("native:claude/default: 2.1.259 -> 2.1.260"))
     expect(tui.screen()).toContain("sandbox:floating: 2.1.252 -> 2.1.260")
     expect(tui.screen()).toContain("sandbox:pinned: 2.1.263 -> 2.1.252 (pinned)")
     expect(tui.screen()).not.toContain("sandbox:current")
@@ -413,36 +413,36 @@ describe("global Admin update keyboard ownership", () => {
     expect(tui.screen()).not.toContain("[y]")
     expect(tui.updates()).toHaveLength(0)
     resolveSkills(new Map([[native().ref, { kind: "current" }]]))
-    await vi.waitFor(() => expect(tui.screen()).toContain("Planned native:cldx/default: 2.1.252 -> 2.1.260"))
+    await vi.waitFor(() => expect(tui.screen()).toContain("Planned native:claude/default: 2.1.252 -> 2.1.260"))
     expect(tui.screen()).toContain("[y] update selected items")
     expect(tui.screen()).toContain("Required after harness updates")
     expect(tui.updates()).toHaveLength(0)
     await tui.press("y")
     await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 1 updated"))
-    expect(tui.updates().map(([, args]) => args)).toEqual([["harness-update"], ["skills", "update"], ["skills-update", "default"]])
+    expect(tui.updates().map(([, args]) => args)).toEqual([["upgrade", "claude", "default", "--harness-only"], ["skills", "update"], ["upgrade", "claude", "default", "--skills-only"]])
   })
 
   it("shows each Firstmate profile's own source revision and catalog pin", async () => {
     const entries = ["default", "pstack-workers"].map((name) => ({
       ...native(name),
-      ref: `native:fmx/${name}`,
-      launcher: "fmx",
+      ref: `native:firstmate/${name}`,
+      launcher: "firstmate",
       harness: "firstmate",
-      commandPath: "/fixture/fmx",
+      commandPath: "/fixture/trx",
     }))
     const reports = new Map([
       ["default", versionReport("a".repeat(40), "b".repeat(40))],
       ["pstack-workers", versionReport("c".repeat(40), "d".repeat(40))],
     ])
     const tui = await mountAdmin(entries, undefined, undefined, async (_executable, args) => {
-      const result = reports.get(args[1] ?? "")
+      const result = reports.get(args[2] ?? "")
       if (result === undefined) throw new Error(`Unexpected version command: ${args.join(" ")}`)
       return result
     })
     await tui.press("A")
-    await vi.waitFor(() => expect(tui.screen()).toContain(`${"d".repeat(40)} (catalog pin)`))
-    expect(tui.screen()).toContain(`native:fmx/default: ${"a".repeat(40)} -> ${"b".repeat(40)} (catalog pin)`)
-    expect(tui.screen()).toContain(`native:fmx/pstack-workers: ${"c".repeat(40)} -> ${"d".repeat(40)}`)
+    await vi.waitFor(() => expect(tui.screen().replace(/\s+/g, " ")).toContain(`${"d".repeat(40)} (catalog pin)`))
+    expect(tui.screen()).toContain(`native:firstmate/default: ${"a".repeat(40)} -> ${"b".repeat(40)} (catalog pin)`)
+    expect(tui.screen()).toContain(`native:firstmate/pstack-workers: ${"c".repeat(40)} -> ${"d".repeat(40)}`)
     expect(tui.updates()).toHaveLength(0)
   })
 
@@ -478,14 +478,14 @@ describe("global Admin update keyboard ownership", () => {
     await vi.waitFor(() => expect(tui.screen()).toContain("[y] update selected items"))
     expect(tui.screen()).toContain("Native updates: 0 | Container builds: 1")
     expect(tui.screen()).toContain("Skills update sandbox:skills")
-    expect(tui.screen()).toContain("Skills update native:cldx/changed")
-    expect(tui.screen()).not.toContain("native:cldx/current")
+    expect(tui.screen()).toContain("Skills update native:claude/changed")
+    expect(tui.screen()).not.toContain("native:claude/current")
     expect(tui.screen()).not.toContain("sandbox:current")
     await tui.press("y")
     await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 1 updated"))
     expect(tui.updates().map(([, args]) => args)).toEqual([
       ["skills", "update"],
-      ["skills-update", "changed"],
+      ["upgrade", "claude", "changed", "--skills-only"],
       ["upgrade", "skills", "--strict-harness"],
     ])
   })
@@ -552,11 +552,11 @@ describe("global Admin update keyboard ownership", () => {
   it("keeps A and U as search text, previews hidden profiles, cancels without mutation, and updates the full confirmed scope", async () => {
     const unsupported: AdminProfileEntry = {
       ...native(),
-      ref: "native:agx/default",
-      launcher: "agx",
+      ref: "native:agency/default",
+      launcher: "agency",
       harness: "agency",
       harnessVersionSupported: false,
-      commandPath: "/fixture/agx",
+      commandPath: "/fixture/trx",
     }
     const entries = [native("native-a"), native("native-b"), container("container-a"), container("container-b"), unsupported]
     const tui = await mountAdmin(entries)
@@ -583,10 +583,10 @@ describe("global Admin update keyboard ownership", () => {
     await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 4 updated, 0 failed, 0 unsupported"))
     expect(tui.screen()).toContain("Native skills: 2 updated, 0 failed, 0 not run")
     expect(tui.updates().map(([, args]) => args)).toEqual([
-      ["harness-update"],
+      ["upgrade", "claude", "native-a", "--harness-only"],
       ["skills", "update"],
-      ["skills-update", "native-a"],
-      ["skills-update", "native-b"],
+      ["upgrade", "claude", "native-a", "--skills-only"],
+      ["upgrade", "claude", "native-b", "--skills-only"],
       ["upgrade", "container-a", "--strict-harness"],
       ["upgrade", "container-b", "--strict-harness"],
     ])
@@ -655,7 +655,7 @@ describe("global Admin update keyboard ownership", () => {
     expect(tui.screen()).toContain("Shared skill cache refresh failed")
     expect(tui.screen()).toContain("Skill source unavailable")
     expect(tui.screen()).toContain("Native skills: 0 updated, 0 failed, 1 not run")
-    expect(tui.updates().some(([, args]) => args[0] === "skills-update")).toBe(false)
+    expect(tui.updates().some(([, args]) => args.includes("--skills-only"))).toBe(false)
     expect(tui.updates().some(([, args]) => args[0] === "upgrade")).toBe(true)
   })
 

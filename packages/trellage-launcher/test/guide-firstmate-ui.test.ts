@@ -146,19 +146,19 @@ const catalog: CombinedGuideCatalog = {
   sandbox: [],
   native: [
     ...profiles.map((profile) => ({
-      launcher: "fmx", harness: "firstmate", name: profile, description: `Firstmate ${profile}`,
+      launcher: "firstmate", harness: "firstmate", name: profile, description: `Firstmate ${profile}`,
       headless, sandbox: false, herdrCompatibility: { status: "supported" as const },
-      guide: guide(profile), commandPath: "/fixture/fmx", orchestration: orchestration(profile),
+      guide: guide(profile), commandPath: "/fixture/trx", orchestration: orchestration(profile),
     })),
     {
-      launcher: "cdx", harness: "codex", name: "reviewer", description: "Review the repository.",
+      launcher: "codex", harness: "codex", name: "reviewer", description: "Review the repository.",
       headless, sandbox: false, herdrCompatibility: { status: "supported" },
-      guide: guide("default"), commandPath: "/fixture/cdx",
+      guide: guide("default"), commandPath: "/fixture/trx",
     },
   ],
 }
 
-const selectedProfile = (profile: Profile) => selectedProfileFromCatalogRef(catalog, `native:fmx/${profile}`, "review-project")
+const selectedProfile = (profile: Profile) => selectedProfileFromCatalogRef(catalog, `native:firstmate/${profile}`, "review-project")
 const advertisedProfile = (profile: Profile) => {
   const selected = selectedProfile(profile)
   if (selected.surface !== "native") throw new Error("The preparation fixture must be Native.")
@@ -166,7 +166,7 @@ const advertisedProfile = (profile: Profile) => {
 }
 const recommendation = (profile: Profile, workflowId = "review-project"): GuideRecommendation =>
   enrichLiteralCandidate(catalog, {
-    profileRef: `native:fmx/${profile}`, workflowId, confidence: 0.9,
+    profileRef: `native:firstmate/${profile}`, workflowId, confidence: 0.9,
     reason: "Use the selected workflow.", tradeoff: "Requires explicit fleet control.",
   })
 
@@ -212,7 +212,7 @@ const confirmLocalTarget = (state: GuideUiState, target = localTarget()): GuideU
 }
 
 const generate = (state: GuideUiState, profile: Profile): GuideUiState => {
-  const document = { ref: `native:fmx/${profile}`, guide: guide(profile), body: "Synthetic guide body." }
+  const document = { ref: `native:firstmate/${profile}`, guide: guide(profile), body: "Synthetic guide body." }
   const loaded = guideUiReducer(state, { type: Action.GenerateGuideLoaded, guideDocument: document })
   const prepared = prepareGuidePrompt(
     document.guide, state.selectedRecommendation!.workflowId, document.ref, state.intent!, guideUiTaskContext(state),
@@ -292,12 +292,12 @@ describe.each(profiles)("Firstmate %s request decisions", (profile) => {
     })
     expect(job.firstmate).toMatchObject({ action: "submit", requestId: expect.stringMatching(uuidPattern) })
     expect(job.placement).toEqual({ kind: "existing-fleet" })
-    expect(job.command.args).toEqual([profile])
+    expect(job.command.args).toEqual(["run", "firstmate", profile])
     expect(job.profile.headlessPrompt).toBe(false)
     expect(job.prompt.match(/## Firstmate request context/gu)).toHaveLength(1)
     expect(job.prompt).not.toContain("/fixture/private-owned-fleet")
-    expect(publicGuideLaunchCommand(catalog, `native:fmx/${profile}`, job.prompt, "review-project")).toMatchObject({
-      args: [profile], promptHandling: "manual-paste",
+    expect(publicGuideLaunchCommand(catalog, `native:firstmate/${profile}`, job.prompt, "review-project")).toMatchObject({
+      args: ["run", "firstmate", profile], promptHandling: "manual-paste",
     })
   })
 
@@ -383,7 +383,7 @@ describe.each(profiles)("Firstmate %s request decisions", (profile) => {
       jobs: state.queue.entries, context: { cwd: "/fixture/control" },
     })
     const normal = createQueuedGuideJob(8, {
-      surface: "native", launcher: "cdx", profile: "reviewer", commandPath: "/fixture/cdx", headlessPrompt: false,
+      surface: "native", launcher: "codex", profile: "reviewer", commandPath: "/fixture/trx", headlessPrompt: false,
     }, "Review.", { kind: "new-tab" })
     expect(() => buildGuideUiBatch({ ...state, queue: { ...state.queue, entries: [...state.queue.entries, normal] } }, "/fixture/control", null, false))
       .toThrow("use Herdr for normal queued jobs")
@@ -606,7 +606,7 @@ describe("Firstmate preparation decisions", () => {
     expect(reopened.firstmate).toBe(original.firstmate)
     const another = guideUiReducer({
       ...preparingCandidates("default"), queue: queued.queue,
-      selectedProfile: { ...advertisedProfile("default"), commandPath: "/fixture/other-source/fmx" },
+      selectedProfile: { ...advertisedProfile("default"), commandPath: "/fixture/other-source/trx" },
     }, { type: Action.CandidatesConfirm })
     expect(another.fleetReadinessOperation).toEqual({ kind: "inspect" })
     const changedIdentity = {
@@ -640,7 +640,7 @@ describe("Firstmate preparation decisions", () => {
     )
     expect(approved.fleetReadinessOperation).toMatchObject({
       kind: "install", approval: {
-        commandPath: "/fixture/fmx", profile: "default", sourceRevision: preparationRevision, installation: preparationPlan,
+        commandPath: "/fixture/trx", profile: "default", sourceRevision: preparationRevision, installation: preparationPlan,
       },
     })
     expect(approved).toMatchObject({ fleetReadinessPending: true, firstmate: undefined, fleetInstallationReview: undefined })
@@ -775,9 +775,9 @@ const herdr: HerdrEnvironment = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "4", HERDR
 const fakeProvider = (profile: Profile, workflowId: string) => ({
   match: vi.fn<GuideProvider["match"]>(async () => ({
     candidates: [
-      { profileRef: `native:fmx/${profile}`, workflowId, confidence: 0.9, reason: "Requested workflow.", tradeoff: "Needs explicit approval." },
-      { profileRef: `native:fmx/${profile === "default" ? "pstack-workers" : "default"}`, workflowId, confidence: 0.8, reason: "Alternative.", tradeoff: "Worker appendix differs." },
-      { profileRef: "native:cdx/reviewer", workflowId: "review-project", confidence: 0.7, reason: "Focused review.", tradeoff: "No fleet." },
+      { profileRef: `native:firstmate/${profile}`, workflowId, confidence: 0.9, reason: "Requested workflow.", tradeoff: "Needs explicit approval." },
+      { profileRef: `native:firstmate/${profile === "default" ? "pstack-workers" : "default"}`, workflowId, confidence: 0.8, reason: "Alternative.", tradeoff: "Worker appendix differs." },
+      { profileRef: "native:codex/reviewer", workflowId: "review-project", confidence: 0.7, reason: "Focused review.", tradeoff: "No fleet." },
     ],
   })),
   generate: vi.fn<GuideProvider["generate"]>(async () => ({
@@ -823,9 +823,9 @@ const syntheticFirstmateControl = async (
     return response(preparationInventory(readiness))
   }
   if (args[0] === "inventory") {
-    if (options.legacy) return response(JSON.stringify({ schemaVersion: 1, launcher: "fmx", profile, readiness: "healthy" }))
+    if (options.legacy) return response(JSON.stringify({ schemaVersion: 1, launcher: "firstmate", profile, readiness: "healthy" }))
     const readiness = await (options.inventory?.(profile, commandOptions) ?? Promise.resolve(fleet(profile)))
-    return response(JSON.stringify({ schemaVersion: 1, launcher: "fmx", profile, readiness: "busy", fleet: readiness }))
+    return response(JSON.stringify({ schemaVersion: 1, launcher: "firstmate", profile, readiness: "busy", fleet: readiness }))
   }
   if (args[0] !== "submit" || !options.inbox) throw new Error(`Unexpected synthetic Firstmate operation: ${args[0]}`)
   if (commandOptions?.stdin === undefined) throw new Error("The synthetic inbox requires JSON on stdin.")
@@ -846,7 +846,7 @@ const mountedCatalog = (options: MountOptions): CombinedGuideCatalog => {
     }),
   } : catalog
   return options.instances === undefined ? prepared : {
-    ...prepared, native: prepared.native.map((entry) => entry.launcher === "fmx" && entry.name === "default"
+    ...prepared, native: prepared.native.map((entry) => entry.launcher === "firstmate" && entry.name === "default"
       ? { ...entry, orchestration: instanceOrchestration } : entry),
   }
 }
@@ -864,9 +864,9 @@ const mount = async (options: MountOptions = {}) => {
   const stderr = new TestOutput()
   const submissions: FirstmateSubmissionRequestV1[] = []
   const run = vi.fn<CommandRunner["run"]>(async (executable, args, commandOptions) => {
-    if (executable === "/fixture/fmx") {
+    if (executable === "/fixture/trx") {
       if (options.instances !== undefined) return options.instances.run(executable, args, commandOptions)
-      const requested = args[1] === "default" || args[1] === "pstack-workers" ? args[1] : profile
+      const requested = args[2] === "default" || args[2] === "pstack-workers" ? args[2] : profile
       return syntheticFirstmateControl(requested, options, args, commandOptions, submissions)
     }
     if (executable !== "git") throw new Error(`Unexpected synthetic command: ${executable} ${args.join(" ")}`)
@@ -1108,7 +1108,7 @@ describe("named Firstmate instance keyboard flow", () => {
   it("aborts discovery on leaving and ignores a late result without binding an instance", async () => {
     const instances = new InstanceRunner()
     const pending = deferred<CommandRunResult>()
-    instances.reply = async ({ args }) => args[1] === "list" ? pending.promise : undefined
+    instances.reply = async ({ args }) => args[2] === "list" ? pending.promise : undefined
     const tui = await mount({ instances })
     await tui.press("\r")
     await vi.waitFor(() => expect(instances.calls).toHaveLength(1))
@@ -1235,7 +1235,7 @@ describe.each(profiles)("Firstmate %s keyboard flow", (profile) => {
     const output: string[] = []
     expect(await executeGuideUiResult(result, { runner: { run: tui.run }, runInteractive, write: (text) => output.push(text) })).toBe(0)
     expect(runInteractive).toHaveBeenCalledExactlyOnceWith({
-      executable: "/fixture/fmx", args: [profile, "--fmx-expected-fleet-json", JSON.stringify(readiness.identity)],
+      executable: "/fixture/trx", args: ["run", "firstmate", profile, "--fmx-expected-fleet-json", JSON.stringify(readiness.identity)],
     }, { cwd: "/fixture/source-a", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }) })
     expect(tui.submissions).toHaveLength(1)
     expect(tui.run.mock.calls.some(([executable]) => executable === "herdr")).toBe(false)
@@ -1260,7 +1260,7 @@ describe.each(profiles)("Firstmate %s keyboard flow", (profile) => {
     const result = await tui.exited as GuideUiResult
     if (result.action !== "current-terminal") throw new Error("Legacy Firstmate must retain its manual-paste terminal route.")
     expect(result.promptHandling).toBe("manual-paste")
-    expect(result.command.args).toEqual([profile])
+    expect(result.command.args).toEqual(["run", "firstmate", profile])
     expect(result.legacyFirstmate).toMatchObject({
       originalIntent, projectTarget: localTarget(), workflowId: "review-project", projectTargetConfirmed: true,
     })
@@ -1302,7 +1302,7 @@ describe.each(profiles)("Firstmate %s keyboard flow", (profile) => {
     expect(batch.jobs).toHaveLength(1)
     expect(batch.jobs[0]).toMatchObject({
       firstmate: { action: "submit", requestId: queuedId },
-      command: { executable: "/fixture/fmx", args: [profile] },
+      command: { executable: "/fixture/trx", args: ["run", "firstmate", profile] },
       guideContext: { originalIntent, projectTarget, workflowId: "review-project" },
     })
     expect(tui.run.mock.calls.every(([executable, args]) => executable === "git" || args[0] === "inventory")).toBe(true)
@@ -1332,7 +1332,7 @@ describe.each(profiles)("Firstmate %s keyboard flow", (profile) => {
     expect(batch.context).toEqual({ cwd: "/fixture/source-a", workspaceId: "4", callerPaneId: "4-2" })
     expect(batch.jobs[0]?.firstmate?.action).toBe(action)
     expect(batch.jobs[0]?.placement).toEqual({ kind: "current-workspace-pane", direction: "right" })
-    expect(batch.jobs[0]?.command.args).toEqual([profile])
+    expect(batch.jobs[0]?.command.args).toEqual(["run", "firstmate", profile])
   })
 
   it("keeps fleet readiness out of refinement and optimization after the action screen is visited", async () => {
@@ -1383,8 +1383,8 @@ describe("Firstmate preparation keyboard flow", () => {
     await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(2))
     await tui.waitFor("Preparation: ready.")
     expect(tui.run.mock.calls.filter(([, args]) => args[0] === "prepare").map(([, args]) => args)).toEqual([
-      ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
-      ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
+      ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision],
+      ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision],
     ])
     expect(tui.run.mock.calls.every(([executable, args]) => executable === "git" || args[0] === "prepare")).toBe(true)
   })
@@ -1408,7 +1408,7 @@ describe("Firstmate preparation keyboard flow", () => {
     await tui.waitFor("not checked · claude: Claude authentication")
     expect(tui.screen()).toContain("not checked · github: GitHub authentication")
     expect(tui.screen()).not.toContain("blocked · claude")
-    expect(tui.screen()).toContain("run /fixture/fmx doctor default")
+    expect(tui.screen()).toContain("run /fixture/trx doctor firstmate default")
     await tui.press("r")
     await vi.waitFor(() => expect(tui.run.mock.calls.filter(([, args]) => args[0] === "inventory")).toHaveLength(2))
     await tui.waitFor("not checked · claude")
@@ -1434,7 +1434,7 @@ describe("Firstmate preparation keyboard flow", () => {
     await tui.press("i")
     await tui.waitFor("Review managed-tool installation")
     for (const line of firstmateInstallationPlanLines({
-      commandPath: "/fixture/fmx", profile: "default", sourceRevision: preparationRevision, installation: plan,
+      commandPath: "/fixture/trx", profile: "default", sourceRevision: preparationRevision, installation: plan,
     })) expect(tui.screen()).toContain(line)
     expect(tui.screen()).toContain("❯ Cancel")
     await tui.press("\r")
@@ -1463,9 +1463,9 @@ describe("Firstmate preparation keyboard flow", () => {
     await tui.waitFor("Preparation: ready.")
     expect(prepare).toHaveBeenCalledTimes(3)
     expect(tui.run.mock.calls.filter(([, args]) => args[0] === "prepare").map(([, args]) => args)).toEqual([
-      ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
-      ["prepare", "default", "--json", "--expected-source-revision", preparationRevision],
-      ["prepare", "default", "--json", "--expected-source-revision", preparationRevision, "--install-prerequisites", plan.identity],
+      ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision],
+      ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision],
+      ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision, "--install-prerequisites", plan.identity],
     ])
     expect(tui.screen()).toContain("Reported repair: Repaired the owned idle profile configuration.")
     expect(tui.screen()).toContain("Recover fleet · allowed")
@@ -1485,7 +1485,7 @@ describe("Firstmate preparation keyboard flow", () => {
 
   it("keeps errors and reported repairs visible after a nonzero result, and retries only on r", async () => {
     const prepare = vi.fn<NonNullable<MountOptions["prepare"]>>().mockRejectedValueOnce(new CommandRunnerError({
-      kind: "exited", executable: "/fixture/fmx", args: ["prepare", "default"], exitCode: 9,
+      kind: "exited", executable: "/fixture/trx", args: ["prepare", "firstmate", "default"], exitCode: 9,
       stdout: preparationInventory(missingToolsFleet()), stderr: "Managed lock changed; recheck the current plan.",
       message: "Preparation exited.",
     })).mockResolvedValue(preparedFleet())

@@ -47,7 +47,7 @@ const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEn
   harness: "oh-my-pi",
   name: "local",
   description: "Oh My Pi native profile.",
-  commandPath: "/opt/trellage/omp/bin/omp",
+  commandPath: "/opt/trellage/omp/bin/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -141,7 +141,7 @@ describe("runBatchedHarnessVersionChecks", () => {
     )
 
     await flush()
-    expect(runner.calls).toEqual([{ executable: "/opt/trellage/omp/bin/omp", args: ["harness-version"] }])
+    expect(runner.calls).toEqual([{ executable: "/opt/trellage/omp/bin/trx", args: ["harness-version", "omp", "local"] }])
     runner.resolveNext(runResult("18.1.1", "18.1.2"))
     await batch
 
@@ -169,8 +169,8 @@ describe("runBatchedHarnessVersionChecks", () => {
     await batch
 
     expect(runner.calls).toEqual([
-      { executable: "/opt/trellage/omp/bin/omp", args: ["harness-version"] },
-      { executable: "/opt/trellage/omp/bin/omp", args: ["harness-version"] },
+      { executable: "/opt/trellage/omp/bin/trx", args: ["harness-version", "omp", "local"] },
+      { executable: "/opt/trellage/omp/bin/trx", args: ["harness-version", "omp", "local"] },
       { executable: "/opt/trellage/bin/trellage", args: ["harness-version", "pi"] },
     ])
   })
@@ -280,8 +280,8 @@ describe("runBatchedHarnessVersionChecks", () => {
     const manager = new AdminRunManager({ runner })
     const now = Date.now()
     const cpx = nativeEntry({
-      ref: "native:cpx/default",
-      launcher: "cpx",
+      ref: "native:copilot/default",
+      launcher: "copilot",
       harness: "copilot",
       name: "default",
     })
@@ -294,7 +294,7 @@ describe("runBatchedHarnessVersionChecks", () => {
     const cache: AdminHarnessVersionCacheRecord = {
       schemaVersion: 2,
       entries: {
-        "native:cpx": {
+        "native:copilot": {
           checkedAt: now - 1000,
           result: {
             installed: { kind: "known", version: "1.0.82" },
@@ -322,10 +322,10 @@ describe("runBatchedHarnessVersionChecks", () => {
     const batch = runBatchedHarnessVersionChecks(
       [
         nativeEntry({
-          ref: "native:cpx/default",
-          launcher: "cpx",
+          ref: "native:copilot/default",
+          launcher: "copilot",
           harness: "copilot",
-          commandPath: "/opt/trellage/cpx/bin/cpx",
+          commandPath: "/opt/trellage/copilot/bin/trx",
         }),
         nativeEntry(),
       ],
@@ -345,7 +345,7 @@ describe("runBatchedHarnessVersionChecks", () => {
     runner.rejectNext(new Error("copilot executable still failed"))
     await batch
 
-    expect(manager.status(harnessVersionRefFor("native:cpx")).state).toBe("failure")
+    expect(manager.status(harnessVersionRefFor("native:copilot")).state).toBe("failure")
     expect(manager.status(harnessVersionRefFor("native:omp")).state).toBe("success")
     expect(settled.some(({ key, result }) => key === "native:omp" && result.result.latest.kind === "known")).toBe(true)
   })
@@ -355,7 +355,7 @@ describe("runBatchedHarnessVersionChecks", () => {
     const manager = new AdminRunManager({ runner })
     await expect(
       runBatchedHarnessVersionChecks(
-        [nativeEntry({ launcher: "agx", harnessVersionSupported: false })],
+        [nativeEntry({ launcher: "agency", harnessVersionSupported: false })],
         manager,
         emptyCache(),
       ),

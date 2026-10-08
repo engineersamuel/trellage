@@ -169,4 +169,39 @@ fi
 [[ "$(cat "$TRELLAGE_TEST_REBUILD_LOG")" == bun ]] \
   || fail 'invalid profile triggered preparation'
 
+native_home="$fixture_root/native-home"
+native_bin="$fixture_root/native-bin"
+mkdir -p "$native_home" "$native_bin" "$workspace/prototypes/trellage-router"
+printf '#!/bin/sh\nexit 0\n' >"$workspace/prototypes/trellage-router/install.sh"
+printf '#!/bin/sh\nexit 0\n' >"$native_bin/trx"
+chmod +x "$workspace/prototypes/trellage-router/install.sh" "$native_bin/trx"
+for record in 'cdx codex v2' 'cpx copilot v1' 'agx agency v1' 'cldx claude v1' \
+  'fmx firstmate v1' 'jcx jcode v1' 'omp omp v2' 'picx picx v1' 'prx prime v1'; do
+  read -r backend package version <<<"$record"
+  package_root="$workspace/prototypes/trellage-$package-profiles"
+  runtime_root="$native_home/.local/share/trellage/$backend"
+  mkdir -p "$package_root" "$runtime_root/bin"
+  printf '#!/bin/sh\nexit 0\n' >"$package_root/install.sh"
+  printf '#!/bin/sh\nexit 0\n' >"$runtime_root/bin/$backend"
+  chmod +x "$package_root/install.sh" "$runtime_root/bin/$backend"
+  marker="trellage-$package-profiles"
+  [[ "$backend" != cpx ]] || marker=trellage-profiles
+  printf '%s-%s\n' "$marker" "$version" >"$runtime_root/.managed-by-$marker"
+done
+native_rebuild() {
+  HOME="$native_home" PATH="$native_bin:/usr/bin:/bin" bash "$workspace/scripts/rebuild-profile-images.sh" --native-only
+}
+output="$(native_rebuild 2>&1)" || fail "native rebuild required retired public aliases: $output"
+[[ "$output" == *'trx --help ok'* && "$output" == *'private backend prx'* ]] \
+  || fail 'native rebuild did not verify public router and private backends'
+
+rm "$native_home/.local/share/trellage/prx/bin/prx"
+if output="$(native_rebuild 2>&1)"; then fail 'missing private backend was accepted'; fi
+[[ "$output" == *'missing or unsafe private backend: prx'* ]] || fail 'missing backend diagnostic was lost'
+printf '#!/bin/sh\nexit 0\n' >"$native_home/.local/share/trellage/prx/bin/prx"
+chmod +x "$native_home/.local/share/trellage/prx/bin/prx"
+printf 'unowned\n' >"$native_home/.local/share/trellage/prx/.managed-by-trellage-prime-profiles"
+if output="$(native_rebuild 2>&1)"; then fail 'unowned private backend was accepted'; fi
+[[ "$output" == *'invalid private backend ownership: prx'* ]] || fail 'ownership diagnostic was lost'
+
 printf 'rebuild profiles Bun runtime contract: PASS\n'

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-unset TRELLAGE_TRX_SOURCE_ROOT
+unset TRELLAGE_TRX_SOURCE_ROOT TRELLAGE_TRX_NATIVE_SOURCE
 
 prototype_root="$(cd -P "$(dirname "$0")/.." && pwd -P)"
 . "$prototype_root/../../tests/helpers/floating_skills_fixture.sh"
@@ -66,9 +66,9 @@ assert_no_upgrade_mutation() {
 
 assert_native_skills_refreshed() {
   jq -se --arg router "$runtime_parent/trx/bin/trx" '
-    length == 8 and all(.[]; .args[0] == "update" and .routerCommandPath == $router)
-  ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh all eight caches once through its own router'
-  jq -r '.catalog.native[] | .launcher + ":skills-update " + .name' \
+    length == 1 and all(.[]; .args == [] and .routerCommandPath == $router)
+  ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh the configured skill maintenance once through its own router'
+  jq -r '.catalog.native[] | (.launcher | {agency:"agx",copilot:"cpx",codex:"cdx",claude:"cldx",firstmate:"fmx",jcode:"jcx",pi:"picx",prime:"prx",omp:"omp"}[.]) + ":skills-update " + (if .launcher == "agency" and .name == "azure" then "trellage-azure" elif .launcher == "omp" and .name == "default" then "copilot" else .name end)' \
     "$fixture_root/guide-catalog.json" | sort >"$fixture_root/expected-skills-update.log"
   sort "$skills_update_log" >"$fixture_root/actual-skills-update.log"
   cmp -s "$fixture_root/expected-skills-update.log" "$fixture_root/actual-skills-update.log" \
@@ -106,9 +106,6 @@ create_native_launcher() {
   fi
 
   local sandbox=false
-  if [[ "$launcher" == grx ]]; then
-    sandbox=true
-  fi
 
   mkdir -p "$runtime/bin"
   printf '%s\n' "$marker_value" >"$runtime/$marker"
@@ -474,7 +471,6 @@ catalog_stage="$fixture_root/cdx-catalog.json"
 mv "$catalog_stage" "$runtime_parent/cdx/catalog.json"
 create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
 create_native_launcher fmx firstmate .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1
-create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v2
 create_native_launcher picx pi .managed-by-trellage-picx-profiles trellage-picx-profiles-v1
@@ -484,7 +480,9 @@ create_native_launcher agx agency .managed-by-trellage-agency-profiles trellage-
 write_fixture_guide() {
   local launcher="$1"
   local profile="$2"
-  local destination="$runtime_parent/trx/share/profile-guides/native/$launcher/$profile.md"
+  local guide_harness="$launcher" guide_profile="$profile"
+  case "$launcher" in cpx) guide_harness=copilot ;; cdx) guide_harness=codex ;; cldx) guide_harness=claude ;; fmx) guide_harness=firstmate ;; jcx) guide_harness=jcode ;; picx) guide_harness=pi ;; prx) guide_harness=prime ;; agx) guide_harness=agency; guide_profile=azure ;; omp) [[ "$profile" != copilot ]] || guide_profile=default ;; esac
+  local destination="$runtime_parent/trx/share/profile-guides/native/$guide_harness/$guide_profile.md"
 
   mkdir -p "$(dirname "$destination")"
   cat >"$destination" <<'EOF'
@@ -591,7 +589,7 @@ cmp -s "$runtime_parent/trx/.managed-by-trellage-router" \
   || fail 'upgrade did not install the dependency bootstrap'
 [[ ! -e "$runtime_parent/trx/lib/terminal-picker.mjs" ]] \
   || fail 'upgrade left the legacy terminal picker'
-[[ -f "$runtime_parent/trx/share/profile-guides/native/cpx/awesome.md" ]] \
+[[ -f "$runtime_parent/trx/share/profile-guides/native/copilot/awesome.md" ]] \
   || fail 'installer did not publish profile guides'
 
 rm -rf -- "$runtime_parent/trx/share/profile-guides"
@@ -603,7 +601,6 @@ for pair in \
   cldx:cldx-p \
   fmx:default \
   fmx:pstack-workers \
-  grx:grx-p \
   jcx:jcx-p \
   omp:copilot \
   omp:local \
@@ -616,8 +613,7 @@ export TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides"
 
 "$fixture_bin/trx" --help >"$fixture_root/help.out"
 assert_contains 'trx list [--json]' "$fixture_root/help.out"
-assert_contains 'trx run LAUNCHER PROFILE [-- ARGS...]' "$fixture_root/help.out"
-assert_contains 'trx --profile agency [COPILOT_ARGS...]' "$fixture_root/help.out"
+assert_contains 'trx run HARNESS PROFILE [-- ARGS...]' "$fixture_root/help.out"
 assert_contains 'trx guide [INTENT]' "$fixture_root/help.out"
 assert_contains 'trx guide --review' "$fixture_root/help.out"
 assert_contains 'trx guide --preview' "$fixture_root/help.out"
@@ -626,47 +622,14 @@ assert_contains 'trx skills update' "$fixture_root/help.out"
 assert_contains 'trx admin' "$fixture_root/help.out"
 assert_contains 'trx upgrade all [--yes | --dry-run]' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
-assert_contains 'trx run cpx tufte-vdqi' "$fixture_root/help.out"
+assert_contains 'trx run copilot tufte-vdqi' "$fixture_root/help.out"
 
-status=0
-"$fixture_bin/trx" --profile cpx-p >"$fixture_root/profile-option.out" \
-  2>"$fixture_root/profile-option.err" || status=$?
-[[ "$status" == 1 ]] || fail "invalid router --profile option exited $status instead of 1"
-assert_contains \
-  'unknown profile alias: cpx-p; use: trx run LAUNCHER PROFILE' \
-  "$fixture_root/profile-option.err"
-
-: >"$argument_log"
-TRX_ARGUMENT_LOG="$argument_log" \
-  "$fixture_bin/trx" --profile agency 'space value' '' '*' \
-  || fail 'direct Agency profile launch failed'
-python3 - "$argument_log" <<'PY' || fail 'direct Agency profile arguments differ'
-import pathlib
-import sys
-
-actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"agx", b"trellage-azure", b"space value", b"", b"*", b""]
-raise SystemExit(0 if actual == expected else 1)
-PY
-
-: >"$argument_log"
-TRX_ARGUMENT_LOG="$argument_log" \
-  "$fixture_bin/trx" --profile=agency --model gpt-5.6-sol \
-  || fail 'equals-form Agency profile launch failed'
-python3 - "$argument_log" <<'PY' || fail 'equals-form Agency arguments differ'
-import pathlib
-import sys
-
-actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"agx", b"trellage-azure", b"--model", b"gpt-5.6-sol", b""]
-raise SystemExit(0 if actual == expected else 1)
-PY
-
-status=0
-"$fixture_bin/trx" --profile unknown >"$fixture_root/profile-unknown.out" \
-  2>"$fixture_root/profile-unknown.err" || status=$?
-[[ "$status" == 1 ]] || fail "unknown profile alias exited $status instead of 1"
-assert_contains 'unknown profile alias: unknown' "$fixture_root/profile-unknown.err"
+for retired_args in '--profile agency' '--profile=agency' 'run cpx cpx-p' 'run cdx youtube' 'run fmx default'; do
+  status=0
+  "$fixture_bin/trx" $retired_args >"$fixture_root/retired-route.out" 2>&1 || status=$?
+  [[ "$status" == 1 ]] || fail "retired route succeeded: $retired_args"
+  assert_contains 'use: trx run' "$fixture_root/retired-route.out"
+done
 
 "$fixture_bin/trx" guide --help >"$fixture_root/guide-help.out"
 assert_contains 'native:<launcher>/<profile> or sandbox:<profile>' \
@@ -760,35 +723,8 @@ chmod 0755 "$fixture_bin/bun"
 XDG_DATA_HOME="$fixture_root/xdg-data" \
   TRX_REAL_BUN="$real_bun" TRX_NODE_LOG="$fixture_root/skills-update.argv" "$fixture_bin/trx" skills update \
   || fail 'skills update did not delegate to the floating-skills manager'
-grep -Fxq native-common "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the native bundle'
-grep -Fxq codex-common "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the Codex bundle'
-grep -Fxq "$fixture_root/xdg-data/trellage/common/cdx-skills" \
-  "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the native Codex cache'
-grep -Fxq youtube "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the native YouTube bundle'
-grep -Fxq "$fixture_root/xdg-data/trellage/common/cdx-youtube-pro-skills" \
-  "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the native YouTube cache'
-grep -Fxq omp-community "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the OMP community bundle'
-grep -Fxq "$fixture_home/.local/share/trellage/common/omp-community-skills" \
-  "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the OMP community cache'
-grep -Fxq guide-prompt-master "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the guide Prompt Master bundle'
-grep -Fxq "$fixture_home/.local/share/trellage/common/guide-prompt-master-skills" \
-  "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the guide Prompt Master cache'
-grep -Fxq guide-optimize-architecture "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the guide architecture bundle'
-grep -Fxq "$fixture_home/.local/share/trellage/common/guide-optimize-architecture-skills" \
-  "$fixture_root/skills-update.argv" \
-  || fail 'skills update omitted the guide architecture cache'
-[[ "$(grep -Fxc update "$fixture_root/skills-update.argv")" == 8 ]] \
-  || fail 'skills update did not invoke all bundle updates'
+grep -Fq '/scripts/skills-update.ts' "$fixture_root/skills-update.argv" \
+  || fail 'skills update omitted the configured source maintenance service'
 rm "$fixture_bin/bun"
 ln -s "$real_bun" "$fixture_bin/bun"
 
@@ -800,21 +736,20 @@ assert_contains 'skills requires status, update, or check --json' "$fixture_root
 
 "$fixture_bin/trx" list >"$fixture_root/list.out" \
   || fail 'human list failed'
-assert_contains $'cpx/cpx-p\t' "$fixture_root/list.out"
-assert_contains $'cdx/cdx-p\tcdx' "$fixture_root/list.out"
-assert_contains $'cldx/cldx-p\tcldx' "$fixture_root/list.out"
-assert_contains $'fmx/default\tFirstmate fleet orchestration' "$fixture_root/list.out"
-assert_contains $'fmx/pstack-workers\tFirstmate with a lean pstack worker policy' \
+assert_contains $'copilot/cpx-p\t' "$fixture_root/list.out"
+assert_contains $'codex/cdx-p\tcdx' "$fixture_root/list.out"
+assert_contains $'claude/cldx-p\tcldx' "$fixture_root/list.out"
+assert_contains $'firstmate/default\tFirstmate fleet orchestration' "$fixture_root/list.out"
+assert_contains $'firstmate/pstack-workers\tFirstmate with a lean pstack worker policy' \
   "$fixture_root/list.out"
-assert_contains $'grx/grx-p\tgrx' "$fixture_root/list.out"
-assert_contains $'jcx/jcx-p\tjcx' "$fixture_root/list.out"
-assert_contains $'omp/copilot\tNative GitHub Copilot' "$fixture_root/list.out"
+assert_contains $'jcode/jcx-p\tjcx' "$fixture_root/list.out"
+assert_contains $'omp/default\tNative GitHub Copilot' "$fixture_root/list.out"
 assert_contains $'omp/local\tLocal Qwen' "$fixture_root/list.out"
-assert_contains $'picx/default\tOrdered Pi extension profile' "$fixture_root/list.out"
-assert_contains $'cdx/pstack\tAqua-123 pstack for Codex' "$fixture_root/list.out"
-assert_contains $'cdx/youtube\tYouTube transcript research with youtube-full' "$fixture_root/list.out"
-assert_contains $'prx/prx-p\tprx' "$fixture_root/list.out"
-assert_contains $'agx/trellage-azure\tagx' "$fixture_root/list.out"
+assert_contains $'pi/default\tOrdered Pi extension profile' "$fixture_root/list.out"
+assert_contains $'codex/pstack\tAqua-123 pstack for Codex' "$fixture_root/list.out"
+assert_contains $'codex/youtube\tYouTube transcript research with youtube-full' "$fixture_root/list.out"
+assert_contains $'prime/prx-p\tprx' "$fixture_root/list.out"
+assert_contains $'agency/azure\tagx' "$fixture_root/list.out"
 
 "$fixture_bin/trx" list --json >"$fixture_root/list.json" \
   || fail 'JSON list failed'
@@ -829,20 +764,19 @@ jq -e '
     and .guide.capabilities == ["fixture-delivery"]
     and .guide.workflows[0].id == "deliver")
   and [.profiles[] | .launcher + "/" + .name] == [
-    "cpx/cpx-p",
-    "cdx/cdx-p",
-    "cdx/pstack",
-    "cdx/youtube",
-    "cldx/cldx-p",
-    "fmx/default",
-    "fmx/pstack-workers",
-    "grx/grx-p",
-    "jcx/jcx-p",
-    "omp/copilot",
+    "copilot/cpx-p",
+    "codex/cdx-p",
+    "codex/pstack",
+    "codex/youtube",
+    "claude/cldx-p",
+    "firstmate/default",
+    "firstmate/pstack-workers",
+    "jcode/jcx-p",
+    "omp/default",
     "omp/local",
-    "picx/default",
-    "prx/prx-p",
-    "agx/trellage-azure"
+    "pi/default",
+    "prime/prx-p",
+    "agency/azure"
   ]
   and [.profiles[] | .harness] == [
     "copilot",
@@ -852,10 +786,9 @@ jq -e '
     "claude",
     "firstmate",
     "firstmate",
-    "grok",
     "jcode",
-    "oh-my-pi",
-    "oh-my-pi",
+    "omp",
+    "omp",
     "pi",
     "prime",
     "agency"
@@ -868,7 +801,6 @@ jq -e '
     false,
     false,
     false,
-    true,
     false,
     false,
     false,
@@ -877,33 +809,33 @@ jq -e '
     false
   ]
   and all(.profiles[]; .herdrCompatibility.status | . == "untested" or . == "verified" or . == "known-issue")
-  and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .herdrCompatibility) == { status: "verified" }
+  and (.profiles[] | select(.launcher == "omp" and .name == "default") | .herdrCompatibility) == { status: "verified" }
   and (.profiles[] | select(.launcher == "omp" and .name == "local") | .herdrCompatibility.status) == "known-issue"
-  and (.profiles[] | select(.launcher == "picx" and .name == "default") | .herdrCompatibility.status) == "untested"
-  and (.profiles[] | select(.launcher == "cdx" and .name == "pstack") | .herdrCompatibility.status) == "untested"
-  and (.profiles[] | select(.launcher == "cdx" and .name == "youtube") | .herdrCompatibility.status) == "verified"
-  and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .herdrCompatibility.status) == "untested"
-  and (.profiles[] | select(.launcher == "fmx" and .name == "pstack-workers") | .herdrCompatibility.status) == "untested"
-  and (.profiles[] | select(.launcher == "agx" and .name == "trellage-azure") | .herdrCompatibility.status) == "untested"
-  and all(.profiles[] | select(.launcher == "fmx"); .headless.prompt == false and .headless.modelOverride == false)
-  and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .orchestration.taskIdPrefix) == "fmd"
-  and (.profiles[] | select(.launcher == "fmx" and .name == "default") | .orchestration.preparation) == {schemaVersion: 1}
-  and (.profiles[] | select(.launcher == "fmx" and .name == "pstack-workers") | .orchestration.workerPolicy.name) == "pstack-workers"
-  and (.profiles[] | select(.launcher == "fmx" and .name == "pstack-workers") | .orchestration | has("preparation") | not)
-  and all(.profiles[] | select(.launcher != "fmx"); has("orchestration") | not)
-  and (.profiles[] | select(.launcher == "cpx") | .herdrCompatibility) == { status: "untested" }
-  and (.profiles[] | select(.launcher == "omp" and .name == "copilot") | .headless.questionToolControl) == "prompt-only"
-  and (.profiles[] | select(.launcher == "cdx") | .headless.testedHarnessVersion) == "1.2.3"
+  and (.profiles[] | select(.launcher == "pi" and .name == "default") | .herdrCompatibility.status) == "untested"
+  and (.profiles[] | select(.launcher == "codex" and .name == "pstack") | .herdrCompatibility.status) == "untested"
+  and (.profiles[] | select(.launcher == "codex" and .name == "youtube") | .herdrCompatibility.status) == "verified"
+  and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .herdrCompatibility.status) == "untested"
+  and (.profiles[] | select(.launcher == "firstmate" and .name == "pstack-workers") | .herdrCompatibility.status) == "untested"
+  and (.profiles[] | select(.launcher == "agency" and .name == "azure") | .herdrCompatibility.status) == "untested"
+  and all(.profiles[] | select(.launcher == "firstmate"); .headless.prompt == false and .headless.modelOverride == false)
+  and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .orchestration.taskIdPrefix) == "fmd"
+  and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .orchestration.preparation) == {schemaVersion: 1}
+  and (.profiles[] | select(.launcher == "firstmate" and .name == "pstack-workers") | .orchestration.workerPolicy.name) == "pstack-workers"
+  and (.profiles[] | select(.launcher == "firstmate" and .name == "pstack-workers") | .orchestration | has("preparation") | not)
+  and all(.profiles[] | select(.launcher != "firstmate"); has("orchestration") | not)
+  and (.profiles[] | select(.launcher == "copilot") | .herdrCompatibility) == { status: "untested" }
+  and (.profiles[] | select(.launcher == "omp" and .name == "default") | .headless.questionToolControl) == "prompt-only"
+  and (.profiles[] | select(.launcher == "codex") | .headless.testedHarnessVersion) == "1.2.3"
   and all(.profiles[]; .description | type == "string" and length > 0)
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list shape or ordering differs'
 
 jq -e --slurpfile ledger "$prototype_root/../../docs/herdr-compatibility.json" '
-  all(.profiles[] | select(.launcher == "fmx");
+  all(.profiles[] | select(.launcher == "firstmate");
     . as $profile
     | .herdrCompatibility == (
         $ledger[0].entries[]
-        | select(.kind == "native" and .launcher == "fmx" and .profile == $profile.name)
+        | select(.kind == "native" and .launcher == "firstmate" and .profile == $profile.name)
         | del(.kind, .launcher, .profile, .harness)))
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'Firstmate compatibility projection differs from its source evidence'
@@ -921,22 +853,7 @@ cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
   || fail 'worktree source launch did not restore readiness automatically'
 mv "$fixture_root/source-ownership.saved" "$fixture_source/.managed-by-trellage-source"
 
-: >"$fixture_source/node_modules/.trx-contract-drift-2"
-: >"$argument_log"
-TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
-  TRX_ARGUMENT_LOG="$argument_log" \
-  "$fixture_source/prototypes/trellage-router/bin/trx" run cpx cpx-p -- --plan -i 'Review report path' \
-  || fail 'worktree source trx run did not recover stale runtime readiness'
-[[ -f "$fixture_source/.trellage-source-ready.json" ]] \
-  || fail 'worktree source trx run did not restore runtime readiness'
-python3 - "$argument_log" <<'PY' || fail 'worktree source trx run changed plan-mode arguments'
-import pathlib
-import sys
 
-actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"cpx", b"cpx-p", b"--plan", b"-i", b"Review report path", b""]
-raise SystemExit(0 if actual == expected else 1)
-PY
 
 # --- TRELLAGE_TRX_NATIVE_SOURCE: opt-in dev-mode native launcher delegation.
 # Uses a self-contained fixture (a copy of trx plus fixture sibling
@@ -960,8 +877,6 @@ create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage
   "$fixture_root/trellage-claude-profiles"
 create_native_launcher fmx firstmate .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1 \
   "$fixture_root/trellage-firstmate-profiles"
-create_native_launcher grx grok .managed-by-trellage-grok-profiles trellage-grok-profiles-v1 \
-  "$fixture_root/trellage-grok-profiles"
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1 \
   "$fixture_root/trellage-jcode-profiles"
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v2 \
@@ -1126,10 +1041,8 @@ chmod 0755 "$fixture_bin/trellage"
 TRX_CATALOG_ARGS_LOG="$fixture_root/guide-catalog-args.log" "$fixture_bin/trx" guide --intent 'fixture intent' --json \
   >"$fixture_root/guide-catalog.json" \
   || fail 'guide mode did not aggregate native and Sandbox catalogs'
-grep -Fxq 'cpx:list --json --cached-capabilities' "$fixture_root/guide-catalog-args.log" \
-  || fail 'guide startup did not defer Copilot capability probing'
-[[ "$(grep -c -- --cached-capabilities "$fixture_root/guide-catalog-args.log")" == 1 ]] \
-  || fail 'guide used the Copilot-only catalog flag for another launcher'
+[[ ! -s "$fixture_root/guide-catalog-args.log" ]] \
+  || fail 'guide catalog executed an installed backend instead of reading static metadata'
 jq -e \
   --arg guideRoot "$runtime_parent/trx/share/profile-guides" \
   --arg sandboxCommandPath "$fixture_bin/trellage" \
@@ -1138,13 +1051,13 @@ jq -e \
     .guideRoot == $guideRoot
     and (.promptMasterSkillDirectory | endswith("/skills/prompt-master"))
     and .goalSkills.managerPath == ($runtimeParent + "/trx/source/scripts/floating-skills.ts")
-    and .goalSkills.catalogPath == ($runtimeParent + "/trx/source/skills.json")
+    and .goalSkills.catalogPath == ($runtimeParent + "/trx/source/config.toml")
     and .goalSkills.cachePath == $goalCache
     and .args == ["--intent", "fixture intent", "--json"]
     and .catalog.schemaVersion == 1
     and .catalog.sandboxCommandPath == $sandboxCommandPath
     and .catalog.sandbox[0].name == "sandbox-fixture"
-    and (.catalog.native | length == 14)
+    and (.catalog.native | length == 13)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -1188,13 +1101,13 @@ jq -e --arg sandboxCommandPath "$fixture_source/prototypes/trellage/trellage" '
   .args == ["--optimize", "--base", "main", "--intent", "keep this original task"]
   and .catalog.sandboxCommandPath == $sandboxCommandPath
   and .catalog.sandbox == []
-  and (.catalog.native | length == 14)
+  and (.catalog.native | length == 13)
 ' "$fixture_root/guide-optimize.json" >/dev/null || fail 'guide Optimize changed its task or Native-only catalog'
 mv "$fixture_bin/trellage" "$fixture_root/optimize-trellage.saved"
 "$fixture_bin/trx" guide --optimize >"$fixture_root/guide-optimize-no-sandbox.json" \
   || fail 'guide Optimize required a separately installed Sandbox command'
 mv "$fixture_root/optimize-trellage.saved" "$fixture_bin/trellage"
-jq -e '.args == ["--optimize"] and .catalog.sandbox == [] and (.catalog.native | length == 14)' \
+jq -e '.args == ["--optimize"] and .catalog.sandbox == [] and (.catalog.native | length == 13)' \
   "$fixture_root/guide-optimize-no-sandbox.json" >/dev/null || fail 'guide Optimize lost its Native catalog'
 mv "$fixture_root/optimize-floating-skills.saved" "$optimize_skills_manager"
 refresh_fixture_source
@@ -1296,7 +1209,7 @@ jq -e \
     and .catalog.schemaVersion == 1
     and .catalog.sandboxCommandPath == $sandboxCommandPath
     and .catalog.sandbox[0].name == "sandbox-fixture"
-    and (.catalog.native | length == 14)
+    and (.catalog.native | length == 13)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -1345,13 +1258,10 @@ assert_contains 'catalog discovery failed' "$fixture_root/upgrade-invalid-native
 [[ ! -s "$upgrade_log" ]] || fail 'invalid Native catalog discovery started an update'
 
 mv "$fixture_bin/cdx" "$fixture_bin/cdx.saved"
-status=0
-TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --yes \
-  >"$fixture_root/upgrade-missing-native.out" 2>&1 || status=$?
+TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --dry-run \
+  >"$fixture_root/upgrade-missing-native.out" 2>&1 \
+  || fail 'upgrade preview requires a retired public wrapper'
 mv "$fixture_bin/cdx.saved" "$fixture_bin/cdx"
-[[ "$status" == 1 ]] || fail 'upgrade accepted missing Native launcher discovery'
-assert_contains 'required launcher not found on PATH: cdx' "$fixture_root/upgrade-missing-native.out"
-[[ ! -s "$upgrade_log" ]] || fail 'missing Native launcher discovery started an update'
 
 mv "$fixture_bin/trellage" "$fixture_bin/trellage.saved"
 status=0
@@ -1402,13 +1312,13 @@ printf 'unexpected dependency bootstrap\n' >>"$TRX_UPGRADE_LOG"
 exit 65
 EOF
 
-fixture_skills_manager="$fixture_source/scripts/floating-skills.ts"
+fixture_skills_manager="$fixture_source/scripts/skills-update.ts"
 mv "$fixture_skills_manager" "$fixture_root/floating-skills.saved"
 cat >"$fixture_skills_manager" <<'EOF'
 import { appendFileSync } from "node:fs"
 
 const args = process.argv.slice(2)
-if (args[0] !== "update" || !process.env.TRX_SKILLS_CACHE_LOG) {
+if (args.length !== 0 || !process.env.TRX_SKILLS_CACHE_LOG) {
   throw new Error("Unexpected floating-skills fixture command; network access is not allowed.")
 }
 appendFileSync(process.env.TRX_SKILLS_CACHE_LOG, `${JSON.stringify({
@@ -1427,7 +1337,7 @@ export TRX_SKILLS_UPDATE_LOG="$skills_update_log"
 reset_upgrade_logs
 TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" skills update >"$fixture_root/skills-without-bootstrap.out" 2>&1 \
   || fail 'skills update unexpectedly ran the development dependency bootstrap'
-[[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 8 ]] || fail 'standalone skills update did not refresh the eight caches'
+[[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 1 ]] || fail 'standalone skills update did not dispatch configured maintenance once'
 [[ ! -s "$upgrade_log" && ! -s "$skills_update_log" ]] || fail 'standalone cache refresh changed profiles or ran bootstrap'
 reset_upgrade_logs
 : >"$discovery_log"
@@ -1436,13 +1346,13 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_DISCOVERY_LOG="$discovery_log" \
   "$fixture_bin/trx" upgrade all --dry-run >"$fixture_root/upgrade-dry-run.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "upgrade dry-run did not report unsupported Agency (got $status)"
 assert_no_upgrade_mutation 'upgrade dry-run'
-[[ "$(sort -u "$discovery_log" | wc -l | tr -d ' ')" == 11 ]] \
-  || fail 'upgrade dry-run did not use every Native catalog and the Sandbox catalog'
-assert_contains '15 catalog profiles' "$fixture_root/upgrade-dry-run.out"
-assert_contains '10 Native runtime/profile updates; 1 Container image updates' "$fixture_root/upgrade-dry-run.out"
-assert_contains 'Unsupported harness native:agx/trellage-azure' "$fixture_root/upgrade-dry-run.out"
+[[ "$(sort -u "$discovery_log" | wc -l | tr -d ' ')" == 1 ]] \
+  || fail 'upgrade dry-run did not use static Native catalogs and only execute the Sandbox catalog'
+assert_contains '14 catalog profiles' "$fixture_root/upgrade-dry-run.out"
+assert_contains '9 Native runtime/profile updates; 1 Container image updates' "$fixture_root/upgrade-dry-run.out"
+assert_contains 'Unsupported harness native:agency/azure' "$fixture_root/upgrade-dry-run.out"
 assert_contains "Refresh: $runtime_parent/trx/bin/trx skills update" "$fixture_root/upgrade-dry-run.out"
-assert_contains "$runtime_parent/agx/bin/agx skills-update trellage-azure" "$fixture_root/upgrade-dry-run.out"
+assert_contains "$runtime_parent/trx/bin/trx upgrade agency azure --skills-only" "$fixture_root/upgrade-dry-run.out"
 assert_contains 'No harness or skill updates or installed-version checks were started' "$fixture_root/upgrade-dry-run.out"
 
 TRX_UPGRADE_LOG="$upgrade_log" python3 - "$fixture_bin/trx" "$fixture_root/upgrade-non-tty.out" <<'PY'
@@ -1469,7 +1379,7 @@ status=0
 TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --yes \
   >"$fixture_root/upgrade-yes.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "authorized upgrade hid unsupported Agency (got $status)"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 11 ]] || fail 'authorized upgrade did not run each planned update exactly once'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'authorized upgrade did not run each planned update exactly once'
 assert_native_skills_refreshed
 assert_contains 'cldx:harness-update' "$upgrade_log"
 assert_contains 'fmx:update default' "$upgrade_log"
@@ -1478,21 +1388,21 @@ assert_contains 'omp:update copilot' "$upgrade_log"
 assert_contains 'picx:update default' "$upgrade_log"
 assert_contains 'trellage:upgrade sandbox-fixture --strict-harness' "$upgrade_log"
 assert_contains 'Installed sandbox:sandbox-fixture: 3.0.0' "$fixture_root/upgrade-yes.out"
-assert_contains 'Harness summary: 14 updated, 0 failed, 1 unsupported' "$fixture_root/upgrade-yes.out"
-assert_contains 'Native skills summary: 14 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-yes.out"
-assert_contains 'Updated Native skills native:agx/trellage-azure' "$fixture_root/upgrade-yes.out"
+assert_contains 'Harness summary: 13 updated, 0 failed, 1 unsupported' "$fixture_root/upgrade-yes.out"
+assert_contains 'Native skills summary: 13 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-yes.out"
+assert_contains 'Updated Native skills native:agency/azure' "$fixture_root/upgrade-yes.out"
 
 reset_upgrade_logs
 status=0
 TRX_UPGRADE_LOG="$upgrade_log" TRX_UPGRADE_FAIL=cldx TRX_UPGRADE_FALLBACK=1 TRX_UPGRADE_VERSION_FAIL=cdx \
   "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-mixed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'upgrade accepted mixed command, fallback, and installed-version failures'
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 11 ]] || fail 'an independent failure stopped later upgrade groups'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'an independent failure stopped later upgrade groups'
 assert_native_skills_refreshed
-assert_contains 'Failed harness native:cldx/cldx-p: fixture harness update failed: cldx' "$fixture_root/upgrade-mixed.out"
+assert_contains 'Failed harness native:claude/cldx-p: fixture harness update failed: cldx' "$fixture_root/upgrade-mixed.out"
 assert_contains 'Installed-version refresh failed for Native codex' "$fixture_root/upgrade-mixed.out"
 assert_contains 'Harness was not updated: upgrade fallback: harness codex' "$fixture_root/upgrade-mixed.out"
-assert_contains 'Updated harness native:prx/prx-p' "$fixture_root/upgrade-mixed.out"
+assert_contains 'Updated harness native:prime/prx-p' "$fixture_root/upgrade-mixed.out"
 
 reset_upgrade_logs
 status=0
@@ -1512,12 +1422,12 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_SKILLS_CACHE_FAIL=1 \
 [[ "$status" == 1 ]] || fail 'unified update accepted a failed shared skills cache'
 [[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 1 ]] || fail 'failed shared cache refresh was restarted'
 [[ ! -s "$skills_update_log" ]] || fail 'unified update copied stale skills after a cache refresh failure'
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 11 ]] || fail 'skills cache failure prevented independent harness updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'skills cache failure prevented independent harness updates'
 assert_contains 'Native skills cache failed: fixture shared skills cache failed' "$fixture_root/upgrade-skills-cache-failed.out"
-assert_contains 'Native skills not run native:agx/trellage-azure: shared cache refresh failed; no stale cache is used.' \
+assert_contains 'Native skills not run native:agency/azure: shared cache refresh failed; no stale cache is used.' \
   "$fixture_root/upgrade-skills-cache-failed.out"
-assert_contains 'Harness summary: 14 updated, 0 failed, 1 unsupported' "$fixture_root/upgrade-skills-cache-failed.out"
-assert_contains 'Native skills summary: 0 updated, 0 failed, 14 not run; shared cache: failed.' "$fixture_root/upgrade-skills-cache-failed.out"
+assert_contains 'Harness summary: 13 updated, 0 failed, 1 unsupported' "$fixture_root/upgrade-skills-cache-failed.out"
+assert_contains 'Native skills summary: 0 updated, 0 failed, 13 not run; shared cache: failed.' "$fixture_root/upgrade-skills-cache-failed.out"
 assert_contains 'Updated harness sandbox:sandbox-fixture' "$fixture_root/upgrade-skills-cache-failed.out"
 
 reset_upgrade_logs
@@ -1526,12 +1436,12 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_SKILLS_UPDATE_FAIL=cdx/pstack \
   "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-profile-skills-failed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'unified update accepted a failed profile skills verification'
 assert_native_skills_refreshed
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 11 ]] || fail 'profile skill failure prevented independent harness updates'
-assert_contains 'Failed Native skills native:cdx/pstack: fixture skill verification failed: cdx/pstack' \
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'profile skill failure prevented independent harness updates'
+assert_contains 'Failed Native skills native:codex/pstack: fixture skill verification failed: cdx/pstack' \
   "$fixture_root/upgrade-profile-skills-failed.out"
-assert_contains 'Updated Native skills native:cdx/youtube' "$fixture_root/upgrade-profile-skills-failed.out"
+assert_contains 'Updated Native skills native:codex/youtube' "$fixture_root/upgrade-profile-skills-failed.out"
 assert_contains 'Updated harness sandbox:sandbox-fixture' "$fixture_root/upgrade-profile-skills-failed.out"
-assert_contains 'Native skills summary: 13 updated, 1 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-profile-skills-failed.out"
+assert_contains 'Native skills summary: 12 updated, 1 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-profile-skills-failed.out"
 
 reset_upgrade_logs
 status=0
@@ -1543,7 +1453,7 @@ if grep -Fq 'agx:skills-update' "$skills_update_log"; then
 fi
 assert_contains 'does not support skills-update. Refresh the installed Trellage launcher first.' \
   "$fixture_root/upgrade-old-skills-interface.out"
-assert_contains 'Updated Native skills native:prx/prx-p' "$fixture_root/upgrade-old-skills-interface.out"
+assert_contains 'Updated Native skills native:prime/prx-p' "$fixture_root/upgrade-old-skills-interface.out"
 
 for cancel_keys in '\r' '\x03'; do
   reset_upgrade_logs
@@ -1561,11 +1471,11 @@ TRX_UPGRADE_LOG="$upgrade_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/upgrade-confirm.out" \
     'yes\r' '' "$fixture_bin/trx" upgrade all || status=$?
 [[ "$status" == 1 ]] || fail "confirmed upgrade hid unsupported profiles (got $status)"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 11 ]] || fail 'terminal confirmation did not start the planned updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'terminal confirmation did not start the planned updates'
 assert_native_skills_refreshed
 assert_contains 'Type yes to update' "$fixture_root/upgrade-confirm.out"
-assert_contains 'Harness summary: 14 updated, 0 failed, 1 unsupported' "$fixture_root/upgrade-confirm.out"
-assert_contains 'Native skills summary: 14 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-confirm.out"
+assert_contains 'Harness summary: 13 updated, 0 failed, 1 unsupported' "$fixture_root/upgrade-confirm.out"
+assert_contains 'Native skills summary: 13 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-confirm.out"
 
 reset_upgrade_logs
 status=0
@@ -1661,8 +1571,8 @@ selection_finished="$(python3 -c 'import time; print(time.monotonic_ns())')"
 selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
 ((selection_milliseconds < 4000)) \
   || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
-jq --arg commandPath "$runtime_parent/cpx/bin/cpx" -e '
-  .description == "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) uses Full Access without a native sandbox. Grok (grx) enables its native sandbox; other native profiles are not security boundaries."
+jq --arg commandPath "$runtime_parent/trx/bin/trx" -e '
+  .description == "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) uses Full Access without a native sandbox; other legacy native profiles are not security boundaries."
   and (.choices[0]
     | .label == "copilot / cpx-p"
       and (.description | length == 1200)
@@ -1714,8 +1624,8 @@ jq -e '
       and .[0].label == "pi / default"
       and .[0].harness == "pi"
       and .[0].profile == "default"
-      and .[0].defaultModel == "copilot-proxy-rs/gpt-5.6-sol:medium"
-      and .[0].models == ["copilot-proxy-rs/gpt-5.6-sol:medium"]
+      and .[0].defaultModel == "copilot-proxy-rs/gpt-6-astra:medium"
+      and .[0].models == ["copilot-proxy-rs/gpt-6-astra:medium"]
       and .[0].modelOverrideSupported == false)
   and ([.choices[] | select(.id == "cdx:pstack")]
     | length == 1
@@ -1758,7 +1668,6 @@ jq -e '
   || fail 'router did not enable model overrides for every launcher except local Qwen'
 jq -e '
   ([.choices[] | select(.id == "cdx:cdx-p") | .sandbox] == [false])
-  and ([.choices[] | select(.id == "grx:grx-p") | .sandbox] == [true])
   and ([.choices[] | select(.id == "cdx:pstack") | .sandbox] == [false])
   and ([.choices[] | select(.id == "cdx:youtube") | .sandbox] == [false])
   and ([.choices[] | select(.commandAlias == "agx" or .commandAlias == "cldx" or .commandAlias == "fmx" or .commandAlias == "jcx" or .commandAlias == "omp" or .commandAlias == "picx" or .commandAlias == "prx") | .sandbox] | all(. == false))
@@ -1920,86 +1829,6 @@ expected = [b"omp", b"copilot", b"--native-copilot", b""]
 raise SystemExit(0 if actual == expected else 1)
 PY
 
-: >"$argument_log"
-TRX_ARGUMENT_LOG="$argument_log" \
-  "$fixture_bin/trx" run cpx cpx-p -- --prompt 'Reply exactly OK' --flag ''
-python3 - "$argument_log" <<'PY' || fail 'trx run arguments were not forwarded unchanged'
-import pathlib
-import sys
-
-actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [
-    b"cpx",
-    b"cpx-p",
-    b"--prompt",
-    b"Reply exactly OK",
-    b"--flag",
-    b"",
-    b"",
-]
-raise SystemExit(0 if actual == expected else 1)
-PY
-
-: >"$argument_log"
-TRX_ARGUMENT_LOG="$argument_log" "$fixture_bin/trx" run cpx cpx-p
-python3 - "$argument_log" <<'PY' || fail 'argument-free trx run launch differs'
-import pathlib
-import sys
-
-actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"cpx", b"cpx-p", b""]
-raise SystemExit(0 if actual == expected else 1)
-PY
-
-: >"$argument_log"
-TRX_ARGUMENT_LOG="$argument_log" "$fixture_bin/trx" run fmx pstack-workers
-python3 - "$argument_log" <<'PY' || fail 'trx run did not route to Firstmate'
-import pathlib
-import sys
-
-actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"fmx", b"pstack-workers", b""]
-raise SystemExit(0 if actual == expected else 1)
-PY
-
-: >"$argument_log"
-: >"$fixture_root/router-environment.log"
-TRANSCRIPT_API_KEY='router-contract-secret' \
-  TRX_ARGUMENT_LOG="$argument_log" \
-  TRX_ENV_LOG="$fixture_root/router-environment.log" \
-  bash -a "$fixture_bin/trx" run cdx youtube
-python3 - "$argument_log" <<'PY' || fail 'trx run YouTube arguments differ'
-import pathlib
-import sys
-
-actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-expected = [b"cdx", b"youtube", b""]
-raise SystemExit(0 if actual == expected else 1)
-PY
-[[ "$(grep -Fxc 'cdx:true' "$fixture_root/router-environment.log")" == 1 ]] \
-  || fail 'trx did not restore the YouTube key only for the selected cdx child'
-if grep -F ':true' "$fixture_root/router-environment.log" \
-  | grep -Fvx 'cdx:true' >/dev/null; then
-  fail 'trx exposed the YouTube key to a catalog helper'
-fi
-
-status=0
-"$fixture_bin/trx" run cpx missing >"$fixture_root/run-missing.out" \
-  2>"$fixture_root/run-missing.err" || status=$?
-[[ "$status" == 1 ]] || fail "unknown trx run profile exited $status instead of 1"
-assert_contains 'unknown profile for cpx: missing' "$fixture_root/run-missing.err"
-
-status=0
-"$fixture_bin/trx" run invalid cpx-p >"$fixture_root/run-launcher.out" \
-  2>"$fixture_root/run-launcher.err" || status=$?
-[[ "$status" == 1 ]] || fail "unknown trx run launcher exited $status instead of 1"
-assert_contains 'unknown launcher: invalid' "$fixture_root/run-launcher.err"
-
-status=0
-"$fixture_bin/trx" run cpx cpx-p --prompt OK >"$fixture_root/run-delimiter.out" \
-  2>"$fixture_root/run-delimiter.err" || status=$?
-[[ "$status" == 1 ]] || fail "trx run accepted arguments without --"
-assert_contains 'run arguments must follow --' "$fixture_root/run-delimiter.err"
 
 status=0
 TRX_ARGUMENT_LOG="$argument_log" \
@@ -2029,79 +1858,12 @@ TRX_WAIT=1 \
   '\r' 'CHILD_READY' "$fixture_bin/trx" || status=$?
 [[ "$status" == 143 ]] || fail "terminated child exited $status instead of 143"
 
-mv "$fixture_bin/grx" "$fixture_bin/grx.absent"
-status=0
-"$fixture_bin/trx" list >"$fixture_root/list-missing.out" \
-  2>"$fixture_root/list-missing.err" || status=$?
-[[ "$status" == 1 ]] || fail "missing launcher list exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: grx' "$fixture_root/list-missing.err"
-status=0
-python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing.out" \
-  '\r' '' "$fixture_bin/trx" || status=$?
-[[ "$status" == 1 ]] || fail "missing launcher exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: grx' "$fixture_root/missing.out"
-mv "$fixture_bin/grx.absent" "$fixture_bin/grx"
-
-mv "$fixture_bin/cldx" "$fixture_bin/cldx.absent"
-status=0
-"$fixture_bin/trx" list >"$fixture_root/list-missing-cldx.out" \
-  2>"$fixture_root/list-missing-cldx.err" || status=$?
-[[ "$status" == 1 ]] || fail "missing cldx list exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: cldx' \
-  "$fixture_root/list-missing-cldx.err"
-mv "$fixture_bin/cldx.absent" "$fixture_bin/cldx"
-
-mv "$fixture_bin/fmx" "$fixture_bin/fmx.absent"
-status=0
-"$fixture_bin/trx" list >"$fixture_root/list-missing-fmx.out" \
-  2>"$fixture_root/list-missing-fmx.err" || status=$?
-[[ "$status" == 1 ]] || fail "missing fmx list exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: fmx' \
-  "$fixture_root/list-missing-fmx.err"
-mv "$fixture_bin/fmx.absent" "$fixture_bin/fmx"
-
-mv "$fixture_bin/omp" "$fixture_bin/omp.absent"
-status=0
-python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-omp.out" \
-  '\r' '' "$fixture_bin/trx" || status=$?
-[[ "$status" == 1 ]] || fail "missing OMP launcher exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: omp' "$fixture_root/missing-omp.out"
-mv "$fixture_bin/omp.absent" "$fixture_bin/omp"
-
-mv "$fixture_bin/picx" "$fixture_bin/picx.absent"
-status=0
-"$fixture_bin/trx" list >"$fixture_root/list-missing-picx.out" \
-  2>"$fixture_root/list-missing-picx.err" || status=$?
-[[ "$status" == 1 ]] || fail "missing picx list exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: picx' \
-  "$fixture_root/list-missing-picx.err"
-mv "$fixture_bin/picx.absent" "$fixture_bin/picx"
-
-
-mv "$fixture_bin/jcx" "$fixture_bin/jcx.absent"
-status=0
-python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-jcx.out" \
-  '\r' '' "$fixture_bin/trx" || status=$?
-[[ "$status" == 1 ]] || fail "missing jcx launcher exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: jcx' "$fixture_root/missing-jcx.out"
-mv "$fixture_bin/jcx.absent" "$fixture_bin/jcx"
-
-mv "$fixture_bin/prx" "$fixture_bin/prx.absent"
-status=0
-python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/missing-prx.out" \
-  '\r' '' "$fixture_bin/trx" || status=$?
-[[ "$status" == 1 ]] || fail "missing prx launcher exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: prx' "$fixture_root/missing-prx.out"
-mv "$fixture_bin/prx.absent" "$fixture_bin/prx"
-
-mv "$fixture_bin/agx" "$fixture_bin/agx.absent"
-status=0
-"$fixture_bin/trx" list >"$fixture_root/list-missing-agx.out" \
-  2>"$fixture_root/list-missing-agx.err" || status=$?
-[[ "$status" == 1 ]] || fail "missing agx list exited $status instead of 1"
-assert_contains 'required launcher not found on PATH: agx' \
-  "$fixture_root/list-missing-agx.err"
-mv "$fixture_bin/agx.absent" "$fixture_bin/agx"
+for missing in cldx fmx omp picx jcx prx agx; do
+  mv "$fixture_bin/$missing" "$fixture_bin/$missing.absent"
+  "$fixture_bin/trx" list >"$fixture_root/list-missing-$missing.out" \
+    || fail "catalog requires retired public wrapper: $missing"
+  mv "$fixture_bin/$missing.absent" "$fixture_bin/$missing"
+done
 
 cp "$runtime_parent/cdx/catalog.json" "$fixture_root/cdx.catalog"
 printf '{not-json}\n' >"$runtime_parent/cdx/catalog.json"
@@ -2174,7 +1936,7 @@ jq '(.profiles[].orchestration.instances) = {"schemaVersion":1}' \
 "$fixture_bin/trx" list --json >"$fixture_root/list-firstmate-instances.json" \
   || fail 'supported Firstmate instance capability should retain static profile discovery'
 jq -e '
-  [.profiles[] | select(.launcher == "fmx")] as $profiles
+  [.profiles[] | select(.launcher == "firstmate")] as $profiles
   | ($profiles | length) == 2
     and all($profiles[]; .orchestration.instances == {schemaVersion: 1})
 ' "$fixture_root/list-firstmate-instances.json" >/dev/null \
@@ -2192,14 +1954,14 @@ jq 'del(.profiles[].orchestration.preparation)' \
   "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
 "$fixture_bin/trx" list --json >"$fixture_root/list-inspect-only-firstmate.json" \
   || fail 'Firstmate without preparation should retain its inbox capability'
-jq -e 'all(.profiles[] | select(.launcher == "fmx"); .orchestration.schemaVersion == 1 and (.orchestration | has("preparation") | not))' \
+jq -e 'all(.profiles[] | select(.launcher == "firstmate"); .orchestration.schemaVersion == 1 and (.orchestration | has("preparation") | not))' \
   "$fixture_root/list-inspect-only-firstmate.json" >/dev/null \
   || fail 'inspect-only Firstmate unexpectedly advertised automatic preparation'
 jq 'del(.profiles[].orchestration)' \
   "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
 "$fixture_bin/trx" list --json >"$fixture_root/list-legacy-firstmate.json" \
   || fail 'legacy Firstmate catalog should retain manual launch compatibility'
-jq -e 'all(.profiles[] | select(.launcher == "fmx"); (has("orchestration") | not) and .headless.prompt == false)' \
+jq -e 'all(.profiles[] | select(.launcher == "firstmate"); (has("orchestration") | not) and .headless.prompt == false)' \
   "$fixture_root/list-legacy-firstmate.json" >/dev/null \
   || fail 'legacy Firstmate unexpectedly advertised inbox submission'
 mv "$fixture_root/fmx.orchestration.catalog" "$runtime_parent/fmx/catalog.json"
@@ -2210,36 +1972,30 @@ ln -s "$fixture_root/unrelated-cpx" "$fixture_bin/cpx"
 status=0
 "$fixture_bin/trx" list >"$fixture_root/list-redirected.out" \
   2>"$fixture_root/list-redirected.err" || status=$?
-[[ "$status" == 1 ]] || fail "redirected launcher list exited $status instead of 1"
-assert_contains 'launcher is not the owned Trellage runtime: cpx' \
-  "$fixture_root/list-redirected.err"
-status=0
-python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/redirected.out" \
-  '\r' '' "$fixture_bin/trx" || status=$?
-[[ "$status" == 1 ]] || fail "redirected launcher exited $status instead of 1"
-assert_contains 'launcher is not the owned Trellage runtime: cpx' "$fixture_root/redirected.out"
+[[ "$status" == 0 ]] || fail "unrelated PATH alias affected owned backend discovery"
+assert_contains 'copilot' "$fixture_root/list-redirected.out"
 rm "$fixture_bin/cpx"
 ln -s "$runtime_parent/cpx/bin/cpx" "$fixture_bin/cpx"
 
 printf 'unrelated\n' \
-  >"$runtime_parent/trx/share/profile-guides/native/cpx/unrelated.txt"
+  >"$runtime_parent/trx/share/profile-guides/native/copilot/unrelated.txt"
 status=0
 "$prototype_root/install.sh" >"$fixture_root/unrelated-guide-install.out" \
   2>"$fixture_root/unrelated-guide-install.err" || status=$?
 [[ "$status" == 1 ]] || fail "unrelated profile guide install exited $status instead of 1"
 assert_contains 'refusing unrelated profile guide path' \
   "$fixture_root/unrelated-guide-install.err"
-rm "$runtime_parent/trx/share/profile-guides/native/cpx/unrelated.txt"
+rm "$runtime_parent/trx/share/profile-guides/native/copilot/unrelated.txt"
 
 ln -s "$fixture_root/unrelated-command" \
-  "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
+  "$runtime_parent/trx/share/profile-guides/native/copilot/redirected.md"
 status=0
 "$prototype_root/install.sh" >"$fixture_root/symlink-guide-install.out" \
   2>"$fixture_root/symlink-guide-install.err" || status=$?
 [[ "$status" == 1 ]] || fail "symlinked profile guide install exited $status instead of 1"
 assert_contains 'refusing symlinked profile guide path' \
   "$fixture_root/symlink-guide-install.err"
-rm "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
+rm "$runtime_parent/trx/share/profile-guides/native/copilot/redirected.md"
 
 printf 'unrelated\n' >"$fixture_root/unrelated-command"
 rm "$fixture_bin/trx"
@@ -2253,7 +2009,7 @@ rm "$fixture_bin/trx"
 ln -s "$runtime_parent/trx/bin/trx" "$fixture_bin/trx"
 
 printf 'unrelated\n' \
-  >"$runtime_parent/trx/share/profile-guides/native/cpx/unrelated.txt"
+  >"$runtime_parent/trx/share/profile-guides/native/copilot/unrelated.txt"
 status=0
 "$prototype_root/uninstall.sh" >"$fixture_root/unrelated-guide-uninstall.out" \
   2>"$fixture_root/unrelated-guide-uninstall.err" || status=$?
@@ -2261,10 +2017,10 @@ status=0
 assert_contains 'refusing unrelated profile guide path' \
   "$fixture_root/unrelated-guide-uninstall.err"
 [[ -d "$runtime_parent/trx" ]] || fail 'unsafe guide uninstall removed trx runtime'
-rm "$runtime_parent/trx/share/profile-guides/native/cpx/unrelated.txt"
+rm "$runtime_parent/trx/share/profile-guides/native/copilot/unrelated.txt"
 
 ln -s "$fixture_root/unrelated-command" \
-  "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
+  "$runtime_parent/trx/share/profile-guides/native/copilot/redirected.md"
 status=0
 "$prototype_root/uninstall.sh" >"$fixture_root/symlink-guide-uninstall.out" \
   2>"$fixture_root/symlink-guide-uninstall.err" || status=$?
@@ -2272,7 +2028,7 @@ status=0
 assert_contains 'refusing symlinked profile guide path' \
   "$fixture_root/symlink-guide-uninstall.err"
 [[ -d "$runtime_parent/trx" ]] || fail 'symlinked guide uninstall removed trx runtime'
-rm "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
+rm "$runtime_parent/trx/share/profile-guides/native/copilot/redirected.md"
 
 "$prototype_root/uninstall.sh" >"$fixture_root/uninstall.out"
 [[ ! -e "$runtime_parent/trx" ]] || fail 'uninstaller left trx runtime'
@@ -2281,7 +2037,6 @@ rm "$runtime_parent/trx/share/profile-guides/native/cpx/redirected.md"
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
   && -x "$runtime_parent/agx/bin/agx" \
   && -x "$runtime_parent/cldx/bin/cldx" && -x "$runtime_parent/fmx/bin/fmx" \
-  && -x "$runtime_parent/grx/bin/grx" \
   && -x "$runtime_parent/jcx/bin/jcx" \
   && -x "$runtime_parent/omp/bin/omp" && -x "$runtime_parent/picx/bin/picx" \
   && -x "$runtime_parent/prx/bin/prx" ]] \

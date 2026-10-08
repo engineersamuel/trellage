@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url"
 import { Cause, Data, Effect, Exit } from "effect"
 import lockfile from "proper-lockfile"
 import { bunArguments, bunExecutable } from "@trellage/runtime"
+import { readTrellageConfig } from "@trellage/runtime/native-config"
+import { readEffectiveSkillCatalog } from "@trellage/runtime/skill-config"
 
 import { resolveGitHubSource } from "./github-cache.ts"
 import { resolveSandboxHeadlessCapabilities, sandboxHeadlessRuntimeAdapter } from "./headless-capabilities.ts"
@@ -73,7 +75,7 @@ const execFilePromise = promisify(execFile)
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const compatibilityAdapter = path.join(repositoryRoot, "prototypes", "trellage", "adapt-agent-kit.sh")
 const floatingSkillsManager = path.join(repositoryRoot, "scripts", "floating-skills.ts")
-const floatingSkillsCatalog = path.join(repositoryRoot, "skills.json")
+const floatingSkillsCatalog = path.join(repositoryRoot, "config.toml")
 const skillsCli = fileURLToPath(import.meta.resolve("skills/bin/cli.mjs"))
 
 export class ApplicationError extends Data.TaggedError("ApplicationError")<{
@@ -775,13 +777,14 @@ export const adjacentLockPath = platformLockPath
 
 const attachSkillBundlePolicy = (document: ProfileDocument): Effect.Effect<ProfileDocument, ApplicationError> => {
   if (document.profile.skill_bundles.length === 0) return Effect.succeed(document)
-  return io("cannot read floating skill catalog", () => readFile(floatingSkillsCatalog, "utf8")).pipe(
-    Effect.flatMap((source) =>
-      Effect.try({
-        try: () => JSON.parse(source) as unknown,
-        catch: (cause) => new ApplicationError({ message: "floating skill catalog is invalid", cause }),
-      }),
-    ),
+  return io("cannot read skill configuration", async () => {
+    const effective = await readTrellageConfig()
+    return readEffectiveSkillCatalog({
+      configPath: effective.path,
+      starterPath: floatingSkillsCatalog,
+      explicit: Boolean(process.env.TRELLAGE_CONFIG),
+    })
+  }).pipe(
     Effect.flatMap((catalog) => {
       if (
         typeof catalog !== "object" ||
@@ -836,7 +839,11 @@ export const loadProfile = (profilePath: string): Effect.Effect<ProfileDocument,
     Effect.flatMap((source) => parseProfile(source, profilePath)),
     Effect.flatMap(attachSkillBundlePolicy),
     Effect.mapError(
-      (cause) => new ApplicationError({ message: "message" in cause ? String(cause.message) : String(cause), cause }),
+      (cause) =>
+        new ApplicationError({
+          message: "message" in cause ? String(cause.message) : String(cause),
+          cause,
+        }),
     ),
   )
 
@@ -862,7 +869,11 @@ export const loadReleaseLock = (
         : parseLock(source).pipe(Effect.map((lock) => lock as ProfileLock | undefined)),
     ),
     Effect.mapError(
-      (cause) => new ApplicationError({ message: "message" in cause ? String(cause.message) : String(cause), cause }),
+      (cause) =>
+        new ApplicationError({
+          message: "message" in cause ? String(cause.message) : String(cause),
+          cause,
+        }),
     ),
   )
 }
@@ -1370,7 +1381,9 @@ const injectFloatingSkills = (
     yield* io("cannot initialize floating skill destination", () => mkdir(destination, { recursive: true }))
     yield* copyFloatingSkills(snapshot, destination, names)
     yield* io("cannot write baked floating skill ownership", () =>
-      writeFile(path.join(destination, ".trellage-floating-skills"), `${names.join("\n")}\n`, { flag: "wx" }),
+      writeFile(path.join(destination, ".trellage-floating-skills"), `${names.join("\n")}\n`, {
+        flag: "wx",
+      }),
     )
     yield* io("cannot record baked floating instructions", async () =>
       writeFile(
@@ -1640,7 +1653,10 @@ const liveUpgradeServices = (target: DockerTarget): UpgradeServices => ({
 const applicationError = (cause: unknown): ApplicationError =>
   cause instanceof ApplicationError
     ? cause
-    : new ApplicationError({ message: String((cause as { readonly message?: unknown })?.message ?? cause), cause })
+    : new ApplicationError({
+        message: String((cause as { readonly message?: unknown })?.message ?? cause),
+        cause,
+      })
 
 const transientUpgradeError = (cause: unknown): boolean => {
   const seen = new Set<unknown>()
@@ -1788,7 +1804,10 @@ const acquireUpgradeLease = (
         return { path: leasePath, release, compromised }
       } catch (cause) {
         if ((cause as NodeJS.ErrnoException).code === "ELOCKED") {
-          throw new ApplicationError({ message: `upgrade already active for profile: ${profileName}`, cause })
+          throw new ApplicationError({
+            message: `upgrade already active for profile: ${profileName}`,
+            cause,
+          })
         }
         throw cause
       }
@@ -2011,7 +2030,12 @@ export const upgradeProfile = (
               return runAll(operations).pipe(
                 Effect.catchAllCause((cause) =>
                   committed
-                    ? Effect.fail(new ApplicationError({ message: "upgrade committed but cleanup failed", cause }))
+                    ? Effect.fail(
+                        new ApplicationError({
+                          message: "upgrade committed but cleanup failed",
+                          cause,
+                        }),
+                      )
                     : Effect.failCause(cause),
                 ),
               )
@@ -2347,7 +2371,10 @@ export const profileMetadata = (
         ? yield* Effect.try({
             try: () => resolutionReceiptTransferBundle(document, receipt, xdgCacheHome),
             catch: (cause) =>
-              new ApplicationError({ message: "cannot prepare development resolution transfer bundle", cause }),
+              new ApplicationError({
+                message: "cannot prepare development resolution transfer bundle",
+                cause,
+              }),
           })
         : null
     const harnessKind = document.profile.harness.kind

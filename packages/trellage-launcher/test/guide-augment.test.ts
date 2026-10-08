@@ -63,7 +63,7 @@ const catalogWith = (native: CombinedGuideCatalog["native"]): CombinedGuideCatal
 })
 
 const hveEntry: CombinedGuideCatalog["native"][number] = {
-  launcher: "cpx",
+  launcher: "copilot",
   harness: "copilot",
   name: "hve",
   description: "Copilot CLI with the HVE Core RPI plugin.",
@@ -87,7 +87,7 @@ const hveEntry: CombinedGuideCatalog["native"][number] = {
   sandbox: false,
   herdrCompatibility: { status: "untested" },
   guide,
-  commandPath: "/opt/trellage/cpx/bin/cpx",
+  commandPath: "/opt/trellage/copilot/bin/trx",
 }
 
 const researchCatalog = catalogWith([hveEntry])
@@ -171,10 +171,10 @@ describe("research augmentation", () => {
     await runResearchAugment("fix the flaky test", researchCatalog, contextFor(runner))
 
     const call = runner.calls[0]
-    expect(call?.executable).toBe("/opt/trellage/cpx/bin/cpx")
-    expect(call?.args[0]).toBe("hve")
-    expect(call?.args[1]).toBe("-p")
-    expect(call?.args[2]).toContain("fix the flaky test")
+    expect(call?.executable).toBe("/opt/trellage/copilot/bin/trx")
+    expect(call?.args.slice(0, 3)).toEqual(["run", "copilot", "hve"])
+    expect(call?.args[3]).toBe("-p")
+    expect(call?.args[4]).toContain("fix the flaky test")
     expect(call?.options?.cwd).toBe(workspace)
   })
 
@@ -191,11 +191,11 @@ describe("research augmentation", () => {
     expect(activity).toEqual(["reading guide-ui.tsx", "wrote the note"])
   })
 
-  it("names the setup command when the cpx/hve profile is not installed", async () => {
+  it("names the setup command when the copilot/hve profile is not installed", async () => {
     const runner = new FakeRunner(ok)
 
     await expect(runResearchAugment("intent", catalogWith([]), contextFor(runner))).rejects.toThrow(
-      /cpx setup hve/u,
+      /trx setup copilot hve/u,
     )
     expect(runner.calls).toHaveLength(0)
   })

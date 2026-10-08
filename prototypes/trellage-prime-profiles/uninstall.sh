@@ -21,7 +21,7 @@ install_root="$home/.local/share/trellage/prx"
 installed_launcher="$install_root/bin/prx"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-prime-profiles"
-command_path="$home/.local/bin/prx"
+command_path="$home/.local/share/trellage/.native-commands/prx"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \

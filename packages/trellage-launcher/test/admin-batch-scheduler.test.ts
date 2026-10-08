@@ -35,13 +35,13 @@ class DeferredRunner implements CommandRunner {
 }
 
 const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
-  ref: overrides.ref ?? "native:cpx/hve",
+  ref: overrides.ref ?? "native:copilot/hve",
   surface: "native",
-  launcher: "cpx",
+  launcher: "copilot",
   harness: "copilot",
   name: "hve",
   description: "Copilot native launcher.",
-  commandPath: "/opt/trellage/cpx/bin/cpx",
+  commandPath: "/opt/trellage/copilot/bin/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -60,7 +60,7 @@ describe("runBatchedDoctorChecks", () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
     const entries = Array.from({ length: 6 }, (_, index) =>
-      entry({ ref: `native:cpx/p${index}`, name: `p${index}` }),
+      entry({ ref: `native:copilot/p${index}`, name: `p${index}` }),
     )
 
     const batch = runBatchedDoctorChecks(entries, manager, { maxConcurrent: 2 })
@@ -89,8 +89,8 @@ describe("runBatchedDoctorChecks", () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
     const entries = [
-      entry({ ref: "native:cdx/pstack", launcher: "cdx", doctorSupported: false }),
-      entry({ ref: "native:cpx/hve" }),
+      entry({ ref: "native:codex/pstack", launcher: "codex", doctorSupported: false }),
+      entry({ ref: "native:copilot/hve" }),
     ]
 
     const batch = runBatchedDoctorChecks(entries, manager, { maxConcurrent: 2 })
@@ -98,14 +98,14 @@ describe("runBatchedDoctorChecks", () => {
     runner.resolveNext(ok())
     await batch
 
-    expect(manager.status("native:cdx/pstack").state).toBe("idle")
-    expect(manager.status("native:cpx/hve").state).toBe("success")
+    expect(manager.status("native:codex/pstack").state).toBe("idle")
+    expect(manager.status("native:copilot/hve").state).toBe("success")
   })
 
   it("continues scheduling remaining profiles after one profile fails", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
-    const entries = [entry({ ref: "native:cpx/a", name: "a" }), entry({ ref: "native:cpx/b", name: "b" })]
+    const entries = [entry({ ref: "native:copilot/a", name: "a" }), entry({ ref: "native:copilot/b", name: "b" })]
 
     const batch = runBatchedDoctorChecks(entries, manager, { maxConcurrent: 1 })
     runner.rejectNext(new Error("boom"))
@@ -113,14 +113,14 @@ describe("runBatchedDoctorChecks", () => {
     runner.resolveNext(ok())
     await batch
 
-    expect(manager.status("native:cpx/a").state).toBe("failure")
-    expect(manager.status("native:cpx/b").state).toBe("success")
+    expect(manager.status("native:copilot/a").state).toBe("failure")
+    expect(manager.status("native:copilot/b").state).toBe("success")
   })
 
   it("does not double-trigger a profile already running when scheduled twice", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
-    const entries = [entry({ ref: "native:cpx/hve" })]
+    const entries = [entry({ ref: "native:copilot/hve" })]
 
     const batch1 = runBatchedDoctorChecks(entries, manager, { maxConcurrent: 2 })
     const batch2 = runBatchedDoctorChecks(entries, manager, { maxConcurrent: 2 })

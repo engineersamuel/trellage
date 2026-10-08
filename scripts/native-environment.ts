@@ -1,27 +1,18 @@
 #!/usr/bin/env -S BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=/dev/null
 
-import { lstat, readFile, readdir } from "node:fs/promises"
+import { lstat, readdir } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { parse } from "smol-toml"
+import { expandTrellagePath, readTrellageConfig } from "@trellage/runtime/native-config"
 
-const allowedKeys = new Set(["provider", "enabled", "path", "required", "strict_permissions"])
 const schemaOnlyFiles = new Set([".env.schema", ".env.example", ".env.sample", ".env.template"])
 
 function fail(message: string): never {
   throw new Error(message)
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
 const isMissing = (cause: unknown) => cause instanceof Error && "code" in cause && cause.code === "ENOENT"
 const isEnvironmentFile = (name: string) => name === ".env" || name.startsWith(".env.")
-
-const expandPath = (candidate: string, home: string, base: string) => {
-  if (candidate === "~") return home
-  if (candidate.startsWith("~/")) return path.join(home, candidate.slice(2))
-  return path.resolve(base, candidate)
-}
 
 const assertSafePath = async (
   candidate: string,
@@ -80,59 +71,6 @@ const inspectEnvironmentSource = async (candidate: string, required: boolean, st
   return true
 }
 
-const decodeEnvironment = (raw: unknown) => {
-  if (!isRecord(raw)) fail("invalid [environment] configuration: expected an object")
-  for (const key of Object.keys(raw)) {
-    if (!allowedKeys.has(key)) fail(`invalid [environment] configuration: unknown key ${key}`)
-  }
-
-  const provider = raw.provider ?? "varlock"
-  const enabled = raw.enabled ?? true
-  const configuredPath = raw.path
-  const required = raw.required ?? false
-  const strictPermissions = raw.strict_permissions ?? true
-
-  if (provider !== "varlock") fail("invalid [environment] configuration: provider must be varlock")
-  if (typeof enabled !== "boolean") fail("invalid [environment] configuration: enabled must be a boolean")
-  if (configuredPath !== undefined && (typeof configuredPath !== "string" || configuredPath.length === 0)) {
-    fail("invalid [environment] configuration: path must be a nonempty string")
-  }
-  if (typeof required !== "boolean") fail("invalid [environment] configuration: required must be a boolean")
-  if (typeof strictPermissions !== "boolean") {
-    fail("invalid [environment] configuration: strict_permissions must be a boolean")
-  }
-
-  return { provider, enabled, path: configuredPath, required, strict_permissions: strictPermissions }
-}
-
-const loadEnvironmentConfig = async (configPath: string) => {
-  let configStats
-  try {
-    configStats = await lstat(configPath)
-  } catch (cause) {
-    if (!isMissing(cause)) fail(`cannot inspect Trellage config: ${configPath}`)
-  }
-  const configPresent = configStats !== undefined
-
-  if (!configPresent) return { configPresent, decoded: decodeEnvironment({}) }
-
-  await assertSafePath(configPath, "Trellage config", false, true)
-  let source
-  try {
-    source = await readFile(configPath, "utf8")
-  } catch {
-    fail(`cannot read Trellage config: ${configPath}`)
-  }
-  let raw
-  try {
-    raw = parse(source)
-  } catch (cause) {
-    fail(`invalid Trellage config: ${String(cause)}`)
-  }
-  const environment = isRecord(raw) && Object.hasOwn(raw, "environment") ? raw.environment : {}
-  return { configPresent, decoded: decodeEnvironment(environment) }
-}
-
 const resolveEnabled = (configured: boolean) => {
   const override = process.env.TRELLAGE_ENVIRONMENT
   if (override !== undefined && override !== "on" && override !== "off") {
@@ -143,16 +81,11 @@ const resolveEnabled = (configured: boolean) => {
 
 export const resolveEnvironment = async () => {
   const home = os.homedir()
-  const configDirectory = process.env.XDG_CONFIG_HOME
-    ? path.resolve(process.env.XDG_CONFIG_HOME, "trellage")
-    : path.join(home, ".config", "trellage")
-  const configPath = process.env.TRELLAGE_CONFIG
-    ? expandPath(process.env.TRELLAGE_CONFIG, home, process.cwd())
-    : path.join(configDirectory, "config.toml")
-  const { configPresent, decoded } = await loadEnvironmentConfig(configPath)
+  const { path: configPath, present: configPresent, config } = await readTrellageConfig({ home })
+  const decoded = config.environment
   const enabled = resolveEnabled(decoded.enabled)
   const configuredPath = decoded.path ?? path.dirname(configPath)
-  const environmentPath = expandPath(configuredPath, home, path.dirname(configPath))
+  const environmentPath = expandTrellagePath(configuredPath, home, path.dirname(configPath))
   const sourcePresent = enabled
     ? await inspectEnvironmentSource(environmentPath, decoded.required, decoded.strict_permissions)
     : false

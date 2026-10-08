@@ -211,7 +211,7 @@ const executeCurrentTerminalResult = async (
 }
 
 const validateFirstmateResultTransport = (result: GuideUiResult): void => {
-  if (!("profile" in result) || result.profile.surface !== "native" || result.profile.launcher !== "fmx") return
+  if (!("profile" in result) || result.profile.surface !== "native" || result.profile.launcher !== "firstmate") return
   if (result.profile.orchestration !== undefined) {
     throw new Error(
       "Firstmate execution requires an explicit fleet action and the inbox batch path. " +
@@ -219,7 +219,7 @@ const validateFirstmateResultTransport = (result: GuideUiResult): void => {
       "or guard the expected fleet identity. No prompt was delivered.",
     )
   }
-  validateLegacyFirstmateArtifact(`native:fmx/${result.profile.profile}`, result.prompt, result.legacyFirstmate)
+  validateLegacyFirstmateArtifact(`native:firstmate/${result.profile.profile}`, result.prompt, result.legacyFirstmate)
   const built = result.action === "current-terminal"
     ? buildGuideLaunchCommand(result.profile, { mode: "argv", prompt: result.prompt })
     : buildHerdrGuideLaunch(result.profile, result.prompt)
@@ -236,7 +236,7 @@ const checkLegacyFirstmateReadiness = async (
   services: GuideInteractiveExecutionServices,
 ): Promise<void> => {
   if (!("profile" in result) || result.profile.surface !== "native" ||
-      result.profile.launcher !== "fmx" || result.profile.orchestration !== undefined) return
+      result.profile.launcher !== "firstmate" || result.profile.orchestration !== undefined) return
   const cwd = "cwd" in result ? result.cwd : result.primaryCheckoutPath
   const readiness = await checkSelectedProfileReadiness(services.runner, result.profile, cwd)
   if (readiness.kind === ProfileReadinessKind.Blocked) {

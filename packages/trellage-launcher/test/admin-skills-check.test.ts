@@ -4,12 +4,12 @@ import type { AdminProfileEntry } from "../src/admin-model.ts"
 import { createNodeCommandRunner, type CommandRunner } from "../src/guide-launch.ts"
 
 const entry = (name: string, surface: "native" | "sandbox" = "native"): AdminProfileEntry => ({
-  ref: `${surface}:cpx/${name}`,
+  ref: `${surface}:copilot/${name}`,
   surface,
-  launcher: "cpx",
+  launcher: "copilot",
   name,
   description: name,
-  commandPath: surface === "sandbox" ? "/fixture/trellage" : "/fixture/cpx",
+  commandPath: surface === "sandbox" ? "/fixture/trellage" : "/fixture/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -60,7 +60,7 @@ describe("read-only Admin skills discovery", () => {
       output(
         args[0] === "--help"
           ? "cpx skills-check PROFILE"
-          : JSON.stringify({ kind: args[1] === "old" ? "available" : "current" }),
+          : JSON.stringify({ kind: args[2] === "old" ? "available" : "current" }),
       ),
     )
     const entries = [entry("old"), entry("new"), entry("container", "sandbox")]
@@ -69,8 +69,8 @@ describe("read-only Admin skills discovery", () => {
     expect([...results.values()].map(({ kind }) => kind)).toEqual(["available", "current", "current", "unknown"])
     expect(run.mock.calls.map(([, args]) => args)).toEqual([
       ["--help"],
-      ["skills-check", "old"],
-      ["skills-check", "new"],
+      ["skills-check", "copilot", "old"],
+      ["skills-check", "copilot", "new"],
       ["--help"],
       ["skills-check", "container"],
       ["--help"],

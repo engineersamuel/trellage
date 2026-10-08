@@ -36,13 +36,13 @@ class DeferredRunner implements CommandRunner {
 }
 
 const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
-  ref: overrides.ref ?? "native:prx/default",
+  ref: overrides.ref ?? "native:prime/default",
   surface: "native",
-  launcher: "prx",
+  launcher: "prime",
   harness: "prime",
   name: "default",
   description: "Prime native launcher.",
-  commandPath: "/opt/trellage/prx/bin/prx",
+  commandPath: "/opt/trellage/prime/bin/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -69,7 +69,7 @@ describe("runBatchedVersionChecks", () => {
     const entries = [entry({})]
     const freshCache: AdminVersionCacheRecord = {
       schemaVersion: 2,
-      entries: { "native:prx/default": { result: { current: true }, checkedAt: Date.now() } },
+      entries: { "native:prime/default": { result: { current: true }, checkedAt: Date.now() } },
     }
 
     await runBatchedVersionChecks(entries, manager, freshCache)
@@ -87,7 +87,7 @@ describe("runBatchedVersionChecks", () => {
     runner.resolveNext(current())
     await batch
 
-    expect(runner.calls).toEqual([{ executable: "/opt/trellage/prx/bin/prx", args: ["update", "--check", "default"] }])
+    expect(runner.calls).toEqual([{ executable: "/opt/trellage/prime/bin/trx", args: ["upgrade", "prime", "default", "--check"] }])
     expect(manager.status(updateCheckRefFor(entries[0]!.ref)).state).toBe("success")
   })
 
@@ -97,7 +97,7 @@ describe("runBatchedVersionChecks", () => {
     const entries = [entry({})]
     const staleCache: AdminVersionCacheRecord = {
       schemaVersion: 2,
-      entries: { "native:prx/default": { result: { current: true }, checkedAt: Date.now() - 25 * 60 * 60 * 1000 } },
+      entries: { "native:prime/default": { result: { current: true }, checkedAt: Date.now() - 25 * 60 * 60 * 1000 } },
     }
 
     const batch = runBatchedVersionChecks(entries, manager, staleCache)
@@ -111,7 +111,7 @@ describe("runBatchedVersionChecks", () => {
   it("never checks a profile that does not support update --check", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
-    const entries = [entry({ ref: "native:cldx/default", launcher: "cldx", updateCheckSupported: false })]
+    const entries = [entry({ ref: "native:claude/default", launcher: "claude", updateCheckSupported: false })]
 
     await runBatchedVersionChecks(entries, manager, emptyCache)
     expect(runner.calls.length).toBe(0)
@@ -120,7 +120,7 @@ describe("runBatchedVersionChecks", () => {
   it("isolates one profile's failure from another profile's result", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
-    const entries = [entry({ ref: "native:prx/a", name: "a" }), entry({ ref: "native:prx/b", name: "b" })]
+    const entries = [entry({ ref: "native:prime/a", name: "a" }), entry({ ref: "native:prime/b", name: "b" })]
 
     const batch = runBatchedVersionChecks(entries, manager, emptyCache, { maxConcurrent: 1 })
     await flush()
@@ -129,8 +129,8 @@ describe("runBatchedVersionChecks", () => {
     runner.resolveNext(current())
     await batch
 
-    expect(manager.status(updateCheckRefFor("native:prx/a")).state).toBe("failure")
-    expect(manager.status(updateCheckRefFor("native:prx/b")).state).toBe("success")
+    expect(manager.status(updateCheckRefFor("native:prime/a")).state).toBe("failure")
+    expect(manager.status(updateCheckRefFor("native:prime/b")).state).toBe("success")
   })
 
   it("bypasses a fresh cache entry when forceResync is set", async () => {
@@ -139,7 +139,7 @@ describe("runBatchedVersionChecks", () => {
     const entries = [entry({})]
     const freshCache: AdminVersionCacheRecord = {
       schemaVersion: 2,
-      entries: { "native:prx/default": { result: { current: true }, checkedAt: Date.now() } },
+      entries: { "native:prime/default": { result: { current: true }, checkedAt: Date.now() } },
     }
 
     const batch = runBatchedVersionChecks(entries, manager, freshCache, { forceResync: true })
@@ -164,7 +164,7 @@ describe("runBatchedVersionChecks", () => {
     await batch
 
     expect(results).toHaveLength(1)
-    expect(results[0]!.ref).toBe("native:prx/default")
+    expect(results[0]!.ref).toBe("native:prime/default")
     expect(results[0]!.entry.result).toEqual({ current: true, installed: "0.8.1" })
   })
 
@@ -207,7 +207,7 @@ describe("versionCheckResultForEntry", () => {
     expect(versionCheckResultForEntry(target, manager)).toMatchObject({ malformed: true })
   })
 
-  it("still parses a non-zero-exit result as a normal update-available outcome (cpx/grx/cdx exit non-zero to signal this)", async () => {
+  it("still parses a non-zero-exit result as a normal update-available outcome (copilot/cdx exit non-zero to signal this)", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
     const target = entry({})
@@ -216,8 +216,8 @@ describe("versionCheckResultForEntry", () => {
     runner.rejectNext(
       new CommandRunnerError({
         kind: "exited",
-        executable: "/opt/trellage/prx/bin/prx",
-        args: ["update", "--check", "default"],
+        executable: "/opt/trellage/prime/bin/trx",
+        args: ["upgrade", "prime", "default", "--check"],
         stdout: "superpowers: update available (6.2.0 -> 6.3.0)",
         stderr: "",
         exitCode: 1,
@@ -238,8 +238,8 @@ describe("versionCheckResultForEntry", () => {
     runner.rejectNext(
       new CommandRunnerError({
         kind: "exited",
-        executable: "/opt/trellage/prx/bin/prx",
-        args: ["update", "--check", "default"],
+        executable: "/opt/trellage/prime/bin/trx",
+        args: ["upgrade", "prime", "default", "--check"],
         stdout: "",
         stderr: "prx: failed to fetch or parse official manifest for default",
         exitCode: 2,
@@ -257,20 +257,20 @@ describe("versionCheckResultForEntry", () => {
 
 describe("shouldAutoRetryMalformedVersion", () => {
   it("retries a malformed result not yet auto-retried this session", () => {
-    expect(shouldAutoRetryMalformedVersion({ malformed: true, diagnostic: "boom" }, "native:prx:default", new Set())).toBe(true)
+    expect(shouldAutoRetryMalformedVersion({ malformed: true, diagnostic: "boom" }, "native:prime:default", new Set())).toBe(true)
   })
 
   it("never retries a non-malformed (current/mismatched) result", () => {
-    expect(shouldAutoRetryMalformedVersion({ current: true }, "native:prx:default", new Set())).toBe(false)
-    expect(shouldAutoRetryMalformedVersion({ current: false, latest: "0.9.0" }, "native:prx:default", new Set())).toBe(false)
+    expect(shouldAutoRetryMalformedVersion({ current: true }, "native:prime:default", new Set())).toBe(false)
+    expect(shouldAutoRetryMalformedVersion({ current: false, latest: "0.9.0" }, "native:prime:default", new Set())).toBe(false)
   })
 
   it("never retries a ref that already received its one automatic retry this session", () => {
     expect(
       shouldAutoRetryMalformedVersion(
         { malformed: true, diagnostic: "boom" },
-        "native:prx:default",
-        new Set(["native:prx:default"]),
+        "native:prime:default",
+        new Set(["native:prime:default"]),
       ),
     ).toBe(false)
   })

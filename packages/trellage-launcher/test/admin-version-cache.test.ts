@@ -33,8 +33,8 @@ describe("loadVersionCache / saveVersionCache", () => {
     const record = {
       schemaVersion: 2 as const,
       entries: {
-        "native:prx:default": { result: { current: true }, checkedAt: 1000 },
-        "native:jcx:default": { result: { current: false, latest: "2.0.0" }, checkedAt: 2000 },
+        "native:prime:default": { result: { current: true }, checkedAt: 1000 },
+        "native:jcode:default": { result: { current: false, latest: "2.0.0" }, checkedAt: 2000 },
       },
     } satisfies AdminVersionCacheRecord
 
@@ -91,7 +91,7 @@ describe("parseVersionCacheRecord", () => {
     // self-identifies as stale, so the schema bump is what forces a refresh.
     const source = JSON.stringify({
       schemaVersion: 1,
-      entries: { "native:cpx:hve": { result: { current: true }, checkedAt: 1000 } },
+      entries: { "native:copilot:hve": { result: { current: true }, checkedAt: 1000 } },
     })
     expect(parseVersionCacheRecord(source)).toEqual({ schemaVersion: 2, entries: {} })
   })

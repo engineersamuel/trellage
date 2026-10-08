@@ -28,7 +28,7 @@
     "profiles",
     "prototypes",
     "scripts",
-    "skills.json"
+    "config.toml"
   ],
   "scripts": {
     "preinstall": "bash scripts/check-package-manager.sh",

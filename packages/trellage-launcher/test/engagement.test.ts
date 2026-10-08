@@ -178,7 +178,7 @@ describe("evidence-backed engagement assessment", () => {
           {
             ...first,
             title: "Test the uncertainty",
-            workflow: { profileRef: "native:cpx/hve", workflowId: "test-assumption" },
+            workflow: { profileRef: "native:copilot/hve", workflowId: "test-assumption" },
           },
         ],
       },
@@ -186,7 +186,7 @@ describe("evidence-backed engagement assessment", () => {
       engagementWorkflows(fixture.catalog),
     )
     expect(result.actions).toHaveLength(2)
-    expect(result.actions.map((action) => action.workflow?.profileRef)).toEqual(["native:cpx/hve", "native:cpx/hve"])
+    expect(result.actions.map((action) => action.workflow?.profileRef)).toEqual(["native:copilot/hve", "native:copilot/hve"])
     for (const [citation, message] of [
       [{ ...engagementCitation, path: "not-shared.md" }, "not shared"],
       [{ ...engagementCitation, startLine: 1.5 }, "integers"],
@@ -206,7 +206,7 @@ describe("evidence-backed engagement assessment", () => {
     }
     for (const [action, message] of [
       [{ ...first, command: "untrusted command" }, "unsupported keys"],
-      [{ ...first, workflow: { profileRef: "native:cpx/hve", workflowId: "invented" } }, "unavailable"],
+      [{ ...first, workflow: { profileRef: "native:copilot/hve", workflowId: "invented" } }, "unavailable"],
     ] as const) {
       expect(() =>
         parseEngagementAssessment(
@@ -336,7 +336,7 @@ describe("reviewed assignment lifecycle", () => {
     })
     expect(result.work).toMatchObject({ status: "returned", exitCode: 0, review: null })
     expect(runInteractive).toHaveBeenCalledOnce()
-    expect(launch.command.args.slice(0, 4)).toEqual(["interactive", "hve", "--agent", "hve-core:dt-coach"])
+    expect(launch.command.args.slice(0, 6)).toEqual(["run", "copilot", "hve", "--interactive", "--agent", "hve-core:dt-coach"])
     expect(launch.command.args).not.toContain("--autopilot")
     expect(await engagementResultDocument(result.work, reopened, fixture.runner)).toContain("workshop.md")
     await expect(
@@ -390,7 +390,7 @@ describe("reviewed assignment lifecycle", () => {
       runInteractive: async () => {
         throw new CommandRunnerError({
           kind: "exited",
-          executable: "/fixture/cpx",
+          executable: "/fixture/trx",
           args: [],
           exitCode: 42,
           message: "fixture failed",
@@ -476,7 +476,7 @@ describe("engagement CLI mode separation", () => {
     for (const args of [
       ["--json"],
       ["--next-steps"],
-      ["--profile", "native:cpx/hve"],
+      ["--profile", "native:copilot/hve"],
       ["--ui-variant", "pager"],
       ["--engagement"],
     ]) {

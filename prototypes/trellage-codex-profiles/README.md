@@ -1,6 +1,8 @@
 # Isolated Codex profiles
 
-`cdx` runs the host Codex CLI with named, isolated user-state homes. The
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run codex PROFILE` runs the host Codex CLI with named, isolated user-state homes. The
 catalog contains `pstack`, `superpowers`, and the skill-only `youtube` profile.
 
 Every profile uses `gpt-5.6-sol-fast` with
@@ -46,7 +48,7 @@ non-symlink `~/.config/fish/config.fish`. Install with:
 ./install.sh
 ```
 
-The installer publishes `~/.local/bin/cdx` as a symlink to the owned runtime at
+The installer keeps `cdx` as a private backend in the owned runtime at
 `~/.local/share/trellage/cdx/`. `~/.local/bin` must already be on `PATH`.
 Successful installation migrates the managed runtime to ownership generation
 v2. Older v1 worktree installers then fail closed instead of removing newer
@@ -79,38 +81,38 @@ retain the old function until it reloads.
 ## Commands
 
 ```sh
-cdx list
-cdx inventory superpowers --json
-cdx inventory youtube --json
-cdx setup superpowers
-cdx setup pstack
-cdx setup youtube
-cdx setup --all
-cdx superpowers
-cdx pstack -p "Review this repository"
-cdx youtube
-cdx --native-auth superpowers exec "Review this repository"
-cdx doctor superpowers
-cdx doctor youtube
-cdx update --check superpowers
-cdx update --check youtube
-cdx update --check --all
-cdx update superpowers
-cdx update youtube
-cdx update --all
-cdx repair superpowers
-cdx repair youtube
-cdx harness-update
+trx list
+trx inventory codex superpowers --json
+trx inventory codex youtube --json
+trx setup codex superpowers
+trx setup codex pstack
+trx setup codex youtube
+trx setup codex --all
+trx run codex superpowers
+trx run codex pstack -p "Review this repository"
+trx run codex youtube
+trx run codex superpowers --native-auth -- exec "Review this repository"
+trx doctor codex superpowers
+trx doctor codex youtube
+trx upgrade codex superpowers --check
+trx upgrade codex youtube --check
+trx upgrade codex --all --check
+trx upgrade codex superpowers
+trx upgrade codex youtube
+trx upgrade codex --all
+trx repair codex superpowers
+trx repair codex youtube
+trx upgrade codex pstack --harness-only
 ```
 
-`cdx harness-update` updates the shared host Codex CLI through its built-in
+`trx upgrade codex pstack --harness-only` updates the shared host Codex CLI through its built-in
 `codex update` command. It takes no profile argument and applies to every
 native Codex profile, including `youtube` and `superpowers`. It does not run
 plugin or skill updates, load the YouTube environment, or change profile homes.
 Older Codex installations without a built-in updater fail with a diagnostic;
 update those installations with their original package manager.
 
-`cdx skills-update PROFILE` copies and verifies managed skills from an
+`trx upgrade codex PROFILE --skills-only` copies and verifies managed skills from an
 existing cache after `trx skills update`. Plugin profiles use `native-common`
 and `codex-common` at
 `${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/cdx-skills`;
@@ -120,24 +122,24 @@ unsafe paths, and name collisions fail closed. This command never fetches,
 runs Codex, changes plugins or authentication, or loads the YouTube Varlock
 environment. `--native-auth skills-update` is not a valid launch.
 
-Use `cdx list --json` for the stable machine-readable catalog, including
+Use `trx list --json` for the stable machine-readable catalog, including
 launcher, harness, profile kind, plugin or managed-skill identity, source,
 marketplace, floating-skill bundles, required environment, standalone MCP
 metadata, and a conservative `headless` object. Trellage has no recorded live headless matrix
-for Codex yet, so `cdx list --json` intentionally does not claim prompt,
+for Codex yet, so `trx list --json` intentionally does not claim prompt,
 question-tool control, or model-override support from the installed version.
 These are catalog declarations, not proof that profile setup or installed
-plugin state is healthy. Use `cdx doctor PROFILE` for that validation.
-`cdx inventory PROFILE --json` is read-only. It reports readiness, installed
+plugin state is healthy. Use `trx doctor codex PROFILE` for that validation.
+`trx inventory codex PROFILE --json` is read-only. It reports readiness, installed
 plugins/versions, exact managed package skills, broader CLI-visible entries
 from static `debug prompt-input`, and MCP names. For plugin profiles, package
 skills are counted only beneath the selected plugin's validated cache paths.
 For skill-only profiles, the package count comes from the cataloged managed
 skills. Unrelated marketplace caches are never scanned.
 
-`cdx inventory PROFILE --goal-features` returns the Codex feature table with
+`trx inventory codex PROFILE --goal-features` returns the Codex feature table with
 the same managed home, project-trust overrides, and profile config overrides
-as `cdx PROFILE`. Unlike a bare `codex features list`, this query includes
+as `trx run codex PROFILE`. Unlike a bare `codex features list`, this query includes
 project configuration that the launcher trusts. It does not run setup,
 repair, doctor, or a session, and it writes no settings or trust. Goal
 readiness requires this read-only adapter; an older installed launcher that
@@ -167,7 +169,7 @@ Pre-release or unrecognized `codex --version` output also omits the flag.
 Codex does not request command approvals, and its native OS-level sandbox is
 disabled. Plugin code and Codex commands can read, write, and use the network
 with the host account's permissions. Isolated profile state is not a security
-boundary. Use `cdx` only with trusted repositories and plugins; use Trellage
+boundary. Use the Codex harness only with trusted repositories and plugins; use Trellage
 Sandbox when isolation is required. Lifecycle commands do not add these
 launch flags.
 
@@ -187,8 +189,8 @@ plugin or managed skill bundle. Launch self-heals repairable managed policy,
 floating-skill, marketplace, plugin, and cache drift while preserving
 profile-local state. `doctor` remains a strict diagnostic for policy and the
 cataloged plugin or managed skills.
-For example, if `cdx doctor pstack` reports a managed-config mismatch,
-`cdx pstack` repairs that drift before starting Codex; a separate `repair`
+For example, if `trx doctor codex pstack` reports a managed-config mismatch,
+`trx run codex pstack` repairs that drift before starting Codex; a separate `repair`
 command is not required. Unsafe paths and authentication failures still stop
 the launch. A failed Codex session is not automatically replayed, because it
 may already have changed files or performed external actions.
@@ -223,7 +225,7 @@ upstream email, OTP, account-creation, or key-persistence flow.
 
 `cdx` automatically uses the bundled Varlock runtime for profile launches that
 declare required environment variables. The current profile is `youtube`.
-Always run `cdx youtube` directly; do not prefix it with `varlock`.
+Always run `trx run codex youtube` directly; do not prefix it with `varlock`.
 
 The default user source is `~/.config/trellage`. Put only declarations in
 `~/.config/trellage/.env.schema` and values in mode-`0600`
@@ -263,10 +265,10 @@ inventory, repair, and update never load the source. Insecure directories,
 files, symlinks, and unknown configuration fail before Codex starts or profile
 state changes.
 
-Default `cdx PROFILE ...` launches use the configured local `copilotproxy` and
+Default `trx run codex PROFILE ...` launches use the configured local `copilotproxy` and
 do not require or copy `~/.codex/auth.json`.
 
-Use `cdx --native-auth PROFILE ...` to opt into native OpenAI authentication
+Use `trx run codex PROFILE --native-auth -- ...` to opt into native OpenAI authentication
 for one launch. This requires a valid host `codex login`, atomically refreshes
 only the selected profile's `auth.json`, and does not change managed proxy configuration.
 Missing or invalid native auth fails without proxy fallback. Sessions,
@@ -276,7 +278,7 @@ MCP servers are profile-local. `cdx` does not import host MCP definitions from
 `~/.codex/config.toml`, and one profile's MCPs are not shared with another.
 Configure MCPs by launching the selected profile explicitly.
 
-Multiple `cdx PROFILE` Codex sessions may run at the same time against one
+Multiple `trx run codex PROFILE` Codex sessions may run at the same time against one
 shared profile home, matching bare `codex` multi-instance use. The profile lock
 is only held for brief prepare/cleanup windows and for lifecycle commands
 (`setup`, `doctor`, `update`, `repair`). Post-exit cleanup strips only

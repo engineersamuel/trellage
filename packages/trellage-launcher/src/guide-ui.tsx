@@ -126,6 +126,7 @@ import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.
 import {
   GuideCandidatePromptCollisionError,
   GuideCandidatePromptStage,
+  GuideWorkflowBodyError,
   renderWorkflowBodyCandidate,
   requireDistinctGuideCandidatePrompts,
   resolveGeneratedWorkflowBodyCandidate,
@@ -518,7 +519,7 @@ export interface GuideUiState {
   readonly generationPhase: GuideGenerationPhase | undefined
   readonly candidates: Triple<GuideGenerateCandidate> | undefined
   readonly candidateIndex: number
-  readonly usedTemplateFallback: boolean
+  readonly templateFallback: GuideTemplateFallback | undefined
   readonly selectedCandidate: GuideGenerateCandidate | undefined
   readonly readiness: ProfileReadinessResult | undefined
   readonly firstmate: FirstmateQueuedSubmission | undefined
@@ -600,7 +601,7 @@ const emptyState: GuideUiState = {
   generationPhase: undefined,
   candidates: undefined,
   candidateIndex: 0,
-  usedTemplateFallback: false,
+  templateFallback: undefined,
   selectedCandidate: undefined,
   readiness: undefined,
   firstmate: undefined,
@@ -1070,7 +1071,7 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.GenerateRetry }
   | { readonly type: GuideUiActionType.GenerateSucceeded; readonly candidates: Triple<GuideGenerateCandidate> }
   | { readonly type: GuideUiActionType.GenerateFailed; readonly message: string }
-  | { readonly type: GuideUiActionType.GenerateTemplateFallback; readonly candidates: Triple<GuideGenerateCandidate> }
+  | { readonly type: GuideUiActionType.GenerateTemplateFallback; readonly candidates: Triple<GuideGenerateCandidate>; readonly reason?: string }
   | { readonly type: GuideUiActionType.GenerateTemplateFallbackFailed; readonly message: string }
   | { readonly type: GuideUiActionType.GenerateBack }
   | { readonly type: GuideUiActionType.CandidatesMove; readonly delta: 1 | -1 }
@@ -1301,7 +1302,7 @@ const AugmentJobContext = createContext<GuideAugmentJob | undefined>(undefined)
 
 /** What the live output panel is showing, so its heading names the real source. */
 const augmentSourceLabels: Readonly<Record<GuideAugmentKind, string>> = {
-  [GuideAugmentKind.Research]: "Live output · cpx hve",
+  [GuideAugmentKind.Research]: "Live output · copilot hve",
   [GuideAugmentKind.Codebase]: "Live output · repomix",
   [GuideAugmentKind.GoalMe]: "Goal me activity",
   [GuideAugmentKind.CustomerContext]: "Local customer preparation",
@@ -1905,7 +1906,7 @@ const moveGuideRecommendation = (state: GuideUiState, delta: number): GuideUiSta
 }
 
 const isFirstmateProfile = (selected: SelectedProfile | undefined): selected is NativeSelectedProfile =>
-  selected?.surface === "native" && selected.launcher === "fmx"
+  selected?.surface === "native" && selected.launcher === "firstmate"
 
 const isFirstmateSelection = (selected: SelectedProfile | undefined): selected is NativeSelectedProfile =>
   isFirstmateProfile(selected) && selected.orchestration !== undefined
@@ -2018,7 +2019,7 @@ const openRecommendedProfile = (
     projectTarget: undefined,
     proposedProjectTarget: undefined,
     projectTargetConfirmed: false,
-    usedTemplateFallback: false,
+    templateFallback: undefined,
     errorMessage: undefined,
   }
   return base.activeForkId === undefined ? openFork(base, slice) : { ...base, ...slice }
@@ -2171,14 +2172,14 @@ const reduceGoalChange = (state: GuideUiState, action: GuideUiAction): GuideUiSt
 const candidatesState = (
   state: GuideUiState,
   candidates: Triple<GuideGenerateCandidate>,
-  usedTemplateFallback: boolean,
+  templateFallback: GuideTemplateFallback | undefined,
 ): GuideUiState => ({
   ...state,
   stage: GuideUiStage.Candidates,
   generationPhase: undefined,
   candidates,
   candidateIndex: 0,
-  usedTemplateFallback,
+  templateFallback,
   errorMessage: undefined,
 })
 
@@ -2191,7 +2192,7 @@ const profileSelectionState = (state: GuideUiState): GuideUiState => ({
   generationPhase: undefined,
   candidates: undefined,
   candidateIndex: 0,
-  usedTemplateFallback: false,
+  templateFallback: undefined,
   selectedCandidate: undefined,
   readiness: undefined,
   destinationIndex: 0,
@@ -2215,6 +2216,9 @@ const reduceGenerateProgress = (state: GuideUiState, action: GuideUiAction): Gui
   }
 }
 
+const acceptsGeneratedTemplateFallback = (stage: GuideUiStage): boolean =>
+  stage === GuideUiStage.GenerateFailed || stage === GuideUiStage.Generating
+
 const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.GenerateGuideLoaded:
@@ -2231,7 +2235,7 @@ const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiStat
         : state
 
     case GuideUiActionType.GenerateSucceeded:
-      return state.stage === GuideUiStage.Generating ? candidatesState(state, action.candidates, false) : state
+      return state.stage === GuideUiStage.Generating ? candidatesState(state, action.candidates, undefined) : state
 
     case GuideUiActionType.GenerateFailed:
       return state.stage === GuideUiStage.Generating
@@ -2239,7 +2243,12 @@ const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiStat
         : state
 
     case GuideUiActionType.GenerateTemplateFallback:
-      return state.stage === GuideUiStage.GenerateFailed ? candidatesState(state, action.candidates, true) : state
+      return acceptsGeneratedTemplateFallback(state.stage)
+        ? candidatesState(state, action.candidates, {
+            kind: state.stage === GuideUiStage.Generating ? "validation" : "manual",
+            reason: action.reason ?? state.errorMessage,
+          })
+        : state
 
     case GuideUiActionType.GenerateTemplateFallbackFailed:
       return state.stage === GuideUiStage.GenerateFailed ? { ...state, errorMessage: action.message } : state
@@ -2318,7 +2327,7 @@ export const guideUiTaskContext = (state: GuideUiState): GuideTaskContext => {
   const { orchestration, profile } = state.selectedProfile
   return {
     ...customer,
-    profileRef: `native:fmx/${profile}`,
+    profileRef: `native:firstmate/${profile}`,
     originalIntent: validateGuideOriginalIntent(state.selectedOriginalIntent ?? state.originalIntent ?? state.intent),
     ...(state.projectTargetConfirmed ? { projectTarget: state.projectTarget ?? null } : {}),
     ...(orchestration === undefined ? {} : { orchestration }),
@@ -2506,7 +2515,7 @@ const selectedInstanceMatchesJob = (state: GuideUiState, job: QueuedGuideJob): b
     const identity = state.firstmate?.expectedFleet ?? state.fleetReadiness?.identity ?? undefined
     const key = firstmateProfileInstanceKey(profile, identity)
     if (key !== undefined) return key === firstmateJobInstanceKey(job)
-    return job.profile.launcher === "fmx" && job.profile.profile === profile.profile &&
+    return job.profile.launcher === "firstmate" && job.profile.profile === profile.profile &&
       job.profile.firstmateInstance?.mode !== "named"
   } catch {
     return false
@@ -3640,7 +3649,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🔄",
     label: "HVE RPI",
     description: "Run the dedicated HVE Core RPI agent.",
-    profileRef: "native:cpx/hve",
+    profileRef: "native:copilot/hve",
     workflowId: "rpi-agent-cycle",
     agent: "hve-core:rpi-agent",
     reason:
@@ -3653,7 +3662,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "💬",
     label: "Discover with the customer",
     description: "Clarify needs and evidence with DT Coach.",
-    profileRef: "native:cpx/hve",
+    profileRef: "native:copilot/hve",
     workflowId: "customer-discovery",
     reason: "Work with the customer on the problem and resume the method supported by the existing evidence.",
     tradeoff: "Needs your answers and customer decisions; not an unattended engineering run.",
@@ -3664,7 +3673,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🧪",
     label: "Test an assumption",
     description: "Plan a bounded experiment before investment.",
-    profileRef: "native:cpx/hve",
+    profileRef: "native:copilot/hve",
     workflowId: "test-assumption",
     reason: "Define a falsifiable hypothesis and measurement criteria before approving an experiment.",
     tradeoff: "Needs human approval before execution; a working demo does not establish the hypothesis.",
@@ -3722,7 +3731,7 @@ export const templateGuideCandidates = (
   const context = contextOrGoal
   const workflow = guide.workflows.find(({ id }) => id === workflowId)
   if (workflow === undefined) throw new Error(`Unknown workflow reference: ${workflowId}`)
-  const fallbackIntent = context.profileRef?.startsWith("native:fmx/") && context.originalIntent !== undefined
+  const fallbackIntent = context.profileRef?.startsWith("native:firstmate/") && context.originalIntent !== undefined
     ? "Use the unchanged original human intent in this request. Follow the selected workflow and confirmed target without extending their scope."
     : stripCustomerContext(intent, context.customerContext)
   const candidates = templatePromptCandidates(guide, workflowId, fallbackIntent)
@@ -3740,9 +3749,15 @@ export const templateGuideCandidates = (
 // requirements are directly unit-testable with a fake `GuideProvider`.
 // ---------------------------------------------------------------------------
 
+export interface GuideTemplateFallback {
+  readonly kind: "validation" | "manual"
+  readonly reason: string | undefined
+}
+
 export interface GuideGenerationStepResult {
   readonly guideDocument: SelectedGuideDocument
   readonly candidates: Triple<GuideGenerateCandidate>
+  readonly templateFallback: GuideTemplateFallback | undefined
 }
 
 const catalogGuideTaskContext = (
@@ -3828,7 +3843,7 @@ export const runGuideGenerationStep = async (
       ),
     })
     onProgress?.(GuideGenerationPhase.ApplyingWorkflow)
-    return { guideDocument, candidates: result.candidates }
+    return { guideDocument, candidates: result.candidates, templateFallback: undefined }
   }
   const produce = async () => {
     onProgress?.(GuideGenerationPhase.GeneratingCandidates)
@@ -3897,28 +3912,39 @@ export const runGuideGenerationStep = async (
       ),
     }
   }
-  const generated = await (cache === undefined
-    ? produce()
-    : cache.generation(
-        {
-          intent,
-          profileRef: recommendation.profileRef,
-          workflowId: recommendation.workflowId,
-          guide: prepared.guide,
-          guideBody: guideDocument.body,
-          targetTool,
-          ...prepared.context,
-          bodyBudget: prepared.bodyBudget,
-          ...(fixedFrame === undefined ? {} : { fixedFrame }),
-        },
-        produce,
-      ))
+  let generated: { readonly candidates: ReadonlyArray<GuideGenerateCandidate> }
+  try {
+    generated = await (cache === undefined
+      ? produce()
+      : cache.generation(
+          {
+            intent,
+            profileRef: recommendation.profileRef,
+            workflowId: recommendation.workflowId,
+            guide: prepared.guide,
+            guideBody: guideDocument.body,
+            targetTool,
+            ...prepared.context,
+            bodyBudget: prepared.bodyBudget,
+            ...(fixedFrame === undefined ? {} : { fixedFrame }),
+          },
+          produce,
+        ))
+  } catch (cause) {
+    if (!(cause instanceof GuideWorkflowBodyError)) throw cause
+    return {
+      guideDocument,
+      candidates: templateGuideCandidates(prepared.guide, recommendation.workflowId, intent, contextOrGoal),
+      templateFallback: { kind: "validation", reason: cause.message },
+    }
+  }
   const [first, second, third] = generated.candidates
   if (first === undefined || second === undefined || third === undefined)
     throw new Error("Cached generation must contain three candidates")
   return {
     guideDocument,
     candidates: [complete(first), complete(second), complete(third)],
+    templateFallback: undefined,
   }
 }
 
@@ -4157,7 +4183,7 @@ export const buildPrintResult = (
       notice: "Firstmate specification only, not a complete delivery. Use the inbox queue to carry original intent, workflow, and confirmed target; do not paste this specification alone.",
     }
   }
-  validateLegacyFirstmateArtifact(`native:fmx/${profile.profile}`, prompt, legacyFirstmate)
+  validateLegacyFirstmateArtifact(`native:firstmate/${profile.profile}`, prompt, legacyFirstmate)
   return {
     action: "print", prompt,
     notice: "Complete legacy Firstmate manual-paste request. No inbox acceptance, atomic fleet guard, dispatch, or task completion is confirmed.",
@@ -4173,7 +4199,7 @@ export const buildCurrentTerminalResult = (
   const goalExecution = context !== undefined && "goal" in context ? context : undefined
   const legacyFirstmate = context !== undefined && !("goal" in context) ? context : undefined
   if (isFirstmateProfile(profile) && profile.orchestration === undefined) {
-    validateLegacyFirstmateArtifact(`native:fmx/${profile.profile}`, prompt, legacyFirstmate)
+    validateLegacyFirstmateArtifact(`native:firstmate/${profile.profile}`, prompt, legacyFirstmate)
   }
   const built = buildGuideLaunchCommand(profile, { mode: "argv", prompt }, goalExecution)
   return {
@@ -5325,15 +5351,14 @@ const AugmentInline = ({ job }: { readonly job: GuideAugmentJob | undefined }) =
 }
 
 const launcherHarnessLabels: Readonly<Record<string, string>> = {
-  cdx: "Codex",
-  cpx: "Copilot",
-  cldx: "Claude",
-  fmx: "Firstmate",
-  grx: "Grok",
-  jcx: "Junie",
+  codex: "Codex",
+  copilot: "Copilot",
+  claude: "Claude",
+  firstmate: "Firstmate",
+  jcode: "Junie",
   omp: "OpenCode",
-  picx: "Pi",
-  prx: "Prime",
+  pi: "Pi",
+  prime: "Prime",
 }
 
 const titleCaseIdentifier = (value: string): string =>
@@ -5352,7 +5377,7 @@ const recommendationHarness = (recommendation: GuideRecommendation): string => {
 const recommendationLabel = (recommendation: GuideRecommendation): string => {
   if (recommendation.name === "pstack") return "Poteto Mode"
   if (recommendation.name === "hve") {
-    return recommendation.launcher === "cdx" ? "HVE Core" : `${recommendationHarness(recommendation)} HVE`
+    return recommendation.launcher === "codex" ? "HVE Core" : `${recommendationHarness(recommendation)} HVE`
   }
   return titleCaseIdentifier(recommendation.name)
 }
@@ -5647,7 +5672,7 @@ const candidateInstancePreview = (command: PublicGuideCommand, profile: Selected
 const CandidatesView = ({
   candidates,
   index,
-  usedTemplateFallback,
+  templateFallback,
   command,
   firstmate = false,
   legacyFirstmate = false,
@@ -5655,14 +5680,21 @@ const CandidatesView = ({
 }: {
   readonly candidates: Triple<GuideGenerateCandidate>
   readonly index: number
-  readonly usedTemplateFallback: boolean
+  readonly templateFallback: GuideTemplateFallback | undefined
   readonly command: PublicGuideCommand
   readonly firstmate?: boolean
   readonly legacyFirstmate?: boolean
   readonly instanceLabel?: string
 }) => {
   const { rows, columns: terminalColumns } = useGuideWindowSize()
-  const paneHeight = Math.max(1, candidatePaneHeight(rows) - (instanceLabel === undefined ? 0 : 2))
+  const fallbackNotice = templateFallback === undefined ? undefined : [
+    templateFallback.kind === "validation"
+      ? "Using template candidates: generated output failed workflow validation."
+      : "Using template candidates you selected after generation failed.",
+    ...(templateFallback.reason === undefined ? [] : [templateFallback.reason]),
+  ].join("\n")
+  const fallbackRows = fallbackNotice === undefined ? 0 : wrapGuideText(fallbackNotice, Math.max(1, terminalColumns - 2)).length
+  const paneHeight = Math.max(1, candidatePaneHeight(rows) - fallbackRows - (instanceLabel === undefined ? 0 : 2))
   const railWidth = candidateRailWidth(terminalColumns)
   const candidate = tripleAt(candidates, index)
   return (
@@ -5671,7 +5703,7 @@ const CandidatesView = ({
         Prompt candidates
       </Text>
       {instanceLabel === undefined ? null : <Text>{instanceLabel}</Text>}
-      {usedTemplateFallback ? <Text color="yellow">Deterministic template fallback (no model call).</Text> : null}
+      {fallbackNotice === undefined ? null : <Text color="yellow">{fallbackNotice}</Text>}
       <Box marginTop={1}>
         <CandidateRail candidates={candidates} index={index} width={railWidth} height={paneHeight} />
         <CandidateDetail
@@ -5811,7 +5843,7 @@ const DestinationView = ({
   )
 }
 
-/** `cpx · council`, or `sandbox · claude-council`. */
+/** `copilot · council`, or `sandbox · claude-council`. */
 const describeJobRunner = (profile: SelectedProfile): string =>
   profile.surface === "native"
     ? profile.firstmateInstance === undefined
@@ -6061,7 +6093,7 @@ const firstmateViewportHeight = (rows: number, width: number, fixedLines: Readon
 }
 
 export const firstmateInstallationPlanLines = (approval: FirstmatePreparationApproval): ReadonlyArray<string> => [
-  `Profile: fmx/${approval.profile}`,
+  `Profile: firstmate/${approval.profile}`,
   ...(approval.firstmateInstance === undefined ? [] : [
     `Instance: ${approval.firstmateInstance.mode} ${approval.firstmateInstance.instanceId}`,
     `Binding: ${approval.firstmateInstanceContext?.expectedBindingDigest ?? "legacy shared root"}`,
@@ -6342,7 +6374,7 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
     const recommendation = state.selectedRecommendation
     void (async () => {
       try {
-        const { candidates } = await runGuideGenerationStep(
+        const { candidates, templateFallback } = await runGuideGenerationStep(
           props.catalog,
           props.guideRoot,
           props.provider,
@@ -6358,7 +6390,15 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
           state.selectedGoal ?? guideUiTaskContext(state),
           (input) => jevShouldSkipPromptOptimization(input, intent, { cwd: props.cwd }),
         )
-        if (!cancelled) dispatch({ type: GuideUiActionType.GenerateSucceeded, candidates })
+        if (!cancelled) {
+          dispatch({
+            type: templateFallback
+              ? GuideUiActionType.GenerateTemplateFallback
+              : GuideUiActionType.GenerateSucceeded,
+            candidates,
+            ...(templateFallback?.reason === undefined ? {} : { reason: templateFallback.reason }),
+          })
+        }
       } catch (error) {
         if (!cancelled) dispatch({ type: GuideUiActionType.GenerateFailed, message: describeGuideUiError(error) })
       }
@@ -7638,7 +7678,7 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
     <CandidatesView
       candidates={state.candidates}
       index={state.candidateIndex}
-      usedTemplateFallback={state.usedTemplateFallback}
+      templateFallback={state.templateFallback}
       firstmate={isFirstmateSelection(state.selectedProfile)}
       legacyFirstmate={isFirstmateProfile(state.selectedProfile) && !isFirstmateSelection(state.selectedProfile)}
       {...(isFirstmateSelection(state.selectedProfile) && state.selectedProfile.orchestration?.instances !== undefined

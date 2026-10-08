@@ -2,15 +2,14 @@
 
 **Trellage Sandbox** compiles locked agent profiles and runs them in isolated
 Docker containers. **Trellage Native** runs profile launchers directly on the
-host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
-`omp`, `picx`, and `prx`.
+host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 
 ## Project overview
 
 - Trellage Sandbox profiles describe reproducible container environments.
 - The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
-- Trellage Native profiles isolate agent state but are not containers or security boundaries, **except** `grx` (Grok), which enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `cdx` (Codex) uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
-- The `trx` router presents Trellage Native profiles. Examples: `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`, `picx`, and `prx` launchers.
+- Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
+- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `firstmate`, `jcode`, `omp`, `pi`, `prime`, and `grok`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
@@ -40,7 +39,7 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
 - Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
 - After merging CLI/compiler/native launcher changes, from the repo root run
   `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
-  launchers (`agx`/`cdx`/`cpx`/`cldx`/`fmx`/`grx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
+  launchers (`agx`/`cdx`/`cpx`/`cldx`/`fmx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
   runs a non-locked Sandbox `build` for each `profiles/*`. Use `--native-only`
   or `--sandbox-only` on the underlying script when you only need one side.
   Installed `post-merge` and `post-rewrite` hooks prepare the source runtime and
@@ -103,7 +102,7 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
 - `packages/trellage-conversation-source` contains production conversation capture.
 - `packages/trellage-runtime` contains shared Bun execution and source-runtime support.
 - `prototypes/trellage` contains the Trellage Sandbox launcher and container runtime entrypoints.
-- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`agx`, `cdx`, `cpx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`, `picx`, `prx`).
+- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`agx`, `cdx`, `cpx`, `cldx`, `fmx`, `jcx`, `omp`, `picx`, `prx`).
 - `profiles` contains concrete locked profile definitions.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.
@@ -124,15 +123,12 @@ host. Examples: `trx`, `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`,
 - Use `git` and `gh` only for explicit user-authorized delivery.
 - Verify scope, tests, PR state, and merge result before reporting delivery.
 
-## Grok profile recovery
+## Composed Grok
 
-- Applies ONLY to `grx`; `cdx` and `cpx` use different authentication.
-- `grx` auth readiness failure? Verify `~/.grok/auth.json` is readable, regular, non-symlink.
-- Valid source + missing profile `auth.json`? Run `grx repair PROFILE`, then `grx doctor PROFILE`.
-- Regular profile `auth.json` with incorrect permissions? Set mode `0600`, then repair and doctor.
-- Profile authentication symlink or non-regular path? Report it; NEVER alter it automatically.
+- Launch Grok through `mise run trx -- run grok PROFILE`.
+- The adapter routes model traffic through `copilot-proxy-rs`, pins API-key authentication in generated `config.toml`, and supplies a non-secret local proxy token through `XAI_API_KEY`. It does not create, copy, repair, or modify `auth.json`.
 - NEVER run `grok login`, delete authentication paths, follow authentication symlinks, or weaken authentication permissions without explicit user authorization.
-- Repair or doctor failure? Report the exact diagnostic; NEVER substitute proxy or native authentication.
+- Grok always launches with its native workspace sandbox. Repository compatibility resources can still load, so selected-only configuration isolation remains unproven.
 
 ## Package feeds on Microsoft-managed devices
 
@@ -186,7 +182,7 @@ url = "https://packagefeedproxy.microsoft.io/pypi/simple/"
 default = true
 ```
 
-### Trellage Native (`trx`, `cpx`, `cdx`, `grx`, …)
+### Trellage Native (`trx`, `cpx`, `cdx`, …)
 
 - Native launchers run on the host; they inherit host package-manager config.
 - Configure npm, pip, and uv on the host (as above). Do not rely on public PyPI
@@ -207,7 +203,7 @@ default = true
 
 - Use Effect for TypeScript application logic where practical.
 - Preserve deterministic core profile locks and isolated runtime state. Skill
-  content is intentionally floating and is not part of the lock.
+  content is configured separately from the core profile lock.
 - Keep static verification free of model inference and paid calls.
 - Do not weaken or skip repository contracts to make a change pass.
 - Keep changes scoped and preserve unrelated dirty-worktree edits.
@@ -218,26 +214,29 @@ default = true
   exclusions. The
   `engineersamuel` source MUST require `ui-guidelines`.
 - Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.
-- `skills.json` is the only skill-source allowlist. Skill entries MUST NOT
-  contain a ref, commit, digest, or fetched timestamp. Third-party selections
+- `config.toml` is the only skill-source allowlist. Sources may use an explicit commit or tag; omitted refs track the default branch.
+  Resolved commits, digests, and fetch timestamps belong in derived cache receipts. Third-party selections
   MUST be explicit. Wildcards require `allowWildcard = true`.
-- Every native launcher MUST use the shared floating-skills manager with
-  `native-common`. Every comparison image MUST use the single
+- Native skill selections MUST derive from the selected config.toml profiles,
+  including their explicit always-profile selection. Every comparison image MUST use the single
   `comparison-common` snapshot staged for that build operation. These common
   bundles MUST retain the `engineersamuel` source so `ui-guidelines` is
-  available on every native and container surface.
+  available in the shipped defaults.
 - The three common bundles MUST retain `i-have-adhd` with manual activation
   only. Preserve its upstream manual-invocation metadata; do not enable
   `alwaysOn` or install its upstream plugin, hooks, or extensions.
-- `jcx` MUST keep `i-have-adhd` outside JCode's automatic skill discovery.
+- JCode MUST keep `i-have-adhd` outside JCode's automatic skill discovery.
   Its managed library lives outside `JCODE_HOME`; explicit requests use
-  `jcx skill i-have-adhd PROMPT`. Reinstall the updated Native launchers before
+  `trx skill jcode i-have-adhd PROMPT`. Reinstall the updated Native launchers before
   refreshing a shared cache that adds this skill.
 - Headlong MUST keep `i-have-adhd` in its private managed store, not in an
   identity's `skills` or `kernel` registry. Explicit requests read and apply
   its private `SKILL.md`; Headlong does not enforce the upstream manual flag.
-- Native first use and `trx skills update` fetch current default-branch
-  content. Later native launches reuse the shared cache without network
-  access. Sandbox and comparison builds fetch current skill content at build
-  time. A fetch or validation failure MUST fail closed and preserve any
-  previously published native cache.
+- Every native profile load attempts to refresh unpinned sources from their
+  default branch. Pinned tags or commits stay fixed during launch. An unsuccessful
+  floating refresh may reuse only a validated, matching cache with a warning;
+  without that cache the launch fails. Preserve the previous published cache on
+  failure. Sandbox and comparison builds resolve configured sources at build time.
+- `trx skills update` refreshes floating sources and verifies pins; `--check`
+  reports available changes, and explicit `--upgrade-pins` atomically updates
+  pinned selectors in config.toml. Cache receipts never become configuration.

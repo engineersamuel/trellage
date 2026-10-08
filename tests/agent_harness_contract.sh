@@ -32,7 +32,7 @@ for required in \
   scripts/install-native-environment-runtime.sh \
   scripts/native-environment.ts \
   scripts/profile-compiler-fingerprint.sh \
-  skills.json \
+  config.toml \
   scripts/install-lefthook-hook.sh; do
   [[ -f "${required}" ]] || fail "missing ${required}"
 done

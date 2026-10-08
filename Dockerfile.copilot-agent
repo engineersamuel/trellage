@@ -69,7 +69,7 @@ COPY --from=floating_skills / /opt/floating-skills
 COPY --from=comparison_source /opt/comparison-runtime/bun /usr/local/bin/bun
 COPY --from=comparison_source /opt/comparison-runtime/source /opt/trellage-source
 COPY --chmod=0555 scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh
-COPY --chmod=0444 skills.json /opt/floating-skills-catalog.json
+COPY --chmod=0444 config.toml /opt/floating-skills-catalog.json
 COPY scripts/copilot-agent-entrypoint.sh /usr/local/bin/copilot-agent-entrypoint.sh
 COPY --chmod=0555 prototypes/trellage/copilot-model-settings.py /usr/local/bin/trellage-copilot-model-settings
 COPY --chmod=0444 prototypes/trellage/assets/rundown/rundown.instructions.md \

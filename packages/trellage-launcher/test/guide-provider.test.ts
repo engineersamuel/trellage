@@ -13,16 +13,16 @@ import {
 import type { GuideMatchCatalogEntry } from "../src/guide-catalog.ts"
 
 const workflowIndex = new Map<string, ReadonlySet<string>>([
-  ["native:cpx/plannotator", new Set(["visual-artifact"])],
+  ["native:copilot/plannotator", new Set(["visual-artifact"])],
   ["sandbox:prime-agent", new Set(["review"])],
   ["sandbox:other", new Set(["build"])],
-  ["native:cdx/pstack", new Set(["poteto-mode-entry-point"])],
+  ["native:codex/pstack", new Set(["poteto-mode-entry-point"])],
   ["sandbox:headlong", new Set(["persistent-investigation"])],
-  ["native:cdx/superpowers", new Set(["systematic-debugging"])],
+  ["native:codex/superpowers", new Set(["systematic-debugging"])],
 ])
 
 const validMatchCandidate = (overrides: Partial<Record<string, unknown>> = {}) => ({
-  profileRef: "native:cpx/plannotator",
+  profileRef: "native:copilot/plannotator",
   workflowId: "visual-artifact",
   confidence: 0.9,
   reason: "Strong fit for reviewing diffs.",
@@ -44,7 +44,7 @@ const validFiveMatchResult = () => ({
     validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review", confidence: 0.85 }),
     validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build", confidence: 0.75 }),
     validMatchCandidate({
-      profileRef: "native:cdx/pstack",
+      profileRef: "native:codex/pstack",
       workflowId: "poteto-mode-entry-point",
       confidence: 0.65,
     }),
@@ -61,7 +61,7 @@ describe("validateGuideMatchResult", () => {
     const result = validateGuideMatchResult(validMatchResult(), workflowIndex)
     expect(result.candidates).toHaveLength(3)
     expect(result.candidates.map((c) => c.profileRef)).toEqual([
-      "native:cpx/plannotator",
+      "native:copilot/plannotator",
       "sandbox:prime-agent",
       "sandbox:other",
     ])
@@ -82,7 +82,7 @@ describe("validateGuideMatchResult", () => {
       candidates: [
         ...validFiveMatchResult().candidates,
         validMatchCandidate({
-          profileRef: "native:cdx/superpowers",
+          profileRef: "native:codex/superpowers",
           workflowId: "systematic-debugging",
           confidence: 0.45,
         }),
@@ -275,10 +275,10 @@ const compactGuide = (): GuideMatchCatalogEntry["guide"] => ({
 
 const matchCatalogEntry = (overrides: Partial<GuideMatchCatalogEntry> = {}): GuideMatchCatalogEntry => {
   const base: GuideMatchCatalogEntry = {
-    ref: "native:cdx/pstack",
+    ref: "native:codex/pstack",
     surface: "native",
     name: "pstack",
-    launcher: "cdx",
+    launcher: "codex",
     description: "Code review harness.",
     sandbox: false,
     guide: compactGuide(),
@@ -335,7 +335,7 @@ describe("assertGuideGenerateInput", () => {
 
   const validInput = (): GuideGenerateInput => ({
     intent: "Review my open PR",
-    profileRef: "native:cdx/pstack",
+    profileRef: "native:codex/pstack",
     workflowId: "review",
     guide,
     guideBody: "# pstack\n\nThis guide describes the review workflow.",
@@ -369,7 +369,7 @@ describe("assertGuideGenerateInput", () => {
 describe("assertGuideOptimizeInput", () => {
   const validInput = () => ({
     targetTool: "copilot",
-    profileRef: "native:cpx/compound-engineering",
+    profileRef: "native:copilot/compound-engineering",
     candidates: [validGenerateCandidate()],
     fixedFrame: {
       beforeBody: "/ce-compound mode:non-interactive ",

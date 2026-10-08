@@ -33,7 +33,7 @@ export const toSelectedProfile = (entry: AdminProfileEntry): SelectedProfile =>
 /** Firstmate control uses the confirmed instance context; other launchers retain the picker command. */
 export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =>
   isAdminFirstmate(entry)
-    ? { executable: entry.commandPath, args: [entry.name, ...adminInstanceControlArgs(entry)] }
+    ? { executable: entry.commandPath, args: ["run", entry.launcher!, entry.name, ...adminInstanceControlArgs(entry)] }
     : buildGuideLaunchCommand(toSelectedProfile(entry)).command
 
 /**
@@ -42,7 +42,7 @@ export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =
  */
 export const buildDiagnosticCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: entry.surface === "native" ? ["doctor", entry.name, ...adminInstanceSelectorArgs(entry)] : ["validate", entry.name],
+  args: entry.surface === "native" ? ["doctor", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry)] : ["validate", entry.name],
 })
 
 /**
@@ -68,12 +68,12 @@ export const buildRepairCommand = (entry: AdminProfileEntry): CommandSpec => {
     return {
       executable: entry.commandPath,
       args: [
-        "prepare", entry.name, ...adminInstanceControlArgs(entry), "--json",
+        "prepare", entry.launcher!, entry.name, ...adminInstanceControlArgs(entry), "--json",
         firstmateInstanceCli.expectedSourceRevision, entry.orchestration!.sourceRevision,
       ],
     }
   }
-  return { executable: entry.commandPath, args: ["repair", entry.name] }
+  return { executable: entry.commandPath, args: ["repair", entry.launcher!, entry.name] }
 }
 
 /**
@@ -82,7 +82,7 @@ export const buildRepairCommand = (entry: AdminProfileEntry): CommandSpec => {
  */
 export const buildSetupCommand = (entry: AdminProfileEntry): CommandSpec => {
   if (isAdminFirstmate(entry)) throw new Error("Admin does not create Firstmate fleets or escalate preparation to setup.")
-  return { executable: entry.commandPath, args: ["setup", entry.name] }
+  return { executable: entry.commandPath, args: ["setup", entry.launcher!, entry.name] }
 }
 
 /**

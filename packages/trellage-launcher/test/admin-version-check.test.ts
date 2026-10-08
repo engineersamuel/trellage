@@ -4,13 +4,13 @@ import type { AdminProfileEntry } from "../src/admin-model.ts"
 import { buildUpdateCheckCommand, parseUpdateCheckOutput, versionColumnsFor } from "../src/admin-version-check.ts"
 
 const entry: AdminProfileEntry = {
-  ref: "native:prx:default",
+  ref: "native:prime:default",
   surface: "native",
-  launcher: "prx",
+  launcher: "prime",
   harness: "prime",
   name: "default",
   description: "Prime native profile.",
-  commandPath: "/usr/local/bin/prx",
+  commandPath: "/usr/local/bin/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -25,18 +25,18 @@ const entry: AdminProfileEntry = {
 describe("buildUpdateCheckCommand", () => {
   it("builds `update --check PROFILE` against the entry's own command path", () => {
     expect(buildUpdateCheckCommand(entry)).toEqual({
-      executable: "/usr/local/bin/prx",
-      args: ["update", "--check", "default"],
+      executable: "/usr/local/bin/trx",
+      args: ["upgrade", "prime", "default", "--check"],
     })
   })
 })
 
 describe("parseUpdateCheckOutput", () => {
-  it("parses the prx/jcx/omp/picx 'is current' message family", () => {
+  it("parses the prime/jcode/omp/picx 'is current' message family", () => {
     expect(parseUpdateCheckOutput("prx update: 0.8.1 is current", "0.8.1")).toEqual({ current: true, installed: "0.8.1" })
   })
 
-  it("parses the prx/jcx/omp/picx '-> available' message family", () => {
+  it("parses the prime/jcode/omp/picx '-> available' message family", () => {
     expect(parseUpdateCheckOutput("prx update: 0.8.1 -> 0.9.0 available", "0.8.1")).toEqual({
       current: false,
       installed: "0.8.1",
@@ -44,11 +44,11 @@ describe("parseUpdateCheckOutput", () => {
     })
   })
 
-  it("parses the cpx/grx 'current (X)' message family", () => {
+  it("parses the cpx 'current (X)' message family", () => {
     expect(parseUpdateCheckOutput("default: current (1.2.3)", "1.2.3")).toEqual({ current: true, installed: "1.2.3" })
   })
 
-  it("parses the cpx/grx 'update available (X -> Y)' message family", () => {
+  it("parses the cpx 'update available (X -> Y)' message family", () => {
     expect(parseUpdateCheckOutput("default: update available (1.2.3 -> 1.3.0)", "1.2.3")).toEqual({
       current: false,
       installed: "1.2.3",
@@ -56,7 +56,7 @@ describe("parseUpdateCheckOutput", () => {
     })
   })
 
-  it("parses the cpx/grx 'not installed' message as malformed rather than a version result", () => {
+  it("parses the cpx 'not installed' message as malformed rather than a version result", () => {
     const result = parseUpdateCheckOutput("default: not installed", undefined)
     expect(result).toMatchObject({ malformed: true })
   })

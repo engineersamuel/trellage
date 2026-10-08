@@ -40,7 +40,7 @@ const container = (name: string, harness = "claude", commandPath = "/fixture/tre
   updateCheckStale: false,
 })
 
-const native = (launcher: string, harness: string, name = "default", commandPath = `/fixture/${launcher}`): AdminProfileEntry => ({
+const native = (launcher: string, harness: string, name = "default", commandPath = "/fixture/trx"): AdminProfileEntry => ({
   ...container(name, harness, commandPath),
   ref: `native:${launcher}/${name}`,
   surface: "native",
@@ -48,7 +48,7 @@ const native = (launcher: string, harness: string, name = "default", commandPath
 })
 
 const success: CommandRunResult = { stdout: "updated", stderr: "", exitCode: 0 }
-const help: CommandRunResult = { ...success, stdout: "usage: launcher harness-update\nlauncher skills-update PROFILE\ntrx skills update" }
+const help: CommandRunResult = { ...success, stdout: "usage: trx upgrade HARNESS PROFILE --harness-only --skills-only\ntrx skills update" }
 const successfulRun = () => vi.fn<CommandRunner["run"]>(async (_executable, args) => (args[0] === "--help" ? help : success))
 
 const deferred = <T>() => {
@@ -64,24 +64,24 @@ const deferred = <T>() => {
 describe("all-harness update planning", () => {
   it("includes the full catalog, deduplicates native runtimes, and keeps container and Firstmate operations per profile", () => {
     const entries = [
-      native("cldx", "claude", "default"),
-      native("cldx", "claude", "other"),
+      native("claude", "claude", "default"),
+      native("claude", "claude", "other"),
       native("omp", "oh-my-pi", "copilot"),
       native("omp", "oh-my-pi", "local"),
-      native("picx", "pi"),
-      native("fmx", "firstmate"),
-      native("fmx", "firstmate", "pstack-workers"),
+      native("pi", "pi"),
+      native("firstmate", "firstmate"),
+      native("firstmate", "firstmate", "pstack-workers"),
       container("claude-a"),
       container("claude-b"),
       container("pi", "pi"),
       container("prime", "prime"),
-      native("agx", "agency"),
+      native("agency", "agency"),
     ]
     const plan = harnessUpdateAllPlanFor([...entries].reverse().concat(entries[0]!))
     expect(plan.profileCount).toBe(entries.length)
     expect(plan.nativeUpdateCount).toBe(5)
     expect(plan.containerUpdateCount).toBe(4)
-    expect(plan.unsupported).toEqual([{ entry: entries.at(-1), diagnostic: "No harness update command is supported for agx." }])
+    expect(plan.unsupported).toEqual([{ entry: entries.at(-1), diagnostic: "No harness update command is supported for agency." }])
     expect(plan.groups.flatMap((group) => group.targets.map((entry) => entry.ref)).sort()).toEqual(
       entries
         .slice(0, -1)
@@ -90,12 +90,12 @@ describe("all-harness update planning", () => {
     )
     expect(plan.groups.filter((group) => group.harness.includes("pi")).map((group) => group.key)).toEqual([
       "native:omp",
-      "native:picx",
+      "native:pi",
       "sandbox:pi",
     ])
-    expect(plan.groups.find((group) => group.key === "native:fmx")?.steps.map((step) => step.command.args)).toEqual([
-      ["update", "default"],
-      ["update", "pstack-workers"],
+    expect(plan.groups.find((group) => group.key === "native:firstmate")?.steps.map((step) => step.command.args)).toEqual([
+      ["upgrade", "firstmate", "default"],
+      ["upgrade", "firstmate", "pstack-workers"],
     ])
     expect(
       plan.groups.filter((group) => group.surface === "sandbox").flatMap((group) => group.steps.map((step) => step.command.args)),
@@ -109,8 +109,8 @@ describe("all-harness update planning", () => {
 
   it("retains separate executable paths when their harness update keys match", async () => {
     const entries = [
-      native("cldx", "claude", "a"),
-      native("cldx", "claude", "b", "/other/cldx"),
+      native("claude", "claude", "a"),
+      native("claude", "claude", "b", "/other/trx"),
       container("a"),
       container("b", "claude", "/other/trellage"),
     ]
@@ -121,14 +121,14 @@ describe("all-harness update planning", () => {
     const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager({ run }, "/worktree"), { refresh: async () => {} })
     expect(
       run.mock.calls
-        .filter(([, args]) => ["harness-update", "upgrade", "update"].includes(args[0] ?? ""))
+        .filter(([, args]) => ["harness-update", "upgrade", "update"].includes(args[0] ?? "") && !args.includes("--skills-only"))
         .map(([executable]) => executable),
     ).toEqual(entries.map((entry) => entry.commandPath))
     expect(harnessUpdateAllSummary(outcome).updated).toBe(4)
   })
 
   it("does not override configured pins with a cached latest version", () => {
-    const entries = [container("claude-pinned"), native("fmx", "firstmate")]
+    const entries = [container("claude-pinned"), native("firstmate", "firstmate")]
     const plain = harnessUpdateAllPlanFor(entries)
     const withLatest = harnessUpdateAllPlanFor(entries, () => ({
       installed: { kind: "known", version: "1.0.0" },
@@ -152,7 +152,7 @@ describe("all-harness update planning", () => {
     expect(pages.every((page) => Buffer.byteLength(page) <= 64 * 1024)).toBe(true)
     let pageIndex = 0
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
-      expect(args.slice(0, 3)).toEqual(["instances", "list", "default"])
+      expect(args.slice(0, 4)).toEqual(["instances", "firstmate", "list", "default"])
       return { ...success, stdout: pages[pageIndex++]! }
     })
     const entries = await discoverAdminInstanceEntries({ run }, firstmateCatalog(), "/work/entry")
@@ -180,7 +180,7 @@ describe("all-harness update planning", () => {
         expect(context).toBeDefined()
         expect(target.firstmateInstanceContext).toBe(context)
         expect(step.command.args).toEqual([
-          "update", target.name, "--instance",
+          "upgrade", "firstmate", target.name, "--instance",
           target.firstmateInstance?.mode === "legacy" ? "legacy" : target.firstmateInstance!.instanceId,
           "--fmx-instance-context-json", canonicalFirstmateInstanceJson(context!),
         ])
@@ -214,10 +214,10 @@ describe("all-harness update planning", () => {
         ...entry, orchestration: { ...entry.orchestration!, sourceRevision: otherPin },
       } : entry),
     }, [
-      { ref: "native:fmx/default", state: "complete", instances: [missingLegacy, alpha, beta] },
-      { ref: "native:fmx/pstack-workers", state: "complete", instances: [pstackLegacy, pstack] },
+      { ref: "native:firstmate/default", state: "complete", instances: [missingLegacy, alpha, beta] },
+      { ref: "native:firstmate/pstack-workers", state: "complete", instances: [pstackLegacy, pstack] },
     ]).map((entry) => entry.firstmateInstance?.instanceId === beta.reference.instanceId && entry.name === "default"
-      ? { ...entry, commandPath: "/other/fmx" } : entry)
+      ? { ...entry, commandPath: "/other/trx" } : entry)
     const originalContext = instanceSelection.createFirstmateInstanceContext(alpha, alpha.worktree.evidence, "entry-match")
     const selected = entries.map((entry) => entry.firstmateInstance?.instanceId === alpha.reference.instanceId
       ? { ...entry, firstmateInstanceContext: originalContext } : entry)
@@ -230,7 +230,7 @@ describe("all-harness update planning", () => {
     expect(plan.nativeUpdateCount).toBe(3)
     expect(plan.profileCount).toBe(5)
     expect(plan.unsupported.map(({ entry }) => entry.firstmateInstanceDescriptor)).toEqual([missingLegacy, pstackLegacy])
-    expect(plan.groups.map((group) => group.steps[0]?.command.executable)).toEqual(["/fixture/fmx", "/other/fmx"])
+    expect(plan.groups.map((group) => group.steps[0]?.command.executable)).toEqual(["/fixture/trx", "/other/trx"])
     expect(plan.groups.map((group) => group.latestVersion)).toEqual([firstmatePin, firstmatePin])
     const steps = plan.groups.flatMap((group) => group.steps)
     expect(steps.map((step) => step.targets[0]?.name)).toEqual(["default", "pstack-workers", "default"])
@@ -238,7 +238,7 @@ describe("all-harness update planning", () => {
     expect(defaultContext).toBe(originalContext)
     const pstackContext = steps[1]!.targets[0]!.firstmateInstanceContext
     expect(pstackContext?.expectedRuntimeDigest).toBe(firstmateRuntimeVariantDigest(pstack.runtime.required))
-    expect(steps[1]!.command.args[1]).toBe("pstack-workers")
+    expect(steps[1]!.command.args[2]).toBe("pstack-workers")
     const before = plan.groups.map(harnessUpdateScopeKey)
     selected.push(...instanceRows(namedInstanceRegistry(1)))
     expect(plan.groups.map(harnessUpdateScopeKey)).toEqual(before)
@@ -252,22 +252,22 @@ describe("all-harness update queue", () => {
       if (args[0] === "--help") return executable === "trx" ? { ...help, stdout: "usage: trx [AGENT_ARGS]" } : help
       return success
     })
-    const plan = harnessUpdateAllPlanFor([native("cldx", "claude")])
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude")])
     const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager({ run }, "/worktree"), { refresh: async () => {} })
     expect(run.mock.calls.some(([, args]) => args[0] === "skills")).toBe(false)
-    expect(run.mock.calls.some(([, args]) => args[0] === "skills-update")).toBe(false)
+    expect(run.mock.calls.some(([, args]) => args.includes("--skills-only"))).toBe(false)
     expect(harnessUpdateAllSummary(outcome)).toMatchObject({ skillsCacheFailed: true, nativeSkillsNotRun: 1, success: false })
   })
 
   it("serializes commands and refreshes, reports every profile, and continues after independent failures", async () => {
     const entries = [
-      native("cpx", "copilot", "a"),
-      native("cpx", "copilot", "b"),
-      native("fmx", "firstmate", "default"),
-      native("fmx", "firstmate", "pstack-workers"),
+      native("copilot", "copilot", "a"),
+      native("copilot", "copilot", "b"),
+      native("firstmate", "firstmate", "default"),
+      native("firstmate", "firstmate", "pstack-workers"),
       container("claude-a"),
       container("claude-b"),
-      native("agx", "agency"),
+      native("agency", "agency"),
     ]
     const plan = harnessUpdateAllPlanFor(entries)
     let active = 0
@@ -280,12 +280,12 @@ describe("all-harness update queue", () => {
       active -= 1
       if (args[0] === "--help") return help
       sequence.push(args.join(" "))
-      if (args[1] === "pstack-workers" || args[1] === "claude-b") throw new Error(`Download failed: ${args[1]}`)
+      if (args[2] === "pstack-workers" || args[1] === "claude-b") throw new Error(`Download failed: ${args[2] ?? args[1]}`)
       return success
     })
     const refresh = vi.fn(async (group: HarnessUpdatePlan) => {
       sequence.push(`refresh ${group.key}`)
-      if (group.key === "native:cpx") throw new Error("Version receipt unavailable")
+      if (group.key === "native:copilot") throw new Error("Version receipt unavailable")
     })
     const events: HarnessUpdateQueueEvent[] = []
     const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager({ run }, "/worktree with spaces"), {
@@ -294,17 +294,17 @@ describe("all-harness update queue", () => {
     })
     expect(peak).toBe(1)
     expect(sequence).toEqual([
-      "harness-update",
-      "refresh native:cpx",
-      "update default",
-      "update pstack-workers",
-      "refresh native:fmx",
+      "upgrade copilot a --harness-only",
+      "refresh native:copilot",
+      "upgrade firstmate default",
+      "upgrade firstmate pstack-workers",
+      "refresh native:firstmate",
       "skills update",
-      "skills-update default",
-      "skills-update a",
-      "skills-update b",
-      "skills-update default",
-      "skills-update pstack-workers",
+      "upgrade agency default --skills-only",
+      "upgrade copilot a --skills-only",
+      "upgrade copilot b --skills-only",
+      "upgrade firstmate default --skills-only",
+      "upgrade firstmate pstack-workers --skills-only",
       "upgrade claude-a --strict-harness",
       "upgrade claude-b --strict-harness",
       "refresh sandbox:claude",
@@ -402,7 +402,7 @@ describe("all-harness update queue", () => {
       controller.abort()
       return help
     })
-    const plan = harnessUpdateAllPlanFor([native("cldx", "claude")])
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude")])
     const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager({ run }, "/worktree"), {
       refresh: async () => {},
       signal: controller.signal,
@@ -415,7 +415,7 @@ describe("all-harness update queue", () => {
   it("does not report unsupported-only or empty catalogs as successful updates", async () => {
     const run = successfulRun()
     const manager = new HarnessUpdateManager({ run }, "/worktree")
-    const outcome = await runAllHarnessUpdates(harnessUpdateAllPlanFor([native("agx", "agency")]), manager, { refresh: async () => {} })
+    const outcome = await runAllHarnessUpdates(harnessUpdateAllPlanFor([native("agency", "agency")]), manager, { refresh: async () => {} })
     expect(harnessUpdateAllSummary(outcome)).toMatchObject({ unsupported: 1, updated: 0, success: false })
     expect(harnessUpdateAllSummary(outcome).nativeSkillsUpdated).toBe(1)
     run.mockClear()
@@ -426,22 +426,22 @@ describe("all-harness update queue", () => {
   })
 
   it("publishes Native skill copies after harness updates, then builds Containers with current skills", async () => {
-    const entries = [native("cldx", "claude", "a"), native("cldx", "claude", "b"), container("claude")]
+    const entries = [native("claude", "claude", "a"), native("claude", "claude", "b"), container("claude")]
     const plan = harnessUpdateAllPlanFor(entries, undefined, "/selected worktree/bin/trx")
     const run = successfulRun()
     const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager({ run }, "/worktree"), { refresh: async () => {} })
     expect(run.mock.calls.filter(([, args]) => args[0] !== "--help").map(([executable, args]) => [executable, args])).toEqual([
-      ["/fixture/cldx", ["harness-update"]],
+      ["/fixture/trx", ["upgrade", "claude", "a", "--harness-only"]],
       ["/selected worktree/bin/trx", ["skills", "update"]],
-      ["/fixture/cldx", ["skills-update", "a"]],
-      ["/fixture/cldx", ["skills-update", "b"]],
+      ["/fixture/trx", ["upgrade", "claude", "a", "--skills-only"]],
+      ["/fixture/trx", ["upgrade", "claude", "b", "--skills-only"]],
       ["/fixture/trellage", ["upgrade", "claude", "--strict-harness"]],
     ])
     expect(harnessUpdateAllSummary(outcome)).toMatchObject({ success: true, nativeSkillsUpdated: 2, updated: 3 })
   })
 
   it("does not copy stale Native skills after cache refresh fails, but continues independent harness updates", async () => {
-    const entries = [native("cldx", "claude"), container("claude")]
+    const entries = [native("claude", "claude"), container("claude")]
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
       if (args[0] === "--help") return help
       if (args[0] === "skills") throw new Error("Skill source unavailable")
@@ -450,7 +450,7 @@ describe("all-harness update queue", () => {
     const outcome = await runAllHarnessUpdates(harnessUpdateAllPlanFor(entries), new HarnessUpdateManager({ run }, "/worktree"), {
       refresh: async () => {},
     })
-    expect(run.mock.calls.some(([, args]) => args[0] === "skills-update")).toBe(false)
+    expect(run.mock.calls.some(([, args]) => args.includes("--skills-only"))).toBe(false)
     expect(harnessUpdateAllSummary(outcome)).toMatchObject({
       updated: 2,
       nativeSkillsUpdated: 0,
@@ -462,7 +462,7 @@ describe("all-harness update queue", () => {
   })
 
   it("keeps the all-run reservation during skills refresh and blocks an overlapping U", async () => {
-    const plan = harnessUpdateAllPlanFor([native("cldx", "claude"), container("claude")])
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude"), container("claude")])
     const pending = deferred<CommandRunResult>()
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
       if (args[0] === "--help") return help
@@ -472,15 +472,15 @@ describe("all-harness update queue", () => {
     const first = runAllHarnessUpdates(plan, manager, { refresh: async () => {} })
     await vi.waitFor(() => expect(run.mock.calls.some(([, args]) => args[0] === "skills")).toBe(true))
     await expect(manager.run(plan.groups[0]!, async () => {})).rejects.toThrow("Update all is running")
-    expect(run.mock.calls.filter(([, args]) => args[0] === "harness-update")).toHaveLength(1)
-    expect(run.mock.calls.some(([, args]) => args[0] === "upgrade")).toBe(false)
+    expect(run.mock.calls.filter(([, args]) => args.includes("--harness-only"))).toHaveLength(1)
+    expect(run.mock.calls.some(([, args]) => args[0] === "upgrade" && !args.includes("--harness-only") && !args.includes("--skills-only"))).toBe(false)
     pending.resolve(success)
     expect(harnessUpdateAllSummary(await first).success).toBe(true)
     expect(manager.isBusy()).toBe(false)
   })
 
   it("reports an old skills launcher without forwarding the new management verb into a profile", async () => {
-    const entry = native("cldx", "claude")
+    const entry = native("claude", "claude")
     const run = vi.fn<CommandRunner["run"]>(async (executable, args) => {
       if (args[0] === "--help") return executable === "trx" ? help : { ...help, stdout: "usage: cldx harness-update" }
       return success
@@ -488,10 +488,10 @@ describe("all-harness update queue", () => {
     const outcome = await runAllHarnessUpdates(harnessUpdateAllPlanFor([entry]), new HarnessUpdateManager({ run }, "/worktree"), {
       refresh: async () => {},
     })
-    expect(run.mock.calls.some(([, args]) => args[0] === "skills-update")).toBe(false)
-    expect(harnessUpdateAllSummary(outcome)).toMatchObject({ updated: 1, nativeSkillsFailed: 1, success: false })
+    expect(run.mock.calls.some(([, args]) => args.includes("--skills-only"))).toBe(false)
+    expect(harnessUpdateAllSummary(outcome)).toMatchObject({ updated: 0, failed: 1, nativeSkillsFailed: 1, success: false })
     expect(outcome.skills?.results).toEqual([
-      expect.objectContaining({ state: "failure", diagnostic: expect.stringContaining("does not support skills-update") }),
+      expect.objectContaining({ state: "failure", diagnostic: expect.stringContaining("does not support upgrade") }),
     ])
   })
 })
@@ -509,7 +509,7 @@ describe("all-harness installed-version refresh", () => {
   })
 
   it("does not claim success if no installed-version read is supported", async () => {
-    const entry = { ...native("cldx", "claude"), harnessVersionSupported: false }
+    const entry = { ...native("claude", "claude"), harnessVersionSupported: false }
     const plan = harnessUpdateAllPlanFor([entry]).groups[0]!
     const run = successfulRun()
     await expect(

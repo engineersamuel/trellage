@@ -12,7 +12,7 @@ bestFor:
   - Applying the shared poteto-mode, pstack-omp, and orchestrate-omp community skills, plus the 46 pstack workflow/principle/automation/support skills
 avoidFor:
   - Hosts without copilot-proxy-rs listening on http://127.0.0.1:8080 with the local Qwen route registered; this profile has a known-issue when no backend is registered
-  - Work that needs OMP's native GitHub Copilot model catalog or authenticated Copilot models — use omp copilot instead
+  - Work that needs OMP's native GitHub Copilot model catalog or authenticated Copilot models — use trx run omp default instead
   - Non-interactive launches that must fail on any user prompt; questionToolControl stays none for this profile until it has its own live smoke test
 prerequisites:
   - id: mise
@@ -20,7 +20,7 @@ prerequisites:
   - id: proxy-health
     description: copilot-proxy-rs listening on http://127.0.0.1:8080 with the qwen3.6-35b-a3b-local route registered for every model role.
   - id: omp-317-community-skills
-    description: OMP 17.3.5 or newer for the bundled community skill directory to be discovered; older pins omit it until omp update.
+    description: OMP 17.3.5 or newer for the bundled community skill directory to be discovered; older pins omit it until trx upgrade trx run omp local.
   - id: cli-tools
     description: curl and jq available on the host for setup, doctor, and update checks.
 workflows:
@@ -53,7 +53,7 @@ workflows:
 
 # Native Oh My Pi (`omp`) — `local` profile
 
-`omp local` runs OMP with one keyless `copilot-proxy-rs` route
+`trx run omp local` runs OMP with one keyless `copilot-proxy-rs` route
 (`qwen3.6-35b-a3b-local`) assigned to every model role, retaining OMP's full
 host tool and subagent surface. See `prototypes/trellage-omp-profiles/README.md`.
 
@@ -78,12 +78,12 @@ host tool and subagent surface. See `prototypes/trellage-omp-profiles/README.md`
   copilot` instead.
 - The task needs `--headless-policy no-user-input` guarantees; this profile's
   `headless.questionToolControl` stays `none` until it has its own live
-  smoke test, unlike `omp copilot` on exact OMP `18.0.10`.
+  smoke test, unlike `trx run omp default` on exact OMP `18.0.10`.
 
 ## Workflow Notes
 
-- Bare `omp` invocations use `local` by default; use `omp local ...` to be
-  explicit or `omp copilot ...` for the other profile.
+- Bare `omp` invocations use `local` by default; use `trx run omp local ...` to be
+  explicit or `trx run omp default ...` for the other profile.
 - `dsebban/skills` and `cursor/plugins/pstack` both provide a `poteto-mode`
   skill; Trellage intentionally selects the `dsebban` version because it
   adapts pstack skill links and agent roles for OMP.
@@ -91,7 +91,7 @@ host tool and subagent surface. See `prototypes/trellage-omp-profiles/README.md`
   launch argument vector; the agent can use all host access available to the
   OMP process.
 - The profile also carries the shared `native-common` floating skill bundle
-  (see `skills.json`: `engineersamuel` wildcard, `show-me`, and manually
+  (see `config.toml`: `engineersamuel` wildcard, `show-me`, and manually
   activated `i-have-adhd`).
 
 ## Gotchas
@@ -103,7 +103,7 @@ host tool and subagent surface. See `prototypes/trellage-omp-profiles/README.md`
   real error as an empty submind-answerer response.
 - The bundled 49 community skills require OMP `17.3.5` or newer; a profile
   pinned to an older release omits the `agent/community-skills` directory
-  from discovery until `omp update` runs.
+  from discovery until `trx upgrade trx run omp local` runs.
 - `skill://` is the invocation convention documented by `dsebban/skills` for
   its own three community skills; no equivalent explicit invocation syntax
   is documented for the 46 `cursor/plugins/pstack` skills bundled alongside

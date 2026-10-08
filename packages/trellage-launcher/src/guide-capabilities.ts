@@ -27,7 +27,7 @@ export const resolveGuideCapabilities = async (
   signal?: AbortSignal,
 ): Promise<CombinedGuideCatalog> => {
   signal?.throwIfAborted()
-  const copilot = catalog.native.filter(({ launcher }) => launcher === "cpx")
+  const copilot = catalog.native.filter(({ launcher }) => launcher === "copilot")
   const first = copilot[0]
   if (first === undefined) return catalog
   let capabilities: ReadonlyMap<string, HeadlessCapabilitiesV1> = new Map()
@@ -42,11 +42,12 @@ export const resolveGuideCapabilities = async (
     })
     signal?.throwIfAborted()
     const payload = JSON.parse(result.stdout)
-    if (payload?.schemaVersion !== 1 || payload.launcher !== "cpx" || payload.harness !== "copilot" || !Array.isArray(payload.profiles)) {
+    if (payload?.schemaVersion !== 1 || (payload.launcher !== undefined && payload.launcher !== "copilot") || !Array.isArray(payload.profiles)) {
       throw new Error("Invalid Copilot capability catalog")
     }
     const refreshed = new Map<string, HeadlessCapabilitiesV1>()
     for (const profile of payload.profiles) {
+      if (profile.launcher !== undefined && profile.launcher !== "copilot") continue
       if (typeof profile?.name !== "string" || refreshed.has(profile.name)) {
         throw new Error("Invalid Copilot profile identity")
       }
@@ -61,7 +62,7 @@ export const resolveGuideCapabilities = async (
   }
   return {
     ...catalog,
-    native: catalog.native.map((entry) => entry.launcher === "cpx"
+    native: catalog.native.map((entry) => entry.launcher === "copilot"
       ? { ...entry, headless: capabilities.get(entry.name) ?? unavailableCapabilities }
       : entry),
   }

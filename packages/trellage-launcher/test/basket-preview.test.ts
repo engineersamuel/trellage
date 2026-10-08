@@ -289,7 +289,7 @@ describe("basketVisibleRange", () => {
 describe("destinationSummaryLines", () => {
   it("names the launcher, profile, model, and where it runs", () => {
     const [runsOn, runsIn] = destinationSummaryLines(previewDestination)
-    expect(runsOn).toContain("cldx · claude/default")
+    expect(runsOn).toContain("claude · claude/default")
     expect(runsOn).toContain("claude-opus-5")
     expect(runsOn).toContain("sandbox off")
     expect(runsIn).toContain("~/src/trellage")

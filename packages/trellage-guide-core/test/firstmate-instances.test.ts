@@ -78,7 +78,7 @@ describe("immutable instance authority", () => {
     )
     const renamed = parseFirstmateInstanceDescriptorV1({ ...descriptor, name: "another-label" })
     expect(renamed.reference).toEqual(reference)
-    expect(firstmateInstanceKey(reference)).toBe(`native:fmx/default:${reference.instanceId}`)
+    expect(firstmateInstanceKey(reference)).toBe(`native:firstmate/default:${reference.instanceId}`)
     const legacy = { ...reference, mode: "legacy" as const }
     expect(firstmateInstanceKey(legacy)).toBe(firstmateInstanceKey(reference))
     expect(sameFirstmateInstance(legacy, reference)).toBe(false)

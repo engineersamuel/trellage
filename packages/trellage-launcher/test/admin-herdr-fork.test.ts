@@ -26,7 +26,7 @@ const { adminProfileLabel } = await import("../src/admin-model.ts")
 const { beta, instanceRows } = await import("./admin-firstmate-fixtures.ts")
 
 const fakeRunner = { run: vi.fn() } as unknown as import("../src/guide-launch.ts").CommandRunner
-const command = { executable: "/opt/trellage/cpx/bin/cpx", args: ["hve"] }
+const command = { executable: "/opt/trellage/copilot/bin/trx", args: ["run", "copilot", "hve"] }
 
 const readyInspection = {
   kind: "ready" as const,
@@ -99,7 +99,7 @@ describe("forkFailureToHerdrWorktree", () => {
     expect(call.prompt).toContain(beta.name)
     expect(call.prompt).toContain(beta.reference.instanceId)
     expect(call.prompt).toContain(beta.root)
-    expect(call.prompt).toContain('["/fixture/fmx","doctor","default","--instance","33333333-3333-4333-8333-333333333333"]')
+    expect(call.prompt).toContain('["/fixture/trx","doctor","firstmate","default","--instance","33333333-3333-4333-8333-333333333333"]')
     expect(call.prompt).toContain("Do not replace it with an unqualified Firstmate profile")
     expect(defaultWorktreeBranch).toHaveBeenCalledWith(expect.stringContaining(beta.reference.instanceId))
   })
@@ -109,7 +109,7 @@ describe("forkFailureToHerdrWorktree", () => {
     createHerdrWorktreeAndHandoff.mockResolvedValue(launchResult)
     const outcome = await forkFailureToHerdrWorktree(
       fakeRunner,
-      { ref: "native:cpx/hve", name: "hve", capturedOutput: "boom; rm -rf /", diagnosis: { summary: "s", suggestedFix: "f" } },
+      { ref: "native:copilot/hve", name: "hve", capturedOutput: "boom; rm -rf /", diagnosis: { summary: "s", suggestedFix: "f" } },
       { cwd: "/repo", command, promptDelivery: "agent" },
     )
     expect(outcome).toEqual({ kind: "launched", result: launchResult })
@@ -129,7 +129,7 @@ describe("forkFailureToHerdrWorktree", () => {
     inspectGitWorktreeIntent.mockResolvedValue({ ...rest, kind: "collision", collision: { kind: "branch-exists" } })
     const outcome = await forkFailureToHerdrWorktree(
       fakeRunner,
-      { ref: "native:cpx/hve", name: "hve", capturedOutput: "boom" },
+      { ref: "native:copilot/hve", name: "hve", capturedOutput: "boom" },
       { cwd: "/repo", command, promptDelivery: "agent" },
     )
     expect(outcome.kind).toBe("not-ready")
@@ -141,7 +141,7 @@ describe("forkFailureToHerdrWorktree", () => {
     createHerdrWorktreeAndHandoff.mockRejectedValue(new Error("herdr worktree create failed"))
     const outcome = await forkFailureToHerdrWorktree(
       fakeRunner,
-      { ref: "native:cpx/hve", name: "hve", capturedOutput: "boom" },
+      { ref: "native:copilot/hve", name: "hve", capturedOutput: "boom" },
       { cwd: "/repo", command, promptDelivery: "agent" },
     )
     expect(outcome.kind).toBe("failed")
@@ -151,7 +151,7 @@ describe("forkFailureToHerdrWorktree", () => {
     inspectGitWorktreeIntent.mockRejectedValue(new Error("git worktree list failed"))
     const outcome = await forkFailureToHerdrWorktree(
       fakeRunner,
-      { ref: "native:cpx/hve", name: "hve", capturedOutput: "boom" },
+      { ref: "native:copilot/hve", name: "hve", capturedOutput: "boom" },
       { cwd: "/repo", command, promptDelivery: "agent" },
     )
     expect(outcome.kind).toBe("failed")

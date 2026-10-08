@@ -55,16 +55,16 @@ describe("fresh Admin harness discovery", () => {
     const entries = ["one", "two"].map(
       (name): AdminProfileEntry => ({
         ...container(name),
-        ref: `native:cdx/${name}`,
+        ref: `native:codex/${name}`,
         surface: "native",
-        launcher: "cdx",
+        launcher: "codex",
         harness: "codex",
-        commandPath: "/fixture/cdx",
+        commandPath: "/fixture/trx",
       }),
     )
     const run = vi.fn<CommandRunner["run"]>(async () => report("0.153.4", "0.154.0"))
     const results = await checkAdminHarnessUpdates(entries, { run }, "/fixture", new AbortController().signal)
-    expect(run.mock.calls.map(([, args]) => args)).toEqual([["harness-version"]])
+    expect(run.mock.calls.map(([, args]) => args)).toEqual([["harness-version", "codex", "one"]])
     expect([...results.keys()]).toEqual(entries.map((entry) => entry.ref))
     expect([...results.values()].map((result) => result.latest)).toEqual([
       { kind: "known", version: "0.154.0" },
@@ -99,13 +99,13 @@ describe("fresh Admin harness discovery", () => {
         surface: "native",
         launcher: "omp",
         harness: "oh-my-pi",
-        commandPath: `/fixture/${name}/omp`,
+        commandPath: `/fixture/${name}/trx`,
       }),
     )
-    const run = vi.fn<CommandRunner["run"]>(async (executable) => report(executable === "/fixture/one/omp" ? "3.0.0" : "2.0.0", "3.0.0"))
+    const run = vi.fn<CommandRunner["run"]>(async (executable) => report(executable === "/fixture/one/trx" ? "3.0.0" : "2.0.0", "3.0.0"))
     const publish = vi.fn()
     const results = await checkAdminHarnessUpdates(entries, { run }, "/fixture", new AbortController().signal, publish)
-    expect(run.mock.calls.map(([executable]) => executable)).toEqual(["/fixture/one/omp", "/fixture/two/omp"])
+    expect(run.mock.calls.map(([executable]) => executable)).toEqual(["/fixture/one/trx", "/fixture/two/trx"])
     expect(results.get(entries[0]!.ref)?.installed).toEqual({ kind: "known", version: "3.0.0" })
     expect(results.get(entries[1]!.ref)?.installed).toEqual({ kind: "known", version: "2.0.0" })
     expect(publish).not.toHaveBeenCalled()

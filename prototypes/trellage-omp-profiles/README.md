@@ -1,14 +1,16 @@
 # Native Oh My Pi profiles
 
-`omp` runs host-native Oh My Pi with two isolated profiles:
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run omp PROFILE` runs host-native Oh My Pi with two isolated profiles:
 
 - `local` uses `copilot-proxy-rs` with only
   `qwen3.6-35b-a3b-local` enabled.
-- `copilot` uses OMP's native GitHub Copilot provider and discovered models
+- `default` uses OMP's native GitHub Copilot provider and discovered models
   without the local proxy.
 
-Bare `omp` invocations continue to use `local`. Explicit launches use
-`omp local ...` or `omp copilot ...`.
+Choose the local proxy or native Copilot explicitly with
+`trx run omp local ...` or `trx run omp default ...`.
 
 ## Requirements
 
@@ -25,25 +27,25 @@ No API key is required or written for `local`. The managed provider uses
 
 ```bash
 ./install.sh
-omp setup
-omp setup copilot
-omp doctor
-omp doctor copilot
-omp update --check
-omp update
-omp repair
+trx setup omp local
+trx setup omp default
+trx doctor omp local
+trx doctor omp default
+trx upgrade omp local --check
+trx upgrade omp local
+trx repair omp local
 ```
 
-The installer publishes `~/.local/bin/omp` and owns its runtime beneath
+The installer keeps `omp` as a private backend and owns its runtime beneath
 `~/.local/share/trellage/omp`. `setup` resolves the latest release eligible
 under `mise` policy on first use, installs it into the managed runtime, and
 records the exact installed version in the local `installed-version` receipt.
 Ordinary launches reuse that version without a network request. Only explicit
-`omp update` resolves latest again, and a failed update preserves the last good
+`trx upgrade omp local` resolves latest again, and a failed update preserves the last good
 installed version, receipt, version-specific configuration, and managed skill
 state. The bundled OMP community skills require OMP 17.3.5 or newer. Profiles
 using an older installed OMP release omit the community skill directory from
-discovery; run `omp update` to enable it.
+discovery; run `trx upgrade omp local` to enable it.
 
 Managed OMP files live at:
 
@@ -54,23 +56,25 @@ Managed OMP files live at:
 ~/.omp/profiles/trellage-copilot-native/agent/models.yml
 ```
 
-Both profiles also receive 49 approved community skills from:
+Both profiles also receive 34 approved community skills from:
 
 - [`dsebban/skills`](https://github.com/dsebban/skills): `orchestrate-omp`,
   `poteto-mode`, and `pstack-omp`
-- [`cursor/plugins/pstack`](https://github.com/cursor/plugins/tree/main/pstack):
-  46 pstack workflow, principle, automation, and support skills
+- [`Aqua-123/pstack-for-codex`](https://github.com/Aqua-123/pstack-for-codex):
+  31 harness-neutral pstack workflow, principle, automation, and support skills
 
-The approved source policy is in `skills.json`. The two repositories both
+The approved source policy is in `config.toml`. The two repositories both
 provide `poteto-mode`; Trellage intentionally selects the dsebban version
-because it adapts pstack skill links and agent roles for OMP. The first
+because it adapts pstack skill links and agent roles for OMP. Codex-specific
+skills, hooks, profiles, setup automation, and namespaced invocation remain
+exclusive to the `trx run codex pstack` profile. The first
 eligible OMP setup resolves the latest source commits into a shared local
 cache. Later launches work offline and synchronize the cached snapshot
 atomically into each profile's `agent/community-skills` directory without
 removing unrelated skills. Run `trx skills update` to refresh both the common
 native skills and this OMP-only cache from the approved default branches.
 
-Then run `omp skills-update local` and `omp skills-update copilot` to update
+Then run `trx upgrade omp local --skills-only` and `trx upgrade omp default --skills-only` to update
 the existing copies. Each command checks both caches and both managed targets
 before writing `agent/skills` (`native-common`) or `agent/community-skills`
 (`omp-community`). Custom skills are preserved. Missing caches or copies,
@@ -78,8 +82,8 @@ invalid ownership, unsafe paths, and name collisions fail closed. The command
 never fetches, starts OMP or the proxy, changes configuration or authentication,
 or updates the harness. Older profiles without a managed community copy need
 their normal explicit upgrade first.
-`omp --help` shows launcher commands without starting OMP. Use
-`omp local --help` or `omp copilot --help` for upstream OMP help.
+`trx --help` shows router commands. Use
+`trx run omp local --help` or `trx run omp default --help` for upstream OMP help.
 
 Setup and repair refuse symlinked paths or unrelated existing profile files.
 They preserve other profile state, including sessions. `doctor` is read-only
@@ -90,8 +94,8 @@ checks native GitHub Copilot authentication and model availability.
 Launching self-heals. OMP rewrites its own config during use, so a launch that
 finds drifted managed bytes republishes them and reports
 `omp: managed config restored` on stderr before starting; a launch that finds the
-receipt-selected version missing installs it. `omp repair` remains available
-for repairing without launching, and `omp doctor` keeps the strict read-only
+receipt-selected version missing installs it. `trx repair omp local` remains available
+for repairing without launching, and `trx doctor omp local` keeps the strict read-only
 check. Self-healing never crosses the ownership boundary: an unmanaged or
 foreign-marked profile still fails with `profile is not managed`.
 
@@ -106,7 +110,7 @@ If no host Copilot credential is available, OMP can use profile-scoped
 authentication. Run:
 
 ```bash
-omp copilot auth-broker login github-copilot
+trx run omp default auth-broker login github-copilot
 ```
 
 The Copilot profile defaults to `github-copilot/gpt-5.6-sol:medium` while
@@ -115,9 +119,9 @@ leaving the rest of the authenticated Copilot model catalog available.
 All other arguments pass unchanged to OMP:
 
 ```bash
-omp models copilot-proxy-rs
-omp -p "Reply exactly OMP_LOCAL_OK"
-omp copilot -p "Reply exactly OMP_COPILOT_OK"
+trx run omp local models copilot-proxy-rs
+trx run omp local -p "Reply exactly OMP_LOCAL_OK"
+trx run omp default -p "Reply exactly OMP_COPILOT_OK"
 ```
 
 Use `--headless-policy no-user-input` for one non-interactive launch that must
@@ -135,7 +139,7 @@ signal, and leaves the managed profile configuration unchanged. For exact OMP
 `headless.questionToolControl = "prompt-only"` with the live-proved prompt/text
 contract. The `local` profile stays fully conservative, including
 `headless.questionToolControl = "none"`, until it has its own live smoke.
-Other versions stay discoverable in `omp list --json`, but they fall back to
+Other versions stay discoverable in `trx list --json`, but they fall back to
 conservative `headless` values and `--headless-policy no-user-input` fails
 closed. OMP 18.0.10 therefore retains its verified headless behavior while
 loading the current community skills; other releases do not inherit that

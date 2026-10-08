@@ -73,10 +73,10 @@ readonly profile_marker="$profile_root/.managed-by-trellage-jcode-profiles"
 readonly profile_config="$profile_home/config.toml"
 readonly setup_hints="$profile_home/setup_hints.json"
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
-floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
-  floating_skills_catalog="$runtime_root/../../skills.json"
+  floating_skills_catalog="$runtime_root/../../config.toml"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 readonly config_manager="${floating_skills_manager%/*}/../prototypes/trellage-jcode-profiles/config-manager.ts"

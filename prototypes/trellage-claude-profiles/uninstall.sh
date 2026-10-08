@@ -22,7 +22,7 @@ installed_launcher="$install_root/bin/cldx"
 installed_catalog="$install_root/catalog.json"
 installed_native_claude="$install_root/lib/native-claude"
 ownership_marker="$install_root/.managed-by-trellage-claude-profiles"
-command_path="$home/.local/bin/cldx"
+command_path="$home/.local/share/trellage/.native-commands/cldx"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \

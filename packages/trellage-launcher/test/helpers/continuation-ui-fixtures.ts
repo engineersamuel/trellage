@@ -34,8 +34,8 @@ export enum ContinuationFixtureMode {
 }
 
 export const continuationFixtureProfiles = [
-  { ref: "native:cpx/reviewer", name: "Review specialist", workflows: [{ id: "review", description: "Review the reported changes" }, { id: "explain", description: "Explain the design" }] },
-  { ref: "native:cdx/builder", name: "Implementation specialist", workflows: [{ id: "implement", description: "Implement the scoped brief" }, { id: "verify", description: "Verify the result" }] },
+  { ref: "native:copilot/reviewer", name: "Review specialist", workflows: [{ id: "review", description: "Review the reported changes" }, { id: "explain", description: "Explain the design" }] },
+  { ref: "native:codex/builder", name: "Implementation specialist", workflows: [{ id: "implement", description: "Implement the scoped brief" }, { id: "verify", description: "Verify the result" }] },
 ] as const
 
 export const continuationFixtureAssessment = (

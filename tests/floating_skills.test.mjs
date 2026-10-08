@@ -156,11 +156,11 @@ const createFixture = async () => {
 }
 
 test("the checked-in catalog contains policy but no fetched identity", async () => {
-  const source = await readFile(new URL("../skills.json", import.meta.url), "utf8")
-  const catalog = await readCatalog(new URL("../skills.json", import.meta.url))
+  const source = await readFile(new URL("../config.toml", import.meta.url), "utf8")
+  const catalog = await readCatalog(new URL("../config.toml", import.meta.url))
   assert.equal(catalog.schema, 1)
   assert.ok(Object.hasOwn(catalog.bundles, "sandbox-common"))
-  assert.deepEqual(catalog.bundles["omp-community"], ["dsebban-omp", "cursor-pstack"])
+  assert.deepEqual(catalog.bundles["omp-community"], ["dsebban-omp", "pstack-portable"])
   assert.deepEqual(catalog.bundles["guide-prompt-master"], ["prompt-master"])
   assert.deepEqual(catalog.bundles.youtube, ["youtube-skills"])
   assert.deepEqual(catalog.sources["prompt-master"].select, ["prompt-master"])
@@ -212,10 +212,10 @@ test("the checked-in catalog contains policy but no fetched identity", async () 
   const ompCommunityNames = catalog.bundles["omp-community"].flatMap(
     (sourceId) => catalog.sources[sourceId].select,
   )
-  assert.equal(ompCommunityNames.length, 49)
-  assert.equal(new Set(ompCommunityNames).size, 49)
+  assert.equal(ompCommunityNames.length, 34)
+  assert.equal(new Set(ompCommunityNames).size, 34)
   assert.ok(catalog.sources["dsebban-omp"].select.includes("poteto-mode"))
-  assert.ok(!catalog.sources["cursor-pstack"].select.includes("poteto-mode"))
+  assert.ok(!catalog.sources["pstack-portable"].select.includes("poteto-mode"))
   assert.deepEqual(catalog.sources.engineersamuel.exclude, ["deja-history"])
   assert.deepEqual(catalog.sources.engineersamuel.required, ["ui-guidelines"])
   assert.deepEqual(catalog.bundles["guide-optimize-architecture"], ["mattpocock-optimize"])
@@ -391,7 +391,7 @@ test("all launcher and container surfaces consume their common skill bundle", as
   for (const dockerfile of ["Dockerfile.agent", "Dockerfile.copilot-agent"]) {
     assert.match(
       await readFile(path.join(repositoryRoot, dockerfile), "utf8"),
-      /COPY --chmod=0444 skills\.json \/opt\/floating-skills-catalog\.json/u,
+      /COPY --chmod=0444 config\.toml \/opt\/floating-skills-catalog\.json/u,
       `${dockerfile} must install the floating-skills catalog`,
     )
   }
@@ -837,4 +837,42 @@ test("snapshot CLI excludes Codex-only skills and rejects discoverable collision
     ),
     /excluded skill remains discoverable/,
   )
+})
+
+test("each native load attempts current floating content even seconds after first load", async () => {
+  const fixture = await createFixture()
+  await ensureNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache, target: fixture.target })
+  await writeSkill(fixture.repository, "version two")
+  await commit(fixture.repository, "next load")
+  await ensureNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache, target: fixture.target })
+  assert.match(await readFile(path.join(fixture.target, "fixture", "SKILL.md"), "utf8"), /version two/)
+})
+
+test("offline native fallback refuses altered cached skill bytes", async () => {
+  const fixture = await createFixture()
+  await ensureNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache, target: fixture.target })
+  await writeFile(path.join(fixture.cache, "skills", "fixture", "SKILL.md"), "---\nname: fixture\n---\nchanged\n")
+  await rename(fixture.repository, `${fixture.repository}.offline`)
+  await assert.rejects(ensureNative({ catalog: fixture.catalog, bundleIds: ["test"], cache: fixture.cache, target: fixture.target }), /integrity/)
+})
+
+test("direct Native catalog reads honor user policy and explicit config without rewriting either", async () => {
+  const { readNativeSkillCatalog } = await import("../scripts/floating-skills.ts")
+  const root = await temporaryRoot()
+  const configHome = path.join(root, "config")
+  const config = path.join(configHome, "trellage/config.toml")
+  const starter = path.join(repositoryRoot, "config.toml")
+  const policy = '[skills.sources.pinned]\nrepository = "https://github.com/example/pinned.git"\ncommit = "' + 'a'.repeat(40) + '"\nselect = ["chosen"]\n[skills.bundles]\nnative-common = ["pinned"]\n'
+  await mkdir(path.dirname(config), { recursive: true })
+  await writeFile(config, policy, { mode: 0o600 })
+  const environment = { HOME: root, XDG_CONFIG_HOME: configHome }
+  const selected = await readNativeSkillCatalog(starter, environment)
+  assert.equal(selected.sources.pinned.commit, 'a'.repeat(40))
+  assert.deepEqual(selected.bundles['native-common'], ['pinned'])
+  assert.equal(await readFile(config, 'utf8'), policy)
+  const explicit = path.join(root, 'explicit.toml')
+  await writeFile(explicit, policy.replaceAll('pinned', 'explicit'), { mode: 0o600 })
+  assert.deepEqual((await readNativeSkillCatalog(starter, { ...environment, TRELLAGE_CONFIG: explicit })).bundles['native-common'], ['explicit'])
+  await writeFile(explicit, '[environment]\nenabled = false\n', { mode: 0o600 })
+  await assert.rejects(readNativeSkillCatalog(starter, { ...environment, TRELLAGE_CONFIG: explicit }), /no \[skills\] policy/)
 })

@@ -49,7 +49,7 @@ const approval: FirstmatePreparationApproval = {
   commandPath: selected.commandPath, profile: selected.profile,
   sourceRevision: preparationRevision, installation: preparationPlan,
 }
-const prepareArgs = ["prepare", "default", "--json", "--expected-source-revision", preparationRevision]
+const prepareArgs = ["prepare", "firstmate", "default", "--json", "--expected-source-revision", preparationRevision]
 
 describe("Firstmate preparation client", () => {
   it("repairs only through the advertised validated command and returns actual readiness without launching work", async () => {
@@ -73,9 +73,9 @@ describe("Firstmate preparation client", () => {
 
   it.each([
     { profile: "default;touch unexpected" },
-    { commandPath: "fmx" },
+    { commandPath: "firstmate" },
     { orchestration: { ...selected.orchestration!, sourceRevision: "--install-prerequisites" } },
-    { launcher: "cdx" },
+    { launcher: "codex" },
   ])("rejects an invalid selected identity before any command ($profile $launcher)", async (change) => {
     const runner = new FakeRunner([])
     await expect(prepareFirstmateReadiness(runner, { ...selected, ...change }, "/fixture/caller")).rejects.toThrow()
@@ -170,7 +170,7 @@ describe("Firstmate preparation client", () => {
 
 describe("Firstmate preparation diagnostics and permissions", () => {
   it("keeps manual maintenance on the selected worktree backend, including paths with spaces", () => {
-    const profile = { ...selected, commandPath: "/worktrees/Firstmate candidate/bin/fmx" }
+    const profile = { ...selected, commandPath: "/worktrees/Firstmate candidate/bin/trx" }
     const fleet = preparedFleet()
     const blocked = { allowed: false, reason: "Setup consent is required." }
     const setupRequired = parseFirstmateFleetReadinessV1({
@@ -178,10 +178,10 @@ describe("Firstmate preparation diagnostics and permissions", () => {
       actions: { ...fleet.actions, start: blocked, recover: blocked },
     })
     expect(firstmateMaintenanceCommand(profile, "doctor"))
-      .toBe("'/worktrees/Firstmate candidate/bin/fmx' doctor default")
+      .toBe("'/worktrees/Firstmate candidate/bin/trx' doctor firstmate default")
     expect(firstmateActionReadiness(profile, setupRequired, "recover")).toMatchObject({
       kind: ProfileReadinessKind.Blocked,
-      diagnostic: expect.stringContaining("Run '/worktrees/Firstmate candidate/bin/fmx' setup default, then refresh."),
+      diagnostic: expect.stringContaining("Run '/worktrees/Firstmate candidate/bin/trx' setup firstmate default, then refresh."),
     })
   })
 

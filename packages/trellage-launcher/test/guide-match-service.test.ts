@@ -119,13 +119,13 @@ describe("guide match service", () => {
     const input = parseGuideCatalog(JSON.stringify({
       ...base,
       native: [{
-        launcher: "fmx", harness: "firstmate", name: "default", description: "Firstmate fleet",
-        sandbox: false, commandPath: "/bin/fmx", headless: base.sandbox[0]!.headless,
+        launcher: "firstmate", harness: "firstmate", name: "default", description: "Firstmate fleet",
+        sandbox: false, commandPath: "/bin/trx", headless: base.sandbox[0]!.headless,
         herdrCompatibility: { status: "supported" }, guide: guide(),
       }],
     }))
-    const result = resultFor(["sandbox:profile-0", "sandbox:profile-1", "native:fmx/default"])
-    const request = { intent: "Use native:fmx/default to implement this", model: "copilot", effort: GuideEffort.Medium }
+    const result = resultFor(["sandbox:profile-0", "sandbox:profile-1", "native:firstmate/default"])
+    const request = { intent: "Use native:firstmate/default to implement this", model: "copilot", effort: GuideEffort.Medium }
     const calls = { legacy: [] as unknown[], matcher: [] as unknown[] }
     const adapter = { ...matcher(calls), match: async () => result }
     const jev = await runGuideMatch(provider(calls), input, request, undefined, { matcher: adapter })
@@ -137,7 +137,7 @@ describe("guide match service", () => {
       { ...provider(calls), match: async () => result }, input, request, undefined,
       { matcher: { ...adapter, match: async () => { throw new Error("unavailable") } } },
     )
-    expect(fallback.recommendations[0]).toMatchObject({ profileRef: "native:fmx/default", confidence: 1 })
+    expect(fallback.recommendations[0]).toMatchObject({ profileRef: "native:firstmate/default", confidence: 1 })
     expect(fallback.execution?.backend).toBe("copilot")
   })
 

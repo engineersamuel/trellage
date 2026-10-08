@@ -18,12 +18,12 @@ jq -e '
 ' "$logs/fleet-ready.json" >/dev/null || fail 'an idle configured fleet is not ready'
 fleet_identity="$(jq -c '.fleet.identity' "$logs/fleet-ready.json")"
 instance_before="$(cat "$fleet_profile/receipts/instance.json")"
-NATIVE_CLAUDE_SKILLS_STATUS=1 fmx inventory default --json >"$logs/fleet-missing-skills.json" \
+NATIVE_CLAUDE_SKILLS_STATUS=1 fmx inventory default --json >"$logs/fleet-missing-config.toml" \
   || fail 'missing cached skills caused an inventory failure'
 jq -e '
   .readiness == "unhealthy" and .fleet.runtime == "ready" and .fleet.actions.submit.allowed
   and (.fleet.actions.start.allowed | not) and (.fleet.actions.recover.allowed | not)
-' "$logs/fleet-missing-skills.json" >/dev/null || fail 'missing cached skills admitted a supervisor'
+' "$logs/fleet-missing-config.toml" >/dev/null || fail 'missing cached skills admitted a supervisor'
 python3 - "$fleet_profile/receipts/instance.json" <<'PY'
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])

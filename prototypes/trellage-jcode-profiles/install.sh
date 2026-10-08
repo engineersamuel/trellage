@@ -30,7 +30,7 @@ legacy_config_manager="$install_root/config-manager.mjs"
 installed_version_receipt="$install_root/installed-version"
 legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
-command_dir="$local_dir/bin"
+command_dir="$runtime_parent/.native-commands"
 command_path="$command_dir/jcx"
 
 require_safe_directory() {
@@ -46,7 +46,7 @@ require_safe_directory() {
 require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 runtime_owned=false
 if [[ -e "$install_root" || -L "$install_root" ]]; then
@@ -113,3 +113,6 @@ BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$so
 [[ ! -f "$legacy_config_manager" ]] || rm -- "$legacy_config_manager"
 printf 'Installed jcx at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
+
+# Retire only the old public symlink; retain the installed backend and runtime.
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" jcx "$installed_launcher" "$ownership_marker" "$ownership_value"

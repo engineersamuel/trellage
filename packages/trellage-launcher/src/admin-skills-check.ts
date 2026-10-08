@@ -60,7 +60,7 @@ const checkEntry = async (
           env: { ...process.env, NODE_DISABLE_COMPILE_CACHE: "1" },
         })
         .then((output) =>
-          /(?:^|\s)skills-check\s+PROFILE(?:\s|$)/m.test(
+          /(?:^|\s)skills-check\s+(?:HARNESS\s+)?PROFILE(?:\s|$)/m.test(
             stripVTControlCharacters(`${output.stdout}\n${output.stderr}`),
           ),
         )
@@ -68,7 +68,7 @@ const checkEntry = async (
     }
     if (!(await supported)) return unknown("Refresh the installed Trellage launcher to enable read-only skills-check.")
     signal.throwIfAborted()
-    const output = await runner.run(entry.commandPath, ["skills-check", entry.name, ...selector], {
+    const output = await runner.run(entry.commandPath, ["skills-check", ...(entry.surface === "native" ? [entry.launcher!] : []), entry.name, ...selector], {
       cwd,
       signal,
       timeoutMs: 5 * 60 * 1000,

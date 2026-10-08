@@ -382,7 +382,7 @@ mkdir -p "$install_home"
 ) >"$fixture_root/install.out"
 assert_contains 'Installed agx at ' "$fixture_root/install.out"
 installed_root="$install_home/.local/share/trellage/agx"
-installed_command="$install_home/.local/bin/agx"
+installed_command="$install_home/.local/share/trellage/.native-commands/agx"
 [[ -x "$installed_root/bin/agx" && -f "$installed_root/catalog.json" ]] \
   || fail 'installer did not publish runtime files'
 cmp -s "$installed_root/copilot-model-settings.py" \
@@ -412,9 +412,9 @@ assert_line 'Uninstalled agx; profile homes were preserved.' "$fixture_root/unin
 assert_line 'preserve' "$preserved_profile/session"
 
 collision_home="$fixture_root/collision-home"
-mkdir -p "$collision_home/.local/bin"
-printf '#!/usr/bin/env bash\nprintf unrelated\n' >"$collision_home/.local/bin/agx"
-chmod 0755 "$collision_home/.local/bin/agx"
+mkdir -p "$collision_home/.local/share/trellage/.native-commands"
+printf '#!/usr/bin/env bash\nprintf unrelated\n' >"$collision_home/.local/share/trellage/.native-commands/agx"
+chmod 0755 "$collision_home/.local/share/trellage/.native-commands/agx"
 if (
   export HOME="$collision_home"
   "$prototype_root/install.sh"
@@ -422,7 +422,7 @@ if (
   fail 'installer replaced an unrelated agx command'
 fi
 assert_contains 'refusing to replace unrelated command' "$fixture_root/collision.err"
-assert_contains 'printf unrelated' "$collision_home/.local/bin/agx"
+assert_contains 'printf unrelated' "$collision_home/.local/share/trellage/.native-commands/agx"
 
 if grep -Fq 'npx ' "$agency_command_log"; then
   fail 'static launcher commands invoked the Azure MCP executable'

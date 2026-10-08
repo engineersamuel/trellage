@@ -1,7 +1,7 @@
 # Trellage Native profile router
 
 **Trellage Native** is the host-native profile family. Its `trx` router
-discovers the installed launchers `agx`, `cpx`, `cdx`, `cldx`, `fmx`, `grx`,
+discovers the installed launchers `agx`, `cpx`, `cdx`, `cldx`, `fmx`,
 `jcx`, `omp`, `picx`, and `prx`,
 validates each launcher's machine-readable catalog, and presents one
 flat interactive list.
@@ -21,7 +21,6 @@ also require Node.js. Install the root source workspace dependencies with
 (cd ../trellage-agency-profiles && ./install.sh)
 (cd ../trellage-claude-profiles && ./install.sh)
 (cd ../trellage-firstmate-profiles && ./install.sh)
-(cd ../trellage-grok-profiles && ./install.sh)
 (cd ../trellage-jcode-profiles && ./install.sh)
 (cd ../trellage-omp-profiles && ./install.sh)
 (cd ../trellage-picx-profiles && ./install.sh)
@@ -514,8 +513,8 @@ current filter. This covers Claude, Codex, Copilot, Oh My Pi (`pi`),
 Prime, and Headlong. Existing version pins are preserved. Failed package
 resolution is reported as a failure, not as an update using the old harness.
 
-Native updates remain separate from container updates. Copilot, Codex, Grok,
-and Claude use `cpx harness-update`, `cdx harness-update`, `grx harness-update`,
+Native updates remain separate from container updates. Copilot, Codex,
+and Claude use `cpx harness-update`, `cdx harness-update`,
 and `cldx harness-update` once per shared host binary. Selecting either Codex
 `youtube` or `superpowers` updates the same Codex binary for all native Codex profiles.
 Grok updates the stable channel. Oh My Pi, jcode, Pi Coding Agent, and Prime
@@ -650,7 +649,7 @@ launchers that support `inventory PROFILE --json`; `trx` does not collect it on
 the launch path. Inventory can report `busy` while a launcher owns its mutation
 lock. `doctor` remains the full runtime health diagnostic.
 
-`trx` adds no containment. `cpx`, `cdx`, `cldx`, `fmx`, `grx`, `jcx`, `omp`,
+Legacy `trx` routing adds no containment. `cpx`, `cdx`, `cldx`, `fmx`, `jcx`, `omp`,
 `picx`, and `prx` still run their selected agents directly on the host with
 the permissions and safety behavior documented by each launcher. Use only
 trusted repositories, profiles, plugins, and arguments.

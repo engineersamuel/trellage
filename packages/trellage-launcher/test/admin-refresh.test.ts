@@ -46,7 +46,7 @@ const fixtureCatalog = () =>
       sandboxCommandPath: "/opt/trellage/bin/trellage",
       native: [
         {
-          launcher: "cpx",
+          launcher: "copilot",
           harness: "copilot",
           name: "hve",
           description: "Copilot native launcher.",
@@ -54,10 +54,10 @@ const fixtureCatalog = () =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide,
-          commandPath: "/opt/trellage/cpx/bin/cpx",
+          commandPath: "/opt/trellage/copilot/bin/trx",
         },
         {
-          launcher: "cldx",
+          launcher: "claude",
           harness: "claude",
           name: "broken",
           description: "Claude native launcher returning malformed inventory.",
@@ -65,10 +65,10 @@ const fixtureCatalog = () =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide,
-          commandPath: "/opt/trellage/cldx/bin/cldx",
+          commandPath: "/opt/trellage/claude/bin/trx",
         },
         {
-          launcher: "cdx",
+          launcher: "codex",
           harness: "codex",
           name: "pstack",
           description: "Codex native launcher.",
@@ -76,27 +76,27 @@ const fixtureCatalog = () =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide,
-          commandPath: "/opt/trellage/cdx/bin/cdx",
+          commandPath: "/opt/trellage/codex/bin/trx",
         },
       ],
       sandbox: [],
     }),
   )
 
-/** Routes each call by executable path so cpx/cldx/cdx get distinct canned outcomes. */
+/** Routes each call by executable path so copilot/claude/cdx get distinct canned outcomes. */
 class RoutingRunner implements CommandRunner {
   readonly calls: Array<{ executable: string; args: ReadonlyArray<string> }> = []
 
   async run(executable: string, args: ReadonlyArray<string>, _options?: CommandRunOptions): Promise<CommandRunResult> {
     this.calls.push({ executable, args })
-    if (executable.includes("cpx")) {
-      return { stdout: '{"schemaVersion":1,"launcher":"cpx","profile":"hve","readiness":"healthy"}', stderr: "", exitCode: 0 }
+    if (executable.includes("copilot")) {
+      return { stdout: '{"schemaVersion":1,"launcher":"copilot","profile":"hve","readiness":"healthy"}', stderr: "", exitCode: 0 }
     }
-    if (executable.includes("cldx")) {
+    if (executable.includes("claude")) {
       return { stdout: "not json at all", stderr: "", exitCode: 0 }
     }
-    if (executable.includes("cdx")) {
-      return { stdout: '{"schemaVersion":1,"launcher":"cdx","profile":"pstack","readiness":"healthy"}', stderr: "", exitCode: 0 }
+    if (executable.includes("codex")) {
+      return { stdout: '{"schemaVersion":1,"launcher":"codex","profile":"pstack","readiness":"healthy"}', stderr: "", exitCode: 0 }
     }
     throw new Error(`unexpected executable: ${executable}`)
   }
@@ -108,7 +108,7 @@ describe("refreshAdminEntries", () => {
     const entries = await refreshAdminEntries(runner, fixtureCatalog(), "/work")
 
     expect(runner.calls).toHaveLength(3) // cpx + cldx + cdx all checked; cdx supports doctor/inventory via native-codex.
-    expect(runner.calls.some((call) => call.executable.includes("cdx/bin/cdx"))).toBe(true)
+    expect(runner.calls.some((call) => call.executable.includes("codex/bin/trx"))).toBe(true)
 
     const cpx = entries.find((entry) => entry.ref.includes("hve"))
     const cldx = entries.find((entry) => entry.ref.includes("broken"))

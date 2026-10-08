@@ -150,7 +150,6 @@ test.each([
   ["agency", "--install"],
   ["copilot", "--install"],
   ["claude", "--install"],
-  ["grok", "--install"],
   ["jcode", "--install-manual"],
   ["omp", "--install"],
   ["picx", "--install"],

@@ -1,3 +1,5 @@
+import { canonicalNativeIdentity, canonicalProfileRef } from "./native-identity.ts"
+export { canonicalNativeIdentity, canonicalProfileRef } from "./native-identity.ts"
 import { parse } from "yaml"
 import { lstat, readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
@@ -165,8 +167,8 @@ const goalControllerSupportsIdentity = (
 ): boolean => {
   if (identity.surface === "native") {
     return (
-      (controller === "codex-goal" && identity.launcher === "cdx") ||
-      (controller === "claude-goal" && identity.launcher === "cldx")
+      (controller === "codex-goal" && canonicalNativeIdentity(identity.launcher, identity.profile).launcher === "codex") ||
+      (controller === "claude-goal" && canonicalNativeIdentity(identity.launcher, identity.profile).launcher === "claude")
     )
   }
   if (controller === "graph-of-loops") return identity.profile === "claude-graph-of-loops"
@@ -420,8 +422,8 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
   if (fields.schemaVersion !== 1) fail(`${path} frontmatter.schemaVersion`, "must equal 1")
   const guideWorkflows = workflows(fields.workflows, `${path} frontmatter.workflows`)
   if (guideWorkflows.some(({ interaction }) => interaction !== undefined) &&
-      !/(?:^|\/)native\/cpx\/hve\.md$/u.test(path.replaceAll("\\", "/"))) {
-    fail(`${path} frontmatter.workflows`, "verified interactive workflows require native/cpx/hve.md")
+      !/(?:^|\/)native\/(?:cpx|copilot)\/hve\.md$/u.test(path.replaceAll("\\", "/"))) {
+    fail(`${path} frontmatter.workflows`, "verified interactive workflows require native/copilot/hve.md")
   }
   let execution: ProfileGuideGoalExecution | undefined
   if (fields.goalExecution !== undefined) {
@@ -466,11 +468,11 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
 }
 
 export const profileGuideIdentityKey = (identity: ProfileGuideIdentity): string =>
-  identity.surface === "native" ? `native:${identity.launcher}/${identity.profile}` : `sandbox:${identity.profile}`
+  identity.surface === "native" ? canonicalProfileRef(`native:${identity.launcher}/${identity.profile}`) : `sandbox:${identity.profile}`
 
 export const profileGuideRelativePath = (identity: ProfileGuideIdentity): string =>
   identity.surface === "native"
-    ? `native/${identity.launcher}/${identity.profile}.md`
+    ? `native/${canonicalNativeIdentity(identity.launcher, identity.profile).launcher}/${canonicalNativeIdentity(identity.launcher, identity.profile).profile}.md`
     : `sandbox/${identity.profile}.md`
 
 export const parseProfileGuideIdentity = (relativePath: string): ProfileGuideIdentity => {
@@ -482,7 +484,7 @@ export const parseProfileGuideIdentity = (relativePath: string): ProfileGuideIde
     if (!identityPart.test(launcher) || !identityPart.test(profile)) {
       return fail(relativePath, "contains an invalid native guide identity")
     }
-    return { surface: "native", launcher, profile }
+    return { surface: "native", ...canonicalNativeIdentity(launcher, profile) }
   }
   const sandbox = /^sandbox\/([^/]+)\.md$/u.exec(normalized)
   if (sandbox !== null) {

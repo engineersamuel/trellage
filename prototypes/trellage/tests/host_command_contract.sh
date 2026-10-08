@@ -3964,7 +3964,7 @@ for (const directory of ["bin", "profile-guides", "profiles", "packages/trellage
   mkdirSync(path.join(root, directory), { recursive: true })
 for (const relative of ["scripts/bun-runtime.sh", "prototypes/trellage/trellage", "packages/trellage-runtime/src", "packages/trellage-runtime/bunfig.toml"])
   cpSync(path.join(source, relative), path.join(root, relative), { recursive: true })
-for (const name of ["bun.lock", "bunfig.toml", "tsconfig.base.json", "skills.json"])
+for (const name of ["bun.lock", "bunfig.toml", "tsconfig.base.json", "config.toml"])
   write(name, name === "bunfig.toml" ? "" : "{}")
 write("package.json", '{"name":"readiness-fixture","private":true}')
 write("packages/trellage-runtime/package.json", '{"name":"@trellage/runtime"}')

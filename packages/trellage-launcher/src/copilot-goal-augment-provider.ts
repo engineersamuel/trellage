@@ -21,6 +21,7 @@ import { validateGuideIntent } from "./guide-api.ts"
 import {
   GuideGoalCancelledError,
   GuideGoalError,
+  guideGoalTemplateKind,
   renderGuideGoalProposal,
   validateGuideGoalAnswer,
   validateGuideGoalQuestion,
@@ -218,27 +219,93 @@ const seedMessage = (input: GuideGoalAugmentInput): string => {
   ].join("\n")
 }
 
-const proposalParameters = {
+const baseProposalProperties = {
+  artifact: { type: "string", minLength: 1, maxLength: 1000, description: "One exact artifact to produce." },
+  task: { type: "string", minLength: 1, maxLength: 30_000, description: "The task for that artifact." },
+  criteria: {
+    type: "array", minItems: 3, maxItems: 32, uniqueItems: true,
+    items: { type: "string", minLength: 1, maxLength: 2000 },
+    description: "Distinct criteria scoreable from the artifact alone.",
+  },
+}
+
+const expandedProposalProperties = {
+  inputsAndArtifacts: {
+    type: "string", minLength: 1, maxLength: 30_000,
+    description: "Input locations, output paths, relevant context, and how to inspect them.",
+  },
+  constraints: {
+    type: "string", minLength: 1, maxLength: 30_000,
+    description: "Scope, exclusions, project rules, existing authorization, and resources.",
+  },
+  criterionVerifications: {
+    type: "array", minItems: 3, maxItems: 32,
+    items: { type: "string", minLength: 1, maxLength: 4000 },
+    description: "One reproducible verification and 8/10 and 10/10 score mapping per criterion, in criterion order.",
+  },
+  requiredChecks: {
+    type: "array", minItems: 1, maxItems: 32,
+    items: { type: "string", minLength: 1, maxLength: 4000 },
+    description: "Required gates with their command or inspection method and pass condition; use one explicit None entry if none apply.",
+  },
+  actions: {
+    type: "array", minItems: 1, maxItems: 32,
+    items: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        action: { type: "string", minLength: 1, maxLength: 4000 },
+        criterionIds: {
+          type: "array", minItems: 1, uniqueItems: true,
+          items: { type: "string", pattern: "^C[1-9][0-9]*$" },
+        },
+        expectedBenefit: { type: "string", minLength: 1, maxLength: 4000 },
+        prerequisites: { type: "string", minLength: 1, maxLength: 4000 },
+        verification: { type: "string", minLength: 1, maxLength: 4000 },
+      },
+      required: ["action", "criterionIds", "expectedBenefit", "prerequisites", "verification"],
+    },
+    description: "A compact catalog of concrete improvements tied to criterion IDs.",
+  },
+  maxIterations: { type: "integer", minimum: 1, maximum: 10_000 },
+  maxConsecutiveNoProgressAttempts: { type: "integer", minimum: 1, maximum: 10_000 },
+}
+
+const expandedProposalKeys = [
+  "inputsAndArtifacts",
+  "constraints",
+  "criterionVerifications",
+  "requiredChecks",
+  "actions",
+  "maxIterations",
+  "maxConsecutiveNoProgressAttempts",
+] as const
+
+const proposalParameters = (skillContent: string) => {
+  const expanded = guideGoalTemplateKind(skillContent) === "expanded"
+  return {
   type: "object",
   additionalProperties: false,
   properties: {
-    artifact: { type: "string", minLength: 1, maxLength: 1000, description: "One exact artifact to produce." },
-    task: { type: "string", minLength: 1, maxLength: 30_000, description: "The task for that artifact." },
-    criteria: {
-      type: "array", minItems: 3, maxItems: 32, uniqueItems: true,
-      items: { type: "string", minLength: 1, maxLength: 2000 },
-      description: "Distinct criteria scoreable from the artifact alone.",
-    },
+    ...baseProposalProperties,
+    ...(expanded ? expandedProposalProperties : {}),
   },
-  required: ["artifact", "task", "criteria"],
+  required: ["artifact", "task", "criteria", ...(expanded ? expandedProposalKeys : [])],
+  }
 }
 
-const assertProposalKeys = (value: unknown): void => {
+const assertProposalKeys = (value: unknown, skillContent: string): void => {
+  const allowed = new Set([
+    "artifact",
+    "task",
+    "criteria",
+    ...(guideGoalTemplateKind(skillContent) === "expanded" ? expandedProposalKeys : []),
+  ])
   if (
     typeof value !== "object" || value === null || Array.isArray(value) ||
-    Object.keys(value).some((key) => !["artifact", "task", "criteria"].includes(key))
+    Object.keys(value).some((key) => !allowed.has(key))
   ) {
-    throw new GuideGoalError("A goal proposal must contain only artifact, task, and criteria.")
+    throw new GuideGoalError("A goal proposal contains fields outside the installed goal-me template.")
   }
 }
 
@@ -250,11 +317,11 @@ const proposalTool = (
 ): Tool => ({
   name: "propose_goal",
   description: "Render the installed goal template and wait for explicit user approval or revision feedback.",
-  parameters: proposalParameters,
+  parameters: proposalParameters(skillContent),
   skipPermission: true,
   handler: (draft: unknown, invocation) => run.callback(async (): Promise<ToolResultObject> => {
     if (invocation.sessionId !== sessionId) throw new GuideGoalError("The goal proposal belongs to another session.")
-    assertProposalKeys(draft)
+    assertProposalKeys(draft, skillContent)
     const proposal = renderGuideGoalProposal(skillContent, draft)
     const review = await run.human(
       () => context.interactions.review(proposal),

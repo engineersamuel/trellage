@@ -56,7 +56,7 @@ const setup = async (input: {
       return {
         stdout: JSON.stringify({
           schemaVersion: 1,
-          launcher: "cdx",
+          launcher: "codex",
           profile: "default",
           readiness: "healthy",
         }),
@@ -136,7 +136,7 @@ const setup = async (input: {
 describe("continuation runtime", () => {
   it.each(["default", "pstack-workers"])("persists complete legacy %s input and uses private manual-paste delivery rather than the inbox", async (name) => {
     const catalog = legacyFirstmateCatalog()
-    const profileRef = `native:fmx/${name}`
+    const profileRef = `native:firstmate/${name}`
     const base = runtimeAssessment()
     const f = await setup({
       catalog,
@@ -171,7 +171,7 @@ describe("continuation runtime", () => {
     expect(continuationPromptEditText(saved, "action-1", f.services.profiles)).toBe("Inspect committed error boundaries.")
     const originalRun = f.run.getMockImplementation()!
     f.run.mockImplementation(async (executable, args, options) => args[0] === "inventory"
-      ? { stdout: JSON.stringify({ schemaVersion: 1, launcher: "fmx", profile: name, readiness: "healthy" }), stderr: "", exitCode: 0 }
+      ? { stdout: JSON.stringify({ schemaVersion: 1, launcher: "firstmate", profile: name, readiness: "healthy" }), stderr: "", exitCode: 0 }
       : originalRun(executable, args, options))
     const deliver = vi.spyOn(launch, "launchPrivateContinuation").mockImplementation(async (_socket, _runner, options) => ({
       paneId: options.paneId, commandPreview: `fmx ${name}`,
@@ -182,7 +182,7 @@ describe("continuation runtime", () => {
     expect(result.actions[0]).not.toHaveProperty("firstmateAction")
     expect(deliver).toHaveBeenCalledTimes(1)
     expect(deliver.mock.calls[0]?.[2]).toMatchObject({
-      command: { executable: "/profiles/fmx", args: [name] }, prompt, promptDelivery: "agent",
+      command: { executable: "/profiles/trx", args: ["run", "firstmate", name] }, prompt, promptDelivery: "agent",
     })
     expect(f.memory.entries.size).toBe(0)
     expect(f.run.mock.calls.some(([, args]) => args[0] === "submit" || args[0] === "receipt")).toBe(false)
@@ -243,7 +243,7 @@ describe("continuation runtime", () => {
         }), prepared.context)
         return {
         ...completed,
-        command: { executable: "fmx", args: [profile.name], preview: `fmx ${profile.name}`, promptHandling: "manual-paste" },
+        command: { executable: "firstmate", args: [profile.name], preview: `fmx ${profile.name}`, promptHandling: "manual-paste" },
         }
       }
       return {
@@ -255,7 +255,7 @@ describe("continuation runtime", () => {
         originalIntent: "A model result cannot replace the saved human intent.",
         profile: {
           profileRef: request.profileRef, workflowId: prepared.workflow.id,
-          surface: "native", launcher: "fmx", name: profile.name, description: profile.description,
+          surface: "native", launcher: "firstmate", name: profile.name, description: profile.description,
           sandbox: false, workflow: prepared.workflow, prerequisites: [],
           headless: profile.headless, herdrCompatibility: profile.herdrCompatibility,
         },
@@ -272,14 +272,14 @@ describe("continuation runtime", () => {
         projectTarget: firstmateProjectC(), projectTargetConfirmed: true,
       }))
       const switched = await f.services.save(changeContinuationAction(confirmed, "action-1", {
-        profileRef: "native:cdx/default", workflowId: "review",
+        profileRef: "native:codex/default", workflowId: "review",
       }))
       expect(switched.actions[0]).toMatchObject({ projectTarget: firstmateProjectC(), projectTargetConfirmed: false })
       const generate = vi.spyOn(guide, "runGuideGenerate").mockRejectedValue(new Error("Reached the synthetic generation boundary."))
       await expect(f.services.prepare(switched, "action-1", new AbortController().signal, () => undefined))
         .rejects.toThrow("Reached the synthetic generation boundary")
       expect(generate.mock.calls[0]?.[3]).toMatchObject({
-        profileRef: "native:cdx/default", workflowId: "review", originalIntent: firstmateOriginalIntent,
+        profileRef: "native:codex/default", workflowId: "review", originalIntent: firstmateOriginalIntent,
       })
       expect(generate.mock.calls[0]?.[3]).not.toHaveProperty("projectTarget")
       const prepared = await f.services.save(changeContinuationAction(switched, "action-1", { prompt: "Review each caller." }))
@@ -292,7 +292,7 @@ describe("continuation runtime", () => {
       const f = await setupFirstmate()
       const initial = await f.analyzed()
       const switched = await f.services.save(changeContinuationAction(initial, "action-1", {
-        profileRef: "native:cdx/default", workflowId: "review",
+        profileRef: "native:codex/default", workflowId: "review",
       }))
       const confirmed = await f.services.save(changeContinuationAction(switched, "action-1", {
         projectTarget: firstmateProjectC(), projectTargetConfirmed: true,
@@ -523,7 +523,7 @@ describe("continuation runtime", () => {
       prompt: `Reviewed complete prompt ${index}`,
       notes: "Synthetic",
       command: {
-        executable: "cdx",
+        executable: "codex",
         args: [],
         preview: "cdx default",
         promptHandling: "manual-paste",
@@ -536,11 +536,11 @@ describe("continuation runtime", () => {
       model: "fixture-model",
       effort: guide.GuideEffort.Medium,
       profile: {
-        profileRef: "native:cdx/default",
+        profileRef: "native:codex/default",
         workflowId: "review",
         surface: "native",
         name: "default",
-        launcher: "cdx",
+        launcher: "codex",
         description: profile.description,
         sandbox: false,
         workflow: profile.guide.workflows[0],
@@ -556,7 +556,7 @@ describe("continuation runtime", () => {
     expect(prepared.actions[1]?.status).toBe(Status.Draft)
     expect(prepared.actions[0]).toEqual(assessed.actions[0])
     expect(generated.mock.calls[0]?.[3]).toMatchObject({
-      profileRef: "native:cdx/default",
+      profileRef: "native:codex/default",
       workflowId: "review",
     })
     expect(generated.mock.calls[0]?.[3].intent).toContain("Draw the implemented data flow.")

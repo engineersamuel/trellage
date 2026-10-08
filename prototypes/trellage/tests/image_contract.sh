@@ -83,7 +83,7 @@ jq -e \
 
 grep -Eq '^skill_bundles = \[[^]]*"sandbox-common"' "$profile" \
   || fail 'profile does not select the common floating-skill bundle'
-jq -e '
+bun --cwd "$repo_root" --no-install --no-env-file -e 'import { readCatalog } from "./scripts/floating-skills.ts"; console.log(JSON.stringify(await readCatalog(process.argv[1])))' "$repo_root/config.toml" | jq -e '
   .sources.caveman == {
     repository: "https://github.com/JuliusBrussee/caveman.git",
     select: ["caveman"],
@@ -91,7 +91,7 @@ jq -e '
     allowExecutables: true
   }
   and (.bundles["sandbox-common"] | index("caveman") != null)
-' "$repo_root/skills.json" >/dev/null \
+' >/dev/null \
   || fail 'floating-skill catalog does not declare always-on Caveman'
 ! grep -Fq 'JuliusBrussee/caveman' "$lock" \
   || fail 'floating Caveman source leaked into the core lock'

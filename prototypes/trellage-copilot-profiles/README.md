@@ -1,6 +1,8 @@
 # Lightweight Copilot Profiles
 
-`cpx` runs host-native GitHub Copilot CLI profiles with isolated `COPILOT_HOME`
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run copilot PROFILE` runs host-native GitHub Copilot CLI profiles with isolated `COPILOT_HOME`
 directories. It preserves the real `HOME`, working directory, terminal, Git,
 SSH, and Herdr environment. Profiles separate configuration and state; they are
 not a security boundary.
@@ -18,10 +20,10 @@ Copilot authentication is inherited through the CLI native credential mechanism;
 
 ```bash
 ./install.sh
-cpx setup --all
+trx setup copilot --all
 ```
 
-The installer creates `~/.local/bin/cpx` and records ownership of its runtime
+The installer keeps `cpx` as a private backend and records ownership of its runtime
 under `~/.local/share/trellage/cpx`. Install and uninstall refuse unrelated or
 symlinked runtime roots and unrelated commands. `./uninstall.sh` removes only
 owned command and runtime files; profile homes and their sessions, permissions,
@@ -39,46 +41,46 @@ The checked-in profiles are `awesome`, `compound-engineering`, `hve`,
 ## Commands
 
 ```bash
-cpx list
-cpx inventory hve --json
-cpx setup awesome
-cpx setup compound-engineering
-cpx setup hve
-cpx setup plannotator
-cpx setup tufte-vdqi
-cpx setup --all
-cpx awesome --prompt "Suggest useful repository skills"
-cpx compound-engineering
-cpx compound-engineering --prompt "/ce-plan Design resumable uploads"
-cpx hve
-cpx plannotator --prompt "Create an implementation plan as a self-contained HTML artifact"
-cpx superpowers --prompt "Review this repository"
-cpx tufte-vdqi --prompt "Critique this chart, then rebuild it as a static SVG"
-cpx doctor awesome
-cpx doctor compound-engineering
-cpx doctor hve
-cpx doctor plannotator
-cpx doctor tufte-vdqi
-cpx inventory compound-engineering --json
-cpx inventory plannotator --json
-cpx inventory tufte-vdqi --json
-cpx update --check awesome
-cpx update --check compound-engineering
-cpx update --check hve
-cpx update --check plannotator
-cpx update --check tufte-vdqi
-cpx update --check --all
-cpx update compound-engineering
-cpx update hve
-cpx update tufte-vdqi
-cpx update --all
-cpx harness-update
-cpx repair compound-engineering
-cpx repair hve
-cpx repair tufte-vdqi
+trx list
+trx inventory copilot hve --json
+trx setup copilot awesome
+trx setup copilot compound-engineering
+trx setup copilot hve
+trx setup copilot plannotator
+trx setup copilot tufte-vdqi
+trx setup copilot --all
+trx run copilot awesome --prompt "Suggest useful repository skills"
+trx run copilot compound-engineering
+trx run copilot compound-engineering --prompt "/ce-plan Design resumable uploads"
+trx run copilot hve
+trx run copilot plannotator --prompt "Create an implementation plan as a self-contained HTML artifact"
+trx run copilot superpowers --prompt "Review this repository"
+trx run copilot tufte-vdqi --prompt "Critique this chart, then rebuild it as a static SVG"
+trx doctor copilot awesome
+trx doctor copilot compound-engineering
+trx doctor copilot hve
+trx doctor copilot plannotator
+trx doctor copilot tufte-vdqi
+trx inventory copilot compound-engineering --json
+trx inventory copilot plannotator --json
+trx inventory copilot tufte-vdqi --json
+trx upgrade copilot awesome --check
+trx upgrade copilot compound-engineering --check
+trx upgrade copilot hve --check
+trx upgrade copilot plannotator --check
+trx upgrade copilot tufte-vdqi --check
+trx upgrade copilot --all --check
+trx upgrade copilot compound-engineering
+trx upgrade copilot hve
+trx upgrade copilot tufte-vdqi
+trx upgrade copilot --all
+trx upgrade copilot hve --harness-only
+trx repair copilot compound-engineering
+trx repair copilot hve
+trx repair copilot tufte-vdqi
 ```
 
-Use `cpx list --json` for the stable machine-readable catalog, including
+Use `trx list --json` for the stable machine-readable catalog, including
 launcher, harness, plugin, source, marketplace, standalone MCP metadata, and a
 version-gated `headless` object. Exact prompt/text-json, `--no-ask-user`
 hard-deny classification, and model-override publication are advertised only
@@ -91,8 +93,8 @@ on a miss. `trx guide` uses this mode at startup, then resolves current
 capabilities after matching and before preparing launch commands.
 
 These are catalog declarations, not proof that profile setup or installed
-plugin state is healthy. Use `cpx doctor PROFILE` for that validation.
-`cpx inventory PROFILE --json` is read-only. It reports readiness, installed
+plugin state is healthy. Use `trx doctor copilot PROFILE` for that validation.
+`trx inventory copilot PROFILE --json` is read-only. It reports readiness, installed
 plugins/versions, exact package skills counted as `SKILL.md` files beneath the
 safely validated selected plugin root, broader CLI-visible inventory entries,
 and MCP names. `visibleCount` reflects Copilot's enabled `skill list` entries;
@@ -104,7 +106,7 @@ After installing the native launchers and the
 harness/profile picker. Remaining arguments are forwarded to `cpx` unchanged
 after selection; the bare picker never performs setup, repair, or update.
 
-Ordinary `cpx PROFILE` launches pass `--autopilot --allow-all --no-ask-user`, so
+Ordinary `trx run copilot PROFILE` launches pass `--autopilot --allow-all --no-ask-user`, so
 Copilot runs autonomously without waiting for permission or user-input prompts.
 Pass `--plan` immediately after the profile name to start in approval-gated
 plan mode instead; this launch does not pass Autopilot or automatic approval
@@ -123,10 +125,10 @@ commands do not add model or reasoning arguments.
 Use the explicit mode for workflows that need questions and human decisions:
 
 ```sh
-cpx workflow-check hve --agent hve-core:dt-coach \
+trx workflow-check copilot hve --agent hve-core:dt-coach \
   --require-skill dt-coaching-foundation --require-skill dt-methods \
   --require-skill dt-rpi-integration
-cpx interactive hve --agent hve-core:dt-coach \
+trx run copilot hve --interactive --agent hve-core:dt-coach \
   --require-skill dt-coaching-foundation --require-skill dt-methods \
   --require-skill dt-rpi-integration -i "Help us discover the customer problem."
 ```
@@ -144,7 +146,7 @@ It uses the usual model and effort defaults but does **not** add `--autopilot`,
 `--allow-all`, or `--no-ask-user`. Copilot's normal permission settings still
 apply. It accepts only `--agent`, repeated `--require-skill`, `-i`, `--model`,
 and `--effort`; headless and autonomous options are rejected. Piped input and
-unattended batch use are rejected. Ordinary `cpx hve` remains autonomous.
+unattended batch use are rejected. Ordinary `trx run copilot hve` remains autonomous.
 
 Use [the Native HVE guide](../../profile-guides/native/cpx/hve.md) for the
 Discovery, Experiment, BRD, PRD, UX, architecture, and planning mappings.
@@ -159,12 +161,12 @@ Cataloged retired plugin identities are removed during setup, launch, update,
 and repair. Updates remain explicit and use native Copilot
 marketplace/plugin commands.
 
-`cpx harness-update` updates the host Copilot CLI shared by all `cpx`
+`trx upgrade copilot hve --harness-only` updates the host Copilot CLI shared by all `cpx`
 profiles. It runs Copilot's own `update stable` command, preserves its
 output and exit status, and does not change profile homes or plugins.
-It is separate from `cpx update PROFILE`, which updates plugins only.
+It is separate from `trx upgrade copilot PROFILE`, which updates plugins only.
 
-`cpx skills-update PROFILE` copies and verifies only the existing shared
+`trx upgrade copilot PROFILE --skills-only` copies and verifies only the existing shared
 `native-common` skill cache. Run `trx skills update` first to refresh it.
 The profile and its managed skill state must already exist. Custom skills
 are preserved; unsafe paths, invalid ownership, and name collisions fail

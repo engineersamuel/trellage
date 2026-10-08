@@ -80,11 +80,11 @@ const describeError = (error: unknown): string =>
 
 export const isFirstmateBatchJob = (job: QueuedGuideJob): boolean =>
   job.firstmate !== undefined ||
-  (job.profile?.surface === "native" && job.profile.launcher === "fmx" && job.profile.orchestration !== undefined)
+  (job.profile?.surface === "native" && job.profile.launcher === "firstmate" && job.profile.orchestration !== undefined)
 
 const selectedFirstmateProfile = (job: QueuedGuideJob): NativeSelectedProfile => {
   const profile = parseSelectedProfile(job.profile)
-  if (profile.surface !== "native" || profile.launcher !== "fmx" || profile.orchestration === undefined) {
+  if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration === undefined) {
     throw new Error("Firstmate queue delivery requires a native fmx profile with a supported orchestration contract.")
   }
   return profile
@@ -119,7 +119,7 @@ const requireWorkflowContext = (job: QueuedGuideJob) => {
 
 const validateRequestFrame = (job: QueuedGuideJob, profile: NativeSelectedProfile): void => {
   const context = requireWorkflowContext(job)
-  validateFirstmatePromptFrame(`native:fmx/${profile.profile}`, context.workflow, job.prompt, {
+  validateFirstmatePromptFrame(`native:firstmate/${profile.profile}`, context.workflow, job.prompt, {
     originalIntent: context.originalIntent,
     projectTarget: context.projectTarget,
     orchestration: profile.orchestration!,

@@ -17,35 +17,6 @@
     ]
   },
   "adapters": {
-    "agency-copilot": {
-      "readyPatterns": [
-        "/ commands"
-      ],
-      "blockedPatterns": [
-        "Select a session",
-        "Confirm folder trust",
-        "Do you trust the files in this folder"
-      ],
-      "launchArgs": [
-        "--session-id",
-        "{sessionId}"
-      ],
-      "exitSteps": [
-        {
-          "data": "\u0003",
-          "delayMilliseconds": 300
-        },
-        {
-          "data": "\u0003",
-          "delayMilliseconds": 0
-        }
-      ],
-      "allowedExitCodes": [
-        0,
-        130
-      ],
-      "skillPrefix": "/justify "
-    },
     "claude": {
       "readyPatterns": [
         "\u276f"
@@ -211,35 +182,6 @@
       ],
       "skillPrefix": ""
     },
-    "oh-my-pi": {
-      "readyPatterns": [
-        "Type your message",
-        "Enter your message",
-        "\n> "
-      ],
-      "blockedPatterns": [
-        "Select a provider",
-        "Login required"
-      ],
-      "launchArgs": [
-        "--no-session"
-      ],
-      "exitSteps": [
-        {
-          "data": "\u0003",
-          "delayMilliseconds": 300
-        },
-        {
-          "data": "\u0003",
-          "delayMilliseconds": 0
-        }
-      ],
-      "allowedExitCodes": [
-        0,
-        130
-      ],
-      "skillPrefix": ""
-    },
     "pi": {
       "readyPatterns": [
         "Ponytail loaded:"
@@ -296,18 +238,76 @@
         130
       ],
       "skillPrefix": ""
+    },
+    "agency": {
+      "readyPatterns": [
+        "/ commands"
+      ],
+      "blockedPatterns": [
+        "Select a session",
+        "Confirm folder trust",
+        "Do you trust the files in this folder"
+      ],
+      "launchArgs": [
+        "--session-id",
+        "{sessionId}"
+      ],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": "/justify "
+    },
+    "omp": {
+      "readyPatterns": [
+        "Type your message",
+        "Enter your message",
+        "\n> "
+      ],
+      "blockedPatterns": [
+        "Select a provider",
+        "Login required"
+      ],
+      "launchArgs": [
+        "--no-session"
+      ],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": ""
     }
   },
   "launchers": {
-    "agx": "agency-copilot",
-    "cdx": "codex",
-    "cldx": "claude",
-    "cpx": "copilot",
-    "fmx": "firstmate",
-    "grx": "grok",
-    "jcx": "jcode",
-    "omp": "oh-my-pi",
-    "picx": "pi",
-    "prx": "prime"
+    "agency": "agency",
+    "codex": "codex",
+    "claude": "claude",
+    "copilot": "copilot",
+    "firstmate": "firstmate",
+    "jcode": "jcode",
+    "omp": "omp",
+    "pi": "pi",
+    "prime": "prime",
+    "grok": "grok"
   }
 }

@@ -1,3 +1,4 @@
+import { canonicalNativeIdentity } from "@trellage/guide-core"
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -208,7 +209,7 @@ const nativeCatalogFamily = async (
   return Object.entries(profiles).map(([profile, rawProfile]) => {
     const entry = record(rawProfile, `${launcher}/${profile} catalog entry`)
     return [
-      `${launcher}/${profile}`,
+      `${canonicalNativeIdentity(launcher, profile).launcher}/${canonicalNativeIdentity(launcher, profile).profile}`,
       {
         description: text(entry.description, `${launcher}/${profile}.description`),
         headless: validateHeadlessCapabilitiesV1(entry.headless, `${launcher}/${profile}.headless`),
@@ -269,7 +270,7 @@ const nativeCatalogEntry = async (
     name: identity.profile,
     description: catalogMetadata.description,
     headless: catalogMetadata.headless,
-    sandbox: identity.launcher === "grx",
+    sandbox: false,
     herdrCompatibility: { status: "test" },
     guide: loaded.guide,
     commandPath: `/tmp/${identity.launcher}`,
@@ -453,7 +454,7 @@ describe("profile guide recommendation scenarios", () => {
         }
       }
       expect(candidates.map(({ profileRef, workflowId }) => `${profileRef}/${workflowId}`)).not.toEqual(
-        expect.arrayContaining(["native:cpx/hve/rpi-agent-cycle"]),
+        expect.arrayContaining(["native:copilot/hve/rpi-agent-cycle"]),
       )
       expect(candidates.map(({ workflowId }) => workflowId)).not.toEqual(
         expect.arrayContaining(["run-council-deliberation"]),
@@ -486,7 +487,7 @@ describe("profile guide recommendation scenarios", () => {
       "Implement a stable Rust 1.85 byte-slice parenthesis matcher with scalar, AVX2, and NEON paths, documented unsafe blocks, differential tests, and release benchmarks.",
     ).map(({ ref }) => ref)
     expect(rustSimdRefs).toHaveLength(12)
-    expect(rustSimdRefs).toContain("native:cdx/pstack")
+    expect(rustSimdRefs).toContain("native:codex/pstack")
     expect(rustSimdRefs).toContain("sandbox:headlong")
   })
 

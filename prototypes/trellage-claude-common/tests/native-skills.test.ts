@@ -78,7 +78,6 @@ const launchers: LauncherDescriptor[] = [
   { alias: "cpx", package: "copilot" },
   { alias: "cdx", package: "codex" },
   { alias: "cldx", package: "claude", marker: "claude", owner: "trellage-claude-profile-v1" },
-  { alias: "grx", package: "grok" },
   { alias: "jcx", package: "jcode", marker: "jcode", owner: "trellage-jcode-profile-v1" },
   { alias: "omp", package: "omp", marker: "omp", owner: "trellage-omp-profile-v1", leaf: "agent" },
   { alias: "picx", package: "picx", marker: "picx", owner: "trellage-picx-profile-v2", leaf: "agent" },
@@ -188,7 +187,7 @@ const fixtureFor = async (context: TestContext, descriptor: LauncherDescriptor |
   await copy(path.join(common, "native-skills.ts"), path.join(runtime, "native-skills.ts"))
   await copy(path.join(common, "manual-skills.ts"), path.join(runtime, "manual-skills.ts"))
   await copy(manager, path.join(workspace, "scripts/floating-skills.ts"))
-  await copy(path.join(repository, "skills.json"), path.join(workspace, "skills.json"))
+  await copy(path.join(repository, "config.toml"), path.join(workspace, "config.toml"))
   await installSharedRuntime(fixture)
   await write(fixture.forbiddenLog, "")
   await write(fixture.envLog, "")
@@ -232,13 +231,14 @@ const installSourceFixture = async (fixture: Fixture) => {
       dependencies: { "@trellage/runtime": "workspace:*" },
     }),
   )
+  await cp(path.join(repository, "packages/trellage-runtime/src"), path.join(workspace, "packages/trellage-runtime/src"), { recursive: true })
   await write(
     path.join(workspace, "packages/trellage-runtime/package.json"),
     JSON.stringify({
       name: "@trellage/runtime",
       version: "0.1.0",
       type: "module",
-      exports: { ".": "./src/index.ts" },
+      exports: JSON.parse(await readFile(path.join(repository, "packages/trellage-runtime/package.json"), "utf8")).exports,
     }),
   )
   await write(path.join(workspace, "bunfig.toml"), '[install]\nauto = "disable"\nlinker = "isolated"\n')
@@ -256,6 +256,16 @@ const installSourceFixture = async (fixture: Fixture) => {
       { cwd: workspace, env: fixture.env, encoding: "utf8" },
     ),
   )
+  const copied = new Set<string>()
+  const copyDependency = async (dependency: string, parent: string) => {
+    if (copied.has(dependency)) return
+    copied.add(dependency)
+    const packagePath = path.dirname(import.meta.resolve(`${dependency}/package.json`, path.join(parent, "package.json")).replace("file://", ""))
+    await cp(packagePath, path.join(workspace, "node_modules", dependency), { recursive: true })
+    const manifest = JSON.parse(await readFile(path.join(packagePath, "package.json"), "utf8"))
+    for (const nested of Object.keys(manifest.dependencies ?? {})) await copyDependency(nested, packagePath)
+  }
+  for (const dependency of ["smol-toml", "effect"]) await copyDependency(dependency, path.join(repository, "packages/trellage-runtime"))
   writeReadiness(workspace)
 }
 
@@ -522,6 +532,32 @@ test("Sandbox skills-check and help bypass dependency bootstrap and environment 
   await noExternalCalls(fixture)
 })
 
+const installLocalSkillRepository = async (fixture: Fixture, names: string[]) => {
+  const source = path.join(fixture.root, "upstream")
+  const git = commandPath("git")
+  await mkdir(source)
+  for (const name of names) await write(path.join(source, "skills", name, "SKILL.md"), `# ${name} 1\n`)
+  for (const args of [["init", "--quiet"], ["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "skills"]]) {
+    succeeds(spawnSync(git, args, { cwd: source, encoding: "utf8" }))
+  }
+  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
+  await write(path.join(fixture.bin, "git"), `#!/bin/sh\nexec ${quote(git)} -c ${quote(`url.${source}.insteadOf=https://github.com/fixture/skills.git`)} "$@"\n`, 0o755)
+}
+
+const installFixtureSkillsCli = async (fixture: Fixture) => {
+  await write(path.join(fixture.workspace, "node_modules/skills/package.json"), JSON.stringify({
+    name: "skills", type: "module", exports: { "./bin/cli.mjs": "./bin/cli.mjs" },
+  }))
+  await write(path.join(fixture.workspace, "node_modules/skills/bin/cli.mjs"), `
+import { cpSync, mkdirSync } from "node:fs"
+if (process.env.HOME !== process.cwd() || process.env.TMPDIR !== process.cwd()) throw new Error("generator is not isolated")
+if (!process.env.XDG_STATE_HOME.startsWith(process.cwd() + "/")) throw new Error("global state is not isolated")
+mkdirSync(".agents/skills", { recursive: true })
+cpSync(process.argv[3] + "/skills", ".agents/skills", { recursive: true })
+console.log("generator progress must not enter the JSON report")
+`)
+}
+
 test("read-only source staging uses an existing CLI and never installs a missing one", async (context) => {
   const fixture = await fixtureFor(
     context,
@@ -531,40 +567,17 @@ test("read-only source staging uses an existing CLI and never installs a missing
   const profile = await seedProfile(fixture, firstProfileName(fixture))
   const runtime = fixture.workspace
   await write(
-    path.join(runtime, "skills.json"),
+    path.join(runtime, "config.toml"),
     JSON.stringify({
       schema: 1,
       sources: { fixture: { repository: "https://github.com/fixture/skills.git", select: ["kept", "retired"] } },
       bundles: { "native-common": ["fixture"] },
     }),
   )
-  await write(path.join(fixture.bin, "git"), "#!/bin/sh\nexit 0\n", 0o755)
+  await installLocalSkillRepository(fixture, ["kept", "retired"])
   const before = await treeState(profile.root, true)
-  const missing = run(fixture, ["skills-check", profile.name])
-  fails(missing, /read-only skills check requires the installed skills CLI/)
-  const cli = path.join(runtime, "node_modules/skills/bin/cli.mjs")
-  await write(
-    path.join(runtime, "node_modules/skills/package.json"),
-    JSON.stringify({
-      name: "skills",
-      type: "module",
-      exports: { "./bin/cli.mjs": "./bin/cli.mjs" },
-    }),
-  )
-  await write(
-    cli,
-    `
-import { mkdirSync, writeFileSync } from "node:fs"
-if (process.env.HOME !== process.cwd() || process.env.TMPDIR !== process.cwd()) throw new Error("generator is not isolated")
-if (!process.env.XDG_STATE_HOME.startsWith(process.cwd() + "/")) throw new Error("global state is not isolated")
-for (const name of ["kept", "retired"]) {
-  const target = ".agents/skills/" + name
-  mkdirSync(target, { recursive: true })
-  writeFileSync(target + "/SKILL.md", "# " + name + " 1\\n")
-}
-console.log("generator progress must not enter the JSON report")
-`,
-  )
+  fails(run(fixture, ["skills-check", profile.name]), /read-only skills check requires the installed skills CLI/)
+  await installFixtureSkillsCli(fixture)
   const current = run(fixture, ["skills-check", profile.name])
   succeeds(current)
   assert.deepEqual(JSON.parse(current.stdout), { kind: "current" })
@@ -609,7 +622,7 @@ test("router checks all shared caches, including guide-only changes, without pro
   ]
   for (const cache of caches) await seedSnapshot(cache, ["fixture"], 1)
   await write(
-    path.join(runtime, "skills.json"),
+    path.join(runtime, "config.toml"),
     JSON.stringify({
       schema: 1,
       sources: {
@@ -627,23 +640,8 @@ test("router checks all shared caches, including guide-only changes, without pro
       },
     }),
   )
-  await write(path.join(fixture.bin, "git"), "#!/bin/sh\nexit 0\n", 0o755)
-  await write(
-    path.join(runtime, "node_modules/skills/package.json"),
-    JSON.stringify({
-      name: "skills",
-      type: "module",
-      exports: { "./bin/cli.mjs": "./bin/cli.mjs" },
-    }),
-  )
-  await write(
-    path.join(runtime, "node_modules/skills/bin/cli.mjs"),
-    `
-import { mkdirSync, writeFileSync } from "node:fs"
-mkdirSync(".agents/skills/fixture", { recursive: true })
-writeFileSync(".agents/skills/fixture/SKILL.md", "# fixture 1\\n")
-`,
-  )
+  await installLocalSkillRepository(fixture, ["fixture"])
+  await installFixtureSkillsCli(fixture)
   const check = () => {
     writeReadiness(fixture.workspace)
     return spawnSync(router, ["skills", "check", "--json"], {
@@ -653,6 +651,8 @@ writeFileSync(".agents/skills/fixture/SKILL.md", "# fixture 1\\n")
       timeout: 20000,
     })
   }
+  // Prepare the source-runtime digest memo before measuring skill-check mutations.
+  succeeds(check())
   const before = await treeState(fixture.home, true)
   const current = check()
   succeeds(current)
@@ -681,7 +681,7 @@ writeFileSync(".agents/skills/fixture/SKILL.md", "# fixture 1\\n")
   const failed = check()
   succeeds(failed)
   assert.equal(JSON.parse(failed.stdout).kind, "unknown")
-  assert.match(JSON.parse(failed.stdout).diagnostic, /command failed: git/)
+  assert.match(JSON.parse(failed.stdout).diagnostic, /command failed: git|cannot be refreshed/)
   assert.deepEqual(
     (await readdir(fixture.root)).filter((name) => name.startsWith(".trellage-shared-skills-check.")),
     [],

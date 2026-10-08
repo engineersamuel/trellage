@@ -45,8 +45,8 @@ export const goalTransportFixture = (
       }
     : {
         surface: "native",
-        launcher: controller === "codex-goal" ? "cdx" : "cldx",
-        commandPath: controller === "codex-goal" ? "/opt/trellage/bin/cdx" : "/opt/trellage/bin/cldx",
+        launcher: controller === "codex-goal" ? "codex" : "claude",
+        commandPath: controller === "codex-goal" ? "/opt/trellage/bin/trx" : "/opt/trellage/bin/trx",
         profile: controller === "codex-goal" ? "superpowers" : "default",
         headlessPrompt: true,
         goalExecutionPolicy: policy,

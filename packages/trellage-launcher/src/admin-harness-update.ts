@@ -22,17 +22,16 @@ interface NativeHarnessUpdate {
   readonly shared: boolean
 }
 
-// cpx, cdx, and grx use ordinary update commands for profile plugins or skills.
+// Shared launchers update their harness once; Firstmate updates per profile.
 const nativeHarnessUpdates: ReadonlyMap<string, NativeHarnessUpdate> = new Map([
-  ["cpx", { command: "harness-update", shared: true }],
-  ["cdx", { command: "harness-update", shared: true }],
-  ["grx", { command: "harness-update", shared: true }],
-  ["cldx", { command: "harness-update", shared: true }],
-  ["fmx", { command: "update", shared: false }],
-  ["jcx", { command: "update", shared: true }],
+  ["copilot", { command: "harness-update", shared: true }],
+  ["codex", { command: "harness-update", shared: true }],
+  ["claude", { command: "harness-update", shared: true }],
+  ["firstmate", { command: "update", shared: false }],
+  ["jcode", { command: "update", shared: true }],
   ["omp", { command: "update", shared: true }],
-  ["picx", { command: "update", shared: true }],
-  ["prx", { command: "update", shared: true }],
+  ["pi", { command: "update", shared: true }],
+  ["prime", { command: "update", shared: true }],
 ])
 
 export type HarnessUpdateStep = ProfileUpdateStep
@@ -108,7 +107,7 @@ const buildHarnessUpdateCommand = (entry: AdminProfileEntry): CommandSpec => {
   if (update === undefined) throw new Error(`Harness update is not supported for ${entry.ref}`)
   return {
     executable: entry.commandPath,
-    args: update.command === "harness-update" ? ["harness-update"] : ["update", entry.name, ...adminInstanceControlArgs(entry)],
+    args: ["upgrade", entry.launcher!, entry.name, ...(update.command === "harness-update" ? ["--harness-only"] : []), ...adminInstanceControlArgs(entry)],
   }
 }
 
@@ -130,7 +129,7 @@ export const harnessUpdatePlanFor = (
 
   const shared = selected.surface === "native" && nativeHarnessUpdates.get(selected.launcher ?? "")?.shared === true
   const steps = shared
-    ? [{ command: buildHarnessUpdateCommand(selected), targets }]
+    ? [{ command: buildHarnessUpdateCommand(targets[0]!), targets }]
     : targets.map((entry) => ({ command: buildHarnessUpdateCommand(entry), targets: [entry] }))
   return {
     key,

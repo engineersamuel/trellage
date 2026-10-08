@@ -74,11 +74,11 @@ const runClaudeGoalRuntime = (
   args: ReadonlyArray<string>,
   options: CommandRunOptions | undefined,
 ): CommandRunResult => {
-  deepStrictEqual(args, ["harness-version"])
+  deepStrictEqual(args, ["harness-version", "default"])
   deepStrictEqual(options?.cwd, root)
   return success(JSON.stringify({
     schemaVersion: 1,
-    launcher: "cldx",
+    launcher: "claude",
     harness: "claude",
     installed: "2.1.139",
     goalRuntime: {
@@ -123,10 +123,10 @@ const runNative = (
   args: ReadonlyArray<string>,
   options: CommandRunOptions | undefined,
 ): CommandRunResult | Promise<CommandRunResult> => {
-  if (executable === path.join(root, "bin", "cpx") && args[0] === "hve" && args[1] === "-p") {
+  if (executable === path.join(root, "bin", "copilot") && args[0] === "hve" && args[1] === "-p") {
     return runResearch(root, args, options)
   }
-  if (executable === path.join(root, "bin", "cldx") && args[0] === "harness-version") {
+  if (executable === path.join(root, "bin", "claude") && args[0] === "harness-version") {
     return runClaudeGoalRuntime(root, args, options)
   }
   const native = profiles.find(
@@ -140,7 +140,7 @@ const runNative = (
     assert([root, path.join(root, "worktrees", fixtureBranches.hve), path.join(root, "worktrees", "existing-canonical")]
       .includes(options?.cwd ?? ""), "Customer readiness must use a known selected destination")
   } else deepStrictEqual(options?.cwd, root)
-  if (native.launcher === "cdx" && args[2] === "--goal-features") {
+  if (native.launcher === "codex" && args[2] === "--goal-features") {
     return runCodexGoalProbe(root, args, options, "features")
   }
   if (args[0] === "workflow-check") {
@@ -148,7 +148,7 @@ const runNative = (
     deepStrictEqual(args, ["workflow-check", native.name, "--agent", native.agent,
       ...native.interaction.requiredSkills.flatMap((skill) => ["--require-skill", skill])])
     return success(JSON.stringify({
-      schemaVersion: 1, launcher: "cpx", profile: "hve", mode: "interactive", agent: native.agent,
+      schemaVersion: 1, launcher: "copilot", profile: "hve", mode: "interactive", agent: native.agent,
       requiredSkills: native.interaction.requiredSkills, manifestSha256: "a".repeat(64), harnessVersion: "1.0.81",
     }))
   }
@@ -356,6 +356,11 @@ export const createFixtureRunner = (root: string, mode: FixtureMode, record: Rec
           ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
         },
       })
+      if (executable === bin("trx")) {
+        const harness = args[1]!
+        const backendArgs = args[0] === "run" ? args.slice(2) : [args[0]!, ...args.slice(2)]
+        return runNative(root, fixtureProfiles, bin(harness), backendArgs, options)
+      }
       if (nativeCommands.has(executable)) return runNative(root, fixtureProfiles, executable, args, options)
       switch (executable) {
         case "codex":

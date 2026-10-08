@@ -22,7 +22,7 @@ installed_launcher="$runtime_bin/agx"
 installed_catalog="$install_root/catalog.json"
 installed_model_settings="$install_root/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-agency-profiles"
-command_path="$canonical_home/.local/bin/agx"
+command_path="$canonical_home/.local/share/trellage/.native-commands/agx"
 
 if [[ ! -e "$install_root" ]]; then
   [[ ! -e "$command_path" && ! -L "$command_path" ]] \

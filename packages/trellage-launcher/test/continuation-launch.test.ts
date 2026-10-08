@@ -65,8 +65,8 @@ describe("private continuation launch", () => {
       1,
       {
         surface: "native",
-        launcher: "cpx",
-        commandPath: "/profiles/cpx",
+        launcher: "copilot",
+        commandPath: "/profiles/trx",
         profile: "default",
         headlessPrompt: true,
       },
@@ -92,7 +92,7 @@ describe("private continuation launch", () => {
       promptDelivery: job.promptDelivery,
       promptTimeoutMs: 1000,
     })
-    expect(job.command.args).toEqual(["default"])
+    expect(job.command.args).toEqual(["run", "copilot", "default"])
     expect(JSON.stringify(calls)).not.toContain(secretText)
     expect(JSON.stringify(result)).not.toContain(secretText)
     expect(JSON.parse(fixture.requests[0] ?? "").params).toEqual({

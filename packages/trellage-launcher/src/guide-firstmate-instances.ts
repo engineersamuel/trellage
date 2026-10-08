@@ -186,7 +186,7 @@ export class FirstmateInstancesClient {
 
   constructor(private readonly runner: CommandRunner, profile: NativeSelectedProfile, cwd: string) {
     const selected = parseSelectedProfile(profile)
-    if (selected.surface !== "native" || selected.launcher !== "fmx" || selected.orchestration?.instances === undefined) {
+    if (selected.surface !== "native" || selected.launcher !== "firstmate" || selected.orchestration?.instances === undefined) {
       throw new Error("Named fleet discovery requires a Firstmate backend with instance support.")
     }
     this.executable = selected.commandPath
@@ -201,7 +201,7 @@ export class FirstmateInstancesClient {
     let progress: InstanceListProgress | undefined
     while (true) {
       const result = await this.invoke([
-        "instances", "list", this.profileName, "--json",
+        "instances", "firstmate", "list", this.profileName, "--json",
         firstmateInstanceCli.limit, String(firstmateInstanceLimits.pageItems),
         ...(cursor === undefined ? [] : [firstmateInstanceCli.cursor, cursor]),
       ], parseFirstmateInstanceListResultV1, options)
@@ -215,7 +215,7 @@ export class FirstmateInstancesClient {
 
   async resolve(worktreePath: string, options: FirstmateInstanceCommandOptions = {}): Promise<FirstmateInstanceResolveResultV1> {
     const result = await this.invoke([
-      "instances", "resolve", this.profileName, "--worktree", commandPath(worktreePath), "--json",
+      "instances", "firstmate", "resolve", this.profileName, "--worktree", commandPath(worktreePath), "--json",
     ], parseFirstmateInstanceResolveResultV1, options)
     this.requireProfile(result.profile)
     return result
@@ -228,7 +228,7 @@ export class FirstmateInstancesClient {
   ): Promise<FirstmateInstancePlanResultV1> {
     const selectedName = parseFirstmateInstanceName(name)
     const result = await this.invoke([
-      "instances", "plan", this.profileName, "--name", selectedName, "--worktree", commandPath(worktreePath),
+      "instances", "firstmate", "plan", this.profileName, "--name", selectedName, "--worktree", commandPath(worktreePath),
       "--json", firstmateInstanceCli.expectedSourceRevision, this.sourceRevision,
     ], parseFirstmateInstancePlanResultV1, options)
     this.requireProfile(result.profile)
@@ -249,7 +249,7 @@ export class FirstmateInstancesClient {
       throw new FirstmateInstanceCommandError("The approved creation plan changed. Nothing was sent.", { approvedPlan: plan })
     }
     return this.invoke([
-      "instances", "create", this.profileName, "--json", firstmateInstanceCli.approveCreation, plan.approvalDigest,
+      "instances", "firstmate", "create", this.profileName, "--json", firstmateInstanceCli.approveCreation, plan.approvalDigest,
     ], (value) => parseFirstmateInstanceCreateResultV1(value, plan), {
       ...options, timeoutMs: options.timeoutMs ?? 180_000,
     }, plan)
@@ -262,7 +262,7 @@ export class FirstmateInstancesClient {
   ): Promise<FirstmateNamedInstanceDescriptorV1> {
     this.requireProfile(previous.profile)
     return this.invoke([
-      "instances", "refresh-locator", this.profileName, firstmateInstanceCli.selector, previous.reference.instanceId,
+      "instances", "firstmate", "refresh-locator", this.profileName, firstmateInstanceCli.selector, previous.reference.instanceId,
       "--worktree", commandPath(newPath), "--json",
       firstmateInstanceCli.expectedBindingDigest, firstmateWorktreeBindingDigest(previous.worktree.evidence),
       firstmateInstanceCli.confirm,
@@ -283,7 +283,7 @@ export class FirstmateInstancesClient {
   ): Promise<T> {
     options.signal?.throwIfAborted()
     const monitor = outputMonitor(options.signal)
-    const operation = args[1] ?? "operation"
+    const operation = args[2] ?? "operation"
     let stdout: string
     try {
       const result = await this.runner.run(this.executable, args, {

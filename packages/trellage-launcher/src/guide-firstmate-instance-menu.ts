@@ -438,7 +438,7 @@ export const reduceFirstmateInstanceMenu = (
 }
 
 export const firstmateInstanceDescriptorLines = (descriptor: FirstmateInstanceDescriptorV1): ReadonlyArray<string> => [
-  `Profile: fmx/${descriptor.profile}; ${descriptor.mode} instance: ${descriptor.name}`,
+  `Profile: firstmate/${descriptor.profile}; ${descriptor.mode} instance: ${descriptor.name}`,
   `UUID: ${descriptor.reference?.instanceId ?? "missing identity; not selectable"}`,
   `State: ${descriptor.creationState}; runtime: ${descriptor.runtime.state}; association: ${descriptor.worktree.status}`,
   `Private root: ${descriptor.root}`,
@@ -457,7 +457,7 @@ export const firstmateInstanceDescriptorLines = (descriptor: FirstmateInstanceDe
 ]
 
 const planLines = (plan: FirstmateInstanceCreationPlanV1): ReadonlyArray<string> => [
-  `Create ${plan.name} on fmx/${plan.reference.profile}`,
+  `Create ${plan.name} on firstmate/${plan.reference.profile}`,
   `Planned UUID: ${plan.reference.instanceId}`, `Task namespace: ${plan.taskIdPrefix}-`,
   `Destination: ${plan.destination}`, `Entry worktree: ${plan.worktree.locators.worktree}`,
   `Private Git directory: ${plan.worktree.locators.privateGitDir}`,

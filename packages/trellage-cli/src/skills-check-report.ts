@@ -145,7 +145,7 @@ const extractAndCompare = (
             bunArguments(path.join(root, "scripts/floating-skills.ts"), [
               "check-container",
               "--catalog",
-              path.join(root, "skills.json"),
+              path.join(root, "config.toml"),
               ...document.profile.skill_bundles.flatMap((bundle) => ["--bundle", bundle]),
               "--target",
               extracted,

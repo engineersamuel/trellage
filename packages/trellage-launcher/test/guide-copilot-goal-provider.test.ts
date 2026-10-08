@@ -30,7 +30,12 @@ import {
 } from "../src/guide-goal-augment.ts"
 import type { GuideGoalSkills } from "../src/guide-goal-skills.ts"
 import { defaultGuideModelRouting } from "../src/guide-model-routing.ts"
-import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
+import {
+  expandedGoalDraft,
+  expandedGoalMeSkill,
+  goalDraft,
+  goalMeSkill,
+} from "./fixtures/goal-me-skill.ts"
 
 const systemPrompt = await readFile(new URL("../prompts/guide-goal-augment.md", import.meta.url), "utf8")
 type UserInputRequest = Parameters<NonNullable<SessionConfig["onUserInputRequest"]>>[0]
@@ -320,6 +325,34 @@ describe("Copilot Goal me interview", () => {
     expect(await config.onPermissionRequest!({} as never, { sessionId: h.sdk.session.sessionId })).toEqual({ kind: "reject" })
     h.abort.abort()
     await expect(result).rejects.toBeInstanceOf(GuideGoalCancelledError)
+  })
+
+  it("requires and accepts every authored field for the expanded installed template", async () => {
+    const h = harness({ skillContent: expandedGoalMeSkill })
+    const result = h.start()
+    await h.sdk.sent
+    expect(h.sdk.currentConfig().tools?.[0]).toMatchObject({
+      parameters: {
+        additionalProperties: false,
+        required: [
+          "artifact",
+          "task",
+          "criteria",
+          "inputsAndArtifacts",
+          "constraints",
+          "criterionVerifications",
+          "requiredChecks",
+          "actions",
+          "maxIterations",
+          "maxConsecutiveNoProgressAttempts",
+        ],
+      },
+    })
+    const proposal = h.sdk.propose(expandedGoalDraft)
+    await flushCallbacks()
+    h.submit({ kind: "review", review: { decision: "use" } })
+    await expect(proposal).resolves.toMatchObject({ resultType: "success" })
+    await expect(result).resolves.toBe(renderGuideGoalProposal(expandedGoalMeSkill, expandedGoalDraft).prompt)
   })
 
   it("does not fall back to the enrichment model when Astra is unavailable", async () => {

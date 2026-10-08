@@ -352,7 +352,7 @@ function sourceFixture(withShellRunner = false) {
   )
   write(root, "bunfig.toml", '[install]\nauto = "disable"\nlinker = "isolated"\n')
   write(root, "tsconfig.base.json", '{"compilerOptions":{"strict":true,"noEmit":true}}')
-  write(root, "skills.json", "{}")
+  write(root, "config.toml", "{}")
   write(
     root,
     "packages/library/package.json",

@@ -59,10 +59,10 @@ readonly catalog="$runtime_root/catalog.json"
 readonly receipt_file="$runtime_root/installed-version"
 readonly legacy_version_file="$runtime_root/version"
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
-floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
-  floating_skills_catalog="$runtime_root/../../skills.json"
+  floating_skills_catalog="$runtime_root/../../config.toml"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 readonly community_skills_cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/omp-community-skills"
@@ -1141,6 +1141,10 @@ launch_omp() {
   fi
   parse_launch_arguments "$@"
   launch_args=(--approval-mode yolo)
+  if [[ -n "${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}" ]]; then
+    [[ -f "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" && ! -L "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" ]] || die 'unsafe selected instructions'
+    launch_args+=(--append-system-prompt "$(cat "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md")")
+  fi
   if [[ "$launch_headless_policy" == no-user-input ]]; then
     [[ "$version" == "$verified_headless_policy_version" ]] \
       || die "--headless-policy no-user-input is verified only for OMP $verified_headless_policy_version; installed version is $version"

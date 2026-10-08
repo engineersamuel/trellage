@@ -60,8 +60,8 @@ readme="$root/README.md"
 assert_install_text '~/.local/share/trellage/profiles/codex/<profile>/home/' "$readme"
 assert_install_text '~/.local/share/trellage/profiles/copilot/<profile>/home/' "$readme"
 assert_install_text '~/.local/share/trellage/profiles/grok/<profile>/home/' "$readme"
-assert_install_text 'cdx setup --all' "$readme"
-assert_install_text 'cdx --native-auth superpowers exec "Review this repository"' "$readme"
+assert_install_text 'trx setup codex --all' "$readme"
+assert_install_text 'trx run codex superpowers --native-auth -- exec "Review this repository"' "$readme"
 assert_install_text 'Profile launch always passes `--dangerously-bypass-approvals-and-sandbox`' "$readme"
 assert_install_text '`approval_policy = "never"` and `sandbox_mode = "danger-full-access"`.' "$readme"
 assert_install_text 'MCP servers are profile-local.' "$readme"
@@ -148,7 +148,7 @@ write_absent_definition_fish() {
 assert_install_published() {
   fixture_home="$1"
   installed="$fixture_home/.local/share/trellage/cdx"
-  command="$fixture_home/.local/bin/cdx"
+  command="$fixture_home/.local/share/trellage/.native-commands/cdx"
   environment_runtime="$fixture_home/.local/share/trellage/common/native-environment-runtime"
   logical_home="$(CDPATH= cd -L -- "$fixture_home" && pwd -L)"
   [ -d "$installed" ] && [ ! -L "$installed" ] || fail 'managed runtime root was not published'
@@ -212,13 +212,13 @@ cmp -s "$fixture_root/clean-uninstall.topology-before" \
   || fail 'clean HOME uninstall changed directory topology'
 
 clean_collision_home="$fixture_root/clean-collision-home"
-mkdir -p "$clean_collision_home/.local/bin"
-printf 'unrelated command\n' >"$clean_collision_home/.local/bin/cdx"
+mkdir -p "$clean_collision_home/.local/share/trellage/.native-commands"
+printf 'unrelated command\n' >"$clean_collision_home/.local/share/trellage/.native-commands/cdx"
 if HOME="$clean_collision_home" /bin/bash "$uninstall_script" \
   >"$fixture_root/clean-collision.out" 2>&1; then
   fail 'uninstall treated an unrelated command collision as not installed'
 fi
-assert_install_line 'unrelated command' "$clean_collision_home/.local/bin/cdx"
+assert_install_line 'unrelated command' "$clean_collision_home/.local/share/trellage/.native-commands/cdx"
 
 clean_symlink_home="$fixture_root/clean-symlink-home"
 mkdir -p "$clean_symlink_home" "$fixture_root/clean-symlink-outside"
@@ -247,7 +247,7 @@ legacy_floating="$install_home/.local/share/trellage/common/floating-skills-runt
 rm -rf "$legacy_floating"
 mkdir "$legacy_floating"
 printf 'legacy helper\n' >"$legacy_floating/floating-skills.mjs"
-cp "$root/../../skills.json" "$legacy_floating/skills.json"
+printf '{"schemaVersion":1,"sources":{},"bundles":{}}\n' >"$legacy_floating/skills.json"
 HOME="$install_home" /bin/bash "$install_script" \
   >"$fixture_root/legacy-floating-migration-install.out" \
   || fail 'installer did not migrate the legacy two-file floating runtime'
@@ -263,7 +263,7 @@ HOME="$install_home" /bin/bash "$install_script" \
   >"$fixture_root/legacy-marker-migration-install.out" \
   || fail 'installer did not migrate the legacy ownership marker'
 assert_install_published "$install_home"
-HOME="$install_home" "$install_home/.local/bin/cdx" list \
+HOME="$install_home" "$install_home/.local/share/trellage/.native-commands/cdx" list \
   >"$fixture_root/installed-list.out" 2>"$fixture_root/installed-list.err" \
   || fail "installed cdx list failed: $(cat "$fixture_root/installed-list.err")"
 cmp -s "$fixture_root/installed-list.out" <(printf '%s\n' \
@@ -271,13 +271,13 @@ cmp -s "$fixture_root/installed-list.out" <(printf '%s\n' \
   $'superpowers\tsuperpowers@superpowers-marketplace' \
   $'youtube\tyoutube-full') \
   || fail 'installed cdx list output differs'
-ln -s cdx "$install_home/.local/bin/cdx-relative"
-HOME="$install_home" "$install_home/.local/bin/cdx-relative" list \
+ln -s cdx "$install_home/.local/share/trellage/.native-commands/cdx-relative"
+HOME="$install_home" "$install_home/.local/share/trellage/.native-commands/cdx-relative" list \
   >"$fixture_root/relative-list.out" 2>"$fixture_root/relative-list.err" \
   || fail "relative symlink cdx list failed: $(cat "$fixture_root/relative-list.err")"
 cmp -s "$fixture_root/relative-list.out" "$fixture_root/installed-list.out" \
   || fail 'relative symlink cdx list output differs'
-rm "$install_home/.local/bin/cdx-relative"
+rm "$install_home/.local/share/trellage/.native-commands/cdx-relative"
 printf '%s\n' \
   '# preserved before' \
   'set -gx TRELLAGE_FISH_SENTINEL "sp ace"' \
@@ -322,7 +322,7 @@ HOME="$install_home" /bin/bash "$uninstall_script" >"$fixture_root/uninstall.out
 cmp -s "$fish_config" "$fixture_root/fish-before" || fail 'uninstall did not restore exact Fish bytes'
 [ "$(path_mode "$fish_config")" = "$fish_before_mode" ] || fail 'uninstall did not restore Fish mode'
 [ ! -e "$install_home/.local/share/trellage/cdx" ] || fail 'uninstall left managed runtime'
-[ ! -e "$install_home/.local/bin/cdx" ] && [ ! -L "$install_home/.local/bin/cdx" ] \
+[ ! -e "$install_home/.local/share/trellage/.native-commands/cdx" ] && [ ! -L "$install_home/.local/share/trellage/.native-commands/cdx" ] \
   || fail 'uninstall left managed command'
 assert_install_line 'preserved profile' \
   "$install_home/.local/share/trellage/profiles/codex/pstack/home/sentinel"
@@ -383,8 +383,8 @@ cmp -s "$absent_fish" "$fixture_root/absent-definition.fish-before" \
   || fail 'absent-definition uninstall changed Fish mode'
 [ ! -e "$absent_definition_home/.local/share/trellage/cdx" ] \
   || fail 'absent-definition uninstall left managed runtime'
-[ ! -e "$absent_definition_home/.local/bin/cdx" ] \
-  && [ ! -L "$absent_definition_home/.local/bin/cdx" ] \
+[ ! -e "$absent_definition_home/.local/share/trellage/.native-commands/cdx" ] \
+  && [ ! -L "$absent_definition_home/.local/share/trellage/.native-commands/cdx" ] \
   || fail 'absent-definition uninstall left managed command'
 assert_no_install_staging "$absent_definition_home"
 release_install_home "$absent_definition_home"
@@ -399,7 +399,7 @@ HOME="$absent_origin_home" /bin/bash "$install_script" >/dev/null \
 absent_origin_runtime="$absent_origin_home/.local/share/trellage/cdx"
 write_owned_runtime_snapshot "$absent_origin_runtime" \
   "$fixture_root/absent-origin.runtime-before-refused-reinstall"
-absent_origin_command_target="$(readlink "$absent_origin_home/.local/bin/cdx")"
+absent_origin_command_target="$(readlink "$absent_origin_home/.local/share/trellage/.native-commands/cdx")"
 printf '%s\n' 'alias cdx="codex --dangerously-bypass-approvals-and-sandbox"' \
   >>"$absent_origin_fish"
 cp "$absent_origin_fish" "$fixture_root/absent-origin.edited-fish"
@@ -414,8 +414,8 @@ write_owned_runtime_snapshot "$absent_origin_runtime" \
 cmp -s "$fixture_root/absent-origin.runtime-before-refused-reinstall" \
   "$fixture_root/absent-origin.runtime-after-refused-reinstall" \
   || fail 'absent-origin refused reinstall changed runtime or recovery state'
-[ -L "$absent_origin_home/.local/bin/cdx" ] \
-  && [ "$(readlink "$absent_origin_home/.local/bin/cdx")" = \
+[ -L "$absent_origin_home/.local/share/trellage/.native-commands/cdx" ] \
+  && [ "$(readlink "$absent_origin_home/.local/share/trellage/.native-commands/cdx")" = \
     "$absent_origin_command_target" ] \
   || fail 'absent-origin refused reinstall changed managed command'
 assert_no_install_staging "$absent_origin_home"
@@ -429,8 +429,8 @@ cmp -s "$absent_origin_fish" "$fixture_root/absent-origin.original-fish" \
   || fail 'absent-origin uninstall added or restored a Fish definition'
 [ ! -e "$absent_origin_home/.local/share/trellage/cdx" ] \
   || fail 'absent-origin uninstall left managed runtime'
-[ ! -e "$absent_origin_home/.local/bin/cdx" ] \
-  && [ ! -L "$absent_origin_home/.local/bin/cdx" ] \
+[ ! -e "$absent_origin_home/.local/share/trellage/.native-commands/cdx" ] \
+  && [ ! -L "$absent_origin_home/.local/share/trellage/.native-commands/cdx" ] \
   || fail 'absent-origin uninstall left managed command'
 assert_no_install_staging "$absent_origin_home"
 release_install_home "$absent_origin_home"
@@ -490,8 +490,8 @@ for failure_point in \
     || fail "absent-definition install rollback changed Fish mode: $failure_point"
   [ ! -e "$absent_failure_home/.local/share/trellage/cdx" ] \
     || fail "absent-definition install rollback left runtime: $failure_point"
-  [ ! -e "$absent_failure_home/.local/bin/cdx" ] \
-    && [ ! -L "$absent_failure_home/.local/bin/cdx" ] \
+  [ ! -e "$absent_failure_home/.local/share/trellage/.native-commands/cdx" ] \
+    && [ ! -L "$absent_failure_home/.local/share/trellage/.native-commands/cdx" ] \
     || fail "absent-definition install rollback left command: $failure_point"
   assert_no_install_staging "$absent_failure_home"
   write_directory_topology "$absent_failure_home" \
@@ -840,7 +840,7 @@ for failure_point in \
     || fail "Fish mode changed after injected failure: $failure_point"
   [ ! -e "$failure_home/.local/share/trellage/cdx" ] \
     || fail "runtime remained after injected failure: $failure_point"
-  [ ! -e "$failure_home/.local/bin/cdx" ] && [ ! -L "$failure_home/.local/bin/cdx" ] \
+  [ ! -e "$failure_home/.local/share/trellage/.native-commands/cdx" ] && [ ! -L "$failure_home/.local/share/trellage/.native-commands/cdx" ] \
     || fail "command remained after injected failure: $failure_point"
   assert_no_install_staging "$failure_home"
   write_directory_topology "$failure_home" "$fixture_root/$failure_point.topology-after"
@@ -928,11 +928,11 @@ case "$CDX_TEST_SIGNAL_MV:$source_path:$destination_path" in
   install-fish-new:*/.config/fish/.cdx-fish.*:*/.config/fish/config.fish|\
   install-runtime-old:*/.local/share/trellage/cdx:*/.cdx-install.*/old-runtime|\
   install-runtime-new:*/.cdx-install.*/new-runtime:*/.local/share/trellage/cdx|\
-  install-command-old:*/.local/bin/cdx:*/.cdx-command.*/old-command|\
-  install-command-new:*/.cdx-command.*/new-command:*/.local/bin/cdx|\
+  install-command-old:*/.local/share/trellage/.native-commands/cdx:*/.cdx-command.*/old-command|\
+  install-command-new:*/.cdx-command.*/new-command:*/.local/share/trellage/.native-commands/cdx|\
   uninstall-fish-old:*/.config/fish/config.fish:*/.config/fish/.cdx-uninstall-fish.*|\
   uninstall-fish-new:*/.config/fish/.cdx-uninstall-fish.*:*/.config/fish/config.fish|\
-  uninstall-command:*/.local/bin/cdx:*/.cdx-uninstall-command.*/command|\
+  uninstall-command:*/.local/share/trellage/.native-commands/cdx:*/.cdx-uninstall-command.*/command|\
   uninstall-runtime:*/.local/share/trellage/cdx:*/.cdx-uninstall.*/runtime)
     if [ ! -e "$CDX_TEST_SIGNAL_ONCE" ]; then
       : >"$CDX_TEST_SIGNAL_ONCE"
@@ -988,7 +988,7 @@ for signal_boundary in \
     *)
       [ ! -e "$signal_home/.local/share/trellage/cdx" ] \
         || fail "signal-boundary install left runtime: $signal_boundary"
-      [ ! -e "$signal_home/.local/bin/cdx" ] && [ ! -L "$signal_home/.local/bin/cdx" ] \
+      [ ! -e "$signal_home/.local/share/trellage/.native-commands/cdx" ] && [ ! -L "$signal_home/.local/share/trellage/.native-commands/cdx" ] \
         || fail "signal-boundary install left command: $signal_boundary"
       ;;
   esac
@@ -1100,14 +1100,14 @@ for failure_point in \
 done
 
 unrelated_command_home="$fixture_root/unrelated-command-home"
-mkdir -p "$unrelated_command_home/.local/bin"
+mkdir -p "$unrelated_command_home/.local/share/trellage/.native-commands"
 write_legacy_fish "$unrelated_command_home"
-printf 'unrelated command\n' >"$unrelated_command_home/.local/bin/cdx"
+printf 'unrelated command\n' >"$unrelated_command_home/.local/share/trellage/.native-commands/cdx"
 if HOME="$unrelated_command_home" /bin/bash "$install_script" \
   >"$fixture_root/unrelated-command.out" 2>&1; then
   fail 'install replaced an unrelated cdx command'
 fi
-assert_install_line 'unrelated command' "$unrelated_command_home/.local/bin/cdx"
+assert_install_line 'unrelated command' "$unrelated_command_home/.local/share/trellage/.native-commands/cdx"
 
 symlink_runtime_home="$fixture_root/symlink-runtime-home"
 mkdir -p "$symlink_runtime_home/.local/share/trellage" "$symlink_runtime_home/outside"
@@ -1228,8 +1228,8 @@ cmp -s "$unowned_environment_home/.config/fish/config.fish" \
   || fail 'native environment runtime failure changed Fish bytes'
 [ ! -e "$unowned_environment_home/.local/share/trellage/cdx" ] \
   || fail 'native environment runtime failure left the cdx runtime'
-[ ! -e "$unowned_environment_home/.local/bin/cdx" ] \
-  && [ ! -L "$unowned_environment_home/.local/bin/cdx" ] \
+[ ! -e "$unowned_environment_home/.local/share/trellage/.native-commands/cdx" ] \
+  && [ ! -L "$unowned_environment_home/.local/share/trellage/.native-commands/cdx" ] \
   || fail 'native environment runtime failure left the cdx command'
 assert_install_line 'preserve unowned runtime' \
   "$unowned_environment_home/.local/share/trellage/common/native-environment-runtime/keep"
@@ -1252,8 +1252,8 @@ cmp -s "$writable_environment_home/.config/fish/config.fish" \
   || fail 'writable native runtime parent failure changed Fish bytes'
 [ ! -e "$writable_environment_home/.local/share/trellage/cdx" ] \
   || fail 'writable native runtime parent failure left the cdx runtime'
-[ ! -e "$writable_environment_home/.local/bin/cdx" ] \
-  && [ ! -L "$writable_environment_home/.local/bin/cdx" ] \
+[ ! -e "$writable_environment_home/.local/share/trellage/.native-commands/cdx" ] \
+  && [ ! -L "$writable_environment_home/.local/share/trellage/.native-commands/cdx" ] \
   || fail 'writable native runtime parent failure left the cdx command'
 assert_no_install_staging "$writable_environment_home"
 

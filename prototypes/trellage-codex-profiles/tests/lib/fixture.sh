@@ -184,6 +184,39 @@ printf '%s\n' '# Fixture YouTube skill' \
 printf '%s\n' fixture-personal show-me youtube-full \
   >"$fixture_youtube_skills_cache/managed-skills.txt"
 : >"$fixture_youtube_skills_cache/always-on.md"
+fixture_skill_sources="$fixture_root/skill-sources"
+for fixture_source in common youtube; do
+  mkdir -p "$fixture_skill_sources/$fixture_source/.omp/skills"
+  git -C "$fixture_skill_sources/$fixture_source" init -q
+  if [ "$fixture_source" = common ]; then
+    cp -R "$fixture_skills_cache/skills/." "$fixture_skill_sources/$fixture_source/.omp/skills/"
+  else
+    cp -R "$fixture_youtube_skills_cache/skills/youtube-full" "$fixture_skill_sources/$fixture_source/.omp/skills/"
+  fi
+  git -C "$fixture_skill_sources/$fixture_source" add .
+  git -C "$fixture_skill_sources/$fixture_source" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm 'Seed offline skills'
+done
+chmod u+w "$fixture_skills_runtime/config.toml"
+cat >"$fixture_skills_runtime/config.toml" <<'EOF'
+[skills]
+schema = 1
+[skills.sources.fixture-common]
+repository = "https://github.com/trellage-fixture/common.git"
+select = ["fixture-personal", "show-me"]
+adapter = "omp-native"
+[skills.sources.fixture-youtube]
+repository = "https://github.com/trellage-fixture/youtube.git"
+select = ["youtube-full"]
+adapter = "omp-native"
+[skills.bundles]
+native-common = ["fixture-common"]
+codex-common = ["fixture-common"]
+youtube = ["fixture-youtube"]
+EOF
+refresh_fixture_source "$fixture_skills_runtime"
+. "$root/../../tests/helpers/floating_skills_fixture.sh"
+seal_floating_skills_cache "$fixture_skills_cache" "$fixture_skills_runtime/config.toml" native-common codex-common
+seal_floating_skills_cache "$fixture_youtube_skills_cache" "$fixture_skills_runtime/config.toml" native-common codex-common youtube
 chmod +x "$fixture_launcher" "$fixture_common_launcher" "$fixture_session_bridge"
 }
 
@@ -844,7 +877,17 @@ if [ "$*" = 'ls-remote https://github.com/Aqua-123/pstack-for-codex.git refs/hea
   printf '%s\trefs/heads/main\n' '0123456789abcdef0123456789abcdef01234567'
   exit 0
 fi
-exec "$REAL_GIT" "$@"
+args=()
+for arg in "$@"; do
+  case "$arg" in
+    https://github.com/trellage-fixture/common.git|https://github.com/trellage-fixture/migration-common.git) arg="$FAKE_SKILL_SOURCES/common" ;;
+    https://github.com/trellage-fixture/astra.git) arg="$FAKE_SKILL_SOURCES/astra" ;;
+    https://github.com/trellage-fixture/youtube.git|https://github.com/trellage-fixture/migration-youtube.git) arg="$FAKE_SKILL_SOURCES/youtube" ;;
+    https://*|http://*) printf 'unexpected network Git operation in static Codex contract\n' >&2; exit 86 ;;
+  esac
+  args+=("$arg")
+done
+exec "$REAL_GIT" "${args[@]}"
 EOF
 chmod +x "$fake_bin/git"
 
@@ -869,6 +912,7 @@ export FAKE_CODEX_STATE="$fake_state"
 export FAKE_ENV_ENV_LOG="$fixture_root/fake-env-env.log"
 export REAL_ENV
 export REAL_GIT
+export FAKE_SKILL_SOURCES="$fixture_root/skill-sources"
 export REAL_JQ
 export REAL_NODE
 export REAL_BUN

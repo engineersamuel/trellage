@@ -3,6 +3,7 @@ set -euo pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)"
 repository_root="$(CDPATH= cd -- "$root/../.." && pwd)"
+. "$repository_root/tests/helpers/floating_skills_fixture.sh"
 
 fail() {
   printf 'trellage Codex pstack contract failed: %s\n' "$1" >&2
@@ -44,6 +45,7 @@ HOME="$home" "$repository_root/scripts/install-source-runtime.sh" --stage "$comm
 printf '%s\n' '# Fixture skill' >"$shared_cache/skills/fixture-personal/SKILL.md"
 printf '%s\n' fixture-personal >"$shared_cache/managed-skills.txt"
 : >"$shared_cache/always-on.md"
+seal_floating_skills_cache "$shared_cache" "$repository_root/config.toml" native-common codex-common
 printf '%040d\n' 1 >"$state/remote-revision"
 
 cat >"$fake_bin/git" <<'EOF'

@@ -40,7 +40,7 @@ export const nativeSkillsUpdatePlanFor = (
 export const nativeSkillsUpdateCommand = (entry: AdminProfileEntry): CommandSpec | undefined => {
   if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher) || entry.commandPath.length === 0) return undefined
   if (adminFirstmateMutationBlockReason(entry) !== undefined) return undefined
-  return { executable: entry.commandPath, args: ["skills-update", entry.name, ...adminInstanceControlArgs(entry)] }
+  return { executable: entry.commandPath, args: ["upgrade", entry.launcher!, entry.name, "--skills-only", ...adminInstanceControlArgs(entry)] }
 }
 
 export const runNativeSkillsUpdate = async (

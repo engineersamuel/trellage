@@ -104,6 +104,9 @@ else
   printf 'none\n' >"${CLAUDE_CONFIG_PATH_OUT:?}"
 fi
 env | LC_ALL=C sort >"$CLAUDE_ENV_OUT"
+if [[ -n "${CLAUDE_TTY_OUT-}" ]]; then
+  stty -a 2>/dev/null </dev/tty >"$CLAUDE_TTY_OUT"
+fi
 if [[ -n "${CLAUDE_CREATE_SESSION_ID-}" ]]; then
   session_dir="$CLAUDE_CONFIG_DIR/projects/test-project"
   mkdir -p "$session_dir"
@@ -189,6 +192,29 @@ if [[ "$dangerous_line" -ge "$separator_line" || "$settings_line" -ge "$separato
   printf 'managed Claude flags must precede the user argument separator\n' >&2
   exit 1
 fi
+
+tty_out="$root/interactive-tty"
+PATH="$fake_bin:$PATH" \
+TRELLAGE_CLAUDE_SEED_HOME="$seed" \
+TRELLAGE_CLAUDE_HOME="$runtime" \
+TRELLAGE_CLAUDE_AUTH_MODE=proxy \
+TRELLAGE_GRAPH_RUST_CARGO_CONFIG="$root/graph-rust-cargo-config.toml" \
+CARGO_HOME="$root/home/.cargo" \
+ANTHROPIC_AUTH_TOKEN=proxy-sentinel \
+CLAUDE_ARGS_OUT="$root/interactive-args" \
+CLAUDE_CONFIG_OUT="$root/interactive-config" \
+CLAUDE_CONFIG_PATH_OUT="$root/interactive-config-path" \
+CLAUDE_ENV_OUT="$root/interactive-env" \
+CLAUDE_TTY_OUT="$tty_out" \
+  script -qec "$entry new claude" /dev/null >/dev/null
+grep -Eq '(^|[[:space:];])-icanon([[:space:];]|$)' "$tty_out" || {
+  printf 'interactive Claude started before the container PTY disabled canonical input\n' >&2
+  exit 1
+}
+grep -Eq '(^|[[:space:];])-echo([[:space:];]|$)' "$tty_out" || {
+  printf 'interactive Claude started before the container PTY disabled input echo\n' >&2
+  exit 1
+}
 
 legacy_runtime="$root/legacy-home/.claude"
 legacy_transaction="$legacy_runtime/.trellage-claude-transaction.4242"

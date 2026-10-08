@@ -23,15 +23,14 @@ export type HarnessReleaseKey =
   | "prime"
 
 const nativeReleaseKeys: Readonly<Partial<Record<NativeLauncherAlias, HarnessReleaseKey>>> = {
-  cpx: "copilot-cli",
-  cdx: "codex",
-  cldx: "claude-code",
-  fmx: "firstmate",
-  grx: "grok",
-  jcx: "jcode",
+  copilot: "copilot-cli",
+  codex: "codex",
+  claude: "claude-code",
+  firstmate: "firstmate",
+  jcode: "jcode",
   omp: "oh-my-pi",
-  picx: "pi-coding-agent",
-  prx: "prime",
+  pi: "pi-coding-agent",
+  prime: "prime",
 }
 
 const sandboxReleaseKeys: Readonly<Record<string, HarnessReleaseKey>> = {
@@ -44,13 +43,12 @@ const sandboxReleaseKeys: Readonly<Record<string, HarnessReleaseKey>> = {
 }
 
 const nativeLatestLookupLaunchers: ReadonlySet<NativeLauncherAlias> = new Set([
-  "cdx",
-  "fmx",
-  "grx",
-  "jcx",
+  "codex",
+  "firstmate",
+  "jcode",
   "omp",
-  "picx",
-  "prx",
+  "pi",
+  "prime",
 ])
 
 export const harnessVersionReleaseKeyFor = (entry: AdminProfileEntry): HarnessReleaseKey | undefined => {
@@ -81,12 +79,12 @@ export const harnessVersionOperationKeyFor = (entry: AdminProfileEntry): string 
     return releaseKey === undefined ? undefined : `sandbox:${releaseKey}`
   }
   if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher)) return undefined
-  if (entry.launcher !== "fmx") return `native:${entry.launcher}`
+  if (entry.launcher !== "firstmate") return `native:${entry.launcher}`
   const instance = entry.firstmateInstance
-  if (instance !== undefined) return `native:fmx:${entry.name}:${instance.mode}:${instance.instanceId}`
+  if (instance !== undefined) return `native:firstmate:${entry.name}:${instance.mode}:${instance.instanceId}`
   return entry.firstmateInstanceDescriptor?.reference === null
-    ? `native:fmx:${entry.name}:legacy:missing-identity`
-    : `native:fmx:${entry.name}`
+    ? `native:firstmate:${entry.name}:legacy:missing-identity`
+    : `native:firstmate:${entry.name}`
 }
 
 export interface BuildHarnessVersionCommandOptions {
@@ -105,7 +103,7 @@ export const buildHarnessVersionCommand = (
   }
   return {
     executable: entry.commandPath,
-    args: entry.launcher === "fmx" ? ["harness-version", entry.name, ...adminInstanceSelectorArgs(entry)] : ["harness-version"],
+    args: ["harness-version", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry)],
   }
 }
 
@@ -223,13 +221,13 @@ const resultForEntry = (
 
 // Firstmate reports a profile's catalog pin, not a shared upstream release.
 const shareableReleaseKeyFor = (entry: AdminProfileEntry): HarnessReleaseKey | undefined =>
-  entry.surface === "native" && entry.launcher === "fmx" ? undefined : harnessVersionReleaseKeyFor(entry)
+  entry.surface === "native" && entry.launcher === "firstmate" ? undefined : harnessVersionReleaseKeyFor(entry)
 
 const catalogPinnedObservation = (
   entry: AdminProfileEntry,
   observation: AdminHarnessVersionResult | undefined,
 ): AdminHarnessVersionResult | undefined =>
-  entry.launcher === "fmx" && entry.orchestration !== undefined && observation !== undefined
+  entry.launcher === "firstmate" && entry.orchestration !== undefined && observation !== undefined
     ? { ...observation, latest: { kind: "known", version: entry.orchestration.sourceRevision } }
     : observation
 
@@ -279,7 +277,7 @@ export const harnessVersionEntriesForForceResync = (
 ): ReadonlyArray<AdminProfileEntry> => {
   const operationKey = harnessVersionOperationKeyFor(selected)
   if (operationKey === undefined) return []
-  if (selected.launcher === "fmx") {
+  if (selected.launcher === "firstmate") {
     return entries.filter((entry) => harnessVersionOperationKeyFor(entry) === operationKey)
   }
   const releaseKey = harnessVersionReleaseKeyFor(selected)

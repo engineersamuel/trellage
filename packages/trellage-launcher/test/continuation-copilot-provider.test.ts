@@ -854,7 +854,7 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     })
     const input: GuideGenerateInput = {
       intent: "Explain the design.",
-      profileRef: "native:cpx/default",
+      profileRef: "native:copilot/default",
       workflowId: "assist",
       guide: {
         schemaVersion: 1,
@@ -907,7 +907,7 @@ describe("Copilot continuation model budgets and bounded repair", () => {
     })
     const result = await provider.generate({
       intent: "Explain.",
-      profileRef: "native:cpx/default",
+      profileRef: "native:copilot/default",
       workflowId: "assist",
       guideBody: "# Guide",
       guide: {

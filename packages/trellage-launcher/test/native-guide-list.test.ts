@@ -34,15 +34,15 @@ Use this profile for repository delivery.
 describe("native profile guide list", () => {
   it("adds guide metadata without changing existing profile fields", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "trellage-native-guides-"))
-    await mkdir(path.join(root, "native", "cpx"), { recursive: true })
+    await mkdir(path.join(root, "native", "copilot"), { recursive: true })
     await mkdir(path.join(root, "sandbox"), { recursive: true })
-    await writeFile(path.join(root, "native", "cpx", "hve.md"), guide)
+    await writeFile(path.join(root, "native", "copilot", "hve.md"), guide)
 
     const result = JSON.parse(
       await enrichNativeProfileList(
         JSON.stringify({
           schemaVersion: 1,
-          profiles: [{ launcher: "cpx", name: "hve", description: "HVE", sandbox: false }],
+          profiles: [{ launcher: "copilot", name: "hve", description: "HVE", sandbox: false }],
         }),
         root,
       ),
@@ -52,7 +52,7 @@ describe("native profile guide list", () => {
 
     expect(result.profiles).toEqual([
       {
-        launcher: "cpx",
+        launcher: "copilot",
         name: "hve",
         description: "HVE",
         sandbox: false,
@@ -77,9 +77,9 @@ describe("native profile guide list", () => {
 
   it("skips a native profile whose guide is absent from this checkout", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "trellage-native-guides-"))
-    await mkdir(path.join(root, "native", "cpx"), { recursive: true })
+    await mkdir(path.join(root, "native", "copilot"), { recursive: true })
     await mkdir(path.join(root, "sandbox"), { recursive: true })
-    await writeFile(path.join(root, "native", "cpx", "hve.md"), guide)
+    await writeFile(path.join(root, "native", "copilot", "hve.md"), guide)
 
     const warnings: Array<string> = []
     const write = process.stderr.write.bind(process.stderr)
@@ -93,8 +93,8 @@ describe("native profile guide list", () => {
         JSON.stringify({
           schemaVersion: 1,
           profiles: [
-            { launcher: "cpx", name: "hve" },
-            { launcher: "cpx", name: "tufte-vdqi" },
+            { launcher: "copilot", name: "hve" },
+            { launcher: "copilot", name: "tufte-vdqi" },
           ],
         }),
         root,
@@ -105,17 +105,17 @@ describe("native profile guide list", () => {
 
     const parsed = JSON.parse(result) as { readonly profiles: ReadonlyArray<{ readonly name: string }> }
     expect(parsed.profiles.map((profile) => profile.name)).toEqual(["hve"])
-    expect(warnings.join("")).toContain("skipping native:cpx/tufte-vdqi")
+    expect(warnings.join("")).toContain("skipping native:copilot/tufte-vdqi")
   })
 
   it("fails when a native profile guide is present but malformed", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "trellage-native-guides-"))
-    await mkdir(path.join(root, "native", "cpx"), { recursive: true })
+    await mkdir(path.join(root, "native", "copilot"), { recursive: true })
     await mkdir(path.join(root, "sandbox"), { recursive: true })
-    await writeFile(path.join(root, "native", "cpx", "hve.md"), "# no frontmatter\n")
+    await writeFile(path.join(root, "native", "copilot", "hve.md"), "# no frontmatter\n")
 
     await expect(
-      enrichNativeProfileList(JSON.stringify({ schemaVersion: 1, profiles: [{ launcher: "cpx", name: "hve" }] }), root),
-    ).rejects.toThrow("native/cpx/hve.md")
+      enrichNativeProfileList(JSON.stringify({ schemaVersion: 1, profiles: [{ launcher: "copilot", name: "hve" }] }), root),
+    ).rejects.toThrow("native/copilot/hve.md")
   })
 })

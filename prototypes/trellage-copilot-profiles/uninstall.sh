@@ -13,7 +13,7 @@ installed_statusline="$install_root/lib/trellage-statusline.sh"
 installed_model_settings="$install_root/lib/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-profiles"
 ownership_value='trellage-profiles-v1'
-command_dir="$local_dir/bin"
+command_dir="$runtime_parent/.native-commands"
 command_path="$command_dir/cpx"
 
 refuse() {
@@ -56,7 +56,7 @@ require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime a
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
-require_safe_existing_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 if [[ ! -e "$install_root" ]]; then
   if [[ -e "$command_path" || -L "$command_path" ]]; then

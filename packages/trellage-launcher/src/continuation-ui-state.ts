@@ -217,7 +217,7 @@ export const continuationProjectTargetProblem = (
 ): string | null => {
   const { action, edit } = continuationAction(draft, actionId)
   const profile = continuationProfile(draft, actionId, profiles)
-  if (!profile?.orchestration && !(edit.profileRef ?? action.profileRef).startsWith("native:fmx/")) {
+  if (!profile?.orchestration && !(edit.profileRef ?? action.profileRef).startsWith("native:firstmate/")) {
     return unsupportedContinuationProjectTargetProblem(edit)
   }
   if (edit.projectTargetConfirmed !== true || edit.projectTarget === undefined) {
@@ -236,7 +236,7 @@ export const continuationPreparedGuidePrompt = (
   profiles: ReadonlyArray<ContinuationProfileOption>,
 ) => {
   const profile = continuationProfile(draft, actionId, profiles)
-  if (profile === undefined || (profile.orchestration === undefined && !profile.ref.startsWith("native:fmx/"))) return undefined
+  if (profile === undefined || (profile.orchestration === undefined && !profile.ref.startsWith("native:firstmate/"))) return undefined
   if (profile.guide === undefined) throw new Error("The authored Firstmate guide is unavailable. Reload the catalog before editing.")
   const { action, edit } = continuationAction(draft, actionId)
   const problem = continuationProjectTargetProblem(draft, actionId, profiles)
@@ -336,7 +336,7 @@ const firstmateRequestMatchesAction = (
   request.originalIntent === edit.originalIntent &&
   request.generatedSpec === edit.prompt &&
   request.workflowId === (edit.workflowId ?? action.workflowId) &&
-  `native:fmx/${request.expectedFleet.profile}` === profile.ref &&
+  `native:firstmate/${request.expectedFleet.profile}` === profile.ref &&
   request.expectedFleet.sourceRevision === profile.orchestration?.sourceRevision &&
   JSON.stringify(request.projectTarget) === JSON.stringify(edit.projectTarget)
 

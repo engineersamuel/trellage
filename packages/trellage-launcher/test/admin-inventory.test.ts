@@ -4,13 +4,13 @@ import type { AdminProfileEntry } from "../src/admin-model.ts"
 import { buildInventoryCommand, parseInventoryOutput } from "../src/admin-inventory.ts"
 
 const entry: AdminProfileEntry = {
-  ref: "native:cpx:hve",
+  ref: "native:copilot:hve",
   surface: "native",
-  launcher: "cpx",
+  launcher: "copilot",
   harness: "copilot",
   name: "hve",
   description: "Copilot native profile.",
-  commandPath: "/usr/local/bin/cpx",
+  commandPath: "/usr/local/bin/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -24,15 +24,15 @@ const entry: AdminProfileEntry = {
 describe("buildInventoryCommand", () => {
   it("builds `inventory PROFILE --json` against the entry's own command path", () => {
     expect(buildInventoryCommand(entry)).toEqual({
-      executable: "/usr/local/bin/cpx",
-      args: ["inventory", "hve", "--json"],
+      executable: "/usr/local/bin/trx",
+      args: ["inventory", "copilot", "hve", "--json"],
     })
   })
 })
 
 const validSource = JSON.stringify({
   schemaVersion: 1,
-  launcher: "cpx",
+  launcher: "copilot",
   harness: "copilot",
   profile: "hve",
   readiness: "healthy",

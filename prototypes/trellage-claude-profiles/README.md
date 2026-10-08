@@ -1,6 +1,8 @@
 # Native Claude Code profile
 
-`cldx` runs the host-installed
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run claude PROFILE` runs the host-installed
 [Claude Code](https://github.com/anthropics/claude-code) executable with
 isolated profiles. It uses keyless `copilot-proxy-rs` at
 `http://127.0.0.1:8080`. It defaults to `claude-sonnet-5.5` at `medium` effort
@@ -24,35 +26,35 @@ variables before setting the local proxy endpoint and non-secret auth sentinel.
 
 ```bash
 ./install.sh
-cldx setup
-cldx doctor
-cldx
-cldx -p "Reply exactly CLDX_OK"
-cldx --model claude-opus-5.5 -p "Reply exactly CLDX_OPUS_OK"
-cldx repair
-cldx harness-update
+trx setup claude default
+trx doctor claude default
+trx run claude default
+trx run claude default -p "Reply exactly CLDX_OK"
+trx run claude default --model claude-opus-5.5 -p "Reply exactly CLDX_OPUS_OK"
+trx repair claude default
+trx upgrade claude default --harness-only
 ```
 
 ## Office profiles
 
 ```bash
-cldx setup office
-cldx doctor office
-cldx office
+trx setup claude office
+trx doctor claude office
+trx run claude office
 ```
 
 `office` installs `document-skills@anthropic-agent-skills` from the
 `anthropics/skills` marketplace in its isolated Claude home. It also installs
 `academic-pptx` from `Gabberflast/academic-pptx-skill` for presentation content
 and structure. The shared floating-skills manager installs this explicit
-selection from `skills.json`; it does not run an unpinned `npx skills add`.
+selection from `config.toml`; it does not run an unpinned `npx skills add`.
 The profile retains all `native-common` skills.
 
 The chart-heavy builder is opt-in through a separate profile:
 
 ```bash
-cldx setup office-charts
-cldx office-charts
+trx setup claude office-charts
+trx run claude office-charts
 ```
 
 `office-charts` includes everything in `office` plus `slide-maker` from
@@ -63,14 +65,14 @@ Setup and repair install or enable the document plugin. Later launches reuse
 the installed plugin and cached skills, and restore a missing or disabled
 managed plugin. Install, validation, and skill fetch failures stop the launch.
 `doctor` and `inventory` check the document plugin without installing it.
-Use `trx skills update`, then `cldx skills-update office` (or
+Use `trx skills update`, then `trx upgrade claude office --skills-only` (or
 `office-charts`) to refresh the managed skill copies. Profile state lives at
 `~/.local/share/trellage/profiles/claude/<profile>/home/`. No plugin or skill
 is installed in your personal `~/.claude`.
 
 All profiles use the same Sonnet 5.5 medium / Opus 5.5 max model policy.
 The `opusplan` selector uses Sonnet for normal work and Opus in plan mode.
-Use `cldx office --permission-mode plan` to start in plan mode; an explicit
+Use `trx run claude office --permission-mode plan` to start in plan mode; an explicit
 permission mode takes precedence over the launcher's default bypass mode.
 Canonical Claude model IDs map to the proxy's dotted IDs so Claude recognizes
 the 5.5 model capabilities.
@@ -79,7 +81,7 @@ headless capabilities remain conservative until profile-specific live
 evidence is recorded; existing `default` evidence does not validate the
 document plugin combination.
 
-`cldx harness-update` updates the shared host Claude Code executable with its
+`trx upgrade claude default --harness-only` updates the shared host Claude Code executable with its
 built-in updater. It takes no profile argument, requires no profile setup or
 running proxy, and does not run an agent session. It uses the shared runtime's
 credential-environment scrub without adding profile, model, or proxy settings.
@@ -88,14 +90,14 @@ Updater output and failure status pass through unchanged.
 In `trx admin`, select `claude / default`, then press `U` and confirm with `y`.
 Native Claude updates remain separate from Claude container updates.
 
-`cldx skills-update default` copies and verifies only managed `native-common`
+`trx upgrade claude default --skills-only` copies and verifies only managed `native-common`
 skills after `trx skills update` refreshes the shared cache. It requires an
 existing owned profile. It preserves custom skills, authentication, settings,
 output styles, and session hooks. Missing caches, invalid ownership, unsafe
 paths, and name collisions fail closed. It never fetches, starts Claude, or
 checks or starts the proxy.
 
-The installer publishes `~/.local/bin/cldx` and owns its runtime beneath
+The installer keeps `cldx` as a private backend and owns its runtime beneath
 `~/.local/share/trellage/cldx/`. Claude profile state lives at:
 
 ```text
@@ -106,11 +108,10 @@ The installer publishes `~/.local/bin/cldx` and owns its runtime beneath
 without managing the user's theme preference in `settings.json` or changing
 unrelated state. Sessions remain isolated from direct `claude` use.
 
-Bare and explicit launches are equivalent:
+Launch the profile explicitly:
 
 ```bash
-cldx
-cldx default
+trx run claude default
 ```
 
 If the arguments do not contain `--model` or `--model=...`, `cldx` adds

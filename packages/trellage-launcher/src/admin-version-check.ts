@@ -2,13 +2,13 @@
  * Builds the `update --check PROFILE` command for a native profile and
  * tolerantly parses its stdout into a structured current/latest-version
  * result. `update --check` is documented as read-only for every launcher
- * that implements it (e.g. `fmx`'s own usage text: "always offline: it
+ * that implements it (e.g. `firstmate`'s own usage text: "always offline: it
  * compares the installed receipt to the catalog pin and never fetches";
- * `prx`/`jcx`/`omp`/`picx` resolve the latest eligible release via `mise`
+ * `prime`/`jcode`/`omp`/`pi` resolve the latest eligible release via `mise`
  * without mutating any installed state) — safe to run in the background
  * alongside doctor checks. Callers must check `entry.updateCheckSupported`
  * first (see `admin-model.ts`'s `launchersWithoutUpdateCheckSupport`;
- * currently only `cldx` lacks this command).
+ * currently only `claude` lacks this command).
  *
  * Each native launcher implements `update --check` independently and their
  * exact human-readable message text differs (verified directly against
@@ -26,13 +26,13 @@ import type { CommandSpec } from "./guide-launch.ts"
 /** Builds `update --check PROFILE` for a profile. Callers must check `entry.updateCheckSupported` first. */
 export const buildUpdateCheckCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: ["update", "--check", entry.name, ...adminInstanceSelectorArgs(entry)],
+  args: ["upgrade", entry.launcher!, entry.name, "--check", ...adminInstanceSelectorArgs(entry)],
 })
 
 /** Each pattern's capture group 1, when present, is the installed version/commit/pin named in that family's own output text. */
 const currentPatterns: ReadonlyArray<RegExp> = [
   // fmx: "fmx update: default is current (abc123def456)"
-  // cpx/grx: "default: current (1.2.3)"
+  // cpx: "default: current (1.2.3)"
   /\bcurrent\s*\(([^)]+)\)/i,
   // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
   /\b(\S+)\s+is current\b/i,
@@ -45,7 +45,7 @@ const currentPatterns: ReadonlyArray<RegExp> = [
 const updateAvailablePatterns: ReadonlyArray<RegExp> = [
   // prx/jcx/omp/picx: "prx update: 0.8.1 -> 0.9.0 available"
   /([^\s:][^\s]*)\s*->\s*([^\s]+?)\s+available/i,
-  // cpx/grx: "default: update available (1.2.3 -> 1.3.0)"
+  // cpx: "default: update available (1.2.3 -> 1.3.0)"
   /update available\s*\(\s*([^\s]+?)\s*->\s*([^\s)]+?)\s*\)/i,
   // fmx: "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)"
   /is stale\s*\(installed\s+([^\s,]+),\s*catalog pin\s+([^\s)]+)\)/i,

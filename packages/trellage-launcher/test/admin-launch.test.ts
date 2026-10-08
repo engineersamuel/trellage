@@ -19,13 +19,13 @@ import {
 } from "../src/admin-launch.ts"
 
 const nativeEntry: AdminProfileEntry = {
-  ref: "native:cpx:default",
+  ref: "native:copilot:default",
   surface: "native",
-  launcher: "cpx",
+  launcher: "copilot",
   harness: "copilot",
   name: "default",
   description: "Copilot native profile.",
-  commandPath: "/usr/local/bin/cpx",
+  commandPath: "/usr/local/bin/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -66,8 +66,8 @@ describe("toSelectedProfile", () => {
   it("maps a native admin entry to a native SelectedProfile", () => {
     expect(toSelectedProfile(nativeEntry)).toEqual({
       surface: "native",
-      launcher: "cpx",
-      commandPath: "/usr/local/bin/cpx",
+      launcher: "copilot",
+      commandPath: "/usr/local/bin/trx",
       profile: "default",
       headlessPrompt: false,
     })
@@ -86,8 +86,8 @@ describe("toSelectedProfile", () => {
 describe("buildAdminLaunchCommand", () => {
   it("delegates to the existing guide-launch command builder (no prompt argv, plain profile launch)", () => {
     expect(buildAdminLaunchCommand(nativeEntry)).toEqual({
-      executable: "/usr/local/bin/cpx",
-      args: ["default"],
+      executable: "/usr/local/bin/trx",
+      args: ["run", "copilot", "default"],
     })
   })
 })
@@ -95,8 +95,8 @@ describe("buildAdminLaunchCommand", () => {
 describe("buildDiagnosticCommand", () => {
   it("builds a native `doctor PROFILE` command", () => {
     expect(buildDiagnosticCommand(nativeEntry)).toEqual({
-      executable: "/usr/local/bin/cpx",
-      args: ["doctor", "default"],
+      executable: "/usr/local/bin/trx",
+      args: ["doctor", "copilot", "default"],
     })
   })
 
@@ -125,8 +125,8 @@ describe("isRepairSupported", () => {
 describe("buildRepairCommand", () => {
   it("builds a native `repair PROFILE` command using the same shape as buildDiagnosticCommand's doctor branch", () => {
     expect(buildRepairCommand(nativeEntry)).toEqual({
-      executable: "/usr/local/bin/cpx",
-      args: ["repair", "default"],
+      executable: "/usr/local/bin/trx",
+      args: ["repair", "copilot", "default"],
     })
   })
 })
@@ -141,28 +141,28 @@ describe("launchAdminProfile", () => {
   it("delegates to the injected runner with the built command once confirmed", async () => {
     const run = vi.fn().mockResolvedValue(undefined)
     await launchAdminProfile(nativeEntry, true, run)
-    expect(run).toHaveBeenCalledWith({ executable: "/usr/local/bin/cpx", args: ["default"] })
+    expect(run).toHaveBeenCalledWith({ executable: "/usr/local/bin/trx", args: ["run", "copilot", "default"] })
   })
 })
 
 describe("buildSetupCommand", () => {
   it("builds a native `setup PROFILE` command using the same shape as buildRepairCommand", () => {
     expect(buildSetupCommand(nativeEntry)).toEqual({
-      executable: "/usr/local/bin/cpx",
-      args: ["setup", "default"],
+      executable: "/usr/local/bin/trx",
+      args: ["setup", "copilot", "default"],
     })
   })
 })
 
 describe("repairRefFor", () => {
   it("builds a distinct ref namespaced under the profile's own ref", () => {
-    expect(repairRefFor(nativeEntry)).toBe("native:cpx:default::repair")
+    expect(repairRefFor(nativeEntry)).toBe("native:copilot:default::repair")
   })
 })
 
 describe("setupRefFor", () => {
   it("builds a distinct ref namespaced under the profile's own ref, separate from repairRefFor", () => {
-    expect(setupRefFor(nativeEntry)).toBe("native:cpx:default::setup")
+    expect(setupRefFor(nativeEntry)).toBe("native:copilot:default::setup")
     expect(setupRefFor(nativeEntry)).not.toBe(repairRefFor(nativeEntry))
   })
 })
@@ -198,7 +198,7 @@ describe("repairThenRecheckDoctor", () => {
     let observed: string | undefined
     await repairThenRecheckDoctor(nativeEntry, manager, async () => {
       observed = manager.status(nativeEntry.ref).state
-      expect(runner.calls.at(-1)?.args).toEqual(["doctor", "default"])
+      expect(runner.calls.at(-1)?.args).toEqual(["doctor", "copilot", "default"])
       expect(runner.calls).toHaveLength(needsSetup ? 4 : 2)
     })
     expect(observed).toBe("success")
@@ -210,8 +210,8 @@ describe("repairThenRecheckDoctor", () => {
     const outcome = await repairThenRecheckDoctor(nativeEntry, manager)
     expect(outcome).toEqual({ repairState: "success", doctorState: "success" })
     expect(runner.calls.map(({ executable, args }) => ({ executable, args }))).toEqual([
-      { executable: "/usr/local/bin/cpx", args: ["repair", "default"] },
-      { executable: "/usr/local/bin/cpx", args: ["doctor", "default"] },
+      { executable: "/usr/local/bin/trx", args: ["repair", "copilot", "default"] },
+      { executable: "/usr/local/bin/trx", args: ["doctor", "copilot", "default"] },
     ])
     expect(manager.status(repairRefFor(nativeEntry)).state).toBe("success")
     expect(manager.status(nativeEntry.ref).state).toBe("success")
@@ -244,10 +244,10 @@ describe("repairThenRecheckDoctor", () => {
     const outcome = await repairThenRecheckDoctor(nativeEntry, manager)
     expect(outcome).toEqual({ repairState: "success", setupState: "success", doctorState: "success" })
     expect(runner.calls.map(({ executable, args }) => ({ executable, args }))).toEqual([
-      { executable: "/usr/local/bin/cpx", args: ["repair", "default"] },
-      { executable: "/usr/local/bin/cpx", args: ["doctor", "default"] },
-      { executable: "/usr/local/bin/cpx", args: ["setup", "default"] },
-      { executable: "/usr/local/bin/cpx", args: ["doctor", "default"] },
+      { executable: "/usr/local/bin/trx", args: ["repair", "copilot", "default"] },
+      { executable: "/usr/local/bin/trx", args: ["doctor", "copilot", "default"] },
+      { executable: "/usr/local/bin/trx", args: ["setup", "copilot", "default"] },
+      { executable: "/usr/local/bin/trx", args: ["doctor", "copilot", "default"] },
     ])
     expect(manager.status(setupRefFor(nativeEntry)).state).toBe("success")
     expect(manager.status(nativeEntry.ref).state).toBe("success")

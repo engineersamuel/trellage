@@ -55,13 +55,13 @@ const renderEntry = (surface: "native" | "sandbox", harness: string, launcher: s
 
 describe("Admin harness update control", () => {
   it.each([
-    ["native", "copilot", "cpx"],
-    ["native", "claude", "cldx"],
+    ["native", "copilot", "copilot"],
+    ["native", "claude", "claude"],
     ["native", "oh-my-pi", "omp"],
-    ["native", "firstmate", "fmx"],
-    ["native", "jcode", "jcx"],
-    ["native", "pi", "picx"],
-    ["native", "prime", "prx"],
+    ["native", "firstmate", "firstmate"],
+    ["native", "jcode", "jcode"],
+    ["native", "pi", "pi"],
+    ["native", "prime", "prime"],
     ["sandbox", "claude", ""],
     ["sandbox", "codex", ""],
     ["sandbox", "copilot", ""],
@@ -73,9 +73,8 @@ describe("Admin harness update control", () => {
   })
 
   it.each([
-    ["codex", "youtube", "cdx"],
-    ["codex", "superpowers", "cdx"],
-    ["grok", "superpowers", "grx"],
+    ["codex", "youtube", "codex"],
+    ["codex", "superpowers", "codex"],
   ])("shows U for native %s/%s without starting a profile update", (harness, name, launcher) => {
     expect(renderEntry("native", harness, launcher, name)).toContain("[U] update harness")
   })

@@ -24,7 +24,7 @@ fail() {
 
 required_commands=(jq node trellage)
 if [[ "$live_scope" == all ]]; then
-  required_commands+=(cpx cldx omp)
+  required_commands+=(trx)
 fi
 for command_name in "${required_commands[@]}"; do
   command -v "$command_name" >/dev/null 2>&1 \
@@ -140,12 +140,8 @@ else
 fi
 
 if [[ "$live_scope" == all ]]; then
-  for inventory_command in \
-    'cpx list --json' \
-    'cldx list --json' \
-    'omp list --json'; do
-    read -r -a inventory_arguments <<<"$inventory_command"
-    "${inventory_arguments[@]}" >"$temp_root/${inventory_arguments[0]}-inventory.json"
+  for harness in copilot claude omp; do
+    trx list "$harness" --json >"$temp_root/$harness-inventory.json"
   done
 
   jq -e '
@@ -156,7 +152,7 @@ if [[ "$live_scope" == all ]]; then
       and (.headless.outputFormats | index("json") != null)
       and .headless.questionToolControl == "hard-deny"
     )
-  ' "$temp_root/cpx-inventory.json" >/dev/null \
+  ' "$temp_root/copilot-inventory.json" >/dev/null \
     || fail 'cpx hve is not publishing the recorded Copilot 1.0.81 contract'
   jq -e '
     any(.profiles[];
@@ -166,11 +162,11 @@ if [[ "$live_scope" == all ]]; then
       and .headless.usage == true
       and .headless.cost == true
     )
-  ' "$temp_root/cldx-inventory.json" >/dev/null \
+  ' "$temp_root/claude-inventory.json" >/dev/null \
     || fail 'cldx default is not publishing the recorded Claude 2.1.233 contract'
   jq -e '
     any(.profiles[];
-      .name == "copilot"
+      .name == "default"
       and .headless.testedHarnessVersion == "18.0.10"
       and .headless.prompt == true
       and .headless.questionToolControl == "prompt-only"
@@ -181,7 +177,7 @@ if [[ "$live_scope" == all ]]; then
   printf 'verify-headless-live-contracts: Native Copilot\n'
   cpx_output="$temp_root/cpx.jsonl"
   run_live "$cpx_output" "$temp_root/cpx.stderr" "$temp_root/cpx.timeout" \
-    cpx hve \
+    trx run copilot hve -- \
     --prompt 'Reply exactly TRELLAGE_CPX_LIVE_OK. Do not use tools.' \
     --output-format json \
     --disable-builtin-mcps \
@@ -204,7 +200,7 @@ if [[ "$live_scope" == all ]]; then
   printf 'verify-headless-live-contracts: Native Claude\n'
   cldx_initial="$temp_root/cldx-initial.jsonl"
   run_live "$cldx_initial" "$temp_root/cldx-initial.stderr" "$temp_root/cldx-initial.timeout" \
-    cldx default \
+    trx run claude default -- \
     --model claude-opus-5 \
     --tools '' \
     --output-format stream-json \
@@ -227,7 +223,7 @@ if [[ "$live_scope" == all ]]; then
 
   cldx_resume="$temp_root/cldx-resume.jsonl"
   run_live "$cldx_resume" "$temp_root/cldx-resume.stderr" "$temp_root/cldx-resume.timeout" \
-    cldx default \
+    trx run claude default -- \
     --model claude-opus-5 \
     --tools '' \
     --output-format stream-json \
@@ -247,7 +243,7 @@ if [[ "$live_scope" == all ]]; then
   printf 'verify-headless-live-contracts: Native OMP\n'
   omp_output="$temp_root/omp.out"
   run_live "$omp_output" "$temp_root/omp.stderr" "$temp_root/omp.timeout" \
-    omp copilot --headless-policy no-user-input \
+    trx run omp default -- --headless-policy no-user-input \
     -p 'Reply exactly TRELLAGE_OMP_LIVE_OK. Do not use tools.' \
     || fail 'OMP live probe failed'
   [[ "$(<"$omp_output")" == TRELLAGE_OMP_LIVE_OK ]] \

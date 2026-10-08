@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": {
     "default": {
-      "description": "Upstream Pi for daily coding with a fixed Vox extension workflow set and keyless gpt-5.6-sol routing.",
+      "description": "Upstream Pi for daily coding with a fixed Vox extension workflow set and keyless gpt-6-astra routing.",
       "headless": {
         "schemaVersion": 1,
         "prompt": true,

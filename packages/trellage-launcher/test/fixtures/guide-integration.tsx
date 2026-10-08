@@ -10,6 +10,7 @@ import { parseGuideCatalog } from "../../src/guide-catalog.ts"
 import { executeGuideUiResult } from "../../src/guide-interactive-execution.ts"
 import type { CommandRunner } from "../../src/guide-launch.ts"
 import { checkSelectedProfileReadiness } from "../../src/guide-preflight.ts"
+import { GuideWorkflowBodyError } from "../../src/guide-workflow-prompt.ts"
 import type { GuideProvider } from "../../src/guide-provider.ts"
 import { createInitialGuideRenderHandler } from "../../src/guide-terminal.ts"
 import { GuideApp, type GuideUiResult } from "../../src/guide-ui.tsx"
@@ -98,7 +99,7 @@ const catalog = parseGuideCatalog(
         harness: profile.harness,
         name: profile.name,
         description: `${profile.name} integration fixture`,
-        commandPath: path.join(root, "bin", profile.launcher),
+        commandPath: path.join(root, "bin", "trx"),
         guide: parsedGuides.get(profile.ref)?.guide,
         sandbox: false,
         herdrCompatibility: { status: "supported" },
@@ -205,6 +206,10 @@ const provider: GuideProvider = {
       },
       candidates,
     })
+    if (mode === FixtureMode.GenerationInvalid) {
+      throw new GuideWorkflowBodyError("generation", input.workflowId, "changed required workflow text")
+    }
+    if (mode === FixtureMode.GenerationUnavailable) throw new Error("Fixture provider unavailable")
     return input.goal === undefined ? { candidates } : goalModelProvider("generate", { candidates }).generate(input)
   },
   async optimize(input) {
@@ -263,7 +268,7 @@ const instance = render(
   directOptimize ? <GuideOptimizeApp services={optimizeServices} /> : <GuideApp
     catalog={{
       ...catalog,
-      native: catalog.native.map((entry) => entry.launcher === "cpx"
+      native: catalog.native.map((entry) => entry.launcher === "copilot"
         ? { ...entry, headless: { ...entry.headless, prompt: false, testedHarnessVersion: null } }
         : entry),
     }}

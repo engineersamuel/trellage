@@ -18,7 +18,7 @@ installed_model_settings="$install_root/lib/copilot-model-settings.py"
 model_settings_source="$source_dir/../trellage/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-profiles"
 ownership_value='trellage-profiles-v1'
-command_dir="$local_dir/bin"
+command_dir="$runtime_parent/.native-commands"
 command_path="$command_dir/cpx"
 runtime_owned=false
 
@@ -62,7 +62,7 @@ require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime a
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
-require_safe_existing_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 if [[ -e "$install_root" ]]; then
   [[ -d "$install_root" ]] || refuse "refusing unowned runtime root: $install_root"
@@ -111,7 +111,7 @@ require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime a
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
-require_safe_existing_directory "$command_dir" "$canonical_home/.local/bin" 'command directory'
+require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 require_safe_existing_directory "$install_root/assets" \
   "$canonical_home/.local/share/trellage/cpx/assets" 'runtime assets'
 require_safe_existing_directory "$install_root/lib" \
@@ -147,3 +147,6 @@ fi
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
 printf 'Installed cpx at %s\n' "$command_path"
+
+# Retire only the old public symlink; retain the installed backend and runtime.
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" cpx "$installed_launcher" "$ownership_marker" "$ownership_value"

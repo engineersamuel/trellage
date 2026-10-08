@@ -1,3 +1,5 @@
+import { canonicalNativeIdentity, canonicalProfileRef } from "@trellage/guide-core"
+import { canonicalNativeCommandPath } from "./guide-launch.ts"
 /**
  * Strict types and parsing for the combined `trx guide` catalog: the
  * enriched native `trx list --json` profiles (with a projected `guide` field
@@ -194,9 +196,9 @@ export const validateProfileGuideV1 = (
     validateWorkflow(item, `${path}.workflows[${index}]`),
   )
   if (context !== undefined && workflows.some(({ interaction }) => interaction !== undefined) &&
-      (context.identity.surface !== "native" || context.identity.launcher !== "cpx" ||
+      (context.identity.surface !== "native" || context.identity.launcher !== "copilot" ||
        context.identity.profile !== "hve" || context.harness !== "copilot")) {
-    fail(`${path}.workflows`, "interactive workflow checks currently require native:cpx/hve")
+    fail(`${path}.workflows`, "interactive workflow checks currently require native:copilot/hve")
   }
   uniqueArray(
     workflows.map(({ id }) => id),
@@ -345,16 +347,17 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
     "herdrCompatibility",
     "guide",
     "commandPath",
-  ], ["orchestration"])
+  ], ["orchestration", "backendPath"])
   const orchestration = fields.orchestration === undefined
     ? undefined
     : parseFirstmateOrchestrationV1(fields.orchestration, `${path}.orchestration`)
-  if (orchestration !== undefined && (fields.launcher !== "fmx" || fields.harness !== "firstmate")) {
+  if (orchestration !== undefined && (canonicalNativeIdentity(String(fields.launcher), String(fields.name)).launcher !== "firstmate" || fields.harness !== "firstmate")) {
     fail(`${path}.orchestration`, "is supported only for native Firstmate profiles")
   }
-  const launcher = identifier(fields.launcher, `${path}.launcher`)
+  const identity = canonicalNativeIdentity(identifier(fields.launcher, `${path}.launcher`), identifier(fields.name, `${path}.name`))
+  const launcher = identity.launcher
   const harness = identifier(fields.harness, `${path}.harness`)
-  const name = identifier(fields.name, `${path}.name`)
+  const name = identity.profile
   return {
     launcher,
     harness,
@@ -367,7 +370,7 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
       identity: { surface: "native", launcher, profile: name },
       harness,
     }),
-    commandPath: absolutePath(fields.commandPath, `${path}.commandPath`, 4096),
+    commandPath: canonicalNativeCommandPath(absolutePath(fields.commandPath, `${path}.commandPath`, 4096)),
     ...(orchestration === undefined ? {} : { orchestration }),
   }
 }
@@ -566,7 +569,7 @@ export const guideCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArra
 ]
 
 export const findGuideCatalogEntry = (catalog: CombinedGuideCatalog, ref: string): GuideCatalogEntryRef | undefined =>
-  guideCatalogEntries(catalog).find((entry) => entry.ref === ref)
+  guideCatalogEntries(catalog).find((entry) => entry.ref === canonicalProfileRef(ref))
 
 /** A `ref -> known workflow IDs` index, used to validate model-referenced workflow IDs. */
 export const guideCatalogWorkflowIndex = (catalog: CombinedGuideCatalog): ReadonlyMap<string, ReadonlySet<string>> =>
@@ -591,7 +594,7 @@ export interface CompactProfileGuide {
 }
 
 const crossCuttingPinnedWorkflows: Readonly<Record<string, string>> = {
-  "native:cpx/hve": "rpi-agent-cycle",
+  "native:copilot/hve": "rpi-agent-cycle",
   "sandbox:claude-council": "run-council-deliberation",
   "sandbox:claude-research": "vault-backed-research",
 }

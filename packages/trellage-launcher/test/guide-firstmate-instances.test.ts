@@ -70,8 +70,8 @@ const capability = parseFirstmateOrchestrationV1({
 })
 const unbound: NativeSelectedProfile = {
   surface: "native",
-  launcher: "fmx",
-  commandPath: "/opt/trellage/bin/fmx",
+  launcher: "firstmate",
+  commandPath: "/opt/trellage/bin/trx",
   profile: "default",
   headlessPrompt: false,
   orchestration: capability,
@@ -169,7 +169,7 @@ describe("Firstmate instance execution selection", () => {
   it("refuses unsupported backends, profile mismatch, and orphaned context", () => {
     expect(() => firstmateInstanceSelectorArgs({ ...selected, orchestration: oldCapability })).toThrow(/does not support/)
     expect(() => firstmateInstanceSelectorArgs({ ...selected, profile: "pstack-workers" })).toThrow(/selected profile/)
-    expect(() => firstmateInstanceSelectorArgs({ ...selected, launcher: "cldx" })).toThrow(/Native fmx/)
+    expect(() => firstmateInstanceSelectorArgs({ ...selected, launcher: "claude" })).toThrow(/Native firstmate/)
     expect(() => firstmateInstanceSelectorArgs({ ...unbound, firstmateInstanceContext: context })).toThrow(/explicit instance reference/)
   })
 
@@ -217,8 +217,8 @@ describe("Firstmate instance command transport", () => {
     const runner = new Runner(source.map((page) => ok(page)))
     expect(await createFirstmateInstancesClient(runner, unbound, "/work/configuration").list()).toEqual(instances)
     expect(runner.calls.map(({ args }) => args)).toEqual([
-      ["instances", "list", "default", "--json", "--limit", "32"],
-      ["instances", "list", "default", "--json", "--limit", "32", "--cursor", source[0]!.page.nextCursor],
+      ["instances", "firstmate", "list", "default", "--json", "--limit", "32"],
+      ["instances", "firstmate", "list", "default", "--json", "--limit", "32", "--cursor", source[0]!.page.nextCursor],
     ])
     expect(runner.calls.every(({ options }) => options?.cwd === "/work/configuration")).toBe(true)
   })
@@ -256,9 +256,9 @@ describe("Firstmate instance command transport", () => {
     const client = createFirstmateInstancesClient(runner, unbound, "/work/configuration")
     expect((await client.resolve("/work/alpha")).state).toBe("matched")
     expect((await client.plan("alpha", "/work/alpha")).state).toBe("ready")
-    expect(runner.calls[0]!.args).toEqual(["instances", "resolve", "default", "--worktree", "/work/alpha", "--json"])
+    expect(runner.calls[0]!.args).toEqual(["instances", "firstmate", "resolve", "default", "--worktree", "/work/alpha", "--json"])
     expect(runner.calls[1]!.args).toEqual([
-      "instances", "plan", "default", "--name", "alpha", "--worktree", "/work/alpha",
+      "instances", "firstmate", "plan", "default", "--name", "alpha", "--worktree", "/work/alpha",
       "--json", "--expected-source-revision", sourceRevision,
     ])
     expect(runner.calls.every(({ options }) => options?.stdin === undefined && options?.cwd === "/work/configuration")).toBe(true)
@@ -280,7 +280,7 @@ describe("Firstmate instance command transport", () => {
     const runner = new Runner([ok(example("create"))])
     const result = await createFirstmateInstancesClient(runner, unbound, "/work/configuration").create(plan)
     expect(result.state).toBe("created")
-    expect(runner.calls[0]!.args).toEqual(["instances", "create", "default", "--json", "--approve-creation", plan.approvalDigest])
+    expect(runner.calls[0]!.args).toEqual(["instances", "firstmate", "create", "default", "--json", "--approve-creation", plan.approvalDigest])
     expect(runner.calls[0]!.options).toMatchObject({
       stdin: canonicalFirstmateInstanceJson(plan), cwd: "/work/configuration",
       timeoutMs: 180_000, terminationGraceMs: 10_000, outputOverflow: "terminate",
@@ -361,7 +361,7 @@ describe("Firstmate instance command transport", () => {
     const runner = new Runner([ok(moved)])
     expect(await createFirstmateInstancesClient(runner, unbound, "/work").refreshLocator(descriptor, "/work/moved-alpha")).toEqual(moved)
     expect(runner.calls[0]!.args).toEqual([
-      "instances", "refresh-locator", "default", "--instance", descriptor.reference.instanceId,
+      "instances", "firstmate", "refresh-locator", "default", "--instance", descriptor.reference.instanceId,
       "--worktree", "/work/moved-alpha", "--json", "--expected-binding-digest",
       firstmateWorktreeBindingDigest(descriptor.worktree.evidence), "--confirm",
     ])

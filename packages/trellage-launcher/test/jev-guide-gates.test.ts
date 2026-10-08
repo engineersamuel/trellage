@@ -6,7 +6,7 @@ import type { JevSystemOneClient } from "../src/jev-decisions.ts"
 const optimizeInput: GuideOptimizeInput = {
   originalIntent: "Add a typed parser and tests",
   targetTool: "copilot",
-  profileRef: "native:cpx/default",
+  profileRef: "native:copilot/default",
   candidates: [
     { title: "Focused", prompt: "Add a typed parser with boundary tests.", notes: "Focus on contract." },
     { title: "Thorough", prompt: "Add a typed parser and test invalid inputs.", notes: "Cover edge cases." },

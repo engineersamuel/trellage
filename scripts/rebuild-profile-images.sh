@@ -126,7 +126,6 @@ known_native_packages=(
   trellage-agency-profiles
   trellage-claude-profiles
   trellage-firstmate-profiles
-  trellage-grok-profiles
   trellage-jcode-profiles
   trellage-omp-profiles
   trellage-picx-profiles
@@ -206,29 +205,37 @@ install_native_stack() {
     return 1
   fi
 
-  printf 'rebuild-profile-images: verifying native commands on PATH\n' >&2
-  local cmd resolved runtime
-  for cmd in cdx cpx agx cldx fmx grx jcx omp picx prx trx; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-      printf 'rebuild-profile-images: missing required command on PATH: %s\n' "$cmd" >&2
+  printf 'rebuild-profile-images: verifying public trx and owned private backends\n' >&2
+  if ! command -v trx >/dev/null 2>&1; then
+    printf 'rebuild-profile-images: missing required command on PATH: trx\n' >&2
+    status=1
+  elif trx --help >/dev/null 2>&1; then
+    printf 'rebuild-profile-images: trx --help ok\n' >&2
+  else
+    printf 'rebuild-profile-images: trx --help failed\n' >&2
+    status=1
+  fi
+
+  local record cmd package version runtime marker ownership
+  for record in 'cdx codex v2' 'cpx copilot v1' 'agx agency v1' 'cldx claude v1' \
+    'fmx firstmate v1' 'jcx jcode v1' 'omp omp v2' 'picx picx v1' 'prx prime v1'; do
+    read -r cmd package version <<<"$record"
+    runtime="$HOME/.local/share/trellage/$cmd"
+    marker="trellage-$package-profiles"
+    [[ "$cmd" != cpx ]] || marker=trellage-profiles
+    ownership="$runtime/.managed-by-$marker"
+    if [[ ! -d "$runtime" || -L "$runtime" || -L "$runtime/bin" \
+      || ! -f "$runtime/bin/$cmd" || -L "$runtime/bin/$cmd" || ! -x "$runtime/bin/$cmd" ]]; then
+      printf 'rebuild-profile-images: missing or unsafe private backend: %s\n' "$cmd" >&2
       status=1
-      continue
-    fi
-    resolved="$(command -v "$cmd")"
-    if [[ -L "$resolved" ]]; then
-      runtime="$(readlink "$resolved" 2>/dev/null || true)"
-      printf 'rebuild-profile-images: %s -> %s\n' "$cmd" "$runtime" >&2
+    elif [[ ! -f "$ownership" || -L "$ownership" \
+      || "$(<"$ownership")" != "$marker-$version" ]]; then
+      printf 'rebuild-profile-images: invalid private backend ownership: %s\n' "$cmd" >&2
+      status=1
     else
-      printf 'rebuild-profile-images: %s -> %s\n' "$cmd" "$resolved" >&2
+      printf 'rebuild-profile-images: private backend %s -> %s/bin/%s\n' "$cmd" "$runtime" "$cmd" >&2
     fi
   done
-
-  if command -v trx >/dev/null 2>&1; then
-    # Best-effort catalog sanity; do not require TTY.
-    if trx --help >/dev/null 2>&1; then
-      printf 'rebuild-profile-images: trx --help ok\n' >&2
-    fi
-  fi
 
   return "$status"
 }

@@ -59,7 +59,7 @@ export const instanceOrchestration = parseFirstmateOrchestrationV1({
   preparation: { schemaVersion: 1 }, instances: { schemaVersion: 1 },
 })
 export const instanceProfile = (descriptor?: FirstmateNamedInstanceDescriptorV1): NativeSelectedProfile => ({
-  surface: "native", launcher: "fmx", profile: "default", commandPath: "/profiles/fmx",
+  surface: "native", launcher: "firstmate", profile: "default", commandPath: "/profiles/trx",
   headlessPrompt: false, orchestration: instanceOrchestration,
   ...(descriptor === undefined ? {} : {
     firstmateInstance: descriptor.reference,
@@ -69,7 +69,7 @@ export const instanceProfile = (descriptor?: FirstmateNamedInstanceDescriptorV1)
 })
 export const instanceCatalog = () => ({
   ...firstmateRuntimeCatalog(),
-  native: firstmateRuntimeCatalog().native.map((entry) => entry.launcher === "fmx" && entry.name === "default"
+  native: firstmateRuntimeCatalog().native.map((entry) => entry.launcher === "firstmate" && entry.name === "default"
     ? { ...entry, orchestration: instanceOrchestration } : entry),
 })
 export const instanceFleet = (
@@ -115,15 +115,15 @@ export class InstanceRunner implements CommandRunner {
   }
 
   private instanceCommand(args: ReadonlyArray<string>, options?: CommandRunOptions): CommandRunResult {
-    if (args[1] === "list") return this.ok(instanceList(this.instances))
-    if (args[1] === "resolve") {
+    if (args[2] === "list") return this.ok(instanceList(this.instances))
+    if (args[2] === "resolve") {
       const worktree = this.worktrees.get(args[args.indexOf("--worktree") + 1]!) ?? null
       const descriptor = this.instances.find((entry) => entry.mode === "named" &&
         entry.worktree.evidence.generationDigest === worktree?.generationDigest) ?? null
       return this.ok({ schemaVersion: 1, profile: "default", diagnostics: [], state: descriptor === null ? "not-found" : "matched", descriptor, worktree })
     }
-    if (args[1] === "plan") return this.ok({ schemaVersion: 1, profile: "default", diagnostics: [], state: "ready", plan: instancePlan() })
-    if (args[1] === "create") {
+    if (args[2] === "plan") return this.ok({ schemaVersion: 1, profile: "default", diagnostics: [], state: "ready", plan: instancePlan() })
+    if (args[2] === "create") {
       const plan = parseFirstmateInstanceCreationPlanV1(JSON.parse(options?.stdin ?? "null"))
       const descriptor = plan.reference.instanceId === alpha.reference.instanceId ? alpha : beta
       if (!this.instances.some((item) => item.reference?.instanceId === plan.reference.instanceId)) this.instances.push(descriptor)

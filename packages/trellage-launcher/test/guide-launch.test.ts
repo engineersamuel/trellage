@@ -41,15 +41,15 @@ import { guideGoalActivationInput, guideGoalApproachBudget, guideGoalArgvMaximum
 describe("profile worktree suggestions", () => {
   const profile = {
     surface: "native",
-    launcher: "cpx",
+    launcher: "copilot",
     profile: "hve",
-    commandPath: "cpx",
+    commandPath: "copilot",
     headlessPrompt: true,
   } as const
   it("uses profile identity and a normalized bounded topic", () => {
-    expect(suggestWorktreeBranch("Review my PR", profile)).toBe("wt/cpx-hve-review-my-pr")
-    expect(suggestWorktreeBranch("!!!", profile)).toBe("wt/cpx-hve-task")
-    expect(suggestWorktreeBranch("Réview / my PR", profile)).toBe("wt/cpx-hve-review-my-pr")
+    expect(suggestWorktreeBranch("Review my PR", profile)).toBe("wt/copilot-hve-review-my-pr")
+    expect(suggestWorktreeBranch("!!!", profile)).toBe("wt/copilot-hve-task")
+    expect(suggestWorktreeBranch("Réview / my PR", profile)).toBe("wt/copilot-hve-review-my-pr")
     expect(
       suggestWorktreeBranch("Review my PR", {
         surface: "sandbox",
@@ -67,7 +67,7 @@ describe("profile worktree suggestions", () => {
       const branch = suggestWorktreeBranch("abcdefghijklmnopqrstuv", long, reserved)
       expect(branch).toHaveLength(40)
       expect(execFileSync("git", ["check-ref-format", "--branch", branch], { encoding: "utf8" }).trim()).toBe(branch)
-      expect(branch).toMatch(/^wt\/cpx-abcdefghijk-[a-f0-9]{6}-[a-z]+(?:-\d+)?$/u)
+      expect(branch).toMatch(/^wt\/copilot-abcdefg-[a-f0-9]{6}-[a-z]+(?:-\d+)?$/u)
       if (i > 1) expect(branch.endsWith(`-${i}`)).toBe(true)
       reserved.push(branch)
     }
@@ -80,21 +80,21 @@ describe("profile worktree suggestions", () => {
     ).toBe(reserved[1])
   })
   it("distinguishes launchers and long profile identities without truncating the tag", () => {
-    expect(suggestWorktreeBranch("review", { ...profile, profile: "default" })).toBe("wt/cpx-default-review")
-    expect(suggestWorktreeBranch("review", { ...profile, launcher: "cdx", profile: "default" })).toBe(
-      "wt/cdx-default-review",
+    expect(suggestWorktreeBranch("review", { ...profile, profile: "default" })).toBe("wt/copilot-default-review")
+    expect(suggestWorktreeBranch("review", { ...profile, launcher: "codex", profile: "default" })).toBe(
+      "wt/codex-default-review",
     )
     const first = suggestWorktreeBranch("x".repeat(100), { ...profile, profile: "a".repeat(80) })
     const second = suggestWorktreeBranch("x".repeat(100), { ...profile, profile: `${"a".repeat(79)}b` })
     expect(first).not.toBe(second)
-    expect(first).toMatch(/^wt\/cpx-a{11}-[a-f0-9]{6}-x{14}$/u)
+    expect(first).toMatch(/^wt\/copilot-a{7}-[a-f0-9]{6}-x{14}$/u)
     expect(suggestWorktreeBranch("x".repeat(100), { ...profile, profile: "a".repeat(80) })).toBe(first)
   })
   it("uses word boundaries and accepts trimmed reservations", () => {
-    expect(suggestWorktreeBranch("Review the login flow for regressions", profile)).toBe("wt/cpx-hve-review-the")
-    expect(suggestWorktreeBranch("", profile)).toBe("wt/cpx-hve-task")
-    expect(suggestWorktreeBranch("review", profile, [" wt/cpx-hve-review ", "wt/cpx-hve-review-3"])).toBe(
-      "wt/cpx-hve-review-2",
+    expect(suggestWorktreeBranch("Review the login flow for regressions", profile)).toBe("wt/copilot-hve-review-the")
+    expect(suggestWorktreeBranch("", profile)).toBe("wt/copilot-hve-task")
+    expect(suggestWorktreeBranch("review", profile, [" wt/copilot-hve-review ", "wt/copilot-hve-review-3"])).toBe(
+      "wt/copilot-hve-review-2",
     )
   })
 })
@@ -175,16 +175,16 @@ const clock = (): { readonly time: TimeController; readonly advance: (ms: number
 
 const nativeProfile = parseSelectedProfile({
   surface: "native",
-  launcher: "cpx",
-  commandPath: "/opt/trellage/bin/cpx",
+  launcher: "copilot",
+  commandPath: "/opt/trellage/bin/trx",
   profile: "hve-core",
   headlessPrompt: true,
 })
 
 const codexProfile = parseSelectedProfile({
   surface: "native",
-  launcher: "cdx",
-  commandPath: "/opt/trellage/bin/cdx",
+  launcher: "codex",
+  commandPath: "/opt/trellage/bin/trx",
   profile: "pstack",
   headlessPrompt: true,
 })
@@ -197,10 +197,10 @@ const sandboxProfile = parseSelectedProfile({
 })
 
 const bareCommand: CommandSpec = {
-  executable: "/opt/trellage/bin/cpx",
-  args: ["hve-core"],
+  executable: "/opt/trellage/bin/trx",
+  args: ["run", "copilot", "hve-core"],
 }
-const automatedBareCommandPreview = "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cpx hve-core"
+const automatedBareCommandPreview = "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run copilot hve-core"
 
 const linkedHead = "1111111111111111111111111111111111111111"
 const primaryHead = "2222222222222222222222222222222222222222"
@@ -209,11 +209,11 @@ describe("guide launch command building", () => {
   it("keeps Codex goal text out of both interactive startup and exec argv", () => {
     const { profile, candidate } = goalTransportFixture()
     expect(buildGuideLaunchCommand(profile, { mode: "argv", prompt: candidate.prompt }, candidate.goalExecution)).toEqual({
-      command: { executable: profile.commandPath, args: ["superpowers"] },
+      command: { executable: profile.commandPath, args: ["run", "codex", "superpowers"] },
       promptHandling: "manual-paste",
     })
     expect(buildHerdrGuideLaunch(profile, candidate.prompt, candidate.goalExecution)).toEqual({
-      command: { executable: profile.commandPath, args: ["superpowers"] },
+      command: { executable: profile.commandPath, args: ["run", "codex", "superpowers"] },
       promptDelivery: "manual",
     })
   })
@@ -221,12 +221,12 @@ describe("guide launch command building", () => {
   it("uses Claude print goal dispatch but does not change an interactive Herdr session to print mode", () => {
     const { profile, candidate } = goalTransportFixture("claude-goal")
     expect(buildGuideLaunchCommand(profile, { mode: "argv", prompt: candidate.prompt }, candidate.goalExecution)).toEqual({
-      command: { executable: profile.commandPath, args: ["default", "-p", candidate.prompt] },
+      command: { executable: profile.commandPath, args: ["run", "claude", "default", "-p", candidate.prompt] },
       promptHandling: "argv",
     })
 
     expect(buildHerdrGuideLaunch(profile, candidate.prompt, candidate.goalExecution)).toEqual({
-      command: { executable: profile.commandPath, args: ["default"] },
+      command: { executable: profile.commandPath, args: ["run", "claude", "default"] },
       promptDelivery: "manual",
     })
     const interactive = { ...profile, headlessPrompt: false }
@@ -273,15 +273,15 @@ describe("guide launch command building", () => {
     expect(() => buildHerdrGuideLaunch(profile, "Unprotected approach", candidate.goalExecution)).toThrow(/no longer matches/u)
     expect(() => buildHerdrGuideLaunch({ ...profile, goalExecutionPolicy: { controller: "codex-goal", workflowIds: ["other"] } }, candidate.prompt, candidate.goalExecution)).toThrow(/does not declare/u)
     expect(() => buildHerdrGuideLaunch(
-      parseSelectedProfile({ ...profile, launcher: "cpx", commandPath: "/opt/trellage/bin/cpx" }),
+      parseSelectedProfile({ ...profile, launcher: "copilot", commandPath: "/opt/trellage/bin/trx" }),
       candidate.prompt, candidate.goalExecution,
     )).toThrow(/supported launch path/u)
   })
 
   it("builds native and sandbox argv without command text injection", () => {
     expect(buildGuideLaunchCommand(nativeProfile).command).toEqual({
-      executable: "/opt/trellage/bin/cpx",
-      args: ["hve-core"],
+      executable: "/opt/trellage/bin/trx",
+      args: ["run", "copilot", "hve-core"],
     })
     expect(buildGuideLaunchCommand(sandboxProfile).command).toEqual({
       executable: "/opt/trellage/bin/trellage",
@@ -291,7 +291,7 @@ describe("guide launch command building", () => {
 
   it("builds trusted Herdr prompt delivery for embedded and Sandbox profiles", () => {
     expect(buildHerdrGuideLaunch(nativeProfile, "Run /council now")).toEqual({
-      command: { executable: "/opt/trellage/bin/cpx", args: ["hve-core", "-i", "Run /council now"] },
+      command: { executable: "/opt/trellage/bin/trx", args: ["run", "copilot", "hve-core", "-i", "Run /council now"] },
       promptDelivery: "command",
     })
     expect(buildHerdrGuideLaunch(sandboxProfile, "Research this")).toEqual({
@@ -309,9 +309,9 @@ describe("guide launch command building", () => {
     const sandboxResult = buildGuideLaunchCommand(sandboxProfile, { mode: "argv", prompt })
 
     expect(nativeResult.promptHandling).toBe("argv")
-    expect(nativeResult.command.executable).toBe("/opt/trellage/bin/cpx")
-    expect(nativeResult.command.args).toEqual(["hve-core", "-i", prompt])
-    expect(nativeResult.command.args[2]).toBe(prompt)
+    expect(nativeResult.command.executable).toBe("/opt/trellage/bin/trx")
+    expect(nativeResult.command.args).toEqual(["run", "copilot", "hve-core", "-i", prompt])
+    expect(nativeResult.command.args[4]).toBe(prompt)
     expect(sandboxResult.promptHandling).toBe("argv")
     expect(sandboxResult.command.executable).toBe("/opt/trellage/bin/trellage")
     expect(sandboxResult.command.args).toEqual(["--profile", "prime-agent", prompt])
@@ -323,15 +323,15 @@ describe("guide launch command building", () => {
 
     expect(buildGuideLaunchCommand(codexProfile, { mode: "argv", prompt })).toEqual({
       command: {
-        executable: "/opt/trellage/bin/cdx",
-        args: ["pstack", "--", prompt],
+        executable: "/opt/trellage/bin/trx",
+        args: ["run", "codex", "pstack", "--", prompt],
       },
       promptHandling: "argv",
     })
     expect(buildHerdrGuideLaunch(codexProfile, prompt)).toEqual({
       command: {
-        executable: "/opt/trellage/bin/cdx",
-        args: ["pstack", "--", prompt],
+        executable: "/opt/trellage/bin/trx",
+        args: ["run", "codex", "pstack", "--", prompt],
       },
       promptDelivery: "command",
     })
@@ -345,20 +345,20 @@ describe("guide launch command building", () => {
         prompt,
       )
 
-    for (const launcher of ["cldx", "grx", "omp"]) {
-      expect(launch(launcher, `/opt/trellage/bin/${launcher}`)).toEqual({
-        command: { executable: `/opt/trellage/bin/${launcher}`, args: ["default", "--", prompt] },
+    for (const launcher of ["claude", "omp"]) {
+      expect(launch(launcher, "/opt/trellage/bin/trx")).toEqual({
+        command: { executable: "/opt/trellage/bin/trx", args: ["run", launcher, "default", "--", prompt] },
         promptDelivery: "command",
       })
     }
-    for (const launcher of ["picx", "prx"]) {
-      expect(launch(launcher, `/opt/trellage/bin/${launcher}`)).toEqual({
-        command: { executable: `/opt/trellage/bin/${launcher}`, args: ["default", prompt] },
+    for (const launcher of ["pi", "prime"]) {
+      expect(launch(launcher, "/opt/trellage/bin/trx")).toEqual({
+        command: { executable: "/opt/trellage/bin/trx", args: ["run", launcher, "default", prompt] },
         promptDelivery: "command",
       })
     }
-    expect(launch("jcx", "/opt/trellage/bin/jcx")).toEqual({
-      command: { executable: "/opt/trellage/bin/jcx", args: ["default"] },
+    expect(launch("jcode", "/opt/trellage/bin/trx")).toEqual({
+      command: { executable: "/opt/trellage/bin/trx", args: ["run", "jcode", "default"] },
       promptDelivery: "agent",
     })
   })
@@ -366,8 +366,8 @@ describe("guide launch command building", () => {
   it("places a validated Copilot agent override before the interactive prompt", () => {
     const profile = parseSelectedProfile({
       surface: "native",
-      launcher: "cpx",
-      commandPath: "/opt/trellage/bin/cpx",
+      launcher: "copilot",
+      commandPath: "/opt/trellage/bin/trx",
       profile: "hve",
       headlessPrompt: true,
       agent: "hve-core:rpi-agent",
@@ -376,7 +376,7 @@ describe("guide launch command building", () => {
 
     expect(result.promptHandling).toBe("argv")
     expect(result.command.args).toEqual([
-      "hve",
+      "run", "copilot", "hve",
       "--agent",
       "hve-core:rpi-agent",
       "-i",
@@ -393,7 +393,7 @@ describe("guide launch command building", () => {
     expect(buildGuideLaunchCommand(selected, { mode: "argv", prompt: "Discover the customer problem." })).toEqual({
       command: {
         executable: nativeProfile.commandPath,
-        args: ["hve-core", "--agent", "hve-core:dt-coach"],
+        args: ["run", "copilot", "hve-core", "--agent", "hve-core:dt-coach"],
       },
       promptHandling: "manual-paste",
     })
@@ -406,8 +406,8 @@ describe("guide launch command building", () => {
   it("keeps launcher identity and validates absolute command paths", () => {
     expect(nativeProfile).toMatchObject({
       surface: "native",
-      launcher: "cpx",
-      commandPath: "/opt/trellage/bin/cpx",
+      launcher: "copilot",
+      commandPath: "/opt/trellage/bin/trx",
     })
     expect(sandboxProfile).toMatchObject({
       surface: "sandbox",
@@ -416,8 +416,8 @@ describe("guide launch command building", () => {
     expect(() =>
       parseSelectedProfile({
         surface: "native",
-        launcher: "cpx",
-        commandPath: "cpx",
+        launcher: "copilot",
+        commandPath: "copilot",
         profile: "hve-core",
         headlessPrompt: true,
       }),
@@ -433,18 +433,18 @@ describe("guide launch command building", () => {
     expect(() =>
       parseSelectedProfile({
         surface: "native",
-        launcher: "cdx",
-        commandPath: "/opt/trellage/bin/cdx",
+        launcher: "codex",
+        commandPath: "/opt/trellage/bin/trx",
         profile: "hve",
         headlessPrompt: true,
         agent: "hve-core:rpi-agent",
       }),
-    ).toThrow(/only by the cpx launcher/)
+    ).toThrow(/only by the Copilot harness/)
     expect(() =>
       parseSelectedProfile({
         surface: "native",
-        launcher: "cpx",
-        commandPath: "/opt/trellage/bin/cpx",
+        launcher: "copilot",
+        commandPath: "/opt/trellage/bin/trx",
         profile: "hve",
         headlessPrompt: true,
         agent: "--unsafe",
@@ -926,7 +926,7 @@ describe("direct pane prompt delivery", () => {
   it("returns a manual-needed outcome immediately after starting, without polling or terminal injection", async () => {
     const { profile, candidate } = goalTransportFixture()
     const built = buildHerdrGuideLaunch(profile, candidate.prompt, candidate.goalExecution)
-    const preview = "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx superpowers"
+    const preview = "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run codex superpowers"
     const runner = new FakeRunner([{ executable: "herdr", args: ["pane", "run", "w1:p2", preview] }])
     const phases: string[] = []
     await expect(launchInHerdrPaneAndPrompt(runner, {

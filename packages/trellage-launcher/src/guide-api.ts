@@ -1,3 +1,4 @@
+import { canonicalProfileRef } from "@trellage/guide-core"
 /**
  * Provider-neutral, side-effect-free headless service for `trx guide --json`.
  *
@@ -639,7 +640,7 @@ const findFullCatalogEntry = (
         surface: "native",
         launcher: entry.launcher,
         profile: entry.name,
-      }) === ref,
+      }) === canonicalProfileRef(ref),
   )
   if (native !== undefined) return native
   return catalog.sandbox.find((entry) => profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }) === ref)
@@ -1048,7 +1049,7 @@ export const publicGuideLaunchCommand = (
   goalExecution?: GuideGoalCandidateContext,
 ): PublicGuideCommand => {
   const selected = selectedProfileFromCatalogRef(catalog, ref, workflowId)
-  const executable = selected.surface === "native" ? selected.launcher : "trellage"
+  const executable = selected.surface === "native" ? "trx" : "trellage"
   if (goalExecution !== undefined) {
     if (goalExecution.workflow.id !== workflowId) {
       throw new GuideServiceError("The goal candidate does not belong to the selected workflow.")
@@ -1229,8 +1230,8 @@ export const applyWorkflowPromptTemplate = (
 ): GuideGenerateCandidate => restoreWorkflowCandidateFrame(findGuideWorkflow(guide, workflowId), candidate)
 
 const requiredProfilePromptTemplateRefs: ReadonlySet<string> = new Set([
-  "native:fmx/default",
-  "native:fmx/pstack-workers",
+  "native:firstmate/default",
+  "native:firstmate/pstack-workers",
 ])
 
 const firstmateContractHeadings: ReadonlySet<string> = new Set([
@@ -1533,7 +1534,7 @@ export interface LiteralGuideCandidate {
 const profileIdentityAliases = (entry: GuideMatchCatalogEntry): ReadonlyArray<string> => {
   if (entry.launcher === undefined) return [entry.ref, `sandbox/${entry.name}`, `sandbox ${entry.name}`]
   const aliases = [entry.ref, `${entry.launcher}/${entry.name}`, `${entry.launcher} ${entry.name}`]
-  if (entry.launcher !== "fmx") return aliases
+  if (entry.launcher !== "firstmate") return aliases
   return [
     ...aliases,
     `firstmate ${entry.name}`,
@@ -1571,7 +1572,7 @@ export const prioritizeExplicitFirstmate = (
 ): ReadonlyArray<GuideMatchCandidate> => {
   const named = entries.filter((entry) => namesProfile(entry, intent))
   const entry = named.length === 1 ? named[0] : undefined
-  if (entry?.launcher !== "fmx" || !explicitlyChoosesProfile(entry, intent)) return candidates
+  if (entry?.launcher !== "firstmate" || !explicitlyChoosesProfile(entry, intent)) return candidates
   const existing = candidates.find(({ profileRef }) => profileRef === entry.ref)
   const selected: GuideMatchCandidate = existing === undefined
     ? {
@@ -1680,7 +1681,7 @@ const ordinaryMatchEntries = (
   scoreGuideMatchEntries(entries, intent).filter(({ explicitIdentity }) => explicitIdentity).map(({ entry }) => entry.ref),
 )
 
-const crossCuttingGuideProfileRefs: ReadonlyArray<string> = ["native:cdx/pstack", "sandbox:headlong"]
+const crossCuttingGuideProfileRefs: ReadonlyArray<string> = ["native:codex/pstack", "sandbox:headlong"]
 const guideMatchPrefilterTarget = 12
 const lowSignalMatchedTermMaximum = 2
 
@@ -1695,7 +1696,7 @@ const retainFleetCandidates = (
   retained: Set<string>,
 ): void => {
   if (!hasFleetIntent(intent)) return
-  for (const entry of entries) if (entry.launcher === "fmx") retained.add(entry.ref)
+  for (const entry of entries) if (entry.launcher === "firstmate") retained.add(entry.ref)
 }
 
 const goalMatchIntent = (goal: PreparedGuideGoal): string =>

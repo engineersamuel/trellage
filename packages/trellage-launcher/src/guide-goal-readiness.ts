@@ -137,7 +137,7 @@ const checkCodexGoal = async (
   }
   // Bare feature listing can silently skip project config that a cdx launch trusts.
   const features = await runner.run(
-    selected.commandPath, ["inventory", selected.profile, "--goal-features"], options,
+    selected.commandPath, ["inventory", selected.launcher, selected.profile, "--goal-features"], options,
   ).catch((error: unknown) => {
     if (error instanceof CommandRunnerError && error.kind === "exited") {
       throw new GoalReadinessUnknownError(
@@ -336,7 +336,7 @@ const checkClaudeGoal = async (
   signal?: AbortSignal,
 ): Promise<GuideGoalReadiness> => {
   const options = { cwd, timeoutMs: 30_000, ...(signal === undefined ? {} : { signal }) }
-  const version = await runner.run(selected.commandPath, ["harness-version"], options)
+  const version = await runner.run(selected.commandPath, ["harness-version", selected.launcher, selected.profile], options)
   const runtime = readClaudeRuntime(version.stdout, selected)
   if (runtime === undefined) return unknown("This Claude launcher does not expose its goal evaluator runtime. Refresh the managed launcher before automatic goal delivery, or inspect the runtime and use native input manually.")
   // Claude's published changelog introduces interactive and -p /goal in 2.1.139.

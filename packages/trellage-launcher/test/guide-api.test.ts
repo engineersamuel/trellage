@@ -364,15 +364,15 @@ describe("applyRequiredProfilePromptTemplate", () => {
   }
 
   it("wraps optimized fmx prompts with the authored operating contract", () => {
-    expect(applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", candidate).prompt).toBe(
+    expect(applyRequiredProfilePromptTemplate("native:firstmate/default", guide, "fleet", candidate).prompt).toBe(
       "## Firstmate operating contract\nKeep Firstmate as the sole router.\n\n## Task\nImplement the requested repository change.",
     )
   })
 
   it("does not duplicate an already wrapped fmx prompt", () => {
-    const wrapped = applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", candidate)
+    const wrapped = applyRequiredProfilePromptTemplate("native:firstmate/default", guide, "fleet", candidate)
 
-    expect(applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", wrapped)).toEqual(wrapped)
+    expect(applyRequiredProfilePromptTemplate("native:firstmate/default", guide, "fleet", wrapped)).toEqual(wrapped)
   })
 
   it("replaces a model-authored leading fleet contract instead of duplicating it", () => {
@@ -381,7 +381,7 @@ describe("applyRequiredProfilePromptTemplate", () => {
       prompt:
         "## Operating contract\nUse Firstmate as the sole fleet router.\n\n## Task\nImplement the requested repository change.",
     }
-    const wrapped = applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", modelCandidate)
+    const wrapped = applyRequiredProfilePromptTemplate("native:firstmate/default", guide, "fleet", modelCandidate)
 
     expect(wrapped.prompt).toBe(
       "## Firstmate operating contract\nKeep Firstmate as the sole router.\n\n## Task\nImplement the requested repository change.",
@@ -391,19 +391,19 @@ describe("applyRequiredProfilePromptTemplate", () => {
 
   it.each([
     {
-      profileRef: "native:fmx/default",
+      profileRef: "native:firstmate/default",
       workflowId: "investigation",
       modelHeading: "Firstmate investigation contract",
       authoredHeading: "Firstmate investigation contract",
     },
     {
-      profileRef: "native:fmx/default",
+      profileRef: "native:firstmate/default",
       workflowId: "investigation",
       modelHeading: "Investigation contract",
       authoredHeading: "Firstmate investigation contract",
     },
     {
-      profileRef: "native:fmx/pstack-workers",
+      profileRef: "native:firstmate/pstack-workers",
       workflowId: "pstack-investigation",
       modelHeading: "Firstmate pstack-worker investigation contract",
       authoredHeading: "Firstmate pstack-worker investigation contract",
@@ -445,14 +445,14 @@ describe("applyRequiredProfilePromptTemplate", () => {
       ].join("\n"),
     }
 
-    const wrapped = applyRequiredProfilePromptTemplate("native:fmx/default", guide, "fleet", taskCandidate)
+    const wrapped = applyRequiredProfilePromptTemplate("native:firstmate/default", guide, "fleet", taskCandidate)
 
     expect(wrapped.prompt).toContain(taskCandidate.prompt)
     expect(wrapped.prompt.match(/Firstmate operating contract/gu)).toHaveLength(1)
   })
 
   it("leaves other profiles unchanged", () => {
-    expect(applyRequiredProfilePromptTemplate("native:cdx/pstack", guide, "fleet", candidate)).toEqual(candidate)
+    expect(applyRequiredProfilePromptTemplate("native:codex/pstack", guide, "fleet", candidate)).toEqual(candidate)
   })
 })
 
@@ -518,7 +518,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
       sandboxCommandPath: "/opt/trellage/bin/trellage",
       native: [
         {
-          launcher: "cdx",
+          launcher: "codex",
           harness: "codex",
           name: "pstack",
           description: "Codex host-native launcher.",
@@ -526,10 +526,10 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide: guideCdxHve,
-          commandPath: "/opt/trellage/cdx/bin/cdx",
+          commandPath: "/opt/trellage/codex/bin/trx",
         },
         {
-          launcher: "jcx",
+          launcher: "jcode",
           harness: "jules",
           name: "foo",
           description: "Jules code-native launcher.",
@@ -537,7 +537,7 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           guide: guideFoo,
-          commandPath: "/opt/trellage/jcx/bin/jcx",
+          commandPath: "/opt/trellage/jcode/bin/trx",
         },
       ],
       sandbox: [
@@ -590,20 +590,20 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
 const withCdxPstackGuide = (catalog: CombinedGuideCatalog, guide: ProfileGuideV1): CombinedGuideCatalog => ({
   ...catalog,
   native: catalog.native.map((entry) =>
-    entry.launcher === "cdx" && entry.name === "pstack" ? { ...entry, guide } : entry,
+    entry.launcher === "codex" && entry.name === "pstack" ? { ...entry, guide } : entry,
   ),
 })
 
 const writeCdxPstackGuide = async (root: string, markdown: string): Promise<void> => {
-  await mkdir(path.join(root, "native", "cdx"), { recursive: true })
-  await writeFile(path.join(root, "native", "cdx", "pstack.md"), markdown)
+  await mkdir(path.join(root, "native", "codex"), { recursive: true })
+  await writeFile(path.join(root, "native", "codex", "pstack.md"), markdown)
 }
 
 /** Writes the guide Markdown fixtures matching the catalog's `foo` and `prime-agent` guides under `root`. */
 const writeGuideFixtures = async (root: string): Promise<void> => {
-  await mkdir(path.join(root, "native", "jcx"), { recursive: true })
+  await mkdir(path.join(root, "native", "jcode"), { recursive: true })
   await mkdir(path.join(root, "profile-guides", "sandbox"), { recursive: true })
-  await writeFile(path.join(root, "native", "jcx", "foo.md"), fooGuideMarkdown)
+  await writeFile(path.join(root, "native", "jcode", "foo.md"), fooGuideMarkdown)
   await writeFile(path.join(root, "profile-guides", "sandbox", "prime-agent.md"), primeAgentGuideMarkdown)
 }
 
@@ -671,7 +671,7 @@ describe("parseGuideHeadlessArgv", () => {
     expect(() => parseGuideHeadlessArgv(["--optimize", "--base", "main", "--base", "HEAD"])).toThrow("Duplicate flag")
     expect(() => parseGuideHeadlessArgv(["--optimize", "--base", ""])).toThrow()
     for (const flags of [
-      ["--json"], ["--next-steps"], ["--profile", "native:cdx/default"], ["--optimize"],
+      ["--json"], ["--next-steps"], ["--profile", "native:codex/default"], ["--optimize"],
       ["--ui-variant", "pager"],
     ]) {
       expect(() => parseGuideHeadlessArgv(["--optimize", ...flags])).toThrow(GuideArgsError)
@@ -704,7 +704,7 @@ describe("parseGuideHeadlessArgv", () => {
     ["--intent", "ordinary intent"],
     ["ordinary intent"],
     ["--intent-stdin"],
-    ["--profile", "native:cdx/pstack"],
+    ["--profile", "native:codex/pstack"],
     ["--ui-variant", "pager"],
     ["--next-steps"],
   ])("rejects next steps combined with %j", (...flags) => {
@@ -735,12 +735,12 @@ describe("parseGuideHeadlessArgv", () => {
   })
 
   it("accepts --profile only alongside --json", () => {
-    const args = parseGuideHeadlessArgv(["--json", "--intent", "Review my PR", "--profile", "native:cdx/pstack"])
-    expect(args.profile).toBe("native:cdx/pstack")
+    const args = parseGuideHeadlessArgv(["--json", "--intent", "Review my PR", "--profile", "native:codex/pstack"])
+    expect(args.profile).toBe("native:codex/pstack")
   })
 
   it("rejects --profile without --json", () => {
-    expect(() => parseGuideHeadlessArgv(["--intent", "Review my PR", "--profile", "native:cdx/pstack"])).toThrow(
+    expect(() => parseGuideHeadlessArgv(["--intent", "Review my PR", "--profile", "native:codex/pstack"])).toThrow(
       GuideArgsError,
     )
   })
@@ -873,7 +873,7 @@ describe("parseGuideServiceRequestJson", () => {
       JSON.stringify({
         schemaVersion: 1,
         intent: "Review my PR",
-        profile: "native:cdx/pstack",
+        profile: "native:codex/pstack",
         model: "gpt-5.4",
         effort: "xhigh",
       }),
@@ -881,7 +881,7 @@ describe("parseGuideServiceRequestJson", () => {
     expect(request).toEqual({
       schemaVersion: 1,
       intent: "Review my PR",
-      profile: "native:cdx/pstack",
+      profile: "native:codex/pstack",
       model: "gpt-5.4",
       effort: GuideEffort.XHigh,
     })
@@ -1006,7 +1006,7 @@ describe("runGuideMatch", () => {
         {
           candidates: [
             {
-              profileRef: "native:cdx/pstack",
+              profileRef: "native:codex/pstack",
               workflowId: "review",
               confidence: 0.9,
               reason: "Strong fit for reviewing diffs.",
@@ -1043,10 +1043,10 @@ describe("runGuideMatch", () => {
 
       const [first, second, third] = response.recommendations
       expect(first).toMatchObject({
-        profileRef: "native:cdx/pstack",
+        profileRef: "native:codex/pstack",
         workflowId: "review",
         surface: "native",
-        launcher: "cdx",
+        launcher: "codex",
         name: "pstack",
         sandbox: false,
       })
@@ -1102,14 +1102,14 @@ describe("runGuideMatch", () => {
         {
           candidates: [
             {
-              profileRef: "native:jcx/foo",
+              profileRef: "native:jcode/foo",
               workflowId: "deep-refactor",
               confidence: 0.9,
               reason: "Strong refactoring fit.",
               tradeoff: "Uses the Jules harness.",
             },
             {
-              profileRef: "native:cdx/pstack",
+              profileRef: "native:codex/pstack",
               workflowId: "review",
               confidence: 0.8,
               reason: "Structured engineering fit.",
@@ -1136,7 +1136,7 @@ describe("runGuideMatch", () => {
       const matchEntries = provider.matchCalls[0]?.entries ?? []
       expect(matchEntries).toHaveLength(12)
       expect(matchEntries.map(({ ref }) => ref)).toEqual(
-        expect.arrayContaining(["native:jcx/foo", "native:cdx/pstack", "sandbox:headlong"]),
+        expect.arrayContaining(["native:jcode/foo", "native:codex/pstack", "sandbox:headlong"]),
       )
     } finally {
       await rm(tmpRoot, { recursive: true, force: true })
@@ -1151,7 +1151,7 @@ describe("runGuideMatch", () => {
         {
           candidates: [
             {
-              profileRef: "native:cdx/pstack",
+              profileRef: "native:codex/pstack",
               workflowId: "review",
               confidence: 0.9,
               reason: "Strong fit.",
@@ -1258,7 +1258,7 @@ describe("runGuideGenerate", () => {
               tradeoff: "Sandboxed.",
             },
             {
-              profileRef: "native:cdx/pstack",
+              profileRef: "native:codex/pstack",
               workflowId: "review",
               confidence: 0.5,
               reason: "Alternative.",
@@ -1478,12 +1478,12 @@ describe("runGuideGenerate", () => {
     try {
       await writeGuideFixtures(tmpRoot)
       const catalog = buildCatalog(tmpRoot)
-      // The match candidates deliberately exclude native:jcx/foo.
+      // The match candidates deliberately exclude native:jcode/foo.
       const provider = new FakeGuideProvider(
         {
           candidates: [
             {
-              profileRef: "native:cdx/pstack",
+              profileRef: "native:codex/pstack",
               workflowId: "review",
               confidence: 0.9,
               reason: "Top pick.",
@@ -1510,7 +1510,7 @@ describe("runGuideGenerate", () => {
 
       const response = await runGuideGenerate(provider, catalog, tmpRoot, {
         intent: "Refactor the payment pipeline safely",
-        profileRef: "native:jcx/foo",
+        profileRef: "native:jcode/foo",
         model: "mai-code-1.1-flash",
         effort: GuideEffort.Medium,
       })
@@ -1519,11 +1519,11 @@ describe("runGuideGenerate", () => {
       expect(response.profile.workflowId).toBe("deep-refactor")
       expect(response.candidates[0]?.prompt).toBe("Prompt Master: Do the focused thing.")
       // "deep-refactor" declares no launchAgent, so --agent must be omitted.
-      expect(response.candidates[0]?.command.args).toEqual(["foo", "-p", "Prompt Master: Do the focused thing."])
+      expect(response.candidates[0]?.command.args).toEqual(["run", "jcode", "foo", "-p", "Prompt Master: Do the focused thing."])
       expect(provider.optimizeCalls).toEqual([
         {
           targetTool: "jules",
-          profileRef: "native:jcx/foo",
+          profileRef: "native:jcode/foo",
           bodyBudget: 8000,
           candidates: genCandidates().candidates,
         },
@@ -1576,14 +1576,14 @@ describe("runGuideGenerate", () => {
 
       const response = await runGuideGenerate(provider, catalog, tmpRoot, {
         intent: "Refactor the payment pipeline safely",
-        profileRef: "native:jcx/foo",
+        profileRef: "native:jcode/foo",
         model: "test-model",
         effort: GuideEffort.Medium,
       })
 
       expect(optimizeInput).toEqual({
         targetTool: "jules",
-        profileRef: "native:jcx/foo",
+        profileRef: "native:jcode/foo",
         bodyBudget: 8000,
         candidates: generatedCandidates,
       })
@@ -1633,7 +1633,7 @@ describe("runGuideGenerate", () => {
       await expect(
         runGuideGenerate(provider, catalog, tmpRoot, {
           intent: "Refactor the payment pipeline safely",
-          profileRef: "native:jcx/foo",
+          profileRef: "native:jcode/foo",
           model: "test-model",
           effort: GuideEffort.Medium,
         }),
@@ -1684,7 +1684,7 @@ describe("runGuideGenerate", () => {
 
       const response = await runGuideGenerate(provider, catalog, tmpRoot, {
         intent: "Refactor the payment pipeline safely",
-        profileRef: "native:jcx/foo",
+        profileRef: "native:jcode/foo",
         model: "test-model",
         effort: GuideEffort.Medium,
       })
@@ -1733,7 +1733,7 @@ describe("runGuideGenerate", () => {
       await expect(
         runGuideGenerate(provider, catalog, tmpRoot, {
           intent: "Capture this verified repository learning.",
-          profileRef: "native:cdx/pstack",
+          profileRef: "native:codex/pstack",
           model: "test-model",
           effort: GuideEffort.Medium,
         }),
@@ -1799,7 +1799,7 @@ describe("runGuideGenerate", () => {
       await expect(
         runGuideGenerate(provider, catalog, tmpRoot, {
           intent: "Capture this verified repository learning.",
-          profileRef: "native:cdx/pstack",
+          profileRef: "native:codex/pstack",
           model: "test-model",
           effort: GuideEffort.Medium,
         }),
@@ -1849,7 +1849,7 @@ describe("runGuideGenerate", () => {
       await expect(
         runGuideGenerate(provider, catalog, tmpRoot, {
           intent,
-          profileRef: "native:cdx/pstack",
+          profileRef: "native:codex/pstack",
           model: "test-model",
           effort: GuideEffort.Medium,
         }),
@@ -1911,7 +1911,7 @@ describe("runGuideGenerate", () => {
 
       const response = await runGuideGenerate(provider, catalog, tmpRoot, {
         intent: "Capture this verified repository learning.",
-        profileRef: "native:cdx/pstack",
+        profileRef: "native:codex/pstack",
         model: "test-model",
         effort: GuideEffort.Medium,
       })
@@ -1919,7 +1919,7 @@ describe("runGuideGenerate", () => {
       expect(optimizeCalls).toEqual([
         {
           targetTool: "Codex CLI terminal coding agent",
-          profileRef: "native:cdx/pstack",
+          profileRef: "native:codex/pstack",
           bodyBudget: 8000 - "/ce-compound mode:non-interactive ".length,
           candidates: [
             {
@@ -1957,7 +1957,7 @@ describe("runGuideGenerate", () => {
       expect(response.candidates[0]?.prompt.match(/\/ce-compound/gu)).toHaveLength(1)
       expect(response.candidates[0]?.prompt.match(/mode:non-interactive/gu)).toHaveLength(1)
       expect(response.candidates[0]?.command.args).toEqual([
-        "pstack",
+        "run", "codex", "pstack",
         "-p",
         "/ce-compound mode:non-interactive Rewrite the repository learning.",
       ])
@@ -2007,7 +2007,7 @@ describe("runGuideGenerate", () => {
 
       const response = await runGuideGenerate(provider, catalog, tmpRoot, {
         intent: "Review and polish this queue change",
-        profileRef: "native:cdx/pstack",
+        profileRef: "native:codex/pstack",
         model: "test-model",
         effort: GuideEffort.Medium,
       })
@@ -2071,11 +2071,11 @@ describe("runGuideGenerate", () => {
 describe("publicGuideLaunchCommand", () => {
   it("uses the launcher alias and appends -p <prompt> when headless.prompt is true", () => {
     const catalog = buildCatalog("/tmp-unused")
-    const command = publicGuideLaunchCommand(catalog, "native:cdx/pstack", "say hello world", "review")
-    expect(command.executable).toBe("cdx")
-    expect(command.args).toEqual(["pstack", "-p", "say hello world"])
+    const command = publicGuideLaunchCommand(catalog, "native:codex/pstack", "say hello world", "review")
+    expect(command.executable).toBe("trx")
+    expect(command.args).toEqual(["run", "codex", "pstack", "-p", "say hello world"])
     expect(command.promptHandling).toBe("argv")
-    expect(command.preview).toBe(`cdx pstack -p 'say hello world'`)
+    expect(command.preview).toBe(`trx run codex pstack -p 'say hello world'`)
     expect(command.preview).not.toContain("/opt/trellage")
   })
 
@@ -2101,8 +2101,8 @@ describe("publicGuideLaunchCommand", () => {
         launchAgent: "hve-core:dt-coach",
       })),
     })
-    expect(() => publicGuideLaunchCommand(catalog, "native:cdx/pstack", "say hello world", "review")).toThrow(
-      /only by the cpx launcher/,
+    expect(() => publicGuideLaunchCommand(catalog, "native:codex/pstack", "say hello world", "review")).toThrow(
+      /only by the Copilot harness/,
     )
   })
 
@@ -2140,10 +2140,10 @@ describe("publicGuideLaunchCommand", () => {
 describe("selectedProfileFromCatalogRef", () => {
   it("uses the native entry's own commandPath", () => {
     const catalog = buildCatalog("/tmp-unused")
-    expect(selectedProfileFromCatalogRef(catalog, "native:cdx/pstack", "review")).toEqual({
+    expect(selectedProfileFromCatalogRef(catalog, "native:codex/pstack", "review")).toEqual({
       surface: "native",
-      launcher: "cdx",
-      commandPath: "/opt/trellage/cdx/bin/cdx",
+      launcher: "codex",
+      commandPath: "/opt/trellage/codex/bin/trx",
       profile: "pstack",
       headlessPrompt: true,
     })
@@ -2161,7 +2161,7 @@ describe("selectedProfileFromCatalogRef", () => {
 
   it("throws for an unknown profile reference", () => {
     const catalog = buildCatalog("/tmp-unused")
-    expect(() => selectedProfileFromCatalogRef(catalog, "native:cdx/does-not-exist", "review")).toThrow(
+    expect(() => selectedProfileFromCatalogRef(catalog, "native:codex/does-not-exist", "review")).toThrow(
       GuideServiceError,
     )
   })
@@ -2184,9 +2184,9 @@ describe("selectedProfileFromCatalogRef", () => {
 describe("guideTargetTool", () => {
   it("describes known harness agents and keeps unknown harness ids", () => {
     const catalog = buildCatalog("/tmp-unused")
-    expect(guideTargetTool(catalog, "native:cdx/pstack")).toBe("Codex CLI terminal coding agent")
+    expect(guideTargetTool(catalog, "native:codex/pstack")).toBe("Codex CLI terminal coding agent")
     expect(guideTargetTool(catalog, "sandbox:prime-agent")).toBe("GitHub Copilot CLI terminal coding agent")
-    expect(guideTargetTool(catalog, "native:jcx/foo")).toBe("jules")
+    expect(guideTargetTool(catalog, "native:jcode/foo")).toBe("jules")
     expect(guidePromptTarget("constructor")).toBe("constructor")
   })
 
@@ -2212,10 +2212,10 @@ describe("guideTargetTool", () => {
 
 describe("literalGuideMatch", () => {
   it("ranks an explicitly named native launcher and profile first", () => {
-    const candidates = literalGuideMatch(buildCatalog("/tmp-unused"), "Use cdx pstack to review this change")
+    const candidates = literalGuideMatch(buildCatalog("/tmp-unused"), "Use trx run codex pstack to review this change")
 
-    expect(candidates[0]?.profileRef).toBe("native:cdx/pstack")
-    expect(candidates[0]?.reason).toContain("explicitly names native:cdx/pstack")
+    expect(candidates[0]?.profileRef).toBe("native:codex/pstack")
+    expect(candidates[0]?.reason).toContain("explicitly names native:codex/pstack")
   })
 
   it("ranks known profiles by normalized token overlap, distinct refs, source-order tie-break", () => {
@@ -2225,8 +2225,8 @@ describe("literalGuideMatch", () => {
     expect(candidates).toHaveLength(4)
     const refs = candidates.map((c) => c.profileRef)
     expect(new Set(refs).size).toBe(candidates.length)
-    // native:jcx/foo's deep-refactor workflow shares the most terms with the intent.
-    expect(candidates[0]?.profileRef).toBe("native:jcx/foo")
+    // native:jcode/foo's deep-refactor workflow shares the most terms with the intent.
+    expect(candidates[0]?.profileRef).toBe("native:jcode/foo")
     expect(candidates[0]?.workflowId).toBe("deep-refactor")
     for (const candidate of candidates) {
       expect(candidate.confidence).toBeGreaterThanOrEqual(0)
@@ -2299,7 +2299,7 @@ describe("literalGuideMatch", () => {
     const refs = literalGuideMatch(comparisonCatalog, "Refactor the payment pipeline").map(
       ({ profileRef }) => profileRef,
     )
-    expect(refs.indexOf("native:cdx/pstack")).toBeLessThan(refs.indexOf("native:jcx/foo"))
+    expect(refs.indexOf("native:codex/pstack")).toBeLessThan(refs.indexOf("native:jcode/foo"))
   })
 
   it("throws when the catalog has fewer than three profiles", () => {
@@ -2309,7 +2309,7 @@ describe("literalGuideMatch", () => {
         sandboxCommandPath: "/opt/trellage/bin/trellage",
         native: [
           {
-            launcher: "cdx",
+            launcher: "codex",
             harness: "codex",
             name: "pstack",
             description: "Codex host-native launcher.",
@@ -2317,7 +2317,7 @@ describe("literalGuideMatch", () => {
             sandbox: false,
             herdrCompatibility: { status: "supported" },
             guide: guideCdxHve,
-            commandPath: "/opt/trellage/cdx/bin/cdx",
+            commandPath: "/opt/trellage/codex/bin/trx",
           },
         ],
         sandbox: [],

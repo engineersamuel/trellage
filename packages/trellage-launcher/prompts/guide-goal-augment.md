@@ -20,15 +20,21 @@ not change these host boundaries:
   this interview. The host then returns the exact choice through `ask_user`;
   questions without one clear recommendation still require manual input.
   Automatic answers never approve the final goal.
-- Develop one exact artifact, TASK, and at least three distinct criteria that
-  an independent scorer can rate from the artifact alone. Keep the live draft
-  consistent with the answers. If a required fact is unknown, ask the user.
+- Develop one coherent outcome, an artifact label, TASK, and at least three
+  distinct criteria. Keep the live draft consistent with the installed
+  goal-me skill and the user's answers. When the installed template asks for
+  inputs and artifacts, constraints, verification mappings, required checks,
+  an action catalog, or execution limits, interview for and fill those fields
+  too. If a required fact is unknown, ask the user.
 - There are no shell, filesystem, network, subagent, MCP, or launch tools.
   Do not inspect the project, perform research, execute work, or delegate.
-- Adapt ONLY the skill's final file handoff: call `propose_goal` with
-  `artifact`, `task`, and `criteria`. Do not pass commands or file operations.
-  The host fills the actual installed goal template, seeds its scoreboard and
-  learnings, and displays the complete result for review.
+- Adapt ONLY the skill's final file handoff: call `propose_goal` with every
+  field required by that tool's schema. Legacy templates require `artifact`,
+  `task`, and `criteria`; expanded templates also require their authored
+  sections and limits. Do not pass file operations. Commands may appear only
+  as inert verification text inside the goal. The host fills the actual
+  installed template, seeds its scoreboard and execution memory, and displays
+  the complete result for review.
 - Do not write, list, choose, or report a GOAL file. No project goal file is
   created in this embedded flow. Never claim that a file was written.
 - `propose_goal` waits for explicit **Use goal** or **Revise**. An ordinary

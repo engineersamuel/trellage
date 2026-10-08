@@ -139,7 +139,7 @@ const parseNativeInventory = (source: string, selected: NativeSelectedProfile): 
 
 const firstmateProfile = (selected: NativeSelectedProfile): NativeSelectedProfile => {
   const profile = parseSelectedProfile(selected)
-  if (profile.surface !== "native" || profile.launcher !== "fmx" || profile.orchestration === undefined) {
+  if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration === undefined) {
     throw new ProfilePreflightError("Fleet readiness requires a Firstmate orchestration profile.")
   }
   return profile
@@ -168,7 +168,7 @@ export const inspectFirstmateReadiness = async (
   signal?: AbortSignal,
 ): Promise<FirstmateFleetReadinessV1> => {
   const profile = firstmateProfile(selected)
-  const result = await runner.run(profile.commandPath, ["inventory", profile.profile, "--json", ...firstmateInstanceSelectorArgs(profile)], {
+  const result = await runner.run(profile.commandPath, ["inventory", profile.launcher, profile.profile, "--json", ...firstmateInstanceSelectorArgs(profile)], {
     cwd, timeoutMs: 30_000, ...(signal === undefined ? {} : { signal }),
   })
   return firstmateInventory(result.stdout, profile)
@@ -223,7 +223,7 @@ export const prepareFirstmateReadiness = async (
   if (orchestration?.preparation?.schemaVersion !== 1) {
     throw new ProfilePreflightError("This Firstmate backend does not advertise safe preparation. Use inventory and the reported manual action.")
   }
-  const args = ["prepare", profile.profile, "--json", "--expected-source-revision", orchestration.sourceRevision,
+  const args = ["prepare", profile.launcher, profile.profile, "--json", "--expected-source-revision", orchestration.sourceRevision,
     ...firstmateInstanceControlArgs(profile)]
   if (options.approval !== undefined) {
     const approval = options.approval
@@ -267,7 +267,7 @@ export const firstmateInstallationPlan = (
 export const firstmateMaintenanceCommand = (
   selected: NativeSelectedProfile,
   action: "doctor" | "setup",
-): string => renderCommandPreview({ executable: selected.commandPath, args: [action, selected.profile, ...firstmateInstanceSelectorArgs(selected)] })
+): string => renderCommandPreview({ executable: selected.commandPath, args: [action, selected.launcher, selected.profile, ...firstmateInstanceSelectorArgs(selected)] })
 
 const firstmateManualCheck = (selected: NativeSelectedProfile): string =>
   `Run ${firstmateMaintenanceCommand(selected, "doctor")}, then refresh.`
@@ -296,7 +296,7 @@ const firstmateAdmissionDiagnostic = (
   fleet: FirstmateFleetReadinessV1,
   action: keyof FirstmateFleetReadinessV1["actions"],
 ): string | undefined => {
-  if (selected.launcher !== "fmx" || selected.orchestration === undefined) return "A supported Firstmate orchestration contract is required."
+  if (selected.launcher !== "firstmate" || selected.orchestration === undefined) return "A supported Firstmate orchestration contract is required."
   if (fleet.identity === null) return `An owned Firstmate fleet identity is required. ${firstmateManualCheck(selected)}`
   if (fleet.identity.profile !== selected.profile || fleet.identity.sourceRevision !== selected.orchestration.sourceRevision) {
     return "The Firstmate fleet does not match the selected profile and source revision."
@@ -358,7 +358,7 @@ const checkNativeReadiness = async (
   let stdout: string
   try {
     stdout = (
-      await runner.run(selected.commandPath, ["inventory", selected.profile, "--json"], {
+      await runner.run(selected.commandPath, ["inventory", selected.launcher, selected.profile, "--json"], {
         cwd,
         timeoutMs: 30_000,
         ...(signal === undefined ? {} : { signal }),
@@ -499,7 +499,7 @@ const checkInteractiveReadiness = async (
   let stdout: string
   try {
     stdout = (await runner.run(selected.commandPath, [
-      "workflow-check", selected.profile, "--agent", selected.agent,
+      "workflow-check", selected.launcher, selected.profile, "--agent", selected.agent,
       ...interaction.requiredSkills.flatMap((skill) => ["--require-skill", skill]),
     ], { cwd, timeoutMs: 30_000, ...(signal === undefined ? {} : { signal }) })).stdout
   } catch (cause) {
@@ -507,7 +507,7 @@ const checkInteractiveReadiness = async (
     return {
       kind: ProfileReadinessKind.Blocked,
       summary: "This customer workflow is unavailable",
-      diagnostic: `${diagnosticFromError(cause)}\nUse an updated cpx launcher and an HVE installation with the required agent and skills. No workflow was started.`,
+      diagnostic: `${diagnosticFromError(cause)}\nUse an updated trx router and an HVE installation with the required agent and skills. No workflow was started.`,
     }
   }
   validateInteractiveCheck(stdout, selected)

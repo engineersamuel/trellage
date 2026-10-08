@@ -12,7 +12,7 @@ import { bunArguments, bunExecutable } from "@trellage/runtime"
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url))
 const managerPath = path.join(repository, "scripts/floating-skills.ts")
-const catalogPath = path.join(repository, "skills.json")
+const catalogPath = path.join(repository, "config.toml")
 const skill = "i-have-adhd"
 const policy = "policy:\n  allow_implicit_invocation: false\n"
 const instructions = (version: number) =>
@@ -34,6 +34,7 @@ const seedSnapshot = async (cache: string, version = 1, includeManual = true) =>
   }
   await write(path.join(cache, "managed-skills.txt"), `${names.join("\n")}\n`)
   await write(path.join(cache, "always-on.md"), "")
+  await write(path.join(cache, ".trellage-composition-snapshot"), "1\n")
 }
 
 const fixtureFor = async (context: TestContext, includeManual = true) => {
@@ -49,6 +50,12 @@ const fixtureFor = async (context: TestContext, includeManual = true) => {
     skill,
   }
   await seedSnapshot(options.cache, 1, includeManual)
+  const previousSnapshot = process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
+  process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT = options.cache
+  context.after(() => {
+    if (previousSnapshot === undefined) delete process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
+    else process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT = previousSnapshot
+  })
   return { root, options, run: (command: string) => manageManualSkill({ ...options, command }) }
 }
 
@@ -134,6 +141,7 @@ export const stageLatest = async ({ destination }) =>
   cp(${JSON.stringify(fresh)}, destination, { recursive: true });
 `,
   )
+  delete process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
   const check = () => manageManualSkill({ ...options, managerPath: fakeManager, command: "fresh" })
   assert.deepEqual(await check(), { kind: "current" })
   await seedSnapshot(fresh, 2)
@@ -167,7 +175,7 @@ export const ensureNative = async () => {
       options.target,
       skill,
     ]),
-    { stdio: ["ignore", "pipe", "pipe"] },
+    { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT: undefined } },
   )
   const closed = once(child, "close")
   const timer = setTimeout(() => child.kill("SIGKILL"), 5000)
@@ -186,4 +194,22 @@ export const ensureNative = async () => {
     clearTimeout(timer)
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
   }
+})
+
+test("manual ensure obtains policy from the effective catalog API", async (context) => {
+  const { root, options } = await fixtureFor(context)
+  delete process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
+  const fakeManager = path.join(root, "effective-manager.ts")
+  await write(fakeManager, `
+export * from ${JSON.stringify(pathToFileURL(managerPath).href)};
+import { syncSnapshot } from ${JSON.stringify(pathToFileURL(managerPath).href)};
+export const readNativeSkillCatalog = async () => ({ effectivePolicy: true });
+export const readCatalog = async () => { throw new Error("bundled catalog must not be used"); };
+export const ensureNative = async ({ catalog, cache, target }) => {
+  if (catalog.effectivePolicy !== true) throw new Error("effective policy missing");
+  await syncSnapshot(cache, target);
+};
+`)
+  await manageManualSkill({ ...options, managerPath: fakeManager, command: "ensure" })
+  assert.deepEqual(await verifyTarget(options.cache, options.target, [skill]), ["fixture"])
 })

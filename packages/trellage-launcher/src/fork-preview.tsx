@@ -141,7 +141,7 @@ export const previewLenses: ReadonlyArray<PreviewLens> = [
     origin: {
       key: "council",
       label: "Council",
-      profileRef: "native:cpx/council",
+      profileRef: "native:copilot/council",
       harness: "Copilot",
       workflowId: "three-positions-one-verdict",
       score: 0,
@@ -163,7 +163,7 @@ export const previewLenses: ReadonlyArray<PreviewLens> = [
     origin: {
       key: "research",
       label: "Research",
-      profileRef: "native:cdx/research",
+      profileRef: "native:codex/research",
       harness: "Codex",
       workflowId: "read-before-write",
       score: 0,
@@ -185,7 +185,7 @@ export const previewLenses: ReadonlyArray<PreviewLens> = [
     origin: {
       key: "hve-rpi",
       label: "HVE RPI",
-      profileRef: "native:cldx/hve-rpi",
+      profileRef: "native:claude/hve-rpi",
       harness: "Claude",
       workflowId: "risk-plan-implement",
       score: 0,
@@ -222,7 +222,7 @@ export const previewRecommendations: ReadonlyArray<ForkOrigin> = [
   {
     key: "poteto-mode",
     label: "Poteto Mode",
-    profileRef: "native:cdx/pstack",
+    profileRef: "native:codex/pstack",
     harness: "Codex",
     workflowId: "poteto-mode-entry-point",
     score: 92,
@@ -254,7 +254,7 @@ export const previewRecommendations: ReadonlyArray<ForkOrigin> = [
   {
     key: "default",
     label: "Default",
-    profileRef: "native:picx/default",
+    profileRef: "native:pi/default",
     harness: "Pi",
     workflowId: "subagent-and-workflow-fan-out",
     score: 84,
@@ -270,7 +270,7 @@ export const previewRecommendations: ReadonlyArray<ForkOrigin> = [
   {
     key: "headlong",
     label: "Headlong",
-    profileRef: "native:cdx/headlong",
+    profileRef: "native:codex/headlong",
     harness: "Headlong",
     workflowId: "start-persistent-exploration",
     score: 76,

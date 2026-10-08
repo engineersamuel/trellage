@@ -60,7 +60,6 @@ const nativeCatalogs = [
   "prototypes/trellage-copilot-profiles/catalog.json",
   "prototypes/trellage-claude-profiles/catalog.json",
   "prototypes/trellage-firstmate-profiles/catalog.json",
-  "prototypes/trellage-grok-profiles/catalog.json",
   "prototypes/trellage-jcode-profiles/catalog.json",
   "prototypes/trellage-omp-profiles/catalog.json",
   "prototypes/trellage-picx-profiles/catalog.json",

@@ -13,8 +13,8 @@ const entry: LaunchEntry = {
   plugins: ["claude-blog", "editorial-review"],
   skills: ["caveman", "technical-writing"],
   mcps: ["docs", "files"],
-  commandAlias: "cpx",
-  commandPath: "/opt/trellage/cpx/bin/cpx",
+  commandAlias: "copilot",
+  commandPath: "/opt/trellage/copilot/bin/trx",
   profileArgument: "copilot",
   passthroughArgs: ["two words", "", "--literal=*"],
   defaultModel: "claude-opus-5",
@@ -51,9 +51,9 @@ describe("profile detail layout", () => {
     const rows = detailRows(entry, "gpt-fast", 200, "gpt-fast")
     const fields = Object.fromEntries(rows.filter((row) => row.label !== undefined).map((row) => [row.label, row.text]))
 
-    expect(fields.Run).toBe("trx run cpx copilot")
-    expect(fields.Alias).toBe("cpx")
-    expect(fields.Binary).toBe("/opt/trellage/cpx/bin/cpx")
+    expect(fields.Run).toBe("trx run copilot copilot")
+    expect(fields.Alias).toBe("copilot")
+    expect(fields.Binary).toBe("/opt/trellage/copilot/bin/trx")
     expect(fields.Arguments).toBe('["copilot","--model","gpt-fast","two words","","--literal=*"]')
   })
 

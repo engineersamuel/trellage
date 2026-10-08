@@ -43,7 +43,7 @@ export interface GuideLegacyFirstmateContext {
   readonly customerContext?: ApprovedGuideCustomerContext
 }
 
-const isFirstmateRef = (profileRef: string | undefined): boolean => profileRef?.startsWith("native:fmx/") === true
+const isFirstmateRef = (profileRef: string | undefined): boolean => profileRef?.startsWith("native:firstmate/") === true
 const legacyFirstmateContext = (context: GuideTaskContext): boolean =>
   isFirstmateRef(context.profileRef) && context.orchestration === undefined
 

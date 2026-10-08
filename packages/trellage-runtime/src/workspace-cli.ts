@@ -24,6 +24,7 @@ import {
   requireReplaceableOwnedWorkspace,
   requireReplaceableSourceContents,
   requireReadyAsync,
+  requireReadyQuickAsync,
   requirePublishedSourceIdentity,
   safeDirectory,
   safePath,
@@ -84,7 +85,7 @@ async function prepareDependencies(root: string, alwaysInstall: boolean): Promis
   try {
     if (!alwaysInstall) {
       try {
-        await requireReadyAsync(root)
+        await requireReadyQuickAsync(root)
         return
       } catch (error) {
         process.stderr.write(`trellage source runtime: ${error instanceof Error ? error.message : String(error)}\n`)

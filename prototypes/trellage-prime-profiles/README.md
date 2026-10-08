@@ -1,6 +1,8 @@
 # Native Prime Agent profile
 
-`prx` runs [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+
+`trx run prime PROFILE` runs [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)
 directly on the host with an isolated profile. It uses keyless
 `copilot-proxy-rs` at `http://127.0.0.1:8080` (Anthropic Messages API), pins
 the provider to `copilot-proxy-rs`, and defaults the model to `claude-opus-5`.
@@ -28,24 +30,24 @@ Launch unsets `ANTHROPIC_*`, `OPENAI_API_KEY`, `COPILOT_GITHUB_TOKEN`,
 
 ```bash
 ./install.sh
-prx setup
-prx doctor
-prx update --check
-prx update
-prx repair
+trx setup prime default
+trx doctor prime default
+trx upgrade prime default --check
+trx upgrade prime default
+trx repair prime default
 ```
 
-The installer publishes `~/.local/bin/prx` and owns its runtime beneath
+The installer keeps `prx` as a private backend and owns its runtime beneath
 `~/.local/share/trellage/prx`. `setup` resolves the latest Prime Agent release
 eligible under `mise` policy on first use, installs the release package into a
 managed npm prefix, and records the exact installed version in the local
 `installed-version` receipt. Ordinary launches reuse that version without a
-network request. Only explicit `prx update` resolves latest again. Updates
+network request. Only explicit `trx upgrade prime default` resolves latest again. Updates
 stage and verify a complete npm prefix before publication. The launcher selects
 the `prime-agent-VERSION.tgz` npm archive explicitly. If Mise cached a standalone
 archive at that version, repair replaces that owned cache once before retrying.
 
-`prx skills-update default` copies and verifies only the refreshed
+`trx upgrade prime default --skills-only` copies and verifies only the refreshed
 `native-common` cache after `trx skills update`. It requires an existing owned
 profile and managed skill state. Custom skills, extensions, authentication,
 runtime receipts, and kernel state are preserved. Missing caches, invalid
@@ -62,9 +64,9 @@ during doctor, repair, or launch. Inventory reports that state as unhealthy
 without changing it, and reports `busy` while another profile mutation owns
 the lock.
 
-The launcher is named `prx` (Prime + `x`) so it does not collide with macOS
-`/bin/pax` (POSIX archive tool). `trx` refuses any `prx` that does not resolve
-to the owned runtime under `~/.local/share/trellage/prx/bin/prx`.
+The private backend remains `prx` under
+`~/.local/share/trellage/prx/bin/prx`. Public commands use `trx`; retired
+launcher aliases are not installed on `PATH`.
 
 Profile state lives at:
 
@@ -95,7 +97,7 @@ supervisor environment at spawn — they do **not** receive client
 `PRIME_AGENT_KERNEL_*` over the wire. `prx` therefore pins
 `--daemon-socket ~/.local/share/trellage/profiles/prime/default/daemon/daemon.sock`
 and restarts that profile daemon when its runtime identity or kernel paths
-change, so workers see the matching managed venv. Use `prx shutdown` to stop
+change, so workers see the matching managed venv. Use `trx shutdown prime default` to stop
 the profile daemon.
 
 Setup, repair, update, doctor, and launch readiness use a profile-local
@@ -112,13 +114,12 @@ When the host npm registry is CFS, it uses the CFS PyPI index; otherwise it
 preserves uv's host configuration. Setup and repair refuse symlinked paths or
 unrelated existing profile files. Uninstall preserves this profile.
 
-Bare and explicit launches are equivalent:
+Launch the profile explicitly:
 
 ```bash
-prx
-prx default
-prx -p "Reply exactly PRX_OK"
-prx --single-turn -p "Reply exactly PRX_OK"
+trx run prime default
+trx run prime default -p "Reply exactly PRX_OK"
+trx run prime default --single-turn -p "Reply exactly PRX_OK"
 ```
 
 Arguments pass after managed `--provider copilot-proxy-rs`, `--model`,
@@ -132,7 +133,7 @@ Long-running interactive sessions may leave Prime background workers on the
 profile socket. Stop them with:
 
 ```bash
-prx shutdown
+trx shutdown prime default
 ```
 
 Prefer `--single-turn -p` for one-shot smoke tests.

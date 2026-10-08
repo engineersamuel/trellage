@@ -3,7 +3,7 @@
  * Each takes the intent the user is editing and returns a richer one:
  *
  * - `research` runs HVE Core's RPI research skill through the already
- *   installed `cpx hve` launcher and returns the durable research note it
+ *   installed `trx run copilot hve` launcher and returns the durable research note it
  *   writes. It runs out-of-process on purpose: the note needs the `hve-core`
  *   plugin, file-write tools, and the repository as its working directory,
  *   which `CopilotGuideProvider`'s locked-down sessions deliberately deny.
@@ -189,7 +189,7 @@ const researchPrompt = (intent: string): string =>
   ].join("\n")
 
 /**
- * Runs `cpx hve` headlessly and returns the research note it wrote.
+ * Runs `trx run copilot hve` headlessly and returns the research note it wrote.
  *
  * The note is found by diffing the tracking directory before and after the
  * run: HVE Core names the file `{YYYY-MM-DD}/{task_slug}-research.md` with a
@@ -201,10 +201,10 @@ export const runResearchAugment = async (
   context: GuideAugmentContext,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<string> => {
-  const profile = catalog.native.find((entry) => entry.launcher === "cpx" && entry.name === "hve")
+  const profile = catalog.native.find((entry) => entry.launcher === "copilot" && entry.name === "hve")
   if (profile === undefined) {
     throw new GuideAugmentError(
-      "research needs the native cpx/hve profile, which is not installed. Install it with: cpx setup hve",
+      "research needs the native copilot/hve profile, which is not installed. Install it with: trx setup copilot hve",
     )
   }
 
@@ -212,7 +212,7 @@ export const runResearchAugment = async (
   context.onPhase(GuideAugmentPhase.RunningResearch)
   let response = ""
   try {
-    const result = await context.runner.run(profile.commandPath, ["hve", "-p", researchPrompt(intent)], {
+    const result = await context.runner.run(profile.commandPath, ["run", "copilot", "hve", "-p", researchPrompt(intent)], {
       cwd: context.cwd,
       timeoutMs: positiveInteger(env.TRELLAGE_GUIDE_RESEARCH_TIMEOUT_MS, defaultResearchTimeoutMs),
       signal: context.signal,
@@ -221,7 +221,7 @@ export const runResearchAugment = async (
     })
     response = result.stdout
   } catch (error) {
-    throw new GuideAugmentError(`cpx hve research failed: ${diagnostic(error)}`, { cause: error })
+    throw new GuideAugmentError(`Copilot hve research failed: ${diagnostic(error)}`, { cause: error })
   }
 
   context.onPhase(GuideAugmentPhase.ReadingNote)

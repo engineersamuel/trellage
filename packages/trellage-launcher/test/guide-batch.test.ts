@@ -35,7 +35,7 @@ import { guideGoalActivationInput } from "../src/guide-goal-execution.ts"
 
 describe("queued worktree reservations", () => {
   it("releases removed reservations and permits explicit existing-worktree reuse", () => {
-    const profile = native("cpx", "hve")
+    const profile = native("copilot", "hve")
     const placement = { kind: "new-worktree", branch: " branch ", baseRef: "HEAD" } as const
     const queue = enqueueGuideJob(emptyGuideQueue(), profile, "first", placement)
     expect(reservedWorktreeBranches(queue)).toEqual(["branch"])
@@ -51,16 +51,16 @@ describe("queued worktree reservations", () => {
     expect(findGuideQueueConflict(queue, "branch", 1)).toBeUndefined()
   })
   it("rejects trimmed duplicates without consuming IDs and permits self replacement", () => {
-    const profile = native("cpx", "hve")
-    const placement = { kind: "new-worktree", branch: "wt/cpx-hve-review", baseRef: "HEAD" } as const
+    const profile = native("copilot", "hve")
+    const placement = { kind: "new-worktree", branch: "wt/copilot-hve-review", baseRef: "HEAD" } as const
     const queue = enqueueGuideJob(emptyGuideQueue(), profile, "first", placement)
     expect(() =>
-      enqueueGuideJob(queue, native("cdx", "default"), "second", {
+      enqueueGuideJob(queue, native("codex", "default"), "second", {
         ...placement,
         branch: ` ${placement.branch} `,
         baseRef: "main",
       }),
-    ).toThrow("already queued by job 1 (cpx hve)")
+    ).toThrow("already queued by job 1 (copilot hve)")
     expect(queue.nextId).toBe(2)
     const two = enqueueGuideJob(queue, profile, "second", { ...placement, branch: "other" })
     expect(() => replaceQueuedGuideJob(two, 2, profile, "changed", placement)).toThrow("already queued")
@@ -123,8 +123,8 @@ class BatchRunner implements CommandRunner {
       return {
         stdout: JSON.stringify({
           schemaVersion: 1,
-          launcher: executable.split("/").at(-1),
-          profile: args[1],
+          launcher: args[1],
+          profile: args[2],
           readiness: "healthy",
         }),
         stderr: "",
@@ -185,10 +185,10 @@ const sandbox = (profile: string): SelectedProfile => ({
   headlessPrompt: false,
 })
 
-const native = (launcher: "cpx" | "cdx", profile: string, agent?: string): SelectedProfile => ({
+const native = (launcher: "copilot" | "codex", profile: string, agent?: string): SelectedProfile => ({
   surface: "native",
   launcher,
-  commandPath: `/opt/trellage/bin/${launcher}`,
+  commandPath: "/opt/trellage/bin/trx",
   profile,
   headlessPrompt: false,
   ...(agent === undefined ? {} : { agent }),
@@ -216,7 +216,7 @@ const worktreeCreates = (runner: BatchRunner): ReadonlyArray<string> =>
 
 describe("guide batch queue", () => {
   it.each(["default", "pstack-workers"])("keeps complete legacy %s input through queue edits and the existing Herdr paste transport", async (name) => {
-    const profileRef = `native:fmx/${name}`
+    const profileRef = `native:firstmate/${name}`
     const profile = selectedProfileFromCatalogRef(legacyFirstmateCatalog(), profileRef, "review-project")
     const prepared = prepareGuidePrompt(firstmateGuide, "review-project", profileRef, "Review the change.", {
       originalIntent: firstmateOriginalIntent, projectTarget: firstmateProjectC(),
@@ -237,7 +237,7 @@ describe("guide batch queue", () => {
     expect(job.prompt).toContain("Inspect the public callers.")
     expect(job.prompt).toContain('"entryWorktree": "/fixture/project-c"')
     expect(job.prompt.match(/## Original human intent \(unchanged\)/gu)).toHaveLength(1)
-    expect(job.command.args).toEqual([name])
+    expect(job.command.args).toEqual(["run", "firstmate", name])
     const unused = async (): Promise<never> => { throw new Error("Legacy delivery must not use the inbox journal.") }
     const runner = new BatchRunner()
     const result = await executeGuideBatch({ jobs: [job], context: paneContext }, {
@@ -254,8 +254,8 @@ describe("guide batch queue", () => {
   })
 
   it.each([
-    { profile: native("cpx", "default"), placement: here },
-    { profile: native("cdx", "default"), placement: newTab },
+    { profile: native("copilot", "default"), placement: here },
+    { profile: native("codex", "default"), placement: newTab },
     { profile: sandbox("claude-research"), placement: here },
     { profile: sandbox("claude-research"), placement: newTab },
   ])("does not require a primary checkout for a $profile.surface $placement.kind", async ({ profile, placement }) => {
@@ -272,7 +272,7 @@ describe("guide batch queue", () => {
     async (placement) => {
       const runner = new BatchRunner()
       const result = await executeGuideBatch({
-        jobs: [createQueuedGuideJob(1, native("cpx", "default"), "Review the project.", placement)], context: paneContext,
+        jobs: [createQueuedGuideJob(1, native("copilot", "default"), "Review the project.", placement)], context: paneContext,
       }, { runner, write: () => undefined })
       expect(result.result.entries[0]).toMatchObject({ status: "invalid", message: expect.stringContaining("inspected absolute primary checkout") })
       expect(runner.calls).toEqual([])
@@ -283,10 +283,10 @@ describe("guide batch queue", () => {
     const runner = new BatchRunner()
     const jobs = [
       createQueuedGuideJob(
-        1, native("cpx", "default"), "Review A.", fresh("review-a"), undefined, undefined, "/repo",
+        1, native("copilot", "default"), "Review A.", fresh("review-a"), undefined, undefined, "/repo",
       ),
       createQueuedGuideJob(
-        2, native("cdx", "default"), "Review B.", { kind: "existing-worktree", path: "/other/review-b" },
+        2, native("codex", "default"), "Review B.", { kind: "existing-worktree", path: "/other/review-b" },
         undefined, undefined, "/other",
       ),
     ]
@@ -303,7 +303,7 @@ describe("guide batch queue", () => {
   it("keeps the full original input in an ordinary queued command after specification edits", () => {
     const originalIntent = "  Keep all existing behavior.\r\nDo not change public names.  "
     const profile: SelectedProfile = {
-      surface: "native", launcher: "cpx", commandPath: "/fixture/cpx", profile: "default", headlessPrompt: true,
+      surface: "native", launcher: "copilot", commandPath: "/fixture/trx", profile: "default", headlessPrompt: true,
     }
     const guideContext = {
       originalIntent, workflowId: "review", projectTarget: null,
@@ -320,7 +320,7 @@ describe("guide batch queue", () => {
 
   it("requires real Herdr context for normal allocation and does not use placeholder IDs", async () => {
     const runner = new BatchRunner()
-    const job = createQueuedGuideJob(1, native("cpx", "default"), "Inspect the project.", here)
+    const job = createQueuedGuideJob(1, native("copilot", "default"), "Inspect the project.", here)
     const result = await executeGuideBatch(
       { jobs: [job], context: { cwd: "/repo" } },
       { runner, write: () => undefined },
@@ -335,7 +335,7 @@ describe("guide batch queue", () => {
     const runner = new BatchRunner()
     const unused = async (): Promise<never> => { throw new Error("Firstmate journal must not be used.") }
     const result = await executeGuideBatch(
-      { jobs: [createQueuedGuideJob(1, native("cpx", "default"), "Inspect the project.", here)], context },
+      { jobs: [createQueuedGuideJob(1, native("copilot", "default"), "Inspect the project.", here)], context },
       { runner, write: () => undefined, firstmateJournal: {
         prepare: unused, begin: unused, record: unused, get: unused, listPending: unused,
       } },
@@ -347,14 +347,14 @@ describe("guide batch queue", () => {
   it("rejects an existing-fleet placement for an ordinary profile without prompt fallback transport", async () => {
     const runner = new BatchRunner()
     const result = await executeGuideBatch(
-      { jobs: [createQueuedGuideJob(1, native("cpx", "default"), "Inspect the project.", { kind: "existing-fleet" })], context },
+      { jobs: [createQueuedGuideJob(1, native("copilot", "default"), "Inspect the project.", { kind: "existing-fleet" })], context },
       { runner, write: () => undefined },
     )
     expect(result.result.entries[0]?.status).toBe("invalid")
     expect(runner.calls).toEqual([])
   })
 
-  it.each([native("cpx", "default"), sandbox("claude-research")])(
+  it.each([native("copilot", "default"), sandbox("claude-research")])(
     "rejects queued current-terminal placement for an ordinary $surface profile",
     async (profile) => {
       const runner = new BatchRunner()
@@ -370,7 +370,7 @@ describe("guide batch queue", () => {
   )
 
   it("requires an explicit private launcher and records allocation before prompt submission", async () => {
-    const job = createPrivateContinuationJob(1, native("cpx", "default"), "Synthetic private prompt", here)
+    const job = createPrivateContinuationJob(1, native("copilot", "default"), "Synthetic private prompt", here)
     const rejectedRunner = new BatchRunner()
     const rejected = await executeGuideBatch(
       { jobs: [job], context },
@@ -389,7 +389,7 @@ describe("guide batch queue", () => {
           events.push(`allocated:${destination.paneId}`)
         },
         launchPrivate: async (_, options) => {
-          expect(options.command.args).toEqual(["default"])
+          expect(options.command.args).toEqual(["run", "copilot", "default"])
           events.push(`submit:${options.paneId}`)
           return { paneId: options.paneId, commandPreview: "cpx default" }
         },
@@ -404,7 +404,7 @@ describe("guide batch queue", () => {
 
   it("does not submit a prompt if recording its allocated destination fails", async () => {
     let submissions = 0
-    const job = createPrivateContinuationJob(1, native("cpx", "default"), "Synthetic task", here)
+    const job = createPrivateContinuationJob(1, native("copilot", "default"), "Synthetic task", here)
     const result = await executeGuideBatch(
       { jobs: [job], context },
       {
@@ -482,7 +482,7 @@ describe("guide batch queue", () => {
     expect(edited.goalExecution?.approach).toBe("Begin with a focused regression case.")
     expect(edited.prompt).toContain("Begin with a focused regression case.")
     expect(edited.prompt).not.toContain(candidate.goalExecution.approach)
-    expect(edited.command.args).toEqual(["superpowers"])
+    expect(edited.command.args).toEqual(["run", "codex", "superpowers"])
     expect(edited.promptDelivery).toBe("manual")
     expect(() => replaceQueuedGuideJobPrompt(job, "/goal-me Start a different interview")).toThrow(/another goal controller/u)
   })
@@ -508,7 +508,7 @@ describe("guide batch queue", () => {
     expect(queue.entries[0]?.goalExecution?.goal.prompt).toBe(candidate.goalExecution.goal.prompt)
     expect(runner.calls.some(({ args }) => args[0] === "agent")).toBe(false)
     expect(runner.calls.find(({ args }) => args[0] === "pane" && args[1] === "run")?.args[3]).toBe(
-      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx superpowers",
+      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run codex superpowers",
     )
     expect(writes.join("")).toContain("needs-input in pane 9-1")
     expect(writes.join("")).toContain("Type '/goal '")
@@ -519,7 +519,7 @@ describe("guide batch queue", () => {
     const codex = goalTransportFixture("codex-goal")
     const claude = goalTransportFixture("claude-goal")
     const jobs = [
-      createPrivateContinuationJob(1, native("cpx", "default"), "Synthetic private prompt", here),
+      createPrivateContinuationJob(1, native("copilot", "default"), "Synthetic private prompt", here),
       createQueuedGuideJob(2, codex.profile, codex.candidate.prompt, here, codex.candidate.goalExecution),
       createQueuedGuideJob(
         3,
@@ -529,7 +529,7 @@ describe("guide batch queue", () => {
         claude.candidate.goalExecution,
       ),
     ]
-    if (withFailure) jobs.push(createQueuedGuideJob(4, native("cpx", "blocked"), "Blocked prompt", here))
+    if (withFailure) jobs.push(createQueuedGuideJob(4, native("copilot", "blocked"), "Blocked prompt", here))
     const runner = new BatchRunner()
     const allocated: number[] = []
     const submissions: string[] = []
@@ -567,8 +567,8 @@ describe("guide batch queue", () => {
     expect(
       runner.calls.filter(({ args }) => args[0] === "pane" && args[1] === "run").map(({ args }) => args[3]),
     ).toEqual([
-      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cdx superpowers",
-      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/cldx default",
+      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run codex superpowers",
+      "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run claude default",
     ])
     expect(runner.calls.some(({ args }) => args[0] === "agent")).toBe(false)
   })
@@ -579,7 +579,7 @@ describe("guide batch queue", () => {
     const jobs = [
       { ...source, prompt: "Only an approach." },
       { ...source, command: { ...source.command, args: [...source.command.args, source.prompt] } },
-      { ...source, profile: { ...profile, launcher: "cpx", commandPath: "/opt/trellage/bin/cpx" } },
+      { ...source, profile: { ...profile, launcher: "copilot", commandPath: "/opt/trellage/bin/trx" } },
       { ...source, goalExecution: { ...candidate.goalExecution, approach: "An unapproved edit." } },
       { ...source, goalExecution: {
         ...candidate.goalExecution,
@@ -595,11 +595,11 @@ describe("guide batch queue", () => {
 
   it("keeps the ordinary 8000-character queue limit without applying it to the frozen goal body", async () => {
     const runner = new BatchRunner()
-    const job = createQueuedGuideJob(1, native("cdx", "reviewer"), "x".repeat(8001), here)
+    const job = createQueuedGuideJob(1, native("codex", "reviewer"), "x".repeat(8001), here)
     const result = await executeGuideBatch({ jobs: [job], context }, { runner, write: () => undefined })
     expect(result.result.entries[0]).toMatchObject({ status: "invalid", message: "Queued prompt exceeds 8000 characters." })
     expect(runner.calls).toEqual([])
-    const atLimit = createQueuedGuideJob(2, native("cdx", "reviewer"), "x".repeat(8000), here)
+    const atLimit = createQueuedGuideJob(2, native("codex", "reviewer"), "x".repeat(8000), here)
     const valid = await executeGuideBatch({ jobs: [atLimit], context }, { runner: new BatchRunner(), write: () => undefined })
     expect(valid.result.entries[0]).toMatchObject({ status: "launched", job: atLimit })
   })
@@ -632,19 +632,19 @@ describe("guide batch queue", () => {
 
   it("preserves enqueue order, keeps each placement, and rebuilds prompt delivery per profile", () => {
     let queue = emptyGuideQueue()
-    queue = enqueueGuideJob(queue, native("cpx", "council", "claude-council"), "/council First proposal", here)
-    queue = enqueueGuideJob(queue, native("cdx", "research"), "Research prior work", fresh("worktree/research"))
+    queue = enqueueGuideJob(queue, native("copilot", "council", "claude-council"), "/council First proposal", here)
+    queue = enqueueGuideJob(queue, native("codex", "research"), "Research prior work", fresh("worktree/research"))
 
     expect(queue.entries.map((job) => job.id)).toEqual([1, 2])
     expect(queue.entries.map((job) => job.placement)).toEqual([here, fresh("worktree/research")])
     expect(queue.entries[0]?.command.args).toEqual([
-      "council",
+      "run", "copilot", "council",
       "--agent",
       "claude-council",
       "-i",
       "/council First proposal",
     ])
-    expect(queue.entries[1]?.command.args).toEqual(["research", "--", "Research prior work"])
+    expect(queue.entries[1]?.command.args).toEqual(["run", "codex", "research", "--", "Research prior work"])
     expect(queue.entries.map((job) => job.promptDelivery)).toEqual(["command", "command"])
 
     queue = selectQueuedGuideJob(queue, -1)
@@ -748,9 +748,9 @@ describe("guide batch queue", () => {
   it("routes each entry to its own placement in one batch", async () => {
     const runner = new BatchRunner()
     const jobs = [
-      createQueuedGuideJob(1, native("cpx", "council"), "Council prompt", here),
-      createQueuedGuideJob(2, native("cdx", "research"), "Research prompt", fresh("worktree/research")),
-      createQueuedGuideJob(3, native("cpx", "review"), "Review prompt", {
+      createQueuedGuideJob(1, native("copilot", "council"), "Council prompt", here),
+      createQueuedGuideJob(2, native("codex", "research"), "Research prompt", fresh("worktree/research")),
+      createQueuedGuideJob(3, native("copilot", "review"), "Review prompt", {
         kind: "existing-worktree",
         path: "/repo/.worktrees/review",
       }),
@@ -777,7 +777,7 @@ describe("guide batch queue", () => {
   it("creates one worktree per entry when five profiles fan out", async () => {
     const runner = new BatchRunner()
     const jobs = [1, 2, 3, 4, 5].map((id) =>
-      createQueuedGuideJob(id, native("cpx", `worker-${id}`), `Prompt ${id}`, fresh(`worktree/task-${id}`)),
+      createQueuedGuideJob(id, native("copilot", `worker-${id}`), `Prompt ${id}`, fresh(`worktree/task-${id}`)),
     )
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 
@@ -796,8 +796,8 @@ describe("guide batch queue", () => {
   it("rejects the second of two entries that would create the same branch", async () => {
     const runner = new BatchRunner()
     const jobs = [
-      createQueuedGuideJob(1, native("cpx", "first"), "First prompt", fresh("worktree/shared")),
-      createQueuedGuideJob(2, native("cdx", "second"), "Second prompt", fresh("worktree/shared")),
+      createQueuedGuideJob(1, native("copilot", "first"), "First prompt", fresh("worktree/shared")),
+      createQueuedGuideJob(2, native("codex", "second"), "Second prompt", fresh("worktree/shared")),
     ]
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 
@@ -811,7 +811,7 @@ describe("guide batch queue", () => {
 
   it("rejects an entry whose worktree placement is incomplete", async () => {
     const runner = new BatchRunner()
-    const jobs = [createQueuedGuideJob(1, native("cpx", "worker"), "Prompt", fresh("   "))]
+    const jobs = [createQueuedGuideJob(1, native("copilot", "worker"), "Prompt", fresh("   "))]
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 
     expect(outcome.result.entries[0]).toMatchObject({
@@ -823,9 +823,9 @@ describe("guide batch queue", () => {
 
   it("reports invalid entries and continues with valid peers", async () => {
     const runner = new BatchRunner()
-    const valid = createQueuedGuideJob(2, native("cpx", "worker"), "Keep going", here)
+    const valid = createQueuedGuideJob(2, native("copilot", "worker"), "Keep going", here)
     const invalid = {
-      ...createQueuedGuideJob(1, native("cdx", "reviewer"), "Review", here),
+      ...createQueuedGuideJob(1, native("codex", "reviewer"), "Review", here),
       command: { executable: "/tmp/model-command", args: [] },
     }
     const outcome = await executeGuideBatch({ jobs: [invalid, valid], context }, { runner, write: () => undefined })
@@ -837,12 +837,12 @@ describe("guide batch queue", () => {
 
   it("reports an unready entry and continues with a ready peer", async () => {
     const runner = new BatchRunner((executable, args) =>
-      executable.endsWith("/cpx") && args[0] === "inventory" && args[1] === "blocked"
+      executable.endsWith("/trx") && args[0] === "inventory" && args[2] === "blocked"
         ? failure("blocked profile")
         : undefined,
     )
-    const blocked = createQueuedGuideJob(1, native("cpx", "blocked"), "Blocked prompt", here)
-    const ready = createQueuedGuideJob(2, native("cdx", "ready"), "Ready prompt", here)
+    const blocked = createQueuedGuideJob(1, native("copilot", "blocked"), "Blocked prompt", here)
+    const ready = createQueuedGuideJob(2, native("codex", "ready"), "Ready prompt", here)
     const outcome = await executeGuideBatch({ jobs: [blocked, ready], context }, { runner, write: () => undefined })
 
     expect(outcome.exitCode).toBe(1)
@@ -863,7 +863,7 @@ describe("guide batch queue", () => {
       }
       return undefined
     })
-    const jobs = [1, 2, 3].map((id) => createQueuedGuideJob(id, native("cpx", `worker-${id}`), `Prompt ${id}`, here))
+    const jobs = [1, 2, 3].map((id) => createQueuedGuideJob(id, native("copilot", `worker-${id}`), `Prompt ${id}`, here))
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 
     expect(outcome.result.entries.map((entry) => entry.status)).toEqual(["allocation-failed", "launched", "launched"])
@@ -871,11 +871,11 @@ describe("guide batch queue", () => {
   })
 
   it("reports worktree creation and launch failures with their stage and prompt", async () => {
-    const job = createQueuedGuideJob(1, native("cpx", "worker"), "Recovery prompt", fresh("worktree/recovery"))
+    const job = createQueuedGuideJob(1, native("copilot", "worker"), "Recovery prompt", fresh("worktree/recovery"))
     const creationRunner = new BatchRunner((executable, args) =>
       executable === "herdr" && args[0] === "worktree" ? failure("create refused") : undefined,
     )
-    const creationPeer = createQueuedGuideJob(2, native("cdx", "peer"), "Peer recovery prompt", fresh("worktree/peer"))
+    const creationPeer = createQueuedGuideJob(2, native("codex", "peer"), "Peer recovery prompt", fresh("worktree/peer"))
     const creation = await executeGuideBatch(
       { jobs: [job, creationPeer], context },
       { runner: creationRunner, write: () => undefined },
@@ -892,8 +892,8 @@ describe("guide batch queue", () => {
     })
 
     const writes: string[] = []
-    const launchJob = createQueuedGuideJob(1, native("cpx", "worker"), "Recovery prompt", here)
-    const peer = createQueuedGuideJob(2, native("cpx", "peer"), "Peer prompt", here)
+    const launchJob = createQueuedGuideJob(1, native("copilot", "worker"), "Recovery prompt", here)
+    const peer = createQueuedGuideJob(2, native("copilot", "peer"), "Peer prompt", here)
     let paneRuns = 0
     const launchRunner = new BatchRunner((executable, args) =>
       executable === "herdr" && args[0] === "pane" && args[1] === "run" && ++paneRuns === 1

@@ -147,7 +147,7 @@ export FAKE_JCODE_SIGNAL_LOG="$fixture_root/signal.log"
 : >"$FAKE_JCODE_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/bin/jcx"
+command_path="$HOME/.local/share/trellage/.native-commands/jcx"
 runtime_root="$HOME/.local/share/trellage/jcx"
 profile_root="$HOME/.local/share/trellage/profiles/jcode/default"
 profile_home="$profile_root/home"

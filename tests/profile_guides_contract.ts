@@ -5,6 +5,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import {
+  canonicalNativeIdentity,
   discoverProfileGuideRelativePaths,
   loadProfileGuideRegistry,
   profileGuideGoalExecutionProblem,
@@ -40,7 +41,7 @@ for (const family of nativeFamilies) {
     throw new Error(`${family}/catalog.json must contain a profile object`)
   }
   for (const profile of Object.keys(profiles)) {
-    expected.push({ surface: "native", launcher, profile })
+    expected.push({ surface: "native", ...canonicalNativeIdentity(launcher, profile) })
   }
 }
 
@@ -67,8 +68,8 @@ if (coverage.missing.length > 0 || coverage.unexpected.length > 0) {
 
 const registry = await loadProfileGuideRegistry(guideRoot, expected)
 const nativeGoalSurfaces = new Map([
-  ["cdx", { controller: "codex-goal", harness: "codex" }],
-  ["cldx", { controller: "claude-goal", harness: "claude" }],
+  ["codex", { controller: "codex-goal", harness: "codex" }],
+  ["claude", { controller: "claude-goal", harness: "claude" }],
 ])
 const expectedGoalSurface = (identity) => {
   if (identity.surface === "native") return nativeGoalSurfaces.get(identity.launcher)
@@ -252,8 +253,8 @@ for (const phrase of [
   }
 }
 
-const compoundGuide = registry.get("native:cpx/compound-engineering")
-if (compoundGuide === undefined) throw new Error("cpx compound-engineering guide is missing")
+const compoundGuide = registry.get("native:copilot/compound-engineering")
+if (compoundGuide === undefined) throw new Error("copilot compound-engineering guide is missing")
 const expectedCompoundPrompts = new Map([
   ["ce-plan", "/ce-plan {{intent}}"],
   ["lfg", "/lfg {{intent}}"],
@@ -266,7 +267,7 @@ if (
   new Set(compoundSkills).size !== expectedCompoundSkills.length ||
   compoundSkills.some((skill) => skill === undefined || !expectedCompoundPrompts.has(skill))
 ) {
-  throw new Error(`cpx compound-engineering one-shot skills must be exactly: ${expectedCompoundSkills.join(", ")}`)
+  throw new Error(`copilot compound-engineering one-shot skills must be exactly: ${expectedCompoundSkills.join(", ")}`)
 }
 for (const prohibitedSkill of ["ce-brainstorm", "ce-code-review"]) {
   if (
@@ -274,14 +275,14 @@ for (const prohibitedSkill of ["ce-brainstorm", "ce-code-review"]) {
       ({ skill, promptTemplate }) => skill === prohibitedSkill || promptTemplate.includes(`/${prohibitedSkill}`),
     )
   ) {
-    throw new Error(`cpx compound-engineering must not expose ${prohibitedSkill} as a one-shot workflow`)
+    throw new Error(`copilot compound-engineering must not expose ${prohibitedSkill} as a one-shot workflow`)
   }
 }
 for (const [skill, promptTemplate] of expectedCompoundPrompts) {
   const workflow = compoundGuide.guide.workflows.find((candidate) => candidate.skill === skill)
-  if (workflow === undefined) throw new Error(`cpx compound-engineering is missing the ${skill} workflow`)
+  if (workflow === undefined) throw new Error(`copilot compound-engineering is missing the ${skill} workflow`)
   if (workflow.promptTemplate !== promptTemplate) {
-    throw new Error(`cpx compound-engineering ${skill} must use one direct prompt`)
+    throw new Error(`copilot compound-engineering ${skill} must use one direct prompt`)
   }
 }
 
@@ -312,19 +313,19 @@ const hasSemanticGroupsNear = (value: string, anchor: string, groups: SemanticGr
 }
 const requireWorkflowSemanticGroups = (skill: string, facts: ReadonlyArray<readonly [string, SemanticGroups]>) => {
   const workflow = compoundGuide.guide.workflows.find((candidate) => candidate.skill === skill)
-  if (workflow === undefined) throw new Error(`cpx compound-engineering is missing the ${skill} workflow`)
+  if (workflow === undefined) throw new Error(`copilot compound-engineering is missing the ${skill} workflow`)
   const semanticText = workflowSemanticText(workflow)
   for (const [fact, groups] of facts) {
     if (!groups.every((alternatives) => alternatives.some((pattern) => pattern.test(semanticText)))) {
-      throw new Error(`cpx compound-engineering ${skill} description/examples must document ${fact}`)
+      throw new Error(`copilot compound-engineering ${skill} description/examples must document ${fact}`)
     }
   }
 }
 const requireWorkflowSemanticContext = (skill: string, fact: string, anchor: string, groups: SemanticGroups) => {
   const workflow = compoundGuide.guide.workflows.find((candidate) => candidate.skill === skill)
-  if (workflow === undefined) throw new Error(`cpx compound-engineering is missing the ${skill} workflow`)
+  if (workflow === undefined) throw new Error(`copilot compound-engineering is missing the ${skill} workflow`)
   if (!hasSemanticGroupsNear(workflowSemanticText(workflow), anchor, groups)) {
-    throw new Error(`cpx compound-engineering ${skill} description/examples must document ${fact}`)
+    throw new Error(`copilot compound-engineering ${skill} description/examples must document ${fact}`)
   }
 }
 
@@ -448,8 +449,8 @@ const hasCompoundBodyTermsNear = (anchor: string, terms: ReadonlyArray<RegExp>, 
 }
 const compoundBodyFacts = [
   [
-    "a bare interactive cpx compound-engineering launch",
-    hasCompoundBodyTermsNear("cpx compound-engineering", [/\binteractive\b/u, /\b(?:bare|without (?:a )?`?-p`?)\b/u]),
+    "a bare interactive copilot compound-engineering launch",
+    hasCompoundBodyTermsNear("copilot compound-engineering", [/\binteractive\b/u, /\b(?:bare|without (?:a )?`?-p`?)\b/u]),
   ],
   [
     "manual first-use ce-setup",
@@ -601,11 +602,11 @@ const compoundBodyFacts = [
   ],
 ]
 for (const [fact, present] of compoundBodyFacts) {
-  if (!present) throw new Error(`cpx compound-engineering guide must document ${fact}`)
+  if (!present) throw new Error(`copilot compound-engineering guide must document ${fact}`)
 }
 
-const pstackGuide = registry.get("native:cdx/pstack")
-if (pstackGuide === undefined) throw new Error("cdx pstack guide is missing")
+const pstackGuide = registry.get("native:codex/pstack")
+if (pstackGuide === undefined) throw new Error("codex pstack guide is missing")
 const expectedPstackWorkflows = new Map([
   [
     "poteto-mode-entry-point",
@@ -622,15 +623,15 @@ const expectedPstackWorkflows = new Map([
 ])
 for (const [workflowId, [skill, promptTemplate]] of expectedPstackWorkflows) {
   const workflow = pstackGuide.guide.workflows.find(({ id }) => id === workflowId)
-  if (workflow === undefined) throw new Error(`cdx pstack guide is missing workflow: ${workflowId}`)
-  if (workflow.skill !== skill) throw new Error(`cdx pstack workflow uses the wrong skill identity: ${workflowId}`)
+  if (workflow === undefined) throw new Error(`codex pstack guide is missing workflow: ${workflowId}`)
+  if (workflow.skill !== skill) throw new Error(`codex pstack workflow uses the wrong skill identity: ${workflowId}`)
   if (workflow.promptTemplate !== promptTemplate) {
-    throw new Error(`cdx pstack workflow uses the wrong prompt invocation: ${workflowId}`)
+    throw new Error(`codex pstack workflow uses the wrong prompt invocation: ${workflowId}`)
   }
 }
 
-const tufteGuide = registry.get("native:cpx/tufte-vdqi")
-if (tufteGuide === undefined) throw new Error("cpx tufte-vdqi guide is missing")
+const tufteGuide = registry.get("native:copilot/tufte-vdqi")
+if (tufteGuide === undefined) throw new Error("copilot tufte-vdqi guide is missing")
 const expectedTufteWorkflows = new Map([
   ["critique-visualization", "tufte-critique"],
   ["critique-and-rebuild", "tufte-critique"],
@@ -643,12 +644,12 @@ const expectedTufteWorkflows = new Map([
 ])
 for (const [workflowId, skill] of expectedTufteWorkflows) {
   const workflow = tufteGuide.guide.workflows.find(({ id }) => id === workflowId)
-  if (workflow === undefined) throw new Error(`cpx tufte-vdqi guide is missing workflow: ${workflowId}`)
+  if (workflow === undefined) throw new Error(`copilot tufte-vdqi guide is missing workflow: ${workflowId}`)
   if (workflow.skill !== skill) {
-    throw new Error(`cpx tufte-vdqi workflow uses the wrong skill identity: ${workflowId}`)
+    throw new Error(`copilot tufte-vdqi workflow uses the wrong skill identity: ${workflowId}`)
   }
   if (!workflow.promptTemplate.includes(skill)) {
-    throw new Error(`cpx tufte-vdqi workflow prompt does not invoke its declared skill: ${workflowId}`)
+    throw new Error(`copilot tufte-vdqi workflow prompt does not invoke its declared skill: ${workflowId}`)
   }
 }
 const critiqueAndRebuild = tufteGuide.guide.workflows.find(({ id }) => id === "critique-and-rebuild")
@@ -657,13 +658,13 @@ if (
   !critiqueAndRebuild.promptTemplate.includes("tufte-critique") ||
   !critiqueAndRebuild.promptTemplate.includes("tufte-chart")
 ) {
-  throw new Error("cpx tufte-vdqi critique-and-rebuild prompt must invoke both skills")
+  throw new Error("copilot tufte-vdqi critique-and-rebuild prompt must invoke both skills")
 }
 
-const firstmateGuide = registry.get("native:fmx/default")
-if (firstmateGuide === undefined) throw new Error("fmx default guide is missing")
+const firstmateGuide = registry.get("native:firstmate/default")
+if (firstmateGuide === undefined) throw new Error("firstmate default guide is missing")
 const firstmateFleet = firstmateGuide.guide.workflows.find(({ id }) => id === "coordinate-fleet-delivery")
-if (firstmateFleet === undefined) throw new Error("fmx default fleet workflow is missing")
+if (firstmateFleet === undefined) throw new Error("firstmate default fleet workflow is missing")
 const normalizedPrompt = (prompt: string) => prompt.replace(/\s+/gu, " ")
 for (const phrase of [
   "Firstmate operating contract",
@@ -685,11 +686,11 @@ for (const phrase of [
   "final report covering the task graph",
 ]) {
   if (!normalizedPrompt(firstmateFleet.promptTemplate).includes(phrase)) {
-    throw new Error(`fmx default prompt is missing: ${phrase}`)
+    throw new Error(`firstmate default prompt is missing: ${phrase}`)
   }
 }
 const firstmateInvestigation = firstmateGuide.guide.workflows.find(({ id }) => id === "run-fleet-investigation")
-if (firstmateInvestigation === undefined) throw new Error("fmx default investigation workflow is missing")
+if (firstmateInvestigation === undefined) throw new Error("firstmate default investigation workflow is missing")
 for (const phrase of [
   "sole router and decision authority",
   "Consult existing reports before dispatch",
@@ -699,14 +700,14 @@ for (const phrase of [
   "safe teardown only after their artifacts are secured",
 ]) {
   if (!normalizedPrompt(firstmateInvestigation.promptTemplate).includes(phrase)) {
-    throw new Error(`fmx default investigation prompt is missing: ${phrase}`)
+    throw new Error(`firstmate default investigation prompt is missing: ${phrase}`)
   }
 }
 
-const firstmatePstackGuide = registry.get("native:fmx/pstack-workers")
-if (firstmatePstackGuide === undefined) throw new Error("fmx pstack-workers guide is missing")
+const firstmatePstackGuide = registry.get("native:firstmate/pstack-workers")
+if (firstmatePstackGuide === undefined) throw new Error("firstmate pstack-workers guide is missing")
 const disciplinedFleet = firstmatePstackGuide.guide.workflows.find(({ id }) => id === "disciplined-fleet-delivery")
-if (disciplinedFleet === undefined) throw new Error("fmx pstack-workers fleet workflow is missing")
+if (disciplinedFleet === undefined) throw new Error("firstmate pstack-workers fleet workflow is missing")
 for (const phrase of [
   "sole router and integration authority",
   "lean pstack-derived inner loop",
@@ -727,13 +728,13 @@ for (const phrase of [
   "safe teardown only after required artifacts and delivery state are secured",
 ]) {
   if (!normalizedPrompt(disciplinedFleet.promptTemplate).includes(phrase)) {
-    throw new Error(`fmx pstack-workers prompt is missing: ${phrase}`)
+    throw new Error(`firstmate pstack-workers prompt is missing: ${phrase}`)
   }
 }
 const disciplinedInvestigation = firstmatePstackGuide.guide.workflows.find(
   ({ id }) => id === "disciplined-parallel-debugging",
 )
-if (disciplinedInvestigation === undefined) throw new Error("fmx pstack-workers investigation workflow is missing")
+if (disciplinedInvestigation === undefined) throw new Error("firstmate pstack-workers investigation workflow is missing")
 for (const phrase of [
   "concrete evidence first",
   "falsified alternatives",
@@ -743,36 +744,36 @@ for (const phrase of [
   "safe teardown",
 ]) {
   if (!normalizedPrompt(disciplinedInvestigation.promptTemplate).includes(phrase)) {
-    throw new Error(`fmx pstack-workers investigation prompt is missing: ${phrase}`)
+    throw new Error(`firstmate pstack-workers investigation prompt is missing: ${phrase}`)
   }
 }
 for (const workflow of [disciplinedFleet, disciplinedInvestigation]) {
   for (const forbidden of ["$poteto-mode", "$pstack-for-codex:", "multi-frontier"]) {
     if (workflow.promptTemplate.includes(forbidden)) {
-      throw new Error(`fmx pstack-workers prompt includes forbidden full-pstack behavior: ${forbidden}`)
+      throw new Error(`firstmate pstack-workers prompt includes forbidden full-pstack behavior: ${forbidden}`)
     }
   }
 }
 
-const youtubeGuide = registry.get("native:cdx/youtube")
-if (youtubeGuide === undefined) throw new Error("cdx youtube guide is missing")
+const youtubeGuide = registry.get("native:codex/youtube")
+if (youtubeGuide === undefined) throw new Error("codex youtube guide is missing")
 for (const workflowId of ["transcript-analysis", "youtube-topic-research", "channel-playlist-review"]) {
   const workflow = youtubeGuide.guide.workflows.find(({ id }) => id === workflowId)
-  if (workflow === undefined) throw new Error(`cdx youtube guide is missing workflow: ${workflowId}`)
+  if (workflow === undefined) throw new Error(`codex youtube guide is missing workflow: ${workflowId}`)
   if (workflow.skill !== "youtube-full") {
-    throw new Error(`cdx youtube workflow uses the wrong skill identity: ${workflowId}`)
+    throw new Error(`codex youtube workflow uses the wrong skill identity: ${workflowId}`)
   }
 }
 if (!youtubeGuide.guide.prerequisites.some(({ id }) => id === "transcript-api-key")) {
-  throw new Error("cdx youtube guide must declare the TranscriptAPI key prerequisite")
+  throw new Error("codex youtube guide must declare the TranscriptAPI key prerequisite")
 }
 if (!youtubeGuide.guide.avoidFor.some((item) => /visual analysis/iu.test(item))) {
-  throw new Error("cdx youtube guide must state the visual-analysis boundary")
+  throw new Error("codex youtube guide must state the visual-analysis boundary")
 }
 if (!youtubeGuide.guide.avoidFor.some((item) => /paid TranscriptAPI credits/iu.test(item))) {
-  throw new Error("cdx youtube guide must state the paid-credit boundary")
+  throw new Error("codex youtube guide must state the paid-credit boundary")
 }
-const youtubeGuideText = await readFile(path.join(guideRoot, "native", "cdx", "youtube.md"), "utf8")
+const youtubeGuideText = await readFile(path.join(guideRoot, "native", "codex", "youtube.md"), "utf8")
 for (const phrase of [
   "~/.config/trellage/.env.schema",
   "~/.config/trellage/.env.local",
@@ -791,7 +792,7 @@ for (const phrase of [
   "`location = false`",
 ]) {
   if (!youtubeGuideText.includes(phrase)) {
-    throw new Error(`cdx youtube guide must document Varlock setup: ${phrase}`)
+    throw new Error(`codex youtube guide must document Varlock setup: ${phrase}`)
   }
 }
 

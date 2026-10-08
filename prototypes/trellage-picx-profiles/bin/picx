@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly provider='copilot-proxy-rs'
-readonly model_id='gpt-5.6-sol'
+readonly model_id='gpt-6-astra'
 readonly model_selector="$provider/$model_id:medium"
 readonly mise_tool='npm:@earendil-works/pi-coding-agent'
 readonly profile_marker_value='trellage-picx-profile-v2'
@@ -55,10 +55,10 @@ readonly catalog="$runtime_root/catalog.json"
 readonly receipt_file="$runtime_root/installed-version"
 readonly legacy_version_file="$runtime_root/version"
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
-floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/skills.json"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
-  floating_skills_catalog="$runtime_root/../../skills.json"
+  floating_skills_catalog="$runtime_root/../../config.toml"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 
@@ -1176,6 +1176,10 @@ launch_pi() {
       "When asked what extensions are installed, report this ordered list. Do not report editor or browser extensions instead."
     ' "$catalog"
   )"
+  if [[ -n "${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}" ]]; then
+    [[ -f "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" && ! -L "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" ]] || die 'unsafe selected instructions'
+    extension_context+=$'\n\n'"$(cat "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md")"
+  fi
   launch_args=(
     --session-dir "$profile_session_dir"
     --provider "$provider"

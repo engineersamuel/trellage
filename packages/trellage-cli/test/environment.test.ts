@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -15,7 +15,11 @@ const nativeResolver = path.resolve(import.meta.dirname, "../../../scripts/nativ
 
 const withHome = async (run: (home: string, environment: NodeJS.ProcessEnv) => Promise<void>): Promise<void> => {
   const home = await mkdtemp(path.join(os.tmpdir(), "trellage-environment-"))
-  await run(home, {})
+  try {
+    await run(home, {})
+  } finally {
+    await rm(home, { recursive: true, force: true })
+  }
 }
 
 const nativeEnvironmentMetadata = async (
@@ -157,6 +161,31 @@ describe("environmentMetadata", () => {
       await expect(nativeEnvironmentMetadata(home, environment)).rejects.toThrow(
         /must not be writable by group or other users/,
       )
+    })
+  })
+
+  it("validates Native catalogs consistently in compiler and launcher config consumers", async () => {
+    await withHome(async (home, environment) => {
+      const configPath = path.join(home, "config.toml")
+      environment.TRELLAGE_CONFIG = configPath
+      await writeFile(
+        configPath,
+        '[environment]\nenabled = false\n[native.sources.work]\nrepository = "example/skills"\n[native.profiles.work]\nskills = [{ source = "work", names = ["writing-plans"] }]\n',
+        { mode: 0o600 },
+      )
+
+      const result = await Effect.runPromise(environmentMetadata(environment, home))
+      expect(result.enabled).toBe(false)
+      expect(await nativeEnvironmentMetadata(home, environment)).toEqual(result)
+
+      await writeFile(
+        configPath,
+        '[environment]\nenabled = false\n[native.profiles.work]\nskills = [{ source = "missing", names = ["writing-plans"] }]\n',
+      )
+      await expect(Effect.runPromise(environmentMetadata(environment, home))).rejects.toThrow(
+        /invalid \[native\] configuration/,
+      )
+      await expect(nativeEnvironmentMetadata(home, environment)).rejects.toThrow(/invalid \[native\] configuration/)
     })
   })
 })

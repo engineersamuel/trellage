@@ -71,7 +71,7 @@ export const runtimeAssessment = (): ContinuationAssessment => ({
     expectedOutput: expectedOutput!,
     evidenceIds: ["m2"],
     importance: ActionImportance.Optional,
-    profileRef: "native:cdx/default",
+    profileRef: "native:codex/default",
     workflowId: "review",
     dependsOn: [],
     access: ActionAccess.Unknown,
@@ -86,11 +86,11 @@ export const runtimeCatalog = () =>
       sandbox: [],
       native: [
         {
-          launcher: "cdx",
+          launcher: "codex",
           harness: "codex",
           name: "default",
           description: "Synthetic profile for runtime tests.",
-          commandPath: "/profiles/cdx",
+          commandPath: "/profiles/trx",
           sandbox: false,
           herdrCompatibility: { status: "supported" },
           headless: {

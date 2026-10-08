@@ -276,7 +276,7 @@ build_all() {
   prepare_build_package_feeds
   skills_staging="$(create_private_directory harness-skills)"
   "$repo_root/scripts/run-source.sh" "$repo_root/scripts/floating-skills.ts" stage \
-    --catalog "$repo_root/skills.json" \
+    --catalog "$repo_root/config.toml" \
     --bundle comparison-common \
     --output "$skills_staging/snapshot" >/dev/null
   local contestant service

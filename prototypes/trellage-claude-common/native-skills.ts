@@ -1,7 +1,7 @@
 #!/usr/bin/env -S BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=/dev/null
 
 import { constants, type Stats } from "node:fs"
-import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -72,11 +72,11 @@ const requireManagedTree = async (candidate: string): Promise<void> => {
   }
 }
 
-const readSnapshotNames = async (cache: string) => {
+const readSnapshotNames = async (cache: string, allowEmpty = false) => {
   const manifest = path.join(cache, "managed-skills.txt")
   await requireFile(manifest)
   const names = (await readFile(manifest, "utf8")).split("\n").filter(Boolean)
-  if (names.length === 0 || names.some((name) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name))) {
+  if ((!allowEmpty && names.length === 0) || names.some((name) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name))) {
     fail(`invalid skill snapshot manifest: ${manifest}`)
   }
   const sorted = [...new Set(names)].sort((left, right) => left.localeCompare(right, "en"))
@@ -85,8 +85,8 @@ const readSnapshotNames = async (cache: string) => {
 }
 
 // Preflight every snapshot before publishing any target (OMP has two).
-const requireSnapshot = async (cache: string) => {
-  const names = await readSnapshotNames(cache)
+const requireSnapshot = async (cache: string, allowEmpty = false) => {
+  const names = await readSnapshotNames(cache, allowEmpty)
   const skills = await requireDirectory(path.join(cache, "skills"), "snapshot skills directory")
   const entries = (await readdir(skills)).sort((left, right) => left.localeCompare(right, "en"))
   if (JSON.stringify(entries) !== JSON.stringify(names)) fail(`skill snapshot does not match its manifest: ${cache}`)
@@ -125,7 +125,7 @@ const readManagedManifest = async (candidate: string, legacy = false) => {
   if (legacy && !/^[0-9a-f]{40}$/.test(lines.shift() ?? "")) {
     fail(`invalid legacy managed skill manifest: ${candidate}`)
   }
-  if (lines.length === 0 || lines.some((name) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name))) {
+  if ((legacy && lines.length === 0) || lines.some((name) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name))) {
     fail(`invalid managed skill manifest: ${candidate}`)
   }
   if (new Set(lines).size !== lines.length) fail(`invalid managed skill manifest: ${candidate}`)
@@ -149,7 +149,7 @@ const targetManagedNames = async (target: string) => {
   const current = await readManagedManifest(path.join(target, ".trellage-managed-skills"))
   const legacy = await readManagedManifest(path.join(target, ".trellage-engineersamuel-skills"), true)
   const names = current.length > 0 ? current : [...new Set([...legacy, ...(await legacyShowMe(target))])]
-  if (names.length === 0) fail(`profile skills are not managed: ${target}; run the profile setup command first`)
+  if (names.length === 0 && !(await statusIfPresent(path.join(target, ".trellage-managed-skills")))) fail(`profile skills are not managed: ${target}; run the profile setup command first`)
   return names
 }
 
@@ -177,8 +177,9 @@ const preflightPair = async (
   } catch (error) {
     fail(`${error instanceof Error ? error.message : String(error)}; run trx skills update first`)
   }
-  const snapshotNames = await requireSnapshot(cache)
-  const names = excluded.length === 0 ? snapshotNames : manager.selectTargetSkills(snapshotNames, excluded)
+  const composed = await manager.isComposedSkillSnapshot(cache)
+  const snapshotNames = await requireSnapshot(cache, composed)
+  const names = excluded.length === 0 ? snapshotNames : manager.selectTargetSkills(snapshotNames, excluded, composed)
   await requireDirectory(path.dirname(targetPath), "profile home")
   const target = await requireDirectory(targetPath, "profile skills directory")
   await requireTarget(target, names)
@@ -194,17 +195,60 @@ export const loadSkillsManager = async (managerPath: string): Promise<FloatingSk
   return import(pathToFileURL(resolvedManager).href)
 }
 
+export const publishCompositionInstructions = async (cache: string, target: string, checkOnly = false) => {
+  const harness = process.env.TRELLAGE_NATIVE_COMPOSITION_HARNESS
+  if (!process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT || (harness !== "copilot" && harness !== "agency" && harness !== "jcode")) return
+  const home = path.dirname(target)
+  await requireDirectory(home, "profile home")
+  const directory = harness === "jcode" ? home : path.join(home, "instructions")
+  const existingDirectory = await statusIfPresent(directory)
+  if (existingDirectory) await requireDirectory(directory, "profile instructions")
+  const destination = path.join(directory, harness === "jcode" ? "prompt-overlay.md" : "trellage-selected.instructions.md")
+  const marker = "<!-- trellage-selected-instructions-v1 -->"
+  const existing = await statusIfPresent(destination)
+  let previous = ""
+  if (existing) {
+    await requireFile(destination)
+    previous = await readFile(destination, "utf8")
+    if (harness !== "jcode" && !previous.includes(marker)) fail(`refusing to replace user instructions: ${destination}`)
+  }
+  await requireFile(path.join(cache, "always-on.md"))
+  const selected = await readFile(path.join(cache, "always-on.md"), "utf8")
+  const end = "<!-- /trellage-selected-instructions-v1 -->"
+  let contents = `---\napplyTo: "**"\n---\n${marker}\n${selected}`
+  if (harness === "jcode") {
+    const startIndex = previous.indexOf(marker)
+    const endIndex = previous.indexOf(end)
+    if ((startIndex === -1) !== (endIndex === -1) || (startIndex !== -1 && endIndex < startIndex))
+      fail(`invalid managed instruction block: ${destination}`)
+    const block = `${marker}\n${selected}\n${end}`
+    contents = startIndex === -1 ? `${previous}${previous && !previous.endsWith("\n") ? "\n" : ""}${block}\n` : previous.slice(0, startIndex) + block + previous.slice(endIndex + end.length)
+  }
+  if (checkOnly) return
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const staged = path.join(directory, `.trellage-selected-${randomUUID()}`)
+  try {
+    await writeFile(staged, contents, { mode: 0o600, flag: "wx" })
+    const current = await statusIfPresent(destination)
+    if (!!current !== !!existing || (current && (await readFile(destination, "utf8")) !== previous)) fail(`instructions changed while preparing: ${destination}`)
+    await rename(staged, destination)
+  } finally { await rm(staged, { force: true }) }
+}
+
 export const syncCachedSkills = async (managerPath: string, pairs: readonly SkillPair[], checkOnly = false) => {
   const manager = await loadSkillsManager(managerPath)
+  if (typeof manager.resolveComposedSkillSnapshot !== "function" || typeof manager.isComposedSkillSnapshot !== "function") fail("refresh the floating-skills runtime to enable profile composition")
   const validated = []
   for (const [cache, target, excluded = []] of pairs) {
-    validated.push(await preflightPair(cache, target, excluded, manager))
+    validated.push(await preflightPair(await manager.resolveComposedSkillSnapshot(cache, target), target, excluded, manager))
   }
+  for (const { cache, target } of validated) await publishCompositionInstructions(cache, target, true)
   if (checkOnly) return
   for (const { cache, target, excluded } of validated) {
     await preflightPair(cache, target, excluded, manager)
     await manager.syncSnapshot(cache, target, excluded)
     await manager.verifyTarget(cache, target, excluded)
+    await publishCompositionInstructions(cache, target)
   }
 }
 
@@ -251,10 +295,18 @@ export const checkFreshSkills = async (
   signal?: AbortSignal,
 ) => {
   await syncCachedSkills(managerPath, pairs, true)
-  await requireFile(catalogPath)
   const manager = await loadSkillsManager(managerPath)
+  if (process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT !== undefined) {
+    let current = true
+    for (const [cache, target, excluded = []] of pairs) {
+      signal?.throwIfAborted()
+      if (!(await targetMatches(manager, await manager.resolveComposedSkillSnapshot(cache, target), target, excluded))) current = false
+    }
+    return { kind: current ? "current" : "available" }
+  }
+  if (typeof manager.readNativeSkillCatalog !== "function") fail("refresh the floating-skills runtime to enable effective skill configuration")
   if (manager.readOnlyStageSupported !== true) fail("refresh the floating-skills runtime to enable read-only checks")
-  const catalog = await manager.readCatalog(catalogPath)
+  const catalog = await manager.readNativeSkillCatalog(catalogPath)
   const stage = path.join(process.cwd(), `.trellage-skills-check.${randomUUID()}`)
   await mkdir(stage, { mode: 0o700 })
   try {

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Offline preparation contracts using the real launcher, resolver, and installer."""
 
+import ctypes
+import errno
 import hashlib
 import importlib.util
 import io
@@ -9,11 +11,15 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
+import traceback
 import unittest
+from unittest.mock import patch
 import uuid
 
 FIXTURE, SOURCE, REPO, BIN, NATIVE, UPSTREAM = map(Path, sys.argv[1:7])
@@ -25,6 +31,82 @@ TOOL_OWNER = "trellage-firstmate-prerequisites-v1"
 REVISION = "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
 TOOLS = ("no-mistakes", "treehouse", "gh-axi", "chrome-devtools-axi", "lavish-axi", "tasks-axi", "quota-axi")
 BASE = FIXTURE / "healing-baseline"
+SNAPSHOT_DIGESTS = {}
+
+
+class ImmediateFailureResult(unittest.TextTestResult):
+    def addError(self, test, error):
+        super().addError(test, error)
+        self.report_traceback(test, error)
+
+    def addFailure(self, test, error):
+        super().addFailure(test, error)
+        self.report_traceback(test, error)
+
+    def report_traceback(self, test, error):
+        self.stream.writeln("\n" + self.getDescription(test))
+        traceback.print_exception(*error, file=self.stream)
+        self.stream.flush()
+
+
+def copy_fixture(source, destination):
+    if sys.platform == "darwin":
+        clonefile = ctypes.CDLL(None, use_errno=True).clonefile
+        clonefile.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int)
+        clonefile.restype = ctypes.c_int
+        if clonefile(os.fsencode(source), os.fsencode(destination), 0) == 0:
+            return
+        error = ctypes.get_errno()
+        if error not in (errno.ENOTSUP, errno.EXDEV, errno.ENOSYS, errno.EINVAL):
+            raise OSError(error, os.strerror(error), str(destination))
+    shutil.copytree(source, destination, symlinks=True)
+
+
+class FixtureCopyContract(unittest.TestCase):
+    def test_copies_preserve_links_and_modes_without_sharing_writes(self):
+        with tempfile.TemporaryDirectory(dir=FIXTURE) as temporary:
+            source = Path(temporary) / "source"
+            source.mkdir()
+            original = source / "script"
+            original.write_text("original\n")
+            original.chmod(0o755)
+            (source / "alias").symlink_to("script")
+            destination = Path(temporary) / "destination"
+            copy_fixture(source, destination)
+            copied = destination / "script"
+            self.assertEqual(copied.read_text(), "original\n")
+            self.assertEqual(copied.stat().st_mode & 0o777, 0o755)
+            self.assertEqual(os.readlink(destination / "alias"), "script")
+            self.assertNotEqual(original.stat().st_ino, copied.stat().st_ino)
+            self.assertEqual(copied.stat().st_nlink, 1)
+            copied.write_text("changed\n")
+            copied.chmod(0o600)
+            self.assertEqual(original.read_text(), "original\n")
+            self.assertEqual(original.stat().st_mode & 0o777, 0o755)
+
+    def test_snapshot_cache_detects_restored_mtime_and_atomic_replacement(self):
+        with tempfile.TemporaryDirectory(dir=FIXTURE) as temporary:
+            root = Path(temporary)
+            path = root / "file"
+            path.write_text("abcd")
+            original = path.stat()
+            with patch.object(hashlib, "sha256", wraps=hashlib.sha256) as digest:
+                before = snapshot(root)
+                self.assertEqual(before, snapshot(root))
+                self.assertEqual(digest.call_count, 1)
+                path.write_text("wxyz")
+                os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+                edited = snapshot(root)
+                self.assertNotEqual(before, edited)
+                self.assertEqual(digest.call_count, 2)
+                replacement = root / "replacement"
+                replacement.write_text("abcd")
+                replacement.chmod(original.st_mode & 0o777)
+                os.utime(replacement, ns=(original.st_atime_ns, original.st_mtime_ns))
+                replacement.replace(path)
+                self.assertEqual(before, snapshot(root))
+                self.assertEqual(digest.call_count, 3)
+        SNAPSHOT_DIGESTS.clear()
 
 
 def write(path, text, mode=0o600):
@@ -38,12 +120,17 @@ def snapshot(root):
     if root.exists():
         for path in (root, *sorted(root.rglob("*"))):
             relative = str(path.relative_to(root))
-            if path.is_symlink():
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
                 value = ("link", os.readlink(path))
-            elif path.is_file():
-                value = ("file", path.stat().st_mode & 0o777, hashlib.sha256(path.read_bytes()).hexdigest())
+            elif stat.S_ISREG(metadata.st_mode):
+                identity = (metadata.st_dev, metadata.st_ino, metadata.st_size,
+                            metadata.st_mtime_ns, metadata.st_ctime_ns)
+                if identity not in SNAPSHOT_DIGESTS:
+                    SNAPSHOT_DIGESTS[identity] = hashlib.sha256(path.read_bytes()).hexdigest()
+                value = ("file", metadata.st_mode & 0o777, SNAPSHOT_DIGESTS[identity])
             else:
-                value = ("directory", path.stat().st_mode & 0o777)
+                value = ("directory", metadata.st_mode & 0o777)
             result[relative] = value
     return result
 
@@ -78,7 +165,7 @@ def profile(case):
     return case / "home/.local/share/trellage/profiles/firstmate/default"
 
 
-def process(case, *args, env=None, data=None, helper=False, installed=False):
+def process(case, *args, env=None, data=None, helper=False, installed=False, timeout=45):
     root = runtime(case) if installed else package(case)
     values = environment(case)
     values.update(env or {})
@@ -89,8 +176,10 @@ def process(case, *args, env=None, data=None, helper=False, installed=False):
             native = root.parent / "trellage-claude-common/native-claude"
         values.update(TRELLAGE_CLAUDE_LAUNCHER_NAME="fmx", TRELLAGE_CLAUDE_RUNTIME_ROOT=str(root))
         command = [str(native), "exec-clean", "--", *command]
+    # Approved preparation has a 240-second production deadline, plus outer inspection and startup.
+    timeout = 270 if args and args[0] == "prepare" and "--install-prerequisites" in args else timeout
     return subprocess.run(command, env=values, input=data, text=True, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, timeout=45, cwd=case, check=False)
+                          stderr=subprocess.PIPE, timeout=timeout, cwd=case, check=False)
 
 
 def source_lock_identity(case):
@@ -245,8 +334,9 @@ class HealingContract(unittest.TestCase):
         create_baseline()
 
     def setUp(self):
+        SNAPSHOT_DIGESTS.clear()
         self.case = FIXTURE / ("healing-" + uuid.uuid4().hex)
-        shutil.copytree(BASE, self.case, symlinks=True)
+        copy_fixture(BASE, self.case)
         self.root = profile(self.case)
         record_path = self.root / "receipts/instance.json"
         record = json.loads(record_path.read_text())
@@ -259,12 +349,13 @@ class HealingContract(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.case)
+        SNAPSHOT_DIGESTS.clear()
 
-    def prepare(self, approved=None, revision=REVISION, env=None, data=None):
+    def prepare(self, approved=None, revision=REVISION, env=None, data=None, timeout=45):
         args = ["prepare", "default", "--json", "--expected-source-revision", revision]
         if approved is not None:
             args += ["--install-prerequisites", approved]
-        return process(self.case, *args, env=env, data=data)
+        return process(self.case, *args, env=env, data=data, timeout=timeout)
 
     def response(self, result, state):
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -296,7 +387,7 @@ class HealingContract(unittest.TestCase):
 
     def shared_maintenance_artifacts(self, interrupted=False, missing_runtime=False):
         installed = runtime(self.case)
-        commands = self.case / "home/.local/bin"
+        commands = self.case / "home/.local/share/trellage/.native-commands"
         commands.mkdir(parents=True, exist_ok=True)
         (commands / "fmx").symlink_to(installed / "bin/fmx")
         retired = installed.parent / ".fmx-retired-install.fixture"
@@ -384,10 +475,10 @@ class HealingContract(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("injected failure at after-recovery", result.stderr)
         self.assertEqual((runtime(self.case) / "policies/admission-retired.md").read_text(), "prior runtime\n")
-        self.assertTrue((self.case / "home/.local/bin/fmx").is_symlink())
+        self.assertTrue((self.case / "home/.local/share/trellage/.native-commands/fmx").is_symlink())
         self.assertFalse((runtime(self.case).parent / ".fmx-install.fixture").exists())
         self.assertFalse((runtime(self.case).parent / ".fmx-retired-install.fixture").exists())
-        self.assertFalse((self.case / "home/.local/bin/.fmx-command.fixture").exists())
+        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/.fmx-command.fixture").exists())
         self.assertFalse((runtime(self.case).parent / ".fmx-install.lock").exists())
         self.unchanged(before, self.root)
         self.no_network()
@@ -401,9 +492,9 @@ class HealingContract(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(runtime(self.case).exists())
-        self.assertFalse((self.case / "home/.local/bin/fmx").is_symlink())
+        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/fmx").is_symlink())
         self.assertFalse((runtime(self.case).parent / ".fmx-retired-install.fixture").exists())
-        self.assertFalse((self.case / "home/.local/bin/.fmx-command.fixture").exists())
+        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/.fmx-command.fixture").exists())
         self.assertFalse((runtime(self.case).parent / ".fmx-install.lock").exists())
         self.unchanged(before, self.root)
         self.no_network()
@@ -464,7 +555,8 @@ class HealingContract(unittest.TestCase):
         before = snapshot(cache)
         retired = cache.with_name(".retired." + self.artifact_identity + ".fixture")
         cache.rename(retired)
-        value = self.response(self.prepare(), "ready")
+        # Cache restoration uses the same 240-second maintenance deadline as approved installation.
+        value = self.response(self.prepare(timeout=270), "ready")
         self.assertTrue(value["fleet"]["preparation"]["repairs"])
         self.assertEqual(before, snapshot(cache))
         self.assertFalse(retired.exists())
@@ -1182,4 +1274,4 @@ os.execv(WRAPPED, [WRAPPED, *sys.argv[1:]])
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=1)
+    unittest.main(testRunner=unittest.TextTestRunner(resultclass=ImmediateFailureResult))
