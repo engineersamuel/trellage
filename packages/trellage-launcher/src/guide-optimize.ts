@@ -348,7 +348,7 @@ const runFreshAgent = async (
   const dependencies = options.dependencies ?? {}
   const prompt = buildGuideOptimizePrompt(request)
   const launch = buildHerdrGuideLaunch(profile, prompt)
-  if (request.automatic && (profile.launcher !== "cpx" || profile.profile !== "hve" || request.destination !== "tab"))
+  if (request.automatic && (profile.launcher !== "copilot" || profile.profile !== "hve" || request.destination !== "tab"))
     throw new Error("Automatic approved implementation requires Copilot hve in a same-worktree Herdr tab.")
   const command = request.automatic ? {
     executable: launch.command.executable,
@@ -527,7 +527,7 @@ export const createGuideOptimizeServices = (initialOptions: OptimizeRuntime): Gu
     },
     plan: async (review, destination, signal) => {
       const profile = guideOptimizeProfiles(options.catalog).find((entry) =>
-        entry.profile.launcher === "cpx" && entry.profile.profile === "hve")?.profile
+        entry.profile.launcher === "copilot" && entry.profile.profile === "hve")?.profile
       if (!profile) throw new Error("Planning unavailable: install Native Copilot hve.")
       const authority = await reviewAuthority(review.request.target.gitDirectory, review.id)
       const result: ReviewPlanTerminalResult = { action: "review-plan-terminal", id: review.id,

@@ -1018,9 +1018,10 @@ if [[ "$mode" == guide && ( "$review_seen" == true || "$optimize_seen" == true )
     [[ -n "$review_command" && -f "$review_command" && -x "$review_command" ]] || continue
     if review_inventory="$("$review_command" list --json --cached-capabilities 2>/dev/null)"; then
       review_profiles="$(jq -cn --argjson previous "$review_profiles" --argjson inventory "$review_inventory" \
-        --arg launcher "$review_launcher" --arg commandPath "$review_command" '
+        --arg launcher "$review_launcher" --arg commandPath "$router_command_path" '
         $previous + [$inventory.profiles[] | {
-          launcher: $launcher, commandPath: $commandPath, harness: $inventory.harness,
+          launcher: ({cpx:"copilot",cdx:"codex",cldx:"claude"}[$launcher]),
+          commandPath: $commandPath, harness: $inventory.harness,
           name, description, headless, sandbox: $inventory.sandbox,
           herdrCompatibility: {status: "untested"}
         } + (if has("orchestration") then {orchestration} else {} end)]')" \
@@ -1030,11 +1031,11 @@ if [[ "$mode" == guide && ( "$review_seen" == true || "$optimize_seen" == true )
   review_native="$(jq -cn --argjson profiles "$review_profiles" '{schemaVersion:1, profiles:$profiles}' \
     | "${trellage_launcher[@]}" "$picker_path" enrich-native-list "$guide_root")" \
     || die 'cannot read optional Native profiles'
-  review_catalog="$(jq -cn --argjson native "$review_native" --argjson profiles "$review_profiles" \
+  review_catalog="$(jq -cn --argjson native "$review_native" --arg commandPath "$router_command_path" \
     --arg sandbox "$source_workspace/prototypes/trellage/trellage" '{
       schemaVersion:1, sandboxCommandPath:$sandbox, sandbox:[],
       native: [$native.profiles[] as $entry | $entry + {
-        commandPath: ([$profiles[] | select(.launcher == $entry.launcher and .name == $entry.name)][0].commandPath)
+        commandPath: $commandPath
       }]
     }')"
   printf '%s\n' "$review_catalog"

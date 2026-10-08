@@ -207,7 +207,7 @@ const sourceEnvironment = async (): Promise<NodeJS.ProcessEnv> => {
   return {
     ...process.env,
     TRELLAGE_GUIDE_SKILLS_MANAGER: path.join(root, "scripts/floating-skills.ts"),
-    TRELLAGE_GUIDE_SKILLS_CATALOG: path.join(root, "skills.json"),
+    TRELLAGE_GUIDE_SKILLS_CATALOG: path.join(root, "config.toml"),
     TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE: path.join(
       process.env.XDG_DATA_HOME ?? path.join(home, ".local/share"),
       "trellage/common/skills",

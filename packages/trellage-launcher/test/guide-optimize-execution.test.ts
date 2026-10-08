@@ -206,11 +206,11 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       } finally { readiness.mockRestore(); interactive.mockRestore() }
       const tampered = { ...f.request.approval,
         findings: f.request.approval.findings.map((finding) => ({ ...finding, proposal: "Unauthorized change" })) }
-      await expect(f.services.execute({ ...f.request, approval: tampered }, "native:cpx/reviewer", f.signal))
+      await expect(f.services.execute({ ...f.request, approval: tampered }, "native:copilot/reviewer", f.signal))
         .rejects.toThrow(/approval/iu)
       expect(f.launch).not.toHaveBeenCalled()
-      await f.services.execute(f.request, "native:cpx/reviewer", f.signal)
-      await expect(f.services.execute(f.request, "native:cpx/reviewer", f.signal)).rejects.toThrow(/launch|execution/u)
+      await f.services.execute(f.request, "native:copilot/reviewer", f.signal)
+      await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow(/launch|execution/u)
       expect(f.launch).toHaveBeenCalledOnce()
       expect((await f.services.readReview(id, f.signal)).execution).toBe("launched")
     },
@@ -283,7 +283,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     await services.refreshProfiles?.(new AbortController().signal)
     expect(discover).toHaveBeenCalledWith("/fixture/trx", ["guide", "--review"],
       expect.objectContaining({ env: expect.objectContaining({ TRELLAGE_REVIEW_PROFILES_ONLY: "1" }) }))
-    expect(services.profiles.map((entry) => entry.ref)).toEqual(["native:cpx/reviewer"])
+    expect(services.profiles.map((entry) => entry.ref)).toEqual(["native:copilot/reviewer"])
   })
 
   it("requires saved approval for automatic hve and reserves its same-worktree tab once", async () => {
@@ -293,17 +293,17 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
     })
     const request = { ...f.request, automatic: true as const, destination: "tab" as const }
-    await expect(services.execute({ ...request, destination: "pane" }, "native:cpx/hve", f.signal))
+    await expect(services.execute({ ...request, destination: "pane" }, "native:copilot/hve", f.signal))
       .rejects.toThrow(/tab/u)
     await expect(services.execute({ ...request, approval: { ...request.approval, reviewDigest: "0".repeat(64) } },
-      "native:cpx/hve", f.signal)).rejects.toThrow(/approval/iu)
+      "native:copilot/hve", f.signal)).rejects.toThrow(/approval/iu)
     expect(f.calls.filter((call) => call.executable === "herdr")).toEqual([])
-    await services.execute(request, "native:cpx/hve", f.signal)
+    await services.execute(request, "native:copilot/hve", f.signal)
     const launch = f.calls.find((call) => call.executable === "herdr" && call.args[1] === "run")
     expect(launch?.args.join(" ")).toContain("autopilot")
     expect(launch?.args.join(" ")).toContain("--allow-all")
     expect(launch?.args.join(" ")).toContain("approved findings")
-    await expect(services.execute(request, "native:cpx/hve", f.signal)).rejects.toThrow(/launch|execution/u)
+    await expect(services.execute(request, "native:copilot/hve", f.signal)).rejects.toThrow(/launch|execution/u)
     expect(f.launch).toHaveBeenCalledTimes(1)
   })
 

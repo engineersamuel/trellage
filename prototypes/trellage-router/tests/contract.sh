@@ -1121,7 +1121,7 @@ jq -e --arg sandboxCommandPath "$fixture_source/prototypes/trellage/trellage" '
 TRELLAGE_REVIEW_PROFILES_ONLY=1 "$fixture_bin/trx" guide --review >"$fixture_root/review-handoff-catalog.json" \
   || fail 'review handoff could not discover optional Native profiles'
 jq -e '.sandbox == [] and (.native | length > 0) and
-  all(.native[]; .launcher == "cpx" or .launcher == "cdx" or .launcher == "cldx")' \
+  all(.native[]; .launcher == "copilot" or .launcher == "codex" or .launcher == "claude")' \
   "$fixture_root/review-handoff-catalog.json" >/dev/null || fail 'review handoff catalog contains unsupported profiles'
 mv "$fixture_bin/trellage" "$fixture_root/optimize-trellage.saved"
 "$fixture_bin/trx" guide --optimize >"$fixture_root/guide-optimize-no-sandbox.json" \

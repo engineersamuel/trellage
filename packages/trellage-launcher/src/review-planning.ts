@@ -38,7 +38,7 @@ const planCommand = async (
   prompt: string
   review: ReviewRun
 }> => {
-  if (result.selectedProfile.launcher !== "cpx" || result.selectedProfile.profile !== "hve")
+  if (result.selectedProfile.launcher !== "copilot" || result.selectedProfile.profile !== "hve")
     throw new Error("Planning requires the Native Copilot hve profile.")
   const review = await readReview(result)
   if (review.request.target.cwd !== result.cwd) throw new Error("Planning target belongs to another worktree.")
@@ -64,7 +64,7 @@ const planCommand = async (
   return {
     review,
     prompt,
-    command: { executable: result.selectedProfile.commandPath, args: ["hve", "--plan", "-i", prompt] },
+    command: { executable: result.selectedProfile.commandPath, args: ["run", "copilot", "hve", "--", "--plan", "-i", prompt] },
   }
 }
 
@@ -73,7 +73,7 @@ export const executeReviewPlanTerminal = async (
   runner: CommandRunner,
 ): Promise<number> => {
   const { prompt } = await planCommand(result, runner, new AbortController().signal)
-  const args = ["run", "cpx", "hve", "--", "--plan", "-i", prompt]
+  const args = ["run", "copilot", "hve", "--", "--plan", "-i", prompt]
   const source =
     process.env.TRELLAGE_TRX_NATIVE_SOURCE === "1" &&
     path.resolve(process.env.MISE_PROJECT_ROOT ?? "") === path.resolve(result.cwd)

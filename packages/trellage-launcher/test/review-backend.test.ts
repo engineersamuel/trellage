@@ -1746,6 +1746,10 @@ describe("restricted SDK review workflow", () => {
     }
     try {
       const pending = provider.review(reviewCatalog[1]!, controller.signal)
+      if (scenario === "pending-primary") {
+        await vi.waitFor(() => expect(workers).toBe(6))
+        await vi.advanceTimersByTimeAsync(300)
+      }
       if (scenario === "cancelled") {
         await expect(pending).rejects.toThrow("Fleet cancelled.")
       } else {
