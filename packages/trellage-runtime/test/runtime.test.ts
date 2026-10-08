@@ -295,6 +295,24 @@ test("installed source execution heals inventory drift without accepting source 
   expect(unrelated.stderr).toContain("refusing unrelated source runtime path")
 })
 
+test("upgrades an owned legacy skills.json snapshot without accepting changed legacy policy", () => {
+  const { root, destination, home } = sourceFixture(true)
+  expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+  rmSync(path.join(destination, "config.toml"))
+  write(destination, "skills.json", "{}")
+  writeReadiness(destination)
+  expect(run("validate-replaceable-owned", destination).status).toBe(0)
+
+  write(destination, "skills.json", '{"changed":true}')
+  expect(run("validate-replaceable-owned", destination).status).toBe(1)
+  write(destination, "skills.json", "{}")
+  const upgraded = run("install", root, destination, { HOME: home })
+  expect(upgraded.status, upgraded.stderr).toBe(0)
+  expect(existsSync(path.join(destination, "skills.json"))).toBe(false)
+  expect(readFileSync(path.join(destination, "config.toml"), "utf8")).toBe("{}")
+  expect(() => requireOwnedWorkspace(destination)).not.toThrow()
+})
+
 test("replaceable owned validation accepts a previous Bun pin but rejects changed contents", () => {
   const { root, destination, home } = sourceFixture(true)
   expect(run("install", root, destination, { HOME: home }).status).toBe(0)
