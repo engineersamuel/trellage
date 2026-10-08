@@ -34,27 +34,36 @@ export const runNativeBackend = async (operation: string, harness: string, args:
       const json = operation !== "run" && (args.includes("--json") || args.includes("--goal-features") || operation === "workflow-check" || operation === "harness-version")
       const capture = json || operation === "list"
       const grouped = operation !== "run" && guardedPresets.length > 0
-      const child = spawn(command, argv, { stdio: capture ? ["inherit", "pipe", "inherit"] : "inherit", env, detached: grouped })
+      let child: ReturnType<typeof spawn> | undefined
       const signalChild = (signal: NodeJS.Signals) => {
+        if (child === undefined) return
         if (grouped && child.pid !== undefined) {
           try { process.kill(-child.pid, signal) }
           catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error }
         } else if (child.pid !== undefined) guard.signalTree(child.pid, signal)
       }
-      let guardError: unknown
-      child.once("spawn", () => {
-        try { if (child.pid !== undefined) guard.attachChild(child.pid, grouped) }
-        catch (error) { guardError = error; signalChild("SIGTERM"); return }
-        if (prepared && historyKeys)
-          recorded = createSelectionHistory(prepared.paths).record(historyKeys, { harness, profiles: prepared.profiles }).catch(() => undefined)
-      })
-      let output = ""
-      child.stdout?.on("data", (chunk) => { output += String(chunk) })
       const signals = ["SIGTERM", "SIGINT", "SIGHUP"] as const
       let cancelledBy: (typeof signals)[number] | undefined
       const forwards = signals.map((signal) => () => { cancelledBy ??= signal; signalChild(signal) })
       const removeSignals = () => signals.forEach((signal, index) => process.off(signal, forwards[index]!))
       signals.forEach((signal, index) => process.on(signal, forwards[index]!))
+      try {
+        child = spawn(command, argv, { stdio: capture ? ["inherit", "pipe", "inherit"] : "inherit", env, detached: grouped })
+      } catch (error) {
+        removeSignals()
+        reject(error)
+        return
+      }
+      let guardError: unknown
+      child.once("spawn", () => {
+        try { if (child?.pid !== undefined) guard.attachChild(child.pid, grouped) }
+        catch (error) { guardError = error; signalChild("SIGTERM"); return }
+        if (cancelledBy !== undefined) signalChild(cancelledBy)
+        if (prepared && historyKeys)
+          recorded = createSelectionHistory(prepared.paths).record(historyKeys, { harness, profiles: prepared.profiles }).catch(() => undefined)
+      })
+      let output = ""
+      child.stdout?.on("data", (chunk) => { output += String(chunk) })
       child.once("error", (error) => { removeSignals(); reject(error) })
       child.once("close", (code, signal) => {
         removeSignals()
