@@ -1539,6 +1539,7 @@ describe("restricted SDK review workflow", () => {
       references: new Map(), dispose: async () => {},
     }
     let now = 0
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
     const clock = vi.spyOn(performance, "now").mockImplementation(() => now)
     const controller = new AbortController()
     const timeouts: number[] = []
@@ -1625,6 +1626,7 @@ describe("restricted SDK review workflow", () => {
     } finally {
       await provider.close()
       clock.mockRestore()
+      vi.useRealTimers()
     }
   })
 
