@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import assert from "node:assert/strict"
 import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -76,7 +77,8 @@ test("Codex preserves YouTube argv and adds valid TOML composition instructions"
       if (!match) throw new Error(`Missing shell function ${name}`)
       return match[0]
     }
-    const builtin = source.match(/^youtube_developer_instructions='(.*)'$/m)![1]
+    const builtin = source.match(/^youtube_developer_instructions='(.*)'$/m)?.[1]
+    assert.ok(builtin !== undefined, "Missing YouTube developer instructions")
     const catalog = path.join(root, "catalog.json")
     await writeFile(catalog, JSON.stringify({ profiles: {
       youtube: { requiredEnvironment: ["TRANSCRIPT_API_KEY"] },
@@ -113,12 +115,14 @@ test("Codex preserves YouTube argv and adds valid TOML composition instructions"
     ])
     const composed = await argsFor("youtube", root)
     expect(composed.slice(0, 7)).toEqual(plain.slice(0, 7))
-    expect(Bun.TOML.parse(composed[7]).developer_instructions).toBe(`${builtin}\n\n${selected}`)
+    assert.ok(composed[7] !== undefined)
+    expect(Bun.TOML.parse(composed[7])).toEqual({ developer_instructions: `${builtin}\n\n${selected}` })
     expect(await argsFor("pstack", "")).toEqual([])
     const regular = await argsFor("pstack", root)
     expect(regular).toHaveLength(2)
     expect(regular[0]).toBe("-c")
-    expect(Bun.TOML.parse(regular[1]).developer_instructions).toBe(selected)
+    assert.ok(regular[1] !== undefined)
+    expect(Bun.TOML.parse(regular[1])).toEqual({ developer_instructions: selected })
   } finally {
     await rm(root, { recursive: true, force: true })
   }
