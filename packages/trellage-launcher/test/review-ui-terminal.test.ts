@@ -89,6 +89,19 @@ const createTerminal = async (
       return { color: cell.getFgColor(), default: cell.isFgDefault() }
     },
     waitFor,
+    pressUntil: async (keys: string, ...texts: string[]): Promise<void> => {
+      let lastError: unknown
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        child.write(keys)
+        try {
+          await waitForScreen(1_000, ...texts)
+          return
+        } catch (error) {
+          lastError = error
+        }
+      }
+      throw lastError
+    },
     events,
     close: async (): Promise<void> => {
       if (exit === undefined) child.kill()
@@ -250,10 +263,10 @@ describe("ReviewApp terminal", () => {
       await terminal.waitFor("[x] Ponytail Review")
       terminal.press("\r")
       await terminal.waitFor("New worktree unavailable: uncommitted changes are not transferred.")
+      await terminal.pressUntil("\t", "[Overview]")
       terminal.press("w")
       expect(await terminal.events()).toHaveLength(1)
-      terminal.press("t")
-      await terminal.waitFor("Plan then implement in a new Herdr tab (auto-approved, full access)?")
+      await terminal.pressUntil("t", "Plan then implement in a new Herdr tab (auto-approved, full access)?")
       terminal.press("\r")
       await vi.waitFor(async () => {
         expect((await terminal.events())[1]).toMatchObject({ action: "continue", destination: "new-herdr-tab" })
