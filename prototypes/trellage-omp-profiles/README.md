@@ -1,6 +1,6 @@
 # Native Oh My Pi profiles
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run omp PROFILE` runs host-native Oh My Pi with two isolated profiles:
 

@@ -13,7 +13,7 @@ const entry: LaunchEntry = {
   plugins: ["claude-blog", "editorial-review"],
   skills: ["caveman", "technical-writing"],
   mcps: ["docs", "files"],
-  commandAlias: "copilot",
+  commandName: "copilot",
   commandPath: "/opt/trellage/copilot/bin/trx",
   profileArgument: "copilot",
   passthroughArgs: ["two words", "", "--literal=*"],
@@ -52,7 +52,7 @@ describe("profile detail layout", () => {
     const fields = Object.fromEntries(rows.filter((row) => row.label !== undefined).map((row) => [row.label, row.text]))
 
     expect(fields.Run).toBe("trx run copilot copilot")
-    expect(fields.Alias).toBe("copilot")
+    expect(fields.Command).toBe("copilot")
     expect(fields.Binary).toBe("/opt/trellage/copilot/bin/trx")
     expect(fields.Arguments).toBe('["copilot","--model","gpt-fast","two words","","--literal=*"]')
   })

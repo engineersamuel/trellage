@@ -261,7 +261,7 @@ class FleetRunner implements CommandRunner {
   private herdr(call: Call): CommandRunResult {
     const { args } = call
     if (args[0] === "pane" && args[1] === "run") {
-      const match = /^env TRELLAGE_AUTOMATION=1 \/fixture\/bin\/trx run firstmate (default|pstack-workers) --fmx-expected-fleet-json '(.+)'$/u.exec(args[3]!)
+      const match = /^env TRELLAGE_AUTOMATION=1 \/fixture\/bin\/trx run firstmate (default|pstack-workers) --firstmate-expected-fleet-json '(.+)'$/u.exec(args[3]!)
       if (match === null) throw new Error("Fixture supervisor launch requires an explicit identity guard.")
       const encoded = match[2]!.replaceAll("'\"'\"'", "'")
       expect(Buffer.byteLength(encoded, "utf8")).toBeLessThanOrEqual(65_536)
@@ -344,7 +344,7 @@ const paneRuns = (runner: FleetRunner): ReadonlyArray<Call> =>
 const expectedSupervisorCommand = (profile: ProfileName): string =>
   `env TRELLAGE_AUTOMATION=1 ${renderCommandPreview({
     executable: "/fixture/bin/trx",
-    args: ["run", "firstmate", profile, "--fmx-expected-fleet-json", JSON.stringify(identity(profile))],
+    args: ["run", "firstmate", profile, "--firstmate-expected-fleet-json", JSON.stringify(identity(profile))],
   })}`
 const submissionIds = (runner: FleetRunner) =>
   commands(runner, "submit").map(({ options }) => JSON.parse(options!.stdin!).requestId)
@@ -432,7 +432,7 @@ describe("Firstmate current-terminal handoff", () => {
       events.push("terminal-launch")
       expect(command).toEqual({
         executable: "/fixture/bin/trx",
-        args: ["run", "firstmate", name, "--fmx-expected-fleet-json", JSON.stringify(identity(name))],
+        args: ["run", "firstmate", name, "--firstmate-expected-fleet-json", JSON.stringify(identity(name))],
       })
       expect(Buffer.byteLength(command.args[4]!, "utf8")).toBeLessThanOrEqual(65_536)
       expect(options).toEqual({

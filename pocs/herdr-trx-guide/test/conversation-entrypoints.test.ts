@@ -60,7 +60,7 @@ fs.writeFileSync(${JSON.stringify(outputPath)}, JSON.stringify({
   paneId: process.env.HERDR_PANE_ID,
   pluginContext: process.env.HERDR_PLUGIN_CONTEXT_JSON,
   legacyIntent: process.env.TRELLAGE_GUIDE_HERDR_INTENT_FILE,
-  inheritedOrigin: process.env.FMX_LAUNCH_PROVENANCE_JSON
+  inheritedOrigin: process.env.TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON
 }))
 `, { mode: 0o755 })
   return { binary, outputPath }
@@ -160,7 +160,7 @@ test("Firstmate conversation popup carries only private origin metadata and pres
   await execFileAsync(process.execPath, [entrypoint("conversation-popup.ts")], {
     env: {
       ...fixture.env, TRELLAGE_GUIDE_CONVERSATION_REQUEST_FILE: requestPath,
-      HERDR_PANE_ID: "popup-pane", FMX_LAUNCH_PROVENANCE_JSON: "untrusted daemon hint",
+      HERDR_PANE_ID: "popup-pane", TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON: "untrusted daemon hint",
     },
   })
   const call = JSON.parse(await readFile(mise.outputPath, "utf8"))

@@ -794,7 +794,7 @@ timeout --signal=TERM --kill-after=30s 15m \
   --no-remote-export \
   --no-auto-update \
   --stream off \
-  >"$log_dir/native-cpx.jsonl" 2>"$log_dir/native-cpx.stderr"
+  >"$log_dir/native-copilot.jsonl" 2>"$log_dir/native-copilot.stderr"
 jq -Rse '
   [split("\n")[] | fromjson?
     | select(
@@ -803,9 +803,9 @@ jq -Rse '
         and .data.content != "")
     | .data.content
   ][-1] == "OK"
-' "$log_dir/native-cpx.jsonl" >/dev/null
+' "$log_dir/native-copilot.jsonl" >/dev/null
 
-run_text_probe native-cdx \
+run_text_probe native-codex \
   env TRELLAGE_AUTOMATION=1 \
   trx run codex pstack -- exec 'Reply exactly OK. Do not use tools.'
 
@@ -816,13 +816,13 @@ timeout --signal=TERM --kill-after=30s 15m \
   --output-format stream-json \
   --verbose \
   -p 'Reply exactly OK. Do not use tools.' \
-  >"$log_dir/native-cldx.jsonl" 2>"$log_dir/native-cldx.stderr"
+  >"$log_dir/native-claude.jsonl" 2>"$log_dir/native-claude.stderr"
 jq -Rse '
   [split("\n")[] | fromjson? | select(.type == "result")][-1] as $result
   | $result.subtype == "success"
     and $result.is_error == false
     and $result.result == "OK"
-' "$log_dir/native-cldx.jsonl" >/dev/null
+' "$log_dir/native-claude.jsonl" >/dev/null
 
 run_text_probe native-grok \
   trx run grok superpowers -- -p 'Reply exactly OK. Do not use tools.'
@@ -833,21 +833,21 @@ timeout --signal=TERM --kill-after=30s 15m \
   --quiet \
   --tool-profile none \
   'Reply exactly OK. Do not use tools.' \
-  >"$log_dir/native-jcx.json" 2>"$log_dir/native-jcx.stderr"
-jq -e '.text == "OK"' "$log_dir/native-jcx.json" >/dev/null
+  >"$log_dir/native-jcode.json" 2>"$log_dir/native-jcode.stderr"
+jq -e '.text == "OK"' "$log_dir/native-jcode.json" >/dev/null
 
 run_text_probe native-omp \
   trx run omp default -- \
   --headless-policy no-user-input \
   -p 'Reply exactly OK. Do not use tools.'
 
-run_text_probe native-picx \
+run_text_probe native-pi \
   trx run pi default -- -p 'Reply exactly OK. Do not use tools.'
 
-run_text_probe native-prx \
+run_text_probe native-prime \
   trx run prime default -- --single-turn -p 'Reply exactly OK. Do not use tools.'
-trx shutdown prime >"$log_dir/native-prx-shutdown.stdout" \
-  2>"$log_dir/native-prx-shutdown.stderr"
+trx shutdown prime >"$log_dir/native-prime-shutdown.stdout" \
+  2>"$log_dir/native-prime-shutdown.stderr"
 
 timeout --signal=TERM --kill-after=30s 45m \
   trellage build claude-council \

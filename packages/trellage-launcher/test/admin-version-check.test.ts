@@ -32,23 +32,23 @@ describe("buildUpdateCheckCommand", () => {
 })
 
 describe("parseUpdateCheckOutput", () => {
-  it("parses the prime/jcode/omp/picx 'is current' message family", () => {
-    expect(parseUpdateCheckOutput("prx update: 0.8.1 is current", "0.8.1")).toEqual({ current: true, installed: "0.8.1" })
+  it("parses the prime/jcode/omp/pi 'is current' message family", () => {
+    expect(parseUpdateCheckOutput("prime update: 0.8.1 is current", "0.8.1")).toEqual({ current: true, installed: "0.8.1" })
   })
 
-  it("parses the prime/jcode/omp/picx '-> available' message family", () => {
-    expect(parseUpdateCheckOutput("prx update: 0.8.1 -> 0.9.0 available", "0.8.1")).toEqual({
+  it("parses the prime/jcode/omp/pi '-> available' message family", () => {
+    expect(parseUpdateCheckOutput("prime update: 0.8.1 -> 0.9.0 available", "0.8.1")).toEqual({
       current: false,
       installed: "0.8.1",
       latest: "0.9.0",
     })
   })
 
-  it("parses the cpx 'current (X)' message family", () => {
+  it("parses the copilot 'current (X)' message family", () => {
     expect(parseUpdateCheckOutput("default: current (1.2.3)", "1.2.3")).toEqual({ current: true, installed: "1.2.3" })
   })
 
-  it("parses the cpx 'update available (X -> Y)' message family", () => {
+  it("parses the copilot 'update available (X -> Y)' message family", () => {
     expect(parseUpdateCheckOutput("default: update available (1.2.3 -> 1.3.0)", "1.2.3")).toEqual({
       current: false,
       installed: "1.2.3",
@@ -56,29 +56,29 @@ describe("parseUpdateCheckOutput", () => {
     })
   })
 
-  it("parses the cpx 'not installed' message as malformed rather than a version result", () => {
+  it("parses the copilot 'not installed' message as malformed rather than a version result", () => {
     const result = parseUpdateCheckOutput("default: not installed", undefined)
     expect(result).toMatchObject({ malformed: true })
   })
 
-  it("parses the fmx 'is current (COMMIT)' message family", () => {
-    expect(parseUpdateCheckOutput("fmx update: default is current (abc123def456)", "abc123def456")).toEqual({
+  it("parses the firstmate 'is current (COMMIT)' message family", () => {
+    expect(parseUpdateCheckOutput("firstmate update: default is current (abc123def456)", "abc123def456")).toEqual({
       current: true,
       installed: "abc123def456",
     })
   })
 
-  it("parses the fmx 'is stale (installed X, catalog pin Y)' message family", () => {
+  it("parses the firstmate 'is stale (installed X, catalog pin Y)' message family", () => {
     expect(
       parseUpdateCheckOutput(
-        "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)",
+        "firstmate update: default is stale (installed abc123def456, catalog pin 789abc012def)",
         "abc123def456",
       ),
     ).toEqual({ current: false, installed: "abc123def456", latest: "789abc012def" })
   })
 
-  it("parses the fmx 'is not set up' message as malformed rather than a version result", () => {
-    const result = parseUpdateCheckOutput("fmx update: default is not set up (catalog pin 789abc012def)", undefined)
+  it("parses the firstmate 'is not set up' message as malformed rather than a version result", () => {
+    const result = parseUpdateCheckOutput("firstmate update: default is not set up (catalog pin 789abc012def)", undefined)
     expect(result).toMatchObject({ malformed: true })
   })
 
@@ -92,11 +92,11 @@ describe("parseUpdateCheckOutput", () => {
     if ("malformed" in result) expect(result.diagnostic).toContain("unrecognized")
   })
 
-  it("parses cdx's skill-only 'PROFILE: current' message with no version to name (e.g. youtube)", () => {
+  it("parses codex's skill-only 'PROFILE: current' message with no version to name (e.g. youtube)", () => {
     expect(parseUpdateCheckOutput("youtube: current", undefined)).toEqual({ current: true })
   })
 
-  it("parses cdx's skill-only 'PROFILE: update available' message with no version to name", () => {
+  it("parses codex's skill-only 'PROFILE: update available' message with no version to name", () => {
     expect(parseUpdateCheckOutput("youtube: update available", undefined)).toEqual({ current: false, latest: "—" })
   })
 })

@@ -9,18 +9,25 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - Trellage Sandbox profiles describe reproducible container environments.
 - The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
 - Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
-- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `firstmate`, `jcode`, `omp`, `pi`, `prime`, and `grok`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
+- The `trx` router is the only Native launch interface. It presents canonical harnesses: `agency`, `codex`, `claude`, `copilot`, `firstmate`, `jcode`, `omp`, `pi`, `prime`, and `grok`. Installed private backends use those same canonical names and are not published on `PATH`.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
 ## Build and test
 
-- Run the full repository suite with `make test`.
+- Run change-aware local validation with `make test-changed`. Reserve the full
+  `make test` suite for `main`, manual high-risk verification, and CI.
+- Use `make test-changed-build` only when changed Sandbox profiles must also be
+  rebuilt. Routine PR and pre-push validation does not build OCI images.
 - When working on `trx guide` code, always run `mise run trx-guide-test` and
   ensure it passes before completing the work.
 - Run profile compiler tests with `make profile-compiler`.
 - Run native profile matrix contracts with `make profile-matrix-test`.
 - Run static native profile verification with `make profile-matrix`.
+- Firstmate validation is split into `make native-firstmate-overlays`,
+  `make native-firstmate-healing`, `make native-firstmate-instances`, and
+  `make native-firstmate-lifecycle`. Use `make native-firstmate-profile` only
+  for the complete aggregate gate.
 - Prepare the source workspace with `scripts/install-source-runtime.sh --prepare`
   from the root. This installs frozen dependencies and records runtime readiness.
   Do not substitute a raw Bun install for this preparation step.
@@ -39,7 +46,7 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
 - After merging CLI/compiler/native launcher changes, from the repo root run
   `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
-  launchers (`agx`/`cdx`/`cpx`/`cldx`/`fmx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
+  launchers (`agency`/`codex`/`copilot`/`claude`/`firstmate`/`jcode`/`omp`/`pi`/`prime`) then `trx`, then
   runs a non-locked Sandbox `build` for each `profiles/*`. Use `--native-only`
   or `--sandbox-only` on the underlying script when you only need one side.
   Installed `post-merge` and `post-rewrite` hooks prepare the source runtime and
@@ -68,14 +75,14 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - A successful run must save evidence under
   `~/.local/state/trellage-azure-fresh/evidence/<resource-group>/`, verify exact
   `OK` results for all eight Native launchers and Sandbox `claude-council`,
-  verify both `fmx` profiles through setup, doctor, healthy inventory,
+  verify both `firstmate` profiles through setup, doctor, healthy inventory,
   source-pin, and overlay evidence, and delete its owned Azure resource group.
 - A failed run intentionally retains the resource group. Use
   `mise run azure-fresh-install -- ssh`, then retry `bootstrap` or `accept`.
   Always finish an abandoned run with `mise run azure-fresh-install -- down`.
 - This is a live, billable, quota-consuming integration test. Do not add it to
   `make test` or run it without explicit intent. Before delivery, run
-  `make test`; after merged launcher or compiler changes, also run
+  `make test-changed`; after merged launcher or compiler changes, also run
   `mise run rebuild-profiles`.
 
 ## Worktrees and mise trust
@@ -102,7 +109,7 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - `packages/trellage-conversation-source` contains production conversation capture.
 - `packages/trellage-runtime` contains shared Bun execution and source-runtime support.
 - `prototypes/trellage` contains the Trellage Sandbox launcher and container runtime entrypoints.
-- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`agx`, `cdx`, `cpx`, `cldx`, `fmx`, `jcx`, `omp`, `picx`, `prx`).
+- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`agency`, `codex`, `copilot`, `claude`, `firstmate`, `jcode`, `omp`, `pi`, `prime`).
 - `profiles` contains concrete locked profile definitions.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.
@@ -182,7 +189,7 @@ url = "https://packagefeedproxy.microsoft.io/pypi/simple/"
 default = true
 ```
 
-### Trellage Native (`trx`, `cpx`, `cdx`, …)
+### Trellage Native (`trx`, `copilot`, `codex`, …)
 
 - Native launchers run on the host; they inherit host package-manager config.
 - Configure npm, pip, and uv on the host (as above). Do not rely on public PyPI

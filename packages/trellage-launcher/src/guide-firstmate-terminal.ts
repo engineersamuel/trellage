@@ -68,7 +68,7 @@ export const buildFirstmateSupervisorCommand = (
   selectedFirstmateInstance(profile, identity)
   const { firstmateInstance: _instance, firstmateInstanceContext: _context, ...unbound } = profile
   const command = buildGuideLaunchCommand(unbound).command
-  return { ...command, args: [...command.args, ...firstmateInstanceControlArgs(profile), "--fmx-expected-fleet-json", encoded] }
+  return { ...command, args: [...command.args, ...firstmateInstanceControlArgs(profile), "--firstmate-expected-fleet-json", encoded] }
 }
 
 const confirmedEntryRequest = (entry: AcceptedEntry): FirstmateSubmissionRequestV1 => {

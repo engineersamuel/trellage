@@ -90,7 +90,7 @@ export const buildSetupCommand = (entry: AdminProfileEntry): CommandSpec => {
  * downloading a pinned release) that legitimately take much longer than a
  * read-only `doctor` check. The shared `AdminRunManager`'s default timeout
  * (30s, sized for fast diagnostic checks) is too short for these and was
- * observed truncating a real `prx setup` mid-install ("setup timed out").
+ * observed truncating a real `prime setup` mid-install ("setup timed out").
  * This override only widens the budget for `repair`/`setup`; `doctor`
  * rechecks keep the manager's own default.
  */

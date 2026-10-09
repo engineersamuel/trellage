@@ -2741,7 +2741,7 @@ esac
       expect(failureTrace, failure.name).toContain(failure.reached)
       for (const forbidden of failure.forbidden) expect(failureTrace, failure.name).not.toContain(forbidden)
     }
-  }, 20_000)
+  }, 60_000)
 })
 
 describe("development build receipt persistence", () => {

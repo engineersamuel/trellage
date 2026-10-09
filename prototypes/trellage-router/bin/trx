@@ -23,22 +23,22 @@ readonly ownership_value='trellage-router-v3'
 # this repository's working tree. KEEP THIS IN SYNC with the native entries in
 # docs/herdr-compatibility.json.
 readonly trx_herdr_ledger='[
-  { "launcher": "agx", "profile": "trellage-azure", "status": "untested", "notes": "Static launcher, state-isolation, Agency configuration, inventory, and router contracts pass; awaiting an end-to-end Agency and Azure MCP round trip." },
-  { "launcher": "cldx", "profile": "default", "status": "verified" },
-  { "launcher": "fmx", "profile": "default", "status": "untested", "notes": "The previous 4ad8cbae pin completed a real Herdr supervisor-and-scout round trip with consent-managed prerequisites, an isolated Treehouse worktree and worker home, and teardown. The 527aa7c1 source and retry-safe guide inbox flow still require a new live round trip." },
-  { "launcher": "fmx", "profile": "pstack-workers", "status": "untested", "notes": "The previous shared runtime had default-profile Herdr evidence, not a pstack-workers fleet proof. The 527aa7c1 source, worker policy, and guide inbox flow require a profile-specific live round trip." },
+  { "launcher": "agency", "profile": "trellage-azure", "status": "untested", "notes": "Static launcher, state-isolation, Agency configuration, inventory, and router contracts pass; awaiting an end-to-end Agency and Azure MCP round trip." },
+  { "launcher": "claude", "profile": "default", "status": "verified" },
+  { "launcher": "firstmate", "profile": "default", "status": "untested", "notes": "The previous 4ad8cbae pin completed a real Herdr supervisor-and-scout round trip with consent-managed prerequisites, an isolated Treehouse worktree and worker home, and teardown. The 527aa7c1 source and retry-safe guide inbox flow still require a new live round trip." },
+  { "launcher": "firstmate", "profile": "pstack-workers", "status": "untested", "notes": "The previous shared runtime had default-profile Herdr evidence, not a pstack-workers fleet proof. The 527aa7c1 source, worker policy, and guide inbox flow require a profile-specific live round trip." },
   { "launcher": "omp", "profile": "copilot", "status": "verified" },
-  { "launcher": "picx", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
-  { "launcher": "cdx", "profile": "pstack", "status": "untested", "notes": "Static profile, plugin inventory, and native launch contracts pass; awaiting an end-to-end Herdr round trip." },
-  { "launcher": "cdx", "profile": "youtube", "status": "verified", "notes": "Verified end-to-end with Herdr v0.8.2: a fresh cdx youtube session loaded youtube-full and completed one free TranscriptAPI channel/resolve request for @GitHub with the expected channel ID and canonical URL, using standard-input curl configuration without putting the key in process arguments." },
-  { "launcher": "cpx", "profile": "hve", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally via cpx repair hve (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
-  { "launcher": "cpx", "profile": "compound-engineering", "status": "untested", "notes": "Static catalog, plugin inventory, and profile-guide contracts pass; an end-to-end Herdr round trip has not yet been recorded." },
-  { "launcher": "cpx", "profile": "awesome", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrator\u0027s own repo/worktree; never finished." },
-  { "launcher": "cpx", "profile": "superpowers", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
-  { "launcher": "cdx", "profile": "superpowers", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
-  { "launcher": "jcx", "profile": "default", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
+  { "launcher": "pi", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
+  { "launcher": "codex", "profile": "pstack", "status": "untested", "notes": "Static profile, plugin inventory, and native launch contracts pass; awaiting an end-to-end Herdr round trip." },
+  { "launcher": "codex", "profile": "youtube", "status": "verified", "notes": "Verified end-to-end with Herdr v0.8.2: a fresh codex youtube session loaded youtube-full and completed one free TranscriptAPI channel/resolve request for @GitHub with the expected channel ID and canonical URL, using standard-input curl configuration without putting the key in process arguments." },
+  { "launcher": "copilot", "profile": "hve", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally via copilot repair hve (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
+  { "launcher": "copilot", "profile": "compound-engineering", "status": "untested", "notes": "Static catalog, plugin inventory, and profile-guide contracts pass; an end-to-end Herdr round trip has not yet been recorded." },
+  { "launcher": "copilot", "profile": "awesome", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrator\u0027s own repo/worktree; never finished." },
+  { "launcher": "copilot", "profile": "superpowers", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
+  { "launcher": "codex", "profile": "superpowers", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
+  { "launcher": "jcode", "profile": "default", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
   { "launcher": "omp", "profile": "local", "status": "known-issue", "issue": "G", "notes": "No local Qwen inference backend is registered with the running copilot-proxy-rs instance; out-of-repo infrastructure provisioning, not a Trellage code defect. driveLoop also masked the real error as an empty submind-answerer response." },
-  { "launcher": "prx", "profile": "default", "status": "known-issue", "issue": "E", "notes": "\"agent_not_ready: not an active named agent\"; pane never reached a ready state." }
+  { "launcher": "prime", "profile": "default", "status": "known-issue", "issue": "E", "notes": "\"agent_not_ready: not an active named agent\"; pane never reached a ready state." }
 ]'
 
 die() {
@@ -47,7 +47,7 @@ die() {
 }
 
 restore_transcript_api_key() {
-  if [[ "$1" == cdx && "$2" == youtube && "$trx_transcript_api_key_is_set" == true ]]; then
+  if [[ "$1" == codex && "$2" == youtube && "$trx_transcript_api_key_is_set" == true ]]; then
     export TRANSCRIPT_API_KEY="$trx_transcript_api_key"
   fi
 }
@@ -208,10 +208,12 @@ discover_launcher() {
   local launcher="$1"
   local marker_name="$2"
   local marker_value="$3"
-  local legacy_marker_value="${4-}"
-  local package_dir="${5-}"
+  local package_dir="${4-}"
+  shift 4
+  local -a legacy_marker_values=("$@")
   local discovered
   local installed_marker_value
+  local accepted_marker_value
   local resolved
   local dev_candidate
   local dev_source
@@ -246,7 +248,7 @@ discover_launcher() {
     return 0
   fi
 
-  # Backends are private installed assets; public aliases are never discovered on PATH.
+  # Backends are private installed assets; trx is the only public launch interface.
   if [[ ! -f "$expected" ]]; then
     dev_source="$source_workspace/prototypes/$package_dir/bin/$launcher"
     [[ -f "$dev_source" && -x "$dev_source" && ! -L "$dev_source" ]] \
@@ -264,9 +266,15 @@ discover_launcher() {
   [[ -f "$marker" && -r "$marker" && ! -L "$marker" ]] \
     || die "missing ownership marker for $launcher"
   installed_marker_value="$(<"$marker")"
-  if [[ "$installed_marker_value" != "$marker_value" ]] \
-    && { [[ -z "$legacy_marker_value" ]] || [[ "$installed_marker_value" != "$legacy_marker_value" ]]; }; then
-    die "invalid ownership marker for $launcher"
+  if [[ "$installed_marker_value" != "$marker_value" ]]; then
+    accepted_marker_value=false
+    for legacy_marker_value in "${legacy_marker_values[@]}"; do
+      if [[ "$installed_marker_value" == "$legacy_marker_value" ]]; then
+        accepted_marker_value=true
+        break
+      fi
+    done
+    [[ "$accepted_marker_value" == true ]] || die "invalid ownership marker for $launcher"
   fi
 
   printf '%s\n' "$expected"
@@ -384,7 +392,7 @@ read_catalog() {
         and (test("[\u0000-\u001f\u007f-\u009f]") | not))
       and (.headless | validHeadless)
       and ((has("orchestration") | not) or
-        ($launcher == "fmx" and $harness == "firstmate"
+        ($launcher == "firstmate" and $harness == "firstmate"
           and .headless.prompt == false and (.orchestration | validOrchestration)))
       and (.plugin == null or
         (.plugin
@@ -429,57 +437,57 @@ read_catalog() {
 
 build_choices() {
   jq -cn \
-    --argjson cpxCatalog "$1" \
-    --argjson cdxCatalog "$2" \
-    --argjson cldxCatalog "$3" \
-    --argjson jcxCatalog "$4" \
+    --argjson copilotCatalog "$1" \
+    --argjson codexCatalog "$2" \
+    --argjson claudeCatalog "$3" \
+    --argjson jcodeCatalog "$4" \
     --argjson ompCatalog "$5" \
-    --argjson picxCatalog "$6" \
-    --argjson prxCatalog "$7" \
-    --argjson fmxCatalog "$8" \
-    --argjson agxCatalog "$9" \
-    --arg cpxPath "${10}" \
-    --arg cdxPath "${11}" \
-    --arg cldxPath "${12}" \
-    --arg jcxPath "${13}" \
+    --argjson piCatalog "$6" \
+    --argjson primeCatalog "$7" \
+    --argjson firstmateCatalog "$8" \
+    --argjson agencyCatalog "$9" \
+    --arg copilotPath "${10}" \
+    --arg codexPath "${11}" \
+    --arg claudePath "${12}" \
+    --arg jcodePath "${13}" \
     --arg ompPath "${14}" \
-    --arg picxPath "${15}" \
-    --arg prxPath "${16}" \
-    --arg fmxPath "${17}" \
-    --arg agxPath "${18}" \
+    --arg piPath "${15}" \
+    --arg primePath "${16}" \
+    --arg firstmatePath "${17}" \
+    --arg agencyPath "${18}" \
     --arg trxPath "$router_command_path" \
     --argjson passthroughArgs "${19}" '
     def models($catalog; $profile):
-      if $catalog.launcher == "cpx" or $catalog.launcher == "cdx" then
+      if $catalog.launcher == "copilot" or $catalog.launcher == "codex" then
         {defaultModel:"gpt-6-astra",models:["gpt-6-astra","gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
-      elif $catalog.launcher == "cldx" then
+      elif $catalog.launcher == "claude" then
         {defaultModel:"claude-opus-5",models:["claude-opus-5","claude-sonnet-5","claude-haiku-4.5"],modelOverrideSupported:true}
       elif $catalog.launcher == "omp" and $profile.name == "copilot" then
         {defaultModel:"github-copilot/gpt-5.6-sol:medium",models:["github-copilot/gpt-5.6-sol:medium","github-copilot/gpt-5.6-terra:medium"],modelOverrideSupported:true}
-      elif $catalog.launcher == "picx" then
+      elif $catalog.launcher == "pi" then
         {defaultModel:"copilot-proxy-rs/gpt-6-astra:medium",models:["copilot-proxy-rs/gpt-6-astra:medium"],modelOverrideSupported:false}
       elif $catalog.launcher == "omp" then
         {defaultModel:"copilot-proxy-rs/qwen3.6-35b-a3b-local",models:["copilot-proxy-rs/qwen3.6-35b-a3b-local"],modelOverrideSupported:false}
-      elif $catalog.launcher == "jcx" then
+      elif $catalog.launcher == "jcode" then
         {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol"],modelOverrideSupported:true}
-      elif $catalog.launcher == "prx" then
+      elif $catalog.launcher == "prime" then
         {defaultModel:"claude-opus-5",models:["claude-opus-5"],modelOverrideSupported:true}
       else {models:[],modelOverrideSupported:false}
       end;
     def display_harness($catalog):
-      if $catalog.launcher == "omp" or $catalog.launcher == "picx" then "pi" else $catalog.harness end;
+      if $catalog.launcher == "omp" or $catalog.launcher == "pi" then "pi" else $catalog.harness end;
     def display_profile($catalog; $profile):
       if $catalog.launcher == "omp" and $profile.name == "copilot" then "oh-my-pi" else $profile.name end;
     def binary_path($catalog):
-      if $catalog.launcher == "cpx" then $cpxPath
-      elif $catalog.launcher == "cdx" then $cdxPath
-      elif $catalog.launcher == "cldx" then $cldxPath
-      elif $catalog.launcher == "fmx" then $fmxPath
-      elif $catalog.launcher == "jcx" then $jcxPath
+      if $catalog.launcher == "copilot" then $copilotPath
+      elif $catalog.launcher == "codex" then $codexPath
+      elif $catalog.launcher == "claude" then $claudePath
+      elif $catalog.launcher == "firstmate" then $firstmatePath
+      elif $catalog.launcher == "jcode" then $jcodePath
       elif $catalog.launcher == "omp" then $ompPath
-      elif $catalog.launcher == "picx" then $picxPath
-      elif $catalog.launcher == "prx" then $prxPath
-      elif $catalog.launcher == "agx" then $agxPath
+      elif $catalog.launcher == "pi" then $piPath
+      elif $catalog.launcher == "prime" then $primePath
+      elif $catalog.launcher == "agency" then $agencyPath
       else error("unknown launcher path") end;
     def pair($catalog):
       $catalog.profiles[] as $profile
@@ -490,7 +498,7 @@ build_choices() {
         label: ($harness + " / " + $displayProfile),
         harness: $harness,
         profile: $displayProfile,
-        commandAlias: $catalog.launcher,
+        commandName: $catalog.launcher,
         commandPath: $trxPath,
         profileArgument: $profile.name,
         passthroughArgs: $passthroughArgs,
@@ -503,17 +511,17 @@ build_choices() {
       } + models($catalog; $profile));
     {
       prompt: "Select a Trellage harness/profile",
-      description: "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex (cdx) uses Full Access without a native sandbox; other legacy native profiles are not security boundaries.",
+      description: "Direct launch: trx run LAUNCHER PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent launchers and Firstmate fleet orchestration directly on the host with isolated state. Codex uses Full Access without a native sandbox; other Native profiles are not security boundaries.",
       choices: [
-        pair($cpxCatalog),
-        pair($cdxCatalog),
-        pair($cldxCatalog),
-        pair($fmxCatalog),
-        pair($jcxCatalog),
+        pair($copilotCatalog),
+        pair($codexCatalog),
+        pair($claudeCatalog),
+        pair($firstmateCatalog),
+        pair($jcodeCatalog),
         pair($ompCatalog),
-        pair($picxCatalog),
-        pair($prxCatalog)
-        ,pair($agxCatalog)
+        pair($piCatalog),
+        pair($primeCatalog)
+        ,pair($agencyCatalog)
       ]
     }
   '
@@ -521,15 +529,15 @@ build_choices() {
 
 build_profile_list() {
   jq -cn \
-    --argjson cpxCatalog "$1" \
-    --argjson cdxCatalog "$2" \
-    --argjson cldxCatalog "$3" \
-    --argjson jcxCatalog "$4" \
+    --argjson copilotCatalog "$1" \
+    --argjson codexCatalog "$2" \
+    --argjson claudeCatalog "$3" \
+    --argjson jcodeCatalog "$4" \
     --argjson ompCatalog "$5" \
-    --argjson picxCatalog "$6" \
-    --argjson prxCatalog "$7" \
-    --argjson fmxCatalog "$8" \
-    --argjson agxCatalog "$9" \
+    --argjson piCatalog "$6" \
+    --argjson primeCatalog "$7" \
+    --argjson firstmateCatalog "$8" \
+    --argjson agencyCatalog "$9" \
     --argjson herdrLedger "$trx_herdr_ledger" '
     def herdrCompatibility($launcher; $name):
       ([$herdrLedger[] | select(.launcher == $launcher and .profile == $name)] | .[0]) as $entry
@@ -540,7 +548,7 @@ build_profile_list() {
       $catalog.profiles[] | {
         launcher: (if $catalog.launcher == "omp" then "omp" else $catalog.harness end),
         harness: (if $catalog.launcher == "omp" then "omp" else $catalog.harness end),
-        name: (if $catalog.launcher == "agx" then "azure" elif $catalog.launcher == "omp" and .name == "copilot" then "default" else .name end),
+        name: (if $catalog.launcher == "agency" then "azure" elif $catalog.launcher == "omp" and .name == "copilot" then "default" else .name end),
         description,
         headless,
         sandbox: $catalog.sandbox,
@@ -549,15 +557,15 @@ build_profile_list() {
     {
       schemaVersion: 1,
       profiles: [
-        profiles($cpxCatalog),
-        profiles($cdxCatalog),
-        profiles($cldxCatalog),
-        profiles($fmxCatalog),
-        profiles($jcxCatalog),
+        profiles($copilotCatalog),
+        profiles($codexCatalog),
+        profiles($claudeCatalog),
+        profiles($firstmateCatalog),
+        profiles($jcodeCatalog),
         profiles($ompCatalog),
-        profiles($picxCatalog),
-        profiles($prxCatalog)
-        ,profiles($agxCatalog)
+        profiles($piCatalog),
+        profiles($primeCatalog)
+        ,profiles($agencyCatalog)
       ]
     }
   '
@@ -565,15 +573,15 @@ build_profile_list() {
 
 # Builds the profile-guide catalog shared by `guide`
 # `admin`, and `upgrade all`, writing it to "$1/combined.json". Requires guide_root,
-# runtime, source_workspace, picker_path, cpx/cdx/cldx/jcx/omp/picx/prx (validated launcher
+# runtime, source_workspace, picker_path, copilot/codex/claude/jcode/omp/pi/prime (validated launcher
 # paths), and the per-launcher *_catalog variables to already be in scope.
 build_combined_guide_catalog() {
   local out_dir="$1"
   local native_only="${2:-false}"
   local profile_list
   profile_list="$(build_profile_list \
-    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
+    "$copilot_catalog" "$codex_catalog" "$claude_catalog" \
+    "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$firstmate_catalog" "$agency_catalog")" \
     || die 'could not build native profile list'
 
   local sandbox_cli
@@ -970,7 +978,7 @@ if [[ "$mode" == compose-select ]]; then
   exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-launcher/src/run-select-cli.tsx" ${compose_args[@]+"${compose_args[@]}"}
 fi
 if [[ "$mode" == compose ]]; then
-  if [[ "${compose_args[0]-}" == codex && "${compose_args[1]-}" == youtube ]]; then restore_transcript_api_key cdx youtube; fi
+  if [[ "${compose_args[0]-}" == codex && "${compose_args[1]-}" == youtube ]]; then restore_transcript_api_key codex youtube; fi
   require_source_runtime
   exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/native-run/cli.ts" ${compose_args[@]+"${compose_args[@]}"}
 fi
@@ -1009,18 +1017,18 @@ if [[ "$mode" == guide && ( "$review_seen" == true || "$optimize_seen" == true )
       exec "${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "" "${guide_args[@]}" 3< <(printf '%s\n' "$review_catalog")
   fi
   review_profiles='[]'
-  for review_launcher in cpx cdx cldx; do
+  for review_launcher in copilot codex claude; do
     case "$review_launcher" in
-      cpx) review_command="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1 '' trellage-copilot-profiles 2>/dev/null)" || continue ;;
-      cdx) review_command="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1 trellage-codex-profiles 2>/dev/null)" || continue ;;
-      cldx) review_command="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 '' trellage-claude-profiles 2>/dev/null)" || continue ;;
+      copilot) review_command="$(discover_launcher copilot .managed-by-trellage-copilot-profiles trellage-copilot-profiles-v1 trellage-copilot-profiles 2>/dev/null)" || continue ;;
+      codex) review_command="$(discover_launcher codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles trellage-codex-profiles-v1 2>/dev/null)" || continue ;;
+      claude) review_command="$(discover_launcher claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 trellage-claude-profiles 2>/dev/null)" || continue ;;
     esac
     [[ -n "$review_command" && -f "$review_command" && -x "$review_command" ]] || continue
     if review_inventory="$("$review_command" list --json --cached-capabilities 2>/dev/null)"; then
       review_profiles="$(jq -cn --argjson previous "$review_profiles" --argjson inventory "$review_inventory" \
         --arg launcher "$review_launcher" --arg commandPath "$router_command_path" '
         $previous + [$inventory.profiles[] | {
-          launcher: ({cpx:"copilot",cdx:"codex",cldx:"claude"}[$launcher]),
+          launcher: $launcher,
           commandPath: $commandPath, harness: $inventory.harness,
           name, description, headless, sandbox: $inventory.sandbox,
           herdrCompatibility: {status: "untested"}
@@ -1063,27 +1071,27 @@ fi
 
 
 
-cpx="$(discover_launcher cpx .managed-by-trellage-profiles trellage-profiles-v1 '' trellage-copilot-profiles)"
-cdx="$(discover_launcher cdx .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles-v1 trellage-codex-profiles)"
-cldx="$(discover_launcher cldx .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 '' trellage-claude-profiles)"
-fmx="$(discover_launcher fmx .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1 '' trellage-firstmate-profiles)"
-jcx="$(discover_launcher jcx .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1 '' trellage-jcode-profiles)"
-omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v2 '' trellage-omp-profiles)"
-picx="$(discover_launcher picx .managed-by-trellage-picx-profiles trellage-picx-profiles-v1 '' trellage-picx-profiles)"
-prx="$(discover_launcher prx .managed-by-trellage-prime-profiles trellage-prime-profiles-v1 '' trellage-prime-profiles)"
-agx="$(discover_launcher agx .managed-by-trellage-agency-profiles trellage-agency-profiles-v1 '' trellage-agency-profiles)"
+copilot="$(discover_launcher copilot .managed-by-trellage-copilot-profiles trellage-copilot-profiles-v1 trellage-copilot-profiles)"
+codex="$(discover_launcher codex .managed-by-trellage-codex-profiles trellage-codex-profiles-v2 trellage-codex-profiles trellage-codex-profiles-v1)"
+claude="$(discover_launcher claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 trellage-claude-profiles)"
+firstmate="$(discover_launcher firstmate .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1 trellage-firstmate-profiles)"
+jcode="$(discover_launcher jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1 trellage-jcode-profiles)"
+omp="$(discover_launcher omp .managed-by-trellage-omp-profiles trellage-omp-profiles-v2 trellage-omp-profiles)"
+pi="$(discover_launcher pi .managed-by-trellage-pi-profiles trellage-pi-profiles-v1 trellage-pi-profiles)"
+prime="$(discover_launcher prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1 trellage-prime-profiles)"
+agency="$(discover_launcher agency .managed-by-trellage-agency-profiles trellage-agency-profiles-v1 trellage-agency-profiles)"
 
 if [[ "$mode" == inventory ]]; then
   case "$inventory_launcher" in
-    cpx) inventory_executable="$cpx" ;;
-    cdx) inventory_executable="$cdx" ;;
-    cldx) inventory_executable="$cldx" ;;
-    fmx) inventory_executable="$fmx" ;;
-    jcx) inventory_executable="$jcx" ;;
+    copilot) inventory_executable="$copilot" ;;
+    codex) inventory_executable="$codex" ;;
+    claude) inventory_executable="$claude" ;;
+    firstmate) inventory_executable="$firstmate" ;;
+    jcode) inventory_executable="$jcode" ;;
     omp) inventory_executable="$omp" ;;
-    picx) inventory_executable="$picx" ;;
-    prx) inventory_executable="$prx" ;;
-    agx) inventory_executable="$agx" ;;
+    pi) inventory_executable="$pi" ;;
+    prime) inventory_executable="$prime" ;;
+    agency) inventory_executable="$agency" ;;
     *) die "unknown launcher: $inventory_launcher" ;;
   esac
   output="$("$inventory_executable" inventory "$inventory_profile_arg" --json)" \
@@ -1103,34 +1111,34 @@ cleanup_catalog_tmp() {
 }
 trap cleanup_catalog_tmp EXIT HUP INT TERM
 
-read_catalog cpx copilot "$cpx" >"$catalog_tmp/cpx" 2>"$catalog_tmp/cpx.err" &
-cpx_catalog_pid=$!
-read_catalog cdx codex "$cdx" >"$catalog_tmp/cdx" 2>"$catalog_tmp/cdx.err" &
-cdx_catalog_pid=$!
-read_catalog cldx claude "$cldx" >"$catalog_tmp/cldx" 2>"$catalog_tmp/cldx.err" &
-cldx_catalog_pid=$!
-read_catalog fmx firstmate "$fmx" >"$catalog_tmp/fmx" 2>"$catalog_tmp/fmx.err" &
-fmx_catalog_pid=$!
-read_catalog jcx jcode "$jcx" >"$catalog_tmp/jcx" 2>"$catalog_tmp/jcx.err" &
-jcx_catalog_pid=$!
-read_catalog omp oh-my-pi "$omp" >"$catalog_tmp/omp" 2>"$catalog_tmp/omp.err" &
+read_catalog copilot copilot "$copilot" >"$catalog_tmp/copilot" 2>"$catalog_tmp/copilot.err" &
+copilot_catalog_pid=$!
+read_catalog codex codex "$codex" >"$catalog_tmp/codex" 2>"$catalog_tmp/codex.err" &
+codex_catalog_pid=$!
+read_catalog claude claude "$claude" >"$catalog_tmp/claude" 2>"$catalog_tmp/claude.err" &
+claude_catalog_pid=$!
+read_catalog firstmate firstmate "$firstmate" >"$catalog_tmp/firstmate" 2>"$catalog_tmp/firstmate.err" &
+firstmate_catalog_pid=$!
+read_catalog jcode jcode "$jcode" >"$catalog_tmp/jcode" 2>"$catalog_tmp/jcode.err" &
+jcode_catalog_pid=$!
+read_catalog omp omp "$omp" >"$catalog_tmp/omp" 2>"$catalog_tmp/omp.err" &
 omp_catalog_pid=$!
-read_catalog picx pi "$picx" >"$catalog_tmp/picx" 2>"$catalog_tmp/picx.err" &
-picx_catalog_pid=$!
-read_catalog prx prime "$prx" >"$catalog_tmp/prx" 2>"$catalog_tmp/prx.err" &
-prx_catalog_pid=$!
-read_catalog agx agency "$agx" >"$catalog_tmp/agx" 2>"$catalog_tmp/agx.err" &
-agx_catalog_pid=$!
+read_catalog pi pi "$pi" >"$catalog_tmp/pi" 2>"$catalog_tmp/pi.err" &
+pi_catalog_pid=$!
+read_catalog prime prime "$prime" >"$catalog_tmp/prime" 2>"$catalog_tmp/prime.err" &
+prime_catalog_pid=$!
+read_catalog agency agency "$agency" >"$catalog_tmp/agency" 2>"$catalog_tmp/agency.err" &
+agency_catalog_pid=$!
 
 catalog_status=0
 for catalog_pid in \
-  "$cpx_catalog_pid" "$cdx_catalog_pid" "$cldx_catalog_pid" \
-  "$fmx_catalog_pid" "$jcx_catalog_pid" "$omp_catalog_pid" "$picx_catalog_pid" \
-  "$prx_catalog_pid" "$agx_catalog_pid"; do
+  "$copilot_catalog_pid" "$codex_catalog_pid" "$claude_catalog_pid" \
+  "$firstmate_catalog_pid" "$jcode_catalog_pid" "$omp_catalog_pid" "$pi_catalog_pid" \
+  "$prime_catalog_pid" "$agency_catalog_pid"; do
   wait "$catalog_pid" || catalog_status=1
 done
 if ((catalog_status != 0)); then
-  for launcher in cpx cdx cldx fmx jcx omp picx prx agx; do
+  for launcher in copilot codex claude firstmate jcode omp pi prime agency; do
     while IFS= read -r diagnostic; do
       printf '%s\n' "$diagnostic" >&2
     done <"$catalog_tmp/$launcher.err"
@@ -1138,15 +1146,15 @@ if ((catalog_status != 0)); then
   die 'catalog discovery failed'
 fi
 
-cpx_catalog="$(<"$catalog_tmp/cpx")"
-cdx_catalog="$(<"$catalog_tmp/cdx")"
-cldx_catalog="$(<"$catalog_tmp/cldx")"
-fmx_catalog="$(<"$catalog_tmp/fmx")"
-jcx_catalog="$(<"$catalog_tmp/jcx")"
+copilot_catalog="$(<"$catalog_tmp/copilot")"
+codex_catalog="$(<"$catalog_tmp/codex")"
+claude_catalog="$(<"$catalog_tmp/claude")"
+firstmate_catalog="$(<"$catalog_tmp/firstmate")"
+jcode_catalog="$(<"$catalog_tmp/jcode")"
 omp_catalog="$(<"$catalog_tmp/omp")"
-picx_catalog="$(<"$catalog_tmp/picx")"
-prx_catalog="$(<"$catalog_tmp/prx")"
-agx_catalog="$(<"$catalog_tmp/agx")"
+pi_catalog="$(<"$catalog_tmp/pi")"
+prime_catalog="$(<"$catalog_tmp/prime")"
+agency_catalog="$(<"$catalog_tmp/agency")"
 if [[ "$mode" == upgrade ]]; then
   require_source_runtime
   [[ -f "$picker_path" && ! -L "$picker_path" ]] \
@@ -1192,8 +1200,8 @@ trap - EXIT HUP INT TERM
 
 if [[ "$mode" == list ]]; then
   profile_list="$(build_profile_list \
-    "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" \
-    "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog")" \
+    "$copilot_catalog" "$codex_catalog" "$claude_catalog" \
+    "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$firstmate_catalog" "$agency_catalog")" \
     || die 'could not build profile list'
   if ((list_json)); then
     require_source_runtime
@@ -1294,8 +1302,8 @@ require_source_runtime
 passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
   || die 'could not encode launcher arguments'
 choices="$(build_choices \
-  "$cpx_catalog" "$cdx_catalog" "$cldx_catalog" "$jcx_catalog" "$omp_catalog" "$picx_catalog" "$prx_catalog" "$fmx_catalog" "$agx_catalog" \
-  "$cpx" "$cdx" "$cldx" "$jcx" "$omp" "$picx" "$prx" "$fmx" "$agx" "$passthrough_args")" \
+  "$copilot_catalog" "$codex_catalog" "$claude_catalog" "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$firstmate_catalog" "$agency_catalog" \
+  "$copilot" "$codex" "$claude" "$jcode" "$omp" "$pi" "$prime" "$firstmate" "$agency" "$passthrough_args")" \
   || die 'could not build profile choices'
 
 choice_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-choices.XXXXXX")" \
@@ -1320,41 +1328,41 @@ selected_model="$(jq -r '.model // empty' <<<"$launch_intent")" \
 launcher="${selection%%:*}"
 profile="${selection#*:}"
 case "$launcher" in
-  cpx)
-    selected_launcher="$cpx"
-    selected_catalog="$cpx_catalog"
+  copilot)
+    selected_launcher="$copilot"
+    selected_catalog="$copilot_catalog"
     ;;
-  cdx)
-    selected_launcher="$cdx"
-    selected_catalog="$cdx_catalog"
+  codex)
+    selected_launcher="$codex"
+    selected_catalog="$codex_catalog"
     ;;
-  cldx)
-    selected_launcher="$cldx"
-    selected_catalog="$cldx_catalog"
+  claude)
+    selected_launcher="$claude"
+    selected_catalog="$claude_catalog"
     ;;
-  fmx)
-    selected_launcher="$fmx"
-    selected_catalog="$fmx_catalog"
+  firstmate)
+    selected_launcher="$firstmate"
+    selected_catalog="$firstmate_catalog"
     ;;
-  jcx)
-    selected_launcher="$jcx"
-    selected_catalog="$jcx_catalog"
+  jcode)
+    selected_launcher="$jcode"
+    selected_catalog="$jcode_catalog"
     ;;
   omp)
     selected_launcher="$omp"
     selected_catalog="$omp_catalog"
     ;;
-  picx)
-    selected_launcher="$picx"
-    selected_catalog="$picx_catalog"
+  pi)
+    selected_launcher="$pi"
+    selected_catalog="$pi_catalog"
     ;;
-  prx)
-    selected_launcher="$prx"
-    selected_catalog="$prx_catalog"
+  prime)
+    selected_launcher="$prime"
+    selected_catalog="$prime_catalog"
     ;;
-  agx)
-    selected_launcher="$agx"
-    selected_catalog="$agx_catalog"
+  agency)
+    selected_launcher="$agency"
+    selected_catalog="$agency_catalog"
     ;;
   *) die 'terminal picker returned an invalid launcher' ;;
 esac
@@ -1367,7 +1375,7 @@ launch_arguments=("$selected_launcher" "$profile")
 [[ -z "$selected_model" ]] || launch_arguments+=(--model "$selected_model")
 launch_arguments+=("$@")
 if [[ "$launch_target" == herdr ]]; then
-  if [[ "$launcher" == cdx && "$profile" == youtube \
+  if [[ "$launcher" == codex && "$profile" == youtube \
       && "$trx_transcript_api_key_is_set" == true ]]; then
     die 'explicit TRANSCRIPT_API_KEY cannot be forwarded securely to Herdr; use the Trellage Varlock source or launch in the current pane'
   fi

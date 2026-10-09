@@ -10,7 +10,15 @@ cd "$repo_root"
 files_tmp="$(mktemp "${TMPDIR:-/tmp}/check-shell-syntax.XXXXXX")"
 trap 'rm -f -- "$files_tmp"' EXIT
 
-if ! git ls-files -z -- >"$files_tmp"; then
+if (( $# > 0 )); then
+  for file in "$@"; do
+    [[ "$file" != /* && "$file" != ../* && "$file" != */../* ]] || {
+      printf 'shell syntax: path must be repository-relative: %s\n' "$file" >&2
+      exit 1
+    }
+    printf '%s\0' "$file"
+  done >"$files_tmp"
+elif ! git ls-files -z -- >"$files_tmp"; then
   printf 'shell syntax: git ls-files failed\n' >&2
   exit 1
 fi

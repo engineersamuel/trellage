@@ -13,6 +13,7 @@ import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import path from "node:path"
 import { bunExecutable } from "./index.ts"
+import { isFrozenLockfileFailure, retryInstall } from "./install-retry.ts"
 import { acquirePreparationLock } from "./preparation-lock.ts"
 import { withRegistryTransport } from "./lock-transport.ts"
 import {
@@ -129,30 +130,52 @@ async function installFrozenDependencies(root: string, env: NodeJS.ProcessEnv, i
     }
   }
   await withRegistryTransport(root, registry, async () => {
-    const child = spawn(
-      bunExecutable(),
-      [
-        "--no-env-file",
-        "install",
-        "--frozen-lockfile",
-        "--ignore-scripts",
-        "--no-progress",
-        "--backend=copyfile",
-        `--config=${path.join(root, "bunfig.toml")}`,
-      ],
-      { cwd: root, env: { ...env, HOME: installHome }, stdio: ["ignore", 2, 2], signal: cancellation.signal },
+    await retryInstall(
+      async () => {
+        let stderr = ""
+        const child = spawn(
+          bunExecutable(),
+          [
+            "--no-env-file",
+            "install",
+            "--frozen-lockfile",
+            "--ignore-scripts",
+            "--no-progress",
+            "--backend=copyfile",
+            `--config=${path.join(root, "bunfig.toml")}`,
+          ],
+          { cwd: root, env: { ...env, HOME: installHome }, stdio: ["ignore", 2, "pipe"], signal: cancellation.signal },
+        )
+        child.stderr?.on("data", (chunk: Buffer) => {
+          process.stderr.write(chunk)
+          if (stderr.length < 16_384) stderr += chunk.toString("utf8", 0, 16_384 - stderr.length)
+        })
+        await new Promise<void>((resolve, reject) => {
+          let failure: Error | undefined
+          child.once("error", (error) => {
+            failure = error
+          })
+          child.once("close", (code, signal) => {
+            if (failure !== undefined) reject(failure)
+            else if (code !== 0) {
+              const error = new Error(`frozen source dependency installation failed (${code ?? signal})`)
+              Object.assign(error, { deterministic: isFrozenLockfileFailure(stderr) })
+              reject(error)
+            }
+            else resolve()
+          })
+        })
+      },
+      {
+        signal: cancellation.signal,
+        shouldRetry: (error) => !(error instanceof Error && "deterministic" in error && error.deterministic === true),
+        onRetry: (_error, nextAttempt, attempts) => {
+          process.stderr.write(
+            `trellage source runtime: frozen dependency installation failed; retrying (${nextAttempt}/${attempts})\n`,
+          )
+        },
+      },
     )
-    await new Promise<void>((resolve, reject) => {
-      let failure: Error | undefined
-      child.once("error", (error) => {
-        failure = error
-      })
-      child.once("close", (code, signal) => {
-        if (failure !== undefined) reject(failure)
-        else if (code !== 0) reject(new Error(`frozen source dependency installation failed (${code ?? signal})`))
-        else resolve()
-      })
-    })
   })
 }
 
@@ -173,7 +196,11 @@ async function requireReplaceable(destination: string, legacy: LegacyRuntime): P
   }
   safeDirectory(destination)
   const entries = readdirSync(destination).sort()
-  const floatingLayouts = ["floating-skills.mjs,skills.json", "floating-skills.mjs,fmx-registry.py,skills.json"]
+  const floatingLayouts = [
+    "floating-skills.mjs,skills.json",
+    "firstmate-registry.py,floating-skills.mjs,skills.json",
+    "floating-skills.mjs,fmx-registry.py,skills.json",
+  ]
   if (legacy === "floating" && floatingLayouts.includes(entries.join(","))) {
     for (const entry of entries) safePath(path.join(destination, entry), "file")
     return false

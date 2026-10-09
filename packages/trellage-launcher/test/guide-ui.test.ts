@@ -1110,9 +1110,9 @@ describe("guideUiReducer: intent and match", () => {
       const failed = guideUiReducer(started(), {
         type: GuideUiActionType.AugmentFailed,
         runId: 1,
-        message: "cpx hve research failed",
+        message: "copilot hve research failed",
       })
-      expect(failed.augmentJob).toMatchObject({ status: "failed", errorMessage: "cpx hve research failed" })
+      expect(failed.augmentJob).toMatchObject({ status: "failed", errorMessage: "copilot hve research failed" })
       const retried = guideUiReducer(failed, { type: GuideUiActionType.AugmentRetry })
       expect(retried.augmentJob).toMatchObject({ status: "running", runId: 2, kind: GuideAugmentKind.Research })
       expect(guideUiReducer(failed, { type: GuideUiActionType.AugmentDiscard }).augmentJob).toBeUndefined()
@@ -2412,7 +2412,7 @@ describe("runGuideGenerationStep", () => {
   ] as const)(
     "reapplies the canonical Firstmate contract after interactive generation for %s",
     async (profile, expectedHeading, expectsWorkerContract) => {
-      const tmpRoot = await mkdtemp(path.join(tmpdir(), `guide-ui-generate-fmx-${profile}-`))
+      const tmpRoot = await mkdtemp(path.join(tmpdir(), `guide-ui-generate-firstmate-${profile}-`))
       try {
         const catalog = buildFirstmateCatalog(tmpRoot)
         await writeFirstmateGuideFixture(tmpRoot, profile)
@@ -3397,7 +3397,7 @@ describe("destinationOptions", () => {
         expect(candidatePaneHeight(10)).toBe(6)
         expect(candidateRailWidth(100)).toBe(30)
         expect(candidateRailWidth(60)).toBe(20)
-        expect(compactCommandPreview("cpx hve -i 'line one\nline two'")).toBe("cpx hve -i 'line one line two'")
+        expect(compactCommandPreview("copilot hve -i 'line one\nline two'")).toBe("copilot hve -i 'line one line two'")
       })
 
       it("wraps and pages large guide text without losing content", () => {
@@ -3449,7 +3449,7 @@ describe("destinationOptions", () => {
 })
 
 describe("buildCurrentTerminalResult: headless gating", () => {
-  it("uses Copilot interactive prompt delivery when the selected cpx profile supports prompts", () => {
+  it("uses Copilot interactive prompt delivery when the selected copilot profile supports prompts", () => {
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
@@ -3489,7 +3489,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     expect(result.promptHandling).toBe("argv")
   })
 
-  it("passes a cdx prompt positionally even when conservative headless support is false", () => {
+  it("passes a codex prompt positionally even when conservative headless support is false", () => {
     const result = buildCurrentTerminalResult(nativeSelectedProfile(false), "Do the thing.", "/repo")
     expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])
     expect(result.promptHandling).toBe("argv")
@@ -3530,7 +3530,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
 describe("Herdr result builders: trust-safe initial prompt delivery", () => {
   const herdrContext: HerdrContext = { workspaceId: "workspace-1", paneId: "pane-1", surface: "pane" }
 
-  it("queues a cpx prompt in the interactive command so folder trust cannot consume later prompt injection", () => {
+  it("queues a copilot prompt in the interactive command so folder trust cannot consume later prompt injection", () => {
     const result = buildCurrentHerdrWorkspaceResult(
       {
         surface: "native",
@@ -3548,7 +3548,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
     expect(result.promptDelivery).toBe("command")
   })
 
-  it("queues a cdx positional prompt so hook trust cannot consume later prompt injection", () => {
+  it("queues a codex positional prompt so hook trust cannot consume later prompt injection", () => {
     const result = buildCurrentHerdrWorkspaceResult(nativeSelectedProfile(true), "Do the thing.", "/repo", herdrContext)
     expect(result.action).toBe("current-herdr-workspace")
     expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])

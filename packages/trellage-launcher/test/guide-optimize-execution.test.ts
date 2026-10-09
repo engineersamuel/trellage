@@ -551,7 +551,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
             selectedProfile: {
               ...profile.profile,
               launcher,
-              commandPath: `/fixture/${launcher}`,
+              commandPath: "/fixture/trx",
               headlessPrompt,
             },
           },
@@ -565,7 +565,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
         expect(runs).toEqual([
           {
             command: {
-              executable: `/fixture/${launcher}`,
+              executable: "/fixture/trx",
               args: ["run", launcher, "reviewer", promptFlag, buildGuideOptimizePrompt(f.request)],
             },
             cwd: f.root,

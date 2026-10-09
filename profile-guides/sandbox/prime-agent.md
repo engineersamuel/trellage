@@ -13,7 +13,7 @@ avoidFor:
 - GitHub PR factories
 - Anything needing a stable, low-surprise harness
 - Autonomous background investigation while unattended — use Headlong's continuous mind instead
-- Host-native Prime work that requires the native prx runtime rather than a reproducible Sandbox
+- Host-native Prime work that requires the native prime runtime rather than a reproducible Sandbox
 prerequisites: []
 workflows:
 - id: long-horizon-research-loop
@@ -41,7 +41,7 @@ workflows:
 - You need a session that can detach and resume later without losing its persistent iPython control-loop state.
 - You want to delegate exploratory work to subagents from within a single long-running loop.
 - You want to direct the control loop yourself. For continuous autonomous work between interactions, use
-  Headlong; for host-native Prime, use the native `prx` runtime.
+  Headlong; for host-native Prime, use the native `prime` runtime.
 
 ## Avoid This Profile When
 
@@ -54,7 +54,7 @@ workflows:
 - No documented slash-command surface is published locally for this harness — describe the research or automation task directly.
 - Detach/resume is a first-class feature of this profile; long-horizon work is expected to span multiple sessions.
 - Headlong persists an autonomous background mind and dashboard; Prime persists a user-directed IPython
-  control loop. This Sandbox is separate from the host-native `prx` runtime.
+  control loop. This Sandbox is separate from the host-native `prime` runtime.
 
 ## Gotchas
 

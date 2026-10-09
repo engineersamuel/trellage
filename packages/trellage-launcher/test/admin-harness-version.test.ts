@@ -281,7 +281,7 @@ describe("operation and release identities", () => {
 
 describe("reconcileHarnessVersionResults", () => {
   it("shares only latest while preserving native and sandbox installed versions", () => {
-    const cpx = nativeEntry({
+    const copilot = nativeEntry({
       ref: "native:copilot/default",
       launcher: "copilot",
       harness: "copilot",
@@ -304,8 +304,8 @@ describe("reconcileHarnessVersionResults", () => {
       ],
     ])
 
-    const results = reconcileHarnessVersionResults([cpx, sandbox], (key) => raw.get(key))
-    expect(results.get(cpx.ref)).toEqual(known("1.0.82", "1.0.90"))
+    const results = reconcileHarnessVersionResults([copilot, sandbox], (key) => raw.get(key))
+    expect(results.get(copilot.ref)).toEqual(known("1.0.82", "1.0.90"))
     expect(results.get(sandbox.ref)).toEqual(known("1.0.70", "1.0.90"))
   })
 
@@ -373,9 +373,9 @@ describe("reconcileHarnessVersionResults", () => {
 
 describe("harnessVersionEntriesForForceResync", () => {
   it("refreshes an equivalent native/sandbox release group", () => {
-    const cpx = nativeEntry({ ref: "native:copilot/default", launcher: "copilot", harness: "copilot" })
+    const copilot = nativeEntry({ ref: "native:copilot/default", launcher: "copilot", harness: "copilot" })
     const sandbox = sandboxEntry({ ref: "sandbox:copilot", harness: "copilot" })
-    expect(harnessVersionEntriesForForceResync(cpx, [cpx, sandbox])).toEqual([cpx, sandbox])
+    expect(harnessVersionEntriesForForceResync(copilot, [copilot, sandbox])).toEqual([copilot, sandbox])
   })
 
   it("keeps Firstmate force refresh profile-scoped", () => {

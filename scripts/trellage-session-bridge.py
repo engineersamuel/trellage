@@ -215,7 +215,7 @@ def herdr_agent_context(agent):
 
 def firstmate_provenance_helper():
     helper = (Path(os.environ["HOME"]) / ".local/share/trellage/common/floating-skills-runtime"
-              / "prototypes/trellage-firstmate-profiles/lib/fmx-registry.py")
+              / "prototypes/trellage-firstmate-profiles/lib/firstmate-registry.py")
     for path in (helper, *helper.parents):
         if path.is_symlink():
             raise BridgeError("unsafe Firstmate provenance verifier")
@@ -239,13 +239,13 @@ def firstmate_captain_context(raw, profile):
     root = root / "instances" / instance_id if mode == "named" else root / profile
     if (os.environ.get("CLAUDE_CONFIG_DIR") != str(root / "captain/claude")
         or os.environ.get("FM_HOME") != str(root / "home")
-        or os.environ.get("FMX_PROFILE_ROOT") != str(root)):
+        or os.environ.get("TRELLAGE_FIRSTMATE_PROFILE_ROOT") != str(root)):
         raise BridgeError("Firstmate provenance does not match the captain home")
     return instance_id if mode == "named" else "legacy"
 
 
 def firstmate_launch_origin(agent, profile):
-    raw = os.environ.get("FMX_LAUNCH_PROVENANCE_JSON", "")
+    raw = os.environ.get("TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON", "")
     if not raw:
         return None
     if agent != "claude" or len(raw.encode()) > 65536:

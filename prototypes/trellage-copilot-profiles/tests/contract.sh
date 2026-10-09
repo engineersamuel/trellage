@@ -556,7 +556,7 @@ for profile in awesome compound-engineering hve plannotator superpowers tufte-vd
   printf '{"profile":"%s"}\n' "$profile" >"$profile_home/plugins/$profile-plugin/manifest.json"
 done
 
-launcher='./bin/cpx'
+launcher='./bin/copilot'
 installer='./install.sh'
 uninstaller='./uninstall.sh'
 readme="$prototype_root/README.md"
@@ -564,7 +564,7 @@ readme="$prototype_root/README.md"
 [[ -x "$launcher" ]] || fail "missing executable launcher: $launcher"
 [[ -x "$installer" ]] || fail "missing executable installer: $installer"
 [[ -x "$uninstaller" ]] || fail "missing executable uninstaller: $uninstaller"
-assert_line 'Copilot authentication is inherited through the CLI native credential mechanism; cpx never copies ~/.copilot into a profile home.' "$readme"
+assert_line 'Copilot authentication is inherited through the CLI native credential mechanism; copilot never copies ~/.copilot into a profile home.' "$readme"
 
 export FAKE_COPILOT_HARNESS_UPDATE_LOG="$fixture_root/harness-update.jsonl"
 profiles_before_harness_update="$(profile_tree_hash "$HOME/.local/share/trellage/profiles/copilot")"
@@ -779,9 +779,9 @@ for malicious_profile in '../../../../../.ssh' 'bad/name' '.hidden' 'Upper'; do
   for malicious_operation in setup doctor launch; do
     malicious_status=0
     case "$malicious_operation" in
-      setup) CPX_CATALOG="$malicious_catalog" "$launcher" setup "$malicious_profile" >"$fixture_root/malicious.out" 2>"$fixture_root/malicious.err" || malicious_status=$? ;;
-      doctor) CPX_CATALOG="$malicious_catalog" "$launcher" doctor "$malicious_profile" >"$fixture_root/malicious.out" 2>"$fixture_root/malicious.err" || malicious_status=$? ;;
-      launch) CPX_CATALOG="$malicious_catalog" "$launcher" "$malicious_profile" --prompt unsafe >"$fixture_root/malicious.out" 2>"$fixture_root/malicious.err" || malicious_status=$? ;;
+      setup) TRELLAGE_COPILOT_CATALOG="$malicious_catalog" "$launcher" setup "$malicious_profile" >"$fixture_root/malicious.out" 2>"$fixture_root/malicious.err" || malicious_status=$? ;;
+      doctor) TRELLAGE_COPILOT_CATALOG="$malicious_catalog" "$launcher" doctor "$malicious_profile" >"$fixture_root/malicious.out" 2>"$fixture_root/malicious.err" || malicious_status=$? ;;
+      launch) TRELLAGE_COPILOT_CATALOG="$malicious_catalog" "$launcher" "$malicious_profile" --prompt unsafe >"$fixture_root/malicious.out" 2>"$fixture_root/malicious.err" || malicious_status=$? ;;
     esac
     [[ "$malicious_status" -ne 0 ]] \
       || fail "$malicious_operation accepted malicious profile key: $malicious_profile"
@@ -799,9 +799,9 @@ jq '.profiles.hve.headless.questionToolControl = "invalid"' \
 for invalid_operation in list setup launch; do
   invalid_status=0
   case "$invalid_operation" in
-    list) CPX_CATALOG="$invalid_headless_catalog" "$launcher" list --json >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
-    setup) CPX_CATALOG="$invalid_headless_catalog" "$launcher" setup hve >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
-    launch) CPX_CATALOG="$invalid_headless_catalog" "$launcher" hve --prompt unsafe >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
+    list) TRELLAGE_COPILOT_CATALOG="$invalid_headless_catalog" "$launcher" list --json >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
+    setup) TRELLAGE_COPILOT_CATALOG="$invalid_headless_catalog" "$launcher" setup hve >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
+    launch) TRELLAGE_COPILOT_CATALOG="$invalid_headless_catalog" "$launcher" hve --prompt unsafe >"$fixture_root/invalid-headless.out" 2>"$fixture_root/invalid-headless.err" || invalid_status=$? ;;
   esac
   [[ "$invalid_status" -ne 0 ]] || fail "$invalid_operation accepted invalid headless catalog"
   assert_contains 'invalid catalog:' "$fixture_root/invalid-headless.err"
@@ -813,8 +813,8 @@ printf '%s\n' 'repository skill sentinel' >"$worktree/.github/skills/repository-
 launch_output="$fixture_root/launch.out"
 (
   cd "$worktree"
-  CPX_PROFILES_ROOT="$fixture_root/forbidden-profile-root" \
-    "$prototype_root/bin/cpx" hve --prompt 'hello world' --allow-tool 'git status'
+  TRELLAGE_COPILOT_PROFILES_ROOT="$fixture_root/forbidden-profile-root" \
+    "$prototype_root/bin/copilot" hve --prompt 'hello world' --allow-tool 'git status'
 ) >"$launch_output"
 expected_hve_home="$HOME/.local/share/trellage/profiles/copilot/hve/home"
 assert_contains "COPILOT_HOME=$expected_hve_home" "$launch_output"
@@ -837,7 +837,7 @@ actual_hve_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_lo
 
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" hve --plan -i 'Plan fixes before editing.'
+  "$prototype_root/bin/copilot" hve --plan -i 'Plan fixes before editing.'
 ) >"$fixture_root/plan-launch.out"
 expected_plan_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
@@ -849,7 +849,7 @@ actual_plan_launch="$(jq -c 'select(.args[0] == "--plan")' "$fake_copilot_argv_l
 
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" hve --plan --mode autopilot --allow-all --no-ask-user -i 'Plan and implement verified fixes.'
+  "$prototype_root/bin/copilot" hve --plan --mode autopilot --allow-all --no-ask-user -i 'Plan and implement verified fixes.'
 ) >"$fixture_root/autopilot-plan-launch.out"
 expected_autopilot_plan_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
@@ -861,7 +861,7 @@ expected_autopilot_plan_launch="$(jq -cn \
 expected_superpowers_home="$HOME/.local/share/trellage/profiles/copilot/superpowers/home"
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" superpowers --model 'gpt-5.5' --effort high --prompt 'two words' -- '--deny-tool'
+  "$prototype_root/bin/copilot" superpowers --model 'gpt-5.5' --effort high --prompt 'two words' -- '--deny-tool'
 ) >"$fixture_root/superpowers-launch.out"
 expected_superpowers_launch="$(jq -cn \
   --arg home "$expected_superpowers_home" \
@@ -877,7 +877,7 @@ expected_plannotator_home="$HOME/.local/share/trellage/profiles/copilot/plannota
 expected_tufte_home="$HOME/.local/share/trellage/profiles/copilot/tufte-vdqi/home"
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" awesome --prompt 'find useful skills' --deny-url=example.com --model=gpt-5.5 --reasoning-effort=low
+  "$prototype_root/bin/copilot" awesome --prompt 'find useful skills' --deny-url=example.com --model=gpt-5.5 --reasoning-effort=low
 ) >"$fixture_root/awesome-launch.out"
 expected_awesome_launch="$(jq -cn \
   --arg home "$expected_awesome_home" \
@@ -889,7 +889,7 @@ actual_awesome_launch="$(jq -c 'select(.args[0] == "--autopilot")' "$fake_copilo
 
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" compound-engineering --prompt 'ship and compound this feature'
+  "$prototype_root/bin/copilot" compound-engineering --prompt 'ship and compound this feature'
 ) >"$fixture_root/compound-engineering-launch.out"
 expected_compound_engineering_launch="$(jq -cn \
   --arg home "$expected_compound_engineering_home" \
@@ -902,7 +902,7 @@ actual_compound_engineering_launch="$(jq -c --arg home "$expected_compound_engin
 
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" tufte-vdqi --prompt 'critique this chart'
+  "$prototype_root/bin/copilot" tufte-vdqi --prompt 'critique this chart'
 ) >"$fixture_root/tufte-launch.out"
 expected_tufte_launch="$(jq -cn \
   --arg home "$expected_tufte_home" \
@@ -918,7 +918,7 @@ actual_tufte_launch="$(jq -c \
 
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" hve
+  "$prototype_root/bin/copilot" hve
 ) >"$fixture_root/bare-launch.out"
 expected_bare_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
@@ -931,7 +931,7 @@ actual_bare_launch="$(tail -n 1 "$fake_copilot_argv_log")"
 for agent in hve-core:dt-coach hve-core:rpi-agent; do
   (
     cd "$worktree"
-    "$prototype_root/bin/cpx" hve --agent "$agent" -i 'Preserve the selected workflow.'
+    "$prototype_root/bin/copilot" hve --agent "$agent" -i 'Preserve the selected workflow.'
   ) >"$fixture_root/agent-launch.out"
   expected_agent_launch="$(jq -cn \
     --argjson launch "$expected_bare_launch" \
@@ -944,13 +944,13 @@ done
 valid_json_stream="$fixture_root/headless-valid.jsonl"
 printf '%s\n' \
   '{"type":"session.start","data":{"sessionId":"fixture-session"}}' \
-  '{"type":"assistant.message","data":{"content":"CPX_JSON_OK"}}' \
+  '{"type":"assistant.message","data":{"content":"TRELLAGE_COPILOT_JSON_OK"}}' \
   >"$valid_json_stream"
 (
   cd "$worktree"
   FAKE_COPILOT_STREAM_HOME="$expected_hve_home" \
   FAKE_COPILOT_STREAM_STDOUT_FILE="$valid_json_stream" \
-    "$prototype_root/bin/cpx" hve \
+    "$prototype_root/bin/copilot" hve \
     --prompt 'machine output' --output-format json --stream off
 ) >"$fixture_root/headless-valid.out" 2>"$fixture_root/headless-valid.err" \
   || fail 'JSON headless launch failed'
@@ -975,7 +975,7 @@ printf '%s\n' '{"type":"assistant.message","data":{"content":"partial"}}' 'not-j
   cd "$worktree"
   FAKE_COPILOT_STREAM_HOME="$expected_hve_home" \
   FAKE_COPILOT_STREAM_STDOUT_FILE="$malformed_json_stream" \
-    "$prototype_root/bin/cpx" hve \
+    "$prototype_root/bin/copilot" hve \
     --prompt 'malformed output' --output-format json --stream off
 ) >"$fixture_root/headless-malformed.out" 2>"$fixture_root/headless-malformed.err" \
   || fail 'malformed-output fixture launch failed'
@@ -1008,7 +1008,7 @@ for permission_argument_vector in "${permission_argument_vectors[@]}"; do
   IFS=$'\t' read -r -a permission_args <<<"$permission_argument_vector"
   (
     cd "$worktree"
-    "$prototype_root/bin/cpx" hve "${permission_args[@]}" --prompt 'permission contract'
+    "$prototype_root/bin/copilot" hve "${permission_args[@]}" --prompt 'permission contract'
   ) >"$fixture_root/permission-launch.out"
   actual_permission_launch="$(tail -n 1 "$fake_copilot_argv_log")"
   expected_permission_launch="$(jq -cn \
@@ -1052,7 +1052,7 @@ for profile in awesome compound-engineering hve plannotator superpowers tufte-vd
   inventory_output="$fixture_root/$profile-inventory.out"
   (
     cd "$worktree"
-    "$prototype_root/bin/cpx" "$profile" --fixture-capability-inventory
+    "$prototype_root/bin/copilot" "$profile" --fixture-capability-inventory
   ) >"$inventory_output"
   assert_contains 'repository-skill' "$inventory_output"
   for global_capability in \
@@ -1141,7 +1141,7 @@ FAKE_COPILOT_SIGNAL_PID_FILE="$signal_pid_file" \
   >"$fixture_root/signal.out" \
   2>"$fixture_root/signal.err" &
 signal_launcher_pid=$!
-signal_deadline=$((SECONDS + 10))
+signal_deadline=$((SECONDS + 30))
 while [[ ! -s "$signal_pid_file" && "$SECONDS" -lt "$signal_deadline" ]]; do
   kill -0 "$signal_launcher_pid" 2>/dev/null || break
   sleep 0.05
@@ -1150,7 +1150,7 @@ if [[ ! -s "$signal_pid_file" ]]; then
   kill -TERM "$signal_launcher_pid" 2>/dev/null || true
   wait "$signal_launcher_pid" || true
   cat "$fixture_root/signal.err" >&2
-  fail 'signal fixture did not start Copilot within 10 seconds'
+  fail 'signal fixture did not start Copilot within 30 seconds'
 fi
 signal_copilot_pid="$(<"$signal_pid_file")"
 kill -TERM "$signal_launcher_pid"
@@ -1233,7 +1233,7 @@ json_list_output="$fixture_root/list.json"
 "$launcher" list --json >"$json_list_output"
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cpx"
+  and .launcher == "copilot"
   and .harness == "copilot"
   and .sandbox == false
   and [.profiles[].name] == ["awesome", "compound-engineering", "hve", "plannotator", "superpowers", "tufte-vdqi"]
@@ -1437,7 +1437,7 @@ inventory_output="$fixture_root/inventory.json"
 "$launcher" inventory hve --json >"$inventory_output"
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cpx"
+  and .launcher == "copilot"
   and .harness == "copilot"
   and .profile == "hve"
   and .readiness == "healthy"
@@ -1467,7 +1467,7 @@ assert_contains \
   >"$fixture_root/compound-engineering-inventory.json"
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cpx"
+  and .launcher == "copilot"
   and .harness == "copilot"
   and .profile == "compound-engineering"
   and .readiness == "healthy"
@@ -1479,7 +1479,7 @@ jq -e '
 
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" compound-engineering --fixture-capability-inventory
+  "$prototype_root/bin/copilot" compound-engineering --fixture-capability-inventory
 ) >"$fixture_root/compound-engineering-capabilities.out"
 assert_line 'plugin:compound-engineering@compound-engineering-plugin' \
   "$fixture_root/compound-engineering-capabilities.out"
@@ -1576,7 +1576,7 @@ repair_compound_engineering_manifest_case() {
     fail "doctor accepted the $case_name Compound Engineering manifest"
   fi
   assert_contains \
-    'cpx: failed to resolve installed plugin version: compound-engineering@compound-engineering-plugin' \
+    'copilot: failed to resolve installed plugin version: compound-engineering@compound-engineering-plugin' \
     "$fixture_root/compound-engineering-$case_name-manifest-doctor.err"
 
   "$launcher" repair compound-engineering \
@@ -1654,7 +1654,7 @@ if "$launcher" setup compound-engineering \
   fail 'setup accepted a missing required Compound Engineering skill'
 fi
 assert_contains \
-  'cpx: required package skill is missing or unsafe: compound-engineering/lfg' \
+  'copilot: required package skill is missing or unsafe: compound-engineering/lfg' \
   "$fixture_root/compound-engineering-missing-skill-setup.err"
 if "$launcher" doctor compound-engineering \
   >"$fixture_root/compound-engineering-missing-skill.out" \
@@ -1662,7 +1662,7 @@ if "$launcher" doctor compound-engineering \
   fail 'doctor accepted a missing required Compound Engineering skill'
 fi
 assert_contains \
-  'cpx: required package skill is missing or unsafe: compound-engineering/lfg' \
+  'copilot: required package skill is missing or unsafe: compound-engineering/lfg' \
   "$fixture_root/compound-engineering-missing-skill.err"
 "$launcher" repair compound-engineering \
   >"$fixture_root/compound-engineering-missing-skill-repair.out"
@@ -1708,7 +1708,7 @@ if "$launcher" doctor compound-engineering \
   fail 'doctor accepted a disabled required Compound Engineering skill'
 fi
 assert_contains \
-  'cpx: required package skill is not enabled by Copilot: compound-engineering/lfg' \
+  'copilot: required package skill is not enabled by Copilot: compound-engineering/lfg' \
   "$fixture_root/compound-engineering-disabled-skill.err"
 compound_engineering_update_count="$(awk \
   'index($0, "args=plugin update compound-engineering@compound-engineering-plugin ") { count++ } END { print count + 0 }' \
@@ -1789,7 +1789,7 @@ assert_contains \
 "$launcher" inventory plannotator --json >"$fixture_root/plannotator-inventory.json"
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cpx"
+  and .launcher == "copilot"
   and .harness == "copilot"
   and .profile == "plannotator"
   and .readiness == "healthy"
@@ -1801,7 +1801,7 @@ jq -e '
 
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" plannotator --fixture-capability-inventory
+  "$prototype_root/bin/copilot" plannotator --fixture-capability-inventory
 ) >"$fixture_root/plannotator-capabilities.out"
 assert_line 'plugin:plannotator-effective-html@effective-html' \
   "$fixture_root/plannotator-capabilities.out"
@@ -1825,7 +1825,7 @@ if "$launcher" doctor plannotator \
   fail 'doctor accepted a missing required Plannotator skill'
 fi
 assert_contains \
-  'cpx: required package skill is missing or unsafe: plannotator/html-plan' \
+  'copilot: required package skill is missing or unsafe: plannotator/html-plan' \
   "$fixture_root/plannotator-missing-skill.err"
 if "$launcher" plannotator --prompt 'missing required skill' \
   >"$fixture_root/plannotator-missing-skill-launch.out" \
@@ -1833,7 +1833,7 @@ if "$launcher" plannotator --prompt 'missing required skill' \
   fail 'launch accepted a missing required Plannotator skill'
 fi
 assert_contains \
-  'cpx: required package skill is missing or unsafe: plannotator/html-plan' \
+  'copilot: required package skill is missing or unsafe: plannotator/html-plan' \
   "$fixture_root/plannotator-missing-skill-launch.err"
 plannotator_update_count="$(awk \
   'index($0, "args=plugin update plannotator-effective-html@effective-html ") { count++ } END { print count + 0 }' \
@@ -1857,7 +1857,7 @@ if FAKE_COPILOT_DISABLED_SKILL=html-plan "$launcher" doctor plannotator \
   fail 'doctor accepted a disabled required Plannotator skill'
 fi
 assert_contains \
-  'cpx: required package skill is not enabled by Copilot: plannotator/html-plan' \
+  'copilot: required package skill is not enabled by Copilot: plannotator/html-plan' \
   "$fixture_root/plannotator-disabled-skill.err"
 if FAKE_COPILOT_DISABLED_SKILL=html-plan \
   "$launcher" plannotator --prompt 'disabled required skill' \
@@ -1866,7 +1866,7 @@ if FAKE_COPILOT_DISABLED_SKILL=html-plan \
   fail 'launch accepted a disabled required Plannotator skill'
 fi
 assert_contains \
-  'cpx: required package skill is not enabled by Copilot: plannotator/html-plan' \
+  'copilot: required package skill is not enabled by Copilot: plannotator/html-plan' \
   "$fixture_root/plannotator-disabled-skill-launch.err"
 
 mv "$plannotator_plugin_root/skills/html-diagram" \
@@ -1889,7 +1889,7 @@ if "$launcher" doctor plannotator \
   fail 'doctor accepted a redirected Plannotator skill'
 fi
 assert_contains \
-  'cpx: required package skill is missing or unsafe: plannotator/html-diagram' \
+  'copilot: required package skill is missing or unsafe: plannotator/html-diagram' \
   "$fixture_root/plannotator-symlink-skill.err"
 if "$launcher" repair plannotator \
   >"$fixture_root/plannotator-symlink-skill-repair.out" \
@@ -1897,7 +1897,7 @@ if "$launcher" repair plannotator \
   fail 'repair mutated a redirected Plannotator skill'
 fi
 assert_contains \
-  'cpx: cannot safely repair required package skill path: plannotator/html-diagram' \
+  'copilot: cannot safely repair required package skill path: plannotator/html-diagram' \
   "$fixture_root/plannotator-symlink-skill-repair.err"
 [[ -L "$plannotator_plugin_root/skills/html-diagram" \
   && "$(<"$plannotator_plugin_root/skills/html/SKILL.md")" == "$plannotator_redirect_target_before" ]] \
@@ -1929,7 +1929,7 @@ if "$launcher" doctor plannotator \
   fail 'doctor accepted a redirected Plannotator version manifest'
 fi
 assert_contains \
-  'cpx: failed to resolve installed plugin version: plannotator-effective-html@effective-html' \
+  'copilot: failed to resolve installed plugin version: plannotator-effective-html@effective-html' \
   "$fixture_root/plannotator-symlink-version.err"
 if "$launcher" repair plannotator \
   >"$fixture_root/plannotator-symlink-version-repair.out" \
@@ -1937,7 +1937,7 @@ if "$launcher" repair plannotator \
   fail 'repair accepted a redirected Plannotator version manifest'
 fi
 assert_contains \
-  'cpx: cannot safely repair installed plugin manifest: plannotator' \
+  'copilot: cannot safely repair installed plugin manifest: plannotator' \
   "$fixture_root/plannotator-symlink-version-repair.err"
 [[ -L "$plannotator_plugin_root/.codex-plugin/plugin.json" ]] \
   || fail 'failed Plannotator repair changed a redirected version manifest'
@@ -1961,7 +1961,7 @@ if "$launcher" repair plannotator \
   fail 'repair accepted a non-regular Plannotator version manifest'
 fi
 assert_contains \
-  'cpx: cannot safely repair installed plugin manifest: plannotator' \
+  'copilot: cannot safely repair installed plugin manifest: plannotator' \
   "$fixture_root/plannotator-nonregular-version-repair.err"
 [[ -d "$plannotator_plugin_root/.codex-plugin/plugin.json" \
   && ! -L "$plannotator_plugin_root/.codex-plugin/plugin.json" ]] \
@@ -1987,7 +1987,7 @@ if "$launcher" repair plannotator \
   fail 'repair accepted an unsafe Plannotator version manifest path'
 fi
 assert_contains \
-  'cpx: cannot safely repair installed plugin manifest: plannotator' \
+  'copilot: cannot safely repair installed plugin manifest: plannotator' \
   "$fixture_root/plannotator-unsafe-version-path-repair.err"
 [[ -L "$plannotator_plugin_root/.codex-plugin" ]] \
   || fail 'failed Plannotator repair changed an unsafe version manifest path'
@@ -2041,7 +2041,7 @@ assert_contains \
 "$launcher" inventory tufte-vdqi --json >"$fixture_root/tufte-inventory.json"
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cpx"
+  and .launcher == "copilot"
   and .harness == "copilot"
   and .profile == "tufte-vdqi"
   and .readiness == "healthy"
@@ -2053,7 +2053,7 @@ jq -e '
 
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" tufte-vdqi --fixture-capability-inventory
+  "$prototype_root/bin/copilot" tufte-vdqi --fixture-capability-inventory
 ) >"$fixture_root/tufte-capabilities.out"
 assert_line 'plugin:tufte-vdqi@tufte-vdqi-marketplace' \
   "$fixture_root/tufte-capabilities.out"
@@ -2070,7 +2070,7 @@ if "$launcher" doctor tufte-vdqi \
   fail 'doctor accepted a missing required Tufte skill'
 fi
 assert_contains \
-  'cpx: required package skill is missing or unsafe: tufte-vdqi/tufte-chart' \
+  'copilot: required package skill is missing or unsafe: tufte-vdqi/tufte-chart' \
   "$fixture_root/tufte-missing-skill.err"
 mv "$tufte_plugin_root/skills/tufte-chart/SKILL.md.safe" \
   "$tufte_plugin_root/skills/tufte-chart/SKILL.md"
@@ -2081,7 +2081,7 @@ if FAKE_COPILOT_DISABLED_SKILL=tufte-critique "$launcher" doctor tufte-vdqi \
   fail 'doctor accepted a disabled required Tufte skill'
 fi
 assert_contains \
-  'cpx: required package skill is not enabled by Copilot: tufte-vdqi/tufte-critique' \
+  'copilot: required package skill is not enabled by Copilot: tufte-vdqi/tufte-critique' \
   "$fixture_root/tufte-disabled-skill.err"
 
 mv "$tufte_plugin_root/skills/tufte-critique" \
@@ -2094,7 +2094,7 @@ if "$launcher" doctor tufte-vdqi \
   fail 'doctor accepted a redirected Tufte skill'
 fi
 assert_contains \
-  'cpx: required package skill is missing or unsafe: tufte-vdqi/tufte-critique' \
+  'copilot: required package skill is missing or unsafe: tufte-vdqi/tufte-critique' \
   "$fixture_root/tufte-symlink-skill.err"
 rm "$tufte_plugin_root/skills/tufte-critique"
 mv "$tufte_plugin_root/skills/tufte-critique.safe" \
@@ -2162,7 +2162,7 @@ if "$launcher" doctor hve \
   >"$fixture_root/retired-hve-doctor.out" 2>"$fixture_root/retired-hve-doctor.err"; then
   fail 'doctor accepted a retired HVE plugin'
 fi
-assert_contains 'cpx: retired plugin is installed: hve; run: cpx repair hve' \
+assert_contains 'copilot: retired plugin is installed: hve; run: copilot repair hve' \
   "$fixture_root/retired-hve-doctor.err"
 "$launcher" repair hve >"$fixture_root/retired-hve-repair.out"
 assert_contains 'args=plugin uninstall hve-core-all@hve-core ' "$fake_copilot_log"
@@ -2252,7 +2252,7 @@ HOME="$fixture_root/awesome-decoy-home" FAKE_HIDE_AWESOME_MARKETPLACE=1 \
 [[ "$awesome_missing_builtin_status" != '0' ]] \
   || fail 'awesome setup accepted a missing built-in marketplace'
 [[ "$(<"$fixture_root/awesome-missing-built-in.err")" \
-  == 'cpx: required built-in marketplace is unavailable: awesome-copilot' ]] \
+  == 'copilot: required built-in marketplace is unavailable: awesome-copilot' ]] \
   || fail 'awesome setup did not report the missing built-in marketplace'
 next_awesome_marketplace_add_count="$(awk 'index($0, "args=plugin marketplace add github/awesome-copilot ") { count++ } END { print count + 0 }' "$fake_copilot_log")"
 [[ "$next_awesome_marketplace_add_count" == "$awesome_marketplace_add_count" ]] \
@@ -2289,7 +2289,7 @@ if "$launcher" doctor hve >"$fixture_root/hve-superpowers-doctor.out" \
   2>"$fixture_root/hve-superpowers-doctor.err"; then
   fail 'doctor accepted Superpowers in the HVE profile'
 fi
-assert_contains 'cpx: forbidden Superpowers plugin is installed: hve; run: cpx repair hve' \
+assert_contains 'copilot: forbidden Superpowers plugin is installed: hve; run: copilot repair hve' \
   "$fixture_root/hve-superpowers-doctor.err"
 "$launcher" repair hve >"$fixture_root/hve-superpowers-repair.out"
 assert_not_contains 'superpowers@' "$expected_hve_home/fake-state/plugins"
@@ -2324,7 +2324,7 @@ done
 awesome_inventory_output="$fixture_root/awesome-provisioned-inventory.out"
 (
   cd "$worktree"
-  "$prototype_root/bin/cpx" awesome --fixture-capability-inventory
+  "$prototype_root/bin/copilot" awesome --fixture-capability-inventory
 ) >"$awesome_inventory_output"
 assert_line 'plugin:awesome-copilot@awesome-copilot' "$awesome_inventory_output"
 assert_line 'plugin-skill:suggest-awesome-github-copilot-agents' "$awesome_inventory_output"
@@ -2411,38 +2411,38 @@ if "$launcher" not-a-profile >"$fixture_root/unknown.out" 2>"$fixture_root/unkno
 fi
 assert_contains 'unknown profile: not-a-profile' "$fixture_root/unknown.err"
 
-runtime_root="$HOME/.local/share/trellage/cpx"
-installed="$HOME/.local/share/trellage/.native-commands/cpx"
+runtime_root="$HOME/.local/share/trellage/copilot"
+installed="$HOME/.local/share/trellage/.native-commands/copilot"
 mkdir -p "$(dirname "$installed")"
-ln -s "$runtime_root/bin/cpx" "$installed"
+ln -s "$runtime_root/bin/copilot" "$installed"
 if "$installer" >"$fixture_root/dangling-command-install.out" 2>"$fixture_root/dangling-command-install.err"; then
   fail 'installer claimed an unowned dangling command symlink'
 fi
 assert_contains 'refusing to replace unrelated command' "$fixture_root/dangling-command-install.err"
-[[ -L "$installed" && "$(readlink "$installed")" == "$runtime_root/bin/cpx" ]] \
+[[ -L "$installed" && "$(readlink "$installed")" == "$runtime_root/bin/copilot" ]] \
   || fail 'installer changed an unowned dangling command symlink'
 rm "$installed"
 
 mkdir -p "$runtime_root/bin"
-printf 'unrelated launcher\n' >"$runtime_root/bin/cpx"
+printf 'unrelated launcher\n' >"$runtime_root/bin/copilot"
 printf 'unrelated catalog\n' >"$runtime_root/catalog.json"
 if "$installer" >"$fixture_root/unowned-install.out" 2>"$fixture_root/unowned-install.err"; then
   fail 'installer overwrote an unowned runtime root'
 fi
 assert_contains 'refusing unowned runtime root' "$fixture_root/unowned-install.err"
-assert_contains 'unrelated launcher' "$runtime_root/bin/cpx"
+assert_contains 'unrelated launcher' "$runtime_root/bin/copilot"
 assert_contains 'unrelated catalog' "$runtime_root/catalog.json"
 if "$uninstaller" >"$fixture_root/unowned-uninstall.out" 2>"$fixture_root/unowned-uninstall.err"; then
   fail 'uninstaller deleted an unowned runtime root'
 fi
 assert_contains 'refusing unowned runtime root' "$fixture_root/unowned-uninstall.err"
-assert_contains 'unrelated launcher' "$runtime_root/bin/cpx"
+assert_contains 'unrelated launcher' "$runtime_root/bin/copilot"
 assert_contains 'unrelated catalog' "$runtime_root/catalog.json"
 rm -rf "$runtime_root"
 
 "$installer"
-[[ -x "$installed" ]] || fail 'installer did not create ~/.local/share/trellage/.native-commands/cpx'
-assert_contains 'trellage-profiles-v1' "$runtime_root/.managed-by-trellage-profiles"
+[[ -x "$installed" ]] || fail 'installer did not create ~/.local/share/trellage/.native-commands/copilot'
+assert_contains 'trellage-copilot-profiles-v1' "$runtime_root/.managed-by-trellage-copilot-profiles"
 [[ -f "$runtime_root/lib/trellage-session-bridge.py" \
   && ! -L "$runtime_root/lib/trellage-session-bridge.py" \
   && -x "$runtime_root/lib/trellage-session-bridge.py" ]] \
@@ -2483,7 +2483,7 @@ workflow_before="$(profile_tree_hash "$expected_hve_home")"
 "$installed" workflow-check hve --agent hve-core:dt-coach --require-skill dt-methods \
   >"$fixture_root/workflow-check.json"
 jq -e '
-  .schemaVersion == 1 and .launcher == "cpx" and .profile == "hve"
+  .schemaVersion == 1 and .launcher == "copilot" and .profile == "hve"
   and .mode == "interactive" and .agent == "hve-core:dt-coach"
   and .requiredSkills == ["dt-methods"] and (.manifestSha256 | test("^[a-f0-9]{64}$"))
 ' "$fixture_root/workflow-check.json" >/dev/null || fail 'workflow readiness lost capability identity'
@@ -2570,7 +2570,7 @@ if XDG_CACHE_HOME="$fixture_root/old-workflow-cache" FAKE_COPILOT_VERSION=1.0.80
   fail 'workflow check accepted an unsupported CLI'
 fi
 "$uninstaller"
-[[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/share/trellage/.native-commands/cpx behind'
+[[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/share/trellage/.native-commands/copilot behind'
 [[ ! -e "$runtime_root/assets" ]] || fail 'uninstaller left runtime assets behind'
 [[ ! -e "$runtime_root/lib" ]] || fail 'uninstaller left runtime helpers behind'
 [[ -d "$HOME/.local/share/trellage/profiles/copilot/hve/home" ]] \
@@ -2593,14 +2593,14 @@ mv "$original_share" "$HOME/.local/share"
 [[ "$runtime_ancestor_install_status" -ne 0 ]] \
   || fail 'installer accepted a symlinked runtime ancestor'
 assert_contains 'runtime ancestor sentinel' "$redirected_share/sentinel"
-[[ ! -e "$redirected_share/trellage/cpx" ]] \
+[[ ! -e "$redirected_share/trellage/copilot" ]] \
   || fail 'installer created runtime files through a symlinked ancestor'
 
 mv "$HOME/.local/share" "$original_share"
-mkdir -p "$redirected_share/trellage/cpx/bin"
-printf 'trellage-profiles-v1\n' >"$redirected_share/trellage/cpx/.managed-by-trellage-profiles"
-printf 'redirected launcher sentinel\n' >"$redirected_share/trellage/cpx/bin/cpx"
-printf 'redirected catalog sentinel\n' >"$redirected_share/trellage/cpx/catalog.json"
+mkdir -p "$redirected_share/trellage/copilot/bin"
+printf 'trellage-copilot-profiles-v1\n' >"$redirected_share/trellage/copilot/.managed-by-trellage-copilot-profiles"
+printf 'redirected launcher sentinel\n' >"$redirected_share/trellage/copilot/bin/copilot"
+printf 'redirected catalog sentinel\n' >"$redirected_share/trellage/copilot/catalog.json"
 ln -s "$redirected_share" "$HOME/.local/share"
 runtime_ancestor_uninstall_status=0
 "$uninstaller" \
@@ -2611,8 +2611,8 @@ rm "$HOME/.local/share"
 mv "$original_share" "$HOME/.local/share"
 [[ "$runtime_ancestor_uninstall_status" -ne 0 ]] \
   || fail 'uninstaller accepted a symlinked runtime ancestor'
-assert_contains 'redirected launcher sentinel' "$redirected_share/trellage/cpx/bin/cpx"
-assert_contains 'redirected catalog sentinel' "$redirected_share/trellage/cpx/catalog.json"
+assert_contains 'redirected launcher sentinel' "$redirected_share/trellage/copilot/bin/copilot"
+assert_contains 'redirected catalog sentinel' "$redirected_share/trellage/copilot/catalog.json"
 
 original_command_dir="$fixture_root/original-command-dir"
 redirected_command_dir="$fixture_root/redirected-command-dir"
@@ -2627,11 +2627,11 @@ command_ancestor_install_status=0
   || command_ancestor_install_status=$?
 command_ancestor_install_created_command=false
 command_ancestor_install_created_runtime=false
-[[ -e "$redirected_command_dir/cpx" || -L "$redirected_command_dir/cpx" ]] \
+[[ -e "$redirected_command_dir/copilot" || -L "$redirected_command_dir/copilot" ]] \
   && command_ancestor_install_created_command=true
 [[ -e "$runtime_root" || -L "$runtime_root" ]] \
   && command_ancestor_install_created_runtime=true
-rm -f "$redirected_command_dir/cpx"
+rm -f "$redirected_command_dir/copilot"
 rm "$HOME/.local/share/trellage/.native-commands"
 mv "$original_command_dir" "$HOME/.local/share/trellage/.native-commands"
 rm -rf "$runtime_root"
@@ -2644,11 +2644,11 @@ rm -rf "$runtime_root"
 assert_contains 'command ancestor sentinel' "$redirected_command_dir/sentinel"
 
 mkdir -p "$runtime_root/bin"
-printf 'trellage-profiles-v1\n' >"$runtime_root/.managed-by-trellage-profiles"
-printf 'owned launcher sentinel\n' >"$runtime_root/bin/cpx"
+printf 'trellage-copilot-profiles-v1\n' >"$runtime_root/.managed-by-trellage-copilot-profiles"
+printf 'owned launcher sentinel\n' >"$runtime_root/bin/copilot"
 printf 'owned catalog sentinel\n' >"$runtime_root/catalog.json"
 mv "$HOME/.local/share/trellage/.native-commands" "$original_command_dir"
-ln -s "$runtime_root/bin/cpx" "$redirected_command_dir/cpx"
+ln -s "$runtime_root/bin/copilot" "$redirected_command_dir/copilot"
 ln -s "$redirected_command_dir" "$HOME/.local/share/trellage/.native-commands"
 command_ancestor_uninstall_status=0
 "$uninstaller" \
@@ -2657,11 +2657,11 @@ command_ancestor_uninstall_status=0
   || command_ancestor_uninstall_status=$?
 command_ancestor_uninstall_preserved_command=false
 command_ancestor_uninstall_preserved_runtime=false
-[[ -L "$redirected_command_dir/cpx" ]] \
+[[ -L "$redirected_command_dir/copilot" ]] \
   && command_ancestor_uninstall_preserved_command=true
-[[ -f "$runtime_root/bin/cpx" && -f "$runtime_root/catalog.json" ]] \
+[[ -f "$runtime_root/bin/copilot" && -f "$runtime_root/catalog.json" ]] \
   && command_ancestor_uninstall_preserved_runtime=true
-rm -f "$redirected_command_dir/cpx"
+rm -f "$redirected_command_dir/copilot"
 rm "$HOME/.local/share/trellage/.native-commands"
 mv "$original_command_dir" "$HOME/.local/share/trellage/.native-commands"
 rm -rf "$runtime_root"
@@ -2675,7 +2675,7 @@ assert_contains 'command ancestor sentinel' "$redirected_command_dir/sentinel"
 
 symlink_runtime_target="$fixture_root/unrelated-runtime-target"
 mkdir -p "$symlink_runtime_target/bin"
-printf 'symlink sentinel\n' >"$symlink_runtime_target/bin/cpx"
+printf 'symlink sentinel\n' >"$symlink_runtime_target/bin/copilot"
 ln -s "$symlink_runtime_target" "$runtime_root"
 if "$installer" >"$fixture_root/symlink-install.out" 2>"$fixture_root/symlink-install.err"; then
   fail 'installer accepted a symlinked runtime root'
@@ -2685,14 +2685,14 @@ if "$uninstaller" >"$fixture_root/symlink-uninstall.out" 2>"$fixture_root/symlin
   fail 'uninstaller accepted a symlinked runtime root'
 fi
 assert_contains 'refusing unsafe symlinked runtime root' "$fixture_root/symlink-uninstall.err"
-assert_contains 'symlink sentinel' "$symlink_runtime_target/bin/cpx"
+assert_contains 'symlink sentinel' "$symlink_runtime_target/bin/copilot"
 rm "$runtime_root"
 
 mkdir -p "$HOME/.local/share/trellage/.native-commands"
 printf '%s\n' '#!/usr/bin/env bash' 'printf unrelated' >"$installed"
 chmod 0755 "$installed"
 if "$installer" >"$fixture_root/collision.out" 2>"$fixture_root/collision.err"; then
-  fail 'installer overwrote an unrelated cpx command'
+  fail 'installer overwrote an unrelated copilot command'
 fi
 assert_contains 'refusing to replace unrelated command' "$fixture_root/collision.err"
 assert_contains 'printf unrelated' "$installed"

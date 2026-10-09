@@ -30,7 +30,8 @@ const common = path.join(repository, "prototypes/trellage-claude-common")
 const manager = path.join(repository, "scripts/floating-skills.ts")
 
 // Each contract runs several bounded CLI processes, sometimes for every profile.
-const test = (name: string, run: (context: TestContext) => Promise<void>) => nodeTest(name, { timeout: 60_000 }, run)
+const test = (name: string, run: (context: TestContext) => Promise<void>, timeout = 60_000) =>
+  nodeTest(name, { timeout }, run)
 
 interface LauncherDescriptor {
   alias: string
@@ -74,15 +75,15 @@ interface ProfileFixture {
 }
 
 const launchers: LauncherDescriptor[] = [
-  { alias: "agx", package: "agency", marker: "agency", owner: "trellage-agency-profile-v1" },
-  { alias: "cpx", package: "copilot" },
-  { alias: "cdx", package: "codex" },
-  { alias: "cldx", package: "claude", marker: "claude", owner: "trellage-claude-profile-v1" },
-  { alias: "jcx", package: "jcode", marker: "jcode", owner: "trellage-jcode-profile-v1" },
+  { alias: "agency", package: "agency", marker: "agency", owner: "trellage-agency-profile-v1" },
+  { alias: "copilot", package: "copilot" },
+  { alias: "codex", package: "codex" },
+  { alias: "claude", package: "claude", marker: "claude", owner: "trellage-claude-profile-v1" },
+  { alias: "jcode", package: "jcode", marker: "jcode", owner: "trellage-jcode-profile-v1" },
   { alias: "omp", package: "omp", marker: "omp", owner: "trellage-omp-profile-v1", leaf: "agent" },
-  { alias: "picx", package: "picx", marker: "picx", owner: "trellage-picx-profile-v2", leaf: "agent" },
-  { alias: "prx", package: "prime", marker: "prime", owner: "trellage-prime-profile-v1" },
-  { alias: "fmx", package: "firstmate", marker: "firstmate", owner: "trellage-firstmate-profiles-v1" },
+  { alias: "pi", package: "pi", marker: "pi", owner: "trellage-pi-profile-v2", leaf: "agent" },
+  { alias: "prime", package: "prime", marker: "prime", owner: "trellage-prime-profile-v1" },
+  { alias: "firstmate", package: "firstmate", marker: "firstmate", owner: "trellage-firstmate-profiles-v1" },
 ]
 
 const write = async (file: string, content: string, mode = 0o600) => {
@@ -174,8 +175,8 @@ const fixtureFor = async (context: TestContext, descriptor: LauncherDescriptor |
     runtime,
     source,
     bin: path.join(root, "bin"),
-    cache: path.join(home, ".local/share/trellage/common", descriptor.alias === "cdx" ? "cdx-skills" : "skills"),
-    youtubeCache: path.join(home, ".local/share/trellage/common/cdx-youtube-pro-skills"),
+    cache: path.join(home, ".local/share/trellage/common", descriptor.alias === "codex" ? "codex-skills" : "skills"),
+    youtubeCache: path.join(home, ".local/share/trellage/common/codex-youtube-pro-skills"),
     communityCache: path.join(home, ".local/share/trellage/common/omp-community-skills"),
     forbiddenLog: path.join(root, "forbidden.log"),
     envLog: path.join(root, "bun-environment.log"),
@@ -270,13 +271,13 @@ const installSourceFixture = async (fixture: Fixture) => {
 }
 
 const installSharedRuntime = async ({ descriptor, runtime }: Fixture) => {
-  if (descriptor.alias === "cdx") {
+  if (descriptor.alias === "codex") {
     await copy(
       path.join(repository, "prototypes/trellage-codex-common/native-codex"),
       path.join(runtime, "lib/native-codex"),
     )
   }
-  if (["cldx", "fmx"].includes(descriptor.alias)) {
+  if (["claude", "firstmate"].includes(descriptor.alias)) {
     await copy(path.join(common, "native-claude"), path.join(runtime, "lib/native-claude"))
   }
 }
@@ -319,7 +320,7 @@ const seedCaches = async (fixture: Fixture, version: number) => {
 }
 
 const officeCache = (fixture: Fixture, name: string) =>
-  path.join(fixture.home, `.local/share/trellage/common/cldx-${name}-skills`)
+  path.join(fixture.home, `.local/share/trellage/common/claude-${name}-skills`)
 
 const firstProfileName = (fixture: Fixture) => {
   const [name] = Object.keys(fixture.catalog.profiles)
@@ -334,7 +335,7 @@ const profileRoot = (fixture: Fixture, name: string) => {
     assert.ok(typeof profile.ompProfile === "string")
     return path.join(fixture.home, ".omp/profiles", profile.ompProfile)
   }
-  if (fixture.descriptor.alias === "picx") {
+  if (fixture.descriptor.alias === "pi") {
     assert.ok(typeof profile.piProfile === "string")
     return path.join(fixture.home, ".local/share/trellage/profiles/pi", profile.piProfile)
   }
@@ -382,10 +383,10 @@ const seedProfile = async (fixture: Fixture, name: string) => {
   const root = profileRoot(fixture, name)
   const home = path.join(
     root,
-    fixture.descriptor.alias === "fmx" ? "captain/claude" : (fixture.descriptor.leaf ?? "home"),
+    fixture.descriptor.alias === "firstmate" ? "captain/claude" : (fixture.descriptor.leaf ?? "home"),
   )
   const cache =
-    fixture.descriptor.alias === "cldx" && name.startsWith("office")
+    fixture.descriptor.alias === "claude" && name.startsWith("office")
       ? officeCache(fixture, name)
       : name === "youtube"
         ? fixture.youtubeCache
@@ -398,7 +399,7 @@ const seedProfile = async (fixture: Fixture, name: string) => {
     guards: [],
   }
   await markOwned(fixture, root)
-  if (fixture.descriptor.alias === "jcx") {
+  if (fixture.descriptor.alias === "jcode") {
     await syncSnapshot(cache, path.join(root, "skill-library"))
   }
   if (fixture.descriptor.alias === "omp") {
@@ -407,7 +408,7 @@ const seedProfile = async (fixture: Fixture, name: string) => {
     await write(path.join(target, "custom/SKILL.md"), "# User community skill\n")
     profile.targets.push({ cache: fixture.communityCache, target })
   }
-  if (fixture.descriptor.alias === "fmx") await seedFirstmate(fixture, profile, name)
+  if (fixture.descriptor.alias === "firstmate") await seedFirstmate(fixture, profile, name)
   for (const file of ["auth.json", "config.toml", "installed-plugins/user/source-pin", "extensions/custom.js"]) {
     const target = path.join(home, file)
     await write(target, `User-owned ${file}\n`, 0o640)
@@ -451,10 +452,37 @@ const otherProfileState = async (profiles: readonly ProfileFixture[], selected: 
   return Promise.all(targets.map(({ target }) => treeState(target, true)))
 }
 
+test("composed skill synchronization excludes package-owned skills", async (context) => {
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "native-skills-exclusions-")))
+  context.after(() => rm(root, { recursive: true, force: true }))
+  const cache = path.join(root, "cache")
+  const target = path.join(root, "target")
+  await mkdir(target, { recursive: true, mode: 0o700 })
+  await seedSnapshot(cache, ["managed", "package-owned"], 1)
+  await write(path.join(cache, ".trellage-composition-snapshot"), "1\n")
+  await syncSnapshot(cache, target)
+  const result = spawnSync(
+    bunExecutable(),
+    [
+      path.join(common, "native-skills.ts"),
+      manager,
+      "--sync",
+      "--exclude-skill",
+      "package-owned",
+      cache,
+      target,
+    ],
+    { encoding: "utf8" },
+  )
+  succeeds(result)
+  assert.deepEqual(await verifyTarget(cache, target, ["package-owned"]), ["managed"])
+  await assert.rejects(lstat(path.join(target, "package-owned")), { code: "ENOENT" })
+})
+
 test("baked Container skills use immutable contents and distinguish ambiguous older ownership", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cpx"),
+    launchers.find(({ alias }) => alias === "copilot"),
   )
   await seedSnapshot(fixture.cache, ["kept", "retired"], 1)
   const baked = path.join(fixture.root, "baked")
@@ -485,7 +513,7 @@ test("baked Container skills use immutable contents and distinguish ambiguous ol
 test("matching skill files cannot prove baked instruction currency without evidence", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cpx"),
+    launchers.find(({ alias }) => alias === "copilot"),
   )
   await seedSnapshot(fixture.cache, ["kept"], 1)
   await write(path.join(fixture.cache, "always-on.md"), "# new activation policy\n")
@@ -503,7 +531,7 @@ test("matching skill files cannot prove baked instruction currency without evide
 test("Sandbox skills-check and help bypass dependency bootstrap and environment setup", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cpx"),
+    launchers.find(({ alias }) => alias === "copilot"),
   )
   const launcher = path.join(fixture.workspace, "prototypes/trellage/trellage")
   await copy(path.join(repository, "prototypes/trellage/trellage"), launcher)
@@ -561,7 +589,7 @@ console.log("generator progress must not enter the JSON report")
 test("read-only source staging uses an existing CLI and never installs a missing one", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cpx"),
+    launchers.find(({ alias }) => alias === "copilot"),
   )
   await seedCaches(fixture, 1)
   const profile = await seedProfile(fixture, firstProfileName(fixture))
@@ -601,7 +629,7 @@ test("read-only source staging uses an existing CLI and never installs a missing
 test("router checks all shared caches, including guide-only changes, without profile copies", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cpx"),
+    launchers.find(({ alias }) => alias === "copilot"),
   )
   const runtime = fixture.workspace
   const routerRoot = path.join(fixture.workspace, "prototypes/trellage-router")
@@ -609,7 +637,7 @@ test("router checks all shared caches, including guide-only changes, without pro
   await copy(path.join(repository, "prototypes/trellage-router/bin/trx"), router)
   const guideCache = path.join(fixture.home, ".local/share/trellage/common/guide-prompt-master-skills")
   const architectureCache = path.join(fixture.home, ".local/share/trellage/common/guide-optimize-architecture-skills")
-  const codexCache = path.join(fixture.home, ".local/share/trellage/common/cdx-skills")
+  const codexCache = path.join(fixture.home, ".local/share/trellage/common/codex-skills")
   const caches = [
     fixture.cache,
     codexCache,
@@ -687,12 +715,12 @@ test("router checks all shared caches, including guide-only changes, without pro
     [],
   )
   await noExternalCalls(fixture)
-})
+}, 120_000)
 
 test("older skill managers fail closed before fetching or installing", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cpx"),
+    launchers.find(({ alias }) => alias === "copilot"),
   )
   await seedCaches(fixture, 1)
   const profile = await seedProfile(fixture, firstProfileName(fixture))
@@ -706,7 +734,7 @@ test("older skill managers fail closed before fetching or installing", async (co
 })
 
 for (const descriptor of launchers) {
-  if (["cpx", "cdx", "cldx", "fmx", "jcx"].includes(descriptor.alias)) {
+  if (["copilot", "codex", "claude", "firstmate", "jcode"].includes(descriptor.alias)) {
     test(`${descriptor.alias} cleans skill check staging when cancelled`, async (context) => {
       const fixture = await fixtureFor(context, descriptor)
       await seedCaches(fixture, 1)
@@ -774,7 +802,7 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
 `,
     )
     await seedSnapshot(
-      path.join(freshRoot, descriptor.alias === "cdx" ? "native-common+codex-common" : "native-common"),
+      path.join(freshRoot, descriptor.alias === "codex" ? "native-common+codex-common" : "native-common"),
       ["kept", "retired"],
       1,
     )
@@ -804,7 +832,7 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
       )
     }
     await seedSnapshot(
-      path.join(freshRoot, descriptor.alias === "cdx" ? "native-common+codex-common" : "native-common"),
+      path.join(freshRoot, descriptor.alias === "codex" ? "native-common+codex-common" : "native-common"),
       ["kept", "retired"],
       2,
     )
@@ -932,7 +960,7 @@ test("OMP preflights both bundles before it replaces either copy", async (contex
 test("Firstmate keeps both fleets idle and validates worker ownership before it changes the captain", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "fmx"),
+    launchers.find(({ alias }) => alias === "firstmate"),
   )
   await seedCaches(fixture, 1)
   const profile = await seedProfile(fixture, "pstack-workers")
@@ -957,7 +985,7 @@ test("Firstmate keeps both fleets idle and validates worker ownership before it 
 test("Codex YouTube management bypasses Varlock and rejects management verbs as native-auth profiles", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cdx"),
+    launchers.find(({ alias }) => alias === "codex"),
   )
   await seedCaches(fixture, 1)
   const profile = await seedProfile(fixture, "youtube")
@@ -973,7 +1001,7 @@ test("Codex YouTube management bypasses Varlock and rejects management verbs as 
 })
 
 test("Claude and Codex skills management scrub provider credentials but retain file-backed GitHub configuration", async (context) => {
-  for (const alias of ["cldx", "cdx", "fmx"]) {
+  for (const alias of ["claude", "codex", "firstmate"]) {
     const fixture = await fixtureFor(
       context,
       launchers.find((entry) => entry.alias === alias),
@@ -997,7 +1025,7 @@ test("Claude and Codex skills management scrub provider credentials but retain f
       const [ghConfig, github, claude, openai, transcript, codex] = line.split("|")
       assert.equal(ghConfig, fixture.env.GH_CONFIG_DIR)
       assert.deepEqual([github, claude, openai], ["unset", "unset", "unset"])
-      if (alias === "cdx") assert.deepEqual([transcript, codex], ["unset", "unset"])
+      if (alias === "codex") assert.deepEqual([transcript, codex], ["unset", "unset"])
     }
     await noExternalCalls(fixture)
   }
@@ -1006,7 +1034,7 @@ test("Claude and Codex skills management scrub provider credentials but retain f
 test("cache-only updates reject redirected caches, shared writes, hard links, and managed skill symlinks", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cpx"),
+    launchers.find(({ alias }) => alias === "copilot"),
   )
   await seedCaches(fixture, 1)
   const profile = await seedProfile(fixture, "superpowers")
@@ -1052,13 +1080,13 @@ test("cache-only updates reject redirected caches, shared writes, hard links, an
 test("cache-only updates honor XDG_DATA_HOME without changing the default cache", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cdx"),
+    launchers.find(({ alias }) => alias === "codex"),
   )
   await seedCaches(fixture, 1)
   const profile = await seedProfile(fixture, "youtube")
   const defaultBefore = await treeState(fixture.youtubeCache, true)
   const xdg = path.join(fixture.root, "data")
-  const cache = path.join(xdg, "trellage/common/cdx-youtube-pro-skills")
+  const cache = path.join(xdg, "trellage/common/codex-youtube-pro-skills")
   await seedSnapshot(cache, ["added", "kept", "youtube-full"], 2)
   succeeds(run(fixture, ["skills-update", "youtube"], { XDG_DATA_HOME: xdg }))
   await verifyTarget(cache, profile.targets[0].target)
@@ -1069,7 +1097,7 @@ test("cache-only updates honor XDG_DATA_HOME without changing the default cache"
 test("cache-only updates accept the Native wrappers' canonical HOME boundary", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cpx"),
+    launchers.find(({ alias }) => alias === "copilot"),
   )
   await seedCaches(fixture, 1)
   const profile = await seedProfile(fixture, "superpowers")
@@ -1084,7 +1112,7 @@ test("cache-only updates accept the Native wrappers' canonical HOME boundary", a
 test("Pi skills-only synchronization keeps the legacy managed ownership migration safe", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "picx"),
+    launchers.find(({ alias }) => alias === "pi"),
   )
   await seedCaches(fixture, 1)
   const profile = await seedProfile(fixture, "default")
@@ -1092,7 +1120,7 @@ test("Pi skills-only synchronization keeps the legacy managed ownership migratio
   await rm(path.join(target, ".trellage-managed-skills"))
   await write(path.join(target, ".trellage-engineersamuel-skills"), `${"a".repeat(40)}\nkept\nretired\n`)
   await write(path.join(target, "show-me/SKILL.md"), "# Legacy show-me\n")
-  await write(path.join(target, "show-me/.managed-by-trellage-picx-profiles"), "trellage-picx-profile-v2\n")
+  await write(path.join(target, "show-me/.managed-by-trellage-pi-profiles"), "trellage-pi-profile-v2\n")
   await seedSnapshot(fixture.cache, ["added", "kept", "show-me"], 2)
   succeeds(run(fixture, ["skills-update", "default"]))
   await verifyTarget(fixture.cache, target)

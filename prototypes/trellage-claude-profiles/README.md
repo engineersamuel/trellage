@@ -1,6 +1,6 @@
 # Native Claude Code profile
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run claude PROFILE` runs the host-installed
 [Claude Code](https://github.com/anthropics/claude-code) executable with
@@ -29,8 +29,8 @@ variables before setting the local proxy endpoint and non-secret auth sentinel.
 trx setup claude default
 trx doctor claude default
 trx run claude default
-trx run claude default -p "Reply exactly CLDX_OK"
-trx run claude default --model claude-opus-5.5 -p "Reply exactly CLDX_OPUS_OK"
+trx run claude default -p "Reply exactly TRELLAGE_CLAUDE_OK"
+trx run claude default --model claude-opus-5.5 -p "Reply exactly TRELLAGE_CLAUDE_OPUS_OK"
 trx repair claude default
 trx upgrade claude default --harness-only
 ```
@@ -97,8 +97,8 @@ output styles, and session hooks. Missing caches, invalid ownership, unsafe
 paths, and name collisions fail closed. It never fetches, starts Claude, or
 checks or starts the proxy.
 
-The installer keeps `cldx` as a private backend and owns its runtime beneath
-`~/.local/share/trellage/cldx/`. Claude profile state lives at:
+The installer keeps `claude` as a private backend and owns its runtime beneath
+`~/.local/share/trellage/claude/`. Claude profile state lives at:
 
 ```text
 ~/.local/share/trellage/profiles/claude/default/home/
@@ -114,7 +114,7 @@ Launch the profile explicitly:
 trx run claude default
 ```
 
-If the arguments do not contain `--model` or `--model=...`, `cldx` adds
+If the arguments do not contain `--model` or `--model=...`, `claude` adds
 `--model opusplan`. Claude Code has no separate plan-mode model setting, so
 `opusplan` is the only supported way to pair one model with plan mode and
 another with normal turns: plan turns resolve through the Opus family

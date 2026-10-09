@@ -290,7 +290,7 @@ describe("Firstmate Admin instance controls", () => {
     expect(tui.screen()).toContain("Shared writer refused")
     expect(tui.updates()).toHaveLength(1)
     expect(tui.updates()[0]?.[1]).toContain(alpha.reference.instanceId)
-    expect(tui.updates()[0]?.[1]).toContain("--fmx-instance-context-json")
+    expect(tui.updates()[0]?.[1]).toContain("--firstmate-instance-context-json")
     expect(tui.updates()[0]?.[1]).not.toContain("--install-prerequisites")
   })
 

@@ -4,16 +4,16 @@ set -euo pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
-launcher="$root/bin/cldx"
+launcher="$root/bin/claude"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
 
 fail() {
-  printf 'cldx contract failed: %s\n' "$1" >&2
+  printf 'claude contract failed: %s\n' "$1" >&2
   exit 1
 }
 
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-cldx-contract.XXXXXX")" \
+fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-claude-contract.XXXXXX")" \
   || fail 'could not create fixture root'
 fixture_root="$(CDPATH= cd -P -- "$fixture_root" && pwd -P)"
 signal_pid=''
@@ -164,7 +164,7 @@ ln -s "$(command -v jq)" "$fake_bin/jq"
 install_fixture_node "$fake_bin"
 seed_floating_skills_cache "$home"
 for office_variant in office office-charts; do
-  office_cache="$home/.local/share/trellage/common/cldx-$office_variant-skills"
+  office_cache="$home/.local/share/trellage/common/claude-$office_variant-skills"
   cp -R "$home/.local/share/trellage/common/skills" "$office_cache"
   mkdir "$office_cache/skills/academic-pptx"
   printf '# Academic presentation fixture\n' >"$office_cache/skills/academic-pptx/SKILL.md"
@@ -183,13 +183,13 @@ export FAKE_CLAUDE_SIGNAL_LOG="$fixture_root/signal.log"
 : >"$FAKE_CLAUDE_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/share/trellage/.native-commands/cldx"
-runtime_root="$HOME/.local/share/trellage/cldx"
+command_path="$HOME/.local/share/trellage/.native-commands/claude"
+runtime_root="$HOME/.local/share/trellage/claude"
 profile_root="$HOME/.local/share/trellage/profiles/claude/default"
 profile_home="$profile_root/home"
 
 [[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
-[[ "$(readlink "$command_path")" == "$runtime_root/bin/cldx" ]] \
+[[ "$(readlink "$command_path")" == "$runtime_root/bin/claude" ]] \
   || fail 'command symlink target differs'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
@@ -236,7 +236,7 @@ grep -Fqx $'default\tIsolated Claude Code for autonomous engineering and Rundown
 "$command_path" list --json >"$fixture_root/list.json" || fail 'JSON list failed'
 jq -e '
   .schemaVersion == 1
-  and .launcher == "cldx"
+  and .launcher == "claude"
   and .harness == "claude"
   and .sandbox == false
   and [.profiles[].name] == ["default", "office", "office-charts"]
@@ -297,7 +297,7 @@ mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
 if "$command_path" list --json >"$fixture_root/invalid-list.out" 2>"$fixture_root/invalid-list.err"; then
   fail 'list accepted invalid headless catalog'
 fi
-grep -Fq 'cldx: invalid catalog:' "$fixture_root/invalid-list.err" \
+grep -Fq 'claude: invalid catalog:' "$fixture_root/invalid-list.err" \
   || fail 'invalid headless catalog diagnostic differs'
 jq '.profiles.default.headless.trellageEventContract = "unsupported-trellage-events-v1"' \
   "$fixture_root/catalog.saved" >"$fixture_root/catalog.invalid" \
@@ -308,7 +308,7 @@ if "$command_path" list --json \
   2>"$fixture_root/invalid-trellage-event-list.err"; then
   fail 'list accepted unsupported Trellage event contract'
 fi
-grep -Fq 'cldx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
+grep -Fq 'claude: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
   || fail 'unsupported Trellage event contract diagnostic differs'
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
@@ -349,7 +349,7 @@ for argument in default --all --check; do
   if run_harness_update "$argument" >"$fixture_root/harness-update-invalid.out" 2>"$fixture_root/harness-update-invalid.err"; then
     fail "harness update accepted $argument"
   fi
-  grep -Fxq 'cldx: harness-update accepts no arguments' "$fixture_root/harness-update-invalid.err" \
+  grep -Fxq 'claude: harness-update accepts no arguments' "$fixture_root/harness-update-invalid.err" \
     || fail 'harness update argument diagnostic differs'
 done
 [[ "$(wc -l <"$harness_update_log" | tr -d ' ')" == "$calls_before" ]] \
@@ -473,9 +473,9 @@ jq -s -e --arg home "$profile_home" '
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'default launch environment or arguments differ'
 
 # --- provider/token scrub must cover the supported provider/token override
-# paths, so a stale tmux/Herdr daemon environment (fmx worker threat
+# paths, so a stale tmux/Herdr daemon environment (firstmate worker threat
 # model) can never leak into the launched process. GH_CONFIG_DIR must
-# survive since fmx workers deliberately use file-backed gh auth.
+# survive since firstmate workers deliberately use file-backed gh auth.
 poison_env_assignments=(
   ANTHROPIC_CUSTOM_HEADERS=poison ANTHROPIC_MODEL=poison ANTHROPIC_SMALL_FAST_MODEL=poison
   CLAUDE_CODE_USE_FOUNDRY=poison ANTHROPIC_FOUNDRY_API_KEY=poison ANTHROPIC_FOUNDRY_BASE_URL=poison
@@ -521,7 +521,7 @@ for scrubbed_var in "${scrubbed_var_names[@]}"; do
     && fail "launch did not scrub $scrubbed_var"
 done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$env_dump" \
-  || fail 'launch scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+  || fail 'launch scrubbed GH_CONFIG_DIR, which firstmate workers rely on for file-backed gh auth'
 grep -Fqx 'ANTHROPIC_AUTH_TOKEN=trellage-local-proxy' "$env_dump" \
   || fail 'launch did not set the managed ANTHROPIC_AUTH_TOKEN'
 grep -Fqx 'ANTHROPIC_BASE_URL=http://127.0.0.1:8080' "$env_dump" \
@@ -555,7 +555,7 @@ headless_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
 headless_initial_stream="$fixture_root/headless-initial.jsonl"
 printf '%s\n' \
   '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-sonnet-5.5"}' \
-  '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"CLDX_JSONL_OK","usage":{"input_tokens":9,"output_tokens":4},"total_cost_usd":0.01}' \
+  '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"TRELLAGE_CLAUDE_JSONL_OK","usage":{"input_tokens":9,"output_tokens":4},"total_cost_usd":0.01}' \
   >"$headless_initial_stream"
 FAKE_CLAUDE_STDOUT_FILE="$headless_initial_stream" \
   "$command_path" --output-format stream-json --verbose -p 'machine output' \
@@ -575,7 +575,7 @@ jq -se --arg session "$headless_session_id" '
   and .[1].subtype == "success"
   and .[1].is_error == false
   and .[1].session_id == $session
-  and .[1].result == "CLDX_JSONL_OK"
+  and .[1].result == "TRELLAGE_CLAUDE_JSONL_OK"
   and (.[1].usage | type == "object")
   and (.[1].total_cost_usd | type == "number")
 ' "$fixture_root/headless-initial.out" >/dev/null \
@@ -587,7 +587,7 @@ jq -s -e '
 headless_resume_stream="$fixture_root/headless-resume.jsonl"
 printf '%s\n' \
   '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","model":"claude-sonnet-5.5"}' \
-  '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"CLDX_RESUME_OK","usage":{"input_tokens":5,"output_tokens":3},"total_cost_usd":0.006}' \
+  '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"TRELLAGE_CLAUDE_RESUME_OK","usage":{"input_tokens":5,"output_tokens":3},"total_cost_usd":0.006}' \
   >"$headless_resume_stream"
 FAKE_CLAUDE_STDOUT_FILE="$headless_resume_stream" \
   "$command_path" --resume "$headless_session_id" \
@@ -597,7 +597,7 @@ FAKE_CLAUDE_STDOUT_FILE="$headless_resume_stream" \
 jq -se --arg session "$headless_session_id" '
   all(.[]; type == "object")
   and all(.[] | select(.session_id != null); .session_id == $session)
-  and .[-1].result == "CLDX_RESUME_OK"
+  and .[-1].result == "TRELLAGE_CLAUDE_RESUME_OK"
 ' "$fixture_root/headless-resume.out" >/dev/null \
   || fail 'Claude resume-with-prompt session evidence differs'
 jq -s -e --arg session "$headless_session_id" '
@@ -640,7 +640,7 @@ grep -Fqx TERM "$FAKE_CLAUDE_SIGNAL_LOG" \
   || fail 'Claude process did not receive TERM'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
-grep -Fq 'cldx doctor: OK (2.1.233, claude-sonnet-5.5)' "$fixture_root/doctor.out" \
+grep -Fq 'claude doctor: OK (2.1.233, claude-sonnet-5.5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
 no_python_bin="$fixture_root/no-python-bin"
@@ -761,17 +761,17 @@ cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
 
 unrelated_home="$fixture_root/unrelated-home"
 mkdir -p "$unrelated_home/.local/share/trellage/.native-commands"
-printf 'unrelated\n' >"$unrelated_home/.local/share/trellage/.native-commands/cldx"
+printf 'unrelated\n' >"$unrelated_home/.local/share/trellage/.native-commands/claude"
 HOME="$unrelated_home" "$installer" >"$fixture_root/unrelated.out" 2>&1 \
   && fail 'installer replaced unrelated command'
 grep -Fq 'unrelated command' "$fixture_root/unrelated.out" \
   || fail 'unrelated command error differs'
 
-# --- delegation: cldx must actually call the shared native Claude runtime,
+# --- delegation: claude must actually call the shared native Claude runtime,
 # not reimplement its logic. Swap the installed shared runtime for a stub
-# and confirm cldx's own output changes accordingly.
+# and confirm claude's own output changes accordingly.
 native_claude="$runtime_root/lib/native-claude"
-export TRELLAGE_CLAUDE_LAUNCHER_NAME=cldx
+export TRELLAGE_CLAUDE_LAUNCHER_NAME=claude
 export TRELLAGE_CLAUDE_RUNTIME_ROOT="$(CDPATH= cd -P -- "$runtime_root" && pwd)"
 cp "$native_claude" "$fixture_root/native-claude.real"
 cat >"$native_claude" <<'STUB'
@@ -782,20 +782,20 @@ STUB
 chmod 0755 "$native_claude"
 "$command_path" doctor >"$fixture_root/delegation.out" || fail 'delegation stub doctor failed'
 grep -Fq 'STUB-INVOKED:doctor --home' "$fixture_root/delegation.out" \
-  || fail 'cldx did not delegate doctor to the shared native Claude runtime'
+  || fail 'claude did not delegate doctor to the shared native Claude runtime'
 grep -Fq -- '--bridge enabled --profile default' "$fixture_root/delegation.out" \
-  || fail 'cldx did not pass --bridge/--profile through to the shared runtime'
+  || fail 'claude did not pass --bridge/--profile through to the shared runtime'
 cp "$fixture_root/native-claude.real" "$native_claude"
 chmod 0755 "$native_claude"
 "$command_path" doctor >"$fixture_root/delegation-restored.out" \
   || fail 'doctor failed after restoring the shared native Claude runtime'
-grep -Fq 'cldx doctor: OK (2.1.233, claude-sonnet-5.5)' "$fixture_root/delegation-restored.out" \
+grep -Fq 'claude doctor: OK (2.1.233, claude-sonnet-5.5)' "$fixture_root/delegation-restored.out" \
   || fail 'doctor output differs after restoring the shared native Claude runtime'
 
 # --- prepare/doctor must scrub the provider/token environment before
 # probing `claude --version`, not only before launch's final exec, since a
 # stale tmux/Herdr daemon environment could otherwise leak into that
-# earlier child process too. Invoke native-claude directly (not the cldx
+# earlier child process too. Invoke native-claude directly (not the claude
 # wrapper) so the dump captures exactly prepare's/doctor's own --version
 # probe, with no risk of being overwritten by an unrelated later call.
 prepare_scrub_dump="$fixture_root/prepare-scrub-dump.txt"
@@ -812,7 +812,7 @@ for scrubbed_var in "${scrubbed_var_names[@]}"; do
     && fail "prepare did not scrub $scrubbed_var before probing claude --version"
 done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$prepare_scrub_dump" \
-  || fail 'prepare scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+  || fail 'prepare scrubbed GH_CONFIG_DIR, which firstmate workers rely on for file-backed gh auth'
 
 doctor_scrub_dump="$fixture_root/doctor-scrub-dump.txt"
 env "${poison_env_assignments[@]}" \
@@ -828,13 +828,13 @@ for scrubbed_var in "${scrubbed_var_names[@]}"; do
     && fail "doctor did not scrub $scrubbed_var before probing claude --version"
 done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$doctor_scrub_dump" \
-  || fail 'doctor scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+  || fail 'doctor scrubbed GH_CONFIG_DIR, which firstmate workers rely on for file-backed gh auth'
 
-# --- the standalone `version` verb must scrub too: `cldx setup`/`doctor`
-# call it after the main operation (via cldx's setup_profile/doctor_profile
+# --- the standalone `version` verb must scrub too: `claude setup`/`doctor`
+# call it after the main operation (via claude's setup_profile/doctor_profile
 # wrappers), so its own `claude --version` child must not inherit a
 # poisoned environment either, even though `version` starts no bridge or
-# proxy work of its own. `cldx doctor` runs `native-claude doctor` and then
+# proxy work of its own. `claude doctor` runs `native-claude doctor` and then
 # `native-claude version`, so the dump (last write wins) reflects the
 # version verb's own probe specifically.
 version_scrub_dump="$fixture_root/version-scrub-dump.txt"
@@ -842,13 +842,13 @@ env "${poison_env_assignments[@]}" \
   GH_CONFIG_DIR=/fixture/gh-config-marker \
   FAKE_CLAUDE_ENV_DUMP="$version_scrub_dump" \
   "$command_path" doctor >"$fixture_root/version-scrub-check.out" \
-  || fail 'scrub-check cldx doctor (version verb) failed'
+  || fail 'scrub-check claude doctor (version verb) failed'
 for scrubbed_var in "${scrubbed_var_names[@]}"; do
   grep -q "^${scrubbed_var}=" "$version_scrub_dump" \
     && fail "version did not scrub $scrubbed_var before probing claude --version"
 done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$version_scrub_dump" \
-  || fail 'version scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+  || fail 'version scrubbed GH_CONFIG_DIR, which firstmate workers rely on for file-backed gh auth'
 
 update_scrub_dump="$fixture_root/update-scrub-dump.txt"
 env "${poison_env_assignments[@]}" \
@@ -1097,7 +1097,7 @@ rm -f "$settings"
   --marker-value trellage-claude-profile-v1 --bridge disabled --profile default \
   -- --version >"$fixture_root/settings-missing.out" 2>"$fixture_root/settings-missing.err" \
   && fail 'launch accepted a missing settings.json as zero managed hooks'
-grep -Fq 'Claude settings are missing; run: cldx repair' "$fixture_root/settings-missing.err" \
+grep -Fq 'Claude settings are missing; run: claude repair' "$fixture_root/settings-missing.err" \
   || fail 'missing-settings diagnostic differs'
 cp "$fixture_root/settings-before-safety-checks.json" "$settings"
 
@@ -1256,4 +1256,4 @@ bun --no-install --no-env-file "--config=$root/../../packages/trellage-runtime/b
   test "$root/../trellage-claude-common/tests/native-skills.test.ts" \
   || fail 'Native skills-only contracts failed'
 
-printf 'cldx contract: PASS\n'
+printf 'claude contract: PASS\n'

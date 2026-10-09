@@ -51,7 +51,7 @@ workflows:
 
 `pi` runs upstream `@earendil-works/pi-coding-agent@0.84.2` routed through
 keyless `copilot-proxy-rs/gpt-5.6-sol:medium`, with one fixed, ordered
-extension set. See `prototypes/trellage-picx-profiles/README.md`.
+extension set. See `prototypes/trellage-pi-profiles/README.md`.
 
 ## Use This Profile When
 
@@ -94,6 +94,6 @@ extension set. See `prototypes/trellage-picx-profiles/README.md`.
 - `trx`'s Herdr compatibility ledger marks `pi`/`default` as `untested`:
   static launcher, catalog, inventory, and headless contracts pass, but an
   end-to-end Herdr round trip has not yet run.
-- The old `~/.omp/profiles/trellage-picx-default` profile path is not used
+- The old `~/.omp/profiles/trellage-pi-default` profile path is not used
   or deleted by this launcher; do not confuse it with the current profile
   home.

@@ -217,7 +217,7 @@ The checked-in core fixture resolves to its recorded Claude Code `2.1.229`
 contract. Sandbox adapters can publish different tested Claude versions.
 Set `TRELLAGE_HEADLESS_SANDBOX_VERSION` when selecting another
 full-inventory profile with that exact contract. The live driver also requires
-the recorded Native `cpx`, `cldx`, and `omp` versions. When the selected profile
+the recorded Native `copilot`, `claude`, and `omp` versions. When the selected profile
 is `claude-council`, it also proves that the Council plugin launches
 `council:*` agents and completes on the JSONL path.
 `TRELLAGE_HEADLESS_LIVE_SCOPE=sandbox` skips unrelated Native inventories and

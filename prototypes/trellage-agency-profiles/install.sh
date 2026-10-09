@@ -4,7 +4,7 @@ set -euo pipefail
 readonly ownership_value='trellage-agency-profiles-v1'
 
 refuse() {
-  printf 'agx install: %s\n' "$1" >&2
+  printf 'agency install: %s\n' "$1" >&2
   exit 1
 }
 
@@ -21,15 +21,15 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 local_dir="$canonical_home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
-install_root="$runtime_parent/agx"
+install_root="$runtime_parent/agency"
 runtime_bin="$install_root/bin"
-installed_launcher="$runtime_bin/agx"
+installed_launcher="$runtime_bin/agency"
 installed_catalog="$install_root/catalog.json"
 installed_model_settings="$install_root/copilot-model-settings.py"
 model_settings_source="$source_dir/../trellage/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-agency-profiles"
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/agx"
+command_path="$command_dir/agency"
 
 require_safe_directory() {
   local path="$1" expected="$2" description="$3" resolved
@@ -43,7 +43,7 @@ require_safe_directory() {
 require_safe_directory "$local_dir" "$canonical_home/.local" 'local directory'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'share directory'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/agx" 'runtime root'
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/agency" 'runtime root'
 require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 runtime_owned=false
@@ -75,8 +75,8 @@ done
 
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
 mkdir -p "$runtime_bin" "$command_dir"
-require_safe_directory "$runtime_bin" "$canonical_home/.local/share/trellage/agx/bin" 'runtime bin'
-launcher_stage="$(mktemp "$runtime_bin/.agx.XXXXXX")" || refuse 'cannot stage launcher'
+require_safe_directory "$runtime_bin" "$canonical_home/.local/share/trellage/agency/bin" 'runtime bin'
+launcher_stage="$(mktemp "$runtime_bin/.agency.XXXXXX")" || refuse 'cannot stage launcher'
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")" || {
   rm -f -- "$launcher_stage"
   refuse 'cannot stage catalog'
@@ -90,7 +90,7 @@ model_settings_stage="$(mktemp "$install_root/.model-settings.XXXXXX")" || {
   refuse 'cannot stage model settings helper'
 }
 trap 'rm -f -- "$launcher_stage" "$catalog_stage" "$marker_stage" "$model_settings_stage"' EXIT
-install -m 0755 "$source_dir/bin/agx" "$launcher_stage"
+install -m 0755 "$source_dir/bin/agency" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
 install -m 0755 "$model_settings_source" "$model_settings_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
@@ -102,18 +102,19 @@ mv -f "$marker_stage" "$ownership_marker"
 trap - EXIT
 
 if [[ ! -L "$command_path" ]]; then
-  command_stage="$(mktemp -d "$command_dir/.agx-command.XXXXXX")" \
+  command_stage="$(mktemp -d "$command_dir/.agency-command.XXXXXX")" \
     || refuse 'cannot stage command'
-  trap 'rm -f -- "$command_stage/agx"; rmdir "$command_stage" 2>/dev/null || true' EXIT
-  ln -s "$installed_launcher" "$command_stage/agx"
-  mv "$command_stage/agx" "$command_path"
+  trap 'rm -f -- "$command_stage/agency"; rmdir "$command_stage" 2>/dev/null || true' EXIT
+  ln -s "$installed_launcher" "$command_stage/agency"
+  mv "$command_stage/agency" "$command_path"
   rmdir "$command_stage"
   trap - EXIT
 fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
-printf 'Installed agx at %s\n' "$command_path"
+printf 'Installed agency at %s\n' "$command_path"
 
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" agx "$installed_launcher" "$ownership_marker" "$ownership_value"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" agx \
+  .managed-by-trellage-agency-profiles trellage-agency-profiles-v1
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" agency "$installed_launcher" "$ownership_marker" "$ownership_value"

@@ -9,7 +9,7 @@ describe("launch catalog", () => {
         description: "Choose a host-native harness profile.",
         choices: [
           {
-            id: "cdx:hve",
+            id: "codex:hve",
             label: "codex / hve",
             harness: "codex",
             profile: "hve",
@@ -18,7 +18,7 @@ describe("launch catalog", () => {
             plugins: ["planner", "reviewer"],
             skills: ["debugging", "verification"],
             mcps: ["docs"],
-            commandAlias: "codex",
+            commandName: "codex",
             commandPath: "/opt/trellage/codex/bin/trx",
             profileArgument: "hve",
             passthroughArgs: ["--literal", "two words", ""],
@@ -35,13 +35,13 @@ describe("launch catalog", () => {
     expect(catalog.prompt).toBe("Select a harness")
     expect(catalog.description).toBe("Choose a host-native harness profile.")
     expect(catalog.entries[0]).toMatchObject({
-      id: "cdx:hve",
+      id: "codex:hve",
       harness: "codex",
       profile: "hve",
       harnessVersion: "1.2.3",
       plugins: ["planner", "reviewer"],
       skills: ["debugging", "verification"],
-      commandAlias: "codex",
+      commandName: "codex",
       commandPath: "/opt/trellage/codex/bin/trx",
       profileArgument: "hve",
       passthroughArgs: ["--literal", "two words", ""],

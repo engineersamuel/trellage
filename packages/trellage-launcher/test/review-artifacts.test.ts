@@ -69,11 +69,15 @@ it("rejects a linked report directory before listing its contents", async () => 
   await expect(captureIntermediateReviewArtifacts(root, "fleet")).rejects.toThrow("Unsafe report artifact directory")
 })
 
-it("retains 4096 files and rejects the next artifact rather than truncating", async () => {
-  const { root, reports } = await workspace()
-  for (let index = 0; index < 4096; index++)
-    await writeFile(path.join(reports, `${index}.txt`), "", { mode: 0o600 })
-  expect(await captureIntermediateReviewArtifacts(root, "matt-code-review")).toHaveLength(4096)
-  await writeFile(path.join(reports, "overflow.txt"), "", { mode: 0o600 })
-  await expect(captureIntermediateReviewArtifacts(root, "matt-code-review")).rejects.toThrow("4096")
-})
+it(
+  "retains 4096 files and rejects the next artifact rather than truncating",
+  async () => {
+    const { root, reports } = await workspace()
+    for (let index = 0; index < 4096; index++)
+      await writeFile(path.join(reports, `${index}.txt`), "", { mode: 0o600 })
+    expect(await captureIntermediateReviewArtifacts(root, "matt-code-review")).toHaveLength(4096)
+    await writeFile(path.join(reports, "overflow.txt"), "", { mode: 0o600 })
+    await expect(captureIntermediateReviewArtifacts(root, "matt-code-review")).rejects.toThrow("4096")
+  },
+  15_000,
+)

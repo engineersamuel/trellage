@@ -12,7 +12,7 @@ printf '1.2.3\n'
 MISE
 chmod +x "$fixture/fake-bin/mise"
 export PATH="$fixture/fake-bin:$PATH"
-for spec in omp:omp picx:picx prime:prx; do
+for spec in omp:omp pi:pi prime:prime; do
   package="${spec%:*}"
   launcher="${spec#*:}"
   runtime="$fixture/$launcher"
@@ -27,15 +27,15 @@ for spec in omp:omp picx:picx prime:prx; do
   printf '%s version reporting: OK\n' "$launcher"
 done
 
-mkdir -p "$fixture/agx/bin"
-cp "$root/prototypes/trellage-agency-profiles/bin/agx" "$fixture/agx/bin/agx"
-cp "$root/prototypes/trellage-agency-profiles/catalog.json" "$fixture/agx/catalog.json"
+mkdir -p "$fixture/agency/bin"
+cp "$root/prototypes/trellage-agency-profiles/bin/agency" "$fixture/agency/bin/agency"
+cp "$root/prototypes/trellage-agency-profiles/catalog.json" "$fixture/agency/catalog.json"
 cat > "$fixture/fake-bin/agency" <<'AGENCY'
 #!/usr/bin/env bash
 [[ "$1" == --version ]] || exit 99
 printf 'agency 1.2.3\n'
 AGENCY
 chmod +x "$fixture/fake-bin/agency"
-"$fixture/agx/bin/agx" harness-version > "$fixture/result.json"
+"$fixture/agency/bin/agency" harness-version > "$fixture/result.json"
 jq -e '.installed == "1.2.3" and .latest == null and .latestKnown == false' "$fixture/result.json" >/dev/null
-printf 'agx version reporting: OK\n'
+printf 'agency version reporting: OK\n'

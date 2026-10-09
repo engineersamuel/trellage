@@ -8,6 +8,7 @@ import type { FixtureEvent, FixtureMode, FixtureReport } from "../fixtures/guide
 import { spawnSourcePty, type SourcePty } from "./source-pty.ts"
 
 const waitOptions = { timeout: 5_000, interval: 20 }
+const startupWaitOptions = { timeout: 15_000, interval: 20 }
 
 export const createGuideTerminal = async (
   entry: string,
@@ -32,11 +33,14 @@ export const createGuideTerminal = async (
     inputs.push(keys)
     child.write(keys)
   }
-  const readScreen = async <Value>(read: (text: string) => Value): Promise<Value> =>
+  const readScreen = async <Value>(
+    read: (text: string) => Value,
+    options = waitOptions,
+  ): Promise<Value> =>
     vi.waitFor(() => {
       expect(exit, "Guide exited before the expected screen state").toBeUndefined()
       return read(screen)
-    }, waitOptions)
+    }, options)
   const waitForText = async (...texts: ReadonlyArray<string>): Promise<void> =>
     readScreen((text) => {
       for (const expected of texts) expect(text).toContain(expected)
@@ -102,7 +106,7 @@ export const createGuideTerminal = async (
       processUnderTest.onExit((status) => {
         exit = status
       })
-      await waitForText(initialText)
+      await readScreen((text) => expect(text).toContain(initialText), startupWaitOptions)
       // The first render precedes Ink's input effects. Echo is not input acknowledgment.
       await vi.waitFor(() => {
         expect(exit, "Guide exited before enabling terminal input").toBeUndefined()

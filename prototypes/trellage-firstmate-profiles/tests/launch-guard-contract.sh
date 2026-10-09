@@ -30,16 +30,16 @@ PY
 guard_source_before="$(shasum -a 256 "$fleet_profile/receipts/source.json")"
 for guard_case in profile instanceId home sourceRevision malformed array extra duplicate oversized; do
   guard_status=0
-  fmx default --fmx-expected-fleet-json "$(cat "$guard_inputs/$guard_case.json")" \
+  firstmate default --firstmate-expected-fleet-json "$(cat "$guard_inputs/$guard_case.json")" \
     >/dev/null 2>"$logs/guard-$guard_case.err" || guard_status=$?
   [[ "$guard_status" != 0 ]] || fail "launch accepted a $guard_case expected identity"
 done
 guard_status=0
-fmx default --fmx-expected-fleet-json "$fleet_identity" --fmx-expected-fleet-json "$fleet_identity" \
+firstmate default --firstmate-expected-fleet-json "$fleet_identity" --firstmate-expected-fleet-json "$fleet_identity" \
   >/dev/null 2>"$logs/guard-repeated.err" || guard_status=$?
 [[ "$guard_status" != 0 ]] || fail 'launch accepted duplicate identity guards'
 guard_status=0
-fmx default --fmx-expected-fleet-json >/dev/null 2>"$logs/guard-missing.err" || guard_status=$?
+firstmate default --firstmate-expected-fleet-json >/dev/null 2>"$logs/guard-missing.err" || guard_status=$?
 [[ "$guard_status" != 0 ]] || fail 'launch accepted an identity guard without its value'
 [[ ! -s "$NATIVE_CLAUDE_LAUNCH_LOG" && ! -s "$NATIVE_CLAUDE_LOG" \
   && ! -s "$NATIVE_CLAUDE_ARGV_LOG" && ! -e "$fleet_profile/locks/session" ]] \
@@ -54,7 +54,7 @@ value["instanceId"] = "314ea25d-e3e7-429c-bfb7-7385db576e26"
 path.write_text(json.dumps(value))
 PY
 guard_status=0
-fmx default --fmx-expected-fleet-json "$fleet_identity" \
+firstmate default --firstmate-expected-fleet-json "$fleet_identity" \
   >/dev/null 2>"$logs/guard-replaced-instance.err" || guard_status=$?
 [[ "$guard_status" != 0 && ! -s "$NATIVE_CLAUDE_LAUNCH_LOG" ]] \
   || fail 'launch used an identity captured before fleet replacement'
@@ -63,13 +63,13 @@ printf '%s\n' "$instance_before" >"$fleet_profile/receipts/instance.json"
 # A controlled launch never repairs source or refreshes prerequisites after preflight.
 mkdir "$fleet_profile/runtime.previous"
 guard_status=0
-fmx default --fmx-expected-fleet-json "$fleet_identity" \
+firstmate default --firstmate-expected-fleet-json "$fleet_identity" \
   >/dev/null 2>"$logs/guard-interrupted-publication.err" || guard_status=$?
 [[ "$guard_status" != 0 && -d "$fleet_profile/runtime.previous" ]] \
   || fail 'guarded launch changed an interrupted source publication'
 rmdir "$fleet_profile/runtime.previous"
 guard_status=0
-NATIVE_CLAUDE_SKILLS_STATUS=1 fmx default --fmx-expected-fleet-json "$fleet_identity" \
+NATIVE_CLAUDE_SKILLS_STATUS=1 firstmate default --firstmate-expected-fleet-json "$fleet_identity" \
   >/dev/null 2>"$logs/guard-missing-skills.err" || guard_status=$?
 [[ "$guard_status" != 0 && ! -s "$NATIVE_CLAUDE_LAUNCH_LOG" ]] \
   || fail 'guarded launch refreshed missing cached skills'
@@ -84,7 +84,7 @@ guard_launch_release="$fixture_root/guard-launch-release"
 (
   NATIVE_CLAUDE_DOCTOR_READY="$guard_doctor_ready" NATIVE_CLAUDE_DOCTOR_RELEASE="$guard_doctor_release" \
     NATIVE_CLAUDE_LAUNCH_READY="$guard_launch_ready" NATIVE_CLAUDE_LAUNCH_RELEASE="$guard_launch_release" \
-    fmx default --fmx-expected-fleet-json "$fleet_identity" >/dev/null 2>"$logs/guard-winner.err"
+    firstmate default --firstmate-expected-fleet-json "$fleet_identity" >/dev/null 2>"$logs/guard-winner.err"
 ) &
 guard_pid=$!
 for _ in $(seq 1 200); do
@@ -98,9 +98,9 @@ if [[ ! -f "$guard_doctor_ready" ]]; then
   fail 'guarded launch did not retain its mutation gate through startup checks'
 fi
 guard_update_status=0
-fmx update default >/dev/null 2>"$logs/update-during-guarded-launch.err" || guard_update_status=$?
+firstmate update default >/dev/null 2>"$logs/update-during-guarded-launch.err" || guard_update_status=$?
 guard_contender_status=0
-fmx default --fmx-expected-fleet-json "$fleet_identity" \
+firstmate default --firstmate-expected-fleet-json "$fleet_identity" \
   >/dev/null 2>"$logs/guard-contender.err" || guard_contender_status=$?
 : >"$guard_doctor_release"
 for _ in $(seq 1 200); do
@@ -114,10 +114,10 @@ if [[ ! -f "$guard_launch_ready" ]]; then
   fail 'the matching guarded launch did not start its supervisor'
 fi
 guard_active_status=0
-fmx default --fmx-expected-fleet-json "$fleet_identity" \
+firstmate default --firstmate-expected-fleet-json "$fleet_identity" \
   >/dev/null 2>"$logs/guard-active-contender.err" || guard_active_status=$?
 guard_inventory_status=0
-fmx inventory default --json >"$logs/guard-running.json" || guard_inventory_status=$?
+firstmate inventory default --json >"$logs/guard-running.json" || guard_inventory_status=$?
 : >"$guard_launch_release"
 wait "$guard_pid" || { cat "$logs/guard-winner.err" >&2; fail 'guarded supervisor launch failed'; }
 [[ "$guard_update_status" != 0 && "$guard_contender_status" != 0 && "$guard_active_status" != 0 ]] \
@@ -130,14 +130,14 @@ jq -e --argjson expected "$fleet_identity" '
 ' "$logs/guard-running.json" >/dev/null || fail 'concurrent startup did not expose its matching owned identity'
 [[ "$(grep -c '^launch|' "$NATIVE_CLAUDE_LAUNCH_LOG")" == 1 ]] \
   || fail 'concurrent guarded launches started more than one supervisor'
-assert_not_contains '--fmx-expected-fleet-json' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_not_contains '--firstmate-expected-fleet-json' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 # A completed session-open hook cannot initiate the first model turn. Recovery
 # must also supply an operational first message, without copying the saved task.
-fmx inventory default --json >"$logs/guard-exited.json" || fail 'could not inspect the exited supervisor'
+firstmate inventory default --json >"$logs/guard-exited.json" || fail 'could not inspect the exited supervisor'
 jq -e '.fleet.supervisor.state == "stale"' "$logs/guard-exited.json" >/dev/null \
   || fail 'guarded recovery fixture has no stale supervisor'
-fmx default --fmx-expected-fleet-json "$fleet_identity" \
+firstmate default --firstmate-expected-fleet-json "$fleet_identity" \
   >/dev/null 2>"$logs/guard-recovery.err" \
   || { cat "$logs/guard-recovery.err" >&2; fail 'guarded recovery did not start a supervisor'; }
 python3 - "$NATIVE_CLAUDE_ARGV_LOG" "$logs/request.json" \
@@ -163,11 +163,11 @@ PY
 rm -rf -- "$fleet_profile/locks/session"
 
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
-fmx default --model claude-opus-5 "--fmx-expected-fleet-json=$fleet_identity" \
+firstmate default --model claude-opus-5 "--firstmate-expected-fleet-json=$fleet_identity" \
   >/dev/null 2>"$logs/guard-passthrough.err" \
   || { cat "$logs/guard-passthrough.err" >&2; fail 'guarded launch lost normal argument ordering'; }
 assert_contains 'args=--model claude-opus-5' "$NATIVE_CLAUDE_LAUNCH_LOG"
-assert_not_contains '--fmx-expected-fleet-json' "$NATIVE_CLAUDE_LAUNCH_LOG"
+assert_not_contains '--firstmate-expected-fleet-json' "$NATIVE_CLAUDE_LAUNCH_LOG"
 python3 - "$NATIVE_CLAUDE_ARGV_LOG" <<'PY'
 import json, pathlib, sys
 calls = [json.loads(line) for line in pathlib.Path(sys.argv[1]).read_text().splitlines()]
@@ -176,4 +176,4 @@ PY
 [[ "$?" == 0 ]] || fail 'guarded startup changed explicit Claude arguments'
 unset NATIVE_CLAUDE_ARGV_LOG
 rm -rf -- "$fleet_profile/locks/session"
-printf 'fmx launch identity guard: passed\n'
+printf 'firstmate launch identity guard: passed\n'

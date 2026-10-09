@@ -4,10 +4,10 @@
  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
  FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
  
-+if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
-+  python3 "${FMX_WORKER_LAUNCHER%/*}/fmx-controls.py" control "$@" >/dev/null || exit 1
-+elif [ -e "${FM_HOME:-$FM_ROOT}/.fmx-managed" ]; then
-+  echo "error: managed Firstmate control requires the fmx worker boundary" >&2
++if [ -n "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER:-}" ]; then
++  python3 "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER%/*}/firstmate-controls.py" control "$@" >/dev/null || exit 1
++elif [ -e "${FM_HOME:-$FM_ROOT}/.firstmate-managed" ] || [ -e "${FM_HOME:-$FM_ROOT}/.fmx-managed" ]; then
++  echo "error: managed Firstmate control requires the firstmate worker boundary" >&2
 +  exit 1
 +fi
 +
@@ -20,7 +20,7 @@
    spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
 -  [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
 -  [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
-+  if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++  if [ -n "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER:-}" ]; then
 +    spawn_args+=(--model "$TARGET_MODEL" --effort "$TARGET_EFFORT")
 +  else
 +    [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
@@ -33,7 +33,7 @@
      die "the replacement agent for $ID could not be launched on $TARGET_HARNESS"
    fi
  
-+  if [ -n "${FMX_WORKER_LAUNCHER:-}" ]; then
++  if [ -n "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER:-}" ]; then
 +    TARGET_MODEL=$(fm_meta_get "$META" model)
 +    TARGET_EFFORT=$(fm_meta_get "$META" effort)
 +  fi

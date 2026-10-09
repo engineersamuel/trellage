@@ -23,10 +23,10 @@ home="$fixture/home"
 fake_bin="$fixture/fake-bin"
 state="$fixture/state"
 common_runtime="$fixture/common/floating-skills-runtime"
-shared_cache="$home/.local/share/trellage/common/cdx-skills"
+shared_cache="$home/.local/share/trellage/common/codex-skills"
 mkdir -p "$runtime/bin" "$runtime/lib" "$fake_bin" "$state" "$home" \
   "$fixture/common" "$shared_cache/skills/fixture-personal"
-cp "$root/bin/cdx" "$runtime/bin/cdx"
+cp "$root/bin/codex" "$runtime/bin/codex"
 cp "$root/catalog.json" "$runtime/catalog.json"
 cp "$root/../trellage-codex-common/native-codex" "$runtime/lib/native-codex"
 cp "$root/../trellage-codex-common/codex-config.py" "$runtime/lib/"
@@ -35,7 +35,7 @@ cp "$root/../trellage-claude-common/native-skills.ts" "$runtime/"
 cp -R "$root/../trellage-codex-common/agents" "$runtime/lib/"
 cp "$repository_root/scripts/trellage-session-bridge.py" \
   "$runtime/lib/trellage-session-bridge.py"
-chmod 0755 "$runtime/bin/cdx" "$runtime/lib/native-codex" \
+chmod 0755 "$runtime/bin/codex" "$runtime/lib/native-codex" \
   "$runtime/lib/trellage-session-bridge.py"
 HOME="$home" "$repository_root/scripts/install-source-runtime.sh" --stage "$common_runtime" \
   >"$fixture/source-install.log" 2>&1 || {
@@ -198,9 +198,9 @@ esac
 EOF
 chmod 0755 "$fake_bin/codex" "$fake_bin/git"
 
-run_cdx() {
+run_codex() {
   HOME="$home" PATH="$fake_bin:$PATH" FAKE_PSTACK_STATE="$state" \
-    "$runtime/bin/cdx" "$@"
+    "$runtime/bin/codex" "$@"
 }
 
 assert_launch_args() {
@@ -217,18 +217,18 @@ assert_launch_args() {
   ' "$state/launch" >/dev/null || fail 'Full Access launch arguments differ'
 }
 
-run_cdx list --json >"$fixture/list.json"
-jq -e '.launcher == "cdx" and .sandbox == false
+run_codex list --json >"$fixture/list.json"
+jq -e '.launcher == "codex" and .sandbox == false
   and (.profiles | map(.name)) == ["pstack", "superpowers", "youtube"]' "$fixture/list.json" >/dev/null \
   || fail 'list JSON differs'
-run_cdx inventory pstack --json >"$fixture/inventory-before.json"
-jq -e '.readiness == "not-setup" and .launcher == "cdx"' \
+run_codex inventory pstack --json >"$fixture/inventory-before.json"
+jq -e '.readiness == "not-setup" and .launcher == "codex"' \
   "$fixture/inventory-before.json" >/dev/null || fail 'pre-setup inventory differs'
 [ ! -e "$state/calls" ] || fail 'read-only pre-setup commands invoked Codex'
 
-run_cdx setup pstack >"$fixture/setup.out" || fail 'setup failed'
+run_codex setup pstack >"$fixture/setup.out" || fail 'setup failed'
 grep -Fqx -- 'pstack: ready' "$fixture/setup.out" || fail 'setup output differs'
-run_cdx doctor pstack >"$fixture/doctor.out" || fail 'doctor failed'
+run_codex doctor pstack >"$fixture/doctor.out" || fail 'doctor failed'
 grep -Fqx -- 'pstack: healthy' "$fixture/doctor.out" || fail 'doctor output differs'
 profile_home="$home/.local/share/trellage/profiles/codex/pstack/home"
 [ -d "$profile_home" ] && [ ! -L "$profile_home" ] || fail 'profile home differs'
@@ -237,41 +237,41 @@ profile_home="$home/.local/share/trellage/profiles/codex/pstack/home"
 [ ! -e "$profile_home/agents/benny.toml" ] || fail 'optional pstack agents were installed'
 [ ! -e "$profile_home/benny" ] || fail 'Benny was enabled'
 
-run_cdx inventory pstack --json >"$fixture/inventory.json"
-jq -e '.launcher == "cdx" and .readiness == "healthy"
+run_codex inventory pstack --json >"$fixture/inventory.json"
+jq -e '.launcher == "codex" and .readiness == "healthy"
   and .skills.packageCount == 45
   and .plugins == [{name:"pstack-for-codex@pstack-for-codex-local",version:"0.1.0"}]' \
   "$fixture/inventory.json" >/dev/null || fail 'healthy inventory differs'
 
 config_hash="$(shasum -a 256 "$profile_home/config.toml" | awk '{print $1}')"
-run_cdx doctor pstack >/dev/null || fail 'second doctor failed'
+run_codex doctor pstack >/dev/null || fail 'second doctor failed'
 [ "$(shasum -a 256 "$profile_home/config.toml" | awk '{print $1}')" = "$config_hash" ] \
   || fail 'doctor mutated config'
 [ ! -e "$state/launch" ] || fail 'setup, doctor, or inventory started a Codex session'
 
-run_cdx pstack --version || fail 'pstack profile launch failed'
+run_codex pstack --version || fail 'pstack profile launch failed'
 assert_launch_args false
 rm "$state/launch"
-run_cdx update --check pstack >"$fixture/update-current.out" \
+run_codex update --check pstack >"$fixture/update-current.out" \
   || fail 'current update check failed'
 grep -Fq -- 'pstack: current (' "$fixture/update-current.out" \
   || fail 'current update check output differs'
 printf '%040d\n' 2 >"$state/remote-revision"
 update_status=0
-run_cdx update --check pstack >"$fixture/update-available.out" || update_status=$?
+run_codex update --check pstack >"$fixture/update-available.out" || update_status=$?
 [ "$update_status" -eq 1 ] || fail "update check status was $update_status"
 grep -Fq -- 'pstack: update available (' "$fixture/update-available.out" \
   || fail 'available update output differs'
-run_cdx update pstack >"$fixture/update.out" || fail 'update failed'
+run_codex update pstack >"$fixture/update.out" || fail 'update failed'
 grep -Fqx -- 'pstack: updated' "$fixture/update.out" || fail 'update output differs'
-run_cdx update --check pstack >/dev/null || fail 'post-update check was not current'
+run_codex update --check pstack >/dev/null || fail 'post-update check was not current'
 [ ! -e "$state/launch" ] || fail 'update started a Codex session'
 
 native_home="$home/.codex"
 mkdir -p "$native_home"
 printf '%s\n' '{"tokens":{"access_token":"fixture"}}' >"$native_home/auth.json"
 chmod 0600 "$native_home/auth.json"
-run_cdx --native-auth pstack --version || fail 'native-auth launch failed'
+run_codex --native-auth pstack --version || fail 'native-auth launch failed'
 assert_launch_args true
 [ -f "$profile_home/auth.json" ] && [ ! -L "$profile_home/auth.json" ] \
   || fail 'native auth was not refreshed'

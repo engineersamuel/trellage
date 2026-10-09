@@ -800,7 +800,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
     def test_legacy_discovery_generates_canonical_launch_commands(self) -> None:
         namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
         adapter = namespace["load_config"](PRODUCTION_CONFIG).adapters["codex"]
-        profile = namespace["parse_profile"]({"launcher": "cdx", "harness": "codex", "name": "pstack"})
+        profile = namespace["parse_profile"]({"launcher": "codex", "harness": "codex", "name": "pstack"})
         self.assertEqual(namespace["prepare_command"]("trx", profile, adapter), ["trx", "run", "codex", "pstack"])
 
     def test_production_config_covers_every_router_launcher(self) -> None:

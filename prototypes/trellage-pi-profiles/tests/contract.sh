@@ -4,16 +4,16 @@ set -euo pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
-launcher="$root/bin/picx"
+launcher="$root/bin/pi"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
 
 fail() {
-  printf 'picx contract failed: %s\n' "$1" >&2
+  printf 'pi contract failed: %s\n' "$1" >&2
   exit 1
 }
 
-fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-picx-contract.XXXXXX")"
+fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-pi-contract.XXXXXX")"
 trap 'rm -rf -- "$fixture_root"' EXIT HUP INT TERM
 fixture_registry="$(npm config get registry --workspaces=false)" \
   || fail 'could not discover the host npm registry'
@@ -24,12 +24,17 @@ export npm_config_registry="$fixture_registry"
 fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
 node_binary="$(node -p 'process.execPath')"
-mkdir -p "$fake_bin" "$home/.copilot" "$home/.omp/profiles/trellage-picx-default"
+mkdir -p "$fake_bin" "$home/.copilot" "$home/.omp/profiles/trellage-pi-default"
+mkdir -p "$home/.local/share/trellage/profiles/pi/picx-default/sessions"
 seed_floating_skills_cache "$home"
 printf '%s\n' '{"models":[{"id":"gpt-6-astra"}]}' >"$home/.copilot/models.json"
 printf '%s\n' '{"mcpServers":{"plan":{"url":"https://agent-native.example.test/mcp"}}}' \
   >"$home/.claude.json"
-printf 'legacy OMP state\n' >"$home/.omp/profiles/trellage-picx-default/canary"
+printf 'legacy OMP state\n' >"$home/.omp/profiles/trellage-pi-default/canary"
+printf 'trellage-picx-profile-v2\n' \
+  >"$home/.local/share/trellage/profiles/pi/picx-default/.managed-by-trellage-picx-profiles"
+printf 'legacy Pi session\n' \
+  >"$home/.local/share/trellage/profiles/pi/picx-default/sessions/canary"
 
 cat >"$fake_bin/mise" <<'FAKE_MISE'
 #!/usr/bin/env bash
@@ -202,6 +207,12 @@ case "${!#}" in
 esac
 FAKE_CURL
 chmod 0755 "$fake_bin/curl"
+cat >"$fake_bin/git" <<'FAKE_GIT'
+#!/usr/bin/env bash
+printf '%s\n' 'fixture git is unavailable' >&2
+exit 1
+FAKE_GIT
+chmod 0755 "$fake_bin/git"
 ln -s "$node_binary" "$fake_bin/node"
 install_fixture_bun "$fake_bin"
 
@@ -219,20 +230,26 @@ export MISE_NPM_PACKAGE_MANAGER=aube
 : >"$FAKE_MISE_LOG"
 
 "$installer" >/dev/null
-command_path="$HOME/.local/share/trellage/.native-commands/picx"
-runtime_root="$HOME/.local/share/trellage/picx"
-profile_root="$HOME/.local/share/trellage/profiles/pi/picx-default"
+command_path="$HOME/.local/share/trellage/.native-commands/pi"
+runtime_root="$HOME/.local/share/trellage/pi"
+profile_root="$HOME/.local/share/trellage/profiles/pi/pi-default"
 agent_root="$profile_root/agent"
+[[ ! -e "$HOME/.local/share/trellage/profiles/pi/picx-default" ]] \
+  || fail 'installer left the legacy Pi profile in place'
+[[ "$(<"$profile_root/.managed-by-trellage-pi-profiles")" == trellage-pi-profile-v2 ]] \
+  || fail 'installer did not migrate Pi profile ownership'
+grep -Fqx 'legacy Pi session' "$profile_root/sessions/canary" \
+  || fail 'installer did not preserve legacy Pi profile state'
 
-[[ -L "$command_path" ]] || fail 'installer did not publish picx'
-[[ "$(readlink "$command_path")" == "$runtime_root/bin/picx" ]] \
-  || fail 'picx command target differs'
+[[ -L "$command_path" ]] || fail 'installer did not publish pi'
+[[ "$(readlink "$command_path")" == "$runtime_root/bin/pi" ]] \
+  || fail 'pi command target differs'
 [[ ! -e "$runtime_root/installed-version" && ! -e "$runtime_root/version" ]] \
   || fail 'installer authored an installed version receipt'
 
 "$command_path" list --json >"$fixture_root/list.json"
 jq -e '
-  .launcher == "picx"
+  .launcher == "pi"
   and .harness == "pi"
   and .sandbox == false
   and [.profiles[].name] == ["default"]
@@ -254,7 +271,7 @@ jq -e '
 
 "$command_path" inventory default --json >"$fixture_root/not-setup.json"
 jq -e '
-  .launcher == "picx"
+  .launcher == "pi"
   and .harness == "pi"
   and .profile == "default"
   and .readiness == "not-setup"
@@ -278,7 +295,7 @@ jq -e '
   and .profiles[0].headless.testedHarnessVersion == "0.84.2"
 ' "$fixture_root/setup-list.json" >/dev/null \
   || fail 'setup catalog did not expose verified headless support'
-grep -Fqx 'legacy OMP state' "$HOME/.omp/profiles/trellage-picx-default/canary" \
+grep -Fqx 'legacy OMP state' "$HOME/.omp/profiles/trellage-pi-default/canary" \
   || fail 'setup altered the legacy OMP profile'
 cp "$FAKE_EXTENSION_LOG" "$fixture_root/setup-extension-log"
 
@@ -420,7 +437,7 @@ status=0
 [[ ! -s "$fixture_root/unhealthy-inventory.err" ]] \
   || fail 'unhealthy inventory wrote a diagnostic instead of structured JSON'
 jq -e '
-  .launcher == "picx"
+  .launcher == "pi"
   and .harness == "pi"
   and .profile == "default"
   and .ready == false
@@ -486,7 +503,7 @@ FAKE_PROXY_FAIL_HEALTH=1 "$command_path" inventory default --json \
 [[ ! -s "$fixture_root/unhealthy-proxy-inventory.err" ]] \
   || fail 'unhealthy proxy inventory wrote a diagnostic instead of structured JSON'
 jq -e '
-  .launcher == "picx"
+  .launcher == "pi"
   and .profile == "default"
   and .ready == false
   and .readiness == "unhealthy"
@@ -508,7 +525,7 @@ grep -Fq "$agent_root|$profile_root/.copilot-models.json|copilot=|gh=|github=|op
   "$FAKE_LAUNCH_LOG" || fail 'launch isolation environment differs'
 grep -Fq -- '--provider copilot-proxy-rs --model gpt-6-astra --thinking medium' \
   "$FAKE_LAUNCH_LOG" || fail 'launch model selection differs'
-grep -Fq 'This picx profile has exactly these Pi extensions installed, in order:' \
+grep -Fq 'This pi profile has exactly these Pi extensions installed, in order:' \
   "$FAKE_LAUNCH_LOG" || fail 'launch omitted extension inventory context'
 if grep -Eq 'plan.*HTTP 401|MCP finished with failures.*plan' \
   "$fixture_root/live.out" "$fixture_root/live.err"; then
@@ -550,7 +567,7 @@ wait "$headless_pid" || status=$?
 grep -Fqx 'TERM' "$headless_signal" \
   || fail 'headless cancellation did not reach the Pi child'
 "$command_path" update --check >"$fixture_root/update-check.out"
-grep -Fqx 'picx update: 0.84.2 is current' "$fixture_root/update-check.out" \
+grep -Fqx 'pi update: 0.84.2 is current' "$fixture_root/update-check.out" \
   || fail 'update check differs'
 
 if FAKE_MISE_LATEST=0.85.0 FAKE_MISE_INSTALL_FAIL_VERSION=0.85.0 \
@@ -593,7 +610,7 @@ cmp -s "$fixture_root/update-extension-state.before" \
   "$fixture_root/update-extension-state.after" \
   || fail 'failed extension refresh did not restore all prior profile and receipt bytes'
 FAKE_MISE_LATEST=0.85.0 "$command_path" update >"$fixture_root/update.out"
-grep -Fqx 'picx update: 0.84.2 -> 0.85.0 installed' "$fixture_root/update.out" \
+grep -Fqx 'pi update: 0.84.2 -> 0.85.0 installed' "$fixture_root/update.out" \
   || fail 'update output differs'
 [[ "$(<"$runtime_root/installed-version")" == '0.85.0' ]] \
   || fail 'update did not publish the new installed version receipt'
@@ -610,7 +627,7 @@ if "$command_path" --headless-policy no-user-input -p unverified-headless \
   2>"$fixture_root/unverified-headless.err"; then
   fail 'headless policy unexpectedly launched an unverified Pi version'
 fi
-grep -Fqx 'picx: --headless-policy no-user-input is verified only for Pi 0.84.2; installed version is 0.85.0' \
+grep -Fqx 'pi: --headless-policy no-user-input is verified only for Pi 0.84.2; installed version is 0.85.0' \
   "$fixture_root/unverified-headless.err" \
   || fail 'unverified Pi headless policy diagnostic differs'
 [[ "$(wc -l <"$FAKE_LAUNCH_LOG" | tr -d ' ')" == "$unverified_launches_before" ]] \
@@ -623,8 +640,8 @@ jq -e '.readiness == "healthy" and .harnessVersion == "0.85.0"' \
 "$uninstaller" >/dev/null
 [[ ! -e "$command_path" && ! -e "$runtime_root" ]] || fail 'uninstall left runtime'
 [[ -f "$profile_root/extensions.json" ]] || fail 'uninstall removed Pi profile state'
-grep -Fqx 'legacy OMP state' "$HOME/.omp/profiles/trellage-picx-default/canary" \
+grep -Fqx 'legacy OMP state' "$HOME/.omp/profiles/trellage-pi-default/canary" \
   || fail 'uninstall altered the legacy OMP profile'
 
 bash -n "$launcher" "$installer" "$uninstaller" "$0"
-printf 'PICX native launcher contract: PASS\n'
+printf 'TRELLAGE_PI native launcher contract: PASS\n'

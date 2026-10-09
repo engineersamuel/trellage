@@ -239,7 +239,7 @@ mkdir -p \
   "$fixture_home/.local/share/trellage/profiles/codex/youtube/home"
 
 mkdir -p "$fixture_root/backends"
-cat >"$fixture_root/backends/cdx" <<'FAKE_CDX'
+cat >"$fixture_root/backends/codex" <<'FAKE_TRELLAGE_CODEX'
 #!/usr/bin/env bash
 set -euo pipefail
 launcher="$(basename "$0")"
@@ -251,17 +251,17 @@ if [ "$#" -eq 1 ] && [ "$1" = 'list' ]; then
   cat "$FAKE_DATA/$launcher-list"
 elif [ "$#" -eq 2 ] && [ "$1" = 'doctor' ]; then
   [ ! -f "$FAKE_DATA/fail-$launcher-doctor-$2" ] || {
-    printf 'CDX_DOCTOR_SECRET_DO_NOT_LEAK\n' >&2
+    printf 'TRELLAGE_CODEX_DOCTOR_SECRET_DO_NOT_LEAK\n' >&2
     exit 65
   }
   printf '%s: healthy\n' "$2"
 elif [ "$#" -eq 4 ] && [ "$2" = 'debug' ] \
   && [ "$3" = 'prompt-input' ] && [ "$4" = 'profile verification' ]; then
-  if [ "$launcher" = cdx ] && [ "$1" = youtube ] \
+  if [ "$launcher" = codex ] && [ "$1" = youtube ] \
     && [ -z "${TRANSCRIPT_API_KEY:-}" ]; then
     exit 66
   fi
-  if [ "$launcher" = cdx ] && [ "$1" = youtube ] \
+  if [ "$launcher" = codex ] && [ "$1" = youtube ] \
     && [ "${TRELLAGE_ENVIRONMENT:-}" != off ]; then
     exit 67
   fi
@@ -278,16 +278,16 @@ elif [ "$#" -eq 4 ] && [ "$2" = 'debug' ] \
     [ "$static_released" -eq 1 ] || exit 124
   fi
   [ ! -f "$FAKE_DATA/fail-$launcher-$1" ] || {
-    printf 'CDX_COMMAND_SECRET_DO_NOT_LEAK\n' >&2
+    printf 'TRELLAGE_CODEX_COMMAND_SECRET_DO_NOT_LEAK\n' >&2
     exit 65
   }
   data_prefix="$launcher"
-  [ "$launcher" != cdx ] || data_prefix=codex
+  [ "$launcher" != codex ] || data_prefix=codex
   cat "$FAKE_DATA/$data_prefix-$1.json"
 else
   exit 64
 fi
-FAKE_CDX
+FAKE_TRELLAGE_CODEX
 
 cat >"$fixture_bin/trx" <<'FAKE_TRX'
 #!/usr/bin/env bash
@@ -296,8 +296,8 @@ operation="$1"
 harness="$2"
 shift 2
 case "$harness" in
-  codex) backend=cdx ;;
-  copilot) backend=cpx ;;
+  codex) backend=codex ;;
+  copilot) backend=copilot ;;
   *) exit 64 ;;
 esac
 backend_path="$(dirname "$0")/../backends/$backend"
@@ -363,49 +363,49 @@ else
 fi
 FAKE_CODEX
 
-cat >"$fixture_root/backends/cpx" <<'FAKE_CPX'
+cat >"$fixture_root/backends/copilot" <<'FAKE_TRELLAGE_COPILOT'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'cpx' >>"$FAKE_COMMAND_LOG"
+printf 'copilot' >>"$FAKE_COMMAND_LOG"
 printf '\t%s' "$@" >>"$FAKE_COMMAND_LOG"
 printf '\n' >>"$FAKE_COMMAND_LOG"
 if [ "$#" -eq 1 ] && [ "$1" = 'list' ]; then
-  [ ! -f "$FAKE_DATA/fail-cpx-list" ] || exit 65
-  cat "$FAKE_DATA/cpx-list"
+  [ ! -f "$FAKE_DATA/fail-copilot-list" ] || exit 65
+  cat "$FAKE_DATA/copilot-list"
 elif [ "$#" -eq 2 ] && [ "$1" = 'doctor' ]; then
-    [ ! -f "$FAKE_DATA/fail-cpx-doctor-$2" ] || {
-      printf 'CPX_COMMAND_SECRET_DO_NOT_LEAK\n' >&2
+    [ ! -f "$FAKE_DATA/fail-copilot-doctor-$2" ] || {
+      printf 'TRELLAGE_COPILOT_COMMAND_SECRET_DO_NOT_LEAK\n' >&2
       exit 65
     }
     printf '%s: healthy\n' "$2"
 elif [ "$#" -eq 3 ] && [ "$2" = 'plugin' ] && [ "$3" = 'list' ]; then
-    [ ! -f "$FAKE_DATA/fail-cpx-plugin-$1" ] || {
-      printf 'CPX_PLUGIN_LIST_SECRET_DO_NOT_LEAK\n' >&2
+    [ ! -f "$FAKE_DATA/fail-copilot-plugin-$1" ] || {
+      printf 'TRELLAGE_COPILOT_PLUGIN_LIST_SECRET_DO_NOT_LEAK\n' >&2
       exit 65
     }
-    cat "$FAKE_DATA/cpx-$1-plugins"
+    cat "$FAKE_DATA/copilot-$1-plugins"
 elif [ "$#" -eq 4 ] && [ "$2" = 'skill' ] && [ "$3" = 'list' ] && [ "$4" = '--json' ]; then
-    [ ! -f "$FAKE_DATA/fail-cpx-skills-$1" ] || {
-      printf 'CPX_SKILL_LIST_SECRET_DO_NOT_LEAK\n' >&2
+    [ ! -f "$FAKE_DATA/fail-copilot-skills-$1" ] || {
+      printf 'TRELLAGE_COPILOT_SKILL_LIST_SECRET_DO_NOT_LEAK\n' >&2
       exit 65
     }
-    cat "$FAKE_DATA/cpx-$1-skills.json"
+    cat "$FAKE_DATA/copilot-$1-skills.json"
 elif [ "$#" -eq 13 ] && [ "$2" = '--prompt' ] && [ "$4" = '--output-format' ] \
   && [ "$5" = 'json' ] && [ "$6" = '--no-ask-user' ] \
   && [ "$7" = '--disable-builtin-mcps' ] && [ "$8" = '--available-tools=' ] \
   && [ "$9" = '--no-remote' ] && [ "${10}" = '--no-remote-export' ] \
   && [ "${11}" = '--no-auto-update' ] && [ "${12}" = '--stream' ] && [ "${13}" = 'off' ]; then
-    [ ! -f "$FAKE_DATA/fail-live-cpx-$1" ] || {
-      printf 'LIVE_CPX_SECRET_DO_NOT_LEAK\n' >&2
+    [ ! -f "$FAKE_DATA/fail-live-copilot-$1" ] || {
+      printf 'LIVE_TRELLAGE_COPILOT_SECRET_DO_NOT_LEAK\n' >&2
       exit 65
     }
-    if [ "${FAKE_BLOCK_LIVE:-}" = "cpx-$1" ]; then
+    if [ "${FAKE_BLOCK_LIVE:-}" = "copilot-$1" ]; then
       trap 'exit 143' TERM
       printf '%s\n' "$$" >"$FAKE_PID_FILE"
       "$FAKE_TREE_CHILD" &
       wait "$!"
     fi
-    if [ "${FAKE_EXIT_WITH_SURVIVOR:-}" = "cpx-$1" ]; then
+    if [ "${FAKE_EXIT_WITH_SURVIVOR:-}" = "copilot-$1" ]; then
       "$FAKE_TERM_IGNORER" &
       survivor_ready=0
       for survivor_attempt in {1..500}; do
@@ -419,11 +419,11 @@ elif [ "$#" -eq 13 ] && [ "$2" = '--prompt' ] && [ "$4" = '--output-format' ] \
       [ "${FAKE_SURVIVOR_EXIT_STATUS:-0}" -eq 0 ] \
         || exit "$FAKE_SURVIVOR_EXIT_STATUS"
     fi
-    cat "$FAKE_DATA/cpx-$1-live.jsonl"
+    cat "$FAKE_DATA/copilot-$1-live.jsonl"
 else
   exit 64
 fi
-FAKE_CPX
+FAKE_TRELLAGE_COPILOT
 
 
 cat >"$fixture_bin/fake-live-descendant" <<'FAKE_LIVE_DESCENDANT'
@@ -443,20 +443,20 @@ printf '%s\n' "$$" >"$FAKE_IGNORER_PID_FILE"
 while :; do :; done
 FAKE_TERM_IGNORER
 
-chmod 0755 "$fixture_root/backends/cdx" "$fixture_bin/codex" "$fixture_root/backends/cpx" \
+chmod 0755 "$fixture_root/backends/codex" "$fixture_bin/codex" "$fixture_root/backends/copilot" \
   "$fixture_bin/fake-live-descendant" "$fixture_bin/fake-term-ignorer"
 ln -s "$real_jq" "$fixture_bin/jq"
 for core_command in bash mktemp rm cut grep sort awk head cat sleep basename dirname; do
   ln -s "$(command -v "$core_command")" "$fixture_core_bin/$core_command"
 done
 
-printf '%s\n' $'zeta\tpack-zeta' $'alpha\tpack-alpha' >"$fixture_data/cpx-list"
+printf '%s\n' $'zeta\tpack-zeta' $'alpha\tpack-alpha' >"$fixture_data/copilot-list"
 printf '%s\n' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' \
-  $'youtube\tyoutube-full' >"$fixture_data/cdx-list"
-printf '%s\n' 'Installed plugins:' '  • pack-alpha (v1)' >"$fixture_data/cpx-alpha-plugins"
-printf '%s\n' 'Installed plugins:' '  • pack-zeta (v1)' >"$fixture_data/cpx-zeta-plugins"
+  $'youtube\tyoutube-full' >"$fixture_data/codex-list"
+printf '%s\n' 'Installed plugins:' '  • pack-alpha (v1)' >"$fixture_data/copilot-alpha-plugins"
+printf '%s\n' 'Installed plugins:' '  • pack-zeta (v1)' >"$fixture_data/copilot-zeta-plugins"
 
 "$real_jq" -cn --arg text $'prefix\n### Available skills\n- skillb: B (file: /b)\n- skilla: A (file: /a)\n### Skill roots\nsuffix' \
   '[{type:"message",role:"developer",content:[{type:"input_text",text:$text}]}]' \
@@ -472,40 +472,40 @@ printf '%s\n' 'Installed plugins:' '  • pack-zeta (v1)' >"$fixture_data/cpx-ze
   {name:"p4",source:"plugin",enabled:true}, {name:"p3",source:"plugin",enabled:true},
   {name:"p2",source:"plugin",enabled:true}, {name:"p1",source:"plugin",enabled:true},
   {name:"projectskill",source:"project",enabled:true}
-]' >"$fixture_data/cpx-alpha-skills.json"
+]' >"$fixture_data/copilot-alpha-skills.json"
 "$real_jq" -cn '[
   {name:"zplugin",source:"plugin",enabled:true},
   {name:"hidden",source:"project",enabled:false}
-]' >"$fixture_data/cpx-zeta-skills.json"
+]' >"$fixture_data/copilot-zeta-skills.json"
 for live_profile in superpowers youtube; do
   printf '%s\n' '{"type":"thread.started"}' >"$fixture_data/codex-$live_profile-live-events.jsonl"
 done
 printf '%s\n' '{"type":"thread.started"}' >"$fixture_data/codex-pstack-live-events.jsonl"
-"$real_jq" -cn '{launcher:"cdx",profile:"superpowers",skills:["skilla","skillb"],emptyPackageConfirmed:false}' \
+"$real_jq" -cn '{launcher:"codex",profile:"superpowers",skills:["skilla","skillb"],emptyPackageConfirmed:false}' \
   >"$fixture_data/codex-superpowers-live.json"
-"$real_jq" -cn '{launcher:"cdx",profile:"pstack",skills:["poteto"],emptyPackageConfirmed:false}' \
+"$real_jq" -cn '{launcher:"codex",profile:"pstack",skills:["poteto"],emptyPackageConfirmed:false}' \
   >"$fixture_data/codex-pstack-live.json"
-"$real_jq" -cn '{launcher:"cdx",profile:"youtube",skills:["youtube-full"],emptyPackageConfirmed:false}' \
+"$real_jq" -cn '{launcher:"codex",profile:"youtube",skills:["youtube-full"],emptyPackageConfirmed:false}' \
   >"$fixture_data/codex-youtube-live.json"
 "$real_jq" -cn --arg content \
-  '{"launcher":"cpx","profile":"alpha","skills":["p1","p2","p3","p4","p5"],"emptyPackageConfirmed":false}' \
-  '{type:"assistant.message",data:{content:$content}}' >"$fixture_data/cpx-alpha-live.jsonl"
+  '{"launcher":"copilot","profile":"alpha","skills":["p1","p2","p3","p4","p5"],"emptyPackageConfirmed":false}' \
+  '{type:"assistant.message",data:{content:$content}}' >"$fixture_data/copilot-alpha-live.jsonl"
 "$real_jq" -cn --arg content \
-  '{"launcher":"cpx","profile":"zeta","skills":["zplugin"],"emptyPackageConfirmed":false}' \
-  '{type:"assistant.message",data:{content:$content}}' >"$fixture_data/cpx-zeta-live.jsonl"
+  '{"launcher":"copilot","profile":"zeta","skills":["zplugin"],"emptyPackageConfirmed":false}' \
+  '{type:"assistant.message",data:{content:$content}}' >"$fixture_data/copilot-zeta-live.jsonl"
 
 restricted_path="$fixture_bin:$fixture_core_bin"
 
 set +e
 FAKE_COMMAND_LOG="$command_log" FAKE_DATA="$fixture_data" \
-  "$fixture_root/backends/cpx" doctor alpha extra >/dev/null 2>&1
-poison_cpx_status=$?
+  "$fixture_root/backends/copilot" doctor alpha extra >/dev/null 2>&1
+poison_copilot_status=$?
 FAKE_COMMAND_LOG="$command_log" FAKE_DATA="$fixture_data" \
-  "$fixture_root/backends/cpx" setup alpha >/dev/null 2>&1
-poison_cpx_lifecycle_status=$?
+  "$fixture_root/backends/copilot" setup alpha >/dev/null 2>&1
+poison_copilot_lifecycle_status=$?
 set -e
-[ "$poison_cpx_status" -ne 0 ] || fail 'fake cpx accepted an extra doctor argument'
-[ "$poison_cpx_lifecycle_status" -ne 0 ] || fail 'fake cpx accepted a lifecycle command'
+[ "$poison_copilot_status" -ne 0 ] || fail 'fake copilot accepted an extra doctor argument'
+[ "$poison_copilot_lifecycle_status" -ne 0 ] || fail 'fake copilot accepted a lifecycle command'
 : >"$command_log"
 
 run_matrix() {
@@ -551,12 +551,12 @@ run_live_matrix() {
   set -e
 }
 
-write_cpx_live() {
+write_copilot_live() {
   local profile="$1"
   local content="$2"
   "$real_jq" -cn --arg content "$content" \
     '{type:"assistant.message",data:{content:$content}}' \
-    >"$fixture_data/cpx-$profile-live.jsonl"
+    >"$fixture_data/copilot-$profile-live.jsonl"
 }
 
 process_is_running() {
@@ -672,9 +672,9 @@ verifier_under_signal_pid=''
   || fail "timed-out live verifier returned $timeout_verifier_status instead of 1"
 [ -s "$timeout_pid_file" ] || fail 'timed-out live probe never started'
 timeout_child_pid="$(cat "$timeout_pid_file")"
-grep -Fq '| cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | fail: timeout |' "$output_file" \
+grep -Fq '| codex | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | fail: timeout |' "$output_file" \
   || fail 'timed-out live probe did not fail its row distinctly'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | pass |' "$output_file" \
+grep -Fq '| codex | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | pass |' "$output_file" \
   || fail 'timed-out live probe stopped a later profile'
 grep -Fq 'verify-agent-profiles: codex live probe timed out for pstack' "$error_file" \
   || fail 'timed-out live probe omitted its safe diagnostic'
@@ -687,8 +687,8 @@ fi
 
 # Successful and failed launchers cannot leave owned descendants behind.
 for survivor_case in \
-  'codex pstack 0 cdx cdx superpowers' 'codex pstack 65 cdx cdx superpowers' \
-  'cpx alpha 0 cpx cpx zeta' 'cpx alpha 65 cpx cpx zeta'; do
+  'codex pstack 0 codex codex superpowers' 'codex pstack 65 codex codex superpowers' \
+  'copilot alpha 0 copilot copilot zeta' 'copilot alpha 65 copilot copilot zeta'; do
   read -r survivor_adapter survivor_profile survivor_exit \
     survivor_row_adapter survivor_later_adapter survivor_later_profile \
     <<<"$survivor_case"
@@ -742,44 +742,44 @@ expected_table="$fixture_root/expected-table"
 cat >"$expected_table" <<'TABLE'
 | Launcher | Profile | Package | Package skills | Visible skills | Sample | Static | Live |
 |---|---|---|---:|---:|---|---|---|
-| cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | not run |
-| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | not run |
-| cdx | youtube | youtube-full | 1 | 1 | youtube-full | pass | not run |
-| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | not run |
-| cpx | zeta | pack-zeta | 1 | 1 | zplugin | pass | not run |
+| codex | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | not run |
+| codex | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | not run |
+| codex | youtube | youtube-full | 1 | 1 | youtube-full | pass | not run |
+| copilot | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | not run |
+| copilot | zeta | pack-zeta | 1 | 1 | zplugin | pass | not run |
 TABLE
 cmp -s "$expected_table" "$output_file" || {
   diff -u "$expected_table" "$output_file" >&2 || true
   fail 'happy-path matrix did not match the shared table contract'
 }
 
-grep -Fqx $'cdx\tlist' "$command_log" \
-  || fail 'managed Codex profiles were not discovered through cdx list'
-grep -Fqx $'cdx\tdoctor\tsuperpowers' "$command_log" \
-  || fail 'managed Codex superpowers profile was not checked through cdx doctor'
-grep -Fqx $'cdx\tsuperpowers\tdebug\tprompt-input\tprofile verification' "$command_log" \
+grep -Fqx $'codex\tlist' "$command_log" \
+  || fail 'managed Codex profiles were not discovered through codex list'
+grep -Fqx $'codex\tdoctor\tsuperpowers' "$command_log" \
+  || fail 'managed Codex superpowers profile was not checked through codex doctor'
+grep -Fqx $'codex\tsuperpowers\tdebug\tprompt-input\tprofile verification' "$command_log" \
   || fail 'managed Codex superpowers profile was not verified through prompt-input'
-grep -Fqx $'cdx\tdoctor\tpstack' "$command_log" \
-  || fail 'managed pstack profile was not checked through cdx doctor'
-grep -Fqx $'cdx\tpstack\tdebug\tprompt-input\tprofile verification' "$command_log" \
+grep -Fqx $'codex\tdoctor\tpstack' "$command_log" \
+  || fail 'managed pstack profile was not checked through codex doctor'
+grep -Fqx $'codex\tpstack\tdebug\tprompt-input\tprofile verification' "$command_log" \
   || fail 'managed pstack profile was not verified through prompt-input'
-grep -Fqx $'cdx\tdoctor\tyoutube' "$command_log" \
-  || fail 'managed YouTube profile was not checked through cdx doctor'
-grep -Fqx $'cdx\tyoutube\tdebug\tprompt-input\tprofile verification' "$command_log" \
+grep -Fqx $'codex\tdoctor\tyoutube' "$command_log" \
+  || fail 'managed YouTube profile was not checked through codex doctor'
+grep -Fqx $'codex\tyoutube\tdebug\tprompt-input\tprofile verification' "$command_log" \
   || fail 'managed YouTube profile was not verified through prompt-input'
 if grep -Fq 'trellage-static-profile-verification' "$command_log"; then
   fail 'managed YouTube verification placed its placeholder key in arguments'
 fi
-grep -Fqx $'cpx\tdoctor\talpha' "$command_log" || fail 'Copilot doctor was not called'
+grep -Fqx $'copilot\tdoctor\talpha' "$command_log" || fail 'Copilot doctor was not called'
 awk -F '\t' '
-  $1 == "cdx" && NF == 2 && $2 == "list" { next }
-  $1 == "cdx" && NF == 3 && $2 == "doctor" { next }
-  $1 == "cdx" && NF == 5 && $3 == "debug" \
+  $1 == "codex" && NF == 2 && $2 == "list" { next }
+  $1 == "codex" && NF == 3 && $2 == "doctor" { next }
+  $1 == "codex" && NF == 5 && $3 == "debug" \
     && $4 == "prompt-input" && $5 == "profile verification" { next }
-  $1 == "cpx" && NF == 2 && $2 == "list" { next }
-  $1 == "cpx" && NF == 3 && $2 == "doctor" { next }
-  $1 == "cpx" && NF == 4 && $3 == "plugin" && $4 == "list" { next }
-  $1 == "cpx" && NF == 5 && $3 == "skill" && $4 == "list" && $5 == "--json" { next }
+  $1 == "copilot" && NF == 2 && $2 == "list" { next }
+  $1 == "copilot" && NF == 3 && $2 == "doctor" { next }
+  $1 == "copilot" && NF == 4 && $3 == "plugin" && $4 == "list" { next }
+  $1 == "copilot" && NF == 5 && $3 == "skill" && $4 == "list" && $5 == "--json" { next }
   { invalid = 1 }
   END { exit invalid }
 ' "$command_log" || fail 'verifier invoked a launcher with an unexpected command shape'
@@ -792,123 +792,123 @@ fi
 [ -z "$(find "$fixture_tmp" -mindepth 1 -print -quit)" ] \
   || fail 'temporary artifacts remained after successful verification'
 
-cp "$fixture_data/cpx-list" "$fixture_data/cpx-list.good"
-cp "$fixture_data/cpx-alpha-plugins" "$fixture_data/cpx-alpha-plugins.good"
-cp "$fixture_data/cpx-alpha-skills.json" "$fixture_data/cpx-alpha-skills.good.json"
-cp "$fixture_data/cdx-list" "$fixture_data/cdx-list.good"
+cp "$fixture_data/copilot-list" "$fixture_data/copilot-list.good"
+cp "$fixture_data/copilot-alpha-plugins" "$fixture_data/copilot-alpha-plugins.good"
+cp "$fixture_data/copilot-alpha-skills.json" "$fixture_data/copilot-alpha-skills.good.json"
+cp "$fixture_data/codex-list" "$fixture_data/codex-list.good"
 cp "$fixture_data/codex-superpowers.json" "$fixture_data/codex-superpowers.good.json"
 cp "$fixture_data/codex-youtube.json" "$fixture_data/codex-youtube.good.json"
 
 # Every dynamic cell is Markdown-safe.
-printf '%s\n' $'alpha\tpack&copy;~alpha*beta|bundle' $'zeta\tpack-zeta' >"$fixture_data/cpx-list"
-printf '%s\n' 'Installed plugins:' '  • pack&copy;~alpha*beta|bundle (v1)' >"$fixture_data/cpx-alpha-plugins"
+printf '%s\n' $'alpha\tpack&copy;~alpha*beta|bundle' $'zeta\tpack-zeta' >"$fixture_data/copilot-list"
+printf '%s\n' 'Installed plugins:' '  • pack&copy;~alpha*beta|bundle (v1)' >"$fixture_data/copilot-alpha-plugins"
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'Markdown escaping fixture returned nonzero'
 grep -Fq 'pack\&copy;\~alpha\*beta\|bundle' "$output_file" \
   || fail 'Markdown metacharacters were not escaped in a table cell'
-cp "$fixture_data/cpx-list.good" "$fixture_data/cpx-list"
-cp "$fixture_data/cpx-alpha-plugins.good" "$fixture_data/cpx-alpha-plugins"
+cp "$fixture_data/copilot-list.good" "$fixture_data/copilot-list"
+cp "$fixture_data/copilot-alpha-plugins.good" "$fixture_data/copilot-alpha-plugins"
 
 # Duplicate rows are inventory failures, but unique discoverable rows still emit.
-printf '%s\n' $'alpha\tpack-alpha' $'alpha\tpack-alpha' $'zeta\tpack-zeta' >"$fixture_data/cpx-list"
+printf '%s\n' $'alpha\tpack-alpha' $'alpha\tpack-alpha' $'zeta\tpack-zeta' >"$fixture_data/copilot-list"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'duplicate profile inventory did not return 1'
-grep -Fq '| cpx | alpha |' "$output_file" || fail 'valid Copilot row was lost after a duplicate'
-printf '%s\n' $'zeta\tpack-zeta' $'alpha\tpack-alpha' >"$fixture_data/cpx-list"
+grep -Fq '| copilot | alpha |' "$output_file" || fail 'valid Copilot row was lost after a duplicate'
+printf '%s\n' $'zeta\tpack-zeta' $'alpha\tpack-alpha' >"$fixture_data/copilot-list"
 
 # Strict list parsing rejects empty inventories.
-: >"$fixture_data/cpx-list"
+: >"$fixture_data/copilot-list"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'empty Copilot inventory did not return 1'
-grep -Fq 'verify-agent-profiles: cpx profile inventory is empty' "$error_file" \
+grep -Fq 'verify-agent-profiles: copilot profile inventory is empty' "$error_file" \
   || fail 'empty Copilot inventory did not emit a useful diagnostic'
-if grep -Fq '| cpx |' "$output_file"; then
+if grep -Fq '| copilot |' "$output_file"; then
   fail 'empty Copilot inventory emitted a fabricated profile row'
 fi
-cp "$fixture_data/cpx-list.good" "$fixture_data/cpx-list"
+cp "$fixture_data/copilot-list.good" "$fixture_data/copilot-list"
 
 # Malformed JSON and unexpected packages fail their rows without stopping aggregation.
 printf '%s\n' '{"token":"SENSITIVE_PAYLOAD_DO_NOT_LEAK","fullConfig":{"prompt":"DO_NOT_DUMP_FULL_DOCUMENT"}}' \
-  >"$fixture_data/cpx-alpha-skills.json"
+  >"$fixture_data/copilot-alpha-skills.json"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'malformed Copilot JSON did not return 1'
-grep -Fq '| cpx | alpha | pack-alpha | ? | ? |  | fail: invalid skill JSON | not run |' "$output_file" \
+grep -Fq '| copilot | alpha | pack-alpha | ? | ? |  | fail: invalid skill JSON | not run |' "$output_file" \
   || fail 'malformed Copilot JSON diagnostic was not retained in its row'
-grep -Fq 'verify-agent-profiles: cpx skill inventory validation failed for alpha: expected one JSON array with valid skill fields' "$error_file" \
+grep -Fq 'verify-agent-profiles: copilot skill inventory validation failed for alpha: expected one JSON array with valid skill fields' "$error_file" \
   || fail 'malformed Copilot JSON did not emit useful safe stderr detail'
 if grep -Eq 'SENSITIVE_PAYLOAD_DO_NOT_LEAK|DO_NOT_DUMP_FULL_DOCUMENT' "$error_file"; then
   fail 'malformed Copilot JSON leaked sensitive or full payload content to stderr'
 fi
-grep -Fq '| cpx | zeta |' "$output_file" || fail 'later Copilot row was lost after malformed JSON'
-cp "$fixture_data/cpx-alpha-skills.good.json" "$fixture_data/cpx-alpha-skills.json"
+grep -Fq '| copilot | zeta |' "$output_file" || fail 'later Copilot row was lost after malformed JSON'
+cp "$fixture_data/copilot-alpha-skills.good.json" "$fixture_data/copilot-alpha-skills.json"
 
-printf '%s\n' 'Installed plugins:' '  • other-package (v1)' >"$fixture_data/cpx-alpha-plugins"
+printf '%s\n' 'Installed plugins:' '  • other-package (v1)' >"$fixture_data/copilot-alpha-plugins"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'unexpected Copilot package did not return 1'
 grep -Fq 'fail: unexpected package' "$output_file" \
   || fail 'unexpected package diagnostic was not retained in its row'
-grep -Fq 'verify-agent-profiles: cpx package validation failed for alpha: cataloged package is not the sole installed plugin' "$error_file" \
+grep -Fq 'verify-agent-profiles: copilot package validation failed for alpha: cataloged package is not the sole installed plugin' "$error_file" \
   || fail 'unexpected Copilot package did not emit useful safe stderr detail'
-cp "$fixture_data/cpx-alpha-plugins.good" "$fixture_data/cpx-alpha-plugins"
+cp "$fixture_data/copilot-alpha-plugins.good" "$fixture_data/copilot-alpha-plugins"
 
 # Each adapter command failure is a row failure; other profiles still run.
-: >"$fixture_data/fail-cdx-superpowers"
-: >"$fixture_data/fail-cpx-doctor-alpha"
+: >"$fixture_data/fail-codex-superpowers"
+: >"$fixture_data/fail-copilot-doctor-alpha"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'adapter command failures did not aggregate to status 1'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | ? |  | fail: prompt input command | not run |' "$output_file" \
+grep -Fq '| codex | superpowers | superpowers@superpowers-marketplace | n/a | ? |  | fail: prompt input command | not run |' "$output_file" \
   || fail 'Codex command failure row is missing'
-grep -Fq '| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | fail: doctor command | not run |' "$output_file" \
+grep -Fq '| copilot | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | fail: doctor command | not run |' "$output_file" \
   || fail 'Copilot command failure row is missing'
 grep -Fq 'verify-agent-profiles: Codex prompt-input failed for superpowers (exit 65)' "$error_file" \
   || fail 'Codex command failure stderr omitted safe exit detail'
-grep -Fq 'verify-agent-profiles: cpx doctor failed for alpha (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: copilot doctor failed for alpha (exit 65)' "$error_file" \
   || fail 'Copilot command failure stderr omitted safe exit detail'
-if grep -Eq 'CODEX_COMMAND_SECRET_DO_NOT_LEAK|CPX_COMMAND_SECRET_DO_NOT_LEAK' "$error_file"; then
+if grep -Eq 'CODEX_COMMAND_SECRET_DO_NOT_LEAK|TRELLAGE_COPILOT_COMMAND_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'adapter command failure leaked command stderr payload'
 fi
-grep -Fq '| cpx | zeta |' "$output_file" || fail 'Copilot aggregation stopped after command failure'
-rm -f "$fixture_data/fail-cdx-superpowers" "$fixture_data/fail-cpx-doctor-alpha"
+grep -Fq '| copilot | zeta |' "$output_file" || fail 'Copilot aggregation stopped after command failure'
+rm -f "$fixture_data/fail-codex-superpowers" "$fixture_data/fail-copilot-doctor-alpha"
 
-: >"$fixture_data/fail-cdx-doctor-superpowers"
+: >"$fixture_data/fail-codex-doctor-superpowers"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'managed Codex doctor failure did not return 1'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | fail: doctor command | not run |' "$output_file" \
+grep -Fq '| codex | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | fail: doctor command | not run |' "$output_file" \
   || fail 'managed Codex doctor failure row is missing'
-grep -Fq 'verify-agent-profiles: cdx doctor failed for superpowers (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: codex doctor failed for superpowers (exit 65)' "$error_file" \
   || fail 'managed Codex doctor failure omitted safe stderr detail'
-if grep -Fq 'CDX_DOCTOR_SECRET_DO_NOT_LEAK' "$error_file"; then
+if grep -Fq 'TRELLAGE_CODEX_DOCTOR_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'managed Codex doctor failure leaked command stderr payload'
 fi
-grep -Fq '| cpx | zeta |' "$output_file" \
+grep -Fq '| copilot | zeta |' "$output_file" \
   || fail 'managed Codex doctor failure stopped later adapters'
-rm -f "$fixture_data/fail-cdx-doctor-superpowers"
+rm -f "$fixture_data/fail-codex-doctor-superpowers"
 
-: >"$fixture_data/fail-cpx-plugin-alpha"
+: >"$fixture_data/fail-copilot-plugin-alpha"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'Copilot plugin-list command failure did not return 1'
-grep -Fq '| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | fail: plugin command | not run |' "$output_file" \
+grep -Fq '| copilot | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | fail: plugin command | not run |' "$output_file" \
   || fail 'Copilot plugin-list failure row is missing'
-grep -Fq 'verify-agent-profiles: cpx plugin list failed for alpha (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: copilot plugin list failed for alpha (exit 65)' "$error_file" \
   || fail 'Copilot plugin-list failure omitted safe stderr detail'
-if grep -Fq 'CPX_PLUGIN_LIST_SECRET_DO_NOT_LEAK' "$error_file"; then
+if grep -Fq 'TRELLAGE_COPILOT_PLUGIN_LIST_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'Copilot plugin-list failure leaked command payload'
 fi
-grep -Fq '| cpx | zeta |' "$output_file" || fail 'Copilot plugin-list failure stopped later profiles'
-rm -f "$fixture_data/fail-cpx-plugin-alpha"
+grep -Fq '| copilot | zeta |' "$output_file" || fail 'Copilot plugin-list failure stopped later profiles'
+rm -f "$fixture_data/fail-copilot-plugin-alpha"
 
-: >"$fixture_data/fail-cpx-skills-alpha"
+: >"$fixture_data/fail-copilot-skills-alpha"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'Copilot skill-list command failure did not return 1'
-grep -Fq '| cpx | alpha | pack-alpha | ? | ? |  | fail: skill command | not run |' "$output_file" \
+grep -Fq '| copilot | alpha | pack-alpha | ? | ? |  | fail: skill command | not run |' "$output_file" \
   || fail 'Copilot skill-list failure row is missing'
-grep -Fq 'verify-agent-profiles: cpx skill list failed for alpha (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: copilot skill list failed for alpha (exit 65)' "$error_file" \
   || fail 'Copilot skill-list failure omitted safe stderr detail'
-if grep -Fq 'CPX_SKILL_LIST_SECRET_DO_NOT_LEAK' "$error_file"; then
+if grep -Fq 'TRELLAGE_COPILOT_SKILL_LIST_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'Copilot skill-list failure leaked command payload'
 fi
-grep -Fq '| cpx | zeta |' "$output_file" || fail 'Copilot skill-list failure stopped later profiles'
-rm -f "$fixture_data/fail-cpx-skills-alpha"
+grep -Fq '| copilot | zeta |' "$output_file" || fail 'Copilot skill-list failure stopped later profiles'
+rm -f "$fixture_data/fail-copilot-skills-alpha"
 
 # Codex inventory and prompt JSON validation are strict.
 printf '%s\n' '{"token":"CODEX_SECRET_DO_NOT_LEAK","fullPrompt":"DO_NOT_DUMP_PROMPT"}' \
@@ -940,7 +940,7 @@ cp "$fixture_data/codex-superpowers.good.json" "$fixture_data/codex-superpowers.
   >"$fixture_data/codex-youtube.json"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'missing managed YouTube skill returned success'
-grep -Fq '| cdx | youtube | youtube-full | ? | 1 | unrelated | fail: missing managed skill | not run |' \
+grep -Fq '| codex | youtube | youtube-full | ? | 1 | unrelated | fail: missing managed skill | not run |' \
   "$output_file" || fail 'missing managed YouTube skill row is absent'
 grep -Fq 'verify-agent-profiles: Codex managed skill validation failed for youtube: cataloged package is not visible' \
   "$error_file" || fail 'missing managed YouTube skill omitted its safe diagnostic'
@@ -948,59 +948,59 @@ cp "$fixture_data/codex-youtube.good.json" "$fixture_data/codex-youtube.json"
 
 # Managed Codex discovery strictly rejects malformed and duplicate list rows.
 printf '%s\n' $'Bad\tbad-package' \
-  $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/cdx-list"
+  $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/codex-list"
 run_matrix
-[ "$matrix_status" -eq 1 ] || fail 'malformed cdx list row did not return 1'
-grep -Fq 'verify-agent-profiles: cdx profile inventory is invalid' "$error_file" \
-  || fail 'malformed cdx list row omitted its exact diagnostic'
-if grep -Fq '| cdx | Bad |' "$output_file"; then
-  fail 'malformed cdx list row emitted an invalid profile row'
+[ "$matrix_status" -eq 1 ] || fail 'malformed codex list row did not return 1'
+grep -Fq 'verify-agent-profiles: codex profile inventory is invalid' "$error_file" \
+  || fail 'malformed codex list row omitted its exact diagnostic'
+if grep -Fq '| codex | Bad |' "$output_file"; then
+  fail 'malformed codex list row emitted an invalid profile row'
 fi
-grep -Fq '| cpx | alpha |' "$output_file" \
-  || fail 'malformed cdx list row stopped later adapters'
+grep -Fq '| copilot | alpha |' "$output_file" \
+  || fail 'malformed codex list row stopped later adapters'
 
 printf '%s\n' $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' \
   $'youtube\tyoutube-full' \
-  $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/cdx-list"
+  $'superpowers\tsuperpowers@superpowers-marketplace' >"$fixture_data/codex-list"
 run_matrix
-[ "$matrix_status" -eq 1 ] || fail 'duplicate cdx list row did not return 1'
-grep -Fq 'verify-agent-profiles: duplicate cdx profile: superpowers' "$error_file" \
-  || fail 'duplicate cdx list row omitted its exact diagnostic'
-grep -Fq '| cdx | superpowers |' "$output_file" || fail 'first unique cdx row was lost after duplicate'
+[ "$matrix_status" -eq 1 ] || fail 'duplicate codex list row did not return 1'
+grep -Fq 'verify-agent-profiles: duplicate codex profile: superpowers' "$error_file" \
+  || fail 'duplicate codex list row omitted its exact diagnostic'
+grep -Fq '| codex | superpowers |' "$output_file" || fail 'first unique codex row was lost after duplicate'
 
 printf '%s\n' $'superpowers\tsuperpowers@superpowers-marketplace' \
-  >"$fixture_data/cdx-list"
+  >"$fixture_data/codex-list"
 run_matrix
-[ "$matrix_status" -eq 1 ] || fail 'missing managed cdx profile did not return 1'
-grep -Fq 'verify-agent-profiles: cdx profile inventory does not match managed catalog' "$error_file" \
-  || fail 'missing managed cdx profile omitted its exact diagnostic'
-grep -Fq '| cpx | alpha |' "$output_file" \
-  || fail 'missing managed cdx profile stopped later adapters'
+[ "$matrix_status" -eq 1 ] || fail 'missing managed codex profile did not return 1'
+grep -Fq 'verify-agent-profiles: codex profile inventory does not match managed catalog' "$error_file" \
+  || fail 'missing managed codex profile omitted its exact diagnostic'
+grep -Fq '| copilot | alpha |' "$output_file" \
+  || fail 'missing managed codex profile stopped later adapters'
 
 printf '%s\n' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\tsuperpowers@superpowers-marketplace' \
   $'youtube\tyoutube-full' \
-  $'third\tthird-package' >"$fixture_data/cdx-list"
+  $'third\tthird-package' >"$fixture_data/codex-list"
 run_matrix
-[ "$matrix_status" -eq 1 ] || fail 'extra managed cdx profile did not return 1'
-grep -Fq 'verify-agent-profiles: cdx profile inventory does not match managed catalog' "$error_file" \
-  || fail 'extra managed cdx profile omitted its exact diagnostic'
-grep -Fq '| cpx | alpha |' "$output_file" \
-  || fail 'extra managed cdx profile stopped later adapters'
+[ "$matrix_status" -eq 1 ] || fail 'extra managed codex profile did not return 1'
+grep -Fq 'verify-agent-profiles: codex profile inventory does not match managed catalog' "$error_file" \
+  || fail 'extra managed codex profile omitted its exact diagnostic'
+grep -Fq '| copilot | alpha |' "$output_file" \
+  || fail 'extra managed codex profile stopped later adapters'
 
 printf '%s\n' \
   $'pstack\tpstack-for-codex@pstack-for-codex-local' \
   $'superpowers\twrong-package' \
-  $'youtube\tyoutube-full' >"$fixture_data/cdx-list"
+  $'youtube\tyoutube-full' >"$fixture_data/codex-list"
 run_matrix
-[ "$matrix_status" -eq 1 ] || fail 'wrong managed cdx package did not return 1'
-grep -Fq 'verify-agent-profiles: cdx profile inventory does not match managed catalog' "$error_file" \
-  || fail 'wrong managed cdx package omitted its exact diagnostic'
-grep -Fq '| cpx | zeta |' "$output_file" \
-  || fail 'wrong managed cdx package stopped later adapters'
-cp "$fixture_data/cdx-list.good" "$fixture_data/cdx-list"
+[ "$matrix_status" -eq 1 ] || fail 'wrong managed codex package did not return 1'
+grep -Fq 'verify-agent-profiles: codex profile inventory does not match managed catalog' "$error_file" \
+  || fail 'wrong managed codex package omitted its exact diagnostic'
+grep -Fq '| copilot | zeta |' "$output_file" \
+  || fail 'wrong managed codex package stopped later adapters'
+cp "$fixture_data/codex-list.good" "$fixture_data/codex-list"
 
 # Every required launcher and jq must be present.
 for missing_command in trx codex jq; do
@@ -1011,7 +1011,7 @@ for missing_command in trx codex jq; do
     || fail "missing $missing_command diagnostic is absent"
   case "$missing_command" in
     codex)
-      grep -Fq '| cpx | zeta |' "$output_file" \
+      grep -Fq '| copilot | zeta |' "$output_file" \
         || fail "missing $missing_command stopped the later Copilot adapter"
       ;;
     trx)
@@ -1023,32 +1023,32 @@ for missing_command in trx codex jq; do
 done
 
 # Failure cleanup is as strict as success cleanup.
-: >"$fixture_data/fail-cpx-list"
+: >"$fixture_data/fail-copilot-list"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'discovery command failure did not return 1'
 [ -z "$(find "$fixture_tmp" -mindepth 1 -print -quit)" ] \
   || fail 'temporary artifacts remained after failed verification'
-rm -f "$fixture_data/fail-cpx-list"
+rm -f "$fixture_data/fail-copilot-list"
 
 # A valid empty Copilot skill array is a zero-count inventory.
-cp "$fixture_data/cpx-zeta-skills.json" "$fixture_data/cpx-zeta-skills.good.json"
-printf '[]\n' >"$fixture_data/cpx-zeta-skills.json"
+cp "$fixture_data/copilot-zeta-skills.json" "$fixture_data/copilot-zeta-skills.good.json"
+printf '[]\n' >"$fixture_data/copilot-zeta-skills.json"
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'empty valid Copilot skill inventory returned nonzero'
-grep -Fq '| cpx | zeta | pack-zeta | 0 | 0 |  | pass | not run |' "$output_file" \
+grep -Fq '| copilot | zeta | pack-zeta | 0 | 0 |  | pass | not run |' "$output_file" \
   || fail 'empty valid Copilot skill inventory did not produce zero counts'
-cp "$fixture_data/cpx-zeta-skills.good.json" "$fixture_data/cpx-zeta-skills.json"
+cp "$fixture_data/copilot-zeta-skills.good.json" "$fixture_data/copilot-zeta-skills.json"
 
 # Skill source metadata must be structurally valid, not merely present.
-cp "$fixture_data/cpx-alpha-skills.json" "$fixture_data/cpx-alpha-skills.source-good.json"
+cp "$fixture_data/copilot-alpha-skills.json" "$fixture_data/copilot-alpha-skills.source-good.json"
 "$real_jq" '.+[ {name:"badsource",source:"bad\nsource",enabled:true} ]' \
-  "$fixture_data/cpx-alpha-skills.json" >"$fixture_data/cpx-alpha-skills.invalid.json"
-mv "$fixture_data/cpx-alpha-skills.invalid.json" "$fixture_data/cpx-alpha-skills.json"
+  "$fixture_data/copilot-alpha-skills.json" >"$fixture_data/copilot-alpha-skills.invalid.json"
+mv "$fixture_data/copilot-alpha-skills.invalid.json" "$fixture_data/copilot-alpha-skills.json"
 run_matrix
 [ "$matrix_status" -eq 1 ] || fail 'invalid Copilot skill source returned success'
 grep -Fq 'fail: invalid skill JSON' "$output_file" \
   || fail 'invalid Copilot skill source was not diagnosed in its row'
-cp "$fixture_data/cpx-alpha-skills.source-good.json" "$fixture_data/cpx-alpha-skills.json"
+cp "$fixture_data/copilot-alpha-skills.source-good.json" "$fixture_data/copilot-alpha-skills.json"
 
 # Codex may expose the same skill name from more than one model-visible root.
 cp "$fixture_data/codex-superpowers.json" "$fixture_data/codex-superpowers.duplicate-good.json"
@@ -1057,7 +1057,7 @@ cp "$fixture_data/codex-superpowers.json" "$fixture_data/codex-superpowers.dupli
   >"$fixture_data/codex-superpowers.json"
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'duplicate model-visible Codex skill names returned nonzero'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 3 | skilla, skilla, skillb | pass | not run |' "$output_file" \
+grep -Fq '| codex | superpowers | superpowers@superpowers-marketplace | n/a | 3 | skilla, skilla, skillb | pass | not run |' "$output_file" \
   || fail 'duplicate model-visible Codex skill entries were not counted'
 cp "$fixture_data/codex-superpowers.duplicate-good.json" "$fixture_data/codex-superpowers.json"
 
@@ -1068,7 +1068,7 @@ cp "$fixture_data/codex-superpowers.json" "$fixture_data/codex-superpowers.sampl
   >"$fixture_data/codex-superpowers.json"
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'six-skill Codex sample fixture returned nonzero'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 6 | skilla, skillb, skillc, skilld, skille | pass | not run |' "$output_file" \
+grep -Fq '| codex | superpowers | superpowers@superpowers-marketplace | n/a | 6 | skilla, skillb, skillc, skilld, skille | pass | not run |' "$output_file" \
   || fail 'Codex sample was not sorted and capped at five entries'
 if grep -Fq 'skille, skillf' "$output_file"; then
   fail 'Codex sample included a sixth entry'
@@ -1088,7 +1088,7 @@ awk 'BEGIN {
   >"$fixture_data/codex-superpowers.json"
 run_matrix
 [ "$matrix_status" -eq 0 ] || fail 'large Codex inventory triggered a verifier failure'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 20000 | largeskill00001, largeskill00002, largeskill00003, largeskill00004, largeskill00005 | pass | not run |' "$output_file" \
+grep -Fq '| codex | superpowers | superpowers@superpowers-marketplace | n/a | 20000 | largeskill00001, largeskill00002, largeskill00003, largeskill00004, largeskill00005 | pass | not run |' "$output_file" \
   || fail 'large Codex inventory did not retain a passing capped sample'
 [ -z "$(find "$fixture_tmp" -mindepth 1 -print -quit)" ] \
   || fail 'temporary artifacts remained after large inventory verification'
@@ -1102,13 +1102,13 @@ run_live_matrix
   || fail '--live did not report five passing live rows'
 for live_row in \
   $'codex\texec' \
-  $'cpx\talpha\t--prompt' \
-  $'cpx\tzeta\t--prompt'; do
+  $'copilot\talpha\t--prompt' \
+  $'copilot\tzeta\t--prompt'; do
   grep -Fq "$live_row" "$command_log" || fail "missing live invocation: $live_row"
 done
-grep -Fq '| cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | pass |' "$output_file" \
+grep -Fq '| codex | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | pass |' "$output_file" \
   || fail 'pstack row was not live-probed successfully'
-grep -Fq '| cdx | youtube | youtube-full | 1 | 1 | youtube-full | pass | pass |' "$output_file" \
+grep -Fq '| codex | youtube | youtube-full | 1 | 1 | youtube-full | pass | pass |' "$output_file" \
   || fail 'YouTube row was not live-probed successfully'
 if grep -Eq $'\t(--dangerously-bypass-approvals-and-sandbox|--allow-all|--allow-all-tools|--yolo|--always-approve|--permission-mode\tbypassPermissions)(\t|$)' "$command_log"; then
   fail 'live verifier used a dangerous approval or sandbox bypass'
@@ -1126,7 +1126,7 @@ awk -F '\t' -v temp_prefix="$fixture_tmp/verify-agent-profiles." '
       $11 != "--output-last-message" || index($12, temp_prefix) != 1 ||
       $13 != "-") bad = 1
   }
-  $1 == "cpx" && $3 == "--prompt" {
+  $1 == "copilot" && $3 == "--prompt" {
     if (NF != 14 || $5 != "--output-format" || $6 != "json" ||
       $7 != "--no-ask-user" || $8 != "--disable-builtin-mcps" ||
       $9 != "--available-tools=" || $10 != "--no-remote" ||
@@ -1135,7 +1135,7 @@ awk -F '\t' -v temp_prefix="$fixture_tmp/verify-agent-profiles." '
   }
   END { exit bad || codex_count != 3 }
 ' "$command_log" || fail 'live verifier changed a safety-critical argument shape'
-if grep -Eq $'^cdx\t.*\t(exec|-p|--prompt|--dangerously-bypass-approvals-and-sandbox)(\t|$)|\t(--model|--resume|--continue|--session-id|--autopilot|--always-approve|--allow-all|--allow-all-tools|--yolo)(\t|$)' "$command_log"; then
+if grep -Eq $'^codex\t.*\t(exec|-p|--prompt|--dangerously-bypass-approvals-and-sandbox)(\t|$)|\t(--model|--resume|--continue|--session-id|--autopilot|--always-approve|--allow-all|--allow-all-tools|--yolo)(\t|$)' "$command_log"; then
   fail 'live verifier used a forbidden launcher, model, lifecycle, or multi-turn variant'
 fi
 if grep -Eq '/fixture|\.config\.toml|SECRET_DO_NOT_LEAK' "$command_log"; then
@@ -1145,60 +1145,60 @@ fi
 cp "$fixture_data/codex-superpowers-live.json" "$fixture_data/codex-superpowers-live.good.json"
 cp "$fixture_data/codex-superpowers-live-events.jsonl" "$fixture_data/codex-superpowers-live-events.good.jsonl"
 cp "$fixture_data/codex-pstack-live-events.jsonl" "$fixture_data/codex-pstack-live-events.good.jsonl"
-cp "$fixture_data/cpx-alpha-live.jsonl" "$fixture_data/cpx-alpha-live.good.jsonl"
-cp "$fixture_data/cpx-zeta-live.jsonl" "$fixture_data/cpx-zeta-live.good.jsonl"
+cp "$fixture_data/copilot-alpha-live.jsonl" "$fixture_data/copilot-alpha-live.good.jsonl"
+cp "$fixture_data/copilot-zeta-live.jsonl" "$fixture_data/copilot-zeta-live.good.jsonl"
 
 # A live command failure is safe, aggregates, and does not stop later profiles.
-: >"$fixture_data/fail-live-cpx-alpha"
+: >"$fixture_data/fail-live-copilot-alpha"
 : >"$command_log"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'nonzero live command returned success'
-grep -Fq '| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | fail: command |' "$output_file" \
+grep -Fq '| copilot | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | fail: command |' "$output_file" \
   || fail 'nonzero live command did not fail its row'
-grep -Fq '| cpx | zeta | pack-zeta | 1 | 1 | zplugin | pass | pass |' "$output_file" \
+grep -Fq '| copilot | zeta | pack-zeta | 1 | 1 | zplugin | pass | pass |' "$output_file" \
   || fail 'live command failure stopped a later Copilot profile'
-grep -Fq 'verify-agent-profiles: cpx live probe failed for alpha (exit 65)' "$error_file" \
+grep -Fq 'verify-agent-profiles: copilot live probe failed for alpha (exit 65)' "$error_file" \
   || fail 'nonzero live command omitted safe exit detail'
-if grep -Fq 'LIVE_CPX_SECRET_DO_NOT_LEAK' "$error_file"; then
+if grep -Fq 'LIVE_TRELLAGE_COPILOT_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'nonzero live command leaked captured stderr'
 fi
 [ -z "$(find "$fixture_tmp" -mindepth 1 -print -quit)" ] \
   || fail 'temporary artifacts remained after a failed live verification'
-rm -f "$fixture_data/fail-live-cpx-alpha"
+rm -f "$fixture_data/fail-live-copilot-alpha"
 
 # Malformed structured output fails without dumping response content.
-write_cpx_live alpha 'MALFORMED_LIVE_SECRET_DO_NOT_LEAK'
+write_copilot_live alpha 'MALFORMED_LIVE_SECRET_DO_NOT_LEAK'
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'malformed live response returned success'
-grep -Fq '| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | fail: malformed evidence |' "$output_file" \
+grep -Fq '| copilot | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | fail: malformed evidence |' "$output_file" \
   || fail 'malformed live response did not fail its row'
 if grep -Fq 'MALFORMED_LIVE_SECRET_DO_NOT_LEAK' "$error_file"; then
   fail 'malformed live response leaked model output'
 fi
-cp "$fixture_data/cpx-alpha-live.good.jsonl" "$fixture_data/cpx-alpha-live.jsonl"
+cp "$fixture_data/copilot-alpha-live.good.jsonl" "$fixture_data/copilot-alpha-live.jsonl"
 
 # Launcher and profile identity must match exactly.
-"$real_jq" '.launcher = "cpx"' "$fixture_data/codex-superpowers-live.good.json" \
+"$real_jq" '.launcher = "copilot"' "$fixture_data/codex-superpowers-live.good.json" \
   >"$fixture_data/codex-superpowers-live.json"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'wrong live launcher returned success'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | fail: wrong launcher |' "$output_file" \
+grep -Fq '| codex | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | fail: wrong launcher |' "$output_file" \
   || fail 'wrong live launcher did not fail its row'
 cp "$fixture_data/codex-superpowers-live.good.json" "$fixture_data/codex-superpowers-live.json"
 
 # Missing and duplicate expected skills are distinct failures.
-write_cpx_live alpha '{"launcher":"cpx","profile":"alpha","skills":["p1","p2","p3","p4"],"emptyPackageConfirmed":false}'
+write_copilot_live alpha '{"launcher":"copilot","profile":"alpha","skills":["p1","p2","p3","p4"],"emptyPackageConfirmed":false}'
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'missing expected live skill returned success'
 grep -Fq 'pass | fail: missing skill |' "$output_file" \
   || fail 'missing expected live skill was not diagnosed'
 
-write_cpx_live alpha '{"launcher":"cpx","profile":"alpha","skills":["p1","p1","p2","p3","p4","p5"],"emptyPackageConfirmed":false}'
+write_copilot_live alpha '{"launcher":"copilot","profile":"alpha","skills":["p1","p1","p2","p3","p4","p5"],"emptyPackageConfirmed":false}'
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'duplicate expected live skill returned success'
 grep -Fq 'pass | fail: duplicate skill |' "$output_file" \
   || fail 'duplicate expected live skill was not diagnosed'
-cp "$fixture_data/cpx-alpha-live.good.jsonl" "$fixture_data/cpx-alpha-live.jsonl"
+cp "$fixture_data/copilot-alpha-live.good.jsonl" "$fixture_data/copilot-alpha-live.jsonl"
 
 # Event adapters reject tool use even when final structured evidence is valid.
 printf '%s\n' '{"type":"item.started","item":{"type":"command_execution"}}' \
@@ -1213,46 +1213,46 @@ printf '%s\n' '{"type":"item.started","item":{"type":"collab_tool_call"}}' \
   >>"$fixture_data/codex-pstack-live-events.jsonl"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'Codex collab tool event returned success'
-grep -Fq '| cdx | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | fail: tool use |' "$output_file" \
+grep -Fq '| codex | pstack | pstack-for-codex@pstack-for-codex-local | n/a | 1 | poteto | pass | fail: tool use |' "$output_file" \
   || fail 'Codex collab tool event was not diagnosed'
-grep -Fq '| cdx | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | pass |' "$output_file" \
+grep -Fq '| codex | superpowers | superpowers@superpowers-marketplace | n/a | 2 | skilla, skillb | pass | pass |' "$output_file" \
   || fail 'Codex collab tool event stopped a later Codex profile'
 cp "$fixture_data/codex-pstack-live-events.good.jsonl" "$fixture_data/codex-pstack-live-events.jsonl"
 
 {
   printf '%s\n' '{"type":"tool.execution_start"}'
-  cat "$fixture_data/cpx-alpha-live.good.jsonl"
-} >"$fixture_data/cpx-alpha-live.jsonl"
+  cat "$fixture_data/copilot-alpha-live.good.jsonl"
+} >"$fixture_data/copilot-alpha-live.jsonl"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'Copilot tool-use event returned success'
-grep -Fq '| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | fail: tool use |' "$output_file" \
+grep -Fq '| copilot | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | pass | fail: tool use |' "$output_file" \
   || fail 'Copilot tool-use event was not diagnosed'
-cp "$fixture_data/cpx-alpha-live.good.jsonl" "$fixture_data/cpx-alpha-live.jsonl"
+cp "$fixture_data/copilot-alpha-live.good.jsonl" "$fixture_data/copilot-alpha-live.jsonl"
 
 # Empty Copilot package evidence requires explicit confirmation.
-cp "$fixture_data/cpx-zeta-skills.json" "$fixture_data/cpx-zeta-skills.live-good.json"
-printf '[]\n' >"$fixture_data/cpx-zeta-skills.json"
-write_cpx_live zeta '{"launcher":"cpx","profile":"zeta","skills":[],"emptyPackageConfirmed":true}'
+cp "$fixture_data/copilot-zeta-skills.json" "$fixture_data/copilot-zeta-skills.live-good.json"
+printf '[]\n' >"$fixture_data/copilot-zeta-skills.json"
+write_copilot_live zeta '{"launcher":"copilot","profile":"zeta","skills":[],"emptyPackageConfirmed":true}'
 run_live_matrix
 [ "$matrix_status" -eq 0 ] || fail 'confirmed empty Copilot package returned nonzero'
-grep -Fq '| cpx | zeta | pack-zeta | 0 | 0 |  | pass | pass |' "$output_file" \
+grep -Fq '| copilot | zeta | pack-zeta | 0 | 0 |  | pass | pass |' "$output_file" \
   || fail 'empty Copilot package was not live-probed'
-cp "$fixture_data/cpx-zeta-skills.live-good.json" "$fixture_data/cpx-zeta-skills.json"
-cp "$fixture_data/cpx-zeta-live.good.jsonl" "$fixture_data/cpx-zeta-live.jsonl"
+cp "$fixture_data/copilot-zeta-skills.live-good.json" "$fixture_data/copilot-zeta-skills.json"
+cp "$fixture_data/copilot-zeta-live.good.jsonl" "$fixture_data/copilot-zeta-live.jsonl"
 
 # Static-failed rows stay not-run while all other eligible rows are probed.
-: >"$fixture_data/fail-cpx-doctor-alpha"
+: >"$fixture_data/fail-copilot-doctor-alpha"
 : >"$command_log"
 run_live_matrix
 [ "$matrix_status" -eq 1 ] || fail 'static failure in live mode returned success'
-grep -Fq '| cpx | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | fail: doctor command | not run |' "$output_file" \
+grep -Fq '| copilot | alpha | pack-alpha | 6 | 7 | p1, p2, p3, p4, p5 | fail: doctor command | not run |' "$output_file" \
   || fail 'static-failed live row did not retain not-run'
-if grep -Fq $'cpx\talpha\t--prompt' "$command_log"; then
+if grep -Fq $'copilot\talpha\t--prompt' "$command_log"; then
   fail 'static-failed row was live-probed'
 fi
-grep -Fq $'cpx\tzeta\t--prompt' "$command_log" \
+grep -Fq $'copilot\tzeta\t--prompt' "$command_log" \
   || fail 'eligible row after static failure was not live-probed'
-rm -f "$fixture_data/fail-cpx-doctor-alpha"
+rm -f "$fixture_data/fail-copilot-doctor-alpha"
 
 # INT and TERM remove the validated temp workspace and terminate the fake live child.
 for verifier_signal in HUP INT TERM; do
@@ -1313,7 +1313,7 @@ for launch_case in 'INT hold-before-spawn pre-spawn' \
   rm -f "$static_ready" "$static_release"
   : >"$command_log"
   set -m
-  FAKE_BLOCK_STATIC='cdx-pstack' \
+  FAKE_BLOCK_STATIC='codex-pstack' \
   FAKE_STATIC_READY_FILE="$static_ready" \
   FAKE_STATIC_RELEASE_FILE="$static_release" \
   HOME="$fixture_home" \
@@ -1393,7 +1393,7 @@ done
   || fail 'launch-window gate was unavailable for INT or TERM'
 
 tree_cleanup_failure=0
-for tree_case in 'cpx INT alpha' 'cpx TERM alpha' 'cpx HUP zeta'; do
+for tree_case in 'copilot INT alpha' 'copilot TERM alpha' 'copilot HUP zeta'; do
   read -r tree_adapter tree_signal tree_profile <<<"$tree_case"
   tree_ready="$fixture_root/tree-$tree_adapter.ready"
   tree_launcher_pid_file="$fixture_root/tree-$tree_adapter.launcher-pid"

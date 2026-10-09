@@ -33,7 +33,7 @@ assert_invalid_catalog_command() {
     status=$?
     [ "$status" -eq 1 ] || fail "untrusted catalog exit for $label via $command_name was $status, expected 1"
   fi
-  grep -F -- 'cdx: invalid catalog:' "$output" >/dev/null \
+  grep -F -- 'codex: invalid catalog:' "$output" >/dev/null \
     || fail "untrusted catalog was not rejected for $label via $command_name"
   grep -F -- 'not implemented' "$output" >/dev/null \
     && fail "untrusted catalog reached deferred path for $label via $command_name"

@@ -49,8 +49,8 @@ native_profile_command() {
   shift 2
   local harness
   case "$launcher" in
-    cdx) harness=codex ;;
-    cpx) harness=copilot ;;
+    codex) harness=codex ;;
+    copilot) harness=copilot ;;
     *) report_error "unknown profile verifier harness: $launcher"; return 1 ;;
   esac
   if [ "$operation" = run ]; then
@@ -584,17 +584,17 @@ probe_codex_live() {
   fi
 }
 
-probe_cpx_live() {
+probe_copilot_live() {
   local profile="$1"
   local package="$2"
   local source_skills="$3"
-  local events_file="$temp_dir/live-cpx-$profile-events.jsonl"
-  local result_file="$temp_dir/live-cpx-$profile-result.json"
-  local error_file="$temp_dir/live-cpx-$profile.stderr"
+  local events_file="$temp_dir/live-copilot-$profile-events.jsonl"
+  local result_file="$temp_dir/live-copilot-$profile-result.json"
+  local error_file="$temp_dir/live-copilot-$profile.stderr"
   local prompt
   local command_status=0
 
-  prepare_live_probe cpx "$profile" "$package" "$source_skills"
+  prepare_live_probe copilot "$profile" "$package" "$source_skills"
   prompt="$(<"$live_prompt_file")"
   run_live_process /dev/null "$events_file" "$error_file" \
     trx run copilot "$profile" -- \
@@ -608,16 +608,16 @@ probe_cpx_live() {
       --no-auto-update \
       --stream off || command_status=$?
   if [ "$live_process_timed_out" -eq 1 ]; then
-    report_error "cpx live probe timed out for $profile"
+    report_error "copilot live probe timed out for $profile"
     set_live_failure 'timeout'
   elif [ "$command_status" -ne 0 ]; then
-    report_error "cpx live probe failed for $profile (exit $command_status)"
+    report_error "copilot live probe failed for $profile (exit $command_status)"
     set_live_failure 'command'
   elif ! jq -se 'all(.[]; type == "object")' "$events_file" >/dev/null 2>&1; then
-    report_error "cpx live event stream was malformed for $profile"
+    report_error "copilot live event stream was malformed for $profile"
     set_live_failure 'malformed evidence'
   elif live_events_have_tool_use "$events_file"; then
-    report_error "cpx live probe attempted tool use for $profile"
+    report_error "copilot live probe attempted tool use for $profile"
     set_live_failure 'tool use'
   elif ! jq -Rrsc '
     [split("\n")[]
@@ -626,10 +626,10 @@ probe_cpx_live() {
       | .data.content
     ][-1] // ""
   ' "$events_file" >"$result_file" 2>/dev/null; then
-    report_error "cpx live evidence was malformed for $profile"
+    report_error "copilot live evidence was malformed for $profile"
     set_live_failure 'malformed evidence'
   else
-    validate_live_result cpx "$profile" "$live_expected_file" "$result_file"
+    validate_live_result copilot "$profile" "$live_expected_file" "$result_file"
   fi
 }
 
@@ -802,9 +802,9 @@ discover_catalog() {
   return 0
 }
 
-verify_cpx_profiles() {
-  local list_output="$temp_dir/cpx-list"
-  local inventory="$temp_dir/cpx-inventory"
+verify_copilot_profiles() {
+  local list_output="$temp_dir/copilot-list"
+  local inventory="$temp_dir/copilot-inventory"
   local profile
   local package
   local plugin_output
@@ -820,31 +820,31 @@ verify_cpx_profiles() {
   local command_status
 
   command -v trx >/dev/null 2>&1 || return 0
-  discover_catalog cpx "$list_output" "$inventory" || return 0
+  discover_catalog copilot "$list_output" "$inventory" || return 0
   while IFS=$'\t' read -r profile package; do
     row_static='pass'
     package_count='?'
     visible_count='?'
     sample=''
     row_live='not run'
-    plugin_output="$temp_dir/cpx-$profile-plugins"
-    plugin_names="$temp_dir/cpx-$profile-plugin-names"
-    skills_json="$temp_dir/cpx-$profile-skills.json"
-    enabled_skills="$temp_dir/cpx-$profile-enabled-skills"
-    package_skill_names="$temp_dir/cpx-$profile-package-skills"
+    plugin_output="$temp_dir/copilot-$profile-plugins"
+    plugin_names="$temp_dir/copilot-$profile-plugin-names"
+    skills_json="$temp_dir/copilot-$profile-skills.json"
+    enabled_skills="$temp_dir/copilot-$profile-enabled-skills"
+    package_skill_names="$temp_dir/copilot-$profile-package-skills"
 
     command_status=0
-    native_profile_command cpx doctor "$profile" >"$temp_dir/cpx-$profile-doctor" \
-      2>"$temp_dir/cpx-$profile-doctor.stderr" || command_status=$?
+    native_profile_command copilot doctor "$profile" >"$temp_dir/copilot-$profile-doctor" \
+      2>"$temp_dir/copilot-$profile-doctor.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
-      report_error "cpx doctor failed for $profile (exit $command_status)"
+      report_error "copilot doctor failed for $profile (exit $command_status)"
       set_row_failure 'doctor command'
     fi
     command_status=0
-    native_profile_command cpx run "$profile" plugin list >"$plugin_output" \
-      2>"$temp_dir/cpx-$profile-plugin.stderr" || command_status=$?
+    native_profile_command copilot run "$profile" plugin list >"$plugin_output" \
+      2>"$temp_dir/copilot-$profile-plugin.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
-      report_error "cpx plugin list failed for $profile (exit $command_status)"
+      report_error "copilot plugin list failed for $profile (exit $command_status)"
       set_row_failure 'plugin command'
     else
       awk '
@@ -857,15 +857,15 @@ verify_cpx_profiles() {
       ' "$plugin_output" >"$plugin_names"
       if [ "$(line_count "$plugin_names")" -ne 1 ] \
         || ! grep -Fxq -- "$package" "$plugin_names"; then
-        report_error "cpx package validation failed for $profile: cataloged package is not the sole installed plugin"
+        report_error "copilot package validation failed for $profile: cataloged package is not the sole installed plugin"
         set_row_failure 'unexpected package'
       fi
     fi
     command_status=0
-    native_profile_command cpx run "$profile" skill list --json >"$skills_json" \
-      2>"$temp_dir/cpx-$profile-skills.stderr" || command_status=$?
+    native_profile_command copilot run "$profile" skill list --json >"$skills_json" \
+      2>"$temp_dir/copilot-$profile-skills.stderr" || command_status=$?
     if [ "$command_status" -ne 0 ]; then
-      report_error "cpx skill list failed for $profile (exit $command_status)"
+      report_error "copilot skill list failed for $profile (exit $command_status)"
       set_row_failure 'skill command'
     elif ! jq -se '
       length == 1 and (.[0]
@@ -878,7 +878,7 @@ verify_cpx_profiles() {
         )
       )
     ' "$skills_json" >/dev/null 2>&1; then
-      report_error "cpx skill inventory validation failed for $profile: expected one JSON array with valid skill fields"
+      report_error "copilot skill inventory validation failed for $profile: expected one JSON array with valid skill fields"
       set_row_failure 'invalid skill JSON'
     else
       jq -r '.[] | select(.enabled == true) | .name' "$skills_json" >"$enabled_skills"
@@ -891,15 +891,15 @@ verify_cpx_profiles() {
       fi
     fi
     if [ "$live_mode" -eq 1 ] && [ "$row_static" = 'pass' ]; then
-      probe_cpx_live "$profile" "$package" "$package_skill_names"
+      probe_copilot_live "$profile" "$package" "$package_skill_names"
       if [ "$row_live" = 'not run' ]; then
         row_live='pass'
       fi
     fi
-    emit_row cpx "$profile" "$package" "$package_count" "$visible_count" "$sample" "$row_static" "$row_live"
+    emit_row copilot "$profile" "$package" "$package_count" "$visible_count" "$sample" "$row_static" "$row_live"
   done <"$inventory"
 }
 
-verify_codex_profiles cdx
-verify_cpx_profiles
+verify_codex_profiles codex
+verify_copilot_profiles
 exit "$status"

@@ -13,7 +13,7 @@ bestFor:
 avoidFor:
   - Hosts without network access to a PyPI simple index for kernel bootstrap; files.pythonhosted.org unreachable falls back to a mirror, but full offline bootstrap is not supported
   - One-shot automation that assumes background workers exit with the process; long sessions can leave resident workers on the profile daemon socket until trx shutdown prime runs
-  - Tasks that need OS-level sandboxing or containment; prx adds no containment and Prime Agent runs with all host access available to the process
+  - Tasks that need OS-level sandboxing or containment; prime adds no containment and Prime Agent runs with all host access available to the process
 prerequisites:
   - id: mise
     description: mise installed on the host; setup resolves and pins the eligible Prime Agent release, and bootstraps uv if missing (mise use -g uv).
@@ -104,6 +104,6 @@ extension. See `prototypes/trellage-prime-profiles/README.md`.
 - The launcher is named `prime` rather than `pax` specifically to avoid
   colliding with macOS `/bin/pax`; `trx` refuses any `prime` binary that does
   not resolve to the owned runtime under
-  `~/.local/share/trellage/prx/bin/prx`.
+  `~/.local/share/trellage/prime/bin/prime`.
 - Long-running sessions can leave Prime background workers on the profile
   daemon socket; run `trx shutdown prime default` to stop them explicitly.

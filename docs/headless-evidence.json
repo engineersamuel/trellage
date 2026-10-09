@@ -475,7 +475,7 @@
       "id": "native-pi-0.84.2",
       "publication": {
         "surface": "native",
-        "catalog": "prototypes/trellage-picx-profiles/catalog.json",
+        "catalog": "prototypes/trellage-pi-profiles/catalog.json",
         "profiles": [
           "default"
         ]
@@ -501,7 +501,7 @@
       },
       "deterministicEvidence": [
         {
-          "path": "prototypes/trellage-picx-profiles/tests/contract.sh",
+          "path": "prototypes/trellage-pi-profiles/tests/contract.sh",
           "cases": [
             "nonTtyCompletion",
             "nonZeroExit",

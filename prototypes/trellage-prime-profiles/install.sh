@@ -6,7 +6,7 @@ readonly ownership_value='trellage-prime-profiles-v1'
 readonly managed_extension_name='ask-user'
 
 refuse() {
-  printf 'prx install: %s\n' "$1" >&2
+  printf 'prime install: %s\n' "$1" >&2
   exit 1
 }
 
@@ -23,8 +23,8 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 local_dir="$home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
-install_root="$runtime_parent/prx"
-installed_launcher="$install_root/bin/prx"
+install_root="$runtime_parent/prime"
+installed_launcher="$install_root/bin/prime"
 installed_catalog="$install_root/catalog.json"
 installed_version_receipt="$install_root/installed-version"
 legacy_version_receipt="$install_root/version"
@@ -33,7 +33,7 @@ installed_extension="$installed_extensions_dir/${managed_extension_name}.ts"
 source_extension="$source_dir/assets/extensions/${managed_extension_name}.ts"
 ownership_marker="$install_root/.managed-by-trellage-prime-profiles"
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/prx"
+command_path="$command_dir/prime"
 
 require_safe_directory() {
   local path="$1" expected="$2" description="$3" canonical_path
@@ -74,7 +74,7 @@ fi
 
 runtime_owned=false
 if [[ -e "$install_root" || -L "$install_root" ]]; then
-  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prx" 'runtime root'
+  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prime" 'runtime root'
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "unowned runtime root: $install_root"
   [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
@@ -99,11 +99,11 @@ if [[ -L "$legacy_command" ]]; then
   esac
 fi
 
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prx" 'runtime root'
-require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/prx/bin" 'runtime bin'
-require_safe_directory "$install_root/assets" "$canonical_home/.local/share/trellage/prx/assets" 'runtime assets'
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prime" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/prime/bin" 'runtime bin'
+require_safe_directory "$install_root/assets" "$canonical_home/.local/share/trellage/prime/assets" 'runtime assets'
 require_safe_directory "$installed_extensions_dir" \
-  "$canonical_home/.local/share/trellage/prx/assets/extensions" 'runtime extensions'
+  "$canonical_home/.local/share/trellage/prime/assets/extensions" 'runtime extensions'
 [[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
@@ -121,15 +121,15 @@ done
 
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
 mkdir -p "$install_root/bin" "$installed_extensions_dir" "$command_dir"
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prx" 'runtime root'
-require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/prx/bin" 'runtime bin'
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/prime" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/prime/bin" 'runtime bin'
 require_safe_directory "$installed_extensions_dir" \
-  "$canonical_home/.local/share/trellage/prx/assets/extensions" 'runtime extensions'
-launcher_stage="$(mktemp "$install_root/bin/.prx.XXXXXX")"
+  "$canonical_home/.local/share/trellage/prime/assets/extensions" 'runtime extensions'
+launcher_stage="$(mktemp "$install_root/bin/.prime.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
 extension_stage="$(mktemp "$installed_extensions_dir/.ask-user.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
-install -m 0755 "$source_dir/bin/prx" "$launcher_stage"
+install -m 0755 "$source_dir/bin/prime" "$launcher_stage"
 install -m 0644 "$source_dir/catalog.json" "$catalog_stage"
 install -m 0644 "$source_extension" "$extension_stage"
 printf '%s\n' "$ownership_value" >"$marker_stage"
@@ -140,7 +140,7 @@ mv -f "$extension_stage" "$installed_extension"
 mv -f "$marker_stage" "$ownership_marker"
 
 if [[ ! -L "$command_path" ]]; then
-  command_stage="$command_dir/.prx-command.$$"
+  command_stage="$command_dir/.prime-command.$$"
   [[ ! -e "$command_stage" && ! -L "$command_stage" ]] \
     || refuse "unsafe command staging path: $command_stage"
   ln -s "$installed_launcher" "$command_stage"
@@ -149,7 +149,8 @@ fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
-printf 'Installed prx at %s\n' "$command_path"
+printf 'Installed prime at %s\n' "$command_path"
 
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" prx "$installed_launcher" "$ownership_marker" "$ownership_value"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" prx \
+  .managed-by-trellage-prime-profiles trellage-prime-profiles-v1
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" prime "$installed_launcher" "$ownership_marker" "$ownership_value"

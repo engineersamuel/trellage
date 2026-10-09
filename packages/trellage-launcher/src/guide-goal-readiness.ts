@@ -135,7 +135,7 @@ const checkCodexGoal = async (
   if (version === undefined || !versionAtLeast(version, [0, 153, 4])) {
     return unknown("Native /goal is confirmed for stable Codex 0.153.4 or later. Check the installed runtime; no goal was submitted.")
   }
-  // Bare feature listing can silently skip project config that a cdx launch trusts.
+  // Bare feature listing can silently skip project config that a codex launch trusts.
   const features = await runner.run(
     selected.commandPath, ["inventory", selected.launcher, selected.profile, "--goal-features"], options,
   ).catch((error: unknown) => {

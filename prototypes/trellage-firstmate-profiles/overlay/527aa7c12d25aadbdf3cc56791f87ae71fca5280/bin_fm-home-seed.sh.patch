@@ -4,8 +4,9 @@
  #       duplicate ids or homes, and nested or overlapping homes.
  set -eu
  
-+if [ -n "${FMX_WORKER_LAUNCHER:-}" ] || [ -e "${FM_HOME:-}/.fmx-managed" ]; then
-+  echo "error: fmx does not manage secondmate homes or provisioning" >&2
++if [ -n "${TRELLAGE_FIRSTMATE_WORKER_LAUNCHER:-}" ] \
++  || [ -e "${FM_HOME:-}/.firstmate-managed" ] || [ -e "${FM_HOME:-}/.fmx-managed" ]; then
++  echo "error: firstmate does not manage secondmate homes or provisioning" >&2
 +  exit 1
 +fi
 +

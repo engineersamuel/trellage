@@ -7,7 +7,7 @@
   },
   "profiles": {
     "default": {
-      "description": "Native fmx/default Firstmate fleet orchestration on a pinned runtime, with an isolated captain home and one Trellage-managed Claude home per worker.",
+      "description": "Native firstmate/default Firstmate fleet orchestration on a pinned runtime, with an isolated captain home and one Trellage-managed Claude home per worker.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,
@@ -46,7 +46,7 @@
       }
     },
     "pstack-workers": {
-      "description": "Native fmx/pstack-workers Firstmate fleet orchestration with a lean pstack-derived worker policy inserted once into every ship and scout brief.",
+      "description": "Native firstmate/pstack-workers Firstmate fleet orchestration with a lean pstack-derived worker policy inserted once into every ship and scout brief.",
       "headless": {
         "schemaVersion": 1,
         "prompt": false,

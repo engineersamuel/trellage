@@ -147,7 +147,7 @@ const detailColors: Record<
   NonNullable<DetailRow["label"]>,
   "blue" | "cyan" | "gray" | "green" | "magenta" | "yellow"
 > = {
-  Alias: "green",
+  Command: "green",
   Binary: "blue",
   Arguments: "yellow",
   Description: "cyan",
@@ -760,7 +760,7 @@ const runInteractiveGuideMode = async (
   }
   const herdrEnv = herdrEnvironment()
   const herdrContext = getHerdrContext(herdrEnv)
-  const launchOrigin = firstmateLaunchOrigin(herdrContext?.launchOrigin, process.env.FMX_LAUNCH_PROVENANCE_JSON)
+  const launchOrigin = firstmateLaunchOrigin(herdrContext?.launchOrigin, process.env.TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON)
   const initialIntent = await resolveInteractiveGuideIntent({
     args,
     herdrContext,
@@ -970,7 +970,7 @@ const runContinuationMode = async (
     throw new Error("A conversation request cannot be combined with an ordinary guide intent file.")
   }
   const capturedContext = getHerdrContext(herdrEnvironment())
-  const launchOrigin = firstmateLaunchOrigin(capturedContext?.launchOrigin, process.env.FMX_LAUNCH_PROVENANCE_JSON)
+  const launchOrigin = firstmateLaunchOrigin(capturedContext?.launchOrigin, process.env.TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON)
   if (capturedContext === null) throw new Error("Conversation next steps requires Herdr.")
   const context = { ...capturedContext, ...(launchOrigin === undefined ? {} : { launchOrigin }) }
   const stateRoot = process.env.HERDR_PLUGIN_STATE_DIR

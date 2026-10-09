@@ -363,13 +363,13 @@ describe("applyRequiredProfilePromptTemplate", () => {
     ],
   }
 
-  it("wraps optimized fmx prompts with the authored operating contract", () => {
+  it("wraps optimized firstmate prompts with the authored operating contract", () => {
     expect(applyRequiredProfilePromptTemplate("native:firstmate/default", guide, "fleet", candidate).prompt).toBe(
       "## Firstmate operating contract\nKeep Firstmate as the sole router.\n\n## Task\nImplement the requested repository change.",
     )
   })
 
-  it("does not duplicate an already wrapped fmx prompt", () => {
+  it("does not duplicate an already wrapped firstmate prompt", () => {
     const wrapped = applyRequiredProfilePromptTemplate("native:firstmate/default", guide, "fleet", candidate)
 
     expect(applyRequiredProfilePromptTemplate("native:firstmate/default", guide, "fleet", wrapped)).toEqual(wrapped)

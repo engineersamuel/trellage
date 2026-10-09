@@ -13,28 +13,28 @@ readonly profile_marker_value='trellage-prime-profile-v1'
 readonly managed_extension_name='ask-user'
 
 die() {
-  printf 'prx: %s\n' "$1" >&2
+  printf 'prime: %s\n' "$1" >&2
   exit 1
 }
 
 usage() {
   cat <<'EOF'
 Usage:
-  prx [PRIME_ARGS...]
-  prx default [PRIME_ARGS...]
-  prx [default] --single-turn [PRIME_ARGS...]
-  prx list [--json]
-  prx inventory PROFILE --json
-  prx setup [default]
-  prx doctor [default]
-  prx repair [default]
-  prx skills-update PROFILE
-  prx skills-check PROFILE
-  prx shutdown [default]
-  prx update [--check] [default]
-  prx harness-version
+  prime [PRIME_ARGS...]
+  prime default [PRIME_ARGS...]
+  prime [default] --single-turn [PRIME_ARGS...]
+  prime list [--json]
+  prime inventory PROFILE --json
+  prime setup [default]
+  prime doctor [default]
+  prime repair [default]
+  prime skills-update PROFILE
+  prime skills-check PROFILE
+  prime shutdown [default]
+  prime update [--check] [default]
+  prime harness-version
 
-Bare prx invocations use the default profile.
+Bare prime invocations use the default profile.
 EOF
 }
 
@@ -244,7 +244,7 @@ list_profiles_json() {
   jq -S --argjson headless "$headless_map" '
     {
       schemaVersion: 1,
-      launcher: "prx",
+      launcher: "prime",
       harness: "prime",
       # Prime Agent has no known native OS-level sandbox; runs directly on
       # the host. See docs/native-sandbox-research.md.
@@ -369,9 +369,9 @@ recover_stale_mutation_lock() {
   [[ -d "$owner_dir" && ! -L "$owner_dir" ]] || return 1
   [[ -f "$owner_dir/token" && ! -L "$owner_dir/token" ]] || return 1
   [[ "$observed" -ef "$owner_dir/token" ]] || return 1
-  if [[ -n "${PRX_TEST_STALE_RECOVERY_FAIL_ONCE:-}" \
-    && ! -e "$PRX_TEST_STALE_RECOVERY_FAIL_ONCE" ]]; then
-    : >"$PRX_TEST_STALE_RECOVERY_FAIL_ONCE"
+  if [[ -n "${TRELLAGE_PRIME_TEST_STALE_RECOVERY_FAIL_ONCE:-}" \
+    && ! -e "$TRELLAGE_PRIME_TEST_STALE_RECOVERY_FAIL_ONCE" ]]; then
+    : >"$TRELLAGE_PRIME_TEST_STALE_RECOVERY_FAIL_ONCE"
     return 1
   fi
   mv "$mutation_lock" "$owner_dir/recovered-lock" || return 1
@@ -493,9 +493,9 @@ acquire_mutation_lock() {
     rm -f -- "$observed"
     sleep 0.05
   done
-  if [[ -n "${PRX_TEST_LOCK_HELD_MARKER:-}" ]]; then
-    : >"$PRX_TEST_LOCK_HELD_MARKER"
-    while [[ ! -e "$PRX_TEST_LOCK_HELD_MARKER.continue" ]]; do
+  if [[ -n "${TRELLAGE_PRIME_TEST_LOCK_HELD_MARKER:-}" ]]; then
+    : >"$TRELLAGE_PRIME_TEST_LOCK_HELD_MARKER"
+    while [[ ! -e "$TRELLAGE_PRIME_TEST_LOCK_HELD_MARKER.continue" ]]; do
       sleep 0.05
     done
   fi
@@ -524,7 +524,7 @@ managed_models() {
 require_managed_extension_source() {
   [[ -f "$managed_extension_source" && -r "$managed_extension_source" \
     && ! -L "$managed_extension_source" ]] \
-    || die "managed ask-user extension asset is missing; reinstall prx ($managed_extension_source)"
+    || die "managed ask-user extension asset is missing; reinstall prime ($managed_extension_source)"
 }
 
 publish_managed_extensions() {
@@ -591,7 +591,7 @@ publish_managed_profile() {
 require_owned_profile() {
   require_safe_profile_path
   [[ -f "$profile_marker" && ! -L "$profile_marker" ]] \
-    || die 'profile is not managed; run prx setup'
+    || die 'profile is not managed; run prime setup'
   [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] \
     || die "profile ownership marker differs: $profile_marker"
 }
@@ -613,16 +613,16 @@ verify_managed_profile() {
       and all(.providers[$provider].models[]; keys == ["id"] and (.id | type == "string" and length > 0))
       and ([.providers[$provider].models[].id] | length == (unique | length))
     ' "$profile_models" >/dev/null \
-    || die 'managed models config differs; run prx repair'
+    || die 'managed models config differs; run prime repair'
   require_managed_extension_source
   [[ -f "$profile_extension" && ! -L "$profile_extension" ]] \
-    || die "managed ask-user extension is missing; run prx repair"
+    || die "managed ask-user extension is missing; run prime repair"
   cmp -s "$managed_extension_source" "$profile_extension" \
-    || die 'managed ask-user extension differs; run prx repair'
+    || die 'managed ask-user extension differs; run prime repair'
   [[ -f "$profile_extension_manifest" && ! -L "$profile_extension_manifest" ]] \
-    || die "managed extension manifest is missing; run prx repair"
+    || die "managed extension manifest is missing; run prime repair"
   grep -Fqx -- "$managed_extension_name" "$profile_extension_manifest" \
-    || die 'managed extension manifest differs; run prx repair'
+    || die 'managed extension manifest differs; run prime repair'
 }
 
 require_exact_version() {
@@ -656,7 +656,7 @@ read_installed_version() {
 
   if [[ ! -e "$receipt_file" && ! -L "$receipt_file" ]]; then
     if [[ ! -e "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
-      die 'prime-agent installed version receipt is missing; run prx setup'
+      die 'prime-agent installed version receipt is missing; run prime setup'
     fi
     [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]] \
       || die "unsafe legacy installed version receipt: $legacy_version_file"
@@ -666,7 +666,7 @@ read_installed_version() {
     return
   fi
   [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
-    || die 'prime-agent installed version receipt is missing; run prx setup'
+    || die 'prime-agent installed version receipt is missing; run prime setup'
   version="$(<"$receipt_file")"
   require_exact_version "$version"
   printf '%s\n' "$version"
@@ -742,9 +742,9 @@ published_runtime_identity() {
   [[ ! -L "$runtime_identity_file" ]] \
     || die "unsafe Prime runtime identity: $runtime_identity_file"
   identity="$(canonical_identity_from_file "$runtime_identity_file")" \
-    || die 'Prime runtime identity is missing or invalid; run prx repair'
+    || die 'Prime runtime identity is missing or invalid; run prime repair'
   [[ "$(jq -r '.primeVersion' <<<"$identity")" == "$version" ]] \
-    || die 'Prime runtime identity version differs; run prx repair'
+    || die 'Prime runtime identity version differs; run prime repair'
   printf '%s\n' "$identity"
 }
 
@@ -752,7 +752,7 @@ resolve_package_source() {
   local version="$1" install_dir expected
 
   install_dir="$(mise_env where "$mise_tool@$version")" \
-    || die "prime-agent $version is not installed; run prx repair"
+    || die "prime-agent $version is not installed; run prime repair"
   expected="$runtime_root/mise/installs/$mise_install_name/$version"
   [[ "$install_dir" == "$expected" ]] \
     || die "mise returned unexpected prime-agent path: $install_dir"
@@ -785,13 +785,13 @@ installed_cli() {
   # npm install of a bare directory path creates a symlink into the mise
   # extract without dependencies. Require a real package tree.
   [[ -d "$package_root" && ! -L "$package_root" ]] \
-    || die "prime-agent $version is not installed; run prx repair"
+    || die "prime-agent $version is not installed; run prime repair"
   [[ -f "$cli" && ! -L "$cli" ]] \
-    || die "prime-agent $version is not installed; run prx repair"
+    || die "prime-agent $version is not installed; run prime repair"
   [[ -f "$package_json" && ! -L "$package_json" ]] \
     || die "prime-agent package metadata is missing: $package_json"
   [[ -d "$package_root/node_modules" && ! -L "$package_root/node_modules" ]] \
-    || die "prime-agent dependencies are missing; run prx repair"
+    || die "prime-agent dependencies are missing; run prime repair"
   jq -e --arg version "$version" '
     .name == "prime-agent" and .version == $version
   ' "$package_json" >/dev/null 2>&1 \
@@ -1068,7 +1068,7 @@ rollback_runtime_transaction() {
   staged_runtime_identity=''
   transaction_active=''
   if [[ -n "$rollback_failed" ]]; then
-    printf 'prx: runtime rollback is incomplete; inspect retained *-backup paths under %s and %s\n' \
+    printf 'prime: runtime rollback is incomplete; inspect retained *-backup paths under %s and %s\n' \
       "$runtime_root" "$profile_home" >&2
     return 1
   fi
@@ -1242,7 +1242,7 @@ resolve_runtime_source() {
   # Bundled with the managed npm install of prime-agent (not a PyPI package).
   candidate="$prefix/lib/node_modules/prime-agent/dist/prime-agent-runtime"
   [[ -d "$candidate" && ! -L "$candidate" ]] \
-    || die "bundled prime-agent-runtime is missing; run prx repair ($candidate)"
+    || die "bundled prime-agent-runtime is missing; run prime repair ($candidate)"
   [[ -f "$candidate/pyproject.toml" && ! -L "$candidate/pyproject.toml" ]] \
     || die "bundled prime-agent-runtime is incomplete: $candidate"
   printf '%s\n' "$candidate"
@@ -1270,7 +1270,7 @@ build_kernel_runtime() {
   [[ ! -L "$kernel_venv" ]] || die "unsafe kernel venv path: $kernel_venv"
   runtime_source="$(resolve_runtime_source "$prefix")"
 
-  printf 'prx: bootstrapping Prime IPython kernel (one-time; needs network)…\n' >&2
+  printf 'prime: bootstrapping Prime IPython kernel (one-time; needs network)…\n' >&2
 
   # Drop a partial/broken venv so install is deterministic.
   if [[ -e "$kernel_venv" ]]; then
@@ -1304,7 +1304,7 @@ build_kernel_runtime() {
 
   kernel_runtime_ready "$kernel_python" \
     || die "Prime kernel runtime is incomplete after install: $kernel_python"
-  printf 'prx: kernel ready (%s)\n' "$kernel_python" >&2
+  printf 'prime: kernel ready (%s)\n' "$kernel_python" >&2
 }
 
 ensure_kernel_runtime() {
@@ -1329,15 +1329,15 @@ verify_kernel_runtime() {
   local identity="$1"
 
   [[ -x "$kernel_python" ]] \
-    || die "Prime kernel python is missing; run prx setup or prx repair"
+    || die "Prime kernel python is missing; run prime setup or prime repair"
   [[ -d "$kernel_venv" && ! -L "$kernel_venv" ]] \
-    || die "Prime kernel venv is missing or unsafe; run prx repair"
+    || die "Prime kernel venv is missing or unsafe; run prime repair"
   kernel_runtime_ready "$kernel_python" \
-    || die "Prime kernel runtime is incomplete; run prx repair"
+    || die "Prime kernel runtime is incomplete; run prime repair"
   [[ ! -L "$kernel_identity_stamp" ]] \
     || die "unsafe kernel identity stamp: $kernel_identity_stamp"
   runtime_identity_matches "$identity" "$kernel_identity_stamp" \
-    || die 'Prime kernel identity differs; run prx repair'
+    || die 'Prime kernel identity differs; run prime repair'
 }
 
 daemon_stamp_json() {
@@ -1384,7 +1384,7 @@ prepare_daemon_dir() {
 # requires TTY confirmation, and "… --daemon-socket X shutdown" is treated as a
 # chat prompt rather than the lifecycle command.
 daemon_socket_is_listening() {
-  if [[ -n "${PRX_TEST_DAEMON_MARKER:-}" && -f "$PRX_TEST_DAEMON_MARKER" ]]; then
+  if [[ -n "${TRELLAGE_PRIME_TEST_DAEMON_MARKER:-}" && -f "$TRELLAGE_PRIME_TEST_DAEMON_MARKER" ]]; then
     return 0
   fi
   [[ -S "$daemon_socket" ]] || return 1
@@ -1394,14 +1394,14 @@ daemon_socket_is_listening() {
 
 stop_profile_daemon_socket() {
   local launch_js="$npm_prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
-  local fallback_launch_js="$HOME/.local/share/trellage/prx/npm-prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
+  local fallback_launch_js="$HOME/.local/share/trellage/prime/npm-prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
 
   if ! daemon_socket_is_listening; then
     rm -f -- "$daemon_socket"
     return 1
   fi
   # The profile daemon is shared (keyed by $profile_root under $HOME), but
-  # npm_prefix is per-runtime_root. A daemon started by a different prx copy
+  # npm_prefix is per-runtime_root. A daemon started by a different prime copy
   # (another worktree, or the installed runtime) has no client module staged
   # here yet. Fall back to the canonical installed runtime's copy before
   # giving up: any recent daemon-launch.js build can speak the shutdown
@@ -1411,13 +1411,13 @@ stop_profile_daemon_socket() {
     launch_js="$fallback_launch_js"
   fi
   [[ -f "$launch_js" && ! -L "$launch_js" ]] \
-    || die "prime-agent daemon-launch module missing; run prx repair ($launch_js)"
+    || die "prime-agent daemon-launch module missing; run prime repair ($launch_js)"
 
-  if PRX_DAEMON_SOCKET="$daemon_socket" PRX_DAEMON_LAUNCH_JS="$launch_js" \
+  if TRELLAGE_PRIME_DAEMON_SOCKET="$daemon_socket" TRELLAGE_PRIME_DAEMON_LAUNCH_JS="$launch_js" \
     node --input-type=module -e '
 import { pathToFileURL } from "node:url";
-const launchJs = process.env.PRX_DAEMON_LAUNCH_JS;
-const socket = process.env.PRX_DAEMON_SOCKET;
+const launchJs = process.env.TRELLAGE_PRIME_DAEMON_LAUNCH_JS;
+const socket = process.env.TRELLAGE_PRIME_DAEMON_SOCKET;
 const { shutdownDaemonAndWait } = await import(pathToFileURL(launchJs).href);
 const ok = await shutdownDaemonAndWait(socket, 10000);
 process.exit(ok ? 0 : 2);
@@ -1441,7 +1441,7 @@ restart_stale_profile_daemon() {
   fi
 
   if daemon_socket_is_listening; then
-    printf 'prx: restarting profile daemon so kernel env reaches workers…\n' >&2
+    printf 'prime: restarting profile daemon so kernel env reaches workers…\n' >&2
     stop_profile_daemon_socket >/dev/null \
       || die 'could not stop profile daemon with stale runtime identity'
   fi
@@ -1453,7 +1453,7 @@ restart_stale_profile_daemon() {
 stop_profile_daemon_for_mutation() {
   prepare_daemon_dir
   if daemon_socket_is_listening; then
-    printf 'prx: stopping profile daemon before runtime mutation…\n' >&2
+    printf 'prime: stopping profile daemon before runtime mutation…\n' >&2
     stop_profile_daemon_socket >/dev/null \
       || die 'could not stop profile daemon before runtime mutation'
   else
@@ -1470,9 +1470,9 @@ shutdown_profile_daemon() {
   prepare_daemon_dir
   if ! daemon_socket_is_listening; then
     if [[ -S "$daemon_socket" ]]; then
-      printf 'prx shutdown: profile daemon was not running (cleared stale socket)\n'
+      printf 'prime shutdown: profile daemon was not running (cleared stale socket)\n'
     else
-      printf 'prx shutdown: no profile daemon socket\n'
+      printf 'prime shutdown: no profile daemon socket\n'
     fi
     rm -f -- "$daemon_socket"
     rm -f -- "$daemon_env_stamp"
@@ -1480,8 +1480,8 @@ shutdown_profile_daemon() {
   fi
   stop_profile_daemon_socket || stop_status=$?
   case "$stop_status" in
-    0) printf 'prx shutdown: stopped profile daemon\n' ;;
-    1) printf 'prx shutdown: profile daemon was not running (cleared stale socket)\n' ;;
+    0) printf 'prime shutdown: stopped profile daemon\n' ;;
+    1) printf 'prime shutdown: profile daemon was not running (cleared stale socket)\n' ;;
     2) die 'profile daemon did not stop; identity stamp was preserved' ;;
     *) die "unexpected profile daemon shutdown status: $stop_status" ;;
   esac
@@ -1501,7 +1501,7 @@ setup_profile() {
   publish_managed_profile
   ensure_floating_skills
   replace_runtime_state "$version"
-  printf 'prx setup: ready (%s, %s)\n' "$version" "$model_id"
+  printf 'prime setup: ready (%s, %s)\n' "$version" "$model_id"
 }
 
 repair_profile() {
@@ -1512,7 +1512,7 @@ repair_profile() {
   publish_managed_profile
   ensure_floating_skills
   replace_runtime_state "$version"
-  printf 'prx repair: restored (%s, %s)\n' "$version" "$model_id"
+  printf 'prime repair: restored (%s, %s)\n' "$version" "$model_id"
 }
 
 replace_runtime_state() {
@@ -1524,21 +1524,21 @@ replace_runtime_state() {
   staged_runtime_identity="$(stage_runtime_identity "$identity")"
 
   stop_profile_daemon_for_mutation
-  [[ "${PRX_TEST_FAIL_AT-}" != after-daemon-stop ]] \
+  [[ "${TRELLAGE_PRIME_TEST_FAIL_AT-}" != after-daemon-stop ]] \
     || die 'injected failure after daemon stop'
   begin_runtime_transaction
-  [[ "${PRX_TEST_FAIL_AT-}" != after-state-backup ]] \
+  [[ "${TRELLAGE_PRIME_TEST_FAIL_AT-}" != after-state-backup ]] \
     || die 'injected failure after state backup'
 
   build_kernel_runtime "$staged_npm_prefix"
-  [[ "${PRX_TEST_FAIL_AT-}" != after-kernel-build ]] \
+  [[ "${TRELLAGE_PRIME_TEST_FAIL_AT-}" != after-kernel-build ]] \
     || die 'injected failure after kernel build'
-  [[ "${PRX_TEST_FAIL_AT-}" != before-receipt-publication ]] \
+  [[ "${TRELLAGE_PRIME_TEST_FAIL_AT-}" != before-receipt-publication ]] \
     || die 'injected failure before installed version receipt publication'
 
   mv "$staged_npm_prefix" "$npm_prefix"
   staged_npm_prefix=''
-  [[ "${PRX_TEST_FAIL_AT-}" != after-npm-publication ]] \
+  [[ "${TRELLAGE_PRIME_TEST_FAIL_AT-}" != after-npm-publication ]] \
     || die 'injected failure after npm publication'
   mv "$staged_receipt" "$receipt_file"
   staged_receipt=''
@@ -1552,7 +1552,7 @@ replace_runtime_state() {
   verify_kernel_runtime "$identity"
   [[ "$(compute_runtime_identity "$version")" == "$identity" ]] \
     || die 'published Prime runtime identity verification failed'
-  [[ "${PRX_TEST_FAIL_AT-}" != after-state-publication ]] \
+  [[ "${TRELLAGE_PRIME_TEST_FAIL_AT-}" != after-state-publication ]] \
     || die 'injected failure after state publication'
   commit_runtime_transaction
 }
@@ -1578,9 +1578,9 @@ check_for_update() {
   current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]]; then
-    printf 'prx update: %s is current\n' "$current"
+    printf 'prime update: %s is current\n' "$current"
   else
-    printf 'prx update: %s -> %s available\n' "$current" "$latest"
+    printf 'prime update: %s -> %s available\n' "$current" "$latest"
   fi
 }
 
@@ -1591,7 +1591,7 @@ print_harness_version_json() {
   latest="$(resolve_latest_version 2>/dev/null)" || latest=''
   jq -cn --arg installed "$installed" --arg latest "$latest" '{
     schemaVersion: 1,
-    launcher: "prx",
+    launcher: "prime",
     harness: "prime",
     installed: ($installed | if length > 0 then . else null end),
     latest: ($latest | if length > 0 then . else null end),
@@ -1608,15 +1608,15 @@ update_profile() {
   current="$(read_installed_version)"
   latest="$(resolve_latest_version)"
   if [[ "$current" == "$latest" ]] && runtime_state_is_current "$current"; then
-    printf 'prx update: %s is current\n' "$current"
+    printf 'prime update: %s is current\n' "$current"
     return
   fi
   publish_managed_profile
   replace_runtime_state "$latest"
   if [[ "$current" == "$latest" ]]; then
-    printf 'prx update: %s runtime state rebuilt\n' "$current"
+    printf 'prime update: %s runtime state rebuilt\n' "$current"
   else
-    printf 'prx update: %s -> %s installed\n' "$current" "$latest"
+    printf 'prime update: %s -> %s installed\n' "$current" "$latest"
   fi
 }
 
@@ -1629,7 +1629,7 @@ doctor_profile() {
     if [[ "$repair_legacy" == true ]]; then
       repair_profile >/dev/null
     else
-      die 'legacy Prime runtime state requires prx doctor or prx repair'
+      die 'legacy Prime runtime state requires prime doctor or prime repair'
     fi
   fi
   verify_managed_profile
@@ -1639,16 +1639,16 @@ doctor_profile() {
   recorded="$(published_runtime_identity "$version")"
   actual="$(compute_runtime_identity "$version")"
   [[ "$actual" == "$recorded" ]] \
-    || die 'Prime runtime content differs from its identity; run prx repair'
+    || die 'Prime runtime content differs from its identity; run prime repair'
   verify_kernel_runtime "$recorded"
   [[ ! -L "$daemon_env_stamp" ]] \
     || die "unsafe daemon identity stamp: $daemon_env_stamp"
   if daemon_socket_is_listening || [[ -e "$daemon_env_stamp" ]]; then
     daemon_env_stamp_matches "$recorded" \
-      || die 'Prime daemon identity stamp differs; run prx shutdown'
+      || die 'Prime daemon identity stamp differs; run prime shutdown'
   fi
   check_proxy
-  printf 'prx doctor: OK (%s, %s)\n' "$version" "$model_id"
+  printf 'prime doctor: OK (%s, %s)\n' "$version" "$model_id"
 }
 
 not_ready_inventory() {
@@ -1657,7 +1657,7 @@ not_ready_inventory() {
 
   jq -cn --arg profile "$profile" --arg readiness "$readiness" '{
     schemaVersion: 1,
-    launcher: "prx",
+    launcher: "prime",
     harness: "prime",
     profile: $profile,
     readiness: $readiness,
@@ -1683,7 +1683,7 @@ inventory_profile() {
     0)
       jq -cn --arg profile "$profile" '{
         schemaVersion: 1,
-        launcher: "prx",
+        launcher: "prime",
         harness: "prime",
         profile: $profile,
         readiness: "healthy",
@@ -1855,7 +1855,7 @@ case "${1-}" in
       check_only=true
       shift
     fi
-    [[ "$#" -le 1 ]] || die 'usage: prx update [--check] [default]'
+    [[ "$#" -le 1 ]] || die 'usage: prime update [--check] [default]'
     require_default_profile "${1-default}"
     if [[ "$check_only" == true ]]; then
       check_for_update

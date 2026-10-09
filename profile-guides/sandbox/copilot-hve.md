@@ -13,8 +13,8 @@ avoidFor:
 - One-line edits
 - Offline or private-only work
 - Experimental non-Copilot runtimes
-- Host-native HVE sessions or local-state continuity — use the separate native:cpx/hve profile
-- Guided customer discovery, experiments, or requirements interviews — use the verified interactive native:cpx/hve workflows
+- Host-native HVE sessions or local-state continuity — use the separate native:copilot/hve profile
+- Guided customer discovery, experiments, or requirements interviews — use the verified interactive native:copilot/hve workflows
 prerequisites: []
 workflows:
 - id: rpi-agent-cycle
@@ -43,7 +43,7 @@ workflows:
 - You want a default, GitHub-native engineering harness with durable SDLC gates for features, PRs, and issues.
 - You want the Research → Plan → Implement → Review cycle run explicitly via `/rpi` rather than ad hoc.
 - You want to adapt or fork HVE Core's patterns into your own agent instructions via `/hve-builder`.
-- You need the isolated, reproducible Sandbox profile. Use `native:cpx/hve` when the separately managed
+- You need the isolated, reproducible Sandbox profile. Use `native:copilot/hve` when the separately managed
   host-native HVE profile is the required destination.
 
 ## Avoid This Profile When
@@ -57,12 +57,12 @@ workflows:
 - The default model is `gpt-6-astra` with `max` reasoning.
 - HVE Core is explicitly called out upstream as opinionated and rapidly evolving — treat it as a source of patterns rather than a stable, unchanging platform.
 - `/rpi` selects the RPI Agent for the Research-Plan-Implement-Review cycle; `/hve-builder` helps fork or adapt those patterns into an independently owned agentic SDLC.
-- Guide customer workflows use `native:cpx/hve`. The Sandbox can run interactive
+- Guide customer workflows use `native:copilot/hve`. The Sandbox can run interactive
   Copilot sessions, but Guide does not yet verify its installed per-workflow
   agent and skill requirements. It no longer advertises a catch-all lifecycle
   that always starts DT Coach, regardless of the customer's actual need.
 - This profile installs the `microsoft/hve-core` plugin via the Copilot marketplace adapter, pinned to a specific commit.
-- This Sandbox profile and `native:cpx/hve` are separate profiles. They can share the HVE concept without
+- This Sandbox profile and `native:copilot/hve` are separate profiles. They can share the HVE concept without
   sharing a session, runtime state, or lifecycle.
 
 ## Gotchas

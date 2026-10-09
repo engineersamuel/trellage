@@ -21,6 +21,9 @@ fail() {
 hook_fixture="$fixture_root/hook"
 mkdir -p "$hook_fixture/bin" "$hook_fixture/caller"
 git init --quiet "$hook_fixture/caller"
+git -C "$hook_fixture/caller" config user.name "Trellage Hook Contract"
+git -C "$hook_fixture/caller" config user.email "trellage-hook@example.invalid"
+git -C "$hook_fixture/caller" commit --quiet --allow-empty -m initial
 cp "$hook_fixture/caller/.git/config" "$hook_fixture/config-before"
 cat >"$hook_fixture/bin/git" <<'SH'
 #!/usr/bin/env bash
@@ -30,16 +33,29 @@ SH
 cat >"$hook_fixture/bin/bun" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "$*" >>"$HOOK_CALLS"
+SH
+cat >"$hook_fixture/bin/make" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
 [[ -z "${GIT_DIR+x}${GIT_WORK_TREE+x}${GIT_COMMON_DIR+x}${GIT_INDEX_FILE+x}${GIT_PREFIX+x}" ]] || {
   printf 'Git hook repository variables leaked into source tests\n' >&2
   exit 1
 }
+[[ "${TEST_CHANGED_BASE:-}" == "${HOOK_EXPECTED_BASE:?}" ]] || {
+  printf 'Changed-test base was not passed to the selector\n' >&2
+  exit 1
+}
+[[ "${TEST_CHANGED_COMMITTED_ONLY:-}" == 1 ]] || {
+  printf 'Changed-test selector included dirty worktree state\n' >&2
+  exit 1
+}
 printf '%s\n' "$*" >>"$HOOK_CALLS"
-if [[ "$*" == 'run test' ]]; then git init --quiet --bare "$HOOK_NESTED"; fi
+git init --quiet --bare "$HOOK_NESTED"
 SH
-chmod 0755 "$hook_fixture/bin/git" "$hook_fixture/bin/bun"
+chmod 0755 "$hook_fixture/bin/git" "$hook_fixture/bin/bun" "$hook_fixture/bin/make"
 hook_command="$(awk '
-  /name: source workspace checks/ { found = 1; next }
+  /name: changed tests/ { found = 1; next }
   found && /^[[:space:]]+run:/ {
     sub(/^[[:space:]]+run: /, ""); print; exit
   }
@@ -47,15 +63,29 @@ hook_command="$(awk '
 [[ -n "$hook_command" ]] || fail 'missing source workspace pre-push command'
 HOOK_REAL_GIT="$(command -v git)" HOOK_CALLS="$hook_fixture/calls" \
   HOOK_NESTED="$hook_fixture/nested" PATH="$hook_fixture/bin:$PATH" \
+  HOOK_EXPECTED_BASE='refs/remotes/{1}/main' \
   GIT_DIR="$hook_fixture/caller/.git" GIT_WORK_TREE="$hook_fixture/caller" \
   GIT_COMMON_DIR="$hook_fixture/caller/.git" GIT_INDEX_FILE="$hook_fixture/index" \
   GIT_PREFIX=fixture/ bash -c "$hook_command" \
   || fail 'source workspace hook did not isolate nested Git fixtures'
-[[ "$(<"$hook_fixture/calls")" == $'run check\nrun test' ]] \
-  || fail 'source workspace hook did not run both checks'
+[[ "$(<"$hook_fixture/calls")" == 'test-changed' ]] \
+  || fail 'source workspace hook did not run the changed-test selector'
 cmp -s "$hook_fixture/config-before" "$hook_fixture/caller/.git/config" \
   || fail 'source workspace hook changed its caller repository'
 [[ -f "$hook_fixture/nested/HEAD" ]] || fail 'nested Git fixture was not initialized'
+hook_branch="$(git -C "$hook_fixture/caller" symbolic-ref --quiet --short HEAD)"
+hook_remote_branch="refs/remotes/{1}/$hook_branch"
+git -C "$hook_fixture/caller" update-ref "$hook_remote_branch" HEAD
+: >"$hook_fixture/calls"
+HOOK_REAL_GIT="$(command -v git)" HOOK_CALLS="$hook_fixture/calls" \
+  HOOK_NESTED="$hook_fixture/nested" PATH="$hook_fixture/bin:$PATH" \
+  HOOK_EXPECTED_BASE="$hook_remote_branch" \
+  GIT_DIR="$hook_fixture/caller/.git" GIT_WORK_TREE="$hook_fixture/caller" \
+  GIT_COMMON_DIR="$hook_fixture/caller/.git" GIT_INDEX_FILE="$hook_fixture/index" \
+  GIT_PREFIX=fixture/ bash -c "$hook_command" \
+  || fail 'source workspace hook did not select the existing remote branch'
+[[ "$(<"$hook_fixture/calls")" == 'test-changed' ]] \
+  || fail 'source workspace hook did not rerun the changed-test selector'
 printf 'source startup contract: PASS: pre-push isolates nested Git fixtures\n'
 
 mkdir -p "$hook_fixture/packages/trellage-cli" "$hook_fixture/git-bin" "$hook_fixture/home"
@@ -76,8 +106,8 @@ done < <(awk '
     sub(/^[[:space:]]+run: /, ""); print
   }
 ' "$repo_root/lefthook.yml")
-[[ "$(<"$hook_fixture/script-calls")" == $'lint\nformat\ncheck\ncheck' ]] \
-  || fail 'compiler package hooks did not execute all four Bun scripts'
+[[ "$(<"$hook_fixture/script-calls")" == $'lint\nformat\ncheck' ]] \
+  || fail 'compiler package hooks did not execute all three Bun scripts'
 printf 'source startup contract: PASS: compiler hooks execute their Bun scripts\n'
 
 (

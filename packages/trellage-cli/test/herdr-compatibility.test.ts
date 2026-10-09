@@ -27,9 +27,9 @@ describe("herdr compatibility ledger", () => {
 
   it("looks up native launcher/profile entries independently of container entries", async () => {
     const ledger = await Effect.runPromise(loadHerdrCompatibilityLedger(repositoryRoot))
-    expect(nativeHerdrCompatibility(ledger, "cldx", "default")).toEqual({ status: "verified" })
-    expect(nativeHerdrCompatibility(ledger, "prx", "default")).toMatchObject({ status: "known-issue" })
-    expect(nativeHerdrCompatibility(ledger, "cpx", "does-not-exist")).toEqual({ status: "untested" })
+    expect(nativeHerdrCompatibility(ledger, "claude", "default")).toEqual({ status: "verified" })
+    expect(nativeHerdrCompatibility(ledger, "prime", "default")).toMatchObject({ status: "known-issue" })
+    expect(nativeHerdrCompatibility(ledger, "copilot", "does-not-exist")).toEqual({ status: "untested" })
   })
 
   it("degrades to an empty ledger instead of failing when the file is missing", async () => {

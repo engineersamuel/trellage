@@ -55,7 +55,7 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
   ...overrides,
 })
 
-const current = (): CommandRunResult => ({ stdout: "prx update: 0.8.1 is current", stderr: "", exitCode: 0 })
+const current = (): CommandRunResult => ({ stdout: "prime update: 0.8.1 is current", stderr: "", exitCode: 0 })
 const emptyCache: AdminVersionCacheRecord = { schemaVersion: 2, entries: {} }
 
 const flush = async (): Promise<void> => {
@@ -207,7 +207,7 @@ describe("versionCheckResultForEntry", () => {
     expect(versionCheckResultForEntry(target, manager)).toMatchObject({ malformed: true })
   })
 
-  it("still parses a non-zero-exit result as a normal update-available outcome (copilot/cdx exit non-zero to signal this)", async () => {
+  it("still parses a non-zero-exit result as a normal update-available outcome (copilot/codex exit non-zero to signal this)", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
     const target = entry({})
@@ -241,7 +241,7 @@ describe("versionCheckResultForEntry", () => {
         executable: "/opt/trellage/prime/bin/trx",
         args: ["upgrade", "prime", "default", "--check"],
         stdout: "",
-        stderr: "prx: failed to fetch or parse official manifest for default",
+        stderr: "prime: failed to fetch or parse official manifest for default",
         exitCode: 2,
         message: "command exited with status 2",
       }),
@@ -250,7 +250,7 @@ describe("versionCheckResultForEntry", () => {
 
     expect(versionCheckResultForEntry(target, manager)).toEqual({
       malformed: true,
-      diagnostic: "update --check failure: prx: failed to fetch or parse official manifest for default",
+      diagnostic: "update --check failure: prime: failed to fetch or parse official manifest for default",
     })
   })
 })

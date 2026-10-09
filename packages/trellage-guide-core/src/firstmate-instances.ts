@@ -21,8 +21,8 @@ export const firstmateInstanceLimits = Object.freeze({
 
 export const firstmateInstanceCli = Object.freeze({
   selector: "--instance",
-  context: "--fmx-instance-context-json",
-  expectedFleet: "--fmx-expected-fleet-json",
+  context: "--firstmate-instance-context-json",
+  expectedFleet: "--firstmate-expected-fleet-json",
   expectedSourceRevision: "--expected-source-revision",
   approveCreation: "--approve-creation",
   cursor: "--cursor",
@@ -222,7 +222,7 @@ export type FirstmateInstanceCreateResultV1 = {
   | { readonly state: "blocked" | "incomplete"; readonly descriptor: FirstmateNamedInstanceDescriptorV1 | null }
 )
 
-/** Also used for FMX_LAUNCH_PROVENANCE_JSON. Native must revalidate it against owned state.
+/** Also used for TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON. Native must revalidate it against owned state.
  * It is not a task target, package-install consent, or a substitute for a saved fleet identity.
  * Receipt lookup uses only the instance selector and unchanged V1 receipt request.
  */

@@ -1,8 +1,11 @@
-/** Historical persisted names are read here; every newly emitted identity is canonical. */
 export const canonicalNativeIdentity = (launcher: string, profile: string): { launcher: string; profile: string } => {
-  const aliases: Readonly<Record<string, string>> = { agx: "agency", cdx: "codex", cpx: "copilot", cldx: "claude", fmx: "firstmate", jcx: "jcode", picx: "pi", prx: "prime", "agency-copilot": "agency", "oh-my-pi": "omp" }
-  const harness = aliases[launcher] ?? launcher
-  return { launcher: harness, profile: harness === "agency" && profile === "trellage-azure" ? "azure" : harness === "omp" && profile === "copilot" ? "default" : profile }
+  const canonicalProfile =
+    launcher === "agency" && profile === "trellage-azure"
+      ? "azure"
+      : launcher === "omp" && profile === "copilot"
+        ? "default"
+        : profile
+  return { launcher, profile: canonicalProfile }
 }
 
 export const canonicalProfileRef = (ref: string): string => {

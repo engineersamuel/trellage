@@ -18,14 +18,14 @@ bestFor:
   - Status updates, standups, or PR summaries where the built-in Rundown TL;DR-plus-checklist output style should apply automatically
 avoidFor:
   - Tasks that require direct Anthropic, Bedrock, Vertex, AWS, Google, or Azure credentials, since launch strips those environment variables before starting Claude
-  - Work that needs OS-level sandboxing or containment; cldx grants Claude full host access with no security boundary
+  - Work that needs OS-level sandboxing or containment; claude grants Claude full host access with no security boundary
   - Sessions that need interactive approval prompts or AskUserQuestion; every launch bypasses permissions and disallows that tool
 prerequisites:
   - id: claude-code-cli
     description: Host `claude` (Claude Code) executable installed and resolvable on PATH.
   - id: proxy-health
     description: copilot-proxy-rs listening on http://127.0.0.1:8080 and advertising claude-sonnet-5.5 and claude-opus-5.5.
-  - id: cldx-setup-complete
+  - id: claude-setup-complete
     description: trx setup claude run once so first-run onboarding and the managed output style are staged.
   - id: cli-tools
     description: curl and jq available on the host for health checks used by setup, doctor, and launch.
@@ -79,7 +79,7 @@ authoritative operational reference.
 ## Workflow Notes
 
 - Bare `claude` and `trx run claude default` are equivalent; explicit `--model` wins over
-  the default `claude-opus-5` (for example `cldx --model claude-sonnet-5`).
+  the default `claude-opus-5` (for example `claude --model claude-sonnet-5`).
 - Every `setup`, `doctor`, `repair`, and launch verifies proxy health and that
   `claude-opus-5` is advertised before running.
 - The profile also installs the shared `native-common` floating skill bundle

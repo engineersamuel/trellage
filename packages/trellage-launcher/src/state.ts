@@ -10,7 +10,7 @@ export interface LaunchEntry {
   readonly plugins?: ReadonlyArray<string>
   readonly skills?: ReadonlyArray<string>
   readonly mcps?: ReadonlyArray<string>
-  readonly commandAlias?: string
+  readonly commandName?: string
   readonly commandPath?: string
   readonly profileArgument?: string
   readonly passthroughArgs?: ReadonlyArray<string>

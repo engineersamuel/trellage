@@ -1,6 +1,6 @@
 schema = 1
 name = "prime-agent"
-description = "Sandboxed Prime Agent (Opus via proxy) for experimental long-horizon research and automation through a persistent IPython control loop, detach/resume, and subagents. Unlike Headlong, it is user-directed control-loop research; unlike native `prx`, it runs in a reproducible Sandbox."
+description = "Sandboxed Prime Agent (Opus via proxy) for experimental long-horizon research and automation through a persistent IPython control loop, detach/resume, and subagents. Unlike Headlong, it is user-directed control-loop research; unlike native `prime`, it runs in a reproducible Sandbox."
 skill_bundles = ["sandbox-common"]
 
 [harness]

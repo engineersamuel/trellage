@@ -63,7 +63,7 @@ describe("Firstmate preparation client", () => {
     expect(firstmateActionReadiness(selected, preparedFleet(), "recover").kind).toBe(ProfileReadinessKind.Ready)
   })
 
-  it("does not infer safe preparation from an fmx name on a legacy contract", async () => {
+  it("does not infer safe preparation from an firstmate name on a legacy contract", async () => {
     const { preparation: _preparation, ...orchestration } = selected.orchestration!
     const runner = new FakeRunner([])
     await expect(prepareFirstmateReadiness(runner, { ...selected, orchestration }, "/fixture/caller"))

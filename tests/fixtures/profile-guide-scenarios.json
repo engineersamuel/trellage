@@ -290,7 +290,7 @@
     },
     {
       "id": "firstmate-default-explicit",
-      "intent": "Use fmx default to orchestrate work in my named Firstmate project.",
+      "intent": "Use firstmate default to orchestrate work in my named Firstmate project.",
       "expectedProfiles": ["native:firstmate/default"],
       "maxRank": 1,
       "excludedProfiles": ["native:firstmate/pstack-workers", "native:codex/pstack"]
@@ -304,7 +304,7 @@
     },
     {
       "id": "firstmate-pstack-worker-explicit-singular",
-      "intent": "Use fmx pstack-worker to orchestrate one measured repository optimization with explicit blast radius and verification evidence.",
+      "intent": "Use firstmate pstack-worker to orchestrate one measured repository optimization with explicit blast radius and verification evidence.",
       "expectedProfiles": ["native:firstmate/pstack-workers"],
       "maxRank": 1,
       "excludedProfiles": ["native:firstmate/default", "native:codex/pstack"]
@@ -318,7 +318,7 @@
     },
     {
       "id": "firstmate-ordinary-project-memory",
-      "intent": "Use fmx default and ordinary Stow to retain confirmed findings, decisions, and supporting references for my registered project without creating skills or implementation workers.",
+      "intent": "Use firstmate default and ordinary Stow to retain confirmed findings, decisions, and supporting references for my registered project without creating skills or implementation workers.",
       "expectedProfiles": ["native:firstmate/default"],
       "maxRank": 1,
       "excludedProfiles": ["native:firstmate/pstack-workers", "native:codex/pstack"]

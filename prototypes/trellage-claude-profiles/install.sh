@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ownership_value='trellage-claude-profiles-v1'
 
 refuse() {
-  printf 'cldx install: %s\n' "$1" >&2
+  printf 'claude install: %s\n' "$1" >&2
   exit 1
 }
 
@@ -22,8 +22,8 @@ canonical_home="$(canonical_directory "$home")" || refuse "cannot resolve HOME: 
 local_dir="$home/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
-install_root="$runtime_parent/cldx"
-installed_launcher="$install_root/bin/cldx"
+install_root="$runtime_parent/claude"
+installed_launcher="$install_root/bin/claude"
 installed_catalog="$install_root/catalog.json"
 installed_assets="$install_root/assets/rundown"
 installed_session_bridge="$install_root/lib/trellage-session-bridge.py"
@@ -34,7 +34,7 @@ installed_native_claude="$install_root/lib/native-claude"
 native_claude_source="$source_dir/../trellage-claude-common/native-claude"
 ownership_marker="$install_root/.managed-by-trellage-claude-profiles"
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/cldx"
+command_path="$command_dir/claude"
 
 require_safe_directory() {
   local path="$1" expected="$2" description="$3" canonical_path
@@ -53,7 +53,7 @@ require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.na
 
 runtime_owned=false
 if [[ -e "$install_root" || -L "$install_root" ]]; then
-  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/cldx" 'runtime root'
+  require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/claude" 'runtime root'
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "unowned runtime root: $install_root"
   [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
@@ -75,13 +75,13 @@ fi
 [[ -f "$native_claude_source" && ! -L "$native_claude_source" ]] \
   || refuse "missing shared native Claude launcher: $native_claude_source"
 mkdir -p "$install_root/bin" "$install_root/lib" "$installed_assets" "$command_dir"
-require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/cldx" 'runtime root'
-require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/cldx/bin" 'runtime bin'
-require_safe_directory "$install_root/lib" "$canonical_home/.local/share/trellage/cldx/lib" 'runtime lib'
+require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/claude" 'runtime root'
+require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/claude/bin" 'runtime bin'
+require_safe_directory "$install_root/lib" "$canonical_home/.local/share/trellage/claude/lib" 'runtime lib'
 require_safe_directory "$install_root/assets" \
-  "$canonical_home/.local/share/trellage/cldx/assets" 'runtime assets'
+  "$canonical_home/.local/share/trellage/claude/assets" 'runtime assets'
 require_safe_directory "$installed_assets" \
-  "$canonical_home/.local/share/trellage/cldx/assets/rundown" 'runtime assets'
+  "$canonical_home/.local/share/trellage/claude/assets/rundown" 'runtime assets'
 for asset in rundown.md NOTICE.md; do
   [[ ! -L "$installed_assets/$asset" \
     && ( ! -e "$installed_assets/$asset" || -f "$installed_assets/$asset" ) ]] \
@@ -101,13 +101,13 @@ done
   && ( ! -e "$installed_native_claude" || -f "$installed_native_claude" ) ]] \
   || refuse "unsafe managed native Claude runtime: $installed_native_claude"
 
-launcher_stage="$(mktemp "$install_root/bin/.cldx.XXXXXX")"
+launcher_stage="$(mktemp "$install_root/bin/.claude.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
 marker_stage="$(mktemp "$install_root/.ownership.XXXXXX")"
 session_bridge_stage="$(mktemp "$install_root/lib/.trellage-session-bridge.py.XXXXXX")"
 statusline_stage="$(mktemp "$install_root/lib/.trellage-statusline.sh.XXXXXX")"
 native_claude_stage="$(mktemp "$install_root/lib/.native-claude.XXXXXX")"
-install -m 0755 "$source_dir/bin/cldx" "$launcher_stage"
+install -m 0755 "$source_dir/bin/claude" "$launcher_stage"
 install -m 0755 "$session_bridge_source" "$session_bridge_stage"
 install -m 0755 "$statusline_source" "$statusline_stage"
 install -m 0755 "$native_claude_source" "$native_claude_stage"
@@ -128,7 +128,7 @@ for asset in rundown.md NOTICE.md; do
 done
 
 if [[ ! -L "$command_path" ]]; then
-  command_stage="$command_dir/.cldx-command.$$"
+  command_stage="$command_dir/.claude-command.$$"
   [[ ! -e "$command_stage" && ! -L "$command_stage" ]] \
     || refuse "unsafe command staging path: $command_stage"
   ln -s "$installed_launcher" "$command_stage"
@@ -137,8 +137,9 @@ fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
-printf 'Installed cldx at %s\n' "$command_path"
+printf 'Installed claude at %s\n' "$command_path"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
 
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" cldx "$installed_launcher" "$ownership_marker" "$ownership_value"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" cldx \
+  .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" claude "$installed_launcher" "$ownership_marker" "$ownership_value"

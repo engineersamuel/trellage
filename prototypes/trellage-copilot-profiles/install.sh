@@ -6,8 +6,8 @@ source_dir="$(cd "$(dirname "$0")" && pwd)"
 local_dir="$HOME/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
-install_root="$runtime_parent/cpx"
-installed_launcher="$install_root/bin/cpx"
+install_root="$runtime_parent/copilot"
+installed_launcher="$install_root/bin/copilot"
 installed_catalog="$install_root/catalog.json"
 installed_assets="$install_root/assets/rundown"
 installed_session_bridge="$install_root/lib/trellage-session-bridge.py"
@@ -16,14 +16,14 @@ installed_statusline="$install_root/lib/trellage-statusline.sh"
 statusline_source="$source_dir/../../scripts/trellage-statusline.sh"
 installed_model_settings="$install_root/lib/copilot-model-settings.py"
 model_settings_source="$source_dir/../trellage/copilot-model-settings.py"
-ownership_marker="$install_root/.managed-by-trellage-profiles"
-ownership_value='trellage-profiles-v1'
+ownership_marker="$install_root/.managed-by-trellage-copilot-profiles"
+ownership_value='trellage-copilot-profiles-v1'
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/cpx"
+command_path="$command_dir/copilot"
 runtime_owned=false
 
 refuse() {
-  printf 'cpx install: %s\n' "$1" >&2
+  printf 'copilot install: %s\n' "$1" >&2
   exit 1
 }
 
@@ -61,7 +61,7 @@ fi
 require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
+require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/copilot" 'runtime root'
 require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 if [[ -e "$install_root" ]]; then
@@ -110,14 +110,14 @@ fi
 require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
+require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/copilot" 'runtime root'
 require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 require_safe_existing_directory "$install_root/assets" \
-  "$canonical_home/.local/share/trellage/cpx/assets" 'runtime assets'
+  "$canonical_home/.local/share/trellage/copilot/assets" 'runtime assets'
 require_safe_existing_directory "$install_root/lib" \
-  "$canonical_home/.local/share/trellage/cpx/lib" 'runtime lib'
+  "$canonical_home/.local/share/trellage/copilot/lib" 'runtime lib'
 require_safe_existing_directory "$installed_assets" \
-  "$canonical_home/.local/share/trellage/cpx/assets/rundown" 'runtime assets'
+  "$canonical_home/.local/share/trellage/copilot/assets/rundown" 'runtime assets'
 for asset in rundown.instructions.md NOTICE.md; do
   [[ ! -L "$installed_assets/$asset" \
     && ( ! -e "$installed_assets/$asset" || -f "$installed_assets/$asset" ) ]] \
@@ -125,13 +125,13 @@ for asset in rundown.instructions.md NOTICE.md; do
 done
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
 mkdir -p "$install_root/bin" "$install_root/lib" "$installed_assets" "$command_dir"
-require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
-require_safe_existing_directory "$install_root/bin" "$canonical_home/.local/share/trellage/cpx/bin" 'runtime bin'
-require_safe_existing_directory "$install_root/lib" "$canonical_home/.local/share/trellage/cpx/lib" 'runtime lib'
+require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/copilot" 'runtime root'
+require_safe_existing_directory "$install_root/bin" "$canonical_home/.local/share/trellage/copilot/bin" 'runtime bin'
+require_safe_existing_directory "$install_root/lib" "$canonical_home/.local/share/trellage/copilot/lib" 'runtime lib'
 require_safe_existing_directory "$installed_assets" \
-  "$canonical_home/.local/share/trellage/cpx/assets/rundown" 'runtime assets'
+  "$canonical_home/.local/share/trellage/copilot/assets/rundown" 'runtime assets'
 printf '%s\n' "$ownership_value" >"$ownership_marker"
-install -m 0755 "$source_dir/bin/cpx" "$installed_launcher"
+install -m 0755 "$source_dir/bin/copilot" "$installed_launcher"
 install -m 0755 "$session_bridge_source" "$installed_session_bridge"
 install -m 0755 "$statusline_source" "$installed_statusline"
 install -m 0755 "$model_settings_source" "$installed_model_settings"
@@ -146,7 +146,8 @@ fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
-printf 'Installed cpx at %s\n' "$command_path"
+printf 'Installed copilot at %s\n' "$command_path"
 
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" cpx "$installed_launcher" "$ownership_marker" "$ownership_value"
+TRELLAGE_RETIRE_BEST_EFFORT=1 bash "$source_dir/../../scripts/retire-native-backend.sh" "$HOME" cpx \
+  .managed-by-trellage-profiles trellage-profiles-v1
+bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" copilot "$installed_launcher" "$ownership_marker" "$ownership_value"

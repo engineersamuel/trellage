@@ -1,7 +1,7 @@
 # Third-party test fixtures
 
 `firstmate/<commit>/` holds verbatim copies of the exact upstream Firstmate
-files the pinned `fmx` overlay edits and their shell dependencies, taken from
+files the pinned `firstmate` overlay edits and their shell dependencies, taken from
 <https://github.com/kunchenguid/firstmate> at the commit named by the directory.
 
 They exist so the checked-in overlay can be proved offline: the contract test

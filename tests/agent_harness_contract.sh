@@ -82,20 +82,24 @@ jq -e '.mcpServers["codebase-memory"].command == "codebase-memory-mcp"' \
 rg -q '\.agents/rules/trellage-cli\.md' .github/instructions/trellage-cli.instructions.md \
   || fail "GitHub instruction does not reference canonical generic rule"
 
-ci_tool_probe='for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done'
+ci_tool_probe='for tool in jq curl git make fish rg bun node python3 uv; do command -v "$tool" >/dev/null; done'
 for required_ci_line in \
   '          ref: ${{ github.event.pull_request.head.sha || github.sha }}' \
-  '          fetch-depth: 2' \
+  '          fetch-depth: 0' \
   '        run: sudo apt-get install --yes --no-install-recommends fish ripgrep' \
   "        run: ${ci_tool_probe}" \
   '          bun-version: 1.4.2' \
+  '        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0' \
+  '          version: "0.12.24"' \
   '        run: bash scripts/install-source-runtime.sh --prepare' \
   '        run: npm ci --prefix tests/playwright' \
   '    runs-on: macos-latest' \
   '        run: make profile-compiler launcher conversation-source source-runtime profile-guide-contract' \
   "        if: github.event_name == 'pull_request'" \
   "        if: github.event_name != 'pull_request'" \
-  '        run: make test-pr' \
+  '          TEST_CHANGED_BASE: ${{ github.event.pull_request.base.sha }}' \
+  '          TEST_CHANGED_COMMITTED_ONLY: "1"' \
+  '        run: make test-changed' \
   '        run: make test'; do
   grep -Fxq -- "$required_ci_line" .github/workflows/ci.yml \
     || fail "CI is missing a required regression check or setup: $required_ci_line"
@@ -103,7 +107,7 @@ done
 if (
   ci_tool_probe_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-ci-tool-probe.XXXXXX")"
   trap 'rm -rf -- "${ci_tool_probe_root}"' EXIT
-  for tool in jq git make fish rg bun node python3; do
+  for tool in jq git make fish rg bun node python3 uv; do
     ln -s /usr/bin/true "${ci_tool_probe_root}/${tool}"
   done
   PATH="${ci_tool_probe_root}" /bin/bash -e -c "${ci_tool_probe}"

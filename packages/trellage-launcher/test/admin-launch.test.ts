@@ -53,7 +53,7 @@ const sandboxEntry: AdminProfileEntry = {
   updateCheckStale: false,
 }
 
-/** A hypothetical native launcher that lacks doctor support, to exercise the generic doctorSupported=false gate — no current native launcher (including cdx) actually lacks doctor support. */
+/** A hypothetical native launcher that lacks doctor support, to exercise the generic doctorSupported=false gate — no current native launcher (including codex) actually lacks doctor support. */
 const nativeDoctorUnsupportedEntry: AdminProfileEntry = {
   ...nativeEntry,
   ref: "native:hypothetical-unsupported:default",

@@ -100,7 +100,7 @@ process.stdin.on("end", () => {
     argv: process.argv.slice(2),
     cwd: process.cwd(),
     context: process.env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON,
-    inheritedOrigin: process.env.FMX_LAUNCH_PROVENANCE_JSON,
+    inheritedOrigin: process.env.TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON,
     intentPath,
     intent: intentPath ? fs.readFileSync(intentPath, "utf8") : undefined,
     stdin,
@@ -517,7 +517,7 @@ test("Firstmate popup forwards a fresh source-pane origin without changing the i
       HOME: root, HERDR_BIN_PATH: "",
       HERDR_SOCKET_PATH: socketPath, HERDR_PLUGIN_ROOT: pluginRoot, HERDR_PLUGIN_STATE_DIR: root,
       HERDR_PANE_ID: "different-popup-pane", TRELLAGE_GUIDE_INVOCATION_PATH: invocationPath,
-      FMX_LAUNCH_PROVENANCE_JSON: "untrusted daemon origin",
+      TRELLAGE_FIRSTMATE_LAUNCH_PROVENANCE_JSON: "untrusted daemon origin",
     },
   }, "keep keyboard attached")
   const call = JSON.parse(await readFile(capturePath, "utf8"))

@@ -323,7 +323,7 @@ describe("continuation assessment", () => {
     { evidenceIds: ["invented-message"] },
     { evidenceIds: ["message-1", "message-1"] },
     { profileRef: "native:codex/invented" },
-    { profileRef: "cdx default; do-something" },
+    { profileRef: "codex default; do-something" },
     { workflowId: "invented" },
     { dependsOn: ["action-1"] },
     { dependsOn: ["action-6"] },

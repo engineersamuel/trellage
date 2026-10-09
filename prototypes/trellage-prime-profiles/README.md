@@ -1,6 +1,6 @@
 # Native Prime Agent profile
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run prime PROFILE` runs [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)
 directly on the host with an isolated profile. It uses keyless
@@ -37,8 +37,8 @@ trx upgrade prime default
 trx repair prime default
 ```
 
-The installer keeps `prx` as a private backend and owns its runtime beneath
-`~/.local/share/trellage/prx`. `setup` resolves the latest Prime Agent release
+The installer keeps `prime` as a private backend and owns its runtime beneath
+`~/.local/share/trellage/prime`. `setup` resolves the latest Prime Agent release
 eligible under `mise` policy on first use, installs the release package into a
 managed npm prefix, and records the exact installed version in the local
 `installed-version` receipt. Ordinary launches reuse that version without a
@@ -54,7 +54,7 @@ runtime receipts, and kernel state are preserved. Missing caches, invalid
 ownership, unsafe paths, and name collisions fail closed. It never fetches,
 starts Prime or the proxy, or starts or stops the daemon.
 
-`prx` records one canonical runtime identity containing the identity schema,
+`prime` records one canonical runtime identity containing the identity schema,
 the exact Prime Agent version, a deterministic SHA-256 of the bundled
 `dist/prime-agent-runtime` tree, and the managed kernel specification version.
 The kernel and daemon stamps include that identity. Normal launch compares
@@ -64,8 +64,8 @@ during doctor, repair, or launch. Inventory reports that state as unhealthy
 without changing it, and reports `busy` while another profile mutation owns
 the lock.
 
-The private backend remains `prx` under
-`~/.local/share/trellage/prx/bin/prx`. Public commands use `trx`; retired
+The private backend remains `prime` under
+`~/.local/share/trellage/prime/bin/prime`. Public commands use `trx`; retired
 launcher aliases are not installed on `PATH`.
 
 Profile state lives at:
@@ -94,7 +94,7 @@ manually maintained source hash is required.
 
 Prime’s default daemon socket is UID-global, and resident workers inherit the
 supervisor environment at spawn — they do **not** receive client
-`PRIME_AGENT_KERNEL_*` over the wire. `prx` therefore pins
+`PRIME_AGENT_KERNEL_*` over the wire. `prime` therefore pins
 `--daemon-socket ~/.local/share/trellage/profiles/prime/default/daemon/daemon.sock`
 and restarts that profile daemon when its runtime identity or kernel paths
 change, so workers see the matching managed venv. Use `trx shutdown prime default` to stop
@@ -118,8 +118,8 @@ Launch the profile explicitly:
 
 ```bash
 trx run prime default
-trx run prime default -p "Reply exactly PRX_OK"
-trx run prime default --single-turn -p "Reply exactly PRX_OK"
+trx run prime default -p "Reply exactly TRELLAGE_PRIME_OK"
+trx run prime default --single-turn -p "Reply exactly TRELLAGE_PRIME_OK"
 ```
 
 Arguments pass after managed `--provider copilot-proxy-rs`, `--model`,
@@ -138,7 +138,7 @@ trx shutdown prime default
 
 Prefer `--single-turn -p` for one-shot smoke tests.
 
-`prx` adds no containment. Prime Agent runs with all host access available to
+`prime` adds no containment. Prime Agent runs with all host access available to
 the process.
 
 ## Uninstall

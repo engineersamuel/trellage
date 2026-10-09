@@ -64,7 +64,7 @@ const profile = (headlessPrompt: boolean): SelectedProfile => ({
   profile: "hve-core",
   headlessPrompt,
 })
-// jcode is the one harness with no argv prompt at all, so jcx is the only
+// jcode is the one harness with no argv prompt at all, so jcode is the only
 // launcher still on Herdr's paste path.
 const agentPromptProfile: SelectedProfile = {
   surface: "native",
@@ -291,7 +291,7 @@ describe("interactive guide result execution", () => {
       unconfirmed,
       { ...valid, prompt: "Only the specification, with the original intent discarded." },
       { ...valid, legacyFirstmate: { ...context, originalIntent: "A different original request." } },
-      { ...valid, command: { ...valid.command, args: [...valid.command.args, "--fmx-expected-fleet-json", "{}"] } },
+      { ...valid, command: { ...valid.command, args: [...valid.command.args, "--firstmate-expected-fleet-json", "{}"] } },
       { ...valid, profile: { ...valid.profile, headlessPrompt: true } },
     ]) {
       await expect(executeGuideUiResult(result, services(runner, writes, runInteractive)))
@@ -513,7 +513,7 @@ describe("interactive guide result execution", () => {
     )
   })
 
-  it("passes a cdx prompt positionally without printing manual-paste instructions", async () => {
+  it("passes a codex prompt positionally without printing manual-paste instructions", async () => {
     const runner = new RecordingRunner()
     const writes: string[] = []
     const runInteractive = vi.fn(async () => undefined)
@@ -635,7 +635,7 @@ describe("interactive guide result execution", () => {
     expect(writes).toHaveLength(0)
   })
 
-  it("queues cpx prompts in the launch command before a workspace trust decision", async () => {
+  it("queues copilot prompts in the launch command before a workspace trust decision", async () => {
     const runner = new RecordingRunner([
       { stdout: '{"result":{"pane":{"pane_id":"2-3"}}}', stderr: "", exitCode: 0 },
       { stdout: "", stderr: "", exitCode: 0 },
@@ -661,13 +661,13 @@ describe("interactive guide result execution", () => {
     expect(writes).toHaveLength(0)
   })
 
-  it("queues cdx prompts in the launch command before a hook trust decision", async () => {
+  it("queues codex prompts in the launch command before a hook trust decision", async () => {
     const runner = new RecordingRunner([
       { stdout: '{"result":{"pane":{"pane_id":"2-4"}}}', stderr: "", exitCode: 0 },
       { stdout: "", stderr: "", exitCode: 0 },
     ])
     const writes: string[] = []
-    const cdxProfile: SelectedProfile = {
+    const codexProfile: SelectedProfile = {
       surface: "native",
       launcher: "codex",
       commandPath: "/opt/trellage/bin/trx",
@@ -677,7 +677,7 @@ describe("interactive guide result execution", () => {
 
     await expect(
       executeGuideUiResult(
-        buildCurrentHerdrWorkspaceResult(cdxProfile, "Run the full workflow.", "/repo", {
+        buildCurrentHerdrWorkspaceResult(codexProfile, "Run the full workflow.", "/repo", {
           workspaceId: "2",
           paneId: "2-1",
           surface: "pane",

@@ -783,7 +783,7 @@ Install the dependencies for the harnesses you use. On a brand-new machine:
      backend. On first launch it detects the remaining Firstmate-specific
      tools, shows their exact versions and managed destination, and asks for
      consent before installing them under
-     `~/.local/share/trellage/fmx/prerequisites/`. It does not install global
+     `~/.local/share/trellage/firstmate/prerequisites/`. It does not install global
      npm packages or global agent hooks.
 3. **Browse with `trx list`.** Listing does not require every harness to be
    installed. Launch with `trx run HARNESS PROFILE`.
@@ -828,7 +828,7 @@ repository root:
 (cd prototypes/trellage-firstmate-profiles && ./install.sh)
 (cd prototypes/trellage-jcode-profiles && ./install.sh)
 (cd prototypes/trellage-omp-profiles && ./install.sh)
-(cd prototypes/trellage-picx-profiles && ./install.sh)
+(cd prototypes/trellage-pi-profiles && ./install.sh)
 (cd prototypes/trellage-prime-profiles && ./install.sh)
 (cd prototypes/trellage-router && ./install.sh)
 ```
@@ -906,23 +906,8 @@ comparison images must be rebuilt with the updated Trellage compiler and runtime
 
 The public command is `trx` (`~/.local/bin/trx`). Native installers retain
 private backend runtimes under `~/.local/share/trellage/` and register them
-outside PATH. Successful installation removes only an owned legacy launcher
-symlink; unrelated executables, authentication, sessions, and profile homes stay
-in place.
-
-| Former command | Canonical command |
-| --- | --- |
-| `agx trellage-azure` | `trx run agency azure` |
-| `cdx PROFILE` | `trx run codex PROFILE` |
-| `cldx PROFILE` | `trx run claude PROFILE` |
-| `cpx PROFILE` | `trx run copilot PROFILE` |
-| `fmx PROFILE` | `trx run firstmate PROFILE` |
-| `jcx` | `trx run jcode default` |
-| `omp copilot` | `trx run omp default` |
-| `omp` (local Qwen) | `trx run omp local` |
-| `picx` | `trx run pi default` |
-| `prx` | `trx run prime default` |
-| `grx PROFILE` | `trx run grok PROFILE` |
+outside `PATH`. Unrelated executables, authentication, sessions, and profile
+homes stay in place.
 
 Native lifecycle commands use the same identity, for example
 `trx setup agency azure`, `trx doctor omp default`, and
@@ -938,7 +923,7 @@ Their isolated profile homes are rooted at:
 ~/.local/share/trellage/profiles/jcode/default/home/
 ~/.local/share/trellage/profiles/prime/default/home/
 ~/.omp/profiles/trellage-qwen-local/
-~/.local/share/trellage/profiles/pi/picx-default/
+~/.local/share/trellage/profiles/pi/pi-default/
 ~/.local/share/trellage/profiles/firstmate/<profile>/home/
 ```
 
@@ -979,7 +964,7 @@ release. Setup and explicit update resolve current stable extension packages;
 ordinary launches reuse the installed profile. The launcher also provides
 isolated user-scope package data, the configured TOML skills,
 disabled host-MCP discovery, and `copilot-proxy-rs/gpt-6-astra:medium`. See
-the [native picx guide](prototypes/trellage-picx-profiles/README.md).
+the [native pi guide](prototypes/trellage-pi-profiles/README.md).
 
 Managed Codex profiles use the local proxy by default. Native OpenAI authentication
 is an explicit per-launch opt-in:
@@ -1000,8 +985,8 @@ Claude Code cannot save per-model `max` effort. An explicit
 ```bash
 trx setup claude
 trx doctor claude
-trx run claude default -- -p "Reply exactly CLDX_OK"
-trx run claude default -- --model claude-sonnet-5.5 -p "Reply exactly CLDX_SONNET_OK"
+trx run claude default -- -p "Reply exactly TRELLAGE_CLAUDE_OK"
+trx run claude default -- --model claude-sonnet-5.5 -p "Reply exactly TRELLAGE_CLAUDE_SONNET_OK"
 trx repair claude
 ```
 
@@ -1026,7 +1011,7 @@ Firstmate owns one isolated Claude home for the captain and separate isolated
 Claude homes for each worker; only the captain gets the Trellage session
 bridge. The first captain launch detects Firstmate's additional toolchain and,
 when anything is missing, shows the locked versions and install destination
-before asking for consent. Accepted installs stay under the fmx runtime rather
+before asking for consent. Accepted installs stay under the firstmate runtime rather
 than using global npm. Two profiles are available:
 
 ```bash
@@ -1712,7 +1697,7 @@ the Herdr agent API after the agent is idle. Goal handoffs use the separate
 controller and native-input rules above.
 
 Guide worktree suggestions use `wt/<profile-tag>-<topic>`, for example
-`wt/cpx-hve-review-my-pr` or `wt/sb-claude-council-review-my-pr`.
+`wt/copilot-hve-review-my-pr` or `wt/sb-claude-council-review-my-pr`.
 Generated names contain at most 40 ASCII characters. Native tags include the
 launcher and profile; Sandbox tags use `sb-` and the profile. Tags longer than
 22 characters retain a readable prefix and a six-hex identity hash. Topics use
@@ -1784,7 +1769,7 @@ Messages API at `http://127.0.0.1:8080`). It is independent of the Docker
 ```bash
 trx setup prime
 trx doctor prime
-trx run prime default -- -p "Reply exactly PRX_OK"
+trx run prime default -- -p "Reply exactly TRELLAGE_PRIME_OK"
 trx upgrade prime --check
 trx upgrade prime
 trx repair prime

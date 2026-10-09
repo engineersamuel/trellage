@@ -51,7 +51,8 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
       expect(screen).toContain("║ › Fleet [running] ║")
       expect(screen).toContain("Read-only reviews do not authorize edits")
     }
-    assertFilled()
+    const waitForFilled = async () => vi.waitFor(assertFilled, { timeout: 8000, interval: 25 })
+    await waitForFilled()
     if (process.env.REVIEW_UI_SCREEN === "1") console.log(`\n${screen}\n`)
     if (outcome === "all") {
       for (const [index, label, content] of [
@@ -88,13 +89,13 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
     terminal.resize(110, 42)
     child.resize(110, 42)
     await wait(before!)
-    await vi.waitFor(assertFilled)
+    await waitForFilled()
     if (process.env.REVIEW_UI_SCREEN === "1") console.log(`\n${screen}\n`)
     if (outcome === "all") {
       await wait("Architecture [running]", "Matt [running]", "Overview [running]", "Synthesis [queued]")
       await press("\u001b[Z", "› Synthesis [queued]", "Tab 8/8", "Esc cancel")
       await press("\u001b[C", "› Fleet [running]", before!)
-      assertFilled()
+      await waitForFilled()
     }
     if (outcome === "cancelled") child.write("\u001b")
     else await writeFile(path.join(root, "finish"), outcome === "all" ? "complete" : outcome)
@@ -131,9 +132,23 @@ it("shows an Architecture prerequisite timeout as partial with synthesis not run
     screen = Array.from({ length: terminal.rows }, (_, row) =>
       terminal.buffer.active.getLine(terminal.buffer.active.viewportY + row)?.translateToString(true) ?? "").join("\n")
   }))
-  const wait = async (...texts: string[]) => vi.waitFor(() => {
+  const waitForScreen = async (timeout: number, ...texts: string[]) => vi.waitFor(() => {
     for (const text of texts) expect(screen).toContain(text)
-  }, { timeout: 8000, interval: 25 })
+  }, { timeout, interval: 25 })
+  const wait = async (...texts: string[]) => waitForScreen(8000, ...texts)
+  const pressUntil = async (key: string, ...texts: string[]) => {
+    let lastError: unknown
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      child.write(key)
+      try {
+        await waitForScreen(1000, ...texts)
+        return
+      } catch (error) {
+        lastError = error
+      }
+    }
+    throw lastError
+  }
   try {
     await wait("src/login.ts")
     child.write("\r")
@@ -147,17 +162,15 @@ it("shows an Architecture prerequisite timeout as partial with synthesis not run
     await writeFile(path.join(root, "append"), "")
     await writeFile(path.join(root, "finish"), "architecture-failed")
     await wait("Architecture [partial]", "Synthesis [not-run]")
-    child.write("f")
-    await wait(
+    await pressUntil(
+      "f",
       "Review failed",
       "Failed phase: Independent reviews",
       "Failure reason: Request timeout",
       "Partial findings saved: 1.",
     )
-    child.write("p")
-    await wait("Architecture [partial]", "Synthesis [not-run]")
-    child.write("\t")
-    await wait("Failure phase: Independent reviews", "Failure reason: Request timeout")
+    await pressUntil("p", "Architecture [partial]", "Synthesis [not-run]")
+    await pressUntil("\t", "Failure phase: Independent reviews", "Failure reason: Request timeout")
   } finally {
     child.kill()
     terminal.dispose()

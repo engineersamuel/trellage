@@ -351,7 +351,7 @@ describe("Firstmate native submission transport", () => {
 })
 
 describe("Firstmate submission request validation", () => {
-  it("requires an fmx profile with orchestration and public headless disabled", () => {
+  it("requires an firstmate profile with orchestration and public headless disabled", () => {
     const runner = new FakeRunner([])
     const { orchestration: _orchestration, ...noOrchestration } = profile
     for (const invalid of [noOrchestration, { ...profile, launcher: "copilot" }, { ...profile, headlessPrompt: true }]) {

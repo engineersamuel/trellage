@@ -1549,7 +1549,7 @@ const profileIdentityAliases = (entry: GuideMatchCatalogEntry): ReadonlyArray<st
   return [
     ...aliases,
     `firstmate ${entry.name}`,
-    ...(entry.name === "pstack-workers" ? ["fmx pstack-worker", "fmx/pstack-worker", "firstmate pstack-worker"] : []),
+    ...(entry.name === "pstack-workers" ? ["firstmate pstack-worker", "firstmate/pstack-worker", "firstmate pstack-worker"] : []),
   ]
 }
 

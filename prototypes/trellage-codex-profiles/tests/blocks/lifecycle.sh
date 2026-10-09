@@ -76,7 +76,7 @@ assert_status 1 doctor-youtube-drift env \
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" doctor youtube
-grep -F -- 'cdx: floating skills are unhealthy: youtube' \
+grep -F -- 'codex: floating skills are unhealthy: youtube' \
   "$fixture_root/doctor-youtube-drift.out" >/dev/null \
   || fail 'drifted YouTube skill diagnostic differs'
 pstack_config_before="$(state_file_hash "$pstack_home/config.toml")"
@@ -98,9 +98,9 @@ set -T
 trap '
   case "$BASH_COMMAND" in
     acquire_profile_launch_lock*)
-      if [ "$0" = "$CDX_TEST_LAUNCHER_PATH" ] \
-        && [ ! -f "$CDX_TEST_LOCK_ATTEMPT" ]; then
-        : >"$CDX_TEST_LOCK_ATTEMPT"
+      if [ "$0" = "$TRELLAGE_CODEX_TEST_LAUNCHER_PATH" ] \
+        && [ ! -f "$TRELLAGE_CODEX_TEST_LOCK_ATTEMPT" ]; then
+        : >"$TRELLAGE_CODEX_TEST_LOCK_ATTEMPT"
       fi
       ;;
   esac
@@ -134,8 +134,8 @@ assert_lifecycle_waits_for_lifecycle() {
 
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     BASH_ENV="$lifecycle_lock_bash_env" \
-    CDX_TEST_LAUNCHER_PATH="$fixture_launcher" \
-    CDX_TEST_LOCK_ATTEMPT="$hold_dir/lock-attempt" \
+    TRELLAGE_CODEX_TEST_LAUNCHER_PATH="$fixture_launcher" \
+    TRELLAGE_CODEX_TEST_LOCK_ATTEMPT="$hold_dir/lock-attempt" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     "$fixture_launcher" "$@" >"$hold_dir/contender.out" 2>&1 &
   contender_pid=$!
@@ -331,17 +331,17 @@ auth_is_absent "$pstack_home/auth.json" || fail 'repair created profile authenti
 
 assert_owned_temps_cleaned() {
   local label="$1" temp_directory="$2"
-  if find "$temp_directory" -type f ! -name 'cdx-inventory.user-owned' -print \
+  if find "$temp_directory" -type f ! -name 'codex-inventory.user-owned' -print \
     | grep . >/dev/null; then
     fail "$label left an owned temporary file"
   fi
-  [ -f "$temp_directory/cdx-inventory.user-owned" ] \
+  [ -f "$temp_directory/codex-inventory.user-owned" ] \
     || fail "$label removed an unowned temporary file"
 }
 
 die_temp_directory="$fixture_root/"$'die\ntemp'
 mkdir "$die_temp_directory"
-printf '%s\n' 'keep' >"$die_temp_directory/cdx-inventory.user-owned"
+printf '%s\n' 'keep' >"$die_temp_directory/codex-inventory.user-owned"
 cp "$pstack_home/config.toml" "$fixture_root/config-before-temp-die.toml"
 assert_command_fails owned-temp-nested-die env HOME="$fixture_root/home" \
   TMPDIR="$die_temp_directory" PATH="$fake_bin:$PATH" \
@@ -353,7 +353,7 @@ assert_owned_temps_cleaned nested-die "$die_temp_directory"
 
 signal_temp_directory="$fixture_root/signal-temp"
 mkdir "$signal_temp_directory"
-printf '%s\n' 'keep' >"$signal_temp_directory/cdx-inventory.user-owned"
+printf '%s\n' 'keep' >"$signal_temp_directory/codex-inventory.user-owned"
 assert_command_fails owned-temp-term env HOME="$fixture_root/home" \
   TMPDIR="$signal_temp_directory" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" FAKE_CODEX_SIGNAL_PARENT=TERM \
@@ -541,7 +541,7 @@ FAKE_CODEX_PLUGIN_OVERRIDE="$traversal_version_plugin" \
     HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
     "$fixture_launcher" doctor superpowers
-grep -F -- 'cdx: invalid selected plugin inventory: superpowers' \
+grep -F -- 'codex: invalid selected plugin inventory: superpowers' \
   "$fixture_root/plugin-selected-traversal-version.out" >/dev/null \
   || fail 'traversal plugin version diagnostic differs'
 
@@ -655,7 +655,7 @@ assert_command_fails setup-empty-superpowers-cache env \
   FAKE_CODEX_MARKETPLACE_OVERRIDE="$fixture_root/no-marketplace-override" \
   "$fixture_launcher" setup superpowers
 grep -Fx -- \
-  'cdx: selected plugin cache is invalid: superpowers; run: cdx repair superpowers' \
+  'codex: selected plugin cache is invalid: superpowers; run: codex repair superpowers' \
   "$fixture_root/setup-empty-superpowers-cache.out" >/dev/null \
   || fail 'empty selected cache setup diagnostic differs'
 if grep -F -- 'superpowers: ready' \
@@ -690,7 +690,7 @@ assert_command_fails setup-junk-superpowers-cache env \
   FAKE_CODEX_MARKETPLACE_OVERRIDE="$fixture_root/no-marketplace-override" \
   "$fixture_launcher" setup superpowers
 grep -Fx -- \
-  'cdx: selected plugin cache is invalid: superpowers; run: cdx repair superpowers' \
+  'codex: selected plugin cache is invalid: superpowers; run: codex repair superpowers' \
   "$fixture_root/setup-junk-superpowers-cache.out" >/dev/null \
   || fail 'junk selected cache setup diagnostic differs'
 HOME="$fixture_root/home" fake_env "$fixture_launcher" repair superpowers \
@@ -724,7 +724,7 @@ assert_command_fails doctor-control-character-skills env \
   FAKE_CODEX_MARKETPLACE_OVERRIDE="$fixture_root/no-marketplace-override" \
   "$fixture_launcher" doctor superpowers
 grep -Fx -- \
-  'cdx: selected plugin cache is invalid: superpowers; run: cdx repair superpowers' \
+  'codex: selected plugin cache is invalid: superpowers; run: codex repair superpowers' \
   "$fixture_root/doctor-control-character-skills.out" >/dev/null \
   || fail 'control-character skills diagnostic differs'
 mkdir -p "$superpowers_home/plugins/cache/superpowers-marketplace/superpowers/6.2.0/third"
@@ -738,7 +738,7 @@ assert_command_fails doctor-control-character-skills-array env \
   FAKE_CODEX_MARKETPLACE_OVERRIDE="$fixture_root/no-marketplace-override" \
   "$fixture_launcher" doctor superpowers
 grep -Fx -- \
-  'cdx: selected plugin cache is invalid: superpowers; run: cdx repair superpowers' \
+  'codex: selected plugin cache is invalid: superpowers; run: codex repair superpowers' \
   "$fixture_root/doctor-control-character-skills-array.out" >/dev/null \
   || fail 'control-character skills array diagnostic differs'
 printf '%s\n' \
@@ -778,7 +778,7 @@ assert_status 0 update-check-current env HOME="$fixture_root/home" PATH="$fake_b
 assert_isolation_snapshot_unchanged update-check-ordinary
 if grep -F -- 'successful native stderr must stay private' \
   "$fixture_root/update-check-current.out" >/dev/null; then
-  fail 'successful native stderr leaked through cdx'
+  fail 'successful native stderr leaked through codex'
 fi
 [ "$(cat "$fixture_root/fake-curl.log")" = '-fsSL https://raw.githubusercontent.com/obra/superpowers-marketplace/main/.claude-plugin/marketplace.json' ] \
   || fail 'update check fetched a non-official URL'
@@ -943,7 +943,7 @@ assert_command_fails update-superpowers-unrelated-block env \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
   "$fixture_launcher" update superpowers
 grep -Fx -- \
-  'cdx: cannot upgrade selected Git marketplace with unrelated installed plugins: superpowers' \
+  'codex: cannot upgrade selected Git marketplace with unrelated installed plugins: superpowers' \
   "$fixture_root/update-superpowers-unrelated-block.out" >/dev/null \
   || fail 'unrelated same-marketplace update diagnostic differs'
 assert_isolation_snapshot_unchanged update-superpowers-unrelated-block
@@ -1010,7 +1010,7 @@ printf '%s\n' '{"tokens":{"access_token":"native-v1","refresh_token":"native-ref
   >"$fixture_root/home/.codex/auth.json"
 chmod 0600 "$fixture_root/home/.codex/auth.json"
 
-# Malformed host auth is rejected by native login status; cdx does not parse it.
+# Malformed host auth is rejected by native login status; codex does not parse it.
 printf '%s\n' '{malformed-host-auth' >"$fixture_root/home/.codex/auth.json"
 printf '%s\n' '{"tokens":{"access_token":"profile-before-malformed-login"}}' \
   >"$pstack_home/auth.json"
@@ -1102,13 +1102,13 @@ assert_early_status 41 native-launch-child-status env \
 native_tree_cp="$real_cp"
 cat >"$fake_bin/cp" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_TREE_REAL_CP" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_TREE_REAL_CP" "$@" || exit $?
 case "${2:-}" in
   */.config-snapshot.*)
-    if [ -f "$CDX_TEST_TREE_DIR/child-signaled" ] \
-      && [ ! -f "$CDX_TEST_TREE_DIR/cleanup-ready" ]; then
-      : >"$CDX_TEST_TREE_DIR/cleanup-ready"
-      while [ ! -f "$CDX_TEST_TREE_DIR/release-cleanup" ]; do
+    if [ -f "$TRELLAGE_CODEX_TEST_TREE_DIR/child-signaled" ] \
+      && [ ! -f "$TRELLAGE_CODEX_TEST_TREE_DIR/cleanup-ready" ]; then
+      : >"$TRELLAGE_CODEX_TEST_TREE_DIR/cleanup-ready"
+      while [ ! -f "$TRELLAGE_CODEX_TEST_TREE_DIR/release-cleanup" ]; do
         sleep 0.05
       done
     fi
@@ -1126,7 +1126,7 @@ for native_tree_case in HUP:129 INT:130 TERM:143; do
   HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" FAKE_CODEX_LOGIN_STATUS=0 \
     FAKE_CODEX_APPEND_PROJECT_TRUST=1 FAKE_CODEX_TREE_DIR="$native_tree_dir" \
-    CDX_TEST_TREE_REAL_CP="$native_tree_cp" CDX_TEST_TREE_DIR="$native_tree_dir" \
+    TRELLAGE_CODEX_TEST_TREE_REAL_CP="$native_tree_cp" TRELLAGE_CODEX_TEST_TREE_DIR="$native_tree_dir" \
     "$fixture_launcher" --native-auth pstack --version \
     >"$native_tree_output" 2>&1 &
   native_tree_launcher_pid=$!
@@ -1231,7 +1231,7 @@ assert_native_refresh_failure() {
   native_refresh_failure_status="$asserted_failure_status"
   grep -F -- 'pstack' "$fixture_root/$label.out" >/dev/null \
     || fail "$label diagnostic omitted selected profile"
-  if grep '^cdx:' "$fixture_root/$label.out" | grep -Fv -- 'pstack' >/dev/null; then
+  if grep '^codex:' "$fixture_root/$label.out" | grep -Fv -- 'pstack' >/dev/null; then
     fail "$label emitted a native refresh diagnostic without selected profile"
   fi
   assert_isolation_snapshot_unchanged "$label"
@@ -1314,16 +1314,16 @@ real_rm="$(command -v rm)"
 cat >"$fake_bin/chmod" <<'EOF'
 #!/usr/bin/env bash
 case "${2:-}" in
-  "$CDX_TEST_AUTH_TARGET") exit 70 ;;
+  "$TRELLAGE_CODEX_TEST_AUTH_TARGET") exit 70 ;;
 esac
-exec "$CDX_TEST_REAL_CHMOD" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_CHMOD" "$@"
 EOF
 "$real_chmod" +x "$fake_bin/chmod"
 cp "$pstack_home/auth.json" "$fixture_root/home/.codex/auth.json"
 assert_native_refresh_failure native-existing-auth-chmod-failure \
   env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" FAKE_CODEX_LOGIN_STATUS=0 \
-  CDX_TEST_AUTH_TARGET="$pstack_home/auth.json" CDX_TEST_REAL_CHMOD="$real_chmod" \
+  TRELLAGE_CODEX_TEST_AUTH_TARGET="$pstack_home/auth.json" TRELLAGE_CODEX_TEST_REAL_CHMOD="$real_chmod" \
   "$fixture_launcher" --native-auth pstack --version
 rm "$fake_bin/chmod"
 printf '%s\n' '{"tokens":{"access_token":"native-v2","refresh_token":"native-refresh-v2"}}' \
@@ -1334,13 +1334,13 @@ cat >"$fake_bin/chmod" <<'EOF'
 case "${2:-}" in
   */.auth.*) exit 71 ;;
 esac
-exec "$CDX_TEST_REAL_CHMOD" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_CHMOD" "$@"
 EOF
 "$real_chmod" +x "$fake_bin/chmod"
 assert_native_refresh_failure native-staged-auth-chmod-failure \
   env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" FAKE_CODEX_LOGIN_STATUS=0 \
-  CDX_TEST_REAL_CHMOD="$real_chmod" \
+  TRELLAGE_CODEX_TEST_REAL_CHMOD="$real_chmod" \
   "$fixture_launcher" --native-auth pstack --version
 rm "$fake_bin/chmod"
 
@@ -1349,12 +1349,12 @@ cat >"$fake_bin/mktemp" <<'EOF'
 case "${1:-}" in
   */.auth.XXXXXX) exit 72 ;;
 esac
-exec "$CDX_TEST_REAL_MKTEMP" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_MKTEMP" "$@"
 EOF
 chmod +x "$fake_bin/mktemp"
 assert_native_refresh_failure native-staging-failure env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_LOGIN_STATUS=0 CDX_TEST_REAL_MKTEMP="$real_mktemp" \
+  FAKE_CODEX_LOGIN_STATUS=0 TRELLAGE_CODEX_TEST_REAL_MKTEMP="$real_mktemp" \
   "$fixture_launcher" --native-auth pstack --version
 rm "$fake_bin/mktemp"
 
@@ -1363,26 +1363,26 @@ cat >"$fake_bin/cp" <<'EOF'
 case "${2:-}" in
   */.auth.*) exit 73 ;;
 esac
-exec "$CDX_TEST_REAL_CP" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_CP" "$@"
 EOF
 chmod +x "$fake_bin/cp"
 assert_native_refresh_failure native-copy-failure env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_LOGIN_STATUS=0 CDX_TEST_REAL_CP="$real_cp" \
+  FAKE_CODEX_LOGIN_STATUS=0 TRELLAGE_CODEX_TEST_REAL_CP="$real_cp" \
   "$fixture_launcher" --native-auth pstack --version
 rm "$fake_bin/cp"
 
 cat >"$fake_bin/cp" <<'EOF'
 #!/usr/bin/env bash
 case "${2:-}" in */.auth.*) exit 75 ;; esac
-exec "$CDX_TEST_REAL_CP" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_CP" "$@"
 EOF
 cat >"$fake_bin/rm" <<'EOF'
 #!/usr/bin/env bash
 for argument in "$@"; do
   case "$argument" in */.auth.*) exit 76 ;; esac
 done
-exec "$CDX_TEST_REAL_RM" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_RM" "$@"
 EOF
 chmod +x "$fake_bin/cp" "$fake_bin/rm"
 : >"$fixture_root/fake-codex.log"
@@ -1391,11 +1391,11 @@ cleanup_prior_inode="$(file_inode "$pstack_home/auth.json")"
 cleanup_prior_mode="$(file_mode "$pstack_home/auth.json")"
 assert_command_fails native-cleanup-failure env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_LOGIN_STATUS=0 CDX_TEST_REAL_CP="$real_cp" \
-  CDX_TEST_REAL_RM="$real_rm" "$fixture_launcher" --native-auth pstack --version
+  FAKE_CODEX_LOGIN_STATUS=0 TRELLAGE_CODEX_TEST_REAL_CP="$real_cp" \
+  TRELLAGE_CODEX_TEST_REAL_RM="$real_rm" "$fixture_launcher" --native-auth pstack --version
 grep -F -- 'pstack' "$fixture_root/native-cleanup-failure.out" >/dev/null \
   || fail 'cleanup failure diagnostic omitted selected profile'
-if grep '^cdx:' "$fixture_root/native-cleanup-failure.out" \
+if grep '^codex:' "$fixture_root/native-cleanup-failure.out" \
   | grep -Fv -- 'pstack' >/dev/null; then
   fail 'cleanup failure emitted a native refresh diagnostic without selected profile'
 fi
@@ -1411,15 +1411,15 @@ stale_auth_stage="$(find "$pstack_home" -maxdepth 1 -name '.auth.*' -print -quit
 
 cat >"$fake_bin/cp" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CP" "$@" || exit $?
-case "${2:-}" in */.auth.*) "$CDX_TEST_REAL_RM" "$CDX_TEST_AUTH_SOURCE" ;; esac
+"$TRELLAGE_CODEX_TEST_REAL_CP" "$@" || exit $?
+case "${2:-}" in */.auth.*) "$TRELLAGE_CODEX_TEST_REAL_RM" "$TRELLAGE_CODEX_TEST_AUTH_SOURCE" ;; esac
 EOF
 chmod +x "$fake_bin/cp"
 assert_native_refresh_failure native-source-removed-during-copy \
   env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
   FAKE_CODEX_LOG="$fixture_root/fake-codex.log" FAKE_CODEX_LOGIN_STATUS=0 \
-  CDX_TEST_REAL_CP="$real_cp" CDX_TEST_REAL_RM="$real_rm" \
-  CDX_TEST_AUTH_SOURCE="$fixture_root/home/.codex/auth.json" \
+  TRELLAGE_CODEX_TEST_REAL_CP="$real_cp" TRELLAGE_CODEX_TEST_REAL_RM="$real_rm" \
+  TRELLAGE_CODEX_TEST_AUTH_SOURCE="$fixture_root/home/.codex/auth.json" \
   "$fixture_launcher" --native-auth pstack --version
 rm "$fake_bin/cp"
 printf '%s\n' '{"tokens":{"access_token":"native-v2","refresh_token":"native-refresh-v2"}}' \
@@ -1430,19 +1430,19 @@ cat >"$fake_bin/mv" <<'EOF'
 for argument in "$@"; do
   case "$argument" in */.auth.*) exit 74 ;; esac
 done
-exec "$CDX_TEST_REAL_MV" "$@"
+exec "$TRELLAGE_CODEX_TEST_REAL_MV" "$@"
 EOF
 chmod +x "$fake_bin/mv"
 assert_native_refresh_failure native-publication-failure env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_LOGIN_STATUS=0 CDX_TEST_REAL_MV="$real_mv" \
+  FAKE_CODEX_LOGIN_STATUS=0 TRELLAGE_CODEX_TEST_REAL_MV="$real_mv" \
   "$fixture_launcher" --native-auth pstack --version
 rm "$fake_bin/mv"
 
 cat >"$fake_bin/cp" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CP" "$@" || exit $?
-case "${2:-}" in */.auth.*) kill -s "$CDX_TEST_SIGNAL" "$PPID" ;; esac
+"$TRELLAGE_CODEX_TEST_REAL_CP" "$@" || exit $?
+case "${2:-}" in */.auth.*) kill -s "$TRELLAGE_CODEX_TEST_SIGNAL" "$PPID" ;; esac
 EOF
 chmod +x "$fake_bin/cp"
 for native_signal in HUP INT TERM; do
@@ -1454,8 +1454,8 @@ for native_signal in HUP INT TERM; do
   assert_native_refresh_failure "native-stage-signal-$native_signal" \
     env HOME="$fixture_root/home" PATH="$fake_bin:$PATH" \
     FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-    FAKE_CODEX_LOGIN_STATUS=0 CDX_TEST_REAL_CP="$real_cp" \
-    CDX_TEST_SIGNAL="$native_signal" \
+    FAKE_CODEX_LOGIN_STATUS=0 TRELLAGE_CODEX_TEST_REAL_CP="$real_cp" \
+    TRELLAGE_CODEX_TEST_SIGNAL="$native_signal" \
     "$fixture_launcher" --native-auth pstack --version
   [ "$native_refresh_failure_status" -eq "$expected_signal_status" ] \
     || fail "native-stage-signal-$native_signal exit was $native_refresh_failure_status, expected $expected_signal_status"
@@ -1467,16 +1467,16 @@ rm "$fake_bin/cp"
 
 cat >"$fake_bin/cp" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CP" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_REAL_CP" "$@" || exit $?
 case "${2:-}" in
-  */.auth.*) printf '%s\n' '{"tokens":{"access_token":"changed-during-copy"}}' >"$CDX_TEST_AUTH_SOURCE" ;;
+  */.auth.*) printf '%s\n' '{"tokens":{"access_token":"changed-during-copy"}}' >"$TRELLAGE_CODEX_TEST_AUTH_SOURCE" ;;
 esac
 EOF
 chmod +x "$fake_bin/cp"
 assert_native_refresh_failure native-source-changed-during-copy env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_LOGIN_STATUS=0 CDX_TEST_REAL_CP="$real_cp" \
-  CDX_TEST_AUTH_SOURCE="$fixture_root/home/.codex/auth.json" \
+  FAKE_CODEX_LOGIN_STATUS=0 TRELLAGE_CODEX_TEST_REAL_CP="$real_cp" \
+  TRELLAGE_CODEX_TEST_AUTH_SOURCE="$fixture_root/home/.codex/auth.json" \
   "$fixture_launcher" --native-auth pstack --version
 rm "$fake_bin/cp"
 printf '%s\n' '{"tokens":{"access_token":"native-v2","refresh_token":"native-refresh-v2"}}' \
@@ -1486,11 +1486,11 @@ outside_auth="$fixture_root/outside-native-auth"
 : >"$outside_auth"
 cat >"$fake_bin/cp" <<'EOF'
 #!/usr/bin/env bash
-"$CDX_TEST_REAL_CP" "$@" || exit $?
+"$TRELLAGE_CODEX_TEST_REAL_CP" "$@" || exit $?
 case "${2:-}" in
   */.auth.*)
-    "$CDX_TEST_REAL_MV" "$CDX_TEST_AUTH_TARGET" "$CDX_TEST_AUTH_SAVED" || exit $?
-    "$CDX_TEST_REAL_LN" -s "$CDX_TEST_AUTH_OUTSIDE" "$CDX_TEST_AUTH_TARGET" || exit $?
+    "$TRELLAGE_CODEX_TEST_REAL_MV" "$TRELLAGE_CODEX_TEST_AUTH_TARGET" "$TRELLAGE_CODEX_TEST_AUTH_SAVED" || exit $?
+    "$TRELLAGE_CODEX_TEST_REAL_LN" -s "$TRELLAGE_CODEX_TEST_AUTH_OUTSIDE" "$TRELLAGE_CODEX_TEST_AUTH_TARGET" || exit $?
     ;;
 esac
 EOF
@@ -1501,11 +1501,11 @@ native_target_inode="$(file_inode "$pstack_home/auth.json")"
 write_isolation_snapshot native-target-changed-during-copy
 assert_command_fails native-target-changed-during-copy env HOME="$fixture_root/home" \
   PATH="$fake_bin:$PATH" FAKE_CODEX_LOG="$fixture_root/fake-codex.log" \
-  FAKE_CODEX_LOGIN_STATUS=0 CDX_TEST_REAL_CP="$real_cp" \
-  CDX_TEST_REAL_MV="$real_mv" CDX_TEST_REAL_LN="$real_ln" \
-  CDX_TEST_AUTH_TARGET="$pstack_home/auth.json" \
-  CDX_TEST_AUTH_SAVED="$fixture_root/native-auth-post-stage.saved" \
-  CDX_TEST_AUTH_OUTSIDE="$outside_auth" \
+  FAKE_CODEX_LOGIN_STATUS=0 TRELLAGE_CODEX_TEST_REAL_CP="$real_cp" \
+  TRELLAGE_CODEX_TEST_REAL_MV="$real_mv" TRELLAGE_CODEX_TEST_REAL_LN="$real_ln" \
+  TRELLAGE_CODEX_TEST_AUTH_TARGET="$pstack_home/auth.json" \
+  TRELLAGE_CODEX_TEST_AUTH_SAVED="$fixture_root/native-auth-post-stage.saved" \
+  TRELLAGE_CODEX_TEST_AUTH_OUTSIDE="$outside_auth" \
   "$fixture_launcher" --native-auth pstack --version
 grep -F -- 'pstack' "$fixture_root/native-target-changed-during-copy.out" >/dev/null \
   || fail 'destination safety diagnostic omitted selected profile'

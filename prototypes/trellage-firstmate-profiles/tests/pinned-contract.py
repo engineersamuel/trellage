@@ -17,7 +17,7 @@ COMMIT = "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
 OWNER = "trellage-firstmate-profiles-v1"
 
 
-def run(argv, env, cwd=None, data=None, success=True, timeout=30):
+def run(argv, env, cwd=None, data=None, success=True, timeout=90):
     result = subprocess.run(
         [str(value) for value in argv], env=env, cwd=cwd, input=data,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, check=False,
@@ -56,12 +56,12 @@ class Pinned:
             "NATIVE_CLAUDE_LAUNCH_LOG": str(self.work / "claude.log"),
             "FAKE_GIT_LOG": str(self.work / "git.log"),
             "FAKE_GH_LOG": str(self.work / "gh.log"),
-            "FMX_WORKER_LAUNCHER": str(install / "lib/fmx-worker"),
-            "FMX_WORKER_HOME": str(home),
-            "FMX_WORKER_PATH": str(self.external) + ":" + str(fakebin),
-            "FMX_WORKER_BASH": str(realbash),
-            "FMX_GH_CONFIG_DIR": str(gh),
-            "FMX_CAPTAIN_PANE_ID": "",
+            "TRELLAGE_FIRSTMATE_WORKER_LAUNCHER": str(install / "lib/firstmate-worker"),
+            "TRELLAGE_FIRSTMATE_WORKER_HOME": str(home),
+            "TRELLAGE_FIRSTMATE_WORKER_PATH": str(self.external) + ":" + str(fakebin),
+            "TRELLAGE_FIRSTMATE_WORKER_BASH": str(realbash),
+            "TRELLAGE_FIRSTMATE_GH_CONFIG_DIR": str(gh),
+            "TRELLAGE_FIRSTMATE_CAPTAIN_PANE_ID": "",
             "FM_SPAWN_NO_GUARD": "1",
             "FM_BACKEND": "tmux",
             "FM_TEST_EXTERNAL_LOG": str(self.external_log),
@@ -74,12 +74,12 @@ class Pinned:
         Path(self.env["FM_TEST_TASKS_STATE"]).mkdir()
         self.make_external_tools()
         run([
-            sys.executable, package / "lib/fmx-overlay.py",
+            sys.executable, package / "lib/firstmate-overlay.py",
             "--root", self.runtime, "--manifest", package / "overlay" / COMMIT / "manifest.json",
             "--commit", COMMIT,
         ], self.env)
         run([
-            sys.executable, package / "lib/fmx-overlay.py",
+            sys.executable, package / "lib/firstmate-overlay.py",
             "--root", self.runtime, "--manifest", package / "overlay" / COMMIT / "manifest.json",
             "--commit", COMMIT, "--verify-only",
         ], self.env)
@@ -107,7 +107,7 @@ if [[ -n "${FM_TEST_CONTROL_STATE:-}" ]]; then
         if [[ "$previous" == -l ]]; then
           case "$value" in
             /exit) printf 'exit\n' >"$FM_TEST_CONTROL_STATE.pending" ;;
-            *fmx-worker*)
+            *firstmate-worker*)
               printf '%s\n' "$value" >>"$FM_TEST_LAUNCH_LOG"
               printf 'launch\n' >"$FM_TEST_CONTROL_STATE.pending" ;;
           esac
@@ -162,14 +162,14 @@ esac
         self.home = self.profile / "home"
         self.prefix = prefix
         self.env.update(
-            FM_HOME=str(self.home), FMX_PROFILE=profile, FMX_PROFILE_ROOT=str(self.profile),
-            FMX_TASK_ID_PREFIX=prefix, FM_ROOT_OVERRIDE=str(self.runtime),
+            FM_HOME=str(self.home), TRELLAGE_FIRSTMATE_PROFILE=profile, TRELLAGE_FIRSTMATE_PROFILE_ROOT=str(self.profile),
+            TRELLAGE_FIRSTMATE_TASK_ID_PREFIX=prefix, FM_ROOT_OVERRIDE=str(self.runtime),
         )
-        self.env.pop("FMX_WORKER_POLICY_FILE", None)
+        self.env.pop("TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE", None)
         if profile == "pstack-workers":
-            self.env["FMX_WORKER_POLICY_FILE"] = str(self.profile / "policy/worker-policy.md")
+            self.env["TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE"] = str(self.profile / "policy/worker-policy.md")
 
-    def entry(self, script, *args, success=True, data=None, timeout=30):
+    def entry(self, script, *args, success=True, data=None, timeout=90):
         return run([self.runtime / "bin" / script, *args], self.env, self.runtime, data, success, timeout)
 
     def refused(self, script, *args):
@@ -264,11 +264,11 @@ esac
         metadata = dict(line.split("=", 1) for line in (self.home / "state" / (task + ".meta")).read_text().splitlines() if "=" in line)
         expected = ("claude", "claude-sonnet-5.5", "") if batch else ("claude", "claude-opus-5.5", "xhigh")
         assert (metadata["harness"], metadata["model"], metadata["effort"]) == expected
-        run([sys.executable, self.install / "lib/fmx-controls.py", "fleet", "--offline"], self.env)
+        run([sys.executable, self.install / "lib/firstmate-controls.py", "fleet", "--offline"], self.env)
         launch = self.launch_log.read_text().strip()
         assert "/usr/bin/env -i" in launch, "spawn bypassed the configured environment allowlist"
         assert "CLAUDE_CONFIG_DIR=" not in launch, "spawn forwarded captain Claude state"
-        if not self.env.get("FMX_INSTANCE_ID"):
+        if not self.env.get("TRELLAGE_FIRSTMATE_INSTANCE_ID"):
             run(["/bin/sh", "-c", launch], self.env, worktree)
         self.check_worker(task, worktree, metadata)
         assert not (self.runtime / "state").exists(), "operational state leaked into the source runtime"

@@ -4,20 +4,20 @@ set -euo pipefail
 local_dir="$HOME/.local"
 share_dir="$local_dir/share"
 runtime_parent="$share_dir/trellage"
-install_root="$runtime_parent/cpx"
-installed_launcher="$install_root/bin/cpx"
+install_root="$runtime_parent/copilot"
+installed_launcher="$install_root/bin/copilot"
 installed_catalog="$install_root/catalog.json"
 installed_assets="$install_root/assets/rundown"
 installed_session_bridge="$install_root/lib/trellage-session-bridge.py"
 installed_statusline="$install_root/lib/trellage-statusline.sh"
 installed_model_settings="$install_root/lib/copilot-model-settings.py"
-ownership_marker="$install_root/.managed-by-trellage-profiles"
-ownership_value='trellage-profiles-v1'
+ownership_marker="$install_root/.managed-by-trellage-copilot-profiles"
+ownership_value='trellage-copilot-profiles-v1'
 command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/cpx"
+command_path="$command_dir/copilot"
 
 refuse() {
-  printf 'cpx uninstall: %s\n' "$1" >&2
+  printf 'copilot uninstall: %s\n' "$1" >&2
   exit 1
 }
 
@@ -55,14 +55,14 @@ fi
 require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
+require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/copilot" 'runtime root'
 require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 if [[ ! -e "$install_root" ]]; then
   if [[ -e "$command_path" || -L "$command_path" ]]; then
     refuse "refusing unowned runtime root: $install_root"
   fi
-  printf 'cpx is not installed; profile homes were preserved.\n'
+  printf 'copilot is not installed; profile homes were preserved.\n'
   exit 0
 fi
 
@@ -112,4 +112,4 @@ rm -f "$installed_session_bridge" "$installed_statusline" "$installed_model_sett
 rm -f "$installed_assets/rundown.instructions.md" "$installed_assets/NOTICE.md"
 rmdir "$installed_assets" "$install_root/assets" 2>/dev/null || true
 rmdir "$install_root/lib" "$install_root/bin" "$install_root" 2>/dev/null || true
-printf 'Uninstalled cpx; profile homes were preserved.\n'
+printf 'Uninstalled copilot; profile homes were preserved.\n'

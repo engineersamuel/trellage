@@ -83,7 +83,7 @@ const fixtureCatalog = () =>
     }),
   )
 
-/** Routes each call by executable path so copilot/claude/cdx get distinct canned outcomes. */
+/** Routes each call by executable path so copilot/claude/codex get distinct canned outcomes. */
 class RoutingRunner implements CommandRunner {
   readonly calls: Array<{ executable: string; args: ReadonlyArray<string> }> = []
 
@@ -103,19 +103,19 @@ class RoutingRunner implements CommandRunner {
 }
 
 describe("refreshAdminEntries", () => {
-  it("checks every native profile, including cdx, isolating a malformed result from healthy ones", async () => {
+  it("checks every native profile, including codex, isolating a malformed result from healthy ones", async () => {
     const runner = new RoutingRunner()
     const entries = await refreshAdminEntries(runner, fixtureCatalog(), "/work")
 
-    expect(runner.calls).toHaveLength(3) // cpx + cldx + cdx all checked; cdx supports doctor/inventory via native-codex.
+    expect(runner.calls).toHaveLength(3) // copilot + claude + codex all checked; codex supports doctor/inventory via native-codex.
     expect(runner.calls.some((call) => call.executable.includes("codex/bin/trx"))).toBe(true)
 
-    const cpx = entries.find((entry) => entry.ref.includes("hve"))
-    const cldx = entries.find((entry) => entry.ref.includes("broken"))
-    const cdx = entries.find((entry) => entry.ref.includes("pstack"))
+    const copilot = entries.find((entry) => entry.ref.includes("hve"))
+    const claude = entries.find((entry) => entry.ref.includes("broken"))
+    const codex = entries.find((entry) => entry.ref.includes("pstack"))
 
-    expect(cpx).toMatchObject({ health: "healthy", install: "installed", stale: false })
-    expect(cldx).toMatchObject({ health: "malformed-output", install: "malformed-output", stale: false })
-    expect(cdx).toMatchObject({ health: "healthy", install: "installed", stale: false })
+    expect(copilot).toMatchObject({ health: "healthy", install: "installed", stale: false })
+    expect(claude).toMatchObject({ health: "malformed-output", install: "malformed-output", stale: false })
+    expect(codex).toMatchObject({ health: "healthy", install: "installed", stale: false })
   })
 })

@@ -34,7 +34,7 @@ describe("profile table columns", () => {
   })
 
   it("reserves a sandbox column once any entry declares a sandbox status", () => {
-    const withSandbox = [...entries, { ...entries[0]!, id: "cdx:hve", sandbox: true }]
+    const withSandbox = [...entries, { ...entries[0]!, id: "codex:hve", sandbox: true }]
     const columns = tableColumns(withSandbox, 100)
 
     expect(columns).toEqual({ profile: 19, harness: 10, sandbox: 9, model: 56 })
@@ -42,7 +42,7 @@ describe("profile table columns", () => {
   })
 
   it("keeps every column visible in a narrow terminal", () => {
-    const withSandbox = [...entries, { ...entries[0]!, id: "cdx:hve", sandbox: true }]
+    const withSandbox = [...entries, { ...entries[0]!, id: "codex:hve", sandbox: true }]
     const columns = tableColumns(withSandbox, 48)
 
     expect(columns.profile).toBeGreaterThanOrEqual(12)

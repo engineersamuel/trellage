@@ -103,6 +103,6 @@ plugin from `obra/superpowers-marketplace`, the same skill library used by
   `known-issue: C`: a correct answer can be produced but the session gets
   stuck in a repeated approval loop (`outcome=turn_limit`) — watch for that
   pattern rather than assuming the run is a slow but ordinary loop.
-- `cpx list --json` only advertises the exact prompt/`--no-ask-user`
+- `trx list --json` only advertises the exact prompt/`--no-ask-user`
   hard-deny/model-override contract for Copilot CLI `1.0.80`; other versions
   report conservative `headless` values.

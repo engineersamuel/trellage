@@ -1,11 +1,11 @@
 # trellage-claude-common
 
-Shared Native Claude runtime consumed by owned Claude launchers: `cldx` and
-`fmx` are both current consumers of this stable internal API. This package
+Shared Native Claude runtime consumed by owned Claude launchers: `claude` and
+`firstmate` are both current consumers of this stable internal API. This package
 owns `native-claude`, an executable Bash script that centralizes shared
 Claude-profile logic, and `native-skills.mjs`, the cache-only skill sync
 adapter installed in all ten Native launcher runtimes.
-The optional `manual-skills.mjs` adapter is installed only for `jcx`.
+The optional `manual-skills.mjs` adapter is installed only for `jcode`.
 
 ## Internal API
 
@@ -67,7 +67,7 @@ built-in updater without preparing a profile or requiring the proxy.
 
 `goal-runtime` reads the installed version and reports the runtime's actual
 goal evaluator model and model-inventory URL as JSON. It does not prepare a
-profile, change settings, or make a model request. `cldx harness-version`
+profile, change settings, or make a model request. `claude harness-version`
 includes this evidence under `goalRuntime`, with its managed `profileHome`.
 Guide goal readiness uses that home to check workspace trust and hook policy,
 and verifies that the evaluator is in the existing proxy model inventory.
@@ -120,7 +120,7 @@ from the repository root. The Claude profile contract also runs it.
 inside the same installed runtime. It applies the shared provider/token scrub,
 validates an absolute, non-symlink command under `TRELLAGE_CLAUDE_RUNTIME_ROOT`,
 and execs it. `--interpreter ABS` also validates and resolves an explicit
-interpreter, then uses it instead of the command's shebang. `fmx-worker` uses
+interpreter, then uses it instead of the command's shebang. `firstmate-worker` uses
 this form so neither of its Bash boundaries depends on a pane daemon's PATH.
 
 ## What the shared runtime owns
@@ -139,7 +139,7 @@ this form so neither of its Bash boundaries depends on a pane daemon's PATH.
 - Optional Trellage session-bridge installation/removal.
 
 Catalog schema validation, `list`/`inventory` projections, and vendored
-output-style assets remain owned by each launcher (e.g. `cldx`), since those
+output-style assets remain owned by each launcher (e.g. `claude`), since those
 assets/schemas live outside this shared runtime's scope.
 
 ## Provider/token scrub contract
@@ -149,7 +149,7 @@ single shared `scrub_provider_environment` as early as possible — before
 any external child process this runtime spawns (`claude --version`, the
 floating-skills `ensure` (node), the copilot-proxy-rs health/model probes
 (curl), session-bridge hook installation (python3), or the final launched
-Claude process) — so a stale tmux/Herdr daemon environment (the fmx worker
+Claude process) — so a stale tmux/Herdr daemon environment (the firstmate worker
 threat model) can never leak into any of them. `model-id` starts no child
 process and needs no scrub. The list is always explicit — never a
 wildcard/prefix delete — so removals stay auditable:
@@ -176,7 +176,7 @@ wildcard/prefix delete — so removals stay auditable:
 - **GitHub/Copilot token overrides**: `COPILOT_GITHUB_TOKEN`,
   `COPILOT_PROXY_GITHUB_TOKEN`, `COPILOT_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`,
   `GH_ENTERPRISE_TOKEN`, and `GITHUB_ENTERPRISE_TOKEN`. `GH_CONFIG_DIR` is
-  deliberately **not** scrubbed, since fmx workers rely on it for file-backed
+  deliberately **not** scrubbed, since firstmate workers rely on it for file-backed
   `gh` auth.
 
 After scrubbing, `launch` injects only the managed values
@@ -231,7 +231,7 @@ exec `claude` itself, only probe its version.
 Callers must export:
 
 - `TRELLAGE_CLAUDE_LAUNCHER_NAME`: the caller's own command name (e.g.
-  `cldx`), used only for `native-claude`'s own error-message prefix and
+  `claude`), used only for `native-claude`'s own error-message prefix and
   `repair`/`setup` hints. Must match `[A-Za-z0-9_-]+`.
 - `TRELLAGE_CLAUDE_RUNTIME_ROOT`: the caller's own installed runtime root
   (an absolute, symlink-free, non-redirected directory). `native-claude`
@@ -259,7 +259,7 @@ Container profiles use `trellage skills-check PROFILE` instead. That check
 reads the actual immutable local image, not a leftover build context.
 Missing images or ambiguous ownership evidence remain unknown.
 
-An owned launcher (like `cldx`) remains a thin delegator: it owns its own
+An owned launcher (like `claude`) remains a thin delegator: it owns its own
 public CLI surface, catalog validation, `list`/`inventory` projections, and
 any vendored assets, then calls `native-claude prepare`/`doctor`/`launch`
 for everything else, exec-ing into `native-claude launch` for the final

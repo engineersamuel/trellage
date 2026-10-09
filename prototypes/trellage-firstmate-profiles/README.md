@@ -1,6 +1,6 @@
 # Native Firstmate profiles
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this canonically named private backend, which is not published on `PATH`.
 
 `trx run firstmate PROFILE` launches [Firstmate](https://github.com/kunchenguid/firstmate),
 an agent distribution that uses one coding agent to supervise a fleet. `trx run firstmate PROFILE` runs the
@@ -9,7 +9,7 @@ worker isolated Trellage-managed Claude state.
 
 The captain is the human. The directory named `captain/claude` stores the
 Firstmate supervisor's state; it does not grant human approval authority.
-`fmx` is state isolation, not a security boundary. Its agents run on the host.
+`firstmate` is state isolation, not a security boundary. Its agents run on the host.
 
 ## Profiles
 
@@ -74,7 +74,7 @@ Live use requires the Native launcher and shared Claude/skills writers to be
 updated together while affected fleets are idle. A new registry compatibility
 record makes old immediate-root scanners refuse, but older installers can
 recover files before scanning and some old shared writers ignore that record.
-One updated `fmx` binary is not sufficient. Do not bypass an upgrade diagnostic
+One updated `firstmate` binary is not sufficient. Do not bypass an upgrade diagnostic
 or delete the compatibility record as a stale lock.
 
 Shared writes must obtain admission before recovery, cleanup, or publication.
@@ -192,7 +192,7 @@ Network use, stated precisely:
 
 If a shell remains inside a profile runtime that was atomically replaced,
 its working directory inode can be deleted even though the same path exists
-again. `fmx` detects this before it runs prerequisite or Claude checks,
+again. `firstmate` detects this before it runs prerequisite or Claude checks,
 continues from the validated home directory, and prints one recovery
 diagnostic. The parent shell still owns its own directory; after the supervisor
 exits, run `cd ~` before the next command if the shell prompt reports `getcwd`
@@ -330,7 +330,7 @@ the host toolchain. On the first supervisor launch, `trx run firstmate PROFILE` 
 detect-only, network-disabled prerequisite check with the selected backend and
 the exact PATH that the supervisor and workers will receive.
 
-If Firstmate-specific tools are missing, `fmx` shows:
+If Firstmate-specific tools are missing, `firstmate` shows:
 
 - every missing tool;
 - every exact version that Trellage will install;
@@ -344,7 +344,7 @@ explicit yes changes nothing and stops the launch. Consent installs one
 versioned toolchain under:
 
 ```
-~/.local/share/trellage/fmx/prerequisites/<lock-identity>/
+~/.local/share/trellage/firstmate/prerequisites/<lock-identity>/
   bin/{no-mistakes,treehouse}
   npm/node_modules/.bin/{gh-axi,chrome-devtools-axi,lavish-axi,tasks-axi,quota-axi}
 ```
@@ -385,13 +385,13 @@ uses that tool.
 }
 ```
 
-`fmx` never follows `main`. `setup` and `update` install exactly that commit:
+`firstmate` never follows `main`. `setup` and `update` install exactly that commit:
 
 1. Stage a fresh checkout and fetch the exact commit.
 2. Verify the staged `HEAD` equals the pin. A different `HEAD` aborts.
 3. Verify the sha256 of every file the overlay edits against
    `overlay/<commit>/manifest.json`. Any drift aborts before a single edit.
-4. Apply the checked-in patches with `lib/fmx-overlay.py`, which matches hunk
+4. Apply the checked-in patches with `lib/firstmate-overlay.py`, which matches hunk
    context exactly and never fuzzes.
 5. Verify the sha256 of every patched file against the recorded result.
 6. Publish the staged checkout over the live runtime by rename, then write the
@@ -420,27 +420,27 @@ instance-specific even when several instances use the same profile pin.
 The overlay is small, keyed by commit, and stored in `overlay/<commit>/`.
 
 - **`bin/fm-update.sh`** and the `updatefirstmate` skill: firstmate self-update
-  is refused whenever a `.fmx-managed` marker is present, with a diagnostic that
+  is refused whenever a `.firstmate-managed` marker is present, with a diagnostic that
   points at `trx upgrade firstmate <profile>`. Unmanaged clones are untouched.
 - **`bin/fm-brief.sh`**: reads one worker-policy file from
-  `FMX_WORKER_POLICY_FILE` and inserts it once into ship and scout briefs.
+  `TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE` and inserts it once into ship and scout briefs.
   Secondmate charters never receive it. The size bound is **fixed at 16384
   bytes by the overlay** and is deliberately not configurable from the
   environment. It also enforces the profile's task-id namespace.
 - **`bin/fm-dod-lib.sh`** and **`bin/fm-promote.sh`**: share the bounded policy
   reader and retain the worker appendix when a scout becomes a ship.
 - **`bin/fm-spawn.sh`**: replaces the opaque shell launch string with
-  **structured inputs** to `FMX_WORKER_LAUNCHER` — task, kind, backend, brief,
+  **structured inputs** to `TRELLAGE_FIRSTMATE_WORKER_LAUNCHER` — task, kind, backend, brief,
   worktree, operational-input helper, model, effort, trace-context decision,
-  `FMX_GH_CONFIG_DIR`, `FMX_TASK_ID_PREFIX`, `FMX_WORKER_HOME`, and
-  `FMX_WORKER_PATH`, plus the supervisor's absolute `FMX_WORKER_BASH`. The pane
+  `TRELLAGE_FIRSTMATE_GH_CONFIG_DIR`, `TRELLAGE_FIRSTMATE_TASK_ID_PREFIX`, `TRELLAGE_FIRSTMATE_WORKER_HOME`, and
+  `TRELLAGE_FIRSTMATE_WORKER_PATH`, plus the supervisor's absolute `TRELLAGE_FIRSTMATE_WORKER_BASH`. The pane
   command is leading variable assignments followed by that absolute Bash and
   the absolute helper path, not `env …`, so neither interpreter nor helper
   startup depends on the session daemon's `PATH`. Admission checks reject
   unsupported kinds, harnesses, backends, namespaces, and worker controls
   **before** remote dispatch or resource creation, including relaunch paths.
   Secondmates remain unsupported. It stops forwarding the supervisor's Claude
-  store to workers. With no `FMX_*` variables set, the upstream launch path is
+  store to workers. With no `TRELLAGE_FIRSTMATE_*` variables set, the upstream launch path is
   byte-for-byte unchanged.
 - **`bin/fm-inbox.sh`**: adds an optional stable request ID to the canonical
   text producer. It deduplicates pending and handled notes, rejects conflicting
@@ -478,8 +478,8 @@ to execute. A killed admission helper cannot release a still-running writer.
 Launcher runtime, removed by `uninstall.sh`:
 
 ```
-~/.local/share/trellage/fmx/
-  bin/fmx  catalog.json  policies/  overlay/<commit>/
+~/.local/share/trellage/firstmate/
+  bin/firstmate  catalog.json  policies/  overlay/<commit>/
   instance-overlay/<commit>/     named-instance supplemental manifest and patches
   prerequisite-lock/{manifest.json,npm/{package.json,package-lock.json}}
   prerequisites/<lock-identity>/   consent-installed shared toolchain
@@ -494,7 +494,7 @@ markers is incomplete. They do not remove `~/.no-mistakes` state or any
 profile root.
 
 `install.sh` uses the sibling lock
-`~/.local/share/trellage/.fmx-install.lock`, stages a complete replacement,
+`~/.local/share/trellage/.firstmate-install.lock`, stages a complete replacement,
 and swaps the runtime by rename. The prerequisite installer and uninstaller
 use the same lock, so they cannot mutate the runtime during replacement. The
 lock records its owner and pid: a dead owned lock is reclaimed, while an
@@ -510,7 +510,7 @@ transaction before it starts a new install. If rollback itself cannot complete,
 the diagnostic retains the lock and transaction directory for manual recovery.
 An interrupted prerequisite stage is recovered by the next prerequisite
 installation. If a launcher reinstall reports one, run
-`~/.local/share/trellage/fmx/lib/fmx-prerequisites install`, then retry
+`~/.local/share/trellage/firstmate/lib/firstmate-prerequisites install`, then retry
 `install.sh`.
 
 Legacy profile roots, **never** removed by `uninstall.sh`:
@@ -518,7 +518,7 @@ Legacy profile roots, **never** removed by `uninstall.sh`:
 ```
 ~/.local/share/trellage/profiles/firstmate/<profile>/
   runtime/          the published pinned checkout (FM_ROOT)
-  home/             FM_HOME: data, state, config, projects, .tasks.toml, .fmx-managed
+  home/             FM_HOME: data, state, config, projects, .tasks.toml, .firstmate-managed
   captain/claude/   the supervisor's Claude home
   workers/<task>/   one Claude home, record, and liveness marker per task
   policy/           the profile's managed worker policy, if any
@@ -545,7 +545,7 @@ legacy journal in place.
 
 ## Managed Firstmate configuration
 
-v1 supports exactly one worker harness, because the fmx worker boundary only
+v1 supports exactly one worker harness, because the firstmate worker boundary only
 wraps Claude launches. `setup`, `repair`, and `update` manage these files inside
 `FM_HOME`:
 
@@ -561,7 +561,7 @@ by even one byte. Captain and worker processes also receive explicit
 `TASKS_AXI_FILE=<FM_HOME>/data/backlog.md`, so neither a project checkout nor a
 long-lived Herdr or tmux daemon can redirect the fleet queue.
 
-Older `fmx` builds could let `tasks-axi` create `home/backlog.md` because the
+Older `firstmate` builds could let `tasks-axi` create `home/backlog.md` because the
 managed runtime and `FM_HOME` are separate directories. `repair` moves that
 legacy file to `home/data/backlog.md` only when the managed destination does not
 already exist. If both files exist, repair fails rather than guessing how to
@@ -617,8 +617,8 @@ only the overlay files. Source and receipt integrity checks are offline:
 4. Every managed file hashes to its recorded post-overlay digest.
 5. The receipt matches the full pinned schema: exact key set, `schemaVersion`,
    `profile`, `repository`, `commit`, and `overlay`.
-6. `home/.fmx-managed` matches its exact two-line content, not merely exists.
-7. Every fmx-owned subdirectory a check traverses (`home`, `home/config`,
+6. `home/.firstmate-managed` matches its exact two-line content, not merely exists.
+7. Every firstmate-owned subdirectory a check traverses (`home`, `home/config`,
    `home/data`, `home/state`, `home/projects`, `captain`, `captain/claude`,
    `workers`, `receipts`, `locks`, `policy`, `runtime`) is a real directory
    inside the profile root — never a symlink that could redirect a read.
@@ -661,7 +661,7 @@ for an active, incomplete, or unowned lock.
 unreadable receipt can never become a licence to replace a runtime under a live
 supervisor or worker. `inventory` checks for a live mutation **before** deciding a
 profile is `not-setup`, so a first setup in progress reports `busy`. A second mutation fails as busy, and `inventory` reports
-`readiness: "busy"` with `mutation: "active"`. Only an exact stale lock that fmx
+`readiness: "busy"` with `mutation: "active"`. Only an exact stale lock that firstmate
 owns is reclaimed; an unowned lock directory is reported and left alone. The
 lock never touches fleet state. `HUP`, `INT`, and `TERM` release the mutation
 lock and terminate the operation; cleanup never returns to the interrupted
@@ -699,12 +699,12 @@ singleton after an abrupt process exit in any intermediate publication state.
   never reaches `gh` either. `doctor` **and** a launch
   both run this full check.
 - The resolved configuration directory is passed on explicitly as
-  `GH_CONFIG_DIR` and `FMX_GH_CONFIG_DIR`. Nothing relies on a tmux or Herdr
+  `GH_CONFIG_DIR` and `TRELLAGE_FIRSTMATE_GH_CONFIG_DIR`. Nothing relies on a tmux or Herdr
   server inheriting it.
 
 ## Workers
 
-`lib/fmx-worker` is the worker launch boundary. Crewmate panes are created by a
+`lib/firstmate-worker` is the worker launch boundary. Crewmate panes are created by a
 long-lived tmux or Herdr daemon, so nothing useful is inherited and a great deal
 that is wrong may be: every value arrives explicitly, and every value the worker
 must not see is removed.
@@ -716,7 +716,7 @@ package:
 native-claude launch --home <per-task home> --marker … --bridge disabled --   [--model M] [--effort E] <encoded launch brief>
 ```
 
-Before any worker-side helper runs, `fmx-worker` re-execs itself through the
+Before any worker-side helper runs, `firstmate-worker` re-execs itself through the
 shared runtime's `exec-clean` boundary. That single shared scrub then owns
 executable resolution and verification (one
 `claude`, resolved and version-checked once, exec'd by absolute path), the
@@ -746,8 +746,8 @@ because only the pane itself knows it. It is accepted only after the worker's
 `HERDR_PANE_ID` is validated as present and distinct from the supervisor's.
 
 Everything else is carried explicitly, including `HOME`, `PATH`, and Bash. The
-supervisor passes them as `FMX_WORKER_HOME`, `FMX_WORKER_PATH`, and
-`FMX_WORKER_BASH`. The pane invokes that absolute Bash directly; `fmx-worker`
+supervisor passes them as `TRELLAGE_FIRSTMATE_WORKER_HOME`, `TRELLAGE_FIRSTMATE_WORKER_PATH`, and
+`TRELLAGE_FIRSTMATE_WORKER_BASH`. The pane invokes that absolute Bash directly; `firstmate-worker`
 then validates every PATH entry with shell builtins and exports the carrier PATH
 before the shared scrub needs an external utility. A wrong ambient pane `HOME`
 would put worker state in the wrong place, while a wrong ambient `PATH` cannot
@@ -757,7 +757,7 @@ consumed.
 Isolation rules:
 
 - One Claude home per task id, with the session bridge **disabled**. `prepare`
-  and `launch` name the same fmx profile, so the shared runtime's hook
+  and `launch` name the same firstmate profile, so the shared runtime's hook
   accounting stays consistent even with the bridge off.
 - tmux workers have **every** `HERDR_*` variable scrubbed, not a fixed list, and
   `TRELLAGE_GUIDE_HERDR_CONTEXT_JSON` is dropped on both backends. A Herdr worker
@@ -767,19 +767,19 @@ Isolation rules:
   `FM_HOME`, `FM_ROOT_OVERRIDE`, `FM_STATE_OVERRIDE`, `FM_DATA_OVERRIDE`,
   `FM_PROJECTS_OVERRIDE`, `FM_CONFIG_OVERRIDE`,
   `FM_PUBLIC_FOLLOWUP_PRIMARY_HOME`, `FM_TRACE_CONTEXT`, `FM_SUPERVISION_MODEL`,
-  and `FM_BACKEND`. The explicit `FMX_TASK`, `FMX_BRIEF`, and `FMX_WORKTREE`
+  and `FM_BACKEND`. The explicit `TRELLAGE_FIRSTMATE_TASK`, `TRELLAGE_FIRSTMATE_BRIEF`, and `TRELLAGE_FIRSTMATE_WORKTREE`
   values are kept.
-- The task-id namespace arrives as a structured `FMX_TASK_ID_PREFIX` carrier and
+- The task-id namespace arrives as a structured `TRELLAGE_FIRSTMATE_TASK_ID_PREFIX` carrier and
   is revalidated here, so a worker home and its `fm/<id>` branch cannot be
   created outside the profile's namespace.
 - `worker.json` is built with `jq -n`, so a model or effort value containing a
   quote cannot produce malformed JSON.
-- `FMX_GH_CONFIG_DIR` is validated (absolute, real directory, readable
+- `TRELLAGE_FIRSTMATE_GH_CONFIG_DIR` is validated (absolute, real directory, readable
   `hosts.yml` with a `github.com:` entry), exported as `GH_CONFIG_DIR`, and then
-  scrubbed along with every other `FMX_*` carrier.
-- `FMX_WORKER_HOME` must be an absolute, existing, non-symlink directory that is
-  not `/`; every `FMX_WORKER_PATH` entry must be non-empty, newline-free, and
-  absolute; `FMX_WORKER_BASH` must be an absolute executable file. Any carrier
+  scrubbed along with every other `TRELLAGE_FIRSTMATE_*` carrier.
+- `TRELLAGE_FIRSTMATE_WORKER_HOME` must be an absolute, existing, non-symlink directory that is
+  not `/`; every `TRELLAGE_FIRSTMATE_WORKER_PATH` entry must be non-empty, newline-free, and
+  absolute; `TRELLAGE_FIRSTMATE_WORKER_BASH` must be an absolute executable file. Any carrier
   being absent or unusable fails closed — there is no fallback to an ambient
   value.
 - `CURSOR_AGENT` and `CURSOR_INVOKED_AS` are unset, matching upstream's
@@ -794,8 +794,8 @@ the boundary with an explicit diagnostic rather than started without its
 
 `inventory` and `doctor` report and never delete:
 
-- `active`: an fmx marker whose pid is alive.
-- `stale`: an fmx marker whose pid is gone, or a worker home with a Firstmate
+- `active`: an firstmate marker whose pid is alive.
+- `stale`: an firstmate marker whose pid is gone, or a worker home with a Firstmate
   task record and no live process.
 - `orphaned`: a worker home with neither.
 
@@ -826,7 +826,7 @@ also runs `doctor`, including its local proxy and GitHub authentication checks.
 | `.workers[].task` / `.workers[].state` | per-task id and `active`/`stale`/`orphaned` |
 
 `.overlay.manifestDigest` and `.overlay.contentDigest` are reproducible from the
-checked-in manifest alone, so acceptance can pin them without running `fmx`. Two
+checked-in manifest alone, so acceptance can pin them without running `firstmate`. Two
 profiles installed from the same pin report identical overlay identity.
 
 The `.source.*` and `.overlay.*` fields are computed by reading and hashing

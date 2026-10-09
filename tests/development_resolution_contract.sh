@@ -73,7 +73,7 @@ jq -e '
     (($spec | test("^npm:")) | not)
     or (($spec | test("@[0-9]+([.][0-9]+)+([-.+][0-9A-Za-z.-]+)?$")) | not)
   )
-' prototypes/trellage-picx-profiles/catalog.json >/dev/null \
+' prototypes/trellage-pi-profiles/catalog.json >/dev/null \
   || fail 'Native Pi extension catalog pins an npm package version'
 
 for dockerfile in Dockerfile.agent Dockerfile.copilot-agent Dockerfile.app; do

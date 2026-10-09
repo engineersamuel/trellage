@@ -136,10 +136,10 @@ const legacyShowMe = async (target: string) => {
   const directory = path.join(target, "show-me")
   const status = await statusIfPresent(directory)
   if (status === undefined || !status.isDirectory() || status.isSymbolicLink()) return []
-  const marker = path.join(directory, ".managed-by-trellage-picx-profiles")
+  const marker = path.join(directory, ".managed-by-trellage-pi-profiles")
   if (!(await statusIfPresent(marker))) return []
   await requireFile(marker)
-  if ((await readFile(marker, "utf8")) !== "trellage-picx-profile-v2\n") {
+  if ((await readFile(marker, "utf8")) !== "trellage-pi-profile-v2\n") {
     fail(`invalid legacy managed skill marker: ${marker}`)
   }
   return ["show-me"]
@@ -195,6 +195,31 @@ export const loadSkillsManager = async (managerPath: string): Promise<FloatingSk
   return import(pathToFileURL(resolvedManager).href)
 }
 
+const replaceManagedInstructionBlock = (
+  previous: string,
+  marker: string,
+  end: string,
+  selected: string,
+  destination: string,
+) => {
+  const startIndex = previous.indexOf(marker)
+  const endIndex = previous.indexOf(end)
+  if ((startIndex === -1) !== (endIndex === -1) || (startIndex !== -1 && endIndex < startIndex))
+    fail(`invalid managed instruction block: ${destination}`)
+  const block = `${marker}\n${selected}\n${end}`
+  return startIndex === -1
+    ? `${previous}${previous && !previous.endsWith("\n") ? "\n" : ""}${block}\n`
+    : previous.slice(0, startIndex) + block + previous.slice(endIndex + end.length)
+}
+
+const readExistingInstructions = async (destination: string, harness: string, marker: string) => {
+  if (!(await statusIfPresent(destination))) return ""
+  await requireFile(destination)
+  const previous = await readFile(destination, "utf8")
+  if (harness !== "jcode" && !previous.includes(marker)) fail(`refusing to replace user instructions: ${destination}`)
+  return previous
+}
+
 export const publishCompositionInstructions = async (cache: string, target: string, checkOnly = false) => {
   const harness = process.env.TRELLAGE_NATIVE_COMPOSITION_HARNESS
   if (!process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT || (harness !== "copilot" && harness !== "agency" && harness !== "jcode")) return
@@ -206,24 +231,13 @@ export const publishCompositionInstructions = async (cache: string, target: stri
   const destination = path.join(directory, harness === "jcode" ? "prompt-overlay.md" : "trellage-selected.instructions.md")
   const marker = "<!-- trellage-selected-instructions-v1 -->"
   const existing = await statusIfPresent(destination)
-  let previous = ""
-  if (existing) {
-    await requireFile(destination)
-    previous = await readFile(destination, "utf8")
-    if (harness !== "jcode" && !previous.includes(marker)) fail(`refusing to replace user instructions: ${destination}`)
-  }
+  const previous = await readExistingInstructions(destination, harness, marker)
   await requireFile(path.join(cache, "always-on.md"))
   const selected = await readFile(path.join(cache, "always-on.md"), "utf8")
   const end = "<!-- /trellage-selected-instructions-v1 -->"
-  let contents = `---\napplyTo: "**"\n---\n${marker}\n${selected}`
-  if (harness === "jcode") {
-    const startIndex = previous.indexOf(marker)
-    const endIndex = previous.indexOf(end)
-    if ((startIndex === -1) !== (endIndex === -1) || (startIndex !== -1 && endIndex < startIndex))
-      fail(`invalid managed instruction block: ${destination}`)
-    const block = `${marker}\n${selected}\n${end}`
-    contents = startIndex === -1 ? `${previous}${previous && !previous.endsWith("\n") ? "\n" : ""}${block}\n` : previous.slice(0, startIndex) + block + previous.slice(endIndex + end.length)
-  }
+  const contents = harness === "jcode"
+    ? replaceManagedInstructionBlock(previous, marker, end, selected, destination)
+    : `---\napplyTo: "**"\n---\n${marker}\n${selected}`
   if (checkOnly) return
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const staged = path.join(directory, `.trellage-selected-${randomUUID()}`)
@@ -256,13 +270,13 @@ const bundlesForCache = (cache: string) => {
   switch (path.basename(cache)) {
     case "skills":
       return ["native-common"]
-    case "cdx-skills":
+    case "codex-skills":
       return ["native-common", "codex-common"]
-    case "cdx-youtube-pro-skills":
+    case "codex-youtube-pro-skills":
       return ["native-common", "codex-common", "youtube"]
-    case "cldx-office-skills":
+    case "claude-office-skills":
       return ["native-common", "claude-office"]
-    case "cldx-office-charts-skills":
+    case "claude-office-charts-skills":
       return ["native-common", "claude-office-charts"]
     case "omp-community-skills":
       return ["omp-community"]
@@ -288,22 +302,26 @@ const targetMatches = async (
   }
 }
 
-export const checkFreshSkills = async (
-  managerPath: string,
+const checkComposedSkills = async (
+  manager: FloatingSkillsManager,
+  pairs: readonly SkillPair[],
+  signal?: AbortSignal,
+) => {
+  let current = true
+  for (const [cache, target, excluded = []] of pairs) {
+    signal?.throwIfAborted()
+    if (!(await targetMatches(manager, await manager.resolveComposedSkillSnapshot(cache, target), target, excluded)))
+      current = false
+  }
+  return current
+}
+
+const checkStagedSkills = async (
+  manager: FloatingSkillsManager,
   catalogPath: string,
   pairs: readonly SkillPair[],
   signal?: AbortSignal,
 ) => {
-  await syncCachedSkills(managerPath, pairs, true)
-  const manager = await loadSkillsManager(managerPath)
-  if (process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT !== undefined) {
-    let current = true
-    for (const [cache, target, excluded = []] of pairs) {
-      signal?.throwIfAborted()
-      if (!(await targetMatches(manager, await manager.resolveComposedSkillSnapshot(cache, target), target, excluded))) current = false
-    }
-    return { kind: current ? "current" : "available" }
-  }
   if (typeof manager.readNativeSkillCatalog !== "function") fail("refresh the floating-skills runtime to enable effective skill configuration")
   if (manager.readOnlyStageSupported !== true) fail("refresh the floating-skills runtime to enable read-only checks")
   const catalog = await manager.readNativeSkillCatalog(catalogPath)
@@ -326,10 +344,24 @@ export const checkFreshSkills = async (
       if (!(await targetMatches(manager, snapshot, target, excluded))) current = false
     }
     signal?.throwIfAborted()
-    return { kind: current ? "current" : "available" }
+    return current
   } finally {
     await rm(stage, { recursive: true, force: true })
   }
+}
+
+export const checkFreshSkills = async (
+  managerPath: string,
+  catalogPath: string,
+  pairs: readonly SkillPair[],
+  signal?: AbortSignal,
+) => {
+  await syncCachedSkills(managerPath, pairs, true)
+  const manager = await loadSkillsManager(managerPath)
+  const current = process.env.TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT !== undefined
+    ? await checkComposedSkills(manager, pairs, signal)
+    : await checkStagedSkills(manager, catalogPath, pairs, signal)
+  return { kind: current ? "current" : "available" }
 }
 
 const installHelper = async (runtimeRoot: string, includeManual = false) => {
@@ -358,13 +390,13 @@ const installHelper = async (runtimeRoot: string, includeManual = false) => {
   }
 }
 
-const skillPairs = (paths: readonly string[]): SkillPair[] => {
+const skillPairs = (paths: readonly string[], excluded: readonly string[]): SkillPair[] => {
   const pairs: SkillPair[] = []
   for (let index = 0; index < paths.length; index += 2) {
     const cache = paths[index]
     const target = paths[index + 1]
     if (cache === undefined || target === undefined) fail("each skill cache requires a target")
-    pairs.push([cache, target])
+    pairs.push([cache, target, excluded])
   }
   return pairs
 }
@@ -381,6 +413,13 @@ const main = async (args: readonly string[]) => {
   }
   const [manager, command, ...remaining] = args
   const catalog = command === "--fresh" ? remaining.shift() : undefined
+  const excluded: string[] = []
+  while (remaining[0] === "--exclude-skill") {
+    remaining.shift()
+    const name = remaining.shift()
+    if (name === undefined) fail("--exclude-skill requires a skill name")
+    excluded.push(name)
+  }
   const paths = remaining
   if (
     manager === undefined ||
@@ -389,9 +428,9 @@ const main = async (args: readonly string[]) => {
     paths.length === 0 ||
     paths.length % 2 !== 0
   ) {
-    fail("usage: native-skills.ts MANAGER --sync|--check|--fresh [CATALOG] CACHE TARGET [CACHE TARGET...]")
+    fail("usage: native-skills.ts MANAGER --sync|--check|--fresh [CATALOG] [--exclude-skill NAME...] CACHE TARGET [CACHE TARGET...]")
   }
-  const pairs = skillPairs(paths)
+  const pairs = skillPairs(paths, excluded)
   if (command === "--fresh") {
     if (catalog === undefined) fail("a fresh skills check requires a catalog")
     const controller = new AbortController()

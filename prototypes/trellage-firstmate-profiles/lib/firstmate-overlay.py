@@ -324,7 +324,7 @@ def apply_manifest(root, manifest_path, commit, verify_only):
         return
     for target, patched, relative in staged:
         mode = target.stat().st_mode & 0o777
-        temporary = target.with_name(f".{target.name}.fmx-overlay")
+        temporary = target.with_name(f".{target.name}.firstmate-overlay")
         with open(temporary, "w", encoding="utf-8", newline="") as handle:
             handle.write(patched)
         os.chmod(temporary, mode)
@@ -358,7 +358,7 @@ def main() -> int:
         else:
             apply_manifest(root, manifest_path, arguments.commit, arguments.verify_only)
     except (OverlayError, OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
-        print(f"fmx overlay: {error}", file=sys.stderr)
+        print(f"firstmate overlay: {error}", file=sys.stderr)
         return 1
     return 0
 

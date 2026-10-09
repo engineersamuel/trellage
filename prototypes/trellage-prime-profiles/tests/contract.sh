@@ -6,19 +6,19 @@ set -o pipefail
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
 real_node="$(command -v node)" || {
-  printf 'prx contract failed: host node is required\n' >&2
+  printf 'prime contract failed: host node is required\n' >&2
   exit 1
 }
 real_bun="$(command -v bun)" || {
-  printf 'prx contract failed: Bun 1.4.2 is required\n' >&2
+  printf 'prime contract failed: Bun 1.4.2 is required\n' >&2
   exit 1
 }
-launcher="$root/bin/prx"
+launcher="$root/bin/prime"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
 
 fail() {
-  printf 'prx contract failed: %s\n' "$1" >&2
+  printf 'prime contract failed: %s\n' "$1" >&2
   exit 1
 }
 
@@ -46,9 +46,9 @@ file_mode() {
 
 fixture_parent="$root/.contract-work"
 mkdir -p "$fixture_parent"
-fixture_root="$(mktemp -d "$fixture_parent/trellage-prx-contract.XXXXXX")" \
+fixture_root="$(mktemp -d "$fixture_parent/trellage-prime-contract.XXXXXX")" \
   || fail 'could not create fixture root'
-trap 'if [[ "${PRX_TEST_KEEP_FIXTURE:-0}" != 1 ]]; then rm -rf -- "$fixture_root"; rmdir "$fixture_parent" 2>/dev/null || true; else printf "fixture kept: %s\n" "$fixture_root" >&2; fi' EXIT HUP INT TERM
+trap 'if [[ "${TRELLAGE_PRIME_TEST_KEEP_FIXTURE:-0}" != 1 ]]; then rm -rf -- "$fixture_root"; rmdir "$fixture_parent" 2>/dev/null || true; else printf "fixture kept: %s\n" "$fixture_root" >&2; fi' EXIT HUP INT TERM
 
 fixture_registry="$(npm config get registry --workspaces=false)" \
   || fail 'could not discover the host npm registry'
@@ -247,12 +247,12 @@ fi
 if [[ "${1-}" == --input-type=module && "${2-}" == -e ]]; then
   if [[ "$*" == *shutdownDaemonAndWait* ]]; then
     [[ "${FAKE_DAEMON_STOP_FAIL-}" != 1 ]] || exit 2
-    rm -f -- "${PRX_DAEMON_SOCKET-}"
+    rm -f -- "${TRELLAGE_PRIME_DAEMON_SOCKET-}"
     [[ -z "${FAKE_DAEMON_MARKER-}" ]] || rm -f -- "$FAKE_DAEMON_MARKER"
     [[ -z "${FAKE_DAEMON_STOP_LOG-}" ]] || printf 'stopped\n' >>"$FAKE_DAEMON_STOP_LOG"
     exit 0
   fi
-  if [[ -n "${PRX_DAEMON_SOCKET-}" && -S "${PRX_DAEMON_SOCKET-}" \
+  if [[ -n "${TRELLAGE_PRIME_DAEMON_SOCKET-}" && -S "${TRELLAGE_PRIME_DAEMON_SOCKET-}" \
     && -f "${FAKE_DAEMON_MARKER-}" ]]; then
     exit 0
   fi
@@ -315,7 +315,7 @@ cat >"$fake_bin/sleep" <<'FAKE_SLEEP'
 #!/usr/bin/env bash
 set -u
 
-if [[ "${PRX_TEST_FAST_SLEEP-}" == 1 ]]; then
+if [[ "${TRELLAGE_PRIME_TEST_FAST_SLEEP-}" == 1 ]]; then
   exec /bin/sleep 0.001
 fi
 exec /bin/sleep "$@"
@@ -383,7 +383,7 @@ export FAKE_PRIME_TEMPLATE="$fixture_root/fake-prime-template"
 export FAKE_FIXTURE_ROOT="$fixture_root"
 export FAKE_DAEMON_STOP_LOG="$fixture_root/daemon-stop.log"
 export FAKE_DAEMON_MARKER="$fixture_root/daemon-running"
-export PRX_TEST_DAEMON_MARKER="$FAKE_DAEMON_MARKER"
+export TRELLAGE_PRIME_TEST_DAEMON_MARKER="$FAKE_DAEMON_MARKER"
 : >"$FAKE_MISE_LOG"
 : >"$FAKE_NPM_LOG"
 : >"$FAKE_CURL_LOG"
@@ -392,13 +392,13 @@ export PRX_TEST_DAEMON_MARKER="$FAKE_DAEMON_MARKER"
 : >"$FAKE_DAEMON_STOP_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/share/trellage/.native-commands/prx"
-runtime_root="$HOME/.local/share/trellage/prx"
+command_path="$HOME/.local/share/trellage/.native-commands/prime"
+runtime_root="$HOME/.local/share/trellage/prime"
 profile_root="$HOME/.local/share/trellage/profiles/prime/default"
 profile_home="$profile_root/home"
 
 [[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
-[[ "$(readlink "$command_path")" == "$runtime_root/bin/prx" ]] \
+[[ "$(readlink "$command_path")" == "$runtime_root/bin/prime" ]] \
   || fail 'command symlink target differs'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
@@ -410,14 +410,14 @@ cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
 status=0
 "$command_path" update --check >"$fixture_root/not-setup-update.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'update check accepted an unconfigured runtime'
-grep -Fq 'prime-agent installed version receipt is missing; run prx setup' \
+grep -Fq 'prime-agent installed version receipt is missing; run prime setup' \
   "$fixture_root/not-setup-update.out" \
   || fail 'unconfigured update check diagnostic differs'
 
 "$command_path" list --json >"$fixture_root/list.json" || fail 'JSON list failed'
 jq -e '
   .schemaVersion == 1
-  and .launcher == "prx"
+  and .launcher == "prime"
   and .harness == "prime"
   and .sandbox == false
   and [.profiles[].name] == ["default"]
@@ -450,7 +450,7 @@ mv "$fixture_root/catalog.invalid" "$runtime_root/catalog.json"
 if "$command_path" list --json >"$fixture_root/invalid-list.out" 2>"$fixture_root/invalid-list.err"; then
   fail 'list accepted invalid headless catalog'
 fi
-grep -Fq 'prx: invalid catalog:' "$fixture_root/invalid-list.err" \
+grep -Fq 'prime: invalid catalog:' "$fixture_root/invalid-list.err" \
   || fail 'invalid headless catalog diagnostic differs'
 jq '.profiles.default.headless.trellageEventContract = "unsupported-trellage-events-v1"' \
   "$fixture_root/catalog.saved" >"$fixture_root/catalog.invalid" \
@@ -461,7 +461,7 @@ if "$command_path" list --json \
   2>"$fixture_root/invalid-trellage-event-list.err"; then
   fail 'list accepted unsupported Trellage event contract'
 fi
-grep -Fq 'prx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
+grep -Fq 'prime: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err" \
   || fail 'unsupported Trellage event contract diagnostic differs'
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
@@ -526,7 +526,7 @@ jq -e '
 ' "$profile_home/models.json" >/dev/null || fail 'models.json seed differs'
 [[ "$(file_mode "$profile_home/models.json")" == 600 ]] \
   || fail 'models.json mode is not 0600'
-grep -Fq 'prx setup: ready (0.7.0, claude-opus-5)' "$fixture_root/setup.out" \
+grep -Fq 'prime setup: ready (0.7.0, claude-opus-5)' "$fixture_root/setup.out" \
   || fail 'setup output differs'
 [[ -f "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" ]] \
   || fail 'setup did not install prime-agent CLI'
@@ -588,7 +588,7 @@ jq -e '
 ' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list differs'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
-grep -Fq 'prx doctor: OK (0.7.0, claude-opus-5)' "$fixture_root/doctor.out" \
+grep -Fq 'prime doctor: OK (0.7.0, claude-opus-5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
 # Seed poison credentials; launch must unset them.
@@ -672,7 +672,7 @@ if "$command_path" --single-turn --single-turn -p duplicate \
   >"$fixture_root/single-turn-duplicate.out" 2>"$fixture_root/single-turn-duplicate.err"; then
   fail 'duplicate single-turn option unexpectedly succeeded'
 fi
-grep -Fqx 'prx: --single-turn may be specified only once' \
+grep -Fqx 'prime: --single-turn may be specified only once' \
   "$fixture_root/single-turn-duplicate.err" \
   || fail 'duplicate single-turn diagnostic differs'
 
@@ -712,7 +712,7 @@ export async function shutdownDaemonAndWait() {
 }
 FAKE_LAUNCH
 "$command_path" shutdown >"$fixture_root/shutdown.out" || fail 'shutdown failed'
-grep -Fq 'prx shutdown: no profile daemon socket' "$fixture_root/shutdown.out" \
+grep -Fq 'prime shutdown: no profile daemon socket' "$fixture_root/shutdown.out" \
   || fail 'shutdown output differs'
 [[ ! -e "$profile_root/daemon/kernel-env.stamp" ]] \
   || fail 'shutdown did not clear daemon kernel env stamp'
@@ -759,7 +759,7 @@ printf 'drift\n' >>"$profile_home/models.json"
 status=0
 "$command_path" doctor >"$fixture_root/drift.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted modified managed models config'
-grep -Fq 'managed models config differs; run prx repair' "$fixture_root/drift.out" \
+grep -Fq 'managed models config differs; run prime repair' "$fixture_root/drift.out" \
   || fail 'managed models config drift error differs'
 "$command_path" repair >"$fixture_root/repair-config.out" \
   || fail 'repair did not restore managed models config'
@@ -772,7 +772,7 @@ printf 'runtime-drift\n' \
 status=0
 "$command_path" doctor >"$fixture_root/runtime-drift.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted bundled runtime content drift'
-grep -Fq 'Prime runtime content differs from its identity; run prx repair' \
+grep -Fq 'Prime runtime content differs from its identity; run prime repair' \
   "$fixture_root/runtime-drift.out" || fail 'runtime drift diagnostic differs'
 "$command_path" repair >/dev/null || fail 'repair did not restore runtime content identity'
 
@@ -780,7 +780,7 @@ printf '{malformed\n' >"$profile_home/kernel-runtime-identity.json"
 status=0
 "$command_path" doctor >"$fixture_root/kernel-stamp-malformed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted malformed kernel identity stamp'
-grep -Fq 'Prime kernel identity differs; run prx repair' \
+grep -Fq 'Prime kernel identity differs; run prime repair' \
   "$fixture_root/kernel-stamp-malformed.out" \
   || fail 'malformed kernel identity diagnostic differs'
 "$command_path" repair >/dev/null || fail 'repair did not restore malformed kernel stamp'
@@ -816,7 +816,7 @@ printf '{malformed\n' >"$profile_root/daemon/kernel-env.stamp"
 status=0
 "$command_path" doctor >"$fixture_root/daemon-stamp-malformed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted malformed daemon identity stamp'
-grep -Fq 'Prime daemon identity stamp differs; run prx shutdown' \
+grep -Fq 'Prime daemon identity stamp differs; run prime shutdown' \
   "$fixture_root/daemon-stamp-malformed.out" \
   || fail 'malformed daemon identity diagnostic differs'
 "$command_path" -p daemon-stamp-repair >/dev/null \
@@ -830,7 +830,7 @@ rm -f "$profile_root/daemon/kernel-env.stamp"
 status=0
 "$command_path" doctor >"$fixture_root/daemon-stamp-missing.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'doctor accepted a running daemon without an identity stamp'
-grep -Fq 'Prime daemon identity stamp differs; run prx shutdown' \
+grep -Fq 'Prime daemon identity stamp differs; run prime shutdown' \
   "$fixture_root/daemon-stamp-missing.out" \
   || fail 'missing daemon identity stamp diagnostic differs'
 "$command_path" -p daemon-stamp-missing-repair >/dev/null \
@@ -894,7 +894,7 @@ for fail_point in after-daemon-stop after-state-backup after-kernel-build \
   if [[ "$fail_point" == after-daemon-stop ]]; then
     : >"$FAKE_DAEMON_MARKER"
   fi
-  if FAKE_MISE_LATEST=0.8.0 PRX_TEST_FAIL_AT="$fail_point" \
+  if FAKE_MISE_LATEST=0.8.0 TRELLAGE_PRIME_TEST_FAIL_AT="$fail_point" \
     "$command_path" update >"$fixture_root/update-$fail_point.out" 2>&1; then
     fail "update unexpectedly succeeded at rollback boundary $fail_point"
   fi
@@ -949,7 +949,7 @@ noop_npm_calls_before="$(wc -l <"$FAKE_NPM_LOG" | tr -d ' ')"
 noop_uv_calls_before="$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')"
 FAKE_MISE_LATEST=0.8.0 "$command_path" update >"$fixture_root/update-noop.out" \
   || fail 'current update no-op failed'
-grep -Fq 'prx update: 0.8.0 is current' "$fixture_root/update-noop.out" \
+grep -Fq 'prime update: 0.8.0 is current' "$fixture_root/update-noop.out" \
   || fail 'current update no-op output differs'
 [[ "$(wc -l <"$FAKE_NPM_LOG" | tr -d ' ')" == "$noop_npm_calls_before" ]] \
   || fail 'current update no-op reinstalled npm runtime'
@@ -957,7 +957,7 @@ grep -Fq 'prx update: 0.8.0 is current' "$fixture_root/update-noop.out" \
   || fail 'current update no-op rebuilt kernel'
 
 lock_marker="$fixture_root/mutation-lock-held"
-PRX_TEST_LOCK_HELD_MARKER="$lock_marker" "$command_path" doctor \
+TRELLAGE_PRIME_TEST_LOCK_HELD_MARKER="$lock_marker" "$command_path" doctor \
   >"$fixture_root/lock-owner.out" 2>"$fixture_root/lock-owner.err" &
 lock_owner_pid=$!
 wait_for_file "$lock_marker"
@@ -965,7 +965,7 @@ busy_inventory="$("$command_path" inventory default --json)" \
   || fail 'inventory failed while the profile mutation lock was held'
 jq -e '.readiness == "busy"' <<<"$busy_inventory" >/dev/null \
   || fail 'inventory did not report a held profile mutation lock as busy'
-PRX_TEST_FAST_SLEEP=1 "$command_path" doctor >"$fixture_root/lock-waiter.out" \
+TRELLAGE_PRIME_TEST_FAST_SLEEP=1 "$command_path" doctor >"$fixture_root/lock-waiter.out" \
   2>"$fixture_root/lock-waiter.err" &
 lock_waiter_pid=$!
 sleep 0.2
@@ -981,7 +981,7 @@ printf '.mutation.lock-owned.stale\n' >"$stale_owner/token"
 printf '999999999\n' >"$stale_owner/pid"
 ln "$stale_owner/token" "$profile_root/.mutation.lock"
 stale_recovery_retry="$fixture_root/stale-recovery-retry"
-PRX_TEST_STALE_RECOVERY_FAIL_ONCE="$stale_recovery_retry" \
+TRELLAGE_PRIME_TEST_STALE_RECOVERY_FAIL_ONCE="$stale_recovery_retry" \
   "$command_path" doctor >"$fixture_root/stale-lock.out" \
   || fail 'doctor did not recover stale profile mutation lock'
 [[ -f "$stale_recovery_retry" ]] \
@@ -990,14 +990,14 @@ PRX_TEST_STALE_RECOVERY_FAIL_ONCE="$stale_recovery_retry" \
   || fail 'stale profile mutation lock was not removed'
 
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
-grep -Fq 'prx repair: restored (0.8.0, claude-opus-5)' "$fixture_root/repair.out" \
+grep -Fq 'prime repair: restored (0.8.0, claude-opus-5)' "$fixture_root/repair.out" \
   || fail 'repair output differs after update'
 
 mkdir -p "$fixture_root/unrelated-home/.local/share/trellage/profiles/prime/default"
 printf 'unrelated\n' \
   >"$fixture_root/unrelated-home/.local/share/trellage/profiles/prime/default/data"
 status=0
-HOME="$fixture_root/unrelated-home" "$runtime_root/bin/prx" setup \
+HOME="$fixture_root/unrelated-home" "$runtime_root/bin/prime" setup \
   >"$fixture_root/unrelated.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'setup accepted unrelated profile files'
 grep -Fq 'refusing unrelated existing profile files' "$fixture_root/unrelated.out" \
@@ -1021,12 +1021,12 @@ rm -f "$profile_home/models.json"
 # stop_profile_daemon_socket must fall back to the canonical installed
 # runtime's daemon-launch.js when this runtime's own copy is missing, rather
 # than dying with "prime-agent daemon-launch module missing".
-other_runtime="$HOME/.local/share/trellage/other-worktree-prx"
+other_runtime="$HOME/.local/share/trellage/other-worktree-prime"
 cp -R "$runtime_root" "$other_runtime"
 rm -f "$other_runtime/npm-prefix/lib/node_modules/prime-agent/dist/cli/daemon-launch.js"
 : >"$FAKE_DAEMON_MARKER"
 fallback_stops_before="$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')"
-"$other_runtime/bin/prx" repair >"$fixture_root/fallback-launch-js.out" 2>&1 \
+"$other_runtime/bin/prime" repair >"$fixture_root/fallback-launch-js.out" 2>&1 \
   || fail 'repair from a runtime without its own daemon-launch module failed'
 grep -Fq 'prime-agent daemon-launch module missing' "$fixture_root/fallback-launch-js.out" \
   && fail 'repair incorrectly reported a missing daemon-launch module'
@@ -1054,4 +1054,4 @@ grep -Fxq 'https://packagefeedproxy.microsoft.io/pypi/simple/' "$FAKE_UV_FEED_LO
 grep -Fq 'Prime profile state and sessions were preserved' "$fixture_root/uninstall.out" \
   || fail 'uninstall message differs'
 
-printf 'prx contract: PASS\n'
+printf 'prime contract: PASS\n'

@@ -4,20 +4,20 @@
  # launch section that states its own precedence for Firstmate tasks, so a brief
  # that authors its own role wording is superseded rather than duplicated.
  
-+fm_fmx_worker_policy() {
-+  local path="${FMX_WORKER_POLICY_FILE:-}" bytes
++fm_firstmate_worker_policy() {
++  local path="${TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE:-}" bytes
 +  [ -n "$path" ] || return 0
 +  case "$path" in
 +    /*) ;;
-+    *) echo "error: FMX_WORKER_POLICY_FILE must be an absolute path" >&2; return 1 ;;
++    *) echo "error: TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE must be an absolute path" >&2; return 1 ;;
 +  esac
 +  if [ -L "$path" ] || [ ! -f "$path" ] || [ ! -r "$path" ]; then
-+    echo "error: FMX_WORKER_POLICY_FILE is not a readable regular file: $path" >&2
++    echo "error: TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE is not a readable regular file: $path" >&2
 +    return 1
 +  fi
 +  bytes=$(wc -c < "$path" | tr -d ' ')
 +  if [ "$bytes" -eq 0 ] || [ "$bytes" -gt 16384 ]; then
-+    echo "error: FMX_WORKER_POLICY_FILE must be between 1 and 16384 bytes" >&2
++    echo "error: TRELLAGE_FIRSTMATE_WORKER_POLICY_FILE must be between 1 and 16384 bytes" >&2
 +    return 1
 +  fi
 +  cat "$path"

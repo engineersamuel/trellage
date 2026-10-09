@@ -18,9 +18,9 @@ trap cleanup EXIT HUP INT TERM
 runtime="$fixture/runtime"
 fake_bin="$fixture/fake-bin"
 mkdir -p "$runtime/bin" "$runtime/lib" "$fake_bin" "$fixture/home"
-cp "$root/bin/cdx" "$runtime/bin/cdx"
+cp "$root/bin/codex" "$runtime/bin/codex"
 cp "$root/../trellage-codex-common/native-codex" "$runtime/lib/native-codex"
-chmod 0755 "$runtime/bin/cdx" "$runtime/lib/native-codex"
+chmod 0755 "$runtime/bin/codex" "$runtime/lib/native-codex"
 
 cat >"$fake_bin/codex" <<'EOF'
 #!/usr/bin/env bash
@@ -65,14 +65,14 @@ write_fake_curl_failure() {
 }
 
 run_harness_version() {
-  HOME="$fixture/home" PATH="$fake_bin:$PATH" "$runtime/bin/cdx" harness-version
+  HOME="$fixture/home" PATH="$fake_bin:$PATH" "$runtime/bin/codex" harness-version
 }
 
 run_harness_update() (
   unset CODEX_HOME _TRELLAGE_NATIVE_VARLOCK_ACTIVE
   export HOME="$fixture/home"
   export FAKE_CODEX_HARNESS_LOG="$fixture/harness-update.log"
-  PATH="$fake_bin:$PATH" "$runtime/bin/cdx" harness-update "$@"
+  PATH="$fake_bin:$PATH" "$runtime/bin/codex" harness-update "$@"
 )
 
 assert_json_field() {
@@ -86,7 +86,7 @@ assert_json_field() {
 write_fake_curl_json '{"tag_name":"rust-v0.152.1","draft":false,"prerelease":false}'
 output="$(run_harness_version)"
 assert_json_field "$output" .schemaVersion 1
-assert_json_field "$output" .launcher cdx
+assert_json_field "$output" .launcher codex
 assert_json_field "$output" .harness codex
 assert_json_field "$output" .installed 0.146.0
 assert_json_field "$output" .latest 0.152.1
@@ -148,7 +148,7 @@ for argument in youtube superpowers --all --check; do
   if run_harness_update "$argument" >"$fixture/harness-update-invalid.out" 2>"$fixture/harness-update-invalid.err"; then
     fail "harness update accepted $argument"
   fi
-  grep -Fxq 'cdx: usage: cdx harness-update' "$fixture/harness-update-invalid.err" \
+  grep -Fxq 'codex: usage: codex harness-update' "$fixture/harness-update-invalid.err" \
     || fail 'missing harness update argument diagnostic'
 done
 [ "$(wc -l <"$fixture/harness-update.log" | tr -d ' ')" = "$calls_before" ] \
@@ -159,11 +159,11 @@ mkdir -p "$missing_bin"
 for tool in bash dirname uname; do
   ln -s "$(command -v "$tool")" "$missing_bin/$tool"
 done
-if HOME="$fixture/home" PATH="$missing_bin" "$runtime/bin/cdx" harness-update \
+if HOME="$fixture/home" PATH="$missing_bin" "$runtime/bin/codex" harness-update \
   >"$fixture/harness-update-missing.out" 2>"$fixture/harness-update-missing.err"; then
   fail 'harness update accepted a missing Codex executable'
 fi
-grep -Fxq 'cdx: required command not found: codex' "$fixture/harness-update-missing.err" \
+grep -Fxq 'codex: required command not found: codex' "$fixture/harness-update-missing.err" \
   || fail 'missing Codex executable diagnostic'
 
 printf 'trellage Codex harness-version contract: PASS\n'

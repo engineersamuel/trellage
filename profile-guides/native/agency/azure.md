@@ -11,7 +11,7 @@ bestFor:
 avoidFor:
   - Azure deployment or write operations; the profile exposes read-only tools only
   - Work outside a Trellage worktree; the first release requires repository-root agency.toml
-  - Tasks that need a container security boundary; agx runs directly on the host
+  - Tasks that need a container security boundary; agency runs directly on the host
 prerequisites:
   - id: agency
     description: Microsoft Agency installed and available on PATH.

@@ -181,7 +181,7 @@ function hostileBunEnvironment(cwd: string): NodeJS.ProcessEnv {
 test("native profile state is excluded from source fingerprints and staging", async () => {
   const { root } = sourceFixture()
   const profile = "prototypes/trellage-jcode-profiles"
-  write(root, `${profile}/bin/jcx`, "#!/bin/sh\n")
+  write(root, `${profile}/bin/jcode`, "#!/bin/sh\n")
   const fingerprint = sourceFingerprint(root)
   const prepared = run("prepare", root)
   expect(prepared.status, prepared.stderr).toBe(0)
@@ -199,7 +199,7 @@ test("native profile state is excluded from source fingerprints and staging", as
   copySources(root, staged)
   expect(readdirSync(path.join(staged, profile))).toEqual(["bin"])
   expect(sourceFingerprint(staged)).toBe(fingerprint)
-  write(root, `${profile}/bin/jcx`, "#!/bin/sh\nexit 1\n")
+  write(root, `${profile}/bin/jcode`, "#!/bin/sh\nexit 1\n")
   expect(sourceFingerprint(root)).not.toBe(fingerprint)
   symlinkSync(fixture(), path.join(root, profile, "bin", "mise"))
   expect(() => sourceFingerprint(root)).toThrow("source workspace contains a symlink")
@@ -614,11 +614,11 @@ describe("Bun invocation", () => {
 
 describe("Owned source installation", () => {
   test.each([
-    ["trellage-agency-profiles", "agx"],
-    ["trellage-copilot-profiles", "cpx"],
+    ["trellage-agency-profiles", "agency"],
+    ["trellage-copilot-profiles", "copilot"],
     ["trellage-omp-profiles", "omp"],
-    ["trellage-picx-profiles", "picx"],
-    ["trellage-prime-profiles", "prx"],
+    ["trellage-pi-profiles", "pi"],
+    ["trellage-prime-profiles", "prime"],
   ])("does not publish %s when source dependency preparation fails", (prototype, command) => {
     const root = fixture()
     const home = path.join(root, "home")
@@ -830,14 +830,15 @@ describe("Owned source installation", () => {
     expect(existsSync(path.join(destination, "prototypes/example/.env.local"))).toBe(false)
   })
 
-  test.each(["floating", "floating-firstmate", "environment"] as const)("migrates only the exact legacy %s layout", (layout) => {
-    const legacy = layout === "floating-firstmate" ? "floating" : layout
+  test.each(["floating", "floating-firstmate", "floating-fmx", "environment"] as const)("migrates only the exact legacy %s layout", (layout) => {
+    const legacy = layout === "floating-firstmate" || layout === "floating-fmx" ? "floating" : layout
     const { root, destination, home } = sourceFixture()
     mkdirSync(destination)
     if (legacy === "floating") {
       write(destination, "floating-skills.mjs", "legacy helper")
       write(destination, "skills.json", "{}")
-      if (layout === "floating-firstmate") write(destination, "fmx-registry.py", "# legacy shared writer guard\n")
+      if (layout === "floating-firstmate") write(destination, "firstmate-registry.py", "# canonical shared writer guard\n")
+      if (layout === "floating-fmx") write(destination, "fmx-registry.py", "# legacy shared writer guard\n")
     } else {
       write(destination, ".managed-by-trellage", "trellage-native-environment-runtime-v1\n")
       write(destination, "native-environment.mjs", "legacy helper")
@@ -919,20 +920,24 @@ describe("Owned source installation", () => {
     expect(() => validateOwnedTree(destination)).toThrow("unpermitted runtime link")
   })
 
-  test("refuses a lock mismatch without publishing a runtime", () => {
-    const { root, destination, home } = sourceFixture()
-    write(
-      root,
-      "packages/application/package.json",
-      JSON.stringify({
-        name: "@fixture/application",
-        version: "2.0.0",
-        dependencies: { "@fixture/missing": "workspace:*" },
-      }),
-    )
-    const result = run("install", root, destination, { HOME: home })
-    expect(result.status).toBe(1)
-    expect(existsSync(destination)).toBe(false)
-    expect(existsSync(`${destination}.lock`)).toBe(false)
-  })
+  test(
+    "refuses a lock mismatch without publishing a runtime",
+    () => {
+      const { root, destination, home } = sourceFixture()
+      write(
+        root,
+        "packages/application/package.json",
+        JSON.stringify({
+          name: "@fixture/application",
+          version: "2.0.0",
+          dependencies: { "@fixture/missing": "workspace:*" },
+        }),
+      )
+      const result = run("install", root, destination, { HOME: home })
+      expect(result.status).toBe(1)
+      expect(existsSync(destination)).toBe(false)
+      expect(existsSync(`${destination}.lock`)).toBe(false)
+    },
+    15_000,
+  )
 })

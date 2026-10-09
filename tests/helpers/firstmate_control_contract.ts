@@ -24,7 +24,7 @@ const value = JSON.parse(Buffer.concat(chunks).toString("utf8"))
 
 if (operation === "inventory") {
   assert.equal(requestPath, undefined, "inventory does not accept a request fixture")
-  assert.equal(value.launcher, "fmx")
+  assert.equal(value.launcher, "firstmate")
   assert.equal(value.harness, "firstmate")
   const fleet = parseFirstmateFleetReadinessV1(value.fleet)
   if (fleet.identity !== null) assert.equal(fleet.identity.profile, value.profile)

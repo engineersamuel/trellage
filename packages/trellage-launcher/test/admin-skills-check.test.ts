@@ -59,7 +59,7 @@ describe("read-only Admin skills discovery", () => {
     const run = vi.fn<CommandRunner["run"]>(async (_command, args) =>
       output(
         args[0] === "--help"
-          ? "cpx skills-check PROFILE"
+          ? "copilot skills-check PROFILE"
           : JSON.stringify({ kind: args[2] === "old" ? "available" : "current" }),
       ),
     )
@@ -78,7 +78,7 @@ describe("read-only Admin skills discovery", () => {
   })
 
   it("never forwards a new management verb into an old launcher", async () => {
-    const run = vi.fn<CommandRunner["run"]>(async () => output("cpx skills-update PROFILE"))
+    const run = vi.fn<CommandRunner["run"]>(async () => output("copilot skills-update PROFILE"))
     expect((await check([entry("default")], run)).get(entry("default").ref)?.kind).toBe("unknown")
     expect(run).toHaveBeenCalledTimes(2)
   })

@@ -46,7 +46,7 @@ const launchResult: HerdrWorktreeLaunchResult = {
   rootPaneId: "w1:p1",
   checkoutPath: "/worktrees/fix-hve",
   paneId: "w1:p1",
-  commandPreview: "cpx hve",
+  commandPreview: "copilot hve",
 }
 
 beforeEach(() => {
@@ -95,7 +95,7 @@ describe("forkFailureToHerdrWorktree", () => {
     const call = createHerdrWorktreeAndHandoff.mock.calls[0]?.[1] as { command: typeof command; prompt: string }
     expect(call.command).toEqual(scoped)
     expect(call.command.args).toContain(beta.reference.instanceId)
-    expect(call.command.args).toContain("--fmx-instance-context-json")
+    expect(call.command.args).toContain("--firstmate-instance-context-json")
     expect(call.prompt).toContain(beta.name)
     expect(call.prompt).toContain(beta.reference.instanceId)
     expect(call.prompt).toContain(beta.root)

@@ -23,7 +23,7 @@ from unittest.mock import patch
 import uuid
 
 FIXTURE, SOURCE, REPO, BIN, NATIVE, UPSTREAM = map(Path, sys.argv[1:7])
-sys.argv = sys.argv[:1] + os.environ.get("FMX_HEALING_TEST", "").split()
+sys.argv = sys.argv[:1] + os.environ.get("TRELLAGE_FIRSTMATE_HEALING_TEST", "").split()
 OWNER = "trellage-firstmate-profiles-v1"
 MARKER = ".managed-by-trellage-firstmate-profiles"
 INSTALL_OWNER = "trellage-firstmate-install-lock-v1"
@@ -139,7 +139,7 @@ def environment(case):
     home = case / "home"
     values = {
         "HOME": str(home), "PATH": str(case / "bin"), "TMPDIR": str(case / "scratch"),
-        "BUN_RUNTIME_TRANSPILER_CACHE_PATH": "0",
+        "BUN_RUNTIME_TRANSPILER_CACHE_PATH": "0", "PYTHONDONTWRITEBYTECODE": "1",
         "GH_CONFIG_DIR": str(home / ".config/gh"), "FAKE_HEALING_CASE": str(case),
         "npm_config_userconfig": str(home / ".npmrc"),
         "npm_config_globalconfig": str(home / "global.npmrc"),
@@ -158,7 +158,7 @@ def package(case):
 
 
 def runtime(case):
-    return case / "home/.local/share/trellage/fmx"
+    return case / "home/.local/share/trellage/firstmate"
 
 
 def profile(case):
@@ -169,12 +169,12 @@ def process(case, *args, env=None, data=None, helper=False, installed=False, tim
     root = runtime(case) if installed else package(case)
     values = environment(case)
     values.update(env or {})
-    command = [str(root / ("lib/fmx-prerequisites" if helper else "bin/fmx")), *args]
+    command = [str(root / ("lib/firstmate-prerequisites" if helper else "bin/firstmate")), *args]
     if helper:
         native = root / "lib/native-claude"
         if not native.exists():
             native = root.parent / "trellage-claude-common/native-claude"
-        values.update(TRELLAGE_CLAUDE_LAUNCHER_NAME="fmx", TRELLAGE_CLAUDE_RUNTIME_ROOT=str(root))
+        values.update(TRELLAGE_CLAUDE_LAUNCHER_NAME="firstmate", TRELLAGE_CLAUDE_RUNTIME_ROOT=str(root))
         command = [str(native), "exec-clean", "--", *command]
     # Approved preparation has a 240-second production deadline, plus outer inspection and startup.
     timeout = 270 if args and args[0] == "prepare" and "--install-prerequisites" in args else timeout
@@ -231,7 +231,7 @@ if name == "npm":
     assert sys.argv[1] == "ci", "only a locked local npm ci is allowed"
     assert "--ignore-scripts" in sys.argv and "--no-audit" in sys.argv
     prefix = pathlib.Path(sys.argv[sys.argv.index("--prefix") + 1])
-    assert prefix.is_relative_to(root / "home/.local/share/trellage/fmx/prerequisites")
+    assert prefix.is_relative_to(root / "home/.local/share/trellage/firstmate/prerequisites")
     (root / "install-started").write_text(str(os.getpid()))
     while (root / "hold-npm").exists():
         time.sleep(0.03)
@@ -261,7 +261,7 @@ if name == "npm":
 elif name == "curl":
     url = next(arg for arg in sys.argv if arg.startswith("https://"))
     target = pathlib.Path(sys.argv[sys.argv.index("-o") + 1])
-    assert target.is_relative_to(root / "home/.local/share/trellage/fmx/prerequisites")
+    assert target.is_relative_to(root / "home/.local/share/trellage/firstmate/prerequisites")
     assert url.startswith("https://github.com/kunchenguid/")
     tool = "no-mistakes" if "/no-mistakes/" in url else "treehouse"
     shutil.copyfile(root / "assets" / (tool + ".tar.gz"), target)
@@ -316,8 +316,8 @@ def create_baseline():
         raise AssertionError("fixture setup failed: " + result.stderr)
     values = environment(BASE)
     command = [str(common / "native-claude"), "exec-clean", "--",
-               str(source / "lib/fmx-prerequisites"), "install"]
-    values.update(TRELLAGE_CLAUDE_LAUNCHER_NAME="fmx", TRELLAGE_CLAUDE_RUNTIME_ROOT=str(source))
+               str(source / "lib/firstmate-prerequisites"), "install"]
+    values.update(TRELLAGE_CLAUDE_LAUNCHER_NAME="firstmate", TRELLAGE_CLAUDE_RUNTIME_ROOT=str(source))
     result = subprocess.run(command, env=values, stdin=subprocess.DEVNULL, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90, cwd=BASE, check=False)
     if result.returncode:
@@ -389,12 +389,12 @@ class HealingContract(unittest.TestCase):
         installed = runtime(self.case)
         commands = self.case / "home/.local/share/trellage/.native-commands"
         commands.mkdir(parents=True, exist_ok=True)
-        (commands / "fmx").symlink_to(installed / "bin/fmx")
-        retired = installed.parent / ".fmx-retired-install.fixture"
+        (commands / "firstmate").symlink_to(installed / "bin/firstmate")
+        retired = installed.parent / ".firstmate-retired-install.fixture"
         write(retired / "retained", "existing retired install\n")
-        write(commands / ".fmx-command.fixture/retained", "existing command stage\n")
+        write(commands / ".firstmate-command.fixture/retained", "existing command stage\n")
         if interrupted:
-            transaction = installed.parent / ".fmx-install.fixture"
+            transaction = installed.parent / ".firstmate-install.fixture"
             for name, value in (
                 (".managed-by-trellage-firstmate-install-transaction", INSTALL_OWNER),
                 ("had-runtime", "yes"), ("had-command", "yes"), ("runtime-retired", "yes"),
@@ -406,12 +406,12 @@ class HealingContract(unittest.TestCase):
             installed.rename(retired / "runtime")
 
     def shared_maintenance_snapshot(self):
-        lock = ".local/share/trellage/.fmx-install.lock"
+        lock = ".local/share/trellage/.firstmate-install.lock"
         return {name: value for name, value in snapshot(self.case / "home").items()
                 if name != lock and not name.startswith(lock + "/")}
 
     def refuse_shared_maintenance_after_lock(self, operation, blocker):
-        lock = runtime(self.case).parent / ".fmx-install.lock"
+        lock = runtime(self.case).parent / ".firstmate-install.lock"
         self.hold_lock_creation(lock)
         child = subprocess.Popen(
             [str(self.case / "bin/bash"), str(SOURCE / (operation + ".sh"))],
@@ -441,7 +441,7 @@ class HealingContract(unittest.TestCase):
                 pass
             child.communicate(timeout=10)
         self.assertEqual(child.returncode, 1, error)
-        self.assertIn("cannot " + operation + " fmx while a Firstmate fleet or profile mutation is active or indeterminate", error)
+        self.assertIn("cannot " + operation + " firstmate while a Firstmate fleet or profile mutation is active or indeterminate", error)
         self.assertEqual(output, "")
         self.assertEqual(before, self.shared_maintenance_snapshot(), "refusal changed pre-existing state")
         self.assertFalse(lock.exists())
@@ -467,7 +467,7 @@ class HealingContract(unittest.TestCase):
         self.shared_maintenance_artifacts(interrupted=True)
         before = snapshot(self.root)
         values = environment(self.case)
-        values["FMX_INSTALL_TEST_FAIL_AT"] = "after-recovery"
+        values["TRELLAGE_FIRSTMATE_INSTALL_TEST_FAIL_AT"] = "after-recovery"
         result = subprocess.run(
             [str(self.case / "bin/bash"), str(SOURCE / "install.sh")], env=values,
             stdin=subprocess.DEVNULL, capture_output=True, text=True, cwd=self.case, timeout=30, check=False,
@@ -475,11 +475,11 @@ class HealingContract(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("injected failure at after-recovery", result.stderr)
         self.assertEqual((runtime(self.case) / "policies/admission-retired.md").read_text(), "prior runtime\n")
-        self.assertTrue((self.case / "home/.local/share/trellage/.native-commands/fmx").is_symlink())
-        self.assertFalse((runtime(self.case).parent / ".fmx-install.fixture").exists())
-        self.assertFalse((runtime(self.case).parent / ".fmx-retired-install.fixture").exists())
-        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/.fmx-command.fixture").exists())
-        self.assertFalse((runtime(self.case).parent / ".fmx-install.lock").exists())
+        self.assertTrue((self.case / "home/.local/share/trellage/.native-commands/firstmate").is_symlink())
+        self.assertFalse((runtime(self.case).parent / ".firstmate-install.fixture").exists())
+        self.assertFalse((runtime(self.case).parent / ".firstmate-retired-install.fixture").exists())
+        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/.firstmate-command.fixture").exists())
+        self.assertFalse((runtime(self.case).parent / ".firstmate-install.lock").exists())
         self.unchanged(before, self.root)
         self.no_network()
 
@@ -492,10 +492,10 @@ class HealingContract(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(runtime(self.case).exists())
-        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/fmx").is_symlink())
-        self.assertFalse((runtime(self.case).parent / ".fmx-retired-install.fixture").exists())
-        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/.fmx-command.fixture").exists())
-        self.assertFalse((runtime(self.case).parent / ".fmx-install.lock").exists())
+        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/firstmate").is_symlink())
+        self.assertFalse((runtime(self.case).parent / ".firstmate-retired-install.fixture").exists())
+        self.assertFalse((self.case / "home/.local/share/trellage/.native-commands/.firstmate-command.fixture").exists())
+        self.assertFalse((runtime(self.case).parent / ".firstmate-install.lock").exists())
         self.unchanged(before, self.root)
         self.no_network()
 
@@ -525,7 +525,7 @@ class HealingContract(unittest.TestCase):
         self.no_network()
 
     def test_wire_text_bounds_preserve_helper_failure_details(self):
-        control = package(self.case) / "lib/fmx-control.py"
+        control = package(self.case) / "lib/firstmate-control.py"
         details = "Helper check failed:\nmissing gh-axi\t" + "🧭" * 4000
         result = subprocess.run(
             [str(self.case / "bin/python3"), str(control), "tool-report", "false", details, "gh-axi", ""],
@@ -620,7 +620,7 @@ class HealingContract(unittest.TestCase):
         self.assertEqual(identity, (self.root / "receipts/instance.json").read_bytes())
         self.assertFalse((self.case / "home/.no-mistakes").exists())
         self.assertFalse((self.root / "locks/mutation").exists())
-        self.assertFalse((runtime(self.case).parent / ".fmx-install.lock").exists())
+        self.assertFalse((runtime(self.case).parent / ".firstmate-install.lock").exists())
         self.assertFalse((self.case / "native_claude_launch_log.log").read_text())
 
     def test_plan_binds_registry_scope_and_destination_without_changing_artifact_cache(self):
@@ -725,7 +725,7 @@ class HealingContract(unittest.TestCase):
         self.no_network()
 
     def test_scoped_registry_is_rechecked_under_runtime_lock(self):
-        self.changed_registry_under_installer_lock(runtime(self.case).parent / ".fmx-install.lock")
+        self.changed_registry_under_installer_lock(runtime(self.case).parent / ".firstmate-install.lock")
 
     def test_scoped_registry_is_rechecked_under_cache_install_lock(self):
         self.changed_registry_under_installer_lock(runtime(self.case) / "prerequisites/.install-lock")
@@ -842,7 +842,7 @@ class HealingContract(unittest.TestCase):
         self.response(self.prepare(), "blocked")
         self.assertEqual(marker.read_text(), "foreign\n")
         installed = runtime(self.case)
-        saved = installed.with_name("saved-fmx")
+        saved = installed.with_name("saved-firstmate")
         installed.rename(saved)
         self.assertEqual(process(self.case, "path", helper=True).returncode, 3)
         self.response(self.prepare(), "blocked")
@@ -1066,7 +1066,7 @@ raise SystemExit(result.returncode)
     def test_install_plan_is_rechecked_under_the_runtime_gate(self):
         self.remove_cache()
         before = snapshot(self.root)
-        self.hold_lock_creation(runtime(self.case).parent / ".fmx-install.lock")
+        self.hold_lock_creation(runtime(self.case).parent / ".firstmate-install.lock")
         child = self.start_preparation(self.identity)
         self.wait_file(self.case / "lock-ready", child)
         path = package(self.case) / "prerequisites/npm/package-lock.json"
@@ -1078,7 +1078,7 @@ raise SystemExit(result.returncode)
         self.assertEqual(result["fleet"]["preparation"]["state"], "blocked")
         self.assertIn("plan changed", result["fleet"]["preparation"]["diagnostic"])
         self.assertEqual(before, snapshot(self.root))
-        self.assertFalse((runtime(self.case).parent / ".fmx-install.lock").exists())
+        self.assertFalse((runtime(self.case).parent / ".firstmate-install.lock").exists())
         self.no_network()
 
     def preserve_interrupted_state_on_locked_refusal(self, change):
@@ -1116,7 +1116,7 @@ raise SystemExit(result.returncode)
         self.preserve_interrupted_state_on_locked_refusal("plan")
 
     def test_cancel_between_spawn_and_registration_stops_the_new_group(self):
-        control = package(self.case) / "lib/fmx-control.py"
+        control = package(self.case) / "lib/firstmate-control.py"
         pid_file, action_file = self.case / "race-child-pid", self.case / "race-child-action"
         driver = self.case / "spawn-race.py"
         code = """import importlib.util, os, pathlib, signal, subprocess, sys
@@ -1161,7 +1161,7 @@ raise SystemExit("cancellation was lost")
                     pass
 
     def start_preparation(self, approved=None, extra=None):
-        args = [str(package(self.case) / "bin/fmx"), "prepare", "default", "--json",
+        args = [str(package(self.case) / "bin/firstmate"), "prepare", "default", "--json",
                 "--expected-source-revision", REVISION]
         if approved:
             args += ["--install-prerequisites", approved]
@@ -1188,7 +1188,7 @@ raise SystemExit("cancellation was lost")
         except subprocess.TimeoutExpired:
             child.send_signal(signal.SIGKILL)
             output, error = child.communicate(timeout=5)
-            self.fail("the public fmx parent did not finish cancellation within the Guide's 10-second grace: " + error)
+            self.fail("the public firstmate parent did not finish cancellation within the Guide's 10-second grace: " + error)
         self.assertEqual(child.returncode, 143, error)
         self.assertEqual(output, "")
 
@@ -1203,7 +1203,7 @@ raise SystemExit("cancellation was lost")
         with self.assertRaises(ProcessLookupError):
             os.kill(provider_pid, 0)
         self.assertFalse((self.root / "locks/mutation").exists())
-        self.assertFalse((runtime(self.case).parent / ".fmx-install.lock").exists())
+        self.assertFalse((runtime(self.case).parent / ".firstmate-install.lock").exists())
         self.assertFalse((runtime(self.case) / "prerequisites/.install-lock").exists())
         self.assertFalse(list((runtime(self.case) / "prerequisites").glob(".stage.*")))
         self.assertFalse(destination(self.case).exists())

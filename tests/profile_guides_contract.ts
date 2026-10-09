@@ -543,7 +543,7 @@ const compoundBodyFacts = [
     "fresh ce-compound one-shot context",
     hasCompoundBodyTermsNear(
       "/ce-compound mode:non-interactive",
-      [/\bdoes not inherit\b/u, /\bcpx\b/u, /\bconversation\b/u, /\broot cause\b/u, /\bproof\b/u, /\bcurrent tree\b/u],
+      [/\bdoes not inherit\b/u, /\bcopilot\b/u, /\bconversation\b/u, /\broot cause\b/u, /\bproof\b/u, /\bcurrent tree\b/u],
       520,
     ),
   ],

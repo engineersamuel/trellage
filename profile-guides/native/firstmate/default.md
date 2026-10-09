@@ -1,7 +1,7 @@
 ---
 schemaVersion: 1
 capabilities:
-  - fmx-default-native-profile
+  - firstmate-default-native-profile
   - firstmate-fleet-orchestration
   - isolated-git-worktree-crews
   - event-driven-worker-supervision
@@ -13,7 +13,7 @@ capabilities:
   - fleet-status-and-project-memory
   - notify-only-condition-watches
 bestFor:
-  - Explicit requests for trx run firstmate default, fmx/default, firstmate/default, firstmate / default, or native:firstmate/default
+  - Explicit requests for trx run firstmate default, firstmate/default, firstmate/default, firstmate / default, or native:firstmate/default
   - Coordinating several related engineering tasks across isolated Git worktrees while one Firstmate supervisor routes, supervises, and delivers the work
   - Long-running project programs that need durable backlog, task, watcher, and project state between interactions
   - Mixed ship and scout work where Firstmate handles delegated decisions and workers report actionable status changes
@@ -24,10 +24,10 @@ avoidFor:
   - Untrusted repositories or tasks that require a container security boundary; Firstmate workers run directly on the host
   - Work that requires a Firstmate backend other than Herdr or tmux, or a worker harness other than the Trellage-managed Claude runtime
 prerequisites:
-  - id: fmx-setup
+  - id: firstmate-setup
     description: Select or create a fleet in the interactive guide when instance support is available. Unqualified trx setup firstmate default prepares only the shared legacy fleet; it does not create a worktree fleet.
   - id: managed-fleet-tools
-    description: On first launch, fmx detects missing locked Firstmate tools and offers to install them into the displayed fmx-owned user-data path only after explicit consent.
+    description: On first launch, firstmate detects missing locked Firstmate tools and offers to install them into the displayed firstmate-owned user-data path only after explicit consent.
   - id: github-auth
     description: GitHub CLI authenticated through the host gh configuration; token-only environment authentication is not forwarded.
   - id: proxy-health
