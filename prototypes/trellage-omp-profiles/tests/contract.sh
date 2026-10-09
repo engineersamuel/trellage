@@ -282,6 +282,13 @@ printf '%s\n' "$FAKE_GH_TOKEN"
 FAKE_GH
 chmod 0755 "$fake_bin/gh"
 
+cat >"$fake_bin/git" <<'FAKE_GIT'
+#!/usr/bin/env bash
+printf '%s\n' 'fixture git is unavailable' >&2
+exit 1
+FAKE_GIT
+chmod 0755 "$fake_bin/git"
+
 install_fixture_node "$fake_bin"
 seed_floating_skills_cache "$home"
 seed_community_skills_cache "$home/.local/share/trellage/common/omp-community-skills"
@@ -672,7 +679,7 @@ FAKE_MISE_READY_FILE="$prelaunch_signal_ready" \
 FAKE_MISE_RELEASE_FILE="$prelaunch_signal_release" \
   "$command_path" --headless-policy no-user-input -p cancel-before-child &
 prelaunch_signal_pid=$!
-for _ in {1..100}; do
+for _ in {1..1500}; do
   [[ -e "$prelaunch_signal_ready" ]] && break
   sleep 0.02
 done
@@ -692,7 +699,7 @@ fi
 
 FAKE_OMP_WAIT_FOR_SIGNAL=1 "$command_path" -p wait-for-signal &
 signal_pid=$!
-for _ in {1..100}; do
+for _ in {1..1500}; do
   grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null && break
   sleep 0.02
 done
@@ -709,7 +716,7 @@ grep -Fqx TERM "$FAKE_OMP_SIGNAL_LOG" || fail 'launcher did not preserve TERM de
 : >"$FAKE_OMP_SIGNAL_LOG"
 FAKE_OMP_WAIT_FOR_SIGNAL=1 "$command_path" --headless-policy no-user-input -p wait-for-signal &
 headless_signal_pid=$!
-for _ in {1..100}; do
+for _ in {1..1500}; do
   grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null && break
   sleep 0.02
 done
