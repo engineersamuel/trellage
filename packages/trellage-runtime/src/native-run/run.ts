@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { lstat, mkdir, readFile } from "node:fs/promises"
 import path from "node:path"
+import { promisify } from "node:util"
 import { readTrellageConfig, TrellageConfigError, type NativeCatalog } from "../native-config.ts"
 import {
   PI_EXTENSION_PACKAGES,
@@ -193,35 +194,96 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
   })
 
 const piInstaller = fileURLToPath(new URL("../../../../scripts/install-pi-release.sh", import.meta.url))
+const execFilePromise = promisify(execFile)
+const LATEST_CHECK_TIMEOUT_MS = 2_000
 
-/** Install the newest Pi GitHub release before launch; failures warn and keep the installed Pi. */
-export const refreshPiRelease = (environment: NodeJS.ProcessEnv): Promise<string | undefined> => {
+const latestPiReleaseTag = async (environment: NodeJS.ProcessEnv): Promise<string> => {
+  const { stdout } = await execFilePromise("gh", ["release", "view", "-R", "earendil-works/pi", "--json", "tagName", "--jq", ".tagName"], {
+    env: environment, encoding: "utf8", timeout: LATEST_CHECK_TIMEOUT_MS,
+  })
+  const tag = stdout.trim()
+  if (!/^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-.][0-9A-Za-z.]+)?$/.test(tag)) throw new Error(`GitHub returned an invalid Pi release tag: ${tag}`)
+  return tag
+}
+
+/** Install the given Pi GitHub release; resolving it separately lets source and release checks overlap. */
+export const refreshPiRelease = (environment: NodeJS.ProcessEnv, tag?: string): Promise<string | undefined> => {
   if (environment.TRELLAGE_PI_BIN || environment.TRELLAGE_PI_AUTO_UPDATE === "0") return Promise.resolve(undefined)
   return new Promise((resolve) => {
-    execFile("bash", [piInstaller], { env: environment, timeout: 120_000 }, (error, _stdout, stderr) => {
+    execFile("bash", tag === undefined ? [piInstaller] : [piInstaller, tag], { env: environment, timeout: 120_000 }, (error, _stdout, stderr) => {
       resolve(error ? `Pi release update failed, using the installed Pi: ${stderr.trim().split("\n").pop() || error.message}` : undefined)
     })
   })
 }
 
-/** Install the latest always-on Pi extensions; failures warn and keep what is installed. */
-export const refreshPiExtensions = (environment: NodeJS.ProcessEnv): Promise<string | undefined> => {
-  if (environment.TRELLAGE_PI_BIN || environment.TRELLAGE_PI_AUTO_UPDATE === "0") return Promise.resolve(undefined)
-  const home = piExtensionsHome(environment)
-  return new Promise((resolve) => {
-    mkdir(home, { recursive: true }).then(
-      () =>
-        execFile(
-          "npm",
-          ["install", "--prefix", home, "--no-audit", "--no-fund", "--no-progress", "--loglevel=error", ...PI_EXTENSION_PACKAGES.map((name) => `${name}@latest`)],
-          { env: environment, timeout: 120_000 },
-          (error, _stdout, stderr) => {
-            resolve(error ? `Pi extension update failed, using the installed extensions: ${stderr.trim().split("\n").pop() || error.message}` : undefined)
-          },
-        ),
-      (error: Error) => resolve(`Pi extension update failed: ${error.message}`),
-    )
+type LatestPackageVersion = (name: string, environment: NodeJS.ProcessEnv) => Promise<string>
+
+const npmLatestPackageVersion: LatestPackageVersion = async (name, environment) => {
+  const { stdout } = await execFilePromise("npm", ["view", name, "version", "--json"], {
+    env: environment, encoding: "utf8", timeout: LATEST_CHECK_TIMEOUT_MS,
   })
+  const version: unknown = JSON.parse(stdout)
+  if (typeof version !== "string" || version.length === 0) throw new Error(`npm returned an invalid latest version for ${name}`)
+  return version
+}
+
+export const piExtensionsNeedUpdate = async (
+  environment: NodeJS.ProcessEnv,
+  latestVersion: LatestPackageVersion = npmLatestPackageVersion,
+): Promise<boolean> => {
+  const home = piExtensionsHome(environment)
+  const installed = await Promise.all(PI_EXTENSION_PACKAGES.map(async (name) => {
+    try {
+      const manifest: unknown = JSON.parse(await readFile(path.join(home, "node_modules", name, "package.json"), "utf8"))
+      return manifest && typeof manifest === "object" && "version" in manifest && typeof manifest.version === "string"
+        ? manifest.version : undefined
+    } catch {
+      return undefined
+    }
+  }))
+  if (installed.some((version) => version === undefined)) return true
+  const latest = await Promise.all(PI_EXTENSION_PACKAGES.map((name) => latestVersion(name, environment)))
+  return installed.some((version, index) => version !== latest[index])
+}
+
+/** Check the always-on Pi extensions and install only when a package is missing or outdated. */
+export const refreshPiExtensions = async (environment: NodeJS.ProcessEnv, needsUpdate?: boolean): Promise<string | undefined> => {
+  if (environment.TRELLAGE_PI_BIN || environment.TRELLAGE_PI_AUTO_UPDATE === "0") return undefined
+  const home = piExtensionsHome(environment)
+  try {
+    await mkdir(home, { recursive: true })
+    if (!(needsUpdate ?? (await piExtensionsNeedUpdate(environment)))) return undefined
+    await execFilePromise("npm", [
+      "install", "--prefix", home, "--no-audit", "--no-fund", "--no-progress", "--loglevel=error",
+      ...PI_EXTENSION_PACKAGES.map((name) => `${name}@latest`),
+    ], { env: environment, timeout: 120_000 })
+    return undefined
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.split("\n").pop() : String(error)
+    return `Pi extension update failed, using the installed extensions: ${detail}`
+  }
+}
+
+interface PiRefreshCheck {
+  readonly releaseTag?: string
+  readonly releaseWarning?: string
+  readonly extensionsNeedUpdate?: boolean
+  readonly extensionsWarning?: string
+}
+
+const checkPiRefresh = async (environment: NodeJS.ProcessEnv): Promise<PiRefreshCheck> => {
+  if (environment.TRELLAGE_PI_BIN || environment.TRELLAGE_PI_AUTO_UPDATE === "0") return {}
+  const [release, extensions] = await Promise.all([
+    latestPiReleaseTag(environment).then(
+      (releaseTag) => ({ releaseTag }),
+      (error: unknown) => ({ releaseWarning: `Pi release update failed, using the installed Pi: ${error instanceof Error ? error.message : String(error)}` }),
+    ),
+    piExtensionsNeedUpdate(environment).then(
+      (extensionsNeedUpdate) => ({ extensionsNeedUpdate }),
+      (error: unknown) => ({ extensionsWarning: `Pi extension update failed, using the installed extensions: ${error instanceof Error ? error.message : String(error)}` }),
+    ),
+  ])
+  return { ...release, ...extensions }
 }
 
 export interface RunDependencies {
@@ -367,14 +429,19 @@ const refreshPreparedRun = async (
   dependencies: RunDependencies,
   environment: NodeJS.ProcessEnv,
   write: (line: string) => void,
+  piRefresh: PiRefreshCheck = {},
 ): Promise<PreparedRun> => {
   const extensionsBefore = piExtensionEntries(environment).join("\0")
   const refresh =
     dependencies.refreshHarness ??
     (async (harness: string, currentEnvironment: NodeJS.ProcessEnv) => {
       if (harness !== "pi") return undefined
-      const warnings = (await Promise.all([refreshPiRelease(currentEnvironment), refreshPiExtensions(currentEnvironment)])).filter(Boolean)
-      return warnings.length ? warnings.join("; ") : undefined
+      const warnings = [piRefresh.releaseWarning, piRefresh.extensionsWarning]
+      warnings.push(...await Promise.all([
+        piRefresh.releaseWarning ? undefined : refreshPiRelease(currentEnvironment, piRefresh.releaseTag),
+        piRefresh.extensionsWarning ? undefined : refreshPiExtensions(currentEnvironment, piRefresh.extensionsNeedUpdate),
+      ]))
+      return warnings.filter(Boolean).join("; ") || undefined
     })
   const warning = await refresh(prepared.adapter.id, environment)
   if (warning) write(`Warning     ${warning}`)
@@ -436,11 +503,13 @@ export const runNative = async (options: RunOptions, dependencies: RunDependenci
   const environment = dependencies.environment ?? process.env
   const cwd = dependencies.cwd ?? process.cwd()
   const paths = dependencies.paths ?? resolveNativeRunPaths({ environment })
+  const piRefresh = options.harness === "pi" && !options.dryRun && dependencies.refreshHarness === undefined
+    ? checkPiRefresh(environment) : Promise.resolve({})
 
   let prepared = await prepareRun(options, dependencies)
   for (const line of describePreparedRun(prepared)) write(line)
   if (options.dryRun) return 0
-  prepared = await refreshPreparedRun(prepared, options, dependencies, environment, write)
+  prepared = await refreshPreparedRun(prepared, options, dependencies, environment, write, await piRefresh)
   assertLaunchIsolation(prepared, options)
   return launchPreparedRun(prepared, options, dependencies, environment, cwd, paths, write)
 }
