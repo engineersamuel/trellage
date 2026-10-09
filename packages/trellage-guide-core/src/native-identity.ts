@@ -1,5 +1,11 @@
 export const canonicalNativeIdentity = (launcher: string, profile: string): { launcher: string; profile: string } => {
-  return { launcher, profile }
+  const canonicalProfile =
+    launcher === "agency" && profile === "trellage-azure"
+      ? "azure"
+      : launcher === "omp" && profile === "copilot"
+        ? "default"
+        : profile
+  return { launcher, profile: canonicalProfile }
 }
 
 export const canonicalProfileRef = (ref: string): string => {

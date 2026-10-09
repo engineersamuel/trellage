@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import {
+  canonicalNativeIdentity,
   discoverProfileGuideRelativePaths,
   loadProfileGuide,
   loadProfileGuideRegistry,
@@ -373,6 +374,12 @@ describe("profile guide goal execution", () => {
 })
 
 describe("profile guide identities", () => {
+  it("normalizes backend-only profile names without accepting historical launcher aliases", () => {
+    expect(canonicalNativeIdentity("agency", "trellage-azure")).toEqual({ launcher: "agency", profile: "azure" })
+    expect(canonicalNativeIdentity("omp", "copilot")).toEqual({ launcher: "omp", profile: "default" })
+    expect(canonicalNativeIdentity("cpx", "hve")).toEqual({ launcher: "cpx", profile: "hve" })
+  })
+
   it("round-trips native and Sandbox paths", () => {
     const native = parseProfileGuideIdentity("native/copilot/hve.md")
     const sandbox = parseProfileGuideIdentity("sandbox/claude-social-media.md")
