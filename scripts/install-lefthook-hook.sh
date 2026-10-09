@@ -32,19 +32,14 @@ case "$hook_name" in
     fi
     exec "$lefthook" run "$hook_name" --no-auto-install "$@"
     ;;
-  post-merge|post-rewrite)
-    "${active_root}/scripts/build-profile-compiler.sh"
-    branch="$(git branch --show-current)"
-    if [ "$branch" != main ]; then
-      exit 0
-    fi
-    native_refresh="${active_root}/scripts/rebuild-profile-images.sh"
+  post-commit|post-merge|post-rewrite)
+    native_refresh="${active_root}/scripts/refresh-native-if-stale.sh"
     if [ ! -x "$native_refresh" ]; then
-      printf 'trellage %s: native refresh script is missing or not executable: %s\n' \
+      printf 'trellage %s: native freshness script is missing or not executable: %s\n' \
         "$hook_name" "$native_refresh" >&2
       exit 1
     fi
-    exec "$native_refresh" --native-only
+    exec "$native_refresh"
     ;;
   *)
     printf 'trellage hook: unsupported hook name: %s\n' "$hook_name" >&2
@@ -57,6 +52,6 @@ EOF
   mv -f -- "$temp_hook" "$hook_path"
 }
 
-for hook_name in pre-commit pre-push post-merge post-rewrite; do
+for hook_name in pre-commit pre-push post-commit post-merge post-rewrite; do
   install_hook "$hook_name"
 done
