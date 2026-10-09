@@ -91,13 +91,13 @@ grep -Fq 'bash prototypes/trellage/tests/claude_entry_contract.sh' "$repo_root/M
   || fail 'Makefile does not run the Claude entry contract'
 grep -Fq 'bash prototypes/trellage/tests/prime_entry_contract.sh' "$repo_root/Makefile" \
   || fail 'Makefile does not run the Prime entry contract'
-for target in native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-jcode-profile; do
+for target in native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-firstmate-overlays native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
 done
-for target in native-codex-auth-config-launch native-codex-lifecycle native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-profile headlong-entry; do
+for target in native-codex-auth-config-launch native-codex-lifecycle native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-healing native-firstmate-instances native-firstmate-lifecycle headlong-entry; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^TIMING_SENSITIVE_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
@@ -106,6 +106,11 @@ for target in native-codex-auth-config-launch native-codex-lifecycle native-omp-
     fail "Makefile also runs timing-sensitive ${target} in parallel"
   fi
 done
+grep -Eq '^\.PHONY:.* native-firstmate-profile( |$)' "$repo_root/Makefile" \
+  || fail 'Makefile does not declare native-firstmate-profile phony'
+if grep -Eq '^(PARALLEL_TEST_TARGETS|TIMING_SENSITIVE_TEST_TARGETS|FINAL_TEST_TARGETS) :=.* native-firstmate-profile( |$)' "$repo_root/Makefile"; then
+  fail 'Makefile test runs the explicit Firstmate aggregate'
+fi
 grep -Fqx $'\t$(MAKE) --no-print-directory TEST_TIMING=1 -j1 $(TIMING_SENSITIVE_TEST_TARGETS)' "$repo_root/Makefile" \
   || fail 'Makefile does not run timing-sensitive contracts serially'
 grep -Fqx '.PHONY: profile-compiler-fingerprint' "$repo_root/Makefile" \
@@ -127,8 +132,16 @@ grep -Fqx $'\tbash prototypes/trellage-agency-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Agency profile target is stale'
 grep -Fqx $'\tbash prototypes/trellage-claude-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Claude profile target is stale'
-grep -Fqx $'\tbash prototypes/trellage-firstmate-profiles/tests/contract.sh' \
-  "$repo_root/Makefile" || fail 'Makefile Firstmate profile target is stale'
+grep -Fqx $'\tuv run python tests/firstmate_overlay_contract.py' \
+  "$repo_root/Makefile" || fail 'Makefile Firstmate overlay target is stale'
+for slice in healing instances lifecycle; do
+  grep -Fqx $'\tTRELLAGE_FIRSTMATE_CONTRACT_ONLY='"$slice"' bash prototypes/trellage-firstmate-profiles/tests/contract.sh' \
+    "$repo_root/Makefile" || fail "Makefile Firstmate ${slice} target is stale"
+  grep -Fqx $'\t$(MAKE) --no-print-directory native-firstmate-'"$slice" \
+    "$repo_root/Makefile" || fail "Makefile Firstmate aggregate omits ${slice}"
+done
+grep -Fqx $'\t$(MAKE) --no-print-directory native-firstmate-overlays' \
+  "$repo_root/Makefile" || fail 'Makefile Firstmate aggregate omits overlays'
 grep -Fqx $'\tbash prototypes/trellage-jcode-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile jcode profile target is stale'
 
