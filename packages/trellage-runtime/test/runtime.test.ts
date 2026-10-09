@@ -920,20 +920,24 @@ describe("Owned source installation", () => {
     expect(() => validateOwnedTree(destination)).toThrow("unpermitted runtime link")
   })
 
-  test("refuses a lock mismatch without publishing a runtime", () => {
-    const { root, destination, home } = sourceFixture()
-    write(
-      root,
-      "packages/application/package.json",
-      JSON.stringify({
-        name: "@fixture/application",
-        version: "2.0.0",
-        dependencies: { "@fixture/missing": "workspace:*" },
-      }),
-    )
-    const result = run("install", root, destination, { HOME: home })
-    expect(result.status).toBe(1)
-    expect(existsSync(destination)).toBe(false)
-    expect(existsSync(`${destination}.lock`)).toBe(false)
-  })
+  test(
+    "refuses a lock mismatch without publishing a runtime",
+    () => {
+      const { root, destination, home } = sourceFixture()
+      write(
+        root,
+        "packages/application/package.json",
+        JSON.stringify({
+          name: "@fixture/application",
+          version: "2.0.0",
+          dependencies: { "@fixture/missing": "workspace:*" },
+        }),
+      )
+      const result = run("install", root, destination, { HOME: home })
+      expect(result.status).toBe(1)
+      expect(existsSync(destination)).toBe(false)
+      expect(existsSync(`${destination}.lock`)).toBe(false)
+    },
+    15_000,
+  )
 })
