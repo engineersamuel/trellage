@@ -207,6 +207,12 @@ case "${!#}" in
 esac
 FAKE_CURL
 chmod 0755 "$fake_bin/curl"
+cat >"$fake_bin/git" <<'FAKE_GIT'
+#!/usr/bin/env bash
+printf '%s\n' 'fixture git is unavailable' >&2
+exit 1
+FAKE_GIT
+chmod 0755 "$fake_bin/git"
 ln -s "$node_binary" "$fake_bin/node"
 install_fixture_bun "$fake_bin"
 
