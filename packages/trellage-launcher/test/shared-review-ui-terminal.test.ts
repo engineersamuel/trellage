@@ -51,7 +51,8 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
       expect(screen).toContain("║ › Fleet [running] ║")
       expect(screen).toContain("Read-only reviews do not authorize edits")
     }
-    assertFilled()
+    const waitForFilled = async () => vi.waitFor(assertFilled, { timeout: 8000, interval: 25 })
+    await waitForFilled()
     if (process.env.REVIEW_UI_SCREEN === "1") console.log(`\n${screen}\n`)
     if (outcome === "all") {
       for (const [index, label, content] of [
@@ -88,13 +89,13 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
     terminal.resize(110, 42)
     child.resize(110, 42)
     await wait(before!)
-    await vi.waitFor(assertFilled)
+    await waitForFilled()
     if (process.env.REVIEW_UI_SCREEN === "1") console.log(`\n${screen}\n`)
     if (outcome === "all") {
       await wait("Architecture [running]", "Matt [running]", "Overview [running]", "Synthesis [queued]")
       await press("\u001b[Z", "› Synthesis [queued]", "Tab 8/8", "Esc cancel")
       await press("\u001b[C", "› Fleet [running]", before!)
-      assertFilled()
+      await waitForFilled()
     }
     if (outcome === "cancelled") child.write("\u001b")
     else await writeFile(path.join(root, "finish"), outcome === "all" ? "complete" : outcome)
