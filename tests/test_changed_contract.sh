@@ -139,7 +139,7 @@ printf 'dirty\n' >"$git_fixture/packages/trellage-runtime/src/dirty.ts"
 output="$(cd "$git_fixture" && scripts/test-changed.sh --dry-run --base HEAD --committed-only)"
 grep -Fqx 'test-changed: no changed files' <<<"$output" \
   || fail "committed-only mode included dirty worktree state: $output"
-output="$(cd "$git_fixture" && scripts/test-changed.sh --dry-run --base HEAD)"
+output="$(cd "$git_fixture" && TEST_CHANGED_COMMITTED_ONLY=0 scripts/test-changed.sh --dry-run --base HEAD)"
 grep -Fqx 'test-changed: make targets: source-runtime' <<<"$output" \
   || fail "default mode omitted dirty worktree state: $output"
 
