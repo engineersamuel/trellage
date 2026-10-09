@@ -14,4 +14,4 @@ pre-push:
   parallel: true
   jobs:
     - name: changed tests
-      run: git_local_env=$(git rev-parse --local-env-vars) && unset $git_local_env && TEST_CHANGED_BASE="refs/remotes/{1}/main" TEST_CHANGED_COMMITTED_ONLY=1 make test-changed
+      run: remote={1} && branch=$(git symbolic-ref --quiet --short HEAD || true) && remote_branch="refs/remotes/$remote/$branch" && if [ -n "$branch" ] && git rev-parse --verify --quiet "$remote_branch^{commit}" >/dev/null; then test_base=$remote_branch; else test_base="refs/remotes/$remote/main"; fi && git_local_env=$(git rev-parse --local-env-vars) && unset $git_local_env && TEST_CHANGED_BASE="$test_base" TEST_CHANGED_COMMITTED_ONLY=1 make test-changed

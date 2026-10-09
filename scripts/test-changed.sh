@@ -427,12 +427,16 @@ classify() {
     .agents/* | .github/instructions/*)
       add_target agent-harness
       ;;
+    lefthook.yml)
+      add_target agent-harness
+      add_target test-changed-contract
+      ;;
     config.toml)
       add_target floating-skills-contract
       add_all_native_targets
       add_all_profiles
       ;;
-    package.json | bun.lock | bunfig.toml | tsconfig.json | tsconfig.base.json | Makefile | lefthook.yml | \
+    package.json | bun.lock | bunfig.toml | tsconfig.json | tsconfig.base.json | Makefile | \
       .github/workflows/* | harnesses/* | Dockerfile*)
       add_target test
       ;;

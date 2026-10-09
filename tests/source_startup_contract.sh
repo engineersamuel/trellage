@@ -21,6 +21,9 @@ fail() {
 hook_fixture="$fixture_root/hook"
 mkdir -p "$hook_fixture/bin" "$hook_fixture/caller"
 git init --quiet "$hook_fixture/caller"
+git -C "$hook_fixture/caller" config user.name "Trellage Hook Contract"
+git -C "$hook_fixture/caller" config user.email "trellage-hook@example.invalid"
+git -C "$hook_fixture/caller" commit --quiet --allow-empty -m initial
 cp "$hook_fixture/caller/.git/config" "$hook_fixture/config-before"
 cat >"$hook_fixture/bin/git" <<'SH'
 #!/usr/bin/env bash
@@ -39,7 +42,7 @@ set -euo pipefail
   printf 'Git hook repository variables leaked into source tests\n' >&2
   exit 1
 }
-[[ "${TEST_CHANGED_BASE:-}" == 'refs/remotes/{1}/main' ]] || {
+[[ "${TEST_CHANGED_BASE:-}" == "${HOOK_EXPECTED_BASE:?}" ]] || {
   printf 'Changed-test base was not passed to the selector\n' >&2
   exit 1
 }
@@ -60,6 +63,7 @@ hook_command="$(awk '
 [[ -n "$hook_command" ]] || fail 'missing source workspace pre-push command'
 HOOK_REAL_GIT="$(command -v git)" HOOK_CALLS="$hook_fixture/calls" \
   HOOK_NESTED="$hook_fixture/nested" PATH="$hook_fixture/bin:$PATH" \
+  HOOK_EXPECTED_BASE='refs/remotes/{1}/main' \
   GIT_DIR="$hook_fixture/caller/.git" GIT_WORK_TREE="$hook_fixture/caller" \
   GIT_COMMON_DIR="$hook_fixture/caller/.git" GIT_INDEX_FILE="$hook_fixture/index" \
   GIT_PREFIX=fixture/ bash -c "$hook_command" \
@@ -69,6 +73,19 @@ HOOK_REAL_GIT="$(command -v git)" HOOK_CALLS="$hook_fixture/calls" \
 cmp -s "$hook_fixture/config-before" "$hook_fixture/caller/.git/config" \
   || fail 'source workspace hook changed its caller repository'
 [[ -f "$hook_fixture/nested/HEAD" ]] || fail 'nested Git fixture was not initialized'
+hook_branch="$(git -C "$hook_fixture/caller" symbolic-ref --quiet --short HEAD)"
+hook_remote_branch="refs/remotes/{1}/$hook_branch"
+git -C "$hook_fixture/caller" update-ref "$hook_remote_branch" HEAD
+: >"$hook_fixture/calls"
+HOOK_REAL_GIT="$(command -v git)" HOOK_CALLS="$hook_fixture/calls" \
+  HOOK_NESTED="$hook_fixture/nested" PATH="$hook_fixture/bin:$PATH" \
+  HOOK_EXPECTED_BASE="$hook_remote_branch" \
+  GIT_DIR="$hook_fixture/caller/.git" GIT_WORK_TREE="$hook_fixture/caller" \
+  GIT_COMMON_DIR="$hook_fixture/caller/.git" GIT_INDEX_FILE="$hook_fixture/index" \
+  GIT_PREFIX=fixture/ bash -c "$hook_command" \
+  || fail 'source workspace hook did not select the existing remote branch'
+[[ "$(<"$hook_fixture/calls")" == 'test-changed' ]] \
+  || fail 'source workspace hook did not rerun the changed-test selector'
 printf 'source startup contract: PASS: pre-push isolates nested Git fixtures\n'
 
 mkdir -p "$hook_fixture/packages/trellage-cli" "$hook_fixture/git-bin" "$hook_fixture/home"

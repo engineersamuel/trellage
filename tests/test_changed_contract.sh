@@ -89,6 +89,10 @@ output="$(select_files functional-markdown .agents/rules/runtime.md)"
 grep -Fqx 'test-changed: make targets: agent-harness' <<<"$output" \
   || fail "functional Markdown was skipped: $output"
 
+output="$(select_files lefthook lefthook.yml)"
+grep -Fqx 'test-changed: make targets: agent-harness test-changed-contract' <<<"$output" \
+  || fail "Lefthook configuration selected unrelated targets: $output"
+
 output="$(select_files shared-sandbox prototypes/trellage/runtime-entry.sh)"
 profile_count="$(sed -n 's/^test-changed: sandbox profiles: //p' <<<"$output" | wc -w | tr -d ' ')"
 expected_profile_count="$(find "$repo_root/profiles" -mindepth 2 -maxdepth 2 -name profile.toml | wc -l | tr -d ' ')"
