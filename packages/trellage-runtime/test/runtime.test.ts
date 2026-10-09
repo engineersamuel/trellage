@@ -10,6 +10,7 @@ import {
   realpathSync,
   rmSync,
   rmdirSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   utimesSync,
@@ -463,6 +464,35 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
     expect(existsSync(cache)).toBe(false)
   }
   expect(readdirSync(home), JSON.stringify(readdirSync(home, { recursive: true }))).toEqual(before)
+})
+
+test("shares the Bun download cache through the Git common directory", () => {
+  const { root, home, parent, destination } = sourceFixture()
+  const initialized = spawnSync("git", ["init", "--quiet", root], { encoding: "utf8" })
+  expect(initialized.status, initialized.stderr).toBe(0)
+  const before = readdirSync(home)
+  const probe = path.join(parent, "cache-paths")
+  const fakeBin = path.join(parent, "fake-bin")
+  write(parent, "fake-bin/npm", [
+    "#!/bin/sh",
+    "set -eu",
+    'printf "%s\\n" "$BUN_INSTALL_CACHE_DIR" > "$CACHE_PROBE"',
+    'printf "%s\\n" "https://registry.npmjs.org/"',
+  ].join("\n"))
+  chmodSync(path.join(fakeBin, "npm"), 0o755)
+  const result = run("install", root, destination, {
+    HOME: home,
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+    CACHE_PROBE: probe,
+    BUN_INSTALL_CACHE_DIR: undefined,
+    npm_config_registry: undefined,
+    NPM_CONFIG_REGISTRY: undefined,
+  })
+  expect(result.status, result.stderr).toBe(0)
+  const shared = readFileSync(probe, "utf8").trim()
+  expect(realpathSync(shared)).toBe(realpathSync(path.join(root, ".git/trellage/bun-install-cache")))
+  expect(statSync(shared).mode & 0o777).toBe(0o700)
+  expect(readdirSync(home)).toEqual(before)
 })
 
 test.each([

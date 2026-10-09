@@ -13,6 +13,14 @@ dependency metadata changes. A raw `bun install --frozen-lockfile` is not a
 substitute: it does not record readiness and can leave declared bins with
 unsafe permissions.
 
+Preparation stores Bun package downloads in
+`<git-common-dir>/trellage/bun-install-cache`, so all worktrees of one
+repository share them. A new worktree then installs from this cache in seconds
+instead of downloading every package again. Bun verifies each cached package
+against the lockfile integrity. Set `BUN_INSTALL_CACHE_DIR` to use a different
+cache. Roots that are not a Git worktree top level use a temporary cache that
+preparation deletes after the install.
+
 `mise run rebuild-profiles` prepares the worktree source runtime before building
 Sandbox images. The `--sandbox-only` path does this too. If preparation fails,
 the image builds do not start. Native-only refreshes do not prepare this runtime;
