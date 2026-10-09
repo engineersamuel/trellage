@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   rmdirSync,
@@ -59,16 +60,41 @@ const signalHandlers = Object.entries(signalStatus).map(([signal, status]) => {
   return { signal, handler }
 })
 
-async function installDependencies(root: string): Promise<void> {
+// Worktrees of one repository share a Bun download cache in the Git common
+// directory, so a new worktree does not download every package again. Bun
+// verifies each cached package against the frozen lockfile integrity. Roots that
+// are not a Git worktree top level keep a temporary per-install cache.
+async function sharedBunCache(owner: string): Promise<string | undefined> {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")))
+  try {
+    const { stdout } = await promisify(execFile)(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+      { cwd: owner, env, signal: cancellation.signal, timeout: 10_000 },
+    )
+    const [topLevel, commonDirectory] = stdout.trim().split("\n")
+    if (topLevel === undefined || commonDirectory === undefined) return undefined
+    if (realpathSync(topLevel) !== realpathSync(owner)) return undefined
+    const cache = path.join(commonDirectory, "trellage", "bun-install-cache")
+    mkdirSync(cache, { recursive: true, mode: 0o700 })
+    return cache
+  } catch {
+    cancellation.signal.throwIfAborted()
+    return undefined
+  }
+}
+
+async function installDependencies(root: string, cacheOwner: string = root): Promise<void> {
   cancellation.signal.throwIfAborted()
   validateWorkspaceBinaries(root)
+  const sharedCache = process.env.BUN_INSTALL_CACHE_DIR ?? (await sharedBunCache(cacheOwner))
   const cache = mkdtempSync(path.join(root, ".trellage-package-cache."))
   const installHome = path.join(cache, "home")
   mkdirSync(installHome, { mode: 0o700 })
   try {
     await installFrozenDependencies(root, {
       ...process.env,
-      BUN_INSTALL_CACHE_DIR: process.env.BUN_INSTALL_CACHE_DIR ?? path.join(cache, "bun"),
+      BUN_INSTALL_CACHE_DIR: sharedCache ?? path.join(cache, "bun"),
       npm_config_cache: process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE ?? path.join(cache, "npm"),
       XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? path.join(cache, "xdg"),
     }, installHome)
@@ -160,7 +186,7 @@ async function stage(root: string, destination: string): Promise<void> {
   mkdirSync(destination, { mode: 0o755 })
   copySources(root, destination)
   writeFileSync(path.join(destination, sourceMarker), `${sourceOwnership}\n`, { flag: "wx", mode: 0o644 })
-  await installDependencies(destination)
+  await installDependencies(destination, root)
   requireOwnedWorkspace(destination)
 }
 
