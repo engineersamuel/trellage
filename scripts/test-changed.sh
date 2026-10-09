@@ -431,6 +431,10 @@ classify() {
       add_target agent-harness
       add_target test-changed-contract
       ;;
+    .github/workflows/ci.yml)
+      add_target agent-harness
+      add_target test-changed-contract
+      ;;
     config.toml)
       add_target floating-skills-contract
       add_all_native_targets

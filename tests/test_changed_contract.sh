@@ -93,6 +93,10 @@ output="$(select_files lefthook lefthook.yml)"
 grep -Fqx 'test-changed: make targets: agent-harness test-changed-contract' <<<"$output" \
   || fail "Lefthook configuration selected unrelated targets: $output"
 
+output="$(select_files ci-workflow .github/workflows/ci.yml)"
+grep -Fqx 'test-changed: make targets: agent-harness test-changed-contract' <<<"$output" \
+  || fail "CI workflow selected unrelated local targets: $output"
+
 output="$(select_files shared-sandbox prototypes/trellage/runtime-entry.sh)"
 profile_count="$(sed -n 's/^test-changed: sandbox profiles: //p' <<<"$output" | wc -w | tr -d ' ')"
 expected_profile_count="$(find "$repo_root/profiles" -mindepth 2 -maxdepth 2 -name profile.toml | wc -l | tr -d ' ')"
