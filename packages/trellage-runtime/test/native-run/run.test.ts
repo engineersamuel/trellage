@@ -8,7 +8,7 @@ import {
   grokAdapter,
   type LaunchInput,
 } from "../../src/native-run/adapters.ts"
-import { parseRunArguments, prepareRun, resumeCommand, runNative, type RunDependencies, type Spawner } from "../../src/native-run/run.ts"
+import { parseRunArguments, piExtensionsNeedUpdate, prepareRun, resumeCommand, runNative, type RunDependencies, type Spawner } from "../../src/native-run/run.ts"
 import { createSourceResolver, gitSourceTransport } from "../../src/native-run/source.ts"
 import { createSelectionHistory, scopeKeysFor } from "../../src/native-run/history.ts"
 import { cleanupFixtures, createSourceRepo, fixturePaths, git, skillMarkdown, tempRoot } from "./fixtures.ts"
@@ -406,6 +406,33 @@ test("a failed Pi release refresh warns and still launches", async () => {
   expect(status).toBe(0)
   expect(refreshed).toEqual(["pi"])
   expect(lines.some((line) => line.includes("Pi release update failed"))).toBe(true)
+})
+
+test("Pi extension freshness skips installation when every installed version is latest", async () => {
+  const root = await tempRoot("pi-extensions-current")
+  const extension = path.join(root, "node_modules", "@narumitw", "pi-plan-mode")
+  await mkdir(extension, { recursive: true })
+  await writeFile(path.join(extension, "package.json"), JSON.stringify({ version: "0.58.4" }))
+
+  const queried: string[] = []
+  const needsUpdate = await piExtensionsNeedUpdate(
+    { HOME: root, TRELLAGE_PI_EXTENSIONS_HOME: root },
+    async (name) => (queried.push(name), "0.58.4"),
+  )
+
+  expect(needsUpdate).toBe(false)
+  expect(queried).toEqual(["@narumitw/pi-plan-mode"])
+})
+
+test("Pi extension freshness installs missing or outdated packages", async () => {
+  const root = await tempRoot("pi-extensions-outdated")
+  const environment = { HOME: root, TRELLAGE_PI_EXTENSIONS_HOME: root }
+  expect(await piExtensionsNeedUpdate(environment, async () => "0.58.4")).toBe(true)
+
+  const extension = path.join(root, "node_modules", "@narumitw", "pi-plan-mode")
+  await mkdir(extension, { recursive: true })
+  await writeFile(path.join(extension, "package.json"), JSON.stringify({ version: "0.58.3" }))
+  expect(await piExtensionsNeedUpdate(environment, async () => "0.58.4")).toBe(true)
 })
 
 test("shared wildcard policy excludes unwanted skills and checks required selections", async () => {

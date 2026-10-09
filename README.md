@@ -2189,10 +2189,17 @@ installs it under `~/.local/share/pi-release/<version>`, and links
 `~/.local/bin/pi` to it. Re-run it to upgrade. `TRELLAGE_PI_BIN` overrides the
 binary `trx run pi` launches.
 
-`trx run pi` runs this installer before every launch (a no-op when current). A
-failed update warns and keeps the installed Pi. Set `TRELLAGE_PI_AUTO_UPDATE=0`
-to skip it; `TRELLAGE_PI_BIN` also skips it.
+`trx run pi` checks the latest Pi release and always-on extension versions on
+every launch. Those checks run concurrently with floating-skill freshness
+checks. The release installer receives the already-resolved tag, and npm runs
+`install` only when an extension is missing or its installed version differs
+from the registry's latest version. Each latest-version check has a two-second
+limit; failure warns and keeps the installed Pi or extensions. Set
+`TRELLAGE_PI_AUTO_UPDATE=0` to skip these checks; `TRELLAGE_PI_BIN` also skips
+them.
 
 `trx run` checks each floating default-branch skill source with `git ls-remote`.
-Every profile load attempts this check; there is no freshness TTL. Pinned
-sources reuse their validated resolved content until explicitly upgraded.
+Every profile load attempts this check; there is no freshness TTL. Each ref
+check has a two-second limit so a slow remote falls back to validated last-good
+content with a warning. Pinned sources reuse their validated resolved content
+until explicitly upgraded.

@@ -47,26 +47,29 @@ export const selectorOf = (source: NativeSource): SourceSelector =>
       ? { kind: "tag", value: source.tag }
       : { kind: "default" }
 
-const run = async (cwd: string, ...args: string[]): Promise<string> =>
+const run = async (cwd: string, args: ReadonlyArray<string>, timeout: number): Promise<string> =>
   (
     await execFilePromise("git", args, {
       cwd,
       encoding: "utf8",
+      timeout,
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_CONFIG_NOSYSTEM: "1" },
     })
   ).stdout
 
 export const githubUrl = (repository: string): string => `https://github.com/${repository}.git`
 
+const REFRESH_TIMEOUT_MS = 2_000
+
 export const gitSourceTransport = (remoteUrl: (repository: string) => string = githubUrl): SourceTransport => ({
   listTags: async (repository) =>
-    (await run(process.cwd(), "ls-remote", "--tags", "--refs", remoteUrl(repository)))
+    (await run(process.cwd(), ["ls-remote", "--tags", "--refs", remoteUrl(repository)], 30_000))
       .split("\n")
       .filter(Boolean)
       .map((line) => line.split(/\s+/)[1]!.replace(/^refs\/tags\//, "")),
   resolveRef: async (repository, ref) => {
     const refs = ref === "HEAD" ? ["HEAD"] : [`refs/tags/${ref}`, `refs/tags/${ref}^{}`]
-    const output = await run(process.cwd(), "ls-remote", remoteUrl(repository), ...refs)
+    const output = await run(process.cwd(), ["ls-remote", remoteUrl(repository), ...refs], REFRESH_TIMEOUT_MS)
     const lines = output.split("\n").filter((line) => line.length > 0)
     const peeled = lines.find((line) => line.split(/\s+/)[1]?.endsWith("^{}"))
     const commit = (peeled ?? lines[0] ?? "").split(/\s+/)[0] ?? ""
@@ -74,9 +77,9 @@ export const gitSourceTransport = (remoteUrl: (repository: string) => string = g
     return commit
   },
   fetchCommit: async (repository, commit, destination) => {
-    await run(destination, "init", "-q")
-    await run(destination, "fetch", "-q", "--depth", "1", remoteUrl(repository), commit)
-    await run(destination, "-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD")
+    await run(destination, ["init", "-q"], 30_000)
+    await run(destination, ["fetch", "-q", "--depth", "1", remoteUrl(repository), commit], 120_000)
+    await run(destination, ["-c", "advice.detachedHead=false", "checkout", "-q", "FETCH_HEAD"], 30_000)
     await rm(path.join(destination, ".git"), { recursive: true, force: true })
   },
 })
