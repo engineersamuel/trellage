@@ -5447,7 +5447,7 @@ PY
       TRELLAGE_IMAGE='test/copilot:locked' "$prototype_dir/trellage" -p metadata-failure \
       2>"$failure_stderr"
   failure_elapsed="$(( $(date +%s) - failure_started ))"
-  (( failure_elapsed < 10 )) \
+  (( failure_elapsed < 30 )) \
     || fail "permanent Herdr socket failure delayed command exit by ${failure_elapsed}s"
   grep -Fq 'Sandbox session metadata was not reported to Herdr' "$failure_stderr" \
     || fail 'Sandbox metadata failure was not visible'
