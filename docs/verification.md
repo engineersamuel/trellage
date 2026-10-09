@@ -185,6 +185,16 @@ shell syntax. These jobs run concurrently and should complete in seconds;
 GitHub Actions remains authoritative for broad deterministic and lifecycle
 contracts.
 
+The installed `post-commit`, `post-merge`, and `post-rewrite` hooks prepare the
+active Trellage worktree and compare its source receipt with
+`~/.local/share/trellage/.native-stack-sources`. A changed receipt atomically
+reinstalls every Native launcher and `trx`; an unchanged receipt skips the
+reinstall. The receipt advances only after the complete Native stack succeeds,
+so a partial failure is retried by the next hook. The global `trx` used from
+other repositories therefore follows the most recently committed, merged, or
+rewritten Trellage worktree. Uncommitted launcher work remains opt-in through
+`TRELLAGE_TRX_SOURCE_ROOT` and `TRELLAGE_TRX_NATIVE_SOURCE`.
+
 Run full GitHub Actions contract parity explicitly before high-risk pushes:
 
 ```bash

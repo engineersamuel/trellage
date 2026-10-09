@@ -42,10 +42,13 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   launchers (`agx`/`cdx`/`cpx`/`cldx`/`fmx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
   runs a non-locked Sandbox `build` for each `profiles/*`. Use `--native-only`
   or `--sandbox-only` on the underlying script when you only need one side.
-  Installed `post-merge` and `post-rewrite` hooks prepare the source runtime and
-  refresh native launchers automatically when the local `main` worktree
-  receives merged commits. Application code runs from source; profile-image
-  rebuilding is a separate product operation.
+  Installed `post-commit`, `post-merge`, and `post-rewrite` hooks prepare the
+  active worktree and compare its source receipt with
+  `~/.local/share/trellage/.native-stack-sources`. Changed runtime inputs
+  refresh every native launcher plus `trx`; unchanged inputs skip the
+  reinstall. The receipt advances only after the complete Native refresh
+  succeeds, so partial failures retry on the next hook. Application code runs
+  from source; profile-image rebuilding is a separate product operation.
 
 ## Fresh Azure integration test
 

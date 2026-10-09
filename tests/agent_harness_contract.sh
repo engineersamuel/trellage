@@ -33,7 +33,8 @@ for required in \
   scripts/native-environment.ts \
   scripts/profile-compiler-fingerprint.sh \
   config.toml \
-  scripts/install-lefthook-hook.sh; do
+  scripts/install-lefthook-hook.sh \
+  scripts/refresh-native-if-stale.sh; do
   [[ -f "${required}" ]] || fail "missing ${required}"
 done
 
@@ -50,6 +51,7 @@ done
 [[ -x scripts/profile-compiler-fingerprint.sh ]] \
   || fail "profile compiler fingerprint script is not executable"
 [[ -x scripts/install-lefthook-hook.sh ]] || fail "Lefthook installer is not executable"
+[[ -x scripts/refresh-native-if-stale.sh ]] || fail "native freshness script is not executable"
 
 jq -e '
   .devDependencies.oxlint and
@@ -210,6 +212,7 @@ git -C "${lefthook_primary}" worktree add -q "${lefthook_linked}"
 mkdir -p "${lefthook_linked}/packages/trellage-cli"
 lefthook_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
 pre_push_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/pre-push)"
+post_commit_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/post-commit)"
 post_merge_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/post-merge)"
 post_rewrite_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/post-rewrite)"
 [[ "${lefthook_hook}" == "${lefthook_custom_hooks}/pre-commit" ]] \
@@ -221,9 +224,10 @@ post_rewrite_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolut
 
 [[ -x "${lefthook_hook}" ]] || fail "installer did not create executable effective pre-commit hook"
 [[ -x "${pre_push_hook}" ]] || fail "installer did not create executable pre-push hook"
+[[ -x "${post_commit_hook}" ]] || fail "installer did not create executable post-commit hook"
 [[ -x "${post_merge_hook}" ]] || fail "installer did not create executable post-merge hook"
 [[ -x "${post_rewrite_hook}" ]] || fail "installer did not create executable post-rewrite hook"
-for installed_hook in "${lefthook_hook}" "${pre_push_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
+for installed_hook in "${lefthook_hook}" "${pre_push_hook}" "${post_commit_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
   if grep -Fq -- "${lefthook_linked}" "${installed_hook}"; then
     fail "installed Git hook embeds linked-worktree path: ${installed_hook}"
   fi
@@ -258,33 +262,54 @@ printf 'run\npre-push\n--no-auto-install\norigin\ngit@example.invalid:trellage.g
 cmp -s "${lefthook_regression_root}/expected-args" "${lefthook_args}" \
   || fail "installed pre-push hook did not forward Lefthook command and arguments"
 
+refresh_args="${lefthook_regression_root}/refresh-args"
+mkdir -p "${lefthook_primary}/scripts"
+cat >"${lefthook_primary}/scripts/refresh-native-if-stale.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$PWD" "$@" >"${REFRESH_CONTRACT_ARGS:?}"
+EOF
+chmod +x "${lefthook_primary}/scripts/refresh-native-if-stale.sh"
+for rebuild_hook in "${post_commit_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
+  (
+    cd "${lefthook_primary}"
+    REFRESH_CONTRACT_ARGS="${refresh_args}" "${rebuild_hook}"
+  )
+  printf '%s\n' "${lefthook_primary}" >"${lefthook_regression_root}/expected-refresh-args"
+  cmp -s "${lefthook_regression_root}/expected-refresh-args" "${refresh_args}" \
+    || fail "installed rebuild hook did not refresh from the active worktree"
+done
+
+refresh_fixture="${lefthook_regression_root}/refresh-fixture"
+refresh_home="${lefthook_regression_root}/refresh-home"
 source_args="${lefthook_regression_root}/source-args"
 native_args="${lefthook_regression_root}/native-args"
-mkdir -p "${lefthook_primary}/scripts"
-cat >"${lefthook_primary}/scripts/build-profile-compiler.sh" <<'EOF'
+mkdir -p "${refresh_fixture}/scripts" "${refresh_home}/.local/share/trellage"
+cp "${ROOT}/scripts/refresh-native-if-stale.sh" "${refresh_fixture}/scripts/refresh-native-if-stale.sh"
+cat >"${refresh_fixture}/scripts/build-profile-compiler.sh" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$PWD" "$@" >"${SOURCE_CONTRACT_ARGS:?}"
 EOF
-chmod +x "${lefthook_primary}/scripts/build-profile-compiler.sh"
-cat >"${lefthook_primary}/scripts/rebuild-profile-images.sh" <<'EOF'
+cat >"${refresh_fixture}/scripts/rebuild-profile-images.sh" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" >"${NATIVE_CONTRACT_ARGS:?}"
 EOF
-chmod +x "${lefthook_primary}/scripts/rebuild-profile-images.sh"
-for rebuild_hook in "${post_merge_hook}" "${post_rewrite_hook}"; do
-  (
-    cd "${lefthook_primary}"
-    SOURCE_CONTRACT_ARGS="${source_args}" \
-      NATIVE_CONTRACT_ARGS="${native_args}" \
-      "${rebuild_hook}"
-  )
-  printf '%s\n' "${lefthook_primary}" >"${lefthook_regression_root}/expected-source-args"
-  cmp -s "${lefthook_regression_root}/expected-source-args" "${source_args}" \
-    || fail "installed rebuild hook did not prepare the active source worktree"
-  printf '%s\n' --native-only >"${lefthook_regression_root}/expected-native-args"
-  cmp -s "${lefthook_regression_root}/expected-native-args" "${native_args}" \
-    || fail "installed rebuild hook did not refresh native launchers"
-done
+chmod +x "${refresh_fixture}/scripts/"*.sh
+printf '%s\n' '{"schema":1,"sources":"worktree"}' >"${refresh_fixture}/.trellage-source-ready.json"
+printf '%s\n' 'installed' >"${refresh_home}/.local/share/trellage/.native-stack-sources"
+HOME="${refresh_home}" SOURCE_CONTRACT_ARGS="${source_args}" NATIVE_CONTRACT_ARGS="${native_args}" \
+  "${refresh_fixture}/scripts/refresh-native-if-stale.sh"
+printf '%s\n' "$(cd "${refresh_fixture}" && pwd -P)" >"${lefthook_regression_root}/expected-source-args"
+cmp -s "${lefthook_regression_root}/expected-source-args" "${source_args}" \
+  || fail "native freshness check did not prepare the active source worktree"
+printf '%s\n' --native-only >"${lefthook_regression_root}/expected-native-args"
+cmp -s "${lefthook_regression_root}/expected-native-args" "${native_args}" \
+  || fail "native freshness check did not refresh a stale installation"
+[[ "$(<"${refresh_home}/.local/share/trellage/.native-stack-sources")" == worktree ]] \
+  || fail "native freshness check did not record the complete successful refresh"
+rm -f "${native_args}"
+HOME="${refresh_home}" SOURCE_CONTRACT_ARGS="${source_args}" NATIVE_CONTRACT_ARGS="${native_args}" \
+  "${refresh_fixture}/scripts/refresh-native-if-stale.sh"
+[[ ! -e "${native_args}" ]] || fail "native freshness check rebuilt an installation that was already current"
 
 rm -f -- "${lefthook_fake_dir}/lefthook"
 set +e
