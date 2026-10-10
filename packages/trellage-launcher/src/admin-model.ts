@@ -28,22 +28,23 @@ import type { CombinedGuideCatalog, GuideCatalogEntryRef } from "./guide-catalog
 import { guideCatalogEntries } from "./guide-catalog.ts"
 import { ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.ts"
 
-/** Native launcher command aliases, matching `guide-catalog.ts` `launcher` values. */
-export type NativeLauncherAlias = "agency" | "copilot" | "codex" | "claude" | "firstmate" | "jcode" | "omp" | "pi" | "prime"
+/** Canonical Native harness identifiers, matching guide catalog `launcher` values. */
+export type NativeHarnessId = "agency" | "copilot" | "codex" | "claude" | "firstmate" | "fx" | "jcode" | "omp" | "pi" | "prime"
 
-const allNativeLaunchers: ReadonlyArray<NativeLauncherAlias> = [
+const allNativeHarnesses: ReadonlyArray<NativeHarnessId> = [
   "agency",
   "copilot",
   "codex",
   "claude",
   "firstmate",
+  "fx",
   "jcode",
   "omp",
   "pi",
   "prime",
 ]
 
-const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeLauncherAlias> = new Set<NativeLauncherAlias>([
+const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeHarnessId> = new Set<NativeHarnessId>([
   "agency",
   "claude",
 ])
@@ -74,8 +75,8 @@ export const nativeLauncherCapabilities = (launcher: string): NativeLauncherCapa
   }
 }
 
-export const isKnownNativeLauncher = (launcher: string): launcher is NativeLauncherAlias =>
-  allNativeLaunchers.includes(launcher as NativeLauncherAlias)
+export const isKnownNativeLauncher = (launcher: string): launcher is NativeHarnessId =>
+  allNativeHarnesses.includes(launcher as NativeHarnessId)
 
 /** Distinct health/install status values. "unsupported" and "malformed-output" are never fabricated as healthy/unhealthy. */
 export type AdminHealthStatus = "healthy" | "unhealthy" | "unsupported" | "malformed-output" | "unknown"

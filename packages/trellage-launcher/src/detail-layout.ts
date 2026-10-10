@@ -2,7 +2,7 @@ import type { LaunchEntry } from "./state.ts"
 
 export interface DetailRow {
   readonly label?:
-    | "Alias"
+    | "Command"
     | "Arguments"
     | "Binary"
     | "Description"
@@ -69,7 +69,7 @@ export const detailRows = (
     ...(entry.commandAlias === undefined || entry.profileArgument === undefined
       ? []
       : fieldRows("Run", `trx run ${entry.commandAlias} ${entry.profileArgument}`, width)),
-    ...(entry.commandAlias === undefined ? [] : fieldRows("Alias", entry.commandAlias, width)),
+    ...(entry.commandAlias === undefined ? [] : fieldRows("Command", entry.commandAlias, width)),
     ...(entry.commandPath === undefined ? [] : fieldRows("Binary", entry.commandPath, width)),
     ...(entry.commandAlias === undefined && entry.commandPath === undefined
       ? []

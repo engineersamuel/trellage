@@ -581,7 +581,33 @@ github.com:
     oauth_token: fixture
 HOSTS
 
+trx_config="$fixture_root/trx-config.toml"
+cat >"$trx_config" <<'TRX_CONFIG'
+[native.profiles.base]
+label = "Fixture defaults"
+always = true
+
+[native.profiles.preset-firstmate-default]
+label = "firstmate / default"
+harnesses = ["firstmate"]
+
+[native.profiles.preset-firstmate-pstack-workers]
+label = "firstmate / pstack-workers"
+harnesses = ["firstmate"]
+TRX_CONFIG
+
 fmx() {
+  local -a entrypoint=("$install_root/bin/fmx")
+  if [[ "${1-}" == __trx-run ]]; then
+    shift
+    local profile="${1-}"
+    [[ -n "$profile" ]] || fail 'canonical Firstmate launch requires a profile'
+    shift
+    entrypoint=("$repo_root/prototypes/trellage-router/bin/trx" run firstmate "$profile")
+    if [[ "$#" -gt 0 ]]; then
+      entrypoint+=(--)
+    fi
+  fi
   local -a command=(
     env -i
     "HOME=$home"
@@ -618,6 +644,10 @@ fmx() {
     "NATIVE_CLAUDE_PREPARE_SIGNAL_PARENT=${NATIVE_CLAUDE_PREPARE_SIGNAL_PARENT-}"
     "HERDR_ENV=${TEST_HERDR_ENV-}"
     "HERDR_PANE_ID=${TEST_HERDR_PANE-}"
+    "TRELLAGE_CONFIG=$trx_config"
+    "TRELLAGE_TRX_SOURCE_ROOT=$repo_root/prototypes/trellage-router"
+    TRELLAGE_TRX_NATIVE_SOURCE=1
+    "TRELLAGE_FIRSTMATE_LIFECYCLE_BIN=$install_root/bin/fmx"
     GH_TOKEN=fixture-gh-token
     GITHUB_TOKEN=fixture-github-token
     COPILOT_GITHUB_TOKEN=fixture-copilot-token
@@ -632,7 +662,7 @@ fmx() {
     GOOGLE_APPLICATION_CREDENTIALS=fixture-google-file
     AZURE_CLIENT_SECRET=fixture-azure-secret
     OPENAI_API_KEY=fixture-openai-token
-    "$install_root/bin/fmx"
+    "${entrypoint[@]}"
     "$@"
   )
   case "${1-}" in
@@ -1836,7 +1866,9 @@ assert_contains '# Backlog' "$profiles_root/default/home/data/backlog.md"
 cmp -s "$profiles_root/default/home/.tasks.toml" <(printf '%s\n' "$expected_tasks_config") \
   || fail 'repair did not restore the managed tasks-axi config'
 
-# A worker harness that is not exactly claude fails doctor and launch.
+# A worker harness that is not exactly claude fails lifecycle diagnostics.
+# Canonical launches are covered through `trx run firstmate <profile>` by the
+# named-instance contract; fmx itself is intentionally lifecycle-only.
 for broken in 'codex' 'claude extra' 'claude '; do
   for name in crew-harness secondmate-harness; do
     cp "$profiles_root/default/home/config/$name" "$fixture_root/$name.good"
@@ -1846,12 +1878,6 @@ for broken in 'codex' 'claude extra' 'claude '; do
     [[ "$status" == 1 ]] \
       || fail "doctor with $name='$broken' exited $status instead of 1"
     assert_contains "must contain exactly 'claude'" "$logs/doctor-harness.err"
-    rm -rf -- "$profiles_root/default/locks/session"
-    status=0
-    fmx default >/dev/null 2>"$logs/launch-harness.err" || status=$?
-    [[ "$status" == 1 ]] \
-      || fail "launch with $name='$broken' exited $status instead of 1"
-    assert_contains "must contain exactly 'claude'" "$logs/launch-harness.err"
     cp "$fixture_root/$name.good" "$profiles_root/default/home/config/$name"
   done
 done
@@ -1877,7 +1903,7 @@ fmx doctor default >/dev/null 2>"$logs/doctor-dispatch.err" || status=$?
 assert_contains 'invalid Claude-only crew dispatch rules' "$logs/doctor-dispatch.err"
 rm -rf -- "$profiles_root/default/locks/session"
 status=0
-fmx default >/dev/null 2>"$logs/launch-dispatch.err" || status=$?
+fmx __trx-run default >/dev/null 2>"$logs/launch-dispatch.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with a crew dispatch profile exited $status instead of 1"
 assert_contains 'invalid Claude-only crew dispatch rules' "$logs/launch-dispatch.err"
 fmx inventory default --json >"$logs/inventory-dispatch.json" || fail 'inventory failed'
@@ -1936,7 +1962,7 @@ fmx doctor default >/dev/null 2>"$logs/doctor-head.err" || status=$?
 assert_contains 'not the pinned commit' "$logs/doctor-head.err"
 rm -rf -- "$profiles_root/default/locks/session"
 status=0
-fmx default >/dev/null 2>"$logs/launch-head.err" || status=$?
+fmx __trx-run default >/dev/null 2>"$logs/launch-head.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with a foreign runtime HEAD exited $status instead of 1"
 assert_contains 'not the pinned commit' "$logs/launch-head.err"
 FAKE_GIT_HEAD=''
@@ -2009,10 +2035,15 @@ HOSTS
 rm -rf -- "$profiles_root/default/locks/session"
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   XDG_CONFIG_HOME="$xdg_root" \
+  TRELLAGE_CONFIG="$trx_config" \
+  TRELLAGE_TRX_SOURCE_ROOT="$repo_root/prototypes/trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_FIRSTMATE_LIFECYCLE_BIN="$install_root/bin/fmx" \
   FAKE_GIT_LOG="$FAKE_GIT_LOG" FAKE_GH_LOG="$FAKE_GH_LOG" \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" default >/dev/null 2>"$logs/launch-xdg.err" \
+  "$repo_root/prototypes/trellage-router/bin/trx" run firstmate default \
+  >/dev/null 2>"$logs/launch-xdg.err" \
   || { cat "$logs/launch-xdg.err" >&2; fail 'launch failed with an XDG gh configuration'; }
 assert_contains "GH_CONFIG_DIR=$xdg_root/gh" "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains "FMX_GH_CONFIG_DIR=$xdg_root/gh" "$NATIVE_CLAUDE_LAUNCH_LOG"
@@ -2022,10 +2053,15 @@ assert_contains "FMX_GH_CONFIG_DIR=$xdg_root/gh" "$NATIVE_CLAUDE_LAUNCH_LOG"
 rm -rf -- "$profiles_root/default/locks/session"
 env -i HOME="$home" PATH="$fake_bin" TMPDIR="${TMPDIR:-/tmp}" \
   XDG_CONFIG_HOME="$xdg_root" GH_CONFIG_DIR="$gh_config" \
+  TRELLAGE_CONFIG="$trx_config" \
+  TRELLAGE_TRX_SOURCE_ROOT="$repo_root/prototypes/trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_FIRSTMATE_LIFECYCLE_BIN="$install_root/bin/fmx" \
   FAKE_GIT_LOG="$FAKE_GIT_LOG" FAKE_GH_LOG="$FAKE_GH_LOG" \
   NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
-  "$install_root/bin/fmx" default >/dev/null 2>&1 \
+  "$repo_root/prototypes/trellage-router/bin/trx" run firstmate default \
+  >/dev/null 2>&1 \
   || fail 'launch failed with GH_CONFIG_DIR set alongside XDG_CONFIG_HOME'
 assert_contains "GH_CONFIG_DIR=$gh_config" "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_not_contains "GH_CONFIG_DIR=$xdg_root/gh" "$NATIVE_CLAUDE_LAUNCH_LOG"
@@ -2036,7 +2072,7 @@ rm -rf -- "$profiles_root/default/locks/session"
 rm -rf -- "$profiles_root/default/locks/session"
 FAKE_GH_STATUS=1
 status=0
-fmx default >/dev/null 2>"$logs/launch-gh-status.err" || status=$?
+fmx __trx-run default >/dev/null 2>"$logs/launch-gh-status.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with an unauthenticated gh exited $status instead of 1"
 assert_contains 'gh is not authenticated for github.com' "$logs/launch-gh-status.err"
 assert_contains 'auth status --hostname github.com' "$FAKE_GH_LOG"
@@ -2057,7 +2093,7 @@ for managed in home receipts; do
   assert_contains 'unsafe managed path (symlink)' "$logs/doctor-link-$managed.err"
   rm -rf -- "$profiles_root/default/locks/session"
   status=0
-  fmx default >/dev/null 2>"$logs/launch-link-$managed.err" || status=$?
+  fmx __trx-run default >/dev/null 2>"$logs/launch-link-$managed.err" || status=$?
   [[ "$status" == 1 ]] || fail "launch with a symlinked $managed exited $status instead of 1"
   assert_contains 'unsafe managed path (symlink)' "$logs/launch-link-$managed.err"
   fmx inventory default --json >"$logs/inventory-link-$managed.json" \
@@ -2113,7 +2149,7 @@ jq -e '.readiness == "unhealthy"' "$logs/inventory-policy.json" >/dev/null \
   || fail 'inventory did not report a modified policy as unhealthy'
 rm -rf -- "$profiles_root/pstack-workers/locks/session"
 status=0
-fmx pstack-workers >/dev/null 2>"$logs/launch-policy-modified.err" || status=$?
+fmx __trx-run pstack-workers >/dev/null 2>"$logs/launch-policy-modified.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch with a modified policy exited $status instead of 1"
 assert_contains 'differs from the Trellage-owned source' "$logs/launch-policy-modified.err"
 
@@ -2147,7 +2183,7 @@ for command_name in setup repair update; do
   assert_contains 'another fmx mutation is already running' "$logs/$command_name-locked.err"
 done
 status=0
-fmx default >/dev/null 2>"$logs/launch-mutation-locked.err" || status=$?
+fmx __trx-run default >/dev/null 2>"$logs/launch-mutation-locked.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch during a live mutation exited $status instead of 1"
 assert_contains 'another fmx mutation is already running' "$logs/launch-mutation-locked.err"
 fmx inventory default --json >"$logs/inventory-mutating.json" || fail 'inventory failed'
@@ -2180,7 +2216,7 @@ for shape in empty owner-only bad-pid; do
     assert_contains 'incomplete mutation lock' "$logs/$command_name-$shape.err"
   done
   status=0
-  fmx default >/dev/null 2>"$logs/launch-mutation-$shape.err" || status=$?
+  fmx __trx-run default >/dev/null 2>"$logs/launch-mutation-$shape.err" || status=$?
   [[ "$status" == 1 ]] \
     || fail "launch against an $shape mutation lock exited $status instead of 1"
   assert_contains 'incomplete mutation lock' "$logs/launch-mutation-$shape.err"
@@ -2219,7 +2255,7 @@ for shape in empty owner-only bad-pid; do
       ;;
   esac
   status=0
-  fmx default >/dev/null 2>"$logs/launch-session-$shape.err" || status=$?
+  fmx __trx-run default >/dev/null 2>"$logs/launch-session-$shape.err" || status=$?
   [[ "$status" == 1 ]] \
     || fail "launch against an $shape session lock exited $status instead of 1"
   assert_contains 'captain session lock' "$logs/launch-session-$shape.err"
@@ -2520,10 +2556,10 @@ fmx doctor default >/dev/null 2>&1 || fail 'doctor failed after preserved-runtim
 
 : >"$FAKE_GIT_LOG"
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
-fmx default --resume-nothing >"$logs/launch1.out" 2>"$logs/launch1.err" \
+fmx __trx-run default --resume-nothing >"$logs/launch1.out" 2>"$logs/launch1.err" \
   || { cat "$logs/launch1.err" >&2; fail 'launch failed'; }
 rm -rf -- "$profiles_root/default/locks/session"
-fmx default >"$logs/launch2.out" 2>"$logs/launch2.err" \
+fmx __trx-run default >"$logs/launch2.out" 2>"$logs/launch2.err" \
   || { cat "$logs/launch2.err" >&2; fail 'repeat launch failed'; }
 assert_not_contains 'fetch' "$FAKE_GIT_LOG"
 assert_contains 'rev-parse HEAD' "$FAKE_GIT_LOG"
@@ -2574,7 +2610,7 @@ assert_contains 'no-mistakes' "$logs/prerequisite-doctor.err"
 [[ ! -s "$FAKE_PREREQUISITE_LOG" ]] \
   || fail 'doctor attempted to install prerequisites'
 status=0
-printf 'n\n' | fmx default >"$logs/prerequisite-decline.out" \
+printf 'n\n' | fmx __trx-run default >"$logs/prerequisite-decline.out" \
   2>"$logs/prerequisite-decline.err" || status=$?
 [[ "$status" == 1 ]] \
   || fail "declined prerequisite installation exited $status instead of 1"
@@ -2597,7 +2633,7 @@ assert_contains 'prerequisite installation declined' "$logs/prerequisite-decline
 rm -rf -- "$profiles_root/default/locks/session"
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 printf 'yes\n' | FAKE_EXPECT_LAUNCH_MUTATION_PROFILE=default \
-  fmx default >"$logs/prerequisite-install.out" \
+  fmx __trx-run default >"$logs/prerequisite-install.out" \
   2>"$logs/prerequisite-install.err" \
   || { cat "$logs/prerequisite-install.err" >&2; fail 'consented prerequisite installation failed'; }
 assert_contains 'Installed Firstmate prerequisites' "$logs/prerequisite-install.out"
@@ -2613,7 +2649,7 @@ assert_contains "FMX_WORKER_PATH=$managed_destination/bin:$managed_destination/n
 # again.
 rm -rf -- "$profiles_root/default/locks/session"
 install_count_before="$(wc -l <"$FAKE_PREREQUISITE_LOG" | tr -d '[:space:]')"
-fmx default </dev/null >"$logs/prerequisite-repeat.out" \
+fmx __trx-run default </dev/null >"$logs/prerequisite-repeat.out" \
   2>"$logs/prerequisite-repeat.err" \
   || { cat "$logs/prerequisite-repeat.err" >&2; fail 'repeat launch with managed prerequisites failed'; }
 install_count_after="$(wc -l <"$FAKE_PREREQUISITE_LOG" | tr -d '[:space:]')"
@@ -2638,7 +2674,7 @@ rm -rf -- "$profiles_root/pstack-workers/locks/session"
 (
   cd "$deleted_cwd"
   rmdir "$deleted_cwd"
-  fmx pstack-workers >"$logs/deleted-cwd-launch.out" \
+  fmx __trx-run pstack-workers >"$logs/deleted-cwd-launch.out" \
     2>"$logs/deleted-cwd-launch.err"
 ) || {
   cat "$logs/deleted-cwd-launch.err" >&2
@@ -2654,7 +2690,7 @@ rmdir "$deleted_cwd_parent"
 # namespace.
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 rm -rf -- "$profiles_root/pstack-workers/locks/session"
-fmx pstack-workers >/dev/null 2>"$logs/launch-pstack.err" \
+fmx __trx-run pstack-workers >/dev/null 2>"$logs/launch-pstack.err" \
   || { cat "$logs/launch-pstack.err" >&2; fail 'pstack-workers launch failed'; }
 assert_contains "FM_HOME=$profiles_root/pstack-workers/home" "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains "home=$profiles_root/pstack-workers/captain/claude|bridge=enabled|profile=pstack-workers" \
@@ -2669,14 +2705,14 @@ assert_contains "FMX_WORKER_POLICY_FILE=$profiles_root/pstack-workers/policy/wor
 # Herdr is chosen only from a real pane identity.
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 rm -rf -- "$profiles_root/default/locks/session"
-TEST_HERDR_ENV=1 TEST_HERDR_PANE=pane-captain fmx default >/dev/null 2>&1 \
+TEST_HERDR_ENV=1 TEST_HERDR_PANE=pane-captain fmx __trx-run default >/dev/null 2>&1 \
   || fail 'launch inside a Herdr pane failed'
 assert_contains 'FM_BACKEND=herdr' "$NATIVE_CLAUDE_LAUNCH_LOG"
 assert_contains 'FMX_CAPTAIN_PANE_ID=pane-captain' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 rm -rf -- "$profiles_root/default/locks/session"
-TEST_HERDR_ENV=1 TEST_HERDR_PANE='' fmx default >/dev/null 2>&1 \
+TEST_HERDR_ENV=1 TEST_HERDR_PANE='' fmx __trx-run default >/dev/null 2>&1 \
   || fail 'launch with an empty Herdr pane id failed'
 assert_contains 'FM_BACKEND=tmux' "$NATIVE_CLAUDE_LAUNCH_LOG"
 
@@ -2691,18 +2727,23 @@ rm -rf -- "$profiles_root/default/locks/session"
 status=0
 env -i HOME="$home" PATH="$no_tmux_bin" GH_CONFIG_DIR="$gh_config" \
   TMPDIR="${TMPDIR:-/tmp}" NATIVE_CLAUDE_LOG="$NATIVE_CLAUDE_LOG" \
+  TRELLAGE_CONFIG="$trx_config" \
+  TRELLAGE_TRX_SOURCE_ROOT="$repo_root/prototypes/trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_FIRSTMATE_LIFECYCLE_BIN="$install_root/bin/fmx" \
   NATIVE_CLAUDE_LAUNCH_LOG="$NATIVE_CLAUDE_LAUNCH_LOG" \
   FAKE_GIT_LOG="$FAKE_GIT_LOG" FAKE_GH_LOG="$FAKE_GH_LOG" \
-  "$install_root/bin/fmx" default >/dev/null 2>"$logs/launch-no-backend.err" || status=$?
+  "$repo_root/prototypes/trellage-router/bin/trx" run firstmate default \
+  >/dev/null 2>"$logs/launch-no-backend.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch without a backend exited $status instead of 1"
 assert_contains 'MISSING: tmux' "$logs/launch-no-backend.err"
 assert_contains 'Firstmate cannot dispatch workers' "$logs/launch-no-backend.err"
 
 # A launch never repairs a profile that is not set up.
 status=0
-fmx not-a-profile >/dev/null 2>"$logs/launch-unknown.err" || status=$?
+fmx __trx-run not-a-profile >/dev/null 2>"$logs/launch-unknown.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch of an unknown profile exited $status instead of 1"
-assert_contains 'unknown profile: not-a-profile' "$logs/launch-unknown.err"
+assert_contains 'unknown profile not-a-profile' "$logs/launch-unknown.err"
 
 # ===========================================================================
 # 8b. Captain session acquisition is atomic.
@@ -2729,7 +2770,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     status=0
     NATIVE_CLAUDE_LAUNCH_READY="$concurrent_launch_ready" \
       NATIVE_CLAUDE_LAUNCH_RELEASE="$concurrent_launch_release" \
-      fmx default \
+      fmx __trx-run default \
       >/dev/null 2>"$logs/concurrent-$attempt.err" || status=$?
     printf '%s\n' "$status" >"$concurrent_status/$attempt"
   ) &
@@ -2792,7 +2833,7 @@ printf '%s\n' "$ownership_value" >"$profiles_root/default/locks/session/owner"
 printf '999999\n' >"$profiles_root/default/locks/session/pid"
 printf 'tmux\n' >"$profiles_root/default/locks/session/backend"
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
-fmx default >/dev/null 2>"$logs/launch-stale-session.err" \
+fmx __trx-run default >/dev/null 2>"$logs/launch-stale-session.err" \
   || { cat "$logs/launch-stale-session.err" >&2; fail 'launch did not reclaim a stale session lock'; }
 [[ "$(grep -c '^launch|' "$NATIVE_CLAUDE_LAUNCH_LOG")" -eq 1 ]] \
   || fail 'a reclaimed stale session lock did not launch exactly once'
@@ -2811,7 +2852,7 @@ fmx repair default >/dev/null 2>"$logs/repair-foreign-session.err" || status=$?
 [[ "$status" == 1 ]] || fail "repair against an unowned session lock exited $status instead of 1"
 assert_contains 'captain session lock' "$logs/repair-foreign-session.err"
 status=0
-fmx default >/dev/null 2>"$logs/launch-foreign-session.err" || status=$?
+fmx __trx-run default >/dev/null 2>"$logs/launch-foreign-session.err" || status=$?
 [[ "$status" == 1 ]] || fail "launch against an unowned session lock exited $status instead of 1"
 assert_contains 'captain session lock' "$logs/launch-foreign-session.err"
 assert_contains 'unowned' "$logs/launch-foreign-session.err"
@@ -2886,7 +2927,7 @@ for command_name in update repair; do
   assert_contains "$command_name refused" "$logs/$command_name-busy.err"
 done
 status=0
-fmx default >/dev/null 2>"$logs/launch-busy.err" || status=$?
+fmx __trx-run default >/dev/null 2>"$logs/launch-busy.err" || status=$?
 [[ "$status" == 1 ]] || fail "a second captain launch exited $status instead of 1"
 assert_contains 'launch refused' "$logs/launch-busy.err"
 assert_contains 'fleet is active' "$logs/launch-busy.err"

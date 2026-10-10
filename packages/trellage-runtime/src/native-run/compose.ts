@@ -199,11 +199,13 @@ const resolveSkills = async (
   request: CompositionRequest,
   options: PlanOptions,
   wanted: ReadonlyMap<string, ReadonlySet<string>>,
-): Promise<{ sources: ResolvedSource[]; skills: SelectedSkill[] }> => {
+  selectedSources: ReadonlySet<string>,
+): Promise<{ sources: ResolvedSource[]; skills: SelectedSkill[]; warnings: string[] }> => {
   const sources = await Promise.all(
     [...wanted.keys()].sort().map((sourceId) => options.resolver.resolve(sourceId, request.catalog.sources[sourceId]!)),
   )
   const skills = new Map<string, SelectedSkill>()
+  const warnings: string[] = []
   for (const source of sources) {
     const policy = request.catalog.sources[source.sourceId]!
     const wantedNames = wanted.get(source.sourceId)!
@@ -237,15 +239,24 @@ const resolveSkills = async (
         ...(policy.alwaysOn && !manualOnly ? { alwaysOn: true } : {}),
       }
       const existing = skills.get(name)
-      if (existing && existing.digest !== selected.digest)
-        throw new NativeRunError(
-          "conflict",
-          `skill ${name} differs between sources ${existing.sourceId} and ${selected.sourceId}; remove one profile from the stack`,
-        )
+      if (existing && existing.digest !== selected.digest) {
+        const existingSelected = selectedSources.has(existing.sourceId)
+        const currentSelected = selectedSources.has(selected.sourceId)
+        if (existingSelected === currentSelected)
+          throw new NativeRunError(
+            "conflict",
+            `skill ${name} differs between sources ${existing.sourceId} and ${selected.sourceId}; remove one profile from the stack`,
+          )
+        const winner = currentSelected ? selected : existing
+        const loser = currentSelected ? existing : selected
+        skills.set(name, winner)
+        warnings.push(`skill ${name} from selected source ${winner.sourceId} overrides always-profile source ${loser.sourceId}`)
+        continue
+      }
       if (!existing) skills.set(name, selected)
     }
   }
-  return { sources, skills: [...skills.values()].sort((a, b) => (a.name < b.name ? -1 : 1)) }
+  return { sources, skills: [...skills.values()].sort((a, b) => (a.name < b.name ? -1 : 1)), warnings }
 }
 
 const generationIdOf = (
@@ -277,7 +288,8 @@ export const planComposition = async (request: CompositionRequest, options: Plan
   const profiles = selectedProfiles(request)
   const { alwaysProfiles, effective } = effectiveProfiles(request, profiles)
   const instructions = selectedInstructions(request, effective)
-  const { sources, skills } = await resolveSkills(request, options, wantedSkills(request, effective))
+  const selectedSources = new Set(profiles.flatMap((id) => request.catalog.profiles[id]!.skills.map((selection) => selection.source)))
+  const { sources, skills, warnings } = await resolveSkills(request, options, wantedSkills(request, effective), selectedSources)
   for (const skill of skills.filter((entry) => entry.alwaysOn && !entry.manualOnly)) {
     instructions.push({
       id: `skill-${skill.name}`,
@@ -293,7 +305,7 @@ export const planComposition = async (request: CompositionRequest, options: Plan
     instructions,
     skills,
     sources,
-    warnings: sources.flatMap((source) => (source.warning ? [source.warning] : [])),
+    warnings: [...sources.flatMap((source) => (source.warning ? [source.warning] : [])), ...warnings],
     generationId: generationIdOf(request, effective, instructions, skills),
   }
 }

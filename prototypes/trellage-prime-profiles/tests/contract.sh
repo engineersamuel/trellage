@@ -4,6 +4,7 @@ set -u
 set -o pipefail
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+repository_root="$(CDPATH= cd -- "$root/../.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
 real_node="$(command -v node)" || {
   printf 'prx contract failed: host node is required\n' >&2
@@ -16,6 +17,22 @@ real_bun="$(command -v bun)" || {
 launcher="$root/bin/prx"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
+
+trx_run_prime() {
+  TRELLAGE_TRX_SOURCE_ROOT="$repository_root/prototypes/trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_PRIME_LIFECYCLE_BIN="$command_path" \
+    "$repository_root/prototypes/trellage-router/bin/trx" run prime default -- "$@"
+}
+
+trx_run_prime_model() {
+  local model="$1"
+  shift
+  TRELLAGE_TRX_SOURCE_ROOT="$repository_root/prototypes/trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_PRIME_LIFECYCLE_BIN="$command_path" \
+    "$repository_root/prototypes/trellage-router/bin/trx" run prime default --model "$model" -- "$@"
+}
 
 fail() {
   printf 'prx contract failed: %s\n' "$1" >&2
@@ -469,7 +486,7 @@ mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 grep -Fq $'default\tPrime Agent for persistent exploratory analysis and multi-turn work through daemon-backed IPython/RLM subagents and managed clarification.' \
   "$fixture_root/list.txt" || fail 'text list differs'
 
-"$command_path" default -p 'self-heal-before-setup-probe' \
+trx_run_prime -p 'self-heal-before-setup-probe' \
   >"$fixture_root/self-heal.out" 2>"$fixture_root/self-heal.err" \
   || fail 'launch before explicit setup did not self-heal'
 [[ -f "$runtime_root/installed-version" ]] \
@@ -599,15 +616,14 @@ export GITHUB_TOKEN=poison-github
 export COPILOT_GITHUB_TOKEN=poison-copilot
 : >"$FAKE_PRIME_LOG"
 latest_calls_before="$(grep -c '^latest ' "$FAKE_MISE_LOG" || :)"
-"$command_path" default -p 'two words' '' '--literal=*' \
+trx_run_prime -p 'two words' '' '--literal=*' \
   || fail 'explicit launch failed'
 [[ "$(grep -c '^latest ' "$FAKE_MISE_LOG" || :)" == "$latest_calls_before" ]] \
   || fail 'ordinary launch resolved latest instead of reusing the receipt'
-jq -e --arg home "$profile_home" \
-  --arg kernelPython "$profile_home/kernel-venv/bin/python" \
+jq -e --arg kernelPython "$profile_home/kernel-venv/bin/python" \
   --arg kernelVenv "$profile_home/kernel-venv" \
   --arg daemonSocket "$profile_root/daemon/daemon.sock" '
-  .codingAgentDir == $home
+  (.codingAgentDir | contains("/native-run/compositions/prime-") and contains("/generations/"))
   and .kernelPython == $kernelPython
   and .kernelVenv == $kernelVenv
   and .anthropic == "unset"
@@ -643,7 +659,7 @@ unset ANTHROPIC_API_KEY OPENAI_API_KEY GH_TOKEN GITHUB_TOKEN COPILOT_GITHUB_TOKE
 kernel_rebuild_stops_before="$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')"
 kernel_rebuild_uv_before="$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')"
 rm -f "$profile_home/kernel-venv/bin/python"
-"$command_path" -p kernel-rebuild-probe >/dev/null \
+trx_run_prime -p kernel-rebuild-probe >/dev/null \
   || fail 'launch did not repair a stale kernel'
 [[ "$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')" -gt "$kernel_rebuild_stops_before" ]] \
   || fail 'stale kernel repair did not stop the old profile daemon'
@@ -657,7 +673,7 @@ jq -e '.runtimeIdentity.primeVersion == "0.7.0"' \
 
 # Explicit single-turn launches omit only the managed autonomous flag.
 : >"$FAKE_PRIME_LOG"
-"$command_path" default --single-turn -p 'one turn' \
+trx_run_prime --single-turn -p 'one turn' \
   || fail 'single-turn launch failed'
 jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
   .args == [
@@ -668,17 +684,17 @@ jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
     "-p", "one turn"
   ]
 ' "$FAKE_PRIME_LOG" >/dev/null || fail 'single-turn launch arguments differ'
-if "$command_path" --single-turn --single-turn -p duplicate \
+if trx_run_prime --single-turn --single-turn -p duplicate \
   >"$fixture_root/single-turn-duplicate.out" 2>"$fixture_root/single-turn-duplicate.err"; then
   fail 'duplicate single-turn option unexpectedly succeeded'
 fi
-grep -Fqx 'prx: --single-turn may be specified only once' \
+grep -Fqx 'trx run: --single-turn may be specified only once' \
   "$fixture_root/single-turn-duplicate.err" \
   || fail 'duplicate single-turn diagnostic differs'
 
 # Bare launch is equivalent to default.
 : >"$FAKE_PRIME_LOG"
-"$command_path" -p 'bare' || fail 'bare launch failed'
+trx_run_prime -p 'bare' || fail 'bare launch failed'
 jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
   .args == [
     "--provider", "copilot-proxy-rs",
@@ -692,7 +708,7 @@ jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
 
 # An argument-free launch must work under macOS Bash 3.2 with `set -u`.
 : >"$FAKE_PRIME_LOG"
-"$command_path" default || fail 'argument-free launch failed'
+trx_run_prime || fail 'argument-free launch failed'
 jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
   .args == [
     "--provider", "copilot-proxy-rs",
@@ -718,11 +734,12 @@ grep -Fq 'prx shutdown: no profile daemon socket' "$fixture_root/shutdown.out" \
   || fail 'shutdown did not clear daemon kernel env stamp'
 
 : >"$FAKE_PRIME_LOG"
-"$command_path" --model vendor/custom -p custom-model || fail 'custom model launch failed'
+trx_run_prime_model vendor/custom -p custom-model || fail 'custom model launch failed'
+custom_model_home="$(jq -r '.codingAgentDir' "$FAKE_PRIME_LOG")"
 jq -e '
   .providers["copilot-proxy-rs"].baseUrl == "http://127.0.0.1:8080"
   and [.providers["copilot-proxy-rs"].models[].id] == ["vendor/custom"]
-' "$profile_home/models.json" >/dev/null \
+' "$custom_model_home/models.json" >/dev/null \
   || fail 'custom model was not materialized in native Prime configuration'
 python3 - "$FAKE_PRIME_LOG" "$profile_root/daemon/daemon.sock" <<'PY' || fail 'custom Prime model arguments differ'
 import json
@@ -746,7 +763,7 @@ PY
 printf '{"providers":{}}\n' >"$profile_home/models.json"
 printf 'stale-extension\n' >"$profile_home/extensions/ask-user.ts"
 : >"$FAKE_PRIME_LOG"
-"$command_path" -p restore-probe || fail 'launch after drift failed'
+trx_run_prime -p restore-probe || fail 'launch after drift failed'
 jq -e '
   .providers["copilot-proxy-rs"].baseUrl == "http://127.0.0.1:8080"
   and [.providers["copilot-proxy-rs"].models[].id] == ["claude-opus-5"]
@@ -811,7 +828,7 @@ cmp -s "$fixture_root/outside-runtime-identity.json" \
 rm -f "$runtime_root/runtime-identity.json"
 "$command_path" repair >/dev/null || fail 'repair after runtime identity symlink failed'
 
-"$command_path" -p daemon-stamp-seed >/dev/null || fail 'could not seed daemon identity stamp'
+trx_run_prime -p daemon-stamp-seed >/dev/null || fail 'could not seed daemon identity stamp'
 printf '{malformed\n' >"$profile_root/daemon/kernel-env.stamp"
 status=0
 "$command_path" doctor >"$fixture_root/daemon-stamp-malformed.out" 2>&1 || status=$?
@@ -819,7 +836,7 @@ status=0
 grep -Fq 'Prime daemon identity stamp differs; run prx shutdown' \
   "$fixture_root/daemon-stamp-malformed.out" \
   || fail 'malformed daemon identity diagnostic differs'
-"$command_path" -p daemon-stamp-repair >/dev/null \
+trx_run_prime -p daemon-stamp-repair >/dev/null \
   || fail 'launch did not repair malformed daemon identity stamp'
 jq -e '.runtimeIdentity.primeVersion == "0.7.0"' \
   "$profile_root/daemon/kernel-env.stamp" >/dev/null \
@@ -833,7 +850,7 @@ status=0
 grep -Fq 'Prime daemon identity stamp differs; run prx shutdown' \
   "$fixture_root/daemon-stamp-missing.out" \
   || fail 'missing daemon identity stamp diagnostic differs'
-"$command_path" -p daemon-stamp-missing-repair >/dev/null \
+trx_run_prime -p daemon-stamp-missing-repair >/dev/null \
   || fail 'launch did not repair a missing daemon identity stamp'
 [[ ! -e "$FAKE_DAEMON_MARKER" ]] \
   || fail 'missing daemon identity repair left the old daemon running'
@@ -851,7 +868,7 @@ grep -Fq 'profile daemon did not stop; identity stamp was preserved' \
 "$command_path" shutdown >/dev/null || fail 'shutdown after refusal failed'
 
 status=0
-FAKE_PRIME_EXIT_STATUS=37 "$command_path" -p probe || status=$?
+FAKE_PRIME_EXIT_STATUS=37 trx_run_prime -p probe || status=$?
 [[ "$status" == 37 ]] || fail "child exit status became $status"
 
 FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/model.out" 2>&1 \

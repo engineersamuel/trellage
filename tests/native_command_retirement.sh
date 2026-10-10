@@ -33,4 +33,25 @@ if retire; then
   exit 1
 fi
 [[ -L "$home/.local/bin/omp" ]]
+
+while read -r package command profile harness public_profile; do
+  manager="$root/prototypes/$package/bin/$command"
+  if HOME="$home" "$manager" "$profile" >"$fixture/manager.out" 2>"$fixture/manager.err"; then
+    printf 'private profile manager launched through %s\n' "$command" >&2
+    exit 1
+  fi
+  grep -Fq "use trx run $harness $public_profile" "$fixture/manager.err" \
+    || { printf 'private profile manager did not point to trx run: %s\n' "$command" >&2; exit 1; }
+done <<'EOF'
+trellage-agency-profiles agx trellage-azure agency azure
+trellage-claude-profiles cldx default claude default
+trellage-codex-profiles cdx pstack codex PROFILE
+trellage-copilot-profiles cpx hve copilot hve
+trellage-firstmate-profiles fmx default firstmate default
+trellage-jcode-profiles jcx default jcode default
+trellage-omp-profiles omp copilot omp default
+trellage-picx-profiles picx default pi default
+trellage-prime-profiles prx default prime default
+EOF
+
 printf 'native command retirement: PASS\n'

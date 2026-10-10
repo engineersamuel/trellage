@@ -445,6 +445,8 @@ FAKE_TERM_IGNORER
 
 chmod 0755 "$fixture_root/backends/cdx" "$fixture_bin/codex" "$fixture_root/backends/cpx" \
   "$fixture_bin/fake-live-descendant" "$fixture_bin/fake-term-ignorer"
+export TRELLAGE_CODEX_LIFECYCLE_BIN="$fixture_root/backends/cdx"
+export TRELLAGE_COPILOT_LIFECYCLE_BIN="$fixture_root/backends/cpx"
 ln -s "$real_jq" "$fixture_bin/jq"
 for core_command in bash mktemp rm cut grep sort awk head cat sleep basename dirname; do
   ln -s "$(command -v "$core_command")" "$fixture_core_bin/$core_command"

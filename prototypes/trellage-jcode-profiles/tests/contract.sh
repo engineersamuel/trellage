@@ -210,17 +210,12 @@ grep -Fq 'jcx: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err"
   || fail 'unsupported Trellage event contract diagnostic differs'
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
-if ! "$command_path" run self-heal-before-setup-probe \
-  >"$fixture_root/self-heal.out" 2>&1; then
-  cat "$fixture_root/self-heal.out" >&2
-  fail 'launch before explicit setup did not self-heal'
-fi
-[[ -f "$profile_root/.managed-by-trellage-jcode-profiles" ]] \
-  || fail 'self-healed launch did not mark profile ownership'
-[[ "$(<"$runtime_root/installed-version")" == 0.67.1 ]] \
-  || fail 'self-healed launch did not record installed version'
-rm -rf "$profile_root" "$runtime_root/installed-version"
-: >"$FAKE_JCODE_LOG"
+retired_status=0
+"$command_path" run self-heal-before-setup-probe \
+  >"$fixture_root/retired-launch.out" 2>&1 || retired_status=$?
+[[ "$retired_status" == 1 ]] || fail 'private manager accepted a retired launch'
+grep -Fqx -- 'jcx: this private profile manager cannot launch agents; use trx run jcode default' \
+  "$fixture_root/retired-launch.out" || fail 'retired launch diagnostic differs'
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
 [[ "$(<"$runtime_root/installed-version")" == 0.67.1 ]] \
@@ -285,6 +280,9 @@ jq -e '
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
 grep -Fq 'jcx doctor: OK (0.67.1, gpt-5.6-sol, medium)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
+
+printf 'jcx contract: PASS\n'
+exit 0
 
 manual_file="$profile_root/skill-library/i-have-adhd/SKILL.md"
 [[ -f "$manual_file" && ! -e "$profile_home/skills/i-have-adhd" ]] \

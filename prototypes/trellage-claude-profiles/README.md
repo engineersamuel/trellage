@@ -114,7 +114,7 @@ Launch the profile explicitly:
 trx run claude default
 ```
 
-If the arguments do not contain `--model` or `--model=...`, `cldx` adds
+If the arguments do not contain `--model` or `--model=...`, the canonical Claude adapter adds
 `--model opusplan`. Claude Code has no separate plan-mode model setting, so
 `opusplan` is the only supported way to pair one model with plan mode and
 another with normal turns: plan turns resolve through the Opus family

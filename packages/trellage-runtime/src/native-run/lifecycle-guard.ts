@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto"
 import { chmodSync, existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { nativeHarness } from "./registry.ts"
+import { lifecycleRuntime } from "./lifecycle-runtime.ts"
+import { nativePresetProfiles } from "./presets.ts"
 
 interface Owner {
   scope: string
@@ -90,9 +91,10 @@ const live = (pid: number, started: string): boolean => {
   }
 }
 
-export const backendGuardPresets = (operation: string, harness: string, args: readonly string[]): string[] => {
-  const entry = nativeHarness(harness)
-  if (!entry) throw new Error(`unknown native harness: ${harness}`)
+export const profileGuardProfiles = (operation: string, harness: string, args: readonly string[]): string[] => {
+  const runtime = lifecycleRuntime(harness)
+  if (!runtime) throw new Error(`unknown managed profile harness: ${harness}`)
+  const profiles = nativePresetProfiles(harness)
   // Firstmate's per-instance mutation gate and fleet session lock already protect
   // publication, including workers that outlive their captain. Shared writers use
   // its registry-wide maintenance lease; a preset guard would conflate UUID homes.
@@ -113,7 +115,7 @@ export const backendGuardPresets = (operation: string, harness: string, args: re
     ].includes(operation)
   )
     return []
-  const selected = args.find((arg) => Object.hasOwn(entry.presets, arg))
+  const selected = args.find((arg) => profiles.includes(arg as never))
   // Harness upgrades replace shared executables even when a profile argument is present.
   if (
     args.includes("--all") ||
@@ -122,23 +124,23 @@ export const backendGuardPresets = (operation: string, harness: string, args: re
     operation === "harness-update" ||
     (operation === "upgrade" && !args.includes("--skills-only"))
   )
-    return Object.keys(entry.presets).sort()
+    return [...profiles].sort()
   return [selected]
 }
 
-export interface BackendGuard {
+export interface ProfileGuard {
   readonly attachChild: (pid: number, processGroup?: boolean) => void
   readonly signalTree: (pid: number, signal: NodeJS.Signals) => void
   readonly release: () => void
 }
 
-/** Private backends publish into persistent homes, so their sessions must hold exclusive ownership. */
-export const acquireBackendGuard = (
+/** Lifecycle managers publish into persistent homes, so mutations hold exclusive ownership. */
+export const acquireProfileGuard = (
   harness: string,
   presets: readonly string[],
   operation: string,
   home = process.env.HOME ?? os.homedir(),
-): BackendGuard => {
+): ProfileGuard => {
   if (presets.length === 0)
     return {
       attachChild: () => {},
@@ -151,11 +153,12 @@ export const acquireBackendGuard = (
       },
       release: () => {},
     }
-  const entry = nativeHarness(harness)
-  if (!entry || presets.some((preset) => !Object.hasOwn(entry.presets, preset)))
-    throw new Error("invalid backend guard scope")
+  const runtime = lifecycleRuntime(harness)
+  const profiles = nativePresetProfiles(harness)
+  if (!runtime || presets.some((preset) => !profiles.includes(preset as never)))
+    throw new Error("invalid profile guard scope")
   let directory = realpathSync(home)
-  for (const component of [".local", "share", "trellage", "backend-guards"]) {
+  for (const component of [".local", "share", "trellage", "profile-guards"]) {
     directory = path.join(directory, component)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const status = lstatSync(directory)
@@ -165,7 +168,7 @@ export const acquireBackendGuard = (
       status.uid !== process.getuid?.() ||
       (status.mode & 0o022) !== 0
     )
-      throw new Error(`unsafe backend guard directory: ${directory}`)
+      throw new Error(`unsafe profile guard directory: ${directory}`)
   }
   const file = path.join(directory, "profiles.sqlite")
   if (existsSync(file)) {
@@ -177,7 +180,7 @@ export const acquireBackendGuard = (
       status.uid !== process.getuid?.() ||
       (status.mode & 0o022) !== 0
     )
-      throw new Error(`unsafe backend guard database: ${file}`)
+      throw new Error(`unsafe profile guard database: ${file}`)
   }
   const db = new Database(file, { create: true })
   db.exec("PRAGMA busy_timeout = 5000")
@@ -185,7 +188,7 @@ export const acquireBackendGuard = (
   const token = randomUUID()
   const started = processStart(process.pid)
   try {
-    if (started === null) throw new Error("cannot determine backend guard process identity")
+    if (started === null) throw new Error("cannot determine profile guard process identity")
     db.exec(
       "CREATE TABLE IF NOT EXISTS owners (scope TEXT PRIMARY KEY, operation TEXT NOT NULL, pid INTEGER NOT NULL, started TEXT NOT NULL, child_pid INTEGER, child_started TEXT, token TEXT NOT NULL, descendants TEXT NOT NULL DEFAULT '[]')",
     )
@@ -199,7 +202,7 @@ export const acquireBackendGuard = (
       )
         db.exec("ALTER TABLE owners ADD COLUMN descendants TEXT NOT NULL DEFAULT '[]'")
       for (const preset of [...new Set(presets)].sort()) {
-        const scope = `${harness}/${entry.presets[preset]}`
+        const scope = `${harness}/${runtime.profileName(preset)}`
         const owner = db.query<Owner, [string]>("SELECT * FROM owners WHERE scope = ?").get(scope)
         if (
           owner &&

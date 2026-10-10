@@ -91,7 +91,6 @@ trx setup codex --all
 trx run codex superpowers
 trx run codex pstack -p "Review this repository"
 trx run codex youtube
-trx run codex superpowers --native-auth -- exec "Review this repository"
 trx doctor codex superpowers
 trx doctor codex youtube
 trx upgrade codex superpowers --check
@@ -120,7 +119,7 @@ and `codex-common` at
 Custom skills are preserved. Missing profiles or caches, invalid ownership,
 unsafe paths, and name collisions fail closed. This command never fetches,
 runs Codex, changes plugins or authentication, or loads the YouTube Varlock
-environment. `--native-auth skills-update` is not a valid launch.
+environment.
 
 Use `trx list --json` for the stable machine-readable catalog, including
 launcher, harness, profile kind, plugin or managed-skill identity, source,
@@ -147,24 +146,17 @@ does not support it reports unknown readiness and blocks goal startup.
 
 After installing the native launchers and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
-harness/profile picker. Remaining arguments are forwarded to `cdx` unchanged
+harness/profile picker. Remaining arguments are forwarded to the canonical Codex harness
 after selection; the bare picker never performs setup, repair, or update.
 In `trx admin`, press `U`, then `y` to update the shared Codex harness.
 
-Profile launch always passes `--dangerously-bypass-approvals-and-sandbox` and
-disables `default_mode_request_user_input`. This selects **Full Access**:
-`approval_policy = "never"` and `sandbox_mode = "danger-full-access"`.
-The default applies to `pstack`, `superpowers`, and `youtube`, with proxy or
-`--native-auth` authentication, in interactive and non-interactive sessions.
-New and resumed sessions use the same launch policy.
-
-With stable Codex 0.156.0 or later, launch also passes `--no-daemon`. The
-launch `-c` and `--disable` overrides already make Codex run without its
-shared background server, and Codex 0.160.0 shows a warning about this at
-every start. `--no-daemon` keeps the same mode and removes the warning.
-Launch omits the flag when the Codex arguments include `--no-daemon`,
-`agents`, `queue`, or `--remote`, because Codex rejects those combinations.
-Pre-release or unrecognized `codex --version` output also omits the flag.
+Profile launch always passes `--dangerously-bypass-approvals-and-sandbox`.
+This selects **Full Access**: `approval_policy = "never"` and
+`sandbox_mode = "danger-full-access"`. The canonical adapter also supplies
+workspace trust and local `copilot-proxy-rs` provider overrides without
+persisting those launch-only values into the generated profile configuration.
+The policy applies to `pstack`, `superpowers`, and `youtube` in interactive
+and non-interactive sessions. New and resumed sessions use the same policy.
 
 Codex does not request command approvals, and its native OS-level sandbox is
 disabled. Plugin code and Codex commands can read, write, and use the network
@@ -268,11 +260,8 @@ state changes.
 Default `trx run codex PROFILE ...` launches use the configured local `copilotproxy` and
 do not require or copy `~/.codex/auth.json`.
 
-Use `trx run codex PROFILE --native-auth -- ...` to opt into native OpenAI authentication
-for one launch. This requires a valid host `codex login`, atomically refreshes
-only the selected profile's `auth.json`, and does not change managed proxy configuration.
-Missing or invalid native auth fails without proxy fallback. Sessions,
-configuration, and other profile state remain isolated.
+Native OpenAI authentication is not a canonical launch mode. Use another
+harness when the local `copilot-proxy-rs` route is unsuitable.
 
 MCP servers are profile-local. `cdx` does not import host MCP definitions from
 `~/.codex/config.toml`, and one profile's MCPs are not shared with another.

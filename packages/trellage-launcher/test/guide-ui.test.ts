@@ -1110,9 +1110,9 @@ describe("guideUiReducer: intent and match", () => {
       const failed = guideUiReducer(started(), {
         type: GuideUiActionType.AugmentFailed,
         runId: 1,
-        message: "cpx hve research failed",
+        message: "trx run copilot hve research failed",
       })
-      expect(failed.augmentJob).toMatchObject({ status: "failed", errorMessage: "cpx hve research failed" })
+      expect(failed.augmentJob).toMatchObject({ status: "failed", errorMessage: "trx run copilot hve research failed" })
       const retried = guideUiReducer(failed, { type: GuideUiActionType.AugmentRetry })
       expect(retried.augmentJob).toMatchObject({ status: "running", runId: 2, kind: GuideAugmentKind.Research })
       expect(guideUiReducer(failed, { type: GuideUiActionType.AugmentDiscard }).augmentJob).toBeUndefined()
@@ -3397,7 +3397,7 @@ describe("destinationOptions", () => {
         expect(candidatePaneHeight(10)).toBe(6)
         expect(candidateRailWidth(100)).toBe(30)
         expect(candidateRailWidth(60)).toBe(20)
-        expect(compactCommandPreview("cpx hve -i 'line one\nline two'")).toBe("cpx hve -i 'line one line two'")
+        expect(compactCommandPreview("trx run copilot hve -- -i 'line one\nline two'")).toBe("trx run copilot hve -- -i 'line one line two'")
       })
 
       it("wraps and pages large guide text without losing content", () => {

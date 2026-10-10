@@ -35,7 +35,7 @@ fmx inventory default --json >"$logs/fleet-needs-consent.json" || fail 'consent 
 jq -e '.fleet.consentRequired and .fleet.actions.submit.allowed and (.fleet.actions.start.allowed | not)' \
   "$logs/fleet-needs-consent.json" >/dev/null || fail 'inventory ignored prior consent'
 status=0
-fmx default >/dev/null 2>"$logs/launch-needs-consent.err" || status=$?
+fmx __trx-run default >/dev/null 2>"$logs/launch-needs-consent.err" || status=$?
 [[ "$status" != 0 ]] || fail 'launch ignored missing prior consent'
 fmx repair default >/dev/null 2>&1 || fail 'explicit idle repair could not record consent'
 [[ "$instance_before" == "$(cat "$fleet_profile/receipts/instance.json")" ]] \
@@ -302,7 +302,7 @@ for command_name in setup update repair; do
 done
 mkdir "$fleet_profile/runtime.previous"
 status=0
-fmx default >/dev/null 2>"$logs/recovery-interrupted.err" || status=$?
+fmx __trx-run default >/dev/null 2>"$logs/recovery-interrupted.err" || status=$?
 [[ "$status" != 0 && -d "$fleet_profile/runtime.previous" ]] \
   || fail 'live-worker recovery restored an interrupted publication'
 rmdir "$fleet_profile/runtime.previous"
@@ -321,7 +321,7 @@ for unsafe in second-live incomplete unowned; do
     unowned) printf 'other-owner\n' >"$fleet_profile/locks/session/owner" ;;
   esac
   status=0
-  fmx default >/dev/null 2>"$logs/recovery-$unsafe.err" || status=$?
+  fmx __trx-run default >/dev/null 2>"$logs/recovery-$unsafe.err" || status=$?
   [[ "$status" != 0 ]] || fail "recovery adopted a $unsafe supervisor lock"
 done
 printf '%s\n' "$ownership_value" >"$fleet_profile/locks/session/owner"
@@ -333,7 +333,7 @@ wakes_before="$(shasum -a 256 "$fleet_home/state/.wake-queue")"
 : >"$NATIVE_CLAUDE_LOG"
 : >"$NATIVE_CLAUDE_LAUNCH_LOG"
 : >"$FAKE_GIT_LOG"
-fmx default --fmx-expected-fleet-json "$fleet_identity" >/dev/null 2>"$logs/recovered.err" \
+fmx __trx-run default --fmx-expected-fleet-json "$fleet_identity" >/dev/null 2>"$logs/recovered.err" \
   || { cat "$logs/recovered.err" >&2; fail 'live-worker supervisor recovery failed'; }
 kill -0 "$busy_pid" || fail 'recovery terminated a live worker'
 [[ "$source_before" == "$(shasum -a 256 "$fleet_profile/receipts/source.json")" \

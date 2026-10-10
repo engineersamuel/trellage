@@ -153,7 +153,7 @@ if [[ "$live_scope" == all ]]; then
       and .headless.questionToolControl == "hard-deny"
     )
   ' "$temp_root/copilot-inventory.json" >/dev/null \
-    || fail 'cpx hve is not publishing the recorded Copilot 1.0.81 contract'
+    || fail 'trx run copilot hve is not publishing the recorded Copilot 1.0.81 contract'
   jq -e '
     any(.profiles[];
       .name == "default"
@@ -163,7 +163,7 @@ if [[ "$live_scope" == all ]]; then
       and .headless.cost == true
     )
   ' "$temp_root/claude-inventory.json" >/dev/null \
-    || fail 'cldx default is not publishing the recorded Claude 2.1.233 contract'
+    || fail 'trx run claude default is not publishing the recorded Claude 2.1.233 contract'
   jq -e '
     any(.profiles[];
       .name == "default"
@@ -187,15 +187,15 @@ if [[ "$live_scope" == all ]]; then
     --no-auto-update \
     --model gpt-5.6-sol \
     --stream off \
-    || fail 'cpx live probe failed'
-  require_json_lines "$cpx_output" || fail 'cpx live stdout was not JSON-only'
+    || fail 'Copilot live probe failed'
+  require_json_lines "$cpx_output" || fail 'Copilot live stdout was not JSON-only'
   jq -Rse '
     [split("\n")[] | fromjson?
       | select(.type == "assistant.message" and (.data.content | type == "string"))
       | .data.content
     ][-1] == "TRELLAGE_CPX_LIVE_OK"
   ' "$cpx_output" >/dev/null \
-    || fail 'cpx live result differed'
+    || fail 'Copilot live result differed'
 
   printf 'verify-headless-live-contracts: Native Claude\n'
   cldx_initial="$temp_root/cldx-initial.jsonl"
@@ -206,12 +206,12 @@ if [[ "$live_scope" == all ]]; then
     --output-format stream-json \
     --verbose \
     -p 'Reply exactly TRELLAGE_CLDX_INITIAL_OK. Do not use tools.' \
-    || fail 'cldx initial live probe failed'
-  require_json_lines "$cldx_initial" || fail 'cldx initial stdout was not JSONL-only'
+    || fail 'Claude initial live probe failed'
+  require_json_lines "$cldx_initial" || fail 'Claude initial stdout was not JSONL-only'
   cldx_session_id="$(jq -Rrse '
     [split("\n")[] | fromjson? | select(.type == "system" and .subtype == "init") | .session_id][0]
     | select(type == "string" and length > 0)
-  ' "$cldx_initial")" || fail 'cldx initial stream had no authoritative session ID'
+  ' "$cldx_initial")" || fail 'Claude initial stream had no authoritative session ID'
   jq -Rse '
     [split("\n")[] | fromjson? | select(.type == "result")][-1] as $result
     | $result.subtype == "success"
@@ -219,7 +219,7 @@ if [[ "$live_scope" == all ]]; then
     and $result.result == "TRELLAGE_CLDX_INITIAL_OK"
     and ($result.usage | type == "object")
     and ($result.total_cost_usd | type == "number")
-  ' "$cldx_initial" >/dev/null || fail 'cldx initial terminal evidence differed'
+  ' "$cldx_initial" >/dev/null || fail 'Claude initial terminal evidence differed'
 
   cldx_resume="$temp_root/cldx-resume.jsonl"
   run_live "$cldx_resume" "$temp_root/cldx-resume.stderr" "$temp_root/cldx-resume.timeout" \
@@ -230,15 +230,15 @@ if [[ "$live_scope" == all ]]; then
     --verbose \
     --resume "$cldx_session_id" \
     -p 'Reply exactly TRELLAGE_CLDX_RESUME_OK. Do not use tools.' \
-    || fail 'cldx resume live probe failed'
-  require_json_lines "$cldx_resume" || fail 'cldx resume stdout was not JSONL-only'
+    || fail 'Claude resume live probe failed'
+  require_json_lines "$cldx_resume" || fail 'Claude resume stdout was not JSONL-only'
   jq -Rse --arg session "$cldx_session_id" '
     [split("\n")[] | fromjson? | select(.type == "result")][-1] as $result
     | $result.subtype == "success"
     and $result.is_error == false
     and $result.session_id == $session
     and $result.result == "TRELLAGE_CLDX_RESUME_OK"
-  ' "$cldx_resume" >/dev/null || fail 'cldx resume terminal evidence differed'
+  ' "$cldx_resume" >/dev/null || fail 'Claude resume terminal evidence differed'
 
   printf 'verify-headless-live-contracts: Native OMP\n'
   omp_output="$temp_root/omp.out"

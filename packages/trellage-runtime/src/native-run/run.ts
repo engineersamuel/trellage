@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { lstat, mkdir, readFile } from "node:fs/promises"
 import path from "node:path"
+import { constants as osConstants } from "node:os"
 import { promisify } from "node:util"
 import { readTrellageConfig, TrellageConfigError, type NativeCatalog } from "../native-config.ts"
 import {
@@ -22,6 +23,8 @@ import { createSelectionHistory, scopeKeysFor, type Selection } from "./history.
 import { acquireLease, pruneGenerations } from "./lease.ts"
 import { NativeRunError, resolveNativeRunPaths, type NativeRunPaths } from "./paths.ts"
 import { createSourceResolver, gitSourceTransport, type SourceTransport } from "./source.ts"
+import { ensureNativeConfig, withBuiltinPreset } from "./config-init.ts"
+import { nativePresetProfile } from "./presets.ts"
 
 export interface RunOptions {
   readonly harness: string
@@ -30,6 +33,7 @@ export interface RunOptions {
   readonly effort?: string | undefined
   readonly dryRun: boolean
   readonly allowUnprovenIsolation: boolean
+  readonly plan?: boolean
   /** Launch without always-on profiles (a clean base harness). */
   readonly noAlways?: boolean
   readonly forwardedArgs: ReadonlyArray<string>
@@ -42,7 +46,8 @@ export const RUN_USAGE = `Usage:
           [--no-always] [--require-proven-isolation] [--continue | --resume[=ID]]
           [-- <harness-args>]
 
-Harnesses: pi, copilot, claude, codex, grok. Profiles come from ~/.config/trellage/config.toml.
+Harnesses: agency, claude, codex, copilot, firstmate, fx, grok, jcode, omp, pi, prime.
+Profiles come from ~/.config/trellage/config.toml.
 Profiles with always = true are added to every run; --no-always skips them. --dry-run prepares the composition and
 prints the launch plan without starting the harness.
 Conversations are kept per harness and profile set. --continue reopens the most recent one in this directory;
@@ -54,6 +59,7 @@ interface RunArgumentState {
   dryRun: boolean
   allowUnprovenIsolation: boolean
   noAlways: boolean
+  plan: boolean
   resume?: ResumeRequest
 }
 
@@ -97,6 +103,9 @@ const parseFlagRunArgument = (argument: string, state: RunArgumentState): boolea
     "--dry-run": () => {
       state.dryRun = true
     },
+    "--plan": () => {
+      state.plan = true
+    },
     "--no-always": () => {
       state.noAlways = true
     },
@@ -128,6 +137,7 @@ export const parseRunArguments = (argv: ReadonlyArray<string>): RunOptions => {
     dryRun: false,
     allowUnprovenIsolation: true,
     noAlways: false,
+    plan: false,
   }
   for (let index = 0; index < own.length; index += 1) {
     const argument = own[index]!
@@ -145,7 +155,8 @@ export const parseRunArguments = (argv: ReadonlyArray<string>): RunOptions => {
   }
   const [harness, ...profiles] = positionals
   if (!harness) throw new NativeRunError("usage", "run requires a harness")
-  if (state.model !== undefined && state.model.length === 0) throw new NativeRunError("usage", "--model requires a value")
+  if (state.model !== undefined && state.model.length === 0)
+    throw new NativeRunError("usage", "--model requires a value")
   return { harness, profiles, forwardedArgs, ...state }
 }
 
@@ -158,7 +169,8 @@ const loadInstructions = async (configDirectory: string, catalog: NativeCatalog)
     const file = path.join(configDirectory, instruction.file)
     try {
       const info = await lstat(file)
-      if (!info.isFile() || info.size > MAX_INSTRUCTION_BYTES) throw new Error("not a regular file within the size limit")
+      if (!info.isFile() || info.size > MAX_INSTRUCTION_BYTES)
+        throw new Error("not a regular file within the size limit")
       texts[id] = await readFile(file, "utf8")
     } catch (error) {
       throw new NativeRunError(
@@ -181,15 +193,17 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
       if (value === null) delete env[key]
       else env[key] = value
     }
-    const child = spawn(launch.command, [...launch.args], { cwd, env, stdio: "inherit" })
+    const child = spawn(launch.command, [...launch.args], { cwd: launch.cwd ?? cwd, env, stdio: "inherit" })
     child.once("spawn", onSpawn)
-    child.once("error", (error) => reject(new NativeRunError("launch", `could not start ${launch.command}: ${error.message}`)))
+    child.once("error", (error) =>
+      reject(new NativeRunError("launch", `could not start ${launch.command}: ${error.message}`)),
+    )
     const forward = (signal: NodeJS.Signals) => () => child.kill(signal)
     const term = forward("SIGTERM")
     process.on("SIGTERM", term)
     child.once("exit", (code, signal) => {
       process.off("SIGTERM", term)
-      resolve(code ?? (signal ? 128 : 1))
+      resolve(code ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1))
     })
   })
 
@@ -198,11 +212,18 @@ const execFilePromise = promisify(execFile)
 const LATEST_CHECK_TIMEOUT_MS = 2_000
 
 const latestPiReleaseTag = async (environment: NodeJS.ProcessEnv): Promise<string> => {
-  const { stdout } = await execFilePromise("gh", ["release", "view", "-R", "earendil-works/pi", "--json", "tagName", "--jq", ".tagName"], {
-    env: environment, encoding: "utf8", timeout: LATEST_CHECK_TIMEOUT_MS,
-  })
+  const { stdout } = await execFilePromise(
+    "gh",
+    ["release", "view", "-R", "earendil-works/pi", "--json", "tagName", "--jq", ".tagName"],
+    {
+      env: environment,
+      encoding: "utf8",
+      timeout: LATEST_CHECK_TIMEOUT_MS,
+    },
+  )
   const tag = stdout.trim()
-  if (!/^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-.][0-9A-Za-z.]+)?$/.test(tag)) throw new Error(`GitHub returned an invalid Pi release tag: ${tag}`)
+  if (!/^v?[0-9]+\.[0-9]+\.[0-9]+(?:[-.][0-9A-Za-z.]+)?$/.test(tag))
+    throw new Error(`GitHub returned an invalid Pi release tag: ${tag}`)
   return tag
 }
 
@@ -210,9 +231,18 @@ const latestPiReleaseTag = async (environment: NodeJS.ProcessEnv): Promise<strin
 export const refreshPiRelease = (environment: NodeJS.ProcessEnv, tag?: string): Promise<string | undefined> => {
   if (environment.TRELLAGE_PI_BIN || environment.TRELLAGE_PI_AUTO_UPDATE === "0") return Promise.resolve(undefined)
   return new Promise((resolve) => {
-    execFile("bash", tag === undefined ? [piInstaller] : [piInstaller, tag], { env: environment, timeout: 120_000 }, (error, _stdout, stderr) => {
-      resolve(error ? `Pi release update failed, using the installed Pi: ${stderr.trim().split("\n").pop() || error.message}` : undefined)
-    })
+    execFile(
+      "bash",
+      tag === undefined ? [piInstaller] : [piInstaller, tag],
+      { env: environment, timeout: 120_000 },
+      (error, _stdout, stderr) => {
+        resolve(
+          error
+            ? `Pi release update failed, using the installed Pi: ${stderr.trim().split("\n").pop() || error.message}`
+            : undefined,
+        )
+      },
+    )
   })
 }
 
@@ -220,10 +250,13 @@ type LatestPackageVersion = (name: string, environment: NodeJS.ProcessEnv) => Pr
 
 const npmLatestPackageVersion: LatestPackageVersion = async (name, environment) => {
   const { stdout } = await execFilePromise("npm", ["view", name, "version", "--json"], {
-    env: environment, encoding: "utf8", timeout: LATEST_CHECK_TIMEOUT_MS,
+    env: environment,
+    encoding: "utf8",
+    timeout: LATEST_CHECK_TIMEOUT_MS,
   })
   const version: unknown = JSON.parse(stdout)
-  if (typeof version !== "string" || version.length === 0) throw new Error(`npm returned an invalid latest version for ${name}`)
+  if (typeof version !== "string" || version.length === 0)
+    throw new Error(`npm returned an invalid latest version for ${name}`)
   return version
 }
 
@@ -232,31 +265,49 @@ export const piExtensionsNeedUpdate = async (
   latestVersion: LatestPackageVersion = npmLatestPackageVersion,
 ): Promise<boolean> => {
   const home = piExtensionsHome(environment)
-  const installed = await Promise.all(PI_EXTENSION_PACKAGES.map(async (name) => {
-    try {
-      const manifest: unknown = JSON.parse(await readFile(path.join(home, "node_modules", name, "package.json"), "utf8"))
-      return manifest && typeof manifest === "object" && "version" in manifest && typeof manifest.version === "string"
-        ? manifest.version : undefined
-    } catch {
-      return undefined
-    }
-  }))
+  const installed = await Promise.all(
+    PI_EXTENSION_PACKAGES.map(async (name) => {
+      try {
+        const manifest: unknown = JSON.parse(
+          await readFile(path.join(home, "node_modules", name, "package.json"), "utf8"),
+        )
+        return manifest && typeof manifest === "object" && "version" in manifest && typeof manifest.version === "string"
+          ? manifest.version
+          : undefined
+      } catch {
+        return undefined
+      }
+    }),
+  )
   if (installed.some((version) => version === undefined)) return true
   const latest = await Promise.all(PI_EXTENSION_PACKAGES.map((name) => latestVersion(name, environment)))
   return installed.some((version, index) => version !== latest[index])
 }
 
 /** Check the always-on Pi extensions and install only when a package is missing or outdated. */
-export const refreshPiExtensions = async (environment: NodeJS.ProcessEnv, needsUpdate?: boolean): Promise<string | undefined> => {
+export const refreshPiExtensions = async (
+  environment: NodeJS.ProcessEnv,
+  needsUpdate?: boolean,
+): Promise<string | undefined> => {
   if (environment.TRELLAGE_PI_BIN || environment.TRELLAGE_PI_AUTO_UPDATE === "0") return undefined
   const home = piExtensionsHome(environment)
   try {
     await mkdir(home, { recursive: true })
     if (!(needsUpdate ?? (await piExtensionsNeedUpdate(environment)))) return undefined
-    await execFilePromise("npm", [
-      "install", "--prefix", home, "--no-audit", "--no-fund", "--no-progress", "--loglevel=error",
-      ...PI_EXTENSION_PACKAGES.map((name) => `${name}@latest`),
-    ], { env: environment, timeout: 120_000 })
+    await execFilePromise(
+      "npm",
+      [
+        "install",
+        "--prefix",
+        home,
+        "--no-audit",
+        "--no-fund",
+        "--no-progress",
+        "--loglevel=error",
+        ...PI_EXTENSION_PACKAGES.map((name) => `${name}@latest`),
+      ],
+      { env: environment, timeout: 120_000 },
+    )
     return undefined
   } catch (error) {
     const detail = error instanceof Error ? error.message.split("\n").pop() : String(error)
@@ -276,11 +327,15 @@ const checkPiRefresh = async (environment: NodeJS.ProcessEnv): Promise<PiRefresh
   const [release, extensions] = await Promise.all([
     latestPiReleaseTag(environment).then(
       (releaseTag) => ({ releaseTag }),
-      (error: unknown) => ({ releaseWarning: `Pi release update failed, using the installed Pi: ${error instanceof Error ? error.message : String(error)}` }),
+      (error: unknown) => ({
+        releaseWarning: `Pi release update failed, using the installed Pi: ${error instanceof Error ? error.message : String(error)}`,
+      }),
     ),
     piExtensionsNeedUpdate(environment).then(
       (extensionsNeedUpdate) => ({ extensionsNeedUpdate }),
-      (error: unknown) => ({ extensionsWarning: `Pi extension update failed, using the installed extensions: ${error instanceof Error ? error.message : String(error)}` }),
+      (error: unknown) => ({
+        extensionsWarning: `Pi extension update failed, using the installed extensions: ${error instanceof Error ? error.message : String(error)}`,
+      }),
     ),
   ])
   return { ...release, ...extensions }
@@ -309,10 +364,12 @@ export interface PreparedRun {
   readonly defaults: HostDefaults
 }
 
-const shellWord = (word: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`)
+const shellWord = (word: string): string =>
+  /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
 
 const launchModel = (prepared: PreparedRun): string | undefined => prepared.selection.model ?? prepared.defaults.model
-const launchEffort = (prepared: PreparedRun): string | undefined => prepared.selection.effort ?? prepared.defaults.effort
+const launchEffort = (prepared: PreparedRun): string | undefined =>
+  prepared.selection.effort ?? prepared.defaults.effort
 
 const loadNativeCatalog = async (dependencies: RunDependencies, environment: NodeJS.ProcessEnv) => {
   try {
@@ -339,6 +396,7 @@ const buildLaunch = (
   adapter.launch({
     layout,
     plan,
+    planMode: options.plan === true,
     model: options.model ?? defaults.model,
     effort: options.effort ?? defaults.effort,
     forwardedArgs: options.forwardedArgs,
@@ -362,7 +420,8 @@ export const describePreparedRun = (prepared: PreparedRun): string[] => {
     ...(plan.skills.length === 0
       ? ["Skills      none"]
       : plan.skills.map(
-          (skill, index) => `${index === 0 ? "Skills      " : "            "}${skill.name}  ${skill.sourceId}@${skill.commit.slice(0, 12)}`,
+          (skill, index) =>
+            `${index === 0 ? "Skills      " : "            "}${skill.name}  ${skill.sourceId}@${skill.commit.slice(0, 12)}`,
         )),
     ...plan.warnings.map((warning) => `Warning     ${warning}`),
     `Command     ${[launch.command, ...launch.args].map(shellWord).join(" ")}`,
@@ -377,14 +436,22 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
   assertEffort(adapter, options.effort)
   assertForwardedArgs(adapter, options.forwardedArgs)
 
+  await ensureNativeConfig({ environment, ...(dependencies.configHome ? { home: dependencies.configHome } : {}) })
   const loaded = await loadNativeCatalog(dependencies, environment)
-  const catalog = loaded.config.native
+  let catalog = loaded.config.native
+  const publicProfiles = options.profiles
+  const selectedProfiles = publicProfiles.map((profile) =>
+    Object.hasOwn(catalog.profiles, profile) ? profile : (nativePresetProfile(adapter.id, profile) ?? profile),
+  )
+  for (const profile of selectedProfiles) {
+    if (profile.startsWith(`preset-${adapter.id}-`)) catalog = await withBuiltinPreset(catalog, profile)
+  }
   const instructionTexts = await loadInstructions(path.dirname(loaded.path), catalog)
   const resolver = createSourceResolver({ paths, transport: dependencies.transport ?? gitSourceTransport() })
   const plan = await planComposition(
     {
       harness: adapter.id,
-      profiles: options.profiles,
+      profiles: selectedProfiles,
       catalog,
       adapterPolicy: adapter.policyVersion,
       providerPolicy: adapter.providerPolicy(options.model),
@@ -405,7 +472,10 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
   for (const source of plan.sources) await resolver.markGood(source)
   await pruneGenerations(paths, layout.ownerHome, 3, plan.generationId)
 
-  const defaults = hostDefaults(adapter.id, dependencies.configHome ?? environment.HOME)
+  const host = hostDefaults(adapter.id, dependencies.configHome ?? environment.HOME)
+  const defaults = options.plan
+    ? { model: adapter.planDefaults?.model ?? host.model, effort: adapter.planDefaults?.effort ?? host.effort }
+    : host
   const launch = buildLaunch(adapter, layout, plan, options, defaults, environment, dependencies.cwd ?? process.cwd())
   return {
     adapter,
@@ -413,7 +483,7 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
     layout,
     launch,
     defaults,
-    selection: { harness: adapter.id, profiles: plan.profiles, model: options.model, effort: options.effort },
+    selection: { harness: adapter.id, profiles: publicProfiles, model: options.model, effort: options.effort },
   }
 }
 
@@ -437,10 +507,14 @@ const refreshPreparedRun = async (
     (async (harness: string, currentEnvironment: NodeJS.ProcessEnv) => {
       if (harness !== "pi") return undefined
       const warnings = [piRefresh.releaseWarning, piRefresh.extensionsWarning]
-      warnings.push(...await Promise.all([
-        piRefresh.releaseWarning ? undefined : refreshPiRelease(currentEnvironment, piRefresh.releaseTag),
-        piRefresh.extensionsWarning ? undefined : refreshPiExtensions(currentEnvironment, piRefresh.extensionsNeedUpdate),
-      ]))
+      warnings.push(
+        ...(await Promise.all([
+          piRefresh.releaseWarning ? undefined : refreshPiRelease(currentEnvironment, piRefresh.releaseTag),
+          piRefresh.extensionsWarning
+            ? undefined
+            : refreshPiExtensions(currentEnvironment, piRefresh.extensionsNeedUpdate),
+        ])),
+      )
       return warnings.filter(Boolean).join("; ") || undefined
     })
   const warning = await refresh(prepared.adapter.id, environment)
@@ -474,6 +548,7 @@ const launchPreparedRun = async (
     const launchInput = {
       layout: prepared.layout,
       plan: prepared.plan,
+      planMode: options.plan === true,
       model: launchModel(prepared),
       effort: launchEffort(prepared),
       forwardedArgs: options.forwardedArgs,
@@ -481,11 +556,12 @@ const launchPreparedRun = async (
       environment,
       workspace: cwd,
     }
+    const resolvedLaunch = (await prepared.adapter.resolveLaunch?.(launchInput, prepared.launch)) ?? prepared.launch
     const finalEnvironment = await prepared.adapter.beforeLaunch?.(launchInput)
     const launch =
       finalEnvironment === undefined
-        ? prepared.launch
-        : { ...prepared.launch, env: { ...prepared.launch.env, ...finalEnvironment } }
+        ? resolvedLaunch
+        : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
     let recorded: Promise<void> = Promise.resolve()
     const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, () => {
       recorded = history.record(keys, prepared.selection).catch(() => undefined)
@@ -499,12 +575,25 @@ const launchPreparedRun = async (
 }
 
 export const runNative = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<number> => {
-  const write = dependencies.write ?? ((line: string) => process.stdout.write(`${line}\n`))
+  const outputFormatIndex = options.forwardedArgs.findIndex((argument) => argument === "--output-format")
+  const outputFormat =
+    outputFormatIndex === -1
+      ? options.forwardedArgs
+          .find((argument) => argument.startsWith("--output-format="))
+          ?.slice("--output-format=".length)
+      : options.forwardedArgs[outputFormatIndex + 1]
+  const machineOutput = outputFormat === "json" || outputFormat === "jsonl" || outputFormat === "stream-json"
+  const reportLaunch = options.dryRun || process.stdout.isTTY
+  const write =
+    dependencies.write ??
+    (machineOutput || !reportLaunch ? () => undefined : (line: string) => process.stdout.write(`${line}\n`))
   const environment = dependencies.environment ?? process.env
   const cwd = dependencies.cwd ?? process.cwd()
   const paths = dependencies.paths ?? resolveNativeRunPaths({ environment })
-  const piRefresh = options.harness === "pi" && !options.dryRun && dependencies.refreshHarness === undefined
-    ? checkPiRefresh(environment) : Promise.resolve({})
+  const piRefresh =
+    options.harness === "pi" && !options.dryRun && dependencies.refreshHarness === undefined
+      ? checkPiRefresh(environment)
+      : Promise.resolve({})
 
   let prepared = await prepareRun(options, dependencies)
   for (const line of describePreparedRun(prepared)) write(line)

@@ -17,8 +17,6 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  jcx [JCODE_ARGS...]
-  jcx default [JCODE_ARGS...]
   jcx list [--json]
   jcx inventory PROFILE --json
   jcx setup [default]
@@ -26,11 +24,11 @@ Usage:
   jcx repair [default]
   jcx skills-update PROFILE
   jcx skills-check PROFILE
-  jcx skill i-have-adhd PROMPT
   jcx update [--check] [default]
   jcx harness-version
 
-Bare jcx invocations use the default profile.
+Launch with `trx run jcode default`. Invoke the manual skill through
+`trx skill jcode i-have-adhd PROMPT`.
 EOF
 }
 
@@ -762,38 +760,21 @@ inventory_profile() {
   }'
 }
 
-launch_jcode() {
-  local manual_skill="$1" manual_prompt="$2" version binary instructions
-  shift 2
-
-  require_command mise
-  ensure_profile_installed_for_launch
-  version="$(read_installed_version)"
-  binary="$(installed_binary "$version")"
-  verify_binary_version "$binary" "$version"
-  ensure_managed_profile_for_launch "$binary"
-  ensure_floating_skills
-  ensure_onboarding_skipped
-  check_proxy
-  clear_jcode_environment
-  export JCODE_HOME="$profile_home"
-  export JCODE_NO_TELEMETRY=1
-  export JCODE_PROVIDER="$provider"
-  export JCODE_MODEL="$model_id"
-  export JCODE_OPENAI_REASONING_EFFORT="$reasoning_effort"
-  export JCODE_OPENAI_EXTRA_BODY='{}'
-  export JCODE_CROSS_PROVIDER_FAILOVER=manual
-  if [[ -n "$manual_skill" ]]; then
-    instructions="$(manual_skill_operation prompt)" || die 'manual skill is unavailable'
-    set -- run -- "$instructions"$'\n\nUser request:\n'"$manual_prompt"
-  fi
-  exec "$binary" --no-update "$@"
-}
-
 require_command jq
 validate_catalog
 
 case "${1-}" in
+  _trx-executable)
+    [[ "${TRELLAGE_TRX_JCODE_ADAPTER:-0}" == 1 ]] \
+      || die '_trx-executable is reserved for the trx JCode adapter'
+    shift
+    [[ "$#" -eq 0 ]] || die '_trx-executable accepts no arguments'
+    require_command mise
+    version="$(read_installed_version)"
+    binary="$(installed_binary "$version")"
+    verify_binary_version "$binary" "$version"
+    printf '%s\n' "$binary"
+    ;;
   help|-h|--help)
     usage
     ;;
@@ -855,13 +836,13 @@ case "${1-}" in
     shift
     [[ "$#" -eq 2 && "$1" == i-have-adhd && -n "$2" ]] \
       || die 'usage: jcx skill i-have-adhd PROMPT'
-    launch_jcode "$1" "$2"
+    instructions="$(manual_skill_operation prompt)" || die 'manual skill is unavailable'
+    printf '%s\n\nUser request:\n%s\n' "$instructions" "$2"
     ;;
   default)
-    shift
-    launch_jcode '' '' "$@"
+    die 'this private profile manager cannot launch agents; use trx run jcode default'
     ;;
   *)
-    launch_jcode '' '' "$@"
+    die 'this private profile manager cannot launch agents; use trx run jcode default'
     ;;
 esac

@@ -8,9 +8,7 @@ import { render } from "ink"
 import { readTrellageConfig } from "@trellage/runtime/native-config"
 import {
   adapters,
-  nativeHarnessRegistry,
-  nativeHarness,
-  runNativeBackend,
+  nativeHarnessPresets,
   loadModelCatalog,
   hostDefaults,
   createSelectionHistory,
@@ -23,7 +21,7 @@ import { ThemeProvider } from "./termcn/theme-provider.tsx"
 import { trellageTheme } from "./termcn/theme-trellage.ts"
 import type { RunSelectorCatalog, RunSelectorChoice } from "./run-select-state.ts"
 
-const harnessOrder = [...new Set([...Object.keys(adapters), ...nativeHarnessRegistry.map(({ id }) => id)])]
+const harnessOrder = Object.keys(adapters)
 
 const loadCatalog = async (): Promise<RunSelectorCatalog> => {
   const loaded = await readTrellageConfig({})
@@ -34,11 +32,13 @@ const loadCatalog = async (): Promise<RunSelectorCatalog> => {
   })
   const first = modelCatalog.groups[0]
   const profileHarnesses: Record<string, ReadonlyArray<string> | undefined> = {}
-  for (const entry of nativeHarnessRegistry) {
-    for (const profile of Object.keys(entry.presets)) profileHarnesses[profile] = [...(profileHarnesses[profile] ?? []), entry.id]
+  for (const [harness, profiles] of Object.entries(nativeHarnessPresets)) {
+    for (const profile of profiles) profileHarnesses[profile] = [...(profileHarnesses[profile] ?? []), harness]
   }
   for (const [id, profile] of Object.entries(loaded.config.native.profiles)) {
-    const isPresetContent = nativeHarnessRegistry.some((entry) => Object.keys(entry.presets).some((preset) => id === `preset-${entry.id}-${preset}`))
+    const isPresetContent = Object.entries(nativeHarnessPresets).some(([harness, profiles]) =>
+      profiles.some((preset) => id === `preset-${harness}-${preset}`),
+    )
     if (!profile.always && !isPresetContent) profileHarnesses[id] = profile.harnesses
   }
   return {
@@ -106,6 +106,4 @@ const launchArgs = [
   ...(choice.effort === undefined ? [] : ["--effort", choice.effort]),
   ...argv,
 ]
-process.exitCode = choice.profiles.some((profile) => nativeHarness(choice.harness)?.presets[profile])
-  ? await runNativeBackend("run", choice.harness, launchArgs)
-  : await runMain([choice.harness, ...launchArgs])
+process.exitCode = await runMain([choice.harness, ...launchArgs])

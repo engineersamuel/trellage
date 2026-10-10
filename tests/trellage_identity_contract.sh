@@ -68,6 +68,8 @@ scan_public_branding() {
   || fail 'shared native Claude prototype path is missing'
 [[ -d "$repo_root/prototypes/trellage-firstmate-profiles" ]] \
   || fail 'Firstmate profiles prototype path is missing'
+[[ ! -e "$repo_root/prototypes/trellage-fx-profiles" ]] \
+  || fail 'retired Fx launcher package remains'
 [[ ! -e "$repo_root/prototypes/trellage-profiles" ]] \
   || fail 'ambiguous legacy Copilot profiles prototype path remains'
 [[ ! -e "$repo_root/prototypes/trellage-grok-profiles" ]] || fail 'legacy Grok profiles prototype path remains'

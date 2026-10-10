@@ -240,6 +240,14 @@
       "excludedProfiles": []
     },
     {
+      "id": "fx-shared-host-context",
+      "intent": "Use Fx with my existing GitHub CLI login, SSH keys, Git configuration, shell setup, and current ~/.fx sessions instead of an isolated profile home.",
+      "expectedProfiles": ["native:fx/default"],
+      "expectedWorkflows": {"native:fx/default": "interactive"},
+      "maxRank": 3,
+      "excludedProfiles": []
+    },
+    {
       "id": "pi-extension-guided-coding",
       "intent": "Use Pi's goal tracking, plan annotation, fast context tools, and dynamic subagents to coordinate this daily coding task.",
       "expectedProfiles": ["native:pi/default"],
@@ -290,7 +298,7 @@
     },
     {
       "id": "firstmate-default-explicit",
-      "intent": "Use fmx default to orchestrate work in my named Firstmate project.",
+      "intent": "Use trx run firstmate default to orchestrate work in my named Firstmate project.",
       "expectedProfiles": ["native:firstmate/default"],
       "maxRank": 1,
       "excludedProfiles": ["native:firstmate/pstack-workers", "native:codex/pstack"]
@@ -304,7 +312,7 @@
     },
     {
       "id": "firstmate-pstack-worker-explicit-singular",
-      "intent": "Use fmx pstack-worker to orchestrate one measured repository optimization with explicit blast radius and verification evidence.",
+      "intent": "Use trx run firstmate pstack-workers to orchestrate one measured repository optimization with explicit blast radius and verification evidence.",
       "expectedProfiles": ["native:firstmate/pstack-workers"],
       "maxRank": 1,
       "excludedProfiles": ["native:firstmate/default", "native:codex/pstack"]
@@ -318,7 +326,7 @@
     },
     {
       "id": "firstmate-ordinary-project-memory",
-      "intent": "Use fmx default and ordinary Stow to retain confirmed findings, decisions, and supporting references for my registered project without creating skills or implementation workers.",
+      "intent": "Use trx run firstmate default and ordinary Stow to retain confirmed findings, decisions, and supporting references for my registered project without creating skills or implementation workers.",
       "expectedProfiles": ["native:firstmate/default"],
       "maxRank": 1,
       "excludedProfiles": ["native:firstmate/pstack-workers", "native:codex/pstack"]

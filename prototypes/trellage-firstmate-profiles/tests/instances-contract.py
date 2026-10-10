@@ -98,7 +98,21 @@ class InstanceContract(unittest.TestCase):
             "#!/usr/bin/env bash\nexec " + shlex.quote(str(REPO / "scripts/install-floating-skills-runtime.sh")) + ' "$@"\n',
             0o755,
         )
-        shutil.copyfile(REPO / "config.toml", self.case / "config.toml")
+        healing.write(
+            self.case / "config.toml",
+            """[native.profiles.base]
+label = "Fixture defaults"
+always = true
+
+[native.profiles.preset-firstmate-default]
+label = "firstmate / default"
+harnesses = ["firstmate"]
+
+[native.profiles.preset-firstmate-pstack-workers]
+label = "firstmate / pstack-workers"
+harnesses = ["firstmate"]
+""",
+        )
         native_skills = REPO / "prototypes/trellage-claude-common/native-skills.ts"
         shutil.copyfile(native_skills, self.package.parent / "trellage-claude-common/native-skills.ts")
         shutil.copyfile(native_skills, self.runtime / "native-skills.ts")
@@ -119,6 +133,17 @@ class InstanceContract(unittest.TestCase):
         return subprocess.run([str((self.runtime if installed else self.package) / "bin/fmx"), *args],
                               input=None if data is None else json.dumps(data), text=True, capture_output=True,
                               env=values, cwd=cwd or self.case, timeout=80, check=False)
+
+    def run_trx(self, profile, *args, cwd=None, env=None):
+        values = healing.environment(self.case)
+        values.update(env or {})
+        values.update(TRELLAGE_TRX_SOURCE_ROOT=str(REPO / "prototypes/trellage-router"),
+                      TRELLAGE_TRX_NATIVE_SOURCE="1",
+                      TRELLAGE_FIRSTMATE_LIFECYCLE_BIN=str(self.package / "bin/fmx"),
+                      TRELLAGE_CONFIG=str(self.case / "config.toml"))
+        return subprocess.run([str(REPO / "prototypes/trellage-router/bin/trx"), "run", "firstmate", profile,
+                               "--", *args], text=True, capture_output=True, env=values,
+                              cwd=cwd or self.case, timeout=80, check=False)
 
     def json_result(self, result, state=None):
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -324,8 +349,13 @@ if sys.argv[3]=='yes':
         values.update(NATIVE_CLAUDE_LAUNCH_READY=str(ready),
                       NATIVE_CLAUDE_LAUNCH_RELEASE=str(self.case / (label + "-release")),
                       NATIVE_CLAUDE_INSTANCE_LOG=str(self.case / "instance-launches.jsonl"),
-                      NATIVE_CLAUDE_ARGV_LOG=str(self.case / "captain-argv.jsonl"))
-        child = subprocess.Popen([str(self.package / "bin/fmx"), plan["reference"]["profile"],
+                      NATIVE_CLAUDE_ARGV_LOG=str(self.case / "captain-argv.jsonl"),
+                      TRELLAGE_TRX_SOURCE_ROOT=str(REPO / "prototypes/trellage-router"),
+                      TRELLAGE_TRX_NATIVE_SOURCE="1",
+                      TRELLAGE_FIRSTMATE_LIFECYCLE_BIN=str(self.package / "bin/fmx"),
+                      TRELLAGE_CONFIG=str(self.case / "config.toml"))
+        child = subprocess.Popen([str(REPO / "prototypes/trellage-router/bin/trx"), "run", "firstmate",
+                                  plan["reference"]["profile"], "--",
                                   "--instance", plan["reference"]["instanceId"],
                                   "--fmx-instance-context-json", json.dumps(self.context(plan))],
                                  env=values, cwd=self.worktree_b, stdin=subprocess.DEVNULL,
@@ -348,7 +378,7 @@ if sys.argv[3]=='yes':
             self.assertEqual(fleet["supervisor"], {"state": "running", "pid": child.pid})
             self.assertTrue(fleet["actions"]["submit"]["allowed"])
         before = healing.snapshot(Path(b["destination"]))
-        duplicate = self.run_fmx("default", "--instance", a["reference"]["instanceId"],
+        duplicate = self.run_trx("default", "--instance", a["reference"]["instanceId"],
                                  "--fmx-instance-context-json", json.dumps(self.context(a)))
         self.assertNotEqual(duplicate.returncode, 0)
         self.assertIn("already running", duplicate.stderr)
@@ -562,7 +592,7 @@ if sys.argv[3]=='yes':
                 healing.write(root / "runtime/.unapproved", "must not be ignored\n")
             result = self.inventory(a)
             self.assertFalse(result["overlay"]["verified"], change)
-            launch = self.run_fmx("default", "--instance", a["reference"]["instanceId"],
+            launch = self.run_trx("default", "--instance", a["reference"]["instanceId"],
                                   "--fmx-instance-context-json", json.dumps(self.context(a)))
             self.assertNotEqual(launch.returncode, 0, change)
             target.write_bytes(original)

@@ -249,7 +249,7 @@ describe("research augmentation", () => {
 
   it("reports the failing command when cpx exits non-zero", async () => {
     const runner = new FakeRunner(async () => {
-      throw new Error("cpx hve exited with code 1")
+      throw new Error("trx run copilot hve exited with code 1")
     })
 
     await expect(runResearchAugment("intent", researchCatalog, contextFor(runner))).rejects.toThrow(

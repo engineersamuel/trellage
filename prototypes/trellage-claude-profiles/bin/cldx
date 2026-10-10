@@ -12,8 +12,6 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  cldx [CLAUDE_ARGS...]
-  cldx {default|office|office-charts} [CLAUDE_ARGS...]
   cldx list [--json]
   cldx inventory PROFILE --json
   cldx setup [PROFILE]
@@ -24,7 +22,7 @@ Usage:
   cldx harness-version
   cldx harness-update
 
-Bare cldx invocations use the default profile.
+Launch with `trx run claude PROFILE`.
 EOF
 }
 
@@ -191,7 +189,6 @@ select_profile() {
   output_style_root="$profile_home/output-styles"
   output_style="$output_style_root/rundown.md"
   export TRELLAGE_CLAUDE_PROFILE_SKILLS=native-common
-  [[ "$profile_name" == default ]] || export TRELLAGE_CLAUDE_PROFILE_SKILLS="$profile_name"
 }
 
 conservative_headless() {
@@ -272,7 +269,7 @@ office_plugin_inventory() {
   ' "$registry" || die 'invalid Office plugin inventory'
 }
 
-require_office_plugin() {
+office_plugin_path() {
   [[ "$profile_name" != default ]] || return 0
   local inventory
   inventory="$(office_plugin_inventory)"
@@ -280,8 +277,6 @@ require_office_plugin() {
     and .scope == "user" and .enabled == true)' <<<"$inventory" >/dev/null \
     || die "Office document plugin is missing or disabled; run cldx repair $profile_name"
   local install_path ancestor skill
-  local required_skills=(academic-pptx)
-  [[ "$profile_name" != office-charts ]] || required_skills+=(slide-maker)
   install_path="$(jq -r '[.[] | select(.scope == "user")][0].installPath // empty' <<<"$inventory")"
   [[ "$install_path" == "$profile_home/plugins/cache/anthropic-agent-skills/document-skills/"* \
     && "$install_path" != *'/../'* && "$install_path" != *'/./'* ]] \
@@ -302,11 +297,11 @@ require_office_plugin() {
       && ! -L "$install_path/skills/$skill" && -f "$install_path/skills/$skill/SKILL.md" \
       && ! -L "$install_path/skills/$skill/SKILL.md" ]] || die "missing or unsafe document plugin skill: $skill"
   done
-  for skill in "${required_skills[@]}"; do
-    [[ -d "$profile_home/skills/$skill" && ! -L "$profile_home/skills" \
-      && ! -L "$profile_home/skills/$skill" && -f "$profile_home/skills/$skill/SKILL.md" \
-      && ! -L "$profile_home/skills/$skill/SKILL.md" ]] || die "missing or unsafe Office skill: $skill"
-  done
+  printf '%s\n' "$install_path"
+}
+
+require_office_plugin() {
+  office_plugin_path >/dev/null
 }
 
 ensure_office_plugin() {
@@ -448,22 +443,25 @@ inventory_profile() {
   }'
 }
 
-launch_profile() {
-  "$native_claude" prepare \
-    --home "$profile_home" --marker "$profile_marker" \
-    --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name"
-  ensure_output_style
-  ensure_office_plugin
-  exec "$native_claude" launch \
-    --home "$profile_home" --marker "$profile_marker" \
-    --marker-value "$profile_marker_value" --bridge enabled --profile "$profile_name" -- "$@"
-}
-
 require_command jq
 validate_catalog
 select_profile default
 
 case "${1-}" in
+  _trx-admit)
+    [[ "${TRELLAGE_TRX_CLAUDE_ADAPTER:-0}" == 1 ]] \
+      || die '_trx-admit is reserved for the trx Claude adapter'
+    shift
+    [[ "$#" -eq 1 ]] || die '_trx-admit requires PROFILE'
+    select_profile "$1"
+    if [[ "$profile_name" == default ]]; then
+      jq -cn '{pluginDir:null}'
+    else
+      setup_profile >/dev/null
+      plugin_dir="$(office_plugin_path)"
+      jq -cn --arg pluginDir "$plugin_dir" '{pluginDir:$pluginDir}'
+    fi
+    ;;
   help|-h|--help)
     usage
     ;;
@@ -531,11 +529,9 @@ case "${1-}" in
     exec "$native_claude" harness-update
     ;;
   default|office|office-charts)
-    select_profile "$1"
-    shift
-    launch_profile "$@"
+    die "this private profile manager cannot launch agents; use trx run claude $1"
     ;;
   *)
-    launch_profile "$@"
+    die 'this private profile manager cannot launch agents; use trx run claude PROFILE'
     ;;
 esac

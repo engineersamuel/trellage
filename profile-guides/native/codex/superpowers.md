@@ -17,7 +17,7 @@ bestFor:
   - Branch lifecycle discipline — writing plans, executing them, and finishing a development branch cleanly
   - Code-review loops that want both requesting-code-review and receiving-code-review conventions plus subagent-driven or parallel-agent dispatch
 avoidFor:
-  - Tasks that need native OpenAI authentication by default; the profile routes through copilot-proxy-rs unless you opt in with cdx --native-auth
+  - Tasks that need native OpenAI authentication; the profile routes through copilot-proxy-rs
   - Anything needing a command approval pause; launch uses Full Access and disables user-input requests
   - Sessions that need a different marketplace's skill set installed alongside superpowers; setup and launch remove forbidden Superpowers variants rather than mixing them
   - Work requiring an OS-level sandbox; use the codex-superpowers Trellage Sandbox profile instead
@@ -85,8 +85,8 @@ review, verification, and branch-finishing discipline. See
 
 - You need a security boundary around agent commands. Use the
   `codex-superpowers` Trellage Sandbox profile instead.
-- You need native OpenAI authentication by default; use
-  `cdx --native-auth superpowers exec "..."` for one launch instead.
+- You require native OpenAI authentication; this canonical profile is routed
+  through local `copilot-proxy-rs`.
 - You want to combine superpowers with a different Codex marketplace plugin in
   the same profile; setup, launch, update, and repair actively remove
   forbidden Superpowers variants rather than layering plugins.

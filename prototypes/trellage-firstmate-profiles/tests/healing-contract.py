@@ -178,8 +178,11 @@ def process(case, *args, env=None, data=None, helper=False, installed=False, tim
         command = [str(native), "exec-clean", "--", *command]
     # Approved preparation has a 240-second production deadline, plus outer inspection and startup.
     timeout = 270 if args and args[0] == "prepare" and "--install-prerequisites" in args else timeout
-    return subprocess.run(command, env=values, input=data, text=True, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, timeout=timeout, cwd=case, check=False)
+    standard_input = ({"input": data} if data is not None
+                      else {"stdin": subprocess.DEVNULL})
+    return subprocess.run(command, env=values, text=True, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, timeout=timeout, cwd=case, check=False,
+                          **standard_input)
 
 
 def source_lock_identity(case):

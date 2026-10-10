@@ -3,6 +3,8 @@
 set -u
 set -o pipefail
 
+unset TRELLAGE_NATIVE_COMPOSITION_HARNESS TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
+
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
 launcher="$root/bin/omp"
@@ -373,14 +375,16 @@ grep -Fq 'omp: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err"
   || fail 'unsupported Trellage event contract diagnostic differs'
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
-"$command_path" local -p 'Reply exactly OMP_SELF_HEAL_SETUP' \
-  >"$fixture_root/self-heal.out" 2>&1 \
-  || fail 'launch before explicit setup did not self-heal'
-[[ -f "$profile_root/.managed-by-trellage-omp-profiles" ]] \
-  || fail 'self-healed launch did not mark profile ownership'
-[[ -f "$runtime_root/installed-version" ]] \
-  || fail 'self-healed launch did not record an installed version'
-rm -rf "$profile_root" "$runtime_root/installed-version"
+if "$command_path" local -p 'Reply exactly OMP_REFUSED' \
+  >"$fixture_root/pre-setup-launch.out" 2>"$fixture_root/pre-setup-launch.err"; then
+  fail 'private profile manager launched OMP before setup'
+fi
+grep -Fqx 'omp: this private profile manager cannot launch agents; use trx run omp local' \
+  "$fixture_root/pre-setup-launch.err" || fail 'pre-setup launch refusal diagnostic differs'
+[[ ! -s "$FAKE_OMP_LOG" ]] || fail 'pre-setup launch refusal invoked OMP'
+[[ ! -e "$profile_root" ]] || fail 'pre-setup launch refusal created profile state'
+[[ ! -e "$runtime_root/installed-version" ]] \
+  || fail 'pre-setup launch refusal installed OMP'
 
 "$command_path" setup >"$fixture_root/setup.out" || fail 'setup failed'
 [[ "$(<"$runtime_root/installed-version")" == '18.0.11' ]] \
@@ -503,10 +507,27 @@ jq -e '
   }
 ' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON profile list differs'
 
-"$command_path" >"$fixture_root/bare-launch.out" 2>&1 \
-  || fail 'bare launch opened the model-selection wizard'
-! grep -Fq 'Choose your default model' "$fixture_root/bare-launch.out" \
-  || fail 'bare launch displayed the model-selection wizard'
+if "$command_path" -p 'Reply exactly OMP_REFUSED' \
+  >"$fixture_root/bare-launch.out" 2>"$fixture_root/bare-launch.err"; then
+  fail 'private profile manager accepted a bare launch'
+fi
+grep -Fqx 'omp: this private profile manager cannot launch agents; use trx run omp PROFILE' \
+  "$fixture_root/bare-launch.err" || fail 'bare launch refusal diagnostic differs'
+
+if "$command_path" local -p 'Reply exactly OMP_REFUSED' \
+  >"$fixture_root/local-launch.out" 2>"$fixture_root/local-launch.err"; then
+  fail 'private profile manager accepted a local launch'
+fi
+grep -Fqx 'omp: this private profile manager cannot launch agents; use trx run omp local' \
+  "$fixture_root/local-launch.err" || fail 'local launch refusal diagnostic differs'
+
+if "$command_path" copilot -p 'Reply exactly OMP_REFUSED' \
+  >"$fixture_root/copilot-launch.out" 2>"$fixture_root/copilot-launch.err"; then
+  fail 'private profile manager accepted a Copilot launch'
+fi
+grep -Fqx 'omp: this private profile manager cannot launch agents; use trx run omp default' \
+  "$fixture_root/copilot-launch.err" || fail 'Copilot launch refusal diagnostic differs'
+[[ ! -s "$FAKE_OMP_LOG" ]] || fail 'launch refusal invoked OMP'
 
 config_hash="$(shasum -a 256 "$agent_root/config.yml" | awk '{print $1}')"
 models_hash="$(shasum -a 256 "$agent_root/models.yml" | awk '{print $1}')"
@@ -522,208 +543,6 @@ grep -Fqx 'profile session canary' "$profile_root/reinstall-canary" \
   || fail 'reinstall changed profile state'
 [[ "$(<"$runtime_root/installed-version")" == '18.0.10' ]] \
   || fail 'reinstall changed installed version receipt'
-
-worktree="$fixture_root/worktree with spaces"
-mkdir -p "$worktree"
-worktree="$(CDPATH= cd -P -- "$worktree" && pwd -P)"
-(
-  cd "$worktree" || exit 1
-  "$command_path" -p 'Reply exactly OMP_LOCAL_OK' -- '--literal value'
-) || fail 'argument forwarding failed'
-expected_launch="$(jq -cn \
-  --arg home "$HOME" \
-  --arg cwd "$worktree" \
-  '{version:"18.0.10",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_LOCAL_OK","--","--literal value"]}')"
-[[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_launch" ]] \
-  || fail 'launch did not preserve profile, cwd, HOME, or exact arguments'
-
-(
-  cd "$worktree" || exit 1
-  "$command_path" local -p 'Reply exactly OMP_LOCAL_EXPLICIT'
-) || fail 'explicit local launch failed'
-expected_local_launch="$(jq -cn \
-  --arg home "$HOME" \
-  --arg cwd "$worktree" \
-  '{version:"18.0.10",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_LOCAL_EXPLICIT"]}')"
-[[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_local_launch" ]] \
-  || fail 'explicit local launch did not select the local profile'
-
-(
-  cd "$worktree" || exit 1
-  "$command_path" copilot -p 'Reply exactly OMP_COPILOT_OK'
-) || fail 'Copilot launch failed'
-expected_copilot_launch="$(jq -cn \
-  --arg home "$HOME" \
-  --arg cwd "$worktree" \
-  '{version:"18.0.10",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--approval-mode","yolo","-p","Reply exactly OMP_COPILOT_OK"]}')"
-[[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_copilot_launch" ]] \
-  || fail 'Copilot launch did not select the native Copilot profile'
-grep -Fqx 'find-generic-password -s copilot-cli -w' "$FAKE_SECURITY_LOG" \
-  || fail 'Copilot launch did not inherit the host Copilot credential'
-
-printf 'terminal-response\n' \
-  | FAKE_OMP_REQUIRE_STDIN=1 "$command_path" copilot -p stdin-probe \
-  || fail 'Copilot launch did not preserve standard input'
-
-GH_TOKEN=host-copilot-token GITHUB_TOKEN=poison-github \
-  FAKE_COPILOT_KEYCHAIN=0 "$command_path" copilot -p gh-env-auth \
-  || fail 'Copilot launch did not accept GH_TOKEN'
-FAKE_GH_TOKEN=host-copilot-token FAKE_COPILOT_KEYCHAIN=0 \
-  "$command_path" copilot -p gh-cli-auth \
-  || fail 'Copilot launch did not accept gh auth token'
-grep -Fqx 'auth token --hostname github.com' "$FAKE_GH_LOG" \
-  || fail 'Copilot launch did not use the container-compatible gh auth fallback'
-
-(
-  cd "$worktree" || exit 1
-  "$command_path" --headless-policy no-user-input -p 'Reply exactly OMP_HEADLESS_LOCAL'
-) || fail 'local headless-policy launch failed'
-local_overlay_record="$(tail -n 1 "$FAKE_OMP_OVERLAY_LOG")"
-local_overlay_path="$(printf '%s\n' "$local_overlay_record" | jq -r '.path')"
-expected_headless_local_launch="$(jq -cn \
-  --arg home "$HOME" \
-  --arg cwd "$worktree" \
-  --arg path "$local_overlay_path" \
-  '{version:"18.0.10",profile:"trellage-qwen-local",home:$home,cwd:$cwd,args:["--approval-mode","yolo","--config",$path,"-p","Reply exactly OMP_HEADLESS_LOCAL"]}')"
-[[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_headless_local_launch" ]] \
-  || fail 'local headless-policy launch arguments differ'
-printf '%s\n' "$local_overlay_record" | jq -e '
-  .profile == "trellage-qwen-local"
-  and .overlayMatches == true
-  and .approvalModeYolo == true
-  and .defaultModel == "copilot-proxy-rs/qwen3.6-35b-a3b-local"
-' >/dev/null || fail 'local headless-policy overlay contents differ'
-[[ ! -e "$local_overlay_path" ]] || fail 'local headless-policy overlay was not removed'
-
-GH_TOKEN=host-copilot-token GITHUB_TOKEN=poison-github \
-  FAKE_COPILOT_KEYCHAIN=0 "$command_path" copilot --headless-policy no-user-input \
-  -p 'Reply exactly OMP_HEADLESS_COPILOT' \
-  || fail 'copilot headless-policy launch failed'
-copilot_overlay_record="$(tail -n 1 "$FAKE_OMP_OVERLAY_LOG")"
-copilot_overlay_path="$(printf '%s\n' "$copilot_overlay_record" | jq -r '.path')"
-expected_headless_copilot_launch="$(jq -cn \
-  --arg home "$HOME" \
-  --arg cwd "$PWD" \
-  --arg path "$copilot_overlay_path" \
-  '{version:"18.0.10",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--approval-mode","yolo","--config",$path,"-p","Reply exactly OMP_HEADLESS_COPILOT"]}')"
-[[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_headless_copilot_launch" ]] \
-  || fail 'copilot headless-policy launch arguments differ'
-printf '%s\n' "$copilot_overlay_record" | jq -e '
-  .profile == "trellage-copilot-native"
-  and .overlayMatches == true
-  and .approvalModeYolo == true
-  and .defaultModel == "github-copilot/gpt-5.6-sol:medium"
-' >/dev/null || fail 'copilot headless-policy overlay contents differ'
-[[ ! -e "$copilot_overlay_path" ]] || fail 'copilot headless-policy overlay was not removed'
-
-duplicate_before="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
-overlay_before="$(wc -l <"$FAKE_OMP_OVERLAY_LOG" | tr -d ' ')"
-if "$command_path" --headless-policy no-user-input --headless-policy no-user-input \
-  -p duplicate >"$fixture_root/headless-duplicate.out" 2>"$fixture_root/headless-duplicate.err"; then
-  fail 'duplicate headless policy unexpectedly succeeded'
-fi
-grep -Fqx 'omp: --headless-policy may be specified only once' \
-  "$fixture_root/headless-duplicate.err" || fail 'duplicate headless policy diagnostic differs'
-[[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$duplicate_before" ]] \
-  || fail 'duplicate headless policy invoked OMP'
-[[ "$(wc -l <"$FAKE_OMP_OVERLAY_LOG" | tr -d ' ')" == "$overlay_before" ]] \
-  || fail 'duplicate headless policy created an overlay'
-
-missing_before="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
-if "$command_path" --headless-policy >"$fixture_root/headless-missing.out" 2>"$fixture_root/headless-missing.err"; then
-  fail 'missing headless policy value unexpectedly succeeded'
-fi
-grep -Fqx 'omp: --headless-policy requires a value' \
-  "$fixture_root/headless-missing.err" || fail 'missing headless policy diagnostic differs'
-[[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$missing_before" ]] \
-  || fail 'missing headless policy invoked OMP'
-
-unknown_before="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
-if "$command_path" --headless-policy unsupported -p unknown \
-  >"$fixture_root/headless-unknown.out" 2>"$fixture_root/headless-unknown.err"; then
-  fail 'unknown headless policy unexpectedly succeeded'
-fi
-grep -Fqx 'omp: unknown --headless-policy: unsupported' \
-  "$fixture_root/headless-unknown.err" || fail 'unknown headless policy diagnostic differs'
-[[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$unknown_before" ]] \
-  || fail 'unknown headless policy invoked OMP'
-
-if FAKE_OMP_EXIT_STATUS=37 "$command_path" local --help >/dev/null 2>&1; then
-  fail 'launcher swallowed upstream failure'
-else
-  status=$?
-  [[ "$status" -eq 37 ]] || fail "launcher exit was $status, expected 37"
-fi
-
-if FAKE_OMP_EXIT_STATUS=38 "$command_path" -h >/dev/null 2>&1; then
-  fail 'launcher intercepted upstream short help'
-else
-  status=$?
-  [[ "$status" -eq 38 ]] || fail "short-help exit was $status, expected 38"
-fi
-
-prelaunch_signal_ready="$fixture_root/prelaunch-signal.ready"
-prelaunch_signal_release="$fixture_root/prelaunch-signal.release"
-prelaunch_signal_calls="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
-prelaunch_signal_overlays="$(wc -l <"$FAKE_OMP_OVERLAY_LOG" | tr -d ' ')"
-rm -f "$prelaunch_signal_ready" "$prelaunch_signal_release"
-FAKE_MISE_BLOCK_WHERE=1 \
-FAKE_MISE_READY_FILE="$prelaunch_signal_ready" \
-FAKE_MISE_RELEASE_FILE="$prelaunch_signal_release" \
-  "$command_path" --headless-policy no-user-input -p cancel-before-child &
-prelaunch_signal_pid=$!
-for _ in {1..100}; do
-  [[ -e "$prelaunch_signal_ready" ]] && break
-  sleep 0.02
-done
-[[ -e "$prelaunch_signal_ready" ]] || fail 'prelaunch signal fixture did not become ready'
-kill -TERM "$prelaunch_signal_pid"
-: >"$prelaunch_signal_release"
-if wait "$prelaunch_signal_pid"; then
-  fail 'prelaunch cancellation unexpectedly succeeded'
-else
-  status=$?
-  [[ "$status" -eq 143 ]] || fail "prelaunch cancellation exit was $status, expected 143"
-fi
-[[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$prelaunch_signal_calls" ]] \
-  || fail 'prelaunch cancellation invoked OMP'
-[[ "$(wc -l <"$FAKE_OMP_OVERLAY_LOG" | tr -d ' ')" == "$prelaunch_signal_overlays" ]] \
-  || fail 'prelaunch cancellation created an overlay'
-
-FAKE_OMP_WAIT_FOR_SIGNAL=1 "$command_path" -p wait-for-signal &
-signal_pid=$!
-for _ in {1..100}; do
-  grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null && break
-  sleep 0.02
-done
-grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null || fail 'signal fixture did not become ready'
-kill -TERM "$signal_pid"
-if wait "$signal_pid"; then
-  fail 'signaled launcher unexpectedly succeeded'
-else
-  status=$?
-  [[ "$status" -eq 143 ]] || fail "signaled launcher exit was $status, expected 143"
-fi
-grep -Fqx TERM "$FAKE_OMP_SIGNAL_LOG" || fail 'launcher did not preserve TERM delivery'
-
-: >"$FAKE_OMP_SIGNAL_LOG"
-FAKE_OMP_WAIT_FOR_SIGNAL=1 "$command_path" --headless-policy no-user-input -p wait-for-signal &
-headless_signal_pid=$!
-for _ in {1..100}; do
-  grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null && break
-  sleep 0.02
-done
-grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null || fail 'headless signal fixture did not become ready'
-kill -TERM "$headless_signal_pid"
-if wait "$headless_signal_pid"; then
-  fail 'signaled headless launcher unexpectedly succeeded'
-else
-  status=$?
-  [[ "$status" -eq 143 ]] || fail "signaled headless launcher exit was $status, expected 143"
-fi
-grep -Fqx TERM "$FAKE_OMP_SIGNAL_LOG" || fail 'headless launcher did not preserve TERM delivery'
-headless_signal_overlay_path="$(tail -n 1 "$FAKE_OMP_OVERLAY_LOG" | jq -r '.path')"
-[[ ! -e "$headless_signal_overlay_path" ]] || fail 'headless signal overlay was not removed'
 
 state_before="$fixture_root/doctor.before"
 state_after="$fixture_root/doctor.after"
@@ -749,11 +568,6 @@ fi
 grep -Fq 'run omp copilot auth-broker login github-copilot' \
   "$fixture_root/doctor-copilot-auth.out" \
   || fail 'Copilot doctor omitted authentication remediation'
-
-if FAKE_COPILOT_KEYCHAIN=0 "$command_path" copilot -p auth-required \
-  >"$fixture_root/launch-copilot-auth.out" 2>&1; then
-  fail 'Copilot launch accepted missing host authentication'
-fi
 
 if FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/doctor-missing.out" 2>&1; then
   fail 'doctor accepted missing local model'
@@ -842,20 +656,6 @@ jq -e '
   })
 ' "$fixture_root/list-updated.json" >/dev/null || fail 'updated JSON profile list did not fall closed'
 
-fail_closed_before="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
-fail_closed_overlay_before="$(wc -l <"$FAKE_OMP_OVERLAY_LOG" | tr -d ' ')"
-if "$command_path" --headless-policy no-user-input -p headless-version-mismatch \
-  >"$fixture_root/headless-version-mismatch.out" 2>"$fixture_root/headless-version-mismatch.err"; then
-  fail 'headless policy unexpectedly succeeded on an unverified OMP version'
-fi
-grep -Fqx 'omp: --headless-policy no-user-input is verified only for OMP 18.0.10; installed version is 18.0.11' \
-  "$fixture_root/headless-version-mismatch.err" \
-  || fail 'unverified OMP version diagnostic differs'
-[[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$fail_closed_before" ]] \
-  || fail 'unverified OMP version invoked OMP'
-[[ "$(wc -l <"$FAKE_OMP_OVERLAY_LOG" | tr -d ' ')" == "$fail_closed_overlay_before" ]] \
-  || fail 'unverified OMP version created an overlay'
-
 printf 'damaged managed config\n' >"$agent_root/config.yml"
 damaged_hash="$(shasum -a 256 "$agent_root/config.yml" | awk '{print $1}')"
 if OMP_TEST_FAIL_AT=after-config "$command_path" repair >"$fixture_root/repair-rollback.out" 2>&1; then
@@ -869,53 +669,12 @@ grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" || fail 'repair did no
   || fail 'repair changed installed version receipt'
 
 printf 'drifted managed config\n' >"$agent_root/config.yml"
-"$command_path" -p 'Reply exactly OMP_SELF_HEAL' >"$fixture_root/self-heal.out" 2>&1 \
-  || fail 'launch did not self-heal drifted managed config'
-grep -Fq 'omp: managed config restored' "$fixture_root/self-heal.out" \
-  || fail 'launch did not report managed config restoration'
-grep -Fqx '  approvalMode: yolo' "$agent_root/config.yml" \
-  || fail 'launch did not republish managed config'
-
-printf 'drifted managed models\n' >"$agent_root/models.yml"
-"$command_path" -p 'Reply exactly OMP_SELF_HEAL_MODELS' >"$fixture_root/self-heal-models.out" 2>&1 \
-  || fail 'launch did not self-heal drifted managed models config'
-grep -Fqx 'providers:' "$agent_root/models.yml" \
-  || fail 'launch did not republish managed models config'
-
-"$command_path" -p 'Reply exactly OMP_NO_REPAIR' >"$fixture_root/clean-launch.out" 2>&1 \
-  || fail 'clean launch failed'
-! grep -Fq 'managed config restored' "$fixture_root/clean-launch.out" \
-  || fail 'clean launch republished managed config'
-
-printf 'drifted managed config\n' >"$agent_root/config.yml"
 if "$command_path" doctor >"$fixture_root/doctor-drift.out" 2>&1; then
   fail 'doctor accepted drifted managed config'
 fi
 grep -Fq 'managed config differs; run omp repair local' "$fixture_root/doctor-drift.out" \
   || fail 'doctor did not report managed config drift'
-
-mv "$profile_root/.managed-by-trellage-omp-profiles" "$fixture_root/marker-away" \
-  || fail 'could not stage ownership marker'
-if "$command_path" -p 'Reply exactly OMP_UNOWNED' >"$fixture_root/unowned-launch.out" 2>&1; then
-  fail 'launch self-healed an unmanaged profile'
-fi
-grep -Fq 'profile is not managed; run omp setup local' "$fixture_root/unowned-launch.out" \
-  || fail 'launch did not report unmanaged profile'
-grep -Fqx 'drifted managed config' "$agent_root/config.yml" \
-  || fail 'launch overwrote config for an unmanaged profile'
-mv "$fixture_root/marker-away" "$profile_root/.managed-by-trellage-omp-profiles" \
-  || fail 'could not restore ownership marker'
 "$command_path" repair >/dev/null || fail 'repair after drift checks failed'
-
-installed_omp="$runtime_root/mise/installs/github-can1357-oh-my-pi/18.0.11/omp"
-rm "$installed_omp" || fail 'could not remove receipt-selected install for launch recovery test'
-"$command_path" -p 'Reply exactly OMP_INSTALL_RECOVERY' \
-  >"$fixture_root/install-recovery.out" 2>&1 \
-  || fail 'launch did not recover a missing receipt-selected install'
-grep -Fq 'omp: OMP 18.0.11 is not installed; installing' \
-  "$fixture_root/install-recovery.out" \
-  || fail 'launch did not report missing receipt-selected install recovery'
-[[ -x "$installed_omp" ]] || fail 'launch did not reinstall the missing receipt-selected executable'
 
 unsafe_home="$fixture_root/unsafe-home"
 mkdir -p "$unsafe_home/.omp/profiles/trellage-qwen-local/agent"
