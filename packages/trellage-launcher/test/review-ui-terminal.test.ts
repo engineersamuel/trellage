@@ -250,6 +250,7 @@ describe("ReviewApp terminal", () => {
       await terminal.waitFor("New worktree unavailable: uncommitted changes are not transferred.")
       terminal.press("w")
       expect(await terminal.events()).toHaveLength(1)
+      await new Promise((resolve) => setTimeout(resolve, 50))
       terminal.press("t")
       await terminal.waitFor("Plan then implement in a new Herdr tab (auto-approved, full access)?")
       terminal.press("\r")
