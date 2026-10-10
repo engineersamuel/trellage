@@ -126,6 +126,28 @@
       ],
       "skillPrefix": "/justify "
     },
+    "fx": {
+      "readyPatterns": [
+        "\u2503"
+      ],
+      "blockedPatterns": [],
+      "launchArgs": [],
+      "exitSteps": [
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 300
+        },
+        {
+          "data": "\u0003",
+          "delayMilliseconds": 0
+        }
+      ],
+      "allowedExitCodes": [
+        0,
+        130
+      ],
+      "skillPrefix": ""
+    },
     "grok": {
       "readyPatterns": [
         "\u276f"
@@ -304,6 +326,7 @@
     "claude": "claude",
     "copilot": "copilot",
     "firstmate": "firstmate",
+    "fx": "fx",
     "jcode": "jcode",
     "omp": "omp",
     "pi": "pi",

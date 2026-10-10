@@ -25,7 +25,6 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  fmx PROFILE [--instance UUID|NAME|legacy] [--join] [FIRSTMATE_ARGS...]
   fmx list [--json]
   fmx instances list PROFILE --json [--limit 1..32] [--cursor CURSOR]
   fmx instances resolve PROFILE --worktree PATH --json
@@ -50,7 +49,7 @@ Management commands accept --instance UUID|NAME|legacy. Unqualified commands
 and --all retain their legacy profile scope. Named creation never starts work
 or approves tool installation.
 
-fmx runs a Firstmate captain from a pinned, overlaid runtime.
+Launch a Firstmate captain with `trx run firstmate PROFILE`.
 
 Network use:
   setup                always fetches the pinned Firstmate source.
@@ -2566,7 +2565,10 @@ inventory_profile() {
 # launches can never both start a captain. A stale owned lock is reclaimed
 # atomically; an unowned lock directory is refused, never removed.
 acquire_session_lock() {
-  local backend="$1" state stale="$profile_root/locks/.session-stale.$$"
+  local backend="$1" supervisor_pid="${2:-$$}" state stale="$profile_root/locks/.session-stale.$$"
+
+  [[ "$supervisor_pid" =~ ^[1-9][0-9]*$ ]] \
+    || die "invalid captain supervisor pid: $supervisor_pid"
 
   make_owned_directory "$profile_root/locks"
   if ! mkdir "$session_lock" 2>/dev/null; then
@@ -2594,10 +2596,10 @@ acquire_session_lock() {
       || die "the $profile_key captain session is already running; attach to it instead of starting a second one"
   fi
   populate_lock_directory "$session_lock" \
-    "owner=$ownership_value" "backend=$backend" "pid=$$"
+    "owner=$ownership_value" "backend=$backend" "pid=$supervisor_pid"
 }
 
-launch_profile() {
+launch_from_trx() {
   local commit overlay_commit repository backend gh_config worker_bash state workers_live=false
   local expected_fleet_json='' expected_fleet_set=false startup_message
   local -a captain_arguments=()
@@ -2725,7 +2727,7 @@ launch_profile() {
     [[ -n "$startup_message" ]] || die 'the Firstmate startup instruction is empty'
     set -- "$startup_message"
   fi
-  acquire_session_lock "$backend"
+  acquire_session_lock "$backend" "$PPID"
   release_mutation_lock
   [[ ! -e "$mutation_lock" && ! -L "$mutation_lock" ]] \
     || die "launch refused: the mutation lock at $mutation_lock could not be released"
@@ -2765,22 +2767,24 @@ launch_profile() {
     environment+=("FMX_WORKER_POLICY_FILE=")
   fi
 
-  exec env \
-    -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
-    -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE \
-    -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN -u OPENAI_API_KEY \
-    -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX \
-    "TRELLAGE_CLAUDE_LAUNCHER_NAME=$launcher_name" \
-    "TRELLAGE_CLAUDE_RUNTIME_ROOT=$runtime_root" \
-    "PATH=$prerequisite_path" \
-    "${environment[@]}" \
-    "$native_claude" launch \
-    --home "$captain_home" \
-    --marker "$captain_marker" \
-    --marker-value "$ownership_value" \
-    --bridge enabled \
-    --profile "$profile_key" \
-    -- "$@"
+  environment+=(
+    "TRELLAGE_CLAUDE_LAUNCHER_NAME=$launcher_name"
+    "TRELLAGE_CLAUDE_RUNTIME_ROOT=$runtime_root"
+    "PATH=$prerequisite_path"
+  )
+  jq -cn \
+    --arg command "$native_claude" \
+    --arg cwd "$fm_runtime" \
+    --argjson env "$(printf '%s\n' "${environment[@]}" | jq -Rn '[inputs | capture("^(?<key>[^=]+)=(?<value>.*)$")] | from_entries')" \
+    --argjson unset '["GH_TOKEN","GITHUB_TOKEN","COPILOT_GITHUB_TOKEN","FM_STATE_OVERRIDE","FM_DATA_OVERRIDE","FM_CONFIG_OVERRIDE","FM_PROJECTS_OVERRIDE","ANTHROPIC_API_KEY","CLAUDE_CODE_OAUTH_TOKEN","OPENAI_API_KEY","CLAUDE_CODE_USE_BEDROCK","CLAUDE_CODE_USE_VERTEX"]' \
+    '$ARGS.named + {args:$ARGS.positional,env:($env + reduce $unset[] as $key ({}; .[$key] = null))}' \
+    --args -- launch \
+      --home "$captain_home" \
+      --marker "$captain_marker" \
+      --marker-value "$ownership_value" \
+      --bridge enabled \
+      --profile "$profile_key" \
+      -- "$@"
 }
 
 # ---------------------------------------------------------------------------
@@ -3035,11 +3039,18 @@ case "${1-}" in
       run_over_selection update_profile "$1"
     fi
     ;;
-  *)
+  _trx-admit)
+    shift
+    [[ "${TRELLAGE_TRX_FIRSTMATE_ADAPTER-}" == 1 ]] \
+      || die '_trx-admit is reserved for trx run firstmate'
+    [[ "$#" -ge 1 ]] || die '_trx-admit requires PROFILE'
     profile_argument="$1"
     shift
     require_safe_home
     select_profile "$profile_argument"
-    launch_profile "$@"
+    launch_from_trx "$@"
+    ;;
+  *)
+    die "this private profile manager cannot launch agents; use trx run firstmate $1"
     ;;
 esac

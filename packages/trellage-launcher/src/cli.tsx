@@ -147,7 +147,7 @@ const detailColors: Record<
   NonNullable<DetailRow["label"]>,
   "blue" | "cyan" | "gray" | "green" | "magenta" | "yellow"
 > = {
-  Alias: "green",
+  Command: "green",
   Binary: "blue",
   Arguments: "yellow",
   Description: "cyan",

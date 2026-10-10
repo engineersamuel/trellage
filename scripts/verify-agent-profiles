@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd -P)"
+
 usage() {
   printf 'Usage: scripts/verify-agent-profiles [--live]\n' >&2
 }
@@ -58,7 +60,25 @@ native_profile_command() {
     shift
     trx run "$harness" "$profile" -- "$@"
   else
-    trx "$operation" "$harness" "$@"
+    local lifecycle=''
+    case "$launcher" in
+      cdx) lifecycle="${TRELLAGE_CODEX_LIFECYCLE_BIN-}" ;;
+      cpx) lifecycle="${TRELLAGE_COPILOT_LIFECYCLE_BIN-}" ;;
+    esac
+    if [ -z "$lifecycle" ]; then
+      case "$launcher" in
+        cdx) lifecycle="$repo_root/prototypes/trellage-codex-profiles/bin/cdx" ;;
+        cpx) lifecycle="$repo_root/prototypes/trellage-copilot-profiles/bin/cpx" ;;
+      esac
+      [ -x "$lifecycle" ] || lifecycle=''
+    fi
+    if [ -z "$lifecycle" ]; then
+      lifecycle="$(command -v "$launcher" 2>/dev/null || true)"
+    fi
+    if [ -z "$lifecycle" ]; then
+      lifecycle="${HOME:?}/.local/share/trellage/$launcher/bin/$launcher"
+    fi
+    "$lifecycle" "$operation" "$@"
   fi
 }
 

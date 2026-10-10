@@ -231,13 +231,16 @@ checks_before_launch="$(grep -Fxc 'config check --skip-remotes' "$agency_command
 sources_before_launch="$(grep -Fxc 'config list --show-source' "$agency_command_log")"
 (
   cd "$worktree"
-  "$launcher" trellage-azure 'space value' '' '*' --model gpt-5.6-sol --effort high
+  export TRELLAGE_AGENCY_LIFECYCLE_BIN="$launcher"
+  TRELLAGE_TRX_SOURCE_ROOT="$repository_root/prototypes/trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  "$repository_root/prototypes/trellage-router/bin/trx" run agency azure \
+    --model gpt-5.6-sol --effort high -- 'space value' '' '*'
 )
 jq -e \
-  --arg home "$expected_home" \
   --arg realHome "$fixture_home" \
   --arg cwd "$worktree" '
-  .copilotHome == $home
+  (.copilotHome | contains("/native-run/compositions/agency-") and endswith("/generations/28ffb19c30f2bc48"))
   and .home == $realHome
   and .cwd == $cwd
   and .auth == "AzureCliCredential"
@@ -245,23 +248,18 @@ jq -e \
   and .settings.effortLevel == "low"
   and .settings.planModel == "gpt-6-astra"
   and .settings.planEffortLevel == "max"
-  and .settings.userSetting == "preserve"
   and .args == [
     "copilot",
     "--profile-only",
     "trellage-azure",
     "--",
     "--model",
-    "gpt-6-astra",
-    "--effort",
-    "low",
-    "space value",
-    "",
-    "*",
-    "--model",
     "gpt-5.6-sol",
     "--effort",
-    "high"
+    "high",
+    "space value",
+    "",
+    "*"
   ]
 ' "$agency_log" >/dev/null || fail 'launch environment or argument forwarding differs'
 [[ "$(grep -Fxc 'config check --skip-remotes' "$agency_command_log")" \
@@ -288,7 +286,7 @@ jq -e --arg agency "$standard_agency" '
   || fail 'standard Agency install path was not detected'
 mv "$standard_agency" "$fixture_bin/agency"
 rmdir "$fixture_home/.config/agency/CurrentVersion" \
-  "$fixture_home/.config/agency" "$fixture_home/.config"
+  "$fixture_home/.config/agency"
 
 mv "$fixture_bin/agency" "$fixture_bin/agency.absent"
 if (

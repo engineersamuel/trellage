@@ -203,17 +203,36 @@ run_cdx() {
     "$runtime/bin/cdx" "$@"
 }
 
+native_config="$fixture/native-config.toml"
+cat >"$native_config" <<'EOF'
+[native.profiles.base]
+label = "Fixture defaults"
+always = true
+
+[native.profiles.preset-codex-pstack]
+label = "codex / pstack"
+harnesses = ["codex"]
+EOF
+
+run_trx() {
+  HOME="$home" PATH="$fake_bin:$PATH" FAKE_PSTACK_STATE="$state" \
+  TRELLAGE_CODEX_BIN="$fake_bin/codex" \
+  TRELLAGE_CONFIG="$native_config" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_TRX_SOURCE_ROOT="$repository_root/prototypes/trellage-router" \
+    "$repository_root/prototypes/trellage-router/bin/trx" run codex pstack -- "$@"
+}
+
 assert_launch_args() {
-  jq -e --argjson nativeAuth "$1" '
-    .[0:3] == [
-      "--dangerously-bypass-approvals-and-sandbox",
-      "--disable", "default_mode_request_user_input"
-    ]
+  jq -e '
+    .[0] == "--dangerously-bypass-approvals-and-sandbox"
     and .[-1] == "--version"
     and index("--sandbox") == null
     and index("--ask-for-approval") == null
     and index("sandbox_workspace_write.network_access=true") == null
-    and ((index("model_provider=\"openai\"") != null) == $nativeAuth)
+    and index("model_provider=\"copilotproxy\"") != null
+    and index("model_providers.copilotproxy.base_url=\"http://127.0.0.1:8080/v1\"") != null
+    and index("model_providers.copilotproxy.requires_openai_auth=false") != null
   ' "$state/launch" >/dev/null || fail 'Full Access launch arguments differ'
 }
 
@@ -249,8 +268,8 @@ run_cdx doctor pstack >/dev/null || fail 'second doctor failed'
   || fail 'doctor mutated config'
 [ ! -e "$state/launch" ] || fail 'setup, doctor, or inventory started a Codex session'
 
-run_cdx pstack --version || fail 'pstack profile launch failed'
-assert_launch_args false
+run_trx --version || fail 'pstack profile launch failed'
+assert_launch_args
 rm "$state/launch"
 run_cdx update --check pstack >"$fixture/update-current.out" \
   || fail 'current update check failed'
@@ -266,14 +285,5 @@ run_cdx update pstack >"$fixture/update.out" || fail 'update failed'
 grep -Fqx -- 'pstack: updated' "$fixture/update.out" || fail 'update output differs'
 run_cdx update --check pstack >/dev/null || fail 'post-update check was not current'
 [ ! -e "$state/launch" ] || fail 'update started a Codex session'
-
-native_home="$home/.codex"
-mkdir -p "$native_home"
-printf '%s\n' '{"tokens":{"access_token":"fixture"}}' >"$native_home/auth.json"
-chmod 0600 "$native_home/auth.json"
-run_cdx --native-auth pstack --version || fail 'native-auth launch failed'
-assert_launch_args true
-[ -f "$profile_home/auth.json" ] && [ ! -L "$profile_home/auth.json" ] \
-  || fail 'native auth was not refreshed'
 
 printf 'trellage Codex pstack contract: PASS\n'

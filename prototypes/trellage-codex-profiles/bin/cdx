@@ -243,6 +243,14 @@ maybe_load_native_environment() {
     -- "$launcher_path" "$@"
 }
 
+case "${1-}" in
+  list|inventory|setup|doctor|update|repair|skills-check|skills-update|harness-version|harness-update|-h|--help) ;;
+  *)
+    printf 'cdx: this private profile manager cannot launch agents; use trx run codex PROFILE\n' >&2
+    exit 1
+    ;;
+esac
+
 maybe_load_native_environment "$@"
 
 export TRELLAGE_CODEX_LAUNCHER_NAME=cdx

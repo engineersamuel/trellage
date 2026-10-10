@@ -53,12 +53,12 @@ periods, underscores, colons, or hyphens, starting with a letter or digit.
 
 The guide carries this selection into command previews, current-terminal
 launches, and Herdr handoffs and queued jobs as `--agent <identifier>`.
-It is supported by native `cpx` and Sandbox `copilot` profiles. It does
+It is supported by Native Copilot and Sandbox `copilot` profiles. It does
 not install agents, change prompt delivery, or select an agent for other
 workflows on the same profile. Omit it when no workflow-specific agent is
 required.
 
-Use `interaction` only for verified customer workflows on `native:cpx/hve`:
+Use `interaction` only for verified customer workflows on `native:copilot/hve`:
 
 ```yaml
 launchAgent: hve-core:dt-coach
@@ -69,9 +69,9 @@ frame: fixed
 ```
 
 This metadata requires an explicit agent and 1 to 16 unique lowercase
-kebab-case skill names. It selects `cpx interactive hve --agent ...` with
+kebab-case skill names. It selects `trx run copilot hve -- --agent ...` with
 one `--require-skill` per entry and `-i` for the prompt. Guide checks the
-installed manifest and enabled skill files through `cpx workflow-check`
+installed manifest and enabled skill files through the private Copilot lifecycle manager's `workflow-check`
 before launch, including a recheck in the chosen Herdr destination.
 It does not use headless capability fallback or autonomous Copilot defaults.
 The new launcher requires a terminal; interactive workflows cannot use the
@@ -105,7 +105,7 @@ Sandbox identity and the catalog's actual harness must support the controller.
 | Controller | Supported surface | Workflow rule |
 | --- | --- | --- |
 | `codex-goal` | Native `cdx` running Codex | Keep the existing workflow discipline inside the application-owned native `/goal` invocation. |
-| `claude-goal` | Native `cldx` or Sandbox Claude Code, except Graph of Loops | Keep the existing workflow frame inside the application-owned native `/goal` invocation. |
+| `claude-goal` | Native Claude or Sandbox Claude Code, except Graph of Loops | Keep the existing workflow frame inside the application-owned native `/goal` invocation. |
 | `graph-of-loops` | Sandbox `claude-graph-of-loops` only | Use the `graph-of-loops` skill and the authored `/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="..."` goal-start frame. |
 
 Graph's policy names its four goal-start workflows, not

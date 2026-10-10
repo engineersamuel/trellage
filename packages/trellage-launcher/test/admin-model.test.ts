@@ -139,13 +139,13 @@ const fixtureCatalogWithClaudeSandbox = () =>
 
 describe("nativeLauncherCapabilities", () => {
   it("marks every native launcher, including cdx, as supporting doctor/inventory", () => {
-    for (const launcher of ["agency", "copilot", "codex", "claude", "firstmate", "jcode", "omp", "pi", "prime"]) {
+    for (const launcher of ["agency", "copilot", "codex", "claude", "firstmate", "fx", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher)).toMatchObject({ doctorSupported: true, inventorySupported: true })
     }
   })
 
   it("marks every native launcher except agx and cldx as supporting update --check", () => {
-    for (const launcher of ["copilot", "codex", "firstmate", "jcode", "omp", "pi", "prime"]) {
+    for (const launcher of ["copilot", "codex", "firstmate", "fx", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher).updateCheckSupported).toBe(true)
     }
     expect(nativeLauncherCapabilities("agency").updateCheckSupported).toBe(false)

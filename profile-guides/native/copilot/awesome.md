@@ -88,7 +88,7 @@ Copilot assets from the community `github/awesome-copilot` repository. See
   suggesting curated collections; it is not currently reflected in this
   profile's "three meta-skills" catalog description, so treat it as
   unconfirmed for this profile until verified against the installed plugin.
-- `cpx list --json` only advertises the exact prompt/`--no-ask-user`
+- `trx list copilot --json` only advertises the exact prompt/`--no-ask-user`
   hard-deny/model-override contract for Copilot CLI `1.0.80`; other installed
   versions still work but report conservative `headless` values.
 

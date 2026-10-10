@@ -5,7 +5,7 @@
  * sandbox rows can share latest without copying another row's installed
  * revision.
  */
-import { isKnownNativeLauncher, type AdminProfileEntry, type NativeLauncherAlias } from "./admin-model.ts"
+import { isKnownNativeLauncher, type AdminProfileEntry, type NativeHarnessId } from "./admin-model.ts"
 import { adminInstanceSelectorArgs } from "./admin-firstmate.ts"
 import type { AdminVersionColumns } from "./admin-version-check.ts"
 import type { CommandSpec } from "./guide-launch.ts"
@@ -15,6 +15,7 @@ export type HarnessReleaseKey =
   | "codex"
   | "copilot-cli"
   | "firstmate"
+  | "fx"
   | "grok"
   | "headlong-main"
   | "jcode"
@@ -22,11 +23,12 @@ export type HarnessReleaseKey =
   | "pi-coding-agent"
   | "prime"
 
-const nativeReleaseKeys: Readonly<Partial<Record<NativeLauncherAlias, HarnessReleaseKey>>> = {
+const nativeReleaseKeys: Readonly<Partial<Record<NativeHarnessId, HarnessReleaseKey>>> = {
   copilot: "copilot-cli",
   codex: "codex",
   claude: "claude-code",
   firstmate: "firstmate",
+  fx: "fx",
   jcode: "jcode",
   omp: "oh-my-pi",
   pi: "pi-coding-agent",
@@ -42,9 +44,10 @@ const sandboxReleaseKeys: Readonly<Record<string, HarnessReleaseKey>> = {
   prime: "prime",
 }
 
-const nativeLatestLookupLaunchers: ReadonlySet<NativeLauncherAlias> = new Set([
+const nativeLatestLookupLaunchers: ReadonlySet<NativeHarnessId> = new Set([
   "codex",
   "firstmate",
+  "fx",
   "jcode",
   "omp",
   "pi",

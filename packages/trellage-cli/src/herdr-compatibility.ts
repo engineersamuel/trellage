@@ -13,7 +13,6 @@ export interface HerdrCompatibilityEntry {
 
 interface LedgerRecord {
   readonly kind: "native" | "container"
-  readonly launcher?: string
   readonly profile: string
   readonly harness?: string
   readonly status: HerdrCompatibilityStatus
@@ -59,11 +58,11 @@ export const containerHerdrCompatibility = (ledger: Ledger, profileName: string)
 
 export const nativeHerdrCompatibility = (
   ledger: Ledger,
-  launcher: string,
+  harness: string,
   profileName: string,
 ): HerdrCompatibilityEntry => {
   const record = ledger.entries.find(
-    (entry) => entry.kind === "native" && entry.launcher === launcher && entry.profile === profileName,
+    (entry) => entry.kind === "native" && entry.harness === harness && entry.profile === profileName,
   )
   return record === undefined ? untested : toEntry(record)
 }

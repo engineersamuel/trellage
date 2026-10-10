@@ -159,5 +159,4 @@ grep -Fq 'scripts/verify-headless-live-contracts' scripts/verify-headless-contra
 grep -Fq 'prototypes/trellage-firstmate-profiles/tests/contract.sh' \
   scripts/verify-headless-contracts \
   || fail 'deterministic verifier does not run the Firstmate headless contract'
-
 printf 'headless contract matrix: PASS\n'

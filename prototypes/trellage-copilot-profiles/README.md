@@ -87,8 +87,8 @@ hard-deny classification, and model-override publication are advertised only
 for GitHub Copilot CLI `1.0.81`. Other versions stay discoverable, but they
 fall back to conservative `headless` values instead of inferred support.
 The installed Copilot version is cached across invocations and rechecked when
-the executable or its package installation changes. `cpx list --json
---cached-capabilities` reads only that cache and reports conservative capabilities
+the executable or its package installation changes. The private lifecycle manager's
+`list --json --cached-capabilities` mode reads only that cache and reports conservative capabilities
 on a miss. `trx guide` uses this mode at startup, then resolves current
 capabilities after matching and before preparing launch commands.
 
@@ -103,7 +103,7 @@ skill count.
 
 After installing the native launchers and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
-harness/profile picker. Remaining arguments are forwarded to `cpx` unchanged
+harness/profile picker. Remaining arguments are forwarded to the selected canonical harness
 after selection; the bare picker never performs setup, repair, or update.
 
 Ordinary `trx run copilot PROFILE` launches pass `--autopilot --allow-all --no-ask-user`, so
@@ -148,7 +148,7 @@ apply. It accepts only `--agent`, repeated `--require-skill`, `-i`, `--model`,
 and `--effort`; headless and autonomous options are rejected. Piped input and
 unattended batch use are rejected. Ordinary `trx run copilot hve` remains autonomous.
 
-Use [the Native HVE guide](../../profile-guides/native/cpx/hve.md) for the
+Use [the Native HVE guide](../../profile-guides/native/copilot/hve.md) for the
 Discovery, Experiment, BRD, PRD, UX, architecture, and planning mappings.
 Those agents retain their own references and approval rules. Meeting ingestion,
 publishing, tracker mutation, and automatic customer signoff are not part of
@@ -161,7 +161,7 @@ Cataloged retired plugin identities are removed during setup, launch, update,
 and repair. Updates remain explicit and use native Copilot
 marketplace/plugin commands.
 
-`trx upgrade copilot hve --harness-only` updates the host Copilot CLI shared by all `cpx`
+`trx upgrade copilot hve --harness-only` updates the host Copilot CLI shared by all Native Copilot
 profiles. It runs Copilot's own `update stable` command, preserves its
 output and exit status, and does not change profile homes or plugins.
 It is separate from `trx upgrade copilot PROFILE`, which updates plugins only.

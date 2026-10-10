@@ -525,7 +525,7 @@ describe("continuation runtime", () => {
       command: {
         executable: "codex",
         args: [],
-        preview: "cdx default",
+        preview: "trx run codex default",
         promptHandling: "manual-paste",
       },
     })
@@ -595,7 +595,7 @@ describe("continuation runtime", () => {
       .spyOn(launch, "launchPrivateContinuation")
       .mockImplementationOnce(async (_socket, _runner, options) => ({
         paneId: options.paneId,
-        commandPreview: "cdx default",
+        commandPreview: "trx run codex default",
       }))
       .mockRejectedValueOnce(new Error("Delivery connection lost"))
     const result = await f.services.launch(draft, false)
@@ -628,7 +628,7 @@ describe("continuation runtime", () => {
       .spyOn(launch, "launchPrivateContinuation")
       .mockImplementation(async (_socket, _runner, options) => ({
         paneId: options.paneId,
-        commandPreview: "cdx default",
+        commandPreview: "trx run codex default",
       }))
     const result = await f.services.launch(draft, false)
     expect(result.actions.slice(0, 2).map(({ status }) => status)).toEqual([Status.Launched, Status.Waiting])

@@ -19,10 +19,6 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  omp [OMP_ARGS...]
-  omp local [OMP_ARGS...]
-  omp copilot [OMP_ARGS...]
-  omp [local|copilot] --headless-policy no-user-input [OMP_ARGS...]
   omp list [--json]
   omp inventory PROFILE --json
   omp setup [local|copilot|--all]
@@ -33,7 +29,7 @@ Usage:
   omp update [--check] [local|copilot|--all]
   omp harness-version
 
-Bare omp invocations use the local profile for backward compatibility.
+Launch with `trx run omp default` or `trx run omp local`.
 EOF
 }
 
@@ -1103,110 +1099,6 @@ wait_for_launch_child() {
   done
 }
 
-launch_omp() {
-  local version binary token status
-  local launch_args=()
-
-  launch_child_pid=''
-  launch_pending_signal=''
-  launch_cancel_status=0
-  trap cleanup_launch_overlay EXIT
-  trap 'forward_launch_signal HUP' HUP
-  trap 'forward_launch_signal INT' INT
-  trap 'forward_launch_signal TERM' TERM
-
-  require_command mise
-  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
-    && ! -e "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
-    setup_profile >/dev/null
-    if cancel_pending_launch; then
-      return "$launch_cancel_status"
-    fi
-  fi
-  version="$(read_installed_version)"
-  configure_version_capabilities "$version"
-  ensure_managed_profile
-  ensure_floating_skills
-  ensure_community_skills
-  if cancel_pending_launch; then
-    return "$launch_cancel_status"
-  fi
-  binary="$(ensure_installed_binary "$version")"
-  if cancel_pending_launch; then
-    return "$launch_cancel_status"
-  fi
-  verify_binary_version "$binary" "$version"
-  if cancel_pending_launch; then
-    return "$launch_cancel_status"
-  fi
-  parse_launch_arguments "$@"
-  launch_args=(--approval-mode yolo)
-  if [[ -n "${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}" ]]; then
-    [[ -f "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" && ! -L "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" ]] || die 'unsafe selected instructions'
-    launch_args+=(--append-system-prompt "$(cat "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md")")
-  fi
-  if [[ "$launch_headless_policy" == no-user-input ]]; then
-    [[ "$version" == "$verified_headless_policy_version" ]] \
-      || die "--headless-policy no-user-input is verified only for OMP $verified_headless_policy_version; installed version is $version"
-    create_headless_policy_overlay
-    launch_args+=(--config "$launch_overlay_path")
-  fi
-  if cancel_pending_launch; then
-    return "$launch_cancel_status"
-  fi
-  if [[ "${#launch_forwarded_args[@]}" -gt 0 ]]; then
-    launch_args+=("${launch_forwarded_args[@]}")
-  fi
-
-  if cancel_pending_launch; then
-    return "$launch_cancel_status"
-  fi
-  if [[ "$profile_kind" == copilot ]]; then
-    if token="$(resolve_copilot_token)"; then
-      if cancel_pending_launch; then
-        return "$launch_cancel_status"
-      fi
-      env -u GH_TOKEN -u GITHUB_TOKEN \
-        COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name" \
-        "$binary" "${launch_args[@]}" <&0 &
-      launch_child_pid=$!
-    else
-      if cancel_pending_launch; then
-        return "$launch_cancel_status"
-      fi
-      env OMP_PROFILE="$profile_name" "$binary" "${launch_args[@]}" <&0 &
-      launch_child_pid=$!
-    fi
-  else
-    env OMP_PROFILE="$profile_name" "$binary" "${launch_args[@]}" <&0 &
-    launch_child_pid=$!
-  fi
-  if [[ -n "$launch_pending_signal" ]]; then
-    case "$launch_pending_signal" in
-      HUP) launch_cancel_status=129 ;;
-      INT) launch_cancel_status=130 ;;
-      TERM) launch_cancel_status=143 ;;
-      *) launch_cancel_status=1 ;;
-    esac
-    forward_launch_signal "$launch_pending_signal"
-    launch_pending_signal=''
-  fi
-  if wait_for_launch_child; then
-    status=0
-  else
-    status=$?
-  fi
-  if [[ "$launch_cancel_status" -ne 0 ]]; then
-    status="$launch_cancel_status"
-  fi
-  launch_child_pid=''
-  launch_pending_signal=''
-  launch_cancel_status=0
-  trap - EXIT HUP INT TERM
-  cleanup_launch_overlay
-  return "$status"
-}
-
 run_for_selection() {
   local selection="$1" callback="$2"
 
@@ -1300,12 +1192,11 @@ case "$command_name" in
     print_harness_version_json
     ;;
   local|copilot)
-    select_profile "$command_name"
-    shift
-    launch_omp "$@"
+    public_profile="$command_name"
+    [[ "$public_profile" != copilot ]] || public_profile=default
+    die "this private profile manager cannot launch agents; use trx run omp $public_profile"
     ;;
   *)
-    select_profile local
-    launch_omp "$@"
+    die 'this private profile manager cannot launch agents; use trx run omp PROFILE'
     ;;
 esac

@@ -51,7 +51,6 @@ usage() {
   cat <<'EOF'
 Usage:
   agx setup PROFILE
-  agx PROFILE [COPILOT_ARGS...]
   agx list
   agx list --json
   agx harness-version
@@ -62,7 +61,7 @@ Usage:
   agx skills-check PROFILE
 
 Launcher updates are installed by re-running install.sh or the Trellage native
-rebuild. Agency and Azure MCP never auto-update during an agx launch.
+rebuild. Launch with `trx run agency azure`.
 EOF
 }
 
@@ -577,19 +576,6 @@ inventory_profile() {
   inventory_json "$profile" healthy "$ready_executable" "$ready_config" "$ready_auth"
 }
 
-launch_profile() {
-  local profile="$1"
-  shift
-  prepare_profile_home "$profile"
-  ensure_floating_skills "$profile"
-  resolve_profile_readiness "$profile"
-  exec env \
-    COPILOT_HOME="$(profile_home "$profile")" \
-    AZURE_TOKEN_CREDENTIALS="$ready_auth" \
-    "$ready_executable" copilot --profile-only "$(profile_value "$profile" agencyProfile)" -- \
-    --model gpt-6-astra --effort low "$@"
-}
-
 require_command jq
 validate_catalog
 
@@ -642,7 +628,6 @@ case "$command_name" in
     usage
     ;;
   *)
-    require_profile "$command_name"
-    launch_profile "$command_name" "$@"
+    die 'this private profile manager cannot launch agents; use trx run agency azure'
     ;;
 esac

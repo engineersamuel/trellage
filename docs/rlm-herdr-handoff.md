@@ -17,7 +17,7 @@ in a different codebase (the `herdr` binary's `driveLoop`, agent detection,
 
 ## What Trellage fixed (category G — broken profile environments)
 
-- **`cpx hve`**: was `unhealthy` (missing `hve-core-all@hve-core` skill
+- **`trx run copilot hve`**: was `unhealthy` (missing `hve-core-all@hve-core` skill
   plugin). Repaired via `cpx repair hve`; `cpx doctor hve` and
   `cpx inventory hve --json` now report `healthy`. Ledger status: `untested`
   (repaired, awaiting a fresh Herdr verification run).

@@ -805,8 +805,8 @@ class NativeTuiMatrixTest(unittest.TestCase):
 
     def test_production_config_covers_every_router_launcher(self) -> None:
         config = json.loads(PRODUCTION_CONFIG.read_text())
-        registry = (REPOSITORY_ROOT / "packages" / "trellage-runtime" / "src" / "native-run" / "registry.ts").read_text()
-        discovered = set(re.findall(r'register\("([a-z0-9]+)"', registry)) | {"grok"}
+        presets = (REPOSITORY_ROOT / "packages" / "trellage-runtime" / "src" / "native-run" / "presets.ts").read_text()
+        discovered = set(re.findall(r'^  ([a-z0-9]+): \[', presets, re.MULTILINE)) | {"grok"}
         self.assertEqual(set(config["launchers"]), discovered)
         self.assertTrue(all(adapter in config["adapters"] for adapter in config["launchers"].values()))
         for adapter_name in ("agency", "copilot"):

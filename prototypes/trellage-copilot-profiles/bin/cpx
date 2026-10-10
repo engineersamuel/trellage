@@ -53,8 +53,6 @@ usage() {
   cat <<'EOF'
 Usage:
   cpx setup PROFILE|--all
-  cpx PROFILE [COPILOT_ARGS...]
-  cpx interactive hve --agent AGENT --require-skill SKILL [--require-skill SKILL...] [-i PROMPT]
   cpx workflow-check hve --agent AGENT --require-skill SKILL [--require-skill SKILL...]
   cpx list
   cpx list --json
@@ -68,6 +66,8 @@ Usage:
   cpx skills-check PROFILE
   cpx harness-version
   cpx harness-update
+
+Launch with `trx run copilot PROFILE`.
 EOF
 }
 
@@ -779,22 +779,6 @@ run_copilot() {
   COPILOT_HOME="$(profile_home "$profile")" copilot "$@"
 }
 
-launch_profile() {
-  local profile="$1"
-  shift
-  ensure_floating_skills "$profile"
-
-  ensure_profile_for_launch "$profile"
-  if [[ "${1-}" == --plan ]]; then
-    shift
-    exec env COPILOT_HOME="$(profile_home "$profile")" \
-      copilot --plan --model gpt-6-astra --effort low "$@"
-  fi
-  exec env COPILOT_HOME="$(profile_home "$profile")" \
-    copilot --autopilot --allow-all --no-ask-user \
-    --model gpt-6-astra --effort low "$@"
-}
-
 parse_workflow_arguments() {
   local mode="$1" option value
   shift
@@ -923,16 +907,6 @@ except (OSError, ValueError) as error:
     print("cpx: workflow unavailable: " + str(error), file=sys.stderr)
     sys.exit(1)
 PY
-}
-
-launch_interactive_workflow() {
-  local profile="$1"
-  [[ -t 0 && -t 1 ]] || die 'interactive customer workflows require a terminal for your answers; do not pipe or batch them'
-  check_interactive_workflow "$profile" >/dev/null
-  ensure_profile_for_launch "$profile"
-  check_interactive_workflow "$profile" >/dev/null
-  exec env COPILOT_HOME="$(profile_home "$profile")" \
-    copilot --model gpt-6-astra --effort low "${workflow_args[@]}"
 }
 
 plugin_inventory_snapshot() {
@@ -1931,17 +1905,41 @@ command_name="${1-}"
 shift
 
 case "$command_name" in
-  interactive|workflow-check)
+  _trx-admit)
+    [[ "${TRELLAGE_TRX_COPILOT_ADAPTER:-0}" == 1 ]] \
+      || die '_trx-admit is reserved for the trx Copilot adapter'
+    [[ "$#" == 1 ]] || die '_trx-admit requires PROFILE'
+    admission_profile="$1"
+    require_profile "$admission_profile"
+    require_command copilot
+    ensure_profile_for_launch "$admission_profile" >/dev/null
+    admission_home="$(profile_home "$admission_profile")"
+    admission_settings="$admission_home/settings.json"
+    [[ -f "$admission_settings" && ! -L "$admission_settings" ]] \
+      || die "invalid profile settings: $admission_profile"
+    admission_plugin="$(profile_value "$admission_profile" plugin)"
+    active_plugin_root "$admission_profile" "$admission_plugin" >/dev/null \
+      || die "installed plugin root is missing or unsafe: $admission_profile"
+    jq -cn --arg installedPlugins "$admission_home/installed-plugins" \
+      --slurpfile settings "$admission_settings" '
+      {
+        installedPlugins: $installedPlugins,
+        settings: ($settings[0]
+          | {enabledPlugins, extraKnownMarketplaces, hooks, subagents}
+          | with_entries(select(.value != null)))
+      }
+    '
+    ;;
+  interactive)
+    die 'this private profile manager cannot launch agents; use trx run copilot hve'
+    ;;
+  workflow-check)
     [[ "$#" -ge 1 ]] || die "$command_name requires a profile"
     workflow_profile="$1"
     shift
     require_profile "$workflow_profile"
     parse_workflow_arguments "$command_name" "$@"
-    if [[ "$command_name" == interactive ]]; then
-      launch_interactive_workflow "$workflow_profile"
-    else
-      check_interactive_workflow "$workflow_profile"
-    fi
+    check_interactive_workflow "$workflow_profile"
     ;;
   list)
     if [[ "$#" == 0 ]]; then
@@ -2004,9 +2002,6 @@ case "$command_name" in
     usage
     ;;
   *)
-    require_profile "$command_name"
-    require_command copilot
-    require_safe_profile_home "$command_name"
-    launch_profile "$command_name" "$@"
+    die "this private profile manager cannot launch agents; use trx run copilot $command_name"
     ;;
 esac

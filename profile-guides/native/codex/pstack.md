@@ -18,7 +18,7 @@ bestFor:
   - Reproduce-first bug fixing with $pstack-for-codex:tdd, or removing low-value comments/prose with $pstack-for-codex:no-comments and $pstack-for-codex:unslop
 avoidFor:
   - Casual prompts that do not name a skill; all 45 pstack-for-codex skills require explicit $name invocation and are not auto-triggered
-  - Tasks needing native OpenAI authentication by default; the profile routes through copilot-proxy-rs unless you opt in with cdx --native-auth
+  - Tasks needing native OpenAI authentication; the profile routes through copilot-proxy-rs
   - Multi-writer parallel edits on one shared checkout without isolation; pstack falls back to serial execution when safe isolation is unavailable
   - Work requiring an OS-level sandbox; use a Trellage Sandbox profile instead
 prerequisites:
@@ -101,8 +101,8 @@ the real result before declaring completion.
 - You only need a simple question, quick lookup, or small edit. Invoke a
   narrower pstack skill directly when one operation still benefits from a
   specialized workflow.
-- You need native OpenAI authentication by default; use
-  `cdx --native-auth pstack exec "..."` for one launch instead.
+- You require native OpenAI authentication; this canonical profile is routed
+  through local `copilot-proxy-rs`.
 - You need the optional `pstack-poteto-agent` / `pstack-comment-sicko` agent
   profiles without running `$pstack-for-codex:setup-pstack` first — they are
   opt-in and not installed by plain `trx setup codex pstack`.

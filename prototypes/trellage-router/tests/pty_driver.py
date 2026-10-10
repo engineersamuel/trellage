@@ -41,9 +41,8 @@ while time.monotonic() < deadline:
         output.extend(chunk)
         # Entering the alternate screen precedes Ink's input subscription.
         screen_ready = (
-            b"\x1b[?1049h" not in output
-            or b"\x1b[?2026l" in output
-            or b"Type yes to update" in output
+            b"Type yes to update" in output
+            or (b"\x1b[?1049h" in output and b"\x1b[?2026l" in output)
         )
         if next_key_stage == 0 and output and screen_ready:
             time.sleep(0.1)

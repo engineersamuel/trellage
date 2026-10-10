@@ -46,7 +46,7 @@ const launchResult: HerdrWorktreeLaunchResult = {
   rootPaneId: "w1:p1",
   checkoutPath: "/worktrees/fix-hve",
   paneId: "w1:p1",
-  commandPreview: "cpx hve",
+  commandPreview: "trx run copilot hve",
 }
 
 beforeEach(() => {

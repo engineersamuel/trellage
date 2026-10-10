@@ -348,8 +348,8 @@ full profile discovery and Prompt Master preparation, and supplies an optional
 Native catalog on fd 3. Both flags, the embedded action and popup use the same flow.
 Ctrl-R stays inside Guide so intent, goals, forks and queued jobs survive returning.
 The current-terminal continuation launches through
-`mise run trx -- run cpx hve -- --plan -i` in a source worktree, or
-`trx run cpx hve -- --plan -i`
+`mise run trx -- run copilot hve --plan -- -i` in a source worktree, or
+`trx run copilot hve --plan -- -i`
 for an installed router. The source router prepares stale runtime readiness
 before dispatch; neither route launches the saved absolute `cpx` path directly.
 The selection screen includes Matt Pocock Code Review as a separate option

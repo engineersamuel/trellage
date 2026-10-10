@@ -18,7 +18,7 @@ bestFor:
   - Status updates, standups, or PR summaries where the built-in Rundown TL;DR-plus-checklist output style should apply automatically
 avoidFor:
   - Tasks that require direct Anthropic, Bedrock, Vertex, AWS, Google, or Azure credentials, since launch strips those environment variables before starting Claude
-  - Work that needs OS-level sandboxing or containment; cldx grants Claude full host access with no security boundary
+  - Work that needs OS-level sandboxing or containment; this Native Claude profile grants full host access with no security boundary
   - Sessions that need interactive approval prompts or AskUserQuestion; every launch bypasses permissions and disallows that tool
 prerequisites:
   - id: claude-code-cli
@@ -78,8 +78,8 @@ authoritative operational reference.
 
 ## Workflow Notes
 
-- Bare `claude` and `trx run claude default` are equivalent; explicit `--model` wins over
-  the default `claude-opus-5` (for example `cldx --model claude-sonnet-5`).
+- Launch with `trx run claude default`; explicit `--model` wins over
+  the default `claude-opus-5` (for example `trx run claude default --model claude-sonnet-5`).
 - Every `setup`, `doctor`, `repair`, and launch verifies proxy health and that
   `claude-opus-5` is advertised before running.
 - The profile also installs the shared `native-common` floating skill bundle

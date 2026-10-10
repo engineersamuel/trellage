@@ -224,7 +224,35 @@ const nativeCatalogs = async (): Promise<ReadonlyMap<string, NativeCatalogMetada
     .filter((directory) => directory.isDirectory() && /^trellage-.+-profiles$/u.test(directory.name))
     .map(({ name }) => name)
   const entries = await Promise.all(families.map((family) => nativeCatalogFamily(prototypes, family)))
-  return new Map(entries.flat())
+  return new Map([
+    ...entries.flat(),
+    [
+      "fx/default",
+      {
+        description: "Fx with shared host context through copilot-proxy-rs",
+        headless: validateHeadlessCapabilitiesV1(
+          {
+            schemaVersion: 1,
+            prompt: true,
+            outputFormats: ["text", "json"],
+            eventContract: null,
+            trellageEventContract: null,
+            sessionId: "native",
+            resume: true,
+            resumeWithPrompt: true,
+            questionToolControl: "prompt-only",
+            changedFiles: "native",
+            usage: true,
+            cost: true,
+            modelOverride: true,
+            effortOverride: true,
+            testedHarnessVersion: null,
+          },
+          "fx/default.headless",
+        ),
+      },
+    ] as const,
+  ])
 }
 
 const nativeGuideIdentities = async (): Promise<

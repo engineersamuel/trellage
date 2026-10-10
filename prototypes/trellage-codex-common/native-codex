@@ -220,9 +220,7 @@ usage() {
     '  skills-update PROFILE' \
     '  skills-check PROFILE' \
     '  harness-version' \
-    '  harness-update' \
-    '  --native-auth PROFILE [CODEX_ARGS...]' \
-    '  PROFILE [CODEX_ARGS...]'
+    '  harness-update'
 }
 
 extract_semver() {

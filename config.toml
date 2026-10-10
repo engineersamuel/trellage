@@ -407,6 +407,10 @@ harnesses = [ "firstmate" ]
 label = "firstmate / pstack-workers"
 harnesses = [ "firstmate" ]
 
+[native.profiles.preset-fx-default]
+label = "fx / default"
+harnesses = [ "fx" ]
+
 [native.profiles.preset-jcode-default]
 label = "jcode / default"
 harnesses = [ "jcode" ]

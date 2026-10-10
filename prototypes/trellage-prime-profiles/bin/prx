@@ -20,9 +20,6 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  prx [PRIME_ARGS...]
-  prx default [PRIME_ARGS...]
-  prx [default] --single-turn [PRIME_ARGS...]
   prx list [--json]
   prx inventory PROFILE --json
   prx setup [default]
@@ -34,7 +31,7 @@ Usage:
   prx update [--check] [default]
   prx harness-version
 
-Bare prx invocations use the default profile.
+Launch with `trx run prime default`.
 EOF
 }
 
@@ -1697,83 +1694,6 @@ inventory_profile() {
   esac
 }
 
-launch_prime() {
-  local version cli identity selected_model="$model_id" single_turn=false
-  local -a prime_args=() command_args
-
-  while (( $# > 0 )); do
-    case "$1" in
-      --single-turn)
-        [[ "$single_turn" == false ]] || die '--single-turn may be specified only once'
-        single_turn=true
-        shift
-        ;;
-      --model)
-        [[ $# -ge 2 && -n "$2" ]] || die '--model requires a value'
-        selected_model="$2"
-        shift 2
-        ;;
-      --model=*)
-        selected_model="${1#--model=}"
-        [[ -n "$selected_model" ]] || die '--model requires a value'
-        shift
-        ;;
-      *)
-        prime_args+=("$1")
-        shift
-        ;;
-    esac
-  done
-
-  require_command mise
-  require_node
-  acquire_mutation_lock
-  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
-    && ! -e "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
-    setup_profile >/dev/null
-  fi
-  publish_managed_profile "$selected_model"
-  ensure_floating_skills
-  version="$(read_installed_version)"
-  if [[ ! -f "$receipt_file" || -L "$receipt_file" \
-    || ! -f "$runtime_identity_file" || -L "$runtime_identity_file" ]]; then
-    repair_profile >/dev/null
-    version="$(read_installed_version)"
-  fi
-  cli="$(installed_cli "$version")"
-  verify_cli_version "$cli" "$version"
-  identity="$(published_runtime_identity "$version")"
-  ensure_kernel_runtime "$identity"
-  restart_stale_profile_daemon "$identity"
-  check_proxy "$selected_model"
-  release_mutation_lock || die 'could not release profile mutation lock'
-  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN OPENAI_API_KEY
-  unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
-  command_args=(
-    "$cli"
-    --provider "$provider"
-    --model "$selected_model"
-    --offline
-  )
-  if [[ "$single_turn" == false ]]; then
-    command_args+=(--autonomous)
-  fi
-  command_args+=(--daemon-socket "$daemon_socket")
-  if [[ -n "${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}" ]]; then
-    [[ -f "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" && ! -L "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" ]] || die 'unsafe selected instructions'
-    command_args+=(--append-system-prompt "$(cat "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md")")
-  fi
-  # Bash 3.2 treats an empty array expansion as unbound under `set -u`.
-  if (( ${#prime_args[@]} > 0 )); then
-    command_args+=("${prime_args[@]}")
-  fi
-  exec env \
-    PRIME_AGENT_CODING_AGENT_DIR="$profile_home" \
-    PRIME_AGENT_KERNEL_PYTHON="$kernel_python" \
-    PRIME_AGENT_KERNEL_VENV="$kernel_venv" \
-    node "${command_args[@]}"
-}
-
 cleanup_on_exit() {
   rollback_runtime_transaction || :
   rm -rf -- "$staged_npm_prefix" 2>/dev/null || true
@@ -1869,10 +1789,9 @@ case "${1-}" in
     print_harness_version_json
     ;;
   default)
-    shift
-    launch_prime "$@"
+    die 'this private profile manager cannot launch agents; use trx run prime default'
     ;;
   *)
-    launch_prime "$@"
+    die 'this private profile manager cannot launch agents; use trx run prime default'
     ;;
 esac

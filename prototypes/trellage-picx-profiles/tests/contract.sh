@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+unset TRELLAGE_NATIVE_COMPOSITION_HARNESS TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
@@ -493,62 +494,23 @@ jq -e '
 ' "$fixture_root/unhealthy-proxy-inventory.json" >/dev/null \
   || fail 'unhealthy proxy inventory differs'
 
-extension_installs_before="$(wc -l <"$FAKE_EXTENSION_LOG" | tr -d ' ')"
-COPILOT_GITHUB_TOKEN='do-not-forward' \
-GH_TOKEN='do-not-forward' \
-GITHUB_TOKEN='do-not-forward' \
-OPENAI_API_KEY='do-not-forward' \
-OPENAI_BASE_URL='https://invalid.example.test/v1' \
-AZURE_OPENAI_API_KEY='do-not-forward' \
-"$command_path" -p 'what extensions are installed' >"$fixture_root/live.out" \
-  2>"$fixture_root/live.err"
-cmp -s <(jq -r '.[].name' "$profile_root/extensions.json") "$fixture_root/live.out" \
-  || fail 'non-interactive extension report differs'
-grep -Fq "$agent_root|$profile_root/.copilot-models.json|copilot=|gh=|github=|openai=|openai_base=|azure=|" \
-  "$FAKE_LAUNCH_LOG" || fail 'launch isolation environment differs'
-grep -Fq -- '--provider copilot-proxy-rs --model gpt-6-astra --thinking medium' \
-  "$FAKE_LAUNCH_LOG" || fail 'launch model selection differs'
-grep -Fq 'This picx profile has exactly these Pi extensions installed, in order:' \
-  "$FAKE_LAUNCH_LOG" || fail 'launch omitted extension inventory context'
-if grep -Eq 'plan.*HTTP 401|MCP finished with failures.*plan' \
-  "$fixture_root/live.out" "$fixture_root/live.err"; then
-  fail 'launch inherited the host Claude plan MCP'
-fi
-[[ "$(grep -c '^latest ' "$FAKE_MISE_LOG")" == 1 ]] \
-  || fail 'ordinary launch resolved latest instead of reusing the receipt'
-[[ "$(wc -l <"$FAKE_EXTENSION_LOG" | tr -d ' ')" == "$extension_installs_before" ]] \
-  || fail 'ordinary launch refreshed extensions instead of reusing installed state'
-
-"$command_path" --headless-policy no-user-input -p 'headless probe' >/dev/null
-grep -Fq -- '--exclude-tools ask_question' "$FAKE_LAUNCH_LOG" \
-  || fail 'headless policy did not exclude ask_question'
 status=0
-FAKE_PI_EXIT_STATUS=37 \
-  "$command_path" --headless-policy no-user-input -p 'failing headless probe' \
-  >/dev/null 2>"$fixture_root/headless-nonzero.err" || status=$?
-[[ "$status" == 37 ]] \
-  || fail "headless launch returned $status instead of the Pi exit status 37"
+"$command_path" -p 'legacy direct launch' \
+  >"$fixture_root/direct-launch.out" 2>"$fixture_root/direct-launch.err" || status=$?
+[[ "$status" == 1 ]] || fail "legacy direct launch exited $status instead of 1"
+grep -Fqx 'picx: this private profile manager cannot launch agents; use trx run pi default' \
+  "$fixture_root/direct-launch.err" \
+  || fail 'legacy direct launch did not point to the canonical trx command'
+[[ ! -s "$FAKE_LAUNCH_LOG" ]] || fail 'legacy direct launch invoked Pi'
 
-headless_ready="$fixture_root/headless-ready"
-headless_signal="$fixture_root/headless-signal"
-FAKE_PI_READY_FILE="$headless_ready" \
-FAKE_PI_SIGNAL_FILE="$headless_signal" \
-FAKE_PI_HOLD=30 \
-  "$command_path" --headless-policy no-user-input -p 'cancelled headless probe' \
-  >/dev/null 2>"$fixture_root/headless-cancel.err" &
-headless_pid=$!
-for _ in $(seq 1 100); do
-  [[ -f "$headless_ready" ]] && break
-  sleep 0.05
-done
-[[ -f "$headless_ready" ]] || fail 'headless cancellation probe did not start Pi'
-kill -TERM "$headless_pid"
 status=0
-wait "$headless_pid" || status=$?
-[[ "$status" == 143 ]] \
-  || fail "cancelled headless launch returned $status instead of 143"
-grep -Fqx 'TERM' "$headless_signal" \
-  || fail 'headless cancellation did not reach the Pi child'
+"$command_path" default -p 'legacy named launch' \
+  >"$fixture_root/named-launch.out" 2>"$fixture_root/named-launch.err" || status=$?
+[[ "$status" == 1 ]] || fail "legacy named launch exited $status instead of 1"
+grep -Fqx 'picx: this private profile manager cannot launch agents; use trx run pi default' \
+  "$fixture_root/named-launch.err" \
+  || fail 'legacy named launch did not point to the canonical trx command'
+[[ ! -s "$FAKE_LAUNCH_LOG" ]] || fail 'legacy named launch invoked Pi'
 "$command_path" update --check >"$fixture_root/update-check.out"
 grep -Fqx 'picx update: 0.84.2 is current' "$fixture_root/update-check.out" \
   || fail 'update check differs'
@@ -604,17 +566,6 @@ jq -e '
   and .profiles[0].headless.testedHarnessVersion == null
 ' "$fixture_root/updated-list.json" >/dev/null \
   || fail 'unverified Pi version did not fall back to conservative capabilities'
-unverified_launches_before="$(wc -l <"$FAKE_LAUNCH_LOG" | tr -d ' ')"
-if "$command_path" --headless-policy no-user-input -p unverified-headless \
-  >"$fixture_root/unverified-headless.out" \
-  2>"$fixture_root/unverified-headless.err"; then
-  fail 'headless policy unexpectedly launched an unverified Pi version'
-fi
-grep -Fqx 'picx: --headless-policy no-user-input is verified only for Pi 0.84.2; installed version is 0.85.0' \
-  "$fixture_root/unverified-headless.err" \
-  || fail 'unverified Pi headless policy diagnostic differs'
-[[ "$(wc -l <"$FAKE_LAUNCH_LOG" | tr -d ' ')" == "$unverified_launches_before" ]] \
-  || fail 'unverified Pi headless policy invoked Pi'
 "$command_path" inventory default --json >"$fixture_root/updated-inventory.json"
 jq -e '.readiness == "healthy" and .harnessVersion == "0.85.0"' \
   "$fixture_root/updated-inventory.json" >/dev/null \

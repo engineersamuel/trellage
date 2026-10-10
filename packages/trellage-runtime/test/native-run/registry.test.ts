@@ -1,34 +1,31 @@
 import { describe, expect, test } from "bun:test"
-import { nativeHarnessRegistry, backendArguments, nativeHarness } from "../../src/native-run/registry.ts"
+import { nativeHarnessPresets, nativePresetProfile, nativePresetProfiles } from "../../src/native-run/presets.ts"
+import { adapters } from "../../src/native-run/adapters.ts"
+import { canonicalRunArguments } from "../../src/native-run/cli.ts"
 
-describe("native backend registry", () => {
-  test("every legacy family has one canonical destination", () => {
-    expect(new Set(nativeHarnessRegistry.map((entry) => entry.legacyLauncher)).size).toBe(9)
-    expect(nativeHarness("agency")?.presets.azure).toBe("trellage-azure")
-    expect(nativeHarness("omp")?.presets.default).toBe("copilot")
-    expect(nativeHarness("omp")?.presets.local).toBe("local")
+describe("native harness presets", () => {
+  test("every public preset has a canonical built-in profile", () => {
+    expect(Object.keys(nativeHarnessPresets).sort()).toEqual([
+      "agency", "claude", "codex", "copilot", "firstmate", "fx", "jcode", "omp", "pi", "prime",
+    ])
+    expect(nativePresetProfile("agency", "azure")).toBe("preset-agency-azure")
+    expect(nativePresetProfile("omp", "default")).toBe("preset-omp-default")
+    expect(nativePresetProfile("fx", "default")).toBe("preset-fx-default")
   })
-  test("upgrade inspection cannot silently become a mutating update", () => {
-    for (const harness of ["codex", "copilot", "claude"]) {
-      expect(() => backendArguments("upgrade", harness, ["--harness-only", "--check"])).toThrow("not supported")
-      expect(backendArguments("upgrade", harness, ["--harness-only", "--dry-run"])).toEqual(["harness-update", "--dry-run"])
-    }
+  test("unknown presets never acquire an alias translation", () => {
+    expect(nativePresetProfile("fx", "ask")).toBeUndefined()
+    expect(nativePresetProfile("unknown", "default")).toBeUndefined()
+    expect(nativePresetProfiles("fx")).toEqual(["default"])
   })
-  test("checks preserve presets and launch payloads preserve option-looking text", () => {
-    for (const harness of ["prime", "jcode", "pi", "omp", "copilot", "codex"]) {
-      const preset = harness === "omp" ? "copilot" : "default"
-      expect(backendArguments("upgrade", harness, ["default", "--check"])).toEqual(["update", "--check", preset])
-      expect(backendArguments("upgrade", harness, ["--check", "default"])).toEqual(["update", "--check", preset])
-    }
-    expect(backendArguments("run", "codex", ["superpowers", "--native-auth", "--", "exec", "review"])).toEqual(["--native-auth", "superpowers", "exec", "review"])
-    expect(backendArguments("run", "codex", ["superpowers", "--", "-p", "--native-auth"])).toEqual(["superpowers", "-p", "--native-auth"])
-    expect(backendArguments("run", "codex", ["pstack", "--", "-p", "--interactive"])).toEqual(["pstack", "-p", "--interactive"])
-    expect(backendArguments("run", "copilot", ["hve", "--interactive", "--", "-p", "--interactive"])).toEqual(["interactive", "hve", "-p", "--interactive"])
+  test("every canonical harness launches through an adapter", () => {
+    expect(Object.keys(adapters).sort()).toEqual([
+      "agency", "claude", "codex", "copilot", "firstmate", "fx", "grok", "jcode", "omp", "pi", "prime",
+    ])
   })
-  test("launch and lifecycle arguments preserve provider identity and passthrough", () => {
-    expect(backendArguments("run", "omp", ["default", "--", "--resume", "session"])).toEqual(["copilot", "--resume", "session"])
-    expect(backendArguments("inventory", "agency", ["azure", "--json"])).toEqual(["inventory", "trellage-azure", "--json"])
-    expect(backendArguments("instances", "firstmate", ["list", "--json"])).toEqual(["instances", "list", "--json"])
-    expect(() => backendArguments("run", "omp", ["unknown"])).toThrow("unknown preset")
+  test("Fx keeps its zero-profile shorthand without inventing a launcher alias", () => {
+    expect(canonicalRunArguments(["fx"])).toEqual(["fx", "default"])
+    expect(canonicalRunArguments(["fx", "ask", "hello"])).toEqual(["fx", "default", "--", "ask", "hello"])
+    expect(canonicalRunArguments(["fx", "--plan", "ask", "hello"])).toEqual(["fx", "default", "--plan", "--", "ask", "hello"])
+    expect(canonicalRunArguments(["fx", "default", "--", "ask", "hello"])).toEqual(["fx", "default", "--", "ask", "hello"])
   })
 })

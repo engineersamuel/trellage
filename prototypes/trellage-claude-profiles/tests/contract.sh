@@ -13,6 +13,14 @@ fail() {
   exit 1
 }
 
+profile_tree_hash() {
+  local directory="$1"
+  find "$directory" -type f -exec shasum -a 256 {} + \
+    | LC_ALL=C sort \
+    | shasum -a 256 \
+    | awk '{print $1}'
+}
+
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/trellage-cldx-contract.XXXXXX")" \
   || fail 'could not create fixture root'
 fixture_root="$(CDPATH= cd -P -- "$fixture_root" && pwd -P)"
@@ -187,6 +195,61 @@ command_path="$HOME/.local/share/trellage/.native-commands/cldx"
 runtime_root="$HOME/.local/share/trellage/cldx"
 profile_root="$HOME/.local/share/trellage/profiles/claude/default"
 profile_home="$profile_root/home"
+native_config="$fixture_root/native-config.toml"
+cat >"$native_config" <<'EOF'
+[native.profiles.base]
+label = "Fixture defaults"
+always = true
+
+[native.profiles.preset-claude-default]
+label = "claude / default"
+harnesses = ["claude"]
+
+[native.profiles.preset-claude-office]
+label = "claude / office"
+harnesses = ["claude"]
+
+[native.profiles.preset-claude-office-charts]
+label = "claude / office-charts"
+harnesses = ["claude"]
+EOF
+
+trx_run_claude() {
+  local profile="$1" argument
+  shift
+  local -a own=() agent=()
+  while [[ $# -gt 0 ]]; do
+    argument="$1"
+    case "$argument" in
+      --model | --effort)
+        own+=("$argument" "$2")
+        shift 2 ;;
+      --resume)
+        own+=("--resume=$2")
+        shift 2 ;;
+      --model=* | --effort=* | --resume=* | --plan | --continue)
+        own+=("$argument")
+        shift ;;
+      *)
+        agent+=("$argument")
+        shift ;;
+    esac
+  done
+  TRELLAGE_TRX_SOURCE_ROOT="$root/../trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_CONFIG="$native_config" \
+    "$root/../trellage-router/bin/trx" run claude "$profile" \
+      ${own[@]+"${own[@]}"} -- ${agent[@]+"${agent[@]}"}
+}
+
+trx_exec_claude() {
+  local profile="$1"
+  shift
+  TRELLAGE_TRX_SOURCE_ROOT="$root/../trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_CONFIG="$native_config" \
+    exec "$root/../trellage-router/bin/trx" run claude "$profile" -- "$@"
+}
 
 [[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
 [[ "$(readlink "$command_path")" == "$runtime_root/bin/cldx" ]] \
@@ -355,14 +418,14 @@ done
 [[ "$(wc -l <"$harness_update_log" | tr -d ' ')" == "$calls_before" ]] \
   || fail 'invalid harness update arguments reached Claude'
 
-"$command_path" default -p 'self-heal-before-setup-probe' \
-  >"$fixture_root/self-heal.out" 2>"$fixture_root/self-heal.err" \
-  || fail 'launch before explicit setup did not self-heal'
-[[ -f "$profile_root/.managed-by-trellage-claude-profiles" ]] \
-  || fail 'self-healed launch did not mark profile ownership'
-[[ -d "$profile_home" && ! -L "$profile_home" ]] \
-  || fail 'self-healed launch did not materialize the profile home'
-rm -rf "$profile_root"
+trx_run_claude default -p 'canonical-before-setup-probe' \
+  >"$fixture_root/canonical-before-setup.out" 2>"$fixture_root/canonical-before-setup.err" \
+  || fail 'canonical launch before explicit lifecycle setup failed'
+canonical_home="$(jq -sr '.[-1].configDir' "$FAKE_CLAUDE_LOG")"
+[[ "$canonical_home" == *'/native-run/compositions/claude-'*'/generations/'* ]] \
+  || fail 'canonical Claude launch did not use a generated home'
+[[ ! -e "$profile_root" ]] \
+  || fail 'canonical launch created the lifecycle profile before explicit setup'
 
 mkdir -p "$profile_home"
 printf '%s\n' 'trellage-claude-profile-v1' \
@@ -440,15 +503,15 @@ settings_hash="$(shasum -a 256 "$settings" | awk '{print $1}')"
 [[ "$(shasum -a 256 "$settings" | awk '{print $1}')" == "$settings_hash" ]] \
   || fail 'repeated setup changed session bridge hook settings'
 
-"$command_path" || fail 'bare launch failed'
-jq -e '
-  .args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan"]
+trx_run_claude default || fail 'bare canonical launch failed'
+jq -s -e '
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--effort", "medium"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'bare launch arguments differ'
 
 workspace="$(pwd -P)"
 jq -e --arg workspace "$workspace" \
   '.projects[$workspace].hasTrustDialogAccepted == true' \
-  "$profile_home/.claude.json" >/dev/null \
+  "$canonical_home/.claude.json" >/dev/null \
   || fail 'launch did not trust the current workspace'
 
 printf 'preserve\n' >"$profile_home/unrelated-state"
@@ -456,20 +519,20 @@ ANTHROPIC_API_KEY=poison \
 CLAUDE_CODE_OAUTH_TOKEN=poison \
 OPENAI_API_KEY=poison \
 GH_TOKEN=poison \
-  "$command_path" default -p 'two words' '' '--literal=*' \
+  trx_run_claude default -p 'two words' '' '--literal=*' \
   || fail 'default launch failed'
-jq -s -e --arg home "$profile_home" '
+jq -s -e --arg home "$canonical_home" '
   .[-1].configDir == $home
   and .[-1].authToken == "trellage-local-proxy"
   and .[-1].baseUrl == "http://127.0.0.1:8080"
-  and .[-1].opus == "claude-opus-5.5"
-  and .[-1].sonnet == "claude-sonnet-5.5"
+  and .[-1].opus == "opusplan"
+  and .[-1].sonnet == "opusplan"
   and .[-1].haiku == "claude-haiku-4.5"
   and .[-1].apiKey == "unset"
   and .[-1].oauth == "unset"
   and .[-1].openai == "unset"
   and .[-1].gh == "unset"
-  and .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "-p", "two words", "", "--literal=*"]
+  and .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--effort", "medium", "-p", "two words", "", "--literal=*"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'default launch environment or arguments differ'
 
 # --- provider/token scrub must cover the supported provider/token override
@@ -510,11 +573,14 @@ scrubbed_var_names=(
 )
 
 env_dump="$fixture_root/launch-env-dump.txt"
-env "${poison_env_assignments[@]}" \
-  GH_CONFIG_DIR=/fixture/gh-config-marker \
-  FAKE_CLAUDE_ENV_DUMP="$env_dump" \
-  "$command_path" default -p 'scrub check' \
-  || fail 'scrub-check launch failed'
+(
+  for assignment in "${poison_env_assignments[@]}"; do
+    export "$assignment"
+  done
+  export GH_CONFIG_DIR=/fixture/gh-config-marker
+  export FAKE_CLAUDE_ENV_DUMP="$env_dump"
+  trx_run_claude default -p 'scrub check'
+) || fail 'scrub-check launch failed'
 
 for scrubbed_var in "${scrubbed_var_names[@]}"; do
   grep -q "^${scrubbed_var}=" "$env_dump" \
@@ -527,28 +593,28 @@ grep -Fqx 'ANTHROPIC_AUTH_TOKEN=trellage-local-proxy' "$env_dump" \
 grep -Fqx 'ANTHROPIC_BASE_URL=http://127.0.0.1:8080' "$env_dump" \
   || fail 'launch did not set the managed ANTHROPIC_BASE_URL'
 
-"$command_path" --model claude-sonnet-5 -p override \
+trx_run_claude default --model claude-sonnet-5 -p override \
   || fail 'model override launch failed'
 jq -s -e '
-  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-sonnet-5", "-p", "override"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "claude-sonnet-5", "--effort", "medium", "-p", "override"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model override was changed'
 
-"$command_path" --permission-mode plan -p planning \
-  || fail 'explicit plan mode launch failed'
+trx_run_claude default --plan -p planning \
+  || fail 'canonical plan launch failed'
 jq -s -e '
   .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "max", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode", "plan", "-p", "planning"]
-' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit plan mode was overridden by bypass permissions'
+' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'canonical plan launch did not apply the plan policy'
 
-"$command_path" --model opusplan --permission-mode=plan -p planning \
+trx_run_claude default --model opusplan --plan -p planning \
   || fail 'explicit model and plan mode launch failed'
 jq -s -e '
-  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "max", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode=plan", "-p", "planning"]
-' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model and inline plan mode were changed'
+  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "max", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode", "plan", "-p", "planning"]
+' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit model was changed in canonical plan mode'
 
-"$command_path" --permission-mode plan --effort=high -p planning \
+trx_run_claude default --plan --effort=high -p planning \
   || fail 'explicit plan effort override failed'
 jq -s -e '
-  .[-1].args == ["--allow-dangerously-skip-permissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode", "plan", "--effort=high", "-p", "planning"]
+  .[-1].args == ["--allow-dangerously-skip-permissions", "--effort", "high", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--permission-mode", "plan", "-p", "planning"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'explicit plan effort was changed'
 
 headless_session_id='5b3664c0-9954-4526-8aab-d3d2c177798d'
@@ -558,7 +624,7 @@ printf '%s\n' \
   '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"CLDX_JSONL_OK","usage":{"input_tokens":9,"output_tokens":4},"total_cost_usd":0.01}' \
   >"$headless_initial_stream"
 FAKE_CLAUDE_STDOUT_FILE="$headless_initial_stream" \
-  "$command_path" --output-format stream-json --verbose -p 'machine output' \
+  trx_run_claude default --output-format stream-json --verbose -p 'machine output' \
   >"$fixture_root/headless-initial.out" 2>"$fixture_root/headless-initial.err" \
   || fail 'Claude JSONL launch failed'
 cmp -s "$headless_initial_stream" "$fixture_root/headless-initial.out" \
@@ -581,7 +647,7 @@ jq -se --arg session "$headless_session_id" '
 ' "$fixture_root/headless-initial.out" >/dev/null \
   || fail 'Claude JSONL evidence differs'
 jq -s -e '
-  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--output-format", "stream-json", "--verbose", "-p", "machine output"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--effort", "medium", "--output-format", "stream-json", "--verbose", "-p", "machine output"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude JSONL argument vector differs'
 
 headless_resume_stream="$fixture_root/headless-resume.jsonl"
@@ -590,7 +656,7 @@ printf '%s\n' \
   '{"type":"result","subtype":"success","is_error":false,"session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d","result":"CLDX_RESUME_OK","usage":{"input_tokens":5,"output_tokens":3},"total_cost_usd":0.006}' \
   >"$headless_resume_stream"
 FAKE_CLAUDE_STDOUT_FILE="$headless_resume_stream" \
-  "$command_path" --resume "$headless_session_id" \
+  trx_run_claude default --resume "$headless_session_id" \
   --output-format stream-json --verbose -p 'resume output' \
   >"$fixture_root/headless-resume.out" 2>"$fixture_root/headless-resume.err" \
   || fail 'Claude resume-with-prompt launch failed'
@@ -601,7 +667,7 @@ jq -se --arg session "$headless_session_id" '
 ' "$fixture_root/headless-resume.out" >/dev/null \
   || fail 'Claude resume-with-prompt session evidence differs'
 jq -s -e --arg session "$headless_session_id" '
-  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--resume", $session, "--output-format", "stream-json", "--verbose", "-p", "resume output"]
+  .[-1].args == ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "AskUserQuestion", "--model", "opusplan", "--effort", "medium", "--resume", $session, "--output-format", "stream-json", "--verbose", "-p", "resume output"]
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'Claude resume-with-prompt argument vector differs'
 
 headless_malformed_stream="$fixture_root/headless-malformed.jsonl"
@@ -609,7 +675,7 @@ printf '%s\n' \
   '{"type":"system","subtype":"init","session_id":"5b3664c0-9954-4526-8aab-d3d2c177798d"}' \
   'not-json' >"$headless_malformed_stream"
 FAKE_CLAUDE_STDOUT_FILE="$headless_malformed_stream" \
-  "$command_path" --output-format stream-json --verbose -p malformed \
+  trx_run_claude default --output-format stream-json --verbose -p malformed \
   >"$fixture_root/headless-malformed.out" 2>"$fixture_root/headless-malformed.err" \
   || fail 'Claude malformed-output fixture launch failed'
 cmp -s "$headless_malformed_stream" "$fixture_root/headless-malformed.out" \
@@ -619,10 +685,10 @@ if jq -se 'all(.[]; type == "object")' "$fixture_root/headless-malformed.out" >/
 fi
 
 status=0
-FAKE_CLAUDE_EXIT_STATUS=37 "$command_path" -p exit-probe || status=$?
+FAKE_CLAUDE_EXIT_STATUS=37 trx_run_claude default -p exit-probe || status=$?
 [[ "$status" == 37 ]] || fail "child exit status became $status"
 
-FAKE_CLAUDE_WAIT_FOR_SIGNAL=1 "$command_path" -p signal-probe &
+FAKE_CLAUDE_WAIT_FOR_SIGNAL=1 trx_exec_claude default -p signal-probe &
 signal_pid=$!
 for _attempt in {1..100}; do
   [[ -f "$FAKE_CLAUDE_SIGNAL_LOG" ]] && grep -Fqx READY "$FAKE_CLAUDE_SIGNAL_LOG" \
@@ -1197,12 +1263,11 @@ charts_home="$HOME/.local/share/trellage/profiles/claude/office-charts/home"
 "$command_path" inventory office --json | jq -e '.readiness == "not-setup"' >/dev/null \
   || fail 'Office inventory did not report missing setup'
 "$command_path" setup office >"$fixture_root/office-setup.out" || fail 'Office setup failed'
-[[ -f "$office_home/skills/academic-pptx/SKILL.md"
-  && -f "$office_home/skills/show-me/SKILL.md"
+[[ ! -e "$office_home/skills/academic-pptx"
   && ! -e "$office_home/skills/slide-maker"
   && ! -e "$profile_home/skills/academic-pptx"
   && ! -e "$HOME/.claude/skills/academic-pptx" ]] \
-  || fail 'Office skills were missing, chart builder was enabled, or isolation failed'
+  || fail 'lifecycle setup installed profile-selected skills outside canonical composition'
 "$command_path" doctor office >"$fixture_root/office-doctor.out" || fail 'Office doctor failed'
 "$command_path" inventory office --json | jq -e \
   '.readiness == "healthy" and .plugins == ["document-skills@anthropic-agent-skills"]' >/dev/null \
@@ -1210,16 +1275,19 @@ charts_home="$HOME/.local/share/trellage/profiles/claude/office-charts/home"
 : >"$FAKE_CLAUDE_LOG"
 ANTHROPIC_API_KEY=must-not-leak GH_TOKEN=must-not-leak \
   FAKE_CLAUDE_ENV_DUMP="$fixture_root/office-launch.env" \
-  "$command_path" office -p 'Office contract' >/dev/null || fail 'Office launch failed'
+  trx_run_claude office -p 'Office contract' >/dev/null || fail 'Office launch failed'
 if grep -q '^TRELLAGE_CLAUDE_PROFILE_SKILLS=' "$fixture_root/office-launch.env"; then
   fail 'Office skill selection leaked into child launchers'
 fi
-jq -se --arg home "$office_home" '
-  all(.[]; .configDir == $home and .apiKey == "unset" and .gh == "unset")
-  and all(.[]; .args[0] != "plugin")
-  and any(.[]; .args[-2:] == ["-p", "Office contract"])
+jq -se '
+  (.[-1].configDir | contains("/native-run/compositions/claude-"))
+  and (.[-1].configDir | contains("/generations/"))
+  and .[-1].apiKey == "unset"
+  and .[-1].gh == "unset"
+  and (.[-1].args | index("--plugin-dir")) != null
+  and (.[-1].args | index("Office contract")) != null
 ' "$FAKE_CLAUDE_LOG" >/dev/null \
-  || fail 'Office launch leaked credentials, reinstalled plugins, or used the wrong home'
+  || fail 'Office launch leaked credentials, omitted the plugin, or used the wrong home'
 : >"$office_home/.fixture-document-disabled"
 jq '.enabledPlugins["document-skills@anthropic-agent-skills"] = false' \
   "$office_home/settings.json" >"$fixture_root/office-disabled-settings.json"
@@ -1232,20 +1300,27 @@ mv "$fixture_root/office-disabled-settings.json" "$office_home/settings.json"
 [[ ! -e "$office_home/.fixture-document-disabled" ]] || fail 'Office repair did not enable plugin'
 cp "$office_home/plugins/installed_plugins.json" "$fixture_root/office-registry.json"
 printf '{}\n' >"$office_home/plugins/installed_plugins.json"
-"$command_path" office -p 'must not launch' \
-  >"$fixture_root/office-plugin-invalid.out" 2>&1 && fail 'Office accepted invalid plugin inventory'
+office_invalid_hash="$(profile_tree_hash "$office_home")"
+if trx_run_claude office -p 'reject invalid lifecycle plugin inventory' \
+  >"$fixture_root/office-plugin-invalid.out" 2>&1; then
+  fail 'canonical Office launch accepted invalid lifecycle plugin inventory'
+fi
+[[ "$(profile_tree_hash "$office_home")" == "$office_invalid_hash" ]] \
+  || fail 'canonical Office launch mutated invalid lifecycle plugin inventory'
 cp "$fixture_root/office-registry.json" "$office_home/plugins/installed_plugins.json"
 jq '.enabledPlugins["document-skills@anthropic-agent-skills"] = false' \
   "$office_home/settings.json" >"$fixture_root/office-disabled-settings.json"
 mv "$fixture_root/office-disabled-settings.json" "$office_home/settings.json"
-FAKE_CLAUDE_PLUGIN_FAIL=1 "$command_path" office -p 'must not launch' \
-  >"$fixture_root/office-plugin-failure.out" 2>&1 && fail 'Office ignored plugin management failure'
-"$command_path" repair office >/dev/null || fail 'Office recovery after plugin failure failed'
+trx_run_claude office -p 'repair disabled lifecycle plugin' \
+  >"$fixture_root/office-plugin-repair.out" 2>&1 \
+  || fail 'canonical Office launch did not repair disabled lifecycle plugin state'
+"$command_path" doctor office >/dev/null || fail 'canonical Office launch left the plugin unhealthy'
 "$command_path" skills-update office >/dev/null || fail 'Office cached skills update failed'
 "$command_path" setup office-charts >"$fixture_root/charts-setup.out" || fail 'chart profile setup failed'
-[[ -f "$charts_home/skills/academic-pptx/SKILL.md"
-  && -f "$charts_home/skills/slide-maker/SKILL.md"
-  && ! -e "$office_home/skills/slide-maker" ]] || fail 'chart builder was not opt-in and isolated'
+[[ ! -e "$charts_home/skills/academic-pptx"
+  && ! -e "$charts_home/skills/slide-maker"
+  && ! -e "$office_home/skills/slide-maker" ]] \
+  || fail 'lifecycle setup installed chart profile skills outside canonical composition'
 "$command_path" doctor office-charts >/dev/null || fail 'chart profile doctor failed'
 "$uninstaller" >"$fixture_root/uninstall.out" || fail 'uninstall failed'
 [[ ! -e "$runtime_root" ]] || fail 'uninstaller left runtime'

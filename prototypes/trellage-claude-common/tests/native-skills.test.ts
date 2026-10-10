@@ -968,7 +968,7 @@ test("Codex YouTube management bypasses Varlock and rejects management verbs as 
   )
   succeeds(run(fixture, ["skills-update", "youtube"]))
   await verifyTarget(fixture.youtubeCache, profile.targets[0].target)
-  fails(run(fixture, ["--native-auth", "skills-update"]), /Usage:/)
+  fails(run(fixture, ["--native-auth", "skills-update"]), /use trx run codex PROFILE/)
   await noExternalCalls(fixture)
 })
 

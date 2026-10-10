@@ -16,9 +16,6 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  picx [PI_ARGS...]
-  picx default [PI_ARGS...]
-  picx [default] --headless-policy no-user-input [PI_ARGS...]
   picx list [--json]
   picx inventory default --json
   picx setup [default]
@@ -29,7 +26,7 @@ Usage:
   picx update [--check] [default]
   picx harness-version
 
-Bare picx invocations use the default profile.
+Launch with `trx run pi default`.
 EOF
 }
 
@@ -1132,99 +1129,6 @@ wait_for_launch_child() {
   done
 }
 
-launch_pi() {
-  local version binary status extension_context verified_headless_version
-  local launch_args=()
-
-  launch_child_pid=''
-  launch_pending_signal=''
-  launch_cancel_status=0
-  trap 'forward_launch_signal HUP' HUP
-  trap 'forward_launch_signal INT' INT
-  trap 'forward_launch_signal TERM' TERM
-
-  if [[ ! -f "$profile_marker" \
-    || ( ! -f "$receipt_file" && ! -f "$legacy_version_file" ) ]]; then
-    setup_profile >/dev/null
-    if cancel_pending_launch; then
-      return "$launch_cancel_status"
-    fi
-  fi
-  version="$(read_installed_version)"
-  ensure_managed_profile "$version"
-  ensure_floating_skills
-  verify_profile_assets
-  if cancel_pending_launch; then
-    return "$launch_cancel_status"
-  fi
-  binary="$(ensure_installed_binary "$version")"
-  verify_binary_version "$binary" "$version"
-  doctor_local
-  parse_launch_arguments "$@"
-  if [[ "$launch_headless_policy" == no-user-input ]]; then
-    verified_headless_version="$(tested_headless_version "$profile_key")" \
-      || die "--headless-policy no-user-input has no verified Pi version for profile $profile_key"
-    [[ "$version" == "$verified_headless_version" ]] \
-      || die "--headless-policy no-user-input is verified only for Pi $verified_headless_version; installed version is $version"
-  fi
-  extension_context="$(
-    jq -r '
-      "This picx profile has exactly these Pi extensions installed, in order:",
-      (.profiles.default.extensions
-        | to_entries[]
-        | "\(.key + 1). \(.value.name) (`\(.value.package)`)"),
-      "When asked what extensions are installed, report this ordered list. Do not report editor or browser extensions instead."
-    ' "$catalog"
-  )"
-  if [[ -n "${TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT:-}" ]]; then
-    [[ -f "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" && ! -L "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md" ]] || die 'unsafe selected instructions'
-    extension_context+=$'\n\n'"$(cat "$TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT/always-on.md")"
-  fi
-  launch_args=(
-    --session-dir "$profile_session_dir"
-    --provider "$provider"
-    --model "$model_id"
-    --thinking medium
-    --append-system-prompt "$extension_context"
-  )
-  if [[ "$launch_headless_policy" == no-user-input ]]; then
-    launch_args+=(--exclude-tools ask_question)
-  fi
-  if [[ "${#launch_forwarded_args[@]}" -gt 0 ]]; then
-    launch_args+=("${launch_forwarded_args[@]}")
-  fi
-
-  env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
-    -u OPENAI_API_KEY -u OPENAI_BASE_URL -u OPENAI_API_BASE \
-    -u OPENAI_ORG_ID -u OPENAI_ORGANIZATION -u OPENAI_PROJECT \
-    -u AZURE_OPENAI_API_KEY -u AZURE_OPENAI_ENDPOINT \
-    -u AZURE_OPENAI_API_VERSION -u NODE_OPTIONS -u NODE_PATH \
-    -u NODE_COMPILE_CACHE \
-    PI_CODING_AGENT_DIR="$agent_root" \
-    PI_SKIP_VERSION_CHECK=1 \
-    PI_TELEMETRY=0 \
-    COPILOT_MODELS_PATH="$profile_models_catalog" \
-    "$binary" "${launch_args[@]}" &
-  launch_child_pid=$!
-  if [[ -n "$launch_pending_signal" ]]; then
-    forward_launch_signal "$launch_pending_signal"
-    launch_pending_signal=''
-  fi
-  if wait_for_launch_child; then
-    status=0
-  else
-    status=$?
-  fi
-  if [[ "$launch_cancel_status" -ne 0 ]]; then
-    status="$launch_cancel_status"
-  fi
-  launch_child_pid=''
-  launch_pending_signal=''
-  launch_cancel_status=0
-  trap - HUP INT TERM
-  return "$status"
-}
-
 run_for_selection() {
   local selection="$1" callback="$2"
 
@@ -1308,12 +1212,9 @@ case "$command_name" in
     print_harness_version_json
     ;;
   default)
-    select_profile "$command_name"
-    shift
-    launch_pi "$@"
+    die 'this private profile manager cannot launch agents; use trx run pi default'
     ;;
   *)
-    select_profile default
-    launch_pi "$@"
+    die 'this private profile manager cannot launch agents; use trx run pi default'
     ;;
 esac

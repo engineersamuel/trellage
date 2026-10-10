@@ -1,15 +1,14 @@
 # Trellage Native profile router
 
 **Trellage Native** is the host-native profile family. Its `trx` router
-discovers the installed launchers `agx`, `cpx`, `cdx`, `cldx`, `fmx`,
-`jcx`, `omp`, `picx`, and `prx`,
-validates each launcher's machine-readable catalog, and presents one
+uses canonical harness adapters behind `trx run`, reads managed profile
+catalogs for lifecycle operations, and presents one
 flat interactive list.
 
 ## Install
 
-Install the ten native launchers first. Their commands must resolve from
-`PATH` to their owned runtimes under `~/.local/share/trellage/`.
+Install the managed Native runtimes, then install `trx`. Retired launcher
+aliases are not public commands.
 
 Prerequisites: Bash, the pinned Bun runtime, and `jq`. External agent tools can
 also require Node.js. Install the root source workspace dependencies with
@@ -50,10 +49,13 @@ or unrelated paths instead of replacing them.
 
 ```sh
 trx
-trx --profile agency
-trx run cpx hve -- --prompt "Reply exactly OK"
-trx run cpx tufte-vdqi
-trx run cldx default
+trx run agency azure
+trx run copilot hve -- --prompt "Reply exactly OK"
+trx run copilot tufte-vdqi
+trx run fx
+trx run fx ask "explain this repository"
+trx run fx --plan
+trx run claude default
 trx --model gpt-5.6-terra
 trx list
 trx list --json
@@ -83,29 +85,27 @@ paths stop the launch. Installed
 
 ```sh
 mise run trx
-mise run trx -- --profile agency
-mise run trx -- run cpx tufte-vdqi
-mise run trx -- run cldx default
+mise run trx -- run agency azure
+mise run trx -- run copilot tufte-vdqi
+mise run trx -- run claude default
 mise run trx -- --model gpt-5.6-terra
 mise run trx -- list --json
 mise run trx -- guide --intent "Write a technical LinkedIn post"
 mise run trx -- guide "$(cat /tmp/large-prompt.md)" --ui-variant split
 ```
 
-`mise run trx -- --profile agency` directly launches
-`agx/trellage-azure` without opening the picker. Remaining arguments are
-forwarded to Agency's managed Copilot CLI.
+`mise run trx -- run agency azure` directly launches Agency without opening
+the picker. Remaining arguments are forwarded to Agency's managed Copilot CLI.
 
 `trx list` prints one `launcher/profile` and catalog description per line.
 `trx list --json` emits a schema-versioned `profiles` array whose entries contain
 `launcher`, `harness`, `name`, `description`, `guide`, `headless`, `sandbox`,
 and `herdrCompatibility`. The nested guide is projected from the installed
 Markdown registry; Markdown remains the authored source. `trx` copies each
-launcher's `headless` object unchanged;
-it does not infer headless support from launcher names. Both forms are
-non-interactive and work without a TTY. They validate all ten owned launchers
-and their catalogs before producing output, so missing, redirected, or invalid
-launchers fail closed.
+harness catalog's `headless` object unchanged. It does not infer headless
+support from harness names. Both forms are non-interactive and work without a
+TTY. They validate canonical catalog data without requiring profile-manager
+executables.
 Firstmate entries can also contain validated `orchestration` metadata for
 their fixed source, task namespace, worker policy, and text-inbox protocol.
 This metadata is not a headless capability or a live readiness result.
@@ -326,9 +326,8 @@ created. Current-terminal launches reconnect all streams to the controlling
 terminal, including when the original intent came from stdin.
 On macOS, redirected streams reconnect to the actual terminal device rather
 than the `/dev/tty` proxy, which does not support `kqueue` input polling.
-Optimize uses the same interactive startup arguments in the current terminal
-and Herdr: `cpx PROFILE -i PROMPT`, `cdx PROFILE -- PROMPT`, and
-`cldx PROFILE -- PROMPT`. A profile's non-interactive (`headless.prompt`)
+Optimize uses the same canonical startup commands in the current terminal and
+Herdr. A profile's non-interactive (`headless.prompt`)
 capability does not disable these interactive launches.
 Herdr handoffs preserve backslashes and source quotations in both Fish and
 POSIX shells.
@@ -390,7 +389,7 @@ confirmation before current-terminal, Herdr-pane, or Herdr-worktree handoff.
 Before a Sandbox handoff, the guide checks the development resolution and
 image. It automatically builds a missing or stale profile and confirms the
 repaired state before it starts the destination session.
-For `cpx` and `cdx` Herdr handoffs, the selected prompt is queued in the
+For Copilot and Codex Herdr handoffs, the selected prompt is queued in the
 harness's initial interactive command. Copilot workspace-trust and Codex
 hook-trust requests cannot consume a later prompt injection. Trust decisions
 remain interactive.
@@ -398,7 +397,7 @@ remain interactive.
 ### Firstmate guide delivery
 
 The guide keeps the confirmed project and workflow separate from destination
-placement. `fmx` starts Firstmate in its pinned runtime, not in the caller's
+placement. `trx run firstmate` starts Firstmate in its pinned runtime, not in the caller's
 repository. A new Herdr worktree does not become a Firstmate worker worktree
 and does not transfer staged, unstaged, or untracked changes.
 
@@ -413,7 +412,7 @@ instance before preparation or delivery. It recommends the named instance for
 the captured entry worktree, or offers explicit creation when none exists.
 Joining another instance or the shared legacy fleet requires confirmation.
 It does not replace the worktree association or the confirmed task target.
-Unqualified `fmx PROFILE` commands retain their legacy shared-fleet meaning.
+Unqualified `trx run firstmate PROFILE` commands select the shared legacy fleet.
 
 With a compatible installed inbox API, queue items for one owned Firstmate
 instance go to one fleet. Several instances can use the `default` template
@@ -433,14 +432,14 @@ hook alone supplies context; it does not make an empty Claude session act.
 Readiness must permit the selected action. Source integrity alone is not
 enough, and a healthy running fleet is not an unconditional busy error.
 Resolve installation consent before unattended startup. Older installed
-launchers retain their manual launch path and do not acquire new capabilities
-from their names alone.
+profile managers retain only maintenance commands. They cannot launch agents;
+all starts and recoveries enter through `trx run firstmate PROFILE`.
 The initial action focus follows readiness, so a valid Recover or Send action
 is highlighted instead of a blocked Start. Focus is not approval.
 Only one instance can claim the current terminal for startup or recovery;
 other instances need separate destinations or an existing fleet for Send.
 
-When the selected backend advertises preparation, entering or refreshing
+When the selected lifecycle manager advertises preparation, entering or refreshing
 Firstmate action selection prepares a new request's confirmed owned instance
 automatically. Safe idle repairs and reuse of the matching installed tool
 cache do not require another terminal command. Preparation never starts or
@@ -454,7 +453,7 @@ Genuinely missing managed tools have an in-menu installation plan with exact
 versions, destination, sources and side-state paths. Installation needs
 explicit approval of that plan; old setup consent does not approve new
 downloads, and approval for one instance cannot be used for another.
-The backend rejects a changed source revision or prerequisite
+The lifecycle manager rejects a changed source revision or prerequisite
 lock, destination or effective package source before mutation. Cancellation
 keeps the prompt, workflow and target intact and does not select a fleet
 action. The guide reports skipped checks
@@ -480,7 +479,7 @@ stored in their artifact caches.
 Live instance use requires compatible Native, Claude, and shared-skills writer
 components installed together while affected fleets are idle. An older
 installer or writer can mutate before checking a new registry; one updated
-`fmx` binary is not sufficient. Do not remove compatibility records or bypass
+The private Firstmate manager is not sufficient. Do not remove compatibility records or bypass
 the upgrade diagnostic.
 
 Both profiles also provide fleet-status, ordinary project-memory, and
@@ -516,7 +515,7 @@ harness version observations and checks skill availability without updating
 installed runtimes, profile skills, or images. Source checks may use the network.
 Confirmation is disabled while discovery runs.
 
-Discovery uses `LAUNCHER skills-check PROFILE` for Native profiles,
+Discovery uses `trx skills-check HARNESS PROFILE` for Native profiles,
 `trellage skills-check PROFILE` for Containers, and `trx skills check --json`
 for the shared caches. Installed launchers and the compiler must support
 these commands; old installations produce incomplete-check diagnostics.
@@ -556,12 +555,11 @@ Prime, and Headlong. Existing version pins are preserved. Failed package
 resolution is reported as a failure, not as an update using the old harness.
 
 Native updates remain separate from container updates. Copilot, Codex,
-and Claude use `cpx harness-update`, `cdx harness-update`,
-and `cldx harness-update` once per shared host binary. Selecting either Codex
+and Claude use `trx harness-update HARNESS` once per shared host binary. Selecting either Codex
 `youtube` or `superpowers` updates the same Codex binary for all native Codex profiles.
 Grok updates the stable channel. Oh My Pi, jcode, Pi Coding Agent, and Prime
-use their launcher's `update` command once per shared runtime. Firstmate
-runs a scoped `fmx update PROFILE --instance UUID` for each confirmed named
+use `trx upgrade HARNESS PROFILE` once per shared runtime. Firstmate
+runs a scoped `trx upgrade firstmate PROFILE --instance UUID` for each confirmed named
 instance to apply its profile's catalog-pinned source and overlay. Legacy
 rows retain their legacy selector. The confirmation names the actual instance
 targets; filters do not change their identity. Native launchers without a
@@ -645,20 +643,17 @@ The bare picker requires stdin and stderr attached to a TTY; a non-TTY
 invocation exits `1`.
 
 `trx run LAUNCHER PROFILE [-- ARGS...]` is the non-interactive routing
-surface. It performs the same owned-runtime discovery and full catalog
-validation as the picker, rejects unknown launcher/profile pairs, then
-executes the exact owned launcher with the selected profile and unchanged
+surface. It performs the same canonical catalog validation as the picker,
+rejects unknown harness/profile pairs, then executes `trx run` with the selected profile and unchanged
 arguments. Arguments must follow `--` so router options cannot be confused
 with launcher options.
 
 The picker’s **HARNESS** and **PROFILE** columns are display labels, not a
 single command-line profile name. Use the exact **Run** command in the selected
 row’s detail pane. For example, `copilot / tufte-vdqi` runs as
-`trx run cpx tufte-vdqi`, while `claude / default` runs as
-`trx run cldx default`. From this repository, prefix the same route with
-`mise run trx --`, such as `mise run trx -- run cpx tufte-vdqi`.
-`--profile agency` is the only direct profile alias. Use `trx run` for exact
-launcher/profile pairs.
+`trx run copilot tufte-vdqi`, while `claude / default` runs as
+`trx run claude default`. From this repository, prefix the same route with
+`mise run trx --`, such as `mise run trx -- run copilot tufte-vdqi`.
 
 The first setup or launch through any native launcher fetches the
 `native-common` bundle from the approved repositories' current default
@@ -683,18 +678,17 @@ without this command need a normal launcher refresh.
 These commands do not require launcher discovery, bootstrap development
 dependencies, or start an agent.
 
-Rows show `harness / profile`. The highlighted detail pane shows the resolved
-launcher alias, absolute binary path, and exact JSON argument vector—including
+Rows show `harness / profile`. The highlighted detail pane shows the canonical
+command, absolute router path, and exact JSON argument vector, including
 empty or space-containing arguments—before the full catalog metadata and
 readiness status. Diagnostic inventory remains available directly from
 launchers that support `inventory PROFILE --json`; `trx` does not collect it on
 the launch path. Inventory can report `busy` while a launcher owns its mutation
 lock. `doctor` remains the full runtime health diagnostic.
 
-Legacy `trx` routing adds no containment. `cpx`, `cdx`, `cldx`, `fmx`, `jcx`, `omp`,
-`picx`, and `prx` still run their selected agents directly on the host with
-the permissions and safety behavior documented by each launcher. Use only
-trusted repositories, profiles, plugins, and arguments.
+Trellage Native adds no containment. Canonical harnesses run their selected
+agents directly on the host with the permissions and safety behavior documented
+for each harness. Use only trusted repositories, profiles, plugins, and arguments.
 
 ### Optional Jev key
 

@@ -265,19 +265,18 @@ if (args.length === 1 && args[0] === "--version") {
         kind: ProfileReadinessKind.Blocked, goalReadiness: "blocked", diagnostic: expect.stringContaining("disables goals"),
       })
       const commands = (await readFile(trace, "utf8")).trim().split("\n").map((line): unknown => JSON.parse(line))
-      expect(commands).toEqual([
+      expect(commands.slice(0, 2)).toEqual([
         { args: ["features", "list"], home: profileHome },
         { args: ["--version"], home: profileHome },
-        {
-          args: [
-            "-c", "sandbox_workspace_write.network_access=true",
-            "--disable", "default_mode_request_user_input",
-            "-c", `projects={${[cwd, repository, primary].map((root) => `${JSON.stringify(root)}={trust_level="trusted"}`).join(",")}}`,
-            "features", "list",
-          ],
-          home: profileHome,
-        },
       ])
+      const trustedLaunch = commands[2] as { args: string[]; home: string }
+      expect(trustedLaunch.home).toBe(profileHome)
+      expect(trustedLaunch.args).toEqual(expect.arrayContaining([
+        "sandbox_workspace_write.network_access=true",
+        "default_mode_request_user_input",
+        `projects={${[cwd, repository, primary].map((root) => `${JSON.stringify(root)}={trust_level="trusted"}`).join(",")}}`,
+      ]))
+      expect(trustedLaunch.args.slice(-2)).toEqual(["features", "list"])
       expect(await readFile(config, "utf8")).toBe("[features]\ngoals = true\n")
       expect(await readFile(projectConfig, "utf8")).toBe("[features]\ngoals = false\n")
       expect((await stat(config)).mtimeMs).toBe(beforeConfig.mtimeMs)

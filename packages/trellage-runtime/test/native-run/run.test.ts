@@ -5,10 +5,21 @@ import {
   claudeAdapter,
   codexAdapter,
   copilotAdapter,
+  fxAdapter,
   grokAdapter,
+  jcodeAdapter,
   type LaunchInput,
 } from "../../src/native-run/adapters.ts"
-import { parseRunArguments, piExtensionsNeedUpdate, prepareRun, resumeCommand, runNative, type RunDependencies, type Spawner } from "../../src/native-run/run.ts"
+import {
+  parseRunArguments,
+  piExtensionsNeedUpdate,
+  prepareRun,
+  resumeCommand,
+  runNative,
+  spawnInherited,
+  type RunDependencies,
+  type Spawner,
+} from "../../src/native-run/run.ts"
 import { createSourceResolver, gitSourceTransport } from "../../src/native-run/source.ts"
 import { createSelectionHistory, scopeKeysFor } from "../../src/native-run/history.ts"
 import { cleanupFixtures, createSourceRepo, fixturePaths, git, skillMarkdown, tempRoot } from "./fixtures.ts"
@@ -65,19 +76,199 @@ skills = [{ source = "superpowers", names = ["brainstorming", "writing-plans"] }
 const base = { dryRun: false, allowUnprovenIsolation: false, forwardedArgs: [] as string[] }
 
 test("parses harness, stacked profiles, overrides and forwarded arguments", () => {
-  expect(parseRunArguments(["pi", "office", "superpowers", "--model", "m", "--effort=high", "--", "-p", "hi"])).toEqual({
-    harness: "pi",
-    profiles: ["office", "superpowers"],
-    model: "m",
-    effort: "high",
-    dryRun: false,
-    allowUnprovenIsolation: true,
-    noAlways: false,
-    forwardedArgs: ["-p", "hi"],
-  })
+  expect(parseRunArguments(["pi", "office", "superpowers", "--model", "m", "--effort=high", "--", "-p", "hi"])).toEqual(
+    {
+      harness: "pi",
+      profiles: ["office", "superpowers"],
+      model: "m",
+      effort: "high",
+      dryRun: false,
+      allowUnprovenIsolation: true,
+      noAlways: false,
+      plan: false,
+      forwardedArgs: ["-p", "hi"],
+    },
+  )
   expect(parseRunArguments(["copilot", "--require-proven-isolation"]).allowUnprovenIsolation).toBe(false)
   expect(() => parseRunArguments(["pi", "--bogus"])).toThrow(/unknown option/)
   expect(() => parseRunArguments([])).toThrow(/requires a harness/)
+  expect(parseRunArguments(["fx", "default", "--plan", "--", "ask", "hello"])).toMatchObject({
+    harness: "fx",
+    profiles: ["default"],
+    plan: true,
+    forwardedArgs: ["ask", "hello"],
+  })
+})
+
+test("Fx uses the canonical adapter with shared host context and plan defaults", async () => {
+  const { dependencies, root } = await world()
+  const normal = await prepareRun({ ...base, harness: "fx", profiles: ["default"] }, dependencies())
+  expect(normal.launch.command).toBe("fx")
+  expect(normal.launch.args).toEqual(["--effort", "medium"])
+  expect(normal.launch.env).toMatchObject({
+    FX_AUTO_UPGRADE: "0",
+    FX_PROVIDER: "trellage-copilot-proxy",
+    FX_MODEL: "gpt-6.1-sol",
+  })
+  expect(normal.launch.env.HOME).toBeUndefined()
+  const planned = await prepareRun({ ...base, harness: "fx", profiles: ["default"], plan: true }, dependencies())
+  expect(planned.launch.args).toEqual(["--effort", "max"])
+  expect(planned.launch.env.FX_MODEL).toBe("gpt-6-astra")
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: planned.layout,
+    plan: planned.plan,
+    model: "gpt-6-astra",
+    effort: "max",
+    forwardedArgs: [],
+    environment: { HOME: root },
+    workspace: root,
+  }
+  await fxAdapter.beforeLaunch!(input)
+  const settings = JSON.parse(await readFile(path.join(root, ".fx", "settings.json"), "utf8"))
+  expect(settings.providers["trellage-copilot-proxy"].base_url).toBe("http://127.0.0.1:8080/v1")
+})
+
+test("canonical adapters launch agent executables instead of retired profile wrappers", async () => {
+  const { dependencies } = await world()
+  const expected: Readonly<Record<string, string>> = {
+    agency: "agency",
+    firstmate: "claude",
+    jcode: "jcode",
+    omp: "omp",
+    prime: "prime-agent",
+  }
+  for (const [harness, command] of Object.entries(expected)) {
+    const profile = harness === "agency" ? "azure" : "default"
+    const prepared = await prepareRun(
+      { ...base, harness, profiles: [profile], dryRun: true, allowUnprovenIsolation: true },
+      dependencies(),
+    )
+    expect(prepared.launch.command).toBe(command)
+    expect(prepared.launch.command).not.toMatch(/\/(?:agx|fmx|jcx|prx)$/u)
+  }
+})
+
+test("JCode resolves its managed private mise executable", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "jcx")
+  const managed = path.join(root, "managed-jcode")
+  await writeFile(managed, "#!/bin/sh\n", { mode: 0o755 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+test "$TRELLAGE_TRX_JCODE_ADAPTER" = 1
+test "$1" = _trx-executable
+printf '%s\\n' ${JSON.stringify(managed)}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "fx", profiles: ["default"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    environment: { HOME: root, PATH: "/usr/bin:/bin", TRELLAGE_JCODE_LIFECYCLE_BIN: lifecycle },
+    workspace: work,
+  }
+  expect((await jcodeAdapter.resolveLaunch!(input, prepared.launch)).command).toBe(managed)
+})
+
+test("Claude admission loads the validated lifecycle plugin directory", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "cldx")
+  const plugin = path.join(root, "document-plugin")
+  await mkdir(plugin)
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+test "$TRELLAGE_TRX_CLAUDE_ADAPTER" = 1
+test "$1" = _trx-admit
+printf '{"pluginDir":%s}\\n' ${JSON.stringify(JSON.stringify(plugin))}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "claude", profiles: ["office"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "opusplan",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    environment: { HOME: root, PATH: "/usr/bin:/bin", TRELLAGE_CLAUDE_LIFECYCLE_BIN: lifecycle },
+  }
+  const launch = await claudeAdapter.resolveLaunch!(input, prepared.launch)
+  expect(launch.args.slice(-2)).toEqual(["--plugin-dir", plugin])
+})
+
+test("Copilot admission bridges lifecycle plugins, hooks, and agents into the generated home", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "cpx")
+  const installedPlugins = path.join(root, "installed-plugins")
+  await mkdir(installedPlugins)
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+test "$TRELLAGE_TRX_COPILOT_ADAPTER" = 1
+test "$1" = _trx-admit
+printf '%s\\n' '${JSON.stringify({ installedPlugins: "INSTALL_ROOT", settings: { enabledPlugins: { "hve-core@hve-core": true }, hooks: { sessionStart: [] }, subagents: { reviewer: { description: "review" } } } }).replace("INSTALL_ROOT", installedPlugins)}'
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "fx", profiles: ["default"] }, dependencies())
+  const copilotPlan = { ...prepared.plan, harness: "copilot", profiles: ["preset-copilot-hve"] }
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: copilotPlan,
+    planMode: false,
+    model: "gpt-6-astra",
+    effort: "low",
+    forwardedArgs: [],
+    workspace: work,
+    environment: { HOME: root, PATH: "/usr/bin:/bin", TRELLAGE_COPILOT_LIFECYCLE_BIN: lifecycle },
+  }
+  await copilotAdapter.resolveLaunch!(input, prepared.launch)
+  expect(await readlink(path.join(prepared.layout.generationPath, "installed-plugins"))).toBe(installedPlugins)
+  const settings = JSON.parse(await readFile(path.join(prepared.layout.generationPath, "settings.json"), "utf8"))
+  expect(settings.enabledPlugins["hve-core@hve-core"]).toBe(true)
+  expect(settings.hooks).toEqual({ sessionStart: [] })
+  expect(settings.subagents.reviewer.description).toBe("review")
+})
+
+test("Claude applies opusplan defaults and real plan-mode arguments", async () => {
+  const { dependencies } = await world()
+  const normal = await prepareRun({ ...base, harness: "claude", profiles: ["default"] }, dependencies())
+  expect(normal.launch.args).toEqual([
+    "--dangerously-skip-permissions",
+    "--permission-mode",
+    "bypassPermissions",
+    "--disallowedTools",
+    "AskUserQuestion",
+    "--model",
+    "opusplan",
+    "--effort",
+    "medium",
+  ])
+  const planned = await prepareRun({ ...base, harness: "claude", profiles: ["default"], plan: true }, dependencies())
+  expect(planned.launch.args).toEqual([
+    "--allow-dangerously-skip-permissions",
+    "--effort",
+    "max",
+    "--disallowedTools",
+    "AskUserQuestion",
+    "--model",
+    "opusplan",
+    "--permission-mode",
+    "plan",
+  ])
 })
 
 test("parses resume requests and prints the matching resume command", () => {
@@ -91,6 +282,17 @@ test("parses resume requests and prints the matching resume command", () => {
   expect(codexAdapter.resumeArgs({ kind: "continue" })).toEqual(["resume", "--last"])
   expect(copilotAdapter.resumeArgs({ kind: "pick", id: "x" })).toEqual(["--resume=x"])
   expect(grokAdapter.resumeArgs({ kind: "pick", id: "x" })).toEqual(["--resume", "x"])
+})
+
+test("canonical launches preserve signal exit status", async () => {
+  expect(
+    await spawnInherited(
+      { command: "/bin/sh", args: ["-c", "kill -TERM $$"], env: {} },
+      process.env,
+      process.cwd(),
+      () => {},
+    ),
+  ).toBe(143)
 })
 
 test("Grok publishes a proxy-only home and keeps conversation state across generations", async () => {
@@ -129,7 +331,9 @@ test("Grok publishes a proxy-only home and keeps conversation state across gener
   expect(await readFile(path.join(prepared.layout.generationPath, "sandbox.toml"), "utf8")).toContain(
     `[profiles.trellage-workspace]\nextends = "workspace"\nread_write = [${JSON.stringify(prepared.layout.generationPath)}, ${JSON.stringify(path.join(prepared.layout.ownerHome, "state"))}]`,
   )
-  expect(await readFile(path.join(prepared.layout.generationPath, "requirements.toml"), "utf8")).toContain("fail_closed = true")
+  expect(await readFile(path.join(prepared.layout.generationPath, "requirements.toml"), "utf8")).toContain(
+    "fail_closed = true",
+  )
   expect(await readlink(path.join(prepared.layout.generationPath, "sessions"))).toBe(
     path.join(prepared.layout.ownerHome, "state", "sessions"),
   )
@@ -176,9 +380,9 @@ test("Grok GitHub bridge preserves explicit credentials and validates opt-out", 
   })
   expect(await grokAdapter.beforeLaunch!(input({ GH_TOKEN: "explicit" }))).toEqual({})
   expect(await grokAdapter.beforeLaunch!(input({ TRELLAGE_GROK_GH_AUTH_BRIDGE: "0" }))).toEqual({})
-  await expect(
-    grokAdapter.beforeLaunch!(input({ TRELLAGE_GROK_GH_AUTH_BRIDGE: "invalid" })),
-  ).rejects.toThrow(/must be 0 or 1/)
+  await expect(grokAdapter.beforeLaunch!(input({ TRELLAGE_GROK_GH_AUTH_BRIDGE: "invalid" }))).rejects.toThrow(
+    /must be 0 or 1/,
+  )
 })
 
 test("conversation directories are links to per-composition state that survives a new generation", async () => {
@@ -198,8 +402,17 @@ test("a stacked Pi composition publishes only the selected skills and launches P
   }
   const status = await runNative({ ...base, harness: "pi", profiles: ["superpowers", "office"] }, dependencies(spawner))
   expect(status).toBe(0)
-  expect(launched!.args.slice(0, 6)).toEqual(["--no-skills", "--no-extensions", "--extension", "builtin:codemode", "--no-prompt-templates", "--no-approve"])
-  const skillArguments = launched!.args.flatMap((argument, index, all) => (all[index - 1] === "--skill" ? [argument] : []))
+  expect(launched!.args.slice(0, 6)).toEqual([
+    "--no-skills",
+    "--no-extensions",
+    "--extension",
+    "builtin:codemode",
+    "--no-prompt-templates",
+    "--no-approve",
+  ])
+  const skillArguments = launched!.args.flatMap((argument, index, all) =>
+    all[index - 1] === "--skill" ? [argument] : [],
+  )
   expect(skillArguments.map((entry) => path.basename(entry))).toEqual(["brainstorming", "powerpoint", "writing-plans"])
   expect(launched!.env.PI_CODING_AGENT_DIR).toBe(path.dirname(path.dirname(skillArguments[0]!)))
   expect((await readdir(path.join(launched!.env.PI_CODING_AGENT_DIR!, "skills"))).sort()).toEqual([
@@ -233,7 +446,9 @@ test("a floating source update creates a new generation while the old one stays"
   expect(second.plan.generationId).not.toBe(first.plan.generationId)
   expect(second.layout.ownerHome).toBe(first.layout.ownerHome)
   expect((await readdir(path.join(first.layout.ownerHome, "generations"))).length).toBe(2)
-  expect(await readFile(path.join(second.layout.generationPath, "skills/powerpoint/SKILL.md"), "utf8")).toContain("changed")
+  expect(await readFile(path.join(second.layout.generationPath, "skills/powerpoint/SKILL.md"), "utf8")).toContain(
+    "changed",
+  )
   expect(paths.data).toBeTruthy()
 })
 
@@ -241,7 +456,10 @@ test("floating refresh checks ignore the former TTL on every profile load", asyn
   const { office, paths } = await world()
   const real = gitSourceTransport(() => office.directory)
   let checks = 0
-  const transport = { ...real, resolveRef: async (repository: string, ref: string) => (checks++, real.resolveRef(repository, ref)) }
+  const transport = {
+    ...real,
+    resolveRef: async (repository: string, ref: string) => (checks++, real.resolveRef(repository, ref)),
+  }
   let clock = new Date("2026-01-01T00:00:00Z")
   const resolver = createSourceResolver({ paths, transport, ttlSeconds: 300, now: () => clock })
   const resolveOnce = async () => {
@@ -272,7 +490,9 @@ skills = [{ source = "b", names = ["powerpoint"] }]
   await other.write({ "skills/powerpoint/SKILL.md": skillMarkdown("powerpoint", "different") })
   const repositories: Record<string, string> = { "example/office": office.directory, "example/other": other.directory }
   const deps = { ...dependencies(), transport: gitSourceTransport((repository) => repositories[repository]!) }
-  await expect(prepareRun({ ...base, harness: "pi", profiles: ["one", "two"] }, deps)).rejects.toThrow(/differs between sources/)
+  await expect(prepareRun({ ...base, harness: "pi", profiles: ["one", "two"] }, deps)).rejects.toThrow(
+    /differs between sources/,
+  )
   await expect(readdir(path.join(paths.data, "compositions"))).rejects.toThrow()
   await expect(prepareRun({ ...base, harness: "pi", profiles: ["nope"] }, deps)).rejects.toThrow(/unknown profile nope/)
 })
@@ -289,14 +509,21 @@ test("unproven harnesses refuse to launch without explicit opt-in but allow a dr
     onSpawn()
     return 0
   }
-  await runNative({ ...base, allowUnprovenIsolation: true, harness: "codex", profiles: ["office"] }, dependencies(spawner))
+  await runNative(
+    { ...base, allowUnprovenIsolation: true, harness: "codex", profiles: ["office"] },
+    dependencies(spawner),
+  )
   expect(started).toBe(true)
 })
 
 test("rejects unsupported effort values and managed isolation flags", async () => {
   const { dependencies } = await world()
-  await expect(prepareRun({ ...base, harness: "pi", profiles: [], effort: "turbo" }, dependencies())).rejects.toThrow(/does not support effort/)
-  await expect(prepareRun({ ...base, harness: "pi", profiles: [], forwardedArgs: ["--skill", "/x"] }, dependencies())).rejects.toThrow(/managed by/)
+  await expect(prepareRun({ ...base, harness: "pi", profiles: [], effort: "turbo" }, dependencies())).rejects.toThrow(
+    /does not support effort/,
+  )
+  await expect(
+    prepareRun({ ...base, harness: "pi", profiles: [], forwardedArgs: ["--skill", "/x"] }, dependencies()),
+  ).rejects.toThrow(/managed by/)
 })
 
 test("offline with no cache stops before any launch", async () => {
@@ -389,7 +616,9 @@ test("--no-always starts a clean harness and a changed instruction yields a new 
 
 test("a missing instruction file stops the launch with a clear error", async () => {
   const { dependencies } = await world(alwaysConfig)
-  await expect(prepareRun({ ...base, harness: "pi", profiles: [] }, dependencies())).rejects.toThrow(/instruction rundown: cannot read/)
+  await expect(prepareRun({ ...base, harness: "pi", profiles: [] }, dependencies())).rejects.toThrow(
+    /instruction rundown: cannot read/,
+  )
 })
 
 test("a failed Pi release refresh warns and still launches", async () => {
@@ -401,7 +630,10 @@ test("a failed Pi release refresh warns and still launches", async () => {
   const refreshed: string[] = []
   const status = await runNative(
     { ...base, harness: "pi", profiles: [] },
-    { ...dependencies(spawner), refreshHarness: async (harness) => (refreshed.push(harness), "Pi release update failed") },
+    {
+      ...dependencies(spawner),
+      refreshHarness: async (harness) => (refreshed.push(harness), "Pi release update failed"),
+    },
   )
   expect(status).toBe(0)
   expect(refreshed).toEqual(["pi"])
@@ -465,7 +697,10 @@ native-common = ["superpowers"]
 always = true
 skills = [{source = "superpowers", names = ["brainstorming", "writing-plans"]}]
 `)
-  await fixture.superpowers.write({ "skills/brainstorming/SKILL.md": "---\nname: brainstorming\ndisable-model-invocation: true\n---\n\nManual brainstorming.\n" })
+  await fixture.superpowers.write({
+    "skills/brainstorming/SKILL.md":
+      "---\nname: brainstorming\ndisable-model-invocation: true\n---\n\nManual brainstorming.\n",
+  })
   const prepared = await prepareRun({ ...base, harness: "pi", profiles: [] }, fixture.dependencies())
   const instructions = await readFile(path.join(prepared.layout.generationPath, "APPEND_SYSTEM.md"), "utf8")
   expect(instructions).toContain("writing-plans")

@@ -18,6 +18,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const guideRoot = path.join(root, "profile-guides")
 
 const expected: ProfileGuideIdentity[] = []
+expected.push({ surface: "native", launcher: "fx", profile: "default" })
 const sandboxHarnesses = new Map<string, string>()
 const prototypeEntries = await readdir(path.join(root, "prototypes"), { withFileTypes: true })
 const nativeFamilies = prototypeEntries
@@ -543,7 +544,7 @@ const compoundBodyFacts = [
     "fresh ce-compound one-shot context",
     hasCompoundBodyTermsNear(
       "/ce-compound mode:non-interactive",
-      [/\bdoes not inherit\b/u, /\bcpx\b/u, /\bconversation\b/u, /\broot cause\b/u, /\bproof\b/u, /\bcurrent tree\b/u],
+      [/\bdoes not inherit\b/u, /\bcopilot\b/u, /\bconversation\b/u, /\broot cause\b/u, /\bproof\b/u, /\bcurrent tree\b/u],
       520,
     ),
   ],
