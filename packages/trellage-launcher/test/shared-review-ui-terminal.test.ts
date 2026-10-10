@@ -23,7 +23,12 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
   const wait = async (...text: string[]) => vi.waitFor(() => {
     for (const value of text) expect(screen).toContain(value)
   }, { timeout: 8000, interval: 25 })
-  const press = async (key: string, ...text: string[]) => { child.write(key); await wait(...text) }
+  const press = async (key: string, ...text: string[]) => {
+    const previous = screen
+    child.write(key)
+    await vi.waitFor(() => expect(screen).not.toBe(previous))
+    await wait(...text)
+  }
   try {
     await wait("src/login.ts")
     await press("\r", "Choose reviewers")
@@ -51,7 +56,7 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
       expect(screen).toContain("║ › Fleet [running] ║")
       expect(screen).toContain("Read-only reviews do not authorize edits")
     }
-    assertFilled()
+    await vi.waitFor(assertFilled)
     if (process.env.REVIEW_UI_SCREEN === "1") console.log(`\n${screen}\n`)
     if (outcome === "all") {
       for (const [index, label, content] of [
@@ -64,10 +69,12 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
         [8, "Synthesis", "Waiting for streamed output"],
       ] as const) {
         await press("\t", `› ${label}`, `Tab ${index}/8`, content, "Esc cancel")
-        const lines = screen.split("\n")
-        const footer = lines.findIndex((line) => line.includes("Tab/Shift+Tab"))
-        expect(lines[footer - 1]).toBe(` ╰${"─".repeat(terminal.cols - 4)}╯`)
-        expect(screen).toContain(`║ › ${label}`)
+        await vi.waitFor(() => {
+          const lines = screen.split("\n")
+          const footer = lines.findIndex((line) => line.includes("Tab/Shift+Tab"))
+          expect(lines[footer - 1]).toBe(` ╰${"─".repeat(terminal.cols - 4)}╯`)
+          expect(screen).toContain(`║ › ${label}`)
+        })
       }
       await press("\t", "› Fleet", "fleet streamed line 000")
     }
@@ -78,37 +85,41 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
     await press("\u001b[Z", "› Fleet [running]", "fleet streamed line 000")
     child.write("\u001b[6~")
     await vi.waitFor(() => expect(screen).not.toContain("fleet streamed line 000"))
-    const before = screen.match(/fleet streamed line \d+/u)?.[0]
+    const before = await vi.waitFor(() => {
+      const value = screen.match(/fleet streamed line \d+/u)?.[0]
+      expect(value).toBeDefined()
+      return value!
+    })
     await press("\u001b[5~", "fleet streamed line 000")
-    await press("\u001b[6~", before!)
+    await press("\u001b[6~", before)
     await press("\u001b[C", "ponytail streamed line 000")
-    await press("\u001b[D", before!)
+    await press("\u001b[D", before)
     await writeFile(path.join(root, "append"), "")
-    await wait(before!)
+    await wait(before)
     terminal.resize(110, 42)
     child.resize(110, 42)
-    await wait(before!)
+    await wait(before)
     await vi.waitFor(assertFilled)
     if (process.env.REVIEW_UI_SCREEN === "1") console.log(`\n${screen}\n`)
     if (outcome === "all") {
       await wait("Architecture [running]", "Matt [running]", "Overview [running]", "Synthesis [queued]")
       await press("\u001b[Z", "› Synthesis [queued]", "Tab 8/8", "Esc cancel")
-      await press("\u001b[C", "› Fleet [running]", before!)
-      assertFilled()
+      await press("\u001b[C", "› Fleet [running]", before)
+      await vi.waitFor(assertFilled)
     }
     if (outcome === "cancelled") child.write("\u001b")
     else await writeFile(path.join(root, "finish"), outcome === "all" ? "complete" : outcome)
-    await wait(`Fleet [${outcome === "cancelled" ? "failed" : outcome === "all" ? "complete" : outcome}]`, "f findings", before!)
+    await wait(`Fleet [${outcome === "cancelled" ? "failed" : outcome === "all" ? "complete" : outcome}]`, "f findings", before)
     if (outcome === "partial") {
       await press("\u001b[Z", "› Synthesis [complete]", "Overview [incomplete]")
-      await press("\t", "› Fleet [partial]", before!)
+      await press("\t", "› Fleet [partial]", before)
     }
     await press("p", "fleet full saved evidence")
     await wait("w".repeat(104), "Review changes", "f findings")
-    await press("p", before!)
+    await press("p", before)
     terminal.resize(80, 24)
     child.resize(80, 24)
-    await wait(before!, "Esc back")
+    await wait(before, "Esc back")
     await press("p", "fleet full saved evidence", "w".repeat(74), "Review changes")
   } finally {
     child.kill()
