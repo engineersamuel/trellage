@@ -133,6 +133,7 @@ describe("ReviewApp terminal", () => {
     try {
       terminal.press("\r")
       expect(await terminal.events()).toEqual([])
+      await new Promise((resolve) => setTimeout(resolve, 50))
       terminal.press(" ")
       await terminal.waitFor("[x] Ponytail Review")
       terminal.press("\u001b[B")
