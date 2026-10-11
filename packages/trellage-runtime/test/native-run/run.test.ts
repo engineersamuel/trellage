@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { spawn } from "node:child_process"
+import { existsSync } from "node:fs"
 import { chmod, mkdir, readFile, readdir, readlink, realpath, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
@@ -398,6 +399,91 @@ while :; do :; done
       }
     }
     process.stderr.write = previousWrite
+  }
+})
+
+test("OMP admission settles and cleans up when guard child attachment fails", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-attach-failure")
+  const childPidFile = path.join(root, "omp-attach-failure.pid")
+  const terminatedFile = path.join(root, "omp-attach-failure.terminated")
+  const credential = path.join(root, "omp-attach-failure-credential")
+  const executable = path.join(root, "host-omp-attach-failure")
+  const managedOverlay = path.join(root, "omp-managed-attach-failure.yml")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+trap 'printf "%s\\n" terminated > "$OMP_TEST_ADMISSION_TERMINATED"; exit 143' TERM INT HUP
+printf '%s\\n' "$$" > "$OMP_TEST_ADMISSION_PID"
+printf '%s\\n' secret-token > "$OMP_TEST_CREDENTIAL"
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-copilot-native",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: credential,
+      }),
+    )}
+while :; do :; done
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    guard: {
+      attachChild: () => {
+        const deadline = Date.now() + 1_000
+        while (!existsSync(childPidFile) && Date.now() < deadline)
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+        throw new Error("guard attachment failed")
+      },
+      signalTree: (pid, signal) => process.kill(pid, signal),
+    },
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_ADMISSION_PID: childPidFile,
+      OMP_TEST_ADMISSION_TERMINATED: terminatedFile,
+      OMP_TEST_CREDENTIAL: credential,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  }
+  const admission = ompAdapter.resolveLaunch!(input, prepared.launch)
+  try {
+    for (let attempts = 0; attempts < 100 && !(await Bun.file(childPidFile).exists()); attempts += 1)
+      await Bun.sleep(10)
+    const pid = Number(await readFile(childPidFile, "utf8"))
+    await expect(admission).rejects.toThrow(/guard attachment failed/)
+    for (let attempts = 0; attempts < 100 && !(await Bun.file(terminatedFile).exists()); attempts += 1)
+      await Bun.sleep(10)
+    expect(await Bun.file(terminatedFile).exists()).toBe(true)
+    expect(await Bun.file(credential).exists()).toBe(false)
+    try {
+      process.kill(pid, 0)
+      throw new Error("admission child is still alive")
+    } catch (error) {
+      expect((error as NodeJS.ErrnoException).code).toBe("ESRCH")
+    }
+  } finally {
+    if (await Bun.file(childPidFile).exists()) {
+      try {
+        process.kill(Number(await readFile(childPidFile, "utf8")), "SIGTERM")
+      } catch {
+        // The admission child already exited.
+      }
+    }
   }
 })
 

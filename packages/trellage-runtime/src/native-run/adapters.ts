@@ -447,6 +447,9 @@ const removeAdmissionCredential = async (output: string): Promise<void> => {
   if (file !== undefined) await unlink(file).catch(() => {})
 }
 
+const OMP_ADMISSION_TERM_TIMEOUT = 1_000
+const OMP_ADMISSION_KILL_TIMEOUT = 1_000
+
 const runOmpAdmission = async (
   profile: string,
   environment: NodeJS.ProcessEnv,
@@ -473,16 +476,45 @@ const runOmpAdmission = async (
     const stderr: string[] = []
     const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
     let settled = false
+    let closed = false
     const removeHandlers = () => signals.forEach((signal, index) => process.off(signal, handlers[index]!))
+    const waitForClose = async (timeout: number): Promise<void> => {
+      if (closed) return
+      await new Promise<void>((resolve) => {
+        const onClose = () => {
+          clearTimeout(timer)
+          resolve()
+        }
+        const timer = setTimeout(() => {
+          child.off("close", onClose)
+          resolve()
+        }, timeout)
+        child.once("close", onClose)
+      })
+    }
+    const terminate = async (): Promise<void> => {
+      if (!closed) {
+        try {
+          child.kill("SIGTERM")
+        } catch {
+          // The admission child already exited.
+        }
+        await waitForClose(OMP_ADMISSION_TERM_TIMEOUT)
+      }
+      if (!closed) {
+        try {
+          child.kill("SIGKILL")
+        } catch {
+          // The admission child already exited.
+        }
+        await waitForClose(OMP_ADMISSION_KILL_TIMEOUT)
+      }
+    }
     const fail = async (error: unknown) => {
       if (settled) return
       settled = true
       removeHandlers()
-      try {
-        child.kill("SIGTERM")
-      } catch {
-        // The admission child already exited.
-      }
+      await terminate()
       await removeAdmissionCredential(stdout.join(""))
       reject(error)
     }
@@ -495,7 +527,6 @@ const runOmpAdmission = async (
         void fail(error)
       }
     })
-    if (child.pid !== undefined) guard?.attachChild(child.pid)
     signals.forEach((signal, index) => process.on(signal, handlers[index]!))
     child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk.toString("utf8")))
     child.stderr?.on("data", (chunk: Buffer) => {
@@ -508,6 +539,7 @@ const runOmpAdmission = async (
       void fail(new NativeRunError("launch", "OMP admission failed: " + (diagnostic || error.message)))
     })
     child.once("close", (status, signal) => {
+      closed = true
       if (settled) return
       settled = true
       removeHandlers()
@@ -527,6 +559,11 @@ const runOmpAdmission = async (
         void removeAdmissionCredential(output).then(() => reject(error))
       }
     })
+    try {
+      if (child.pid !== undefined) guard?.attachChild(child.pid)
+    } catch (error) {
+      void fail(error)
+    }
   })
 }
 
