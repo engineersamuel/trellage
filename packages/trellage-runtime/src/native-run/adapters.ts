@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { execFile, spawn } from "node:child_process"
+import { execFile, spawn, type ChildProcess } from "node:child_process"
 import { chmod, copyFile, lstat, mkdir, readFile, realpath, rename, symlink, unlink, writeFile } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import os from "node:os"
@@ -66,6 +66,13 @@ export interface LaunchInput {
   readonly environment: NodeJS.ProcessEnv
   /** Directory the harness starts in. */
   readonly workspace: string
+  /** Guard that owns launch-time admission and child processes, when applicable. */
+  readonly guard?: LaunchGuard
+}
+
+export interface LaunchGuard {
+  readonly attachChild: (pid: number, processGroup?: boolean) => void
+  readonly signalTree: (pid: number, signal: NodeJS.Signals) => void
 }
 
 export interface LaunchCommand {
@@ -424,9 +431,26 @@ const parseOmpAdmission = (output: string, expectedProfile: string): OmpAdmissio
   return validateOmpAdmission(value, expectedProfile)
 }
 
+const admissionCredentialPath = (output: string): string | undefined => {
+  try {
+    const value: unknown = JSON.parse(output)
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+    const candidate = (value as Record<string, unknown>).copilotCredentialFile
+    return typeof candidate === "string" && path.isAbsolute(candidate) && !candidate.includes("\0") ? candidate : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const removeAdmissionCredential = async (output: string): Promise<void> => {
+  const file = admissionCredentialPath(output)
+  if (file !== undefined) await unlink(file).catch(() => {})
+}
+
 const runOmpAdmission = async (
   profile: string,
   environment: NodeJS.ProcessEnv,
+  guard?: LaunchGuard,
 ): Promise<OmpAdmission> => {
   const runtime = lifecycleRuntime("omp")!
   const command = binary(
@@ -434,22 +458,76 @@ const runOmpAdmission = async (
     "TRELLAGE_OMP_LIFECYCLE_BIN",
     lifecycleRuntimeCommand(runtime, environment.HOME),
   )
-  let stdout: string
-  try {
-    const result = await execFileAsync(command, ["_trx-admit", profile], {
-      env: { ...environment, TRELLAGE_TRX_OMP_ADAPTER: "1" },
-      encoding: "utf8",
-      maxBuffer: 1024 * 1024,
+  return new Promise((resolve, reject) => {
+    let child: ChildProcess
+    try {
+      child = spawn(command, ["_trx-admit", profile], {
+        env: { ...environment, TRELLAGE_TRX_OMP_ADAPTER: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+    } catch (error) {
+      reject(new NativeRunError("launch", "OMP admission failed: " + String(error)))
+      return
+    }
+    const stdout: string[] = []
+    const stderr: string[] = []
+    const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
+    let settled = false
+    const removeHandlers = () => signals.forEach((signal, index) => process.off(signal, handlers[index]!))
+    const fail = async (error: unknown) => {
+      if (settled) return
+      settled = true
+      removeHandlers()
+      try {
+        child.kill("SIGTERM")
+      } catch {
+        // The admission child already exited.
+      }
+      await removeAdmissionCredential(stdout.join(""))
+      reject(error)
+    }
+    const handlers = signals.map((signal) => () => {
+      try {
+        if (child.pid === undefined) return
+        if (guard === undefined) child.kill(signal)
+        else guard.signalTree(child.pid, signal)
+      } catch (error) {
+        void fail(error)
+      }
     })
-    stdout = result.stdout
-  } catch (error) {
-    const failure = error as { stderr?: string; message?: string }
-    throw new NativeRunError(
-      "launch",
-      "OMP admission failed: " + (failure.stderr ?? failure.message ?? String(error)).trim(),
-    )
-  }
-  return parseOmpAdmission(stdout, profile === "default" ? "trellage-copilot-native" : "trellage-qwen-local")
+    if (child.pid !== undefined) guard?.attachChild(child.pid)
+    signals.forEach((signal, index) => process.on(signal, handlers[index]!))
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk.toString("utf8")))
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8")
+      stderr.push(text)
+      process.stderr.write(text)
+    })
+    child.once("error", (error) => {
+      const diagnostic = stderr.join("").trim()
+      void fail(new NativeRunError("launch", "OMP admission failed: " + (diagnostic || error.message)))
+    })
+    child.once("close", (status, signal) => {
+      if (settled) return
+      settled = true
+      removeHandlers()
+      const output = stdout.join("")
+      if (status !== 0) {
+        const diagnostic = stderr.join("").trim()
+        const failure = new NativeRunError(
+          "launch",
+          "OMP admission failed: " + (diagnostic || String(status ?? signal ?? "without status")),
+        )
+        void removeAdmissionCredential(output).then(() => reject(failure))
+        return
+      }
+      try {
+        resolve(parseOmpAdmission(output, profile === "default" ? "trellage-copilot-native" : "trellage-qwen-local"))
+      } catch (error) {
+        void removeAdmissionCredential(output).then(() => reject(error))
+      }
+    })
+  })
 }
 
 const parseOmpHeadlessPolicy = (
@@ -497,13 +575,20 @@ const createOmpHeadlessOverlay = async (layout: GenerationLayout): Promise<strin
 
 const readOmpCredential = async (file: string | null): Promise<{ token?: string; cleanup: () => Promise<void> }> => {
   if (file === null) return { cleanup: async () => {} }
-  const status = await lstat(file).catch(() => undefined)
-  if (!status || !status.isFile() || status.isSymbolicLink())
-    throw new NativeRunError("launch", "OMP admission returned an invalid Copilot credential file")
-  const token = (await readFile(file, "utf8")).trim()
-  if (token.length === 0 || token.includes("\n") || token.includes("\r"))
-    throw new NativeRunError("launch", "OMP admission returned an invalid Copilot credential")
-  return { token, cleanup: () => unlink(file).catch(() => {}) }
+  const cleanup = () => unlink(file).catch(() => {})
+  try {
+    const status = await lstat(file).catch(() => undefined)
+    if (!status || !status.isFile() || status.isSymbolicLink())
+      throw new NativeRunError("launch", "OMP admission returned an invalid Copilot credential file")
+    const token = (await readFile(file, "utf8")).trim()
+    if (token.length === 0 || token.includes("\n") || token.includes("\r"))
+      throw new NativeRunError("launch", "OMP admission returned an invalid Copilot credential")
+    await cleanup()
+    return { token, cleanup: async () => {} }
+  } catch (error) {
+    await cleanup()
+    throw error
+  }
 }
 
 const prepareOmpHeadlessOverlay = async (
@@ -783,10 +868,10 @@ export const ompAdapter: NativeAdapter = {
         selectedPreset(plan, "omp", "default") === "default" ? "trellage-copilot-native" : "trellage-qwen-local",
     },
   }),
-  resolveLaunch: async ({ layout, plan, forwardedArgs, environment }, planned) => {
+  resolveLaunch: async ({ layout, plan, forwardedArgs, environment, guard }, planned) => {
     const profile = selectedPreset(plan, "omp", "default")
-    const admission = await runOmpAdmission(profile, environment)
     const parsed = parseOmpHeadlessArguments(forwardedArgs)
+    const admission = await runOmpAdmission(profile, environment, guard)
     const credential = await readOmpCredential(admission.copilotCredentialFile)
     return buildOmpLaunch(layout, planned, forwardedArgs, parsed, admission, credential)
   },

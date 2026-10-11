@@ -577,6 +577,7 @@ const launchPreparedRun = async (
       resumeArgs: options.resume ? prepared.adapter.resumeArgs(options.resume) : [],
       environment,
       workspace: cwd,
+      ...(guard === undefined ? {} : { guard }),
     }
     const resolvedLaunch = (await prepared.adapter.resolveLaunch?.(launchInput, prepared.launch)) ?? prepared.launch
     const finalEnvironment = await prepared.adapter.beforeLaunch?.(launchInput)

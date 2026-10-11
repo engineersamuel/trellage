@@ -207,10 +207,21 @@ printf '%s\\n' ${JSON.stringify(
 test("OMP admission rejects malformed relative executable paths", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-relative")
+  const credential = path.join(root, "omp-invalid-admission-credential")
+  await writeFile(credential, "secret-token\n", { mode: 0o600 })
   await writeFile(
     lifecycle,
     `#!/bin/sh
-printf '%s\\n' '{"schemaVersion":1,"executable":"omp","ompProfile":"trellage-qwen-local","piConfigFiles":"/tmp/managed.yml","version":"18.8.5","copilotCredentialFile":null}'
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable: "omp",
+        ompProfile: "trellage-qwen-local",
+        piConfigFiles: "/tmp/managed.yml",
+        version: "18.8.5",
+        copilotCredentialFile: credential,
+      }),
+    )}
 `,
     { mode: 0o755 },
   )
@@ -227,6 +238,167 @@ printf '%s\\n' '{"schemaVersion":1,"executable":"omp","ompProfile":"trellage-qwe
     environment: { HOME: root, PATH: process.env.PATH ?? "", TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle },
   }
   await expect(ompAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(/invalid executable/)
+  await expect(readFile(credential, "utf8")).rejects.toThrow()
+})
+
+test("OMP invalid headless policy does not leave an admission credential handoff", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-invalid-headless")
+  const executable = path.join(root, "host-omp-invalid-headless")
+  const managedOverlay = path.join(root, "omp-managed-invalid-headless.yml")
+  const credential = path.join(root, "omp-invalid-headless-credential")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' secret-token > "$OMP_TEST_CREDENTIAL"
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-copilot-native",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: credential,
+      }),
+    )}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: ["--headless-policy=unsupported"],
+    workspace: work,
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_CREDENTIAL: credential,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  }
+  await expect(ompAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(/unknown --headless-policy/)
+  await expect(readFile(credential, "utf8")).rejects.toThrow()
+})
+
+test("OMP invalid credential content removes the admission handoff", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-invalid-credential")
+  const executable = path.join(root, "host-omp-invalid-credential")
+  const managedOverlay = path.join(root, "omp-managed-invalid-credential.yml")
+  const credential = path.join(root, "omp-invalid-credential")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(credential, "token-one\ntoken-two\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-copilot-native",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: credential,
+      }),
+    )}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    environment: { HOME: root, PATH: process.env.PATH ?? "", TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle },
+  }
+  await expect(ompAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(/invalid Copilot credential/)
+  await expect(readFile(credential, "utf8")).rejects.toThrow()
+})
+
+test("OMP admission attaches its child and forwards diagnostics while it is supervised", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-supervised")
+  const childPidFile = path.join(root, "omp-admission.pid")
+  const terminatedFile = path.join(root, "omp-admission.terminated")
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' "$$" > "$OMP_TEST_ADMISSION_PID"
+printf '%s\\n' 'cached floating skill snapshot used' >&2
+trap 'printf "%s\\n" terminated > "$OMP_TEST_ADMISSION_TERMINATED"; exit 143' TERM INT HUP
+while :; do :; done
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const diagnostics: string[] = []
+  const previousWrite = process.stderr.write
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    diagnostics.push(String(chunk))
+    return true
+  }) as typeof process.stderr.write
+  const attached: number[] = []
+  const signalled: Array<{ pid: number; signal: NodeJS.Signals }> = []
+  const guard = {
+    attachChild: (pid: number) => attached.push(pid),
+    signalTree: (pid: number, signal: NodeJS.Signals) => {
+      signalled.push({ pid, signal })
+      process.kill(pid, signal)
+    },
+  }
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    guard,
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_ADMISSION_PID: childPidFile,
+      OMP_TEST_ADMISSION_TERMINATED: terminatedFile,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  } as LaunchInput & { readonly guard: typeof guard }
+  try {
+    const admission = ompAdapter.resolveLaunch!(input, prepared.launch)
+    for (let attempts = 0; attempts < 100 && !(await Bun.file(childPidFile).exists()); attempts += 1)
+      await Bun.sleep(10)
+    expect(await Bun.file(childPidFile).exists()).toBe(true)
+    const pid = Number(await readFile(childPidFile, "utf8"))
+    if (attached.length === 1) process.emit("SIGTERM")
+    else process.kill(pid, "SIGTERM")
+    await expect(admission).rejects.toThrow(/OMP admission failed/)
+    expect(signalled).toEqual([{ pid: attached[0]!, signal: "SIGTERM" }])
+    expect(await Bun.file(terminatedFile).exists()).toBe(true)
+    expect(diagnostics.join("")).toContain("cached floating skill snapshot used")
+  } finally {
+    if (await Bun.file(childPidFile).exists()) {
+      try {
+        process.kill(Number(await readFile(childPidFile, "utf8")), "SIGTERM")
+      } catch {
+        // The admission child already exited.
+      }
+    }
+    process.stderr.write = previousWrite
+  }
 })
 
 test("OMP headless policy creates a per-launch overlay and cleans it after settlement", async () => {
