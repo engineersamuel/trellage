@@ -100,8 +100,10 @@ Update a manually maintained host binary with the mechanism that installed it.
 - Token order for native Copilot auth is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
   `GITHUB_TOKEN`, then `gh auth token`; macOS additionally falls back to the
   existing `copilot-cli` Keychain credential. Only
-  `COPILOT_GITHUB_TOKEN` is forwarded to OMP, and the token is never copied to
-  disk or logged.
+  `COPILOT_GITHUB_TOKEN` is forwarded to OMP. Admission briefly stages the
+  credential in a per-launch mode-0600 file; the adapter removes that handoff
+  immediately after reading it, and removes it on admission failure. The token
+  is never included in admission JSON or logged.
 - `PI_CONFIG_FILES` retains existing entries and receives the Trellage overlay
   last. Explicit OMP `--config` arguments load later and override the overlay.
 - The overlay disables startup update checks and marketplace auto-update,

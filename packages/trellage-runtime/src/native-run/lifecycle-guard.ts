@@ -1,11 +1,11 @@
 import { Database } from "bun:sqlite";
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { lifecycleRuntime } from "./lifecycle-runtime.ts";
 import { nativePresetProfiles } from "./presets.ts";
+import { descendantsOf, processStart, signalIdentity, type ProcessIdentity } from "./process-tree.ts";
 
 interface Owner {
   scope: string;
@@ -19,57 +19,6 @@ interface Owner {
 }
 
 type AttachedWork = Pick<Owner, "child_pid" | "child_started" | "descendants">;
-
-interface ProcessIdentity {
-  pid: number;
-  started: string;
-}
-
-const processEnvironment = () => ({ ...process.env, TZ: "UTC", LC_ALL: "C" });
-
-const processStart = (pid: number): string | null => {
-  try {
-    return (
-      execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
-        encoding: "utf8",
-        env: processEnvironment(),
-      }).trim() || null
-    );
-  } catch {
-    return null;
-  }
-};
-
-const descendantsOf = (root: number): ProcessIdentity[] => {
-  const rows = execFileSync("ps", ["-axo", "pid=,ppid=,lstart="], {
-    encoding: "utf8",
-    env: processEnvironment(),
-  })
-    .split("\n")
-    .flatMap((line) => {
-      const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
-      return match ? [{ pid: Number(match[1]), parent: Number(match[2]), started: match[3]! }] : [];
-    });
-  const parents = new Set([root]);
-  const result: ProcessIdentity[] = [];
-  for (;;) {
-    const children = rows.filter((row) => parents.has(row.parent) && !parents.has(row.pid));
-    if (children.length === 0) return result;
-    for (const row of children) {
-      parents.add(row.pid);
-      result.push({ pid: row.pid, started: row.started });
-    }
-  }
-};
-
-const signalIdentity = (identity: ProcessIdentity, signal: NodeJS.Signals): void => {
-  if (processStart(identity.pid) !== identity.started) return;
-  try {
-    process.kill(identity.pid, signal);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-  }
-};
 
 const live = (pid: number, started: string): boolean => {
   if (pid === 0) return false;
@@ -343,7 +292,7 @@ const signalOwnedTree = (
   try {
     signalIdentity({ pid, started }, "SIGSTOP");
     for (;;) {
-      const children = descendantsOf(pid).filter((identity) => !stopped.has(identity.pid));
+      const children = descendantsOf(pid, owner!.child_pid! < 0).filter((identity) => !stopped.has(identity.pid));
       if (children.length === 0) break;
       for (const identity of children) {
         stopped.set(identity.pid, identity);
@@ -410,9 +359,11 @@ const createOwnedProfileGuard = (db: Database, token: string): ProfileGuard => {
     attachChild: (pid, processGroup = false) => {
       fallback = captureOwnedChild(pid, processGroup);
       if (!fallback) return;
-      db.query("UPDATE owners SET child_pid = ?, child_started = ? WHERE token = ?").run(
+      fallback.descendants = JSON.stringify(descendantsOf(pid, processGroup));
+      db.query("UPDATE owners SET child_pid = ?, child_started = ?, descendants = ? WHERE token = ?").run(
         fallback.child_pid,
         fallback.child_started,
+        fallback.descendants,
         token,
       );
       fallback = undefined;

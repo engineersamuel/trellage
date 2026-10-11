@@ -304,6 +304,12 @@ jq -cn \
   '$ARGS.named + {args:$ARGS.positional}' \
   --args -- "$@" >>"$FAKE_OMP_LOG"
 
+if [[ -n "${FAKE_OMP_RUN_READY_FILE-}" ]]; then
+  printf '%s\n' "$$" >"$FAKE_OMP_RUN_READY_FILE"
+  while [[ ! -e "$FAKE_OMP_RUN_RELEASE_FILE" && "$SECONDS" -lt 25 ]]; do sleep 0.01; done
+  [[ -e "$FAKE_OMP_RUN_RELEASE_FILE" ]] || exit 124
+fi
+
 if [[ "${FAKE_OMP_WAIT_FOR_SIGNAL-}" == 1 ]]; then
   trap 'printf "TERM\n" >>"$FAKE_OMP_SIGNAL_LOG"; exit 143' TERM
   printf 'READY\n' >>"$FAKE_OMP_SIGNAL_LOG"
@@ -496,6 +502,33 @@ providers:
 MODELS
 cmp -s "$fixture_root/expected-local-models.yml" "$agent_root/models.yml" \
   || fail 'local setup did not publish the exact provider file'
+
+cp "$copilot_overlay" "$fixture_root/inventory-overlay.saved"
+printf 'damaged overlay\n' >"$copilot_overlay"
+"$command_path" inventory copilot --json >"$fixture_root/unhealthy-overlay-inventory.json" \
+  || fail 'unhealthy overlay inventory exited without its JSON response'
+jq -se 'length == 1 and .[0].readiness == "unhealthy" and (.[0] | has("harnessVersion") | not)' \
+  "$fixture_root/unhealthy-overlay-inventory.json" >/dev/null \
+  || fail 'unhealthy overlay inventory did not emit one conservative JSON response'
+mv "$fixture_root/inventory-overlay.saved" "$copilot_overlay"
+inventory_unhealthy_calls="$fixture_root/inventory-unhealthy-calls"
+FAKE_COPILOT_AUTH=0 COPILOT_GITHUB_TOKEN=host-copilot-token \
+  FAKE_OMP_EXEC_LOG="$inventory_unhealthy_calls" \
+  "$command_path" inventory copilot --json >"$fixture_root/unhealthy-auth-inventory.json" \
+  || fail 'unhealthy Copilot authentication inventory exited without its JSON response'
+jq -se 'length == 1 and .[0].readiness == "unhealthy" and (.[0] | has("harnessVersion") | not)' \
+  "$fixture_root/unhealthy-auth-inventory.json" >/dev/null \
+  || fail 'unhealthy authentication inventory did not emit one conservative JSON response'
+[[ "$(grep -c -- ' --version$' "$inventory_unhealthy_calls")" == 1 ]] \
+  || fail 'unhealthy inventory resolved the host more than once'
+[[ "$(grep -c -- ' models github-copilot$' "$inventory_unhealthy_calls")" == 1 ]] \
+  || fail 'unhealthy inventory did not use the captured host for its health check'
+printf 'OMP unhealthy inventory JSON contract: PASS\n'
+if [[ "${OMP_CONTRACT_FINAL_INVENTORY_ONLY:-0}" == 1 ]]; then exit 0; fi
+
+bun --no-env-file "$root/tests/canonical-acceptance.ts" "$fixture_root" "$host_bin/omp" \
+  || fail 'literal canonical OMP acceptance failed'
+if [[ "${OMP_CONTRACT_FINAL_ACCEPTANCE_ONLY:-0}" == 1 ]]; then exit 0; fi
 
 # Canonical trx runs still exercise the lifecycle manager's initialization
 # coordination; mutations below remain private-manager operations.

@@ -22,6 +22,13 @@ export class NativeRunError extends Error {
   }
 }
 
+export class NativeRunCancelledError extends NativeRunError {
+  constructor(message: string, readonly signal: NodeJS.Signals) {
+    super("launch", message)
+    this.name = "NativeRunCancelledError"
+  }
+}
+
 export interface NativeRunPaths {
   readonly cache: string
   readonly data: string

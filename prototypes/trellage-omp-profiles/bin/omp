@@ -1405,7 +1405,7 @@ inventory_profile() {
   fi
   binary="$host_omp"
   version="$host_omp_version"
-  if ! doctor_profile "$binary" "$version" >/dev/null 2>/dev/null; then
+  if ! (doctor_profile "$binary" "$version") >/dev/null 2>/dev/null; then
     not_ready_inventory "$requested" unhealthy
     return
   fi

@@ -17,15 +17,17 @@ import {
   type LaunchCommand,
   type NativeAdapter,
   type ResumeRequest,
+  type LaunchGuard,
 } from "./adapters.ts"
 import { planComposition, publishGeneration, type CompositionPlan, type GenerationLayout } from "./compose.ts"
 import { createSelectionHistory, scopeKeysFor, type Selection } from "./history.ts"
 import { acquireLease, pruneGenerations } from "./lease.ts"
-import { NativeRunError, resolveNativeRunPaths, type NativeRunPaths } from "./paths.ts"
+import { NativeRunCancelledError, NativeRunError, resolveNativeRunPaths, type NativeRunPaths } from "./paths.ts"
 import { createSourceResolver, gitSourceTransport, type SourceTransport } from "./source.ts"
 import { ensureNativeConfig, withBuiltinPreset } from "./config-init.ts"
 import { nativePresetProfile } from "./presets.ts"
 import { acquireProfileGuard } from "./lifecycle-guard.ts"
+import { childSettlement } from "./child-settlement.ts"
 
 export interface RunOptions {
   readonly harness: string
@@ -184,10 +186,10 @@ const loadInstructions = async (configDirectory: string, catalog: NativeCatalog)
 }
 
 export interface Spawner {
-  (command: LaunchCommand, environment: NodeJS.ProcessEnv, cwd: string, onSpawn: (pid?: number) => void): Promise<number>
+  (command: LaunchCommand, environment: NodeJS.ProcessEnv, cwd: string, onSpawn: (pid?: number) => void, guard?: LaunchGuard): Promise<number>
 }
 
-export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
+export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn, guard) =>
   new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...environment }
     for (const [key, value] of Object.entries(launch.env)) {
@@ -195,7 +197,19 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
       else env[key] = value
     }
     const child = spawn(launch.command, [...launch.args], { cwd: launch.cwd ?? cwd, env, stdio: "inherit" })
-    child.once("spawn", () => onSpawn(child.pid))
+    const settlement = childSettlement(child, guard)
+    let attachmentFailed = false
+    child.once("spawn", () => {
+      try {
+        onSpawn(child.pid)
+      } catch (error) {
+        attachmentFailed = true
+        void settlement.terminate().then((settled) => {
+          process.off("SIGTERM", term)
+          reject(settled ? error : new NativeRunError("launch", `child cleanup did not settle after SIGKILL: ${String(error)}`))
+        }, reject)
+      }
+    })
     child.once("error", (error) =>
       reject(new NativeRunError("launch", `could not start ${launch.command}: ${error.message}`)),
     )
@@ -204,6 +218,7 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
     process.on("SIGTERM", term)
     child.once("exit", (code, signal) => {
       process.off("SIGTERM", term)
+      if (attachmentFailed) return
       resolve(code ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1))
     })
   })
@@ -590,7 +605,7 @@ const launchPreparedRun = async (
     const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, (pid) => {
       if (pid !== undefined) guard?.attachChild(pid)
       recorded = history.record(keys, prepared.selection).catch(() => undefined)
-    })
+    }, guard)
     await recorded
     write(`Resume     ${resumeCommand(options)}`)
     return status
@@ -635,6 +650,7 @@ export const main = async (argv: ReadonlyArray<string>): Promise<number> => {
   } catch (error) {
     if (error instanceof NativeRunError) {
       process.stderr.write(`trx run: ${error.message}\n`)
+      if (error instanceof NativeRunCancelledError) return 128 + (osConstants.signals[error.signal] ?? 0)
       return error.code === "usage" ? 2 : 1
     }
     throw error

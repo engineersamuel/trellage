@@ -353,12 +353,17 @@ while :; do :; done
   }) as typeof process.stderr.write
   const attached: number[] = []
   const signalled: Array<{ pid: number; signal: NodeJS.Signals }> = []
+  const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
   const guard = {
-    attachChild: (pid: number) => attached.push(pid),
+    attachChild: (pid: number, grouped?: boolean) => {
+      profileGuard.attachChild(pid, grouped)
+      attached.push(pid)
+    },
     signalTree: (pid: number, signal: NodeJS.Signals) => {
       signalled.push({ pid, signal })
-      process.kill(pid, signal)
+      profileGuard.signalTree(pid, signal)
     },
+    waitForTree: profileGuard.waitForTree,
   }
   const input: LaunchInput = {
     resumeArgs: [],
@@ -383,26 +388,23 @@ while :; do :; done
     for (let attempts = 0; attempts < 100 && !(await Bun.file(childPidFile).exists()); attempts += 1)
       await Bun.sleep(10)
     expect(await Bun.file(childPidFile).exists()).toBe(true)
-    const pid = Number(await readFile(childPidFile, "utf8"))
-    if (attached.length === 1) process.emit("SIGTERM")
-    else process.kill(pid, "SIGTERM")
+    expect(attached).toHaveLength(1)
+    process.emit("SIGTERM")
     await expect(admission).rejects.toThrow(/OMP admission failed/)
     expect(signalled).toEqual([{ pid: attached[0]!, signal: "SIGTERM" }])
     expect(await Bun.file(terminatedFile).exists()).toBe(true)
     expect(diagnostics.join("")).toContain("cached floating skill snapshot used")
   } finally {
-    if (await Bun.file(childPidFile).exists()) {
-      try {
-        process.kill(Number(await readFile(childPidFile, "utf8")), "SIGTERM")
-      } catch {
-        // The admission child already exited.
-      }
+    if (attached[0] !== undefined) {
+      profileGuard.signalTree(attached[0], "SIGKILL")
+      await profileGuard.waitForTree(attached[0], 1_000)
     }
+    profileGuard.release()
     process.stderr.write = previousWrite
   }
 })
 
-test("OMP admission settles and cleans up when guard child attachment fails", async () => {
+test("OMP guard attachment failure settles its supervisor before admission can start", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-attach-failure")
   const childPidFile = path.join(root, "omp-attach-failure.pid")
@@ -433,6 +435,8 @@ while :; do :; done
     { mode: 0o755 },
   )
   const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
+  let attachedPid: number | undefined
   const input: LaunchInput = {
     resumeArgs: [],
     layout: prepared.layout,
@@ -443,13 +447,13 @@ while :; do :; done
     forwardedArgs: [],
     workspace: work,
     guard: {
-      attachChild: () => {
-        const deadline = Date.now() + 1_000
-        while (!existsSync(childPidFile) && Date.now() < deadline)
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+      attachChild: (pid, grouped) => {
+        attachedPid = pid
+        profileGuard.attachChild(pid, grouped)
         throw new Error("guard attachment failed")
       },
-      signalTree: (pid, signal) => process.kill(pid, signal),
+      signalTree: profileGuard.signalTree,
+      waitForTree: profileGuard.waitForTree,
     },
     environment: {
       HOME: root,
@@ -462,32 +466,22 @@ while :; do :; done
   }
   const admission = ompAdapter.resolveLaunch!(input, prepared.launch)
   try {
-    for (let attempts = 0; attempts < 100 && !(await Bun.file(childPidFile).exists()); attempts += 1)
-      await Bun.sleep(10)
-    const pid = Number(await readFile(childPidFile, "utf8"))
     await expect(admission).rejects.toThrow(/guard attachment failed/)
-    for (let attempts = 0; attempts < 100 && !(await Bun.file(terminatedFile).exists()); attempts += 1)
-      await Bun.sleep(10)
-    expect(await Bun.file(terminatedFile).exists()).toBe(true)
+    expect(await Bun.file(childPidFile).exists()).toBe(false)
+    expect(await Bun.file(terminatedFile).exists()).toBe(false)
     expect(await Bun.file(credential).exists()).toBe(false)
-    try {
-      process.kill(pid, 0)
-      throw new Error("admission child is still alive")
-    } catch (error) {
-      expect((error as NodeJS.ErrnoException).code).toBe("ESRCH")
-    }
+    expect(await profileGuard.waitForTree(attachedPid!, 0)).toBe(true)
   } finally {
-    if (await Bun.file(childPidFile).exists()) {
-      try {
-        process.kill(Number(await readFile(childPidFile, "utf8")), "SIGTERM")
-      } catch {
-        // The admission child already exited.
-      }
+    if (attachedPid !== undefined) {
+      profileGuard.signalTree(attachedPid, "SIGKILL")
+      await profileGuard.waitForTree(attachedPid, 1_000)
     }
+    await admission.catch(() => undefined)
+    profileGuard.release()
   }
 })
 
-test("OMP admission settles descendants when SQLite rejects persistent attachment", async () => {
+test("SQLite attachment failure prevents admission descendants and late credential writes", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-descendant-attachment-failure")
   const descendantScript = path.join(root, "omp-admission-descendant.ts")
@@ -539,6 +533,8 @@ while :; do :; done
   const db = new Database(path.join(root, ".local/share/trellage/profile-guards/profiles.sqlite"))
   db.exec("CREATE TRIGGER reject_owner_updates BEFORE UPDATE ON owners BEGIN SELECT RAISE(FAIL, 'guard attachment failed'); END")
   let treeSettledAt = 0
+  let attachedPid: number | undefined
+  let released = false
   const input: LaunchInput = {
     resumeArgs: [],
     layout: prepared.layout,
@@ -549,14 +545,9 @@ while :; do :; done
     forwardedArgs: [],
     workspace: work,
     guard: {
-      attachChild: (pid) => {
-        const deadline = Date.now() + 1_000
-        while (
-          (!existsSync(childPidFile) || !existsSync(descendantPidFile)) &&
-          Date.now() < deadline
-        )
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
-        profileGuard.attachChild(pid)
+      attachChild: (pid, grouped) => {
+        attachedPid = pid
+        profileGuard.attachChild(pid, grouped)
       },
       signalTree: profileGuard.signalTree,
       waitForTree: async (pid, timeout) => {
@@ -580,50 +571,29 @@ while :; do :; done
   }
   const admission = ompAdapter.resolveLaunch!(input, prepared.launch)
   try {
-    for (let attempts = 0; attempts < 100 && !(await Bun.file(descendantPidFile).exists()); attempts += 1)
-      await Bun.sleep(10)
-    const childPid = Number(await readFile(childPidFile, "utf8"))
-    const descendantPid = Number(await readFile(descendantPidFile, "utf8"))
     await expect(admission).rejects.toThrow(/guard attachment failed/)
     const rejectionAt = Date.now()
     expect(treeSettledAt).toBeGreaterThan(0)
     expect(treeSettledAt).toBeLessThanOrEqual(rejectionAt)
-    expect(await Bun.file(terminatedFile).exists()).toBe(true)
-    expect(() => process.kill(childPid, 0)).toThrow()
+    expect(await Bun.file(childPidFile).exists()).toBe(false)
+    expect(await Bun.file(descendantPidFile).exists()).toBe(false)
+    expect(await Bun.file(terminatedFile).exists()).toBe(false)
     expect(await Bun.file(credential).exists()).toBe(false)
     expect(await Bun.file(emittedFile).exists()).toBe(false)
-    let gone = false
-    for (let attempts = 0; attempts < 20; attempts += 1) {
-      try {
-        process.kill(descendantPid, 0)
-      } catch {
-        gone = true
-        break
-      }
-      await Bun.sleep(10)
-    }
-    expect(gone).toBe(true)
+    expect(await profileGuard.waitForTree(attachedPid!, 0)).toBe(true)
     profileGuard.release()
+    released = true
     const mutation = acquireProfileGuard("omp", ["default"], "repair", root)
     mutation.release()
     await Bun.sleep(2_700)
     expect(await Bun.file(credential).exists()).toBe(false)
     expect(await Bun.file(emittedFile).exists()).toBe(false)
   } finally {
-    if (await Bun.file(childPidFile).exists()) {
-      try {
-        process.kill(Number(await readFile(childPidFile, "utf8")), "SIGKILL")
-      } catch {
-        // The admission root already exited.
-      }
+    if (!released && attachedPid !== undefined) {
+      profileGuard.signalTree(attachedPid, "SIGKILL")
+      await profileGuard.waitForTree(attachedPid, 1_000)
     }
-    if (await Bun.file(descendantPidFile).exists()) {
-      try {
-        process.kill(Number(await readFile(descendantPidFile, "utf8")), "SIGKILL")
-      } catch {
-        // The admission descendant already exited.
-      }
-    }
+    await admission.catch(() => undefined)
     profileGuard.release()
     db.close()
   }
@@ -657,13 +627,9 @@ while :; do :; done
       TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
     },
     guard: {
-      attachChild: (pid) => {
+      attachChild: (pid, grouped) => {
         childPid = pid
-        profileGuard.attachChild(pid)
-        const deadline = Date.now() + 1_000
-        while (!existsSync(ready) && Date.now() < deadline)
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
-        throw new Error("guard attachment failed")
+        profileGuard.attachChild(pid, grouped)
       },
       signalTree: (pid, signal) => {
         if (signal === "SIGKILL") throw new Error("cannot signal admission tree")
@@ -674,7 +640,9 @@ while :; do :; done
   }, prepared.launch)
   const outcome = admission.then(() => "unexpected launch", (error) => String(error))
   try {
+    for (let attempt = 0; attempt < 200 && !existsSync(ready); attempt += 1) await Bun.sleep(10)
     expect(existsSync(ready)).toBe(true)
+    process.emit("SIGTERM")
     expect(await Promise.race([outcome, Bun.sleep(3_500).then(() => "cleanup timed out")]))
       .toMatch(/admission cleanup did not settle/)
     expect(await profileGuard.waitForTree(childPid!, 0)).toBe(false)

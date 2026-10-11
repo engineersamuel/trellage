@@ -7,11 +7,12 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { parse as parseToml } from "smol-toml"
-import { NativeRunError } from "./paths.ts"
+import { NativeRunCancelledError, NativeRunError } from "./paths.ts"
 import { PRIME_MANAGED_FLAGS, ensurePrimeRuntime, primeLaunchCommand, primeRuntimePaths } from "./prime-runtime.ts"
 import type { GenerationLayout, CompositionPlan } from "./compose.ts"
 import { lifecycleRuntime, lifecycleRuntimeCommand } from "./lifecycle-runtime.ts"
 import { nativePresetProfiles } from "./presets.ts"
+import { childSettlement } from "./child-settlement.ts"
 
 const execFileAsync = promisify(execFile)
 
@@ -453,8 +454,7 @@ const removeAdmissionCredential = async (output: string): Promise<void> => {
   if (file !== undefined) await unlink(file).catch(() => {})
 }
 
-const OMP_ADMISSION_TERM_TIMEOUT = 1_000
-const OMP_ADMISSION_KILL_TIMEOUT = 1_000
+const ompAdmissionWorker = fileURLToPath(new URL("./omp-admission-worker.ts", import.meta.url))
 
 const runOmpAdmission = async (
   profile: string,
@@ -470,9 +470,10 @@ const runOmpAdmission = async (
   return new Promise((resolve, reject) => {
     let child: ChildProcess
     try {
-      child = spawn(command, ["_trx-admit", profile], {
+      child = spawn(guard ? process.execPath : command, guard ? [ompAdmissionWorker, command, "_trx-admit", profile] : ["_trx-admit", profile], {
         env: { ...environment, TRELLAGE_TRX_OMP_ADAPTER: "1" },
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: guard ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
+        detached: guard !== undefined,
       })
     } catch (error) {
       reject(new NativeRunError("launch", "OMP admission failed: " + String(error)))
@@ -482,71 +483,21 @@ const runOmpAdmission = async (
     const stderr: string[] = []
     const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
     let settled = false
-    let closed = false
-    let terminationRequested = false
+    const settlement = childSettlement(child, guard)
     const removeHandlers = () => signals.forEach((signal, index) => process.off(signal, handlers[index]!))
-    const waitForClose = async (timeout: number): Promise<void> => {
-      if (closed) return
-      await new Promise<void>((resolve) => {
-        const onClose = () => {
-          clearTimeout(timer)
-          resolve()
-        }
-        const timer = setTimeout(() => {
-          child.off("close", onClose)
-          resolve()
-        }, timeout)
-        child.once("close", onClose)
-      })
-    }
-    const signalTree = (signal: NodeJS.Signals): void => {
-      if (child.pid === undefined) return
-      if (guard === undefined) {
-        child.kill(signal)
-        terminationRequested = true
-      } else {
-        guard.signalTree(child.pid, signal)
-        terminationRequested = true
-      }
-    }
-    const waitForSettlement = async (timeout: number): Promise<boolean> => {
-      const [, treeSettled] = await Promise.all([
-        waitForClose(timeout),
-        child.pid === undefined || guard?.waitForTree === undefined ? true : guard.waitForTree(child.pid, timeout),
-      ])
-      return closed && treeSettled
-    }
-    const terminate = async (): Promise<boolean> => {
-      if (!terminationRequested) {
-        try {
-          signalTree("SIGTERM")
-        } catch {
-          // The admission child or its guard already exited.
-        }
-      }
-      if (await waitForSettlement(OMP_ADMISSION_TERM_TIMEOUT)) return true
-      try {
-        signalTree("SIGKILL")
-      } catch {
-        // The admission child or its guard already exited.
-      }
-      return waitForSettlement(OMP_ADMISSION_KILL_TIMEOUT)
-    }
     const fail = async (error: unknown) => {
       if (settled) return
       settled = true
       removeHandlers()
-      const terminated = await terminate().catch(() => false)
+      const terminated = await settlement.terminate()
       await removeAdmissionCredential(stdout.join(""))
       reject(terminated ? error : new NativeRunError("launch", "OMP admission cleanup did not settle after SIGKILL: " + String(error)))
     }
     const handlers = signals.map((signal) => () => {
-      try {
-        if (child.pid === undefined) return
-        signalTree(signal)
-      } catch (error) {
-        void fail(error)
+      if (signal !== "SIGTERM") {
+        try { settlement.signal(signal) } catch { /* The bounded cleanup still runs. */ }
       }
+      void fail(new NativeRunCancelledError("OMP admission failed: cancelled by " + signal, signal))
     })
     signals.forEach((signal, index) => process.on(signal, handlers[index]!))
     child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk.toString("utf8")))
@@ -559,34 +510,43 @@ const runOmpAdmission = async (
       const diagnostic = stderr.join("").trim()
       void fail(new NativeRunError("launch", "OMP admission failed: " + (diagnostic || error.message)))
     })
-    child.once("close", (status, signal) => {
-      closed = true
+    const finish = async (status: number | null, signal: string | null) => {
       if (settled) return
-      const output = stdout.join("")
       if (status !== 0) {
         const diagnostic = stderr.join("").trim()
         const failure = new NativeRunError(
           "launch",
           "OMP admission failed: " + (diagnostic || String(status ?? signal ?? "without status")),
         )
-        void fail(failure)
+        await fail(failure)
         return
       }
+      settled = true
+      removeHandlers()
       try {
+        if (guard && !(await settlement.terminate()))
+          throw new NativeRunError("launch", "OMP admission cleanup did not settle after SIGKILL")
         const admission = parseOmpAdmission(
-          output,
+          stdout.join(""),
           profile === "default" ? "trellage-copilot-native" : "trellage-qwen-local",
         )
-        settled = true
-        removeHandlers()
         resolve(admission)
       } catch (error) {
-        void fail(error)
+        await removeAdmissionCredential(stdout.join(""))
+        reject(error)
       }
+    }
+    child.once("close", (status, signal) => { void finish(status, signal) })
+    child.once("message", (message: { status?: number | null; signal?: string | null; error?: string }) => {
+      if (message.error !== undefined) void fail(new NativeRunError("launch", "OMP admission failed: " + message.error))
+      else void finish(message.status ?? null, message.signal ?? null)
     })
     try {
-      if (child.pid !== undefined) guard?.attachChild(child.pid)
+      if (child.pid !== undefined) guard?.attachChild(child.pid, true)
+      if (guard) child.send("start")
     } catch (error) {
+      // The supervisor has not received permission to launch admission work.
+      child.kill("SIGTERM")
       void fail(error)
     }
   })
