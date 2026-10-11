@@ -494,15 +494,23 @@ const runOmpAdmission = async (
         child.once("close", onClose)
       })
     }
+    const waitForCloseIndefinitely = async (): Promise<void> => {
+      if (closed) return
+      await new Promise<void>((resolve) => child.once("close", resolve))
+    }
     const signalTree = (signal: NodeJS.Signals): void => {
       if (child.pid === undefined) return
-      terminationRequested = true
-      if (guard === undefined) child.kill(signal)
-      else guard.signalTree(child.pid, signal)
+      if (guard === undefined) {
+        child.kill(signal)
+        terminationRequested = true
+      } else {
+        guard.signalTree(child.pid, signal)
+        terminationRequested = true
+      }
     }
     const treeSettled = async (timeout?: number): Promise<boolean> => {
       if (child.pid === undefined || guard?.waitForTree === undefined) return closed
-      return guard.waitForTree(child.pid, timeout)
+      return closed && (await guard.waitForTree(child.pid, timeout))
     }
     const terminate = async (): Promise<void> => {
       if (!terminationRequested) {
@@ -520,7 +528,10 @@ const runOmpAdmission = async (
         // The admission child or its guard already exited.
       }
       await waitForClose(OMP_ADMISSION_KILL_TIMEOUT)
-      await treeSettled()
+      if (child.pid !== undefined && guard?.waitForTree !== undefined) {
+        await guard.waitForTree(child.pid)
+        await waitForCloseIndefinitely()
+      }
     }
     const fail = async (error: unknown) => {
       if (settled) return
