@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { execFile, spawn } from "node:child_process"
-import { chmod, copyFile, lstat, mkdir, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, readFile, realpath, rename, symlink, unlink, writeFile } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
@@ -75,6 +75,8 @@ export interface LaunchCommand {
   readonly env: Readonly<Record<string, string | null>>
   /** Harnesses such as Firstmate run from their prepared runtime, not the entry worktree. */
   readonly cwd?: string
+  /** Release launch-scoped resources after the child settles or a spawn fails. */
+  readonly cleanup?: () => void | Promise<void>
 }
 
 export interface NativeAdapter {
@@ -363,6 +365,210 @@ const instructionsArgument = (layout: GenerationLayout): string[] => {
   }
 }
 
+interface OmpAdmission {
+  readonly schemaVersion: 1
+  readonly executable: string
+  readonly ompProfile: string
+  readonly piConfigFiles: string
+  readonly version: string
+  readonly copilotCredentialFile: string | null
+}
+
+const OMP_ADMISSION_KEYS = [
+  "copilotCredentialFile",
+  "executable",
+  "ompProfile",
+  "piConfigFiles",
+  "schemaVersion",
+  "version",
+] as const
+
+const assertAbsolutePath = (label: string, value: string): void => {
+  if (!path.isAbsolute(value) || value.includes("\0"))
+    throw new NativeRunError("launch", "OMP admission returned an invalid " + label)
+}
+
+const validOmpAdmissionShape = (value: Record<string, unknown>): boolean =>
+  Object.keys(value).sort().join("\0") === OMP_ADMISSION_KEYS.join("\0") &&
+  value.schemaVersion === 1 &&
+  typeof value.executable === "string" &&
+  typeof value.ompProfile === "string" &&
+  typeof value.piConfigFiles === "string" &&
+  typeof value.version === "string" &&
+  (value.copilotCredentialFile === null || typeof value.copilotCredentialFile === "string")
+
+const validateOmpAdmission = (value: Record<string, unknown>, expectedProfile: string): OmpAdmission => {
+  const admission = value as unknown as OmpAdmission
+  assertAbsolutePath("executable", admission.executable)
+  if (admission.piConfigFiles.length === 0 || admission.piConfigFiles.split(":").some((entry) => !path.isAbsolute(entry)))
+    throw new NativeRunError("launch", "OMP admission returned invalid PI_CONFIG_FILES")
+  if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(admission.version))
+    throw new NativeRunError("launch", "OMP admission returned an invalid host version")
+  if (admission.ompProfile !== expectedProfile)
+    throw new NativeRunError("launch", "OMP admission returned the wrong managed profile")
+  if (admission.copilotCredentialFile !== null) assertAbsolutePath("Copilot credential file", admission.copilotCredentialFile)
+  return admission
+}
+
+const parseOmpAdmission = (output: string, expectedProfile: string): OmpAdmission => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(output)
+  } catch {
+    throw new NativeRunError("launch", "OMP admission returned invalid JSON")
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new NativeRunError("launch", "OMP admission returned invalid JSON")
+  const value = parsed as Record<string, unknown>
+  if (!validOmpAdmissionShape(value)) throw new NativeRunError("launch", "OMP admission returned invalid JSON")
+  return validateOmpAdmission(value, expectedProfile)
+}
+
+const runOmpAdmission = async (
+  profile: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<OmpAdmission> => {
+  const runtime = lifecycleRuntime("omp")!
+  const command = binary(
+    environment,
+    "TRELLAGE_OMP_LIFECYCLE_BIN",
+    lifecycleRuntimeCommand(runtime, environment.HOME),
+  )
+  let stdout: string
+  try {
+    const result = await execFileAsync(command, ["_trx-admit", profile], {
+      env: { ...environment, TRELLAGE_TRX_OMP_ADAPTER: "1" },
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+    })
+    stdout = result.stdout
+  } catch (error) {
+    const failure = error as { stderr?: string; message?: string }
+    throw new NativeRunError(
+      "launch",
+      "OMP admission failed: " + (failure.stderr ?? failure.message ?? String(error)).trim(),
+    )
+  }
+  return parseOmpAdmission(stdout, profile === "default" ? "trellage-copilot-native" : "trellage-qwen-local")
+}
+
+const parseOmpHeadlessPolicy = (
+  argument: string,
+  next: string | undefined,
+  alreadySelected: boolean,
+): { readonly consumed: number } | undefined => {
+  if (argument === "--headless-policy") {
+    if (alreadySelected) throw new NativeRunError("usage", "--headless-policy may be specified only once")
+    if (next === undefined || next.length === 0 || next.startsWith("-"))
+      throw new NativeRunError("usage", "--headless-policy requires a value")
+    if (next !== "no-user-input") throw new NativeRunError("usage", "unknown --headless-policy: " + next)
+    return { consumed: 2 }
+  }
+  if (!argument.startsWith("--headless-policy=")) return undefined
+  if (alreadySelected) throw new NativeRunError("usage", "--headless-policy may be specified only once")
+  const value = argument.slice("--headless-policy=".length)
+  if (value.length === 0) throw new NativeRunError("usage", "--headless-policy requires a value")
+  if (value !== "no-user-input") throw new NativeRunError("usage", "unknown --headless-policy: " + value)
+  return { consumed: 1 }
+}
+
+const parseOmpHeadlessArguments = (
+  args: ReadonlyArray<string>,
+): { readonly forwarded: string[]; readonly headless: boolean } => {
+  let headless = false
+  const forwarded: string[] = []
+  for (let index = 0; index < args.length; index += 1) {
+    const policy = parseOmpHeadlessPolicy(args[index]!, args[index + 1], headless)
+    if (policy !== undefined) {
+      headless = true
+      index += policy.consumed - 1
+      continue
+    }
+    forwarded.push(args[index]!)
+  }
+  return { forwarded, headless }
+}
+
+const createOmpHeadlessOverlay = async (layout: GenerationLayout): Promise<string> => {
+  const overlay = path.join(layout.generationPath, ".headless-policy-" + randomUUID() + ".yml")
+  await writeFile(overlay, "ask:\n  enabled: false\n", { flag: "wx", mode: 0o600 })
+  return overlay
+}
+
+const readOmpCredential = async (file: string | null): Promise<{ token?: string; cleanup: () => Promise<void> }> => {
+  if (file === null) return { cleanup: async () => {} }
+  const status = await lstat(file).catch(() => undefined)
+  if (!status || !status.isFile() || status.isSymbolicLink())
+    throw new NativeRunError("launch", "OMP admission returned an invalid Copilot credential file")
+  const token = (await readFile(file, "utf8")).trim()
+  if (token.length === 0 || token.includes("\n") || token.includes("\r"))
+    throw new NativeRunError("launch", "OMP admission returned an invalid Copilot credential")
+  return { token, cleanup: () => unlink(file).catch(() => {}) }
+}
+
+const prepareOmpHeadlessOverlay = async (
+  layout: GenerationLayout,
+  admission: OmpAdmission,
+  requested: boolean,
+): Promise<string | undefined> => {
+  if (!requested) return undefined
+  if (admission.version !== "18.8.5")
+    throw new NativeRunError(
+      "launch",
+      "--headless-policy no-user-input is verified only for OMP 18.8.5; installed version is " +
+        admission.version,
+    )
+  return createOmpHeadlessOverlay(layout)
+}
+
+const ompLaunchEnvironment = (
+  admission: OmpAdmission,
+  credential: { readonly token?: string },
+): Record<string, string | null> => {
+  const environment: Record<string, string | null> = {
+    OMP_PROFILE: admission.ompProfile,
+    PI_CONFIG_FILES: admission.piConfigFiles,
+  }
+  if (credential.token !== undefined) {
+    environment.COPILOT_GITHUB_TOKEN = credential.token
+    environment.GH_TOKEN = null
+    environment.GITHUB_TOKEN = null
+  }
+  return environment
+}
+
+const buildOmpLaunch = async (
+  layout: GenerationLayout,
+  planned: LaunchCommand,
+  forwardedArgs: ReadonlyArray<string>,
+  parsed: { readonly forwarded: string[]; readonly headless: boolean },
+  admission: OmpAdmission,
+  credential: { readonly token?: string; readonly cleanup: () => Promise<void> },
+): Promise<LaunchCommand> => {
+  let headlessOverlay: string | undefined
+  try {
+    headlessOverlay = await prepareOmpHeadlessOverlay(layout, admission, parsed.headless)
+    return {
+      ...planned,
+      command: admission.executable,
+      args: [
+        ...instructionsArgument(layout),
+        ...(headlessOverlay === undefined ? [] : ["--config", headlessOverlay]),
+        ...parsed.forwarded,
+      ],
+      env: ompLaunchEnvironment(admission, credential),
+      cleanup: async () => {
+        if (headlessOverlay !== undefined) await unlink(headlessOverlay).catch(() => {})
+        await credential.cleanup()
+      },
+    }
+  } catch (error) {
+    if (headlessOverlay !== undefined) await unlink(headlessOverlay).catch(() => {})
+    await credential.cleanup()
+    throw error
+  }
+}
+
 export const agencyAdapter: NativeAdapter = {
   id: "agency",
   label: "Agency",
@@ -557,7 +763,7 @@ export const ompAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "always-on.md",
   efforts: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-  policyVersion: "omp-direct-1",
+  policyVersion: "omp-admission-1",
   providerPolicy: (model) => `github-copilot:${model ?? "gpt-5.6-sol"}`,
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? "gpt-5.6-sol"} · effort ${effort ?? "medium"}`,
@@ -571,12 +777,19 @@ export const ompAdapter: NativeAdapter = {
   resumeArgs: () => [],
   launch: ({ layout, plan, forwardedArgs, environment }) => ({
     command: binary(environment, "TRELLAGE_OMP_BIN", "omp"),
-    args: ["--approval-mode", "yolo", ...instructionsArgument(layout), ...forwardedArgs],
+    args: [...instructionsArgument(layout), ...forwardedArgs],
     env: {
       OMP_PROFILE:
         selectedPreset(plan, "omp", "default") === "default" ? "trellage-copilot-native" : "trellage-qwen-local",
     },
   }),
+  resolveLaunch: async ({ layout, plan, forwardedArgs, environment }, planned) => {
+    const profile = selectedPreset(plan, "omp", "default")
+    const admission = await runOmpAdmission(profile, environment)
+    const parsed = parseOmpHeadlessArguments(forwardedArgs)
+    const credential = await readOmpCredential(admission.copilotCredentialFile)
+    return buildOmpLaunch(layout, planned, forwardedArgs, parsed, admission, credential)
+  },
 }
 
 export const primeAdapter: NativeAdapter = {

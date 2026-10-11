@@ -25,6 +25,7 @@ import { NativeRunError, resolveNativeRunPaths, type NativeRunPaths } from "./pa
 import { createSourceResolver, gitSourceTransport, type SourceTransport } from "./source.ts"
 import { ensureNativeConfig, withBuiltinPreset } from "./config-init.ts"
 import { nativePresetProfile } from "./presets.ts"
+import { acquireProfileGuard } from "./lifecycle-guard.ts"
 
 export interface RunOptions {
   readonly harness: string
@@ -183,7 +184,7 @@ const loadInstructions = async (configDirectory: string, catalog: NativeCatalog)
 }
 
 export interface Spawner {
-  (command: LaunchCommand, environment: NodeJS.ProcessEnv, cwd: string, onSpawn: () => void): Promise<number>
+  (command: LaunchCommand, environment: NodeJS.ProcessEnv, cwd: string, onSpawn: (pid?: number) => void): Promise<number>
 }
 
 export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
@@ -194,7 +195,7 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
       else env[key] = value
     }
     const child = spawn(launch.command, [...launch.args], { cwd: launch.cwd ?? cwd, env, stdio: "inherit" })
-    child.once("spawn", onSpawn)
+    child.once("spawn", () => onSpawn(child.pid))
     child.once("error", (error) =>
       reject(new NativeRunError("launch", `could not start ${launch.command}: ${error.message}`)),
     )
@@ -531,6 +532,20 @@ const assertLaunchIsolation = (prepared: PreparedRun, options: RunOptions): void
   )
 }
 
+const createRunWriter = (options: RunOptions, dependencies: RunDependencies): ((line: string) => void) => {
+  if (dependencies.write) return dependencies.write
+  const outputFormatIndex = options.forwardedArgs.findIndex((argument) => argument === "--output-format")
+  const outputFormat =
+    outputFormatIndex === -1
+      ? options.forwardedArgs
+          .find((argument) => argument.startsWith("--output-format="))
+          ?.slice("--output-format=".length)
+      : options.forwardedArgs[outputFormatIndex + 1]
+  const machineOutput = outputFormat === "json" || outputFormat === "jsonl" || outputFormat === "stream-json"
+  if (machineOutput || (!options.dryRun && !process.stdout.isTTY)) return () => undefined
+  return (line: string) => process.stdout.write(`${line}\n`)
+}
+
 const launchPreparedRun = async (
   prepared: PreparedRun,
   options: RunOptions,
@@ -544,7 +559,14 @@ const launchPreparedRun = async (
   const history = createSelectionHistory(paths)
   const keys = await scopeKeysFor(cwd)
   const lease = await acquireLease(paths, prepared.plan.generationId)
+  const ompProfile = prepared.plan.profiles.find((profile) => profile.startsWith("preset-omp-"))?.slice("preset-omp-".length)
+  let guard: ReturnType<typeof acquireProfileGuard> | undefined
+  let cleanup: (() => void | Promise<void>) | undefined
   try {
+    guard =
+      prepared.adapter.id === "omp"
+        ? acquireProfileGuard("omp", [ompProfile ?? "default"], "run", environment.HOME)
+        : undefined
     const launchInput = {
       layout: prepared.layout,
       plan: prepared.plan,
@@ -562,31 +584,30 @@ const launchPreparedRun = async (
       finalEnvironment === undefined
         ? resolvedLaunch
         : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
+    cleanup = launch.cleanup
     let recorded: Promise<void> = Promise.resolve()
-    const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, () => {
+    const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, (pid) => {
+      if (pid !== undefined) guard?.attachChild(pid)
       recorded = history.record(keys, prepared.selection).catch(() => undefined)
     })
     await recorded
     write(`Resume     ${resumeCommand(options)}`)
     return status
   } finally {
-    await lease.release()
+    try {
+      await cleanup?.()
+    } finally {
+      try {
+        guard?.release()
+      } finally {
+        await lease.release()
+      }
+    }
   }
 }
 
 export const runNative = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<number> => {
-  const outputFormatIndex = options.forwardedArgs.findIndex((argument) => argument === "--output-format")
-  const outputFormat =
-    outputFormatIndex === -1
-      ? options.forwardedArgs
-          .find((argument) => argument.startsWith("--output-format="))
-          ?.slice("--output-format=".length)
-      : options.forwardedArgs[outputFormatIndex + 1]
-  const machineOutput = outputFormat === "json" || outputFormat === "jsonl" || outputFormat === "stream-json"
-  const reportLaunch = options.dryRun || process.stdout.isTTY
-  const write =
-    dependencies.write ??
-    (machineOutput || !reportLaunch ? () => undefined : (line: string) => process.stdout.write(`${line}\n`))
+  const write = createRunWriter(options, dependencies)
   const environment = dependencies.environment ?? process.env
   const cwd = dependencies.cwd ?? process.cwd()
   const paths = dependencies.paths ?? resolveNativeRunPaths({ environment })

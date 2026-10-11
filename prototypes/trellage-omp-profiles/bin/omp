@@ -1516,6 +1516,75 @@ wait_for_launch_child() {
   done
 }
 
+admit_omp() (
+  local version binary config_files token credential_file=''
+
+  cleanup_admission() {
+    [[ -z "$credential_file" ]] || rm -f -- "$credential_file"
+    release_profile_initialization_lock || :
+  }
+  trap 'cleanup_admission' EXIT HUP INT TERM
+
+  refresh_host_omp
+  version="$host_omp_version"
+  binary="$host_omp"
+  if ! profile_committed_ready; then
+    acquire_profile_initialization_lock || return $?
+    require_safe_profile_path
+    if ! profile_committed_ready; then
+      if [[ "$profile_kind" == local ]]; then
+        profile_is_owned_or_adoptable || require_owned_profile
+      fi
+      setup_profile >/dev/null
+    fi
+  fi
+  verify_managed_profile
+  ensure_floating_skills >/dev/null
+  ensure_community_skills >/dev/null
+  release_profile_initialization_lock || die "failed to release profile initialization lock: $profile_key"
+  config_files="$(compose_pi_config_files "$managed_overlay_path")"
+
+  if [[ "$profile_kind" == copilot ]] && token="$(resolve_copilot_token)"; then
+    require_safe_overlay_path
+    credential_file="$(mktemp "$runtime_root/.copilot-credential.XXXXXX")" \
+      || die 'could not stage Copilot credential handoff'
+    chmod 0600 "$credential_file"
+    printf '%s\n' "$token" >"$credential_file"
+  fi
+
+  if [[ -n "$credential_file" ]]; then
+    jq -cn \
+      --arg executable "$binary" \
+      --arg ompProfile "$profile_name" \
+      --arg piConfigFiles "$config_files" \
+      --arg version "$version" \
+      --arg copilotCredentialFile "$credential_file" \
+      '{
+        schemaVersion: 1,
+        executable: $executable,
+        ompProfile: $ompProfile,
+        piConfigFiles: $piConfigFiles,
+        version: $version,
+        copilotCredentialFile: $copilotCredentialFile
+      }'
+  else
+    jq -cn \
+      --arg executable "$binary" \
+      --arg ompProfile "$profile_name" \
+      --arg piConfigFiles "$config_files" \
+      --arg version "$version" \
+      '{
+        schemaVersion: 1,
+        executable: $executable,
+        ompProfile: $ompProfile,
+        piConfigFiles: $piConfigFiles,
+        version: $version,
+        copilotCredentialFile: null
+      }'
+  fi
+  trap - EXIT HUP INT TERM
+)
+
 run_for_selection() {
   local selection="$1" callback="$2"
 
@@ -1614,6 +1683,18 @@ case "$command_name" in
     shift
     [[ "$#" -eq 0 ]] || die 'harness-version accepts no arguments'
     print_harness_version_json
+    ;;
+  _trx-admit)
+    [[ "${TRELLAGE_TRX_OMP_ADAPTER:-}" == 1 ]] \
+      || die '_trx-admit is reserved for the trx OMP adapter'
+    shift
+    [[ "$#" -eq 1 ]] || die '_trx-admit requires a profile'
+    case "$1" in
+      default) select_profile copilot ;;
+      local) select_profile local ;;
+      *) die "unknown profile: $1" ;;
+    esac
+    admit_omp
     ;;
   local|copilot)
     public_profile="$command_name"

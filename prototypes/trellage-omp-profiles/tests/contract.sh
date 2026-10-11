@@ -431,6 +431,27 @@ copilot_agent_root="$copilot_profile_root/agent"
 local_overlay="$runtime_root/overlays/local.yml"
 copilot_overlay="$runtime_root/overlays/copilot.yml"
 
+# Canonical launches must cross the same router boundary users invoke.  Keep
+# the private manager available for lifecycle operations and admission, while
+# this fixture command supplies the source router with the isolated fixture
+# HOME and the installed manager as its adapter-only admission endpoint.
+canonical_omp_command="$fixture_root/trx-run-omp"
+cat >"$canonical_omp_command" <<CANONICAL_OMP_COMMAND
+#!/usr/bin/env bash
+set -euo pipefail
+case "\${1-}" in
+  local) profile=local; shift ;;
+  default|copilot) profile=default; shift ;;
+  *) profile=local ;;
+esac
+exec env \
+  TRELLAGE_TRX_SOURCE_ROOT="$root/../trellage-router" \
+  TRELLAGE_TRX_NATIVE_SOURCE=1 \
+  TRELLAGE_OMP_LIFECYCLE_BIN="\${TRELLAGE_OMP_LIFECYCLE_BIN:-\$HOME/.local/share/trellage/.native-commands/omp}" \
+  "$root/../trellage-router/bin/trx" run omp "\$profile" --no-always -- "\$@"
+CANONICAL_OMP_COMMAND
+chmod 0755 "$canonical_omp_command"
+
 seed_user_state() {
   local profile="$1" label="$2" target
   mkdir -p "$profile/agent" "$profile/sessions" "$profile/agent/cache"
@@ -476,10 +497,8 @@ MODELS
 cmp -s "$fixture_root/expected-local-models.yml" "$agent_root/models.yml" \
   || fail 'local setup did not publish the exact provider file'
 
-# Direct private-manager launch coordination was superseded by trx run's
-# lifecycle guard; keep the guarded reap contract below as the manager's
-# recovery surface.
-if false; then
+# Canonical trx runs still exercise the lifecycle manager's initialization
+# coordination; mutations below remain private-manager operations.
 lock_pause_mv_bin="$fixture_root/lock-pause-mv-bin"
 mkdir "$lock_pause_mv_bin"
 lock_pause_real_mv="$(command -v mv)"
@@ -507,12 +526,12 @@ TZ=UTC PATH="$lock_pause_mv_bin:$host_bin:$fixture_tools_path" \
   LOCK_PAUSE_REAL_MV="$lock_pause_real_mv" LOCK_PAUSE_DESTINATION="$local_overlay" \
   LOCK_PAUSE_READY_FILE="$timezone_ready" LOCK_PAUSE_RELEASE_FILE="$timezone_release" \
   FAKE_OMP_WAIT_FOR_SIGNAL=1 FAKE_OMP_SIGNAL_LOG="$timezone_first_signal" \
-  "$command_path" local -p timezone-first >"$fixture_root/timezone-first.out" 2>&1 &
+  "$canonical_omp_command" local -p timezone-first >"$fixture_root/timezone-first.out" 2>&1 &
 timezone_first_pid=$!
 wait_for_file "$timezone_ready" 'UTC initializer lock publication'
 TZ=America/New_York PATH="$host_bin:$fixture_tools_path" \
   FAKE_OMP_WAIT_FOR_SIGNAL=1 FAKE_OMP_SIGNAL_LOG="$timezone_second_signal" \
-  "$command_path" local -p timezone-second >"$fixture_root/timezone-second.out" 2>&1 &
+  "$canonical_omp_command" local -p timezone-second >"$fixture_root/timezone-second.out" 2>&1 &
 timezone_second_pid=$!
 sleep 0.2
 [[ ! -e "$timezone_second_signal" ]] \
@@ -560,12 +579,12 @@ PATH="$lock_pause_rm_bin:$host_bin:$fixture_tools_path" \
   LOCK_PAUSE_REAL_RM="$lock_pause_real_rm" LOCK_PAUSE_DESTINATION="$recovery_lock" \
   LOCK_PAUSE_READY_FILE="$recovery_ready" LOCK_PAUSE_RELEASE_FILE="$recovery_release" \
   LOCK_PAUSE_BLOCK=1 FAKE_OMP_WAIT_FOR_SIGNAL=1 FAKE_OMP_SIGNAL_LOG="$recovery_first_signal" \
-  "$command_path" local -p recovery-first >"$fixture_root/recovery-first.out" 2>&1 &
+  "$canonical_omp_command" local -p recovery-first >"$fixture_root/recovery-first.out" 2>&1 &
 recovery_first_pid=$!
 wait_for_file "$recovery_ready" 'first stale-lock claimant'
 PATH="$host_bin:$fixture_tools_path" \
   FAKE_OMP_WAIT_FOR_SIGNAL=1 FAKE_OMP_SIGNAL_LOG="$recovery_second_signal" \
-  "$command_path" local -p recovery-second >"$fixture_root/recovery-second.out" 2>&1 &
+  "$canonical_omp_command" local -p recovery-second >"$fixture_root/recovery-second.out" 2>&1 &
 recovery_second_pid=$!
 sleep 0.2
 [[ ! -e "$recovery_second_signal" ]] \
@@ -619,7 +638,7 @@ stale_claim_status=0
 PATH="$stale_claim_ps_bin:$host_bin:$fixture_tools_path" \
   STALE_CLAIM_PID="$stale_claim_pid" STALE_CLAIM_PS_READY="$stale_claim_ps_ready" \
   STALE_CLAIM_PS_RELEASE="$stale_claim_ps_release" STALE_CLAIM_REAL_PS="$stale_claim_real_ps" \
-  "$command_path" local -p stale-claim >"$fixture_root/stale-claim.out" 2>&1 &
+  "$canonical_omp_command" local -p stale-claim >"$fixture_root/stale-claim.out" 2>&1 &
 stale_claim_launcher_pid=$!
 wait_for_file "$stale_claim_ps_ready" 'stale recovery claim observation'
 printf '%s\n' "$stale_claim_pid $stale_claim_birth $stale_claim_pid-2" >"$stale_claim_reap"
@@ -630,7 +649,7 @@ touch "$stale_claim_ps_release"
 wait "$stale_claim_launcher_pid" || stale_claim_status=$?
 [[ "$stale_claim_status" -ne 0 ]] \
   || fail 'stale recovery claim interleaving unexpectedly succeeded'
-grep -Fqx 'omp: stale profile initialization recovery: local' "$fixture_root/stale-claim.out" \
+grep -Fq 'omp: stale profile initialization recovery: local' "$fixture_root/stale-claim.out" \
   || fail 'stale recovery claim interleaving did not report stale profile initialization recovery'
 grep -Fqx "$stale_claim_pid $stale_claim_birth $stale_claim_pid-2" "$stale_claim_reap" \
   || fail 'stale recovery claim interleaving deleted the replacement claim'
@@ -642,8 +661,6 @@ rm -f -- "$stale_claim_reap" "$stale_claim_lock"
 touch "$stale_claim_process_release"
 cleanup_stale_claim_process
 "$command_path" repair local >/dev/null || fail 'stale recovery claim test did not restore the local profile'
-
-fi
 
 reap_claim="$runtime_root/.profile-initialization-local.reap"
 reap_target="$fixture_root/reap-target"
@@ -1309,14 +1326,20 @@ grep -Fq 'omp: invalid catalog:' "$fixture_root/invalid-trellage-event-list.err"
   || fail 'unsupported Trellage event contract diagnostic differs'
 mv "$fixture_root/catalog.saved" "$runtime_root/catalog.json"
 
+pre_setup_profile_state="$fixture_root/pre-setup-profile-state"
+pre_setup_omp_calls="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
+find "$profile_root" "$runtime_root" -type f -exec shasum -a 256 {} + | sort >"$pre_setup_profile_state"
 if "$command_path" local -p 'Reply exactly OMP_REFUSED' \
   >"$fixture_root/pre-setup-launch.out" 2>"$fixture_root/pre-setup-launch.err"; then
   fail 'private profile manager launched OMP before setup'
 fi
 grep -Fqx 'omp: this private profile manager cannot launch agents; use trx run omp local' \
   "$fixture_root/pre-setup-launch.err" || fail 'pre-setup launch refusal diagnostic differs'
-[[ ! -s "$FAKE_OMP_LOG" ]] || fail 'pre-setup launch refusal invoked OMP'
-[[ ! -e "$profile_root" ]] || fail 'pre-setup launch refusal created profile state'
+[[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$pre_setup_omp_calls" ]] \
+  || fail 'pre-setup launch refusal invoked OMP'
+find "$profile_root" "$runtime_root" -type f -exec shasum -a 256 {} + | sort >"$fixture_root/pre-setup-profile-state.after"
+cmp -s "$pre_setup_profile_state" "$fixture_root/pre-setup-profile-state.after" \
+  || fail 'pre-setup launch refusal changed profile state'
 [[ ! -e "$runtime_root/installed-version" ]] \
   || fail 'pre-setup launch refusal installed OMP'
 
@@ -1462,6 +1485,7 @@ jq -e '
   }
 ' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON profile list differs'
 
+launch_refusal_omp_calls="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
 if "$command_path" -p 'Reply exactly OMP_REFUSED' \
   >"$fixture_root/bare-launch.out" 2>"$fixture_root/bare-launch.err"; then
   fail 'private profile manager accepted a bare launch'
@@ -1482,7 +1506,8 @@ if "$command_path" copilot -p 'Reply exactly OMP_REFUSED' \
 fi
 grep -Fqx 'omp: this private profile manager cannot launch agents; use trx run omp default' \
   "$fixture_root/copilot-launch.err" || fail 'Copilot launch refusal diagnostic differs'
-[[ ! -s "$FAKE_OMP_LOG" ]] || fail 'launch refusal invoked OMP'
+[[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$launch_refusal_omp_calls" ]] \
+  || fail 'launch refusal invoked OMP'
 
 config_hash="$(shasum -a 256 "$agent_root/config.yml" | awk '{print $1}')"
 models_hash="$(shasum -a 256 "$agent_root/models.yml" | awk '{print $1}')"
@@ -1499,13 +1524,14 @@ grep -Fqx 'profile session canary' "$profile_root/reinstall-canary" \
 "$command_path" harness-version | jq -e '.installed == "18.8.5"' >/dev/null \
   || fail 'reinstall changed the selected host version'
 
-if false; then
+# Canonical launch coverage enters through the public trx router. The private
+# manager refusal checks immediately above remain intentionally direct.
 worktree="$fixture_root/worktree with spaces"
 mkdir -p "$worktree"
 worktree="$(CDPATH= cd -P -- "$worktree" && pwd -P)"
 (
   cd "$worktree" || exit 1
-  "$command_path" -p 'Reply exactly OMP_LOCAL_OK' -- '--literal value'
+  "$canonical_omp_command" -p 'Reply exactly OMP_LOCAL_OK' -- '--literal value'
 ) || fail 'argument forwarding failed'
 expected_launch="$(jq -cn \
   --arg home "$HOME" \
@@ -1516,7 +1542,7 @@ expected_launch="$(jq -cn \
 
 (
   cd "$worktree" || exit 1
-  "$command_path" local -p 'Reply exactly OMP_LOCAL_EXPLICIT'
+  "$canonical_omp_command" local -p 'Reply exactly OMP_LOCAL_EXPLICIT'
 ) || fail 'explicit local launch failed'
 expected_local_launch="$(jq -cn \
   --arg home "$HOME" \
@@ -1527,7 +1553,7 @@ expected_local_launch="$(jq -cn \
 
 (
   cd "$worktree" || exit 1
-  "$command_path" copilot -p 'Reply exactly OMP_COPILOT_OK'
+  "$canonical_omp_command" copilot -p 'Reply exactly OMP_COPILOT_OK'
 ) || fail 'Copilot launch failed'
 expected_copilot_launch="$(jq -cn \
   --arg home "$HOME" \
@@ -1539,21 +1565,21 @@ grep -Fqx 'find-generic-password -s copilot-cli -w' "$FAKE_SECURITY_LOG" \
   || fail 'Copilot launch did not inherit the host Copilot credential'
 
 printf 'terminal-response\n' \
-  | FAKE_OMP_REQUIRE_STDIN=1 "$command_path" copilot -p stdin-probe \
+  | FAKE_OMP_REQUIRE_STDIN=1 "$canonical_omp_command" copilot -p stdin-probe \
   || fail 'Copilot launch did not preserve standard input'
 
 GH_TOKEN=host-copilot-token GITHUB_TOKEN=poison-github \
-  FAKE_COPILOT_KEYCHAIN=0 "$command_path" copilot -p gh-env-auth \
+  FAKE_COPILOT_KEYCHAIN=0 "$canonical_omp_command" copilot -p gh-env-auth \
   || fail 'Copilot launch did not accept GH_TOKEN'
 FAKE_GH_TOKEN=host-copilot-token FAKE_COPILOT_KEYCHAIN=0 \
-  "$command_path" copilot -p gh-cli-auth \
+  "$canonical_omp_command" copilot -p gh-cli-auth \
   || fail 'Copilot launch did not accept gh auth token'
 grep -Fqx 'auth token --hostname github.com' "$FAKE_GH_LOG" \
   || fail 'Copilot launch did not use the container-compatible gh auth fallback'
 
 (
   cd "$worktree" || exit 1
-  "$command_path" --headless-policy no-user-input -p 'Reply exactly OMP_HEADLESS_LOCAL'
+  "$canonical_omp_command" --headless-policy no-user-input -p 'Reply exactly OMP_HEADLESS_LOCAL'
 ) || fail 'local headless-policy launch failed'
 local_overlay_record="$(tail -n 1 "$FAKE_OMP_OVERLAY_LOG")"
 local_overlay_path="$(printf '%s\n' "$local_overlay_record" | jq -r '.path')"
@@ -1575,7 +1601,7 @@ printf '%s\n' "$local_overlay_record" | jq -e --arg managed "$local_overlay" '
 [[ ! -e "$local_overlay_path" ]] || fail 'local headless-policy overlay was not removed'
 
 GH_TOKEN=host-copilot-token GITHUB_TOKEN=poison-github \
-  FAKE_COPILOT_KEYCHAIN=0 "$command_path" copilot --headless-policy no-user-input \
+  FAKE_COPILOT_KEYCHAIN=0 "$canonical_omp_command" copilot --headless-policy no-user-input \
   -p 'Reply exactly OMP_HEADLESS_COPILOT' \
   || fail 'copilot headless-policy launch failed'
 copilot_overlay_record="$(tail -n 1 "$FAKE_OMP_OVERLAY_LOG")"
@@ -1599,11 +1625,11 @@ printf '%s\n' "$copilot_overlay_record" | jq -e --arg managed "$copilot_overlay"
 
 duplicate_before="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
 overlay_before="$(wc -l <"$FAKE_OMP_OVERLAY_LOG" | tr -d ' ')"
-if "$command_path" --headless-policy no-user-input --headless-policy no-user-input \
+if "$canonical_omp_command" --headless-policy no-user-input --headless-policy no-user-input \
   -p duplicate >"$fixture_root/headless-duplicate.out" 2>"$fixture_root/headless-duplicate.err"; then
   fail 'duplicate headless policy unexpectedly succeeded'
 fi
-grep -Fqx 'omp: --headless-policy may be specified only once' \
+grep -Fqx 'trx run: --headless-policy may be specified only once' \
   "$fixture_root/headless-duplicate.err" || fail 'duplicate headless policy diagnostic differs'
 [[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$duplicate_before" ]] \
   || fail 'duplicate headless policy invoked OMP'
@@ -1611,32 +1637,32 @@ grep -Fqx 'omp: --headless-policy may be specified only once' \
   || fail 'duplicate headless policy created an overlay'
 
 missing_before="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
-if "$command_path" --headless-policy >"$fixture_root/headless-missing.out" 2>"$fixture_root/headless-missing.err"; then
+if "$canonical_omp_command" --headless-policy >"$fixture_root/headless-missing.out" 2>"$fixture_root/headless-missing.err"; then
   fail 'missing headless policy value unexpectedly succeeded'
 fi
-grep -Fqx 'omp: --headless-policy requires a value' \
+grep -Fqx 'trx run: --headless-policy requires a value' \
   "$fixture_root/headless-missing.err" || fail 'missing headless policy diagnostic differs'
 [[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$missing_before" ]] \
   || fail 'missing headless policy invoked OMP'
 
 unknown_before="$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')"
-if "$command_path" --headless-policy unsupported -p unknown \
+if "$canonical_omp_command" --headless-policy unsupported -p unknown \
   >"$fixture_root/headless-unknown.out" 2>"$fixture_root/headless-unknown.err"; then
   fail 'unknown headless policy unexpectedly succeeded'
 fi
-grep -Fqx 'omp: unknown --headless-policy: unsupported' \
+grep -Fqx 'trx run: unknown --headless-policy: unsupported' \
   "$fixture_root/headless-unknown.err" || fail 'unknown headless policy diagnostic differs'
 [[ "$(wc -l <"$FAKE_OMP_LOG" | tr -d ' ')" == "$unknown_before" ]] \
   || fail 'unknown headless policy invoked OMP'
 
-if FAKE_OMP_EXIT_STATUS=37 "$command_path" local --help >/dev/null 2>&1; then
+if FAKE_OMP_EXIT_STATUS=37 "$canonical_omp_command" local --help >/dev/null 2>&1; then
   fail 'launcher swallowed upstream failure'
 else
   status=$?
   [[ "$status" -eq 37 ]] || fail "launcher exit was $status, expected 37"
 fi
 
-if FAKE_OMP_EXIT_STATUS=38 "$command_path" -h >/dev/null 2>&1; then
+if FAKE_OMP_EXIT_STATUS=38 "$canonical_omp_command" -h >/dev/null 2>&1; then
   fail 'launcher intercepted upstream short help'
 else
   status=$?
@@ -1651,7 +1677,7 @@ rm -f "$prelaunch_signal_ready" "$prelaunch_signal_release"
 FAKE_OMP_BLOCK_VERSION=1 \
 FAKE_OMP_READY_FILE="$prelaunch_signal_ready" \
 FAKE_OMP_RELEASE_FILE="$prelaunch_signal_release" \
-  "$command_path" --headless-policy no-user-input -p cancel-before-child &
+  "$canonical_omp_command" --headless-policy no-user-input -p cancel-before-child &
 prelaunch_signal_pid=$!
 for _ in {1..100}; do
   [[ -e "$prelaunch_signal_ready" ]] && break
@@ -1671,7 +1697,7 @@ fi
 [[ "$(wc -l <"$FAKE_OMP_OVERLAY_LOG" | tr -d ' ')" == "$prelaunch_signal_overlays" ]] \
   || fail 'prelaunch cancellation created an overlay'
 
-FAKE_OMP_WAIT_FOR_SIGNAL=1 "$command_path" -p wait-for-signal &
+FAKE_OMP_WAIT_FOR_SIGNAL=1 "$canonical_omp_command" -p wait-for-signal &
 signal_pid=$!
 for _ in {1..100}; do
   grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null && break
@@ -1688,7 +1714,7 @@ fi
 grep -Fqx TERM "$FAKE_OMP_SIGNAL_LOG" || fail 'launcher did not preserve TERM delivery'
 
 : >"$FAKE_OMP_SIGNAL_LOG"
-FAKE_OMP_WAIT_FOR_SIGNAL=1 "$command_path" --headless-policy no-user-input -p wait-for-signal &
+FAKE_OMP_WAIT_FOR_SIGNAL=1 "$canonical_omp_command" --headless-policy no-user-input -p wait-for-signal &
 headless_signal_pid=$!
 for _ in {1..100}; do
   grep -Fqx READY "$FAKE_OMP_SIGNAL_LOG" 2>/dev/null && break
@@ -1706,7 +1732,6 @@ grep -Fqx TERM "$FAKE_OMP_SIGNAL_LOG" || fail 'headless launcher did not preserv
 headless_signal_overlay_path="$(tail -n 1 "$FAKE_OMP_OVERLAY_LOG" | jq -r '.path')"
 [[ ! -e "$headless_signal_overlay_path" ]] || fail 'headless signal overlay was not removed'
 
-fi
 state_before="$fixture_root/doctor.before"
 state_after="$fixture_root/doctor.after"
 find "$runtime_root" "$profile_root" -type f -exec shasum -a 256 {} + | sort >"$state_before"
@@ -2120,13 +2145,12 @@ fresh_copilot_agent="$fresh_home/.omp/profiles/trellage-copilot-native/agent"
 
 # Fresh-launch concurrency belongs to trx's lifecycle guard. The private
 # manager now owns setup publication only and refuses direct agent launches.
-if false; then
 concurrent_home="$fixture_root/concurrent-fresh-home"
 mkdir "$concurrent_home"
 seed_floating_skills_cache "$concurrent_home"
 seed_community_skills_cache "$concurrent_home/.local/share/trellage/common/omp-community-skills"
 HOME="$concurrent_home" "$installer" >/dev/null || fail 'concurrent fresh fixture install failed'
-concurrent_command="$concurrent_home/.local/share/trellage/.native-commands/omp"
+concurrent_command="$canonical_omp_command"
 concurrent_host_one="$fixture_root/concurrent-host-one"
 concurrent_host_two="$fixture_root/concurrent-host-two"
 publish_host_omp "$concurrent_host_one" 18.0.11
@@ -2163,7 +2187,7 @@ mkdir "$isolated_home"
 seed_floating_skills_cache "$isolated_home"
 seed_community_skills_cache "$isolated_home/.local/share/trellage/common/omp-community-skills"
 HOME="$isolated_home" "$installer" >/dev/null || fail 'isolated fresh fixture install failed'
-isolated_command="$isolated_home/.local/share/trellage/.native-commands/omp"
+isolated_command="$canonical_omp_command"
 isolated_fault_bin="$fixture_root/isolated-fault-bin"
 mkdir "$isolated_fault_bin"
 cat >"$isolated_fault_bin/mv" <<'ISOLATED_FAULT_MV'
@@ -2209,7 +2233,6 @@ grep -Fqx 'trellage-omp-profile-v1' \
 [[ -z "$(find "$isolated_home/.local/share/trellage/omp" "$isolated_profile" \
   -name '.profile-transaction.*' -print -quit)" ]] \
   || fail 'isolated fresh launch leaked a publication transaction'
-fi
 
 ln -s "$fixture_root/provider-link-target" "$fresh_copilot_agent/models.yml"
 for operation in setup repair doctor update; do
