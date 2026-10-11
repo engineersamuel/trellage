@@ -167,12 +167,12 @@ if [[ "$live_scope" == all ]]; then
   jq -e '
     any(.profiles[];
       .name == "default"
-      and .headless.testedHarnessVersion == "18.0.10"
+      and .headless.testedHarnessVersion == "18.8.5"
       and .headless.prompt == true
       and .headless.questionToolControl == "prompt-only"
     )
   ' "$temp_root/omp-inventory.json" >/dev/null \
-    || fail 'omp copilot is not publishing the recorded OMP 18.0.10 contract'
+    || fail 'omp copilot is not publishing the recorded OMP 18.8.5 contract'
 
   printf 'verify-headless-live-contracts: Native Copilot\n'
   cpx_output="$temp_root/cpx.jsonl"

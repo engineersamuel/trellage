@@ -17,14 +17,17 @@ import {
   type LaunchCommand,
   type NativeAdapter,
   type ResumeRequest,
+  type LaunchGuard,
 } from "./adapters.ts"
 import { planComposition, publishGeneration, type CompositionPlan, type GenerationLayout } from "./compose.ts"
 import { createSelectionHistory, scopeKeysFor, type Selection } from "./history.ts"
 import { acquireLease, pruneGenerations } from "./lease.ts"
-import { NativeRunError, resolveNativeRunPaths, type NativeRunPaths } from "./paths.ts"
+import { NativeRunCancelledError, NativeRunError, resolveNativeRunPaths, type NativeRunPaths } from "./paths.ts"
 import { createSourceResolver, gitSourceTransport, type SourceTransport } from "./source.ts"
 import { ensureNativeConfig, withBuiltinPreset } from "./config-init.ts"
 import { nativePresetProfile } from "./presets.ts"
+import { acquireProfileGuard } from "./lifecycle-guard.ts"
+import { childSettlement } from "./child-settlement.ts"
 
 export interface RunOptions {
   readonly harness: string
@@ -183,10 +186,10 @@ const loadInstructions = async (configDirectory: string, catalog: NativeCatalog)
 }
 
 export interface Spawner {
-  (command: LaunchCommand, environment: NodeJS.ProcessEnv, cwd: string, onSpawn: () => void): Promise<number>
+  (command: LaunchCommand, environment: NodeJS.ProcessEnv, cwd: string, onSpawn: (pid?: number) => void, guard?: LaunchGuard): Promise<number>
 }
 
-export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
+export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn, guard) =>
   new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...environment }
     for (const [key, value] of Object.entries(launch.env)) {
@@ -194,7 +197,19 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
       else env[key] = value
     }
     const child = spawn(launch.command, [...launch.args], { cwd: launch.cwd ?? cwd, env, stdio: "inherit" })
-    child.once("spawn", onSpawn)
+    const settlement = childSettlement(child, guard)
+    let attachmentFailed = false
+    child.once("spawn", () => {
+      try {
+        onSpawn(child.pid)
+      } catch (error) {
+        attachmentFailed = true
+        void settlement.terminate().then((settled) => {
+          process.off("SIGTERM", term)
+          reject(settled ? error : new NativeRunError("launch", `child cleanup did not settle after SIGKILL: ${String(error)}`))
+        }, reject)
+      }
+    })
     child.once("error", (error) =>
       reject(new NativeRunError("launch", `could not start ${launch.command}: ${error.message}`)),
     )
@@ -203,6 +218,7 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn) =>
     process.on("SIGTERM", term)
     child.once("exit", (code, signal) => {
       process.off("SIGTERM", term)
+      if (attachmentFailed) return
       resolve(code ?? (signal ? 128 + (osConstants.signals[signal] ?? 0) : 1))
     })
   })
@@ -531,6 +547,20 @@ const assertLaunchIsolation = (prepared: PreparedRun, options: RunOptions): void
   )
 }
 
+const createRunWriter = (options: RunOptions, dependencies: RunDependencies): ((line: string) => void) => {
+  if (dependencies.write) return dependencies.write
+  const outputFormatIndex = options.forwardedArgs.findIndex((argument) => argument === "--output-format")
+  const outputFormat =
+    outputFormatIndex === -1
+      ? options.forwardedArgs
+          .find((argument) => argument.startsWith("--output-format="))
+          ?.slice("--output-format=".length)
+      : options.forwardedArgs[outputFormatIndex + 1]
+  const machineOutput = outputFormat === "json" || outputFormat === "jsonl" || outputFormat === "stream-json"
+  if (machineOutput || (!options.dryRun && !process.stdout.isTTY)) return () => undefined
+  return (line: string) => process.stdout.write(`${line}\n`)
+}
+
 const launchPreparedRun = async (
   prepared: PreparedRun,
   options: RunOptions,
@@ -544,7 +574,14 @@ const launchPreparedRun = async (
   const history = createSelectionHistory(paths)
   const keys = await scopeKeysFor(cwd)
   const lease = await acquireLease(paths, prepared.plan.generationId)
+  const ompProfile = prepared.plan.profiles.find((profile) => profile.startsWith("preset-omp-"))?.slice("preset-omp-".length)
+  let guard: ReturnType<typeof acquireProfileGuard> | undefined
+  let cleanup: (() => void | Promise<void>) | undefined
   try {
+    guard =
+      prepared.adapter.id === "omp"
+        ? acquireProfileGuard("omp", [ompProfile ?? "default"], "run", environment.HOME)
+        : undefined
     const launchInput = {
       layout: prepared.layout,
       plan: prepared.plan,
@@ -555,6 +592,7 @@ const launchPreparedRun = async (
       resumeArgs: options.resume ? prepared.adapter.resumeArgs(options.resume) : [],
       environment,
       workspace: cwd,
+      ...(guard === undefined ? {} : { guard }),
     }
     const resolvedLaunch = (await prepared.adapter.resolveLaunch?.(launchInput, prepared.launch)) ?? prepared.launch
     const finalEnvironment = await prepared.adapter.beforeLaunch?.(launchInput)
@@ -562,31 +600,30 @@ const launchPreparedRun = async (
       finalEnvironment === undefined
         ? resolvedLaunch
         : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
+    cleanup = launch.cleanup
     let recorded: Promise<void> = Promise.resolve()
-    const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, () => {
+    const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, (pid) => {
+      if (pid !== undefined) guard?.attachChild(pid)
       recorded = history.record(keys, prepared.selection).catch(() => undefined)
-    })
+    }, guard)
     await recorded
     write(`Resume     ${resumeCommand(options)}`)
     return status
   } finally {
-    await lease.release()
+    try {
+      await cleanup?.()
+    } finally {
+      try {
+        guard?.release()
+      } finally {
+        await lease.release()
+      }
+    }
   }
 }
 
 export const runNative = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<number> => {
-  const outputFormatIndex = options.forwardedArgs.findIndex((argument) => argument === "--output-format")
-  const outputFormat =
-    outputFormatIndex === -1
-      ? options.forwardedArgs
-          .find((argument) => argument.startsWith("--output-format="))
-          ?.slice("--output-format=".length)
-      : options.forwardedArgs[outputFormatIndex + 1]
-  const machineOutput = outputFormat === "json" || outputFormat === "jsonl" || outputFormat === "stream-json"
-  const reportLaunch = options.dryRun || process.stdout.isTTY
-  const write =
-    dependencies.write ??
-    (machineOutput || !reportLaunch ? () => undefined : (line: string) => process.stdout.write(`${line}\n`))
+  const write = createRunWriter(options, dependencies)
   const environment = dependencies.environment ?? process.env
   const cwd = dependencies.cwd ?? process.cwd()
   const paths = dependencies.paths ?? resolveNativeRunPaths({ environment })
@@ -613,6 +650,7 @@ export const main = async (argv: ReadonlyArray<string>): Promise<number> => {
   } catch (error) {
     if (error instanceof NativeRunError) {
       process.stderr.write(`trx run: ${error.message}\n`)
+      if (error instanceof NativeRunCancelledError) return 128 + (osConstants.signals[error.signal] ?? 0)
       return error.code === "usage" ? 2 : 1
     }
     throw error

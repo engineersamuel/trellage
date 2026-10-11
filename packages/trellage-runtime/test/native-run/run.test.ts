@@ -1,4 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { spawn } from "node:child_process"
+import { existsSync } from "node:fs"
 import { chmod, mkdir, readFile, readdir, readlink, realpath, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
@@ -8,6 +11,7 @@ import {
   fxAdapter,
   grokAdapter,
   jcodeAdapter,
+  ompAdapter,
   type LaunchInput,
 } from "../../src/native-run/adapters.ts"
 import {
@@ -22,6 +26,7 @@ import {
 } from "../../src/native-run/run.ts"
 import { createSourceResolver, gitSourceTransport } from "../../src/native-run/source.ts"
 import { createSelectionHistory, scopeKeysFor } from "../../src/native-run/history.ts"
+import { acquireProfileGuard } from "../../src/native-run/lifecycle-guard.ts"
 import { cleanupFixtures, createSourceRepo, fixturePaths, git, skillMarkdown, tempRoot } from "./fixtures.ts"
 
 afterEach(cleanupFixtures)
@@ -146,6 +151,641 @@ test("canonical adapters launch agent executables instead of retired profile wra
     )
     expect(prepared.launch.command).toBe(command)
     expect(prepared.launch.command).not.toMatch(/\/(?:agx|fmx|jcx|prx)$/u)
+  }
+})
+
+test("OMP admission prepares the host executable and managed launch environment", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle")
+  const executable = path.join(root, "host-omp")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  const managedOverlay = path.join(root, "omp-managed.yml")
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+test "$TRELLAGE_TRX_OMP_ADAPTER" = 1
+test "$1" = _trx-admit
+test "$2" = default
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-copilot-native",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: null,
+      }),
+    )}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: ["-p", "hello"],
+    workspace: work,
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  }
+  const launch = await ompAdapter.resolveLaunch!(input, prepared.launch)
+  expect(launch.command).toBe(executable)
+  expect(launch.args).toEqual(["-p", "hello"])
+  expect(launch.env).toMatchObject({
+    OMP_PROFILE: "trellage-copilot-native",
+    PI_CONFIG_FILES: managedOverlay,
+  })
+})
+
+test("OMP admission rejects malformed relative executable paths", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-relative")
+  const credential = path.join(root, "omp-invalid-admission-credential")
+  await writeFile(credential, "secret-token\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable: "omp",
+        ompProfile: "trellage-qwen-local",
+        piConfigFiles: "/tmp/managed.yml",
+        version: "18.8.5",
+        copilotCredentialFile: credential,
+      }),
+    )}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["local"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    environment: { HOME: root, PATH: process.env.PATH ?? "", TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle },
+  }
+  await expect(ompAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(/invalid executable/)
+  await expect(readFile(credential, "utf8")).rejects.toThrow()
+})
+
+test("OMP invalid headless policy does not leave an admission credential handoff", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-invalid-headless")
+  const executable = path.join(root, "host-omp-invalid-headless")
+  const managedOverlay = path.join(root, "omp-managed-invalid-headless.yml")
+  const credential = path.join(root, "omp-invalid-headless-credential")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' secret-token > "$OMP_TEST_CREDENTIAL"
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-copilot-native",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: credential,
+      }),
+    )}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: ["--headless-policy=unsupported"],
+    workspace: work,
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_CREDENTIAL: credential,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  }
+  await expect(ompAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(/unknown --headless-policy/)
+  await expect(readFile(credential, "utf8")).rejects.toThrow()
+})
+
+test("OMP invalid credential content removes the admission handoff", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-invalid-credential")
+  const executable = path.join(root, "host-omp-invalid-credential")
+  const managedOverlay = path.join(root, "omp-managed-invalid-credential.yml")
+  const credential = path.join(root, "omp-invalid-credential")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(credential, "token-one\ntoken-two\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-copilot-native",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: credential,
+      }),
+    )}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    environment: { HOME: root, PATH: process.env.PATH ?? "", TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle },
+  }
+  await expect(ompAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(/invalid Copilot credential/)
+  await expect(readFile(credential, "utf8")).rejects.toThrow()
+})
+
+test("OMP admission attaches its child and forwards diagnostics while it is supervised", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-supervised")
+  const childPidFile = path.join(root, "omp-admission.pid")
+  const terminatedFile = path.join(root, "omp-admission.terminated")
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' "$$" > "$OMP_TEST_ADMISSION_PID"
+printf '%s\\n' 'cached floating skill snapshot used' >&2
+trap 'printf "%s\\n" terminated > "$OMP_TEST_ADMISSION_TERMINATED"; exit 143' TERM INT HUP
+while :; do :; done
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const diagnostics: string[] = []
+  const previousWrite = process.stderr.write
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    diagnostics.push(String(chunk))
+    return true
+  }) as typeof process.stderr.write
+  const attached: number[] = []
+  const signalled: Array<{ pid: number; signal: NodeJS.Signals }> = []
+  const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
+  const guard = {
+    attachChild: (pid: number, grouped?: boolean) => {
+      profileGuard.attachChild(pid, grouped)
+      attached.push(pid)
+    },
+    signalTree: (pid: number, signal: NodeJS.Signals) => {
+      signalled.push({ pid, signal })
+      profileGuard.signalTree(pid, signal)
+    },
+    waitForTree: profileGuard.waitForTree,
+  }
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    guard,
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_ADMISSION_PID: childPidFile,
+      OMP_TEST_ADMISSION_TERMINATED: terminatedFile,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  } as LaunchInput & { readonly guard: typeof guard }
+  try {
+    const admission = ompAdapter.resolveLaunch!(input, prepared.launch)
+    for (let attempts = 0; attempts < 100 && !(await Bun.file(childPidFile).exists()); attempts += 1)
+      await Bun.sleep(10)
+    expect(await Bun.file(childPidFile).exists()).toBe(true)
+    expect(attached).toHaveLength(1)
+    process.emit("SIGTERM")
+    await expect(admission).rejects.toThrow(/OMP admission failed/)
+    expect(signalled).toEqual([{ pid: attached[0]!, signal: "SIGTERM" }])
+    expect(await Bun.file(terminatedFile).exists()).toBe(true)
+    expect(diagnostics.join("")).toContain("cached floating skill snapshot used")
+  } finally {
+    if (attached[0] !== undefined) {
+      profileGuard.signalTree(attached[0], "SIGKILL")
+      await profileGuard.waitForTree(attached[0], 1_000)
+    }
+    profileGuard.release()
+    process.stderr.write = previousWrite
+  }
+})
+
+test("OMP guard attachment failure settles its supervisor before admission can start", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-attach-failure")
+  const childPidFile = path.join(root, "omp-attach-failure.pid")
+  const terminatedFile = path.join(root, "omp-attach-failure.terminated")
+  const credential = path.join(root, "omp-attach-failure-credential")
+  const executable = path.join(root, "host-omp-attach-failure")
+  const managedOverlay = path.join(root, "omp-managed-attach-failure.yml")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+trap 'printf "%s\\n" terminated > "$OMP_TEST_ADMISSION_TERMINATED"; exit 143' TERM INT HUP
+printf '%s\\n' "$$" > "$OMP_TEST_ADMISSION_PID"
+printf '%s\\n' secret-token > "$OMP_TEST_CREDENTIAL"
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-copilot-native",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: credential,
+      }),
+    )}
+while :; do :; done
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
+  let attachedPid: number | undefined
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    guard: {
+      attachChild: (pid, grouped) => {
+        attachedPid = pid
+        profileGuard.attachChild(pid, grouped)
+        throw new Error("guard attachment failed")
+      },
+      signalTree: profileGuard.signalTree,
+      waitForTree: profileGuard.waitForTree,
+    },
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_ADMISSION_PID: childPidFile,
+      OMP_TEST_ADMISSION_TERMINATED: terminatedFile,
+      OMP_TEST_CREDENTIAL: credential,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  }
+  const admission = ompAdapter.resolveLaunch!(input, prepared.launch)
+  try {
+    await expect(admission).rejects.toThrow(/guard attachment failed/)
+    expect(await Bun.file(childPidFile).exists()).toBe(false)
+    expect(await Bun.file(terminatedFile).exists()).toBe(false)
+    expect(await Bun.file(credential).exists()).toBe(false)
+    expect(await profileGuard.waitForTree(attachedPid!, 0)).toBe(true)
+  } finally {
+    if (attachedPid !== undefined) {
+      profileGuard.signalTree(attachedPid, "SIGKILL")
+      await profileGuard.waitForTree(attachedPid, 1_000)
+    }
+    await admission.catch(() => undefined)
+    profileGuard.release()
+  }
+})
+
+test("SQLite attachment failure prevents admission descendants and late credential writes", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-descendant-attachment-failure")
+  const descendantScript = path.join(root, "omp-admission-descendant.ts")
+  const childPidFile = path.join(root, "omp-descendant-root.pid")
+  const descendantPidFile = path.join(root, "omp-descendant.pid")
+  const terminatedFile = path.join(root, "omp-descendant-root.terminated")
+  const credential = path.join(root, "omp-descendant-credential")
+  const emittedFile = path.join(root, "omp-descendant-emitted")
+  const executable = path.join(root, "host-omp-descendant-attachment-failure")
+  const managedOverlay = path.join(root, "omp-managed-descendant-attachment-failure.yml")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    descendantScript,
+    `import { writeFileSync } from "node:fs"
+
+writeFileSync(process.env.OMP_TEST_ADMISSION_DESCENDANT_PID!, String(process.pid) + "\\n")
+process.on("SIGTERM", () => {})
+process.on("SIGINT", () => {})
+setTimeout(() => {
+  writeFileSync(process.env.OMP_TEST_CREDENTIAL!, "secret-token\\n", { mode: 0o600 })
+  writeFileSync(process.env.OMP_TEST_EMITTED!, "emitted\\n")
+  process.stdout.write(${JSON.stringify(
+    `${JSON.stringify({
+      schemaVersion: 1,
+      executable,
+      ompProfile: "trellage-copilot-native",
+      piConfigFiles: managedOverlay,
+      version: "18.8.5",
+      copilotCredentialFile: credential,
+    })}\n`,
+  )})
+}, 2_500)
+`,
+    { mode: 0o600 },
+  )
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+trap 'printf "%s\\n" terminated > "$OMP_TEST_ADMISSION_TERMINATED"; exit 143' TERM INT HUP
+"$OMP_TEST_ADMISSION_RUNTIME" "$OMP_TEST_ADMISSION_DESCENDANT" &
+printf '%s\\n' "$$" > "$OMP_TEST_ADMISSION_PID"
+while :; do :; done
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
+  const db = new Database(path.join(root, ".local/share/trellage/profile-guards/profiles.sqlite"))
+  db.exec("CREATE TRIGGER reject_owner_updates BEFORE UPDATE ON owners BEGIN SELECT RAISE(FAIL, 'guard attachment failed'); END")
+  let treeSettledAt = 0
+  let attachedPid: number | undefined
+  let released = false
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    guard: {
+      attachChild: (pid, grouped) => {
+        attachedPid = pid
+        profileGuard.attachChild(pid, grouped)
+      },
+      signalTree: profileGuard.signalTree,
+      waitForTree: async (pid, timeout) => {
+        const settled = await profileGuard.waitForTree(pid, timeout)
+        if (settled) treeSettledAt = Date.now()
+        return settled
+      },
+    },
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_ADMISSION_PID: childPidFile,
+      OMP_TEST_ADMISSION_TERMINATED: terminatedFile,
+      OMP_TEST_ADMISSION_RUNTIME: process.execPath,
+      OMP_TEST_ADMISSION_DESCENDANT: descendantScript,
+      OMP_TEST_ADMISSION_DESCENDANT_PID: descendantPidFile,
+      OMP_TEST_CREDENTIAL: credential,
+      OMP_TEST_EMITTED: emittedFile,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  }
+  const admission = ompAdapter.resolveLaunch!(input, prepared.launch)
+  try {
+    await expect(admission).rejects.toThrow(/guard attachment failed/)
+    const rejectionAt = Date.now()
+    expect(treeSettledAt).toBeGreaterThan(0)
+    expect(treeSettledAt).toBeLessThanOrEqual(rejectionAt)
+    expect(await Bun.file(childPidFile).exists()).toBe(false)
+    expect(await Bun.file(descendantPidFile).exists()).toBe(false)
+    expect(await Bun.file(terminatedFile).exists()).toBe(false)
+    expect(await Bun.file(credential).exists()).toBe(false)
+    expect(await Bun.file(emittedFile).exists()).toBe(false)
+    expect(await profileGuard.waitForTree(attachedPid!, 0)).toBe(true)
+    profileGuard.release()
+    released = true
+    const mutation = acquireProfileGuard("omp", ["default"], "repair", root)
+    mutation.release()
+    await Bun.sleep(2_700)
+    expect(await Bun.file(credential).exists()).toBe(false)
+    expect(await Bun.file(emittedFile).exists()).toBe(false)
+  } finally {
+    if (!released && attachedPid !== undefined) {
+      profileGuard.signalTree(attachedPid, "SIGKILL")
+      await profileGuard.waitForTree(attachedPid, 1_000)
+    }
+    await admission.catch(() => undefined)
+    profileGuard.release()
+    db.close()
+  }
+})
+
+test("OMP admission bounds failed tree cleanup while owned work remains alive", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-cleanup-timeout")
+  const ready = path.join(root, "omp-cleanup-ready")
+  await writeFile(lifecycle, `#!/bin/sh
+trap '' TERM
+printf ready > "$OMP_TEST_READY"
+while :; do :; done
+`, { mode: 0o755 })
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
+  let childPid: number | undefined
+  const admission = ompAdapter.resolveLaunch!({
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_READY: ready,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+    guard: {
+      attachChild: (pid, grouped) => {
+        childPid = pid
+        profileGuard.attachChild(pid, grouped)
+      },
+      signalTree: (pid, signal) => {
+        if (signal === "SIGKILL") throw new Error("cannot signal admission tree")
+        profileGuard.signalTree(pid, signal)
+      },
+      waitForTree: profileGuard.waitForTree,
+    },
+  }, prepared.launch)
+  const outcome = admission.then(() => "unexpected launch", (error) => String(error))
+  try {
+    for (let attempt = 0; attempt < 200 && !existsSync(ready); attempt += 1) await Bun.sleep(10)
+    expect(existsSync(ready)).toBe(true)
+    process.emit("SIGTERM")
+    expect(await Promise.race([outcome, Bun.sleep(3_500).then(() => "cleanup timed out")]))
+      .toMatch(/admission cleanup did not settle/)
+    expect(await profileGuard.waitForTree(childPid!, 0)).toBe(false)
+  } finally {
+    if (childPid !== undefined) {
+      profileGuard.signalTree(childPid, "SIGKILL")
+      await profileGuard.waitForTree(childPid, 1_000)
+    }
+    await outcome
+    profileGuard.release()
+  }
+})
+
+test("OMP headless policy creates a per-launch overlay and cleans it after settlement", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-headless")
+  const executable = path.join(root, "host-omp-headless")
+  const managedOverlay = path.join(root, "omp-managed-headless.yml")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-qwen-local",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: null,
+      }),
+    )}
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["local"] }, dependencies())
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: ["--headless-policy=no-user-input", "-p", "hello"],
+    workspace: work,
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  }
+  const launch = await ompAdapter.resolveLaunch!(input, prepared.launch)
+  const overlayIndex = launch.args.indexOf("--config")
+  expect(overlayIndex).toBeGreaterThan(-1)
+  const overlay = launch.args[overlayIndex + 1]!
+  expect(path.isAbsolute(overlay)).toBe(true)
+  expect(await readFile(overlay, "utf8")).toBe("ask:\n  enabled: false\n")
+  expect(launch.args.slice(overlayIndex + 2)).toEqual(["-p", "hello"])
+  await launch.cleanup?.()
+  await expect(readFile(overlay, "utf8")).rejects.toThrow()
+})
+
+test("a canonical OMP run attaches its child and holds the mutation guard until exit", async () => {
+  const { dependencies, root } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-guard")
+  const executable = path.join(root, "host-omp-guard")
+  const managedOverlay = path.join(root, "omp-managed-guard.yml")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+printf '%s\\n' ${JSON.stringify(
+      JSON.stringify({
+        schemaVersion: 1,
+        executable,
+        ompProfile: "trellage-copilot-native",
+        piConfigFiles: managedOverlay,
+        version: "18.8.5",
+        copilotCredentialFile: null,
+      }),
+    )}
+`,
+    { mode: 0o755 },
+  )
+  let runPromise: Promise<number> | undefined
+  const childStarted = new Promise<number>((resolve) => {
+    const spawner: Spawner = async (_launch, _environment, _cwd, onSpawn) => {
+      const child = spawn("sleep", ["0.25"], { stdio: "ignore" })
+      child.once("spawn", () => {
+        onSpawn(child.pid)
+        resolve(child.pid ?? -1)
+      })
+      await new Promise<void>((done, reject) => {
+        child.once("error", reject)
+        child.once("exit", () => done())
+      })
+      return 0
+    }
+    runPromise = runNative(
+      { ...base, allowUnprovenIsolation: true, harness: "omp", profiles: ["default"] },
+      {
+        ...dependencies(spawner),
+        environment: {
+          ...dependencies(spawner).environment,
+          TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+        },
+      },
+    )
+  })
+  let db: Database | undefined
+  try {
+    const pid = await childStarted
+    expect(pid).toBeGreaterThan(0)
+    db = new Database(path.join(root, ".local/share/trellage/profile-guards/profiles.sqlite"))
+    const owners = db
+      .query<{ scope: string; operation: string; child_pid: number | null }, []>(
+        "SELECT scope, operation, child_pid FROM owners",
+      )
+      .all()
+    expect(owners).toHaveLength(1)
+    expect(owners[0]).toMatchObject({ scope: "omp/copilot", operation: "run", child_pid: pid })
+    expect(() => acquireProfileGuard("omp", ["default"], "repair", root)).toThrow(/profile busy/)
+    expect(runPromise).toBeDefined()
+    await expect(runPromise!).resolves.toBe(0)
+    expect(db.query("SELECT scope FROM owners").all()).toHaveLength(0)
+  } finally {
+    await runPromise?.catch(() => undefined)
+    db?.close()
+  }
+})
+
+test("a failed OMP guard admission releases its generation lease", async () => {
+  const { dependencies, paths, root } = await world()
+  const options = { ...base, allowUnprovenIsolation: true, harness: "omp", profiles: ["default"] }
+  const prepared = await prepareRun(options, dependencies())
+  const mutation = acquireProfileGuard("omp", ["default"], "repair", root)
+  try {
+    await expect(runNative(options, dependencies())).rejects.toThrow(/profile busy/)
+    await expect(readdir(path.join(paths.state, "leases", prepared.plan.generationId))).resolves.toEqual([])
+  } finally {
+    mutation.release()
   }
 })
 

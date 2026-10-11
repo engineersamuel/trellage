@@ -10,20 +10,20 @@ capabilities:
 bestFor:
   - Work that should use OMP's native GitHub Copilot authentication and full discovered model catalog instead of the local proxy
   - Sessions that lean on OMP's built-in LSP, debugger, browser, and eval tools alongside typed subagent fan-out
-  - Applying the shared poteto-mode, pstack-omp, and orchestrate-omp community skills, plus the 46 pstack workflow/principle/automation/support skills
+  - Applying the shared poteto-mode, pstack-omp, and orchestrate-omp community skills with the 31 harness-neutral workflow, principle, automation, and support skills
 avoidFor:
-  - Hosts with no usable GitHub Copilot credential and no willingness to run trx run omp default auth-broker login github-copilot
+  - Hosts without a host-installed OMP executable or usable GitHub Copilot credential
   - Fully offline or airgapped model routing; use trx run omp local for the keyless proxy-backed profile instead
-  - Non-interactive launches that must fail on any user prompt without OMP 18.0.10 exactly; questionToolControl=prompt-only is only proved for that version
+  - Non-interactive launches that must fail on any user prompt unless host OMP is exactly 18.8.5; only that version has the verified prompt/text contract
 prerequisites:
-  - id: mise
-    description: mise installed on the host; setup resolves and pins the eligible OMP release.
+  - id: host-omp
+    description: A valid host-installed OMP executable; Bun, Homebrew, and mise are supported owners for automatic update and latest-version checks, while manually maintained executables remain usable for setup, launch, repair, doctor, and inventory.
   - id: copilot-credential
     description: A usable GitHub Copilot credential in COPILOT_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN, gh auth token, or (macOS) the copilot-cli Keychain entry, or profile-scoped auth via trx run omp default auth-broker login github-copilot.
   - id: omp-317-community-skills
-    description: OMP 17.3.5 or newer for the bundled community skill directory to be discovered; older pins omit it until trx upgrade trx run omp default.
+    description: OMP 17.3.5 or newer for the bundled community skill directory to be discovered; older host versions remain usable without it.
   - id: cli-tools
-    description: curl and jq available on the host for setup, doctor, and update checks.
+    description: curl and jq available on the host for setup, doctor, and owner update checks.
 workflows:
   - id: native-copilot-tool-assisted-engineering
     description: Deliver a complex engineering outcome with OMP's native Copilot provider, tool surface, and typed subagents.
@@ -42,70 +42,104 @@ workflows:
     promptTemplate: |
       Use skill://poteto-mode to plan and coordinate {{intent}}.
   - id: pstack-orchestrate-omp
-    description: Combine the pstack-omp and orchestrate-omp community skills for pstack-style workflow automation on OMP's typed subagent fan-out.
+    description: Combine the pstack-omp and orchestrate-omp community skills for workflow automation on OMP's typed subagent fan-out.
     skill: skill://pstack-omp
     examples:
       - Use the pstack workflow skills to drive this feature through design, implementation, and review
-      - Coordinate specialized subagents to debug this regression and verify the final fix
+      - Coordinate specialized subagents to debug this regression and verify the final patch
     promptTemplate: |
       Use skill://pstack-omp together with skill://orchestrate-omp to drive
       {{intent}} through OMP's typed subagent fan-out.
 ---
 
-# Native Oh My Pi (`omp`) — `copilot` profile
+# Native Oh My Pi (`omp`): `default` profile
 
-`trx run omp default` runs OMP with its native GitHub Copilot provider and discovered
-model catalog, defaulting to `github-copilot/gpt-5.6-sol:medium`, without the
-local proxy. See `prototypes/trellage-omp-profiles/README.md`.
+`trx run omp default` runs OMP with the host-installed `omp` executable, its
+native GitHub Copilot provider, and the discovered model catalog. The launcher
+uses the backend's `copilot` profile name internally. See
+`prototypes/trellage-omp-profiles/README.md` for the complete lifecycle.
 
 ## Use This Profile When
 
 - You want OMP's native GitHub Copilot authentication and model catalog
   instead of the keyless local proxy used by `trx run omp local`.
 - You want OMP's built-in LSP, debugger, browser, and eval tools together
-  with typed subagent fan-out for a single task.
-- You want the shared community skill bundle: `orchestrate-omp`,
-  `poteto-mode`, and `pstack-omp` from `dsebban/skills`, plus 46 pstack
-  workflow/principle/automation/support skills from
-  `cursor/plugins/pstack` — 49 skills in total, synced into
-  `agent/community-skills`.
+  with typed subagent fan-out for one task.
+- You want the 34 approved OMP community skills and the shared native-common
+  skill bundle.
 
 ## Avoid This Profile When
 
-- No usable GitHub Copilot credential is available on the host and you are
-  not ready to run `trx run omp default auth-broker login github-copilot` for
-  profile-scoped authentication.
-- You want a fully offline, keyless proxy-backed route instead — use `omp
-  local`.
-- You need `--headless-policy no-user-input` to fail closed on a live-proved
-  prompt/text contract and are not running exact OMP `18.0.10`; other
-  versions fall back to conservative `headless` values.
+- No host-installed OMP executable or usable GitHub Copilot credential is
+  available, and profile-scoped authentication is not an option.
+- You want a keyless local route instead. Use `trx run omp local`.
+- You need `--headless-policy no-user-input` on an unverified OMP version.
+  Trellage publishes that contract only for exact OMP 18.8.5.
+
+## Host installation and updates
+
+Trellage does not install or pin a private OMP copy. A valid manually maintained
+host executable is enough for setup, launch, repair, doctor, and inventory.
+Bun, Homebrew, and mise are the supported owners for automatic update and
+latest-version checks; use the detected owner for updates:
+
+```text
+bun update -g --latest @oh-my-pi/pi-coding-agent '@oh-my-pi/pi-natives*'
+brew upgrade can1357/tap/omp
+mise upgrade github:can1357/oh-my-pi
+```
+
+`trx setup omp default` prepares the profile and managed overlay. `trx repair
+omp default` reconciles managed state without changing the host OMP version.
+`trx doctor omp default` is read-only. Unknown package ownership does not block
+setup, launch, repair, doctor, or inventory; it fails only update and check.
+Update a manually maintained host binary with the mechanism that installed it.
 
 ## Workflow Notes
 
 - Token order for native Copilot auth is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
   `GITHUB_TOKEN`, then `gh auth token`; macOS additionally falls back to the
-  existing `copilot-cli` Keychain credential. Only `COPILOT_GITHUB_TOKEN` is
-  forwarded to OMP; other token variables are removed first, and the token is
-  never copied to disk or logged.
-- `dsebban/skills` and `cursor/plugins/pstack` both provide a `poteto-mode`
-  skill; Trellage intentionally selects the `dsebban` version because it
-  adapts pstack skill links and agent roles for OMP.
-- Tool approval is set to `yolo` in both managed configuration and every
-  launch argument vector; the agent can use all host access available to the
-  OMP process.
-- The profile also carries the shared `native-common` floating skill bundle
-  (see `config.toml`: `engineersamuel` wildcard, `show-me`, and manually
-  activated `i-have-adhd`).
+  existing `copilot-cli` Keychain credential. Only
+  `COPILOT_GITHUB_TOKEN` is forwarded to OMP. Admission briefly stages the
+  credential in a per-launch mode-0600 file; the adapter removes that handoff
+  immediately after reading it, and removes it on admission failure. The token
+  is never included in admission JSON or logged.
+- `PI_CONFIG_FILES` retains existing entries and receives the Trellage overlay
+  last. Explicit OMP `--config` arguments load later and override the overlay.
+- The overlay disables startup update checks and marketplace auto-update,
+  enables the setup completion marker, sets tool approval to `yolo`, enables
+  Git protection and secret handling, and uses streaming cache warming.
+- Trellage does not rewrite `config.yml`, Copilot `models.yml`, authentication,
+  sessions, caches, history, or other profile state. The local profile's
+  provider file is the only managed `models.yml` exception.
+- `dsebban/skills` and `Aqua-123/pstack-for-codex` provide the approved 34
+  community skills. OMP 17.3.5 or newer discovers the community directory.
+  `trx skills update` refreshes caches, and `trx upgrade omp default
+  --skills-only` synchronizes the existing profile.
+
+## Headless behavior
+
+Only exact OMP 18.8.5 publishes the verified prompt/text headless capability.
+After an unverified host upgrade, `trx list --json` publishes conservative
+metadata and `--headless-policy no-user-input` fails before invoking OMP. The
+temporary `ask.enabled: false` layer is passed with a later `--config` and is
+removed after the launch.
+
+## Authentication
+
+If no host Copilot credential is available, use profile-scoped authentication:
+
+```bash
+trx run omp default auth-broker login github-copilot
+```
+
+The profile defaults to `github-copilot/gpt-5.6-sol:medium` while leaving the
+rest of the authenticated Copilot model catalog available.
 
 ## Gotchas
 
-- `trx`'s Herdr compatibility ledger marks `omp`/`copilot` as `verified`
-  with no open known-issue entry.
-- The bundled 49 community skills require OMP `17.3.5` or newer; a profile
-  pinned to an older release omits the `agent/community-skills` directory
-  from discovery until `trx upgrade trx run omp default` runs.
-- `skill://` is the invocation convention documented by `dsebban/skills` for
-  its own three community skills; no equivalent explicit invocation syntax
-  is documented for the 46 `cursor/plugins/pstack` skills bundled alongside
-  them.
+- `trx`'s Herdr compatibility ledger marks `omp`/`copilot` as `verified` with
+  no open known-issue entry.
+- A successful package-manager update does not prove headless compatibility
+  for the new version. Wait for a new live contract before relying on that
+  capability.
