@@ -154,6 +154,7 @@ export const profileGuardProfiles = (
 export interface ProfileGuard {
   readonly attachChild: (pid: number, processGroup?: boolean) => void;
   readonly signalTree: (pid: number, signal: NodeJS.Signals) => void;
+  readonly waitForTree: (pid: number, timeout?: number) => Promise<boolean>;
   readonly release: () => void;
 }
 
@@ -261,6 +262,7 @@ const emptyProfileGuard = (): ProfileGuard => ({
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     }
   },
+  waitForTree: async () => true,
   release: () => {},
 });
 
@@ -309,8 +311,16 @@ const signalOwnedTree = (
   pid: number,
   signal: NodeJS.Signals,
 ): void => {
+  const owner = db
+    .query<Owner, [string]>("SELECT * FROM owners WHERE token = ? LIMIT 1")
+    .get(token);
+  const previous = owner ? (JSON.parse(owner.descendants) as ProcessIdentity[]) : [];
   const started = processStart(pid);
-  if (started === null) return;
+  const previousRoot = previous.find((identity) => identity.pid === pid);
+  if (started === null || (previousRoot !== undefined && previousRoot.started !== started)) {
+    for (const identity of [...previous].reverse()) signalIdentity(identity, signal);
+    return;
+  }
   const stopped = new Map<number, ProcessIdentity>([[pid, { pid, started }]]);
   try {
     signalIdentity({ pid, started }, "SIGSTOP");
@@ -322,18 +332,27 @@ const signalOwnedTree = (
         signalIdentity(identity, "SIGSTOP");
       }
     }
-    const owner = db
-      .query<Owner, [string]>("SELECT * FROM owners WHERE token = ? LIMIT 1")
-      .get(token);
-    const previous = owner ? (JSON.parse(owner.descendants) as ProcessIdentity[]) : [];
-    const identities = [...previous, ...stopped.values()];
+    const identities = new Map(previous.map((identity) => [identity.pid, identity] as const));
+    for (const identity of stopped.values()) identities.set(identity.pid, identity);
     db.query("UPDATE owners SET descendants = ? WHERE token = ?").run(
-      JSON.stringify(identities),
+      JSON.stringify([...identities.values()]),
       token,
     );
     for (const identity of [...stopped.values()].reverse()) signalIdentity(identity, signal);
   } finally {
     for (const identity of stopped.values()) signalIdentity(identity, "SIGCONT");
+  }
+};
+
+const waitForOwnedTree = async (db: Database, token: string, timeout?: number): Promise<boolean> => {
+  const deadline = timeout === undefined ? undefined : Date.now() + timeout;
+  for (;;) {
+    const owners = db
+      .query<Owner, [string]>("SELECT * FROM owners WHERE token = ?")
+      .all(token);
+    if (!owners.some(ownerHasAttachedLiveWork)) return true;
+    if (deadline !== undefined && Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(10, deadline === undefined ? 10 : deadline - Date.now())));
   }
 };
 
@@ -370,6 +389,7 @@ const createOwnedProfileGuard = (db: Database, token: string): ProfileGuard => {
   return {
     signalTree: (pid, signal) => signalOwnedTree(db, token, pid, signal),
     attachChild: (pid, processGroup = false) => attachOwnedChild(db, token, pid, processGroup),
+    waitForTree: async (_pid, timeout) => waitForOwnedTree(db, token, timeout),
     release: () => {
       if (released) return;
       released = true;

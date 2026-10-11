@@ -73,6 +73,7 @@ export interface LaunchInput {
 export interface LaunchGuard {
   readonly attachChild: (pid: number, processGroup?: boolean) => void
   readonly signalTree: (pid: number, signal: NodeJS.Signals) => void
+  readonly waitForTree?: (pid: number, timeout?: number) => Promise<boolean>
 }
 
 export interface LaunchCommand {
@@ -477,6 +478,7 @@ const runOmpAdmission = async (
     const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
     let settled = false
     let closed = false
+    let terminationRequested = false
     const removeHandlers = () => signals.forEach((signal, index) => process.off(signal, handlers[index]!))
     const waitForClose = async (timeout: number): Promise<void> => {
       if (closed) return
@@ -492,23 +494,33 @@ const runOmpAdmission = async (
         child.once("close", onClose)
       })
     }
+    const signalTree = (signal: NodeJS.Signals): void => {
+      if (child.pid === undefined) return
+      terminationRequested = true
+      if (guard === undefined) child.kill(signal)
+      else guard.signalTree(child.pid, signal)
+    }
+    const treeSettled = async (timeout?: number): Promise<boolean> => {
+      if (child.pid === undefined || guard?.waitForTree === undefined) return closed
+      return guard.waitForTree(child.pid, timeout)
+    }
     const terminate = async (): Promise<void> => {
-      if (!closed) {
+      if (!terminationRequested) {
         try {
-          child.kill("SIGTERM")
+          signalTree("SIGTERM")
         } catch {
-          // The admission child already exited.
+          // The admission child or its guard already exited.
         }
-        await waitForClose(OMP_ADMISSION_TERM_TIMEOUT)
       }
-      if (!closed) {
-        try {
-          child.kill("SIGKILL")
-        } catch {
-          // The admission child already exited.
-        }
-        await waitForClose(OMP_ADMISSION_KILL_TIMEOUT)
+      await waitForClose(OMP_ADMISSION_TERM_TIMEOUT)
+      if (await treeSettled(0)) return
+      try {
+        signalTree("SIGKILL")
+      } catch {
+        // The admission child or its guard already exited.
       }
+      await waitForClose(OMP_ADMISSION_KILL_TIMEOUT)
+      await treeSettled()
     }
     const fail = async (error: unknown) => {
       if (settled) return
@@ -521,8 +533,7 @@ const runOmpAdmission = async (
     const handlers = signals.map((signal) => () => {
       try {
         if (child.pid === undefined) return
-        if (guard === undefined) child.kill(signal)
-        else guard.signalTree(child.pid, signal)
+        signalTree(signal)
       } catch (error) {
         void fail(error)
       }
@@ -541,8 +552,6 @@ const runOmpAdmission = async (
     child.once("close", (status, signal) => {
       closed = true
       if (settled) return
-      settled = true
-      removeHandlers()
       const output = stdout.join("")
       if (status !== 0) {
         const diagnostic = stderr.join("").trim()
@@ -550,13 +559,19 @@ const runOmpAdmission = async (
           "launch",
           "OMP admission failed: " + (diagnostic || String(status ?? signal ?? "without status")),
         )
-        void removeAdmissionCredential(output).then(() => reject(failure))
+        void fail(failure)
         return
       }
       try {
-        resolve(parseOmpAdmission(output, profile === "default" ? "trellage-copilot-native" : "trellage-qwen-local"))
+        const admission = parseOmpAdmission(
+          output,
+          profile === "default" ? "trellage-copilot-native" : "trellage-qwen-local",
+        )
+        settled = true
+        removeHandlers()
+        resolve(admission)
       } catch (error) {
-        void removeAdmissionCredential(output).then(() => reject(error))
+        void fail(error)
       }
     })
     try {

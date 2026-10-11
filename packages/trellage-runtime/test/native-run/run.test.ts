@@ -487,6 +487,133 @@ while :; do :; done
   }
 })
 
+test("OMP admission kills descendants before rejecting a failed attachment", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-descendant-attachment-failure")
+  const descendantScript = path.join(root, "omp-admission-descendant.ts")
+  const childPidFile = path.join(root, "omp-descendant-root.pid")
+  const descendantPidFile = path.join(root, "omp-descendant.pid")
+  const terminatedFile = path.join(root, "omp-descendant-root.terminated")
+  const credential = path.join(root, "omp-descendant-credential")
+  const emittedFile = path.join(root, "omp-descendant-emitted")
+  const executable = path.join(root, "host-omp-descendant-attachment-failure")
+  const managedOverlay = path.join(root, "omp-managed-descendant-attachment-failure.yml")
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await writeFile(managedOverlay, "setupVersion: 1\n", { mode: 0o600 })
+  await writeFile(
+    descendantScript,
+    `import { writeFileSync } from "node:fs"
+
+writeFileSync(process.env.OMP_TEST_ADMISSION_DESCENDANT_PID!, String(process.pid) + "\\n")
+process.on("SIGTERM", () => {})
+process.on("SIGINT", () => {})
+setTimeout(() => {
+  writeFileSync(process.env.OMP_TEST_CREDENTIAL!, "secret-token\\n", { mode: 0o600 })
+  writeFileSync(process.env.OMP_TEST_EMITTED!, "emitted\\n")
+  process.stdout.write(${JSON.stringify(
+    `${JSON.stringify({
+      schemaVersion: 1,
+      executable,
+      ompProfile: "trellage-copilot-native",
+      piConfigFiles: managedOverlay,
+      version: "18.8.5",
+      copilotCredentialFile: credential,
+    })}\n`,
+  )})
+}, 2_500)
+`,
+    { mode: 0o600 },
+  )
+  await writeFile(
+    lifecycle,
+    `#!/bin/sh
+trap 'printf "%s\\n" terminated > "$OMP_TEST_ADMISSION_TERMINATED"; exit 143' TERM INT HUP
+"$OMP_TEST_ADMISSION_RUNTIME" "$OMP_TEST_ADMISSION_DESCENDANT" &
+printf '%s\\n' "$$" > "$OMP_TEST_ADMISSION_PID"
+while :; do :; done
+`,
+    { mode: 0o755 },
+  )
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
+  let treeSettledAt = 0
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    guard: {
+      attachChild: () => {
+        const deadline = Date.now() + 1_000
+        while (
+          (!existsSync(childPidFile) || !existsSync(descendantPidFile)) &&
+          Date.now() < deadline
+        )
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+        throw new Error("guard attachment failed")
+      },
+      signalTree: profileGuard.signalTree,
+      waitForTree: async (pid, timeout) => {
+        const settled = await profileGuard.waitForTree(pid, timeout)
+        if (settled) treeSettledAt = Date.now()
+        return settled
+      },
+    },
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_ADMISSION_PID: childPidFile,
+      OMP_TEST_ADMISSION_TERMINATED: terminatedFile,
+      OMP_TEST_ADMISSION_RUNTIME: process.execPath,
+      OMP_TEST_ADMISSION_DESCENDANT: descendantScript,
+      OMP_TEST_ADMISSION_DESCENDANT_PID: descendantPidFile,
+      OMP_TEST_CREDENTIAL: credential,
+      OMP_TEST_EMITTED: emittedFile,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+  }
+  const admission = ompAdapter.resolveLaunch!(input, prepared.launch)
+  try {
+    for (let attempts = 0; attempts < 100 && !(await Bun.file(descendantPidFile).exists()); attempts += 1)
+      await Bun.sleep(10)
+    const descendantPid = Number(await readFile(descendantPidFile, "utf8"))
+    await expect(admission).rejects.toThrow(/guard attachment failed/)
+    const rejectionAt = Date.now()
+    expect(treeSettledAt).toBeGreaterThan(0)
+    expect(treeSettledAt).toBeLessThanOrEqual(rejectionAt)
+    expect(await Bun.file(terminatedFile).exists()).toBe(true)
+    expect(await Bun.file(credential).exists()).toBe(false)
+    expect(await Bun.file(emittedFile).exists()).toBe(false)
+    let gone = false
+    for (let attempts = 0; attempts < 20; attempts += 1) {
+      try {
+        process.kill(descendantPid, 0)
+      } catch {
+        gone = true
+        break
+      }
+      await Bun.sleep(10)
+    }
+    expect(gone).toBe(true)
+    await Bun.sleep(2_700)
+    expect(await Bun.file(credential).exists()).toBe(false)
+    expect(await Bun.file(emittedFile).exists()).toBe(false)
+  } finally {
+    if (await Bun.file(descendantPidFile).exists()) {
+      try {
+        process.kill(Number(await readFile(descendantPidFile, "utf8")), "SIGKILL")
+      } catch {
+        // The admission descendant already exited.
+      }
+    }
+    profileGuard.release()
+  }
+})
+
 test("OMP headless policy creates a per-launch overlay and cleans it after settlement", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-headless")
