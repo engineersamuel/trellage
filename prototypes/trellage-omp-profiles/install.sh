@@ -26,8 +26,6 @@ runtime_parent="$share_dir/trellage"
 install_root="$runtime_parent/omp"
 installed_launcher="$install_root/bin/omp"
 installed_catalog="$install_root/catalog.json"
-installed_version_receipt="$install_root/installed-version"
-legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-omp-profiles"
 command_dir="$runtime_parent/.native-commands"
 command_path="$command_dir/omp"
@@ -72,12 +70,29 @@ require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellag
   || refuse "unsafe managed launcher: $installed_launcher"
 [[ ! -L "$installed_catalog" && ( ! -e "$installed_catalog" || -f "$installed_catalog" ) ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
-for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
-  if [[ -e "$receipt" || -L "$receipt" ]]; then
-    [[ -f "$receipt" && ! -L "$receipt" ]] \
-      || refuse "unsafe installed version receipt: $receipt"
-  fi
-done
+is_retired_mise_cache() (
+  local cache="$install_root/cache" directory entry name
+  [[ -d "$cache" && ! -L "$cache" ]] || return 1
+  [[ "$(canonical_directory "$cache")" == "$canonical_home/.local/share/trellage/omp/cache" ]] || return 1
+  shopt -s nullglob dotglob
+  for directory in "$cache"/*; do
+    [[ -d "$directory" && ! -L "$directory" ]] || return 1
+    name="${directory##*/}"
+    case "$name" in
+      github|github-can1357-oh-my-pi|lockfiles|.auto_prune) ;;
+      *) return 1 ;;
+    esac
+    for entry in "$directory"/*; do
+      [[ -f "$entry" && ! -L "$entry" ]] || return 1
+      case "$name:${entry##*/}" in
+        github:https-api-github-com-can1357-oh-my-pi-*.msgpack.z) ;;
+        github-can1357-oh-my-pi:remote_versions-*.msgpack.z) ;;
+        lockfiles:*) [[ "${entry##*/}" =~ ^[[:xdigit:]]+$ ]] || return 1 ;;
+        *) return 1 ;;
+      esac
+    done
+  done
+)
 
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
 mkdir -p "$install_root/bin" "$command_dir"
@@ -103,6 +118,13 @@ fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
+if [[ "$runtime_owned" == true ]]; then
+  rm -rf -- "$install_root/installed-version" "$install_root/version" \
+    "$install_root/mise" "$install_root/mise-config"
+  if is_retired_mise_cache; then
+    rm -rf -- "$install_root/cache"
+  fi
+fi
 printf 'Installed omp at %s\n' "$command_path"
 
 # Retire only the old public symlink; retain the installed backend and runtime.

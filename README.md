@@ -771,9 +771,12 @@ Install the dependencies for the harnesses you use. On a brand-new machine:
    - composed Grok needs the `grok` CLI. `trx run grok` uses
      `copilot-proxy-rs`, generated API-key-only configuration, and Grok's
      native workspace sandbox; it does not require or copy an xAI login.
-   - JCode, OMP, and Pi need `mise` and `curl`.
-     First use resolves the latest stable runtime and records the installed
-     version locally for offline reuse.
+   - JCode and Pi need `mise` and `curl`; first use resolves their selected
+     runtime according to each backend's lifecycle.
+   - OMP needs a host-installed `omp` executable, `jq`, and `curl`. Bun,
+     Homebrew, and mise are supported owners for automatic update/check;
+     manually maintained executables also work for setup and launch. Trellage
+     does not install or pin a private OMP copy.
    - Prime Agent needs `mise`, Node 22+, `npm`, `curl`, `jq`, **and
      `uv`** (`mise use -g uv` if it is not already on `PATH`) to bootstrap its
      Python kernel venv.
@@ -943,16 +946,30 @@ Their isolated profile homes are rooted at:
 ```
 
 The native `omp` launcher is independent of the Docker `pi-oh-my-pi` profile.
-It reuses a locally recorded `mise`-resolved Oh My Pi release and provides two
-isolated profiles:
+It uses the host-installed `omp` executable and provides two isolated profiles:
 `local` routes every built-in model role to keyless
 `copilot-proxy-rs/qwen3.6-35b-a3b-local` on
 `http://127.0.0.1:8080/v1`, while `default` uses OMP's native GitHub Copilot
-authentication and discovered models. It uses the same host-auth precedence as
-the container profile (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then
-`gh auth token`) and on macOS additionally falls back to the existing
-`copilot-cli` Keychain credential. It defaults to
-`github-copilot/gpt-5.6-sol:medium`:
+authentication and discovered models. Trellage does not install or pin a
+private OMP copy. A valid manually maintained host executable is enough for
+setup, launch, repair, doctor, and inventory. Bun, Homebrew, and mise are the
+supported owners for automatic update and latest-version checks; use one of
+these commands when that owner is detected:
+
+```text
+bun update -g --latest @oh-my-pi/pi-coding-agent '@oh-my-pi/pi-natives*'
+brew upgrade can1357/tap/omp
+mise upgrade github:can1357/oh-my-pi
+```
+
+The wrapper resolves and checks the host executable on every setup, launch,
+doctor, inventory, and update command. Unknown ownership fails update and
+check but does not block setup, launch, repair, doctor, or inventory; update a
+manually maintained binary with the mechanism that installed it. The default
+profile uses the same host-auth precedence as the container profile
+(`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, then `gh auth token`) and
+on macOS additionally falls back to the existing `copilot-cli` Keychain
+credential. It defaults to `github-copilot/gpt-5.6-sol:medium`:
 
 ```bash
 trx setup omp local
@@ -962,13 +979,32 @@ trx doctor omp default
 trx models omp copilot-proxy-rs
 trx run omp local -- -p "Reply exactly OMP_LOCAL_OK"
 trx run omp default -p "Reply exactly OMP_COPILOT_OK"
-trx upgrade omp --check
+trx upgrade omp default --check
 trx upgrade omp default
 trx repair omp default
 ```
 
 `trx run omp default` uses native Copilot. `trx run omp local` preserves the
-former bare-`omp` local Qwen setup and its separate state.
+former bare-`omp` local Qwen setup and its separate state. Trellage leaves each
+profile's `config.yml`, Copilot `models.yml`, authentication, sessions, caches,
+history, and unrelated state byte-for-byte unchanged. The local profile's
+`models.yml` is the one provider-file exception because OMP has no equivalent
+overlay mechanism.
+
+The wrapper composes policy through `PI_CONFIG_FILES`: an existing list is
+preserved and the Trellage profile overlay is appended last. Explicit OMP
+`--config` arguments load later and override the overlay. The common policy
+disables startup update checks and marketplace auto-update, sets `yolo` tool
+approval, enables Git protection and secret handling, and uses streaming cache
+warming.
+
+Headless capability publication is conservative. The launcher accepts
+`--headless-policy no-user-input` for either profile only at exact OMP 18.8.5;
+the default profile publishes the verified prompt/text contract, while the
+local profile remains conservative and unverified because it has no live smoke
+contract for the local route. Other versions publish conservative metadata and
+fail closed after an unverified upgrade; keeping OMP current does not itself
+establish headless compatibility.
 
 See the [native OMP guide](prototypes/trellage-omp-profiles/README.md) for
 ownership, update, repair, and uninstall behavior.

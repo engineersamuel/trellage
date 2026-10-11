@@ -6,9 +6,8 @@ readonly provider='copilot-proxy-rs'
 readonly model_id='qwen3.6-35b-a3b-local'
 readonly model_selector="$provider/$model_id"
 readonly copilot_model_selector='github-copilot/gpt-5.6-sol:medium'
-readonly mise_tool='github:can1357/oh-my-pi'
 readonly profile_marker_value='trellage-omp-profile-v1'
-readonly verified_headless_policy_version='18.0.10'
+readonly verified_headless_policy_version='18.8.5'
 readonly minimum_community_skills_version='17.3.5'
 
 die() {
@@ -24,6 +23,7 @@ Usage:
   omp setup [local|copilot|--all]
   omp doctor [local|copilot]
   omp repair [local|copilot]
+  omp reap [local|copilot]
   omp skills-update PROFILE
   omp skills-check PROFILE
   omp update [--check] [local|copilot|--all]
@@ -52,8 +52,6 @@ script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
 runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
-readonly receipt_file="$runtime_root/installed-version"
-readonly legacy_version_file="$runtime_root/version"
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
@@ -69,6 +67,7 @@ profile_name=''
 profile_root=''
 agent_root=''
 profile_marker=''
+managed_overlay_path=''
 launch_child_pid=''
 launch_overlay_path=''
 launch_headless_policy=''
@@ -76,6 +75,13 @@ launch_pending_signal=''
 launch_cancel_status=0
 launch_forwarded_args=()
 community_skills_enabled=false
+host_omp=''
+host_omp_version=''
+initialization_lock_path=''
+initialization_lock_candidate=''
+initialization_lock_claim=''
+initialization_lock_reap=''
+initialization_lock_owner=''
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
@@ -249,6 +255,7 @@ select_profile() {
   profile_root="$HOME/.omp/profiles/$profile_name"
   agent_root="$profile_root/agent"
   profile_marker="$profile_root/.managed-by-trellage-omp-profiles"
+  managed_overlay_path="$runtime_root/overlays/$profile_key.yml"
 }
 
 list_profiles() {
@@ -313,17 +320,14 @@ require_safe_profile_path() {
   done
 }
 
-profile_is_owned_or_empty() {
-  local existing
-
+profile_is_owned_or_adoptable() {
   if [[ -e "$profile_marker" || -L "$profile_marker" ]]; then
     [[ -f "$profile_marker" && ! -L "$profile_marker" ]] || return 1
     [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] || return 1
     return 0
   fi
-  [[ ! -e "$profile_root" ]] && return 0
-  existing="$(find "$profile_root" -mindepth 1 \( -type f -o -type l \) -print -quit)"
-  [[ -z "$existing" ]]
+  [[ "$profile_kind" != local ]] && return 0
+  [[ ! -L "$agent_root/models.yml" && ! -e "$agent_root/models.yml" ]]
 }
 
 require_owned_profile() {
@@ -338,7 +342,7 @@ prepare_profile_directories() {
   local path="$HOME" component
 
   require_safe_profile_path
-  profile_is_owned_or_empty || die "refusing unrelated existing profile files: $profile_root"
+  profile_is_owned_or_adoptable || die "refusing unrelated existing profile files: $profile_root"
   for component in .omp profiles "$profile_name" agent; do
     path="$path/$component"
     [[ -e "$path" ]] || mkdir "$path"
@@ -348,7 +352,7 @@ prepare_profile_directories() {
   require_safe_profile_path
 }
 
-managed_config() {
+managed_overlay() {
   cat <<EOF
 setupVersion: 1
 startup:
@@ -372,7 +376,6 @@ modelRoles:
   slow: $model_selector
   vision: $model_selector
   plan: $model_selector
-  designer: $model_selector
   commit: $model_selector
   tiny: $model_selector
   task: $model_selector
@@ -384,17 +387,30 @@ EOF
     cat <<EOF
 modelRoles:
   default: $copilot_model_selector
+  smol: github-copilot/gpt-5.6-sol:low
+  slow: github-copilot/gpt-5.6-sol:high
+  vision: github-copilot/gpt-5.6-sol:medium
+  plan: github-copilot/gpt-5.6-sol:high
+  commit: github-copilot/gpt-5.6-sol:low
+  tiny: github-copilot/gpt-5.6-sol:low
+  task: github-copilot/gpt-5.6-sol:medium
+  advisor: github-copilot/gpt-5.6-sol:high
 EOF
   fi
   cat <<'EOF'
 tools:
   approvalMode: yolo
+bash:
+  gitGuard: true
+secrets:
+  enabled: true
+providers:
+  cacheWarming: streaming
 EOF
 }
 
-managed_models() {
-  if [[ "$profile_kind" == local ]]; then
-    cat <<EOF
+managed_local_models() {
+  cat <<EOF
 providers:
   $provider:
     baseUrl: http://127.0.0.1:8080/v1
@@ -403,115 +419,572 @@ providers:
     discovery:
       type: openai-models-list
 EOF
+}
+
+publish_local_models() (
+  local stage=''
+
+  require_safe_profile_path
+  [[ ! -L "$agent_root/models.yml" \
+    && ( ! -e "$agent_root/models.yml" || -f "$agent_root/models.yml" ) ]] \
+    || die "unsafe managed profile file: $agent_root/models.yml"
+  trap '[[ -z "$stage" ]] || rm -f -- "$stage"' EXIT
+  stage="$(mktemp "$agent_root/.models.yml.XXXXXX")"
+  managed_local_models >"$stage"
+  chmod 0600 "$stage"
+  mv -f "$stage" "$agent_root/models.yml"
+  stage=''
+)
+
+verify_local_models() {
+  [[ ! -L "$agent_root/models.yml" && -f "$agent_root/models.yml" ]] \
+    || die "managed models config is missing: $agent_root/models.yml"
+  cmp -s "$agent_root/models.yml" <(managed_local_models) \
+    || die "managed models config differs; run omp repair $profile_key"
+}
+
+require_safe_overlay_path() {
+  local marker="$runtime_root/.managed-by-trellage-omp-profiles"
+  local directory="$runtime_root/overlays"
+
+  [[ -d "$runtime_root" && ! -L "$runtime_root" ]] || die "unsafe runtime root: $runtime_root"
+  [[ -f "$marker" && ! -L "$marker" ]] || die "unowned runtime root: $runtime_root"
+  [[ "$(<"$marker")" == trellage-omp-profiles-v2 \
+    || "$(<"$marker")" == trellage-omp-profiles-v1 ]] || die "unowned runtime root: $runtime_root"
+  [[ ! -L "$directory" && ( ! -e "$directory" || -d "$directory" ) ]] \
+    || die "unsafe overlay directory: $directory"
+  [[ ! -L "$managed_overlay_path" \
+    && ( ! -e "$managed_overlay_path" || -f "$managed_overlay_path" ) ]] \
+    || die "unsafe managed overlay: $managed_overlay_path"
+}
+
+initialization_lock_file_is_safe() {
+  local path="$1" mode
+
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  if ! mode="$(stat -f '%Lp' "$path" 2>/dev/null)"; then
+    mode="$(stat -c '%a' "$path" 2>/dev/null)" || return 1
+  fi
+  [[ "$mode" == 600 ]]
+}
+
+valid_process_birth_identity() {
+  local birth="$1" weekday month day hour minute second year month_num max_day day_num year_num
+  local weekday_year weekday_index month_offset
+  local -a month_offsets=(0 3 2 5 0 3 5 1 4 6 2 4)
+  local -a weekday_names=(Sun Mon Tue Wed Thu Fri Sat)
+  local identity_regex='^(Sun|Mon|Tue|Wed|Thu|Fri|Sat)(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)([1-9]|[12][0-9]|3[01])([01][0-9]|2[0-3])([0-5][0-9])([0-5][0-9])([0-9]{4})$'
+
+  [[ "$birth" =~ $identity_regex ]] || return 1
+  weekday="${BASH_REMATCH[1]}"
+  month="${BASH_REMATCH[2]}"
+  day="${BASH_REMATCH[3]}"
+  hour="${BASH_REMATCH[4]}"
+  minute="${BASH_REMATCH[5]}"
+  second="${BASH_REMATCH[6]}"
+  year="${BASH_REMATCH[7]}"
+  case "$month" in
+    Jan) month_num=1; max_day=31 ;;
+    Feb) month_num=2; max_day=28 ;;
+    Mar) month_num=3; max_day=31 ;;
+    Apr) month_num=4; max_day=30 ;;
+    May) month_num=5; max_day=31 ;;
+    Jun) month_num=6; max_day=30 ;;
+    Jul) month_num=7; max_day=31 ;;
+    Aug) month_num=8; max_day=31 ;;
+    Sep) month_num=9; max_day=30 ;;
+    Oct) month_num=10; max_day=31 ;;
+    Nov) month_num=11; max_day=30 ;;
+    Dec) month_num=12; max_day=31 ;;
+  esac
+  day_num=$((10#$day))
+  year_num=$((10#$year))
+  (( year_num > 0 )) || return 1
+  if (( month_num == 2 && (year_num % 400 == 0 || (year_num % 4 == 0 && year_num % 100 != 0)) )); then
+    max_day=29
+  fi
+  (( day_num <= max_day )) || return 1
+  weekday_year="$year_num"
+  if (( month_num < 3 )); then
+    weekday_year=$((weekday_year - 1))
+  fi
+  month_offset="${month_offsets[$((month_num - 1))]}"
+  weekday_index=$(( (weekday_year + weekday_year / 4 - weekday_year / 100 + weekday_year / 400 + month_offset + day_num) % 7 ))
+  [[ "$weekday" == "${weekday_names[$weekday_index]}" ]]
+}
+
+process_birth_identity() (
+  local pid="$1" output_file diagnostic_file value compact status
+  local row_regex='^ *(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +([1-9]|[12][0-9]|3[01]) ([01][0-9]|2[0-3]):([0-5][0-9]):([0-5][0-9]) ([0-9]{4}) *$'
+
+  output_file="$(mktemp "${TMPDIR:-/tmp}/trellage-omp-ps-output.XXXXXX")" \
+    || return 2
+  diagnostic_file="$(mktemp "${TMPDIR:-/tmp}/trellage-omp-ps-diagnostic.XXXXXX")" \
+    || { rm -f -- "$output_file"; return 2; }
+  trap 'rm -f -- "$output_file" "$diagnostic_file"' EXIT
+  if TZ=UTC LC_ALL=C ps -p "$pid" -o lstart= >"$output_file" 2>"$diagnostic_file"; then
+    status=0
   else
-    printf 'providers: {}\n'
+    status=$?
+  fi
+  [[ ! -s "$diagnostic_file" ]] || return 2
+  if [[ "$status" != 0 ]]; then
+    [[ ! -s "$output_file" ]] && return 1
+    return 2
+  fi
+  IFS= read -r value <"$output_file" || return 2
+  cmp -s "$output_file" <(printf '%s\n' "$value") || return 2
+  [[ "$value" =~ $row_regex ]] || return 2
+  compact="$(printf '%s' "$value" | LC_ALL=C tr -cd '[:alnum:]')" || return 2
+  valid_process_birth_identity "$compact" || return 2
+  printf '%s\n' "$compact"
+)
+
+process_is_absent() {
+  local pid="$1" diagnostic
+
+  if diagnostic="$(LC_ALL=C kill -0 "$pid" 2>&1)"; then
+    return 1
+  fi
+  case "$diagnostic" in
+    *[Nn]o\ such\ process*|*ESRCH*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+pending_launch_signal_status() {
+  case "$launch_pending_signal" in
+    HUP) printf '129\n' ;;
+    INT) printf '130\n' ;;
+    TERM) printf '143\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+read_initialization_lock_owner() {
+  local path="$1" pid birth token extra
+
+  initialization_lock_file_is_safe "$path" || return 1
+  IFS=' ' read -r pid birth token extra <"$path" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ "$birth" =~ ^[A-Za-z0-9]+$ ]] || return 1
+  [[ "$token" =~ ^[1-9][0-9]*-[0-9]+$ ]] || return 1
+  [[ "${token%%-*}" == "$pid" ]] || return 1
+  [[ -z "$extra" ]] || return 1
+  cmp -s "$path" <(printf '%s %s %s\n' "$pid" "$birth" "$token") || return 1
+  printf '%s %s %s\n' "$pid" "$birth" "$token"
+}
+
+initialization_file_identity() {
+  local path="$1" identity
+
+  identity="$(stat -f '%d:%i' "$path" 2>/dev/null)" \
+    || identity="$(stat -c '%d:%i' "$path" 2>/dev/null)" \
+    || return 1
+  [[ "$identity" =~ ^[0-9]+:[0-9]+$ ]] || return 1
+  printf '%s\n' "$identity"
+}
+
+reap_profile_initialization_claim() (
+  local reap="$runtime_root/.profile-initialization-$profile_key.reap"
+  local owner claim_pid claim_birth current_birth expected_identity actual_identity
+  local staging_dir staging nested_claim restored=false identity_status=0
+
+  require_safe_overlay_path
+  [[ "$reap" == "$runtime_root/.profile-initialization-$profile_key.reap" ]] \
+    || die "unsafe profile initialization recovery claim: $profile_key"
+  [[ -f "$reap" && ! -L "$reap" ]] \
+    || die "unsafe profile initialization recovery claim: $profile_key"
+  initialization_lock_file_is_safe "$reap" \
+    || die "unsafe profile initialization recovery claim: $profile_key"
+  expected_identity="$(initialization_file_identity "$reap")" \
+    || die "could not identify profile initialization recovery claim: $profile_key"
+  owner="$(read_initialization_lock_owner "$reap" 2>/dev/null || :)"
+  [[ -n "$owner" ]] || die "malformed profile initialization recovery claim: $profile_key"
+  claim_pid="${owner%% *}"
+  claim_birth="${owner#* }"
+  claim_birth="${claim_birth%% *}"
+  [[ "$claim_pid" =~ ^[1-9][0-9]*$ ]] \
+    && valid_process_birth_identity "$claim_birth" \
+    || die "malformed profile initialization recovery claim: $profile_key"
+  [[ "$(initialization_file_identity "$reap" 2>/dev/null || :)" == "$expected_identity" ]] \
+    || die "profile initialization recovery claim changed during reap: $profile_key"
+  if current_birth="$(process_birth_identity "$claim_pid" 2>/dev/null)"; then
+    [[ "$current_birth" != "$claim_birth" ]] \
+      || die "profile initialization claim is live: $profile_key"
+  else
+    identity_status=$?
+    if [[ "$identity_status" != 1 ]] || ! process_is_absent "$claim_pid"; then
+      die "could not verify profile initialization claim identity: $profile_key"
+    fi
+  fi
+
+  staging_dir="$(mktemp -d "$runtime_root/.profile-initialization-$profile_key.reap.XXXXXX")" \
+    || die "could not stage profile initialization recovery claim: $profile_key"
+  trap 'rmdir "$staging_dir" 2>/dev/null || :' EXIT
+  chmod 0700 "$staging_dir" || die "could not secure profile initialization recovery claim: $profile_key"
+  staging="$staging_dir/claim"
+  if ! mv -n -- "$reap" "$staging"; then
+    die "could not claim profile initialization recovery file: $profile_key"
+  fi
+  if [[ -d "$staging" && ! -L "$staging" ]]; then
+    nested_claim="$staging/${reap##*/}"
+    [[ ! -e "$reap" && ! -L "$reap" ]] \
+      && [[ "$(initialization_file_identity "$nested_claim" 2>/dev/null || :)" == "$expected_identity" ]] \
+      && [[ "$(read_initialization_lock_owner "$nested_claim" 2>/dev/null || :)" == "$owner" ]] \
+      && ln "$nested_claim" "$reap" 2>/dev/null || :
+    die "profile initialization recovery claim changed during reap: $profile_key"
+  fi
+  [[ ! -e "$reap" && ! -L "$reap" ]] \
+    || die "profile initialization recovery claim changed during reap: $profile_key"
+  actual_identity="$(initialization_file_identity "$staging" 2>/dev/null || :)"
+  if [[ "$actual_identity" != "$expected_identity" ]] \
+    || [[ "$(read_initialization_lock_owner "$staging" 2>/dev/null || :)" != "$owner" ]]; then
+    if [[ ! -e "$reap" && ! -L "$reap" ]] && ln "$staging" "$reap" 2>/dev/null; then
+      rm -f -- "$staging"
+      restored=true
+    fi
+    if [[ "$restored" != true && ! -e "$reap" && ! -L "$reap" ]]; then
+      if mv -n -- "$staging" "$reap" 2>/dev/null \
+        && [[ ! -e "$staging" && -e "$reap" ]]; then
+        restored=true
+      fi
+    fi
+    [[ "$restored" == true ]] || die "profile initialization recovery claim changed during reap: $profile_key"
+    die "profile initialization recovery claim changed during reap: $profile_key"
+  fi
+  rm -f -- "$staging" \
+    || die "could not remove stale profile initialization recovery claim: $profile_key"
+  rmdir "$staging_dir" \
+    || die "could not clean stale profile initialization recovery staging: $profile_key"
+  printf 'omp reap %s: removed stale initialization claim\n' "$profile_key"
+)
+
+acquire_profile_initialization_lock() {
+  local lock="$runtime_root/.profile-initialization-$profile_key.lock"
+  local reap="$runtime_root/.profile-initialization-$profile_key.reap"
+  local candidate owner claimed_owner claim_pid claim_birth pid owner_birth current_birth token candidate_birth
+  local current_owner
+
+  [[ -z "$initialization_lock_path" ]] || die 'internal error: profile initialization lock already held'
+  require_safe_overlay_path
+  [[ ! -L "$lock" ]] || die "unsafe profile initialization lock: $profile_key"
+  [[ ! -e "$lock" || -f "$lock" ]] || die "unsafe profile initialization lock: $profile_key"
+  [[ ! -L "$reap" ]] || die "unsafe profile initialization recovery: $profile_key"
+  [[ ! -e "$reap" || -f "$reap" ]] || die "unsafe profile initialization recovery: $profile_key"
+
+  candidate="$(mktemp "$runtime_root/.profile-initialization-$profile_key.XXXXXX")" \
+    || die "could not stage profile initialization lock: $profile_key"
+  initialization_lock_candidate="$candidate"
+  candidate_birth="$(process_birth_identity "$$" 2>/dev/null || printf '%s\n' unavailable)"
+  token="$$-${RANDOM:-0}"
+  printf '%s %s %s\n' "$$" "$candidate_birth" "$token" >"$candidate" \
+    || die "could not write profile initialization lock: $profile_key"
+  chmod 0600 "$candidate" || die "could not secure profile initialization lock: $profile_key"
+
+  while :; do
+    if [[ -n "$launch_pending_signal" ]]; then
+      launch_cancel_status="$(pending_launch_signal_status)"
+      return "$launch_cancel_status"
+    fi
+    require_safe_overlay_path
+    [[ ! -L "$lock" ]] || die "unsafe profile initialization lock: $profile_key"
+    [[ ! -e "$lock" || -f "$lock" ]] || die "unsafe profile initialization lock: $profile_key"
+    if [[ -e "$reap" || -L "$reap" ]]; then
+      initialization_lock_file_is_safe "$reap" \
+        || die "unsafe profile initialization recovery: $profile_key"
+      claimed_owner="$(read_initialization_lock_owner "$reap" 2>/dev/null || :)"
+      [[ -n "$claimed_owner" ]] || die "unsafe profile initialization recovery: $profile_key"
+      claim_pid="${claimed_owner%% *}"
+      claim_birth="${claimed_owner#* }"
+      claim_birth="${claim_birth%% *}"
+      if kill -0 "$claim_pid" 2>/dev/null; then
+        current_birth="$(process_birth_identity "$claim_pid" 2>/dev/null || printf '%s\n' unavailable)"
+        if [[ "$claim_birth" == unavailable || "$current_birth" == unavailable || "$claim_birth" == "$current_birth" ]]; then
+          sleep 0.05
+          continue
+        fi
+      fi
+      die "stale profile initialization recovery: $profile_key"
+    fi
+    if ln "$candidate" "$lock" 2>/dev/null; then
+      initialization_lock_path="$lock"
+      initialization_lock_reap="$reap"
+      initialization_lock_owner="$$ $candidate_birth $token"
+      rm -f -- "$candidate" || die "could not clean profile initialization lock staging: $profile_key"
+      initialization_lock_candidate=''
+      return 0
+    fi
+    [[ -e "$lock" ]] || continue
+
+    owner="$(read_initialization_lock_owner "$lock" 2>/dev/null || :)"
+    [[ -n "$owner" ]] || {
+      [[ ! -e "$lock" && ! -L "$lock" ]] && continue
+      die "unsafe profile initialization lock: $profile_key"
+    }
+    pid="${owner%% *}"
+    owner_birth="${owner#* }"
+    owner_birth="${owner_birth%% *}"
+    if kill -0 "$pid" 2>/dev/null; then
+      current_birth="$(process_birth_identity "$pid" 2>/dev/null || printf '%s\n' unavailable)"
+      if [[ "$owner_birth" == unavailable || "$current_birth" == unavailable || "$owner_birth" == "$current_birth" ]]; then
+        sleep 0.05
+        continue
+      fi
+    fi
+
+    if ln "$candidate" "$reap" 2>/dev/null; then
+      claimed_owner="$(read_initialization_lock_owner "$reap" 2>/dev/null || :)"
+      if [[ "$claimed_owner" != "$$ $candidate_birth $token" ]]; then
+        rm -f -- "$reap" || die "could not discard changed profile initialization recovery: $profile_key"
+        continue
+      fi
+      current_owner="$(read_initialization_lock_owner "$lock" 2>/dev/null || :)"
+      if [[ "$current_owner" != "$owner" ]]; then
+        rm -f -- "$reap" || die "could not discard changed profile initialization recovery: $profile_key"
+        continue
+      fi
+      initialization_lock_claim="$reap"
+      initialization_lock_owner="$$ $candidate_birth $token"
+      rm -f -- "$lock" || die "could not recover profile initialization lock: $profile_key"
+      rm -f -- "$reap" || die "could not clean profile initialization recovery: $profile_key"
+      initialization_lock_claim=''
+      initialization_lock_owner=''
+    fi
+  done
+}
+
+profile_committed_ready() {
+  require_safe_profile_path
+  require_safe_overlay_path
+  [[ -f "$profile_marker" && ! -L "$profile_marker" ]] || return 1
+  [[ "$(<"$profile_marker")" == "$profile_marker_value" ]] || return 1
+  [[ -f "$managed_overlay_path" && ! -L "$managed_overlay_path" ]] || return 1
+  cmp -s "$managed_overlay_path" <(managed_overlay) || return 1
+  if [[ "$profile_kind" == local ]]; then
+    [[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] || return 1
+    cmp -s "$agent_root/models.yml" <(managed_local_models) || return 1
   fi
 }
 
-transaction_active=false
-config_backup=''
-models_backup=''
-marker_backup=''
-config_existed=false
-models_existed=false
-marker_existed=false
+release_profile_initialization_lock() {
+  local lock="$initialization_lock_path" owner claim_owner
 
-restore_target() {
-  local target="$1" backup="$2" existed="$3" staged
-
-  if [[ "$existed" == true && -f "$backup" ]]; then
-    staged="$(mktemp "$(dirname "$target")/.omp-rollback.XXXXXX")" || return
-    cp -p "$backup" "$staged" && mv -f "$staged" "$target"
-    return
+  if [[ -n "$initialization_lock_candidate" ]]; then
+    rm -f -- "$initialization_lock_candidate"
+    initialization_lock_candidate=''
   fi
-  rm -f -- "$target"
+  if [[ -n "$initialization_lock_claim" ]]; then
+    if [[ -e "$initialization_lock_claim" || -L "$initialization_lock_claim" ]]; then
+      claim_owner="$(read_initialization_lock_owner "$initialization_lock_claim")" || return 1
+      [[ "$claim_owner" == "$initialization_lock_owner" ]] || return 1
+      rm -f -- "$initialization_lock_claim" || return 1
+    fi
+    initialization_lock_claim=''
+  fi
+  [[ -n "$lock" ]] || return 0
+  if [[ ! -e "$lock" && ! -L "$lock" ]]; then
+    initialization_lock_path=''
+    initialization_lock_reap=''
+    initialization_lock_owner=''
+    return 0
+  fi
+  owner="$(read_initialization_lock_owner "$lock")" || return 1
+  [[ "$owner" == "$initialization_lock_owner" ]] || return 1
+  rm -f -- "$lock" || return 1
+  initialization_lock_path=''
+  initialization_lock_reap=''
+  initialization_lock_owner=''
 }
 
-rollback_profile_transaction() {
-  [[ "$transaction_active" == true ]] || return 0
-  restore_target "$agent_root/config.yml" "$config_backup" "$config_existed"
-  restore_target "$agent_root/models.yml" "$models_backup" "$models_existed"
-  restore_target "$profile_marker" "$marker_backup" "$marker_existed"
-}
+publish_managed_overlay() (
+  local stage=''
 
-cleanup_profile_transaction() {
-  rm -f -- "$config_backup" "$models_backup" "$marker_backup"
-  config_backup=''
-  models_backup=''
-  marker_backup=''
-}
+  require_safe_profile_path
+  require_safe_overlay_path
+  trap '[[ -z "$stage" ]] || rm -f -- "$stage"' EXIT
+  [[ -e "$runtime_root/overlays" ]] || mkdir "$runtime_root/overlays"
+  chmod 0700 "$runtime_root/overlays"
+  stage="$(mktemp "$runtime_root/overlays/.$profile_key.XXXXXX")"
+  managed_overlay >"$stage"
+  chmod 0600 "$stage"
+  mv -f "$stage" "$managed_overlay_path"
+  stage=''
+)
 
-publish_managed_profile() {
-  local config_stage models_stage marker_stage target
+publish_profile() (
+  local transaction='' marker_stage='' path index mode committed_count=0
+  local publication_paths=("$managed_overlay_path" "$profile_marker")
+  local publication_existing=()
+  local publication_directories=(
+    "$HOME/.omp" "$HOME/.omp/profiles" "$profile_root" "$agent_root" "$runtime_root/overlays"
+  )
+  local publication_directory_modes=()
 
-  prepare_profile_directories
-  for target in "$agent_root/config.yml" "$agent_root/models.yml"; do
-    [[ ! -L "$target" && ( ! -e "$target" || -f "$target" ) ]] \
-      || die "unsafe managed profile file: $target"
+  require_safe_profile_path
+  profile_is_owned_or_adoptable || die "refusing unrelated existing profile files: $profile_root"
+  require_safe_overlay_path
+  if [[ "$profile_kind" == local ]]; then
+    [[ ! -L "$agent_root/models.yml" \
+      && ( ! -e "$agent_root/models.yml" || -f "$agent_root/models.yml" ) ]] \
+      || die "unsafe managed profile file: $agent_root/models.yml"
+    publication_paths=("$agent_root/models.yml" "${publication_paths[@]}")
+  fi
+  for ((index=0; index < ${#publication_directories[@]}; index += 1)); do
+    path="${publication_directories[index]}"
+    mode=''
+    if [[ -d "$path" ]]; then
+      if ! mode="$(stat -f '%Lp' "$path" 2>/dev/null)"; then
+        mode="$(stat -c '%a' "$path")"
+      fi
+    fi
+    publication_directory_modes[index]="$mode"
   done
 
-  config_stage="$(mktemp "$agent_root/.config.yml.XXXXXX")"
-  models_stage="$(mktemp "$agent_root/.models.yml.XXXXXX")"
-  marker_stage="$(mktemp "$profile_root/.profile-marker.XXXXXX")"
-  managed_config >"$config_stage"
-  managed_models >"$models_stage"
-  printf '%s\n' "$profile_marker_value" >"$marker_stage"
-  chmod 0600 "$config_stage" "$models_stage" "$marker_stage"
+  finish_profile_publication() {
+    local status="$1" rollback_failed=false rollback_index directory
 
-  config_backup="$(mktemp "$agent_root/.config-backup.XXXXXX")"
-  models_backup="$(mktemp "$agent_root/.models-backup.XXXXXX")"
-  marker_backup="$(mktemp "$profile_root/.marker-backup.XXXXXX")"
-  config_existed=false
-  models_existed=false
-  marker_existed=false
-  if [[ -e "$agent_root/config.yml" ]]; then
-    config_existed=true
-    cp -p "$agent_root/config.yml" "$config_backup"
-  fi
-  if [[ -e "$agent_root/models.yml" ]]; then
-    models_existed=true
-    cp -p "$agent_root/models.yml" "$models_backup"
-  fi
-  if [[ -e "$profile_marker" ]]; then
-    marker_existed=true
-    cp -p "$profile_marker" "$marker_backup"
-  fi
+    set +e
+    [[ -z "$marker_stage" ]] || rm -f -- "$marker_stage" || rollback_failed=true
+    if [[ "$status" -ne 0 ]]; then
+      for ((rollback_index=committed_count - 1; rollback_index >= 0; rollback_index -= 1)); do
+        if [[ "${publication_existing[rollback_index]}" == true ]]; then
+          mv -f -- "$transaction/file-$rollback_index" "${publication_paths[rollback_index]}" \
+            || rollback_failed=true
+        else
+          rm -f -- "${publication_paths[rollback_index]}" || rollback_failed=true
+        fi
+      done
+      for ((rollback_index=${#publication_directories[@]} - 1; rollback_index >= 0; rollback_index -= 1)); do
+        directory="${publication_directories[rollback_index]}"
+        if [[ -n "${publication_directory_modes[rollback_index]}" ]]; then
+          chmod "${publication_directory_modes[rollback_index]}" "$directory" || rollback_failed=true
+        elif [[ -d "$directory" ]]; then
+          rmdir -- "$directory" || rollback_failed=true
+        fi
+      done
+    fi
+    if [[ "$rollback_failed" == true ]]; then
+      printf 'omp: profile publication rollback failed; recovery files retained at %s\n' "$transaction" >&2
+      return 1
+    fi
+    [[ -z "$transaction" ]] || rm -rf -- "$transaction"
+    return "$status"
+  }
 
-  transaction_active=true
-  trap 'rollback_profile_transaction; cleanup_profile_transaction' EXIT
+  trap 'finish_profile_publication "$?"' EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  mv -f "$config_stage" "$agent_root/config.yml"
-  [[ "${OMP_TEST_FAIL_AT-}" != after-config ]] || die 'injected failure after config publication'
-  mv -f "$models_stage" "$agent_root/models.yml"
-  [[ "${OMP_TEST_FAIL_AT-}" != after-models ]] || die 'injected failure after models publication'
+  transaction="$(mktemp -d "$runtime_root/.profile-transaction.XXXXXX")"
+  for ((index=0; index < ${#publication_paths[@]}; index += 1)); do
+    path="${publication_paths[index]}"
+    publication_existing[index]=false
+    if [[ -f "$path" ]]; then
+      cp -p -- "$path" "$transaction/file-$index"
+      publication_existing[index]=true
+    fi
+  done
+
+  prepare_profile_directories
+  if [[ "$profile_kind" == local ]]; then
+    publish_local_models
+    committed_count=$((committed_count + 1))
+  fi
+  publish_managed_overlay
+  committed_count=$((committed_count + 1))
+  marker_stage="$(mktemp "$profile_root/.profile-marker.XXXXXX")"
+  printf '%s\n' "$profile_marker_value" >"$marker_stage"
+  chmod 0600 "$marker_stage"
   mv -f "$marker_stage" "$profile_marker"
-  transaction_active=false
-  cleanup_profile_transaction
-  trap - EXIT HUP INT TERM
+  committed_count=$((committed_count + 1))
+  marker_stage=''
+)
+
+compose_pi_config_files() {
+  local overlay="$1" remaining="${PI_CONFIG_FILES-}" entry composed=''
+
+  # Put our layer last even when an inherited list already contains it.
+  while [[ -n "$remaining" ]]; do
+    entry="${remaining%%:*}"
+    if [[ "$entry" != "$overlay" ]]; then
+      if [[ -n "$composed" ]]; then
+        composed="$composed:$entry"
+      else
+        composed="$entry"
+      fi
+    fi
+    [[ "$remaining" == *:* ]] || break
+    remaining="${remaining#*:}"
+  done
+  printf '%s\n' "${composed:+$composed:}$overlay"
 }
 
-require_exact_version() {
-  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid OMP version: $1"
+canonical_executable() {
+  local path="$1" directory target links=0
+
+  [[ "$path" == /* ]] || path="$PWD/$path"
+  while :; do
+    directory="$(CDPATH= cd -P -- "${path%/*}/" 2>/dev/null && pwd -P)" || return 1
+    path="${directory%/}/${path##*/}"
+    if [[ ! -L "$path" ]]; then
+      [[ -f "$path" && -x "$path" ]] || return 1
+      printf '%s\n' "$path"
+      return 0
+    fi
+    (( links < 40 )) || return 1
+    links=$((links + 1))
+    target="$(readlink "$path")" || return 1
+    if [[ "$target" == /* ]]; then
+      path="$target"
+    else
+      path="$directory/$target"
+    fi
+  done
+}
+
+resolve_host_omp() {
+  local remaining="${PATH-}:" entry candidate canonical launcher_path internal_path=''
+
+  launcher_path="$(canonical_executable "${BASH_SOURCE[0]}")" \
+    || die 'could not resolve the running OMP launcher'
+  internal_path="$(canonical_executable "$runtime_root/../.native-commands/omp" 2>/dev/null)" \
+    || internal_path=''
+  while [[ "$remaining" == *:* ]]; do
+    entry="${remaining%%:*}"
+    remaining="${remaining#*:}"
+    [[ "$entry" == /* ]] || continue
+    candidate="$entry/omp"
+    [[ -f "$candidate" && -x "$candidate" ]] || continue
+    canonical="$(canonical_executable "$candidate")" || continue
+    [[ "$canonical" != "$launcher_path" && "$canonical" != "$internal_path" ]] || continue
+    printf '%s\n' "$canonical"
+    return 0
+  done
+  die 'no host OMP executable found on PATH; install with Bun (bun install -g @oh-my-pi/pi-coding-agent), Homebrew (brew install can1357/tap/omp), or mise (mise use -g github:can1357/oh-my-pi)'
+}
+
+read_omp_version() {
+  local binary="$1" actual
+
+  actual="$("$binary" --version)" \
+    || die "could not read host OMP version: $binary; repair this installation or correct PATH"
+  [[ "$actual" =~ ^omp/([0-9]+\.[0-9]+\.[0-9]+)$ ]] \
+    || die "invalid host OMP version from $binary: $actual; expected omp/X.Y.Z; repair this installation or correct PATH"
+  printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+refresh_host_omp() {
+  host_omp="$(resolve_host_omp)" || return $?
+  host_omp_version="$(read_omp_version "$host_omp")" || return $?
+  configure_version_capabilities "$host_omp_version"
 }
 
 omp_version_if_available() {
-  local version binary actual
+  local binary
 
-  if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
-    version="$(<"$receipt_file")"
-  elif [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
-    version="$(<"$legacy_version_file")"
-  else
-    return 0
-  fi
-  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
-  binary="$runtime_root/mise/installs/github-can1357-oh-my-pi/$version/omp"
-  [[ -x "$binary" && ! -L "$binary" ]] || return 0
-  actual="$("$binary" --version 2>/dev/null || :)"
-  [[ "$actual" == "omp/$version" ]] || return 0
-  printf '%s\n' "$version"
+  binary="$(resolve_host_omp 2>/dev/null)" || return 0
+  read_omp_version "$binary" 2>/dev/null || :
 }
 
 conservative_headless() {
@@ -568,217 +1041,20 @@ projected_headless_map_json() {
   '
 }
 
-mise_env() {
-  MISE_DATA_DIR="$runtime_root/mise" \
-    MISE_CACHE_DIR="$runtime_root/cache" \
-    MISE_CONFIG_DIR="$runtime_root/mise-config" \
-    MISE_GLOBAL_CONFIG_FILE=/dev/null \
-    MISE_IGNORED_CONFIG_PATHS="$HOME" \
-    mise "$@"
-}
-
-resolve_latest_version() {
-  local version
-
-  version="$(mise_env latest "$mise_tool")" || die 'could not resolve latest eligible OMP release'
-  require_exact_version "$version"
-  printf '%s\n' "$version"
-}
-
-read_installed_version() {
-  local version
-
-  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
-    && ( -e "$legacy_version_file" || -L "$legacy_version_file" ) ]]; then
-    [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]] \
-      || die "unsafe legacy installed version receipt: $legacy_version_file"
-    version="$(<"$legacy_version_file")"
-    require_exact_version "$version"
-    publish_installed_version "$version"
-  fi
-  [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
-    || die "OMP installed version receipt is missing; run omp setup $profile_key"
-  version="$(<"$receipt_file")"
-  require_exact_version "$version"
-  printf '%s\n' "$version"
-}
-
-installed_binary() {
-  local version="$1" install_dir expected
-
-  install_dir="$(mise_env where "$mise_tool@$version")" \
-    || die "OMP $version is not installed; run omp repair $profile_key"
-  expected="$runtime_root/mise/installs/github-can1357-oh-my-pi/$version"
-  [[ "$install_dir" == "$expected" ]] || die "mise returned unexpected OMP path: $install_dir"
-  [[ -x "$install_dir/omp" && ! -L "$install_dir/omp" ]] \
-    || die "OMP executable is missing: $install_dir/omp"
-  printf '%s/omp\n' "$install_dir"
-}
-
-verify_binary_version() {
-  local binary="$1" version="$2" actual
-
-  actual="$("$binary" --version)" || die "could not run OMP $version"
-  [[ "$actual" == "omp/$version" ]] || die "OMP version differs: expected omp/$version, got $actual"
-}
-
-install_exact_version() {
-  local version="$1" binary
-
-  mise_env install "$mise_tool@$version" || die "mise could not install OMP $version"
-  binary="$(installed_binary "$version")"
-  verify_binary_version "$binary" "$version"
-}
-
-stage_installed_version_receipt() {
-  local version="$1" staged
-
-  staged="$(mktemp "$runtime_root/.installed-version.XXXXXX")" \
-    || die 'could not stage OMP installed version receipt'
-  printf '%s\n' "$version" >"$staged"
-  chmod 0600 "$staged"
-  printf '%s\n' "$staged"
-}
-
-publish_installed_version() {
-  local version="$1" staged
-
-  staged="$(stage_installed_version_receipt "$version")"
-  mv -f "$staged" "$receipt_file"
-  rm -f -- "$legacy_version_file"
-}
-
-backup_update_state() {
-  local backup target name
-
-  backup="$(mktemp -d "$runtime_root/.update-backup.XXXXXX")" \
-    || die 'could not stage OMP update backup'
-  for target in "$agent_root/config.yml" "$agent_root/models.yml" "$profile_marker"; do
-    if [[ -e "$target" || -L "$target" ]]; then
-      [[ -f "$target" && ! -L "$target" ]] \
-        || {
-          rm -rf -- "$backup"
-          die "unsafe managed update target: $target"
-        }
-      name="$(basename "$target")"
-      cp -p "$target" "$backup/$name"
-    fi
-  done
-  for name in skills community-skills; do
-    target="$agent_root/$name"
-    if [[ -e "$target" || -L "$target" ]]; then
-      [[ -d "$target" && ! -L "$target" ]] \
-        || {
-          rm -rf -- "$backup"
-          die "unsafe managed update target: $target"
-        }
-      cp -R -p "$target" "$backup/$name"
-    fi
-  done
-  if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
-    cp -p "$receipt_file" "$backup/installed-version"
-  fi
-  if [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
-    cp -p "$legacy_version_file" "$backup/legacy-version"
-  fi
-  printf '%s\n' "$backup"
-}
-
-restore_update_state() {
-  local backup="$1" name target
-
-  rm -f -- "$agent_root/config.yml" "$agent_root/models.yml" "$profile_marker"
-  for name in config.yml models.yml; do
-    [[ ! -f "$backup/$name" ]] || mv "$backup/$name" "$agent_root/$name"
-  done
-  [[ ! -f "$backup/.managed-by-trellage-omp-profiles" ]] \
-    || mv "$backup/.managed-by-trellage-omp-profiles" "$profile_marker"
-  for name in skills community-skills; do
-    target="$agent_root/$name"
-    rm -rf -- "$target"
-    [[ ! -d "$backup/$name" ]] || mv "$backup/$name" "$target"
-  done
-  rm -f -- "$receipt_file" "$legacy_version_file"
-  [[ ! -f "$backup/installed-version" ]] \
-    || mv "$backup/installed-version" "$receipt_file"
-  [[ ! -f "$backup/legacy-version" ]] \
-    || mv "$backup/legacy-version" "$legacy_version_file"
-  rm -rf -- "$backup"
-}
-
-adopt_updated_version() {
-  local version="$1" backup receipt_stage status
-
-  receipt_stage="$(stage_installed_version_receipt "$version")"
-  backup="$(backup_update_state)"
-  if (
-    ensure_floating_skills
-    configure_version_capabilities "$version"
-    ensure_community_skills
-    publish_managed_profile
-    [[ "${OMP_TEST_FAIL_AT-}" != before-receipt-publication ]] \
-      || die 'injected failure before installed version receipt publication'
-    mv -f "$receipt_stage" "$receipt_file"
-  ); then
-    if ! rm -f -- "$legacy_version_file"; then
-      printf 'omp: warning: could not remove legacy installed version receipt: %s\n' \
-        "$legacy_version_file" >&2
-    fi
-    if ! rm -rf -- "$backup"; then
-      printf 'omp: warning: could not remove update backup: %s\n' "$backup" >&2
-    fi
-    return
-  else
-    status=$?
-    restore_update_state "$backup"
-    rm -f -- "$receipt_stage"
-    return "$status"
-  fi
+verify_managed_overlay() {
+  require_owned_profile
+  require_safe_overlay_path
+  [[ -f "$managed_overlay_path" && ! -L "$managed_overlay_path" ]] \
+    || die "managed overlay is missing: $managed_overlay_path"
+  cmp -s "$managed_overlay_path" <(managed_overlay) \
+    || die "managed overlay differs; run omp repair $profile_key"
 }
 
 verify_managed_profile() {
-  require_owned_profile
-  [[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] \
-    || die "managed config is missing: $agent_root/config.yml"
-  [[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] \
-    || die "managed models config is missing: $agent_root/models.yml"
-  cmp -s "$agent_root/config.yml" <(managed_config) \
-    || die "managed config differs; run omp repair $profile_key"
-  cmp -s "$agent_root/models.yml" <(managed_models) \
-    || die "managed models config differs; run omp repair $profile_key"
-}
-
-managed_profile_is_current() {
-  [[ -f "$agent_root/config.yml" && ! -L "$agent_root/config.yml" ]] || return 1
-  [[ -f "$agent_root/models.yml" && ! -L "$agent_root/models.yml" ]] || return 1
-  cmp -s "$agent_root/config.yml" <(managed_config) || return 1
-  cmp -s "$agent_root/models.yml" <(managed_models)
-}
-
-# OMP rewrites its own config during normal use, so drift on launch is expected
-# rather than exceptional. Republish instead of stopping for a manual repair.
-# Ownership and path safety still fail hard: only a profile this launcher created is
-# ever overwritten, and `omp doctor` keeps the strict check for diagnosis.
-ensure_managed_profile() {
-  require_owned_profile
-  managed_profile_is_current && return 0
-  publish_managed_profile
-  ensure_floating_skills
-  printf 'omp: managed config restored\n' >&2
-}
-
-# The installed version receipt is the contract. A missing installation is
-# repairable state, not a reason to refuse to start.
-ensure_installed_binary() {
-  local version="$1" binary
-
-  if binary="$(installed_binary "$version" 2>/dev/null)"; then
-    printf '%s\n' "$binary"
-    return 0
+  verify_managed_overlay
+  if [[ "$profile_kind" == local ]]; then
+    verify_local_models
   fi
-  printf 'omp: OMP %s is not installed; installing\n' "$version" >&2
-  install_exact_version "$version" >&2
-  installed_binary "$version"
 }
 
 profile_ready_label() {
@@ -792,19 +1068,11 @@ profile_ready_label() {
 setup_profile() {
   local version
 
-  require_command mise
-  if [[ -e "$receipt_file" || -L "$receipt_file" \
-    || -e "$legacy_version_file" || -L "$legacy_version_file" ]]; then
-    version="$(read_installed_version)"
-  else
-    version="$(resolve_latest_version)"
-  fi
-  configure_version_capabilities "$version"
-  install_exact_version "$version"
-  publish_managed_profile
+  refresh_host_omp
+  version="$host_omp_version"
+  publish_profile
   ensure_floating_skills
   ensure_community_skills
-  publish_installed_version "$version"
   if [[ "$profile_kind" == local ]]; then
     printf 'omp setup: ready (%s, %s)\n' "$version" "$(profile_ready_label)"
   else
@@ -816,11 +1084,10 @@ setup_profile() {
 repair_profile() {
   local version
 
-  require_command mise
-  version="$(read_installed_version)"
-  configure_version_capabilities "$version"
-  install_exact_version "$version"
-  publish_managed_profile
+  refresh_host_omp
+  version="$host_omp_version"
+  require_owned_profile
+  publish_profile
   ensure_floating_skills
   ensure_community_skills
   if [[ "$profile_kind" == local ]]; then
@@ -831,52 +1098,186 @@ repair_profile() {
   fi
 }
 
-check_for_update() {
-  local current latest
+bun_owns_omp() {
+  local binary="$1" global_bin owned_binary packages
 
-  require_command mise
-  current="$(read_installed_version)"
-  latest="$(resolve_latest_version)"
-  if [[ "$current" == "$latest" ]]; then
-    printf 'omp update: %s is current\n' "$current"
-    return
+  command -v bun >/dev/null 2>&1 || return 1
+  global_bin="$(bun pm bin -g 2>/dev/null)" || return 1
+  [[ "$global_bin" == /* ]] || return 1
+  owned_binary="$(canonical_executable "$global_bin/omp" 2>/dev/null)" || return 1
+  [[ "$owned_binary" == "$binary" ]] || return 1
+  packages="$(bun pm ls -g 2>/dev/null)" || return 1
+  awk -v package="@oh-my-pi/pi-coding-agent@$host_omp_version" '
+    { for (i = 1; i <= NF; i++) if ($i == package) found = 1 }
+    END { exit !found }
+  ' <<<"$packages"
+}
+
+brew_owns_omp() {
+  local binary="$1" packages root canonical_root
+
+  command -v brew >/dev/null 2>&1 || return 1
+  packages="$(brew list --formula --versions can1357/tap/omp 2>/dev/null)" || return 1
+  awk -v version="$host_omp_version" '
+    $1 == "omp" || $1 == "can1357/tap/omp" {
+      for (i = 2; i <= NF; i++) if ($i == version) found = 1
+    }
+    END { exit !found }
+  ' <<<"$packages" || return 1
+  for root in \
+    "$(brew --cellar can1357/tap/omp 2>/dev/null)" \
+    "$(brew --prefix can1357/tap/omp 2>/dev/null)"; do
+    [[ "$root" == /* ]] || continue
+    canonical_root="$(canonical_directory "$root" 2>/dev/null)" || continue
+    [[ "$binary" == "$canonical_root/"* ]] && return 0
+  done
+  return 1
+}
+
+mise_owns_omp() {
+  local binary="$1" owned_binary packages
+
+  command -v mise >/dev/null 2>&1 || return 1
+  owned_binary="$(mise which omp 2>/dev/null)" || return 1
+  owned_binary="$(canonical_executable "$owned_binary" 2>/dev/null)" || return 1
+  [[ "$owned_binary" == "$binary" ]] || return 1
+  packages="$(mise ls --json github:can1357/oh-my-pi 2>/dev/null)" || return 1
+  jq -e --arg version "$host_omp_version" '
+    type == "array" and any(.[]; .installed == true and .version == $version)
+  ' <<<"$packages" >/dev/null 2>&1
+}
+
+detect_omp_owner() {
+  local binary="$1"
+
+  if bun_owns_omp "$binary"; then
+    printf '%s\n' bun
+  elif brew_owns_omp "$binary"; then
+    printf '%s\n' brew
+  elif mise_owns_omp "$binary"; then
+    printf '%s\n' mise
+  else
+    return 1
   fi
-  printf 'omp update: %s -> %s available\n' "$current" "$latest"
+}
+
+owner_latest_version() {
+  local owner="$1" output latest outdated_status=0
+
+  case "$owner" in
+    bun)
+      output="$(bun outdated -g @oh-my-pi/pi-coding-agent --no-progress)" || return 1
+      latest="$(awk '
+        { gsub(/[|│]/, " ") }
+        $1 == "@oh-my-pi/pi-coding-agent" { print $NF }
+      ' <<<"$output")"
+      if [[ -z "$latest" ]]; then
+        awk 'NF && $0 !~ /^bun outdated v/ { found = 1 } END { exit found }' \
+          <<<"$output" || return 1
+        latest="$host_omp_version"
+      fi
+      ;;
+    brew)
+      # Homebrew exits 1 when a named formula is outdated, even with valid JSON.
+      output="$(brew outdated --formula --json=v2 can1357/tap/omp)" || outdated_status=$?
+      [[ "$outdated_status" == 0 || "$outdated_status" == 1 ]] || return 1
+      latest="$(jq -er '
+        .formulae[] | select(.full_name == "can1357/tap/omp" or .name == "can1357/tap/omp" or .name == "omp") | .current_version
+      ' <<<"$output")" || {
+        [[ "$outdated_status" == 0 ]] || return 1
+        jq -e '.formulae | type == "array" and length == 0' <<<"$output" >/dev/null || return 1
+        output="$(brew info --formula --json=v2 can1357/tap/omp)" || return 1
+        latest="$(jq -er '
+          .formulae[] | select(.full_name == "can1357/tap/omp" or .name == "can1357/tap/omp" or .name == "omp") | .versions.stable
+        ' <<<"$output")" || return 1
+      }
+      ;;
+    mise)
+      latest="$(mise latest github:can1357/oh-my-pi)" || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  [[ "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  printf '%s\n' "$latest"
+}
+
+upgrade_owned_omp() {
+  case "$1" in
+    bun) bun update -g --latest @oh-my-pi/pi-coding-agent '@oh-my-pi/pi-natives*' ;;
+    brew) brew upgrade can1357/tap/omp ;;
+    mise) mise upgrade github:can1357/oh-my-pi ;;
+    *) return 1 ;;
+  esac
+}
+
+require_omp_owner() {
+  detect_omp_owner "$host_omp" \
+    || die "unknown package manager ownership for host OMP $host_omp_version at $host_omp; update it manually with the mechanism used to install it"
+}
+
+check_for_update() {
+  local owner latest
+
+  refresh_host_omp
+  owner="$(require_omp_owner)" || return $?
+  latest="$(owner_latest_version "$owner" 2>/dev/null)" \
+    || die "could not determine the latest OMP version through $owner; current version is $host_omp_version at $host_omp"
+  printf 'omp update check: owner=%s current=%s latest=%s\n' "$owner" "$host_omp_version" "$latest"
 }
 
 print_harness_version_json() {
-  local installed='' latest=''
+  local owner='' latest='' diagnostic=''
 
-  installed="$(read_installed_version 2>/dev/null)" || installed=''
-  latest="$(resolve_latest_version 2>/dev/null)" || latest=''
-  jq -cn --arg installed "$installed" --arg latest "$latest" '{
+  refresh_host_omp
+  if owner="$(detect_omp_owner "$host_omp")"; then
+    latest="$(owner_latest_version "$owner" 2>/dev/null)" \
+      || diagnostic="Could not determine the latest host OMP version through $owner."
+  else
+    diagnostic="Unknown package manager ownership for host OMP at $host_omp; update it manually with the mechanism used to install it."
+  fi
+  jq -cn --arg installed "$host_omp_version" --arg latest "$latest" --arg diagnostic "$diagnostic" '{
     schemaVersion: 1,
     launcher: "omp",
     harness: "oh-my-pi",
-    installed: ($installed | if length > 0 then . else null end),
-    latest: ($latest | if length > 0 then . else null end),
-    latestKnown: ($latest | length > 0),
-    latestDiagnostic: (if ($latest | length) > 0 then null else "Could not resolve the latest harness release; check mise and package feed connectivity." end)
-  }'
+    installed: $installed,
+    latest: (if $latest == "" then null else $latest end),
+    latestKnown: ($latest != "")
+  } + (if $diagnostic == "" then {} else {latestDiagnostic: $diagnostic} end)'
+}
+
+preflight_update_profile() {
+  require_safe_profile_path
+  profile_is_owned_or_adoptable || die "refusing unrelated existing profile files: $profile_root"
+  require_safe_overlay_path
+  if [[ "$profile_kind" == local ]]; then
+    [[ ! -L "$agent_root/models.yml" \
+      && ( ! -e "$agent_root/models.yml" || -f "$agent_root/models.yml" ) ]] \
+      || die "unsafe managed profile file: $agent_root/models.yml"
+  fi
+}
+
+refresh_updated_profile() {
+  publish_profile
+  ensure_floating_skills
+  ensure_community_skills
 }
 
 update_profile() {
-  local current latest
+  local owner before
 
-  require_command mise
-  current="$(read_installed_version)"
-  latest="$(resolve_latest_version)"
-  if [[ "$current" == "$latest" ]]; then
-    ensure_floating_skills
-    configure_version_capabilities "$current"
-    ensure_community_skills
-    ensure_managed_profile
-    printf 'omp update: %s is current\n' "$current"
-    return
+  refresh_host_omp
+  before="$host_omp_version"
+  owner="$(require_omp_owner)" || return $?
+  run_for_selection --all preflight_update_profile
+  if ! upgrade_owned_omp "$owner"; then
+    if refresh_host_omp; then
+      die "$owner OMP update failed; still observed host OMP $host_omp_version at $host_omp (before: $before)"
+    fi
+    die "$owner OMP update failed; no valid host OMP remains (before: $before)"
   fi
-  install_exact_version "$latest"
-  adopt_updated_version "$latest"
-  printf 'omp update: %s -> %s installed\n' "$current" "$latest"
+  refresh_host_omp || die "$owner OMP update left no valid host executable (before: $before)"
+  run_for_selection --all refresh_updated_profile
+  printf 'omp update: owner=%s before=%s after=%s (%s)\n' "$owner" "$before" "$host_omp_version" "$host_omp"
 }
 
 doctor_local() {
@@ -894,18 +1295,20 @@ doctor_local() {
 }
 
 doctor_copilot() {
-  local binary="$1" output token
+  local binary="$1" output token config_files
+
+  config_files="$(compose_pi_config_files "$managed_overlay_path")"
 
   if token="$(resolve_copilot_token)"; then
     output="$(
       unset GH_TOKEN GITHUB_TOKEN
-      export COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name"
+      export COPILOT_GITHUB_TOKEN="$token" OMP_PROFILE="$profile_name" PI_CONFIG_FILES="$config_files"
       "$binary" models github-copilot 2>&1
     )" || {
       printf '%s\n' "$output" >&2
       die 'GitHub Copilot authentication is unavailable; run omp copilot auth-broker login github-copilot'
     }
-  elif ! output="$(OMP_PROFILE="$profile_name" \
+  elif ! output="$(OMP_PROFILE="$profile_name" PI_CONFIG_FILES="$config_files" \
     "$binary" models github-copilot 2>&1)"; then
     printf '%s\n' "$output" >&2
     die 'GitHub Copilot authentication is unavailable; run omp copilot auth-broker login github-copilot'
@@ -945,15 +1348,18 @@ resolve_copilot_token() {
 }
 
 doctor_profile() {
-  local version binary
+  local version="${2-}" binary="${1-}"
 
-  require_command mise
-  version="$(read_installed_version)"
-  configure_version_capabilities "$version"
+  if [[ "$#" -eq 0 ]]; then
+    refresh_host_omp
+    version="$host_omp_version"
+    binary="$host_omp"
+  else
+    [[ "$#" -eq 2 && -n "$binary" && -n "$version" ]] \
+      || die 'internal error: doctor host executable/version pair is incomplete'
+  fi
   verify_managed_profile
   check_community_skills
-  binary="$(installed_binary "$version")"
-  verify_binary_version "$binary" "$version"
   if [[ "$profile_kind" == local ]]; then
     doctor_local
   else
@@ -984,7 +1390,7 @@ not_ready_inventory() {
 }
 
 inventory_profile() {
-  local requested="$1"
+  local requested="$1" binary version
 
   jq -e --arg profile "$requested" '.profiles[$profile] != null' "$catalog" \
     >/dev/null || die "unknown profile: $requested"
@@ -993,16 +1399,23 @@ inventory_profile() {
     not_ready_inventory "$requested" not-setup
     return
   fi
-  if ! (doctor_profile >/dev/null 2>&1); then
+  if ! refresh_host_omp 2>/dev/null; then
     not_ready_inventory "$requested" unhealthy
     return
   fi
-  jq -cn --arg profile "$requested" '{
+  binary="$host_omp"
+  version="$host_omp_version"
+  if ! doctor_profile "$binary" "$version" >/dev/null 2>/dev/null; then
+    not_ready_inventory "$requested" unhealthy
+    return
+  fi
+  jq -cn --arg profile "$requested" --arg harnessVersion "$version" '{
     schemaVersion: 1,
     launcher: "omp",
     harness: "oh-my-pi",
     profile: $profile,
     readiness: "healthy",
+    harnessVersion: $harnessVersion,
     plugins: [],
     skills: {packageCount: null, visibleCount: null},
     mcps: []
@@ -1078,6 +1491,10 @@ cancel_pending_launch() {
   esac
   launch_pending_signal=''
   launch_child_pid=''
+  if [[ -n "$initialization_lock_path" ]]; then
+    release_profile_initialization_lock \
+      || die "failed to release profile initialization lock: $profile_key"
+  fi
   trap - EXIT HUP INT TERM
   cleanup_launch_overlay
   return 0
@@ -1154,6 +1571,13 @@ case "$command_name" in
       || die 'repair accepts only local or copilot'
     select_profile "${1-local}"
     repair_profile
+    ;;
+  reap)
+    shift
+    [[ "$#" -le 1 && "${1-local}" != --all ]] \
+      || die 'reap accepts only local or copilot'
+    select_profile "${1-local}"
+    reap_profile_initialization_claim
     ;;
   skills-check)
     shift
