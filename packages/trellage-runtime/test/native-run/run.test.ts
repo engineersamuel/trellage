@@ -547,7 +547,8 @@ while :; do :; done
     forwardedArgs: [],
     workspace: work,
     guard: {
-      attachChild: () => {
+      attachChild: (pid) => {
+        profileGuard.attachChild(pid)
         const deadline = Date.now() + 1_000
         while (
           (!existsSync(childPidFile) || !existsSync(descendantPidFile)) &&
@@ -610,6 +611,65 @@ while :; do :; done
         // The admission descendant already exited.
       }
     }
+    profileGuard.release()
+  }
+})
+
+test("OMP admission bounds failed tree cleanup while owned work remains alive", async () => {
+  const { dependencies, root, work } = await world()
+  const lifecycle = path.join(root, "omp-lifecycle-cleanup-timeout")
+  const ready = path.join(root, "omp-cleanup-ready")
+  await writeFile(lifecycle, `#!/bin/sh
+trap '' TERM
+printf ready > "$OMP_TEST_READY"
+while :; do :; done
+`, { mode: 0o755 })
+  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
+  let childPid: number | undefined
+  const admission = ompAdapter.resolveLaunch!({
+    resumeArgs: [],
+    layout: prepared.layout,
+    plan: prepared.plan,
+    planMode: false,
+    model: "gpt-5.6-sol",
+    effort: "medium",
+    forwardedArgs: [],
+    workspace: work,
+    environment: {
+      HOME: root,
+      PATH: process.env.PATH ?? "",
+      OMP_TEST_READY: ready,
+      TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
+    },
+    guard: {
+      attachChild: (pid) => {
+        childPid = pid
+        profileGuard.attachChild(pid)
+        const deadline = Date.now() + 1_000
+        while (!existsSync(ready) && Date.now() < deadline)
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+        throw new Error("guard attachment failed")
+      },
+      signalTree: (pid, signal) => {
+        if (signal === "SIGKILL") throw new Error("cannot signal admission tree")
+        profileGuard.signalTree(pid, signal)
+      },
+      waitForTree: profileGuard.waitForTree,
+    },
+  }, prepared.launch)
+  const outcome = admission.then(() => "unexpected launch", (error) => String(error))
+  try {
+    expect(existsSync(ready)).toBe(true)
+    expect(await Promise.race([outcome, Bun.sleep(3_500).then(() => "cleanup timed out")]))
+      .toMatch(/admission cleanup did not settle/)
+    expect(await profileGuard.waitForTree(childPid!, 0)).toBe(false)
+  } finally {
+    if (childPid !== undefined) {
+      profileGuard.signalTree(childPid, "SIGKILL")
+      await profileGuard.waitForTree(childPid, 1_000)
+    }
+    await outcome
     profileGuard.release()
   }
 })

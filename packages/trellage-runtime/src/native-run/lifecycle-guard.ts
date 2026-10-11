@@ -305,6 +305,12 @@ const openProfileGuardDatabase = (home: string): Database => {
   return db;
 };
 
+const ownsRoot = (owner: Owner | null, pid: number, started: string): boolean =>
+  owner !== null &&
+  owner.child_pid !== null &&
+  Math.abs(owner.child_pid) === pid &&
+  owner.child_started === started;
+
 const signalOwnedTree = (
   db: Database,
   token: string,
@@ -316,8 +322,7 @@ const signalOwnedTree = (
     .get(token);
   const previous = owner ? (JSON.parse(owner.descendants) as ProcessIdentity[]) : [];
   const started = processStart(pid);
-  const previousRoot = previous.find((identity) => identity.pid === pid);
-  if (started === null || (previousRoot !== undefined && previousRoot.started !== started)) {
+  if (started === null || !ownsRoot(owner, pid, started)) {
     for (const identity of [...previous].reverse()) signalIdentity(identity, signal);
     return;
   }
@@ -338,7 +343,7 @@ const signalOwnedTree = (
       JSON.stringify([...identities.values()]),
       token,
     );
-    for (const identity of [...stopped.values()].reverse()) signalIdentity(identity, signal);
+    for (const identity of [...identities.values()].reverse()) signalIdentity(identity, signal);
   } finally {
     for (const identity of stopped.values()) signalIdentity(identity, "SIGCONT");
   }

@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { acquireProfileGuard, profileGuardProfiles } from "../../src/native-run/lifecycle-guard.ts";
 import { cleanupFixtures, tempRoot } from "./fixtures.ts";
@@ -463,6 +463,84 @@ test("attached cancellation retains ownership when a descendant ignores TERM", a
         } catch {}
       }
     child.kill("SIGKILL");
+    guard.release();
+    db.close();
+  }
+});
+
+test("escalation kills a recorded orphan after TERM removes its intermediate parent", async () => {
+  const home = await tempRoot("profile-guard-orphan-escalation");
+  const guard = acquireProfileGuard("omp", ["default"], "run", home);
+  const script = path.join(home, "tree.ts");
+  const leafFile = path.join(home, "leaf.pid");
+  const intermediateExit = path.join(home, "intermediate.exited");
+  writeFileSync(script, `
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const role = process.argv[2];
+if (role !== "intermediate") process.on("SIGTERM", () => {});
+if (role === "leaf") writeFileSync(${JSON.stringify(leafFile)}, String(process.pid));
+else {
+  const child = spawn(process.execPath, [import.meta.filename, role === "root" ? "intermediate" : "leaf"], { stdio: "ignore" });
+  if (role === "root") child.on("exit", () => writeFileSync(${JSON.stringify(intermediateExit)}, "exited"));
+}
+setTimeout(() => process.exit(0), 30_000);
+`);
+  const child = spawn(process.execPath, [script, "root"], { stdio: "ignore" });
+  const exited = once(child, "exit");
+  let leaf: { pid: number; started: string } | undefined;
+  try {
+    await once(child, "spawn");
+    for (let attempt = 0; attempt < 100 && !existsSync(leafFile); attempt += 1) await Bun.sleep(10);
+    expect(existsSync(leafFile)).toBe(true);
+    const leafPid = Number(readFileSync(leafFile, "utf8"));
+    leaf = { pid: leafPid, started: processStarted(leafPid) };
+    guard.attachChild(child.pid!);
+
+    guard.signalTree(child.pid!, "SIGTERM");
+    for (let attempt = 0; attempt < 100 && !existsSync(intermediateExit); attempt += 1) await Bun.sleep(10);
+    expect(existsSync(intermediateExit)).toBe(true);
+    expect(child.signalCode).toBeNull();
+    expect(processStarted(leaf.pid)).toBe(leaf.started);
+    expect(await guard.waitForTree(child.pid!, 0)).toBe(false);
+
+    guard.signalTree(child.pid!, "SIGKILL");
+    expect(await guard.waitForTree(child.pid!, 1_000)).toBe(true);
+    await exited;
+    guard.release();
+    const repair = acquireProfileGuard("omp", ["default"], "repair", home);
+    repair.release();
+  } finally {
+    if (leaf) {
+      try {
+        if (processStarted(leaf.pid) === leaf.started) process.kill(leaf.pid, "SIGKILL");
+      } catch {}
+    }
+    child.kill("SIGKILL");
+    await exited;
+    guard.release();
+  }
+});
+
+test("the first tree signal refuses a root whose stored child start time does not match", async () => {
+  const home = await tempRoot("profile-guard-reused-root");
+  const guard = acquireProfileGuard("omp", ["default"], "run", home);
+  const child = spawn("sleep", ["30"], { stdio: "ignore" });
+  const exited = once(child, "exit");
+  const db = database(home);
+  try {
+    await once(child, "spawn");
+    guard.attachChild(child.pid!);
+    db.query("UPDATE owners SET child_started = ?").run("previous process using the same PID");
+
+    guard.signalTree(child.pid!, "SIGTERM");
+    await Bun.sleep(100);
+    expect(child.signalCode).toBeNull();
+    expect(() => process.kill(child.pid!, 0)).not.toThrow();
+    expect(await guard.waitForTree(child.pid!, 0)).toBe(true);
+  } finally {
+    child.kill("SIGKILL");
+    await exited;
     guard.release();
     db.close();
   }

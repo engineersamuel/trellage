@@ -159,17 +159,7 @@ const FX_PROVIDER_DEFINITION = {
 
 const sameJson = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right)
 
-export const ensureFxProvider = async (environment: NodeJS.ProcessEnv): Promise<void> => {
-  const home = environment.HOME ?? os.homedir()
-  const directory = path.join(home, ".fx")
-  const file = path.join(directory, "settings.json")
-  const directoryStatus = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
-    throw error
-  })
-  if (directoryStatus && (!directoryStatus.isDirectory() || directoryStatus.isSymbolicLink()))
-    throw new NativeRunError("launch", `unsafe Fx settings directory: ${directory}`)
-  await mkdir(directory, { recursive: true, mode: 0o700 })
+const readFxSettings = async (file: string): Promise<Record<string, unknown>> => {
   const fileStatus = await lstat(file).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined
     throw error
@@ -189,6 +179,21 @@ export const ensureFxProvider = async (environment: NodeJS.ProcessEnv): Promise<
       )
     }
   }
+  return settings
+}
+
+export const ensureFxProvider = async (environment: NodeJS.ProcessEnv): Promise<void> => {
+  const home = environment.HOME ?? os.homedir()
+  const directory = path.join(home, ".fx")
+  const file = path.join(directory, "settings.json")
+  const directoryStatus = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
+    throw error
+  })
+  if (directoryStatus && (!directoryStatus.isDirectory() || directoryStatus.isSymbolicLink()))
+    throw new NativeRunError("launch", `unsafe Fx settings directory: ${directory}`)
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  const settings = await readFxSettings(file)
   const providers = settings.providers
   if (providers !== undefined && (!providers || typeof providers !== "object" || Array.isArray(providers)))
     throw new NativeRunError("launch", "invalid Fx providers configuration")
@@ -494,10 +499,6 @@ const runOmpAdmission = async (
         child.once("close", onClose)
       })
     }
-    const waitForCloseIndefinitely = async (): Promise<void> => {
-      if (closed) return
-      await new Promise<void>((resolve) => child.once("close", resolve))
-    }
     const signalTree = (signal: NodeJS.Signals): void => {
       if (child.pid === undefined) return
       if (guard === undefined) {
@@ -508,11 +509,14 @@ const runOmpAdmission = async (
         terminationRequested = true
       }
     }
-    const treeSettled = async (timeout?: number): Promise<boolean> => {
-      if (child.pid === undefined || guard?.waitForTree === undefined) return closed
-      return closed && (await guard.waitForTree(child.pid, timeout))
+    const waitForSettlement = async (timeout: number): Promise<boolean> => {
+      const [, treeSettled] = await Promise.all([
+        waitForClose(timeout),
+        child.pid === undefined || guard?.waitForTree === undefined ? true : guard.waitForTree(child.pid, timeout),
+      ])
+      return closed && treeSettled
     }
-    const terminate = async (): Promise<void> => {
+    const terminate = async (): Promise<boolean> => {
       if (!terminationRequested) {
         try {
           signalTree("SIGTERM")
@@ -520,26 +524,21 @@ const runOmpAdmission = async (
           // The admission child or its guard already exited.
         }
       }
-      await waitForClose(OMP_ADMISSION_TERM_TIMEOUT)
-      if (await treeSettled(0)) return
+      if (await waitForSettlement(OMP_ADMISSION_TERM_TIMEOUT)) return true
       try {
         signalTree("SIGKILL")
       } catch {
         // The admission child or its guard already exited.
       }
-      await waitForClose(OMP_ADMISSION_KILL_TIMEOUT)
-      if (child.pid !== undefined && guard?.waitForTree !== undefined) {
-        await guard.waitForTree(child.pid)
-        await waitForCloseIndefinitely()
-      }
+      return waitForSettlement(OMP_ADMISSION_KILL_TIMEOUT)
     }
     const fail = async (error: unknown) => {
       if (settled) return
       settled = true
       removeHandlers()
-      await terminate()
+      const terminated = await terminate().catch(() => false)
       await removeAdmissionCredential(stdout.join(""))
-      reject(error)
+      reject(terminated ? error : new NativeRunError("launch", "OMP admission cleanup did not settle after SIGKILL: " + String(error)))
     }
     const handlers = signals.map((signal) => () => {
       try {
@@ -775,6 +774,28 @@ export const agencyAdapter: NativeAdapter = {
   },
 }
 
+const validateFirstmateLaunch = (record: Record<string, unknown>): LaunchCommand => {
+  if (
+    typeof record.command !== "string" ||
+    !path.isAbsolute(record.command) ||
+    !Array.isArray(record.args) ||
+    !record.args.every((argument) => typeof argument === "string") ||
+    typeof record.cwd !== "string" ||
+    !path.isAbsolute(record.cwd) ||
+    !record.env ||
+    typeof record.env !== "object" ||
+    Array.isArray(record.env) ||
+    !Object.values(record.env).every((entry) => typeof entry === "string" || entry === null)
+  )
+    throw new NativeRunError("launch", "Firstmate admission returned invalid launch JSON")
+  return {
+    command: record.command,
+    args: record.args as string[],
+    cwd: record.cwd,
+    env: record.env as Record<string, string | null>,
+  }
+}
+
 export const firstmateAdapter: NativeAdapter = {
   id: "firstmate",
   label: "Firstmate",
@@ -823,26 +844,7 @@ export const firstmateAdapter: NativeAdapter = {
     }
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new NativeRunError("launch", "Firstmate admission returned invalid launch JSON")
-    const record = value as Record<string, unknown>
-    if (
-      typeof record.command !== "string" ||
-      !path.isAbsolute(record.command) ||
-      !Array.isArray(record.args) ||
-      !record.args.every((argument) => typeof argument === "string") ||
-      typeof record.cwd !== "string" ||
-      !path.isAbsolute(record.cwd) ||
-      !record.env ||
-      typeof record.env !== "object" ||
-      Array.isArray(record.env) ||
-      !Object.values(record.env).every((entry) => typeof entry === "string" || entry === null)
-    )
-      throw new NativeRunError("launch", "Firstmate admission returned invalid launch JSON")
-    return {
-      command: record.command,
-      args: record.args as string[],
-      cwd: record.cwd,
-      env: record.env as Record<string, string | null>,
-    }
+    return validateFirstmateLaunch(value as Record<string, unknown>)
   },
 }
 
