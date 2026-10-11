@@ -487,7 +487,7 @@ while :; do :; done
   }
 })
 
-test("OMP admission kills descendants before rejecting a failed attachment", async () => {
+test("OMP admission settles descendants when SQLite rejects persistent attachment", async () => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle-descendant-attachment-failure")
   const descendantScript = path.join(root, "omp-admission-descendant.ts")
@@ -536,6 +536,8 @@ while :; do :; done
   )
   const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
   const profileGuard = acquireProfileGuard("omp", ["default"], "run", root)
+  const db = new Database(path.join(root, ".local/share/trellage/profile-guards/profiles.sqlite"))
+  db.exec("CREATE TRIGGER reject_owner_updates BEFORE UPDATE ON owners BEGIN SELECT RAISE(FAIL, 'guard attachment failed'); END")
   let treeSettledAt = 0
   const input: LaunchInput = {
     resumeArgs: [],
@@ -548,14 +550,13 @@ while :; do :; done
     workspace: work,
     guard: {
       attachChild: (pid) => {
-        profileGuard.attachChild(pid)
         const deadline = Date.now() + 1_000
         while (
           (!existsSync(childPidFile) || !existsSync(descendantPidFile)) &&
           Date.now() < deadline
         )
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
-        throw new Error("guard attachment failed")
+        profileGuard.attachChild(pid)
       },
       signalTree: profileGuard.signalTree,
       waitForTree: async (pid, timeout) => {
@@ -581,12 +582,14 @@ while :; do :; done
   try {
     for (let attempts = 0; attempts < 100 && !(await Bun.file(descendantPidFile).exists()); attempts += 1)
       await Bun.sleep(10)
+    const childPid = Number(await readFile(childPidFile, "utf8"))
     const descendantPid = Number(await readFile(descendantPidFile, "utf8"))
     await expect(admission).rejects.toThrow(/guard attachment failed/)
     const rejectionAt = Date.now()
     expect(treeSettledAt).toBeGreaterThan(0)
     expect(treeSettledAt).toBeLessThanOrEqual(rejectionAt)
     expect(await Bun.file(terminatedFile).exists()).toBe(true)
+    expect(() => process.kill(childPid, 0)).toThrow()
     expect(await Bun.file(credential).exists()).toBe(false)
     expect(await Bun.file(emittedFile).exists()).toBe(false)
     let gone = false
@@ -600,10 +603,20 @@ while :; do :; done
       await Bun.sleep(10)
     }
     expect(gone).toBe(true)
+    profileGuard.release()
+    const mutation = acquireProfileGuard("omp", ["default"], "repair", root)
+    mutation.release()
     await Bun.sleep(2_700)
     expect(await Bun.file(credential).exists()).toBe(false)
     expect(await Bun.file(emittedFile).exists()).toBe(false)
   } finally {
+    if (await Bun.file(childPidFile).exists()) {
+      try {
+        process.kill(Number(await readFile(childPidFile, "utf8")), "SIGKILL")
+      } catch {
+        // The admission root already exited.
+      }
+    }
     if (await Bun.file(descendantPidFile).exists()) {
       try {
         process.kill(Number(await readFile(descendantPidFile, "utf8")), "SIGKILL")
@@ -612,6 +625,7 @@ while :; do :; done
       }
     }
     profileGuard.release()
+    db.close()
   }
 })
 

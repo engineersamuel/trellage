@@ -545,3 +545,40 @@ test("the first tree signal refuses a root whose stored child start time does no
     db.close();
   }
 });
+
+test("failed persistent attachment keeps mutation excluded until captured work settles", async () => {
+  const home = await tempRoot("profile-guard-attachment-write-failure");
+  const guard = acquireProfileGuard("omp", ["default"], "run", home);
+  const child = spawn("sleep", ["30"], { stdio: "ignore" });
+  const exited = once(child, "exit");
+  const db = database(home);
+  db.exec("CREATE TRIGGER reject_owner_updates BEFORE UPDATE ON owners BEGIN SELECT RAISE(FAIL, 'guard attachment failed'); END");
+  try {
+    await once(child, "spawn");
+    expect(() => guard.attachChild(child.pid!)).toThrow("guard attachment failed");
+    expect(db.query("SELECT child_pid, child_started FROM owners").get()).toEqual({
+      child_pid: null,
+      child_started: null,
+    });
+
+    guard.release();
+    expect(() => {
+      const mutation = acquireProfileGuard("omp", ["default"], "repair", home);
+      mutation.release();
+    }).toThrow("profile busy");
+    expect(await guard.waitForTree(child.pid!, 0)).toBe(false);
+
+    guard.signalTree(child.pid!, "SIGTERM");
+    expect(await guard.waitForTree(child.pid!, 1_000)).toBe(true);
+    await exited;
+    guard.release();
+    const mutation = acquireProfileGuard("omp", ["default"], "repair", home);
+    mutation.release();
+    expect(db.query("SELECT * FROM owners").all()).toEqual([]);
+  } finally {
+    child.kill("SIGKILL");
+    await exited;
+    guard.release();
+    db.close();
+  }
+});

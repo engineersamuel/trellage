@@ -18,6 +18,8 @@ interface Owner {
   descendants: string;
 }
 
+type AttachedWork = Pick<Owner, "child_pid" | "child_started" | "descendants">;
+
 interface ProcessIdentity {
   pid: number;
   started: string;
@@ -93,12 +95,12 @@ const live = (pid: number, started: string): boolean => {
   }
 };
 
-const childLive = (owner: Owner): boolean =>
+const childLive = (owner: AttachedWork): boolean =>
   owner.child_pid !== null &&
   owner.child_started !== null &&
   live(owner.child_pid, owner.child_started);
 
-const descendantsLive = (owner: Owner): boolean =>
+const descendantsLive = (owner: AttachedWork): boolean =>
   (JSON.parse(owner.descendants) as ProcessIdentity[]).some(({ pid, started }) =>
     live(pid, started),
   );
@@ -106,7 +108,7 @@ const descendantsLive = (owner: Owner): boolean =>
 const ownerLive = (owner: Owner): boolean =>
   live(owner.pid, owner.started) || childLive(owner) || descendantsLive(owner);
 
-const ownerHasAttachedLiveWork = (owner: Owner): boolean =>
+const ownerHasAttachedLiveWork = (owner: AttachedWork): boolean =>
   childLive(owner) || descendantsLive(owner);
 
 export const profileGuardProfiles = (
@@ -305,21 +307,32 @@ const openProfileGuardDatabase = (home: string): Database => {
   return db;
 };
 
-const ownsRoot = (owner: Owner | null, pid: number, started: string): boolean =>
+const ownsRoot = (owner: AttachedWork | null, pid: number, started: string): boolean =>
   owner !== null &&
   owner.child_pid !== null &&
   Math.abs(owner.child_pid) === pid &&
   owner.child_started === started;
+
+const rememberOwnedDescendants = (
+  db: Database,
+  token: string,
+  identities: readonly ProcessIdentity[],
+  fallback?: AttachedWork,
+): void => {
+  const descendants = JSON.stringify(identities);
+  if (fallback) fallback.descendants = descendants;
+  else db.query("UPDATE owners SET descendants = ? WHERE token = ?").run(descendants, token);
+};
 
 const signalOwnedTree = (
   db: Database,
   token: string,
   pid: number,
   signal: NodeJS.Signals,
+  fallback?: AttachedWork,
 ): void => {
-  const owner = db
-    .query<Owner, [string]>("SELECT * FROM owners WHERE token = ? LIMIT 1")
-    .get(token);
+  const owner =
+    fallback ?? db.query<Owner, [string]>("SELECT * FROM owners WHERE token = ? LIMIT 1").get(token);
   const previous = owner ? (JSON.parse(owner.descendants) as ProcessIdentity[]) : [];
   const started = processStart(pid);
   if (started === null || !ownsRoot(owner, pid, started)) {
@@ -339,41 +352,41 @@ const signalOwnedTree = (
     }
     const identities = new Map(previous.map((identity) => [identity.pid, identity] as const));
     for (const identity of stopped.values()) identities.set(identity.pid, identity);
-    db.query("UPDATE owners SET descendants = ? WHERE token = ?").run(
-      JSON.stringify([...identities.values()]),
-      token,
-    );
+    rememberOwnedDescendants(db, token, [...identities.values()], fallback);
     for (const identity of [...identities.values()].reverse()) signalIdentity(identity, signal);
   } finally {
     for (const identity of stopped.values()) signalIdentity(identity, "SIGCONT");
   }
 };
 
-const waitForOwnedTree = async (db: Database, token: string, timeout?: number): Promise<boolean> => {
+const waitForOwnedTree = async (
+  db: Database,
+  token: string,
+  timeout?: number,
+  fallback?: AttachedWork,
+): Promise<boolean> => {
   const deadline = timeout === undefined ? undefined : Date.now() + timeout;
   for (;;) {
-    const owners = db
-      .query<Owner, [string]>("SELECT * FROM owners WHERE token = ?")
-      .all(token);
+    const owners = fallback
+      ? [fallback]
+      : db.query<Owner, [string]>("SELECT * FROM owners WHERE token = ?").all(token);
     if (!owners.some(ownerHasAttachedLiveWork)) return true;
     if (deadline !== undefined && Date.now() >= deadline) return false;
     await new Promise((resolve) => setTimeout(resolve, Math.min(10, deadline === undefined ? 10 : deadline - Date.now())));
   }
 };
 
-const attachOwnedChild = (
-  db: Database,
-  token: string,
+const captureOwnedChild = (
   pid: number,
   processGroup: boolean,
-): void => {
+): AttachedWork | undefined => {
   const childStarted = processStart(pid);
-  if (childStarted !== null || processGroup)
-    db.query("UPDATE owners SET child_pid = ?, child_started = ? WHERE token = ?").run(
-      processGroup ? -pid : pid,
-      childStarted ?? "exited group leader",
-      token,
-    );
+  if (childStarted === null && !processGroup) return undefined;
+  return {
+    child_pid: processGroup ? -pid : pid,
+    child_started: childStarted ?? "exited group leader",
+    descendants: "[]",
+  };
 };
 
 const releaseOwnedRows = (db: Database, token: string): void => {
@@ -391,12 +404,22 @@ const releaseOwnedRows = (db: Database, token: string): void => {
 
 const createOwnedProfileGuard = (db: Database, token: string): ProfileGuard => {
   let released = false;
+  let fallback: AttachedWork | undefined;
   return {
-    signalTree: (pid, signal) => signalOwnedTree(db, token, pid, signal),
-    attachChild: (pid, processGroup = false) => attachOwnedChild(db, token, pid, processGroup),
-    waitForTree: async (_pid, timeout) => waitForOwnedTree(db, token, timeout),
+    signalTree: (pid, signal) => signalOwnedTree(db, token, pid, signal, fallback),
+    attachChild: (pid, processGroup = false) => {
+      fallback = captureOwnedChild(pid, processGroup);
+      if (!fallback) return;
+      db.query("UPDATE owners SET child_pid = ?, child_started = ? WHERE token = ?").run(
+        fallback.child_pid,
+        fallback.child_started,
+        token,
+      );
+      fallback = undefined;
+    },
+    waitForTree: async (_pid, timeout) => waitForOwnedTree(db, token, timeout, fallback),
     release: () => {
-      if (released) return;
+      if (released || (fallback && ownerHasAttachedLiveWork(fallback))) return;
       released = true;
       try {
         releaseOwnedRows(db, token);
