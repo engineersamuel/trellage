@@ -169,6 +169,12 @@ fake_bin="$fixture_root/fake-bin"
 home="$fixture_root/home"
 mkdir -p "$fake_bin" "$home"
 
+cat >"$fake_bin/git" <<'FAKE_GIT'
+#!/usr/bin/env bash
+exit 86
+FAKE_GIT
+chmod 0755 "$fake_bin/git"
+
 cat >"$fixture_root/fake-omp-template" <<'FAKE_OMP'
 #!/usr/bin/env bash
 set -u
