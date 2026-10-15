@@ -8,6 +8,7 @@ import { render } from "ink"
 import { readTrellageConfig } from "@trellage/runtime/native-config"
 import {
   adapters,
+  CLEAN_PROFILE,
   nativeHarnessPresets,
   loadModelCatalog,
   hostDefaults,
@@ -41,6 +42,7 @@ const loadCatalog = async (): Promise<RunSelectorCatalog> => {
     )
     if (!profile.always && !isPresetContent) profileHarnesses[id] = profile.harnesses
   }
+  profileHarnesses[CLEAN_PROFILE] = harnessOrder.filter((id) => adapters[id]?.clean.supported)
   return {
     harnesses: harnessOrder.map((id) => {
       const adapter = adapters[id]

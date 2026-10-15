@@ -10,6 +10,7 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
 - Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
 - The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `firstmate`, `jcode`, `omp`, `pi`, `prime`, `grok`, and `uji`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
+- `trx run HARNESS clean` launches `claude`, `codex`, `copilot`, or `pi` with no skills, MCP servers, instructions, hooks, or plugins from trx, the repository, or the host, and installs nothing. Other harnesses refuse a clean run.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
