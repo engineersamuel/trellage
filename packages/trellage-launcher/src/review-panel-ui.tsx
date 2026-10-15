@@ -5,10 +5,10 @@ import { MarkdownTextViewport, wrapGuideText } from "./guide-markdown.tsx"
 import {
   sharedReviewDocument,
   type OptimizeReviewInput,
-} from "./guide-optimize-review.ts"
-import type { OptimizeReviewSummary } from "./guide-optimize-store.ts"
+} from "./review-findings.ts"
+import type { OptimizeReviewSummary } from "./review-records.ts"
 import type { SharedReviewApproval } from "./review-store.ts"
-import type { GuideOptimizeServices } from "./guide-optimize.ts"
+import type { GuideReviewServices } from "./review-services.ts"
 import {
   reviewFailureKindLabel,
   reviewFailurePhaseLabel,
@@ -18,7 +18,6 @@ import {
   type ReviewEvent,
   type ReviewRun,
 } from "./review-contracts.ts"
-import { reviewCheckCatalog } from "./review-catalog.ts"
 import { appendReviewOutput, safeOutput } from "./review-ui.tsx"
 import { useTheme } from "./termcn/use-theme.ts"
 
@@ -33,7 +32,7 @@ const nextIndex = (index: number, delta: number, count: number): number =>
 
 type Mode = "reviewers" | "consent" | "running" | "findings" | "outcome" | "report"
 interface ReviewProps {
-  readonly services: GuideOptimizeServices
+  readonly services: GuideReviewServices
   readonly input: Omit<OptimizeReviewInput, "reviewerIds">
   readonly review: ReviewRun | undefined
   readonly height: number
@@ -51,7 +50,7 @@ const useReview = (props: ReviewProps) => {
     props.review === undefined ? "reviewers" : props.review.status === "complete" ? "findings" : "outcome",
   )
   const [reviewerIds, setReviewerIds] = useState<ReadonlySet<string>>(
-    new Set(props.services.defaultReviewerIds ?? ["first-principles", "behavior-preservation"]),
+    new Set(props.services.defaultReviewerIds ?? []),
   )
   const [index, setIndex] = useState(0)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
@@ -106,8 +105,7 @@ const useReview = (props: ReviewProps) => {
         ["synthesis", reviewSynthesisStatus(review)]]))
       props.onReview(review)
       setIndex(0)
-      setMode(review.artifacts.some((entry) => entry.id === "synthesis:legacy-document")
-        ? review.status === "complete" ? "findings" : "outcome" : "report")
+      setMode("report")
     } catch (cause) {
       if (!mounted.current) return
       setError(messageOf(cause))
@@ -153,7 +151,6 @@ const useReview = (props: ReviewProps) => {
     else props.onBack()
   }
   const showReport = (): void => {
-    if (props.review?.artifacts.some((entry) => entry.id === "synthesis:legacy-document")) setTab("overview")
     setMode("report")
   }
   const restart = (): void => {
@@ -257,25 +254,18 @@ const consentDocument = (flow: ReviewFlow): string => {
   return [
     "## Confirm read-only review",
     `Review ${flow.props.input.paths.length} selected files. Nothing can edit, stage, or commit through the review tools.`,
-    reviewers.some((entry) => reviewCheckCatalog.find((check) => check.id === entry.id)?.evidence === "related-source")
-      ? "Selected built-in or architecture checks can read selected diffs, selected untracked text, and related tracked source across this repository. Check for private information."
-      : "Selected skill checks receive only selected patches, untracked content or link metadata, commit identities and standards pinned to the comparison base. Related repository source is not shared.",
+    "Selected skill checks receive only selected patches, untracked content or link metadata, commit identities and standards pinned to the comparison base. Related repository source is not shared.",
     ...reviewers.map((entry) => `- ${entry.title}: ${entry.model.model} / ${entry.model.effort}`),
     `Coordinator: ${coordinator.model} / ${coordinator.effort}.`,
     `One batch permits up to ${maximumReviewCalls([...flow.reviewerIds], 1)} SDK requests and worker starts, including recovery. Large snapshots use fresh batches and cross-file checks: up to 128 batches and ${maximumReviewCalls([...flow.reviewerIds], 128)} requests. Tool turns also use model quota.`,
-    "One combined synthesis. Built-in checks retain one complete proposal challenge round and at most one correction for each invalid structured response.",
+    "One combined synthesis.",
     "Each Ponytail and Matt batch needs structured extraction. The master can ask at most four peer questions in each of two rounds; round two requires new evidence. Failed checks do not retry without bounds.",
     ...(flow.reviewerIds.has("fleet") ? ["Fleet uses exactly six guarded code-review workers per batch. Each completed result must be read; report recovery stays in the same coordinator. Model assignments are shown below.",
       ...(flow.props.services.assignments?.find((entry) => entry.id === "fleet")?.workers.map((worker) =>
         `- ${worker.name}: ${worker.model.model} / ${worker.model.effort}`) ?? [])] : []),
     ...(flow.reviewerIds.has("matt-code-review") ? ["Matt launches only Standards. Spec is unavailable; task context is not a verified Spec."] : []),
-    "Request deadlines: built-in 8 minutes. Skill 4 minutes; Fleet 15 minutes per batch. Combined synthesis has a 15-minute budget. Large reviews take longer and use more quota.",
+    "Request deadlines: Skill 4 minutes; Fleet 15 minutes per batch. Combined synthesis has a 15-minute budget. Large reviews take longer and use more quota.",
     "Only frozen text tools are available. A failed or incomplete review cannot authorize edits. No-change and unresolved outcomes are valid.",
-    ...(flow.reviewerIds.has("improve-codebase-architecture")
-      ? [
-          "The architecture option loads Matt Pocock's managed skill and codebase-design after consent. First use can fetch their current content. Guide replaces HTML, subagents, questions, and writes with its read-only report and approval steps.",
-        ]
-      : []),
     "Evidence and partial results are saved privately in this worktree's Git metadata. Reopening them does not call a model.",
   ].join("\n\n")
 }
@@ -333,8 +323,7 @@ const ReviewReports = ({ flow, height }: { readonly flow: ReviewFlow; readonly h
     const status = reportTabStatus(flow, id)
     const title = ({
       ponytail: "Ponytail", fleet: "Fleet", "matt-code-review": "Matt",
-      "first-principles": "First principles", "behavior-preservation": "Behavior",
-      "improve-codebase-architecture": "Architecture", overview: "Overview", synthesis: "Synthesis",
+      overview: "Overview", synthesis: "Synthesis",
     } as Record<string, string>)[id] ?? id
     const text = `${id === flow.tab ? "›" : " "} ${title} [${status}]`
     return { id, title, status, text, width: Math.min(flow.props.width, stringWidth(text) + 4) }
@@ -589,7 +578,7 @@ export const OptimizeHistory = ({
   height,
   onOpen,
 }: {
-  readonly services: GuideOptimizeServices
+  readonly services: GuideReviewServices
   readonly height: number
   readonly onOpen: (review: ReviewRun) => void
 }) => {

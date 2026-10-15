@@ -12,7 +12,7 @@ import { validateFleetReport, type FleetReport, type ReviewOutput, type ReviewSn
 import type { ReviewCheckAssignment } from "./review-catalog.ts"
 import type { GuideModelConfig } from "./guide-model-routing.ts"
 import type { ReviewArtifact, ReviewFinding } from "./review-contracts.ts"
-import type { OptimizeEvidence } from "./guide-optimize-evidence.ts"
+import type { OptimizeEvidence } from "./review-source.ts"
 import { reviewContextBudget, reviewTokenUpperBound,
   ReviewSnapshotReader, snapshotBatches, snapshotSliceText, type ReviewSlice } from "./review-evidence.ts"
 import { captureIntermediateReviewArtifacts } from "./review-artifacts.ts"

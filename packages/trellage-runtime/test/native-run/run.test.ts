@@ -1087,6 +1087,16 @@ test("zero profiles launches a clean base harness", async () => {
   expect(prepared.launch.args.filter((argument) => argument === "--skill")).toEqual([])
 })
 
+test("--skill composes only the named skills, reusing a configured source", async () => {
+  const { dependencies } = await world()
+  const options = parseRunArguments(["pi", "--no-always", "--skill", "example/superpowers:writing-plans", "--skill=example/office:powerpoint"])
+  expect(options.skills).toEqual(["example/superpowers:writing-plans", "example/office:powerpoint"])
+  const prepared = await prepareRun({ ...base, ...options }, dependencies())
+  expect(prepared.plan.skills.map((skill) => skill.name)).toEqual(["powerpoint", "writing-plans"])
+  expect(prepared.plan.sources.map((source) => source.sourceId).sort()).toEqual(["office-content", "superpowers"])
+  expect(() => parseRunArguments(["pi", "--skill", "writing-plans"])).toThrow(/OWNER\/REPO:NAME/)
+})
+
 test("profile order and duplicates do not change the composition", async () => {
   const { dependencies } = await world()
   const a = await prepareRun({ ...base, harness: "pi", profiles: ["office", "superpowers", "office"] }, dependencies())
@@ -1370,4 +1380,16 @@ skills = [{source = "superpowers", names = ["brainstorming", "writing-plans"]}]
   expect(instructions).toContain("writing-plans")
   expect(instructions).not.toContain("Manual brainstorming")
   expect(prepared.plan.skills.find((skill) => skill.name === "brainstorming")?.manualOnly).toBe(true)
+})
+
+test("Copilot generations drop disable-model-invocation; other harnesses keep it", async () => {
+  const { dependencies, office } = await world()
+  await office.write({ "skills/powerpoint/SKILL.md": "---\nname: powerpoint\ndescription: Slides.\ndisable-model-invocation: true\n---\n\nBody\n" })
+  const copilot = await prepareRun({ ...base, harness: "copilot", profiles: ["office"] }, dependencies())
+  const copied = await readFile(path.join(copilot.layout.generationPath, "skills", "powerpoint", "SKILL.md"), "utf8")
+  expect(copied).not.toContain("disable-model-invocation")
+  expect(copied).toContain("name: powerpoint")
+  const claude = await prepareRun({ ...base, harness: "claude", profiles: ["office"] }, dependencies())
+  const kept = await readFile(path.join(claude.layout.generationPath, "skills", "powerpoint", "SKILL.md"), "utf8")
+  expect(kept).toContain("disable-model-invocation: true")
 })

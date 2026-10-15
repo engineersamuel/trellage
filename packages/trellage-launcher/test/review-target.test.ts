@@ -3,15 +3,12 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { createNodeCommandRunner } from "../src/guide-launch.ts"
-import { resolveGuideModelRouting } from "../src/guide-api.ts"
 import {
-  assertGuideOptimizeTargetCurrent,
-  guideOptimizeTargetIdentity,
-  inspectGuideOptimizeTarget,
-  selectedGuideOptimizeChanges,
-} from "../src/guide-optimize-target.ts"
-import { optimizeReviewersFor } from "../src/guide-optimize-review.ts"
-import { runGuideOptimizeReview } from "../src/guide-optimize.ts"
+  assertGuideReviewTargetCurrent,
+  guideReviewTargetIdentity,
+  inspectGuideReviewTarget,
+  selectedGuideReviewChanges,
+} from "../src/review-target.ts"
 
 const runner = createNodeCommandRunner()
 const roots: string[] = []
@@ -46,7 +43,7 @@ describe("Optimize change targets", () => {
     await writeFile(path.join(root, "src", "tracked.ts"), "export const value = 3\n")
     await rm(path.join(root, ".gitignore"))
     await writeFile(path.join(root, "new file é.ts"), "export const fresh = true\n")
-    const target = await inspectGuideOptimizeTarget(runner, path.join(root, "src"))
+    const target = await inspectGuideReviewTarget(runner, path.join(root, "src"))
     expect(target.cwd).toBe(root)
     expect(target.changes).toEqual([
       expect.objectContaining({ path: ".gitignore", kind: "deleted", staged: false, unstaged: true }),
@@ -54,17 +51,17 @@ describe("Optimize change targets", () => {
       expect.objectContaining({ path: "src/tracked.ts", kind: "file", staged: true, unstaged: true }),
     ])
     const before = await git("status", "--porcelain")
-    await assertGuideOptimizeTargetCurrent(runner, target)
+    await assertGuideReviewTargetCurrent(runner, target)
     expect(await git("status", "--porcelain")).toBe(before)
   })
 
   it("does not select ignored files or invent a previous commit for a clean worktree", async () => {
     const { root } = await fixture()
     await writeFile(path.join(root, "ignored.txt"), "not part of this task\n")
-    const target = await inspectGuideOptimizeTarget(runner, root)
+    const target = await inspectGuideReviewTarget(runner, root)
     expect(target.changes).toEqual([])
     expect(target.base).toBeUndefined()
-    expect(() => selectedGuideOptimizeChanges(target, [])).toThrow("Select at least one")
+    expect(() => selectedGuideReviewChanges(target, [])).toThrow("Select at least one")
   })
 
   it("preserves spaces at the end of a worktree directory name", async () => {
@@ -73,7 +70,7 @@ describe("Optimize change targets", () => {
     await mkdir(directory)
     await runner.run("git", ["init", "--quiet"], { cwd: directory })
     await writeFile(path.join(directory, "task.ts"), "new task\n")
-    const target = await inspectGuideOptimizeTarget(runner, directory)
+    const target = await inspectGuideReviewTarget(runner, directory)
     expect(target.cwd).toBe(directory)
     expect(target.changes.map((entry) => entry.path)).toEqual(["task.ts"])
   })
@@ -86,15 +83,15 @@ describe("Optimize change targets", () => {
     await git("add", ".")
     await git("commit", "--quiet", "-m", "Fixture change")
     expect(await git("status", "--porcelain")).toBe("")
-    expect((await inspectGuideOptimizeTarget(runner, root)).changes).toEqual([])
-    expect((await inspectGuideOptimizeTarget(runner, root, { kind: "branch", baseRef: "base" })).changes).toEqual([
+    expect((await inspectGuideReviewTarget(runner, root)).changes).toEqual([])
+    expect((await inspectGuideReviewTarget(runner, root, { kind: "branch", baseRef: "base" })).changes).toEqual([
       expect.objectContaining({ path: "src/tracked.ts", committed: true }),
     ])
     await writeFile(path.join(root, ".gitignore"), "ignored.txt\nstaged.txt\n")
     await git("add", ".gitignore")
     await writeFile(path.join(root, ".gitignore"), "ignored.txt\nstaged.txt\nunstaged.txt\n")
     await writeFile(path.join(root, "current.ts"), "export const current = true\n")
-    const target = await inspectGuideOptimizeTarget(runner, root, { kind: "branch", baseRef: "base" })
+    const target = await inspectGuideReviewTarget(runner, root, { kind: "branch", baseRef: "base" })
     expect(target.base).toEqual({ ref: "base", commit: baseline, mergeBase: baseline })
     expect(target.changes).toEqual([
       expect.objectContaining({ path: ".gitignore", staged: true, unstaged: true }),
@@ -102,7 +99,7 @@ describe("Optimize change targets", () => {
       expect.objectContaining({ path: "src/tracked.ts", committed: true, staged: false, unstaged: false }),
     ])
     await git("branch", "--force", "base", "HEAD")
-    await expect(assertGuideOptimizeTargetCurrent(runner, target)).rejects.toThrow("comparison base changed")
+    await expect(assertGuideReviewTargetCurrent(runner, target)).rejects.toThrow("comparison base changed")
   })
 
   it("defaults to the current branch's changes against main, including committed and current edits", async () => {
@@ -115,7 +112,7 @@ describe("Optimize change targets", () => {
     await git("add", "src/tracked.ts")
     await writeFile(path.join(root, "src", "tracked.ts"), "current task\n")
     const index = await git("diff", "--cached")
-    const target = await inspectGuideOptimizeTarget(runner, path.join(root, "src"), { kind: "current-branch" })
+    const target = await inspectGuideReviewTarget(runner, path.join(root, "src"), { kind: "current-branch" })
     expect(target.cwd).toBe(root)
     expect(target.scope).toEqual({ kind: "branch", baseRef: "refs/heads/main" })
     expect(target.base).toEqual({ ref: "refs/heads/main", commit: baseline, mergeBase: baseline })
@@ -124,7 +121,7 @@ describe("Optimize change targets", () => {
     ])
     expect(await git("diff", "--cached")).toBe(index)
     await git("branch", "--force", "main", "HEAD")
-    await expect(assertGuideOptimizeTargetCurrent(runner, target)).rejects.toThrow("comparison base changed")
+    await expect(assertGuideReviewTargetCurrent(runner, target)).rejects.toThrow("comparison base changed")
   })
 
   it("uses the cached remote default without hiding work already pushed to the task branch", async () => {
@@ -137,7 +134,7 @@ describe("Optimize change targets", () => {
     await git("update-ref", "refs/remotes/origin/task", "HEAD")
     await git("config", "branch.task.remote", "origin")
     await git("config", "branch.task.merge", "refs/heads/task")
-    const target = await inspectGuideOptimizeTarget(runner, root, { kind: "current-branch" })
+    const target = await inspectGuideReviewTarget(runner, root, { kind: "current-branch" })
     expect(target.base?.ref).toBe("refs/remotes/origin/main")
     expect(target.changes).toEqual([
       expect.objectContaining({ path: "src/tracked.ts", committed: true, staged: false, unstaged: false }),
@@ -148,37 +145,13 @@ describe("Optimize change targets", () => {
     const { root, git } = await fixture()
     const linked = path.join(root, "linked")
     await git("worktree", "add", "--quiet", "-b", "task", linked)
-    const identity = await guideOptimizeTargetIdentity(runner, path.join(root, "src"))
-    const inspected = await inspectGuideOptimizeTarget(runner, path.join(root, "src"))
+    const identity = await guideReviewTargetIdentity(runner, path.join(root, "src"))
+    const inspected = await inspectGuideReviewTarget(runner, path.join(root, "src"))
     expect(identity).toEqual({ cwd: inspected.cwd, gitDirectory: inspected.gitDirectory })
     expect(identity.cwd).toBe(root)
-    const other = await guideOptimizeTargetIdentity(runner, linked)
+    const other = await guideReviewTargetIdentity(runner, linked)
     expect(other.cwd).toBe(linked)
     expect(other.gitDirectory).not.toBe(identity.gitDirectory)
-  })
-
-  it("refuses to review a target that belongs to another worktree", async () => {
-    const { root, git } = await fixture()
-    const linked = path.join(root, "linked")
-    await git("worktree", "add", "--quiet", "-b", "task", linked)
-    await writeFile(path.join(linked, "src", "tracked.ts"), "linked task\n")
-    const foreign = await inspectGuideOptimizeTarget(runner, linked)
-    const routing = resolveGuideModelRouting({}, {})
-    const progress: string[] = []
-    await expect(
-      runGuideOptimizeReview(
-        { runner, cwd: root },
-        routing,
-        {
-          target: foreign,
-          paths: ["src/tracked.ts"],
-          reviewerIds: optimizeReviewersFor(routing).map((entry) => entry.id),
-        },
-        new AbortController().signal,
-        (message) => progress.push(message),
-      ),
-    ).rejects.toThrow("not this Guide worktree")
-    expect(progress).toEqual([])
   })
 
   it("uses the primary worktree branch for a linked worktree with a custom base name", async () => {
@@ -188,7 +161,7 @@ describe("Optimize change targets", () => {
     await git("worktree", "add", "--quiet", "-b", "task", linked)
     await writeFile(path.join(linked, "src", "tracked.ts"), "linked task\n")
     await runner.run("git", ["commit", "--quiet", "-am", "Task work"], { cwd: linked })
-    const target = await inspectGuideOptimizeTarget(runner, linked, { kind: "current-branch" })
+    const target = await inspectGuideReviewTarget(runner, linked, { kind: "current-branch" })
     expect(target.cwd).toBe(linked)
     expect(target.base?.ref).toBe("refs/heads/trunk")
     expect(target.changes).toEqual([expect.objectContaining({ path: "src/tracked.ts", committed: true })])
@@ -199,14 +172,14 @@ describe("Optimize change targets", () => {
     await git("update-ref", "refs/remotes/origin/main", "HEAD")
     await writeFile(path.join(root, "src", "tracked.ts"), "unpushed task\n")
     await git("commit", "--quiet", "-am", "Task work")
-    const target = await inspectGuideOptimizeTarget(runner, root, { kind: "current-branch" })
+    const target = await inspectGuideReviewTarget(runner, root, { kind: "current-branch" })
     expect(target.base?.ref).toBe("refs/remotes/origin/main")
     expect(target.changes).toEqual([expect.objectContaining({ path: "src/tracked.ts", committed: true })])
   })
 
   it("requests a base only when Git has no separate comparison branch", async () => {
     const { root } = await fixture()
-    await expect(inspectGuideOptimizeTarget(runner, root, { kind: "current-branch" })).rejects.toThrow(
+    await expect(inspectGuideReviewTarget(runner, root, { kind: "current-branch" })).rejects.toThrow(
       "Cannot detect a comparison base",
     )
   })
@@ -217,20 +190,20 @@ describe("Optimize change targets", () => {
     await writeFile(file, "staged version\n")
     await git("add", ".")
     await writeFile(file, "working version\n")
-    const target = await inspectGuideOptimizeTarget(runner, root)
+    const target = await inspectGuideReviewTarget(runner, root)
     await writeFile(file, "changed working version\n")
-    await expect(assertGuideOptimizeTargetCurrent(runner, target)).rejects.toThrow(
+    await expect(assertGuideReviewTargetCurrent(runner, target)).rejects.toThrow(
       "worktree or comparison base changed",
     )
     await writeFile(file, "different staged version\n")
     await git("add", ".")
     await writeFile(file, "working version\n")
-    await expect(assertGuideOptimizeTargetCurrent(runner, target)).rejects.toThrow(
+    await expect(assertGuideReviewTargetCurrent(runner, target)).rejects.toThrow(
       "worktree or comparison base changed",
     )
-    const beforeCommit = await inspectGuideOptimizeTarget(runner, root)
+    const beforeCommit = await inspectGuideReviewTarget(runner, root)
     await git("commit", "--quiet", "-m", "Fixture staged change")
-    await expect(assertGuideOptimizeTargetCurrent(runner, beforeCommit)).rejects.toThrow(
+    await expect(assertGuideReviewTargetCurrent(runner, beforeCommit)).rejects.toThrow(
       "worktree or comparison base changed",
     )
   })
@@ -239,31 +212,31 @@ describe("Optimize change targets", () => {
     const { root, git } = await fixture()
     await rename(path.join(root, "src", "tracked.ts"), path.join(root, "renamed.ts"))
     await git("add", "--all")
-    const target = await inspectGuideOptimizeTarget(runner, root)
+    const target = await inspectGuideReviewTarget(runner, root)
     expect(target.changes.map((change) => [change.path, change.kind])).toEqual([
       ["renamed.ts", "file"],
       ["src/tracked.ts", "deleted"],
     ])
-    expect(selectedGuideOptimizeChanges(target, ["renamed.ts"])).toHaveLength(1)
-    expect(() => selectedGuideOptimizeChanges(target, ["../outside"])).toThrow("not part")
-    expect(() => selectedGuideOptimizeChanges(target, ["renamed.ts", "renamed.ts"])).toThrow("duplicate")
+    expect(selectedGuideReviewChanges(target, ["renamed.ts"])).toHaveLength(1)
+    expect(() => selectedGuideReviewChanges(target, ["../outside"])).toThrow("not part")
+    expect(() => selectedGuideReviewChanges(target, ["renamed.ts", "renamed.ts"])).toThrow("duplicate")
   })
 
   it("never reads symlink targets and rejects links as optimization inputs", async () => {
     const { root } = await fixture()
     await symlink("/does/not/exist/outside", path.join(root, "outside-link"))
-    const target = await inspectGuideOptimizeTarget(runner, root)
+    const target = await inspectGuideReviewTarget(runner, root)
     expect(target.changes).toEqual([expect.objectContaining({ path: "outside-link", kind: "symlink" })])
-    expect(() => selectedGuideOptimizeChanges(target, ["outside-link"])).toThrow("regular files only")
+    expect(() => selectedGuideReviewChanges(target, ["outside-link"])).toThrow("regular files only")
   })
 
   it("supports a first uncommitted task but requires a commit for branch comparison", async () => {
     const { root } = await fixture(false)
-    const target = await inspectGuideOptimizeTarget(runner, root)
+    const target = await inspectGuideReviewTarget(runner, root)
     expect(target.head).toBeNull()
     expect(target.changes.map((change) => change.path)).toEqual([".gitignore", "src/tracked.ts"])
-    expect(await inspectGuideOptimizeTarget(runner, root, { kind: "current-branch" })).toEqual(target)
-    await expect(inspectGuideOptimizeTarget(runner, root, { kind: "branch", baseRef: "main" })).rejects.toThrow(
+    expect(await inspectGuideReviewTarget(runner, root, { kind: "current-branch" })).toEqual(target)
+    await expect(inspectGuideReviewTarget(runner, root, { kind: "branch", baseRef: "main" })).rejects.toThrow(
       "existing commit",
     )
   })

@@ -5,12 +5,12 @@ import path from "node:path"
 import { CommandRunnerError, parseGitWorktreeList, type CommandRunner } from "./guide-launch.ts"
 import { array, boolean, exactKeys, literal, record, text } from "./guide-text.ts"
 
-export type GuideOptimizeScope =
+export type GuideReviewScope =
   | { readonly kind: "uncommitted" }
   | { readonly kind: "current-branch" }
   | { readonly kind: "branch"; readonly baseRef: string }
 
-export interface GuideOptimizeChange {
+export interface GuideReviewChange {
   readonly path: string
   readonly staged: boolean
   readonly unstaged: boolean
@@ -20,13 +20,13 @@ export interface GuideOptimizeChange {
   readonly fingerprint: string
 }
 
-export interface GuideOptimizeTarget {
+export interface GuideReviewTarget {
   readonly cwd: string
   readonly gitDirectory: string
   readonly head: string | null
-  readonly scope: Exclude<GuideOptimizeScope, { readonly kind: "current-branch" }>
+  readonly scope: Exclude<GuideReviewScope, { readonly kind: "current-branch" }>
   readonly base?: { readonly ref: string; readonly commit: string; readonly mergeBase: string }
-  readonly changes: ReadonlyArray<GuideOptimizeChange>
+  readonly changes: ReadonlyArray<GuideReviewChange>
   readonly fingerprint: string
 }
 
@@ -118,7 +118,7 @@ const fingerprintFile = async (
   cwd: string,
   relative: string,
   signal?: AbortSignal,
-): Promise<Pick<GuideOptimizeChange, "kind" | "fingerprint">> => {
+): Promise<Pick<GuideReviewChange, "kind" | "fingerprint">> => {
   signal?.throwIfAborted()
   const file = path.join(cwd, relative)
   let before: Stats
@@ -169,9 +169,9 @@ const currentBranchBase = async (git: ReturnType<typeof gitReader>): Promise<str
 
 const inspectBase = async (
   git: ReturnType<typeof gitReader>,
-  scope: GuideOptimizeScope,
+  scope: GuideReviewScope,
   head: string | null,
-): Promise<GuideOptimizeTarget["base"]> => {
+): Promise<GuideReviewTarget["base"]> => {
   if (scope.kind === "uncommitted") return undefined
   if (scope.kind === "current-branch" && head === null) return undefined
   if (head === null) throw new Error("Branch comparison requires an existing commit.")
@@ -185,11 +185,11 @@ const inspectBase = async (
   return { ref, commit, mergeBase: objectId(await git(["merge-base", head, commit])) }
 }
 
-export const guideOptimizeTargetIdentity = async (
+export const guideReviewTargetIdentity = async (
   runner: CommandRunner,
   directory: string,
   signal?: AbortSignal,
-): Promise<Pick<GuideOptimizeTarget, "cwd" | "gitDirectory">> => {
+): Promise<Pick<GuideReviewTarget, "cwd" | "gitDirectory">> => {
   const toplevel = await gitReader(runner, directory, signal)(["rev-parse", "--show-toplevel"])
   const cwd = await realpath(gitDirectoryOutput(toplevel))
   const gitDirectory = await realpath(
@@ -198,12 +198,12 @@ export const guideOptimizeTargetIdentity = async (
   return { cwd, gitDirectory }
 }
 
-export const inspectGuideOptimizeTarget = async (
+export const inspectGuideReviewTarget = async (
   runner: CommandRunner,
   directory: string,
-  scope: GuideOptimizeScope = { kind: "uncommitted" },
+  scope: GuideReviewScope = { kind: "uncommitted" },
   signal?: AbortSignal,
-): Promise<GuideOptimizeTarget> => {
+): Promise<GuideReviewTarget> => {
   const initialGit = gitReader(runner, directory, signal)
   const cwd = await realpath(gitDirectoryOutput(await initialGit(["rev-parse", "--show-toplevel"])))
   const git = gitReader(runner, cwd, signal)
@@ -233,7 +233,7 @@ export const inspectGuideOptimizeTarget = async (
   const untrackedSet = new Set(untracked)
   const committedSet = new Set(committed)
   const names = [...new Set([...staged, ...unstaged, ...untracked, ...committed])].sort()
-  const changes: GuideOptimizeChange[] = []
+  const changes: GuideReviewChange[] = []
   for (const name of names) {
     changes.push({
       path: name,
@@ -255,7 +255,7 @@ export const inspectGuideOptimizeTarget = async (
   if (status !== currentStatus || index !== currentIndex || head !== currentHead || base?.commit !== currentBase) {
     throw new Error("The worktree changed during inspection. Refresh the target before continuing.")
   }
-  const stableScope: GuideOptimizeTarget["scope"] =
+  const stableScope: GuideReviewTarget["scope"] =
     base === undefined ? { kind: "uncommitted" } : { kind: "branch", baseRef: base.ref }
   return {
     cwd,
@@ -268,10 +268,10 @@ export const inspectGuideOptimizeTarget = async (
   }
 }
 
-export const selectedGuideOptimizeChanges = (
-  target: GuideOptimizeTarget,
+export const selectedGuideReviewChanges = (
+  target: GuideReviewTarget,
   paths: ReadonlyArray<string>,
-): ReadonlyArray<GuideOptimizeChange> => {
+): ReadonlyArray<GuideReviewChange> => {
   if (paths.length === 0) throw new Error("Select at least one changed file.")
   if (new Set(paths).size !== paths.length) throw new Error("The optimization target contains duplicate paths.")
   return paths.map((name) => {
@@ -286,27 +286,27 @@ export const selectedGuideOptimizeChanges = (
   })
 }
 
-export const assertGuideOptimizeTargetCurrent = async (
+export const assertGuideReviewTargetCurrent = async (
   runner: CommandRunner,
-  target: GuideOptimizeTarget,
+  target: GuideReviewTarget,
   signal?: AbortSignal,
-): Promise<GuideOptimizeTarget> => {
-  const current = await inspectGuideOptimizeTarget(runner, target.cwd, target.scope, signal)
+): Promise<GuideReviewTarget> => {
+  const current = await inspectGuideReviewTarget(runner, target.cwd, target.scope, signal)
   if (current.fingerprint !== target.fingerprint) {
     throw new Error("The worktree or comparison base changed. Refresh and confirm the target again; nothing was sent.")
   }
   return current
 }
 
-export const parseGuideOptimizeTarget = (input: unknown): GuideOptimizeTarget => {
+export const parseGuideReviewTarget = (input: unknown): GuideReviewTarget => {
   const fields = record(input, "Optimize target")
   exactKeys(fields, "Optimize target", ["cwd", "gitDirectory", "head", "scope", "changes", "fingerprint"], ["base"])
   const scope = record(fields.scope, "scope")
   const kind = literal(scope.kind, "scope.kind", ["uncommitted", "branch"])
   exactKeys(scope, "scope", kind === "branch" ? ["kind", "baseRef"] : ["kind"])
-  const parsedScope: GuideOptimizeTarget["scope"] =
+  const parsedScope: GuideReviewTarget["scope"] =
     kind === "branch" ? { kind, baseRef: text(scope.baseRef, "baseRef", 256) } : { kind }
-  const changes = array(fields.changes, "changes", { maximum: 10_000 }).map((value): GuideOptimizeChange => {
+  const changes = array(fields.changes, "changes", { maximum: 10_000 }).map((value): GuideReviewChange => {
     const entry = record(value, "change")
     exactKeys(entry, "change", ["path", "staged", "unstaged", "untracked", "committed", "kind", "fingerprint"])
     const filename = text(entry.path, "path", 4096, { preserve: true })
@@ -321,7 +321,7 @@ export const parseGuideOptimizeTarget = (input: unknown): GuideOptimizeTarget =>
       fingerprint: text(entry.fingerprint, "fingerprint", 128),
     }
   })
-  let base: GuideOptimizeTarget["base"]
+  let base: GuideReviewTarget["base"]
   if (fields.base !== undefined) {
     const entry = record(fields.base, "base")
     exactKeys(entry, "base", ["ref", "commit", "mergeBase"])

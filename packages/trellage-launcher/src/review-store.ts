@@ -1,9 +1,9 @@
 import { readdir } from "node:fs/promises"
-import { optimizeDigest } from "./guide-optimize-evidence.ts"
+import { optimizeDigest } from "./review-source.ts"
 import { parseStoredOptimizeEvidence, validateSharedReviewEvidence } from "./review-evidence.ts"
-import { parseOptimizeCitations } from "./guide-optimize-review.ts"
-import { PrivateReviewRecords, reviewRecordId } from "./guide-optimize-store.ts"
-import { parseGuideOptimizeTarget } from "./guide-optimize-target.ts"
+import { parseOptimizeCitations } from "./review-findings.ts"
+import { PrivateReviewRecords, reviewRecordId } from "./review-records.ts"
+import { parseGuideReviewTarget } from "./review-target.ts"
 import { array, boundedNumber, exactKeys, literal, record, stringArray, text, uniqueArray } from "./guide-text.ts"
 import { fleetLenses, selectReviewChecks, type ReviewCheckAssignment } from "./review-catalog.ts"
 import {
@@ -48,7 +48,7 @@ const parseRequest = (input: unknown): ReviewRequest => {
   const value = record(input, "request")
   exactKeys(value, "request", ["target", "paths", "checks", "coordinator"], ["originalIntent", "intent"])
   const request: ReviewRequest = {
-    target: parseGuideOptimizeTarget(value.target),
+    target: parseGuideReviewTarget(value.target),
     paths: uniqueArray(
       array(value.paths, "paths", { minimum: 1, maximum: 5000 }).map((name) =>
         text(name, "path", 4096, { preserve: true }),

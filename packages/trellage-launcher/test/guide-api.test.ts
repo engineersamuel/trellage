@@ -659,31 +659,25 @@ const genCandidates = (): GuideGenerateResult => ({
 // ---------------------------------------------------------------------------
 
 describe("parseGuideHeadlessArgv", () => {
-  it("starts the change-target flow without making the original task into an optimization preset", () => {
+  it("starts the change-target review flow; --optimize opens Optimize without an intent", () => {
     const intent = "  Preserve retries.\nDo not change the public API.  "
-    expect(parseGuideHeadlessArgv(["--optimize", "--base", "main", "--intent", intent])).toMatchObject({
-      optimize: true, optimizeBase: "main", intent, json: false,
+    expect(parseGuideHeadlessArgv(["--review", "--base", "main", "--intent", intent])).toMatchObject({
+      review: true, reviewBase: "main", intent, json: false,
     })
+    expect(parseGuideHeadlessArgv(["--review"]).reviewBase).toBeUndefined()
+    expect(() => parseGuideHeadlessArgv(["--base", "main"])).toThrow("--base requires --review")
+    expect(() => parseGuideHeadlessArgv(["--review", "--base"])).toThrow("Missing value")
     expect(parseGuideHeadlessArgv(["--optimize"])).toMatchObject({ optimize: true, intent: undefined })
-    expect(parseGuideHeadlessArgv(["--optimize"]).optimizeBase).toBeUndefined()
-    expect(() => parseGuideHeadlessArgv(["--base", "main"])).toThrow("--base requires --review or --optimize")
-    expect(() => parseGuideHeadlessArgv(["--optimize", "--base"])).toThrow("Missing value")
-    expect(() => parseGuideHeadlessArgv(["--optimize", "--base", "main", "--base", "HEAD"])).toThrow("Duplicate flag")
-    expect(() => parseGuideHeadlessArgv(["--optimize", "--base", ""])).toThrow()
-    for (const flags of [
-      ["--json"], ["--next-steps"], ["--profile", "native:codex/default"], ["--optimize"],
-      ["--ui-variant", "pager"],
-    ]) {
+    for (const flags of [["--review"], ["--intent", "x"], ["--json"], ["--intent-stdin"]])
       expect(() => parseGuideHeadlessArgv(["--optimize", ...flags])).toThrow(GuideArgsError)
+    for (const flags of [["--json"], ["--next-steps"], ["--profile", "native:codex/default"], ["--ui-variant", "pager"]]) {
+      expect(() => parseGuideHeadlessArgv(["--review", ...flags])).toThrow(GuideArgsError)
     }
-    expect(parseGuideHeadlessArgv(["--optimize", "--model", "model-a", "--effort", "high"])).toMatchObject({
-      optimize: true, model: "model-a", effort: "high",
-    })
   })
 
   it.each([
-    ["--optimize", "--engagement"],
-    ["--engagement", "--optimize"],
+    ["--review", "--engagement"],
+    ["--engagement", "--review"],
     ["--engagement", "--base", "main"],
   ])("rejects mixed change-review and engagement scopes: %j", (...flags) => {
     expect(() => parseGuideHeadlessArgv(flags)).toThrow(GuideArgsError)

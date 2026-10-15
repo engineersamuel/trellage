@@ -55,7 +55,7 @@ import {
   writeResolutionReceipt,
   writeResolutionReceiptBytes,
 } from "./resolution-receipt.ts"
-import { loadResolutionSidecar, writeResolutionSidecar } from "./resolution-sidecar-storage.ts"
+import { loadResolutionSidecar, publishAttachedSidecar } from "./resolution-sidecar-storage.ts"
 import type { ResolutionSidecar } from "./resolution-sidecar.ts"
 import { discoverPypiIndex, sanitizePypiIndex } from "./package-feeds.ts"
 import { npmTarballUrl } from "./npm-artifact.ts"
@@ -897,19 +897,9 @@ const writeReleaseLockBytes = (
 export const writeReleaseLock = (profilePath: string, lock: ProfileLock): Effect.Effect<void, ApplicationError> =>
   Effect.gen(function* () {
     const lockPath = adjacentLockPath(profilePath, lock.platform)
-    const sidecar = attachedSidecar(lock)
-    if (sidecar !== undefined) {
-      const reference = yield* writeResolutionSidecar(lockPath, sidecar).pipe(
-        Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-      )
-      if (
-        lock.sidecar === undefined ||
-        reference.integrity !== lock.sidecar.integrity ||
-        reference.size !== lock.sidecar.size
-      ) {
-        return yield* Effect.fail(new ApplicationError({ message: "resolution sidecar reference mismatch" }))
-      }
-    }
+    yield* publishAttachedSidecar(lockPath, lock).pipe(
+      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+    )
     yield* writeReleaseLockBytes(profilePath, lock.platform, renderLock(lock))
   })
 
@@ -973,23 +963,6 @@ export const compileProfileLock = (
 
 export const snapshotProfileReleaseLock = compileProfileLock
 
-interface DevelopmentResolution {
-  readonly receipt: ProfileLock | undefined
-  readonly current: ProfileLock | undefined
-}
-
-const loadDevelopmentResolution = (
-  document: ProfileDocument,
-  xdgCacheHome: string,
-  platform: Platform,
-): Effect.Effect<DevelopmentResolution, ApplicationError> =>
-  Effect.gen(function* () {
-    const receipt = yield* loadResolutionReceipt(document, platform, xdgCacheHome).pipe(
-      Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-    )
-    return { receipt, current: receipt }
-  })
-
 const resolveLockSidecar = (
   lockPath: string,
   lock: ProfileLock,
@@ -1000,21 +973,6 @@ const resolveLockSidecar = (
         Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       )
     : Effect.succeed(sidecar)
-}
-
-const publishAttachedSidecar = (lockPath: string, lock: ProfileLock): Effect.Effect<void, ApplicationError> => {
-  const sidecar = attachedSidecar(lock)
-  if (sidecar === undefined) return Effect.void
-  return writeResolutionSidecar(lockPath, sidecar).pipe(
-    Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
-    Effect.flatMap((reference) =>
-      lock.sidecar !== undefined &&
-      reference.integrity === lock.sidecar.integrity &&
-      reference.size === lock.sidecar.size
-        ? Effect.void
-        : Effect.fail(new ApplicationError({ message: "resolution sidecar reference mismatch" })),
-    ),
-  )
 }
 
 interface CommandOptions {
@@ -1943,7 +1901,9 @@ export const upgradeProfile = (
               yield* requireLocked(document, persistedFinal, platform).pipe(
                 Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
               )
-              yield* publishAttachedSidecar(resolutionReceiptPath(document, platform, xdgCacheHome), finalLock)
+              yield* publishAttachedSidecar(resolutionReceiptPath(document, platform, xdgCacheHome), finalLock).pipe(
+                Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+              )
               if (document.profile.skill_bundles.length === 0) {
                 alias = profileImageAlias(document.profile.name, platform, finalLock.profile_hash, runtimeSnapshot.hash)
                 aliasBackup = `${alias}-backup-${process.pid}`
@@ -2111,11 +2071,12 @@ export const buildProfile = (
         Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
       )
     } else {
-      const development = yield* loadDevelopmentResolution(document, xdgCacheHome, platform)
-      receipt = development.receipt
+      receipt = yield* loadResolutionReceipt(document, platform, xdgCacheHome).pipe(
+        Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })),
+      )
       lock = yield* compileLock(
         document,
-        development.current,
+        receipt,
         false,
         productionResolvers(xdgCacheHome, platform, npmRegistry),
       ).pipe(Effect.mapError((cause) => new ApplicationError({ message: cause.message, cause })))

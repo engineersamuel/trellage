@@ -1,4 +1,3 @@
-import { guideOptimizeReviewers } from "./guide-optimize-prompts.ts"
 import { defaultGuideModelRouting, type GuideModelConfig, type GuideModelRouting } from "./guide-model-routing.ts"
 
 export interface ReviewChoice {
@@ -81,9 +80,6 @@ export const selectReviews = (ids: ReadonlyArray<string>, catalog = reviewCatalo
 }
 
 export type ReviewCheckId =
-  | "first-principles"
-  | "behavior-preservation"
-  | "improve-codebase-architecture"
   | "ponytail"
   | "fleet"
   | "matt-code-review"
@@ -92,26 +88,14 @@ export interface ReviewCheckDefinition {
   readonly id: ReviewCheckId
   readonly label: string
   readonly purpose: string
-  readonly kind: "builtin" | "architecture" | "leaf" | "fleet" | "two-axis"
-  readonly evidence: "related-source" | "patch"
+  readonly kind: "leaf" | "fleet" | "two-axis"
+  readonly evidence: "patch"
   readonly requiresHead: boolean
   readonly maximumFindings: number
-  readonly requiredSkillSources?: ReadonlyArray<string>
 }
 
 /** The skill-only catalog above remains the guarded SDK adapter's input. */
 export const reviewCheckCatalog: ReadonlyArray<ReviewCheckDefinition> = Object.freeze([
-  ...guideOptimizeReviewers.map((entry): ReviewCheckDefinition => ({
-    id: entry.id,
-    label: entry.title,
-    purpose: entry.description,
-    kind: entry.id === "improve-codebase-architecture" ? "architecture" : "builtin",
-    evidence: "related-source",
-    requiresHead: false,
-    maximumFindings: 4,
-    ...(entry.id === "improve-codebase-architecture"
-      ? { requiredSkillSources: ["@skill/improve-codebase-architecture", "@skill/codebase-design"] } : {}),
-  })),
   ...reviewCatalog.map((entry): ReviewCheckDefinition => ({
     id: entry.id as ReviewCheckId,
     label: reviewLabel(entry),
@@ -122,9 +106,6 @@ export const reviewCheckCatalog: ReadonlyArray<ReviewCheckDefinition> = Object.f
     maximumFindings: 50,
   })),
 ])
-
-export const defaultReviewChecks = (entry: "review" | "optimize"): ReadonlyArray<ReviewCheckId> =>
-  entry === "review" ? [] : ["first-principles", "behavior-preservation"]
 
 export interface ReviewCheckAssignment {
   readonly id: ReviewCheckId
@@ -148,12 +129,8 @@ export const assignReviewModels = (
   override: Partial<GuideModelConfig> = {},
 ): ReadonlyArray<ReviewCheckAssignment> =>
   selectReviewChecks(ids).map((check) => {
-    const skill = reviewCatalog.find((entry) => entry.id === check.id)
-    const defaults: GuideModelConfig = skill
-      ? { model: skill.model, effort: skill.kind === "fleet" || skill.id === "ponytail" ? "high" : "low" }
-      : check.id === "behavior-preservation"
-        ? routing.generate
-        : routing.optimize
+    const skill = reviewCatalog.find((entry) => entry.id === check.id)!
+    const defaults: GuideModelConfig = { model: skill.model, effort: skill.kind === "fleet" || skill.id === "ponytail" ? "high" : "low" }
     const model = { ...defaults, ...override }
     return {
       id: check.id,

@@ -1122,52 +1122,52 @@ jq -e '.args == ["--engagement", "--intent", "What\u0027s the next step in this 
   || fail 'guide treated a literal engagement intent as a mode flag'
 jq -e '.promptMasterExists == true' "$fixture_root/guide-engagement-literal.json" >/dev/null \
   || fail 'ordinary guide skipped Prompt Master for a literal intent value'
-for conflicting_flag in --engagement --engagement=value --optimize --next-steps --json --profile=native:cpx/hve --ui-variant=pager --preview --forks; do
+for conflicting_flag in --engagement --engagement=value --review --next-steps --json --profile=native:cpx/hve --ui-variant=pager --preview --forks; do
   status=0
   "$fixture_bin/trx" guide --engagement "$conflicting_flag" \
     >"$fixture_root/guide-engagement-invalid.out" 2>"$fixture_root/guide-engagement-invalid.err" \
     || status=$?
   [[ "$status" -ne 0 ]] || fail "engagement accepted conflicting flag: $conflicting_flag"
 done
-optimize_skills_manager="$fixture_source/scripts/floating-skills.ts"
-mv "$optimize_skills_manager" "$fixture_root/optimize-floating-skills.saved"
-printf '%s\n' 'throw new Error("Optimize must not prepare Prompt Master or call the floating-skills manager.");' \
-  >"$optimize_skills_manager"
+review_skills_manager="$fixture_source/scripts/floating-skills.ts"
+mv "$review_skills_manager" "$fixture_root/review-floating-skills.saved"
+printf '%s\n' 'throw new Error("Review setup must not prepare Prompt Master or call the floating-skills manager.");' \
+  >"$review_skills_manager"
 refresh_fixture_source
-: >"$fixture_root/guide-optimize-discovery.log"
-TRX_SANDBOX_CATALOG_MODE=failed TRX_DISCOVERY_LOG="$fixture_root/guide-optimize-discovery.log" \
-  "$fixture_bin/trx" guide --optimize --base main --intent 'keep this original task' \
-  >"$fixture_root/guide-optimize.json" || fail 'guide Optimize required the unused Sandbox catalog'
-if grep -Fxq trellage "$fixture_root/guide-optimize-discovery.log"; then
-  fail 'guide Optimize attempted Sandbox discovery'
+: >"$fixture_root/guide-review-discovery.log"
+TRX_SANDBOX_CATALOG_MODE=failed TRX_DISCOVERY_LOG="$fixture_root/guide-review-discovery.log" \
+  "$fixture_bin/trx" guide --review --base main --intent 'keep this original task' \
+  >"$fixture_root/guide-review.json" || fail 'guide Review required the unused Sandbox catalog'
+if grep -Fxq trellage "$fixture_root/guide-review-discovery.log"; then
+  fail 'guide Review attempted Sandbox discovery'
 fi
 jq -e --arg sandboxCommandPath "$fixture_source/prototypes/trellage/trellage" '
-  .args == ["--optimize", "--base", "main", "--intent", "keep this original task"]
+  .args == ["--review", "--base", "main", "--intent", "keep this original task"]
   and .catalog.sandboxCommandPath == $sandboxCommandPath
   and .catalog.sandbox == []
   and .catalog.native == []
-' "$fixture_root/guide-optimize.json" >/dev/null || fail 'guide Optimize changed its task or discovered profiles during setup'
-[[ ! -s "$fixture_root/guide-optimize-discovery.log" ]] || fail 'review setup discovered an optional Native profile'
+' "$fixture_root/guide-review.json" >/dev/null || fail 'guide Review changed its task or discovered profiles during setup'
+[[ ! -s "$fixture_root/guide-review-discovery.log" ]] || fail 'review setup discovered an optional Native profile'
 TRELLAGE_REVIEW_PROFILES_ONLY=1 "$fixture_bin/trx" guide --review >"$fixture_root/review-handoff-catalog.json" \
   || fail 'review handoff could not discover optional Native profiles'
 jq -e '.sandbox == [] and (.native | length > 0) and
   all(.native[]; .launcher == "copilot" or .launcher == "codex" or .launcher == "claude")' \
   "$fixture_root/review-handoff-catalog.json" >/dev/null || fail 'review handoff catalog contains unsupported profiles'
-mv "$fixture_bin/trellage" "$fixture_root/optimize-trellage.saved"
-"$fixture_bin/trx" guide --optimize >"$fixture_root/guide-optimize-no-sandbox.json" \
-  || fail 'guide Optimize required a separately installed Sandbox command'
-mv "$fixture_root/optimize-trellage.saved" "$fixture_bin/trellage"
-jq -e '.args == ["--optimize"] and .catalog.sandbox == [] and .catalog.native == []' \
-  "$fixture_root/guide-optimize-no-sandbox.json" >/dev/null || fail 'guide Optimize did not defer its Native catalog'
-mv "$fixture_root/optimize-floating-skills.saved" "$optimize_skills_manager"
+mv "$fixture_bin/trellage" "$fixture_root/review-trellage.saved"
+"$fixture_bin/trx" guide --review >"$fixture_root/guide-review-no-sandbox.json" \
+  || fail 'guide Review required a separately installed Sandbox command'
+mv "$fixture_root/review-trellage.saved" "$fixture_bin/trellage"
+jq -e '.args == ["--review"] and .catalog.sandbox == [] and .catalog.native == []' \
+  "$fixture_root/guide-review-no-sandbox.json" >/dev/null || fail 'guide Review did not defer its Native catalog'
+mv "$fixture_root/review-floating-skills.saved" "$review_skills_manager"
 refresh_fixture_source
-for conflicting_flag in --optimize --review --optimize=value --engagement --json --next-steps --preview --forks; do
+for conflicting_flag in --review --review=value --engagement --json --next-steps --preview --forks; do
   status=0
-  "$fixture_bin/trx" guide --optimize "$conflicting_flag" \
-    >"$fixture_root/guide-optimize-invalid.out" 2>"$fixture_root/guide-optimize-invalid.err" \
+  "$fixture_bin/trx" guide --review "$conflicting_flag" \
+    >"$fixture_root/guide-review-invalid.out" 2>"$fixture_root/guide-review-invalid.err" \
     || status=$?
-  [[ "$status" -ne 0 ]] || fail "guide Optimize accepted conflicting flag: $conflicting_flag"
-  assert_contains '--optimize' "$fixture_root/guide-optimize-invalid.err"
+  [[ "$status" -ne 0 ]] || fail "guide Review accepted conflicting flag: $conflicting_flag"
+  assert_contains '--review' "$fixture_root/guide-review-invalid.err"
 done
 "$fixture_bin/trx" guide --next-steps --model fixture-model --effort high \
   >"$fixture_root/guide-next-steps.json" \

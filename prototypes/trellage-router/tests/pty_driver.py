@@ -28,7 +28,8 @@ next_key_stage = 0
 next_key_stage_at = None
 key_stage_frame = 0
 sent_signal = False
-deadline = time.monotonic() + (60 if "upgrade" in command else 10)
+# Upgrades and source-mode launches start the real runtime, which can exceed 10 seconds.
+deadline = time.monotonic() + (60 if "upgrade" in command or "--source-mode" in command else 10)
 status = None
 
 while time.monotonic() < deadline:

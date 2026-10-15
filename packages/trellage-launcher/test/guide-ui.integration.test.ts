@@ -1168,53 +1168,19 @@ it("does not discard a draft when Review is requested", async ({ guide }) => {
   expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
 })
 
-it("shows all six checks and keeps mixed live tabs read-only at 80 columns", async ({ guide }) => {
+it("shows the skill checks and keeps live tabs read-only at 80 columns", async ({ guide }) => {
   await guide.start(FixtureMode.OptimizeCancel, 80, 24, "Choose review scope")
   await selectOptimizeBase(guide)
-  await guide.pressAndWait(enter, "Choose reviewers")
-  await guide.pressAndWait(down, "> [x] Behavior preservation")
-  await guide.pressAndWait(down, "> [ ] Improve codebase architecture")
-  await guide.pressAndWait(" ", "[x] Improve codebase architecture")
-  await guide.pressAndWait(down, "> [ ] Ponytail Review")
+  await guide.pressAndWait(enter, "Choose reviewers", "[ ] Ponytail Review", "[ ] Fleet Review", "[ ] Matt Pocock Code Review")
   await guide.pressAndWait(" ", "[x] Ponytail Review")
-  await guide.pressAndWait(down, "> [ ] Fleet Review")
-  await guide.pressAndWait(" ", "[x] Fleet Review")
-  await guide.pressAndWait(down, "> [ ] Matt Pocock Code Review")
-  await guide.pressAndWait(" ", "[x] Matt Pocock Code Review")
   await guide.pressAndWait(enter, "Confirm read-only review")
   await guide.pressAndWait(enter, "Live text is unverified")
-  await guide.waitForText("║ › First principles [running] ║", "Unverified fixture output from first-principles")
-  for (const [id, label] of [
-    ["behavior-preservation", "Behavior"], ["improve-codebase-architecture", "Architecture"],
-    ["ponytail", "Ponytail"], ["fleet", "Fleet"], ["matt-code-review", "Matt"],
-  ]) {
-    await guide.pressAndWait("\t", `║ › ${label} [running] ║`, `Unverified fixture output from ${id}`)
-  }
   await guide.pressAndWait("\u001b", "Review cancelled")
   const report = await guide.finish("q", 130)
   const runs = report.events.filter((event) => event.kind === "optimize-review")
-  expect(runs).toHaveLength(1)
-  expect(runs[0]?.input.reviewerIds).toHaveLength(6)
+  expect(runs.map((run) => run.input.reviewerIds)).toEqual([["ponytail"]])
   expect(report.events.filter((event) => event.kind === "optimize-approval" || event.kind === "optimize-changes")).toEqual([])
 }, 30_000)
-
-it("keeps one readiness probe alive while its fork is parked and the main selection changes", async ({ guide }) => {
-  await guide.start(FixtureMode.ParkedReadiness)
-  await enterIntent(guide)
-  await selectProfile(guide, "planner", 0)
-  await guide.pressAndWait(enter, "Checking profile readiness")
-  const current = await mainScreen(guide)
-  for (let step = 1; step <= 3; step += 1) {
-    const id = recommendationIds[(current + step) % recommendationIds.length]
-    assert(id !== undefined)
-    await guide.pressAndWait(down, `${fixtureProfile(id).ref} |`)
-  }
-  await guide.pressAndWait("1", "Checking profile readiness")
-  await guide.pressAndWait("\u0012", "Choose a destination")
-  const report = await guide.finish("q", 130)
-  expect(report.result).toEqual({ action: "cancel", exitCode: 130 })
-  expect(commandEvents(report.events)).toEqual([readinessCommand(guide.root, "planner")])
-})
 
 it("reviews a local customer brief and launches the checked Discovery lens without batch execution", async ({
   guide,
@@ -1491,10 +1457,16 @@ const selectOptimizeBase = async (guide: GuideTerminal, base?: string): Promise<
   await guide.pressAndWait(enter, "Confirm target", `Branch base: ${base}`)
 }
 
+const choosePonytail = async (guide: GuideTerminal): Promise<void> => {
+  await guide.pressAndWait(enter, "Choose reviewers", "[ ] Ponytail Review")
+  await guide.pressAndWait(" ", "[x] Ponytail Review")
+}
+
 const approveOptimizeReview = async (guide: GuideTerminal): Promise<void> => {
   await guide.pressAndWait(enter, "Confirm read-only review")
   const before = (await guide.events()).filter((event) => event.kind === "optimize-review").length
-  await guide.pressAndWait(enter, "Review complete", "Findings selected: 0", "[ ] recommended:")
+  await guide.pressAndWait(enter, "Ponytail [complete]")
+  await guide.pressAndWait("f", "Review complete", "Findings selected: 0", "[ ] recommended:")
   assert.equal((await guide.events()).filter((event) => event.kind === "optimize-review").length, before + 1)
   assert.deepEqual(
     (await guide.events()).filter((event) => event.kind === "optimize-changes"),
@@ -1511,152 +1483,148 @@ const confirmOptimizePane = async (guide: GuideTerminal): Promise<void> => {
   await guide.pressAndWait(enter, "Confirm execution")
 }
 
-it("reviews around a saved standalone fork without taking over its terminal or regenerating it", async ({ guide }) => {
+const openOptimize = async (guide: GuideTerminal): Promise<void> => {
+  await guide.pressAndWait("o", "Optimize", "Runs skills on the whole repository", "[ ] First principles", "[ ] UI and CSS")
+}
+
+it("runs selected Optimize skills in the Copilot SDK without a change set or review", async ({ guide }) => {
   await guide.start(FixtureMode.Terminal, 120, 40)
   await enterIntent(guide)
-  await selectProfile(guide, "planner", 0)
-  await mainScreen(guide)
-  const generated = (await guide.events()).filter((event) => event.kind === "generate" || event.kind === "optimize")
-  await guide.pressAndWait("o", "Choose review scope")
-  await selectOptimizeBase(guide)
-  await guide.pressAndWait(enter, "Choose reviewers")
-  await approveOptimizeReview(guide)
-  await guide.pressAndWait(enter, "Choose a fresh agent", "would close Guide", "forks first")
-  await guide.pressAndWait("q", "Profile recommendations")
-  await guide.pressAndWait("1", "Prompt candidates", "Approach: focused.")
+  await guide.waitForText("o Optimize repository")
+  await openOptimize(guide)
+  await guide.pressAndWait(enter, "Press Space to select one or more skills.")
+  await guide.pressAndWait(" ", "[x] First principles")
+  await guide.pressAndWait(down, "> [ ] Behavior preservation")
+  await guide.pressAndWait(down, "> [ ] Improve codebase architecture")
+  await guide.pressAndWait(down, "> [ ] UI and CSS")
+  await guide.pressAndWait(" ", "[x] UI and CSS")
+  await guide.pressAndWait(enter, "Copilot SDK in this terminal (all tools allowed)", "Agent harness in this terminal")
+  assert(!guide.text().includes("New Herdr tab"))
+  await guide.pressAndWait(enter, "Fixture optimization finished.", "finished")
+  await guide.pressAndWait(enter, "Profile recommendations", "o Optimize repository")
   const report = await guide.finish("q", 130)
-  assert.deepEqual(
-    report.events.filter((event) => event.kind === "generate" || event.kind === "optimize"),
-    generated,
-  )
-  assert.equal(report.events.filter((event) => event.kind === "optimize-review").length, 1)
-  assert.equal(report.events.filter((event) => event.kind === "optimize-changes").length, 0)
+  const runs = report.events.filter((event) => event.kind === "optimize-sdk")
+  assert.equal(runs.length, 1)
+  const [run] = runs
+  assert(run?.kind === "optimize-sdk")
+  assert.equal(run.cwd, guide.root)
+  assert(run.prompt.includes("Optimize this repository as it is now"))
+  assert(run.prompt.includes("## First principles"))
+  assert(run.prompt.includes("## UI and CSS"))
+  assert(run.prompt.includes("good-css.com"))
+  assert(!run.prompt.includes("## Behavior preservation"))
+  assert.deepEqual(report.events.filter((event) => event.kind.startsWith("optimize-") && !["optimize-sdk", "optimize-skills"].includes(event.kind)), [])
+  assert.equal(run.skillDirectory, undefined)
   assert.deepEqual(commandEvents(report.events), [])
 }, 30_000)
 
-it.for([80, 120])(
-  "previews and cancels Optimize without changing the request at %i columns",
-  { timeout: 30_000 },
-  async (columns, { guide }) => {
-    await guide.start(FixtureMode.Terminal, columns, columns === 80 ? 24 : 40)
-    await enterIntent(guide)
-    await guide.waitForText("o Optimize")
-    await guide.pressAndWait("o", "Review changes", "Choose review scope")
-    await selectOptimizeBase(guide)
-    await guide.waitForText("2 of 2 files selected", '[x] "notes.txt"')
-    await guide.pressAndWait(
-      enter,
-      "Choose reviewers",
-      "[x] First principles",
-      "[x] Behavior preservation",
-      "[ ] Improve codebase architecture",
-      "Enter continue",
-    )
-    for (const key of [down, "\u001b[A", "j", "k", "\t", "\u001b[Z"]) {
-      await guide.pressAndWaitForInput(key)
-      await guide.waitForText("Review changes", "Choose reviewers", "First principles", "Esc back")
-    }
-    await guide.pressAndWait(enter, "Confirm read-only review")
-    await scrollUntil(guide, "8 minutes.")
-    assert.deepEqual(
-      (await guide.events()).filter((event) => event.kind === "optimize-review"),
-      [],
-    )
-    await guide.pressAndWait("\u001b", "Choose reviewers")
-    await guide.pressAndWait("\u001b", "Confirm target", "2 of 2 files selected")
-    await guide.pressAndWait("\u001b", "Profile recommendations", "o Optimize")
-    await assertDeferredLaunch(guide)
-    const report = await guide.finish("q", 130)
-    assertCancelledQueue(report)
-    assertDataflow(report, [])
-  },
-)
-
-it("optimizes current changes without rematching the task or changing queued work", async ({ guide }) => {
-  await guide.start(FixtureMode.Herdr, 240, 40)
+it("downloads the architecture skills before the SDK run and passes their directory", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal, 120, 40)
   await enterIntent(guide)
-  await selectProfile(guide, "planner", 0)
-  await enqueue(guide, 1)
-  await mainScreen(guide)
-  await guide.pressAndWait("o", "Review changes", "Choose review scope")
-  await selectOptimizeBase(guide)
-  await guide.waitForText("2 of 2 files selected")
-  await guide.pressAndWait(down, '> [x] "notes.txt"')
-  await guide.pressAndWait(" ", "1 of 2 files selected", '[ ] "notes.txt"')
-  await guide.pressAndWaitForInput("L")
-  await assertDeferredLaunch(guide)
-  await guide.pressAndWait(enter, "Choose reviewers", "First principles")
-  await guide.pressAndWait("\u001b", "Confirm target", "1 of 2 files selected", '[ ] "notes.txt"')
-  await guide.pressAndWait(enter, "Choose reviewers", "First principles")
-  await approveOptimizeReview(guide)
-  await confirmOptimizePane(guide)
-  await guide.waitForText("[ ] Confirm other agents")
-  await guide.pressAndWait(enter, "Press Space to confirm")
-  assert.deepEqual(
-    (await guide.events()).filter((event) => event.kind === "optimize-changes"),
-    [],
-  )
-  await guide.pressAndWait(" ", "[x] Confirm other agents")
-  await guide.pressAndWait(enter, "Handoff result", "Optimization launched")
-  await guide.pressAndWait("\u001b", "Profile recommendations")
-  const selections: ReadonlyArray<Selection> = [
-    { id: 1, profileId: "planner", candidate: 0, intent: fixtureIntent, placement: panePlacement },
-  ]
-  await guide.pressAndWait("v", queueText(1))
-  await selectQueueEntry(guide, selections, 0, 0)
-  await assertDeferredLaunch(guide)
+  await openOptimize(guide)
+  await guide.pressAndWait(down, "> [ ] Behavior preservation")
+  await guide.pressAndWait(down, "> [ ] Improve codebase architecture")
+  await guide.pressAndWait(" ", "[x] Improve codebase architecture")
+  await guide.pressAndWait(enter, "Copilot SDK in this terminal")
+  await guide.pressAndWait(enter, "Fixture optimization finished.", "finished")
+  await guide.pressAndWait(enter, "Profile recommendations")
   const report = await guide.finish("q", 130)
-  assertCancelledQueue(report)
-  assertDataflow(report, selections)
-  const submissions = report.events.filter((event) => event.kind === "optimize-changes")
-  const [submission] = submissions
-  assert(submissions.length === 1 && submission !== undefined, "Expected exactly one optimization submission")
-  assert.equal(submission.request.originalIntent, fixtureIntent)
-  assert.equal(submission.request.intent, fixtureIntent)
-  assert.deepEqual(submission.request.paths, ["src/login.ts"])
-  assert.equal(submission.request.otherEditorsStopped, true)
-  assert.equal(submission.profileRef, "native:codex/planner")
-  assert.deepEqual(submission.request.target.scope, { kind: "branch", baseRef: "main" })
-  assert(submission.prompt.includes("Implement only the explicitly approved"))
-  assert(submission.prompt.includes("Remove the redundant wrapper"))
-  assert.deepEqual(
-    submission.request.approval.findings.map((entry) => entry.id),
-    ["first-principles:1"],
-  )
+  const skills = report.events.filter((event) => event.kind === "optimize-skills")
+  assert.deepEqual(skills.map((event) => event.kind === "optimize-skills" && event.skillIds), [["improve-codebase-architecture"]])
+  const [run] = report.events.filter((event) => event.kind === "optimize-sdk")
+  assert(run?.kind === "optimize-sdk")
+  assert.equal(run.skillDirectory, path.join(guide.root, "optimize-skills"))
+  assert(run.prompt.includes(`Managed skills are in ${JSON.stringify(path.join(guide.root, "optimize-skills"))}`))
 }, 30_000)
 
-it("sends the explicit branch scope with untracked files selected by default to a fresh same-worktree agent", async ({
-  guide,
-}) => {
+it("hands selected Optimize skills to an agent harness in this terminal", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal, 120, 40)
+  await enterIntent(guide)
+  await openOptimize(guide)
+  await guide.pressAndWait(down, "> [ ] Behavior preservation")
+  await guide.pressAndWait(" ", "[x] Behavior preservation")
+  await guide.pressAndWait(enter, "Agent harness in this terminal")
+  await guide.pressAndWait(down, "> Agent harness in this terminal")
+  await guide.pressAndWait(enter, "Guide loads only the selected skills", "> Agency", "Pi", "Copilot", "Claude", "Codex", "JCode", "Grok")
+  assert(!guide.text().includes("copilot awesome"))
+  await guide.pressAndWait("b", "> Copilot SDK in this terminal")
+  await guide.pressAndWait(down, "> Agent harness in this terminal")
+  await guide.pressAndWait(enter, "> Agency")
+  await guide.pressAndWait(down, "> Pi")
+  await guide.pressAndWait(down, "> Copilot")
+  await guide.pressAndWait(down, "> Claude")
+  await guide.pressAndWait(down, "> Codex")
+  await assertDeferredLaunch(guide)
+  const report = await guide.finish(enter)
+  assert(report.result.action === "current-terminal")
+  assert.equal(report.result.cwd, guide.root)
+  assert(report.result.prompt.includes("## Behavior preservation"))
+  assert(report.result.prompt.includes("Do not limit the work to uncommitted or committed changes"))
+  const args = report.result.command.args
+  assert.deepEqual(args.slice(0, 3), ["run", "codex", "--no-always"])
+  assert(!args.includes("--skill"), "Behavior preservation needs no managed skills")
+  assert.equal(args.at(-1), report.result.prompt)
+  assert(!args.includes("--allow-all"))
+}, 30_000)
+
+it("offers Herdr tab and worktree runners and creates a worktree from a checked branch", async ({ guide }) => {
   await guide.start(FixtureMode.Herdr, 120, 40)
   await enterIntent(guide)
-  await guide.pressAndWait("o", "Choose review scope")
-  await selectOptimizeBase(guide, "release")
-  await guide.waitForText("2 of 2 files selected", '[x] "src/login.ts"', '[x] "notes.txt"')
-  await guide.pressAndWait(enter, "Choose reviewers", "First principles")
-  await approveOptimizeReview(guide)
-  await guide.pressAndWait(down, "> copilot reviewer")
-  await confirmOptimizePane(guide)
-  await guide.waitForText("Destination: copilot reviewer")
-  await guide.pressAndWait("p", "Review context", "Implement only the explicitly approved")
-  await guide.pressAndWait("\u001b", "Confirm execution")
-  await guide.pressAndWait(" ", "[x] Confirm other agents")
-  await guide.pressAndWait(enter, "Handoff result", "Pane: 9-optimize")
-  await guide.pressAndWait("\u001b", "Profile recommendations")
+  await openOptimize(guide)
+  await guide.pressAndWait(" ", "[x] First principles")
+  await guide.pressAndWait(enter, "Agent harness in a new Herdr tab", "Agent harness in a new Herdr worktree")
+  await guide.pressAndWait(down, "> Agent harness in this terminal")
+  await guide.pressAndWait(down, "> Agent harness in a new Herdr tab")
+  await guide.pressAndWait(down, "> Agent harness in a new Herdr worktree")
+  await guide.pressAndWait(enter, "> Agency")
+  await guide.pressAndWait(down, "> Pi")
+  await guide.pressAndWait(down, "> Copilot")
+  await guide.pressAndWait(down, "> Claude")
+  await guide.pressAndWait(down, "> Codex")
+  await guide.pressAndWait(enter, "Branch:")
+  const report = await guide.finish(enter)
+  assert(report.result.action === "herdr-worktree-create")
+  assert(report.result.prompt.includes("## First principles"))
+  assert.deepEqual(report.result.command.args.slice(0, 3), ["run", "codex", "--no-always"])
+  assert.equal(report.result.branch, fixtureBranches.optimize)
+  assert.equal(report.result.primaryCheckoutPath, guide.root)
+}, 30_000)
+
+it("composes a harness with only the selected skills' managed skills", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal, 120, 40)
+  await enterIntent(guide)
+  await openOptimize(guide)
+  await guide.pressAndWait(down, "> [ ] Behavior preservation")
+  await guide.pressAndWait(down, "> [ ] Improve codebase architecture")
+  await guide.pressAndWait(" ", "[x] Improve codebase architecture")
+  await guide.pressAndWait(down, "> [ ] UI and CSS")
+  await guide.pressAndWait(" ", "[x] UI and CSS")
+  await guide.pressAndWait(enter, "Agent harness in this terminal")
+  await guide.pressAndWait(down, "> Agent harness in this terminal")
+  await guide.pressAndWait(enter, "> Agency")
+  await guide.pressAndWait(down, "> Pi")
+  await guide.pressAndWait(down, "> Copilot")
+  const report = await guide.finish(enter)
+  assert(report.result.action === "current-terminal")
+  const args = report.result.command.args
+  assert.deepEqual(args.slice(0, args.indexOf("--")), [
+    "run", "copilot", "--no-always", "--model", "auto",
+    "--skill", "mattpocock/skills:improve-codebase-architecture",
+    "--skill", "mattpocock/skills:codebase-design",
+  ])
+  assert.deepEqual(args.slice(args.indexOf("--") + 1), ["-i", report.result.prompt])
+  assert(report.result.prompt.includes("## UI and CSS"))
+}, 30_000)
+
+it("closes Optimize with Esc and returns to recommendations without launching", async ({ guide }) => {
+  await guide.start(FixtureMode.Herdr, 80, 24)
+  await enterIntent(guide)
+  await openOptimize(guide)
+  await guide.pressAndWait("\u001b", "Profile recommendations", "o Optimize repository")
+  await assertDeferredLaunch(guide)
   const report = await guide.finish("q", 130)
   assertCancelledQueue(report)
-  assertDataflow(report, [])
-  const submissions = report.events.filter((event) => event.kind === "optimize-changes")
-  const [submission] = submissions
-  assert(submissions.length === 1 && submission !== undefined, "Expected exactly one optimization submission")
-  assert.equal(submission.profileRef, "native:copilot/reviewer")
-  assert.equal(submission.request.originalIntent, fixtureIntent)
-  assert.equal(submission.request.intent, fixtureIntent)
-  assert.deepEqual(submission.request.paths, ["src/login.ts", "notes.txt"])
-  assert.equal(submission.request.target.cwd, guide.root)
-  assert.deepEqual(submission.request.target.scope, { kind: "branch", baseRef: "release" })
-  assert(submission.prompt.includes(fixtureIntent))
-  assert(!submission.prompt.includes("Conversation context"))
+  assert.deepEqual(report.events.filter((event) => event.kind === "optimize-sdk"), [])
 }, 30_000)
 
 it("opens the current worktree directly without asking for a base or matching a prompt", async ({ guide }) => {
@@ -1671,22 +1639,24 @@ it("opens the current worktree directly without asking for a base or matching a 
     (await guide.events()).filter((event) => event.kind === "optimize-target"),
     [{ kind: "optimize-target", scope: { kind: "current-branch" } }],
   )
-  await guide.pressAndWait(enter, "Choose reviewers", "First principles")
+  await choosePonytail(guide)
   await approveOptimizeReview(guide)
   await confirmOptimizePane(guide)
   await guide.pressAndWait(" ", "[x] Confirm other agents")
   await guide.pressAndWait(enter, "Handoff result", "Optimization launched")
   const report = await guide.finish("\u001b")
-  assert.deepEqual(report.result, { action: "optimize-submitted" })
+  assert.deepEqual(report.result, { action: "review-submitted" })
   assert.deepEqual(
     report.events.filter((event) => ["match", "generate", "optimize"].includes(event.kind)),
     [],
   )
   const submissions = report.events.filter((event) => event.kind === "optimize-changes")
+  assert.deepEqual(submissions.map((event) => event.request.paths), [["src/login.ts", "notes.txt"]])
   assert.deepEqual(
-    submissions.map((event) => event.request.paths),
-    [["src/login.ts", "notes.txt"]],
+    submissions.flatMap((event) => event.request.approval.findings.map((finding) => finding.id)),
+    ["ponytail:1"],
   )
+  assert(submissions[0]?.prompt.includes("Return the value directly."))
   assert.deepEqual(commandEvents(report.events), [])
 }, 30_000)
 
@@ -1740,7 +1710,7 @@ it("allows uncommitted-only review only after it is explicitly selected", async 
 }, 30_000)
 
 test.for([FixtureMode.Terminal, FixtureMode.Herdr])(
-  "starts committed-work Optimize in %s without conversation access, Prompt Master, or model calls",
+  "starts committed-work review in %s without conversation access, Prompt Master, or model calls",
   { timeout: 30_000 },
   async (mode, { onTestFailed }) => {
     const commandEntry = fileURLToPath(new URL("./fixtures/guide-optimize-entry.ts", import.meta.url))
@@ -1764,7 +1734,7 @@ test.for([FixtureMode.Terminal, FixtureMode.Herdr])(
       await guide.pressAndWait("p", "Review context")
       await scrollUntil(guide, "Preserve the original task without rewriting it.")
       await guide.pressAndWait("\u001b", "Confirm target")
-      await guide.pressAndWait(enter, "Choose reviewers", "First principles")
+      await choosePonytail(guide)
       await guide.pressAndWait(enter, "Confirm read-only review")
       const report = await guide.finish("q", 130)
       assertCancelledQueue(report)
@@ -1775,43 +1745,18 @@ test.for([FixtureMode.Terminal, FixtureMode.Herdr])(
   },
 )
 
-it("includes the managed architecture option in a consented review, then requires explicit approval", async ({
-  guide,
-}) => {
-  await guide.start(FixtureMode.OptimizeDirect, 80, 24, "Choose review scope")
-  await selectOptimizeBase(guide)
-  await guide.pressAndWait(enter, "Choose reviewers", "[ ] Improve codebase architecture")
-  await guide.pressAndWait(down, "> [x] Behavior preservation")
-  await guide.pressAndWait(down, "> [ ] Improve codebase architecture", "Matt Pocock")
-  await guide.pressAndWait(" ", "[x] Improve codebase architecture")
-  await approveOptimizeReview(guide)
-  await guide.pressAndWait("\u001b", "Review changes", "Review complete", "Findings selected: 0", "Summary continues")
-  await guide.pressAndWait("p", "Optimization review")
-  await scrollUntil(guide, "Architecture review tail:")
-  const report = await guide.finish("q", 130)
-  const reviews = report.events.filter((event) => event.kind === "optimize-review")
-  assert.deepEqual(
-    reviews.map((entry) => entry.input.reviewerIds),
-    [["first-principles", "behavior-preservation", "improve-codebase-architecture"]],
-  )
-  assert.equal(report.events.filter((entry) => entry.kind === "optimize-approval").length, 1)
-  assert.equal(report.events.filter((entry) => entry.kind === "optimize-changes").length, 0)
-}, 30_000)
-
 it("reopens a saved no-change review without new model calls or implementation", async ({ guide }) => {
   await guide.start(FixtureMode.OptimizeNoChange, 120, 40, "Choose review scope")
   await selectOptimizeBase(guide)
-  await guide.pressAndWait(enter, "Choose reviewers")
+  await choosePonytail(guide)
   await guide.pressAndWait(enter, "Confirm read-only review")
-  await guide.waitForText("One combined synthesis", "one correction")
-  await guide.pressAndWait(enter, "No change recommended.", "Findings selected: 0")
-  await guide.pressAndWait("p", "Optimization review")
-  await guide.pressAndWait("\u001b", "No change recommended.")
+  await guide.pressAndWait(enter, "Ponytail [complete]")
+  await guide.pressAndWait("f", "Findings selected: 0")
   await guide.pressAndWait(enter, "Select a recommended finding")
   await guide.pressAndWait("\u001b", "Confirm target")
   await guide.pressAndWait("h", "Saved reviews", "Reopen without model calls.")
   await guide.waitForText("· complete ·")
-  await guide.pressAndWait(enter, "No change recommended.")
+  await guide.pressAndWait(enter, "No change recommended.", "Findings selected: 0")
   const report = await guide.finish("q", 130)
   assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 1)
   assert.equal(report.events.filter((entry) => entry.kind === "optimize-history").length, 2)
@@ -1821,57 +1766,32 @@ it("reopens a saved no-change review without new model calls or implementation",
   )
 }, 30_000)
 
-it(
-  "keeps a failed challenge report out of approval and requires consent before restarting",
-  { timeout: 30_000 },
-  async ({ guide }) => {
-    await guide.start(FixtureMode.OptimizeIncomplete, 80, 24, "Choose review scope")
-    await selectOptimizeBase(guide)
-    await guide.pressAndWait(enter, "Choose reviewers")
-    await guide.pressAndWait(enter, "Confirm read-only review")
-    await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1", "Challenge round")
-    expect(guide.text()).not.toContain("Enter approve selected")
-    expect(guide.text()).not.toContain("[ ]")
-    await guide.pressAndWaitForInput(" ")
-    await guide.pressAndWaitForInput(enter)
-    await guide.readScreen((screen) => {
-      expect(screen).toContain("Review failed")
-      expect(screen).not.toContain("Enter approve selected")
-      expect(screen).not.toContain("[ ]")
-    })
-    expect((await guide.events()).filter((entry) => entry.kind === "optimize-approval")).toHaveLength(0)
-    await guide.pressAndWait("p", "Optimization review")
-    await scrollUntil(guide, "Challenge round")
-    await guide.pressAndWait("\u001b", "Partial findings saved: 1")
-    await guide.pressAndWait("r", "Confirm target", "2 of 2 files selected")
-    expect((await guide.events()).filter((entry) => entry.kind === "optimize-target")).toHaveLength(2)
-    expect((await guide.events()).filter((entry) => entry.kind === "optimize-review")).toHaveLength(1)
-    await guide.pressAndWait(enter, "Choose reviewers")
-    await guide.pressAndWait(enter, "Confirm read-only review")
-    expect((await guide.events()).filter((entry) => entry.kind === "optimize-review")).toHaveLength(1)
-    await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1")
-    await guide.pressAndWait("\u001b", "Confirm target")
-    await guide.pressAndWait("h", "Saved reviews", "Reopen without model calls.")
-    await guide.waitForText("· failed ·")
-    await guide.pressAndWait(enter, "Review failed", "Partial findings saved: 1")
-    await guide.pressAndWait("\u001b", "Confirm target")
-    const report = await guide.finish("q", 130)
-    assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 2)
-    assert.equal(report.events.filter((entry) => entry.kind === "optimize-history").length, 2)
-    assert.equal(
-      report.events.filter((entry) => entry.kind === "optimize-approval" || entry.kind === "optimize-changes").length,
-      0,
-    )
-  },
-)
+it("keeps an incomplete review out of approval", async ({ guide }) => {
+  await guide.start(FixtureMode.OptimizeIncomplete, 80, 24, "Choose review scope")
+  await selectOptimizeBase(guide)
+  await choosePonytail(guide)
+  await guide.pressAndWait(enter, "Confirm read-only review")
+  await guide.pressAndWait(enter, "Ponytail [partial]")
+  await guide.pressAndWait("f", "Review failed")
+  expect(guide.text()).not.toContain("Enter approve selected")
+  await guide.pressAndWaitForInput(" ")
+  await guide.pressAndWaitForInput(enter)
+  await guide.readScreen((screen) => expect(screen).not.toContain("Enter approve selected"))
+  const report = await guide.finish("q", 130)
+  assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 1)
+  assert.equal(
+    report.events.filter((entry) => entry.kind === "optimize-approval" || entry.kind === "optimize-changes").length,
+    0,
+  )
+}, 30_000)
 
 it("cancels reviewers and leaves an inspectable incomplete record", async ({ guide }) => {
   await guide.start(FixtureMode.OptimizeCancel, 80, 24, "Choose review scope")
   await selectOptimizeBase(guide)
-  await guide.pressAndWait(enter, "Choose reviewers")
+  await choosePonytail(guide)
   await guide.pressAndWait(enter, "Confirm read-only review")
   await guide.pressAndWait(enter, "Live text is unverified", "Esc cancel")
-  await guide.pressAndWait("\u001b", "Review cancelled", "No findings can be approved.")
+  await guide.pressAndWait("\u001b", "Review failed", "Review cancelled by the user.")
   const report = await guide.finish("q", 130)
   assert.equal(report.events.filter((entry) => entry.kind === "optimize-review").length, 1)
   assert.equal(report.events.filter((entry) => entry.kind === "optimize-changes").length, 0)

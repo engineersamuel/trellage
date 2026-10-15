@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createNodeCommandRunner } from "../src/guide-launch.ts"
-import { inspectGuideOptimizeTarget } from "../src/guide-optimize-target.ts"
+import { inspectGuideReviewTarget } from "../src/review-target.ts"
 import { type ReviewRun } from "../src/review-contracts.ts"
 import { reviewCheckCatalog } from "../src/review-catalog.ts"
 import {
@@ -154,36 +154,34 @@ describe("live review acceptance harness (offline contracts)", () => {
     expect(liveReviewFailures(complete(), ["ponytail"])).toEqual([])
   })
 
-  it("counts persisted evidence batches and can require a multi-batch Architecture fixture", () => {
+  it("counts persisted evidence batches per check", () => {
     const run = {
       ...complete(),
       results: [{
-        id: "improve-codebase-architecture" as const,
+        id: "ponytail" as const,
         status: "complete" as const,
-        reportId: "improve-codebase-architecture:report",
+        reportId: "ponytail:report",
         findings: [],
         limitations: [],
       }],
       artifacts: [
         {
-          id: "improve-codebase-architecture:batch-evidence-1",
-          checkId: "improve-codebase-architecture" as const,
+          id: "ponytail:batch-evidence-1",
+          checkId: "ponytail" as const,
           name: "batch-1.md",
           content: "Batch 1",
           digest: "one",
         },
         {
-          id: "improve-codebase-architecture:report",
-          checkId: "improve-codebase-architecture" as const,
+          id: "ponytail:report",
+          checkId: "ponytail" as const,
           name: "report.md",
           content: "Report",
           digest: "report",
         },
       ],
     }
-    expect(reviewBatchCounts(run.artifacts)).toEqual({ "improve-codebase-architecture": 1 })
-    expect(liveReviewFailures(run, ["improve-codebase-architecture"], { minimumArchitectureBatches: 2 }))
-      .toContain("Architecture fixture produced 1 evidence batch; expected at least 2.")
+    expect(reviewBatchCounts(run.artifacts)).toEqual({ "ponytail": 1 })
   })
 
   it("fails when the report exists but structured extraction fails", () => {
@@ -235,7 +233,7 @@ describe("live review acceptance harness (offline contracts)", () => {
     const runner = createNodeCommandRunner()
     const signal = new AbortController().signal
     const cwd = await createLiveReviewFixture(root, runner, signal)
-    const target = await inspectGuideOptimizeTarget(runner, cwd, { kind: "uncommitted" }, signal)
+    const target = await inspectGuideReviewTarget(runner, cwd, { kind: "uncommitted" }, signal)
     expect(target.head).toMatch(/^[0-9a-f]{40,64}$/u)
     expect(target.changes.map(({ path: name, unstaged, kind }) => ({ name, unstaged, kind }))).toEqual([
       { name: "labels.ts", unstaged: true, kind: "file" },
@@ -251,7 +249,7 @@ describe("live review acceptance harness (offline contracts)", () => {
     const runner = createNodeCommandRunner()
     const signal = new AbortController().signal
     const cwd = await createLiveReviewFixture(root, runner, signal, options.fixtureBytes)
-    const target = await inspectGuideOptimizeTarget(runner, cwd, { kind: "uncommitted" }, signal)
+    const target = await inspectGuideReviewTarget(runner, cwd, { kind: "uncommitted" }, signal)
     const sizes = await Promise.all(target.changes.filter((change) => change.untracked).map(async (change) =>
       (await stat(path.join(cwd, change.path))).size))
     expect(sizes.reduce((sum, size) => sum + size, 0)).toBeGreaterThanOrEqual(1_200_000)

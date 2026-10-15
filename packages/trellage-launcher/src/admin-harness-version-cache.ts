@@ -5,8 +5,7 @@
  * its profile/launcher keys and combined result states cannot be migrated
  * safely.
  */
-import { randomUUID } from "node:crypto"
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
+import { createAdminRecordCache } from "./admin-record-cache.ts"
 import os from "node:os"
 import path from "node:path"
 
@@ -31,10 +30,6 @@ export interface AdminHarnessVersionCacheRecord {
   readonly schemaVersion: 2
   readonly entries: Readonly<Record<string, AdminHarnessVersionCacheEntry>>
 }
-
-const emptyRecord: AdminHarnessVersionCacheRecord = { schemaVersion: 2, entries: {} }
-
-const isMissingFile = (error: unknown): boolean => error instanceof Error && "code" in error && error.code === "ENOENT"
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -85,57 +80,16 @@ const parseEntry = (value: unknown): AdminHarnessVersionCacheEntry | undefined =
   return { result, checkedAt: value.checkedAt }
 }
 
-export const parseHarnessVersionCacheRecord = (source: string): AdminHarnessVersionCacheRecord => {
-  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) return emptyRecord
-  let payload: unknown
-  try {
-    payload = JSON.parse(source)
-  } catch {
-    return emptyRecord
-  }
-  if (!isPlainObject(payload) || payload.schemaVersion !== 2 || !isPlainObject(payload.entries)) return emptyRecord
-  const entries: Record<string, AdminHarnessVersionCacheEntry> = {}
-  for (const [operationKey, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
-    const entry = parseEntry(value)
-    if (entry !== undefined) entries[operationKey] = entry
-  }
-  return { schemaVersion: 2, entries }
-}
+const cache = createAdminRecordCache<AdminHarnessVersionCacheEntry>({
+  maximumBytes: maximumCacheBytes,
+  maximumEntries: maximumCacheEntries,
+  label: "admin harness-version cache",
+  parseEntry,
+})
 
-export const loadHarnessVersionCache = async (cachePath: string): Promise<AdminHarnessVersionCacheRecord> => {
-  try {
-    return parseHarnessVersionCacheRecord(await readFile(cachePath, "utf8"))
-  } catch {
-    return emptyRecord
-  }
-}
-
-const removeTemporaryCache = async (temporaryPath: string): Promise<void> => {
-  try {
-    await unlink(temporaryPath)
-  } catch (error) {
-    if (!isMissingFile(error)) throw error
-  }
-}
-
-export const saveHarnessVersionCache = async (
-  cachePath: string,
-  value: AdminHarnessVersionCacheRecord,
-): Promise<void> => {
-  await mkdir(path.dirname(cachePath), { recursive: true, mode: 0o700 })
-  const temporaryPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`
-  const source = `${JSON.stringify(value)}\n`
-  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
-    throw new Error(`admin harness-version cache exceeds ${maximumCacheBytes} bytes`)
-  }
-  try {
-    await writeFile(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 0o600 })
-    await rename(temporaryPath, cachePath)
-  } catch (error) {
-    await removeTemporaryCache(temporaryPath)
-    throw new Error(`could not write admin harness-version cache: ${cachePath}`, { cause: error })
-  }
-}
+export const parseHarnessVersionCacheRecord = cache.parse
+export const loadHarnessVersionCache = cache.load
+export const saveHarnessVersionCache = cache.save
 
 export interface AdminHarnessVersionCacheSaveQueue {
   readonly enqueue: (value: AdminHarnessVersionCacheRecord) => Promise<void>

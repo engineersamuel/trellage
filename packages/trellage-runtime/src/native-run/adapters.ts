@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
-import { chmod, copyFile, lstat, mkdir, readFile, realpath, rename, symlink, unlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, symlink, unlink, writeFile } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
@@ -1145,6 +1145,31 @@ export const piAdapter: NativeAdapter = {
   }),
 }
 
+/**
+ * Copilot hides skills marked `disable-model-invocation: true` from the model
+ * instead of offering them as user-only commands, so a composed skill would be
+ * unreachable. The generation copy drops that front-matter line; sources are unchanged.
+ */
+export const allowCopilotModelInvocation = async (skillsDirectory: string): Promise<void> => {
+  let entries: string[]
+  try {
+    entries = await readdir(skillsDirectory)
+  } catch {
+    return
+  }
+  for (const name of entries) {
+    const file = path.join(skillsDirectory, name, "SKILL.md")
+    let text: string
+    try {
+      text = await readFile(file, "utf8")
+    } catch {
+      continue
+    }
+    const updated = text.replace(/^(---\r?\n[\s\S]*?)^disable-model-invocation:\s*true\s*\r?\n([\s\S]*?^---)/m, "$1$2")
+    if (updated !== text) await writeFile(file, updated)
+  }
+}
+
 export const copilotAdapter: NativeAdapter = {
   id: "copilot",
   label: "Copilot",
@@ -1154,14 +1179,14 @@ export const copilotAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "copilot-instructions.md",
   efforts: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-  policyVersion: "copilot-5",
+  policyVersion: "copilot-6",
   providerPolicy: () => "copilot-native",
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? "gpt-6-astra"} · effort ${effort ?? "low"}`,
     plan: "harness default planModel",
   }),
   managedFlags: ["--config-dir", "--no-custom-instructions"],
-  writeAdapterFiles: async () => {},
+  writeAdapterFiles: (stage) => allowCopilotModelInvocation(path.join(stage, "skills")),
   trustWorkspace: async (layout, workspace) => {
     await mergeJson(path.join(layout.generationPath, "config.json"), (current) => {
       const folders = Array.isArray(current.trustedFolders) ? (current.trustedFolders as unknown[]) : []

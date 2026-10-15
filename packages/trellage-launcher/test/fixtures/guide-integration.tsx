@@ -33,7 +33,7 @@ import { createFixtureGoalReadinessServices, createFixtureRunner } from "./guide
 import { createFixtureGoalProvider } from "./guide-goal-provider.ts"
 import { createFixtureGoalModelProvider } from "./guide-goal-model.ts"
 import { createFixtureOptimizeServices } from "./guide-optimize-services.ts"
-import { GuideOptimizeApp } from "../../src/guide-optimize-ui.tsx"
+import { GuideReviewApp } from "../../src/review-flow-ui.tsx"
 
 assert(process.versions.bun, "Guide integration fixtures must execute with Bun")
 const root = process.argv[2]
@@ -265,7 +265,7 @@ const writes: string[] = []
 const optimizeServices = createFixtureOptimizeServices(root, mode, catalog, record)
 const directOptimize = [FixtureMode.OptimizeDirect, FixtureMode.OptimizeIncomplete, FixtureMode.OptimizeNoChange, FixtureMode.OptimizeCancel].includes(mode)
 const instance = render(
-  directOptimize ? <GuideOptimizeApp services={optimizeServices} /> : <GuideApp
+  directOptimize ? <GuideReviewApp services={optimizeServices} /> : <GuideApp
     catalog={{
       ...catalog,
       native: catalog.native.map((entry) => entry.launcher === "copilot"
@@ -287,7 +287,16 @@ const instance = render(
     herdrEnv={mode === FixtureMode.Terminal || mode === FixtureMode.Customer
       ? {} : { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "9", HERDR_PANE_ID: "9-0" }}
     herdrAvailabilityProbe={mode !== FixtureMode.Terminal && mode !== FixtureMode.Customer}
-    optimizeServices={optimizeServices}
+    reviewServices={optimizeServices}
+    ensureOptimizeSkills={async (_runner, skillIds) => {
+      await record({ kind: "optimize-skills", skillIds })
+      return skillIds.includes("improve-codebase-architecture") ? path.join(root, "optimize-skills") : undefined
+    }}
+    runOptimizeSdk={async ({ prompt, cwd, model, skillDirectory, onActivity }) => {
+      await record({ kind: "optimize-sdk", prompt, cwd, model: model.model, ...(skillDirectory === undefined ? {} : { skillDirectory }) })
+      onActivity("Tool: view")
+      onActivity("Fixture optimization finished.")
+    }}
   />,
   {
     stdin: process.stdin,

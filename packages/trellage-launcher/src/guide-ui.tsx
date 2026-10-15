@@ -120,8 +120,11 @@ import {
 import type { GuideArtifactCache } from "./guide-match-cache.ts"
 import type { GuideGenerateCandidate, GuideOptimizeInput, GuideProvider } from "./guide-provider.ts"
 import { jevShouldSkipPromptOptimization } from "./jev-guide-gates.ts"
-import { createGuideOptimizeServices, type GuideOptimizeServices, type GuideOptimizeTerminalResult } from "./guide-optimize.ts"
-import { GuideOptimizeFlow } from "./guide-optimize-ui.tsx"
+import { createGuideReviewServices, type GuideReviewServices, type GuideReviewTerminalResult } from "./review-services.ts"
+import { GuideReviewFlow } from "./review-flow-ui.tsx"
+import { GuideOptimizeScreen, type GuideOptimizeLaunch } from "./guide-optimize-ui.tsx"
+import { GuideOptimizeRunner, type GuideOptimizeSdkOptions } from "./guide-optimize.ts"
+import type { ensureOptimizeSkills } from "./guide-optimize-skills.ts"
 import type { ReviewPlanTerminalResult } from "./review-planning.ts"
 import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.ts"
 import {
@@ -292,6 +295,7 @@ export enum GuideUiStage {
   Matching = "matching",
   MatchFailed = "match-failed",
   Recommendations = "recommendations",
+  Review = "review",
   Optimize = "optimize",
   TargetChoice = "target-choice",
   TargetEditor = "target-editor",
@@ -371,6 +375,7 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.Matching]: GuideWizardStep.Profile,
   [GuideUiStage.MatchFailed]: GuideWizardStep.Profile,
   [GuideUiStage.Recommendations]: GuideWizardStep.Profile,
+  [GuideUiStage.Review]: undefined,
   [GuideUiStage.Optimize]: undefined,
   [GuideUiStage.TargetChoice]: GuideWizardStep.Profile,
   [GuideUiStage.TargetEditor]: GuideWizardStep.Profile,
@@ -635,7 +640,8 @@ const emptyState: GuideUiState = {
 }
 
 /** Builds initial state and starts matching immediately when a supplied intent is present. */
-export const createInitialGuideUiState = (initialIntent?: string): GuideUiState => {
+export const createInitialGuideUiState = (initialIntent?: string, openOptimize = false): GuideUiState => {
+  if (openOptimize) return { ...emptyState, stage: GuideUiStage.Optimize, reviewReturnStage: GuideUiStage.Intent }
   const trimmed = initialIntent?.trim()
   if (trimmed !== undefined && trimmed.length > 0) {
     return {
@@ -885,6 +891,8 @@ export enum GuideUiActionType {
   MatchLiteralFailed = "match/literal-failed",
   RecommendationsMove = "recommendations/move",
   RecommendationsConfirm = "recommendations/confirm",
+  ReviewOpen = "review/open",
+  ReviewBack = "review/back",
   OptimizeOpen = "optimize/open",
   OptimizeBack = "optimize/back",
   TargetOpen = "target/open",
@@ -1042,6 +1050,8 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.MatchLiteral; readonly recommendations: ReadonlyArray<GuideRecommendation> }
   | { readonly type: GuideUiActionType.MatchLiteralFailed; readonly message: string }
   | { readonly type: GuideUiActionType.RecommendationsMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.ReviewOpen }
+  | { readonly type: GuideUiActionType.ReviewBack }
   | { readonly type: GuideUiActionType.OptimizeOpen }
   | { readonly type: GuideUiActionType.OptimizeBack }
   | { readonly type: GuideUiActionType.TargetOpen }
@@ -1379,7 +1389,7 @@ const openAugmentChooser = (
  */
 const canAutoApplyAugment = (state: GuideUiState): boolean =>
   state.activeForkId === undefined && !state.promptReviewEditing &&
-  state.stage !== GuideUiStage.GoalChange && state.stage !== GuideUiStage.Optimize
+  state.stage !== GuideUiStage.GoalChange && state.stage !== GuideUiStage.Review && state.stage !== GuideUiStage.Optimize
 
 const goalSourceIsCurrent = (state: GuideUiState, job: GuideAugmentJob): boolean => {
   const usesDraft =
@@ -1816,13 +1826,18 @@ const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUi
   }
 }
 
-const reduceOptimize = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
-  if (action.type === GuideUiActionType.OptimizeOpen) {
+/** Review and Optimize are side screens: each opens over Intent or Recommendations and returns there. */
+const reduceSideScreen = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+  const opened = action.type === GuideUiActionType.ReviewOpen ? GuideUiStage.Review
+    : action.type === GuideUiActionType.OptimizeOpen ? GuideUiStage.Optimize : undefined
+  if (opened !== undefined) {
     if (state.stage !== GuideUiStage.Recommendations && state.stage !== GuideUiStage.Intent) return state
     const source = state.activeForkId === undefined ? state : enterMainScreen(state)
-    return { ...source, stage: GuideUiStage.Optimize, reviewReturnStage: state.stage, errorMessage: undefined }
+    return { ...source, stage: opened, reviewReturnStage: state.stage, errorMessage: undefined }
   }
-  if (state.stage !== GuideUiStage.Optimize || action.type !== GuideUiActionType.OptimizeBack) return state
+  const closing = action.type === GuideUiActionType.ReviewBack ? GuideUiStage.Review
+    : action.type === GuideUiActionType.OptimizeBack ? GuideUiStage.Optimize : undefined
+  if (closing === undefined || state.stage !== closing) return state
   const stage = state.reviewReturnStage ?? (state.recommendations === undefined
     ? state.intent === undefined ? GuideUiStage.Intent : GuideUiStage.Matching
     : GuideUiStage.Recommendations)
@@ -3416,8 +3431,10 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.MatchLiteralFailed]: reduceMatch,
   [GuideUiActionType.RecommendationsMove]: reduceRecommendations,
   [GuideUiActionType.RecommendationsConfirm]: reduceRecommendations,
-  [GuideUiActionType.OptimizeOpen]: reduceOptimize,
-  [GuideUiActionType.OptimizeBack]: reduceOptimize,
+  [GuideUiActionType.ReviewOpen]: reduceSideScreen,
+  [GuideUiActionType.ReviewBack]: reduceSideScreen,
+  [GuideUiActionType.OptimizeOpen]: reduceSideScreen,
+  [GuideUiActionType.OptimizeBack]: reduceSideScreen,
   [GuideUiActionType.PromptReviewOpen]: reducePromptReview,
   [GuideUiActionType.PromptReviewEdit]: reducePromptReview,
   [GuideUiActionType.PromptReviewChange]: reducePromptReview,
@@ -4165,9 +4182,9 @@ export type GuideUiResult =
   | GuideUiNewHerdrWorktreeResult
   | GuideUiExistingHerdrWorktreeResult
   | GuideUiBatchResult
-  | GuideOptimizeTerminalResult
+  | GuideReviewTerminalResult
   | ReviewPlanTerminalResult
-  | { readonly action: "optimize-submitted" }
+  | { readonly action: "review-submitted" }
   | { readonly action: "review" }
 
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
@@ -4326,7 +4343,11 @@ export interface GuideUiProps {
   /** Whether a Herdr availability probe (e.g. `probeHerdrAvailability`) succeeded, checked before rendering. */
   readonly herdrAvailabilityProbe: boolean
   readonly initialIntent?: string
-  readonly optimizeServices?: GuideOptimizeServices
+  /** Open directly on the Optimize screen; Esc returns to an empty intent. */
+  readonly openOptimize?: boolean
+  readonly reviewServices?: GuideReviewServices
+  readonly runOptimizeSdk?: (options: GuideOptimizeSdkOptions) => Promise<void>
+  readonly ensureOptimizeSkills?: typeof ensureOptimizeSkills
   readonly uiVariant?: GuideLongPromptVariant
 }
 
@@ -5086,25 +5107,62 @@ const optimizeTerminalBlockReason = (state: GuideUiState): string | undefined =>
   return undefined
 }
 
-const OptimizeStage = ({ props, state, dispatch }: {
+const ReviewStage = ({ props, state, dispatch }: {
   readonly props: GuideUiProps
   readonly state: GuideUiState
   readonly dispatch: React.Dispatch<GuideUiAction>
 }) => {
   const { rows, columns } = useGuideWindowSize()
   const { exit } = useApp()
-  const services = useMemo(() => props.optimizeServices ?? createGuideOptimizeServices({
+  const services = useMemo(() => props.reviewServices ?? createGuideReviewServices({
     runner: props.runner, cwd: props.cwd, catalog: props.catalog,
-    routing: props.routing, entry: state.reviewReturnStage === GuideUiStage.Intent ? "review" : "optimize",
+    routing: props.routing,
     ...(props.reviewModelOverrides ? { modelOverrides: props.reviewModelOverrides } : {}),
     context: props.herdrAvailabilityProbe ? getHerdrContext(props.herdrEnv) : null,
-  }), [props.optimizeServices, props.runner, props.cwd, props.catalog, props.routing, props.reviewModelOverrides, props.herdrAvailabilityProbe, props.herdrEnv, state.reviewReturnStage])
-  return <GuideOptimizeFlow
+  }), [props.reviewServices, props.runner, props.cwd, props.catalog, props.routing, props.reviewModelOverrides, props.herdrAvailabilityProbe, props.herdrEnv, state.reviewReturnStage])
+  return <GuideReviewFlow
     services={services} rows={rows} columns={columns} originalIntent={state.originalIntent ?? state.intent} intent={state.intent}
     blockedReason={state.augmentJob === undefined ? undefined : "Finish or discard the pending augmentation first. Press Esc, then a."}
     terminalBlockedReason={optimizeTerminalBlockReason(state)}
-    onBack={() => dispatch({ type: GuideUiActionType.OptimizeBack })}
+    onBack={() => dispatch({ type: GuideUiActionType.ReviewBack })}
     onTerminal={(result) => exit(result)}
+  />
+}
+
+/** Optimize launches carry their own composed `trx run --skill` command; the prompt is already in it. */
+const optimizeLaunchResult = (launch: GuideOptimizeLaunch, cwd: string, herdrContext: HerdrContext | null): GuideUiResult => {
+  const { profile, command, prompt } = launch
+  if (launch.runner === GuideOptimizeRunner.CurrentTerminal)
+    return { action: "current-terminal", profile, command, promptHandling: "argv", prompt, cwd }
+  if (herdrContext === null) throw new Error("This placement requires Herdr.")
+  return launch.runner === GuideOptimizeRunner.NewHerdrTab
+    ? { action: "new-herdr-tab", profile, command, prompt, promptDelivery: "command", cwd, workspaceId: herdrContext.workspaceId }
+    : { action: "herdr-worktree-create", profile, command, prompt, promptDelivery: "command",
+        primaryCheckoutPath: launch.primaryCheckoutPath, branch: launch.branch, baseRef: launch.baseRef }
+}
+
+const OptimizeStage = ({ props, state, dispatch }: {
+  readonly props: GuideUiProps
+  readonly state: GuideUiState
+  readonly dispatch: React.Dispatch<GuideUiAction>
+}) => {
+  const { rows } = useGuideWindowSize()
+  const { exit } = useApp()
+  const herdrContext = props.herdrAvailabilityProbe ? getHerdrContext(props.herdrEnv) : null
+  return <GuideOptimizeScreen
+    catalog={props.catalog} cwd={props.cwd} runner={props.runner} herdrContext={herdrContext}
+    model={props.routing.optimize} rows={rows} terminalBlockedReason={optimizeTerminalBlockReason(state)}
+    {...(props.runOptimizeSdk === undefined ? {} : { runSdk: props.runOptimizeSdk })}
+    {...(props.ensureOptimizeSkills === undefined ? {} : { ensureSkills: props.ensureOptimizeSkills })}
+    onBack={() => dispatch({ type: GuideUiActionType.OptimizeBack })}
+    onLaunch={(launch) => {
+      try {
+        exit(optimizeLaunchResult(launch, props.cwd, herdrContext))
+      } catch (error) {
+        dispatch({ type: GuideUiActionType.OptimizeBack })
+        dispatch({ type: GuideUiActionType.InputRejected, message: describeGuideUiError(error) })
+      }
+    }}
   />
 }
 
@@ -5478,7 +5536,7 @@ const PinnedLenses = ({ lenses }: { readonly lenses: ReadonlyArray<GuidePinnedLe
         </Text>
       ))}
       <Text bold color="magenta">
-        {lenses.length === 0 ? "" : " · "}o Optimize changes
+        {lenses.length === 0 ? "" : " · "}o Optimize repository
       </Text>
     </Text>
   </Box>
@@ -6836,7 +6894,7 @@ const handleIntentInput: GuideInputHandler = ({ state, dispatch }, input, key) =
   // Checked before the printable branch: every other key on this screen is
   // text, so only a Ctrl chord can be a shortcut here.
   if (key.ctrl && input === "r") {
-    if (state.textDraft.length === 0) dispatch({ type: GuideUiActionType.OptimizeOpen })
+    if (state.textDraft.length === 0) dispatch({ type: GuideUiActionType.ReviewOpen })
     else dispatch({ type: GuideUiActionType.InputRejected, message: "Clear the draft before opening Review." })
   } else if (key.ctrl && input === "g") dispatch({ type: GuideUiActionType.AugmentOpen })
   else if (key.return) dispatch({ type: GuideUiActionType.IntentSubmit })
@@ -7405,6 +7463,7 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.Matching]: handleMatchingInput,
   [GuideUiStage.MatchFailed]: handleMatchFailedInput,
   [GuideUiStage.Recommendations]: handleRecommendationsInput,
+  [GuideUiStage.Review]: handleNoInput,
   [GuideUiStage.Optimize]: handleNoInput,
   [GuideUiStage.PromptReview]: handlePromptReviewInput,
   [GuideUiStage.GoalChange]: handleGoalChangeInput,
@@ -7439,6 +7498,7 @@ const acceptsGlobalKeys = (state: GuideUiState): boolean =>
   state.stage !== GuideUiStage.Intent &&
   state.stage !== GuideUiStage.Launching &&
   state.stage !== GuideUiStage.GoalChange &&
+  state.stage !== GuideUiStage.Review &&
   state.stage !== GuideUiStage.Optimize &&
   // The watch screen owns `x`: there it stops the job, never drops a fork tab.
   state.stage !== GuideUiStage.Augmenting &&
@@ -7474,7 +7534,7 @@ const hasRunningAugmentPanel = (state: GuideUiState): boolean =>
   (state.augmentJob.goalPanel !== undefined || state.augmentJob.customerPanel !== undefined)
 
 const handleGuideInput = (context: GuideInputContext, input: string, key: Key): void => {
-  if (context.state.stage === GuideUiStage.Optimize) return
+  if (context.state.stage === GuideUiStage.Review || context.state.stage === GuideUiStage.Optimize) return
   if (key.ctrl && input === "c") {
     context.cancel()
     return
@@ -7878,6 +7938,7 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
     />
   ),
   [GuideUiStage.Recommendations]: renderRecommendations,
+  [GuideUiStage.Review]: ({ props, state, dispatch }) => <ReviewStage props={props} state={state} dispatch={dispatch} />,
   [GuideUiStage.Optimize]: ({ props, state, dispatch }) => <OptimizeStage props={props} state={state} dispatch={dispatch} />,
   [GuideUiStage.PromptReview]: ({ props, state }) => (
     <PromptReviewStage
@@ -8007,7 +8068,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
     }),
     [catalog, props, props.resolveCatalog, resolveCatalog],
   )
-  const [state, dispatch] = useReducer(guideUiReducer, props.initialIntent, createInitialGuideUiState)
+  const [state, dispatch] = useReducer(guideUiReducer, props.initialIntent, (intent) => createInitialGuideUiState(intent, props.openOptimize))
   const herdrContext = getHerdrContext(effectiveProps.herdrEnv)
   const herdrEnabled = herdrContext !== null && effectiveProps.herdrAvailabilityProbe
   const { columns } = useWindowSize()
@@ -8048,7 +8109,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   const activeWizardStep = wizardStepForStage(state.stage)
   return (
     <Box flexDirection="column">
-      {herdrContext?.capture === undefined || state.stage === GuideUiStage.Optimize ? null : <CaptureSourceBanner capture={herdrContext.capture} />}
+      {herdrContext?.capture === undefined || state.stage === GuideUiStage.Review || state.stage === GuideUiStage.Optimize ? null : <CaptureSourceBanner capture={herdrContext.capture} />}
       {state.forks.map((fork) => {
         const slice = forkState(state, fork.id)
         return slice === undefined ? null : (

@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual, parseArgs } from "node:util"
 import { resolveGuideModelRouting } from "./guide-api.ts"
 import { createNodeCommandRunner, type CommandRunner } from "./guide-launch.ts"
-import { createGuideOptimizeServices } from "./guide-optimize.ts"
+import { createGuideReviewServices } from "./review-services.ts"
 import {
-  assertGuideOptimizeTargetCurrent,
-  type GuideOptimizeScope,
-  type GuideOptimizeTarget,
-} from "./guide-optimize-target.ts"
+  assertGuideReviewTargetCurrent,
+  type GuideReviewScope,
+  type GuideReviewTarget,
+} from "./review-target.ts"
 import { reviewCheckCatalog, selectReviewChecks } from "./review-catalog.ts"
 import { reviewSynthesisStatus, type ReviewEvent, type ReviewRun } from "./review-contracts.ts"
 import { SharedReviewStore } from "./review-store.ts"
@@ -27,7 +27,7 @@ const liveTarget = (values: { cwd?: string; fixture?: boolean; base?: string; un
   if (values.base !== undefined && (values.uncommitted || values.fixture))
     throw new Error("--base cannot be combined with --uncommitted or --fixture.")
   if (values.base !== undefined && !values.base.trim()) throw new Error("--base must not be empty.")
-  const scope: GuideOptimizeScope =
+  const scope: GuideReviewScope =
     values.fixture || values.uncommitted
       ? { kind: "uncommitted" }
       : values.base === undefined
@@ -181,7 +181,6 @@ const checkFailures = (run: ReviewOutcome, id: string): string[] => {
 export const liveReviewFailures = (
   run: ReviewOutcome,
   checks: ReadonlyArray<string>,
-  requirements: { readonly minimumArchitectureBatches?: number } = {},
 ): string[] => {
   const failures: string[] = []
   if (run.status !== "complete") failures.push(`Review status: ${run.status}.`)
@@ -190,11 +189,6 @@ export const liveReviewFailures = (
   if (run.results.length !== checks.length || run.results.some((result) => !checks.includes(result.id)))
     failures.push("Saved check results do not match the selection.")
   failures.push(...checks.flatMap((id) => checkFailures(run, id)))
-  if (requirements.minimumArchitectureBatches !== undefined) {
-    const count = reviewBatchCounts(run.artifacts)["improve-codebase-architecture"] ?? 0
-    if (count < requirements.minimumArchitectureBatches)
-      failures.push(`Architecture fixture produced ${count} evidence batch${count === 1 ? "" : "es"}; expected at least ${requirements.minimumArchitectureBatches}.`)
-  }
   if (run.synthesisStatus !== "complete") failures.push("Synthesis did not complete.")
   if (run.approvedIds.length || run.execution !== "not-started")
     failures.push("Read-only review was approved or launched.")
@@ -211,10 +205,6 @@ const sourceEnvironment = async (): Promise<NodeJS.ProcessEnv> => {
     TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE: path.join(
       process.env.XDG_DATA_HOME ?? path.join(home, ".local/share"),
       "trellage/common/skills",
-    ),
-    TRELLAGE_GUIDE_OPTIMIZE_SKILLS_CACHE: path.join(
-      home,
-      ".local/share/trellage/common/guide-optimize-architecture-skills",
     ),
   }
 }
@@ -255,13 +245,12 @@ const openReviewEvents = (output: string) => {
 const liveServices = async (cwd: string, runner: CommandRunner) => {
   const env = await sourceEnvironment()
   const routing = resolveGuideModelRouting({}, env)
-  return createGuideOptimizeServices({
+  return createGuideReviewServices({
     cwd,
     runner,
     env,
     routing,
     context: null,
-    entry: "review",
     catalog: { schemaVersion: 1, sandboxCommandPath: "/unused", native: [], sandbox: [] },
     modelOverrides: {
       ...(env.TRELLAGE_GUIDE_MODEL ? { model: routing.optimize.model } : {}),
@@ -270,7 +259,7 @@ const liveServices = async (cwd: string, runner: CommandRunner) => {
   })
 }
 
-const selectedLivePaths = (target: GuideOptimizeTarget, selection: ReadonlyArray<string> | undefined) => {
+const selectedLivePaths = (target: GuideReviewTarget, selection: ReadonlyArray<string> | undefined) => {
   const paths =
     selection ??
     target.changes.filter((entry) => entry.kind === "file" || entry.kind === "deleted").map((entry) => entry.path)
@@ -345,14 +334,10 @@ export const runLiveReviewTest = async (
       saved = await new SharedReviewStore(target.gitDirectory).read(displayed.id)
       if (!isDeepStrictEqual(displayed, saved)) failures.push("TUI result differs from the persisted review.")
       await writeFile(path.join(output, "review.json"), JSON.stringify(saved, null, 2), { flag: "wx", mode: 0o600 })
-      failures.push(...liveReviewFailures(saved, input.checks, {
-        ...(input.fixtureBytes !== undefined && input.checks.includes("improve-codebase-architecture")
-          ? { minimumArchitectureBatches: 2 }
-          : {}),
-      }))
+      failures.push(...liveReviewFailures(saved, input.checks))
     } finally {
       try {
-        await assertGuideOptimizeTargetCurrent(runner, target, AbortSignal.timeout(30_000))
+        await assertGuideReviewTargetCurrent(runner, target, AbortSignal.timeout(30_000))
         worktreeUnchanged = true
       } catch (cause) {
         failures.push(`Worktree changed or could not be checked: ${message(cause)}`)

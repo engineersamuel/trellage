@@ -54,39 +54,6 @@ partial reports and offer a new review through target inspection and fresh
 model consent. The architecture option reads managed skill content through
 the floating manager; skill resolution has an offline fixture.
 
-## Headless Optimize goal
-
-The PTY matrix uses injected model responses. The separate acceptance command
-uses the same production review engine with real Copilot SDK calls:
-
-```sh
-mise run trx-optimize-check -- --live
-```
-
-Use this goal: **Complete a read-only Optimize run over all eligible changes
-in the specified worktree, with all three reviewers, without changing source,
-approving findings, or launching an editor.**
-
-Its measurable pass condition is exit `0` and one JSON result with
-`passed: true`, `status: "complete"`, `reports: 3`,
-`worktreeUnchanged: true`, `approvedFindings: 0`, and
-`execution: "not-started"`. When findings exist, require `challenges: 3` and
-one decision per finding. A no-change result has zero challenges and decisions.
-The saved `reviewId` and `evidenceFingerprint` identify the evidence. Logs on
-stderr show progress; the full report can be reopened in Guide without new
-model calls.
-
-Live use requires explicit approval and can consume paid quota. Set the
-allowed number of runs before giving this goal to an agent; do not retry
-indefinitely, narrow the scope to pass, weaken evidence checks, or require a
-fixed number of suggestions. The command performs one review, with at most
-one correction request per invalid model response. The 14-request bound for all
-three built-in reviewers applies to a single evidence batch; larger snapshots
-have a saved, expanded call budget. Corrections stay within their request
-deadline. Model-capacity preflight can select fresh batches before inference;
-runtime and exhausted evidence-budget failures are not retried. Keep live use outside
-the offline test suite.
-
 ## Other Guide fixtures
 
 Separate customer fixtures replace the HVE RPI entry with checked Discovery.
@@ -225,8 +192,7 @@ finding remains read-only, and a second coverage failure stops normalization.
 
 Local safety limits remain separate from model capacity: 32 MB of frozen
 evidence, 128 skill batches, 1 MiB per saved report artifact, 4096 intermediate
-artifacts (32 MB combined), and the existing per-check finding bounds. Built-in snapshots retain
-their per-file and file-count bounds. Exceeding a bound fails explicitly; no
+artifacts (32 MB combined), and the existing per-check finding bounds. Exceeding a bound fails explicitly; no
 patch text is silently truncated. Large reviews can use more calls and time.
 Automatic model conversation compaction remains disabled.
 Combined synthesis has a 15-minute default deadline, including startup and
@@ -239,7 +205,7 @@ Run real reviews without a terminal UI:
 ```sh
 mise run trx-review-test -- --live --fixture
 mise run trx-review-test -- --live --fixture --all
-mise run trx-review-test -- --live --fixture --fixture-bytes 420000 --check first-principles --check ponytail --check fleet
+mise run trx-review-test -- --live --fixture --fixture-bytes 420000 --check ponytail --check fleet
 mise run trx-review-test -- --live --cwd /absolute/worktree --uncommitted --check ponytail
 mise run trx-review-test -- --live --cwd /absolute/worktree --base main --check ponytail --check fleet
 ```
@@ -254,7 +220,7 @@ Only `--cwd` commands send the selected worktree's code to the models. `--live` 
 exactly one target (`--fixture` or `--cwd`) are required. These commands consume
 quota. They are not part of `make test`, the offline Guide matrix, or CI.
 
-The harness calls `createGuideOptimizeServices().inspect()` and `.review()`,
+The harness calls `createGuideReviewServices().inspect()` and `.review()`,
 the same service methods used by `trx guide --review`. It does not substitute
 SDK clients, model responses, prompts, skills, extraction schemas, or validators.
 The production coordinator captures frozen Git evidence, loads the installed
@@ -343,9 +309,9 @@ text streaming, Fleet child progress, and suppression of duplicate final
 messages and master JSON. The Guide
 matrix also checks that Ctrl-R opens Review only from an empty intent and
 does not discard an existing draft. The direct `trx guide --review` router
-path accepts the same context/base/model arguments as `--optimize`, avoids required
+path accepts context, base and model arguments, avoids required
 full profile discovery and Prompt Master preparation, and supplies an optional
-Native catalog on fd 3. Both flags, the embedded action and popup use the same flow.
+Native catalog on fd 3. The flag, Ctrl-R and the popup use the same flow.
 Ctrl-R stays inside Guide so intent, goals, forks and queued jobs survive returning.
 The current-terminal continuation launches through
 `mise run trx -- run copilot hve --plan -- -i` in a source worktree, or
@@ -499,17 +465,16 @@ Handoffs are recorded requests, not real harness launches.
 | Remove every entry; try `L` and Enter; cancel | 1 | 15 | 5 to 0 | 0 | Empty queues emit no allocation or launch command |
 | Augment the draft with Research or Codebase before matching | 2 | 3 | 1 | 1 | The full augmented intent reaches matching, generation, optimization, and the final command |
 | Augment from prompt review after one job is queued | 1 | 6 | 2 | 2 | Matching uses the new intent; the existing queued prompt does not change |
-| Preview and cancel Optimize at 80x24 and 120x40 | 2 | 0 | 0 | 0 | Target, reviewers, and consent remain readable; no review before consent; cancellation preserves the original request |
-| Review with a saved standalone fork | 1 | 3 | 0 | 0 | Read-only review is available; taking over the terminal stays blocked; returning to the fork does not regenerate it |
-| Optimize current changes after one job is queued | 1 | 3 | 1 | 1 | All files start selected; exclusions survive back navigation; only explicitly approved findings reach the fresh agent; the queued prompt is unchanged; `L` is inactive in Optimize |
-| Select a branch base, keep all files selected, then choose a fresh agent | 1 | 0 | 0 | 1 | Both tracked and untracked paths, the confirmed base, and the original task reach the selected Native profile in the same worktree |
-| Open Optimize directly at 80x24 | 1 | 0 | 0 | 1 | The committed-and-uncommitted choice inspects the current branch without a base editor; no matching, generation, or source-conversation dependency |
+| Press `o`, select two Optimize skills, and run them in the Copilot SDK | 1 | 0 | 0 | 0 | The prompt targets the whole repository and contains only the selected skills; no review, change target, or Herdr command runs |
+| Press `o`, select a skill, and hand it to a harness in this terminal | 1 | 0 | 0 | 1 | A `current-terminal` result carries the Optimize prompt; no `--allow-all` flag is added |
+| Press `o` in Herdr and choose a new worktree | 1 | 0 | 0 | 1 | Tab and worktree runners are offered; the checked branch reaches a `herdr-worktree-create` result |
+| Press `o` then Esc | 1 | 0 | 0 | 0 | Optimize closes without a launch or SDK run |
+| Open Review directly at 80x24 | 1 | 0 | 0 | 1 | The committed-and-uncommitted choice inspects the current branch without a base editor; only the approved Ponytail finding reaches the fresh agent |
 | Correct an invalid comparison base | 1 | 0 | 0 | 0 | The failure remains visible, Enter does not submit, and `b` plus Ctrl+U allows a valid replacement |
 | Confirm an empty change set | 1 | 0 | 0 | 0 | The review stays empty and never expands into repository-wide work |
 | Choose uncommitted-only review | 1 | 0 | 0 | 0 | The scope excludes committed history only after that choice is explicit |
 | Start the real CLI with a missing Prompt Master and traps for model/Herdr commands, standalone or with unusable Herdr context | 2 | 0 | 0 | 0 | Automatic and explicit bases select committed, staged, unstaged, and untracked files; links stay unselected and ignored files are absent; no session lookup or model initialization occurs |
-| Add Matt Pocock's architecture reviewer at 80x24 | 1 | 0 | 0 | 0 | Its role is selected explicitly; a long summary cannot hide approval controls; the full report remains accessible; approval stays separate from implementation |
-| Reopen a saved no-change review; inspect and restart a failed challenge at 80x24 | 2 | 0 | 0 | 0 | Failed runs have no approval controls; partial evidence remains readable; restart rechecks the target and requires model consent; reopening history makes no model calls |
+| Reopen a saved no-change review; open an incomplete review at 80x24 | 2 | 0 | 0 | 0 | Incomplete runs have no approval controls; reopening history makes no model calls |
 | Cancel active reviewers at 80x24 | 1 | 0 | 0 | 0 | Calls are aborted; cancellation is saved; implementation stays blocked |
 | Open Goal me with `p` then `a`; answer, park, edit the source, revise, and approve | 1 | 6 | 2 | 2 | One interview carries choice and text answers; replacement of the newer prompt needs confirmation; the old ordinary job stays unchanged and the new Codex goal needs native input |
 | Review all three Codex `/goal` candidates, edit one approach, and print | 1 | 3 | 0 | 0 | The exact approved goal and score bar survive; the editor receives only the approach; typed shortcut keys remain text |

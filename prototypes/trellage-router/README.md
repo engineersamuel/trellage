@@ -138,7 +138,6 @@ or the repository's entire history. Run it from the worktree you want to review:
 ```sh
 trx guide --review
 trx guide --review --base main --intent "Original task and constraints"
-trx guide --optimize # Same view, with two built-in checks selected
 ```
 
 Choose **Committed and uncommitted changes** to go directly to the current
@@ -160,38 +159,19 @@ review**. All eligible changed files, including
 untracked files, are selected initially. Use Space to exclude unrelated files
 or select them again. Ignored files, submodules, and special files remain
 excluded. Skill-only reviews can include binary patches and link-target metadata
-without following links. Built-in and architecture checks require supported text.
-Incompatible check/path selections must be changed explicitly. Press `b` to change the base, `p` to inspect full paths and task context,
+without following links. Press `b` to change the base, `p` to inspect full paths and task context,
 `h` to reopen saved reviews, or `r` to refresh. Ctrl+U clears the base editor.
 Up/Down, `j`/`k`, and Tab/Shift-Tab navigate choices; Page Up/Page Down scroll
 the consent screen and full report.
 
-Both flags show six independent checks: **First principles**, **Behavior preservation**,
-**Improve codebase architecture**, **Ponytail Review**, **Fleet Review**, and
-**Matt Pocock Code Review**. `--review` starts with none selected; `--optimize`
-retains the first two defaults. The flags cannot be combined. The optional
-**Improve codebase architecture** reviewer uses Matt Pocock's
-[`improve-codebase-architecture`](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md)
-and its `codebase-design` vocabulary. It looks for useful module deepening,
-better locality, and removable shallow layers, while respecting `GLOSSARY.md`
-and relevant ADRs. Its current managed content is loaded only after review
-consent. First use can fetch the `guide-optimize-architecture` bundle;
-later runs reuse its cache. `trx skills update` refreshes it. No skill version
-is pinned or copied into the application.
-
-Guide adapts that skill's exploration, not its whole interactive workflow:
-it produces a structured review instead of HTML, browser launches, nested
-agents, interviews, or domain-file writes. Questions and ADR conflicts stay
-visible as risks or limitations. A Native Claude profile is not being run
-merely because a reviewer uses a Claude model through the SDK.
+`--review` shows three checks, none selected: **Ponytail Review**,
+**Fleet Review**, and **Matt Pocock Code Review**.
 
 Reviewers use independent, restricted Copilot SDK sessions. They inspect projections
-of one frozen target. Built-in checks challenge every built-in proposal in one bounded round. A
+of one frozen target. A
 coordinator reads the reports and replies; it must retain rejected proposals
-and unresolved disagreement rather than force consensus. A built-in-only run has at most
-`2 × (2 × reviewers + 1)` model requests, with a two-minute limit per request and an
-eight-minute review limit. A no-change result skips the challenge round.
-Mixed runs use one run ID, one history record, and one combined synthesis, not two
+and unresolved disagreement rather than force consensus.
+Runs use one run ID, one history record, and one combined synthesis, not two
 completed reviews followed by another synthesis. Ponytail and Matt reports have
 a structured extraction step; original reports remain available. Findings without
 checked source citations remain read-only. Fleet retains six guarded workers per batch,
@@ -224,38 +204,11 @@ Corrections reread the frozen evidence and pass the same validation before
 they can be accepted. Runtime, cancellation, and evidence-budget failures
 are not retried. A second invalid response stops the review and blocks approval.
 
-For built-in and architecture checks, the only model tools list, search, and read frozen text. They cannot execute
-commands, edit files, access the live filesystem, or use MCP, plugins, skill
-discovery, or other agents. The snapshot includes related tracked code across
-the repository as context, selected diffs, and selected untracked files.
-Other untracked files and credential-like paths are excluded. Binary,
-unsupported, or oversized context files are reported as exclusions; a selected
-file that cannot be captured blocks the review. The repository snapshot is
-bounded to 5,000 files, 1 MB per source file, and 32 MB total. Each request
-reserves instructions, tool protocol, and output space from discovered model
-capacities. Serialized UTF-8 bytes provide a conservative token upper bound,
-not an exact token count. Large inputs use fresh complete-evidence batches,
-followed by cross-file consolidation; they are not subject to a fixed 768 KB
-model-input cap. Tool reads remain bounded per request. Definite budget
-failures stop before inference. Missing
-selected-source coverage, invalid citations, exhausted budgets, cancellation,
-or a failed reviewer prevents approval. No evidence is silently truncated.
-Models cite source IDs and line ranges, not retyped source text. Guide copies
-each exact quotation from those frozen lines and requires the model to have
-read every cited line. Saved quotations are still checked against the snapshot.
-Evidence quotations have no separate character or line-span limit. Line ranges
-must exist in the snapshot; reviewers read long ranges in pages. Each complete
-model response is limited to 32,000 bytes.
-Each source read gives absolute line numbers and the next unread required
-ranges. Reviewers must finish those ranges before reporting; only successfully
-delivered pages count toward coverage.
-
 Version-2 reviews, full reports and snapshots are saved under
 `<absolute-worktree-git-directory>/trellage-reviews/`, outside tracked
 files, using private directories and atomic mode-0600 files. Press `h` from
 scope or target selection to reopen them without a model call. Interrupted
-runs retain their evidence; they do not resume automatically. Legacy Optimize records
-under `trellage-optimize-reviews` retain their original validation and approval path.
+runs retain their evidence; they do not resume automatically.
 Existing `.trx-review-*` reports are not migrated or treated as editing authority.
 
 A failed review opens a failure screen with no approval controls. Partial
@@ -265,29 +218,6 @@ selection, reviewer selection, and model consent. No model calls run merely
 from pressing `r`. The saved status `incomplete` means the process failed;
 `unresolved` is a finding decision from a completed review that could not
 resolve an objection.
-
-For a headless acceptance check from this checkout, run:
-
-```sh
-mise run trx-optimize-check -- --live
-```
-
-This requires explicit consent because it sends the selected changes and
-related source context to models and can consume paid quota. It uses all
-three reviewers, including the managed architecture skills, with the same
-capture, coordination, validation, and private store as the interface.
-First use may fetch the architecture skills. `--cwd PATH` selects a worktree;
-`--base REF` overrides the detected comparison base, and `--uncommitted`
-explicitly selects uncommitted changes only. The default includes committed
-and uncommitted changes. All eligible changed files are included.
-
-Progress goes to stderr; stdout is one JSON result. Exit `0` requires
-`passed: true`, a complete saved review that can be reopened, and an unchanged
-worktree. Empty scopes, invalid output, incomplete evidence, failed reviewers,
-or changed files fail. The check never approves findings or starts an editor.
-A no-change result is valid; it does not force suggestions or a challenge
-round. This checks review execution, not the correctness of each suggestion.
-It is not part of `make test`.
 
 Read the findings and full report (`p`), select recommended findings with
 Space, and press Enter to **approve only that selection**. No finding starts
@@ -306,7 +236,7 @@ freshness, readiness, writer, lock and one-use delivery checks.
 Use Left/Right in live and saved report views to select Overview, checks or Synthesis.
 Live text is unverified; only its display buffer is limited.
 
-Guide's pinned `o` action, Ctrl-R from an empty intent, and Herdr's `prefix+ctrl+b` → **Review changes**
+Ctrl-R from an empty intent and Herdr's `prefix+ctrl+b` → **Review changes**
 open this same flow. An ordinary shell targets its current Git worktree; the
 popup supplies the invoking worktree explicitly. Setup reads no conversation,
 requires no source agent or session identity, makes no model calls, and does
@@ -326,7 +256,7 @@ created. Current-terminal launches reconnect all streams to the controlling
 terminal, including when the original intent came from stdin.
 On macOS, redirected streams reconnect to the actual terminal device rather
 than the `/dev/tty` proxy, which does not support `kqueue` input polling.
-Optimize uses the same canonical startup commands in the current terminal and
+Review handoffs use the same canonical startup commands in the current terminal and
 Herdr. A profile's non-interactive (`headless.prompt`)
 capability does not disable these interactive launches.
 Herdr handoffs preserve backslashes and source quotations in both Fish and
@@ -357,10 +287,18 @@ queued jobs do not block read-only review. They must be finished or removed
 before a new agent can take
 over the terminal. Symlinks, special files, and submodules cannot be selected.
 
-The first reviewer, **First principles**, challenges assumptions, prefers
-deletion over simplification, and permits only high-impact recommendations.
-Good code can remain unchanged. Built-in reviewer roles are defined in
-`packages/trellage-launcher/src/guide-optimize-prompts.ts`.
+**Optimize** is separate from review. Press `o` in Guide to select skills
+(**First principles**, **Behavior preservation**, **Improve codebase
+architecture**, **UI and CSS** from [good-css.com](https://good-css.com)) and
+run them on the whole repository, not on a change set. Run them in the Copilot
+SDK in this terminal (all tools and permissions approved), or hand them to a
+Copilot, Codex, or Claude harness in this terminal, a new Herdr tab, or a new
+Herdr worktree. Harness runs are composed with only the selected skills'
+managed skills through `trx run HARNESS --no-always --skill OWNER/REPO:NAME`. Harness runs keep the harness's own permission settings.
+Skills are defined in `packages/trellage-launcher/src/guide-optimize.ts`.
+The architecture skill downloads its managed bundle before each run.
+`mise run trx-optimize-test -- --live` runs Optimize through the real Copilot SDK
+on a throwaway repository.
 
 The non-interactive API is side-effect-free:
 

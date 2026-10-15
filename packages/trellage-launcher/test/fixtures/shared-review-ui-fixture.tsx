@@ -2,23 +2,23 @@ import React from "react"
 import { render } from "ink"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-import { GuideOptimizeApp } from "../../src/guide-optimize-ui.tsx"
+import { GuideReviewApp } from "../../src/review-flow-ui.tsx"
 import { createFixtureOptimizeServices } from "./guide-optimize-services.ts"
 import { FixtureMode } from "./guide-integration-data.ts"
-import { newOptimizeReview } from "../../src/guide-optimize-review.ts"
+import { randomUUID } from "node:crypto"
 import { assignReviewModels, reviewCatalog, fleetLenses, pinnedFleetModel } from "../../src/review-catalog.ts"
 import { CopilotReviewProvider, type ReviewClientFactory } from "../../src/copilot-review-provider.ts"
 import type { SessionEvent } from "@github/copilot-sdk"
 import type { ReviewEvent } from "../../src/review-contracts.ts"
-import type { GuideOptimizeServices } from "../../src/guide-optimize.ts"
+import type { GuideReviewServices } from "../../src/review-services.ts"
 import { createInitialGuideRenderHandler } from "../../src/guide-terminal.ts"
 
 const root = process.argv[2]!
 const fixtureOutcome = process.argv[3] ?? "complete"
 const selectedChecks = fixtureOutcome === "all"
-  ? ["fleet", "ponytail", "first-principles", "behavior-preservation", "improve-codebase-architecture", "matt-code-review"]
+  ? ["fleet", "ponytail", "matt-code-review"]
   : fixtureOutcome === "architecture-failed"
-    ? ["improve-codebase-architecture"]
+    ? ["ponytail"]
   : ["fleet", "ponytail"]
 const base = createFixtureOptimizeServices(root, FixtureMode.Terminal,
   { schemaVersion: 1, sandboxCommandPath: "/unused", native: [], sandbox: [] }, async () => {})
@@ -37,7 +37,7 @@ const completedFixtureState = (finish: string, aborted: boolean) => {
   return { result: "complete" as const, run: "complete" as const, synthesis: "complete" as const }
 }
 const retainedFixtureFindings = (id: string, failed: boolean) => failed ? [{
-  id: `${id}:partial-1`, checkId: id as "improve-codebase-architecture", reportId: `${id}:report`,
+  id: `${id}:partial-1`, checkId: id as "ponytail", reportId: `${id}:report`,
   sourceId: `${id}:batch-1`, title: "Retained partial finding", proposal: "Keep the completed batch result.",
   benefit: "Preserves completed review work.", risk: "The review remains incomplete.",
   verification: "Finish synthesis before approval.", paths: ["src/login.ts"], citations: [], grounded: false,
@@ -88,13 +88,13 @@ const retainedFixtureFindings = (id: string, failed: boolean) => failed ? [{
       }))
     } finally { await provider.close() }
   }
-const services: GuideOptimizeServices = {
+const services: GuideReviewServices = {
   ...base,
   defaultReviewerIds: selectedChecks,
   assignments: assignReviewModels(selectedChecks),
   async review(input, signal, _progress, event) {
     const evidence = { sources: [], excluded: [], fingerprint: "fixture" }
-    const initial = newOptimizeReview(input, evidence, base.reviewers, base.coordinator)
+    const initial = { id: randomUUID(), createdAt: new Date().toISOString() }
     await wait("stream", signal)
     await streamReviews(input.reviewerIds, signal, event)
     await wait("finish", signal)
@@ -109,18 +109,18 @@ const services: GuideOptimizeServices = {
         request: { ...input, checks: assignReviewModels(input.reviewerIds), coordinator: base.coordinator },
         evidence: { fingerprint: "fixture", source: evidence }, status: state.run, synthesisStatus: state.synthesis,
         ...(failed ? { failure: { kind: "request-timeout" as const, phase: "independent-reviews" as const,
-          message: "Improve codebase architecture: restricted model request timed-out" } } : {}),
+          message: "Ponytail Review: restricted model request timed-out" } } : {}),
         results: input.reviewerIds.map((id) => ({ id: id as "fleet" | "ponytail", status: state.result,
           reportId: `${id}:report`, findings: retainedFixtureFindings(id, failed),
           limitations: failed ? ["Final synthesis did not run."] : [] })), artifacts: input.reviewerIds.map((id) => ({
           id: `${id}:report`, checkId: id as "fleet" | "ponytail", name: `${id}.md`,
           content: `${id} full saved evidence\x1b[2J\n${"w".repeat(220)}`, digest: "fixture",
         })), challenges: [], decisions: [], summary: failed ? "Review failed before final synthesis." : "Saved fixture",
-        error: failed ? "Review failed during Independent reviews: Improve codebase architecture: restricted model request timed-out" : null, calls: 0,
+        error: failed ? "Review failed during Independent reviews: Ponytail Review: restricted model request timed-out" : null, calls: 0,
         approvedIds: [], execution: "not-started",
       }
   },
 }
-const app = render(<GuideOptimizeApp services={services} initialBase="main" />,
+const app = render(<GuideReviewApp services={services} initialBase="main" />,
   { exitOnCtrlC: false, onRender: createInitialGuideRenderHandler((text) => process.stdout.write(text), true) })
 await app.waitUntilExit()

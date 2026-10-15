@@ -21,7 +21,7 @@ import { guideGoalInputInstructions } from "./guide-goal-transport.ts"
 import { executeFirstmateTerminalHandoff } from "./guide-firstmate-terminal.ts"
 import { validateLegacyFirstmateArtifact } from "./guide-context.ts"
 import { checkSelectedProfileReadiness, ProfileReadinessKind } from "./guide-preflight.ts"
-import { executeGuideOptimizeTerminal } from "./guide-optimize.ts"
+import { executeGuideReviewTerminal } from "./review-services.ts"
 
 const startupTimeoutMs = 60_000
 const promptTimeoutMs = 60_000
@@ -47,7 +47,7 @@ const writeRecoveryPrompt = (services: GuideInteractiveExecutionServices, prompt
 const writeIncompleteLaunchPrompt = (services: GuideInteractiveExecutionServices, prompt: string): void =>
   writePrompt(services.write, prompt, "Profile launch did not complete. Selected prompt:")
 
-type LaunchResult = Exclude<GuideUiResult, { readonly action: "cancel" | "print" | "batch" | "optimize-terminal" | "optimize-submitted" | "review" | "review-plan-terminal" }>
+type LaunchResult = Exclude<GuideUiResult, { readonly action: "cancel" | "print" | "batch" | "review-terminal" | "review-submitted" | "review" | "review-plan-terminal" }>
 type HerdrResult = Exclude<LaunchResult, { readonly action: "current-terminal" }>
 
 const validateGoalResult = (result: LaunchResult): void => {
@@ -287,7 +287,7 @@ export const executeGuideUiResult = async (
   switch (result.action) {
     case "cancel":
       return result.exitCode
-    case "optimize-submitted":
+    case "review-submitted":
       return 0
     case "print":
       if (result.goalExecution === undefined) return printGuideResult(result, services)
@@ -305,8 +305,8 @@ export const executeGuideUiResult = async (
       return executeHerdrResult(result, services)
     case "batch":
       return executeCompletedGuideBatch(result, services)
-    case "optimize-terminal":
-      return executeGuideOptimizeTerminal(result, {
+    case "review-terminal":
+      return executeGuideReviewTerminal(result, {
         runner: services.runner,
         ...(services.runInteractive === undefined ? {} : { runInteractive: services.runInteractive }),
         ...(services.checkReadiness === undefined ? {} : { readiness: services.checkReadiness }),

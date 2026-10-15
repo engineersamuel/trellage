@@ -20,9 +20,9 @@ description = "Run the offline trx guide UI integration matrix"
 # Vitest also applies this threshold to the roughly 35-second file total.
 run = "cd packages/trellage-launcher && bun run test test/guide-ui.integration.test.ts --reporter=tree --slowTestThreshold=60000"
 
-[tasks.trx-optimize-check]
-description = "Run the read-only Optimize acceptance check; requires explicit --live consent"
-run = "bun --no-install --no-env-file --config=./bunfig.toml packages/trellage-launcher/src/guide-optimize-check.ts"
+[tasks.trx-optimize-test]
+description = "Run Optimize skills through the real Copilot SDK on a throwaway repository; requires --live"
+run = "bun --no-install --no-env-file --config=./bunfig.toml packages/trellage-launcher/src/optimize-live-test.ts"
 
 [tasks.trx-review-test]
 description = "Test the real Guide review path without the TUI; requires --live and a target"

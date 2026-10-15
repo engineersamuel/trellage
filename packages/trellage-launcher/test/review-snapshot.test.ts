@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { ReviewSnapshotReader, snapshotBatches, snapshotSliceText } from "../src/review-snapshot.ts"
-import { optimizeDigest, optimizeEvidenceTools, type OptimizeEvidence } from "../src/guide-optimize-evidence.ts"
+import { optimizeDigest, optimizeEvidenceTools, type OptimizeEvidence } from "../src/review-source.ts"
 
 const evidenceFor = (content: string): OptimizeEvidence => ({
   sources: [{ id: "@diff/net", content }],
