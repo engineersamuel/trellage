@@ -984,7 +984,7 @@ export const primeAdapter: NativeAdapter = {
 }
 
 /** Always-available Pi extensions, installed unpinned (latest) into a shared directory outside any generation. */
-export const PI_EXTENSION_PACKAGES: ReadonlyArray<string> = ["@narumitw/pi-plan-mode"]
+export const PI_EXTENSION_PACKAGES: ReadonlyArray<string> = ["@narumitw/pi-plan-mode", "@narumitw/pi-goal"]
 
 export const piExtensionsHome = (environment: NodeJS.ProcessEnv): string =>
   environment.TRELLAGE_PI_EXTENSIONS_HOME ??

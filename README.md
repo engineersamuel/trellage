@@ -2229,8 +2229,12 @@ binary `trx run pi` launches.
 every launch. Those checks run concurrently with floating-skill freshness
 checks. The release installer receives the already-resolved tag, and npm runs
 `install` only when an extension is missing or its installed version differs
-from the registry's latest version. Each latest-version check has a two-second
-limit; failure warns and keeps the installed Pi or extensions. Set
+from the registry's latest version. Native Pi loads `@narumitw/pi-plan-mode`
+and `@narumitw/pi-goal` from the shared
+`~/.local/share/trellage/pi-extensions` directory, outside the generated
+composition. Set `TRELLAGE_PI_EXTENSIONS_HOME` to override that shared
+directory. Each latest-version check has a two-second limit; failure warns and
+keeps the installed Pi or extensions. Set
 `TRELLAGE_PI_AUTO_UPDATE=0` to skip these checks; `TRELLAGE_PI_BIN` also skips
 them.
 
