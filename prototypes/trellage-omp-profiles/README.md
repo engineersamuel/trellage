@@ -51,6 +51,12 @@ installing or downgrading OMP. `doctor` is read-only. A first launch can set up
 an absent profile, but launch, setup, repair, and doctor all resolve and verify
 the host executable before they continue.
 
+Source-mode commands, including `mise run trx run omp`, use the worktree's
+launcher, catalog, and skill helpers. They still require the installed, owned
+`~/.local/share/trellage/omp` runtime for overlays, initialization locks, and
+temporary files. Install the backend once with the command above before using
+source mode. No runtime files or ownership marker are written into the worktree.
+
 If an interrupted first launch leaves an initialization claim behind, an
 operator may run the installed backend command
 `~/.local/share/trellage/.native-commands/omp reap PROFILE` (with `PROFILE`

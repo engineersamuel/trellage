@@ -1,12 +1,14 @@
 import assert from "node:assert/strict"
 import { Database } from "bun:sqlite"
-import { readFile, writeFile } from "node:fs/promises"
+import { readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { createProcessLifecycle, POSIX_ALARM_SCRIPT } from "../../../packages/trellage-runtime/test/native-run/process-lifecycle.ts"
 
 const [fixture, executable] = process.argv.slice(2)
 assert(fixture && executable, "canonical acceptance requires fixture and host executable paths")
 const home = process.env.HOME!
+const sourceRuntime = path.resolve(import.meta.dir, "..")
+const sourceEntries = await readdir(sourceRuntime)
 const router = path.resolve(import.meta.dir, "../../trellage-router/bin/trx")
 const config = path.join(fixture, "canonical-config.toml")
 const original = await readFile(executable, "utf8")
@@ -17,12 +19,12 @@ const environment: NodeJS.ProcessEnv = {
   ...process.env,
   TRELLAGE_CONFIG: config,
   TRELLAGE_TRX_SOURCE_ROOT: path.dirname(path.dirname(router)),
-  TRELLAGE_OMP_LIFECYCLE_BIN: path.join(home, ".local/share/trellage/.native-commands/omp"),
+  TRELLAGE_TRX_NATIVE_SOURCE: "1",
   HERDR_ENV: "0",
   COPILOT_GITHUB_TOKEN: "host-copilot-token",
   TRELLAGE_TEST_ALARM_SECONDS: "30",
 }
-delete environment.TRELLAGE_TRX_NATIVE_SOURCE
+delete environment.TRELLAGE_OMP_LIFECYCLE_BIN
 const lifecycle = createProcessLifecycle({ settleDeadline: 35_000 })
 const invoke = (args: string[], extra: NodeJS.ProcessEnv = {}) => lifecycle.spawn("perl", [
   "-e", POSIX_ALARM_SCRIPT, router, ...args,
@@ -44,7 +46,7 @@ try {
   const first = invoke(["run", "omp", "default"], {
     FAKE_OMP_RUN_READY_FILE: firstReady, FAKE_OMP_RUN_RELEASE_FILE: firstRelease,
   })
-  const second = invoke(["run", "omp", "default"], {
+  const second = invoke(["run", "omp"], {
     FAKE_OMP_RUN_READY_FILE: secondReady, FAKE_OMP_RUN_RELEASE_FILE: secondRelease,
   })
   await waitFor(async () => {
@@ -113,6 +115,7 @@ try {
       `unverified OMP ${version} launched a host child`)
   }
   console.log("OMP literal canonical headless rejection at 18.8.4 and 18.8.6: PASS")
+  assert.deepEqual(await readdir(sourceRuntime), sourceEntries, "source launches wrote runtime files into the worktree")
 } finally {
   await writeFile(firstRelease, "release")
   await writeFile(secondRelease, "release")
