@@ -446,7 +446,7 @@ copilot_overlay="$runtime_root/overlays/copilot.yml"
 # Canonical launches must cross the same router boundary users invoke.  Keep
 # the private manager available for lifecycle operations and admission, while
 # this fixture command supplies the source router with the isolated fixture
-# HOME and the installed manager as its adapter-only admission endpoint.
+# HOME and uses source-mode lifecycle resolution without an admission override.
 canonical_omp_command="$fixture_root/trx-run-omp"
 cat >"$canonical_omp_command" <<CANONICAL_OMP_COMMAND
 #!/usr/bin/env bash
@@ -459,7 +459,6 @@ esac
 exec env \
   TRELLAGE_TRX_SOURCE_ROOT="$root/../trellage-router" \
   TRELLAGE_TRX_NATIVE_SOURCE=1 \
-  TRELLAGE_OMP_LIFECYCLE_BIN="\${TRELLAGE_OMP_LIFECYCLE_BIN:-\$HOME/.local/share/trellage/.native-commands/omp}" \
   "$root/../trellage-router/bin/trx" run omp "\$profile" --no-always -- "\$@"
 CANONICAL_OMP_COMMAND
 chmod 0755 "$canonical_omp_command"
@@ -2341,7 +2340,7 @@ if HOME="$unowned_home" "$installer" >"$fixture_root/unowned.out" 2>&1; then
 fi
 grep -Fqx 'unrelated' "$unowned_home/.local/share/trellage/.native-commands/omp" || fail 'installer changed unrelated command'
 
-for unsafe_case in unowned-root marker-link runtime-link ancestor-link command-dir-link; do
+for unsafe_case in missing-marker unowned-root marker-link runtime-link ancestor-link command-dir-link; do
   unsafe_home="$fixture_root/unsafe-runtime-$unsafe_case"
   unsafe_runtime="$unsafe_home/.local/share/trellage/omp"
   unsafe_target="$fixture_root/unsafe-target-$unsafe_case"
@@ -2352,6 +2351,7 @@ for unsafe_case in unowned-root marker-link runtime-link ancestor-link command-d
   install -m 0644 "$root/catalog.json" "$unsafe_runtime/catalog.json"
   printf 'retired receipt\n' >"$unsafe_runtime/installed-version"
   case "$unsafe_case" in
+    missing-marker) rm "$unsafe_runtime/.managed-by-trellage-omp-profiles" ;;
     unowned-root) printf 'unrelated\n' >"$unsafe_runtime/.managed-by-trellage-omp-profiles" ;;
     marker-link)
       mv "$unsafe_runtime/.managed-by-trellage-omp-profiles" "$unsafe_target/marker"
@@ -2371,6 +2371,17 @@ for unsafe_case in unowned-root marker-link runtime-link ancestor-link command-d
       ln -s "$unsafe_runtime/bin/omp" "$unsafe_target/commands/omp"
       ;;
   esac
+  if [[ "$unsafe_case" != command-dir-link ]]; then
+    if HOME="$unsafe_home" TRELLAGE_TRX_OMP_ADAPTER=1 "$launcher" _trx-admit default \
+      >"$fixture_root/unsafe-source-$unsafe_case.out" 2>&1; then
+      fail "source admission accepted $unsafe_case"
+    fi
+    grep -Eq '^omp: (unsafe runtime path|unowned runtime root):' \
+      "$fixture_root/unsafe-source-$unsafe_case.out" \
+      || fail "source admission did not reject runtime ownership for $unsafe_case"
+    [[ ! -e "$unsafe_runtime/overlays" && ! -e "$unsafe_home/.omp" ]] \
+      || fail "source admission changed state before refusing $unsafe_case"
+  fi
   for operation in "$installer" "$uninstaller"; do
     if HOME="$unsafe_home" "$operation" >"$fixture_root/unsafe-runtime-$unsafe_case.out" 2>&1; then
       fail "${operation##*/} accepted $unsafe_case"

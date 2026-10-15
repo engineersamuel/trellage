@@ -49,14 +49,16 @@ resolve_script_dir() {
 }
 
 script_dir="$(resolve_script_dir)" || die 'could not resolve launcher directory'
-runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
-  || die 'could not resolve runtime root'
-readonly catalog="$runtime_root/catalog.json"
+launcher_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
+  || die 'could not resolve launcher root'
+runtime_root="$launcher_root"
+readonly catalog="$launcher_root/catalog.json"
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
 floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
   floating_skills_catalog="$runtime_root/../../config.toml"
+  runtime_root="$HOME/.local/share/trellage/omp"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 readonly community_skills_cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/omp-community-skills"
@@ -120,13 +122,13 @@ check_community_skills() {
 }
 
 skills_update_profile() {
-  local helper="$runtime_root/native-skills.ts"
+  local helper="$launcher_root/native-skills.ts"
   local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills"
   local skill_args=("${1:---sync}")
   [[ "${skill_args[0]}" != --fresh ]] || skill_args+=("$floating_skills_catalog")
 
   require_owned_profile
-  [[ -e "$helper" || -L "$helper" ]] || helper="$runtime_root/../trellage-claude-common/native-skills.ts"
+  [[ -e "$helper" || -L "$helper" ]] || helper="$launcher_root/../trellage-claude-common/native-skills.ts"
   [[ -f "$helper" && ! -L "$helper" ]] || die "missing or unsafe Native skills helper: $helper"
   if [[ "${skill_args[0]}" == --fresh ]]; then
     exec "$bun_runner" "$helper" "$floating_skills_manager" "${skill_args[@]}" \
@@ -446,6 +448,15 @@ verify_local_models() {
 require_safe_overlay_path() {
   local marker="$runtime_root/.managed-by-trellage-omp-profiles"
   local directory="$runtime_root/overlays"
+  local path="$HOME" component
+
+  if [[ "$runtime_root" != "$launcher_root" ]]; then
+    require_safe_home
+    for component in .local share trellage omp; do
+      path="$path/$component"
+      [[ -d "$path" && ! -L "$path" ]] || die "unsafe runtime path: $path"
+    done
+  fi
 
   [[ -d "$runtime_root" && ! -L "$runtime_root" ]] || die "unsafe runtime root: $runtime_root"
   [[ -f "$marker" && ! -L "$marker" ]] || die "unowned runtime root: $runtime_root"
