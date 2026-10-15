@@ -120,7 +120,34 @@ export interface NativeAdapter {
   readonly resolveLaunch?: (input: LaunchInput, planned: LaunchCommand) => Promise<LaunchCommand>
   /** Flags the adapter owns; forwarding them would undo the prepared boundary. */
   readonly managedFlags: ReadonlyArray<string>
+  readonly clean: CleanLaunch
 }
+
+export interface HostDefaults {
+  readonly model: string | undefined
+  readonly effort: string | undefined
+}
+
+export type CleanLaunch =
+  | {
+      readonly supported: true
+      /** Probe that proved no repository or host content loads. */
+      readonly evidence: string
+      /** Model and effort used when the caller names none; never read from host harness settings. */
+      readonly defaults: HostDefaults
+      readonly writeAdapterFiles: (stage: string, model: string | undefined, layout: GenerationLayout) => Promise<void>
+      readonly launch: (input: LaunchInput) => LaunchCommand
+      /** Repository paths that would still load despite the clean flags, and what loading them does. */
+      readonly blockers?: {
+        readonly find: (workspace: string) => Promise<ReadonlyArray<string>>
+        readonly effect: string
+      }
+      /** Harness flags that would reopen what the clean flags close; refused after `--`. */
+      readonly managedFlags?: ReadonlyArray<string>
+      /** Launch-time discovery of harness content that only a listing can name. */
+      readonly resolveLaunch?: (input: LaunchInput, planned: LaunchCommand) => Promise<LaunchCommand>
+    }
+  | { readonly supported: false; readonly reason: string }
 
 const mergeJson = async (
   file: string,
@@ -268,6 +295,10 @@ export const fxAdapter: NativeAdapter = {
     plan: `${FX_PLAN_MODEL} · effort ${FX_PLAN_EFFORT}`,
   }),
   managedFlags: ["--provider", "--model", "--effort"],
+  clean: {
+    supported: false,
+    reason: "Fx uses the host HOME and ~/.fx by design",
+  },
   writeAdapterFiles: async (stage) => {
     await mkdir(stage, { recursive: true })
   },
@@ -739,6 +770,10 @@ export const agencyAdapter: NativeAdapter = {
     plan: "Agency profile policy",
   }),
   managedFlags: ["--profile-only", "--model", "--effort"],
+  clean: {
+    supported: false,
+    reason: "Agency launches its managed trellage-azure Copilot profile",
+  },
   writeAdapterFiles: async (stage) => {
     await mkdir(stage, { recursive: true })
     await writeFile(
@@ -818,6 +853,10 @@ export const firstmateAdapter: NativeAdapter = {
   providerPolicy: () => "copilot-proxy-rs:claude-opus-5.5",
   effectivePolicy: () => ({ normal: "claude-opus-5.5 · effort managed", plan: "Firstmate fleet policy" }),
   managedFlags: [],
+  clean: {
+    supported: false,
+    reason: "Firstmate launches its prepared fleet runtime and captain home",
+  },
   writeAdapterFiles: async (stage) => {
     await mkdir(stage, { recursive: true })
   },
@@ -871,6 +910,10 @@ export const jcodeAdapter: NativeAdapter = {
     plan: "JCode native plan mode",
   }),
   managedFlags: ["--no-update"],
+  clean: {
+    supported: false,
+    reason: "JCode discovers repository context and has no verified way to switch it off",
+  },
   writeAdapterFiles: async (stage, model) => {
     await mkdir(stage, { recursive: true })
     await writeFile(
@@ -929,6 +972,10 @@ export const ompAdapter: NativeAdapter = {
     plan: "OMP profile policy",
   }),
   managedFlags: ["--approval-mode", "--append-system-prompt"],
+  clean: {
+    supported: false,
+    reason: "OMP admission installs managed skills and profile overlays before every launch",
+  },
   writeAdapterFiles: async (stage) => {
     await mkdir(stage, { recursive: true })
   },
@@ -965,6 +1012,10 @@ export const primeAdapter: NativeAdapter = {
     plan: "Prime autonomous policy",
   }),
   managedFlags: PRIME_MANAGED_FLAGS.filter((flag) => flag !== "--single-turn"),
+  clean: {
+    supported: false,
+    reason: "Prime repairs its runtime before launch and keeps its native kernel",
+  },
   writeAdapterFiles: async (stage, model) => {
     await mkdir(stage, { recursive: true })
     await writeFile(
@@ -1104,6 +1155,59 @@ const piModelsJson = (model: string | undefined): string => {
   )}\n`
 }
 
+const writePiSettings = async (
+  stage: string,
+  model: string | undefined,
+  extra: Readonly<Record<string, unknown>>,
+): Promise<void> => {
+  await mkdir(stage, { recursive: true })
+  await writeFile(
+    path.join(stage, "settings.json"),
+    `${JSON.stringify(
+      {
+        defaultProvider: piProviderFor(model),
+        defaultModel: model ?? PI_DEFAULT_MODEL,
+        defaultThinkingLevel: "medium",
+        ...extra,
+        defaultProjectTrust: "never",
+        enableInstallTelemetry: false,
+        packages: [],
+      },
+      null,
+      2,
+    )}\n`,
+  )
+  await writeFile(path.join(stage, "models.json"), piModelsJson(model))
+}
+
+const piLaunch = (
+  loading: ReadonlyArray<string>,
+  { layout, model, effort, forwardedArgs, resumeArgs, environment }: LaunchInput,
+): LaunchCommand => ({
+  command: binary(environment, "TRELLAGE_PI_BIN", "pi"),
+  args: [
+    ...loading,
+    "--session-dir",
+    layout.sessionsPath,
+    "--provider",
+    piProviderFor(model),
+    "--model",
+    model ?? PI_DEFAULT_MODEL,
+    "--thinking",
+    effort ?? "medium",
+    ...resumeArgs,
+    ...forwardedArgs,
+  ],
+  env: {
+    PI_CODING_AGENT_DIR: layout.generationPath,
+    PI_SKIP_VERSION_CHECK: "1",
+    PI_TELEMETRY: "0",
+    NODE_OPTIONS: null,
+    NODE_PATH: null,
+    NODE_COMPILE_CACHE: null,
+  },
+})
+
 export const piAdapter: NativeAdapter = {
   id: "pi",
   label: "Pi",
@@ -1138,60 +1242,47 @@ export const piAdapter: NativeAdapter = {
     "--prompt-template",
     "--theme",
   ],
-  writeAdapterFiles: async (stage, model) => {
-    await mkdir(stage, { recursive: true })
-    await writeFile(
-      path.join(stage, "settings.json"),
-      `${JSON.stringify(
-        {
-          defaultProvider: piProviderFor(model),
-          defaultModel: model ?? PI_DEFAULT_MODEL,
-          defaultThinkingLevel: "medium",
-          defaultTools: ["+codemode"],
-          defaultProjectTrust: "never",
-          enableInstallTelemetry: false,
-          packages: [],
-        },
-        null,
-        2,
-      )}\n`,
-    )
-    await writeFile(path.join(stage, "models.json"), piModelsJson(model))
-  },
+  writeAdapterFiles: (stage, model) => writePiSettings(stage, model, { defaultTools: ["+codemode"] }),
   persistentState: [],
   resumeArgs: (resume) =>
     resume.kind === "continue" ? ["--continue"] : resume.id ? ["--resume", resume.id] : ["--resume"],
-  launch: ({ layout, plan, model, effort, forwardedArgs, resumeArgs, environment }) => ({
-    command: binary(environment, "TRELLAGE_PI_BIN", "pi"),
-    args: [
-      "--no-skills",
-      "--no-extensions",
-      "--extension",
-      "builtin:codemode",
-      ...piExtensionEntries(environment).flatMap((entry) => ["--extension", entry]),
-      "--no-prompt-templates",
-      "--no-approve",
-      ...plan.skills.flatMap((skill) => ["--skill", path.join(layout.generationPath, "skills", skill.name)]),
-      "--session-dir",
-      layout.sessionsPath,
-      "--provider",
-      piProviderFor(model),
-      "--model",
-      model ?? PI_DEFAULT_MODEL,
-      "--thinking",
-      effort ?? "medium",
-      ...resumeArgs,
-      ...forwardedArgs,
-    ],
-    env: {
-      PI_CODING_AGENT_DIR: layout.generationPath,
-      PI_SKIP_VERSION_CHECK: "1",
-      PI_TELEMETRY: "0",
-      NODE_OPTIONS: null,
-      NODE_PATH: null,
-      NODE_COMPILE_CACHE: null,
-    },
-  }),
+  launch: (input) =>
+    piLaunch(
+      [
+        "--no-skills",
+        "--no-extensions",
+        "--extension",
+        "builtin:codemode",
+        ...piExtensionEntries(input.environment).flatMap((entry) => ["--extension", entry]),
+        "--no-prompt-templates",
+        "--no-approve",
+        ...input.plan.skills.flatMap((skill) => [
+          "--skill",
+          path.join(input.layout.generationPath, "skills", skill.name),
+        ]),
+      ],
+      input,
+    ),
+  clean: {
+    supported: true,
+    evidence:
+      "Pi 1.2.0: --no-skills, --no-extensions, --no-prompt-templates, --no-context-files, --no-mcp and --no-themes load no repository or host instructions, skills, extensions or MCP servers",
+    defaults: { model: PI_DEFAULT_MODEL, effort: "medium" },
+    writeAdapterFiles: (stage, model) => writePiSettings(stage, model, {}),
+    launch: (input) =>
+      piLaunch(
+        [
+          "--no-skills",
+          "--no-extensions",
+          "--no-prompt-templates",
+          "--no-context-files",
+          "--no-mcp",
+          "--no-themes",
+          "--no-approve",
+        ],
+        input,
+      ),
+  },
 }
 
 /**
@@ -1219,6 +1310,70 @@ export const allowCopilotModelInvocation = async (skillsDirectory: string): Prom
   }
 }
 
+const exists = (file: string): Promise<boolean> =>
+  lstat(file).then(
+    () => true,
+    () => false,
+  )
+
+/** Entries with the given relative names from the workspace up to and including the repository root, nearest first. */
+const repositoryEntries =
+  (names: ReadonlyArray<string>) =>
+  async (workspace: string): Promise<ReadonlyArray<string>> => {
+    const found: string[] = []
+    for (let directory = path.resolve(workspace); ; directory = path.dirname(directory)) {
+      for (const name of names) {
+        const entry = path.join(directory, name)
+        if (await exists(entry)) found.push(entry)
+      }
+      if ((await exists(path.join(directory, ".git"))) || path.dirname(directory) === directory) return found
+    }
+  }
+
+const LISTING_TIMEOUT_MS = 20_000
+
+/** Insert launch arguments right after the clean flags, before any subcommand or forwarded argument. */
+const afterCleanArgs = (
+  planned: LaunchCommand,
+  cleanArgs: ReadonlyArray<string>,
+  extra: ReadonlyArray<string>,
+): LaunchCommand => ({
+  ...planned,
+  args: [...cleanArgs, ...extra, ...planned.args.slice(cleanArgs.length)],
+})
+
+const copilotLaunch = ({
+  layout,
+  model,
+  effort,
+  forwardedArgs,
+  resumeArgs,
+  environment,
+  planMode,
+}: LaunchInput): LaunchCommand => {
+  const planning = planMode === true || forwardedArgs.includes("--plan")
+  return {
+    command: binary(environment, "TRELLAGE_COPILOT_BIN", "copilot"),
+    args: [
+      ...(planning ? ["--plan"] : ["--autopilot", "--allow-all", "--no-ask-user"]),
+      "--model",
+      model ?? "gpt-6-astra",
+      "--effort",
+      effort ?? "low",
+      ...resumeArgs,
+      ...forwardedArgs.filter((argument) => argument !== "--plan"),
+    ],
+    env: { COPILOT_HOME: layout.generationPath },
+  }
+}
+
+const COPILOT_CLEAN_ARGS: ReadonlyArray<string> = [
+  "--no-auto-update",
+  "--no-custom-instructions",
+  "--disable-builtin-mcps",
+  "--excluded-tools=task,read_agent,list_agents,write_agent",
+]
+
 export const copilotAdapter: NativeAdapter = {
   id: "copilot",
   label: "Copilot",
@@ -1235,6 +1390,82 @@ export const copilotAdapter: NativeAdapter = {
     plan: "harness default planModel",
   }),
   managedFlags: ["--config-dir", "--no-custom-instructions"],
+  clean: {
+    supported: true,
+    evidence:
+      "Copilot 1.0.98: no custom instructions, every discovered skill and MCP server disabled by name, built-in MCP servers and agent tools off; refuses when the repository defines hooks or agents because a trusted folder always runs them",
+    defaults: { model: "gpt-6-astra", effort: "low" },
+    managedFlags: [
+      "--enable-mcp-server",
+      "--additional-mcp-config",
+      "--enable-all-github-mcp-tools",
+      "--add-github-mcp-toolset",
+      "--add-github-mcp-tool",
+      "--plugin-dir",
+      "--add-dir",
+      "--agent",
+      "--available-tools",
+      "--excluded-tools",
+    ],
+    writeAdapterFiles: async (stage) => {
+      await mkdir(stage, { recursive: true })
+    },
+    launch: (input) => {
+      const base = copilotLaunch(input)
+      return { ...base, args: [...COPILOT_CLEAN_ARGS, ...base.args] }
+    },
+    blockers: {
+      find: repositoryEntries([
+        ".github/hooks",
+        ".github/copilot",
+        ".github/agents",
+        ".claude/settings.json",
+        ".claude/settings.local.json",
+        ".claude/agents",
+      ]),
+      effect:
+        "loads repository hooks or agents in every trusted Copilot folder. Run from a directory without it, or use claude, codex or pi clean.",
+    },
+    resolveLaunch: async (input, planned) => {
+      const list = async (args: ReadonlyArray<string>): Promise<unknown> => {
+        try {
+          const { stdout } = await execFileAsync(
+            binary(input.environment, "TRELLAGE_COPILOT_BIN", "copilot"),
+            ["--no-auto-update", ...args, "--json"],
+            {
+              cwd: input.workspace,
+              env: { ...input.environment, COPILOT_HOME: input.layout.generationPath },
+              encoding: "utf8",
+              timeout: LISTING_TIMEOUT_MS,
+            },
+          )
+          return JSON.parse(stdout)
+        } catch (error) {
+          throw new NativeRunError(
+            "launch",
+            `could not list Copilot ${args[0]}s: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
+      const skills = await list(["skill", "list"])
+      const servers = ((await list(["mcp", "list"])) as { mcpServers?: unknown } | null)?.mcpServers
+      if (!Array.isArray(skills) || !servers || typeof servers !== "object")
+        throw new NativeRunError("launch", "Copilot returned an invalid skill or MCP server list")
+      const disabledSkills = skills.flatMap((skill: { name?: unknown }) =>
+        typeof skill.name === "string" ? [skill.name] : [],
+      )
+      await mergeJson(path.join(input.layout.generationPath, "settings.json"), (current) => ({
+        ...current,
+        disabledSkills,
+        memory: false,
+      }))
+      return afterCleanArgs(
+        planned,
+        COPILOT_CLEAN_ARGS,
+        Object.keys(servers).flatMap((name) => ["--disable-mcp-server", name]),
+      )
+    },
+  },
   writeAdapterFiles: (stage) => allowCopilotModelInvocation(path.join(stage, "skills")),
   trustWorkspace: async (layout, workspace) => {
     await mergeJson(path.join(layout.generationPath, "config.json"), (current) => {
@@ -1248,22 +1479,7 @@ export const copilotAdapter: NativeAdapter = {
   persistentState: ["session-state"],
   resumeArgs: (resume) =>
     resume.kind === "continue" ? ["--continue"] : resume.id ? [`--resume=${resume.id}`] : ["--resume"],
-  launch: ({ layout, model, effort, forwardedArgs, resumeArgs, environment, planMode }) => {
-    const planning = planMode === true || forwardedArgs.includes("--plan")
-    return {
-      command: binary(environment, "TRELLAGE_COPILOT_BIN", "copilot"),
-      args: [
-        ...(planning ? ["--plan"] : ["--autopilot", "--allow-all", "--no-ask-user"]),
-        "--model",
-        model ?? "gpt-6-astra",
-        "--effort",
-        effort ?? "low",
-        ...resumeArgs,
-        ...forwardedArgs.filter((argument) => argument !== "--plan"),
-      ],
-      env: { COPILOT_HOME: layout.generationPath },
-    }
-  },
+  launch: copilotLaunch,
   resolveLaunch: async (input, planned) => {
     const profile = lifecycleProfile(input.plan, "copilot", "hve")
     const admitted = await privateAdmission(
@@ -1296,6 +1512,110 @@ const CODEX_PROXY_OVERRIDES: ReadonlyArray<string> = [
   "features.context_management.experimental_mode=true",
 ]
 
+const CODEX_CLEAN_ARGS: ReadonlyArray<string> = [
+  "-c",
+  "project_doc_max_bytes=0",
+  "-c",
+  "skills.include_instructions=false",
+  "-c",
+  "skills.bundled.enabled=false",
+  "--enable",
+  "skip_host_skill_discovery",
+  "--disable",
+  "apps",
+  "--disable",
+  "plugins",
+  "--disable",
+  "hooks",
+  "--disable",
+  "memories",
+  "-c",
+  "check_for_update_on_startup=false",
+]
+
+/** Paths of the skills a clean Codex would still list, read from its app server. */
+const codexEnabledSkills = (input: LaunchInput): Promise<ReadonlyArray<string>> =>
+  new Promise((resolve, reject) => {
+    const child = spawn(
+      binary(input.environment, "TRELLAGE_CODEX_BIN", "codex"),
+      [...CODEX_CLEAN_ARGS, "-c", `projects.${JSON.stringify(input.workspace)}.trust_level="trusted"`, "app-server"],
+      {
+        cwd: input.workspace,
+        env: { ...input.environment, CODEX_HOME: input.layout.generationPath },
+        stdio: ["pipe", "pipe", "ignore"],
+      },
+    )
+    const settle = (finish: () => void) => {
+      clearTimeout(timer)
+      child.kill()
+      finish()
+    }
+    const fail = (message: string) => settle(() => reject(new NativeRunError("launch", message)))
+    const timer = setTimeout(() => fail("Codex skill listing timed out after 20s"), LISTING_TIMEOUT_MS)
+    const send = (message: Record<string, unknown>) => child.stdin.write(`${JSON.stringify(message)}\n`)
+    child.stdin.on("error", () => undefined)
+    child.once("error", (error) => fail(`could not list Codex skills: ${error.message}`))
+    child.once("exit", (code) => fail(`Codex app-server exited ${code ?? "by signal"} before listing skills`))
+    let buffer = ""
+    child.stdout.setEncoding("utf8")
+    child.stdout.on("data", (chunk: string) => {
+      buffer += chunk
+      for (let end = buffer.indexOf("\n"); end !== -1; end = buffer.indexOf("\n")) {
+        const line = buffer.slice(0, end).trim()
+        buffer = buffer.slice(end + 1)
+        if (!line) continue
+        let message: { id?: unknown; error?: { message?: unknown }; result?: unknown }
+        try {
+          message = JSON.parse(line)
+        } catch {
+          continue
+        }
+        if (message.error) return fail(`Codex skill listing failed: ${String(message.error.message)}`)
+        if (message.id === 1) {
+          send({ method: "initialized" })
+          send({ id: 2, method: "skills/list", params: { cwds: [input.workspace], forceReload: true } })
+        }
+        if (message.id === 2) {
+          const skills = (message.result as { data?: Array<{ skills?: unknown }> } | undefined)?.data?.[0]?.skills
+          if (!Array.isArray(skills)) return fail("Codex skill listing returned no skill list")
+          const enabled = skills.flatMap((skill: { path?: unknown; enabled?: unknown }) =>
+            skill.enabled === true && typeof skill.path === "string" ? [skill.path] : [],
+          )
+          return settle(() => resolve(enabled))
+        }
+      }
+    })
+    send({
+      id: 1,
+      method: "initialize",
+      params: { clientInfo: { name: "trellage", version: "1" }, capabilities: { experimentalApi: true } },
+    })
+  })
+
+const codexLaunch = ({
+  layout,
+  model,
+  effort,
+  forwardedArgs,
+  resumeArgs,
+  environment,
+  workspace,
+}: LaunchInput): LaunchCommand => ({
+  command: binary(environment, "TRELLAGE_CODEX_BIN", "codex"),
+  args: [
+    "--dangerously-bypass-approvals-and-sandbox",
+    "-c",
+    `projects.${JSON.stringify(workspace)}.trust_level="trusted"`,
+    ...CODEX_PROXY_OVERRIDES.flatMap((override) => ["-c", override]),
+    ...(model ? ["-m", model] : []),
+    ...(effort ? ["-c", `model_reasoning_effort="${effort}"`] : []),
+    ...(resumeArgs.length > 0 && forwardedArgs[0] === "exec"
+      ? ["exec", ...resumeArgs, ...forwardedArgs.slice(1)]
+      : [...resumeArgs, ...forwardedArgs]),
+  ],
+  env: { CODEX_HOME: layout.generationPath },
+})
+
 export const codexAdapter: NativeAdapter = {
   id: "codex",
   label: "Codex",
@@ -1325,21 +1645,29 @@ export const codexAdapter: NativeAdapter = {
   persistentState: ["sessions", "archived_sessions"],
   resumeArgs: (resume) =>
     resume.kind === "continue" ? ["resume", "--last"] : resume.id ? ["resume", resume.id] : ["resume"],
-  launch: ({ layout, model, effort, forwardedArgs, resumeArgs, environment, workspace }) => ({
-    command: binary(environment, "TRELLAGE_CODEX_BIN", "codex"),
-    args: [
-      "--dangerously-bypass-approvals-and-sandbox",
-      "-c",
-      `projects.${JSON.stringify(workspace)}.trust_level="trusted"`,
-      ...CODEX_PROXY_OVERRIDES.flatMap((override) => ["-c", override]),
-      ...(model ? ["-m", model] : []),
-      ...(effort ? ["-c", `model_reasoning_effort="${effort}"`] : []),
-      ...(resumeArgs.length > 0 && forwardedArgs[0] === "exec"
-        ? ["exec", ...resumeArgs, ...forwardedArgs.slice(1)]
-        : [...resumeArgs, ...forwardedArgs]),
-    ],
-    env: { CODEX_HOME: layout.generationPath },
-  }),
+  launch: codexLaunch,
+  clean: {
+    supported: true,
+    evidence:
+      "Codex 0.160.0: zero project-doc bytes and disabled skill instructions, bundled skills, host skill discovery, apps, plugins, hooks and memories load no repository or host instructions or skills; refuses when a repository .codex directory is present because Codex loads it in every writable sandbox",
+    defaults: { model: undefined, effort: undefined },
+    writeAdapterFiles: async () => {},
+    launch: (input) => {
+      const base = codexLaunch(input)
+      return { ...base, args: [...CODEX_CLEAN_ARGS, ...base.args] }
+    },
+    blockers: {
+      find: repositoryEntries([".codex"]),
+      effect:
+        "loads repository MCP servers, instructions and hooks in every writable Codex sandbox. Run from a directory without it, or use claude or pi clean.",
+    },
+    resolveLaunch: async (input, planned) => {
+      const skills = await codexEnabledSkills(input)
+      if (skills.length === 0) return planned
+      const entries = skills.map((skill) => `{path=${JSON.stringify(skill)},enabled=false}`)
+      return afterCleanArgs(planned, CODEX_CLEAN_ARGS, ["-c", `skills.config=[${entries.join(",")}]`])
+    },
+  },
 }
 
 const STATUSLINE_SOURCE = fileURLToPath(new URL("../../../../scripts/trellage-statusline.sh", import.meta.url))
@@ -1408,6 +1736,71 @@ export const modelContextWindow = (model: string | undefined, home: string | und
   return typeof entry?.context_window === "number" && entry.context_window > 0 ? entry.context_window : undefined
 }
 
+// Skip first-run onboarding (theme picker) and the bypass-permissions confirmation in a fresh config directory.
+const writeClaudeState = async (stage: string): Promise<void> => {
+  await mkdir(stage, { recursive: true })
+  await writeFile(
+    path.join(stage, ".claude.json"),
+    `${JSON.stringify({ hasCompletedOnboarding: true, shiftEnterKeyBindingInstalled: true }, null, 2)}\n`,
+    { mode: 0o600 },
+  )
+}
+
+const CLAUDE_MODEL_ALIASES: ReadonlySet<string> = new Set(["opusplan", "opus", "sonnet", "haiku", "default", "best"])
+
+// Claude Code resolves its aliases itself; pinning an alias as the default model id sends it to the proxy verbatim.
+const isClaudeAlias = (model: string): boolean => CLAUDE_MODEL_ALIASES.has(model.replace(/\[1m\]$/, ""))
+
+const claudeLaunch = ({
+  layout,
+  model,
+  effort,
+  forwardedArgs,
+  resumeArgs,
+  environment,
+  planMode,
+}: LaunchInput): LaunchCommand => {
+  // Claude Code does not know proxy model ids, so state the window it should assume.
+  const window = modelContextWindow(model, environment.HOME)
+  return {
+    command: binary(environment, "TRELLAGE_CLAUDE_BIN", "claude"),
+    args: [
+      ...(planMode
+        ? ["--allow-dangerously-skip-permissions"]
+        : ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions"]),
+      ...(planMode && effort ? ["--effort", effort] : []),
+      "--disallowedTools",
+      "AskUserQuestion",
+      ...(model ? ["--model", model] : []),
+      ...(planMode ? ["--permission-mode", "plan"] : effort ? ["--effort", effort] : []),
+      ...resumeArgs,
+      ...forwardedArgs,
+    ],
+    env: {
+      CLAUDE_CONFIG_DIR: layout.generationPath,
+      ...CLAUDE_FOREIGN_AUTH,
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:8080",
+      ANTHROPIC_AUTH_TOKEN: "trellage-local-proxy",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4.5",
+      ...(model && !isClaudeAlias(model)
+        ? { ANTHROPIC_DEFAULT_OPUS_MODEL: model, ANTHROPIC_DEFAULT_SONNET_MODEL: model }
+        : {}),
+      ...(window
+        ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(window) }
+        : { CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1" }),
+    },
+  }
+}
+
+const CLAUDE_CLEAN_ARGS: ReadonlyArray<string> = [
+  "--setting-sources",
+  "",
+  "--strict-mcp-config",
+  "--disable-slash-commands",
+  "--settings",
+  JSON.stringify({ skipDangerousModePermissionPrompt: true }),
+]
+
 export const claudeAdapter: NativeAdapter = {
   id: "claude",
   label: "Claude",
@@ -1429,15 +1822,13 @@ export const claudeAdapter: NativeAdapter = {
     "--dangerously-skip-permissions",
     "--permission-mode",
     "--disallowedTools",
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--settings",
+    "--mcp-config",
   ],
   writeAdapterFiles: async (stage) => {
-    await mkdir(stage, { recursive: true })
-    // Skip first-run onboarding (theme picker) and the bypass-permissions confirmation in a fresh config directory.
-    await writeFile(
-      path.join(stage, ".claude.json"),
-      `${JSON.stringify({ hasCompletedOnboarding: true, shiftEnterKeyBindingInstalled: true }, null, 2)}\n`,
-      { mode: 0o600 },
-    )
+    await writeClaudeState(stage)
     const statusline = path.join(stage, "statusline.sh")
     await copyFile(STATUSLINE_SOURCE, statusline)
     await chmod(statusline, 0o755)
@@ -1484,35 +1875,21 @@ export const claudeAdapter: NativeAdapter = {
   persistentState: ["projects", "sessions", "file-history", "todos"],
   resumeArgs: (resume) =>
     resume.kind === "continue" ? ["--continue"] : resume.id ? ["--resume", resume.id] : ["--resume"],
-  launch: ({ layout, model, effort, forwardedArgs, resumeArgs, environment, planMode }) => {
-    // Claude Code does not know proxy model ids, so state the window it should assume.
-    const window = modelContextWindow(model, environment.HOME)
-    return {
-      command: binary(environment, "TRELLAGE_CLAUDE_BIN", "claude"),
-      args: [
-        ...(planMode
-          ? ["--allow-dangerously-skip-permissions"]
-          : ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions"]),
-        ...(planMode && effort ? ["--effort", effort] : []),
-        "--disallowedTools",
-        "AskUserQuestion",
-        ...(model ? ["--model", model] : []),
-        ...(planMode ? ["--permission-mode", "plan"] : effort ? ["--effort", effort] : []),
-        ...resumeArgs,
-        ...forwardedArgs,
-      ],
-      env: {
-        CLAUDE_CONFIG_DIR: layout.generationPath,
-        ...CLAUDE_FOREIGN_AUTH,
-        ANTHROPIC_BASE_URL: "http://127.0.0.1:8080",
-        ANTHROPIC_AUTH_TOKEN: "trellage-local-proxy",
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4.5",
-        ...(model ? { ANTHROPIC_DEFAULT_OPUS_MODEL: model, ANTHROPIC_DEFAULT_SONNET_MODEL: model } : {}),
-        ...(window
-          ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(window) }
-          : { CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1" }),
-      },
-    }
+  launch: claudeLaunch,
+  clean: {
+    supported: true,
+    evidence:
+      "Claude Code 2.1.300: no setting sources, strict empty MCP config and disabled slash commands load no repository or host instructions, skills, agents, MCP servers or hooks",
+    defaults: { model: "opusplan", effort: "medium" },
+    writeAdapterFiles: (stage) => writeClaudeState(stage),
+    launch: (input) => {
+      const base = claudeLaunch(input)
+      return {
+        ...base,
+        args: [...CLAUDE_CLEAN_ARGS, ...base.args],
+        env: { ...base.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" },
+      }
+    },
   },
   resolveLaunch: async (input, planned) => {
     const profile = lifecycleProfile(input.plan, "claude", "default")
@@ -1604,6 +1981,10 @@ export const grokAdapter: NativeAdapter = {
     plan: `${model ?? GROK_DEFAULT_MODEL} · effort ${GROK_PLAN_EFFORT} after /effort xhigh`,
   }),
   managedFlags: ["--sandbox", "--permission-mode", "--always-approve", "--trust"],
+  clean: {
+    supported: false,
+    reason: "Grok 1.0.46 loads repository AGENTS.md, skills, agents and MCP servers in a trusted folder, and an untrusted folder blocks on a trust prompt",
+  },
   writeAdapterFiles: async (stage, selectedModel, layout) => {
     const model = selectedModel ?? GROK_DEFAULT_MODEL
     await mkdir(stage, { recursive: true })
@@ -1681,11 +2062,6 @@ decided_at = ${Math.floor(Date.now() / 1000)}
   beforeLaunch: ({ environment }) => grokGithubEnvironment(environment),
 }
 
-export interface HostDefaults {
-  readonly model: string | undefined
-  readonly effort: string | undefined
-}
-
 const readStructured = (file: string, format: "json" | "toml"): Record<string, unknown> => {
   try {
     const text = readFileSync(file, "utf8")
@@ -1743,6 +2119,10 @@ export const ujiAdapter: NativeAdapter = {
     plan: "same model and effort · Trellage planning instructions",
   }),
   managedFlags: ["--model", "--effort", "--config-dir", "--data-dir", "--db"],
+  clean: {
+    supported: false,
+    reason: "Uji workspace and tool isolation has not been verified",
+  },
   writeAdapterFiles: async (stage, model, layout, plan) => {
     await mkdir(stage, { recursive: true })
     const pluginDirectory = path.join(stage, "plugin")
