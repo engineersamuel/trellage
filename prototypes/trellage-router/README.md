@@ -56,6 +56,8 @@ trx run fx
 trx run fx ask "explain this repository"
 trx run fx --plan
 trx run claude default
+trx run uji default
+trx run uji default --model copilot-proxy-rs/gpt-4.1 --effort high
 trx --model gpt-5.6-terra
 trx list
 trx list --json
@@ -592,6 +594,31 @@ row’s detail pane. For example, `copilot / tufte-vdqi` runs as
 `trx run copilot tufte-vdqi`, while `claude / default` runs as
 `trx run claude default`. From this repository, prefix the same route with
 `mise run trx --`, such as `mise run trx -- run copilot tufte-vdqi`.
+
+Uji is available directly as `trx run uji default`; it is not a managed profile
+catalog entry, so it does not appear in `trx list`. Trellage writes an isolated
+Uji config with the selected skills and instructions, routes requests through
+the local `copilot-proxy-rs` OpenAI Responses endpoint, and stores sessions per
+composition. Uji keeps using its normal data directory for sign-in credentials.
+The default model is `copilot-proxy-rs/gpt-6-astra`. The first launch loads Uji's
+official skills pack. Use `--model copilot-proxy-rs/ID` to select another proxy
+model. Trellage also provides `proxy_preflight` (local health and model-list
+checks), `repo_brief` (Git status and diff summary without file contents), and
+`knowledge_search` (approved search of the local `secondbrain` index).
+Knowledge search asks for approval and searches only its `system`, `projects`,
+`areas`, `wiki`, `actions`, and `outputs` collections. It does not query raw
+sources or private notes. `repo_brief` returns file paths and diff statistics,
+not file contents.
+Uji starts with its tool policy set to `default = "allow"`, so built-in file
+and command tools run without an approval prompt. This is host execution, not
+a sandbox. Use Uji's policy configuration if you need approval prompts or
+restrictions.
+
+The Lua plugin source is tracked in
+`packages/trellage-runtime/src/native-run/uji-tools.lua`. Each generated Uji
+composition copies it into `plugin/`; its content hash is part of the generation
+identity, so a refreshed Trellage runtime installs changed tools on the next
+launch without a separate plugin update step.
 
 The first setup or launch through any native launcher fetches the
 `native-common` bundle from the approved repositories' current default

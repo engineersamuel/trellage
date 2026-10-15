@@ -9,6 +9,7 @@ export const nativeHarnessPresets = {
   omp: ["default", "local"],
   pi: ["default"],
   prime: ["default"],
+  uji: ["default"],
 } as const satisfies Readonly<Record<string, ReadonlyArray<string>>>
 
 export const nativePresetProfile = (harness: string, profile: string): string | undefined => {
