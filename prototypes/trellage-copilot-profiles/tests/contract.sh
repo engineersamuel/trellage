@@ -298,6 +298,10 @@ case "${1-} ${2-}" in
       printf 'fixture plugin-list failure: %s\n' "$COPILOT_HOME" >&2
       exit 66
     fi
+    if [[ "${FAKE_COPILOT_BUILTIN_SECTION:-0}" == '1' ]]; then
+      printf 'Built-in plugins:\n'
+      printf '  • github-copilot-browser (v0.0.3) [disabled]\n\n'
+    fi
     if [[ -f "$installed" ]]; then
       printf 'Installed plugins:\n'
       while IFS=$'\t' read -r plugin version; do
@@ -1448,6 +1452,13 @@ jq -e '
   and .skills == {packageCount:2,visibleCount:3}
   and .mcps == ["docs","files"]
 ' "$inventory_output" >/dev/null || fail 'healthy inventory output differs'
+FAKE_COPILOT_BUILTIN_SECTION=1 "$launcher" inventory hve --json \
+  >"$fixture_root/builtin-plugin-inventory.json"
+jq -e '
+  .readiness == "healthy"
+  and .plugins == [{name:"hve-core@hve-core",version:"3.2.2"}]
+' "$fixture_root/builtin-plugin-inventory.json" >/dev/null \
+  || fail 'inventory rejected Copilot output containing built-in plugins'
 
 expected_compound_engineering_home="$HOME/.local/share/trellage/profiles/copilot/compound-engineering/home"
 compound_engineering_plugin_root="$expected_compound_engineering_home/installed-plugins/compound-engineering-plugin/compound-engineering"

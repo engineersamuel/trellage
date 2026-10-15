@@ -916,8 +916,27 @@ plugin_inventory_snapshot() {
   printf '%s\n' "$inventory" | jq -Rsce '
     def selector:
       "[A-Za-z0-9][A-Za-z0-9._+-]*(@[A-Za-z0-9][A-Za-z0-9._+-]*)?";
+    def state:
+      "( (\\((enabled|disabled)\\)|\\[(enabled|disabled)\\]))?";
+    def versioned:
+      "^[[:space:]]*• " + selector + " \\(v[^()[:cntrl:]]+\\)" + state + "$";
     split("\n")
     | map(select(length > 0))
+    | if .[0] == "Built-in plugins:" then
+        . as $lines
+        | ([range(1; $lines | length)
+            | select($lines[.] == "Installed plugins:"
+                or $lines[.] == "No plugins installed."
+                or $lines[.] == "No plugins installed")]
+          | first) as $boundary
+        | if $boundary == null
+            or $boundary == 1
+            or any($lines[1:$boundary][]; test(versioned) | not)
+          then error("invalid built-in plugin inventory")
+          else $lines[$boundary:]
+          end
+      else .
+      end
     | if .[0] == "No plugins installed." or .[0] == "No plugins installed" then
         if length == 1
           or (length == 2 and .[1] == "Use '\''copilot plugin install <source>'\'' to install a plugin.")
@@ -927,11 +946,11 @@ plugin_inventory_snapshot() {
       elif .[0] == "Installed plugins:" then
         .[1:]
         | map(
-            if test("^[[:space:]]*• " + selector + " \\(v[^()[:cntrl:]]+\\)( \\((enabled|disabled)\\))?$") then
-              capture("^[[:space:]]*• (?<name>" + selector + ") \\(v(?<version>[^()[:cntrl:]]+)\\)( \\((enabled|disabled)\\))?$")
+            if test(versioned) then
+              capture("^[[:space:]]*• (?<name>" + selector + ") \\(v(?<version>[^()[:cntrl:]]+)\\)" + state + "$")
               | {name, version}
-            elif test("^[[:space:]]*• " + selector + "( \\((enabled|disabled)\\))?$") then
-              capture("^[[:space:]]*• (?<name>" + selector + ")( \\((enabled|disabled)\\))?$")
+            elif test("^[[:space:]]*• " + selector + state + "$") then
+              capture("^[[:space:]]*• (?<name>" + selector + ")" + state + "$")
               | {name, version: null}
             else
               error("invalid plugin row")
