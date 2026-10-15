@@ -99,6 +99,12 @@ mise run trx -- guide "$(cat /tmp/large-prompt.md)" --ui-variant split
 `mise run trx -- run agency azure` directly launches Agency without opening
 the picker. Remaining arguments are forwarded to Agency's managed Copilot CLI.
 
+Direct runs use the selected harness adapter, not the retired public launcher
+commands. For example, `mise run trx -- run claude default` does not require
+`cpx` or `cldx` on `PATH`, or a valid Copilot catalog. An older worktree can
+still require those retired commands; update the worktree or use the installed
+`trx run claude default` instead.
+
 `trx list` prints one `launcher/profile` and catalog description per line.
 `trx list --json` emits a schema-versioned `profiles` array whose entries contain
 `launcher`, `harness`, `name`, `description`, `guide`, `headless`, `sandbox`,

@@ -1918,6 +1918,28 @@ actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
 raise SystemExit(0 if actual[0] == b"omp" and actual[-2:] == [b"--native-copilot", b""] else 1)
 PY
 
+for launcher in cpx cdx cldx fmx jcx omp picx prx agx; do
+  mv "$fixture_bin/$launcher" "$fixture_bin/$launcher.absent"
+done
+cp "$runtime_parent/cpx/catalog.json" "$fixture_root/copilot-isolation.catalog"
+printf '{not-json}\n' >"$runtime_parent/cpx/catalog.json"
+TRX_ARGUMENT_LOG="$argument_log" \
+  TRELLAGE_CONFIG="$fixture_root/minimal-native-config.toml" \
+  "$fixture_bin/trx" run claude cldx-p -- 'two words' '' '--literal=*' \
+  || fail 'direct Claude launch required a public launcher or unrelated catalog'
+python3 - "$argument_log" <<'PY' || fail 'isolated Claude launch changed arguments'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+raise SystemExit(0 if actual[0] == b"claude" and actual[-4:] == [
+    b"two words", b"", b"--literal=*", b"",
+] else 1)
+PY
+mv "$fixture_root/copilot-isolation.catalog" "$runtime_parent/cpx/catalog.json"
+for launcher in cpx cdx cldx fmx jcx omp picx prx agx; do
+  mv "$fixture_bin/$launcher.absent" "$fixture_bin/$launcher"
+done
 
 status=0
 TRX_ARGUMENT_LOG="$argument_log" \
