@@ -12,6 +12,8 @@ import {
   grokAdapter,
   jcodeAdapter,
   ompAdapter,
+  PI_EXTENSION_PACKAGES,
+  piExtensionEntries,
   type LaunchInput,
 } from "../../src/native-run/adapters.ts"
 import {
@@ -1033,7 +1035,16 @@ test("conversation directories are links to per-composition state that survives 
 })
 
 test("a stacked Pi composition publishes only the selected skills and launches Pi with explicit skill paths", async () => {
-  const { dependencies, lines } = await world()
+  const { dependencies, lines, root } = await world()
+  const extensionHome = path.join(root, ".local", "share", "trellage", "pi-extensions", "node_modules")
+  for (const name of PI_EXTENSION_PACKAGES) {
+    const extensionRoot = path.join(extensionHome, name)
+    await mkdir(extensionRoot, { recursive: true })
+    await writeFile(
+      path.join(extensionRoot, "package.json"),
+      JSON.stringify({ pi: { extensions: ["dist/index.ts"] } }),
+    )
+  }
   let launched: Parameters<Spawner>[0] | undefined
   const spawner: Spawner = async (launch, _environment, _cwd, onSpawn) => {
     launched = launch
@@ -1042,14 +1053,20 @@ test("a stacked Pi composition publishes only the selected skills and launches P
   }
   const status = await runNative({ ...base, harness: "pi", profiles: ["superpowers", "office"] }, dependencies(spawner))
   expect(status).toBe(0)
-  expect(launched!.args.slice(0, 6)).toEqual([
+  expect(launched!.args.slice(0, 4)).toEqual([
     "--no-skills",
     "--no-extensions",
     "--extension",
     "builtin:codemode",
-    "--no-prompt-templates",
-    "--no-approve",
   ])
+  expect(launched!.args).toContain("--no-prompt-templates")
+  expect(launched!.args).toContain("--no-approve")
+  for (const name of PI_EXTENSION_PACKAGES) {
+    expect(launched!.args).toContain(path.join(extensionHome, name, "dist/index.ts"))
+  }
+  expect(piExtensionEntries({ HOME: root })).toEqual(
+    PI_EXTENSION_PACKAGES.map((name) => path.join(extensionHome, name, "dist/index.ts")),
+  )
   const skillArguments = launched!.args.flatMap((argument, index, all) =>
     all[index - 1] === "--skill" ? [argument] : [],
   )
@@ -1282,9 +1299,11 @@ test("a failed Pi release refresh warns and still launches", async () => {
 
 test("Pi extension freshness skips installation when every installed version is latest", async () => {
   const root = await tempRoot("pi-extensions-current")
-  const extension = path.join(root, "node_modules", "@narumitw", "pi-plan-mode")
-  await mkdir(extension, { recursive: true })
-  await writeFile(path.join(extension, "package.json"), JSON.stringify({ version: "0.58.4" }))
+  for (const name of PI_EXTENSION_PACKAGES) {
+    const extension = path.join(root, "node_modules", name)
+    await mkdir(extension, { recursive: true })
+    await writeFile(path.join(extension, "package.json"), JSON.stringify({ version: "0.58.4" }))
+  }
 
   const queried: string[] = []
   const needsUpdate = await piExtensionsNeedUpdate(
@@ -1293,7 +1312,7 @@ test("Pi extension freshness skips installation when every installed version is 
   )
 
   expect(needsUpdate).toBe(false)
-  expect(queried).toEqual(["@narumitw/pi-plan-mode"])
+  expect(queried).toEqual([...PI_EXTENSION_PACKAGES])
 })
 
 test("Pi extension freshness installs missing or outdated packages", async () => {
@@ -1301,9 +1320,14 @@ test("Pi extension freshness installs missing or outdated packages", async () =>
   const environment = { HOME: root, TRELLAGE_PI_EXTENSIONS_HOME: root }
   expect(await piExtensionsNeedUpdate(environment, async () => "0.58.4")).toBe(true)
 
-  const extension = path.join(root, "node_modules", "@narumitw", "pi-plan-mode")
-  await mkdir(extension, { recursive: true })
-  await writeFile(path.join(extension, "package.json"), JSON.stringify({ version: "0.58.3" }))
+  for (const name of PI_EXTENSION_PACKAGES) {
+    const extension = path.join(root, "node_modules", name)
+    await mkdir(extension, { recursive: true })
+    await writeFile(
+      path.join(extension, "package.json"),
+      JSON.stringify({ version: name === "@narumitw/pi-goal" ? "0.58.3" : "0.58.4" }),
+    )
+  }
   expect(await piExtensionsNeedUpdate(environment, async () => "0.58.4")).toBe(true)
 })
 
