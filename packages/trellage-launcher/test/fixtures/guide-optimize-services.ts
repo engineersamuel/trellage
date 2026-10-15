@@ -1,34 +1,27 @@
+import { randomUUID } from "node:crypto"
 import path from "node:path"
 import type { CombinedGuideCatalog } from "../../src/guide-catalog.ts"
 import { defaultGuideModelRouting } from "../../src/guide-model-routing.ts"
-import { optimizeDigest } from "../../src/guide-optimize-evidence.ts"
+import { optimizeDigest } from "../../src/review-source.ts"
 import {
-  newOptimizeReview,
-  optimizeApproval,
-  optimizeReviewersFor,
-  runOptimizeReview,
-  type OptimizeReview,
-} from "../../src/guide-optimize-review.ts"
-import {
-  buildGuideOptimizePrompt,
-  guideOptimizeProfiles,
-  type GuideOptimizeServices,
-} from "../../src/guide-optimize.ts"
+  buildGuideReviewPrompt,
+  reviewAgentProfiles,
+  type GuideReviewServices,
+} from "../../src/review-services.ts"
+import type { ReviewRun } from "../../src/review-contracts.ts"
+import { sharedReviewApproval } from "../../src/review-store.ts"
 import { FixtureMode, fixtureHead, type RecordFixtureEvent } from "./guide-integration-data.ts"
-import { fixtureOptimizeModel, readReviewEvidence } from "./guide-optimize-model.ts"
-import { record as parseRecord } from "../../src/guide-text.ts"
 import { assignReviewModels } from "../../src/review-catalog.ts"
-import { displayReviewers, legacyReviewRun, legacyReviewApproval } from "../../src/review-view-model.ts"
+import { displayReviewers } from "../../src/review-view-model.ts"
 
 export const createFixtureOptimizeServices = (
   root: string,
   mode: FixtureMode,
   catalog: CombinedGuideCatalog,
   record: RecordFixtureEvent,
-): GuideOptimizeServices => {
-  const reviews = new Map<string, OptimizeReview>()
-  const reviewers = [...optimizeReviewersFor(defaultGuideModelRouting),
-    ...displayReviewers(assignReviewModels(["ponytail", "fleet", "matt-code-review"]))]
+): GuideReviewServices => {
+  const reviews = new Map<string, ReviewRun>()
+  const reviewers = displayReviewers(assignReviewModels(["ponytail", "fleet", "matt-code-review"]))
   const coordinator = defaultGuideModelRouting.optimize
   const getReview = (id: string) => {
     const review = reviews.get(id)
@@ -37,7 +30,7 @@ export const createFixtureOptimizeServices = (
   }
   return {
     herdr: mode !== FixtureMode.Terminal,
-    profiles: guideOptimizeProfiles(catalog),
+    profiles: reviewAgentProfiles(catalog),
     reviewers,
     coordinator,
     destinations: mode === FixtureMode.Terminal ? ["terminal"] : ["pane", "tab", "terminal"],
@@ -49,15 +42,15 @@ export const createFixtureOptimizeServices = (
     async readReview(id, signal) {
       signal.throwIfAborted()
       await record({ kind: "optimize-history", reviewId: id })
-      return legacyReviewRun(getReview(id))
+      return getReview(id)
     },
     async approve(id, ids, signal) {
       signal.throwIfAborted()
       const review = getReview(id)
-      const approval = optimizeApproval(review, ids)
+      const approval = sharedReviewApproval(review, ids)
       reviews.set(id, { ...review, approvedIds: ids })
       await record({ kind: "optimize-approval", reviewId: id, ids })
-      return legacyReviewApproval(review, approval)
+      return approval
     },
     async review(input, signal, progress, events) {
       await record({ kind: "optimize-review", input })
@@ -65,54 +58,53 @@ export const createFixtureOptimizeServices = (
         events?.({ kind: "status", checkId: id, status: "running" })
         events?.({ kind: "text", checkId: id, text: `Unverified fixture output from ${id}.` })
       }
-      const sources = [
-        ...input.paths.map((id) => ({ id, content: "return value\n" })),
-        { id: "@diff/staged", content: "+return value\n" },
-        ...["improve-codebase-architecture", "codebase-design"].map((name) => ({
-          id: `@skill/${name}`,
-          content: `---\nname: ${name}\n---\nRead-only fixture criteria.\n`,
-        })),
-      ]
-      const evidence = { sources, excluded: [], fingerprint: optimizeDigest({ sources, excluded: [] }) }
-      const initial = newOptimizeReview(input, evidence, reviewers, coordinator)
-      return runOptimizeReview(
-        initial,
-        async (review) => {
-          reviews.set(review.id, review)
-        },
-        signal,
-        progress,
-        async (request) => {
-          request.signal?.throwIfAborted()
-          if (
-            mode === FixtureMode.OptimizeIncomplete &&
-            request.systemPrompt.includes("Defend or withdraw your findings")
-          ) {
-            const valid = JSON.parse(await fixtureOptimizeModel(request)) as { responses: ReadonlyArray<unknown> }
-            return JSON.stringify({ ...valid, responses: [] })
-          }
-          if (mode === FixtureMode.OptimizeCancel) {
-            await new Promise<void>((_resolve, reject) =>
-              request.signal?.addEventListener("abort", () => reject(request.signal?.reason), { once: true }),
-            )
-          }
-          if (mode === FixtureMode.OptimizeNoChange && !request.systemPrompt.includes("Reconcile these reports")) {
-            await readReviewEvidence(request)
-            return JSON.stringify({ summary: "Keep this code.", limitations: [], findings: [] })
-          }
-          const response = await fixtureOptimizeModel(request)
-          if (
-            input.reviewerIds.includes("improve-codebase-architecture") &&
-            request.systemPrompt.includes("Reconcile these reports")
-          ) {
-            return JSON.stringify({
-              ...parseRecord(JSON.parse(response), "verdict"),
-              summary: `${"Architecture review: focus on module depth without changing behavior.\n".repeat(16)}Architecture review tail: preserve the retry contract.`,
-            })
-          }
-          return response
-        },
-      ).then(legacyReviewRun)
+      if (mode === FixtureMode.OptimizeCancel) {
+        await new Promise<void>((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+        )
+      }
+      signal.throwIfAborted()
+      const sources = input.paths.map((id) => ({ id, content: "return value\n" }))
+      const source = { sources, excluded: [], fingerprint: optimizeDigest({ sources, excluded: [] }) }
+      const checks = assignReviewModels(input.reviewerIds)
+      const noChange = mode === FixtureMode.OptimizeNoChange
+      const incomplete = mode === FixtureMode.OptimizeIncomplete
+      const results = checks.map((check) => ({
+        id: check.id,
+        status: incomplete ? "partial" as const : "complete" as const,
+        reportId: `${check.id}:report`,
+        limitations: [],
+        findings: noChange ? [] : [{
+          id: `${check.id}:1`, checkId: check.id, reportId: `${check.id}:report`, sourceId: "1",
+          title: `Simplify login from ${check.id}`, proposal: "Return the value directly.",
+          benefit: "Less code.", risk: "None found.", verification: "Run the login tests.",
+          paths: [input.paths[0]!], citations: [{ source: input.paths[0]!, startLine: 1, endLine: 1, quote: "return value" }],
+          grounded: true,
+        }],
+      }))
+      const run: ReviewRun = {
+        schemaVersion: 2, id: randomUUID(), createdAt: new Date().toISOString(),
+        policy: { maximumCalls: 30, maximumFindings: 100, maximumPeerRounds: 2, maximumQuestionsPerRound: 4 },
+        request: { target: input.target, paths: input.paths, checks, coordinator,
+          ...(input.originalIntent === undefined ? {} : { originalIntent: input.originalIntent }),
+          ...(input.intent === undefined ? {} : { intent: input.intent }) },
+        evidence: { fingerprint: optimizeDigest({ source }), source },
+        status: incomplete ? "incomplete" : "complete", synthesisStatus: incomplete ? "not-run" : "complete",
+        results,
+        artifacts: checks.map((check) => ({ id: `${check.id}:report`, checkId: check.id, name: `${check.id}.md`,
+          content: `${check.id} saved report`, digest: optimizeDigest(`${check.id} saved report`) })),
+        challenges: [],
+        decisions: incomplete ? [] : results.flatMap((result) => result.findings.map((finding) => ({
+          findingId: finding.id, disposition: "recommended" as const, reason: "Fixture evidence supports it.",
+        }))),
+        summary: noChange ? "Keep this code." : incomplete ? "Review incomplete." : "Saved fixture",
+        error: incomplete ? "One or more checks have incomplete coverage." : null,
+        calls: 0, approvedIds: [], execution: "not-started",
+      }
+      for (const check of checks) events?.({ kind: "status", checkId: check.id, status: incomplete ? "partial" : "complete" })
+      progress("Fixture review complete.")
+      reviews.set(run.id, run)
+      return run
     },
     async inspect(scope, signal) {
       signal.throwIfAborted()
@@ -158,9 +150,9 @@ export const createFixtureOptimizeServices = (
       signal.throwIfAborted()
       if (!request.otherEditorsStopped) throw new Error("Confirm that other editors have stopped.")
       const review = getReview(request.approval.reviewId)
-      if (optimizeDigest(request.approval) !== optimizeDigest(legacyReviewApproval(review, optimizeApproval(review, review.approvedIds))))
+      if (optimizeDigest(request.approval) !== optimizeDigest(sharedReviewApproval(review, review.approvedIds)))
         throw new Error("Approval does not match the saved fixture.")
-      const prompt = buildGuideOptimizePrompt(request)
+      const prompt = buildGuideReviewPrompt(request)
       await record({ kind: "optimize-changes", request, profileRef, prompt })
       reviews.set(review.id, { ...review, execution: "launched" })
       return { paneId: "9-optimize", message: "Optimization launched; completion is not verified." }

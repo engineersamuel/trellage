@@ -3,7 +3,7 @@ import path from "node:path"
 
 import { Data, Effect } from "effect"
 
-import type { ProfileLock } from "./lock.ts"
+import { attachedSidecar, type ProfileLock } from "./lock.ts"
 import {
   parseResolutionSidecar,
   renderResolutionSidecar,
@@ -49,6 +49,25 @@ export const writeResolutionSidecar = (
       new ResolutionSidecarStorageError({ message: `cannot publish resolution sidecar: ${destination}`, cause }),
   }).pipe(Effect.ensuring(Effect.promise(() => rm(temporary, { force: true })).pipe(Effect.ignore)))
 }
+
+// Publish before the caller replaces its lock bytes. A detached reference is
+// deliberately left alone; only an in-memory attachment is being published.
+export const publishAttachedSidecar = (
+  lockPath: string,
+  lock: ProfileLock,
+): Effect.Effect<void, ResolutionSidecarStorageError> =>
+  Effect.gen(function* () {
+    const sidecar = attachedSidecar(lock)
+    if (sidecar === undefined) return
+    const reference = yield* writeResolutionSidecar(lockPath, sidecar)
+    if (
+      lock.sidecar === undefined ||
+      reference.integrity !== lock.sidecar.integrity ||
+      reference.size !== lock.sidecar.size
+    ) {
+      return yield* Effect.fail(new ResolutionSidecarStorageError({ message: "resolution sidecar reference mismatch" }))
+    }
+  })
 
 export const loadResolutionSidecar = (
   lockPath: string,

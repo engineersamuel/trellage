@@ -11,8 +11,8 @@ import {
   type ReviewResult,
   type ReviewSynthesis,
 } from "./copilot-review-provider.ts"
-import { optimizeDigest } from "./guide-optimize-evidence.ts"
-import type { OptimizeModelCall } from "./guide-optimize-review.ts"
+import { optimizeDigest } from "./review-source.ts"
+import type { OptimizeModelCall } from "./review-findings.ts"
 import type { ReviewArtifact, ReviewCheckResult, ReviewEvent, ReviewRun } from "./review-contracts.ts"
 import { extractReviewFindings, normalizeFleet } from "./review-normalize.ts"
 import { planReviewEvidence } from "./review-evidence.ts"

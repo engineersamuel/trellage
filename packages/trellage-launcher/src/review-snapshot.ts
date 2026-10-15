@@ -1,5 +1,5 @@
 import type { Tool } from "@github/copilot-sdk"
-import { optimizeDigest, type OptimizeEvidence } from "./guide-optimize-evidence.ts"
+import { optimizeDigest, type OptimizeEvidence } from "./review-source.ts"
 import { record, boundedNumber, exactKeys } from "./guide-text.ts"
 import { ReviewReadLedger, packReviewRanges, reviewTokenUpperBound } from "./review-context.ts"
 

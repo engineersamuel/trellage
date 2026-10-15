@@ -152,9 +152,9 @@ complete visible harness or system message. Session identity and transcript
 access errors stop capture instead of triggering that fallback.
 
 Choose **Review changes** to act on repository changes instead of rewriting
-text. This opens `trx guide --optimize` with the original pane/worktree
+text. This opens `trx guide --review` with the original pane/worktree
 context, not the clipboard, latest answer, or capture queue as a substitute
-task. Optimize does not look up a source agent or capture a conversation.
+task. Review does not look up a source agent or capture a conversation.
 The capture queue is neither read nor consumed by this action.
 
 Choose committed and uncommitted changes to use the current worktree and branch

@@ -243,9 +243,9 @@ export interface GuideHeadlessArgs {
   readonly uiVariant?: GuideLongPromptVariant
   readonly nextSteps?: boolean
   readonly engagement?: boolean
-  readonly optimize?: boolean
   readonly review?: boolean
-  readonly optimizeBase?: string
+  readonly reviewBase?: string
+  readonly optimize?: boolean
 }
 
 const helpFlag = "--help"
@@ -259,11 +259,11 @@ const effortFlag = "--effort"
 const uiVariantFlag = "--ui-variant"
 const nextStepsFlag = "--next-steps"
 const engagementFlag = "--engagement"
-const optimizeFlag = "--optimize"
 const reviewFlag = "--review"
+const optimizeFlag = "--optimize"
 const baseFlag = "--base"
 
-const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag, engagementFlag, optimizeFlag, reviewFlag])
+const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag, engagementFlag, reviewFlag, optimizeFlag])
 const valueFlags = new Set([intentFlag, profileFlag, modelFlag, effortFlag, uiVariantFlag, baseFlag])
 const knownFlags = new Set([...booleanFlags, ...valueFlags])
 
@@ -273,9 +273,9 @@ interface MutableGuideArgs {
   intentStdin: boolean
   nextSteps: boolean
   engagement: boolean
-  optimize: boolean
   review: boolean
-  optimizeBase: string | undefined
+  reviewBase: string | undefined
+  optimize: boolean
   intentFromFlag: string | undefined
   profile: string | undefined
   model: string | undefined
@@ -290,7 +290,7 @@ const setGuideValueFlag = (state: MutableGuideArgs, token: string, value: string
   else if (token === profileFlag) state.profile = validateProfileRef(value, "--profile")
   else if (token === modelFlag) state.model = validateModelId(value, "--model")
   else if (token === effortFlag) state.effort = parseGuideEffort(value, "--effort")
-  else if (token === baseFlag) state.optimizeBase = text(value, "--base", 256)
+  else if (token === baseFlag) state.reviewBase = text(value, "--base", 256)
   else state.uiVariant = literal(value, "--ui-variant", guideLongPromptVariantLiterals)
 }
 
@@ -357,19 +357,21 @@ const resolveGuideIntent = (state: MutableGuideArgs): string | undefined => {
 }
 
 const validateEngagementModeFlags = (state: MutableGuideArgs): void => {
-  if (state.engagement && (state.json || state.nextSteps || state.optimize || state.profile !== undefined || state.uiVariant !== undefined)) {
-    throw new GuideArgsError("--engagement is interactive-only and cannot be combined with --json, --next-steps, --optimize, --profile, or --ui-variant")
+  if (state.engagement && (state.json || state.nextSteps || state.review || state.profile !== undefined || state.uiVariant !== undefined)) {
+    throw new GuideArgsError("--engagement is interactive-only and cannot be combined with --json, --next-steps, --review, --profile, or --ui-variant")
   }
 }
 
 const validateOptimizeMode = (state: MutableGuideArgs): void => {
-  if (state.review && state.optimize) throw new GuideArgsError("--review and --optimize cannot be combined")
-  if (state.optimizeBase !== undefined && !state.optimize && !state.review)
-    throw new GuideArgsError("--base requires --review or --optimize")
-  if ((state.optimize || state.review) && (state.json || state.nextSteps || state.engagement || state.profile !== undefined ||
+  if (state.reviewBase !== undefined && !state.review)
+    throw new GuideArgsError("--base requires --review")
+  if (state.review && (state.json || state.nextSteps || state.engagement || state.profile !== undefined ||
     state.uiVariant !== undefined)) {
-    throw new GuideArgsError("--optimize uses a confirmed change target, read-only reviews, and an approved Native handoff, not Guide matching or other modes")
+    throw new GuideArgsError("--review uses a confirmed change target, read-only reviews, and an approved Native handoff, not Guide matching or other modes")
   }
+  if (state.optimize && (state.review || state.json || state.nextSteps || state.engagement ||
+    state.profile !== undefined || state.intentFromFlag !== undefined || state.positionals.length > 0 || state.intentStdin))
+    throw new GuideArgsError("--optimize opens the Optimize screen directly and cannot be combined with an intent or other modes")
 }
 
 const validateGuideModeFlags = (state: MutableGuideArgs): void => {
@@ -405,9 +407,9 @@ const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
     ...(state.uiVariant === undefined ? {} : { uiVariant: state.uiVariant }),
     ...(state.nextSteps ? { nextSteps: true } : {}),
     ...(state.engagement ? { engagement: true } : {}),
-    ...(state.optimize ? { optimize: true } : {}),
     ...(state.review ? { review: true } : {}),
-    ...(state.optimizeBase === undefined ? {} : { optimizeBase: state.optimizeBase }),
+    ...(state.reviewBase === undefined ? {} : { reviewBase: state.reviewBase }),
+    ...(state.optimize ? { optimize: true } : {}),
   }
 }
 
@@ -429,8 +431,8 @@ export const guideHeadlessHelpText = [
   "  --engagement          Assess repository evidence for the next customer-engagement action.",
   "                         Opens local source selection first; no model call or launch on open.",
   "  --review              Review changes; choose any compatible checks.",
-  "  --optimize            Review changes with First principles and Behavior preservation selected.",
   "                         Approve findings before one Native agent can edit.",
+  "  --optimize            Open the Optimize screen directly: run skills on the whole repository.",
   "  --base <ref>          Override the detected comparison base for the current branch.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
   "                         reference instead of matching. Requires --json.",
@@ -456,9 +458,9 @@ export const parseGuideHeadlessArgv = (argv: ReadonlyArray<string>): GuideHeadle
     intentStdin: false,
     nextSteps: false,
     engagement: false,
-    optimize: false,
     review: false,
-    optimizeBase: undefined,
+    reviewBase: undefined,
+    optimize: false,
     intentFromFlag: undefined,
     profile: undefined,
     model: undefined,

@@ -116,7 +116,7 @@ try {
       "guide",
       path.join(root, "unused-guides"),
       path.join(root, "missing-prompt-master"),
-      "--optimize",
+      "--review",
       ...(base === undefined ? [] : ["--base", base]),
       "--intent",
       "Preserve the original task without rewriting it.",

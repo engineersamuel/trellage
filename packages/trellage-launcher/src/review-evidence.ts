@@ -2,21 +2,19 @@ import { lstat } from "node:fs/promises"
 import path from "node:path"
 import { CommandRunnerError, type CommandRunner } from "./guide-launch.ts"
 import {
-  captureOptimizeEvidence,
   optimizeDigest,
   optimizeEvidenceLimits,
   type OptimizeEvidence,
   type OptimizeSource,
-  type OptimizeSourceRange,
-} from "./guide-optimize-evidence.ts"
-import { assertGuideOptimizeTargetCurrent } from "./guide-optimize-target.ts"
+} from "./review-source.ts"
+import { assertGuideReviewTargetCurrent } from "./review-target.ts"
 import { selectReviewChecks } from "./review-catalog.ts"
 import type { ReviewEvidence, ReviewRequest, ReviewExecutionPolicy } from "./review-contracts.ts"
 import type { ReviewSnapshot } from "./review-run.ts"
-import { packReviewRanges, reviewSnapshotBytes, reviewTokenUpperBound } from "./review-context.ts"
+import { reviewSnapshotBytes } from "./review-context.ts"
 import { array, exactKeys, literal, record, stringArray, text, uniqueArray } from "./guide-text.ts"
 
-export { optimizeEvidenceTools } from "./guide-optimize-evidence.ts"
+export { optimizeEvidenceTools } from "./review-source.ts"
 export { reviewContextBudget, reviewTokenUpperBound, reviewSnapshotBytes } from "./review-context.ts"
 export { ReviewSnapshotReader, snapshotBatches, snapshotSliceText, type ReviewSlice } from "./review-snapshot.ts"
 
@@ -28,11 +26,7 @@ const patchFlags = ["--no-ext-diff", "--no-textconv", "--no-renames", "--binary"
 
 const evidenceRequirements = (request: ReviewRequest) => {
   const checks = selectReviewChecks(request.checks.map((check) => check.id))
-  return {
-    relatedSource: checks.some((check) => check.evidence === "related-source"),
-    patch: checks.some((check) => check.evidence === "patch"),
-    requiresHead: checks.some((check) => check.requiresHead),
-  }
+  return { requiresHead: checks.some((check) => check.requiresHead) }
 }
 
 export const maximumReviewCalls = (ids: ReadonlyArray<string>, batches: number): number => {
@@ -98,7 +92,7 @@ export const reviewIncompatibilities = (request: ReviewRequest): ReadonlyArray<s
   for (const path of request.paths) {
     const change = request.target.changes.find((entry) => entry.path === path)
     if (!change) errors.push(`Path is not in the confirmed target: ${JSON.stringify(path)}.`)
-    else if (change.kind === "unsupported" || (requirements.relatedSource && change.kind === "symlink"))
+    else if (change.kind === "unsupported")
       errors.push(`Selected checks cannot review ${JSON.stringify(path)}. Change the check or file selection.`)
   }
   return errors
@@ -108,84 +102,12 @@ export const planReviewEvidence = (request: ReviewRequest, frozen: ReviewEvidenc
   if (!request.checks.some((check) => check.id === checkId)) throw new Error("Unselected evidence check.")
   const check = selectReviewChecks([checkId])[0]!
   if (check.requiresHead && request.target.head === null) throw new Error("Selected review requires HEAD.")
-  if (check.evidence === "related-source")
-    return {
-      evidence: frozen.source,
-      requiredSources: [
-        ...frozen.source.sources.filter((source) => source.id.startsWith("@diff/")).map((source) => source.id),
-        ...request.target.changes
-          .filter((change) => change.untracked && request.paths.includes(change.path))
-          .map((change) => change.path),
-        ...(check.requiredSkillSources ?? []),
-      ],
-    }
   const ids = frozen.patch?.sourceIds
   if (!ids) throw new Error("Selected skill checks lack a frozen patch manifest.")
   if (ids.some((id) => !frozen.source.sources.some((source) => source.id === id)))
     throw new Error("Patch references differ from frozen source evidence.")
   const projection = { sources: frozen.source.sources.filter((source) => ids.includes(source.id)), excluded: [] }
   return { evidence: { ...projection, fingerprint: optimizeDigest(projection) }, requiredSources: ids }
-}
-
-export const reviewLineRanges = (
-  evidence: OptimizeEvidence,
-  ids: ReadonlyArray<string>,
-): ReadonlyArray<OptimizeSourceRange> =>
-  ids.flatMap((id) => {
-    const source = evidence.sources.find((entry) => entry.id === id)
-    if (!source) throw new Error(`Required review source is missing: ${id}.`)
-    return source.content.length === 0 ? [] : [{ source: id, startLine: 1, endLine: source.content.split("\n").length }]
-  })
-
-const lineBytes = (line: string, number: number): number => reviewTokenUpperBound(JSON.stringify({ [number]: line }))
-const pageBytes = (evidence: OptimizeEvidence): number =>
-  1024 +
-  6 *
-    evidence.sources.reduce((maximum, source) => Math.max(maximum, reviewTokenUpperBound(JSON.stringify(source.id))), 0)
-
-export const reviewLineRangeBytes = (evidence: OptimizeEvidence, range: OptimizeSourceRange): number => {
-  const source = evidence.sources.find((entry) => entry.id === range.source)
-  if (!source) throw new Error(`Required review source is missing: ${range.source}.`)
-  return (
-    Math.ceil((range.endLine - range.startLine + 1) / optimizeEvidenceLimits.toolLines) * pageBytes(evidence) +
-    source.content
-      .split("\n")
-      .slice(range.startLine - 1, range.endLine)
-      .reduce((bytes, line, index) => bytes + lineBytes(line, range.startLine + index), 0)
-  )
-}
-
-export const reviewLineBatches = (
-  evidence: OptimizeEvidence,
-  ranges: ReadonlyArray<OptimizeSourceRange>,
-  capacity: number,
-): OptimizeSourceRange[][] => {
-  function* segments() {
-    const overhead = pageBytes(evidence)
-    for (const range of ranges) {
-      const source = evidence.sources.find((source) => source.id === range.source)
-      if (!source) throw new Error(`Required review source is missing: ${range.source}.`)
-      const lines = source.content.split("\n")
-      for (let line = range.startLine; line <= range.endLine; line++) {
-        const cost =
-          lineBytes(lines[line - 1]!, line) +
-          overhead / optimizeEvidenceLimits.toolLines +
-          (line === range.startLine ? overhead : 0)
-        if (cost > capacity)
-          throw new Error(`Snapshot line ${range.source}:${line} cannot fit the model context; nothing was truncated.`)
-        yield { range: { source: range.source, start: line, end: line + 1 }, cost }
-      }
-    }
-  }
-  const batches = packReviewRanges(segments(), capacity)
-  if (!batches.length) throw new Error("No snapshot ranges are available for batching.")
-  if (batches.length > 128)
-    throw new Error(
-      `Review requires ${batches.length} evidence batches, exceeding the consented limit of 128. No evidence batch was started; nothing was truncated.`,
-    )
-  return batches.map((batch) =>
-    batch.map((range) => ({ source: range.source, startLine: range.start, endLine: range.end - 1 })),
-  )
 }
 
 const captureUntracked = async (git: Git, cwd: string, filename: string): Promise<OptimizeSource> => {
@@ -290,8 +212,7 @@ export const captureSharedReviewEvidence = async (
 ): Promise<ReviewEvidence> => {
   const incompatible = reviewIncompatibilities(request)
   if (incompatible.length) throw new Error(incompatible.join("\n"))
-  const { target, paths } = request
-  const requirements = evidenceRequirements(request)
+  const { target } = request
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(60_000)])
   const git: Git = async (args) =>
     (
@@ -308,20 +229,12 @@ export const captureSharedReviewEvidence = async (
         },
       )
     ).stdout
-  await assertGuideOptimizeTargetCurrent(runner, target, bounded)
-  let source: OptimizeEvidence | undefined
-  const captured = target.head === null ? undefined : await capturePatchSources(git, request)
-  if (requirements.relatedSource)
-    source = await captureOptimizeEvidence(runner, target, paths, bounded, captured?.sources)
-  let patch: ReviewSnapshot | undefined
-  if (requirements.patch) {
-    if (!captured) throw new Error("Skill review requires a committed baseline.")
-    const { sources, primarySourceIds } = captured
-    patch = await patchProjection(git, request, sources, primarySourceIds)
-    if (!source) source = { sources, excluded: [], fingerprint: optimizeDigest({ sources, excluded: [] }) }
-  }
-  if (!source) throw new Error("Review has no evidence projection.")
-  await assertGuideOptimizeTargetCurrent(runner, target, bounded)
+  await assertGuideReviewTargetCurrent(runner, target, bounded)
+  if (target.head === null) throw new Error("Skill review requires a committed baseline.")
+  const { sources, primarySourceIds } = await capturePatchSources(git, request)
+  const patch = await patchProjection(git, request, sources, primarySourceIds)
+  const source = { sources, excluded: [], fingerprint: optimizeDigest({ sources, excluded: [] }) }
+  await assertGuideReviewTargetCurrent(runner, target, bounded)
   const evidence = { source, ...(patch ? { patch } : {}) }
   return { ...evidence, fingerprint: optimizeDigest(evidence) }
 }
@@ -413,8 +326,7 @@ export const validateSharedReviewEvidence = (
   request: ReviewRequest,
   source: OptimizeEvidence,
 ): void => {
-  if (evidenceRequirements(request).patch) validatePatchProjection(evidence.patch, request, source)
-  else if (evidence.patch !== undefined) throw new Error("Unselected patch projection.")
+  validatePatchProjection(evidence.patch, request, source)
   if (
     evidence.fingerprint !==
     optimizeDigest({ source, ...(evidence.patch === undefined ? {} : { patch: evidence.patch }) })

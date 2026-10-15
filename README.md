@@ -1209,16 +1209,46 @@ trx guide --intent "Review this architecture" --model claude-opus-5 --effort med
 trx guide "$(cat /tmp/large-prompt.md)" --ui-variant pager
 ```
 
-For committed and working-tree changes, `trx guide --review` opens **Review
-changes**. `trx guide --optimize` opens the same flow with **First principles**
-and **Behavior preservation** selected; `--review` starts with no checks selected.
-Both entries offer all six checks: those two built-in checks, **Improve codebase
-architecture**, **Ponytail Review**, **Fleet Review**, and **Matt Pocock Code
-Review**. Select any compatible combination. The two flags cannot be combined.
-Both accept `--base`, `--intent`, `--model`, and `--effort`; model overrides
-also apply to guarded Fleet workers, not to the eventual Native profile.
+### Optimize the repository
 
-Guide's pinned `o` action, Ctrl-R at an empty intent screen, and Herdr's
+Press `o` in `trx guide` (on the intent screen with an empty draft, or on
+profile recommendations) to open **Optimize**. Optimize works on the whole
+repository as it is now, not on a change set. It does not freeze evidence,
+review, or approve findings.
+
+1. Select one or more skills with Space: **First principles**, **Behavior
+   preservation**, **Improve codebase architecture**, or **UI and CSS** (modern
+   CSS rules from [good-css.com](https://good-css.com)).
+2. Choose where the agent runs:
+   - **Copilot SDK in this terminal**: Guide runs a Copilot agent in the
+     repository with every tool and permission approved. Activity streams on
+     screen; Esc stops it.
+   - **Agent harness in this terminal**, **a new Herdr tab**, or **a new Herdr
+     worktree**: choose Copilot, Codex, or Claude. Guide composes the harness
+     with only the selected skills' managed skills (`trx run HARNESS
+     --no-always --skill OWNER/REPO:NAME ...`), not a configured profile. The
+     harness keeps its own permission settings.
+
+`trx run HARNESS --skill OWNER/REPO:NAME` adds a single skill from a GitHub
+repository without a configured profile; repeat it for more skills.
+
+Skills are defined in `packages/trellage-launcher/src/guide-optimize.ts`.
+**Improve codebase architecture** downloads its managed skills (bundle
+`guide-optimize-architecture`) before every run, so they need not be installed
+first. The agent must not stage, commit, or push.
+
+Test Optimize offline with `bun run test test/guide-ui.integration.test.ts` in
+`packages/trellage-launcher`. Run it for real against the Copilot SDK on a
+throwaway repository with `mise run trx-optimize-test -- --live` (uses quota;
+add `--skill ID` to choose skills).
+
+For committed and working-tree changes, `trx guide --review` opens **Review
+changes** with no checks selected. It offers three checks: **Ponytail Review**,
+**Fleet Review**, and **Matt Pocock Code Review**. It accepts `--base`,
+`--intent`, `--model`, and `--effort`; model overrides also apply to guarded
+Fleet workers, not to the eventual Native profile.
+
+Ctrl-R at an empty intent screen and Herdr's
 **Review changes** popup open this same flow. Returning to Guide preserves its
 draft, goals, forks, and queued jobs. The popup uses the invoking worktree.
 Direct entries do not use profile matching, Prompt Master, or Sandbox discovery.
@@ -1228,8 +1258,7 @@ Opening setup or history makes no model calls and downloads no skills.
 
 Choose the scope and files, select checks, then confirm model use. Consent shows
 the effective models, workers, sharing scope, and bounded follow-up work.
-First principles and Behavior preservation use built-in prompts; architecture
-adapts managed architecture skills. Ponytail looks for removable complexity,
+Ponytail looks for removable complexity,
 Fleet runs six specialist passes, and Matt runs a Standards pass.
 The current Guide flow has no verified spec input, so Matt runs one Standards
 worker and explicitly marks the Spec axis unavailable. It does not invent
@@ -1246,21 +1275,16 @@ rebase is required. Detached HEAD and repositories without an initial commit
 are supported where the selected checks permit them.
 Staged, unstaged, deleted, and non-ignored untracked files can be selected.
 Use Space to include or exclude files. An empty scope does not expand to the
-repository or silently select the last commit. Skill-only reviews can include
-binary patches and link-target metadata without following links; built-in and
-architecture checks require supported text. Incompatible selections require an
-explicit change before starting.
+repository or silently select the last commit. Reviews can include binary
+patches and link-target metadata without following links.
 The confirmed target is rechecked before model work. Escape cancels a run.
 All checks use projections of one frozen target, with one run ID, one history
-record, and one combined synthesis. Built-in proposals receive a bounded
-challenge round. Ponytail and Matt reports receive structured extraction;
+record, and one combined synthesis. Ponytail and Matt reports receive structured extraction;
 their original reports remain available. Ungrounded findings stay read-only.
 A partial or failed review cannot become an all-clear or authorize edits.
 Matt's Standards pass uses documented standards from the review base, so
 committed or uncommitted changes under review cannot set their own rules.
-Evidence limits depend on the selected checks. Built-in and architecture checks
-include related tracked source as context; skill-only checks do not acquire
-that broader source snapshot.
+Checks receive the frozen patch, not a broader source snapshot.
 Router contract fixtures are ignored so an interrupted test does not add a
 copied source tree to the review. Other untracked files remain in scope.
 The former 384 KiB skill-patch limit is removed. Capture retains a 32 MB
@@ -1336,8 +1360,7 @@ frozen evidence are saved under
 with private directories and atomic mode-0600 files. Press `h` from scope or
 target selection to reopen history without model calls. Interrupted runs remain
 inspectable but do not resume automatically.
-Legacy Optimize history under `trellage-optimize-reviews` retains its original
-validation and approval path. Existing `.trx-review-*` reports remain where
+Existing `.trx-review-*` reports remain where
 they are; they are not migrated or treated as authority to edit.
 Untracked dated Fleet reports written manually under `docs/review/` are
 ignored as generated output too. Tracked reports and other untracked files

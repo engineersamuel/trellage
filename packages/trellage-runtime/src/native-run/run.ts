@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process"
+import { createHash } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { lstat, mkdir, readFile } from "node:fs/promises"
 import path from "node:path"
@@ -39,6 +40,8 @@ export interface RunOptions {
   readonly plan?: boolean
   /** Launch without always-on profiles (a clean base harness). */
   readonly noAlways?: boolean
+  /** Ad hoc skills as `owner/repo:name`; composed as one extra profile. */
+  readonly skills?: ReadonlyArray<string>
   readonly forwardedArgs: ReadonlyArray<string>
   /** Reopen the most recent conversation (continue) or choose one (pick, optionally by id). */
   readonly resume?: ResumeRequest | undefined
@@ -46,13 +49,14 @@ export interface RunOptions {
 
 export const RUN_USAGE = `Usage:
   trx run <harness> [<profile>...] [--model NAME] [--effort NAME] [--dry-run]
-          [--no-always] [--require-proven-isolation] [--continue | --resume[=ID]]
-          [-- <harness-args>]
+          [--no-always] [--skill OWNER/REPO:NAME]... [--require-proven-isolation]
+          [--continue | --resume[=ID]] [-- <harness-args>]
 
 Harnesses: agency, claude, codex, copilot, firstmate, fx, grok, jcode, omp, pi, prime.
 Profiles come from ~/.config/trellage/config.toml.
 Profiles with always = true are added to every run; --no-always skips them. --dry-run prepares the composition and
-prints the launch plan without starting the harness.
+prints the launch plan without starting the harness. --skill adds one skill from a GitHub repository without a
+configured profile; repeat it for more skills.
 Conversations are kept per harness and profile set. --continue reopens the most recent one in this directory;
 --resume lists them (or --resume=ID opens one). Use the same harness and profiles as the original run.`
 
@@ -64,6 +68,7 @@ interface RunArgumentState {
   noAlways: boolean
   plan: boolean
   resume?: ResumeRequest
+  skills?: string[]
 }
 
 const optionValue = (
@@ -92,6 +97,13 @@ const parseValuedRunArgument = (
   if (argument === "--effort" || argument.startsWith("--effort=")) {
     const parsed = optionValue(argument, "--effort", own, index)
     state.effort = parsed.value
+    return parsed.index
+  }
+  if (argument === "--skill" || argument.startsWith("--skill=")) {
+    const parsed = optionValue(argument, "--skill", own, index)
+    if (!/^[a-z0-9._-]+\/[a-z0-9._-]+:[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(parsed.value))
+      throw new NativeRunError("usage", `--skill requires OWNER/REPO:NAME, got ${parsed.value}`)
+    state.skills = [...(state.skills ?? []), parsed.value]
     return parsed.index
   }
   if (argument.startsWith("--resume=")) {
@@ -444,6 +456,32 @@ export const describePreparedRun = (prepared: PreparedRun): string[] => {
   ]
 }
 
+/**
+ * Turns `--skill owner/repo:name` values into one synthetic profile. A configured
+ * source for the same repository is reused, so its policy and cache stay shared.
+ */
+const adHocSkillProfile = (catalog: NativeCatalog, skills: ReadonlyArray<string>) => {
+  if (skills.length === 0) return undefined
+  const byRepository = new Map<string, string[]>()
+  for (const skill of skills) {
+    const [repository, name] = skill.toLowerCase().split(":") as [string, string]
+    byRepository.set(repository, [...new Set([...(byRepository.get(repository) ?? []), name])])
+  }
+  const sources: Record<string, NativeCatalog["sources"][string]> = {}
+  const selections = [...byRepository].sort().map(([repository, names]) => {
+    const configured = Object.entries(catalog.sources).find(([, source]) => source.repository === repository)?.[0]
+    const source = configured ?? `adhoc-${repository.replace(/[^a-z0-9]+/g, "-")}`
+    if (configured === undefined) sources[source] = { repository }
+    return { source, names }
+  })
+  const id = `adhoc-${createHash("sha256").update(JSON.stringify(selections)).digest("hex").slice(0, 12)}`
+  const profile: NativeCatalog["profiles"][string] = { label: "Ad hoc skills", always: false, instructions: [], plugins: [], skills: selections }
+  return {
+    id,
+    catalog: { ...catalog, sources: { ...catalog.sources, ...sources }, profiles: { ...catalog.profiles, [id]: profile } },
+  }
+}
+
 /** Resolve, validate, stage and publish the composition without starting the harness. */
 export const prepareRun = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<PreparedRun> => {
   const environment = dependencies.environment ?? process.env
@@ -454,7 +492,8 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
 
   await ensureNativeConfig({ environment, ...(dependencies.configHome ? { home: dependencies.configHome } : {}) })
   const loaded = await loadNativeCatalog(dependencies, environment)
-  let catalog = loaded.config.native
+  const adHoc = adHocSkillProfile(loaded.config.native, options.skills ?? [])
+  let catalog = adHoc?.catalog ?? loaded.config.native
   const publicProfiles = options.profiles
   const selectedProfiles = publicProfiles.map((profile) =>
     Object.hasOwn(catalog.profiles, profile) ? profile : (nativePresetProfile(adapter.id, profile) ?? profile),
@@ -467,7 +506,7 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
   const plan = await planComposition(
     {
       harness: adapter.id,
-      profiles: selectedProfiles,
+      profiles: adHoc === undefined ? selectedProfiles : [...selectedProfiles, adHoc.id],
       catalog,
       adapterPolicy: adapter.policyVersion,
       providerPolicy: adapter.providerPolicy(options.model),

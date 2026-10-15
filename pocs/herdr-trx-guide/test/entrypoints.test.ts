@@ -254,7 +254,7 @@ test("Optimize popup requires no source lookup and scrubs an inherited prompt fi
     },
   }, "popup keyboard input")
   const call = JSON.parse(await readFile(capturePath, "utf8"))
-  assert.deepEqual(call.argv, ["run", "--raw", "trx", "--", "guide", "--optimize"])
+  assert.deepEqual(call.argv, ["run", "--raw", "trx", "--", "guide", "--review"])
   assert.equal(call.intentPath, undefined)
   assert.equal(call.intent, undefined)
   assert.equal(call.stdin, "popup keyboard input")

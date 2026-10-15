@@ -1,12 +1,12 @@
 import type { GuideModelConfig } from "./guide-model-routing.ts"
-import type { OptimizeCitation, OptimizeChallenge } from "./guide-optimize-review.ts"
-import type { OptimizeEvidence } from "./guide-optimize-evidence.ts"
-import type { GuideOptimizeTarget } from "./guide-optimize-target.ts"
+import type { OptimizeCitation, OptimizeChallenge } from "./review-findings.ts"
+import type { OptimizeEvidence } from "./review-source.ts"
+import type { GuideReviewTarget } from "./review-target.ts"
 import { selectReviewChecks, type ReviewCheckAssignment, type ReviewCheckId } from "./review-catalog.ts"
 import type { ReviewSnapshot } from "./review-run.ts"
 
 export interface ReviewRequest {
-  readonly target: GuideOptimizeTarget
+  readonly target: GuideReviewTarget
   readonly paths: ReadonlyArray<string>
   readonly checks: ReadonlyArray<ReviewCheckAssignment>
   readonly coordinator: GuideModelConfig

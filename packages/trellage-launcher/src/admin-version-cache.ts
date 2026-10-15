@@ -16,10 +16,9 @@
  * every pre-fix cache file on next load, forcing one fresh check per profile
  * that immediately repopulates in the current, fully-populated format.
  */
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises"
+import { createAdminRecordCache } from "./admin-record-cache.ts"
 import os from "node:os"
 import path from "node:path"
-import { randomUUID } from "node:crypto"
 
 import type { AdminUpdateCheckResult } from "./admin-model.ts"
 
@@ -37,10 +36,6 @@ export interface AdminVersionCacheRecord {
   readonly schemaVersion: 2
   readonly entries: Readonly<Record<string, AdminVersionCacheEntry>>
 }
-
-const emptyRecord: AdminVersionCacheRecord = { schemaVersion: 2, entries: {} }
-
-const isMissingFile = (error: unknown): boolean => error instanceof Error && "code" in error && error.code === "ENOENT"
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -63,60 +58,16 @@ const parseEntry = (value: unknown): AdminVersionCacheEntry | undefined => {
   return { result, checkedAt: value.checkedAt }
 }
 
-/** Tolerantly parses a cache file's contents. Any structural problem yields the empty record rather than throwing, since a corrupt cache must never block startup. */
-export const parseVersionCacheRecord = (source: string): AdminVersionCacheRecord => {
-  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) return emptyRecord
-  let payload: unknown
-  try {
-    payload = JSON.parse(source)
-  } catch {
-    return emptyRecord
-  }
-  if (!isPlainObject(payload) || payload.schemaVersion !== 2 || !isPlainObject(payload.entries)) return emptyRecord
-  const entries: Record<string, AdminVersionCacheEntry> = {}
-  for (const [ref, value] of Object.entries(payload.entries).slice(0, maximumCacheEntries)) {
-    const entry = parseEntry(value)
-    if (entry !== undefined) entries[ref] = entry
-  }
-  return { schemaVersion: 2, entries }
-}
+const cache = createAdminRecordCache<AdminVersionCacheEntry>({
+  maximumBytes: maximumCacheBytes,
+  maximumEntries: maximumCacheEntries,
+  label: "admin version cache",
+  parseEntry,
+})
 
-/** Loads the cache from disk. A missing or corrupt file resolves to an empty record; only an unexpected read error (not ENOENT) propagates. */
-export const loadVersionCache = async (cachePath: string): Promise<AdminVersionCacheRecord> => {
-  let source: string
-  try {
-    source = await readFile(cachePath, "utf8")
-  } catch (error) {
-    if (isMissingFile(error)) return emptyRecord
-    return emptyRecord
-  }
-  return parseVersionCacheRecord(source)
-}
-
-const removeTemporaryCache = async (temporaryPath: string): Promise<void> => {
-  try {
-    await unlink(temporaryPath)
-  } catch (error) {
-    if (!isMissingFile(error)) throw error
-  }
-}
-
-/** Atomically persists the cache. Failures are surfaced to the caller (unlike `loadVersionCache`) so a write-permission problem can be surfaced once rather than silently discarding every check result. */
-export const saveVersionCache = async (cachePath: string, value: AdminVersionCacheRecord): Promise<void> => {
-  await mkdir(path.dirname(cachePath), { recursive: true, mode: 0o700 })
-  const temporaryPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`
-  const source = `${JSON.stringify(value)}\n`
-  if (Buffer.byteLength(source, "utf8") > maximumCacheBytes) {
-    throw new Error(`admin version cache exceeds ${maximumCacheBytes} bytes`)
-  }
-  try {
-    await writeFile(temporaryPath, source, { encoding: "utf8", flag: "wx", mode: 0o600 })
-    await rename(temporaryPath, cachePath)
-  } catch (error) {
-    await removeTemporaryCache(temporaryPath)
-    throw new Error(`could not write admin version cache: ${cachePath}`, { cause: error })
-  }
-}
+export const parseVersionCacheRecord = cache.parse
+export const loadVersionCache = cache.load
+export const saveVersionCache = cache.save
 
 export const defaultAdminVersionCachePath = (env: Readonly<Record<string, string | undefined>> = process.env): string => {
   const cacheRoot = env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache")

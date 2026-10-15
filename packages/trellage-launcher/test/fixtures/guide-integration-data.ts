@@ -8,9 +8,9 @@ import type {
   GuideOptimizeInput,
 } from "../../src/guide-provider.ts"
 import type { GuideUiResult } from "../../src/guide-ui.tsx"
-import type { GuideOptimizeRequest } from "../../src/guide-optimize.ts"
-import type { GuideOptimizeScope } from "../../src/guide-optimize-target.ts"
-import type { OptimizeReviewInput } from "../../src/guide-optimize-review.ts"
+import type { GuideReviewRequest } from "../../src/review-services.ts"
+import type { GuideReviewScope } from "../../src/review-target.ts"
+import type { OptimizeReviewInput } from "../../src/review-findings.ts"
 import type { GuideGoalAnswer, GuideGoalProposal, GuideGoalReviewDecision } from "../../src/guide-goal-augment.ts"
 
 export enum FixtureMode {
@@ -207,6 +207,7 @@ export const fixtureBranches = {
   hve: "wt/copilot-hve-review-the",
   hveSecond: "wt/copilot-hve-review-the-2",
   sandbox: "wt/sb-sandbox-reviewer-review-the",
+  optimize: "wt/codex-optimize-repository",
 } as const
 export const fixtureHead = "1234567890abcdef1234567890abcdef12345678"
 export const repositoryPack = "# Repository\n\nsrc/login.ts checks token expiry before refresh.\n"
@@ -275,13 +276,15 @@ export interface RecordedCommand {
 
 export type FixtureEvent =
   | { readonly kind: "input"; readonly input: string }
-  | { readonly kind: "optimize-target"; readonly scope: GuideOptimizeScope }
+  | { readonly kind: "optimize-sdk"; readonly prompt: string; readonly cwd: string; readonly model: string; readonly skillDirectory?: string }
+  | { readonly kind: "optimize-skills"; readonly skillIds: ReadonlyArray<string> }
+  | { readonly kind: "optimize-target"; readonly scope: GuideReviewScope }
   | { readonly kind: "optimize-review"; readonly input: OptimizeReviewInput }
   | { readonly kind: "optimize-approval"; readonly reviewId: string; readonly ids: ReadonlyArray<string> }
   | { readonly kind: "optimize-history"; readonly reviewId?: string }
   | {
       readonly kind: "optimize-changes"
-      readonly request: GuideOptimizeRequest
+      readonly request: GuideReviewRequest
       readonly profileRef: string
       readonly prompt: string
     }

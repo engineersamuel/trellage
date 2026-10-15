@@ -1,6 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+
+import { saveHarnessVersionCache } from "../src/admin-harness-version-cache.ts"
 
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -145,5 +147,30 @@ describe("isVersionCacheStale", () => {
   it("treats a malformed result as stale even well within the TTL, so it is retried automatically", () => {
     const entry: AdminVersionCacheEntry = { result: { malformed: true, diagnostic: "boom" }, checkedAt: 1000 }
     expect(isVersionCacheStale(entry, 1000 + 1)).toBe(true)
+  })
+})
+
+// Exercise the shared persistence guarantees through both public cache interfaces.
+describe.each([
+  { name: "profile", save: saveVersionCache, maximumBytes: 256 * 1024 },
+  { name: "harness", save: saveHarnessVersionCache, maximumBytes: 4 * 1024 * 1024 },
+])("$name cache publication", ({ save, maximumBytes }) => {
+  it("preserves the previous cache when a replacement exceeds its limit", async () => {
+    const file = await temporaryCachePath()
+    const record = { schemaVersion: 2 as const, entries: {} }
+    await save(file, record)
+    const original = await readFile(file, "utf8")
+    await expect(save(file, { ...record, padding: "x".repeat(maximumBytes) } as typeof record)).rejects.toThrow("exceeds")
+    expect(await readFile(file, "utf8")).toBe(original)
+    expect(await readdir(path.dirname(file))).toEqual([path.basename(file)])
+    expect((await stat(file)).mode & 0o777).toBe(0o600)
+  })
+
+  it("cleans the temporary file when publication fails", async () => {
+    const file = await temporaryCachePath()
+    await mkdir(file)
+    await expect(save(file, { schemaVersion: 2, entries: {} })).rejects.toThrow("could not write admin")
+    expect(await readdir(path.dirname(file))).toEqual([path.basename(file)])
+    expect((await stat(file)).isDirectory()).toBe(true)
   })
 })

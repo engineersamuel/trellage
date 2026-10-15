@@ -4589,3 +4589,11 @@ describe("guideUiReducer: batch queue", () => {
     })
   })
 })
+
+describe("--optimize entry", () => {
+  it("opens directly on Optimize and returns to an empty intent", () => {
+    const opened = createInitialGuideUiState(undefined, true)
+    expect(opened.stage).toBe(GuideUiStage.Optimize)
+    expect(guideUiReducer(opened, { type: GuideUiActionType.OptimizeBack }).stage).toBe(GuideUiStage.Intent)
+  })
+})

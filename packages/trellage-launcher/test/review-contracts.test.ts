@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
   assignReviewModels,
-  defaultReviewChecks,
   fleetLenses,
   reviewCheckCatalog,
   reviewCoordinatorModel,
@@ -25,43 +24,32 @@ describe("shared review catalog", () => {
       ]),
     ).toMatchObject({
       review: true,
-      optimizeBase: "main",
+      reviewBase: "main",
       intent: "Preserve behavior",
       model: "gpt-6-sol",
       effort: "high",
     })
     expect(parseGuideHeadlessArgv(["--review", "--intent-stdin"])).toMatchObject({ review: true, intentStdin: true })
-    expect(() => parseGuideHeadlessArgv(["--review", "--optimize"])).toThrow("cannot be combined")
-    for (const flag of ["--json", "--engagement", "--next-steps"])
-      expect(() => parseGuideHeadlessArgv(["--review", flag])).toThrow(/review|optimize|engagement/u)
+    for (const flag of ["--json", "--engagement", "--next-steps", "--optimize"])
+      expect(() => parseGuideHeadlessArgv(["--review", flag])).toThrow(/review|engagement|optimize/u)
   })
-  it("offers six independent checks with compatible entry defaults", () => {
-    expect(reviewCheckCatalog).toHaveLength(6)
-    expect(defaultReviewChecks("review")).toEqual([])
-    expect(defaultReviewChecks("optimize")).toEqual(["first-principles", "behavior-preservation"])
+  it("offers only the three skill checks", () => {
+    expect(reviewCheckCatalog.map((entry) => entry.id)).toEqual(["ponytail", "fleet", "matt-code-review"])
     expect(selectReviewChecks(reviewCheckCatalog.map((entry) => entry.id))).toEqual(reviewCheckCatalog)
     expect(() => selectReviewChecks([])).toThrow("Select")
     expect(() => selectReviewChecks(["fleet", "fleet"])).toThrow("distinct")
     expect(() => selectReviewChecks(["unknown"])).toThrow("Unsupported")
   })
 
-  it("keeps built-in and skill defaults distinct", () => {
-    const models = assignReviewModels([
-      "first-principles",
-      "behavior-preservation",
-      "ponytail",
-      "fleet",
-      "matt-code-review",
-    ])
+  it("assigns each skill check its pinned default model", () => {
+    const models = assignReviewModels(["ponytail", "fleet", "matt-code-review"])
     expect(models.map((entry) => entry.model)).toEqual([
-      { model: "gpt-5.6-sol", effort: "medium" },
-      { model: "gpt-5.6-luna", effort: "medium" },
       { model: "claude-opus-5.5", effort: "high" },
       { model: "gpt-6.1-sol", effort: "high" },
       { model: "gpt-6-sol", effort: "low" },
     ])
-    expect(models[3]!.workers.map((entry) => entry.name)).toEqual(fleetLenses)
-    expect(models[4]!.workers.map((entry) => entry.name)).toEqual(["Standards"])
+    expect(models[1]!.workers.map((entry) => entry.name)).toEqual(fleetLenses)
+    expect(models[2]!.workers.map((entry) => entry.name)).toEqual(["Standards"])
   })
 
   it("applies explicit overrides to all selected sessions and guarded workers", () => {

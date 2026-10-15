@@ -10,7 +10,7 @@ import {
   type NativeSelectedProfile,
 } from "./guide-launch.ts"
 import type { ReviewRun } from "./review-contracts.ts"
-import { assertGuideOptimizeTargetCurrent } from "./guide-optimize-target.ts"
+import { assertGuideReviewTargetCurrent } from "./review-target.ts"
 import { checkSelectedProfileReadiness, ProfileReadinessKind } from "./guide-preflight.ts"
 import { reviewAuthority, type ReviewNamespace } from "./review-view-model.ts"
 
@@ -97,7 +97,7 @@ export const executeReviewPlanWorktree = async (
     throw new Error("A new planning worktree requires a clean source with the reviewed HEAD.")
   const branch = `worktree/review-${target.head.slice(0, 8)}-${randomUUID().slice(0, 8)}`
   const inspect = async () => {
-    await assertGuideOptimizeTargetCurrent(runner, target, signal)
+    await assertGuideReviewTargetCurrent(runner, target, signal)
     const state = await inspectGitWorktreeIntent(runner, { cwd: target.cwd, branch })
     if (state.kind !== "ready" || state.dirty || state.currentHeadSha !== target.head)
       throw new Error("Planning source is dirty or changed. No handoff was sent.")
@@ -114,7 +114,7 @@ export const executeReviewPlanWorktree = async (
     promptTimeoutMs: 60_000,
     timeoutMs: 60_000,
     beforeLaunch: async () => {
-      await assertGuideOptimizeTargetCurrent(runner, target, signal)
+      await assertGuideReviewTargetCurrent(runner, target, signal)
     },
   })
   return {

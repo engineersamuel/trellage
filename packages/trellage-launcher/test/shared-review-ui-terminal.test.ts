@@ -61,14 +61,11 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
     if (outcome === "all") {
       for (const [index, label, content] of [
         [2, "Ponytail", "ponytail streamed"],
-        [3, "First principles", "first-principles streamed"],
-        [4, "Behavior", "behavior-preservation streamed"],
-        [5, "Architecture", "improve-codebase-architecture streamed"],
-        [6, "Matt", "matt-code-review streamed"],
-        [7, "Overview", "fleet: running"],
-        [8, "Synthesis", "Waiting for streamed output"],
+        [3, "Matt", "matt-code-review streamed"],
+        [4, "Overview", "fleet: running"],
+        [5, "Synthesis", "Waiting for streamed output"],
       ] as const) {
-        await press("\t", `› ${label}`, `Tab ${index}/8`, content, "Esc cancel")
+        await press("\t", `› ${label}`, `Tab ${index}/5`, content, "Esc cancel")
         await vi.waitFor(() => {
           const lines = screen.split("\n")
           const footer = lines.findIndex((line) => line.includes("Tab/Shift+Tab"))
@@ -102,8 +99,8 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
     await vi.waitFor(assertFilled)
     if (process.env.REVIEW_UI_SCREEN === "1") console.log(`\n${screen}\n`)
     if (outcome === "all") {
-      await wait("Architecture [running]", "Matt [running]", "Overview [running]", "Synthesis [queued]")
-      await press("\u001b[Z", "› Synthesis [queued]", "Tab 8/8", "Esc cancel")
+      await wait("Matt [running]", "Overview [running]", "Synthesis [queued]")
+      await press("\u001b[Z", "› Synthesis [queued]", "Tab 5/5", "Esc cancel")
       await press("\u001b[C", "› Fleet [running]", before)
       await vi.waitFor(assertFilled)
     }
@@ -128,7 +125,7 @@ it.each(["complete", "partial", "cancelled", "all"])("streams separate review ta
   }
 }, 30000)
 
-it("shows an Architecture prerequisite timeout as partial with synthesis not run", async () => {
+it("shows a reviewer timeout as partial with synthesis not run", async () => {
   const root = await mkdtemp(path.join(process.cwd(), ".review-pty-"))
   const terminal = new Terminal({ cols: 100, rows: 30, scrollback: 0, allowProposedApi: true })
   const entry = fileURLToPath(new URL("./fixtures/shared-review-ui-fixture.tsx", import.meta.url))
@@ -148,16 +145,16 @@ it("shows an Architecture prerequisite timeout as partial with synthesis not run
   try {
     await wait("src/login.ts")
     child.write("\r")
-    await wait("Choose reviewers", "Improve codebase architecture")
+    await wait("Choose reviewers", "Ponytail Review")
     child.write("\r")
     await wait("Confirm read-only review")
     child.write("\r")
-    await wait("Architecture [queued]")
+    await wait("Ponytail [queued]")
     await writeFile(path.join(root, "stream"), "")
-    await wait("Architecture [running]")
+    await wait("Ponytail [running]")
     await writeFile(path.join(root, "append"), "")
     await writeFile(path.join(root, "finish"), "architecture-failed")
-    await wait("Architecture [partial]", "Synthesis [not-run]")
+    await wait("Ponytail [partial]", "Synthesis [not-run]")
     child.write("f")
     await wait(
       "Review failed",
@@ -166,7 +163,7 @@ it("shows an Architecture prerequisite timeout as partial with synthesis not run
       "Partial findings saved: 1.",
     )
     child.write("p")
-    await wait("Architecture [partial]", "Synthesis [not-run]")
+    await wait("Ponytail [partial]", "Synthesis [not-run]")
     child.write("\t")
     await wait("Failure phase: Independent reviews", "Failure reason: Request timeout")
   } finally {

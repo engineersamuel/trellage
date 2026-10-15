@@ -1,7 +1,7 @@
 import { RestrictedGuideModelError, runRestrictedGuideModelRequest } from "./copilot-guide-provider.ts"
 import type { ReviewResult } from "./copilot-review-provider.ts"
 import { optimizeEvidenceTools } from "./review-evidence.ts"
-import { parseOptimizeCitations, type OptimizeCitation, type OptimizeModelCall } from "./guide-optimize-review.ts"
+import { parseOptimizeCitations, type OptimizeCitation, type OptimizeModelCall } from "./review-findings.ts"
 import { array, exactKeys, literal, record, stringArray, text } from "./guide-text.ts"
 import type { ReviewCheckAssignment } from "./review-catalog.ts"
 import type { ReviewEvidence, ReviewFinding, ReviewRequest } from "./review-contracts.ts"

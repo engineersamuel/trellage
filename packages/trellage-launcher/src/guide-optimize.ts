@@ -1,593 +1,202 @@
-import { lstat, realpath } from "node:fs/promises"
-import path from "node:path"
-import { isDeepStrictEqual } from "node:util"
-import lockfile from "proper-lockfile"
-import { getProcessInfo, listAgents } from "@trellage/conversation-source/herdr"
-import { resolveGuideModelRouting, validateGuideIntent } from "./guide-api.ts"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.ts"
+import { adapters } from "@trellage/runtime/native-run"
 import {
-  buildHerdrGuideLaunch,
-  CommandRunnerError,
-  createHerdrTab,
-  getHerdrContext,
-  herdrEnvironment,
-  launchInHerdrPane,
-  parseSelectedProfile,
-  runInteractiveTerminalCommand,
-  splitHerdrPane,
-  type CommandRunner,
-  type CommandSpec,
-  type HerdrContext,
-  type NativeSelectedProfile,
-} from "./guide-launch.ts"
-import type { GuideModelConfig, GuideModelRouting } from "./guide-model-routing.ts"
-import { captureOptimizeEvidence, optimizeDigest } from "./guide-optimize-evidence.ts"
-import {
-  newOptimizeReview,
-  optimizeReviewersFor,
-  runOptimizeReview,
-  type OptimizeModelCall,
-  type OptimizeReview,
-  type OptimizeReviewInput,
-  type OptimizeReviewer,
-} from "./guide-optimize-review.ts"
-import { loadOptimizeArchitecture, optimizeArchitectureSkill } from "./guide-optimize-skills.ts"
-import { OptimizeReviewStore, type OptimizeReviewSummary } from "./guide-optimize-store.ts"
-import {
-  assertGuideOptimizeTargetCurrent,
-  guideOptimizeTargetIdentity,
-  inspectGuideOptimizeTarget,
-  selectedGuideOptimizeChanges,
-  type GuideOptimizeScope,
-  type GuideOptimizeTarget,
-} from "./guide-optimize-target.ts"
-import { checkSelectedProfileReadiness, ProfileReadinessKind } from "./guide-preflight.ts"
-import { array, record } from "./guide-text.ts"
-import { assignReviewModels, defaultReviewChecks, reviewCheckCatalog, reviewCoordinatorModel, type ReviewCheckAssignment } from "./review-catalog.ts"
-import type { ReviewEvent, ReviewRun } from "./review-contracts.ts"
-import { runSharedReview } from "./review-coordinator.ts"
-import { SharedReviewStore, type SharedReviewApproval } from "./review-store.ts"
-import { displayReviewers, reviewAuthority, assertReviewEvidenceCurrent } from "./review-view-model.ts"
-import { executeReviewPlanWorktree, type ReviewPlanTerminalResult } from "./review-planning.ts"
+  approveAll,
+  CopilotClient,
+  RuntimeConnection,
+  type CopilotClientOptions,
+  type SessionConfig,
+} from "@github/copilot-sdk"
+import { findExecutableOnPath, runCleanupStep } from "./copilot-guide-provider.ts"
+import type { GuideModelConfig } from "./guide-model-routing.ts"
 
-export interface GuideOptimizeRequest {
-  readonly automatic?: true
-  readonly target: GuideOptimizeTarget
-  readonly paths: ReadonlyArray<string>
-  readonly approval: SharedReviewApproval
-  readonly destination: "terminal" | "pane" | "tab"
-  readonly originalIntent?: string
-  readonly intent?: string
-  readonly otherEditorsStopped: boolean
+/** One Optimize skill: a standing instruction an agent applies to the whole repository. */
+export interface GuideOptimizeSkill {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly prompt: string
+  /** Skills loaded into a harness run, as `owner/repo:name` for `trx run --skill`. */
+  readonly harnessSkills?: ReadonlyArray<string>
 }
 
-export interface GuideOptimizeProfile {
-  readonly ref: string
-  readonly label: string
-  readonly profile: NativeSelectedProfile
-}
-
-export interface GuideOptimizeReceipt {
-  readonly paneId: string
-  readonly message: string
-}
-
-export interface GuideOptimizeServices {
-  readonly assignments?: ReadonlyArray<ReviewCheckAssignment>
-  readonly defaultReviewerIds?: ReadonlyArray<string>
-  readonly herdr: boolean
-  readonly profiles: ReadonlyArray<GuideOptimizeProfile>
-  refreshProfiles?(signal: AbortSignal): Promise<void>
-  readonly reviewers: ReadonlyArray<OptimizeReviewer>
-  readonly coordinator: GuideModelConfig
-  readonly destinations: ReadonlyArray<GuideOptimizeRequest["destination"]>
-  inspect(scope: GuideOptimizeScope, signal: AbortSignal): Promise<GuideOptimizeTarget>
-  review(input: OptimizeReviewInput, signal: AbortSignal, progress: (message: string) => void,
-    events?: (event: ReviewEvent) => void): Promise<ReviewRun>
-  history(signal: AbortSignal): Promise<ReadonlyArray<OptimizeReviewSummary>>
-  readReview(id: string, signal: AbortSignal): Promise<ReviewRun>
-  approve(id: string, ids: ReadonlyArray<string>, signal: AbortSignal): Promise<SharedReviewApproval>
-  execute(request: GuideOptimizeRequest, profileRef: string, signal: AbortSignal): Promise<GuideOptimizeReceipt>
-  plan?(review: ReviewRun, destination: "terminal" | "worktree", signal: AbortSignal):
-    Promise<ReviewPlanTerminalResult | GuideOptimizeReceipt>
-}
-
-export interface GuideOptimizeTerminalResult {
-  readonly action: "optimize-terminal"
-  readonly request: GuideOptimizeRequest
-  readonly selectedProfile: NativeSelectedProfile
-}
-
-export interface GuideOptimizeDependencies {
-  readonly listAgents?: typeof listAgents
-  readonly processReader?: typeof getProcessInfo
-  readonly readiness?: typeof checkSelectedProfileReadiness
-  readonly modelCall?: OptimizeModelCall
-  readonly loadArchitecture?: typeof loadOptimizeArchitecture
-}
-
-const nativeLaunchers = new Set(["copilot", "codex", "claude"])
-const readyStatus = (value: unknown): boolean => value === "idle" || value === "done"
-const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
-
-export const guideOptimizeProfiles = (catalog: CombinedGuideCatalog): ReadonlyArray<GuideOptimizeProfile> =>
-  catalog.native
-    .filter((entry) => nativeLaunchers.has(entry.launcher))
-    .map((entry) => {
-      const profile = parseSelectedProfile({
-        surface: "native",
-        launcher: entry.launcher,
-        commandPath: entry.commandPath,
-        profile: entry.name,
-        headlessPrompt: entry.headless.prompt,
-      })
-      if (profile.surface !== "native") throw new Error("Optimize requires a Native profile in the current worktree.")
-      return { ref: `native:${entry.launcher}/${entry.name}`, label: `${entry.launcher} ${entry.name}`, profile }
-    })
-
-export const assertGuideOptimizeNoWriters = async (
-  target: GuideOptimizeTarget,
-  env: NodeJS.ProcessEnv,
-  dependencies: GuideOptimizeDependencies = {},
-  ignoredPanes: ReadonlySet<string> = new Set(),
-  signal?: AbortSignal,
-): Promise<void> => {
-  const agents = await (dependencies.listAgents ?? listAgents)({
-    socketPath: env.HERDR_SOCKET_PATH,
-    ...(signal === undefined ? {} : { signal }),
-  })
-  for (const agent of agents) {
-    if (
-      (typeof agent.pane_id === "string" && ignoredPanes.has(agent.pane_id)) ||
-      typeof agent.agent !== "string" ||
-      readyStatus(agent.agent_status)
-    )
-      continue
-    const directory = agent.foreground_cwd ?? agent.cwd
-    if (typeof directory !== "string" || !path.isAbsolute(directory)) {
-      throw new Error(
-        `Busy agent in pane ${JSON.stringify(agent.pane_id)} has no verified working directory. Stop it before optimizing shared files.`,
-      )
-    }
-    const canonical = await realpath(directory)
-    if (canonical === target.cwd || canonical.startsWith(`${target.cwd}${path.sep}`)) {
-      throw new Error(
-        `Agent in pane ${String(agent.pane_id)} is ${String(agent.agent_status)} in this worktree. Stop or finish it first.`,
-      )
-    }
-  }
-}
-
-export const buildGuideOptimizePrompt = (request: GuideOptimizeRequest): string => {
-  selectedGuideOptimizeChanges(request.target, request.paths)
-  if (request.approval === undefined || request.approval.findings.length === 0)
-    throw new Error("Approve saved review findings before implementation.")
-  const allowed = [...new Set(request.approval.findings.flatMap((entry) => entry.paths))]
-  if (allowed.some((filename) => !request.paths.includes(filename)))
-    throw new Error("Approved finding exceeds the reviewed scope.")
-  const changes = selectedGuideOptimizeChanges(request.target, allowed)
-  const target = request.target
-  const parts = [
-    ...(request.automatic ? ["Use Copilot hve to plan, then implement only these approved findings without another approval prompt."] : []),
-    "Implement only the explicitly approved optimization findings below. Do not perform a new open-ended cleanup.",
-    "Inspect the actual Git changes and related code before deciding. Preserve task requirements, behavior, and unrelated changes.",
-    "Read repository instructions, relevant documentation, existing helpers, and tests for context. Do not turn this into unrelated repository-wide cleanup.",
-    "Inspect staged and unstaged diffs and selected untracked files. For branch scope, also compare its stated merge-base with HEAD.",
-    "Modify only the selected paths. If a necessary change falls outside them, report it instead of expanding the scope.",
-    "Do not follow symbolic links or modify another worktree. Do not stage, commit, stash, reset, or discard changes.",
-    "Use the original task below to preserve requirements, not to restart its workflow or repeat previous delivery commands.",
-    "Run the relevant existing checks after any code change. It is valid to make no change.",
-    "Reviewer agreement is not proof. Independently verify each proposal and leave it unchanged if its evidence is wrong or its risk is unresolved.",
-    `## Change target\n${JSON.stringify(
-      {
-        worktree: target.cwd,
-        head: target.head,
-        scope: target.scope,
-        comparisonBase: target.base ?? null,
-        selectedPaths: changes.map((entry) => entry.path),
-      },
-      null,
-      2,
-    )}`,
-    `## Approved findings from review ${request.approval.reviewId}\n${JSON.stringify(request.approval.findings, null, 2)}`,
-  ]
-  if (request.originalIntent !== undefined) parts.push(`## Original task (unchanged)\n${request.originalIntent}`)
-  if (request.intent !== undefined && request.intent !== request.originalIntent) {
-    parts.push(`## Current Guide task and constraints (unchanged)\n${request.intent}`)
-  }
-  return validateGuideIntent(
-    parts.join("\n\n"),
-    "Implementation request; approve fewer findings or shorten the supplied task if it exceeds the prompt limit",
-  )
-}
-
-const requireConfirmation = (request: GuideOptimizeRequest): void => {
-  if (request.automatic && request.destination !== "tab")
-    throw new Error("Automatic implementation is available only in a same-worktree Herdr tab.")
-  if (!request.otherEditorsStopped)
-    throw new Error("Confirm that other agents and editors have stopped changing this worktree.")
-  selectedGuideOptimizeChanges(request.target, request.paths)
-  buildGuideOptimizePrompt(request)
-}
-
-const safeTargetLock = async (directory: string): Promise<string> => {
-  const parent = await lstat(directory)
-  if (!parent.isDirectory() || parent.isSymbolicLink() || parent.uid !== process.getuid?.()) {
-    throw new Error("The optimization lock requires owned, regular Git metadata.")
-  }
-  const file = path.join(directory, "trellage-optimize.lock")
-  try {
-    const info = await lstat(file)
-    if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.()) {
-      throw new Error("The optimization lock path is unsafe. It was not changed.")
-    }
-  } catch (cause) {
-    if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause
-  }
-  return file
-}
-
-const withTargetLock = async <Value>(target: GuideOptimizeTarget, operation: () => Promise<Value>): Promise<Value> => {
-  const release = await lockfile.lock(target.gitDirectory, {
-    lockfilePath: await safeTargetLock(target.gitDirectory),
-    realpath: false,
-    retries: 0,
-  })
-  try {
-    return await operation()
-  } finally {
-    await release()
-  }
-}
-
-interface OptimizeRuntime {
-  readonly entry?: "review" | "optimize"
-  readonly modelOverrides?: Partial<GuideModelConfig>
-  readonly runner: CommandRunner
-  readonly cwd: string
-  readonly context: HerdrContext | null
-  readonly catalog: CombinedGuideCatalog
-  readonly env?: NodeJS.ProcessEnv
-  readonly dependencies?: GuideOptimizeDependencies
-  readonly routing?: GuideModelRouting
-}
-
-const herdrRunner = (options: OptimizeRuntime): CommandRunner =>
-  options.env === undefined
-    ? options.runner
-    : {
-        run: (executable, args, commandOptions) =>
-          options.runner.run(executable, args, {
-            ...commandOptions,
-            env: { ...process.env, ...options.env },
-          }),
-      }
-
-const hasForegroundGuideProcess = async (
-  context: HerdrContext,
-  env: NodeJS.ProcessEnv,
-  dependencies: GuideOptimizeDependencies = {},
-  signal?: AbortSignal,
-): Promise<boolean> => {
-  if (context.surface !== "pane") return false
-  const info = await (dependencies.processReader ?? getProcessInfo)(context.paneId, {
-    socketPath: env.HERDR_SOCKET_PATH,
-    ...(signal === undefined ? {} : { signal }),
-  })
-  if (info.pane_id !== context.paneId) throw new Error("Herdr returned process information for a different Guide pane.")
-  const foreground = array(info.foreground_processes, "Herdr foreground processes")
-  return foreground.some((entry) => record(entry, "foreground process").pid === process.pid)
-}
-
-const currentRequest = async (
-  options: Pick<OptimizeRuntime, "runner" | "context" | "env" | "dependencies">,
-  request: GuideOptimizeRequest,
-  signal?: AbortSignal,
-  ignoredPane?: string,
-): Promise<GuideOptimizeRequest> => {
-  requireConfirmation(request)
-  const saved = await (await reviewAuthority(request.target.gitDirectory, request.approval.reviewId)).approved(request.approval)
-  const expected = {
-    target: saved.request.target,
-    paths: saved.request.paths,
-    originalIntent: saved.request.originalIntent,
-    intent: saved.request.intent,
-  }
-  if (
-    !isDeepStrictEqual(expected, {
-      target: request.target,
-      paths: request.paths,
-      originalIntent: request.originalIntent,
-      intent: request.intent,
-    })
-  )
-    throw new Error("Implementation context differs from the approved review.")
-  const target = await assertGuideOptimizeTargetCurrent(options.runner, request.target, signal)
-  selectedGuideOptimizeChanges(target, request.paths)
-  const env = options.env ?? process.env
-  if (options.context !== null) {
-    const ignoredPanes = new Set(ignoredPane === undefined ? [] : [ignoredPane])
-    if (await hasForegroundGuideProcess(options.context, env, options.dependencies, signal))
-      ignoredPanes.add(options.context.paneId)
-    await assertGuideOptimizeNoWriters(target, env, options.dependencies, ignoredPanes, signal)
-  }
-  return { ...request, target }
-}
-
-const assertReviewedEvidenceCurrent = async (
-  runner: CommandRunner,
-  request: GuideOptimizeRequest,
-  signal: AbortSignal,
-): Promise<void> => {
-  const store = await reviewAuthority(request.target.gitDirectory, request.approval.reviewId)
-  await assertReviewEvidenceCurrent(store, request.approval, runner, signal)
-}
-
-const readyProfile = async (
-  runner: CommandRunner,
-  profile: NativeSelectedProfile,
-  cwd: string,
-  dependencies: GuideOptimizeDependencies,
-  signal?: AbortSignal,
-): Promise<void> => {
-  if (!nativeLaunchers.has(profile.launcher)) throw new Error("Choose a Native Copilot, Codex, or Claude profile.")
-  const readiness = await (dependencies.readiness ?? checkSelectedProfileReadiness)(runner, profile, cwd, signal)
-  if (readiness.kind === ProfileReadinessKind.Blocked) throw new Error(`${readiness.summary}. ${readiness.diagnostic}`)
-}
-
-const runFreshAgent = async (
-  options: OptimizeRuntime,
-  request: GuideOptimizeRequest,
-  profileRef: string,
-  signal: AbortSignal,
-): Promise<GuideOptimizeReceipt> => {
-  if (options.context === null) throw new Error("A new Herdr agent requires a destination workspace.")
-  if (request.destination === "terminal") throw new Error("Use the current-terminal handoff for this destination.")
-  const profile = guideOptimizeProfiles(options.catalog).find((entry) => entry.ref === profileRef)?.profile
-  if (profile === undefined) throw new Error("The selected Native profile is no longer available.")
-  const dependencies = options.dependencies ?? {}
-  const prompt = buildGuideOptimizePrompt(request)
-  const launch = buildHerdrGuideLaunch(profile, prompt)
-  if (request.automatic && (profile.launcher !== "copilot" || profile.profile !== "hve" || request.destination !== "tab"))
-    throw new Error("Automatic approved implementation requires Copilot hve in a same-worktree Herdr tab.")
-  const command = request.automatic ? {
-    executable: launch.command.executable,
-    args: [profile.profile, "--plan", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", prompt],
-  } : launch.command
-  if (launch.promptDelivery !== "command") throw new Error("This profile cannot start with an optimization request.")
-  await readyProfile(options.runner, profile, request.target.cwd, dependencies, signal)
-  await currentRequest(options, request, signal)
-  await assertReviewedEvidenceCurrent(options.runner, request, signal)
-  signal.throwIfAborted()
-  const runner = herdrRunner(options)
-  const paneId =
-    request.destination === "tab"
-      ? await createHerdrTab(runner, { workspaceId: options.context.workspaceId, cwd: request.target.cwd })
-      : await splitHerdrPane(runner, {
-          anchorPaneId: options.context.paneId,
-          cwd: request.target.cwd,
-          direction: "right",
-        })
-  const store = await reviewAuthority(request.target.gitDirectory, request.approval.reviewId)
-  let reserved = false
-  try {
-    await launchInHerdrPane(runner, {
-      paneId,
-      cwd: request.target.cwd,
-      command,
-      beforeLaunch: async () => {
-        await currentRequest(options, request, signal, paneId)
-        await assertReviewedEvidenceCurrent(options.runner, request, signal)
-        signal.throwIfAborted()
-        await store.beginExecution(request.approval)
-        reserved = true
-      },
-    })
-    await store.finishExecution(request.approval.reviewId, "launched")
-    return {
-      paneId,
-      message: "Approved optimization launched in one fresh agent in this worktree. Work is not yet verified.",
-    }
-  } catch (cause) {
-    if (reserved)
-      await markUnknownExecution(store, request.approval.reviewId, cause, `New agent pane ${paneId} remains open.`)
-    throw new Error(
-      `New agent pane ${paneId} remains open. ${errorText(cause)} Inspect it before retrying; no automatic resend.`,
-      { cause },
-    )
-  }
-}
-
-const markUnknownExecution = async (
-  store: Pick<OptimizeReviewStore, "finishExecution">,
-  id: string,
-  cause: unknown,
-  destination: string,
-): Promise<void> => {
-  try {
-    await store.finishExecution(id, "unknown")
-  } catch (saveError) {
-    throw new AggregateError(
-      [cause, saveError],
-      `${destination} Delivery or its receipt is uncertain. Do not resend this review.`,
-      { cause: saveError },
-    )
-  }
-}
-
-export const runGuideOptimizeReview = async (
-  options: Pick<OptimizeRuntime, "runner" | "cwd" | "env" | "dependencies">,
-  routing: GuideModelRouting,
-  input: OptimizeReviewInput,
-  signal: AbortSignal,
-  progress: (message: string) => void,
-): Promise<OptimizeReview> => {
-  const local = await guideOptimizeTargetIdentity(options.runner, options.cwd, signal)
-  if (local.cwd !== input.target.cwd || local.gitDirectory !== input.target.gitDirectory)
-    throw new Error("The review target is not this Guide worktree.")
-  progress("Capturing a fixed source snapshot. Review sessions cannot edit your worktree.")
-  const evidence = await captureOptimizeEvidence(options.runner, input.target, input.paths, signal)
-  const initial = newOptimizeReview(input, evidence, optimizeReviewersFor(routing), routing.optimize)
-  const skills = input.reviewerIds.includes(optimizeArchitectureSkill)
-    ? await (options.dependencies?.loadArchitecture ?? loadOptimizeArchitecture)(
-        options.runner,
-        signal,
-        options.env ?? process.env,
-      )
-    : []
-  const sources = [...evidence.sources, ...skills]
-  const snapshot = { sources, excluded: evidence.excluded }
-  const review = { ...initial, evidence: { ...snapshot, fingerprint: optimizeDigest(snapshot) } }
-  await assertGuideOptimizeTargetCurrent(options.runner, input.target, signal)
-  const store = new OptimizeReviewStore(input.target.gitDirectory)
-  await store.save(review)
-  return runOptimizeReview(review, (state) => store.save(state), signal, progress, options.dependencies?.modelCall)
-}
-
-export const createGuideOptimizeServices = (initialOptions: OptimizeRuntime): GuideOptimizeServices => {
-  let options = initialOptions
-  const routing = options.routing ?? resolveGuideModelRouting({}, options.env ?? process.env)
-  const assignments = assignReviewModels(reviewCheckCatalog.map((check) => check.id), routing, options.modelOverrides)
-  const coordinator = reviewCoordinatorModel(options.modelOverrides)
-  const storeForWorktree = async (signal: AbortSignal) =>
-    new OptimizeReviewStore(
-      (await inspectGuideOptimizeTarget(options.runner, options.cwd, { kind: "uncommitted" }, signal)).gitDirectory,
-    )
-  return {
-    defaultReviewerIds: defaultReviewChecks(options.entry ?? "optimize"),
-    assignments,
-    herdr: options.context !== null,
-    get profiles() { return guideOptimizeProfiles(options.catalog) },
-    refreshProfiles: async (signal) => {
-      const env = options.env ?? process.env
-      const command = env.TRELLAGE_REVIEW_PROFILE_COMMAND
-      if (!command) return
-      const result = await options.runner.run(command, ["guide", "--review"], {
-        cwd: options.cwd, signal, env: { ...env, TRELLAGE_REVIEW_PROFILES_ONLY: "1" },
-      })
-      options = { ...options, catalog: parseGuideCatalog(result.stdout) }
-    },
-    reviewers: displayReviewers(assignments),
-    coordinator,
-    destinations:
-      options.context === null
-        ? ["terminal"]
-        : options.context.surface === "popup"
-          ? ["pane", "tab"]
-          : ["pane", "tab", "terminal"],
-    inspect: (scope, signal) => inspectGuideOptimizeTarget(options.runner, options.cwd, scope, signal),
-    review: async (input, signal, progress, events) => {
-      const local = await guideOptimizeTargetIdentity(options.runner, options.cwd, signal)
-      if (local.cwd !== input.target.cwd || local.gitDirectory !== input.target.gitDirectory)
-        throw new Error("Review target is not this Guide worktree.")
-      const run = await runSharedReview({
-        request: { target: input.target, paths: input.paths,
-          checks: input.reviewerIds.map((id) => {
-            const assignment = assignments.find((entry) => entry.id === id)
-            if (!assignment) throw new Error(`Unsupported review check: ${id}`)
-            return assignment
-          }), coordinator,
-          ...(input.originalIntent === undefined ? {} : { originalIntent: input.originalIntent }),
-          ...(input.intent === undefined ? {} : { intent: input.intent }) },
-        confirmed: true, runner: options.runner, signal,
-        ...(options.env ? { env: options.env } : {}),
-        ...(options.dependencies?.modelCall ? { modelCall: options.dependencies.modelCall } : {}),
-        ...(options.dependencies?.loadArchitecture ? { loadArchitecture: options.dependencies.loadArchitecture } : {}),
-        onEvent: (event) => {
-          events?.(event)
-          if (event.kind === "activity") progress(`${event.checkId}: ${event.text}`)
-        },
-      })
-      return run
-    },
-    history: async (signal) => {
-      const legacy = await storeForWorktree(signal)
-      const shared = new SharedReviewStore((await guideOptimizeTargetIdentity(options.runner, options.cwd, signal)).gitDirectory)
-      return [...await legacy.list(), ...await shared.list()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    },
-    readReview: async (id, signal) => {
-      const identity = await guideOptimizeTargetIdentity(options.runner, options.cwd, signal)
-      return (await reviewAuthority(identity.gitDirectory, id)).read(id)
-    },
-    approve: async (id, ids, signal) => {
-      const identity = await guideOptimizeTargetIdentity(options.runner, options.cwd, signal)
-      const store = await reviewAuthority(identity.gitDirectory, id)
-      const review = await store.read(id)
-      await assertGuideOptimizeTargetCurrent(options.runner, review.request.target, signal)
-      signal.throwIfAborted()
-      return store.approve(id, ids)
-    },
-    execute: async (request, profileRef, signal) => {
-      requireConfirmation(request)
-      const initial = await currentRequest(options, request, signal)
-      return withTargetLock(initial.target, async () => {
-        const checked = await currentRequest(options, request, signal)
-        return runFreshAgent(options, checked, profileRef, signal)
-      })
-    },
-    plan: async (review, destination, signal) => {
-      const profile = guideOptimizeProfiles(options.catalog).find((entry) =>
-        entry.profile.launcher === "copilot" && entry.profile.profile === "hve")?.profile
-      if (!profile) throw new Error("Planning unavailable: install Native Copilot hve.")
-      const authority = await reviewAuthority(review.request.target.gitDirectory, review.id)
-      const result: ReviewPlanTerminalResult = { action: "review-plan-terminal", id: review.id,
-        gitDirectory: review.request.target.gitDirectory, cwd: review.request.target.cwd, namespace: authority.namespace, selectedProfile: profile }
-      return destination === "terminal" ? result : executeReviewPlanWorktree(result, options.runner, options.context, signal)
-    },
-  }
-}
-
-export const executeGuideOptimizeTerminal = async (
-  result: GuideOptimizeTerminalResult,
-  services: {
-    readonly runner: CommandRunner
-    readonly runInteractive?: (
-      command: CommandSpec,
-      options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
-    ) => Promise<void>
-    readonly readiness?: typeof checkSelectedProfileReadiness
-    readonly context?: HerdrContext | null
+export const guideOptimizeSkills: ReadonlyArray<GuideOptimizeSkill> = [
+  {
+    id: "first-principles",
+    title: "First principles",
+    description: "Challenge assumptions. Prefer deletion, then simplification. Leave good code alone.",
+    prompt:
+      "Review the implementation from first principles. Challenge weak assumptions and unnecessary complexity. Find only high-impact opportunities to delete or simplify. Prefer deleting over simplifying, simplifying over optimizing, and optimizing over automating. It is valid to recommend no change.",
   },
-): Promise<number> => {
-  requireConfirmation(result.request)
-  if (result.request.destination !== "terminal")
-    throw new Error("This review requires its confirmed Herdr destination.")
-  return withTargetLock(result.request.target, async () => {
-    await readyProfile(
-      services.runner,
-      result.selectedProfile,
-      result.request.target.cwd,
-      services.readiness === undefined ? {} : { readiness: services.readiness },
-    )
-    const context = services.context === undefined ? getHerdrContext(herdrEnvironment()) : services.context
-    const request = await currentRequest(
-      {
-        runner: services.runner,
-        context,
-      },
-      result.request,
-    )
-    const signal = new AbortController().signal
-    await assertReviewedEvidenceCurrent(services.runner, request, signal)
-    const target = await assertGuideOptimizeTargetCurrent(services.runner, request.target)
-    const prompt = buildGuideOptimizePrompt({ ...request, target })
-    const launch = buildHerdrGuideLaunch(result.selectedProfile, prompt)
-    if (launch.promptDelivery !== "command") {
-      throw new Error("This profile cannot start an interactive agent with the optimization prompt.")
-    }
-    const store = await reviewAuthority(target.gitDirectory, request.approval.reviewId)
-    await store.beginExecution(request.approval)
-    try {
-      await (services.runInteractive ?? runInteractiveTerminalCommand)(launch.command, {
-        cwd: target.cwd,
-        env: { ...process.env, TRELLAGE_AUTOMATION: "1" },
-      })
-      await store.finishExecution(request.approval.reviewId, "launched")
-      return 0
-    } catch (cause) {
-      await markUnknownExecution(store, request.approval.reviewId, cause, "Inspect the agent in this terminal.")
-      if (cause instanceof CommandRunnerError && cause.kind === "exited") return cause.exitCode ?? 130
-      throw cause
-    }
+  {
+    id: "behavior-preservation",
+    title: "Behavior preservation",
+    description: "Protect requirements, edge cases, and existing behavior.",
+    prompt:
+      "Check the implementation against the repository contracts and relevant tests. Find concrete behavioral risks and simpler alternatives that preserve requirements. Do not manufacture objections. A necessary safeguard is not needless complexity.",
+  },
+  {
+    id: "improve-codebase-architecture",
+    title: "Improve codebase architecture",
+    description: "Matt Pocock's skill: deepen modules, improve locality, and remove shallow layers.",
+    harnessSkills: ["mattpocock/skills:improve-codebase-architecture", "mattpocock/skills:codebase-design"],
+    prompt:
+      "Use the improve-codebase-architecture and codebase-design skills (invoke them; they are loaded). Deepen shallow modules, improve locality, and remove layers that only pass calls through. Read GLOSSARY.md and relevant ADRs if present. State ADR conflicts instead of overriding them.",
+  },
+  {
+    id: "ui-css",
+    title: "UI and CSS",
+    description: "Modern CSS from good-css.com: intrinsic layout, focus, motion, and color.",
+    prompt: [
+      "Review the repository's stylesheets and UI markup (CSS, HTML, JSX, TSX). If there are none, report that and stop.",
+      "Read https://good-css.com and its linked entries when network access is available. Apply its rules, including:",
+      "- Set min-width: 0 where flex or grid children overflow.",
+      "- Prefer intrinsic layout (clamp(), auto-fit grids, container queries) over breakpoint ladders.",
+      "- Use logical properties (inline, block) instead of left, right, top, and bottom.",
+      "- Use :focus-visible and never remove outlines without a replacement.",
+      "- Guard motion with @media (prefers-reduced-motion: no-preference).",
+      "- Use :user-invalid for form feedback, :has() for parent state, and @starting-style for entry transitions.",
+      "- Use OKLCH colors and color-mix() for consistent palettes; text-wrap: pretty or balance for text.",
+      "Rank the improvements by user impact. Prefer CSS over JavaScript when both work.",
+    ].join("\n"),
+  },
+]
+
+/** Where the selected skills run. */
+export enum GuideOptimizeRunner {
+  CopilotSdk = "copilot-sdk",
+  CurrentTerminal = "current-terminal",
+  NewHerdrTab = "new-herdr-tab",
+  NewHerdrWorktree = "new-herdr-worktree",
+}
+
+export const guideOptimizeRunnerLabels: Readonly<Record<GuideOptimizeRunner, string>> = {
+  [GuideOptimizeRunner.CopilotSdk]: "Copilot SDK in this terminal (all tools allowed)",
+  [GuideOptimizeRunner.CurrentTerminal]: "Agent harness in this terminal",
+  [GuideOptimizeRunner.NewHerdrTab]: "Agent harness in a new Herdr tab",
+  [GuideOptimizeRunner.NewHerdrWorktree]: "Agent harness in a new Herdr worktree",
+}
+
+export const guideOptimizeRunners = (herdr: boolean): ReadonlyArray<GuideOptimizeRunner> =>
+  herdr
+    ? [
+        GuideOptimizeRunner.CopilotSdk,
+        GuideOptimizeRunner.CurrentTerminal,
+        GuideOptimizeRunner.NewHerdrTab,
+        GuideOptimizeRunner.NewHerdrWorktree,
+      ]
+    : [GuideOptimizeRunner.CopilotSdk, GuideOptimizeRunner.CurrentTerminal]
+
+/** Every `trx run` harness, in its picker order; each accepts `--skill`. */
+export const guideOptimizeHarnesses: ReadonlyArray<{ readonly id: string; readonly label: string; readonly composable: boolean }> =
+  Object.entries(adapters).map(([id, adapter]) => ({ id, label: adapter.label, composable: true }))
+export type GuideOptimizeHarness = string
+
+/**
+ * The `trx run` command for a harness with exactly the selected skills. It skips
+ * always-on profiles and keeps the harness's own permission settings.
+ */
+export const buildGuideOptimizeHarnessCommand = (
+  trx: string,
+  harness: GuideOptimizeHarness,
+  skills: ReadonlyArray<GuideOptimizeSkill>,
+  prompt: string,
+): { readonly executable: string; readonly args: ReadonlyArray<string> } => ({
+  executable: trx,
+  args: [
+    "run", harness, "--no-always", ...(harness === "copilot" ? ["--model", "auto"] : []),
+    ...[...new Set(skills.flatMap((skill) => skill.harnessSkills ?? []))].flatMap((ref) => ["--skill", ref]),
+    "--", ...(harness === "copilot" ? ["-i", prompt] : [prompt]),
+  ],
+})
+
+export const selectGuideOptimizeSkills = (ids: ReadonlyArray<string>): ReadonlyArray<GuideOptimizeSkill> => {
+  const selected = guideOptimizeSkills.filter((skill) => ids.includes(skill.id))
+  if (selected.length === 0 || selected.length !== new Set(ids).size) throw new Error("Select one or more Optimize skills.")
+  return selected
+}
+
+/** The agent prompt. It targets the repository as it is now, not a change set. */
+export const buildGuideOptimizePrompt = (skills: ReadonlyArray<GuideOptimizeSkill>, skillDirectory?: string): string =>
+  [
+    "Optimize this repository as it is now. Do not limit the work to uncommitted or committed changes.",
+    ...(skillDirectory === undefined ? [] : [`Managed skills are in ${JSON.stringify(skillDirectory)}. Read each <name>/SKILL.md named below before you start.`]),
+    "Read repository instructions (AGENTS.md, CLAUDE.md, CONTRIBUTING.md) and follow them.",
+    "Apply each section below. Make the highest-impact improvements, keep behavior unchanged, and run the relevant checks after each change.",
+    "Do not stage, commit, or push. End with a short summary of what changed and what you left alone and why.",
+    ...skills.map((skill) => `## ${skill.title}\n${skill.prompt}`),
+  ].join("\n\n")
+
+export interface GuideOptimizeSdkSession {
+  on(handler: (event: { readonly type: string; readonly data: unknown }) => void): () => void
+  sendAndWait(options: { readonly prompt: string }, timeoutMs: number): Promise<unknown>
+  abort(): Promise<void>
+  disconnect(): Promise<void>
+}
+
+export interface GuideOptimizeSdkClient {
+  start(): Promise<void>
+  createSession(config: SessionConfig): Promise<GuideOptimizeSdkSession>
+  stop(): Promise<ReadonlyArray<Error>>
+}
+
+export interface GuideOptimizeSdkOptions {
+  readonly cwd: string
+  readonly prompt: string
+  readonly skillDirectory?: string | undefined
+  readonly model: GuideModelConfig
+  readonly signal: AbortSignal
+  readonly onActivity: (text: string) => void
+  readonly clientFactory?: (options: CopilotClientOptions) => GuideOptimizeSdkClient
+  readonly timeoutMs?: number
+}
+
+const activityText = (event: { readonly type: string; readonly data: unknown }): string | undefined => {
+  const data = event.data as Record<string, unknown> | null
+  if (event.type === "tool.execution_start" && typeof data?.toolName === "string") return `Tool: ${data.toolName}`
+  if (event.type === "assistant.message" && typeof data?.content === "string" && data.content.trim() !== "")
+    return data.content.trim()
+  if (event.type === "session.error" && typeof data?.message === "string") return `Error: ${data.message}`
+  return undefined
+}
+
+/**
+ * Runs the prompt as a full Copilot agent in the repository. Every tool and
+ * permission request is approved: the user chose this runner for that reason.
+ */
+export const runGuideOptimizeSdk = async (options: GuideOptimizeSdkOptions): Promise<void> => {
+  const copilotCliPath = findExecutableOnPath("copilot")
+  const client = (options.clientFactory ?? ((config) => new CopilotClient(config)))({
+    mode: "copilot-cli",
+    ...(copilotCliPath === undefined ? {} : { connection: RuntimeConnection.forStdio({ path: copilotCliPath }) }),
+    workingDirectory: options.cwd,
+    logLevel: "none",
   })
+  let session: GuideOptimizeSdkSession | undefined
+  const abort = () => void session?.abort()
+  options.signal.addEventListener("abort", abort, { once: true })
+  try {
+    await client.start()
+    options.signal.throwIfAborted()
+    session = await client.createSession({
+      clientName: "trellage-trx-optimize",
+      model: options.model.model,
+      reasoningEffort: options.model.effort,
+      workingDirectory: options.cwd,
+      streaming: false,
+      ...(options.skillDirectory === undefined ? {} : { skillDirectories: [options.skillDirectory] }),
+      onPermissionRequest: approveAll,
+    })
+    session.on((event) => {
+      const text = activityText(event)
+      if (text !== undefined) options.onActivity(text)
+    })
+    options.signal.throwIfAborted()
+    await session.sendAndWait({ prompt: options.prompt }, options.timeoutMs ?? 3_600_000)
+  } finally {
+    options.signal.removeEventListener("abort", abort)
+    const errors: unknown[] = []
+    if (session !== undefined) await runCleanupStep(errors, () => session!.disconnect())
+    await runCleanupStep(errors, () => client.stop())
+    if (errors.length > 0 && !options.signal.aborted) throw new AggregateError(errors, "Copilot SDK cleanup failed.")
+  }
 }

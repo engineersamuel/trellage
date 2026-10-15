@@ -20,7 +20,7 @@ export { findTrellageRoot }
 
 const launchGuide = (root, env, optimize) =>
   new Promise((resolve, reject) => {
-    const child = spawn("mise", ["run", "--raw", "trx", "--", "guide", ...(optimize ? ["--optimize"] : [])], {
+    const child = spawn("mise", ["run", "--raw", "trx", "--", "guide", ...(optimize ? ["--review"] : [])], {
       cwd: root,
       env,
       shell: false,

@@ -49,8 +49,8 @@ import { JevGuideMatcher } from "./jev-guide-matcher.ts"
 import { adoptPrivateJevApiKey } from "./jev-decisions.ts"
 import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
 import { GuideApp, type GuideUiProps, type GuideUiResult } from "./guide-ui.tsx"
-import { createGuideOptimizeServices } from "./guide-optimize.ts"
-import { GuideOptimizeApp } from "./guide-optimize-ui.tsx"
+import { createGuideReviewServices } from "./review-services.ts"
+import { GuideReviewApp } from "./review-flow-ui.tsx"
 import { ContinuationApp } from "./continuation-ui.tsx"
 import { ContinuationStore } from "./continuation-store.ts"
 import { ContinuationSourceClient } from "./continuation-source-client.ts"
@@ -688,6 +688,18 @@ interface InteractiveTerminalStreams {
   readonly close: () => void
 }
 
+/**
+ * Ink leaves stdin in flowing mode after it unmounts. A paused, listener-free
+ * stdin lets a launched child harness receive every key from the terminal.
+ */
+const releaseStdin = (): void => {
+  if (process.stdin.isTTY) process.stdin.setRawMode(false)
+  process.stdin.removeAllListeners("data")
+  process.stdin.removeAllListeners("readable")
+  process.stdin.pause()
+  process.stdin.unref()
+}
+
 const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
   let input: NodeJS.ReadStream | undefined
   try {
@@ -699,6 +711,7 @@ const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
       output,
       close: () => {
         if (openedInput !== process.stdin) openedInput.destroy()
+        else releaseStdin()
         if (output !== process.stderr) output.destroy()
       },
     }
@@ -732,7 +745,7 @@ const completeInteractiveGuideResult = async (
   })
 }
 
-const isChangeReview = (args: ReturnType<typeof parseGuideHeadlessArgv>): boolean => Boolean(args.optimize || args.review)
+const isChangeReview = (args: ReturnType<typeof parseGuideHeadlessArgv>): boolean => Boolean(args.review)
 const reviewModelOverrides = (
   args: ReturnType<typeof parseGuideHeadlessArgv>, routing: ReturnType<typeof resolveGuideModelRouting>,
 ) => ({
@@ -822,6 +835,7 @@ const runInteractiveGuideMode = async (
         herdrAvailabilityProbe={herdrAvailabilityProbe}
         {...(initialIntent === undefined ? {} : { initialIntent })}
         {...(args.uiVariant === undefined ? {} : { uiVariant: args.uiVariant })}
+        {...(args.optimize ? { openOptimize: true } : {})}
       />,
       {
         stdin: input,
@@ -931,14 +945,13 @@ const runOptimizeMode = async (argv: ReadonlyArray<string>, catalog?: ReturnType
     ...(args.model === undefined ? {} : { model: args.model }),
     ...(args.effort === undefined ? {} : { effort: args.effort }),
   }, process.env)
-  const services = createGuideOptimizeServices({ runner, cwd, context, catalog: catalog ?? readGuideCatalog(), routing,
-    entry: args.review ? "review" : "optimize",
+  const services = createGuideReviewServices({ runner, cwd, context, catalog: catalog ?? readGuideCatalog(), routing,
     modelOverrides: reviewModelOverrides(args, routing),
   })
   const terminal = openInteractiveTerminalStreams()
   let result: GuideUiResult
   try {
-    const instance = render(<GuideOptimizeApp services={services} originalIntent={originalIntent} initialBase={args.optimizeBase} />, {
+    const instance = render(<GuideReviewApp services={services} originalIntent={originalIntent} initialBase={args.reviewBase} />, {
       stdin: terminal.input,
       stdout: terminal.output,
       interactive: true,

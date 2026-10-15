@@ -1,7 +1,7 @@
 import { constants } from "node:fs"
 import { lstat, open, readdir } from "node:fs/promises"
 import path from "node:path"
-import { optimizeDigest } from "./guide-optimize-evidence.ts"
+import { optimizeDigest } from "./review-source.ts"
 import type { ReviewArtifact } from "./review-contracts.ts"
 import { reviewCheckCatalog } from "./review-catalog.ts"
 

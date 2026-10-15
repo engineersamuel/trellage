@@ -9,20 +9,19 @@ import * as launchTransport from "../src/guide-launch.ts"
 import * as planningReadiness from "../src/guide-preflight.ts"
 import { executeReviewPlanTerminal, executeReviewPlanWorktree } from "../src/review-planning.ts"
 import {
-  buildGuideOptimizePrompt,
-  createGuideOptimizeServices,
-  executeGuideOptimizeTerminal,
-  runGuideOptimizeReview,
-  type GuideOptimizeDependencies,
-  type GuideOptimizeRequest,
-} from "../src/guide-optimize.ts"
+  buildGuideReviewPrompt,
+  createGuideReviewServices,
+  executeGuideReviewTerminal,
+  type GuideReviewDependencies,
+  type GuideReviewRequest,
+} from "../src/review-services.ts"
 import { ProfileReadinessKind } from "../src/guide-preflight.ts"
 import { fixtureProfile, guideSource } from "./fixtures/guide-integration-data.ts"
-import { fixtureOptimizeModel } from "./fixtures/guide-optimize-model.ts"
 import { SharedReviewStore as OptimizeReviewStore } from "../src/review-store.ts"
-import { OptimizeReviewStore as LegacyStore } from "../src/guide-optimize-store.ts"
-import { resolveGuideModelRouting } from "../src/guide-api.ts"
-import { optimizeApproval, optimizeReviewDocument, sharedReviewDocument } from "../src/guide-optimize-review.ts"
+import { assignReviewModels } from "../src/review-catalog.ts"
+import { captureSharedReviewEvidence, reviewExecutionPolicy } from "../src/review-evidence.ts"
+import type { ReviewRun } from "../src/review-contracts.ts"
+import { optimizeDigest } from "../src/review-source.ts"
 import { reviewAuthority } from "../src/review-view-model.ts"
 
 const roots: string[] = []
@@ -67,7 +66,7 @@ const catalog = parseGuideCatalog(
   }),
 )
 
-const fixture = async (namespace: "legacy" | "shared" = "shared") => {
+const fixture = async () => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), "guide-optimize-execution-")))
   roots.push(root)
   const realRunner = createNodeCommandRunner()
@@ -108,13 +107,12 @@ const fixture = async (namespace: "legacy" | "shared" = "shared") => {
   await writeFile(path.join(root, "code.ts"), "staged\n")
   await git("add", "code.ts")
   await writeFile(path.join(root, "code.ts"), "after\n")
-  const list = vi.fn<NonNullable<GuideOptimizeDependencies["listAgents"]>>(async () => [])
-  const readiness = vi.fn<NonNullable<GuideOptimizeDependencies["readiness"]>>(async () => ({
+  const list = vi.fn<NonNullable<GuideReviewDependencies["listAgents"]>>(async () => [])
+  const readiness = vi.fn<NonNullable<GuideReviewDependencies["readiness"]>>(async () => ({
     kind: ProfileReadinessKind.Ready,
     summary: "Ready",
   }))
-  const modelCall = vi.fn<typeof fixtureOptimizeModel>(fixtureOptimizeModel)
-  const processReader = vi.fn<NonNullable<GuideOptimizeDependencies["processReader"]>>(async () => ({
+  const processReader = vi.fn<NonNullable<GuideReviewDependencies["processReader"]>>(async () => ({
     pane_id: "w1:origin",
     foreground_processes: [{ pid: process.pid }],
   }))
@@ -129,24 +127,48 @@ const fixture = async (namespace: "legacy" | "shared" = "shared") => {
       capture: { source: "conversation-transcript" as const, confidence: "exact" as const, sessionId: "unavailable" },
     },
     catalog,
-    dependencies: { listAgents: list, readiness, modelCall, processReader },
+    dependencies: { listAgents: list, readiness, processReader },
     env: { HERDR_SOCKET_PATH: "/fixture/unavailable-socket" },
   }
-  const services = createGuideOptimizeServices(options)
+  const services = createGuideReviewServices(options)
   const signal = new AbortController().signal
-  const approve = async (): Promise<GuideOptimizeRequest> => {
+  const savedReview = async (input: { target: GuideReviewRequest["target"]; paths: ReadonlyArray<string>;
+    originalIntent: string; intent: string }): Promise<ReviewRun> => {
+    const request = { target: input.target, paths: input.paths, originalIntent: input.originalIntent, intent: input.intent,
+      checks: assignReviewModels(["ponytail"]), coordinator: { model: "gpt-6-sol", effort: "low" as const } }
+    const evidence = await captureSharedReviewEvidence(runner, request, signal)
+    const diff = evidence.source.sources[0]!
+    const run: ReviewRun = {
+      schemaVersion: 2, id: crypto.randomUUID(), createdAt: new Date().toISOString(), request, evidence,
+      policy: reviewExecutionPolicy(["ponytail"], evidence.source),
+      status: "complete", synthesisStatus: "complete",
+      results: [{ id: "ponytail", status: "complete", reportId: "ponytail:report", limitations: [], findings: [{
+        id: "ponytail:1", checkId: "ponytail", reportId: "ponytail:report", sourceId: "1",
+        title: "Keep the retry bound", proposal: "Keep the retry bound at three attempts.",
+        benefit: "Preserves behavior.", risk: "None.", verification: "Run the retry tests.", paths: ["code.ts"],
+        citations: [{ source: diff.id, startLine: 1, endLine: 1, quote: diff.content.split("\n")[0]! }], grounded: true,
+      }] }],
+      artifacts: [{ id: "ponytail:report", checkId: "ponytail", name: "ponytail.md", content: "Keep the retry bound.",
+        digest: optimizeDigest("Keep the retry bound.") }],
+      challenges: [],
+      decisions: [{ findingId: "ponytail:1", disposition: "recommended", reason: "Grounded in the diff." }],
+      summary: "Review completed.", error: null, calls: 1, approvedIds: [], execution: "not-started",
+    }
+    const store = new OptimizeReviewStore(input.target.gitDirectory)
+    await store.save({ ...run, status: "running" })
+    await store.save(run)
+    return run
+  }
+  const approve = async (): Promise<GuideReviewRequest> => {
     const input = {
       target: await services.inspect({ kind: "branch", baseRef: "base" }, signal),
       paths: ["code.ts"],
-      reviewerIds: ["first-principles", "behavior-preservation"],
+      reviewerIds: ["ponytail"],
       originalIntent: "  Preserve behavior.\r\nDo not remove the retry bound.  ",
       intent: "Approved goal: at most three attempts.",
     }
-    const review = namespace === "shared"
-      ? await services.review(input, signal, () => {})
-      : await runGuideOptimizeReview(options, resolveGuideModelRouting({}, {}), input, signal, () => {})
-    if (review.status !== "complete") throw new Error(review.error ?? "Review did not complete.")
-    const approval = await services.approve(review.id, ["first-principles:1"], signal)
+    const review = await savedReview(input)
+    const approval = await services.approve(review.id, ["ponytail:1"], signal)
     return { ...input, approval, destination: "pane", otherEditorsStopped: true }
   }
   const request = await approve()
@@ -159,7 +181,6 @@ const fixture = async (namespace: "legacy" | "shared" = "shared") => {
     launch,
     list,
     readiness,
-    modelCall,
     processReader,
     options,
     services,
@@ -170,9 +191,9 @@ const fixture = async (namespace: "legacy" | "shared" = "shared") => {
 }
 
 describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
-  it.each(["legacy", "shared"] as const)(
-    "keeps %s history, display, planning and one-use execution bound to its saved authority", async (namespace) => {
-      const f = await fixture(namespace)
+  it("keeps history, display, planning and one-use execution bound to its saved authority", async () => {
+      const namespace = "shared"
+      const f = await fixture()
       const id = f.request.approval.reviewId
       const authority = await reviewAuthority(f.request.target.gitDirectory, id)
       expect(authority.namespace).toBe(namespace)
@@ -181,15 +202,8 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       expect(reopened.schemaVersion).toBe(2)
       expect(reopened).not.toHaveProperty("shared")
       expect(reopened).not.toHaveProperty("reports")
-      if (namespace === "legacy") {
-        const original = await new LegacyStore(f.request.target.gitDirectory).read(id)
-        expect(f.request.approval.reviewDigest).toBe(optimizeApproval(original, original.approvedIds).reviewDigest)
-        expect(sharedReviewDocument(reopened)).toBe(optimizeReviewDocument(original))
-      } else {
-        expect(reopened).toEqual(await new OptimizeReviewStore(f.request.target.gitDirectory).read(id))
-        expect(reopened.artifacts.some((artifact) => artifact.id === "synthesis:legacy-document")).toBe(false)
-      }
-      const services = createGuideOptimizeServices({
+      expect(reopened).toEqual(await new OptimizeReviewStore(f.request.target.gitDirectory).read(id))
+      const services = createGuideReviewServices({
         ...f.options, catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
       })
       const result = await services.plan!(reopened, "terminal", f.signal)
@@ -202,7 +216,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       try {
         await executeReviewPlanTerminal(result, f.runner)
         expect(interactive.mock.calls[0]![0].args.join(" "))
-          .toContain(namespace === "legacy" ? "trellage-optimize-reviews" : "trellage-reviews")
+          .toContain("trellage-reviews")
       } finally { readiness.mockRestore(); interactive.mockRestore() }
       const tampered = { ...f.request.approval,
         findings: f.request.approval.findings.map((finding) => ({ ...finding, proposal: "Unauthorized change" })) }
@@ -213,26 +227,14 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       await expect(f.services.execute(f.request, "native:copilot/reviewer", f.signal)).rejects.toThrow(/launch|execution/u)
       expect(f.launch).toHaveBeenCalledOnce()
       expect((await f.services.readReview(id, f.signal)).execution).toBe("launched")
-    },
-  )
+  })
 
-  it("rejects ambiguous record IDs and never falls back from a malformed shared record", async () => {
-    const f = await fixture("legacy")
+  it("never falls back from a malformed shared record", async () => {
+    const f = await fixture()
     const id = f.request.approval.reviewId
-    const directory = f.request.target.gitDirectory
-    const shared = await f.services.review({ ...f.request, reviewerIds: ["first-principles"] }, f.signal, () => {})
-    const sharedDirectory = path.join(directory, "trellage-reviews")
-    const store = new OptimizeReviewStore(directory)
-    await store.save({ ...shared, id, status: "running", results: [], artifacts: [], challenges: [],
-      decisions: [], approvedIds: [], execution: "not-started", synthesisStatus: "queued" })
-    await expect(f.services.readReview(id, f.signal)).rejects.toThrow("ambiguous")
-    expect((await new LegacyStore(directory).read(id)).schemaVersion).toBe(1)
-    await rm(path.join(directory, "trellage-optimize-reviews", `${id}.snapshot.json`))
-    await expect(f.services.readReview(id, f.signal)).rejects.toThrow("ambiguous")
-    await rm(path.join(sharedDirectory, `${id}.json`))
-    await expect(f.services.readReview(id, f.signal)).rejects.toMatchObject({ code: "ENOENT" })
-    await writeFile(path.join(sharedDirectory, `${shared.id}.json`), "{invalid", { mode: 0o600 })
-    await expect(f.services.readReview(shared.id, f.signal)).rejects.toThrow()
+    const sharedDirectory = path.join(f.request.target.gitDirectory, "trellage-reviews")
+    await writeFile(path.join(sharedDirectory, `${id}.json`), "{invalid", { mode: 0o600 })
+    await expect(f.services.readReview(id, f.signal)).rejects.toThrow()
   })
 
   it("plans incomplete reports in the terminal but never copies dirty changes to a new worktree", async () => {
@@ -243,7 +245,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       error: "One check did not finish." }
     await store.save({ ...incomplete, status: "running" })
     await store.save(incomplete)
-    const services = createGuideOptimizeServices({
+    const services = createGuideReviewServices({
       ...f.options, catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
     })
     const result = await services.plan!(incomplete, "terminal", f.signal)
@@ -273,7 +275,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     const discover = vi.fn<CommandRunner["run"]>(async () => ({
       stdout: JSON.stringify(catalog), stderr: "", exitCode: 0,
     }))
-    const services = createGuideOptimizeServices({
+    const services = createGuideReviewServices({
       cwd: process.cwd(), context: null, runner: { run: discover },
       catalog: { ...catalog, native: [] },
       env: { TRELLAGE_REVIEW_PROFILE_COMMAND: "/fixture/trx" },
@@ -288,7 +290,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
 
   it("requires saved approval for automatic hve and reserves its same-worktree tab once", async () => {
     const f = await fixture()
-    const services = createGuideOptimizeServices({
+    const services = createGuideReviewServices({
       ...f.options,
       catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
     })
@@ -316,15 +318,15 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     expect(f.list).not.toHaveBeenCalled()
     expect(f.readiness).not.toHaveBeenCalled()
     expect(f.calls.filter((call) => call.executable === "herdr")).toEqual([])
-    const prompt = buildGuideOptimizePrompt(f.request)
+    const prompt = buildGuideReviewPrompt(f.request)
     expect(prompt).toContain("Implement only the explicitly approved")
-    expect(prompt).toContain("Remove the redundant wrapper")
+    expect(prompt).toContain("Keep the retry bound at three attempts.")
     expect(prompt).toContain(`## Original task (unchanged)\n${f.request.originalIntent}`)
     expect(prompt).toContain("Approved goal: at most three attempts.")
     expect(prompt).toContain('"selectedPaths": [\n    "code.ts"\n  ]')
     expect(prompt).toContain("Do not stage, commit, stash, reset, or discard changes.")
     expect(prompt).not.toContain("sessionId")
-    expect(() => buildGuideOptimizePrompt({ ...f.request, paths: ["outside.ts"] })).toThrow("not part")
+    expect(() => buildGuideReviewPrompt({ ...f.request, paths: ["outside.ts"] })).toThrow("not part")
   })
 
   it("starts a fresh agent through normal argv delivery in the same worktree and preserves staging", async () => {
@@ -369,7 +371,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     f.split.mockImplementationOnce(async () => {
       f.list.mockResolvedValue([caller, { pane_id: "w1:new", agent: "copilot", agent_status: "unknown", cwd: f.root }])
     })
-    const services = createGuideOptimizeServices({
+    const services = createGuideReviewServices({
       ...f.options,
       context: { ...f.options.context, surface: "pane" },
     })
@@ -387,7 +389,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       { pane_id: "w1:origin", agent: "copilot", agent_status: "unknown", cwd: f.root },
       { pane_id: "w1:other", agent: "copilot", agent_status: "working", cwd: f.root },
     ])
-    const services = createGuideOptimizeServices({
+    const services = createGuideReviewServices({
       ...f.options,
       context: { ...f.options.context, surface: "pane" },
     })
@@ -404,7 +406,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       pane_id: "w1:origin",
       foreground_processes: [{ pid: process.pid + 1 }],
     })
-    const services = createGuideOptimizeServices({
+    const services = createGuideReviewServices({
       ...f.options,
       context: { ...f.options.context, surface: "pane" },
     })
@@ -414,7 +416,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
 
   it("fails closed when foreground process ownership cannot be verified", async () => {
     const f = await fixture()
-    const services = createGuideOptimizeServices({
+    const services = createGuideReviewServices({
       ...f.options,
       context: { ...f.options.context, surface: "pane" },
     })
@@ -544,9 +546,9 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
           runs.push({ command, cwd: options.cwd })
         })
       try {
-        const result = await executeGuideOptimizeTerminal(
+        const result = await executeGuideReviewTerminal(
           {
-            action: "optimize-terminal",
+            action: "review-terminal",
             request: { ...f.request, destination: "terminal" },
             selectedProfile: {
               ...profile.profile,
@@ -566,7 +568,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
           {
             command: {
               executable: `/fixture/${launcher}`,
-              args: ["run", launcher, "reviewer", promptFlag, buildGuideOptimizePrompt(f.request)],
+              args: ["run", launcher, "reviewer", promptFlag, buildGuideReviewPrompt(f.request)],
             },
             cwd: f.root,
           },
@@ -595,7 +597,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       },
     }
     await expect(f.services.execute(altered, "native:copilot/reviewer", f.signal)).rejects.toThrow("Approval differs")
-    expect(saved.approvedIds).toEqual(["first-principles:1"])
+    expect(saved.approvedIds).toEqual(["ponytail:1"])
     expect(f.launch).not.toHaveBeenCalled()
   })
 
@@ -625,42 +627,5 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       ["tab", "create"],
       ["pane", "run"],
     ])
-  })
-
-  it.each(["pane", "tab"] as const)("rechecks hidden related context after %s allocation", async (destination) => {
-    const f = await fixture()
-    await writeFile(path.join(f.root, "context.ts"), "original context\n")
-    await f.git("add", "context.ts")
-    await f.git("commit", "--quiet", "-m", "Context")
-    await f.git("branch", "-f", "base", "HEAD")
-    await f.git("update-index", "--assume-unchanged", "context.ts")
-    const request = { ...(await f.approve()), destination }
-    f.split.mockImplementationOnce(async () => {
-      await writeFile(path.join(f.root, "context.ts"), "unreviewed context\n")
-    })
-    const paneId = destination === "pane" ? "w1:new" : "w1:tab"
-    await expect(f.services.execute(request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
-      `New agent pane ${paneId} remains open. Review context changed. Run a new review before implementation. Inspect it before retrying; no automatic resend.`,
-    )
-    expect(f.split).toHaveBeenCalledOnce()
-    expect(f.launch).not.toHaveBeenCalled()
-    expect(
-      f.calls.some((call) => call.executable === "herdr" && call.args[0] === "pane" && call.args[1] === "run"),
-    ).toBe(false)
-    expect((await f.services.readReview(request.approval.reviewId, f.signal)).execution).toBe("not-started")
-  })
-
-  it("detects changed related context even when Git hides its worktree changes", async () => {
-    const f = await fixture()
-    await writeFile(path.join(f.root, "context.ts"), "original context\n")
-    await f.git("add", "context.ts")
-    await f.git("commit", "--quiet", "-m", "Context")
-    const request = await f.approve()
-    await f.git("update-index", "--assume-unchanged", "context.ts")
-    await writeFile(path.join(f.root, "context.ts"), "unreviewed context\n")
-    await expect(f.services.execute(request, "native:copilot/reviewer", f.signal)).rejects.toThrow(
-      /Review context changed|worktree or comparison base changed/u,
-    )
-    expect(f.launch).not.toHaveBeenCalled()
   })
 })

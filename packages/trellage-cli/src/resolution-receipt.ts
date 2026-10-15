@@ -5,10 +5,10 @@ import path from "node:path"
 import { Data, Effect } from "effect"
 
 import { parseLock, renderLock } from "./lock-file.ts"
-import { attachedSidecar, profileHash, withAttachedSidecar, type ProfileLock } from "./lock.ts"
+import { profileHash, withAttachedSidecar, type ProfileLock } from "./lock.ts"
 import { platformIdentity, platformLockPath, type Platform } from "./platform.ts"
 import type { ProfileDocument } from "./profile.ts"
-import { loadResolutionSidecar, resolutionSidecarPath, writeResolutionSidecar } from "./resolution-sidecar-storage.ts"
+import { loadResolutionSidecar, publishAttachedSidecar, resolutionSidecarPath } from "./resolution-sidecar-storage.ts"
 
 export const developmentResolutionPolicy = "floating-stable" as const
 export type DevelopmentResolutionPolicy = typeof developmentResolutionPolicy
@@ -180,19 +180,9 @@ export const writeResolutionReceipt = (
 ): Effect.Effect<void, ResolutionReceiptError> =>
   Effect.gen(function* () {
     const receiptPath = resolutionReceiptPath(document, lock.platform, xdgCacheHome)
-    const sidecar = attachedSidecar(lock)
-    if (sidecar !== undefined) {
-      const reference = yield* writeResolutionSidecar(receiptPath, sidecar).pipe(
-        Effect.mapError((cause) => new ResolutionReceiptError({ message: cause.message, cause })),
-      )
-      if (
-        lock.sidecar === undefined ||
-        reference.integrity !== lock.sidecar.integrity ||
-        reference.size !== lock.sidecar.size
-      ) {
-        return yield* Effect.fail(new ResolutionReceiptError({ message: "resolution sidecar reference mismatch" }))
-      }
-    }
+    yield* publishAttachedSidecar(receiptPath, lock).pipe(
+      Effect.mapError((cause) => new ResolutionReceiptError({ message: cause.message, cause })),
+    )
     yield* writeResolutionReceiptBytes(document, lock.platform, xdgCacheHome, renderLock(lock))
   })
 
