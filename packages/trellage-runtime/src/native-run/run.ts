@@ -52,7 +52,7 @@ export const RUN_USAGE = `Usage:
           [--no-always] [--skill OWNER/REPO:NAME]... [--require-proven-isolation]
           [--continue | --resume[=ID]] [-- <harness-args>]
 
-Harnesses: agency, claude, codex, copilot, firstmate, fx, grok, jcode, omp, pi, prime.
+Harnesses: agency, claude, codex, copilot, firstmate, fx, grok, jcode, omp, pi, prime, uji.
 Profiles come from ~/.config/trellage/config.toml.
 Profiles with always = true are added to every run; --no-always skips them. --dry-run prepares the composition and
 prints the launch plan without starting the harness. --skill adds one skill from a GitHub repository without a
@@ -522,7 +522,8 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
     skillsSubdirectory: adapter.skillsSubdirectory,
     instructionsFile: adapter.instructionsFile,
     persistentState: adapter.persistentState,
-    writeAdapterFiles: (stage, generationLayout) => adapter.writeAdapterFiles(stage, options.model, generationLayout),
+    writeAdapterFiles: (stage, generationLayout) =>
+      adapter.writeAdapterFiles(stage, options.model, generationLayout, plan),
   })
   for (const source of plan.sources) await resolver.markGood(source)
   await pruneGenerations(paths, layout.ownerHome, 3, plan.generationId)

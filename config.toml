@@ -430,3 +430,7 @@ harnesses = [ "pi" ]
 [native.profiles.preset-prime-default]
 label = "prime / default"
 harnesses = [ "prime" ]
+
+[native.profiles.preset-uji-default]
+label = "uji / default"
+harnesses = [ "uji" ]

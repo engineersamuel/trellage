@@ -704,13 +704,13 @@ case "${1-}" in
         mode='compose-select'
         compose_args=("$@")
         ;;
-      pi|copilot|claude|codex|grok|agency|firstmate|fx|jcode|omp|prime|-h|--help|help)
+      pi|copilot|claude|codex|grok|agency|firstmate|fx|jcode|omp|prime|uji|-h|--help|help)
         mode='compose'
         compose_args=("$@")
-        [[ "${1-}" == pi || "${1-}" == copilot || "${1-}" == claude || "${1-}" == codex || "${1-}" == grok || "${1-}" == agency || "${1-}" == firstmate || "${1-}" == fx || "${1-}" == jcode || "${1-}" == omp || "${1-}" == prime ]] \
+        [[ "${1-}" == pi || "${1-}" == copilot || "${1-}" == claude || "${1-}" == codex || "${1-}" == grok || "${1-}" == agency || "${1-}" == firstmate || "${1-}" == fx || "${1-}" == jcode || "${1-}" == omp || "${1-}" == prime || "${1-}" == uji ]] \
           || compose_args=(--help)
         ;;
-      *) die "unknown harness: $1; use: trx run copilot|codex|claude|agency|firstmate|fx|jcode|omp|pi|prime|grok PROFILE" ;;
+      *) die "unknown harness: $1; use: trx run copilot|codex|claude|agency|firstmate|fx|jcode|omp|pi|prime|grok|uji PROFILE" ;;
     esac
     ;;
   --profile|--profile=*)

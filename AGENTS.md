@@ -9,7 +9,7 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - Trellage Sandbox profiles describe reproducible container environments.
 - The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
 - Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
-- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `firstmate`, `jcode`, `omp`, `pi`, `prime`, and `grok`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
+- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `firstmate`, `jcode`, `omp`, `pi`, `prime`, `grok`, and `uji`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
@@ -106,6 +106,7 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - `packages/trellage-runtime` contains shared Bun execution and source-runtime support.
 - `prototypes/trellage` contains the Trellage Sandbox launcher and container runtime entrypoints.
 - `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`agx`, `cdx`, `cpx`, `cldx`, `fmx`, `jcx`, `omp`, `picx`, `prx`).
+- Uji runs through `trx run uji default` and routes to the local `copilot-proxy-rs` endpoint; its generated config, selected skills, custom tools, and session database are profile-scoped, while Uji credentials remain in its normal data directory. The tracked Lua tools are copied from `packages/trellage-runtime/src/native-run/uji-tools.lua`; their content hash invalidates the generated configuration when they change. Uji defaults to `uji.tool.policy({ default = "allow" })`, so its tools run without per-call approval and are not sandboxed.
 - `profiles` contains concrete locked profile definitions.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, symlink, unlink, writeFile } from "node:fs/promises"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -102,7 +102,12 @@ export interface NativeAdapter {
   readonly policyVersion: string
   readonly providerPolicy: (model: string | undefined) => string
   readonly effectivePolicy: (model: string | undefined, effort: string | undefined) => EffectivePolicy
-  readonly writeAdapterFiles: (stage: string, model: string | undefined, layout: GenerationLayout) => Promise<void>
+  readonly writeAdapterFiles: (
+    stage: string,
+    model: string | undefined,
+    layout: GenerationLayout,
+    plan?: CompositionPlan,
+  ) => Promise<void>
   /** Marks the workspace as trusted in the generation so the harness starts without a trust prompt. */
   readonly trustWorkspace?: (layout: GenerationLayout, workspace: string) => Promise<void>
   /** Generation-relative directories holding conversations, kept across generations. */
@@ -322,6 +327,50 @@ const unprovenEvidence = (detail: string): IsolationStatus => ({
   status: "unproven",
   evidence: detail,
 })
+
+const luaStringLiteral = (value: string): string => {
+  let literal = '"'
+  for (const character of value) {
+    switch (character) {
+      case "\\":
+        literal += "\\\\"
+        break
+      case '"':
+        literal += '\\"'
+        break
+      case "\n":
+        literal += "\\n"
+        break
+      case "\r":
+        literal += "\\r"
+        break
+      case "\t":
+        literal += "\\t"
+        break
+      default: {
+        const codepoint = character.codePointAt(0)!
+        literal += codepoint < 0x20 || codepoint === 0x7f ? `\\${codepoint.toString().padStart(3, "0")}` : character
+      }
+    }
+  }
+  return `${literal}"`
+}
+
+const UJI_PROXY_PROVIDER = "copilot-proxy-rs"
+const UJI_PROXY_BASE_URL = "http://127.0.0.1:8080/v1"
+const UJI_PROXY_API_KEY = "trellage-local-proxy"
+const UJI_PROXY_DEFAULT_MODEL = "gpt-6-astra"
+const UJI_TOOLS_SOURCE = new URL("./uji-tools.lua", import.meta.url)
+const UJI_TOOLS_CONTENT = readFileSync(UJI_TOOLS_SOURCE)
+const UJI_TOOLS_POLICY = `uji-allow-all-${createHash("sha256").update(UJI_TOOLS_CONTENT).digest("hex")}`
+
+const ujiModelSelection = (model: string | undefined): string => {
+  const selection = model ?? `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`
+  const separator = selection.indexOf("/")
+  if (separator < 1 || separator === selection.length - 1 || selection.slice(0, separator) !== UJI_PROXY_PROVIDER)
+    throw new NativeRunError("usage", `Uji models must use ${UJI_PROXY_PROVIDER}/ID format`)
+  return selection
+}
 
 const selectedPreset = (plan: CompositionPlan, harness: string, fallback: string): string => {
   const prefix = `preset-${harness}-`
@@ -1661,6 +1710,7 @@ export const hostDefaults = (harness: string, home: string = os.homedir()): Host
   if (harness === "omp") return { model: "gpt-5.6-sol", effort: "medium" }
   if (harness === "prime") return { model: "claude-opus-5", effort: undefined }
   if (harness === "firstmate") return { model: "claude-opus-5.5", effort: undefined }
+  if (harness === "uji") return { model: `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`, effort: undefined }
   if (harness === "copilot") {
     const settings = readStructured(path.join(home, ".copilot", "settings.json"), "json")
     return { model: text(settings.model), effort: valid(text(settings.effortLevel)) }
@@ -1677,6 +1727,86 @@ export const hostDefaults = (harness: string, home: string = os.homedir()): Host
   return { model: text(settings.model), effort: valid(text(settings.model_reasoning_effort)) }
 }
 
+export const ujiAdapter: NativeAdapter = {
+  id: "uji",
+  label: "Uji",
+  isolation: unprovenEvidence(
+    "Uji uses a generated config and selected skill roots; broader workspace and tool isolation has not been verified",
+  ),
+  skillsSubdirectory: "skills",
+  instructionsFile: "TRELLAGE_INSTRUCTIONS.md",
+  efforts: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+  policyVersion: UJI_TOOLS_POLICY,
+  providerPolicy: (model) => ujiModelSelection(model),
+  effectivePolicy: (model, effort) => ({
+    normal: `${ujiModelSelection(model)}${effort ? ` · effort ${effort}` : ""}`,
+    plan: "same model and effort · Trellage planning instructions",
+  }),
+  managedFlags: ["--model", "--effort", "--config-dir", "--data-dir", "--db"],
+  writeAdapterFiles: async (stage, model, layout, plan) => {
+    await mkdir(stage, { recursive: true })
+    const pluginDirectory = path.join(stage, "plugin")
+    await mkdir(pluginDirectory, { recursive: true })
+    await writeFile(path.join(pluginDirectory, "trellage-tools.lua"), UJI_TOOLS_CONTENT, { mode: 0o600 })
+    const instructions = plan?.instructions.map((instruction) => instruction.text.trim()).filter(Boolean) ?? []
+    const manualSkills = plan?.skills.filter((skill) => skill.manualOnly).map((skill) => skill.name) ?? []
+    const selectedModel = ujiModelSelection(model).slice(UJI_PROXY_PROVIDER.length + 1)
+    const config = [
+      'require("uji.builtin.defaults")',
+      'uji.tool.policy({ default = "allow" })',
+      'uji.pack.add({ "uji-labs/uji-plugins" })',
+      `require("skills").setup({ roots = { ${luaStringLiteral(path.join(layout.generationPath, "skills"))} } })`,
+      "uji.provider.add({",
+      `  id = ${luaStringLiteral(UJI_PROXY_PROVIDER)},`,
+      `  name = ${luaStringLiteral(UJI_PROXY_PROVIDER)},`,
+      "  api = uji.api.responses(),",
+      `  base_url = ${luaStringLiteral(UJI_PROXY_BASE_URL)},`,
+      '  auth_env = { "OPENAI_API_KEY" },',
+      `  models = { { id = ${luaStringLiteral(selectedModel)} } },`,
+      "})",
+      ...(instructions.length > 0
+        ? [
+            `uji.context.add("trellage-instructions", function() return ${luaStringLiteral(instructions.join("\n\n"))} end, { priority = 10 })`,
+          ]
+        : []),
+      ...(manualSkills.length > 0
+        ? [
+            `uji.context.add("trellage-manual-skills", function() return ${luaStringLiteral(
+              `Only use these Trellage skills when the user explicitly asks to activate them: ${manualSkills.join(", ")}.`,
+            )} end, { priority = 30 })`,
+          ]
+        : []),
+      'local model = os.getenv("TRX_UJI_MODEL")',
+      'local effort = os.getenv("TRX_UJI_EFFORT")',
+      `model = model or ${luaStringLiteral(`${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`)}`,
+      'local provider, id = model:match("^([^/]+)/(.+)$")',
+      `if provider ~= ${luaStringLiteral(UJI_PROXY_PROVIDER)} or not id then error("TRX_UJI_MODEL must use ${UJI_PROXY_PROVIDER}/ID format") end`,
+      "uji.model.use({ provider = provider, model = id, effort = effort })",
+      'if os.getenv("TRX_UJI_PLAN") == "1" then',
+      '  uji.context.add("trellage-plan-mode", function() return "Planning mode: analyze the request and produce a plan. Do not modify files or run commands that change state." end, { priority = 90 })',
+      "end",
+      "",
+    ].join("\n")
+    await writeFile(path.join(stage, "init.lua"), config, { mode: 0o600 })
+  },
+  persistentState: [],
+  resumeArgs: (resume) =>
+    resume.kind === "continue" ? ["resume"] : resume.id ? ["resume", "--id", resume.id] : ["resume"],
+  launch: ({ layout, model, effort, forwardedArgs, resumeArgs, environment, planMode }) => ({
+    command: binary(environment, "TRELLAGE_UJI_BIN", "uji"),
+    args: [...(resumeArgs.length > 0 ? resumeArgs : ["new"]), ...forwardedArgs],
+    env: {
+      UJI_CONFIG_DIR: layout.generationPath,
+      UJI_DB: path.join(layout.sessionsPath, "uji.db"),
+      OPENAI_API_KEY: UJI_PROXY_API_KEY,
+      OPENAI_BASE_URL: null,
+      TRX_UJI_MODEL: model ?? null,
+      TRX_UJI_EFFORT: effort ?? null,
+      TRX_UJI_PLAN: planMode === true ? "1" : null,
+    },
+  }),
+}
+
 export const adapters: Readonly<Record<string, NativeAdapter>> = {
   agency: agencyAdapter,
   pi: piAdapter,
@@ -1689,6 +1819,7 @@ export const adapters: Readonly<Record<string, NativeAdapter>> = {
   prime: primeAdapter,
   grok: grokAdapter,
   fx: fxAdapter,
+  uji: ujiAdapter,
 }
 
 export const adapterFor = (harness: string): NativeAdapter => {

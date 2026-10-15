@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
+import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { chmod, mkdir, readFile, readdir, readlink, realpath, writeFile } from "node:fs/promises"
@@ -14,6 +15,7 @@ import {
   ompAdapter,
   PI_EXTENSION_PACKAGES,
   piExtensionEntries,
+  ujiAdapter,
   type LaunchInput,
 } from "../../src/native-run/adapters.ts"
 import {
@@ -134,6 +136,96 @@ test("Fx uses the canonical adapter with shared host context and plan defaults",
   await fxAdapter.beforeLaunch!(input)
   const settings = JSON.parse(await readFile(path.join(root, ".fx", "settings.json"), "utf8"))
   expect(settings.providers["trellage-copilot-proxy"].base_url).toBe("http://127.0.0.1:8080/v1")
+})
+
+test("Uji scopes its config, selected skills, and session database to the profile composition", async () => {
+  const { dependencies, root } = await world(`schema_version = 1
+  [native.sources.office-content]
+  repository = "example/office"
+  [native.instructions.policy]
+  file = "policy.md"
+  [native.profiles.office]
+  instructions = ["policy"]
+  skills = [{ source = "office-content", names = ["powerpoint"] }]
+  `)
+  await mkdir(path.join(root, ".codex"), { recursive: true })
+  await writeFile(path.join(root, ".codex", "config.toml"), 'model = "gpt-5.6-sol"\n')
+  const instruction = 'Keep "quoted" text.\nSecond line.\n'
+  await writeFile(path.join(root, "policy.md"), instruction)
+  const defaultPrepared = await prepareRun({ ...base, harness: "uji", profiles: ["default"] }, dependencies())
+  expect(defaultPrepared.launch.env.TRX_UJI_MODEL).toBe("copilot-proxy-rs/gpt-6-astra")
+  expect(defaultPrepared.launch.env.TRX_UJI_EFFORT).toBeNull()
+  const prepared = await prepareRun(
+    {
+      ...base,
+      harness: "uji",
+      profiles: ["default", "office"],
+      model: "copilot-proxy-rs/gpt-4.1",
+      effort: "high",
+      forwardedArgs: ["--help"],
+    },
+    dependencies(),
+  )
+  expect(prepared.launch.command).toBe("uji")
+  expect(prepared.launch.args).toEqual(["new", "--help"])
+  expect(prepared.launch.env).toMatchObject({
+    UJI_CONFIG_DIR: prepared.layout.generationPath,
+    UJI_DB: path.join(prepared.layout.sessionsPath, "uji.db"),
+    OPENAI_API_KEY: "trellage-local-proxy",
+    OPENAI_BASE_URL: null,
+    TRX_UJI_MODEL: "copilot-proxy-rs/gpt-4.1",
+    TRX_UJI_EFFORT: "high",
+  })
+  expect(prepared.launch.env.UJI_DATA_DIR).toBeUndefined()
+  expect(prepared.launch.env.TRX_UJI_PLAN).toBeNull()
+  expect(
+    await readFile(path.join(prepared.layout.generationPath, "skills", "powerpoint", "SKILL.md"), "utf8"),
+  ).toContain("powerpoint")
+  const config = await readFile(path.join(prepared.layout.generationPath, "init.lua"), "utf8")
+  const ujiTools = await readFile(path.join(prepared.layout.generationPath, "plugin", "trellage-tools.lua"), "utf8")
+  const ujiToolsSource = await readFile(new URL("../../src/native-run/uji-tools.lua", import.meta.url))
+  expect(ujiTools).toBe(ujiToolsSource.toString("utf8"))
+  expect(ujiAdapter.policyVersion).toBe(`uji-allow-all-${createHash("sha256").update(ujiToolsSource).digest("hex")}`)
+  expect(config).toContain('require("uji.builtin.defaults")')
+  expect(config).toContain('uji.tool.policy({ default = "allow" })')
+  expect(config).toContain('uji.pack.add({ "uji-labs/uji-plugins" })')
+  expect(config).toContain("api = uji.api.responses()")
+  expect(config).toContain('base_url = "http://127.0.0.1:8080/v1"')
+  expect(config).toContain('auth_env = { "OPENAI_API_KEY" }')
+  expect(config).toContain('models = { { id = "gpt-4.1" } }')
+  expect(config).toContain("uji.model.use({ provider = provider, model = id, effort = effort })")
+  expect(config).toContain(path.join(prepared.layout.generationPath, "skills"))
+  expect(config).toContain('Keep \\"quoted\\" text.\\nSecond line.')
+  expect(ujiTools).toContain('uji.tool.add("proxy_preflight"')
+  expect(ujiTools).toContain('uji.tool.add("repo_brief"')
+  expect(ujiTools).toContain('uji.tool.add("knowledge_search"')
+  expect(ujiTools).toContain('"http://127.0.0.1:8080/v1/models"')
+  expect(ujiTools).toContain('"secondbrain"')
+  expect(ujiTools).toContain('"outputs"')
+
+  const resumed = await prepareRun(
+    { ...base, harness: "uji", profiles: ["default"], resume: { kind: "pick", id: "session-123" } },
+    dependencies(),
+  )
+  expect(resumed.launch.args).toEqual(["resume", "--id", "session-123"])
+  expect(resumed.launch.env.UJI_DB).not.toBe(prepared.launch.env.UJI_DB)
+  expect(ujiAdapter.resumeArgs({ kind: "continue" })).toEqual(["resume"])
+})
+
+test("Uji requires provider/model syntax and reserves adapter-controlled flags", async () => {
+  const { dependencies } = await world()
+  await expect(
+    prepareRun({ ...base, harness: "uji", profiles: ["default"], model: "gpt-4.1" }, dependencies()),
+  ).rejects.toThrow(/copilot-proxy-rs\/ID/)
+  await expect(
+    prepareRun({ ...base, harness: "uji", profiles: ["default"], model: "openai/gpt-4.1" }, dependencies()),
+  ).rejects.toThrow(/copilot-proxy-rs\/ID/)
+  await expect(
+    prepareRun(
+      { ...base, harness: "uji", profiles: ["default"], forwardedArgs: ["--config-dir", "/tmp"] },
+      dependencies(),
+    ),
+  ).rejects.toThrow(/managed by the Uji adapter/)
 })
 
 test("canonical adapters launch agent executables instead of retired profile wrappers", async () => {
