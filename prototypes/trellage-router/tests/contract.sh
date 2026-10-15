@@ -422,6 +422,26 @@ if [[ "${1-}" == inventory && "${3-}" == --json ]]; then
     } + (if $launcher == "agx" then {authenticationMethod:"azure-cli"} else {} end)'
   exit 0
 fi
+if [[ "$(basename "$0")" == cldx && "${1-}" == _trx-admit ]]; then
+  [[ "${TRELLAGE_TRX_CLAUDE_ADAPTER:-0}" == 1 && "$#" -eq 2 ]] || exit 64
+  printf '{"pluginDir":null}\n'
+  exit 0
+fi
+if [[ "$(basename "$0")" == omp && "${1-}" == _trx-admit ]]; then
+  [[ "${TRELLAGE_TRX_OMP_ADAPTER:-0}" == 1 && "$#" -eq 2 ]] || exit 64
+  case "$2" in
+    default) omp_profile=trellage-copilot-native ;;
+    local) omp_profile=trellage-qwen-local ;;
+    *) exit 64 ;;
+  esac
+  jq -cn \
+    --arg executable "$runtime/bin/omp" \
+    --arg ompProfile "$omp_profile" \
+    --arg piConfigFiles "$runtime/omp-config.toml" \
+    --arg version "18.8.5" \
+    '{schemaVersion:1,executable:$executable,ompProfile:$ompProfile,piConfigFiles:$piConfigFiles,version:$version,copilotCredentialFile:null}'
+  exit 0
+fi
 profile="${1-}"
 shift || true
 if [[ -n "${TRX_ARGUMENT_LOG-}" ]]; then
@@ -1807,8 +1827,8 @@ import pathlib
 import sys
 
 actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
-# The direct adapter invokes the canonical executable with only its managed
-# safety flags and no invented passthrough argument.
+# Managed policy flags are expected; profile selection must not add an empty
+# passthrough argument.
 if actual != [
     b"claude",
     b"--dangerously-skip-permissions",
@@ -1816,6 +1836,10 @@ if actual != [
     b"bypassPermissions",
     b"--disallowedTools",
     b"AskUserQuestion",
+    b"--model",
+    b"opusplan",
+    b"--effort",
+    b"medium",
     b"",
 ]:
     print(f"actual={actual!r}", file=sys.stderr)
