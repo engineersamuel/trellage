@@ -511,6 +511,18 @@ const adHocSkillProfile = (catalog: NativeCatalog, skills: ReadonlyArray<string>
   }
 }
 
+const selectRunProfiles = async (native: NativeCatalog, adapter: NativeAdapter, options: RunOptions) => {
+  const adHoc = adHocSkillProfile(native, options.skills ?? [])
+  let catalog = adHoc?.catalog ?? native
+  const selectedProfiles = options.profiles.map((profile) =>
+    Object.hasOwn(catalog.profiles, profile) ? profile : (nativePresetProfile(adapter.id, profile) ?? profile),
+  )
+  for (const profile of selectedProfiles) {
+    if (profile.startsWith(`preset-${adapter.id}-`)) catalog = await withBuiltinPreset(catalog, profile)
+  }
+  return { catalog, profiles: adHoc === undefined ? selectedProfiles : [...selectedProfiles, adHoc.id] }
+}
+
 /** Resolve, validate, stage and publish the composition without starting the harness. */
 export const prepareRun = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<PreparedRun> => {
   const environment = dependencies.environment ?? process.env
@@ -523,21 +535,13 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
 
   await ensureNativeConfig({ environment, ...(dependencies.configHome ? { home: dependencies.configHome } : {}) })
   const loaded = await loadNativeCatalog(dependencies, environment)
-  const adHoc = adHocSkillProfile(loaded.config.native, options.skills ?? [])
-  let catalog = adHoc?.catalog ?? loaded.config.native
-  const publicProfiles = options.profiles
-  const selectedProfiles = publicProfiles.map((profile) =>
-    Object.hasOwn(catalog.profiles, profile) ? profile : (nativePresetProfile(adapter.id, profile) ?? profile),
-  )
-  for (const profile of selectedProfiles) {
-    if (profile.startsWith(`preset-${adapter.id}-`)) catalog = await withBuiltinPreset(catalog, profile)
-  }
+  const { catalog, profiles } = await selectRunProfiles(loaded.config.native, adapter, options)
   const instructionTexts = await loadInstructions(path.dirname(loaded.path), catalog)
   const resolver = createSourceResolver({ paths, transport: dependencies.transport ?? gitSourceTransport() })
   const plan = await planComposition(
     {
       harness: adapter.id,
-      profiles: adHoc === undefined ? selectedProfiles : [...selectedProfiles, adHoc.id],
+      profiles,
       catalog,
       adapterPolicy: adapter.policyVersion,
       providerPolicy: adapter.providerPolicy(options.model),
@@ -559,7 +563,7 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
   for (const source of plan.sources) await resolver.markGood(source)
   await pruneGenerations(paths, layout.ownerHome, 3, plan.generationId)
 
-  const host = hostDefaults(adapter.id, dependencies.configHome ?? environment.HOME)
+  const host = hostDefaults(adapter.id, dependencies.configHome ?? environment.HOME, plan)
   const defaults = options.plan
     ? { model: adapter.planDefaults?.model ?? host.model, effort: adapter.planDefaults?.effort ?? host.effort }
     : host
@@ -581,7 +585,7 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
     defaults,
     isolation: adapter.isolation,
     clean: false,
-    selection: { harness: adapter.id, profiles: publicProfiles, model: options.model, effort: options.effort },
+    selection: { harness: adapter.id, profiles: options.profiles, model: options.model, effort: options.effort },
   }
 }
 
@@ -714,6 +718,19 @@ const createRunWriter = (options: RunOptions, dependencies: RunDependencies): ((
   return (line: string) => process.stdout.write(`${line}\n`)
 }
 
+const resolvePreparedLaunch = async (prepared: PreparedRun, launchInput: LaunchInput): Promise<LaunchCommand> => {
+  const resolve = prepared.clean
+    ? prepared.adapter.clean.supported
+      ? prepared.adapter.clean.resolveLaunch
+      : undefined
+    : prepared.adapter.resolveLaunch
+  const resolvedLaunch = (await resolve?.(launchInput, prepared.launch)) ?? prepared.launch
+  const finalEnvironment = prepared.clean ? undefined : await prepared.adapter.beforeLaunch?.(launchInput)
+  return finalEnvironment === undefined
+    ? resolvedLaunch
+    : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
+}
+
 const launchPreparedRun = async (
   prepared: PreparedRun,
   options: RunOptions,
@@ -747,17 +764,7 @@ const launchPreparedRun = async (
       workspace: cwd,
       ...(guard === undefined ? {} : { guard }),
     }
-    const resolve = prepared.clean
-      ? prepared.adapter.clean.supported
-        ? prepared.adapter.clean.resolveLaunch
-        : undefined
-      : prepared.adapter.resolveLaunch
-    const resolvedLaunch = (await resolve?.(launchInput, prepared.launch)) ?? prepared.launch
-    const finalEnvironment = prepared.clean ? undefined : await prepared.adapter.beforeLaunch?.(launchInput)
-    const launch =
-      finalEnvironment === undefined
-        ? resolvedLaunch
-        : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
+    const launch = await resolvePreparedLaunch(prepared, launchInput)
     cleanup = launch.cleanup
     let recorded: Promise<void> = Promise.resolve()
     const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, (pid) => {

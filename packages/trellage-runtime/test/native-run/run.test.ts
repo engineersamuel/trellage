@@ -249,7 +249,10 @@ test("canonical adapters launch agent executables instead of retired profile wra
   }
 })
 
-test("OMP admission prepares the host executable and managed launch environment", async () => {
+test.each([
+  ["--model=claude-opus-5.5", "github-copilot/claude-opus-5.5"],
+  ["--model=github-copilot/claude-opus-5.5", "github-copilot/claude-opus-5.5"],
+])("OMP admission preserves the model override %s", async (modelOption, selector) => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle")
   const executable = path.join(root, "host-omp")
@@ -275,15 +278,17 @@ printf '%s\\n' ${JSON.stringify(
 `,
     { mode: 0o755 },
   )
-  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const prepared = await prepareRun(parseRunArguments(["omp", modelOption, "--effort=high"]), dependencies())
+  expect(prepared.launch.args).toEqual(["--model", selector, "--thinking", "high"])
+  const forwardedArgs = ["-p", "hello"]
   const input: LaunchInput = {
     resumeArgs: [],
     layout: prepared.layout,
     plan: prepared.plan,
     planMode: false,
-    model: "gpt-5.6-sol",
-    effort: "medium",
-    forwardedArgs: ["-p", "hello"],
+    model: prepared.selection.model,
+    effort: prepared.selection.effort,
+    forwardedArgs,
     workspace: work,
     environment: {
       HOME: root,
@@ -291,13 +296,26 @@ printf '%s\\n' ${JSON.stringify(
       TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
     },
   }
-  const launch = await ompAdapter.resolveLaunch!(input, prepared.launch)
+  const planned = ompAdapter.launch(input)
+  const launch = await ompAdapter.resolveLaunch!(input, planned)
   expect(launch.command).toBe(executable)
-  expect(launch.args).toEqual(["-p", "hello"])
+  expect(launch.args).toEqual(["--model", selector, "--thinking", "high", "-p", "hello"])
   expect(launch.env).toMatchObject({
     OMP_PROFILE: "trellage-copilot-native",
     PI_CONFIG_FILES: managedOverlay,
   })
+})
+
+test("OMP keeps profile defaults and passes explicit local model overrides", async () => {
+  const { dependencies } = await world()
+  const defaultRun = await prepareRun({ ...base, harness: "omp", profiles: [] }, dependencies())
+  expect(defaultRun.launch.args).toEqual(["--model", "github-copilot/gpt-5.6-sol", "--thinking", "medium"])
+  const local = await prepareRun({ ...base, harness: "omp", profiles: ["local"] }, dependencies())
+  expect(local.launch.args).toEqual([])
+  const overridden = await prepareRun({
+    ...base, harness: "omp", profiles: ["local"], model: "copilot-proxy-rs/custom-model", effort: "off",
+  }, dependencies())
+  expect(overridden.launch.args).toEqual(["--model", "copilot-proxy-rs/custom-model", "--thinking", "off"])
 })
 
 test("OMP admission rejects malformed relative executable paths", async () => {

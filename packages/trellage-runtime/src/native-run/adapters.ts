@@ -739,7 +739,7 @@ const buildOmpLaunch = async (
       ...planned,
       command: admission.executable,
       args: [
-        ...instructionsArgument(layout),
+        ...planned.args.slice(0, planned.args.length - forwardedArgs.length),
         ...(headlessOverlay === undefined ? [] : ["--config", headlessOverlay]),
         ...parsed.forwarded,
       ],
@@ -965,13 +965,13 @@ export const ompAdapter: NativeAdapter = {
   skillsSubdirectory: "skills",
   instructionsFile: "always-on.md",
   efforts: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-  policyVersion: "omp-admission-1",
+  policyVersion: "omp-admission-2",
   providerPolicy: (model) => `github-copilot:${model ?? "gpt-5.6-sol"}`,
   effectivePolicy: (model, effort) => ({
     normal: `${model ?? "gpt-5.6-sol"} · effort ${effort ?? "medium"}`,
     plan: "OMP profile policy",
   }),
-  managedFlags: ["--approval-mode", "--append-system-prompt"],
+  managedFlags: ["--approval-mode", "--append-system-prompt", "--model", "--provider", "--thinking"],
   clean: {
     supported: false,
     reason: "OMP admission installs managed skills and profile overlays before every launch",
@@ -981,9 +981,14 @@ export const ompAdapter: NativeAdapter = {
   },
   persistentState: [],
   resumeArgs: () => [],
-  launch: ({ layout, plan, forwardedArgs, environment }) => ({
+  launch: ({ layout, plan, model, effort, forwardedArgs, environment }) => ({
     command: binary(environment, "TRELLAGE_OMP_BIN", "omp"),
-    args: [...instructionsArgument(layout), ...forwardedArgs],
+    args: [
+      ...instructionsArgument(layout),
+      ...(model ? ["--model", model.includes("/") ? model : `github-copilot/${model}`] : []),
+      ...(effort ? ["--thinking", effort] : []),
+      ...forwardedArgs,
+    ],
     env: {
       OMP_PROFILE:
         selectedPreset(plan, "omp", "default") === "default" ? "trellage-copilot-native" : "trellage-qwen-local",
@@ -2074,8 +2079,13 @@ const readStructured = (file: string, format: "json" | "toml"): Record<string, u
 
 const text = (value: unknown): string | undefined => (typeof value === "string" && value.length > 0 ? value : undefined)
 
+const ompDefaults = (plan: CompositionPlan | undefined): HostDefaults =>
+  plan && selectedPreset(plan, "omp", "default") !== "default"
+    ? { model: undefined, effort: undefined }
+    : { model: "gpt-5.6-sol", effort: "medium" }
+
 /** The model and effort a launch uses when the caller names none; read from the host's own harness settings. */
-export const hostDefaults = (harness: string, home: string = os.homedir()): HostDefaults => {
+export const hostDefaults = (harness: string, home: string = os.homedir(), plan?: CompositionPlan): HostDefaults => {
   const adapter = adapterFor(harness)
   const valid = (effort: string | undefined) =>
     effort !== undefined && adapter.efforts.includes(effort) ? effort : undefined
@@ -2083,7 +2093,7 @@ export const hostDefaults = (harness: string, home: string = os.homedir()): Host
   if (harness === "fx") return { model: FX_DEFAULT_MODEL, effort: FX_DEFAULT_EFFORT }
   if (harness === "agency") return { model: "gpt-6-astra", effort: "low" }
   if (harness === "jcode") return { model: "gpt-5.6-sol", effort: "medium" }
-  if (harness === "omp") return { model: "gpt-5.6-sol", effort: "medium" }
+  if (harness === "omp") return ompDefaults(plan)
   if (harness === "prime") return { model: "claude-opus-5", effort: undefined }
   if (harness === "firstmate") return { model: "claude-opus-5.5", effort: undefined }
   if (harness === "uji") return { model: `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`, effort: undefined }
