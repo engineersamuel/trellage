@@ -39,7 +39,19 @@ case "$hook_name" in
         "$hook_name" "$native_refresh" >&2
       exit 1
     fi
-    exec "$native_refresh"
+    "$native_refresh"
+    # git pull sets GIT_REFLOG_ACTION=pull...; a fast-forward fires post-merge, a rebase post-rewrite.
+    case "$hook_name:${GIT_REFLOG_ACTION-}" in
+      post-merge:pull*|post-rewrite:pull*)
+        pull_upgrade="${active_root}/scripts/upgrade-after-pull.sh"
+        if [ ! -x "$pull_upgrade" ]; then
+          printf 'trellage %s: pull upgrade script is missing or not executable: %s\n' \
+            "$hook_name" "$pull_upgrade" >&2
+          exit 1
+        fi
+        exec "$pull_upgrade"
+        ;;
+    esac
     ;;
   *)
     printf 'trellage hook: unsupported hook name: %s\n' "$hook_name" >&2

@@ -183,11 +183,14 @@ const instanceFixture = () => {
 
 describe("upgrade CLI arguments", () => {
   it.each([
-    { argv: ["all"], approval: "confirm" },
-    { argv: ["all", "--yes"], approval: "yes" },
-    { argv: ["all", "--dry-run"], approval: "dry-run" },
-  ])("parses $argv without broadening approval", ({ argv, approval }) => {
-    expect(parseHarnessUpgradeArgv(argv)).toEqual({ kind: "run", approval })
+    { argv: ["all"], approval: "confirm", scope: "all" },
+    { argv: ["all", "--yes"], approval: "yes", scope: "all" },
+    { argv: ["all", "--dry-run"], approval: "dry-run", scope: "all" },
+    { argv: ["all", "--native"], approval: "confirm", scope: "native" },
+    { argv: ["all", "--native", "--yes"], approval: "yes", scope: "native" },
+    { argv: ["all", "--dry-run", "--native"], approval: "dry-run", scope: "native" },
+  ])("parses $argv without broadening approval", ({ argv, approval, scope }) => {
+    expect(parseHarnessUpgradeArgv(argv)).toEqual({ kind: "run", approval, scope })
   })
 
   it.each(["--help", "-h", "help"])("serves %s without catalog discovery or commands", async (flag) => {
@@ -198,7 +201,7 @@ describe("upgrade CLI arguments", () => {
     expect(readCatalog).not.toHaveBeenCalled()
     expect(confirm).not.toHaveBeenCalled()
     expect(run).not.toHaveBeenCalled()
-    expect(lines.join("\n")).toContain("trx upgrade all [--yes | --dry-run]")
+    expect(lines.join("\n")).toContain("trx upgrade all [--native] [--yes | --dry-run]")
   })
 
   it.each(
@@ -215,6 +218,9 @@ describe("upgrade CLI arguments", () => {
       ["all", "profile"],
       ["all", "--help", "--yes"],
       ["--help", "--yes"],
+      ["all", "--native", "--native"],
+      ["all", "--native", "--yes", "--dry-run"],
+      ["all", "--native", "--help"],
     ].map((argv) => ({ argv })),
   )("rejects $argv before discovery, confirmation, or commands", async ({ argv }) => {
     const { invoke, readCatalog, run } = fixture()
@@ -253,6 +259,18 @@ describe("upgrade CLI discovery and authorization", () => {
     expect(preview.indexOf("Refresh: trx skills update")).toBeLessThan(preview.indexOf("/fixture/trx upgrade claude a --skills-only"))
     expect(preview.indexOf("/fixture/trx upgrade claude b --skills-only")).toBeLessThan(preview.indexOf("/fixture/trellage upgrade claude-a"))
     expect(lines.at(-1)).toContain("No harness or skill updates or installed-version checks were started")
+  })
+
+  it("limits --native to Native harness and skill updates without Container builds", async () => {
+    const { invoke, lines, run } = fixture()
+    expect(await invoke(["all", "--native", "--dry-run"])).toBe(0)
+    expect(run).not.toHaveBeenCalled()
+    const preview = lines.join("\n")
+    expect(preview).toContain("1 Native runtime/profile updates; 0 Container image updates")
+    expect(preview).toContain("/fixture/trx upgrade claude a --harness-only")
+    expect(preview).toContain("/fixture/trx upgrade claude b --skills-only")
+    expect(preview).not.toContain("sandbox:claude-a")
+    expect(preview).not.toContain("/fixture/trellage upgrade")
   })
 
   it("reports unsupported entries as an incomplete dry-run without running anything", async () => {
