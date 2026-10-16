@@ -1498,10 +1498,24 @@ export const copilotAdapter: NativeAdapter = {
       throw new NativeRunError("launch", "Copilot admission returned an invalid plugin root")
     if (!admitted.settings || typeof admitted.settings !== "object" || Array.isArray(admitted.settings))
       throw new NativeRunError("launch", "Copilot admission returned invalid plugin settings")
+    const registrations = admitted.pluginRegistrations
+    if (
+      !Array.isArray(registrations) ||
+      registrations.length === 0 ||
+      !registrations.every(
+        (entry: unknown) => !!entry && typeof entry === "object" && !Array.isArray(entry) && "cache_path" in entry,
+      )
+    )
+      throw new NativeRunError("launch", "Copilot admission returned invalid plugin registrations")
     await ensureManagedSymlink(path.join(input.layout.generationPath, "installed-plugins"), admitted.installedPlugins)
     await mergeJson(path.join(input.layout.generationPath, "settings.json"), (current) => ({
       ...current,
       ...(admitted.settings as Record<string, unknown>),
+    }))
+    // Copilot discovers plugins only from config.json installedPlugins; settings and the plugin root alone load nothing.
+    await mergeJson(path.join(input.layout.generationPath, "config.json"), (current) => ({
+      ...current,
+      installedPlugins: registrations,
     }))
     return planned
   },

@@ -971,7 +971,7 @@ test("Copilot admission bridges lifecycle plugins, hooks, and agents into the ge
     `#!/bin/sh
 test "$TRELLAGE_TRX_COPILOT_ADAPTER" = 1
 test "$1" = _trx-admit
-printf '%s\\n' '${JSON.stringify({ installedPlugins: "INSTALL_ROOT", settings: { enabledPlugins: { "hve-core@hve-core": true }, hooks: { sessionStart: [] }, subagents: { reviewer: { description: "review" } } } }).replace("INSTALL_ROOT", installedPlugins)}'
+printf '%s\\n' '${JSON.stringify({ installedPlugins: "INSTALL_ROOT", pluginRegistrations: [{ name: "hve-core", marketplace: "hve-core", enabled: true, cache_path: "INSTALL_ROOT/hve-core/hve-core" }], settings: { enabledPlugins: { "hve-core@hve-core": true }, hooks: { sessionStart: [] }, subagents: { reviewer: { description: "review" } } } }).replaceAll("INSTALL_ROOT", installedPlugins)}'
 `,
     { mode: 0o755 },
   )
@@ -994,6 +994,15 @@ printf '%s\\n' '${JSON.stringify({ installedPlugins: "INSTALL_ROOT", settings: {
   expect(settings.enabledPlugins["hve-core@hve-core"]).toBe(true)
   expect(settings.hooks).toEqual({ sessionStart: [] })
   expect(settings.subagents.reviewer.description).toBe("review")
+  const config = JSON.parse(await readFile(path.join(prepared.layout.generationPath, "config.json"), "utf8"))
+  expect(config.installedPlugins).toEqual([
+    {
+      name: "hve-core",
+      marketplace: "hve-core",
+      enabled: true,
+      cache_path: path.join(installedPlugins, "hve-core", "hve-core"),
+    },
+  ])
 })
 
 test("Claude applies opusplan defaults and real plan-mode arguments", async () => {

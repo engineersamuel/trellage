@@ -50,6 +50,14 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   reinstall. The receipt advances only after the complete Native refresh
   succeeds, so partial failures retry on the next hook. Application code runs
   from source; profile-image rebuilding is a separate product operation.
+  When `git pull` (with or without `--rebase`) brings in commits, the
+  `post-merge`/`post-rewrite` hook then runs `scripts/upgrade-after-pull.sh`
+  in the foreground: `trx upgrade all --native --yes`, then
+  `trx upgrade codex --all` and `trx upgrade copilot --all` for plugins.
+  Launches never update harness binaries or plugins, so they stay fast; a
+  pull that is already up to date fires no hook. `mise run pull` runs
+  `git pull --rebase origin main` with hooks off, then always runs the Native
+  refresh and `scripts/upgrade-after-pull.sh` exactly once.
 
 ## Fresh Azure integration test
 
