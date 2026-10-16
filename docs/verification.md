@@ -26,6 +26,13 @@ Sandbox images. The `--sandbox-only` path does this too. If preparation fails,
 the image builds do not start. Native-only refreshes do not prepare this runtime;
 their installers manage separate installed runtimes.
 
+Codex and router reinstall preflights distinguish replacement from execution.
+An owned runtime with unchanged published sources and dependency manifests can
+be replaced even when its file-metadata or dependency inventory has drifted.
+The installer stages a fresh frozen runtime before publication; it does not
+rewrite the old receipt to approve drifted files for execution. Changed sources,
+unowned paths, unsafe permissions, and escaping links still block replacement.
+
 Fresh development resolutions use the full Mise `2026.9.10` builder image and
 record its exact platform digest. Newer `latest` images omit the shell, while
 the `debian` variant omits the C linker needed to compile Headlong. Before

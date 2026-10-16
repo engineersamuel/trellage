@@ -1126,6 +1126,31 @@ write_legacy_fish "$shared_rollback_home"
 HOME="$shared_rollback_home" /bin/bash "$install_script" >/dev/null \
   || fail 'shared-runtime rollback fixture install failed'
 shared_runtime_root="$shared_rollback_home/.local/share/trellage/common"
+for runtime in native-environment-runtime floating-skills-runtime; do
+  printf 'managed inventory drift\n' >"$shared_runtime_root/$runtime/node_modules/inventory-drift"
+done
+write_owned_runtime_snapshot "$shared_runtime_root" "$fixture_root/drifted-runtime.before"
+if HOME="$shared_rollback_home" CDX_INSTALL_TEST_FAIL_AT=after-floating-runtime-publication \
+  /bin/bash "$install_script" >"$fixture_root/drifted-runtime-failure.out" 2>&1; then
+  fail 'drifted shared-runtime install accepted an injected publication failure'
+fi
+assert_install_text 'injected failure at after-floating-runtime-publication' \
+  "$fixture_root/drifted-runtime-failure.out"
+write_owned_runtime_snapshot "$shared_runtime_root" "$fixture_root/drifted-runtime.after"
+cmp -s "$fixture_root/drifted-runtime.before" "$fixture_root/drifted-runtime.after" \
+  || fail 'failed refresh changed the drifted shared runtimes'
+assert_no_install_staging "$shared_rollback_home"
+HOME="$shared_rollback_home" /bin/bash "$install_script" >/dev/null \
+  || fail 'reinstall rejected safe shared-runtime inventory drift'
+for runtime in native-environment-runtime floating-skills-runtime; do
+  [ ! -e "$shared_runtime_root/$runtime/node_modules/inventory-drift" ] \
+    || fail "reinstall retained drifted dependencies: $runtime"
+  bun --no-install --no-env-file "--config=$root/../../packages/trellage-runtime/bunfig.toml" \
+    "$root/../../packages/trellage-runtime/src/workspace-cli.ts" validate-owned "$shared_runtime_root/$runtime" \
+    || fail "reinstalled shared runtime is not ready: $runtime"
+done
+assert_install_published "$shared_rollback_home"
+assert_no_install_staging "$shared_rollback_home"
 shared_guard="$shared_runtime_root/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py"
 for unsafe_guard in symlink directory writable extra; do
   case "$unsafe_guard" in
