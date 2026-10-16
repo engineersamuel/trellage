@@ -23,7 +23,6 @@ import {
   preparationLockName,
   requireOwnedWorkspace,
   requireReplaceableOwnedWorkspace,
-  requireReplaceableSourceContents,
   requireReadyAsync,
   requireReadyQuickAsync,
   requirePublishedSourceIdentity,
@@ -345,7 +344,7 @@ try {
       break
     case "validate-replaceable-owned":
       requireReplaceableOwnedWorkspace(root)
-      requireReplaceableSourceContents(root)
+      requirePublishedSourceIdentity(root)
       break
     case "validate-floating":
       await requireReplaceable(root, "floating")

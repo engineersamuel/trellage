@@ -342,6 +342,42 @@ test("replaceable owned validation accepts a previous Bun pin but rejects change
   expect(run("validate-replaceable-owned", destination).status).toBe(1)
 })
 
+test.each(["metadata", "dependencies"])("replacement validation accepts %s inventory drift without blessing it for execution", (drift) => {
+  const { root, destination, home } = sourceFixture(true)
+  expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+  const readiness = path.join(destination, ".trellage-source-ready.json")
+  const published = readFileSync(readiness, "utf8")
+  if (drift === "metadata") {
+    const source = path.join(destination, "packages/library/src/index.ts")
+    utimesSync(source, new Date(0), new Date(0))
+  } else {
+    write(destination, "node_modules/inventory-drift", "managed drift")
+  }
+
+  expect(run("validate-owned", destination).status).toBe(1)
+  const replaceable = run("validate-replaceable-owned", destination)
+  expect(replaceable.status, replaceable.stderr).toBe(0)
+  expect(readFileSync(readiness, "utf8")).toBe(published)
+  expect(run("validate-owned", destination).status).toBe(1)
+})
+
+test.each(["packages/library/src/index.ts", "packages/library/package.json", "bun.lock", "config.toml"])(
+  "replacement validation refuses changed published %s without rewriting readiness",
+  (relative) => {
+    const { root, destination, home } = sourceFixture(true)
+    expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+    const readiness = path.join(destination, ".trellage-source-ready.json")
+    const published = readFileSync(readiness, "utf8")
+    const changed = path.join(destination, relative)
+    writeFileSync(changed, `${readFileSync(changed, "utf8")}\n`)
+
+    const replaceable = run("validate-replaceable-owned", destination)
+    expect(replaceable.status).toBe(1)
+    expect(replaceable.stderr).toContain("source runtime is stale")
+    expect(readFileSync(readiness, "utf8")).toBe(published)
+  },
+)
+
 function run(action: string, root: string, destination?: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync(
     bunExecutable(),
