@@ -117,6 +117,35 @@ failure reports the new pane ID for inspection; it does not close that pane or
 retry the command. See [engagement guidance](../../docs/trx-guide-engagement.md)
 for its repository, data-sharing, and review boundaries.
 
+### Open a saved ritual
+
+1. Focus a terminal in the repository.
+2. Press `prefix+ctrl+b`, then `r`, or select **Rituals** and press Enter.
+3. Guide opens the ritual list in a new pane. No model call runs. Opening the list does not copy.
+4. Press Enter in that list to copy one prompt. Paste it into the current agent.
+
+The same checks as engagement apply: the source pane is unchanged, the new pane is an idle terminal in that repository, and a failed start names the pane to inspect.
+
+One progress-page prompt ships with Guide. Add or replace prompts as `~/.config/trellage/rituals/<id>.md` (`XDG_CONFIG_HOME/trellage/rituals` when that variable is set). The id is the lowercase kebab-case file name.
+
+```text
+title: Review the diff
+when: Before you call the work done
+
+Review the current diff and report the behavior that changed.
+```
+
+A valid file with the id `progress-page` replaces the shipped prompt. A bad file is reported in the list and does not hide the other prompts. From a shell, `trx guide --ritual <id> --copy` copies one prompt, and `--print` writes it to stdout.
+
+### Copy the progress page
+
+1. Focus the pane whose repository you want to track.
+2. Press `prefix+ctrl+b`, then `w`, or select **Progress page** and press Enter.
+3. The menu stays open. The status line says the progress-page prompt was copied.
+4. Paste it into the current agent.
+
+The copied prompt adds this pane's repository path and tells the agent to write `.dashboard/index.html` there. No pane opens and no model runs. If the copy fails, the status line says why and the row preview shows the prompt.
+
 ### Open captured text
 
 To collect highlighted text before opening the guide:

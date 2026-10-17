@@ -284,44 +284,38 @@ const compactWorkflow = (value: unknown, name: string): CompactWorkflow => {
   return workflow.skill === undefined ? compact : { ...compact, skill: text(workflow.skill, `${name}.skill`) }
 }
 
-const catalogProfile = (value: unknown, surface: string): [string, CatalogProfile] => {
-  const entry = record(value, `${surface} profile`)
-  const name = text(entry.name, `${surface} profile.name`)
-  const guide = record(entry.guide, `${surface}:${name}.guide`)
+const catalogProfile = (value: unknown): [string, CatalogProfile] => {
+  const entry = record(value, "native profile")
+  const name = text(entry.name, "native profile.name")
+  const launcher = text(entry.launcher, `native:${name}.launcher`)
+  const guide = record(entry.guide, `native:${launcher}/${name}.guide`)
   if (!Array.isArray(guide.workflows) || !Array.isArray(guide.prerequisites)) {
-    throw new Error(`${surface}:${name}.guide must contain workflows and prerequisites`)
+    throw new Error(`native:${launcher}/${name}.guide must contain workflows and prerequisites`)
   }
   const workflows = new Map(
     guide.workflows.map((workflow, index): [string, CompactWorkflow] => {
-      const compact = compactWorkflow(workflow, `${surface}:${name}.workflows[${index}]`)
+      const compact = compactWorkflow(workflow, `native:${launcher}/${name}.workflows[${index}]`)
       return [compact.id, compact]
     }),
   )
-  const shared = {
-    surface,
-    name,
-    description: text(entry.description, `${surface}:${name}.description`),
-    sandbox: entry.sandbox,
-    workflows,
-    prerequisites: guide.prerequisites,
-    headless: entry.headless,
-    herdrCompatibility: entry.herdrCompatibility,
-  }
-  if (surface === "native") {
-    const launcher = text(entry.launcher, `${surface}:${name}.launcher`)
-    return [`native:${launcher}/${name}`, { ...shared, launcher }]
-  }
-  const harness = text(record(entry.harness, `${surface}:${name}.harness`).kind, `${surface}:${name}.harness.kind`)
-  return [`sandbox:${name}`, { ...shared, harness }]
+  return [
+    `native:${launcher}/${name}`,
+    {
+      surface: "native",
+      name,
+      launcher,
+      description: text(entry.description, `native:${launcher}/${name}.description`),
+      sandbox: entry.sandbox,
+      workflows,
+      prerequisites: guide.prerequisites,
+      headless: entry.headless,
+      herdrCompatibility: entry.herdrCompatibility,
+    },
+  ]
 }
 
-const profileCatalogIndex = (nativeList: ProfileList, sandboxList: ProfileList) => {
-  const entries = [
-    ...nativeList.profiles.map((profile) => catalogProfile(profile, "native")),
-    ...sandboxList.profiles.map((profile) => catalogProfile(profile, "sandbox")),
-  ]
-  return new Map(entries)
-}
+const profileCatalogIndex = (nativeList: ProfileList) =>
+  new Map(nativeList.profiles.map((profile) => catalogProfile(profile)))
 
 const validateNativeCatalogSync = (nativeList: ProfileList, sourceDescriptions: ReadonlyMap<string, string>) => {
   const installedProfiles = new Set<string>()
@@ -513,20 +507,17 @@ const evaluate = async () => {
   const env = { ...process.env, XDG_CACHE_HOME: cacheRoot }
   try {
     process.stdout.write(`profile guide live evaluation: worktree launcher, isolated cache ${cacheRoot}\n`)
-    const [nativeSource, sourceDescriptions, sandboxSource] = await Promise.all([
+    const [nativeSource, sourceDescriptions] = await Promise.all([
       runMiseTask("trx", ["list", "--json"], env),
       nativeSourceDescriptions(),
-      runMiseTask("trellage", ["list", "--json-full"], env),
     ])
     const nativeValue = record(JSON.parse(nativeSource), "Native profile list")
-    const sandboxValue = record(JSON.parse(sandboxSource), "Sandbox profile list")
-    if (!Array.isArray(nativeValue.profiles) || !Array.isArray(sandboxValue.profiles)) {
-      throw new Error("worktree profile lists must contain profiles")
+    if (!Array.isArray(nativeValue.profiles)) {
+      throw new Error("worktree profile list must contain profiles")
     }
     const nativeList: ProfileList = { profiles: nativeValue.profiles }
-    const sandboxList: ProfileList = { profiles: sandboxValue.profiles }
     validateNativeCatalogSync(nativeList, sourceDescriptions)
-    const profiles = profileCatalogIndex(nativeList, sandboxList)
+    const profiles = profileCatalogIndex(nativeList)
     validateExpectedWorkflowProfiles(scenarios, profiles)
 
     let failures = 0

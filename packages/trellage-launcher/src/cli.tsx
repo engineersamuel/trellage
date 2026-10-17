@@ -63,6 +63,9 @@ import { EngagementWorkStore, type EngagementWork } from "./engagement-work.ts"
 import { EngagementApp, type EngagementUiProps, type EngagementUiResult } from "./engagement-ui.tsx"
 import { executeEngagementWork } from "./engagement-execution.ts"
 import { text as guideText } from "./guide-text.ts"
+import { copyTextToClipboard } from "./ritual-clipboard.ts"
+import { loadRitualCatalog, requireRitual } from "./ritual-catalog.ts"
+import { RitualApp } from "./ritual-ui.tsx"
 import {
   BasketPreviewApp,
   basketPreviewHelpText,
@@ -753,24 +756,85 @@ const reviewModelOverrides = (
   ...(args.effort ?? process.env.TRELLAGE_GUIDE_EFFORT ? { effort: routing.optimize.effort } : {}),
 })
 
+const writeRitualPrompt = (prompt: string): void => {
+  process.stdout.write(prompt.endsWith("\n") ? prompt : `${prompt}\n`)
+}
+
+const runRitualOutput = async (args: ReturnType<typeof parseGuideHeadlessArgv>): Promise<void> => {
+  const ritual = requireRitual(await loadRitualCatalog({ env: process.env }), args.ritualId ?? "")
+  if (args.ritualPrint) {
+    writeRitualPrompt(ritual.prompt)
+    return
+  }
+  copyTextToClipboard(ritual.prompt)
+  process.stdout.write("Copied. Paste it into the current agent.\n")
+}
+
+const runRitualMode = async (args: ReturnType<typeof parseGuideHeadlessArgv>): Promise<void> => {
+  if (args.ritualPrint || args.ritualCopy) {
+    await runRitualOutput(args)
+    return
+  }
+  const catalog = await loadRitualCatalog({ env: process.env })
+  const terminal = openInteractiveTerminalStreams()
+  try {
+    const instance = render(
+      <RitualApp
+        catalog={catalog}
+        {...(args.ritualId === undefined ? {} : { selectedId: args.ritualId })}
+        copy={copyTextToClipboard}
+      />,
+      {
+        stdin: terminal.input,
+        stdout: terminal.output,
+        interactive: true,
+        exitOnCtrlC: false,
+        kittyKeyboard: { mode: "disabled" },
+        alternateScreen: true,
+        onRender: createInitialGuideRenderHandler((value) => {
+          terminal.output.write(value)
+        }, process.env.INK_SCREEN_READER !== "true"),
+        maxFps: 30,
+      },
+    )
+    await instance.waitUntilExit()
+  } finally {
+    terminal.close()
+  }
+}
+
+const runAlternateGuideMode = async (
+  args: ReturnType<typeof parseGuideHeadlessArgv>,
+  argv: ReadonlyArray<string>,
+  guideRoot: string,
+  promptMasterSkillDirectory: string,
+): Promise<boolean> => {
+  if (args.ritual) {
+    await runRitualMode(args)
+    return true
+  }
+  if (args.engagement) {
+    await runEngagementMode(argv, guideRoot)
+    return true
+  }
+  if (isChangeReview(args)) {
+    await runOptimizeMode(argv)
+    return true
+  }
+  if (args.nextSteps) {
+    await runContinuationMode(argv, guideRoot, promptMasterSkillDirectory)
+    return true
+  }
+  return false
+}
+
 const runInteractiveGuideMode = async (
   argv: ReadonlyArray<string>,
   guideRoot: string,
   promptMasterSkillDirectory: string,
 ): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
-  if (args.engagement) {
-    await runEngagementMode(argv, guideRoot)
-    return
-  }
-  if (isChangeReview(args)) {
-    await runOptimizeMode(argv)
-    return
-  }
-  if (args.nextSteps) {
-    await runContinuationMode(argv, guideRoot, promptMasterSkillDirectory)
-    return
-  }
+  if (await runAlternateGuideMode(args, argv, guideRoot, promptMasterSkillDirectory)) return
   const herdrEnv = herdrEnvironment()
   const herdrContext = getHerdrContext(herdrEnv)
   const launchOrigin = firstmateLaunchOrigin(herdrContext?.launchOrigin, process.env.FMX_LAUNCH_PROVENANCE_JSON)

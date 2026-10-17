@@ -94,3 +94,65 @@ test("does not enqueue an engagement action as captured conversation text", asyn
   ui.input.emit("keypress", "", { name: "escape" })
   assert.equal(await ui.run, 0)
 })
+
+test("opens the ritual list with r while capture sources are still loading", async () => {
+  const opened = []
+  const requests = []
+  const context = { workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1", cwd: "/customer/repository" }
+  const ui = setup({
+    context,
+    ritualOpener: async (options) => { opened.push(options.context); return "w1:p2" },
+    request: async (method, params) => {
+      requests.push({ method, params })
+      return { type: "popup_closed" }
+    },
+  })
+  assert.match(ui.screen(), /Rituals/u)
+  assert.match(ui.screen(), /r rituals/u)
+  ui.input.emit("keypress", "r", { name: "r" })
+  assert.equal(await ui.run, 0)
+  assert.deepEqual(opened, [context])
+  assert.deepEqual(requests, [{ method: "popup.close", params: {} }])
+})
+
+test("copies the progress page with w and leaves the menu open", async () => {
+  const copied = []
+  const ui = setup({
+    watchCopier: async () => {
+      copied.push("progress-page")
+      return "Copied the progress-page prompt. Paste it into the current agent."
+    },
+  })
+  assert.match(ui.screen(), /w progress/u)
+  ui.input.emit("keypress", "w", { name: "w" })
+  await tick()
+  assert.deepEqual(copied, ["progress-page"])
+  assert.match(ui.screen(), /Copied the progress-page prompt/u)
+  ui.input.emit("keypress", "", { name: "escape" })
+  assert.equal(await ui.run, 0)
+})
+
+test("shows the progress-page prompt when the clipboard copy fails", async () => {
+  const ui = setup({
+    watchCopier: async () => {
+      const error = new Error("Clipboard verification failed")
+      error.prompt = "PROMPT TEXT"
+      throw error
+    },
+  })
+  ui.input.emit("keypress", "w", { name: "w" })
+  await tick()
+  assert.match(ui.screen(), /Clipboard verification failed/u)
+  assert.match(ui.screen(), /PROMPT TEXT/u)
+  ui.input.emit("keypress", "", { name: "escape" })
+  assert.equal(await ui.run, 0)
+})
+
+test("does not enqueue the ritual list or the progress page", async () => {
+  const ui = setup()
+  ui.input.emit("keypress", "k", { name: "k" })
+  ui.input.emit("keypress", "a", { name: "a" })
+  assert.match(ui.screen(), /Choose highlighted text/u)
+  ui.input.emit("keypress", "", { name: "escape" })
+  assert.equal(await ui.run, 0)
+})

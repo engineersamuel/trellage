@@ -479,6 +479,7 @@ describe("engagement CLI mode separation", () => {
       ["--profile", "native:copilot/hve"],
       ["--ui-variant", "pager"],
       ["--engagement"],
+      ["--ritual"],
     ]) {
       expect(() => parseGuideHeadlessArgv(["--engagement", ...args])).toThrow(/--engagement|Duplicate flag/u)
     }

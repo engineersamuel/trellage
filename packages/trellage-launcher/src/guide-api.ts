@@ -245,6 +245,10 @@ export interface GuideHeadlessArgs {
   readonly review?: boolean
   readonly reviewBase?: string
   readonly optimize?: boolean
+  readonly ritual?: boolean
+  readonly ritualId?: string
+  readonly ritualPrint?: boolean
+  readonly ritualCopy?: boolean
 }
 
 const helpFlag = "--help"
@@ -260,9 +264,15 @@ const nextStepsFlag = "--next-steps"
 const engagementFlag = "--engagement"
 const reviewFlag = "--review"
 const optimizeFlag = "--optimize"
+const ritualFlag = "--ritual"
+const ritualPrintFlag = "--print"
+const ritualCopyFlag = "--copy"
 const baseFlag = "--base"
 
-const booleanFlags = new Set([helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag, engagementFlag, reviewFlag, optimizeFlag])
+const booleanFlags = new Set([
+  helpFlag, jsonFlag, intentStdinFlag, nextStepsFlag, engagementFlag, reviewFlag, optimizeFlag,
+  ritualFlag, ritualPrintFlag, ritualCopyFlag,
+])
 const valueFlags = new Set([intentFlag, profileFlag, modelFlag, effortFlag, uiVariantFlag, baseFlag])
 const knownFlags = new Set([...booleanFlags, ...valueFlags])
 
@@ -275,6 +285,9 @@ interface MutableGuideArgs {
   review: boolean
   reviewBase: string | undefined
   optimize: boolean
+  ritual: boolean
+  ritualPrint: boolean
+  ritualCopy: boolean
   intentFromFlag: string | undefined
   profile: string | undefined
   model: string | undefined
@@ -293,37 +306,27 @@ const setGuideValueFlag = (state: MutableGuideArgs, token: string, value: string
   else state.uiVariant = literal(value, "--ui-variant", guideLongPromptVariantLiterals)
 }
 
+const booleanFlagSetters: Readonly<Record<string, (state: MutableGuideArgs) => void>> = {
+  [helpFlag]: (state) => { state.help = true },
+  [jsonFlag]: (state) => { state.json = true },
+  [intentStdinFlag]: (state) => { state.intentStdin = true },
+  [nextStepsFlag]: (state) => { state.nextSteps = true },
+  [engagementFlag]: (state) => { state.engagement = true },
+  [reviewFlag]: (state) => { state.review = true },
+  [optimizeFlag]: (state) => { state.optimize = true },
+  [ritualFlag]: (state) => { state.ritual = true },
+  [ritualPrintFlag]: (state) => { state.ritualPrint = true },
+  [ritualCopyFlag]: (state) => { state.ritualCopy = true },
+}
+
 const consumeGuideFlag = (argv: ReadonlyArray<string>, index: number, state: MutableGuideArgs): number => {
   const token = argv[index]
   if (token === undefined || !knownFlags.has(token)) throw new GuideArgsError(`Unknown flag: ${token ?? ""}`)
   if (state.seenFlags.has(token)) throw new GuideArgsError(`Duplicate flag: ${token}`)
   state.seenFlags.add(token)
-  if (token === helpFlag) {
-    state.help = true
-    return index
-  }
-  if (token === jsonFlag) {
-    state.json = true
-    return index
-  }
-  if (token === intentStdinFlag) {
-    state.intentStdin = true
-    return index
-  }
-  if (token === nextStepsFlag) {
-    state.nextSteps = true
-    return index
-  }
-  if (token === engagementFlag) {
-    state.engagement = true
-    return index
-  }
-  if (token === reviewFlag) {
-    state.review = true
-    return index
-  }
-  if (token === optimizeFlag) {
-    state.optimize = true
+  const setBoolean = booleanFlagSetters[token]
+  if (setBoolean !== undefined) {
+    setBoolean(state)
     return index
   }
   const value = argv[index + 1]
@@ -347,7 +350,10 @@ const validateGuideIntentSource = (state: MutableGuideArgs): void => {
   }
 }
 
+const ritualIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
+
 const resolveGuideIntent = (state: MutableGuideArgs): string | undefined => {
+  if (state.ritual) return state.intentFromFlag
   const positionalIntent = state.positionals[0]
   return (
     state.intentFromFlag ??
@@ -355,17 +361,51 @@ const resolveGuideIntent = (state: MutableGuideArgs): string | undefined => {
   )
 }
 
+const ritualModeConflicts = (state: MutableGuideArgs): boolean =>
+  state.json || state.nextSteps || state.engagement || state.review || state.optimize ||
+  state.profile !== undefined || state.uiVariant !== undefined || state.reviewBase !== undefined ||
+  state.intentFromFlag !== undefined || state.intentStdin
+
+const validateRitualId = (id: string | undefined): void => {
+  if (id !== undefined && (id.length > 64 || !ritualIdPattern.test(id))) {
+    throw new GuideArgsError("Ritual id must be lowercase kebab-case")
+  }
+}
+
+const validateRitualOutput = (state: MutableGuideArgs): void => {
+  if (state.ritualPrint && state.ritualCopy) throw new GuideArgsError("Use --print or --copy, not both")
+  if ((state.ritualPrint || state.ritualCopy) && state.positionals[0] === undefined) {
+    throw new GuideArgsError("--print and --copy require a ritual id")
+  }
+}
+
+const validateRitualMode = (state: MutableGuideArgs): void => {
+  if (!state.ritual && (state.ritualPrint || state.ritualCopy)) {
+    throw new GuideArgsError("--print and --copy require --ritual")
+  }
+  if (!state.ritual) return
+  if (ritualModeConflicts(state)) {
+    throw new GuideArgsError("--ritual opens the ritual list and cannot be combined with an intent or other modes")
+  }
+  if (state.positionals.length > 1) throw new GuideArgsError("Provide at most one ritual id")
+  validateRitualOutput(state)
+  validateRitualId(state.positionals[0])
+}
+
+const engagementModeConflicts = (state: MutableGuideArgs): boolean =>
+  state.json || state.nextSteps || state.review || state.ritual || state.profile !== undefined || state.uiVariant !== undefined
+
 const validateEngagementModeFlags = (state: MutableGuideArgs): void => {
-  if (state.engagement && (state.json || state.nextSteps || state.review || state.profile !== undefined || state.uiVariant !== undefined)) {
+  if (state.engagement && engagementModeConflicts(state)) {
     throw new GuideArgsError("--engagement is interactive-only and cannot be combined with --json, --next-steps, --review, --profile, or --ui-variant")
   }
 }
 
 const hasReviewModeConflicts = (state: MutableGuideArgs): boolean =>
-  state.json || state.nextSteps || state.engagement || state.profile !== undefined || state.uiVariant !== undefined
+  state.json || state.nextSteps || state.engagement || state.ritual || state.profile !== undefined || state.uiVariant !== undefined
 
 const hasOptimizeModeConflicts = (state: MutableGuideArgs): boolean =>
-  state.review || state.json || state.nextSteps || state.engagement ||
+  state.review || state.json || state.nextSteps || state.engagement || state.ritual ||
   state.profile !== undefined || state.intentFromFlag !== undefined ||
   state.positionals.length > 0 || state.intentStdin
 
@@ -381,6 +421,7 @@ const validateOptimizeMode = (state: MutableGuideArgs): void => {
 const validateGuideModeFlags = (state: MutableGuideArgs): void => {
   validateEngagementModeFlags(state)
   validateOptimizeMode(state)
+  validateRitualMode(state)
   if (
     state.nextSteps &&
     (state.json ||
@@ -414,6 +455,10 @@ const finalizeGuideArgs = (state: MutableGuideArgs): GuideHeadlessArgs => {
     ...(state.review ? { review: true } : {}),
     ...(state.reviewBase === undefined ? {} : { reviewBase: state.reviewBase }),
     ...(state.optimize ? { optimize: true } : {}),
+    ...(state.ritual ? { ritual: true } : {}),
+    ...(state.ritual && state.positionals[0] !== undefined ? { ritualId: state.positionals[0] } : {}),
+    ...(state.ritualPrint ? { ritualPrint: true } : {}),
+    ...(state.ritualCopy ? { ritualCopy: true } : {}),
   }
 }
 
@@ -421,6 +466,7 @@ export const guideHeadlessHelpText = [
   "Usage: trx guide [intent] [options]",
   "       trx guide --intent-stdin [options]",
   "       trx guide --engagement [--intent <engagement question>]",
+  "       trx guide --ritual [id] [--print | --copy]",
   "       trx guide --review [--base <branch-or-commit>] [--intent <original task>]",
   "       trx guide --json --intent <text> [options]",
   "       trx guide --json <text> [options]",
@@ -437,6 +483,9 @@ export const guideHeadlessHelpText = [
   "  --review              Review changes; choose any compatible checks.",
   "                         Approve findings before one Native agent can edit.",
   "  --optimize            Open the Optimize screen directly: run skills on the whole repository.",
+  "  --ritual [id]         Open saved prompts. No model call. Opening the list does not copy.",
+  "  --print               Write one ritual prompt to stdout. Requires --ritual and an id.",
+  "  --copy                Copy one ritual prompt and exit. Requires --ritual and an id.",
   "  --base <ref>          Override the detected comparison base for the current branch.",
   "  --profile <ref>        Generate prompts for one specific catalog profile",
   "                         reference instead of matching. Requires --json.",
@@ -465,6 +514,9 @@ export const parseGuideHeadlessArgv = (argv: ReadonlyArray<string>): GuideHeadle
     review: false,
     reviewBase: undefined,
     optimize: false,
+    ritual: false,
+    ritualPrint: false,
+    ritualCopy: false,
     intentFromFlag: undefined,
     profile: undefined,
     model: undefined,

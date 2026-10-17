@@ -27,6 +27,7 @@ import {
   defaultGuideEffort,
   defaultGuideModelId,
   defaultGuideModelRouting,
+  guideHeadlessHelpText,
   guideIntentMaximumLength,
   guidePromptTarget,
   guideTargetTool,
@@ -822,6 +823,26 @@ describe("parseGuideHeadlessArgv", () => {
   it("preserves multiline Markdown intent formatting", () => {
     const intent = "# Heading\n\n- first\n- second"
     expect(parseGuideHeadlessArgv(["--intent", intent]).intent).toBe(intent)
+  })
+
+  it("opens the ritual list without an intent or a clipboard write", () => {
+    expect(guideHeadlessHelpText).toContain("trx guide --ritual [id] [--print | --copy]")
+    expect(parseGuideHeadlessArgv(["--ritual"])).toMatchObject({ ritual: true, intent: undefined })
+    expect(parseGuideHeadlessArgv(["--ritual", "progress-page"])).toMatchObject({
+      ritual: true,
+      ritualId: "progress-page",
+    })
+    expect(parseGuideHeadlessArgv(["--ritual", "progress-page", "--print"])).toMatchObject({ ritualPrint: true })
+    expect(parseGuideHeadlessArgv(["--ritual", "progress-page", "--copy"])).toMatchObject({ ritualCopy: true })
+    expect(() => parseGuideHeadlessArgv(["--print"])).toThrow(/require --ritual/u)
+    expect(() => parseGuideHeadlessArgv(["--ritual", "--copy"])).toThrow(/require a ritual id/u)
+    expect(() => parseGuideHeadlessArgv(["--ritual", "progress-page", "--print", "--copy"])).toThrow(/not both/u)
+    expect(() => parseGuideHeadlessArgv(["--ritual", "Not Kebab"])).toThrow(/kebab-case/u)
+    for (const flag of ["--intent", "--json", "--engagement", "--optimize", "--review"]) {
+      expect(() => parseGuideHeadlessArgv(["--ritual", ...(flag === "--intent" ? [flag, "Review this"] : [flag])])).toThrow(
+        GuideArgsError,
+      )
+    }
   })
 })
 
