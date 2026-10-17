@@ -375,7 +375,10 @@ test("Native and remaining container surfaces consume their common skill bundle"
   }
 
   const profilesRoot = path.join(repositoryRoot, "profiles")
-  const sandboxProfiles = (await readdir(profilesRoot, { withFileTypes: true }))
+  const sandboxProfiles = (await readdir(profilesRoot, { withFileTypes: true }).catch((error) => {
+    if (error?.code === "ENOENT") return []
+    throw error
+  }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
