@@ -17,6 +17,7 @@ import {
   readlinkSync,
   realpathSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs"
 import { lstat as lstatAsync, readFile, readdir as readdirAsync } from "node:fs/promises"
@@ -476,17 +477,48 @@ function normalizePermission(candidate: string, status: Stats): void {
   }
 }
 
+function removeRetiredWorkspaceLinks(root: string, links: readonly string[]): Set<string> {
+  const retired = new Set<string>()
+  const targets = new Map<string, string>()
+  for (const candidate of links) {
+    const link = readlinkSync(candidate)
+    if (path.isAbsolute(link)) continue
+    const target = path.resolve(path.dirname(candidate), link)
+    targets.set(candidate, target)
+    if (!/\/node_modules\/(?:@[^/]+\/)?[^/]+$/.test(candidate)) continue
+    if (path.dirname(target) !== path.join(root, "packages")) continue
+    const status = lstatSync(target, { throwIfNoEntry: false })
+    if (status !== undefined) {
+      if (!status.isDirectory()) continue
+      safeDirectory(target)
+    }
+    if (lstatSync(path.join(target, "package.json"), { throwIfNoEntry: false }) === undefined) {
+      retired.add(candidate)
+    }
+  }
+  const removed = new Set(retired)
+  for (const [candidate, target] of targets) {
+    if (!path.dirname(candidate).endsWith(`${path.sep}node_modules${path.sep}.bin`)) continue
+    if ([...retired].some((workspace) => inside(workspace, target))) removed.add(candidate)
+  }
+  for (const candidate of removed) {
+    safeDirectory(path.dirname(candidate))
+    const status = lstatSync(candidate)
+    if (!status.isSymbolicLink() || status.uid !== process.getuid?.()) {
+      throw new Error(`unsafe retired workspace link: ${candidate}`)
+    }
+    unlinkSync(candidate)
+  }
+  return removed
+}
+
 export function normalizeDependencyPermissions(root: string): void {
   const binaries = workspaceBinaryTargets(root)
+  const links: string[] = []
   const normalize = (candidate: string): void => {
     const status = lstatSync(candidate)
     if (status.isSymbolicLink()) {
-      validateRuntimeLink(root, candidate)
-      if (path.dirname(candidate).endsWith(`${path.sep}node_modules${path.sep}.bin`)) {
-        const target = realpathSync(candidate)
-        if (!lstatSync(target).isFile()) throw new Error(`invalid dependency command: ${candidate}`)
-        normalize(target)
-      }
+      links.push(candidate)
       return
     }
     normalizePermission(candidate, status)
@@ -499,6 +531,17 @@ export function normalizeDependencyPermissions(root: string): void {
     if (manifest === "package.json") continue
     const dependencies = path.join(root, path.dirname(manifest), "node_modules")
     if (existsSync(dependencies)) normalize(dependencies)
+  }
+  const removed = removeRetiredWorkspaceLinks(root, links)
+  for (const candidate of links) {
+    if (removed.has(candidate)) continue
+    validateRuntimeLink(root, candidate)
+    if (path.dirname(candidate).endsWith(`${path.sep}node_modules${path.sep}.bin`)) {
+      const target = realpathSync(candidate)
+      const status = lstatSync(target)
+      if (!status.isFile()) throw new Error(`invalid dependency command: ${candidate}`)
+      normalizePermission(target, status)
+    }
   }
   for (const [target, status] of binaries) normalizePermission(target, status)
 }
