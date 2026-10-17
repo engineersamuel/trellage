@@ -57,6 +57,11 @@ run = "./scripts/rebuild-profile-images.sh"
 description = "Refresh native trx/launchers (alias of rebuild-profiles)"
 run = "./scripts/rebuild-profile-images.sh --native-only"
 
+[tasks.pull]
+description = "git pull --rebase origin main, then always refresh native launchers and upgrade Native harnesses, skills, and plugins"
+# Hooks are off for the pull itself so the upgrade runs exactly once, even when already up to date.
+run = "git -c core.hooksPath=/dev/null pull --rebase origin main && ./scripts/refresh-native-if-stale.sh && ./scripts/upgrade-after-pull.sh"
+
 [tasks.azure-copilot-spike]
 description = "Eval prototype: up|run|down|status a Copilot profile on an ephemeral Azure ARM64 VM"
 run = "./scripts/prototype-azure-copilot-spike.sh"

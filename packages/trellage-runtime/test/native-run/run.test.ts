@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite"
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
-import { chmod, mkdir, readFile, readdir, readlink, realpath, writeFile } from "node:fs/promises"
+import { chmod, mkdir, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
   claudeAdapter,
@@ -18,6 +18,7 @@ import {
   piExtensionEntries,
   primeAdapter,
   ujiAdapter,
+  type LaunchCommand,
   type LaunchInput,
 } from "../../src/native-run/adapters.ts"
 import {
@@ -361,7 +362,10 @@ test("canonical adapters launch agent executables instead of retired profile wra
   }
 })
 
-test("OMP admission prepares the host executable and managed launch environment", async () => {
+test.each([
+  ["--model=claude-opus-5.5", "github-copilot/claude-opus-5.5"],
+  ["--model=github-copilot/claude-opus-5.5", "github-copilot/claude-opus-5.5"],
+])("OMP admission preserves the model override %s", async (modelOption, selector) => {
   const { dependencies, root, work } = await world()
   const lifecycle = path.join(root, "omp-lifecycle")
   const executable = path.join(root, "host-omp")
@@ -387,15 +391,17 @@ printf '%s\\n' ${JSON.stringify(
 `,
     { mode: 0o755 },
   )
-  const prepared = await prepareRun({ ...base, harness: "omp", profiles: ["default"] }, dependencies())
+  const prepared = await prepareRun(parseRunArguments(["omp", modelOption, "--effort=high"]), dependencies())
+  expect(prepared.launch.args).toEqual(["--model", selector, "--thinking", "high"])
+  const forwardedArgs = ["-p", "hello"]
   const input: LaunchInput = {
     resumeArgs: [],
     layout: prepared.layout,
     plan: prepared.plan,
     planMode: false,
-    model: "gpt-5.6-sol",
-    effort: "medium",
-    forwardedArgs: ["-p", "hello"],
+    model: prepared.selection.model,
+    effort: prepared.selection.effort,
+    forwardedArgs,
     workspace: work,
     environment: {
       HOME: root,
@@ -403,13 +409,26 @@ printf '%s\\n' ${JSON.stringify(
       TRELLAGE_OMP_LIFECYCLE_BIN: lifecycle,
     },
   }
-  const launch = await ompAdapter.resolveLaunch!(input, prepared.launch)
+  const planned = ompAdapter.launch(input)
+  const launch = await ompAdapter.resolveLaunch!(input, planned)
   expect(launch.command).toBe(executable)
-  expect(launch.args).toEqual(["-p", "hello"])
+  expect(launch.args).toEqual(["--model", selector, "--thinking", "high", "-p", "hello"])
   expect(launch.env).toMatchObject({
     OMP_PROFILE: "trellage-copilot-native",
     PI_CONFIG_FILES: managedOverlay,
   })
+})
+
+test("OMP keeps profile defaults and passes explicit local model overrides", async () => {
+  const { dependencies } = await world()
+  const defaultRun = await prepareRun({ ...base, harness: "omp", profiles: [] }, dependencies())
+  expect(defaultRun.launch.args).toEqual(["--model", "github-copilot/gpt-5.6-sol", "--thinking", "medium"])
+  const local = await prepareRun({ ...base, harness: "omp", profiles: ["local"] }, dependencies())
+  expect(local.launch.args).toEqual([])
+  const overridden = await prepareRun({
+    ...base, harness: "omp", profiles: ["local"], model: "copilot-proxy-rs/custom-model", effort: "off",
+  }, dependencies())
+  expect(overridden.launch.args).toEqual(["--model", "copilot-proxy-rs/custom-model", "--thinking", "off"])
 })
 
 test("OMP admission rejects malformed relative executable paths", async () => {
@@ -1102,7 +1121,7 @@ test("Copilot admission bridges lifecycle plugins, hooks, and agents into the ge
     `#!/bin/sh
 test "$TRELLAGE_TRX_COPILOT_ADAPTER" = 1
 test "$1" = _trx-admit
-printf '%s\\n' '${JSON.stringify({ installedPlugins: "INSTALL_ROOT", settings: { enabledPlugins: { "hve-core@hve-core": true }, hooks: { sessionStart: [] }, subagents: { reviewer: { description: "review" } } } }).replace("INSTALL_ROOT", installedPlugins)}'
+printf '%s\\n' '${JSON.stringify({ installedPlugins: "INSTALL_ROOT", pluginRegistrations: [{ name: "hve-core", marketplace: "hve-core", enabled: true, cache_path: "INSTALL_ROOT/hve-core/hve-core" }], settings: { enabledPlugins: { "hve-core@hve-core": true }, hooks: { sessionStart: [] }, subagents: { reviewer: { description: "review" } } } }).replaceAll("INSTALL_ROOT", installedPlugins)}'
 `,
     { mode: 0o755 },
   )
@@ -1125,6 +1144,15 @@ printf '%s\\n' '${JSON.stringify({ installedPlugins: "INSTALL_ROOT", settings: {
   expect(settings.enabledPlugins["hve-core@hve-core"]).toBe(true)
   expect(settings.hooks).toEqual({ sessionStart: [] })
   expect(settings.subagents.reviewer.description).toBe("review")
+  const config = JSON.parse(await readFile(path.join(prepared.layout.generationPath, "config.json"), "utf8"))
+  expect(config.installedPlugins).toEqual([
+    {
+      name: "hve-core",
+      marketplace: "hve-core",
+      enabled: true,
+      cache_path: path.join(installedPlugins, "hve-core", "hve-core"),
+    },
+  ])
 })
 
 test("Claude applies opusplan defaults and real plan-mode arguments", async () => {
@@ -1634,4 +1662,234 @@ test("Copilot generations drop disable-model-invocation; other harnesses keep it
   const claude = await prepareRun({ ...base, harness: "claude", profiles: ["office"] }, dependencies())
   const kept = await readFile(path.join(claude.layout.generationPath, "skills", "powerpoint", "SKILL.md"), "utf8")
   expect(kept).toContain("disable-model-invocation: true")
+})
+
+const CLAUDE_CLEAN_ARGS = [
+  "--setting-sources",
+  "",
+  "--strict-mcp-config",
+  "--disable-slash-commands",
+  "--settings",
+  '{"skipDangerousModePermissionPrompt":true}',
+]
+
+const cleanWorld = async () => {
+  const w = await world()
+  const configPath = path.join(w.root, "absent", "config.toml")
+  const dependencies = (spawner?: Spawner): RunDependencies => {
+    const shared = w.dependencies(spawner)
+    return { ...shared, environment: { ...shared.environment, TRELLAGE_CONFIG: configPath, HOME: w.root } }
+  }
+  return { ...w, configPath, dependencies }
+}
+
+test("Claude clean publishes an empty generation without reading or creating the user config", async () => {
+  const { dependencies, configPath } = await cleanWorld()
+  const prepared = await prepareRun({ ...base, harness: "claude", profiles: ["clean"] }, dependencies())
+  expect(existsSync(configPath)).toBe(false)
+  expect(prepared.plan.skills).toEqual([])
+  expect(prepared.plan.instructions).toEqual([])
+  expect(prepared.plan.sources).toEqual([])
+  expect(prepared.launch.args.slice(0, CLAUDE_CLEAN_ARGS.length)).toEqual(CLAUDE_CLEAN_ARGS)
+  expect(prepared.launch.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe("1")
+  const files = await readdir(prepared.layout.generationPath)
+  expect(files).toContain(".claude.json")
+  expect(files).toContain("manifest.json")
+  expect(files).not.toContain("settings.json")
+  expect(files).not.toContain("statusline.sh")
+})
+
+test("clean ignores always-on profiles and loads no Pi skills, extensions or context files", async () => {
+  const { dependencies } = await alwaysWorld()
+  const pi = await prepareRun({ ...base, harness: "pi", profiles: ["clean"] }, dependencies())
+  expect(pi.plan.skills).toEqual([])
+  expect(existsSync(path.join(pi.layout.generationPath, "APPEND_SYSTEM.md"))).toBe(false)
+  expect(pi.launch.args).not.toContain("--skill")
+  expect(pi.launch.args).not.toContain("--extension")
+  expect(pi.launch.args).toContain("--no-context-files")
+  expect(pi.launch.args).toContain("--no-mcp")
+})
+
+test("Codex clean ignores host Codex defaults and disables repository docs and skills", async () => {
+  const { dependencies, root } = await cleanWorld()
+  await mkdir(path.join(root, ".codex"))
+  await writeFile(path.join(root, ".codex", "config.toml"), 'model = "host-model"\nmodel_reasoning_effort = "high"\n')
+  const codex = await prepareRun(
+    { ...base, harness: "codex", profiles: ["clean"], forwardedArgs: ["exec", "hi"] },
+    dependencies(),
+  )
+  const args = codex.launch.args
+  expect(args).not.toContain("-m")
+  expect(args).not.toContain("host-model")
+  const at = (value: string) => args.findIndex((argument, index) => argument === "-c" && args[index + 1] === value)
+  expect(at("project_doc_max_bytes=0")).toBeGreaterThanOrEqual(0)
+  expect(at("skills.include_instructions=false")).toBeGreaterThanOrEqual(0)
+  expect(at("project_doc_max_bytes=0")).toBeLessThan(args.indexOf("exec"))
+  expect(at("skills.include_instructions=false")).toBeLessThan(args.indexOf("exec"))
+})
+
+test("clean runs skip harness refresh and admission and count as proven isolation", async () => {
+  const { dependencies } = await cleanWorld()
+  const refreshed: string[] = []
+  const spawner: Spawner = async (_launch, _environment, _cwd, onSpawn) => {
+    onSpawn()
+    return 0
+  }
+  const shared = dependencies(spawner)
+  const claude = await runNative(
+    { ...base, harness: "claude", profiles: ["clean"], allowUnprovenIsolation: false },
+    {
+      ...shared,
+      environment: { ...shared.environment, TRELLAGE_CLAUDE_LIFECYCLE_BIN: "/nonexistent/claude-lifecycle" },
+      refreshHarness: async (harness) => (refreshed.push(harness), undefined),
+    },
+  )
+  expect(claude).toBe(0)
+  const pi = await runNative(
+    { ...base, harness: "pi", profiles: ["clean"], allowUnprovenIsolation: false },
+    { ...shared, refreshHarness: async (harness) => (refreshed.push(harness), undefined) },
+  )
+  expect(pi).toBe(0)
+  expect(refreshed).toEqual([])
+})
+
+test("clean rejects unsupported harnesses and mixed selections", async () => {
+  const { dependencies } = await cleanWorld()
+  await expect(prepareRun({ ...base, harness: "grok", profiles: ["clean"] }, dependencies())).rejects.toThrow(
+    /Grok cannot run clean: .*Clean runs support: claude, codex, copilot, pi/,
+  )
+  await expect(prepareRun({ ...base, harness: "claude", profiles: ["clean", "office"] }, dependencies())).rejects.toThrow(
+    /cannot be combined/,
+  )
+  await expect(
+    prepareRun({ ...base, harness: "claude", profiles: ["clean"], skills: ["a/b:c"] }, dependencies()),
+  ).rejects.toThrow(/cannot be combined/)
+})
+
+test("clean resume command names the clean profile", () => {
+  expect(resumeCommand({ ...base, harness: "claude", profiles: ["clean"] })).toBe("trx run claude clean --continue")
+})
+
+test("Codex clean refuses a repository .codex layer up to the git root but not above it", async () => {
+  const { dependencies, root, work } = await cleanWorld()
+  await mkdir(path.join(work, ".codex"))
+  await writeFile(path.join(work, ".codex", "config.toml"), 'developer_instructions = "repo"\n')
+  await expect(prepareRun({ ...base, harness: "codex", profiles: ["clean"] }, dependencies())).rejects.toThrow(
+    /cannot run clean here: .*\.codex/,
+  )
+  const nested = path.join(work, "sub", "dir")
+  await mkdir(nested, { recursive: true })
+  await expect(
+    prepareRun({ ...base, harness: "codex", profiles: ["clean"] }, { ...dependencies(), cwd: nested }),
+  ).rejects.toThrow(/cannot run clean here: .*\.codex/)
+  await rm(path.join(work, ".codex"), { recursive: true })
+  await mkdir(path.join(root, ".codex"))
+  const codex = await prepareRun({ ...base, harness: "codex", profiles: ["clean"] }, dependencies())
+  expect(codex.plan.skills).toEqual([])
+})
+
+test("Claude pins default model ids only for concrete models, never for aliases", async () => {
+  const { dependencies } = await cleanWorld()
+  const normal = await prepareRun({ ...base, harness: "claude", profiles: ["default"] }, dependencies())
+  expect(normal.launch.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined()
+  const clean = await prepareRun({ ...base, harness: "claude", profiles: ["clean"] }, dependencies())
+  expect(clean.launch.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined()
+  const concrete = await prepareRun(
+    { ...base, harness: "claude", profiles: ["default"], model: "claude-opus-5" },
+    dependencies(),
+  )
+  expect(concrete.launch.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-5")
+  expect(concrete.launch.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-opus-5")
+})
+
+const capture = () => {
+  const launches: LaunchCommand[] = []
+  const spawner: Spawner = async (launch, _environment, _cwd, onSpawn) => {
+    launches.push(launch)
+    onSpawn()
+    return 0
+  }
+  return { launches, spawner }
+}
+
+test("Codex clean disables every skill its app server still lists", async () => {
+  const { dependencies, root } = await cleanWorld()
+  const fake = path.join(root, "fake-codex")
+  await writeFile(
+    fake,
+    `#!${process.execPath}
+const lines = require("node:readline").createInterface({ input: process.stdin })
+lines.on("line", (line) => {
+  const message = JSON.parse(line)
+  if (message.id === 1) console.log(JSON.stringify({ id: 1, result: {} }))
+  if (message.id === 2)
+    console.log(JSON.stringify({ id: 2, result: { data: [{ skills: [
+      { name: "a", path: "/a/SKILL.md", enabled: true },
+      { name: "b", path: "/b/SKILL.md", enabled: true },
+      { name: "c", path: "/c/SKILL.md", enabled: false },
+    ] }] } }))
+})
+`,
+    { mode: 0o755 },
+  )
+  const { launches, spawner } = capture()
+  const shared = dependencies(spawner)
+  const status = await runNative(
+    { ...base, harness: "codex", profiles: ["clean"], forwardedArgs: ["exec", "hi"] },
+    { ...shared, environment: { ...shared.environment, TRELLAGE_CODEX_BIN: fake } },
+  )
+  expect(status).toBe(0)
+  const args = launches[0]!.args
+  const config = args.indexOf('skills.config=[{path="/a/SKILL.md",enabled=false},{path="/b/SKILL.md",enabled=false}]')
+  expect(args[config - 1]).toBe("-c")
+  expect(config).toBeLessThan(args.indexOf("exec"))
+  expect(args.slice(0, 2)).toEqual(["-c", "project_doc_max_bytes=0"])
+})
+
+test("Copilot clean disables listed skills and MCP servers and refuses repository hooks", async () => {
+  const { dependencies, root, work } = await cleanWorld()
+  const fake = path.join(root, "fake-copilot")
+  await writeFile(
+    fake,
+    `#!/bin/sh
+case "$*" in
+  *"skill list"*) echo '[{"name":"repo-skill","source":"project","enabled":true},{"name":"host-skill","source":"personal","enabled":true}]' ;;
+  *"mcp list"*) echo '{"mcpServers":{"repo-server":{},"host-server":{}}}' ;;
+  *) exit 9 ;;
+esac
+`,
+    { mode: 0o755 },
+  )
+  const { launches, spawner } = capture()
+  const shared = dependencies(spawner)
+  const environment = { ...shared.environment, TRELLAGE_COPILOT_BIN: fake }
+  const status = await runNative(
+    { ...base, harness: "copilot", profiles: ["clean"] },
+    { ...shared, environment },
+  )
+  expect(status).toBe(0)
+  const launch = launches[0]!
+  expect(launch.args.slice(0, 8)).toEqual([
+    "--no-auto-update",
+    "--no-custom-instructions",
+    "--disable-builtin-mcps",
+    "--excluded-tools=task,read_agent,list_agents,write_agent",
+    "--disable-mcp-server",
+    "repo-server",
+    "--disable-mcp-server",
+    "host-server",
+  ])
+  const settings = JSON.parse(await readFile(path.join(launch.env.COPILOT_HOME!, "settings.json"), "utf8"))
+  expect(settings).toEqual({ disabledSkills: ["repo-skill", "host-skill"], memory: false })
+  expect(existsSync(path.join(launch.env.COPILOT_HOME!, "installed-plugins"))).toBe(false)
+  await expect(
+    prepareRun(
+      { ...base, harness: "copilot", profiles: ["clean"], forwardedArgs: ["--enable-mcp-server=repo-server"] },
+      { ...shared, environment },
+    ),
+  ).rejects.toThrow("--enable-mcp-server cannot be forwarded to a clean Copilot run")
+  await mkdir(path.join(work, ".github", "hooks"), { recursive: true })
+  await expect(
+    prepareRun({ ...base, harness: "copilot", profiles: ["clean"] }, { ...shared, environment }),
+  ).rejects.toThrow(/cannot run clean here: .*\.github\/hooks/)
 })

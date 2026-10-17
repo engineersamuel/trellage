@@ -719,18 +719,6 @@ export function requirePublishedSourceIdentity(root: string): void {
   publishedReadiness(root)
 }
 
-// Replacement must still refuse tampered or unrelated runtime contents. Only
-// the recorded Bun pin is ignored, so bumping that pin cannot strand an
-// otherwise intact installed runtime behind an unreplaceable readiness record.
-export function requireReplaceableSourceContents(root: string): void {
-  const value = publishedReadiness(root)
-  if (value === undefined) return
-  if (typeof value.inventory !== "string") {
-    throw new Error(`refusing changed or unrelated source runtime contents: ${root}; prepare dependencies explicitly`)
-  }
-  requireInventory(root, value.inventory, validateOwnedTree(root, !existsSync(path.join(root, sourceMarker))))
-}
-
 function requireInventory(root: string, expected: string, actual: string): void {
   if (expected !== actual) {
     throw new Error(`refusing changed or unrelated source runtime contents: ${root}; prepare dependencies explicitly`)

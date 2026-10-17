@@ -8,12 +8,16 @@ import { promisify } from "node:util"
 import { readTrellageConfig, TrellageConfigError, type NativeCatalog } from "../native-config.ts"
 import {
   PI_EXTENSION_PACKAGES,
+  adapters,
   piExtensionEntries,
   piExtensionsHome,
   adapterFor,
   assertEffort,
   hostDefaults,
   type HostDefaults,
+  type CleanLaunch,
+  type IsolationStatus,
+  type LaunchInput,
   assertForwardedArgs,
   type LaunchCommand,
   type NativeAdapter,
@@ -58,7 +62,28 @@ Profiles with always = true are added to every run; --no-always skips them. --dr
 prints the launch plan without starting the harness. --skill adds one skill from a GitHub repository without a
 configured profile; repeat it for more skills.
 Conversations are kept per harness and profile set. --continue reopens the most recent one in this directory;
---resume lists them (or --resume=ID opens one). Use the same harness and profiles as the original run.`
+--resume lists them (or --resume=ID opens one). Use the same harness and profiles as the original run.
+Profile clean launches the harness with no skills, MCP servers, instructions, hooks or plugins from trx, the
+repository or the host, and installs nothing. Supported: claude, codex, copilot, pi.`
+
+export const CLEAN_PROFILE = "clean"
+
+type SupportedCleanLaunch = Extract<CleanLaunch, { supported: true }>
+
+const cleanLaunchFor = (adapter: NativeAdapter, options: RunOptions): SupportedCleanLaunch | undefined => {
+  if (!options.profiles.includes(CLEAN_PROFILE)) return undefined
+  if (options.profiles.length > 1 || options.skills?.length)
+    throw new NativeRunError("usage", "clean cannot be combined with other profiles or --skill")
+  if (adapter.clean.supported) return adapter.clean
+  const supported = Object.entries(adapters)
+    .filter(([, candidate]) => candidate.clean.supported)
+    .map(([id]) => id)
+    .sort()
+  throw new NativeRunError(
+    "unsupported",
+    `${adapter.label} cannot run clean: ${adapter.clean.reason}. Clean runs support: ${supported.join(", ")}`,
+  )
+}
 
 interface RunArgumentState {
   model?: string
@@ -390,6 +415,9 @@ export interface PreparedRun {
   readonly selection: Selection
   /** Host defaults applied when the selection names no model or effort. */
   readonly defaults: HostDefaults
+  readonly isolation: IsolationStatus
+  /** Launched through the adapter's clean boundary; no refresh or admission runs. */
+  readonly clean: boolean
 }
 
 const shellWord = (word: string): string =>
@@ -414,6 +442,7 @@ const loadNativeCatalog = async (dependencies: RunDependencies, environment: Nod
 
 const buildLaunch = (
   adapter: NativeAdapter,
+  launch: (input: LaunchInput) => LaunchCommand,
   layout: GenerationLayout,
   plan: CompositionPlan,
   options: RunOptions,
@@ -421,7 +450,7 @@ const buildLaunch = (
   environment: NodeJS.ProcessEnv,
   workspace: string,
 ): LaunchCommand =>
-  adapter.launch({
+  launch({
     layout,
     plan,
     planMode: options.plan === true,
@@ -434,16 +463,16 @@ const buildLaunch = (
   })
 
 export const describePreparedRun = (prepared: PreparedRun): string[] => {
-  const { adapter, plan, layout, launch } = prepared
+  const { adapter, plan, layout, launch, isolation } = prepared
   const policy = adapter.effectivePolicy(launchModel(prepared), launchEffort(prepared))
   return [
     `Harness     ${adapter.label}${plan.profiles.length ? ` + ${plan.profiles.join(" + ")}` : " (no selected profiles)"}`,
-    ...(adapter.extensions?.length ? [`Extensions  ${adapter.extensions.join(", ")}`] : []),
+    ...(adapter.extensions?.length && !prepared.clean ? [`Extensions  ${adapter.extensions.join(", ")}`] : []),
     `Always-on   ${plan.alwaysProfiles.join(", ") || "none"}`,
     `Instructions ${plan.instructions.map((instruction) => instruction.id).join(", ") || "none"}`,
     `Normal      ${policy.normal}`,
     `Plan        ${policy.plan}`,
-    `Isolation   ${adapter.isolation.status} — ${adapter.isolation.evidence}`,
+    `Isolation   ${isolation.status} — ${isolation.evidence}`,
     `Generation  ${layout.generationPath}`,
     ...(plan.skills.length === 0
       ? ["Skills      none"]
@@ -545,23 +574,100 @@ const buildPreparedRun = (
   dependencies: RunDependencies,
   environment: NodeJS.ProcessEnv,
 ): PreparedRun => {
-  const host = hostDefaults(adapter.id, dependencies.configHome ?? environment.HOME)
+  const host = hostDefaults(adapter.id, dependencies.configHome ?? environment.HOME, plan)
   const defaults = options.plan
     ? { model: adapter.planDefaults?.model ?? host.model, effort: adapter.planDefaults?.effort ?? host.effort }
     : host
-  const launch = buildLaunch(adapter, layout, plan, options, defaults, environment, dependencies.cwd ?? process.cwd())
+  const launch = buildLaunch(
+    adapter,
+    adapter.launch,
+    layout,
+    plan,
+    options,
+    defaults,
+    environment,
+    dependencies.cwd ?? process.cwd(),
+  )
   return {
     adapter,
     plan,
     layout,
     launch,
     defaults,
-    selection: {
+    isolation: adapter.isolation,
+    clean: false,
+    selection: { harness: adapter.id, profiles: options.profiles, model: options.model, effort: options.effort },
+  }
+}
+
+/** Compose an empty generation without reading the user config, resolving sources or reading host defaults. */
+const prepareCleanRun = async (
+  adapter: NativeAdapter,
+  clean: SupportedCleanLaunch,
+  options: RunOptions,
+  dependencies: RunDependencies,
+  environment: NodeJS.ProcessEnv,
+  paths: NativeRunPaths,
+): Promise<PreparedRun> => {
+  const reopened = options.forwardedArgs.find((argument) => clean.managedFlags?.includes(argument.split("=", 1)[0]!))
+  if (reopened !== undefined)
+    throw new NativeRunError("usage", `${reopened.split("=", 1)[0]} cannot be forwarded to a clean ${adapter.label} run`)
+  const blocked = (await clean.blockers?.find(dependencies.cwd ?? process.cwd())) ?? []
+  if (blocked.length > 0)
+    throw new NativeRunError(
+      "unsupported",
+      `${adapter.label} cannot run clean here: ${blocked.join(", ")} ${clean.blockers!.effect}`,
+    )
+  const plan = await planComposition(
+    {
       harness: adapter.id,
-      profiles: options.profiles,
-      model: options.model,
-      effort: options.effort,
+      profiles: [CLEAN_PROFILE],
+      catalog: {
+        sources: {},
+        instructions: {},
+        profiles: { [CLEAN_PROFILE]: { always: false, instructions: [], skills: [], plugins: [] } },
+      },
+      adapterPolicy: adapter.policyVersion,
+      providerPolicy: adapter.providerPolicy(options.model),
+      instructionTexts: {},
+      skipAlways: true,
     },
+    { resolver: createSourceResolver({ paths, transport: dependencies.transport ?? gitSourceTransport() }) },
+  )
+  const layout = await publishGeneration({
+    paths,
+    plan,
+    skillsSubdirectory: adapter.skillsSubdirectory,
+    instructionsFile: adapter.instructionsFile,
+    persistentState: adapter.persistentState,
+    writeAdapterFiles: (stage, generationLayout) => clean.writeAdapterFiles(stage, options.model, generationLayout),
+  })
+  await pruneGenerations(paths, layout.ownerHome, 3, plan.generationId)
+  const defaults = options.plan
+    ? {
+        model: adapter.planDefaults?.model ?? clean.defaults.model,
+        effort: adapter.planDefaults?.effort ?? clean.defaults.effort,
+      }
+    : clean.defaults
+  const launch = buildLaunch(
+    adapter,
+    clean.launch,
+    layout,
+    plan,
+    options,
+    defaults,
+    environment,
+    dependencies.cwd ?? process.cwd(),
+  )
+  return {
+    adapter,
+    plan,
+    layout,
+    launch,
+    defaults,
+    isolation: { status: "proven", evidence: clean.evidence },
+    clean: true,
+    selection: { harness: adapter.id, profiles: options.profiles, model: options.model, effort: options.effort },
   }
 }
 
@@ -572,6 +678,8 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
   const adapter = adapterFor(options.harness)
   assertEffort(adapter, options.effort)
   assertForwardedArgs(adapter, options.forwardedArgs)
+  const clean = cleanLaunchFor(adapter, options)
+  if (clean) return prepareCleanRun(adapter, clean, options, dependencies, environment, paths)
 
   await ensureNativeConfig({ environment, ...(dependencies.configHome ? { home: dependencies.configHome } : {}) })
   const loaded = await loadNativeCatalog(dependencies, environment)
@@ -626,7 +734,7 @@ const refreshPreparedRun = async (
 }
 
 const assertLaunchIsolation = (prepared: PreparedRun, options: RunOptions): void => {
-  if (prepared.adapter.isolation.status === "proven" || options.allowUnprovenIsolation) return
+  if (prepared.isolation.status === "proven" || options.allowUnprovenIsolation) return
   throw new NativeRunError(
     "isolation",
     `${prepared.adapter.label} configuration isolation is not proven, so the launch was not started. Unselected skills from the repository or host may load. Remove --require-proven-isolation to launch anyway.`,
@@ -645,6 +753,19 @@ const createRunWriter = (options: RunOptions, dependencies: RunDependencies): ((
   const machineOutput = outputFormat === "json" || outputFormat === "jsonl" || outputFormat === "stream-json"
   if (machineOutput || (!options.dryRun && !process.stdout.isTTY)) return () => undefined
   return (line: string) => process.stdout.write(`${line}\n`)
+}
+
+const resolvePreparedLaunch = async (prepared: PreparedRun, launchInput: LaunchInput): Promise<LaunchCommand> => {
+  const resolve = prepared.clean
+    ? prepared.adapter.clean.supported
+      ? prepared.adapter.clean.resolveLaunch
+      : undefined
+    : prepared.adapter.resolveLaunch
+  const resolvedLaunch = (await resolve?.(launchInput, prepared.launch)) ?? prepared.launch
+  const finalEnvironment = prepared.clean ? undefined : await prepared.adapter.beforeLaunch?.(launchInput)
+  return finalEnvironment === undefined
+    ? resolvedLaunch
+    : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
 }
 
 const launchPreparedRun = async (
@@ -680,12 +801,7 @@ const launchPreparedRun = async (
       workspace: cwd,
       ...(guard === undefined ? {} : { guard }),
     }
-    const resolvedLaunch = (await prepared.adapter.resolveLaunch?.(launchInput, prepared.launch)) ?? prepared.launch
-    const finalEnvironment = await prepared.adapter.beforeLaunch?.(launchInput)
-    const launch =
-      finalEnvironment === undefined
-        ? resolvedLaunch
-        : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
+    const launch = await resolvePreparedLaunch(prepared, launchInput)
     cleanup = launch.cleanup
     let recorded: Promise<void> = Promise.resolve()
     const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, (pid) => {
@@ -713,15 +829,17 @@ export const runNative = async (options: RunOptions, dependencies: RunDependenci
   const environment = dependencies.environment ?? process.env
   const cwd = dependencies.cwd ?? process.cwd()
   const paths = dependencies.paths ?? resolveNativeRunPaths({ environment })
+  const clean = options.profiles.includes(CLEAN_PROFILE)
   const piRefresh =
-    options.harness === "pi" && !options.dryRun && dependencies.refreshHarness === undefined
+    options.harness === "pi" && !clean && !options.dryRun && dependencies.refreshHarness === undefined
       ? checkPiRefresh(environment)
       : Promise.resolve({})
 
   let prepared = await prepareRun(options, dependencies)
   for (const line of describePreparedRun(prepared)) write(line)
   if (options.dryRun) return 0
-  prepared = await refreshPreparedRun(prepared, options, dependencies, environment, write, await piRefresh)
+  if (!prepared.clean)
+    prepared = await refreshPreparedRun(prepared, options, dependencies, environment, write, await piRefresh)
   assertLaunchIsolation(prepared, options)
   return launchPreparedRun(prepared, options, dependencies, environment, cwd, paths, write)
 }

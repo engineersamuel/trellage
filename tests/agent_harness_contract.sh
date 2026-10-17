@@ -32,7 +32,8 @@ for required in \
   scripts/profile-compiler-fingerprint.sh \
   config.toml \
   scripts/install-lefthook-hook.sh \
-  scripts/refresh-native-if-stale.sh; do
+  scripts/refresh-native-if-stale.sh \
+  scripts/upgrade-after-pull.sh; do
   [[ -f "${required}" ]] || fail "missing ${required}"
 done
 
@@ -50,6 +51,7 @@ done
   || fail "profile compiler fingerprint script is not executable"
 [[ -x scripts/install-lefthook-hook.sh ]] || fail "Lefthook installer is not executable"
 [[ -x scripts/refresh-native-if-stale.sh ]] || fail "native freshness script is not executable"
+[[ -x scripts/upgrade-after-pull.sh ]] || fail "pull upgrade script is not executable"
 
 jq -e '
   .devDependencies.oxlint and
@@ -258,15 +260,38 @@ cat >"${lefthook_primary}/scripts/refresh-native-if-stale.sh" <<'EOF'
 printf '%s\n' "$PWD" "$@" >"${REFRESH_CONTRACT_ARGS:?}"
 EOF
 chmod +x "${lefthook_primary}/scripts/refresh-native-if-stale.sh"
+pull_upgrade_log="${lefthook_regression_root}/pull-upgrade-log"
+cat >"${lefthook_primary}/scripts/upgrade-after-pull.sh" <<'EOF'
+#!/bin/sh
+printf 'upgrade %s\n' "$PWD" >>"${PULL_UPGRADE_LOG:?}"
+EOF
+chmod +x "${lefthook_primary}/scripts/upgrade-after-pull.sh"
 for rebuild_hook in "${post_commit_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
   (
     cd "${lefthook_primary}"
-    REFRESH_CONTRACT_ARGS="${refresh_args}" "${rebuild_hook}"
+    env -u GIT_REFLOG_ACTION REFRESH_CONTRACT_ARGS="${refresh_args}" PULL_UPGRADE_LOG="${pull_upgrade_log}" \
+      "${rebuild_hook}"
   )
   printf '%s\n' "${lefthook_primary}" >"${lefthook_regression_root}/expected-refresh-args"
   cmp -s "${lefthook_regression_root}/expected-refresh-args" "${refresh_args}" \
     || fail "installed rebuild hook did not refresh from the active worktree"
 done
+[[ ! -e "${pull_upgrade_log}" ]] || fail "a non-pull hook ran the pull upgrade"
+
+# git pull fast-forwards through post-merge and rebases through post-rewrite (plus post-commit per commit).
+for pull_hook in "${post_commit_hook}" "${post_merge_hook}" "${post_rewrite_hook}"; do
+  rm -f -- "${refresh_args}"
+  (
+    cd "${lefthook_primary}"
+    GIT_REFLOG_ACTION='pull --rebase origin main' REFRESH_CONTRACT_ARGS="${refresh_args}" \
+      PULL_UPGRADE_LOG="${pull_upgrade_log}" "${pull_hook}"
+  )
+  [[ -e "${refresh_args}" ]] || fail "pull hook skipped the Native refresh before upgrading"
+done
+printf 'upgrade %s\nupgrade %s\n' "${lefthook_primary}" "${lefthook_primary}" \
+  >"${lefthook_regression_root}/expected-pull-upgrades"
+cmp -s "${lefthook_regression_root}/expected-pull-upgrades" "${pull_upgrade_log}" \
+  || fail "git pull did not upgrade exactly once from post-merge and once from post-rewrite"
 
 refresh_fixture="${lefthook_regression_root}/refresh-fixture"
 refresh_home="${lefthook_regression_root}/refresh-home"

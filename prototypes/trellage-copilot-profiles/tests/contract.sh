@@ -332,6 +332,19 @@ case "${1-} ${2-}" in
     mkdir -p "$(dirname "$installed")"
     printf '%s\t%s\n' "$plugin" "$version" >"$installed"
     mkdir -p "$COPILOT_HOME/installed-plugins/${plugin#*@}/${plugin%%@*}"
+    # Real Copilot registers installs in config.json behind a // comment header.
+    config="$COPILOT_HOME/config.json"
+    current='{}'
+    [[ -f "$config" ]] && current="$(grep -v '^//' "$config")"
+    {
+      printf '// User settings belong in settings.json.\n// This file is managed automatically.\n'
+      jq --arg name "${plugin%%@*}" --arg marketplace "${plugin#*@}" --arg version "$version" \
+        --arg cache "$COPILOT_HOME/installed-plugins/${plugin#*@}/${plugin%%@*}" '
+        .installedPlugins = ([(.installedPlugins // [])[] | select(.name != $name or .marketplace != $marketplace)]
+          + [{name: $name, marketplace: $marketplace, enabled: true, version: $version, cache_path: $cache}])
+      ' <<<"$current"
+    } >"$config.next"
+    mv "$config.next" "$config"
     if [[ "$plugin" == 'plannotator-effective-html@effective-html' ]]; then
       materialize_plannotator_plugin 1
     elif [[ "$plugin" == 'compound-engineering@compound-engineering-plugin' ]]; then
@@ -1116,7 +1129,7 @@ for profile in awesome compound-engineering hve plannotator superpowers tufte-vd
     && -f "$profile_home/mcp-config.json" \
     && -f "$profile_home/plugins/$profile-plugin/manifest.json" ]] \
     || fail "$profile did not retain distinct profile-local config, session, MCP, and plugin state"
-  [[ "$(<"$profile_home/config.json")" == "{\"profile\":\"$profile\"}" \
+  [[ "$(grep -v '^//' "$profile_home/config.json" | jq -r 'del(.installedPlugins) | tojson')" == "{\"profile\":\"$profile\"}" \
     && "$(<"$profile_home/sessions/$profile-session")" == "$profile session" \
     && "$(<"$profile_home/mcp-config.json")" == "{\"mcpServers\":{},\"profile\":\"$profile\"}" \
     && "$(<"$profile_home/plugins/$profile-plugin/manifest.json")" == "{\"profile\":\"$profile\"}" \

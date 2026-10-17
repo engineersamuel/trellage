@@ -670,7 +670,7 @@ assert_contains 'trx guide --preview' "$fixture_root/help.out"
 assert_contains 'trx skills status' "$fixture_root/help.out"
 assert_contains 'trx skills update' "$fixture_root/help.out"
 assert_contains 'trx admin' "$fixture_root/help.out"
-assert_contains 'trx upgrade all [--yes | --dry-run]' "$fixture_root/help.out"
+assert_contains 'trx upgrade all [--native] [--yes | --dry-run]' "$fixture_root/help.out"
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
 assert_contains 'trx run copilot tufte-vdqi' "$fixture_root/help.out"
 
@@ -697,17 +697,18 @@ assert_contains 'It reads' "$fixture_root/guide-help.out"
 
 PATH=/usr/bin:/bin "$fixture_bin/trx" upgrade --help >"$fixture_root/upgrade-help.out"
 PATH=/usr/bin:/bin "$fixture_bin/trx" upgrade all --help >"$fixture_root/upgrade-all-help.out"
-assert_contains 'trx upgrade all [--yes | --dry-run]' "$fixture_root/upgrade-help.out"
+assert_contains 'trx upgrade all [--native] [--yes | --dry-run]' "$fixture_root/upgrade-help.out"
 for invalid_upgrade in \
   '' '--yes' 'native' 'all --yes --dry-run' 'all --yes --yes' \
   'all --dry-run --dry-run' 'all --unknown' 'all --yes=true' \
-  'all --' 'all profile' 'all --help --yes'; do
+  'all --' 'all profile' 'all --help --yes' 'all --native --native' \
+  'all --native --yes --dry-run'; do
   read -r -a invalid_upgrade_args <<<"$invalid_upgrade"
   status=0
   PATH=/usr/bin:/bin "$fixture_bin/trx" upgrade "${invalid_upgrade_args[@]+"${invalid_upgrade_args[@]}"}" \
     >"$fixture_root/upgrade-invalid.out" 2>"$fixture_root/upgrade-invalid.err" || status=$?
   [[ "$status" == 1 ]] || fail "invalid upgrade arguments exited $status instead of 1"
-  assert_contains 'upgrade requires all [--yes | --dry-run]' "$fixture_root/upgrade-invalid.err"
+  assert_contains 'upgrade requires all [--native] [--yes | --dry-run]' "$fixture_root/upgrade-invalid.err"
 done
 
 # The fixture-only basket preview must short-circuit before the Sandbox catalog.
@@ -1858,6 +1859,28 @@ actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
 raise SystemExit(0 if actual[0] == b"omp" and actual[-2:] == [b"--native-copilot", b""] else 1)
 PY
 
+for launcher in cpx cdx cldx fmx jcx omp picx prx agx; do
+  mv "$fixture_bin/$launcher" "$fixture_bin/$launcher.absent"
+done
+cp "$runtime_parent/cpx/catalog.json" "$fixture_root/copilot-isolation.catalog"
+printf '{not-json}\n' >"$runtime_parent/cpx/catalog.json"
+TRX_ARGUMENT_LOG="$argument_log" \
+  TRELLAGE_CONFIG="$fixture_root/minimal-native-config.toml" \
+  "$fixture_bin/trx" run claude cldx-p -- 'two words' '' '--literal=*' \
+  || fail 'direct Claude launch required a public launcher or unrelated catalog'
+python3 - "$argument_log" <<'PY' || fail 'isolated Claude launch changed arguments'
+import pathlib
+import sys
+
+actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+raise SystemExit(0 if actual[0] == b"claude" and actual[-4:] == [
+    b"two words", b"", b"--literal=*", b"",
+] else 1)
+PY
+mv "$fixture_root/copilot-isolation.catalog" "$runtime_parent/cpx/catalog.json"
+for launcher in cpx cdx cldx fmx jcx omp picx prx agx; do
+  mv "$fixture_bin/$launcher.absent" "$fixture_bin/$launcher"
+done
 
 status=0
 TRX_ARGUMENT_LOG="$argument_log" \

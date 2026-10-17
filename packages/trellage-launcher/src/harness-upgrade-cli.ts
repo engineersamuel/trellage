@@ -17,7 +17,7 @@ import type { CombinedGuideCatalog } from "./guide-catalog.ts"
 import { renderCommandPreview, type CommandRunner } from "./guide-launch.ts"
 
 export const harnessUpgradeHelpText = `Usage:
-  trx upgrade all [--yes | --dry-run]
+  trx upgrade all [--native] [--yes | --dry-run]
 
 Update harness versions AND skills for every Native catalog profile
 and every discovered Firstmate instance. The preview includes targets hidden by
@@ -29,6 +29,7 @@ Native skill copies are final; harness updates cannot overwrite them afterward.
 Admin U remains the selected harness-only action.
 
 Without a flag, preview the scope and require you to type yes at a terminal.
+--native limits the queue to steps 1-3; Container images are not built.
 --yes authorizes updates without an interactive terminal.
 --dry-run reads local instance lists and previews the scope without running
 updates, readiness probes, or version checks.
@@ -43,20 +44,31 @@ Cancellation exits 130.
 
 This does not install or upgrade Trellage itself.`
 
-export type HarnessUpgradeArgs = { readonly kind: "help" } | { readonly kind: "run"; readonly approval: "confirm" | "yes" | "dry-run" }
+export type HarnessUpgradeScope = "all" | "native"
+export type HarnessUpgradeArgs =
+  | { readonly kind: "help" }
+  | { readonly kind: "run"; readonly approval: "confirm" | "yes" | "dry-run"; readonly scope: HarnessUpgradeScope }
 
-const helpArguments = new Set(["--help", "-h", "help"])
-const usageError = (): Error => new Error("Use trx upgrade all [--yes | --dry-run], or trx upgrade --help.")
+const helpArguments: Record<string, true> = { "--help": true, "-h": true, help: true }
+const isHelpArgument = (argument: string | undefined): boolean =>
+  argument !== undefined && Object.hasOwn(helpArguments, argument)
+const usageError = (): Error =>
+  new Error("Use trx upgrade all [--native] [--yes | --dry-run], or trx upgrade --help.")
 
 export const parseHarnessUpgradeArgv = (argv: ReadonlyArray<string>): HarnessUpgradeArgs => {
-  if (argv.length === 1 && helpArguments.has(argv[0]!)) return { kind: "help" }
-  if (argv[0] !== "all" || argv.length > 2) throw usageError()
-  if (argv.length === 1) return { kind: "run", approval: "confirm" }
-  const flag = argv[1]!
-  if (helpArguments.has(flag)) return { kind: "help" }
-  if (flag === "--yes") return { kind: "run", approval: "yes" }
-  if (flag === "--dry-run") return { kind: "run", approval: "dry-run" }
-  throw usageError()
+  if (argv.length === 1 && isHelpArgument(argv[0])) return { kind: "help" }
+  if (argv[0] !== "all" || argv.length > 3) throw usageError()
+  const flags = argv.slice(1)
+  if (flags.length === 1 && isHelpArgument(flags[0])) return { kind: "help" }
+  let approval: "confirm" | "yes" | "dry-run" = "confirm"
+  let scope: HarnessUpgradeScope = "all"
+  for (const flag of flags) {
+    if (flag === "--native" && scope === "all") scope = "native"
+    else if (flag === "--yes" && approval === "confirm") approval = "yes"
+    else if (flag === "--dry-run" && approval === "confirm") approval = "dry-run"
+    else throw usageError()
+  }
+  return { kind: "run", approval, scope }
 }
 
 export type HarnessUpgradeConfirmation = "confirmed" | "cancelled" | "unavailable"
@@ -144,14 +156,15 @@ const validateInstanceCoverage = (entries: ReadonlyArray<AdminProfileEntry>, cat
 }
 
 const completeCatalogPlan = async (
-  combined: CombinedGuideCatalog,
+  catalog: CombinedGuideCatalog,
+  scope: HarnessUpgradeScope,
   options: HarnessUpgradeCliOptions,
   runner: CommandRunner,
 ): Promise<HarnessUpdateAllPlan> => {
-  const catalog = combined
   const refs = completeCatalogRefs(catalog)
-  const entries = await discoverAdminInstanceEntries(runner, catalog, options.cwd, options.signal)
-  validateInstanceCoverage(entries, refs)
+  const discovered = await discoverAdminInstanceEntries(runner, catalog, options.cwd, options.signal)
+  validateInstanceCoverage(discovered, refs)
+  const entries = scope === "native" ? discovered.filter((entry) => entry.surface === "native") : discovered
   const plan = harnessUpdateAllPlanFor(entries, undefined, options.routerCommandPath ?? "trx")
   if (plan.profileCount !== entries.length) {
     throw new Error("Incomplete catalog: the update plan lost instance targets. No updates were started.")
@@ -160,12 +173,13 @@ const completeCatalogPlan = async (
 }
 
 const discoverUpgradePlan = async (
+  scope: HarnessUpgradeScope,
   options: HarnessUpgradeCliOptions,
   runner: CommandRunner,
 ): Promise<HarnessUpdateAllPlan | "cancelled"> => {
   try {
     options.signal?.throwIfAborted()
-    return await completeCatalogPlan(await options.readCatalog(), options, runner)
+    return await completeCatalogPlan(await options.readCatalog(), scope, options, runner)
   } catch (error) {
     if (options.signal?.aborted !== true) throw error
     return "cancelled"
@@ -340,7 +354,7 @@ export const runHarnessUpgradeCli = async (options: HarnessUpgradeCliOptions): P
     return 0
   }
   const runner = upgradeRunner(options)
-  const plan = await discoverUpgradePlan(options, runner)
+  const plan = await discoverUpgradePlan(args.scope, options, runner)
   if (plan === "cancelled") {
     options.writeLine("Update all cancelled. No harness or skill updates were started.")
     return 130

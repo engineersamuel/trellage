@@ -1939,10 +1939,21 @@ case "$command_name" in
     admission_plugin="$(profile_value "$admission_profile" plugin)"
     active_plugin_root "$admission_profile" "$admission_plugin" >/dev/null \
       || die "installed plugin root is missing or unsafe: $admission_profile"
+    admission_config="$admission_home/config.json"
+    [[ -f "$admission_config" && ! -L "$admission_config" ]] \
+      || die "invalid profile config: $admission_profile"
+    # Copilot registers plugins only through config.json installedPlugins; it prefixes the file with // comments.
+    admission_registration="$(grep -v '^[[:space:]]*//' "$admission_config" | jq -c --arg plugin "$admission_plugin" '
+      [(.installedPlugins // [])[] | select("\(.name)@\(.marketplace)" == $plugin)]
+    ')" || die "invalid profile config: $admission_profile"
+    [[ "$(jq length <<<"$admission_registration")" == 1 ]] \
+      || die "plugin is not registered in the profile config: $admission_profile"
     jq -cn --arg installedPlugins "$admission_home/installed-plugins" \
+      --argjson registration "$admission_registration" \
       --slurpfile settings "$admission_settings" '
       {
         installedPlugins: $installedPlugins,
+        pluginRegistrations: $registration,
         settings: ($settings[0]
           | {enabledPlugins, extraKnownMarketplaces, hooks, subagents}
           | with_entries(select(.value != null)))

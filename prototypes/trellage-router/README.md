@@ -99,6 +99,12 @@ mise run trx -- guide "$(cat /tmp/large-prompt.md)" --ui-variant split
 `mise run trx -- run agency azure` directly launches Agency without opening
 the picker. Remaining arguments are forwarded to Agency's managed Copilot CLI.
 
+Direct runs use the selected harness adapter, not the retired public launcher
+commands. For example, `mise run trx -- run claude default` does not require
+`cpx` or `cldx` on `PATH`, or a valid Copilot catalog. An older worktree can
+still require those retired commands; update the worktree or use the installed
+`trx run claude default` instead.
+
 `trx list` prints one `launcher/profile` and catalog description per line.
 `trx list --json` emits a schema-versioned `profiles` array whose entries contain
 `launcher`, `harness`, `name`, `description`, `guide`, `headless`, `sandbox`,
@@ -654,6 +660,46 @@ lock. `doctor` remains the full runtime health diagnostic.
 Trellage Native adds no containment. Canonical harnesses run their selected
 agents directly on the host with the permissions and safety behavior documented
 for each harness. Use only trusted repositories, profiles, plugins, and arguments.
+
+### Clean runs
+
+`trx run HARNESS clean` launches a harness with no skills, MCP servers,
+instructions, hooks, plugins, memory, or settings from trx, the repository, or
+the host. trx installs, refreshes, and downloads nothing for a clean run.
+
+Clean runs support `claude`, `codex`, `copilot`, and `pi`. Other harnesses
+refuse to launch and print the reason:
+
+- `grok` loads repository instructions, skills, agents, and MCP servers in a trusted folder.
+- `omp` installs managed skills and profile overlays before every launch.
+- `agency` launches its managed Copilot profile.
+- `firstmate` launches its prepared fleet runtime and captain home.
+- `jcode` discovers repository context and cannot switch it off.
+- `prime` repairs its runtime before launch and keeps its native kernel.
+- `fx` uses the host `HOME` and `~/.fx` by design.
+- `uji` workspace and tool isolation has not been verified.
+
+Some harnesses need more than flags:
+
+- Claude turns off slash commands, so `/skills` is not available in a clean run.
+- Codex lists the skills it still finds before launch and disables each one, so
+  none appear in the `$` picker.
+- Codex refuses inside a repository that has a `.codex` directory between the
+  working directory and the repository root. Codex loads it in every writable
+  sandbox whatever the trust setting.
+- Copilot lists its skills and MCP servers before launch and disables each one
+  by name. It also turns off custom instructions, built-in MCP servers, memory,
+  and the agent tools.
+- Copilot needs a trusted folder, and a trusted folder always runs repository
+  hooks and agents. So Copilot refuses when `.github/hooks`, `.github/copilot`,
+  `.github/agents`, `.claude/settings.json`, `.claude/settings.local.json`, or
+  `.claude/agents` exists between the working directory and the repository root.
+
+`clean` is a reserved profile name. A clean run never reads or writes
+`~/.config/trellage/config.toml`, and it cannot be combined with other profiles
+or `--skill`. Model routing through the local proxy stays. The harness's own
+built-in behavior also stays, such as built-in tools, built-in subagents, and
+managed policy.
 
 ### Optional Jev key
 

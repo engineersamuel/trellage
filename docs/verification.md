@@ -24,6 +24,13 @@ preparation deletes after the install.
 `mise run rebuild-profiles` reinstalls the Native launchers and `trx`; their
 installers manage separate installed runtimes.
 
+Codex and router reinstall preflights distinguish replacement from execution.
+An owned runtime with unchanged published sources and dependency manifests can
+be replaced even when its file-metadata or dependency inventory has drifted.
+The installer stages a fresh frozen runtime before publication; it does not
+rewrite the old receipt to approve drifted files for execution. Changed sources,
+unowned paths, unsafe permissions, and escaping links still block replacement.
+
 CI caches Bun and npm package downloads by runner platform, pinned runtime
 versions, and lockfile contents. The cache excludes installed dependencies and
 the readiness receipt, so each job still prepares its source workspace from the
