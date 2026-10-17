@@ -29,6 +29,7 @@ import { createSelectionHistory, scopeKeysFor, type Selection } from "./history.
 import { acquireLease, pruneGenerations } from "./lease.ts"
 import { NativeRunCancelledError, NativeRunError, resolveNativeRunPaths, type NativeRunPaths } from "./paths.ts"
 import { createSourceResolver, gitSourceTransport, type SourceTransport } from "./source.ts"
+import { devSourceRoots, devSourceTransport } from "./dev-sources.ts"
 import { ensureNativeConfig, withBuiltinPreset } from "./config-init.ts"
 import { nativePresetProfile } from "./presets.ts"
 import { acquireProfileGuard } from "./lifecycle-guard.ts"
@@ -538,7 +539,11 @@ const composeRun = async (
   profiles: ReadonlyArray<string>,
 ): Promise<{ plan: CompositionPlan; layout: GenerationLayout }> => {
   const instructionTexts = await loadInstructions(configDirectory, catalog)
-  const resolver = createSourceResolver({ paths, transport: dependencies.transport ?? gitSourceTransport() })
+  const transport = devSourceTransport(
+    dependencies.transport ?? gitSourceTransport(),
+    devSourceRoots(environment.TRELLAGE_DEV_SOURCES),
+  )
+  const resolver = createSourceResolver({ paths, transport })
   const plan = await planComposition(
     {
       harness: adapter.id,

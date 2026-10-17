@@ -85,7 +85,7 @@ authentication, model route, tool surface, persistence model, and process
 discipline. Do not reward a profile only because it lists more capabilities,
 workflows, examples, or implementation details.
 
-The interactive guide pins the broad Council, Research, and HVE RPI workflows
+The interactive guide pins the broad Council, Six Hats, Research, and HVE RPI workflows
 as optional lenses. The caller removes those specific workflows unless the
 intent names their profile. Do not exclude a whole profile because one of its
 workflows is pinned. HVE customer discovery, experiments, requirements, and

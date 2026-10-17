@@ -514,6 +514,8 @@ export interface GuideUiState {
   readonly recommendations: ReadonlyArray<GuideRecommendation> | undefined
   readonly recommendationIndex: number
   readonly usedLiteralFallback: boolean
+  /** The `c` Decide chooser is open over the recommendations screen. */
+  readonly decideChooserOpen: boolean
   readonly selectedRecommendation: GuideRecommendation | undefined
   readonly selectedProfile: SelectedProfile | undefined
   readonly guideDocument: SelectedGuideDocument | undefined
@@ -596,6 +598,7 @@ const emptyState: GuideUiState = {
   recommendations: undefined,
   recommendationIndex: 0,
   usedLiteralFallback: false,
+  decideChooserOpen: false,
   selectedRecommendation: undefined,
   selectedProfile: undefined,
   guideDocument: undefined,
@@ -885,6 +888,8 @@ export enum GuideUiActionType {
   MatchLiteralFailed = "match/literal-failed",
   RecommendationsMove = "recommendations/move",
   RecommendationsConfirm = "recommendations/confirm",
+  DecideOpen = "decide/open",
+  DecideClose = "decide/close",
   ReviewOpen = "review/open",
   ReviewBack = "review/back",
   OptimizeOpen = "optimize/open",
@@ -1044,6 +1049,8 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.MatchLiteral; readonly recommendations: ReadonlyArray<GuideRecommendation> }
   | { readonly type: GuideUiActionType.MatchLiteralFailed; readonly message: string }
   | { readonly type: GuideUiActionType.RecommendationsMove; readonly delta: 1 | -1 }
+  | { readonly type: GuideUiActionType.DecideOpen }
+  | { readonly type: GuideUiActionType.DecideClose }
   | { readonly type: GuideUiActionType.ReviewOpen }
   | { readonly type: GuideUiActionType.ReviewBack }
   | { readonly type: GuideUiActionType.OptimizeOpen }
@@ -2052,7 +2059,11 @@ const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): Guid
     case GuideUiActionType.RecommendationsMove:
       return moveGuideRecommendation(state, action.delta)
     case GuideUiActionType.RecommendationsConfirm:
-      return confirmGuideRecommendation(state, action)
+      return confirmGuideRecommendation({ ...state, decideChooserOpen: false }, action)
+    case GuideUiActionType.DecideOpen:
+      return { ...state, decideChooserOpen: true }
+    case GuideUiActionType.DecideClose:
+      return { ...state, decideChooserOpen: false }
     default:
       return state
   }
@@ -3445,6 +3456,8 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.MatchLiteralFailed]: reduceMatch,
   [GuideUiActionType.RecommendationsMove]: reduceRecommendations,
   [GuideUiActionType.RecommendationsConfirm]: reduceRecommendations,
+  [GuideUiActionType.DecideOpen]: reduceRecommendations,
+  [GuideUiActionType.DecideClose]: reduceRecommendations,
   [GuideUiActionType.ReviewOpen]: reduceSideScreen,
   [GuideUiActionType.ReviewBack]: reduceSideScreen,
   [GuideUiActionType.OptimizeOpen]: reduceSideScreen,
@@ -3619,15 +3632,21 @@ export const enrichLiteralCandidate = (
 
 export enum GuidePinnedLensKind {
   Council = "council",
+  SixHats = "six-hats",
   Research = "research",
   HveRpi = "hve-rpi",
   Discovery = "discovery",
   Experiment = "experiment",
 }
 
+/** Opens the Decide chooser; decision lenses are bound to keys inside it. */
+export const guideDecideKey = "c"
+
 export interface GuidePinnedLens {
   readonly kind: GuidePinnedLensKind
+  /** Inside the Decide chooser for decision lenses; on the recommendations screen otherwise. */
   readonly key: string
+  readonly decision: boolean
   readonly emoji: string
   readonly label: string
   readonly description: string
@@ -3646,6 +3665,7 @@ const pinnedLensDefinitions: ReadonlyArray<
   {
     kind: GuidePinnedLensKind.Council,
     key: "c",
+    decision: true,
     emoji: "🧠",
     label: "Council",
     description: "Pressure-test the idea and its implementation.",
@@ -3655,8 +3675,21 @@ const pinnedLensDefinitions: ReadonlyArray<
     tradeoff: "Adds deliberation time before implementation begins.",
   },
   {
+    kind: GuidePinnedLensKind.SixHats,
+    key: "6",
+    decision: true,
+    emoji: "🎩",
+    label: "Six Thinking Hats",
+    description: "Facts, gut, value, risks, and tried options, then one plan.",
+    profileRef: "native:claude/six-hats",
+    workflowId: "run-six-hats-deliberation",
+    reason: "Separate facts, feelings, benefits, risks, and alternatives before committing to one plan.",
+    tradeoff: "Runs six subagents, including a scratch-copy prototype, before implementation begins.",
+  },
+  {
     kind: GuidePinnedLensKind.Research,
     key: "r",
+    decision: false,
     emoji: "🔎",
     label: "Research",
     description: "Gather evidence before implementation.",
@@ -3668,6 +3701,7 @@ const pinnedLensDefinitions: ReadonlyArray<
   {
     kind: GuidePinnedLensKind.HveRpi,
     key: "h",
+    decision: false,
     emoji: "🔄",
     label: "HVE RPI",
     description: "Run the dedicated HVE Core RPI agent.",
@@ -3681,6 +3715,7 @@ const pinnedLensDefinitions: ReadonlyArray<
   {
     kind: GuidePinnedLensKind.Discovery,
     key: "d",
+    decision: false,
     emoji: "💬",
     label: "Discover with the customer",
     description: "Clarify needs and evidence with DT Coach.",
@@ -3692,6 +3727,7 @@ const pinnedLensDefinitions: ReadonlyArray<
   {
     kind: GuidePinnedLensKind.Experiment,
     key: "e",
+    decision: false,
     emoji: "🧪",
     label: "Test an assumption",
     description: "Plan a bounded experiment before investment.",
@@ -5529,19 +5565,37 @@ const RecommendationDetail = ({ recommendation, controllerLabel }: {
   )
 }
 
-const PinnedLenses = ({ lenses }: { readonly lenses: ReadonlyArray<GuidePinnedLens> }) => (
-  <Box flexDirection="column" marginTop={1}>
-    <Text bold>PINNED LENSES</Text>
-    <Text>
-      {lenses.map((lens, index) => (
-        <Text key={lens.kind} bold color="magenta">
-          {index === 0 ? "" : " · "}{lens.emoji} {lens.key} {lens.label}
-        </Text>
-      ))}
-      <Text bold color="magenta">
-        {lenses.length === 0 ? "" : " · "}o Optimize repository
+const PinnedLenses = ({ lenses }: { readonly lenses: ReadonlyArray<GuidePinnedLens> }) => {
+  const direct = lenses.filter(({ decision }) => !decision)
+  const entries = [
+    ...(lenses.some(({ decision }) => decision) ? [{ id: "decide", text: `🧭 ${guideDecideKey} Decide…` }] : []),
+    ...direct.map((lens) => ({ id: lens.kind, text: `${lens.emoji} ${lens.key} ${lens.label}` })),
+    { id: "optimize", text: "o Optimize repository" },
+  ]
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text bold>PINNED LENSES</Text>
+      <Text>
+        {entries.map(({ id, text }, index) => (
+          <Text key={id} bold color="magenta">
+            {index === 0 ? "" : " · "}{text}
+          </Text>
+        ))}
       </Text>
-    </Text>
+    </Box>
+  )
+}
+
+const DecideChooser = ({ lenses }: { readonly lenses: ReadonlyArray<GuidePinnedLens> }) => (
+  <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="magenta" paddingX={1}>
+    <Text bold color="magenta">DECIDE — how should this decision be made?</Text>
+    {lenses.map((lens) => (
+      <Text key={lens.kind}>
+        <Text bold color="magenta">{lens.key}</Text> {lens.emoji} <Text bold>{lens.label}</Text>
+        <Text dimColor> — {lens.description}</Text>
+      </Text>
+    ))}
+    <Text dimColor>{lenses.map(({ key }) => key).join("/")} choose · Esc or b back · q cancel</Text>
   </Box>
 )
 
@@ -5555,6 +5609,7 @@ const RecommendationsView = ({
   recommendations,
   index,
   usedLiteralFallback,
+  decideChooserOpen,
   goal,
   controllerLabel,
 }: {
@@ -5567,6 +5622,7 @@ const RecommendationsView = ({
   readonly recommendations: ReadonlyArray<GuideRecommendation>
   readonly index: number
   readonly usedLiteralFallback: boolean
+  readonly decideChooserOpen: boolean
   readonly goal?: PreparedGuideGoal
   readonly controllerLabel?: string
 }) => {
@@ -5587,6 +5643,7 @@ const RecommendationsView = ({
       </Text>
       {usedLiteralFallback ? <Text color="yellow">Deterministic literal match (no model call).</Text> : <MatchFallbackNotice fallback={fallback} />}
       <PinnedLenses lenses={pinnedLenses} />
+      {decideChooserOpen ? <DecideChooser lenses={pinnedLenses.filter(({ decision }) => decision)} /> : null}
       <Box marginTop={1}>
         <RecommendationRail recommendations={recommendations} index={index} compact={compact} />
         <RecommendationDetail recommendation={recommendation} {...(controllerLabel === undefined ? {} : { controllerLabel })} />
@@ -5594,7 +5651,7 @@ const RecommendationsView = ({
       <Text dimColor>
         {compact
           ? "↑/↓ or j/k select · ↵ generate · p view prompt · q cancel"
-          : `↑/↓ or j/k select · ↵ generate · p view prompt${pinnedLenses.length === 0 ? "" : ` · ${pinnedLenses.map(({ key }) => key).join("/")} lenses`} · o Optimize · q cancel`}
+          : `↑/↓ or j/k select · ↵ generate · p view prompt${pinnedLenses.length === 0 ? "" : ` · ${[...new Set(pinnedLenses.map((lens) => lens.decision ? guideDecideKey : lens.key))].join("/")} lenses`} · o Optimize · q cancel`}
       </Text>
     </Box>
   )
@@ -7031,6 +7088,23 @@ const handleMatchFailedInput: GuideInputHandler = ({ props, state, dispatch, can
 }
 
 const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch, cancel }, input, key) => {
+  const lenses = pinnedGuideLenses(props.catalog)
+  const confirmLens = (pinnedLens: GuidePinnedLens): void => {
+    const goalUnavailableReason = goalRecommendationReason(props.catalog, guideProfileGoal(state), pinnedLens.recommendation)
+    dispatch({
+      type: GuideUiActionType.RecommendationsConfirm,
+      selectedProfile: selectedProfileForPinnedLens(props.catalog, pinnedLens),
+      recommendation: pinnedLens.recommendation,
+      ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
+    })
+  }
+  if (state.decideChooserOpen) {
+    const decisionLens = lenses.find((lens) => lens.decision && lens.key === input)
+    if (decisionLens !== undefined) confirmLens(decisionLens)
+    else if (key.escape || input === "b") dispatch({ type: GuideUiActionType.DecideClose })
+    else if (input === "q") cancel()
+    return
+  }
   if (input === "o") {
     dispatch({ type: GuideUiActionType.OptimizeOpen })
     return
@@ -7039,15 +7113,13 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
     dispatch({ type: GuideUiActionType.PromptReviewOpen })
     return
   }
-  const pinnedLens = pinnedGuideLenses(props.catalog).find(({ key: lensKey }) => lensKey === input)
+  if (input === guideDecideKey && lenses.some(({ decision }) => decision)) {
+    dispatch({ type: GuideUiActionType.DecideOpen })
+    return
+  }
+  const pinnedLens = lenses.find((lens) => !lens.decision && lens.key === input)
   if (pinnedLens !== undefined) {
-    const goalUnavailableReason = goalRecommendationReason(props.catalog, guideProfileGoal(state), pinnedLens.recommendation)
-    dispatch({
-      type: GuideUiActionType.RecommendationsConfirm,
-      selectedProfile: selectedProfileForPinnedLens(props.catalog, pinnedLens),
-      recommendation: pinnedLens.recommendation,
-      ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
-    })
+    confirmLens(pinnedLens)
     return
   }
 
@@ -7764,6 +7836,7 @@ const renderRecommendations: GuideStageRenderer = (context) => {
       recommendations={recommendations}
       index={recommendationIndex}
       usedLiteralFallback={usedLiteralFallback}
+      decideChooserOpen={context.state.decideChooserOpen}
       {...(goal === undefined ? {} : { goal })}
       {...(controller === undefined ? {} : { controllerLabel: guideGoalControllerLabel(controller) })}
     />

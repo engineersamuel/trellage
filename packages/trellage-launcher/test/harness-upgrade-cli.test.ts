@@ -237,7 +237,7 @@ describe("upgrade CLI discovery and authorization", () => {
     expect(await invoke(["all", "--native", "--dry-run"])).toBe(0)
     expect(run).not.toHaveBeenCalled()
     const preview = lines.join("\n")
-    expect(preview).toContain("1 Native runtime/profile updates; 0 Container image updates")
+    expect(preview).toContain("Scope: 1 Native runtime/profile updates.")
     expect(preview).toContain("/fixture/trx upgrade claude a --harness-only")
     expect(preview).toContain("/fixture/trx upgrade claude b --skills-only")
     expect(preview).not.toContain("sandbox:claude-a")

@@ -20,7 +20,6 @@ const guideRoot = path.join(root, "profile-guides")
 const expected: ProfileGuideIdentity[] = []
 expected.push({ surface: "native", launcher: "fx", profile: "default" })
 expected.push({ surface: "native", launcher: "headlong", profile: "default" })
-const sandboxHarnesses = new Map<string, string>()
 const prototypeEntries = await readdir(path.join(root, "prototypes"), { withFileTypes: true })
 const nativeFamilies = prototypeEntries
   .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
@@ -47,19 +46,6 @@ for (const family of nativeFamilies) {
   }
 }
 
-for (const entry of await readdir(path.join(root, "profiles"), { withFileTypes: true })) {
-  if (!entry.isDirectory()) continue
-  const profileDocument = path.join(root, "profiles", entry.name, "profile.toml")
-  if ((await stat(profileDocument)).isFile()) {
-    expected.push({ surface: "sandbox", profile: entry.name })
-    const source = await readFile(profileDocument, "utf8")
-    const harnessSection = source.split(/^\[harness\][ \t]*\r?$/mu)[1]?.split(/^\[/mu)[0]
-    const harness = /^kind[ \t]*=[ \t]*"([a-z-]+)"[ \t]*(?:#.*)?$/mu.exec(harnessSection ?? "")?.[1]
-    if (harness === undefined) throw new Error(`${profileDocument} must declare its harness kind`)
-    sandboxHarnesses.set(entry.name, harness)
-  }
-}
-
 const actual = await discoverProfileGuideRelativePaths(guideRoot)
 const coverage = validateProfileGuideCoverage(expected, actual)
 if (coverage.missing.length > 0 || coverage.unexpected.length > 0) {
@@ -73,15 +59,8 @@ const nativeGoalSurfaces = new Map([
   ["codex", { controller: "codex-goal", harness: "codex" }],
   ["claude", { controller: "claude-goal", harness: "claude" }],
 ])
-const expectedGoalSurface = (identity) => {
-  if (identity.surface === "native") return nativeGoalSurfaces.get(identity.launcher)
-  const harness = sandboxHarnesses.get(identity.profile)
-  if (harness !== "claude") return undefined
-  return {
-    controller: "claude-goal",
-    harness,
-  }
-}
+const expectedGoalSurface = (identity) =>
+  identity.surface === "native" ? nativeGoalSurfaces.get(identity.launcher) : undefined
 const operationalWorkflowId =
   /^(?:(?:doctor|health-check|inventory|readiness|setup|smoke-test)|(?:extension|launch|launcher|local|model|profile|proxy)-(?:doctor|health-check|inventory-check|readiness-check|repair|setup|smoke-test))$/u
 const operationalExamplePatterns = [
@@ -221,6 +200,17 @@ for (const phrase of [
   if (!councilWorkflow.promptTemplate.includes(phrase)) {
     throw new Error(`claude-council prompt is missing: ${phrase}`)
   }
+}
+
+const sixHatsGuide = registry.get("native:claude/six-hats")
+if (sixHatsGuide === undefined) throw new Error("native Claude six-hats guide is missing")
+const sixHatsWorkflow = sixHatsGuide.guide.workflows.find(({ id }) => id === "run-six-hats-deliberation")
+if (sixHatsWorkflow === undefined) throw new Error("native Claude six-hats workflow is missing")
+if (sixHatsWorkflow.skill !== "six-hats:decide" || !sixHatsWorkflow.promptTemplate.startsWith("/six-hats:decide ")) {
+  throw new Error("native Claude six-hats workflow must invoke the six-hats skill")
+}
+if (!sixHatsWorkflow.promptTemplate.includes("stop before changing this checkout")) {
+  throw new Error("native Claude six-hats prompt must stop before changing the launching checkout")
 }
 
 const eccGuide = registry.get("native:claude/ecc")

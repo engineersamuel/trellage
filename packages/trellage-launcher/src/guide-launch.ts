@@ -647,6 +647,8 @@ const nativePromptArgs = (
   if (selectedProfile.launcher === "codex") return [...baseArgs, "--", prompt]
   if (selectedProfile.interaction !== undefined) return [...baseArgs, "-i", prompt]
   if (!selectedProfile.headlessPrompt) return baseArgs
+  // trx accepts Claude's own flags only after `--`.
+  if (selectedProfile.launcher === "claude") return [...baseArgs, "--", "-p", prompt]
   return [...baseArgs, selectedProfile.launcher === "copilot" ? "-i" : "-p", prompt]
 }
 
@@ -693,9 +695,13 @@ export const buildGuideLaunchCommand = (
     return {
       command: {
         executable: selectedProfile.commandPath,
-        args: nativePromptArgs(selectedProfile, baseArgs, normalizedDelivery.prompt),
+        // Claude opens interactively with the prompt as its first turn, so the session can continue.
+        args: selectedProfile.launcher === "claude"
+          ? [...baseArgs, "--", normalizedDelivery.prompt]
+          : nativePromptArgs(selectedProfile, baseArgs, normalizedDelivery.prompt),
       },
-      promptHandling: selectedProfile.interaction !== undefined || selectedProfile.headlessPrompt || selectedProfile.launcher === "codex" ? "argv" : "manual-paste",
+      promptHandling: selectedProfile.interaction !== undefined || selectedProfile.headlessPrompt ||
+        selectedProfile.launcher === "codex" || selectedProfile.launcher === "claude" ? "argv" : "manual-paste",
     }
   }
   return {

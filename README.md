@@ -215,6 +215,32 @@ The six specialized routes have detailed workflows in
 workflows can use `APIFY_API_TOKEN` and `GOOGLE_AI_API_KEY` when you configure
 those integrations. Native runs use your host access; they are not contained
 by Trellage.
+
+### Decide: council and six-hats
+
+In `trx guide`, `c` opens the Decide chooser on the recommendations screen:
+`c` starts `trx run claude council` and `6` starts `trx run claude six-hats`.
+Both open Claude interactively with the generated prompt
+(`trx run claude six-hats -- '<prompt>'`), so the session stays open after the
+round. Both Decide workflows stay out of normal ranking unless the request
+names the profile.
+
+`six-hats` loads this repository's `plugins/six-hats` plugin for that session
+only (the `preset-claude-six-hats` profile in [`config.toml`](config.toml)): six
+hat subagents and `/six-hats:decide`. White runs first; red, yellow, black, and
+green run in parallel on its facts; then blue returns one plan. Green copies the
+checkout's tracked and untracked, non-ignored files (including uncommitted
+edits) into `.six-hats/green-<time>/`, ignored through `.gitignore` and the
+local `info/exclude`, and commits its attempts there. A round ends with
+`Six Hats round complete`; a failed hat is reported and blue still runs.
+
+Native sources normally resolve from GitHub. To test unpushed plugin changes,
+run `trx` through `mise` in the worktree: `mise.toml` sets
+`TRELLAGE_DEV_SOURCES` to map `https://github.com/engineersamuel/trellage.git`
+to the worktree, so composition snapshots the worktree's current files
+(tracked and untracked, not ignored) into a deterministic local commit without
+changing its index, HEAD, or refs. The variable takes whitespace-separated
+`<repository>=<absolute path>` pairs.
 ## Automatic Varlock Environment Loading
 
 Trellage bundles Varlock and uses it automatically for Native profile launches
@@ -1248,8 +1274,8 @@ Disproving an assumption can be useful learning. Partner participation,
 ownership transfer, and independent repetition are part of experiment design.
 
 Discovery and Experiment remain eligible for normal recommendations even
-though they also have pinned shortcuts. The broad Council, Research, and HVE
-RPI workflows remain optional lenses unless explicitly requested. This
+though they also have pinned shortcuts. The broad Council, Six Hats, Research,
+and HVE RPI workflows remain optional lenses unless explicitly requested. This
 exclusion applies to those workflows, not every workflow on their profiles.
 
 These seven customer workflows use `trx run copilot hve --interactive`, an explicit agent,

@@ -207,7 +207,7 @@ describe("guide launch command building", () => {
   it("uses Claude print goal dispatch but does not change an interactive Herdr session to print mode", () => {
     const { profile, candidate } = goalTransportFixture("claude-goal")
     expect(buildGuideLaunchCommand(profile, { mode: "argv", prompt: candidate.prompt }, candidate.goalExecution)).toEqual({
-      command: { executable: profile.commandPath, args: ["run", "claude", "default", "-p", candidate.prompt] },
+      command: { executable: profile.commandPath, args: ["run", "claude", "default", "--", "-p", candidate.prompt] },
       promptHandling: "argv",
     })
     expect(buildHerdrGuideLaunch(profile, candidate.prompt, candidate.goalExecution)).toEqual({

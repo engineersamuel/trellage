@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { cp, lstat, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises"
+import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { NativeCatalog, NativePluginSelection } from "../native-config.ts"
 import { NativeRunError, type NativeRunPaths } from "./paths.ts"
@@ -261,6 +261,23 @@ const resolvePluginDirectory = async (source: ResolvedSource, selection: NativeP
   return resolved
 }
 
+/** Plugins may link files inside themselves (Council links skills/council/SKILL.md to its root SKILL.md). */
+const assertSymlinksStayInside = async (root: string, name: string): Promise<void> => {
+  const realRoot = await realpath(root)
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const child = path.join(directory, entry.name)
+      if (entry.isDirectory()) await walk(child)
+      if (!entry.isSymbolicLink()) continue
+      const target = await realpath(child).catch(() => undefined)
+      const relative = target === undefined ? ".." : path.relative(realRoot, target)
+      if (relative.startsWith("..") || path.isAbsolute(relative))
+        throw new NativeRunError("unsafe-path", `plugin ${name} links outside itself: ${path.relative(root, child)}`)
+    }
+  }
+  await walk(root)
+}
+
 const validatePluginDirectory = async (
   source: ResolvedSource,
   selection: NativePluginSelection,
@@ -273,7 +290,8 @@ const validatePluginDirectory = async (
       throw new NativeRunError("unsafe-path", `plugin ${pluginName(selection)} is not a safe directory`)
     if (!(await pluginManifestExists(directory)))
       throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} has no regular Claude plugin manifest`)
-    return { directory, digest: await digestDirectory(directory) }
+    await assertSymlinksStayInside(directory, pluginName(selection))
+    return { directory, digest: await digestDirectory(directory, true) }
   } catch (cause) {
     if (cause instanceof NativeRunError) throw cause
     throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} for ${profile} is invalid: ${String(cause)}`)
@@ -529,7 +547,7 @@ export const publishGeneration = async (input: PublishInput): Promise<Generation
     }
     for (const plugin of input.plan.plugins) {
       const directory = path.join(stage, "plugins", plugin.name)
-      await cp(plugin.directory, directory, { recursive: true, errorOnExist: true })
+      await cp(plugin.directory, directory, { recursive: true, errorOnExist: true, verbatimSymlinks: true })
       if (!plugin.includeMcp) await rm(path.join(directory, ".mcp.json"), { force: true })
     }
     await input.writeAdapterFiles(stage, layout)

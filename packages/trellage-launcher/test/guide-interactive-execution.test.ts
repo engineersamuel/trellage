@@ -191,7 +191,7 @@ describe("interactive guide result execution", () => {
       },
     )).resolves.toBe(0)
     expect(runInteractive).toHaveBeenCalledWith(
-      { executable: selected.commandPath, args: ["run", "claude", "default", "-p", candidate.prompt] },
+      { executable: selected.commandPath, args: ["run", "claude", "default", "--", "-p", candidate.prompt] },
       { cwd: "/repo", env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }) },
     )
     expect(writes).toEqual([])

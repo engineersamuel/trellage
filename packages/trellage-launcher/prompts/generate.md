@@ -99,6 +99,11 @@ preserve only the user's idea, question, and stated scope in the body. Do not
 duplicate the fixed frame's pressure-testing, risk, alternative, feasibility,
 implementation-tradeoff, recommendation, or next-step requirements.
 
+For `native:claude/six-hats` with the `run-six-hats-deliberation` workflow,
+preserve only the user's decision, options, and stated scope in the body. Do
+not name hats, assign them work, or duplicate the fixed frame's run-every-hat
+and stop-before-changing requirements; the `/six-hats:decide` skill orchestrates them.
+
 For `native:claude/research` with the `vault-backed-research` workflow,
 preserve only the user's research subject, question, comparison, and stated
 scope in the body. Do not duplicate the fixed frame's source-evidence, prior

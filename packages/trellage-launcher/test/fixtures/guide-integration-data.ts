@@ -54,6 +54,8 @@ export type FixtureProfile = {
   readonly afterBody: string
   readonly skill?: string
   readonly key?: string
+  /** The key is bound inside the `c` Decide chooser. */
+  readonly decision?: true
   readonly goalExecution?: ProfileGuideV1["goalExecution"]
   readonly interaction?: ProfileGuideWorkflow["interaction"]
 } & (
@@ -127,6 +129,7 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     harness: "claude",
     workflowId: "run-council-deliberation",
     key: "c",
+    decision: true,
     skill: "council",
     beforeBody: "/council Pressure-test this request:\n",
     afterBody: "\nEnd with an actionable verdict.",
