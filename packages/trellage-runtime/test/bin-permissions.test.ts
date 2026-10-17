@@ -128,6 +128,94 @@ test("explicit prepare recovers real Bun bin drift without remote dependencies",
   expect(() => requireReady(f.root)).not.toThrow();
 });
 
+test.each(["prepare", "ensure"])("%s removes retired workspace links left by Bun", (action) => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  normalizeDependencyPermissions(f.root);
+  writeReadiness(f.root);
+  const modules = path.join(f.root, "node_modules");
+  const retired = path.join(f.root, "packages/retired");
+  mkdirSync(retired);
+  const leftover = f.write("packages/retired/dist/old.js", "old build\n");
+  const workspaceLink = path.join(modules, "@fixture/retired");
+  const binLink = path.join(modules, ".bin/retired-tool");
+  symlinkSync("../../packages/retired", workspaceLink);
+  symlinkSync("../@fixture/retired/src/cli.ts", binLink);
+  const cli = path.join(sourceWorkspaceRoot(), "packages/trellage-runtime/src/workspace-cli.ts");
+  const run = () => spawnSync(bunExecutable(), bunArguments(cli, [action, f.root]), {
+    cwd: f.parent, encoding: "utf8", env: f.env,
+  });
+  const result = run();
+  expect(result.status, result.stderr).toBe(0);
+  expect(lstatSync(workspaceLink, { throwIfNoEntry: false })).toBeUndefined();
+  expect(lstatSync(binLink, { throwIfNoEntry: false })).toBeUndefined();
+  expect(readFileSync(leftover, "utf8")).toBe("old build\n");
+  expect(realpathSync(path.join(modules, ".bin/fixture-tool"))).toBe(f.binary);
+  expect(() => requireReady(f.root)).not.toThrow();
+  const repeated = run();
+  expect(repeated.status, repeated.stderr).toBe(0);
+});
+
+test("normalization removes links to a completely deleted workspace", () => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  const modules = path.join(f.root, "node_modules");
+  const workspaceLink = path.join(modules, "retired");
+  const binLink = path.join(modules, ".bin/retired-tool");
+  symlinkSync("../packages/retired", workspaceLink);
+  symlinkSync("../retired/src/cli.ts", binLink);
+  normalizeDependencyPermissions(f.root);
+  expect(lstatSync(workspaceLink, { throwIfNoEntry: false })).toBeUndefined();
+  expect(lstatSync(binLink, { throwIfNoEntry: false })).toBeUndefined();
+});
+
+test("normalization refuses an absolute link to a retired workspace", () => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  const link = path.join(f.root, "node_modules/retired");
+  symlinkSync(path.join(f.root, "packages/retired"), link);
+  expect(() => normalizeDependencyPermissions(f.root)).toThrow("unpermitted runtime link");
+  expect(lstatSync(link).isSymbolicLink()).toBe(true);
+});
+
+test("normalization refuses a redirected retired workspace", () => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  const outside = path.join(f.parent, "external-package");
+  mkdirSync(outside);
+  symlinkSync(outside, path.join(f.root, "packages/retired"));
+  const link = path.join(f.root, "node_modules/retired");
+  symlinkSync("../packages/retired", link);
+  expect(() => normalizeDependencyPermissions(f.root)).toThrow("unsafe workspace package");
+  expect(lstatSync(link).isSymbolicLink()).toBe(true);
+});
+
+test("normalization removes retired links from workspace-local dependencies", () => {
+  const f = fixture();
+  expect(f.install().status).toBe(0);
+  const modules = path.join(f.root, "packages/tool/node_modules");
+  mkdirSync(path.join(modules, ".bin"), { recursive: true });
+  const link = path.join(modules, "retired");
+  const bin = path.join(modules, ".bin/retired-tool");
+  symlinkSync("../../retired", link);
+  symlinkSync("../retired/src/cli.ts", bin);
+  normalizeDependencyPermissions(f.root);
+  expect(lstatSync(link, { throwIfNoEntry: false })).toBeUndefined();
+  expect(lstatSync(bin, { throwIfNoEntry: false })).toBeUndefined();
+});
+
+test.each(["../missing/cli.ts", "../../scripts/missing.ts", "../../../outside/cli.ts"])(
+  "normalization refuses unrelated dangling command %s",
+  (target) => {
+    const f = fixture();
+    expect(f.install().status).toBe(0);
+    const link = path.join(f.root, "node_modules/.bin/unrelated");
+    symlinkSync(target, link);
+    expect(() => normalizeDependencyPermissions(f.root)).toThrow();
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+  },
+);
+
 test("automatic preparation normalizes existing dependency permissions before validation", () => {
   const f = fixture();
   expect(f.install().status).toBe(0);
