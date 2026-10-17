@@ -69,7 +69,7 @@ assert_native_skills_refreshed() {
   jq -se --arg router "$runtime_parent/trx/bin/trx" '
     length == 1 and all(.[]; .args == [] and .routerCommandPath == $router)
   ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh the configured skill maintenance once through its own router'
-  jq -r '.catalog.native[] | select(.launcher != "fx" and .launcher != "headlong" and (.name != "firstmate" or .launcher == "firstmate")) | (.launcher | {agency:"agx",copilot:"cpx",codex:"cdx",claude:"cldx",firstmate:"fmx",jcode:"jcx",pi:"picx",prime:"prx",omp:"omp"}[.]) + ":skills-update " + (if .launcher == "agency" and .name == "azure" then "trellage-azure" elif .launcher == "omp" and .name == "default" then "copilot" else .name end)' \
+  jq -r '.catalog.native[] | select(.launcher != "fx" and .launcher != "headlong" and .name != "firstmate") | (.launcher | {agency:"agx",copilot:"cpx",codex:"cdx",claude:"cldx",jcode:"jcx",pi:"picx",prime:"prx",omp:"omp"}[.]) + ":skills-update " + (if .launcher == "agency" and .name == "azure" then "trellage-azure" elif .launcher == "omp" and .name == "default" then "copilot" else .name end)' \
     "$fixture_root/guide-catalog.json" | sort >"$fixture_root/expected-skills-update.log"
   sort "$skills_update_log" >"$fixture_root/actual-skills-update.log"
   cmp -s "$fixture_root/expected-skills-update.log" "$fixture_root/actual-skills-update.log" \
@@ -208,93 +208,6 @@ EOF
       "extensions": [
         {"name":"Ponytail","package":"@dietrichgebert/ponytail","installSpec":"git:github.com/DietrichGebert/ponytail"}
       ]
-    }
-  ]
-}
-EOF
-  elif [[ "$launcher" == fmx ]]; then
-    cat >"$runtime/catalog.json" <<EOF
-{
-  "schemaVersion": 1,
-  "launcher": "fmx",
-  "harness": "firstmate",
-  "sandbox": false,
-  "profiles": [
-    {
-      "name": "default",
-      "description": "Firstmate fleet orchestration",
-      "orchestration": {
-        "schemaVersion": 1,
-        "kind": "firstmate",
-        "sourceRevision": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
-        "taskIdPrefix": "fmd",
-        "workerPolicy": null,
-        "workerHarness": "claude",
-        "workerEfforts": ["low", "medium", "high", "xhigh", "max"],
-        "dispatchRules": "claude-single",
-        "submission": {"schemaVersion": 1, "maxRequestBytes": 524288},
-        "preparation": {"schemaVersion": 1}
-      },
-      "headless": {
-        "schemaVersion": 1,
-        "prompt": false,
-        "outputFormats": ["text"],
-        "eventContract": null,
-        "trellageEventContract": null,
-        "sessionId": "none",
-        "resume": false,
-        "resumeWithPrompt": false,
-        "questionToolControl": "none",
-        "changedFiles": "none",
-        "usage": false,
-        "cost": false,
-        "modelOverride": false,
-        "effortOverride": false,
-        "testedHarnessVersion": null
-      },
-      "plugin": null,
-      "source": null,
-      "marketplace": null,
-      "standaloneMcps": []
-    },
-    {
-      "name": "pstack-workers",
-      "description": "Firstmate with a lean pstack worker policy",
-      "orchestration": {
-        "schemaVersion": 1,
-        "kind": "firstmate",
-        "sourceRevision": "527aa7c12d25aadbdf3cc56791f87ae71fca5280",
-        "taskIdPrefix": "fmp",
-        "workerPolicy": {
-          "name": "pstack-workers",
-          "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        },
-        "workerHarness": "claude",
-        "workerEfforts": ["low", "medium", "high", "xhigh", "max"],
-        "dispatchRules": "claude-single",
-        "submission": {"schemaVersion": 1, "maxRequestBytes": 524288}
-      },
-      "headless": {
-        "schemaVersion": 1,
-        "prompt": false,
-        "outputFormats": ["text"],
-        "eventContract": null,
-        "trellageEventContract": null,
-        "sessionId": "none",
-        "resume": false,
-        "resumeWithPrompt": false,
-        "questionToolControl": "none",
-        "changedFiles": "none",
-        "usage": false,
-        "cost": false,
-        "modelOverride": false,
-        "effortOverride": false,
-        "testedHarnessVersion": null
-      },
-      "plugin": null,
-      "source": null,
-      "marketplace": null,
-      "standaloneMcps": []
     }
   ]
 }
@@ -495,14 +408,12 @@ catalog_stage="$fixture_root/cdx-catalog.json"
 ]' "$runtime_parent/cdx/catalog.json" >"$catalog_stage"
 mv "$catalog_stage" "$runtime_parent/cdx/catalog.json"
 create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1
-create_native_launcher fmx firstmate .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v2
 create_native_launcher picx pi .managed-by-trellage-picx-profiles trellage-picx-profiles-v1
 create_native_launcher prx prime .managed-by-trellage-prime-profiles trellage-prime-profiles-v1
 create_native_launcher agx agency .managed-by-trellage-agency-profiles trellage-agency-profiles-v1
 ln -s "$runtime_parent/cldx/bin/cldx" "$fixture_bin/claude"
-ln -s "$runtime_parent/fmx/bin/fmx" "$fixture_bin/firstmate"
 ln -s "$runtime_parent/jcx/bin/jcx" "$fixture_bin/jcode"
 ln -s "$runtime_parent/picx/bin/picx" "$fixture_bin/pi"
 ln -s "$runtime_parent/prx/bin/prx" "$fixture_bin/prime-agent"
@@ -512,7 +423,7 @@ write_fixture_guide() {
   local launcher="$1"
   local profile="$2"
   local guide_harness="$launcher" guide_profile="$profile"
-  case "$launcher" in cpx) guide_harness=copilot ;; cdx) guide_harness=codex ;; cldx) guide_harness=claude ;; fmx) guide_harness=firstmate ;; jcx) guide_harness=jcode ;; picx) guide_harness=pi ;; prx) guide_harness=prime ;; agx) guide_harness=agency; guide_profile=azure ;; omp) [[ "$profile" != copilot ]] || guide_profile=default ;; esac
+  case "$launcher" in cpx) guide_harness=copilot ;; cdx) guide_harness=codex ;; cldx) guide_harness=claude ;; jcx) guide_harness=jcode ;; picx) guide_harness=pi ;; prx) guide_harness=prime ;; agx) guide_harness=agency; guide_profile=azure ;; omp) [[ "$profile" != copilot ]] || guide_profile=default ;; esac
   local destination="$runtime_parent/trx/share/profile-guides/native/$guide_harness/$guide_profile.md"
 
   mkdir -p "$(dirname "$destination")"
@@ -630,8 +541,6 @@ for pair in \
   cdx:pstack \
   cdx:youtube \
   cldx:cldx-p \
-  fmx:default \
-  fmx:pstack-workers \
   fx:default \
   jcx:jcx-p \
   omp:copilot \
@@ -650,7 +559,6 @@ for mapping in \
   cpx:trellage-copilot-profiles \
   cdx:trellage-codex-profiles \
   cldx:trellage-claude-profiles \
-  fmx:trellage-firstmate-profiles \
   jcx:trellage-jcode-profiles \
   omp:trellage-omp-profiles \
   picx:trellage-picx-profiles \
@@ -677,7 +585,7 @@ assert_contains 'trx upgrade all [--native] [--yes | --dry-run]' "$fixture_root/
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
 assert_contains 'trx run copilot tufte-vdqi' "$fixture_root/help.out"
 
-for retired_args in '--profile agency' '--profile=agency' 'run cpx cpx-p' 'run cdx youtube' 'run fmx default' 'run firstmate default'; do
+for retired_args in '--profile agency' '--profile=agency' 'run cpx cpx-p' 'run cdx youtube'; do
   status=0
   "$fixture_bin/trx" $retired_args >"$fixture_root/retired-route.out" 2>&1 || status=$?
   [[ "$status" == 1 ]] || fail "retired route succeeded: $retired_args"
@@ -857,9 +765,6 @@ assert_contains 'skills requires status, update, or check --json' "$fixture_root
 assert_contains $'copilot/cpx-p\t' "$fixture_root/list.out"
 assert_contains $'codex/cdx-p\tcdx' "$fixture_root/list.out"
 assert_contains $'claude/cldx-p\tcldx' "$fixture_root/list.out"
-assert_contains $'firstmate/default\tFirstmate fleet orchestration' "$fixture_root/list.out"
-assert_contains $'firstmate/pstack-workers\tFirstmate with a lean pstack worker policy' \
-  "$fixture_root/list.out"
 assert_contains $'fx/default\tFx with shared host context through copilot-proxy-rs' "$fixture_root/list.out"
 assert_contains $'jcode/jcx-p\tjcx' "$fixture_root/list.out"
 assert_contains $'omp/default\tNative GitHub Copilot' "$fixture_root/list.out"
@@ -879,7 +784,7 @@ jq -e '
   and keys == ["profiles", "schemaVersion"]
   and .schemaVersion == 1
   and all(.profiles[];
-    (keys - ["orchestration"]) == ["description", "guide", "harness", "headless", "herdrCompatibility", "launcher", "name", "sandbox"])
+    keys == ["description", "guide", "harness", "headless", "herdrCompatibility", "launcher", "name", "sandbox"])
   and all(.profiles[];
     .guide.schemaVersion == 1
     and .guide.capabilities == ["fixture-delivery"]
@@ -891,8 +796,6 @@ jq -e '
     "codex/youtube",
     "claude/cldx-p",
     "claude/firstmate",
-    "firstmate/default",
-    "firstmate/pstack-workers",
     "fx/default",
     "jcode/jcx-p",
     "omp/default",
@@ -910,8 +813,6 @@ jq -e '
     "codex",
     "claude",
     "claude",
-    "firstmate",
-    "firstmate",
     "fx",
     "jcode",
     "omp",
@@ -937,8 +838,6 @@ jq -e '
     false,
     false,
     false,
-    false,
-    false,
     false
   ]
   and all(.profiles[]; .herdrCompatibility.status | . == "untested" or . == "verified" or . == "known-issue")
@@ -947,34 +846,16 @@ jq -e '
   and (.profiles[] | select(.launcher == "pi" and .name == "default") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "codex" and .name == "pstack") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "codex" and .name == "youtube") | .herdrCompatibility.status) == "verified"
-  and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .herdrCompatibility.status) == "untested"
-  and (.profiles[] | select(.launcher == "firstmate" and .name == "pstack-workers") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "fx" and .name == "default") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "agency" and .name == "azure") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "headlong" and .name == "default") | .herdrCompatibility.status) == "untested"
-  and all(.profiles[] | select(.launcher == "firstmate"); .headless.prompt == false and .headless.modelOverride == false)
-  and all(.profiles[] | select(.name == "firstmate"); .headless.prompt == false and (has("orchestration") | not))
-  and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .orchestration.taskIdPrefix) == "fmd"
-  and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .orchestration.preparation) == {schemaVersion: 1}
-  and (.profiles[] | select(.launcher == "firstmate" and .name == "pstack-workers") | .orchestration.workerPolicy.name) == "pstack-workers"
-  and (.profiles[] | select(.launcher == "firstmate" and .name == "pstack-workers") | .orchestration | has("preparation") | not)
-  and all(.profiles[] | select(.launcher != "firstmate"); has("orchestration") | not)
+  and all(.profiles[] | select(.name == "firstmate"); .headless.prompt == false and .headless.modelOverride == false and (has("orchestration") | not))
   and (.profiles[] | select(.launcher == "copilot") | .herdrCompatibility) == { status: "untested" }
   and (.profiles[] | select(.launcher == "omp" and .name == "default") | .headless.questionToolControl) == "prompt-only"
   and (.profiles[] | select(.launcher == "codex") | .headless.testedHarnessVersion) == "1.2.3"
   and all(.profiles[]; .description | type == "string" and length > 0)
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list shape or ordering differs'
-
-jq -e --slurpfile ledger "$prototype_root/../../docs/herdr-compatibility.json" '
-  all(.profiles[] | select(.launcher == "firstmate");
-    . as $profile
-    | .herdrCompatibility == (
-        $ledger[0].entries[]
-        | select(.kind == "native" and .launcher == "firstmate" and .profile == $profile.name)
-        | del(.kind, .launcher, .profile, .harness)))
-' "$fixture_root/list.json" >/dev/null \
-  || fail 'Firstmate compatibility projection differs from its source evidence'
 
 # Model a source checkout, not an installed runtime with a missing receipt.
 mv "$fixture_source/.managed-by-trellage-source" "$fixture_root/source-ownership.saved"
@@ -1011,8 +892,6 @@ create_native_launcher cdx codex .managed-by-trellage-codex-profiles trellage-co
   "$fixture_root/trellage-codex-profiles" ' (dev-source)'
 create_native_launcher cldx claude .managed-by-trellage-claude-profiles trellage-claude-profiles-v1 \
   "$fixture_root/trellage-claude-profiles"
-create_native_launcher fmx firstmate .managed-by-trellage-firstmate-profiles trellage-firstmate-profiles-v1 \
-  "$fixture_root/trellage-firstmate-profiles"
 create_native_launcher jcx jcode .managed-by-trellage-jcode-profiles trellage-jcode-profiles-v1 \
   "$fixture_root/trellage-jcode-profiles"
 create_native_launcher omp oh-my-pi .managed-by-trellage-omp-profiles trellage-omp-profiles-v2 \
@@ -1155,7 +1034,7 @@ jq -e \
     and .catalog.schemaVersion == 1
     and (.catalog | has("sandboxCommandPath") | not)
     and .catalog.sandbox == []
-    and (.catalog.native | length == 17)
+    and (.catalog.native | length == 15)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -1307,7 +1186,7 @@ jq -e \
     and .catalog.schemaVersion == 1
     and (.catalog | has("sandboxCommandPath") | not)
     and .catalog.sandbox == []
-    and (.catalog.native | length == 15)
+    and (.catalog.native | length == 13)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -1324,7 +1203,7 @@ for upgrade_flag in '' '--yes' '--dry-run'; do
   jq -e --slurpfile guide "$fixture_root/guide-catalog.json" --arg flag "$upgrade_flag" \
     --arg router "$runtime_parent/trx/bin/trx" '
     # Upgrade manages installed backends; the guide also offers the firstmate config profiles.
-    .catalog == ($guide[0].catalog | .native |= map(select(.name != "firstmate" or .launcher == "firstmate")))
+    .catalog == ($guide[0].catalog | .native |= map(select(.name != "firstmate")))
     and .routerCommandPath == $router
     and .args == (if $flag == "" then ["all"] else ["all", $flag] end)
   ' "$fixture_root/upgrade-catalog.json" >/dev/null \
@@ -1428,8 +1307,8 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_DISCOVERY_LOG="$discovery_log" \
 assert_no_upgrade_mutation 'upgrade dry-run'
 [[ ! -s "$discovery_log" ]] \
   || fail 'upgrade dry-run did not use static Native catalogs'
-assert_contains '15 catalog profiles' "$fixture_root/upgrade-dry-run.out"
-assert_contains 'Scope: 9 Native runtime/profile updates.' "$fixture_root/upgrade-dry-run.out"
+assert_contains '13 catalog profiles' "$fixture_root/upgrade-dry-run.out"
+assert_contains 'Scope: 7 Native runtime/profile updates.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Unsupported harness native:agency/azure' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Unsupported harness native:headlong/default' "$fixture_root/upgrade-dry-run.out"
 assert_contains "Refresh: $runtime_parent/trx/bin/trx skills update" "$fixture_root/upgrade-dry-run.out"
@@ -1460,15 +1339,13 @@ status=0
 TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --yes \
   >"$fixture_root/upgrade-yes.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "authorized upgrade hid unsupported Agency (got $status)"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'authorized upgrade did not run each planned update exactly once'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 7 ]] || fail 'authorized upgrade did not run each planned update exactly once'
 assert_native_skills_refreshed
 assert_contains 'cldx:harness-update' "$upgrade_log"
-assert_contains 'fmx:update default' "$upgrade_log"
-assert_contains 'fmx:update pstack-workers' "$upgrade_log"
 assert_contains 'omp:update copilot' "$upgrade_log"
 assert_contains 'picx:update default' "$upgrade_log"
-assert_contains 'Harness summary: 12 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-yes.out"
-assert_contains 'Native skills summary: 14 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-yes.out"
+assert_contains 'Harness summary: 10 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-yes.out"
+assert_contains 'Native skills summary: 12 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-yes.out"
 assert_contains 'Updated Native skills native:agency/azure' "$fixture_root/upgrade-yes.out"
 
 reset_upgrade_logs
@@ -1476,7 +1353,7 @@ status=0
 TRX_UPGRADE_LOG="$upgrade_log" TRX_UPGRADE_FAIL=cldx TRX_UPGRADE_VERSION_FAIL=cdx \
   "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-mixed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'upgrade accepted mixed command and installed-version failures'
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'an independent failure stopped later upgrade groups'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 7 ]] || fail 'an independent failure stopped later upgrade groups'
 assert_native_skills_refreshed
 assert_contains 'Failed harness native:claude/cldx-p: fixture harness update failed: cldx' "$fixture_root/upgrade-mixed.out"
 assert_contains 'Installed-version refresh failed for Native codex' "$fixture_root/upgrade-mixed.out"
@@ -1500,12 +1377,12 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_SKILLS_CACHE_FAIL=1 \
 [[ "$status" == 1 ]] || fail 'unified update accepted a failed shared skills cache'
 [[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 1 ]] || fail 'failed shared cache refresh was restarted'
 [[ ! -s "$skills_update_log" ]] || fail 'unified update copied stale skills after a cache refresh failure'
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'skills cache failure prevented independent harness updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 7 ]] || fail 'skills cache failure prevented independent harness updates'
 assert_contains 'Native skills cache failed: fixture shared skills cache failed' "$fixture_root/upgrade-skills-cache-failed.out"
 assert_contains 'Native skills not run native:agency/azure: shared cache refresh failed; no stale cache is used.' \
   "$fixture_root/upgrade-skills-cache-failed.out"
-assert_contains 'Harness summary: 12 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-skills-cache-failed.out"
-assert_contains 'Native skills summary: 0 updated, 0 failed, 14 not run; shared cache: failed.' "$fixture_root/upgrade-skills-cache-failed.out"
+assert_contains 'Harness summary: 10 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-skills-cache-failed.out"
+assert_contains 'Native skills summary: 0 updated, 0 failed, 12 not run; shared cache: failed.' "$fixture_root/upgrade-skills-cache-failed.out"
 
 reset_upgrade_logs
 status=0
@@ -1513,11 +1390,11 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_SKILLS_UPDATE_FAIL=cdx/pstack \
   "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-profile-skills-failed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'unified update accepted a failed profile skills verification'
 assert_native_skills_refreshed
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'profile skill failure prevented independent harness updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 7 ]] || fail 'profile skill failure prevented independent harness updates'
 assert_contains 'Failed Native skills native:codex/pstack: fixture skill verification failed: cdx/pstack' \
   "$fixture_root/upgrade-profile-skills-failed.out"
 assert_contains 'Updated Native skills native:codex/youtube' "$fixture_root/upgrade-profile-skills-failed.out"
-assert_contains 'Native skills summary: 13 updated, 1 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-profile-skills-failed.out"
+assert_contains 'Native skills summary: 11 updated, 1 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-profile-skills-failed.out"
 
 reset_upgrade_logs
 status=0
@@ -1547,11 +1424,11 @@ TRX_UPGRADE_LOG="$upgrade_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/upgrade-confirm.out" \
     'yes\r' '' "$fixture_bin/trx" upgrade all || status=$?
 [[ "$status" == 1 ]] || fail "confirmed upgrade hid unsupported profiles (got $status)"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'terminal confirmation did not start the planned updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 7 ]] || fail 'terminal confirmation did not start the planned updates'
 assert_native_skills_refreshed
 assert_contains 'Type yes to update' "$fixture_root/upgrade-confirm.out"
-assert_contains 'Harness summary: 12 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-confirm.out"
-assert_contains 'Native skills summary: 14 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-confirm.out"
+assert_contains 'Harness summary: 10 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-confirm.out"
+assert_contains 'Native skills summary: 12 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-confirm.out"
 
 reset_upgrade_logs
 status=0
@@ -1653,7 +1530,7 @@ selection_milliseconds="$(((selection_finished - selection_started) / 1000000))"
 ((selection_milliseconds < 4000)) \
   || fail "selected profile launch was delayed ${selection_milliseconds}ms by inventory"
 jq --arg commandPath "$runtime_parent/trx/bin/trx" -e '
-  .description == "Direct launch: trx run HARNESS PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent harnesses and Firstmate fleet orchestration directly on the host with isolated state. Codex uses Full Access without a native sandbox; other Native profiles are not security boundaries."
+  .description == "Direct launch: trx run HARNESS PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent harnesses directly on the host with isolated state. Codex uses Full Access without a native sandbox; other Native profiles are not security boundaries."
   and (.choices[0]
     | .label == "copilot / cpx-p"
       and (.description | length == 1200)
@@ -1677,19 +1554,6 @@ jq -e '
       and .[0].label == "claude / cldx-p"
       and .[0].harness == "claude"
       and .[0].profile == "cldx-p")
-  and ([.choices[] | select(.id == "firstmate:default")]
-    | length == 1
-      and .[0].label == "firstmate / default"
-      and .[0].harness == "firstmate"
-      and .[0].profile == "default"
-      and .[0].commandAlias == "firstmate"
-      and .[0].models == []
-      and .[0].modelOverrideSupported == false)
-  and ([.choices[] | select(.id == "firstmate:pstack-workers")]
-    | length == 1
-      and .[0].label == "firstmate / pstack-workers"
-      and .[0].profile == "pstack-workers"
-      and .[0].modelOverrideSupported == false)
   and ([.choices[] | select(.id == "omp:default")]
     | length == 1
       and .[0].label == "omp / default"
@@ -1743,15 +1607,15 @@ jq -e '
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices omitted Agency profile'
 jq -e '
-  ([.choices[] | select(.id == "omp:local" or .id == "pi:default" or .commandAlias == "firstmate" or .commandAlias == "fx" or .id == "agency:azure" or .id == "headlong:default") | .modelOverrideSupported] | all(. == false))
-  and ([.choices[] | select(.id != "omp:local" and .id != "pi:default" and .commandAlias != "firstmate" and .commandAlias != "fx" and .id != "agency:azure" and .id != "headlong:default") | .modelOverrideSupported] | all)
+  ([.choices[] | select(.id == "omp:local" or .id == "pi:default" or .commandAlias == "fx" or .id == "agency:azure" or .id == "headlong:default") | .modelOverrideSupported] | all(. == false))
+  and ([.choices[] | select(.id != "omp:local" and .id != "pi:default" and .commandAlias != "fx" and .id != "agency:azure" and .id != "headlong:default") | .modelOverrideSupported] | all)
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router exposed model overrides unsupported by a Native harness'
 jq -e '
   ([.choices[] | select(.id == "codex:cdx-p") | .sandbox] == [false])
   and ([.choices[] | select(.id == "codex:pstack") | .sandbox] == [false])
   and ([.choices[] | select(.id == "codex:youtube") | .sandbox] == [false])
-  and ([.choices[] | select(.commandAlias == "agency" or .commandAlias == "claude" or .commandAlias == "firstmate" or .commandAlias == "fx" or .commandAlias == "jcode" or .commandAlias == "omp" or .commandAlias == "pi" or .commandAlias == "prime") | .sandbox] | all(. == false))
+  and ([.choices[] | select(.commandAlias == "agency" or .commandAlias == "claude" or .commandAlias == "fx" or .commandAlias == "jcode" or .commandAlias == "omp" or .commandAlias == "pi" or .commandAlias == "prime") | .sandbox] | all(. == false))
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router did not expose accurate per-choice sandbox status'
 [[ ! -e "$inventory_log" ]] \
@@ -1776,16 +1640,6 @@ jq -e '
   and .readiness == "busy"
 ' <<<"$busy_inventory_output" >/dev/null \
   || fail 'trx inventory did not preserve busy readiness'
-
-firstmate_inventory_output="$("$fixture_bin/trx" inventory firstmate default --json)" \
-  || fail 'trx inventory failed for Firstmate'
-jq -e '
-  .launcher == "firstmate"
-  and .harness == "firstmate"
-  and .profile == "default"
-  and .readiness == "healthy"
-' <<<"$firstmate_inventory_output" >/dev/null \
-  || fail 'trx inventory did not route to Firstmate'
 
 status=0
 "$fixture_bin/trx" inventory bogus cpx-p --json >"$fixture_root/inventory-bad-launcher.out" \
@@ -1921,7 +1775,7 @@ actual = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
 raise SystemExit(0 if actual[0] == b"omp" and actual[-2:] == [b"--native-copilot", b""] else 1)
 PY
 
-for launcher in cpx cdx cldx fmx jcx omp picx prx agx; do
+for launcher in cpx cdx cldx jcx omp picx prx agx; do
   mv "$fixture_bin/$launcher" "$fixture_bin/$launcher.absent"
 done
 cp "$runtime_parent/cpx/catalog.json" "$fixture_root/copilot-isolation.catalog"
@@ -1940,7 +1794,7 @@ raise SystemExit(0 if actual[0] == b"claude" and actual[-4:] == [
 ] else 1)
 PY
 mv "$fixture_root/copilot-isolation.catalog" "$runtime_parent/cpx/catalog.json"
-for launcher in cpx cdx cldx fmx jcx omp picx prx agx; do
+for launcher in cpx cdx cldx jcx omp picx prx agx; do
   mv "$fixture_bin/$launcher.absent" "$fixture_bin/$launcher"
 done
 
@@ -1971,7 +1825,7 @@ TRX_WAIT=1 \
   '\r' 'CHILD_READY' "$fixture_bin/trx" || status=$?
 [[ "$status" == 143 ]] || fail "terminated child exited $status instead of 143"
 
-for missing in cldx fmx omp picx jcx prx agx; do
+for missing in cldx omp picx jcx prx agx; do
   mv "$fixture_bin/$missing" "$fixture_bin/$missing.absent"
   "$fixture_bin/trx" list >"$fixture_root/list-missing-$missing.out" \
     || fail "catalog requires retired public wrapper: $missing"
@@ -2026,58 +1880,6 @@ status=0
   || fail "unsupported Trellage event contract list exited $status instead of 1"
 assert_contains 'invalid catalog from codex' "$fixture_root/list-invalid-trellage-event.err"
 mv "$fixture_root/cdx.headless.catalog" "$runtime_parent/cdx/catalog.json"
-
-cp "$runtime_parent/fmx/catalog.json" "$fixture_root/fmx.orchestration.catalog"
-jq '(.profiles[].orchestration.submission.maxRequestBytes) = 999999' \
-  "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
-status=0
-"$fixture_bin/trx" list --json >"$fixture_root/list-invalid-orchestration.out" \
-  2>"$fixture_root/list-invalid-orchestration.err" || status=$?
-[[ "$status" == 1 ]] || fail "unsafe Firstmate control bound exited $status instead of 1"
-assert_contains 'invalid catalog from firstmate' "$fixture_root/list-invalid-orchestration.err"
-for preparation in '{"schemaVersion":2}' '{"schemaVersion":1,"command":"/bin/sh"}'; do
-  jq --argjson preparation "$preparation" '(.profiles[].orchestration.preparation) = $preparation' \
-    "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
-  status=0
-  "$fixture_bin/trx" list --json >"$fixture_root/list-invalid-preparation.out" \
-    2>"$fixture_root/list-invalid-preparation.err" || status=$?
-  [[ "$status" == 1 ]] || fail "unsupported Firstmate preparation capability exited $status instead of 1"
-  assert_contains 'invalid catalog from firstmate' "$fixture_root/list-invalid-preparation.err"
-done
-jq '(.profiles[].orchestration.instances) = {"schemaVersion":1}' \
-  "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
-"$fixture_bin/trx" list --json >"$fixture_root/list-firstmate-instances.json" \
-  || fail 'supported Firstmate instance capability should retain static profile discovery'
-jq -e '
-  [.profiles[] | select(.launcher == "firstmate")] as $profiles
-  | ($profiles | length) == 2
-    and all($profiles[]; .orchestration.instances == {schemaVersion: 1})
-' "$fixture_root/list-firstmate-instances.json" >/dev/null \
-  || fail 'Firstmate instance capability changed static profile discovery'
-for instances in '{"schemaVersion":2}' '{"schemaVersion":1,"command":"/bin/sh"}' 'null'; do
-  jq --argjson instances "$instances" '(.profiles[].orchestration.instances) = $instances' \
-    "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
-  status=0
-  "$fixture_bin/trx" list --json >"$fixture_root/list-invalid-instances.out" \
-    2>"$fixture_root/list-invalid-instances.err" || status=$?
-  [[ "$status" == 1 ]] || fail "unsupported Firstmate instance capability exited $status instead of 1"
-  assert_contains 'invalid catalog from firstmate' "$fixture_root/list-invalid-instances.err"
-done
-jq 'del(.profiles[].orchestration.preparation)' \
-  "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
-"$fixture_bin/trx" list --json >"$fixture_root/list-inspect-only-firstmate.json" \
-  || fail 'Firstmate without preparation should retain its inbox capability'
-jq -e 'all(.profiles[] | select(.launcher == "firstmate"); .orchestration.schemaVersion == 1 and (.orchestration | has("preparation") | not))' \
-  "$fixture_root/list-inspect-only-firstmate.json" >/dev/null \
-  || fail 'inspect-only Firstmate unexpectedly advertised automatic preparation'
-jq 'del(.profiles[].orchestration)' \
-  "$fixture_root/fmx.orchestration.catalog" >"$runtime_parent/fmx/catalog.json"
-"$fixture_bin/trx" list --json >"$fixture_root/list-legacy-firstmate.json" \
-  || fail 'legacy Firstmate catalog should retain manual launch compatibility'
-jq -e 'all(.profiles[] | select(.launcher == "firstmate"); (has("orchestration") | not) and .headless.prompt == false)' \
-  "$fixture_root/list-legacy-firstmate.json" >/dev/null \
-  || fail 'legacy Firstmate unexpectedly advertised inbox submission'
-mv "$fixture_root/fmx.orchestration.catalog" "$runtime_parent/fmx/catalog.json"
 
 rm "$fixture_bin/cpx"
 cp "$runtime_parent/cpx/bin/cpx" "$fixture_root/unrelated-cpx"
@@ -2149,7 +1951,7 @@ rm "$runtime_parent/trx/share/profile-guides/native/copilot/redirected.md"
   || fail 'uninstaller left trx command'
 [[ -x "$runtime_parent/cpx/bin/cpx" && -x "$runtime_parent/cdx/bin/cdx" \
   && -x "$runtime_parent/agx/bin/agx" \
-  && -x "$runtime_parent/cldx/bin/cldx" && -x "$runtime_parent/fmx/bin/fmx" \
+  && -x "$runtime_parent/cldx/bin/cldx" \
   && -x "$runtime_parent/jcx/bin/jcx" \
   && -x "$runtime_parent/omp/bin/omp" && -x "$runtime_parent/picx/bin/picx" \
   && -x "$runtime_parent/prx/bin/prx" ]] \

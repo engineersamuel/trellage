@@ -17,8 +17,6 @@
  * version comparison the architecture cannot support.
  */
 import type { AdminProfileEntry } from "./admin-model.ts"
-import { FIRSTMATE_MAX_RESPONSE_BYTES, type FirstmateFleetReadinessV1 } from "@trellage/guide-core"
-import { adminInstanceSelectorArgs, parseAdminFirstmateInventory } from "./admin-firstmate.ts"
 import type { CommandSpec } from "./guide-launch.ts"
 
 export interface AdminInventoryPlugin {
@@ -36,7 +34,6 @@ export interface AdminInventoryResult {
   readonly plugins: ReadonlyArray<AdminInventoryPlugin>
   readonly skills: AdminInventorySkills
   readonly mcps: ReadonlyArray<string>
-  readonly fleet?: FirstmateFleetReadinessV1
 }
 
 export type AdminInventoryOutcome = { readonly malformed: true; readonly diagnostic: string } | ({ readonly malformed?: false } & AdminInventoryResult)
@@ -44,7 +41,7 @@ export type AdminInventoryOutcome = { readonly malformed: true; readonly diagnos
 /** Builds `inventory PROFILE --json` for a profile. Callers must check `entry.inventorySupported` first. */
 export const buildInventoryCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: ["inventory", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry), "--json"],
+  args: ["inventory", entry.launcher!, entry.name, "--json"],
 })
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -91,11 +88,8 @@ const parseInventoryPayload = (value: unknown, entry: AdminProfileEntry | undefi
   return { readiness: value.readiness, plugins, skills, mcps }
 }
 
-/** Read-only inventory must identify the selected instance, not only its template. */
+/** Read-only inventory must identify the selected profile. */
 export const parseInventoryOutput = (stdout: string, entry?: AdminProfileEntry): AdminInventoryOutcome => {
-  if (entry?.orchestration !== undefined && Buffer.byteLength(stdout, "utf8") > FIRSTMATE_MAX_RESPONSE_BYTES) {
-    return { malformed: true, diagnostic: "Firstmate inventory exceeded its output limit." }
-  }
   const trimmed = stdout.trim()
   if (trimmed.length === 0) return { malformed: true, diagnostic: "inventory --json produced no output" }
   let value: unknown
@@ -105,21 +99,13 @@ export const parseInventoryOutput = (stdout: string, entry?: AdminProfileEntry):
     return { malformed: true, diagnostic: "inventory --json did not return valid JSON" }
   }
 
-  const inventory = parseInventoryPayload(value, entry)
-  if (inventory.malformed === true) return inventory
-  try {
-    const fleet = entry?.orchestration === undefined ? undefined : parseAdminFirstmateInventory(stdout, entry)
-    return { ...inventory, ...(fleet === undefined ? {} : { fleet }) }
-  } catch (error) {
-    return { malformed: true, diagnostic: error instanceof Error ? error.message : String(error) }
-  }
+  return parseInventoryPayload(value, entry)
 }
 
 export const adminInventorySummary = (outcome: AdminInventoryOutcome): string => {
   if (outcome.malformed === true) return `Inventory could not be verified: ${outcome.diagnostic}`
   return [
     `Readiness: ${outcome.readiness}`,
-    ...(outcome.fleet === undefined ? [] : [`Fleet runtime: ${outcome.fleet.runtime} · Supervisor: ${outcome.fleet.supervisor.state}`]),
     "",
     `### Plugins (${outcome.plugins.length})`,
     ...(outcome.plugins.length === 0 ? ["None reported."] : outcome.plugins.map((plugin) => `- ${plugin.name}${plugin.version === undefined ? "" : ` (${plugin.version})`}`)),

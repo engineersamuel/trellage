@@ -18,8 +18,6 @@ import type { GuideUiResult } from "./guide-ui.tsx"
 import { guideBatchExitCode, writeGuideBatchSummary } from "./guide-batch.ts"
 import { assertGuideGoalCandidate, type GuideGoalCandidateContext } from "./guide-goal-execution.ts"
 import { guideGoalInputInstructions } from "./guide-goal-transport.ts"
-import { executeFirstmateTerminalHandoff } from "./guide-firstmate-terminal.ts"
-import { validateLegacyFirstmateArtifact } from "./guide-context.ts"
 import { checkSelectedProfileReadiness, ProfileReadinessKind } from "./guide-preflight.ts"
 import { executeGuideReviewTerminal } from "./review-services.ts"
 
@@ -210,66 +208,6 @@ const executeCurrentTerminalResult = async (
   }
 }
 
-const validateFirstmateResultTransport = (result: GuideUiResult): void => {
-  if (!("profile" in result) || result.profile.surface !== "native" || result.profile.launcher !== "firstmate") return
-  if (result.profile.orchestration !== undefined) {
-    throw new Error(
-      "Firstmate execution requires an explicit fleet action and the inbox batch path. " +
-      "A terminal or command-only fallback cannot preserve the separate original intent and specification, " +
-      "or guard the expected fleet identity. No prompt was delivered.",
-    )
-  }
-  validateLegacyFirstmateArtifact(`native:firstmate/${result.profile.profile}`, result.prompt, result.legacyFirstmate)
-  const built = result.action === "current-terminal"
-    ? buildGuideLaunchCommand(result.profile, { mode: "argv", prompt: result.prompt })
-    : buildHerdrGuideLaunch(result.profile, result.prompt)
-  if (result.profile.headlessPrompt ||
-      JSON.stringify([result.command.executable, result.command.args]) !== JSON.stringify([built.command.executable, built.command.args]) ||
-      ("promptHandling" in result && result.promptHandling !== "manual-paste") ||
-      ("promptDelivery" in result && "promptDelivery" in built && result.promptDelivery !== built.promptDelivery)) {
-    throw new Error("Legacy Firstmate execution must retain the selected interactive manual-paste command. No prompt was delivered.")
-  }
-}
-
-const checkLegacyFirstmateReadiness = async (
-  result: GuideUiResult,
-  services: GuideInteractiveExecutionServices,
-): Promise<void> => {
-  if (!("profile" in result) || result.profile.surface !== "native" ||
-      result.profile.launcher !== "firstmate" || result.profile.orchestration !== undefined) return
-  const cwd = "cwd" in result ? result.cwd : result.primaryCheckoutPath
-  const readiness = await checkSelectedProfileReadiness(services.runner, result.profile, cwd)
-  if (readiness.kind === ProfileReadinessKind.Blocked) {
-    throw new Error(`${readiness.summary}. ${readiness.diagnostic} No legacy prompt was delivered.`)
-  }
-  services.write("Legacy Firstmate manual-paste delivery. No inbox receipt or atomic fleet identity guard is available.\n")
-}
-
-const summarizeGuideBatch = (
-  result: Extract<GuideUiResult, { readonly action: "batch" }>,
-  services: GuideInteractiveExecutionServices,
-): number => {
-  writeGuideBatchSummary(result.result, services.write)
-  if (result.result.entries.some((entry) => entry.job.firstmate !== undefined)) {
-    services.write(
-      "Firstmate queue is frozen. Accepted means saved, not dispatched or completed. " +
-      "For an unknown submission, reconcile the same request ID and payload; do not paste or submit a new ID.\n",
-    )
-  }
-  return guideBatchExitCode(result.result)
-}
-
-const executeCompletedGuideBatch = async (
-  result: Extract<GuideUiResult, { readonly action: "batch" }>,
-  services: GuideInteractiveExecutionServices,
-): Promise<number> => {
-  const batchExitCode = summarizeGuideBatch(result, services)
-  const handoff = result.result.firstmateTerminalHandoff
-  if (handoff === undefined) return batchExitCode
-  const handoffExitCode = await executeFirstmateTerminalHandoff(handoff, result.result.entries, services)
-  return handoffExitCode === 0 ? batchExitCode : handoffExitCode
-}
-
 const printGuideResult = (
   result: Extract<GuideUiResult, { readonly action: "print" }>,
   services: GuideInteractiveExecutionServices,
@@ -282,8 +220,6 @@ export const executeGuideUiResult = async (
   result: GuideUiResult,
   services: GuideInteractiveExecutionServices,
 ): Promise<number> => {
-  validateFirstmateResultTransport(result)
-  await checkLegacyFirstmateReadiness(result, services)
   switch (result.action) {
     case "cancel":
       return result.exitCode
@@ -304,7 +240,8 @@ export const executeGuideUiResult = async (
     case "herdr-worktree-open":
       return executeHerdrResult(result, services)
     case "batch":
-      return executeCompletedGuideBatch(result, services)
+      writeGuideBatchSummary(result.result, services.write)
+      return guideBatchExitCode(result.result)
     case "review-terminal":
       return executeGuideReviewTerminal(result, {
         runner: services.runner,

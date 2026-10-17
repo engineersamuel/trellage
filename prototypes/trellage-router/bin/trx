@@ -34,8 +34,6 @@ readonly ownership_value='trellage-router-v3'
 readonly trx_herdr_ledger='[
   { "launcher": "agency", "profile": "azure", "status": "untested", "notes": "Static launcher, state-isolation, Agency configuration, inventory, and router contracts pass; awaiting an end-to-end Agency and Azure MCP round trip." },
   { "launcher": "claude", "profile": "default", "status": "verified" },
-  { "launcher": "firstmate", "profile": "default", "status": "untested", "notes": "The previous 4ad8cbae pin completed a real Herdr supervisor-and-scout round trip with consent-managed prerequisites, an isolated Treehouse worktree and worker home, and teardown. The 527aa7c1 source and retry-safe guide inbox flow still require a new live round trip." },
-  { "launcher": "firstmate", "profile": "pstack-workers", "status": "untested", "notes": "The previous shared runtime had default-profile Herdr evidence, not a pstack-workers fleet proof. The 527aa7c1 source, worker policy, and guide inbox flow require a profile-specific live round trip." },
   { "launcher": "fx", "profile": "default", "status": "untested", "notes": "Fx preserves host HOME and ~/.fx context by design; static adapter and router contracts pass, but no end-to-end Herdr round trip is recorded." },
   { "launcher": "omp", "profile": "default", "status": "verified" },
   { "launcher": "pi", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
@@ -98,8 +96,8 @@ interactive terminal and never launches a profile without an explicit,
 separately confirmed terminal-launch action.
 `trx upgrade all` previews Native harness version AND skill updates and
 requires explicit terminal confirmation. Use --yes to authorize a
-non-interactive update, or --dry-run to preview without updates. --native skips
-Container image builds. It does not install or upgrade Trellage itself.
+non-interactive update, or --dry-run to preview without updates. --native is
+accepted for compatibility. It does not install or upgrade Trellage itself.
 EOF
 }
 
@@ -110,14 +108,14 @@ Usage:
 
 Update harness versions AND skills for every Native catalog profile.
 The preview includes profiles hidden by Admin filters. One queue runs:
-1. Native harness updates: shared runtimes once, Firstmate per profile.
+1. Native harness updates: shared runtimes once.
 2. Shared Native skill-cache refresh: one trx skills update.
 3. Native profile skill copies and verification, including Agency.
 Native skill copies are final; harness updates cannot overwrite them afterward.
 Admin U remains the selected harness-only action.
 
 Without a flag, preview the scope and require you to type yes at a terminal.
---native limits the queue to steps 1-3; Container images are not built.
+--native is accepted for compatibility; every update is already Native.
 --yes authorizes updates without an interactive terminal.
 --dry-run previews the scope without running updates or version checks.
 
@@ -172,7 +170,7 @@ It reads no profile catalog, calls no model, and launches nothing.
 --print writes one prompt to stdout. --copy copies one prompt and exits.
 Use --print or --copy with --ritual and an id.
 --review accepts --base, --intent, --intent-stdin, --model and --effort.
-It needs Copilot and selected review skills, not every Native launcher or Sandbox.
+It needs Copilot and selected review skills, not every Native launcher.
 EOF
 }
 
@@ -269,39 +267,6 @@ read_catalog() {
       and (.effortOverride | type == "boolean")
       and (.testedHarnessVersion == null
         or (.testedHarnessVersion | type == "string" and length > 0));
-    def validOrchestration:
-      type == "object"
-      and ((keys - ["preparation", "instances"]) == [
-        "dispatchRules", "kind", "schemaVersion", "sourceRevision", "submission",
-        "taskIdPrefix", "workerEfforts", "workerHarness", "workerPolicy"
-      ])
-      and ((has("preparation") | not) or
-        (.preparation | type == "object" and keys == ["schemaVersion"] and .schemaVersion == 1))
-      and ((has("instances") | not) or
-        (.instances | type == "object" and keys == ["schemaVersion"] and .schemaVersion == 1))
-      and .schemaVersion == 1
-      and .kind == "firstmate"
-      and (.sourceRevision | type == "string" and test("^[a-f0-9]{40}$"))
-      and (.taskIdPrefix
-        | type == "string" and length <= 128 and test("^[a-z0-9]+(-[a-z0-9]+)*$"))
-      and (.workerPolicy == null or
-        (.workerPolicy
-          | type == "object"
-          and keys == ["digest", "name"]
-          and (.name | type == "string" and length <= 128 and test("^[a-z0-9]+(-[a-z0-9]+)*$"))
-          and (.digest | type == "string" and test("^[a-f0-9]{64}$"))))
-      and .workerHarness == "claude"
-      and (.workerEfforts
-        | type == "array"
-        and length > 0 and length <= 5 and length == (unique | length)
-        and all(.[]; . == "low" or . == "medium" or . == "high" or . == "xhigh" or . == "max"))
-      and .dispatchRules == "claude-single"
-      and (.submission
-        | type == "object"
-        and keys == ["maxRequestBytes", "schemaVersion"]
-        and .schemaVersion == 1
-        and (.maxRequestBytes
-          | type == "number" and . == floor and . >= 1024 and . <= 524288));
     type == "object"
     and keys == ["harness", "launcher", "profiles", "sandbox", "schemaVersion"]
     and .schemaVersion == 1
@@ -317,9 +282,6 @@ read_catalog() {
         and length > 0
         and (test("[\u0000-\u001f\u007f-\u009f]") | not))
       and (.headless == null or (.headless | validHeadless))
-      and ((has("orchestration") | not) or
-        ($harness == "firstmate"
-          and .headless.prompt == false and (.orchestration | validOrchestration)))
       and (.plugin == null or
         (.plugin
           | type == "string"
@@ -398,12 +360,11 @@ build_choices() {
     --argjson ompCatalog "$5" \
     --argjson piCatalog "$6" \
     --argjson primeCatalog "$7" \
-    --argjson firstmateCatalog "$8" \
-    --argjson agencyCatalog "$9" \
-    --argjson fxCatalog "${10}" \
-    --argjson headlongCatalog "${11}" \
+    --argjson agencyCatalog "$8" \
+    --argjson fxCatalog "$9" \
+    --argjson headlongCatalog "${10}" \
     --arg trxPath "$router_command_path" \
-    --argjson passthroughArgs "${12}" '
+    --argjson passthroughArgs "${11}" '
     def models($catalog; $profile):
       if $catalog.harness == "copilot" or $catalog.harness == "codex" then
         {defaultModel:"gpt-6-astra",models:["gpt-6-astra","gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
@@ -448,12 +409,11 @@ build_choices() {
       } + models($catalog; $profile));
     {
       prompt: "Select a Trellage harness/profile",
-      description: "Direct launch: trx run HARNESS PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent harnesses and Firstmate fleet orchestration directly on the host with isolated state. Codex uses Full Access without a native sandbox; other Native profiles are not security boundaries.",
+      description: "Direct launch: trx run HARNESS PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent harnesses directly on the host with isolated state. Codex uses Full Access without a native sandbox; other Native profiles are not security boundaries.",
       choices: [
         pair($copilotCatalog),
         pair($codexCatalog),
         pair($claudeCatalog),
-        pair($firstmateCatalog),
         pair($fxCatalog),
         pair($jcodeCatalog),
         pair($ompCatalog),
@@ -475,12 +435,11 @@ build_profile_list() {
     --argjson ompCatalog "$5" \
     --argjson piCatalog "$6" \
     --argjson primeCatalog "$7" \
-    --argjson firstmateCatalog "$8" \
-    --argjson agencyCatalog "$9" \
-    --argjson fxCatalog "${10}" \
-    --argjson headlongCatalog "${11}" \
-    --argjson herdrLedger "${12}" \
-    --argjson configProfiles "${13:-false}" '
+    --argjson agencyCatalog "$8" \
+    --argjson fxCatalog "$9" \
+    --argjson headlongCatalog "${10}" \
+    --argjson herdrLedger "${11}" \
+    --argjson configProfiles "${12:-false}" '
     def herdrCompatibility($launcher; $name):
       ([$herdrLedger[] | select(.launcher == $launcher and .profile == $name)] | .[0]) as $entry
       | if $entry == null then { status: "untested" }
@@ -495,7 +454,7 @@ build_profile_list() {
         headless,
         sandbox: $catalog.sandbox,
         herdrCompatibility: herdrCompatibility($catalog.harness; .name)
-      } + (if has("orchestration") then {orchestration} else {} end);
+      };
     # The firstmate config profile runs Firstmate from its own clone; it is interactive,
     # so the guide hands its message over for pasting instead of passing a prompt.
     def firstmateProfile($harness):
@@ -518,7 +477,6 @@ build_profile_list() {
         profiles($codexCatalog),
         profiles($claudeCatalog),
         (if $configProfiles then firstmateProfile("claude") else empty end),
-        profiles($firstmateCatalog),
         profiles($fxCatalog),
         profiles($jcodeCatalog),
         profiles($ompCatalog),
@@ -543,7 +501,7 @@ build_combined_guide_catalog() {
   local profile_list
   profile_list="$(build_profile_list \
     "$copilot_catalog" "$codex_catalog" "$claude_catalog" \
-    "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$firstmate_catalog" "$agency_catalog" \
+    "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$agency_catalog" \
     "$fx_catalog" "$headlong_catalog" "$trx_herdr_ledger" \
     "$config_profiles")" \
     || die 'could not build native profile list'
@@ -697,7 +655,7 @@ case "${1-}" in
       done
     fi
     ;;
-  models|setup|doctor|repair|workflow-check|harness-version|instances|prepare|submit|receipt|shutdown|skill|skills-update|skills-check|harness-update)
+  models|setup|doctor|repair|workflow-check|harness-version|shutdown|skill|skills-update|skills-check|harness-update)
     mode='lifecycle'
     lifecycle_args=("$@")
     ;;
@@ -709,7 +667,7 @@ case "${1-}" in
     inventory_launcher="$1"
     inventory_profile_arg="$2"
     case "$1" in
-      agency|codex|claude|copilot|firstmate|fx|jcode|omp|pi|prime)
+      agency|codex|claude|copilot|fx|jcode|omp|pi|prime)
         mode='lifecycle'
         lifecycle_args=(inventory "$@")
         ;;
@@ -752,7 +710,7 @@ case "${1-}" in
       exit 0
     fi
     if [[ "${1-}" != all ]]; then
-      case "${1-}" in agency|codex|claude|copilot|firstmate|fx|jcode|omp|pi|prime) ;; *) die 'upgrade requires all [--native] [--yes | --dry-run] or HARNESS [PROFILE]' ;; esac
+      case "${1-}" in agency|codex|claude|copilot|fx|jcode|omp|pi|prime) ;; *) die 'upgrade requires all [--native] [--yes | --dry-run] or HARNESS [PROFILE]' ;; esac
       mode='lifecycle'
       lifecycle_args=(upgrade "$@")
     else
@@ -983,7 +941,7 @@ if [[ "$mode" == guide && "$review_seen" == true ]]; then
         commandPath: $commandPath, harness: $inventory.harness,
         name, description, headless, sandbox: $inventory.sandbox,
         herdrCompatibility: {status: "untested"}
-      } + (if has("orchestration") then {orchestration} else {} end)]')" \
+      }]')" \
       || die 'invalid canonical Native profile inventory'
   done
   review_native="$(jq -cn --argjson profiles "$review_profiles" '{schemaVersion:1, profiles:$profiles}' \
@@ -1038,7 +996,7 @@ if [[ "$mode" == guide ]] && ((${#guide_args[@]} > 0)); then
     if [[ "$guide_arg" == --preview || "$guide_arg" == --preview=* \
       || "$guide_arg" == --forks || "$guide_arg" == --forks=* ]]; then
       # Fixture-only previews: they read no catalog, so short-circuit
-      # before launcher discovery, the ten catalog reads, the Sandbox list,
+      # before launcher discovery, the catalog reads,
       # and the floating-skills fetch below. None of them apply to fixtures.
       require_source_runtime
       [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
@@ -1064,7 +1022,6 @@ trap cleanup_catalog_tmp EXIT HUP INT TERM
 read_canonical_catalog copilot trellage-copilot-profiles cpx >"$catalog_tmp/copilot"
 read_canonical_catalog codex trellage-codex-profiles cdx >"$catalog_tmp/codex"
 read_canonical_catalog claude trellage-claude-profiles cldx >"$catalog_tmp/claude"
-read_canonical_catalog firstmate trellage-firstmate-profiles fmx >"$catalog_tmp/firstmate"
 fx_catalog='{"schemaVersion":1,"launcher":"fx","harness":"fx","sandbox":false,"profiles":[{"name":"default","description":"Fx with shared host context through copilot-proxy-rs","headless":{"schemaVersion":1,"prompt":true,"outputFormats":["text","json"],"eventContract":null,"trellageEventContract":null,"sessionId":"native","resume":true,"resumeWithPrompt":true,"questionToolControl":"prompt-only","changedFiles":"native","usage":true,"cost":true,"modelOverride":true,"effortOverride":true,"testedHarnessVersion":null},"plugin":null,"source":"vercel-labs/fx","standaloneMcps":[]}]}'
 headlong_catalog='{"schemaVersion":1,"launcher":"headlong","harness":"headlong","sandbox":false,"profiles":[{"name":"default","description":"Persistent Headlong agent with durable identity, memory, and background thinking on the host.","headless":{"schemaVersion":1,"prompt":false,"outputFormats":["text"],"eventContract":null,"trellageEventContract":null,"sessionId":"none","resume":false,"resumeWithPrompt":false,"questionToolControl":"none","changedFiles":"none","usage":false,"cost":false,"modelOverride":false,"effortOverride":false,"testedHarnessVersion":null},"plugin":null,"source":"laude-institute/headlong","standaloneMcps":[],"managedSkills":[]}]}'
 read_canonical_catalog jcode trellage-jcode-profiles jcx >"$catalog_tmp/jcode"
@@ -1076,7 +1033,6 @@ read_canonical_catalog agency trellage-agency-profiles agx >"$catalog_tmp/agency
 copilot_catalog="$(<"$catalog_tmp/copilot")"
 codex_catalog="$(<"$catalog_tmp/codex")"
 claude_catalog="$(<"$catalog_tmp/claude")"
-firstmate_catalog="$(<"$catalog_tmp/firstmate")"
 jcode_catalog="$(<"$catalog_tmp/jcode")"
 omp_catalog="$(<"$catalog_tmp/omp")"
 pi_catalog="$(<"$catalog_tmp/pi")"
@@ -1125,7 +1081,7 @@ trap - EXIT HUP INT TERM
 if [[ "$mode" == list ]]; then
   profile_list="$(build_profile_list \
     "$copilot_catalog" "$codex_catalog" "$claude_catalog" \
-    "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$firstmate_catalog" "$agency_catalog" \
+    "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$agency_catalog" \
     "$fx_catalog" "$headlong_catalog" "$trx_herdr_ledger" true)" \
     || die 'could not build profile list'
   if ((list_json)); then
@@ -1227,7 +1183,7 @@ require_source_runtime
 passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
   || die 'could not encode launcher arguments'
 choices="$(build_choices \
-  "$copilot_catalog" "$codex_catalog" "$claude_catalog" "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$firstmate_catalog" "$agency_catalog" "$fx_catalog" "$headlong_catalog" \
+  "$copilot_catalog" "$codex_catalog" "$claude_catalog" "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$agency_catalog" "$fx_catalog" "$headlong_catalog" \
   "$passthrough_args")" \
   || die 'could not build profile choices'
 
@@ -1264,10 +1220,6 @@ case "$launcher" in
   claude)
     selected_harness=claude
     selected_catalog="$claude_catalog"
-    ;;
-  firstmate)
-    selected_harness=firstmate
-    selected_catalog="$firstmate_catalog"
     ;;
   fx)
     selected_harness=fx

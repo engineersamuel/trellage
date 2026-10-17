@@ -4,8 +4,6 @@ import type { ModelInfo } from "@github/copilot-sdk"
 import { GuideModelCleanupError, GuideModelResponseError, type GuideModelClient, type GuideModelSession } from "../src/copilot-guide-provider.ts"
 import { DoctorFailureDiagnosisProvider } from "../src/admin-diagnosis-provider.ts"
 import type { JevSystemOneClient } from "../src/jev-decisions.ts"
-import { buildDiagnosticCommand } from "../src/admin-launch.ts"
-import { beta, instanceRows } from "./admin-firstmate-fixtures.ts"
 
 const model: ModelInfo = {
   id: "gpt-5.6-sol",
@@ -141,18 +139,13 @@ describe("DoctorFailureDiagnosisProvider", () => {
     expect(client.session.capturedPrompts).toHaveLength(1)
   })
 
-  it("keeps the instance UUID and read-only selector in an explicitly requested diagnosis", async () => {
+  it("includes the read-only doctor argument vector in an explicitly requested diagnosis", async () => {
     const client = new FakeClient([okContent])
-    const row = instanceRows()[2]!
     await buildProvider(client).diagnose({
-      ref: row.ref, name: "default / beta", capturedOutput: "Needs operator review.",
-      firstmateInstance: beta, diagnosticCommand: buildDiagnosticCommand(row),
+      ref: "native:copilot/hve", name: "hve", capturedOutput: "Needs operator review.",
+      diagnosticCommand: { executable: "/fixture/trx", args: ["doctor", "copilot", "hve"] },
     })
-    const prompt = client.session.capturedPrompts[0]!
-    expect(prompt).toContain(beta.reference.instanceId)
-    expect(prompt).toContain(beta.worktree.evidence.locators.worktree)
-    expect(prompt).toContain('"doctor","firstmate","default","--instance"')
-    expect(prompt).toContain("does not authorize fleet creation, setup, rebinding, or package installation")
+    expect(client.session.capturedPrompts[0]!).toContain('Read-only doctor argument vector: ["/fixture/trx","doctor","copilot","hve"]')
   })
 
   it("parses a successful, well-formed response", async () => {

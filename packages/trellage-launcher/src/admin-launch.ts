@@ -1,17 +1,8 @@
 /**
- * Confirmed Admin controls. Firstmate uses the shared instance selectors
- * and context. Other profiles use the existing guide launch builder.
+ * Confirmed Admin controls. Profiles use the existing guide launch builder.
  * Terminal handoff still uses runInteractiveCommand; selection never launches.
  */
-import { firstmateInstanceCli } from "@trellage/guide-core"
-import { adminProfileLabel, isAdminFirstmate, type AdminProfileEntry } from "./admin-model.ts"
-import {
-  adminFirstmatePreparationBlockReason,
-  adminFirstmatePreparationDiagnostic,
-  adminInstanceControlArgs,
-  adminInstanceSelectorArgs,
-  adminNativeSelectedProfile,
-} from "./admin-firstmate.ts"
+import type { AdminProfileEntry } from "./admin-model.ts"
 import type { AdminRunManager, AdminRunState } from "./admin-run-manager.ts"
 import {
   buildGuideLaunchCommand,
@@ -21,58 +12,31 @@ import {
 } from "./guide-launch.ts"
 
 export const toSelectedProfile = (entry: AdminProfileEntry): SelectedProfile =>
-  adminNativeSelectedProfile(entry)
+  ({
+    surface: "native",
+    launcher: entry.launcher ?? "",
+    commandPath: entry.commandPath,
+    profile: entry.name,
+    headlessPrompt: false,
+  })
 
-/** Firstmate control uses the confirmed instance context; other launchers retain the picker command. */
 export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =>
-  isAdminFirstmate(entry)
-    ? { executable: entry.commandPath, args: ["run", entry.launcher!, entry.name, ...adminInstanceControlArgs(entry)] }
-    : buildGuideLaunchCommand(toSelectedProfile(entry)).command
+  buildGuideLaunchCommand(toSelectedProfile(entry)).command
 
 /** Native launchers accept `doctor PROFILE`. Callers must check `entry.doctorSupported` first. */
 export const buildDiagnosticCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: ["doctor", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry)],
+  args: ["doctor", entry.launcher!, entry.name],
 })
 
-/**
- * Firstmate requires safe preparation and a published fleet identity.
- * Ordinary Native repair support follows doctor support.
- */
-export const isRepairSupported = (entry: AdminProfileEntry): boolean =>
-  entry.doctorSupported &&
-  (!isAdminFirstmate(entry) || adminFirstmatePreparationBlockReason(entry) === undefined)
+/** Native repair support follows doctor support. */
+export const isRepairSupported = (entry: AdminProfileEntry): boolean => entry.doctorSupported
 
-export const isAutoRepairSupported = (entry: AdminProfileEntry): boolean =>
-  !isAdminFirstmate(entry) && isRepairSupported(entry)
+export const buildRepairCommand = (entry: AdminProfileEntry): CommandSpec =>
+  ({ executable: entry.commandPath, args: ["repair", entry.launcher!, entry.name] })
 
-/**
- * Firstmate preparation has no package-install approval or setup fallback.
- * Other Native profiles retain repair PROFILE.
- */
-export const buildRepairCommand = (entry: AdminProfileEntry): CommandSpec => {
-  if (isAdminFirstmate(entry)) {
-    const reason = adminFirstmatePreparationBlockReason(entry)
-    if (reason !== undefined) throw new Error(reason)
-    return {
-      executable: entry.commandPath,
-      args: [
-        "prepare", entry.launcher!, entry.name, ...adminInstanceControlArgs(entry), "--json",
-        firstmateInstanceCli.expectedSourceRevision, entry.orchestration!.sourceRevision,
-      ],
-    }
-  }
-  return { executable: entry.commandPath, args: ["repair", entry.launcher!, entry.name] }
-}
-
-/**
- * Only ordinary Native profiles can use setup. Firstmate creation is a
- * separate approved operation and is never an Admin recovery fallback.
- */
-export const buildSetupCommand = (entry: AdminProfileEntry): CommandSpec => {
-  if (isAdminFirstmate(entry)) throw new Error("Admin does not create Firstmate fleets or escalate preparation to setup.")
-  return { executable: entry.commandPath, args: ["setup", entry.launcher!, entry.name] }
-}
+export const buildSetupCommand = (entry: AdminProfileEntry): CommandSpec =>
+  ({ executable: entry.commandPath, args: ["setup", entry.launcher!, entry.name] })
 
 /**
  * `repair`/`setup` can perform real installs (e.g. `mise install`, `npm ci`,
@@ -98,12 +62,7 @@ export interface RepairAndRecheckOutcome {
   readonly doctorState: AdminRunState
 }
 
-/**
- * Keeps preparation/repair separate from doctor history. Firstmate returns
- * after one prepare and one doctor, even on refusal or invalid output.
- * Other Native profiles keep their existing repair → doctor → setup fallback.
- * Only the confirmed manual action may call this for Firstmate.
- */
+/** Keeps repair separate from doctor history: repair → doctor → setup fallback. */
 export const repairThenRecheckDoctor = async (
   entry: AdminProfileEntry,
   runManager: AdminRunManager,
@@ -111,18 +70,13 @@ export const repairThenRecheckDoctor = async (
 ): Promise<RepairAndRecheckOutcome> => {
   const repairCommand = buildRepairCommand(entry)
   await runManager.trigger(repairRefFor(entry), repairCommand.executable, repairCommand.args, {
-    timeoutMs: isAdminFirstmate(entry) ? 300_000 : repairOrSetupTimeoutMs,
-    ...(isAdminFirstmate(entry) ? {
-      terminationGraceMs: 10_000,
-      outputOverflow: "terminate" as const,
-      validateOutput: (stdout: string) => adminFirstmatePreparationDiagnostic(entry, stdout),
-    } : {}),
+    timeoutMs: repairOrSetupTimeoutMs,
   })
   const repairState = runManager.status(repairRefFor(entry)).state
   const doctorCommand = buildDiagnosticCommand(entry)
   await runManager.retry(entry.ref, doctorCommand.executable, doctorCommand.args)
   const doctorStateAfterRepair = runManager.status(entry.ref).state
-  if (doctorStateAfterRepair === "success" || isAdminFirstmate(entry)) {
+  if (doctorStateAfterRepair === "success") {
     await refreshVersions?.()
     return { repairState, doctorState: doctorStateAfterRepair }
   }
@@ -154,6 +108,6 @@ export const launchAdminProfile = async (
   confirmed: boolean,
   run: (command: CommandSpec) => Promise<void> = runInteractiveCommand,
 ): Promise<void> => {
-  if (!confirmed) throw new LaunchNotConfirmedError(adminProfileLabel(entry))
+  if (!confirmed) throw new LaunchNotConfirmedError(entry.name)
   await run(buildAdminLaunchCommand(entry))
 }

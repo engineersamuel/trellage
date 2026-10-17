@@ -266,7 +266,6 @@ describe("profile guide goal execution", () => {
     ["native/copilot/hve.md", "codex-goal"],
     ["native/copilot/hve.md", "claude-goal"],
     ["native/agency/trellage-azure.md", "claude-goal"],
-    ["native/firstmate/pstack-workers.md", "codex-goal"],
     ["native/pi/default.md", "claude-goal"],
     ["sandbox/codex-superpowers.md", "codex-goal"],
     ["sandbox/headlong.md", "claude-goal"],
@@ -360,7 +359,7 @@ describe("profile guide identities", () => {
 
       expect(loaded.key).toBe("native:copilot/hve")
       expect(registry.size).toBe(2)
-      await expect(discoverProfileGuideRelativePaths(root)).resolves.toEqual(["native/copilot/hve.md", "sandbox/social.md"])
+      await expect(discoverProfileGuideRelativePaths(root)).resolves.toEqual(["native/copilot/hve.md"])
     })
 
     it("rejects symlinked guides", async () => {

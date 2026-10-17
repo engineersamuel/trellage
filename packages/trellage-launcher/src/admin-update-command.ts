@@ -94,7 +94,7 @@ export const runProfileUpdateStep = async (
   const diagnostic =
     output.state === "failure" ? output.diagnostic : fallback === undefined ? undefined : `Harness was not updated: ${fallback}`
   return step.targets.map((entry) => {
-    const name = entry.displayName ?? entry.name
+    const name = entry.name
     return diagnostic === undefined
       ? { ref: entry.ref, name, state: "success" }
       : { ref: entry.ref, name, state: "failure", diagnostic }

@@ -87,7 +87,7 @@ and installs the Native launchers from that source on the VM.
 
 The acceptance workflow requires an Azure CLI login,
 `COPILOT_GITHUB_TOKEN` (or `GH_TOKEN` / `gh auth token`) for Native Copilot
-and Firstmate GitHub access, and `COPILOT_PROXY_GITHUB_TOKEN` (or the safe
+GitHub access, and `COPILOT_PROXY_GITHUB_TOKEN` (or the safe
 mode-0600 `~/.config/copilot-proxy-rs/github_token`) for
 `copilot-proxy-rs`. It streams the tokens to the remote process and writes
 them only to mode-0600 files under VM `/dev/shm`. The temporary GitHub CLI
@@ -97,10 +97,7 @@ request-body logging. No host credential file is copied.
 
 The workflow verifies one exact `OK` response from each Native pair through
 `trx run`: `copilot/hve`, `codex/pstack`, `claude/default`, composed `grok/superpowers`,
-`jcode/default`, `omp/default`, `pi/default`, and `prime/default`. For Firstmate, it avoids a
-vacuous paid fleet prompt and instead verifies setup, doctor, healthy routed
-inventory, the exact Firstmate source pin, and the managed overlay for both
-profiles. `trx run` performs the same owned-runtime and catalog validation as
+`jcode/default`, `omp/default`, `pi/default`, and `prime/default`. `trx run` performs the same owned-runtime and catalog validation as
 the interactive picker before it executes the selected launcher.
 
 On Linux, installing a tool with `mise use -g` is not enough for non-login SSH
@@ -143,7 +140,7 @@ syntax differs between harnesses.
 | Harness | Command in the harness conversation |
 | --- | --- |
 | Codex | `$i-have-adhd` |
-| Claude Code, Firstmate, Grok | `/i-have-adhd` |
+| Claude Code, Grok | `/i-have-adhd` |
 | Copilot, Agency | `/i-have-adhd`, subject to the compatibility note below |
 | Oh My Pi, Pi, Prime | `/skill:i-have-adhd` |
 
@@ -354,8 +351,6 @@ harness/preset, across all worktrees. Other presets remain independent. Setup,
 repair, skill updates, and runtime upgrades reject a busy preset so they cannot
 replace skills used by a running session. Finish the owning operation or shut
 down its session, then retry; `trx shutdown prime default` remains available.
-Firstmate retains its existing per-instance fleet admission, so distinct instance
-UUIDs can run concurrently while fleet and shared-resource mutations remain guarded.
 Only Pi has proven selected-only isolation; Copilot, Claude, Codex, and Grok launch by
 default even though unselected repository or host skills may load; pass
 `--require-proven-isolation` to refuse instead. Grok still uses its native
@@ -536,17 +531,9 @@ Install the dependencies for the harnesses you use. On a brand-new machine:
    - Prime Agent needs `mise`, Node 22+, `npm`, `curl`, `jq`, **and
      `uv`** (`mise use -g uv` if it is not already on `PATH`) to bootstrap its
      Python kernel venv.
-   - Firstmate needs the `claude` CLI (`npm install -g
-     @anthropic-ai/claude-code`), `git`, `gh`, `jq`, `python3`, authenticated
-     host `gh` configuration, and either a Herdr pane or `tmux` for its
-     backend. On first launch it detects the remaining Firstmate-specific
-     tools, shows their exact versions and managed destination, and asks for
-     consent before installing them under
-     `~/.local/share/trellage/fmx/prerequisites/`. It does not install global
-     npm packages or global agent hooks.
 3. **Browse with `trx list`.** Listing does not require every harness to be
    installed. Launch with `trx run HARNESS PROFILE`.
-4. Claude, Firstmate, JCode, Prime, Pi, Grok, and the default Codex provider use
+4. Claude, JCode, Prime, Pi, Grok, and the default Codex provider use
    the keyless `copilot-proxy-rs` service at `http://127.0.0.1:8080`. Start
    that proxy and make sure it has a valid GitHub Copilot device-flow login
    before using those launchers. A `401` or `GitHub OAuth device flow is not
@@ -584,7 +571,6 @@ repository root:
 (cd prototypes/trellage-copilot-profiles && ./install.sh)
 (cd prototypes/trellage-agency-profiles && ./install.sh)
 (cd prototypes/trellage-claude-profiles && ./install.sh)
-(cd prototypes/trellage-firstmate-profiles && ./install.sh)
 (cd prototypes/trellage-jcode-profiles && ./install.sh)
 (cd prototypes/trellage-omp-profiles && ./install.sh)
 (cd prototypes/trellage-picx-profiles && ./install.sh)
@@ -603,16 +589,13 @@ trx setup omp default
 trx setup pi
 trx setup codex pstack
 trx setup prime
-trx setup firstmate default
 trx doctor copilot awesome
 trx list
 ```
 
 An explicit `setup` step is not required for Agency, Codex, Copilot, Claude,
 JCode, OMP, Pi, or Prime; those backends self-heal on first
-launch. Firstmate requires explicit setup: run `trx setup firstmate PROFILE` first so
-the pinned Firstmate source and overlay are installed as an explicit,
-reviewable step. Running `setup`/`doctor` ahead of time is recommended for
+launch. Running `setup`/`doctor` ahead of time is recommended for
 every launcher so missing prerequisites are reported before a session starts.
 
 For harness versions and skills, use `trx admin`: press `A` to check the full
@@ -673,7 +656,6 @@ in place.
 | `agx trellage-azure` | `trx run agency azure` |
 | `cdx PROFILE` | `trx run codex PROFILE` |
 | `cldx PROFILE` | `trx run claude PROFILE` |
-| `fmx PROFILE` | `trx run firstmate PROFILE` |
 | `jcx` | `trx run jcode default` |
 | `omp copilot` | `trx run omp default` |
 | `omp` (local Qwen) | `trx run omp local` |
@@ -685,7 +667,7 @@ GitHub Copilot Native runs use `trx run copilot PROFILE`.
 
 Native lifecycle commands use the same identity, for example
 `trx setup agency azure`, `trx doctor omp default`, and
-`trx inventory firstmate default --json`.
+`trx inventory claude default --json`.
 
 Their isolated profile homes are rooted at:
 
@@ -698,7 +680,6 @@ Their isolated profile homes are rooted at:
 ~/.local/share/trellage/profiles/prime/default/home/
 ~/.omp/profiles/trellage-qwen-local/
 ~/.local/share/trellage/profiles/pi/picx-default/
-~/.local/share/trellage/profiles/firstmate/<profile>/home/
 ```
 
 The native `omp` launcher uses the host-installed `omp` executable and provides two isolated profiles:
@@ -805,42 +786,6 @@ Both profiles retain the shared native skills and use isolated homes.
 No host model credentials are copied. Launch scrubs ambient provider and token
 variables before setting only the local proxy environment. See the
 [native Claude guide](prototypes/trellage-claude-profiles/README.md).
-
-The native `firstmate` backend runs [Firstmate](https://github.com/kunchenguid/firstmate)
-fleet orchestration directly on the host, pinned to a fixed upstream commit
-(`4ad8cbaeafc109a17c1af3911867b7fe9e04e801`); ordinary launches never update
-that pin, and only `trx upgrade firstmate` installs a newer catalog pin. The integration
-is experimental while Firstmate has no immutable tagged release. v1 uses
-Claude Code for the captain and every worker, with tmux and Herdr as its two
-backends (Herdr when launched inside a valid Herdr pane, tmux otherwise).
-Firstmate owns one isolated Claude home for the captain and separate isolated
-Claude homes for each worker; only the captain gets the Trellage session
-bridge. The first captain launch detects Firstmate's additional toolchain and,
-when anything is missing, shows the locked versions and install destination
-before asking for consent. Accepted installs stay under the fmx runtime rather
-than using global npm. Two profiles are available:
-
-```bash
-trx setup firstmate default
-trx doctor firstmate default
-trx run firstmate default
-trx setup firstmate pstack-workers
-trx run firstmate pstack-workers
-trx upgrade firstmate --check default
-trx upgrade firstmate default
-```
-
-`default` keeps Firstmate's standard ship/scout brief behavior within the v1
-limits above. `pstack-workers` adds only a concise pstack-derived worker
-inner-loop policy (smallest-change discipline, blast-radius naming,
-conditional architecture/history checks, real-artifact proof); it does not
-invoke Poteto Mode, install the pstack plugin, create pstack subagents, add a
-second router, or require mandatory multi-frontier review. v1 refuses all
-secondmate spawns. Both profiles report `sandbox: false` — Firstmate's
-autonomous workers run directly on the host and are not a container or
-OS-level security boundary. See
-[`docs/herdr-compatibility.json`](docs/herdr-compatibility.json) for their
-current Herdr round-trip status.
 
 The native `trx run codex pstack` profile runs Codex with
 [pstack for Codex](https://github.com/Aqua-123/pstack-for-codex), created and
@@ -1701,7 +1646,7 @@ Open the live apps:
 
 ## Native Agent Profile Matrix
 
-Prerequisites are the installed commands `trx`, `codex`, and `jq`; provisioned Codex/Copilot profiles; and authenticated CLI sessions. The Agency, Claude, Firstmate, and JCode backends have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Composed Grok is verified by the Native runtime tests rather than this legacy profile matrix. Live verification also requires paid model access.
+Prerequisites are the installed commands `trx`, `codex`, and `jq`; provisioned Codex/Copilot profiles; and authenticated CLI sessions. The Agency, Claude, and JCode backends have their own contracts and router integration but are not yet part of the plugin-and-skill profile matrix. Composed Grok is verified by the Native runtime tests rather than this legacy profile matrix. Live verification also requires paid model access.
 
 Run native non-inference verification in static mode:
 

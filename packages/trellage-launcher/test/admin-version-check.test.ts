@@ -61,27 +61,6 @@ describe("parseUpdateCheckOutput", () => {
     expect(result).toMatchObject({ malformed: true })
   })
 
-  it("parses the fmx 'is current (COMMIT)' message family", () => {
-    expect(parseUpdateCheckOutput("fmx update: default is current (abc123def456)", "abc123def456")).toEqual({
-      current: true,
-      installed: "abc123def456",
-    })
-  })
-
-  it("parses the fmx 'is stale (installed X, catalog pin Y)' message family", () => {
-    expect(
-      parseUpdateCheckOutput(
-        "fmx update: default is stale (installed abc123def456, catalog pin 789abc012def)",
-        "abc123def456",
-      ),
-    ).toEqual({ current: false, installed: "abc123def456", latest: "789abc012def" })
-  })
-
-  it("parses the fmx 'is not set up' message as malformed rather than a version result", () => {
-    const result = parseUpdateCheckOutput("fmx update: default is not set up (catalog pin 789abc012def)", undefined)
-    expect(result).toMatchObject({ malformed: true })
-  })
-
   it("reports empty output as malformed", () => {
     expect(parseUpdateCheckOutput("", "0.8.1")).toMatchObject({ malformed: true, diagnostic: expect.stringContaining("no output") })
   })

@@ -14,7 +14,6 @@
 #   native-claude model-id
 #   native-claude model-map --json
 #   native-claude model-catalog --json
-#   native-claude exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 #
 # Callers select their own launcher identity via TRELLAGE_CLAUDE_LAUNCHER_NAME
 # and their own installed runtime root via TRELLAGE_CLAUDE_RUNTIME_ROOT
@@ -90,26 +89,11 @@ Usage:
   $launcher_name model-id
   $launcher_name model-map --json
   $launcher_name model-catalog --json
-  $launcher_name exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 EOF
 }
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
-}
-
-firstmate_shared_guard() {
-  local candidate
-  for candidate in "$runtime_root/lib/fmx-registry.py" \
-    "$runtime_root/../common/floating-skills-runtime/prototypes/trellage-firstmate-profiles/lib/fmx-registry.py" \
-    "$runtime_root/../common/floating-skills-runtime/fmx-registry.py" \
-    "$runtime_root/../trellage-firstmate-profiles/lib/fmx-registry.py"; do
-    if [[ -f "$candidate" && ! -L "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return
-    fi
-  done
-  die 'registry-aware Firstmate shared writer support is missing; install the coherent Native writer set'
 }
 
 canonical_directory() {
@@ -299,13 +283,12 @@ claude_version_if_available() {
 }
 
 harness_update_command() {
-  local executable guard
+  local executable
 
   [[ "$#" -eq 0 ]] || die 'harness-update accepts no arguments'
   scrub_provider_environment
   executable="$(claude_executable)"
-  guard="$(firstmate_shared_guard)"
-  exec python3 "$guard" lease -- "$executable" update
+  exec "$executable" update
 }
 
 ensure_floating_skills() {
@@ -780,8 +763,7 @@ validate_common_arguments() {
 }
 
 # Explicit provider/token scrub covering the supported provider/token
-# override paths, so a stale tmux/Herdr daemon environment (the fmx
-# worker threat model) can never leak into any child process this runtime
+# override paths, so a stale tmux/Herdr daemon environment can never leak into any child process this runtime
 # spawns: claude --version, the floating-skills ensure (node), the
 # copilot-proxy-rs health/model probes (curl), session-bridge hook
 # installation (python3), or the final launched Claude process. Called as
@@ -790,7 +772,7 @@ validate_common_arguments() {
 # inherits the same clean environment established here. model-id starts
 # no child process and needs no scrub. Never wildcard this list; each
 # variable is named so removals are auditable. GH_CONFIG_DIR is
-# preserved, because fmx workers deliberately use file-backed gh auth.
+# preserved for file-backed gh auth.
 scrub_provider_environment() {
   unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
   unset ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
@@ -807,45 +789,6 @@ scrub_provider_environment() {
   unset AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT OPENAI_BASE_URL
   unset COPILOT_GITHUB_TOKEN COPILOT_PROXY_GITHUB_TOKEN COPILOT_TOKEN
   unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
-}
-
-exec_clean_command() {
-  local command_path resolved_command interpreter='' resolved_interpreter=''
-
-  if [[ "${1-}" == --interpreter ]]; then
-    [[ "$#" -ge 2 ]] || die 'exec-clean --interpreter requires a value'
-    interpreter="$2"
-    shift 2
-  fi
-  [[ "${1-}" == -- ]] || die 'exec-clean requires -- before the command'
-  shift
-  [[ "$#" -gt 0 ]] || die 'exec-clean requires an absolute command'
-  command_path="$1"
-  scrub_provider_environment
-  if [[ -n "$interpreter" ]]; then
-    [[ "$interpreter" == /* && -f "$interpreter" && -x "$interpreter" ]] \
-      || die "exec-clean interpreter is missing or unsafe: $interpreter"
-    resolved_interpreter="$(resolve_file "$interpreter")" \
-      || die "could not resolve exec-clean interpreter: $interpreter"
-    [[ -f "$resolved_interpreter" && -x "$resolved_interpreter" \
-      && ! -L "$resolved_interpreter" ]] \
-      || die "resolved exec-clean interpreter is unsafe: $resolved_interpreter"
-  fi
-  [[ "$command_path" == /* && -f "$command_path" && -x "$command_path" \
-    && ! -L "$command_path" ]] \
-    || die "exec-clean command is missing or unsafe: $command_path"
-  resolved_command="$(resolve_file "$command_path")" \
-    || die "could not resolve exec-clean command: $command_path"
-  [[ "$resolved_command" == "$command_path" ]] \
-    || die "redirected exec-clean command: $command_path"
-  case "$resolved_command" in
-    "$runtime_root"/*) ;;
-    *) die "exec-clean command is outside the runtime root: $command_path" ;;
-  esac
-  if [[ -n "$resolved_interpreter" ]]; then
-    exec "$resolved_interpreter" "$resolved_command" "${@:2}"
-  fi
-  exec "$resolved_command" "${@:2}"
 }
 
 skills_update_command() {
@@ -873,7 +816,6 @@ skills_update_command() {
 prepare_command() {
   local home='' marker='' marker_value='' bridge='' profile=default require_existing=false
   local executable version
-  local -a original_arguments=("$@")
 
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
@@ -900,25 +842,6 @@ prepare_command() {
   done
   validate_common_arguments "$home" "$marker" "$marker_value" "$bridge"
   [[ -n "$profile" ]] || die 'invalid --profile: value must not be empty'
-  local cache="${XDG_DATA_HOME:-$HOME/.local/share}/trellage/common/skills" guard parent_root
-  local -a lease_arguments=(lease)
-  if [[ ! -e "$cache" && ! -L "$cache" ]]; then
-    guard="$(firstmate_shared_guard)"
-    parent_root="${home%/captain/claude}"
-    case "$parent_root" in
-      "$HOME/.local/share/trellage/profiles/firstmate/instances/"*)
-        die 'named instance preparation requires existing shared skills; creation is not shared bootstrap consent' ;;
-      "$HOME/.local/share/trellage/profiles/firstmate/default" | \
-      "$HOME/.local/share/trellage/profiles/firstmate/pstack-workers")
-        lease_arguments+=(--parent-mutation "$parent_root") ;;
-    esac
-    if [[ -z "${FMX_SHARED_LEASE_FD-}" ]]; then
-      exec python3 "$guard" "${lease_arguments[@]}" -- "$BASH" "${BASH_SOURCE[0]}" \
-        prepare "${original_arguments[@]}"
-    fi
-    python3 "$guard" check-delegation || die 'shared skills bootstrap requires its owned writer lease'
-  fi
-
   if [[ "$require_existing" == true ]]; then
     require_owned_profile "$home" "$marker" "$marker_value"
   else
@@ -1174,10 +1097,6 @@ case "${1-}" in
     curl -fsS --max-time 5 "$proxy_origin/v1/models" \
       | jq -ce '[((.data // .models // [])[]) | (.id // .slug) |
           select(type == "string" and startswith("claude-"))] | unique'
-    ;;
-  exec-clean)
-    shift
-    exec_clean_command "$@"
     ;;
   '')
     die 'missing command'

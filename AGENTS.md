@@ -75,8 +75,8 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   `TRELLAGE_AZURE_APPLY_LOCAL_CHANGES=1 mise run azure-fresh-install -- all`.
 - A successful run must save evidence under
   `~/.local/state/trellage-azure-fresh/evidence/<resource-group>/`, verify exact
-  `OK` results for all eight Native launchers, verify both `fmx` profiles through setup, doctor, healthy inventory,
-  source-pin, and overlay evidence, and delete its owned Azure resource group.
+  `OK` results for all eight Native launchers, and delete its owned Azure
+  resource group.
 - A failed run intentionally retains the resource group. Use
   `mise run azure-fresh-install -- ssh`, then retry `bootstrap` or `accept`.
   Always finish an abandoned run with `mise run azure-fresh-install -- down`.

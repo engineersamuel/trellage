@@ -1,4 +1,4 @@
-.PHONY: native-harness-version test dependency-bootstrap development-resolution-contract publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation launcher conversation-source source-runtime trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-copilot-profiles native-agency-profile native-claude-profile native-firstmate-profile native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test build compare compare-down clean trellage-statusline
+.PHONY: native-harness-version test dependency-bootstrap development-resolution-contract publication-contract publication-history-audit publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-core profile-guide-contract profile-guide-live-evaluation launcher conversation-source source-runtime trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-codex-auth-config-launch native-codex-lifecycle native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-copilot-profiles native-agency-profile native-claude-profile native-jcode-profile native-omp-profile native-picx-profile native-prime-profile native-profile-router manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence profile-matrix profile-matrix-test native-tui-matrix native-tui-matrix-live native-tui-matrix-test headless-matrix headless-matrix-live headless-matrix-test headless-matrix-static-test build compare compare-down clean trellage-statusline
 
 .PHONY: profile-compiler-fingerprint
 .PHONY: test-command
@@ -15,7 +15,7 @@ ifeq ($(TEST_TIMING),1)
 %: SHELL = python3 scripts/test-command.py $@
 endif
 PARALLEL_TEST_TARGETS := test-command native-copilot-profiles native-prime-profile launcher conversation-source source-runtime dependency-bootstrap development-resolution-contract rebuild-profiles-bun-runtime publication-contract publication-contract-self-test agent-profile-hup-contract floating-skills-contract profile-guide-contract trellage-identity trellage-session-bridge azure-fresh-install-contract agent-harness native-codex-catalog native-codex-installation native-codex-pstack native-codex-harness-version native-harness-version native-agency-profile native-jcode-profile manifest contract adapter awesome-adapter copilot-image runner session workspace-checks playwright-matrix evidence headless-matrix-static-test trellage-statusline
-TIMING_SENSITIVE_TEST_TARGETS := native-picx-profile native-codex-auth-config-launch native-codex-lifecycle native-omp-profile native-claude-profile native-tui-matrix-test native-firstmate-profile
+TIMING_SENSITIVE_TEST_TARGETS := native-picx-profile native-codex-auth-config-launch native-codex-lifecycle native-omp-profile native-claude-profile native-tui-matrix-test
 FINAL_TEST_TARGETS := native-profile-router
 
 test:
@@ -130,9 +130,6 @@ native-agency-profile:
 
 native-claude-profile:
 	bash prototypes/trellage-claude-profiles/tests/contract.sh
-
-native-firstmate-profile:
-	bash prototypes/trellage-firstmate-profiles/tests/contract.sh
 
 native-jcode-profile:
 	bun test prototypes/trellage-claude-common/tests/manual-skills.test.ts prototypes/trellage-claude-common/tests/source-helpers.test.ts

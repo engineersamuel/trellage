@@ -109,7 +109,4 @@ grep -Fq 'docs/headless-evidence.json' scripts/verify-headless-contracts \
   || fail 'deterministic verifier does not load the evidence ledger'
 grep -Fq 'scripts/verify-headless-live-contracts' scripts/verify-headless-contracts \
   || fail 'live verifier is not isolated behind the opt-in branch'
-grep -Fq 'prototypes/trellage-firstmate-profiles/tests/contract.sh' \
-  scripts/verify-headless-contracts \
-  || fail 'deterministic verifier does not run the Firstmate headless contract'
 printf 'headless contract matrix: PASS\n'

@@ -4,10 +4,7 @@
  * `GuideApp` walks a user from a free-text intent through model-backed
  * profile matching, prompt generation/refinement, and destination selection,
  * then exits (via Ink's `useApp().exit`) with a `GuideUiResult`. Confirmed
- * batches run here so the guide can show progress. Inbox-capable Firstmate
- * uses that path; legacy Firstmate keeps complete manual-paste delivery.
- * The outer CLI can hand the released TTY to one guarded supervisor without
- * delivering its saved requests again.
+ * batches run here so the guide can show progress.
  *
  * The reducer (`guideUiReducer`) and every state-derived helper in this file
  * are exported so decisions can be tested without rendering Ink.
@@ -16,12 +13,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
 
 import {
-  ProfileGuideValidationError,
   profileGuideIdentityKey,
-  sameFirstmateInstance,
-  type FirstmateInstanceControlContextV1,
-  type FirstmateFleetReadinessV1,
-  type GuideProjectTargetV1,
   type ProfileGuideV1,
   type ProfileGuideWorkflow,
 } from "@trellage/guide-core"
@@ -81,22 +73,18 @@ import {
 } from "./guide-goal-execution.ts"
 import { runGuideGoalGeneration, runGuideGoalRefinement } from "./guide-goal-generation.ts"
 import type { GuideGoalReadinessServices } from "./guide-goal-readiness.ts"
-import { compactProfileGuide, findGuideCatalogEntry, type CombinedGuideCatalog } from "./guide-catalog.ts"
+import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.ts"
 import {
   assertGuidePromptDeliveryContext,
   completeSinglePromptArtifact,
   guideModelBodyCandidate,
   prepareGuidePrompt,
-  registeredGuideProjectTarget,
   validateGuideOriginalIntent,
-  validateLegacyFirstmateArtifact,
-  type GuideLegacyFirstmateContext,
   type GuideTaskContext,
   type PreparedGuidePrompt,
 } from "./guide-context.ts"
 import { GuideValidationError } from "./guide-text.ts"
 import {
-  applyRequiredProfilePromptTemplate,
   guideIntentMaximumLength,
   guideTargetTool,
   GuideLongPromptVariant,
@@ -146,7 +134,6 @@ import {
   suggestWorktreeBranch,
   getHerdrContext,
   inspectGitWorktreeIntent,
-  inspectGuideProjectTarget,
   parseSelectedProfile,
   renderCommandPreview,
   type CommandRunner,
@@ -158,36 +145,16 @@ import {
   type HerdrPromptDeliveryMode,
   type HerdrInvocationSurface,
   type HerdrSplitDirection,
-  type NativeSelectedProfile,
   type PromptHandlingMode,
   type SelectedProfile,
   type WorktreeCollisionResult,
 } from "./guide-launch.ts"
 import {
   checkSelectedProfileReadiness,
-  firstmateActionReadiness,
-  firstmateInstallationPlan,
-  firstmateMaintenanceCommand,
-  firstmatePrerequisiteStatus,
-  inspectFirstmateReadiness,
-  prepareFirstmateReadiness,
-  FirstmatePreparationError,
   ProfileReadinessKind,
-  type FirstmatePreparationApproval,
   type ProfileReadinessResult,
 } from "./guide-preflight.ts"
 import {
-  firstmateInstanceMenuDocument, firstmateInstanceMenuIsEditor, firstmateInstanceMenuKeyEvent,
-  initialFirstmateInstanceMenu, pauseFirstmateInstanceMenu, reduceFirstmateInstanceMenu,
-  runFirstmateInstanceMenuOperation,
-  type FirstmateInstanceChoice, type FirstmateInstanceMenuEvent, type FirstmateInstanceMenuState,
-} from "./guide-firstmate-instance-menu.ts"
-import { firstmateJobInstanceKey, firstmateProfileInstanceKey, firstmateInstanceLabel } from "./guide-firstmate-group.ts"
-import type { FirstmateCreationPlanStore } from "./guide-firstmate-creation-store.ts"
-import { verifiedFirstmateOriginCwd } from "./guide-firstmate-origin.ts"
-import { firstmateInstanceSelectorArgs, selectedFirstmateInstance } from "./guide-firstmate-instance-selection.ts"
-import {
-  createFirstmateQueuedSubmission,
   describeJobPlacement,
   emptyGuideQueue,
   enqueueGuideJob,
@@ -202,9 +169,6 @@ import {
   submitQueuedGuidePromptEdit,
   queuedGuideJobEditText,
   executeGuideBatch,
-  guideBatchRequiresHerdr,
-  type FirstmateGuideAction,
-  type FirstmateQueuedSubmission,
   type GuideBatch,
   type GuideBatchExecutionResult,
   type GuideBatchProgressEvent,
@@ -292,10 +256,6 @@ export enum GuideUiStage {
   Recommendations = "recommendations",
   Review = "review",
   Optimize = "optimize",
-  TargetChoice = "target-choice",
-  TargetEditor = "target-editor",
-  TargetInspecting = "target-inspecting",
-  TargetConfirm = "target-confirm",
   PromptReview = "prompt-review",
   GoalChange = "goal-change",
   Generating = "generating",
@@ -305,8 +265,6 @@ export enum GuideUiStage {
   Refining = "refining",
   RefineFailed = "refine-failed",
   DirectEditor = "direct-editor",
-  FirstmateAction = "firstmate-action",
-  FirstmateInstance = "firstmate-instance",
   CheckingReadiness = "checking-readiness",
   ReadinessBlocked = "readiness-blocked",
   Destination = "destination",
@@ -322,7 +280,6 @@ export enum GuideUiStage {
 }
 
 const editingStages: ReadonlySet<GuideUiStage> = new Set([
-  GuideUiStage.TargetEditor,
   GuideUiStage.RefineEditor,
   GuideUiStage.DirectEditor,
   GuideUiStage.WorktreeBranchEditor,
@@ -372,10 +329,6 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.Recommendations]: GuideWizardStep.Profile,
   [GuideUiStage.Review]: undefined,
   [GuideUiStage.Optimize]: undefined,
-  [GuideUiStage.TargetChoice]: GuideWizardStep.Profile,
-  [GuideUiStage.TargetEditor]: GuideWizardStep.Profile,
-  [GuideUiStage.TargetInspecting]: GuideWizardStep.Profile,
-  [GuideUiStage.TargetConfirm]: GuideWizardStep.Profile,
   [GuideUiStage.PromptReview]: GuideWizardStep.Profile,
   [GuideUiStage.GoalChange]: GuideWizardStep.Profile,
   [GuideUiStage.Generating]: GuideWizardStep.PromptCandidates,
@@ -385,8 +338,6 @@ const wizardStepByStage: Readonly<Record<GuideUiStage, GuideWizardStep | undefin
   [GuideUiStage.Refining]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.RefineFailed]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.DirectEditor]: GuideWizardStep.PromptCandidates,
-  [GuideUiStage.FirstmateAction]: GuideWizardStep.Destination,
-  [GuideUiStage.FirstmateInstance]: GuideWizardStep.Profile,
   [GuideUiStage.CheckingReadiness]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.ReadinessBlocked]: GuideWizardStep.PromptCandidates,
   [GuideUiStage.Destination]: GuideWizardStep.Destination,
@@ -464,16 +415,6 @@ interface GuideProfileSelection {
   readonly fallback?: GuideMatcherFallback | undefined
 }
 
-export type FirstmateReadinessOperation =
-  | { readonly kind: "inspect" | "prepare" }
-  | { readonly kind: "install"; readonly approval: FirstmatePreparationApproval }
-
-export interface FirstmateInstallationReview {
-  readonly inspectionId: number
-  readonly approval: FirstmatePreparationApproval
-  readonly choice: "cancel" | "install"
-}
-
 export interface GuideUiState {
   readonly reviewReturnStage?: GuideUiStage | undefined
   readonly stage: GuideUiStage
@@ -492,11 +433,6 @@ export interface GuideUiState {
   readonly selectedOriginalIntent?: string | undefined
   readonly customerContext?: ApprovedGuideCustomerContext | undefined
   readonly selectedCustomerContext?: ApprovedGuideCustomerContext | undefined
-  readonly projectTarget?: GuideProjectTargetV1 | null | undefined
-  readonly proposedProjectTarget?: GuideProjectTargetV1 | null | undefined
-  readonly projectTargetConfirmed?: boolean
-  readonly targetMode?: "current" | "path" | "registered" | undefined
-  readonly targetInspectionId: number
   /** Shared free-text editing buffer for the intent editor, refine feedback, direct edit, and worktree branch editors. */
   readonly textDraft: string
   readonly errorMessage: string | undefined
@@ -526,20 +462,6 @@ export interface GuideUiState {
   readonly templateFallback: GuideTemplateFallback | undefined
   readonly selectedCandidate: GuideGenerateCandidate | undefined
   readonly readiness: ProfileReadinessResult | undefined
-  readonly firstmate: FirstmateQueuedSubmission | undefined
-  readonly fleetReadiness: FirstmateFleetReadinessV1 | undefined
-  readonly fleetReadinessPending: boolean
-  readonly fleetReadinessId: number
-  readonly fleetReadinessOperation: FirstmateReadinessOperation | undefined
-  readonly fleetReadinessError: string | undefined
-  readonly fleetRepairs: ReadonlyArray<string>
-  readonly fleetInstallationReview: FirstmateInstallationReview | undefined
-  readonly firstmateActionIndex: number
-  readonly firstmateActionFocus: "automatic" | "manual"
-  readonly instanceMenu?: FirstmateInstanceMenuState | undefined
-  readonly instanceMenuGeneration: number
-  readonly instanceReturnStage?: GuideUiStage | undefined
-  readonly preparationCwd?: string | undefined
   readonly destinationIndex: number
   readonly worktreeBranch: string | undefined
   readonly worktreeInspection: GitInspectionReady | WorktreeCollisionResult | undefined
@@ -581,11 +503,6 @@ const emptyState: GuideUiState = {
   profileSelection: undefined,
   originalIntent: undefined,
   selectedOriginalIntent: undefined,
-  projectTarget: undefined,
-  proposedProjectTarget: undefined,
-  projectTargetConfirmed: false,
-  targetMode: undefined,
-  targetInspectionId: 0,
   textDraft: "",
   errorMessage: undefined,
   augmentIndex: 0,
@@ -609,17 +526,6 @@ const emptyState: GuideUiState = {
   templateFallback: undefined,
   selectedCandidate: undefined,
   readiness: undefined,
-  firstmate: undefined,
-  fleetReadiness: undefined,
-  fleetReadinessPending: false,
-  fleetReadinessId: 0,
-  fleetReadinessOperation: undefined,
-  fleetReadinessError: undefined,
-  fleetRepairs: [],
-  fleetInstallationReview: undefined,
-  firstmateActionIndex: 0,
-  firstmateActionFocus: "automatic",
-  instanceMenuGeneration: 0,
   destinationIndex: 0,
   worktreeBranch: undefined,
   worktreeInspection: undefined,
@@ -764,7 +670,7 @@ const parkActiveFork = (state: GuideUiState): GuideUiState =>
     : {
         ...state,
         forks: state.forks.map((fork) =>
-          fork.id === state.activeForkId ? { ...fork, slice: forkSlice(pauseGuideInstanceMenu(cancelFirstmatePreparation(state))) } : fork,
+          fork.id === state.activeForkId ? { ...fork, slice: forkSlice(state) } : fork,
         ),
       }
 
@@ -778,10 +684,7 @@ const enterFork = (state: GuideUiState, id: number): GuideUiState => {
   const parked = parkActiveFork(state)
   const target = parked.forks.find((fork) => fork.id === id)
   if (target === undefined) return state
-  const entered = { ...parked, ...target.slice, activeForkId: id }
-  return entered.stage === GuideUiStage.FirstmateAction && !entered.fleetReadinessPending
-    ? firstmateActionState(entered)
-    : entered
+  return { ...parked, ...target.slice, activeForkId: id }
 }
 
 const openFork = (state: GuideUiState, slice: GuideForkSlice): GuideUiState => {
@@ -808,9 +711,6 @@ const bindActiveForkToJob = (state: GuideUiState, jobId: number): GuideUiState =
 
 /** Drops the active tab and, because the two are one thing, the queue entry it held. */
 const dropActiveFork = (state: GuideUiState): GuideUiState => {
-  if (state.instanceMenu?.creationUncertain) {
-    return { ...state, errorMessage: "Reconcile the original approved instance creation before removing this fork." }
-  }
   const dropped = state.forks.find((fork) => fork.id === state.activeForkId)
   if (dropped === undefined) return state
   const main = enterMainScreen(state)
@@ -833,7 +733,6 @@ export const forkState = (state: GuideUiState, id: number): GuideUiState | undef
 
 /** Every stage that waits on a model or a git call. A tab in one of these shows a spinner. */
 const busyStages: ReadonlySet<GuideUiStage> = new Set([
-  GuideUiStage.TargetInspecting,
   GuideUiStage.Matching,
   GuideUiStage.Generating,
   GuideUiStage.Refining,
@@ -843,8 +742,7 @@ const busyStages: ReadonlySet<GuideUiStage> = new Set([
 
 export const forkIsBusy = (state: GuideUiState, id: number): boolean => {
   const target = forkState(state, id)
-  return target !== undefined &&
-    (busyStages.has(target.stage) || (target.stage === GuideUiStage.FirstmateAction && target.fleetReadinessPending))
+  return target !== undefined && busyStages.has(target.stage)
 }
 
 /** Tab order: the main screen first, then every open fork. */
@@ -895,14 +793,6 @@ export enum GuideUiActionType {
   ReviewBack = "review/back",
   OptimizeOpen = "optimize/open",
   OptimizeBack = "optimize/back",
-  TargetOpen = "target/open",
-  TargetCurrent = "target/current",
-  TargetEdit = "target/edit",
-  TargetSubmit = "target/submit",
-  TargetResolved = "target/resolved",
-  TargetFailed = "target/failed",
-  TargetConfirm = "target/confirm",
-  TargetBack = "target/back",
   InputRejected = "input/rejected",
   PromptReviewOpen = "prompt-review/open",
   PromptReviewEdit = "prompt-review/edit",
@@ -937,19 +827,6 @@ export enum GuideUiActionType {
   RefineBack = "refine/back",
   DirectEditSubmit = "direct-edit/submit",
   DirectEditBack = "direct-edit/back",
-  FirstmateReadinessResolved = "firstmate/readiness-resolved",
-  FirstmateInstanceOpen = "firstmate/instance-open",
-  FirstmateInstanceEvent = "firstmate/instance-event",
-  FirstmateInstanceBack = "firstmate/instance-back",
-  FirstmateReadinessFailed = "firstmate/readiness-failed",
-  FirstmateReadinessRefresh = "firstmate/readiness-refresh",
-  FirstmateInstallationReview = "firstmate/installation-review",
-  FirstmateInstallationMove = "firstmate/installation-move",
-  FirstmateInstallationConfirm = "firstmate/installation-confirm",
-  FirstmateInstallationCancel = "firstmate/installation-cancel",
-  FirstmateActionMove = "firstmate/action-move",
-  FirstmateActionConfirm = "firstmate/action-confirm",
-  FirstmateActionBack = "firstmate/action-back",
   ReadinessReady = "readiness/ready",
   ReadinessBlocked = "readiness/blocked",
   ReadinessRetry = "readiness/retry",
@@ -981,8 +858,6 @@ export enum GuideUiActionType {
   QueuePlacementBack = "queue-placement/back",
   QueuePlacementUnavailable = "queue-placement/unavailable",
   QueuePlacementHere = "queue-placement/here",
-  QueuePlacementTerminal = "queue-placement/terminal",
-  QueuePlacementReuse = "queue-placement/reuse",
   QueuePlacementStartWorktree = "queue-placement/start-worktree",
   QueuePlacementWorktree = "queue-placement/worktree",
   ForkNext = "fork/next",
@@ -994,9 +869,6 @@ export enum GuideUiActionType {
 }
 
 export type GuideUiAction =
-  | { readonly type: GuideUiActionType.FirstmateInstanceOpen; readonly cwd: string }
-  | { readonly type: GuideUiActionType.FirstmateInstanceEvent; readonly event: FirstmateInstanceMenuEvent }
-  | { readonly type: GuideUiActionType.FirstmateInstanceBack }
   | { readonly type: GuideUiActionType.IntentChange; readonly text: string }
   | { readonly type: GuideUiActionType.IntentBackspace }
   | { readonly type: GuideUiActionType.IntentSubmit }
@@ -1056,14 +928,6 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.ReviewBack }
   | { readonly type: GuideUiActionType.OptimizeOpen }
   | { readonly type: GuideUiActionType.OptimizeBack }
-  | { readonly type: GuideUiActionType.TargetOpen }
-  | { readonly type: GuideUiActionType.TargetCurrent }
-  | { readonly type: GuideUiActionType.TargetEdit; readonly mode: "path" | "registered" }
-  | { readonly type: GuideUiActionType.TargetSubmit }
-  | { readonly type: GuideUiActionType.TargetResolved; readonly inspectionId: number; readonly target: GuideProjectTargetV1 }
-  | { readonly type: GuideUiActionType.TargetFailed; readonly inspectionId: number; readonly message: string }
-  | { readonly type: GuideUiActionType.TargetConfirm }
-  | { readonly type: GuideUiActionType.TargetBack }
   | { readonly type: GuideUiActionType.InputRejected; readonly message: string }
   | {
       readonly type: GuideUiActionType.RecommendationsConfirm
@@ -1104,25 +968,6 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.RefineBack }
   | { readonly type: GuideUiActionType.DirectEditSubmit }
   | { readonly type: GuideUiActionType.DirectEditBack }
-  | {
-      readonly type: GuideUiActionType.FirstmateReadinessResolved
-      readonly inspectionId: number
-      readonly fleet: FirstmateFleetReadinessV1
-    }
-  | {
-      readonly type: GuideUiActionType.FirstmateReadinessFailed
-      readonly inspectionId: number
-      readonly message: string
-      readonly fleet?: FirstmateFleetReadinessV1
-    }
-  | { readonly type: GuideUiActionType.FirstmateReadinessRefresh }
-  | { readonly type: GuideUiActionType.FirstmateInstallationReview }
-  | { readonly type: GuideUiActionType.FirstmateInstallationMove }
-  | { readonly type: GuideUiActionType.FirstmateInstallationConfirm }
-  | { readonly type: GuideUiActionType.FirstmateInstallationCancel }
-  | { readonly type: GuideUiActionType.FirstmateActionMove; readonly delta: 1 | -1 }
-  | { readonly type: GuideUiActionType.FirstmateActionConfirm }
-  | { readonly type: GuideUiActionType.FirstmateActionBack }
   | { readonly type: GuideUiActionType.ReadinessReady; readonly result: ProfileReadinessResult }
   | { readonly type: GuideUiActionType.ReadinessBlocked; readonly result: ProfileReadinessResult }
   | { readonly type: GuideUiActionType.ReadinessRetry }
@@ -1154,8 +999,6 @@ export type GuideUiAction =
   | { readonly type: GuideUiActionType.QueuePlacementBack }
   | { readonly type: GuideUiActionType.QueuePlacementUnavailable }
   | { readonly type: GuideUiActionType.QueuePlacementHere }
-  | { readonly type: GuideUiActionType.QueuePlacementTerminal }
-  | { readonly type: GuideUiActionType.QueuePlacementReuse }
   | { readonly type: GuideUiActionType.QueuePlacementStartWorktree }
   | {
       readonly type: GuideUiActionType.QueuePlacementWorktree
@@ -1938,14 +1781,6 @@ const moveGuideRecommendation = (state: GuideUiState, delta: number): GuideUiSta
     : { ...state, profileSelection: { ...selection, recommendationIndex } }
 }
 
-const isFirstmateProfile = (selected: SelectedProfile | undefined): selected is NativeSelectedProfile =>
-  selected?.surface === "native" && selected.launcher === "firstmate"
-
-const isFirstmateSelection = (
-  selected: SelectedProfile | undefined,
-): selected is NativeSelectedProfile & { readonly orchestration: NonNullable<NativeSelectedProfile["orchestration"]> } =>
-  isFirstmateProfile(selected) && selected.orchestration !== undefined
-
 const invalidateForkQueueEntry = (state: GuideUiState): GuideUiState => {
   if (state.launchBatch !== undefined) return state
   const fork = state.forks.find(({ id }) => id === state.activeForkId)
@@ -1957,42 +1792,10 @@ const invalidateForkQueueEntry = (state: GuideUiState): GuideUiState => {
   }
 }
 
-const invalidateFirstmateApproval = (state: GuideUiState): GuideUiState => ({
-  ...invalidateForkQueueEntry(state),
-  firstmate: undefined,
-  fleetReadiness: undefined,
-  fleetReadinessPending: false,
-  fleetReadinessId: state.fleetReadinessId + 1,
-  fleetReadinessOperation: undefined,
-  fleetReadinessError: undefined,
-  fleetRepairs: [],
-  fleetInstallationReview: undefined,
-  selectedCandidate: undefined,
-  readiness: undefined,
-})
-
-const targetSelectionState = (state: GuideUiState): GuideUiState => ({
-  ...invalidateFirstmateApproval(state),
-  stage: state.selectedRecommendation?.workflow.scope === "fleet" ? GuideUiStage.TargetConfirm : GuideUiStage.TargetChoice,
-  projectTarget: undefined,
-  proposedProjectTarget: undefined,
-  projectTargetConfirmed: false,
-  targetInspectionId: state.targetInspectionId + 1,
-  targetMode: undefined,
-  candidates: undefined,
-  firstmateActionIndex: 0,
-  firstmateActionFocus: "automatic",
-  errorMessage: undefined,
-  textDraft: "",
-})
-
 const confirmGuideRecommendation = (
   state: GuideUiState,
   action: Extract<GuideUiAction, { readonly type: GuideUiActionType.RecommendationsConfirm }>,
 ): GuideUiState => {
-  if (state.instanceMenu?.creationUncertain) {
-    return { ...state, errorMessage: "Reconcile this fork's approved instance creation before changing its profile." }
-  }
   const selection = guideProfileSelection(state)
   if (selection.recommendations === undefined ||
     (selection.recommendations.length === 0 && action.recommendation === undefined)) return state
@@ -2015,18 +1818,10 @@ const openRecommendedProfile = (
   recommendation: GuideRecommendation,
   goal: PreparedGuideGoal | undefined,
 ): GuideUiState => {
-  const firstmate = isFirstmateProfile(action.selectedProfile)
-  const instance = firstmate && action.selectedProfile.orchestration?.instances !== undefined
-  const targetStage = recommendation.workflow.scope === "fleet" ? GuideUiStage.TargetConfirm : GuideUiStage.TargetChoice
   const base = invalidateForkQueueEntry(state)
   const slice: GuideForkSlice = {
     ...forkSlice(base),
-    stage: firstmate
-      ? instance ? GuideUiStage.FirstmateInstance : targetStage
-      : GuideUiStage.Generating,
-    instanceMenu: undefined,
-    instanceMenuGeneration: state.instanceMenuGeneration + 1,
-    instanceReturnStage: instance ? targetStage : undefined,
+    stage: GuideUiStage.Generating,
     selectedRecommendation: recommendation,
     selectedGoal: goal,
     selectedIntent: guideProfileIntent(state),
@@ -2039,21 +1834,6 @@ const openRecommendedProfile = (
     candidates: undefined,
     selectedCandidate: undefined,
     readiness: undefined,
-    firstmate: undefined,
-    fleetReadiness: undefined,
-    fleetReadinessPending: false,
-    fleetReadinessId: state.fleetReadinessId + 1,
-    fleetReadinessOperation: undefined,
-    fleetReadinessError: undefined,
-    fleetRepairs: [],
-    fleetInstallationReview: undefined,
-    firstmateActionIndex: 0,
-    firstmateActionFocus: "automatic",
-    targetInspectionId: state.targetInspectionId + 1,
-    targetMode: undefined,
-    projectTarget: undefined,
-    proposedProjectTarget: undefined,
-    projectTargetConfirmed: false,
     templateFallback: undefined,
     errorMessage: undefined,
   }
@@ -2071,81 +1851,6 @@ const reduceRecommendations = (state: GuideUiState, action: GuideUiAction): Guid
       return { ...state, decideChooserOpen: true }
     case GuideUiActionType.DecideClose:
       return { ...state, decideChooserOpen: false }
-    default:
-      return state
-  }
-}
-
-const submitTargetDraft = (state: GuideUiState): GuideUiState => {
-  if (state.stage !== GuideUiStage.TargetEditor) return state
-  if (state.textDraft.trim().length === 0) return { ...state, errorMessage: "Enter a repository path or registered project name." }
-  if (state.targetMode === "path") {
-    return {
-      ...state,
-      stage: GuideUiStage.TargetInspecting,
-      targetInspectionId: state.targetInspectionId + 1,
-      errorMessage: undefined,
-    }
-  }
-  try {
-    return {
-      ...state,
-      stage: GuideUiStage.TargetConfirm,
-      proposedProjectTarget: registeredGuideProjectTarget(state.textDraft.trim()),
-      errorMessage: undefined,
-    }
-  } catch (cause) {
-    if (cause instanceof ProfileGuideValidationError) return { ...state, errorMessage: cause.message }
-    throw cause
-  }
-}
-
-const confirmTarget = (state: GuideUiState): GuideUiState => {
-  if (state.stage !== GuideUiStage.TargetConfirm) return state
-  const projectTarget = state.proposedProjectTarget ?? null
-  if (projectTarget === null && state.selectedRecommendation?.workflow.scope !== "fleet") {
-    return { ...state, errorMessage: "Confirm a project target before generating a project request." }
-  }
-  return {
-    ...state,
-    projectTarget,
-    projectTargetConfirmed: true,
-    stage: GuideUiStage.Generating,
-    generationPhase: GuideGenerationPhase.LoadingProfile,
-    errorMessage: undefined,
-  }
-}
-
-const reduceTargetChoice = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
-  if (!isFirstmateProfile(state.selectedProfile)) return state
-  switch (action.type) {
-    case GuideUiActionType.TargetOpen:
-      return targetSelectionState(state)
-    case GuideUiActionType.TargetCurrent:
-      return { ...targetSelectionState(state), stage: GuideUiStage.TargetInspecting, targetMode: "current" }
-    case GuideUiActionType.TargetEdit:
-      return { ...targetSelectionState(state), stage: GuideUiStage.TargetEditor, targetMode: action.mode }
-    case GuideUiActionType.TargetBack:
-      return profileSelectionState(state)
-    default:
-      return state
-  }
-}
-
-const reduceTargetResult = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
-  switch (action.type) {
-    case GuideUiActionType.TargetSubmit:
-      return submitTargetDraft(state)
-    case GuideUiActionType.TargetConfirm:
-      return confirmTarget(state)
-    case GuideUiActionType.TargetResolved:
-      return state.stage === GuideUiStage.TargetInspecting && action.inspectionId === state.targetInspectionId
-        ? { ...state, stage: GuideUiStage.TargetConfirm, proposedProjectTarget: action.target, errorMessage: undefined }
-        : state
-    case GuideUiActionType.TargetFailed:
-      return state.stage === GuideUiStage.TargetInspecting && action.inspectionId === state.targetInspectionId
-        ? { ...state, stage: GuideUiStage.TargetChoice, errorMessage: action.message }
-        : state
     default:
       return state
   }
@@ -2223,7 +1928,7 @@ const candidatesState = (
 })
 
 const profileSelectionState = (state: GuideUiState): GuideUiState => ({
-  ...(isFirstmateProfile(state.selectedProfile) ? invalidateFirstmateApproval(state) : state),
+  ...state,
   stage: GuideUiStage.Recommendations,
   selectedRecommendation: undefined,
   selectedProfile: undefined,
@@ -2238,10 +1943,6 @@ const profileSelectionState = (state: GuideUiState): GuideUiState => ({
   worktreeBranch: undefined,
   worktreeInspection: undefined,
   worktreeConfirmations: 0,
-  projectTarget: undefined,
-  projectTargetConfirmed: false,
-  proposedProjectTarget: undefined,
-  targetInspectionId: state.targetInspectionId + 1,
   errorMessage: undefined,
 })
 
@@ -2312,14 +2013,12 @@ const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiStat
 
 const confirmCandidate = (state: GuideUiState): GuideUiState => {
   if (state.stage !== GuideUiStage.Candidates || state.candidates === undefined) return state
-  return isFirstmateSelection(state.selectedProfile)
-    ? firstmateActionState(state)
-    : {
-        ...state,
-        stage: GuideUiStage.CheckingReadiness,
-        selectedCandidate: tripleAt(state.candidates, state.candidateIndex),
-        readiness: undefined,
-      }
+  return {
+    ...state,
+    stage: GuideUiStage.CheckingReadiness,
+    selectedCandidate: tripleAt(state.candidates, state.candidateIndex),
+    readiness: undefined,
+  }
 }
 
 const placeCandidate = (state: GuideUiState): GuideUiState => {
@@ -2329,19 +2028,14 @@ const placeCandidate = (state: GuideUiState): GuideUiState => {
   if (state.selectedProfile.interaction !== undefined) {
     return { ...state, errorMessage: "This workflow needs your answers. Press Enter to launch it directly; it cannot use the batch queue." }
   }
-  return isFirstmateSelection(state.selectedProfile)
-    ? firstmateActionState(state)
-    : { ...state, stage: GuideUiStage.QueuePlacement, destinationIndex: 0, errorMessage: undefined }
+  return { ...state, stage: GuideUiStage.QueuePlacement, destinationIndex: 0, errorMessage: undefined }
 }
 
 const reduceCandidateNavigation = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.CandidatesMove:
       return state.stage === GuideUiStage.Candidates
-        ? {
-            ...(isFirstmateProfile(state.selectedProfile) ? invalidateFirstmateApproval(state) : state),
-            candidateIndex: (state.candidateIndex + action.delta + 3) % 3,
-          }
+        ? { ...state, candidateIndex: (state.candidateIndex + action.delta + 3) % 3 }
         : state
 
     case GuideUiActionType.CandidatesBack:
@@ -2367,27 +2061,17 @@ const reduceCandidateNavigation = (state: GuideUiState, action: GuideUiAction): 
 const candidateEditingWorkflow = (state: GuideUiState): ProfileGuideWorkflow | undefined =>
   guideUiPrompt(state)?.workflow
 
-export const guideUiTaskContext = (state: GuideUiState): GuideTaskContext => {
-  const customer = state.selectedCustomerContext === undefined ? {} : {
+export const guideUiTaskContext = (state: GuideUiState): GuideTaskContext =>
+  state.selectedCustomerContext === undefined ? {} : {
     customerContext: state.selectedCustomerContext,
     originalIntent: validateGuideOriginalIntent(state.selectedOriginalIntent ?? state.originalIntent ?? state.intent),
   }
-  if (!isFirstmateProfile(state.selectedProfile)) return customer
-  const { orchestration, profile } = state.selectedProfile
-  return {
-    ...customer,
-    profileRef: `native:firstmate/${profile}`,
-    originalIntent: validateGuideOriginalIntent(state.selectedOriginalIntent ?? state.originalIntent ?? state.intent),
-    ...(state.projectTargetConfirmed ? { projectTarget: state.projectTarget ?? null } : {}),
-    ...(orchestration === undefined ? {} : { orchestration }),
-  }
-}
 
 const guideUiPrompt = (state: GuideUiState): PreparedGuidePrompt | undefined => {
   const recommendation = state.selectedRecommendation
   if (state.guideDocument === undefined || recommendation === undefined || state.intent === undefined) return undefined
   return prepareGuidePrompt(
-    state.guideDocument.guide, recommendation.workflowId, recommendation.profileRef, state.intent, guideUiTaskContext(state),
+    state.guideDocument.guide, recommendation.workflowId, recommendation.profileRef, guideUiTaskContext(state),
   )
 }
 
@@ -2442,9 +2126,8 @@ const submitDirectEdit = (state: GuideUiState): GuideUiState => {
   if (state.textDraft.trim().length === 0) return { ...state, errorMessage: "Enter a non-empty specification." }
   try {
     const edited = directlyEditedCandidate(state)
-    const changed = edited.prompt !== tripleAt(state.candidates, state.candidateIndex).prompt
     return {
-      ...(changed && isFirstmateProfile(state.selectedProfile) ? invalidateFirstmateApproval(state) : state),
+      ...state,
       stage: GuideUiStage.Candidates,
       candidates: requireDistinctGuideCandidatePrompts(
         replaceCandidateAt(state.candidates, state.candidateIndex, edited),
@@ -2496,7 +2179,7 @@ const refineSucceededState = (state: GuideUiState, candidate: GuideGenerateCandi
       GuideCandidatePromptStage.FinalRendering,
     )
     return {
-      ...(isFirstmateProfile(state.selectedProfile) ? invalidateFirstmateApproval(state) : state),
+      ...state,
       stage: GuideUiStage.Candidates,
       candidates,
       errorMessage: undefined,
@@ -2541,329 +2224,7 @@ const reduceRefine = (state: GuideUiState, action: GuideUiAction): GuideUiState 
   }
 }
 
-export const firstmateActionOptions: ReadonlyArray<FirstmateGuideAction> = ["start", "recover", "submit"]
-
-export const firstmateActionLabels: Readonly<Record<FirstmateGuideAction, string>> = {
-  start: "Start fleet",
-  recover: "Recover fleet",
-  submit: "Send work to the existing owned fleet",
-}
-
-const canPrepareFirstmate = (state: GuideUiState): boolean => {
-  const selected = state.selectedProfile
-  if (!isFirstmateSelection(selected) || selected.orchestration?.preparation?.schemaVersion !== 1 ||
-      state.firstmate !== undefined || state.launchBatch !== undefined) return false
-  if (selected.orchestration.instances !== undefined && selected.firstmateInstance === undefined) return false
-  return !state.queue.entries.some((job) => job.firstmate !== undefined && selectedInstanceMatchesJob(state, job))
-}
-
-const selectedInstanceMatchesJob = (state: GuideUiState, job: QueuedGuideJob): boolean => {
-  const profile = state.selectedProfile
-  if (!isFirstmateSelection(profile) || job.profile.surface !== "native") return false
-  try {
-    const identity = state.firstmate?.expectedFleet ?? state.fleetReadiness?.identity ?? undefined
-    const key = firstmateProfileInstanceKey(profile, identity)
-    if (key !== undefined) return key === firstmateJobInstanceKey(job)
-    return job.profile.launcher === "firstmate" && job.profile.profile === profile.profile &&
-      job.profile.firstmateInstance?.mode !== "named"
-  } catch {
-    return false
-  }
-}
-
-const cancelFirstmatePreparation = (state: GuideUiState): GuideUiState =>
-  state.stage !== GuideUiStage.FirstmateAction ? state : {
-    ...state,
-    fleetReadinessPending: false,
-    fleetReadinessId: state.fleetReadinessId + 1,
-    fleetReadinessOperation: undefined,
-    fleetInstallationReview: undefined,
-  }
-
-const firstmateActionState = (state: GuideUiState): GuideUiState => ({
-  ...state,
-  stage: GuideUiStage.FirstmateAction,
-  selectedCandidate: state.selectedCandidate ?? (state.candidates === undefined ? undefined : tripleAt(state.candidates, state.candidateIndex)),
-  fleetReadinessPending: true,
-  fleetReadinessId: state.fleetReadinessId + 1,
-  fleetReadinessOperation: { kind: canPrepareFirstmate(state) ? "prepare" : "inspect" },
-  fleetInstallationReview: undefined,
-  readiness: undefined,
-  errorMessage: undefined,
-})
-
-const pauseGuideInstanceMenu = (state: GuideUiState): GuideUiState => {
-  if (state.stage !== GuideUiStage.FirstmateInstance || state.instanceMenu === undefined) return state
-  const menu = pauseFirstmateInstanceMenu(state.instanceMenu)
-  return { ...state, instanceMenu: menu, instanceMenuGeneration: menu.generation }
-}
-
-const openGuideInstanceMenu = (state: GuideUiState, cwd: string): GuideUiState => {
-  if (!isFirstmateSelection(state.selectedProfile) || state.selectedProfile.orchestration?.instances === undefined) {
-    return { ...state, errorMessage: "This backend does not advertise named fleet instances. Keep its legacy delivery path." }
-  }
-  const paused = cancelFirstmatePreparation(state)
-  const previous = paused.instanceMenu
-  const menu = previous?.creationUncertain ? pauseFirstmateInstanceMenu(previous)
-    : initialFirstmateInstanceMenu(cwd, paused.instanceMenuGeneration + 1)
-  return {
-    ...paused, stage: GuideUiStage.FirstmateInstance, instanceMenu: menu, instanceMenuGeneration: menu.generation,
-    instanceReturnStage: state.stage === GuideUiStage.FirstmateInstance
-      ? state.instanceReturnStage : state.stage,
-    errorMessage: undefined,
-  }
-}
-
-const acceptGuideInstance = (state: GuideUiState, choice: FirstmateInstanceChoice): GuideUiState => {
-  if (!isFirstmateSelection(state.selectedProfile)) return state
-  const profile = state.selectedProfile
-  const previous = state.firstmate?.expectedFleet === undefined ? profile.firstmateInstance
-    : selectedFirstmateInstance(profile, state.firstmate.expectedFleet)
-  const same = previous !== undefined && sameFirstmateInstance(previous, choice.context.reference)
-  const retainApproval = same && JSON.stringify(profile.firstmateInstanceContext) === JSON.stringify(choice.context) &&
-    state.preparationCwd === choice.configurationCwd
-  validateGuideInstanceChange(state, choice, previous, same)
-  const selectedProfile = parseSelectedProfile({
-    ...profile, firstmateInstance: choice.context.reference, firstmateInstanceContext: choice.context,
-  })
-  const next = {
-    ...(retainApproval ? state : invalidateFirstmateApproval(state)),
-    stage: state.instanceReturnStage ?? GuideUiStage.TargetChoice,
-    selectedProfile,
-    selectedCandidate: state.selectedCandidate,
-    preparationCwd: choice.configurationCwd,
-    fleetInstallationReview: undefined,
-    firstmateActionFocus: retainApproval ? state.firstmateActionFocus : "automatic" as const,
-    errorMessage: undefined,
-  }
-  return next.stage === GuideUiStage.FirstmateAction ? firstmateActionState(next) : next
-}
-
-const validateGuideInstanceChange = (
-  state: GuideUiState, choice: FirstmateInstanceChoice,
-  previous: NativeSelectedProfile["firstmateInstance"], same: boolean,
-): void => {
-  if (previous !== undefined && previous.instanceId === choice.context.reference.instanceId && !same) {
-    throw new Error("The same fleet UUID cannot change profile or mode.")
-  }
-  if (same && state.firstmate?.expectedFleet !== undefined &&
-      state.firstmate.expectedFleet.home !== `${choice.descriptor.root}/home`) {
-    throw new Error("The saved fleet home changed. Its original request cannot be retargeted.")
-  }
-  if (same && state.firstmate !== undefined && state.selectedProfile?.surface === "native" &&
-      state.selectedProfile.firstmateInstanceContext?.expectedRuntimeDigest !== choice.context.expectedRuntimeDigest) {
-    throw new Error("The saved instance runtime expectation changed. Its original request cannot be rebound.")
-  }
-}
-
-const reduceGuideInstanceMenu = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
-  if (action.type === GuideUiActionType.FirstmateInstanceOpen) return openGuideInstanceMenu(state, action.cwd)
-  if (state.stage !== GuideUiStage.FirstmateInstance) return state
-  if (action.type === GuideUiActionType.FirstmateInstanceBack) {
-    const unbound = isFirstmateSelection(state.selectedProfile) && requiresFirstmateInstance(state.selectedProfile)
-    return {
-      ...pauseGuideInstanceMenu(state),
-      stage: unbound ? GuideUiStage.Recommendations : state.instanceReturnStage ?? GuideUiStage.Recommendations,
-    }
-  }
-  if (action.type !== GuideUiActionType.FirstmateInstanceEvent || state.instanceMenu === undefined) return state
-  const menu = reduceFirstmateInstanceMenu(state.instanceMenu, action.event)
-  const next = { ...state, instanceMenu: menu, instanceMenuGeneration: menu.generation, errorMessage: menu.error }
-  if (menu.accepted === undefined) return next
-  try {
-    return acceptGuideInstance(next, menu.accepted)
-  } catch (cause) {
-    const error = describeGuideUiError(cause)
-    return { ...next, instanceMenu: { ...menu, accepted: undefined, error }, errorMessage: error }
-  }
-}
-
-const firstmateInstallationApproval = (state: GuideUiState): FirstmatePreparationApproval | undefined => {
-  const selected = state.selectedProfile
-  if (!canPrepareFirstmate(state) || !isFirstmateSelection(selected) || state.fleetReadinessPending ||
-      state.fleetReadinessError !== undefined || state.fleetReadiness === undefined) return undefined
-  const installation = firstmateInstallationPlan(state.fleetReadiness)
-  return installation === undefined ? undefined : {
-    commandPath: selected.commandPath,
-    profile: selected.profile,
-    sourceRevision: selected.orchestration!.sourceRevision,
-    installation,
-    ...(selected.firstmateInstance === undefined ? {} : { firstmateInstance: selected.firstmateInstance }),
-    ...(selected.firstmateInstanceContext === undefined ? {} : { firstmateInstanceContext: selected.firstmateInstanceContext }),
-    ...(state.preparationCwd === undefined ? {} : { configurationCwd: state.preparationCwd }),
-  }
-}
-
-const confirmFirstmateInstallation = (state: GuideUiState): GuideUiState => {
-  const review = state.fleetInstallationReview
-  if (review === undefined) return state
-  if (review.choice === "cancel") return { ...state, fleetInstallationReview: undefined }
-  const approval = firstmateInstallationApproval(state)
-  if (review.inspectionId !== state.fleetReadinessId || approval === undefined ||
-      JSON.stringify(approval) !== JSON.stringify(review.approval)) {
-    return {
-      ...state,
-      fleetInstallationReview: undefined,
-      errorMessage: "The installation plan or fleet state changed. Refresh and review the current plan. Nothing was approved.",
-    }
-  }
-  return {
-    ...state,
-    fleetReadinessPending: true,
-    fleetReadinessId: state.fleetReadinessId + 1,
-    fleetReadinessOperation: { kind: "install", approval },
-    fleetInstallationReview: undefined,
-    readiness: undefined,
-    errorMessage: undefined,
-  }
-}
-
-const reduceFirstmateInstallation = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
-  if (state.stage !== GuideUiStage.FirstmateAction) return state
-  switch (action.type) {
-    case GuideUiActionType.FirstmateInstallationReview: {
-      const approval = firstmateInstallationApproval(state)
-      return approval === undefined ? {
-        ...state,
-        errorMessage: "No current managed-tool plan is available for approval. Refresh to check readiness.",
-      } : {
-        ...state,
-        fleetInstallationReview: { inspectionId: state.fleetReadinessId, approval, choice: "cancel" },
-        errorMessage: undefined,
-      }
-    }
-    case GuideUiActionType.FirstmateInstallationMove:
-      return state.fleetInstallationReview === undefined ? state : {
-        ...state,
-        fleetInstallationReview: {
-          ...state.fleetInstallationReview,
-          choice: state.fleetInstallationReview.choice === "cancel" ? "install" : "cancel",
-        },
-      }
-    case GuideUiActionType.FirstmateInstallationConfirm:
-      return confirmFirstmateInstallation(state)
-    case GuideUiActionType.FirstmateInstallationCancel:
-      return { ...state, fleetInstallationReview: undefined }
-    default:
-      return state
-  }
-}
-
-const firstmateRequestForAction = (
-  state: GuideUiState,
-  action: FirstmateGuideAction,
-  fleet: FirstmateFleetReadinessV1,
-): FirstmateQueuedSubmission =>
-  state.firstmate?.action === action && JSON.stringify(state.firstmate.expectedFleet) === JSON.stringify(fleet.identity)
-    ? state.firstmate
-    : createFirstmateQueuedSubmission(action, fleet.identity ?? undefined)
-
-const confirmFirstmateAction = (state: GuideUiState): GuideUiState => {
-  const profile = state.selectedProfile
-  if (!isFirstmateSelection(profile) || state.fleetInstallationReview !== undefined) return state
-  if (requiresFirstmateInstance(profile)) {
-    return { ...state, errorMessage: "Choose and confirm a fleet instance before approving an action." }
-  }
-  if (state.fleetReadinessError !== undefined) return { ...state, errorMessage: state.fleetReadinessError }
-  if (state.fleetReadinessPending || state.fleetReadiness === undefined) {
-    return { ...state, errorMessage: "Wait for the fleet readiness check, or refresh it. No action was selected." }
-  }
-  if (state.firstmate?.expectedFleet !== undefined &&
-      JSON.stringify(state.firstmate.expectedFleet) !== JSON.stringify(state.fleetReadiness.identity)) {
-    return { ...state, errorMessage: "The owned fleet identity changed. This queued request is unchanged. Remove the unsubmitted request before choosing a new fleet." }
-  }
-  const action = firstmateActionOptions[state.firstmateActionIndex]
-  if (action === undefined) return state
-  const readiness = firstmateActionReadiness(profile, state.fleetReadiness, action)
-  if (readiness.kind === ProfileReadinessKind.Blocked) {
-    return { ...state, readiness, errorMessage: readiness.diagnostic }
-  }
-  try {
-    selectedQueuedContext(state)
-  } catch (cause) {
-    return { ...state, errorMessage: describeGuideUiError(cause) }
-  }
-  const approved = {
-    ...state,
-    readiness,
-    firstmate: firstmateRequestForAction(state, action, state.fleetReadiness),
-    errorMessage: undefined,
-    destinationIndex: 0,
-  }
-  return action === "submit"
-    ? enqueueSelectedCandidate(approved, { kind: "existing-fleet" })
-    : { ...approved, stage: GuideUiStage.QueuePlacement }
-}
-
-const requiresFirstmateInstance = (profile: NativeSelectedProfile): boolean =>
-  profile.orchestration?.instances !== undefined && profile.firstmateInstance === undefined
-
-const firstmateReportedRepairs = (state: GuideUiState, fleet: FirstmateFleetReadinessV1 | undefined): ReadonlyArray<string> =>
-  [...new Set([...state.fleetRepairs, ...(fleet?.preparation?.repairs ?? [])])]
-
-const firstmateReadinessFocus = (state: GuideUiState, fleet: FirstmateFleetReadinessV1): number => {
-  const profile = state.selectedProfile
-  if (state.firstmateActionFocus === "manual" || state.firstmate !== undefined || !isFirstmateSelection(profile)) {
-    return state.firstmateActionIndex
-  }
-  const preferred = fleet.supervisor.state === "running" ? "submit" : fleet.supervisor.state === "stale" ? "recover" : "start"
-  if (firstmateActionReadiness(profile, fleet, preferred).kind === ProfileReadinessKind.Ready) {
-    return firstmateActionOptions.indexOf(preferred)
-  }
-  const index = firstmateActionOptions.findIndex((action) =>
-    firstmateActionReadiness(profile, fleet, action).kind === ProfileReadinessKind.Ready)
-  return index < 0 ? state.firstmateActionIndex : index
-}
-
-const reduceFirstmateAction = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
-  if (state.stage !== GuideUiStage.FirstmateAction) return state
-  switch (action.type) {
-    case GuideUiActionType.FirstmateReadinessResolved:
-      return action.inspectionId === state.fleetReadinessId && state.fleetReadinessPending
-        ? {
-            ...state,
-            fleetReadiness: action.fleet,
-            fleetReadinessPending: false,
-            fleetReadinessOperation: undefined,
-            fleetReadinessError: undefined,
-            fleetRepairs: firstmateReportedRepairs(state, action.fleet),
-            firstmateActionIndex: firstmateReadinessFocus(state, action.fleet),
-            errorMessage: undefined,
-          }
-        : state
-    case GuideUiActionType.FirstmateReadinessFailed:
-      return action.inspectionId === state.fleetReadinessId && state.fleetReadinessPending
-        ? {
-            ...state,
-            fleetReadiness: action.fleet,
-            fleetReadinessPending: false,
-            fleetReadinessOperation: undefined,
-            fleetReadinessError: action.message,
-            fleetRepairs: firstmateReportedRepairs(state, action.fleet),
-            errorMessage: action.message,
-          }
-        : state
-    case GuideUiActionType.FirstmateReadinessRefresh:
-      return firstmateActionState(state)
-    case GuideUiActionType.FirstmateActionMove:
-      return state.fleetInstallationReview !== undefined ? state : {
-        ...state,
-        firstmateActionIndex: (state.firstmateActionIndex + action.delta + firstmateActionOptions.length) % firstmateActionOptions.length,
-        firstmateActionFocus: "manual",
-        readiness: undefined,
-        errorMessage: undefined,
-      }
-    case GuideUiActionType.FirstmateActionConfirm:
-      return confirmFirstmateAction(state)
-    case GuideUiActionType.FirstmateActionBack:
-      return { ...cancelFirstmatePreparation(state), stage: GuideUiStage.Candidates, readiness: undefined, errorMessage: undefined }
-    default:
-      return state
-  }
-}
-
 const reduceReadiness = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
-  if (isFirstmateSelection(state.selectedProfile)) return state
   switch (action.type) {
     case GuideUiActionType.ReadinessReady:
       if (state.stage !== GuideUiStage.CheckingReadiness) return state
@@ -2978,7 +2339,6 @@ const submitQueueEdit = (state: GuideUiState): GuideUiState => {
       const { editingId: _, ...queue } = state.queue
       return { ...state, stage: GuideUiStage.Queue, queue, errorMessage: undefined }
     }
-    if (selected.firstmate !== undefined) return submitFirstmateQueueEdit(state, selected)
     return {
       ...state,
       stage: GuideUiStage.Queue,
@@ -2988,30 +2348,6 @@ const submitQueueEdit = (state: GuideUiState): GuideUiState => {
   } catch (cause) {
     if (cause instanceof GuideValidationError) return { ...state, errorMessage: cause.message }
     throw cause
-  }
-}
-
-const submitFirstmateQueueEdit = (state: GuideUiState, job: QueuedGuideJob): GuideUiState => {
-  const owner = state.forks.find((fork) => fork.jobId === job.id)
-  if (owner === undefined || owner.slice.candidates === undefined) {
-    return { ...state, errorMessage: "Remove this unsubmitted request and select its profile again before editing." }
-  }
-  const queue = submitQueuedGuidePromptEdit(state.queue, state.textDraft)
-  const edited = queue.entries.find((entry) => entry.id === job.id)
-  if (edited === undefined) return { ...state, errorMessage: "The queued request is no longer available." }
-  const fork = enterFork({ ...state, queue }, owner.id)
-  const candidates = owner.slice.candidates
-  return {
-    ...invalidateFirstmateApproval(fork),
-    selectedOriginalIntent: job.guideContext?.originalIntent ?? fork.selectedOriginalIntent,
-    selectedCustomerContext: job.guideContext?.customerContext,
-    stage: GuideUiStage.Candidates,
-    candidates: replaceCandidateAt(candidates, fork.candidateIndex, {
-      ...tripleAt(candidates, fork.candidateIndex),
-      prompt: edited.prompt,
-    }),
-    textDraft: "",
-    errorMessage: "Specification changed. Choose a fleet action again before queueing this request.",
   }
 }
 
@@ -3081,52 +2417,15 @@ const reduceLaunch = (state: GuideUiState, action: GuideUiAction): GuideUiState 
  * one worktree per entry.
  */
 const selectedQueuedContext = (state: GuideUiState): GuideQueuedContext | undefined => {
-  const firstmate = isFirstmateProfile(state.selectedProfile)
-  if (!firstmate && state.selectedCustomerContext === undefined) return undefined
-  if (firstmate && !state.projectTargetConfirmed) throw new GuideValidationError("projectTarget", "requires explicit confirmation")
+  if (state.selectedCustomerContext === undefined) return undefined
   const prepared = guideUiPrompt(state)
   if (prepared === undefined) throw new Error("Queue context requires a loaded selected workflow")
-  if (firstmate && prepared.workflow.scope !== "fleet" && state.projectTarget == null) {
-    throw new GuideValidationError("projectTarget", "requires a real project target for this workflow")
-  }
   return {
     originalIntent: validateGuideOriginalIntent(state.selectedOriginalIntent ?? state.originalIntent ?? state.intent),
     workflowId: prepared.workflow.id,
-    projectTarget: state.projectTarget ?? null,
-    projectTargetConfirmed: true,
     workflow: prepared.workflow,
     ...(state.selectedCustomerContext === undefined ? {} : { customerContext: state.selectedCustomerContext }),
   }
-}
-
-const selectedLegacyFirstmateContext = (state: GuideUiState): GuideLegacyFirstmateContext | undefined => {
-  if (!isFirstmateProfile(state.selectedProfile) || isFirstmateSelection(state.selectedProfile)) return undefined
-  const context = selectedQueuedContext(state)
-  if (context === undefined) throw new Error("Legacy Firstmate requires confirmed task context.")
-  return { ...context, projectTargetConfirmed: true }
-}
-
-export const queuedFirstmateSupervisor = (state: GuideUiState): QueuedGuideJob | undefined => {
-  if (!isFirstmateSelection(state.selectedProfile) || state.firstmate?.action === "submit") return undefined
-  const held = state.forks.find((fork) => fork.id === state.activeForkId)?.jobId
-  return state.queue.entries.find((job) =>
-    job.id !== held && job.firstmate !== undefined && job.firstmate.action !== "submit" &&
-    selectedInstanceMatchesJob(state, job),
-  )
-}
-
-const firstmatePlacementError = (state: GuideUiState, placement: JobPlacement): string | undefined => {
-  const firstmate = state.firstmate
-  if (firstmate === undefined) return "Choose Start fleet, Recover fleet, or Send work explicitly before queueing."
-  if (state.readiness?.kind !== ProfileReadinessKind.Ready) return "Confirm an allowed fleet action before queueing."
-  if ((firstmate.action === "submit") !== (placement.kind === "existing-fleet")) {
-    return "Send work uses the existing fleet. Start and recovery require an explicit supervisor destination."
-  }
-  const supervisor = queuedFirstmateSupervisor(state)
-  if (supervisor !== undefined && JSON.stringify(supervisor.placement) !== JSON.stringify(placement)) {
-    return `Request ${supervisor.id} already sets this instance's supervisor destination. Confirm that destination or change the earlier request.`
-  }
-  return undefined
 }
 
 const validateQueuedCheckoutRoot = (
@@ -3170,8 +2469,6 @@ const enqueueSelectedCandidate = (
     const guideContext = selectedQueuedContext(state)
     const candidate = tripleAt(state.candidates, state.candidateIndex)
     const prompt = queuedCandidatePrompt(state, candidate, guideContext)
-    const message = isFirstmateSelection(profile) ? firstmatePlacementError(state, placement) : undefined
-    if (message !== undefined) return { ...state, errorMessage: message }
     const held = state.forks.find((fork) => fork.id === state.activeForkId)?.jobId
     validateQueuedCheckoutRoot(state, placement, checkedRoot, held)
     return {
@@ -3179,8 +2476,8 @@ const enqueueSelectedCandidate = (
       stage: GuideUiStage.Queue,
       queue:
         held === undefined
-          ? enqueueGuideJob(state.queue, profile, prompt, placement, candidate.goalExecution ?? guideContext, state.firstmate, checkedRoot)
-          : replaceQueuedGuideJob(state.queue, held, profile, prompt, placement, candidate.goalExecution ?? guideContext, state.firstmate, checkedRoot),
+          ? enqueueGuideJob(state.queue, profile, prompt, placement, candidate.goalExecution ?? guideContext, checkedRoot)
+          : replaceQueuedGuideJob(state.queue, held, profile, prompt, placement, candidate.goalExecution ?? guideContext, checkedRoot),
       ...(placement.kind !== "new-worktree" || checkedRoot === undefined ? {} : { primaryCheckoutPath: checkedRoot }),
       errorMessage: undefined,
     }
@@ -3210,35 +2507,20 @@ const queueConflictState = (state: GuideUiState, error: GuideQueueConflictError,
   errorMessage: error.message,
 })
 
-const reuseFirstmateSupervisor = (state: GuideUiState): GuideUiState => {
-  if (state.stage !== GuideUiStage.QueuePlacement) return state
-  const supervisor = queuedFirstmateSupervisor(state)
-  return supervisor === undefined
-    ? { ...state, errorMessage: "The earlier supervisor destination is no longer queued. Choose a destination." }
-    : enqueueSelectedCandidate(state, supervisor.placement, supervisor.primaryCheckoutPath)
-}
-
 const reduceQueuePlacementNavigation = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
   switch (action.type) {
     case GuideUiActionType.QueuePlacementMove:
       return state.stage === GuideUiStage.QueuePlacement
         ? {
             ...state,
-            destinationIndex: queuedFirstmateSupervisor(state) === undefined
-              ? (state.destinationIndex + action.delta + queuePlacementOptions(state).length) % queuePlacementOptions(state).length
-              : 0,
+            destinationIndex: (state.destinationIndex + action.delta + queuePlacementOptions(state).length) % queuePlacementOptions(state).length,
           }
         : state
     case GuideUiActionType.QueuePlacementBack:
-      if (state.stage !== GuideUiStage.QueuePlacement) return state
-      return isFirstmateSelection(state.selectedProfile)
-        ? firstmateActionState(state)
-        : { ...state, stage: GuideUiStage.Candidates }
+      return state.stage === GuideUiStage.QueuePlacement ? { ...state, stage: GuideUiStage.Candidates } : state
     case GuideUiActionType.QueuePlacementUnavailable:
       return state.stage === GuideUiStage.QueuePlacement
-        ? { ...state, errorMessage: isFirstmateSelection(state.selectedProfile)
-            ? "Herdr is unavailable. Choose the current terminal, or start guide from a Herdr pane."
-            : "Herdr is unavailable. Start trx guide from a Herdr pane or popup." }
+        ? { ...state, errorMessage: "Herdr is unavailable. Start trx guide from a Herdr pane or popup." }
         : state
     default:
       return state
@@ -3251,12 +2533,6 @@ const reduceQueuePlacement = (state: GuideUiState, action: GuideUiAction): Guide
       return state.stage === GuideUiStage.QueuePlacement
         ? enqueueSelectedCandidate(state, { kind: "current-workspace-pane", direction: "right" })
         : state
-    case GuideUiActionType.QueuePlacementTerminal:
-      return state.stage === GuideUiStage.QueuePlacement && isFirstmateSelection(state.selectedProfile)
-        ? enqueueSelectedCandidate(state, { kind: "current-terminal" })
-        : state
-    case GuideUiActionType.QueuePlacementReuse:
-      return reuseFirstmateSupervisor(state)
     case GuideUiActionType.QueuePlacementStartWorktree:
       return state.stage === GuideUiStage.QueuePlacement
         ? {
@@ -3383,8 +2659,6 @@ const deliverToFork = (state: GuideUiState, forkId: number, action: GuideUiActio
   if (state.activeForkId === forkId) return guideUiReducer(state, action)
   const target = state.forks.find((fork) => fork.id === forkId)
   if (target === undefined) return state
-  if ((action.type === GuideUiActionType.TargetResolved || action.type === GuideUiActionType.TargetFailed) &&
-      target.slice.selectedOriginalIntent !== state.originalIntent) return state
   const applied = guideUiReducer({ ...hydrateFork(state, target.slice), activeForkId: forkId }, action)
   return {
     ...applied,
@@ -3421,17 +2695,6 @@ type GuideUiDomainReducer = (state: GuideUiState, action: GuideUiAction) => Guid
 
 /** Routes every action type to the single domain reducer that owns it. A plain table lookup, so this stays O(1) and trivially simple regardless of how many action types exist. */
 const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer> = {
-  [GuideUiActionType.FirstmateInstanceOpen]: reduceGuideInstanceMenu,
-  [GuideUiActionType.FirstmateInstanceEvent]: reduceGuideInstanceMenu,
-  [GuideUiActionType.FirstmateInstanceBack]: reduceGuideInstanceMenu,
-  [GuideUiActionType.TargetOpen]: reduceTargetChoice,
-  [GuideUiActionType.TargetCurrent]: reduceTargetChoice,
-  [GuideUiActionType.TargetEdit]: reduceTargetChoice,
-  [GuideUiActionType.TargetBack]: reduceTargetChoice,
-  [GuideUiActionType.TargetSubmit]: reduceTargetResult,
-  [GuideUiActionType.TargetConfirm]: reduceTargetResult,
-  [GuideUiActionType.TargetResolved]: reduceTargetResult,
-  [GuideUiActionType.TargetFailed]: reduceTargetResult,
   [GuideUiActionType.InputRejected]: (state, action) =>
     action.type === GuideUiActionType.InputRejected ? { ...state, errorMessage: action.message } : state,
   [GuideUiActionType.IntentChange]: reduceIntent,
@@ -3495,16 +2758,6 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.CandidatesDirectEditStart]: reduceCandidateSelection,
   [GuideUiActionType.DirectEditSubmit]: reduceDirectEdit,
   [GuideUiActionType.DirectEditBack]: reduceDirectEdit,
-  [GuideUiActionType.FirstmateReadinessResolved]: reduceFirstmateAction,
-  [GuideUiActionType.FirstmateReadinessFailed]: reduceFirstmateAction,
-  [GuideUiActionType.FirstmateReadinessRefresh]: reduceFirstmateAction,
-  [GuideUiActionType.FirstmateInstallationReview]: reduceFirstmateInstallation,
-  [GuideUiActionType.FirstmateInstallationMove]: reduceFirstmateInstallation,
-  [GuideUiActionType.FirstmateInstallationConfirm]: reduceFirstmateInstallation,
-  [GuideUiActionType.FirstmateInstallationCancel]: reduceFirstmateInstallation,
-  [GuideUiActionType.FirstmateActionMove]: reduceFirstmateAction,
-  [GuideUiActionType.FirstmateActionConfirm]: reduceFirstmateAction,
-  [GuideUiActionType.FirstmateActionBack]: reduceFirstmateAction,
   [GuideUiActionType.EditorChange]: reduceEditor,
   [GuideUiActionType.EditorBackspace]: reduceEditor,
   [GuideUiActionType.RefineSubmit]: reduceRefine,
@@ -3543,8 +2796,6 @@ const domainReducerByActionType: Record<GuideUiActionType, GuideUiDomainReducer>
   [GuideUiActionType.QueuePlacementBack]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementUnavailable]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementHere]: reduceQueuePlacement,
-  [GuideUiActionType.QueuePlacementTerminal]: reduceQueuePlacement,
-  [GuideUiActionType.QueuePlacementReuse]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementStartWorktree]: reduceQueuePlacement,
   [GuideUiActionType.QueuePlacementWorktree]: reduceQueuePlacement,
   [GuideUiActionType.ForkNext]: reduceFork,
@@ -3796,10 +3047,7 @@ export const templateGuideCandidates = (
   const context = contextOrGoal
   const workflow = guide.workflows.find(({ id }) => id === workflowId)
   if (workflow === undefined) throw new Error(`Unknown workflow reference: ${workflowId}`)
-  const fallbackIntent = context.profileRef?.startsWith("native:firstmate/") && context.originalIntent !== undefined
-    ? "Use the unchanged original human intent in this request. Follow the selected workflow and confirmed target without extending their scope."
-    : stripCustomerContext(intent, context.customerContext)
-  const candidates = templatePromptCandidates(guide, workflowId, fallbackIntent)
+  const candidates = templatePromptCandidates(guide, workflowId, stripCustomerContext(intent, context.customerContext))
   return [
     completeSinglePromptArtifact(workflow, candidates[0], context),
     completeSinglePromptArtifact(workflow, candidates[1], context),
@@ -3823,19 +3071,6 @@ export interface GuideGenerationStepResult {
   readonly guideDocument: SelectedGuideDocument
   readonly candidates: Triple<GuideGenerateCandidate>
   readonly templateFallback: GuideTemplateFallback | undefined
-}
-
-const catalogGuideTaskContext = (
-  catalog: CombinedGuideCatalog,
-  profileRef: string,
-  context: GuideTaskContext,
-): GuideTaskContext => {
-  const orchestration = findGuideCatalogEntry(catalog, profileRef)?.orchestration
-  if (context.orchestration !== undefined && orchestration === undefined) {
-    throw new GuideValidationError("orchestration", "requires controls from the selected profile catalog")
-  }
-  const { orchestration: _providedControls, ...input } = context
-  return { ...input, ...(orchestration === undefined ? {} : { orchestration }) }
 }
 
 export const runGuideMatchingStep = async (
@@ -3880,16 +3115,14 @@ export const runGuideGenerationStep = async (
   const context = "fingerprint" in contextOrGoal ? {} : contextOrGoal
   const guideDocument = await loadSelectedGuide(catalog, guideRoot, recommendation.profileRef)
   onGuideLoaded?.(guideDocument)
-  const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.profileRef, intent,
-    catalogGuideTaskContext(catalog, recommendation.profileRef, context))
+  const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.profileRef, context)
   const subject = stripCustomerContext(intent, prepared.context.customerContext)
   assertGuidePromptDeliveryContext(prepared.context)
   const workflow = prepared.workflow
   const complete = (candidate: GuideGenerateCandidate): GuideGenerateCandidate =>
-    completeSinglePromptArtifact(workflow, applyRequiredProfilePromptTemplate(
-      recommendation.profileRef, prepared.guide, recommendation.workflowId,
-      renderWorkflowBodyCandidate(workflow, guideModelBodyCandidate(workflow, candidate, prepared.context)),
-    ), prepared.context)
+    completeSinglePromptArtifact(
+      workflow, renderWorkflowBodyCandidate(workflow, guideModelBodyCandidate(workflow, candidate, prepared.context)), prepared.context,
+    )
   const fixedFrame = workflowOptimizeFixedFrame(workflow)
   const targetTool = guideTargetTool(catalog, recommendation.profileRef)
   if (goal !== undefined) {
@@ -4033,8 +3266,7 @@ export const runGuideRefinementStep = async (
 ): Promise<GuideGenerateCandidate> => {
   const goal = "fingerprint" in contextOrGoal ? contextOrGoal : undefined
   const context = "fingerprint" in contextOrGoal ? {} : contextOrGoal
-  const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.profileRef, intent,
-    catalogGuideTaskContext(catalog, recommendation.profileRef, context))
+  const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.profileRef, context)
   assertGuidePromptDeliveryContext(prepared.context)
   const workflow = prepared.workflow
   const candidate = tripleAt(candidates, candidateIndex)
@@ -4097,12 +3329,7 @@ export const runGuideRefinementStep = async (
       resolveWorkflowBodyCandidate(prepared.guide, workflow, refinedBodyCandidate, optimizedCandidate),
     )
     return {
-      candidate: completeSinglePromptArtifact(workflow, applyRequiredProfilePromptTemplate(
-        recommendation.profileRef,
-        prepared.guide,
-        recommendation.workflowId,
-        renderedCandidate,
-      ), prepared.context),
+      candidate: completeSinglePromptArtifact(workflow, renderedCandidate, prepared.context),
     }
   }
   const refined = await (cache === undefined
@@ -4160,7 +3387,6 @@ export interface GuideUiCurrentTerminalResult extends GuideUiGoalResult {
   readonly promptHandling: PromptHandlingMode
   readonly prompt: string
   readonly cwd: string
-  readonly legacyFirstmate?: GuideLegacyFirstmateContext
 }
 
 export interface GuideUiCurrentHerdrWorkspaceResult extends GuideUiGoalResult {
@@ -4172,7 +3398,6 @@ export interface GuideUiCurrentHerdrWorkspaceResult extends GuideUiGoalResult {
   readonly cwd: string
   readonly callerPaneId: string
   readonly direction: HerdrSplitDirection
-  readonly legacyFirstmate?: GuideLegacyFirstmateContext
 }
 
 export interface GuideUiNewHerdrWorktreeResult extends GuideUiGoalResult {
@@ -4184,7 +3409,6 @@ export interface GuideUiNewHerdrWorktreeResult extends GuideUiGoalResult {
   readonly primaryCheckoutPath: string
   readonly branch: string
   readonly baseRef: string
-  readonly legacyFirstmate?: GuideLegacyFirstmateContext
 }
 
 export interface GuideUiExistingHerdrWorktreeResult extends GuideUiGoalResult {
@@ -4195,7 +3419,6 @@ export interface GuideUiExistingHerdrWorktreeResult extends GuideUiGoalResult {
   readonly promptDelivery: HerdrPromptDeliveryMode
   readonly primaryCheckoutPath: string
   readonly path: string
-  readonly legacyFirstmate?: GuideLegacyFirstmateContext
 }
 
 /**
@@ -4216,7 +3439,6 @@ export interface GuideUiNewHerdrTabResult extends GuideUiGoalResult {
   readonly promptDelivery: HerdrPromptDeliveryMode
   readonly cwd: string
   readonly workspaceId: string
-  readonly legacyFirstmate?: GuideLegacyFirstmateContext
 }
 
 export type GuideUiResult =
@@ -4235,38 +3457,15 @@ export type GuideUiResult =
 
 export const buildCancelResult = (): GuideUiCancelResult => ({ action: "cancel", exitCode: 130 })
 
-export const buildPrintResult = (
-  prompt: string,
-  profileOrGoal?: SelectedProfile | GuideGoalCandidateContext,
-  legacyFirstmate?: GuideLegacyFirstmateContext,
-): GuideUiPrintResult => {
-  if (profileOrGoal !== undefined && "goal" in profileOrGoal) return { action: "print", prompt, goalExecution: profileOrGoal }
-  const profile = profileOrGoal
-  if (!isFirstmateProfile(profile)) return { action: "print", prompt }
-  if (profile.orchestration !== undefined) {
-    return {
-      action: "print", prompt,
-      notice: "Firstmate specification only, not a complete delivery. Use the inbox queue to carry original intent, workflow, and confirmed target; do not paste this specification alone.",
-    }
-  }
-  validateLegacyFirstmateArtifact(`native:firstmate/${profile.profile}`, prompt, legacyFirstmate)
-  return {
-    action: "print", prompt,
-    notice: "Complete legacy Firstmate manual-paste request. No inbox acceptance, atomic fleet guard, dispatch, or task completion is confirmed.",
-  }
-}
+export const buildPrintResult = (prompt: string, goalExecution?: GuideGoalCandidateContext): GuideUiPrintResult =>
+  goalExecution === undefined ? { action: "print", prompt } : { action: "print", prompt, goalExecution }
 
 export const buildCurrentTerminalResult = (
   profile: SelectedProfile,
   prompt: string,
   cwd: string,
-  context?: GuideLegacyFirstmateContext | GuideGoalCandidateContext,
+  goalExecution?: GuideGoalCandidateContext,
 ): GuideUiCurrentTerminalResult => {
-  const goalExecution = context !== undefined && "goal" in context ? context : undefined
-  const legacyFirstmate = context !== undefined && !("goal" in context) ? context : undefined
-  if (isFirstmateProfile(profile) && profile.orchestration === undefined) {
-    validateLegacyFirstmateArtifact(`native:firstmate/${profile.profile}`, prompt, legacyFirstmate)
-  }
   const built = buildGuideLaunchCommand(profile, { mode: "argv", prompt }, goalExecution)
   return {
     action: "current-terminal",
@@ -4276,7 +3475,6 @@ export const buildCurrentTerminalResult = (
     prompt,
     cwd,
     ...(goalExecution === undefined ? {} : { goalExecution }),
-    ...(legacyFirstmate === undefined ? {} : { legacyFirstmate }),
   }
 }
 
@@ -4378,12 +3576,10 @@ export interface GuideUiProps {
   readonly goalProvider?: GuideGoalAugmentProvider
   readonly goalReadinessServices?: GuideGoalReadinessServices
   readonly cache?: GuideArtifactCache
-  readonly firstmateCreationStore?: FirstmateCreationPlanStore
   readonly routing: GuideResolvedModelRouting
   readonly reviewModelOverrides?: Partial<GuideResolvedModelRouting["optimize"]>
   readonly runner: CommandRunner
   readonly cwd: string
-  readonly launchOrigin?: FirstmateInstanceControlContextV1
   /** Raw Herdr environment used to derive `HerdrContext` via `getHerdrContext`. */
   readonly herdrEnv: HerdrEnvironment
   /** Whether a Herdr availability probe (e.g. `probeHerdrAvailability`) succeeded, checked before rendering. */
@@ -4448,14 +3644,6 @@ const CaptureSourceBanner = ({ capture }: { readonly capture: GuideCaptureProven
       </Text>
     </Box>
   )
-}
-
-const firstmateCaptureBannerRows = (stage: GuideUiStage, context: HerdrContext | null, columns: number): number => {
-  const capture = context?.capture
-  if (stage !== GuideUiStage.FirstmateAction || capture === undefined) return 0
-  const { label, detail } = captureSourcePresentation(capture)
-  const width = Math.max(1, columns - 4)
-  return 3 + wrapGuideText(label, width).length + wrapGuideText(detail, width).length
 }
 
 const cyclicItemAt = <T,>(items: ReadonlyArray<T>, index: number): T | undefined =>
@@ -5463,7 +4651,6 @@ const launcherHarnessLabels: Readonly<Record<string, string>> = {
   codex: "Codex",
   copilot: "Copilot",
   claude: "Claude",
-  firstmate: "Firstmate",
   jcode: "Junie",
   omp: "OpenCode",
   pi: "Pi",
@@ -5795,94 +4982,26 @@ const CandidateDetail = ({
   )
 }
 
-const candidateInstancePreview = (command: PublicGuideCommand, profile: SelectedProfile | undefined): PublicGuideCommand =>
-  profile?.surface === "native" && profile.firstmateInstance !== undefined
-    ? { ...command, preview: `${command.preview} ${firstmateInstanceSelectorArgs(profile).join(" ")}` } : command
-
-const candidateFallbackNotice = (fallback: GuideTemplateFallback | undefined): string | undefined => {
-  if (fallback === undefined) return undefined
-  const reason = fallback.reason === undefined ? [] : [fallback.reason]
-  const message = fallback.kind === "validation"
-    ? "Using template candidates: generated output failed workflow validation."
-    : "Using template candidates you selected after generation failed."
-  return [message, ...reason].join("\n")
-}
-
-const candidateFallbackRows = (notice: string | undefined, columns: number): number =>
-  notice === undefined ? 0 : wrapGuideText(notice, Math.max(1, columns - 2)).length
-
-const candidateCommandNotice = (
-  candidate: GuideGenerateCandidate,
-  promptHandling: PublicGuideCommand["promptHandling"],
-  firstmate: boolean,
-): string => {
-  if (promptHandling !== "manual-paste") return ""
-  if (candidate.goalExecution !== undefined) return " (native goal input required)"
-  return firstmate ? " (manual-paste preview only; guide execution uses the inbox)" : " (manual paste required)"
-}
-
-const candidateNavigationText = (
-  firstmate: boolean,
-  instanceLabel: string | undefined,
-  legacyFirstmate: boolean,
-): string => {
-  const action = firstmate ? "choose fleet action" : "continue"
-  const instance = instanceLabel === undefined ? "" : " · f instance"
-  const target = firstmate || legacyFirstmate ? " · t target" : ""
-  const back = instanceLabel === undefined ? " · b/Esc back · r refine · e edit · c print · q cancel" : ""
-  return `↑/↓ or j/k select · ↵ ${action}${instance}${target}${back}`
-}
-
-const CandidateInstanceLabel = ({ label }: { readonly label: string | undefined }): React.ReactElement | null =>
-  label === undefined ? null : <Text>{label}</Text>
-
-const CandidateFallbackBanner = ({ notice }: { readonly notice: string | undefined }): React.ReactElement | null =>
-  notice === undefined ? null : <Text color="yellow">{notice}</Text>
-
-const CandidateFooter = ({
-  candidate,
-  command,
-  firstmate,
-  legacyFirstmate,
-  instanceLabel,
-}: {
-  readonly candidate: GuideGenerateCandidate
-  readonly command: PublicGuideCommand
-  readonly firstmate: boolean
-  readonly legacyFirstmate: boolean
-  readonly instanceLabel: string | undefined
-}): React.ReactElement => (
-  <>
-    <Text dimColor wrap="truncate-end">
-      Command: {compactCommandPreview(command.preview)}
-      {candidateCommandNotice(candidate, command.promptHandling, firstmate)}
-    </Text>
-    <Text dimColor wrap="truncate-end">{candidateNavigationText(firstmate, instanceLabel, legacyFirstmate)}</Text>
-    {instanceLabel === undefined ? null : <Text dimColor>b/Esc back · r refine · e edit · c print · q cancel</Text>}
-  </>
-)
-
 const CandidatesView = ({
   candidates,
   index,
   templateFallback,
   command,
-  firstmate = false,
-  legacyFirstmate = false,
-  instanceLabel,
 }: {
   readonly candidates: Triple<GuideGenerateCandidate>
   readonly index: number
   readonly templateFallback: GuideTemplateFallback | undefined
   readonly command: PublicGuideCommand
-  readonly firstmate?: boolean
-  readonly legacyFirstmate?: boolean
-  readonly instanceLabel?: string
 }) => {
   const { rows, columns: terminalColumns } = useGuideWindowSize()
-  const fallbackNotice = candidateFallbackNotice(templateFallback)
-  const fallbackRows = candidateFallbackRows(fallbackNotice, terminalColumns)
-  const paneHeight = Math.max(1, candidatePaneHeight(rows) - fallbackRows - (instanceLabel === undefined ? 0 : 2))
+  const fallbackNotice = templateFallback === undefined ? undefined : [
+    templateFallback.kind === "validation"
+      ? "Using template candidates: generated output failed workflow validation."
+      : "Using template candidates you selected after generation failed.",
+    ...(templateFallback.reason === undefined ? [] : [templateFallback.reason]),
+  ].join("\n")
+  const fallbackRows = fallbackNotice === undefined ? 0 : wrapGuideText(fallbackNotice, Math.max(1, terminalColumns - 2)).length
+  const paneHeight = Math.max(1, candidatePaneHeight(rows) - fallbackRows)
   const railWidth = candidateRailWidth(terminalColumns)
   const candidate = tripleAt(candidates, index)
   return (
@@ -5890,8 +5009,7 @@ const CandidatesView = ({
       <Text bold color="cyan">
         Prompt candidates
       </Text>
-      <CandidateInstanceLabel label={instanceLabel} />
-      <CandidateFallbackBanner notice={fallbackNotice} />
+      {fallbackNotice === undefined ? null : <Text color="yellow">{fallbackNotice}</Text>}
       <Box marginTop={1}>
         <CandidateRail candidates={candidates} index={index} width={railWidth} height={paneHeight} />
         <CandidateDetail
@@ -5900,13 +5018,15 @@ const CandidatesView = ({
           width={Math.max(1, terminalColumns - railWidth - 2)}
         />
       </Box>
-      <CandidateFooter
-        candidate={candidate}
-        command={command}
-        firstmate={firstmate}
-        legacyFirstmate={legacyFirstmate}
-        instanceLabel={instanceLabel}
-      />
+      <Text dimColor wrap="truncate-end">
+        Command: {compactCommandPreview(command.preview)}
+        {command.promptHandling === "manual-paste"
+          ? candidate.goalExecution === undefined ? " (manual paste required)" : " (native goal input required)"
+          : ""}
+      </Text>
+      <Text dimColor wrap="truncate-end">
+        ↑/↓ or j/k select · ↵ continue · b/Esc back · r refine · e edit · c print · q cancel
+      </Text>
     </Box>
   )
 }
@@ -6029,9 +5149,7 @@ const DestinationView = ({
 
 /** `copilot · council`. */
 const describeJobRunner = (profile: SelectedProfile): string =>
-  profile.firstmateInstance === undefined
-    ? `${profile.launcher} · ${profile.profile}${profile.agent === undefined ? "" : ` · ${profile.agent}`}`
-    : firstmateInstanceLabel(profile)
+  `${profile.launcher} · ${profile.profile}${profile.agent === undefined ? "" : ` · ${profile.agent}`}`
 
 const QueuedJobBlock = ({
   job,
@@ -6064,9 +5182,6 @@ const QueuedJobBlock = ({
       {"  "}
       {compactCommandPreview(renderCommandPreview(job.command))}
     </Text>
-    {job.firstmate === undefined ? null : (
-      <Text wrap="wrap">{firstmateActionLabels[job.firstmate.action]} · request {job.firstmate.requestId}</Text>
-    )}
     {preview.lines.map((line, index) => (
       <Text key={`${job.id}:${index}`} dimColor={!selected} wrap="truncate-end">
         {line.length === 0 ? " " : line}
@@ -6084,15 +5199,13 @@ const QueueView = ({ queue, errorMessage }: { readonly queue: GuideQueueState; r
   const { rows, columns } = useGuideWindowSize()
   const width = Math.max(20, columns - 6)
   const previews = queue.entries.map((job) => basketBlockPreview(job.prompt, width))
-  const heights = previews.map((preview, index) => preview.lines.length + (queue.entries[index]?.firstmate === undefined ? 4 : 5))
-  const hasFirstmate = queue.entries.some((job) => job.firstmate !== undefined)
+  const heights = previews.map((preview) => preview.lines.length + 4)
   const { start, end } = basketVisibleRange(heights, queue.selectedIndex, Math.max(4, rows - 8))
   return (
     <Box flexDirection="column" height={Math.max(6, rows - 2)} overflowY="hidden" paddingX={1}>
       <Text bold color="cyan">
-        Batch queue. {countLabel(queue.entries.length, "job")} {hasFirstmate ? "ready for execution" : "launch together"}
+        Batch queue. {countLabel(queue.entries.length, "job")} launch together
       </Text>
-      {hasFirstmate ? <Text>Firstmate uses the inbox. Execution freezes these requests and their IDs.</Text> : null}
       <Box flexDirection="column" flexGrow={1} marginTop={1} overflowY="hidden">
         {queue.entries.slice(start, end).map((job, offset) => (
           <QueuedJobBlock
@@ -6131,13 +5244,10 @@ const QueueEntryView = ({ queue }: { readonly queue: GuideQueueState }) => {
         → {describeJobPlacement(job.placement)} · {job.prompt.length}c ·{" "}
         {countLabel(countTextLines(job.prompt), "line")}
       </Text>
-      {job.firstmate === undefined ? null : (
-        <Text>{firstmateActionLabels[job.firstmate.action]} · request {job.firstmate.requestId}</Text>
-      )}
       <ScrollableTextViewport
         value={job.prompt}
         width={Math.max(1, columns - 2)}
-        height={Math.max(1, rows - (job.firstmate === undefined ? 6 : 7))}
+        height={Math.max(1, rows - 6)}
         startAtEnd={false}
         resetKey={`${job.id}`}
       />
@@ -6146,41 +5256,22 @@ const QueueEntryView = ({ queue }: { readonly queue: GuideQueueState }) => {
   )
 }
 
-const queuePlacementOptions = (state: GuideUiState): ReadonlyArray<{
+const queuePlacementOptions = (_state: GuideUiState): ReadonlyArray<{
   readonly label: string
   readonly action: GuideUiAction
   readonly requiresHerdr: boolean
-}> => {
-  const supervisor = queuedFirstmateSupervisor(state)
-  if (supervisor !== undefined) {
-    return [{
-      label: `Reuse request ${supervisor.id} supervisor destination: ${describeJobPlacement(supervisor.placement)}`,
-      action: { type: GuideUiActionType.QueuePlacementReuse },
-      requiresHerdr: supervisor.placement.kind !== "current-terminal",
-    }]
-  }
-  return [
-    { label: "Pane in this Herdr workspace", action: { type: GuideUiActionType.QueuePlacementHere }, requiresHerdr: true },
-    { label: "Herdr worktree", action: { type: GuideUiActionType.QueuePlacementStartWorktree }, requiresHerdr: true },
-    ...(isFirstmateSelection(state.selectedProfile) ? [{
-      label: "Use the current terminal after saving requests",
-      action: { type: GuideUiActionType.QueuePlacementTerminal } satisfies GuideUiAction,
-      requiresHerdr: false,
-    }] : []),
-  ]
-}
+}> => [
+  { label: "Pane in this Herdr workspace", action: { type: GuideUiActionType.QueuePlacementHere }, requiresHerdr: true },
+  { label: "Herdr worktree", action: { type: GuideUiActionType.QueuePlacementStartWorktree }, requiresHerdr: true },
+]
 
 const QueuePlacementView = ({ state }: { readonly state: GuideUiState }) => {
-  const supervisor = queuedFirstmateSupervisor(state)
   const options = queuePlacementOptions(state)
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold color="cyan">
-        {isFirstmateSelection(state.selectedProfile) ? "Choose the supervisor destination" : "Where does this queued job run?"}
+        Where does this queued job run?
       </Text>
-      {isFirstmateSelection(state.selectedProfile) ? (
-        <Text>One owned supervisor per profile. This destination does not change the confirmed project target.</Text>
-      ) : null}
       {options.map(({ label }, itemIndex) => (
         <Text key={label} bold={itemIndex === state.destinationIndex} {...(itemIndex === state.destinationIndex ? { color: "green" as const } : {})}>
           {itemIndex === state.destinationIndex ? "❯ " : "  "}
@@ -6188,202 +5279,7 @@ const QueuePlacementView = ({ state }: { readonly state: GuideUiState }) => {
         </Text>
       ))}
       {state.errorMessage === undefined ? null : <Text color="yellow">{state.errorMessage}</Text>}
-      {supervisor === undefined ? null : <Text>Confirm this destination, or change the earlier queued request.</Text>}
       <Text dimColor>j/k select · ↵ confirm · b back</Text>
-    </Box>
-  )
-}
-
-export const firstmateFleetStatusLines = (fleet: FirstmateFleetReadinessV1): ReadonlyArray<string> => [
-  `Runtime: ${fleet.runtime}`,
-  `Identity: ${fleet.identity === null ? "not available" : `owned (${fleet.identity.profile})`}`,
-  `Backend: ${fleet.backend ?? "not selected"}`,
-  `Supervisor: ${fleet.supervisor.state}`,
-  `Active workers: ${fleet.activeWorkers}`,
-  `Setup consent: ${fleet.consentRequired ? "required before startup" : "not required; not package-install approval"}`,
-  "Prerequisites:",
-  ...(fleet.prerequisites.length === 0
-    ? ["  None reported."]
-    : fleet.prerequisites.map((item) => `  ${firstmatePrerequisiteStatus(fleet, item).replace("-", " ")} · ${item.id}: ${item.description}`)),
-]
-
-const firstmateChoiceReadiness = (state: GuideUiState, action: FirstmateGuideAction): ProfileReadinessResult | undefined =>
-  isFirstmateSelection(state.selectedProfile) && state.fleetReadiness !== undefined &&
-  !state.fleetReadinessPending && state.fleetReadinessError === undefined
-    ? firstmateActionReadiness(state.selectedProfile, state.fleetReadiness, action)
-    : undefined
-
-const firstmatePreparationStatus = (state: GuideUiState): string => {
-  if (state.fleetReadinessPending) {
-    if (state.fleetReadinessOperation?.kind === "install") return "Installing approved managed tools. No fleet action is selected."
-    if (state.fleetReadinessOperation?.kind === "prepare") return "Preparing: checking and repairing owned idle state; no new tool installation."
-    return "Readiness check pending. Checking fleet state (read-only)."
-  }
-  if (state.fleetReadinessError !== undefined) return "Readiness check failed. Press r to retry; no automatic retry."
-  const preparation = state.fleetReadiness?.preparation
-  if (preparation !== undefined) {
-    return `Preparation: ${preparation.state === "needs-consent" ? "needs package-install approval" : preparation.state}.`
-  }
-  return canPrepareFirstmate(state)
-    ? "Fleet readiness is unavailable. Press r to retry."
-    : "Read-only inspection. No source or home repair."
-}
-
-const firstmateNextAction = (state: GuideUiState): string => {
-  if (state.fleetReadinessPending) return "No automatic start, recovery, or work submission."
-  if (state.fleetReadinessError !== undefined) return "Next: r refresh to retry this check."
-  if (firstmateInstallationApproval(state) !== undefined) return "Next: i review missing managed tools before approving installation."
-  const allowed = firstmateActionOptions.find((action) => firstmateChoiceReadiness(state, action)?.kind === ProfileReadinessKind.Ready)
-  if (allowed !== undefined) return `Next: select ${firstmateActionLabels[allowed]}, then confirm explicitly.`
-  const profile = state.selectedProfile
-  return isFirstmateSelection(profile)
-    ? `Next: run ${firstmateMaintenanceCommand(profile, state.fleetReadiness?.consentRequired ? "setup" : "doctor")}, then r refresh.`
-    : "Next: return to profile selection."
-}
-
-const firstmateReadinessDiagnostics = (state: GuideUiState): ReadonlyArray<string> => {
-  const action = firstmateActionOptions[state.firstmateActionIndex] ?? "start"
-  const selected = firstmateChoiceReadiness(state, action)
-  const diagnostics = [...new Set([
-    state.fleetReadinessError,
-    state.errorMessage,
-    selected?.kind === ProfileReadinessKind.Blocked ? selected.diagnostic : undefined,
-    state.fleetReadiness?.preparation?.diagnostic ?? undefined,
-  ].filter((message): message is string => message !== undefined))]
-  return diagnostics.filter((message) => !diagnostics.some((other) => other !== message && other.includes(message)))
-}
-
-const firstmateActionDetails = (state: GuideUiState): string => {
-  return [
-    ...firstmateReadinessDiagnostics(state),
-    ...state.fleetRepairs.map((repair) => `Reported repair: ${repair}`),
-    ...(state.fleetReadinessPending && state.fleetReadiness !== undefined ? ["Previous check (refresh in progress):"] : []),
-    ...(state.fleetReadinessError !== undefined && state.fleetReadiness !== undefined ? ["Failed command report; readiness is not confirmed:"] : []),
-    ...(state.fleetReadiness === undefined
-      ? []
-      : firstmateFleetStatusLines(state.fleetReadiness)),
-    ...(state.selectedProfile?.surface === "native" && state.selectedProfile.orchestration?.preparation === undefined
-      ? ["This backend does not advertise automatic preparation. Follow the named prerequisite diagnostic, then refresh."]
-      : []),
-  ].join("\n")
-}
-
-const firstmateViewportHeight = (rows: number, width: number, fixedLines: ReadonlyArray<string>): number => {
-  const breadcrumb = wizardSteps.map(({ label }, index) => wizardBreadcrumbLabel(index, label, index < 2)).join(" › ")
-  const chrome = wrapGuideText(breadcrumb, width).length + 1
-  return Math.max(1, rows - chrome - fixedLines.reduce((height, line) => height + wrapGuideText(line, width).length, 0))
-}
-
-export const firstmateInstallationPlanLines = (approval: FirstmatePreparationApproval): ReadonlyArray<string> => [
-  `Profile: firstmate/${approval.profile}`,
-  ...(approval.firstmateInstance === undefined ? [] : [
-    `Instance: ${approval.firstmateInstance.mode} ${approval.firstmateInstance.instanceId}`,
-    `Binding: ${approval.firstmateInstanceContext?.expectedBindingDigest ?? "legacy shared root"}`,
-  ]),
-  ...(approval.configurationCwd === undefined ? [] : [`Package configuration cwd: ${approval.configurationCwd}`]),
-  `Source revision: ${approval.sourceRevision}`,
-  "Plan identity:",
-  `  ${approval.installation.identity}`,
-  "Tools (exact versions):",
-  ...approval.installation.tools.map(({ name, version }) => `  ${name} ${version}`),
-  `Destination: ${approval.installation.destination}`,
-  "Network sources:",
-  ...approval.installation.sources.map((source) => `  ${source}`),
-  "Side-state paths:",
-  ...(approval.installation.statePaths.length === 0 ? ["  None."] : approval.installation.statePaths.map((location) => `  ${location}`)),
-  "No global npm packages, hooks, or authentication changes.",
-  "No supervisor or worker starts, stops, recovery, or work submission.",
-  "Approval applies only to this plan, instance, context, cwd, and source.",
-  "Native rechecks ownership and idle state.",
-]
-
-const FirstmateInstallationView = ({ review }: { readonly review: FirstmateInstallationReview }) => {
-  const { rows, columns } = useGuideWindowSize()
-  const width = Math.max(1, columns - 2)
-  const heading = "Review managed-tool installation"
-  const explanation = "Package-install approval is separate from setup consent."
-  const choices = [
-    `${review.choice === "cancel" ? "❯" : " "} Cancel`,
-    `${review.choice === "install" ? "❯" : " "} Install listed managed tools`,
-  ]
-  const footer = ["j/k select · Enter confirm · b/Esc cancel · r refresh", "PgUp/PgDn details · t target · q cancel guide"]
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      <Text bold color="cyan">{heading}</Text>
-      <Text>{explanation}</Text>
-      <ScrollableTextViewport
-        value={firstmateInstallationPlanLines(review.approval).join("\n")}
-        width={width}
-        height={firstmateViewportHeight(rows, width, [heading, explanation, ...choices, ...footer])}
-        startAtEnd={false}
-        resetKey={`${review.inspectionId}:install:${review.approval.installation.identity}`}
-      />
-      {choices.map((choice, index) => <Text key={index} bold={index === (review.choice === "cancel" ? 0 : 1)}>{choice}</Text>)}
-      {footer.map((line) => <Text key={line} dimColor>{line}</Text>)}
-    </Box>
-  )
-}
-
-const FirstmateActionView = ({ state }: { readonly state: GuideUiState }) => {
-  const { rows, columns } = useGuideWindowSize()
-  if (state.fleetInstallationReview !== undefined) return <FirstmateInstallationView review={state.fleetInstallationReview} />
-  const width = Math.max(1, columns - 2)
-  const heading = "Choose a Firstmate action"
-  const status = firstmatePreparationStatus(state)
-  const instance = isFirstmateSelection(state.selectedProfile) ? firstmateInstanceLabel(state.selectedProfile) : ""
-  const nextAction = firstmateNextAction(state)
-  const choices = firstmateActionOptions.map((option, index) => {
-    const readiness = firstmateChoiceReadiness(state, option)
-    return `${state.firstmateActionIndex === index ? "❯ " : "  "}${firstmateActionLabels[option]} · ${
-      readiness?.kind === ProfileReadinessKind.Ready ? "allowed" : readiness === undefined ? "not checked" : "blocked"
-    }`
-  })
-  const installAvailable = firstmateInstallationApproval(state) !== undefined
-  const footer = [
-    "Saved means accepted by the inbox, not dispatched or completed.",
-    `j/k select · Enter confirm action${installAvailable ? " · i review tools" : ""}`,
-    `r refresh · t target${isFirstmateSelection(state.selectedProfile) && state.selectedProfile.orchestration?.instances !== undefined ? " · f instance" : ""} · b/Esc back · q cancel · PgUp/PgDn details`,
-  ]
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      <Text bold color="cyan">{heading}</Text>
-      {instance.length === 0 ? null : <Text>{instance}</Text>}
-      <Text>{status}</Text>
-      {choices.map((choice, index) => <Text key={index} bold={state.firstmateActionIndex === index}>{choice}</Text>)}
-      <Text>{nextAction}</Text>
-      <ScrollableTextViewport
-        value={firstmateActionDetails(state)}
-        width={width}
-        height={firstmateViewportHeight(rows, width, [heading, instance, status, ...choices, nextAction, ...footer])}
-        startAtEnd={false}
-        resetKey={`${state.fleetReadinessId}:${state.firstmateActionIndex}:${state.errorMessage ?? ""}`}
-      />
-      {footer.map((line, index) => <Text key={line} dimColor={index > 0}>{line}</Text>)}
-    </Box>
-  )
-}
-
-const FirstmateInstanceView = ({ state }: { readonly state: GuideUiState }) => {
-  const { rows, columns } = useGuideWindowSize()
-  const menu = state.instanceMenu
-  if (menu === undefined) return <Text>Checking fleet instance discovery.</Text>
-  const document = firstmateInstanceMenuDocument(menu)
-  if (firstmateInstanceMenuIsEditor(menu)) return (
-    <Box flexDirection="column">
-      {menu.error === undefined ? null : <Text color="yellow">{menu.error}</Text>}
-      <TextEditor title={document.title} textDraft={menu.text} keys={document.controls.join(" · ")} />
-    </Box>
-  )
-  const width = Math.max(1, columns - 2)
-  return (
-    <Box flexDirection="column" paddingX={1}>
-      <Text bold color="cyan">{document.title}</Text>
-      <ScrollableTextViewport
-        value={document.body} width={width}
-        height={firstmateViewportHeight(rows, width, [document.title, ...document.controls])}
-        startAtEnd={false} resetKey={`${menu.generation}:${menu.screen}:${menu.index}:${menu.confirm}`}
-      />
-      {document.controls.map((line) => <Text key={line} dimColor>{line}</Text>)}
     </Box>
   )
 }
@@ -6508,40 +5404,6 @@ const useGuideMatchEffect = (props: GuideUiProps, state: GuideUiState, dispatch:
   }, [state.stage, state.intent, state.goal?.fingerprint, state.goalRevision, props.matcher, props.resolveCatalog])
 }
 
-const checkedGuideEntryCwd = (state: GuideUiState, cwd: string): string => {
-  const profile = state.selectedProfile
-  if (isFirstmateSelection(profile) && profile.orchestration?.instances !== undefined &&
-      profile.firstmateInstanceContext?.entryWorktree == null) {
-    throw new Error("Choose and verify an entry worktree before using the current repository or allocating a new checkout. Runtime cwd is not a fallback.")
-  }
-  return state.preparationCwd ?? cwd
-}
-
-const guideAllocationEntryCwd = async (props: GuideUiProps, state: GuideUiState): Promise<string> =>
-  !isFirstmateSelection(state.selectedProfile) && props.launchOrigin !== undefined
-    ? verifiedFirstmateOriginCwd(props.runner, props.catalog, props.cwd, props.launchOrigin)
-    : checkedGuideEntryCwd(state, props.cwd)
-
-const useGuideTargetEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
-  useEffect(() => {
-    if (state.stage !== GuideUiStage.TargetInspecting) return undefined
-    let cancelled = false
-    const inspectionId = state.targetInspectionId
-    void Promise.resolve().then(() => inspectGuideProjectTarget(
-      props.runner, state.targetMode === "path" ? props.cwd : checkedGuideEntryCwd(state, props.cwd),
-      state.targetMode === "path" ? state.textDraft : undefined,
-    )).then(
-      (target) => {
-        if (!cancelled) dispatch({ type: GuideUiActionType.TargetResolved, inspectionId, target })
-      },
-      (cause: unknown) => {
-        if (!cancelled) dispatch({ type: GuideUiActionType.TargetFailed, inspectionId, message: describeGuideUiError(cause) })
-      },
-    )
-    return () => { cancelled = true }
-  }, [state.stage, state.targetMode, state.textDraft, state.targetInspectionId, state.preparationCwd, props.cwd, props.runner])
-}
-
 const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   const intent = state.selectedIntent ?? state.intent
   useEffect(() => {
@@ -6588,7 +5450,7 @@ const useGuideGenerationEffect = (props: GuideUiProps, state: GuideUiState, disp
     return () => {
       cancelled = true
     }
-  }, [state.stage, intent, state.selectedGoal?.fingerprint, state.selectedRecommendation, state.intent, state.projectTarget, state.selectedOriginalIntent])
+  }, [state.stage, intent, state.selectedGoal?.fingerprint, state.selectedRecommendation, state.intent, state.selectedOriginalIntent])
 }
 
 const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
@@ -6632,105 +5494,12 @@ const useGuideRefinementEffect = (props: GuideUiProps, state: GuideUiState, disp
     return () => {
       cancelled = true
     }
-  }, [state.stage, intent, state.selectedGoal?.fingerprint, state.selectedRecommendation, state.intent, state.projectTarget, state.selectedOriginalIntent])
-}
-
-const runFirstmateReadinessOperation = (
-  props: GuideUiProps,
-  profile: NativeSelectedProfile,
-  operation: FirstmateReadinessOperation | undefined,
-  signal: AbortSignal,
-  configurationCwd = props.cwd,
-): Promise<FirstmateFleetReadinessV1> =>
-  operation === undefined || operation.kind === "inspect"
-    ? inspectFirstmateReadiness(props.runner, profile, props.cwd, signal)
-    : prepareFirstmateReadiness(props.runner, profile, configurationCwd, {
-        signal,
-        ...(operation.kind === "install" ? { approval: operation.approval } : {}),
-      })
-
-const useFirstmateReadinessEffect = (
-  props: GuideUiProps,
-  state: GuideUiState,
-  dispatch: GuideUiDispatch,
-  active = true,
-): void => {
-  const preparationAllowed = canPrepareFirstmate(state)
-  useEffect(() => {
-    if (!active || state.launchBatch !== undefined || state.stage !== GuideUiStage.FirstmateAction ||
-        !state.fleetReadinessPending || !isFirstmateSelection(state.selectedProfile)) return undefined
-    const abort = new AbortController()
-    const inspectionId = state.fleetReadinessId
-    const profile = state.selectedProfile
-    const operation = state.fleetReadinessOperation
-    const run = async (): Promise<FirstmateFleetReadinessV1> => {
-      if (operation !== undefined && operation.kind !== "inspect" && !preparationAllowed) {
-        throw new Error("A queued request now binds this fleet. Refresh for a read-only check. No preparation was started.")
-      }
-      return runFirstmateReadinessOperation(props, profile, operation, abort.signal, state.preparationCwd)
-    }
-    // Delay the command until effect cleanup can cancel a discarded render.
-    void Promise.resolve().then(() => {
-      abort.signal.throwIfAborted()
-      return run()
-    }).then(
-      (fleet) => {
-        if (!abort.signal.aborted) dispatch({ type: GuideUiActionType.FirstmateReadinessResolved, inspectionId, fleet })
-      },
-      (cause: unknown) => {
-        if (!abort.signal.aborted) dispatch({
-          type: GuideUiActionType.FirstmateReadinessFailed,
-          inspectionId,
-          message: describeGuideUiError(cause),
-          ...(cause instanceof FirstmatePreparationError && cause.fleet !== undefined ? { fleet: cause.fleet } : {}),
-        })
-      },
-    )
-    return () => abort.abort()
-  }, [
-    active, preparationAllowed, state.stage, state.launchBatch, state.fleetReadinessPending,
-    state.fleetReadinessId, state.fleetReadinessOperation, state.selectedProfile, state.preparationCwd, props.cwd, props.runner,
-  ])
-}
-
-const useGuideInstanceEffect = (
-  props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch, active = true,
-): void => {
-  useEffect(() => {
-    if (!active || state.stage !== GuideUiStage.FirstmateInstance || !isFirstmateSelection(state.selectedProfile)) return undefined
-    const menu = state.instanceMenu
-    if (menu === undefined) {
-      dispatch({ type: GuideUiActionType.FirstmateInstanceOpen, cwd: props.cwd })
-      return undefined
-    }
-    if (menu.operation === undefined) return undefined
-    const abort = new AbortController()
-    void Promise.resolve().then(async () => {
-      abort.signal.throwIfAborted()
-      return runFirstmateInstanceMenuOperation({
-        runner: props.runner, profile: state.selectedProfile as NativeSelectedProfile, cwd: props.cwd,
-        ...(props.launchOrigin === undefined ? {} : { launchOrigin: props.launchOrigin }),
-        ...(props.firstmateCreationStore === undefined ? {} : { creationStore: props.firstmateCreationStore }),
-      }, menu, abort.signal)
-    }).then((event) => {
-      if (!abort.signal.aborted) dispatch({ type: GuideUiActionType.FirstmateInstanceEvent, event })
-    }, (cause: unknown) => {
-      if (!abort.signal.aborted) dispatch({
-        type: GuideUiActionType.FirstmateInstanceEvent,
-        event: { type: "failed", generation: menu.generation, error: describeGuideUiError(cause) },
-      })
-    })
-    return () => abort.abort()
-  }, [
-    active, state.stage, state.instanceMenu?.generation, state.instanceMenu?.operation,
-    state.selectedProfile, props.runner, props.cwd, props.launchOrigin,
-  ])
+  }, [state.stage, intent, state.selectedGoal?.fingerprint, state.selectedRecommendation, state.intent, state.selectedOriginalIntent])
 }
 
 const useGuideReadinessEffect = (props: GuideUiProps, state: GuideUiState, dispatch: GuideUiDispatch): void => {
   useEffect(() => {
-    if (state.stage !== GuideUiStage.CheckingReadiness || state.selectedProfile === undefined ||
-        isFirstmateSelection(state.selectedProfile)) return undefined
+    if (state.stage !== GuideUiStage.CheckingReadiness || state.selectedProfile === undefined) return undefined
     let cancelled = false
     const abort = new AbortController()
     const selectedProfile = state.selectedProfile
@@ -6894,9 +5663,7 @@ const useGuideWorktreeEffect = (props: GuideUiProps, state: GuideUiState, dispat
     const branch = state.worktreeBranch
     void (async () => {
       try {
-        const cwd = await guideAllocationEntryCwd(props, state)
-        if (cancelled) return
-        const inspection = await inspectGitWorktreeIntent(props.runner, { cwd, branch })
+        const inspection = await inspectGitWorktreeIntent(props.runner, { cwd: props.cwd, branch })
         if (!cancelled) dispatch(worktreeInspectionAction(inspection))
       } catch (error) {
         if (!cancelled)
@@ -6970,12 +5737,9 @@ const ForkWorker = ({
     [dispatch, forkId],
   )
   useGuideMatchEffect(props, state, deliver)
-  useGuideTargetEffect(props, state, deliver)
   useGuideGenerationEffect(props, state, deliver)
   useGuideRefinementEffect(props, state, deliver)
   useGuideReadinessEffect(props, state, deliver)
-  useFirstmateReadinessEffect(props, state, deliver, state.activeForkId === forkId)
-  useGuideInstanceEffect(props, state, deliver, state.activeForkId === forkId)
   useGuideWorktreeEffect(props, state, deliver)
   return null
 }
@@ -7204,7 +5968,6 @@ const candidateNavigationAction = (input: string, key: Key): GuideUiAction | und
 }
 
 const candidateCommandAction = (state: GuideUiState, input: string): GuideUiAction | undefined => {
-  if (input === "t" && isFirstmateProfile(state.selectedProfile)) return { type: GuideUiActionType.TargetOpen }
   if (input === "a") return { type: GuideUiActionType.CandidatesEnqueue }
   if (input === "v" && state.queue.entries.length > 0) return { type: GuideUiActionType.CandidatesViewQueue }
   if (input === "r") return { type: GuideUiActionType.CandidatesRefineStart }
@@ -7221,9 +5984,8 @@ export const buildGuideUiBatch = (
   if (state.queue.entries.length === 0) {
     throw new Error("Batch queue is empty.")
   }
-  if (!guideBatchRequiresHerdr(state.queue.entries)) return { jobs: state.queue.entries, context: { cwd } }
   if (!herdrEnabled || herdrContext === null) {
-    throw new Error("Herdr is unavailable for the selected destination. Choose the current terminal for Firstmate, or use Herdr for normal queued jobs.")
+    throw new Error("Herdr is unavailable for the selected destination. Use Herdr for queued jobs.")
   }
   return {
     jobs: state.queue.entries,
@@ -7264,7 +6026,7 @@ const handleQueueInput: GuideInputHandler = (context, input, key) => {
 
 const completePrintedCandidate = (context: GuideInputContext, prompt: string): void => {
   try {
-    context.complete(buildPrintResult(prompt, context.state.selectedProfile, selectedLegacyFirstmateContext(context.state)))
+    context.complete(buildPrintResult(prompt))
   } catch (error) {
     context.dispatch({ type: GuideUiActionType.InputRejected, message: describeGuideUiError(error) })
   }
@@ -7272,10 +6034,6 @@ const completePrintedCandidate = (context: GuideInputContext, prompt: string): v
 
 const handleCandidatesInput: GuideInputHandler = (context, input, key) => {
   const { state, dispatch, cancel } = context
-  if (input === "f" && isFirstmateSelection(state.selectedProfile)) {
-    dispatch({ type: GuideUiActionType.FirstmateInstanceOpen, cwd: context.props.cwd })
-    return
-  }
   const action = candidateNavigationAction(input, key) ?? candidateCommandAction(state, input)
   if (action !== undefined) {
     dispatch(action)
@@ -7361,45 +6119,6 @@ const handleReadinessBlockedInput: GuideInputHandler = ({ dispatch, cancel }, in
   else if (input === "q") cancel()
 }
 
-const handleFirstmateInstallationInput: GuideInputHandler = ({ dispatch, cancel }, input, key) => {
-  if (key.upArrow || key.downArrow || input === "k" || input === "j") dispatch({ type: GuideUiActionType.FirstmateInstallationMove })
-  else if (key.return) dispatch({ type: GuideUiActionType.FirstmateInstallationConfirm })
-  else if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.FirstmateInstallationCancel })
-  else if (input === "r") dispatch({ type: GuideUiActionType.FirstmateReadinessRefresh })
-  else if (input === "t") dispatch({ type: GuideUiActionType.TargetOpen })
-  else if (input === "q") cancel()
-}
-
-const handleFirstmateActionInput: GuideInputHandler = (context, input, key) => {
-  const { state, dispatch, cancel } = context
-  if (state.fleetInstallationReview !== undefined) {
-    handleFirstmateInstallationInput(context, input, key)
-    return
-  }
-  if (key.upArrow || input === "k") dispatch({ type: GuideUiActionType.FirstmateActionMove, delta: -1 })
-  else if (key.downArrow || input === "j") dispatch({ type: GuideUiActionType.FirstmateActionMove, delta: 1 })
-  else if (key.return) dispatch({ type: GuideUiActionType.FirstmateActionConfirm })
-  else if (input === "i") dispatch({ type: GuideUiActionType.FirstmateInstallationReview })
-  else if (input === "r") dispatch({ type: GuideUiActionType.FirstmateReadinessRefresh })
-  else if (input === "t") dispatch({ type: GuideUiActionType.TargetOpen })
-  else if (input === "f") dispatch({ type: GuideUiActionType.FirstmateInstanceOpen, cwd: context.props.cwd })
-  else if (input === "b" || key.escape) dispatch({ type: GuideUiActionType.FirstmateActionBack })
-  else if (input === "q") cancel()
-}
-
-const handleInstanceInput: GuideInputHandler = (context, input, key) => {
-  const { state, dispatch } = context
-  const menu = state.instanceMenu
-  if (menu === undefined) return
-  if (!firstmateInstanceMenuIsEditor(menu) && input === "q") return context.cancel()
-  if ((key.escape || input === "b") && menu.operation === undefined && menu.screen === "list") {
-    dispatch({ type: GuideUiActionType.FirstmateInstanceBack })
-    return
-  }
-  const event = firstmateInstanceMenuKeyEvent(menu, input, key)
-  if (event !== undefined) dispatch({ type: GuideUiActionType.FirstmateInstanceEvent, event })
-}
-
 const completeCustomerDestination = (context: GuideInputContext, option: GuideUiDestination): boolean => {
   const { state, props, herdrContext, dispatch, complete } = context
   const profile = state.selectedProfile
@@ -7422,14 +6141,10 @@ const completeDestination = (context: GuideInputContext, option: GuideUiDestinat
   const profile = state.selectedProfile
   const candidate = state.selectedCandidate
   if (profile === undefined || candidate === undefined) return
-  if (isFirstmateSelection(profile)) {
-    dispatch({ type: GuideUiActionType.InputRejected, message: "Choose a fleet action. Firstmate uses the inbox queue, not a terminal prompt." })
-    return
-  }
   if (option === GuideUiDestination.CurrentTerminal) {
     try {
       complete(buildCurrentTerminalResult(
-        profile, candidate.prompt, props.cwd, candidate.goalExecution ?? selectedLegacyFirstmateContext(state),
+        profile, candidate.prompt, props.cwd, candidate.goalExecution,
       ))
     } catch (error) {
       dispatch({ type: GuideUiActionType.InputRejected, message: describeGuideUiError(error) })
@@ -7570,29 +6285,7 @@ const handleWorktreeReadyInput: GuideInputHandler = (context, input, key) => {
   }
 }
 
-const handleTargetInput: GuideInputHandler = ({ dispatch, cancel, props }, input, key) => {
-  if (input === "c") dispatch({ type: GuideUiActionType.TargetCurrent })
-  else if (input === "p") dispatch({ type: GuideUiActionType.TargetEdit, mode: "path" })
-  else if (input === "n") dispatch({ type: GuideUiActionType.TargetEdit, mode: "registered" })
-  else if (key.return) dispatch({ type: GuideUiActionType.TargetConfirm })
-  else if (key.escape || input === "b") dispatch({ type: GuideUiActionType.TargetBack })
-  else if (input === "q") cancel()
-  else if (input === "f") dispatch({ type: GuideUiActionType.FirstmateInstanceOpen, cwd: props.cwd })
-}
-
-const handleTargetEditorInput: GuideInputHandler = (context, input, key) =>
-  handleTextEditorInput(
-    context, input, key, 4096,
-    { type: GuideUiActionType.TargetSubmit },
-    { type: GuideUiActionType.TargetBack },
-  )
-
 const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
-  [GuideUiStage.FirstmateInstance]: handleInstanceInput,
-  [GuideUiStage.TargetChoice]: handleTargetInput,
-  [GuideUiStage.TargetEditor]: handleTargetEditorInput,
-  [GuideUiStage.TargetInspecting]: handleTargetInput,
-  [GuideUiStage.TargetConfirm]: handleTargetInput,
   [GuideUiStage.Intent]: handleIntentInput,
   [GuideUiStage.Augment]: handleAugmentInput,
   [GuideUiStage.Augmenting]: handleAugmentingInput,
@@ -7610,7 +6303,6 @@ const inputHandlerByStage: Record<GuideUiStage, GuideInputHandler> = {
   [GuideUiStage.Refining]: handleNoInput,
   [GuideUiStage.RefineFailed]: handleRefineFailedInput,
   [GuideUiStage.DirectEditor]: handleDirectEditorInput,
-  [GuideUiStage.FirstmateAction]: handleFirstmateActionInput,
   [GuideUiStage.CheckingReadiness]: handleNoInput,
   [GuideUiStage.ReadinessBlocked]: handleReadinessBlockedInput,
   [GuideUiStage.Destination]: handleDestinationInput,
@@ -7639,7 +6331,6 @@ const acceptsGlobalKeys = (state: GuideUiState): boolean =>
   // The watch screen owns `x`: there it stops the job, never drops a fork tab.
   state.stage !== GuideUiStage.Augmenting &&
   !editingStages.has(state.stage) &&
-  !(state.stage === GuideUiStage.FirstmateInstance && state.instanceMenu !== undefined && firstmateInstanceMenuIsEditor(state.instanceMenu)) &&
   !(state.stage === GuideUiStage.PromptReview && state.promptReviewEditing)
 
 const canSwitchForks = (state: GuideUiState): boolean => state.forks.length > 0 && acceptsGlobalKeys(state)
@@ -7677,7 +6368,7 @@ const handleGuideInput = (context: GuideInputContext, input: string, key: Key): 
   }
   // The mounted goal or customer panel owns ordinary keys, including answer text.
   if (hasRunningAugmentPanel(context.state)) return
-  if (acceptsGlobalKeys(context.state) && !isTargetStage(context.state.stage)) {
+  if (acceptsGlobalKeys(context.state)) {
     if (input === "L" && context.state.queue.entries.length > 0) {
       launchQueue(context, input, key)
       return
@@ -7697,10 +6388,6 @@ const handleGuideInput = (context: GuideInputContext, input: string, key: Key): 
 }
 
 const pastedEditorMaximum = (state: GuideUiState): number | undefined => {
-  if (state.stage === GuideUiStage.FirstmateInstance && state.instanceMenu !== undefined && firstmateInstanceMenuIsEditor(state.instanceMenu)) {
-    return state.instanceMenu.screen === "name" ? 64 : 4096
-  }
-  if (state.stage === GuideUiStage.TargetEditor) return 4096
   if (state.stage === GuideUiStage.Intent) return guideIntentMaximumLength
   if (state.stage === GuideUiStage.PromptReview && state.promptReviewEditing) return guideIntentMaximumLength
   if (state.stage === GuideUiStage.RefineEditor) return feedbackMaxLength
@@ -7709,13 +6396,6 @@ const pastedEditorMaximum = (state: GuideUiState): number | undefined => {
 }
 
 export const handleGuidePaste = (state: GuideUiState, dispatch: GuideUiDispatch, pasted: string): void => {
-  if (state.stage === GuideUiStage.FirstmateInstance && state.instanceMenu !== undefined && firstmateInstanceMenuIsEditor(state.instanceMenu)) {
-    dispatch({
-      type: GuideUiActionType.FirstmateInstanceEvent,
-      event: { type: "text", text: state.instanceMenu.text + pasted },
-    })
-    return
-  }
   const maximum = pastedEditorMaximum(state)
   if (maximum === undefined) return
   const normalized = pasted.replace(/\r\n?/gu, "\n").replace(pastedControlCharacters, "")
@@ -7881,17 +6561,13 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
       candidates={state.candidates}
       index={state.candidateIndex}
       templateFallback={state.templateFallback}
-      firstmate={isFirstmateSelection(state.selectedProfile)}
-      legacyFirstmate={isFirstmateProfile(state.selectedProfile) && !isFirstmateSelection(state.selectedProfile)}
-      {...(isFirstmateSelection(state.selectedProfile) && state.selectedProfile.orchestration?.instances !== undefined
-        ? { instanceLabel: firstmateInstanceLabel(state.selectedProfile) } : {})}
-      command={candidateInstancePreview(publicGuideLaunchCommand(
+      command={publicGuideLaunchCommand(
         props.catalog,
         state.selectedRecommendation.profileRef,
         tripleAt(state.candidates, state.candidateIndex).prompt,
         state.selectedRecommendation.workflowId,
         tripleAt(state.candidates, state.candidateIndex).goalExecution,
-      ), state.selectedProfile)}
+      )}
     />
   )
 }
@@ -7973,96 +6649,33 @@ const LaunchProgress = ({ state }: { readonly state: GuideUiState }) => {
     return () => clearInterval(timer)
   }, [])
   const jobs = state.launchBatch?.jobs ?? []
-  const hasFirstmate = jobs.some((job) => job.firstmate !== undefined)
   const finished = state.launchProgress.filter((event) =>
     event.phase === "done" || event.phase === "failed" || event.phase === "needs-input",
   ).length
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold>
-        {hasFirstmate ? "Delivering" : "Launching"} {jobs.length} job{jobs.length === 1 ? "" : "s"} · {finished}/{jobs.length} {hasFirstmate ? "results" : "finished"}
+        Launching {jobs.length} job{jobs.length === 1 ? "" : "s"} · {finished}/{jobs.length} finished
       </Text>
       {jobs.map((job) => {
         const event = state.launchProgress.find((entry) => entry.jobId === job.id)
         return (
           <Text key={job.id} wrap="wrap">
-            <Text color={launchRowColor(event)}>{launchRowMarker(event, tick)}</Text> {job.id}. {
-              isFirstmateSelection(job.profile) ? firstmateInstanceLabel(job.profile) : job.profile.profile
-            }
+            <Text color={launchRowColor(event)}>{launchRowMarker(event, tick)}</Text> {job.id}. {job.profile.profile}
             {" · "}
             {describeJobPlacement(job.placement)} — {launchRowDetail(event)}
           </Text>
         )
       })}
-      {hasFirstmate ? (
-        <>
-          <Text>Queue frozen. Accepted means saved, not dispatched or completed.</Text>
-          <Text>Unknown requests keep the same payload and request ID. Reconcile that ID; do not paste or submit a new ID.</Text>
-          <Text dimColor>Supervisor startup and inbox wake status remain separate in the summary.</Text>
-        </>
-      ) : <Text dimColor>Every job runs in its own pane. The summary prints when all of them finish.</Text>}
+      <Text dimColor>Every job runs in its own pane. The summary prints when all of them finish.</Text>
       {state.errorMessage === undefined ? null : (
-        <Text color="yellow">Execution stopped: {state.errorMessage} The queue stays frozen. Check the recorded request IDs before any further action.</Text>
+        <Text color="yellow">Execution stopped: {state.errorMessage}</Text>
       )}
     </Box>
   )
 }
 
-const isTargetStage = (stage: GuideUiStage): boolean =>
-  stage === GuideUiStage.TargetChoice || stage === GuideUiStage.TargetEditor ||
-  stage === GuideUiStage.TargetInspecting || stage === GuideUiStage.TargetConfirm
-
-const targetReviewLines = (state: GuideUiState): ReadonlyArray<string> => {
-  const target = state.proposedProjectTarget
-  if (target === undefined || target === null) {
-    return [state.selectedRecommendation?.workflow.scope === "fleet" ? "Scope: fleet-wide request" : "Project target: not confirmed"]
-  }
-  return [
-    `Project: ${target.projectName ?? "explicit source"}`,
-    `Source: ${target.source?.location ?? "registered project"}`,
-    `Entry worktree: ${target.entryWorktree ?? "resolved by the registered project"}`,
-    `Base commit: ${target.baseRevision ?? "resolved by the registered project"}`,
-    ...(target.dirty ? ["Uncommitted changes will not be copied."] : []),
-  ]
-}
-
-const TargetReview = ({ state }: { readonly state: GuideUiState }) => {
-  return (
-    <Box flexDirection="column">
-      <Text bold>Confirm Firstmate target</Text>
-      {isFirstmateSelection(state.selectedProfile) ? <Text>{firstmateInstanceLabel(state.selectedProfile)}</Text> : null}
-      {targetReviewLines(state).map((line) => <Text key={line}>{line}</Text>)}
-      <Text>Dirty changes are excluded. The supervisor runtime and Herdr placement do not change this target.</Text>
-      {state.errorMessage ? <Text color="red">{state.errorMessage}</Text> : null}
-      <Text dimColor>Enter confirm target · c current repository · p another repository · n registered project · b back</Text>
-      {isFirstmateSelection(state.selectedProfile) && state.selectedProfile.orchestration?.instances !== undefined
-        ? <Text dimColor>f Review/select fleet instance</Text> : null}
-    </Box>
-  )
-}
-
 const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
-  [GuideUiStage.FirstmateInstance]: ({ state }) => <FirstmateInstanceView state={state} />,
-  [GuideUiStage.TargetChoice]: ({ state }) => (
-    <Box flexDirection="column">
-      <Text bold>Select the Firstmate project</Text>
-      {isFirstmateSelection(state.selectedProfile) ? <Text>{firstmateInstanceLabel(state.selectedProfile)}</Text> : null}
-      <Text>The target is separate from the runtime and the supervisor pane.</Text>
-      {state.errorMessage ? <Text color="red">{state.errorMessage}</Text> : null}
-      <Text>c use current repository · p enter repository path · n use registered project · b back · q cancel</Text>
-      {isFirstmateSelection(state.selectedProfile) && state.selectedProfile.orchestration?.instances !== undefined
-        ? <Text dimColor>f Review/select fleet instance</Text> : null}
-    </Box>
-  ),
-  [GuideUiStage.TargetEditor]: ({ state }) => (
-    <TextEditor
-      title={state.targetMode === "registered" ? "Registered Firstmate project name" : "Repository path"}
-      textDraft={state.textDraft}
-      keys="Enter review target · Esc back"
-    />
-  ),
-  [GuideUiStage.TargetInspecting]: () => <Spinner label="Inspecting the selected repository" />,
-  [GuideUiStage.TargetConfirm]: ({ state }) => <TargetReview state={state} />,
   [GuideUiStage.Intent]: ({ state }) => <IntentEditor textDraft={state.textDraft} />,
   [GuideUiStage.Augment]: ({ state }) => <AugmentChooser index={state.augmentIndex} error={state.errorMessage} />,
   [GuideUiStage.Augmenting]: renderAugmentWatch,
@@ -8110,7 +6723,6 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
   [GuideUiStage.Refining]: renderCandidateStage,
   [GuideUiStage.RefineFailed]: renderCandidateStage,
   [GuideUiStage.DirectEditor]: renderCandidateStage,
-  [GuideUiStage.FirstmateAction]: ({ state }) => <FirstmateActionView state={state} />,
   [GuideUiStage.CheckingReadiness]: ({ state }) => (
     <Spinner
       label="Checking profile readiness"
@@ -8168,8 +6780,6 @@ const stageRenderer: Record<GuideUiStage, GuideStageRenderer> = {
 const inlineErrorStages: ReadonlySet<GuideUiStage> = new Set([
   GuideUiStage.Intent,
   GuideUiStage.PromptReview,
-  GuideUiStage.TargetEditor,
-  GuideUiStage.TargetInspecting,
   GuideUiStage.Candidates,
   GuideUiStage.DirectEditor,
   GuideUiStage.RefineEditor,
@@ -8190,7 +6800,6 @@ interface GuideAppViewProps {
   readonly submitGoal: ReturnType<typeof useGuideAugmentEffect>
   readonly inlineError: string | undefined
   readonly inlineErrorRows: number
-  readonly firstmateCaptureRows: number
 }
 
 const GuideAppView = ({
@@ -8202,7 +6811,6 @@ const GuideAppView = ({
   submitGoal,
   inlineError,
   inlineErrorRows,
-  firstmateCaptureRows,
 }: GuideAppViewProps): React.ReactElement => {
   const activeWizardStep = wizardStepForStage(state.stage)
   return (
@@ -8219,7 +6827,7 @@ const GuideAppView = ({
       ) : null}
       {state.forks.length === 0 ? null : <ForkTabBar state={state} />}
       <ChromeRowsContext.Provider
-        value={(state.forks.length === 0 ? 0 : forkTabBarRows) + (showsAugmentStatusBar(state) ? augmentStatusRows : 0) + inlineErrorRows + firstmateCaptureRows}
+        value={(state.forks.length === 0 ? 0 : forkTabBarRows) + (showsAugmentStatusBar(state) ? augmentStatusRows : 0) + inlineErrorRows}
       >
         {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
         {inlineError === undefined ? null : <Box paddingX={1}><Text color="yellow">Error: {inlineError}</Text></Box>}
@@ -8259,7 +6867,6 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   const { columns } = useWindowSize()
   const inlineError = inlineErrorStages.has(state.stage) ? state.errorMessage : undefined
   const inlineErrorRows = inlineError === undefined ? 0 : wrapGuideText(`Error: ${inlineError}`, Math.max(1, columns - 2)).length
-  const firstmateCaptureRows = firstmateCaptureBannerRows(state.stage, herdrContext, columns)
   const complete = (result: GuideUiResult): void => exit(result)
   const cancel = (): void => complete(buildCancelResult())
 
@@ -8268,12 +6875,9 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   const mainState = state.activeForkId === undefined ? state : { ...state, ...mainForkSlice }
   const submitGoal = useGuideAugmentEffect(effectiveProps, mainState, dispatch)
   useGuideMatchEffect(effectiveProps, mainState, dispatch)
-  useGuideTargetEffect(effectiveProps, mainState, dispatch)
   useGuideGenerationEffect(effectiveProps, mainState, dispatch)
   useGuideRefinementEffect(effectiveProps, mainState, dispatch)
   useGuideReadinessEffect(effectiveProps, mainState, dispatch)
-  useFirstmateReadinessEffect(effectiveProps, mainState, dispatch)
-  useGuideInstanceEffect(effectiveProps, mainState, dispatch)
   useGuideWorktreeEffect(effectiveProps, mainState, dispatch)
   useGuideLaunchEffect(effectiveProps, mainState, dispatch, complete)
 
@@ -8301,7 +6905,6 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
       submitGoal={submitGoal}
       inlineError={inlineError}
       inlineErrorRows={inlineErrorRows}
-      firstmateCaptureRows={firstmateCaptureRows}
     />
   )
 }

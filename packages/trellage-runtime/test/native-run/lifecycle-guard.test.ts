@@ -61,8 +61,6 @@ test("a live OMP run blocks every mutating operation", async () => {
       "skills-update",
       "upgrade",
       "harness-update",
-      "prepare",
-      "submit",
       "skill",
     ])
       expect(() => {
@@ -407,17 +405,6 @@ test("process identities remain stable when timezone and locale change", async (
       else process.env[name] = value;
     }
   }
-});
-
-test("Firstmate preserves independent instance admission and registry-aware maintenance", () => {
-  for (const operation of ["run", "setup", "repair", "skills-update", "upgrade"])
-    expect(
-      profileGuardProfiles(operation, "firstmate", [
-        "default",
-        "--instance",
-        "11111111-1111-4111-8111-111111111111",
-      ]),
-    ).toEqual([]);
 });
 
 test("surviving maintenance process group retains ownership after its leader exits", async () => {

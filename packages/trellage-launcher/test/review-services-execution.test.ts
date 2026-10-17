@@ -471,7 +471,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
 
   it("does not allocate a pane for an invalid profile or changed approval context", async () => {
     const f = await fixture()
-    await expect(f.services.execute(f.request, "native:firstmate/default", f.signal)).rejects.toThrow("no longer available")
+    await expect(f.services.execute(f.request, "native:retired/default", f.signal)).rejects.toThrow("no longer available")
     await expect(
       f.services.execute({ ...f.request, originalIntent: "x".repeat(60_000) }, "native:copilot/reviewer", f.signal),
     ).rejects.toThrow(/prompt limit|context differs/u)

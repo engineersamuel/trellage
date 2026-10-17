@@ -49,9 +49,6 @@ export interface AdminRunManagerOptions {
 
 export interface AdminRunOptions {
   readonly timeoutMs?: number
-  readonly terminationGraceMs?: number
-  readonly outputOverflow?: "truncate" | "terminate"
-  readonly validateOutput?: (stdout: string) => string | undefined
 }
 
 interface InFlightRun {
@@ -127,15 +124,12 @@ export class AdminRunManager {
       .run(executable, args, {
         timeoutMs: options?.timeoutMs ?? this.timeoutMs,
         signal: controller.signal,
-        ...(options?.terminationGraceMs === undefined ? {} : { terminationGraceMs: options.terminationGraceMs }),
-        ...(options?.outputOverflow === undefined ? {} : { outputOverflow: options.outputOverflow }),
       })
       .then((result) => {
-        const diagnostic = options?.validateOutput?.(result.stdout)
         this.record(ref, {
-          state: diagnostic === undefined ? "success" : "failure",
+          state: "success",
           stdout: result.stdout,
-          stderr: diagnostic === undefined ? result.stderr : [result.stderr, diagnostic].filter(Boolean).join("\n"),
+          stderr: result.stderr,
           startedAt,
           endedAt: this.now(),
         })

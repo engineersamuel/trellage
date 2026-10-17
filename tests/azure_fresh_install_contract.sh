@@ -25,8 +25,6 @@ grep -Fq 'Bare `trx` is an interactive TTY picker' <<<"$help" \
   || fail 'help does not explain the automated native launch'
 grep -Fq 'install all nine Trellage Native launchers' <<<"$help" \
   || fail 'help does not describe the complete Native installation'
-grep -Fq 'verify both Firstmate profiles' <<<"$help" \
-  || fail 'help does not describe Firstmate readiness evidence'
 if grep -Fq 'trellage --profile claude-council' <<<"$help"; then
   fail 'help still describes the removed Sandbox acceptance profile'
 fi
@@ -48,8 +46,6 @@ grep -Fq 'SSH source:     192.0.2.10/32' <<<"$plan" \
   || fail 'plan does not preserve the restricted SSH source'
 grep -Fq 'agent probes:   eight launchers through trx run' <<<"$plan" \
   || fail 'plan does not include all live Native agent probes'
-grep -Fq 'Firstmate:      setup, doctor, inventory, source pin, and overlay receipts' \
-  <<<"$plan" || fail 'plan does not include Firstmate readiness evidence'
 if grep -Fq 'sandbox probe:' <<<"$plan"; then
   fail 'plan still includes a removed Sandbox acceptance profile'
 fi
@@ -101,9 +97,7 @@ for asset in \
   packages/trellage-launcher/src/guide-ui.tsx \
   scripts/bun-runtime.json \
   prototypes/trellage-omp-profiles/catalog.json \
-  prototypes/trellage-claude-common/native-claude \
-  prototypes/trellage-firstmate-profiles/bin/fmx \
-  profile-guides/native/firstmate/default.md; do
+  prototypes/trellage-claude-common/native-claude; do
   [[ -f "$candidate/$asset" && ! -L "$candidate/$asset" ]] \
     || fail "complete local candidate omitted a regular source asset: $asset"
   cmp -s "$repo_root/$asset" "$candidate/$asset" \
@@ -117,8 +111,6 @@ grep -Fq 'trap cleanup_gh_config EXIT' "$script" \
   || fail 'acceptance does not remove the ephemeral GitHub CLI credential'
 grep -Fq '  - fish' "$script" \
   || fail 'cloud-init does not install Fish for the Native Codex launcher'
-grep -Fq '  - tmux' "$script" \
-  || fail 'cloud-init does not install tmux for Firstmate'
 grep -Fq '  - bubblewrap' "$script" \
   || fail 'cloud-init does not install bubblewrap for the Native Grok sandbox'
 grep -Fq 'profile trellage-bwrap /usr/bin/bwrap flags=(unconfined)' "$script" \
@@ -137,34 +129,6 @@ grep -Fq "jq -e '.text == \"OK\"' \"\$log_dir/native-jcx.json\"" "$script" \
   || fail 'JCode result does not require exact JSON text OK'
 grep -Fq 'scripts/rebuild-profile-images.sh --install --native-only' "$script" \
   || fail 'bootstrap does not install the Native stack and trx'
-grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx setup firstmate default' "$script" \
-  || fail 'acceptance does not set up the default Firstmate profile without token variables'
-grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx setup firstmate pstack-workers' "$script" \
-  || fail 'acceptance does not set up the pstack worker profile without token variables'
-grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx doctor firstmate default' "$script" \
-  || fail 'acceptance does not diagnose the default Firstmate profile without token variables'
-grep -Fq 'env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx doctor firstmate pstack-workers' "$script" \
-  || fail 'acceptance does not diagnose the pstack worker profile without token variables'
-grep -Fq 'COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \' "$script" \
-  || fail 'routed Firstmate inventory does not remove the proxy token variable'
-grep -Fq 'trx inventory "$launcher" "$profile" --json' "$script" \
-  || fail 'acceptance does not collect routed profile inventory'
-for expected in \
-  'https://github.com/kunchenguid/firstmate.git' \
-  '527aa7c12d25aadbdf3cc56791f87ae71fca5280' \
-  '8b865df368a6ad01a8dc38dee66f01340bd707c2c1c74cbae5ac6b34aaee4cd7' \
-  'dd3373bd80a3bdd7ed7761bb4c16c07e42e71a99b8d0de2e733774ad3f7d5b2b' \
-  '.source.commitMatchesPin == true' \
-  '.overlay.digestAlgorithm == "sha256"' \
-  '.overlay.fileCount == 12' \
-  '.overlay.verified == true' \
-  '.fleet.schemaVersion == 1' \
-  '.fleet.runtime == "ready"' \
-  '.fleet.identity.profile == $profile' \
-  '.fleet.identity.sourceRevision == .source.installedCommit'; do
-  grep -Fq "$expected" "$script" \
-    || fail "Firstmate source or overlay evidence assertion is missing: $expected"
-done
 grep -Fq '@xai-official/grok@0.2.112' "$script" \
   || fail 'bootstrap does not install the verified Grok CLI'
 grep -Fq 'git clone --no-checkout "$proxy_repository" "$proxy_checkout"' "$script" \
@@ -207,8 +171,8 @@ for pair in \
   grep -Fq "trx run $pair --" "$script" \
     || fail "acceptance does not route $pair through trx run"
 done
-if grep -Fq 'trx run firstmate ' "$script"; then
-  fail 'acceptance starts a paid Firstmate fleet instead of checking readiness'
+if grep -Eq 'trx (setup|doctor|run|inventory) firstmate' "$script"; then
+  fail 'acceptance still uses the removed firstmate launcher'
 fi
 if grep -Eq 'trellage (build|--profile) claude-council' "$script"; then
   fail 'acceptance still invokes the removed Claude Council Sandbox profile'

@@ -16,8 +16,6 @@ import {
   writeChoice,
   writeInvocation,
 } from "../lib/state.ts"
-import { firstmateOrigin, firstmateTokens } from "./helpers/firstmate.ts"
-import { sessionId as firstmateSessionId } from "./helpers/conversation-fixtures.ts"
 
 const execFileAsync = promisify(execFile)
 const pluginRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -100,7 +98,6 @@ process.stdin.on("end", () => {
     argv: process.argv.slice(2),
     cwd: process.cwd(),
     context: process.env.TRELLAGE_GUIDE_HERDR_CONTEXT_JSON,
-    inheritedOrigin: process.env.FMX_LAUNCH_PROVENANCE_JSON,
     intentPath,
     intent: intentPath ? fs.readFileSync(intentPath, "utf8") : undefined,
     stdin,
@@ -486,50 +483,6 @@ setInterval(() => {}, 1000)
   assert.deepEqual(await exit, { status: null, signal: "SIGTERM" })
   await assert.rejects(readFile(waiting.intentPath, "utf8"), { code: "ENOENT" })
   process.kill(waiting.pid, "SIGTERM")
-})
-
-test("Firstmate popup forwards a fresh source-pane origin without changing the intent or destination", async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), "herdr-firstmate-popup-"))
-  t.after(() => rm(root, { recursive: true, force: true }))
-  const capturePath = path.join(root, "mise-call.json")
-  await writeCaptureExecutable(root, "mise", capturePath)
-  const source = { workspaceId: "w1", paneId: "w1:captain", cwd: "/firstmate/owned/runtime" }
-  const calls = []
-  const socketPath = await socketServer(t, (request) => {
-    calls.push(request)
-    if (request.method === "agent.get") {
-      assert.deepEqual(request.params, { target: source.paneId })
-      return { type: "agent_info", agent: {
-        workspace_id: source.workspaceId, pane_id: source.paneId, cwd: source.cwd,
-        agent: "claude", tokens: firstmateTokens(),
-      } }
-    }
-    assert.equal(request.method, "pane.process_info")
-    assert.deepEqual(request.params, { pane_id: source.paneId })
-    return { type: "pane_process_info", process_info: { pane_id: source.paneId, foreground_process_group_id: 12345 } }
-  })
-  const answer = "Inspect the project with one read-only scout."
-  const capture = { source: "transcript", confidence: "exact", agent: "claude", sessionId: firstmateSessionId }
-  const invocationPath = await writeInvocation(root, { schemaVersion: 1, answer, capture, source })
-  await execFileWithInput(process.execPath, [popupEntrypoint], {
-    env: {
-      ...process.env, PATH: `${root}${path.delimiter}${process.env.PATH ?? ""}`,
-      HOME: root, HERDR_BIN_PATH: "",
-      HERDR_SOCKET_PATH: socketPath, HERDR_PLUGIN_ROOT: pluginRoot, HERDR_PLUGIN_STATE_DIR: root,
-      HERDR_PANE_ID: "different-popup-pane", TRELLAGE_GUIDE_INVOCATION_PATH: invocationPath,
-      FMX_LAUNCH_PROVENANCE_JSON: "untrusted daemon origin",
-    },
-  }, "keep keyboard attached")
-  const call = JSON.parse(await readFile(capturePath, "utf8"))
-  assert.deepEqual(call.argv, ["run", "--raw", "trx", "--", "guide"])
-  assert.deepEqual(JSON.parse(call.context), {
-    schemaVersion: 1, surface: "popup", ...source, capture, launchOrigin: firstmateOrigin,
-  })
-  assert.equal(call.inheritedOrigin, undefined)
-  assert.equal(call.intent, answer)
-  assert.equal(call.stdin, "keep keyboard attached")
-  assert.doesNotMatch(call.intent, /33333333-3333|expectedBindingDigest/u)
-  assert.deepEqual(calls.map((request) => request.method), ["agent.get", "pane.process_info"])
 })
 
 test("latest popup uses one exact completed agent from a focused shell", async (t) => {

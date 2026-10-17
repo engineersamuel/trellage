@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import "./bun-runtime.setup.ts"
-import { readdir, readFile, stat } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -61,9 +61,11 @@ const nativeGoalSurfaces = new Map([
   ["codex", { controller: "codex-goal", harness: "codex" }],
   ["claude", { controller: "claude-goal", harness: "claude" }],
 ])
-// Firstmate supervises its own fleet loop; a single-agent goal controller does not apply.
-const expectedGoalSurface = (identity) =>
-  identity.surface === "native" && identity.profile !== "firstmate" ? nativeGoalSurfaces.get(identity.launcher) : undefined
+const expectedGoalSurface = (identity: ProfileGuideIdentity) => {
+  // Firstmate supervises its own fleet loop; a single-agent goal controller does not apply.
+  if (identity.profile === "firstmate") return undefined
+  return nativeGoalSurfaces.get(identity.launcher)
+}
 const operationalWorkflowId =
   /^(?:(?:doctor|health-check|inventory|readiness|setup|smoke-test)|(?:extension|launch|launcher|local|model|profile|proxy)-(?:doctor|health-check|inventory-check|readiness-check|repair|setup|smoke-test))$/u
 const operationalExamplePatterns = [
@@ -203,17 +205,6 @@ for (const phrase of [
   if (!councilWorkflow.promptTemplate.includes(phrase)) {
     throw new Error(`claude-council prompt is missing: ${phrase}`)
   }
-}
-
-const sixHatsGuide = registry.get("native:claude/six-hats")
-if (sixHatsGuide === undefined) throw new Error("native Claude six-hats guide is missing")
-const sixHatsWorkflow = sixHatsGuide.guide.workflows.find(({ id }) => id === "run-six-hats-deliberation")
-if (sixHatsWorkflow === undefined) throw new Error("native Claude six-hats workflow is missing")
-if (sixHatsWorkflow.skill !== "six-hats:decide" || !sixHatsWorkflow.promptTemplate.startsWith("/six-hats:decide ")) {
-  throw new Error("native Claude six-hats workflow must invoke the six-hats skill")
-}
-if (!sixHatsWorkflow.promptTemplate.includes("stop before changing this checkout")) {
-  throw new Error("native Claude six-hats prompt must stop before changing the launching checkout")
 }
 
 const eccGuide = registry.get("native:claude/ecc")
@@ -658,100 +649,6 @@ if (
   !critiqueAndRebuild.promptTemplate.includes("tufte-chart")
 ) {
   throw new Error("copilot tufte-vdqi critique-and-rebuild prompt must invoke both skills")
-}
-
-const firstmateGuide = registry.get("native:firstmate/default")
-if (firstmateGuide === undefined) throw new Error("firstmate default guide is missing")
-const firstmateFleet = firstmateGuide.guide.workflows.find(({ id }) => id === "coordinate-fleet-delivery")
-if (firstmateFleet === undefined) throw new Error("firstmate default fleet workflow is missing")
-const normalizedPrompt = (prompt: string) => prompt.replace(/\s+/gu, " ")
-for (const phrase of [
-  "Firstmate operating contract",
-  "sole router and integration authority",
-  "conservative unregistered posture: `no-mistakes` delivery with `yolo` off",
-  "standing registration defaults `no-mistakes-prod-only` and `yolo` off",
-  "smallest useful durable task graph and worker count",
-  "Ships are the default for implementation",
-  "promote an existing scout instead of creating duplicate implementation work",
-  "non-overlapping work to isolated worktrees",
-  "Confirm each spawned worker is processing its brief",
-  "durable status and wake events",
-  "Serialize only for a true semantic dependency",
-  "Resolve each task to `direct-PR`, `no-mistakes`, or `local-only`",
-  "do not offer a false binary",
-  "`direct-PR` for confirmed internal-only work",
-  "hold green work durably while approval is pending",
-  "safe teardown only after required artifacts and delivery state are secured",
-  "final report covering the task graph",
-]) {
-  if (!normalizedPrompt(firstmateFleet.promptTemplate).includes(phrase)) {
-    throw new Error(`firstmate default prompt is missing: ${phrase}`)
-  }
-}
-const firstmateInvestigation = firstmateGuide.guide.workflows.find(({ id }) => id === "run-fleet-investigation")
-if (firstmateInvestigation === undefined) throw new Error("firstmate default investigation workflow is missing")
-for (const phrase of [
-  "sole router and decision authority",
-  "Consult existing reports before dispatch",
-  "durable task graph",
-  "non-overlapping hypotheses",
-  "promote the existing scout",
-  "safe teardown only after their artifacts are secured",
-]) {
-  if (!normalizedPrompt(firstmateInvestigation.promptTemplate).includes(phrase)) {
-    throw new Error(`firstmate default investigation prompt is missing: ${phrase}`)
-  }
-}
-
-const firstmatePstackGuide = registry.get("native:firstmate/pstack-workers")
-if (firstmatePstackGuide === undefined) throw new Error("firstmate pstack-workers guide is missing")
-const disciplinedFleet = firstmatePstackGuide.guide.workflows.find(({ id }) => id === "disciplined-fleet-delivery")
-if (disciplinedFleet === undefined) throw new Error("firstmate pstack-workers fleet workflow is missing")
-for (const phrase of [
-  "sole router and integration authority",
-  "lean pstack-derived inner loop",
-  "worker brief",
-  "smallest logical change",
-  "expected blast radius",
-  "`how` walk",
-  "`why` history check",
-  "real artifact",
-  "verification gaps",
-  "must not route, merge, or assume captain authority",
-  "smallest useful durable task graph and worker count",
-  "promote an existing scout",
-  "Confirm each spawned worker is processing its brief",
-  "do not duplicate its policy section in worker briefs",
-  "Resolve each task to `direct-PR`, `no-mistakes`, or `local-only`",
-  "hold green work durably while approval is pending",
-  "safe teardown only after required artifacts and delivery state are secured",
-]) {
-  if (!normalizedPrompt(disciplinedFleet.promptTemplate).includes(phrase)) {
-    throw new Error(`firstmate pstack-workers prompt is missing: ${phrase}`)
-  }
-}
-const disciplinedInvestigation = firstmatePstackGuide.guide.workflows.find(
-  ({ id }) => id === "disciplined-parallel-debugging",
-)
-if (disciplinedInvestigation === undefined) throw new Error("firstmate pstack-workers investigation workflow is missing")
-for (const phrase of [
-  "concrete evidence first",
-  "falsified alternatives",
-  "evidence-backed final decision",
-  "durable status and wake events",
-  "promote the existing scout",
-  "safe teardown",
-]) {
-  if (!normalizedPrompt(disciplinedInvestigation.promptTemplate).includes(phrase)) {
-    throw new Error(`firstmate pstack-workers investigation prompt is missing: ${phrase}`)
-  }
-}
-for (const workflow of [disciplinedFleet, disciplinedInvestigation]) {
-  for (const forbidden of ["$poteto-mode", "$pstack-for-codex:", "multi-frontier"]) {
-    if (workflow.promptTemplate.includes(forbidden)) {
-      throw new Error(`firstmate pstack-workers prompt includes forbidden full-pstack behavior: ${forbidden}`)
-    }
-  }
 }
 
 const youtubeGuide = registry.get("native:codex/youtube")

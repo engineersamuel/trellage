@@ -59,7 +59,6 @@ describe("Admin harness update control", () => {
     ["native", "copilot", "copilot"],
     ["native", "claude", "claude"],
     ["native", "oh-my-pi", "omp"],
-    ["native", "firstmate", "firstmate"],
     ["native", "jcode", "jcode"],
     ["native", "pi", "pi"],
     ["native", "prime", "prime"],

@@ -5,7 +5,7 @@
  * doctor commands (see plan Functional Requirements).
  */
 import type { AdminVersionColumns } from "./admin-version-check.ts"
-import { adminInstanceDetails, adminProfileLabel, type AdminProfileEntry } from "./admin-model.ts"
+import type { AdminProfileEntry } from "./admin-model.ts"
 import type { AdminStatus } from "./admin-status.ts"
 import { statusLabel } from "./admin-status.ts"
 
@@ -25,16 +25,15 @@ export const filterAdminProfiles = (
   if (trimmed.length === 0) return entries
   const needle = normalize(trimmed)
   return entries.filter((entry) =>
-    [entry.name, adminProfileLabel(entry), entry.description, entry.launcher ?? "", entry.harness ?? "", entry.surface,
-      ...adminInstanceDetails(entry)].some((field) =>
+    [entry.name, entry.description, entry.launcher ?? "", entry.harness ?? "", entry.surface].some((field) =>
       normalize(field).includes(needle),
     ),
   )
 }
 
 const compareBy = (key: AdminSortKey) => (a: AdminProfileEntry, b: AdminProfileEntry): number => {
-  const left = key === "name" ? adminProfileLabel(a) : key === "launcher" ? (a.launcher ?? a.surface) : a[key]
-  const right = key === "name" ? adminProfileLabel(b) : key === "launcher" ? (b.launcher ?? b.surface) : b[key]
+  const left = key === "name" ? a.name : key === "launcher" ? (a.launcher ?? a.surface) : a[key]
+  const right = key === "name" ? b.name : key === "launcher" ? (b.launcher ?? b.surface) : b[key]
   return normalize(String(left)).localeCompare(normalize(String(right)))
 }
 
@@ -76,12 +75,10 @@ export type AdminProfileType = "Native"
 export const adminProfileType = (_entry: AdminProfileEntry): AdminProfileType => "Native"
 
 export const adminVisibleRowRange = (
-  entries: ReadonlyArray<AdminProfileEntry>,
   selectedIndex: number,
   terminalRows: number,
 ): { readonly start: number; readonly count: number } => {
-  const detailRows = entries[selectedIndex]?.firstmateInstanceDescriptor === undefined ? 8 : 25
-  const count = Math.max(3, terminalRows - detailRows)
+  const count = Math.max(3, terminalRows - 8)
   return { start: Math.max(0, selectedIndex - count + 1), count }
 }
 

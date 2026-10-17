@@ -1,17 +1,26 @@
 import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
-import { loadProfileGuide, parseGuideProjectTargetV1 } from "@trellage/guide-core"
+import { loadProfileGuide, type ProfileGuideV1 } from "@trellage/guide-core"
 import { GuideEffort, runGuideGenerate } from "../src/guide-api.ts"
 import { completeSinglePromptArtifact, prepareGuidePrompt } from "../src/guide-context.ts"
 import type { GuideGenerateCandidate, GuideProvider } from "../src/guide-provider.ts"
-import { enrichLiteralCandidate, runGuideGenerationStep, runGuideRefinementStep } from "../src/guide-ui.tsx"
 import { renderWorkflowBodyCandidate, workflowPromptFrame } from "../src/guide-workflow-prompt.ts"
-import {
-  firstmateGuide,
-  firstmateOrchestration,
-  firstmateProjectC,
-  firstmateRuntimeCatalog,
-} from "./helpers/continuation-firstmate-fixtures.ts"
+import { runtimeCatalog } from "./helpers/continuation-runtime-fixtures.ts"
+
+const fixedGuide: ProfileGuideV1 = {
+  schemaVersion: 1,
+  capabilities: ["code-review"],
+  bestFor: ["Review a project", "Inspect a revision"],
+  avoidFor: ["Changing permissions", "Unbounded launches"],
+  prerequisites: [],
+  workflows: [{
+    id: "review-project",
+    description: "Review the project.",
+    examples: ["Review project C", "Find defects in this project", "Inspect the selected revision"],
+    frame: "fixed",
+    promptTemplate: "Review the project.\n\nSpecification:\n{{intent}}\n\nReport evidence. Do not merge.",
+  }],
+}
 
 const guideRoot = fileURLToPath(new URL("../../../profile-guides", import.meta.url))
 const boundaryCandidates = (budget: number | undefined): ReadonlyArray<GuideGenerateCandidate> => {
@@ -28,69 +37,9 @@ const boundaryProvider = () => ({
 })
 
 describe("remaining guide prompt body budget", () => {
-  it.each(["default", "pstack-workers"])("fits every authored %s workflow at its exact API and interactive body boundary", async (profile) => {
-    const loaded = await loadProfileGuide(guideRoot, { surface: "native", launcher: "firstmate", profile })
-    const base = firstmateRuntimeCatalog()
-    const catalog = {
-      ...base,
-      native: base.native.map((entry) => entry.launcher === "firstmate" && entry.name === profile
-        ? { ...entry, guide: loaded.guide, herdrCompatibility: { status: "untested" } }
-        : entry),
-    }
-    const entry = catalog.native.find((candidate) => candidate.launcher === "firstmate" && candidate.name === profile)!
-    const location = "/fixture/project-\u{1f600}"
-    const target = parseGuideProjectTargetV1({
-      ...firstmateProjectC(), source: { kind: "local", location }, entryWorktree: location,
-    })
-    const originalIntent = "\u{1f600}".repeat(30_000)
-    const profileRef = `native:firstmate/${profile}`
-    for (const workflow of loaded.guide.workflows) {
-      const context = {
-        originalIntent, projectTarget: workflow.scope === "fleet" ? null : target, orchestration: entry.orchestration!,
-      }
-      const prepared = prepareGuidePrompt(loaded.guide, workflow.id, profileRef, "Use the selected workflow.", context)
-      const frame = workflowPromptFrame(prepared.workflow)
-      const expectedBudget = 8000 - frame.beforeBody.length - frame.afterBody.length
-      expect(prepared.bodyBudget).toBe(expectedBudget)
-      expect(expectedBudget).toBeGreaterThan(0)
-      const api = boundaryProvider()
-      const generated = await runGuideGenerate(api, catalog, guideRoot, {
-        ...context, intent: "Use the selected workflow.", profileRef, workflowId: workflow.id,
-        model: "synthetic-model", effort: GuideEffort.Low,
-      })
-      for (const candidate of generated.candidates) {
-        expect(candidate.prompt.length).toBe(8000)
-        expect(candidate.command.args).toEqual(["run", "firstmate", profile])
-      }
-      expect(generated.profile.herdrCompatibility.status).toBe("untested")
-      expect(api.generate.mock.calls[0]?.[0].bodyBudget).toBe(expectedBudget)
-      expect(api.optimize.mock.calls[0]?.[0].bodyBudget).toBe(expectedBudget)
-
-      const ui = boundaryProvider()
-      const recommendation = enrichLiteralCandidate(catalog, {
-        profileRef, workflowId: workflow.id, confidence: 1,
-        reason: "Explicit workflow selection.", tradeoff: "The new source has no live Herdr proof.",
-      })
-      const choices = await runGuideGenerationStep(
-        catalog, guideRoot, ui, "Use the selected workflow.", recommendation,
-        undefined, undefined, undefined, context,
-      )
-      for (const candidate of choices.candidates) expect(candidate.prompt.length).toBe(8000)
-      const refined = await runGuideRefinementStep(
-        catalog, ui, "Use the selected workflow.", recommendation, choices.guideDocument,
-        choices.candidates, 0, "Keep the selected scope.", undefined, context,
-      )
-      expect(refined.prompt.length).toBe(8000)
-      expect(ui.generate.mock.calls[0]?.[0].bodyBudget).toBe(expectedBudget)
-      expect(ui.refine.mock.calls[0]?.[0].bodyBudget).toBe(expectedBudget)
-      expect(ui.optimize.mock.calls.every(([input]) => input.bodyBudget === expectedBudget)).toBe(true)
-      expect(ui.refine.mock.calls[0]?.[0].candidate.prompt.length).toBe(expectedBudget)
-    }
-  })
-
   it("also reserves the unchanged original appendix for one-prompt delivery", () => {
     const context = { originalIntent: "  Keep this exact scope.\r\n\u{1f600}  " }
-    const prepared = prepareGuidePrompt(firstmateGuide, "review-project", "native:codex/default", "Review.", context)
+    const prepared = prepareGuidePrompt(fixedGuide, "review-project", "native:codex/default", context)
     const frame = workflowPromptFrame(prepared.workflow)
     const appendix = `\n\n## Original human intent (unchanged)\n\n${context.originalIntent}`
     expect(prepared.bodyBudget).toBe(8000 - frame.beforeBody.length - frame.afterBody.length - appendix.length)
@@ -101,29 +50,25 @@ describe("remaining guide prompt body budget", () => {
   })
 
   it("rejects an exhausted frame before generation or optimization", async () => {
-    const base = firstmateRuntimeCatalog()
-    const oversized = { ...firstmateGuide, workflows: [{
-      ...firstmateGuide.workflows[0]!, promptTemplate: `${"F".repeat(8000)}{{intent}}`,
+    const oversized = { ...fixedGuide, workflows: [{
+      ...fixedGuide.workflows[0]!, promptTemplate: `${"F".repeat(8000)}{{intent}}`,
     }] }
     const provider = boundaryProvider()
-    const prepared = () => prepareGuidePrompt(oversized, "review-project", "native:firstmate/default", "Review.", {
-      originalIntent: "Do not lose this input.", projectTarget: firstmateProjectC(), orchestration: firstmateOrchestration,
+    const prepared = () => prepareGuidePrompt(oversized, "review-project", "native:codex/default", {
+      originalIntent: "Do not lose this input.",
     })
     expect(prepared).toThrow("leave no body space")
-    const loaded = await loadProfileGuide(guideRoot, { surface: "native", launcher: "firstmate", profile: "default" })
+    const loaded = await loadProfileGuide(guideRoot, { surface: "native", launcher: "codex", profile: "pstack" })
+    const base = runtimeCatalog()
     const catalog = {
       ...base,
-      native: base.native.map((entry) => {
-        if (entry.launcher !== "firstmate" || entry.name !== "default") return entry
-        const { orchestration: _orchestration, ...legacy } = entry
-        return { ...legacy, guide: loaded.guide }
-      }),
+      native: base.native.map((entry) => entry.launcher === "codex" && entry.name === "default" ? { ...entry, name: "pstack", guide: loaded.guide } : entry),
     }
     const oversizedIntent = "x".repeat(7990)
     await expect(runGuideGenerate(provider, catalog, guideRoot, {
-      intent: "Review.", originalIntent: oversizedIntent, profileRef: "native:firstmate/default",
+      intent: "Review.", originalIntent: oversizedIntent, profileRef: "native:codex/pstack",
       workflowId: loaded.guide.workflows[0]!.id, model: "synthetic-model", effort: GuideEffort.Low,
-    })).rejects.toThrow("leave no body space")
+    })).rejects.toThrow(/no body space|8000 UTF-16/)
     expect(provider.generate).not.toHaveBeenCalled()
     expect(provider.optimize).not.toHaveBeenCalled()
   })

@@ -135,31 +135,6 @@ const guideReviewer: ProfileGuideV1 = {
   ],
 }
 
-const firstmateGuide = (pstackWorkers: boolean): ProfileGuideV1 => ({
-  schemaVersion: 1,
-  capabilities: ["fleet-orchestration"],
-  bestFor: ["Parallel repository work", "Captain-owned delivery"],
-  avoidFor: ["One-line edits", "Untrusted repositories"],
-  prerequisites: [{ id: "git-repo", description: "A git repository checkout." }],
-  workflows: [
-    {
-      id: "orchestrate",
-      description: "Coordinate a Firstmate fleet.",
-      examples: ["Coordinate parallel implementation", "Dispatch isolated workers"],
-      promptTemplate: [
-        pstackWorkers ? "## Firstmate pstack-worker operating contract" : "## Firstmate operating contract",
-        "Keep Firstmate as the sole router.",
-        ...(pstackWorkers
-          ? ["", "### Worker inner-loop contract", "Keep each worker brief bounded and evidence-driven."]
-          : []),
-        "",
-        "## Task",
-        "{{intent}}",
-      ].join("\n"),
-    },
-  ],
-})
-
 const guideSkillReviewer: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["code-review"],
@@ -232,71 +207,6 @@ workflows:
 # Reviewer
 
 Use this profile to review diffs.
-`
-
-const firstmateDefaultGuideMarkdown = `---
-schemaVersion: 1
-capabilities:
-  - fleet-orchestration
-bestFor:
-  - Parallel repository work
-  - Captain-owned delivery
-avoidFor:
-  - One-line edits
-  - Untrusted repositories
-prerequisites:
-  - id: git-repo
-    description: A git repository checkout.
-workflows:
-  - id: orchestrate
-    description: Coordinate a Firstmate fleet.
-    examples:
-      - Coordinate parallel implementation
-      - Dispatch isolated workers
-    promptTemplate: |
-      ## Firstmate operating contract
-      Keep Firstmate as the sole router.
-
-      ## Task
-      {{intent}}
----
-# Firstmate
-
-Use this profile for fleet orchestration.
-`
-
-const firstmatePstackGuideMarkdown = `---
-schemaVersion: 1
-capabilities:
-  - fleet-orchestration
-bestFor:
-  - Parallel repository work
-  - Captain-owned delivery
-avoidFor:
-  - One-line edits
-  - Untrusted repositories
-prerequisites:
-  - id: git-repo
-    description: A git repository checkout.
-workflows:
-  - id: orchestrate
-    description: Coordinate a Firstmate fleet.
-    examples:
-      - Coordinate parallel implementation
-      - Dispatch isolated workers
-    promptTemplate: |
-      ## Firstmate pstack-worker operating contract
-      Keep Firstmate as the sole router.
-
-      ### Worker inner-loop contract
-      Keep each worker brief bounded and evidence-driven.
-
-      ## Task
-      {{intent}}
----
-# Firstmate
-
-Use this profile for fleet orchestration.
 `
 
 const guideWriter: ProfileGuideV1 = {
@@ -651,25 +561,6 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
     }),
   )
 
-const buildFirstmateCatalog = (tmpRoot: string): CombinedGuideCatalog => {
-  const catalog = buildCatalog(tmpRoot)
-  const firstmateEntry = (name: "default" | "pstack-workers"): CombinedGuideCatalog["native"][number] => ({
-    launcher: "firstmate",
-    harness: "firstmate",
-    name,
-    description: `Firstmate ${name} profile.`,
-    headless: headless({ prompt: false }),
-    sandbox: false,
-    herdrCompatibility: { status: "supported" },
-    guide: firstmateGuide(name === "pstack-workers"),
-    commandPath: "/opt/trellage/firstmate/bin/trx",
-  })
-  return {
-    ...catalog,
-    native: [...catalog.native, firstmateEntry("default"), firstmateEntry("pstack-workers")],
-  }
-}
-
 const buildCatalogWithSkillReviewer = (tmpRoot: string): CombinedGuideCatalog => {
   const catalog = buildCatalog(tmpRoot)
   return {
@@ -725,14 +616,6 @@ const writeGuideFixtures = async (root: string, reviewerMarkdown: string = revie
   await writeFile(path.join(root, "native", "codex", "reviewer.md"), reviewerMarkdown)
   await mkdir(path.join(root, "native", "claude"), { recursive: true })
   await writeFile(path.join(root, "native", "claude", "research.md"), researchGuideMarkdown)
-}
-
-const writeFirstmateGuideFixture = async (root: string, profile: "default" | "pstack-workers"): Promise<void> => {
-  await mkdir(path.join(root, "native", "firstmate"), { recursive: true })
-  await writeFile(
-    path.join(root, "native", "firstmate", `${profile}.md`),
-    profile === "pstack-workers" ? firstmatePstackGuideMarkdown : firstmateDefaultGuideMarkdown,
-  )
 }
 
 const nativeSelectedProfile = (headlessPrompt: boolean): SelectedProfile => ({
@@ -2381,43 +2264,6 @@ describe("runGuideGenerationStep", () => {
     }
   })
 
-  it.each([
-    ["default", "## Firstmate operating contract", false],
-    ["pstack-workers", "## Firstmate pstack-worker operating contract", true],
-  ] as const)(
-    "reapplies the canonical Firstmate contract after interactive generation for %s",
-    async (profile, expectedHeading, expectsWorkerContract) => {
-      const tmpRoot = await mkdtemp(path.join(tmpdir(), `guide-ui-generate-fmx-${profile}-`))
-      try {
-        const catalog = buildFirstmateCatalog(tmpRoot)
-        await writeFirstmateGuideFixture(tmpRoot, profile)
-        const provider = new FakeGuideProvider()
-        const chosen = recommendation({
-          profileRef: `native:firstmate/${profile}`,
-          workflowId: "orchestrate",
-          launcher: "firstmate",
-          name: profile,
-        })
-
-        const result = await runGuideGenerationStep(
-          catalog,
-          tmpRoot,
-          provider,
-          "Implement the feature with isolated workers.",
-          chosen,
-        )
-
-        for (const generatedCandidate of result.candidates) {
-          expect(generatedCandidate.prompt).toContain(expectedHeading)
-          expect(generatedCandidate.prompt).toContain("Do the ")
-          expect(generatedCandidate.prompt.includes("### Worker inner-loop contract")).toBe(expectsWorkerContract)
-        }
-      } finally {
-        await rm(tmpRoot, { recursive: true, force: true })
-      }
-    },
-  )
-
   it("invokes onGuideLoaded with the loaded guide before calling provider.generate, even when generation itself fails (regression: template fallback must stay available)", async () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-loaded-"))
     try {
@@ -2937,42 +2783,6 @@ describe("runGuideRefinementStep", () => {
     expect(refined.prompt.match(/\/review-diff/gu)).toHaveLength(1)
   })
 
-  it.each([
-    ["default", "## Firstmate operating contract", false],
-    ["pstack-workers", "## Firstmate pstack-worker operating contract", true],
-  ] as const)(
-    "reapplies the canonical Firstmate contract after interactive refinement for %s",
-    async (profile, expectedHeading, expectsWorkerContract) => {
-      const chosen = recommendation({
-        profileRef: `native:firstmate/${profile}`,
-        workflowId: "orchestrate",
-        launcher: "firstmate",
-        name: profile,
-      })
-      const guide = firstmateGuide(profile === "pstack-workers")
-      const guideDocument: SelectedGuideDocument = {
-        ref: `native:firstmate/${profile}`,
-        guide,
-        body: "guide body",
-      }
-      const provider = new FakeGuideProvider()
-
-      const refined = await runGuideRefinementStep(
-        buildFirstmateCatalog("/tmp-unused"),
-        provider,
-        "Implement the feature with isolated workers.",
-        chosen,
-        guideDocument,
-        refinementCandidateTriple(candidate()),
-        0,
-        "Make the worker boundaries explicit.",
-      )
-
-      expect(refined.prompt).toContain(expectedHeading)
-      expect(refined.prompt).toContain("Do the focused thing.")
-      expect(refined.prompt.includes("### Worker inner-loop contract")).toBe(expectsWorkerContract)
-    },
-  )
 })
 
 // ---------------------------------------------------------------------------

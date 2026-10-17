@@ -537,9 +537,8 @@ jq -s -e --arg home "$canonical_home" '
 ' "$FAKE_CLAUDE_LOG" >/dev/null || fail 'default launch environment or arguments differ'
 
 # --- provider/token scrub must cover the supported provider/token override
-# paths, so a stale tmux/Herdr daemon environment (fmx worker threat
-# model) can never leak into the launched process. GH_CONFIG_DIR must
-# survive since fmx workers deliberately use file-backed gh auth.
+# paths, so a stale tmux/Herdr daemon environment can never leak into the
+# launched process. GH_CONFIG_DIR must survive for file-backed gh auth.
 poison_env_assignments=(
   ANTHROPIC_CUSTOM_HEADERS=poison ANTHROPIC_MODEL=poison ANTHROPIC_SMALL_FAST_MODEL=poison
   CLAUDE_CODE_USE_FOUNDRY=poison ANTHROPIC_FOUNDRY_API_KEY=poison ANTHROPIC_FOUNDRY_BASE_URL=poison
@@ -588,7 +587,7 @@ for scrubbed_var in "${scrubbed_var_names[@]}"; do
     && fail "launch did not scrub $scrubbed_var"
 done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$env_dump" \
-  || fail 'launch scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+  || fail 'launch scrubbed GH_CONFIG_DIR, which file-backed gh auth relies on'
 grep -Fqx 'ANTHROPIC_AUTH_TOKEN=trellage-local-proxy' "$env_dump" \
   || fail 'launch did not set the managed ANTHROPIC_AUTH_TOKEN'
 grep -Fqx 'ANTHROPIC_BASE_URL=http://127.0.0.1:8080' "$env_dump" \
@@ -879,7 +878,7 @@ for scrubbed_var in "${scrubbed_var_names[@]}"; do
     && fail "prepare did not scrub $scrubbed_var before probing claude --version"
 done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$prepare_scrub_dump" \
-  || fail 'prepare scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+  || fail 'prepare scrubbed GH_CONFIG_DIR, which file-backed gh auth relies on'
 
 doctor_scrub_dump="$fixture_root/doctor-scrub-dump.txt"
 env "${poison_env_assignments[@]}" \
@@ -895,7 +894,7 @@ for scrubbed_var in "${scrubbed_var_names[@]}"; do
     && fail "doctor did not scrub $scrubbed_var before probing claude --version"
 done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$doctor_scrub_dump" \
-  || fail 'doctor scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+  || fail 'doctor scrubbed GH_CONFIG_DIR, which file-backed gh auth relies on'
 
 # --- the standalone `version` verb must scrub too: `cldx setup`/`doctor`
 # call it after the main operation (via cldx's setup_profile/doctor_profile
@@ -915,7 +914,7 @@ for scrubbed_var in "${scrubbed_var_names[@]}"; do
     && fail "version did not scrub $scrubbed_var before probing claude --version"
 done
 grep -Fqx 'GH_CONFIG_DIR=/fixture/gh-config-marker' "$version_scrub_dump" \
-  || fail 'version scrubbed GH_CONFIG_DIR, which fmx workers rely on for file-backed gh auth'
+  || fail 'version scrubbed GH_CONFIG_DIR, which file-backed gh auth relies on'
 
 update_scrub_dump="$fixture_root/update-scrub-dump.txt"
 env "${poison_env_assignments[@]}" \

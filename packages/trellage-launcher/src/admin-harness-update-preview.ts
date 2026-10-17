@@ -11,14 +11,14 @@ export interface HarnessUpgradeVersionPreview {
   readonly text: string
 }
 
-const latestTargetFor = (result: AdminHarnessVersionResult | undefined, suffix = ""): UpgradeTargetVersion => {
+const latestTargetFor = (result: AdminHarnessVersionResult | undefined): UpgradeTargetVersion => {
   const latest = result?.latest
-  if (latest?.kind === "known") return { version: latest.version, label: `${latest.version}${suffix}` }
+  if (latest?.kind === "known") return { version: latest.version, label: latest.version }
   return { label: latest?.kind === "failed" ? "unknown (lookup failed)" : "unknown" }
 }
 
 const targetFor = (entry: AdminProfileEntry, result: AdminHarnessVersionResult | undefined): UpgradeTargetVersion =>
-  latestTargetFor(result, entry.launcher === "firstmate" ? " (catalog pin)" : "")
+  latestTargetFor(result)
 
 export const harnessUpgradeAvailability = (
   entry: AdminProfileEntry,

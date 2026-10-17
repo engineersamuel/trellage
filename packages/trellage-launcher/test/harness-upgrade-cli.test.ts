@@ -1,15 +1,5 @@
-import { readFileSync } from "node:fs"
 import { PassThrough } from "node:stream"
 import { describe, expect, it, vi } from "vitest"
-import {
-  firstmateInstanceListCursor,
-  firstmateInstanceListSnapshotDigest,
-  firstmateWorktreeGenerationDigest,
-  parseFirstmateInstanceControlContextV1,
-  parseFirstmateInstanceDescriptorV1,
-  parseFirstmateOrchestrationV1,
-  type FirstmateInstanceDescriptorV1,
-} from "@trellage/guide-core"
 import {
   confirmHarnessUpgrade,
   InteractiveTerminalRequiredError,
@@ -97,64 +87,6 @@ const fixture = (source = catalog()) => {
   return { lines, run, readCatalog, invoke }
 }
 
-const instanceDescriptors = (): ReadonlyArray<FirstmateInstanceDescriptorV1> => {
-  const wire: unknown = JSON.parse(readFileSync(
-    new URL("../../trellage-guide-core/test/fixtures/firstmate-instances-v1.json", import.meta.url), "utf8",
-  ))
-  if (wire === null || typeof wire !== "object") throw new Error("Missing Firstmate wire fixture.")
-  const alpha = parseFirstmateInstanceDescriptorV1(Reflect.get(wire, "descriptor"))
-  if (alpha.mode !== "named") throw new Error("Expected a named Firstmate fixture.")
-  const betaId = "33333333-3333-4333-8333-333333333333"
-  const generation = {
-    ...alpha.worktree.evidence.generation,
-    worktree: { device: "1", inode: "20", birthtimeNs: "30" },
-    privateGitDir: { device: "1", inode: "21", birthtimeNs: "31" },
-  }
-  const beta = parseFirstmateInstanceDescriptorV1({
-    ...alpha, name: "beta", reference: { ...alpha.reference, instanceId: betaId },
-    root: `/state/firstmate/instances/${betaId}`, taskIdPrefix: "fi456def",
-    worktree: {
-      status: "bound",
-      evidence: {
-        ...alpha.worktree.evidence, generation, generationDigest: firstmateWorktreeGenerationDigest(generation),
-        locators: { ...alpha.worktree.evidence.locators, worktree: "/work/beta", privateGitDir: "/repos/project/.git/worktrees/beta" },
-      },
-    },
-  })
-  const legacy = parseFirstmateInstanceDescriptorV1({
-    ...parseFirstmateInstanceDescriptorV1(Reflect.get(wire, "legacyMissingIdentity")),
-    reference: { schemaVersion: 1, profile: "default", mode: "legacy", instanceId: "22222222-2222-4222-8222-222222222222" },
-    creationState: "published", diagnostics: [],
-  })
-  return [legacy, alpha, beta]
-}
-
-const instanceFixture = () => {
-  const instances = instanceDescriptors()
-  const sourceRevision = "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
-  const source: CombinedGuideCatalog = {
-    ...catalog(),
-    native: [{
-      ...native("firstmate", "firstmate", "default"), headless: { ...headless, prompt: false },
-      orchestration: parseFirstmateOrchestrationV1({
-        schemaVersion: 1, kind: "firstmate", sourceRevision, taskIdPrefix: "fmd",
-        workerPolicy: null, workerHarness: "claude", workerEfforts: ["high"], dispatchRules: "claude-single",
-        submission: { schemaVersion: 1, maxRequestBytes: 524288 },
-        preparation: { schemaVersion: 1 }, instances: { schemaVersion: 1 },
-      }),
-    }],
-  }
-  const result = fixture(source)
-  const page = {
-    schemaVersion: 1, profile: "default", diagnostics: [], state: "page", instances,
-    page: { snapshotDigest: firstmateInstanceListSnapshotDigest("default", instances), offset: 0, total: instances.length, nextCursor: null },
-  }
-  result.run.mockImplementation(async (_executable, args) =>
-    args[0] === "instances" ? success(JSON.stringify(page)) : successfulCommand(args),
-  )
-  return { ...result, source, sourceRevision, instances, page }
-}
-
 describe("upgrade CLI arguments", () => {
   it.each([
     { argv: ["all"], approval: "confirm", scope: "all" },
@@ -232,7 +164,7 @@ describe("upgrade CLI discovery and authorization", () => {
     expect(lines.at(-1)).toContain("No harness or skill updates or installed-version checks were started")
   })
 
-  it("limits --native to Native harness and skill updates without Container builds", async () => {
+  it("accepts --native with the same Native harness and skill preview", async () => {
     const { invoke, lines, run } = fixture()
     expect(await invoke(["all", "--native", "--dry-run"])).toBe(0)
     expect(run).not.toHaveBeenCalled()
@@ -240,8 +172,16 @@ describe("upgrade CLI discovery and authorization", () => {
     expect(preview).toContain("Scope: 1 Native runtime/profile updates.")
     expect(preview).toContain("/fixture/trx upgrade claude a --harness-only")
     expect(preview).toContain("/fixture/trx upgrade claude b --skills-only")
-    expect(preview).not.toContain("sandbox:claude-a")
-    expect(preview).not.toContain("/fixture/trellage upgrade")
+    expect(preview).not.toContain("Container")
+  })
+
+  it("rejects duplicate static identities before running anything", async () => {
+    const source = catalog()
+    const { invoke, run } = fixture(source)
+    await expect(invoke(["all", "--yes"], {
+      readCatalog: () => ({ ...source, native: [...source.native, ...source.native] }),
+    })).rejects.toThrow("Incomplete catalog")
+    expect(run).not.toHaveBeenCalled()
   })
 
   it("reports unsupported entries as an incomplete dry-run without running anything", async () => {
@@ -323,134 +263,6 @@ describe("upgrade CLI discovery and authorization", () => {
   })
 })
 
-describe("upgrade CLI Firstmate instance scope", () => {
-  it("previews every UUID through read-only discovery without changing the model catalog", async () => {
-    const { invoke, run, lines, instances, source } = instanceFixture()
-    const before = JSON.stringify(source)
-    const confirm = vi.fn()
-    expect(await invoke(["all", "--dry-run"], { confirm })).toBe(0)
-    expect(run.mock.calls.map(([, args]) => args)).toEqual([["instances", "firstmate", "list", "default", "--json", "--limit", "32"]])
-    expect(confirm).not.toHaveBeenCalled()
-    expect(JSON.stringify(source)).toBe(before)
-    for (const instance of instances) expect(lines.join("\n")).toContain(instance.reference!.instanceId)
-    expect(lines.join("\n")).not.toContain("sandbox:")
-    expect(lines.at(-1)).toContain("No harness or skill updates or installed-version checks were started")
-  })
-
-  it("requires approval of the actual UUID targets before any maintenance", async () => {
-    const { invoke, run, lines, instances } = instanceFixture()
-    const confirm = vi.fn(async (): Promise<HarnessUpgradeConfirmation> => {
-      for (const instance of instances) expect(lines.join("\n")).toContain(instance.reference!.instanceId)
-      expect(run.mock.calls.every(([, args]) => args[0] === "instances")).toBe(true)
-      return "cancelled"
-    })
-    expect(await invoke(["all"], { confirm })).toBe(130)
-    expect(confirm).toHaveBeenCalledOnce()
-    expect(run.mock.calls).toHaveLength(1)
-  })
-
-  it("keeps update, skill-copy, and installed-version evidence separate for two default instances", async () => {
-    const { invoke, run, lines, page, instances, sourceRevision } = instanceFixture()
-    const named = instances.filter((instance) => instance.mode === "named")
-    run.mockImplementation(async (executable, args) => {
-      if (args[0] === "instances") return success(JSON.stringify(page))
-      if (executable === "/fixture/trx" && args[0] === "harness-version") {
-        const selector = args[args.indexOf("--instance") + 1]
-        const instance = instances.find((entry) => entry.mode === "legacy" ? selector === "legacy" : selector === entry.reference.instanceId)
-        if (instance?.reference === null || instance?.reference === undefined) throw new Error("An instance selector was lost.")
-        return success(JSON.stringify({
-          schemaVersion: 1, installed: instance.reference.instanceId[0]!.repeat(40), latestKnown: true, latest: sourceRevision,
-        }))
-      }
-      return successfulCommand(args)
-    })
-    expect(await invoke(["all", "--yes"])).toBe(0)
-    for (const verb of ["update", "skills-update", "harness-version"]) {
-      const calls = run.mock.calls.filter(([executable, args]) => executable === "/fixture/trx" && (verb === "skills-update" ? args.includes("--skills-only") : verb === "update" ? args[0] === "upgrade" && !args.includes("--skills-only") : args[0] === verb))
-      expect(calls.map(([, args]) => args[args.indexOf("--instance") + 1]).sort()).toEqual([
-        "legacy", ...named.map((entry) => entry.reference.instanceId),
-      ].sort())
-      if (verb === "harness-version") continue
-      for (const [, args] of calls.filter(([, args]) => args[args.indexOf("--instance") + 1] !== "legacy")) {
-        const context = parseFirstmateInstanceControlContextV1(JSON.parse(args[args.indexOf("--fmx-instance-context-json") + 1]!))
-        expect(context.reference.instanceId).toBe(args[args.indexOf("--instance") + 1])
-        expect(context.selection).toBe("confirmed-join")
-      }
-    }
-    for (const instance of named) {
-      expect(lines.some((line) => line.startsWith("Installed ") && line.includes(instance.reference.instanceId)
-        && line.includes(instance.reference.instanceId[0]!.repeat(40)))).toBe(true)
-    }
-    expect(run.mock.calls.filter(([, args]) => args[0] === "instances")).toHaveLength(1)
-    expect(run.mock.calls.every(([, , options]) => options?.cwd === "/fixture/worktree")).toBe(true)
-  })
-
-  it("rejects duplicate static identities before discovering any instance", async () => {
-    const { invoke, run, source } = instanceFixture()
-    await expect(invoke(["all", "--yes"], {
-      readCatalog: () => ({ ...source, native: [...source.native, ...source.native] }),
-    })).rejects.toThrow("Incomplete catalog")
-    expect(run).not.toHaveBeenCalled()
-  })
-
-  it("does not update a legacy-only subset after a blocked registry response", async () => {
-    const { invoke, run, lines } = instanceFixture()
-    const confirm = vi.fn()
-    run.mockResolvedValue(success(JSON.stringify({
-      schemaVersion: 1, profile: "default", state: "blocked", instances: [], page: null,
-      diagnostics: [{ code: "unsafe-state", message: "Firstmate instance registry ownership is unsafe." }],
-    })))
-    await expect(invoke(["all", "--yes"], { confirm })).rejects.toThrow(/instance registry/)
-    expect(run.mock.calls.every(([, args]) => args[0] === "instances")).toBe(true)
-    expect(confirm).not.toHaveBeenCalled()
-    expect(lines.some((line) => line.startsWith("Updated "))).toBe(false)
-  })
-
-  it("refuses unsafe instance evidence before starting unrelated updates", async () => {
-    const { invoke, run, page, instances } = instanceFixture()
-    const unsafe = instances.map((instance) => instance.mode === "named"
-      ? parseFirstmateInstanceDescriptorV1({
-          ...instance, runtime: { ...instance.runtime, state: "unsafe" },
-          diagnostics: [{ code: "unsafe-state", message: "The instance runtime is not owned safely." }],
-        })
-      : instance)
-    run.mockResolvedValue(success(JSON.stringify({
-      ...page, instances: unsafe, page: { ...page.page, snapshotDigest: firstmateInstanceListSnapshotDigest("default", unsafe) },
-    })))
-    await expect(invoke(["all", "--yes"])).rejects.toThrow(/unsafe state/)
-    expect(run.mock.calls).toHaveLength(1)
-    expect(run.mock.calls[0]![1][0]).toBe("instances")
-  })
-
-  it("refuses a changing paginated registry instead of approving an incomplete target set", async () => {
-    const { invoke, run, page, instances } = instanceFixture()
-    const firstPage = {
-      ...page, instances: [instances[0]],
-      page: { ...page.page, nextCursor: firstmateInstanceListCursor({ schemaVersion: 1, snapshotDigest: page.page.snapshotDigest, offset: 1 }) },
-    }
-    run.mockResolvedValueOnce(success(JSON.stringify(firstPage))).mockResolvedValueOnce(success(JSON.stringify({
-      schemaVersion: 1, profile: "default", state: "stale-cursor", instances: [], page: null,
-      diagnostics: [{ code: "stale-cursor", message: "Registry changed; restart instance discovery." }],
-    })))
-    await expect(invoke(["all", "--yes"])).rejects.toThrow(/[Rr]egistry changed/)
-    expect(run.mock.calls).toHaveLength(2)
-    expect(run.mock.calls.every(([, args]) => args[0] === "instances")).toBe(true)
-  })
-
-  it("cancels instance discovery without starting an update or version check", async () => {
-    const { invoke, run } = instanceFixture()
-    const controller = new AbortController()
-    run.mockImplementation(async (executable, args, options) => {
-      expect(args[0]).toBe("instances")
-      controller.abort()
-      expect(options?.signal?.aborted).toBe(true)
-      throw new CommandRunnerError({ kind: "aborted", executable, args, message: "Instance discovery cancelled." })
-    })
-    expect(await invoke(["all", "--yes"], { signal: controller.signal })).toBe(130)
-    expect(run.mock.calls).toHaveLength(1)
-  })
-})
-
 describe("upgrade CLI shared queue execution", () => {
   it("runs shared and per-profile updates, then reports each result and fresh installed versions", async () => {
     const { invoke, run, lines } = fixture()
@@ -475,12 +287,10 @@ describe("upgrade CLI shared queue execution", () => {
     expect(lines.at(-1)).toBe("All catalog harness versions and skills were updated.")
   })
 
-  it("keeps Firstmate, Oh My Pi, and Pi Coding Agent operations distinct", async () => {
+  it("keeps Oh My Pi and Pi Coding Agent operations distinct", async () => {
     const { invoke, run } = fixture({
       ...catalog(),
       native: [
-        native("firstmate", "firstmate", "default"),
-        native("firstmate", "firstmate", "workers"),
         native("omp", "oh-my-pi"),
         native("pi", "pi"),
       ],
@@ -489,8 +299,6 @@ describe("upgrade CLI shared queue execution", () => {
     expect(
       run.mock.calls.filter(([, args]) => ["update", "upgrade"].includes(args[0]!) && !args.includes("--skills-only")).map(([executable, args]) => [executable, args]),
     ).toEqual([
-      ["/fixture/trx", ["upgrade", "firstmate", "default"]],
-      ["/fixture/trx", ["upgrade", "firstmate", "workers"]],
       ["/fixture/trx", ["upgrade", "omp", "a"]],
       ["/fixture/trx", ["upgrade", "pi", "a"]],
     ])
@@ -623,7 +431,6 @@ describe("upgrade CLI Native skills phase", () => {
       ["copilot", "copilot"],
       ["codex", "codex"],
       ["claude", "claude"],
-      ["firstmate", "firstmate"],
       ["jcode", "jcode"],
       ["omp", "oh-my-pi"],
       ["pi", "pi"],
@@ -640,7 +447,7 @@ describe("upgrade CLI Native skills phase", () => {
     ).toEqual(launchers.map(([launcher]) => ["/fixture/trx", ["upgrade", launcher, "a", "--skills-only"]]).sort())
     expect(lines.join("\n")).toContain("Updated Native skills native:agency/a")
     expect(lines.join("\n")).toContain("Unsupported harness native:agency/a")
-    expect(lines.join("\n")).toContain("Native skills summary: 9 updated, 0 failed, 0 not run")
+    expect(lines.join("\n")).toContain("Native skills summary: 8 updated, 0 failed, 0 not run")
   })
 
   it("does not use stale caches after refresh failure, but still runs independent harness updates", async () => {

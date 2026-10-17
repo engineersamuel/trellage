@@ -4,21 +4,11 @@ import { createHash } from "node:crypto"
 import { execFileSync, spawn } from "node:child_process"
 import { closeSync, constants, openSync } from "node:fs"
 import {
-  FIRSTMATE_MAX_REQUEST_BYTES,
   type ProfileGuideV1,
   isLaunchAgentIdentifier,
   parseProfileGuideInteraction,
   type ProfileGuideInteraction,
-  parseFirstmateInstanceControlContextV1,
-  parseFirstmateInstanceReferenceV1,
-  parseFirstmateOrchestrationV1,
-  parseGuideProjectTargetV1,
-  type FirstmateInstanceControlContextV1,
-  type FirstmateInstanceReferenceV1,
-  type FirstmateOrchestrationV1,
-  type GuideProjectTargetV1,
 } from "@trellage/guide-core"
-import { firstmateInstanceControlArgs, firstmateInstanceSelectorArgs } from "./guide-firstmate-instance-selection.ts"
 import type { GuideGoalCandidateContext } from "./guide-goal-execution.ts"
 import { guideGoalPromptFromContext, resolveGuideGoalTransport } from "./guide-goal-transport.ts"
 
@@ -28,6 +18,7 @@ const safeProfileName = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const safeShellText = /^[A-Za-z0-9_./:-]+$/u
 const gitBranchPrefix = "refs/heads/"
 const commandOutputLimitBytes = 1024 * 1024
+const commandStdinLimitBytes = 512 * 1024
 const forcedKillDelayMs = 1000
 const guideCaptureSources: ReadonlyArray<GuideCaptureSource> = [
   "selection",
@@ -91,9 +82,6 @@ export interface NativeSelectedProfile {
   readonly agent?: string
   readonly interaction?: ProfileGuideInteraction
   readonly goalExecutionPolicy?: NonNullable<ProfileGuideV1["goalExecution"]>
-  readonly orchestration?: FirstmateOrchestrationV1
-  readonly firstmateInstance?: FirstmateInstanceReferenceV1
-  readonly firstmateInstanceContext?: FirstmateInstanceControlContextV1
 }
 
 export type SelectedProfile = NativeSelectedProfile
@@ -172,7 +160,6 @@ export interface HerdrContext {
   readonly surface: HerdrInvocationSurface
   readonly cwd?: string
   readonly capture?: GuideCaptureProvenance
-  readonly launchOrigin?: FirstmateInstanceControlContextV1
 }
 
 export interface GuideCaptureProvenance {
@@ -597,13 +584,7 @@ const parseNativeSelectedProfile = (value: Record<string, unknown>): NativeSelec
     value = { ...value, profile: identity.profile, commandPath: canonicalNativeCommandPath(validateCommandPath(value.commandPath)) }
     const agent = validateAgent(value.agent, launcher)
     const interaction = selectedInteraction(value, launcher, agent)
-    const orchestration = value.orchestration === undefined
-      ? undefined
-      : parseFirstmateOrchestrationV1(value.orchestration)
-    if (orchestration !== undefined && (launcher !== "firstmate" || value.headlessPrompt !== false)) {
-      throw new Error("Firstmate orchestration requires firstmate with headless prompt disabled")
-    }
-    const selected: NativeSelectedProfile = {
+    return {
       surface: "native",
       launcher,
       commandPath: validateCommandPath(value.commandPath),
@@ -612,17 +593,7 @@ const parseNativeSelectedProfile = (value: Record<string, unknown>): NativeSelec
       ...(agent === undefined ? {} : { agent }),
       ...(interaction === undefined ? {} : { interaction }),
       ...(goalExecutionPolicy === undefined ? {} : { goalExecutionPolicy }),
-      ...(orchestration === undefined ? {} : { orchestration }),
-      ...(value.firstmateInstance === undefined ? {} : {
-        firstmateInstance: parseFirstmateInstanceReferenceV1(value.firstmateInstance),
-      }),
-      ...(value.firstmateInstanceContext === undefined ? {} : {
-        firstmateInstanceContext: parseFirstmateInstanceControlContextV1(value.firstmateInstanceContext),
-      }),
     }
-    firstmateInstanceSelectorArgs(selected)
-    if (selected.firstmateInstanceContext !== undefined) firstmateInstanceControlArgs(selected)
-    return selected
 }
 
 export const parseSelectedProfile = (value: unknown): SelectedProfile => {
@@ -633,7 +604,7 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
 }
 
 export const canonicalNativeCommandPath = (commandPath: string): string => {
-  const aliases = ["agx", "cdx", "cpx", "cldx", "fmx", "jcx", "omp", "picx", "prx"]
+  const aliases = ["agx", "cdx", "cpx", "cldx", "jcx", "omp", "picx", "prx"]
   const parts = commandPath.split("/")
   if (aliases.includes(parts.at(-1) ?? "")) parts[parts.length - 1] = "trx"
   return parts.join("/")
@@ -686,7 +657,6 @@ export const buildGuideLaunchCommand = (
     ...(selectedProfile.interaction === undefined ? [] : ["--interactive"]),
     ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
     ...(selectedProfile.interaction?.requiredSkills.flatMap((skill) => ["--require-skill", skill]) ?? []),
-    ...firstmateInstanceSelectorArgs(selectedProfile),
   ])
   if (goalExecution !== undefined) {
     return buildGoalLaunchCommand(selectedProfile, baseArgs, normalizedDelivery, goalExecution)
@@ -793,10 +763,10 @@ const commandInputFailure = (
       kind: "aborted", executable, args, message: `command aborted before start: ${executable}`,
     })
   }
-  if (options?.stdin !== undefined && Buffer.byteLength(options.stdin, "utf8") > FIRSTMATE_MAX_REQUEST_BYTES) {
+  if (options?.stdin !== undefined && Buffer.byteLength(options.stdin, "utf8") > commandStdinLimitBytes) {
     return new CommandRunnerError({
       kind: "spawn-failed", executable, args,
-      message: `Command stdin exceeds ${FIRSTMATE_MAX_REQUEST_BYTES} bytes; the command was not started.`,
+      message: `Command stdin exceeds ${commandStdinLimitBytes} bytes; the command was not started.`,
     })
   }
   return undefined
@@ -1194,7 +1164,7 @@ const parseGuideCaptureProvenance = (value: unknown): GuideCaptureProvenance | u
 
 const parsePopupHerdrContext = (source: string): HerdrContext => {
   const fields = parseJsonRecord(source, "TRELLAGE_GUIDE_HERDR_CONTEXT_JSON")
-  const allowedKeys = new Set(["schemaVersion", "surface", "workspaceId", "paneId", "cwd", "capture", "launchOrigin"])
+  const allowedKeys = new Set(["schemaVersion", "surface", "workspaceId", "paneId", "cwd", "capture"])
   const unexpectedKeys = Object.keys(fields).filter((key) => !allowedKeys.has(key))
   if (unexpectedKeys.length > 0) {
     throw new GuideLaunchError({
@@ -1232,9 +1202,6 @@ const parsePopupHerdrContext = (source: string): HerdrContext => {
     surface: "popup",
     cwd,
     ...(capture === undefined ? {} : { capture }),
-    ...(fields.launchOrigin === undefined ? {} : {
-      launchOrigin: parseFirstmateInstanceControlContextV1(fields.launchOrigin),
-    }),
   }
 }
 
@@ -1577,23 +1544,6 @@ const inspectGitSource = async (runner: CommandRunner, cwd: string) => {
   const status = await runGit(runner, currentCheckoutRoot, ["status", "--porcelain"])
   const currentHeadSha = await resolveCurrentHeadSha(runner, currentCheckoutRoot)
   return { currentCheckoutRoot, currentHeadSha, dirty: status.stdout.length > 0 }
-}
-
-export const inspectGuideProjectTarget = async (
-  runner: CommandRunner,
-  cwd: string,
-  source?: string,
-): Promise<GuideProjectTargetV1> => {
-  const inspected = await inspectGitSource(runner, source === undefined ? cwd : path.resolve(cwd, source))
-  return parseGuideProjectTargetV1({
-    schemaVersion: 1,
-    projectName: null,
-    source: { kind: "local", location: inspected.currentCheckoutRoot },
-    entryWorktree: inspected.currentCheckoutRoot,
-    baseRevision: inspected.currentHeadSha,
-    dirty: inspected.dirty,
-    dirtyChanges: "excluded",
-  })
 }
 
 const resolveGitInspectionBase = async (

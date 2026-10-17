@@ -34,23 +34,6 @@ describe("harnessUpgradeVersionPreview", () => {
     ).toEqual({ isCurrent: false, text: "2.1.259 -> 2.1.260" })
   })
 
-  it("labels Firstmate's profile-specific catalog target as a pin", () => {
-    expect(
-      harnessUpgradeVersionPreview(
-        entry({ surface: "native", launcher: "firstmate", harness: "firstmate" }),
-        known("a".repeat(40), "b".repeat(40)),
-      ),
-    ).toEqual({ isCurrent: false, text: `${"a".repeat(40)} -> ${"b".repeat(40)} (catalog pin)` })
-  })
-
-  it("shows a matching Firstmate catalog pin once", () => {
-    const pin = "a".repeat(40)
-    expect(harnessUpgradeVersionPreview(entry({ surface: "native", launcher: "firstmate", harness: "firstmate" }), known(pin, pin))).toEqual({
-      isCurrent: true,
-      text: `${pin} (catalog pin)`,
-    })
-  })
-
   it("shows an already-current version without inventing an upgrade", () => {
     expect(harnessUpgradeVersionPreview(entry(), known("2.1.260", "2.1.260"))).toEqual({
       isCurrent: true,

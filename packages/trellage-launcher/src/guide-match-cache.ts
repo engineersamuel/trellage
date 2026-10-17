@@ -21,7 +21,7 @@ import type {
   GuidePromptBodyBudget,
 } from "./guide-provider.ts"
 import { validateGuideGenerateResult, validateGuideMatchResult, validateGuideRefineResult } from "./guide-provider.ts"
-import { guidePromptRendererVersion, guideTaskOrchestration, type GuideTaskContext } from "./guide-context.ts"
+import { guidePromptRendererVersion, type GuideTaskContext } from "./guide-context.ts"
 import { fail } from "./guide-text.ts"
 import { validateFinalGuideCandidate } from "./guide-workflow-prompt.ts"
 
@@ -233,7 +233,6 @@ const renderCandidates = (
     ...(input.originalIntent === undefined ? [] : [`Original intent: ${input.originalIntent}`]),
     `Profile: ${input.profileRef}`,
     `Workflow: ${input.workflowId}`,
-    ...(input.projectTarget === undefined ? [] : [`Project target: ${JSON.stringify(input.projectTarget)}`]),
     `Target tool: ${input.targetTool}`,
     `Routing: ${routing}`,
     ...(input.goalExecution === undefined ? [] : [`Goal controller: ${input.goalExecution.controller}`]),
@@ -265,8 +264,6 @@ const validateCachedCandidateFrame = (
 const contextCacheKey = (input: GenerationCacheInput) => ({
   rendererVersion: guidePromptRendererVersion,
   originalIntent: input.originalIntent ?? input.intent,
-  projectTarget: input.projectTarget ?? null,
-  orchestration: input.orchestration === undefined ? null : guideTaskOrchestration(input.orchestration),
   customerContext: input.customerContext ?? null,
   bodyBudget: input.bodyBudget ?? null,
 })

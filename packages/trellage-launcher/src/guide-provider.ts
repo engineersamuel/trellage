@@ -218,14 +218,14 @@ export const assertGuideGenerateInput = <Input extends GuideGenerateInput>(input
   }
   text(input.guideBody, "generate input.guideBody", guideBodyMaximumLength, { multiline: true })
   if (input.goal !== undefined) resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
-  guideTaskContext(input.intent, input)
+  guideTaskContext(input)
   assertGuideBodyBudget(input.bodyBudget, "generate input.bodyBudget")
   return input
 }
 
 /** Fails closed unless Prompt Master receives one to three complete candidates and a known target label. */
 export const assertGuideOptimizeInput = (input: GuideOptimizeInput): GuideOptimizeInput => {
-  guideTaskContext(input.originalIntent ?? "", input)
+  guideTaskContext(input)
   assertGuideBodyBudget(input.bodyBudget, "optimize input.bodyBudget")
   text(input.targetTool, "optimize input.targetTool", 256)
   text(input.profileRef, "optimize input.profileRef", 256)
