@@ -11,6 +11,11 @@ router="$repo_root/prototypes/trellage-router/bin/trx"
   exit 1
 }
 
+# Git exports GIT_DIR, GIT_INDEX_FILE, and GIT_REFLOG_ACTION to hooks. Upgrades run git in skill
+# and plugin caches; inheriting them would rebase this repository onto those caches instead.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars) GIT_REFLOG_ACTION
+
 trx() {
   TRELLAGE_TRX_SOURCE_ROOT="$repo_root/prototypes/trellage-router" "$router" "$@"
 }

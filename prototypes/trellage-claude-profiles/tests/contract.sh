@@ -526,8 +526,8 @@ jq -s -e --arg home "$canonical_home" '
   .[-1].configDir == $home
   and .[-1].authToken == "trellage-local-proxy"
   and .[-1].baseUrl == "http://127.0.0.1:8080"
-  and .[-1].opus == "opusplan"
-  and .[-1].sonnet == "opusplan"
+  and .[-1].opus == ""
+  and .[-1].sonnet == ""
   and .[-1].haiku == "claude-haiku-4.5"
   and .[-1].apiKey == "unset"
   and .[-1].oauth == "unset"

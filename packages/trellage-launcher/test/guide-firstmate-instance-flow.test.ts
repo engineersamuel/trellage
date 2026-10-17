@@ -462,6 +462,8 @@ describe("instance-bound control and batches", () => {
   it("keeps canonical startup arguments instance-bound without embedding task text", () => {
     const queued = job(alpha, 1, "start")
     const command = buildFirstmateSupervisorCommand(instanceProfile(alpha), queued.firstmate!.expectedFleet!)
+    expect(command.args.slice(0, 6)).toEqual(["run", "firstmate", "default", "--", "--instance", alpha.reference.instanceId])
+    expect(command.args.filter((arg) => arg === "--")).toHaveLength(1)
     expect(command.args).toEqual(expect.arrayContaining([...firstmateInstanceControlArgs(instanceProfile(alpha))]))
     expect(command.args.filter((arg) => arg === "--instance")).toHaveLength(1)
     expect(command.args.join(" ")).not.toContain(queued.prompt)

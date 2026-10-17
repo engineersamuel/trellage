@@ -601,7 +601,7 @@ describe("explicit goal JSON generation", () => {
     for (const candidate of response.candidates) {
       expect(candidate.goalExecution).toBeUndefined()
       expect(candidate.command.goalTransport).toBeUndefined()
-      expect(candidate.command.args).toEqual(["run", "codex", "superpowers", "-p", candidate.prompt])
+      expect(candidate.command.args).toEqual(["run", "codex", "superpowers", "--", candidate.prompt])
       expect(candidate.prompt).not.toContain("/goal ")
     }
   })

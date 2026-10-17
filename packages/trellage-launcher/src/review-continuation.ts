@@ -67,13 +67,13 @@ export const executeReviewContinuation = async (
   const prompt = reviewContinuationPrompt(result)
   const launch = buildHerdrGuideLaunch(profile, prompt)
   if (profile.launcher !== "copilot" || launch.promptDelivery !== "command" ||
-    launch.command.args.length !== 5 || launch.command.args[0] !== "run" || launch.command.args[1] !== "copilot" || launch.command.args[2] !== profile.profile ||
-    launch.command.args[3] !== "-i" || launch.command.args[4] !== prompt) {
+    launch.command.args.length !== 6 || launch.command.args[0] !== "run" || launch.command.args[1] !== "copilot" || launch.command.args[2] !== profile.profile ||
+    launch.command.args[3] !== "--" || launch.command.args[4] !== "-i" || launch.command.args[5] !== prompt) {
     throw new Error("Copilot review continuation needs the selected profile and an argv prompt.")
   }
   const command: CommandSpec = {
     executable: launch.command.executable,
-    args: ["run", "copilot", profile.profile, "--plan", ...(result.destination === "new-herdr-tab"
+    args: ["run", "copilot", profile.profile, "--", "--plan", ...(result.destination === "new-herdr-tab"
       ? ["--mode", "autopilot", "--allow-all", "--no-ask-user"] : []), "-i", prompt],
   }
   if (result.destination === "current-terminal") {

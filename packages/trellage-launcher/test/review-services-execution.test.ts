@@ -341,7 +341,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     expect(commands).toHaveLength(2)
     expect(commands[1]?.cwd).toBe(f.root)
     expect(commands[1]?.args.slice(0, 3)).toEqual(["pane", "run", "w1:new"])
-    expect(commands[1]?.args[3]).toContain("env TRELLAGE_AUTOMATION=1 /fixture/trx run copilot reviewer -i ")
+    expect(commands[1]?.args[3]).toContain("env TRELLAGE_AUTOMATION=1 /fixture/trx run copilot reviewer -- -i ")
     expect(commands[1]?.args[3]).toContain('"selectedPaths"')
     expect(commands[1]?.args[3]).toContain("Do not remove the retry bound.")
     expect(await f.git("diff", "--cached")).toBe(index)
@@ -566,7 +566,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
           {
             command: {
               executable: `/fixture/${launcher}`,
-              args: ["run", launcher, "reviewer", promptFlag, buildGuideReviewPrompt(f.request)],
+              args: ["run", launcher, "reviewer", "--", ...(promptFlag === "--" ? [] : [promptFlag]), buildGuideReviewPrompt(f.request)],
             },
             cwd: f.root,
           },

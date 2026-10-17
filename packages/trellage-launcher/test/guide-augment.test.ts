@@ -170,9 +170,8 @@ describe("research augmentation", () => {
 
     const call = runner.calls[0]
     expect(call?.executable).toBe("/opt/trellage/copilot/bin/trx")
-    expect(call?.args.slice(0, 3)).toEqual(["run", "copilot", "hve"])
-    expect(call?.args[3]).toBe("-p")
-    expect(call?.args[4]).toContain("fix the flaky test")
+    expect(call?.args.slice(0, 5)).toEqual(["run", "copilot", "hve", "--", "-p"])
+    expect(call?.args[5]).toContain("fix the flaky test")
     expect(call?.options?.cwd).toBe(workspace)
   })
 

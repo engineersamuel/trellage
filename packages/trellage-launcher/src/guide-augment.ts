@@ -212,7 +212,7 @@ export const runResearchAugment = async (
   context.onPhase(GuideAugmentPhase.RunningResearch)
   let response = ""
   try {
-    const result = await context.runner.run(profile.commandPath, ["run", "copilot", "hve", "-p", researchPrompt(intent)], {
+    const result = await context.runner.run(profile.commandPath, ["run", "copilot", "hve", "--", "-p", researchPrompt(intent)], {
       cwd: context.cwd,
       timeoutMs: positiveInteger(env.TRELLAGE_GUIDE_RESEARCH_TIMEOUT_MS, defaultResearchTimeoutMs),
       signal: context.signal,

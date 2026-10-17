@@ -639,7 +639,7 @@ describe("guide batch queue", () => {
     expect(queue.entries.map((job) => job.id)).toEqual([1, 2])
     expect(queue.entries.map((job) => job.placement)).toEqual([here, fresh("worktree/research")])
     expect(queue.entries[0]?.command.args).toEqual([
-      "run", "copilot", "council",
+      "run", "copilot", "council", "--",
       "--agent",
       "claude-council",
       "-i",

@@ -14,6 +14,7 @@ import { firstmateOutcomeFromReceipt } from "./guide-firstmate.ts"
 import type { GuideInteractiveExecutionServices } from "./guide-interactive-execution.ts"
 import {
   CommandRunnerError,
+  appendNativeArguments,
   buildGuideLaunchCommand,
   parseSelectedProfile,
   runInteractiveCommand,
@@ -68,7 +69,7 @@ export const buildFirstmateSupervisorCommand = (
   selectedFirstmateInstance(profile, identity)
   const { firstmateInstance: _instance, firstmateInstanceContext: _context, ...unbound } = profile
   const command = buildGuideLaunchCommand(unbound).command
-  return { ...command, args: [...command.args, ...firstmateInstanceControlArgs(profile), "--fmx-expected-fleet-json", encoded] }
+  return { ...command, args: appendNativeArguments(command.args, [...firstmateInstanceControlArgs(profile), "--fmx-expected-fleet-json", encoded]) }
 }
 
 const confirmedEntryRequest = (entry: AcceptedEntry): FirstmateSubmissionRequestV1 => {

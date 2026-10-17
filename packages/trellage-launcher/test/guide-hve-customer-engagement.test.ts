@@ -249,7 +249,7 @@ describe("HVE customer workflow delivery", () => {
         "run",
         "copilot",
         "hve",
-        "--interactive",
+        "--", "--interactive",
         "--agent",
         agent,
         ...skills.flatMap((skill) => ["--require-skill", skill]),
@@ -298,7 +298,7 @@ describe("HVE customer workflow delivery", () => {
         "run",
         "copilot",
         "hve",
-        "--interactive",
+        "--", "--interactive",
         "--agent",
         "hve-core:experiment-designer",
         "--require-skill",
@@ -370,7 +370,7 @@ describe("HVE customer workflow delivery", () => {
     const research = selectedProfileFromCatalogRef(profiles, "native:copilot/hve", "rpi-research")
     expect(research.agent).toBeUndefined()
     expect(research.interaction).toBeUndefined()
-    expect(buildHerdrGuideLaunch(research, "Research").command.args).toEqual(["run", "copilot", "hve", "-i", "Research"])
+    expect(buildHerdrGuideLaunch(research, "Research").command.args).toEqual(["run", "copilot", "hve", "--", "-i", "Research"])
     const guide = await loadProfileGuide(guideRoot, { surface: "native", launcher: "copilot", profile: "hve" })
     expect(guide.guide.workflows.map(({ id }) => id)).toContain("rpi-agent-cycle")
     expect(guide.guide.workflows.map(({ id }) => id)).toContain("customer-discovery")
