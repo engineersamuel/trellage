@@ -1,4 +1,5 @@
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -105,16 +106,24 @@ async function installDependencies(root: string, cacheOwner: string = root): Pro
   writeReadiness(root)
 }
 
-async function prepareDependencies(root: string, alwaysInstall: boolean): Promise<void> {
+async function preparationIsReady(root: string, explicit: boolean): Promise<boolean> {
+  try {
+    if (explicit) await requireReadyAsync(root)
+    else await requireReadyQuickAsync(root)
+    return true
+  } catch (error) {
+    if (!explicit || await present(path.join(root, ".trellage-source-ready.json"))) {
+      process.stderr.write(`trellage source runtime: ${error instanceof Error ? error.message : String(error)}\n`)
+    }
+    return false
+  }
+}
+
+async function prepareDependencies(root: string, explicit: boolean): Promise<void> {
   const preparation = await acquirePreparationLock(path.join(root, preparationLockName), { signal: cancellation.signal })
   try {
-    if (!alwaysInstall) {
-      try {
-        await requireReadyQuickAsync(root)
-        return
-      } catch (error) {
-        process.stderr.write(`trellage source runtime: ${error instanceof Error ? error.message : String(error)}\n`)
-      }
+    if (await preparationIsReady(root, explicit)) return
+    if (!explicit) {
       const readiness = path.join(root, ".trellage-source-ready.json")
       if (await present(readiness)) safePath(readiness, "file")
       if (await present(path.join(root, "node_modules"))) normalizeDependencyPermissions(root)
@@ -185,7 +194,40 @@ async function stage(root: string, destination: string): Promise<void> {
   mkdirSync(destination, { mode: 0o755 })
   copySources(root, destination)
   writeFileSync(path.join(destination, sourceMarker), `${sourceOwnership}\n`, { flag: "wx", mode: 0o644 })
-  await installDependencies(destination, root)
+  let ready = false
+  try {
+    await requireReadyAsync(root)
+    ready = true
+  } catch (error) {
+    process.stderr.write(
+      `trellage source runtime: cannot reuse workspace dependencies: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
+  }
+  if (ready) {
+    const directories = [
+      "",
+      ...readdirSync(path.join(root, "packages"), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join("packages", entry.name)),
+    ]
+    for (const directory of directories) {
+      cancellation.signal.throwIfAborted()
+      const relative = path.join(directory, "node_modules")
+      const source = path.join(root, relative)
+      if (!(await present(source))) continue
+      // Keep relative workspace links and independent files in each published runtime.
+      cpSync(source, path.join(destination, relative), {
+        recursive: true,
+        verbatimSymlinks: true,
+        errorOnExist: true,
+        force: false,
+      })
+    }
+    await requireReadyAsync(root)
+    writeReadiness(destination)
+  } else {
+    await installDependencies(destination, root)
+  }
   requireOwnedWorkspace(destination)
 }
 
