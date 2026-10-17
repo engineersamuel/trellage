@@ -17,6 +17,7 @@ import {
 } from "./lib/context.ts"
 import { invokeContextMenuChoice } from "./context-menu-action.ts"
 import { engagementSourceChoice, openEngagementGuide } from "./engagement-action.ts"
+import { copyProgressPagePrompt, openRitualGuide, ritualSourceChoice, watchSourceChoice } from "./ritual-action.ts"
 import { HerdrRequestError, requestHerdr } from "./lib/herdr.ts"
 import {
   captureQueueIntent,
@@ -60,9 +61,11 @@ const selectionFromClipboard = (clipboard) => {
   }
 }
 
-export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueue, rewriteChoice, engagementChoice) => [
+export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueue, rewriteChoice, engagementChoice, ritualChoice, watchChoice) => [
   ...(rewriteChoice === undefined ? [] : [rewriteChoice]),
   ...(engagementChoice === undefined ? [] : [engagementChoice]),
+  ...(ritualChoice === undefined ? [] : [ritualChoice]),
+  ...(watchChoice === undefined ? [] : [watchChoice]),
   ...(selectedText === undefined ? [] : [selectedTextChoice(selectedText)]),
   ...inspectedChoices,
   {
@@ -81,8 +84,10 @@ export const orderedSourceChoices = (inspectedChoices, selectedText, captureQueu
   : []),
 ]
 
+const menuActionKinds = new Set(["rewrite", "engagement", "ritual", "watch"])
+
 export const initialSourceChoiceIndex = (choices) => {
-  const existingChoice = choices.findIndex((choice) => choice.kind !== "rewrite" && choice.kind !== "engagement")
+  const existingChoice = choices.findIndex((choice) => !menuActionKinds.has(choice.kind))
   return existingChoice < 0 ? Math.max(0, choices.findIndex((choice) => choice.kind === "engagement")) : existingChoice
 }
 
@@ -94,6 +99,8 @@ export const sourceChoiceIdentity = (choice) => {
   if (choice.kind === "queue") return "queue"
   if (choice.kind === "rewrite") return "rewrite"
   if (choice.kind === "engagement") return "engagement"
+  if (choice.kind === "ritual") return "ritual"
+  if (choice.kind === "watch") return "watch"
   if (choice.kind === "optimize") return "optimize"
   return `${choice.kind}:${choice.paneId ?? ""}:${choice.sessionId ?? ""}:${choice.stateChangeSeq ?? ""}`
 }
@@ -148,7 +155,7 @@ const popupFooter = ({ busy, status, screen, queueOnly, choices }) => {
       ? "Enter open queue  x remove selected  c clear  q/Esc close"
       : "Enter open queue  x remove selected  c clear  a add another  b back  q/Esc close"
   }
-  return "Enter open  g engagement  a queue  e edit queue  x clear  Esc close"
+  return "Enter open  g engagement  r rituals  w progress  a queue  e edit  x clear  Esc"
 }
 
 const privateGuideChoice = (choice, operation) => {
@@ -203,6 +210,8 @@ export const main = async ({
   captureInspector = inspectCaptureOptions,
   contextMenuCapture = captureContextMenuRequest,
   engagementOpener = openEngagementGuide,
+  ritualOpener = openRitualGuide,
+  watchCopier = copyProgressPagePrompt,
   queueReader = readCaptureQueue,
   initialStatus = "",
 } = {}) => {
@@ -210,11 +219,13 @@ export const main = async ({
   const context = providedContext ?? parseCustomPopupContext(env)
   const stateDir = resolvePluginStateDirectory(env)
   const engagementChoice = engagementSourceChoice(context)
+  const ritualChoice = ritualSourceChoice()
+  let watchChoice = watchSourceChoice(context)
   let rewriteChoice
   let selection = {}
   let captureQueue = { schemaVersion: 1, entries: [] }
   let inspected = { choices: [], notes: [] }
-  let choices = orderedSourceChoices([], undefined, captureQueue, undefined, engagementChoice)
+  let choices = orderedSourceChoices([], undefined, captureQueue, undefined, engagementChoice, ritualChoice, watchChoice)
   let selectedIndex = initialSourceChoiceIndex(choices)
   let selectionTouched = false
   let queueIndex = 0
@@ -301,7 +312,7 @@ export const main = async ({
 
   const refreshChoices = () => {
     const selectedKey = sourceChoiceIdentity(choices[selectedIndex] ?? {})
-    choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice)
+    choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice, ritualChoice, watchChoice)
     const nextIndex = choices.findIndex((choice) => sourceChoiceIdentity(choice) === selectedKey)
     selectedIndex = selectionTouched && nextIndex >= 0 ? nextIndex : initialSourceChoiceIndex(choices)
   }
@@ -379,12 +390,36 @@ export const main = async ({
     resolveRun(code)
   }
 
+  const copyWatchPrompt = async () => {
+    if (busy) return
+    busy = true
+    status = "Copying the progress-page prompt..."
+    render()
+    try {
+      status = await watchCopier({ context, env, request })
+    } catch (error) {
+      status = error instanceof Error ? error.message : String(error)
+      if (typeof error?.prompt === "string") {
+        watchChoice = { ...watchChoice, preview: error.prompt }
+        selectionTouched = true
+        selectedIndex = Math.max(0, choices.findIndex((choice) => choice.kind === "watch"))
+        refreshChoices()
+      }
+    }
+    busy = false
+    render()
+  }
+
   const openSelectedChoice = async () => {
     if (busy) return
+    const choice = choices[selectedIndex]
+    if (choice?.kind === "watch") {
+      await copyWatchPrompt()
+      return
+    }
     busy = true
     status = "Opening Trellage guide..."
     render()
-    const choice = choices[selectedIndex]
     if (choice === undefined) {
       busy = false
       status = "No usable source is available"
@@ -400,6 +435,9 @@ export const main = async ({
     try {
       if (choice.kind === "engagement") {
         await engagementOpener({ context, env, request })
+        await closePopup(request)
+      } else if (choice.kind === "ritual") {
+        await ritualOpener({ context, env, request })
         await closePopup(request)
       } else if (choice.kind === "rewrite") {
         if (choice.request === undefined) throw new Error(choice.detail)
@@ -419,7 +457,7 @@ export const main = async ({
     if (busy) return
     const choice = choices[selectedIndex]
     if (choice === undefined || choice.kind === "queue" || choice.kind === "rewrite" ||
-      choice.kind === "engagement" || choice.kind === "optimize") {
+      choice.kind === "engagement" || choice.kind === "ritual" || choice.kind === "watch" || choice.kind === "optimize") {
       status = "Choose highlighted text, an exact result, or a terminal snapshot to add"
       render()
       return
@@ -431,7 +469,7 @@ export const main = async ({
       const previousLength = captureQueue.entries.length
       await invokeGuideChoice({ choice, operation: "enqueue", context, stateDir, request })
       captureQueue = await waitForCaptureQueueGrowth(stateDir, previousLength)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice, ritualChoice, watchChoice)
       selectedIndex = choices.findIndex((candidate) => candidate.kind === "queue")
       busy = false
       status = `Added. ${captureQueue.entries.length} item${captureQueue.entries.length === 1 ? "" : "s"} queued. Enter opens the queue.`
@@ -481,7 +519,7 @@ export const main = async ({
     render()
     try {
       captureQueue = await removeCaptureQueueEntry(stateDir, entry.id)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice, ritualChoice, watchChoice)
       queueIndex = Math.min(queueIndex, Math.max(0, captureQueue.entries.length - 1))
       busy = false
       status = `${captureQueue.entries.length} item${captureQueue.entries.length === 1 ? "" : "s"} queued`
@@ -506,7 +544,7 @@ export const main = async ({
     try {
       await clearCaptureQueue(stateDir)
       captureQueue = await readCaptureQueue(stateDir)
-      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice)
+      choices = orderedSourceChoices(inspected.choices, selection.value, captureQueue, rewriteChoice, engagementChoice, ritualChoice, watchChoice)
       selectedIndex = initialSourceChoiceIndex(choices)
       queueIndex = 0
       busy = false
@@ -567,6 +605,16 @@ export const main = async ({
       selectionTouched = true
       selectedIndex = choices.findIndex((choice) => choice.kind === "engagement")
       void openSelectedChoice()
+      return
+    }
+    if (key.name === "r") {
+      selectionTouched = true
+      selectedIndex = choices.findIndex((choice) => choice.kind === "ritual")
+      void openSelectedChoice()
+      return
+    }
+    if (key.name === "w") {
+      void copyWatchPrompt()
       return
     }
     if (key.name === "a") {
