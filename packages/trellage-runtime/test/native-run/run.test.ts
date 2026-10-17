@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite"
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
-import { chmod, mkdir, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, readFile, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
   claudeAdapter,
@@ -1109,6 +1109,43 @@ plugins = [{
   expect(settings.pluginConfigs["sample@fixture-market"]).toEqual({ options: { mode: "minimal" } })
   expect(prepared.launch.args).toContain(path.join(prepared.layout.generationPath, "plugins", "sample"))
   expect(prepared.plan.plugins[0]?.digest).toMatch(/^[a-f0-9]{64}$/)
+})
+
+const linkedPluginConfig = `schema_version = 1
+[native.sources.office-content]
+repository = "example/office"
+[native.profiles.linked]
+plugins = [{ source = "office-content", harness = "claude", path = "plugins/linked", name = "linked" }]
+`
+
+test("Native Claude stages a plugin whose files link inside the plugin, like Council", async () => {
+  const { dependencies, office } = await world(linkedPluginConfig)
+  const plugin = path.join(office.directory, "plugins", "linked")
+  await mkdir(path.join(plugin, ".claude-plugin"), { recursive: true })
+  await mkdir(path.join(plugin, "skills", "linked"), { recursive: true })
+  await writeFile(path.join(plugin, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "linked" }))
+  await writeFile(path.join(plugin, "SKILL.md"), skillMarkdown("linked"))
+  await symlink("../../SKILL.md", path.join(plugin, "skills", "linked", "SKILL.md"))
+  await office.write({}, "add linked plugin")
+
+  const prepared = await prepareRun({ ...base, harness: "claude", profiles: ["linked"] }, dependencies())
+  const staged = path.join(prepared.layout.generationPath, "plugins", "linked", "skills", "linked", "SKILL.md")
+
+  expect(await readlink(staged)).toBe("../../SKILL.md")
+  expect(await readFile(staged, "utf8")).toContain("name: linked")
+})
+
+test("Native Claude refuses a plugin that links outside itself", async () => {
+  const { dependencies, office } = await world(linkedPluginConfig)
+  const plugin = path.join(office.directory, "plugins", "linked")
+  await mkdir(path.join(plugin, ".claude-plugin"), { recursive: true })
+  await writeFile(path.join(plugin, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "linked" }))
+  await symlink("../../skills/powerpoint/SKILL.md", path.join(plugin, "outside.md"))
+  await office.write({}, "add escaping plugin")
+
+  await expect(prepareRun({ ...base, harness: "claude", profiles: ["linked"] }, dependencies())).rejects.toThrow(
+    "plugin linked links outside itself: outside.md",
+  )
 })
 
 test("Copilot admission bridges lifecycle plugins, hooks, and agents into the generated home", async () => {
