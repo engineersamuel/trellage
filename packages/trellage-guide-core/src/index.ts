@@ -593,9 +593,14 @@ const discoverMarkdown = async (root: string, directory: string): Promise<Readon
 
 export const discoverProfileGuideRelativePaths = async (root: string): Promise<ReadonlyArray<string>> => {
   const resolvedRoot = await safeGuideRoot(root)
+  // Sandbox guides were retired with the Sandbox; older guide roots may still ship them.
+  const sandbox = await lstat(path.join(resolvedRoot, "sandbox")).then(
+    () => true,
+    (cause: NodeJS.ErrnoException) => (cause.code === "ENOENT" ? false : Promise.reject(cause)),
+  )
   const discovered = [
     ...(await discoverMarkdown(resolvedRoot, "native")),
-    ...(await discoverMarkdown(resolvedRoot, "sandbox")),
+    ...(sandbox ? await discoverMarkdown(resolvedRoot, "sandbox") : []),
   ].sort()
   for (const relativePath of discovered) parseProfileGuideIdentity(relativePath)
   return discovered
