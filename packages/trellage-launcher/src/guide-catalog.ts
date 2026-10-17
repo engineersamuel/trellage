@@ -332,6 +332,25 @@ export interface NativeGuideCatalogEntry {
   readonly orchestration?: FirstmateOrchestrationV1
 }
 
+// Native catalogs publish `headless: null` for interactive-only profiles; treat it as no headless support.
+const interactiveOnlyHeadless = {
+  schemaVersion: 1,
+  prompt: false,
+  outputFormats: ["text"],
+  eventContract: null,
+  trellageEventContract: null,
+  sessionId: "none",
+  resume: false,
+  resumeWithPrompt: false,
+  questionToolControl: "none",
+  changedFiles: "none",
+  usage: false,
+  cost: false,
+  modelOverride: false,
+  effortOverride: false,
+  testedHarnessVersion: null,
+} as const
+
 const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEntry => {
   const fields = record(value, path)
   exactKeys(fields, path, [
@@ -360,7 +379,7 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
     harness,
     name,
     description: text(fields.description, `${path}.description`, 2000),
-    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path}.headless`),
+    headless: validateHeadlessCapabilitiesV1(fields.headless ?? interactiveOnlyHeadless, `${path}.headless`),
     sandbox: boolean(fields.sandbox, `${path}.sandbox`),
     herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path}.herdrCompatibility`),
     guide: validateProfileGuideV1(fields.guide, `${path}.guide`, {
