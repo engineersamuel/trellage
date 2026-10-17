@@ -3,7 +3,9 @@
 set -u
 set -o pipefail
 
-unset TRELLAGE_NATIVE_COMPOSITION_HARNESS TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT
+# A contract started from inside an OMP session inherits that session's profile and overlay list.
+unset TRELLAGE_NATIVE_COMPOSITION_HARNESS TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT \
+  OMP_PROFILE PI_PROFILE PI_CODING_AGENT_DIR PI_CONFIG_FILES
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
@@ -1596,7 +1598,7 @@ expected_local_launch="$(jq -cn \
 expected_copilot_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$worktree" \
-  '{version:"18.8.5",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["-p","Reply exactly OMP_COPILOT_OK"]}')"
+  '{version:"18.8.5",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--model","github-copilot/gpt-5.6-sol","--thinking","medium","-p","Reply exactly OMP_COPILOT_OK"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_copilot_launch" ]] \
   || fail 'Copilot launch did not select the native Copilot profile'
 grep -Fqx 'find-generic-password -s copilot-cli -w' "$FAKE_SECURITY_LOG" \
@@ -1648,7 +1650,7 @@ expected_headless_copilot_launch="$(jq -cn \
   --arg home "$HOME" \
   --arg cwd "$PWD" \
   --arg path "$copilot_overlay_path" \
-  '{version:"18.8.5",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--config",$path,"-p","Reply exactly OMP_HEADLESS_COPILOT"]}')"
+  '{version:"18.8.5",profile:"trellage-copilot-native",home:$home,cwd:$cwd,args:["--model","github-copilot/gpt-5.6-sol","--thinking","medium","--config",$path,"-p","Reply exactly OMP_HEADLESS_COPILOT"]}')"
 [[ "$(tail -n 1 "$FAKE_OMP_LOG")" == "$expected_headless_copilot_launch" ]] \
   || fail 'copilot headless-policy launch arguments differ'
 printf '%s\n' "$copilot_overlay_record" | jq -e --arg managed "$copilot_overlay" '
