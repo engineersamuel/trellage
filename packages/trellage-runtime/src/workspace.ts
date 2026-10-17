@@ -28,8 +28,9 @@ export const preparationLockName = ".trellage-prepare.lock"
 export const sourceOwnership = "trellage-source-runtime-v1"
 const readyFile = ".trellage-source-ready.json"
 const distributionManifest = "package.source.json"
-const sourceDirectories = ["bin", "packages", "prototypes", "scripts", "profile-guides", "profiles"]
-const optionalSourceDirectories = [".agents"]
+const sourceDirectories = ["bin", "packages", "prototypes", "scripts", "profile-guides"]
+// `profiles/` held retired Sandbox profiles; older source trees may still ship it.
+const optionalSourceDirectories = [".agents", "profiles"]
 const rootFiles = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.base.json", "config.toml"]
 function sourceRootFiles(root: string): string[] {
   const legacy =
