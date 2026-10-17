@@ -460,6 +460,62 @@ function sourceFixture(withShellRunner = false) {
   return { root, home, parent, destination: path.join(parent, "installed") }
 }
 
+test("repeated explicit preparation reuses validated dependencies", () => {
+  const { root } = sourceFixture()
+  const first = run("prepare", root)
+  expect(first.status, first.stderr).toBe(0)
+  const readiness = readFileSync(path.join(root, ".trellage-source-ready.json"), "utf8")
+  const repeated = run("prepare", root)
+  expect(repeated.status, repeated.stderr).toBe(0)
+  expect(repeated.stderr).not.toContain("bun install v")
+  expect(readFileSync(path.join(root, ".trellage-source-ready.json"), "utf8")).toBe(readiness)
+
+  rmSync(path.join(root, "node_modules"), { recursive: true })
+  const repaired = run("prepare", root)
+  expect(repaired.status, repaired.stderr).toBe(0)
+  expect(repaired.stderr).toContain("bun install v")
+  expect(() => requireReady(root)).not.toThrow()
+})
+
+test("staging reuses ready dependencies with independent files and relative workspace links", () => {
+  const { root, parent } = sourceFixture()
+  expect(run("prepare", root).status).toBe(0)
+  mkdirSync(path.join(root, "node_modules/.bin"), { recursive: true })
+  symlinkSync("../../packages/application/src/cli.ts", path.join(root, "node_modules/.bin/fixture-tool"))
+  write(root, "node_modules/reuse-probe", "original")
+  writeReadiness(root)
+  for (const name of ["environment", "floating", "router"]) {
+    const destination = path.join(parent, name)
+    const staged = run("stage", root, destination)
+    expect(staged.status, staged.stderr).toBe(0)
+    expect(staged.stderr).not.toContain("bun install v")
+    expect(() => requireOwnedWorkspace(destination)).not.toThrow()
+    const binary = path.join(destination, "node_modules/.bin/fixture-tool")
+    expect(realpathSync(binary)).toBe(path.join(destination, "packages/application/src/cli.ts"))
+    const library = path.join(destination, "packages/application/node_modules/@fixture/library")
+    expect(realpathSync(library)).toBe(path.join(destination, "packages/library"))
+
+    const copied = path.join(destination, "node_modules/reuse-probe")
+    const original = path.join(root, "node_modules/reuse-probe")
+    expect(statSync(copied).ino).not.toBe(statSync(original).ino)
+    writeFileSync(copied, "changed copy")
+    expect(readFileSync(original, "utf8")).toBe("original")
+  }
+  expect(() => requireReady(root)).not.toThrow()
+})
+
+test("staging installs dependencies when workspace readiness cannot be reused", () => {
+  const { root, destination } = sourceFixture()
+  expect(run("prepare", root).status).toBe(0)
+  write(root, "node_modules/inventory-drift", "not validated")
+  const staged = run("stage", root, destination)
+  expect(staged.status, staged.stderr).toBe(0)
+  expect(staged.stderr).toContain("cannot reuse workspace dependencies")
+  expect(staged.stderr).toContain("bun install v")
+  expect(existsSync(path.join(destination, "node_modules/inventory-drift"))).toBe(false)
+  expect(() => requireOwnedWorkspace(destination)).not.toThrow()
+})
+
 afterEach(() => {
   for (const directory of fixtures.splice(0)) rmSync(directory, { recursive: true })
 })
