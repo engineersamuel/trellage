@@ -76,6 +76,13 @@ budget, reserve room for the frame and original-input appendix. With Firstmate
 the renderer preserves any supplied `originalIntent` in the single delivered
 prompt. Do not rewrite or silently drop the original input.
 
+For `native:claude/firstmate` and `native:pi/firstmate`, keep the result one
+pasteable Firstmate message: the `ahoy!` opening and project line, numbered
+`SCOUT`/`SHIP` tasks with `Done when:` lines, explicit parallel and wait
+conditions, the `/bearings` request, captain merge authority, and the closing
+"Ask me before you decide anything this prompt does not state." line. Apply
+the feedback inside that shape.
+
 For Firstmate, keep the selected project/workflow and the supported Claude
 controls. Do not infer a repository from a runtime or terminal directory.
 Status/Bearings remains observation, memory uses ordinary scoped Stow, and

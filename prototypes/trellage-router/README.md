@@ -343,7 +343,8 @@ remain interactive.
 ### Firstmate guide delivery
 
 The guide keeps the confirmed project and workflow separate from destination
-placement. `trx run firstmate` starts Firstmate in its pinned runtime, not in the caller's
+placement. The guide's fleet actions use the `fmx` lifecycle, which `trx run` no longer
+launches; `trx run claude firstmate` starts Firstmate from its own clone, not in the caller's
 repository. A new Herdr worktree does not become a Firstmate worker worktree
 and does not transfer staged, unstaged, or untracked changes.
 
@@ -673,7 +674,6 @@ refuse to launch and print the reason:
 - `grok` loads repository instructions, skills, agents, and MCP servers in a trusted folder.
 - `omp` installs managed skills and profile overlays before every launch.
 - `agency` launches its managed Copilot profile.
-- `firstmate` launches its prepared fleet runtime and captain home.
 - `jcode` discovers repository context and cannot switch it off.
 - `prime` repairs its runtime before launch and keeps its native kernel.
 - `fx` uses the host `HOME` and `~/.fx` by design.

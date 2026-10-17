@@ -87,6 +87,7 @@ import {
   validateGuideOptimizeResult,
   validateGuideRefineResult,
   type GuideEnrichInput,
+  type GuideFirstmateInput,
   type GuideEnrichResult,
   type GuideGenerateInput,
   type GuideGenerateResult,
@@ -958,6 +959,18 @@ export class CopilotGuideProvider implements GuideProvider {
   async enrich(input: GuideEnrichInput, onActivity?: (line: string) => void): Promise<GuideEnrichResult> {
     assertGuideEnrichInput(input)
     return this.run("enrich", this.prompts.enrich, input, this.enrichTimeoutMs, validateGuideEnrichResult, {
+      ...(onActivity === undefined ? {} : { onActivity }),
+    })
+  }
+
+  /**
+   * Rewrites the intent into one message for a Firstmate session. It runs on the
+   * enrich route with the same locked-down session; only the system prompt differs.
+   */
+  async firstmate(input: GuideFirstmateInput, onActivity?: (line: string) => void): Promise<GuideEnrichResult> {
+    if (this.prompts.firstmate === undefined) throw new Error("the Firstmate augment prompt is not loaded")
+    assertGuideEnrichInput(input)
+    return this.run("enrich", this.prompts.firstmate, input, this.enrichTimeoutMs, validateGuideEnrichResult, {
       ...(onActivity === undefined ? {} : { onActivity }),
     })
   }

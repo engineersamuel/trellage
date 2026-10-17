@@ -9,7 +9,9 @@ import { readTrellageConfig } from "@trellage/runtime/native-config"
 import {
   adapters,
   CLEAN_PROFILE,
+  builtinProfile,
   nativeHarnessPresets,
+  nativeSharedPresets,
   loadModelCatalog,
   hostDefaults,
   createSelectionHistory,
@@ -42,6 +44,11 @@ const loadCatalog = async (): Promise<RunSelectorCatalog> => {
     )
     if (!profile.always && !isPresetContent) profileHarnesses[id] = profile.harnesses
   }
+  for (const id of nativeSharedPresets) {
+    if (!Object.hasOwn(loaded.config.native.profiles, id)) profileHarnesses[id] = (await builtinProfile(id))?.harnesses
+  }
+  // Presets stay hidden on other harnesses; named profiles show disabled there.
+  const presets = new Set(Object.values(nativeHarnessPresets).flat())
   profileHarnesses[CLEAN_PROFILE] = harnessOrder.filter((id) => adapters[id]?.clean.supported)
   return {
     harnesses: harnessOrder.map((id) => {
@@ -59,6 +66,9 @@ const loadCatalog = async (): Promise<RunSelectorCatalog> => {
     }),
     profileHarnesses,
     profiles: Object.keys(profileHarnesses).sort(),
+    disabledProfiles: Object.keys(profileHarnesses).filter(
+      (id) => profileHarnesses[id] !== undefined && id !== CLEAN_PROFILE && !presets.has(id as never),
+    ),
     always: Object.entries(loaded.config.native.profiles)
       .filter(([, profile]) => profile.always)
       .sort(([a], [b]) => (a < b ? -1 : 1))

@@ -9,13 +9,14 @@ import {
   GuideAugmentError,
   GuideAugmentPhase,
   runCodebaseAugment,
+  runFirstmateAugment,
   runResearchAugment,
   type GuideAugmentContext,
 } from "../src/guide-augment.ts"
 import type { CombinedGuideCatalog } from "../src/guide-catalog.ts"
 import { guideIntentMaximumLength } from "../src/guide-api.ts"
 import type { CommandRunOptions, CommandRunResult, CommandRunner } from "../src/guide-launch.ts"
-import type { GuideEnrichInput, GuideProvider } from "../src/guide-provider.ts"
+import type { GuideEnrichInput, GuideFirstmateInput, GuideProvider } from "../src/guide-provider.ts"
 import type { JevSystemOneClient } from "../src/jev-decisions.ts"
 
 interface RecordedCall {
@@ -418,5 +419,50 @@ describe("codebase augmentation", () => {
       /does not support codebase augmentation/u,
     )
     expect(runner.calls).toHaveLength(0)
+  })
+})
+
+describe("Firstmate augmentation", () => {
+  const gitAware = (origin: string | undefined) =>
+    new FakeRunner(async ({ executable, args }) => {
+      if (executable === "git" && args[0] === "remote") {
+        if (origin === undefined) throw new Error("no origin")
+        return { stdout: `${origin}\n`, stderr: "", exitCode: 0 }
+      }
+      if (executable === "git") return { stdout: "origin/main\n", stderr: "", exitCode: 0 }
+      await writeFile(args[args.length - 1] ?? "", "# Repository\n\nsrc/run.ts", "utf8")
+      return ok()
+    })
+
+  it("packs the repository, names the GitHub project and returns the Firstmate message", async () => {
+    let seen: GuideFirstmateInput | undefined
+    const provider = {
+      ...providerWith(undefined),
+      firstmate: async (input: GuideFirstmateInput) => {
+        seen = input
+        return { intent: "ahoy! Add my GitHub project octo/repo." }
+      },
+    } as GuideProvider
+    const result = await runFirstmateAugment("add dark mode", provider, contextFor(gitAware("git@github.com:octo/repo.git")))
+    expect(result).toBe("ahoy! Add my GitHub project octo/repo.")
+    expect(seen).toMatchObject({ intent: "add dark mode", project: { repository: "octo/repo", branch: "main" } })
+    expect(seen?.pack).toContain("src/run.ts")
+    expect(phases).toEqual([GuideAugmentPhase.PackingRepository, GuideAugmentPhase.RewritingIntent])
+  })
+
+  it("omits the project without a GitHub origin and refuses providers without the phase", async () => {
+    let seen: GuideFirstmateInput | undefined
+    const provider = {
+      ...providerWith(undefined),
+      firstmate: async (input: GuideFirstmateInput) => {
+        seen = input
+        return { intent: "ahoy!" }
+      },
+    } as GuideProvider
+    await runFirstmateAugment("x", provider, contextFor(gitAware(undefined)))
+    expect(seen?.project).toBeUndefined()
+    await expect(runFirstmateAugment("x", providerWith(undefined), contextFor(gitAware(undefined)))).rejects.toThrow(
+      /does not support the Firstmate augmenter/,
+    )
   })
 })

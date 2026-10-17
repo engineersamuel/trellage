@@ -219,8 +219,38 @@ const nativeCatalogs = async (): Promise<ReadonlyMap<string, NativeCatalogMetada
     .filter((directory) => directory.isDirectory() && /^trellage-.+-profiles$/u.test(directory.name))
     .map(({ name }) => name)
   const entries = await Promise.all(families.map((family) => nativeCatalogFamily(prototypes, family)))
+  // Mirrors the router's interactive firstmate config profiles (trx build_profile_list).
+  const firstmate = (harness: string) =>
+    [
+      `${harness}/firstmate`,
+      {
+        description: `Firstmate fleet supervisor on ${harness}, run from its own clone at the latest main`,
+        headless: validateHeadlessCapabilitiesV1(
+          {
+            schemaVersion: 1,
+            prompt: false,
+            outputFormats: ["text"],
+            eventContract: null,
+            trellageEventContract: null,
+            sessionId: "none",
+            resume: false,
+            resumeWithPrompt: false,
+            questionToolControl: "none",
+            changedFiles: "none",
+            usage: false,
+            cost: false,
+            modelOverride: false,
+            effortOverride: false,
+            testedHarnessVersion: null,
+          },
+          `${harness}/firstmate.headless`,
+        ),
+      },
+    ] as const
   return new Map([
     ...entries.flat(),
+    firstmate("claude"),
+    firstmate("pi"),
     [
       "headlong/default",
       {

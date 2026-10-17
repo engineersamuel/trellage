@@ -11,6 +11,12 @@ schema_version = 1
 # Instruction files are Markdown paths relative to this directory (the style/output rules
 # each harness reads as user instructions: Pi APPEND_SYSTEM.md, Copilot copilot-instructions.md,
 # Claude CLAUDE.md, Codex AGENTS.md, Grok Agents.md).
+# A profile can start the harness elsewhere: current_working_directory = "~/dir" (absolute or ~/),
+# optionally kept in sync with repository = { url = "...", branch = "main" } (cloned when missing,
+# `git pull --rebase` before every launch), and project_resources = true to let Pi load that
+# directory's .pi/extensions and .agents/skills. prerequisites = [{ command = "x", install = "..." }]
+# lists required executables; trx offers to install missing ones. workers = "firstmate" hands the
+# proxy setup to the workers Firstmate starts. See the shipped `firstmate` profile.
 [native.sources.engineersamuel]
 repository = "engineersamuel/skills"
 

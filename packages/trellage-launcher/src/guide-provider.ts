@@ -117,6 +117,11 @@ export interface GuideEnrichInput {
   readonly pack: string
 }
 
+export interface GuideFirstmateInput extends GuideEnrichInput {
+  /** The repository's GitHub project and base branch, when its remote names one. */
+  readonly project?: { readonly repository: string; readonly branch: string }
+}
+
 export interface GuideEnrichResult {
   readonly intent: string
 }
@@ -151,6 +156,8 @@ export interface GuideProvider {
   optimize(input: GuideOptimizeInput): Promise<GuideOptimizeResult>
   /** Optional: only adapters that back the in-TUI codebase augmenter implement it. */
   enrich?(input: GuideEnrichInput, onActivity?: (line: string) => void): Promise<GuideEnrichResult>
+  /** Optional: rewrites the intent into a message for a Firstmate session, with the packed repository as reference. */
+  firstmate?(input: GuideFirstmateInput, onActivity?: (line: string) => void): Promise<GuideEnrichResult>
 }
 
 /** Maximum length for the authored Markdown guide body carried in generate/refine input, mirroring `trellage-guide-core`'s source-document bound. */

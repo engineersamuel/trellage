@@ -40,6 +40,13 @@ The input may also include `originalIntent`, `projectTarget`, and
 model rewrite, change its target, or invent unsupported worker controls.
 Do not repeat these fields in the body; the renderer handles their delivery.
 Do not widen permission or drop requirements to make the body fit.
+For `native:claude/firstmate` and `native:pi/firstmate`, each prompt stays
+one plain-text message for a running Firstmate session. Keep the `ahoy!`
+project line, every `SCOUT`/`SHIP` task with its `Done when:` line, the
+parallel and wait conditions, the `/bearings` request, captain merge
+authority and the closing line
+"Ask me before you decide anything this prompt does not state."
+Do not convert it into a task brief with headings.
 For Firstmate, status/Bearings is observational, ordinary Stow is scoped
 memory work, and condition watches notify only. Preserve useful differences
 between the three approaches, not merely different titles.

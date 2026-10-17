@@ -346,7 +346,6 @@ test("canonical adapters launch agent executables instead of retired profile wra
   const { dependencies } = await world()
   const expected: Readonly<Record<string, string>> = {
     agency: "agency",
-    firstmate: "claude",
     jcode: "jcode",
     omp: "omp",
     prime: "prime-agent",

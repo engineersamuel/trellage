@@ -5,7 +5,7 @@ import { lstat, mkdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import { constants as osConstants } from "node:os"
 import { promisify } from "node:util"
-import { readTrellageConfig, TrellageConfigError, type NativeCatalog } from "../native-config.ts"
+import { expandTrellagePath, readTrellageConfig, TrellageConfigError, type NativeCatalog } from "../native-config.ts"
 import {
   PI_EXTENSION_PACKAGES,
   adapters,
@@ -31,9 +31,19 @@ import { NativeRunCancelledError, NativeRunError, resolveNativeRunPaths, type Na
 import { createSourceResolver, gitSourceTransport, type SourceTransport } from "./source.ts"
 import { devSourceRoots, devSourceTransport } from "./dev-sources.ts"
 import { ensureNativeConfig, withBuiltinPreset } from "./config-init.ts"
-import { nativePresetProfile } from "./presets.ts"
+import { nativePresetProfile, nativeSharedPresets } from "./presets.ts"
 import { acquireProfileGuard } from "./lifecycle-guard.ts"
 import { childSettlement } from "./child-settlement.ts"
+import { syncProfileRepository, type ProfileRepository } from "./repository-sync.ts"
+import {
+  clearFirstmatePiWorkers,
+  markWorkerGeneration,
+  workerPath,
+  writeClaudeWorkerEnvironment,
+  writeFirstmatePiWorkers,
+  writePiWorkerShell,
+} from "./worker-handoff.ts"
+import { defaultPrerequisiteIo, ensurePrerequisites, missingPrerequisites, type PrerequisiteIo } from "./prerequisites.ts"
 
 export interface RunOptions {
   readonly harness: string
@@ -57,7 +67,7 @@ export const RUN_USAGE = `Usage:
           [--no-always] [--skill OWNER/REPO:NAME]... [--require-proven-isolation]
           [--continue | --resume[=ID]] [-- <harness-args>]
 
-Harnesses: agency, claude, codex, copilot, firstmate, fx, grok, headlong, jcode, omp, pi, prime, uji.
+Harnesses: agency, claude, codex, copilot, fx, grok, headlong, jcode, omp, pi, prime, uji.
 Profiles come from ~/.config/trellage/config.toml.
 Profiles with always = true are added to every run; --no-always skips them. --dry-run prepares the composition and
 prints the launch plan without starting the harness. --skill adds one skill from a GitHub repository without a
@@ -65,7 +75,10 @@ configured profile; repeat it for more skills.
 Conversations are kept per harness and profile set. --continue reopens the most recent one in this directory;
 --resume lists them (or --resume=ID opens one). Use the same harness and profiles as the original run.
 Profile clean launches the harness with no skills, MCP servers, instructions, hooks or plugins from trx, the
-repository or the host, and installs nothing. Supported: claude, codex, copilot, pi.`
+repository or the host, and installs nothing. Supported: claude, codex, copilot, pi.
+A profile with current_working_directory starts the harness there instead of this directory; with repository it
+is cloned when missing and rebased onto the latest remote branch before every launch. Profile firstmate runs
+Firstmate (claude, pi).`
 
 export const CLEAN_PROFILE = "clean"
 
@@ -234,7 +247,7 @@ export const spawnInherited: Spawner = (launch, environment, cwd, onSpawn, guard
       if (value === null) delete env[key]
       else env[key] = value
     }
-    const child = spawn(launch.command, [...launch.args], { cwd: launch.cwd ?? cwd, env, stdio: "inherit" })
+    const child = spawn(launch.command, [...launch.args], { cwd, env, stdio: "inherit" })
     const settlement = childSettlement(child, guard)
     let attachmentFailed = false
     child.once("spawn", () => {
@@ -406,6 +419,8 @@ export interface RunDependencies {
   readonly spawner?: Spawner
   readonly write?: (line: string) => void
   readonly configHome?: string
+  readonly syncRepository?: (directory: string, repository: ProfileRepository, environment: NodeJS.ProcessEnv) => Promise<void>
+  readonly prerequisiteIo?: PrerequisiteIo
 }
 
 export interface PreparedRun {
@@ -419,6 +434,10 @@ export interface PreparedRun {
   readonly isolation: IsolationStatus
   /** Launched through the adapter's clean boundary; no refresh or admission runs. */
   readonly clean: boolean
+  /** Directory the harness starts in: the profile's working directory or the invocation directory. */
+  readonly workspace: string
+  /** Prerequisite commands not on PATH when the run was prepared. */
+  readonly missing: ReadonlyArray<string>
 }
 
 const shellWord = (word: string): string =>
@@ -475,6 +494,15 @@ export const describePreparedRun = (prepared: PreparedRun): string[] => {
     `Plan        ${policy.plan}`,
     `Isolation   ${isolation.status} — ${isolation.evidence}`,
     `Generation  ${layout.generationPath}`,
+    ...(plan.workingDirectory ? [`Directory   ${prepared.workspace}`] : []),
+    ...(plan.repository ? [`Repository  ${plan.repository.url} (${plan.repository.branch}, pulled before launch)`] : []),
+    ...(plan.prerequisites?.length
+      ? [
+          `Requires    ${plan.prerequisites
+            .map((entry) => (prepared.missing.includes(entry.command) ? `${entry.command} (missing)` : entry.command))
+            .join(", ")}`,
+        ]
+      : []),
     ...(plan.skills.length === 0
       ? ["Skills      none"]
       : plan.skills.map(
@@ -523,7 +551,16 @@ const resolveRunProfiles = async (
     Object.hasOwn(catalog.profiles, profile) ? profile : (nativePresetProfile(adapter.id, profile) ?? profile),
   )
   for (const profile of profiles) {
-    if (profile.startsWith(`preset-${adapter.id}-`)) catalog = await withBuiltinPreset(catalog, profile)
+    if (profile.startsWith(`preset-${adapter.id}-`) || nativeSharedPresets.includes(profile))
+      catalog = await withBuiltinPreset(catalog, profile)
+  }
+  for (const profile of profiles) {
+    const harnesses = catalog.profiles[profile]?.harnesses
+    if (harnesses && !harnesses.includes(adapter.id))
+      throw new NativeRunError(
+        "unsupported",
+        `profile ${profile} does not support ${adapter.label}; it supports: ${[...harnesses].sort().join(", ")}`,
+      )
   }
   return { catalog, profiles: adHoc === undefined ? profiles : [...profiles, adHoc.id] }
 }
@@ -578,6 +615,7 @@ const buildPreparedRun = (
   options: RunOptions,
   dependencies: RunDependencies,
   environment: NodeJS.ProcessEnv,
+  workspace: string,
 ): PreparedRun => {
   const host = hostDefaults(adapter.id, dependencies.configHome ?? environment.HOME, plan)
   const defaults = options.plan
@@ -591,7 +629,7 @@ const buildPreparedRun = (
     options,
     defaults,
     environment,
-    dependencies.cwd ?? process.cwd(),
+    workspace,
   )
   return {
     adapter,
@@ -601,6 +639,8 @@ const buildPreparedRun = (
     defaults,
     isolation: adapter.isolation,
     clean: false,
+    workspace,
+    missing: missingPrerequisites(plan.prerequisites ?? [], environment).map((entry) => entry.command),
     selection: { harness: adapter.id, profiles: options.profiles, model: options.model, effort: options.effort },
   }
 }
@@ -654,16 +694,8 @@ const prepareCleanRun = async (
         effort: adapter.planDefaults?.effort ?? clean.defaults.effort,
       }
     : clean.defaults
-  const launch = buildLaunch(
-    adapter,
-    clean.launch,
-    layout,
-    plan,
-    options,
-    defaults,
-    environment,
-    dependencies.cwd ?? process.cwd(),
-  )
+  const workspace = dependencies.cwd ?? process.cwd()
+  const launch = buildLaunch(adapter, clean.launch, layout, plan, options, defaults, environment, workspace)
   return {
     adapter,
     plan,
@@ -672,6 +704,8 @@ const prepareCleanRun = async (
     defaults,
     isolation: { status: "proven", evidence: clean.evidence },
     clean: true,
+    workspace,
+    missing: [],
     selection: { harness: adapter.id, profiles: options.profiles, model: options.model, effort: options.effort },
   }
 }
@@ -699,7 +733,20 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
     resolved.catalog,
     resolved.profiles,
   )
-  return buildPreparedRun(adapter, plan, layout, options, dependencies, environment)
+  const invocation = dependencies.cwd ?? process.cwd()
+  const workspace = plan.workingDirectory
+    ? expandTrellagePath(plan.workingDirectory, dependencies.configHome ?? environment.HOME ?? invocation, invocation)
+    : invocation
+  if (plan.prerequisites && !options.dryRun)
+    await ensurePrerequisites(
+      `Profile ${options.profiles.join(" + ")}`,
+      plan.prerequisites,
+      environment,
+      dependencies.prerequisiteIo ?? defaultPrerequisiteIo(dependencies.write ?? ((line) => process.stderr.write(`${line}\n`))),
+    )
+  if (plan.repository && !options.dryRun)
+    await (dependencies.syncRepository ?? syncProfileRepository)(workspace, plan.repository, environment)
+  return buildPreparedRun(adapter, plan, layout, options, dependencies, environment, workspace)
 }
 
 /** The command that reopens the latest conversation of this harness and profile set. */
@@ -773,6 +820,41 @@ const resolvePreparedLaunch = async (prepared: PreparedRun, launchInput: LaunchI
     : { ...resolvedLaunch, env: { ...resolvedLaunch.env, ...finalEnvironment } }
 }
 
+const argumentAfter = (args: ReadonlyArray<string>, flag: string): string | undefined => {
+  const index = args.lastIndexOf(flag)
+  return index === -1 ? undefined : args[index + 1]
+}
+
+/** Give the workers Firstmate starts the same proxy setup as the supervisor (see worker-handoff.ts). */
+const handOffToFirstmateWorkers = async (
+  prepared: PreparedRun,
+  launch: LaunchCommand,
+  paths: NativeRunPaths,
+  environment: NodeJS.ProcessEnv,
+): Promise<void> => {
+  const compositions = path.join(paths.data, "compositions")
+  const home = environment.HOME ?? ""
+  await markWorkerGeneration(prepared.layout.generationPath)
+  if (prepared.adapter.id === "claude") {
+    await writeClaudeWorkerEnvironment(prepared.layout.generationPath, launch, workerPath(home, environment.PATH))
+    await clearFirstmatePiWorkers(prepared.workspace, compositions)
+    return
+  }
+  if (prepared.adapter.id !== "pi") return
+  const provider = argumentAfter(launch.args, "--provider")
+  const model = argumentAfter(launch.args, "--model")
+  if (!provider || !model) throw new NativeRunError("launch", "the Pi launch names no provider and model for Firstmate's workers")
+  await writePiWorkerShell(prepared.layout.generationPath, home)
+  await writeFirstmatePiWorkers(
+    prepared.workspace,
+    compositions,
+    prepared.layout.generationPath,
+    provider,
+    model,
+    argumentAfter(launch.args, "--thinking"),
+  )
+}
+
 const launchPreparedRun = async (
   prepared: PreparedRun,
   options: RunOptions,
@@ -782,7 +864,7 @@ const launchPreparedRun = async (
   paths: NativeRunPaths,
   write: (line: string) => void,
 ): Promise<number> => {
-  await prepared.adapter.trustWorkspace?.(prepared.layout, cwd)
+  await prepared.adapter.trustWorkspace?.(prepared.layout, prepared.workspace)
   const history = createSelectionHistory(paths)
   const keys = await scopeKeysFor(cwd)
   const lease = await acquireLease(paths, prepared.plan.generationId)
@@ -803,13 +885,14 @@ const launchPreparedRun = async (
       forwardedArgs: options.forwardedArgs,
       resumeArgs: options.resume ? prepared.adapter.resumeArgs(options.resume) : [],
       environment,
-      workspace: cwd,
+      workspace: prepared.workspace,
       ...(guard === undefined ? {} : { guard }),
     }
     const launch = await resolvePreparedLaunch(prepared, launchInput)
     cleanup = launch.cleanup
+    if (prepared.plan.workers === "firstmate") await handOffToFirstmateWorkers(prepared, launch, paths, environment)
     let recorded: Promise<void> = Promise.resolve()
-    const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, cwd, (pid) => {
+    const status = await (dependencies.spawner ?? spawnInherited)(launch, environment, prepared.workspace, (pid) => {
       if (pid !== undefined) guard?.attachChild(pid)
       recorded = history.record(keys, prepared.selection).catch(() => undefined)
     }, guard)

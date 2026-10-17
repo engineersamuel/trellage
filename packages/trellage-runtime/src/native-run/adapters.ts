@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import {
   chmod,
@@ -31,33 +31,6 @@ import { childSettlement } from "./child-settlement.ts"
 import { digestDirectory } from "./source.ts"
 
 const execFileAsync = promisify(execFile)
-
-const runFirstmateAdmission = (
-  lifecycle: string,
-  profile: string,
-  forwardedArgs: ReadonlyArray<string>,
-  environment: NodeJS.ProcessEnv,
-): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const child = spawn(lifecycle, ["_trx-admit", profile, ...forwardedArgs], {
-      env: { ...environment, TRELLAGE_TRX_FIRSTMATE_ADAPTER: "1" },
-      stdio: ["inherit", "pipe", "pipe"],
-    })
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk))
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr.push(chunk)
-      process.stderr.write(chunk)
-    })
-    child.once("error", reject)
-    child.once("close", (status, signal) => {
-      const output = Buffer.concat(stdout).toString("utf8")
-      if (status === 0) return resolve(output)
-      const diagnostic = Buffer.concat(stderr).toString("utf8").trim()
-      reject(new Error(diagnostic || `Firstmate admission exited ${status ?? signal ?? "without status"}`))
-    })
-  })
 
 export interface IsolationStatus {
   readonly status: "proven" | "unproven"
@@ -98,8 +71,6 @@ export interface LaunchCommand {
   readonly args: ReadonlyArray<string>
   /** A string sets the variable; null removes it from the child environment. */
   readonly env: Readonly<Record<string, string | null>>
-  /** Harnesses such as Firstmate run from their prepared runtime, not the entry worktree. */
-  readonly cwd?: string
   /** Release launch-scoped resources after the child settles or a spawn fails. */
   readonly cleanup?: () => void | Promise<void>
 }
@@ -1163,84 +1134,6 @@ export const agencyAdapter: NativeAdapter = {
   },
 }
 
-const validateFirstmateLaunch = (record: Record<string, unknown>): LaunchCommand => {
-  if (
-    typeof record.command !== "string" ||
-    !path.isAbsolute(record.command) ||
-    !Array.isArray(record.args) ||
-    !record.args.every((argument) => typeof argument === "string") ||
-    typeof record.cwd !== "string" ||
-    !path.isAbsolute(record.cwd) ||
-    !record.env ||
-    typeof record.env !== "object" ||
-    Array.isArray(record.env) ||
-    !Object.values(record.env).every((entry) => typeof entry === "string" || entry === null)
-  )
-    throw new NativeRunError("launch", "Firstmate admission returned invalid launch JSON")
-  return {
-    command: record.command,
-    args: record.args as string[],
-    cwd: record.cwd,
-    env: record.env as Record<string, string | null>,
-  }
-}
-
-export const firstmateAdapter: NativeAdapter = {
-  id: "firstmate",
-  label: "Firstmate",
-  isolation: unprovenEvidence(
-    "Firstmate retains its prepared fleet runtime and captain home while trx owns process dispatch",
-  ),
-  skillsSubdirectory: "skills",
-  instructionsFile: "always-on.md",
-  efforts: [],
-  policyVersion: "firstmate-canonical-2",
-  providerPolicy: () => "copilot-proxy-rs:claude-opus-5.5",
-  effectivePolicy: () => ({ normal: "claude-opus-5.5 · effort managed", plan: "Firstmate fleet policy" }),
-  managedFlags: [],
-  clean: {
-    supported: false,
-    reason: "Firstmate launches its prepared fleet runtime and captain home",
-  },
-  writeAdapterFiles: async (stage) => {
-    await mkdir(stage, { recursive: true })
-  },
-  persistentState: [],
-  resumeArgs: () => [],
-  launch: ({ forwardedArgs, environment }) => {
-    return {
-      command: binary(environment, "TRELLAGE_CLAUDE_BIN", "claude"),
-      args: forwardedArgs,
-      env: {},
-    }
-  },
-  resolveLaunch: async ({ plan, forwardedArgs, environment }) => {
-    const profile = selectedPreset(plan, "firstmate", "default")
-    const lifecycle = binary(environment, "TRELLAGE_FIRSTMATE_LIFECYCLE_BIN", "fmx")
-    let stdout: string
-    try {
-      stdout = await runFirstmateAdmission(lifecycle, profile, forwardedArgs, environment)
-    } catch (error) {
-      throw new NativeRunError(
-        "launch",
-        `Firstmate admission failed: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
-    const line = stdout.trim().split(/\r?\n/u).at(-1)
-    const launchOffset = line === undefined ? -1 : stdout.lastIndexOf(line)
-    if (launchOffset > 0) process.stdout.write(stdout.slice(0, launchOffset))
-    let value: unknown
-    try {
-      value = JSON.parse(line ?? "")
-    } catch {
-      throw new NativeRunError("launch", "Firstmate admission returned invalid launch JSON")
-    }
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      throw new NativeRunError("launch", "Firstmate admission returned invalid launch JSON")
-    return validateFirstmateLaunch(value as Record<string, unknown>)
-  },
-}
-
 export const jcodeAdapter: NativeAdapter = {
   id: "jcode",
   label: "JCode",
@@ -1455,6 +1348,27 @@ export const piExtensionEntries = (environment: NodeJS.ProcessEnv): string[] =>
     }
   })
 
+/** The working directory's own Pi extensions and skills, loaded explicitly so the rest of the isolation stays. */
+export const piProjectResources = (workspace: string): string[] => {
+  const entries = (directory: string) => {
+    try {
+      return readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
+    } catch {
+      return []
+    }
+  }
+  const extensions = path.join(workspace, ".pi", "extensions")
+  const skills = path.join(workspace, ".agents", "skills")
+  return [
+    ...entries(extensions)
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+      .flatMap((entry) => ["--extension", path.join(extensions, entry.name)]),
+    ...entries(skills)
+      .filter((entry) => entry.isDirectory() && existsSync(path.join(skills, entry.name, "SKILL.md")))
+      .flatMap((entry) => ["--skill", path.join(skills, entry.name)]),
+  ]
+}
+
 const PI_DEFAULT_MODEL = "gpt-6-astra"
 const PI_PROVIDER = "copilot-proxy-rs"
 const PI_CLAUDE_PROVIDER = "copilot-proxy-rs-claude"
@@ -1611,6 +1525,7 @@ export const piAdapter: NativeAdapter = {
           "--skill",
           path.join(input.layout.generationPath, "skills", skill.name),
         ]),
+        ...(input.plan.projectResources ? piProjectResources(input.workspace) : []),
       ],
       input,
     ),
@@ -2484,7 +2399,6 @@ export const hostDefaults = (harness: string, home: string = os.homedir(), plan?
   if (harness === "jcode") return { model: "gpt-5.6-sol", effort: "medium" }
   if (harness === "omp") return ompDefaults(plan)
   if (harness === "prime") return { model: PRIME_DEFAULT_MODEL, effort: undefined }
-  if (harness === "firstmate") return { model: "claude-opus-5.5", effort: undefined }
   if (harness === "uji") return { model: `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`, effort: undefined }
   if (harness === "copilot") {
     const settings = readStructured(path.join(home, ".copilot", "settings.json"), "json")
@@ -2592,7 +2506,6 @@ export const adapters: Readonly<Record<string, NativeAdapter>> = {
   copilot: copilotAdapter,
   claude: claudeAdapter,
   codex: codexAdapter,
-  firstmate: firstmateAdapter,
   jcode: jcodeAdapter,
   omp: ompAdapter,
   prime: primeAdapter,

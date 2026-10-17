@@ -37,6 +37,7 @@ import {
   GuideAugmentPhase,
   clampAugmentedIntent,
   runCodebaseAugment,
+  runFirstmateAugment,
   runResearchAugment,
   type GuideAugmentContext,
 } from "./guide-augment.ts"
@@ -1245,7 +1246,7 @@ const reduceIntent = (state: GuideUiState, action: GuideUiAction): GuideUiState 
 }
 
 /** The augmenters offered on the augment screen, in display order. */
-export const augmentOptions = [GuideAugmentKind.Research, GuideAugmentKind.Codebase, GuideAugmentKind.GoalMe, GuideAugmentKind.CustomerContext] as const
+export const augmentOptions = [GuideAugmentKind.Research, GuideAugmentKind.Codebase, GuideAugmentKind.GoalMe, GuideAugmentKind.CustomerContext, GuideAugmentKind.Firstmate] as const
 
 const augmentLabels: Readonly<Record<GuideAugmentKind, { readonly title: string; readonly detail: string }>> = {
   [GuideAugmentKind.Research]: {
@@ -1255,6 +1256,10 @@ const augmentLabels: Readonly<Record<GuideAugmentKind, { readonly title: string;
   [GuideAugmentKind.Codebase]: {
     title: "Codebase",
     detail: "Pack this repository with repomix and rewrite the draft",
+  },
+  [GuideAugmentKind.Firstmate]: {
+    title: "Firstmate",
+    detail: "Pack this repository and rewrite the draft as tasks for a Firstmate fleet",
   },
   [GuideAugmentKind.GoalMe]: {
     title: "Goal me",
@@ -1317,6 +1322,7 @@ const AugmentJobContext = createContext<GuideAugmentJob | undefined>(undefined)
 const augmentSourceLabels: Readonly<Record<GuideAugmentKind, string>> = {
   [GuideAugmentKind.Research]: "Live output · copilot hve",
   [GuideAugmentKind.Codebase]: "Live output · repomix",
+  [GuideAugmentKind.Firstmate]: "Live output · repomix",
   [GuideAugmentKind.GoalMe]: "Goal me activity",
   [GuideAugmentKind.CustomerContext]: "Local customer preparation",
 }
@@ -1324,6 +1330,7 @@ const augmentSourceLabels: Readonly<Record<GuideAugmentKind, string>> = {
 const augmentRunningLabels: Readonly<Record<GuideAugmentKind, string>> = {
   [GuideAugmentKind.Research]: "Researching your request",
   [GuideAugmentKind.Codebase]: "Reading your codebase",
+  [GuideAugmentKind.Firstmate]: "Writing your Firstmate message",
   [GuideAugmentKind.GoalMe]: "Preparing your goal",
   [GuideAugmentKind.CustomerContext]: "Preparing your customer brief",
 }
@@ -6781,6 +6788,8 @@ const runAugmentJob = async (
       return runResearchAugment(job.source, props.catalog, context)
     case GuideAugmentKind.Codebase:
       return runCodebaseAugment(job.source, props.provider, context)
+    case GuideAugmentKind.Firstmate:
+      return runFirstmateAugment(job.source, props.provider, context)
     case GuideAugmentKind.GoalMe: {
       if (props.goalProvider === undefined || interactions === undefined) {
         throw new GuideGoalError("Goal me is not configured. Start the guide through an updated trx installation.")

@@ -30,6 +30,7 @@ import type { JevDecisionOptions } from "./jev-decisions.ts"
 export enum GuideAugmentKind {
   Research = "research",
   Codebase = "codebase",
+  Firstmate = "firstmate",
   GoalMe = "goal-me",
   CustomerContext = "customer-context",
 }
@@ -324,29 +325,11 @@ const repomixScopes: ReadonlyArray<RepomixScope> = [
   },
 ]
 
-/** Packs the repository with `repomix` and returns the provider's rewritten intent. */
-export const runCodebaseAugment = async (
-  intent: string,
-  provider: GuideProvider,
+/** Packs the repository with the first `repomix` scope that fits the budget, then hands the pack to `use`. */
+const withRepositoryPack = async <Result>(
   context: GuideAugmentContext,
-  options: { readonly jev?: JevDecisionOptions } = {},
-): Promise<string> => {
-  if (provider.enrich === undefined) {
-    throw new GuideAugmentError("this guide provider does not support codebase augmentation")
-  }
-  context.onPhase(GuideAugmentPhase.CheckingRepositoryNeed)
-  if (
-    !(await jevIntentNeedsRepositoryContext(
-      intent,
-      options.jev ?? { cwd: context.cwd },
-      context.onActivity,
-      context.signal,
-    ))
-  ) {
-    context.onActivity("Jev found that the request is clear without repository context; keeping the original intent.")
-    return intent
-  }
-
+  use: (pack: string) => Promise<Result>,
+): Promise<Result> => {
   // Outside the repository, so the pack is never mistaken for a tracked file.
   const directory = await mkdtemp(path.join(os.tmpdir(), "trellage-guide-pack-"))
   try {
@@ -389,11 +372,74 @@ export const runCodebaseAugment = async (
         `this repository still packs to ${oversized} characters after narrowing to source signatures, over the ${guideEnrichPackMaximumLength}-character budget. Add an "include" list to repomix.config.json, or run trx guide from a single package directory, then try again.`,
       )
     }
-
-    context.onPhase(GuideAugmentPhase.RewritingIntent)
-    const result = await provider.enrich({ intent, pack }, context.onActivity)
-    return clampAugmentedIntent(result.intent)
+    return await use(pack)
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
+}
+
+/** Packs the repository with `repomix` and returns the provider's rewritten intent. */
+export const runCodebaseAugment = async (
+  intent: string,
+  provider: GuideProvider,
+  context: GuideAugmentContext,
+  options: { readonly jev?: JevDecisionOptions } = {},
+): Promise<string> => {
+  if (provider.enrich === undefined) {
+    throw new GuideAugmentError("this guide provider does not support codebase augmentation")
+  }
+  context.onPhase(GuideAugmentPhase.CheckingRepositoryNeed)
+  if (
+    !(await jevIntentNeedsRepositoryContext(
+      intent,
+      options.jev ?? { cwd: context.cwd },
+      context.onActivity,
+      context.signal,
+    ))
+  ) {
+    context.onActivity("Jev found that the request is clear without repository context; keeping the original intent.")
+    return intent
+  }
+
+  return withRepositoryPack(context, async (pack) => {
+    context.onPhase(GuideAugmentPhase.RewritingIntent)
+    const result = await provider.enrich!({ intent, pack }, context.onActivity)
+    return clampAugmentedIntent(result.intent)
+  })
+}
+
+/** Reads `owner/name` and the default branch from the repository's GitHub `origin`, when it has one. */
+export const githubProject = async (
+  context: GuideAugmentContext,
+): Promise<{ readonly repository: string; readonly branch: string } | undefined> => {
+  const read = async (args: ReadonlyArray<string>): Promise<string | undefined> => {
+    try {
+      return (await context.runner.run("git", args, { cwd: context.cwd, timeoutMs: 10_000, signal: context.signal })).stdout.trim()
+    } catch {
+      return undefined
+    }
+  }
+  const url = await read(["remote", "get-url", "origin"])
+  const repository = url?.match(/github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/u)?.[1]
+  if (repository === undefined) return undefined
+  const head = await read(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+  return { repository, branch: head?.replace(/^origin\//u, "") || "main" }
+}
+
+/** Packs the repository and asks the provider to rewrite the intent as a message for a Firstmate session. */
+export const runFirstmateAugment = async (
+  intent: string,
+  provider: GuideProvider,
+  context: GuideAugmentContext,
+): Promise<string> => {
+  if (provider.firstmate === undefined) {
+    throw new GuideAugmentError("this guide provider does not support the Firstmate augmenter")
+  }
+  const project = await githubProject(context)
+  context.onActivity(project ? `Firstmate project: ${project.repository} (${project.branch})` : "No GitHub origin; the message names no project")
+  return withRepositoryPack(context, async (pack) => {
+    context.onPhase(GuideAugmentPhase.RewritingIntent)
+    const result = await provider.firstmate!({ intent, pack, ...(project ? { project } : {}) }, context.onActivity)
+    return clampAugmentedIntent(result.intent)
+  })
 }

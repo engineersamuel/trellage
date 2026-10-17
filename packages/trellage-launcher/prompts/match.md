@@ -69,6 +69,14 @@ or a full delivery lifecycle. Fleet-scope workflows do not require a project
 target; project-scope workflows require a separate human-confirmed target.
 Do not force Firstmate into unrelated single-agent work.
 
+`native:claude/firstmate` and `native:pi/firstmate` run current upstream
+Firstmate from its own clone, with Claude or Pi as supervisor and workers.
+Prefer them over the legacy `native:firstmate/*` profiles for fleet work, and
+prefer `native:claude/firstmate` unless the user asks for Pi. Pick the
+workflow by outcome: `fleet-delivery` for changes delivered as pull requests,
+`fleet-investigation` for report-only questions, `fleet-status` for progress
+and pending decisions.
+
 Firstmate `default` and `pstack-workers` use the same supervisor and supported
 Claude workers. Prefer `default` when no worker-policy preference is stated.
 Use `pstack-workers` when the user wants its lean worker brief policy; it is

@@ -20,6 +20,8 @@ const guideRoot = path.join(root, "profile-guides")
 const expected: ProfileGuideIdentity[] = []
 expected.push({ surface: "native", launcher: "fx", profile: "default" })
 expected.push({ surface: "native", launcher: "headlong", profile: "default" })
+// The firstmate config profile is listed by the router for its supported harnesses.
+for (const launcher of ["claude", "pi"]) expected.push({ surface: "native", launcher, profile: "firstmate" })
 const prototypeEntries = await readdir(path.join(root, "prototypes"), { withFileTypes: true })
 const nativeFamilies = prototypeEntries
   .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
@@ -59,8 +61,9 @@ const nativeGoalSurfaces = new Map([
   ["codex", { controller: "codex-goal", harness: "codex" }],
   ["claude", { controller: "claude-goal", harness: "claude" }],
 ])
+// Firstmate supervises its own fleet loop; a single-agent goal controller does not apply.
 const expectedGoalSurface = (identity) =>
-  identity.surface === "native" ? nativeGoalSurfaces.get(identity.launcher) : undefined
+  identity.surface === "native" && identity.profile !== "firstmate" ? nativeGoalSurfaces.get(identity.launcher) : undefined
 const operationalWorkflowId =
   /^(?:(?:doctor|health-check|inventory|readiness|setup|smoke-test)|(?:extension|launch|launcher|local|model|profile|proxy)-(?:doctor|health-check|inventory-check|readiness-check|repair|setup|smoke-test))$/u
 const operationalExamplePatterns = [

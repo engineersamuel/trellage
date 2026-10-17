@@ -330,6 +330,8 @@
       "expectedProfiles": ["native:firstmate/pstack-workers"],
       "maxRank": 1,
       "excludedProfiles": ["native:firstmate/default", "native:codex/pstack"]
-    }
+    },
+    {"id": "claude-firstmate-fleet", "intent": "Use trx run claude firstmate to split a goal on my GitHub project into parallel scout and ship tasks that come back as pull requests.", "expectedProfiles": ["native:claude/firstmate"], "expectedWorkflows": {"native:claude/firstmate": "fleet-delivery"}, "maxRank": 1, "excludedProfiles": []},
+    {"id": "pi-firstmate-fleet", "intent": "Use trx run pi firstmate so Pi supervises a fleet of read-only scouts that report why the test suite is slow.", "expectedProfiles": ["native:pi/firstmate"], "expectedWorkflows": {"native:pi/firstmate": "fleet-investigation"}, "maxRank": 1, "excludedProfiles": []}
   ]
 }

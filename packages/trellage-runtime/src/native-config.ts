@@ -84,15 +84,42 @@ const NativeInstruction = Schema.Struct({
   file: RelativePluginPath,
 })
 
+/** Absolute or home-relative (`~/...`) directory. */
+const WorkingDirectory = NonEmpty.pipe(
+  Schema.filter((value) => !hasControlCharacters(value) && (value === "~" || value.startsWith("~/") || path.isAbsolute(value))),
+)
+
+const NativeProfileRepository = Schema.Struct({
+  url: NonEmpty.pipe(Schema.filter((value) => !hasControlCharacters(value))),
+  branch: Schema.optionalWith(NonEmpty.pipe(Schema.pattern(/^[A-Za-z0-9._/-]+$/)), { default: () => "main" }),
+})
+
+const NativePrerequisite = Schema.Struct({
+  /** Executable that must be on PATH. */
+  command: NonEmpty.pipe(Schema.pattern(/^[A-Za-z0-9._-]+$/)),
+  /** Shell command that installs it; run only after the user confirms. */
+  install: NonEmpty.pipe(Schema.filter((value) => !hasControlCharacters(value))),
+})
+
 const NativeProfile = Schema.Struct({
   label: Schema.optional(NonEmpty),
   /** Apply to every run, before the profiles the user selects. */
   always: Schema.optionalWith(Schema.Boolean, { default: () => false }),
-  /** Restrict an always-on profile to these harnesses; omitted means all. */
+  /** Restrict the profile to these harnesses; omitted means all. */
   harnesses: Schema.optional(Schema.Array(Identifier).pipe(Schema.minItems(1))),
   instructions: Schema.optionalWith(Schema.Array(Identifier), { default: () => [] }),
   skills: Schema.optionalWith(Schema.Array(NativeSkillSelection), { default: () => [] }),
   plugins: Schema.optionalWith(Schema.Array(NativePluginSelection), { default: () => [] }),
+  /** Start the harness in this directory instead of the invocation directory. */
+  current_working_directory: Schema.optional(WorkingDirectory),
+  /** Clone this repository into current_working_directory and pull it before every launch. */
+  repository: Schema.optional(NativeProfileRepository),
+  /** Load the working directory's own harness extensions and skills. */
+  project_resources: Schema.optional(Schema.Boolean),
+  /** Executables the profile needs; trx offers to install missing ones before launch. */
+  prerequisites: Schema.optional(Schema.Array(NativePrerequisite)),
+  /** Hand this run's harness setup to the workers the agent starts; "firstmate" writes the Firstmate home's worker config. */
+  workers: Schema.optional(Schema.Literal("firstmate")),
 })
 
 const NativeCatalog = Schema.Struct({
@@ -177,8 +204,19 @@ const validateProfileInstructions = (catalog: NativeCatalog): string | undefined
   }
 }
 
+const validateProfileWorkspaces = (catalog: NativeCatalog): string | undefined => {
+  for (const [profileId, profile] of Object.entries(catalog.profiles)) {
+    if (profile.repository && !profile.current_working_directory)
+      return `profile ${profileId} declares repository without current_working_directory`
+  }
+  return undefined
+}
+
 const validateNativeReferences = (catalog: NativeCatalog): string | undefined =>
-  validateProfileSources(catalog) ?? validateProfileWildcards(catalog) ?? validateProfileInstructions(catalog)
+  validateProfileWorkspaces(catalog) ??
+  validateProfileSources(catalog) ??
+  validateProfileWildcards(catalog) ??
+  validateProfileInstructions(catalog)
 
 export const parseTrellageConfig = (source: string): Effect.Effect<TrellageConfig, TrellageConfigError> =>
   Effect.gen(function* () {

@@ -118,6 +118,35 @@ PRD builders retain their own signoff gates. Existing evidence permits entry
 at the right stage. No prompt rewrite is customer validation. The fixed
 workflow frame supplies question, approval, reference, and handoff rules.
 
+For `native:claude/firstmate` and `native:pi/firstmate`, each `prompt` is one
+complete message the captain pastes into a running Firstmate session. Follow
+the guide body's "Writing A Firstmate Message" section and ignore the generic
+task-brief sections below. In order:
+
+- Open with `ahoy!` and the project as GitHub `owner/name` with its base
+  branch, taken only from `intent`, `originalIntent` or `projectTarget`; when
+  none names it, write `my GitHub project <name>` with the name the request
+  uses. Add the delivery mode (`direct-PR` unless the request names another).
+- Numbered tasks, each with a short title marked `SCOUT` (report only, no
+  code) or `SHIP` (code change delivered as a pull request), the real files,
+  symbols and commands the sources name, and one checkable `Done when:` line.
+- Which tasks run in parallel, and for each dependent task the exact
+  condition it waits for (a merge, or the captain's approval of a scout's
+  finding). Do not serialize independent tasks.
+- `Rules for all tasks:` only for limits the sources state, plus the reminder
+  that workers start from the base branch and cannot see uncommitted work
+  when local changes matter.
+- A request for `/bearings` once tasks have started and for each pull request
+  or report as soon as it is ready. Merges stay with the captain unless the
+  request grants them.
+- The closing line `Ask me before you decide anything this prompt does not state.`
+
+For `fleet-investigation`, every task is a `SCOUT`. For `fleet-status`, ask for
+`/bearings` and the specific answer only, and start no tasks. Make the three
+candidates differ in plan, not wording: for example scouts first then ships,
+everything parallel with narrow ships, or one interface-first ship followed by
+dependent ships. Stay in plain text with short lines; no Markdown headings.
+
 For Firstmate delivery and investigation workflows, Firstmate is the sole fleet
 supervisor and the human is captain. Cover the supported fleet lifecycle
 conditionally: verify the target and registration state; resolve project

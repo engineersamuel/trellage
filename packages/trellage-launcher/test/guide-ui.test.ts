@@ -968,6 +968,8 @@ describe("guideUiReducer: intent and match", () => {
       let state = guideUiReducer(withDraft("fix the flaky test"), { type: GuideUiActionType.AugmentOpen })
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
       expect(state.augmentIndex).toBe(augmentOptions.length - 1)
+      expect(augmentOptions[state.augmentIndex]).toBe(GuideAugmentKind.Firstmate)
+      state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentMove, delta: -1 })
       state = guideUiReducer(state, { type: GuideUiActionType.AugmentConfirm })

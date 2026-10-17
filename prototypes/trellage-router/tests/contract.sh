@@ -69,7 +69,7 @@ assert_native_skills_refreshed() {
   jq -se --arg router "$runtime_parent/trx/bin/trx" '
     length == 1 and all(.[]; .args == [] and .routerCommandPath == $router)
   ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh the configured skill maintenance once through its own router'
-  jq -r '.catalog.native[] | select(.launcher != "fx" and .launcher != "headlong") | (.launcher | {agency:"agx",copilot:"cpx",codex:"cdx",claude:"cldx",firstmate:"fmx",jcode:"jcx",pi:"picx",prime:"prx",omp:"omp"}[.]) + ":skills-update " + (if .launcher == "agency" and .name == "azure" then "trellage-azure" elif .launcher == "omp" and .name == "default" then "copilot" else .name end)' \
+  jq -r '.catalog.native[] | select(.launcher != "fx" and .launcher != "headlong" and (.name != "firstmate" or .launcher == "firstmate")) | (.launcher | {agency:"agx",copilot:"cpx",codex:"cdx",claude:"cldx",firstmate:"fmx",jcode:"jcx",pi:"picx",prime:"prx",omp:"omp"}[.]) + ":skills-update " + (if .launcher == "agency" and .name == "azure" then "trellage-azure" elif .launcher == "omp" and .name == "default" then "copilot" else .name end)' \
     "$fixture_root/guide-catalog.json" | sort >"$fixture_root/expected-skills-update.log"
   sort "$skills_update_log" >"$fixture_root/actual-skills-update.log"
   cmp -s "$fixture_root/expected-skills-update.log" "$fixture_root/actual-skills-update.log" \
@@ -642,6 +642,8 @@ for pair in \
   headlong:default; do
   write_fixture_guide "${pair%%:*}" "${pair#*:}"
 done
+write_fixture_guide claude firstmate
+write_fixture_guide pi firstmate
 export TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides"
 
 for mapping in \
@@ -675,7 +677,7 @@ assert_contains 'trx upgrade all [--native] [--yes | --dry-run]' "$fixture_root/
 assert_contains 'Bare trx opens the launcher.' "$fixture_root/help.out"
 assert_contains 'trx run copilot tufte-vdqi' "$fixture_root/help.out"
 
-for retired_args in '--profile agency' '--profile=agency' 'run cpx cpx-p' 'run cdx youtube' 'run fmx default'; do
+for retired_args in '--profile agency' '--profile=agency' 'run cpx cpx-p' 'run cdx youtube' 'run fmx default' 'run firstmate default'; do
   status=0
   "$fixture_bin/trx" $retired_args >"$fixture_root/retired-route.out" 2>&1 || status=$?
   [[ "$status" == 1 ]] || fail "retired route succeeded: $retired_args"
@@ -888,6 +890,7 @@ jq -e '
     "codex/pstack",
     "codex/youtube",
     "claude/cldx-p",
+    "claude/firstmate",
     "firstmate/default",
     "firstmate/pstack-workers",
     "fx/default",
@@ -895,6 +898,7 @@ jq -e '
     "omp/default",
     "omp/local",
     "pi/default",
+    "pi/firstmate",
     "prime/default",
     "agency/azure",
     "headlong/default"
@@ -905,6 +909,7 @@ jq -e '
     "codex",
     "codex",
     "claude",
+    "claude",
     "firstmate",
     "firstmate",
     "fx",
@@ -912,11 +917,14 @@ jq -e '
     "omp",
     "omp",
     "pi",
+    "pi",
     "prime",
     "agency",
     "headlong"
   ]
   and [.profiles[] | .sandbox] == [
+    false,
+    false,
     false,
     false,
     false,
@@ -945,6 +953,7 @@ jq -e '
   and (.profiles[] | select(.launcher == "agency" and .name == "azure") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "headlong" and .name == "default") | .herdrCompatibility.status) == "untested"
   and all(.profiles[] | select(.launcher == "firstmate"); .headless.prompt == false and .headless.modelOverride == false)
+  and all(.profiles[] | select(.name == "firstmate"); .headless.prompt == false and (has("orchestration") | not))
   and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .orchestration.taskIdPrefix) == "fmd"
   and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .orchestration.preparation) == {schemaVersion: 1}
   and (.profiles[] | select(.launcher == "firstmate" and .name == "pstack-workers") | .orchestration.workerPolicy.name) == "pstack-workers"
@@ -1146,7 +1155,7 @@ jq -e \
     and .catalog.schemaVersion == 1
     and (.catalog | has("sandboxCommandPath") | not)
     and .catalog.sandbox == []
-    and (.catalog.native | length == 15)
+    and (.catalog.native | length == 17)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -1314,7 +1323,8 @@ for upgrade_flag in '' '--yes' '--dry-run'; do
     || fail 'upgrade mode did not route the combined catalog'
   jq -e --slurpfile guide "$fixture_root/guide-catalog.json" --arg flag "$upgrade_flag" \
     --arg router "$runtime_parent/trx/bin/trx" '
-    .catalog == $guide[0].catalog
+    # Upgrade manages installed backends; the guide also offers the firstmate config profiles.
+    .catalog == ($guide[0].catalog | .native |= map(select(.name != "firstmate" or .launcher == "firstmate")))
     and .routerCommandPath == $router
     and .args == (if $flag == "" then ["all"] else ["all", $flag] end)
   ' "$fixture_root/upgrade-catalog.json" >/dev/null \

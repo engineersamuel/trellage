@@ -376,6 +376,65 @@ directory). The text is written to the harness's user-instruction file: Pi
 `APPEND_SYSTEM.md`, Copilot `copilot-instructions.md`, Claude `CLAUDE.md`, Codex
 `AGENTS.md`, Grok `Agents.md`. See `docs/examples/trellage-config.toml`.
 
+A profile's `harnesses` list also limits where it can be selected: other
+harnesses refuse it, and the `trx run` menu shows it dimmed. Three optional
+fields change where the harness runs:
+
+- `current_working_directory = "~/path"` starts the harness in that absolute or
+  `~/` directory instead of the directory where `trx run` was invoked.
+- `repository = { url = "...", branch = "main" }` clones that repository into
+  the directory when it is missing, and runs `git pull --rebase origin BRANCH`
+  before every launch (not on `--dry-run`). A failed pull stops the launch.
+- `project_resources = true` makes Pi load the directory's own
+  `.pi/extensions/*.ts` and `.agents/skills/*` explicitly; other trx isolation
+  stays. Claude already loads the directory's `.claude` settings and skills.
+
+`prerequisites = [{ command = "tool", install = "shell command" }]` lists
+executables the profile needs. Before launch (not on `--dry-run`), trx lists
+missing ones with their install commands and asks to install them; without a
+terminal, or when you answer no, it stops. `--dry-run` marks them `(missing)`.
+
+`trx list` and `trx guide` also offer `claude/firstmate` and `pi/firstmate`.
+Their guides (`profile-guides/native/{claude,pi}/firstmate.md`) teach the
+guide's model the Firstmate message shape: `ahoy!` with the project and
+delivery mode, numbered `SCOUT`/`SHIP` tasks with a `Done when:` line each,
+explicit parallel and wait conditions, a `/bearings` request, captain merge
+authority, and a closing "Ask me before…" line. Workflows: `fleet-delivery`,
+`fleet-investigation` (scouts only) and `fleet-status` (no new work). The
+guide launches `trx run claude|pi firstmate` and hands the message over to
+paste, because Firstmate is interactive. `trx upgrade` and `trx admin` do not
+list these profiles: they are config profiles, not installed backends.
+
+The shipped `firstmate` profile uses all four to run
+[Firstmate](https://github.com/kunchenguid/firstmate) on `claude` or `pi`:
+`trx run claude firstmate`. It requires `git`, `gh`, `jq`, `node`,
+`treehouse`, `gh-axi` and `tasks-axi`, with the install commands from
+Firstmate's `bin/fm-bootstrap.sh`. Add `no-mistakes` or `quota-axi` to your own
+copy of the profile if you use no-mistakes delivery or quota profiles.
+Firstmate starts its workers in new terminal panes that do not inherit the
+supervisor's environment, so the profile sets `workers = "firstmate"`:
+
+- Claude: trx writes the proxy variables (`ANTHROPIC_BASE_URL`,
+  `ANTHROPIC_AUTH_TOKEN`, model names) into the generated `settings.json` `env`
+  block. Workers already receive the supervisor's `CLAUDE_CONFIG_DIR`, so they
+  reach copilot-proxy-rs instead of asking for a login.
+- Pi: trx writes Firstmate's `config/pi-account` (the generated Pi directory and
+  provider `copilot-proxy-rs`) and a default-only `config/crew-dispatch.json`
+  that sends workers to Pi with the supervisor's model and effort. A Claude run
+  removes those two files again. trx never replaces or removes a version of
+  either file it did not write; it stops and names the file instead.
+- Worker shells start fresh and may not read your shell config (Claude runs
+  commands in zsh even when you use fish). trx puts the mise shims,
+  `~/.local/bin` and `/opt/homebrew/bin` (those that exist) in front of `PATH`:
+  Claude through the `settings.json` `env` block, Pi through its
+  `shellCommandPrefix` setting.
+- Generations that started workers are kept for 7 days after the last launch,
+  so pruning never removes a directory a live worker uses.
+
+Firstmate keeps its own projects under its clone;
+ask it to add the repository you work on. It does not see uncommitted changes
+in your worktree.
+
 Grok uses `grok` from `PATH`; set `TRELLAGE_GROK_BIN` to an alternate binary.
 The adapter routes model requests to `copilot-proxy-rs`, pins API-key
 authentication in generated `config.toml`, and supplies a non-secret local
@@ -1138,6 +1197,13 @@ page (`p`) or after a failed match.
   signatures with comments removed. Only when the narrowest scope is still too
   large does it fail, and it then names `repomix.config.json` and running from a
   single package directory as the fix.
+- **Firstmate** packs this repository the same way and rewrites the draft as
+  one message for a Firstmate session (`trx run claude firstmate`): a greeting,
+  a project add line with the GitHub `owner/name` and base branch read from
+  `origin` (delivery `direct-PR` unless the draft asks for another), numbered
+  tasks that name real files, one `Done when:` line per task, and an order only
+  where one task depends on another. It uses the `enrich` model route and
+  `prompts/firstmate.md`. Paste the result into Firstmate.
 - **Goal me** runs the installed `goal-me` skill in one Copilot SDK session.
   Questions stay inside the guide. Select an answer or type your own, then
   continue until the task and success criteria are clear. The completed goal

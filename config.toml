@@ -606,14 +606,6 @@ harnesses = [ "copilot" ]
 source = "tufte-vdqi"
 names = [ "tufte-chart", "tufte-critique" ]
 
-[native.profiles.preset-firstmate-default]
-label = "firstmate / default"
-harnesses = [ "firstmate" ]
-
-[native.profiles.preset-firstmate-pstack-workers]
-label = "firstmate / pstack-workers"
-harnesses = [ "firstmate" ]
-
 [native.profiles.preset-fx-default]
 label = "fx / default"
 harnesses = [ "fx" ]
@@ -641,3 +633,44 @@ harnesses = [ "prime" ]
 [native.profiles.preset-uji-default]
 label = "uji / default"
 harnesses = [ "uji" ]
+
+# Firstmate (https://github.com/kunchenguid/firstmate) runs from its own clone, kept on the latest main.
+[native.profiles.firstmate]
+label = "Firstmate fleet"
+harnesses = [ "claude", "pi" ]
+current_working_directory = "~/.local/share/trellage/firstmate"
+repository = { url = "https://github.com/kunchenguid/firstmate.git", branch = "main" }
+project_resources = true
+# Workers start in new panes; trx writes the proxy setup where they find it.
+workers = "firstmate"
+
+# Firstmate's required tools, with the install commands from its bin/fm-bootstrap.sh.
+# trx offers to install missing ones before launch. no-mistakes and quota-axi are optional
+# (no-mistakes delivery, quota profiles); add them here if you use those.
+[[native.profiles.firstmate.prerequisites]]
+command = "git"
+install = "brew install git"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "gh"
+install = "brew install gh"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "jq"
+install = "brew install jq"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "node"
+install = "brew install node"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "treehouse"
+install = "curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "gh-axi"
+install = "npm install -g gh-axi && gh-axi setup hooks"
+
+[[native.profiles.firstmate.prerequisites]]
+command = "tasks-axi"
+install = "npm install -g tasks-axi"
