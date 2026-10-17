@@ -876,7 +876,7 @@ separate Ink flow that matches an intent across both Trellage Native and
 Trellage Sandbox profiles, compares five recommendations, and creates three
 editable prompt candidates. An approved goal instead gets one to five
 compatible recommendations and three editable execution approaches.
-Matching first uses TypeSafe Jev (`jev-1.13.0`) with the complete compact
+Matching first uses TypeSafe Jev (`jev-1.14.0`) with the complete compact
 catalog. The guide reads `TYPESAFE_API_KEY` from, in order: the shell
 environment, `.env` in the guide's working directory, then the Trellage user
 environment directory (`$XDG_CONFIG_HOME/trellage` or `~/.config/trellage`,
@@ -1502,7 +1502,7 @@ selected profile, supplied in JSON or through `--profile`.
 
 Match responses contain `phase: "match"` and enriched `recommendations`.
 Optional host-owned `execution` metadata identifies the actual matcher:
-`{"backend":"jev","model":"jev-1.13.0"}` or
+`{"backend":"jev","model":"jev-1.14.0"}` or
 `{"backend":"copilot","model":"gpt-5.6-sol","effort":"medium"}`.
 The top-level `model` and `effort` retain the configured LLM route. Jev's
 `confidence` is the probability that the profile fits the task. Its explanations
