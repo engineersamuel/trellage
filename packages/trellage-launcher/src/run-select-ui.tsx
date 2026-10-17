@@ -1,3 +1,4 @@
+import { CLEAN_PROFILE } from "@trellage/runtime/native-run"
 import { runSelectorProfiles, runSelectorVisibleProfiles } from "./run-select-state.ts"
 import React, { useReducer } from "react"
 import { Box, Text, useApp, useInput } from "ink"
@@ -7,10 +8,12 @@ import {
   runSelectorChoice,
   runSelectorCommand,
   runSelectorReducer,
+  type RunSelectorAction,
   type RunSelectorCatalog,
   type RunSelectorChoice,
   type RunSelectorField,
   type RunSelectorInitial,
+  type RunSelectorOption,
 } from "./run-select-state.ts"
 
 export interface RunSelectorProps {
@@ -52,13 +55,18 @@ const panelLines = (catalog: RunSelectorCatalog): PanelLine[] => {
 const ModelPanel = ({ catalog, cursor, current }: { catalog: RunSelectorCatalog; cursor: number; current: number }) => {
   const theme = useTheme()
   const lines = panelLines(catalog)
-  const cursorLine = Math.max(0, lines.findIndex((line) => line.index === cursor))
+  const cursorLine = Math.max(
+    0,
+    lines.findIndex((line) => line.index === cursor),
+  )
   const start = Math.max(0, Math.min(cursorLine - Math.floor(PANEL_ROWS / 2), lines.length - PANEL_ROWS))
   const visible = lines.slice(start, start + PANEL_ROWS)
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.colors.focusRing} paddingX={1}>
-      <Text bold color={theme.colors.primary}>Select model</Text>
-      {start > 0 ? <Text dimColor>  ↑ more</Text> : null}
+      <Text bold color={theme.colors.primary}>
+        Select model
+      </Text>
+      {start > 0 ? <Text dimColor> ↑ more</Text> : null}
       {visible.map((line) =>
         line.index === undefined ? (
           <Text key={line.key} bold color={theme.colors.accent}>
@@ -76,14 +84,146 @@ const ModelPanel = ({ catalog, cursor, current }: { catalog: RunSelectorCatalog;
           </Text>
         ),
       )}
-      {start + PANEL_ROWS < lines.length ? <Text dimColor>  ↓ more</Text> : null}
+      {start + PANEL_ROWS < lines.length ? <Text dimColor> ↓ more</Text> : null}
       <Text>
-        <Text color={theme.colors.primary}>↑↓</Text><Text dimColor> move · </Text>
-        <Text color={theme.colors.primary}>enter</Text><Text dimColor> select · </Text>
-        <Text color={theme.colors.primary}>esc</Text><Text dimColor> back</Text>
+        <Text color={theme.colors.primary}>↑↓</Text>
+        <Text dimColor> move · </Text>
+        <Text color={theme.colors.primary}>enter</Text>
+        <Text dimColor> select · </Text>
+        <Text color={theme.colors.primary}>esc</Text>
+        <Text dimColor> back</Text>
       </Text>
     </Box>
   )
+}
+
+const ProfileRows = ({
+  catalog,
+  harnessIndex,
+  profiles,
+  cursor,
+  active,
+}: {
+  readonly catalog: RunSelectorCatalog
+  readonly harnessIndex: number
+  readonly profiles: ReadonlyArray<string>
+  readonly cursor: number
+  readonly active: boolean
+}) => {
+  const theme = useTheme()
+  const visibleProfiles = runSelectorVisibleProfiles(catalog, harnessIndex, profiles)
+  const availableProfiles = runSelectorProfiles(catalog, harnessIndex)
+  const cleanSelected = profiles.includes(CLEAN_PROFILE)
+  if (visibleProfiles.length === 0) return <Text dimColor>none defined in config.toml (clean base harness)</Text>
+  return (
+    <>
+      {visibleProfiles.map(({ profile, enabled }, index) => (
+        <Text
+          key={profile}
+          inverse={active && index === cursor}
+          bold={active && index === cursor}
+          dimColor={!enabled}
+          {...(!(active && index === cursor) && profiles.includes(profile) ? { color: theme.colors.selection } : {})}
+        >
+          [{profiles.includes(profile) ? "x" : " "}] {profile}
+          {enabled
+            ? ""
+            : cleanSelected && availableProfiles.includes(profile)
+              ? " (clean selected)"
+              : ` (${catalog.profileHarnesses?.[profile]?.join(", ")} only)`}
+        </Text>
+      ))}
+    </>
+  )
+}
+
+const AlwaysOnSummary = ({
+  harness,
+  entries,
+}: {
+  readonly harness: RunSelectorOption
+  readonly entries: NonNullable<RunSelectorCatalog["always"]>
+}) => {
+  const theme = useTheme()
+  const always = entries.filter((entry) => !entry.harnesses || entry.harnesses.includes(harness.harness))
+  const skills = [...new Set(always.flatMap((entry) => entry.skills))]
+  const styles = [...new Set(always.flatMap((entry) => entry.instructions))]
+  if (always.length === 0 && (harness.extensions?.length ?? 0) === 0) return null
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text>
+        <Text color={theme.colors.primary}>Always on</Text> (
+        <Text color={theme.colors.selection}>{always.map((entry) => entry.profile).join(", ")}</Text>
+        <Text dimColor>; --no-always skips</Text>)
+      </Text>
+      {(harness.extensions?.length ?? 0) > 0 ? (
+        <Text>
+          {" "}
+          Extensions <Text color={theme.colors.selection}>{harness.extensions!.join(", ")}</Text>
+        </Text>
+      ) : null}
+      {skills.length > 0 ? (
+        <Text>
+          {" "}
+          Skills <Text color={theme.colors.selection}>{skills.join(", ")}</Text>
+        </Text>
+      ) : null}
+      {styles.length > 0 ? (
+        <Text>
+          {" "}
+          Styles <Text color={theme.colors.accent}>{styles.join(", ")}</Text>
+        </Text>
+      ) : null}
+    </Box>
+  )
+}
+
+const SelectorHeader = ({ restoredFrom }: { readonly restoredFrom: string | undefined }) => {
+  const theme = useTheme()
+  return (
+    <>
+      <Text>
+        <Text bold color={theme.colors.primary}>
+          trx run
+        </Text>
+        : choose a harness, profiles and model
+      </Text>
+      {restoredFrom ? <Text dimColor>Restored from {restoredFrom} history</Text> : null}
+    </>
+  )
+}
+
+type InputKey = Parameters<Parameters<typeof useInput>[0]>[1]
+
+const handlePickerInput = (input: string, key: InputKey, dispatch: React.Dispatch<RunSelectorAction>): void => {
+  if (key.escape || input === "q") dispatch({ kind: "picker-close" })
+  else if (key.return) dispatch({ kind: "picker-select" })
+  else if (key.upArrow) dispatch({ kind: "picker-move", delta: -1 })
+  else if (key.downArrow || key.tab) dispatch({ kind: "picker-move", delta: 1 })
+}
+
+const handleSelectorInput = (
+  input: string,
+  key: InputKey,
+  state: ReturnType<typeof initialRunSelectorState>,
+  catalog: RunSelectorCatalog,
+  dispatch: React.Dispatch<RunSelectorAction>,
+  finish: (choice: RunSelectorChoice | null) => void,
+): void => {
+  if (key.return) {
+    if (state.field === "model") dispatch({ kind: "open-picker" })
+    else finish(runSelectorChoice(state, catalog))
+    return
+  }
+  if (key.escape || input === "q" || (key.ctrl && input === "c")) {
+    finish(null)
+    return
+  }
+  if (key.upArrow) dispatch({ kind: "field", delta: -1 })
+  else if (key.downArrow || key.tab) dispatch({ kind: "field", delta: 1 })
+  else if (key.leftArrow) dispatch({ kind: "change", delta: -1 })
+  else if (key.rightArrow) dispatch({ kind: "change", delta: 1 })
+  else if (input === " ") dispatch({ kind: "toggle" })
 }
 
 export const RunSelector = ({ catalog, initial, restoredFrom, onDone }: RunSelectorProps) => {
@@ -99,64 +239,31 @@ export const RunSelector = ({ catalog, initial, restoredFrom, onDone }: RunSelec
     exit()
   }
   useInput((input, key) => {
-    if (state.picker !== null) {
-      if (key.escape || input === "q") dispatch({ kind: "picker-close" })
-      else if (key.return) dispatch({ kind: "picker-select" })
-      else if (key.upArrow) dispatch({ kind: "picker-move", delta: -1 })
-      else if (key.downArrow || key.tab) dispatch({ kind: "picker-move", delta: 1 })
-      return
-    }
-    if (key.return && state.field === "model") dispatch({ kind: "open-picker" })
-    else if (key.escape || input === "q" || (key.ctrl && input === "c")) finish(null)
-    else if (key.return) finish(runSelectorChoice(state, catalog))
-    else if (key.upArrow) dispatch({ kind: "field", delta: -1 })
-    else if (key.downArrow || key.tab) dispatch({ kind: "field", delta: 1 })
-    else if (key.leftArrow) dispatch({ kind: "change", delta: -1 })
-    else if (key.rightArrow) dispatch({ kind: "change", delta: 1 })
-    else if (input === " ") dispatch({ kind: "toggle" })
+    if (state.picker !== null) handlePickerInput(input, key, dispatch)
+    else handleSelectorInput(input, key, state, catalog, dispatch, finish)
   })
 
   const harness = catalog.harnesses[state.harnessIndex]!
   const choice = runSelectorChoice(state, catalog)
   const active = (field: RunSelectorField) => state.field === field
-  const always = (catalog.always ?? []).filter((entry) => !entry.harnesses || entry.harnesses.includes(harness.harness))
-  const alwaysSkills = [...new Set(always.flatMap((entry) => entry.skills))]
-  const alwaysStyles = [...new Set(always.flatMap((entry) => entry.instructions))]
   if (state.picker !== null) return <ModelPanel catalog={catalog} cursor={state.picker} current={state.modelIndex} />
   return (
     <Box flexDirection="column">
-      <Text><Text bold color={theme.colors.primary}>trx run</Text>: choose a harness, profiles and model</Text>
-      {restoredFrom ? <Text dimColor>Restored from {restoredFrom} history</Text> : null}
-      {always.length > 0 || (harness.extensions?.length ?? 0) > 0 ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text>
-            <Text color={theme.colors.primary}>Always on</Text> (<Text color={theme.colors.selection}>{always.map((entry) => entry.profile).join(", ")}</Text>
-            <Text dimColor>; --no-always skips</Text>)
-          </Text>
-          {(harness.extensions?.length ?? 0) > 0 ? <Text>  Extensions  <Text color={theme.colors.selection}>{harness.extensions!.join(", ")}</Text></Text> : null}
-          {alwaysSkills.length > 0 ? <Text>  Skills  <Text color={theme.colors.selection}>{alwaysSkills.join(", ")}</Text></Text> : null}
-          {alwaysStyles.length > 0 ? <Text>  Styles  <Text color={theme.colors.accent}>{alwaysStyles.join(", ")}</Text></Text> : null}
-        </Box>
-      ) : null}
+      <SelectorHeader restoredFrom={restoredFrom} />
+      <AlwaysOnSummary harness={harness} entries={catalog.always ?? []} />
       <Box flexDirection="column" marginTop={1}>
         <Row active={active("harness")} label="Harness">
           <Text color={theme.colors.primary}>◂ {harness.label} ▸</Text>
         </Row>
         <Row active={active("profiles")} label="Profiles">
           <Box flexDirection="column">
-            {runSelectorVisibleProfiles(catalog, state.harnessIndex).length === 0 ? <Text dimColor>none defined in config.toml (clean base harness)</Text> : null}
-            {runSelectorVisibleProfiles(catalog, state.harnessIndex).map(({ profile, enabled }, index) => (
-              <Text
-                key={profile}
-                inverse={active("profiles") && index === state.profileCursor}
-                bold={active("profiles") && index === state.profileCursor}
-                dimColor={!enabled}
-                {...(!(active("profiles") && index === state.profileCursor) && state.profiles.includes(profile) ? { color: theme.colors.selection } : {})}
-              >
-                [{state.profiles.includes(profile) ? "x" : " "}] {profile}
-                {enabled ? "" : ` (${catalog.profileHarnesses?.[profile]?.join(", ")} only)`}
-              </Text>
-            ))}
+            <ProfileRows
+              catalog={catalog}
+              harnessIndex={state.harnessIndex}
+              profiles={state.profiles}
+              cursor={state.profileCursor}
+              active={active("profiles")}
+            />
           </Box>
         </Row>
         <Row active={active("model")} label="Model">
@@ -176,19 +283,30 @@ export const RunSelector = ({ catalog, initial, restoredFrom, onDone }: RunSelec
       </Box>
       <Box flexDirection="column" marginTop={1}>
         <Text>
-          <Text color={theme.colors.primary}>Normal</Text>{"  "}
+          <Text color={theme.colors.primary}>Normal</Text>
+          {"  "}
           <Text color={theme.colors.accent}>{choice.model ?? harness.defaultModel ?? "harness default"}</Text>
-          {" · effort "}<Text color={theme.colors.warning}>{choice.effort ?? harness.defaultEffort ?? "harness default"}</Text>
+          {" · effort "}
+          <Text color={theme.colors.warning}>{choice.effort ?? harness.defaultEffort ?? "harness default"}</Text>
         </Text>
-        <Text><Text color={theme.colors.primary}>Plan</Text>{"    "}<Text color={theme.colors.accent}>{harness.planModel}</Text></Text>
+        <Text>
+          <Text color={theme.colors.primary}>Plan</Text>
+          {"    "}
+          <Text color={theme.colors.accent}>{harness.planModel}</Text>
+        </Text>
         <Text color={theme.colors.selection}>{runSelectorCommand(choice)}</Text>
       </Box>
       <Text>
-        <Text color={theme.colors.primary}>↑↓</Text><Text dimColor> field · </Text>
-        <Text color={theme.colors.primary}>←→</Text><Text dimColor> change · </Text>
-        <Text color={theme.colors.primary}>space</Text><Text dimColor> toggle profile · </Text>
-        <Text color={theme.colors.primary}>enter</Text><Text dimColor> launch (on Model: open list) · </Text>
-        <Text color={theme.colors.primary}>esc</Text><Text dimColor> cancel</Text>
+        <Text color={theme.colors.primary}>↑↓</Text>
+        <Text dimColor> field · </Text>
+        <Text color={theme.colors.primary}>←→</Text>
+        <Text dimColor> change · </Text>
+        <Text color={theme.colors.primary}>space</Text>
+        <Text dimColor> toggle profile · </Text>
+        <Text color={theme.colors.primary}>enter</Text>
+        <Text dimColor> launch (on Model: open list) · </Text>
+        <Text color={theme.colors.primary}>esc</Text>
+        <Text dimColor> cancel</Text>
       </Text>
     </Box>
   )

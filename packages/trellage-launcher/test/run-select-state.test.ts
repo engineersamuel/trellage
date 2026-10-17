@@ -21,7 +21,10 @@ describe("run selector state", () => {
   it("shows a disabled profile on other harnesses but never selects it", () => {
     const gated: RunSelectorCatalog = {
       ...catalog,
-      harnesses: [...catalog.harnesses, { harness: "codex", label: "Codex", efforts: [], defaultModel: undefined, planModel: "none" }],
+      harnesses: [
+        ...catalog.harnesses,
+        { harness: "codex", label: "Codex", efforts: [], defaultModel: undefined, planModel: "none" },
+      ],
       profiles: ["firstmate", "office", "preset-only"],
       profileHarnesses: { firstmate: ["claude", "pi"], "preset-only": ["claude"] },
       disabledProfiles: ["firstmate"],
@@ -47,9 +50,50 @@ describe("run selector state", () => {
     expect(runSelectorCommand(choice)).toBe("trx run pi")
   })
 
+  it("makes clean exclusive and disables other profiles until it is removed", () => {
+    const cleanCatalog: RunSelectorCatalog = {
+      ...catalog,
+      profiles: ["office", "clean", "superpowers"],
+      profileHarnesses: { clean: ["pi", "claude"] },
+    }
+    let state = initialRunSelectorState(cleanCatalog, { profiles: ["office", "clean", "superpowers"] })
+    expect(state.profiles).toEqual(["clean"])
+    expect(runSelectorVisibleProfiles(cleanCatalog, 0, state.profiles)).toEqual([
+      { profile: "office", enabled: false },
+      { profile: "clean", enabled: true },
+      { profile: "superpowers", enabled: false },
+    ])
+
+    state = { ...state, field: "profiles", profileCursor: 0 }
+    state = runSelectorReducer(state, { kind: "toggle" }, cleanCatalog)
+    expect(state.profiles).toEqual(["clean"])
+
+    state = { ...state, profileCursor: 1 }
+    state = runSelectorReducer(state, { kind: "toggle" }, cleanCatalog)
+    expect(state.profiles).toEqual([])
+
+    state = { ...state, profileCursor: 0 }
+    state = runSelectorReducer(state, { kind: "toggle" }, cleanCatalog)
+    expect(state.profiles).toEqual(["office"])
+    state = { ...state, profileCursor: 1 }
+    state = runSelectorReducer(state, { kind: "toggle" }, cleanCatalog)
+    expect(state.profiles).toEqual(["clean"])
+    expect(runSelectorChoice(state, cleanCatalog).profiles).toEqual(["clean"])
+  })
+
   it("restores history and drops unknown profiles", () => {
-    const state = initialRunSelectorState(catalog, { harness: "claude", profiles: ["office", "gone"], model: "b", effort: "medium" })
-    expect(runSelectorChoice(state, catalog)).toEqual({ harness: "claude", profiles: ["office"], model: "b", effort: "medium" })
+    const state = initialRunSelectorState(catalog, {
+      harness: "claude",
+      profiles: ["office", "gone"],
+      model: "b",
+      effort: "medium",
+    })
+    expect(runSelectorChoice(state, catalog)).toEqual({
+      harness: "claude",
+      profiles: ["office"],
+      model: "b",
+      effort: "medium",
+    })
   })
 
   it("stacks profiles, cycles model and resets effort on harness change", () => {
@@ -60,7 +104,11 @@ describe("run selector state", () => {
     state = runSelectorReducer(state, { kind: "toggle" }, catalog)
     state = runSelectorReducer(state, { kind: "field", delta: 1 }, catalog)
     state = runSelectorReducer(state, { kind: "change", delta: -1 }, catalog)
-    expect(runSelectorChoice(state, catalog)).toMatchObject({ profiles: ["office", "superpowers"], model: "b", effort: "high" })
+    expect(runSelectorChoice(state, catalog)).toMatchObject({
+      profiles: ["office", "superpowers"],
+      model: "b",
+      effort: "high",
+    })
     state = runSelectorReducer({ ...state, field: "harness" }, { kind: "change", delta: 1 }, catalog)
     expect(runSelectorChoice(state, catalog)).toMatchObject({ harness: "claude", effort: undefined })
   })

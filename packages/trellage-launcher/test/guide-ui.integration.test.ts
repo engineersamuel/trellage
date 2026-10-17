@@ -2053,7 +2053,7 @@ it("interviews through p then a, revises, and protects a newer prompt and queued
   await scrollUntil(guide, "4. VERIFY")
   await scrollUntil(guide, "5. DECIDE")
   await scrollUntil(guide, "Begin.")
-  await guide.pressAndWait(enter, "Goal me is ready", "Enter replace current prompt")
+  await guide.pressAndWait(enter, "Goal me is ready", "Enter replace current prompt", "c copy to clipboard")
   await guide.waitForText("Run npm test -- --runInBand.", "• Keep failure evidence.")
   expect(guide.text()).not.toContain("`npm test")
   expect(guide.text()).not.toContain("**Keep failure evidence")

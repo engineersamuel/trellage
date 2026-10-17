@@ -115,6 +115,7 @@ import { GuideOptimizeScreen, type GuideOptimizeLaunch } from "./guide-optimize-
 import { GuideOptimizeRunner, type GuideOptimizeSdkOptions } from "./guide-optimize.ts"
 import type { ensureOptimizeSkills } from "./guide-optimize-skills.ts"
 import type { ReviewPlanTerminalResult } from "./review-planning.ts"
+import { copyTextToClipboard } from "./ritual-clipboard.ts"
 import { loadSelectedGuide, type SelectedGuideDocument } from "./guide-selected.ts"
 import {
   GuideCandidatePromptCollisionError,
@@ -4441,6 +4442,17 @@ const goalRecoveryText = (job: GuideAugmentJob): string => {
 const GoalAugmentResult = ({ job }: { readonly job: GuideAugmentJob }) => {
   const { rows, columns } = useGuideWindowSize()
   const failed = job.status === "failed"
+  const [copyNotice, setCopyNotice] = useState<string | undefined>(undefined)
+  useInput((input, key) => {
+    if (input !== "c" || key.ctrl || key.meta || key.super || key.hyper || key.eventType === "release") return
+    if (failed || job.text === undefined) return
+    try {
+      copyTextToClipboard(job.text)
+      setCopyNotice("Copied goal to clipboard.")
+    } catch (error) {
+      setCopyNotice(`Copy failed. ${describeGuideUiError(error)}`)
+    }
+  })
   const viewportProps = {
     width: Math.max(1, columns - 2),
     height: Math.max(1, rows - 7),
@@ -4458,8 +4470,9 @@ const GoalAugmentResult = ({ job }: { readonly job: GuideAugmentJob }) => {
       ) : (
         <MarkdownTextViewport value={job.text ?? ""} {...viewportProps} />
       )}
+      {copyNotice === undefined ? null : <Text color="green" wrap="truncate-end">{copyNotice}</Text>}
       <Text dimColor>
-        {failed ? "r retry" : "Enter replace current prompt"} · x discard interview · PgUp/PgDn scroll · Esc back
+        {failed ? "r retry" : "Enter replace current prompt · c copy to clipboard"} · x discard interview · PgUp/PgDn scroll · Esc back
       </Text>
     </Box>
   )
