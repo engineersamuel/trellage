@@ -45,7 +45,7 @@ function sourceFixture(): {
   const barrier = path.join(home, "install-barrier")
   const preload = path.join(parent, "preload.ts")
   mkdirSync(home)
-  for (const directory of ["bin", "packages", "prototypes", "scripts", "profile-guides", "profiles"]) {
+  for (const directory of ["bin", "packages", "prototypes", "scripts", "profile-guides"]) {
     mkdirSync(path.join(root, directory), { recursive: true })
   }
   writeFileSync(

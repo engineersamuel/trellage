@@ -362,7 +362,7 @@ test("a missing required wildcard skill fails before publishing", async () => {
   assert.equal(await lstat(output).catch(() => undefined), undefined)
 })
 
-test("Native and remaining container surfaces consume their common skill bundle", async () => {
+test("Native and comparison surfaces consume their common skill bundle", async () => {
   const prototypesRoot = path.join(repositoryRoot, "prototypes")
   const nativeFamilies = (await readdir(prototypesRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
@@ -372,19 +372,6 @@ test("Native and remaining container surfaces consume their common skill bundle"
 
   for (const family of nativeFamilies) {
     await assertNativeFamilyCommonBundle(prototypesRoot, family)
-  }
-
-  const profilesRoot = path.join(repositoryRoot, "profiles")
-  const sandboxProfiles = (await readdir(profilesRoot, { withFileTypes: true }).catch((error) => {
-    if (error?.code === "ENOENT") return []
-    throw error
-  }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-  for (const profile of sandboxProfiles) {
-    const source = await readFile(path.join(profilesRoot, profile, "profile.toml"), "utf8")
-    assert.match(source, /^skill_bundles = \[[^\n]*"sandbox-common"/mu, `${profile} must select sandbox-common`)
   }
 
   for (const entrypoint of ["scripts/agent-entrypoint.sh", "scripts/copilot-agent-entrypoint.sh"]) {

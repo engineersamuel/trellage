@@ -48,7 +48,6 @@ function fixture(relativeRoot = "source") {
     "packages",
     "scripts",
     "prototypes",
-    "profiles",
     "profile-guides",
   ]) {
     mkdirSync(path.join(root, directory));
