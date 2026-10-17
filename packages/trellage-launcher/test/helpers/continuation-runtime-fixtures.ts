@@ -82,8 +82,6 @@ export const runtimeCatalog = () =>
   parseGuideCatalog(
     JSON.stringify({
       schemaVersion: 1,
-      sandboxCommandPath: "/profiles/trellage",
-      sandbox: [],
       native: [
         {
           launcher: "codex",

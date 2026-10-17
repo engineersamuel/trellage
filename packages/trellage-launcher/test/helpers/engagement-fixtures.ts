@@ -54,8 +54,6 @@ export const createEngagementFixture = async (directory: string) => {
   await writeFile(path.join(directory, engagementSourcePath), engagementSource)
   const catalog: CombinedGuideCatalog = {
     schemaVersion: 1,
-    sandboxCommandPath: "/fixture/trellage",
-    sandbox: [],
     native: [
       {
         launcher: "copilot",

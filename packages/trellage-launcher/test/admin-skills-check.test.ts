@@ -3,13 +3,13 @@ import { checkAdminSkillsUpdates } from "../src/admin-skills-check.ts"
 import type { AdminProfileEntry } from "../src/admin-model.ts"
 import { createNodeCommandRunner, type CommandRunner } from "../src/guide-launch.ts"
 
-const entry = (name: string, surface: "native" | "sandbox" = "native"): AdminProfileEntry => ({
+const entry = (name: string, surface: "native" = "native"): AdminProfileEntry => ({
   ref: `${surface}:copilot/${name}`,
   surface,
   launcher: "copilot",
   name,
   description: name,
-  commandPath: surface === "sandbox" ? "/fixture/trellage" : "/fixture/trx",
+  commandPath: "/fixture/trx",
   doctorSupported: true,
   inventorySupported: true,
   health: "healthy",
@@ -55,40 +55,20 @@ describe("read-only Admin skills discovery", () => {
     expect(cleaned).toBe(true)
   })
 
-  it("checks deployed Native and Container profiles separately and caches help", async () => {
-    const run = vi.fn<CommandRunner["run"]>(async (_command, args) =>
-      output(
-        args[0] === "--help"
-          ? "cpx skills-check PROFILE"
-          : JSON.stringify({ kind: args[2] === "old" ? "available" : "current" }),
-      ),
-    )
-    const entries = [entry("old"), entry("new"), entry("container", "sandbox")]
-    const results = await check(entries, run)
-    expect([...results.keys()]).toEqual([...entries.map(({ ref }) => ref), "skills:shared"])
-    expect([...results.values()].map(({ kind }) => kind)).toEqual(["available", "current", "current", "unknown"])
-    expect(run.mock.calls.map(([, args]) => args)).toEqual([
-      ["--help"],
-      ["skills-check", "copilot", "old"],
-      ["skills-check", "copilot", "new"],
-      ["--help"],
-      ["skills-check", "container"],
-      ["--help"],
-    ])
-  })
-
   it("never forwards a new management verb into an old launcher", async () => {
     const run = vi.fn<CommandRunner["run"]>(async () => output("cpx skills-update PROFILE"))
     expect((await check([entry("default")], run)).get(entry("default").ref)?.kind).toBe("unknown")
     expect(run).toHaveBeenCalledTimes(2)
   })
 
-  it.each(["available", "unknown"] as const)("keeps Container checks explicit: %s", async (kind) => {
-    const result = kind === "unknown" ? { kind, diagnostic: "Installed image is unavailable." } : { kind }
-    const run = vi.fn<CommandRunner["run"]>(async (_command, args) =>
-      output(args[0] === "--help" ? "trellage skills-check PROFILE" : JSON.stringify(result)),
-    )
-    expect((await check([entry("container", "sandbox")], run)).get(entry("container", "sandbox").ref)).toEqual(result)
+  it("reports Headlong skills as synced at launch without probing unsupported lifecycle commands", async () => {
+    const headlong = { ...entry("default"), ref: "native:headlong/default", launcher: "headlong" }
+    const run = vi.fn<CommandRunner["run"]>()
+    expect((await check([headlong], run)).get(headlong.ref)).toEqual({
+      kind: "unknown",
+      diagnostic: "Headlong syncs its managed skills from the shared cache when it launches.",
+    })
+    expect(run.mock.calls.map(([, args]) => args)).toEqual([["--help"]])
   })
 
   it.each(["", "current", "{}", '{"kind":"unknown"}', '{"kind":"current"}\nnoise', '{"kind":"current"}\n{}'])(

@@ -23,7 +23,6 @@ import {
   parseGuideHeadlessArgv,
   resolveGuideModelRouting,
   runGuideGenerate,
-  selectedProfileFromCatalogRef,
   validateGuideIntent,
 } from "./guide-api.ts"
 import {
@@ -625,7 +624,7 @@ const continuationFirstmateSelection = (
   draft: ContinuationDraft,
   actionId: string,
 ) => {
-  const { action, edit } = findAction(draft, actionId)
+  const { edit } = findAction(draft, actionId)
   if (continuationActionLocked(edit)) throw new Error("An accepted or uncertain request cannot receive a new action or request ID. Reload its receipt.")
   if (edit.prompt === undefined || edit.status === ContinuationActionStatus.Draft) {
     throw new Error("Prepare and choose the full specification before confirming a Firstmate action.")

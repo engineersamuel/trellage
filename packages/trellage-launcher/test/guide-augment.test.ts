@@ -57,9 +57,7 @@ const guide = {
 
 const catalogWith = (native: CombinedGuideCatalog["native"]): CombinedGuideCatalog => ({
   schemaVersion: 1,
-  sandboxCommandPath: "/opt/trellage/bin/trellage",
   native,
-  sandbox: [],
 })
 
 const hveEntry: CombinedGuideCatalog["native"][number] = {

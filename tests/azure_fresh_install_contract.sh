@@ -27,8 +27,9 @@ grep -Fq 'install all nine Trellage Native launchers' <<<"$help" \
   || fail 'help does not describe the complete Native installation'
 grep -Fq 'verify both Firstmate profiles' <<<"$help" \
   || fail 'help does not describe Firstmate readiness evidence'
-grep -Fq '`trellage --profile claude-council`' <<<"$help" \
-  || fail 'help does not describe the Sandbox acceptance profile'
+if grep -Fq 'trellage --profile claude-council' <<<"$help"; then
+  fail 'help still describes the removed Sandbox acceptance profile'
+fi
 
 plan="$(
   TRELLAGE_AZURE_RESOURCE_GROUP_PREFIX=trellage-contract \
@@ -49,8 +50,9 @@ grep -Fq 'agent probes:   eight launchers through trx run' <<<"$plan" \
   || fail 'plan does not include all live Native agent probes'
 grep -Fq 'Firstmate:      setup, doctor, inventory, source pin, and overlay receipts' \
   <<<"$plan" || fail 'plan does not include Firstmate readiness evidence'
-grep -Fq 'sandbox probe:  trellage --profile claude-council' <<<"$plan" \
-  || fail 'plan does not include the Claude Council Sandbox profile'
+if grep -Fq 'sandbox probe:' <<<"$plan"; then
+  fail 'plan still includes a removed Sandbox acceptance profile'
+fi
 
 grep -Fq -- '--source-address-prefixes "$ssh_source"' "$script" \
   || fail 'NSG rule is not source restricted'
@@ -92,18 +94,12 @@ mkdir "$candidate"
 )
 for asset in \
   package.json bun.lock bunfig.toml tsconfig.base.json \
-  bin/trx.ts bin/trellage.ts \
+  bin/trx.ts \
   packages/trellage-runtime/package.json \
   packages/trellage-runtime/bunfig.toml \
   packages/trellage-conversation-source/package.json \
   packages/trellage-launcher/src/guide-ui.tsx \
-  packages/trellage-cli/src/application.ts \
-  packages/trellage-cli/src/materialize.ts \
-  packages/trellage-cli/src/headless-capabilities.ts \
-  packages/trellage-cli/src/runtime-support.ts \
-  prototypes/trellage/bun-runtime.json \
-  prototypes/trellage/claude-managed-files.ts \
-  prototypes/trellage/finalize-claude-seed.ts \
+  scripts/bun-runtime.json \
   prototypes/trellage-omp-profiles/catalog.json \
   prototypes/trellage-claude-common/native-claude \
   prototypes/trellage-firstmate-profiles/bin/fmx \
@@ -214,12 +210,9 @@ done
 if grep -Fq 'trx run firstmate ' "$script"; then
   fail 'acceptance starts a paid Firstmate fleet instead of checking readiness'
 fi
-grep -Fq 'trellage --profile claude-council' "$script" \
-  || fail 'acceptance does not invoke the Claude Council Sandbox profile'
-grep -Fq 'trellage build claude-council' "$script" \
-  || fail 'acceptance does not resolve and build the floating Council profile before probing'
-grep -Fq '$result.finalText == "OK"' "$script" \
-  || fail 'Claude Council result does not require exact final text OK'
+if grep -Eq 'trellage (build|--profile) claude-council' "$script"; then
+  fail 'acceptance still invokes the removed Claude Council Sandbox profile'
+fi
 grep -Fq "printf '%s\\n' \"\$copilot_token\"" "$script" \
   || fail 'Copilot token is not streamed through stdin'
 grep -Fq "printf '%s\\n' \"\$proxy_token\"" "$script" \

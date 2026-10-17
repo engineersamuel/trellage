@@ -36,22 +36,6 @@ const nativeEntry: AdminProfileEntry = {
   updateCheckStale: false,
 }
 
-const sandboxEntry: AdminProfileEntry = {
-  ref: "sandbox:prime-agent",
-  surface: "sandbox",
-  harness: "copilot",
-  name: "prime-agent",
-  description: "Sandboxed prime agent.",
-  commandPath: "/usr/local/bin/trellage",
-  doctorSupported: false,
-  inventorySupported: false,
-  health: "unknown",
-  install: "unknown",
-  stale: false,
-  updateCheckSupported: false,
-  harnessVersionSupported: false,
-  updateCheckStale: false,
-}
 
 /** A hypothetical native launcher that lacks doctor support, to exercise the generic doctorSupported=false gate — no current native launcher (including cdx) actually lacks doctor support. */
 const nativeDoctorUnsupportedEntry: AdminProfileEntry = {
@@ -73,14 +57,6 @@ describe("toSelectedProfile", () => {
     })
   })
 
-  it("maps a sandbox admin entry to a sandbox SelectedProfile", () => {
-    expect(toSelectedProfile(sandboxEntry)).toEqual({
-      surface: "sandbox",
-      commandPath: "/usr/local/bin/trellage",
-      profile: "prime-agent",
-      headlessPrompt: false,
-    })
-  })
 })
 
 describe("buildAdminLaunchCommand", () => {
@@ -100,12 +76,6 @@ describe("buildDiagnosticCommand", () => {
     })
   })
 
-  it("builds a sandbox `validate PROFILE` command", () => {
-    expect(buildDiagnosticCommand(sandboxEntry)).toEqual({
-      executable: "/usr/local/bin/trellage",
-      args: ["validate", "prime-agent"],
-    })
-  })
 })
 
 describe("isRepairSupported", () => {
@@ -117,9 +87,6 @@ describe("isRepairSupported", () => {
     expect(isRepairSupported(nativeDoctorUnsupportedEntry)).toBe(false)
   })
 
-  it("is false for a sandbox profile", () => {
-    expect(isRepairSupported(sandboxEntry)).toBe(false)
-  })
 })
 
 describe("buildRepairCommand", () => {

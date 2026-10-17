@@ -26,10 +26,7 @@ export const goalTransportFixture = (
       id: "implement",
       description: "Implement the approved objective",
       examples: ["Repair retries", "Write the design"],
-      ...(controller === "graph-of-loops" ? { skill: "graph-of-loops" } : {}),
-      promptTemplate: options.frame ?? (controller === "graph-of-loops"
-        ? '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Keep every controller gate."'
-        : "Use the selected workflow:\n{{intent}}"),
+      promptTemplate: options.frame ?? "Use the selected workflow:\n{{intent}}",
     }],
   }
   const execution = resolveGuideGoalExecution(goal, guide, "implement")
@@ -38,18 +35,13 @@ export const goalTransportFixture = (
     prompt: options.approach ?? "Start with the smallest reproducible case.",
     notes: "Keep the approved criteria.",
   })
-  const profile = parseSelectedProfile(controller === "graph-of-loops"
-    ? {
-        surface: "sandbox", commandPath: "/opt/trellage/bin/trellage",
-        profile: "claude-graph-of-loops", headlessPrompt: true, goalExecutionPolicy: policy,
-      }
-    : {
-        surface: "native",
-        launcher: controller === "codex-goal" ? "codex" : "claude",
-        commandPath: controller === "codex-goal" ? "/opt/trellage/bin/trx" : "/opt/trellage/bin/trx",
-        profile: controller === "codex-goal" ? "superpowers" : "default",
-        headlessPrompt: true,
-        goalExecutionPolicy: policy,
-      })
+  const profile = parseSelectedProfile({
+    surface: "native",
+    launcher: controller === "codex-goal" ? "codex" : "claude",
+    commandPath: "/opt/trellage/bin/trx",
+    profile: controller === "codex-goal" ? "superpowers" : "default",
+    headlessPrompt: true,
+    goalExecutionPolicy: policy,
+  })
   return { goal, execution, candidate, profile, guide }
 }

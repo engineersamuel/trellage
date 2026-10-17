@@ -124,15 +124,20 @@ validate_catalog() {
     type == "object"
     and keys == ["profiles", "schemaVersion"]
     and .schemaVersion == 1
-    and (.profiles | type == "object" and keys == ["default", "office", "office-charts"])
+    and (.profiles | type == "object" and length > 0
+      and all(keys[]; test("^[a-z0-9]+(-[a-z0-9]+)*$")))
     and (.profiles | all(.[]; type == "object"
       and keys == ["description", "headless", "plugin", "standaloneMcps"]
       and (.description | type == "string" and length > 0)
-      and (.headless | validHeadless)
+      and (.headless == null or (.headless | validHeadless))
       and .standaloneMcps == []))
-    and .profiles.default.plugin == null
-    and .profiles.office.plugin == "document-skills@anthropic-agent-skills"
-    and .profiles["office-charts"].plugin == "document-skills@anthropic-agent-skills"
+    and (if (.profiles | has("default")) then .profiles.default.plugin == null else true end)
+    and (if (.profiles | has("office")) then
+      .profiles.office.plugin == "document-skills@anthropic-agent-skills"
+      else true end)
+    and (if (.profiles | has("office-charts")) then
+      .profiles["office-charts"].plugin == "document-skills@anthropic-agent-skills"
+      else true end)
   ' "$catalog" >/dev/null 2>&1 || die "invalid catalog: $catalog"
 }
 
@@ -162,14 +167,15 @@ list_profiles_json() {
             headless: $headless[.key],
             plugin: .value.plugin,
             source: "anthropics/claude-code",
-            marketplace: (if .value.plugin == null then null else {
+            marketplace: (if .value.plugin != "document-skills@anthropic-agent-skills" then null else {
               kind: "git",
               source: "anthropics/skills",
               name: "anthropic-agent-skills",
               manifestUrl: "https://raw.githubusercontent.com/anthropics/skills/main/.claude-plugin/marketplace.json"
             } end),
-            skillBundles: (if .key == "default" then ["native-common"]
-              else ["native-common", ("claude-" + .key)] end),
+            skillBundles: (if .key == "office" then ["native-common", "claude-office"]
+              elif .key == "office-charts" then ["native-common", "claude-office-charts"]
+              else ["native-common"] end),
             standaloneMcps: .value.standaloneMcps
           }
       ]
@@ -179,10 +185,8 @@ list_profiles_json() {
 
 select_profile() {
   profile_name="${1-default}"
-  case "$profile_name" in
-    default|office|office-charts) ;;
-    *) die "unknown profile: $profile_name" ;;
-  esac
+  jq -e --arg profile "$profile_name" '.profiles | has($profile)' "$catalog" >/dev/null \
+    || die "unknown profile: $profile_name"
   profile_root="$HOME/.local/share/trellage/profiles/claude/$profile_name"
   profile_home="$profile_root/home"
   profile_marker="$profile_root/.managed-by-trellage-claude-profiles"
@@ -216,34 +220,28 @@ conservative_headless() {
   '
 }
 
-projected_headless() {
-  local profile="$1"
-  local current_version expected_version
-
-  current_version="${2-}"
-  [[ "$#" -ge 2 ]] || current_version="$("$native_claude" version)"
-  expected_version="$(jq -r --arg profile "$profile" \
-    '.profiles[$profile].headless.testedHarnessVersion // empty' "$catalog")"
-  if [[ -z "$current_version" || "$current_version" != "$expected_version" ]]; then
-    conservative_headless
-    return
-  fi
-  jq -c --arg profile "$profile" '.profiles[$profile].headless' "$catalog"
-}
-
 projected_headless_map_json() {
   local current_version
   current_version="$("$native_claude" version)"
-  jq -cn --argjson defaultProfile "$(projected_headless default "$current_version")" \
-    --argjson office "$(projected_headless office "$current_version")" \
-    --argjson charts "$(projected_headless office-charts "$current_version")" '
-    {default: $defaultProfile, office: $office, "office-charts": $charts}
+  jq -cn --arg currentVersion "$current_version" \
+    --argjson conservative "$(conservative_headless)" --slurpfile catalog "$catalog" '
+    $catalog[0].profiles
+    | with_entries(.value =
+        if .value.headless == null
+          or .value.headless.testedHarnessVersion != $currentVersion
+        then $conservative
+        else .value.headless
+        end)
   '
 }
 
 office_plugin() {
   "$native_claude" plugin --home "$profile_home" --marker "$profile_marker" \
     --marker-value "$profile_marker_value" -- "$@"
+}
+
+office_profile() {
+  [[ "$profile_name" == office || "$profile_name" == office-charts ]]
 }
 
 office_plugin_inventory() {
@@ -270,7 +268,7 @@ office_plugin_inventory() {
 }
 
 office_plugin_path() {
-  [[ "$profile_name" != default ]] || return 0
+  office_profile || return 0
   local inventory
   inventory="$(office_plugin_inventory)"
   jq -e 'any(.[]; .id == "document-skills@anthropic-agent-skills"
@@ -305,7 +303,7 @@ require_office_plugin() {
 }
 
 ensure_office_plugin() {
-  [[ "$profile_name" != default ]] || return 0
+  office_profile || return 0
   local inventory marketplaces changed=false
   inventory="$(office_plugin_inventory)"
   if ! jq -e 'any(.[]; .id == "document-skills@anthropic-agent-skills"
@@ -454,7 +452,7 @@ case "${1-}" in
     shift
     [[ "$#" -eq 1 ]] || die '_trx-admit requires PROFILE'
     select_profile "$1"
-    if [[ "$profile_name" == default ]]; then
+    if ! office_profile; then
       jq -cn '{pluginDir:null}'
     else
       setup_profile >/dev/null

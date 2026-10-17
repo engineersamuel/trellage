@@ -173,7 +173,6 @@ process.exitCode = 86
       catalogPath,
       JSON.stringify({
         ...catalog,
-        sandboxCommandPath: path.join(bin, "trellage"),
         native: catalog.native.map((entry) => ({
           ...entry,
           commandPath: path.join(bin, entry.launcher),

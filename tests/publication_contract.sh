@@ -28,11 +28,7 @@ fail() {
 grep -Fxq 'MIT License' LICENSE || fail 'LICENSE is not MIT'
 grep -Fxq 'Copyright (c) 2026 Samuel Mendenhall' LICENSE \
   || fail 'LICENSE copyright identity changed'
-jq -e '
-  .name == "@trellage/profile-compiler"
-  and .license == "MIT"
-' packages/trellage-cli/package.json >/dev/null \
-  || fail 'profile compiler package identity or MIT license changed'
+[[ ! -e packages/trellage-cli ]] || fail 'retired Sandbox profile compiler package remains'
 jq -e '
   .name == "@trellage/guide-core"
   and .private == true
@@ -51,12 +47,12 @@ jq -e '
     and any(.path == "scripts/bun-runtime.sh")
     and any(.path == "scripts/install-source-runtime.sh")
     and any(.path == "scripts/run-source.sh")
-    and any(.path == "bin/trellage.ts")
+    and (any(.path == "bin/trellage.ts") | not)
     and any(.path == "bin/trx.ts")
     and any(.path == "bun.lock")
     and any(.path == "bunfig.toml")
     and any(.path == "tsconfig.base.json")
-    and any(.path == "packages/trellage-cli/src/cli.ts")
+    and (any(.path | startswith("packages/trellage-cli/")) | not)
     and any(.path == "packages/trellage-guide-core/src/index.ts")
     and any(.path == "packages/trellage-guide-core/src/conversation.ts")
     and any(.path == "packages/trellage-launcher/src/cli.tsx")
@@ -104,21 +100,8 @@ if git grep -n -I -E '/Users/smendenhall|/private/var/folders|/var/folders|/Volu
   fail 'forbidden personal or private absolute path'
 fi
 
-if git grep -n -I -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' -- . ':!tests/publication_contract.sh' ':!tests/publication_contract_self_test.sh' ':!tests/fixtures/graph-of-loops/test_runtime_contracts.py'; then
+if git grep -n -I -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' -- . ':!tests/publication_contract.sh' ':!tests/publication_contract_self_test.sh'; then
   fail 'obvious secret material is tracked'
-fi
-
-# The redaction contract intentionally contains token-shaped fixtures. Ignore
-# only those two test methods, then scan the rest of that file normally.
-graph_contract='tests/fixtures/graph-of-loops/test_runtime_contracts.py'
-if [[ -f "$graph_contract" ]]; then
-  if sed \
-    -e '/^    def test_redaction(/,/^    def test_normalized_strips_ts(/d' \
-    -e '/^    def test_gh_token(/,/^    def test_safe(/d' \
-    "$graph_contract" \
-    | grep -n -I -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'; then
-    fail 'obvious secret material is tracked in Graph runtime contracts'
-  fi
 fi
 
 if [[ "$mode" == 'sanitized-history' ]]; then

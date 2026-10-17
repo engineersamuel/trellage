@@ -1087,7 +1087,7 @@ const runGuideMode = async (): Promise<void> => {
 /**
  * Renders one staged prompt basket layout from fixture data. It reads no
  * catalog, calls no provider, and runs no command, so it opens instantly and
- * works with no Docker and no Copilot credentials.
+ * works with no Copilot credentials.
  */
 const runGuidePreviewMode = async (): Promise<void> => {
   const args = parseBasketPreviewArgv(process.argv.slice(3))
@@ -1298,14 +1298,13 @@ export const main = async (): Promise<void> => {
 
 const runLauncherMode = async (): Promise<void> => {
   const catalog = parseLaunchCatalog(await readInput(process.argv[2]))
-  let outputFd: number | undefined
   let input: NodeJS.ReadStream
   let output: NodeJS.WriteStream
   try {
     input = process.stdin.isTTY ? process.stdin : new tty.ReadStream(openSync("/dev/tty", constants.O_RDONLY))
     output = process.stderr.isTTY
       ? process.stderr
-      : new tty.WriteStream((outputFd = openSync("/dev/tty", constants.O_WRONLY)))
+      : new tty.WriteStream(openSync("/dev/tty", constants.O_WRONLY))
   } catch {
     throw new Error("an interactive controlling terminal is required")
   }

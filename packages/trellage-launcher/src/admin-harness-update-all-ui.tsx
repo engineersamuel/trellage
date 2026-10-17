@@ -90,7 +90,6 @@ const emptySelectionPlan = (): HarnessUpdateAllPlan => ({
   unsupported: [],
   profileCount: 0,
   nativeUpdateCount: 0,
-  containerUpdateCount: 0,
 })
 
 const selectedView = (state: HarnessUpdateAllView, routerCommandPath: string): HarnessUpdateAllView => {
@@ -254,7 +253,7 @@ const completedStatus = (outcome: HarnessUpdateAllOutcome): string => {
 const runningStatus = (state: HarnessUpdateAllView): string =>
   state.stage === "skills"
     ? `Updating Native skills: ${state.skillsResults.size}/${state.plan.skills?.targets.length ?? 0} profiles processed.`
-    : `Updating harnesses and Container skills: ${state.completedSteps}/${state.plan.nativeUpdateCount + state.plan.containerUpdateCount} commands completed.`
+    : `Updating harnesses: ${state.completedSteps}/${state.plan.nativeUpdateCount} commands completed.`
 
 const viewStatus = (state: HarnessUpdateAllView): string => {
   switch (state.phase) {
@@ -302,7 +301,7 @@ const profileResultLine = (entry: AdminProfileEntry, state: HarnessUpdateAllView
 }
 
 const groupLines = (group: HarnessUpdatePlan, state: HarnessUpdateAllView, versionResultFor: VersionResultFor): ReadonlyArray<string> => [
-  `### ${group.surface === "native" ? "Native harness" : "Container harness and skills"}: ${group.harness}`,
+  `### Native harness: ${group.harness}`,
   ...group.targets.map((entry) => profileResultLine(entry, state, versionResultFor)),
   "",
 ]
@@ -401,12 +400,12 @@ export const HarnessUpdateAllOverlay = ({
       <Text bold color="cyan">
         Update all harnesses and skills
       </Text>
-      <Text>Available Native and Container updates, including profiles hidden by filters.</Text>
+      <Text>Available Native updates, including profiles hidden by filters.</Text>
       <Text>
-        Native updates: {state.plan.nativeUpdateCount} | Container builds: {state.plan.containerUpdateCount} | Incomplete checks:{" "}
+        Native updates: {state.plan.nativeUpdateCount} | Incomplete checks:{" "}
         {state.issues.length}
       </Text>
-      <Text>Native skill copies: {state.plan.skills?.targets.length ?? 0}. Container builds refresh their configured skills.</Text>
+      <Text>Native skill copies: {state.plan.skills?.targets.length ?? 0}.</Text>
       <Text dimColor>Version and source pins are kept. Trellage itself is not updated. Sessions are not restarted.</Text>
       <Text wrap="wrap">{viewStatus(state)}</Text>
       {operation === undefined ? null : <Text wrap="wrap">{operation}</Text>}

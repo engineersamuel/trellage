@@ -21,7 +21,7 @@ export type { JevSystemOneClient } from "./jev-decisions.ts"
 
 const MODEL = "jev-1.13.0"
 const ATTEMPT_MS = 3_000
-const HEADLONG = "sandbox:headlong"
+const HEADLONG = "native:headlong/default"
 const POTETO = "native:codex/pstack"
 const POTETO_WORKFLOW = "poteto-mode-entry-point"
 const HEADLONG_POLICY =

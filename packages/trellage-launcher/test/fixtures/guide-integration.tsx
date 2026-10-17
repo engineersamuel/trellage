@@ -81,9 +81,7 @@ const parsedGuides = new Map(
   fixtureProfiles.map((profile) => [
     profile.ref,
     parseProfileGuide(
-      profile.surface === "native"
-        ? `native/${profile.launcher}/${profile.name}.md`
-        : `sandbox/${profile.name}.md`,
+      `native/${profile.launcher}/${profile.name}.md`,
       guideSource(profile),
     ),
   ]),
@@ -91,7 +89,6 @@ const parsedGuides = new Map(
 const catalog = parseGuideCatalog(
   JSON.stringify({
     schemaVersion: 1,
-    sandboxCommandPath: path.join(root, "bin", "trellage"),
     native: fixtureProfiles
       .filter((profile) => profile.surface === "native")
       .map((profile) => ({
@@ -105,36 +102,10 @@ const catalog = parseGuideCatalog(
         herdrCompatibility: { status: "supported" },
         headless,
       })),
-    sandbox: fixtureProfiles
-      .filter((profile) => profile.surface === "sandbox")
-      .map((profile) => ({
-        name: profile.name,
-        description: `${profile.name} integration fixture`,
-        path: path.join(root, "profiles", profile.name, "profile.toml"),
-        guide: parsedGuides.get(profile.ref)?.guide,
-        supportedPlatforms: ["linux/amd64"],
-        harness: { kind: profile.harness, version: "1.0.0" },
-        resolutionPolicy: "floating",
-        locallyResolved: false,
-        releaseLockAvailable: false,
-        skillBundles: ["sandbox-common"],
-        skillsMode: "floating",
-        finalDigestLocked: false,
-        skills: [],
-        plugins: [],
-        mcps: [],
-        sandbox: true,
-        headless,
-        locked: false,
-        herdrCompatibility: { status: "supported" },
-      })),
   }),
 )
 for (const profile of fixtureProfiles) {
-  const directory =
-    profile.surface === "native"
-      ? path.join(guideRoot, "native", profile.launcher)
-      : path.join(root, "profile-guides", "sandbox")
+  const directory = path.join(guideRoot, "native", profile.launcher)
   await mkdir(directory, { recursive: true })
   await writeFile(path.join(directory, `${profile.name}.md`), guideSource(profile))
 }

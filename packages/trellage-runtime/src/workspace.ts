@@ -340,7 +340,7 @@ function dependencyManifest(root: string, importer: string, name: string): strin
     if (directory === root) break
     directory = path.dirname(directory)
   }
-  throw new Error(`missing source dependency: ${name}; run scripts/build-profile-compiler.sh explicitly`)
+  throw new Error(`missing source dependency: ${name}; run scripts/install-source-runtime.sh --prepare explicitly`)
 }
 
 function dependencyManifests(root: string): string[] {
@@ -358,7 +358,7 @@ function dependencyManifests(root: string): string[] {
 
 export function dependencyDirectory(root: string, name: string): string {
   return path.dirname(
-    path.join(root, dependencyManifest(root, path.join(root, "packages/trellage-cli/package.json"), name)),
+    path.join(root, dependencyManifest(root, path.join(root, "package.json"), name)),
   )
 }
 
@@ -683,7 +683,7 @@ function readinessInventory(root: string): string {
     !("dependencies" in value) ||
     value.dependencies !== digestFiles(root, dependencyManifests(root), true)
   ) {
-    throw new Error("source runtime is stale; run scripts/build-profile-compiler.sh explicitly")
+    throw new Error("source runtime is stale; run scripts/install-source-runtime.sh --prepare explicitly")
   }
   if (!("inventory" in value) || typeof value.inventory !== "string") {
     throw new Error(`refusing changed or unrelated source runtime contents: ${root}; prepare dependencies explicitly`)
@@ -706,7 +706,7 @@ function publishedReadiness(root: string): Record<string, unknown> | undefined {
     !("dependencies" in value) ||
     value.dependencies !== digestFiles(root, dependencyManifests(root))
   ) {
-    throw new Error("source runtime is stale; run scripts/build-profile-compiler.sh explicitly")
+    throw new Error("source runtime is stale; run scripts/install-source-runtime.sh --prepare explicitly")
   }
   return value as Record<string, unknown>
 }

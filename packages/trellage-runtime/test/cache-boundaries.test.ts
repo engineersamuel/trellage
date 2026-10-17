@@ -52,7 +52,7 @@ function fixture() {
   return { root, home, cwd, write, copy, isolatedEnv };
 }
 
-test.each(["trx", "trx.ts", "trellage", "trellage.ts"])(
+test.each(["trx", "trx.ts"])(
   "initial bin/%s disables the transpiler cache before importing large source",
   (entry) => {
     const f = fixture();
@@ -74,8 +74,7 @@ test.each(["trx", "trx.ts", "trellage", "trellage.ts"])(
       readFileSync(path.join(f.root, ts), "utf8").replace("\n", '\nimport "./cache-probe.ts";\n'),
     );
     f.write("bin/cache-probe.ts", largeModule);
-    const shell =
-      name === "trx" ? "prototypes/trellage-router/bin/trx" : "prototypes/trellage/trellage";
+    const shell = "prototypes/trellage-router/bin/trx";
     chmodSync(
       f.write(
         shell,
@@ -267,43 +266,3 @@ console.log(JSON.stringify({before,after:process.env.NODE_ENV}));`,
   expect(JSON.parse(result.stdout)).toEqual({ before: "test", after: "test" });
 });
 
-test("Sandbox clean compiler environment retains disabled caching without forwarding ambient values", () => {
-  const f = fixture();
-  const sandbox = readFileSync(
-    path.join(sourceWorkspaceRoot(), "prototypes/trellage/trellage"),
-    "utf8",
-  );
-  const initializer = sandbox.match(/^clean_child_environment=\(.*\)$/m)?.[0];
-  if (initializer === undefined)
-    throw new Error("Cannot locate the Sandbox clean environment boundary");
-  f.copy("scripts/bun-runtime.sh");
-  f.copy("packages/trellage-runtime/bunfig.toml");
-  f.write(
-    "compiler.ts",
-    `${largeModule}console.log(JSON.stringify({cache:process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH??null,ambient:process.env.UNEXPECTED_ENV??null,nodeEnv:process.env.NODE_ENV??null}));`,
-  );
-  const script = f.write(
-    "compiler.sh",
-    `#!/bin/bash
-set -euo pipefail
-. "$FIXTURE_ROOT/scripts/bun-runtime.sh"
-trellage_bun_runtime "$FIXTURE_ROOT"
-${initializer}
-"\${clean_child_environment[@]}" "HOME=$HOME" "XDG_CACHE_HOME=$HOME/.cache" "\${trellage_bun[@]}" "$FIXTURE_ROOT/compiler.ts"
-`,
-  );
-  const result = spawnSync("/bin/bash", [script], {
-    cwd: f.cwd,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      ...f.isolatedEnv,
-      FIXTURE_ROOT: f.root,
-      UNEXPECTED_ENV: "not-forwarded",
-      NODE_ENV: "test",
-    },
-  });
-  expect(result.status, result.stderr).toBe(0);
-  expect(JSON.parse(result.stdout)).toEqual({ cache: "0", ambient: null, nodeEnv: null });
-  expect(readdirSync(f.home, { recursive: true })).toEqual([]);
-});

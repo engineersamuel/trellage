@@ -88,7 +88,6 @@ export const namedInstanceRegistry = (count: number): ReadonlyArray<FirstmateNam
 
 export const firstmateCatalog = (instances = true, names: ReadonlyArray<string> = ["default"]) => parseGuideCatalog(JSON.stringify({
   schemaVersion: 1,
-  sandboxCommandPath: "/fixture/trellage",
   native: names.map((name) => ({
     launcher: "firstmate",
     harness: "firstmate",
@@ -122,7 +121,6 @@ export const firstmateCatalog = (instances = true, names: ReadonlyArray<string> 
       ...(instances ? { instances: { schemaVersion: 1 } } : {}),
     },
   })),
-  sandbox: [],
 }))
 
 export const instanceRows = (
@@ -140,28 +138,6 @@ export const mixedInstanceCatalog = (instances = true): CombinedGuideCatalog => 
       { ...template, launcher: "copilot", harness: "copilot", commandPath: "/fixture/trx" },
       ...catalog.native,
     ],
-    sandbox: [{
-      name: "container",
-      description: "Static container template.",
-      guide: template.guide,
-      path: "/profiles/container",
-      supportedPlatforms: ["linux/amd64"],
-      harness: { kind: "claude", version: "latest" },
-      resolutionPolicy: "floating",
-      locallyResolved: false,
-      releaseLockAvailable: true,
-      resolvedVersion: "2.1.260",
-      skillBundles: [],
-      skillsMode: "floating",
-      finalDigestLocked: false,
-      skills: [],
-      plugins: [],
-      mcps: [],
-      sandbox: true,
-      headless: template.headless,
-      locked: false,
-      herdrCompatibility: template.herdrCompatibility,
-    }],
   }
 }
 

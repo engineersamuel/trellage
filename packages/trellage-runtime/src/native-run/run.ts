@@ -56,7 +56,7 @@ export const RUN_USAGE = `Usage:
           [--no-always] [--skill OWNER/REPO:NAME]... [--require-proven-isolation]
           [--continue | --resume[=ID]] [-- <harness-args>]
 
-Harnesses: agency, claude, codex, copilot, firstmate, fx, grok, jcode, omp, pi, prime, uji.
+Harnesses: agency, claude, codex, copilot, firstmate, fx, grok, headlong, jcode, omp, pi, prime, uji.
 Profiles come from ~/.config/trellage/config.toml.
 Profiles with always = true are added to every run; --no-always skips them. --dry-run prepares the composition and
 prints the launch plan without starting the harness. --skill adds one skill from a GitHub repository without a
@@ -511,32 +511,33 @@ const adHocSkillProfile = (catalog: NativeCatalog, skills: ReadonlyArray<string>
   }
 }
 
-const selectRunProfiles = async (native: NativeCatalog, adapter: NativeAdapter, options: RunOptions) => {
-  const adHoc = adHocSkillProfile(native, options.skills ?? [])
-  let catalog = adHoc?.catalog ?? native
-  const selectedProfiles = options.profiles.map((profile) =>
+const resolveRunProfiles = async (
+  adapter: NativeAdapter,
+  options: RunOptions,
+  sourceCatalog: NativeCatalog,
+): Promise<{ catalog: NativeCatalog; profiles: string[] }> => {
+  const adHoc = adHocSkillProfile(sourceCatalog, options.skills ?? [])
+  let catalog = adHoc?.catalog ?? sourceCatalog
+  const profiles = options.profiles.map((profile) =>
     Object.hasOwn(catalog.profiles, profile) ? profile : (nativePresetProfile(adapter.id, profile) ?? profile),
   )
-  for (const profile of selectedProfiles) {
+  for (const profile of profiles) {
     if (profile.startsWith(`preset-${adapter.id}-`)) catalog = await withBuiltinPreset(catalog, profile)
   }
-  return { catalog, profiles: adHoc === undefined ? selectedProfiles : [...selectedProfiles, adHoc.id] }
+  return { catalog, profiles: adHoc === undefined ? profiles : [...profiles, adHoc.id] }
 }
 
-/** Resolve, validate, stage and publish the composition without starting the harness. */
-export const prepareRun = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<PreparedRun> => {
-  const environment = dependencies.environment ?? process.env
-  const paths = dependencies.paths ?? resolveNativeRunPaths({ environment })
-  const adapter = adapterFor(options.harness)
-  assertEffort(adapter, options.effort)
-  assertForwardedArgs(adapter, options.forwardedArgs)
-  const clean = cleanLaunchFor(adapter, options)
-  if (clean) return prepareCleanRun(adapter, clean, options, dependencies, environment, paths)
-
-  await ensureNativeConfig({ environment, ...(dependencies.configHome ? { home: dependencies.configHome } : {}) })
-  const loaded = await loadNativeCatalog(dependencies, environment)
-  const { catalog, profiles } = await selectRunProfiles(loaded.config.native, adapter, options)
-  const instructionTexts = await loadInstructions(path.dirname(loaded.path), catalog)
+const composeRun = async (
+  adapter: NativeAdapter,
+  options: RunOptions,
+  dependencies: RunDependencies,
+  environment: NodeJS.ProcessEnv,
+  paths: NativeRunPaths,
+  configDirectory: string,
+  catalog: NativeCatalog,
+  profiles: ReadonlyArray<string>,
+): Promise<{ plan: CompositionPlan; layout: GenerationLayout }> => {
+  const instructionTexts = await loadInstructions(configDirectory, catalog)
   const resolver = createSourceResolver({ paths, transport: dependencies.transport ?? gitSourceTransport() })
   const plan = await planComposition(
     {
@@ -562,7 +563,17 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
   })
   for (const source of plan.sources) await resolver.markGood(source)
   await pruneGenerations(paths, layout.ownerHome, 3, plan.generationId)
+  return { plan, layout }
+}
 
+const buildPreparedRun = (
+  adapter: NativeAdapter,
+  plan: CompositionPlan,
+  layout: GenerationLayout,
+  options: RunOptions,
+  dependencies: RunDependencies,
+  environment: NodeJS.ProcessEnv,
+): PreparedRun => {
   const host = hostDefaults(adapter.id, dependencies.configHome ?? environment.HOME, plan)
   const defaults = options.plan
     ? { model: adapter.planDefaults?.model ?? host.model, effort: adapter.planDefaults?.effort ?? host.effort }
@@ -658,6 +669,32 @@ const prepareCleanRun = async (
     clean: true,
     selection: { harness: adapter.id, profiles: options.profiles, model: options.model, effort: options.effort },
   }
+}
+
+/** Resolve, validate, stage and publish the composition without starting the harness. */
+export const prepareRun = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<PreparedRun> => {
+  const environment = dependencies.environment ?? process.env
+  const paths = dependencies.paths ?? resolveNativeRunPaths({ environment })
+  const adapter = adapterFor(options.harness)
+  assertEffort(adapter, options.effort)
+  assertForwardedArgs(adapter, options.forwardedArgs)
+  const clean = cleanLaunchFor(adapter, options)
+  if (clean) return prepareCleanRun(adapter, clean, options, dependencies, environment, paths)
+
+  await ensureNativeConfig({ environment, ...(dependencies.configHome ? { home: dependencies.configHome } : {}) })
+  const loaded = await loadNativeCatalog(dependencies, environment)
+  const resolved = await resolveRunProfiles(adapter, options, loaded.config.native)
+  const { plan, layout } = await composeRun(
+    adapter,
+    options,
+    dependencies,
+    environment,
+    paths,
+    path.dirname(loaded.path),
+    resolved.catalog,
+    resolved.profiles,
+  )
+  return buildPreparedRun(adapter, plan, layout, options, dependencies, environment)
 }
 
 /** The command that reopens the latest conversation of this harness and profile set. */

@@ -32,8 +32,6 @@ afterEach(async () => {
 const catalog = parseGuideCatalog(
   JSON.stringify({
     schemaVersion: 1,
-    sandboxCommandPath: "/fixture/trellage",
-    sandbox: [],
     native: [
       {
         launcher: "copilot",

@@ -1,9 +1,8 @@
 /**
  * Harness-version command identity, parsing, and row reconciliation.
  * Operation keys scope subprocesses and cached installed state. Release
- * keys scope only a validated latest value, so equivalent native and
- * sandbox rows can share latest without copying another row's installed
- * revision.
+ * keys scope only a validated latest value, so equivalent native rows can
+ * share latest without copying another row's installed revision.
  */
 import { isKnownNativeLauncher, type AdminProfileEntry, type NativeHarnessId } from "./admin-model.ts"
 import { adminInstanceSelectorArgs } from "./admin-firstmate.ts"
@@ -17,7 +16,6 @@ export type HarnessReleaseKey =
   | "firstmate"
   | "fx"
   | "grok"
-  | "headlong-main"
   | "jcode"
   | "oh-my-pi"
   | "pi-coding-agent"
@@ -35,15 +33,6 @@ const nativeReleaseKeys: Readonly<Partial<Record<NativeHarnessId, HarnessRelease
   prime: "prime",
 }
 
-const sandboxReleaseKeys: Readonly<Record<string, HarnessReleaseKey>> = {
-  claude: "claude-code",
-  codex: "codex",
-  copilot: "copilot-cli",
-  headlong: "headlong-main",
-  pi: "oh-my-pi",
-  prime: "prime",
-}
-
 const nativeLatestLookupLaunchers: ReadonlySet<NativeHarnessId> = new Set([
   "codex",
   "firstmate",
@@ -55,14 +44,12 @@ const nativeLatestLookupLaunchers: ReadonlySet<NativeHarnessId> = new Set([
 ])
 
 export const harnessVersionReleaseKeyFor = (entry: AdminProfileEntry): HarnessReleaseKey | undefined => {
-  if (entry.surface === "sandbox") return entry.harness === undefined ? undefined : sandboxReleaseKeys[entry.harness]
   if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher)) return undefined
   return nativeReleaseKeys[entry.launcher]
 }
 
 export const harnessVersionLatestLookupSupported = (entry: AdminProfileEntry): boolean => {
   if (!entry.harnessVersionSupported) return false
-  if (entry.surface === "sandbox") return harnessVersionReleaseKeyFor(entry) !== undefined
   return (
     entry.launcher !== undefined &&
     isKnownNativeLauncher(entry.launcher) &&
@@ -72,15 +59,10 @@ export const harnessVersionLatestLookupSupported = (entry: AdminProfileEntry): b
 
 /**
  * Cache/run identity. Firstmate owns one installed receipt per fleet instance;
- * ordinary native launchers own one host binary; sandbox operations own a
- * shared latest lookup per explicit release identity.
+ * ordinary native launchers own one host binary.
  */
 export const harnessVersionOperationKeyFor = (entry: AdminProfileEntry): string | undefined => {
   if (!entry.harnessVersionSupported) return undefined
-  if (entry.surface === "sandbox") {
-    const releaseKey = harnessVersionReleaseKeyFor(entry)
-    return releaseKey === undefined ? undefined : `sandbox:${releaseKey}`
-  }
   if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher)) return undefined
   if (entry.launcher !== "firstmate") return `native:${entry.launcher}`
   const instance = entry.firstmateInstance
@@ -90,20 +72,7 @@ export const harnessVersionOperationKeyFor = (entry: AdminProfileEntry): string 
     : `native:firstmate:${entry.name}`
 }
 
-export interface BuildHarnessVersionCommandOptions {
-  readonly refreshLatest?: boolean
-}
-
-export const buildHarnessVersionCommand = (
-  entry: AdminProfileEntry,
-  options: BuildHarnessVersionCommandOptions = {},
-): CommandSpec => {
-  if (entry.surface === "sandbox") {
-    return {
-      executable: entry.commandPath,
-      args: ["harness-version", entry.name, ...(options.refreshLatest === true ? ["--refresh-latest"] : [])],
-    }
-  }
+export const buildHarnessVersionCommand = (entry: AdminProfileEntry): CommandSpec => {
   return {
     executable: entry.commandPath,
     args: ["harness-version", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry)],
@@ -141,11 +110,6 @@ export const failedHarnessVersionResult = (diagnostic: string): AdminHarnessVers
   installed: { kind: "unavailable", diagnostic },
   latest: { kind: "failed", diagnostic },
 })
-
-export const refreshedSandboxInstalledState = (
-  result: AdminHarnessVersionResult,
-): AdminInstalledVersionState | undefined =>
-  result.installed.kind === "known" || result.latest.kind !== "failed" ? result.installed : undefined
 
 const parseInstalledState = (value: unknown): AdminInstalledVersionState => {
   const version = validVersion(value)
@@ -206,25 +170,9 @@ export const harnessVersionColumnsFor = (
   }
 }
 
-const resultForEntry = (
-  entry: AdminProfileEntry,
-  resultForOperation: (operationKey: string) => AdminHarnessVersionResult | undefined,
-  sandboxInstalledForRef: (ref: string) => AdminInstalledVersionState | undefined,
-): AdminHarnessVersionResult | undefined => {
-  const operationKey = harnessVersionOperationKeyFor(entry)
-  const raw = operationKey === undefined ? undefined : resultForOperation(operationKey)
-  if (entry.surface === "native") return raw
-  const installed: AdminInstalledVersionState =
-    sandboxInstalledForRef(entry.ref) ??
-    (validVersion(entry.version) === undefined
-      ? { kind: "unavailable", diagnostic: "sandbox profile has no ready installed harness resolution" }
-      : { kind: "known", version: entry.version! })
-  return { installed, latest: raw?.latest ?? { kind: "unsupported" } }
-}
-
 // Firstmate reports a profile's catalog pin, not a shared upstream release.
 const shareableReleaseKeyFor = (entry: AdminProfileEntry): HarnessReleaseKey | undefined =>
-  entry.surface === "native" && entry.launcher === "firstmate" ? undefined : harnessVersionReleaseKeyFor(entry)
+  entry.launcher === "firstmate" ? undefined : harnessVersionReleaseKeyFor(entry)
 
 const catalogPinnedObservation = (
   entry: AdminProfileEntry,
@@ -270,9 +218,11 @@ export const reconcileHarnessVersionObservations = (
 export const reconcileHarnessVersionResults = (
   entries: ReadonlyArray<AdminProfileEntry>,
   resultForOperation: (operationKey: string) => AdminHarnessVersionResult | undefined,
-  sandboxInstalledForRef: (ref: string) => AdminInstalledVersionState | undefined = () => undefined,
 ): ReadonlyMap<string, AdminHarnessVersionResult> =>
-  reconcileHarnessVersionObservations(entries, (entry) => resultForEntry(entry, resultForOperation, sandboxInstalledForRef))
+  reconcileHarnessVersionObservations(entries, (entry) => {
+    const operationKey = harnessVersionOperationKeyFor(entry)
+    return operationKey === undefined ? undefined : resultForOperation(operationKey)
+  })
 
 export const harnessVersionEntriesForForceResync = (
   selected: AdminProfileEntry,

@@ -83,7 +83,7 @@ fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"
 model_settings_source="$runtime_root/copilot-model-settings.py"
 if [[ ! -f "$model_settings_source" ]]; then
-  model_settings_source="$runtime_root/../trellage/copilot-model-settings.py"
+  model_settings_source="$runtime_root/../../scripts/copilot-model-settings.py"
 fi
 
 validate_catalog() {

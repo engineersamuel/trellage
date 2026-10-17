@@ -34,7 +34,7 @@ esac
 for tool in bash curl jq sha256sum tar install; do
   command -v "$tool" >/dev/null || fail "missing build dependency: $tool"
 done
-pins="$source_root/prototypes/trellage/bun-runtime.json"
+pins="$source_root/scripts/bun-runtime.json"
 config="$source_root/packages/trellage-runtime/bunfig.toml"
 installer="$source_root/scripts/install-source-runtime.sh"
 for asset in "$pins" "$config" "$installer"; do

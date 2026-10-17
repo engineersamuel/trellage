@@ -255,11 +255,10 @@ const launchArguments: Record<FixtureProfileId, ReadonlyArray<string>> = {
   reviewer: ["run", "copilot", "reviewer", "-i"],
   writer: ["run", "claude", "default", "--"],
   builder: ["run", "pi", "builder"],
-  sandbox: ["--profile", "sandbox-reviewer"],
-  council: ["--profile", "claude-council"],
-  research: ["--profile", "claude-research"],
+  auditor: ["run", "copilot", "auditor", "-i"],
+  council: ["run", "claude", "council", "--"],
+  research: ["run", "claude", "research", "--"],
   hve: ["run", "copilot", "hve", "--agent", "hve-core:rpi-agent", "-i"],
-  graph: ["--profile", "claude-graph-of-loops"],
 }
 
 const expectedPrompt = (selection: Pick<Selection, "profileId" | "candidate" | "intent" | "appended">): string => {
@@ -276,15 +275,13 @@ const expectedProfile = (root: string, id: FixtureProfileId): SelectedProfile =>
     headlessPrompt: true,
     ...(profile.goalExecution === undefined ? {} : { goalExecutionPolicy: profile.goalExecution }),
   }
-  return profile.surface === "native"
-    ? {
-        ...common,
-        surface: "native",
-        launcher: profile.launcher,
-        commandPath: path.join(root, "bin", "trx"),
-        ...(profile.agent === undefined ? {} : { agent: profile.agent }),
-      }
-    : { ...common, surface: "sandbox", commandPath: path.join(root, "bin", "trellage") }
+  return {
+    ...common,
+    surface: "native",
+    launcher: profile.launcher,
+    commandPath: path.join(root, "bin", "trx"),
+    ...(profile.agent === undefined ? {} : { agent: profile.agent }),
+  }
 }
 
 const expectedJob = (root: string, selection: Selection): QueuedGuideJob => {
@@ -719,7 +716,7 @@ const expectedGoalContext = (selection: GoalSelection): GuideGoalCandidateContex
 
 const expectedGoalPrompt = (selection: GoalSelection): string => {
   const profile = fixtureProfile(selection.profileId)
-  const { goal, controller, approach } = expectedGoalContext(selection)
+  const { goal, approach } = expectedGoalContext(selection)
   const body = [
     `ARTIFACT: ${goal.draft.artifact}`,
     "",
@@ -740,7 +737,7 @@ const expectedGoalPrompt = (selection: GoalSelection): string => {
     "Use this guidance only where it preserves the approved task, criteria, completion rule, and profile constraints.",
     approach,
   ].join("\n")
-  return `${controller === "graph-of-loops" ? "" : "/goal "}${profile.beforeBody}${body}${profile.afterBody}`
+  return `/goal ${profile.beforeBody}${body}${profile.afterBody}`
 }
 
 const goalSelection = (
@@ -775,9 +772,8 @@ const authorGoal = async (guide: GuideTerminal, focus: string): Promise<Prepared
 
 const selectGoalCandidate = async (guide: GuideTerminal, selection: GoalSelection): Promise<void> => {
   const controller = expectedGoalContext(selection).controller
-  const label =
-    controller === "graph-of-loops" ? "Graph of Loops" : controller === "claude-goal" ? "Claude /goal" : "Codex /goal"
-  const prefix = controller === "graph-of-loops" ? "/graph-of-loops" : "/goal ARTIFACT:"
+  const label = controller === "claude-goal" ? "Claude /goal" : "Codex /goal"
+  const prefix = "/goal ARTIFACT:"
   for (let index = 0; index < 3; index += 1) {
     const title = candidateTitles[index]
     assert(title !== undefined)
@@ -937,7 +933,7 @@ const assertPrintedGoal = (report: FixtureReport, selection: GoalSelection): voi
 }
 
 const assertGoalInputInstructions = (writes: ReadonlyArray<string>, selection: GoalSelection): void => {
-  const command = expectedGoalContext(selection).controller === "graph-of-loops" ? "/graph-of-loops" : "/goal"
+  const command = "/goal"
   const output = writes.join("")
   expect(output).toContain(`Type '${command} ' in the native command input, then paste the body below and submit.`)
   expect(output).toContain(`Goal body:\n${expectedGoalPrompt(selection).slice(command.length + 1)}\n`)
@@ -1126,7 +1122,7 @@ const augmentationCommand = (
 
 it.for([
   { profileId: "reviewer" as const, candidate: 1, surface: "native" },
-  { profileId: "sandbox" as const, candidate: 2, surface: "Sandbox" },
+  { profileId: "auditor" as const, candidate: 2, surface: "second native" },
 ])(
   "hands the selected $surface command to the current-terminal boundary",
   { timeout: 30_000 },
@@ -1431,11 +1427,11 @@ it("rematches an augmented prompt without changing a job already in the queue", 
   const intent = codebaseIntent(fixtureIntent)
   await augment(guide, "codebase", "a", intent)
   await guide.pressAndWait(enter, "Profile recommendations")
-  await selectProfile(guide, "sandbox", 1, intent)
+  await selectProfile(guide, "auditor", 1, intent)
   await enqueue(guide, 2)
   const selections: ReadonlyArray<Selection> = [
     { id: 1, profileId: "planner", candidate: 0, intent: fixtureIntent, placement: panePlacement },
-    { id: 2, profileId: "sandbox", candidate: 1, intent, placement: panePlacement },
+    { id: 2, profileId: "auditor", candidate: 1, intent, placement: panePlacement },
   ]
   await selectQueueEntry(guide, selections, 1, 0)
   await assertDeferredLaunch(guide)
@@ -2018,22 +2014,6 @@ it("keeps queued goals fixed through body edits, reapproval, and an explicit nor
   ])
 }, 45_000)
 
-it("uses the Graph goal controller alone for all three candidates", async ({ guide }) => {
-  await guide.start(FixtureMode.GoalGraph)
-  const goal = await authorGoal(guide, "Require evidence for each regression finding.")
-  const selection = goalSelection(goal, "graph", 1)
-  await selectGoalProfile(guide, selection, ["planner", "writer", "graph"])
-  const report = await guide.finish("c")
-  assertPrintedGoal(report, selection)
-  assertGoalDataflow(report, [selection], [{ goal, profiles: ["planner", "writer", "graph"] }])
-  expect(report.result.action).toBe("print")
-  assert(report.result.action === "print")
-  expect(report.result.prompt.match(/\/graph-of-loops/gu)).toHaveLength(1)
-  expect(report.result.prompt).not.toContain("/goal ")
-  expect(report.result.prompt).toContain("Keep trellage-graph as the only completion authority.")
-  expect(report.result.prompt).toContain("Require its review, proof, integration, and delivery gates.")
-}, 30_000)
-
 it("interviews through p then a, revises, and protects a newer prompt and queued job", async ({ guide }) => {
   await guide.start(FixtureMode.Herdr)
   await enterIntent(guide)
@@ -2327,8 +2307,8 @@ it("keeps profile worktrees distinct, rejects queued duplicates, and preserves r
   await enterIntent(guide)
   await selectProfile(guide, "hve", 0)
   await queueWorktree(guide, 1, FixtureMode.Herdr, fixtureBranches.hve)
-  await selectProfile(guide, "sandbox", 1)
-  await queueWorktree(guide, 2, FixtureMode.Herdr, fixtureBranches.sandbox)
+  await selectProfile(guide, "auditor", 1)
+  await queueWorktree(guide, 2, FixtureMode.Herdr, fixtureBranches.auditor)
   await selectProfile(guide, "hve", 2)
   await guide.pressAndWait("a", "Where does this queued job run?")
   await guide.pressAndWait(down, "\u276f Herdr worktree")
@@ -2359,10 +2339,10 @@ it("keeps profile worktrees distinct, rejects queued duplicates, and preserves r
     },
     {
       id: 2,
-      profileId: "sandbox",
+      profileId: "auditor",
       candidate: 1,
       intent: fixtureIntent,
-      placement: { kind: "new-worktree", branch: fixtureBranches.sandbox, baseRef: "HEAD" },
+      placement: { kind: "new-worktree", branch: fixtureBranches.auditor, baseRef: "HEAD" },
     },
     {
       id: 3,
@@ -2379,7 +2359,7 @@ it("keeps profile worktrees distinct, rejects queued duplicates, and preserves r
   const report = await guide.finish("L")
   assertBatch(guide, report, selections, [
     ...inspectionCommands(guide.root, fixtureBranches.hve),
-    ...inspectionCommands(guide.root, fixtureBranches.sandbox),
+    ...inspectionCommands(guide.root, fixtureBranches.auditor),
     ...inspectionCommands(guide.root, fixtureBranches.hveSecond),
     ...inspectionCommands(guide.root, fixtureBranches.hve),
   ])
@@ -2392,22 +2372,22 @@ it.for([FixtureMode.DirtyWorktree, FixtureMode.ExistingWorktree])(
   async (mode, { guide }) => {
     await guide.start(mode)
     await enterIntent(guide)
-    await selectProfile(guide, "sandbox", 2)
-    await queueWorktree(guide, 1, mode, fixtureBranches.sandbox)
+    await selectProfile(guide, "auditor", 2)
+    await queueWorktree(guide, 1, mode, fixtureBranches.auditor)
     const placement: JobPlacement =
       mode === FixtureMode.ExistingWorktree
         ? { kind: "existing-worktree", path: path.join(guide.root, "worktrees", "existing") }
-        : { kind: "new-worktree", branch: fixtureBranches.sandbox, baseRef: "HEAD" }
+        : { kind: "new-worktree", branch: fixtureBranches.auditor, baseRef: "HEAD" }
     const selection: Selection = {
       id: 1,
-      profileId: "sandbox",
+      profileId: "auditor",
       candidate: 2,
       intent: fixtureIntent,
       placement,
     }
     await assertDeferredLaunch(guide)
     const report = await guide.finish("L")
-    assertBatch(guide, report, [selection], inspectionCommands(guide.root, fixtureBranches.sandbox))
+    assertBatch(guide, report, [selection], inspectionCommands(guide.root, fixtureBranches.auditor))
     assertDataflow(report, [selection])
   },
 )

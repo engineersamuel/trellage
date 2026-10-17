@@ -28,7 +28,7 @@ export interface ReviewSnapshot {
   readonly standards?: ReadonlyArray<{ readonly path: string; readonly content: string }>
 }
 
-const standardsPaths = ["AGENTS.md", "CONTRIBUTING.md", "CODING_STANDARDS.md", ".agents/rules/trellage-cli.md"] as const
+const standardsPaths = ["AGENTS.md", "CONTRIBUTING.md", "CODING_STANDARDS.md"] as const
 
 interface CaptureBudget {
   readonly signal: AbortSignal
@@ -46,8 +46,6 @@ const committedStandards = async (root: string, base: string, changedFiles: Read
   signal: CaptureBudget): Promise<ReadonlyArray<{ path: string; content: string }>> => {
   const sources: Array<{ path: string; content: string }> = []
   for (const file of standardsPaths) {
-    if (file === ".agents/rules/trellage-cli.md" &&
-      !changedFiles.some((name) => name.startsWith("packages/trellage-cli/"))) continue
     const entry = await git(root, signal, "ls-tree", base, "--", file)
     if (!entry) continue
     if (!/^100(?:644|755) blob [0-9a-f]{40,64}\t/u.test(entry)) {

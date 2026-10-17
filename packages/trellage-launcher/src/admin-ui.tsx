@@ -61,9 +61,7 @@ import {
   harnessVersionColumnsFor,
   harnessVersionOperationKeyFor,
   reconcileHarnessVersionResults,
-  refreshedSandboxInstalledState,
   type AdminHarnessVersionResult,
-  type AdminInstalledVersionState,
 } from "./admin-harness-version.ts"
 import {
   createHarnessVersionCacheSaveQueue,
@@ -281,8 +279,7 @@ const HarnessVersionDetail = ({
   )
 }
 
-const harnessUpdateSurfaceLabel = (surface: AdminProfileEntry["surface"]): string =>
-  surface === "sandbox" ? "container" : "native"
+const harnessUpdateSurfaceLabel = (_surface: AdminProfileEntry["surface"]): string => "native"
 
 const CompletedHarnessUpdate = ({ outcome }: { readonly outcome: HarnessUpdateOutcome }) => {
   const failures = outcome.results.filter((result) => result.state === "failure")
@@ -1233,9 +1230,6 @@ export const AdminApp = ({
   const versionBatchStartedRefs = useRef<Set<string>>(new Set())
   const [versionCache, setVersionCache] = useState<AdminHarnessVersionCacheRecord>({ schemaVersion: 2, entries: {} })
   const [versionCacheError, setVersionCacheError] = useState<string | undefined>(undefined)
-  const [sandboxInstalledByRef, setSandboxInstalledByRef] = useState<ReadonlyMap<string, AdminInstalledVersionState>>(
-    new Map(),
-  )
   const [versionCacheLoaded, setVersionCacheLoaded] = useState(false)
   const [harnessUpdateByKey, setHarnessUpdateByKey] = useState<ReadonlyMap<string, HarnessUpdateState>>(new Map())
   const harnessUpdateManager = useMemo(() => new HarnessUpdateManager(runner, cwd), [runner, cwd])
@@ -1357,13 +1351,8 @@ export const AdminApp = ({
   const persistVersionResult = (
     operationKey: string,
     cacheEntry: AdminHarnessVersionCacheEntry,
-    sourceEntry: AdminProfileEntry,
+    _sourceEntry: AdminProfileEntry,
   ): void => {
-    const refreshedInstalled =
-      sourceEntry.surface === "sandbox" ? refreshedSandboxInstalledState(cacheEntry.result) : undefined
-    if (refreshedInstalled !== undefined) {
-      setSandboxInstalledByRef((previous) => new Map(previous).set(sourceEntry.ref, refreshedInstalled))
-    }
     setVersionCache((previous) => {
       const next: AdminHarnessVersionCacheRecord = {
         schemaVersion: 2,
@@ -1406,8 +1395,7 @@ export const AdminApp = ({
 
   /**
    * Forces the selected installed scope and its release group through the
-   * same bounded scheduler. Sandbox producers receive `--refresh-latest`,
-   * bypassing both the Admin cache and the CLI's 24-hour latest cache.
+   * same bounded scheduler, bypassing the Admin cache.
    */
   const forceResyncVersion = (entry: AdminProfileEntry) => {
     const relatedEntries = harnessVersionEntriesForForceResync(entry, entries)
@@ -1564,7 +1552,6 @@ export const AdminApp = ({
     entries,
     (operationKey) =>
       versionCache.entries[operationKey]?.result ?? harnessVersionResultForOperation(operationKey, versionRunManager),
-    (ref) => sandboxInstalledByRef.get(ref),
   )
   const versionResultFor = (entry: AdminProfileEntry) => versionResultsByRef.get(entry.ref)
   const allUpdates = useHarnessUpdateAll({

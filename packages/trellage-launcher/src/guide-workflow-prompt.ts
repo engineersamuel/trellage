@@ -4,7 +4,7 @@ import { GUIDE_MAX_GENERATED_SPEC } from "@trellage/guide-core"
 import { text } from "./guide-text.ts"
 
 const intentPlaceholder = "{{intent}}"
-const authoredCommandToken = /^[/\$][a-z0-9][a-z0-9._:/-]*$/iu
+const authoredCommandToken = /^[/$][a-z0-9][a-z0-9._:/-]*$/iu
 const whitespaceSegment = /^\s+$/u
 const unicodeLetterOrDigit = /[\p{L}\p{N}]/u
 const maximumSuffixComparisonTokens = 32
@@ -507,9 +507,6 @@ const normalizedFrameTokens = (value: string): ReadonlyArray<string> =>
     .split(/\s+/u)
     .map((token) => token.toLowerCase().replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, ""))
     .filter((token) => unicodeLetterOrDigit.test(token))
-
-const equalTokens = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
-  left.length === right.length && left.every((token, index) => token === right[index])
 
 const isSubstantiveSuffixFragment = (tokens: ReadonlyArray<string>): boolean =>
   tokens.length >= minimumSuffixFragmentTokenCount &&

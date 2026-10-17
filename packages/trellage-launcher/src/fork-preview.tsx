@@ -203,23 +203,6 @@ export const previewLenses: ReadonlyArray<PreviewLens> = [
 
 export const previewRecommendations: ReadonlyArray<ForkOrigin> = [
   {
-    key: "graph-of-loops",
-    label: "Claude Graph Of Loops",
-    profileRef: "sandbox:claude-graph-of-loops",
-    harness: "Claude",
-    workflowId: "start-isolated-feature-branch",
-    score: 96,
-    reason:
-      "Its isolated worktrees, retryable orchestration nodes, and research fan-out closely match implementing a queued current-workspace-or-new-worktree launch flow.",
-    why: "Start a new coding task in an isolated git worktree, staffed with a curated specialist agent role.",
-    tradeoff: "Its persistent graph and review gates add more machinery than a direct host-native implementation loop.",
-    skill: "none",
-    sandbox: true,
-    headlessPrompt: true,
-    herdr: "untested",
-    prerequisites: "none",
-  },
-  {
     key: "poteto-mode",
     label: "Poteto Mode",
     profileRef: "native:codex/pstack",
@@ -859,7 +842,7 @@ const OriginDetail = ({ origin }: { readonly origin: ForkOrigin }) => (
       <Text wrap="wrap">{origin.tradeoff}</Text>
     </Box>
     <Text dimColor>
-      Skill: {origin.skill} | Sandbox: {origin.sandbox ? "Docker" : "host"} | Headless prompt:{" "}
+      Skill: {origin.skill} | Sandbox: {origin.sandbox ? "on" : "off"} | Headless prompt:{" "}
       {origin.headlessPrompt ? "yes" : "no"} | Herdr: {origin.herdr}
     </Text>
     <Text dimColor>Prerequisites: {origin.prerequisites}</Text>

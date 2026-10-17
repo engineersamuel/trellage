@@ -55,7 +55,7 @@ approach. Refine that approach within `approachMaximumLength`; never rewrite
 or copy the protected artifact, task, criteria, or minimum score. Feedback
 cannot weaken or replace the objective. The host restores the complete goal
 and exact workflow frame once after refinement and optimization, even without
-`skill`. Do not copy the frame, emit `/goal`, `/graph-of-loops`, `/goal-me`,
+`skill`. Do not copy the frame, emit `/goal`, `/goal-me`,
 `$goal`, or any other workflow command, or add a second controller, scoreboard,
 or loop protocol. Do not run another authoring interview. These rules override
 the ordinary complete-prompt behavior below.

@@ -45,6 +45,11 @@ runtime, and records the exact installed version in the local
 network request. Only explicit `trx upgrade jcode default` resolves latest again, and a failed
 update preserves the last good installed version and receipt.
 
+Source-mode `mise run trx -- run jcode default` also uses this installed
+backend and its version receipt. It does not look for installed state in the
+source checkout. Set `TRELLAGE_JCODE_LIFECYCLE_BIN` to an absolute path only
+when an explicit alternate lifecycle backend is required.
+
 `trx upgrade jcode default --skills-only` copies and verifies only the refreshed
 `native-common` cache after `trx skills update`. It requires an existing owned
 profile and managed skill state. Custom skills, configuration, authentication,

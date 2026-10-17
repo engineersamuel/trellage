@@ -1,6 +1,18 @@
 {
   "schemaVersion": 1,
   "profiles": {
+    "blog": {
+      "description": "Native Claude Code for publication-ready technical blogs and docs-as-blog with the Claude Blog plugin.",
+      "headless": null,
+      "plugin": "claude-blog@agricidaniel-blog",
+      "standaloneMcps": []
+    },
+    "council": {
+      "description": "Native Claude Code Council with Council of High Intelligence and Caveman plugins.",
+      "headless": null,
+      "plugin": "council@council-of-high-intelligence, caveman@caveman",
+      "standaloneMcps": []
+    },
     "default": {
       "description": "Isolated Claude Code for autonomous engineering and Rundown status output, routed keylessly to Claude Sonnet 5.5 with Opus 5.5 plan mode through the local proxy.",
       "headless": {
@@ -21,6 +33,18 @@
         "testedHarnessVersion": "2.1.233"
       },
       "plugin": null,
+      "standaloneMcps": []
+    },
+    "ecc": {
+      "description": "Native Claude Code with ECC and its minimal lifecycle and safety hooks.",
+      "headless": null,
+      "plugin": "ecc@ecc",
+      "standaloneMcps": []
+    },
+    "frontend-design": {
+      "description": "Native Claude Code with UI UX Pro Max, Taste, and GSAP design plugins.",
+      "headless": null,
+      "plugin": "ui-ux-pro-max, taste-skill, gsap-skills",
       "standaloneMcps": []
     },
     "office": {
@@ -65,6 +89,18 @@
         "testedHarnessVersion": null
       },
       "plugin": "document-skills@anthropic-agent-skills",
+      "standaloneMcps": []
+    },
+    "research": {
+      "description": "Native Claude Code for vault-backed research with the Hyperresearch workflow.",
+      "headless": null,
+      "plugin": null,
+      "standaloneMcps": []
+    },
+    "social-media": {
+      "description": "Native Claude Code with Social Media Skills and Humanizer.",
+      "headless": null,
+      "plugin": "social-media-skills, humanizer",
       "standaloneMcps": []
     }
   }

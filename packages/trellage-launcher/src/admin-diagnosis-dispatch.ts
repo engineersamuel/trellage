@@ -54,8 +54,8 @@ export const selectPendingDiagnosisTargets = (
  * repeated calls with an unchanged snapshot plus an updated
  * `alreadyAttemptedRefs` (the caller is expected to add every returned ref
  * to `alreadyAttemptedRefs` before the next call), and a ref outside
- * `repairSupportedRefs` (e.g. a sandbox profile, or a native launcher with
- * no repair subcommand) is never selected regardless of its doctor status.
+ * `repairSupportedRefs` (e.g. a native launcher with no repair
+ * subcommand) is never selected regardless of its doctor status.
  */
 export const selectPendingRepairTargets = (
   statusesByRef: ReadonlyMap<string, AdminRunStatus>,

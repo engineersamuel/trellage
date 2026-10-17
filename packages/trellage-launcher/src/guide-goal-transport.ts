@@ -31,11 +31,10 @@ export const freezeGuideGoalCandidateContext = (
 
 const compatibleGoalSurface = (profile: SelectedProfile, controller: GuideGoalExecution["controller"]): boolean => {
   if (controller === "codex-goal") return profile.surface === "native" && profile.launcher === "codex"
-  if (controller === "graph-of-loops") return profile.surface === "sandbox" && profile.profile === "claude-graph-of-loops"
   if (controller !== "claude-goal") return false
   return profile.surface === "native"
-    ? profile.launcher === "claude" && profile.profile === "default"
-    : profile.profile.startsWith("claude-") && profile.profile !== "claude-graph-of-loops"
+    ? profile.launcher === "claude"
+    : profile.profile.startsWith("claude-")
 }
 
 export const assertGuideGoalProfile = (profile: SelectedProfile, execution: GuideGoalExecution): void => {
@@ -67,9 +66,6 @@ export const resolveGuideGoalTransport = (
     return { mode: "manual", ...input }
   }
   if (Buffer.byteLength(prompt, "utf8") > guideGoalArgvMaximumBytes) {
-    if (profile.surface === "sandbox" && execution.controller === "graph-of-loops") {
-      return { mode: "manual", ...input }
-    }
     throw new GuideGoalError("The goal exceeds the 64 KiB argv limit and this launch path has no supported manual input.")
   }
   return { mode: "argv", ...input }

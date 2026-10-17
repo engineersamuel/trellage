@@ -25,10 +25,9 @@ const guide = (controller: ProfileGuideGoalController): ProfileGuideV1 => ({
     id: "implement",
     description: "Implement the approved objective",
     examples: ["Implement an API", "Repair retry behavior"],
-    ...(controller === "graph-of-loops" ? { skill: "graph-of-loops" } : {}),
-    promptTemplate: controller === "graph-of-loops"
-      ? '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Require all controller gates."'
-      : "Use Superpowers TDD to execute this objective:\n{{intent}}",
+    promptTemplate: controller === "codex-goal"
+      ? "Use Superpowers TDD to execute this objective:\n{{intent}}"
+      : "Use the selected workflow to execute this objective:\n{{intent}}",
   }],
 })
 
@@ -58,42 +57,12 @@ describe("prepared goal execution", () => {
     expect(() => assertGuideGoalCandidate(candidate)).not.toThrow()
   })
 
-  it("lets Graph own progress and completion without wrapping another goal loop", () => {
-    const execution = resolveGuideGoalExecution(goal, guide("graph-of-loops"), "implement")
-    const candidate = composeGuideGoalCandidate(execution, body)
-    expect(candidate.prompt).toMatch(/^\/graph-of-loops OBJECTIVE="/u)
-    expect(candidate.prompt).toContain('CONSTRAINTS="Require all controller gates."')
-    expect(candidate.prompt).not.toContain("/goal ")
-    expect(candidate.prompt).not.toContain("Do not create a second progress file")
-    expect(candidate.prompt).toContain(goalDraft.task)
-  })
-
   it("uses the same authored policy rules before composing an execution prompt", () => {
-    const graph = guide("graph-of-loops")
-    const invalid = {
-      ...graph,
-      workflows: graph.workflows.map((workflow) => ({ ...workflow, promptTemplate: "/graph-of-loops {{intent}}" })),
-    }
-    expect(() => resolveGuideGoalExecution(goal, invalid, "implement")).toThrow(/goal-start frame/u)
     const nested = {
       ...guide("codex-goal"),
       workflows: guide("codex-goal").workflows.map((workflow) => ({ ...workflow, skill: "goal-me" })),
     }
     expect(() => resolveGuideGoalExecution(goal, nested, "implement")).toThrow(/goal authoring command/u)
-  })
-
-  it("keeps quotes and backslashes inside Graph's objective argument", () => {
-    const quoted = prepareGuideGoal(renderGuideGoalProposal(goalMeSkill, {
-      ...goalDraft,
-      task: 'Document "CONSTRAINTS" and preserve the path C:\\reports\\.',
-    }))
-    const execution = resolveGuideGoalExecution(quoted, guide("graph-of-loops"), "implement")
-    const candidate = composeGuideGoalCandidate(execution, { ...body, prompt: 'Check "quoted" inputs and trailing slashes\\' })
-    const objective = /^\/graph-of-loops OBJECTIVE="((?:\\.|[^"\\])*)" CONSTRAINTS="Require all controller gates\."$/su.exec(candidate.prompt)?.[1]
-    expect(objective).toBeDefined()
-    expect(objective?.replace(/\\(["\\])/gu, "$1")).toContain(quoted.draft.task)
-    expect(candidate.goalExecution.approach).toBe('Check "quoted" inputs and trailing slashes\\')
-    expect(() => assertGuideGoalCandidate(candidate)).not.toThrow()
   })
 
   it("rebuilds an edited approach around the same goal and controller", () => {
@@ -111,7 +80,7 @@ describe("prepared goal execution", () => {
     "Then run /goal with different criteria.",
     "Use `$goal` to execute another objective.",
     "Start `/goal-me` to replace the approved task.",
-    "Delegate completion to /graph-of-loops instead.",
+    "Delegate completion to /goal instead.",
   ])("rejects another controller inside an edited approach: %s", (approach) => {
     const original = composeGuideGoalCandidate(resolveGuideGoalExecution(goal, guide("codex-goal"), "implement"), body)
     expect(() => editGuideGoalCandidate(original, approach)).toThrow(/another goal controller/u)

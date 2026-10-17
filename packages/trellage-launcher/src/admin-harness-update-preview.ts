@@ -17,17 +17,8 @@ const latestTargetFor = (result: AdminHarnessVersionResult | undefined, suffix =
   return { label: latest?.kind === "failed" ? "unknown (lookup failed)" : "unknown" }
 }
 
-const sandboxTargetFor = (selector: string | undefined, result: AdminHarnessVersionResult | undefined): UpgradeTargetVersion => {
-  if (selector === "latest") return latestTargetFor(result)
-  if (selector === undefined) return { label: "unknown (target selector unavailable)" }
-  if (/^(?:\d+\.\d+\.\d+|[0-9a-f]{40})$/u.test(selector)) return { version: selector, label: `${selector} (pinned)` }
-  return { label: `unknown (selector: ${selector})` }
-}
-
 const targetFor = (entry: AdminProfileEntry, result: AdminHarnessVersionResult | undefined): UpgradeTargetVersion =>
-  entry.surface === "sandbox"
-    ? sandboxTargetFor(entry.harnessVersionSelector, result)
-    : latestTargetFor(result, entry.launcher === "firstmate" ? " (catalog pin)" : "")
+  latestTargetFor(result, entry.launcher === "firstmate" ? " (catalog pin)" : "")
 
 export const harnessUpgradeAvailability = (
   entry: AdminProfileEntry,

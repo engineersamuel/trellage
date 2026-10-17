@@ -176,7 +176,7 @@ export const assertGuideMatchInput = (input: GuideMatchInput): GuideMatchInput =
       const policy = entry.goalExecution
       if (
         policy === undefined ||
-        !["codex-goal", "claude-goal", "graph-of-loops"].includes(policy.controller) ||
+        !["codex-goal", "claude-goal"].includes(policy.controller) ||
         entry.guide.workflows.length === 0 ||
         entry.guide.workflows.some(({ id }) => !policy.workflowIds.includes(id))
       ) {

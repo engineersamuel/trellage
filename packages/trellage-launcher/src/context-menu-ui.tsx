@@ -3,7 +3,7 @@ import { execFile, spawn } from "node:child_process"
 import tty from "node:tty"
 import { promisify } from "node:util"
 import React, { useEffect, useMemo, useRef, useState } from "react"
-import { Box, Text, render, useApp, useInput, useWindowSize, type Key } from "ink"
+import { Box, Text, render, useApp, useInput, useWindowSize } from "ink"
 import {
   contextMenuErrorResponse,
   runContextMenuRewriteInWorker,

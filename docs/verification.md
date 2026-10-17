@@ -21,10 +21,8 @@ against the lockfile integrity. Set `BUN_INSTALL_CACHE_DIR` to use a different
 cache. Roots that are not a Git worktree top level use a temporary cache that
 preparation deletes after the install.
 
-`mise run rebuild-profiles` prepares the worktree source runtime before building
-Sandbox images. The `--sandbox-only` path does this too. If preparation fails,
-the image builds do not start. Native-only refreshes do not prepare this runtime;
-their installers manage separate installed runtimes.
+`mise run rebuild-profiles` reinstalls the Native launchers and `trx`; their
+installers manage separate installed runtimes.
 
 Codex and router reinstall preflights distinguish replacement from execution.
 An owned runtime with unchanged published sources and dependency manifests can
@@ -32,18 +30,6 @@ be replaced even when its file-metadata or dependency inventory has drifted.
 The installer stages a fresh frozen runtime before publication; it does not
 rewrite the old receipt to approve drifted files for execution. Changed sources,
 unowned paths, unsafe permissions, and escaping links still block replacement.
-
-Fresh development resolutions use the full Mise `2026.9.10` builder image and
-record its exact platform digest. Newer `latest` images omit the shell, while
-the `debian` variant omits the C linker needed to compile Headlong. Before
-updating the builder, verify shell tools, C linking, and an actual profile build.
-Existing development receipts and release locks keep their recorded builder;
-`trellage upgrade PROFILE` refreshes a development receipt.
-
-Image builds copy the prepared context into the container filesystem before
-running package installers. Only a successfully built OCI image is copied back
-to the host. This avoids directory visibility races on Docker Desktop bind
-mounts while preserving source modes and symlinks.
 
 CI caches Bun and npm package downloads by runner platform, pinned runtime
 versions, and lockfile contents. The cache excludes installed dependencies and
@@ -120,12 +106,12 @@ lines emit a pair for each line. Failed targets are reported immediately, even
 while Make waits for other parallel work to finish. To time a single target,
 run `make TEST_TIMING=1 <target>`.
 
-`make test` runs the compiler fingerprint performance contract in a separate
+`make test` runs the source workspace fingerprint performance contract in a separate
 serial phase after the parallel targets finish. It is not part of the parallel
 `launcher` target: concurrent suite activity can distort its wall-clock
 measurement. The contract still requires an unchanged SHA-256 digest and a
 cached-worktree fingerprint time strictly below 900 ms. Run it directly with
-`make profile-compiler-fingerprint`, without another test suite running.
+`make profile-compiler-fingerprint` (source workspace fingerprint), without another test suite running.
 
 The timing-sensitive phase also runs serially. Codex, Grok, OMP, Claude,
 Firstmate, native TUI, and Headlong entry contracts run without competing with
@@ -152,7 +138,7 @@ seeded candidate choices and queue removals, prompt augmentation, the local
 customer brief and approval boundary, prompt edits, parked readiness,
 approved-goal flows, and `L` batch launches.
 It checks complete rendered prompts, candidate and job counts, and exact
-Native, Sandbox, and Herdr commands, including arguments and working directories.
+Native and Herdr commands, including arguments and working directories.
 
 Provider replies, readiness checks, Git inspection, augmentation inputs, and
 Herdr responses are fixtures. No harness, repository packer, or worktree

@@ -2,30 +2,17 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-sandbox_profile="${TRELLAGE_HEADLESS_SANDBOX_PROFILE:-}"
-sandbox_version="${TRELLAGE_HEADLESS_SANDBOX_VERSION:-}"
-live_scope="${TRELLAGE_HEADLESS_LIVE_SCOPE:-all}"
 timeout_seconds="${TRELLAGE_HEADLESS_LIVE_TIMEOUT_SECONDS:-180}"
-profile_compiler="$repository_root/packages/trellage-cli/dist/cli.js"
 
 fail() {
   printf 'verify-headless-live-contracts: %s\n' "$1" >&2
   exit 1
 }
 
-[[ -n "$sandbox_profile" ]] \
-  || fail 'set TRELLAGE_HEADLESS_SANDBOX_PROFILE to a verified Claude profile'
-[[ "$sandbox_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-  || fail 'set TRELLAGE_HEADLESS_SANDBOX_VERSION to the exact verified Claude version'
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ && "$timeout_seconds" -le 600 ]] \
   || fail 'TRELLAGE_HEADLESS_LIVE_TIMEOUT_SECONDS must be an integer from 1 through 600'
-[[ "$live_scope" == all || "$live_scope" == sandbox ]] \
-  || fail 'TRELLAGE_HEADLESS_LIVE_SCOPE must be all or sandbox'
 
-required_commands=(jq node trellage)
-if [[ "$live_scope" == all ]]; then
-  required_commands+=(trx)
-fi
+required_commands=(jq trx)
 for command_name in "${required_commands[@]}"; do
   command -v "$command_name" >/dev/null 2>&1 \
     || fail "required command not found: $command_name"
@@ -96,233 +83,113 @@ require_json_lines() {
   ' "$file" >/dev/null
 }
 
-sandbox_inventory="$temp_root/sandbox-inventory.json"
-if [[ "$sandbox_profile" == */* || "$sandbox_profile" == *.toml ]]; then
-  if [[ "$sandbox_profile" != /* ]]; then
-    sandbox_profile="$repository_root/$sandbox_profile"
-  fi
-  [[ -f "$sandbox_profile" && ! -L "$sandbox_profile" ]] \
-    || fail "Sandbox live profile is missing or unsafe: $sandbox_profile"
-  [[ -f "$profile_compiler" && ! -L "$profile_compiler" ]] \
-    || fail 'profile compiler is not built; run scripts/verify-headless-contracts --live'
-  node "$profile_compiler" metadata "$sandbox_profile" >"$sandbox_inventory"
-  sandbox_name="$(jq -er '.profile_name' "$sandbox_inventory")" \
-    || fail "Sandbox profile metadata has no profile name: $sandbox_profile"
-  jq -e --arg version "$sandbox_version" '
-    .locked == true
-    and .resolved_version == $version
-    and .headless.testedHarnessVersion == $version
+for harness in copilot claude omp; do
+  trx list "$harness" --json >"$temp_root/$harness-inventory.json"
+done
+
+jq -e '
+  any(.profiles[];
+    .name == "hve"
+    and .headless.testedHarnessVersion == "1.0.81"
     and .headless.prompt == true
-    and (.headless.outputFormats | index("jsonl") != null)
-    and .headless.eventContract == "claude-stream-json-v1"
-    and .headless.trellageEventContract == "trellage-headless-v1"
-    and .headless.sessionId == "native"
+    and (.headless.outputFormats | index("json") != null)
+    and .headless.questionToolControl == "hard-deny"
+  )
+' "$temp_root/copilot-inventory.json" >/dev/null \
+  || fail 'trx run copilot hve is not publishing the recorded Copilot 1.0.81 contract'
+jq -e '
+  any(.profiles[];
+    .name == "default"
+    and .headless.testedHarnessVersion == "2.1.233"
     and .headless.resumeWithPrompt == true
-  ' "$sandbox_inventory" >/dev/null \
-    || fail "Sandbox profile is not a published Claude $sandbox_version headless profile: $sandbox_profile"
-else
-  trellage list --json --full >"$sandbox_inventory"
-  sandbox_name="$sandbox_profile"
-  jq -e --arg profile "$sandbox_profile" --arg version "$sandbox_version" '
-    any(.profiles[];
-      .name == $profile
-      and .locked == true
-      and .headless.testedHarnessVersion == $version
-      and .headless.prompt == true
-      and (.headless.outputFormats | index("jsonl") != null)
-      and .headless.eventContract == "claude-stream-json-v1"
-      and .headless.trellageEventContract == "trellage-headless-v1"
-      and .headless.sessionId == "native"
-      and .headless.resumeWithPrompt == true
-    )
-  ' "$sandbox_inventory" >/dev/null \
-    || fail "Sandbox profile is not a published Claude $sandbox_version headless profile: $sandbox_profile"
-fi
+    and .headless.usage == true
+    and .headless.cost == true
+  )
+' "$temp_root/claude-inventory.json" >/dev/null \
+  || fail 'trx run claude default is not publishing the recorded Claude 2.1.233 contract'
+jq -e '
+  any(.profiles[];
+    .name == "default"
+    and .headless.testedHarnessVersion == "18.8.5"
+    and .headless.prompt == true
+    and .headless.questionToolControl == "prompt-only"
+  )
+' "$temp_root/omp-inventory.json" >/dev/null \
+  || fail 'omp copilot is not publishing the recorded OMP 18.8.5 contract'
 
-if [[ "$live_scope" == all ]]; then
-  for harness in copilot claude omp; do
-    trx list "$harness" --json >"$temp_root/$harness-inventory.json"
-  done
+printf 'verify-headless-live-contracts: Native Copilot\n'
+cpx_output="$temp_root/cpx.jsonl"
+run_live "$cpx_output" "$temp_root/cpx.stderr" "$temp_root/cpx.timeout" \
+  trx run copilot hve -- \
+  --prompt 'Reply exactly TRELLAGE_CPX_LIVE_OK. Do not use tools.' \
+  --output-format json \
+  --disable-builtin-mcps \
+  --available-tools= \
+  --no-remote \
+  --no-remote-export \
+  --no-auto-update \
+  --model gpt-5.6-sol \
+  --stream off \
+  || fail 'Copilot live probe failed'
+require_json_lines "$cpx_output" || fail 'Copilot live stdout was not JSON-only'
+jq -Rse '
+  [split("\n")[] | fromjson?
+    | select(.type == "assistant.message" and (.data.content | type == "string"))
+    | .data.content
+  ][-1] == "TRELLAGE_CPX_LIVE_OK"
+' "$cpx_output" >/dev/null \
+  || fail 'Copilot live result differed'
 
-  jq -e '
-    any(.profiles[];
-      .name == "hve"
-      and .headless.testedHarnessVersion == "1.0.81"
-      and .headless.prompt == true
-      and (.headless.outputFormats | index("json") != null)
-      and .headless.questionToolControl == "hard-deny"
-    )
-  ' "$temp_root/copilot-inventory.json" >/dev/null \
-    || fail 'trx run copilot hve is not publishing the recorded Copilot 1.0.81 contract'
-  jq -e '
-    any(.profiles[];
-      .name == "default"
-      and .headless.testedHarnessVersion == "2.1.233"
-      and .headless.resumeWithPrompt == true
-      and .headless.usage == true
-      and .headless.cost == true
-    )
-  ' "$temp_root/claude-inventory.json" >/dev/null \
-    || fail 'trx run claude default is not publishing the recorded Claude 2.1.233 contract'
-  jq -e '
-    any(.profiles[];
-      .name == "default"
-      and .headless.testedHarnessVersion == "18.8.5"
-      and .headless.prompt == true
-      and .headless.questionToolControl == "prompt-only"
-    )
-  ' "$temp_root/omp-inventory.json" >/dev/null \
-    || fail 'omp copilot is not publishing the recorded OMP 18.8.5 contract'
-
-  printf 'verify-headless-live-contracts: Native Copilot\n'
-  cpx_output="$temp_root/cpx.jsonl"
-  run_live "$cpx_output" "$temp_root/cpx.stderr" "$temp_root/cpx.timeout" \
-    trx run copilot hve -- \
-    --prompt 'Reply exactly TRELLAGE_CPX_LIVE_OK. Do not use tools.' \
-    --output-format json \
-    --disable-builtin-mcps \
-    --available-tools= \
-    --no-remote \
-    --no-remote-export \
-    --no-auto-update \
-    --model gpt-5.6-sol \
-    --stream off \
-    || fail 'Copilot live probe failed'
-  require_json_lines "$cpx_output" || fail 'Copilot live stdout was not JSON-only'
-  jq -Rse '
-    [split("\n")[] | fromjson?
-      | select(.type == "assistant.message" and (.data.content | type == "string"))
-      | .data.content
-    ][-1] == "TRELLAGE_CPX_LIVE_OK"
-  ' "$cpx_output" >/dev/null \
-    || fail 'Copilot live result differed'
-
-  printf 'verify-headless-live-contracts: Native Claude\n'
-  cldx_initial="$temp_root/cldx-initial.jsonl"
-  run_live "$cldx_initial" "$temp_root/cldx-initial.stderr" "$temp_root/cldx-initial.timeout" \
-    trx run claude default -- \
-    --model claude-opus-5 \
-    --tools '' \
-    --output-format stream-json \
-    --verbose \
-    -p 'Reply exactly TRELLAGE_CLDX_INITIAL_OK. Do not use tools.' \
-    || fail 'Claude initial live probe failed'
-  require_json_lines "$cldx_initial" || fail 'Claude initial stdout was not JSONL-only'
-  cldx_session_id="$(jq -Rrse '
-    [split("\n")[] | fromjson? | select(.type == "system" and .subtype == "init") | .session_id][0]
-    | select(type == "string" and length > 0)
-  ' "$cldx_initial")" || fail 'Claude initial stream had no authoritative session ID'
-  jq -Rse '
-    [split("\n")[] | fromjson? | select(.type == "result")][-1] as $result
-    | $result.subtype == "success"
-    and $result.is_error == false
-    and $result.result == "TRELLAGE_CLDX_INITIAL_OK"
-    and ($result.usage | type == "object")
-    and ($result.total_cost_usd | type == "number")
-  ' "$cldx_initial" >/dev/null || fail 'Claude initial terminal evidence differed'
-
-  cldx_resume="$temp_root/cldx-resume.jsonl"
-  run_live "$cldx_resume" "$temp_root/cldx-resume.stderr" "$temp_root/cldx-resume.timeout" \
-    trx run claude default -- \
-    --model claude-opus-5 \
-    --tools '' \
-    --output-format stream-json \
-    --verbose \
-    --resume "$cldx_session_id" \
-    -p 'Reply exactly TRELLAGE_CLDX_RESUME_OK. Do not use tools.' \
-    || fail 'Claude resume live probe failed'
-  require_json_lines "$cldx_resume" || fail 'Claude resume stdout was not JSONL-only'
-  jq -Rse --arg session "$cldx_session_id" '
-    [split("\n")[] | fromjson? | select(.type == "result")][-1] as $result
-    | $result.subtype == "success"
-    and $result.is_error == false
-    and $result.session_id == $session
-    and $result.result == "TRELLAGE_CLDX_RESUME_OK"
-  ' "$cldx_resume" >/dev/null || fail 'Claude resume terminal evidence differed'
-
-  printf 'verify-headless-live-contracts: Native OMP\n'
-  omp_output="$temp_root/omp.out"
-  run_live "$omp_output" "$temp_root/omp.stderr" "$temp_root/omp.timeout" \
-    trx run omp default -- --headless-policy no-user-input \
-    -p 'Reply exactly TRELLAGE_OMP_LIVE_OK. Do not use tools.' \
-    || fail 'OMP live probe failed'
-  [[ "$(<"$omp_output")" == TRELLAGE_OMP_LIVE_OK ]] \
-    || fail 'OMP live result differed'
-fi
-
-printf 'verify-headless-live-contracts: Sandbox Claude\n'
-sandbox_initial="$temp_root/sandbox-initial.jsonl"
-run_live "$sandbox_initial" "$temp_root/sandbox-initial.stderr" "$temp_root/sandbox-initial.timeout" \
-  trellage --profile "$sandbox_profile" \
-  --output-format jsonl \
-  --trellage-events \
-  -p 'Reply exactly TRELLAGE_SANDBOX_INITIAL_OK. Do not use tools.' \
-  || fail 'Sandbox initial live probe failed'
-require_json_lines "$sandbox_initial" || fail 'Sandbox initial stdout was not JSONL-only'
-sandbox_session_id="$(jq -Rrse '
-  [split("\n")[] | fromjson? | select(.type == "trellage.session") | .sessionId][0]
+printf 'verify-headless-live-contracts: Native Claude\n'
+cldx_initial="$temp_root/cldx-initial.jsonl"
+run_live "$cldx_initial" "$temp_root/cldx-initial.stderr" "$temp_root/cldx-initial.timeout" \
+  trx run claude default -- \
+  --model claude-opus-5 \
+  --tools '' \
+  --output-format stream-json \
+  --verbose \
+  -p 'Reply exactly TRELLAGE_CLDX_INITIAL_OK. Do not use tools.' \
+  || fail 'Claude initial live probe failed'
+require_json_lines "$cldx_initial" || fail 'Claude initial stdout was not JSONL-only'
+cldx_session_id="$(jq -Rrse '
+  [split("\n")[] | fromjson? | select(.type == "system" and .subtype == "init") | .session_id][0]
   | select(type == "string" and length > 0)
-' "$sandbox_initial")" || fail 'Sandbox initial stream had no Trellage session event'
+' "$cldx_initial")" || fail 'Claude initial stream had no authoritative session ID'
 jq -Rse '
-  [split("\n")[] | fromjson? | select(.type == "trellage.result")][-1] as $result
-  | $result.outcome == "success"
-  and $result.finalText == "TRELLAGE_SANDBOX_INITIAL_OK"
-  and $result.sessionIdConsistent == true
+  [split("\n")[] | fromjson? | select(.type == "result")][-1] as $result
+  | $result.subtype == "success"
+  and $result.is_error == false
+  and $result.result == "TRELLAGE_CLDX_INITIAL_OK"
   and ($result.usage | type == "object")
-  and ($result.costUsd | type == "number")
-  and ($result.changedFiles | type == "array")
-  and $result.changedFilesSource == "git-diff"
-' "$sandbox_initial" >/dev/null || fail 'Sandbox initial terminal evidence differed'
-jq -Rse '
-  [split("\n")[] | fromjson? | select(.type == "system" and .subtype == "init")][0] as $init
-  | ($init.tools | type == "array")
-  and ($init.tools | index("AskUserQuestion") == null)
-' "$sandbox_initial" >/dev/null || fail 'Sandbox initial stream exposed AskUserQuestion'
+  and ($result.total_cost_usd | type == "number")
+' "$cldx_initial" >/dev/null || fail 'Claude initial terminal evidence differed'
 
-sandbox_resume="$temp_root/sandbox-resume.jsonl"
-run_live "$sandbox_resume" "$temp_root/sandbox-resume.stderr" "$temp_root/sandbox-resume.timeout" \
-  trellage --profile "$sandbox_profile" \
-  resume "$sandbox_session_id" \
-  --output-format jsonl \
-  --trellage-events \
-  -p 'Reply exactly TRELLAGE_SANDBOX_RESUME_OK. Do not use tools.' \
-  || fail 'Sandbox resume live probe failed'
-require_json_lines "$sandbox_resume" || fail 'Sandbox resume stdout was not JSONL-only'
-jq -Rse --arg session "$sandbox_session_id" '
-  [split("\n")[] | fromjson? | select(.type == "trellage.result")][-1] as $result
-  | $result.outcome == "success"
-  and $result.finalText == "TRELLAGE_SANDBOX_RESUME_OK"
-  and $result.sessionId == $session
-  and $result.expectedSessionId == $session
-  and $result.expectedSessionIdMatches == true
-  and $result.sessionIdConsistent == true
-' "$sandbox_resume" >/dev/null || fail 'Sandbox resume terminal evidence differed'
+cldx_resume="$temp_root/cldx-resume.jsonl"
+run_live "$cldx_resume" "$temp_root/cldx-resume.stderr" "$temp_root/cldx-resume.timeout" \
+  trx run claude default -- \
+  --model claude-opus-5 \
+  --tools '' \
+  --output-format stream-json \
+  --verbose \
+  --resume "$cldx_session_id" \
+  -p 'Reply exactly TRELLAGE_CLDX_RESUME_OK. Do not use tools.' \
+  || fail 'Claude resume live probe failed'
+require_json_lines "$cldx_resume" || fail 'Claude resume stdout was not JSONL-only'
+jq -Rse --arg session "$cldx_session_id" '
+  [split("\n")[] | fromjson? | select(.type == "result")][-1] as $result
+  | $result.subtype == "success"
+  and $result.is_error == false
+  and $result.session_id == $session
+  and $result.result == "TRELLAGE_CLDX_RESUME_OK"
+' "$cldx_resume" >/dev/null || fail 'Claude resume terminal evidence differed'
 
-if [[ "$sandbox_name" == claude-council ]]; then
-  printf 'verify-headless-live-contracts: Sandbox Claude Council plugin\n'
-  council_output="$temp_root/sandbox-council.jsonl"
-  run_live "$council_output" "$temp_root/sandbox-council.stderr" "$temp_root/sandbox-council.timeout" \
-    trellage --profile "$sandbox_profile" \
-    --output-format jsonl \
-    -p '/council In a fictional reversible test, choose A or B. Use the smallest sufficient council mode, then include sentinel TRELLAGE_COUNCIL_PLUGIN_OK.' \
-    || fail 'Sandbox Council plugin probe failed'
-  require_json_lines "$council_output" || fail 'Sandbox Council plugin stdout was not JSONL-only'
-  jq -Rse '
-    [split("\n")[] | fromjson?] as $events
-    | any($events[];
-        .type == "assistant"
-        and any(.message.content[]?;
-          .type == "tool_use"
-          and .name == "Agent"
-          and (.input.subagent_type | type == "string" and startswith("council:"))
-        )
-      )
-    and ([ $events[] | select(.type == "result") ][-1] as $result
-      | $result.subtype == "success"
-      and $result.is_error == false
-      and ($result.result | type == "string" and contains("TRELLAGE_COUNCIL_PLUGIN_OK"))
-    )
-  ' "$council_output" >/dev/null || fail 'Sandbox Council plugin invocation evidence differed'
-fi
+printf 'verify-headless-live-contracts: Native OMP\n'
+omp_output="$temp_root/omp.out"
+run_live "$omp_output" "$temp_root/omp.stderr" "$temp_root/omp.timeout" \
+  trx run omp default -- --headless-policy no-user-input \
+  -p 'Reply exactly TRELLAGE_OMP_LIVE_OK. Do not use tools.' \
+  || fail 'OMP live probe failed'
+[[ "$(<"$omp_output")" == TRELLAGE_OMP_LIVE_OK ]] \
+  || fail 'OMP live result differed'
 
 printf 'verify-headless-live-contracts: PASS\n'

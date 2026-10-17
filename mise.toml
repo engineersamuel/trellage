@@ -3,13 +3,6 @@ min_version = "2026.6.14"
 [settings]
 auto_install = false
 
-[env]
-_.path = "./prototypes/trellage"
-
-[tasks.trellage]
-description = "Run the repository worktree Trellage command"
-run = "./prototypes/trellage/trellage"
-
 [tasks.trx]
 description = "Run the repository worktree trx router, including its native launchers"
 quiet = true
@@ -57,25 +50,17 @@ description = "Remove the installed macOS TRX guide selection overlay"
 run = "./pocs/herdr-trx-guide/macos-overlay/scripts/uninstall.sh"
 
 [tasks.rebuild-profiles]
-description = "Refresh native trx/launchers + rebuild all sandbox profile images"
-run = "./scripts/rebuild-profile-images.sh --install"
+description = "Refresh native trx/launchers from this worktree"
+run = "./scripts/rebuild-profile-images.sh"
 
 [tasks.rebuild-native-profiles]
-description = "Refresh native trx/launchers without replacing the installed Trellage CLI"
+description = "Refresh native trx/launchers (alias of rebuild-profiles)"
 run = "./scripts/rebuild-profile-images.sh --native-only"
 
 [tasks.pull]
 description = "git pull --rebase origin main, then always refresh native launchers and upgrade Native harnesses, skills, and plugins"
 # Hooks are off for the pull itself so the upgrade runs exactly once, even when already up to date.
 run = "git -c core.hooksPath=/dev/null pull --rebase origin main && ./scripts/refresh-native-if-stale.sh && ./scripts/upgrade-after-pull.sh"
-
-[tasks.trellage-clean-orphans]
-description = "Preview cleanup of Trellage containers for deleted worktrees"
-run = "./scripts/cleanup-orphaned-trellage-containers.sh"
-
-[tasks.trellage-clean-orphans-apply]
-description = "Remove idle Trellage containers and state volumes for deleted worktrees"
-run = "./scripts/cleanup-orphaned-trellage-containers.sh --apply"
 
 [tasks.azure-copilot-spike]
 description = "Eval prototype: up|run|down|status a Copilot profile on an ephemeral Azure ARM64 VM"

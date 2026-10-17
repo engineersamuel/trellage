@@ -19,13 +19,12 @@ import { renderCommandPreview, type CommandRunner } from "./guide-launch.ts"
 export const harnessUpgradeHelpText = `Usage:
   trx upgrade all [--native] [--yes | --dry-run]
 
-Update harness versions AND skills for every Native and Container catalog profile
+Update harness versions AND skills for every Native catalog profile
 and every discovered Firstmate instance. The preview includes targets hidden by
 Admin filters. One queue runs:
 1. Native harness updates: shared runtimes once, Firstmate per instance.
 2. Shared Native skill-cache refresh: one trx skills update.
 3. Native profile skill copies and verification, including Agency.
-4. Container harness builds, including current configured skills.
 Native skill copies are final; harness updates cannot overwrite them afterward.
 Admin U remains the selected harness-only action.
 
@@ -43,8 +42,7 @@ harness or skill updates, failed installed-version reads, and profiles not run.
 A failed skill cache refresh skips Native copies, not independent harness updates.
 Cancellation exits 130.
 
-This does not install or upgrade Trellage itself.
-trellage upgrade all remains Container-only.`
+This does not install or upgrade Trellage itself.`
 
 export type HarnessUpgradeScope = "all" | "native"
 export type HarnessUpgradeArgs =
@@ -131,14 +129,14 @@ export interface HarnessUpgradeCliOptions {
 type WriteLine = HarnessUpgradeCliOptions["writeLine"]
 
 const groupLabel = (group: HarnessUpdatePlan): string =>
-  `${group.surface === "native" ? "Native" : "Container"} ${group.harness} (${group.key})`
+  `Native ${group.harness} (${group.key})`
 
 const completeCatalogRefs = (catalog: CombinedGuideCatalog): ReadonlySet<string> => {
-  if (catalog.native.length === 0 || catalog.sandbox.length === 0) {
-    throw new Error("Incomplete catalog: both Native and Container profiles are required. No harness or skill updates were started.")
+  if (catalog.native.length === 0) {
+    throw new Error("Incomplete catalog: Native profiles are required. No harness or skill updates were started.")
   }
   const refs = new Set(aggregateAdminProfiles(catalog).map((entry) => entry.ref))
-  if (refs.size !== catalog.native.length + catalog.sandbox.length) {
+  if (refs.size !== catalog.native.length) {
     throw new Error("Incomplete catalog: profile identities were lost or duplicated. No harness or skill updates were started.")
   }
   return refs
@@ -221,7 +219,7 @@ const writeHarnessPreview = (groups: ReadonlyArray<HarnessUpdatePlan>, write: Wr
 const writePreview = (plan: HarnessUpdateAllPlan, write: WriteLine): void => {
   const targetNoun = targetCountNoun(plan.skills?.targets ?? [], "catalog profiles")
   write(`Update all harness versions and skills: ${plan.profileCount} ${targetNoun}, ${plan.groups.length} supported harness groups.`)
-  write(`Scope: ${plan.nativeUpdateCount} Native runtime/profile updates; ${plan.containerUpdateCount} Container image updates.`)
+  write(`Scope: ${plan.nativeUpdateCount} Native runtime/profile updates.`)
   write("Includes the full catalog and discovered Firstmate instances, without Admin filters. Existing profile version and source pins are preserved.")
   write("Trellage installation and upgrades are separate. Unsupported profiles are not substituted with plugin updates.")
   writeHarnessPreview(
@@ -229,11 +227,6 @@ const writePreview = (plan: HarnessUpdateAllPlan, write: WriteLine): void => {
     write,
   )
   writeSkillsPreview(plan.skills, write)
-  const containerGroups = plan.groups.filter((group) => group.surface === "sandbox")
-  if (containerGroups.length > 0) {
-    write("Container builds refresh configured skills as part of each harness update; no separate Container skill mutation is added.")
-    writeHarnessPreview(containerGroups, write)
-  }
   for (const { entry, diagnostic } of plan.unsupported) write(`Unsupported harness ${entry.ref}: ${diagnostic}`)
 }
 

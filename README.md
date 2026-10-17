@@ -1,43 +1,34 @@
 # Trellage
 
-Trellage resolves development agent profiles from approved floating stable
-sources and runs them in isolated Docker sandboxes while preserving host
-worktree and Herdr workflows. Harnesses, plugins, skills, packages, and base
-images resolve when first needed or during an explicit upgrade. Trellage keeps
-the last complete local result for offline reuse. Exact portable locks are an
-explicit release artifact, not normal development state. Install the CLI from
-`prototypes/trellage`; it defaults to `~/.local/bin/trellage`.
+Trellage routes Native development agents through `trx run <harness> <profile>`.
+Native launchers run on the host; they are not containers or security
+boundaries.
+Install the Native launchers from `prototypes/trellage-router`.
 
 ## Fresh Machine Setup (macOS)
 
-These are the one-time prerequisites for a Mac that has never run Trellage. Skip anything already installed.
+These are the one-time prerequisites for Native Trellage on macOS. Skip
+anything already installed. Docker is optional and is only needed for the
+comparison harness or services that use Docker.
 
 ```bash
-# 1. Docker Desktop — install from https://www.docker.com/products/docker-desktop/,
-#    then launch it and wait until it reports "running".
-open -a Docker
-docker info >/dev/null && echo "Docker is running"
-
-# 2. mise (task runner / tool version manager)
+# 1. mise (task runner / tool version manager)
 brew install mise
 
-# 3. Bun (Trellage source runtime) and Node.js (external agent tools)
+# 2. Bun (Trellage source runtime) and Node.js (external agent tools)
 mise use --global bun@1.4.2
 brew install node
 
-# 4. GitHub CLI, authenticated — Trellage forwards this token into containers
+# 3. GitHub CLI, authenticated
 brew install gh
 gh auth login
 
-# 5. GitHub Copilot CLI, authenticated — required by profiles that use
-#    native Copilot auth (e.g. copilot-hve) or the shared model catalog mount
+# 4. Install and authenticate the harnesses you plan to use.
 brew install copilot-cli
 copilot -p "Reply exactly OK"
 
-# 6. Shared Copilot model catalog file — every Trellage profile mounts this
-#    read-only, so it must exist even as an empty JSON object
-mkdir -p ~/.copilot
-[ -f ~/.copilot/models.json ] || printf '{}\n' > ~/.copilot/models.json
+# Claude Code, Pi, Codex, and other harnesses must also be installed on the host
+# before their Native launchers can run.
 ```
 
 ## Trellage Quick Start
@@ -56,43 +47,18 @@ remains separate. Preparation installs frozen dependencies and records runtime
 readiness; a raw `bun install` alone does not prepare a usable runtime.
 See the [source-runtime decision](docs/adr/0005-bun-source-runtime.md).
 
-```bash
-cd prototypes/trellage
-mise trust
-mise run install-trellage
-trellage validate /absolute/path/to/profile.toml
-trellage build /absolute/path/to/profile.toml
-trellage lock /absolute/path/to/profile.toml
-trellage build --locked /absolute/path/to/profile.toml
-trellage ci-verify /absolute/path/to/profile.toml
-trellage
-trellage --profile /absolute/path/to/profile.toml
-trellage resume --profile /absolute/path/to/profile.toml
-trellage resume --profile /absolute/path/to/profile.toml SESSION_ID
-trellage list --json --full
-trellage doctor --profile /absolute/path/to/profile.toml
-trellage destroy --profile /absolute/path/to/profile.toml
-trellage upgrade /absolute/path/to/profile.toml
-trellage upgrade all
-```
-
-First run in a repo worktree, end to end with a bundled profile:
+First run in a repo worktree with a Native route:
 
 ```bash
 mise trust
-mise run trellage -- validate copilot-hve
-mise run trellage -- --profile copilot-hve
+mise run trx -- run copilot hve -- -p "Reply exactly OK"
 ```
 
-Codex native, Sandbox, and comparison profiles use the upstream Pro preset:
+Codex native and comparison profiles use the upstream Pro preset:
 `gpt-6-astra` with `medium` reasoning, Luna execution subagents with `max`
 reasoning, and an Astra reviewer with `low` reasoning. Up to four subagents
-can run concurrently. Copilot retains Astra with `low` reasoning. Plan mode
-uses Astra with `max` reasoning; Claude Graph of Loops retains its dedicated
-Astra/`max` reviewer. Explicit harness model and reasoning arguments override
-the default mode settings. Sandbox profiles set plan effort with
-`harness.codex.plan_mode_reasoning_effort` or
-`harness.copilot.plan_mode_reasoning_effort`.
+can run concurrently. Copilot retains Astra with `low` reasoning. Plan mode uses Astra with `max` reasoning. Explicit harness model and reasoning
+arguments override the default mode settings.
 
 ## Fresh Azure VM Acceptance
 
@@ -131,8 +97,7 @@ request-body logging. No host credential file is copied.
 
 The workflow verifies one exact `OK` response from each Native pair through
 `trx run`: `copilot/hve`, `codex/pstack`, `claude/default`, composed `grok/superpowers`,
-`jcode/default`, `omp/default`, `pi/default`, and `prime/default`. It then builds
-and verifies `trellage --profile claude-council`. For Firstmate, it avoids a
+`jcode/default`, `omp/default`, `pi/default`, and `prime/default`. For Firstmate, it avoids a
 vacuous paid fleet prompt and instead verifies setup, doctor, healthy routed
 inventory, the exact Firstmate source pin, and the managed overlay for both
 profiles. `trx run` performs the same owned-runtime and catalog validation as
@@ -152,29 +117,6 @@ downloaded beneath
 Azure resource group is deleted. On failure, the group remains available for
 `ssh`, `bootstrap`, or `accept`; delete it explicitly with `down` after
 diagnosis because the VM and disk remain billable.
-
-An advertised headless prompt also builds the image automatically on first use
-(this can take several minutes), runs one non-TTY prompt, and returns the
-harness status. Check `trellage list --json --full` first.
-
-Four resolution commands, four different jobs:
-
-- `trellage build <profile>` resolves approved stable development inputs into
-  a local receipt and rebuilds the image. It does not write generated lock data
-  beside `profile.toml`.
-- `trellage upgrade <profile>` refreshes floating inputs, builds a candidate,
-  and atomically adopts the new local receipt and image. Failure preserves the
-  last good installation. Add `--strict-harness` to fail if package resolution
-  would retain the previous harness instead.
-- `trellage lock <profile>` creates an exact portable release snapshot beside
-  the profile. This is the only normal command that writes a release lock.
-- `trellage build --locked <profile>` and `trellage ci-verify <profile>`
-  require that exact release snapshot. They never fall back to floating
-  development resolution.
-- Prime is development-only for this policy today. Its `lock`,
-  `build --locked`, and `ci-verify` commands fail closed until Trellage can
-  lock and install the complete Prime npm and Python bootstrap closures
-  offline.
 
 Skill sources and bundles are approved in [`config.toml`](config.toml).
 Profiles select bundle names with `skill_bundles`; they do not store skill
@@ -222,214 +164,64 @@ upstream mode lasts for that session until you request `stop adhd mode` or
 Headlong also ignores the manual-only metadata. Its copy stays in the private
 managed store, outside both identity skill registries. In the Headlong
 conversation, explicitly ask it to read and apply
-`/home/agent/.headlong/.trellage/skills/i-have-adhd/SKILL.md`.
+`~/.headlong/.trellage/skills/i-have-adhd/SKILL.md`.
 It is not registered with Headlong's `skills show` command.
 
-Launching handles the common case on its own: `trellage --profile <profile>`
-resolves and builds on first use, then reuses the matching local receipt and
-image. Harness updates do not need a profile edit: profiles declare
-`version = "latest"`, and `trellage upgrade <profile>` (or `upgrade all`)
-re-resolves that selector, builds a candidate image, and adopts the receipt and
-image atomically.
-
-When a harness exits, Trellage stops a Sandbox container after its last harness exits.
-The retained container and profile state volume are reused by the next launch.
-
-Bundled profiles can also be selected by directory name:
+The built-in agent profiles use Native routes:
 
 ```bash
-trellage validate claude-research
-trellage build claude-research
-trellage --profile claude-research
-trellage validate claude-social-media
-trellage build claude-social-media
-trellage --profile claude-social-media
-trellage validate prime-agent
-trellage build prime-agent
-trellage --profile prime-agent
+trx run claude research
+trx run claude blog
+trx run claude council
+trx run claude ecc
+trx run claude frontend-design
+trx run claude social-media
+trx run headlong default
 ```
 
-A bare profile name checks the current worktree first at
-`profiles/<name>/profile.toml`, then falls back to the profile bundled with the
-deployed Trellage source. Use a value ending in `.toml` or containing a path
-separator for an explicit path.
+`trx` is the only Trellage entrypoint. The former Sandbox CLI (`trellage`),
+its container profile compiler, and its `profiles/` definitions are retired.
 
-# List sandbox profiles (selection catalog)
-
-```bash
-trellage list
-trellage list --json
-trellage list --json-full
-```
-
-Both JSON forms include a nested `guide` object for each profile. The examples,
-workflows, prerequisites, and prompt templates are authored in
-`profile-guides/sandbox/*.md`; JSON is only the runtime projection. Human list
-output stays concise. A worktree-local `profiles/<name>/profile.toml` must pair
-with `profile-guides/sandbox/<name>.md` in that worktree before it can appear in
-JSON or guide mode.
-
-The repository-root `mise.toml` prepends `prototypes/trellage` to `PATH`, so an
-activated mise shell resolves a worktree-local `trellage` without changing
-directories. Trust the config once per worktree; mise trust is keyed by its
+Trust the root mise config once per worktree; mise trust is keyed by its
 absolute path:
 
 ```bash
 mise trust
-mise run trellage -- validate prime-agent
-trellage validate prime-agent
+mise run trx -- run prime default -- -p "Reply exactly OK"
 ```
 
-`mise run trellage --` is the explicit root-level escape hatch when a shell has
-not refreshed its mise environment. The installed `trellage` symlink provides
-the non-mise fallback: inside a linked Trellage worktree it automatically uses
-that worktree's `prototypes/trellage/trellage` and reports the selected path on
-stderr. Outside linked Trellage worktrees, it continues to use its deployed
-source tree. Prepare application dependencies explicitly with
-`scripts/install-source-runtime.sh --prepare` in that source workspace.
-Normal execution does not install missing application packages or build
-compiler output.
+Prepare application dependencies explicitly with
+`scripts/install-source-runtime.sh --prepare` in the source workspace. Normal
+execution does not install missing application packages.
 
-The root mise config also installs missing declared tools when an activated shell enters the
-repository. Source-tree `trellage` and `trx` launches schedule the same dependency check in the
-background, so tool detection and the `uvx yt-dlp` cache warm-up do not delay startup. Concurrent
-checks share a PID lock. Diagnostics are written to
-`${XDG_STATE_HOME:-$HOME/.local/state}/trellage/dependency-bootstrap.log`.
+### Native Claude profiles
 
-`trellage upgrade all` discovers every valid bundled and current-worktree
-profile, applies current-worktree name overrides, and upgrades profiles
-sequentially in name order. Each profile refreshes its approved source channels
-and `latest` harness selector, builds a candidate image, and atomically adopts
-the matching local receipt and image. A failed profile keeps its prior receipt
-and image; remaining profiles continue, and the command exits nonzero after
-reporting all failures.
-
-Run bare `trellage` to open the Ink profile launcher:
+Claude profiles run on the host through the Native adapter and local
+`copilot-proxy-rs` service. Install Claude Code and start the proxy before
+launching a profile:
 
 ```bash
-trellage
+trx run claude default
+trx run claude research
+trx run claude blog
+trx run claude council
+trx run claude ecc
+trx run claude frontend-design
+trx run claude social-media
 ```
 
-The picker combines valid profiles bundled with the installed Trellage source
-tree and valid `<current-worktree>/profiles/<directory>/profile.toml` files into
-one harness-sorted list. A current-worktree profile with the same declared name
-replaces the bundled choice. A context banner distinguishes isolated Trellage
-Sandbox containers from fast host-native launchers and states the native
-security tradeoff. Rows stay concise while the highlighted detail card wraps
-the description, harness version, active model, plugins, skills, and MCPs.
-Press `D` for a scrollable full-detail view; no profile metadata is
-ellipsis-truncated there. The profile remains the source of truth for those
-declarations; they are not installed inventory.
-
-Interactive selection requires a terminal. Escape or Ctrl-C cancels with status
-`130`. Selection does not install, update, lock, or build a profile; the chosen
-profile continues through the normal launch checks. Use `S` to sort, `/` to
-filter, `M` to choose an advertised model or enter a custom model ID, `D` for
-full details, and `H` to launch in a new Herdr pane. `claude-qwen-local` is the
-only pinned model.
-
-Bare profile launches open the harness TUI. Headless prompt, structured output,
-resume, and override support are version-gated. Inspect
-`trellage list --json --full` before using them. Trellage rejects an unsupported
-request before Docker mutation and never downgrades JSONL to text.
-
-```bash
-trellage list --json --full
-trellage --profile VERIFIED_PROFILE -p "hello"
-trellage --profile VERIFIED_PROFILE --output-format jsonl -p "hello"
-trellage resume SESSION_ID --profile VERIFIED_PROFILE -p "continue"
-```
-
-Add `--trellage-events` to a JSONL launch only when the inventory publishes
-`trellage-headless-v1`. Native JSONL remains unchanged; Trellage adds one
-session event and one terminal evidence event. See
-[`docs/headless-contract.md`](docs/headless-contract.md).
-
-### Claude council
-
-`claude-council` runs Claude Sonnet 5.5 through `copilot-proxy-rs` with two Claude
-Code marketplace plugins enabled by default:
-
-- [`0xNyk/council-of-high-intelligence`](https://github.com/0xNyk/council-of-high-intelligence) (`council`) for multi-persona deliberation (`/council`)
-- [`JuliusBrussee/caveman`](https://github.com/JuliusBrussee/caveman) (`caveman`) for compressed communication mode
-
-```bash
-trellage --profile claude-council
-```
-
-Claude profiles default their Opus, Sonnet, and Haiku routes to
-`claude-opus-5.5`, `claude-sonnet-5.5`, and `claude-haiku-4.5`, and bake
-`claude-sonnet-5.5` at `medium` effort into the container session settings.
-When the resolved headless inventory publishes `modelOverride: true`, `--model`
-overrides only the Opus route for that new, prompt, or resumed launch.
-
-Requires the external `copilot-proxy-rs_default` Docker network, same as other
-proxy-backed Claude profiles.
-
-### Claude ECC
-
-`claude-ecc` runs Claude Sonnet 5.5 through `copilot-proxy-rs` with the official
-[`affaan-m/ECC`](https://github.com/affaan-m/ECC) marketplace plugin. It provides
-ECC's plugin-discovered engineering skills, commands, agents, and hooks for
-broad planning, implementation, debugging, review, and verification work.
-
-```bash
-trellage validate claude-ecc
-trellage build claude-ecc
-trellage --profile claude-ecc
-make claude-ecc-image-probe
-```
-
-ECC hooks are enabled with the `minimal` profile. This preserves essential
-lifecycle and safety behavior without the automatic tmux, formatting,
-type-checking, and strict reminder hooks. The image therefore does not add
-`tmux`.
-
-Large plugin seeds are synchronized into persistent Claude state as one
-rollback-safe transaction. The launcher reports progress when at least 1,000
-managed files must be updated.
-
-The profile installs the Claude plugin surface only. It does not import ECC's
-repository `rules/` or `contexts/`, and `include_mcp = false` excludes the
-root `.mcp.json` so its unpinned sample Chrome DevTools MCP cannot run. Use
-`/ecc:ecc-guide` to inspect the installed catalog, `/ecc:plan` before a
-substantial change, `/ecc:tdd-workflow` during implementation, and
-`/ecc:code-review` plus `/ecc:verification-loop` before delivery.
-
-Like other proxy-backed Claude profiles, it requires the external
-`copilot-proxy-rs_default` Docker network.
-
-### Claude social media skills
-
-`claude-social-media` installs every skill from
-[`charlie947/social-media-skills`](https://github.com/charlie947/social-media-skills)
-through Claude Code's native marketplace plugin flow. Core skills need no credentials.
-`APIFY_API_TOKEN` optionally enables Apify-backed workflows, and
-`GOOGLE_AI_API_KEY` optionally enables API-backed Google AI workflows.
-
-Set values securely outside the repository, export the variable names, then launch:
-
-```bash
-export APIFY_API_TOKEN
-export GOOGLE_AI_API_KEY
-trellage --profile claude-social-media
-```
-
-Trellage forwards only variables that are present to the final Claude process;
-neither variable is required or stored in the profile or lock.
-
-Trellage also completes Claude Code's first-run onboarding without managing the
-user's theme preference in `settings.json`. Theme choices and unrelated Claude user
-state are preserved. The current mounted worktree is pre-approved as trusted inside
-the isolated container.
+The six specialized routes have detailed workflows in
+[`profile-guides/native/claude`](profile-guides/native/claude). Social-media
+workflows can use `APIFY_API_TOKEN` and `GOOGLE_AI_API_KEY` when you configure
+those integrations. Native runs use your host access; they are not contained
+by Trellage.
 ## Automatic Varlock Environment Loading
 
-Trellage bundles Varlock and uses it automatically for Sandbox new, prompt,
-and resume launches and for Native profile launches that declare required
-environment variables. Invoke `trellage` or `trx` directly:
+Trellage bundles Varlock and uses it automatically for Native profile launches
+that declare required environment variables. Invoke `trx` directly:
 
 ```bash
-trellage --profile claude-research
+trx run claude research
 trx run codex youtube
 trx
 trellage list --json --full
@@ -451,17 +243,17 @@ The default environment directory is `$XDG_CONFIG_HOME/trellage`, or `~/.config/
 └── .env.local
 ```
 
-No `config.toml` is required for the default behavior. If the directory has no `.env` files, Trellage continues without Varlock. To supply the Claude Research browser extension token:
+No `config.toml` is required for the default behavior. If the directory has no `.env` files, Trellage continues without Varlock. To supply a required environment variable:
 
 ```dotenv
 # ~/.config/trellage/.env.schema
 # @sensitive
-PLAYWRIGHT_MCP_EXTENSION_TOKEN=
+EXAMPLE_TOKEN=
 ```
 
 ```dotenv
 # ~/.config/trellage/.env.local
-PLAYWRIGHT_MCP_EXTENSION_TOKEN=replace-with-token
+EXAMPLE_TOKEN=replace-with-token
 ```
 
 Protect the directory and value file:
@@ -512,14 +304,6 @@ strict_permissions = true
 Trellage rejects symlinked sources, non-regular `.env` entries, group/world-writable configuration, and group/world-accessible secret-bearing files. For unattended applications, provision values before launch; do not use `varlock(prompt)`. Device-local encryption or a noninteractive Varlock secret-provider plugin can protect values at rest.
 
 Use `TRELLAGE_CONFIG` to select another config file. Use `TRELLAGE_ENVIRONMENT=off` for a per-process bypass or `TRELLAGE_ENVIRONMENT=on` to override `enabled = false`. Compiler and lifecycle commands do not load secrets.
-
-Check the resolved state without printing values:
-
-```bash
-trellage doctor --profile claude-research
-```
-
-Doctor reports `environment: varlock (ready)` when `.env.local` is available and secure. See the [prototype guide](prototypes/trellage/README.md#automatic-environment-loading) for the complete runtime details.
 
 ### Native runtime composition (`trx run`)
 
@@ -612,141 +396,28 @@ unsupported schema versions fail config loading in both the compiler and
 Native environment helper, even when environment loading is disabled.
 The reader does not rewrite the user's file.
 
-Profile source files are architecture-neutral editable intent. Development
-receipts and release locks currently support native ARM64 only. `trellage`
-recognizes AMD64 for future selection, but rejects it before downloads or
-Docker mutation until complete AMD64 resolution support is available.
-`trellage build` resolves floating development inputs for the Docker server
-platform into the local cache. `trellage lock` creates the exact release
-snapshot. `--locked` rejects profile, platform, artifact, and digest drift,
-but it intentionally resolves current skill content at build time.
+## Native harness routes
 
-Every build publishes the canonical
-`trellage-profile-<name>-<platform>:locked` tag. A profile without floating
-skills also gets the content-addressed
-`trellage-profile-<name>-<platform>:h-<profile-hash>-<runtime-hash>` alias and
-a locked final digest. A floating profile gets neither because the same core
-lock can produce different skill bytes on a later build.
-
-A GitHub blob URL also works for release-locked builds. Trellage resolves the
-revision once and fetches the profile and selected sibling release lock from
-that same commit:
+The built-in Claude, Headlong, Prime, and OMP routes run on the host:
 
 ```bash
-trellage build --locked https://github.com/engineersamuel/trellage/blob/v1.0.0/profiles/copilot-hve/profile.toml
-trellage --profile https://github.com/engineersamuel/trellage/blob/v1.0.0/profiles/copilot-hve/profile.toml
+trx run claude default
+trx run headlong default
+trx run prime default
+trx run omp default
 ```
 
-See [the Trellage prototype guide](prototypes/trellage/README.md) for
-development receipts, release locks, lifecycle details, Copilot with HVE Core,
-cleanup, and verification.
-
-## Prime Agent
-
-The bundled `prime-agent` profile installs Prime Agent from Prime Intellect's
-official stable release channel. The local development receipt records the
-resolved tarball, size, and SHA-256 digest. Its common skills float, so normal
-development state does not claim one final Linux/arm64 OCI digest. It routes
-model traffic only through the host-managed `copilot-proxy-rs` service, fixes
-the provider to `copilot-proxy-rs`, and defaults the model to
-`claude-opus-5`.
-
-```bash
-trellage validate prime-agent
-trellage build prime-agent
-trellage --profile prime-agent
-trellage doctor --profile prime-agent
-```
-
-The proxy must already be reachable on Docker network
-`copilot-proxy-rs_default`. Prime receives no host model credentials; Trellage
-manages its Anthropic Messages provider seed under `/home/agent/.prime/agent`
-and preserves Prime sessions and other user state in the profile/worktree state
-volume. The image build also prepares a Python kernel archive that each
-state volume restores locally, so tool use does not depend on first-launch
-access to PyPI. Every launch restores the managed provider definition so
-persisted edits cannot redirect this profile to another endpoint. Use
-`--model MODEL` only when the full inventory publishes
-`modelOverride: true`.
-
-Prime release snapshots are intentionally unavailable for now. The current
-bootstrap can still resolve transitive npm and Python content online, so
-Trellage refuses to label that state as a reproducible release lock.
-
-## Headlong
-
-The bundled `headlong` profile resolves the latest stable official
-[`laude-institute/headlong`](https://github.com/laude-institute/headlong)
-checkout when first built or explicitly upgraded. It runs as a persistent
-service with identity, memory, background thinkers, and a web dashboard
-published only at <http://127.0.0.1:18080>.
-
-The image builds the resolved Rust `headlong-tui` during image creation and
-installs it with `ada` on the login-shell `PATH`. Headlong starts and supervises
-the dashboard by default, including after a container restart.
-
-```bash
-trellage validate headlong
-trellage build headlong
-trellage --profile headlong
-trellage stop --profile headlong
-trellage start --profile headlong
-trellage destroy --profile headlong
-```
-
-Headlong uses the local `copilot-proxy-rs` service on Docker network
-`copilot-proxy-rs_default`. Trellage fixes Headlong to the Anthropic Messages
-route with model `claude-sonnet-5`; it does not request, forward, or store a
-provider API key. Start and authenticate `copilot-proxy-rs` before the first
-launch. The Headlong initializer then runs identity setup without a provider
-key prompt.
-
-Exiting the attached shell does not stop Headlong. Use `stop` to pause it and
-`start` to resume it. `destroy` removes the container and its Headlong state
-only after confirmation. `trellage upgrade headlong` can replace a clean
-managed checkout while preserving identity state. If Headlong or
-the user changed tracked or untracked source, the runtime refuses the
-replacement; inspect and back up the checkout with
-`trellage shell --profile headlong`.
-
-Headlong uses the outer Trellage container as its sandbox. The profile does not
-mount the Docker socket or start nested Docker, and prompt, resume, model
-override, and structured-output modes remain disabled.
-
-## Pi with Oh My Pi
-
-The bundled `pi-oh-my-pi` profile resolves the latest stable standalone `omp`
-executable from `can1357/oh-my-pi`. It is distinct from GitHub Copilot CLI:
-OMP uses its native `github-copilot` provider with model `gpt-5.6-terra`. At
-build time, Trellage fetches current default-branch versions of OMP's
-`semantic-compression`, `system-prompts`, and `tool-prompt-optimization`
-skills and seeds them into the isolated OMP state directory.
-
-```bash
-trellage validate pi-oh-my-pi
-trellage build pi-oh-my-pi
-trellage --profile pi-oh-my-pi
-trellage doctor --profile pi-oh-my-pi
-```
-
-Authentication precedence is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`,
-then `gh auth token`. Without a host token, OMP can complete its native GitHub
-Copilot login interactively. Host tokens are forwarded only to the OMP process;
-login and session state persist in the isolated profile/worktree state volume
-under `/home/agent/.omp/agent`. The profile uses Docker `bridge`, not
-`copilot-proxy-rs_default`.
-
-The development receipt records the resolved OMP release asset URL, size, and
-GitHub SHA-256 digest. Native skill content is not part of that receipt. An
-explicit release lock freezes the same data; normal builds and upgrades use
-the floating stable selector.
+Headlong keeps its persistent identity and memory under `~/.headlong`, and its
+dashboard binds to loopback port 18080. Install the upstream `ada` and
+`headlong-init` commands and start `copilot-proxy-rs` before the first run.
+Headlong continues after its TUI exits; use `ada stop` to stop it and
+`ada start` to resume it. See
+[`profile-guides/native/headlong/default.md`](profile-guides/native/headlong/default.md).
 
 ## Trellage Native (`trx`)
 
-Use **Trellage Sandbox** for the Docker-based CLI and isolated container
-profiles described above. Use **Trellage Native** for `trx` and its host-native
-profile launchers. Native launchers isolate agent state but run directly on the
-host.
+Use **Trellage Native** for the built-in routes. They isolate agent state but
+run directly on the host, without a Trellage container or security boundary.
 
 ### Fresh-machine onboarding
 
@@ -878,14 +549,13 @@ trx upgrade all --yes      # Run without an interactive confirmation.
 ```
 
 These actions update selected shared Native runtimes once, refresh the shared
-skill caches, then copy and verify skills for affected Native profiles. Container
-profiles are rebuilt with current configured skills. The final Native skill
+skill caches, then copy and verify skills for affected Native profiles. The final Native skill
 copies cannot be overwritten by a later harness updater. Profile version and
 source pins are preserved. Unsupported profiles and failures are reported;
 independent updates continue. This does not install Trellage or restart
-sessions. `trellage upgrade all` remains Container-only.
+sessions.
 
-`config.toml` is the skill source of truth for Native, Sandbox, and comparison
+`config.toml` is the skill source of truth for Native and comparison
 profiles. Sources with an explicit commit or tag stay pinned during launch.
 Unpinned sources attempt a default-branch refresh on every profile load.
 A failed refresh warns and reuses a validated matching cache; without one,
@@ -918,7 +588,6 @@ in place.
 | `agx trellage-azure` | `trx run agency azure` |
 | `cdx PROFILE` | `trx run codex PROFILE` |
 | `cldx PROFILE` | `trx run claude PROFILE` |
-| `cpx PROFILE` | `trx run copilot PROFILE` |
 | `fmx PROFILE` | `trx run firstmate PROFILE` |
 | `jcx` | `trx run jcode default` |
 | `omp copilot` | `trx run omp default` |
@@ -926,6 +595,8 @@ in place.
 | `picx` | `trx run pi default` |
 | `prx` | `trx run prime default` |
 | `grx PROFILE` | `trx run grok PROFILE` |
+
+GitHub Copilot Native runs use `trx run copilot PROFILE`.
 
 Native lifecycle commands use the same identity, for example
 `trx setup agency azure`, `trx doctor omp default`, and
@@ -945,8 +616,7 @@ Their isolated profile homes are rooted at:
 ~/.local/share/trellage/profiles/firstmate/<profile>/home/
 ```
 
-The native `omp` launcher is independent of the Docker `pi-oh-my-pi` profile.
-It uses the host-installed `omp` executable and provides two isolated profiles:
+The native `omp` launcher uses the host-installed `omp` executable and provides two isolated profiles:
 `local` routes every built-in model role to keyless
 `copilot-proxy-rs/qwen3.6-35b-a3b-local` on
 `http://127.0.0.1:8080/v1`, while `default` uses OMP's native GitHub Copilot
@@ -1637,20 +1307,17 @@ The profile's declared policy selects one controller:
 | Supported Native Claude (`trx run claude default`) in this terminal | Native `/goal` through the launcher's documented `-p` prompt mode |
 | Sandbox Claude in prompt mode | Native `/goal` through the runtime's Claude `-p` path |
 | Native Claude in interactive Herdr | Native `/goal` with explicit manual command input; the session stays interactive |
-| Sandbox Claude Graph of Loops | The authored `/graph-of-loops` workflow; `trellage-graph` remains the only completion authority |
 
 Workflow discipline such as Superpowers TDD does not replace a declared goal
 controller. Every native-goal candidate has one explicit `/goal` frame.
-Graph candidates use `/graph-of-loops` without an outer `/goal`. The installed
-`goal-me` skill authors goals; it is not invoked again to execute an approved
-goal. The guide does not invent a `$goal` skill.
+The installed `goal-me` skill authors goals; it is not invoked again to
+execute an approved goal. The guide does not invent a `$goal` skill.
 
 All three candidates retain the exact approved task and criteria, with a
 minimum score of 8 on every criterion. They differ only in approach. The
 selected controller owns progress, continuation, and completion. The original
 Goal-me document stays available for review, but its generic LOOP PROTOCOL,
 SCOREBOARD, and progress-file rule do not become a second execution protocol.
-Graph keeps its existing review, proof, integration, and delivery gates.
 
 **Edit approach (goal fixed)** changes only the candidate's approach.
 The queued-job editor has the same restriction. Each fork and queued job
@@ -1771,7 +1438,7 @@ the Herdr agent API after the agent is idle. Goal handoffs use the separate
 controller and native-input rules above.
 
 Guide worktree suggestions use `wt/<profile-tag>-<topic>`, for example
-`wt/cpx-hve-review-my-pr` or `wt/sb-claude-council-review-my-pr`.
+`wt/copilot-hve-review-my-pr` or `wt/sb-custom-profile-review-my-pr`.
 Generated names contain at most 40 ASCII characters. Native tags include the
 launcher and profile; Sandbox tags use `sb-` and the profile. Tags longer than
 22 characters retain a readable prefix and a six-hex identity hash. Topics use
@@ -1793,7 +1460,7 @@ Agent Skills can use the side-effect-free JSON API:
 ```bash
 trx guide --intent "Write a post about AI agents" --json
 trx guide --intent "Write a post about AI agents" \
-  --profile sandbox:claude-social-media --json
+  --profile native:claude/social-media --json
 printf '%s' \
   '{"schemaVersion":1,"intent":"Write a post about AI agents"}' \
   | trx guide --json
@@ -1836,8 +1503,7 @@ configured Copilot model for fallback matching and subsequent LLM phases.
 
 The native `prime` backend runs Prime Agent against `copilot-proxy-rs`, pinning
 the provider and model to `copilot-proxy-rs` and `claude-opus-5` (Anthropic
-Messages API at `http://127.0.0.1:8080`). It is independent of the Docker
-`prime-agent` profile. Install and manage it from
+Messages API at `http://127.0.0.1:8080`). Install and manage it from
 `prototypes/trellage-prime-profiles`:
 
 ```bash
@@ -2062,11 +1728,10 @@ Exit statuses:
 
 ## Headless Contract Matrix
 
-The headless publication gate compares Sandbox adapter declarations and Native
-catalogs with [`docs/headless-evidence.json`](docs/headless-evidence.json). It
-also runs deterministic prompt, machine-output, session, resume, malformed
-output, failure, cleanup, question-control, usage/cost, and Git evidence
-contracts.
+The headless publication gate compares Native catalogs with
+[`docs/headless-evidence.json`](docs/headless-evidence.json). It also runs
+deterministic prompt, machine-output, session, resume, malformed output,
+failure, cleanup, question-control, usage/cost, and Git evidence contracts.
 
 ```bash
 scripts/verify-headless-contracts
@@ -2074,30 +1739,13 @@ make headless-matrix
 make headless-matrix-test
 ```
 
-Static and deterministic checks do not invoke a model. Live verification is
-separate because it can consume paid quota:
+Static and deterministic checks do not invoke a model. Live verification runs
+Native `trx` probes and is separate because it can consume paid quota:
 
 ```bash
-TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
-TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.229 \
-  scripts/verify-headless-contracts --live
-TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
-TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.229 \
-  make headless-matrix-live
-
-TRELLAGE_HEADLESS_SANDBOX_PROFILE=claude-council \
-TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.233 \
-TRELLAGE_HEADLESS_LIVE_SCOPE=sandbox \
-  scripts/verify-headless-contracts --live
+scripts/verify-headless-contracts --live
+make headless-matrix-live
 ```
-
-The checked-in core fixture pins its recorded Claude Code `2.1.229` contract.
-Sandbox adapters can publish different tested Claude versions. Set
-`TRELLAGE_HEADLESS_SANDBOX_VERSION` with the exact version expected for the
-selected profile. The `claude-council` live probe also requires a successful
-headless Council agent invocation. Use `TRELLAGE_HEADLESS_LIVE_SCOPE=sandbox`
-to run only the selected Sandbox contract when unrelated Native probes are not
-part of the evidence being refreshed.
 
 Capability values apply only to the exact recorded harness version. Version
 drift keeps the profile discoverable but resolves its headless object to

@@ -47,13 +47,6 @@ class FakeRunner implements CommandRunner {
 }
 
 const ok = (stdout = ""): CommandRunResult => ({ stdout, stderr: "", exitCode: 0 })
-const doctor = (
-  developmentResolution: boolean,
-  image: "available" | "absent" | "stale" | "error",
-  profile = "prime-agent",
-): string =>
-  `profile: ${profile} (/repo/profiles/${profile}/profile.toml)\ndevelopment resolution: ${developmentResolution}\nimage: test/image (${image})\n`
-
 const inventory = (launcher: string, profile: string): CommandRunResult =>
   ok(JSON.stringify({ schemaVersion: 1, launcher, profile, readiness: "healthy" }))
 
@@ -396,24 +389,6 @@ if (args.length === 1 && args[0] === "--version") {
     }
   })
 
-  it("does not automatically build a Sandbox for a goal and does not invent native runtime evidence", async () => {
-    const { profile, execution } = goalTransportFixture("claude-goal")
-    const selected = parseSelectedProfile({
-      surface: "sandbox", commandPath: "/opt/trellage/bin/trellage", profile: "claude-council",
-      headlessPrompt: true, goalExecutionPolicy: profile.goalExecutionPolicy,
-    })
-    const stale = new FakeRunner([ok(doctor(false, "absent", selected.profile))])
-    await expect(checkSelectedProfileReadiness(stale, selected, "/repo", undefined, execution)).resolves.toMatchObject({
-      kind: ProfileReadinessKind.Blocked, diagnostic: expect.stringContaining("No automatic repair was run"),
-    })
-    expect(stale.calls).toHaveLength(1)
-    const readyImage = new FakeRunner([ok(doctor(true, "available", selected.profile))])
-    await expect(checkSelectedProfileReadiness(readyImage, selected, "/repo", undefined, execution)).resolves.toMatchObject({
-      kind: ProfileReadinessKind.Blocked, goalReadiness: "unknown",
-    })
-    expect(readyImage.calls).toHaveLength(1)
-  })
-
   it("gets read-only evaluator metadata from the managed Claude adapter without preparing or launching a profile", async () => {
     const fixture = await mkdtemp(path.join(tmpdir(), "trellage-goal-runtime-"))
     try {
@@ -635,116 +610,4 @@ describe("selected profile readiness", () => {
     ).rejects.toThrow(ProfilePreflightError)
   })
 
-  it("accepts a Sandbox profile with a current resolution and image", async () => {
-    const runner = new FakeRunner([ok(doctor(true, "available"))])
-
-    await expect(
-      checkSelectedProfileReadiness(
-        runner,
-        {
-          surface: "sandbox",
-          commandPath: "/opt/trellage/bin/trellage",
-          profile: "prime-agent",
-          headlessPrompt: false,
-        },
-        "/repo",
-      ),
-    ).resolves.toEqual({
-      kind: ProfileReadinessKind.Ready,
-      summary: "prime-agent is ready",
-    })
-    expect(runner.calls).toEqual([
-      {
-        executable: "/opt/trellage/bin/trellage",
-        args: ["doctor", "--profile", "prime-agent"],
-        options: { cwd: "/repo", timeoutMs: 300_000 },
-      },
-    ])
-  })
-
-  it("automatically builds and rechecks an unprepared Sandbox profile", async () => {
-    const runner = new FakeRunner([
-      ok(doctor(false, "absent", "headlong")),
-      ok(),
-      ok(doctor(true, "available", "headlong")),
-    ])
-
-    await expect(
-      checkSelectedProfileReadiness(
-        runner,
-        {
-          surface: "sandbox",
-          commandPath: "/opt/trellage/bin/trellage",
-          profile: "headlong",
-          headlessPrompt: false,
-        },
-        "/repo",
-      ),
-    ).resolves.toEqual({
-      kind: ProfileReadinessKind.Ready,
-      summary: "headlong was repaired and is ready",
-    })
-    expect(runner.calls.map(({ args, options }) => ({ args, timeoutMs: options?.timeoutMs }))).toEqual([
-      { args: ["doctor", "--profile", "headlong"], timeoutMs: 300_000 },
-      { args: ["build", "headlong"], timeoutMs: 1_800_000 },
-      { args: ["doctor", "--profile", "headlong"], timeoutMs: 300_000 },
-    ])
-    expect(runner.calls[1]?.options?.outputOverflow).toBe("truncate")
-  })
-
-  it("converts Sandbox automatic build failures to blocked diagnostics", async () => {
-    const runner = new FakeRunner([
-      ok(doctor(false, "absent")),
-      new CommandRunnerError({
-        kind: "exited",
-        executable: "/opt/trellage/bin/trellage",
-        args: ["build", "prime-agent"],
-        exitCode: 1,
-        stderr: "build failed",
-        message: "automatic build failed",
-      }),
-    ])
-
-    await expect(
-      checkSelectedProfileReadiness(
-        runner,
-        {
-          surface: "sandbox",
-          commandPath: "/opt/trellage/bin/trellage",
-          profile: "prime-agent",
-          headlessPrompt: false,
-        },
-        "/repo",
-      ),
-    ).resolves.toEqual({
-      kind: ProfileReadinessKind.Blocked,
-      summary: "prime-agent automatic repair failed",
-      diagnostic: "build failed",
-    })
-  })
-
-  it("blocks a Sandbox profile that remains stale after automatic repair", async () => {
-    const runner = new FakeRunner([
-      ok(doctor(true, "stale", "headlong")),
-      ok(),
-      ok(doctor(true, "stale", "headlong")),
-    ])
-
-    await expect(
-      checkSelectedProfileReadiness(
-        runner,
-        {
-          surface: "sandbox",
-          commandPath: "/opt/trellage/bin/trellage",
-          profile: "headlong",
-          headlessPrompt: false,
-        },
-        "/repo",
-      ),
-    ).resolves.toEqual({
-      kind: ProfileReadinessKind.Blocked,
-      summary: "headlong remains unavailable after automatic repair",
-      diagnostic: "Development resolution: true; image: stale.",
-    })
-  })
 })

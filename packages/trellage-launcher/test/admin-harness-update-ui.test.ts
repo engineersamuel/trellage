@@ -1,4 +1,5 @@
 import React from "react"
+import { stripVTControlCharacters } from "node:util"
 import { renderToString } from "ink"
 import { describe, expect, it, vi } from "vitest"
 
@@ -14,7 +15,7 @@ vi.mock("../src/admin-harness-version-cache.ts", async (importOriginal) => ({
   defaultAdminHarnessVersionCachePath: () => "/unused/admin-cache.json",
 }))
 
-const renderEntry = (surface: "native" | "sandbox", harness: string, launcher: string, name = "default"): string => {
+const renderEntry = (surface: "native", harness: string, launcher: string, name = "default"): string => {
   const entry: AdminProfileEntry = {
     ref: surface === "native" ? `native:${launcher}/${name}` : `sandbox:${name}`,
     surface,
@@ -50,7 +51,7 @@ const renderEntry = (surface: "native" | "sandbox", harness: string, launcher: s
   )
   expect(clientFactory).not.toHaveBeenCalled()
   expect(run.mock.calls.some(([, args]) => ["update", "upgrade", "harness-update"].includes(args[0] ?? ""))).toBe(false)
-  return output
+  return stripVTControlCharacters(output)
 }
 
 describe("Admin harness update control", () => {
@@ -62,12 +63,6 @@ describe("Admin harness update control", () => {
     ["native", "jcode", "jcode"],
     ["native", "pi", "pi"],
     ["native", "prime", "prime"],
-    ["sandbox", "claude", ""],
-    ["sandbox", "codex", ""],
-    ["sandbox", "copilot", ""],
-    ["sandbox", "pi", ""],
-    ["sandbox", "prime", ""],
-    ["sandbox", "headlong", ""],
   ] as const)("shows U for %s %s before version data is available, without starting an update", (surface, harness, launcher) => {
     expect(renderEntry(surface, harness, launcher)).toContain("[U] update harness")
   })
@@ -83,7 +78,4 @@ describe("Admin harness update control", () => {
     expect(renderEntry("native", "claude", "unknown")).not.toContain("[U]")
   })
 
-  it("shows U for the graph-of-loops container without starting an update", () => {
-    expect(renderEntry("sandbox", "claude", "", "claude-graph-of-loops")).toContain("[U] update harness")
-  })
 })

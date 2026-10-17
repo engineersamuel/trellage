@@ -251,7 +251,7 @@ const liveServices = async (cwd: string, runner: CommandRunner) => {
     env,
     routing,
     context: null,
-    catalog: { schemaVersion: 1, sandboxCommandPath: "/unused", native: [], sandbox: [] },
+    catalog: { schemaVersion: 1, native: [] },
     modelOverrides: {
       ...(env.TRELLAGE_GUIDE_MODEL ? { model: routing.optimize.model } : {}),
       ...(env.TRELLAGE_GUIDE_EFFORT ? { effort: routing.optimize.effort } : {}),

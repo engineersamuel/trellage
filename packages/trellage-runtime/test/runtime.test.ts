@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util"
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import {
   chmodSync,
@@ -491,7 +492,7 @@ test.each([undefined, "after-staging"])("contains default installer caches witho
   })
   expect(result.status, result.stderr).toBe(failure === undefined ? 0 : 1)
   expect(result.stdout).toBe("")
-  expect(result.stderr).toContain("bun install v")
+  expect(stripVTControlCharacters(result.stderr)).toContain("bun install v")
   if (failure !== undefined) expect(result.stderr).toContain(`injected failure ${failure}`)
   const cachePaths = readFileSync(probe, "utf8").trim().split("\n")
   expect(cachePaths).toHaveLength(3)
@@ -646,7 +647,7 @@ describe("Bun invocation", () => {
     expect(wrong.stderr).toContain("is not Bun 1.4.2")
   })
 
-  test.each(["trx", "trellage"])("preserves every public %s argument from a symlink and foreign cwd", (name) => {
+  test.each(["trx"])("preserves every public %s argument from a symlink and foreign cwd", (name) => {
     const root = fixture()
     const cwd = path.join(root, "foreign")
     mkdirSync(cwd)
@@ -665,7 +666,7 @@ describe("Bun invocation", () => {
     const entrypoint = path.join(root, "bin", name)
     write(root, "package.json", '{"name":"bridge-fixture"}')
     chmodSync(entrypoint, 0o755)
-    const shell = name === "trx" ? "prototypes/trellage-router/bin/trx" : "prototypes/trellage/trellage"
+    const shell = "prototypes/trellage-router/bin/trx"
     write(root, shell, '#!/usr/bin/env bash\nprintf "%s\\0" "$PWD" "${SOURCE_TEST_ENV-clean}" "$@"\nexit 37\n')
     chmodSync(path.join(root, shell), 0o755)
     const env = hostileBunEnvironment(cwd)
@@ -692,7 +693,7 @@ describe("Owned source installation", () => {
     const installer = path.join(root, "prototypes", prototype, "install.sh")
     mkdirSync(path.dirname(installer), { recursive: true })
     cpSync(path.join(sourceWorkspaceRoot(), "prototypes", prototype, "install.sh"), installer)
-    write(root, "prototypes/trellage/copilot-model-settings.py", "fixture")
+    write(root, "scripts/copilot-model-settings.py", "fixture")
     write(root, "scripts/trellage-session-bridge.py", "fixture")
     write(root, "scripts/trellage-statusline.sh", "fixture")
     write(root, `prototypes/${prototype}/assets/extensions/ask-user.ts`, "fixture")

@@ -32,8 +32,8 @@ if [[ "${normalized_path}" == "${ROOT}/"* ]]; then
   repo_relative="${normalized_path#"${ROOT}/"}"
 fi
 
-if [[ "${repo_relative}" == packages/trellage-cli/*.ts || "${repo_relative}" == packages/trellage-cli/**/*.ts ]]; then
-  diagnostics="$("${ROOT}/packages/trellage-cli/node_modules/.bin/oxlint" -c "${ROOT}/.eslintrc.json" "${repo_relative}" 2>&1)" || {
+if [[ "${repo_relative}" == packages/*.ts || "${repo_relative}" == prototypes/*.ts ]]; then
+  diagnostics="$("${ROOT}/node_modules/.bin/oxlint" -c "${ROOT}/.eslintrc.json" "${repo_relative}" 2>&1)" || {
     jq -n --arg diagnostics "${diagnostics}" '{decision: "block", reason: $diagnostics}'
     exit 0
   }

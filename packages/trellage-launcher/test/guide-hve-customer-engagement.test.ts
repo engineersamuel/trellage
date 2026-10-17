@@ -46,8 +46,6 @@ const guideRoot = path.join(root, "profile-guides")
 
 const catalog = async (): Promise<CombinedGuideCatalog> => ({
   schemaVersion: 1,
-  sandboxCommandPath: "/opt/bin/trellage",
-  sandbox: [],
   native: [
     {
       launcher: "copilot",
@@ -373,7 +371,8 @@ describe("HVE customer workflow delivery", () => {
     expect(research.agent).toBeUndefined()
     expect(research.interaction).toBeUndefined()
     expect(buildHerdrGuideLaunch(research, "Research").command.args).toEqual(["run", "copilot", "hve", "-i", "Research"])
-    const sandbox = await loadProfileGuide(guideRoot, { surface: "sandbox", profile: "copilot-hve" })
-    expect(sandbox.guide.workflows.map(({ id }) => id)).toEqual(["rpi-agent-cycle", "adapt-hve-patterns"])
+    const guide = await loadProfileGuide(guideRoot, { surface: "native", launcher: "copilot", profile: "hve" })
+    expect(guide.guide.workflows.map(({ id }) => id)).toContain("rpi-agent-cycle")
+    expect(guide.guide.workflows.map(({ id }) => id)).toContain("customer-discovery")
   })
 })

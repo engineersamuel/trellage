@@ -29,8 +29,7 @@ export const tableColumns = (
     Math.max(10, Math.floor(available * 0.25)),
   )
   // Only reserve a SANDBOX column when at least one entry actually declares
-  // a sandbox status; catalogs that never set it (e.g. Trellage Sandbox,
-  // where every profile is implicitly Docker-isolated) omit the column.
+  // a sandbox status; catalogs that never set it omit the column.
   const sandbox = entries.some((entry) => entry.sandbox !== undefined) ? "SANDBOX".length + 2 : 0
   return {
     profile,

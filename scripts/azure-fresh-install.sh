@@ -9,13 +9,13 @@ Usage: scripts/azure-fresh-install.sh <all|create|bootstrap|accept|ssh|status|do
 
 Create a fresh Azure ARM64 VM, install Trellage from a Git clone on that VM,
 install all nine Trellage Native launchers, live-probe the eight coding-agent
-launchers, verify both Firstmate profiles, and run one Trellage Sandbox prompt.
+launchers, and verify both Firstmate profiles.
 
 Commands:
   all        Create, bootstrap, and run acceptance checks
   create     Create the resource group, network, and VM
   bootstrap Clone and install Trellage on the VM
-  accept     Retry the live Native and Sandbox acceptance checks
+  accept     Retry the live Native acceptance checks
   ssh        Open an interactive SSH session
   status     Show the saved resource group and Azure VM state
   down       Delete only the saved resource group
@@ -46,7 +46,6 @@ composed `grok/superpowers`, `jcode/default`, `omp/default`, `pi/default`, and
 `firstmate/pstack-workers` with setup, doctor, inventory, source-pin, and overlay
 evidence without starting a paid fleet.
 Bare `trx` is an interactive TTY picker.
-The Sandbox check invokes `trellage --profile claude-council`.
 EOF
 }
 
@@ -213,7 +212,6 @@ proxy ref:      $proxy_ref
 checkout:       $checkout
 agent probes:   eight launchers through trx run
 Firstmate:      setup, doctor, inventory, source pin, and overlay receipts
-sandbox probe:  trellage --profile claude-council
 attempts:       $attempts
 EOF
 }
@@ -505,9 +503,7 @@ mise trust
 mise use -g uv
 if [[ "$apply_local_changes" == 0 ]]; then
   scripts/install-source-runtime.sh --prepare
-  mise run trellage -- validate copilot-hve
   scripts/rebuild-profile-images.sh --install --native-only
-  trellage validate copilot-hve
   trx --help >/dev/null
 fi
 
@@ -545,7 +541,6 @@ cd "$checkout"
 mise trust
 scripts/install-source-runtime.sh --prepare
 scripts/rebuild-profile-images.sh --install --native-only
-trellage validate copilot-hve
 trx --help >/dev/null
 REMOTE
   fi
@@ -794,7 +789,7 @@ timeout --signal=TERM --kill-after=30s 15m \
   --no-remote-export \
   --no-auto-update \
   --stream off \
-  >"$log_dir/native-cpx.jsonl" 2>"$log_dir/native-cpx.stderr"
+  >"$log_dir/native-copilot.jsonl" 2>"$log_dir/native-copilot.stderr"
 jq -Rse '
   [split("\n")[] | fromjson?
     | select(
@@ -803,7 +798,7 @@ jq -Rse '
         and .data.content != "")
     | .data.content
   ][-1] == "OK"
-' "$log_dir/native-cpx.jsonl" >/dev/null
+' "$log_dir/native-copilot.jsonl" >/dev/null
 
 run_text_probe native-cdx \
   env TRELLAGE_AUTOMATION=1 \
@@ -849,23 +844,6 @@ run_text_probe native-prx \
 trx shutdown prime >"$log_dir/native-prx-shutdown.stdout" \
   2>"$log_dir/native-prx-shutdown.stderr"
 
-timeout --signal=TERM --kill-after=30s 45m \
-  trellage build claude-council \
-  >"$log_dir/sandbox-claude-council-build.stdout" \
-  2>"$log_dir/sandbox-claude-council-build.stderr"
-timeout --signal=TERM --kill-after=30s 30m \
-  trellage --profile claude-council \
-  --output-format jsonl \
-  --trellage-events \
-  -p 'Reply exactly OK. Do not use tools.' \
-  >"$log_dir/sandbox-claude-council.jsonl" \
-  2>"$log_dir/sandbox-claude-council.stderr"
-jq -Rse '
-  [split("\n")[] | fromjson? | select(.type == "trellage.result")][-1] as $result
-  | $result.outcome == "success"
-    and $result.finalText == "OK"
-    and $result.sessionIdConsistent == true
-' "$log_dir/sandbox-claude-council.jsonl" >/dev/null
 docker network inspect copilot-proxy-rs_default \
   >"$log_dir/copilot-proxy.network.json"
 

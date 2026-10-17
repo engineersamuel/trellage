@@ -4,8 +4,9 @@ import type { AdminHarnessVersionResult } from "../src/admin-harness-version.ts"
 import type { AdminProfileEntry } from "../src/admin-model.ts"
 
 const entry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
-  ref: "sandbox:claude",
-  surface: "sandbox",
+  ref: "native:claude/default",
+  surface: "native",
+  launcher: "claude",
   harness: "claude",
   name: "claude",
   description: "Claude profile",
@@ -27,35 +28,10 @@ const known = (installed: string, latest: string): AdminHarnessVersionResult => 
 })
 
 describe("harnessUpgradeVersionPreview", () => {
-  it("shows the current version and the latest known floating target", () => {
-    expect(harnessUpgradeVersionPreview(entry({ harnessVersionSelector: "latest" }), known("2.1.252", "2.1.260"))).toEqual({
-      isCurrent: false,
-      text: "2.1.252 -> 2.1.260",
-    })
+  it("shows the current version and the latest known target", () => {
     expect(
-      harnessUpgradeVersionPreview(
-        entry({ surface: "native", launcher: "claude", version: "unrelated profile version" }),
-        known("2.1.259", "2.1.260"),
-      ),
+      harnessUpgradeVersionPreview(entry({ version: "unrelated profile version" }), known("2.1.259", "2.1.260")),
     ).toEqual({ isCurrent: false, text: "2.1.259 -> 2.1.260" })
-  })
-
-  it.each([
-    { installed: "2.1.252", isCurrent: false, text: "2.1.252 -> 2.1.260 (pinned)" },
-    { installed: "2.1.260", isCurrent: true, text: "2.1.260 (pinned)" },
-    { installed: "2.1.270", isCurrent: false, text: "2.1.270 -> 2.1.260 (pinned)" },
-  ])("compares $installed against the configured pin, not upstream latest", ({ installed, isCurrent, text }) => {
-    expect(harnessUpgradeVersionPreview(entry({ harnessVersionSelector: "2.1.260" }), known(installed, "2.1.280"))).toEqual({
-      isCurrent,
-      text,
-    })
-  })
-
-  it("shows a Container source pin without substituting upstream HEAD", () => {
-    const pin = "b".repeat(40)
-    expect(
-      harnessUpgradeVersionPreview(entry({ harness: "headlong", harnessVersionSelector: pin }), known("a".repeat(40), "c".repeat(40))),
-    ).toEqual({ isCurrent: false, text: `${"a".repeat(40)} -> ${pin} (pinned)` })
   })
 
   it("labels Firstmate's profile-specific catalog target as a pin", () => {
@@ -75,8 +51,8 @@ describe("harnessUpgradeVersionPreview", () => {
     })
   })
 
-  it("shows an already-current floating version without inventing an upgrade", () => {
-    expect(harnessUpgradeVersionPreview(entry({ harnessVersionSelector: "latest" }), known("2.1.260", "2.1.260"))).toEqual({
+  it("shows an already-current version without inventing an upgrade", () => {
+    expect(harnessUpgradeVersionPreview(entry(), known("2.1.260", "2.1.260"))).toEqual({
       isCurrent: true,
       text: "2.1.260",
     })
@@ -99,33 +75,14 @@ describe("harnessUpgradeVersionPreview", () => {
     ).toEqual({ isCurrent: false, text: "2.1.252 -> unknown" })
   })
 
-  it("reports a latest lookup failure but still shows a configured Container pin", () => {
+  it("reports a latest lookup failure", () => {
     const failed: AdminHarnessVersionResult = {
       installed: { kind: "known", version: "2.1.252" },
       latest: { kind: "failed", diagnostic: "release source unavailable" },
     }
-    expect(harnessUpgradeVersionPreview(entry({ harnessVersionSelector: "latest" }), failed)).toEqual({
+    expect(harnessUpgradeVersionPreview(entry(), failed)).toEqual({
       isCurrent: false,
       text: "2.1.252 -> unknown (lookup failed)",
-    })
-    expect(harnessUpgradeVersionPreview(entry({ harnessVersionSelector: "2.1.260" }), failed)).toEqual({
-      isCurrent: false,
-      text: "2.1.252 -> 2.1.260 (pinned)",
-    })
-    expect(harnessUpgradeVersionPreview(entry({ harnessVersionSelector: "2.1.252" }), failed)).toEqual({
-      isCurrent: true,
-      text: "2.1.252 (pinned)",
-    })
-  })
-
-  it("does not treat an absent selector or a version range as a resolved target", () => {
-    expect(harnessUpgradeVersionPreview(entry(), known("2.1.252", "2.1.260"))).toEqual({
-      isCurrent: false,
-      text: "2.1.252 -> unknown (target selector unavailable)",
-    })
-    expect(harnessUpgradeVersionPreview(entry({ harnessVersionSelector: "^2.1.0" }), known("2.1.252", "2.1.260"))).toEqual({
-      isCurrent: false,
-      text: "2.1.252 -> unknown (selector: ^2.1.0)",
     })
   })
 })

@@ -55,7 +55,6 @@ test("validates lifecycle state, reconciles the daemon stamp, and builds the can
   expect(stamp.kernelVenv).toBe(state.paths.kernelVenv)
 
   const launch = primeLaunchCommand(state, {
-    model: "claude-opus-5",
     appendSystemPrompt: "Open with evidence.",
     codingAgentDirectory: "/tmp/prime-generation",
     forwardedArgs: ["-p", "Reply exactly OK"],
@@ -84,6 +83,13 @@ test("validates lifecycle state, reconciles the daemon stamp, and builds the can
     OPENAI_API_KEY: null,
     GH_TOKEN: null,
   })
+})
+
+test("preserves an explicit model override", async () => {
+  const { environment } = await fixture()
+  const state = await validatePrimeRuntime({ environment }, { verifyCliVersion: false })
+  const launch = primeLaunchCommand(state, { model: "vendor/custom" })
+  expect(launch.args.slice(1, 5)).toEqual(["--provider", "copilot-proxy-rs", "--model", "vendor/custom"])
 })
 
 test("rejects a runtime identity mismatch before creating a launch", async () => {

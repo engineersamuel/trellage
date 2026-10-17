@@ -10,7 +10,7 @@ import { promisify } from "node:util"
 import { NativeRunError } from "./paths.ts"
 
 export const PRIME_PROVIDER = "copilot-proxy-rs"
-export const PRIME_DEFAULT_MODEL = "claude-opus-5"
+export const PRIME_DEFAULT_MODEL = "claude-opus-5.5"
 export const PRIME_PROFILE_MARKER = "trellage-prime-profile-v1"
 export const PRIME_RUNTIME_IDENTITY_SCHEMA = 1
 export const PRIME_KERNEL_SPEC_VERSION = 1
@@ -158,7 +158,7 @@ export const primeRuntimePaths = (options: PrimeRuntimePathOptions = {}): PrimeR
     daemonEnvStamp: path.join(daemonDir, "kernel-env.stamp"),
   }
 }
-const requireNoSymlinkPath = async (target: string, name: string, directory: boolean): Promise<void> => {
+const requireSafePathSegments = async (target: string, name: string): Promise<void> => {
   const segments = target.split(path.sep)
   let current = path.parse(target).root
   for (const segment of segments.slice(1)) {
@@ -173,6 +173,10 @@ const requireNoSymlinkPath = async (target: string, name: string, directory: boo
     if (current !== target && !status.isDirectory())
       fail("unsafe-path", `${name} parent is not a directory: ${current}`)
   }
+}
+
+const requireNoSymlinkPath = async (target: string, name: string, directory: boolean): Promise<void> => {
+  await requireSafePathSegments(target, name)
   const status = await lstat(target).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined
     throw error
@@ -481,6 +485,16 @@ export const validatePrimeRuntime = async (
   return state
 }
 
+const removeStaleDaemonSocket = async (socket: string, listening: boolean): Promise<void> => {
+  const status = await lstat(socket).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
+    throw error
+  })
+  if (status?.isSymbolicLink() || (status && !status.isSocket()))
+    fail("unsafe-path", `unsafe Prime daemon socket: ${socket}`)
+  if (status && !listening) await rm(socket, { force: true })
+}
+
 export const ensurePrimeDaemonIdentity = async (
   state: PrimeRuntimeState,
   dependencies: Pick<PrimeRuntimeDependencies, "daemonIsListening" | "stopDaemon"> = {},
@@ -499,13 +513,7 @@ export const ensurePrimeDaemonIdentity = async (
       fail("launch", "Prime profile daemon did not stop; refusing to replace its identity stamp")
   }
 
-  const socketStatus = await lstat(state.paths.daemonSocket).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined
-    throw error
-  })
-  if (socketStatus?.isSymbolicLink() || (socketStatus && !socketStatus.isSocket()))
-    fail("unsafe-path", `unsafe Prime daemon socket: ${state.paths.daemonSocket}`)
-  if (socketStatus && !listening) await rm(state.paths.daemonSocket, { force: true })
+  await removeStaleDaemonSocket(state.paths.daemonSocket, listening)
   if (!matches || listening === false) await writeDaemonStamp(state.paths.daemonEnvStamp, expected)
 }
 

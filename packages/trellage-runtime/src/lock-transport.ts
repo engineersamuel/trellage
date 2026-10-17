@@ -80,6 +80,8 @@ export async function withRegistryTransport(
         if (!transport.equals(canonical)) publish(canonical)
       } catch (error) {
         preserveRecovery = true
+        // Restoration failure must surface with the install error; this overrides it deliberately.
+        // oxlint-disable-next-line no-unsafe-finally
         throw new AggregateError(
           installationError === undefined ? [error] : [installationError, error],
           `source lock restoration failed; canonical backup retained at ${backup}`,

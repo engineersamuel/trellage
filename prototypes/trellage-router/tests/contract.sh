@@ -69,7 +69,7 @@ assert_native_skills_refreshed() {
   jq -se --arg router "$runtime_parent/trx/bin/trx" '
     length == 1 and all(.[]; .args == [] and .routerCommandPath == $router)
   ' "$skills_cache_log" >/dev/null || fail 'unified update did not refresh the configured skill maintenance once through its own router'
-  jq -r '.catalog.native[] | select(.launcher != "fx") | (.launcher | {agency:"agx",copilot:"cpx",codex:"cdx",claude:"cldx",firstmate:"fmx",jcode:"jcx",pi:"picx",prime:"prx",omp:"omp"}[.]) + ":skills-update " + (if .launcher == "agency" and .name == "azure" then "trellage-azure" elif .launcher == "omp" and .name == "default" then "copilot" else .name end)' \
+  jq -r '.catalog.native[] | select(.launcher != "fx" and .launcher != "headlong") | (.launcher | {agency:"agx",copilot:"cpx",codex:"cdx",claude:"cldx",firstmate:"fmx",jcode:"jcx",pi:"picx",prime:"prx",omp:"omp"}[.]) + ":skills-update " + (if .launcher == "agency" and .name == "azure" then "trellage-azure" elif .launcher == "omp" and .name == "default" then "copilot" else .name end)' \
     "$fixture_root/guide-catalog.json" | sort >"$fixture_root/expected-skills-update.log"
   sort "$skills_update_log" >"$fixture_root/actual-skills-update.log"
   cmp -s "$fixture_root/expected-skills-update.log" "$fixture_root/actual-skills-update.log" \
@@ -638,7 +638,8 @@ for pair in \
   omp:local \
   picx:default \
   prx:default \
-  agx:trellage-azure; do
+  agx:trellage-azure \
+  headlong:default; do
   write_fixture_guide "${pair%%:*}" "${pair#*:}"
 done
 export TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides"
@@ -681,7 +682,7 @@ for retired_args in '--profile agency' '--profile=agency' 'run cpx cpx-p' 'run c
 done
 
 "$fixture_bin/trx" guide --help >"$fixture_root/guide-help.out"
-assert_contains 'native:<launcher>/<profile> or sandbox:<profile>' \
+assert_contains 'PROFILE_REF is native:<launcher>/<profile>.' \
   "$fixture_root/guide-help.out"
 assert_contains 'schemaVersion 1' "$fixture_root/guide-help.out"
 assert_contains 'INTENT can contain line breaks and accepts up to 60,000 characters.' \
@@ -697,7 +698,6 @@ assert_contains 'It reads' "$fixture_root/guide-help.out"
 PATH=/usr/bin:/bin "$fixture_bin/trx" upgrade --help >"$fixture_root/upgrade-help.out"
 PATH=/usr/bin:/bin "$fixture_bin/trx" upgrade all --help >"$fixture_root/upgrade-all-help.out"
 assert_contains 'trx upgrade all [--native] [--yes | --dry-run]' "$fixture_root/upgrade-help.out"
-assert_contains 'trellage upgrade all remains Container-only.' "$fixture_root/upgrade-all-help.out"
 for invalid_upgrade in \
   '' '--yes' 'native' 'all --yes --dry-run' 'all --yes --yes' \
   'all --dry-run --dry-run' 'all --unknown' 'all --yes=true' \
@@ -815,6 +815,8 @@ assert_contains $'codex/pstack\tAqua-123 pstack for Codex' "$fixture_root/list.o
 assert_contains $'codex/youtube\tYouTube transcript research with youtube-full' "$fixture_root/list.out"
 assert_contains $'prime/default\tprx' "$fixture_root/list.out"
 assert_contains $'agency/azure\tagx' "$fixture_root/list.out"
+assert_contains $'headlong/default\tPersistent Headlong agent with durable identity, memory, and background thinking on the host.' \
+  "$fixture_root/list.out"
 
 "$fixture_bin/trx" list --json >"$fixture_root/list.json" \
   || fail 'JSON list failed'
@@ -842,7 +844,8 @@ jq -e '
     "omp/local",
     "pi/default",
     "prime/default",
-    "agency/azure"
+    "agency/azure",
+    "headlong/default"
   ]
   and [.profiles[] | .harness] == [
     "copilot",
@@ -858,9 +861,11 @@ jq -e '
     "omp",
     "pi",
     "prime",
-    "agency"
+    "agency",
+    "headlong"
   ]
   and [.profiles[] | .sandbox] == [
+    false,
     false,
     false,
     false,
@@ -886,6 +891,7 @@ jq -e '
   and (.profiles[] | select(.launcher == "firstmate" and .name == "pstack-workers") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "fx" and .name == "default") | .herdrCompatibility.status) == "untested"
   and (.profiles[] | select(.launcher == "agency" and .name == "azure") | .herdrCompatibility.status) == "untested"
+  and (.profiles[] | select(.launcher == "headlong" and .name == "default") | .herdrCompatibility.status) == "untested"
   and all(.profiles[] | select(.launcher == "firstmate"); .headless.prompt == false and .headless.modelOverride == false)
   and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .orchestration.taskIdPrefix) == "fmd"
   and (.profiles[] | select(.launcher == "firstmate" and .name == "default") | .orchestration.preparation) == {schemaVersion: 1}
@@ -1070,47 +1076,13 @@ if (process.argv[2] === "enrich-native-list") {
 EOF
 chmod 0755 "$fixture_picker"
 refresh_fixture_source
-cat >"$fixture_bin/trellage" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ "${1-}" == upgrade ]]; then
-  [[ "$#" -eq 3 && "$2" == sandbox-fixture && "$3" == --strict-harness ]] || exit 64
-  [[ -n "${TRX_UPGRADE_LOG-}" ]] || exit 64
-  printf 'trellage:%s\n' "$*" >>"$TRX_UPGRADE_LOG"
-  if [[ "${TRX_UPGRADE_FALLBACK-}" == 1 ]]; then
-    printf 'upgrade fallback: harness codex retained version 2.1.0\n'
-  fi
-  exit 0
-fi
-if [[ "${1-}" == harness-version ]]; then
-  [[ "$#" -eq 2 && "$2" == sandbox-fixture ]] || exit 64
-  printf '{"schemaVersion":1,"installed":"3.0.0","latestKnown":true,"latest":"3.0.0"}\n'
-  exit 0
-fi
-[[ "$#" -eq 2 && "$1" == list && "$2" == --json-full ]] || exit 64
-if [[ -n "${TRX_DISCOVERY_LOG-}" ]]; then
-  printf 'trellage\n' >>"$TRX_DISCOVERY_LOG"
-fi
-case "${TRX_SANDBOX_CATALOG_MODE-}" in
-  empty) printf '{"schemaVersion":2,"profiles":[]}\n'; exit 0 ;;
-  malformed) printf '{"schemaVersion":2,"profiles":null}\n'; exit 0 ;;
-  invalid-schema) printf '{"schemaVersion":1,"profiles":[{}]}\n'; exit 0 ;;
-  multiple) printf '{"schemaVersion":2,"profiles":[{}]}\n{"schemaVersion":2,"profiles":[{}]}\n'; exit 0 ;;
-  failed) printf 'fixture Sandbox catalog failed\n' >&2; exit 9 ;;
-esac
-cat <<'JSON'
-{"schemaVersion":2,"profiles":[{"name":"sandbox-fixture","description":"Sandbox fixture","guide":{"schemaVersion":1,"capabilities":["fixture-delivery"],"bestFor":["Fixture delivery","Fixture updates"],"avoidFor":["Unrelated fixture work","Live updates"],"prerequisites":[],"workflows":[{"id":"deliver","description":"Deliver fixture work","examples":["Build the fixture","Test the fixture","Review the fixture"],"promptTemplate":"{{intent}}"}]},"path":"/fixture/profiles/sandbox-fixture/profile.toml","supportedPlatforms":["linux/arm64"],"harness":{"kind":"codex","version":"2.1.0","model":"gpt-5.6-sol"},"resolutionPolicy":"floating","locallyResolved":true,"releaseLockAvailable":true,"skillBundles":["sandbox-common"],"skillsMode":"floating","finalDigestLocked":false,"skills":[],"plugins":[],"mcps":[],"sandbox":true,"headless":{"schemaVersion":1,"prompt":true,"outputFormats":["text"],"eventContract":null,"trellageEventContract":null,"sessionId":"none","resume":false,"resumeWithPrompt":false,"questionToolControl":"hard-deny","changedFiles":"none","usage":false,"cost":false,"modelOverride":true,"effortOverride":false,"testedHarnessVersion":"1.0.0"},"locked":true,"herdrCompatibility":{"status":"untested"}}]}
-JSON
-EOF
-chmod 0755 "$fixture_bin/trellage"
 TRX_CATALOG_ARGS_LOG="$fixture_root/guide-catalog-args.log" "$fixture_bin/trx" guide --intent 'fixture intent' --json \
   >"$fixture_root/guide-catalog.json" \
-  || fail 'guide mode did not aggregate native and Sandbox catalogs'
+  || fail 'guide mode did not aggregate Native catalogs'
 [[ ! -s "$fixture_root/guide-catalog-args.log" ]] \
   || fail 'guide catalog executed an installed backend instead of reading static metadata'
 jq -e \
   --arg guideRoot "$runtime_parent/trx/share/profile-guides" \
-  --arg sandboxCommandPath "$fixture_bin/trellage" \
   --arg goalCache "${XDG_DATA_HOME:-$fixture_home/.local/share}/trellage/common/skills" \
   --arg runtimeParent "$runtime_parent" '
     .guideRoot == $guideRoot
@@ -1120,9 +1092,9 @@ jq -e \
     and .goalSkills.cachePath == $goalCache
     and .args == ["--intent", "fixture intent", "--json"]
     and .catalog.schemaVersion == 1
-    and .catalog.sandboxCommandPath == $sandboxCommandPath
-    and .catalog.sandbox[0].name == "sandbox-fixture"
-    and (.catalog.native | length == 14)
+    and (.catalog | has("sandboxCommandPath") | not)
+    and .catalog.sandbox == []
+    and (.catalog.native | length == 15)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -1156,15 +1128,12 @@ printf '%s\n' 'throw new Error("Review setup must not prepare Prompt Master or c
   >"$review_skills_manager"
 refresh_fixture_source
 : >"$fixture_root/guide-review-discovery.log"
-TRX_SANDBOX_CATALOG_MODE=failed TRX_DISCOVERY_LOG="$fixture_root/guide-review-discovery.log" \
+TRX_DISCOVERY_LOG="$fixture_root/guide-review-discovery.log" \
   "$fixture_bin/trx" guide --review --base main --intent 'keep this original task' \
-  >"$fixture_root/guide-review.json" || fail 'guide Review required the unused Sandbox catalog'
-if grep -Fxq trellage "$fixture_root/guide-review-discovery.log"; then
-  fail 'guide Review attempted Sandbox discovery'
-fi
-jq -e --arg sandboxCommandPath "$fixture_source/prototypes/trellage/trellage" '
+  >"$fixture_root/guide-review.json" || fail 'guide Review failed during setup'
+jq -e '
   .args == ["--review", "--base", "main", "--intent", "keep this original task"]
-  and .catalog.sandboxCommandPath == $sandboxCommandPath
+  and (.catalog | has("sandboxCommandPath") | not)
   and .catalog.sandbox == []
   and .catalog.native == []
 ' "$fixture_root/guide-review.json" >/dev/null || fail 'guide Review changed its task or discovered profiles during setup'
@@ -1174,12 +1143,10 @@ TRELLAGE_REVIEW_PROFILES_ONLY=1 "$fixture_bin/trx" guide --review >"$fixture_roo
 jq -e '.sandbox == [] and (.native | length > 0) and
   all(.native[]; .launcher == "copilot" or .launcher == "codex" or .launcher == "claude")' \
   "$fixture_root/review-handoff-catalog.json" >/dev/null || fail 'review handoff catalog contains unsupported profiles'
-mv "$fixture_bin/trellage" "$fixture_root/review-trellage.saved"
-"$fixture_bin/trx" guide --review >"$fixture_root/guide-review-no-sandbox.json" \
-  || fail 'guide Review required a separately installed Sandbox command'
-mv "$fixture_root/review-trellage.saved" "$fixture_bin/trellage"
+"$fixture_bin/trx" guide --review >"$fixture_root/guide-review-no-args.json" \
+  || fail 'guide Review failed without arguments'
 jq -e '.args == ["--review"] and .catalog.sandbox == [] and .catalog.native == []' \
-  "$fixture_root/guide-review-no-sandbox.json" >/dev/null || fail 'guide Review did not defer its Native catalog'
+  "$fixture_root/guide-review-no-args.json" >/dev/null || fail 'guide Review did not defer its Native catalog'
 mv "$fixture_root/review-floating-skills.saved" "$review_skills_manager"
 refresh_fixture_source
 for conflicting_flag in --review --review=value --engagement --json --next-steps --preview --forks; do
@@ -1272,15 +1239,14 @@ TRELLAGE_TRX_COMMAND_PATH=/unrelated/trx \
   || fail 'admin mode exited with a non-zero status'
 jq -e \
   --arg guideRoot "$runtime_parent/trx/share/profile-guides" \
-  --arg sandboxCommandPath "$fixture_bin/trellage" \
   --arg runtimeParent "$runtime_parent" '
     .guideRoot == $guideRoot
     and .args == []
     and .routerCommandPath == ($runtimeParent + "/trx/bin/trx")
     and .catalog.schemaVersion == 1
-    and .catalog.sandboxCommandPath == $sandboxCommandPath
-    and .catalog.sandbox[0].name == "sandbox-fixture"
-    and (.catalog.native | length == 14)
+    and (.catalog | has("sandboxCommandPath") | not)
+    and .catalog.sandbox == []
+    and (.catalog.native | length == 15)
     and all(.catalog.native[];
       (.commandPath | startswith($runtimeParent + "/"))
       and (.harness | type == "string" and length > 0)
@@ -1310,14 +1276,6 @@ for expected_status in 1 2 130; do
 done
 
 : >"$upgrade_log"
-for broken_catalog in empty malformed invalid-schema multiple failed; do
-  status=0
-  TRX_UPGRADE_LOG="$upgrade_log" TRX_SANDBOX_CATALOG_MODE="$broken_catalog" \
-    "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-discovery.out" 2>&1 || status=$?
-  [[ "$status" == 1 ]] || fail "upgrade accepted $broken_catalog Sandbox catalog"
-  [[ ! -s "$upgrade_log" ]] || fail 'invalid Sandbox discovery started a harness update'
-done
-
 cp "$runtime_parent/cdx/catalog.json" "$fixture_root/upgrade-native-catalog.saved"
 printf '{"schemaVersion":1,"profiles":[]}\n' >"$runtime_parent/cdx/catalog.json"
 status=0
@@ -1334,28 +1292,17 @@ TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --dry-run \
   || fail 'upgrade preview requires a retired public wrapper'
 mv "$fixture_bin/cdx.saved" "$fixture_bin/cdx"
 
-mv "$fixture_bin/trellage" "$fixture_bin/trellage.saved"
-status=0
-TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --yes \
-  >"$fixture_root/upgrade-missing-sandbox.out" 2>&1 || status=$?
-mv "$fixture_bin/trellage.saved" "$fixture_bin/trellage"
-[[ "$status" == 1 ]] || fail 'upgrade accepted missing Sandbox catalog discovery'
-assert_contains 'this mode requires the Sandbox catalog' "$fixture_root/upgrade-missing-sandbox.out"
-[[ ! -s "$upgrade_log" ]] || fail 'missing Sandbox discovery started an update'
-
 source_upgrade_root="$fixture_root/upgrade-source"
 source_upgrade_router="$source_upgrade_root/prototypes/trellage-router"
 cp -R "$fixture_source" "$source_upgrade_root"
 cp "$prototype_root/bin/trx" "$source_upgrade_router/bin/trx"
 cp "$fixture_picker" "$source_upgrade_root/packages/trellage-launcher/src/cli.tsx"
-cp "$fixture_bin/trellage" "$source_upgrade_root/prototypes/trellage/trellage"
 refresh_fixture_source "$source_upgrade_root"
 TRELLAGE_TRX_COMMAND_PATH="$fixture_bin/trx" TRELLAGE_TRX_SOURCE_ROOT="$source_upgrade_router" \
   "$source_upgrade_router/bin/trx" upgrade all --dry-run >"$fixture_root/upgrade-source-catalog.json" \
   || fail 'source router upgrade did not preserve its own executable'
-jq -e --arg router "$source_upgrade_router/bin/trx" \
-  --arg sandbox "$source_upgrade_root/prototypes/trellage/trellage" '
-    .routerCommandPath == $router and .catalog.sandboxCommandPath == $sandbox
+jq -e --arg router "$source_upgrade_router/bin/trx" '
+    .routerCommandPath == $router and (.catalog | has("sandboxCommandPath") | not)
   ' "$fixture_root/upgrade-source-catalog.json" >/dev/null \
   || fail 'source router upgrade selected an unrelated installed router'
 TRELLAGE_TRX_COMMAND_PATH="$fixture_bin/trx" TRELLAGE_TRX_SOURCE_ROOT="$source_upgrade_router" \
@@ -1415,13 +1362,14 @@ reset_upgrade_logs
 status=0
 TRX_UPGRADE_LOG="$upgrade_log" TRX_DISCOVERY_LOG="$discovery_log" \
   "$fixture_bin/trx" upgrade all --dry-run >"$fixture_root/upgrade-dry-run.out" 2>&1 || status=$?
-[[ "$status" == 1 ]] || fail "upgrade dry-run did not report unsupported Agency (got $status)"
+[[ "$status" == 1 ]] || fail "upgrade dry-run did not report unsupported Agency (got $status): $(<"$fixture_root/upgrade-dry-run.out")"
 assert_no_upgrade_mutation 'upgrade dry-run'
-[[ "$(sort -u "$discovery_log" | wc -l | tr -d ' ')" == 1 ]] \
-  || fail 'upgrade dry-run did not use static Native catalogs and only execute the Sandbox catalog'
+[[ ! -s "$discovery_log" ]] \
+  || fail 'upgrade dry-run did not use static Native catalogs'
 assert_contains '15 catalog profiles' "$fixture_root/upgrade-dry-run.out"
-assert_contains '9 Native runtime/profile updates; 1 Container image updates' "$fixture_root/upgrade-dry-run.out"
+assert_contains 'Scope: 9 Native runtime/profile updates.' "$fixture_root/upgrade-dry-run.out"
 assert_contains 'Unsupported harness native:agency/azure' "$fixture_root/upgrade-dry-run.out"
+assert_contains 'Unsupported harness native:headlong/default' "$fixture_root/upgrade-dry-run.out"
 assert_contains "Refresh: $runtime_parent/trx/bin/trx skills update" "$fixture_root/upgrade-dry-run.out"
 assert_contains "$runtime_parent/trx/bin/trx upgrade agency azure --skills-only" "$fixture_root/upgrade-dry-run.out"
 assert_contains 'No harness or skill updates or installed-version checks were started' "$fixture_root/upgrade-dry-run.out"
@@ -1450,29 +1398,26 @@ status=0
 TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --yes \
   >"$fixture_root/upgrade-yes.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail "authorized upgrade hid unsupported Agency (got $status)"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'authorized upgrade did not run each planned update exactly once'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'authorized upgrade did not run each planned update exactly once'
 assert_native_skills_refreshed
 assert_contains 'cldx:harness-update' "$upgrade_log"
 assert_contains 'fmx:update default' "$upgrade_log"
 assert_contains 'fmx:update pstack-workers' "$upgrade_log"
 assert_contains 'omp:update copilot' "$upgrade_log"
 assert_contains 'picx:update default' "$upgrade_log"
-assert_contains 'trellage:upgrade sandbox-fixture --strict-harness' "$upgrade_log"
-assert_contains 'Installed sandbox:sandbox-fixture: 3.0.0' "$fixture_root/upgrade-yes.out"
-assert_contains 'Harness summary: 13 updated, 0 failed, 2 unsupported' "$fixture_root/upgrade-yes.out"
+assert_contains 'Harness summary: 12 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-yes.out"
 assert_contains 'Native skills summary: 14 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-yes.out"
 assert_contains 'Updated Native skills native:agency/azure' "$fixture_root/upgrade-yes.out"
 
 reset_upgrade_logs
 status=0
-TRX_UPGRADE_LOG="$upgrade_log" TRX_UPGRADE_FAIL=cldx TRX_UPGRADE_FALLBACK=1 TRX_UPGRADE_VERSION_FAIL=cdx \
+TRX_UPGRADE_LOG="$upgrade_log" TRX_UPGRADE_FAIL=cldx TRX_UPGRADE_VERSION_FAIL=cdx \
   "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-mixed.out" 2>&1 || status=$?
-[[ "$status" == 1 ]] || fail 'upgrade accepted mixed command, fallback, and installed-version failures'
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'an independent failure stopped later upgrade groups'
+[[ "$status" == 1 ]] || fail 'upgrade accepted mixed command and installed-version failures'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'an independent failure stopped later upgrade groups'
 assert_native_skills_refreshed
 assert_contains 'Failed harness native:claude/cldx-p: fixture harness update failed: cldx' "$fixture_root/upgrade-mixed.out"
 assert_contains 'Installed-version refresh failed for Native codex' "$fixture_root/upgrade-mixed.out"
-assert_contains 'Harness was not updated: upgrade fallback: harness codex' "$fixture_root/upgrade-mixed.out"
 assert_contains 'Updated harness native:prime/default' "$fixture_root/upgrade-mixed.out"
 
 reset_upgrade_logs
@@ -1493,13 +1438,12 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_SKILLS_CACHE_FAIL=1 \
 [[ "$status" == 1 ]] || fail 'unified update accepted a failed shared skills cache'
 [[ "$(wc -l <"$skills_cache_log" | tr -d ' ')" == 1 ]] || fail 'failed shared cache refresh was restarted'
 [[ ! -s "$skills_update_log" ]] || fail 'unified update copied stale skills after a cache refresh failure'
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'skills cache failure prevented independent harness updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'skills cache failure prevented independent harness updates'
 assert_contains 'Native skills cache failed: fixture shared skills cache failed' "$fixture_root/upgrade-skills-cache-failed.out"
 assert_contains 'Native skills not run native:agency/azure: shared cache refresh failed; no stale cache is used.' \
   "$fixture_root/upgrade-skills-cache-failed.out"
-assert_contains 'Harness summary: 13 updated, 0 failed, 2 unsupported' "$fixture_root/upgrade-skills-cache-failed.out"
+assert_contains 'Harness summary: 12 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-skills-cache-failed.out"
 assert_contains 'Native skills summary: 0 updated, 0 failed, 14 not run; shared cache: failed.' "$fixture_root/upgrade-skills-cache-failed.out"
-assert_contains 'Updated harness sandbox:sandbox-fixture' "$fixture_root/upgrade-skills-cache-failed.out"
 
 reset_upgrade_logs
 status=0
@@ -1507,11 +1451,10 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_SKILLS_UPDATE_FAIL=cdx/pstack \
   "$fixture_bin/trx" upgrade all --yes >"$fixture_root/upgrade-profile-skills-failed.out" 2>&1 || status=$?
 [[ "$status" == 1 ]] || fail 'unified update accepted a failed profile skills verification'
 assert_native_skills_refreshed
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'profile skill failure prevented independent harness updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'profile skill failure prevented independent harness updates'
 assert_contains 'Failed Native skills native:codex/pstack: fixture skill verification failed: cdx/pstack' \
   "$fixture_root/upgrade-profile-skills-failed.out"
 assert_contains 'Updated Native skills native:codex/youtube' "$fixture_root/upgrade-profile-skills-failed.out"
-assert_contains 'Updated harness sandbox:sandbox-fixture' "$fixture_root/upgrade-profile-skills-failed.out"
 assert_contains 'Native skills summary: 13 updated, 1 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-profile-skills-failed.out"
 
 reset_upgrade_logs
@@ -1542,10 +1485,10 @@ TRX_UPGRADE_LOG="$upgrade_log" \
   python3 "$prototype_root/tests/pty_driver.py" "$fixture_root/upgrade-confirm.out" \
     'yes\r' '' "$fixture_bin/trx" upgrade all || status=$?
 [[ "$status" == 1 ]] || fail "confirmed upgrade hid unsupported profiles (got $status)"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 10 ]] || fail 'terminal confirmation did not start the planned updates'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 9 ]] || fail 'terminal confirmation did not start the planned updates'
 assert_native_skills_refreshed
 assert_contains 'Type yes to update' "$fixture_root/upgrade-confirm.out"
-assert_contains 'Harness summary: 13 updated, 0 failed, 2 unsupported' "$fixture_root/upgrade-confirm.out"
+assert_contains 'Harness summary: 12 updated, 0 failed, 3 unsupported' "$fixture_root/upgrade-confirm.out"
 assert_contains 'Native skills summary: 14 updated, 0 failed, 0 not run; shared cache: updated.' "$fixture_root/upgrade-confirm.out"
 
 reset_upgrade_logs
@@ -1555,9 +1498,6 @@ TRX_UPGRADE_LOG="$upgrade_log" TRX_UPGRADE_WAIT=cdx \
     '' 'Running:' "$fixture_bin/trx" upgrade all --yes || status=$?
 [[ "$status" == 130 ]] || fail "interrupted router upgrade exited $status instead of 130"
 assert_contains 'Update all cancelled.' "$fixture_root/upgrade-signal.out"
-if grep -Fq 'trellage:upgrade' "$upgrade_log"; then
-  fail 'router cancellation started a later Container update'
-fi
 [[ ! -s "$skills_cache_log" && ! -s "$skills_update_log" ]] || fail 'router cancellation started a later Native skills phase'
 mv -f "$fixture_root/floating-skills.saved" "$fixture_skills_manager"
 refresh_fixture_source
@@ -1741,10 +1681,10 @@ jq -e '
 ' "$fixture_root/picker-input.json" >/dev/null \
   || fail 'router choices omitted Agency profile'
 jq -e '
-  ([.choices[] | select(.id == "omp:local" or .id == "pi:default" or .commandAlias == "firstmate" or .commandAlias == "fx" or .id == "agency:azure") | .modelOverrideSupported] | all(. == false))
-  and ([.choices[] | select(.id != "omp:local" and .id != "pi:default" and .commandAlias != "firstmate" and .commandAlias != "fx" and .id != "agency:azure") | .modelOverrideSupported] | all)
+  ([.choices[] | select(.id == "omp:local" or .id == "pi:default" or .commandAlias == "firstmate" or .commandAlias == "fx" or .id == "agency:azure" or .id == "headlong:default") | .modelOverrideSupported] | all(. == false))
+  and ([.choices[] | select(.id != "omp:local" and .id != "pi:default" and .commandAlias != "firstmate" and .commandAlias != "fx" and .id != "agency:azure" and .id != "headlong:default") | .modelOverrideSupported] | all)
 ' "$fixture_root/picker-input.json" >/dev/null \
-  || fail 'router did not enable model overrides for every launcher except local Qwen'
+  || fail 'router exposed model overrides unsupported by a Native harness'
 jq -e '
   ([.choices[] | select(.id == "codex:cdx-p") | .sandbox] == [false])
   and ([.choices[] | select(.id == "codex:pstack") | .sandbox] == [false])

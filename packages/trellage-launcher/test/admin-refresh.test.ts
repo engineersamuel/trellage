@@ -43,7 +43,6 @@ const fixtureCatalog = () =>
   parseGuideCatalog(
     JSON.stringify({
       schemaVersion: 1,
-      sandboxCommandPath: "/opt/trellage/bin/trellage",
       native: [
         {
           launcher: "copilot",
@@ -79,7 +78,6 @@ const fixtureCatalog = () =>
           commandPath: "/opt/trellage/codex/bin/trx",
         },
       ],
-      sandbox: [],
     }),
   )
 

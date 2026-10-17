@@ -5,7 +5,7 @@ Public commands use the [`trx` router](../trellage-router/README.md). Install it
 `trx run prime PROFILE` runs [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)
 directly on the host with an isolated profile. It uses keyless
 `copilot-proxy-rs` at `http://127.0.0.1:8080` (Anthropic Messages API), pins
-the provider to `copilot-proxy-rs`, and defaults the model to `claude-opus-5`.
+the provider to `copilot-proxy-rs`, and defaults the model to `claude-opus-5.5`.
 
 This launcher is independent of the Docker `prime-agent` Trellage Sandbox
 profile. Native launchers isolate agent state but are not security boundaries.
@@ -125,7 +125,7 @@ trx run prime default --single-turn -p "Reply exactly PRX_OK"
 Arguments pass after managed `--provider copilot-proxy-rs`, `--model`,
 `--offline`, and `--autonomous` flags. Pass `--model MODEL` or `--model=MODEL`
 to select another model advertised by the proxy. `doctor` verifies proxy health
-and confirms that the default `claude-opus-5` model is advertised.
+and confirms that the default `claude-opus-5.5` model is advertised.
 Use `--single-turn` to omit the managed `--autonomous` flag for one response
 whose process status must not depend on autonomous completion gates.
 

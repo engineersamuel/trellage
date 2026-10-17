@@ -142,8 +142,6 @@ const headless: CombinedGuideCatalog["native"][number]["headless"] = {
 
 const catalog: CombinedGuideCatalog = {
   schemaVersion: 1,
-  sandboxCommandPath: "/fixture/trellage",
-  sandbox: [],
   native: [
     ...profiles.map((profile) => ({
       launcher: "firstmate", harness: "firstmate", name: profile, description: `Firstmate ${profile}`,

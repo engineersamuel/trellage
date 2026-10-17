@@ -15,11 +15,9 @@ fail() {
 [[ ! -e .mcp.json && ! -L .mcp.json ]] || fail "root .mcp.json must move under .agents"
 
 for required in \
-  .agents/rules/trellage-cli.md \
   .agents/hooks/guard-shell.sh \
   .agents/hooks/check-edit.sh \
   .agents/mcp_config.json \
-  .github/instructions/trellage-cli.instructions.md \
   .eslintrc.json \
   .prettierrc.json \
   bun.lock \
@@ -61,15 +59,8 @@ jq -e '
   (.devDependencies["@biomejs/biome"] | not) and
   .devDependencies.lefthook and
   (.scripts.lint | startswith("oxlint ")) and
-  (.scripts["lint:fix"] | startswith("oxlint ")) and
-  (.scripts.build | not) and
-  (.scripts.prepare | not) and
-  (.scripts.check | contains("--noEmit")) and
-  (.scripts.test | startswith("BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ")) and
-  (.scripts.test | contains("vitest")) and
-  .scripts.format == "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --config .prettierrc.json '\''packages/trellage-cli/src/*.ts'\'' '\''packages/trellage-cli/test/*.ts'\'' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json" and
-  .scripts["format:check"] == "cd ../.. && packages/trellage-cli/node_modules/.bin/oxfmt --check --config .prettierrc.json '\''packages/trellage-cli/src/*.ts'\'' '\''packages/trellage-cli/test/*.ts'\'' packages/trellage-cli/package.json .eslintrc.json .prettierrc.json .agents/mcp_config.json"
-' packages/trellage-cli/package.json >/dev/null || fail "package scripts or dependencies do not use Oxc"
+  (.scripts["format:check"] | startswith("oxfmt --check "))
+' package.json >/dev/null || fail "root package scripts or dependencies do not use Oxc"
 
 jq -e '
   .packageManager == "bun@1.4.2"
@@ -83,8 +74,6 @@ jq -e '
 jq -e '.mcpServers["codebase-memory"].command == "codebase-memory-mcp"' \
   .agents/mcp_config.json >/dev/null || fail "generic MCP configuration is invalid"
 
-rg -q '\.agents/rules/trellage-cli\.md' .github/instructions/trellage-cli.instructions.md \
-  || fail "GitHub instruction does not reference canonical generic rule"
 
 ci_tool_probe='for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done'
 for required_ci_line in \
@@ -96,7 +85,7 @@ for required_ci_line in \
   '        run: bash scripts/install-source-runtime.sh --prepare' \
   '        run: npm ci --prefix tests/playwright' \
   '    runs-on: macos-latest' \
-  '        run: make profile-compiler launcher conversation-source source-runtime profile-guide-contract' \
+  '        run: make launcher conversation-source source-runtime profile-guide-contract' \
   "        if: github.event_name == 'pull_request'" \
   "        if: github.event_name != 'pull_request'" \
   '        run: make test-pr' \
@@ -177,7 +166,7 @@ jq -e 'type == "object" and length == 0' <<<"${unmatched_output}" >/dev/null \
   || probe_failures+=("guard did not return neutral output for unmatched command: echo hello")
 
 # Keep the failing fixture outside production fingerprints and normal lint roots.
-probe_tests_root="packages/trellage-cli/tests"
+probe_tests_root="packages/trellage-launcher/tests"
 created_probe_tests_root=0
 if [[ ! -d "$probe_tests_root" ]]; then
   mkdir "$probe_tests_root"
@@ -200,18 +189,18 @@ lefthook_linked="${lefthook_regression_root}/linked"
 lefthook_custom_hooks="${lefthook_regression_root}/custom-hooks"
 mkdir -p "${lefthook_custom_hooks}"
 lefthook_custom_hooks="$(cd "${lefthook_custom_hooks}" && pwd -P)"
-mkdir -p "${lefthook_primary}/packages/trellage-cli"
+mkdir -p "${lefthook_primary}/packages/trellage-launcher"
 lefthook_primary="$(cd "${lefthook_primary}" && pwd -P)"
 git -C "${lefthook_primary}" init -q
 git -C "${lefthook_primary}" config user.name "Trellage Contract"
 git -C "${lefthook_primary}" config user.email "trellage-contract@example.invalid"
 git -C "${lefthook_primary}" config core.hooksPath "${lefthook_custom_hooks}"
-touch "${lefthook_primary}/packages/trellage-cli/.keep"
-git -C "${lefthook_primary}" add packages/trellage-cli/.keep
+touch "${lefthook_primary}/packages/trellage-launcher/.keep"
+git -C "${lefthook_primary}" add packages/trellage-launcher/.keep
 git -C "${lefthook_primary}" commit -qm "contract fixture"
 git -C "${lefthook_primary}" branch -M main
 git -C "${lefthook_primary}" worktree add -q "${lefthook_linked}"
-mkdir -p "${lefthook_linked}/packages/trellage-cli"
+mkdir -p "${lefthook_linked}/packages/trellage-launcher"
 lefthook_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/pre-commit)"
 pre_push_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/pre-push)"
 post_commit_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolute --git-path hooks/post-commit)"
@@ -220,7 +209,7 @@ post_rewrite_hook="$(git -C "${lefthook_linked}" rev-parse --path-format=absolut
 [[ "${lefthook_hook}" == "${lefthook_custom_hooks}/pre-commit" ]] \
   || fail "Git did not resolve configured hooks path"
 (
-  cd "${lefthook_linked}/packages/trellage-cli"
+  cd "${lefthook_linked}/packages/trellage-launcher"
   bash "${ROOT}/scripts/install-lefthook-hook.sh"
 )
 
@@ -236,7 +225,7 @@ for installed_hook in "${lefthook_hook}" "${pre_push_hook}" "${post_commit_hook}
 done
 
 git -C "${lefthook_primary}" worktree remove "${lefthook_linked}"
-lefthook_fake_dir="${lefthook_primary}/packages/trellage-cli/node_modules/.bin"
+lefthook_fake_dir="${lefthook_primary}/node_modules/.bin"
 lefthook_args="${lefthook_regression_root}/lefthook-args"
 mkdir -p "${lefthook_fake_dir}"
 cat >"${lefthook_fake_dir}/lefthook" <<'EOF'
@@ -342,7 +331,7 @@ lefthook_missing_output="$(cd "${lefthook_primary}" && "${lefthook_hook}" 2>&1)"
 lefthook_missing_status=$?
 set -e
 ((lefthook_missing_status != 0)) || fail "installed pre-commit hook did not fail closed"
-if [[ "${lefthook_missing_output}" != *"scripts/build-profile-compiler.sh"* ]] || \
+if [[ "${lefthook_missing_output}" != *"scripts/install-source-runtime.sh --prepare"* ]] || \
   [[ "${lefthook_missing_output}" != *"/node_modules/.bin/lefthook"* ]]; then
   fail "installed pre-commit hook missing actionable dependency diagnostic"
 fi
@@ -369,9 +358,9 @@ assert_edit_blocks() {
 assert_edit_blocks "root-relative path" "${ROOT}" "${temp_ts}"
 assert_edit_blocks "dot-relative path" "${ROOT}" "./${temp_ts}"
 assert_edit_blocks "absolute path" "${ROOT}" "${temp_abs}"
-assert_edit_blocks "root-relative path from package directory" "${ROOT}/packages/trellage-cli" "${temp_ts}"
-assert_edit_blocks "dot-relative path from package directory" "${ROOT}/packages/trellage-cli" "./${temp_ts}"
-assert_edit_blocks "absolute path from package directory" "${ROOT}/packages/trellage-cli" "${temp_abs}"
+assert_edit_blocks "root-relative path from package directory" "${ROOT}/packages/trellage-launcher" "${temp_ts}"
+assert_edit_blocks "dot-relative path from package directory" "${ROOT}/packages/trellage-launcher" "./${temp_ts}"
+assert_edit_blocks "absolute path from package directory" "${ROOT}/packages/trellage-launcher" "${temp_abs}"
 
 ((${#probe_failures[@]} == 0)) \
   || fail "$(printf '%s; ' "${probe_failures[@]}")"

@@ -134,11 +134,9 @@ source is unsafe or Varlock cannot load it, the router does not load the key,
 prints one `Jev decisions stay off` line, and the guide continues on its
 existing LLM paths. `TRELLAGE_ENVIRONMENT=off` disables this loading.
 
-Short approved goals instead have two eligible profiles: Native Codex
-`planner` and Native Claude `default`. The long Unicode goal excludes Claude
-when the fixed condition cannot fit its 4,000-character limit. A separate
-Graph case adds one Sandbox `claude-graph-of-loops` fixture; it does not change
-the ordinary matrix's eight-profile catalog or five recommendations.
+Short approved goals use compatible Native Codex and Claude profiles. The long
+Unicode goal excludes Claude when the fixed condition cannot fit its
+4,000-character limit. The built-in catalog contains no Sandbox profiles.
 
 Run only the goal PTY cases with the existing runner:
 
@@ -480,7 +478,6 @@ Handoffs are recorded requests, not real harness launches.
 | Review all three Codex `/goal` candidates, edit one approach, and print | 1 | 3 | 0 | 0 | The exact approved goal and score bar survive; the editor receives only the approach; typed shortcut keys remain text |
 | Select a pinned lens from an approved goal; return with `b` and `Esc`, then choose `n` | 1 | 6 | 0 | 0 | No generation before the explicit normal-flow choice; the reference fork gets goal facts without execution mode; the main goal stays attached |
 | Read a long Unicode goal at 88 columns, edit its approach, and print | 1 | 3 | 0 | 0 | Only compatible Codex is ranked; the task tail and criteria remain accessible; full Unicode text survives without truncation |
-| Select the dedicated Graph goal fixture and visit all three candidates | 1 | 3 | 0 | 0 | `/graph-of-loops` is the only controller; authored gates and approved criteria survive without `/goal` or the generic progress protocol |
 | Confirm a Codex or Claude goal in this terminal | 2 | 3 | 0 | 1 | Codex starts with no argv goal and needs native input; Claude uses the exact `-p` condition after read-only readiness |
 | Queue a Claude goal for Herdr | 1 | 3 | 1 | 1 | The session stays interactive with no startup prompt; the result retains its full condition and reports `needs-input` |
 | Edit a queued goal approach, keep cancelled main changes, reapprove a new goal, then choose normal prompt mode | 1 | 6 | 2 | 2 | Old forks and jobs retain their goal; both queued conditions stay distinct and are reported as needing input, not activated |

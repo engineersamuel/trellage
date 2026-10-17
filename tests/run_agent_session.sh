@@ -32,7 +32,7 @@ try:
     (fixture / "secrets/copilot_token").write_text("fixture-token")
     shutil.copyfile(root / "docker/codex-config.toml", codex_home / "config.toml")
     model_settings_helper = bin_dir / "trellage-copilot-model-settings"
-    shutil.copyfile(root / "prototypes/trellage/copilot-model-settings.py", model_settings_helper)
+    shutil.copyfile(root / "scripts/copilot-model-settings.py", model_settings_helper)
     source_workspace = opt / "trellage-source"
     for relative in (
         "scripts/bun-runtime.sh", "scripts/floating-skills.ts",

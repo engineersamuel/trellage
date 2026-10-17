@@ -190,9 +190,6 @@ grep -Fq 'install uv@latest' "$call_log" \
 grep -Fq 'exec uv@latest -- uvx yt-dlp --version' "$call_log" \
   || fail 'installed trx did not warm yt-dlp'
 
-if grep -Fq '"$dependency_bootstrap" --background' "$repository_root/prototypes/trellage/trellage"; then
-  fail 'trellage still schedules automatic dependency installation'
-fi
 if grep -Eq 'bootstrap-development-dependencies\.sh.*--background' "$repository_root/prototypes/trellage-router/bin/trx"; then
   fail 'source trx still schedules automatic dependency installation'
 fi

@@ -77,10 +77,7 @@ export const selectAvailableAdminUpdates = (
   const issues: Array<UpdateCheckIssue> = full.unsupported.map(({ entry, diagnostic }) => ({ ref: entry.ref, diagnostic }))
   const harnessUpdateRefs = collectHarnessUpdates(full, versionResultFor, issues)
   const skillUpdateRefs = collectSkillUpdates(full, skillChecks, issues)
-  const containerSkillRefs = full.groups
-    .filter((group) => group.surface === "sandbox")
-    .flatMap((group) => group.targets.filter((entry) => skillUpdateRefs.has(entry.ref)).map((entry) => entry.ref))
-  const wanted = new Set([...harnessUpdateRefs, ...containerSkillRefs])
+  const wanted = new Set(harnessUpdateRefs)
   const groups = full.groups.map((group) => selectGroup(group, wanted)).filter((group): group is HarnessUpdatePlan => group !== undefined)
   const dependentSkillRefs = new Set(
     groups.filter((group) => group.surface === "native").flatMap((group) => group.targets.map((entry) => entry.ref)),
@@ -98,7 +95,6 @@ export const selectAvailableAdminUpdates = (
       unsupported: [],
       profileCount: groups.reduce((count, group) => count + group.targets.length, 0),
       nativeUpdateCount: groups.filter((group) => group.surface === "native").reduce((count, group) => count + group.steps.length, 0),
-      containerUpdateCount: groups.filter((group) => group.surface === "sandbox").reduce((count, group) => count + group.steps.length, 0),
     },
     issues,
     harnessUpdateRefs,

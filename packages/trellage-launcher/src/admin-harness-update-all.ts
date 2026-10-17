@@ -27,7 +27,6 @@ export interface HarnessUpdateAllPlan {
   readonly unsupported: ReadonlyArray<UnsupportedHarnessUpdate>
   readonly profileCount: number
   readonly nativeUpdateCount: number
-  readonly containerUpdateCount: number
 }
 
 export interface HarnessUpdateAllOutcome {
@@ -63,7 +62,7 @@ const unsupportedReason = (entry: AdminProfileEntry): string => {
   if (firstmateReason !== undefined) return firstmateReason
   if (entry.commandPath.length === 0) return "The launcher command is unavailable."
   if (entry.harness === undefined) return "The harness identity is missing."
-  const identity = entry.surface === "native" ? (entry.launcher ?? "unknown launcher") : entry.harness
+  const identity = entry.launcher ?? "unknown launcher"
   return `No harness update command is supported for ${identity}.`
 }
 
@@ -106,7 +105,6 @@ export const harnessUpdateAllPlanFor = (
     unsupported: unsupported.sort((left, right) => left.entry.ref.localeCompare(right.entry.ref)),
     profileCount: profiles.length,
     nativeUpdateCount: groups.filter((group) => group.surface === "native").reduce((count, group) => count + group.steps.length, 0),
-    containerUpdateCount: groups.filter((group) => group.surface === "sandbox").reduce((count, group) => count + group.steps.length, 0),
   }
 }
 

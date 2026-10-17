@@ -4,19 +4,18 @@ import { canonicalNativeCommandPath } from "./guide-launch.ts"
  * Strict types and parsing for the combined `trx guide` catalog: the
  * enriched native `trx list --json` profiles (with a projected `guide` field
  * added by `enrichNativeProfileList` in `native-guide-list.ts`) merged with
- * the Trellage Sandbox `trellage list --json-full` profiles, as assembled by
- * `prototypes/trellage-router/bin/trx` into a single JSON document:
+ * assembled by `prototypes/trellage-router/bin/trx` into a single JSON
+ * document (the legacy `sandbox` key, when present, must be empty):
  *
  * ```json
- * { "schemaVersion": 1, "sandboxCommandPath": "...", "native": [...], "sandbox": [...] }
+ * { "schemaVersion": 1, "native": [...], "sandbox": [] }
  * ```
  *
  * Every profile gets a stable reference used throughout the guide feature:
- * `native:<launcher>/<name>` or `sandbox:<name>` (the same key format as
+ * `native:<launcher>/<name>` (the same key format as
  * `profileGuideIdentityKey` in `trellage-guide-core`). Parsing rejects
  * duplicate refs and any guide or headless-capability shape that does not
- * match exactly. `sandboxCommandPath`, every native `commandPath`, and every
- * Sandbox profile `path` must be absolute; workflow `skill` values and
+ * match exactly. Every native `commandPath` must be absolute; workflow `skill` values and
  * `promptTemplate` placeholders are validated with the same rules
  * `trellage-guide-core` applies to authored Markdown guides.
  */
@@ -160,7 +159,7 @@ const validateGoalExecution = (
   const fields = record(value, path)
   exactKeys(fields, path, ["controller", "workflowIds"])
   if (!isProfileGuideGoalController(fields.controller)) {
-    return fail(`${path}.controller`, "must be one of: codex-goal, claude-goal, graph-of-loops")
+    return fail(`${path}.controller`, "must be one of: codex-goal, claude-goal")
   }
   const execution: ProfileGuideGoalExecution = {
     controller: fields.controller,
@@ -221,10 +220,8 @@ export const validateProfileGuideV1 = (
 }
 
 // ---------------------------------------------------------------------------
-// Headless capability contract: identical field set on both native and
-// Sandbox surfaces (`prototypes/trellage-router/bin/trx`'s `validHeadless`
-// jq check and `packages/trellage-cli/src/headless-capabilities.ts`'s
-// `HeadlessCapabilitiesV1Schema`).
+// Headless capability contract: mirrors
+// `prototypes/trellage-router/bin/trx`'s `validHeadless` jq check.
 // ---------------------------------------------------------------------------
 
 export interface HeadlessCapabilitiesV1 {
@@ -301,9 +298,9 @@ export const validateHeadlessCapabilitiesV1 = (value: unknown, path: string): He
 }
 
 // ---------------------------------------------------------------------------
-// Herdr compatibility: curated, hand-maintained ledger data. The native and
-// Sandbox surfaces project different extra fields (e.g. native keeps `kind`
-// and `harness` from `docs/herdr-compatibility.json`), so this is validated
+// Herdr compatibility: curated, hand-maintained ledger data. Native entries
+// project extra fields (e.g. `kind` and `harness` from
+// `docs/herdr-compatibility.json`), so this is validated
 // loosely — a `status` string is required, everything else passes through.
 // ---------------------------------------------------------------------------
 
@@ -319,7 +316,7 @@ const validateHerdrCompatibility = (value: unknown, path: string): HerdrCompatib
 }
 
 // ---------------------------------------------------------------------------
-// Native and Sandbox catalog entries.
+// Native catalog entries.
 // ---------------------------------------------------------------------------
 
 export interface NativeGuideCatalogEntry {
@@ -375,119 +372,13 @@ const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEn
   }
 }
 
-export interface SandboxGuideCatalogEntry {
-  readonly name: string
-  readonly description: string
-  readonly guide: ProfileGuideV1
-  readonly path: string
-  readonly supportedPlatforms: ReadonlyArray<string>
-  readonly harness: {
-    readonly kind: string
-    readonly version: string
-    readonly model?: string
-  }
-  readonly resolutionPolicy: "floating"
-  readonly locallyResolved: boolean
-  readonly releaseLockAvailable: boolean
-  readonly resolvedVersion: string | null
-  readonly skillBundles: ReadonlyArray<string>
-  readonly skillsMode: "floating" | "locked"
-  readonly finalDigestLocked: boolean
-  readonly skills: ReadonlyArray<Record<string, unknown>>
-  readonly plugins: ReadonlyArray<Record<string, unknown>>
-  readonly mcps: ReadonlyArray<Record<string, unknown>>
-  readonly sandbox: true
-  readonly headless: HeadlessCapabilitiesV1
-  readonly locked: boolean
-  readonly herdrCompatibility: HerdrCompatibilityInfo
-}
-
-const validateSandboxEntry = (value: unknown, path: string): SandboxGuideCatalogEntry => {
-  const fields = record(value, path)
-  exactKeys(
-    fields,
-    path,
-    [
-      "name",
-      "description",
-      "guide",
-      "path",
-      "supportedPlatforms",
-      "harness",
-      "resolutionPolicy",
-      "locallyResolved",
-      "releaseLockAvailable",
-      "skillBundles",
-      "skillsMode",
-      "finalDigestLocked",
-      "skills",
-      "plugins",
-      "mcps",
-      "sandbox",
-      "headless",
-      "locked",
-      "herdrCompatibility",
-    ],
-    ["resolvedVersion"],
-  )
-  if (fields.sandbox !== true) fail(`${path}.sandbox`, "must equal true")
-  const harness = record(fields.harness, `${path}.harness`)
-  exactKeys(harness, `${path}.harness`, ["kind", "version"], ["model"])
-  const name = identifier(fields.name, `${path}.name`)
-  const harnessKind = identifier(harness.kind, `${path}.harness.kind`)
-  return {
-    name,
-    description: text(fields.description, `${path}.description`, 2000),
-    guide: validateProfileGuideV1(fields.guide, `${path}.guide`, {
-      identity: { surface: "sandbox", profile: name },
-      harness: harnessKind,
-    }),
-    path: absolutePath(fields.path, `${path}.path`, 4096),
-    supportedPlatforms: stringArray(fields.supportedPlatforms, `${path}.supportedPlatforms`, {
-      minimum: 1,
-      maximumItems: 16,
-      itemMaximum: 64,
-    }),
-    harness: {
-      kind: harnessKind,
-      version: text(harness.version, `${path}.harness.version`, 128),
-      ...(harness.model === undefined ? {} : { model: text(harness.model, `${path}.harness.model`, 128) }),
-    },
-    resolutionPolicy: literal(fields.resolutionPolicy, `${path}.resolutionPolicy`, ["floating"] as const),
-    locallyResolved: boolean(fields.locallyResolved, `${path}.locallyResolved`),
-    releaseLockAvailable: boolean(fields.releaseLockAvailable, `${path}.releaseLockAvailable`),
-    resolvedVersion:
-      fields.resolvedVersion === undefined
-        ? null
-        : nullableText(fields.resolvedVersion, `${path}.resolvedVersion`, 128),
-    skillBundles: stringArray(fields.skillBundles, `${path}.skillBundles`, { maximumItems: 64, itemMaximum: 128 }),
-    skillsMode: literal(fields.skillsMode, `${path}.skillsMode`, ["floating", "locked"] as const),
-    finalDigestLocked: boolean(fields.finalDigestLocked, `${path}.finalDigestLocked`),
-    skills: array(fields.skills, `${path}.skills`, { maximum: 256 }).map((item, index) =>
-      record(item, `${path}.skills[${index}]`),
-    ),
-    plugins: array(fields.plugins, `${path}.plugins`, { maximum: 64 }).map((item, index) =>
-      record(item, `${path}.plugins[${index}]`),
-    ),
-    mcps: array(fields.mcps, `${path}.mcps`, { maximum: 64 }).map((item, index) =>
-      record(item, `${path}.mcps[${index}]`),
-    ),
-    sandbox: true,
-    headless: validateHeadlessCapabilitiesV1(fields.headless, `${path}.headless`),
-    locked: boolean(fields.locked, `${path}.locked`),
-    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path}.herdrCompatibility`),
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Combined catalog.
 // ---------------------------------------------------------------------------
 
 export interface CombinedGuideCatalog {
   readonly schemaVersion: 1
-  readonly sandboxCommandPath: string
   readonly native: ReadonlyArray<NativeGuideCatalogEntry>
-  readonly sandbox: ReadonlyArray<SandboxGuideCatalogEntry>
 }
 
 export const parseGuideCatalog = (source: string): CombinedGuideCatalog => {
@@ -498,23 +389,20 @@ export const parseGuideCatalog = (source: string): CombinedGuideCatalog => {
     fail("catalog", "must contain valid JSON")
   }
   const root = record(payload, "catalog")
-  exactKeys(root, "catalog", ["schemaVersion", "sandboxCommandPath", "native", "sandbox"])
+  // The router still emits a legacy empty `sandbox` array; Trellage Sandbox
+  // profiles are retired, so any entry there is rejected.
+  exactKeys(root, "catalog", ["schemaVersion", "native"], ["sandbox"])
   if (root.schemaVersion !== 1) fail("catalog.schemaVersion", "must equal 1")
-  const sandboxCommandPath = absolutePath(root.sandboxCommandPath, "catalog.sandboxCommandPath", 4096)
+  if (root.sandbox !== undefined && array(root.sandbox, "catalog.sandbox", { maximum: 0 }).length > 0)
+    fail("catalog.sandbox", "must be empty; Trellage Sandbox profiles are retired")
   const native = array(root.native, "catalog.native", { maximum: 512 }).map((item, index) =>
     validateNativeEntry(item, `catalog.native[${index}]`),
   )
-  const sandbox = array(root.sandbox, "catalog.sandbox", { maximum: 512 }).map((item, index) =>
-    validateSandboxEntry(item, `catalog.sandbox[${index}]`),
+  const refs = native.map((entry) =>
+    profileGuideIdentityKey({ surface: "native", launcher: entry.launcher, profile: entry.name }),
   )
-  const refs = [
-    ...native.map((entry) =>
-      profileGuideIdentityKey({ surface: "native", launcher: entry.launcher, profile: entry.name }),
-    ),
-    ...sandbox.map((entry) => profileGuideIdentityKey({ surface: "sandbox", profile: entry.name })),
-  ]
   uniqueArray(refs, "catalog", "profile refs")
-  return { schemaVersion: 1, sandboxCommandPath, native, sandbox }
+  return { schemaVersion: 1, native }
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +413,7 @@ export const parseGuideCatalog = (source: string): CombinedGuideCatalog => {
 // the parsed `guide`, never the source document).
 // ---------------------------------------------------------------------------
 
-export type GuideCatalogSurface = "native" | "sandbox"
+export type GuideCatalogSurface = "native"
 
 export interface GuideCatalogEntryRef {
   readonly ref: string
@@ -552,18 +440,6 @@ export const guideCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArra
       sandbox: entry.sandbox,
       guide: entry.guide,
       ...(entry.orchestration === undefined ? {} : { orchestration: entry.orchestration }),
-    }),
-  ),
-  ...catalog.sandbox.map(
-    (entry): GuideCatalogEntryRef => ({
-      ref: profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }),
-      surface: "sandbox",
-      name: entry.name,
-      harness: entry.harness.kind,
-      ...(entry.resolvedVersion === null ? {} : { resolvedVersion: entry.resolvedVersion }),
-      description: entry.description,
-      sandbox: entry.sandbox,
-      guide: entry.guide,
     }),
   ),
 ]
@@ -595,8 +471,8 @@ export interface CompactProfileGuide {
 
 const crossCuttingPinnedWorkflows: Readonly<Record<string, string>> = {
   "native:copilot/hve": "rpi-agent-cycle",
-  "sandbox:claude-council": "run-council-deliberation",
-  "sandbox:claude-research": "vault-backed-research",
+  "native:claude/council": "run-council-deliberation",
+  "native:claude/research": "vault-backed-research",
 }
 
 export const taskSpecificGuideMatchEntries = (

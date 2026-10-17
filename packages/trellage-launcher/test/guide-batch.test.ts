@@ -178,9 +178,10 @@ class BatchRunner implements CommandRunner {
   }
 }
 
-const sandbox = (profile: string): SelectedProfile => ({
-  surface: "sandbox",
-  commandPath: "/opt/trellage/bin/trellage",
+const claude = (profile: string): SelectedProfile => ({
+  surface: "native",
+  launcher: "claude",
+  commandPath: "/opt/trellage/bin/trx",
   profile,
   headlessPrompt: false,
 })
@@ -256,8 +257,8 @@ describe("guide batch queue", () => {
   it.each([
     { profile: native("copilot", "default"), placement: here },
     { profile: native("codex", "default"), placement: newTab },
-    { profile: sandbox("claude-research"), placement: here },
-    { profile: sandbox("claude-research"), placement: newTab },
+    { profile: claude("claude-research"), placement: here },
+    { profile: claude("claude-research"), placement: newTab },
   ])("does not require a primary checkout for a $profile.surface $placement.kind", async ({ profile, placement }) => {
     const runner = new BatchRunner()
     const job = createQueuedGuideJob(1, profile, "Review the project.", placement)
@@ -354,7 +355,7 @@ describe("guide batch queue", () => {
     expect(runner.calls).toEqual([])
   })
 
-  it.each([native("copilot", "default"), sandbox("claude-research")])(
+  it.each([native("copilot", "default"), claude("claude-research")])(
     "rejects queued current-terminal placement for an ordinary $surface profile",
     async (profile) => {
       const runner = new BatchRunner()
@@ -662,8 +663,8 @@ describe("guide batch queue", () => {
   it("creates one unfocused tab per queued new-tab entry and runs it there", async () => {
     const runner = new BatchRunner()
     const jobs = [
-      createQueuedGuideJob(1, sandbox("claude-council"), "/council Compare the designs", newTab),
-      createQueuedGuideJob(2, sandbox("claude-research"), "Research the prior art", newTab),
+      createQueuedGuideJob(1, claude("claude-council"), "/council Compare the designs", newTab),
+      createQueuedGuideJob(2, claude("claude-research"), "Research the prior art", newTab),
     ]
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 
@@ -696,8 +697,8 @@ describe("guide batch queue", () => {
   it("launches mixed council and research jobs in queue order in the current workspace", async () => {
     const runner = new BatchRunner()
     const jobs = [
-      createQueuedGuideJob(1, sandbox("claude-council"), "/council Compare the designs", here),
-      createQueuedGuideJob(2, sandbox("claude-research"), "Research the prior art", here),
+      createQueuedGuideJob(1, claude("claude-council"), "/council Compare the designs", here),
+      createQueuedGuideJob(2, claude("claude-research"), "Research the prior art", here),
     ]
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 

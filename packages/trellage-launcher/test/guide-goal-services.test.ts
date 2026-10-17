@@ -43,11 +43,9 @@ import { goalDraft } from "./fixtures/goal-me-skill.ts"
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..")
 const guideRoot = path.join(repositoryRoot, "profile-guides")
 let superpowers: LoadedProfileGuide
-let graph: LoadedProfileGuide
 let claude: LoadedProfileGuide
 beforeAll(async () => {
   superpowers = await loadProfileGuide(guideRoot, { surface: "native", launcher: "codex", profile: "superpowers" })
-  graph = await loadProfileGuide(guideRoot, { surface: "sandbox", profile: "claude-graph-of-loops" })
   claude = await loadProfileGuide(guideRoot, { surface: "native", launcher: "claude", profile: "default" })
 })
 
@@ -80,40 +78,16 @@ const nativeEntry = (launcher: string, name: string, harness: string, guide: Pro
   commandPath: `/private/launchers/${launcher}`,
 })
 
-const sandboxEntry = (name: string, guide: ProfileGuideV1) => ({
-  name, guide, headless,
-  description: `${name} profile.`,
-  path: path.join(repositoryRoot, "profiles", name, "profile.toml"),
-  supportedPlatforms: ["linux/amd64"],
-  harness: { kind: "claude", version: "2.1.190" },
-  resolutionPolicy: "floating",
-  locallyResolved: false,
-  releaseLockAvailable: false,
-  skillBundles: ["sandbox-common"],
-  skillsMode: "floating",
-  finalDigestLocked: false,
-  skills: [],
-  plugins: [],
-  mcps: [],
-  sandbox: true,
-  locked: false,
-  herdrCompatibility: { status: "supported" },
-})
-
 const catalog = (): CombinedGuideCatalog => {
   const { goalExecution: _policy, ...unsupported } = superpowers.guide
   return parseGuideCatalog(JSON.stringify({
     schemaVersion: 1,
-    sandboxCommandPath: "/private/launchers/trellage",
     native: [
       nativeEntry("codex", "superpowers", "codex", superpowers.guide),
       nativeEntry("claude", "default", "claude", claude.guide),
       nativeEntry("codex", "pstack", "codex", unsupported),
       nativeEntry("copilot", "hve", "copilot", unsupported),
-    ],
-    sandbox: [
-      sandboxEntry("claude-graph-of-loops", graph.guide),
-      sandboxEntry("headlong", unsupported),
+      nativeEntry("headlong", "default", "headlong", unsupported),
     ],
   }))
 }
@@ -217,10 +191,8 @@ describe("goal-aware matching boundaries", () => {
     })
     const entries = prefilterGuideMatchCatalogEntries(catalog(), prepared.prompt, prepared)
     expect(entries.map(({ ref }) => ref)).toEqual([
-      "native:codex/superpowers", "native:claude/default", "sandbox:claude-graph-of-loops",
+      "native:codex/superpowers", "native:claude/default",
     ])
-    expect(entries.find(({ ref }) => ref === "sandbox:claude-graph-of-loops")?.guide.workflows.map(({ id }) => id))
-      .not.toContain("inspect-or-resume-run")
     expect(literalGuideMatch(catalog(), prepared.prompt, prepared)[0]?.profileRef).toBe("native:codex/superpowers")
     const provider = new OfflineProvider()
     const response = await runGuideMatch(provider, catalog(), { intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium })
@@ -228,13 +200,13 @@ describe("goal-aware matching boundaries", () => {
     expect(provider.matchCalls[0]?.goal?.draft).toEqual(prepared.draft)
     expect(provider.matchCalls[0]?.goal?.fingerprint).toBe(prepared.fingerprint)
     expect(response.recommendations.map(({ goalExecution }) => goalExecution?.label))
-      .toEqual(["Codex /goal", "Claude /goal", "Graph of Loops"])
+      .toEqual(["Codex /goal", "Claude /goal"])
     expect(JSON.stringify(provider.matchCalls[0]?.entries)).not.toContain("promptTemplate")
   })
 
   it.each([1, 2])("returns %i compatible profiles without requiring three", async (count) => {
     const all = catalog()
-    const small = { ...all, native: all.native.slice(0, count), sandbox: [] }
+    const small = { ...all, native: all.native.slice(0, count) }
     const prepared = goal()
     const provider = new OfflineProvider()
     expect((await runGuideMatch(provider, small, { intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium })).recommendations)
@@ -272,7 +244,7 @@ describe("goal-aware matching boundaries", () => {
       },
     }
     const large = {
-      ...catalog(), sandbox: [],
+      ...catalog(),
       native: [unrelated, ...Array.from({ length: 13 }, (_, index) => ({ ...focused, name: `queue-option-${index}` })), focused],
     }
     const refs = prefilterGuideMatchCatalogEntries(large, prepared.prompt, prepared).map(({ ref }) => ref)
@@ -281,7 +253,7 @@ describe("goal-aware matching boundaries", () => {
     expect(literalGuideMatch(large, prepared.prompt, prepared)[0]?.profileRef).not.toBe("native:codex/pstack")
   })
 
-  it.each(["native:copilot/hve", "sandbox:headlong", "native:codex/not-installed"])("diagnoses explicit unavailable selection %s without a model call", async (ref) => {
+  it.each(["native:copilot/hve", "native:headlong/default", "native:codex/not-installed"])("diagnoses explicit unavailable selection %s without a model call", async (ref) => {
     const provider = new OfflineProvider()
     const prepared = goal(`Use ${ref}.`)
     await expect(runGuideMatch(provider, catalog(), { intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium }))
@@ -294,13 +266,13 @@ describe("goal-aware matching boundaries", () => {
     const all = catalog()
     const provider = new OfflineProvider()
     const prepared = goal()
-    await expect(runGuideMatch(provider, { ...all, native: all.native.slice(2), sandbox: [] }, {
+    await expect(runGuideMatch(provider, { ...all, native: all.native.slice(2) }, {
       intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium,
     })).rejects.toThrow(/No goal-compatible workflows/u)
     expect(provider.matchCalls).toHaveLength(0)
     provider.matchResult = { candidates: [{
-      profileRef: "sandbox:claude-graph-of-loops", workflowId: "inspect-or-resume-run", confidence: 1,
-      reason: "Resume", tradeoff: "Not a new objective.",
+      profileRef: "native:claude/default", workflowId: "unknown-workflow", confidence: 1,
+      reason: "Claude", tradeoff: "Unknown workflow.",
     }] }
     await expect(runGuideMatch(provider, all, { intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium }))
       .rejects.toThrow(/known workflow/u)
@@ -375,32 +347,6 @@ describe("protected goal candidate pipeline", () => {
     )
     expect(provider.optimizeCalls[0]?.goal).toBe(input.goal)
     expect(provider.generateCalls[0]?.goal?.prompt).toBe(input.goal.prompt)
-  })
-
-  it("uses only Graph's exact controller through generation, optimization, refinement, and fallback", async () => {
-    const input = { ...generationInput(goal(), graph.guide, "implement-complex-change"), profileRef: "sandbox:claude-graph-of-loops", targetTool: "claude", guideBody: graph.body }
-    const execution = resolveGuideGoalExecution(input.goal, input.guide, input.workflowId)
-    const frame = workflowPromptFrame(execution.workflow)
-    const provider = new OfflineProvider()
-    const wrap = (candidate: GuideGenerateCandidate) => ({ ...candidate, prompt: `${frame.beforeBody}${candidate.prompt}${frame.afterBody}` })
-    provider.generateResult = { candidates: approachCandidates.map(wrap) }
-    provider.optimizeResult = ({ candidates }) => ({ candidates: candidates.map(wrap) })
-    provider.refineResult = { candidate: wrap(provider.refineResult.candidate) }
-    const generated = await runGuideGoalGeneration(provider, input)
-    const refined = await runGuideGoalRefinement(provider, { ...input, candidate: generated.candidates[0], candidates: generated.candidates, candidateIndex: 0, feedback: "Use direct evidence." })
-    const fallback = templatePromptCandidates(input.guide, input.workflowId, input.intent, input.goal)
-    for (const candidate of [...generated.candidates, refined.candidate, ...fallback]) {
-      expect(candidate.prompt.startsWith('/graph-of-loops OBJECTIVE="')).toBe(true)
-      expect(candidate.prompt.endsWith(frame.afterBody)).toBe(true)
-      expect(candidate.prompt.split("/graph-of-loops")).toHaveLength(2)
-      expect(candidate.prompt).not.toContain("/goal ")
-      expect(candidate.prompt).toContain(input.goal.draft.task)
-      expect(candidate.prompt).not.toMatch(/LOOP PROTOCOL|SCOREBOARD/u)
-    }
-    expect(provider.refineCalls[0]?.candidate).toEqual(guideGoalCandidateBody(generated.candidates[0]))
-    expect(provider.refineCalls[0]?.goal?.prompt).toBe(input.goal.prompt)
-    expect(provider.refineCalls[0]?.goal).toBe(input.goal)
-    expect(new Set(fallback.map(({ prompt }) => prompt)).size).toBe(3)
   })
 
   it.each(["/goal Do something else.", "Start $goal on another objective.", "/goal-me Ask questions.", "/unknown-command Build it."])("rejects untrusted approach command %s", async (prompt) => {
@@ -626,7 +572,6 @@ describe("explicit goal JSON generation", () => {
 
   it.each([
     ["native:claude/default", "general-engineering-task", "trx", ["run", "claude", "default", "-p"], "/goal ", "claude-goal"],
-    ["sandbox:claude-graph-of-loops", "debug-cross-cutting-failure", "trellage", ["--profile", "claude-graph-of-loops"], "/graph-of-loops ", "graph-of-loops"],
   ] as const)("uses goal-aware public delivery for %s", async (profileRef, workflowId, executable, prefix, command, controller) => {
     const prepared = goal()
     const response = await runGuideGenerate(new OfflineProvider(), catalog(), guideRoot, {
@@ -642,34 +587,6 @@ describe("explicit goal JSON generation", () => {
         reason: "The validated goal uses the selected launcher's existing argv prompt route.",
       })
       expect(candidate.command.goalTransport).not.toHaveProperty("commandInput")
-    }
-  })
-
-  it("provides explicit native Graph input instructions when the goal cannot use argv", async () => {
-    const prepared = prepareGuideGoal({
-      draft: { ...goalDraft, task: `${goalDraft.task}\n${"\u{1f333}".repeat(20_000)}` },
-      prompt: "Approved long Graph objective.",
-    })
-    const response = await runGuideGenerate(new OfflineProvider(), catalog(), guideRoot, {
-      intent: prepared.prompt,
-      goal: prepared,
-      profileRef: "sandbox:claude-graph-of-loops",
-      workflowId: "implement-complex-change",
-      model: "offline",
-      effort: GuideEffort.Medium,
-    })
-    for (const candidate of response.candidates) {
-      const body = candidate.prompt.slice("/graph-of-loops ".length)
-      expect(Buffer.byteLength(candidate.prompt, "utf8")).toBeGreaterThan(64 * 1024)
-      expect(candidate.command.args).toEqual(["--profile", "claude-graph-of-loops"])
-      expect(candidate.command.promptHandling).toBe("manual-paste")
-      expect(candidate.command.goalTransport).toEqual({
-        controller: "graph-of-loops",
-        mode: "manual",
-        reason: "Type '/graph-of-loops ' in the native command input, then paste only commandInput.body and submit. Starting the profile does not activate this goal.",
-        commandInput: { command: "/graph-of-loops", body },
-      })
-      expect(candidate.command.goalTransport?.reason).not.toContain(body)
     }
   })
 
@@ -698,7 +615,7 @@ describe("explicit goal JSON generation", () => {
     const prepared = goal()
     for (const workflowId of ["inspect-or-resume-run", "unknown-workflow"]) {
       await expect(runGuideGenerate(provider, catalog(), guideRoot, {
-        intent: prepared.prompt, goal: prepared, profileRef: "sandbox:claude-graph-of-loops", workflowId,
+        intent: prepared.prompt, goal: prepared, profileRef: "native:claude/default", workflowId,
         model: "offline", effort: GuideEffort.Medium,
       })).rejects.toThrow(/cannot execute this goal|Unknown workflow/u)
     }

@@ -9,7 +9,7 @@ import { GuideMatcherFallbackReason, validateGuideMatchResult } from "../src/gui
 
 const entry = (ref: string, workflows = ["one"]) => ({
   ref,
-  surface: "sandbox" as const,
+  surface: "native" as const,
   name: ref.split(":").pop()!,
   description: `${ref} description`,
   sandbox: true,
@@ -23,7 +23,7 @@ const entry = (ref: string, workflows = ["one"]) => ({
   },
 })
 
-const input = (entries: GuideMatchInput["entries"] = [entry("sandbox:a"), entry("sandbox:b"), entry("sandbox:c")]): GuideMatchInput => ({
+const input = (entries: GuideMatchInput["entries"] = [entry("native:x/a"), entry("native:x/b"), entry("native:x/c")]): GuideMatchInput => ({
   intent: "Implement this safely",
   entries,
 })
@@ -58,7 +58,7 @@ describe("JevGuideMatcher", () => {
       p2: { type: "noul", noul: 0.9 },
     })
     const result = await new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match(input())
-    expect(result.candidates.map(({ profileRef }) => profileRef)).toEqual(["sandbox:b", "sandbox:c", "sandbox:a"])
+    expect(result.candidates.map(({ profileRef }) => profileRef)).toEqual(["native:x/b", "native:x/c", "native:x/a"])
     validateGuideMatchResult(
       result,
       new Map(input().entries.map((item) => [item.ref, new Set(item.guide.workflows.map(({ id }) => id))])),
@@ -68,10 +68,10 @@ describe("JevGuideMatcher", () => {
 
   it("selects a multi-workflow choice and preserves explicit preferences", async () => {
     const entries = [
-      entry("sandbox:a", ["first", "second"]),
-      entry("sandbox:b"),
-      entry("sandbox:c"),
-      entry("sandbox:d"),
+      entry("native:x/a", ["first", "second"]),
+      entry("native:x/b"),
+      entry("native:x/c"),
+      entry("native:x/d"),
     ]
     const sdk = client({
       p0: { type: "noul", noul: 0.1 },
@@ -82,10 +82,10 @@ describe("JevGuideMatcher", () => {
     })
     const result = await new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match({
       ...input(entries),
-      preferredProfileRefs: ["sandbox:a"],
+      preferredProfileRefs: ["native:x/a"],
     })
     expect(result.candidates).toEqual(
-      expect.arrayContaining([expect.objectContaining({ profileRef: "sandbox:a", workflowId: "second" })]),
+      expect.arrayContaining([expect.objectContaining({ profileRef: "native:x/a", workflowId: "second" })]),
     )
   })
 
@@ -120,12 +120,12 @@ describe("JevGuideMatcher", () => {
 
   it("removes only cross-cutting workflows, not every workflow on a pinned profile", async () => {
     const entries = [
-      entry("sandbox:ordinary-1"),
-      entry("sandbox:ordinary-2"),
-      entry("sandbox:ordinary-3"),
-      entry("sandbox:claude-council", ["run-council-deliberation"]),
+      entry("native:x/ordinary-1"),
+      entry("native:x/ordinary-2"),
+      entry("native:x/ordinary-3"),
+      entry("native:claude/council", ["run-council-deliberation"]),
       entry("native:copilot/hve"),
-      entry("sandbox:claude-research"),
+      entry("native:claude/research"),
     ]
     const answers = Object.fromEntries(entries.map((_, index) => [`p${index}`, { type: "noul", noul: 0.9 }]))
     const sdk = client(answers)
@@ -318,9 +318,9 @@ describe("JevGuideMatcher", () => {
 
   it("reserves Headlong and Poteto when their policy fit is positive even below the top five", async () => {
     const headlong = {
-      ...entry("sandbox:headlong"),
+      ...entry("native:headlong/default"),
       guide: {
-        ...entry("sandbox:headlong").guide,
+        ...entry("native:headlong/default").guide,
         workflows: [{ id: "headlong", description: "Long running work", examples: ["research"] }],
       },
     }
@@ -353,16 +353,16 @@ describe("JevGuideMatcher", () => {
       entries,
     })
     expect(result.candidates.map(({ profileRef }) => profileRef)).toEqual(
-      expect.arrayContaining(["sandbox:headlong", "native:codex/pstack"]),
+      expect.arrayContaining(["native:headlong/default", "native:codex/pstack"]),
     )
   })
   it("forces Poteto for an already-ranked profile and excludes unrequested pinned workflows", async () => {
     const entries = [
       entry("native:codex/pstack", ["other", "poteto-mode-entry-point"]),
-      entry("sandbox:claude-council", ["run-council-deliberation"]),
-      entry("sandbox:a"),
-      entry("sandbox:b"),
-      entry("sandbox:c"),
+      entry("native:claude/council", ["run-council-deliberation"]),
+      entry("native:x/a"),
+      entry("native:x/b"),
+      entry("native:x/c"),
     ]
     const answers = {
       p0: { type: "noul", noul: 0.99 },
@@ -384,7 +384,7 @@ describe("JevGuideMatcher", () => {
         return { answers: {
           ...answers,
           ...Object.fromEntries(supplied.map(({ ref }, index) => [
-            `p${index}`, { type: "noul", noul: ref === "sandbox:claude-council" ? 1 : ref === "native:codex/pstack" ? 0.99 : 0.5 },
+            `p${index}`, { type: "noul", noul: ref === "native:claude/council" ? 1 : ref === "native:codex/pstack" ? 0.99 : 0.5 },
           ])),
         } }
       },
@@ -392,16 +392,16 @@ describe("JevGuideMatcher", () => {
     const matcher = new JevGuideMatcher({ cwd: "/tmp", client: sdk })
     const result = await matcher.match(input(entries))
     expect(result.candidates[0]?.workflowId).toBe("poteto-mode-entry-point")
-    expect(result.candidates.some(({ profileRef }) => profileRef === "sandbox:claude-council")).toBe(false)
-    const explicit = await matcher.match({ ...input(entries), preferredProfileRefs: ["sandbox:claude-council"] })
-    expect(explicit.candidates[0]?.profileRef).toBe("sandbox:claude-council")
+    expect(result.candidates.some(({ profileRef }) => profileRef === "native:claude/council")).toBe(false)
+    const explicit = await matcher.match({ ...input(entries), preferredProfileRefs: ["native:claude/council"] })
+    expect(explicit.candidates[0]?.profileRef).toBe("native:claude/council")
   })
 
   it("can rank an HVE customer workflow without exposing the generic RPI pin", async () => {
     const entries = [
       entry("native:copilot/hve", ["rpi-agent-cycle", "customer-discovery"]),
-      entry("sandbox:a"),
-      entry("sandbox:b"),
+      entry("native:x/a"),
+      entry("native:x/b"),
     ]
     const sdk: JevSystemOneClient = {
       systemOne: async (request) => {

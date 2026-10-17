@@ -240,7 +240,7 @@ sources_before_launch="$(grep -Fxc 'config list --show-source' "$agency_command_
 jq -e \
   --arg realHome "$fixture_home" \
   --arg cwd "$worktree" '
-  (.copilotHome | contains("/native-run/compositions/agency-") and endswith("/generations/28ffb19c30f2bc48"))
+  (.copilotHome | contains("/native-run/compositions/agency-") and endswith("/generations/045855f12ec790e9"))
   and .home == $realHome
   and .cwd == $cwd
   and .auth == "AzureCliCredential"
@@ -384,7 +384,7 @@ installed_command="$install_home/.local/share/trellage/.native-commands/agx"
 [[ -x "$installed_root/bin/agx" && -f "$installed_root/catalog.json" ]] \
   || fail 'installer did not publish runtime files'
 cmp -s "$installed_root/copilot-model-settings.py" \
-  "$repository_root/prototypes/trellage/copilot-model-settings.py" \
+  "$repository_root/scripts/copilot-model-settings.py" \
   || fail 'installer did not publish the shared model settings helper'
 [[ -L "$installed_command" && "$(readlink "$installed_command")" == "$installed_root/bin/agx" ]] \
   || fail 'installer did not publish the exact command symlink'

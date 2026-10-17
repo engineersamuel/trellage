@@ -24,7 +24,6 @@ seed_fixture() {
     "$fixture/tests" \
     "$fixture/prototypes/example/.contract-fixture.publication" \
     "$fixture/prototypes/example/.contract-work" \
-    "$fixture/packages/trellage-cli/src" \
     "$fixture/packages/trellage-guide-core/src" \
     "$fixture/packages/trellage-launcher/src" \
     "$fixture/packages/trellage-conversation-source/src" \
@@ -35,8 +34,6 @@ seed_fixture() {
   printf 'temporary fixture\n' >"$fixture/prototypes/example/.contract-fixture.publication/marker"
   printf 'temporary fixture\n' >"$fixture/prototypes/example/.contract-work/marker"
   cp LICENSE "$fixture/LICENSE"
-  printf '%s\n' '{"name":"@trellage/profile-compiler","license":"MIT"}' \
-    >"$fixture/packages/trellage-cli/package.json"
   printf '%s\n' '{"name":"@trellage/guide-core","private":true,"license":"MIT"}' \
     >"$fixture/packages/trellage-guide-core/package.json"
   printf '%s\n' \
@@ -51,8 +48,7 @@ seed_fixture() {
     printf '%s\n' '#!/usr/bin/env bash' >"$fixture/scripts/$script.sh"
   done
   for source in \
-    bin/trellage.ts bin/trx.ts \
-    packages/trellage-cli/src/cli.ts \
+    bin/trx.ts \
     packages/trellage-guide-core/src/index.ts packages/trellage-guide-core/src/conversation.ts \
     packages/trellage-launcher/src/cli.tsx \
     packages/trellage-conversation-source/src/cli.ts \

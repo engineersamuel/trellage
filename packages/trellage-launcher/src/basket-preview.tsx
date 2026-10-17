@@ -25,7 +25,6 @@ import {
   basketVisibleRange,
   countLabel,
   countTextLines,
-  previewBlockLines,
   type BasketBlockPreview,
 } from "./basket.ts"
 import { wrapGuideText } from "./guide-ui.tsx"

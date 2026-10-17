@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { cp, lstat, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
-import type { NativeCatalog } from "../native-config.ts"
+import type { NativeCatalog, NativePluginSelection } from "../native-config.ts"
 import { NativeRunError, type NativeRunPaths } from "./paths.ts"
 import { digestDirectory, type ResolvedSource, type SourceResolver } from "./source.ts"
 
@@ -16,6 +16,15 @@ export interface SelectedSkill {
   readonly directory: string
   readonly alwaysOn?: boolean
   readonly manualOnly?: boolean
+}
+
+export interface SelectedPlugin extends NativePluginSelection {
+  readonly name: string
+  readonly sourceId: string
+  readonly commit: string
+  readonly digest: string
+  /** Absolute path of the plugin inside the verified source cache. */
+  readonly directory: string
 }
 
 export interface CompositionRequest {
@@ -39,6 +48,7 @@ export interface CompositionPlan {
   readonly alwaysProfiles: ReadonlyArray<string>
   readonly instructions: ReadonlyArray<{ readonly id: string; readonly text: string }>
   readonly skills: ReadonlyArray<SelectedSkill>
+  readonly plugins: ReadonlyArray<SelectedPlugin>
   readonly sources: ReadonlyArray<ResolvedSource>
   readonly warnings: ReadonlyArray<string>
   readonly generationId: string
@@ -160,14 +170,6 @@ const effectiveProfiles = (
         .map(([id]) => id)
         .sort()
   const effective = [...new Set([...alwaysProfiles, ...profiles])].sort()
-  for (const id of effective) {
-    const unsupported = request.catalog.profiles[id]!.plugins.filter((plugin) => plugin.harness === request.harness)
-    if (unsupported.length === 0) continue
-    throw new NativeRunError(
-      "unsupported",
-      `profile ${id} declares plugins for ${request.harness}; plugin installation is not supported yet and is not silently skipped`,
-    )
-  }
   return { alwaysProfiles, effective }
 }
 
@@ -195,6 +197,207 @@ const wantedSkills = (request: CompositionRequest, effective: ReadonlyArray<stri
   return wanted
 }
 
+const selectedPlugins = (
+  request: CompositionRequest,
+  effective: ReadonlyArray<string>,
+): Array<NativePluginSelection & { readonly profile: string }> => {
+  const plugins: Array<NativePluginSelection & { readonly profile: string }> = []
+  for (const profile of effective) {
+    for (const plugin of request.catalog.profiles[profile]!.plugins) {
+      if (plugin.harness !== request.harness) continue
+      if (request.harness !== "claude")
+        throw new NativeRunError("unsupported", `plugin loading is not supported for ${request.harness}`)
+      plugins.push({ ...plugin, profile })
+    }
+  }
+  return plugins
+}
+
+const pluginName = (selection: NativePluginSelection): string =>
+  selection.name ?? path.basename(selection.path === "." ? selection.source : selection.path).toLowerCase()
+
+const pluginManifestExists = async (directory: string): Promise<boolean> => {
+  const manifests = await Promise.all([
+    lstat(path.join(directory, ".claude-plugin", "plugin.json")).catch(() => undefined),
+    lstat(path.join(directory, "plugin.json")).catch(() => undefined),
+  ])
+  return manifests.some((manifest) => manifest?.isFile() && !manifest.isSymbolicLink())
+}
+
+const marketplacePluginDirectory = async (
+  root: string,
+  selection: NativePluginSelection,
+): Promise<string | undefined> => {
+  const manifestPath = path.join(root, ".claude-plugin", "marketplace.json")
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+  } catch {
+    return undefined
+  }
+  if (!manifest || typeof manifest !== "object" || !Array.isArray((manifest as { plugins?: unknown }).plugins))
+    throw new NativeRunError("unsupported", `plugin marketplace manifest is invalid: ${manifestPath}`)
+  const entry = (manifest as { plugins: Array<Record<string, unknown>> }).plugins.find(
+    (candidate) => candidate?.name === selection.plugin,
+  )
+  if (!entry) throw new NativeRunError("unsupported", `plugin ${selection.plugin} is missing from ${manifestPath}`)
+  if (typeof entry.source !== "string" || !entry.source.startsWith("./"))
+    throw new NativeRunError("unsupported", `plugin ${selection.plugin} uses an unsupported marketplace source`)
+  const directory = path.resolve(root, entry.source)
+  const relative = path.relative(root, directory)
+  if (relative.startsWith("..") || path.isAbsolute(relative))
+    throw new NativeRunError("unsafe-path", `plugin ${selection.plugin} escapes marketplace source`)
+  return directory
+}
+
+const resolvePluginDirectory = async (source: ResolvedSource, selection: NativePluginSelection): Promise<string> => {
+  const selectedRoot = path.resolve(source.directory, selection.path)
+  const relative = path.relative(source.directory, selectedRoot)
+  if (relative.startsWith("..") || path.isAbsolute(relative))
+    throw new NativeRunError("unsafe-path", `plugin ${pluginName(selection)} escapes source ${selection.source}`)
+  if (await pluginManifestExists(selectedRoot)) return selectedRoot
+  const resolved = await marketplacePluginDirectory(selectedRoot, selection)
+  if (!resolved) throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} has no plugin manifest`)
+  return resolved
+}
+
+const validatePluginDirectory = async (
+  source: ResolvedSource,
+  selection: NativePluginSelection,
+  profile: string,
+): Promise<{ directory: string; digest: string }> => {
+  try {
+    const directory = await resolvePluginDirectory(source, selection)
+    const info = await lstat(directory)
+    if (!info.isDirectory() || info.isSymbolicLink())
+      throw new NativeRunError("unsafe-path", `plugin ${pluginName(selection)} is not a safe directory`)
+    if (!(await pluginManifestExists(directory)))
+      throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} has no regular Claude plugin manifest`)
+    return { directory, digest: await digestDirectory(directory) }
+  } catch (cause) {
+    if (cause instanceof NativeRunError) throw cause
+    throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} for ${profile} is invalid: ${String(cause)}`)
+  }
+}
+
+const resolvedPlugin = async (
+  source: ResolvedSource,
+  selection: NativePluginSelection,
+  profile: string,
+): Promise<SelectedPlugin> => {
+  const { directory, digest } = await validatePluginDirectory(source, selection, profile)
+  return {
+    ...selection,
+    name: pluginName(selection),
+    includeMcp: selection.includeMcp ?? true,
+    settings: selection.settings ?? {},
+    sourceId: selection.source,
+    commit: source.commit,
+    digest,
+    directory,
+  }
+}
+
+const addPlugin = (plugins: Map<string, SelectedPlugin>, selected: SelectedPlugin): void => {
+  const existing = plugins.get(selected.name)
+  if (
+    existing &&
+    (existing.digest !== selected.digest ||
+      JSON.stringify(existing.settings) !== JSON.stringify(selected.settings) ||
+      existing.includeMcp !== selected.includeMcp)
+  )
+    throw new NativeRunError("conflict", `Claude plugin ${selected.name} has conflicting selections`)
+  if (!existing) plugins.set(selected.name, selected)
+}
+
+const resolvePlugins = async (
+  request: CompositionRequest,
+  options: PlanOptions,
+  effective: ReadonlyArray<string>,
+): Promise<{ sources: ResolvedSource[]; plugins: SelectedPlugin[] }> => {
+  const declarations = selectedPlugins(request, effective)
+  const sourceIds = [...new Set(declarations.map(({ source }) => source))].sort()
+  const sources = await Promise.all(
+    sourceIds.map((sourceId) => options.resolver.resolve(sourceId, request.catalog.sources[sourceId]!)),
+  )
+  const sourceById = new Map(sources.map((source) => [source.sourceId, source]))
+  const plugins = new Map<string, SelectedPlugin>()
+  for (const declaration of declarations) {
+    const { profile, ...selection } = declaration
+    const source = sourceById.get(selection.source)
+    if (!source) throw new NativeRunError("config", `plugin source ${selection.source} was not resolved`)
+    addPlugin(plugins, await resolvedPlugin(source, selection, profile))
+  }
+  return { sources, plugins: [...plugins.values()].sort((a, b) => a.name.localeCompare(b.name)) }
+}
+
+const skillNamesForSource = async (
+  source: ResolvedSource,
+  policy: NativeCatalog["sources"][string],
+  wanted: ReadonlySet<string>,
+): Promise<string[]> => {
+  for (const required of policy.required ?? []) {
+    if (!(await findSkill(source.directory, required)))
+      throw new NativeRunError("skill-not-found", `required skill ${required} is missing from ${source.sourceId}`)
+  }
+  if (!wanted.has("*")) return [...wanted].sort()
+  const names = await discoverSkillNames(source.directory)
+  return names.filter((name) => !policy.exclude?.includes(name))
+}
+
+const loadSelectedSkill = async (
+  source: ResolvedSource,
+  name: string,
+  policy: NativeCatalog["sources"][string],
+): Promise<SelectedSkill> => {
+  const directory = await findSkill(source.directory, name)
+  if (!directory)
+    throw new NativeRunError(
+      "skill-not-found",
+      `skill ${name} was not found in source ${source.sourceId} (${source.repository})`,
+    )
+  if (policy.allowExecutables === false) await validateExecutablePolicy(directory)
+  const markdown = await readFile(path.join(directory, "SKILL.md"), "utf8")
+  const openaiPolicy = await readFile(path.join(directory, "agents", "openai.yaml"), "utf8").catch(() => "")
+  const manualOnly =
+    /^---\r?\n[\s\S]*?^disable-model-invocation:\s*true\s*$/m.test(markdown) ||
+    /^\s*allow_implicit_invocation:\s*false\s*$/m.test(openaiPolicy)
+  return {
+    name,
+    sourceId: source.sourceId,
+    commit: source.commit,
+    digest: await digestDirectory(directory),
+    directory,
+    ...(manualOnly ? { manualOnly: true } : {}),
+    ...(policy.alwaysOn && !manualOnly ? { alwaysOn: true } : {}),
+  }
+}
+
+const mergeSelectedSkill = (
+  skills: Map<string, SelectedSkill>,
+  warnings: string[],
+  selectedSources: ReadonlySet<string>,
+  selected: SelectedSkill,
+): void => {
+  const existing = skills.get(selected.name)
+  if (!existing) {
+    skills.set(selected.name, selected)
+    return
+  }
+  if (existing.digest === selected.digest) return
+  const existingSelected = selectedSources.has(existing.sourceId)
+  const currentSelected = selectedSources.has(selected.sourceId)
+  if (existingSelected === currentSelected)
+    throw new NativeRunError(
+      "conflict",
+      `skill ${selected.name} differs between sources ${existing.sourceId} and ${selected.sourceId}; remove one profile from the stack`,
+    )
+  const winner = currentSelected ? selected : existing
+  const loser = currentSelected ? existing : selected
+  skills.set(selected.name, winner)
+  warnings.push(`skill ${selected.name} from selected source ${winner.sourceId} overrides always-profile source ${loser.sourceId}`)
+}
+
 const resolveSkills = async (
   request: CompositionRequest,
   options: PlanOptions,
@@ -208,52 +411,9 @@ const resolveSkills = async (
   const warnings: string[] = []
   for (const source of sources) {
     const policy = request.catalog.sources[source.sourceId]!
-    const wantedNames = wanted.get(source.sourceId)!
-    const names = wantedNames.has("*")
-      ? (await discoverSkillNames(source.directory)).filter((name) => !policy.exclude?.includes(name))
-      : [...wantedNames].sort()
-    for (const required of policy.required ?? []) {
-      if (!(await findSkill(source.directory, required)))
-        throw new NativeRunError("skill-not-found", `required skill ${required} is missing from ${source.sourceId}`)
-    }
+    const names = await skillNamesForSource(source, policy, wanted.get(source.sourceId)!)
     for (const name of names) {
-      const directory = await findSkill(source.directory, name)
-      if (!directory)
-        throw new NativeRunError(
-          "skill-not-found",
-          `skill ${name} was not found in source ${source.sourceId} (${source.repository})`,
-        )
-      if (policy.allowExecutables === false) await validateExecutablePolicy(directory)
-      const markdown = await readFile(path.join(directory, "SKILL.md"), "utf8")
-      const openaiPolicy = await readFile(path.join(directory, "agents", "openai.yaml"), "utf8").catch(() => "")
-      const manualOnly =
-        /^---\r?\n[\s\S]*?^disable-model-invocation:\s*true\s*$/m.test(markdown) ||
-        /^\s*allow_implicit_invocation:\s*false\s*$/m.test(openaiPolicy)
-      const selected = {
-        name,
-        sourceId: source.sourceId,
-        commit: source.commit,
-        digest: await digestDirectory(directory),
-        directory,
-        ...(manualOnly ? { manualOnly: true } : {}),
-        ...(policy.alwaysOn && !manualOnly ? { alwaysOn: true } : {}),
-      }
-      const existing = skills.get(name)
-      if (existing && existing.digest !== selected.digest) {
-        const existingSelected = selectedSources.has(existing.sourceId)
-        const currentSelected = selectedSources.has(selected.sourceId)
-        if (existingSelected === currentSelected)
-          throw new NativeRunError(
-            "conflict",
-            `skill ${name} differs between sources ${existing.sourceId} and ${selected.sourceId}; remove one profile from the stack`,
-          )
-        const winner = currentSelected ? selected : existing
-        const loser = currentSelected ? existing : selected
-        skills.set(name, winner)
-        warnings.push(`skill ${name} from selected source ${winner.sourceId} overrides always-profile source ${loser.sourceId}`)
-        continue
-      }
-      if (!existing) skills.set(name, selected)
+      mergeSelectedSkill(skills, warnings, selectedSources, await loadSelectedSkill(source, name, policy))
     }
   }
   return { sources, skills: [...skills.values()].sort((a, b) => (a.name < b.name ? -1 : 1)), warnings }
@@ -264,6 +424,7 @@ const generationIdOf = (
   effective: ReadonlyArray<string>,
   instructions: ReadonlyArray<{ readonly id: string; readonly text: string }>,
   skills: ReadonlyArray<SelectedSkill>,
+  plugins: ReadonlyArray<SelectedPlugin>,
 ): string =>
   createHash("sha256")
     .update(
@@ -278,6 +439,14 @@ const generationIdOf = (
         request.adapterPolicy,
         request.providerPolicy,
         skills.map((skill) => [skill.name, skill.digest, skill.alwaysOn ?? false, skill.manualOnly ?? false]),
+        plugins.map((plugin) => [
+          plugin.name,
+          plugin.sourceId,
+          plugin.commit,
+          plugin.digest,
+          plugin.includeMcp,
+          plugin.settings,
+        ]),
       ]),
     )
     .digest("hex")
@@ -290,6 +459,8 @@ export const planComposition = async (request: CompositionRequest, options: Plan
   const instructions = selectedInstructions(request, effective)
   const selectedSources = new Set(profiles.flatMap((id) => request.catalog.profiles[id]!.skills.map((selection) => selection.source)))
   const { sources, skills, warnings } = await resolveSkills(request, options, wantedSkills(request, effective), selectedSources)
+  const resolvedPlugins = await resolvePlugins(request, options, effective)
+  const allSources = new Map([...sources, ...resolvedPlugins.sources].map((source) => [source.sourceId, source]))
   for (const skill of skills.filter((entry) => entry.alwaysOn && !entry.manualOnly)) {
     instructions.push({
       id: `skill-${skill.name}`,
@@ -304,9 +475,10 @@ export const planComposition = async (request: CompositionRequest, options: Plan
     alwaysProfiles,
     instructions,
     skills,
-    sources,
+    sources: [...allSources.values()].sort((a, b) => a.sourceId.localeCompare(b.sourceId)),
+    plugins: resolvedPlugins.plugins,
     warnings: [...sources.flatMap((source) => (source.warning ? [source.warning] : [])), ...warnings],
-    generationId: generationIdOf(request, effective, instructions, skills),
+    generationId: generationIdOf(request, effective, instructions, skills, resolvedPlugins.plugins),
   }
 }
 
@@ -355,6 +527,11 @@ export const publishGeneration = async (input: PublishInput): Promise<Generation
     for (const skill of input.plan.skills) {
       await cp(skill.directory, path.join(stage, input.skillsSubdirectory, skill.name), { recursive: true })
     }
+    for (const plugin of input.plan.plugins) {
+      const directory = path.join(stage, "plugins", plugin.name)
+      await cp(plugin.directory, directory, { recursive: true, errorOnExist: true })
+      if (!plugin.includeMcp) await rm(path.join(directory, ".mcp.json"), { force: true })
+    }
     await input.writeAdapterFiles(stage, layout)
     for (const name of input.persistentState ?? []) {
       const target = path.join(layout.ownerHome, "state", name)
@@ -377,6 +554,14 @@ export const publishGeneration = async (input: PublishInput): Promise<Generation
           alwaysProfiles: input.plan.alwaysProfiles,
           instructions: input.plan.instructions.map((instruction) => instruction.id),
           skills: input.plan.skills.map(({ name, sourceId, commit, digest }) => ({ name, sourceId, commit, digest })),
+          plugins: input.plan.plugins.map(({ name, sourceId, commit, digest, includeMcp, settings }) => ({
+            name,
+            sourceId,
+            commit,
+            digest,
+            includeMcp,
+            settings,
+          })),
         },
         null,
         2,

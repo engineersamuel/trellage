@@ -5,7 +5,6 @@ import {
   harnessVersionOperationKeyFor,
   reconcileHarnessVersionObservations,
   type AdminHarnessVersionResult,
-  type AdminInstalledVersionState,
 } from "./admin-harness-version.ts"
 import { runBatchedHarnessVersionChecks, type HarnessVersionSchedulerOptions } from "./admin-harness-version-scheduler.ts"
 
@@ -42,21 +41,7 @@ const readMissingScopes = async (
     const key = scopeKeyFor(entry)
     if (key === undefined || raw.has(key)) continue
     signal.throwIfAborted()
-    await runBatchedHarnessVersionChecks([entry], manager, emptyCache, { forceResync: true, refreshLatest: true, onResult })
-  }
-}
-
-const observationFor = (
-  entry: AdminProfileEntry,
-  raw: ReadonlyMap<string, AdminHarnessVersionResult>,
-  installed: ReadonlyMap<string, AdminInstalledVersionState>,
-): AdminHarnessVersionResult | undefined => {
-  const key = scopeKeyFor(entry)
-  const result = key === undefined ? undefined : raw.get(key)
-  if (entry.surface === "native") return result
-  return {
-    installed: installed.get(entry.ref) ?? { kind: "unavailable", diagnostic: "Installed Container version could not be checked." },
-    latest: result?.latest ?? { kind: "unsupported" },
+    await runBatchedHarnessVersionChecks([entry], manager, emptyCache, { forceResync: true, onResult })
   }
 }
 
@@ -77,25 +62,17 @@ export const checkAdminHarnessUpdates = async (
     },
   })
   const raw = new Map<string, AdminHarnessVersionResult>()
-  const installed = new Map<string, AdminInstalledVersionState>()
   const collect: NonNullable<HarnessVersionSchedulerOptions["onResult"]> = (_key, observation, entry) => {
     const key = scopeKeyFor(entry)
     if (key !== undefined) raw.set(key, observation.result)
-    if (entry.surface === "sandbox") installed.set(entry.ref, observation.result.installed)
   }
-  await runBatchedHarnessVersionChecks(entries, manager, emptyCache, { forceResync: true, refreshLatest: true, onResult: collect })
+  await runBatchedHarnessVersionChecks(entries, manager, emptyCache, { forceResync: true, onResult: collect })
   await readMissingScopes(entries, raw, manager, signal, collect)
-  for (const entry of entries.filter((candidate) => candidate.surface === "sandbox" && !installed.has(candidate.ref))) {
-    signal.throwIfAborted()
-    await runBatchedHarnessVersionChecks([entry], manager, emptyCache, {
-      forceResync: true,
-      refreshLatest: false,
-      // Only the fresh release checks above determine targets; ignore stale CLI latest caches here.
-      onResult: (_key, observation) => installed.set(entry.ref, observation.result.installed),
-    })
-  }
   signal.throwIfAborted()
-  const results = reconcileHarnessVersionObservations(entries, (entry) => observationFor(entry, raw, installed))
+  const results = reconcileHarnessVersionObservations(entries, (entry) => {
+    const key = scopeKeyFor(entry)
+    return key === undefined ? undefined : raw.get(key)
+  })
   publishResults(entries, results, onResult)
   return results
 }

@@ -100,7 +100,7 @@ accepted plan do not require restarting discovery. Runtime checks still decide
 whether the selected agent and skills are available.
 
 Treat Headlong as a cross-cutting persistence option. If the catalog contains
-`sandbox:headlong` and the intent describes a substantial investigation,
+`native:headlong/default` and the intent describes a substantial investigation,
 research effort, implementation, maintenance task, monitoring task, or other
 open-ended work that could benefit from progress between user interactions,
 include Headlong among the five candidates even when the user did not

@@ -159,6 +159,33 @@ repository = "plannotator/effective-html"
 [native.sources.tufte-vdqi]
 repository = "gnurio/tufte-vdqi-plugin"
 
+[native.sources.claude-blog]
+repository = "AgriciDaniel/claude-blog"
+
+[native.sources.council-high-intelligence]
+repository = "0xNyk/council-of-high-intelligence"
+
+[native.sources.caveman-plugin]
+repository = "JuliusBrussee/caveman"
+
+[native.sources.ecc]
+repository = "affaan-m/ECC"
+
+[native.sources.ui-ux-pro-max]
+repository = "nextlevelbuilder/ui-ux-pro-max-skill"
+
+[native.sources.taste-skill]
+repository = "leonxlnx/taste-skill"
+
+[native.sources.gsap-skills]
+repository = "greensock/gsap-skills"
+
+[native.sources.social-media-skills]
+repository = "charlie947/social-media-skills"
+
+[native.sources.humanizer]
+repository = "blader/humanizer"
+
 [native.sources.pstack]
 repository = "aqua-123/pstack-for-codex"
 
@@ -350,6 +377,172 @@ names = [ "academic-pptx" ]
 [[native.profiles.preset-claude-office-charts.skills]]
 source = "slide-maker"
 names = [ "slide-maker" ]
+
+[native.profiles.preset-claude-blog]
+label = "claude / blog"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-blog.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-blog.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-blog.plugins]]
+source = "claude-blog"
+harness = "claude"
+path = "."
+name = "claude-blog"
+plugin = "claude-blog"
+marketplace = "agricidaniel-blog"
+
+[native.profiles.preset-claude-council]
+label = "claude / council"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-council.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-council.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-council.plugins]]
+source = "council-high-intelligence"
+harness = "claude"
+path = "."
+name = "council"
+plugin = "council"
+marketplace = "council-of-high-intelligence"
+
+[[native.profiles.preset-claude-council.plugins]]
+source = "caveman-plugin"
+harness = "claude"
+path = "."
+name = "caveman-plugin"
+plugin = "caveman"
+marketplace = "caveman"
+
+[native.profiles.preset-claude-ecc]
+label = "claude / ecc"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-ecc.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-ecc.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-ecc.plugins]]
+source = "ecc"
+harness = "claude"
+path = "."
+name = "ecc"
+plugin = "ecc"
+marketplace = "ecc"
+includeMcp = false
+settings = { hooks_enabled = "true", hook_profile = "minimal" }
+
+[native.profiles.preset-claude-frontend-design]
+label = "claude / frontend-design"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "impeccable"
+names = [ "impeccable" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "emil-design"
+names = [ "animate", "animation-vocabulary", "apple-design", "emil-design-eng", "find-animation-opportunities", "improve-animations", "pick-ui-library", "prototype", "review-animations" ]
+
+[[native.profiles.preset-claude-frontend-design.skills]]
+source = "hyperframes"
+names = [ "embedded-captions", "faceless-explainer", "figma", "general-video", "hyperframes", "hyperframes-animation", "hyperframes-cli", "hyperframes-core", "hyperframes-creative", "hyperframes-keyframes", "hyperframes-registry", "media-use", "motion-graphics", "music-to-video", "pr-to-video", "product-launch-video", "remotion-to-hyperframes", "slideshow", "talking-head-recut" ]
+
+[[native.profiles.preset-claude-frontend-design.plugins]]
+source = "ui-ux-pro-max"
+harness = "claude"
+path = "."
+name = "ui-ux-pro-max"
+plugin = "ui-ux-pro-max"
+marketplace = "ui-ux-pro-max-skill"
+
+[[native.profiles.preset-claude-frontend-design.plugins]]
+source = "taste-skill"
+harness = "claude"
+path = "."
+name = "taste-skill"
+plugin = "taste-skill"
+marketplace = "taste-skill"
+
+[[native.profiles.preset-claude-frontend-design.plugins]]
+source = "gsap-skills"
+harness = "claude"
+path = "."
+name = "gsap-skills"
+plugin = "gsap-skills"
+marketplace = "gsap-skills"
+
+[native.profiles.preset-claude-research]
+label = "claude / research"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-research.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-research.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-research.skills]]
+source = "last30days"
+names = [ "last30days" ]
+
+[native.profiles.preset-claude-social-media]
+label = "claude / social-media"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-social-media.skills]]
+source = "caveman"
+names = [ "caveman" ]
+
+[[native.profiles.preset-claude-social-media.skills]]
+source = "mattpocock"
+names = [ "grill-with-docs", "improve-codebase-architecture" ]
+
+[[native.profiles.preset-claude-social-media.plugins]]
+source = "social-media-skills"
+harness = "claude"
+path = "."
+name = "social-media-skills"
+plugin = "social-media-skills"
+marketplace = "social-media-skills"
+
+[[native.profiles.preset-claude-social-media.plugins]]
+source = "humanizer"
+harness = "claude"
+path = "."
+name = "humanizer"
+plugin = "humanizer"
+marketplace = "humanizer"
+
+[native.profiles.preset-headlong-default]
+label = "headlong / default"
+harnesses = [ "headlong" ]
 
 [native.profiles.preset-copilot-awesome]
 label = "copilot / awesome"
