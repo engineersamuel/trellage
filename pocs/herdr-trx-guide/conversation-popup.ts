@@ -4,9 +4,8 @@ import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { bunExecutable } from "@trellage/runtime"
 
-import { bindFocusedConversationForGuide } from "./lib/conversation-capture.ts"
+import { bindFocusedConversation } from "./lib/conversation-capture.ts"
 import type { ConversationSnapshot } from "./lib/conversation-contract.ts"
-import type { FirstmateInstanceControlContextV1 } from "@trellage/guide-core"
 import { conversationGuidePopupContext } from "./lib/context.ts"
 import { readConversationRequest } from "./lib/conversation-state.ts"
 import { findTrellageRoot } from "./lib/trellage-root.ts"
@@ -16,17 +15,15 @@ export const conversationGuideEnvironment = (
   snapshot: ConversationSnapshot,
   requestPath: string,
   env: NodeJS.ProcessEnv,
-  launchOrigin?: FirstmateInstanceControlContextV1,
 ): NodeJS.ProcessEnv => {
   const next: NodeJS.ProcessEnv = {
     ...env,
     TRELLAGE_GUIDE_CONVERSATION_REQUEST_FILE: requestPath,
-    TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify(conversationGuidePopupContext(snapshot, launchOrigin)),
+    TRELLAGE_GUIDE_HERDR_CONTEXT_JSON: JSON.stringify(conversationGuidePopupContext(snapshot)),
   }
   for (const key of [
     "HERDR_PANE_ID", "HERDR_PLUGIN_CONTEXT_JSON", "TRELLAGE_GUIDE_HERDR_INTENT_FILE",
     "TRELLAGE_GUIDE_INVOCATION_PATH",
-    "FMX_LAUNCH_PROVENANCE_JSON",
   ]) delete next[key]
   if (typeof env.HERDR_BIN_PATH === "string" && path.isAbsolute(env.HERDR_BIN_PATH)) {
     next.PATH = `${path.dirname(env.HERDR_BIN_PATH)}${path.delimiter}${next.PATH ?? ""}`
@@ -49,7 +46,7 @@ const launchGuide = (root: string, env: NodeJS.ProcessEnv): Promise<number> =>
 export const main = async ({
   env = process.env,
   readRequest = readConversationRequest,
-  bind = bindFocusedConversationForGuide,
+  bind = bindFocusedConversation,
   findRoot = findTrellageRoot,
   launch = launchGuide,
 } = {}) => {
@@ -60,13 +57,13 @@ export const main = async ({
     throw new Error("The conversation popup is missing plugin runtime context.")
   }
   const snapshot = await readRequest(stateDir, requestPath)
-  const bound = await bind({ ...snapshot.source, expectedSource: snapshot.source }, { env })
+  await bind({ ...snapshot.source, expectedSource: snapshot.source }, { env })
   const root = await findRoot(pluginRoot)
   return launch(root, conversationGuideEnvironment(snapshot, requestPath, {
     ...env,
     HERDR_PLUGIN_STATE_DIR: stateDir,
     TRELLAGE_GUIDE_CONVERSATION_HELPER_ROOT: root,
-  }, bound.launchOrigin))
+  }))
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

@@ -371,7 +371,7 @@ describe("goal execution catalog validation", () => {
     ["claude", "copilot", "claude-goal"],
     ["copilot", "copilot", "claude-goal"],
     ["agency", "claude", "claude-goal"],
-    ["firstmate", "firstmate", "codex-goal"],
+    ["fx", "fx", "codex-goal"],
     ["omp", "pi", "claude-goal"],
   ])("rejects an unsupported Native runtime binding: %s / %s / %s", (launcher, harness, controller) => {
     const source = {

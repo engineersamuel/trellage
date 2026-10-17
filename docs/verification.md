@@ -114,7 +114,7 @@ cached-worktree fingerprint time strictly below 900 ms. Run it directly with
 `make profile-compiler-fingerprint` (source workspace fingerprint), without another test suite running.
 
 The timing-sensitive phase also runs serially. Codex, Grok, OMP, Claude,
-Firstmate, native TUI, and Headlong entry contracts run without competing with
+native TUI, and Headlong entry contracts run without competing with
 source installation and UI test workloads. Fixture startup waits must be
 separate from the behavior being measured: cancellation deadlines start only
 after readiness, and blocked services stay blocked until the test explicitly

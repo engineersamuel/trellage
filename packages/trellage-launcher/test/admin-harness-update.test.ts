@@ -77,7 +77,6 @@ describe("harnessUpdatePlanFor", () => {
     ["jcode", "jcode", "default", ["upgrade", "jcode", "default"]],
     ["pi", "pi", "default", ["upgrade", "pi", "default"]],
     ["prime", "prime", "default", ["upgrade", "prime", "default"]],
-    ["firstmate", "firstmate", "pstack-workers", ["upgrade", "firstmate", "pstack-workers"]],
   ] as const)("uses %s's harness command, not a plugin update", (launcher, harness, name, args) => {
     const selected = nativeEntry(launcher, harness, name)
     const plan = requirePlan(selected, [selected])
@@ -179,37 +178,6 @@ describe("runHarnessUpdate", () => {
     expect(outcome.results).toEqual(entries.map(({ ref, name }) => ({ ref, name, state: "failure", diagnostic: "download failed" })))
   })
 
-  it("updates firstmate profiles sequentially and continues after failures", async () => {
-    const entries = ["a", "b", "c"].map((name) => nativeEntry("firstmate", "firstmate", name))
-    const plan = requirePlan(entries[0]!, entries)
-    let active = 0
-    let peak = 0
-    const run = vi.fn<CommandRunner["run"]>(async (executable, args) => {
-      active += 1
-      peak = Math.max(peak, active)
-      await Promise.resolve()
-      active -= 1
-      if (args[2] === entries[1]!.name) {
-        throw new CommandRunnerError({
-          kind: "exited",
-          executable,
-          args,
-          exitCode: 1,
-          message: "command failed",
-          stdout: "",
-          stderr: "registry unavailable",
-        })
-      }
-      return success
-    })
-    const outcome = await runHarnessUpdate(plan, { run }, "/worktree")
-
-    expect(peak).toBe(1)
-    expect(run.mock.calls.map(([, args]) => args[2])).toEqual(entries.map(({ name }) => name))
-    expect(outcome.results.map(({ state }) => state)).toEqual(["success", "failure", "success"])
-    expect(outcome.results[1]).toMatchObject({ diagnostic: "registry unavailable" })
-  })
-
   it("does not forward an unsupported management verb to an old native launcher", async () => {
     const plan = requirePlan(nativeEntry("claude", "claude"))
     const run = vi.fn<CommandRunner["run"]>().mockResolvedValue({ ...success, stdout: "usage: cldx [PROFILE] [ARGS]" })
@@ -240,7 +208,6 @@ describe("harness update version refresh", () => {
     ["omp", "oh-my-pi", 1],
     ["codex", "codex", 1],
     ["claude", "claude", 1],
-    ["firstmate", "firstmate", 2],
   ] as const)("refreshes the correct installed scopes for %s", async (launcher, harness, expectedReads) => {
     const entries = ["a", "b"].map((name) => nativeEntry(launcher, harness, name))
     const plan = requirePlan(entries[0]!, entries)

@@ -8,8 +8,9 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - `trx` is the only Trellage entrypoint. The former Trellage Sandbox CLI
   (`trellage`), its container profile compiler, and `prototypes/trellage` are retired.
 - Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
-- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `firstmate`, `jcode`, `omp`, `pi`, `prime`, `grok`, and `uji`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
+- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `jcode`, `omp`, `pi`, `prime`, `grok`, and `uji`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
 - `trx run HARNESS clean` launches `claude`, `codex`, `copilot`, or `pi` with no skills, MCP servers, instructions, hooks, or plugins from trx, the repository, or the host, and installs nothing. Other harnesses refuse a clean run.
+- `trx run claude firstmate` and `trx run pi firstmate` run [Firstmate](https://github.com/kunchenguid/firstmate) from its own clone at `~/.local/share/trellage/firstmate`, cloned when missing and rebased onto the latest `main` before every launch. Its workers get the same copilot-proxy-rs setup through files Firstmate passes on (Claude `settings.json` `env`, Pi `config/pi-account` and `config/crew-dispatch.json`). Before launch it offers to install missing tools (`treehouse`, `gh-axi`, `tasks-axi`, ...). Other harnesses refuse the profile, and the `trx run` menu shows it dimmed for them. `trx guide` → Augment → **Firstmate** rewrites a draft as a Firstmate message.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
 - Generated evidence is normalized for later grading; the harness does not select a winner.
 
@@ -74,8 +75,8 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   `TRELLAGE_AZURE_APPLY_LOCAL_CHANGES=1 mise run azure-fresh-install -- all`.
 - A successful run must save evidence under
   `~/.local/state/trellage-azure-fresh/evidence/<resource-group>/`, verify exact
-  `OK` results for all eight Native launchers, verify both `fmx` profiles through setup, doctor, healthy inventory,
-  source-pin, and overlay evidence, and delete its owned Azure resource group.
+  `OK` results for all eight Native launchers, and delete its owned Azure
+  resource group.
 - A failed run intentionally retains the resource group. Use
   `mise run azure-fresh-install -- ssh`, then retry `bootstrap` or `accept`.
   Always finish an abandoned run with `mise run azure-fresh-install -- down`.

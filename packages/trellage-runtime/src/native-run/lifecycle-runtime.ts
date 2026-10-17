@@ -17,7 +17,6 @@ export const lifecycleRuntimes: ReadonlyArray<LifecycleRuntime> = [
   { harness: "claude", runtimeName: "cldx", packageDirectory: "trellage-claude-profiles", profileName: same },
   { harness: "codex", runtimeName: "cdx", packageDirectory: "trellage-codex-profiles", profileName: same },
   { harness: "copilot", runtimeName: "cpx", packageDirectory: "trellage-copilot-profiles", profileName: same },
-  { harness: "firstmate", runtimeName: "fmx", packageDirectory: "trellage-firstmate-profiles", profileName: same },
   { harness: "jcode", runtimeName: "jcx", packageDirectory: "trellage-jcode-profiles", profileName: same },
   { harness: "omp", runtimeName: "omp", packageDirectory: "trellage-omp-profiles", profileName: (profile) => profile === "default" ? "copilot" : profile },
   { harness: "pi", runtimeName: "picx", packageDirectory: "trellage-picx-profiles", profileName: same },
@@ -52,7 +51,7 @@ export const profileOperationArguments = (operation: string, harness: string, ar
   const runtime = lifecycleRuntime(harness)
   if (!runtime) throw new Error(`unknown managed profile harness: ${harness}`)
   const translated = [...args]
-  if (operation === "harness-version" && harness !== "firstmate") return ["harness-version"]
+  if (operation === "harness-version") return ["harness-version"]
   if (operation === "upgrade") {
     if (translated.includes("--skills-only")) {
       operation = "skills-update"
@@ -73,7 +72,7 @@ export const profileOperationArguments = (operation: string, harness: string, ar
     if (profileIndex !== -1) translated[profileIndex] = runtime.profileName(translated[profileIndex]!)
     return ["update", "--check", ...translated]
   }
-  if (operation !== "instances" && operation !== "skill" && translated[0] && !translated[0].startsWith("-")) {
+  if (operation !== "skill" && translated[0] && !translated[0].startsWith("-")) {
     const publicProfiles = nativePresetProfiles(harness)
     if (publicProfiles.includes(translated[0] as never)) translated[0] = runtime.profileName(translated[0]!)
   }

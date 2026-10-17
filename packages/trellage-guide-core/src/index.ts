@@ -7,64 +7,7 @@ import { exactKeys, fail, identifier, identityPart, record, text } from "./valid
 
 export * from "./conversation.ts"
 export * from "./conversation-sanitization.ts"
-export * from "./orchestration.ts"
-export {
-  FIRSTMATE_INSTANCE_DIAGNOSTIC_CODES,
-  firstmateInstanceLimits,
-  firstmateInstanceCli,
-  parseFirstmateInstanceName,
-  parseFirstmateInstanceTaskIdPrefix,
-  parseFirstmateInstanceReferenceV1,
-  sameFirstmateInstance,
-  firstmateInstanceKey,
-  validateFirstmateInstanceFleet,
-  parseFirstmateRuntimeVariantV1,
-  firstmateRuntimeVariantDigest,
-  parseFirstmateWorktreeGenerationV1,
-  firstmateWorktreeGenerationDigest,
-  parseFirstmateWorktreeEvidenceV1,
-  firstmateWorktreeBindingDigest,
-  sameFirstmateWorktreeGeneration,
-  parseFirstmateInstanceDescriptorV1,
-  parseFirstmateInstanceListCursorV1,
-  firstmateInstanceListCursor,
-  firstmateInstanceListSnapshotDigest,
-  parseFirstmateInstanceListResultV1,
-  parseFirstmateInstanceResolveResultV1,
-  firstmateInstanceCreationPlanDigest,
-  parseFirstmateInstanceCreationPlanV1,
-  parseFirstmateInstanceCreationPlanJson,
-  parseFirstmateInstancePlanResultV1,
-  parseFirstmateInstanceCreateResultV1,
-  parseFirstmateInstanceControlContextV1,
-  parseFirstmateInstanceControlContextJson,
-  validateFirstmateInstanceControlContextV1,
-  firstmateInstanceControlContextDigest,
-  parseFirstmateInstanceLocatorRefreshResultV1,
-  canonicalFirstmateInstanceJson,
-  type FirstmateInstanceDiagnosticCode,
-  type FirstmateInstanceDiagnosticV1,
-  type FirstmateInstanceReferenceV1,
-  type FirstmateNamedInstanceReferenceV1,
-  type FirstmateLegacyInstanceReferenceV1,
-  type FirstmateRuntimeVariantV1,
-  type FirstmateFilesystemGenerationV1,
-  type FirstmateWorktreeGenerationV1,
-  type FirstmateWorktreeEvidenceV1,
-  type FirstmateBoundWorktreeV1,
-  type FirstmateNamedRuntimeEvidenceV1,
-  type FirstmateNamedInstanceDescriptorV1,
-  type FirstmateLegacyInstanceDescriptorV1,
-  type FirstmateInstanceDescriptorV1,
-  type FirstmateInstanceListCursorV1,
-  type FirstmateInstanceListResultV1,
-  type FirstmateInstanceResolveResultV1,
-  type FirstmateInstanceCreationPlanBodyV1,
-  type FirstmateInstanceCreationPlanV1,
-  type FirstmateInstancePlanResultV1,
-  type FirstmateInstanceCreateResultV1,
-  type FirstmateInstanceControlContextV1,
-} from "./firstmate-instances.ts"
+export * from "./guide-limits.ts"
 export { ProfileGuideValidationError } from "./validation.ts"
 
 export type ProfileGuideIdentity =
@@ -90,7 +33,6 @@ export interface ProfileGuideWorkflow {
   readonly launchAgent?: string
   readonly interaction?: ProfileGuideInteraction
   readonly frame?: "fixed"
-  readonly scope?: "project" | "fleet"
   readonly examples: ReadonlyArray<string>
   readonly promptTemplate: string
 }
@@ -298,16 +240,12 @@ const workflowInvocationOptions = (
 const workflowFrameOptions = (
   fields: Record<string, unknown>,
   itemPath: string,
-): Pick<ProfileGuideWorkflow, "frame" | "scope"> => {
+): Pick<ProfileGuideWorkflow, "frame"> => {
   if (fields.frame !== undefined && fields.frame !== "fixed") {
     fail(`${itemPath}.frame`, "must equal fixed")
   }
-  if (fields.scope !== undefined && fields.scope !== "project" && fields.scope !== "fleet") {
-    fail(`${itemPath}.scope`, "must equal project or fleet")
-  }
   return {
     ...(fields.frame === "fixed" ? { frame: fields.frame } : {}),
-    ...(fields.scope === "project" || fields.scope === "fleet" ? { scope: fields.scope } : {}),
   }
 }
 
@@ -318,7 +256,7 @@ const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWork
   const result = value.map((item, index): ProfileGuideWorkflow => {
     const itemPath = `${path}[${index}]`
     const fields = record(item, itemPath)
-    exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent", "interaction", "frame", "scope"])
+    exactKeys(fields, itemPath, ["id", "description", "examples", "promptTemplate"], ["skill", "launchAgent", "interaction", "frame"])
     const invocation = workflowInvocationOptions(fields, itemPath)
     const framing = workflowFrameOptions(fields, itemPath)
     const promptTemplate = text(fields.promptTemplate, `${itemPath}.promptTemplate`, 16000, {
@@ -593,15 +531,7 @@ const discoverMarkdown = async (root: string, directory: string): Promise<Readon
 
 export const discoverProfileGuideRelativePaths = async (root: string): Promise<ReadonlyArray<string>> => {
   const resolvedRoot = await safeGuideRoot(root)
-  // Sandbox guides were retired with the Sandbox; older guide roots may still ship them.
-  const sandbox = await lstat(path.join(resolvedRoot, "sandbox")).then(
-    () => true,
-    (cause: NodeJS.ErrnoException) => (cause.code === "ENOENT" ? false : Promise.reject(cause)),
-  )
-  const discovered = [
-    ...(await discoverMarkdown(resolvedRoot, "native")),
-    ...(sandbox ? await discoverMarkdown(resolvedRoot, "sandbox") : []),
-  ].sort()
+  const discovered = [...(await discoverMarkdown(resolvedRoot, "native"))].sort()
   for (const relativePath of discovered) parseProfileGuideIdentity(relativePath)
   return discovered
 }

@@ -10,9 +10,7 @@
  * suggestion); untrusted captured output is only ever embedded as inert
  * prompt text, never interpolated into a shell command.
  */
-import type { DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.ts"
-import type { FirstmateInstanceDescriptorV1 } from "@trellage/guide-core"
-import { adminDiagnosticScopeLines } from "./admin-firstmate.ts"
+import { adminDiagnosticCommandLines, type DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.ts"
 import {
   createHerdrWorktreeAndHandoff,
   defaultWorktreeBranch,
@@ -32,7 +30,6 @@ export interface HerdrForkRequest {
   readonly name: string
   readonly capturedOutput: string
   readonly diagnosis?: DoctorFailureDiagnosisResult
-  readonly firstmateInstance?: FirstmateInstanceDescriptorV1
   readonly diagnosticCommand?: CommandSpec
 }
 
@@ -73,7 +70,7 @@ export const isForkToHerdrAvailable = async (
 const buildForkPrompt = (request: HerdrForkRequest): string => {
   const lines = [
     `Fix the failing Trellage doctor check for profile ${request.name} (${request.ref}).`,
-    ...adminDiagnosticScopeLines(request.firstmateInstance, request.diagnosticCommand),
+    ...adminDiagnosticCommandLines(request.diagnosticCommand),
     "",
     "<untrusted-data>",
     request.capturedOutput,
@@ -105,7 +102,7 @@ export const forkFailureToHerdrWorktree = async (
   request: HerdrForkRequest,
   options: HerdrForkOptions,
 ): Promise<HerdrForkOutcome> => {
-  const branch = defaultWorktreeBranch(`fix ${request.name} ${request.firstmateInstance?.reference?.instanceId ?? ""} doctor failure`)
+  const branch = defaultWorktreeBranch(`fix ${request.name} doctor failure`)
   try {
     const inspection = await inspectGitWorktreeIntent(runner, { cwd: options.cwd, branch })
     if (inspection.kind !== "ready") return { kind: "not-ready", inspection }

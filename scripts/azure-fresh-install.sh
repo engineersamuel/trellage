@@ -9,7 +9,7 @@ Usage: scripts/azure-fresh-install.sh <all|create|bootstrap|accept|ssh|status|do
 
 Create a fresh Azure ARM64 VM, install Trellage from a Git clone on that VM,
 install all nine Trellage Native launchers, live-probe the eight coding-agent
-launchers, and verify both Firstmate profiles.
+launchers through `trx run`.
 
 Commands:
   all        Create, bootstrap, and run acceptance checks
@@ -42,9 +42,7 @@ Authentication:
 
 The automated Native matrix invokes `copilot/hve`, `codex/pstack`, `claude/default`,
 composed `grok/superpowers`, `jcode/default`, `omp/default`, `pi/default`, and
-`prime/default` through `trx run`. It verifies `firstmate/default` and
-`firstmate/pstack-workers` with setup, doctor, inventory, source-pin, and overlay
-evidence without starting a paid fleet.
+`prime/default` through `trx run`.
 Bare `trx` is an interactive TTY picker.
 EOF
 }
@@ -211,7 +209,6 @@ proxy repo:     $proxy_repository
 proxy ref:      $proxy_ref
 checkout:       $checkout
 agent probes:   eight launchers through trx run
-Firstmate:      setup, doctor, inventory, source pin, and overlay receipts
 attempts:       $attempts
 EOF
 }
@@ -699,8 +696,6 @@ trx setup jcode
 trx setup omp default
 trx setup pi
 trx setup prime
-env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx setup firstmate default
-env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx setup firstmate pstack-workers
 
 printf 'acceptance: checking Native profiles\n'
 trx doctor copilot hve
@@ -710,8 +705,6 @@ trx doctor jcode
 trx doctor omp default
 trx doctor pi
 trx doctor prime
-env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx doctor firstmate default
-env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN trx doctor firstmate pstack-workers
 
 trx list --json >"$log_dir/trx-list.json"
 jq -e '
@@ -721,8 +714,6 @@ jq -e '
     ["copilot", "hve"],
     ["codex", "pstack"],
     ["claude", "default"],
-    ["firstmate", "default"],
-    ["firstmate", "pstack-workers"],
     ["jcode", "default"],
     ["omp", "default"],
     ["pi", "default"],
@@ -739,44 +730,18 @@ for pair in \
   'copilot hve' \
   'codex pstack' \
   'claude default' \
-  'firstmate default' \
-  'firstmate pstack-workers' \
   'jcode default' \
   'omp default' \
   'pi default' \
   'prime default'; do
   read -r launcher profile <<<"$pair"
-  if [[ "$launcher" == firstmate ]]; then
-    env -u COPILOT_GITHUB_TOKEN -u COPILOT_PROXY_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
-      trx inventory "$launcher" "$profile" --json \
-      >"$log_dir/inventory-$launcher-$profile.json"
-  else
-    trx inventory "$launcher" "$profile" --json \
-      >"$log_dir/inventory-$launcher-$profile.json"
-  fi
+  trx inventory "$launcher" "$profile" --json \
+    >"$log_dir/inventory-$launcher-$profile.json"
   jq -e --arg launcher "$launcher" --arg profile "$profile" '
     .launcher == $launcher
     and .profile == $profile
     and .readiness == "healthy"
   ' "$log_dir/inventory-$launcher-$profile.json" >/dev/null
-  if [[ "$launcher" == firstmate ]]; then
-    jq -e --arg profile "$profile" '
-      .source.repository == "https://github.com/kunchenguid/firstmate.git"
-      and .source.pinnedCommit == "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
-      and .source.installedCommit == "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
-      and .source.commitMatchesPin == true
-      and .overlay.commit == "527aa7c12d25aadbdf3cc56791f87ae71fca5280"
-      and .overlay.digestAlgorithm == "sha256"
-      and .overlay.manifestDigest == "8b865df368a6ad01a8dc38dee66f01340bd707c2c1c74cbae5ac6b34aaee4cd7"
-      and .overlay.contentDigest == "dd3373bd80a3bdd7ed7761bb4c16c07e42e71a99b8d0de2e733774ad3f7d5b2b"
-      and .overlay.fileCount == 12
-      and .overlay.verified == true
-      and .fleet.schemaVersion == 1
-      and .fleet.runtime == "ready"
-      and .fleet.identity.profile == $profile
-      and .fleet.identity.sourceRevision == .source.installedCommit
-    ' "$log_dir/inventory-$launcher-$profile.json" >/dev/null
-  fi
 done
 
 timeout --signal=TERM --kill-after=30s 15m \

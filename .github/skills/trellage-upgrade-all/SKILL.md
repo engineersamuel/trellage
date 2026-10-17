@@ -80,8 +80,7 @@ preview and confirmation instead. Do not pipe `yes` into it.
 
 The command owns all mutation and ordering:
 
-1. Update each shared Native harness runtime once. Firstmate remains
-   profile-scoped and keeps its catalog source pins.
+1. Update each shared Native harness runtime once.
 2. Refresh the shared Native skill caches once, including the YouTube, OMP
    community, and guide Prompt Master caches.
 3. Copy and verify current managed skills for each confirmed Native profile.

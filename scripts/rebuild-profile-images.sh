@@ -63,7 +63,6 @@ known_native_packages=(
   trellage-copilot-profiles
   trellage-agency-profiles
   trellage-claude-profiles
-  trellage-firstmate-profiles
   trellage-jcode-profiles
   trellage-omp-profiles
   trellage-picx-profiles
@@ -156,7 +155,7 @@ install_native_stack() {
 
   local record cmd package version runtime marker ownership
   for record in 'cdx codex v2' 'cpx copilot v1' 'agx agency v1' 'cldx claude v1' \
-    'fmx firstmate v1' 'jcx jcode v1' 'omp omp v2' 'picx picx v1' 'prx prime v1'; do
+    'jcx jcode v1' 'omp omp v2' 'picx picx v1' 'prx prime v1'; do
     read -r cmd package version <<<"$record"
     runtime="$HOME/.local/share/trellage/$cmd"
     marker="trellage-$package-profiles"

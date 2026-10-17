@@ -2,7 +2,7 @@ import { assertCompletedAgent, sourceWorkingDirectory, validateAnswer } from "./
 import { readAgent } from "./herdr.ts"
 import { captureSandboxFinalMessage } from "./sandbox-bridge.ts"
 import { formatConversationIntent } from "./conversation.ts"
-import { hasFirstmateSessionTokens, trellageSessionIdentity } from "./trellage-session.ts"
+import { trellageSessionIdentity } from "./trellage-session.ts"
 import {
   captureStructuredFinalMessage,
   captureStructuredConversation,
@@ -61,7 +61,7 @@ const currentTrellageIdentity = ({
       processInfo,
     })
   } catch (error) {
-    if (!directIdentityReported || hasFirstmateSessionTokens(agentInfo.tokens)) throw error
+    if (!directIdentityReported) throw error
     diagnostic(onDiagnostic, error)
     return undefined
   }
@@ -108,12 +108,12 @@ const assertMatchingSandboxSession = (identity, structured, agentSessionId, proc
   }
 }
 
-const formattedCapturedConversation = ({ mode, agent, cwd, agentInfo, structured }) =>
+const formattedCapturedConversation = ({ mode, agent, cwd, structured }) =>
   mode === "conversation"
     ? formatConversationIntent(
         {
           agent,
-          ...(hasFirstmateSessionTokens(agentInfo.tokens) ? {} : { cwd }),
+          cwd,
           sessionId: structured.sessionId,
           ...(structured.profile === undefined ? {} : { profile: structured.profile }),
         },
@@ -174,7 +174,7 @@ const captureExactAnswer = async ({
   if (context.expectedSessionId !== undefined && structured.sessionId !== context.expectedSessionId) {
     throw new Error("The selected agent session changed after the source picker opened")
   }
-  const formatted = formattedCapturedConversation({ mode, agent, cwd, agentInfo, structured })
+  const formatted = formattedCapturedConversation({ mode, agent, cwd, structured })
   return {
     answer: validateAnswer(formatted?.text ?? structured.text, `${agent} transcript`),
     source: mode === "conversation" ? "conversation-transcript" : structured.source ?? "transcript",

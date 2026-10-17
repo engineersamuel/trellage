@@ -12,6 +12,7 @@ export type NativeRunErrorCode =
   | "unsupported"
   | "unsafe-path"
   | "launch"
+  | "prerequisite"
 
 export class NativeRunError extends Error {
   readonly code: NativeRunErrorCode

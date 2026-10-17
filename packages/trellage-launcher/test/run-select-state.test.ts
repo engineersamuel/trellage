@@ -4,6 +4,7 @@ import {
   runSelectorChoice,
   runSelectorCommand,
   runSelectorReducer,
+  runSelectorVisibleProfiles,
   type RunSelectorCatalog,
 } from "../src/run-select-state.ts"
 
@@ -17,6 +18,29 @@ const catalog: RunSelectorCatalog = {
 }
 
 describe("run selector state", () => {
+  it("shows a disabled profile on other harnesses but never selects it", () => {
+    const gated: RunSelectorCatalog = {
+      ...catalog,
+      harnesses: [...catalog.harnesses, { harness: "codex", label: "Codex", efforts: [], defaultModel: undefined, planModel: "none" }],
+      profiles: ["firstmate", "office", "preset-only"],
+      profileHarnesses: { firstmate: ["claude", "pi"], "preset-only": ["claude"] },
+      disabledProfiles: ["firstmate"],
+    }
+    const codex = 2
+    expect(runSelectorVisibleProfiles(gated, codex)).toEqual([
+      { profile: "firstmate", enabled: false },
+      { profile: "office", enabled: true },
+    ])
+    let state = initialRunSelectorState(gated, { harness: "codex", profiles: ["firstmate"] })
+    expect(state.profiles).toEqual([])
+    state = runSelectorReducer({ ...state, field: "profiles" }, { kind: "toggle" }, gated)
+    expect(runSelectorChoice(state, gated).profiles).toEqual([])
+    state = runSelectorReducer(state, { kind: "change", delta: 1 }, gated)
+    state = runSelectorReducer(state, { kind: "toggle" }, gated)
+    expect(runSelectorChoice(state, gated).profiles).toEqual(["office"])
+    expect(runSelectorVisibleProfiles(gated, 1).map((row) => row.enabled)).toEqual([true, true, true])
+  })
+
   it("defaults to harness defaults and no profiles", () => {
     const choice = runSelectorChoice(initialRunSelectorState(catalog), catalog)
     expect(choice).toEqual({ harness: "pi", profiles: [], model: undefined, effort: undefined })

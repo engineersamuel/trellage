@@ -69,7 +69,6 @@ const runResolvedGuideJsonRequest = async (
       profileRef: request.profile,
       ...(request.goal === undefined ? {} : { goal: request.goal }),
       ...(request.workflowId === undefined ? {} : { workflowId: request.workflowId }),
-      ...(request.projectTarget === undefined ? {} : { projectTarget: request.projectTarget }),
       ...(request.originalIntent === undefined ? {} : { originalIntent: request.originalIntent }),
     },
     cache,

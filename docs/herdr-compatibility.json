@@ -5,8 +5,6 @@
   "entries": [
     { "kind": "native", "profile": "azure", "harness": "agency", "status": "untested", "notes": "Static launcher, state-isolation, Agency configuration, inventory, and router contracts pass; awaiting an end-to-end Agency and Azure MCP round trip." },
     { "kind": "native", "profile": "default", "harness": "claude", "status": "verified" },
-    { "kind": "native", "profile": "default", "harness": "firstmate", "status": "untested", "notes": "The previous 4ad8cbae pin completed a real Herdr supervisor-and-scout round trip with consent-managed prerequisites, an isolated Treehouse worktree and worker home, and teardown. The 527aa7c1 source and retry-safe guide inbox flow still require a new live round trip." },
-    { "kind": "native", "profile": "pstack-workers", "harness": "firstmate", "status": "untested", "notes": "The previous shared runtime had default-profile Herdr evidence, not a pstack-workers fleet proof. The 527aa7c1 source, worker policy, and guide inbox flow require a profile-specific live round trip." },
     { "kind": "native", "profile": "default", "harness": "fx", "status": "untested", "notes": "Fx preserves host HOME and ~/.fx context by design; static adapter and router contracts pass, but no end-to-end Herdr round trip is recorded." },
     { "kind": "native", "profile": "default", "harness": "omp", "status": "verified" },
     { "kind": "native", "profile": "default", "harness": "pi", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },

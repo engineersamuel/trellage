@@ -281,6 +281,26 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
     })
   }
 
+  it("dims a profile limited to other harnesses and never launches it", async () => {
+    const ui = await createTerminal("gated")
+    try {
+      await ui.waitFor("[ ] fixture-fleet")
+      expect(ui.cell("fixture-fleet").dim).toBe(false)
+      await ui.press(right, "Fixture Codex", "[ ] fixture-fleet (pi only)")
+      expect(ui.cell("fixture-fleet").dim).toBe(true)
+      await ui.press(down, "› Profiles")
+      await ui.press(right)
+      await ui.focus("fixture-fleet")
+      await ui.press(" ")
+      await ui.press(left)
+      await ui.focus("[ ] fixture-build")
+      expect(ui.screen()).toContain("[ ] fixture-fleet (pi only)")
+      expect(await ui.finish(enter)).toEqual([{ harness: "codex", profiles: [], model: undefined, effort: undefined }])
+    } finally {
+      await ui.close()
+    }
+  })
+
   it("preserves Ink's Ctrl+C exit without delivering a launch callback", async () => {
     const ui = await createTerminal()
     try { expect(await ui.finish("\u0003")).toEqual([]) }

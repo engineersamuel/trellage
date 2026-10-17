@@ -1,5 +1,4 @@
 import type { AdminProfileEntry } from "./admin-model.ts"
-import { adminFirstmateMutationBlockReason, adminInstanceControlArgs } from "./admin-firstmate.ts"
 import type { AdminRunManager } from "./admin-run-manager.ts"
 import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.ts"
 import {
@@ -17,21 +16,15 @@ import {
   type NativeSkillsUpdatePlan,
 } from "./admin-skills-update.ts"
 
-interface NativeHarnessUpdate {
-  readonly command: "update" | "harness-update"
-  readonly shared: boolean
-}
-
-// Shared launchers update their harness once; Firstmate updates per profile.
-const nativeHarnessUpdates: ReadonlyMap<string, NativeHarnessUpdate> = new Map([
-  ["copilot", { command: "harness-update", shared: true }],
-  ["codex", { command: "harness-update", shared: true }],
-  ["claude", { command: "harness-update", shared: true }],
-  ["firstmate", { command: "update", shared: false }],
-  ["jcode", { command: "update", shared: true }],
-  ["omp", { command: "update", shared: true }],
-  ["pi", { command: "update", shared: true }],
-  ["prime", { command: "update", shared: true }],
+// Native launchers update their shared harness once.
+const nativeHarnessUpdates: ReadonlyMap<string, "update" | "harness-update"> = new Map([
+  ["copilot", "harness-update"],
+  ["codex", "harness-update"],
+  ["claude", "harness-update"],
+  ["jcode", "update"],
+  ["omp", "update"],
+  ["pi", "update"],
+  ["prime", "update"],
 ])
 
 export type HarnessUpdateStep = ProfileUpdateStep
@@ -92,16 +85,15 @@ interface HarnessUpdateRunOptions {
 
 export const harnessUpdateKeyFor = (entry: AdminProfileEntry): string | undefined => {
   if (entry.harness === undefined || entry.commandPath.length === 0) return undefined
-  if (adminFirstmateMutationBlockReason(entry) !== undefined) return undefined
   return entry.launcher !== undefined && nativeHarnessUpdates.has(entry.launcher) ? `native:${entry.launcher}` : undefined
 }
 
 const buildHarnessUpdateCommand = (entry: AdminProfileEntry): CommandSpec => {
-  const update = nativeHarnessUpdates.get(entry.launcher ?? "")
-  if (update === undefined) throw new Error(`Harness update is not supported for ${entry.ref}`)
+  const command = nativeHarnessUpdates.get(entry.launcher ?? "")
+  if (command === undefined) throw new Error(`Harness update is not supported for ${entry.ref}`)
   return {
     executable: entry.commandPath,
-    args: ["upgrade", entry.launcher!, entry.name, ...(update.command === "harness-update" ? ["--harness-only"] : []), ...adminInstanceControlArgs(entry)],
+    args: ["upgrade", entry.launcher!, entry.name, ...(command === "harness-update" ? ["--harness-only"] : [])],
   }
 }
 
@@ -121,10 +113,7 @@ export const harnessUpdatePlanFor = (
   ].sort((left, right) => left.ref.localeCompare(right.ref))
   if (!targets.some((entry) => entry.ref === selected.ref)) return undefined
 
-  const shared = nativeHarnessUpdates.get(selected.launcher ?? "")?.shared === true
-  const steps = shared
-    ? [{ command: buildHarnessUpdateCommand(targets[0]!), targets }]
-    : targets.map((entry) => ({ command: buildHarnessUpdateCommand(entry), targets: [entry] }))
+  const steps = [{ command: buildHarnessUpdateCommand(targets[0]!), targets }]
   return {
     key,
     surface: selected.surface,
@@ -191,7 +180,6 @@ const queueScopeKey = (plans: ReadonlyArray<HarnessUpdatePlan>, skills: NativeSk
             refresh: skills.refresh,
             targets: skills.targets.map((entry) => [
               entry.ref, entry.launcher, entry.name, entry.commandPath,
-              entry.firstmateInstanceDescriptor, entry.firstmateInstanceContext,
             ]),
           },
   })
@@ -301,7 +289,7 @@ export class HarnessUpdateManager {
     if (existing !== undefined) {
       return this.inFlightScopes.get(plan.key) === scope
         ? existing
-        : Promise.reject(new Error("A harness update with different instance targets or approvals is already running."))
+        : Promise.reject(new Error("A harness update with different targets or approvals is already running."))
     }
     const run = runHarnessUpdate(plan, this.runner, this.cwd, options)
       .then(async (outcome) => {

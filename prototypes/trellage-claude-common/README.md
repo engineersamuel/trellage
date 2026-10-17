@@ -1,7 +1,7 @@
 # trellage-claude-common
 
-Shared Native Claude runtime consumed by owned Claude launchers: `cldx` and
-`fmx` are both current consumers of this stable internal API. This package
+Shared Native Claude runtime consumed by the owned Claude launcher `cldx`
+through this stable internal API. This package
 owns `native-claude`, an executable Bash script that centralizes shared
 Claude-profile logic, and `native-skills.mjs`, the cache-only skill sync
 adapter installed in all ten Native launcher runtimes.
@@ -28,7 +28,6 @@ native-claude skills-update --home ABS --marker ABS --marker-value VALUE \
   [--mode --check|--sync]
 native-claude model-id     # prints the default model id (claude-sonnet-5.5)
 native-claude goal-runtime # read-only version, evaluator model, and model-inventory URL
-native-claude exec-clean [--interpreter ABS] -- ABSOLUTE_COMMAND [ARGS...]
 ```
 
 Flags:
@@ -116,13 +115,6 @@ The offline cross-launcher contract is
 `node --test prototypes/trellage-claude-common/tests/native-skills.test.mjs`
 from the repository root. The Claude profile contract also runs it.
 
-`exec-clean` is the internal preprocessor boundary for another executable
-inside the same installed runtime. It applies the shared provider/token scrub,
-validates an absolute, non-symlink command under `TRELLAGE_CLAUDE_RUNTIME_ROOT`,
-and execs it. `--interpreter ABS` also validates and resolves an explicit
-interpreter, then uses it instead of the command's shebang. `fmx-worker` uses
-this form so neither of its Bash boundaries depends on a pane daemon's PATH.
-
 ## What the shared runtime owns
 
 - Claude executable and version resolution.
@@ -144,13 +136,13 @@ assets/schemas live outside this shared runtime's scope.
 
 ## Provider/token scrub contract
 
-`prepare`, `doctor`, `launch`, `exec-clean`, `harness-update`, `skills-update`, and the standalone `version` verb each call a
+`prepare`, `doctor`, `launch`, `harness-update`, `skills-update`, and the standalone `version` verb each call a
 single shared `scrub_provider_environment` as early as possible — before
 any external child process this runtime spawns (`claude --version`, the
 floating-skills `ensure` (node), the copilot-proxy-rs health/model probes
 (curl), session-bridge hook installation (python3), or the final launched
-Claude process) — so a stale tmux/Herdr daemon environment (the fmx worker
-threat model) can never leak into any of them. `model-id` starts no child
+Claude process) — so a stale tmux/Herdr daemon environment can never leak
+into any of them. `model-id` starts no child
 process and needs no scrub. The list is always explicit — never a
 wildcard/prefix delete — so removals stay auditable:
 
@@ -176,8 +168,7 @@ wildcard/prefix delete — so removals stay auditable:
 - **GitHub/Copilot token overrides**: `COPILOT_GITHUB_TOKEN`,
   `COPILOT_PROXY_GITHUB_TOKEN`, `COPILOT_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`,
   `GH_ENTERPRISE_TOKEN`, and `GITHUB_ENTERPRISE_TOKEN`. `GH_CONFIG_DIR` is
-  deliberately **not** scrubbed, since fmx workers rely on it for file-backed
-  `gh` auth.
+  deliberately **not** scrubbed, since file-backed `gh` auth relies on it.
 
 After scrubbing, `launch` injects only the managed values
 (`CLAUDE_CONFIG_DIR`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, and the
@@ -249,8 +240,7 @@ compares the contents with the profile's managed skills. It does not publish a
 shared cache, copy profile skills, install packages, or change authentication.
 The installed skills CLI is required for generic skill sources. Missing
 dependencies, unsafe paths, and fetch failures are errors, not proof of currency.
-Each target reports JSON with `kind: "current"` or `kind: "available"`; Firstmate
-reports each captain/worker target. Staging is removed after success, failure,
+Each target reports JSON with `kind: "current"` or `kind: "available"`. Staging is removed after success, failure,
 or handled cancellation.
 
 Admin checks launcher help before calling this verb. Older launcher or helper

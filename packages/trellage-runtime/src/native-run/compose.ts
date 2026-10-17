@@ -52,6 +52,15 @@ export interface CompositionPlan {
   readonly sources: ReadonlyArray<ResolvedSource>
   readonly warnings: ReadonlyArray<string>
   readonly generationId: string
+  /** Profile working directory as written in config (may start with `~/`); omitted means the invocation directory. */
+  readonly workingDirectory?: string
+  readonly repository?: { readonly url: string; readonly branch: string }
+  /** Load the working directory's own harness extensions and skills. */
+  readonly projectResources?: boolean
+  /** Executables the effective profiles need, by command. */
+  readonly prerequisites?: ReadonlyArray<{ readonly command: string; readonly install: string }>
+  /** Hand the harness setup to the workers the agent starts. */
+  readonly workers?: "firstmate"
 }
 
 export const normalizeProfiles = (profiles: ReadonlyArray<string>): string[] => [...new Set(profiles)].sort()
@@ -171,6 +180,33 @@ const effectiveProfiles = (
         .sort()
   const effective = [...new Set([...alwaysProfiles, ...profiles])].sort()
   return { alwaysProfiles, effective }
+}
+
+const selectedWorkspace = (
+  request: CompositionRequest,
+  effective: ReadonlyArray<string>,
+): Pick<CompositionPlan, "workingDirectory" | "repository" | "projectResources" | "prerequisites" | "workers"> => {
+  const declaring = effective.filter((id) => request.catalog.profiles[id]!.current_working_directory !== undefined)
+  const directories = new Set(declaring.map((id) => request.catalog.profiles[id]!.current_working_directory))
+  if (directories.size > 1)
+    throw new NativeRunError(
+      "usage",
+      `profiles ${declaring.join(", ")} declare different working directories; select only one of them`,
+    )
+  const owner = declaring[0] === undefined ? undefined : request.catalog.profiles[declaring[0]]!
+  const repository = declaring.map((id) => request.catalog.profiles[id]!.repository).find(Boolean)
+  const prerequisites = new Map<string, { readonly command: string; readonly install: string }>()
+  for (const id of effective) {
+    for (const entry of request.catalog.profiles[id]!.prerequisites ?? [])
+      if (!prerequisites.has(entry.command)) prerequisites.set(entry.command, { command: entry.command, install: entry.install })
+  }
+  return {
+    ...(owner?.current_working_directory ? { workingDirectory: owner.current_working_directory } : {}),
+    ...(repository ? { repository: { url: repository.url, branch: repository.branch } } : {}),
+    ...(effective.some((id) => request.catalog.profiles[id]!.project_resources) ? { projectResources: true } : {}),
+    ...(prerequisites.size > 0 ? { prerequisites: [...prerequisites.values()] } : {}),
+    ...(effective.some((id) => request.catalog.profiles[id]!.workers === "firstmate") ? { workers: "firstmate" as const } : {}),
+  }
 }
 
 const selectedInstructions = (
@@ -474,6 +510,7 @@ const generationIdOf = (
 export const planComposition = async (request: CompositionRequest, options: PlanOptions): Promise<CompositionPlan> => {
   const profiles = selectedProfiles(request)
   const { alwaysProfiles, effective } = effectiveProfiles(request, profiles)
+  const workspace = selectedWorkspace(request, effective)
   const instructions = selectedInstructions(request, effective)
   const selectedSources = new Set(profiles.flatMap((id) => request.catalog.profiles[id]!.skills.map((selection) => selection.source)))
   const { sources, skills, warnings } = await resolveSkills(request, options, wantedSkills(request, effective), selectedSources)
@@ -497,6 +534,7 @@ export const planComposition = async (request: CompositionRequest, options: Plan
     plugins: resolvedPlugins.plugins,
     warnings: [...sources.flatMap((source) => (source.warning ? [source.warning] : [])), ...warnings],
     generationId: generationIdOf(request, effective, instructions, skills, resolvedPlugins.plugins),
+    ...workspace,
   }
 }
 

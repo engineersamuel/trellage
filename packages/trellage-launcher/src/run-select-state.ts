@@ -29,6 +29,8 @@ export interface RunSelectorCatalog {
   readonly harnesses: ReadonlyArray<RunSelectorOption>
   readonly profiles: ReadonlyArray<string>
   readonly profileHarnesses?: Readonly<Record<string, ReadonlyArray<string> | undefined>>
+  /** Profiles shown disabled, instead of hidden, on harnesses outside their harness list. */
+  readonly disabledProfiles?: ReadonlyArray<string>
   /** Always-on profiles, shown read-only; a missing harness list means every harness. */
   readonly always?: ReadonlyArray<{
     readonly profile: string
@@ -68,6 +70,17 @@ export const runSelectorProfiles = (catalog: RunSelectorCatalog, harnessIndex: n
     return harnesses === undefined || harnesses.includes(catalog.harnesses[harnessIndex]?.harness ?? "")
   })
 
+/** Profiles listed for the harness, in display order; disabled ones cannot be selected. */
+export const runSelectorVisibleProfiles = (
+  catalog: RunSelectorCatalog,
+  harnessIndex: number,
+): ReadonlyArray<{ readonly profile: string; readonly enabled: boolean }> => {
+  const enabled = runSelectorProfiles(catalog, harnessIndex)
+  return catalog.profiles
+    .filter((profile) => enabled.includes(profile) || catalog.disabledProfiles?.includes(profile))
+    .map((profile) => ({ profile, enabled: enabled.includes(profile) }))
+}
+
 export const initialRunSelectorState = (catalog: RunSelectorCatalog, initial: RunSelectorInitial = {}): RunSelectorState => {
   const harnessIndex = Math.max(0, catalog.harnesses.findIndex((option) => option.harness === initial.harness))
   const harness = catalog.harnesses[harnessIndex]
@@ -104,8 +117,9 @@ export const runSelectorReducer = (
   }
   if (action.kind === "toggle") {
     if (state.field !== "profiles") return state
-    const profile = runSelectorProfiles(catalog, state.harnessIndex)[state.profileCursor]
-    if (profile === undefined) return state
+    const row = runSelectorVisibleProfiles(catalog, state.harnessIndex)[state.profileCursor]
+    if (row === undefined || !row.enabled) return state
+    const profile = row.profile
     return {
       ...state,
       profiles: state.profiles.includes(profile) ? state.profiles.filter((entry) => entry !== profile) : [...state.profiles, profile],
@@ -116,7 +130,7 @@ export const runSelectorReducer = (
     return { ...state, harnessIndex, effortIndex: 0, profileCursor: 0, profiles: state.profiles.filter((profile) => runSelectorProfiles(catalog, harnessIndex).includes(profile)) }
   }
   if (state.field === "profiles") {
-    return { ...state, profileCursor: wrap(state.profileCursor + action.delta, runSelectorProfiles(catalog, state.harnessIndex).length) }
+    return { ...state, profileCursor: wrap(state.profileCursor + action.delta, runSelectorVisibleProfiles(catalog, state.harnessIndex).length) }
   }
   if (state.field === "model") {
     const size = Math.min(catalog.cycleCount ?? catalog.models.length, catalog.models.length) + 1

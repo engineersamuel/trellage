@@ -68,10 +68,6 @@ export const profileGuardProfiles = (
   const runtime = lifecycleRuntime(harness);
   if (!runtime) throw new Error(`unknown managed profile harness: ${harness}`);
   const profiles = nativePresetProfiles(harness);
-  // Firstmate's per-instance mutation gate and fleet session lock already protect
-  // publication, including workers that outlive their captain. Shared writers use
-  // its registry-wide maintenance lease; a preset guard would conflate UUID homes.
-  if (harness === "firstmate") return [];
   if (operation === "upgrade" && args.includes("--check")) return [];
   if (
     ![
@@ -83,8 +79,6 @@ export const profileGuardProfiles = (
       "skills-update",
       "upgrade",
       "harness-update",
-      "prepare",
-      "submit",
       "skill",
     ].includes(operation)
   )

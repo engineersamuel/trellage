@@ -43,12 +43,11 @@ import {
 } from "./guide-launch.ts"
 import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
 import { GuideArtifactCache } from "./guide-match-cache.ts"
-import { firstmateLaunchOrigin } from "./guide-firstmate-instance-menu.ts"
 import { resolveGuideCapabilities } from "./guide-capabilities.ts"
 import { JevGuideMatcher } from "./jev-guide-matcher.ts"
 import { adoptPrivateJevApiKey } from "./jev-decisions.ts"
 import { createInitialGuideRenderHandler } from "./guide-terminal.ts"
-import { GuideApp, type GuideUiProps, type GuideUiResult } from "./guide-ui.tsx"
+import { GuideApp, type GuideUiResult } from "./guide-ui.tsx"
 import { createGuideReviewServices } from "./review-services.ts"
 import { GuideReviewApp } from "./review-flow-ui.tsx"
 import { ContinuationApp } from "./continuation-ui.tsx"
@@ -724,11 +723,6 @@ const openInteractiveTerminalStreams = (): InteractiveTerminalStreams => {
   }
 }
 
-const interactiveGuidePrivateOptions = (
-  launchOrigin: GuideUiProps["launchOrigin"], cacheOptions: ConstructorParameters<typeof GuideArtifactCache>[0],
-): Pick<GuideUiProps, "cache" | "launchOrigin"> =>
-  launchOrigin === undefined ? { cache: new GuideArtifactCache(cacheOptions) } : { launchOrigin }
-
 const interactiveGuideMatcher = (
   cwd: string,
 ): JevGuideMatcher => new JevGuideMatcher({ cwd, env: process.env })
@@ -837,7 +831,6 @@ const runInteractiveGuideMode = async (
   if (await runAlternateGuideMode(args, argv, guideRoot, promptMasterSkillDirectory)) return
   const herdrEnv = herdrEnvironment()
   const herdrContext = getHerdrContext(herdrEnv)
-  const launchOrigin = firstmateLaunchOrigin(herdrContext?.launchOrigin, process.env.FMX_LAUNCH_PROVENANCE_JSON)
   const initialIntent = await resolveInteractiveGuideIntent({
     args,
     herdrContext,
@@ -869,7 +862,7 @@ const runInteractiveGuideMode = async (
     },
   }
   const cwd = herdrContext?.cwd ?? process.cwd()
-  const privateOptions = interactiveGuidePrivateOptions(launchOrigin, { cwd, routing, prompts, promptMasterSkillDirectory })
+  const cache = new GuideArtifactCache({ cwd, routing, prompts, promptMasterSkillDirectory })
   const matcher = interactiveGuideMatcher(cwd)
   const herdrAvailabilityProbe = await probeInteractiveHerdr(runner, herdrEnv, cwd)
   if (herdrContext?.surface === "popup" && !herdrAvailabilityProbe) {
@@ -890,7 +883,7 @@ const runInteractiveGuideMode = async (
         matcher={matcher}
         resolveCatalog={(signal) => resolveGuideCapabilities(catalog, runner, cwd, signal)}
         goalProvider={goalProvider}
-        {...privateOptions}
+        cache={cache}
         routing={routing}
         reviewModelOverrides={reviewModelOverrides(args, routing)}
         runner={runner}
@@ -1046,10 +1039,8 @@ const runContinuationMode = async (
   if (process.env[popupGuideIntentFileEnvironmentVariable] !== undefined) {
     throw new Error("A conversation request cannot be combined with an ordinary guide intent file.")
   }
-  const capturedContext = getHerdrContext(herdrEnvironment())
-  const launchOrigin = firstmateLaunchOrigin(capturedContext?.launchOrigin, process.env.FMX_LAUNCH_PROVENANCE_JSON)
-  if (capturedContext === null) throw new Error("Conversation next steps requires Herdr.")
-  const context = { ...capturedContext, ...(launchOrigin === undefined ? {} : { launchOrigin }) }
+  const context = getHerdrContext(herdrEnvironment())
+  if (context === null) throw new Error("Conversation next steps requires Herdr.")
   const stateRoot = process.env.HERDR_PLUGIN_STATE_DIR
   if (stateRoot === undefined || !path.isAbsolute(stateRoot)) {
     throw new Error("Conversation next steps requires the private Herdr plugin state directory.")

@@ -221,7 +221,6 @@ describe("HVE customer workflow delivery", () => {
       originalIntent: "Research support work",
       workflowId: workflow.id,
       workflow,
-      projectTarget: null,
       customerContext: approvedContext(),
     }
     const job = createQueuedGuideJob(1, profile, "A bounded research approach.", { kind: "new-tab" }, context)

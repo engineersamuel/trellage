@@ -346,7 +346,6 @@ test("canonical adapters launch agent executables instead of retired profile wra
   const { dependencies } = await world()
   const expected: Readonly<Record<string, string>> = {
     agency: "agency",
-    firstmate: "claude",
     jcode: "jcode",
     omp: "omp",
     prime: "prime-agent",
@@ -358,7 +357,7 @@ test("canonical adapters launch agent executables instead of retired profile wra
       dependencies(),
     )
     expect(prepared.launch.command).toBe(command)
-    expect(prepared.launch.command).not.toMatch(/\/(?:agx|fmx|jcx|prx)$/u)
+    expect(prepared.launch.command).not.toMatch(/\/(?:agx|jcx|prx)$/u)
   }
 })
 

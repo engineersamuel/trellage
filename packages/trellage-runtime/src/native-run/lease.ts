@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 import type { NativeRunPaths } from "./paths.ts"
+import { WORKER_GENERATION_MARKER, WORKER_GENERATION_RETENTION_MS } from "./worker-handoff.ts"
 
 const execFilePromise = promisify(execFile)
 
@@ -52,7 +53,16 @@ export const hasLiveLease = async (paths: NativeRunPaths, generationId: string):
   return live
 }
 
-/** Keep the newest generations of a composition and never collect one with a live lease. */
+/** A generation that started agent workers, which can outlive the trx process that holds the lease. */
+const recentWorkerGeneration = async (generation: string): Promise<boolean> => {
+  try {
+    return Date.now() - (await stat(path.join(generation, WORKER_GENERATION_MARKER))).mtimeMs < WORKER_GENERATION_RETENTION_MS
+  } catch {
+    return false
+  }
+}
+
+/** Keep the newest generations of a composition and never collect one with a live lease or recent workers. */
 export const pruneGenerations = async (
   paths: NativeRunPaths,
   ownerHome: string,
@@ -71,6 +81,7 @@ export const pruneGenerations = async (
   const removed: string[] = []
   for (const { name } of dated.slice(keep)) {
     if (name === protectedGeneration || (await hasLiveLease(paths, name))) continue
+    if (await recentWorkerGeneration(path.join(root, name))) continue
     await rm(path.join(root, name), { recursive: true, force: true })
     removed.push(name)
   }

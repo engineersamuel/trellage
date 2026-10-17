@@ -5,7 +5,6 @@
  * share latest without copying another row's installed revision.
  */
 import { isKnownNativeLauncher, type AdminProfileEntry, type NativeHarnessId } from "./admin-model.ts"
-import { adminInstanceSelectorArgs } from "./admin-firstmate.ts"
 import type { AdminVersionColumns } from "./admin-version-check.ts"
 import type { CommandSpec } from "./guide-launch.ts"
 
@@ -13,7 +12,6 @@ export type HarnessReleaseKey =
   | "claude-code"
   | "codex"
   | "copilot-cli"
-  | "firstmate"
   | "fx"
   | "grok"
   | "jcode"
@@ -25,7 +23,6 @@ const nativeReleaseKeys: Readonly<Partial<Record<NativeHarnessId, HarnessRelease
   copilot: "copilot-cli",
   codex: "codex",
   claude: "claude-code",
-  firstmate: "firstmate",
   fx: "fx",
   jcode: "jcode",
   omp: "oh-my-pi",
@@ -35,7 +32,6 @@ const nativeReleaseKeys: Readonly<Partial<Record<NativeHarnessId, HarnessRelease
 
 const nativeLatestLookupLaunchers: ReadonlySet<NativeHarnessId> = new Set([
   "codex",
-  "firstmate",
   "fx",
   "jcode",
   "omp",
@@ -58,24 +54,18 @@ export const harnessVersionLatestLookupSupported = (entry: AdminProfileEntry): b
 }
 
 /**
- * Cache/run identity. Firstmate owns one installed receipt per fleet instance;
- * ordinary native launchers own one host binary.
+ * Cache/run identity. Native launchers own one host binary.
  */
 export const harnessVersionOperationKeyFor = (entry: AdminProfileEntry): string | undefined => {
   if (!entry.harnessVersionSupported) return undefined
   if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher)) return undefined
-  if (entry.launcher !== "firstmate") return `native:${entry.launcher}`
-  const instance = entry.firstmateInstance
-  if (instance !== undefined) return `native:firstmate:${entry.name}:${instance.mode}:${instance.instanceId}`
-  return entry.firstmateInstanceDescriptor?.reference === null
-    ? `native:firstmate:${entry.name}:legacy:missing-identity`
-    : `native:firstmate:${entry.name}`
+  return `native:${entry.launcher}`
 }
 
 export const buildHarnessVersionCommand = (entry: AdminProfileEntry): CommandSpec => {
   return {
     executable: entry.commandPath,
-    args: ["harness-version", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry)],
+    args: ["harness-version", entry.launcher!, entry.name],
   }
 }
 
@@ -170,18 +160,6 @@ export const harnessVersionColumnsFor = (
   }
 }
 
-// Firstmate reports a profile's catalog pin, not a shared upstream release.
-const shareableReleaseKeyFor = (entry: AdminProfileEntry): HarnessReleaseKey | undefined =>
-  entry.launcher === "firstmate" ? undefined : harnessVersionReleaseKeyFor(entry)
-
-const catalogPinnedObservation = (
-  entry: AdminProfileEntry,
-  observation: AdminHarnessVersionResult | undefined,
-): AdminHarnessVersionResult | undefined =>
-  entry.launcher === "firstmate" && entry.orchestration !== undefined && observation !== undefined
-    ? { ...observation, latest: { kind: "known", version: entry.orchestration.sourceRevision } }
-    : observation
-
 /**
  * Produces one effective result per row. Conflicting latest values disable
  * cross-row promotion for that release identity rather than selecting an
@@ -194,10 +172,10 @@ export const reconcileHarnessVersionObservations = (
   const results = new Map<string, AdminHarnessVersionResult>()
   const latestByRelease = new Map<HarnessReleaseKey, Set<string>>()
   for (const entry of entries) {
-    const result = catalogPinnedObservation(entry, observationFor(entry))
+    const result = observationFor(entry)
     if (result === undefined) continue
     results.set(entry.ref, result)
-    const releaseKey = shareableReleaseKeyFor(entry)
+    const releaseKey = harnessVersionReleaseKeyFor(entry)
     if (releaseKey === undefined || result.latest.kind !== "known") continue
     const versions = latestByRelease.get(releaseKey) ?? new Set<string>()
     versions.add(result.latest.version)
@@ -206,7 +184,7 @@ export const reconcileHarnessVersionObservations = (
 
   for (const entry of entries) {
     const result = results.get(entry.ref)
-    const releaseKey = shareableReleaseKeyFor(entry)
+    const releaseKey = harnessVersionReleaseKeyFor(entry)
     if (result === undefined || releaseKey === undefined || result.latest.kind === "known") continue
     const versions = latestByRelease.get(releaseKey)
     if (versions?.size !== 1) continue
@@ -230,9 +208,6 @@ export const harnessVersionEntriesForForceResync = (
 ): ReadonlyArray<AdminProfileEntry> => {
   const operationKey = harnessVersionOperationKeyFor(selected)
   if (operationKey === undefined) return []
-  if (selected.launcher === "firstmate") {
-    return entries.filter((entry) => harnessVersionOperationKeyFor(entry) === operationKey)
-  }
   const releaseKey = harnessVersionReleaseKeyFor(selected)
   return releaseKey === undefined
     ? entries.filter((entry) => harnessVersionOperationKeyFor(entry) === operationKey)

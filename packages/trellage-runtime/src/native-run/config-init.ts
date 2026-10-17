@@ -7,6 +7,10 @@ import { readTrellageConfig, type NativeCatalog, type TrellageConfigLocation } f
 
 const starterPath = fileURLToPath(new URL("../../../../config.toml", import.meta.url))
 
+/** A profile from the shipped config, or undefined when it ships none by that name. */
+export const builtinProfile = async (id: string): Promise<NativeCatalog["profiles"][string] | undefined> =>
+  (await readTrellageConfig({ environment: { TRELLAGE_CONFIG: starterPath } })).config.native.profiles[id]
+
 /** Add only the selected missing preset; existing user policy and pins remain authoritative. */
 export const withBuiltinPreset = async (catalog: NativeCatalog, preset: string): Promise<NativeCatalog> => {
   if (Object.hasOwn(catalog.profiles, preset)) return catalog

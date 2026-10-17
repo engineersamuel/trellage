@@ -1,5 +1,4 @@
 import type { AdminProfileEntry } from "./admin-model.ts"
-import { adminFirstmateMutationBlockReason } from "./admin-firstmate.ts"
 import type { AdminRunManager } from "./admin-run-manager.ts"
 import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.ts"
 import type { AdminHarnessVersionResult } from "./admin-harness-version.ts"
@@ -54,12 +53,9 @@ export const harnessUpdateScopeKey = (plan: HarnessUpdatePlan): string =>
     plan.key,
     plan.steps.map((step) => step.command.executable),
     plan.targets.map((entry) => entry.ref),
-    plan.key === "native:firstmate" ? plan.steps.map((step) => step.command.args) : null,
   ])
 
 const unsupportedReason = (entry: AdminProfileEntry): string => {
-  const firstmateReason = adminFirstmateMutationBlockReason(entry)
-  if (firstmateReason !== undefined) return firstmateReason
   if (entry.commandPath.length === 0) return "The launcher command is unavailable."
   if (entry.harness === undefined) return "The harness identity is missing."
   const identity = entry.launcher ?? "unknown launcher"

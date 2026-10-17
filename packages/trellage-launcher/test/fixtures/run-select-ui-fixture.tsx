@@ -24,7 +24,8 @@ const catalog: RunSelectorCatalog = {
     },
     { harness: "codex", label: "Fixture Codex", efforts: ["low", "high"], defaultModel: undefined, planModel: "harness default" },
   ],
-  profiles: scenario === "empty" ? [] : [scenario === "long" ? longName : "fixture-review", "fixture-build"],
+  profiles: scenario === "empty" ? [] : scenario === "gated" ? ["fixture-build", "fixture-fleet"] : [scenario === "long" ? longName : "fixture-review", "fixture-build"],
+  ...(scenario === "gated" ? { profileHarnesses: { "fixture-fleet": ["pi"] }, disabledProfiles: ["fixture-fleet"] } : {}),
   always: [
     { profile: "fixture-common", skills: ["fixture-skill"], instructions: ["fixture-style"] },
     { profile: "fixture-pi-only", harnesses: ["pi"], skills: ["fixture-pi-skill"], instructions: [] },

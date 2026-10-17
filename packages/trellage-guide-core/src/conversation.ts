@@ -1,24 +1,7 @@
 import { canonicalProfileRef } from "./native-identity.ts"
 import { createHash } from "node:crypto"
 import path from "node:path"
-import {
-  GUIDE_MAX_ORIGINAL_INTENT,
-  firstmateSubmissionDigest,
-  parseFirstmateSubmissionReceiptV1,
-  parseFirstmateSubmissionRequestV1,
-  parseGuideProjectTargetV1,
-  sameFirstmateFleet,
-  type FirstmateFleetReadinessV1,
-  type FirstmateSubmissionReceiptV1,
-  type FirstmateSubmissionRequestV1,
-  type GuideProjectTargetV1,
-} from "./orchestration.ts"
-import { ProfileGuideValidationError } from "./validation.ts"
-import {
-  parseFirstmateInstanceReferenceV1,
-  validateFirstmateInstanceFleet,
-  type FirstmateInstanceReferenceV1,
-} from "./firstmate-instances.ts"
+import { GUIDE_MAX_ORIGINAL_INTENT } from "./guide-limits.ts"
 
 export enum ConversationSurface {
   Host = "host",
@@ -139,10 +122,6 @@ export enum ContinuationActionStatus {
   Launched = "launched",
   Failed = "failed",
   Unknown = "unknown",
-  Submitting = "submitting",
-  Accepted = "accepted",
-  SubmissionUnknown = "submission-unknown",
-  SubmissionRejected = "submission-rejected",
 }
 
 export interface ContinuationLaunchReceipt {
@@ -165,8 +144,6 @@ export interface ContinuationActionDraft {
   readonly actionId: string
   readonly brief: string
   readonly originalIntent?: string
-  readonly projectTarget?: GuideProjectTargetV1 | null
-  readonly projectTargetConfirmed?: boolean
   readonly selected: boolean
   readonly status: ContinuationActionStatus
   readonly prompt?: string
@@ -180,13 +157,6 @@ export interface ContinuationActionDraft {
   readonly sharedWriteConfirmed?: boolean
   readonly uncommittedChangesConfirmed?: boolean
   readonly launch?: ContinuationLaunchReceipt
-  readonly firstmateInstance?: FirstmateInstanceReferenceV1
-  readonly firstmateAction?: keyof FirstmateFleetReadinessV1["actions"]
-  readonly firstmateDiagnostic?: string
-  readonly firstmateSubmission?: {
-    readonly request: FirstmateSubmissionRequestV1
-    readonly receipt: FirstmateSubmissionReceiptV1 | null
-  }
 }
 
 export interface ContinuationDraft {
@@ -734,8 +704,7 @@ const validateActionPreparation = (
   }
   if (
     (inFlight || status === ContinuationActionStatus.Prepared) &&
-    (prompt === undefined || (fields.placement === undefined &&
-      !(fields.firstmateAction === "submit" && fields.firstmateSubmission !== undefined)))
+    (prompt === undefined || fields.placement === undefined)
   ) {
     invalid(field, "requires a prepared prompt and destination")
   }
@@ -844,144 +813,13 @@ const actionConfirmations = (
       }),
 })
 
-const plainSharedData = (value: unknown, field: string, depth = 0): void => {
-  if (value === null || typeof value !== "object") return
-  if (depth > 8) invalid(field, "contains excessive JSON nesting")
-  const prototype = Object.getPrototypeOf(value)
-  if (prototype !== Object.prototype && prototype !== null) invalid(field, "must contain plain JSON objects")
-  for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== "string") invalid(field, "must contain only JSON fields")
-    const descriptor = Object.getOwnPropertyDescriptor(value, key)!
-    if (!descriptor.enumerable || !Object.hasOwn(descriptor, "value") || descriptor.value === undefined) {
-      invalid(field, "must contain only defined JSON fields")
-    }
-    plainSharedData(descriptor.value, field, depth + 1)
-  }
-}
-
-const sharedContract = <Value>(
-  value: unknown,
-  field: string,
-  parse: (value: unknown, field: string) => Value,
-): Value => {
-  plainSharedData(value, field)
-  try {
-    return parse(value, field)
-  } catch (error) {
-    if (error instanceof ProfileGuideValidationError) {
-      return invalid(field, "must satisfy the shared Firstmate contract")
-    }
-    throw error
-  }
-}
-
 const actionTaskContext = (
   fields: Record<string, unknown>,
   field: string,
-): Pick<ContinuationActionDraft, "originalIntent" | "projectTarget" | "projectTargetConfirmed"> => {
-  const projectTargetConfirmed = fields.projectTargetConfirmed === undefined
-    ? undefined
-    : boolean(fields.projectTargetConfirmed, `${field}.projectTargetConfirmed`)
-  if (projectTargetConfirmed === true && fields.projectTarget === undefined) {
-    invalid(`${field}.projectTarget`, "must be explicit when confirmed; fleet scope uses null")
+): Pick<ContinuationActionDraft, "originalIntent"> =>
+  fields.originalIntent === undefined ? {} : {
+    originalIntent: string(fields.originalIntent, `${field}.originalIntent`, conversationLimits.originalIntentChars, true),
   }
-  return {
-    ...(fields.originalIntent === undefined ? {} : {
-      originalIntent: string(fields.originalIntent, `${field}.originalIntent`, conversationLimits.originalIntentChars, true),
-    }),
-    ...(fields.projectTarget === undefined ? {} : {
-      projectTarget: fields.projectTarget === null
-        ? null
-        : sharedContract(fields.projectTarget, `${field}.projectTarget`, parseGuideProjectTargetV1),
-    }),
-    ...(projectTargetConfirmed === undefined ? {} : { projectTargetConfirmed }),
-  }
-}
-
-const submissionStates = new Set([
-  ContinuationActionStatus.Submitting,
-  ContinuationActionStatus.Accepted,
-  ContinuationActionStatus.SubmissionUnknown,
-])
-
-const actionFirstmateSubmission = (
-  value: unknown,
-  field: string,
-): NonNullable<ContinuationActionDraft["firstmateSubmission"]> => {
-  const fields = object(value, field, ["request", "receipt"])
-  const request = sharedContract(fields.request, `${field}.request`, parseFirstmateSubmissionRequestV1)
-  const receipt = fields.receipt === null
-    ? null
-    : sharedContract(fields.receipt, `${field}.receipt`, parseFirstmateSubmissionReceiptV1)
-  if (receipt !== null && (
-    receipt.requestId !== request.requestId ||
-    (receipt.digest !== null && receipt.digest !== firstmateSubmissionDigest(request)) ||
-    (receipt.fleet !== null && !sameFirstmateFleet(receipt.fleet, request.expectedFleet))
-  )) {
-    invalid(field, "receipt must bind to the same request ID, digest, and fleet")
-  }
-  return { request, receipt }
-}
-
-const validateSubmissionContent = (
-  edit: ContinuationActionDraft,
-  request: FirstmateSubmissionRequestV1,
-  field: string,
-): void => {
-  if (
-    edit.originalIntent !== request.originalIntent ||
-    edit.prompt !== request.generatedSpec ||
-    edit.projectTargetConfirmed !== true ||
-    JSON.stringify(edit.projectTarget) !== JSON.stringify(request.projectTarget)
-  ) {
-    invalid(field, "submission must retain the exact original intent, specification, and confirmed target")
-  }
-}
-
-const validateSubmissionStatus = (
-  status: ContinuationActionStatus,
-  receipt: FirstmateSubmissionReceiptV1 | null,
-  field: string,
-): void => {
-  if (status === ContinuationActionStatus.Accepted && receipt?.state !== "saved" && receipt?.state !== "handled") {
-    invalid(field, "accepted submission requires a saved or handled receipt")
-  }
-  if (status === ContinuationActionStatus.SubmissionRejected && receipt !== null && receipt.state !== "rejected") {
-    invalid(field, "rejected submission requires an explicit rejected receipt when provided")
-  }
-  if (receipt !== null && !submissionStates.has(status) && status !== ContinuationActionStatus.SubmissionRejected) {
-    invalid(field, "submission receipts require an accepted, uncertain, or rejected submission status")
-  }
-}
-
-const validateActionSubmission = (edit: ContinuationActionDraft, field: string): void => {
-  const submission = edit.firstmateSubmission
-  if ((submissionStates.has(edit.status) || edit.firstmateAction !== undefined || edit.firstmateDiagnostic !== undefined) &&
-    submission === undefined) {
-    invalid(field, "requires a saved Firstmate submission request")
-  }
-  if (submission === undefined) return
-  if (edit.firstmateAction !== undefined && (
-    edit.status === ContinuationActionStatus.Draft || edit.launch !== undefined ||
-    (edit.firstmateAction !== "submit" && edit.placement === undefined)
-  )) {
-    invalid(field, "confirmed fleet actions require a prepared request and an explicit supervisor destination for start or recovery")
-  }
-  validateSubmissionContent(edit, submission.request, field)
-  validateSubmissionStatus(edit.status, submission.receipt, field)
-}
-
-const validateActionInstance = (edit: ContinuationActionDraft, field: string): void => {
-  if (edit.firstmateInstance === undefined || edit.firstmateSubmission === undefined) return
-  try {
-    validateFirstmateInstanceFleet(edit.firstmateInstance, edit.firstmateSubmission.request.expectedFleet, field)
-  } catch (error) {
-    if (error instanceof ProfileGuideValidationError) {
-      invalid(field, "must agree with the saved fleet profile and UUID")
-    }
-    throw error
-  }
-}
 
 const actionDraft = (value: unknown, field: string): ContinuationActionDraft => {
   const fields = object(
@@ -990,8 +828,6 @@ const actionDraft = (value: unknown, field: string): ContinuationActionDraft => 
     ["actionId", "brief", "selected", "status"],
     [
       "originalIntent",
-      "projectTarget",
-      "projectTargetConfirmed",
       "prompt",
       "candidates",
       "selectedCandidateId",
@@ -1002,10 +838,6 @@ const actionDraft = (value: unknown, field: string): ContinuationActionDraft => 
       "sharedWriteConfirmed",
       "uncommittedChangesConfirmed",
       "launch",
-      "firstmateInstance",
-      "firstmateAction",
-      "firstmateDiagnostic",
-      "firstmateSubmission",
     ],
   )
   const status = enumeration(fields.status, `${field}.status`, Object.values(ContinuationActionStatus))
@@ -1015,7 +847,7 @@ const actionDraft = (value: unknown, field: string): ContinuationActionDraft => 
       ? undefined
       : string(fields.prompt, `${field}.prompt`, conversationLimits.promptChars, true)
   validateActionPreparation(fields, field, status, launch, prompt)
-  const edit: ContinuationActionDraft = {
+  return {
     actionId: identifier(fields.actionId, `${field}.actionId`),
     brief: string(fields.brief, `${field}.brief`, conversationLimits.briefChars, true),
     ...actionTaskContext(fields, field),
@@ -1028,42 +860,6 @@ const actionDraft = (value: unknown, field: string): ContinuationActionDraft => 
     ...(fields.placement === undefined ? {} : { placement: placement(fields.placement, `${field}.placement`) }),
     ...actionConfirmations(fields, field),
     ...(launch === undefined ? {} : { launch }),
-    ...(fields.firstmateInstance === undefined ? {} : {
-      firstmateInstance: sharedContract(fields.firstmateInstance, `${field}.firstmateInstance`, parseFirstmateInstanceReferenceV1),
-    }),
-    ...(fields.firstmateAction === undefined ? {} : {
-      firstmateAction: enumeration(fields.firstmateAction, `${field}.firstmateAction`, ["start", "recover", "submit"] as const),
-    }),
-    ...(fields.firstmateDiagnostic === undefined ? {} : {
-      firstmateDiagnostic: string(fields.firstmateDiagnostic, `${field}.firstmateDiagnostic`, 64_000, true),
-    }),
-    ...(fields.firstmateSubmission === undefined ? {} : {
-      firstmateSubmission: actionFirstmateSubmission(fields.firstmateSubmission, `${field}.firstmateSubmission`),
-    }),
-  }
-  validateActionSubmission(edit, `${field}.firstmateSubmission`)
-  validateActionInstance(edit, `${field}.firstmateInstance`)
-  return edit
-}
-
-const validateSubmissionSelection = (
-  actions: ReadonlyArray<ContinuationActionDraft>,
-  assessment: ContinuationAssessment | undefined,
-): void => {
-  for (const edit of actions) {
-    const action = assessment?.actions.find(({ id }) => id === edit.actionId)
-    if (edit.firstmateInstance !== undefined &&
-      (edit.profileRef ?? action?.profileRef) !== `native:firstmate/${edit.firstmateInstance.profile}`) {
-      invalid("draft.actions.firstmateInstance", "instance must match the selected static profile")
-    }
-    if (edit.firstmateSubmission === undefined) continue
-    const { request } = edit.firstmateSubmission
-    if (
-      (edit.profileRef ?? action?.profileRef) !== `native:firstmate/${request.expectedFleet.profile}` ||
-      (edit.workflowId ?? action?.workflowId) !== request.workflowId
-    ) {
-      invalid("draft.actions.firstmateSubmission", "submission must match the selected profile and workflow")
-    }
   }
 }
 
@@ -1105,15 +901,10 @@ export const validateContinuationDraft = (value: unknown): ContinuationDraft => 
     actions.flatMap(({ launch }) => (launch === undefined ? [] : [launch.attemptId])),
     `${field}.actions.launch.attemptId`,
   )
-  unique(
-    actions.flatMap(({ firstmateSubmission }) => firstmateSubmission === undefined ? [] : [firstmateSubmission.request.requestId]),
-    `${field}.actions.firstmateSubmission.request.requestId`,
-  )
   const actionIds = new Set(parsedAssessment?.actions.map(({ id }) => id) ?? [])
   if (actions.length !== actionIds.size || actions.some(({ actionId }) => !actionIds.has(actionId))) {
     invalid(`${field}.actions`, "must match the assessment's action IDs exactly")
   }
-  validateSubmissionSelection(actions, parsedAssessment)
   const draft: ContinuationDraft = {
     schemaVersion: 1,
     id: opaqueId(fields.id, `${field}.id`),

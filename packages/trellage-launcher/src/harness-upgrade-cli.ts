@@ -9,8 +9,7 @@ import {
 } from "./admin-harness-update-all.ts"
 import { HarnessUpdateManager, type HarnessUpdatePlan, type HarnessUpdateQueueEvent } from "./admin-harness-update.ts"
 import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cache.ts"
-import { adminProfileLabel, aggregateAdminProfiles, type AdminProfileEntry } from "./admin-model.ts"
-import { discoverAdminInstanceEntries } from "./admin-refresh.ts"
+import { aggregateAdminProfiles } from "./admin-model.ts"
 import { AdminRunManager } from "./admin-run-manager.ts"
 import { nativeSkillsUpdateCommand, type NativeSkillsUpdateEvent, type NativeSkillsUpdatePlan } from "./admin-skills-update.ts"
 import type { CombinedGuideCatalog } from "./guide-catalog.ts"
@@ -19,19 +18,18 @@ import { renderCommandPreview, type CommandRunner } from "./guide-launch.ts"
 export const harnessUpgradeHelpText = `Usage:
   trx upgrade all [--native] [--yes | --dry-run]
 
-Update harness versions AND skills for every Native catalog profile
-and every discovered Firstmate instance. The preview includes targets hidden by
-Admin filters. One queue runs:
-1. Native harness updates: shared runtimes once, Firstmate per instance.
+Update harness versions AND skills for every Native catalog profile.
+The preview includes profiles hidden by Admin filters. One queue runs:
+1. Native harness updates: shared runtimes once.
 2. Shared Native skill-cache refresh: one trx skills update.
 3. Native profile skill copies and verification, including Agency.
 Native skill copies are final; harness updates cannot overwrite them afterward.
 Admin U remains the selected harness-only action.
 
 Without a flag, preview the scope and require you to type yes at a terminal.
---native limits the queue to steps 1-3; Container images are not built.
+--native is accepted for compatibility; every update is already Native.
 --yes authorizes updates without an interactive terminal.
---dry-run reads local instance lists and previews the scope without running
+--dry-run reads the catalog and previews the scope without running
 updates, readiness probes, or version checks.
 
 Existing profile version and source pins are preserved. Unsupported profiles,
@@ -131,67 +129,39 @@ type WriteLine = HarnessUpgradeCliOptions["writeLine"]
 const groupLabel = (group: HarnessUpdatePlan): string =>
   `Native ${group.harness} (${group.key})`
 
-const completeCatalogRefs = (catalog: CombinedGuideCatalog): ReadonlySet<string> => {
+const completeCatalogEntries = (catalog: CombinedGuideCatalog) => {
   if (catalog.native.length === 0) {
     throw new Error("Incomplete catalog: Native profiles are required. No harness or skill updates were started.")
   }
-  const refs = new Set(aggregateAdminProfiles(catalog).map((entry) => entry.ref))
-  if (refs.size !== catalog.native.length) {
+  const entries = aggregateAdminProfiles(catalog)
+  if (new Set(entries.map((entry) => entry.ref)).size !== catalog.native.length) {
     throw new Error("Incomplete catalog: profile identities were lost or duplicated. No harness or skill updates were started.")
   }
-  return refs
+  return entries
 }
 
-const validateInstanceCoverage = (entries: ReadonlyArray<AdminProfileEntry>, catalogRefs: ReadonlySet<string>): void => {
-  const templateRefs = new Set(entries.map((entry) => entry.templateRef ?? entry.ref))
-  if (new Set(entries.map((entry) => entry.ref)).size !== entries.length ||
-      templateRefs.size !== catalogRefs.size || [...catalogRefs].some((ref) => !templateRefs.has(ref))) {
-    throw new Error("Incomplete catalog: instance discovery lost or duplicated profile identities. No updates were started.")
-  }
-  const unsafe = entries.find(({ firstmateInstanceDescriptor: descriptor }) =>
-    descriptor?.creationState === "unsafe" || descriptor?.runtime.state === "unsafe")
-  if (unsafe !== undefined) {
-    throw new Error(`Incomplete Firstmate instance discovery: ${unsafe.ref} has unsafe state. No updates were started.`)
-  }
-}
-
-const completeCatalogPlan = async (
-  catalog: CombinedGuideCatalog,
-  scope: HarnessUpgradeScope,
-  options: HarnessUpgradeCliOptions,
-  runner: CommandRunner,
-): Promise<HarnessUpdateAllPlan> => {
-  const refs = completeCatalogRefs(catalog)
-  const discovered = await discoverAdminInstanceEntries(runner, catalog, options.cwd, options.signal)
-  validateInstanceCoverage(discovered, refs)
-  const entries = scope === "native" ? discovered.filter((entry) => entry.surface === "native") : discovered
+const completeCatalogPlan = (catalog: CombinedGuideCatalog, options: HarnessUpgradeCliOptions): HarnessUpdateAllPlan => {
+  const entries = completeCatalogEntries(catalog)
   const plan = harnessUpdateAllPlanFor(entries, undefined, options.routerCommandPath ?? "trx")
   if (plan.profileCount !== entries.length) {
-    throw new Error("Incomplete catalog: the update plan lost instance targets. No updates were started.")
+    throw new Error("Incomplete catalog: the update plan lost profile targets. No updates were started.")
   }
   return plan
 }
 
-const discoverUpgradePlan = async (
-  scope: HarnessUpgradeScope,
-  options: HarnessUpgradeCliOptions,
-  runner: CommandRunner,
-): Promise<HarnessUpdateAllPlan | "cancelled"> => {
+const discoverUpgradePlan = async (options: HarnessUpgradeCliOptions): Promise<HarnessUpdateAllPlan | "cancelled"> => {
   try {
     options.signal?.throwIfAborted()
-    return await completeCatalogPlan(await options.readCatalog(), scope, options, runner)
+    return completeCatalogPlan(await options.readCatalog(), options)
   } catch (error) {
     if (options.signal?.aborted !== true) throw error
     return "cancelled"
   }
 }
 
-const targetCountNoun = (entries: ReadonlyArray<AdminProfileEntry>, legacy: string): string =>
-  entries.some((entry) => entry.firstmateInstanceDescriptor !== undefined) ? "profile/instance targets" : legacy
-
 const writeSkillsPreview = (skills: NativeSkillsUpdatePlan | undefined, write: WriteLine): void => {
   if (skills === undefined) return
-  write(`Native skills: refresh shared caches once; copy and verify ${skills.targets.length} ${targetCountNoun(skills.targets, "catalog profiles")}.`)
+  write(`Native skills: refresh shared caches once; copy and verify ${skills.targets.length} catalog profiles.`)
   write(`  Refresh: ${renderCommandPreview(skills.refresh)}`)
   write("  Caches: native-common, Codex YouTube, Oh My Pi community, and guide Prompt Master.")
   for (const entry of skills.targets) {
@@ -206,21 +176,16 @@ const writeSkillsPreview = (skills: NativeSkillsUpdatePlan | undefined, write: W
 
 const writeHarnessPreview = (groups: ReadonlyArray<HarnessUpdatePlan>, write: WriteLine): void => {
   for (const group of groups) {
-    write(`${groupLabel(group)}: ${group.targets.length} ${targetCountNoun(group.targets, "profiles")}`)
-    for (const entry of group.targets) {
-      const descriptor = entry.firstmateInstanceDescriptor
-      write(`  ${entry.ref}${descriptor === undefined ? "" : ` (${adminProfileLabel(entry)})`}`)
-      if (descriptor?.mode === "named") write(`  Associated worktree: ${descriptor.worktree.evidence.locators.worktree}`)
-    }
+    write(`${groupLabel(group)}: ${group.targets.length} profiles`)
+    for (const entry of group.targets) write(`  ${entry.ref}`)
     for (const step of group.steps) write(`  Command: ${renderCommandPreview(step.command)}`)
   }
 }
 
 const writePreview = (plan: HarnessUpdateAllPlan, write: WriteLine): void => {
-  const targetNoun = targetCountNoun(plan.skills?.targets ?? [], "catalog profiles")
-  write(`Update all harness versions and skills: ${plan.profileCount} ${targetNoun}, ${plan.groups.length} supported harness groups.`)
+  write(`Update all harness versions and skills: ${plan.profileCount} catalog profiles, ${plan.groups.length} supported harness groups.`)
   write(`Scope: ${plan.nativeUpdateCount} Native runtime/profile updates.`)
-  write("Includes the full catalog and discovered Firstmate instances, without Admin filters. Existing profile version and source pins are preserved.")
+  write("Includes the full catalog, without Admin filters. Existing profile version and source pins are preserved.")
   write("Trellage installation and upgrades are separate. Unsupported profiles are not substituted with plugin updates.")
   writeHarnessPreview(
     plan.groups.filter((group) => group.surface === "native"),
@@ -354,7 +319,7 @@ export const runHarnessUpgradeCli = async (options: HarnessUpgradeCliOptions): P
     return 0
   }
   const runner = upgradeRunner(options)
-  const plan = await discoverUpgradePlan(args.scope, options, runner)
+  const plan = await discoverUpgradePlan(options)
   if (plan === "cancelled") {
     options.writeLine("Update all cancelled. No harness or skill updates were started.")
     return 130

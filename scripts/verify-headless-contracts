@@ -66,7 +66,6 @@ printf 'verify-headless-contracts: Native adapter and router cases\n'
 bash "$repository_root/prototypes/trellage-copilot-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-agency-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-claude-profiles/tests/contract.sh"
-bash "$repository_root/prototypes/trellage-firstmate-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-omp-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-picx-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-router/tests/contract.sh"

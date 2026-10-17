@@ -1,0 +1,2 @@
+export const GUIDE_MAX_ORIGINAL_INTENT = 60_000
+export const GUIDE_MAX_GENERATED_SPEC = 8_000

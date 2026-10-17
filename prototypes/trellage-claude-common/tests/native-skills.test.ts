@@ -82,7 +82,6 @@ const launchers: LauncherDescriptor[] = [
   { alias: "omp", package: "omp", marker: "omp", owner: "trellage-omp-profile-v1", leaf: "agent" },
   { alias: "picx", package: "picx", marker: "picx", owner: "trellage-picx-profile-v2", leaf: "agent" },
   { alias: "prx", package: "prime", marker: "prime", owner: "trellage-prime-profile-v1" },
-  { alias: "fmx", package: "firstmate", marker: "firstmate", owner: "trellage-firstmate-profiles-v1" },
 ]
 
 const write = async (file: string, content: string, mode = 0o600) => {
@@ -276,7 +275,7 @@ const installSharedRuntime = async ({ descriptor, runtime }: Fixture) => {
       path.join(runtime, "lib/native-codex"),
     )
   }
-  if (["cldx", "fmx"].includes(descriptor.alias)) {
+  if (descriptor.alias === "cldx") {
     await copy(path.join(common, "native-claude"), path.join(runtime, "lib/native-claude"))
   }
 }
@@ -359,31 +358,9 @@ const seedSkillTarget = async (cache: string, home: string) => {
   return { cache, target }
 }
 
-const seedFirstmate = async (fixture: Fixture, profile: ProfileFixture, name: string) => {
-  const root = profile.root
-  await mkdir(path.join(root, "runtime"), { recursive: true, mode: 0o700 })
-  await mkdir(path.join(root, "home/state"), { recursive: true, mode: 0o700 })
-  const sourceReceipt = JSON.stringify(fixture.catalog.source)
-  assert.ok(sourceReceipt, "Firstmate fixture must have a source receipt")
-  await write(path.join(root, "receipts/source.json"), sourceReceipt)
-  await markOwned(fixture, root)
-  await markOwned(fixture, path.join(root, "captain"))
-  const worker = path.join(root, "workers", `${name}-task`)
-  await markOwned(fixture, worker)
-  await write(
-    path.join(worker, "worker.json"),
-    JSON.stringify({ schemaVersion: 1, profile: name, task: `${name}-task` }),
-  )
-  profile.targets.push(await seedSkillTarget(fixture.cache, path.join(worker, "claude")))
-  profile.guards.push(path.join(root, "receipts/source.json"), path.join(worker, "worker.json"))
-}
-
 const seedProfile = async (fixture: Fixture, name: string) => {
   const root = profileRoot(fixture, name)
-  const home = path.join(
-    root,
-    fixture.descriptor.alias === "fmx" ? "captain/claude" : (fixture.descriptor.leaf ?? "home"),
-  )
+  const home = path.join(root, fixture.descriptor.leaf ?? "home")
   const cache =
     fixture.descriptor.alias === "cldx" && name.startsWith("office")
       ? officeCache(fixture, name)
@@ -407,7 +384,6 @@ const seedProfile = async (fixture: Fixture, name: string) => {
     await write(path.join(target, "custom/SKILL.md"), "# User community skill\n")
     profile.targets.push({ cache: fixture.communityCache, target })
   }
-  if (fixture.descriptor.alias === "fmx") await seedFirstmate(fixture, profile, name)
   for (const file of ["auth.json", "config.toml", "installed-plugins/user/source-pin", "extensions/custom.js"]) {
     const target = path.join(home, file)
     await write(target, `User-owned ${file}\n`, 0o640)
@@ -674,7 +650,7 @@ test("older skill managers fail closed before fetching or installing", async (co
 })
 
 for (const descriptor of launchers) {
-  if (["cpx", "cdx", "cldx", "fmx", "jcx"].includes(descriptor.alias)) {
+  if (["cpx", "cdx", "cldx", "jcx"].includes(descriptor.alias)) {
     test(`${descriptor.alias} cleans skill check staging when cancelled`, async (context) => {
       const fixture = await fixtureFor(context, descriptor)
       await seedCaches(fixture, 1)
@@ -897,31 +873,6 @@ test("OMP preflights both bundles before it replaces either copy", async (contex
   await noExternalCalls(fixture)
 })
 
-test("Firstmate keeps both fleets idle and validates worker ownership before it changes the captain", async (context) => {
-  const fixture = await fixtureFor(
-    context,
-    launchers.find(({ alias }) => alias === "fmx"),
-  )
-  await seedCaches(fixture, 1)
-  const profile = await seedProfile(fixture, "pstack-workers")
-  await seedCaches(fixture, 2)
-  const before = await treeState(profile.targets[0].target)
-  const lock = path.join(profile.root, "locks/session")
-  await write(path.join(lock, "owner"), `${fixture.descriptor.owner}\n`)
-  await write(path.join(lock, "backend"), "tmux\n")
-  await write(path.join(lock, "pid"), `${process.pid}\n`)
-  fails(run(fixture, ["skills-update", profile.name]), /fleet is active/)
-  assert.deepEqual(await treeState(profile.targets[0].target), before)
-  await rm(lock, { recursive: true })
-  const workerTarget = profile.targets[1]
-  assert.ok(workerTarget, "Firstmate fixture must contain a worker target")
-  const worker = path.dirname(path.dirname(workerTarget.target))
-  await write(path.join(worker, ".managed-by-trellage-firstmate-profiles"), "not-owned\n")
-  fails(run(fixture, ["skills-update", profile.name]), /ownership marker differs/)
-  assert.deepEqual(await treeState(profile.targets[0].target), before)
-  await noExternalCalls(fixture)
-})
-
 test("Codex YouTube management bypasses Varlock and rejects management verbs as native-auth profiles", async (context) => {
   const fixture = await fixtureFor(
     context,
@@ -941,7 +892,7 @@ test("Codex YouTube management bypasses Varlock and rejects management verbs as 
 })
 
 test("Claude and Codex skills management scrub provider credentials but retain file-backed GitHub configuration", async (context) => {
-  for (const alias of ["cldx", "cdx", "fmx"]) {
+  for (const alias of ["cldx", "cdx"]) {
     const fixture = await fixtureFor(
       context,
       launchers.find((entry) => entry.alias === alias),

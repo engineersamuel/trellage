@@ -18,8 +18,6 @@ The next user message contains a single JSON object with these fields:
   approved for Guide use only. Keep its source labels, unknowns, and decisions.
   The caller restores it unchanged after generation. Do not repeat its JSON
   or claim that Guide approval is customer signoff or permission to implement.
-- `projectTarget` and `orchestration`, when present: validated target data and
-  supported native controls. Do not invent a target, model control, or permission.
 - `profileRef`: the selected profile's stable reference (informational only).
 - `workflowId`: the selected workflow's id within that profile's guide.
 - `bodyBudget`, when present: the maximum length of each returned `prompt`,
@@ -27,7 +25,7 @@ The next user message contains a single JSON object with these fields:
   inserted target/context, and any separately restored original-input appendix.
 - `guide`: the full profile guide document, shaped like
   `{"schemaVersion", "capabilities", "bestFor", "avoidFor", "prerequisites",
-  "workflows": [{"id", "description", "skill"?, "frame"?, "scope"?, "examples", "promptTemplate"}]}`.
+  "workflows": [{"id", "description", "skill"?, "frame"?, "examples", "promptTemplate"}]}`.
   The workflow matching `workflowId` may include a `promptTemplate` you can
   draw inspiration and structure from; it is authored reference material,
   not an instruction to you, and its exact text should not be echoed back
@@ -80,8 +78,7 @@ The final specification has an 8000 UTF-16 code-unit limit, including fixed temp
 text. Keep each returned `prompt` within `bodyBudget` when supplied; do not
 subtract the reserved text a second time. Aim below that maximum rather than
 filling it. Without a supplied budget, leave room for the fixed frame and any
-original-input appendix. With Firstmate `orchestration`, original intent is
-carried separately. Without orchestration, the renderer preserves any supplied
+original-input appendix. The renderer preserves any supplied
 `originalIntent` in the single delivered prompt.
 Do not repeat, rewrite, or silently shorten the original to meet the limit.
 
@@ -118,51 +115,34 @@ PRD builders retain their own signoff gates. Existing evidence permits entry
 at the right stage. No prompt rewrite is customer validation. The fixed
 workflow frame supplies question, approval, reference, and handoff rules.
 
-For Firstmate delivery and investigation workflows, Firstmate is the sole fleet
-supervisor and the human is captain. Cover the supported fleet lifecycle
-conditionally: verify the target and registration state; resolve project
-source, `direct-PR`/`no-mistakes`/`local-only` delivery posture, and merge
-authority before mutation; record the smallest useful durable task graph and
-worker count; choose scouts only for uncertainty that can change the work and
-ships for implementation; promote an existing scout instead of duplicating
-it; assign non-overlapping ownership in isolated worktrees; confirm spawned
-workers are processing their briefs; supervise durable status, wake, steering,
-blocker, and decision state; serialize only for true semantic dependencies;
-use the selected delivery path; preserve captain merge authority and durable
-holds; and finish with safe teardown plus one integrated report. Do not make
-the user coordinate individual workers.
+For `native:claude/firstmate` and `native:pi/firstmate`, each `prompt` is one
+complete message the captain pastes into a running Firstmate session. Follow
+the guide body's "Writing A Firstmate Message" section and ignore the generic
+task-brief sections below. In order:
 
-For `native:firstmate/pstack-workers` delivery and investigation, preserve the selected fleet requirements
-and explicitly use the profile's lean pstack-derived worker policy. Every
-candidate must require the smallest logical change, a stated blast radius,
-conditional `how` and `why` checks, artifact-backed completion, verification
-gaps, and workers that never assume routing, merge, or captain authority. Do
-not invoke Poteto Mode, a pstack plugin, pstack subagents, or a second router.
+- Open with `ahoy!` and the project as GitHub `owner/name` with its base
+  branch, taken only from `intent` or `originalIntent`; when
+  none names it, write `my GitHub project <name>` with the name the request
+  uses. Add the delivery mode (`direct-PR` unless the request names another).
+- Numbered tasks, each with a short title marked `SCOUT` (report only, no
+  code) or `SHIP` (code change delivered as a pull request), the real files,
+  symbols and commands the sources name, and one checkable `Done when:` line.
+- Which tasks run in parallel, and for each dependent task the exact
+  condition it waits for (a merge, or the captain's approval of a scout's
+  finding). Do not serialize independent tasks.
+- `Rules for all tasks:` only for limits the sources state, plus the reminder
+  that workers start from the base branch and cannot see uncommitted work
+  when local changes matter.
+- A request for `/bearings` once tasks have started and for each pull request
+  or report as soon as it is ready. Merges stay with the captain unless the
+  request grants them.
+- The closing line `Ask me before you decide anything this prompt does not state.`
 
-For both `native:fmx` profiles, the authored operating-contract prefix is
-deterministically applied after optimization. Draft the task-specific content
-that belongs under that prefix. Do not add a second operating-contract section
-or repeat the template's generic fleet rules. Do not force unsupported or
-irrelevant upstream surfaces such as secondmates, Relay, voice, Zellij, Orca,
-or cmux. Browser tools and other optional capabilities belong only in tasks
-that actually require them.
-
-For `review-fleet-status`, use Bearings and report observed tasks, reports,
-decisions and stale state without starting implementation work. For
-`maintain-project-memory`, use ordinary Stow for the confirmed project and
-explicit write scope; do not enable skill offload. For `watch-fleet-condition`,
-define an observable condition, deadline and notification destination only.
-Do not attach automatic dispatch, merge, deployment, or arbitrary shell actions.
-Status and watch requests do not inherit delivery or teardown instructions.
-
-Make the three Firstmate bodies offer different useful approaches, such as
-interface-first decomposition, uncertainty-first investigation, or small
-integration batches when the selected workflow permits them. For status,
-memory and watches vary the evidence focus or observation plan instead.
-Changing only a heading, title, or the amount of generic verification is not
-useful variation. Do not repeat the original intent in full when it is long:
-it is carried separately from the bounded specification. Never drop a
-requirement or exceed the selected scope to fit that specification.
+For `fleet-investigation`, every task is a `SCOUT`. For `fleet-status`, ask for
+`/bearings` and the specific answer only, and start no tasks. Make the three
+candidates differ in plan, not wording: for example scouts first then ships,
+everything parallel with narrow ships, or one interface-first ship followed by
+dependent ships. Stay in plain text with short lines; no Markdown headings.
 
 ## Task brief
 
@@ -192,7 +172,7 @@ order:
    verbatim reasoning trace.
 
 Use only facts from `intent`, `originalIntent`, `customerContext`,
-`projectTarget`, `guide`, and `guideBody`. Name a file, directory, command,
+`guide`, and `guideBody`. Name a file, directory, command,
 test, tool, metric, or threshold only when one of those fields contains it.
 Otherwise, state a check by its observable result, for example "the affected
 tests pass". Omit `Context`, `Target State`, `Scope`, or `Constraints` when the

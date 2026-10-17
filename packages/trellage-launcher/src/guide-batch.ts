@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto"
 import path from "node:path"
 import {
   buildHerdrGuideLaunch,
@@ -16,90 +15,37 @@ import {
   type HerdrPromptDeliveryMode,
   type HerdrSplitDirection,
   type SelectedProfile,
-  type TimeController,
 } from "./guide-launch.ts"
 import { checkSelectedProfileReadiness, ProfilePreflightError, ProfileReadinessKind } from "./guide-preflight.ts"
 import { composeGuideGoalCandidate, guideGoalPromptMaximumLength, type GuideGoalCandidateContext } from "./guide-goal-execution.ts"
 import { freezeGuideGoalCandidateContext, guideGoalInputInstructions } from "./guide-goal-transport.ts"
 import { GuideGoalError } from "./guide-goal-augment.ts"
-import type {
-  FirstmateFleetIdentityV1,
-  FirstmateFleetReadinessV1,
-  FirstmateSubmissionReceiptV1,
-  FirstmateSubmissionRequestV1,
-  GuideProjectTargetV1,
-  ProfileGuideWorkflow,
-} from "@trellage/guide-core"
-import {
-  createFirstmateJournalFactory,
-  scopeFirstmateJournal,
-  type FirstmateJournalFactory,
-  type FirstmateJournalEntry,
-  type FirstmateSubmissionJournal,
-} from "./guide-firstmate-journal.ts"
-import { executeFirstmateBatchGroup, isFirstmateBatchJob, type FirstmateBatchItem } from "./guide-firstmate-batch.ts"
-import {
-  completeSinglePromptArtifact, guideModelBodyCandidate, validateLegacyFirstmateArtifact,
-  type GuideLegacyFirstmateContext, type GuideTaskContext,
-} from "./guide-context.ts"
-import { firstmateSupervisorStatusText } from "./guide-firstmate.ts"
-import { validateFirstmateTerminalHandoff, type FirstmateTerminalHandoff } from "./guide-firstmate-terminal.ts"
+import type { ProfileGuideWorkflow } from "@trellage/guide-core"
+import { completeSinglePromptArtifact, guideModelBodyCandidate, type GuideTaskContext } from "./guide-context.ts"
 import { renderWorkflowBodyCandidate, validateFinalGuideCandidate } from "./guide-workflow-prompt.ts"
-import { selectedFirstmateInstance } from "./guide-firstmate-instance-selection.ts"
-import { firstmateInstanceLabel, firstmateJobInstanceKey, sameFirstmateJobInstance } from "./guide-firstmate-group.ts"
-
-export type { FirstmateTerminalHandoff } from "./guide-firstmate-terminal.ts"
 
 export interface GuideQueuedContext {
   readonly originalIntent: string
   readonly workflowId: string
-  readonly projectTarget: GuideProjectTargetV1 | null
-  readonly projectTargetConfirmed?: boolean
   readonly workflow: ProfileGuideWorkflow
   readonly customerContext?: NonNullable<GuideTaskContext["customerContext"]>
-}
-
-export const legacyFirstmateQueuedContext = (
-  profile: SelectedProfile,
-  context: GuideQueuedContext | undefined,
-): GuideLegacyFirstmateContext | undefined => {
-  if (profile.surface !== "native" || profile.launcher !== "firstmate" || profile.orchestration !== undefined) return undefined
-  if (context?.projectTargetConfirmed !== true) {
-    throw new Error("Legacy Firstmate delivery requires confirmed original intent, project target, and workflow.")
-  }
-  return { ...context, projectTargetConfirmed: true }
 }
 
 const queuedTaskContext = (profile: SelectedProfile, context: GuideQueuedContext): GuideTaskContext => ({
   ...(profile.surface === "native" ? { profileRef: `native:${profile.launcher}/${profile.profile}` } : {}),
   originalIntent: context.originalIntent,
-  projectTarget: context.projectTarget,
-  ...(profile.surface === "native" && profile.orchestration !== undefined ? { orchestration: profile.orchestration } : {}),
   ...(context.customerContext === undefined ? {} : { customerContext: context.customerContext }),
 })
-
-export type FirstmateGuideAction = keyof FirstmateFleetReadinessV1["actions"]
-
-export interface FirstmateQueuedSubmission {
-  readonly action: FirstmateGuideAction
-  readonly requestId: string
-  readonly expectedFleet?: FirstmateFleetIdentityV1
-}
 
 const startupTimeoutMs = 60_000
 const promptTimeoutMs = 60_000
 
-/**
- * Ordinary jobs need a Herdr destination. Firstmate can reuse a fleet or
- * hand off the current terminal after the guide exits.
- */
+/** Every queued job needs a Herdr destination. */
 export type JobPlacement =
   | { readonly kind: "current-workspace-pane"; readonly direction: HerdrSplitDirection }
   | { readonly kind: "new-tab" }
   | { readonly kind: "new-worktree"; readonly branch: string; readonly baseRef: string }
   | { readonly kind: "existing-worktree"; readonly path: string }
-  | { readonly kind: "existing-fleet" }
-  | { readonly kind: "current-terminal" }
 
 export interface QueuedGuideJob {
   readonly id: number
@@ -111,7 +57,6 @@ export interface QueuedGuideJob {
   readonly privatePrompt?: boolean
   readonly goalExecution?: GuideGoalCandidateContext
   readonly guideContext?: GuideQueuedContext
-  readonly firstmate?: FirstmateQueuedSubmission
   readonly primaryCheckoutPath?: string
 }
 
@@ -174,31 +119,6 @@ export type GuideBatchEntryResult =
     }
   | {
       readonly job: QueuedGuideJob
-      readonly status: "accepted"
-      readonly request: FirstmateSubmissionRequestV1
-      readonly receipt: FirstmateSubmissionReceiptV1
-      readonly supervisor: FirstmateSubmissionReceiptV1["supervisorState"] | "unknown"
-      readonly startupError?: string
-      readonly paneId?: string
-      readonly workspaceId?: string
-      readonly cwd?: string
-    }
-  | {
-      readonly job: QueuedGuideJob
-      readonly status: "submission-unknown" | "submission-rejected"
-      readonly stage: "submission"
-      readonly request: FirstmateSubmissionRequestV1
-      readonly receipt?: FirstmateSubmissionReceiptV1
-      readonly message: string
-    }
-  | {
-      readonly job: QueuedGuideJob
-      readonly status: "not-submitted"
-      readonly stage: "submission"
-      readonly message: string
-    }
-  | {
-      readonly job: QueuedGuideJob
       readonly status: "workspace-create-failed"
       readonly stage: "worktree-create"
       readonly message: string
@@ -221,11 +141,10 @@ export type GuideBatchEntryResult =
 
 export interface GuideBatchExecutionResult {
   readonly entries: ReadonlyArray<GuideBatchEntryResult>
-  readonly firstmateTerminalHandoff?: FirstmateTerminalHandoff
 }
 
 /** One step of one queued job, so a caller can narrate the launch while it runs. */
-export type GuideBatchPhase = "checking" | "allocating" | "saving" | "reconciling" | "starting" | "waiting" | "prompting" | "done" | "needs-input" | "failed"
+export type GuideBatchPhase = "checking" | "allocating" | "starting" | "waiting" | "prompting" | "done" | "needs-input" | "failed"
 
 export interface GuideBatchProgressEvent {
   readonly jobId: number
@@ -248,12 +167,6 @@ export interface GuideBatchExecutionServices {
   readonly onResult?: (entry: GuideBatchEntryResult) => Promise<void>
   readonly launchPrivate?: typeof launchInHerdrPaneAndPrompt
   readonly checkReadiness?: typeof checkSelectedProfileReadiness
-  readonly firstmateJournal?: FirstmateSubmissionJournal
-  readonly firstmateJournalFor?: FirstmateJournalFactory
-  readonly onFirstmateUpdate?: (job: QueuedGuideJob, entry: FirstmateJournalEntry) => Promise<void>
-  readonly firstmateTime?: TimeController
-  readonly firstmateStartupTimeoutMs?: number
-  readonly firstmatePollIntervalMs?: number
 }
 
 export const emptyGuideQueue = (): GuideQueueState => ({ entries: [], nextId: 1, selectedIndex: 0 })
@@ -301,7 +214,6 @@ export const createQueuedGuideJob = (
   prompt: string,
   placement: JobPlacement,
   context?: GuideQueuedContext | GuideGoalCandidateContext,
-  firstmate?: FirstmateQueuedSubmission,
   primaryCheckoutPath?: string,
 ): QueuedGuideJob => {
   const guideContext = context !== undefined && !("goal" in context) ? context : undefined
@@ -315,28 +227,15 @@ export const createQueuedGuideJob = (
         title: "Queued request", prompt, notes: "Preserve the complete original input.",
       }, queuedTaskContext(profile, guideContext)).prompt
     : prompt
-  const legacy = legacyFirstmateQueuedContext(profile, guideContext)
-  if (legacy !== undefined) validateLegacyFirstmateArtifact(`native:firstmate/${profile.profile}`, deliveredPrompt, legacy)
   const built = buildHerdrGuideLaunch(profile, deliveredPrompt, goalExecution)
   return Object.freeze({
     id, profile, prompt: deliveredPrompt, command: Object.freeze({ ...built.command, args: Object.freeze([...built.command.args]) }), promptDelivery: built.promptDelivery, placement: Object.freeze({ ...placement }),
     ...(goalExecution === undefined ? {} : { goalExecution }),
     ...(guideContext === undefined ? {} : { guideContext }),
-    ...(firstmate === undefined ? {} : { firstmate }),
     ...((placement.kind !== "new-worktree" && placement.kind !== "existing-worktree") || primaryCheckoutPath === undefined
       ? {} : { primaryCheckoutPath }),
   })
 }
-
-export const createFirstmateQueuedSubmission = (
-  action: FirstmateGuideAction,
-  expectedFleet?: FirstmateFleetIdentityV1,
-): FirstmateQueuedSubmission =>
-  ({ action, requestId: randomUUID(), ...(expectedFleet === undefined ? {} : { expectedFleet }) })
-
-export const guideBatchRequiresHerdr = (jobs: ReadonlyArray<QueuedGuideJob>): boolean =>
-  jobs.some((job) => !isFirstmateBatchJob(job) ||
-    (job.placement?.kind !== "existing-fleet" && job.placement?.kind !== "current-terminal"))
 
 export const enqueueGuideJob = (
   queue: GuideQueueState,
@@ -344,12 +243,11 @@ export const enqueueGuideJob = (
   prompt: string,
   placement: JobPlacement,
   guideContext?: GuideQueuedContext | GuideGoalCandidateContext,
-  firstmate?: FirstmateQueuedSubmission,
   primaryCheckoutPath?: string,
 ): GuideQueueState => {
   guardQueuePlacement(queue, placement)
   return {
-  entries: [...queue.entries, createQueuedGuideJob(queue.nextId, profile, prompt, placement, guideContext, firstmate, primaryCheckoutPath)],
+  entries: [...queue.entries, createQueuedGuideJob(queue.nextId, profile, prompt, placement, guideContext, primaryCheckoutPath)],
   nextId: queue.nextId + 1,
   selectedIndex: queue.entries.length,
   }
@@ -386,9 +284,7 @@ export const replaceQueuedGuideJobPrompt = (
     ? candidate
     : renderWorkflowBodyCandidate(job.guideContext.workflow, candidate))
   return createQueuedGuideJob(
-    job.id, job.profile, rendered.prompt, job.placement, job.guideContext,
-    job.firstmate === undefined ? undefined : createFirstmateQueuedSubmission(job.firstmate.action, job.firstmate.expectedFleet),
-    job.primaryCheckoutPath,
+    job.id, job.profile, rendered.prompt, job.placement, job.guideContext, job.primaryCheckoutPath,
   )
   }
   const candidate = composeGuideGoalCandidate(goalExecution, { title: "Queued goal", prompt, notes: "" })
@@ -430,7 +326,6 @@ export const replaceQueuedGuideJob = (
   prompt: string,
   placement: JobPlacement,
   guideContext?: GuideQueuedContext | GuideGoalCandidateContext,
-  firstmate?: FirstmateQueuedSubmission,
   primaryCheckoutPath?: string,
 ): GuideQueueState => {
   const index = queue.entries.findIndex((job) => job.id === id)
@@ -439,7 +334,7 @@ export const replaceQueuedGuideJob = (
     ? queue
     : {
         ...queue,
-        entries: queue.entries.map((job) => (job.id === id ? createQueuedGuideJob(id, profile, prompt, placement, guideContext, firstmate, primaryCheckoutPath) : job)),
+        entries: queue.entries.map((job) => (job.id === id ? createQueuedGuideJob(id, profile, prompt, placement, guideContext, primaryCheckoutPath) : job)),
         selectedIndex: index,
       }
 }
@@ -447,8 +342,6 @@ export const replaceQueuedGuideJob = (
 /** One dense line naming where a queued job will run, for the queue review screen. */
 export const describeJobPlacement = (placement: JobPlacement): string => {
   if (placement === null || typeof placement !== "object") return "invalid placement"
-  if (placement.kind === "existing-fleet") return "existing owned fleet; no new terminal"
-  if (placement.kind === "current-terminal") return "current terminal after the guide exits"
   if (placement.kind === "current-workspace-pane") return `pane here (split ${placement.direction})`
   if (placement.kind === "new-tab") return "new tab in this Herdr worktree"
   if (placement.kind === "new-worktree") return `new worktree ${placement.branch} from ${placement.baseRef}`
@@ -482,25 +375,11 @@ const validatePlacement = (placement: JobPlacement): string | undefined => {
       return placement.direction === "right" || placement.direction === "down"
         ? undefined
         : "Queued pane direction must be right or down."
-    case "new-tab":
-    case "current-terminal":
-    case "existing-fleet": return undefined
+    case "new-tab": return undefined
     case "new-worktree": return validateWorktreeRefs(placement)
     case "existing-worktree": return validateExistingWorktree(placement.path)
     default: return "Queued placement is not supported."
   }
-}
-
-const validateQueuedPlacement = (job: QueuedGuideJob): string | undefined => {
-  const message = validatePlacement(job.placement)
-  if (message !== undefined) return message
-  if (job.placement.kind === "existing-fleet" && !isFirstmateBatchJob(job)) {
-    return "An existing fleet placement requires a Firstmate submission."
-  }
-  if (job.placement.kind === "current-terminal" && !isFirstmateBatchJob(job)) {
-    return "A queued current-terminal placement requires an inbox-capable Firstmate Start or Recover action."
-  }
-  return undefined
 }
 
 const validateQueuedJob = (job: QueuedGuideJob): string | undefined => {
@@ -508,7 +387,7 @@ const validateQueuedJob = (job: QueuedGuideJob): string | undefined => {
   if (typeof job.prompt !== "string" || job.prompt.trim().length === 0) return "Queued prompt must not be empty."
   const maximumLength = job.goalExecution === undefined ? 8000 : guideGoalPromptMaximumLength
   if ([...job.prompt].length > maximumLength) return `Queued prompt exceeds ${maximumLength} characters.`
-  const placementMessage = validateQueuedPlacement(job)
+  const placementMessage = validatePlacement(job.placement)
   if (placementMessage !== undefined) return placementMessage
   return validateQueuedCommand(job)
 }
@@ -522,8 +401,6 @@ const validateQueuedCommand = (job: QueuedGuideJob): string | undefined => {
     if (job.privatePrompt && job.goalExecution !== undefined) {
       return "Private prompt delivery does not support goal execution."
     }
-    const legacy = legacyFirstmateQueuedContext(profile, job.guideContext)
-    if (legacy !== undefined) validateLegacyFirstmateArtifact(`native:firstmate/${profile.profile}`, job.prompt, legacy)
     const built = job.privatePrompt
       ? { command: buildGuideLaunchCommand(profile).command, promptDelivery: "agent" }
       : buildHerdrGuideLaunch(profile, job.prompt, job.goalExecution)
@@ -543,8 +420,6 @@ const allocationDetail = (placement: JobPlacement): string => {
   if (placement.kind === "current-workspace-pane") return `Splitting a pane (${placement.direction})`
   if (placement.kind === "new-tab") return "Creating a new tab"
   if (placement.kind === "new-worktree") return `Creating worktree ${placement.branch}`
-  if (placement.kind === "existing-fleet") return "Using the existing owned fleet"
-  if (placement.kind === "current-terminal") return "Preparing the current-terminal handoff"
   return `Opening worktree ${placement.path}`
 }
 
@@ -588,12 +463,6 @@ const collidingEntryMessage = (
   const branch = job.placement.branch.trim()
   const previous = seenBranches.get(branch)
   if (previous === undefined) return undefined
-  if (
-    job.profile.surface === "native" && previous.profile.surface === "native" &&
-    isFirstmateBatchJob(job) && isFirstmateBatchJob(previous) &&
-    job.profile.launcher === "firstmate" && previous.profile.launcher === "firstmate" &&
-    sameFirstmateJobInstance(job, previous)
-  ) return undefined
   return `Two queued jobs would both create branch ${branch}.`
 }
 
@@ -635,15 +504,11 @@ const jobAllocationContext = (context: GuideBatchContext, job: QueuedGuideJob): 
     ...(job.primaryCheckoutPath === undefined ? {} : { primaryCheckoutPath: job.primaryCheckoutPath }),
   })
 
-/** Resolves only Herdr placements. Inbox delivery does not allocate a pane here. */
 const allocateJob = async (
   runner: CommandRunner,
   context: HerdrBatchContext,
   placement: JobPlacement,
 ): Promise<{ readonly paneId: string; readonly cwd: string; readonly workspaceId: string }> => {
-  if (placement.kind === "existing-fleet" || placement.kind === "current-terminal") {
-    throw new Error("This Firstmate placement does not allocate a Herdr destination.")
-  }
   if (placement.kind === "current-workspace-pane") {
     const paneId = await splitHerdrPane(runner, {
       anchorPaneId: context.callerPaneId,
@@ -759,7 +624,7 @@ const writeStartedJob = (
 }
 
 const writeFailedJob = (
-  entry: Exclude<GuideBatchEntryResult, { readonly status: "launched" | "needs-input" | "accepted" }>,
+  entry: Exclude<GuideBatchEntryResult, { readonly status: "launched" | "needs-input" }>,
   write: (text: string) => void,
 ): void => {
   write(`${entry.job.id}. ${entry.job.profile.profile} (${describeJobPlacement(entry.job.placement)}): ${entry.stage} failed: ${entry.message}\n`)
@@ -773,41 +638,9 @@ const writeFailedJob = (
   }
 }
 
-const writeAcceptedSummary = (
-  entry: Extract<GuideBatchEntryResult, { status: "accepted" }>,
-  identity: string,
-  write: (text: string) => void,
-): void => {
-  write(
-    `${identity}: accepted request ${entry.request.requestId}; note ${entry.receipt.noteId} (${entry.receipt.state}); ` +
-    `announcement ${entry.receipt.announcement}; supervisor ${entry.supervisor}` +
-    `${entry.paneId === undefined ? "" : ` in pane ${entry.paneId}`}\n`,
-  )
-  write(`Fleet status: ${firstmateSupervisorStatusText(entry.supervisor)}.\n`)
-  write("Acceptance does not confirm dispatch or task completion.\n")
-  if (entry.receipt.announcement === "failed") write(`Announcement failed: ${entry.receipt.error?.message ?? "The supervisor was not notified."}\n`)
-  if (entry.startupError !== undefined) write(`Supervisor startup/status: ${entry.startupError}\n`)
-}
-
 const writeBatchEntrySummary = (entry: GuideBatchEntryResult, write: (text: string) => void): void => {
-  const profile = entry.job.profile
-  const identity = `${entry.job.id}. ${profile?.surface === "native" && profile.firstmateInstance !== undefined
-    ? firstmateInstanceLabel(profile) : profile?.profile ?? "invalid profile"}`
-  if (entry.status === "launched" || entry.status === "needs-input") {
-    writeStartedJob(entry, write)
-  } else if (entry.status === "accepted") {
-    writeAcceptedSummary(entry, identity, write)
-  } else if (entry.status === "submission-unknown" || entry.status === "submission-rejected") {
-    write(`${identity}: ${entry.status} for request ${entry.request.requestId}: ${entry.message}\n`)
-    if (entry.status === "submission-unknown") write("reconcile the same request ID and payload; do not paste or submit a new ID.\n")
-  } else if (isFirstmateBatchJob(entry.job)) {
-    write(
-      `${identity} (${describeJobPlacement(entry.job.placement)}): ${entry.status}` +
-      `${entry.job.firstmate == null ? "" : `; request ${entry.job.firstmate.requestId}`}: ${entry.message}\n`,
-    )
-  } else {
-    writeFailedJob(entry, write)
-  }
+  if (entry.status === "launched" || entry.status === "needs-input") writeStartedJob(entry, write)
+  else writeFailedJob(entry, write)
 }
 
 /** Prints the per-entry outcome. The interactive guide prints this after Ink exits. */
@@ -816,31 +649,20 @@ export const writeGuideBatchSummary = (result: GuideBatchExecutionResult, write:
   for (const entry of result.entries) writeBatchEntrySummary(entry, write)
 }
 
-export const guideBatchExitCode = (result: GuideBatchExecutionResult): number => {
-  try {
-    const handoff = result.firstmateTerminalHandoff
-    const readyRequests = new Set(handoff === undefined
-      ? []
-      : validateFirstmateTerminalHandoff(handoff, result.entries).requestIds)
-    return result.entries.every((entry) =>
-      (entry.status === "launched" || entry.status === "needs-input") ||
-      (entry.status === "accepted" && (entry.supervisor === "running" || readyRequests.has(entry.request.requestId)) &&
-        entry.startupError === undefined && entry.receipt.announcement !== "failed")) ? (result.entries.some((entry) => entry.status === "needs-input") ? 2 : 0) : 1
-  } catch {
-    return 1
-  }
-}
+export const guideBatchExitCode = (result: GuideBatchExecutionResult): number =>
+  result.entries.every((entry) => entry.status === "launched" || entry.status === "needs-input")
+    ? (result.entries.some((entry) => entry.status === "needs-input") ? 2 : 0) : 1
 
 const executionValidationMessage = (
   job: QueuedGuideJob,
   context: GuideBatchContext,
   services: GuideBatchExecutionServices,
 ): string | undefined => {
-  if (job.privatePrompt && !isFirstmateBatchJob(job) && services.launchPrivate === undefined) {
+  if (job.privatePrompt && services.launchPrivate === undefined) {
     return "Private prompt delivery is unavailable."
   }
   const message = validateQueuedJob(job)
-  if (message !== undefined || job.placement.kind === "existing-fleet" || job.placement.kind === "current-terminal") return message
+  if (message !== undefined) return message
   try {
     const allocationContext = jobAllocationContext(context, job)
     if (job.placement.kind === "new-worktree" || job.placement.kind === "existing-worktree") requirePrimaryCheckout(allocationContext)
@@ -848,57 +670,6 @@ const executionValidationMessage = (
   } catch (error) {
     return describeError(error)
   }
-}
-
-const registerFirstmateGroup = (groups: Map<string, FirstmateBatchItem[]>, item: FirstmateBatchItem): boolean => {
-  const { job } = item
-  if (!isFirstmateBatchJob(job)) return false
-  let key = `invalid:${job.profile?.profile}`
-  try {
-    key = firstmateJobInstanceKey(job) ?? key
-  } catch {
-    // Structural validation reports malformed references before any journal is opened.
-  }
-  const group = groups.get(key) ?? []
-  group.push(item)
-  groups.set(key, group)
-  return true
-}
-
-const duplicateRequestMessage = (
-  job: QueuedGuideJob,
-  index: number,
-  jobs: ReadonlyArray<QueuedGuideJob>,
-  seen: Map<string, number>,
-  entries: Array<GuideBatchEntryResult | undefined>,
-): string | undefined => {
-  if (job.firstmate == null) return undefined
-  const previous = seen.get(job.firstmate.requestId)
-  if (previous === undefined) {
-    seen.set(job.firstmate.requestId, index)
-    return undefined
-  }
-  const message = `Firstmate request ID ${job.firstmate.requestId} is duplicated in the queue.`
-  entries[previous] = { job: jobs[previous]!, status: "invalid", stage: "validation", message }
-  return message
-}
-
-const rejectConflictingTerminalGroups = (
-  groups: ReadonlyMap<string, ReadonlyArray<FirstmateBatchItem>>,
-  entries: Array<GuideBatchEntryResult | undefined>,
-  services: GuideBatchExecutionServices,
-): boolean => {
-  const claimants = [...groups.values()].filter((items) =>
-    items.some(({ job }) => job.placement?.kind === "current-terminal"))
-  if (claimants.length < 2) return false
-  const message = "Different Firstmate fleets cannot share the current terminal. Choose one fleet before saving requests."
-  for (const items of claimants) {
-    for (const { job, index } of items) {
-      entries[index] = { job, status: "invalid", stage: "validation", message }
-      report(services, job.id, "failed", message)
-    }
-  }
-  return true
 }
 
 const checkAllocatedGoalReadiness = async (
@@ -912,30 +683,6 @@ const checkAllocatedGoalReadiness = async (
   )
   if (readiness.kind === ProfileReadinessKind.Blocked) {
     throw new ProfilePreflightError(`${readiness.summary}. ${readiness.diagnostic}`)
-  }
-}
-
-const rejectConflictingLegacyGroups = (
-  groups: ReadonlyMap<string, ReadonlyArray<FirstmateBatchItem>>,
-  entries: Array<GuideBatchEntryResult | undefined>,
-): void => {
-  const legacy = new Map<string, ReadonlyArray<FirstmateBatchItem>>()
-  for (const items of groups.values()) {
-    const { job } = items[0]!
-    if (job.profile.surface !== "native" || job.firstmate?.expectedFleet === undefined) continue
-    try {
-      const reference = selectedFirstmateInstance(job.profile, job.firstmate.expectedFleet)
-      if (reference.mode !== "legacy") continue
-      const previous = legacy.get(reference.profile)
-      if (previous !== undefined) {
-        const message = "One legacy Firstmate profile cannot address different confirmed fleet instances."
-        for (const { job, index } of [...previous, ...items]) {
-          entries[index] = { job, status: "invalid", stage: "validation", message }
-        }
-      } else legacy.set(reference.profile, items)
-    } catch {
-      // The normal structural validator reports invalid selections.
-    }
   }
 }
 
@@ -955,57 +702,17 @@ export const executeGuideBatch = async (
 
   const entries: Array<GuideBatchEntryResult | undefined> = new Array(batch.jobs.length)
   const structurallyValid: Array<LaunchableJob> = []
-  const firstmateGroups = new Map<string, FirstmateBatchItem[]>()
   const seenIds = new Set<number>()
   const seenBranches = new Map<string, QueuedGuideJob>()
-  const seenRequestIds = new Map<string, number>()
   batch.jobs.forEach((job, index) => {
-    const firstmate = registerFirstmateGroup(firstmateGroups, { job, index })
-    const duplicate = duplicateRequestMessage(job, index, batch.jobs, seenRequestIds, entries)
-    const message = duplicate ??
-      executionValidationMessage(job, batch.context, services) ??
+    const message = executionValidationMessage(job, batch.context, services) ??
       collidingEntryMessage(job, seenIds, seenBranches)
     rememberEntry(job, seenIds, seenBranches)
-    if (message === undefined) {
-      if (!firstmate) structurallyValid.push({ index, job })
-    }
+    if (message === undefined) structurallyValid.push({ index, job })
     else {
       entries[index] = { job, status: "invalid", stage: "validation", message }
       report(services, job.id, "failed", message)
     }
-  })
-
-  if (rejectConflictingTerminalGroups(firstmateGroups, entries, services)) return {
-    exitCode: 1,
-    result: { entries: batch.jobs.map((job, index) => entries[index] ?? {
-      job, status: "invalid", stage: "validation",
-      message: "The batch has multiple current-terminal fleet claimants. Nothing was saved or launched.",
-    }) },
-  }
-  rejectConflictingLegacyGroups(firstmateGroups, entries)
-  const journalFor = services.firstmateJournalFor ?? createFirstmateJournalFactory()
-  const firstmateExecutions = [...firstmateGroups.values()].map(async (items) => {
-    const invalid = items.map(({ index }) => entries[index]).find((entry) => entry !== undefined)
-    if (invalid !== undefined && "message" in invalid) {
-      for (const { index, job } of items) {
-        entries[index] ??= { job, status: "invalid", stage: "validation", message: `Fleet group validation failed: ${invalid.message}` }
-      }
-      return
-    }
-    const outcomes = await executeFirstmateBatchGroup(items, batch.context, services, {
-      journal: () => {
-        const job = items[0]!.job
-        if (job.profile.surface !== "native" || job.firstmate?.expectedFleet === undefined) {
-          throw new Error("A fleet journal requires a confirmed native instance.")
-        }
-        const reference = selectedFirstmateInstance(job.profile, job.firstmate.expectedFleet)
-        return reference.mode === "legacy" && services.firstmateJournal !== undefined
-          ? scopeFirstmateJournal(reference, services.firstmateJournal) : journalFor(reference)
-      },
-      allocate: (job) => allocateJob(services.runner, jobAllocationContext(batch.context, job), job.placement),
-    })
-    items.forEach(({ index }, offset) => { entries[index] = outcomes.entries[offset] })
-    return outcomes.firstmateTerminalHandoff
   })
 
   const launchable = await checkReadiness(services, batch.context, structurallyValid, entries)
@@ -1056,10 +763,8 @@ export const executeGuideBatch = async (
     }
     report(services, item.job.id, "failed", message)
   })
-  const firstmateTerminalHandoff = (await Promise.all(firstmateExecutions)).find((handoff) => handoff !== undefined)
 
   const result: GuideBatchExecutionResult = {
-    ...(firstmateTerminalHandoff === undefined ? {} : { firstmateTerminalHandoff }),
     entries: entries.map((entry, index) => {
       if (entry !== undefined) return entry
       const job = batch.jobs[index]

@@ -51,23 +51,6 @@ describe("buildHarnessVersionCommand", () => {
     })
   })
 
-  it("passes the profile to Firstmate because its installed receipt is profile-scoped", () => {
-    expect(
-      buildHarnessVersionCommand(
-        nativeEntry({
-          ref: "native:firstmate/pstack-workers",
-          launcher: "firstmate",
-          harness: "firstmate",
-          name: "pstack-workers",
-          commandPath: "/usr/local/bin/trx",
-        }),
-      ),
-    ).toEqual({
-      executable: "/usr/local/bin/trx",
-      args: ["harness-version", "firstmate", "pstack-workers"],
-    })
-  })
-
 })
 
 describe("parseHarnessVersionOutput", () => {
@@ -191,39 +174,21 @@ describe("operation and release identities", () => {
 })
 
 describe("reconcileHarnessVersionResults", () => {
-  it("never substitutes another Firstmate profile's catalog pin for an unavailable target", () => {
-    const first = nativeEntry({ ref: "native:firstmate/default", launcher: "firstmate", harness: "firstmate", name: "default" })
-    const second = nativeEntry({
-      ref: "native:firstmate/pstack-workers",
-      launcher: "firstmate",
-      harness: "firstmate",
-      name: "pstack-workers",
-    })
-    const unavailable: AdminHarnessVersionResult = {
-      installed: { kind: "known", version: "b".repeat(40) },
-      latest: { kind: "failed", diagnostic: "catalog pin unavailable" },
-    }
-    const raw = new Map<string, AdminHarnessVersionResult>([
-      ["native:firstmate:default", known("a".repeat(40), "c".repeat(40))],
-      ["native:firstmate:pstack-workers", unavailable],
-    ])
-
+  it("shares a known latest across rows of one Native release without copying installed", () => {
+    const first = nativeEntry({ ref: "native:copilot/default", launcher: "copilot", harness: "copilot", name: "default" })
+    const second = nativeEntry({ ref: "native:copilot/hve", launcher: "copilot", harness: "copilot", name: "hve" })
+    expect(harnessVersionReleaseKeyFor(first)).toBe("copilot-cli")
+    const raw = new Map<string, AdminHarnessVersionResult>([["native:copilot", known("1.0.82", "1.0.90")]])
     const results = reconcileHarnessVersionResults([first, second], (key) => raw.get(key))
-    expect(results.get(first.ref)).toEqual(known("a".repeat(40), "c".repeat(40)))
-    expect(results.get(second.ref)).toEqual(unavailable)
+    expect(results.get(first.ref)).toEqual(known("1.0.82", "1.0.90"))
+    expect(results.get(second.ref)).toEqual(known("1.0.82", "1.0.90"))
   })
-
 })
 
 describe("harnessVersionEntriesForForceResync", () => {
-  it("keeps Firstmate force refresh profile-scoped", () => {
-    const first = nativeEntry({ ref: "native:firstmate/default", launcher: "firstmate", harness: "firstmate", name: "default" })
-    const second = nativeEntry({
-      ref: "native:firstmate/pstack-workers",
-      launcher: "firstmate",
-      harness: "firstmate",
-      name: "pstack-workers",
-    })
-    expect(harnessVersionEntriesForForceResync(first, [first, second])).toEqual([first])
+  it("refreshes every row that shares a Native release", () => {
+    const first = nativeEntry({ ref: "native:copilot/default", launcher: "copilot", harness: "copilot", name: "default" })
+    const second = nativeEntry({ ref: "native:copilot/hve", launcher: "copilot", harness: "copilot", name: "hve" })
+    expect(harnessVersionEntriesForForceResync(first, [first, second, nativeEntry()])).toEqual([first, second])
   })
 })

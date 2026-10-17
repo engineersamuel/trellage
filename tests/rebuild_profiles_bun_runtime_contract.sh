@@ -123,7 +123,7 @@ printf '#!/bin/sh\nexit 0\n' >"$workspace/prototypes/trellage-router/install.sh"
 printf '#!/bin/sh\nexit 0\n' >"$native_bin/trx"
 chmod +x "$workspace/prototypes/trellage-router/install.sh" "$native_bin/trx"
 for record in 'cdx codex v2' 'cpx copilot v1' 'agx agency v1' 'cldx claude v1' \
-  'fmx firstmate v1' 'jcx jcode v1' 'omp omp v2' 'picx picx v1' 'prx prime v1'; do
+  'jcx jcode v1' 'omp omp v2' 'picx picx v1' 'prx prime v1'; do
   read -r backend package version <<<"$record"
   package_root="$workspace/prototypes/trellage-$package-profiles"
   runtime_root="$native_home/.local/share/trellage/$backend"

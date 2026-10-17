@@ -63,17 +63,16 @@ describe("guide command request resolution", () => {
     ["omitted", undefined],
     ["different", "native:copilot/awesome"],
   ] as const)("uses the CLI profile for workflow selection when the stdin profile is %s", (_name, profile) => {
-    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:firstmate/default"])
+    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:claude/firstmate"])
     const request = {
       schemaVersion: 1,
       intent: "Review fleet status.",
-      workflowId: "review-fleet-status",
-      projectTarget: null,
+      workflowId: "fleet-status",
       originalIntent: "  Keep the exact fleet status request.  ",
     }
     expect(resolveGuideRequest(args, JSON.stringify({ ...request, profile }), {}).request).toEqual({
       ...request,
-      profile: "native:firstmate/default",
+      profile: "native:claude/firstmate",
     })
   })
 
@@ -82,17 +81,17 @@ describe("guide command request resolution", () => {
     expect(() => resolveGuideRequest(args, JSON.stringify({
       schemaVersion: 1,
       intent: "Review fleet status.",
-      workflowId: "review-fleet-status",
+      workflowId: "fleet-status",
     }), {})).toThrow("requires a selected profile")
   })
 
   it("still validates an invalid stdin profile when CLI overrides it", () => {
-    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:firstmate/default"])
+    const args = parseGuideHeadlessArgv(["--json", "--profile", "native:claude/firstmate"])
     expect(() => resolveGuideRequest(args, JSON.stringify({
       schemaVersion: 1,
       intent: "Review fleet status.",
       profile: 42,
-      workflowId: "review-fleet-status",
+      workflowId: "fleet-status",
     }), {})).toThrow("request.profile")
   })
 

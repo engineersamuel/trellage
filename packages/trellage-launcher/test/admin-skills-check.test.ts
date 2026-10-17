@@ -83,7 +83,7 @@ describe("read-only Admin skills discovery", () => {
     },
   )
 
-  it("combines all Firstmate target reports and keeps errors explicit", async () => {
+  it("combines all target reports and keeps errors explicit", async () => {
     const run = vi.fn<CommandRunner["run"]>(async (_command, args) =>
       output(args[0] === "--help" ? "skills-check PROFILE" : '{"kind":"current"}\n{"kind":"available"}'),
     )

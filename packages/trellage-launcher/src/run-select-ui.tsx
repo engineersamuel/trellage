@@ -1,4 +1,4 @@
-import { runSelectorProfiles } from "./run-select-state.ts"
+import { runSelectorProfiles, runSelectorVisibleProfiles } from "./run-select-state.ts"
 import React, { useReducer } from "react"
 import { Box, Text, useApp, useInput } from "ink"
 import { useTheme } from "./termcn/use-theme.ts"
@@ -144,15 +144,17 @@ export const RunSelector = ({ catalog, initial, restoredFrom, onDone }: RunSelec
         </Row>
         <Row active={active("profiles")} label="Profiles">
           <Box flexDirection="column">
-            {runSelectorProfiles(catalog, state.harnessIndex).length === 0 ? <Text dimColor>none defined in config.toml (clean base harness)</Text> : null}
-            {runSelectorProfiles(catalog, state.harnessIndex).map((profile, index) => (
+            {runSelectorVisibleProfiles(catalog, state.harnessIndex).length === 0 ? <Text dimColor>none defined in config.toml (clean base harness)</Text> : null}
+            {runSelectorVisibleProfiles(catalog, state.harnessIndex).map(({ profile, enabled }, index) => (
               <Text
                 key={profile}
                 inverse={active("profiles") && index === state.profileCursor}
                 bold={active("profiles") && index === state.profileCursor}
+                dimColor={!enabled}
                 {...(!(active("profiles") && index === state.profileCursor) && state.profiles.includes(profile) ? { color: theme.colors.selection } : {})}
               >
                 [{state.profiles.includes(profile) ? "x" : " "}] {profile}
+                {enabled ? "" : ` (${catalog.profileHarnesses?.[profile]?.join(", ")} only)`}
               </Text>
             ))}
           </Box>

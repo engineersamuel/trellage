@@ -47,7 +47,6 @@ trellage-agency-profiles agx trellage-azure agency azure
 trellage-claude-profiles cldx default claude default
 trellage-codex-profiles cdx pstack codex PROFILE
 trellage-copilot-profiles cpx hve copilot hve
-trellage-firstmate-profiles fmx default firstmate default
 trellage-jcode-profiles jcx default jcode default
 trellage-omp-profiles omp copilot omp default
 trellage-picx-profiles picx default pi default

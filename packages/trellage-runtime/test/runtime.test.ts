@@ -393,7 +393,7 @@ function sourceFixture(withShellRunner = false) {
   const home = path.join(parent, "home")
   mkdirSync(home)
   mkdirSync(root)
-  for (const directory of ["bin", "packages", "prototypes", "scripts", "profile-guides", "profiles"]) {
+  for (const directory of ["bin", "packages", "prototypes", "scripts", "profile-guides"]) {
     mkdirSync(path.join(root, directory))
   }
   write(
@@ -887,24 +887,20 @@ describe("Owned source installation", () => {
   test("copies declared hidden source assets but not local environment values", () => {
     const { root, destination, home } = sourceFixture()
     write(root, ".agents/rules.md", "source rules")
-    write(root, "profiles/test/profile.toml", 'name = "test"\n')
     write(root, "prototypes/example/.env.schema", "EXAMPLE=\n")
     write(root, "prototypes/example/.env.local", "EXAMPLE=local-fixture\n")
     expect(run("install", root, destination, { HOME: home }).status).toBe(0)
     expect(readFileSync(path.join(destination, ".agents/rules.md"), "utf8")).toBe("source rules")
-    expect(readFileSync(path.join(destination, "profiles/test/profile.toml"), "utf8")).toBe('name = "test"\n')
     expect(readFileSync(path.join(destination, "prototypes/example/.env.schema"), "utf8")).toBe("EXAMPLE=\n")
     expect(existsSync(path.join(destination, "prototypes/example/.env.local"))).toBe(false)
   })
 
-  test.each(["floating", "floating-firstmate", "environment"] as const)("migrates only the exact legacy %s layout", (layout) => {
-    const legacy = layout === "floating-firstmate" ? "floating" : layout
+  test.each(["floating", "environment"] as const)("migrates only the exact legacy %s layout", (legacy) => {
     const { root, destination, home } = sourceFixture()
     mkdirSync(destination)
     if (legacy === "floating") {
       write(destination, "floating-skills.mjs", "legacy helper")
       write(destination, "skills.json", "{}")
-      if (layout === "floating-firstmate") write(destination, "fmx-registry.py", "# legacy shared writer guard\n")
     } else {
       write(destination, ".managed-by-trellage", "trellage-native-environment-runtime-v1\n")
       write(destination, "native-environment.mjs", "legacy helper")

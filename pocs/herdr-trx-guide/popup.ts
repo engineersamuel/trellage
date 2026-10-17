@@ -6,7 +6,6 @@ import { pathToFileURL } from "node:url"
 import { bunExecutable } from "@trellage/runtime"
 
 import { parsePopupInvocation } from "./lib/context.ts"
-import { readFirstmateLaunchOrigin } from "./lib/firstmate-origin.ts"
 import {
   consumeInvocation,
   removeGuideIntent,
@@ -65,15 +64,8 @@ const registerIntentSignalCleanup = (stateDir, intentPath) => {
   return dispose
 }
 
-const popupLaunchOrigin = (invocation) => {
-  if (invocation.kind === "optimize") return undefined
-  if (invocation.capture?.agent !== undefined && invocation.capture.agent !== "claude") return undefined
-  return readFirstmateLaunchOrigin(invocation.source, { expectedSessionId: invocation.capture?.sessionId })
-}
-
 export const runGuide = async (root, invocation) => {
   const optimize = invocation.kind === "optimize"
-  const launchOrigin = await popupLaunchOrigin(invocation)
   const stateDir = resolvePluginStateDirectory()
   const intentPath = optimize ? undefined : await writeGuideIntent(stateDir, invocation.answer)
   const disposeSignalCleanup = intentPath === undefined ? () => undefined : registerIntentSignalCleanup(stateDir, intentPath)
@@ -88,14 +80,12 @@ export const runGuide = async (root, invocation) => {
       paneId: invocation.source.paneId,
       cwd: invocation.source.cwd,
       ...(invocation.capture === undefined ? {} : { capture: invocation.capture }),
-      ...(launchOrigin === undefined ? {} : { launchOrigin }),
     }),
   }
   if (typeof process.env.HERDR_BIN_PATH === "string" && path.isAbsolute(process.env.HERDR_BIN_PATH)) {
     env.PATH = `${path.dirname(process.env.HERDR_BIN_PATH)}${path.delimiter}${env.PATH ?? ""}`
   }
   delete env.HERDR_PANE_ID
-  delete env.FMX_LAUNCH_PROVENANCE_JSON
   if (optimize) delete env.TRELLAGE_GUIDE_HERDR_INTENT_FILE
   try {
     return await launchGuide(root, env, optimize)

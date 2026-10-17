@@ -98,34 +98,6 @@
       ],
       "skillPrefix": "/justify "
     },
-    "firstmate": {
-      "readyPatterns": [
-        "\u276f"
-      ],
-      "blockedPatterns": [
-        "Do you trust the files in this folder",
-        "Choose the text style"
-      ],
-      "launchArgs": [
-        "--session-id",
-        "{sessionId}"
-      ],
-      "exitSteps": [
-        {
-          "data": "\u0003",
-          "delayMilliseconds": 300
-        },
-        {
-          "data": "\u0003",
-          "delayMilliseconds": 0
-        }
-      ],
-      "allowedExitCodes": [
-        0,
-        130
-      ],
-      "skillPrefix": "/justify "
-    },
     "fx": {
       "readyPatterns": [
         "\u2503"
@@ -325,7 +297,6 @@
     "codex": "codex",
     "claude": "claude",
     "copilot": "copilot",
-    "firstmate": "firstmate",
     "fx": "fx",
     "jcode": "jcode",
     "omp": "omp",

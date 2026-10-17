@@ -21,7 +21,6 @@ import {
 import { parseConversationSnapshot } from "./conversation-validation.ts"
 import type { captureSandboxConversation } from "./sandbox-bridge.ts"
 import { isRecord, type JsonRecord } from "./records.ts"
-import type { FirstmateInstanceControlContextV1 } from "@trellage/guide-core"
 
 export interface FocusedConversationContext {
   readonly workspaceId: string
@@ -239,15 +238,6 @@ export const bindFocusedConversation = async (
   context: FocusedConversationContext,
   dependencies: FocusedCaptureDependencies = {},
 ): Promise<FocusedConversationBinding> => (await bindFocusedSource(context, dependencies)).binding
-
-export const bindFocusedConversationForGuide = async (
-  context: FocusedConversationContext,
-  dependencies: FocusedCaptureDependencies = {},
-): Promise<{ readonly binding: FocusedConversationBinding; readonly launchOrigin?: FirstmateInstanceControlContextV1 }> => {
-  const bound = await bindFocusedSource(context, dependencies)
-  const launchOrigin = bound.surface === ConversationSurface.Sandbox ? undefined : bound.identity?.launchOrigin
-  return { binding: bound.binding, ...(launchOrigin === undefined ? {} : { launchOrigin }) }
-}
 
 const snapshotSource = (binding: FocusedConversationBinding, sessionId: string): ConversationSource => {
   const { transcriptPath: _path, ...source } = binding

@@ -81,14 +81,14 @@ const fixtureCatalog = () =>
 
 describe("nativeLauncherCapabilities", () => {
   it("marks lifecycle-managed native launchers, including cdx, as supporting doctor/inventory", () => {
-    for (const launcher of ["agency", "copilot", "codex", "claude", "firstmate", "fx", "jcode", "omp", "pi", "prime"]) {
+    for (const launcher of ["agency", "copilot", "codex", "claude", "fx", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher)).toMatchObject({ doctorSupported: true, inventorySupported: true })
     }
     expect(nativeLauncherCapabilities("headlong")).toMatchObject({ doctorSupported: false, inventorySupported: false })
   })
 
   it("marks lifecycle-managed native launchers except agx and cldx as supporting update --check", () => {
-    for (const launcher of ["copilot", "codex", "firstmate", "fx", "jcode", "omp", "pi", "prime"]) {
+    for (const launcher of ["copilot", "codex", "fx", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher).updateCheckSupported).toBe(true)
     }
     expect(nativeLauncherCapabilities("agency").updateCheckSupported).toBe(false)
@@ -96,8 +96,7 @@ describe("nativeLauncherCapabilities", () => {
     expect(nativeLauncherCapabilities("headlong").updateCheckSupported).toBe(false)
   })
 
-  it("supports Firstmate and Agency harness versions but not Headlong lifecycle checks", () => {
-    expect(nativeLauncherCapabilities("firstmate").harnessVersionSupported).toBe(true)
+  it("supports Agency harness versions but not Headlong lifecycle checks", () => {
     expect(nativeLauncherCapabilities("agency").harnessVersionSupported).toBe(true)
     expect(nativeLauncherCapabilities("headlong").harnessVersionSupported).toBe(false)
   })
