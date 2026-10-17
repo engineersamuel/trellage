@@ -500,38 +500,6 @@ test("matching skill files cannot prove baked instruction currency without evide
   assert.deepEqual(await compareBakedSkills(fixture.cache, baked), { kind: "current" })
 })
 
-test("Sandbox skills-check and help bypass dependency bootstrap and environment setup", async (context) => {
-  const fixture = await fixtureFor(
-    context,
-    launchers.find(({ alias }) => alias === "cpx"),
-  )
-  const launcher = path.join(fixture.workspace, "prototypes/trellage/trellage")
-  await copy(path.join(repository, "prototypes/trellage/trellage"), launcher)
-  await write(
-    path.join(fixture.workspace, "scripts/bootstrap-development-dependencies.sh"),
-    "#!/bin/sh\nexit 97\n",
-    0o755,
-  )
-  await write(
-    path.join(fixture.workspace, "packages/trellage-cli/src/cli.ts"),
-    'if (process.argv[2] !== "skills-check") process.exit(98); console.log(JSON.stringify({kind:"current"}))\n',
-  )
-  writeReadiness(fixture.workspace)
-  const options: SpawnSyncOptionsWithStringEncoding = {
-    cwd: fixture.root,
-    env: fixture.env,
-    encoding: "utf8",
-    timeout: 10000,
-  }
-  const help = spawnSync(launcher, ["--help"], options)
-  succeeds(help)
-  assert.match(help.stdout, /skills-check PROFILE/)
-  const result = spawnSync(launcher, ["skills-check", "example"], options)
-  succeeds(result)
-  assert.deepEqual(JSON.parse(result.stdout), { kind: "current" })
-  await noExternalCalls(fixture)
-})
-
 const installLocalSkillRepository = async (fixture: Fixture, names: string[]) => {
   const source = path.join(fixture.root, "upstream")
   const git = commandPath("git")

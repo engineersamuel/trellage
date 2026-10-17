@@ -307,7 +307,7 @@ The non-interactive API is side-effect-free:
 ```sh
 trx guide --intent "Write a post about AI agents" --json
 trx guide --intent "Write a post about AI agents" \
-  --profile sandbox:claude-social-media --json
+  --profile native:claude/social-media --json
 printf '%s' \
   '{"schemaVersion":1,"intent":"Write a post about AI agents"}' \
   | trx guide --json

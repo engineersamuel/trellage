@@ -1,4 +1,3 @@
-import path from "node:path"
 import {
   loadProfileGuide,
   canonicalProfileRef,
@@ -7,9 +6,7 @@ import {
   type ProfileGuideIdentity,
   type ProfileGuideV1,
 } from "@trellage/guide-core"
-import type { CombinedGuideCatalog, NativeGuideCatalogEntry, SandboxGuideCatalogEntry } from "./guide-catalog.ts"
-
-const controls = /[\u0000-\u001f\u007f-\u009f]/u
+import type { CombinedGuideCatalog, NativeGuideCatalogEntry } from "./guide-catalog.ts"
 
 export class SelectedGuideError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -24,32 +21,10 @@ export interface SelectedGuideDocument {
   readonly body: string
 }
 
-type SelectedGuideSource =
-  | {
-      readonly identity: Extract<ProfileGuideIdentity, { readonly surface: "native" }>
-      readonly guideRoot: string
-      readonly projectedGuide: ProfileGuideV1
-    }
-  | {
-      readonly identity: Extract<ProfileGuideIdentity, { readonly surface: "sandbox" }>
-      readonly guideRoot: string
-      readonly projectedGuide: ProfileGuideV1
-    }
-
-export const sandboxGuideRootFromProfilePath = (profilePath: string, profile: string): string => {
-  if (!path.isAbsolute(profilePath) || controls.test(profilePath)) {
-    throw new SelectedGuideError("Sandbox profile path must be an absolute path without control characters")
-  }
-  const profileDirectory = path.dirname(profilePath)
-  const profilesDirectory = path.dirname(profileDirectory)
-  if (
-    path.basename(profilePath) !== "profile.toml" ||
-    path.basename(profileDirectory) !== profile ||
-    path.basename(profilesDirectory) !== "profiles"
-  ) {
-    throw new SelectedGuideError(`Sandbox profile path does not match profiles/${profile}/profile.toml`)
-  }
-  return path.join(path.dirname(profilesDirectory), "profile-guides")
+interface SelectedGuideSource {
+  readonly identity: Extract<ProfileGuideIdentity, { readonly surface: "native" }>
+  readonly guideRoot: string
+  readonly projectedGuide: ProfileGuideV1
 }
 
 const nativeSource = (entry: NativeGuideCatalogEntry, guideRoot: string): SelectedGuideSource => ({
@@ -59,15 +34,6 @@ const nativeSource = (entry: NativeGuideCatalogEntry, guideRoot: string): Select
     profile: entry.name,
   },
   guideRoot,
-  projectedGuide: entry.guide,
-})
-
-const sandboxSource = (entry: SandboxGuideCatalogEntry): SelectedGuideSource => ({
-  identity: {
-    surface: "sandbox",
-    profile: entry.name,
-  },
-  guideRoot: sandboxGuideRootFromProfilePath(entry.path, entry.name),
   projectedGuide: entry.guide,
 })
 
@@ -86,10 +52,6 @@ const findSelectedGuideSource = (
   )
   if (native !== undefined) return nativeSource(native, guideRoot)
 
-  const sandbox = catalog.sandbox.find(
-    (entry) => profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }) === canonicalProfileRef(ref),
-  )
-  if (sandbox !== undefined) return sandboxSource(sandbox)
   throw new SelectedGuideError(`Unknown profile reference: ${ref}`)
 }
 

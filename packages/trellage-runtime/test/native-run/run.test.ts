@@ -11,10 +11,12 @@ import {
   copilotAdapter,
   fxAdapter,
   grokAdapter,
+  headlongAdapter,
   jcodeAdapter,
   ompAdapter,
   PI_EXTENSION_PACKAGES,
   piExtensionEntries,
+  primeAdapter,
   ujiAdapter,
   type LaunchInput,
 } from "../../src/native-run/adapters.ts"
@@ -38,7 +40,13 @@ afterEach(cleanupFixtures)
 const world = async (config?: string) => {
   const root = await tempRoot("run")
   const office = await createSourceRepo(root, "office")
-  await office.write({ "skills/powerpoint/SKILL.md": skillMarkdown("powerpoint") })
+  await office.write({
+    "skills/powerpoint/SKILL.md": skillMarkdown("powerpoint"),
+    "skills/i-have-adhd/SKILL.md": "---\nname: i-have-adhd\ndisable-model-invocation: true\n---\nManual output fixture.\n",
+    "plugins/sample/.claude-plugin/plugin.json": JSON.stringify({ name: "sample", description: "fixture" }),
+    "plugins/sample/commands/check.md": "# Check\n",
+    "plugins/sample/.mcp.json": JSON.stringify({ mcpServers: { fixture: { command: "fixture" } } }),
+  })
   const superpowers = await createSourceRepo(root, "superpowers")
   await superpowers.write({
     "skills/brainstorming/SKILL.md": skillMarkdown("brainstorming"),
@@ -57,6 +65,8 @@ repository = "example/superpowers"
 skills = [{ source = "office-content", names = ["powerpoint"] }]
 [native.profiles.superpowers]
 skills = [{ source = "superpowers", names = ["brainstorming", "writing-plans"] }]
+[native.profiles.headlong-test]
+skills = [{ source = "office-content", names = ["powerpoint", "i-have-adhd"] }]
 `,
     { mode: 0o600 },
   )
@@ -81,6 +91,30 @@ skills = [{ source = "superpowers", names = ["brainstorming", "writing-plans"] }
   })
   return { root, office, superpowers, paths, lines, dependencies, work }
 }
+
+const primeLaunchInput = (root: string, environment: NodeJS.ProcessEnv): LaunchInput => ({
+  resumeArgs: [],
+  layout: {
+    ownerHome: path.join(root, "owner"),
+    generationPath: path.join(root, "generation"),
+    sessionsPath: path.join(root, "sessions"),
+  },
+  plan: {
+    compositionId: "prime-fixture",
+    harness: "prime",
+    profiles: ["default"],
+    alwaysProfiles: [],
+    instructions: [],
+    skills: [],
+    plugins: [],
+    sources: [],
+    warnings: [],
+    generationId: "prime-fixture",
+  },
+  forwardedArgs: [],
+  environment,
+  workspace: root,
+})
 
 const base = { dryRun: false, allowUnprovenIsolation: false, forwardedArgs: [] as string[] }
 
@@ -109,6 +143,31 @@ test("parses harness, stacked profiles, overrides and forwarded arguments", () =
   })
 })
 
+test("Prime launch uses its managed lifecycle binary and preserves spawn diagnostics", async () => {
+  const root = await tempRoot("prime-lifecycle")
+  const lifecycle = path.join(root, ".local", "share", "trellage", "prx", "bin", "prx")
+  const marker = path.join(root, "lifecycle-args")
+  await mkdir(path.dirname(lifecycle), { recursive: true })
+  await writeFile(lifecycle, '#!/bin/sh\nprintf "%s\\n" "$@" > "$TRELLAGE_TEST_MARKER"\n', { mode: 0o755 })
+
+  const environment = {
+    HOME: root,
+    PATH: "/usr/bin:/bin",
+    TRELLAGE_TEST_MARKER: marker,
+  }
+  const input = primeLaunchInput(root, environment)
+  await expect(primeAdapter.resolveLaunch!(input, primeAdapter.launch(input))).rejects.toThrow(/unsafe Prime profile root/)
+  expect(await readFile(marker, "utf8")).toBe("setup\ndefault\n")
+
+  const missingLifecycleInput = primeLaunchInput(root, {
+    ...environment,
+    TRELLAGE_PRIME_LIFECYCLE_BIN: path.join(root, "missing-prx"),
+  })
+  await expect(
+    primeAdapter.resolveLaunch!(missingLifecycleInput, primeAdapter.launch(missingLifecycleInput)),
+  ).rejects.toThrow(/ENOENT/)
+})
+
 test("Fx uses the canonical adapter with shared host context and plan defaults", async () => {
   const { dependencies, root } = await world()
   const normal = await prepareRun({ ...base, harness: "fx", profiles: ["default"] }, dependencies())
@@ -119,6 +178,7 @@ test("Fx uses the canonical adapter with shared host context and plan defaults",
     FX_PROVIDER: "trellage-copilot-proxy",
     FX_MODEL: "gpt-6.1-sol",
   })
+
   expect(normal.launch.env.HOME).toBeUndefined()
   const planned = await prepareRun({ ...base, harness: "fx", profiles: ["default"], plan: true }, dependencies())
   expect(planned.launch.args).toEqual(["--effort", "max"])
@@ -136,6 +196,59 @@ test("Fx uses the canonical adapter with shared host context and plan defaults",
   await fxAdapter.beforeLaunch!(input)
   const settings = JSON.parse(await readFile(path.join(root, ".fx", "settings.json"), "utf8"))
   expect(settings.providers["trellage-copilot-proxy"].base_url).toBe("http://127.0.0.1:8080/v1")
+})
+
+test("Headlong uses host proxy settings and keeps manual skills outside identity registries", async () => {
+  const { dependencies, root } = await world()
+  const headlongHome = path.join(root, ".headlong")
+  const appHome = path.join(headlongHome, "app")
+  const initBinary = path.join(root, "bin", "headlong-init")
+  await mkdir(path.dirname(initBinary), { recursive: true })
+  await writeFile(
+    initBinary,
+    "#!/bin/sh\nset -eu\nmkdir -p \"$HEADLONG_APP_DIR/.identities/ada\"\n",
+    { mode: 0o755 },
+  )
+  const configured = dependencies()
+  const environment = {
+    ...configured.environment,
+    TRELLAGE_HEADLONG_HOME: headlongHome,
+    TRELLAGE_HEADLONG_APP_DIR: appHome,
+    TRELLAGE_HEADLONG_INIT_BIN: initBinary,
+    ANTHROPIC_API_KEY: "ambient-secret",
+  }
+  const result = await prepareRun(
+    { ...base, harness: "headlong", profiles: ["headlong-test"] },
+    { ...configured, environment },
+  )
+  const input: LaunchInput = {
+    resumeArgs: [],
+    layout: result.layout,
+    plan: result.plan,
+    forwardedArgs: [],
+    environment,
+    workspace: root,
+  }
+  const launch = await headlongAdapter.resolveLaunch!(input, result.launch)
+
+  expect(launch.command).toBe("ada")
+  expect(launch.env).toMatchObject({
+    HEADLONG_HOME: headlongHome,
+    HEADLONG_APP_DIR: appHome,
+    HEADLONG_UNSANDBOXED: "1",
+    ANTHROPIC_API_KEY: "trellage-local-proxy",
+    LLM_API_URL: "http://127.0.0.1:8080/v1/messages",
+    SHELLM_MODEL: "claude-sonnet-5",
+  })
+  expect(launch.env.OPENAI_API_KEY).toBeNull()
+  expect(await readlink(path.join(appHome, ".identities", "ada", "skills", "powerpoint"))).toBe(
+    path.join(headlongHome, ".trellage", "skills", "powerpoint"),
+  )
+  expect(await readFile(path.join(headlongHome, ".trellage", "skills", "i-have-adhd", "SKILL.md"), "utf8")).toContain(
+    "Manual output fixture",
+  )
+  await expect(readlink(path.join(appHome, ".identities", "ada", "skills", "i-have-adhd"))).rejects.toThrow()
+  await expect(readlink(path.join(appHome, ".identities", "ada", "kernel", "i-have-adhd"))).rejects.toThrow()
 })
 
 test("Uji scopes its config, selected skills, and session database to the profile composition", async () => {
@@ -883,9 +996,10 @@ test("a failed OMP guard admission releases its generation lease", async () => {
   }
 })
 
-test("JCode resolves its managed private mise executable", async () => {
+test.each(["override", "managed"] as const)("JCode resolves its private mise executable through %s lifecycle", async (mode) => {
   const { dependencies, root, work } = await world()
-  const lifecycle = path.join(root, "jcx")
+  const lifecycle = mode === "override" ? path.join(root, "jcx") : path.join(root, ".local/share/trellage/jcx/bin/jcx")
+  await mkdir(path.dirname(lifecycle), { recursive: true })
   const managed = path.join(root, "managed-jcode")
   await writeFile(managed, "#!/bin/sh\n", { mode: 0o755 })
   await writeFile(
@@ -906,10 +1020,19 @@ printf '%s\\n' ${JSON.stringify(managed)}
     model: "gpt-5.6-sol",
     effort: "medium",
     forwardedArgs: [],
-    environment: { HOME: root, PATH: "/usr/bin:/bin", TRELLAGE_JCODE_LIFECYCLE_BIN: lifecycle },
+    environment: {
+      HOME: root,
+      PATH: "/usr/bin:/bin",
+      TRELLAGE_TRX_NATIVE_SOURCE: "1",
+      ...(mode === "override" ? { TRELLAGE_JCODE_LIFECYCLE_BIN: lifecycle } : {}),
+    },
     workspace: work,
   }
   expect((await jcodeAdapter.resolveLaunch!(input, prepared.launch)).command).toBe(managed)
+  await writeFile(lifecycle, "#!/bin/sh\nprintf 'missing fixture receipt\\n' >&2\nexit 1\n", { mode: 0o755 })
+  await expect(jcodeAdapter.resolveLaunch!(input, prepared.launch)).rejects.toThrow(
+    "JCode admission failed: missing fixture receipt",
+  )
 })
 
 test("Claude admission loads the validated lifecycle plugin directory", async () => {
@@ -940,6 +1063,33 @@ printf '{"pluginDir":%s}\\n' ${JSON.stringify(JSON.stringify(plugin))}
   }
   const launch = await claudeAdapter.resolveLaunch!(input, prepared.launch)
   expect(launch.args.slice(-2)).toEqual(["--plugin-dir", plugin])
+})
+
+test("Native Claude stages a complete selected plugin with explicit MCP and option policy", async () => {
+  const { dependencies, root } = await world(`schema_version = 1
+[native.sources.office-content]
+repository = "example/office"
+[native.profiles.blog]
+plugins = [{
+  source = "office-content",
+  harness = "claude",
+  path = "plugins/sample",
+  name = "sample",
+  plugin = "sample",
+  marketplace = "fixture-market",
+  includeMcp = false,
+  settings = { mode = "minimal" }
+}]
+`)
+  const prepared = await prepareRun({ ...base, harness: "claude", profiles: ["blog"] }, dependencies())
+  const pluginDirectory = path.join(prepared.layout.generationPath, "plugins", "sample")
+  const settings = JSON.parse(await readFile(path.join(prepared.layout.generationPath, "settings.json"), "utf8"))
+  expect(await readFile(path.join(pluginDirectory, "commands/check.md"), "utf8")).toContain("# Check")
+  expect(existsSync(path.join(pluginDirectory, ".mcp.json"))).toBe(false)
+  expect(settings.enabledPlugins["sample@fixture-market"]).toBe(true)
+  expect(settings.pluginConfigs["sample@fixture-market"]).toEqual({ options: { mode: "minimal" } })
+  expect(prepared.launch.args).toContain(path.join(prepared.layout.generationPath, "plugins", "sample"))
+  expect(prepared.plan.plugins[0]?.digest).toMatch(/^[a-f0-9]{64}$/)
 })
 
 test("Copilot admission bridges lifecycle plugins, hooks, and agents into the generated home", async () => {

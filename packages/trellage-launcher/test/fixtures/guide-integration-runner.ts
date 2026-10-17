@@ -163,19 +163,6 @@ const runNative = (
   )
 }
 
-const runSandbox = (
-  root: string,
-  profiles: ReadonlyArray<FixtureProfile>,
-  args: ReadonlyArray<string>,
-  options: CommandRunOptions | undefined,
-): CommandRunResult => {
-  const sandbox = profiles.find((profile) => profile.surface === "sandbox" && profile.name === args[2])
-  assert(sandbox !== undefined, `Unexpected Sandbox profile: ${args[2]}`)
-  deepStrictEqual(args, ["doctor", "--profile", sandbox.name])
-  deepStrictEqual(options?.cwd, root)
-  return success(`profile: ${sandbox.name} (sandbox)\ndevelopment resolution: true\nimage: trellage/test (available)\n`)
-}
-
 const runRepomix = async (
   root: string,
   args: ReadonlyArray<string>,
@@ -257,7 +244,7 @@ const runGit = (
       return success(
         primary +
           (existingWorktreeMode(mode)
-            ? `worktree ${path.join(root, "worktrees", "existing")}\nHEAD ${fixtureHead}\nbranch refs/heads/${mode === FixtureMode.CustomerExistingWorktree ? fixtureBranches.hve : fixtureBranches.sandbox}\n\n`
+            ? `worktree ${path.join(root, "worktrees", "existing")}\nHEAD ${fixtureHead}\nbranch refs/heads/${mode === FixtureMode.CustomerExistingWorktree ? fixtureBranches.hve : fixtureBranches.auditor}\n\n`
             : ""),
       )
     }
@@ -367,8 +354,6 @@ export const createFixtureRunner = (root: string, mode: FixtureMode, record: Rec
           return runCodexGoalProbe(root, args, options, "version")
         case "curl":
           return runClaudeGoalInventory(root, args, options)
-        case bin("trellage"):
-          return runSandbox(root, fixtureProfiles, args, options)
         case "npx":
           return runRepomix(root, args, options)
         case "git":

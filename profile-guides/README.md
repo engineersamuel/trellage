@@ -75,8 +75,8 @@ installed manifest and enabled skill files through the private Copilot lifecycle
 before launch, including a recheck in the chosen Herdr destination.
 It does not use headless capability fallback or autonomous Copilot defaults.
 The new launcher requires a terminal; interactive workflows cannot use the
-batch queue. Other profiles, including Sandbox HVE, cannot declare this
-contract until they have equivalent checks.
+batch queue. Other profiles cannot declare this contract until they have
+equivalent checks.
 
 Keep the fixed frame bounded to one agent's purpose. Require the agent to
 load its applicable references and stop if they are unavailable. A successful
@@ -104,13 +104,8 @@ Sandbox identity and the catalog's actual harness must support the controller.
 
 | Controller | Supported surface | Workflow rule |
 | --- | --- | --- |
-| `codex-goal` | Native `cdx` running Codex | Keep the existing workflow discipline inside the application-owned native `/goal` invocation. |
-| `claude-goal` | Native Claude or Sandbox Claude Code, except Graph of Loops | Keep the existing workflow frame inside the application-owned native `/goal` invocation. |
-| `graph-of-loops` | Sandbox `claude-graph-of-loops` only | Use the `graph-of-loops` skill and the authored `/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="..."` goal-start frame. |
-
-Graph's policy names its four goal-start workflows, not
-`inspect-or-resume-run`. Keep its authored constraints; `trellage-graph`
-remains the completion authority. Do not wrap it in native `/goal`.
+| `codex-goal` | Native Codex (`trx run codex`) | Keep the existing workflow discipline inside the application-owned native `/goal` invocation. |
+| `claude-goal` | Native Claude Code | Keep the existing workflow frame inside the application-owned native `/goal` invocation. |
 
 Do not add `/goal` to a native goal workflow template. The application adds
 that command once. Do not invent `$goal`, use `/goal-me` or `$goal-me` to

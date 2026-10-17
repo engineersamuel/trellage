@@ -23,11 +23,11 @@ active_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 
 case "$hook_name" in
   pre-commit|pre-push)
-    lefthook="${active_root}/packages/trellage-cli/node_modules/.bin/lefthook"
+    lefthook="${active_root}/node_modules/.bin/lefthook"
     if [ ! -x "$lefthook" ]; then
       printf '%s\n' \
         "trellage ${hook_name}: Lefthook is missing or not executable at ${lefthook}" \
-        "Run 'scripts/build-profile-compiler.sh' in ${active_root} and retry." >&2
+        "Run 'scripts/install-source-runtime.sh --prepare' in ${active_root} and retry." >&2
       exit 1
     fi
     exec "$lefthook" run "$hook_name" --no-auto-install "$@"

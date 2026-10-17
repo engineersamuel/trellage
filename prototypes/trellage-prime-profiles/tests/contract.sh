@@ -314,7 +314,7 @@ case "$url" in
     ;;
   http://127.0.0.1:8080/v1/models)
     if [[ "${FAKE_PROXY_HAS_MODEL:-1}" == 1 ]]; then
-      printf '{"data":[{"id":"claude-opus-5"},{"id":"vendor/custom"}]}\n'
+      printf '{"data":[{"id":"claude-opus-5.5"},{"id":"vendor/custom"}]}\n'
     else
       printf '{"data":[{"id":"another-model"}]}\n'
     fi
@@ -539,11 +539,11 @@ jq -e '
   and .providers["copilot-proxy-rs"].api == "anthropic-messages"
   and .providers["copilot-proxy-rs"].apiKey == "trellage-local-proxy"
   and .providers["copilot-proxy-rs"].compat.supportsEagerToolInputStreaming == false
-  and [.providers["copilot-proxy-rs"].models[].id] == ["claude-opus-5"]
+  and [.providers["copilot-proxy-rs"].models[].id] == ["claude-opus-5.5"]
 ' "$profile_home/models.json" >/dev/null || fail 'models.json seed differs'
 [[ "$(file_mode "$profile_home/models.json")" == 600 ]] \
   || fail 'models.json mode is not 0600'
-grep -Fq 'prx setup: ready (0.7.0, claude-opus-5)' "$fixture_root/setup.out" \
+grep -Fq 'prx setup: ready (0.7.0, claude-opus-5.5)' "$fixture_root/setup.out" \
   || fail 'setup output differs'
 [[ -f "$runtime_root/npm-prefix/lib/node_modules/prime-agent/dist/bundle/cli.js" ]] \
   || fail 'setup did not install prime-agent CLI'
@@ -605,7 +605,7 @@ jq -e '
 ' "$fixture_root/list-verified.json" >/dev/null || fail 'verified JSON list differs'
 
 "$command_path" doctor >"$fixture_root/doctor.out" || fail 'doctor failed'
-grep -Fq 'prx doctor: OK (0.7.0, claude-opus-5)' "$fixture_root/doctor.out" \
+grep -Fq 'prx doctor: OK (0.7.0, claude-opus-5.5)' "$fixture_root/doctor.out" \
   || fail 'doctor output differs'
 
 # Seed poison credentials; launch must unset them.
@@ -633,7 +633,7 @@ jq -e --arg kernelPython "$profile_home/kernel-venv/bin/python" \
   and .copilot == "unset"
   and .args == [
     "--provider", "copilot-proxy-rs",
-    "--model", "claude-opus-5",
+    "--model", "claude-opus-5.5",
     "--offline",
     "--autonomous",
     "--daemon-socket", $daemonSocket,
@@ -678,7 +678,7 @@ trx_run_prime --single-turn -p 'one turn' \
 jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
   .args == [
     "--provider", "copilot-proxy-rs",
-    "--model", "claude-opus-5",
+    "--model", "claude-opus-5.5",
     "--offline",
     "--daemon-socket", $daemonSocket,
     "-p", "one turn"
@@ -698,7 +698,7 @@ trx_run_prime -p 'bare' || fail 'bare launch failed'
 jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
   .args == [
     "--provider", "copilot-proxy-rs",
-    "--model", "claude-opus-5",
+    "--model", "claude-opus-5.5",
     "--offline",
     "--autonomous",
     "--daemon-socket", $daemonSocket,
@@ -712,7 +712,7 @@ trx_run_prime || fail 'argument-free launch failed'
 jq -e --arg daemonSocket "$profile_root/daemon/daemon.sock" '
   .args == [
     "--provider", "copilot-proxy-rs",
-    "--model", "claude-opus-5",
+    "--model", "claude-opus-5.5",
     "--offline",
     "--autonomous",
     "--daemon-socket", $daemonSocket
@@ -766,7 +766,7 @@ printf 'stale-extension\n' >"$profile_home/extensions/ask-user.ts"
 trx_run_prime -p restore-probe || fail 'launch after drift failed'
 jq -e '
   .providers["copilot-proxy-rs"].baseUrl == "http://127.0.0.1:8080"
-  and [.providers["copilot-proxy-rs"].models[].id] == ["claude-opus-5"]
+  and [.providers["copilot-proxy-rs"].models[].id] == ["claude-opus-5.5"]
 ' "$profile_home/models.json" >/dev/null \
   || fail 'launch did not restore managed models.json'
 cmp -s "$profile_home/extensions/ask-user.ts" "$root/assets/extensions/ask-user.ts" \
@@ -873,7 +873,7 @@ FAKE_PRIME_EXIT_STATUS=37 trx_run_prime -p probe || status=$?
 
 FAKE_PROXY_HAS_MODEL=0 "$command_path" doctor >"$fixture_root/model.out" 2>&1 \
   && fail 'doctor accepted missing model'
-grep -Fq 'copilot-proxy-rs model is missing: claude-opus-5' "$fixture_root/model.out" \
+grep -Fq 'copilot-proxy-rs model is missing: claude-opus-5.5' "$fixture_root/model.out" \
   || fail 'missing model error differs'
 
 FAKE_MISE_LATEST=0.8.0 "$command_path" update --check \
@@ -1007,7 +1007,7 @@ PRX_TEST_STALE_RECOVERY_FAIL_ONCE="$stale_recovery_retry" \
   || fail 'stale profile mutation lock was not removed'
 
 "$command_path" repair >"$fixture_root/repair.out" || fail 'repair failed'
-grep -Fq 'prx repair: restored (0.8.0, claude-opus-5)' "$fixture_root/repair.out" \
+grep -Fq 'prx repair: restored (0.8.0, claude-opus-5.5)' "$fixture_root/repair.out" \
   || fail 'repair output differs after update'
 
 mkdir -p "$fixture_root/unrelated-home/.local/share/trellage/profiles/prime/default"

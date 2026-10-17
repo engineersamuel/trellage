@@ -23,9 +23,9 @@ import {
   alpha, beta, firstmateCatalog, firstmatePin, instancePage, instanceRows, legacy, missingLegacy, namedInstanceRegistry,
 } from "./admin-firstmate-fixtures.ts"
 
-const container = (name: string, harness = "claude", commandPath = "/fixture/trellage"): AdminProfileEntry => ({
-  ref: `sandbox:${name}`,
-  surface: "sandbox",
+const base = (name: string, harness = "claude", commandPath = "/fixture/trx"): AdminProfileEntry => ({
+  ref: `native:unknown/${name}`,
+  surface: "native",
   harness,
   name,
   description: name,
@@ -41,9 +41,8 @@ const container = (name: string, harness = "claude", commandPath = "/fixture/tre
 })
 
 const native = (launcher: string, harness: string, name = "default", commandPath = "/fixture/trx"): AdminProfileEntry => ({
-  ...container(name, harness, commandPath),
+  ...base(name, harness, commandPath),
   ref: `native:${launcher}/${name}`,
-  surface: "native",
   launcher,
 })
 
@@ -62,7 +61,7 @@ const deferred = <T>() => {
 }
 
 describe("all-harness update planning", () => {
-  it("includes the full catalog, deduplicates native runtimes, and keeps container and Firstmate operations per profile", () => {
+  it("includes the full catalog, deduplicates native runtimes, and keeps Firstmate operations per profile", () => {
     const entries = [
       native("claude", "claude", "default"),
       native("claude", "claude", "other"),
@@ -71,16 +70,11 @@ describe("all-harness update planning", () => {
       native("pi", "pi"),
       native("firstmate", "firstmate"),
       native("firstmate", "firstmate", "pstack-workers"),
-      container("claude-a"),
-      container("claude-b"),
-      container("pi", "pi"),
-      container("prime", "prime"),
       native("agency", "agency"),
     ]
     const plan = harnessUpdateAllPlanFor([...entries].reverse().concat(entries[0]!))
     expect(plan.profileCount).toBe(entries.length)
     expect(plan.nativeUpdateCount).toBe(5)
-    expect(plan.containerUpdateCount).toBe(4)
     expect(plan.unsupported).toEqual([{ entry: entries.at(-1), diagnostic: "No harness update command is supported for agency." }])
     expect(plan.groups.flatMap((group) => group.targets.map((entry) => entry.ref)).sort()).toEqual(
       entries
@@ -91,19 +85,10 @@ describe("all-harness update planning", () => {
     expect(plan.groups.filter((group) => group.harness.includes("pi")).map((group) => group.key)).toEqual([
       "native:omp",
       "native:pi",
-      "sandbox:pi",
     ])
     expect(plan.groups.find((group) => group.key === "native:firstmate")?.steps.map((step) => step.command.args)).toEqual([
       ["upgrade", "firstmate", "default"],
       ["upgrade", "firstmate", "pstack-workers"],
-    ])
-    expect(
-      plan.groups.filter((group) => group.surface === "sandbox").flatMap((group) => group.steps.map((step) => step.command.args)),
-    ).toEqual([
-      ["upgrade", "claude-a", "--strict-harness"],
-      ["upgrade", "claude-b", "--strict-harness"],
-      ["upgrade", "pi", "--strict-harness"],
-      ["upgrade", "prime", "--strict-harness"],
     ])
   })
 
@@ -111,12 +96,10 @@ describe("all-harness update planning", () => {
     const entries = [
       native("claude", "claude", "a"),
       native("claude", "claude", "b", "/other/trx"),
-      container("a"),
-      container("b", "claude", "/other/trellage"),
     ]
     const plan = harnessUpdateAllPlanFor(entries)
-    expect(plan.groups).toHaveLength(4)
-    expect(new Set(plan.groups.map(harnessUpdateScopeKey)).size).toBe(4)
+    expect(plan.groups).toHaveLength(2)
+    expect(new Set(plan.groups.map(harnessUpdateScopeKey)).size).toBe(2)
     const run = successfulRun()
     const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager({ run }, "/worktree"), { refresh: async () => {} })
     expect(
@@ -124,11 +107,11 @@ describe("all-harness update planning", () => {
         .filter(([, args]) => ["harness-update", "upgrade", "update"].includes(args[0] ?? "") && !args.includes("--skills-only"))
         .map(([executable]) => executable),
     ).toEqual(entries.map((entry) => entry.commandPath))
-    expect(harnessUpdateAllSummary(outcome).updated).toBe(4)
+    expect(harnessUpdateAllSummary(outcome).updated).toBe(2)
   })
 
   it("does not override configured pins with a cached latest version", () => {
-    const entries = [container("claude-pinned"), native("firstmate", "firstmate")]
+    const entries = [native("claude", "claude", "pinned"), native("firstmate", "firstmate")]
     const plain = harnessUpdateAllPlanFor(entries)
     const withLatest = harnessUpdateAllPlanFor(entries, () => ({
       installed: { kind: "known", version: "1.0.0" },
@@ -138,7 +121,7 @@ describe("all-harness update planning", () => {
   })
 
   it("reports missing commands and unknown harnesses rather than silently excluding them", () => {
-    const entries = [container("missing", "claude", ""), container("unknown", "custom"), native("other", "custom")]
+    const entries = [base("missing", "claude", ""), base("unknown", "custom"), native("other", "custom")]
     const plan = harnessUpdateAllPlanFor(entries)
     expect(plan.groups).toHaveLength(0)
     expect(plan.unsupported.map(({ entry }) => entry.ref).sort()).toEqual(entries.map((entry) => entry.ref).sort())
@@ -265,8 +248,6 @@ describe("all-harness update queue", () => {
       native("copilot", "copilot", "b"),
       native("firstmate", "firstmate", "default"),
       native("firstmate", "firstmate", "pstack-workers"),
-      container("claude-a"),
-      container("claude-b"),
       native("agency", "agency"),
     ]
     const plan = harnessUpdateAllPlanFor(entries)
@@ -280,7 +261,7 @@ describe("all-harness update queue", () => {
       active -= 1
       if (args[0] === "--help") return help
       sequence.push(args.join(" "))
-      if (args[2] === "pstack-workers" || args[1] === "claude-b") throw new Error(`Download failed: ${args[2] ?? args[1]}`)
+      if (args[2] === "pstack-workers") throw new Error(`Download failed: ${args[2]}`)
       return success
     })
     const refresh = vi.fn(async (group: HarnessUpdatePlan) => {
@@ -305,17 +286,14 @@ describe("all-harness update queue", () => {
       "upgrade copilot b --skills-only",
       "upgrade firstmate default --skills-only",
       "upgrade firstmate pstack-workers --skills-only",
-      "upgrade claude-a --strict-harness",
-      "upgrade claude-b --strict-harness",
-      "refresh sandbox:claude",
     ])
     expect(run.mock.calls.every(([, , options]) => options?.cwd === "/worktree with spaces")).toBe(true)
-    expect(events.filter((event) => event.kind === "step-completed")).toHaveLength(5)
-    expect(events.filter((event) => event.kind === "completed")).toHaveLength(3)
+    expect(events.filter((event) => event.kind === "step-completed")).toHaveLength(3)
+    expect(events.filter((event) => event.kind === "completed")).toHaveLength(2)
     expect(outcome.reports[0]?.refreshError).toBe("Version receipt unavailable")
     expect(harnessUpdateAllSummary(outcome)).toEqual({
-      updated: 4,
-      failed: 2,
+      updated: 3,
+      failed: 1,
       unsupported: 1,
       refreshFailed: 1,
       notRun: 0,
@@ -328,8 +306,8 @@ describe("all-harness update queue", () => {
   })
 
   it("deduplicates a repeated all-run and blocks U until the final version refresh completes", async () => {
-    const plan = harnessUpdateAllPlanFor([container("claude")])
-    const other = harnessUpdateAllPlanFor([container("codex", "codex")]).groups[0]!
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude", "claude")])
+    const other = harnessUpdateAllPlanFor([native("codex", "codex", "codex")]).groups[0]!
     const run = successfulRun()
     const manager = new HarnessUpdateManager({ run }, "/worktree")
     const pending = deferred<void>()
@@ -339,16 +317,17 @@ describe("all-harness update queue", () => {
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1))
     await expect(manager.run(other, async () => {})).rejects.toThrow("Update all is running")
     expect(manager.isBusy()).toBe(true)
-    expect(run).toHaveBeenCalledTimes(1)
+    const updates = () => run.mock.calls.filter(([, args]) => args[0] !== "--help")
+    expect(updates()).toHaveLength(1)
     pending.resolve()
     await first
     expect(manager.isBusy()).toBe(false)
     await manager.run(other, async () => {})
-    expect(run).toHaveBeenCalledTimes(2)
+    expect(updates()).toHaveLength(2)
   })
 
   it("does not start an all-run over an active selected-group update", async () => {
-    const plan = harnessUpdateAllPlanFor([container("claude")])
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude", "claude")])
     const run = successfulRun()
     const manager = new HarnessUpdateManager({ run }, "/worktree")
     const pending = deferred<void>()
@@ -356,14 +335,14 @@ describe("all-harness update queue", () => {
     await expect(runAllHarnessUpdates(plan, manager, { refresh: async () => {} })).rejects.toThrow("A harness update is already running")
     pending.resolve()
     await first
-    expect(run).toHaveBeenCalledTimes(1)
+    expect(run.mock.calls.filter(([, args]) => args[0] !== "--help")).toHaveLength(1)
     const outcome = await runAllHarnessUpdates(plan, manager, { refresh: async () => {} })
     expect(harnessUpdateAllSummary(outcome).success).toBe(true)
   })
 
   it("does not attach a different confirmed scope to an active all-run", async () => {
-    const firstPlan = harnessUpdateAllPlanFor([container("a")])
-    const secondPlan = harnessUpdateAllPlanFor([container("b")])
+    const firstPlan = harnessUpdateAllPlanFor([native("claude", "claude", "a")])
+    const secondPlan = harnessUpdateAllPlanFor([native("claude", "claude", "b")])
     const pending = deferred<void>()
     const run = successfulRun()
     const manager = new HarnessUpdateManager({ run }, "/worktree")
@@ -372,12 +351,14 @@ describe("all-harness update queue", () => {
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledOnce())
     await expect(runAllHarnessUpdates(secondPlan, manager, { refresh })).rejects.toThrow("different scope")
     pending.resolve()
-    expect((await first).reports[0]?.outcome.results[0]?.ref).toBe("sandbox:a")
-    expect(run.mock.calls.map(([, args]) => args)).toEqual([["upgrade", "a", "--strict-harness"]])
+    expect((await first).reports[0]?.outcome.results[0]?.ref).toBe("native:claude/a")
+    expect(run.mock.calls.filter(([, args]) => args.includes("--harness-only")).map(([, args]) => args)).toEqual([
+      ["upgrade", "claude", "a", "--harness-only"],
+    ])
   })
 
   it("cancels the active command and does not start later profiles or groups", async () => {
-    const plan = harnessUpdateAllPlanFor([container("a"), container("b"), container("codex", "codex")])
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude", "a"), native("claude", "claude", "b"), native("codex", "codex", "codex")])
     const controller = new AbortController()
     const run = vi.fn<CommandRunner["run"]>(
       (_executable, _args, options) =>
@@ -425,8 +406,8 @@ describe("all-harness update queue", () => {
     expect(run).not.toHaveBeenCalled()
   })
 
-  it("publishes Native skill copies after harness updates, then builds Containers with current skills", async () => {
-    const entries = [native("claude", "claude", "a"), native("claude", "claude", "b"), container("claude")]
+  it("publishes Native skill copies after harness updates, ", async () => {
+    const entries = [native("claude", "claude", "a"), native("claude", "claude", "b")]
     const plan = harnessUpdateAllPlanFor(entries, undefined, "/selected worktree/bin/trx")
     const run = successfulRun()
     const outcome = await runAllHarnessUpdates(plan, new HarnessUpdateManager({ run }, "/worktree"), { refresh: async () => {} })
@@ -435,13 +416,12 @@ describe("all-harness update queue", () => {
       ["/selected worktree/bin/trx", ["skills", "update"]],
       ["/fixture/trx", ["upgrade", "claude", "a", "--skills-only"]],
       ["/fixture/trx", ["upgrade", "claude", "b", "--skills-only"]],
-      ["/fixture/trellage", ["upgrade", "claude", "--strict-harness"]],
     ])
-    expect(harnessUpdateAllSummary(outcome)).toMatchObject({ success: true, nativeSkillsUpdated: 2, updated: 3 })
+    expect(harnessUpdateAllSummary(outcome)).toMatchObject({ success: true, nativeSkillsUpdated: 2, updated: 2 })
   })
 
   it("does not copy stale Native skills after cache refresh fails, but continues independent harness updates", async () => {
-    const entries = [native("claude", "claude"), container("claude")]
+    const entries = [native("claude", "claude"), native("codex", "codex")]
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
       if (args[0] === "--help") return help
       if (args[0] === "skills") throw new Error("Skill source unavailable")
@@ -454,7 +434,7 @@ describe("all-harness update queue", () => {
     expect(harnessUpdateAllSummary(outcome)).toMatchObject({
       updated: 2,
       nativeSkillsUpdated: 0,
-      nativeSkillsNotRun: 1,
+      nativeSkillsNotRun: 2,
       skillsCacheFailed: true,
       success: false,
     })
@@ -462,7 +442,7 @@ describe("all-harness update queue", () => {
   })
 
   it("keeps the all-run reservation during skills refresh and blocks an overlapping U", async () => {
-    const plan = harnessUpdateAllPlanFor([native("claude", "claude"), container("claude")])
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude"), native("claude", "claude", "claude")])
     const pending = deferred<CommandRunResult>()
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
       if (args[0] === "--help") return help
@@ -498,7 +478,7 @@ describe("all-harness update queue", () => {
 
 describe("all-harness installed-version refresh", () => {
   it("surfaces an unavailable installed version instead of claiming a fully refreshed update", async () => {
-    const plan = harnessUpdateAllPlanFor([container("claude")]).groups[0]!
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude", "claude")]).groups[0]!
     const run = vi.fn<CommandRunner["run"]>().mockResolvedValue({ ...success, stdout: "invalid version report" })
     const onResult = vi.fn()
     await expect(

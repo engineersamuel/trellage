@@ -44,6 +44,9 @@ const checkEntry = async (
   signal: AbortSignal,
   helpChecks: Map<string, Promise<boolean>>,
 ): Promise<AdminSkillsCheckResult> => {
+  if (entry.surface === "native" && entry.launcher === "headlong") {
+    return unknown("Headlong syncs its managed skills from the shared cache when it launches.")
+  }
   if ((entry.surface === "native" && !isKnownNativeLauncher(entry.launcher ?? "")) || entry.commandPath.length === 0) {
     return unknown("This launcher has no supported read-only skills check.")
   }

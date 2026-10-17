@@ -1,9 +1,9 @@
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { loadProfileGuide, type ProfileGuideV1 } from "@trellage/guide-core"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
 
 import { parseGuideCatalog, type CombinedGuideCatalog, type HeadlessCapabilitiesV1 } from "../src/guide-catalog.ts"
-import { loadSelectedGuide, SelectedGuideError, sandboxGuideRootFromProfilePath } from "../src/guide-selected.ts"
+import { loadSelectedGuide, SelectedGuideError } from "../src/guide-selected.ts"
 import { enrichNativeProfileList } from "../src/native-guide-list.ts"
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..")
@@ -41,66 +41,27 @@ const authoredCatalog = async (): Promise<CombinedGuideCatalog> => {
           sandbox: true,
           herdrCompatibility: { status: "supported" },
         },
-      ],
-    }),
-    guideRoot,
-  )
-  const graph = await loadProfileGuide(guideRoot, { surface: "sandbox", profile: "claude-graph-of-loops" })
-  return parseGuideCatalog(
-    JSON.stringify({
-      schemaVersion: 1,
-      sandboxCommandPath: "/opt/trellage/bin/trellage",
-      native: JSON.parse(nativeList).profiles,
-      sandbox: [
         {
-          name: "claude-graph-of-loops",
-          description: "Graph of Loops",
-          guide: graph.guide,
-          path: path.join(repositoryRoot, "profiles", "claude-graph-of-loops", "profile.toml"),
-          supportedPlatforms: ["linux/arm64"],
-          harness: { kind: "claude", version: "latest" },
-          resolutionPolicy: "floating",
-          locallyResolved: false,
-          releaseLockAvailable: false,
-          resolvedVersion: null,
-          skillBundles: ["sandbox-common"],
-          skillsMode: "floating",
-          finalDigestLocked: false,
-          skills: [],
-          plugins: [],
-          mcps: [],
-          sandbox: true,
+          launcher: "claude",
+          harness: "claude",
+          name: "social-media",
+          description: "Native Claude Social Media",
+          commandPath: "/opt/trellage/claude/bin/trx",
           headless,
-          locked: false,
+          sandbox: false,
           herdrCompatibility: { status: "supported" },
         },
       ],
     }),
+    guideRoot,
+  )
+  return parseGuideCatalog(
+    JSON.stringify({
+      schemaVersion: 1,
+      native: JSON.parse(nativeList).profiles,
+    }),
   )
 }
-
-describe("sandbox guide root derivation", () => {
-  it("derives the owning worktree guide registry from a profile document", () => {
-    expect(
-      sandboxGuideRootFromProfilePath(
-        path.join(path.sep, "repo", "profiles", "claude-social-media", "profile.toml"),
-        "claude-social-media",
-      ),
-    ).toBe(path.join(path.sep, "repo", "profile-guides"))
-  })
-
-  it("rejects paths that do not match the selected profile identity", () => {
-    expect(() =>
-      sandboxGuideRootFromProfilePath(
-        path.join(path.sep, "repo", "profiles", "other", "profile.toml"),
-        "claude-social-media",
-      ),
-    ).toThrow(SelectedGuideError)
-    expect(() =>
-      sandboxGuideRootFromProfilePath("profiles/claude-social-media/profile.toml", "claude-social-media"),
-    ).toThrow(SelectedGuideError)
-  })
-})
 
 describe("selected guide goal policy", () => {
   it("retains the authored policy through native list enrichment, JSON catalog parsing, and selected guide loading", async () => {
@@ -115,21 +76,26 @@ describe("selected guide goal policy", () => {
     expect(selected.body).toContain("Native Codex")
   })
 
-  it("retains the Graph policy and all authored frames without making resume goal-eligible", async () => {
+  it("retains the migrated Claude goal policy through catalog parsing and selected guide loading", async () => {
     const catalog = await authoredCatalog()
-    const selected = await loadSelectedGuide(catalog, guideRoot, "sandbox:claude-graph-of-loops")
+    const selected = await loadSelectedGuide(catalog, guideRoot, "native:claude/social-media")
 
-    expect(selected.guide).toEqual(catalog.sandbox[0]?.guide)
+    expect(selected.guide).toEqual(catalog.native[1]?.guide)
     expect(selected.guide.goalExecution).toEqual({
-      controller: "graph-of-loops",
+      controller: "claude-goal",
       workflowIds: [
-        "implement-complex-change",
-        "debug-cross-cutting-failure",
-        "research-then-implement",
-        "validate-existing-implementation",
+        "voice-builder",
+        "post-writer",
+        "post-scorer",
+        "gemini-carousel",
+        "niche-research",
+        "content-matrix",
+        "reels-scripting",
+        "youtube-thumbnail",
+        "pinned-comment",
       ],
     })
-    expect(selected.guide.workflows.some(({ id }) => id === "inspect-or-resume-run")).toBe(true)
+    expect(selected.body).toContain("Launch this profile with `trx run claude social-media`")
   })
 
   it("rejects a stale catalog when a goal policy is missing, its controller changes, or eligibility changes", async () => {

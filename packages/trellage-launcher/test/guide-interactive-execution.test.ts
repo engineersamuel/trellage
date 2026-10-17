@@ -543,35 +543,6 @@ describe("interactive guide result execution", () => {
     )
   })
 
-  it("launches a Sandbox profile with its initial prompt and no paste instruction", async () => {
-    const runner = new RecordingRunner()
-    const writes: string[] = []
-    const runInteractive = vi.fn(async () => undefined)
-    const result = buildCurrentTerminalResult(
-      {
-        surface: "sandbox",
-        commandPath: "/opt/trellage/bin/trellage",
-        profile: "claude-research",
-        headlessPrompt: false,
-      },
-      "Research the repository.",
-      "/repo",
-    )
-
-    await expect(executeGuideUiResult(result, services(runner, writes, runInteractive))).resolves.toBe(0)
-    expect(writes).toHaveLength(0)
-    expect(runInteractive).toHaveBeenCalledWith(
-      {
-        executable: "/opt/trellage/bin/trellage",
-        args: ["--profile", "claude-research", "Research the repository."],
-      },
-      {
-        cwd: "/repo",
-        env: expect.objectContaining({ TRELLAGE_AUTOMATION: "1" }),
-      },
-    )
-  })
-
   it("preserves a non-zero interactive child exit code", async () => {
     const runner = new RecordingRunner()
     const writes: string[] = []

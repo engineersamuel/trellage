@@ -52,7 +52,6 @@ const fixtureCatalog = () =>
   parseGuideCatalog(
     JSON.stringify({
       schemaVersion: 1,
-      sandboxCommandPath: "/opt/trellage/bin/trellage",
       native: [
         {
           launcher: "copilot",
@@ -77,84 +76,30 @@ const fixtureCatalog = () =>
           commandPath: "/opt/trellage/codex/bin/trx",
         },
       ],
-      sandbox: [
-        {
-          name: "prime-agent",
-          description: "Sandboxed prime agent profile.",
-          guide,
-          path: "/profiles/prime-agent",
-          supportedPlatforms: ["linux/amd64"],
-          harness: { kind: "copilot", version: "1.0.0" },
-          resolutionPolicy: "floating",
-          locallyResolved: false,
-          releaseLockAvailable: true,
-          resolvedVersion: "1.0.70",
-          skillBundles: [],
-          skillsMode: "floating",
-          finalDigestLocked: false,
-          skills: [],
-          plugins: [],
-          mcps: [],
-          sandbox: true,
-          headless,
-          locked: false,
-          herdrCompatibility: { status: "supported" },
-        },
-      ],
-    }),
-  )
-
-const fixtureCatalogWithClaudeSandbox = () =>
-  parseGuideCatalog(
-    JSON.stringify({
-      schemaVersion: 1,
-      sandboxCommandPath: "/opt/trellage/bin/trellage",
-      native: [],
-      sandbox: [
-        {
-          name: "claude-blog",
-          description: "Sandboxed Claude profile.",
-          guide,
-          path: "/profiles/claude-blog",
-          supportedPlatforms: ["linux/amd64"],
-          harness: { kind: "claude", version: "latest" },
-          resolutionPolicy: "floating",
-          locallyResolved: false,
-          releaseLockAvailable: true,
-          resolvedVersion: null,
-          skillBundles: [],
-          skillsMode: "floating",
-          finalDigestLocked: false,
-          skills: [],
-          plugins: [],
-          mcps: [],
-          sandbox: true,
-          headless,
-          locked: false,
-          herdrCompatibility: { status: "supported" },
-        },
-      ],
     }),
   )
 
 describe("nativeLauncherCapabilities", () => {
-  it("marks every native launcher, including cdx, as supporting doctor/inventory", () => {
+  it("marks lifecycle-managed native launchers, including cdx, as supporting doctor/inventory", () => {
     for (const launcher of ["agency", "copilot", "codex", "claude", "firstmate", "fx", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher)).toMatchObject({ doctorSupported: true, inventorySupported: true })
     }
+    expect(nativeLauncherCapabilities("headlong")).toMatchObject({ doctorSupported: false, inventorySupported: false })
   })
 
-  it("marks every native launcher except agx and cldx as supporting update --check", () => {
+  it("marks lifecycle-managed native launchers except agx and cldx as supporting update --check", () => {
     for (const launcher of ["copilot", "codex", "firstmate", "fx", "jcode", "omp", "pi", "prime"]) {
       expect(nativeLauncherCapabilities(launcher).updateCheckSupported).toBe(true)
     }
     expect(nativeLauncherCapabilities("agency").updateCheckSupported).toBe(false)
     expect(nativeLauncherCapabilities("claude").updateCheckSupported).toBe(false)
+    expect(nativeLauncherCapabilities("headlong").updateCheckSupported).toBe(false)
   })
 
-  it("supports Firstmate and Agency harness versions", () => {
+  it("supports Firstmate and Agency harness versions but not Headlong lifecycle checks", () => {
     expect(nativeLauncherCapabilities("firstmate").harnessVersionSupported).toBe(true)
     expect(nativeLauncherCapabilities("agency").harnessVersionSupported).toBe(true)
+    expect(nativeLauncherCapabilities("headlong").harnessVersionSupported).toBe(false)
   })
 
   it("fails closed for an unrecognized future native launcher", () => {
@@ -170,38 +115,16 @@ describe("nativeLauncherCapabilities", () => {
 describe("aggregateAdminProfiles", () => {
   it("produces one entry per catalog entry with no duplicates or omissions", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
-    expect(entries).toHaveLength(3)
-    expect(entries.map((entry) => entry.ref)).toEqual(["native:copilot/hve", "native:codex/pstack", "sandbox:prime-agent"])
+    expect(entries.map((entry) => entry.ref)).toEqual(["native:copilot/hve", "native:codex/pstack"])
   })
 
-  it("marks a sandbox profile as not supporting inventory (the sandbox launcher has no `inventory` subcommand)", () => {
-    const entries = aggregateAdminProfiles(fixtureCatalog())
-    const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    expect(sandbox).toMatchObject({
-      doctorSupported: true,
-      inventorySupported: false,
-      updateCheckSupported: false,
-      harnessVersionSupported: true,
-    })
-  })
-
-  it("marks every sandbox profile as supporting harness-version", () => {
-    const entries = aggregateAdminProfiles(fixtureCatalogWithClaudeSandbox())
-    const claudeSandbox = entries.find((entry) => entry.ref === "sandbox:claude-blog")
-    expect(claudeSandbox).toMatchObject({ harnessVersionSupported: true })
-  })
-
-  it("projects a ready sandbox resolution as its installed harness version", () => {
-    const entries = aggregateAdminProfiles(fixtureCatalog())
-    const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    expect(sandbox).toMatchObject({ version: "1.0.70", harnessVersionSelector: "1.0.0" })
-    expect(entries.find((entry) => entry.surface === "native")?.harnessVersionSelector).toBeUndefined()
-  })
-
-  it("keeps a floating harness target separate from an unavailable installed version", () => {
-    const entries = aggregateAdminProfiles(fixtureCatalogWithClaudeSandbox())
-    expect(entries[0]).toMatchObject({ harnessVersionSelector: "latest" })
-    expect(entries[0]?.version).toBeUndefined()
+  it("isolates a malformed readiness result to only the affected profile", () => {
+    const readinessInputs: ReadonlyArray<AdminReadinessInput> = [
+      { ref: "native:copilot/hve", result: { malformed: true, diagnostic: "unexpected inventory shape" } },
+    ]
+    const entries = aggregateAdminProfiles(fixtureCatalog(), readinessInputs)
+    expect(entries.find((entry) => entry.ref === "native:copilot/hve")).toMatchObject({ health: "malformed-output", install: "malformed-output" })
+    expect(entries.find((entry) => entry.ref === "native:codex/pstack")).toMatchObject({ health: "unknown", install: "unknown" })
   })
 
   it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {
@@ -228,23 +151,6 @@ describe("aggregateAdminProfiles", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog(), readinessInputs)
     const cpx = entries.find((entry) => entry.ref === "native:copilot/hve")
     expect(cpx).toMatchObject({ health: "healthy", install: "installed", stale: false, version: "1.2.3" })
-  })
-
-  it("isolates a malformed readiness result to only the affected profile", () => {
-    const readinessInputs: ReadonlyArray<AdminReadinessInput> = [
-      { ref: "native:copilot/hve", result: { malformed: true, diagnostic: "unexpected inventory shape" } },
-      {
-        ref: "sandbox:prime-agent",
-        result: { kind: ProfileReadinessKind.Ready, summary: "prime-agent is valid" },
-      },
-    ]
-    const entries = aggregateAdminProfiles(fixtureCatalog(), readinessInputs)
-    const cpx = entries.find((entry) => entry.ref === "native:copilot/hve")
-    const sandbox = entries.find((entry) => entry.ref === "sandbox:prime-agent")
-    const cdx = entries.find((entry) => entry.ref === "native:codex/pstack")
-    expect(cpx).toMatchObject({ health: "malformed-output", install: "malformed-output" })
-    expect(sandbox).toMatchObject({ health: "healthy", install: "installed" })
-    expect(cdx).toMatchObject({ health: "unknown", install: "unknown" })
   })
 
   it("marks a blocked native result as not-installed when its diagnostic mentions not-setup", () => {
@@ -317,23 +223,4 @@ describe("toProfileGuideIdentity", () => {
     ).toEqual({ surface: "native", launcher: "copilot", profile: "hve" })
   })
 
-  it("builds a sandbox identity", () => {
-    expect(
-      toProfileGuideIdentity({
-        ref: "sandbox:prime-agent",
-        surface: "sandbox",
-        name: "prime-agent",
-        description: "d",
-        commandPath: "/bin/trellage",
-        doctorSupported: true,
-        inventorySupported: true,
-        health: "healthy",
-        install: "installed",
-        stale: false,
-        updateCheckSupported: false,
-        harnessVersionSupported: false,
-        updateCheckStale: false,
-      }),
-    ).toEqual({ surface: "sandbox", profile: "prime-agent" })
-  })
 })

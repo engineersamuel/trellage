@@ -20,23 +20,23 @@
     {
       "id": "bounded-private-local-edit",
       "intent": "Make a small bounded parser fix while keeping the code on a private local model. I do not need agents or a large workflow.",
-      "expectedProfiles": ["sandbox:claude-qwen-local"],
+      "expectedProfiles": ["native:omp/local"],
       "maxRank": 3,
-      "excludedProfiles": ["native:omp/local"]
+      "excludedProfiles": ["native:omp/default"]
     },
     {
       "id": "persistent-background-investigation",
       "intent": "Investigate an intermittent production reliability problem for several days, keep thinking after I disconnect, preserve hypotheses and evidence, and show progress in a dashboard.",
-      "expectedProfiles": ["sandbox:headlong"],
+      "expectedProfiles": ["native:headlong/default"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:prime-agent"]
+      "excludedProfiles": ["native:prime/default"]
     },
     {
       "id": "persistent-ipython-exploration",
       "intent": "Use a persistent IPython control loop and delegated subagents to explore a prompt-compression experiment that I can detach and resume.",
-      "expectedProfiles": ["sandbox:prime-agent"],
+      "expectedProfiles": ["native:prime/default"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:headlong"]
+      "excludedProfiles": ["native:headlong/default"]
     },
     {
       "id": "visual-html-prototype",
@@ -50,57 +50,57 @@
       "intent": "Critique this misleading quantitative chart with Tufte principles, then rebuild it as a static SVG with direct labels and minimal chartjunk.",
       "expectedProfiles": ["native:copilot/tufte-vdqi"],
       "maxRank": 3,
-      "excludedProfiles": ["native:copilot/plannotator", "sandbox:claude-frontend-design"]
+      "excludedProfiles": ["native:copilot/plannotator", "native:claude/frontend-design"]
     },
     {
       "id": "tufte-inflation-adjusted-series",
       "intent": "Adjust this multi-year revenue series with real CPI values, then create a Tufte time-series SVG labeled in constant dollars.",
       "expectedProfiles": ["native:copilot/tufte-vdqi"],
       "maxRank": 3,
-      "excludedProfiles": ["native:copilot/plannotator", "sandbox:claude-frontend-design"]
+      "excludedProfiles": ["native:copilot/plannotator", "native:claude/frontend-design"]
     },
     {
       "id": "tufte-small-multiples",
       "intent": "Compare many regional series with shared-scale small multiples instead of an unreadable overplotted chart.",
       "expectedProfiles": ["native:copilot/tufte-vdqi"],
       "maxRank": 3,
-      "excludedProfiles": ["native:copilot/plannotator", "sandbox:claude-frontend-design"]
+      "excludedProfiles": ["native:copilot/plannotator", "native:claude/frontend-design"]
     },
     {
       "id": "voice-first-social-post",
       "intent": "Turn these notes into a LinkedIn post in my established voice, then remove obvious AI writing patterns without inventing claims.",
-      "expectedProfiles": ["sandbox:claude-social-media"],
+      "expectedProfiles": ["native:claude/social-media"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:claude-blog"]
+      "excludedProfiles": ["native:claude/blog"]
     },
     {
       "id": "technical-seo-blog",
       "intent": "Produce a long-form technical blog post with a content brief, editorial gates, SEO checks, and citation-ready structure.",
-      "expectedProfiles": ["sandbox:claude-blog"],
+      "expectedProfiles": ["native:claude/blog"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:claude-social-media"]
+      "excludedProfiles": ["native:claude/social-media"]
     },
     {
       "id": "motion-heavy-frontend",
       "intent": "Design and polish a product landing page with one clear CTA, strong typography, and GSAP motion while avoiding generic AI design.",
-      "expectedProfiles": ["sandbox:claude-frontend-design"],
+      "expectedProfiles": ["native:claude/frontend-design"],
       "maxRank": 3,
       "excludedProfiles": ["native:copilot/plannotator"]
     },
     {
-      "id": "containerized-claude-ecc-delivery",
-      "intent": "Use container-isolated Claude with ECC to discover the right engineering workflow, plan a substantial repository change, implement it test-first, review it, and verify delivery with minimal hooks.",
-      "expectedProfiles": ["sandbox:claude-ecc"],
+      "id": "native-claude-ecc-delivery",
+      "intent": "Use host-native Claude with ECC to discover the right engineering workflow, plan a substantial repository change, implement it test-first, review it, and verify delivery.",
+      "expectedProfiles": ["native:claude/ecc"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:codex-superpowers"]
+      "excludedProfiles": ["native:codex/superpowers"]
     },
     {
-      "id": "sandbox-hve-delivery",
-      "intent": "Use a container-isolated GitHub Copilot RPI workflow to research, plan, implement, review, and prepare a feature for a pull request.",
-      "expectedProfiles": ["sandbox:copilot-hve"],
-      "expectedWorkflows": { "sandbox:copilot-hve": "rpi-agent-cycle" },
+      "id": "native-hve-delivery",
+      "intent": "Use host-native GitHub Copilot with its RPI workflow to research, plan, implement, review, and prepare a feature for a pull request.",
+      "expectedProfiles": ["native:copilot/hve"],
+      "expectedWorkflows": { "native:copilot/hve": "rpi-plan-and-critique" },
       "maxRank": 3,
-      "excludedProfiles": ["native:copilot/hve"]
+      "excludedProfiles": []
     },
     {
       "id": "native-hve-customer-discovery",
@@ -108,7 +108,7 @@
       "expectedProfiles": ["native:copilot/hve"],
       "expectedWorkflows": { "native:copilot/hve": "customer-discovery" },
       "maxRank": 1,
-      "excludedProfiles": ["sandbox:copilot-hve"]
+      "excludedProfiles": []
     },
     {
       "id": "native-hve-assumption-test",
@@ -116,7 +116,7 @@
       "expectedProfiles": ["native:copilot/hve"],
       "expectedWorkflows": { "native:copilot/hve": "test-assumption" },
       "maxRank": 1,
-      "excludedProfiles": ["sandbox:copilot-hve"]
+      "excludedProfiles": []
     },
     {
       "id": "native-hve-business-requirements",
@@ -124,21 +124,21 @@
       "expectedProfiles": ["native:copilot/hve"],
       "expectedWorkflows": { "native:copilot/hve": "business-requirements" },
       "maxRank": 1,
-      "excludedProfiles": ["sandbox:copilot-hve"]
+      "excludedProfiles": []
     },
     {
       "id": "codex-native-superpowers",
       "intent": "Use host-native Codex with Full Access and the Codex-adapted Superpowers workflow to plan, implement with TDD, review, and finish this branch.",
       "expectedProfiles": ["native:codex/superpowers"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:codex-superpowers"]
+      "excludedProfiles": []
     },
     {
       "id": "youtube-transcript-research",
       "intent": "Search YouTube for this topic, compare evidence from several video transcripts, and review the related channel and playlist for recurring claims.",
       "expectedProfiles": ["native:codex/youtube"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:claude-social-media"]
+      "excludedProfiles": ["native:claude/social-media"]
     },
     {
       "id": "copilot-superpowers-tdd",
@@ -252,35 +252,28 @@
       "intent": "Use Pi's goal tracking, plan annotation, fast context tools, and dynamic subagents to coordinate this daily coding task.",
       "expectedProfiles": ["native:pi/default"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:pi-oh-my-pi"]
+      "excludedProfiles": []
     },
     {
       "id": "native-prime-clarifying-analysis",
       "intent": "Run Prime Agent directly on the host, ask me questions instead of guessing, and keep a persistent IPython RLM analysis session across turns.",
       "expectedProfiles": ["native:prime/default"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:prime-agent"]
+      "excludedProfiles": []
     },
     {
       "id": "rapid-rich-tool-repo-work",
       "intent": "Work through a large repository refactor with minimal ceremony using LSP, debugger, browser tools, and context compaction in one fast loop.",
-      "expectedProfiles": ["sandbox:pi-oh-my-pi"],
+      "expectedProfiles": ["native:pi/default"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:copilot-hve"]
+      "excludedProfiles": []
     },
     {
-      "id": "reversible-graph-of-loops",
-      "intent": "Run a long multi-node feature through isolated git worktrees, specialist roles, durable task memory, and a review gate that can take done back.",
-      "expectedProfiles": ["sandbox:claude-graph-of-loops"],
+      "id": "native-codex-marathon",
+      "intent": "Use host-native Codex for a multi-day implementation marathon with brainstorm, plan, TDD, debugging, review, and parallel full-stack agent roles.",
+      "expectedProfiles": ["native:codex/superpowers"],
       "maxRank": 3,
-      "excludedProfiles": ["sandbox:codex-superpowers"]
-    },
-    {
-      "id": "containerized-codex-marathon",
-      "intent": "Use container-isolated Codex for a multi-day implementation marathon with brainstorm, plan, TDD, debugging, review, and parallel full-stack agent roles.",
-      "expectedProfiles": ["sandbox:codex-superpowers"],
-      "maxRank": 3,
-      "excludedProfiles": ["native:codex/superpowers"]
+      "excludedProfiles": []
     },
     {
       "id": "poteto-mode-structured-engineering",

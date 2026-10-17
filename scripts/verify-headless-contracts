@@ -62,21 +62,6 @@ jq -e '
   exit 1
 }
 
-printf 'verify-headless-contracts: package capability and evidence cases\n'
-(
-  cd "$repository_root/packages/trellage-cli"
-  npm run build >/dev/null
-  npm test -- --run \
-    test/headless-capabilities.test.ts \
-    test/headless-publication.test.ts \
-    test/headless-event-bridge.test.ts \
-    test/git-evidence.test.ts
-)
-
-printf 'verify-headless-contracts: Sandbox runtime and host cases\n'
-bash "$repository_root/prototypes/trellage/tests/claude_entry_contract.sh"
-TRELLAGE_HOST_HEADLESS_ONLY=1 bash "$repository_root/prototypes/trellage/tests/host_command_contract.sh"
-
 printf 'verify-headless-contracts: Native adapter and router cases\n'
 bash "$repository_root/prototypes/trellage-copilot-profiles/tests/contract.sh"
 bash "$repository_root/prototypes/trellage-agency-profiles/tests/contract.sh"

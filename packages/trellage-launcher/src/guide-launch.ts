@@ -63,7 +63,7 @@ const appendTruncatedChunk = (target: Array<Buffer>, buffer: Buffer, currentLeng
   return boundedLength
 }
 
-export type GuideSurface = "native" | "sandbox"
+export type GuideSurface = "native"
 export type PromptDeliveryMode = "none" | "argv"
 export type PromptHandlingMode = "none" | "argv" | "manual-paste"
 export type HerdrPromptDeliveryMode = "command" | "agent" | "manual"
@@ -96,17 +96,7 @@ export interface NativeSelectedProfile {
   readonly firstmateInstanceContext?: FirstmateInstanceControlContextV1
 }
 
-export interface SandboxSelectedProfile {
-  readonly surface: "sandbox"
-  readonly commandPath: string
-  readonly profile: string
-  readonly headlessPrompt: boolean
-  readonly agent?: string
-  readonly interaction?: never
-  readonly goalExecutionPolicy?: NonNullable<ProfileGuideV1["goalExecution"]>
-}
-
-export type SelectedProfile = NativeSelectedProfile | SandboxSelectedProfile
+export type SelectedProfile = NativeSelectedProfile
 
 export interface ArgvPromptDelivery {
   readonly mode: "argv"
@@ -405,7 +395,7 @@ const validateAgent = (value: unknown, launcher?: string): string | undefined =>
 const validateGoalExecutionPolicy = (value: unknown): NonNullable<ProfileGuideV1["goalExecution"]> | undefined => {
   if (value === undefined) return undefined
   const policy = getRecord(value, "selected profile goalExecutionPolicy")
-  if (policy.controller !== "codex-goal" && policy.controller !== "claude-goal" && policy.controller !== "graph-of-loops") {
+  if (policy.controller !== "codex-goal" && policy.controller !== "claude-goal") {
     throw new Error("selected profile goalExecutionPolicy must use a supported controller")
   }
   if (!Array.isArray(policy.workflowIds) || policy.workflowIds.length === 0) {
@@ -638,26 +628,8 @@ const parseNativeSelectedProfile = (value: Record<string, unknown>): NativeSelec
 export const parseSelectedProfile = (value: unknown): SelectedProfile => {
   if (!isRecord(value)) throw new Error("selected profile must be an object")
   const surface = getString(value.surface, "selected profile surface")
-  const goalExecutionPolicy = validateGoalExecutionPolicy(value.goalExecutionPolicy)
   if (surface === "native") return parseNativeSelectedProfile(value)
-  if (surface === "sandbox") {
-    if (value.interaction !== undefined) {
-      throw new Error("Verified interactive customer workflows require native:copilot/hve, not Sandbox")
-    }
-    if (value.firstmateInstance !== undefined || value.firstmateInstanceContext !== undefined) {
-      throw new Error("Sandbox profiles cannot select a Firstmate instance.")
-    }
-    const agent = validateAgent(value.agent)
-    return {
-      surface,
-      commandPath: validateCommandPath(value.commandPath),
-      profile: validateProfileName(value.profile),
-      headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
-      ...(agent === undefined ? {} : { agent }),
-      ...(goalExecutionPolicy === undefined ? {} : { goalExecutionPolicy }),
-    }
-  }
-  throw new Error("selected profile surface must be native or sandbox")
+  throw new Error("selected profile surface must be native")
 }
 
 export const canonicalNativeCommandPath = (commandPath: string): string => {
@@ -692,7 +664,7 @@ const buildGoalLaunchCommand = (
   return {
     command: {
       executable: selectedProfile.commandPath,
-      args: selectedProfile.surface === "sandbox" ? [...baseArgs, prompt] : nativePromptArgs(selectedProfile, baseArgs, prompt),
+      args: nativePromptArgs(selectedProfile, baseArgs, prompt),
     },
     promptHandling: "argv",
   }
@@ -706,26 +678,18 @@ export const buildGuideLaunchCommand = (
   selectedProfile = parseSelectedProfile(selectedProfile)
   const normalizedDelivery = normalizePromptDelivery(delivery)
   const baseArgs = [
-    ...(selectedProfile.surface === "native"
-      ? ["run", selectedProfile.launcher, selectedProfile.profile, ...(selectedProfile.interaction === undefined ? [] : ["--interactive"])]
-      : ["--profile", selectedProfile.profile]),
+    "run",
+    selectedProfile.launcher,
+    selectedProfile.profile,
+    ...(selectedProfile.interaction === undefined ? [] : ["--interactive"]),
     ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
     ...(selectedProfile.interaction?.requiredSkills.flatMap((skill) => ["--require-skill", skill]) ?? []),
-    ...(selectedProfile.surface === "native" ? firstmateInstanceSelectorArgs(selectedProfile) : []),
+    ...firstmateInstanceSelectorArgs(selectedProfile),
   ]
   if (goalExecution !== undefined) {
     return buildGoalLaunchCommand(selectedProfile, baseArgs, normalizedDelivery, goalExecution)
   }
   if (normalizedDelivery.mode === "argv") {
-    if (selectedProfile.surface === "sandbox") {
-      return {
-        command: {
-          executable: selectedProfile.commandPath,
-          args: [...baseArgs, normalizedDelivery.prompt],
-        },
-        promptHandling: "argv",
-      }
-    }
     return {
       command: {
         executable: selectedProfile.commandPath,
@@ -779,12 +743,6 @@ export const buildHerdrGuideLaunch = (
     return transport.mode === "manual"
       ? { command: buildGuideLaunchCommand(selectedProfile).command, promptDelivery: "manual" }
       : { command: buildGuideLaunchCommand(selectedProfile, { mode: "argv", prompt }, goalExecution).command, promptDelivery: "command" }
-  }
-  if (selectedProfile.surface === "sandbox") {
-    return {
-      command: buildGuideLaunchCommand(selectedProfile, { mode: "argv", prompt }).command,
-      promptDelivery: "command",
-    }
   }
   const separator = nativeArgvPromptSeparator[selectedProfile.launcher]
   const baseCommand = buildGuideLaunchCommand(selectedProfile).command

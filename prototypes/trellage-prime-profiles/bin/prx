@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly provider='copilot-proxy-rs'
-readonly model_id='claude-opus-5'
+readonly model_id='claude-opus-5.5'
 readonly proxy_origin='http://127.0.0.1:8080'
 readonly proxy_models_url="${proxy_origin}/v1/models"
 readonly api_key='trellage-local-proxy'

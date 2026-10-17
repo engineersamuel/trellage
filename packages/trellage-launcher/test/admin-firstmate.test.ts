@@ -74,7 +74,7 @@ describe("read-only Admin instance discovery", () => {
     }
   })
 
-  it("returns all static surfaces plus named and legacy rows using listing alone", async () => {
+  it("returns static profiles plus named and legacy rows using listing alone", async () => {
     const catalog = mixedInstanceCatalog()
     const descriptors = [missingLegacy, alpha, beta]
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
@@ -83,9 +83,8 @@ describe("read-only Admin instance discovery", () => {
     })
     const rows = await discoverAdminInstanceEntries({ run }, catalog, "/work/entry", undefined, 1500)
     const templates = aggregateAdminProfiles(catalog)
-    expect(rows.map(({ ref }) => ref)).toEqual(["native:copilot/default", ...instanceRows().map(({ ref }) => ref), "sandbox:container"])
+    expect(rows.map(({ ref }) => ref)).toEqual(["native:copilot/default", ...instanceRows().map(({ ref }) => ref)])
     expect(rows[0]).toEqual(templates[0])
-    expect(rows.at(-1)).toEqual(templates.at(-1))
     expect(rows.every((row) => row.lastCheckedAt === undefined && row.firstmateFleet === undefined)).toBe(true)
     expect(rows.find((row) => row.firstmateInstance?.instanceId === alpha.reference.instanceId)?.health).toBe("unknown")
     expect(catalog.native).toHaveLength(2)

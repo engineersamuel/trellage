@@ -72,8 +72,6 @@ await writeFile(
   catalogPath,
   JSON.stringify({
     schemaVersion: 1,
-    sandboxCommandPath: path.join(bin, "trellage"),
-    sandbox: [],
     native: [
       {
         launcher: "copilot",

@@ -20,7 +20,7 @@ export { ReviewSnapshotReader, snapshotBatches, snapshotSliceText, type ReviewSl
 
 // A local capture/storage safety bound, not a model context limit.
 export const reviewPatchBytes = reviewSnapshotBytes
-const standardsPaths = ["AGENTS.md", "CONTRIBUTING.md", "CODING_STANDARDS.md", ".agents/rules/trellage-cli.md"]
+const standardsPaths = ["AGENTS.md", "CONTRIBUTING.md", "CODING_STANDARDS.md"]
 type Git = (args: ReadonlyArray<string>) => Promise<string>
 const patchFlags = ["--no-ext-diff", "--no-textconv", "--no-renames", "--binary", "--unified=5"]
 
@@ -158,11 +158,9 @@ const capturePatchSources = async (git: Git, request: ReviewRequest) => {
   return { sources, primarySourceIds }
 }
 
-const captureStandards = async (git: Git, base: string, paths: ReadonlyArray<string>) => {
+const captureStandards = async (git: Git, base: string) => {
   const standards: { path: string; content: string }[] = []
   for (const name of standardsPaths) {
-    if (name === ".agents/rules/trellage-cli.md" && !paths.some((entry) => entry.startsWith("packages/trellage-cli/")))
-      continue
     const entry = await git(["ls-tree", base, "--", name])
     if (!entry) continue
     if (!/^100(?:644|755) blob [0-9a-f]{40,64}\t/u.test(entry))
@@ -184,7 +182,7 @@ const patchProjection = async (
   if (target.head === null) throw new Error("Skill review requires HEAD.")
   const diff = "Frozen patch sources: " + sources.map((source) => source.id).join(", ")
   const base = target.base?.mergeBase ?? target.head
-  const standards = await captureStandards(git, base, paths)
+  const standards = await captureStandards(git, base)
   const commitList = await git(["log", "--format=%h %s", `${base}..${target.head}`])
   if (Buffer.byteLength(commitList) > 32 * 1024) throw new Error("Review commit list exceeds the size limit.")
   return {

@@ -1,6 +1,6 @@
 ---
 name: trellage-upgrade-all
-description: 'Update all Trellage Native and Container harness versions and skills through the same operation as Admin A. Use when the user invokes trellage-upgrade-all, asks to upgrade every harness and its skills, or requests a repeated global upgrade.'
+description: 'Update all Trellage Native harness versions and skills through the same operation as Admin A. Use when the user invokes trellage-upgrade-all, asks to upgrade every harness and its skills, or requests a repeated global upgrade.'
 user-invocable: true
 disable-model-invocation: false
 ---
@@ -13,7 +13,7 @@ harness update sequences.
 
 ## Safety
 
-- Run on the host, not inside an agent container.
+- Run on the host.
 - Use the installed `trx` command. A worktree-local Node entry point is not
   proof that the installed command works.
 - Preserve unrelated changes, authentication, profile version pins, source
@@ -22,8 +22,6 @@ harness update sequences.
   merge, or publish as part of this operation. These require separate intent.
 - Do not start agent sessions or paid probes. Do not repair profiles, replace
   authentication, or substitute plugin updates for unsupported commands.
-- Do not call `trellage upgrade all` as a substitute. That command remains
-  Container-only and does not synchronize Native skill copies.
 - Keep failures and unsupported profiles visible. Never report an old
   harness fallback as a successful update.
 
@@ -33,7 +31,6 @@ Inspect:
 
 ```bash
 command -v trx
-command -v trellage
 trx --help
 ```
 
@@ -48,8 +45,7 @@ it is authoritative: require an absolute, valid Git worktree root and verify
 its repository identity before changing into it. A bad override is an error;
 never fall back to a different repository. Record the chosen directory.
 
-The command updates the discovered catalog: bundled Container profiles,
-current-worktree overrides, and Native profiles. It does not scan unrelated
+The command updates the discovered Native profile catalog. It does not scan unrelated
 repositories or restart running sessions.
 
 ## 2. Preview the complete operation
@@ -61,7 +57,7 @@ trx upgrade all --dry-run
 ```
 
 Review the Native skill targets, shared cache operation, Native harness
-groups, Container images, and unsupported entries. Do not use Admin filters
+groups, and unsupported entries. Do not use Admin filters
 to infer the scope; the global operation includes hidden profiles.
 
 The preview does not update harnesses, skill caches, profile skill files, or
@@ -92,10 +88,7 @@ The command owns all mutation and ordering:
    A cache-refresh failure prevents stale Native skill copies.
    This happens after Native harness updates so those updaters cannot
    overwrite the final skill copies.
-4. Rebuild each Container profile with its configured harness selector and
-   current configured skills. Harness package and harness-source fallback
-   fail closed.
-5. Read installed versions and report all outcomes.
+4. Read installed versions and report all outcomes.
 
 Do not repeat these phases yourself. The queue handles independent failures,
 unsupported commands, cancellation, and version refresh.
@@ -118,5 +111,5 @@ harness or skill content until relaunched.
 
 Only repeat `trx upgrade all --yes` when the user requested a repeated
 upgrade. Core locks and pins are distinct from floating skills. Do not
-promise byte-identical skills or images when upstream default branches have
+promise byte-identical skills when upstream default branches have
 changed between runs.

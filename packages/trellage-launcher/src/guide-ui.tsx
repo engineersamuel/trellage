@@ -278,12 +278,6 @@ const replaceCandidateAt = <T,>(items: Triple<T>, index: number, value: T): Trip
   return [value, second, third]
 }
 
-const selectedGuideWorkflow = (guide: ProfileGuideV1, workflowId: string): ProfileGuideWorkflow => {
-  const workflow = guide.workflows.find(({ id }) => id === workflowId)
-  if (workflow === undefined) throw new Error(`Unknown workflow reference: ${workflowId}`)
-  return workflow
-}
-
 // ---------------------------------------------------------------------------
 // Stage discriminant (string enum per repository convention).
 // ---------------------------------------------------------------------------
@@ -1827,21 +1821,29 @@ const reducePromptReview = (state: GuideUiState, action: GuideUiAction): GuideUi
 }
 
 /** Review and Optimize are side screens: each opens over Intent or Recommendations and returns there. */
+const openSideScreen = (state: GuideUiState, stage: GuideUiStage): GuideUiState => {
+  if (state.stage !== GuideUiStage.Recommendations && state.stage !== GuideUiStage.Intent) return state
+  const source = state.activeForkId === undefined ? state : enterMainScreen(state)
+  return { ...source, stage, reviewReturnStage: state.stage, errorMessage: undefined }
+}
+
+const sideScreenReturnStage = (state: GuideUiState): GuideUiStage => {
+  if (state.reviewReturnStage !== undefined) return state.reviewReturnStage
+  if (state.recommendations !== undefined) return GuideUiStage.Recommendations
+  return state.intent === undefined ? GuideUiStage.Intent : GuideUiStage.Matching
+}
+
+const closeSideScreen = (state: GuideUiState, stage: GuideUiStage): GuideUiState =>
+  state.stage !== stage
+    ? state
+    : { ...state, stage: sideScreenReturnStage(state), reviewReturnStage: undefined, errorMessage: undefined }
+
 const reduceSideScreen = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
-  const opened = action.type === GuideUiActionType.ReviewOpen ? GuideUiStage.Review
-    : action.type === GuideUiActionType.OptimizeOpen ? GuideUiStage.Optimize : undefined
-  if (opened !== undefined) {
-    if (state.stage !== GuideUiStage.Recommendations && state.stage !== GuideUiStage.Intent) return state
-    const source = state.activeForkId === undefined ? state : enterMainScreen(state)
-    return { ...source, stage: opened, reviewReturnStage: state.stage, errorMessage: undefined }
-  }
-  const closing = action.type === GuideUiActionType.ReviewBack ? GuideUiStage.Review
-    : action.type === GuideUiActionType.OptimizeBack ? GuideUiStage.Optimize : undefined
-  if (closing === undefined || state.stage !== closing) return state
-  const stage = state.reviewReturnStage ?? (state.recommendations === undefined
-    ? state.intent === undefined ? GuideUiStage.Intent : GuideUiStage.Matching
-    : GuideUiStage.Recommendations)
-  return { ...state, stage, reviewReturnStage: undefined, errorMessage: undefined }
+  if (action.type === GuideUiActionType.ReviewOpen) return openSideScreen(state, GuideUiStage.Review)
+  if (action.type === GuideUiActionType.OptimizeOpen) return openSideScreen(state, GuideUiStage.Optimize)
+  if (action.type === GuideUiActionType.ReviewBack) return closeSideScreen(state, GuideUiStage.Review)
+  if (action.type === GuideUiActionType.OptimizeBack) return closeSideScreen(state, GuideUiStage.Optimize)
+  return state
 }
 
 const reduceMatchProgress = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
@@ -1925,7 +1927,9 @@ const moveGuideRecommendation = (state: GuideUiState, delta: number): GuideUiSta
 const isFirstmateProfile = (selected: SelectedProfile | undefined): selected is NativeSelectedProfile =>
   selected?.surface === "native" && selected.launcher === "firstmate"
 
-const isFirstmateSelection = (selected: SelectedProfile | undefined): selected is NativeSelectedProfile =>
+const isFirstmateSelection = (
+  selected: SelectedProfile | undefined,
+): selected is NativeSelectedProfile & { readonly orchestration: NonNullable<NativeSelectedProfile["orchestration"]> } =>
   isFirstmateProfile(selected) && selected.orchestration !== undefined
 
 const invalidateForkQueueEntry = (state: GuideUiState): GuideUiState => {
@@ -2236,7 +2240,7 @@ const reduceGenerateProgress = (state: GuideUiState, action: GuideUiAction): Gui
 const acceptsGeneratedTemplateFallback = (stage: GuideUiStage): boolean =>
   stage === GuideUiStage.GenerateFailed || stage === GuideUiStage.Generating
 
-const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiState => {
+const reduceGenerateActive = (state: GuideUiState, action: GuideUiAction): GuideUiState | undefined => {
   switch (action.type) {
     case GuideUiActionType.GenerateGuideLoaded:
       return state.stage === GuideUiStage.Generating ? { ...state, guideDocument: action.guideDocument } : state
@@ -2254,6 +2258,13 @@ const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiStat
     case GuideUiActionType.GenerateSucceeded:
       return state.stage === GuideUiStage.Generating ? candidatesState(state, action.candidates, undefined) : state
 
+    default:
+      return undefined
+  }
+}
+
+const reduceGenerateRecovery = (state: GuideUiState, action: GuideUiAction): GuideUiState | undefined => {
+  switch (action.type) {
     case GuideUiActionType.GenerateFailed:
       return state.stage === GuideUiStage.Generating
         ? { ...state, stage: GuideUiStage.GenerateFailed, errorMessage: action.message }
@@ -2274,9 +2285,12 @@ const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiStat
       return state.stage === GuideUiStage.GenerateFailed ? profileSelectionState(state) : state
 
     default:
-      return state
+      return undefined
   }
 }
+
+const reduceGenerate = (state: GuideUiState, action: GuideUiAction): GuideUiState =>
+  reduceGenerateActive(state, action) ?? reduceGenerateRecovery(state, action) ?? state
 
 const confirmCandidate = (state: GuideUiState): GuideUiState => {
   if (state.stage !== GuideUiStage.Candidates || state.candidates === undefined) return state
@@ -3540,21 +3554,12 @@ export const guideUiReducer = (state: GuideUiState, action: GuideUiAction): Guid
 const findCombinedCatalogEntry = (
   catalog: CombinedGuideCatalog,
   ref: string,
-):
-  | {
-      readonly native: boolean
-      readonly entry: CombinedGuideCatalog["native"][number] | CombinedGuideCatalog["sandbox"][number]
-    }
-  | undefined => {
-  const native = catalog.native.find(
-    (entry) => profileGuideIdentityKey({ surface: "native", launcher: entry.launcher, profile: entry.name }) === ref,
+): { readonly entry: CombinedGuideCatalog["native"][number] } | undefined => {
+  const entry = catalog.native.find(
+    (candidate) =>
+      profileGuideIdentityKey({ surface: "native", launcher: candidate.launcher, profile: candidate.name }) === ref,
   )
-  if (native !== undefined) return { native: true, entry: native }
-  const sandbox = catalog.sandbox.find(
-    (entry) => profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }) === ref,
-  )
-  if (sandbox !== undefined) return { native: false, entry: sandbox }
-  return undefined
+  return entry === undefined ? undefined : { entry }
 }
 
 const goalRecommendationReason = (
@@ -3588,7 +3593,7 @@ export const enrichLiteralCandidate = (
 ): GuideRecommendation => {
   const found = findCombinedCatalogEntry(catalog, candidate.profileRef)
   if (found === undefined) throw new Error(`Literal match references an unknown profile: ${candidate.profileRef}`)
-  const { entry, native } = found
+  const { entry } = found
   const workflow = compactProfileGuide(entry.guide).workflows.find(({ id }) => id === candidate.workflowId)
   if (workflow === undefined) {
     throw new Error(`Literal match references an unknown workflow of ${candidate.profileRef}: ${candidate.workflowId}`)
@@ -3599,11 +3604,9 @@ export const enrichLiteralCandidate = (
     confidence: candidate.confidence,
     reason: candidate.reason,
     tradeoff: candidate.tradeoff,
-    surface: native ? "native" : "sandbox",
+    surface: "native",
     name: entry.name,
-    ...(native
-      ? { launcher: (entry as CombinedGuideCatalog["native"][number]).launcher }
-      : { harness: (entry as CombinedGuideCatalog["sandbox"][number]).harness.kind }),
+    launcher: entry.launcher,
     description: entry.description,
     sandbox: entry.sandbox,
     workflow,
@@ -3646,7 +3649,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🧠",
     label: "Council",
     description: "Pressure-test the idea and its implementation.",
-    profileRef: "sandbox:claude-council",
+    profileRef: "native:claude/council",
     workflowId: "run-council-deliberation",
     reason: "Use a structured council to challenge the idea, its assumptions, and its implementation.",
     tradeoff: "Adds deliberation time before implementation begins.",
@@ -3657,7 +3660,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🔎",
     label: "Research",
     description: "Gather evidence before implementation.",
-    profileRef: "sandbox:claude-research",
+    profileRef: "native:claude/research",
     workflowId: "vault-backed-research",
     reason: "Collect source-backed evidence, prior art, risks, and implementation options before acting.",
     tradeoff: "Adds research time before implementation begins.",
@@ -4670,7 +4673,7 @@ const MatchProgress = ({
   readonly fallback: GuideMatcherFallback | undefined
   readonly profileCount: number | undefined
 }) => {
-  const availableProfileCount = catalog.native.length + catalog.sandbox.length
+  const availableProfileCount = catalog.native.length
   const readProfileCount = profileCount ?? availableProfileCount
   const executionLabel = matchExecutionLabel(execution, model, effort)
   return (
@@ -5512,7 +5515,7 @@ const RecommendationDetail = ({ recommendation, controllerLabel }: {
         <Text wrap="wrap">{recommendation.tradeoff}</Text>
       </Box>
       <Text dimColor>
-        Skill: {recommendation.workflow.skill ?? "none"} | Sandbox: {recommendation.sandbox ? "Docker" : "host"} |
+        Skill: {recommendation.workflow.skill ?? "none"} | Sandbox: {recommendation.sandbox ? "on" : "off"} |
         Headless prompt: {recommendation.headless.prompt ? "yes" : "no"} | Herdr:{" "}
         {recommendation.herdrCompatibility.status}
       </Text>
@@ -5732,6 +5735,69 @@ const candidateInstancePreview = (command: PublicGuideCommand, profile: Selected
   profile?.surface === "native" && profile.firstmateInstance !== undefined
     ? { ...command, preview: `${command.preview} ${firstmateInstanceSelectorArgs(profile).join(" ")}` } : command
 
+const candidateFallbackNotice = (fallback: GuideTemplateFallback | undefined): string | undefined => {
+  if (fallback === undefined) return undefined
+  const reason = fallback.reason === undefined ? [] : [fallback.reason]
+  const message = fallback.kind === "validation"
+    ? "Using template candidates: generated output failed workflow validation."
+    : "Using template candidates you selected after generation failed."
+  return [message, ...reason].join("\n")
+}
+
+const candidateFallbackRows = (notice: string | undefined, columns: number): number =>
+  notice === undefined ? 0 : wrapGuideText(notice, Math.max(1, columns - 2)).length
+
+const candidateCommandNotice = (
+  candidate: GuideGenerateCandidate,
+  promptHandling: PublicGuideCommand["promptHandling"],
+  firstmate: boolean,
+): string => {
+  if (promptHandling !== "manual-paste") return ""
+  if (candidate.goalExecution !== undefined) return " (native goal input required)"
+  return firstmate ? " (manual-paste preview only; guide execution uses the inbox)" : " (manual paste required)"
+}
+
+const candidateNavigationText = (
+  firstmate: boolean,
+  instanceLabel: string | undefined,
+  legacyFirstmate: boolean,
+): string => {
+  const action = firstmate ? "choose fleet action" : "continue"
+  const instance = instanceLabel === undefined ? "" : " · f instance"
+  const target = firstmate || legacyFirstmate ? " · t target" : ""
+  const back = instanceLabel === undefined ? " · b/Esc back · r refine · e edit · c print · q cancel" : ""
+  return `↑/↓ or j/k select · ↵ ${action}${instance}${target}${back}`
+}
+
+const CandidateInstanceLabel = ({ label }: { readonly label: string | undefined }): React.ReactElement | null =>
+  label === undefined ? null : <Text>{label}</Text>
+
+const CandidateFallbackBanner = ({ notice }: { readonly notice: string | undefined }): React.ReactElement | null =>
+  notice === undefined ? null : <Text color="yellow">{notice}</Text>
+
+const CandidateFooter = ({
+  candidate,
+  command,
+  firstmate,
+  legacyFirstmate,
+  instanceLabel,
+}: {
+  readonly candidate: GuideGenerateCandidate
+  readonly command: PublicGuideCommand
+  readonly firstmate: boolean
+  readonly legacyFirstmate: boolean
+  readonly instanceLabel: string | undefined
+}): React.ReactElement => (
+  <>
+    <Text dimColor wrap="truncate-end">
+      Command: {compactCommandPreview(command.preview)}
+      {candidateCommandNotice(candidate, command.promptHandling, firstmate)}
+    </Text>
+    <Text dimColor wrap="truncate-end">{candidateNavigationText(firstmate, instanceLabel, legacyFirstmate)}</Text>
+    {instanceLabel === undefined ? null : <Text dimColor>b/Esc back · r refine · e edit · c print · q cancel</Text>}
+  </>
+)
+
 const CandidatesView = ({
   candidates,
   index,
@@ -5750,13 +5816,8 @@ const CandidatesView = ({
   readonly instanceLabel?: string
 }) => {
   const { rows, columns: terminalColumns } = useGuideWindowSize()
-  const fallbackNotice = templateFallback === undefined ? undefined : [
-    templateFallback.kind === "validation"
-      ? "Using template candidates: generated output failed workflow validation."
-      : "Using template candidates you selected after generation failed.",
-    ...(templateFallback.reason === undefined ? [] : [templateFallback.reason]),
-  ].join("\n")
-  const fallbackRows = fallbackNotice === undefined ? 0 : wrapGuideText(fallbackNotice, Math.max(1, terminalColumns - 2)).length
+  const fallbackNotice = candidateFallbackNotice(templateFallback)
+  const fallbackRows = candidateFallbackRows(fallbackNotice, terminalColumns)
   const paneHeight = Math.max(1, candidatePaneHeight(rows) - fallbackRows - (instanceLabel === undefined ? 0 : 2))
   const railWidth = candidateRailWidth(terminalColumns)
   const candidate = tripleAt(candidates, index)
@@ -5765,8 +5826,8 @@ const CandidatesView = ({
       <Text bold color="cyan">
         Prompt candidates
       </Text>
-      {instanceLabel === undefined ? null : <Text>{instanceLabel}</Text>}
-      {fallbackNotice === undefined ? null : <Text color="yellow">{fallbackNotice}</Text>}
+      <CandidateInstanceLabel label={instanceLabel} />
+      <CandidateFallbackBanner notice={fallbackNotice} />
       <Box marginTop={1}>
         <CandidateRail candidates={candidates} index={index} width={railWidth} height={paneHeight} />
         <CandidateDetail
@@ -5775,17 +5836,13 @@ const CandidatesView = ({
           width={Math.max(1, terminalColumns - railWidth - 2)}
         />
       </Box>
-      <Text dimColor wrap="truncate-end">
-        Command: {compactCommandPreview(command.preview)}
-        {command.promptHandling === "manual-paste"
-          ? candidate.goalExecution === undefined ? firstmate ? " (manual-paste preview only; guide execution uses the inbox)" : " (manual paste required)" : " (native goal input required)"
-          : ""}
-      </Text>
-      <Text dimColor wrap="truncate-end">
-        ↑/↓ or j/k select · ↵ {firstmate ? "choose fleet action" : "continue"}{instanceLabel === undefined ? "" : " · f instance"}{firstmate || legacyFirstmate ? " · t target" : ""}
-        {instanceLabel === undefined ? " · b/Esc back · r refine · e edit · c print · q cancel" : ""}
-      </Text>
-      {instanceLabel === undefined ? null : <Text dimColor>b/Esc back · r refine · e edit · c print · q cancel</Text>}
+      <CandidateFooter
+        candidate={candidate}
+        command={command}
+        firstmate={firstmate}
+        legacyFirstmate={legacyFirstmate}
+        instanceLabel={instanceLabel}
+      />
     </Box>
   )
 }
@@ -5906,13 +5963,11 @@ const DestinationView = ({
   )
 }
 
-/** `copilot · council`, or `sandbox · claude-council`. */
+/** `copilot · council`. */
 const describeJobRunner = (profile: SelectedProfile): string =>
-  profile.surface === "native"
-    ? profile.firstmateInstance === undefined
-      ? `${profile.launcher} · ${profile.profile}${profile.agent === undefined ? "" : ` · ${profile.agent}`}`
-      : firstmateInstanceLabel(profile)
-    : `sandbox · ${profile.profile}`
+  profile.firstmateInstance === undefined
+    ? `${profile.launcher} · ${profile.profile}${profile.agent === undefined ? "" : ` · ${profile.agent}`}`
+    : firstmateInstanceLabel(profile)
 
 const QueuedJobBlock = ({
   job,
@@ -8044,6 +8099,54 @@ const inlineErrorStages: ReadonlySet<GuideUiStage> = new Set([
   GuideUiStage.Generating,
 ])
 
+interface GuideAppViewProps {
+  readonly props: GuideUiProps
+  readonly state: GuideUiState
+  readonly herdrContext: HerdrContext | null
+  readonly herdrEnabled: boolean
+  readonly dispatch: GuideUiDispatch
+  readonly submitGoal: ReturnType<typeof useGuideAugmentEffect>
+  readonly inlineError: string | undefined
+  readonly inlineErrorRows: number
+  readonly firstmateCaptureRows: number
+}
+
+const GuideAppView = ({
+  props,
+  state,
+  herdrContext,
+  herdrEnabled,
+  dispatch,
+  submitGoal,
+  inlineError,
+  inlineErrorRows,
+  firstmateCaptureRows,
+}: GuideAppViewProps): React.ReactElement => {
+  const activeWizardStep = wizardStepForStage(state.stage)
+  return (
+    <Box flexDirection="column">
+      {herdrContext?.capture === undefined || state.stage === GuideUiStage.Review || state.stage === GuideUiStage.Optimize ? null : <CaptureSourceBanner capture={herdrContext.capture} />}
+      {state.forks.map((fork) => {
+        const slice = forkState(state, fork.id)
+        return slice === undefined ? null : (
+          <ForkWorker key={fork.id} props={props} state={slice} forkId={fork.id} dispatch={dispatch} />
+        )
+      })}
+      {showsAugmentStatusBar(state) && state.augmentJob !== undefined ? (
+        <AugmentStatusBar job={state.augmentJob} />
+      ) : null}
+      {state.forks.length === 0 ? null : <ForkTabBar state={state} />}
+      <ChromeRowsContext.Provider
+        value={(state.forks.length === 0 ? 0 : forkTabBarRows) + (showsAugmentStatusBar(state) ? augmentStatusRows : 0) + inlineErrorRows + firstmateCaptureRows}
+      >
+        {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
+        {inlineError === undefined ? null : <Box paddingX={1}><Text color="yellow">Error: {inlineError}</Text></Box>}
+        {stageRenderer[state.stage]({ props, state, herdrEnabled, herdrContext, dispatch, submitGoal })}
+      </ChromeRowsContext.Provider>
+    </Box>
+  )
+}
+
 /**
  * The exported `trx guide` interactive UI. Side effects and stage-specific
  * input/render behavior are delegated to focused helpers.
@@ -8106,27 +8209,17 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
     isActive: pastedEditorMaximum(state) !== undefined,
   })
 
-  const activeWizardStep = wizardStepForStage(state.stage)
   return (
-    <Box flexDirection="column">
-      {herdrContext?.capture === undefined || state.stage === GuideUiStage.Review || state.stage === GuideUiStage.Optimize ? null : <CaptureSourceBanner capture={herdrContext.capture} />}
-      {state.forks.map((fork) => {
-        const slice = forkState(state, fork.id)
-        return slice === undefined ? null : (
-          <ForkWorker key={fork.id} props={effectiveProps} state={slice} forkId={fork.id} dispatch={dispatch} />
-        )
-      })}
-      {showsAugmentStatusBar(state) && state.augmentJob !== undefined ? (
-        <AugmentStatusBar job={state.augmentJob} />
-      ) : null}
-      {state.forks.length === 0 ? null : <ForkTabBar state={state} />}
-      <ChromeRowsContext.Provider
-        value={(state.forks.length === 0 ? 0 : forkTabBarRows) + (showsAugmentStatusBar(state) ? augmentStatusRows : 0) + inlineErrorRows + firstmateCaptureRows}
-      >
-        {activeWizardStep === undefined ? null : <WizardBreadcrumbs activeStep={activeWizardStep} />}
-        {inlineError === undefined ? null : <Box paddingX={1}><Text color="yellow">Error: {inlineError}</Text></Box>}
-        {stageRenderer[state.stage]({ props: effectiveProps, state, herdrEnabled, herdrContext, dispatch, submitGoal })}
-      </ChromeRowsContext.Provider>
-    </Box>
+    <GuideAppView
+      props={effectiveProps}
+      state={state}
+      herdrContext={herdrContext}
+      herdrEnabled={herdrEnabled}
+      dispatch={dispatch}
+      submitGoal={submitGoal}
+      inlineError={inlineError}
+      inlineErrorRows={inlineErrorRows}
+      firstmateCaptureRows={firstmateCaptureRows}
+    />
   )
 }

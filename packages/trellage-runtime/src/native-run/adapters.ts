@@ -1,6 +1,21 @@
 import { readFileSync } from "node:fs"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
-import { chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, symlink, unlink, writeFile } from "node:fs/promises"
+import {
+  chmod,
+  copyFile,
+  cp,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  readlink,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from "node:fs/promises"
 import { createHash, randomUUID } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
@@ -8,11 +23,12 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { parse as parseToml } from "smol-toml"
 import { NativeRunCancelledError, NativeRunError } from "./paths.ts"
-import { PRIME_MANAGED_FLAGS, ensurePrimeRuntime, primeLaunchCommand, primeRuntimePaths } from "./prime-runtime.ts"
+import { PRIME_DEFAULT_MODEL, PRIME_MANAGED_FLAGS, ensurePrimeRuntime, primeLaunchCommand, primeRuntimePaths } from "./prime-runtime.ts"
 import type { GenerationLayout, CompositionPlan } from "./compose.ts"
 import { lifecycleRuntime, lifecycleRuntimeCommand } from "./lifecycle-runtime.ts"
 import { nativePresetProfiles } from "./presets.ts"
 import { childSettlement } from "./child-settlement.ts"
+import { digestDirectory } from "./source.ts"
 
 const execFileAsync = promisify(execFile)
 
@@ -725,6 +741,331 @@ const buildOmpLaunch = async (
   }
 }
 
+const headlongHome = (environment: NodeJS.ProcessEnv): string => {
+  const home = environment.TRELLAGE_HEADLONG_HOME ?? path.join(environment.HOME ?? os.homedir(), ".headlong")
+  if (!path.isAbsolute(home)) throw new NativeRunError("config", "TRELLAGE_HEADLONG_HOME must be absolute")
+  return home
+}
+
+const headlongAppHome = (environment: NodeJS.ProcessEnv, home: string): string => {
+  const appHome = environment.TRELLAGE_HEADLONG_APP_DIR ?? path.join(home, "app")
+  if (!path.isAbsolute(appHome)) throw new NativeRunError("config", "TRELLAGE_HEADLONG_APP_DIR must be absolute")
+  return appHome
+}
+
+const headlongEnvironment = (
+  environment: NodeJS.ProcessEnv,
+  home: string,
+  appHome: string,
+  model: string | undefined,
+): Record<string, string | null> => ({
+  HOME: environment.HOME ?? os.homedir(),
+  HEADLONG_HOME: home,
+  HEADLONG_APP_DIR: appHome,
+  HEADLONG_UNSANDBOXED: "1",
+  HEADLONG_IDENTITY_NAME: "ada",
+  ANTHROPIC_API_KEY: "trellage-local-proxy",
+  ANTHROPIC_AUTH_TOKEN: null,
+  CLAUDE_CODE_OAUTH_TOKEN: null,
+  OPENAI_API_KEY: null,
+  GEMINI_API_KEY: null,
+  OPENROUTER_API_KEY: null,
+  LLM_API_URL: "http://127.0.0.1:8080/v1/messages",
+  SHELLM_API_URL: "http://127.0.0.1:8080/v1/messages",
+  SHELLM_MODEL: model ?? "claude-sonnet-5",
+  SHELLM_WEB_ARGS: "--host 127.0.0.1 --port 18080",
+  PATH: [
+    path.join(environment.HOME ?? os.homedir(), ".local", "bin"),
+    path.join(appHome, "bin"),
+    path.join(appHome, "tools"),
+    environment.PATH ?? "",
+  ]
+    .filter(Boolean)
+    .join(path.delimiter),
+})
+
+const requireHeadlongDirectory = async (directory: string): Promise<void> => {
+  const status = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
+    throw error
+  })
+  if (status && (!status.isDirectory() || status.isSymbolicLink()))
+    throw new NativeRunError("launch", `unsafe Headlong directory: ${directory}`)
+  if (!status) await mkdir(directory, { recursive: true, mode: 0o700 })
+}
+
+const headlongSkillStatus = async (target: string) =>
+  lstat(target).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
+    throw error
+  })
+
+const parseHeadlongManagedSkillNames = (contents: string): Set<string> => {
+  const names = new Set<string>()
+  const lines = contents.split(/\r?\n/u).filter(Boolean)
+  for (const line of lines) {
+    const [name, alwaysOn, extra] = line.split("\t")
+    if (
+      name === undefined ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name) ||
+      (alwaysOn !== "0" && alwaysOn !== "1") ||
+      (extra !== undefined && extra !== "") ||
+      names.has(name)
+    )
+      throw new NativeRunError("launch", `invalid Headlong skill manifest entry: ${line}`)
+    names.add(name)
+  }
+  return names
+}
+
+const readHeadlongManagedSkillNames = async (metadata: string, store: string): Promise<Set<string>> => {
+  const manifest = path.join(metadata, "managed-skills.tsv")
+  const manifestStatus = await headlongSkillStatus(manifest)
+  const storeStatus = await headlongSkillStatus(store)
+  if (storeStatus && (!storeStatus.isDirectory() || storeStatus.isSymbolicLink()))
+    throw new NativeRunError("launch", `unsafe Headlong managed skill store: ${store}`)
+  if (!manifestStatus) {
+    if (storeStatus && (await readdir(store)).length > 0)
+      throw new NativeRunError("launch", "Headlong managed skill store exists without its ownership manifest")
+    return new Set()
+  }
+  if (!manifestStatus.isFile() || manifestStatus.isSymbolicLink())
+    throw new NativeRunError("launch", `unsafe Headlong skill manifest: ${manifest}`)
+  return parseHeadlongManagedSkillNames(await readFile(manifest, "utf8"))
+}
+
+const stageHeadlongSkill = async (
+  skill: CompositionPlan["skills"][number],
+  store: string,
+): Promise<string> => {
+  const temporary = path.join(store, `.skill-${randomUUID()}`)
+  await cp(skill.directory, temporary, { recursive: true, errorOnExist: true })
+  try {
+    if ((await digestDirectory(temporary)) !== skill.digest)
+      throw new NativeRunError("launch", `Headlong skill changed while staging: ${skill.name}`)
+    return temporary
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true })
+    throw error
+  }
+}
+
+const restoreHeadlongSkill = async (target: string, backup: string): Promise<void> => {
+  const current = await headlongSkillStatus(target)
+  if (current) return
+  try {
+    await rename(backup, target)
+  } catch (error) {
+    throw new NativeRunError(
+      "launch",
+      `Headlong skill update failed and its previous copy could not be restored: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+const replaceHeadlongSkill = async (
+  temporary: string,
+  target: string,
+  backup: string,
+  existing: boolean,
+): Promise<void> => {
+  try {
+    if (existing) await rename(target, backup)
+    await rename(temporary, target)
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true })
+    if (existing) await restoreHeadlongSkill(target, backup)
+    throw error
+  }
+  if (existing) await rm(backup, { recursive: true, force: true })
+}
+
+const publishHeadlongSkill = async (
+  skill: CompositionPlan["skills"][number],
+  store: string,
+  managedNames: ReadonlySet<string>,
+): Promise<string> => {
+  const target = path.join(store, skill.name)
+  const status = await headlongSkillStatus(target)
+  if (status && (!status.isDirectory() || status.isSymbolicLink()))
+    throw new NativeRunError("launch", `unsafe Headlong managed skill: ${target}`)
+  if (status) {
+    const existingDigest = await digestDirectory(target)
+    if (existingDigest === skill.digest) return target
+    if (!managedNames.has(skill.name))
+      throw new NativeRunError("launch", `Headlong managed skill collides with unmanaged state: ${skill.name}`)
+  }
+
+  const temporary = await stageHeadlongSkill(skill, store)
+  await replaceHeadlongSkill(temporary, target, path.join(store, `.backup-${randomUUID()}`), status !== undefined)
+  return target
+}
+
+const managedHeadlongTarget = (store: string, candidate: string): boolean => {
+  const relative = path.relative(store, candidate)
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+}
+
+const removeStaleHeadlongLinks = async (
+  identity: string,
+  store: string,
+  selected: ReadonlyMap<string, { readonly target: string; readonly alwaysOn: boolean }>,
+): Promise<void> => {
+  for (const category of ["skills", "kernel"] as const) {
+    const directory = path.join(identity, category)
+    await requireHeadlongDirectory(directory)
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.isSymbolicLink()) continue
+      const link = path.join(directory, entry.name)
+      const resolved = path.resolve(directory, await readlink(link))
+      if (!managedHeadlongTarget(store, resolved)) continue
+      const expected = selected.get(entry.name)
+      if (expected?.target !== resolved || expected.alwaysOn !== (category === "kernel")) await unlink(link)
+    }
+  }
+}
+
+const linkHeadlongSkills = async (
+  identity: string,
+  selected: ReadonlyMap<string, { readonly target: string; readonly alwaysOn: boolean }>,
+): Promise<void> => {
+  for (const [name, skill] of selected) {
+    const directory = path.join(identity, skill.alwaysOn ? "kernel" : "skills")
+    const link = path.join(directory, name)
+    const existing = await lstat(link).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined
+      throw error
+    })
+    if (existing && !existing.isSymbolicLink())
+      throw new NativeRunError("launch", `Headlong skill conflicts with unmanaged identity content: ${link}`)
+    if (existing) {
+      const existingTarget = path.resolve(directory, await readlink(link))
+      if (!managedHeadlongTarget(path.dirname(skill.target), existingTarget))
+        throw new NativeRunError("launch", `Headlong skill conflicts with an unmanaged symlink: ${link}`)
+      if (existingTarget === skill.target) continue
+    }
+    const temporary = `${link}.trellage-${randomUUID()}`
+    await symlink(skill.target, temporary)
+    await rename(temporary, link)
+  }
+}
+
+const updateHeadlongIdentitySkills = async (
+  identity: string,
+  store: string,
+  selected: ReadonlyMap<string, { readonly target: string; readonly alwaysOn: boolean }>,
+): Promise<void> => {
+  await removeStaleHeadlongLinks(identity, store, selected)
+  await linkHeadlongSkills(identity, selected)
+}
+
+const writeHeadlongManagedSkillManifest = async (
+  metadata: string,
+  skills: CompositionPlan["skills"],
+): Promise<void> => {
+  const lines = skills
+    .map((skill) => `${skill.name}\t${skill.alwaysOn === true && !skill.manualOnly && skill.name !== "i-have-adhd" ? 1 : 0}\t`)
+    .sort()
+  const manifest = path.join(metadata, "managed-skills.tsv")
+  const temporary = path.join(metadata, `.managed-skills-${randomUUID()}`)
+  await writeFile(temporary, `${lines.join("\n")}${lines.length > 0 ? "\n" : ""}`, { flag: "wx", mode: 0o600 })
+  await rename(temporary, manifest)
+}
+
+const syncHeadlongSkills = async (plan: CompositionPlan, home: string, appHome: string): Promise<void> => {
+  const store = path.join(home, ".trellage", "skills")
+  const metadata = path.dirname(store)
+  const identitiesRoot = path.join(appHome, ".identities")
+  await requireHeadlongDirectory(metadata)
+  const managedNames = await readHeadlongManagedSkillNames(metadata, store)
+  await requireHeadlongDirectory(store)
+  await requireHeadlongDirectory(identitiesRoot)
+  const identities = (await readdir(identitiesRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+    .map((entry) => path.join(identitiesRoot, entry.name))
+  if (identities.length === 0)
+    throw new NativeRunError("launch", "Headlong has no initialized identity; run its host installer before trx run")
+
+  const selected = new Map<string, { readonly target: string; readonly alwaysOn: boolean }>()
+  for (const skill of plan.skills) {
+    const target = await publishHeadlongSkill(skill, store, managedNames)
+    if (skill.manualOnly || skill.name === "i-have-adhd") continue
+    selected.set(skill.name, { target, alwaysOn: skill.alwaysOn === true })
+  }
+  await writeHeadlongManagedSkillManifest(metadata, plan.skills)
+  for (const identity of identities) await updateHeadlongIdentitySkills(identity, store, selected)
+}
+
+const headlongInitEnvironment = (
+  environment: NodeJS.ProcessEnv,
+  values: Readonly<Record<string, string | null>>,
+): NodeJS.ProcessEnv => {
+  const result = { ...environment }
+  for (const [key, value] of Object.entries(values)) {
+    if (value === null) delete result[key]
+    else result[key] = value
+  }
+  return result
+}
+
+export const headlongAdapter: NativeAdapter = {
+  id: "headlong",
+  label: "Headlong",
+  isolation: unprovenEvidence(
+    "Headlong runs its persistent agent and shell on the host; it has full host access and continues thinking after the TUI exits",
+  ),
+  skillsSubdirectory: "skills",
+  instructionsFile: "AGENTS.md",
+  efforts: [],
+  policyVersion: "headlong-native-1",
+  providerPolicy: (model) => `copilot-proxy-rs:${model ?? "claude-sonnet-5"}`,
+  effectivePolicy: (model) => ({
+    normal: `${model ?? "claude-sonnet-5"} · persistent agent`,
+    plan: "Headlong persistent-agent policy",
+  }),
+  managedFlags: [],
+  writeAdapterFiles: async (stage) => {
+    await mkdir(stage, { recursive: true })
+  },
+  persistentState: [],
+  resumeArgs: () => [],
+  launch: ({ forwardedArgs, environment, model }) => {
+    const home = headlongHome(environment)
+    const appHome = headlongAppHome(environment, home)
+    return {
+      command: binary(environment, "TRELLAGE_HEADLONG_BIN", "ada"),
+      args: [...forwardedArgs],
+      env: headlongEnvironment(environment, home, appHome, model),
+    }
+  },
+  resolveLaunch: async ({ environment, plan, model }, planned) => {
+    const home = headlongHome(environment)
+    const appHome = headlongAppHome(environment, home)
+    const launchEnvironment = headlongEnvironment(environment, home, appHome, model)
+    const initEnvironment = headlongInitEnvironment(environment, {
+      ...launchEnvironment,
+      HEADLONG_NO_THINKERS: "1",
+      HEADLONG_NO_DASH: "1",
+      HEADLONG_NO_TTY: "1",
+    })
+    const initCommand = binary(
+      environment,
+      "TRELLAGE_HEADLONG_INIT_BIN",
+      path.join(environment.HOME ?? os.homedir(), ".local", "bin", "headlong-init"),
+    )
+    try {
+      await execFileAsync(initCommand, [], { env: initEnvironment, encoding: "utf8", timeout: 60_000 })
+    } catch (error) {
+      throw new NativeRunError(
+        "launch",
+        `Headlong initialization failed; install Headlong on the host and verify headlong-init: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    await syncHeadlongSkills(plan, home, appHome)
+    return { ...planned, env: launchEnvironment }
+  },
+}
+
 export const agencyAdapter: NativeAdapter = {
   id: "agency",
   label: "Agency",
@@ -896,16 +1237,19 @@ export const jcodeAdapter: NativeAdapter = {
   }),
   resolveLaunch: async ({ environment }, planned) => {
     if (environment.TRELLAGE_JCODE_BIN && path.isAbsolute(environment.TRELLAGE_JCODE_BIN)) return planned
-    const runtime = lifecycleRuntime("jcode")!
-    const command = binary(
-      environment,
-      "TRELLAGE_JCODE_LIFECYCLE_BIN",
-      lifecycleRuntimeCommand(runtime, environment.HOME),
-    )
-    const { stdout } = await execFileAsync(command, ["_trx-executable"], {
-      env: { ...environment, TRELLAGE_TRX_JCODE_ADAPTER: "1" },
-      encoding: "utf8",
-    })
+    const command = lifecycleBinary(environment, "TRELLAGE_JCODE_LIFECYCLE_BIN", "jcx", "jcx")
+    let stdout: string
+    try {
+      const result = await execFileAsync(command, ["_trx-executable"], {
+        env: { ...environment, TRELLAGE_TRX_JCODE_ADAPTER: "1" },
+        encoding: "utf8",
+      })
+      stdout = result.stdout
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string }
+      const diagnostic = failure.stderr?.trim() || failure.message || String(error)
+      throw new NativeRunError("launch", `JCode admission failed: ${diagnostic.trim()}`)
+    }
     const executable = stdout.trim()
     if (!path.isAbsolute(executable))
       throw new NativeRunError("launch", "JCode admission returned an invalid executable")
@@ -959,9 +1303,9 @@ export const primeAdapter: NativeAdapter = {
   instructionsFile: "AGENTS.md",
   efforts: [],
   policyVersion: "prime-canonical-2",
-  providerPolicy: (model) => `copilot-proxy-rs:${model ?? "claude-opus-5"}`,
+  providerPolicy: (model) => `copilot-proxy-rs:${model ?? PRIME_DEFAULT_MODEL}`,
   effectivePolicy: (model) => ({
-    normal: `${model ?? "claude-opus-5"} · effort managed`,
+    normal: `${model ?? PRIME_DEFAULT_MODEL} · effort managed`,
     plan: "Prime autonomous policy",
   }),
   managedFlags: PRIME_MANAGED_FLAGS.filter((flag) => flag !== "--single-turn"),
@@ -969,7 +1313,7 @@ export const primeAdapter: NativeAdapter = {
     await mkdir(stage, { recursive: true })
     await writeFile(
       path.join(stage, "models.json"),
-      `${JSON.stringify({ providers: { "copilot-proxy-rs": { baseUrl: "http://127.0.0.1:8080", api: "anthropic-messages", apiKey: "trellage-local-proxy", compat: { supportsEagerToolInputStreaming: false }, models: [{ id: model ?? "claude-opus-5" }] } } }, null, 2)}\n`,
+      `${JSON.stringify({ providers: { "copilot-proxy-rs": { baseUrl: "http://127.0.0.1:8080", api: "anthropic-messages", apiKey: "trellage-local-proxy", compat: { supportsEagerToolInputStreaming: false }, models: [{ id: model ?? PRIME_DEFAULT_MODEL }] } } }, null, 2)}\n`,
     )
   },
   persistentState: ["sessions", "memory"],
@@ -980,7 +1324,7 @@ export const primeAdapter: NativeAdapter = {
       "--provider",
       "copilot-proxy-rs",
       "--model",
-      model ?? "claude-opus-5",
+      model ?? PRIME_DEFAULT_MODEL,
       "--offline",
       "--autonomous",
       ...instructionsArgument(layout),
@@ -996,7 +1340,7 @@ export const primeAdapter: NativeAdapter = {
   }),
   resolveLaunch: async ({ layout, model, forwardedArgs, environment }) => {
     if (environment.TRELLAGE_PRIME_SKIP_REPAIR !== "1") {
-      const lifecycle = binary(environment, "TRELLAGE_PRIME_LIFECYCLE_BIN", "prx")
+      const lifecycle = lifecycleBinary(environment, "TRELLAGE_PRIME_LIFECYCLE_BIN", "prx", "prx")
       const paths = primeRuntimePaths({ environment })
       const installed = await lstat(paths.receiptFile).then(
         () => true,
@@ -1012,10 +1356,8 @@ export const primeAdapter: NativeAdapter = {
         })
       } catch (error) {
         const failure = error as { stderr?: string; message?: string }
-        throw new NativeRunError(
-          "launch",
-          `Prime lifecycle repair failed: ${(failure.stderr ?? failure.message ?? String(error)).trim()}`,
-        )
+        const diagnostic = failure.stderr?.trim() || failure.message || String(error)
+        throw new NativeRunError("launch", `Prime lifecycle repair failed: ${diagnostic.trim()}`)
       }
     }
     const state = await ensurePrimeRuntime({ environment })
@@ -1408,6 +1750,30 @@ export const modelContextWindow = (model: string | undefined, home: string | und
   return typeof entry?.context_window === "number" && entry.context_window > 0 ? entry.context_window : undefined
 }
 
+const claudePluginSettings = (plan: CompositionPlan | undefined): Record<string, unknown> => {
+  if (!plan || plan.plugins.length === 0) return {}
+  const enabledPlugins = Object.fromEntries(
+    plan.plugins
+      .filter((plugin) => plugin.plugin && plugin.marketplace)
+      .map((plugin) => [`${plugin.plugin}@${plugin.marketplace}`, true]),
+  )
+  const pluginConfigs = Object.fromEntries(
+    plan.plugins
+      .filter((plugin) => plugin.plugin && plugin.marketplace && Object.keys(plugin.settings ?? {}).length > 0)
+      .map((plugin) => [`${plugin.plugin}@${plugin.marketplace}`, { options: plugin.settings }]),
+  )
+  return { enabledPlugins, pluginConfigs }
+}
+
+const claudeInteractiveProfiles = new Set([
+  "preset-claude-blog",
+  "preset-claude-council",
+  "preset-claude-ecc",
+  "preset-claude-frontend-design",
+  "preset-claude-research",
+  "preset-claude-social-media",
+])
+
 export const claudeAdapter: NativeAdapter = {
   id: "claude",
   label: "Claude",
@@ -1430,7 +1796,7 @@ export const claudeAdapter: NativeAdapter = {
     "--permission-mode",
     "--disallowedTools",
   ],
-  writeAdapterFiles: async (stage) => {
+  writeAdapterFiles: async (stage, _model, _layout, plan) => {
     await mkdir(stage, { recursive: true })
     // Skip first-run onboarding (theme picker) and the bypass-permissions confirmation in a fresh config directory.
     await writeFile(
@@ -1450,6 +1816,7 @@ export const claudeAdapter: NativeAdapter = {
           model: "opusplan",
           effortLevel: "medium",
           skipDangerousModePermissionPrompt: true,
+          ...claudePluginSettings(plan),
           statusLine: {
             type: "command",
             command: 'bash "$CLAUDE_CONFIG_DIR/statusline.sh"',
@@ -1484,18 +1851,20 @@ export const claudeAdapter: NativeAdapter = {
   persistentState: ["projects", "sessions", "file-history", "todos"],
   resumeArgs: (resume) =>
     resume.kind === "continue" ? ["--continue"] : resume.id ? ["--resume", resume.id] : ["--resume"],
-  launch: ({ layout, model, effort, forwardedArgs, resumeArgs, environment, planMode }) => {
+  launch: ({ layout, plan, model, effort, forwardedArgs, resumeArgs, environment, planMode }) => {
     // Claude Code does not know proxy model ids, so state the window it should assume.
     const window = modelContextWindow(model, environment.HOME)
     return {
       command: binary(environment, "TRELLAGE_CLAUDE_BIN", "claude"),
       args: [
+        ...plan.plugins.flatMap((plugin) => ["--plugin-dir", path.join(layout.generationPath, "plugins", plugin.name)]),
         ...(planMode
           ? ["--allow-dangerously-skip-permissions"]
           : ["--dangerously-skip-permissions", "--permission-mode", "bypassPermissions"]),
         ...(planMode && effort ? ["--effort", effort] : []),
-        "--disallowedTools",
-        "AskUserQuestion",
+        ...(plan.profiles.some((profile) => claudeInteractiveProfiles.has(profile))
+          ? []
+          : ["--disallowedTools", "AskUserQuestion"]),
         ...(model ? ["--model", model] : []),
         ...(planMode ? ["--permission-mode", "plan"] : effort ? ["--effort", effort] : []),
         ...resumeArgs,
@@ -1516,6 +1885,7 @@ export const claudeAdapter: NativeAdapter = {
   },
   resolveLaunch: async (input, planned) => {
     const profile = lifecycleProfile(input.plan, "claude", "default")
+    if (!["default", "office", "office-charts"].includes(profile)) return planned
     const admitted = await privateAdmission(
       "claude",
       "TRELLAGE_CLAUDE_LIFECYCLE_BIN",
@@ -1708,7 +2078,7 @@ export const hostDefaults = (harness: string, home: string = os.homedir()): Host
   if (harness === "agency") return { model: "gpt-6-astra", effort: "low" }
   if (harness === "jcode") return { model: "gpt-5.6-sol", effort: "medium" }
   if (harness === "omp") return { model: "gpt-5.6-sol", effort: "medium" }
-  if (harness === "prime") return { model: "claude-opus-5", effort: undefined }
+  if (harness === "prime") return { model: PRIME_DEFAULT_MODEL, effort: undefined }
   if (harness === "firstmate") return { model: "claude-opus-5.5", effort: undefined }
   if (harness === "uji") return { model: `${UJI_PROXY_PROVIDER}/${UJI_PROXY_DEFAULT_MODEL}`, effort: undefined }
   if (harness === "copilot") {
@@ -1819,6 +2189,7 @@ export const adapters: Readonly<Record<string, NativeAdapter>> = {
   prime: primeAdapter,
   grok: grokAdapter,
   fx: fxAdapter,
+  headlong: headlongAdapter,
   uji: ujiAdapter,
 }
 

@@ -9,7 +9,7 @@ capabilities:
 bestFor:
   - Long-running or exploratory tasks that benefit from Prime's persistent IPython/RLM subagents and a resident daemon session
   - Work where the agent needs to ask clarifying questions through the managed ask_user extension instead of guessing
-  - Tasks that should route through proxy-backed claude-opus-5 without any host Anthropic/OpenAI/Copilot credentials present
+  - Tasks that should route through proxy-backed claude-opus-5.5 without any host Anthropic/OpenAI/Copilot credentials present
 avoidFor:
   - Hosts without network access to a PyPI simple index for kernel bootstrap; files.pythonhosted.org unreachable falls back to a mirror, but full offline bootstrap is not supported
   - One-shot automation that assumes background workers exit with the process; long sessions can leave resident workers on the profile daemon socket until trx shutdown prime runs
@@ -22,7 +22,7 @@ prerequisites:
   - id: uv
     description: uv available to bootstrap the isolated Prime IPython kernel venv.
   - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 (Anthropic Messages API) and advertising claude-opus-5.
+    description: copilot-proxy-rs listening on http://127.0.0.1:8080 (Anthropic Messages API) and advertising claude-opus-5.5.
   - id: cli-tools
     description: curl and jq available on the host for setup, doctor, and update checks.
 workflows:
@@ -54,7 +54,7 @@ workflows:
 # Native Prime Agent (`prime`) — `default` profile
 
 `prime` runs Prime Agent directly on the host with an isolated profile, keyless
-`copilot-proxy-rs` (Anthropic Messages API) pinned to `claude-opus-5`,
+`copilot-proxy-rs` (Anthropic Messages API) pinned to `claude-opus-5.5`,
 persistent IPython/RLM subagents, daemon sessions, and the managed `ask_user`
 extension. See `prototypes/trellage-prime-profiles/README.md`.
 

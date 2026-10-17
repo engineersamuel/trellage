@@ -61,7 +61,7 @@ const headless = {
 }
 const commandPath = path.join(root, "bin", "trx")
 const catalog = parseGuideCatalog(JSON.stringify({
-  schemaVersion: 1, sandbox: [], sandboxCommandPath: path.join(root, "bin", "trellage"),
+  schemaVersion: 1,
   native: [
     ...["default", "pstack-workers"].map((profile) => ({
       launcher: "firstmate", harness: "firstmate", name: profile, description: `Firstmate ${profile}`,

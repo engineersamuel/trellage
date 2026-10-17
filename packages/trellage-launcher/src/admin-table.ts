@@ -70,11 +70,10 @@ export const resolveAdminViewState = (
   return "ready"
 }
 
-/** The user-facing profile "Type" column value: every profile is either an isolated container (Sandbox) or a native host process. */
-export type AdminProfileType = "Native" | "Container"
+/** The user-facing profile "Type" column value: every profile is a native host process. */
+export type AdminProfileType = "Native"
 
-export const adminProfileType = (entry: AdminProfileEntry): AdminProfileType =>
-  entry.surface === "native" ? "Native" : "Container"
+export const adminProfileType = (_entry: AdminProfileEntry): AdminProfileType => "Native"
 
 export const adminVisibleRowRange = (
   entries: ReadonlyArray<AdminProfileEntry>,

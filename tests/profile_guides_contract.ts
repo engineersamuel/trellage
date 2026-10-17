@@ -19,6 +19,7 @@ const guideRoot = path.join(root, "profile-guides")
 
 const expected: ProfileGuideIdentity[] = []
 expected.push({ surface: "native", launcher: "fx", profile: "default" })
+expected.push({ surface: "native", launcher: "headlong", profile: "default" })
 const sandboxHarnesses = new Map<string, string>()
 const prototypeEntries = await readdir(path.join(root, "prototypes"), { withFileTypes: true })
 const nativeFamilies = prototypeEntries
@@ -77,7 +78,7 @@ const expectedGoalSurface = (identity) => {
   const harness = sandboxHarnesses.get(identity.profile)
   if (harness !== "claude") return undefined
   return {
-    controller: identity.profile === "claude-graph-of-loops" ? "graph-of-loops" : "claude-goal",
+    controller: "claude-goal",
     harness,
   }
 }
@@ -144,7 +145,7 @@ for (const [profileRef, loaded] of registry) {
   }
 }
 
-const socialGuide = registry.get("sandbox:claude-social-media")
+const socialGuide = registry.get("native:claude/social-media")
 if (socialGuide === undefined) throw new Error("claude-social-media guide is missing")
 const socialWorkflowIds = new Set(socialGuide.guide.workflows.map(({ id }) => id))
 for (const workflow of [
@@ -182,14 +183,18 @@ if (!socialGuide.guide.prerequisites.some(({ id }) => id === "voice-builder")) {
   throw new Error("claude-social-media guide must declare the voice-builder prerequisite")
 }
 
-const headlongGuide = registry.get("sandbox:headlong")
+const headlongGuide = registry.get("native:headlong/default")
 if (headlongGuide === undefined) throw new Error("headlong guide is missing")
 const persistentInvestigation = headlongGuide.guide.workflows.find(({ id }) => id === "persistent-investigation")
 if (persistentInvestigation === undefined) {
   throw new Error("headlong guide is missing persistent-investigation")
 }
-if (!persistentInvestigation.examples.includes("Investigate intermittent test failures")) {
-  throw new Error("headlong persistent-investigation is missing the concise investigation example")
+if (
+  !persistentInvestigation.examples.includes(
+    "Investigate intermittent test failures and keep testing likely causes after I leave the terminal",
+  )
+) {
+  throw new Error("headlong persistent-investigation is missing the persistent investigation example")
 }
 for (const phrase of [
   "Keep working between my interactions.",
@@ -203,7 +208,7 @@ for (const phrase of [
   }
 }
 
-const councilGuide = registry.get("sandbox:claude-council")
+const councilGuide = registry.get("native:claude/council")
 if (councilGuide === undefined) throw new Error("claude-council guide is missing")
 const councilWorkflow = councilGuide.guide.workflows.find(({ id }) => id === "run-council-deliberation")
 if (councilWorkflow === undefined) throw new Error("claude-council deliberation workflow is missing")
@@ -218,7 +223,7 @@ for (const phrase of [
   }
 }
 
-const eccGuide = registry.get("sandbox:claude-ecc")
+const eccGuide = registry.get("native:claude/ecc")
 if (eccGuide === undefined) throw new Error("claude-ecc guide is missing")
 const expectedEccWorkflows = new Map<string, readonly [string, string]>([
   ["discover-ecc-workflow", ["ecc:ecc-guide", "/ecc:ecc-guide"]],
@@ -239,7 +244,7 @@ if (eccReviewWorkflow === undefined || !eccReviewWorkflow.promptTemplate.include
   throw new Error("claude-ecc review workflow must finish with verification-loop")
 }
 
-const researchGuide = registry.get("sandbox:claude-research")
+const researchGuide = registry.get("native:claude/research")
 if (researchGuide === undefined) throw new Error("claude-research guide is missing")
 const researchWorkflow = researchGuide.guide.workflows.find(({ id }) => id === "vault-backed-research")
 if (researchWorkflow === undefined) throw new Error("claude-research vault-backed workflow is missing")
@@ -797,53 +802,4 @@ for (const phrase of [
   }
 }
 
-const graphGuide = registry.get("sandbox:claude-graph-of-loops")
-if (graphGuide === undefined) throw new Error("claude-graph-of-loops guide is missing")
-const graphWorkflowIds = new Set(graphGuide.guide.workflows.map(({ id }) => id))
-const graphGoalWorkflowIds = [
-  "implement-complex-change",
-  "debug-cross-cutting-failure",
-  "research-then-implement",
-  "validate-existing-implementation",
-]
-const graphGoalPolicy = graphGuide.guide.goalExecution
-if (
-  graphGoalPolicy?.controller !== "graph-of-loops"
-  || graphGoalPolicy.workflowIds.length !== graphGoalWorkflowIds.length
-  || graphGoalPolicy.workflowIds.some((id) => !graphGoalWorkflowIds.includes(id))
-) {
-  throw new Error("claude-graph-of-loops goal policy must bind exactly its four goal-start workflows, never inspect-or-resume-run")
-}
-for (const workflow of [...graphGoalWorkflowIds, "inspect-or-resume-run"]) {
-  if (!graphWorkflowIds.has(workflow)) {
-    throw new Error(`claude-graph-of-loops guide is missing workflow: ${workflow}`)
-  }
-}
-for (const workflow of graphGuide.guide.workflows) {
-  if (workflow.skill !== "graph-of-loops") {
-    throw new Error(`claude-graph-of-loops workflow must select graph-of-loops: ${workflow.id}`)
-  }
-  if (!workflow.promptTemplate.includes("/graph-of-loops")) {
-    throw new Error(`claude-graph-of-loops workflow must invoke the explicit entrypoint: ${workflow.id}`)
-  }
-}
-const implementationWorkflow = graphGuide.guide.workflows.find(({ id }) => id === "implement-complex-change")
-if (
-  implementationWorkflow === undefined ||
-  !implementationWorkflow.promptTemplate.includes('OBJECTIVE="{{intent}}"') ||
-  !implementationWorkflow.promptTemplate.includes("red-green-final") ||
-  !implementationWorkflow.promptTemplate.includes("fast-forward-only")
-) {
-  throw new Error("claude-graph-of-loops implementation workflow must preserve the full execution contract")
-}
-const validationWorkflow = graphGuide.guide.workflows.find(({ id }) => id === "validate-existing-implementation")
-if (
-  validationWorkflow === undefined ||
-  !validationWorkflow.promptTemplate.includes("Do not invent a behavior-changing node")
-) {
-  throw new Error("claude-graph-of-loops validation workflow must prevent fabricated TDD history")
-}
-if (!graphGuide.guide.prerequisites.some(({ id }) => id === "git-worktree")) {
-  throw new Error("claude-graph-of-loops guide must declare the git-worktree prerequisite")
-}
 process.stdout.write(`profile guides: PASS (${expected.length} profiles)\n`)

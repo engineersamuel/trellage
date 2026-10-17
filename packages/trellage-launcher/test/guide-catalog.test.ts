@@ -46,7 +46,6 @@ const headless = {
 
 const validCatalog = {
   schemaVersion: 1,
-  sandboxCommandPath: "/opt/trellage/bin/trellage",
   native: [
     {
       launcher: "codex",
@@ -59,56 +58,16 @@ const validCatalog = {
       guide,
       commandPath: "/opt/trellage/codex/bin/trx",
     },
-  ],
-  sandbox: [
     {
+      launcher: "copilot",
+      harness: "copilot",
       name: "prime-agent",
-      description: "Sandboxed prime agent profile.",
-      guide,
-      path: "/profiles/prime-agent",
-      supportedPlatforms: ["linux/amd64"],
-      harness: {
-        kind: "copilot",
-        version: "1.0.0",
-        model: "mai-code-1.1-flash",
-      },
-      resolutionPolicy: "floating",
-      locallyResolved: false,
-      releaseLockAvailable: true,
-      resolvedVersion: "1.0.70",
-      skillBundles: ["sandbox-common"],
-      skillsMode: "floating",
-      finalDigestLocked: false,
-      skills: [
-        {
-          repository: "https://github.com/example/skills.git",
-          ref: "main",
-          select: ["show-me"],
-        },
-      ],
-      plugins: [
-        {
-          adapter: "claude-marketplace",
-          repository: "https://github.com/example/plugin.git",
-          ref: "main",
-          select: ["example"],
-          marketplace: "example",
-        },
-      ],
-      mcps: [
-        {
-          name: "example",
-          required: false,
-          tools: { allow: [], deny: [] },
-          transport: "stdio",
-          command: "example",
-          args: [],
-        },
-      ],
-      sandbox: true,
+      description: "Copilot prime agent profile.",
       headless,
-      locked: false,
+      sandbox: true,
       herdrCompatibility: { status: "supported" },
+      guide,
+      commandPath: "/opt/trellage/copilot/bin/trx",
     },
   ],
 }
@@ -116,66 +75,17 @@ const validCatalog = {
 const codexPolicy: ProfileGuideGoalExecution = { controller: "codex-goal", workflowIds: ["review"] }
 const goalCatalog = {
   ...validCatalog,
-  native: [{ ...validCatalog.native[0], guide: { ...guide, goalExecution: codexPolicy } }],
+  native: [{ ...validCatalog.native[0], guide: { ...guide, goalExecution: codexPolicy } }, ...validCatalog.native.slice(1)],
 }
-const graphGoalGuide: ProfileGuideV1 = {
-  ...guide,
-  goalExecution: { controller: "graph-of-loops", workflowIds: ["start-run"] },
-  workflows: [
-    {
-      id: "start-run",
-      description: "Start a Graph implementation run.",
-      skill: "graph-of-loops",
-      examples: ["Implement this multi-module change", "Repair and verify the current implementation"],
-      promptTemplate:
-        '/graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="Require evidence and preserve review gates."',
-    },
-    {
-      id: "inspect-or-resume-run",
-      description: "Inspect or resume an existing Graph run.",
-      skill: "graph-of-loops",
-      examples: ["Inspect this run", "Resume this reviewed run"],
-      promptTemplate: "/graph-of-loops {{intent}}. Preserve the current run and reviewed plan.",
-    },
-  ],
-}
-
 describe("parseGuideCatalog", () => {
   it("parses a valid combined catalog into stable refs and entries", () => {
     const catalog = parseGuideCatalog(JSON.stringify(validCatalog))
     const entries = guideCatalogEntries(catalog)
 
     expect(entries).toHaveLength(2)
-    expect(entries.map((entry) => entry.ref)).toEqual(["native:codex/pstack", "sandbox:prime-agent"])
+    expect(entries.map((entry) => entry.ref)).toEqual(["native:codex/pstack", "native:copilot/prime-agent"])
     expect(entries[0]).toMatchObject({ surface: "native", launcher: "codex", harness: "codex", name: "pstack" })
-    expect(entries[1]).toMatchObject({
-      surface: "sandbox",
-      harness: "copilot",
-      name: "prime-agent",
-      resolvedVersion: "1.0.70",
-    })
-    expect(catalog.sandbox[0]).toMatchObject({
-      resolutionPolicy: "floating",
-      locallyResolved: false,
-      releaseLockAvailable: true,
-      resolvedVersion: "1.0.70",
-    })
-  })
-
-  it("accepts an older catalog without resolvedVersion and projects no installed version", () => {
-    const { resolvedVersion: _resolvedVersion, ...withoutResolvedVersion } = validCatalog.sandbox[0]!
-    const catalog = parseGuideCatalog(JSON.stringify({ ...validCatalog, sandbox: [withoutResolvedVersion] }))
-
-    expect(catalog.sandbox[0]?.resolvedVersion).toBeNull()
-    expect(guideCatalogEntries(catalog)[1]?.resolvedVersion).toBeUndefined()
-  })
-
-  it("rejects a malformed resolvedVersion", () => {
-    const broken = {
-      ...validCatalog,
-      sandbox: [{ ...validCatalog.sandbox[0], resolvedVersion: 42 }],
-    }
-    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
+    expect(entries[1]).toMatchObject({ surface: "native", launcher: "copilot", harness: "copilot", name: "prime-agent" })
   })
 
   it("builds a workflow index keyed by ref", () => {
@@ -183,15 +93,15 @@ describe("parseGuideCatalog", () => {
     const index = guideCatalogWorkflowIndex(catalog)
 
     expect(index.get("native:codex/pstack")).toEqual(new Set(["review"]))
-    expect(index.get("sandbox:prime-agent")).toEqual(new Set(["review"]))
-    expect(index.get("sandbox:unknown")).toBeUndefined()
+    expect(index.get("native:copilot/prime-agent")).toEqual(new Set(["review"]))
+    expect(index.get("native:copilot/unknown")).toBeUndefined()
   })
 
   it("retains the authored launch agent without exposing it as match-model metadata", () => {
     const catalog = parseGuideCatalog(
       JSON.stringify({
         ...validCatalog,
-        sandbox: validCatalog.sandbox.map((entry) => ({
+        native: validCatalog.native.map((entry) => ({
           ...entry,
           guide: {
             ...entry.guide,
@@ -201,7 +111,7 @@ describe("parseGuideCatalog", () => {
       }),
     )
 
-    expect(catalog.sandbox[0]?.guide.workflows[0]?.launchAgent).toBe("hve-core:dt-coach")
+    expect(catalog.native[0]?.guide.workflows[0]?.launchAgent).toBe("hve-core:dt-coach")
     expect(JSON.stringify(guideMatchCatalogEntries(catalog))).not.toContain("launchAgent")
   })
 
@@ -210,7 +120,7 @@ describe("parseGuideCatalog", () => {
     (agent) => {
       const source = {
         ...validCatalog,
-        sandbox: validCatalog.sandbox.map((entry) => ({
+        native: validCatalog.native.map((entry) => ({
           ...entry,
           guide: {
             ...entry.guide,
@@ -315,23 +225,21 @@ describe("parseGuideCatalog", () => {
     expect(() => parseGuideCatalog(JSON.stringify(withDuplicateNative))).toThrow(GuideValidationError)
   })
 
-  it("rejects a non-absolute sandboxCommandPath", () => {
-    const broken = { ...validCatalog, sandboxCommandPath: "bin/trellage" }
-    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
+  it("accepts the router's empty retired sandbox array", () => {
+    const catalog = parseGuideCatalog(JSON.stringify({ ...validCatalog, sandbox: [] }))
+    expect(catalog).toEqual(parseGuideCatalog(JSON.stringify(validCatalog)))
+    expect(catalog).not.toHaveProperty("sandbox")
+  })
+
+  it("rejects retired Sandbox profiles", () => {
+    const retired = { ...validCatalog, sandbox: [{ name: "prime-agent" }] }
+    expect(() => parseGuideCatalog(JSON.stringify(retired))).toThrow(/catalog\.sandbox/)
   })
 
   it("rejects a non-absolute native commandPath", () => {
     const broken = {
       ...validCatalog,
       native: [{ ...validCatalog.native[0], commandPath: "codex/bin/trx" }],
-    }
-    expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
-  })
-
-  it("rejects a non-absolute sandbox profile path", () => {
-    const broken = {
-      ...validCatalog,
-      sandbox: [{ ...validCatalog.sandbox[0], path: "profiles/prime-agent" }],
     }
     expect(() => parseGuideCatalog(JSON.stringify(broken))).toThrow(GuideValidationError)
   })
@@ -413,7 +321,7 @@ describe("parseGuideCatalog", () => {
 })
 
 describe("goal execution catalog validation", () => {
-  it("preserves declared Native Codex, Native Claude, and Sandbox Claude policies through full JSON projection", () => {
+  it("preserves declared Native Codex and Native Claude policies through full JSON projection", () => {
     const claudePolicy: ProfileGuideGoalExecution = { controller: "claude-goal", workflowIds: ["review"] }
     const catalog = parseGuideCatalog(
       JSON.stringify({
@@ -429,33 +337,25 @@ describe("goal execution catalog validation", () => {
             guide: { ...guide, goalExecution: claudePolicy },
           },
         ],
-        sandbox: [
-          {
-            ...validCatalog.sandbox[0],
-            name: "claude-blog",
-            harness: { kind: "claude", version: "latest" },
-            guide: { ...guide, goalExecution: claudePolicy },
-          },
-        ],
       }),
     )
     const entries = guideCatalogEntries(catalog)
 
-    expect(entries.map(({ guide }) => guide.goalExecution)).toEqual([codexPolicy, claudePolicy, claudePolicy])
+    expect(entries.map(({ guide }) => guide.goalExecution)).toEqual([codexPolicy, undefined, claudePolicy])
     expect(entries.map(({ guide }) => guide.workflows)).toEqual([guide.workflows, guide.workflows, guide.workflows])
     expect(parseGuideCatalog(JSON.stringify(catalog))).toEqual(catalog)
   })
 
   it.each([
-    null,
-    [],
-    { controller: "codex-goal" },
-    { controller: "codex-goal", workflowIds: [], fallback: true },
-    { controller: "codex-goal", workflowIds: [] },
-    { controller: "codex-goal", workflowIds: ["review", "review"] },
-    { controller: "codex-goal", workflowIds: ["missing"] },
-    { controller: "codex-goal", workflowIds: ["not an id"] },
-    { controller: "goal-me", workflowIds: ["review"] },
+    [null],
+    [[]],
+    [{ controller: "codex-goal" }],
+    [{ controller: "codex-goal", workflowIds: [], fallback: true }],
+    [{ controller: "codex-goal", workflowIds: [] }],
+    [{ controller: "codex-goal", workflowIds: ["review", "review"] }],
+    [{ controller: "codex-goal", workflowIds: ["missing"] }],
+    [{ controller: "codex-goal", workflowIds: ["not an id"] }],
+    [{ controller: "goal-me", workflowIds: ["review"] }],
   ])("rejects an invalid projected policy: %j", (goalExecution) => {
     const source = {
       ...validCatalog,
@@ -488,76 +388,7 @@ describe("goal execution catalog validation", () => {
     expect(() => parseGuideCatalog(JSON.stringify(source))).toThrow(/goalExecution/)
   })
 
-  it.each([
-    ["claude-blog", "copilot", "claude-goal"],
-    ["codex-superpowers", "codex", "codex-goal"],
-    ["headlong", "headlong", "claude-goal"],
-    ["claude-graph-of-loops", "claude", "claude-goal"],
-    ["claude-blog", "claude", "graph-of-loops"],
-    ["claude-graph-of-loops", "codex", "graph-of-loops"],
-  ])("rejects an unsupported Sandbox runtime binding: %s / %s / %s", (name, harness, controller) => {
-    const source = {
-      ...validCatalog,
-      sandbox: [
-        {
-          ...validCatalog.sandbox[0],
-          name,
-          harness: { kind: harness, version: "latest" },
-          guide: { ...guide, goalExecution: { controller, workflowIds: ["review"] } },
-        },
-      ],
-    }
-    expect(() => parseGuideCatalog(JSON.stringify(source))).toThrow(/goalExecution/)
-  })
 
-  it("retains Graph goal-start eligibility without treating resume as a new goal", () => {
-    const source = {
-      ...validCatalog,
-      sandbox: [
-        {
-          ...validCatalog.sandbox[0],
-          name: "claude-graph-of-loops",
-          harness: { kind: "claude", version: "latest" },
-          guide: graphGoalGuide,
-        },
-      ],
-    }
-    const catalog = parseGuideCatalog(JSON.stringify(source))
-    expect(catalog.sandbox[0]?.guide).toEqual(graphGoalGuide)
-    expect(guideMatchCatalogEntries(catalog, true)[1]?.goalExecution?.workflowIds).toEqual(["start-run"])
-
-    const resumePolicy = {
-      ...source,
-      sandbox: source.sandbox.map((entry) => ({
-        ...entry,
-        guide: {
-          ...entry.guide,
-          goalExecution: { controller: "graph-of-loops", workflowIds: ["inspect-or-resume-run"] },
-        },
-      })),
-    }
-    expect(() => parseGuideCatalog(JSON.stringify(resumePolicy))).toThrow("goal-start frame")
-  })
-
-  it.each(["/goal", "$goal", "/goal-me", "/graph-of-loops"])(
-    "rejects a conflicting controller in a projected native workflow: %s",
-    (command) => {
-      const source = {
-        ...goalCatalog,
-        native: goalCatalog.native.map((entry) => ({
-          ...entry,
-          guide: {
-            ...entry.guide,
-            workflows: entry.guide.workflows.map((workflow) => ({
-              ...workflow,
-              promptTemplate: `${command} {{intent}}`,
-            })),
-          },
-        })),
-      }
-      expect(() => parseGuideCatalog(JSON.stringify(source))).toThrow("must leave goal invocation to codex-goal")
-    },
-  )
 })
 
 describe("compactProfileGuide / guideMatchCatalogEntries", () => {
@@ -576,7 +407,7 @@ describe("compactProfileGuide / guideMatchCatalogEntries", () => {
     expect(matchEntries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ ref: "native:codex/pstack", harness: "codex" }),
-        expect.objectContaining({ ref: "sandbox:prime-agent", harness: "copilot" }),
+        expect.objectContaining({ ref: "native:copilot/prime-agent", harness: "copilot" }),
       ]),
     )
   })

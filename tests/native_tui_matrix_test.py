@@ -803,11 +803,13 @@ class NativeTuiMatrixTest(unittest.TestCase):
         profile = namespace["parse_profile"]({"launcher": "cdx", "harness": "codex", "name": "pstack"})
         self.assertEqual(namespace["prepare_command"]("trx", profile, adapter), ["trx", "run", "codex", "pstack"])
 
-    def test_production_config_covers_every_router_launcher(self) -> None:
+    def test_production_config_covers_matrix_eligible_router_launchers(self) -> None:
         config = json.loads(PRODUCTION_CONFIG.read_text())
         presets = (REPOSITORY_ROOT / "packages" / "trellage-runtime" / "src" / "native-run" / "presets.ts").read_text()
         discovered = set(re.findall(r'^  ([a-z0-9]+): \[', presets, re.MULTILINE)) | {"grok"}
-        self.assertEqual(set(config["launchers"]), discovered)
+        # Headlong keeps its background mind after TUI exit; Uji is a direct route, not a managed profile.
+        matrix_exclusions = {"headlong", "uji"}
+        self.assertEqual(set(config["launchers"]) | matrix_exclusions, discovered)
         self.assertTrue(all(adapter in config["adapters"] for adapter in config["launchers"].values()))
         for adapter_name in ("agency", "copilot"):
             self.assertNotIn("--mode", config["adapters"][adapter_name]["launchArgs"])

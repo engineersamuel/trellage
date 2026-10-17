@@ -78,13 +78,14 @@ class TestOutput extends Socket {
   }
 }
 
-const container = (name: string, harness = "claude"): AdminProfileEntry => ({
-  ref: `sandbox:${name}`,
-  surface: "sandbox",
+const base = (name: string, harness = "claude"): AdminProfileEntry => ({
+  ref: `native:${harness}/${name}`,
+  surface: "native",
+  launcher: harness,
   harness,
   name,
   description: name,
-  commandPath: "/fixture/trellage",
+  commandPath: "/fixture/trx",
   doctorSupported: false,
   inventorySupported: false,
   health: "healthy",
@@ -92,17 +93,14 @@ const container = (name: string, harness = "claude"): AdminProfileEntry => ({
   stale: false,
   updateCheckSupported: false,
   harnessVersionSupported: true,
-  harnessVersionSelector: "latest",
   updateCheckStale: false,
 })
 
 const native = (name = "default"): AdminProfileEntry => ({
-  ...container(name),
-  ref: `native:claude/${name}`,
-  surface: "native",
-  launcher: "claude",
-  commandPath: "/fixture/trx",
+  ...base(name),
 })
+
+const other = (name: string, launcher = "codex"): AdminProfileEntry => base(name, launcher)
 
 const success: CommandRunResult = { stdout: "updated", stderr: "", exitCode: 0 }
 const versionReport = (installed = "2.1.252", latest = "3.0.0"): CommandRunResult => ({
@@ -341,12 +339,12 @@ describe("global Admin update keyboard ownership", () => {
       harness: "codex",
       commandPath: "/fixture/trx",
     }))
-    const profiles = [...nativeProfiles, { ...container("codex-current", "codex"), version: "0.153.4" }]
+    const profiles = [...nativeProfiles, { ...other("codex-current", "jcode"), version: "0.153.4" }]
     const tui = await mountAdmin(profiles, undefined, undefined, async () => versionReport("0.153.4", "0.153.4"))
     await tui.press("A")
     await vi.waitFor(() => expect(tui.screen()).toContain("Everything is up to date"))
     for (const entry of profiles) expect(tui.screen()).not.toContain(entry.ref)
-    expect(tui.screen()).toContain("Native updates: 0 | Container builds: 0")
+    expect(tui.screen()).toContain("Native updates: 0 | Incomplete checks")
     expect(tui.screen()).not.toContain("0.153.4 -> 0.153.4")
     expect(tui.updates()).toHaveLength(0)
     await tui.press("y")
@@ -358,33 +356,6 @@ describe("global Admin update keyboard ownership", () => {
     await tui.press("A")
     await vi.waitFor(() => expect(tui.screen()).toContain("Everything is up to date"))
     expect(tui.run.mock.calls.filter(([, args]) => args[0] === "harness-version").length).toBeGreaterThan(checks)
-  })
-
-  it("shows per-profile current and target versions before skills, preserving mixed Container pins", async () => {
-    const installed = new Map([
-      ["floating", "2.1.252"],
-      ["pinned", "2.1.263"],
-      ["current", "2.1.260"],
-    ])
-    const entries = [
-      native(),
-      ...[...installed].map(([name, version]) => ({
-        ...container(name),
-        version,
-        harnessVersionSelector: name === "pinned" ? "2.1.252" : "latest",
-      })),
-    ]
-    const tui = await mountAdmin(entries, undefined, undefined, async (_executable, args) =>
-      versionReport(installed.get(args[1] === "claude" ? args[2] ?? "" : args[1] ?? "") ?? "2.1.259", "2.1.260"),
-    )
-    await tui.press("A")
-    await vi.waitFor(() => expect(tui.screen()).toContain("native:claude/default: 2.1.259 -> 2.1.260"))
-    expect(tui.screen()).toContain("sandbox:floating: 2.1.252 -> 2.1.260")
-    expect(tui.screen()).toContain("sandbox:pinned: 2.1.263 -> 2.1.252 (pinned)")
-    expect(tui.screen()).not.toContain("sandbox:current")
-    expect(tui.screen()).not.toContain("2.1.260 -> 2.1.260")
-    expect(tui.screen().indexOf("sandbox:pinned:")).toBeLessThan(tui.screen().indexOf("Native skills"))
-    expect(tui.updates()).toHaveLength(0)
   })
 
   it("waits for fresh versions and skill checks before enabling the frozen selection", async () => {
@@ -468,28 +439,6 @@ describe("global Admin update keyboard ownership", () => {
     expect(tui.updates()).toHaveLength(0)
   })
 
-  it("updates only available skill copies and rebuilds a skill-only Container", async () => {
-    const entries = [native("changed"), native("current"), container("skills"), container("current")]
-    vi.mocked(checkAdminSkillsUpdates).mockResolvedValueOnce(
-      new Map(entries.map((entry) => [entry.ref, { kind: entry.name === "current" ? ("current" as const) : ("available" as const) }])),
-    )
-    const tui = await mountAdmin(entries, undefined, undefined, async () => versionReport("3.0.0", "3.0.0"))
-    await tui.press("A")
-    await vi.waitFor(() => expect(tui.screen()).toContain("[y] update selected items"))
-    expect(tui.screen()).toContain("Native updates: 0 | Container builds: 1")
-    expect(tui.screen()).toContain("Skills update sandbox:skills")
-    expect(tui.screen()).toContain("Skills update native:claude/changed")
-    expect(tui.screen()).not.toContain("native:claude/current")
-    expect(tui.screen()).not.toContain("sandbox:current")
-    await tui.press("y")
-    await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 1 updated"))
-    expect(tui.updates().map(([, args]) => args)).toEqual([
-      ["skills", "update"],
-      ["upgrade", "claude", "changed", "--skills-only"],
-      ["upgrade", "skills", "--strict-harness"],
-    ])
-  })
-
   it("can refresh only an available shared skill cache", async () => {
     vi.mocked(checkAdminSkillsUpdates).mockResolvedValueOnce(
       new Map([
@@ -507,7 +456,7 @@ describe("global Admin update keyboard ownership", () => {
   })
 
   it("shows unknown checks separately without selecting or calling them current", async () => {
-    const entries = [container("available"), container("current"), container("unknown")]
+    const entries = [other("available", "codex"), other("current", "jcode"), other("unknown", "pi")]
     vi.mocked(checkAdminSkillsUpdates).mockResolvedValueOnce(
       new Map([
         [entries[0]!.ref, { kind: "current" }],
@@ -516,19 +465,23 @@ describe("global Admin update keyboard ownership", () => {
       ]),
     )
     const tui = await mountAdmin(entries, undefined, undefined, async (_executable, args) => {
-      if (args[1] === "unknown") throw new Error("Version source offline")
-      return versionReport(args[1] === "current" ? "3.0.0" : "2.1.252")
+      if (args[2] === "unknown") throw new Error("Version source offline")
+      return versionReport(args[2] === "current" ? "3.0.0" : "2.1.252")
     })
     await tui.press("A")
     await vi.waitFor(() => expect(tui.screen()).toContain("[y] update selected items"))
     expect(tui.screen()).toContain("Incomplete checks")
     expect(tui.screen()).toContain("Skill source offline")
-    expect(tui.screen()).not.toContain("sandbox:current")
-    expect(tui.screen()).not.toContain("Planned sandbox:unknown")
+    expect(tui.screen()).not.toContain("native:jcode/current")
+    expect(tui.screen()).not.toContain("Planned native:pi/unknown")
     expect(tui.screen()).not.toContain("Everything is up to date")
     await tui.press("y")
     await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 1 updated, 0 failed"))
-    expect(tui.updates().map(([, args]) => args)).toEqual([["upgrade", "available", "--strict-harness"]])
+    expect(tui.updates().map(([, args]) => args)).toEqual([
+      ["upgrade", "codex", "available", "--harness-only"],
+      ["skills", "update"],
+      ["upgrade", "codex", "available", "--skills-only"],
+    ])
   })
 
   it("disables confirmation when only failed checks remain", async () => {
@@ -558,7 +511,7 @@ describe("global Admin update keyboard ownership", () => {
       harnessVersionSupported: false,
       commandPath: "/fixture/trx",
     }
-    const entries = [native("native-a"), native("native-b"), container("container-a"), container("container-b"), unsupported]
+    const entries = [native("native-a"), native("native-b"), unsupported]
     const tui = await mountAdmin(entries)
     await tui.press("/")
     await tui.press("A")
@@ -570,7 +523,7 @@ describe("global Admin update keyboard ownership", () => {
     await tui.press("A")
     await vi.waitFor(() => expect(tui.screen()).toContain("including profiles hidden by filters"))
     await vi.waitFor(() => expect(tui.screen()).toContain("[y] update selected items"))
-    expect(tui.screen()).toContain("Native updates: 1 | Container builds: 2 | Incomplete checks: 1")
+    expect(tui.screen()).toContain("Native updates: 1 | Incomplete checks: 1")
     expect(tui.screen()).toContain("Native skill copies: 2")
     for (const entry of entries) expect(tui.screen()).toContain(entry.ref)
     for (const key of ["U", "l", "p", "g", "i"]) await tui.press(key)
@@ -580,15 +533,13 @@ describe("global Admin update keyboard ownership", () => {
     await tui.press("A")
     await vi.waitFor(() => expect(tui.screen()).toContain("[y] update selected items"))
     await tui.press("y")
-    await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 4 updated, 0 failed, 0 unsupported"))
+    await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 2 updated, 0 failed, 0 unsupported"))
     expect(tui.screen()).toContain("Native skills: 2 updated, 0 failed, 0 not run")
     expect(tui.updates().map(([, args]) => args)).toEqual([
       ["upgrade", "claude", "native-a", "--harness-only"],
       ["skills", "update"],
       ["upgrade", "claude", "native-a", "--skills-only"],
       ["upgrade", "claude", "native-b", "--skills-only"],
-      ["upgrade", "container-a", "--strict-harness"],
-      ["upgrade", "container-b", "--strict-harness"],
     ])
     expect(tui.updates().find(([, args]) => args[0] === "skills")?.[0]).toBe("/fixture/trx")
     await tui.press("\u001b")
@@ -602,7 +553,7 @@ describe("global Admin update keyboard ownership", () => {
   })
 
   it("does not let A change the scope of an existing U confirmation", async () => {
-    const tui = await mountAdmin([container("claude-a"), container("claude-b"), container("codex", "codex"), native()])
+    const tui = await mountAdmin([native("claude-a"), native("claude-b"), other("codex")])
     await tui.press("U")
     await tui.press("A")
     expect(tui.screen()).not.toContain("including profiles hidden by filters")
@@ -610,15 +561,12 @@ describe("global Admin update keyboard ownership", () => {
     expect(tui.updates()).toHaveLength(0)
     await tui.press("U")
     await tui.press("y")
-    await vi.waitFor(() => expect(tui.updates()).toHaveLength(2))
-    expect(tui.updates().map(([, args]) => args)).toEqual([
-      ["upgrade", "claude-a", "--strict-harness"],
-      ["upgrade", "claude-b", "--strict-harness"],
-    ])
+    await vi.waitFor(() => expect(tui.updates()).toHaveLength(1))
+    expect(tui.updates().map(([, args]) => args)).toEqual([["upgrade", "claude", "claude-a", "--harness-only"]])
   })
 
   it("shows active progress, blocks duplicate or profile actions, and cancels pending work", async () => {
-    const tui = await mountAdmin([native(), container("queued")], async (options, args) => {
+    const tui = await mountAdmin([native(), other("queued")], async (options, args) => {
       if (args[0] !== "skills") return commandResult(args)
       return new Promise((_resolve, reject) => {
         options?.signal?.addEventListener("abort", () => reject(new Error("Update cancelled")), { once: true })
@@ -627,7 +575,7 @@ describe("global Admin update keyboard ownership", () => {
     await tui.press("A")
     await vi.waitFor(() => expect(tui.screen()).toContain("[y] update selected items"))
     await tui.press("y")
-    await vi.waitFor(() => expect(tui.updates()).toHaveLength(2))
+    await vi.waitFor(() => expect(tui.updates()).toHaveLength(3))
     expect(tui.screen()).toContain("Refreshing shared Native skill caches")
     await tui.press("A")
     await tui.press("y")
@@ -635,16 +583,16 @@ describe("global Admin update keyboard ownership", () => {
     await vi.waitFor(() => expect(tui.screen()).toContain("[A] view update progress"))
     expect(tui.screen()).not.toContain("[U] update harness")
     for (const key of ["U", "l", "p"]) await tui.press(key)
-    expect(tui.updates()).toHaveLength(2)
+    expect(tui.updates()).toHaveLength(3)
     await tui.press("A")
     await tui.press("c")
     await vi.waitFor(() => expect(tui.screen()).toContain("Update all cancelled"))
-    expect(tui.updates()).toHaveLength(2)
-    expect(tui.screen()).toContain("1 not run")
+    expect(tui.updates()).toHaveLength(3)
+    expect(tui.screen()).toContain("2 not run")
   })
 
-  it("shows Native skill cache failures without stopping independent Container updates", async () => {
-    const tui = await mountAdmin([native(), container("claude")], async (_options, args) => {
+  it("shows Native skill cache failures without stopping independent harness updates", async () => {
+    const tui = await mountAdmin([native(), other("codex")], async (_options, args) => {
       if (args[0] === "skills") throw new Error("Skill source unavailable")
       return commandResult(args)
     })
@@ -654,7 +602,7 @@ describe("global Admin update keyboard ownership", () => {
     await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 2 updated"))
     expect(tui.screen()).toContain("Shared skill cache refresh failed")
     expect(tui.screen()).toContain("Skill source unavailable")
-    expect(tui.screen()).toContain("Native skills: 0 updated, 0 failed, 1 not run")
+    expect(tui.screen()).toContain("Native skills: 0 updated, 0 failed, 2 not run")
     expect(tui.updates().some(([, args]) => args.includes("--skills-only"))).toBe(false)
     expect(tui.updates().some(([, args]) => args[0] === "upgrade")).toBe(true)
   })
@@ -662,7 +610,7 @@ describe("global Admin update keyboard ownership", () => {
   it("cancels the owned queue when Admin exits", async () => {
     let signal: AbortSignal | undefined
     const tui = await mountAdmin(
-      [native(), container("queued")],
+      [native(), other("queued")],
       (options) =>
         new Promise((_resolve, reject) => {
           signal = options?.signal
@@ -683,34 +631,22 @@ describe("global Admin update keyboard ownership", () => {
 
   it("keeps the complete scope readable with page keys in an 80-column terminal", async () => {
     const entries = Array.from({ length: 16 }, (_value, index) => ({
-      ...container(`claude-${String(index).padStart(2, "0")}`),
+      ...native(`claude-${String(index).padStart(2, "0")}`),
       version: "2.1.252",
     }))
     const tui = await mountAdmin(entries, undefined, { columns: 80, rows: 24 })
     await tui.press("A")
     await vi.waitFor(() => expect(tui.screen()).toContain("2.1.252 -> 3.0.0"))
-    expect(tui.screen()).toContain("Container builds: 16")
-    expect(tui.screen()).not.toContain("sandbox:claude-15")
+    expect(tui.screen()).toContain("Native updates:")
+    expect(tui.screen()).not.toContain("native:claude/claude-15")
     await tui.press("\u001b[6~")
     await tui.press("\u001b[6~")
-    await vi.waitFor(() => expect(tui.screen()).toContain("sandbox:claude-15"))
+    await vi.waitFor(() => expect(tui.screen()).toContain("native:claude/claude-15"))
     const lines = tui.screen().trimEnd().split("\n")
     expect(lines.length).toBeLessThanOrEqual(24)
     expect(lines.every((line) => stringWidth(line) <= 80)).toBe(true)
     expect(tui.updates()).toHaveLength(0)
   })
 
-  it("wraps full source revisions and pins without truncation in an 80-column terminal", async () => {
-    const current = "a".repeat(40)
-    const target = "b".repeat(40)
-    const profile = { ...container("headlong-pinned", "headlong"), version: current, harnessVersionSelector: target }
-    const tui = await mountAdmin([profile], undefined, { columns: 80, rows: 24 }, async () => versionReport(current, "c".repeat(40)))
-    await tui.press("A")
-    await vi.waitFor(() => expect(tui.screen()).toContain(current))
-    expect(tui.screen()).toContain(`${target} (pinned)`)
-    const lines = tui.screen().trimEnd().split("\n")
-    expect(lines.length).toBeLessThanOrEqual(24)
-    expect(lines.every((line) => stringWidth(line) <= 80)).toBe(true)
-    expect(tui.updates()).toHaveLength(0)
-  })
+
 })

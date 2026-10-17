@@ -176,12 +176,12 @@ describe("guide command request resolution", () => {
       }),
     })
     const resolveCatalog = vi.fn(async () => parseGuideCatalog(JSON.stringify({
-      schemaVersion: 1, sandboxCommandPath: "/unused/trellage", native: [], sandbox: [],
+      schemaVersion: 1, native: [],
     })))
     await expect(runGuideJsonCommand({
       argv: ["--json"],
       catalog: parseGuideCatalog(JSON.stringify({
-        schemaVersion: 1, sandboxCommandPath: "/unused/trellage", native: [], sandbox: [],
+        schemaVersion: 1, native: [],
       })),
       guideRoot: "/unused/profile-guides",
       promptMasterSkillDirectory: "/unused/prompt-master",
@@ -216,7 +216,7 @@ describe("guide command request resolution", () => {
 
     await expect(runGuideJsonCommand({
       argv,
-      catalog: parseGuideCatalog(JSON.stringify({ schemaVersion: 1, sandboxCommandPath: "/unused/trellage", native: [], sandbox: [] })),
+      catalog: parseGuideCatalog(JSON.stringify({ schemaVersion: 1, native: [] })),
       guideRoot: "/unused/profile-guides",
       promptMasterSkillDirectory: "/unused/prompt-master",
       env,

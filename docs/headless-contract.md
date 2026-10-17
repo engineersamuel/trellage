@@ -1,19 +1,14 @@
 # Headless execution contract
 
-Trellage publishes a version-gated `headless` object for each Sandbox runtime
-adapter and each Native profile. An advertised capability applies only to the
+Trellage publishes a version-gated `headless` object for each Native profile. An advertised capability applies only to the
 exact `testedHarnessVersion`. A different or unknown harness version resolves
 to conservative values.
 
 Use these inventory commands:
 
 ```bash
-trellage list --json --full
 trx list --json
 ```
-
-`trellage list --json` keeps its small compatibility schema. The equivalent
-full Sandbox forms are `--json-full` and `--json --full`.
 
 ## Capability schema
 
@@ -58,9 +53,8 @@ remain in `outputFormats` because it is the normal terminal output mode.
 
 ## Launch checks
 
-The Sandbox host checks the selected profile metadata before lock refresh,
-image build, lease creation, volume or container mutation, and authentication
-mutation. Unsupported prompt, JSONL, resume, exact-session resume,
+The Native launcher checks the selected profile metadata before launch.
+Unsupported prompt, JSONL, resume, exact-session resume,
 resume-with-prompt, model override, and Trellage event requests fail with a
 nonzero status.
 
@@ -73,7 +67,7 @@ Native JSONL remains the default and is not rewritten. Add Trellage metadata
 only when the profile advertises both event contracts:
 
 ```bash
-trellage --profile PROFILE --output-format jsonl --trellage-events -p "PROMPT"
+trx run HARNESS PROFILE -- --output-format jsonl --trellage-events -p "PROMPT"
 ```
 
 `--trellage-events` is invalid without `--output-format jsonl`.
@@ -200,28 +194,11 @@ make headless-matrix-test
 Live probes can consume paid quota and require explicit opt-in:
 
 ```bash
-TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
-TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.229 \
-  scripts/verify-headless-contracts --live
-TRELLAGE_HEADLESS_SANDBOX_PROFILE=tests/fixtures/headless-live-claude/profile.toml \
-TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.229 \
-  make headless-matrix-live
-
-TRELLAGE_HEADLESS_SANDBOX_PROFILE=claude-council \
-TRELLAGE_HEADLESS_SANDBOX_VERSION=2.1.233 \
-TRELLAGE_HEADLESS_LIVE_SCOPE=sandbox \
-  scripts/verify-headless-contracts --live
+scripts/verify-headless-contracts --live
+make headless-matrix-live
 ```
 
-The checked-in core fixture resolves to its recorded Claude Code `2.1.229`
-contract. Sandbox adapters can publish different tested Claude versions.
-Set `TRELLAGE_HEADLESS_SANDBOX_VERSION` when selecting another
-full-inventory profile with that exact contract. The live driver also requires
-the recorded Native `cpx`, `cldx`, and `omp` versions. When the selected profile
-is `claude-council`, it also proves that the Council plugin launches
-`council:*` agents and completes on the JSONL path.
-`TRELLAGE_HEADLESS_LIVE_SCOPE=sandbox` skips unrelated Native inventories and
-live probes; the default `all` scope preserves the complete matrix.
+The live driver requires the recorded Native Copilot, Claude, and OMP versions.
 
 A runtime or profile must remain conservative when its exact version and
 evidence record do not match.

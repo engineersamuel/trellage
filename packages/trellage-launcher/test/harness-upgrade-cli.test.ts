@@ -24,7 +24,6 @@ import {
   type CombinedGuideCatalog,
   type HeadlessCapabilitiesV1,
   type NativeGuideCatalogEntry,
-  type SandboxGuideCatalogEntry,
 } from "../src/guide-catalog.ts"
 import { CommandRunnerError, type CommandRunner, type CommandRunResult } from "../src/guide-launch.ts"
 
@@ -67,34 +66,9 @@ const native = (launcher = "claude", harness = "claude", name = "a"): NativeGuid
   commandPath: "/fixture/trx",
 })
 
-const container = (name = "claude-a", kind = "claude"): SandboxGuideCatalogEntry => ({
-  name,
-  description: name,
-  guide,
-  path: `/fixture/profiles/${name}/profile.toml`,
-  supportedPlatforms: ["linux/arm64"],
-  harness: { kind, version: "2.1.0" },
-  resolutionPolicy: "floating",
-  locallyResolved: true,
-  releaseLockAvailable: true,
-  resolvedVersion: "2.1.0",
-  skillBundles: [],
-  skillsMode: "floating",
-  finalDigestLocked: false,
-  skills: [],
-  plugins: [],
-  mcps: [],
-  sandbox: true,
-  headless,
-  locked: true,
-  herdrCompatibility: { status: "untested" },
-})
-
 const catalog = (): CombinedGuideCatalog => ({
   schemaVersion: 1,
-  sandboxCommandPath: "/fixture/trellage",
   native: [native(), native("claude", "claude", "b")],
-  sandbox: [container(), container("claude-b")],
 })
 
 const success = (stdout = ""): CommandRunResult => ({ stdout, stderr: "", exitCode: 0 })
@@ -237,21 +211,18 @@ describe("upgrade CLI discovery and authorization", () => {
     expect(confirm).not.toHaveBeenCalled()
     expect(run).not.toHaveBeenCalled()
     expect(JSON.stringify(source)).toBe(before)
-    expect(lines.join("\n")).toContain("4 catalog profiles")
-    for (const ref of ["native:claude/a", "native:claude/b", "sandbox:claude-a", "sandbox:claude-b"]) {
-      expect(lines.join("\n")).toContain(ref)
-    }
-    expect(lines.join("\n")).toContain("1 Native runtime/profile updates; 2 Container image updates")
-    expect(lines.join("\n")).toContain("/fixture/trellage upgrade claude-a --strict-harness")
+    expect(lines.join("\n")).toContain("2 catalog profiles")
+    for (const ref of ["native:claude/a", "native:claude/b"]) expect(lines.join("\n")).toContain(ref)
+    expect(lines.join("\n")).not.toContain("sandbox:")
+    expect(lines.join("\n")).toContain("Scope: 1 Native runtime/profile updates.")
+    expect(lines.join("\n")).not.toContain("/fixture/trellage")
     expect(lines.join("\n")).toContain("Refresh: trx skills update")
     expect(lines.join("\n")).toContain("/fixture/trx upgrade claude a --skills-only")
     expect(lines.join("\n")).toContain("/fixture/trx upgrade claude b --skills-only")
-    expect(lines.join("\n")).toContain("Container builds refresh configured skills")
     const preview = lines.join("\n")
     expect(preview).toContain("/fixture/trx upgrade claude a --harness-only")
     expect(preview.indexOf("/fixture/trx upgrade claude a --harness-only")).toBeLessThan(preview.indexOf("Refresh: trx skills update"))
     expect(preview.indexOf("Refresh: trx skills update")).toBeLessThan(preview.indexOf("/fixture/trx upgrade claude a --skills-only"))
-    expect(preview.indexOf("/fixture/trx upgrade claude b --skills-only")).toBeLessThan(preview.indexOf("/fixture/trellage upgrade claude-a"))
     expect(lines.at(-1)).toContain("No harness or skill updates or installed-version checks were started")
   })
 
@@ -266,7 +237,7 @@ describe("upgrade CLI discovery and authorization", () => {
   it("prints the complete scope before asking for explicit approval", async () => {
     const { invoke, run, lines } = fixture()
     const confirm = vi.fn(async (): Promise<HarnessUpgradeConfirmation> => {
-      expect(lines.join("\n")).toContain("sandbox:claude-b")
+      expect(lines.join("\n")).toContain("native:claude/b")
       expect(lines.join("\n")).toContain("Refresh: trx skills update")
       expect(lines.join("\n")).toContain("/fixture/trx upgrade claude b --skills-only")
       expect(run).not.toHaveBeenCalled()
@@ -302,10 +273,8 @@ describe("upgrade CLI discovery and authorization", () => {
   })
 
   it.each([
-    { native: [], sandbox: [] },
-    { native: [], sandbox: [container()] },
-    { native: [native()], sandbox: [] },
-    { native: [native(), native()], sandbox: [container()] },
+    { native: [] },
+    { native: [native(), native()] },
   ])("rejects an incomplete or duplicate catalog before approval", async (entries) => {
     const { invoke, run } = fixture({ ...catalog(), ...entries })
     const confirm = vi.fn()
@@ -345,9 +314,8 @@ describe("upgrade CLI Firstmate instance scope", () => {
     expect(run.mock.calls.map(([, args]) => args)).toEqual([["instances", "firstmate", "list", "default", "--json", "--limit", "32"]])
     expect(confirm).not.toHaveBeenCalled()
     expect(JSON.stringify(source)).toBe(before)
-    expect(lines.join("\n")).toContain("5 profile/instance targets")
     for (const instance of instances) expect(lines.join("\n")).toContain(instance.reference!.instanceId)
-    expect(lines.join("\n")).toContain("sandbox:claude-b")
+    expect(lines.join("\n")).not.toContain("sandbox:")
     expect(lines.at(-1)).toContain("No harness or skill updates or installed-version checks were started")
   })
 
@@ -479,22 +447,17 @@ describe("upgrade CLI shared queue execution", () => {
       ["/fixture/trx", ["upgrade", "claude", "a", "--skills-only"]],
       ["/fixture/trx", ["--help"]],
       ["/fixture/trx", ["upgrade", "claude", "b", "--skills-only"]],
-      ["/fixture/trellage", ["upgrade", "claude-a", "--strict-harness"]],
-      ["/fixture/trellage", ["upgrade", "claude-b", "--strict-harness"]],
-      ["/fixture/trellage", ["harness-version", "claude-a"]],
-      ["/fixture/trellage", ["harness-version", "claude-b"]],
     ])
     expect(run.mock.calls.every(([, , options]) => options?.cwd === "/fixture/worktree")).toBe(true)
-    expect(lines.join("\n")).toContain("[1/2] Native claude")
+    expect(lines.join("\n")).toContain("[1/1] Native claude")
     expect(lines.join("\n")).toContain("Updated harness native:claude/a")
     expect(lines.join("\n")).toContain("Updated harness native:claude/b")
-    expect(lines.join("\n")).toContain("Installed sandbox:claude-b: 2.1.0")
-    expect(lines.join("\n")).toContain("Harness summary: 4 updated, 0 failed, 0 unsupported")
+    expect(lines.join("\n")).toContain("Harness summary: 2 updated, 0 failed, 0 unsupported")
     expect(lines.join("\n")).toContain("Native skills summary: 2 updated, 0 failed, 0 not run; shared cache: updated.")
     expect(lines.at(-1)).toBe("All catalog harness versions and skills were updated.")
   })
 
-  it("keeps Firstmate, Oh My Pi, Pi Coding Agent, and Container operations distinct", async () => {
+  it("keeps Firstmate, Oh My Pi, and Pi Coding Agent operations distinct", async () => {
     const { invoke, run } = fixture({
       ...catalog(),
       native: [
@@ -503,7 +466,6 @@ describe("upgrade CLI shared queue execution", () => {
         native("omp", "oh-my-pi"),
         native("pi", "pi"),
       ],
-      sandbox: [container("pi", "pi")],
     })
     expect(await invoke(["all", "--yes"])).toBe(0)
     expect(
@@ -513,7 +475,6 @@ describe("upgrade CLI shared queue execution", () => {
       ["/fixture/trx", ["upgrade", "firstmate", "workers"]],
       ["/fixture/trx", ["upgrade", "omp", "a"]],
       ["/fixture/trx", ["upgrade", "pi", "a"]],
-      ["/fixture/trellage", ["upgrade", "pi", "--strict-harness"]],
     ])
   })
 
@@ -521,7 +482,6 @@ describe("upgrade CLI shared queue execution", () => {
     const { invoke, run, lines } = fixture({
       ...catalog(),
       native: [...catalog().native, native("agency", "agency")],
-      sandbox: [...catalog().sandbox, container("unknown", "custom")],
     })
     run.mockImplementation(async (executable, args) => {
       if (args.includes("--harness-only")) {
@@ -534,17 +494,12 @@ describe("upgrade CLI shared queue execution", () => {
           stderr: "native package fetch failed",
         })
       }
-      if (args[0] === "upgrade" && args[1] === "claude-a") {
-        return success("upgrade fallback: harness claude retained version 2.1.0")
-      }
       return successfulCommand(args)
     })
     expect(await invoke(["all", "--yes"])).toBe(1)
     expect(lines.join("\n")).toContain("Failed harness native:claude/b: native package fetch failed")
-    expect(lines.join("\n")).toContain("Harness was not updated: upgrade fallback: harness claude")
-    expect(lines.join("\n")).toContain("Updated harness sandbox:claude-b")
-    expect(lines.join("\n")).toContain("Unsupported harness sandbox:unknown")
-    expect(lines.join("\n")).toContain("Harness summary: 1 updated, 3 failed, 2 unsupported")
+    expect(lines.join("\n")).not.toContain("sandbox:")
+    expect(lines.join("\n")).toContain("Unsupported harness native:agency/a")
     expect(lines.at(-1)).toContain("did not complete successfully")
   })
 
@@ -558,26 +513,6 @@ describe("upgrade CLI shared queue execution", () => {
     expect(lines.join("\n")).toContain("does not support upgrade. Refresh the installed Trellage launcher first.")
     expect(run.mock.calls.some(([, args]) => args.includes("--skills-only"))).toBe(false)
     expect(lines.join("\n")).toContain("does not support upgrade. Refresh the installed Trellage launcher first.")
-    expect(lines.join("\n")).toContain("Updated harness sandbox:claude-b")
-  })
-
-  it("reports a Headlong source fallback as failure and continues independent profiles", async () => {
-    const { invoke, run, lines } = fixture({
-      ...catalog(),
-      sandbox: [container("headlong-a", "headlong"), container("headlong-b", "headlong")],
-    })
-    run.mockImplementation(async (_executable, args) =>
-      args[0] === "upgrade" && args[1] === "headlong-a"
-        ? success("upgrade fallback: source https://github.com/laude-institute/headlong.git@main retained the installed checkout")
-        : successfulCommand(args),
-    )
-    expect(await invoke(["all", "--yes"])).toBe(1)
-    expect(lines.join("\n")).toContain(
-      "Failed harness sandbox:headlong-a: Harness was not updated: upgrade fallback: source https://github.com/laude-institute/headlong.git@main",
-    )
-    expect(lines.join("\n")).toContain("Updated harness sandbox:headlong-b")
-    expect(lines.join("\n")).toContain("Harness summary: 3 updated, 1 failed, 0 unsupported")
-    expect(lines.at(-1)).toContain("did not complete successfully")
   })
 
   it("reports installed-version refresh failure and continues other groups", async () => {
@@ -589,7 +524,6 @@ describe("upgrade CLI shared queue execution", () => {
     )
     expect(await invoke(["all", "--yes"])).toBe(1)
     expect(lines.join("\n")).toContain("Installed-version refresh failed for Native claude")
-    expect(lines.join("\n")).toContain("Installed sandbox:claude-b: 2.1.0")
     expect(lines.join("\n")).toContain("1 installed-version refresh failures")
     expect(lines.at(-1)).toContain("did not complete successfully")
   })
@@ -603,7 +537,6 @@ describe("upgrade CLI shared queue execution", () => {
     )
     expect(await invoke(["all", "--yes"])).toBe(0)
     expect(lines.join("\n")).toContain("Latest-version lookup unsupported")
-    expect(lines.join("\n")).toContain("Installed sandbox:claude-b: 2.1.0")
   })
 
   it("stops active mutation on cancellation and reports profiles not run", async () => {
@@ -623,8 +556,7 @@ describe("upgrade CLI shared queue execution", () => {
     expect(await invoke(["all", "--yes"], { signal: controller.signal })).toBe(130)
     expect(run.mock.calls.filter(([, args]) => args[0] !== "--help").map(([, args]) => args)).toEqual([["upgrade", "claude", "a", "--harness-only"]])
     expect(lines.join("\n")).toContain("fixture update cancelled")
-    expect(lines.join("\n")).toContain("Harness not run sandbox:claude-a: cancelled")
-    expect(lines.join("\n")).toContain("2 not run")
+    expect(lines.join("\n")).toContain("not run")
     expect(lines.at(-1)).toContain("Completed updates were not rolled back")
   })
 
@@ -649,7 +581,6 @@ describe("upgrade CLI shared queue execution", () => {
     expect(await invoke(["all", "--yes"], { signal: controller.signal })).toBe(130)
     expect(run.mock.calls.some(([, args]) => args[0] === "upgrade" && !args.includes("--skills-only") && !args.includes("--harness-only"))).toBe(false)
     expect(lines.join("\n")).toContain("Installed-version refresh failed")
-    expect(lines.join("\n")).toContain("Harness not run sandbox:claude-b: cancelled")
   })
 })
 
@@ -694,7 +625,7 @@ describe("upgrade CLI Native skills phase", () => {
     expect(lines.join("\n")).toContain("Native skills summary: 9 updated, 0 failed, 0 not run")
   })
 
-  it("does not use stale caches after refresh failure, but still runs independent harness and Container updates", async () => {
+  it("does not use stale caches after refresh failure, but still runs independent harness updates", async () => {
     const { invoke, run, lines } = fixture()
     run.mockImplementation(async (_executable, args) => {
       if (args[0] === "skills") throw new Error("fixture shared skills cache failed")
@@ -705,7 +636,7 @@ describe("upgrade CLI Native skills phase", () => {
     expect(lines.join("\n")).toContain("Native skills cache failed: fixture shared skills cache failed")
     expect(lines.join("\n")).toContain("Native skills not run native:claude/a: shared cache refresh failed; no stale cache is used.")
     expect(lines.join("\n")).toContain("Native skills not run native:claude/b: shared cache refresh failed; no stale cache is used.")
-    expect(lines.join("\n")).toContain("Harness summary: 4 updated, 0 failed, 0 unsupported")
+    expect(lines.join("\n")).toContain("Harness summary: 2 updated, 0 failed, 0 unsupported")
     expect(lines.join("\n")).toContain("Native skills summary: 0 updated, 0 failed, 2 not run; shared cache: failed.")
     expect(lines.at(-1)).toContain("did not complete successfully")
   })
@@ -719,7 +650,7 @@ describe("upgrade CLI Native skills phase", () => {
     expect(await invoke(["all", "--yes"])).toBe(1)
     expect(lines.join("\n")).toContain("Failed Native skills native:claude/a: fixture skill verification failed")
     expect(lines.join("\n")).toContain("Updated Native skills native:claude/b")
-    expect(lines.join("\n")).toContain("Harness summary: 4 updated, 0 failed, 0 unsupported")
+    expect(lines.join("\n")).toContain("Harness summary: 2 updated, 0 failed, 0 unsupported")
     expect(lines.join("\n")).toContain("Native skills summary: 1 updated, 1 failed, 0 not run; shared cache: updated.")
     expect(lines.at(-1)).toContain("did not complete successfully")
   })
@@ -734,8 +665,7 @@ describe("upgrade CLI Native skills phase", () => {
       expect(await invoke(["all", "--yes"])).toBe(1)
       expect(run.mock.calls.some(([, args]) => args.includes("--skills-only"))).toBe(false)
       expect(lines.join("\n")).toContain("does not support upgrade")
-      expect(lines.join("\n")).toContain("Updated harness sandbox:claude-b")
-      expect(lines.join("\n")).toContain("Native skills summary: 0 updated, 2 failed, 0 not run")
+        expect(lines.join("\n")).toContain("Native skills summary: 0 updated, 2 failed, 0 not run")
     },
   )
 
@@ -747,7 +677,7 @@ describe("upgrade CLI Native skills phase", () => {
     expect(await invoke(["all", "--yes"])).toBe(1)
     expect(run.mock.calls.some(([, args]) => args[0] === "skills" || args.includes("--skills-only"))).toBe(false)
     expect(lines.join("\n")).toContain("does not support skills update")
-    expect(lines.join("\n")).toContain("Harness summary: 4 updated, 0 failed, 0 unsupported")
+    expect(lines.join("\n")).toContain("Harness summary: 2 updated, 0 failed, 0 unsupported")
   })
 
   it.each(["skills", "skills-update"])(
@@ -771,7 +701,6 @@ describe("upgrade CLI Native skills phase", () => {
       expect(run.mock.calls.some(([, args]) => args.includes("--harness-only"))).toBe(true)
       expect(run.mock.calls.some(([, args]) => args.includes("--skills-only") && args[2] === "b")).toBe(false)
       expect(lines.join("\n")).toContain("Native skills not run native:claude/b: cancelled.")
-      expect(lines.join("\n")).toContain("Harness not run sandbox:claude-b: cancelled.")
       expect(lines.join("\n")).toContain("fixture skills cancelled")
     },
   )

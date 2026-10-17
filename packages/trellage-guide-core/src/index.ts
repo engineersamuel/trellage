@@ -116,7 +116,7 @@ export const parseProfileGuideInteraction = (value: unknown, path = "interaction
   return { mode: "interactive", requiredSkills }
 }
 
-export type ProfileGuideGoalController = "codex-goal" | "claude-goal" | "graph-of-loops"
+export type ProfileGuideGoalController = "codex-goal" | "claude-goal"
 
 export interface ProfileGuideGoalExecution {
   readonly controller: ProfileGuideGoalController
@@ -154,11 +154,10 @@ const skillIdentifier = /^[a-z0-9][a-z0-9._:/-]*$/u
 export const isLaunchAgentIdentifier = (value: string): boolean => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)
 
 export const isProfileGuideGoalController = (value: unknown): value is ProfileGuideGoalController =>
-  value === "codex-goal" || value === "claude-goal" || value === "graph-of-loops"
+  value === "codex-goal" || value === "claude-goal"
 
-const goalCommandPattern = /(?:^|[^A-Za-z0-9_:/.-])([/$](?:goal(?:-me)?|graph-of-loops))(?=$|[^A-Za-z0-9_:/.-])/u
-const goalSkillPattern = /(?:^|[:/])(?:goal(?:-me)?|graph-of-loops)$/u
-const graphGoalFramePattern = /^\/graph-of-loops\s+OBJECTIVE="\{\{intent\}\}"\s+CONSTRAINTS="([^"]+)"$/u
+const goalCommandPattern = /(?:^|[^A-Za-z0-9_:/.-])([/$]goal(?:-me)?)(?=$|[^A-Za-z0-9_:/.-])/u
+const goalSkillPattern = /(?:^|[:/])goal(?:-me)?$/u
 
 const goalControllerSupportsIdentity = (
   controller: ProfileGuideGoalController,
@@ -171,10 +170,8 @@ const goalControllerSupportsIdentity = (
       (controller === "claude-goal" && canonicalNativeIdentity(identity.launcher, identity.profile).launcher === "claude")
     )
   }
-  if (controller === "graph-of-loops") return identity.profile === "claude-graph-of-loops"
   return (
     controller === "claude-goal" &&
-    identity.profile !== "claude-graph-of-loops" &&
     (harness === "claude" || identity.profile.startsWith("claude-"))
   )
 }
@@ -201,15 +198,7 @@ const goalExecutionWorkflowProblem = (
   if (workflow.launchAgent !== undefined) {
     return `workflow ${workflow.id} uses launchAgent, which is not supported by ${controller}`
   }
-  if (controller === "graph-of-loops") {
-    const frame = graphGoalFramePattern.exec(workflow.promptTemplate)
-    if (workflow.skill !== "graph-of-loops" || frame === null || frame[1]!.trim().length === 0) {
-      return `workflow ${workflow.id} must use the graph-of-loops skill and its /graph-of-loops OBJECTIVE="{{intent}}" CONSTRAINTS="..." goal-start frame`
-    }
-    if (goalCommandPattern.test(frame[1]!)) {
-      return `workflow ${workflow.id} must not add another goal controller or goal authoring command`
-    }
-  } else if (
+  if (
     (workflow.skill !== undefined && goalSkillPattern.test(workflow.skill)) ||
     goalCommandPattern.test(workflow.promptTemplate)
   ) {
@@ -375,7 +364,7 @@ const goalExecution = (
   const fields = record(value, path)
   exactKeys(fields, path, ["controller", "workflowIds"])
   if (!isProfileGuideGoalController(fields.controller)) {
-    return fail(`${path}.controller`, "must be one of: codex-goal, claude-goal, graph-of-loops")
+    return fail(`${path}.controller`, "must be one of: codex-goal, claude-goal")
   }
   const execution: ProfileGuideGoalExecution = {
     controller: fields.controller,

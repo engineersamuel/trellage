@@ -204,7 +204,7 @@ const ReviewTabs = ({ choices, selected, statuses, outcome, activeTab, tick }: P
   )
 }
 
-const ReviewReportActions = ({ outcome, snapshot, stage, destination, herdrAvailable }: {
+const ReviewReportActions = ({ snapshot, stage, destination, herdrAvailable }: {
   readonly outcome: ReviewOutcome
   readonly snapshot: ReviewSnapshot | undefined
   readonly stage: ReviewStage

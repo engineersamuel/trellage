@@ -9,7 +9,6 @@ import {
   harnessVersionReleaseKeyFor,
   parseHarnessVersionOutput,
   reconcileHarnessVersionResults,
-  refreshedSandboxInstalledState,
   type AdminHarnessVersionResult,
 } from "../src/admin-harness-version.ts"
 import type { AdminProfileEntry } from "../src/admin-model.ts"
@@ -33,24 +32,6 @@ const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEn
   ...overrides,
 })
 
-const sandboxEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
-  ref: "sandbox:claude-blog",
-  surface: "sandbox",
-  harness: "claude",
-  name: "claude-blog",
-  description: "Sandboxed Claude profile.",
-  commandPath: "/usr/local/bin/trellage",
-  doctorSupported: true,
-  inventorySupported: false,
-  health: "healthy",
-  install: "installed",
-  version: "2.1.222",
-  stale: false,
-  updateCheckSupported: false,
-  harnessVersionSupported: true,
-  updateCheckStale: false,
-  ...overrides,
-})
 
 const known = (installed: string, latest: string): AdminHarnessVersionResult => ({
   installed: { kind: "known", version: installed },
@@ -87,58 +68,9 @@ describe("buildHarnessVersionCommand", () => {
     })
   })
 
-  it("adds the explicit latest-cache bypass only to a forced sandbox command", () => {
-    expect(buildHarnessVersionCommand(sandboxEntry())).toEqual({
-      executable: "/usr/local/bin/trellage",
-      args: ["harness-version", "claude-blog"],
-    })
-    expect(buildHarnessVersionCommand(sandboxEntry(), { refreshLatest: true })).toEqual({
-      executable: "/usr/local/bin/trellage",
-      args: ["harness-version", "claude-blog", "--refresh-latest"],
-    })
-  })
 })
 
 describe("parseHarnessVersionOutput", () => {
-  it("parses installed and latest independently when both are known", () => {
-    expect(
-      parseHarnessVersionOutput(
-        JSON.stringify({
-          schemaVersion: 1,
-          installed: "18.1.1",
-          latest: "18.1.2",
-          latestKnown: true,
-        }),
-      ),
-    ).toEqual(known("18.1.1", "18.1.2"))
-  })
-
-  describe("refreshedSandboxInstalledState", () => {
-    it("preserves old installed evidence after a whole-command failure", () => {
-      expect(
-        refreshedSandboxInstalledState({
-          installed: { kind: "unavailable", diagnostic: "command failed" },
-          latest: { kind: "failed", diagnostic: "command failed" },
-        }),
-      ).toBeUndefined()
-    })
-
-    it("accepts independently known installed or a valid unavailable report", () => {
-      expect(
-        refreshedSandboxInstalledState({
-          installed: { kind: "known", version: "2.1.221" },
-          latest: { kind: "failed", diagnostic: "release lookup failed" },
-        }),
-      ).toEqual({ kind: "known", version: "2.1.221" })
-      expect(
-        refreshedSandboxInstalledState({
-          installed: { kind: "unavailable", diagnostic: "receipt unavailable" },
-          latest: { kind: "known", version: "2.1.259" },
-        }),
-      ).toEqual({ kind: "unavailable", diagnostic: "receipt unavailable" })
-    })
-  })
-
   it("preserves installed while representing an intentionally unsupported latest", () => {
     expect(
       parseHarnessVersionOutput(
@@ -238,27 +170,6 @@ describe("harnessVersionColumnsFor", () => {
 })
 
 describe("operation and release identities", () => {
-  it("uses launcher, profile, and release scopes deliberately", () => {
-    expect(harnessVersionOperationKeyFor(nativeEntry())).toBe("native:omp")
-    expect(
-      harnessVersionOperationKeyFor(
-        nativeEntry({ ref: "native:firstmate/default", launcher: "firstmate", harness: "firstmate", name: "default" }),
-      ),
-    ).toBe("native:firstmate:default")
-    expect(harnessVersionOperationKeyFor(sandboxEntry())).toBe("sandbox:claude-code")
-    expect(harnessVersionOperationKeyFor(sandboxEntry({ ref: "sandbox:claude-docs", name: "claude-docs" }))).toBe(
-      "sandbox:claude-code",
-    )
-  })
-
-  it("maps equivalent sources while separating Pi Coding Agent from Oh My Pi", () => {
-    expect(harnessVersionReleaseKeyFor(nativeEntry())).toBe("oh-my-pi")
-    expect(harnessVersionReleaseKeyFor(sandboxEntry({ harness: "pi" }))).toBe("oh-my-pi")
-    expect(
-      harnessVersionReleaseKeyFor(nativeEntry({ launcher: "pi", harness: "pi", ref: "native:pi/default" })),
-    ).toBe("pi-coding-agent")
-  })
-
   it("distinguishes latest-capable native producers and fails unsupported aliases closed", () => {
     expect(harnessVersionLatestLookupSupported(nativeEntry())).toBe(true)
     expect(
@@ -280,48 +191,6 @@ describe("operation and release identities", () => {
 })
 
 describe("reconcileHarnessVersionResults", () => {
-  it("shares only latest while preserving native and sandbox installed versions", () => {
-    const cpx = nativeEntry({
-      ref: "native:copilot/default",
-      launcher: "copilot",
-      harness: "copilot",
-      name: "default",
-    })
-    const sandbox = sandboxEntry({
-      ref: "sandbox:copilot-awesome",
-      harness: "copilot",
-      name: "copilot-awesome",
-      version: "1.0.70",
-    })
-    const raw = new Map<string, AdminHarnessVersionResult>([
-      ["native:copilot", unsupported("1.0.82")],
-      [
-        "sandbox:copilot-cli",
-        {
-          installed: { kind: "unavailable", diagnostic: "representative is unresolved" },
-          latest: { kind: "known", version: "1.0.90" },
-        },
-      ],
-    ])
-
-    const results = reconcileHarnessVersionResults([cpx, sandbox], (key) => raw.get(key))
-    expect(results.get(cpx.ref)).toEqual(known("1.0.82", "1.0.90"))
-    expect(results.get(sandbox.ref)).toEqual(known("1.0.70", "1.0.90"))
-  })
-
-  it("does not cross-promote a conflicting latest release", () => {
-    const native = nativeEntry()
-    const sandbox = sandboxEntry({ harness: "pi", version: "18.1.0" })
-    const raw = new Map<string, AdminHarnessVersionResult>([
-      ["native:omp", known("18.1.1", "18.1.2")],
-      ["sandbox:oh-my-pi", known("18.1.0", "18.1.3")],
-    ])
-
-    const results = reconcileHarnessVersionResults([native, sandbox], (key) => raw.get(key))
-    expect(results.get(native.ref)?.latest).toEqual({ kind: "known", version: "18.1.2" })
-    expect(results.get(sandbox.ref)?.latest).toEqual({ kind: "known", version: "18.1.3" })
-  })
-
   it("never substitutes another Firstmate profile's catalog pin for an unavailable target", () => {
     const first = nativeEntry({ ref: "native:firstmate/default", launcher: "firstmate", harness: "firstmate", name: "default" })
     const second = nativeEntry({
@@ -344,40 +213,9 @@ describe("reconcileHarnessVersionResults", () => {
     expect(results.get(second.ref)).toEqual(unavailable)
   })
 
-  it("applies a profile-scoped sandbox installed refresh without copying it to peers", () => {
-    const first = sandboxEntry({ version: "2.1.220" })
-    const second = sandboxEntry({
-      ref: "sandbox:claude-docs",
-      name: "claude-docs",
-      version: "2.1.219",
-    })
-    const raw = new Map<string, AdminHarnessVersionResult>([
-      [
-        "sandbox:claude-code",
-        {
-          installed: { kind: "known", version: "2.1.221" },
-          latest: { kind: "known", version: "2.1.259" },
-        },
-      ],
-    ])
-
-    const results = reconcileHarnessVersionResults(
-      [first, second],
-      (key) => raw.get(key),
-      (ref) => (ref === first.ref ? { kind: "known", version: "2.1.221" } : undefined),
-    )
-    expect(results.get(first.ref)?.installed).toEqual({ kind: "known", version: "2.1.221" })
-    expect(results.get(second.ref)?.installed).toEqual({ kind: "known", version: "2.1.219" })
-  })
 })
 
 describe("harnessVersionEntriesForForceResync", () => {
-  it("refreshes an equivalent native/sandbox release group", () => {
-    const cpx = nativeEntry({ ref: "native:copilot/default", launcher: "copilot", harness: "copilot" })
-    const sandbox = sandboxEntry({ ref: "sandbox:copilot", harness: "copilot" })
-    expect(harnessVersionEntriesForForceResync(cpx, [cpx, sandbox])).toEqual([cpx, sandbox])
-  })
-
   it("keeps Firstmate force refresh profile-scoped", () => {
     const first = nativeEntry({ ref: "native:firstmate/default", launcher: "firstmate", harness: "firstmate", name: "default" })
     const second = nativeEntry({

@@ -197,6 +197,8 @@ export const runGuideOptimizeSdk = async (options: GuideOptimizeSdkOptions): Pro
     const errors: unknown[] = []
     if (session !== undefined) await runCleanupStep(errors, () => session!.disconnect())
     await runCleanupStep(errors, () => client.stop())
+    // Cleanup failures are reported deliberately, even after a session error.
+    // oxlint-disable-next-line no-unsafe-finally
     if (errors.length > 0 && !options.signal.aborted) throw new AggregateError(errors, "Copilot SDK cleanup failed.")
   }
 }

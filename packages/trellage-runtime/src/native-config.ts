@@ -31,6 +31,7 @@ const Repository = NonEmpty.pipe(
   Schema.pattern(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9._-]+$/),
   Schema.filter((value) => ![".", ".."].includes(value.split("/")[1] ?? "")),
 )
+const PluginSettingKey = Schema.String.pipe(Schema.pattern(/^[a-z][a-z0-9_-]*$/))
 const Tag = NonEmpty.pipe(
   Schema.filter(
     (value) =>
@@ -72,6 +73,11 @@ const NativePluginSelection = Schema.Struct({
   source: Identifier,
   harness: Identifier,
   path: RelativePluginPath,
+  name: Schema.optional(Identifier),
+  plugin: Schema.optional(Identifier),
+  marketplace: Schema.optional(Identifier),
+  includeMcp: Schema.optional(Schema.Boolean),
+  settings: Schema.optional(Schema.Record({ key: PluginSettingKey, value: NonEmpty })),
 })
 
 const NativeInstruction = Schema.Struct({
@@ -105,6 +111,7 @@ const RootConfig = Schema.Struct({
 export type EnvironmentConfig = Schema.Schema.Type<typeof EnvironmentConfig>
 export type NativeSource = Schema.Schema.Type<typeof NativeSource>
 export type NativeProfile = Schema.Schema.Type<typeof NativeProfile>
+export type NativePluginSelection = Schema.Schema.Type<typeof NativePluginSelection>
 export type NativeCatalog = Schema.Schema.Type<typeof NativeCatalog>
 
 export interface TrellageConfig {
@@ -138,6 +145,41 @@ const configError = (label: string, cause: ParseResult.ParseError): TrellageConf
   })
 }
 
+const validateProfileSources = (catalog: NativeCatalog): string | undefined => {
+  for (const [profileId, profile] of Object.entries(catalog.profiles)) {
+    for (const selection of [...profile.skills, ...profile.plugins]) {
+      if (!Object.hasOwn(catalog.sources, selection.source))
+        return `profile ${profileId} references undeclared source ${selection.source}`
+    }
+    for (const plugin of profile.plugins) {
+      if (Object.keys(plugin.settings ?? {}).length > 0 && (!plugin.plugin || !plugin.marketplace))
+        return `profile ${profileId} plugin settings require plugin id and marketplace`
+    }
+  }
+}
+
+const validateProfileWildcards = (catalog: NativeCatalog): string | undefined => {
+  for (const [profileId, profile] of Object.entries(catalog.profiles)) {
+    for (const selection of profile.skills) {
+      const source = catalog.sources[selection.source]
+      if (selection.names.includes("*") && (!source?.allowWildcard || selection.names.length !== 1))
+        return `wildcard selection requires explicit source permission and a sole wildcard: ${profileId}/${selection.source}`
+    }
+  }
+}
+
+const validateProfileInstructions = (catalog: NativeCatalog): string | undefined => {
+  for (const [profileId, profile] of Object.entries(catalog.profiles)) {
+    for (const instruction of profile.instructions) {
+      if (!Object.hasOwn(catalog.instructions, instruction))
+        return `profile ${profileId} references undeclared instruction ${instruction}`
+    }
+  }
+}
+
+const validateNativeReferences = (catalog: NativeCatalog): string | undefined =>
+  validateProfileSources(catalog) ?? validateProfileWildcards(catalog) ?? validateProfileInstructions(catalog)
+
 export const parseTrellageConfig = (source: string): Effect.Effect<TrellageConfig, TrellageConfigError> =>
   Effect.gen(function* () {
     const raw = yield* Effect.try({
@@ -169,27 +211,9 @@ export const parseTrellageConfig = (source: string): Effect.Effect<TrellageConfi
     const native = yield* Schema.decodeUnknown(NativeCatalog)({ ...declaredNative, sources: { ...sharedSources, ...ownSources } }, {
       onExcessProperty: "error",
     }).pipe(Effect.mapError((cause) => configError("[native]", cause)))
-    for (const [profileId, profile] of Object.entries(native.profiles)) {
-      for (const selection of [...profile.skills, ...profile.plugins]) {
-        if (!Object.hasOwn(native.sources, selection.source)) {
-          return yield* new TrellageConfigError({
-            message: `invalid [native] configuration: profile ${profileId} references undeclared source ${selection.source}`,
-          })
-        }
-      }
-      for (const selection of profile.skills) {
-        if (selection.names.includes("*") && (!native.sources[selection.source]?.allowWildcard || selection.names.length !== 1)) {
-          return yield* new TrellageConfigError({ message: `invalid [native] configuration: wildcard selection requires explicit source permission and a sole wildcard: ${profileId}/${selection.source}` })
-        }
-      }
-      for (const instruction of profile.instructions) {
-        if (!Object.hasOwn(native.instructions, instruction)) {
-          return yield* new TrellageConfigError({
-            message: `invalid [native] configuration: profile ${profileId} references undeclared instruction ${instruction}`,
-          })
-        }
-      }
-    }
+    const referenceError = validateNativeReferences(native)
+    if (referenceError)
+      return yield* new TrellageConfigError({ message: `invalid [native] configuration: ${referenceError}` })
     return { schema_version: root.schema_version, environment, native }
   })
 

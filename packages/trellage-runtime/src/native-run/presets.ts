@@ -1,10 +1,11 @@
 export const nativeHarnessPresets = {
   agency: ["azure"],
-  claude: ["default", "office", "office-charts"],
+  claude: ["blog", "council", "default", "ecc", "frontend-design", "office", "office-charts", "research", "social-media"],
   codex: ["pstack", "superpowers", "youtube"],
   copilot: ["awesome", "compound-engineering", "hve", "plannotator", "superpowers", "tufte-vdqi"],
   firstmate: ["default", "pstack-workers"],
   fx: ["default"],
+  headlong: ["default"],
   jcode: ["default"],
   omp: ["default", "local"],
   pi: ["default"],

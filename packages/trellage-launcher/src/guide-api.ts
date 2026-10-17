@@ -43,7 +43,6 @@ import {
   type HeadlessCapabilitiesV1,
   type HerdrCompatibilityInfo,
   type NativeGuideCatalogEntry,
-  type SandboxGuideCatalogEntry,
 } from "./guide-catalog.ts"
 import { GuideGoalError, validateGuideGoalDraft } from "./guide-goal-augment.ts"
 import {
@@ -362,15 +361,20 @@ const validateEngagementModeFlags = (state: MutableGuideArgs): void => {
   }
 }
 
+const hasReviewModeConflicts = (state: MutableGuideArgs): boolean =>
+  state.json || state.nextSteps || state.engagement || state.profile !== undefined || state.uiVariant !== undefined
+
+const hasOptimizeModeConflicts = (state: MutableGuideArgs): boolean =>
+  state.review || state.json || state.nextSteps || state.engagement ||
+  state.profile !== undefined || state.intentFromFlag !== undefined ||
+  state.positionals.length > 0 || state.intentStdin
+
 const validateOptimizeMode = (state: MutableGuideArgs): void => {
-  if (state.reviewBase !== undefined && !state.review)
-    throw new GuideArgsError("--base requires --review")
-  if (state.review && (state.json || state.nextSteps || state.engagement || state.profile !== undefined ||
-    state.uiVariant !== undefined)) {
+  if (state.reviewBase !== undefined && !state.review) throw new GuideArgsError("--base requires --review")
+  if (state.review && hasReviewModeConflicts(state)) {
     throw new GuideArgsError("--review uses a confirmed change target, read-only reviews, and an approved Native handoff, not Guide matching or other modes")
   }
-  if (state.optimize && (state.review || state.json || state.nextSteps || state.engagement ||
-    state.profile !== undefined || state.intentFromFlag !== undefined || state.positionals.length > 0 || state.intentStdin))
+  if (state.optimize && hasOptimizeModeConflicts(state))
     throw new GuideArgsError("--optimize opens the Optimize screen directly and cannot be combined with an intent or other modes")
 }
 
@@ -646,8 +650,8 @@ export const resolveGuideModelConfig = (
 const findFullCatalogEntry = (
   catalog: CombinedGuideCatalog,
   ref: string,
-): NativeGuideCatalogEntry | SandboxGuideCatalogEntry | undefined => {
-  const native = catalog.native.find(
+): NativeGuideCatalogEntry | undefined =>
+  catalog.native.find(
     (entry) =>
       profileGuideIdentityKey({
         surface: "native",
@@ -655,12 +659,6 @@ const findFullCatalogEntry = (
         profile: entry.name,
       }) === canonicalProfileRef(ref),
   )
-  if (native !== undefined) return native
-  return catalog.sandbox.find((entry) => profileGuideIdentityKey({ surface: "sandbox", profile: entry.name }) === ref)
-}
-
-const isNativeEntry = (entry: NativeGuideCatalogEntry | SandboxGuideCatalogEntry): entry is NativeGuideCatalogEntry =>
-  "launcher" in entry
 
 const guideHarnessAgents: ReadonlyMap<string, string> = new Map([
   ["agency", "GitHub Copilot CLI terminal coding agent managed by Agency"],
@@ -690,8 +688,7 @@ export const guidePromptTarget = (harness: string, model?: string): string => {
   return model !== undefined && guideTargetModelPattern.test(model) ? `${agent} using model ${model}` : agent
 }
 
-const catalogEntryPromptTarget = (entry: NativeGuideCatalogEntry | SandboxGuideCatalogEntry): string =>
-  isNativeEntry(entry) ? guidePromptTarget(entry.harness) : guidePromptTarget(entry.harness.kind, entry.harness.model)
+const catalogEntryPromptTarget = (entry: NativeGuideCatalogEntry): string => guidePromptTarget(entry.harness)
 
 /** Returns the descriptive agent target Prompt Master should optimize for. */
 export const guideTargetTool = (catalog: CombinedGuideCatalog, profileRef: string): string => {
@@ -914,7 +911,6 @@ const enrichRecommendation = (
       `Match result references an unknown workflow of ${candidate.profileRef}: ${candidate.workflowId}`,
     )
   }
-  const native = isNativeEntry(entry)
   const execution = goal === undefined ? undefined : resolveGuideGoalExecution(goal, entry.guide, candidate.workflowId)
   return {
     profileRef: candidate.profileRef,
@@ -922,9 +918,9 @@ const enrichRecommendation = (
     confidence: candidate.confidence,
     reason: candidate.reason,
     tradeoff: candidate.tradeoff,
-    surface: native ? "native" : "sandbox",
+    surface: "native",
     name: entry.name,
-    ...(native ? { launcher: entry.launcher } : { harness: entry.harness.kind }),
+    launcher: entry.launcher,
     description: entry.description,
     sandbox: entry.sandbox,
     workflow,
@@ -932,14 +928,14 @@ const enrichRecommendation = (
     headless: entry.headless,
     herdrCompatibility: entry.herdrCompatibility,
     ...(execution === undefined ? {} : { goalExecution: goalPolicySummary(execution.controller) }),
-    ...(native && entry.orchestration !== undefined ? { orchestration: entry.orchestration } : {}),
+    ...(entry.orchestration !== undefined ? { orchestration: entry.orchestration } : {}),
   }
 }
 
 /**
  * Calls `provider.match` with the compact, path-free catalog projection and
  * returns three to five ordinary recommendations or one to five goal
- * recommendations. Never exposes `commandPath`, Sandbox `path`, prompt templates, absolute paths,
+ * recommendations. Never exposes `commandPath`, prompt templates, absolute paths,
  * or the full authored guide.
  */
 export const runGuideMatch = async (
@@ -1046,8 +1042,8 @@ const publicGoalTransport = (
 
 /**
  * Builds the current-terminal command a user would run to launch the given
- * catalog profile with `prompt`, using the launcher alias (native) or
- * `trellage` (Sandbox) as the public executable — never the internal
+ * catalog profile with `prompt`, using `trx` as the public executable —
+ * never the internal
  * absolute `commandPath`. Ordinary prompts use `-p <prompt>` only when the
  * profile's `headless.prompt` capability is true; otherwise they use manual
  * paste. Goals use the declared controller transport and expose its input
@@ -1062,7 +1058,7 @@ export const publicGuideLaunchCommand = (
   goalExecution?: GuideGoalCandidateContext,
 ): PublicGuideCommand => {
   const selected = selectedProfileFromCatalogRef(catalog, ref, workflowId)
-  const executable = selected.surface === "native" ? "trx" : "trellage"
+  const executable = "trx"
   if (goalExecution !== undefined) {
     if (goalExecution.workflow.id !== workflowId) {
       throw new GuideServiceError("The goal candidate does not belong to the selected workflow.")
@@ -1092,11 +1088,27 @@ export const publicGuideLaunchCommand = (
 
 /**
  * Converts a catalog reference and workflow into the validated `SelectedProfile`
- * used for later launch: the root `sandboxCommandPath` for Sandbox profiles,
- * the native entry's own `commandPath` for native profiles, and
+ * used for later launch: the native entry's own `commandPath`,
  * `headless.prompt` from the catalog as `headlessPrompt`, and the authored
  * workflow's `launchAgent` as `agent`.
  */
+const workflowSelectionFields = (workflow: ProfileGuideWorkflow) => ({
+  ...(workflow.launchAgent === undefined ? {} : { agent: workflow.launchAgent }),
+  ...(workflow.interaction === undefined ? {} : { interaction: workflow.interaction }),
+})
+
+const nativeSelectedProfile = (entry: NativeGuideCatalogEntry, workflow: ProfileGuideWorkflow): SelectedProfile =>
+  parseSelectedProfile({
+    surface: "native",
+    launcher: entry.launcher,
+    commandPath: entry.commandPath,
+    profile: entry.name,
+    headlessPrompt: entry.headless.prompt,
+    ...workflowSelectionFields(workflow),
+    ...(entry.guide.goalExecution === undefined ? {} : { goalExecutionPolicy: entry.guide.goalExecution }),
+    ...(entry.orchestration === undefined ? {} : { orchestration: entry.orchestration }),
+  })
+
 export const selectedProfileFromCatalogRef = (
   catalog: CombinedGuideCatalog,
   ref: string,
@@ -1105,32 +1117,7 @@ export const selectedProfileFromCatalogRef = (
   const entry = findFullCatalogEntry(catalog, ref)
   if (entry === undefined) throw new GuideServiceError(`Unknown profile reference: ${ref}`)
   const workflow = findGuideWorkflow(entry.guide, workflowId)
-  const agent = workflow.launchAgent
-  if (isNativeEntry(entry)) {
-    return parseSelectedProfile({
-      surface: "native",
-      launcher: entry.launcher,
-      commandPath: entry.commandPath,
-      profile: entry.name,
-      headlessPrompt: entry.headless.prompt,
-      ...(agent === undefined ? {} : { agent }),
-      ...(workflow.interaction === undefined ? {} : { interaction: workflow.interaction }),
-      ...(entry.guide.goalExecution === undefined ? {} : { goalExecutionPolicy: entry.guide.goalExecution }),
-      ...(entry.orchestration === undefined ? {} : { orchestration: entry.orchestration }),
-    })
-  }
-  if (agent !== undefined && entry.harness.kind !== "copilot") {
-    throw new GuideServiceError(`Workflow launchAgent is supported only for Copilot Sandbox profiles: ${ref}`)
-  }
-  return parseSelectedProfile({
-    surface: "sandbox",
-    commandPath: catalog.sandboxCommandPath,
-    profile: entry.name,
-    headlessPrompt: entry.headless.prompt,
-    ...(agent === undefined ? {} : { agent }),
-    ...(workflow.interaction === undefined ? {} : { interaction: workflow.interaction }),
-    ...(entry.guide.goalExecution === undefined ? {} : { goalExecutionPolicy: entry.guide.goalExecution }),
-  })
+  return nativeSelectedProfile(entry, workflow)
 }
 
 // ---------------------------------------------------------------------------
@@ -1305,12 +1292,12 @@ export const applyRequiredProfilePromptTemplate = (
 }
 
 const prepareCatalogPrompt = (
-  entry: NativeGuideCatalogEntry | SandboxGuideCatalogEntry,
+  entry: NativeGuideCatalogEntry,
   guide: ProfileGuideV1,
   workflowId: string,
   request: GuideGenerateRequest,
 ) => {
-  const orchestration = isNativeEntry(entry) ? entry.orchestration : undefined
+  const orchestration = entry.orchestration
   if (request.orchestration !== undefined && orchestration === undefined) {
     throw new GuideServiceError("Orchestration controls must come from the selected profile catalog.")
   }
@@ -1336,13 +1323,12 @@ const generationProfileSummary = (
   workflow: GuideSelectedProfileSummary["workflow"],
   execution: ReturnType<typeof resolveGuideGoalExecution> | undefined,
 ): GuideSelectedProfileSummary => {
-  const native = isNativeEntry(entry)
   return {
     profileRef: request.profileRef,
     workflowId,
-    surface: native ? "native" : "sandbox",
+    surface: "native",
     name: entry.name,
-    ...(native ? { launcher: entry.launcher } : { harness: entry.harness.kind }),
+    launcher: entry.launcher,
     description: entry.description,
     sandbox: entry.sandbox,
     workflow,
@@ -1350,7 +1336,7 @@ const generationProfileSummary = (
     headless: entry.headless,
     herdrCompatibility: entry.herdrCompatibility,
     ...(execution === undefined ? {} : { goalExecution: goalPolicySummary(execution.controller) }),
-    ...(native && entry.orchestration !== undefined ? { orchestration: entry.orchestration } : {}),
+    ...(entry.orchestration !== undefined ? { orchestration: entry.orchestration } : {}),
   }
 }
 
@@ -1545,7 +1531,7 @@ export interface LiteralGuideCandidate {
 }
 
 const profileIdentityAliases = (entry: GuideMatchCatalogEntry): ReadonlyArray<string> => {
-  if (entry.launcher === undefined) return [entry.ref, `sandbox/${entry.name}`, `sandbox ${entry.name}`]
+  if (entry.launcher === undefined) return [entry.ref]
   const aliases = [entry.ref, `${entry.launcher}/${entry.name}`, `${entry.launcher} ${entry.name}`]
   if (entry.launcher !== "firstmate") return aliases
   return [
@@ -1694,7 +1680,7 @@ const ordinaryMatchEntries = (
   scoreGuideMatchEntries(entries, intent).filter(({ explicitIdentity }) => explicitIdentity).map(({ entry }) => entry.ref),
 )
 
-const crossCuttingGuideProfileRefs: ReadonlyArray<string> = ["native:codex/pstack", "sandbox:headlong"]
+const crossCuttingGuideProfileRefs: ReadonlyArray<string> = ["native:codex/pstack", "native:headlong/default"]
 const guideMatchPrefilterTarget = 12
 const lowSignalMatchedTermMaximum = 2
 
@@ -1741,7 +1727,7 @@ const goalMatchCatalog = (catalog: CombinedGuideCatalog, intent: string, goal: P
   const fullEntries = guideCatalogEntries(catalog)
   const identityIntent = `${intent}\n${goalMatchIntent(goal)}`
   const knownRefs = new Set(fullEntries.map(({ ref }) => ref))
-  for (const match of identityIntent.matchAll(/\b(?:native:[a-z0-9-]+\/[a-z0-9._-]+|sandbox:[a-z0-9._-]+)\b/giu)) {
+  for (const match of identityIntent.matchAll(/\bnative:[a-z0-9-]+\/[a-z0-9._-]+\b/giu)) {
     if (!knownRefs.has(match[0].toLocaleLowerCase("en"))) {
       throw new GuideServiceError(`Unknown explicitly requested goal profile: ${match[0]}`)
     }

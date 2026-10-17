@@ -7,7 +7,7 @@ import {
   runBatchedHarnessVersionChecks,
   type HarnessVersionSchedulerOptions,
 } from "./admin-harness-version-scheduler.ts"
-import { harnessVersionOperationKeyFor, harnessVersionReleaseKeyFor, type AdminHarnessVersionResult } from "./admin-harness-version.ts"
+import { harnessVersionOperationKeyFor, type AdminHarnessVersionResult } from "./admin-harness-version.ts"
 import type { CommandRunner, CommandSpec } from "./guide-launch.ts"
 import { runProfileUpdateStep, updateDiagnostic, type ProfileUpdateResult, type ProfileUpdateStep } from "./admin-update-command.ts"
 import {
@@ -93,16 +93,10 @@ interface HarnessUpdateRunOptions {
 export const harnessUpdateKeyFor = (entry: AdminProfileEntry): string | undefined => {
   if (entry.harness === undefined || entry.commandPath.length === 0) return undefined
   if (adminFirstmateMutationBlockReason(entry) !== undefined) return undefined
-  if (entry.surface === "sandbox") {
-    return harnessVersionReleaseKeyFor(entry) === undefined ? undefined : `sandbox:${entry.harness}`
-  }
   return entry.launcher !== undefined && nativeHarnessUpdates.has(entry.launcher) ? `native:${entry.launcher}` : undefined
 }
 
 const buildHarnessUpdateCommand = (entry: AdminProfileEntry): CommandSpec => {
-  if (entry.surface === "sandbox") {
-    return { executable: entry.commandPath, args: ["upgrade", entry.name, "--strict-harness"] }
-  }
   const update = nativeHarnessUpdates.get(entry.launcher ?? "")
   if (update === undefined) throw new Error(`Harness update is not supported for ${entry.ref}`)
   return {
@@ -127,7 +121,7 @@ export const harnessUpdatePlanFor = (
   ].sort((left, right) => left.ref.localeCompare(right.ref))
   if (!targets.some((entry) => entry.ref === selected.ref)) return undefined
 
-  const shared = selected.surface === "native" && nativeHarnessUpdates.get(selected.launcher ?? "")?.shared === true
+  const shared = nativeHarnessUpdates.get(selected.launcher ?? "")?.shared === true
   const steps = shared
     ? [{ command: buildHarnessUpdateCommand(targets[0]!), targets }]
     : targets.map((entry) => ({ command: buildHarnessUpdateCommand(entry), targets: [entry] }))
@@ -142,7 +136,6 @@ export const harnessUpdatePlanFor = (
 }
 
 export const harnessUpdateRefreshTargets = (plan: HarnessUpdatePlan): ReadonlyArray<AdminProfileEntry> => {
-  if (plan.surface === "sandbox") return plan.targets
   const scopes = new Map<string, AdminProfileEntry>()
   for (const target of plan.targets) {
     const key = harnessVersionOperationKeyFor(target)
@@ -163,7 +156,6 @@ export const refreshHarnessUpdateVersions = async (
     await runManager.waitForIdle(harnessVersionRefFor(key))
     await runBatchedHarnessVersionChecks([target], runManager, cache, {
       forceResync: true,
-      refreshLatest: false,
       selectedEntryRef: target.ref,
       onResult,
     })
@@ -249,9 +241,7 @@ export class HarnessUpdateManager {
   }
 
   private async runQueue(plans: ReadonlyArray<HarnessUpdatePlan>, options: HarnessUpdateQueueOptions): Promise<HarnessUpdateQueueOutcome> {
-    const native = plans.filter((plan) => plan.surface === "native")
-    const containers = plans.filter((plan) => plan.surface === "sandbox")
-    const nativeReports = await this.runGroupPhase(native, options, 0, plans.length)
+    const nativeReports = await this.runGroupPhase(plans, options, 0, plans.length)
     // Native harness updaters can rewrite skills; publish the final skill copies afterward.
     const skills =
       options.skills === undefined || options.signal?.aborted === true
@@ -260,8 +250,7 @@ export class HarnessUpdateManager {
             ...(options.signal === undefined ? {} : { signal: options.signal }),
             onProgress: (event) => options.onProgress?.({ kind: "skills", event }),
           })
-    const containerReports = await this.runGroupPhase(containers, options, native.length, plans.length)
-    return { reports: [...nativeReports, ...containerReports], skills }
+    return { reports: nativeReports, skills }
   }
 
   private async runGroupPhase(

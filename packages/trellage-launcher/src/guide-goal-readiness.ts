@@ -365,10 +365,6 @@ export const checkGuideGoalReadiness = async (
   services: GuideGoalReadinessServices = {},
 ): Promise<GuideGoalReadiness> => {
   assertGuideGoalProfile(selected, execution)
-  if (selected.surface === "sandbox") {
-    if (execution.controller === "graph-of-loops") return checked("The selected Graph profile is available; its authored controller owns progress and completion")
-    return unknown("Sandbox doctor does not expose effective goal runtime, workspace trust, hook policy, or evaluator access. Check them in the selected Sandbox before native input; automatic goal delivery is not confirmed.")
-  }
   try {
     return execution.controller === "codex-goal"
       ? await checkCodexGoal(runner, selected, cwd, services, signal)

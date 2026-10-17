@@ -1,5 +1,5 @@
 /**
- * Admin data model: aggregates the combined native + sandbox guide catalog
+ * Admin data model: aggregates the combined native guide catalog
  * (`guide-catalog.ts`) with per-profile health/install readiness
  * (`guide-preflight.ts`, `profile-readiness.ts`-equivalent shapes) into static
  * profile rows. Admin-only instance expansion adds separately discovered
@@ -29,7 +29,18 @@ import { guideCatalogEntries } from "./guide-catalog.ts"
 import { ProfileReadinessKind, type ProfileReadinessResult } from "./guide-preflight.ts"
 
 /** Canonical Native harness identifiers, matching guide catalog `launcher` values. */
-export type NativeHarnessId = "agency" | "copilot" | "codex" | "claude" | "firstmate" | "fx" | "jcode" | "omp" | "pi" | "prime"
+export type NativeHarnessId =
+  | "agency"
+  | "copilot"
+  | "codex"
+  | "claude"
+  | "firstmate"
+  | "fx"
+  | "headlong"
+  | "jcode"
+  | "omp"
+  | "pi"
+  | "prime"
 
 const allNativeHarnesses: ReadonlyArray<NativeHarnessId> = [
   "agency",
@@ -38,6 +49,7 @@ const allNativeHarnesses: ReadonlyArray<NativeHarnessId> = [
   "claude",
   "firstmate",
   "fx",
+  "headlong",
   "jcode",
   "omp",
   "pi",
@@ -48,6 +60,8 @@ const launchersWithoutUpdateCheckSupport: ReadonlySet<NativeHarnessId> = new Set
   "agency",
   "claude",
 ])
+
+const launchersWithoutAdminLifecycleSupport: ReadonlySet<NativeHarnessId> = new Set<NativeHarnessId>(["headlong"])
 
 export interface NativeLauncherCapabilities {
   readonly doctorSupported: boolean
@@ -60,6 +74,14 @@ export interface NativeLauncherCapabilities {
 
 export const nativeLauncherCapabilities = (launcher: string): NativeLauncherCapabilities => {
   if (!isKnownNativeLauncher(launcher)) {
+    return {
+      doctorSupported: false,
+      inventorySupported: false,
+      updateCheckSupported: false,
+      harnessVersionSupported: false,
+    }
+  }
+  if (launchersWithoutAdminLifecycleSupport.has(launcher)) {
     return {
       doctorSupported: false,
       inventorySupported: false,
@@ -86,7 +108,7 @@ export interface AdminProfileEntry {
   readonly ref: string
   /** Static catalog identity. Runtime rows never enter the guide/model catalog. */
   readonly templateRef?: string
-  readonly surface: "native" | "sandbox"
+  readonly surface: "native"
   readonly launcher?: string
   readonly harness?: string
   readonly name: string
@@ -106,11 +128,9 @@ export interface AdminProfileEntry {
   readonly healthDiagnostic?: string
   readonly install: AdminInstallStatus
   readonly version?: string
-  /** Configured Container selector, separate from the installed version and latest release. */
-  readonly harnessVersionSelector?: string
-  /** Whether this profile's launcher supports a read-only `update --check` (see `launchersWithoutUpdateCheckSupport`). Always `false` for sandbox profiles: `trellage upgrade` rebuilds the locked image and has no safe read-only equivalent. */
+  /** Whether this profile's launcher supports a read-only `update --check` (see `launchersWithoutUpdateCheckSupport`). */
   readonly updateCheckSupported: boolean
-  /** Whether this profile supports the read-only `harness-version` report. Sandbox reports use receipt-backed installed revisions and authoritative latest sources where defined. */
+  /** Whether this profile supports the read-only `harness-version` report. */
   readonly harnessVersionSupported: boolean
   /** The latest version reported by the most recent successful `update --check`, when it differs from `version`. `undefined` while unchecked, unsupported, or when already current. */
   readonly latestVersion?: string
@@ -177,10 +197,7 @@ export interface AdminUpdateCheckInput {
 }
 
 const commandPathFor = (entry: GuideCatalogEntryRef, catalog: CombinedGuideCatalog): string =>
-  entry.surface === "sandbox"
-    ? catalog.sandboxCommandPath
-    : (catalog.native.find((native) => native.launcher === entry.launcher && native.name === entry.name)?.commandPath ??
-      "")
+  catalog.native.find((native) => native.launcher === entry.launcher && native.name === entry.name)?.commandPath ?? ""
 
 const readinessFor = (ref: string, inputs: ReadonlyArray<AdminReadinessInput>): AdminReadinessInput | undefined =>
   inputs.find((input) => input.ref === ref)
@@ -228,25 +245,6 @@ const deriveNativeStatus = (
   }
 }
 
-const deriveSandboxStatus = (
-  readiness: AdminReadinessInput | undefined,
-): { readonly health: AdminHealthStatus; readonly install: AdminInstallStatus; readonly diagnostic?: string } => {
-  if (readiness?.result === undefined) return { health: "unknown", install: "unknown" }
-  if ("malformed" in readiness.result) {
-    return { health: "malformed-output", install: "malformed-output", diagnostic: readiness.result.diagnostic }
-  }
-  return readiness.result.kind === ProfileReadinessKind.Ready
-    ? { health: "healthy", install: "installed" }
-    : { health: "unhealthy", install: "not-installed", diagnostic: readiness.result.diagnostic }
-}
-
-const sandboxCapabilities: NativeLauncherCapabilities = {
-  doctorSupported: true,
-  inventorySupported: false,
-  updateCheckSupported: false,
-  harnessVersionSupported: true,
-}
-
 const optionalIdentityFields = (entry: GuideCatalogEntryRef): Pick<AdminProfileEntry, "launcher" | "harness"> => ({
   ...(entry.launcher === undefined ? {} : { launcher: entry.launcher }),
   ...(entry.harness === undefined ? {} : { harness: entry.harness }),
@@ -276,15 +274,6 @@ const optionalUpdateFields = (
   ...(updateCheck.updateCheckedAt === undefined ? {} : { updateCheckedAt: updateCheck.updateCheckedAt }),
 })
 
-const optionalHarnessTargetFields = (
-  entry: GuideCatalogEntryRef,
-  catalog: CombinedGuideCatalog,
-): Pick<AdminProfileEntry, "harnessVersionSelector"> => {
-  if (entry.surface !== "sandbox") return {}
-  const selector = catalog.sandbox.find((profile) => profile.name === entry.name)?.harness.version
-  return selector === undefined ? {} : { harnessVersionSelector: selector }
-}
-
 const aggregateAdminProfile = (
   entry: GuideCatalogEntryRef,
   catalog: CombinedGuideCatalog,
@@ -292,14 +281,12 @@ const aggregateAdminProfile = (
   updateCheckInputs: ReadonlyArray<AdminUpdateCheckInput>,
 ): AdminProfileEntry => {
   const readiness = readinessFor(entry.ref, readinessInputs)
-  const capabilities =
-    entry.surface === "native" ? nativeLauncherCapabilities(entry.launcher ?? "") : sandboxCapabilities
-  const derived =
-    entry.surface === "native" ? deriveNativeStatus(capabilities, readiness) : deriveSandboxStatus(readiness)
+  const capabilities = nativeLauncherCapabilities(entry.launcher ?? "")
+  const derived = deriveNativeStatus(capabilities, readiness)
   const updateCheck = deriveUpdateCheck(capabilities.updateCheckSupported, updateCheckFor(entry.ref, updateCheckInputs))
-  const orchestration = entry.surface === "native"
-    ? catalog.native.find((native) => native.launcher === entry.launcher && native.name === entry.name)?.orchestration
-    : undefined
+  const orchestration = catalog.native.find(
+    (native) => native.launcher === entry.launcher && native.name === entry.name,
+  )?.orchestration
   const fleet = readiness?.result !== undefined && !("malformed" in readiness.result) ? readiness.result.fleet : undefined
   return {
     ref: entry.ref,
@@ -315,7 +302,6 @@ const aggregateAdminProfile = (
     health: derived.health,
     install: derived.install,
     ...optionalReadinessFields(entry, readiness, derived),
-    ...optionalHarnessTargetFields(entry, catalog),
     updateCheckSupported: capabilities.updateCheckSupported,
     harnessVersionSupported: capabilities.harnessVersionSupported,
     ...optionalUpdateFields(updateCheck),
@@ -434,10 +420,11 @@ export const mergeAdminReadiness = (
 }
 
 /** Maps an admin entry back to the identity `loadProfileGuide` expects. Native entries always carry a `launcher`. */
-export const toProfileGuideIdentity = (entry: AdminProfileEntry): ProfileGuideIdentity =>
-  entry.surface === "native"
-    ? { surface: "native", launcher: entry.launcher ?? "", profile: entry.name }
-    : { surface: "sandbox", profile: entry.name }
+export const toProfileGuideIdentity = (entry: AdminProfileEntry): ProfileGuideIdentity => ({
+  surface: "native",
+  launcher: entry.launcher ?? "",
+  profile: entry.name,
+})
 
 export interface GuideBodyResult {
   readonly available: true
@@ -453,8 +440,7 @@ export interface GuideBodyUnavailable {
  * Catalog entries only carry the parsed structured `ProfileGuideV1`
  * projection, never the Markdown body (see `guide-catalog.ts` doc comment),
  * so the body must be read from the `profile-guides/` root via the same
- * `loadProfileGuide` function `packages/trellage-cli/src/profile-guides.ts`
- * already uses for sandbox guides.
+ * `loadProfileGuide` function from `@trellage/guide-core`.
  */
 export const loadAdminProfileGuideBody = async (
   profileGuidesRoot: string,

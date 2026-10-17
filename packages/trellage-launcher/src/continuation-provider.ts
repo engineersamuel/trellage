@@ -847,7 +847,7 @@ const jevNoActionAssessment = async (
       snapshot,
       entries,
     )
-  } catch (error) {
+  } catch {
     throwIfAborted(options.signal)
     options.onProgress?.("Jev completion check failed; using the full continuation assessment.")
     return undefined

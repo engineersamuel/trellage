@@ -362,7 +362,7 @@ test("a missing required wildcard skill fails before publishing", async () => {
   assert.equal(await lstat(output).catch(() => undefined), undefined)
 })
 
-test("all launcher and container surfaces consume their common skill bundle", async () => {
+test("Native and remaining container surfaces consume their common skill bundle", async () => {
   const prototypesRoot = path.join(repositoryRoot, "prototypes")
   const nativeFamilies = (await readdir(prototypesRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
@@ -379,7 +379,6 @@ test("all launcher and container surfaces consume their common skill bundle", as
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
-  assert.ok(sandboxProfiles.length > 0)
   for (const profile of sandboxProfiles) {
     const source = await readFile(path.join(profilesRoot, profile, "profile.toml"), "utf8")
     assert.match(source, /^skill_bundles = \[[^\n]*"sandbox-common"/mu, `${profile} must select sandbox-common`)

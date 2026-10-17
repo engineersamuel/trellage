@@ -1360,12 +1360,6 @@ managed_instructions="$expected_hve_home/instructions/rundown.instructions.md"
   || fail 'setup did not seed the managed instructions'
 cmp -s "$managed_instructions" "$prototype_root/assets/rundown/rundown.instructions.md" \
   || fail 'seeded managed instructions differ'
-cmp -s "$prototype_root/assets/rundown/rundown.instructions.md" \
-  "$prototype_root/../trellage/assets/rundown/rundown.instructions.md" \
-  || fail 'vendored instructions differ from the canonical copy'
-cmp -s "$prototype_root/assets/rundown/NOTICE.md" \
-  "$prototype_root/../trellage/assets/rundown/NOTICE.md" \
-  || fail 'vendored notice differs from the canonical copy'
 printf 'stale\n' >"$managed_instructions"
 "$launcher" setup hve
 cmp -s "$managed_instructions" "$prototype_root/assets/rundown/rundown.instructions.md" \
@@ -2453,7 +2447,7 @@ cmp -s "$runtime_root/lib/trellage-session-bridge.py" \
   "$prototype_root/../../scripts/trellage-session-bridge.py" \
   || fail 'installed runtime session bridge differs'
 cmp -s "$runtime_root/lib/copilot-model-settings.py" \
-  "$prototype_root/../trellage/copilot-model-settings.py" \
+  "$prototype_root/../../scripts/copilot-model-settings.py" \
   || fail 'installed model settings helper differs'
 for asset in rundown.instructions.md NOTICE.md; do
   [[ -f "$runtime_root/assets/rundown/$asset" && ! -L "$runtime_root/assets/rundown/$asset" ]] \

@@ -5,7 +5,6 @@ import {
   TypeSafeClient,
   choice,
   noul,
-  type NoulQuestion,
   type Questions,
   type RequestOptions,
   type SystemOneRequest,

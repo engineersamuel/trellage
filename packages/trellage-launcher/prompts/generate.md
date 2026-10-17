@@ -66,7 +66,7 @@ score unchanged. Do not copy them, the original Goal-me document, a scoreboard,
 a loop protocol, or any part of `fixedFrame` into an approach. The host adds
 the protected objective and exact frame once, even for a workflow without
 `skill`. Return distinct approaches within `approachMaximumLength`. Do not
-emit `/goal`, `/graph-of-loops`, `/goal-me`, `$goal`, workflow commands, or a
+emit `/goal`, `/goal-me`, `$goal`, workflow commands, or a
 second controller. Do not ask questions or start another authoring interview.
 These goal rules override the complete-prompt rules for ordinary workflows
 below. The selected controller alone owns progress and completion.
@@ -94,12 +94,12 @@ For a fixed-frame workflow, let fixed template text supply its own substantive
 requirements. Keep the body focused on the user's subject, question, and stated
 scope without copying or paraphrasing the authored frame.
 
-For `sandbox:claude-council` with the `run-council-deliberation` workflow,
+For `native:claude/council` with the `run-council-deliberation` workflow,
 preserve only the user's idea, question, and stated scope in the body. Do not
 duplicate the fixed frame's pressure-testing, risk, alternative, feasibility,
 implementation-tradeoff, recommendation, or next-step requirements.
 
-For `sandbox:claude-research` with the `vault-backed-research` workflow,
+For `native:claude/research` with the `vault-backed-research` workflow,
 preserve only the user's research subject, question, comparison, and stated
 scope in the body. Do not duplicate the fixed frame's source-evidence, prior
 art, unresolved-question, risk, implementation-option, or approach-change

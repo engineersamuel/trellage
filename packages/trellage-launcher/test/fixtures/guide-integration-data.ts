@@ -25,7 +25,6 @@ export enum FixtureMode {
   GoalLongQuestion = "goal-long-question",
   GoalRecommended = "goal-recommended",
   GoalReapproval = "goal-reapproval",
-  GoalGraph = "goal-graph",
   Customer = "customer",
   CustomerHerdr = "customer-herdr",
   CustomerExistingWorktree = "customer-existing-worktree",
@@ -40,11 +39,10 @@ export type FixtureProfileId =
   | "reviewer"
   | "writer"
   | "builder"
-  | "sandbox"
+  | "auditor"
   | "council"
   | "research"
   | "hve"
-  | "graph"
 
 export type FixtureProfile = {
   readonly id: FixtureProfileId
@@ -59,8 +57,7 @@ export type FixtureProfile = {
   readonly goalExecution?: ProfileGuideV1["goalExecution"]
   readonly interaction?: ProfileGuideWorkflow["interaction"]
 } & (
-  | { readonly surface: "native"; readonly launcher: NativeSelectedProfile["launcher"]; readonly agent?: string }
-  | { readonly surface: "sandbox" }
+  { readonly surface: "native"; readonly launcher: NativeSelectedProfile["launcher"]; readonly agent?: string }
 )
 
 export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
@@ -111,10 +108,11 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     afterBody: "",
   },
   {
-    id: "sandbox",
-    ref: "sandbox:sandbox-reviewer",
-    surface: "sandbox",
-    name: "sandbox-reviewer",
+    id: "auditor",
+    ref: "native:copilot/auditor",
+    surface: "native",
+    launcher: "copilot",
+    name: "auditor",
     harness: "copilot",
     workflowId: "review",
     beforeBody: "",
@@ -122,9 +120,10 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
   {
     id: "council",
-    ref: "sandbox:claude-council",
-    surface: "sandbox",
-    name: "claude-council",
+    ref: "native:claude/council",
+    surface: "native",
+    launcher: "claude",
+    name: "council",
     harness: "claude",
     workflowId: "run-council-deliberation",
     key: "c",
@@ -134,9 +133,10 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
   {
     id: "research",
-    ref: "sandbox:claude-research",
-    surface: "sandbox",
-    name: "claude-research",
+    ref: "native:claude/research",
+    surface: "native",
+    launcher: "claude",
+    name: "research",
     harness: "claude",
     workflowId: "vault-backed-research",
     key: "r",
@@ -159,21 +159,7 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
   },
 ]
 
-const graphFixture: FixtureProfile = {
-  id: "graph",
-  ref: "sandbox:claude-graph-of-loops",
-  surface: "sandbox",
-  name: "claude-graph-of-loops",
-  harness: "claude",
-  workflowId: "start-goal",
-  skill: "graph-of-loops",
-  beforeBody: '/graph-of-loops OBJECTIVE="',
-  afterBody: '" CONSTRAINTS="Keep trellage-graph as the only completion authority. Require its review, proof, integration, and delivery gates."',
-  goalExecution: { controller: "graph-of-loops", workflowIds: ["start-goal"] },
-}
-
 export const fixtureProfilesForMode = (mode: FixtureMode): ReadonlyArray<FixtureProfile> => {
-  if (mode === FixtureMode.GoalGraph) return [...fixtureProfiles, graphFixture]
   if (![FixtureMode.Customer, FixtureMode.CustomerHerdr, FixtureMode.CustomerExistingWorktree].includes(mode)) return fixtureProfiles
   return fixtureProfiles.map((profile) => profile.id !== "hve" ? profile : {
     ...profile,
@@ -188,8 +174,10 @@ export const fixtureProfilesForMode = (mode: FixtureMode): ReadonlyArray<Fixture
 }
 
 export const fixtureMatchProfiles = (profiles: ReadonlyArray<FixtureProfile>): ReadonlyArray<FixtureProfile> =>
-  profiles.filter(({ workflowId }) =>
-    !["run-council-deliberation", "vault-backed-research", "rpi-agent-cycle"].includes(workflowId),
+  profiles.filter(({ id, workflowId }) =>
+    id !== "council" &&
+    id !== "research" &&
+    !(id === "hve" && workflowId === "rpi-agent-cycle"),
   )
 
 export const recommendationIds: ReadonlyArray<FixtureProfileId> = [
@@ -197,23 +185,22 @@ export const recommendationIds: ReadonlyArray<FixtureProfileId> = [
   "reviewer",
   "writer",
   "builder",
-  "sandbox",
+  "auditor",
 ]
-export const goalRecommendationIds: ReadonlyArray<FixtureProfileId> = ["planner", "writer", "graph"]
+export const goalRecommendationIds: ReadonlyArray<FixtureProfileId> = ["planner", "writer"]
 export const pinnedIds: ReadonlyArray<FixtureProfileId> = ["council", "research", "hve"]
 export const candidateTitles = ["Focused", "Thorough", "Minimal"] as const
 export const fixtureIntent = "Review the 'login flow' for regressions."
 export const fixtureBranches = {
   hve: "wt/copilot-hve-review-the",
   hveSecond: "wt/copilot-hve-review-the-2",
-  sandbox: "wt/sb-sandbox-reviewer-review-the",
+  auditor: "wt/copilot-auditor-review-the",
   optimize: "wt/codex-optimize-repository",
 } as const
 export const fixtureHead = "1234567890abcdef1234567890abcdef12345678"
 export const repositoryPack = "# Repository\n\nsrc/login.ts checks token expiry before refresh.\n"
 
 export const fixtureProfile = (id: FixtureProfileId): FixtureProfile => {
-  if (id === "graph") return graphFixture
   const profile = fixtureProfiles.find((entry) => entry.id === id)
   if (profile === undefined) throw new Error(`Unknown fixture profile: ${id}`)
   return profile

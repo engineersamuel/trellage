@@ -1,13 +1,12 @@
 # Trellage Agent Guide
 
-**Trellage Sandbox** compiles locked agent profiles and runs them in isolated
-Docker containers. **Trellage Native** runs profile launchers directly on the
+Trellage runs Native agent profiles. **Trellage Native** runs profile launchers directly on the
 host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 
 ## Project overview
 
-- Trellage Sandbox profiles describe reproducible container environments.
-- The Trellage Sandbox CLI validates, locks, builds, launches, resumes, diagnoses, and destroys those environments.
+- `trx` is the only Trellage entrypoint. The former Trellage Sandbox CLI
+  (`trellage`), its container profile compiler, and `prototypes/trellage` are retired.
 - Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
 - The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `firstmate`, `jcode`, `omp`, `pi`, `prime`, `grok`, and `uji`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
@@ -18,7 +17,6 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - Run the full repository suite with `make test`.
 - When working on `trx guide` code, always run `mise run trx-guide-test` and
   ensure it passes before completing the work.
-- Run profile compiler tests with `make profile-compiler`.
 - Run native profile matrix contracts with `make profile-matrix-test`.
 - Run static native profile verification with `make profile-matrix`.
 - Prepare the source workspace with `scripts/install-source-runtime.sh --prepare`
@@ -29,19 +27,16 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   prepare runtime readiness through lifecycle hooks. Do not bypass these
   hooks with `--ignore-scripts`; the internal frozen preparer uses that flag
   to avoid recursion. Commit manifest and lockfile changes together.
-- Run Oxlint with `cd packages/trellage-cli && bun run lint`.
-- Check Oxfmt with `cd packages/trellage-cli && bun run format:check`.
-- Run no-emit TypeScript checks with `cd packages/trellage-cli && bun run check`.
+- Run Oxlint with `bun run lint` from the root.
+- Check Oxfmt with `bun run format:check` from the root.
+- Run no-emit TypeScript checks with `bun run check` from the root.
 - Run first-party TypeScript and TSX source through the pinned Bun runtime;
   do not generate or commit application bundles, declarations, or `dist`.
 - Live profile probes require explicit `PROFILE_MATRIX_ARGS=--live` opt-in because they may consume paid quota.
-- Validate locally: `mise run trellage -- validate <profile name>`.
-- Smoke-test locally: `mise run trellage -- --profile <profile name> -p "Reply exactly OK"`.
+- Smoke-test locally: `mise run trx -- run <harness> <profile> -- -p "Reply exactly OK"`.
 - After merging CLI/compiler/native launcher changes, from the repo root run
-  `mise run rebuild-profiles`: installs worktree `trellage`, reinstalls native
-  launchers (`agx`/`cdx`/`cpx`/`cldx`/`fmx`/`jcx`/`omp`/`picx`/`prx`) then `trx`, then
-  runs a non-locked Sandbox `build` for each `profiles/*`. Use `--native-only`
-  or `--sandbox-only` on the underlying script when you only need one side.
+  `mise run rebuild-profiles`: reinstalls Native launcher backends and `trx`
+  from this worktree.
   Installed `post-commit`, `post-merge`, and `post-rewrite` hooks prepare the
   active worktree and compare its source receipt with
   `~/.local/share/trellage/.native-stack-sources`. Changed runtime inputs
@@ -70,8 +65,7 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   `TRELLAGE_AZURE_APPLY_LOCAL_CHANGES=1 mise run azure-fresh-install -- all`.
 - A successful run must save evidence under
   `~/.local/state/trellage-azure-fresh/evidence/<resource-group>/`, verify exact
-  `OK` results for all eight Native launchers and Sandbox `claude-council`,
-  verify both `fmx` profiles through setup, doctor, healthy inventory,
+  `OK` results for all eight Native launchers, verify both `fmx` profiles through setup, doctor, healthy inventory,
   source-pin, and overlay evidence, and delete its owned Azure resource group.
 - A failed run intentionally retains the resource group. Use
   `mise run azure-fresh-install -- ssh`, then retry `bootstrap` or `accept`.
@@ -99,15 +93,13 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 
 ## Architecture
 
-- `packages/trellage-cli` contains the Effect-based TypeScript profile compiler and CLI.
 - `packages/trellage-guide-core` exposes shared source contracts; import its
   public package exports, not private source paths or generated files.
 - `packages/trellage-conversation-source` contains production conversation capture.
 - `packages/trellage-runtime` contains shared Bun execution and source-runtime support.
-- `prototypes/trellage` contains the Trellage Sandbox launcher and container runtime entrypoints.
-- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain Trellage Native launchers and profiles (`agx`, `cdx`, `cpx`, `cldx`, `fmx`, `jcx`, `omp`, `picx`, `prx`).
+- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain
+  the canonical Trellage Native router, adapters, and profile catalogs.
 - Uji runs through `trx run uji default` and routes to the local `copilot-proxy-rs` endpoint; its generated config, selected skills, custom tools, and session database are profile-scoped, while Uji credentials remain in its normal data directory. The tracked Lua tools are copied from `packages/trellage-runtime/src/native-run/uji-tools.lua`; their content hash invalidates the generated configuration when they change. Uji defaults to `uji.tool.policy({ default = "allow" })`, so its tools run without per-call approval and are not sandboxed.
-- `profiles` contains concrete locked profile definitions.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.
 - `harnesses` contains comparison manifests consumed by `scripts/harness`.
@@ -146,47 +138,7 @@ endpoints. Use Central Feed Services (CFS) packagefeedproxy instead:
 | PyPI (pip / uv) | `https://packagefeedproxy.microsoft.io/pypi/simple/` |
 | NuGet | `https://packagefeedproxy.microsoft.io/nuget/v3/index.json` |
 
-### Trellage Sandbox (`trellage`)
-
-Package feeds are **host policy**, not baked into profile images. That keeps
-images and locked digests portable for non-Microsoft developers.
-
-- **Image builds** honor host `npm config get registry` for npm, and discover a
-  PyPI simple index for `uv`/pip in this order, injecting `UV_DEFAULT_INDEX` and
-  `PIP_INDEX_URL` into the builder only when set/discovered:
-  1. `UV_DEFAULT_INDEX` / `PIP_INDEX_URL` / `UV_INDEX_URL` in the environment
-  2. Host `pip` / `pip3` / `python3 -m pip` `global.index-url` (from `pip config list`)
-  3. If npm registry is `packagefeedproxy.microsoft.io/npm`, use the CFS PyPI URL above
-- **Runtime sessions** (`docker exec`) forward the same host HTTPS feed env
-  (`UV_DEFAULT_INDEX`, `PIP_INDEX_URL`, `npm_config_registry`, …) into every
-  harness container so in-sandbox `pip`/`uv`/`npm` installs work on CFS hosts.
-  No-op when those vars are unset (public registries).
-- Proxy vars (`HTTP(S)_PROXY`, `NO_PROXY`, …) are forwarded into the builder.
-- If Prime kernel bootstrap fails with `uv venv … --seed` exit code 2, assume
-  public PyPI is blocked and confirm CFS discovery (or set `UV_DEFAULT_INDEX`
-  explicitly) before rebuilding.
-- Locked OCI digests for **prime-agent** (and any future build that installs
-  unpinned PyPI packages) may differ between CFS and public-PyPI builders.
-  Prefer a local non-locked rebuild when digests drift on a managed device.
-
-Host one-time setup (fish example):
-
-```fish
-set -gx UV_DEFAULT_INDEX https://packagefeedproxy.microsoft.io/pypi/simple/
-# npm and pip are often MDM-managed already; verify with:
-#   npm config get registry
-#   pip3 config list
-```
-
-Optional user uv config (`~/.config/uv/uv.toml`):
-
-```toml
-[[index]]
-url = "https://packagefeedproxy.microsoft.io/pypi/simple/"
-default = true
-```
-
-### Trellage Native (`trx`, `cpx`, `cdx`, …)
+### Trellage Native (`trx`)
 
 - Native launchers run on the host; they inherit host package-manager config.
 - Configure npm, pip, and uv on the host (as above). Do not rely on public PyPI
@@ -211,12 +163,6 @@ default = true
 - Keep static verification free of model inference and paid calls.
 - Do not weaken or skip repository contracts to make a change pass.
 - Keep changes scoped and preserve unrelated dirty-worktree edits.
-- Every new Trellage Sandbox profile under `profiles/` MUST include
-  `sandbox-common` in `skill_bundles`. This bundle supplies Caveman as an
-  always-on skill, the selected mattpocock skills, `show-me`, manually activated
-  `i-have-adhd`, and every skill from `engineersamuel/skills` except cataloged
-  exclusions. The
-  `engineersamuel` source MUST require `ui-guidelines`.
 - Every new harness profile MUST mount the host `~/.copilot/models.json` read-only at `/home/agent/.copilot-models.json`.
 - `config.toml` is the only skill-source allowlist. Sources may use an explicit commit or tag; omitted refs track the default branch.
   Resolved commits, digests, and fetch timestamps belong in derived cache receipts. Third-party selections
@@ -240,7 +186,7 @@ default = true
   default branch. Pinned tags or commits stay fixed during launch. An unsuccessful
   floating refresh may reuse only a validated, matching cache with a warning;
   without that cache the launch fails. Preserve the previous published cache on
-  failure. Sandbox and comparison builds resolve configured sources at build time.
+  failure. Comparison builds resolve configured sources at build time.
 - `trx skills update` refreshes floating sources and verifies pins; `--check`
   reports available changes, and explicit `--upgrade-pins` atomically updates
   pinned selectors in config.toml. Cache receipts never become configuration.

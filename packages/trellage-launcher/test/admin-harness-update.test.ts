@@ -13,19 +13,19 @@ import { harnessVersionRefFor } from "../src/admin-harness-version-scheduler.ts"
 import {
   reconcileHarnessVersionResults,
   type AdminHarnessVersionResult,
-  type AdminInstalledVersionState,
 } from "../src/admin-harness-version.ts"
 import type { AdminProfileEntry } from "../src/admin-model.ts"
 import { AdminRunManager } from "../src/admin-run-manager.ts"
 import { CommandRunnerError, type CommandRunner, type CommandRunResult } from "../src/guide-launch.ts"
 
-const sandboxEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
-  ref: "sandbox:claude-blog",
-  surface: "sandbox",
+const baseEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry => ({
+  ref: "native:claude/blog",
+  surface: "native",
+  launcher: "claude",
   harness: "claude",
-  name: "claude-blog",
-  description: "Sandboxed Claude profile.",
-  commandPath: "/usr/local/bin/trellage",
+  name: "blog",
+  description: "Native Claude profile.",
+  commandPath: "/opt/trellage/claude/bin/claude",
   doctorSupported: true,
   inventorySupported: false,
   health: "healthy",
@@ -44,7 +44,7 @@ const versionResult = (installed: string, latest: string): AdminHarnessVersionRe
 })
 
 const nativeEntry = (launcher: string, harness: string, name = "default"): AdminProfileEntry => ({
-  ...sandboxEntry(),
+  ...baseEntry(),
   ref: `native:${launcher}/${name}`,
   surface: "native",
   launcher,
@@ -68,24 +68,6 @@ const help: CommandRunResult = { stdout: "usage: trx upgrade HARNESS PROFILE", s
 const successfulRun = () => vi.fn<CommandRunner["run"]>(async (_executable, args) => (args[0] === "--help" ? help : success))
 
 describe("harnessUpdatePlanFor", () => {
-  it.each(["claude", "codex", "copilot", "pi", "prime", "headlong"])(
-    "updates every container profile for %s, without including other surfaces or harnesses",
-    (harness) => {
-      const selected = sandboxEntry({ harness, ref: `sandbox:${harness}-a`, name: `${harness}-a` })
-      const peer = sandboxEntry({ harness, ref: `sandbox:${harness}-b`, name: `${harness}-b` })
-      const other = sandboxEntry({ harness: "other", ref: "sandbox:other", name: "other" })
-      const native = nativeEntry("copilot", harness)
-      const plan = requirePlan(selected, [peer, other, native, selected, peer])
-
-      expect(plan.key).toBe(`sandbox:${harness}`)
-      expect(plan.targets).toEqual([selected, peer])
-      expect(plan.steps.map(({ command }) => command)).toEqual([
-        { executable: selected.commandPath, args: ["upgrade", selected.name, "--strict-harness"] },
-        { executable: peer.commandPath, args: ["upgrade", peer.name, "--strict-harness"] },
-      ])
-    },
-  )
-
   it.each([
     ["copilot", "copilot", "hve", ["upgrade", "copilot", "hve", "--harness-only"]],
     ["codex", "codex", "youtube", ["upgrade", "codex", "youtube", "--harness-only"]],
@@ -96,10 +78,9 @@ describe("harnessUpdatePlanFor", () => {
     ["pi", "pi", "default", ["upgrade", "pi", "default"]],
     ["prime", "prime", "default", ["upgrade", "prime", "default"]],
     ["firstmate", "firstmate", "pstack-workers", ["upgrade", "firstmate", "pstack-workers"]],
-  ] as const)("uses %s's harness command, not a plugin update or container rebuild", (launcher, harness, name, args) => {
+  ] as const)("uses %s's harness command, not a plugin update", (launcher, harness, name, args) => {
     const selected = nativeEntry(launcher, harness, name)
-    const container = sandboxEntry({ harness })
-    const plan = requirePlan(selected, [selected, container])
+    const plan = requirePlan(selected, [selected])
     expect(plan.surface).toBe("native")
     expect(plan.targets).toEqual([selected])
     expect(plan.steps).toEqual([{ command: { executable: selected.commandPath, args }, targets: [selected] }])
@@ -112,22 +93,21 @@ describe("harnessUpdatePlanFor", () => {
     { installed: { kind: "known", version: "2.1.252" }, latest: { kind: "failed", diagnostic: "offline" } },
     { installed: { kind: "known", version: "2.1.252" }, latest: { kind: "unsupported" } },
   ])("allows explicit updates regardless of cached version availability: %j", (result) => {
-    for (const selected of [sandboxEntry(), nativeEntry("copilot", "copilot", "hve")]) {
+    for (const selected of [baseEntry(), nativeEntry("copilot", "copilot", "hve")]) {
       const plan = requirePlan(selected, [selected], result)
       expect(plan.targets).toEqual([selected])
       expect(plan.latestVersion).toBe(result?.latest.kind === "known" ? result.latest.version : undefined)
     }
   })
 
-  it("keeps native Pi Coding Agent, native Oh My Pi, and container Oh My Pi in separate update groups", () => {
+  it("keeps native Pi Coding Agent and native Oh My Pi in separate update groups", () => {
     const pi = nativeEntry("pi", "pi")
     const omp = nativeEntry("omp", "oh-my-pi", "local")
-    const container = sandboxEntry({ harness: "pi", ref: "sandbox:pi", name: "pi" })
-    const entries = [pi, omp, container]
+    const entries = [pi, omp]
     const plans = entries.map((selected) => requirePlan(selected, entries))
 
-    expect(plans.map(({ key }) => key)).toEqual(["native:pi", "native:omp", "sandbox:pi"])
-    expect(plans.map(({ targets }) => targets)).toEqual([[pi], [omp], [container]])
+    expect(plans.map(({ key }) => key)).toEqual(["native:pi", "native:omp"])
+    expect(plans.map(({ targets }) => targets)).toEqual([[pi], [omp]])
   })
 
   it("does not select another runtime executable with the same harness label", () => {
@@ -136,11 +116,10 @@ describe("harnessUpdatePlanFor", () => {
     expect(requirePlan(selected, [selected, otherRuntime]).targets).toEqual([selected])
   })
 
-  it("groups native Codex profiles without including Codex containers", () => {
+  it("groups native Codex profiles", () => {
     const youtube = nativeEntry("codex", "codex", "youtube")
     const superpowers = nativeEntry("codex", "codex", "superpowers")
-    const container = sandboxEntry({ harness: "codex", ref: "sandbox:codex", name: "codex" })
-    const entries = [youtube, superpowers, container]
+    const entries = [youtube, superpowers]
 
     for (const selected of [youtube, superpowers]) {
       const plan = requirePlan(selected, entries)
@@ -148,16 +127,15 @@ describe("harnessUpdatePlanFor", () => {
       expect(plan.targets).toEqual([superpowers, youtube])
       expect(plan.steps).toHaveLength(1)
     }
-    expect(requirePlan(container, entries).targets).toEqual([container])
   })
 
   it("fails closed for unsupported launchers and unknown or incomplete entries", () => {
-    const unsupported = [nativeEntry("unknown", "copilot"), sandboxEntry({ harness: "unknown" }), sandboxEntry({ commandPath: "" })]
+    const unsupported = [nativeEntry("unknown", "copilot"), baseEntry({ commandPath: "" })]
     for (const selected of unsupported) {
       expect(harnessUpdateKeyFor(selected)).toBeUndefined()
       expect(harnessUpdatePlanFor(selected, [selected], versionResult("1.0.0", "2.0.0"))).toBeUndefined()
     }
-    expect(harnessUpdatePlanFor(sandboxEntry(), [], undefined)).toBeUndefined()
+    expect(harnessUpdatePlanFor(baseEntry(), [], undefined)).toBeUndefined()
   })
 })
 
@@ -201,10 +179,8 @@ describe("runHarnessUpdate", () => {
     expect(outcome.results).toEqual(entries.map(({ ref, name }) => ({ ref, name, state: "failure", diagnostic: "download failed" })))
   })
 
-  it.each(["sandbox", "firstmate"])("updates %s profiles sequentially and continues after failures", async (kind) => {
-    const entries = ["a", "b", "c"].map((name) =>
-      kind === "sandbox" ? sandboxEntry({ ref: `sandbox:claude-${name}`, name: `claude-${name}` }) : nativeEntry("firstmate", "firstmate", name),
-    )
+  it("updates firstmate profiles sequentially and continues after failures", async () => {
+    const entries = ["a", "b", "c"].map((name) => nativeEntry("firstmate", "firstmate", name))
     const plan = requirePlan(entries[0]!, entries)
     let active = 0
     let peak = 0
@@ -213,7 +189,7 @@ describe("runHarnessUpdate", () => {
       peak = Math.max(peak, active)
       await Promise.resolve()
       active -= 1
-      if (args[kind === "sandbox" ? 1 : 2] === entries[1]!.name) {
+      if (args[2] === entries[1]!.name) {
         throw new CommandRunnerError({
           kind: "exited",
           executable,
@@ -229,7 +205,7 @@ describe("runHarnessUpdate", () => {
     const outcome = await runHarnessUpdate(plan, { run }, "/worktree")
 
     expect(peak).toBe(1)
-    expect(run.mock.calls.map(([, args]) => args[kind === "sandbox" ? 1 : 2])).toEqual(entries.map(({ name }) => name))
+    expect(run.mock.calls.map(([, args]) => args[2])).toEqual(entries.map(({ name }) => name))
     expect(outcome.results.map(({ state }) => state)).toEqual(["success", "failure", "success"])
     expect(outcome.results[1]).toMatchObject({ diagnostic: "registry unavailable" })
   })
@@ -246,16 +222,12 @@ describe("runHarnessUpdate", () => {
 
   it.each([
     ["claude", "upgrade fallback: harness claude@latest -> 2.1.252"],
-    [
-      "headlong",
-      "upgrade fallback: source https://github.com/laude-institute/headlong.git@main -> aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    ],
-  ])("reports %s harness fallback as failure even if an older container command exits successfully", async (harness, fallback) => {
-    const plan = requirePlan(sandboxEntry({ harness }))
-    const run = vi.fn<CommandRunner["run"]>().mockResolvedValue({
-      ...success,
-      stdout: `${fallback}\nupgraded: fixture`,
-    })
+    ["codex", "upgrade fallback: harness codex@latest -> 0.1.0"],
+  ])("reports %s harness fallback as failure even if the command exits successfully", async (harness, fallback) => {
+    const plan = requirePlan(nativeEntry(harness, harness))
+    const run = vi.fn<CommandRunner["run"]>(async (_executable, args) =>
+      args[0] === "--help" ? help : { ...success, stdout: `${fallback}\nupgraded: fixture` },
+    )
     const outcome = await runHarnessUpdate(plan, { run }, "/worktree")
     expect(outcome.results).toEqual([
       expect.objectContaining({ state: "failure", diagnostic: expect.stringContaining("Harness was not updated") }),
@@ -269,12 +241,8 @@ describe("harness update version refresh", () => {
     ["codex", "codex", 1],
     ["claude", "claude", 1],
     ["firstmate", "firstmate", 2],
-    ["sandbox", "claude", 2],
   ] as const)("refreshes the correct installed scopes for %s", async (launcher, harness, expectedReads) => {
-    const entries = ["a", "b"].map((name) => {
-      if (launcher === "sandbox") return sandboxEntry({ ref: `sandbox:claude-${name}`, name: `claude-${name}` })
-      return nativeEntry(launcher, harness, name)
-    })
+    const entries = ["a", "b"].map((name) => nativeEntry(launcher, harness, name))
     const plan = requirePlan(entries[0]!, entries)
     const run = vi.fn<CommandRunner["run"]>().mockResolvedValue({
       stdout: JSON.stringify({ schemaVersion: 1, installed: "3.0.0", latest: "3.0.0", latestKnown: true }),
@@ -283,26 +251,19 @@ describe("harness update version refresh", () => {
     })
     const manager = new AdminRunManager({ runner: { run } })
     const cacheEntries: Record<string, AdminHarnessVersionCacheEntry> = {}
-    const installedByRef = new Map<string, AdminInstalledVersionState>()
 
-    await refreshHarnessUpdateVersions(plan, manager, { schemaVersion: 2, entries: cacheEntries }, (key, entry, source) => {
+    await refreshHarnessUpdateVersions(plan, manager, { schemaVersion: 2, entries: cacheEntries }, (key, entry) => {
       cacheEntries[key] = entry
-      if (source.surface === "sandbox") installedByRef.set(source.ref, entry.result.installed)
     })
     expect(run).toHaveBeenCalledTimes(expectedReads)
-    expect(run.mock.calls.every(([, args]) => !args.includes("--refresh-latest"))).toBe(true)
-    const refreshed = reconcileHarnessVersionResults(
-      entries,
-      (key) => cacheEntries[key]?.result,
-      (ref) => installedByRef.get(ref),
-    )
+    const refreshed = reconcileHarnessVersionResults(entries, (key) => cacheEntries[key]?.result)
     for (const entry of entries) {
       expect(refreshed.get(entry.ref)?.installed).toEqual({ kind: "known", version: "3.0.0" })
     }
   })
 
   it("waits for a pre-update version check, then reads the newly installed version", async () => {
-    const selected = sandboxEntry()
+    const selected = baseEntry()
     const plan = requirePlan(selected)
     let finishOldCheck: (result: CommandRunResult) => void = () => {
       throw new Error("no pending check")
@@ -317,7 +278,7 @@ describe("harness update version refresh", () => {
     })
     const run = vi.fn<CommandRunner["run"]>().mockReturnValueOnce(pending).mockResolvedValue(report("2.1.260"))
     const manager = new AdminRunManager({ runner: { run } })
-    const oldCheck = manager.trigger(harnessVersionRefFor("sandbox:claude-code"), selected.commandPath, ["harness-version", selected.name])
+    const oldCheck = manager.trigger(harnessVersionRefFor("native:claude"), selected.commandPath, ["harness-version", "claude", selected.name])
     const results: AdminHarnessVersionCacheEntry[] = []
     const refresh = refreshHarnessUpdateVersions(plan, manager, { schemaVersion: 2, entries: {} }, (_key, result) => results.push(result))
     expect(run).toHaveBeenCalledTimes(1)
@@ -360,23 +321,9 @@ describe("HarnessUpdateManager", () => {
     expect(run.mock.calls.filter(([, args]) => args[0] !== "--help")).toHaveLength(2)
   })
 
-  it("does not block container updates while the equivalent native harness is updating", async () => {
-    const nativePlan = requirePlan(nativeEntry("copilot", "copilot", "hve"))
-    const containerPlan = requirePlan(sandboxEntry({ harness: "copilot" }))
-    const run = successfulRun()
-    const manager = new HarnessUpdateManager({ run }, "/worktree")
-    await Promise.all([manager.run(nativePlan, async () => {}), manager.run(containerPlan, async () => {})])
-    expect(
-      run.mock.calls
-        .filter(([, args]) => args[0] !== "--help")
-        .map(([, args]) => args)
-        .sort(),
-    ).toEqual([["upgrade", "claude-blog", "--strict-harness"], ["upgrade", "copilot", "hve", "--harness-only"]])
-  })
-
   it("surfaces refresh failures and releases the group so a later retry is possible", async () => {
-    const plan = requirePlan(sandboxEntry())
-    const run = vi.fn<CommandRunner["run"]>().mockResolvedValue(success)
+    const plan = requirePlan(baseEntry())
+    const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => (args[0] === "--help" ? help : success))
     const manager = new HarnessUpdateManager({ run }, "/worktree")
     await expect(
       manager.run(plan, async () => {
@@ -385,6 +332,6 @@ describe("HarnessUpdateManager", () => {
     ).rejects.toThrow("refresh failed")
     expect(manager.isRunning(plan.key)).toBe(false)
     await expect(manager.run(plan, async () => {})).resolves.toMatchObject({ key: plan.key })
-    expect(run).toHaveBeenCalledTimes(2)
+    expect(run.mock.calls.filter(([, args]) => args[0] !== "--help")).toHaveLength(2)
   })
 })

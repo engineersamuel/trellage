@@ -150,8 +150,8 @@ const matchEntries: ReadonlyArray<GuideMatchCatalogEntry> = [
     },
   },
   {
-    ref: "sandbox:prime-agent",
-    surface: "sandbox",
+    ref: "native:x/prime-agent",
+    surface: "native",
     name: "prime-agent",
     harness: "copilot",
     description: "Sandboxed prime agent.",
@@ -166,8 +166,8 @@ const matchEntries: ReadonlyArray<GuideMatchCatalogEntry> = [
     },
   },
   {
-    ref: "sandbox:other",
-    surface: "sandbox",
+    ref: "native:x/other",
+    surface: "native",
     name: "other",
     harness: "copilot",
     description: "Another sandbox profile.",
@@ -195,14 +195,14 @@ const validMatchResponse = JSON.stringify({
       tradeoff: "Needs a git checkout.",
     },
     {
-      profileRef: "sandbox:prime-agent",
+      profileRef: "native:x/prime-agent",
       workflowId: "review",
       confidence: 0.6,
       reason: "Good fit.",
       tradeoff: "Sandboxed only.",
     },
     {
-      profileRef: "sandbox:other",
+      profileRef: "native:x/other",
       workflowId: "build",
       confidence: 0.3,
       reason: "Weak fit.",
@@ -303,8 +303,8 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     expect(result.candidates).toHaveLength(3)
     expect(result.candidates.map((c) => c.profileRef)).toEqual([
       "native:codex/pstack",
-      "sandbox:prime-agent",
-      "sandbox:other",
+      "native:x/prime-agent",
+      "native:x/other",
     ])
     expect(client.createSessionCalls).toHaveLength(1)
     expect(client.startCalls).toBe(1)

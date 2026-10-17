@@ -16,7 +16,6 @@ import type {
   CombinedGuideCatalog,
   HeadlessCapabilitiesV1,
   NativeGuideCatalogEntry,
-  SandboxGuideCatalogEntry,
 } from "../src/guide-catalog.ts"
 import { validateHeadlessCapabilitiesV1 } from "../src/guide-catalog.ts"
 
@@ -157,34 +156,27 @@ const loadLiveScenarioParser = async (): Promise<LiveScenarioParserModule["parse
   return liveModule.parseProfileGuideScenarios
 }
 
-const sandboxHeadless: HeadlessCapabilitiesV1 = {
+interface NativeCatalogMetadata {
+  readonly description: string
+  readonly headless: HeadlessCapabilitiesV1
+}
+
+const conservativeHeadless = {
   schemaVersion: 1,
-  prompt: true,
+  prompt: false,
   outputFormats: ["text"],
   eventContract: null,
   trellageEventContract: null,
-  sessionId: "trellage",
+  sessionId: "none",
   resume: false,
   resumeWithPrompt: false,
   questionToolControl: "none",
-  changedFiles: "git-diff",
+  changedFiles: "none",
   usage: false,
   cost: false,
   modelOverride: false,
   effortOverride: false,
   testedHarnessVersion: null,
-}
-
-const sandboxDescription = async (profile: string): Promise<string> => {
-  const source = await readFile(path.join(repositoryRoot, "profiles", profile, "profile.toml"), "utf8")
-  const match = /^description = "(.*)"$/mu.exec(source)
-  if (match?.[1] === undefined) throw new Error(`profiles/${profile}/profile.toml has no description`)
-  return match[1]
-}
-
-interface NativeCatalogMetadata {
-  readonly description: string
-  readonly headless: HeadlessCapabilitiesV1
 }
 
 const nativeLauncher = async (familyRoot: string, family: string): Promise<string> => {
@@ -212,7 +204,10 @@ const nativeCatalogFamily = async (
       `${canonicalNativeIdentity(launcher, profile).launcher}/${canonicalNativeIdentity(launcher, profile).profile}`,
       {
         description: text(entry.description, `${launcher}/${profile}.description`),
-        headless: validateHeadlessCapabilitiesV1(entry.headless, `${launcher}/${profile}.headless`),
+        headless: validateHeadlessCapabilitiesV1(
+          entry.headless === null ? conservativeHeadless : entry.headless,
+          `${launcher}/${profile}.headless`,
+        ),
       },
     ] as const
   })
@@ -226,6 +221,13 @@ const nativeCatalogs = async (): Promise<ReadonlyMap<string, NativeCatalogMetada
   const entries = await Promise.all(families.map((family) => nativeCatalogFamily(prototypes, family)))
   return new Map([
     ...entries.flat(),
+    [
+      "headlong/default",
+      {
+        description: "Persistent Headlong agent with durable identity, memory, and background thinking on the host.",
+        headless: validateHeadlessCapabilitiesV1(conservativeHeadless, "headlong/default.headless"),
+      },
+    ],
     [
       "fx/default",
       {
@@ -264,26 +266,13 @@ const nativeGuideIdentities = async (): Promise<
     for (const profile of await readdir(path.join(guideRoot, "native", launcher.name), { withFileTypes: true })) {
       if (profile.isFile() && profile.name.endsWith(".md")) {
         const identity = parseProfileGuideIdentity(`native/${launcher.name}/${profile.name}`)
-        if (identity.surface !== "native") throw new Error("native guide path produced a Sandbox identity")
+        if (identity.surface !== "native") throw new Error("native guide path produced a non-native identity")
         identities.push(identity)
       }
     }
   }
   return identities
 }
-
-const sandboxGuideIdentity = (filename: string): Extract<ProfileGuideIdentity, { readonly surface: "sandbox" }> => {
-  const identity = parseProfileGuideIdentity(`sandbox/${filename}`)
-  if (identity.surface !== "sandbox") throw new Error("Sandbox guide path produced a native identity")
-  return identity
-}
-
-const sandboxGuideIdentities = async (): Promise<
-  ReadonlyArray<Extract<ProfileGuideIdentity, { readonly surface: "sandbox" }>>
-> =>
-  (await readdir(path.join(guideRoot, "sandbox"), { withFileTypes: true }))
-    .filter((profile) => profile.isFile() && profile.name.endsWith(".md"))
-    .map((profile) => sandboxGuideIdentity(profile.name))
 
 const nativeCatalogEntry = async (
   identity: Extract<ProfileGuideIdentity, { readonly surface: "native" }>,
@@ -305,47 +294,12 @@ const nativeCatalogEntry = async (
   }
 }
 
-const sandboxCatalogEntry = async (
-  identity: Extract<ProfileGuideIdentity, { readonly surface: "sandbox" }>,
-): Promise<SandboxGuideCatalogEntry> => {
-  const loaded = await loadProfileGuide(guideRoot, identity)
-  return {
-    name: identity.profile,
-    description: await sandboxDescription(identity.profile),
-    guide: loaded.guide,
-    path: path.join(repositoryRoot, "profiles", identity.profile, "profile.toml"),
-    supportedPlatforms: ["linux/arm64"],
-    harness: { kind: "test", version: "test" },
-    resolutionPolicy: "floating",
-    locallyResolved: false,
-    releaseLockAvailable: false,
-    resolvedVersion: null,
-    skillBundles: [],
-    skillsMode: "floating",
-    finalDigestLocked: false,
-    skills: [],
-    plugins: [],
-    mcps: [],
-    sandbox: true,
-    headless: sandboxHeadless,
-    locked: false,
-    herdrCompatibility: { status: "test" },
-  }
-}
-
 const loadCatalog = async (): Promise<CombinedGuideCatalog> => {
-  const [metadata, nativeIdentities, sandboxIdentities] = await Promise.all([
-    nativeCatalogs(),
-    nativeGuideIdentities(),
-    sandboxGuideIdentities(),
-  ])
+  const [metadata, nativeIdentities] = await Promise.all([nativeCatalogs(), nativeGuideIdentities()])
   const native = await Promise.all(nativeIdentities.map((identity) => nativeCatalogEntry(identity, metadata)))
-  const sandbox = await Promise.all(sandboxIdentities.map(sandboxCatalogEntry))
   return {
     schemaVersion: 1,
-    sandboxCommandPath: "/tmp/trellage",
     native,
-    sandbox,
   }
 }
 
@@ -435,7 +389,7 @@ describe("profile guide recommendation scenarios", () => {
 
   it("keeps expected profiles visible and known poor fits out of the literal top five", async () => {
     const [catalog, scenarios] = await Promise.all([loadCatalog(), loadScenarios()])
-    const pinnedProfiles = new Set(["sandbox:claude-council", "sandbox:claude-research"])
+    const pinnedProfiles = new Set(["native:claude/council", "native:claude/research"])
     const eligibleProfiles = guideCatalogEntries(catalog)
       .map(({ ref }) => ref)
       .filter((profileRef) => !pinnedProfiles.has(profileRef))
@@ -516,7 +470,7 @@ describe("profile guide recommendation scenarios", () => {
     ).map(({ ref }) => ref)
     expect(rustSimdRefs).toHaveLength(12)
     expect(rustSimdRefs).toContain("native:codex/pstack")
-    expect(rustSimdRefs).toContain("sandbox:headlong")
+    expect(rustSimdRefs).toContain("native:headlong/default")
   })
 
   it("keeps the full catalog for low-signal anaphoric intents", async () => {

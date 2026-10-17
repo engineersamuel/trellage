@@ -21,14 +21,7 @@ import {
 } from "./guide-launch.ts"
 
 export const toSelectedProfile = (entry: AdminProfileEntry): SelectedProfile =>
-  entry.surface === "native"
-    ? adminNativeSelectedProfile(entry)
-    : {
-        surface: "sandbox",
-        commandPath: entry.commandPath,
-        profile: entry.name,
-        headlessPrompt: false,
-      }
+  adminNativeSelectedProfile(entry)
 
 /** Firstmate control uses the confirmed instance context; other launchers retain the picker command. */
 export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =>
@@ -36,22 +29,18 @@ export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =
     ? { executable: entry.commandPath, args: ["run", entry.launcher!, entry.name, ...adminInstanceControlArgs(entry)] }
     : buildGuideLaunchCommand(toSelectedProfile(entry)).command
 
-/**
- * Native launchers accept `doctor PROFILE`; Sandbox profiles accept
- * `validate PROFILE`. Callers must check `entry.doctorSupported` first.
- */
+/** Native launchers accept `doctor PROFILE`. Callers must check `entry.doctorSupported` first. */
 export const buildDiagnosticCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: entry.surface === "native" ? ["doctor", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry)] : ["validate", entry.name],
+  args: ["doctor", entry.launcher!, entry.name, ...adminInstanceSelectorArgs(entry)],
 })
 
 /**
  * Firstmate requires safe preparation and a published fleet identity.
- * Ordinary Native repair support follows doctor support. Containers have
- * no in-place repair command.
+ * Ordinary Native repair support follows doctor support.
  */
 export const isRepairSupported = (entry: AdminProfileEntry): boolean =>
-  entry.surface === "native" && entry.doctorSupported &&
+  entry.doctorSupported &&
   (!isAdminFirstmate(entry) || adminFirstmatePreparationBlockReason(entry) === undefined)
 
 export const isAutoRepairSupported = (entry: AdminProfileEntry): boolean =>

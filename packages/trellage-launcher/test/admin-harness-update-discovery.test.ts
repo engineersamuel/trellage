@@ -3,13 +3,14 @@ import { checkAdminHarnessUpdates } from "../src/admin-harness-update-discovery.
 import type { AdminProfileEntry } from "../src/admin-model.ts"
 import type { CommandRunner, CommandRunResult } from "../src/guide-launch.ts"
 
-const container = (name: string): AdminProfileEntry => ({
-  ref: `sandbox:${name}`,
-  surface: "sandbox",
+const nativeProfile = (name: string): AdminProfileEntry => ({
+  ref: `native:claude/${name}`,
+  surface: "native",
+  launcher: "claude",
   harness: "claude",
   name,
   description: name,
-  commandPath: "/fixture/trellage",
+  commandPath: "/fixture/trx",
   doctorSupported: false,
   inventorySupported: false,
   health: "healthy",
@@ -18,7 +19,6 @@ const container = (name: string): AdminProfileEntry => ({
   updateCheckSupported: false,
   harnessVersionSupported: true,
   updateCheckStale: false,
-  harnessVersionSelector: "latest",
   version: "1.0.0",
 })
 const report = (installed: string, latest: string): CommandRunResult => ({
@@ -28,33 +28,10 @@ const report = (installed: string, latest: string): CommandRunResult => ({
 })
 
 describe("fresh Admin harness discovery", () => {
-  it("refreshes the release once and reads every Container receipt without reusing stale latest values", async () => {
-    const entries = [container("alpha"), container("beta")]
-    const run = vi.fn<CommandRunner["run"]>(async (_executable, args) =>
-      args[1] === "alpha" ? report("2.0.0", "3.0.0") : report("2.5.0", "1.0.0"),
-    )
-    const publish = vi.fn()
-    const results = await checkAdminHarnessUpdates(entries, { run }, "/fixture/worktree", new AbortController().signal, publish)
-    expect(run.mock.calls.map(([, args]) => args)).toEqual([
-      ["harness-version", "alpha", "--refresh-latest"],
-      ["harness-version", "beta"],
-    ])
-    expect(results.get(entries[0]!.ref)).toEqual({
-      installed: { kind: "known", version: "2.0.0" },
-      latest: { kind: "known", version: "3.0.0" },
-    })
-    expect(results.get(entries[1]!.ref)).toEqual({
-      installed: { kind: "known", version: "2.5.0" },
-      latest: { kind: "known", version: "3.0.0" },
-    })
-    expect(publish).toHaveBeenCalledTimes(2)
-    expect(run.mock.calls.every(([, , options]) => options?.cwd === "/fixture/worktree")).toBe(true)
-  })
-
   it("checks a shared Native runtime once while returning a result for every associated profile", async () => {
     const entries = ["one", "two"].map(
       (name): AdminProfileEntry => ({
-        ...container(name),
+        ...nativeProfile(name),
         ref: `native:codex/${name}`,
         surface: "native",
         launcher: "codex",
@@ -81,7 +58,7 @@ describe("fresh Admin harness discovery", () => {
         }),
     )
     const publish = vi.fn()
-    const checking = checkAdminHarnessUpdates([container("alpha")], { run }, "/fixture", controller.signal, publish)
+    const checking = checkAdminHarnessUpdates([nativeProfile("alpha")], { run }, "/fixture", controller.signal, publish)
     const rejected = expect(checking).rejects.toThrow("cancelled")
     await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1))
     controller.abort(new Error("cancelled"))
@@ -94,7 +71,7 @@ describe("fresh Admin harness discovery", () => {
   it("keeps installed versions separate for different Native runtime paths", async () => {
     const entries = ["one", "two"].map(
       (name): AdminProfileEntry => ({
-        ...container(name),
+        ...nativeProfile(name),
         ref: `native:omp/${name}`,
         surface: "native",
         launcher: "omp",

@@ -600,7 +600,6 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
   parseGuideCatalog(
     JSON.stringify({
       schemaVersion: 1,
-      sandboxCommandPath: "/opt/trellage/bin/trellage",
       native: [
         {
           launcher: "codex",
@@ -624,29 +623,16 @@ const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
           guide: guideWriter,
           commandPath: "/opt/trellage/jcode/bin/trx",
         },
-      ],
-      sandbox: [
         {
+          launcher: "copilot",
+          harness: "copilot",
           name: "planner",
-          description: "Sandboxed planning profile.",
-          guide: guidePlanner,
-          path: path.join(tmpRoot, "profiles", "planner", "profile.toml"),
-          supportedPlatforms: ["linux/amd64"],
-          harness: { kind: "copilot", version: "1.0.0" },
-          resolutionPolicy: "floating",
-          locallyResolved: false,
-          releaseLockAvailable: false,
-          resolvedVersion: null,
-          skillBundles: ["sandbox-common"],
-          skillsMode: "floating",
-          finalDigestLocked: false,
-          skills: [],
-          plugins: [],
-          mcps: [],
-          sandbox: true,
+          description: "Copilot planning profile.",
           headless: headless({ prompt: false }),
-          locked: false,
+          sandbox: true,
           herdrCompatibility: { status: "supported" },
+          guide: guidePlanner,
+          commandPath: "/opt/trellage/copilot/bin/trx",
         },
       ],
     }),
@@ -683,47 +669,20 @@ const buildCatalogWithSkillReviewer = (tmpRoot: string): CombinedGuideCatalog =>
 
 const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => {
   const catalog = buildCatalog(tmpRoot)
-  const sandboxEntry = (
+  const nativeClaudeEntry = (
     name: string,
     description: string,
     guide: ProfileGuideV1,
-  ): CombinedGuideCatalog["sandbox"][number] => ({
+  ): CombinedGuideCatalog["native"][number] => ({
+    launcher: "claude",
+    harness: "claude",
     name,
     description,
-    guide,
-    path: path.join(tmpRoot, "profiles", name, "profile.toml"),
-    supportedPlatforms: ["linux/amd64"],
-    harness: { kind: "claude", version: "1.0.0" },
-    resolutionPolicy: "floating",
-    locallyResolved: false,
-    releaseLockAvailable: false,
-    resolvedVersion: null,
-    skillBundles: ["sandbox-common"],
-    skillsMode: "floating",
-    finalDigestLocked: false,
-    skills: [],
-    plugins: [],
-    mcps: [],
-    sandbox: true,
-    headless: {
-      schemaVersion: 1,
-      prompt: true,
-      outputFormats: ["json"],
-      eventContract: null,
-      trellageEventContract: null,
-      sessionId: "trellage",
-      resume: true,
-      resumeWithPrompt: true,
-      questionToolControl: "hard-deny",
-      changedFiles: "git-diff",
-      usage: true,
-      cost: true,
-      modelOverride: false,
-      effortOverride: false,
-      testedHarnessVersion: null,
-    },
-    locked: false,
+    headless: headless({ prompt: false }),
+    sandbox: false,
     herdrCompatibility: { status: "supported" },
+    guide,
+    commandPath: "/opt/trellage/claude/bin/trx",
   })
   return {
     ...catalog,
@@ -740,11 +699,8 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
         guide: guideHve,
         commandPath: "/opt/trellage/copilot/bin/trx",
       },
-    ],
-    sandbox: [
-      ...catalog.sandbox,
-      sandboxEntry("claude-council", "Council profile.", guideCouncil),
-      sandboxEntry("claude-research", "Research profile.", guideResearch),
+      nativeClaudeEntry("council", "Native Claude Council profile.", guideCouncil),
+      nativeClaudeEntry("research", "Native Claude Research profile.", guideResearch),
     ],
   }
 }
@@ -753,6 +709,8 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
 const writeGuideFixtures = async (root: string, reviewerMarkdown: string = reviewerGuideMarkdown): Promise<void> => {
   await mkdir(path.join(root, "native", "codex"), { recursive: true })
   await writeFile(path.join(root, "native", "codex", "reviewer.md"), reviewerMarkdown)
+  await mkdir(path.join(root, "native", "claude"), { recursive: true })
+  await writeFile(path.join(root, "native", "claude", "research.md"), researchGuideMarkdown)
 }
 
 const writeFirstmateGuideFixture = async (root: string, profile: "default" | "pstack-workers"): Promise<void> => {
@@ -820,11 +778,11 @@ const recommendationTriple = (): readonly [GuideRecommendation, GuideRecommendat
     launcher: "jcode",
   }),
   recommendation({
-    profileRef: "sandbox:planner",
+    profileRef: "native:copilot/planner",
     workflowId: "plan",
-    surface: "sandbox",
+    surface: "native",
     name: "planner",
-    harness: "copilot",
+    launcher: "copilot",
   }),
 ]
 
@@ -1444,24 +1402,23 @@ describe("guideUiReducer: recommendations and generation", () => {
   })
 
   it("recommendations/confirm can select a pinned lens outside the ranked recommendation list", () => {
-    const pinned = pinnedGuideLenses(buildCatalogWithPinnedLenses("/tmp-unused"))[0]
+    const catalog = buildCatalogWithPinnedLenses("/tmp-unused")
+    const pinned = pinnedGuideLenses(catalog)[0]
     expect(pinned).toBeDefined()
     if (pinned === undefined) throw new Error("Missing pinned council lens")
+    const selectedProfile = selectedProfileForPinnedLens(catalog, pinned)
+    expect(selectedProfile).toBeDefined()
+    if (selectedProfile === undefined) throw new Error("Missing selected Council profile")
 
     let state = recommendationsState()
     state = guideUiReducer(state, {
       type: GuideUiActionType.RecommendationsConfirm,
-      selectedProfile: {
-        surface: "sandbox",
-        commandPath: "/opt/trellage/bin/trellage",
-        profile: "claude-council",
-        headlessPrompt: true,
-      },
+      selectedProfile,
       recommendation: pinned.recommendation,
     })
 
     expect(state.stage).toBe(GuideUiStage.Generating)
-    expect(state.selectedRecommendation?.profileRef).toBe("sandbox:claude-council")
+    expect(state.selectedRecommendation?.profileRef).toBe("native:claude/council")
     expect(state.selectedRecommendation?.workflowId).toBe("run-council-deliberation")
   })
 
@@ -2264,8 +2221,8 @@ describe("runGuideGenerationStep", () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "guide-ui-generate-research-frame-"))
     try {
       const catalog = buildCatalogWithPinnedLenses(tmpRoot)
-      await mkdir(path.join(tmpRoot, "profile-guides", "sandbox"), { recursive: true })
-      await writeFile(path.join(tmpRoot, "profile-guides", "sandbox", "claude-research.md"), researchGuideMarkdown)
+      await mkdir(path.join(tmpRoot, "native", "claude"), { recursive: true })
+      await writeFile(path.join(tmpRoot, "native", "claude", "research.md"), researchGuideMarkdown)
       const intent = "Migrate trx guide to the composed profile runtime."
       const provider = new FakeGuideProvider({
         generateResult: {
@@ -2290,13 +2247,15 @@ describe("runGuideGenerationStep", () => {
       })
       const researchWorkflow = guideResearch.workflows.find(({ id }) => id === "vault-backed-research")
       if (researchWorkflow === undefined) throw new Error("Missing Research workflow fixture")
-      const { launcher: _launcher, ...chosen } = recommendation({
-        profileRef: "sandbox:claude-research",
+      const chosen = recommendation({
+        profileRef: "native:claude/research",
         workflowId: "vault-backed-research",
-        surface: "sandbox",
-        name: "claude-research",
-        description: "Claude Research container.",
-        sandbox: true,
+        surface: "native",
+        launcher: "claude",
+        name: "research",
+        description: "Native Claude Research.",
+        sandbox: false,
+        headless: headless({ prompt: false }),
         workflow: researchWorkflow,
         prerequisites: [],
       })
@@ -3019,23 +2978,16 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
       expect(rec.profileRef).toBe(literal.profileRef)
       expect(rec.workflowId).toBe(literal.workflowId)
       expect(rec.confidence).toBe(literal.confidence)
-      if (rec.surface === "native") {
-        const entry = catalog.native.find(
-          (candidateEntry) => `native:${candidateEntry.launcher}/${candidateEntry.name}` === rec.profileRef,
-        )
-        expect(entry).toBeDefined()
-        expect(rec.name).toBe(entry?.name)
-        expect(rec.launcher).toBe(entry?.launcher)
-        expect(rec.description).toBe(entry?.description)
-        expect(rec.headless.prompt).toBe(entry?.headless.prompt)
-        expect(rec.herdrCompatibility.status).toBe(entry?.herdrCompatibility.status)
-        expect(rec.prerequisites).toBe(entry?.guide.prerequisites)
-      } else {
-        const entry = catalog.sandbox.find((candidateEntry) => `sandbox:${candidateEntry.name}` === rec.profileRef)
-        expect(entry).toBeDefined()
-        expect(rec.name).toBe(entry?.name)
-        expect(rec.harness).toBe(entry?.harness.kind)
-      }
+      const entry = catalog.native.find(
+        (candidateEntry) => `native:${candidateEntry.launcher}/${candidateEntry.name}` === rec.profileRef,
+      )
+      expect(entry).toBeDefined()
+      expect(rec.name).toBe(entry?.name)
+      expect(rec.launcher).toBe(entry?.launcher)
+      expect(rec.description).toBe(entry?.description)
+      expect(rec.headless.prompt).toBe(entry?.headless.prompt)
+      expect(rec.herdrCompatibility.status).toBe(entry?.herdrCompatibility.status)
+      expect(rec.prerequisites).toBe(entry?.guide.prerequisites)
     }
   })
 
@@ -3056,14 +3008,14 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
           kind: "council",
           key: "c",
           emoji: "🧠",
-          profileRef: "sandbox:claude-council",
+          profileRef: "native:claude/council",
           workflowId: "run-council-deliberation",
         },
         {
           kind: "research",
           key: "r",
           emoji: "🔎",
-          profileRef: "sandbox:claude-research",
+          profileRef: "native:claude/research",
           workflowId: "vault-backed-research",
         },
         {
@@ -3511,20 +3463,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     expect(result.promptHandling).toBe("manual-paste")
   })
 
-  it("passes the prompt to an interactive Sandbox launch without requiring headless support", () => {
-    const result = buildCurrentTerminalResult(
-      {
-        surface: "sandbox",
-        commandPath: "/opt/trellage/bin/trellage",
-        profile: "claude-research",
-        headlessPrompt: false,
-      },
-      "Research the repository.",
-      "/repo",
-    )
-    expect(result.command.args).toEqual(["--profile", "claude-research", "Research the repository."])
-    expect(result.promptHandling).toBe("argv")
-  })
+
 })
 
 describe("Herdr result builders: trust-safe initial prompt delivery", () => {
@@ -4206,7 +4145,7 @@ describe("guideUiReducer: prepared goal ownership", () => {
     expect(updated.candidates?.[0].prompt).toMatch(/^\/goal /u)
     expect(updated.candidates?.[0].prompt).toContain(goalDraft.task)
     const invalid = guideUiReducer({
-      ...editing, textDraft: "/graph-of-loops Start a second controller.",
+      ...editing, textDraft: "/goal Start a second controller.",
     }, { type: GuideUiActionType.DirectEditSubmit })
     expect(invalid.stage).toBe(GuideUiStage.DirectEditor)
     expect(invalid.errorMessage).toContain("another goal controller")

@@ -14,10 +14,10 @@ import type { GuideMatchCatalogEntry } from "../src/guide-catalog.ts"
 
 const workflowIndex = new Map<string, ReadonlySet<string>>([
   ["native:copilot/plannotator", new Set(["visual-artifact"])],
-  ["sandbox:prime-agent", new Set(["review"])],
-  ["sandbox:other", new Set(["build"])],
+  ["native:x/prime-agent", new Set(["review"])],
+  ["native:x/other", new Set(["build"])],
   ["native:codex/pstack", new Set(["poteto-mode-entry-point"])],
-  ["sandbox:headlong", new Set(["persistent-investigation"])],
+  ["native:headlong/default", new Set(["persistent-investigation"])],
   ["native:codex/superpowers", new Set(["systematic-debugging"])],
 ])
 
@@ -33,23 +33,23 @@ const validMatchCandidate = (overrides: Partial<Record<string, unknown>> = {}) =
 const validMatchResult = () => ({
   candidates: [
     validMatchCandidate(),
-    validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review" }),
-    validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build" }),
+    validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review" }),
+    validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
   ],
 })
 
 const validFiveMatchResult = () => ({
   candidates: [
     validMatchCandidate({ confidence: 0.95 }),
-    validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review", confidence: 0.85 }),
-    validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build", confidence: 0.75 }),
+    validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review", confidence: 0.85 }),
+    validMatchCandidate({ profileRef: "native:x/other", workflowId: "build", confidence: 0.75 }),
     validMatchCandidate({
       profileRef: "native:codex/pstack",
       workflowId: "poteto-mode-entry-point",
       confidence: 0.65,
     }),
     validMatchCandidate({
-      profileRef: "sandbox:headlong",
+      profileRef: "native:headlong/default",
       workflowId: "persistent-investigation",
       confidence: 0.55,
     }),
@@ -62,8 +62,8 @@ describe("validateGuideMatchResult", () => {
     expect(result.candidates).toHaveLength(3)
     expect(result.candidates.map((c) => c.profileRef)).toEqual([
       "native:copilot/plannotator",
-      "sandbox:prime-agent",
-      "sandbox:other",
+      "native:x/prime-agent",
+      "native:x/other",
     ])
   })
 
@@ -96,7 +96,7 @@ describe("validateGuideMatchResult", () => {
       candidates: [
         validMatchCandidate(),
         validMatchCandidate(),
-        validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build" }),
+        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -106,8 +106,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ profileRef: "native:unknown/thing" }),
-        validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review" }),
-        validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build" }),
+        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review" }),
+        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -117,8 +117,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ workflowId: "does-not-exist" }),
-        validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review" }),
-        validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build" }),
+        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review" }),
+        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -133,8 +133,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ command: "rm -rf /" }),
-        validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review" }),
-        validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build" }),
+        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review" }),
+        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -149,8 +149,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ confidence: 0.3 }),
-        validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review", confidence: 0.9 }),
-        validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build", confidence: 0.5 }),
+        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review", confidence: 0.9 }),
+        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build", confidence: 0.5 }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -160,8 +160,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ confidence: 0.9 }),
-        validMatchCandidate({ profileRef: "sandbox:prime-agent", workflowId: "review", confidence: 0.6 }),
-        validMatchCandidate({ profileRef: "sandbox:other", workflowId: "build", confidence: 0.3 }),
+        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review", confidence: 0.6 }),
+        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build", confidence: 0.3 }),
       ],
     }
     const validated = validateGuideMatchResult(result, workflowIndex)
@@ -287,8 +287,8 @@ const matchCatalogEntry = (overrides: Partial<GuideMatchCatalogEntry> = {}): Gui
 }
 
 const sandboxMatchCatalogEntry = (overrides: Partial<GuideMatchCatalogEntry> = {}): GuideMatchCatalogEntry => ({
-  ref: "sandbox:prime-agent",
-  surface: "sandbox",
+  ref: "native:x/prime-agent",
+  surface: "native",
   name: "prime-agent",
   description: "Sandboxed coding agent.",
   sandbox: true,
@@ -302,7 +302,7 @@ describe("assertGuideMatchInput", () => {
     entries: [
       matchCatalogEntry(),
       sandboxMatchCatalogEntry(),
-      sandboxMatchCatalogEntry({ ref: "sandbox:other", name: "other" }),
+      sandboxMatchCatalogEntry({ ref: "native:x/other", name: "other" }),
     ],
   })
 

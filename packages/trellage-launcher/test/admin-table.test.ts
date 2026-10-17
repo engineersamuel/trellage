@@ -34,11 +34,11 @@ const fixture: ReadonlyArray<AdminProfileEntry> = [
     health: "unsupported",
   }),
   entry({
-    ref: "sandbox:prime-agent",
-    surface: "sandbox",
-    harness: "copilot",
+    ref: "native:prime/prime-agent",
+    launcher: "prime",
+    harness: "prime",
     name: "prime-agent",
-    description: "Sandboxed prime agent.",
+    description: "Native prime agent.",
     health: "unhealthy",
   }),
 ]
@@ -47,7 +47,7 @@ describe("filterAdminProfiles", () => {
   it("is a pure, case-insensitive substring match with no false positives or negatives", () => {
     expect(filterAdminProfiles(fixture, "hve").map((e) => e.ref)).toEqual(["native:copilot/hve"])
     expect(filterAdminProfiles(fixture, "PSTACK").map((e) => e.ref)).toEqual(["native:example-unsupported/pstack"])
-    expect(filterAdminProfiles(fixture, "sandbox").map((e) => e.ref)).toEqual(["sandbox:prime-agent"])
+    expect(filterAdminProfiles(fixture, "prime agent").map((e) => e.ref)).toEqual(["native:prime/prime-agent"])
     expect(filterAdminProfiles(fixture, "nonexistent")).toEqual([])
   })
 
@@ -56,7 +56,7 @@ describe("filterAdminProfiles", () => {
   })
 
   it("matches on description as well as name", () => {
-    expect(filterAdminProfiles(fixture, "sandboxed prime").map((e) => e.ref)).toEqual(["sandbox:prime-agent"])
+    expect(filterAdminProfiles(fixture, "native prime").map((e) => e.ref)).toEqual(["native:prime/prime-agent"])
   })
 })
 
@@ -99,9 +99,8 @@ describe("resolveAdminViewState", () => {
 })
 
 describe("adminProfileType", () => {
-  it("maps native surfaces to Native and sandbox surfaces to Container", () => {
+  it("labels every profile Native", () => {
     expect(adminProfileType(entry({ surface: "native" }))).toBe("Native")
-    expect(adminProfileType(entry({ surface: "sandbox" }))).toBe("Container")
   })
 })
 

@@ -30,6 +30,10 @@ cleanup() {
     kill -TERM "$signal_pid" 2>/dev/null || true
     wait "$signal_pid" 2>/dev/null || true
   fi
+  if [[ "${CLDX_KEEP_FIXTURE-}" == 1 ]]; then
+    printf 'cldx contract fixture: %s\n' "$fixture_root" >&2
+    return
+  fi
   rm -rf -- "$fixture_root"
 }
 trap cleanup EXIT HUP INT TERM
@@ -196,7 +200,9 @@ runtime_root="$HOME/.local/share/trellage/cldx"
 profile_root="$HOME/.local/share/trellage/profiles/claude/default"
 profile_home="$profile_root/home"
 native_config="$fixture_root/native-config.toml"
-cat >"$native_config" <<'EOF'
+{
+  sed '/^\[native\.sources\./,$d' "$root/../../config.toml"
+  cat <<'EOF'
 [native.profiles.base]
 label = "Fixture defaults"
 always = true
@@ -213,6 +219,7 @@ harnesses = ["claude"]
 label = "claude / office-charts"
 harnesses = ["claude"]
 EOF
+} >"$native_config"
 
 trx_run_claude() {
   local profile="$1" argument
@@ -283,12 +290,6 @@ for asset in rundown.md NOTICE.md; do
   cmp -s "$runtime_root/assets/rundown/$asset" "$root/assets/rundown/$asset" \
     || fail "installed asset differs: $asset"
 done
-cmp -s "$root/assets/rundown/rundown.md" \
-  "$root/../trellage/assets/rundown/rundown.md" \
-  || fail 'vendored output style differs from the canonical copy'
-cmp -s "$root/assets/rundown/NOTICE.md" \
-  "$root/../trellage/assets/rundown/NOTICE.md" \
-  || fail 'vendored notice differs from the canonical copy'
 
 "$installer" >"$fixture_root/reinstall.out" || fail 'repeat install failed'
 
@@ -302,16 +303,16 @@ jq -e '
   and .launcher == "cldx"
   and .harness == "claude"
   and .sandbox == false
-  and [.profiles[].name] == ["default", "office", "office-charts"]
-  and .profiles[1].marketplace.source == "anthropics/skills"
-  and .profiles[1].skillBundles == ["native-common", "claude-office"]
-  and .profiles[2].skillBundles == ["native-common", "claude-office-charts"]
-  and .profiles[1].headless.prompt == false
-  and .profiles[1].headless.testedHarnessVersion == null
-  and .profiles[2].headless.prompt == false
-  and .profiles[2].headless.testedHarnessVersion == null
-  and .profiles[0].source == "anthropics/claude-code"
-  and .profiles[0].headless == {
+  and [.profiles[].name] == ["blog", "council", "default", "ecc", "frontend-design", "office", "office-charts", "research", "social-media"]
+  and ([.profiles[] | select(.name == "office")][0].marketplace.source == "anthropics/skills")
+  and ([.profiles[] | select(.name == "office")][0].skillBundles == ["native-common", "claude-office"])
+  and ([.profiles[] | select(.name == "office-charts")][0].skillBundles == ["native-common", "claude-office-charts"])
+  and ([.profiles[] | select(.name == "office")][0].headless.prompt == false)
+  and ([.profiles[] | select(.name == "office")][0].headless.testedHarnessVersion == null)
+  and ([.profiles[] | select(.name == "office-charts")][0].headless.prompt == false)
+  and ([.profiles[] | select(.name == "office-charts")][0].headless.testedHarnessVersion == null)
+  and ([.profiles[] | select(.name == "default")][0].source == "anthropics/claude-code")
+  and ([.profiles[] | select(.name == "default")][0].headless == {
     "schemaVersion": 1,
     "prompt": true,
     "outputFormats": ["text", "jsonl"],
@@ -327,13 +328,13 @@ jq -e '
     "modelOverride": true,
     "effortOverride": false,
     "testedHarnessVersion": "2.1.233"
-  }
+  })
 ' "$fixture_root/list.json" >/dev/null || fail 'JSON list differs'
 
 FAKE_CLAUDE_VERSION=2.1.230 "$command_path" list --json >"$fixture_root/list-drift.json" \
   || fail 'drifted JSON list failed'
 jq -e '
-  .profiles[0].headless == {
+  ([.profiles[] | select(.name == "default")][0].headless == {
     "schemaVersion": 1,
     "prompt": false,
     "outputFormats": ["text"],
@@ -349,7 +350,7 @@ jq -e '
     "modelOverride": false,
     "effortOverride": false,
     "testedHarnessVersion": null
-  }
+  })
 ' "$fixture_root/list-drift.json" >/dev/null || fail 'drifted JSON list differs'
 
 cp "$runtime_root/catalog.json" "$fixture_root/catalog.saved" || fail 'could not save catalog'

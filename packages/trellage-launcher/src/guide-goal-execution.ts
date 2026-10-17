@@ -60,8 +60,7 @@ export const assertPreparedGuideGoal = (goal: PreparedGuideGoal): void => {
 
 export const guideGoalControllerLabel = (controller: ProfileGuideGoalController): string => {
   if (controller === "codex-goal") return "Codex /goal"
-  if (controller === "claude-goal") return "Claude /goal"
-  return "Graph of Loops"
+  return "Claude /goal"
 }
 
 export const renderPreparedGuideGoal = (goal: PreparedGuideGoal): string => [
@@ -90,21 +89,16 @@ const renderExecutionPrompt = (execution: GuideGoalExecution, approach: string):
     "Use this guidance only where it preserves the approved task, criteria, completion rule, and profile constraints.",
     approach,
   ].join("\n")
-  const workflowBody = execution.controller === "graph-of-loops"
-    ? body.replaceAll("\\", "\\\\").replaceAll('"', '\\"')
-    : body
-  const workflowPrompt = `${frame.beforeBody}${workflowBody}${frame.afterBody}`
-  return execution.controller === "graph-of-loops" ? workflowPrompt : `/goal ${workflowPrompt}`
+  return `/goal ${frame.beforeBody}${body}${frame.afterBody}`
 }
 
 export const guideGoalApproachBudget = (execution: GuideGoalExecution): number => {
   const fixedPrompt = renderExecutionPrompt(execution, "")
   const remaining = guideGoalPromptMaximumLength - [...fixedPrompt].length
-  const hostBudget = execution.controller === "graph-of-loops" ? Math.floor(remaining / 2) : remaining
   const controllerBudget = execution.controller === "claude-goal"
     ? guideClaudeGoalConditionMaximumLength - [...fixedPrompt.slice("/goal ".length)].length
     : guideGoalApproachMaximumLength
-  return Math.min(guideGoalApproachMaximumLength, hostBudget, controllerBudget)
+  return Math.min(guideGoalApproachMaximumLength, remaining, controllerBudget)
 }
 
 export const resolveGuideGoalExecution = (
@@ -136,7 +130,7 @@ export const resolveGuideGoalExecution = (
 }
 
 export const hasGuideGoalControllerCommand = (prompt: string): boolean =>
-  /(?:^|[^\p{L}\p{N}_:/.-])[/\$](?:goal(?:-me)?|graph-of-loops)(?=$|[^\p{L}\p{N}_:/.-])/iu.test(prompt)
+  /(?:^|[^\p{L}\p{N}_:/.-])[/$]goal(?:-me)?(?=$|[^\p{L}\p{N}_:/.-])/iu.test(prompt)
 
 const assertGoalApproach = (execution: GuideGoalExecution, approach: string): string => {
   const value = text(approach, "goal execution approach", guideGoalApproachBudget(execution), { multiline: true })
@@ -183,7 +177,7 @@ export const guideGoalActivationInput = (
   execution: GuideGoalExecution,
   prompt: string,
 ): { readonly command: string; readonly body: string } => {
-  const command = execution.controller === "graph-of-loops" ? "/graph-of-loops" : "/goal"
+  const command = "/goal"
   if (!prompt.startsWith(`${command} `)) {
     throw new GuideGoalError(`The goal prompt must start with ${command}.`)
   }

@@ -29,25 +29,14 @@ const catalog = (goalCompatible = false): CombinedGuideCatalog =>
   parseGuideCatalog(
     JSON.stringify({
       schemaVersion: 1,
-      sandboxCommandPath: "/opt/trellage/bin/trellage",
-      native: [],
-      sandbox: Array.from({ length: 16 }, (_, index) => ({
+      native: Array.from({ length: 16 }, (_, index) => ({
+        launcher: goalCompatible ? "claude" : "copilot",
+        harness: goalCompatible ? "claude" : "copilot",
         name: `profile-${index}`,
         description: `Profile ${index}`,
         guide: guide(goalCompatible),
-        path: `/profiles/profile-${index}/profile.toml`,
-        supportedPlatforms: ["linux/amd64"],
-        harness: { kind: goalCompatible ? "claude" : "copilot", version: "1" },
-        resolutionPolicy: "floating",
-        locallyResolved: false,
-        releaseLockAvailable: false,
-        skillBundles: ["sandbox-common"],
-        skillsMode: "floating",
-        finalDigestLocked: false,
-        skills: [],
-        plugins: [],
-        mcps: [],
-        sandbox: true,
+        commandPath: "/bin/trx",
+        sandbox: false,
         headless: {
           schemaVersion: 1,
           prompt: true,
@@ -65,7 +54,6 @@ const catalog = (goalCompatible = false): CombinedGuideCatalog =>
           effortOverride: false,
           testedHarnessVersion: null,
         },
-        locked: false,
         herdrCompatibility: { status: "supported" },
       })),
     }),
@@ -118,13 +106,13 @@ describe("guide match service", () => {
     const base = catalog()
     const input = parseGuideCatalog(JSON.stringify({
       ...base,
-      native: [{
+      native: [...base.native, {
         launcher: "firstmate", harness: "firstmate", name: "default", description: "Firstmate fleet",
-        sandbox: false, commandPath: "/bin/trx", headless: base.sandbox[0]!.headless,
+        sandbox: false, commandPath: "/bin/trx", headless: base.native[0]!.headless,
         herdrCompatibility: { status: "supported" }, guide: guide(),
       }],
     }))
-    const result = resultFor(["sandbox:profile-0", "sandbox:profile-1", "native:firstmate/default"])
+    const result = resultFor(["native:copilot/profile-0", "native:copilot/profile-1", "native:firstmate/default"])
     const request = { intent: "Use native:firstmate/default to implement this", model: "copilot", effort: GuideEffort.Medium }
     const calls = { legacy: [] as unknown[], matcher: [] as unknown[] }
     const adapter = { ...matcher(calls), match: async () => result }
@@ -146,15 +134,15 @@ describe("guide match service", () => {
     await runGuideMatch(
       provider(calls),
       catalog(),
-      { intent: "Use sandbox:profile-0 to implement the change", model: "copilot", effort: GuideEffort.Medium },
+      { intent: "Use native:copilot/profile-0 to implement the change", model: "copilot", effort: GuideEffort.Medium },
       undefined,
       { matcher: matcher(calls) },
     )
     expect((calls.matcher[0] as { entries: unknown[] }).entries).toHaveLength(16)
-    const pruned = prefilterGuideMatchCatalogEntries(catalog(), "Use sandbox:profile-0 to implement the change")
+    const pruned = prefilterGuideMatchCatalogEntries(catalog(), "Use native:copilot/profile-0 to implement the change")
     expect(pruned).toHaveLength(12)
     const omitted = catalog()
-      .sandbox.map(({ name }) => `sandbox:${name}`)
+      .native.map(({ name }) => `native:copilot/${name}`)
       .find((ref) => !pruned.some((entry) => entry.ref === ref))
     expect((calls.matcher[0] as { entries: { ref: string }[] }).entries.some(({ ref }) => ref === omitted)).toBe(true)
     expect(calls.legacy).toHaveLength(0)
@@ -163,7 +151,7 @@ describe("guide match service", () => {
   it("uses the exact legacy provider input after a matcher failure", async () => {
     const calls = { legacy: [] as unknown[], matcher: [] as unknown[], fail: true }
     const request = {
-      intent: "Use sandbox:profile-0 to implement the change",
+      intent: "Use native:copilot/profile-0 to implement the change",
       model: "copilot",
       effort: GuideEffort.Medium,
     }
@@ -218,7 +206,7 @@ describe("guide match service", () => {
     const events: string[] = []
     const refreshed = (source: CombinedGuideCatalog): CombinedGuideCatalog => ({
       ...source,
-      sandbox: source.sandbox.map((entry, index) =>
+      native: source.native.map((entry, index) =>
         index === 0 ? { ...entry, headless: { ...entry.headless, prompt: false } } : entry,
       ),
     })
@@ -237,7 +225,7 @@ describe("guide match service", () => {
       },
       resolveCatalog,
     }
-    const request = { intent: "Use sandbox:profile-0 to implement", model: "m", effort: GuideEffort.Medium }
+    const request = { intent: "Use native:copilot/profile-0 to implement", model: "m", effort: GuideEffort.Medium }
     const first = await runGuideMatch(provider({ legacy: [] }), catalog(), request, cache, options)
     expect(events).toEqual(["match", "resolve"])
     expect(first.recommendations[0]?.headless.prompt).toBe(false)
@@ -295,7 +283,7 @@ describe("guide match service", () => {
     roots.push(root)
     const cache = new GuideArtifactCache({ cwd: root, routing, prompts })
     const calls = { legacy: [] as unknown[], matcher: [] as unknown[] }
-    const request = { intent: "Use sandbox:profile-0 to implement changes", model: "m", effort: GuideEffort.Medium }
+    const request = { intent: "Use native:copilot/profile-0 to implement changes", model: "m", effort: GuideEffort.Medium }
     const invoke = (reason: GuideMatcherFallbackReason, attempts: unknown[]) =>
       runGuideMatch(provider(calls), catalog(), request, cache, {
         matcher: { ...matcher(calls), match: async () => { throw new GuideMatcherUnavailableError(reason) } },
@@ -322,7 +310,7 @@ describe("guide match service", () => {
     roots.push(root)
     const cache = new GuideArtifactCache({ cwd: root, routing, prompts })
     const calls = { legacy: [] as unknown[], matcher: [] as unknown[], fail: true }
-    const request = { intent: "Use sandbox:profile-0 to implement changes", model: "m", effort: GuideEffort.Medium }
+    const request = { intent: "Use native:copilot/profile-0 to implement changes", model: "m", effort: GuideEffort.Medium }
     const invoke = (options = {}, selectedCache = cache) =>
       runGuideMatch(provider(calls), catalog(), request, selectedCache, { matcher: matcher(calls), ...options })
     expect((await invoke()).execution?.backend).toBe("copilot")

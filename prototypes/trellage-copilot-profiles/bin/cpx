@@ -41,7 +41,7 @@ if [[ ! -f "$statusline_source" ]]; then
 fi
 model_settings_source="$runtime_root/lib/copilot-model-settings.py"
 if [[ ! -f "$model_settings_source" ]]; then
-  model_settings_source="$runtime_root/../trellage/copilot-model-settings.py"
+  model_settings_source="$runtime_root/../../scripts/copilot-model-settings.py"
 fi
 
 die() {

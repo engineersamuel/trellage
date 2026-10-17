@@ -10,8 +10,7 @@ const headless = {
   modelOverride: true, effortOverride: false, testedHarnessVersion: "1.0.81",
 }
 const catalog = () => parseGuideCatalog(JSON.stringify({
-  schemaVersion: 1, sandboxCommandPath: "/bin/trellage", sandbox: [],
-  native: ["copilot", "codex"].map((launcher) => ({
+  schemaVersion: 1, native: ["copilot", "codex"].map((launcher) => ({
     launcher, harness: launcher === "copilot" ? "copilot" : "codex", name: "review",
     description: "Review code", sandbox: false, commandPath: "/bin/trx", headless,
     herdrCompatibility: { status: "supported" },

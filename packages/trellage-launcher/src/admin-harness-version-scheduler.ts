@@ -1,8 +1,8 @@
 /**
  * Bounded harness-version scheduler. Native operations always run when
  * their installed state is stale. For each release identity, one
- * latest-capable primary runs; a sandbox alternate runs only after the
- * primary and its one bounded retry cannot provide latest.
+ * latest-capable primary runs; an alternate runs only after the primary
+ * and its one bounded retry cannot provide latest.
  */
 import {
   buildHarnessVersionCommand,
@@ -25,8 +25,6 @@ import type { AdminRunManager } from "./admin-run-manager.ts"
 export interface HarnessVersionSchedulerOptions {
   readonly maxConcurrent?: number
   readonly forceResync?: boolean
-  /** Overrides whether a forced sandbox run also bypasses the CLI's latest-version cache. */
-  readonly refreshLatest?: boolean
   readonly selectedEntryRef?: string
   readonly now?: () => number
   readonly onResult?: (
@@ -72,9 +70,6 @@ const operationSort = (
 ): number => {
   if (left.ref === preferredEntryRef) return -1
   if (right.ref === preferredEntryRef) return 1
-  const leftMissingVersion = left.surface === "sandbox" && left.version === undefined
-  const rightMissingVersion = right.surface === "sandbox" && right.version === undefined
-  if (leftMissingVersion !== rightMissingVersion) return leftMissingVersion ? 1 : -1
   return left.ref.localeCompare(right.ref)
 }
 
@@ -223,10 +218,7 @@ export const runBatchedHarnessVersionChecks = async (
       for (;;) {
         const operation = queue.shift()
         if (operation === undefined) return
-        const command = buildHarnessVersionCommand(operation.entry, {
-          refreshLatest:
-            operation.entry.surface === "sandbox" && (options.refreshLatest ?? forceRun),
-        })
+        const command = buildHarnessVersionCommand(operation.entry)
         const ref = harnessVersionRefFor(operation.key)
         if (forceRun) {
           await runManager.retry(ref, command.executable, command.args)
