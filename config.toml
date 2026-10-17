@@ -168,6 +168,10 @@ repository = "0xNyk/council-of-high-intelligence"
 [native.sources.caveman-plugin]
 repository = "JuliusBrussee/caveman"
 
+# This repository's first-party plugins (plugins/*).
+[native.sources.trellage]
+repository = "engineersamuel/trellage"
+
 [native.sources.ecc]
 repository = "affaan-m/ECC"
 
@@ -425,6 +429,16 @@ path = "."
 name = "caveman-plugin"
 plugin = "caveman"
 marketplace = "caveman"
+
+[native.profiles.preset-claude-six-hats]
+label = "claude / six-hats"
+harnesses = [ "claude" ]
+
+[[native.profiles.preset-claude-six-hats.plugins]]
+source = "trellage"
+harness = "claude"
+path = "plugins/six-hats"
+name = "six-hats"
 
 [native.profiles.preset-claude-ecc]
 label = "claude / ecc"

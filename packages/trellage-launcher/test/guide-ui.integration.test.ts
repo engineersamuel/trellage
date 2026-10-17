@@ -570,6 +570,7 @@ const selectProfile = async (
     await guide.waitForText(`${profile.ref} |`)
     guide.press(enter)
   } else {
+    if (profile.decision) await guide.pressAndWait("c", "DECIDE")
     guide.press(profile.key)
   }
   await guide.waitForText("Prompt candidates", `Profile: ${profile.ref}`, "Approach: focused.")
@@ -1903,7 +1904,7 @@ it.for([
     assert(profile.surface === "native")
     const command = {
       executable: profile.commandPath,
-      args: manual ? ["run", profile.launcher, profile.profile] : ["run", profile.launcher, profile.profile, "-p", prompt],
+      args: manual ? ["run", profile.launcher, profile.profile] : ["run", profile.launcher, profile.profile, "--", "-p", prompt],
     }
     expect(report.result).toEqual({
       action: "current-terminal",
@@ -2220,6 +2221,18 @@ it("edits one queued prompt and treats launch and removal hotkeys as literal tex
   const report = await guide.finish("L")
   assertBatch(guide, report, edited)
   assertDataflow(report, selections)
+}, 30_000)
+
+it("opens Decide on c and closes it on Esc without selecting a lens", async ({ guide }) => {
+  await guide.start(FixtureMode.Terminal)
+  await enterIntent(guide)
+  await guide.waitForText("🧭 c Decide…")
+  await guide.pressAndWait("c", "DECIDE", "c 🧠 Council")
+  guide.press("\u001b")
+  await expect.poll(() => guide.text()).not.toContain("DECIDE")
+  expect(guide.text()).toContain("Profile recommendations")
+  await selectProfile(guide, "council", 0)
+  await guide.finish("\u0003", 130)
 }, 30_000)
 
 it("replaces the candidate on an existing fork without adding a duplicate job", async ({ guide }) => {

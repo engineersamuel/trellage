@@ -97,6 +97,12 @@
       "plugin": null,
       "standaloneMcps": []
     },
+    "six-hats": {
+      "description": "Native Claude Code with the Six Thinking Hats decision plugin: six hat subagents and /six-hats:decide.",
+      "headless": null,
+      "plugin": "six-hats",
+      "standaloneMcps": []
+    },
     "social-media": {
       "description": "Native Claude Code with Social Media Skills and Humanizer.",
       "headless": null,

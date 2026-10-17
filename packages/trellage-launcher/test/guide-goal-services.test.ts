@@ -571,7 +571,7 @@ describe("explicit goal JSON generation", () => {
   })
 
   it.each([
-    ["native:claude/default", "general-engineering-task", "trx", ["run", "claude", "default", "-p"], "/goal ", "claude-goal"],
+    ["native:claude/default", "general-engineering-task", "trx", ["run", "claude", "default", "--", "-p"], "/goal ", "claude-goal"],
   ] as const)("uses goal-aware public delivery for %s", async (profileRef, workflowId, executable, prefix, command, controller) => {
     const prepared = goal()
     const response = await runGuideGenerate(new OfflineProvider(), catalog(), guideRoot, {

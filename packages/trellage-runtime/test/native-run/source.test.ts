@@ -1,9 +1,13 @@
 import { afterEach, expect, test } from "bun:test"
+import { mkdir, writeFile } from "node:fs/promises"
+import path from "node:path"
 import { createSourceResolver, gitSourceTransport, type SourceTransport } from "../../src/native-run/source.ts"
+import { devSourceRoots, devSourceTransport } from "../../src/native-run/dev-sources.ts"
 import {
   cleanupFixtures,
   createSourceRepo,
   fixturePaths,
+  git,
   skillMarkdown,
   tempRoot,
 } from "./fixtures.ts"
@@ -148,4 +152,34 @@ test("concurrent resolver instances retain every tag binding for offline reuse",
   for (const tag of tags) {
     expect((await createSourceResolver({ paths, transport: offline }).resolve(tag, { repository: "example/office", tag })).commit).toBe(first)
   }
+})
+
+test("development transport snapshots current files deterministically without changing Git state", async () => {
+  const root = await tempRoot("dev-source")
+  const repo = await createSourceRepo(root, "trellage")
+  await repo.write({ "tracked.txt": "original\n", "ignored.txt": "ignored\n", ".gitignore": "ignored.txt\n" })
+  await writeFile(path.join(repo.directory, "tracked.txt"), "edited\n")
+  await writeFile(path.join(repo.directory, "untracked.txt"), "untracked\n")
+  await writeFile(path.join(repo.directory, "ignored.txt"), "changed ignored\n")
+  const beforeStatus = await git(repo.directory, "status", "--porcelain=v1")
+  const beforeHead = await git(repo.directory, "rev-parse", "HEAD")
+  const repositoryUrl = "https://github.com/engineersamuel/trellage.git"
+  const roots = devSourceRoots(`${repositoryUrl}=${repo.directory}`)
+  const transport = devSourceTransport(offline, roots)
+  const first = await transport.resolveRef("engineersamuel/trellage", "HEAD")
+  const second = await transport.resolveRef("engineersamuel/trellage", "v-does-not-matter")
+  expect(second).toBe(first)
+  const destination = path.join(root, "extracted")
+  await mkdir(destination)
+  await transport.fetchCommit("engineersamuel/trellage", first, destination)
+  expect(await Bun.file(path.join(destination, "tracked.txt")).text()).toBe("edited\n")
+  expect(await Bun.file(path.join(destination, "untracked.txt")).text()).toBe("untracked\n")
+  expect(await Bun.file(path.join(destination, "ignored.txt")).exists()).toBe(false)
+  expect(await git(repo.directory, "status", "--porcelain=v1")).toBe(beforeStatus)
+  expect(await git(repo.directory, "rev-parse", "HEAD")).toBe(beforeHead)
+})
+
+test("development source roots require GitHub HTTPS URLs and absolute paths", () => {
+  expect(() => devSourceRoots("git@github.com:owner/repo.git=/tmp/repo")).toThrow(/https:\/\/github\.com/)
+  expect(() => devSourceRoots("https://github.com/owner/repo.git=relative")).toThrow(/absolute path/)
 })

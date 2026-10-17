@@ -1,0 +1,5 @@
+{
+  "name": "six-hats",
+  "version": "1.0.0",
+  "description": "Edward de Bono's Six Thinking Hats as six Claude Code subagents plus a /six-hats decision skill."
+}

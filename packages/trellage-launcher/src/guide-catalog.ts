@@ -470,9 +470,10 @@ export interface CompactProfileGuide {
 }
 
 const crossCuttingPinnedWorkflows: Readonly<Record<string, string>> = {
-  "native:copilot/hve": "rpi-agent-cycle",
   "native:claude/council": "run-council-deliberation",
   "native:claude/research": "vault-backed-research",
+  "native:claude/six-hats": "run-six-hats-deliberation",
+  "native:copilot/hve": "rpi-agent-cycle",
 }
 
 export const taskSpecificGuideMatchEntries = (

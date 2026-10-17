@@ -223,6 +223,17 @@ for (const phrase of [
   }
 }
 
+const sixHatsGuide = registry.get("native:claude/six-hats")
+if (sixHatsGuide === undefined) throw new Error("native Claude six-hats guide is missing")
+const sixHatsWorkflow = sixHatsGuide.guide.workflows.find(({ id }) => id === "run-six-hats-deliberation")
+if (sixHatsWorkflow === undefined) throw new Error("native Claude six-hats workflow is missing")
+if (sixHatsWorkflow.skill !== "six-hats:decide" || !sixHatsWorkflow.promptTemplate.startsWith("/six-hats:decide ")) {
+  throw new Error("native Claude six-hats workflow must invoke the six-hats skill")
+}
+if (!sixHatsWorkflow.promptTemplate.includes("stop before changing this checkout")) {
+  throw new Error("native Claude six-hats prompt must stop before changing the launching checkout")
+}
+
 const eccGuide = registry.get("native:claude/ecc")
 if (eccGuide === undefined) throw new Error("claude-ecc guide is missing")
 const expectedEccWorkflows = new Map<string, readonly [string, string]>([

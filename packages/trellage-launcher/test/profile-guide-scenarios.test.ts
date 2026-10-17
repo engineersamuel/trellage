@@ -389,7 +389,7 @@ describe("profile guide recommendation scenarios", () => {
 
   it("keeps expected profiles visible and known poor fits out of the literal top five", async () => {
     const [catalog, scenarios] = await Promise.all([loadCatalog(), loadScenarios()])
-    const pinnedProfiles = new Set(["native:claude/council", "native:claude/research"])
+    const pinnedProfiles = new Set(["native:claude/council", "native:claude/research", "native:claude/six-hats"])
     const eligibleProfiles = guideCatalogEntries(catalog)
       .map(({ ref }) => ref)
       .filter((profileRef) => !pinnedProfiles.has(profileRef))
@@ -444,6 +444,9 @@ describe("profile guide recommendation scenarios", () => {
       expect(candidates.map(({ workflowId }) => workflowId)).not.toEqual(
         expect.arrayContaining(["vault-backed-research"]),
       )
+      expect(candidates.map(({ workflowId }) => workflowId)).not.toEqual(
+        expect.arrayContaining(["run-six-hats-deliberation"]),
+      )
     }
   })
 
@@ -475,7 +478,10 @@ describe("profile guide recommendation scenarios", () => {
 
   it("keeps the full catalog for low-signal anaphoric intents", async () => {
     const catalog = await loadCatalog()
-    const allProfileRefs = guideCatalogEntries(catalog).map(({ ref }) => ref)
+    // claude/six-hats has only its pinned Decide workflow, so ranking reaches it only by name.
+    const allProfileRefs = guideCatalogEntries(catalog)
+      .map(({ ref }) => ref)
+      .filter((ref) => ref !== "native:claude/six-hats")
 
     expect(prefilterGuideMatchCatalogEntries(catalog, "Add caching to step 2").map(({ ref }) => ref)).toEqual(
       allProfileRefs,

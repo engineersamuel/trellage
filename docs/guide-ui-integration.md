@@ -26,7 +26,8 @@ boundaries, not reducer calls or screen snapshots. No `node-pty` addon,
 application bundle, or `dist` is required.
 
 The fixture offers five ranked recommendations and the three pinned lenses:
-Council, Research, and HVE RPI. Ranking currently permits at most five
+Council, Research, and HVE RPI. Council sits behind the `c` Decide chooser.
+Ranking currently permits at most five
 recommendations. The mixed cases use all eight profiles without changing that
 limit. Each profile generation produces three prompt candidates. Queueing one
 of them creates one job, not three jobs.

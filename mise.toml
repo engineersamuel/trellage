@@ -3,6 +3,10 @@ min_version = "2026.6.14"
 [settings]
 auto_install = false
 
+[env]
+# `mise run` builds this repository's first-party plugins (for example plugins/six-hats) from the
+# worktree instead of GitHub main. Installed launchers outside mise still resolve from GitHub.
+TRELLAGE_DEV_SOURCES = "https://github.com/engineersamuel/trellage.git={{config_root}}"
 [tasks.trx]
 description = "Run the repository worktree trx router, including its native launchers"
 quiet = true

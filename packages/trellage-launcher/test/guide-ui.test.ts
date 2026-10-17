@@ -348,6 +348,19 @@ const guideCouncil: ProfileGuideV1 = {
   ],
 }
 
+const guideSixHats: ProfileGuideV1 = {
+  ...guideCouncil,
+  workflows: [
+    {
+      id: "run-six-hats-deliberation",
+      description: "Run the Six Thinking Hats on one decision.",
+      skill: "six-hats:decide",
+      examples: ["Should we split the billing service?", "Pick a cache store"],
+      promptTemplate: "/six-hats:decide Decide: {{intent}}",
+    },
+  ],
+}
+
 const guideResearch: ProfileGuideV1 = {
   schemaVersion: 1,
   capabilities: ["bounded-factual-research"],
@@ -701,6 +714,7 @@ const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => 
       },
       nativeClaudeEntry("council", "Native Claude Council profile.", guideCouncil),
       nativeClaudeEntry("research", "Native Claude Research profile.", guideResearch),
+      nativeClaudeEntry("six-hats", "Native Claude Six Hats profile.", guideSixHats),
     ],
   }
 }
@@ -2992,14 +3006,14 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
   })
 
   describe("pinnedGuideLenses", () => {
-    it("pins council, research, and the HVE RPI agent with visible lens metadata", () => {
+    it("puts council and six hats behind the Decide chooser and keeps the other lenses direct", () => {
       const lenses = pinnedGuideLenses(buildCatalogWithPinnedLenses("/tmp-unused"))
 
       expect(
-        lenses.map(({ kind, key, emoji, recommendation }) => ({
+        lenses.map(({ kind, key, decision, recommendation }) => ({
           kind,
           key,
-          emoji,
+          decision,
           profileRef: recommendation.profileRef,
           workflowId: recommendation.workflowId,
         })),
@@ -3007,24 +3021,40 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
         {
           kind: "council",
           key: "c",
-          emoji: "🧠",
+          decision: true,
           profileRef: "native:claude/council",
           workflowId: "run-council-deliberation",
         },
         {
+          kind: "six-hats",
+          key: "6",
+          decision: true,
+          profileRef: "native:claude/six-hats",
+          workflowId: "run-six-hats-deliberation",
+        },
+        {
           kind: "research",
           key: "r",
-          emoji: "🔎",
+          decision: false,
           profileRef: "native:claude/research",
           workflowId: "vault-backed-research",
         },
         {
           kind: "hve-rpi",
           key: "h",
-          emoji: "🔄",
+          decision: false,
           profileRef: "native:copilot/hve",
           workflowId: "rpi-agent-cycle",
         },
+      ])
+    })
+
+    it("omits the six hats lens when its Native profile is not in the catalog", () => {
+      const catalog = buildCatalogWithPinnedLenses("/tmp-unused")
+      const withoutSixHats = { ...catalog, native: catalog.native.filter(({ name }) => name !== "six-hats") }
+
+      expect(pinnedGuideLenses(withoutSixHats).filter(({ decision }) => decision).map(({ kind }) => kind)).toEqual([
+        "council",
       ])
     })
 
