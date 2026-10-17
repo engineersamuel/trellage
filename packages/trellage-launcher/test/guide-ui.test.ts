@@ -3444,7 +3444,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
       "/repo",
     )
     expect(result.action).toBe("current-terminal")
-    expect(result.command.args).toEqual(["run", "copilot", "plannotator", "-i", "Do the thing."])
+    expect(result.command.args).toEqual(["run", "copilot", "plannotator", "--", "-i", "Do the thing."])
     expect(result.promptHandling).toBe("argv")
   })
 
@@ -3463,7 +3463,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     )
     expect(result.command.args).toEqual([
       "run", "copilot", "hve",
-      "--agent",
+      "--", "--agent",
       "hve-core:rpi-agent",
       "-i",
       "Build the feature through the full RPI cycle.",
@@ -3513,7 +3513,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
       "/repo",
       herdrContext,
     )
-    expect(result.command.args).toEqual(["run", "copilot", "hve", "--agent", "hve-core:rpi-agent", "-i", "Run the complete RPI cycle."])
+    expect(result.command.args).toEqual(["run", "copilot", "hve", "--", "--agent", "hve-core:rpi-agent", "-i", "Run the complete RPI cycle."])
     expect(result.promptDelivery).toBe("command")
   })
 

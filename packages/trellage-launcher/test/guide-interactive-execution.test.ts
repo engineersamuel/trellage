@@ -504,7 +504,7 @@ describe("interactive guide result execution", () => {
     expect(runInteractive).toHaveBeenCalledWith(
       {
         executable: "/opt/trellage/bin/trx",
-        args: ["run", "copilot", "hve-core", "-i", "Draft the post."],
+        args: ["run", "copilot", "hve-core", "--", "-i", "Draft the post."],
       },
       {
         cwd: "/repo",
@@ -627,7 +627,7 @@ describe("interactive guide result execution", () => {
     expect(runner.calls).toHaveLength(2)
     expect(runner.calls[1]).toMatchObject({
       executable: "herdr",
-      args: ["pane", "run", "2-3", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run copilot hve-core -i 'Draft the post.'"],
+      args: ["pane", "run", "2-3", "env TRELLAGE_AUTOMATION=1 /opt/trellage/bin/trx run copilot hve-core -- -i 'Draft the post.'"],
     })
     expect(writes).toHaveLength(0)
   })

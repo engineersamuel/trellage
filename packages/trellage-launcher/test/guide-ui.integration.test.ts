@@ -252,13 +252,13 @@ interface GoalSelection extends Selection {
 // Independent command oracles: do not call the production launch or workflow builders.
 const launchArguments: Record<FixtureProfileId, ReadonlyArray<string>> = {
   planner: ["run", "codex", "planner", "--"],
-  reviewer: ["run", "copilot", "reviewer", "-i"],
+  reviewer: ["run", "copilot", "reviewer", "--", "-i"],
   writer: ["run", "claude", "default", "--"],
-  builder: ["run", "pi", "builder"],
-  auditor: ["run", "copilot", "auditor", "-i"],
+  builder: ["run", "pi", "builder", "--"],
+  auditor: ["run", "copilot", "auditor", "--", "-i"],
   council: ["run", "claude", "council", "--"],
   research: ["run", "claude", "research", "--"],
-  hve: ["run", "copilot", "hve", "--agent", "hve-core:rpi-agent", "-i"],
+  hve: ["run", "copilot", "hve", "--", "--agent", "hve-core:rpi-agent", "-i"],
 }
 
 const expectedPrompt = (selection: Pick<Selection, "profileId" | "candidate" | "intent" | "appended">): string => {
@@ -1102,8 +1102,8 @@ const augmentationCommand = (
   expect(command.cwd).toBe(guide.root)
   if (kind === "research") {
     expect(command.executable).toBe(path.join(guide.root, "bin", "trx"))
-    expect(command.args).toEqual(["run", "copilot", "hve", "-p", expect.stringContaining(`\n<request>\n${intent}\n</request>`)])
-    expect(command.args[4]).toContain("rpi-research")
+    expect(command.args).toEqual(["run", "copilot", "hve", "--", "-p", expect.stringContaining(`\n<request>\n${intent}\n</request>`)])
+    expect(command.args[5]).toContain("rpi-research")
   } else {
     expect(command.executable).toBe("npx")
     expect(command.args).toEqual([
@@ -1215,7 +1215,7 @@ it("reviews a local customer brief and launches the checked Discovery lens witho
     "run",
     "copilot",
     "hve",
-    "--interactive",
+    "--", "--interactive",
     "--agent",
     "hve-core:dt-coach",
     "--require-skill",
@@ -1272,7 +1272,7 @@ it.for([
     "run",
     "copilot",
     "hve",
-    "--interactive",
+    "--", "--interactive",
     "--agent",
     "hve-core:dt-coach",
     "--require-skill",

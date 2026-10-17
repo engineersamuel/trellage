@@ -104,12 +104,13 @@ const runResearch = async (
   args: ReadonlyArray<string>,
   options: CommandRunOptions | undefined,
 ): Promise<CommandRunResult> => {
-  deepStrictEqual(args.length, 3)
+  deepStrictEqual(args.length, 4)
+  deepStrictEqual(args.slice(0, 3), ["hve", "--", "-p"])
   deepStrictEqual(options?.cwd, root)
   deepStrictEqual(options?.signal?.aborted, false)
-  const request = args[2]?.match(/\n<request>\n([\s\S]+)\n<\/request>$/u)?.[1]
+  const request = args[3]?.match(/\n<request>\n([\s\S]+)\n<\/request>$/u)?.[1]
   assert(request !== undefined, "Research must receive the original intent in its request")
-  assert(args[2]?.includes("rpi-research"))
+  assert(args[3]?.includes("rpi-research"))
   const notes = path.join(root, ".copilot-tracking", "research", "2026-01-01")
   await mkdir(notes, { recursive: true })
   await writeFile(path.join(notes, "login-research.md"), researchIntent(request))
@@ -123,7 +124,7 @@ const runNative = (
   args: ReadonlyArray<string>,
   options: CommandRunOptions | undefined,
 ): CommandRunResult | Promise<CommandRunResult> => {
-  if (executable === path.join(root, "bin", "copilot") && args[0] === "hve" && args[1] === "-p") {
+  if (executable === path.join(root, "bin", "copilot") && args[0] === "hve" && args[1] === "--" && args[2] === "-p") {
     return runResearch(root, args, options)
   }
   if (executable === path.join(root, "bin", "claude") && args[0] === "harness-version") {

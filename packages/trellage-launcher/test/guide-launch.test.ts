@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { execFileSync } from "node:child_process"
 
 import {
+  appendNativeArguments,
   buildGuideLaunchCommand,
   buildHerdrGuideLaunch,
   CommandRunnerError,
@@ -37,6 +38,31 @@ import {
 } from "../src/guide-launch.ts"
 import { goalTransportFixture } from "./fixtures/goal-transport.ts"
 import { guideGoalActivationInput, guideGoalApproachBudget } from "../src/guide-goal-execution.ts"
+
+describe("Native argument boundary", () => {
+  it("adds the router separator only when forwarding arguments", () => {
+    const base = ["run", "copilot", "hve"]
+    expect(appendNativeArguments(base, [])).toEqual(base)
+    expect(appendNativeArguments(base, ["--agent", "hve-core:rpi-agent"])).toEqual([
+      "run", "copilot", "hve", "--", "--agent", "hve-core:rpi-agent",
+    ])
+    expect(appendNativeArguments([...base, "--", "--agent", "hve-core:rpi-agent"], ["-i", "--"])).toEqual([
+      "run", "copilot", "hve", "--", "--agent", "hve-core:rpi-agent", "-i", "--",
+    ])
+  })
+
+  it.each(["agency", "copilot", "jcode", "omp", "pi", "prime", "grok", "uji"])(
+    "separates %s prompt flags from router options",
+    (launcher) => {
+      const selected = parseSelectedProfile({
+        surface: "native", launcher, commandPath: "/fixture/trx", profile: "default", headlessPrompt: true,
+      })
+      expect(buildGuideLaunchCommand(selected, { mode: "argv", prompt: "- literal prompt" }).command.args).toEqual([
+        "run", launcher, "default", "--", launcher === "copilot" ? "-i" : "-p", "- literal prompt",
+      ])
+    },
+  )
+})
 
 describe("profile worktree suggestions", () => {
   const profile = {
@@ -251,7 +277,7 @@ describe("guide launch command building", () => {
 
   it("builds trusted Herdr prompt delivery for native profiles", () => {
     expect(buildHerdrGuideLaunch(nativeProfile, "Run /council now")).toEqual({
-      command: { executable: "/opt/trellage/bin/trx", args: ["run", "copilot", "hve-core", "-i", "Run /council now"] },
+      command: { executable: "/opt/trellage/bin/trx", args: ["run", "copilot", "hve-core", "--", "-i", "Run /council now"] },
       promptDelivery: "command",
     })
   })
@@ -262,8 +288,8 @@ describe("guide launch command building", () => {
 
     expect(nativeResult.promptHandling).toBe("argv")
     expect(nativeResult.command.executable).toBe("/opt/trellage/bin/trx")
-    expect(nativeResult.command.args).toEqual(["run", "copilot", "hve-core", "-i", prompt])
-    expect(nativeResult.command.args[4]).toBe(prompt)
+    expect(nativeResult.command.args).toEqual(["run", "copilot", "hve-core", "--", "-i", prompt])
+    expect(nativeResult.command.args[5]).toBe(prompt)
   })
 
   it("protects positional Codex prompts with an end-of-options marker", () => {
@@ -301,7 +327,7 @@ describe("guide launch command building", () => {
     }
     for (const launcher of ["pi", "prime"]) {
       expect(launch(launcher, "/opt/trellage/bin/trx")).toEqual({
-        command: { executable: "/opt/trellage/bin/trx", args: ["run", launcher, "default", prompt] },
+        command: { executable: "/opt/trellage/bin/trx", args: ["run", launcher, "default", "--", prompt] },
         promptDelivery: "command",
       })
     }
@@ -325,7 +351,7 @@ describe("guide launch command building", () => {
     expect(result.promptHandling).toBe("argv")
     expect(result.command.args).toEqual([
       "run", "copilot", "hve",
-      "--agent",
+      "--", "--agent",
       "hve-core:rpi-agent",
       "-i",
       "Run the complete RPI cycle.",
@@ -341,7 +367,7 @@ describe("guide launch command building", () => {
     expect(buildGuideLaunchCommand(selected, { mode: "argv", prompt: "Discover the customer problem." })).toEqual({
       command: {
         executable: nativeProfile.commandPath,
-        args: ["run", "copilot", "hve-core", "--agent", "hve-core:dt-coach"],
+        args: ["run", "copilot", "hve-core", "--", "--agent", "hve-core:dt-coach"],
       },
       promptHandling: "manual-paste",
     })

@@ -336,7 +336,7 @@ describe("reviewed assignment lifecycle", () => {
     })
     expect(result.work).toMatchObject({ status: "returned", exitCode: 0, review: null })
     expect(runInteractive).toHaveBeenCalledOnce()
-    expect(launch.command.args.slice(0, 6)).toEqual(["run", "copilot", "hve", "--interactive", "--agent", "hve-core:dt-coach"])
+    expect(launch.command.args.slice(0, 7)).toEqual(["run", "copilot", "hve", "--", "--interactive", "--agent", "hve-core:dt-coach"])
     expect(launch.command.args).not.toContain("--autopilot")
     expect(await engagementResultDocument(result.work, reopened, fixture.runner)).toContain("workshop.md")
     await expect(

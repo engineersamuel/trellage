@@ -1295,9 +1295,8 @@ describe("runGuideGenerate", () => {
         "run",
         "copilot",
         "prime-agent",
-        "--agent",
-        "hve-core:dt-coach",
-        "-p",
+        "--", "--agent",
+        "hve-core:dt-coach", "-i",
         "Use the writing-plans skill:\nPrompt Master: Do the focused thing.",
       ])
       expect(provider.optimizeCalls).toEqual([
@@ -1521,7 +1520,7 @@ describe("runGuideGenerate", () => {
       expect(response.profile.workflowId).toBe("deep-refactor")
       expect(response.candidates[0]?.prompt).toBe("Prompt Master: Do the focused thing.")
       // "deep-refactor" declares no launchAgent, so --agent must be omitted.
-      expect(response.candidates[0]?.command.args).toEqual(["run", "jcode", "foo", "-p", "Prompt Master: Do the focused thing."])
+      expect(response.candidates[0]?.command.args).toEqual(["run", "jcode", "foo", "--", "-p", "Prompt Master: Do the focused thing."])
       expect(provider.optimizeCalls).toEqual([
         {
           targetTool: "jules",
@@ -1960,7 +1959,7 @@ describe("runGuideGenerate", () => {
       expect(response.candidates[0]?.prompt.match(/mode:non-interactive/gu)).toHaveLength(1)
       expect(response.candidates[0]?.command.args).toEqual([
         "run", "codex", "pstack",
-        "-p",
+        "--",
         "/ce-compound mode:non-interactive Rewrite the repository learning.",
       ])
       const serialized = JSON.stringify(response)
@@ -2071,13 +2070,13 @@ describe("runGuideGenerate", () => {
 // ---------------------------------------------------------------------------
 
 describe("publicGuideLaunchCommand", () => {
-  it("uses the launcher alias and appends -p <prompt> when headless.prompt is true", () => {
+  it("uses trx and passes Codex prompts positionally after the separator", () => {
     const catalog = buildCatalog("/tmp-unused")
     const command = publicGuideLaunchCommand(catalog, "native:codex/pstack", "say hello world", "review")
     expect(command.executable).toBe("trx")
-    expect(command.args).toEqual(["run", "codex", "pstack", "-p", "say hello world"])
+    expect(command.args).toEqual(["run", "codex", "pstack", "--", "say hello world"])
     expect(command.promptHandling).toBe("argv")
-    expect(command.preview).toBe(`trx run codex pstack -p 'say hello world'`)
+    expect(command.preview).toBe(`trx run codex pstack -- 'say hello world'`)
     expect(command.preview).not.toContain("/opt/trellage")
   })
 
@@ -2103,7 +2102,7 @@ describe("publicGuideLaunchCommand", () => {
     const catalog = buildCatalog("/tmp-unused")
     const command = publicGuideLaunchCommand(catalog, "native:copilot/prime-agent", "say hello world", "review")
     expect(command.executable).toBe("trx")
-    expect(command.args).toEqual(["run", "copilot", "prime-agent", "-p", "say hello world"])
+    expect(command.args).toEqual(["run", "copilot", "prime-agent", "--", "-i", "say hello world"])
   })
 
   it("rejects an unknown workflow rather than silently dropping its launch settings", () => {

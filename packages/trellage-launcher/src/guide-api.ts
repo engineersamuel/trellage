@@ -1125,17 +1125,9 @@ export const publicGuideLaunchCommand = (
       goalTransport: publicGoalTransport(goalExecution.controller, transport),
     }
   }
-  if (selected.interaction !== undefined) {
-    const built = buildGuideLaunchCommand(selected, { mode: "argv", prompt })
-    const command = { executable, args: built.command.args }
-    return { ...command, preview: renderCommandPreview(command), promptHandling: built.promptHandling }
-  }
-  const baseArgs = buildGuideLaunchCommand(selected).command.args
-  const headlessPrompt = selected.headlessPrompt
-  const args = headlessPrompt ? [...baseArgs, "-p", prompt] : baseArgs
-  const promptHandling: PromptHandlingMode = headlessPrompt ? "argv" : "manual-paste"
-  const command: CommandSpec = { executable, args }
-  return { executable, args, preview: renderCommandPreview(command), promptHandling }
+  const built = buildGuideLaunchCommand(selected, { mode: "argv", prompt })
+  const command: CommandSpec = { executable, args: built.command.args }
+  return { ...command, preview: renderCommandPreview(command), promptHandling: built.promptHandling }
 }
 
 /**

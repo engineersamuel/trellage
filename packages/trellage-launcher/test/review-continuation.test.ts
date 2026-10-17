@@ -97,7 +97,7 @@ describe("review continuation", () => {
     ])
     expect(service.commands[1]?.args[2]).toBe("new-pane")
     expect(service.commands[1]?.args[3]).toContain("/private/review/report.md")
-    expect(service.commands[1]?.args[3]).toContain("hve --plan --mode autopilot --allow-all --no-ask-user -i")
+    expect(service.commands[1]?.args[3]).toContain("hve -- --plan --mode autopilot --allow-all --no-ask-user -i")
     const tabPrompt = reviewContinuationPrompt({ ...result, destination: "new-herdr-tab" })
     expect(tabPrompt).toContain("Implement only verified fixes")
     expect(tabPrompt).toContain("stop before editing")
@@ -146,7 +146,7 @@ describe("review continuation", () => {
       const creation = commands.find((command) => command.executable === "herdr" && command.args[0] === "worktree")
       expect(creation?.args).toContain(head)
       expect(commands.at(-1)?.args.slice(0, 3)).toEqual(["pane", "run", "pane-2"])
-      expect(commands.at(-1)?.args[3]).toContain("hve --plan -i")
+      expect(commands.at(-1)?.args[3]).toContain("hve -- --plan -i")
       await writeFile(path.join(root, "a.ts"), "edited\n")
       await expect(executeReviewContinuation(clean, profile, root, context, {
         runner, runInteractive: async () => {},

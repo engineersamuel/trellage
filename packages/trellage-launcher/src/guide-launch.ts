@@ -644,13 +644,16 @@ const nativePromptArgs = (
   baseArgs: ReadonlyArray<string>,
   prompt: string,
 ): ReadonlyArray<string> => {
-  if (selectedProfile.launcher === "codex") return [...baseArgs, "--", prompt]
-  if (selectedProfile.interaction !== undefined) return [...baseArgs, "-i", prompt]
+  if (selectedProfile.launcher === "codex") return appendNativeArguments(baseArgs, [prompt])
+  if (selectedProfile.interaction !== undefined) return appendNativeArguments(baseArgs, ["-i", prompt])
   if (!selectedProfile.headlessPrompt) return baseArgs
-  // trx accepts Claude's own flags only after `--`.
-  if (selectedProfile.launcher === "claude") return [...baseArgs, "--", "-p", prompt]
-  return [...baseArgs, selectedProfile.launcher === "copilot" ? "-i" : "-p", prompt]
+  return appendNativeArguments(baseArgs, [selectedProfile.launcher === "copilot" ? "-i" : "-p", prompt])
 }
+
+export const appendNativeArguments = (
+  args: ReadonlyArray<string>,
+  forwarded: ReadonlyArray<string>,
+): ReadonlyArray<string> => forwarded.length === 0 ? args : [...args, ...(args.includes("--") ? [] : ["--"]), ...forwarded]
 
 const buildGoalLaunchCommand = (
   selectedProfile: SelectedProfile,
@@ -679,15 +682,12 @@ export const buildGuideLaunchCommand = (
 ): BuiltCommandSpec => {
   selectedProfile = parseSelectedProfile(selectedProfile)
   const normalizedDelivery = normalizePromptDelivery(delivery)
-  const baseArgs = [
-    "run",
-    selectedProfile.launcher,
-    selectedProfile.profile,
+  const baseArgs = appendNativeArguments(["run", selectedProfile.launcher, selectedProfile.profile], [
     ...(selectedProfile.interaction === undefined ? [] : ["--interactive"]),
     ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
     ...(selectedProfile.interaction?.requiredSkills.flatMap((skill) => ["--require-skill", skill]) ?? []),
     ...firstmateInstanceSelectorArgs(selectedProfile),
-  ]
+  ])
   if (goalExecution !== undefined) {
     return buildGoalLaunchCommand(selectedProfile, baseArgs, normalizedDelivery, goalExecution)
   }
@@ -697,7 +697,7 @@ export const buildGuideLaunchCommand = (
         executable: selectedProfile.commandPath,
         // Claude opens interactively with the prompt as its first turn, so the session can continue.
         args: selectedProfile.launcher === "claude"
-          ? [...baseArgs, "--", normalizedDelivery.prompt]
+          ? appendNativeArguments(baseArgs, [normalizedDelivery.prompt])
           : nativePromptArgs(selectedProfile, baseArgs, normalizedDelivery.prompt),
       },
       promptHandling: selectedProfile.interaction !== undefined || selectedProfile.headlessPrompt ||
@@ -714,7 +714,7 @@ export const buildGuideLaunchCommand = (
 }
 
 /**
- * What each native launcher must put in front of an interactive prompt in argv.
+ * What each harness must put in front of an interactive prompt after trx's `--`.
  * An empty list means the prompt must stay a bare positional: `pi` and
  * `prime-agent` have no end-of-options guard, and their parser reads `--` as an
  * unknown flag that then consumes the prompt as its value and discards it. A
@@ -724,9 +724,9 @@ export const buildGuideLaunchCommand = (
  */
 const nativeArgvPromptSeparator: Record<string, ReadonlyArray<string>> = {
   copilot: ["-i"],
-  codex: ["--"],
-  claude: ["--"],
-  omp: ["--"],
+  codex: [],
+  claude: [],
+  omp: [],
   pi: [],
   prime: [],
 }
@@ -754,7 +754,7 @@ export const buildHerdrGuideLaunch = (
   const baseCommand = buildGuideLaunchCommand(selectedProfile).command
   if (separator === undefined) return { command: baseCommand, promptDelivery: "agent" }
   return {
-    command: { executable: baseCommand.executable, args: [...baseCommand.args, ...separator, prompt] },
+    command: { executable: baseCommand.executable, args: appendNativeArguments(baseCommand.args, [...separator, prompt]) },
     promptDelivery: "command",
   }
 }
