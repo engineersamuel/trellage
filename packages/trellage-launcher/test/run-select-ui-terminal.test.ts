@@ -24,7 +24,10 @@ const createTerminal = async (scenario = "restored", cols = 120, color = "enable
   const root = await mkdtemp(path.join(tmpdir(), "trellage-run-selector-"))
   const terminal = new Terminal({ cols, rows: 40, scrollback: 0, allowProposedApi: true })
   const child = spawnSourcePty(bunExecutable(), bunArguments(entry, [root, scenario]), {
-    name: "xterm-256color", cols, rows: terminal.rows, cwd: root,
+    name: "xterm-256color",
+    cols,
+    rows: terminal.rows,
+    cwd: root,
     env: {
       HOME: root,
       PATH: path.dirname(bunExecutable()),
@@ -40,17 +43,27 @@ const createTerminal = async (scenario = "restored", cols = 120, color = "enable
   child.onData((data) => {
     output += data
     terminal.write(data, () => {
-      screen = Array.from({ length: terminal.rows }, (_, row) =>
-        terminal.buffer.active.getLine(terminal.buffer.active.viewportY + row)?.translateToString(true) ?? "",
+      screen = Array.from(
+        { length: terminal.rows },
+        (_, row) =>
+          terminal.buffer.active.getLine(terminal.buffer.active.viewportY + row)?.translateToString(true) ?? "",
       ).join("\n")
     })
   })
-  child.onExit((status) => { exit = status })
+  child.onExit((status) => {
+    exit = status
+  })
   const waitFor = async (...texts: string[]): Promise<void> => {
-    await vi.waitFor(() => {
-      expect(exit, `Selector exited: ${JSON.stringify(exit)}; output: ${JSON.stringify(output.slice(-2000))}`).toBeUndefined()
-      for (const text of texts) expect(screen).toContain(text)
-    }, { timeout: 5000, interval: 20 })
+    await vi.waitFor(
+      () => {
+        expect(
+          exit,
+          `Selector exited: ${JSON.stringify(exit)}; output: ${JSON.stringify(output.slice(-2000))}`,
+        ).toBeUndefined()
+        for (const text of texts) expect(screen).toContain(text)
+      },
+      { timeout: 5000, interval: 20 },
+    )
   }
   const cell = (needle: string, offset = 0) => {
     const lines = screen.split("\n")
@@ -62,7 +75,9 @@ const createTerminal = async (scenario = "restored", cols = 120, color = "enable
     return {
       fg: value.isFgDefault() ? null : value.getFgColor(),
       bg: value.isBgDefault() ? null : value.getBgColor(),
-      bold: Boolean(value.isBold()), inverse: Boolean(value.isInverse()), dim: Boolean(value.isDim()),
+      bold: Boolean(value.isBold()),
+      inverse: Boolean(value.isInverse()),
+      dim: Boolean(value.isDim()),
     }
   }
   const close = async (): Promise<void> => {
@@ -79,15 +94,20 @@ const createTerminal = async (scenario = "restored", cols = 120, color = "enable
   }
   try {
     await waitFor("trx run: choose a harness, profiles and model", "› Harness")
-    await vi.waitFor(async () => {
-      expect(await readFile(path.join(root, "ready"), "utf8")).toBe("ready")
-    }, { timeout: 5000, interval: 20 })
+    await vi.waitFor(
+      async () => {
+        expect(await readFile(path.join(root, "ready"), "utf8")).toBe("ready")
+      },
+      { timeout: 5000, interval: 20 },
+    )
   } catch (error) {
     await close()
     throw error
   }
   return {
-    cell, waitFor, close,
+    cell,
+    waitFor,
+    close,
     screen: () => screen,
     async press(keys: string, ...texts: string[]): Promise<void> {
       child.write(keys)
@@ -129,12 +149,25 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
   it("uses the Trellage palette without painting the terminal background or neutral text", async () => {
     const ui = await createTerminal()
     try {
-      for (const text of ["trx run:", "› Harness", "Fixture Pi", "Always on", "Normal", "Plan", "↑↓", "←→", "space", "enter", "esc"]) {
+      for (const text of [
+        "trx run:",
+        "› Harness",
+        "Fixture Pi",
+        "Always on",
+        "Normal",
+        "Plan",
+        "↑↓",
+        "←→",
+        "space",
+        "enter",
+        "esc",
+      ]) {
         expect(ui.cell(text).fg, text).toBe(cyan)
       }
       expect(ui.cell("trx run:").bold).toBe(true)
       expect(ui.cell("› Harness").bold).toBe(true)
-      for (const text of ["fixture-model-alpha", "fixture-plan", "fixture-style"]) expect(ui.cell(text).fg, text).toBe(magenta)
+      for (const text of ["fixture-model-alpha", "fixture-plan", "fixture-style"])
+        expect(ui.cell(text).fg, text).toBe(magenta)
       expect(ui.cell("◂ high").fg).toBe(yellow)
       expect(ui.cell("effort high", 7).fg).toBe(yellow)
       for (const text of ["[x] fixture-review", "fixture-common", "fixture-extension", "fixture-skill", "trx run pi"]) {
@@ -142,13 +175,22 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
         expect(ui.cell(text).dim, text).toBe(false)
       }
       expect(ui.cell("trx run pi").bg).toBeNull()
-      for (const text of ["choose a harness", "[ ] fixture-build", "Profiles", "Restored from", "--no-always skips", "field ·"]) {
+      for (const text of [
+        "choose a harness",
+        "[ ] fixture-build",
+        "Profiles",
+        "Restored from",
+        "--no-always skips",
+        "field ·",
+      ]) {
         expect(ui.cell(text).fg, text).toBeNull()
       }
       expect(ui.cell("Restored from").dim).toBe(true)
       expect(ui.cell("field ·").dim).toBe(true)
       expect(await ui.finish()).toEqual([null])
-    } finally { await ui.close() }
+    } finally {
+      await ui.close()
+    }
   })
 
   it("keeps profile focus inverse and independent from selection, and delivers exactly one launch callback", async () => {
@@ -172,8 +214,12 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
       await ui.press(left, "◂ low ▸")
       await ui.press(up, "› Model")
       await ui.press(up, "› Profiles")
-      expect(await ui.finish(enter)).toEqual([{ harness: "pi", profiles: ["fixture-build"], model: "fixture-model-beta", effort: "low" }])
-    } finally { await ui.close() }
+      expect(await ui.finish(enter)).toEqual([
+        { harness: "pi", profiles: ["fixture-build"], model: "fixture-model-beta", effort: "low" },
+      ])
+    } finally {
+      await ui.close()
+    }
   })
 
   it("colors model groups and committed markers while cursor focus overrides selection; selects and cancels the panel", async () => {
@@ -182,7 +228,8 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
       await openPicker(ui)
       expect(ui.cell("╭").fg).toBe(cyan)
       expect(ui.cell("Select model")).toMatchObject({ fg: cyan, bold: true })
-      for (const text of ["Frontier", "Other models"]) expect(ui.cell(text)).toMatchObject({ fg: magenta, bold: true, dim: false })
+      for (const text of ["Frontier", "Other models"])
+        expect(ui.cell(text)).toMatchObject({ fg: magenta, bold: true, dim: false })
       expect(ui.cell("● fixture-model-alpha")).toMatchObject({ fg: null, bg: null, inverse: true, bold: true })
       await ui.press(down)
       await ui.focus("fixture-model-beta")
@@ -198,14 +245,21 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
       await ui.press(enter, "Select model", "● fixture-model-beta")
       await ui.press("q", "› Model")
       expect(await ui.finish("q")).toEqual([null])
-    } finally { await ui.close() }
+    } finally {
+      await ui.close()
+    }
   })
 
   it("scrolls the existing 14-line model viewport and wraps without losing the committed marker", async () => {
     const ui = await createTerminal("default")
     try {
       await openPicker(ui)
-      expect(ui.screen().split("\n").filter((line) => /harness default|Frontier|Other models|fixture-model-/u.test(line))).toHaveLength(14)
+      expect(
+        ui
+          .screen()
+          .split("\n")
+          .filter((line) => /harness default|Frontier|Other models|fixture-model-/u.test(line)),
+      ).toHaveLength(14)
       await ui.press(up, "fixture-model-24", "↑ more")
       await ui.focus("fixture-model-24")
       expect(ui.screen()).not.toContain("↓ more")
@@ -216,13 +270,20 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
       await ui.focus("harness default")
       await ui.press(enter, "◂ fixture-default (default) ▸")
       expect(await ui.finish()).toEqual([null])
-    } finally { await ui.close() }
+    } finally {
+      await ui.close()
+    }
   })
 
   it("preserves empty profiles, defaults, missing defaults, and harness-specific always-on content", async () => {
     const ui = await createTerminal("empty")
     try {
-      await ui.waitFor("none defined in config.toml (clean base harness)", "◂ fixture-default (default) ▸", "fixture-pi-only", "fixture-pi-skill")
+      await ui.waitFor(
+        "none defined in config.toml (clean base harness)",
+        "◂ fixture-default (default) ▸",
+        "fixture-pi-only",
+        "fixture-pi-skill",
+      )
       expect(ui.cell("(default)")).toMatchObject({ fg: null, dim: true })
       expect(ui.cell("none defined")).toMatchObject({ fg: null, dim: true })
       await ui.press(down, "› Profiles")
@@ -235,7 +296,9 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
       expect(ui.screen()).toContain("fixture-common")
       expect(ui.screen()).not.toContain("(default)")
       expect(await ui.finish(enter)).toEqual([{ harness: "codex", profiles: [] }])
-    } finally { await ui.close() }
+    } finally {
+      await ui.close()
+    }
   })
 
   for (const cols of [80, 120]) {
@@ -253,7 +316,9 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
         expect(ui.screen().replace(/[\s│]/gu, "")).toContain(`●${model}`)
         await ui.press(escape, "› Model")
         expect(await ui.finish()).toEqual([null])
-      } finally { await ui.close() }
+      } finally {
+        await ui.close()
+      }
     })
   }
 
@@ -261,7 +326,12 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
     it(`retains content and non-color state indicators with ${mode}`, async () => {
       const ui = await createTerminal("restored", 120, mode)
       try {
-        await ui.waitFor("Restored from worktree history", "[x] fixture-review", "[ ] fixture-build", "trx run pi fixture-review --model fixture-model-alpha --effort high")
+        await ui.waitFor(
+          "Restored from worktree history",
+          "[x] fixture-review",
+          "[ ] fixture-build",
+          "trx run pi fixture-review --model fixture-model-alpha --effort high",
+        )
         ui.noColors()
         await ui.press(down, "› Profiles")
         await ui.press(" ", "[ ] fixture-review")
@@ -276,8 +346,12 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
         await ui.press(escape, "› Model")
         await ui.press(down, "› Effort")
         ui.noColors()
-        expect(await ui.finish(enter)).toEqual([{ harness: "pi", profiles: ["fixture-build"], model: "fixture-model-beta", effort: "high" }])
-      } finally { await ui.close() }
+        expect(await ui.finish(enter)).toEqual([
+          { harness: "pi", profiles: ["fixture-build"], model: "fixture-model-beta", effort: "high" },
+        ])
+      } finally {
+        await ui.close()
+      }
     })
   }
 
@@ -301,9 +375,35 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
     }
   })
 
+  it("keeps clean exclusive and dims other profiles until clean is removed", async () => {
+    const ui = await createTerminal("clean")
+    try {
+      await ui.waitFor("[x] clean", "[ ] fixture-build (clean selected)", "[ ] fixture-review (clean selected)")
+      expect(ui.cell("fixture-build").dim).toBe(true)
+      expect(ui.cell("fixture-review").dim).toBe(true)
+      await ui.press(down, "› Profiles")
+      await ui.press(right)
+      await ui.focus("fixture-build")
+      await ui.press(" ")
+      expect(ui.screen()).toContain("trx run pi clean")
+      await ui.press(left)
+      await ui.focus("[x] clean")
+      await ui.press(" ", "[ ] clean")
+      await ui.press(right)
+      await ui.focus("fixture-build")
+      await ui.press(" ", "[x] fixture-build")
+      expect(await ui.finish(enter)).toEqual([{ harness: "pi", profiles: ["fixture-build"] }])
+    } finally {
+      await ui.close()
+    }
+  })
+
   it("preserves Ink's Ctrl+C exit without delivering a launch callback", async () => {
     const ui = await createTerminal()
-    try { expect(await ui.finish("\u0003")).toEqual([]) }
-    finally { await ui.close() }
+    try {
+      expect(await ui.finish("\u0003")).toEqual([])
+    } finally {
+      await ui.close()
+    }
   })
 })

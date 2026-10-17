@@ -1,3 +1,5 @@
+import { CLEAN_PROFILE } from "@trellage/runtime/native-run"
+
 export interface RunSelectorOption {
   readonly harness: string
   readonly label: string
@@ -74,27 +76,105 @@ export const runSelectorProfiles = (catalog: RunSelectorCatalog, harnessIndex: n
 export const runSelectorVisibleProfiles = (
   catalog: RunSelectorCatalog,
   harnessIndex: number,
+  selectedProfiles: ReadonlyArray<string> = [],
 ): ReadonlyArray<{ readonly profile: string; readonly enabled: boolean }> => {
   const enabled = runSelectorProfiles(catalog, harnessIndex)
+  const cleanSelected = selectedProfiles.includes(CLEAN_PROFILE)
   return catalog.profiles
     .filter((profile) => enabled.includes(profile) || catalog.disabledProfiles?.includes(profile))
-    .map((profile) => ({ profile, enabled: enabled.includes(profile) }))
+    .map((profile) => ({
+      profile,
+      enabled: enabled.includes(profile) && (!cleanSelected || profile === CLEAN_PROFILE),
+    }))
 }
 
-export const initialRunSelectorState = (catalog: RunSelectorCatalog, initial: RunSelectorInitial = {}): RunSelectorState => {
-  const harnessIndex = Math.max(0, catalog.harnesses.findIndex((option) => option.harness === initial.harness))
+export const initialRunSelectorState = (
+  catalog: RunSelectorCatalog,
+  initial: RunSelectorInitial = {},
+): RunSelectorState => {
+  const harnessIndex = Math.max(
+    0,
+    catalog.harnesses.findIndex((option) => option.harness === initial.harness),
+  )
   const harness = catalog.harnesses[harnessIndex]
   const modelIndex = initial.model === undefined ? -1 : catalog.models.indexOf(initial.model)
   const effortIndex = initial.effort === undefined || !harness ? -1 : harness.efforts.indexOf(initial.effort)
+  const profiles = (initial.profiles ?? []).filter((profile) =>
+    runSelectorProfiles(catalog, harnessIndex).includes(profile),
+  )
   return {
     field: "harness",
     harnessIndex,
     profileCursor: 0,
-    profiles: (initial.profiles ?? []).filter((profile) => runSelectorProfiles(catalog, harnessIndex).includes(profile)),
+    profiles: profiles.includes(CLEAN_PROFILE) ? [CLEAN_PROFILE] : profiles,
     modelIndex: modelIndex + 1,
     effortIndex: effortIndex + 1,
     picker: null,
   }
+}
+
+const toggleProfile = (state: RunSelectorState, catalog: RunSelectorCatalog): RunSelectorState => {
+  const row = runSelectorVisibleProfiles(catalog, state.harnessIndex, state.profiles)[state.profileCursor]
+  if (row === undefined || !row.enabled) return state
+  if (row.profile === CLEAN_PROFILE) {
+    return {
+      ...state,
+      profiles: state.profiles.includes(CLEAN_PROFILE) ? [] : [CLEAN_PROFILE],
+    }
+  }
+  const profiles = state.profiles.filter((profile) => profile !== CLEAN_PROFILE)
+  return {
+    ...state,
+    profiles: profiles.includes(row.profile)
+      ? profiles.filter((profile) => profile !== row.profile)
+      : [...profiles, row.profile],
+  }
+}
+
+const changeHarness = (state: RunSelectorState, delta: 1 | -1, catalog: RunSelectorCatalog): RunSelectorState => {
+  const harnessIndex = wrap(state.harnessIndex + delta, catalog.harnesses.length)
+  return {
+    ...state,
+    harnessIndex,
+    effortIndex: 0,
+    profileCursor: 0,
+    profiles: state.profiles.filter((profile) => runSelectorProfiles(catalog, harnessIndex).includes(profile)),
+  }
+}
+
+const changeSelection = (state: RunSelectorState, delta: 1 | -1, catalog: RunSelectorCatalog): RunSelectorState => {
+  if (state.field === "harness") return changeHarness(state, delta, catalog)
+  if (state.field === "profiles") {
+    return {
+      ...state,
+      profileCursor: wrap(
+        state.profileCursor + delta,
+        runSelectorVisibleProfiles(catalog, state.harnessIndex, state.profiles).length,
+      ),
+    }
+  }
+  if (state.field === "model") {
+    const size = Math.min(catalog.cycleCount ?? catalog.models.length, catalog.models.length) + 1
+    return { ...state, modelIndex: wrap(state.modelIndex + delta, size) }
+  }
+  const efforts = catalog.harnesses[state.harnessIndex]?.efforts ?? []
+  return { ...state, effortIndex: wrap(state.effortIndex + delta, efforts.length + 1) }
+}
+
+const changeField = (state: RunSelectorState, delta: 1 | -1): RunSelectorState => {
+  const index = runSelectorFields.indexOf(state.field)
+  return { ...state, field: runSelectorFields[wrap(index + delta, runSelectorFields.length)]! }
+}
+
+const reduceWithoutPicker = (
+  state: RunSelectorState,
+  action: RunSelectorAction,
+  catalog: RunSelectorCatalog,
+): RunSelectorState => {
+  if (action.kind === "field") return changeField(state, action.delta)
+  if (action.kind === "toggle") return state.field === "profiles" ? toggleProfile(state, catalog) : state
+  if (action.kind === "change") return changeSelection(state, action.delta, catalog)
+  return state
 }
 
 export const runSelectorReducer = (
@@ -102,42 +182,15 @@ export const runSelectorReducer = (
   action: RunSelectorAction,
   catalog: RunSelectorCatalog,
 ): RunSelectorState => {
-  if (action.kind === "open-picker")
-    return state.field === "model" ? { ...state, picker: state.modelIndex } : state
+  if (action.kind === "open-picker") return state.field === "model" ? { ...state, picker: state.modelIndex } : state
   if (action.kind === "picker-close") return { ...state, picker: null }
   if (state.picker !== null) {
-    if (action.kind === "picker-move") return { ...state, picker: wrap(state.picker + action.delta, catalog.models.length + 1) }
+    if (action.kind === "picker-move")
+      return { ...state, picker: wrap(state.picker + action.delta, catalog.models.length + 1) }
     if (action.kind === "picker-select") return { ...state, modelIndex: state.picker, picker: null }
     return state
   }
-  if (action.kind === "picker-move" || action.kind === "picker-select") return state
-  if (action.kind === "field") {
-    const index = runSelectorFields.indexOf(state.field)
-    return { ...state, field: runSelectorFields[wrap(index + action.delta, runSelectorFields.length)]! }
-  }
-  if (action.kind === "toggle") {
-    if (state.field !== "profiles") return state
-    const row = runSelectorVisibleProfiles(catalog, state.harnessIndex)[state.profileCursor]
-    if (row === undefined || !row.enabled) return state
-    const profile = row.profile
-    return {
-      ...state,
-      profiles: state.profiles.includes(profile) ? state.profiles.filter((entry) => entry !== profile) : [...state.profiles, profile],
-    }
-  }
-  if (state.field === "harness") {
-    const harnessIndex = wrap(state.harnessIndex + action.delta, catalog.harnesses.length)
-    return { ...state, harnessIndex, effortIndex: 0, profileCursor: 0, profiles: state.profiles.filter((profile) => runSelectorProfiles(catalog, harnessIndex).includes(profile)) }
-  }
-  if (state.field === "profiles") {
-    return { ...state, profileCursor: wrap(state.profileCursor + action.delta, runSelectorVisibleProfiles(catalog, state.harnessIndex).length) }
-  }
-  if (state.field === "model") {
-    const size = Math.min(catalog.cycleCount ?? catalog.models.length, catalog.models.length) + 1
-    return { ...state, modelIndex: wrap(state.modelIndex + action.delta, size) }
-  }
-  const efforts = catalog.harnesses[state.harnessIndex]?.efforts ?? []
-  return { ...state, effortIndex: wrap(state.effortIndex + action.delta, efforts.length + 1) }
+  return reduceWithoutPicker(state, action, catalog)
 }
 
 export interface RunSelectorChoice {

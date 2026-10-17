@@ -11,27 +11,52 @@ import { trellageTheme } from "../../src/termcn/theme-trellage.ts"
 const [root, scenario = "restored"] = process.argv.slice(2)
 const longName = "fixture-profile-with-a-long-name-for-checking-terminal-wrapping-at-eighty-columns"
 const models = [
-  scenario === "long" ? "fixture-model-with-a-long-name-for-checking-terminal-wrapping-at-eighty-columns" : "fixture-model-alpha",
+  scenario === "long"
+    ? "fixture-model-with-a-long-name-for-checking-terminal-wrapping-at-eighty-columns"
+    : "fixture-model-alpha",
   "fixture-model-beta",
   ...Array.from({ length: 24 }, (_, i) => `fixture-model-${String(i + 1).padStart(2, "0")}`),
 ]
 const catalog: RunSelectorCatalog = {
   harnesses: [
     {
-      harness: "pi", label: "Fixture Pi", efforts: ["low", "high"],
-      defaultModel: "fixture-default", defaultEffort: "low", planModel: "fixture-plan",
+      harness: "pi",
+      label: "Fixture Pi",
+      efforts: ["low", "high"],
+      defaultModel: "fixture-default",
+      defaultEffort: "low",
+      planModel: "fixture-plan",
       extensions: ["fixture-extension"],
     },
-    { harness: "codex", label: "Fixture Codex", efforts: ["low", "high"], defaultModel: undefined, planModel: "harness default" },
+    {
+      harness: "codex",
+      label: "Fixture Codex",
+      efforts: ["low", "high"],
+      defaultModel: undefined,
+      planModel: "harness default",
+    },
   ],
-  profiles: scenario === "empty" ? [] : scenario === "gated" ? ["fixture-build", "fixture-fleet"] : [scenario === "long" ? longName : "fixture-review", "fixture-build"],
-  ...(scenario === "gated" ? { profileHarnesses: { "fixture-fleet": ["pi"] }, disabledProfiles: ["fixture-fleet"] } : {}),
+  profiles:
+    scenario === "clean"
+      ? ["clean", "fixture-build", "fixture-review"]
+      : scenario === "empty"
+        ? []
+        : scenario === "gated"
+          ? ["fixture-build", "fixture-fleet"]
+          : [scenario === "long" ? longName : "fixture-review", "fixture-build"],
+  ...(scenario === "clean" ? { profileHarnesses: { clean: ["pi", "codex"] } } : {}),
+  ...(scenario === "gated"
+    ? { profileHarnesses: { "fixture-fleet": ["pi"] }, disabledProfiles: ["fixture-fleet"] }
+    : {}),
   always: [
     { profile: "fixture-common", skills: ["fixture-skill"], instructions: ["fixture-style"] },
     { profile: "fixture-pi-only", harnesses: ["pi"], skills: ["fixture-pi-skill"], instructions: [] },
   ],
   models,
-  modelGroups: [{ title: "Frontier", models: models.slice(0, 2) }, { title: "Other models", models: models.slice(2) }],
+  modelGroups: [
+    { title: "Frontier", models: models.slice(0, 2) },
+    { title: "Other models", models: models.slice(2) },
+  ],
   cycleCount: 2,
 }
 const callbacks: Array<RunSelectorChoice | null> = []
@@ -44,9 +69,13 @@ const Fixture = () => {
     <ThemeProvider theme={trellageTheme}>
       <RunSelector
         catalog={catalog}
-        initial={scenario === "restored" || scenario === "long"
-          ? { harness: "pi", profiles: [catalog.profiles[0]!], model: models[0], effort: "high" }
-          : undefined}
+        initial={
+          scenario === "clean"
+            ? { harness: "pi", profiles: ["fixture-review", "clean", "fixture-build"] }
+            : scenario === "restored" || scenario === "long"
+              ? { harness: "pi", profiles: [catalog.profiles[0]!], model: models[0], effort: "high" }
+              : undefined
+        }
         restoredFrom={scenario === "restored" ? "worktree" : undefined}
         onDone={(choice) => callbacks.push(choice)}
       />
