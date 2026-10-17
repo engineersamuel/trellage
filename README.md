@@ -396,8 +396,8 @@ delivery mode, numbered `SCOUT`/`SHIP` tasks with a `Done when:` line each,
 explicit parallel and wait conditions, a `/bearings` request, captain merge
 authority, and a closing "Ask me before…" line. Workflows: `fleet-delivery`,
 `fleet-investigation` (scouts only) and `fleet-status` (no new work). The
-guide launches `trx run claude|pi firstmate` and hands the message over to
-paste, because Firstmate is interactive. `trx upgrade` and `trx admin` do not
+guide launches `trx run claude firstmate` with the message as Firstmate's first
+turn; for `pi firstmate` it hands the message over to paste. `trx upgrade` and `trx admin` do not
 list these profiles: they are config profiles, not installed backends.
 
 The shipped `firstmate` profile uses all four to run
