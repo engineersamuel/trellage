@@ -483,21 +483,25 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     expect(f.launch).toHaveBeenCalledTimes(2)
   })
 
-  it.each([
+  it.each(([
     ["copilot", false, "-i"],
     ["copilot", true, "-i"],
     ["codex", false, "--"],
     ["codex", true, "--"],
     ["claude", false, "--"],
     ["claude", true, "--"],
-  ] as const)(
-    "starts %s interactively with headlessPrompt=%s and preserves the scope and index",
-    async (launcher, headlessPrompt, promptFlag) => {
+  ] as const).flatMap(([launcher, headlessPrompt, promptFlag]) =>
+    [false, true].map((activeHerdr) => ({ launcher, headlessPrompt, promptFlag, activeHerdr }))))(
+    "starts $launcher with headlessPrompt=$headlessPrompt and activeHerdr=$activeHerdr, preserving scope and index",
+    async ({ launcher, headlessPrompt, promptFlag, activeHerdr }) => {
       const f = await fixture()
       const profile = f.services.profiles[0]
       if (profile === undefined) throw new Error("Fixture profile is missing")
       const runs: { command: CommandSpec; cwd: string }[] = []
       const index = await f.git("diff", "--cached")
+      if (activeHerdr) f.list.mockResolvedValue([
+        { pane_id: "w1:origin", agent: "copilot", agent_status: "working", cwd: f.root },
+      ])
       const transport = vi
         .spyOn(launchTransport, "runInteractiveTerminalCommand")
         .mockImplementation(async (command, options) => {
@@ -519,7 +523,8 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
           {
             runner: f.runner,
             readiness: f.readiness,
-            context: null,
+            context: activeHerdr ? { surface: "pane", workspaceId: "w1", paneId: "w1:origin" } : null,
+            dependencies: { listAgents: f.list, processReader: f.processReader },
           },
         )
         expect(result).toBe(0)
@@ -533,7 +538,13 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
           },
         ])
         expect(await f.git("diff", "--cached")).toBe(index)
-        expect(f.list).not.toHaveBeenCalled()
+        if (activeHerdr) {
+          expect(f.list).toHaveBeenCalledOnce()
+          expect(f.processReader).toHaveBeenCalledOnce()
+        } else {
+          expect(f.list).not.toHaveBeenCalled()
+          expect(f.processReader).not.toHaveBeenCalled()
+        }
         expect(transport).toHaveBeenCalledOnce()
         expect(
           (await new OptimizeReviewStore(f.request.target.gitDirectory).read(f.request.approval.reviewId)).execution,
@@ -543,6 +554,41 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       }
     },
   )
+
+  it.each([
+    ["other-writer", "w1:other"],
+    ["borrowed-pane", "w1:origin"],
+    ["wrong-pane", "different Guide pane"],
+    ["missing-processes", "must be an array"],
+    ["metadata-error", "Process metadata unavailable"],
+  ] as const)("rejects terminal handoff for %s without consuming approval", async (scenario, error) => {
+    const f = await fixture()
+    const profile = f.services.profiles[0]!
+    f.list.mockResolvedValue([
+      { pane_id: scenario === "other-writer" ? "w1:other" : "w1:origin",
+        agent: "copilot", agent_status: "working", cwd: f.root },
+    ])
+    if (scenario === "borrowed-pane") f.processReader.mockResolvedValueOnce({
+      pane_id: "w1:origin", foreground_processes: [{ pid: process.pid + 1 }],
+    })
+    if (scenario === "wrong-pane") f.processReader.mockResolvedValueOnce({
+      pane_id: "w1:other", foreground_processes: [{ pid: process.pid }],
+    })
+    if (scenario === "missing-processes") f.processReader.mockResolvedValueOnce({ pane_id: "w1:origin" })
+    if (scenario === "metadata-error") f.processReader.mockRejectedValueOnce(new Error(error))
+    const runInteractive = vi.fn(async () => {})
+    await expect(executeGuideReviewTerminal({
+      action: "review-terminal", request: { ...f.request, destination: "terminal" },
+      selectedProfile: profile.profile,
+    }, {
+      runner: f.runner, readiness: f.readiness, runInteractive,
+      context: { surface: "pane", workspaceId: "w1", paneId: "w1:origin" },
+      dependencies: { listAgents: f.list, processReader: f.processReader },
+    })).rejects.toThrow(error)
+    expect(runInteractive).not.toHaveBeenCalled()
+    expect((await new OptimizeReviewStore(f.request.target.gitDirectory)
+      .read(f.request.approval.reviewId)).execution).toBe("not-started")
+  })
 
   it("requires the persisted human approval and rejects altered findings", async () => {
     const f = await fixture()

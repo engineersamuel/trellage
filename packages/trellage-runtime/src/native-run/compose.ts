@@ -479,6 +479,7 @@ const resolveSkills = async (
 const generationIdOf = (
   request: CompositionRequest,
   effective: ReadonlyArray<string>,
+  alwaysProfiles: ReadonlyArray<string>,
   instructions: ReadonlyArray<{ readonly id: string; readonly text: string }>,
   skills: ReadonlyArray<SelectedSkill>,
   plugins: ReadonlyArray<SelectedPlugin>,
@@ -489,6 +490,7 @@ const generationIdOf = (
         COMPOSITION_SCHEMA,
         request.harness,
         effective,
+        alwaysProfiles,
         instructions.map((instruction) => [
           instruction.id,
           createHash("sha256").update(instruction.text).digest("hex"),
@@ -536,7 +538,7 @@ export const planComposition = async (request: CompositionRequest, options: Plan
     sources: [...allSources.values()].sort((a, b) => a.sourceId.localeCompare(b.sourceId)),
     plugins: resolvedPlugins.plugins,
     warnings: [...sources.flatMap((source) => (source.warning ? [source.warning] : [])), ...warnings],
-    generationId: generationIdOf(request, effective, instructions, skills, resolvedPlugins.plugins),
+    generationId: generationIdOf(request, effective, alwaysProfiles, instructions, skills, resolvedPlugins.plugins),
     ...workspace,
   }
 }

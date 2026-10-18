@@ -588,10 +588,16 @@ describe("installed review skill staging", () => {
       if (extra) await mkdir(path.join(bundle, "code-review", "one-more"))
     }
     const reviews = [reviewCatalog[0]!, reviewCatalog[2]!]
-    const workspace = await skillFixture((bundle) => populate(bundle), reviews)
-    await workspace.dispose()
-    await expect(skillFixture((bundle) => populate(bundle, true), reviews)).rejects.toThrow("1024 entries")
-    expect(await readdir(path.join(root, "stages"))).toEqual([])
+    // Entry counts do not depend on host speed; the deadline cases below advance their own clocks.
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0)
+    try {
+      const workspace = await skillFixture((bundle) => populate(bundle), reviews)
+      await workspace.dispose()
+      await expect(skillFixture((bundle) => populate(bundle, true), reviews)).rejects.toThrow("1024 entries")
+      expect(await readdir(path.join(root, "stages"))).toEqual([])
+    } finally {
+      clock.mockRestore()
+    }
   }, 30_000)
 
   it("accepts depth 16 with root depth zero and refuses depth 17", async () => {
