@@ -28,6 +28,14 @@ test-exhaustive:
 	+$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract
 	python3 scripts/test-offline.py -- bun tests/exhaustive/execute.ts
 
+.PHONY: test-exhaustive-supplemental test-exhaustive-plan
+test-exhaustive-supplemental:
+	python3 tests/test_exhaustive_runner.py
+	bash scripts/test-offline.sh --native-sources python3 scripts/test-exhaustive.py
+
+test-exhaustive-plan:
+	python3 scripts/test-exhaustive.py --plan
+
 .PHONY: cli-matrix-contract
 cli-matrix-contract:
 	bun test tests/exhaustive/*.test.ts
@@ -149,6 +157,7 @@ native-jcode-profile:
 	bash prototypes/trellage-jcode-profiles/tests/contract.sh
 
 native-omp-profile:
+	python3 prototypes/trellage-omp-profiles/tests/test-fixture.py
 	bash prototypes/trellage-omp-profiles/tests/contract.sh
 
 

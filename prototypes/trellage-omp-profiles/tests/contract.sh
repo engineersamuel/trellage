@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+if [[ "${1-}" != --fixture-body ]]; then
+  exec python3 "$(dirname "$0")/run-contract.py"
+fi
+shift
+
 set -u
 set -o pipefail
 
@@ -8,6 +13,8 @@ unset TRELLAGE_NATIVE_COMPOSITION_HARNESS TRELLAGE_NATIVE_COMPOSITION_SNAPSHOT \
   OMP_PROFILE PI_PROFILE PI_CODING_AGENT_DIR PI_CONFIG_FILES
 
 root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+export OMP_FIXTURE_SYNC_HELPER="$root/tests/synchronization.sh"
+. "$OMP_FIXTURE_SYNC_HELPER"
 . "$root/../../tests/helpers/floating_skills_fixture.sh"
 launcher="$root/bin/omp"
 installer="$root/install.sh"
@@ -26,13 +33,7 @@ fail() {
 }
 
 wait_for_file() {
-  local path="$1" label="$2" attempts=0
-
-  while [[ ! -e "$path" && "$attempts" -lt 500 ]]; do
-    sleep 0.01
-    attempts=$((attempts + 1))
-  done
-  [[ -e "$path" ]] || fail "$label did not reach its synchronization point"
+  omp_fixture_wait "$1" "$2" || fail "$2 did not reach its synchronization point"
 }
 
 assert_community_skills() {
@@ -179,6 +180,7 @@ chmod 0755 "$fake_bin/git"
 
 cat >"$fixture_root/fake-omp-template" <<'FAKE_OMP'
 #!/usr/bin/env bash
+. "${OMP_FIXTURE_SYNC_HELPER:?}"
 set -u
 
 if [[ -n "${FAKE_OMP_EXEC_LOG:-}" ]]; then
@@ -196,7 +198,7 @@ if [[ "${1-}" == '--version' ]]; then
   fi
   if [[ "${FAKE_OMP_BLOCK_VERSION:-}" == 1 ]]; then
     : >"${FAKE_OMP_READY_FILE:?}"
-    while [[ ! -e "${FAKE_OMP_RELEASE_FILE:?}" ]]; do sleep 0.01; done
+    omp_fixture_wait "${FAKE_OMP_RELEASE_FILE:?}" "version release" || exit $?
   fi
   if [[ '@VERSION@' == not-omp ]]; then
     printf '%s\n' not-omp
@@ -314,14 +316,16 @@ jq -cn \
 
 if [[ -n "${FAKE_OMP_RUN_READY_FILE-}" ]]; then
   printf '%s\n' "$$" >"$FAKE_OMP_RUN_READY_FILE"
-  while [[ ! -e "$FAKE_OMP_RUN_RELEASE_FILE" && "$SECONDS" -lt 25 ]]; do sleep 0.01; done
-  [[ -e "$FAKE_OMP_RUN_RELEASE_FILE" ]] || exit 124
+  omp_fixture_wait "$FAKE_OMP_RUN_RELEASE_FILE" "run release" || exit $?
 fi
 
 if [[ "${FAKE_OMP_WAIT_FOR_SIGNAL-}" == 1 ]]; then
   trap 'printf "TERM\n" >>"$FAKE_OMP_SIGNAL_LOG"; exit 143' TERM
   printf 'READY\n' >>"$FAKE_OMP_SIGNAL_LOG"
-  while :; do sleep 0.05; done
+  signal_deadline=$((SECONDS + 30))
+  while ((SECONDS < signal_deadline)); do sleep 0.05; done
+  printf "OMP fixture timed out waiting for TERM\n" >&2
+  exit 124
 fi
 
 exit "${FAKE_OMP_EXIT_STATUS:-0}"
@@ -519,11 +523,12 @@ mkdir "$lock_pause_mv_bin"
 lock_pause_real_mv="$(command -v mv)"
 cat >"$lock_pause_mv_bin/mv" <<'LOCK_PAUSE_MV'
 #!/usr/bin/env bash
+. "${OMP_FIXTURE_SYNC_HELPER:?}"
 set -u
 for argument in "$@"; do
   if [[ "$argument" == "$LOCK_PAUSE_DESTINATION" ]]; then
     : >"$LOCK_PAUSE_READY_FILE"
-    while [[ ! -e "$LOCK_PAUSE_RELEASE_FILE" ]]; do sleep 0.01; done
+    omp_fixture_wait "$LOCK_PAUSE_RELEASE_FILE" "lock release" || exit $?
   fi
 done
 exec "$LOCK_PAUSE_REAL_MV" "$@"
@@ -568,11 +573,12 @@ mkdir "$lock_pause_rm_bin"
 lock_pause_real_rm="$(command -v rm)"
 cat >"$lock_pause_rm_bin/rm" <<'LOCK_PAUSE_RM'
 #!/usr/bin/env bash
+. "${OMP_FIXTURE_SYNC_HELPER:?}"
 set -u
 for argument in "$@"; do
   if [[ "${LOCK_PAUSE_BLOCK:-0}" == 1 && "$argument" == "$LOCK_PAUSE_DESTINATION" ]]; then
     : >"$LOCK_PAUSE_READY_FILE"
-    while [[ ! -e "$LOCK_PAUSE_RELEASE_FILE" ]]; do sleep 0.01; done
+    omp_fixture_wait "$LOCK_PAUSE_RELEASE_FILE" "lock release" || exit $?
   fi
 done
 exec "$LOCK_PAUSE_REAL_RM" "$@"
@@ -628,11 +634,12 @@ stale_claim_ps_release="$fixture_root/stale-claim-ps-release"
 stale_claim_process_release="$fixture_root/stale-claim-process-release"
 cat >"$stale_claim_ps_bin/ps" <<'STALE_CLAIM_PS'
 #!/usr/bin/env bash
+. "${OMP_FIXTURE_SYNC_HELPER:?}"
 set -u
 if [[ "$#" == 4 && "$1" == -p && "$2" == "$STALE_CLAIM_PID" \
   && "$3" == -o && "$4" == lstart= ]]; then
   : >"$STALE_CLAIM_PS_READY"
-  while [[ ! -e "$STALE_CLAIM_PS_RELEASE" ]]; do sleep 0.01; done
+  omp_fixture_wait "$STALE_CLAIM_PS_RELEASE" "stale claim observation release" || exit $?
 fi
 exec "$STALE_CLAIM_REAL_PS" "$@"
 STALE_CLAIM_PS
@@ -957,11 +964,12 @@ reap_race_ps_ready="$fixture_root/reap-race-ps-ready"
 reap_race_ps_release="$fixture_root/reap-race-ps-release"
 cat >"$reap_race_ps_bin/ps" <<'REAP_RACE_PS'
 #!/usr/bin/env bash
+. "${OMP_FIXTURE_SYNC_HELPER:?}"
 set -u
 if [[ "$#" == 4 && "$1" == -p && "$2" == "$REAP_RACE_PID" \
   && "$3" == -o && "$4" == lstart= ]]; then
   : >"$REAP_RACE_PS_READY"
-  while [[ ! -e "$REAP_RACE_PS_RELEASE" ]]; do sleep 0.01; done
+  omp_fixture_wait "$REAP_RACE_PS_RELEASE" "reap race release" || exit $?
 fi
 exec "$REAP_RACE_REAL_PS" "$@"
 REAP_RACE_PS
@@ -2162,10 +2170,11 @@ isolated_fault_bin="$fixture_root/isolated-fault-bin"
 mkdir "$isolated_fault_bin"
 cat >"$isolated_fault_bin/mv" <<'ISOLATED_FAULT_MV'
 #!/usr/bin/env bash
+. "${OMP_FIXTURE_SYNC_HELPER:?}"
 for argument in "$@"; do
   if [[ "$argument" == "$FAIL_PROVIDER_DESTINATION" ]]; then
     : >"$FAIL_PUBLICATION_READY_FILE"
-    while [[ ! -e "$FAIL_PUBLICATION_RELEASE_FILE" ]]; do sleep 0.01; done
+    omp_fixture_wait "$FAIL_PUBLICATION_RELEASE_FILE" "publication release" || exit $?
     printf 'injected concurrent profile publication failure\n' >&2
     exit 73
   fi

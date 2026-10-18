@@ -24,6 +24,16 @@ preparation deletes after the install.
 `mise run rebuild-profiles` reinstalls the retained Native backends and `trx`;
 their installers manage separate installed runtimes.
 
+The OMP contract runs under a 600-second supervisor. Child stdout and stderr go
+to a private log file, so a paused caller cannot block skill setup by leaving
+its output pipe unread. Log replay waits at most two seconds; failed or
+undelivered logs remain in the caller's temporary directory as
+`trellage-omp-contract-*.log`. Successful, fully delivered logs are deleted.
+The supervisor cleans up owned process groups and fixture directories on exit.
+Fixture synchronization waits fail after 30 seconds with the missing release
+path. `make native-omp-profile` includes regressions for unread output, timeout,
+detached-child cleanup, signal cancellation, and missing release files.
+
 Router reinstall preflight distinguishes replacement from execution.
 An owned runtime with unchanged published sources and dependency manifests can
 be replaced even when its file-metadata or dependency inventory has drifted.
@@ -208,6 +218,40 @@ Package and operating-system caches remain warm; these are not machine-cold or
 dependency-cold measurements. The snapshots and their mise trust entries remain
 for inspection; untrust each snapshot before deleting it.
 
+Supplemental coverage tools live in `scripts/exhaustive-*` and
+`scripts/verify-*`. `make test-exhaustive-plan` lists their independent domains
+and commands. `make test-exhaustive-supplemental` runs these scopes, retaining
+reports under `results/exhaustive-TIMESTAMP/`; it exits 2 even if implemented
+scopes pass while full behavior products remain unimplemented. It does not
+replace the canonical `make test-exhaustive` target. Select individual scopes
+with `bash scripts/test-offline.sh --native-sources python3 scripts/test-exhaustive.py
+--scope NAME --output NEW_DIRECTORY`. The shell wrapper supplies deterministic
+local source repositories and delegates isolation and violation reporting to
+the canonical Python wrapper.
+
+These supplemental scopes cover argument parsing, root dispatch, composition,
+clean launches, model/effort/resume propagation, literal command arguments,
+review services, and continuation admission/preparation/launch. Strict mocks
+reject unexpected provider or command operations; verifiers reject partial
+ranges as complete coverage. Full products have not completed. The expanded
+review scope previously exceeded its 3,600,000 ms timeout after storing 31 of
+42 expected generations; it is not a passing handoff proof. Linux execution of
+the supplemental process fixtures remains unvalidated.
+
+`scripts/benchmark-tests.py` offers alternating warm or fresh-worktree runs
+with competing-workload detection, source identities, raw logs, and recipe
+inventory reconciliation. Historical batch `warm-clonefile-11` measured a
+21.80643614681186% gain: reference median 1,631.5310965839308 seconds, candidate
+median 1,275.7523097919766 seconds, and MADs 10.688214833033271 and
+1.355008624959737 seconds. Each side had one warmup and five measured samples;
+all 12 runs passed 54 recipe invocations across 46 targets. The gain of
+355.7787867919542 seconds exceeded the 81.57655482919654-second threshold.
+These figures describe archived sources before the upstream suite changes,
+not this combined revision. Clean-start and reversed confirmation, complete
+exhaustive coverage, and five qualifying no-improvement attempts remain pending.
+No plateau or router optimization is claimed. Generated benchmark JSON is not
+shipped; supporting archives remain outside the repository.
+
 Each recipe in `make test` emits `[test-timing]` start and end records with its
 target name, elapsed seconds, and exit status. Targets with multiple recipe
 lines emit a pair for each line. Failed targets are reported immediately, even
@@ -227,6 +271,11 @@ source installation and UI test workloads. Fixture startup waits must be
 separate from the behavior being measured: cancellation deadlines start only
 after readiness, and blocked services stay blocked until the test explicitly
 releases them. A slow fixture must not look like a cancellation or lock failure.
+
+The review-skill 1,024-entry boundary test uses a fixed clock while retaining
+its 1,025-entry rejection and cleanup assertions. Separate deadline tests advance
+their clocks. The 4,096-file artifact test allows 30,000 ms for filesystem work
+under load while still capturing every file and rejecting file 4,097.
 
 `prototypes/.npmignore` excludes temporary `.contract-fixture.*` and
 `.contract-work` directories from npm packages. The publication contract checks

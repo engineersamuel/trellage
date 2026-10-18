@@ -229,6 +229,18 @@ jq '
 cp "$fixture_root/stale-model-settings.json" "$expected_home/settings.json"
 checks_before_launch="$(grep -Fxc 'config check --skip-remotes' "$agency_command_log")"
 sources_before_launch="$(grep -Fxc 'config list --show-source' "$agency_command_log")"
+  (
+    cd "$worktree"
+    TRELLAGE_TRX_SOURCE_ROOT="$repository_root/prototypes/trellage-router" \
+    TRELLAGE_TRX_NATIVE_SOURCE=1 \
+    "$repository_root/prototypes/trellage-router/bin/trx" run agency azure \
+      --model gpt-5.6-sol --effort high --dry-run
+  ) >"$fixture_root/launch-plan"
+  expected_generation_path="$(sed -n 's/^Generation  //p' "$fixture_root/launch-plan")"
+  expected_generation="${expected_generation_path##*/}"
+  [[ "$expected_generation" =~ ^[0-9a-f]{16}$ ]] || fail 'dry run did not publish an exact generation'
+  jq -e '.harness == "agency" and .profiles == ["preset-agency-azure"] and .alwaysProfiles == ["base"]' \
+    "$expected_generation_path/manifest.json" >/dev/null || fail 'dry run published the wrong profile selection'
 (
   cd "$worktree"
   export TRELLAGE_AGENCY_LIFECYCLE_BIN="$launcher"
@@ -239,8 +251,9 @@ sources_before_launch="$(grep -Fxc 'config list --show-source' "$agency_command_
 )
 jq -e \
   --arg realHome "$fixture_home" \
+  --arg generation "$expected_generation" \
   --arg cwd "$worktree" '
-  (.copilotHome | contains("/native-run/compositions/agency-") and endswith("/generations/2827e3e1810f5a0e"))
+  (.copilotHome | contains("/native-run/compositions/agency-") and endswith("/generations/" + $generation))
   and .home == $realHome
   and .cwd == $cwd
   and .auth == "AzureCliCredential"

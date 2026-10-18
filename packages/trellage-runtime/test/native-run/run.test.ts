@@ -119,6 +119,28 @@ const primeLaunchInput = (root: string, environment: NodeJS.ProcessEnv): LaunchI
 
 const base = { dryRun: false, allowUnprovenIsolation: false, forwardedArgs: [] as string[] }
 
+test("explicitly selecting an always profile preserves each generation's selection metadata", async () => {
+  const fixture = await world(`schema_version = 1
+[native.profiles.core]
+always = true
+`)
+  const generations: string[] = []
+  for (const noAlways of [false, true, false]) {
+    const prepared = await prepareRun(
+      { ...base, harness: "codex", profiles: ["core"], dryRun: true, noAlways },
+      fixture.dependencies(),
+    )
+    const manifest = JSON.parse(await readFile(path.join(prepared.layout.generationPath, "manifest.json"), "utf8"))
+    expect(prepared.plan.profiles).toEqual(["core"])
+    expect(prepared.plan.alwaysProfiles).toEqual(noAlways ? [] : ["core"])
+    expect(manifest.profiles).toEqual(["core"])
+    expect(manifest.alwaysProfiles).toEqual(prepared.plan.alwaysProfiles)
+    generations.push(prepared.plan.generationId)
+  }
+  expect(generations[0]).not.toBe(generations[1])
+  expect(generations[2]).toBe(generations[0])
+})
+
 test("parses harness, stacked profiles, overrides and forwarded arguments", () => {
   expect(parseRunArguments(["pi", "office", "superpowers", "--model", "m", "--effort=high", "--", "-p", "hi"])).toEqual(
     {
@@ -1275,6 +1297,17 @@ test("parses resume requests and prints the matching resume command", () => {
   expect(copilotAdapter.resumeArgs({ kind: "pick", id: "x" })).toEqual(["--resume=x"])
   expect(grokAdapter.resumeArgs({ kind: "pick", id: "x" })).toEqual(["--resume", "x"])
 })
+
+for (const harness of ["fx", "headlong", "agency", "jcode", "omp", "prime"]) {
+  for (const flag of ["--continue", "--resume", "--resume=fixture-session"]) {
+    test(`${harness} rejects unsupported ${flag} before publishing a new session generation`, async () => {
+      const fixture = await world()
+      await expect(prepareRun(parseRunArguments([harness, "office", flag, "--dry-run"]), fixture.dependencies()))
+        .rejects.toMatchObject({ code: "unsupported" })
+      expect(existsSync(fixture.paths.data)).toBe(false)
+    })
+  }
+}
 
 test("canonical launches preserve signal exit status", async () => {
   expect(

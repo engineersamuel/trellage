@@ -76,6 +76,7 @@ name wins. Run trx list to see them. With no profile, only always-on profiles ar
 from a GitHub repository without a configured profile; repeat it for more skills.
 Conversations are kept per harness and profile set. --continue reopens the most recent one in this directory;
 --resume lists them (or --resume=ID opens one). Use the same harness and profiles as the original run.
+These trx resume options support claude, codex, copilot, grok, pi, and uji; other adapters reject them.
 Profile clean launches the harness with no skills, MCP servers, instructions, hooks or plugins from trx, the
 repository or the host, and installs nothing. Supported: claude, codex, copilot, pi.
 A profile with current_working_directory starts the harness there instead of this directory; with repository it
@@ -790,6 +791,11 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
   const adapter = adapterFor(options.harness)
   assertEffort(adapter, options.effort)
   assertForwardedArgs(adapter, options.forwardedArgs)
+  if (options.resume && adapter.resumeArgs(options.resume).length === 0)
+    throw new NativeRunError(
+      "unsupported",
+      `${adapter.label} does not support trx resume options; pass supported native resume arguments after --`,
+    )
   const clean = cleanLaunchFor(adapter, options)
   if (clean) return prepareCleanRun(adapter, clean, options, dependencies, environment, paths)
 
@@ -959,7 +965,8 @@ const launchPreparedRun = async (
       recorded = history.record(keys, prepared.selection).catch(() => undefined)
     }, guard)
     await recorded
-    write(`Resume     ${resumeCommand(options)}`)
+    if (prepared.adapter.resumeArgs({ kind: "continue" }).length > 0)
+      write(`Resume     ${resumeCommand(options)}`)
     return status
   } finally {
     try {

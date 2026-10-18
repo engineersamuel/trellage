@@ -22,6 +22,7 @@ import {
 } from "./guide-launch.ts"
 import type { GuideModelConfig, GuideModelRouting } from "./guide-model-routing.ts"
 import type { OptimizeModelCall, OptimizeReviewInput, OptimizeReviewer } from "./review-findings.ts"
+import type { ReviewClientFactory } from "./copilot-review-provider.ts"
 import type { OptimizeReviewSummary } from "./review-records.ts"
 import {
   assertGuideReviewTargetCurrent,
@@ -93,6 +94,7 @@ export interface GuideReviewDependencies {
   readonly processReader?: typeof getProcessInfo
   readonly readiness?: typeof checkSelectedProfileReadiness
   readonly modelCall?: OptimizeModelCall
+  readonly clientFactory?: ReviewClientFactory
 }
 
 const nativeLaunchers = new Set(["copilot", "codex", "claude"])
@@ -439,6 +441,7 @@ export const createGuideReviewServices = (initialOptions: OptimizeRuntime): Guid
         confirmed: true, runner: options.runner, signal,
         ...(options.env ? { env: options.env } : {}),
         ...(options.dependencies?.modelCall ? { modelCall: options.dependencies.modelCall } : {}),
+        ...(options.dependencies?.clientFactory ? { clientFactory: options.dependencies.clientFactory } : {}),
         onEvent: (event) => {
           events?.(event)
           if (event.kind === "activity") progress(`${event.checkId}: ${event.text}`)
@@ -491,6 +494,7 @@ export const executeGuideReviewTerminal = async (
     ) => Promise<void>
     readonly readiness?: typeof checkSelectedProfileReadiness
     readonly context?: HerdrContext | null
+    readonly dependencies?: Pick<GuideReviewDependencies, "listAgents" | "processReader">
   },
 ): Promise<number> => {
   requireConfirmation(result.request)
@@ -508,6 +512,7 @@ export const executeGuideReviewTerminal = async (
       {
         runner: services.runner,
         context,
+        ...(services.dependencies ? { dependencies: services.dependencies } : {}),
       },
       result.request,
     )

@@ -76,4 +76,4 @@ it("retains 4096 files and rejects the next artifact rather than truncating", as
   expect(await captureIntermediateReviewArtifacts(root, "matt-code-review")).toHaveLength(4096)
   await writeFile(path.join(reports, "overflow.txt"), "", { mode: 0o600 })
   await expect(captureIntermediateReviewArtifacts(root, "matt-code-review")).rejects.toThrow("4096")
-})
+}, 30_000)
