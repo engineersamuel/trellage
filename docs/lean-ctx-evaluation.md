@@ -1,6 +1,6 @@
 # lean-ctx Evaluation — Negative Result
 
-Status: **evaluated, not adopted.** Recorded so the finding is not re-discovered.
+Status: Historical Trellage Sandbox evaluation. `lean-ctx` was not adopted.
 
 Date of measurement: session `019fdc8c`, worktree `worktree-clear-forest-905a`,
 measured live inside the real `claude-council` container against `copilot-proxy-rs`.

@@ -1,14 +1,11 @@
 # Native Prime Agent profile
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend.
 
 `trx run prime PROFILE` runs [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent)
 directly on the host with an isolated profile. It uses keyless
 `copilot-proxy-rs` at `http://127.0.0.1:8080` (Anthropic Messages API), pins
 the provider to `copilot-proxy-rs`, and defaults the model to `claude-opus-5.5`.
-
-This launcher is independent of the Docker `prime-agent` Trellage Sandbox
-profile. Native launchers isolate agent state but are not security boundaries.
 
 ## Requirements
 
@@ -20,7 +17,7 @@ profile. Native launchers isolate agent state but are not security boundaries.
 - `uv` (bootstraps the Prime IPython kernel venv; `mise use -g uv` if missing)
 - `copilot-proxy-rs` listening on `http://127.0.0.1:8080`
 
-No host model credentials are copied. The launcher materializes an owned
+No host model credentials are copied. The private backend materializes an owned
 `models.json` with a dummy proxy API key and restores the exact provider and
 selected model on every launch so persisted edits cannot redirect the endpoint.
 Launch unsets `ANTHROPIC_*`, `OPENAI_API_KEY`, `COPILOT_GITHUB_TOKEN`,
@@ -43,7 +40,7 @@ eligible under `mise` policy on first use, installs the release package into a
 managed npm prefix, and records the exact installed version in the local
 `installed-version` receipt. Ordinary launches reuse that version without a
 network request. Only explicit `trx upgrade prime default` resolves latest again. Updates
-stage and verify a complete npm prefix before publication. The launcher selects
+stage and verify a complete npm prefix before publication. The backend selects
 the `prime-agent-VERSION.tgz` npm archive explicitly. If Mise cached a standalone
 archive at that version, repair replaces that owned cache once before retrying.
 
@@ -65,8 +62,7 @@ without changing it, and reports `busy` while another profile mutation owns
 the lock.
 
 The private backend remains `prx` under
-`~/.local/share/trellage/prx/bin/prx`. Public commands use `trx`; retired
-launcher aliases are not installed on `PATH`.
+`~/.local/share/trellage/prx/bin/prx`. Public commands use `trx`.
 
 Profile state lives at:
 

@@ -58,13 +58,6 @@ grep -Eq 'uv@[0-9]+([.][0-9]+)+' scripts/bootstrap-development-dependencies.sh \
 grep -Eq 'skills@[0-9]+([.][0-9]+)+' scripts/floating-skills.ts \
   && fail 'floating skill materialization pins the skills CLI'
 
-jq -e '
-  [.profiles[].extensions[]?.installSpec] | all(. as $spec |
-    (($spec | test("^npm:")) | not)
-    or (($spec | test("@[0-9]+([.][0-9]+)+([-.+][0-9A-Za-z.-]+)?$")) | not)
-  )
-' prototypes/trellage-picx-profiles/catalog.json >/dev/null \
-  || fail 'Native Pi extension catalog pins an npm package version'
 
 for dockerfile in Dockerfile.agent Dockerfile.copilot-agent Dockerfile.app; do
   grep -Eq '^FROM (node|python):[0-9]' "$dockerfile" \

@@ -29,6 +29,7 @@ import { lifecycleRuntime, lifecycleRuntimeCommand } from "./lifecycle-runtime.t
 import { nativePresetProfiles } from "./presets.ts"
 import { childSettlement } from "./child-settlement.ts"
 import { digestDirectory } from "./source.ts"
+import { pickCopilotSession } from "./session-picker.ts"
 
 const execFileAsync = promisify(execFile)
 
@@ -101,6 +102,11 @@ export interface NativeAdapter {
   readonly persistentState: ReadonlyArray<string>
   /** Harness arguments that reopen a previous conversation. */
   readonly resumeArgs: (resume: ResumeRequest) => ReadonlyArray<string>
+  /** Selects a session for a bare --resume before any harness process starts. Undefined cancels the launch. */
+  readonly pickResumeSession?: (input: {
+    readonly ownerHome: string
+    readonly workspace: string
+  }) => Promise<string | undefined>
   readonly launch: (input: LaunchInput) => LaunchCommand
   /** Final launch-only environment, prepared after dry-run handling and lease acquisition. */
   readonly beforeLaunch?: (input: LaunchInput) => Promise<Readonly<Record<string, string | null>>>
@@ -1618,10 +1624,14 @@ const copilotLaunch = ({
   planMode,
 }: LaunchInput): LaunchCommand => {
   const planning = planMode === true || forwardedArgs.includes("--plan")
+  // Autopilot makes the model finish through task_complete, whose summary `-p` never prints.
+  const oneShot = forwardedArgs.some(
+    (argument) => argument === "-p" || argument === "--prompt" || argument.startsWith("--prompt="),
+  )
   return {
     command: binary(environment, "TRELLAGE_COPILOT_BIN", "copilot"),
     args: [
-      ...(planning ? ["--plan"] : ["--autopilot", "--allow-all", "--no-ask-user"]),
+      ...(planning ? ["--plan"] : [...(oneShot ? [] : ["--autopilot"]), "--allow-all", "--no-ask-user"]),
       "--model",
       model ?? "gpt-6-astra",
       "--effort",
@@ -1745,6 +1755,7 @@ export const copilotAdapter: NativeAdapter = {
   persistentState: ["session-state"],
   resumeArgs: (resume) =>
     resume.kind === "continue" ? ["--continue"] : resume.id ? [`--resume=${resume.id}`] : ["--resume"],
+  pickResumeSession: ({ ownerHome, workspace }) => pickCopilotSession(ownerHome, workspace),
   launch: copilotLaunch,
   resolveLaunch: async (input, planned) => {
     const profile = lifecycleProfile(input.plan, "copilot", "hve")

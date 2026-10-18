@@ -28,8 +28,6 @@ installed_catalog="$install_root/catalog.json"
 installed_model_settings="$install_root/copilot-model-settings.py"
 model_settings_source="$source_dir/../../scripts/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-agency-profiles"
-command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/agx"
 
 require_safe_directory() {
   local path="$1" expected="$2" description="$3" resolved
@@ -44,21 +42,12 @@ require_safe_directory "$local_dir" "$canonical_home/.local" 'local directory'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'share directory'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/agx" 'runtime root'
-require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
-runtime_owned=false
 if [[ -e "$install_root" ]]; then
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" && -r "$ownership_marker" ]] \
     || refuse "refusing unowned runtime root: $install_root"
   [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
     || refuse "refusing unowned runtime root: $install_root"
-  runtime_owned=true
-fi
-if [[ -e "$command_path" || -L "$command_path" ]]; then
-  [[ "$runtime_owned" == true && -L "$command_path" ]] \
-    || refuse "refusing to replace unrelated command: $command_path"
-  [[ "$(readlink "$command_path")" == "$installed_launcher" ]] \
-    || refuse "refusing to replace unrelated command: $command_path"
 fi
 
 [[ -f "$model_settings_source" && ! -L "$model_settings_source" ]] \
@@ -74,7 +63,7 @@ for path in "$installed_launcher" "$installed_catalog" "$ownership_marker"; do
 done
 
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
-mkdir -p "$runtime_bin" "$command_dir"
+mkdir -p "$runtime_bin"
 require_safe_directory "$runtime_bin" "$canonical_home/.local/share/trellage/agx/bin" 'runtime bin'
 launcher_stage="$(mktemp "$runtime_bin/.agx.XXXXXX")" || refuse 'cannot stage launcher'
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")" || {
@@ -101,19 +90,7 @@ mv -f "$catalog_stage" "$installed_catalog"
 mv -f "$marker_stage" "$ownership_marker"
 trap - EXIT
 
-if [[ ! -L "$command_path" ]]; then
-  command_stage="$(mktemp -d "$command_dir/.agx-command.XXXXXX")" \
-    || refuse 'cannot stage command'
-  trap 'rm -f -- "$command_stage/agx"; rmdir "$command_stage" 2>/dev/null || true' EXIT
-  ln -s "$installed_launcher" "$command_stage/agx"
-  mv "$command_stage/agx" "$command_path"
-  rmdir "$command_stage"
-  trap - EXIT
-fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
-printf 'Installed agx at %s\n' "$command_path"
-
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" agx "$installed_launcher" "$ownership_marker" "$ownership_value"
+printf 'Installed agx at %s\n' "$installed_launcher"

@@ -1,4 +1,4 @@
-import { isKnownNativeLauncher, type AdminProfileEntry } from "./admin-model.ts"
+import type { AdminProfileEntry } from "./admin-model.ts"
 import type { CommandRunner, CommandSpec } from "./guide-launch.ts"
 import { runProfileUpdateStep, runUpdateCommand, type ProfileUpdateResult, type UpdateCommandResult } from "./admin-update-command.ts"
 
@@ -22,14 +22,13 @@ export const nativeSkillsUpdatePlanFor = (
   entries: ReadonlyArray<AdminProfileEntry>,
   routerCommandPath: string,
 ): NativeSkillsUpdatePlan | undefined => {
-  const targets = entries.filter((entry) => entry.surface === "native" && entry.launcher !== "headlong")
+  const targets = entries.filter((entry) => entry.lifecycle !== null)
   return targets.length === 0 ? undefined : { refresh: { executable: routerCommandPath, args: ["skills", "update"] }, targets }
 }
 
 export const nativeSkillsUpdateCommand = (entry: AdminProfileEntry): CommandSpec | undefined => {
-  if (entry.launcher === undefined || !isKnownNativeLauncher(entry.launcher) || entry.commandPath.length === 0) return undefined
-  if (entry.launcher === "headlong") return undefined
-  return { executable: entry.commandPath, args: ["upgrade", entry.launcher!, entry.name, "--skills-only"] }
+  if (entry.lifecycle === null || entry.commandPath.length === 0) return undefined
+  return { executable: entry.commandPath, args: ["upgrade", entry.harness, ...entry.profiles, "--skills-only"] }
 }
 
 export const runNativeSkillsUpdate = async (

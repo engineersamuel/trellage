@@ -77,13 +77,12 @@ class LiveContract:
 @dataclass(frozen=True)
 class MatrixConfig:
     adapters: dict[str, Adapter]
-    launchers: dict[str, str]
+    harnesses: dict[str, str]
     live: LiveContract
 
 
 @dataclass(frozen=True)
 class Profile:
-    launcher: str
     harness: str
     name: str
 
@@ -263,7 +262,7 @@ def parse_adapter(name: str, value: Any, defaults: dict[str, Any]) -> Adapter:
         validate_template(
             value,
             f"adapter {name}.launchArgs[{index}]",
-            frozenset({"launcher", "profile", "sessionId"}),
+            frozenset({"harness", "profile", "sessionId"}),
         )
         for index, value in enumerate(launch_args)
     )
@@ -344,19 +343,19 @@ def parse_live(value: Any) -> LiveContract:
     )
 
 
-def parse_launchers(value: Any, adapters: dict[str, Adapter]) -> dict[str, str]:
-    raw = require_object(value, "launchers")
-    launchers: dict[str, str] = {}
-    for launcher, adapter_name_value in raw.items():
-        if not NAME_PATTERN.fullmatch(launcher):
-            raise MatrixFailure(f"invalid launcher name in config: {launcher}")
-        adapter_name = require_string(adapter_name_value, f"launcher {launcher} adapter")
+def parse_harnesses(value: Any, adapters: dict[str, Adapter]) -> dict[str, str]:
+    raw = require_object(value, "harnesses")
+    harnesses: dict[str, str] = {}
+    for harness, adapter_name_value in raw.items():
+        if not NAME_PATTERN.fullmatch(harness):
+            raise MatrixFailure(f"invalid harness name in config: {harness}")
+        adapter_name = require_string(adapter_name_value, f"harness {harness} adapter")
         if adapter_name not in adapters:
-            raise MatrixFailure(f"launcher {launcher} references unknown adapter: {adapter_name}")
-        launchers[launcher] = adapter_name
-    if not launchers:
-        raise MatrixFailure("launchers must not be empty")
-    return launchers
+            raise MatrixFailure(f"harness {harness} references unknown adapter: {adapter_name}")
+        harnesses[harness] = adapter_name
+    if not harnesses:
+        raise MatrixFailure("harnesses must not be empty")
+    return harnesses
 
 
 def load_config(path: Path) -> MatrixConfig:
@@ -365,7 +364,7 @@ def load_config(path: Path) -> MatrixConfig:
     except (OSError, json.JSONDecodeError) as error:
         raise MatrixFailure(f"cannot read adapter config {path}: {error}") from error
     root = require_object(raw, "adapter config")
-    required = {"schemaVersion", "defaults", "live", "adapters", "launchers"}
+    required = {"schemaVersion", "defaults", "live", "adapters", "harnesses"}
     if set(root) != required or root["schemaVersion"] != 1:
         raise MatrixFailure("adapter config schema differs")
     defaults = parse_defaults(root["defaults"])
@@ -373,7 +372,7 @@ def load_config(path: Path) -> MatrixConfig:
     adapters = {name: parse_adapter(name, value, defaults) for name, value in adapter_values.items()}
     return MatrixConfig(
         adapters=adapters,
-        launchers=parse_launchers(root["launchers"], adapters),
+        harnesses=parse_harnesses(root["harnesses"], adapters),
         live=parse_live(root["live"]),
     )
 
@@ -397,47 +396,39 @@ def run_json(command: list[str], timeout: float) -> dict[str, Any]:
     return require_object(value, f"{' '.join(command)} output")
 
 
-LEGACY_HARNESSES = {"agx": "agency", "cdx": "codex", "cldx": "claude", "cpx": "copilot", "jcx": "jcode", "picx": "pi", "prx": "prime"}
-
-
-def canonical_identity(launcher: str, profile: str) -> tuple[str, str]:
-    harness = LEGACY_HARNESSES.get(launcher, launcher)
-    if harness == "agency" and profile == "trellage-azure":
-        profile = "azure"
-    if harness == "omp" and profile == "copilot":
-        profile = "default"
-    return harness, profile
-
-
-def parse_profile(value: Any) -> Profile:
-    raw = require_object(value, "profile")
-    launcher = require_string(raw.get("launcher"), "profile.launcher")
-    harness = require_string(raw.get("harness"), "profile.harness")
-    name = require_string(raw.get("name"), "profile.name")
-    if not NAME_PATTERN.fullmatch(launcher) or not NAME_PATTERN.fullmatch(name):
-        raise MatrixFailure(f"invalid discovered profile: {launcher}/{name}")
-    launcher, name = canonical_identity(launcher, name)
-    return Profile(launcher=launcher, harness=harness, name=name)
+def parse_profile(harness: str, name: Any) -> Profile:
+    if not NAME_PATTERN.fullmatch(harness):
+        raise MatrixFailure(f"invalid discovered harness: {harness}")
+    profile = require_string(name, f"{harness} profile")
+    if not NAME_PATTERN.fullmatch(profile):
+        raise MatrixFailure(f"invalid discovered profile: {harness}/{profile}")
+    return Profile(harness=harness, name=profile)
 
 
 def discover_profiles(trx: str) -> list[Profile]:
     catalog = run_json([trx, "list", "--json"], 60)
-    if catalog.get("schemaVersion") != 1 or not isinstance(catalog.get("profiles"), list):
+    harnesses = catalog.get("harnesses")
+    if catalog.get("schemaVersion") != 2 or not isinstance(harnesses, list):
         raise MatrixFailure("trx list --json schema differs")
-    profiles = [parse_profile(value) for value in catalog["profiles"]]
+    profiles: list[Profile] = []
+    for value in harnesses:
+        raw = require_object(value, "harness")
+        harness = require_string(raw.get("harness"), "harness.harness")
+        names = require_string_list(raw.get("presets"), f"{harness}.presets", allow_empty=True)
+        profiles.extend(parse_profile(harness, name) for name in names)
     if not profiles:
         raise MatrixFailure("trx list --json returned no profiles")
-    identities = [(profile.launcher, profile.name) for profile in profiles]
+    identities = [(profile.harness, profile.name) for profile in profiles]
     if len(identities) != len(set(identities)):
         raise MatrixFailure("trx list --json returned duplicate profiles")
     return profiles
 
 
-def selected_profiles(profiles: list[Profile], launchers: set[str], names: set[str]) -> list[Profile]:
+def selected_profiles(profiles: list[Profile], harnesses: set[str], names: set[str]) -> list[Profile]:
     selected = [
         profile
         for profile in profiles
-        if (not launchers or profile.launcher in launchers) and (not names or profile.name in names)
+        if (not harnesses or profile.harness in harnesses) and (not names or profile.name in names)
     ]
     if not selected:
         raise MatrixFailure("profile filters matched no discovered profile")
@@ -447,19 +438,19 @@ def selected_profiles(profiles: list[Profile], launchers: set[str], names: set[s
 def validate_discovery(
     config: MatrixConfig,
     profiles: list[Profile],
-    launchers: set[str],
+    harnesses: set[str],
     names: set[str],
 ) -> None:
-    discovered_launchers = {profile.launcher for profile in profiles}
-    missing_adapters = sorted(discovered_launchers - set(config.launchers))
+    discovered_harnesses = {profile.harness for profile in profiles}
+    missing_adapters = sorted(discovered_harnesses - set(config.harnesses))
     if missing_adapters:
         raise MatrixFailure(
-            "no PTY adapter for discovered launcher: " + ", ".join(missing_adapters)
+            "no PTY adapter for discovered harness: " + ", ".join(missing_adapters)
         )
-    unknown_launchers = sorted(launchers - discovered_launchers)
-    if unknown_launchers:
+    unknown_harnesses = sorted(harnesses - discovered_harnesses)
+    if unknown_harnesses:
         raise MatrixFailure(
-            "launcher filter was not discovered: " + ", ".join(unknown_launchers)
+            "harness filter was not discovered: " + ", ".join(unknown_harnesses)
         )
     discovered_names = {profile.name for profile in profiles}
     unknown_names = sorted(names - discovered_names)
@@ -471,32 +462,33 @@ def validate_discovery(
 
 def validate_selected_filters(
     selected: list[Profile],
-    launchers: set[str],
+    harnesses: set[str],
     names: set[str],
 ) -> None:
-    selected_launchers = {profile.launcher for profile in selected}
-    missing_launchers = sorted(launchers - selected_launchers)
-    if missing_launchers:
+    selected_harnesses = {profile.harness for profile in selected}
+    missing_harnesses = sorted(harnesses - selected_harnesses)
+    if missing_harnesses:
         raise MatrixFailure(
-            "launcher filter matched no selected profile: " + ", ".join(missing_launchers)
+            "harness filter matched no selected profile: " + ", ".join(missing_harnesses)
         )
     selected_names = {profile.name for profile in selected}
     missing_names = sorted(names - selected_names)
     if missing_names:
         raise MatrixFailure(
-            "profile filter matched no selected launcher: " + ", ".join(missing_names)
+            "profile filter matched no selected harness: " + ", ".join(missing_names)
         )
 
 
 def inventory_readiness(trx: str, profile: Profile) -> tuple[str, str | None]:
-    command = [trx, "inventory", profile.launcher, profile.name, "--json"]
+    command = [trx, "inventory", profile.harness, profile.name, "--json"]
     try:
         inventory = run_json(command, 60)
     except MatrixFailure as error:
         return "error", str(error)
     if (
-        inventory.get("schemaVersion") != 1
-        or canonical_identity(str(inventory.get("launcher")), str(inventory.get("profile"))) != (profile.launcher, profile.name)
+        inventory.get("schemaVersion") != 2
+        or inventory.get("harness") != profile.harness
+        or inventory.get("profiles") != [profile.name]
     ):
         return "error", "inventory identity differs"
     readiness = inventory.get("readiness")
@@ -891,7 +883,7 @@ def encoded_ascii(value: str) -> str:
 
 
 def live_markers(profile: Profile) -> tuple[str, str, str]:
-    identity = re.sub(r"[^A-Z0-9]+", "_", f"{profile.launcher}_{profile.name}".upper()).strip("_")
+    identity = re.sub(r"[^A-Z0-9]+", "_", f"{profile.harness}_{profile.name}".upper()).strip("_")
     first = f"TUI_MATRIX_{identity}_{uuid.uuid4().hex[:10].upper()}"
     return first, f"{first}_TWO", f"{first}_SKILL"
 
@@ -1043,7 +1035,6 @@ def empty_stages(live: bool) -> dict[str, str]:
 
 def profile_result(profile: Profile, live: bool) -> dict[str, Any]:
     return {
-        "launcher": profile.launcher,
         "harness": profile.harness,
         "profile": profile.name,
         "mode": "live" if live else "lifecycle",
@@ -1058,21 +1049,21 @@ def profile_result(profile: Profile, live: bool) -> dict[str, Any]:
 
 def prepare_command(trx: str, profile: Profile, adapter: Adapter) -> list[str]:
     context = {
-        "launcher": profile.launcher,
+        "harness": profile.harness,
         "profile": profile.name,
         "sessionId": str(uuid.uuid4()),
     }
     launch_args = render_values(adapter.launch_args, context)
-    command = [trx, "run", profile.launcher, profile.name]
+    command = [trx, "run", profile.harness, profile.name]
     if launch_args:
         command.extend(["--", *launch_args])
     return command
 
 
 def adapter_for_profile(config: MatrixConfig, profile: Profile) -> Adapter:
-    adapter_name = config.launchers.get(profile.launcher)
+    adapter_name = config.harnesses.get(profile.harness)
     if adapter_name is None:
-        raise MatrixFailure(f"no PTY adapter for discovered launcher: {profile.launcher}")
+        raise MatrixFailure(f"no PTY adapter for discovered harness: {profile.harness}")
     return config.adapters[adapter_name]
 
 
@@ -1098,7 +1089,7 @@ def run_profile(
         result["errors"].append(detail or f"preflight readiness is {readiness}")
         return result
     stages["preflight"] = "pass"
-    raw_path = evidence_dir / f"{profile.launcher}-{profile.name}.raw"
+    raw_path = evidence_dir / f"{profile.harness}-{profile.name}.raw"
     command = prepare_command(trx, profile, adapter)
     result["command"] = command
     process: PtyProcess | None = None
@@ -1224,8 +1215,8 @@ def escape_cell(value: str) -> str:
 
 def print_table(result: dict[str, Any]) -> None:
     live = result["mode"] == "live"
-    columns = ["Launcher", "Profile", "Preflight", "Ready"]
-    keys = ["launcher", "profile", "preflight", "ready"]
+    columns = ["Harness", "Profile", "Preflight", "Ready"]
+    keys = ["harness", "profile", "preflight", "ready"]
     if live:
         columns.extend(["Turn 1", "Turn 2", "Skill"])
         keys.extend(["turnOne", "turnTwo", "skill"])
@@ -1242,7 +1233,7 @@ def print_table(result: dict[str, Any]) -> None:
     print(f"\nEvidence: {result['evidenceDirectory']}")
     for profile in result["profiles"]:
         for error in profile["errors"]:
-            print(f"{profile['launcher']}/{profile['profile']}: {error}", file=sys.stderr)
+            print(f"{profile['harness']}/{profile['profile']}: {error}", file=sys.stderr)
 
 
 def parse_args() -> argparse.Namespace:
@@ -1251,7 +1242,7 @@ def parse_args() -> argparse.Namespace:
         description="Run sequential PTY lifecycle or live checks for profiles discovered from trx.",
     )
     parser.add_argument("--live", action="store_true", help="run paid multi-turn and skill probes")
-    parser.add_argument("--launcher", action="append", default=[], help="select a launcher; repeatable")
+    parser.add_argument("--harness", action="append", default=[], help="select a harness; repeatable")
     parser.add_argument("--profile", action="append", default=[], help="select a profile name; repeatable")
     parser.add_argument("--json", action="store_true", help="write the result JSON to stdout")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="adapter configuration file")
@@ -1287,11 +1278,11 @@ def main() -> int:
         arguments = parse_args()
         config = load_config(Path(arguments.config).expanduser().resolve())
         discovered = discover_profiles(arguments.trx)
-        launcher_filters = {LEGACY_HARNESSES.get(name, name) for name in arguments.launcher}
+        harness_filters = set(arguments.harness)
         profile_filters = set(arguments.profile)
-        validate_discovery(config, discovered, launcher_filters, profile_filters)
-        profiles = selected_profiles(discovered, launcher_filters, profile_filters)
-        validate_selected_filters(profiles, launcher_filters, profile_filters)
+        validate_discovery(config, discovered, harness_filters, profile_filters)
+        profiles = selected_profiles(discovered, harness_filters, profile_filters)
+        validate_selected_filters(profiles, harness_filters, profile_filters)
         evidence_dir = prepare_evidence_dir(arguments.evidence_dir)
         results = [
             run_profile(arguments.trx, config, profile, evidence_dir, arguments.live)

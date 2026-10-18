@@ -1,33 +1,14 @@
 #!/usr/bin/env bun
 import { constants, openSync } from "node:fs"
-import { readFile, writeFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 import { createInterface } from "node:readline"
 import tty from "node:tty"
 import path from "node:path"
-import React, { useMemo, useState } from "react"
-import { Box, Text, render, useApp, useInput, useWindowSize } from "ink"
-import { parseLaunchCatalog, type LaunchCatalog } from "./catalog.ts"
-import { detailRows, type DetailRow } from "./detail-layout.ts"
-import {
-  handleCommandInput,
-  handleCustomModelInput,
-  handleDetailsInput,
-  handleModelInput,
-  handleSearchInput,
-  type LaunchTarget,
-} from "./input.ts"
-import { tableColumns } from "./table-layout.ts"
-import { resolveTerminalSymbol } from "./termcn/terminal-symbols.ts"
-import { hintText } from "./terminal-hint.ts"
-import { resolveBorderStyle } from "./termcn/terminal-style.ts"
-import { useTheme } from "./termcn/use-theme.ts"
-import { useUnicode } from "./termcn/use-unicode.ts"
-import { ThemeProvider } from "./termcn/theme-provider.tsx"
-import { trellageTheme } from "./termcn/theme-trellage.ts"
-import { enrichNativeProfileList } from "./native-guide-list.ts"
-import { createLauncherState, visibleEntries, type LaunchEntry, type LauncherState } from "./state.ts"
+import React from "react"
+import { render } from "ink"
 import { guideHeadlessHelpText, parseGuideHeadlessArgv, resolveGuideModelRouting } from "./guide-api.ts"
-import { readGuideCatalog, runGuideJsonCommand } from "./guide-command.ts"
+import { runGuideJsonCommand } from "./guide-command.ts"
+import { loadCompositionCatalog, type CompositionCatalog } from "./composition-catalog.ts"
 import { CopilotGuideProvider } from "./copilot-guide-provider.ts"
 import { popupGuideIntentFileEnvironmentVariable, resolveInteractiveGuideIntent } from "./guide-interactive-intent.ts"
 import { CopilotGoalAugmentProvider } from "./copilot-goal-augment-provider.ts"
@@ -85,14 +66,7 @@ import {
 import { parseContextMenuUiRequest, runContextMenuCommand } from "./context-menu-command.ts"
 import { runContextMenuUi } from "./context-menu-ui.tsx"
 
-interface LaunchIntent {
-  readonly id: string
-  readonly target: LaunchTarget
-  readonly model?: string
-}
-
-const readInput = async (filename: string | undefined): Promise<string> => {
-  if (filename !== undefined) return readFile(filename, "utf8")
+const readInput = async (): Promise<string> => {
   const chunks: Array<Buffer> = []
   let length = 0
   for await (const chunk of process.stdin) {
@@ -144,509 +118,11 @@ const readContextMenuWorkerInput = async (onDisconnect: () => void): Promise<{
   }
 }
 
-const selectedEntry = (state: LauncherState) => state.entries.find(({ id }) => id === state.selectedId)
-const detailColors: Record<
-  NonNullable<DetailRow["label"]>,
-  "blue" | "cyan" | "gray" | "green" | "magenta" | "yellow"
-> = {
-  Command: "green",
-  Binary: "blue",
-  Arguments: "yellow",
-  Description: "cyan",
-  Harness: "yellow",
-  Model: "magenta",
-  Plugins: "blue",
-  Run: "green",
-  Skills: "green",
-  MCPs: "cyan",
-  Sandbox: "green",
-  Status: "gray",
-}
 
-/**
- * The row pointer and the text caret. Both are purely decorative accents on
- * top of a selection that is also carried by color and bold weight, so the
- * ASCII substitutes only need to occupy the same single cell.
- */
-const usePointer = (): string => resolveTerminalSymbol(useUnicode(), "❯", ">")
-const useCaret = (): string => resolveTerminalSymbol(useUnicode(), "█", "_")
-
-const useHint = (): ((hint: string) => string) => {
-  const unicode = useUnicode()
-  return (hint: string) => hintText(hint, unicode)
-}
-
-const DetailLine = ({ row }: { readonly row: DetailRow }) => (
-  <Text wrap="wrap">
-    {row.label === undefined ? (
-      "  "
-    ) : (
-      <Text bold color={detailColors[row.label]}>
-        {row.label}:{" "}
-      </Text>
-    )}
-    {row.text}
-  </Text>
-)
-
-const DetailsView = ({
-  selected,
-  expandedDetails,
-  visibleDetails,
-  detailOffset,
-  detailCapacity,
-}: {
-  readonly selected: LaunchEntry
-  readonly expandedDetails: ReadonlyArray<DetailRow>
-  readonly visibleDetails: ReadonlyArray<DetailRow>
-  readonly detailOffset: number
-  readonly detailCapacity: number
-}) => {
-  const theme = useTheme()
-  const hint = useHint()
-  return (
-  <Box flexDirection="column" paddingX={1}>
-    <Box justifyContent="space-between">
-      <Text bold color={theme.colors.primary}>
-        Profile details
-      </Text>
-      <Text dimColor>
-        {detailOffset + 1}–{Math.min(expandedDetails.length, detailOffset + detailCapacity)} of {expandedDetails.length}
-      </Text>
-    </Box>
-    <Text>
-      <Text bold color={theme.colors.selection}>
-        {selected.profile}
-      </Text>{" "}
-      <Text dimColor>· {selected.harness}</Text>
-    </Text>
-    <Box flexDirection="column" marginTop={1}>
-      {visibleDetails.map((row, index) => (
-        <DetailLine key={`${detailOffset + index}:${row.label ?? "continuation"}`} row={row} />
-      ))}
-    </Box>
-    <Text dimColor>{hint("↑/↓ or j/k scroll · D/Esc/q back")}</Text>
-  </Box>
-  )
-}
-
-type TableWidths = ReturnType<typeof tableColumns>
-
-const ProfileTable = ({
-  shown,
-  state,
-  widths,
-}: {
-  readonly shown: ReadonlyArray<LaunchEntry>
-  readonly state: LauncherState
-  readonly widths: TableWidths
-}) => {
-  const theme = useTheme()
-  const pointer = usePointer()
-  return (
-  <Box flexDirection="column" marginTop={1}>
-    <Box>
-      <Box width={2}>
-        <Text> </Text>
-      </Box>
-      <Box width={widths.harness}>
-        <Text bold color={theme.colors.warning}>
-          HARNESS
-        </Text>
-      </Box>
-      <Box width={widths.profile}>
-        <Text bold color={theme.colors.primary}>
-          PROFILE
-        </Text>
-      </Box>
-      <Box width={widths.sandbox}>
-        {widths.sandbox === 0 ? null : (
-          <Text bold color={theme.colors.success}>
-            SANDBOX
-          </Text>
-        )}
-      </Box>
-      <Box width={widths.model}>
-        <Text bold color={theme.colors.accent}>
-          MODEL
-        </Text>
-      </Box>
-    </Box>
-    {shown.length === 0 ? (
-      <Text color={theme.colors.warning}>No matching profiles</Text>
-    ) : (
-      shown.map((entry) => {
-        const active = entry.id === state.selectedId
-        const entryModel = state.modelByEntry[entry.id] ?? entry.defaultModel
-        const modelLabel =
-          entryModel === undefined ? "—" : `${entryModel}${entry.modelOverrideSupported ? "" : " (pinned)"}`
-        const sandboxLabel = entry.sandbox === undefined ? "—" : entry.sandbox ? "true" : "false"
-        return (
-          <Box key={entry.id}>
-            <Box width={2}>
-              <Text bold={active} {...(active ? { color: theme.colors.selection } : {})}>
-                {active ? `${pointer} ` : "  "}
-              </Text>
-            </Box>
-            <Box width={widths.harness}>
-              <Text bold={active} color={theme.colors.warning} dimColor={!active} wrap="truncate-end">
-                {entry.harness}
-              </Text>
-            </Box>
-            <Box width={widths.profile}>
-              <Text bold={active} color={theme.colors.primary} dimColor={!active} wrap="truncate-end">
-                {entry.profile}
-              </Text>
-            </Box>
-            <Box width={widths.sandbox}>
-              {widths.sandbox === 0 ? null : (
-                <Text bold={active} color={theme.colors.success} dimColor={!active} wrap="truncate-end">
-                  {sandboxLabel}
-                </Text>
-              )}
-            </Box>
-            <Box width={widths.model}>
-              <Text bold={active} color={theme.colors.accent} dimColor={!active} wrap="truncate-end">
-                {modelLabel}
-              </Text>
-            </Box>
-          </Box>
-        )
-      })
-    )}
-  </Box>
-  )
-}
-
-const SelectionSummary = ({
-  selected,
-  summaryRows,
-  summaryTruncated,
-}: {
-  readonly selected: LaunchEntry | undefined
-  readonly summaryRows: ReadonlyArray<DetailRow>
-  readonly summaryTruncated: boolean
-}) => {
-  const theme = useTheme()
-  return (
-    <Box
-      flexDirection="column"
-      marginTop={1}
-      borderStyle={resolveBorderStyle("round", useUnicode())}
-      borderColor={theme.colors.primary}
-      paddingX={1}
-    >
-      {selected === undefined ? (
-        <Text>Adjust the search to select a profile.</Text>
-      ) : (
-        <>
-          <Text>
-            <Text bold color={theme.colors.selection}>
-              {selected.profile}
-            </Text>{" "}
-            <Text dimColor>· {selected.harness}</Text>
-          </Text>
-          {summaryRows.map((row, index) => (
-            <DetailLine key={`${index}:${row.label ?? "continuation"}`} row={row} />
-          ))}
-          {summaryTruncated ? (
-            <Text color={theme.colors.warning}>More metadata available — press D for full details.</Text>
-          ) : null}
-        </>
-      )}
-    </Box>
-  )
-}
-
-const ModelChooser = ({
-  selected,
-  modelIndex,
-  editingCustomModel,
-  customModel,
-}: {
-  readonly selected: LaunchEntry
-  readonly modelIndex: number
-  readonly editingCustomModel: boolean
-  readonly customModel: string
-}) => {
-  const theme = useTheme()
-  const pointer = usePointer()
-  const caret = useCaret()
-  return (
-    <Box
-      flexDirection="column"
-      borderStyle={resolveBorderStyle("double", useUnicode())}
-      borderColor={theme.colors.accent}
-      paddingX={1}
-    >
-      <Text bold>Select model</Text>
-      {selected.models.map((candidate, index) => (
-        <Text key={candidate} {...(index === modelIndex ? { color: theme.colors.accent } : {})}>
-          {index === modelIndex ? `${pointer} ` : "  "}
-          {candidate}
-          {candidate === selected.defaultModel ? " (default)" : ""}
-        </Text>
-      ))}
-      <Text {...(modelIndex === selected.models.length ? { color: theme.colors.accent } : {})}>
-        {modelIndex === selected.models.length ? `${pointer} ` : "  "}Custom…
-      </Text>
-      {editingCustomModel ? (
-        <Text>
-          Model ID:{" "}
-          <Text color={theme.colors.warning}>
-            {customModel}
-            {caret}
-          </Text>
-        </Text>
-      ) : null}
-    </Box>
-  )
-}
-
-const ShortcutHelp = ({
-  searching,
-  herdrAvailable,
-  remoteAvailable,
-}: {
-  readonly searching: boolean
-  readonly herdrAvailable: boolean
-  readonly remoteAvailable: boolean
-}) => {
-  const hint = useHint()
-  return (
-    <Text dimColor>
-      {hint(
-        searching
-          ? "Type to filter · ↑↓ move · ↵ launch · Esc commands · Ctrl-C cancel"
-          : `↑↓ move · / search · S sort · M model · D details · ↵ launch${herdrAvailable ? " · H Herdr" : ""}${remoteAvailable ? " · R Remote" : ""} · Esc`,
-      )}
-    </Text>
-  )
-}
-
-const SelectionView = ({
-  catalog,
-  state,
-  searching,
-  herdrAvailable,
-  remoteAvailable,
-  shown,
-  widths,
-  selected,
-  summaryRows,
-  summaryTruncated,
-  choosingModel,
-  modelIndex,
-  editingCustomModel,
-  customModel,
-}: {
-  readonly catalog: LaunchCatalog
-  readonly state: LauncherState
-  readonly searching: boolean
-  readonly herdrAvailable: boolean
-  readonly remoteAvailable: boolean
-  readonly shown: ReadonlyArray<LaunchEntry>
-  readonly widths: TableWidths
-  readonly selected: LaunchEntry | undefined
-  readonly summaryRows: ReadonlyArray<DetailRow>
-  readonly summaryTruncated: boolean
-  readonly choosingModel: boolean
-  readonly modelIndex: number
-  readonly editingCustomModel: boolean
-  readonly customModel: string
-}) => {
-  const theme = useTheme()
-  const caret = useCaret()
-  return (
-  <Box flexDirection="column" paddingX={1}>
-    <Box justifyContent="space-between">
-      <Text bold color={theme.colors.primary}>
-        {catalog.prompt}
-      </Text>
-      <Text dimColor>
-        Sort: {state.sort} · Herdr: {herdrAvailable ? "available" : "unavailable"} · Remote:{" "}
-        {remoteAvailable ? "available" : "unavailable"}
-      </Text>
-    </Box>
-    {catalog.description === undefined ? null : (
-      <Text wrap="wrap">
-        <Text bold color={theme.colors.info}>
-          Context:{" "}
-        </Text>
-        {catalog.description}
-      </Text>
-    )}
-    <Text {...(searching ? { color: theme.colors.warning } : {})}>
-      Search: {state.query}
-      {searching ? caret : ""}
-    </Text>
-    <ProfileTable shown={shown} state={state} widths={widths} />
-    <SelectionSummary selected={selected} summaryRows={summaryRows} summaryTruncated={summaryTruncated} />
-    {choosingModel && selected !== undefined ? (
-      <ModelChooser
-        selected={selected}
-        modelIndex={modelIndex}
-        editingCustomModel={editingCustomModel}
-        customModel={customModel}
-      />
-    ) : null}
-    <ShortcutHelp searching={searching} herdrAvailable={herdrAvailable} remoteAvailable={remoteAvailable} />
-  </Box>
-  )
-}
-
-const Launcher = ({
-  catalog,
-  herdrAvailable,
-  remoteAvailable,
-}: {
-  readonly catalog: LaunchCatalog
-  readonly herdrAvailable: boolean
-  readonly remoteAvailable: boolean
-}) => {
-  const { exit } = useApp()
-  const { columns, rows } = useWindowSize()
-  const [state, updateState] = useState(() => createLauncherState(catalog.entries))
-  const [searching, setSearching] = useState(true)
-  const [choosingModel, setChoosingModel] = useState(false)
-  const [modelIndex, setModelIndex] = useState(0)
-  const [editingCustomModel, setEditingCustomModel] = useState(false)
-  const [customModel, setCustomModel] = useState("")
-  const [showingDetails, setShowingDetails] = useState(false)
-  const [detailOffset, setDetailOffset] = useState(0)
-  const visible = useMemo(() => visibleEntries(state), [state])
-  const selected = selectedEntry(state)
-  const selectedModel = selected === undefined ? undefined : state.modelByEntry[selected.id]
-  const model = selected === undefined ? undefined : (selectedModel ?? selected.defaultModel)
-  const forwardedModel =
-    selectedModel === undefined || selectedModel === selected?.defaultModel ? undefined : selectedModel
-  const expandedDetails = useMemo(
-    () => (selected === undefined ? [] : detailRows(selected, model, Math.max(16, columns - 4), forwardedModel)),
-    [selected, model, columns, forwardedModel],
-  )
-
-  const finish = (target: LaunchIntent["target"]) => {
-    if (selected === undefined) return
-    exit({
-      id: selected.id,
-      target,
-      ...(forwardedModel === undefined ? {} : { model: forwardedModel }),
-    } satisfies LaunchIntent)
-  }
-
-  useInput((input, key) => {
-    const cancel = () => exit({ cancelled: true, exitCode: 130 })
-    if (key.ctrl && input === "c") {
-      cancel()
-      return
-    }
-    if (showingDetails) {
-      handleDetailsInput(input, key, expandedDetails.length, rows, setShowingDetails, setDetailOffset)
-      return
-    }
-    if (editingCustomModel && selected !== undefined) {
-      handleCustomModelInput(
-        input,
-        key,
-        selected.id,
-        customModel,
-        updateState,
-        setCustomModel,
-        setEditingCustomModel,
-        setChoosingModel,
-      )
-      return
-    }
-    if (choosingModel && selected !== undefined) {
-      handleModelInput(
-        input,
-        key,
-        selected,
-        modelIndex,
-        updateState,
-        setChoosingModel,
-        setEditingCustomModel,
-        setCustomModel,
-        setModelIndex,
-      )
-      return
-    }
-    if (searching) {
-      handleSearchInput(input, key, updateState, setSearching, finish)
-      return
-    }
-    handleCommandInput(
-      input,
-      key,
-      state,
-      selected,
-      herdrAvailable,
-      remoteAvailable,
-      updateState,
-      setSearching,
-      setModelIndex,
-      setChoosingModel,
-      setDetailOffset,
-      setShowingDetails,
-      finish,
-      cancel,
-    )
-  })
-
-  const maximumSummaryRows = Math.max(4, Math.floor(rows * 0.35))
-  const summaryRows = expandedDetails.slice(0, maximumSummaryRows)
-  const summaryTruncated = summaryRows.length < expandedDetails.length
-  const introRows =
-    catalog.description === undefined
-      ? 0
-      : Math.ceil((catalog.description.length + "Context: ".length) / Math.max(1, columns - 2))
-  const capacity = Math.max(1, Math.min(visible.length, rows - summaryRows.length - introRows - 8))
-  const selectedIndex = Math.max(
-    0,
-    visible.findIndex(({ id }) => id === state.selectedId),
-  )
-  const start = Math.max(0, Math.min(selectedIndex - Math.floor(capacity / 2), visible.length - capacity))
-  const shown = visible.slice(start, start + capacity)
-  const widths = useMemo(() => tableColumns(visible, columns), [visible, columns])
-  const detailCapacity = Math.max(1, rows - 4)
-  const visibleDetails = expandedDetails.slice(detailOffset, detailOffset + detailCapacity)
-
-  if (showingDetails && selected !== undefined) {
-    return (
-      <DetailsView
-        selected={selected}
-        expandedDetails={expandedDetails}
-        visibleDetails={visibleDetails}
-        detailOffset={detailOffset}
-        detailCapacity={detailCapacity}
-      />
-    )
-  }
-
-  return (
-    <SelectionView
-      catalog={catalog}
-      state={state}
-      searching={searching}
-      herdrAvailable={herdrAvailable}
-      remoteAvailable={remoteAvailable}
-      shown={shown}
-      widths={widths}
-      selected={selected}
-      summaryRows={summaryRows}
-      summaryTruncated={summaryTruncated}
-      choosingModel={choosingModel}
-      modelIndex={modelIndex}
-      editingCustomModel={editingCustomModel}
-      customModel={customModel}
-    />
-  )
-}
-
-const runEnrichNativeList = async (): Promise<void> => {
-  const guideRoot = process.argv[3]
-  if (guideRoot === undefined) throw new Error("enrich-native-list requires GUIDE_ROOT")
-  process.stdout.write(`${await enrichNativeProfileList(await readInput(undefined), guideRoot)}\n`)
+const loadGuideCatalog = async (guideRoot: string): Promise<CompositionCatalog> => {
+  const commandPath = process.env.TRELLAGE_TRX_COMMAND_PATH
+  if (commandPath === undefined) throw new Error("guide requires TRELLAGE_TRX_COMMAND_PATH")
+  return loadCompositionCatalog({ guideRoot, commandPath })
 }
 
 const runGuideJsonMode = async (
@@ -655,9 +131,9 @@ const runGuideJsonMode = async (
   promptMasterSkillDirectory: string,
 ): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
-  const catalog = readGuideCatalog()
+  const catalog = await loadGuideCatalog(guideRoot)
   const runner = createNodeCommandRunner()
-  const stdinRequest = args.intent === undefined ? await readInput(undefined) : undefined
+  const stdinRequest = args.intent === undefined ? await readInput() : undefined
   const response = await runGuideJsonCommand({
     argv,
     catalog,
@@ -729,7 +205,7 @@ const interactiveGuideMatcher = (
 
 const completeInteractiveGuideResult = async (
   result: GuideUiResult,
-  catalog: ReturnType<typeof readGuideCatalog>,
+  catalog: CompositionCatalog,
   runner: ReturnType<typeof createNodeCommandRunner>,
 ): Promise<void> => {
   if (result.action === "review") {
@@ -812,7 +288,7 @@ const runAlternateGuideMode = async (
     return true
   }
   if (isChangeReview(args)) {
-    await runOptimizeMode(argv)
+    await runOptimizeMode(argv, undefined, guideRoot)
     return true
   }
   if (args.nextSteps) {
@@ -835,9 +311,9 @@ const runInteractiveGuideMode = async (
     args,
     herdrContext,
     env: process.env,
-    readStdin: () => readInput(undefined),
+    readStdin: () => readInput(),
   })
-  const catalog = readGuideCatalog()
+  const catalog = await loadGuideCatalog(guideRoot)
   const routing = resolveGuideModelRouting(
     {
       ...(args.model === undefined ? {} : { model: args.model }),
@@ -940,11 +416,11 @@ const runEngagementMode = async (argv: ReadonlyArray<string>, guideRoot: string)
   if (context?.surface === "popup" || process.env[popupGuideIntentFileEnvironmentVariable] !== undefined) {
     throw new Error("Engagement mode needs a normal terminal in the engagement worktree, not a conversation or prompt popup.")
   }
-  const intent = guideText(args.intentStdin ? await readInput(undefined) : args.intent ?? engagementDefaultIntent,
+  const intent = guideText(args.intentStdin ? await readInput() : args.intent ?? engagementDefaultIntent,
     "engagement intent", 8000, { multiline: true, preserve: true })
   const runner = createNodeCommandRunner()
   const repository = await inspectEngagementRepository(runner, context?.cwd ?? process.cwd())
-  const catalog = readGuideCatalog()
+  const catalog = await loadGuideCatalog(guideRoot)
   const routing = resolveGuideModelRouting({
     ...(args.model === undefined ? {} : { model: args.model }),
     ...(args.effort === undefined ? {} : { effort: args.effort }),
@@ -989,12 +465,12 @@ const runEngagementSession = async (
   }
 }
 
-const runOptimizeMode = async (argv: ReadonlyArray<string>, catalog?: ReturnType<typeof readGuideCatalog>): Promise<void> => {
+const runOptimizeMode = async (argv: ReadonlyArray<string>, catalog?: CompositionCatalog, guideRoot?: string): Promise<void> => {
   const args = parseGuideHeadlessArgv(argv)
   const env = herdrEnvironment()
   const context = getHerdrContext(env)
   const originalIntent = await resolveInteractiveGuideIntent({
-    args, herdrContext: context, env: process.env, readStdin: () => readInput(undefined),
+    args, herdrContext: context, env: process.env, readStdin: () => readInput(),
   })
   const runner = createNodeCommandRunner()
   const cwd = context?.surface === "popup" ? context.cwd ?? process.cwd() : process.cwd()
@@ -1002,7 +478,8 @@ const runOptimizeMode = async (argv: ReadonlyArray<string>, catalog?: ReturnType
     ...(args.model === undefined ? {} : { model: args.model }),
     ...(args.effort === undefined ? {} : { effort: args.effort }),
   }, process.env)
-  const services = createGuideReviewServices({ runner, cwd, context, catalog: catalog ?? readGuideCatalog(), routing,
+  const resolvedCatalog = catalog ?? await loadGuideCatalog(guideRoot ?? (() => { throw new Error("review requires GUIDE_ROOT") })())
+  const services = createGuideReviewServices({ runner, cwd, context, catalog: resolvedCatalog, routing,
     modelOverrides: reviewModelOverrides(args, routing),
   })
   const terminal = openInteractiveTerminalStreams()
@@ -1070,7 +547,7 @@ const runContinuationMode = async (
     model: routing.match.model,
     effort: routing.match.effort,
   })
-  const catalog = readGuideCatalog()
+  const catalog = await loadGuideCatalog(guideRoot)
   const prompts = await loadDefaultGuidePrompts()
   const services = createContinuationServices({
     store,
@@ -1205,9 +682,10 @@ const runForkPreviewMode = async (): Promise<void> => {
 }
 
 const runAdminMode = async (): Promise<void> => {
-  const guideRoot = process.argv[3]
+  const guideRoot = process.argv[3] ?? process.env.TRELLAGE_TRX_GUIDE_ROOT
   if (guideRoot === undefined) throw new Error("admin requires GUIDE_ROOT")
-  const catalog = readGuideCatalog()
+  const commandPath = path.resolve(process.env.TRELLAGE_TRX_COMMAND_PATH ?? process.argv[1] ?? "trx")
+  const catalog = await loadCompositionCatalog({ guideRoot, commandPath })
   const runner = createNodeCommandRunner()
   const runManager = new AdminRunManager({ runner })
   const diagnosisProvider = new DoctorFailureDiagnosisProvider({ jev: { cwd: process.cwd() } })
@@ -1223,7 +701,7 @@ const runAdminMode = async (): Promise<void> => {
         cwd={process.cwd()}
         diagnosisProvider={diagnosisProvider}
         herdrEnv={herdrEnvironment()}
-        routerCommandPath={process.env.TRELLAGE_TRX_COMMAND_PATH ?? "trx"}
+        routerCommandPath={commandPath}
       />,
       {
         stdin: input,
@@ -1262,15 +740,15 @@ const runHarnessUpgradeMode = async (): Promise<void> => {
   process.on("SIGINT", cancel)
   process.on("SIGTERM", cancel)
   try {
+    const guideRoot = process.env.TRELLAGE_TRX_GUIDE_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../profile-guides")
+    const commandPath = path.resolve(process.env.TRELLAGE_TRX_COMMAND_PATH ?? process.argv[1] ?? "trx")
     process.exitCode = await runHarnessUpgradeCli({
       argv: process.argv.slice(3),
-      readCatalog: () => readGuideCatalog(0),
+      readCatalog: () => loadCompositionCatalog({ guideRoot, commandPath }),
       runner: createNodeCommandRunner(),
       cwd: process.cwd(),
-      routerCommandPath: process.env.TRELLAGE_TRX_COMMAND_PATH ?? "trx",
-      writeLine: (line) => {
-        process.stdout.write(`${line}\n`)
-      },
+      routerCommandPath: commandPath,
+      writeLine: (line) => process.stdout.write(`${line}\n`),
       confirm: confirmHarnessUpgradeMode,
       signal: controller.signal,
     })
@@ -1298,7 +776,7 @@ const runRewriteContextMode = async (): Promise<void> => {
     return
   }
   if (process.argv[3] === "--interactive") {
-    const request = parseContextMenuUiRequest(await readInput(undefined))
+    const request = parseContextMenuUiRequest(await readInput())
     await runContextMenuUi({ request })
     return
   }
@@ -1307,7 +785,7 @@ const runRewriteContextMode = async (): Promise<void> => {
   process.once("SIGINT", cancel)
   process.once("SIGTERM", cancel)
   try {
-    await runContextMenuCommand({ input: await readInput(undefined), signal: controller.signal })
+    await runContextMenuCommand({ input: await readInput(), signal: controller.signal })
   } finally {
     process.removeListener("SIGINT", cancel)
     process.removeListener("SIGTERM", cancel)
@@ -1322,10 +800,6 @@ export const main = async (): Promise<void> => {
   }
   if (process.argv[2] === "upgrade") {
     await runHarnessUpgradeMode()
-    return
-  }
-  if (process.argv[2] === "enrich-native-list") {
-    await runEnrichNativeList()
     return
   }
   if (process.argv[2] === "guide-preview") {
@@ -1348,56 +822,9 @@ export const main = async (): Promise<void> => {
     await runAdminMode()
     return
   }
-  await runLauncherMode()
+  throw new Error(`unknown launcher mode: ${process.argv[2] ?? "(missing)"}`)
 }
 
-const runLauncherMode = async (): Promise<void> => {
-  const catalog = parseLaunchCatalog(await readInput(process.argv[2]))
-  let input: NodeJS.ReadStream
-  let output: NodeJS.WriteStream
-  try {
-    input = process.stdin.isTTY ? process.stdin : new tty.ReadStream(openSync("/dev/tty", constants.O_RDONLY))
-    output = process.stderr.isTTY
-      ? process.stderr
-      : new tty.WriteStream(openSync("/dev/tty", constants.O_WRONLY))
-  } catch {
-    throw new Error("an interactive controlling terminal is required")
-  }
-  try {
-    const instance = render(
-      <ThemeProvider theme={trellageTheme}>
-        <Launcher
-          catalog={catalog}
-          herdrAvailable={process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID)}
-          remoteAvailable={process.env.TRELLAGE_REMOTE_AVAILABLE === "true"}
-        />
-      </ThemeProvider>,
-      {
-        stdin: input,
-        stdout: output,
-        interactive: true,
-        exitOnCtrlC: false,
-        kittyKeyboard: { mode: "disabled" },
-        alternateScreen: true,
-        maxFps: 30,
-      },
-    )
-    const result = (await instance.waitUntilExit()) as
-      | LaunchIntent
-      | { readonly cancelled: true; readonly exitCode: number }
-    if ("cancelled" in result) {
-      process.exitCode = result.exitCode
-      return
-    }
-    const serialized = `${JSON.stringify(result)}\n`
-    const resultPath = process.argv[3]
-    if (resultPath === undefined) process.stdout.write(serialized)
-    else await writeFile(resultPath, serialized, { mode: 0o600 })
-  } finally {
-    if (input !== process.stdin) input.destroy()
-    if (output !== process.stderr) output.destroy()
-  }
-}
 
 if (import.meta.main) {
   try {

@@ -1,14 +1,4 @@
-/**
- * Async, fail-closed readiness refresh: probes health/install for every
- * catalog entry whose launcher supports it (`entry.doctorSupported`,
- * skipping only a genuinely doctor-unsupported native launcher — currently
- * none) and merges results back into `AdminProfileEntry` rows. Each
- * profile's check is isolated — one profile's rejected/thrown check never
- * blocks or corrupts another profile's result. Bounded workers prevent
- * starting all inventory processes at once. This
- * is the "initial discovery" data flow; `admin-run-manager.ts` is the
- * separate, user-triggered doctor-run orchestration.
- */
+/** Bounded startup refresh for lifecycle-backed rows; other compositions load inventory only when selected. */
 import { toSelectedProfile } from "./admin-launch.ts"
 import {
   aggregateAdminProfiles,
@@ -16,7 +6,7 @@ import {
   type AdminProfileEntry,
   type AdminReadinessInput,
 } from "./admin-model.ts"
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import type { CommandRunner } from "./guide-launch.ts"
 import { checkSelectedProfileReadiness } from "./guide-preflight.ts"
 
@@ -27,7 +17,7 @@ const refreshReadinessInputs = async (
   now: () => number,
   signal: AbortSignal | undefined,
 ): Promise<ReadonlyArray<AdminReadinessInput>> => {
-  const queue = entries.filter((entry) => entry.doctorSupported)
+  const queue = entries.filter((entry) => entry.lifecycle !== null)
   const inputs: Array<AdminReadinessInput> = []
   const worker = async (): Promise<void> => {
     for (;;) {
@@ -50,19 +40,14 @@ const refreshReadinessInputs = async (
   return inputs
 }
 
-/**
- * Runs one readiness check per doctor-supporting entry, with bounded concurrency,
- * isolating failures per profile, and returns the refreshed entry list.
- * Individual probe failures stay visible on their own rows.
- * Cancellation and unexpected catalog failures are not converted into partial success.
- */
+/** Runs one inventory v2 check per lifecycle-backed row; config and external rows stay lazy. */
 export interface AdminRefreshOptions {
   readonly signal?: AbortSignal
 }
 
 export const refreshAdminEntries = async (
   runner: CommandRunner,
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   cwd: string,
   now: () => number = () => Date.now(),
   options: AdminRefreshOptions = {},

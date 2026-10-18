@@ -11,7 +11,7 @@ import {
 import { sanitizeConversationSnapshot } from "@trellage/guide-core"
 import { GuideEffort } from "./guide-api.ts"
 import { describeGuideUiError, wrapGuideText } from "./guide-ui.tsx"
-import { isSubmitInput } from "./input.ts"
+import { isSubmitInput } from "./keyboard-input.ts"
 import type { ContinuationServices, ContinuationSourceStatus } from "./continuation-services.ts"
 import {
   changeContinuationAction,
@@ -627,7 +627,6 @@ const sourceLines = (draft: ContinuationDraft): ReadonlyArray<string> => {
     `Server: ${source.serverId}; workspace ${source.workspaceId}; pane ${source.paneId}${source.tabId === undefined ? "" : `; tab ${source.tabId}`}`,
     `Working directory: ${source.cwd}`,
     ...(source.profile === undefined ? [] : [`Source profile: ${source.profile}`]),
-    ...(source.containerId === undefined ? [] : [`Container: ${source.containerId}; invocation ${source.invocationId ?? "not recorded"}`]),
     `Snapshot: ${snapshot.id}; captured ${snapshot.capturedAt}`,
     `Cutoff: ${snapshot.cutoff.messageId}, record ${snapshot.cutoff.recordIndex}; revision ${snapshot.revision}`,
     `Coverage: ${snapshot.coverage.complete ? "complete filtered history" : "INCOMPLETE SOURCE HISTORY"}; ${snapshot.messages.length} messages.`,

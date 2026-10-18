@@ -67,7 +67,7 @@ describe("harness version cache schema", () => {
             latest: { kind: "failed", diagnostic: "release service unavailable" },
           },
         },
-        "sandbox:claude-code": {
+        "release:claude-code": {
           checkedAt: 2000,
           result: {
             installed: { kind: "unavailable", diagnostic: "representative is unresolved" },
@@ -160,7 +160,7 @@ describe("harness version cache freshness", () => {
     ).toBe(true)
   })
 
-  it("accepts a sandbox latest result without requiring a representative installed version", () => {
+  it("accepts a latest-only result when installed state is not required", () => {
     expect(
       isHarnessVersionCacheStale(
         {

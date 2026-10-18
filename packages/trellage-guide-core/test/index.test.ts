@@ -65,7 +65,7 @@ describe("profile guide parser", () => {
     const interaction = { mode: "interactive", requiredSkills: ["dt-methods"] }
     const source = withInteraction(interaction)
     expect(parseProfileGuide("native/copilot/hve.md", source).guide.workflows[0]?.interaction).toEqual(interaction)
-    for (const identity of ["native/copilot/default.md", "sandbox/copilot-hve.md", "unknown.md"]) {
+    for (const identity of ["native/copilot/default.md", "unknown.md"]) {
       expect(() => parseProfileGuide(identity, source)).toThrow("require native/copilot/hve.md")
     }
     for (const invalid of [
@@ -81,7 +81,7 @@ describe("profile guide parser", () => {
   })
 
   it("parses a valid guide and preserves its Markdown body", () => {
-    const parsed = parseProfileGuide("profile-guides/sandbox/social.md", validGuide)
+    const parsed = parseProfileGuide("profile-guides/native/copilot/social.md", validGuide)
 
     expect(parsed.guide).toEqual({
       schemaVersion: 1,
@@ -110,7 +110,7 @@ describe("profile guide parser", () => {
         `    skill: social-media-skills:post-writer\n    launchAgent: ${JSON.stringify(agent)}\n`,
       )
 
-      const parsed = parseProfileGuide("profile-guides/sandbox/social.md", source)
+      const parsed = parseProfileGuide("profile-guides/native/copilot/social.md", source)
 
       expect(parsed.guide.workflows[0]?.launchAgent).toBe(agent)
     },
@@ -191,7 +191,6 @@ describe("profile guide goal execution", () => {
   it.each([
     ["native/codex/superpowers.md", "codex-goal"],
     ["native/claude/default.md", "claude-goal"],
-    ["sandbox/claude-social-media.md", "claude-goal"],
   ])("preserves an optional policy for %s", (identity, controller) => {
     const policy = { controller, workflowIds: ["post-writer"] }
     const parsed = parseProfileGuide(`profile-guides/${identity}`, withGoalExecution(policy))
@@ -267,9 +266,6 @@ describe("profile guide goal execution", () => {
     ["native/copilot/hve.md", "claude-goal"],
     ["native/agency/trellage-azure.md", "claude-goal"],
     ["native/pi/default.md", "claude-goal"],
-    ["sandbox/codex-superpowers.md", "codex-goal"],
-    ["sandbox/headlong.md", "claude-goal"],
-    ["sandbox/prime-agent.md", "claude-goal"],
   ])("rejects %s with controller %s", (identity, controller) => {
     expect(() => parseProfileGuide(identity, withGoalExecution({ controller, workflowIds: ["post-writer"] }))).toThrow(
       "is not supported by",
@@ -318,28 +314,24 @@ describe("profile guide goal execution", () => {
 })
 
 describe("profile guide identities", () => {
-  it("round-trips native and Sandbox paths", () => {
+  it("round-trips native paths", () => {
     const native = parseProfileGuideIdentity("native/copilot/hve.md")
-    const sandbox = parseProfileGuideIdentity("sandbox/claude-social-media.md")
 
     expect(profileGuideIdentityKey(native)).toBe("native:copilot/hve")
     expect(profileGuideRelativePath(native)).toBe("native/copilot/hve.md")
-    expect(profileGuideIdentityKey(sandbox)).toBe("sandbox:claude-social-media")
-    expect(profileGuideRelativePath(sandbox)).toBe("sandbox/claude-social-media.md")
   })
 
   it("reports missing and unexpected guide identities", () => {
     const coverage = validateProfileGuideCoverage(
       [
-        { surface: "native", launcher: "copilot", profile: "hve" },
-        { surface: "sandbox", profile: "claude-social-media" },
+        { surface: "native", harness: "copilot", profile: "hve" },
       ],
-      ["native/copilot/hve.md", "sandbox/unknown.md"],
+      ["native/copilot/unknown.md"],
     )
 
     expect(coverage).toEqual({
-      missing: ["sandbox:claude-social-media"],
-      unexpected: ["sandbox:unknown"],
+      missing: ["native:copilot/hve"],
+      unexpected: ["native:copilot/unknown"],
     })
   })
 
@@ -347,30 +339,31 @@ describe("profile guide identities", () => {
     it("loads exact profile identities and discovers coverage paths", async () => {
       const root = await temporaryRoot()
       await mkdir(path.join(root, "native", "copilot"), { recursive: true })
-      await mkdir(path.join(root, "sandbox"), { recursive: true })
       await writeFile(path.join(root, "native", "copilot", "hve.md"), validGuide)
-      await writeFile(path.join(root, "sandbox", "social.md"), validGuide)
+      await writeFile(path.join(root, "native", "copilot", "social.md"), validGuide)
 
-      const loaded = await loadProfileGuide(root, { surface: "native", launcher: "copilot", profile: "hve" })
+      const loaded = await loadProfileGuide(root, { surface: "native", harness: "copilot", profile: "hve" })
       const registry = await loadProfileGuideRegistry(root, [
-        { surface: "native", launcher: "copilot", profile: "hve" },
-        { surface: "sandbox", profile: "social" },
+        { surface: "native", harness: "copilot", profile: "hve" },
+        { surface: "native", harness: "copilot", profile: "social" },
       ])
 
       expect(loaded.key).toBe("native:copilot/hve")
       expect(registry.size).toBe(2)
-      await expect(discoverProfileGuideRelativePaths(root)).resolves.toEqual(["native/copilot/hve.md"])
+      await expect(discoverProfileGuideRelativePaths(root)).resolves.toEqual([
+        "native/copilot/hve.md",
+        "native/copilot/social.md",
+      ])
     })
 
     it("rejects symlinked guides", async () => {
       const root = await temporaryRoot()
       const outside = path.join(root, "outside.md")
       await mkdir(path.join(root, "native", "copilot"), { recursive: true })
-      await mkdir(path.join(root, "sandbox"), { recursive: true })
       await writeFile(outside, validGuide)
       await symlink(outside, path.join(root, "native", "copilot", "hve.md"))
 
-      await expect(loadProfileGuide(root, { surface: "native", launcher: "copilot", profile: "hve" })).rejects.toThrow(
+      await expect(loadProfileGuide(root, { surface: "native", harness: "copilot", profile: "hve" })).rejects.toThrow(
         "non-symlink regular file",
       )
     })

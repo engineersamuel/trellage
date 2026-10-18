@@ -1,5 +1,8 @@
 # Herdr hand-off: RLM profile-validation report (2026-08-12)
 
+Status: Historical handoff notes. Command names and lifecycle behavior below
+may describe retired Trellage interfaces.
+
 ## Context
 
 An external orchestrator (Herdr + `invoke_trellage`) drove all 22 Trellage profiles
@@ -108,19 +111,13 @@ address them. Recommend filing these directly against Herdr:
 
 ## What Trellage added to make future validation runs cheaper
 
-- **Standardized readiness** across the legacy native launchers (`cpx`, `cdx`,
-  `omp`, `jcx`, `cldx`, `prx`) — every launcher now exposes the same
-  `not_ready_inventory` / `readiness: healthy | unhealthy | not-setup`
-  contract driven by its `doctor_profile` check, including `prx`'s "active
-  named agent" gate, which used to be a launch-time failure rather than a
-  queryable readiness signal.
-- **`trx list --json`** and **`trellage list --json-full`** now include a
-  `readiness` field (derived live from each launcher's own doctor/readiness
-  check) and an `herdrCompatibility` field (`status`, optional `issue`,
-  optional `notes`) sourced from the curated ledger at
-  `docs/herdr-compatibility.json`. A driving tool can now filter to
-  `readiness: "healthy"` and `herdrCompatibility.status: "verified"` profiles
-  before attempting to launch anything, instead of discovering failures live.
+- **Standardized readiness** across the former private backends. Each backend
+  exposed the same `not_ready_inventory` and
+  `readiness: healthy | unhealthy | not-setup` contract from its profile
+  doctor.
+- **`trx list --json`** included a `readiness` field and an
+  `herdrCompatibility` field sourced from `docs/herdr-compatibility.json`.
+  Driving tools could filter profiles before launch.
 - **`trx inventory <launcher> <profile> --json`** passthrough command, so a
   caller can get the same structured readiness detail `trx list` summarizes,
   per-profile, without needing to know each launcher's own inventory CLI

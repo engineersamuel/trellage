@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import * as guideApi from "../src/guide-api.ts"
 import { defaultGuideModelRouting, GuideEffort, parseGuideHeadlessArgv } from "../src/guide-api.ts"
-import { parseGuideCatalog } from "../src/guide-catalog.ts"
 import { resolveGuideRequest, runGuideJsonCommand } from "../src/guide-command.ts"
 import * as guidePrompts from "../src/guide-prompts.ts"
 import { goalDraft } from "./fixtures/goal-me-skill.ts"
@@ -15,13 +14,13 @@ describe("guide command request resolution", () => {
     expect(
       resolveGuideRequest(
         args,
-        '{"schemaVersion":1,"intent":"Write a post","profile":"sandbox:claude-social-media"}',
+        '{"schemaVersion":2,"intent":"Write a post","profile":"native:claude/social-media"}',
         {},
       ),
     ).toMatchObject({
       request: {
         intent: "Write a post",
-        profile: "sandbox:claude-social-media",
+        profile: "native:claude/social-media",
       },
       routing: defaultGuideModelRouting,
     })
@@ -40,7 +39,7 @@ describe("guide command request resolution", () => {
     expect(
       resolveGuideRequest(
         args,
-        '{"schemaVersion":1,"intent":"Find a skill","profile":"sandbox:other","model":"other","effort":"low"}',
+        '{"schemaVersion":2,"intent":"Find a skill","profile":"native:copilot/other","model":"other","effort":"low"}',
         {},
       ),
     ).toMatchObject({
@@ -65,7 +64,7 @@ describe("guide command request resolution", () => {
   ] as const)("uses the CLI profile for workflow selection when the stdin profile is %s", (_name, profile) => {
     const args = parseGuideHeadlessArgv(["--json", "--profile", "native:claude/firstmate"])
     const request = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       intent: "Review fleet status.",
       workflowId: "fleet-status",
       originalIntent: "  Keep the exact fleet status request.  ",
@@ -79,7 +78,7 @@ describe("guide command request resolution", () => {
   it("rejects a workflow without a profile in either input", () => {
     const args = parseGuideHeadlessArgv(["--json"])
     expect(() => resolveGuideRequest(args, JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       intent: "Review fleet status.",
       workflowId: "fleet-status",
     }), {})).toThrow("requires a selected profile")
@@ -88,7 +87,7 @@ describe("guide command request resolution", () => {
   it("still validates an invalid stdin profile when CLI overrides it", () => {
     const args = parseGuideHeadlessArgv(["--json", "--profile", "native:claude/firstmate"])
     expect(() => resolveGuideRequest(args, JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       intent: "Review fleet status.",
       profile: 42,
       workflowId: "fleet-status",
@@ -116,7 +115,7 @@ describe("guide command request resolution", () => {
     const resolved = resolveGuideRequest(
       parseGuideHeadlessArgv(["--json", "--model", "gpt-6-astra"]),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         intent: "The approved retry goal.",
         goal: goalDraft,
         profile: "native:codex/superpowers",
@@ -135,17 +134,17 @@ describe("guide command request resolution", () => {
   it("does not inherit stdin goal mode when an explicit new intent is supplied", () => {
     const resolved = resolveGuideRequest(
       parseGuideHeadlessArgv(["--json", "--intent", "Write a normal prompt"]),
-      JSON.stringify({ schemaVersion: 1, intent: "Old goal", goal: goalDraft }),
+      JSON.stringify({ schemaVersion: 2, intent: "Old goal", goal: goalDraft }),
       {},
     )
-    expect(resolved.request).toEqual({ schemaVersion: 1, intent: "Write a normal prompt" })
+    expect(resolved.request).toEqual({ schemaVersion: 2, intent: "Write a normal prompt" })
   })
 
   it("accepts a stdin workflow when the selected profile is supplied in argv", () => {
     const resolved = resolveGuideRequest(
       parseGuideHeadlessArgv(["--json", "--profile", "native:codex/superpowers"]),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         intent: "The approved retry goal.",
         goal: goalDraft,
         workflowId: "test-driven-development",
@@ -166,7 +165,7 @@ describe("guide command request resolution", () => {
     const matching = vi.spyOn(guideApi, "runGuideMatch").mockRejectedValue(intercepted)
     const generation = vi.spyOn(guideApi, "runGuideGenerate").mockRejectedValue(intercepted)
     const stdinRequest = JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       intent: "The approved retry goal.",
       goal: goalDraft,
       ...(operation === "match" ? {} : {
@@ -174,14 +173,10 @@ describe("guide command request resolution", () => {
         workflowId: "test-driven-development",
       }),
     })
-    const resolveCatalog = vi.fn(async () => parseGuideCatalog(JSON.stringify({
-      schemaVersion: 1, native: [],
-    })))
+    const resolveCatalog = vi.fn(async () => ({ schemaVersion: 2 as const, entries: [] }))
     await expect(runGuideJsonCommand({
       argv: ["--json"],
-      catalog: parseGuideCatalog(JSON.stringify({
-        schemaVersion: 1, native: [],
-      })),
+      catalog: { schemaVersion: 2, entries: [] },
       guideRoot: "/unused/profile-guides",
       promptMasterSkillDirectory: "/unused/prompt-master",
       stdinRequest,
@@ -215,7 +210,7 @@ describe("guide command request resolution", () => {
 
     await expect(runGuideJsonCommand({
       argv,
-      catalog: parseGuideCatalog(JSON.stringify({ schemaVersion: 1, native: [] })),
+      catalog: { schemaVersion: 2, entries: [] },
       guideRoot: "/unused/profile-guides",
       promptMasterSkillDirectory: "/unused/prompt-master",
       env,

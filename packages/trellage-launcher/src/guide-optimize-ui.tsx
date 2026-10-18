@@ -13,7 +13,7 @@ import {
   selectGuideOptimizeSkills,
   type GuideOptimizeSdkOptions,
 } from "./guide-optimize.ts"
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import { ensureOptimizeSkills } from "./guide-optimize-skills.ts"
 import {
   inspectGitWorktreeIntent,
@@ -44,17 +44,15 @@ export type GuideOptimizeLaunch =
     } & HarnessLaunch)
 
 /** The `trx` router path; every Native catalog entry points at it. */
-const routerPath = (catalog: CombinedGuideCatalog): string | undefined => catalog.native[0]?.commandPath
+const routerPath = (catalog: CompositionCatalog): string | undefined => catalog.entries[0]?.commandPath
 
 /** A placeholder Native profile for the harness: the real content comes from `--skill`. */
 const harnessProfile = (trx: string, harness: GuideOptimizeHarness): NativeSelectedProfile => {
-  const profile = parseSelectedProfile({ surface: "native", launcher: harness, commandPath: trx, profile: "optimize", headlessPrompt: false })
-  if (profile.surface !== "native") throw new Error("Optimize requires a Native harness.")
-  return profile
+  return parseSelectedProfile({ surface: "native", harness, commandPath: trx, profiles: ["optimize"], headlessPrompt: false })
 }
 
 export interface GuideOptimizeScreenProps {
-  readonly catalog: CombinedGuideCatalog
+  readonly catalog: CompositionCatalog
   readonly cwd: string
   readonly runner: CommandRunner
   readonly herdrContext: HerdrContext | null

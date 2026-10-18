@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import type { CommandRunner } from "./guide-launch.ts"
 import { MarkdownTextViewport } from "./guide-markdown.tsx"
 import { text } from "./guide-text.ts"
@@ -38,7 +38,7 @@ export type EngagementUiResult =
 export interface EngagementUiProps {
   readonly repository: EngagementRepository
   readonly intent: string
-  readonly catalog: CombinedGuideCatalog
+  readonly catalog: CompositionCatalog
   readonly guideRoot: string
   readonly runner: CommandRunner
   readonly assessor: EngagementAssessor

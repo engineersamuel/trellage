@@ -8,8 +8,8 @@ usage() {
 Usage: scripts/azure-fresh-install.sh <all|create|bootstrap|accept|ssh|status|down|plan>
 
 Create a fresh Azure ARM64 VM, install Trellage from a Git clone on that VM,
-install all nine Trellage Native launchers, live-probe the eight coding-agent
-launchers through `trx run`.
+install the six launch-required lifecycle backends, and live-probe eight coding
+harnesses through `trx run`.
 
 Commands:
   all        Create, bootstrap, and run acceptance checks
@@ -43,7 +43,7 @@ Authentication:
 The automated Native matrix invokes `copilot/hve`, `codex/pstack`, `claude/default`,
 composed `grok/superpowers`, `jcode/default`, `omp/default`, `pi/default`, and
 `prime/default` through `trx run`.
-Bare `trx` is an interactive TTY picker.
+Bare `trx` opens the interactive run composer.
 EOF
 }
 
@@ -500,7 +500,7 @@ mise trust
 mise use -g uv
 if [[ "$apply_local_changes" == 0 ]]; then
   scripts/install-source-runtime.sh --prepare
-  scripts/rebuild-profile-images.sh --install --native-only
+  scripts/rebuild-profile-images.sh
   trx --help >/dev/null
 fi
 
@@ -537,7 +537,7 @@ export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 cd "$checkout"
 mise trust
 scripts/install-source-runtime.sh --prepare
-scripts/rebuild-profile-images.sh --install --native-only
+scripts/rebuild-profile-images.sh
 trx --help >/dev/null
 REMOTE
   fi
@@ -690,40 +690,34 @@ run_text_probe() {
 
 printf 'acceptance: setting up Native profiles\n'
 trx setup copilot hve
-trx setup codex pstack
 trx setup claude
 trx setup jcode
 trx setup omp default
-trx setup pi
 trx setup prime
 
 printf 'acceptance: checking Native profiles\n'
 trx doctor copilot hve
-trx doctor codex pstack
 trx doctor claude
 trx doctor jcode
 trx doctor omp default
-trx doctor pi
 trx doctor prime
 
 trx list --json >"$log_dir/trx-list.json"
 jq -e '
-  .profiles as $profiles
-  |
-  [
-    ["copilot", "hve"],
-    ["codex", "pstack"],
-    ["claude", "default"],
-    ["jcode", "default"],
-    ["omp", "default"],
-    ["pi", "default"],
-    ["prime", "default"]
-  ] as $expected
-  | $expected
+  .harnesses as $harnesses
+  | [
+      ["copilot", "hve"],
+      ["codex", "pstack"],
+      ["claude", "default"],
+      ["jcode", "default"],
+      ["omp", "default"],
+      ["pi", "default"],
+      ["prime", "default"]
+    ]
   | map(. as $pair
-      | any($profiles[];
-          .launcher == $pair[0]
-          and .name == $pair[1]))
+      | any($harnesses[];
+          .harness == $pair[0]
+          and (.presets | index($pair[1]) != null)))
   | all
 ' "$log_dir/trx-list.json" >/dev/null
 for pair in \
@@ -734,14 +728,15 @@ for pair in \
   'omp default' \
   'pi default' \
   'prime default'; do
-  read -r launcher profile <<<"$pair"
-  trx inventory "$launcher" "$profile" --json \
-    >"$log_dir/inventory-$launcher-$profile.json"
-  jq -e --arg launcher "$launcher" --arg profile "$profile" '
-    .launcher == $launcher
-    and .profile == $profile
+  read -r harness profile <<<"$pair"
+  trx inventory "$harness" "$profile" --json \
+    >"$log_dir/inventory-$harness-$profile.json"
+  jq -e --arg harness "$harness" --arg profile "$profile" '
+    .harness == $harness
+    and (.profiles | index($profile) != null)
     and .readiness == "healthy"
-  ' "$log_dir/inventory-$launcher-$profile.json" >/dev/null
+    and (.binary.version | type == "string" and length > 0)
+  ' "$log_dir/inventory-$harness-$profile.json" >/dev/null
 done
 
 timeout --signal=TERM --kill-after=30s 15m \
@@ -765,7 +760,7 @@ jq -Rse '
   ][-1] == "OK"
 ' "$log_dir/native-copilot.jsonl" >/dev/null
 
-run_text_probe native-cdx \
+run_text_probe codex \
   env TRELLAGE_AUTOMATION=1 \
   trx run codex pstack -- exec 'Reply exactly OK. Do not use tools.'
 
@@ -801,7 +796,7 @@ run_text_probe native-omp \
   --headless-policy no-user-input \
   -p 'Reply exactly OK. Do not use tools.'
 
-run_text_probe native-picx \
+run_text_probe pi \
   trx run pi default -- -p 'Reply exactly OK. Do not use tools.'
 
 run_text_probe native-prx \

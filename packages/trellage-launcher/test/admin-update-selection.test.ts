@@ -12,6 +12,8 @@ const native = (name = "default"): AdminProfileEntry => ({
   launcher: "claude",
   harness: "claude",
   name,
+  profiles: [name],
+  lifecycle: { runtime: "cldx", profile: name },
   description: name,
   commandPath: "/fixture/trx",
   doctorSupported: false,
@@ -28,6 +30,7 @@ const otherNative = (name: string): AdminProfileEntry => ({
   ref: `native:codex/${name}`,
   launcher: "codex",
   harness: "codex",
+  lifecycle: null,
 })
 const known = (installed = "2.0.0", latest = "3.0.0"): AdminHarnessVersionResult => ({
   installed: { kind: "known", version: installed },
@@ -60,8 +63,8 @@ describe("updates-only Admin selection", () => {
     const entries = [native(), otherNative("unknown")]
     const selection = selectAvailableAdminUpdates(harnessUpdateAllPlanFor(entries), () => undefined, checks(entries, "unknown"))
     expect(hasSelectedAdminUpdates(selection.plan)).toBe(false)
-    expect(selection.issues).toHaveLength(4)
-    expect(selection.issues.map((issue) => issue.ref)).toEqual(expect.arrayContaining(entries.map((entry) => entry.ref)))
+    expect(selection.issues).toHaveLength(2)
+    expect(selection.issues.map((issue) => issue.ref)).toEqual([entries[0]?.ref, entries[0]?.ref])
   })
 
   it("does not select any work when all known versions and skills match", () => {

@@ -9,6 +9,8 @@ const nativeProfile = (name: string): AdminProfileEntry => ({
   launcher: "claude",
   harness: "claude",
   name,
+  profiles: [name],
+  lifecycle: { runtime: "cldx", profile: name },
   description: name,
   commandPath: "/fixture/trx",
   doctorSupported: false,

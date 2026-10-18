@@ -1110,6 +1110,36 @@ plugins = [{
   expect(prepared.plan.plugins[0]?.digest).toMatch(/^[a-f0-9]{64}$/)
 })
 
+test("Native Claude accepts a marketplace plugin whose source is the repository root", async () => {
+  const { dependencies, office } = await world(`schema_version = 1
+[native.sources.social]
+repository = "example/office"
+[native.profiles.social]
+plugins = [{
+  source = "social",
+  harness = "claude",
+  path = ".",
+  name = "social",
+  plugin = "social",
+  marketplace = "social"
+}]
+`)
+  await mkdir(path.join(office.directory, ".claude-plugin"), { recursive: true })
+  await writeFile(
+    path.join(office.directory, ".claude-plugin", "marketplace.json"),
+    JSON.stringify({ name: "social", plugins: [{ name: "social", source: ".", version: "1.0.0" }] }),
+  )
+  await mkdir(path.join(office.directory, "skills", "writer"), { recursive: true })
+  await writeFile(path.join(office.directory, "skills", "writer", "SKILL.md"), skillMarkdown("writer"))
+  await office.write({}, "add root marketplace plugin")
+
+  const prepared = await prepareRun({ ...base, harness: "claude", profiles: ["social"] }, dependencies())
+  expect(prepared.plan.plugins[0]?.name).toBe("social")
+  expect(
+    existsSync(path.join(prepared.layout.generationPath, "plugins", "social", "skills", "writer", "SKILL.md")),
+  ).toBe(true)
+})
+
 const linkedPluginConfig = `schema_version = 1
 [native.sources.office-content]
 repository = "example/office"
@@ -1189,6 +1219,20 @@ printf '%s\\n' '${JSON.stringify({ installedPlugins: "INSTALL_ROOT", pluginRegis
       cache_path: path.join(installedPlugins, "hve-core", "hve-core"),
     },
   ])
+})
+
+test("Copilot one-shot prompts skip autopilot so the reply is printed", async () => {
+  const { dependencies } = await world()
+  const interactive = await prepareRun({ ...base, harness: "copilot", profiles: ["superpowers"] }, dependencies())
+  expect(interactive.launch.args).toContain("--autopilot")
+  for (const prompt of [["-p", "hi"], ["--prompt", "hi"], ["--prompt=hi"]]) {
+    const oneShot = await prepareRun(
+      { ...base, harness: "copilot", profiles: ["superpowers"], forwardedArgs: prompt },
+      dependencies(),
+    )
+    expect(oneShot.launch.args).not.toContain("--autopilot")
+    expect(oneShot.launch.args).toContain("--no-ask-user")
+  }
 })
 
 test("Claude applies opusplan defaults and real plan-mode arguments", async () => {
@@ -1468,6 +1512,20 @@ skills = [{ source = "b", names = ["powerpoint"] }]
   )
   await expect(readdir(path.join(paths.data, "compositions"))).rejects.toThrow()
   await expect(prepareRun({ ...base, harness: "pi", profiles: ["nope"] }, deps)).rejects.toThrow(/unknown profile nope/)
+})
+
+test("unknown profiles list every profile accepted by the selected harness", async () => {
+  const { dependencies } = await world(`schema_version = 1
+[native.profiles.base]
+always = true
+[native.profiles.pi-only]
+harnesses = ["pi"]
+[native.profiles.claude-only]
+harnesses = ["claude"]
+`)
+  await expect(prepareRun({ ...base, harness: "pi", profiles: ["nope"] }, dependencies())).rejects.toThrow(
+    "unknown profile nope for pi; available: base, clean, default, firstmate, pi-only",
+  )
 })
 
 test("unproven harnesses refuse to launch without explicit opt-in but allow a dry run", async () => {

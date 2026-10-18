@@ -398,6 +398,17 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
     }
   })
 
+  it("shows pre-selection flags and marks always-on profiles skipped", async () => {
+    const ui = await createTerminal("flags")
+    try {
+      await ui.waitFor("skipped by --no-always", "trx run pi --dry-run --no-always")
+      expect(ui.cell("fixture-common").dim).toBe(true)
+      expect(await ui.finish()).toEqual([null])
+    } finally {
+      await ui.close()
+    }
+  })
+
   it("preserves Ink's Ctrl+C exit without delivering a launch callback", async () => {
     const ui = await createTerminal()
     try {

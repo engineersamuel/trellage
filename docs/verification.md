@@ -21,10 +21,10 @@ against the lockfile integrity. Set `BUN_INSTALL_CACHE_DIR` to use a different
 cache. Roots that are not a Git worktree top level use a temporary cache that
 preparation deletes after the install.
 
-`mise run rebuild-profiles` reinstalls the Native launchers and `trx`; their
-installers manage separate installed runtimes.
+`mise run rebuild-profiles` reinstalls the retained Native backends and `trx`;
+their installers manage separate installed runtimes.
 
-Codex and router reinstall preflights distinguish replacement from execution.
+Router reinstall preflight distinguishes replacement from execution.
 An owned runtime with unchanged published sources and dependency manifests can
 be replaced even when its file-metadata or dependency inventory has drifted.
 The installer stages a fresh frozen runtime before publication; it does not
@@ -181,11 +181,11 @@ contracts.
 The installed `post-commit`, `post-merge`, and `post-rewrite` hooks prepare the
 active Trellage worktree and compare its source receipt with
 `~/.local/share/trellage/.native-stack-sources`. A changed receipt atomically
-reinstalls every Native launcher and `trx`; an unchanged receipt skips the
-reinstall. The receipt advances only after the complete Native stack succeeds,
+reinstalls every retained Native backend and `trx`; an unchanged receipt skips
+the reinstall. The receipt advances only after the complete Native stack succeeds,
 so a partial failure is retried by the next hook. The global `trx` used from
 other repositories therefore follows the most recently committed, merged, or
-rewritten Trellage worktree. Uncommitted launcher work remains opt-in through
+rewritten Trellage worktree. Uncommitted harness work remains opt-in through
 `TRELLAGE_TRX_SOURCE_ROOT` and `TRELLAGE_TRX_NATIVE_SOURCE`.
 
 Run full GitHub Actions contract parity explicitly before high-risk pushes:

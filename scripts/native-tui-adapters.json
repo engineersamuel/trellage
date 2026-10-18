@@ -292,7 +292,7 @@
       "skillPrefix": ""
     }
   },
-  "launchers": {
+  "harnesses": {
     "agency": "agency",
     "codex": "codex",
     "claude": "claude",

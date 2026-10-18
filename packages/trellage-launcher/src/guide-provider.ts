@@ -14,6 +14,7 @@ import { GUIDE_MAX_GENERATED_SPEC, type ProfileGuideV1 } from "@trellage/guide-c
 // `guide-api.ts` imports this module type-only, so this value import adds no runtime cycle.
 import { guideIntentMaximumLength } from "./guide-api.ts"
 import type { GuideMatchCatalogEntry } from "./guide-catalog.ts"
+import { formatCompositionRef, parseCompositionRef } from "./composition-catalog.ts"
 import {
   assertPreparedGuideGoal,
   guideGoalApproachBudget,
@@ -27,7 +28,8 @@ import { guideTaskContext, type GuideTaskContext } from "./guide-context.ts"
 import { array, boundedNumber, exactKeys, fail, record, text, uniqueArray } from "./guide-text.ts"
 
 export interface GuideMatchCandidate {
-  readonly profileRef: string
+  readonly harness: string
+  readonly profiles: ReadonlyArray<string>
   readonly workflowId: string
   readonly confidence: number
   readonly reason: string
@@ -276,16 +278,20 @@ const validateMatchCandidate = (
   workflowIndex: ReadonlyMap<string, ReadonlySet<string>>,
 ): GuideMatchCandidate => {
   const fields = record(value, path)
-  exactKeys(fields, path, ["profileRef", "workflowId", "confidence", "reason", "tradeoff"])
-  const profileRef = text(fields.profileRef, `${path}.profileRef`, 256)
-  const workflowIds = workflowIndex.get(profileRef)
-  if (workflowIds === undefined) return fail(`${path}.profileRef`, `must reference a known profile: ${profileRef}`)
+  exactKeys(fields, path, ["harness", "profiles", "workflowId", "confidence", "reason", "tradeoff"])
+  const harness = text(fields.harness, `${path}.harness`, 128)
+  const profiles = array(fields.profiles, `${path}.profiles`, { minimum: 1, maximum: 32 }).map((profile, index) =>
+    text(profile, `${path}.profiles[${index}]`, 128))
+  const ref = formatCompositionRef(harness, profiles)
+  const workflowIds = workflowIndex.get(ref)
+  if (workflowIds === undefined) return fail(path, `must reference a known composition: ${ref}`)
   const workflowId = text(fields.workflowId, `${path}.workflowId`, 128)
   if (!workflowIds.has(workflowId)) {
-    fail(`${path}.workflowId`, `must reference a known workflow of ${profileRef}: ${workflowId}`)
+    fail(`${path}.workflowId`, `must reference a known workflow of ${ref}: ${workflowId}`)
   }
   return {
-    profileRef,
+    harness,
+    profiles,
     workflowId,
     confidence: boundedNumber(fields.confidence, `${path}.confidence`, 0, 1),
     reason: text(fields.reason, `${path}.reason`, 500),
@@ -316,13 +322,14 @@ export const validateGuideMatchResult = (
     validateMatchCandidate(item, `match result.candidates[${index}]`, workflowIndex),
   )
   uniqueArray(
-    candidates.map(({ profileRef }) => profileRef),
+    candidates.map(({ harness, profiles }) => formatCompositionRef(harness, profiles)),
     "match result.candidates",
-    "profile refs",
+    "composition refs",
   )
   for (const ref of preferredProfileRefs) {
-    if (!candidates.some(({ profileRef }) => profileRef === ref)) {
-      fail("match result.candidates", `omitted the explicitly requested compatible profile: ${ref}`)
+    const preferred = parseCompositionRef(ref)
+    if (!candidates.some(({ harness, profiles }) => harness === preferred.harness && JSON.stringify(profiles) === JSON.stringify(preferred.profiles))) {
+      fail("match result.candidates", `omitted the explicitly requested compatible composition: ${ref}`)
     }
   }
   for (let index = 1; index < candidates.length; index += 1) {

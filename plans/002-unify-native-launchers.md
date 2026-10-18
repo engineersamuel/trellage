@@ -42,13 +42,11 @@ below are destinations, not claims of current behavior equivalence.
 | Launcher | Catalog profiles | Proposed launch destination | Current migration gap |
 | --- | --- | --- | --- |
 | `agx` | `trellage-azure` | `trx run agency azure` | No Agency adapter; expose the preset as `azure`, preserving Agency and Azure MCP restrictions. |
-| `cdx` | `pstack`, `superpowers`, `youtube` | `trx run codex PROFILE` | Adapter exists; plugin workflows, common skills, environment and defaults need parity. |
 | `cldx` | `default`, `office`, `office-charts` | `trx run claude PROFILE` | Adapter exists; default/plan model policy and document plugins need parity. |
 | `cpx` | `awesome`, `compound-engineering`, `hve`, `plannotator`, `superpowers`, `tufte-vdqi` | `trx run copilot PROFILE` | Adapter exists; full plugins, agents, hooks and Guide HVE workflows need parity. |
 | `fmx` | `default`, `pstack-workers` | `trx run firstmate PROFILE` | No adapter; pinned overlay, fleet instances and orchestration services required. |
 | `jcx` | `default` | `trx run jcode default` | No adapter; managed runtime, JCode configuration and manual skills required. |
 | `omp` | `copilot`, `local` | `trx run omp default` | Oh My Pi is a Pi distribution; add its `omp` adapter and `default` preset, accounting for both legacy provider configurations. |
-| `picx` | `default` | `trx run pi default` | Pi adapter exists but replaces the legacy ten-extension set with a different workflow. |
 | `prx` | `default` | `trx run prime default` | No adapter; managed Python kernel, daemon and shutdown lifecycle required. |
 | `grx` (already migrated) | Historical: `superpowers` | `trx run grok PROFILE` | Complete per user confirmation; retain regression coverage, not another migration phase. |
 
@@ -366,7 +364,7 @@ Implement actual plugin/MCP/extension contributions for each required adapter;
 do not label a skills-only substitute as migrated. Test effective generated
 configuration and fake process argv/environment against the parity manifest.
 
-Verify: focused composition tests and `make native-codex-catalog native-codex-pstack native-copilot-profiles native-claude-profile native-picx-profile native-profile-router`.
+Verify: focused composition tests and the maintained Native backend and router targets.
 Keep legacy characterization checks until their new equivalents pass.
 
 ### 4. Missing-adapter checklist for the per-family slices

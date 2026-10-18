@@ -1,5 +1,5 @@
 import type { ProfileGuideV1, ProfileGuideWorkflow } from "@trellage/guide-core"
-import type { NativeSelectedProfile, CommandSpec } from "../../src/guide-launch.ts"
+import type { CommandSpec } from "../../src/guide-launch.ts"
 import type { PreparedGuideGoal } from "../../src/guide-goal-execution.ts"
 import type {
   GuideEnrichInput,
@@ -59,7 +59,7 @@ export type FixtureProfile = {
   readonly goalExecution?: ProfileGuideV1["goalExecution"]
   readonly interaction?: ProfileGuideWorkflow["interaction"]
 } & (
-  { readonly surface: "native"; readonly launcher: NativeSelectedProfile["launcher"]; readonly agent?: string }
+  { readonly surface: "native"; readonly agent?: string }
 )
 
 export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
@@ -67,7 +67,6 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     id: "planner",
     ref: "native:codex/planner",
     surface: "native",
-    launcher: "codex",
     name: "planner",
     harness: "codex",
     workflowId: "review",
@@ -79,7 +78,6 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     id: "reviewer",
     ref: "native:copilot/reviewer",
     surface: "native",
-    launcher: "copilot",
     name: "reviewer",
     harness: "copilot",
     workflowId: "review",
@@ -90,7 +88,6 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     id: "writer",
     ref: "native:claude/default",
     surface: "native",
-    launcher: "claude",
     name: "default",
     harness: "claude",
     workflowId: "review",
@@ -102,7 +99,6 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     id: "builder",
     ref: "native:pi/builder",
     surface: "native",
-    launcher: "pi",
     name: "builder",
     harness: "pi",
     workflowId: "review",
@@ -113,7 +109,6 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     id: "auditor",
     ref: "native:copilot/auditor",
     surface: "native",
-    launcher: "copilot",
     name: "auditor",
     harness: "copilot",
     workflowId: "review",
@@ -124,7 +119,6 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     id: "council",
     ref: "native:claude/council",
     surface: "native",
-    launcher: "claude",
     name: "council",
     harness: "claude",
     workflowId: "run-council-deliberation",
@@ -138,7 +132,6 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     id: "research",
     ref: "native:claude/research",
     surface: "native",
-    launcher: "claude",
     name: "research",
     harness: "claude",
     workflowId: "vault-backed-research",
@@ -151,7 +144,6 @@ export const fixtureProfiles: ReadonlyArray<FixtureProfile> = [
     id: "hve",
     ref: "native:copilot/hve",
     surface: "native",
-    launcher: "copilot",
     name: "hve",
     harness: "copilot",
     workflowId: "rpi-agent-cycle",

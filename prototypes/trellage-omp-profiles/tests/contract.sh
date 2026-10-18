@@ -407,34 +407,9 @@ unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
 : >"$FAKE_SECURITY_LOG"
 : >"$FAKE_GH_LOG"
 
-seed_retired_runtime() {
-  local target="$1" ownership="$2"
-  mkdir -p "$target/mise/installs/github-can1357-oh-my-pi/18.0.10" \
-    "$target/mise-config" "$target/cache/github" \
-    "$target/cache/github-can1357-oh-my-pi" "$target/cache/lockfiles" "$target/cache/.auto_prune"
-  printf '%s\n' "$ownership" >"$target/.managed-by-trellage-omp-profiles"
-  printf '18.0.10\n' >"$target/installed-version"
-  printf '18.0.9\n' >"$target/version"
-  printf 'private executable\n' >"$target/mise/installs/github-can1357-oh-my-pi/18.0.10/omp"
-  printf 'private mise config\n' >"$target/mise-config/config.toml"
-  printf 'private release cache\n' >"$target/cache/github/https-api-github-com-can1357-oh-my-pi-all-releases-a1f6f.msgpack.z"
-  printf 'private versions\n' >"$target/cache/github-can1357-oh-my-pi/remote_versions-a1f6f.msgpack.z"
-  printf 'private lock\n' >"$target/cache/lockfiles/9fa72e8ecde24040"
-}
-
-assert_retired_runtime_absent() {
-  local target="$1" label="$2" retired
-  for retired in installed-version version mise mise-config cache; do
-    [[ ! -e "$target/$retired" && ! -L "$target/$retired" ]] \
-      || fail "$label retained retired private runtime path: $retired"
-  done
-}
-
-seed_retired_runtime "$HOME/.local/share/trellage/omp" trellage-omp-profiles-v1
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-assert_retired_runtime_absent "$HOME/.local/share/trellage/omp" 'v1 migration'
-command_path="$HOME/.local/share/trellage/.native-commands/omp"
 runtime_root="$HOME/.local/share/trellage/omp"
+command_path="$runtime_root/bin/omp"
 installed_catalog="$runtime_root/catalog.json"
 installed_ownership="$runtime_root/.managed-by-trellage-omp-profiles"
 profile_root="$HOME/.omp/profiles/trellage-qwen-local"
@@ -1044,48 +1019,6 @@ profile_state_hashes() {
   find "$HOME/.omp" -type l -exec ls -ld {} \;
 }
 
-for migration_ownership in trellage-omp-profiles-v1 trellage-omp-profiles-v2; do
-  seed_retired_runtime "$runtime_root" "$migration_ownership"
-  printf 'unrelated runtime state\n' >"$runtime_root/user-runtime-state"
-  profile_state_hashes >"$fixture_root/migration-state.before"
-  shasum -a 256 "$local_overlay" "$copilot_overlay" >"$fixture_root/migration-overlays.before"
-  "$installer" >"$fixture_root/reinstall-$migration_ownership.out" || fail "$migration_ownership reinstall failed"
-  assert_retired_runtime_absent "$runtime_root" "$migration_ownership reinstall"
-  profile_state_hashes >"$fixture_root/migration-state.after"
-  cmp -s "$fixture_root/migration-state.before" "$fixture_root/migration-state.after" \
-    || fail "$migration_ownership reinstall changed profile state"
-  shasum -a 256 "$local_overlay" "$copilot_overlay" >"$fixture_root/migration-overlays.after"
-  cmp -s "$fixture_root/migration-overlays.before" "$fixture_root/migration-overlays.after" \
-    || fail "$migration_ownership reinstall changed overlays"
-  cmp -s "$launcher" "$runtime_root/bin/omp" || fail 'reinstall did not publish the launcher'
-  cmp -s "$root/catalog.json" "$installed_catalog" || fail 'reinstall did not publish the catalog'
-  [[ -L "$command_path" && "$(readlink "$command_path")" == "$runtime_root/bin/omp" ]] \
-    || fail 'reinstall did not retain the internal command'
-  grep -Fqx 'unrelated runtime state' "$runtime_root/user-runtime-state" || fail 'reinstall removed unrelated runtime state'
-done
-
-for cache_case in mixed foreign-tool foreign-release symlink; do
-  seed_retired_runtime "$runtime_root" trellage-omp-profiles-v2
-  case "$cache_case" in
-    mixed) printf 'unrelated cache\n' >"$runtime_root/cache/user-cache" ;;
-    foreign-tool) mkdir "$runtime_root/cache/github-other-tool" ;;
-    foreign-release) printf 'unrelated release\n' >"$runtime_root/cache/github/https-api-github-com-other-tool-latest.msgpack.z" ;;
-    symlink) ln -s "$fixture_root/provider-link-target" "$runtime_root/cache/github/cache-link" ;;
-  esac
-  find "$runtime_root/cache" -print | LC_ALL=C sort >"$fixture_root/mixed-cache.before"
-  find "$runtime_root/cache" -type f -exec shasum -a 256 {} + | LC_ALL=C sort >>"$fixture_root/mixed-cache.before"
-  "$installer" >"$fixture_root/cache-$cache_case.out" || fail "$cache_case cache reinstall failed"
-  find "$runtime_root/cache" -print | LC_ALL=C sort >"$fixture_root/mixed-cache.after"
-  find "$runtime_root/cache" -type f -exec shasum -a 256 {} + | LC_ALL=C sort >>"$fixture_root/mixed-cache.after"
-  cmp -s "$fixture_root/mixed-cache.before" "$fixture_root/mixed-cache.after" \
-    || fail "reinstall removed $cache_case cache content"
-  for retired in installed-version version mise mise-config; do
-    [[ ! -e "$runtime_root/$retired" && ! -L "$runtime_root/$retired" ]] \
-      || fail "$cache_case cache prevented private runtime retirement"
-  done
-  rm -rf -- "$runtime_root/cache"
-done
-printf 'OMP private runtime migration contract: PASS\n'
 
 printf 'user changed local provider\n' >"$agent_root/models.yml"
 if "$command_path" doctor local >"$fixture_root/local-models-drift.out" 2>&1; then
@@ -1218,9 +1151,8 @@ for failure_kind in overlay-move marker-move overlay-stage marker-stage; do
   "$command_path" repair local >/dev/null || fail 'could not restore main profile after fresh setup retry'
 done
 
-[[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
-[[ "$(readlink "$command_path")" == "$runtime_root/bin/omp" ]] \
-  || fail 'command symlink target differs'
+[[ -x "$command_path" && ! -L "$command_path" ]] \
+  || fail 'installer did not publish the owned runtime command'
 [[ -f "$installed_ownership" \
   && "$(<"$installed_ownership")" == 'trellage-omp-profiles-v2' ]] \
   || fail 'installer did not publish the current runtime ownership generation'
@@ -1236,12 +1168,11 @@ jq -e '.installed == "18.0.11"' "$fixture_root/host-version.json" >/dev/null \
 
 wrapper_alias="$fixture_root/wrapper-alias"
 mkdir -p "$wrapper_alias"
-ln -s "../home/.local/share/trellage/.native-commands/omp" "$wrapper_alias/omp"
-ln -s "home/.local/share/trellage/.native-commands" "$fixture_root/wrapper-directory-link"
+ln -s "$command_path" "$wrapper_alias/omp"
 for resolver_path in \
   "${command_path%/*}:$host_bin:$fixture_tools_path" \
   "$wrapper_alias:$host_bin:$fixture_tools_path" \
-  "$fixture_root/wrapper-directory-link:$wrapper_alias:${command_path%/*}:${command_path%/*}:$host_bin:$fixture_tools_path"; do
+  "$wrapper_alias:${command_path%/*}:${command_path%/*}:$host_bin:$fixture_tools_path"; do
   PATH="$resolver_path" "$command_path" harness-version \
     >"$fixture_root/resolver-version.json" || fail 'wrapper skipping host resolution failed'
   jq -e '.installed == "18.0.11"' "$fixture_root/resolver-version.json" \
@@ -1320,7 +1251,6 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "omp"
   and .harness == "oh-my-pi"
-  and .sandbox == false
   and [.profiles[].name] == ["copilot", "local"]
   and all(.profiles[]; .plugin == null)
   and all(.profiles[]; .headless == {
@@ -2127,7 +2057,7 @@ unsafe_agent="$unsafe_home/.omp/profiles/trellage-qwen-local/agent"
 printf 'user-owned provider\n' >"$unsafe_agent/models.yml"
 printf 'user-owned legacy settings\n' >"$unsafe_agent/config.yaml"
 HOME="$unsafe_home" "$installer" >/dev/null || fail 'unsafe provider fixture install failed'
-unsafe_command="$unsafe_home/.local/share/trellage/.native-commands/omp"
+unsafe_command="$unsafe_home/.local/share/trellage/omp/bin/omp"
 for operation in setup repair; do
   if HOME="$unsafe_home" "$unsafe_command" "$operation" local >"$fixture_root/unsafe-$operation.out" 2>&1; then
     fail "$operation replaced unrelated local provider"
@@ -2172,7 +2102,7 @@ mkdir "$fresh_home"
 seed_floating_skills_cache "$fresh_home"
 seed_community_skills_cache "$fresh_home/.local/share/trellage/common/omp-community-skills"
 HOME="$fresh_home" "$installer" >/dev/null || fail 'fresh profile fixture install failed'
-fresh_command="$fresh_home/.local/share/trellage/.native-commands/omp"
+fresh_command="$fresh_home/.local/share/trellage/omp/bin/omp"
 HOME="$fresh_home" "$fresh_command" setup local >"$fixture_root/fresh-local-setup.out" \
   || fail 'independent fresh local setup failed'
 cmp -s "$fixture_root/expected-local-models.yml" "$fresh_home/.omp/profiles/trellage-qwen-local/agent/models.yml" \
@@ -2301,7 +2231,7 @@ ln -s "$fixture_root/symlink-target" "$symlink_home/.omp/profiles/trellage-qwen-
 HOME="$symlink_home" "$installer" >/dev/null || fail 'symlink fixture install failed'
 if HOME="$symlink_home" PATH="$host_bin:$fixture_tools_path" \
   FAKE_MISE_LOG="$FAKE_MISE_LOG" FAKE_OMP_TEMPLATE="$FAKE_OMP_TEMPLATE" \
-  "$symlink_home/.local/share/trellage/.native-commands/omp" setup >"$fixture_root/symlink.out" 2>&1; then
+  "$symlink_home/.local/share/trellage/omp/bin/omp" setup >"$fixture_root/symlink.out" 2>&1; then
   fail 'setup accepted symlinked profile path'
 fi
 [[ ! -e "$fixture_root/symlink-target/agent/models.yml" \
@@ -2334,15 +2264,8 @@ grep -Fqx 'session state' "$profile_root/session-canary" || fail 'uninstall remo
 grep -Fqx 'copilot session state' "$copilot_profile_root/session-canary" \
   || fail 'uninstall removed Copilot profile state'
 
-unowned_home="$fixture_root/unowned-home"
-mkdir -p "$unowned_home/.local/share/trellage/.native-commands"
-printf 'unrelated\n' >"$unowned_home/.local/share/trellage/.native-commands/omp"
-if HOME="$unowned_home" "$installer" >"$fixture_root/unowned.out" 2>&1; then
-  fail 'installer replaced unrelated command'
-fi
-grep -Fqx 'unrelated' "$unowned_home/.local/share/trellage/.native-commands/omp" || fail 'installer changed unrelated command'
 
-for unsafe_case in missing-marker unowned-root marker-link runtime-link ancestor-link command-dir-link; do
+for unsafe_case in missing-marker unowned-root marker-link runtime-link ancestor-link; do
   unsafe_home="$fixture_root/unsafe-runtime-$unsafe_case"
   unsafe_runtime="$unsafe_home/.local/share/trellage/omp"
   unsafe_target="$fixture_root/unsafe-target-$unsafe_case"
@@ -2367,23 +2290,16 @@ for unsafe_case in missing-marker unowned-root marker-link runtime-link ancestor
       mv "$unsafe_home/.local" "$unsafe_target/local"
       ln -s "$unsafe_target/local" "$unsafe_home/.local"
       ;;
-    command-dir-link)
-      mkdir "$unsafe_target/commands"
-      ln -s "$unsafe_target/commands" "$unsafe_home/.local/share/trellage/.native-commands"
-      ln -s "$unsafe_runtime/bin/omp" "$unsafe_target/commands/omp"
-      ;;
   esac
-  if [[ "$unsafe_case" != command-dir-link ]]; then
-    if HOME="$unsafe_home" TRELLAGE_TRX_OMP_ADAPTER=1 "$launcher" _trx-admit default \
-      >"$fixture_root/unsafe-source-$unsafe_case.out" 2>&1; then
-      fail "source admission accepted $unsafe_case"
-    fi
-    grep -Eq '^omp: (unsafe runtime path|unowned runtime root):' \
-      "$fixture_root/unsafe-source-$unsafe_case.out" \
-      || fail "source admission did not reject runtime ownership for $unsafe_case"
-    [[ ! -e "$unsafe_runtime/overlays" && ! -e "$unsafe_home/.omp" ]] \
-      || fail "source admission changed state before refusing $unsafe_case"
+  if HOME="$unsafe_home" TRELLAGE_TRX_OMP_ADAPTER=1 "$launcher" _trx-admit default \
+    >"$fixture_root/unsafe-source-$unsafe_case.out" 2>&1; then
+    fail "source admission accepted $unsafe_case"
   fi
+  grep -Eq '^omp: (unsafe runtime path|unowned runtime root):' \
+    "$fixture_root/unsafe-source-$unsafe_case.out" \
+    || fail "source admission did not reject runtime ownership for $unsafe_case"
+  [[ ! -e "$unsafe_runtime/overlays" && ! -e "$unsafe_home/.omp" ]] \
+    || fail "source admission changed state before refusing $unsafe_case"
   for operation in "$installer" "$uninstaller"; do
     if HOME="$unsafe_home" "$operation" >"$fixture_root/unsafe-runtime-$unsafe_case.out" 2>&1; then
       fail "${operation##*/} accepted $unsafe_case"
@@ -2395,7 +2311,7 @@ done
 
 opaque_home="$fixture_root/opaque-profile-home"
 mkdir -p "$opaque_home/.local/share/trellage/omp/bin" "$opaque_home/.omp"
-printf 'trellage-omp-profiles-v1\n' >"$opaque_home/.local/share/trellage/omp/.managed-by-trellage-omp-profiles"
+printf 'trellage-omp-profiles-v2\n' >"$opaque_home/.local/share/trellage/omp/.managed-by-trellage-omp-profiles"
 install -m 0755 "$launcher" "$opaque_home/.local/share/trellage/omp/bin/omp"
 install -m 0644 "$root/catalog.json" "$opaque_home/.local/share/trellage/omp/catalog.json"
 chmod 000 "$opaque_home/.omp"

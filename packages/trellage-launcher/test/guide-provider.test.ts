@@ -22,7 +22,8 @@ const workflowIndex = new Map<string, ReadonlySet<string>>([
 ])
 
 const validMatchCandidate = (overrides: Partial<Record<string, unknown>> = {}) => ({
-  profileRef: "native:copilot/plannotator",
+  harness: "copilot",
+  profiles: ["plannotator"],
   workflowId: "visual-artifact",
   confidence: 0.9,
   reason: "Strong fit for reviewing diffs.",
@@ -33,23 +34,23 @@ const validMatchCandidate = (overrides: Partial<Record<string, unknown>> = {}) =
 const validMatchResult = () => ({
   candidates: [
     validMatchCandidate(),
-    validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review" }),
-    validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
+    validMatchCandidate({ harness: "x", profiles: ["prime-agent"], workflowId: "review" }),
+    validMatchCandidate({ harness: "x", profiles: ["other"], workflowId: "build" }),
   ],
 })
 
 const validFiveMatchResult = () => ({
   candidates: [
     validMatchCandidate({ confidence: 0.95 }),
-    validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review", confidence: 0.85 }),
-    validMatchCandidate({ profileRef: "native:x/other", workflowId: "build", confidence: 0.75 }),
+    validMatchCandidate({ harness: "x", profiles: ["prime-agent"], workflowId: "review", confidence: 0.85 }),
+    validMatchCandidate({ harness: "x", profiles: ["other"], workflowId: "build", confidence: 0.75 }),
     validMatchCandidate({
-      profileRef: "native:codex/pstack",
+      harness: "codex", profiles: ["pstack"],
       workflowId: "poteto-mode-entry-point",
       confidence: 0.65,
     }),
     validMatchCandidate({
-      profileRef: "native:headlong/default",
+      harness: "headlong", profiles: ["default"],
       workflowId: "persistent-investigation",
       confidence: 0.55,
     }),
@@ -60,10 +61,10 @@ describe("validateGuideMatchResult", () => {
   it("accepts three unique, known-reference candidates from an older cached response", () => {
     const result = validateGuideMatchResult(validMatchResult(), workflowIndex)
     expect(result.candidates).toHaveLength(3)
-    expect(result.candidates.map((c) => c.profileRef)).toEqual([
-      "native:copilot/plannotator",
-      "native:x/prime-agent",
-      "native:x/other",
+    expect(result.candidates).toMatchObject([
+      { harness: "copilot", profiles: ["plannotator"] },
+      { harness: "x", profiles: ["prime-agent"] },
+      { harness: "x", profiles: ["other"] },
     ])
   })
 
@@ -82,7 +83,7 @@ describe("validateGuideMatchResult", () => {
       candidates: [
         ...validFiveMatchResult().candidates,
         validMatchCandidate({
-          profileRef: "native:codex/superpowers",
+          harness: "codex", profiles: ["superpowers"],
           workflowId: "systematic-debugging",
           confidence: 0.45,
         }),
@@ -96,7 +97,7 @@ describe("validateGuideMatchResult", () => {
       candidates: [
         validMatchCandidate(),
         validMatchCandidate(),
-        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
+        validMatchCandidate({ harness: "x", profiles: ["other"], workflowId: "build" }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -105,9 +106,9 @@ describe("validateGuideMatchResult", () => {
   it("rejects an unknown profile ref", () => {
     const result = {
       candidates: [
-        validMatchCandidate({ profileRef: "native:unknown/thing" }),
-        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review" }),
-        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
+        validMatchCandidate({ harness: "unknown", profiles: ["thing"] }),
+        validMatchCandidate({ harness: "x", profiles: ["prime-agent"], workflowId: "review" }),
+        validMatchCandidate({ harness: "x", profiles: ["other"], workflowId: "build" }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -117,8 +118,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ workflowId: "does-not-exist" }),
-        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review" }),
-        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
+        validMatchCandidate({ harness: "x", profiles: ["prime-agent"], workflowId: "review" }),
+        validMatchCandidate({ harness: "x", profiles: ["other"], workflowId: "build" }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -133,8 +134,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ command: "rm -rf /" }),
-        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review" }),
-        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build" }),
+        validMatchCandidate({ harness: "x", profiles: ["prime-agent"], workflowId: "review" }),
+        validMatchCandidate({ harness: "x", profiles: ["other"], workflowId: "build" }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -149,8 +150,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ confidence: 0.3 }),
-        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review", confidence: 0.9 }),
-        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build", confidence: 0.5 }),
+        validMatchCandidate({ harness: "x", profiles: ["prime-agent"], workflowId: "review", confidence: 0.9 }),
+        validMatchCandidate({ harness: "x", profiles: ["other"], workflowId: "build", confidence: 0.5 }),
       ],
     }
     expect(() => validateGuideMatchResult(result, workflowIndex)).toThrow(GuideValidationError)
@@ -160,8 +161,8 @@ describe("validateGuideMatchResult", () => {
     const result = {
       candidates: [
         validMatchCandidate({ confidence: 0.9 }),
-        validMatchCandidate({ profileRef: "native:x/prime-agent", workflowId: "review", confidence: 0.6 }),
-        validMatchCandidate({ profileRef: "native:x/other", workflowId: "build", confidence: 0.3 }),
+        validMatchCandidate({ harness: "x", profiles: ["prime-agent"], workflowId: "review", confidence: 0.6 }),
+        validMatchCandidate({ harness: "x", profiles: ["other"], workflowId: "build", confidence: 0.3 }),
       ],
     }
     const validated = validateGuideMatchResult(result, workflowIndex)
@@ -276,22 +277,28 @@ const compactGuide = (): GuideMatchCatalogEntry["guide"] => ({
 const matchCatalogEntry = (overrides: Partial<GuideMatchCatalogEntry> = {}): GuideMatchCatalogEntry => {
   const base: GuideMatchCatalogEntry = {
     ref: "native:codex/pstack",
-    surface: "native",
-    name: "pstack",
-    launcher: "codex",
+    harness: "codex",
+    profiles: ["pstack"],
+    kind: "preset",
+    headless: {
+      schemaVersion: 1, prompt: true, outputFormats: ["json"], eventContract: null,
+      trellageEventContract: null, sessionId: "native", resume: false, resumeWithPrompt: false,
+      questionToolControl: "none", changedFiles: "none", usage: false, cost: false,
+      modelOverride: false, effortOverride: false, testedHarnessVersion: null,
+    },
     description: "Code review harness.",
-    sandbox: false,
     guide: compactGuide(),
   }
   return { ...base, ...overrides }
 }
 
-const sandboxMatchCatalogEntry = (overrides: Partial<GuideMatchCatalogEntry> = {}): GuideMatchCatalogEntry => ({
+const secondaryMatchCatalogEntry = (overrides: Partial<GuideMatchCatalogEntry> = {}): GuideMatchCatalogEntry => ({
   ref: "native:x/prime-agent",
-  surface: "native",
-  name: "prime-agent",
-  description: "Sandboxed coding agent.",
-  sandbox: true,
+  harness: "x",
+  profiles: ["prime-agent"],
+  kind: "preset",
+  headless: matchCatalogEntry().headless,
+  description: "Coding agent.",
   guide: compactGuide(),
   ...overrides,
 })
@@ -301,8 +308,8 @@ describe("assertGuideMatchInput", () => {
     intent: "Review my open PR",
     entries: [
       matchCatalogEntry(),
-      sandboxMatchCatalogEntry(),
-      sandboxMatchCatalogEntry({ ref: "native:x/other", name: "other" }),
+      secondaryMatchCatalogEntry(),
+      secondaryMatchCatalogEntry({ ref: "native:x/other", profiles: ["other"] }),
     ],
   })
 

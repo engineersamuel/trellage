@@ -1,10 +1,11 @@
 #!/usr/bin/env -S BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=/dev/null
 import { spawn } from "node:child_process"
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
+import { loadCompositionCatalog } from "../packages/trellage-launcher/src/composition-catalog.ts"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const maximumOutputBytes = 2 * 1024 * 1024
@@ -27,20 +28,14 @@ interface CompactWorkflow {
 }
 
 interface CatalogProfile {
-  readonly surface: string
-  readonly name: string
+  readonly ref: string
+  readonly harness: string
+  readonly profiles: ReadonlyArray<string>
   readonly description: string
-  readonly sandbox: unknown
   readonly workflows: ReadonlyMap<string, CompactWorkflow>
   readonly prerequisites: readonly unknown[]
   readonly headless: unknown
   readonly herdrCompatibility: unknown
-  readonly launcher?: string
-  readonly harness?: string
-}
-
-interface ProfileList {
-  readonly profiles: readonly unknown[]
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -251,28 +246,6 @@ const runCommand = (
 const runMiseTask = (task: string, taskArgs: readonly string[], env?: NodeJS.ProcessEnv, input?: string) =>
   runCommand("mise", ["run", task, "--", ...taskArgs], { env, input })
 
-const nativeSourceDescriptions = async () => {
-  const descriptions = new Map<string, string>()
-  const prototypes = path.join(root, "prototypes")
-  for (const directory of await readdir(prototypes, { withFileTypes: true })) {
-    if (!directory.isDirectory() || !/^trellage-.+-profiles$/u.test(directory.name)) continue
-    const familyRoot = path.join(prototypes, directory.name)
-    const launchers = (await readdir(path.join(familyRoot, "bin"), { withFileTypes: true }))
-      .filter((entry) => entry.isFile())
-      .map(({ name }) => name)
-    if (launchers.length !== 1) throw new Error(`${directory.name}/bin must contain one launcher`)
-    const catalog = record(
-      JSON.parse(await readFile(path.join(familyRoot, "catalog.json"), "utf8")),
-      `${directory.name}/catalog.json`,
-    )
-    const profiles = record(catalog.profiles, `${directory.name}/catalog.json profiles`)
-    for (const [profile, rawProfile] of Object.entries(profiles)) {
-      const entry = record(rawProfile, `${launchers[0]}/${profile}`)
-      descriptions.set(`native:${launchers[0]}/${profile}`, text(entry.description, `${profile}.description`))
-    }
-  }
-  return descriptions
-}
 
 const compactWorkflow = (value: unknown, name: string): CompactWorkflow => {
   const workflow = record(value, name)
@@ -284,63 +257,37 @@ const compactWorkflow = (value: unknown, name: string): CompactWorkflow => {
   return workflow.skill === undefined ? compact : { ...compact, skill: text(workflow.skill, `${name}.skill`) }
 }
 
-const catalogProfile = (value: unknown): [string, CatalogProfile] => {
-  const entry = record(value, "native profile")
-  const name = text(entry.name, "native profile.name")
-  const launcher = text(entry.launcher, `native:${name}.launcher`)
-  const guide = record(entry.guide, `native:${launcher}/${name}.guide`)
+const catalogProfile = (value: unknown): [string, CatalogProfile] | null => {
+  const entry = record(value, "composition")
+  if (entry.guide === null) return null
+  const ref = text(entry.ref, "composition.ref")
+  const harness = text(entry.harness, `${ref}.harness`)
+  const profiles = stringArray(entry.profiles, `${ref}.profiles`)
+  const guide = record(entry.guide, `${ref}.guide`)
   if (!Array.isArray(guide.workflows) || !Array.isArray(guide.prerequisites)) {
-    throw new Error(`native:${launcher}/${name}.guide must contain workflows and prerequisites`)
+    throw new Error(`${ref}.guide must contain workflows and prerequisites`)
   }
   const workflows = new Map(
     guide.workflows.map((workflow, index): [string, CompactWorkflow] => {
-      const compact = compactWorkflow(workflow, `native:${launcher}/${name}.workflows[${index}]`)
+      const compact = compactWorkflow(workflow, `${ref}.workflows[${index}]`)
       return [compact.id, compact]
     }),
   )
-  return [
-    `native:${launcher}/${name}`,
-    {
-      surface: "native",
-      name,
-      launcher,
-      description: text(entry.description, `native:${launcher}/${name}.description`),
-      sandbox: entry.sandbox,
-      workflows,
-      prerequisites: guide.prerequisites,
-      headless: entry.headless,
-      herdrCompatibility: entry.herdrCompatibility,
-    },
-  ]
+  return [ref, {
+    ref,
+    harness,
+    profiles,
+    description: text(entry.description, `${ref}.description`),
+    workflows,
+    prerequisites: guide.prerequisites,
+    headless: entry.headless,
+    herdrCompatibility: entry.herdrCompatibility,
+  }]
 }
 
-const profileCatalogIndex = (nativeList: ProfileList) =>
-  new Map(nativeList.profiles.map((profile) => catalogProfile(profile)))
-
-const validateNativeCatalogSync = (nativeList: ProfileList, sourceDescriptions: ReadonlyMap<string, string>) => {
-  const installedProfiles = new Set<string>()
-  for (const profile of nativeList.profiles) {
-    const entry = record(profile, "native profile")
-    const profileRef = `native:${text(entry.launcher, "native launcher")}/${text(entry.name, "native profile")}`
-    installedProfiles.add(profileRef)
-    const sourceDescription = sourceDescriptions.get(profileRef)
-    if (sourceDescription === undefined) {
-      throw new Error(
-        `installed Native catalog has unexpected profile: ${profileRef}; run mise run rebuild-native-profiles before live evaluation`,
-      )
-    }
-    if (entry.description !== sourceDescription) {
-      throw new Error(
-        `${profileRef} installed description differs from this worktree; run mise run rebuild-native-profiles before live evaluation`,
-      )
-    }
-  }
-  const missingProfiles = [...sourceDescriptions.keys()].filter((profileRef) => !installedProfiles.has(profileRef))
-  if (missingProfiles.length > 0) {
-    throw new Error(
-      `installed Native catalog is missing worktree profiles: ${missingProfiles.join(", ")}; run mise run rebuild-native-profiles before live evaluation`,
-    )
-  }
+const profileCatalogIndex = (entries: ReadonlyArray<unknown>) => {
+  const pairs = entries.map(catalogProfile).filter((pair): pair is [string, CatalogProfile] => pair !== null)
+  return new Map(pairs)
 }
 
 const validateExpectedWorkflowProfiles = (
@@ -419,12 +366,10 @@ const validateRecommendationEnrichment = (
   profileRef: string,
 ) => {
   if (
-    recommendation.surface !== profile.surface ||
-    recommendation.name !== profile.name ||
-    recommendation.description !== profile.description ||
-    recommendation.sandbox !== profile.sandbox ||
-    recommendation.launcher !== profile.launcher ||
+    recommendation.ref !== profile.ref ||
     recommendation.harness !== profile.harness ||
+    !isDeepStrictEqual(recommendation.profiles, profile.profiles) ||
+    recommendation.description !== profile.description ||
     !isDeepStrictEqual(recommendation.workflow, workflow) ||
     !isDeepStrictEqual(recommendation.prerequisites, profile.prerequisites) ||
     !isDeepStrictEqual(recommendation.headless, profile.headless) ||
@@ -446,23 +391,22 @@ const validateRecommendation = (
     recommendation,
     `${scenario.id}.recommendations[${index}]`,
     [
-      "profileRef",
+      "ref",
+      "harness",
+      "profiles",
       "workflowId",
       "confidence",
       "reason",
       "tradeoff",
-      "surface",
-      "name",
       "description",
-      "sandbox",
       "workflow",
       "prerequisites",
       "headless",
       "herdrCompatibility",
     ],
-    ["launcher", "harness"],
+    ["goalExecution"],
   )
-  const profileRef = text(recommendation.profileRef, `${scenario.id}.profileRef`)
+  const profileRef = text(recommendation.ref, `${scenario.id}.ref`)
   const workflowId = text(recommendation.workflowId, `${scenario.id}.workflowId`)
   const confidence = validateRecommendationConfidence(recommendation, scenario, previousConfidence)
   const profile = profiles.get(profileRef)
@@ -507,17 +451,11 @@ const evaluate = async () => {
   const env = { ...process.env, XDG_CACHE_HOME: cacheRoot }
   try {
     process.stdout.write(`profile guide live evaluation: worktree launcher, isolated cache ${cacheRoot}\n`)
-    const [nativeSource, sourceDescriptions] = await Promise.all([
-      runMiseTask("trx", ["list", "--json"], env),
-      nativeSourceDescriptions(),
-    ])
-    const nativeValue = record(JSON.parse(nativeSource), "Native profile list")
-    if (!Array.isArray(nativeValue.profiles)) {
-      throw new Error("worktree profile list must contain profiles")
-    }
-    const nativeList: ProfileList = { profiles: nativeValue.profiles }
-    validateNativeCatalogSync(nativeList, sourceDescriptions)
-    const profiles = profileCatalogIndex(nativeList)
+    const catalog = await loadCompositionCatalog({
+      guideRoot: path.join(root, "profile-guides"),
+      commandPath: path.join(root, "prototypes", "trellage-router", "bin", "trx"),
+    })
+    const profiles = profileCatalogIndex(catalog.entries)
     validateExpectedWorkflowProfiles(scenarios, profiles)
 
     let failures = 0

@@ -1,23 +1,8 @@
-import { canonicalNativeIdentity, canonicalProfileRef } from "@trellage/guide-core"
-import { canonicalNativeCommandPath } from "./guide-launch.ts"
+import type { CompositionCatalog, CompositionCatalogEntry, HeadlessCapabilitiesV1 } from "./composition-catalog.ts"
+export type { HeadlessCapabilitiesV1 } from "./composition-catalog.ts"
 /**
- * Strict types and parsing for the combined `trx guide` catalog: the
- * enriched native `trx list --json` profiles (with a projected `guide` field
- * added by `enrichNativeProfileList` in `native-guide-list.ts`) merged with
- * assembled by `prototypes/trellage-router/bin/trx` into a single JSON
- * document (the legacy `sandbox` key, when present, must be empty):
- *
- * ```json
- * { "schemaVersion": 1, "native": [...], "sandbox": [] }
- * ```
- *
- * Every profile gets a stable reference used throughout the guide feature:
- * `native:<launcher>/<name>` (the same key format as
- * `profileGuideIdentityKey` in `trellage-guide-core`). Parsing rejects
- * duplicate refs and any guide or headless-capability shape that does not
- * match exactly. Every native `commandPath` must be absolute; workflow `skill` values and
- * `promptTemplate` placeholders are validated with the same rules
- * `trellage-guide-core` applies to authored Markdown guides.
+ * Validation and compact matching projections for authored profile guides.
+ * The launchable rows themselves come from `loadCompositionCatalog`.
  */
 import {
   isLaunchAgentIdentifier,
@@ -25,14 +10,12 @@ import {
   type ProfileGuideInteraction,
   isProfileGuideGoalController,
   profileGuideGoalExecutionProblem,
-  profileGuideIdentityKey,
   type ProfileGuideGoalExecution,
   type ProfileGuideIdentity,
   type ProfileGuidePrerequisite,
   type ProfileGuideV1,
   type ProfileGuideWorkflow,
 } from "@trellage/guide-core"
-import nodePath from "node:path"
 import {
   array,
   boolean,
@@ -71,11 +54,6 @@ const nullableText = (value: unknown, path: string, maximum: number): string | n
   return text(value, path, maximum)
 }
 
-const absolutePath = (value: unknown, fieldPath: string, maximum: number): string => {
-  const result = text(value, fieldPath, maximum)
-  if (!nodePath.isAbsolute(result)) fail(fieldPath, "must be an absolute path")
-  return result
-}
 
 // ---------------------------------------------------------------------------
 // Profile guide (parsed JSON, not Markdown+frontmatter): re-validates the
@@ -191,8 +169,7 @@ export const validateProfileGuideV1 = (
     validateWorkflow(item, `${path}.workflows[${index}]`),
   )
   if (context !== undefined && workflows.some(({ interaction }) => interaction !== undefined) &&
-      (context.identity.surface !== "native" || context.identity.launcher !== "copilot" ||
-       context.identity.profile !== "hve" || context.harness !== "copilot")) {
+      (context.identity.harness !== "copilot" || context.identity.profile !== "hve" || context.harness !== "copilot")) {
     fail(`${path}.workflows`, "interactive workflow checks currently require native:copilot/hve")
   }
   uniqueArray(
@@ -220,23 +197,6 @@ export const validateProfileGuideV1 = (
 // `prototypes/trellage-router/bin/trx`'s `validHeadless` jq check.
 // ---------------------------------------------------------------------------
 
-export interface HeadlessCapabilitiesV1 {
-  readonly schemaVersion: 1
-  readonly prompt: boolean
-  readonly outputFormats: ReadonlyArray<"text" | "json" | "jsonl">
-  readonly eventContract: string | null
-  readonly trellageEventContract: "trellage-headless-v1" | null
-  readonly sessionId: "native" | "trellage" | "none"
-  readonly resume: boolean
-  readonly resumeWithPrompt: boolean
-  readonly questionToolControl: "hard-deny" | "prompt-only" | "none"
-  readonly changedFiles: "native" | "git-diff" | "none"
-  readonly usage: boolean
-  readonly cost: boolean
-  readonly modelOverride: boolean
-  readonly effortOverride: boolean
-  readonly testedHarnessVersion: string | null
-}
 
 const headlessKeys = [
   "changedFiles",
@@ -293,167 +253,23 @@ export const validateHeadlessCapabilitiesV1 = (value: unknown, path: string): He
   }
 }
 
-// ---------------------------------------------------------------------------
-// Herdr compatibility: curated, hand-maintained ledger data. Native entries
-// project extra fields (e.g. `kind` and `harness` from
-// `docs/herdr-compatibility.json`), so this is validated
-// loosely — a `status` string is required, everything else passes through.
+
+// Compact, ref-addressed projections for matching. Catalog entries contain
+// parsed guide metadata, not Markdown source bodies.
 // ---------------------------------------------------------------------------
 
-export interface HerdrCompatibilityInfo {
-  readonly status: string
-  readonly [key: string]: unknown
-}
+export type GuideCatalogEntryRef = CompositionCatalogEntry & { readonly guide: ProfileGuideV1 }
 
-const validateHerdrCompatibility = (value: unknown, path: string): HerdrCompatibilityInfo => {
-  const fields = record(value, path)
-  text(fields.status, `${path}.status`, 64)
-  return fields as HerdrCompatibilityInfo
-}
+const hasGuide = (entry: CompositionCatalogEntry): entry is GuideCatalogEntryRef => entry.guide !== null
 
-// ---------------------------------------------------------------------------
-// Native catalog entries.
-// ---------------------------------------------------------------------------
+export const guideCatalogEntries = (catalog: CompositionCatalog): ReadonlyArray<GuideCatalogEntryRef> =>
+  catalog.entries.filter(hasGuide)
 
-export interface NativeGuideCatalogEntry {
-  readonly launcher: string
-  readonly harness: string
-  readonly name: string
-  readonly description: string
-  readonly headless: HeadlessCapabilitiesV1
-  readonly sandbox: boolean
-  readonly herdrCompatibility: HerdrCompatibilityInfo
-  readonly guide: ProfileGuideV1
-  readonly commandPath: string
-}
-
-// Native catalogs publish `headless: null` for interactive-only profiles; treat it as no headless support.
-const interactiveOnlyHeadless = {
-  schemaVersion: 1,
-  prompt: false,
-  outputFormats: ["text"],
-  eventContract: null,
-  trellageEventContract: null,
-  sessionId: "none",
-  resume: false,
-  resumeWithPrompt: false,
-  questionToolControl: "none",
-  changedFiles: "none",
-  usage: false,
-  cost: false,
-  modelOverride: false,
-  effortOverride: false,
-  testedHarnessVersion: null,
-} as const
-
-const validateNativeEntry = (value: unknown, path: string): NativeGuideCatalogEntry => {
-  const fields = record(value, path)
-  exactKeys(fields, path, [
-    "launcher",
-    "harness",
-    "name",
-    "description",
-    "headless",
-    "sandbox",
-    "herdrCompatibility",
-    "guide",
-    "commandPath",
-  ], ["backendPath"])
-  const identity = canonicalNativeIdentity(identifier(fields.launcher, `${path}.launcher`), identifier(fields.name, `${path}.name`))
-  const launcher = identity.launcher
-  const harness = identifier(fields.harness, `${path}.harness`)
-  const name = identity.profile
-  return {
-    launcher,
-    harness,
-    name,
-    description: text(fields.description, `${path}.description`, 2000),
-    headless: validateHeadlessCapabilitiesV1(fields.headless ?? interactiveOnlyHeadless, `${path}.headless`),
-    sandbox: boolean(fields.sandbox, `${path}.sandbox`),
-    herdrCompatibility: validateHerdrCompatibility(fields.herdrCompatibility, `${path}.herdrCompatibility`),
-    guide: validateProfileGuideV1(fields.guide, `${path}.guide`, {
-      identity: { surface: "native", launcher, profile: name },
-      harness,
-    }),
-    commandPath: canonicalNativeCommandPath(absolutePath(fields.commandPath, `${path}.commandPath`, 4096)),
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Combined catalog.
-// ---------------------------------------------------------------------------
-
-export interface CombinedGuideCatalog {
-  readonly schemaVersion: 1
-  readonly native: ReadonlyArray<NativeGuideCatalogEntry>
-}
-
-export const parseGuideCatalog = (source: string): CombinedGuideCatalog => {
-  let payload: unknown
-  try {
-    payload = JSON.parse(source)
-  } catch {
-    fail("catalog", "must contain valid JSON")
-  }
-  const root = record(payload, "catalog")
-  // The router still emits a legacy empty `sandbox` array; Trellage Sandbox
-  // profiles are retired, so any entry there is rejected.
-  exactKeys(root, "catalog", ["schemaVersion", "native"], ["sandbox"])
-  if (root.schemaVersion !== 1) fail("catalog.schemaVersion", "must equal 1")
-  if (root.sandbox !== undefined && array(root.sandbox, "catalog.sandbox", { maximum: 0 }).length > 0)
-    fail("catalog.sandbox", "must be empty; Trellage Sandbox profiles are retired")
-  const native = array(root.native, "catalog.native", { maximum: 512 }).map((item, index) =>
-    validateNativeEntry(item, `catalog.native[${index}]`),
-  )
-  const refs = native.map((entry) =>
-    profileGuideIdentityKey({ surface: "native", launcher: entry.launcher, profile: entry.name }),
-  )
-  uniqueArray(refs, "catalog", "profile refs")
-  return { schemaVersion: 1, native }
-}
-
-// ---------------------------------------------------------------------------
-// Normalized, ref-addressed entries and the compact projection used for
-// matching (guide metadata without `promptTemplate` or the Markdown body —
-// the body is never present on catalog entries in the first place, since
-// `enrichNativeProfileList` and `toFullList`/`toSimplifiedList` only project
-// the parsed `guide`, never the source document).
-// ---------------------------------------------------------------------------
-
-export type GuideCatalogSurface = "native"
-
-export interface GuideCatalogEntryRef {
-  readonly ref: string
-  readonly surface: GuideCatalogSurface
-  readonly name: string
-  readonly launcher?: string
-  readonly harness?: string
-  readonly resolvedVersion?: string
-  readonly description: string
-  readonly sandbox: boolean
-  readonly guide: ProfileGuideV1
-}
-
-export const guideCatalogEntries = (catalog: CombinedGuideCatalog): ReadonlyArray<GuideCatalogEntryRef> => [
-  ...catalog.native.map(
-    (entry): GuideCatalogEntryRef => ({
-      ref: profileGuideIdentityKey({ surface: "native", launcher: entry.launcher, profile: entry.name }),
-      surface: "native",
-      name: entry.name,
-      launcher: entry.launcher,
-      harness: entry.harness,
-      description: entry.description,
-      sandbox: entry.sandbox,
-      guide: entry.guide,
-    }),
-  ),
-]
-
-export const findGuideCatalogEntry = (catalog: CombinedGuideCatalog, ref: string): GuideCatalogEntryRef | undefined =>
-  guideCatalogEntries(catalog).find((entry) => entry.ref === canonicalProfileRef(ref))
+export const findGuideCatalogEntry = (catalog: CompositionCatalog, ref: string): GuideCatalogEntryRef | undefined =>
+  guideCatalogEntries(catalog).find((entry) => entry.ref === ref)
 
 /** A `ref -> known workflow IDs` index, used to validate model-referenced workflow IDs. */
-export const guideCatalogWorkflowIndex = (catalog: CombinedGuideCatalog): ReadonlyMap<string, ReadonlySet<string>> =>
+export const guideCatalogWorkflowIndex = (catalog: CompositionCatalog): ReadonlyMap<string, ReadonlySet<string>> =>
   new Map(guideCatalogEntries(catalog).map((entry) => [entry.ref, new Set(entry.guide.workflows.map(({ id }) => id))]))
 
 export interface CompactProfileGuideWorkflow {
@@ -508,12 +324,11 @@ export const compactProfileGuide = (guide: ProfileGuideV1): CompactProfileGuide 
 
 export interface GuideMatchCatalogEntry {
   readonly ref: string
-  readonly surface: GuideCatalogSurface
-  readonly name: string
-  readonly launcher?: string
-  readonly harness?: string
+  readonly harness: string
+  readonly profiles: ReadonlyArray<string>
+  readonly kind: CompositionCatalogEntry["kind"]
+  readonly headless: HeadlessCapabilitiesV1
   readonly description: string
-  readonly sandbox: boolean
   readonly guide: CompactProfileGuide
   readonly goalExecution?: ProfileGuideGoalExecution
 }
@@ -523,12 +338,11 @@ export const toGuideMatchCatalogEntry = (
   includeGoalExecution = false,
 ): GuideMatchCatalogEntry => ({
   ref: entry.ref,
-  surface: entry.surface,
-  name: entry.name,
-  ...(entry.launcher === undefined ? {} : { launcher: entry.launcher }),
-  ...(entry.harness === undefined ? {} : { harness: entry.harness }),
+  harness: entry.harness,
+  profiles: entry.profiles,
+  kind: entry.kind,
+  headless: entry.headless,
   description: entry.description,
-  sandbox: entry.sandbox,
   guide: compactProfileGuide(entry.guide),
   ...(includeGoalExecution && entry.guide.goalExecution !== undefined
     ? { goalExecution: entry.guide.goalExecution }
@@ -536,7 +350,7 @@ export const toGuideMatchCatalogEntry = (
 })
 
 export const guideMatchCatalogEntries = (
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   includeGoalExecution = false,
 ): ReadonlyArray<GuideMatchCatalogEntry> =>
   guideCatalogEntries(catalog).map((entry) => toGuideMatchCatalogEntry(entry, includeGoalExecution))

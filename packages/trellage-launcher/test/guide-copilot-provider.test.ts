@@ -132,14 +132,21 @@ const submittedModelInput = (client: FakeClient): unknown => {
   return JSON.parse(encoded)
 }
 
+const matchHeadless: GuideMatchCatalogEntry["headless"] = {
+  schemaVersion: 1, prompt: true, outputFormats: ["json"], eventContract: null,
+  trellageEventContract: null, sessionId: "native", resume: false, resumeWithPrompt: false,
+  questionToolControl: "none", changedFiles: "none", usage: false, cost: false,
+  modelOverride: false, effortOverride: false, testedHarnessVersion: null,
+}
+
 const matchEntries: ReadonlyArray<GuideMatchCatalogEntry> = [
   {
     ref: "native:codex/pstack",
-    surface: "native",
-    name: "pstack",
-    launcher: "codex",
+    harness: "codex",
+    profiles: ["pstack"],
+    kind: "preset",
+    headless: matchHeadless,
     description: "Codex host-native launcher.",
-    sandbox: false,
     guide: {
       schemaVersion: 1,
       capabilities: ["code-review"],
@@ -151,11 +158,11 @@ const matchEntries: ReadonlyArray<GuideMatchCatalogEntry> = [
   },
   {
     ref: "native:x/prime-agent",
-    surface: "native",
-    name: "prime-agent",
-    harness: "copilot",
-    description: "Sandboxed prime agent.",
-    sandbox: true,
+    harness: "x",
+    profiles: ["prime-agent"],
+    kind: "preset",
+    headless: matchHeadless,
+    description: "Prime agent.",
     guide: {
       schemaVersion: 1,
       capabilities: ["code-review"],
@@ -167,11 +174,11 @@ const matchEntries: ReadonlyArray<GuideMatchCatalogEntry> = [
   },
   {
     ref: "native:x/other",
-    surface: "native",
-    name: "other",
-    harness: "copilot",
-    description: "Another sandbox profile.",
-    sandbox: true,
+    harness: "x",
+    profiles: ["other"],
+    kind: "preset",
+    headless: matchHeadless,
+    description: "Another profile.",
     guide: {
       schemaVersion: 1,
       capabilities: ["build"],
@@ -188,21 +195,21 @@ const matchInput: GuideMatchInput = { intent: "Review my pull request", entries:
 const validMatchResponse = JSON.stringify({
   candidates: [
     {
-      profileRef: "native:codex/pstack",
+      harness: "codex", profiles: ["pstack"],
       workflowId: "review",
       confidence: 0.9,
       reason: "Best fit.",
       tradeoff: "Needs a git checkout.",
     },
     {
-      profileRef: "native:x/prime-agent",
+      harness: "x", profiles: ["prime-agent"],
       workflowId: "review",
       confidence: 0.6,
       reason: "Good fit.",
-      tradeoff: "Sandboxed only.",
+      tradeoff: "Restricted access only.",
     },
     {
-      profileRef: "native:x/other",
+      harness: "x", profiles: ["other"],
       workflowId: "build",
       confidence: 0.3,
       reason: "Weak fit.",
@@ -301,10 +308,10 @@ describe("CopilotGuideProvider — match/generate/refine happy paths", () => {
     const result = await provider.match(matchInput)
 
     expect(result.candidates).toHaveLength(3)
-    expect(result.candidates.map((c) => c.profileRef)).toEqual([
-      "native:codex/pstack",
-      "native:x/prime-agent",
-      "native:x/other",
+    expect(result.candidates).toMatchObject([
+      { harness: "codex", profiles: ["pstack"] },
+      { harness: "x", profiles: ["prime-agent"] },
+      { harness: "x", profiles: ["other"] },
     ])
     expect(client.createSessionCalls).toHaveLength(1)
     expect(client.startCalls).toBe(1)
@@ -569,7 +576,7 @@ describe("CopilotGuideProvider goal boundaries", () => {
   it("ranks a single eligible goal entry and repairs an unsupported model workflow", async () => {
     const input = goalGenerateInput()
     const candidate = {
-      profileRef: "native:codex/pstack", workflowId: "review", confidence: 1,
+      harness: "codex", profiles: ["pstack"], workflowId: "review", confidence: 1,
       reason: "Matches the approved objective.", tradeoff: "Requires a checkout.",
     }
     const client = new FakeClient([workingModel], [

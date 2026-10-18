@@ -505,7 +505,6 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "agx",
       harness: "agency",
-      sandbox: false,
       profiles: [
         .profiles
         | to_entries[]
@@ -569,10 +568,15 @@ inventory_profile() {
     inventory_json "$profile" not-setup
     return
   fi
-  if ! resolve_profile_readiness "$profile" >/dev/null 2>&1; then
+  # resolve_profile_readiness calls die on failure, so probe it in a subshell
+  # and report unhealthy instead of exiting without JSON.
+  local readiness
+  if ! readiness="$(resolve_profile_readiness "$profile" >/dev/null 2>&1 \
+    && printf '%s\n%s\n%s\n' "$ready_executable" "$ready_config" "$ready_auth")"; then
     inventory_json "$profile" unhealthy
     return
   fi
+  { IFS= read -r ready_executable; IFS= read -r ready_config; IFS= read -r ready_auth; } <<<"$readiness"
   inventory_json "$profile" healthy "$ready_executable" "$ready_config" "$ready_auth"
 }
 

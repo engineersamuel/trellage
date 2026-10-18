@@ -24,7 +24,7 @@ describe("default guide prompts", () => {
     expect(matchPrompt).toContain("resolve the choice with\ntheir actual runtime differences")
     expect(matchPrompt).toContain("Do not reward a profile only because it lists more capabilities")
     expect(matchPrompt).toContain("must identify the matching user outcome or workflow strength")
-    expect(matchPrompt).toContain("An explicit profile selection has priority.")
+    expect(matchPrompt).toContain("An explicit composition selection has priority.")
     expect(matchPrompt).toContain("Do not exclude a whole profile")
     expect(matchPrompt).toContain("Select only workflows in the supplied catalog")
     expect(generatePrompt).toContain("write only the body that belongs in")

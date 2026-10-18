@@ -13,11 +13,12 @@ import {
   runResearchAugment,
   type GuideAugmentContext,
 } from "../src/guide-augment.ts"
-import type { CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import type { CompositionCatalog, CompositionCatalogEntry } from "../src/composition-catalog.ts"
 import { guideIntentMaximumLength } from "../src/guide-api.ts"
 import type { CommandRunOptions, CommandRunResult, CommandRunner } from "../src/guide-launch.ts"
 import type { GuideEnrichInput, GuideFirstmateInput, GuideProvider } from "../src/guide-provider.ts"
 import type { JevSystemOneClient } from "../src/jev-decisions.ts"
+import { compositionFixtureEntry } from "./helpers/composition-catalog.ts"
 
 interface RecordedCall {
   readonly executable: string
@@ -56,38 +57,24 @@ const guide = {
   ],
 }
 
-const catalogWith = (native: CombinedGuideCatalog["native"]): CombinedGuideCatalog => ({
-  schemaVersion: 1,
-  native,
+const catalogWith = (entries: ReadonlyArray<CompositionCatalogEntry>): CompositionCatalog => ({
+  schemaVersion: 2,
+  entries,
 })
 
-const hveEntry: CombinedGuideCatalog["native"][number] = {
-  launcher: "copilot",
+const hveEntry = compositionFixtureEntry({
   harness: "copilot",
-  name: "hve",
+  profile: "hve",
   description: "Copilot CLI with the HVE Core RPI plugin.",
   headless: {
-    schemaVersion: 1,
     prompt: true,
     outputFormats: ["text"],
-    eventContract: null,
-    trellageEventContract: null,
-    sessionId: "none",
-    resume: false,
-    resumeWithPrompt: false,
-    questionToolControl: "hard-deny",
     changedFiles: "git-diff",
-    usage: false,
-    cost: false,
     modelOverride: true,
-    effortOverride: false,
-    testedHarnessVersion: null,
   },
-  sandbox: false,
-  herdrCompatibility: { status: "untested" },
   guide,
   commandPath: "/opt/trellage/copilot/bin/trx",
-}
+})
 
 const researchCatalog = catalogWith([hveEntry])
 

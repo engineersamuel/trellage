@@ -8,7 +8,7 @@ import {
   selectedProfileFromCatalogRef,
   templatePromptCandidates,
 } from "../src/guide-api.ts"
-import { type CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import type { CompositionCatalog } from "../src/composition-catalog.ts"
 import {
   createQueuedGuideJob,
   executeGuideBatch,
@@ -40,42 +40,21 @@ import {
   parseApprovedCustomerContext,
   renderCustomerContext,
 } from "../src/guide-customer-context.ts"
+import { compositionFixtureCatalog, compositionFixtureEntry } from "./helpers/composition-catalog.ts"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
 const guideRoot = path.join(root, "profile-guides")
 
-const catalog = async (): Promise<CombinedGuideCatalog> => ({
-  schemaVersion: 1,
-  native: [
-    {
-      launcher: "copilot",
-      harness: "copilot",
-      name: "hve",
-      description: "Native HVE",
-      commandPath: "/opt/bin/trx",
-      sandbox: false,
-      herdrCompatibility: { status: "untested" },
-      headless: {
-        schemaVersion: 1,
-        prompt: false,
-        outputFormats: [],
-        eventContract: null,
-        trellageEventContract: null,
-        sessionId: "none",
-        resume: false,
-        resumeWithPrompt: false,
-        questionToolControl: "none",
-        changedFiles: "none",
-        usage: false,
-        cost: false,
-        modelOverride: false,
-        effortOverride: false,
-        testedHarnessVersion: null,
-      },
-      guide: (await loadProfileGuide(guideRoot, { surface: "native", launcher: "copilot", profile: "hve" })).guide,
-    },
-  ],
-})
+const catalog = async (): Promise<CompositionCatalog> => compositionFixtureCatalog([
+  compositionFixtureEntry({
+    harness: "copilot",
+    profile: "hve",
+    description: "Native HVE",
+    commandPath: "/opt/bin/trx",
+    headless: { prompt: false, outputFormats: [], questionToolControl: "none", changedFiles: "none" },
+    guide: (await loadProfileGuide(guideRoot, { surface: "native", harness: "copilot", profile: "hve" })).guide,
+  }),
+])
 
 const provider: GuideProvider = {
   match: async () => {
@@ -216,7 +195,7 @@ describe("HVE customer workflow delivery", () => {
   it("protects the captured context when an ordinary queued prompt is edited", async () => {
     const profiles = await catalog()
     const profile = selectedProfileFromCatalogRef(profiles, "native:copilot/hve", "rpi-research")
-    const workflow = profiles.native[0]!.guide.workflows.find(({ id }) => id === "rpi-research")!
+    const workflow = profiles.entries[0]!.guide!.workflows.find(({ id }) => id === "rpi-research")!
     const context = {
       originalIntent: "Research support work",
       workflowId: workflow.id,
@@ -370,7 +349,7 @@ describe("HVE customer workflow delivery", () => {
     expect(research.agent).toBeUndefined()
     expect(research.interaction).toBeUndefined()
     expect(buildHerdrGuideLaunch(research, "Research").command.args).toEqual(["run", "copilot", "hve", "--", "-i", "Research"])
-    const guide = await loadProfileGuide(guideRoot, { surface: "native", launcher: "copilot", profile: "hve" })
+    const guide = await loadProfileGuide(guideRoot, { surface: "native", harness: "copilot", profile: "hve" })
     expect(guide.guide.workflows.map(({ id }) => id)).toContain("rpi-agent-cycle")
     expect(guide.guide.workflows.map(({ id }) => id)).toContain("customer-discovery")
   })

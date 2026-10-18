@@ -1,4 +1,3 @@
-import { fstatSync, readFileSync } from "node:fs"
 import {
   parseGuideHeadlessArgv,
   parseGuideServiceRequestJson,
@@ -9,14 +8,13 @@ import {
   type GuideResolvedModelRouting,
   type GuideServiceRequest,
 } from "./guide-api.ts"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import { CopilotGuideProvider } from "./copilot-guide-provider.ts"
 import { GuideArtifactCache } from "./guide-match-cache.ts"
 import { loadDefaultGuidePrompts } from "./guide-prompts.ts"
 import { jevShouldSkipPromptOptimization } from "./jev-guide-gates.ts"
 import { JevGuideMatcher } from "./jev-guide-matcher.ts"
 
-const maximumCatalogBytes = 8 * 1024 * 1024
 
 const guideOptimizeGate = (cwd: string, env: Readonly<Record<string, string | undefined>>, intent: string) => ({
   shouldSkipOptimize: (input: Parameters<typeof jevShouldSkipPromptOptimization>[0]) =>
@@ -30,11 +28,11 @@ export interface ResolvedGuideRequest {
 
 const runResolvedGuideJsonRequest = async (
   options: {
-    readonly catalog: CombinedGuideCatalog
+    readonly catalog: CompositionCatalog
     readonly guideRoot: string
     readonly cwd: string
     readonly env: Readonly<Record<string, string | undefined>>
-    readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CombinedGuideCatalog>
+    readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CompositionCatalog>
   },
   resolved: ResolvedGuideRequest,
   provider: CopilotGuideProvider,
@@ -76,17 +74,6 @@ const runResolvedGuideJsonRequest = async (
   )
 }
 
-export const readGuideCatalog = (descriptor = 3): CombinedGuideCatalog => {
-  const status = fstatSync(descriptor)
-  if (status.size > maximumCatalogBytes) {
-    throw new Error(`guide catalog exceeds ${maximumCatalogBytes} bytes`)
-  }
-  const source = readFileSync(descriptor, "utf8")
-  if (Buffer.byteLength(source, "utf8") > maximumCatalogBytes) {
-    throw new Error(`guide catalog exceeds ${maximumCatalogBytes} bytes`)
-  }
-  return parseGuideCatalog(source)
-}
 
 export const resolveGuideRequest = (
   args: GuideHeadlessArgs,
@@ -96,7 +83,7 @@ export const resolveGuideRequest = (
   const fromStdin: GuideServiceRequest =
     args.intent === undefined
       ? parseGuideServiceRequestJson(stdinRequest ?? "", args.profile)
-      : { schemaVersion: 1 as const, intent: args.intent }
+      : { schemaVersion: 2 as const, intent: args.intent }
   const request: GuideServiceRequest = {
     ...fromStdin,
     ...(args.profile === undefined ? {} : { profile: args.profile }),
@@ -118,14 +105,14 @@ export const resolveGuideRequest = (
 
 export const runGuideJsonCommand = async (options: {
   readonly argv: ReadonlyArray<string>
-  readonly catalog: CombinedGuideCatalog
+  readonly catalog: CompositionCatalog
   readonly guideRoot: string
   readonly promptMasterSkillDirectory: string
   readonly stdinRequest?: string
   readonly env: Readonly<Record<string, string | undefined>>
   readonly cwd: string
   /** Production entrypoints inject the capability refresh. Tests and static fixtures leave it unset. */
-  readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CombinedGuideCatalog>
+  readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CompositionCatalog>
 }): Promise<unknown> => {
   const args = parseGuideHeadlessArgv(options.argv)
   if (!args.json) throw new Error("guide JSON command requires --json")

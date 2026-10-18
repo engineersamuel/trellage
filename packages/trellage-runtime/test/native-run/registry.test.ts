@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { nativeHarnessPresets, nativePresetProfile, nativePresetProfiles } from "../../src/native-run/presets.ts"
 import { adapters } from "../../src/native-run/adapters.ts"
-import { canonicalRunArguments } from "../../src/native-run/cli.ts"
 
 describe("native harness presets", () => {
   test("every public preset has a canonical built-in profile", () => {
@@ -23,11 +22,5 @@ describe("native harness presets", () => {
     expect(Object.keys(adapters).sort()).toEqual([
       "agency", "claude", "codex", "copilot", "fx", "grok", "headlong", "jcode", "omp", "pi", "prime", "uji",
     ])
-  })
-  test("Fx keeps its zero-profile shorthand without inventing a launcher alias", () => {
-    expect(canonicalRunArguments(["fx"])).toEqual(["fx", "default"])
-    expect(canonicalRunArguments(["fx", "ask", "hello"])).toEqual(["fx", "default", "--", "ask", "hello"])
-    expect(canonicalRunArguments(["fx", "--plan", "ask", "hello"])).toEqual(["fx", "default", "--plan", "--", "ask", "hello"])
-    expect(canonicalRunArguments(["fx", "default", "--", "ask", "hello"])).toEqual(["fx", "default", "--", "ask", "hello"])
   })
 })

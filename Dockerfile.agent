@@ -79,7 +79,7 @@ COPY --from=floating_skills / /opt/floating-skills
 COPY --from=comparison_source /opt/comparison-runtime/bun /usr/local/bin/bun
 COPY --from=comparison_source /opt/comparison-runtime/source /opt/trellage-source
 COPY docker/codex-config.toml /opt/codex-config.toml
-COPY --from=comparison_source /opt/comparison-runtime/source/prototypes/trellage-codex-common /opt/codex-common
+COPY --from=comparison_source /opt/comparison-runtime/source/harnesses/codex-agents /opt/codex-agents
 COPY --chmod=0555 scripts/adapt-agent-kit.sh /usr/local/bin/adapt-agent-kit.sh
 COPY --chmod=0555 scripts/find-harness-session.sh /usr/local/bin/find-harness-session.sh
 COPY --chmod=0444 config.toml /opt/floating-skills-catalog.json

@@ -1,11 +1,9 @@
 import { execFile, spawn } from "node:child_process"
-import { closeSync, openSync } from "node:fs"
 import { chmod, mkdir, symlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { bunArguments, bunExecutable } from "@trellage/runtime"
-import { parseProfileGuide } from "@trellage/guide-core"
 import { FixtureMode, fixtureProfile, guideSource } from "./guide-integration-data.ts"
 
 const root = process.argv[2]
@@ -34,6 +32,7 @@ const env = {
   CI: "true",
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_SYSTEM: "/dev/null",
+  TRELLAGE_TRX_COMMAND_PATH: path.join(bin, "trx"),
   ...(process.argv[3] !== FixtureMode.Herdr
     ? {}
     : {
@@ -67,72 +66,33 @@ await writeFile(path.join(root, "dirty.ts"), "unstaged change\n")
 await writeFile(path.join(root, "notes.txt"), "Explicitly selected new work\n")
 await writeFile(path.join(root, "ignored.txt"), "Not part of the review\n")
 await symlink("code.ts", path.join(root, "linked.ts"))
-const catalogPath = path.join(root, "catalog.json")
-await writeFile(
-  catalogPath,
-  JSON.stringify({
-    schemaVersion: 1,
-    native: [
-      {
-        launcher: "copilot",
-        name: "reviewer",
-        harness: "copilot",
-        description: "Fixture reviewer",
-        commandPath: path.join(bin, "copilot"),
-        sandbox: false,
-        herdrCompatibility: { status: "supported" },
-        guide: parseProfileGuide("native/copilot/reviewer.md", guideSource(fixtureProfile("reviewer"))).guide,
-        headless: {
-          schemaVersion: 1,
-          prompt: true,
-          outputFormats: ["json"],
-          eventContract: null,
-          trellageEventContract: null,
-          sessionId: "native",
-          resume: false,
-          resumeWithPrompt: false,
-          questionToolControl: "hard-deny",
-          changedFiles: "native",
-          usage: true,
-          cost: true,
-          modelOverride: false,
-          effortOverride: false,
-          testedHarnessVersion: null,
-        },
-      },
-    ],
-  }),
-  { mode: 0o600 },
-)
+const guideRoot = path.join(root, "profile-guides")
+await mkdir(path.join(guideRoot, "native", "copilot"), { recursive: true })
+await writeFile(path.join(guideRoot, "native", "copilot", "reviewer.md"), guideSource(fixtureProfile("reviewer")))
 await writeFile(path.join(root, "events.jsonl"), "")
-const descriptor = openSync(catalogPath, "r")
-try {
-  const base = process.env.TRELLAGE_TEST_OPTIMIZE_BASE
-  const child = spawn(
-    bunExecutable(),
-    bunArguments(fileURLToPath(new URL("../../src/cli.tsx", import.meta.url)), [
-      "guide",
-      path.join(root, "unused-guides"),
-      path.join(root, "missing-prompt-master"),
-      "--review",
-      ...(base === undefined ? [] : ["--base", base]),
-      "--intent",
-      "Preserve the original task without rewriting it.",
-    ]),
-    { cwd: root, env, stdio: ["inherit", "inherit", "inherit", descriptor] },
-  )
-  const code = await new Promise<number>((resolve, reject) => {
-    child.once("error", reject)
-    child.once("close", (status, signal) => {
-      if (signal !== null) reject(new Error(`Direct Optimize stopped with ${signal}.`))
-      else resolve(status ?? 1)
-    })
+const base = process.env.TRELLAGE_TEST_OPTIMIZE_BASE
+const child = spawn(
+  bunExecutable(),
+  bunArguments(fileURLToPath(new URL("../../src/cli.tsx", import.meta.url)), [
+    "guide",
+    guideRoot,
+    path.join(root, "missing-prompt-master"),
+    "--review",
+    ...(base === undefined ? [] : ["--base", base]),
+    "--intent",
+    "Preserve the original task without rewriting it.",
+  ]),
+  { cwd: root, env, stdio: "inherit" },
+)
+const code = await new Promise<number>((resolve, reject) => {
+  child.once("error", reject)
+  child.once("close", (status, signal) => {
+    if (signal !== null) reject(new Error(`Direct Optimize stopped with ${signal}.`))
+    else resolve(status ?? 1)
   })
-  await writeFile(
-    path.join(root, "result.json"),
-    JSON.stringify({ result: { action: "cancel", exitCode: code }, events: [], writes: [] }),
-  )
-  process.exitCode = code
-} finally {
-  closeSync(descriptor)
-}
+})
+await writeFile(
+  path.join(root, "result.json"),
+  JSON.stringify({ result: { action: "cancel", exitCode: code }, events: [], writes: [] }),
+)
+process.exitCode = code

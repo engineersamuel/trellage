@@ -19,11 +19,9 @@ import {
 // Native launchers update their shared harness once.
 const nativeHarnessUpdates: ReadonlyMap<string, "update" | "harness-update"> = new Map([
   ["copilot", "harness-update"],
-  ["codex", "harness-update"],
   ["claude", "harness-update"],
   ["jcode", "update"],
   ["omp", "update"],
-  ["pi", "update"],
   ["prime", "update"],
 ])
 
@@ -83,17 +81,15 @@ interface HarnessUpdateRunOptions {
   readonly onStepComplete?: (step: HarnessUpdateStep, results: ReadonlyArray<HarnessUpdateResult>) => void
 }
 
-export const harnessUpdateKeyFor = (entry: AdminProfileEntry): string | undefined => {
-  if (entry.harness === undefined || entry.commandPath.length === 0) return undefined
-  return entry.launcher !== undefined && nativeHarnessUpdates.has(entry.launcher) ? `native:${entry.launcher}` : undefined
-}
+export const harnessUpdateKeyFor = (entry: AdminProfileEntry): string | undefined =>
+  entry.commandPath.length > 0 && nativeHarnessUpdates.has(entry.harness) ? `native:${entry.harness}` : undefined
 
 const buildHarnessUpdateCommand = (entry: AdminProfileEntry): CommandSpec => {
-  const command = nativeHarnessUpdates.get(entry.launcher ?? "")
+  const command = nativeHarnessUpdates.get(entry.harness)
   if (command === undefined) throw new Error(`Harness update is not supported for ${entry.ref}`)
   return {
     executable: entry.commandPath,
-    args: ["upgrade", entry.launcher!, entry.name, ...(command === "harness-update" ? ["--harness-only"] : [])],
+    args: ["upgrade", entry.harness, ...entry.profiles, ...(command === "harness-update" ? ["--harness-only"] : [])],
   }
 }
 
@@ -112,8 +108,8 @@ export const harnessUpdatePlanFor = (
     ).values(),
   ].sort((left, right) => left.ref.localeCompare(right.ref))
   if (!targets.some((entry) => entry.ref === selected.ref)) return undefined
-
-  const steps = [{ command: buildHarnessUpdateCommand(targets[0]!), targets }]
+  const representative = targets.find((entry) => entry.lifecycle !== null) ?? targets[0]!
+  const steps = [{ command: buildHarnessUpdateCommand(representative), targets }]
   return {
     key,
     surface: selected.surface,

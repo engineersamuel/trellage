@@ -26,12 +26,8 @@ install_root="$runtime_parent/jcx"
 installed_launcher="$install_root/bin/jcx"
 installed_catalog="$install_root/catalog.json"
 installed_config_manager="$install_root/config-manager.ts"
-legacy_config_manager="$install_root/config-manager.mjs"
 installed_version_receipt="$install_root/installed-version"
-legacy_version_receipt="$install_root/version"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
-command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/jcx"
 
 require_safe_directory() {
   local path="$1" expected="$2" description="$3" canonical_path
@@ -46,26 +42,17 @@ require_safe_directory() {
 require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
-runtime_owned=false
 if [[ -e "$install_root" || -L "$install_root" ]]; then
   require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/jcx" 'runtime root'
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "unowned runtime root: $install_root"
   [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
     || refuse "unowned runtime root: $install_root"
-  runtime_owned=true
 fi
 
-if [[ -e "$command_path" || -L "$command_path" ]]; then
-  [[ "$runtime_owned" == true && -L "$command_path" ]] \
-    || refuse "unrelated command: $command_path"
-  [[ "$(readlink "$command_path")" == "$installed_launcher" ]] \
-    || refuse "unrelated command: $command_path"
-fi
 
-mkdir -p "$install_root/bin" "$command_dir"
+mkdir -p "$install_root/bin"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/jcx" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/jcx/bin" 'runtime bin'
 [[ ! -L "$installed_launcher" && ( ! -e "$installed_launcher" || -f "$installed_launcher" ) ]] \
@@ -74,17 +61,13 @@ require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellag
   || refuse "unsafe managed catalog: $installed_catalog"
 [[ -f "$source_dir/config-manager.ts" && ! -L "$source_dir/config-manager.ts" ]] \
   || refuse "invalid config manager: $source_dir/config-manager.ts"
-[[ ! -L "$legacy_config_manager" && ( ! -e "$legacy_config_manager" || -f "$legacy_config_manager" ) ]] \
-  || refuse "unsafe legacy config manager: $legacy_config_manager"
 [[ ! -L "$installed_config_manager" \
   && ( ! -e "$installed_config_manager" || -f "$installed_config_manager" ) ]] \
   || refuse "unsafe managed config manager: $installed_config_manager"
-for receipt in "$installed_version_receipt" "$legacy_version_receipt"; do
-  if [[ -e "$receipt" || -L "$receipt" ]]; then
-    [[ -f "$receipt" && ! -L "$receipt" ]] \
-      || refuse "unsafe installed version receipt: $receipt"
-  fi
-done
+if [[ -e "$installed_version_receipt" || -L "$installed_version_receipt" ]]; then
+  [[ -f "$installed_version_receipt" && ! -L "$installed_version_receipt" ]] \
+    || refuse "unsafe installed version receipt: $installed_version_receipt"
+fi
 
 launcher_stage="$(mktemp "$install_root/bin/.jcx.XXXXXX")"
 catalog_stage="$(mktemp "$install_root/.catalog.XXXXXX")"
@@ -100,19 +83,8 @@ mv -f "$catalog_stage" "$installed_catalog"
 mv -f "$config_manager_stage" "$installed_config_manager"
 mv -f "$marker_stage" "$ownership_marker"
 
-if [[ ! -L "$command_path" ]]; then
-  command_stage="$command_dir/.jcx-command.$$"
-  [[ ! -e "$command_stage" && ! -L "$command_stage" ]] \
-    || refuse "unsafe command staging path: $command_stage"
-  ln -s "$installed_launcher" "$command_stage"
-  mv "$command_stage" "$command_path"
-fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install-manual "$install_root"
-[[ ! -f "$legacy_config_manager" ]] || rm -- "$legacy_config_manager"
-printf 'Installed jcx at %s\n' "$command_path"
+printf 'Installed jcx at %s\n' "$installed_launcher"
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
-
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" jcx "$installed_launcher" "$ownership_marker" "$ownership_value"

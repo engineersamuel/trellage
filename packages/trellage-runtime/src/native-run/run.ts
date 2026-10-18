@@ -30,8 +30,8 @@ import { acquireLease, pruneGenerations } from "./lease.ts"
 import { NativeRunCancelledError, NativeRunError, resolveNativeRunPaths, type NativeRunPaths } from "./paths.ts"
 import { createSourceResolver, gitSourceTransport, type SourceTransport } from "./source.ts"
 import { devSourceRoots, devSourceTransport } from "./dev-sources.ts"
-import { ensureNativeConfig, withBuiltinPreset } from "./config-init.ts"
-import { nativePresetProfile, nativeSharedPresets } from "./presets.ts"
+import { builtinProfile, ensureNativeConfig, withBuiltinPreset } from "./config-init.ts"
+import { nativePresetProfile, nativePresetProfiles, nativeSharedPresets } from "./presets.ts"
 import { acquireProfileGuard } from "./lifecycle-guard.ts"
 import { childSettlement } from "./child-settlement.ts"
 import { syncProfileRepository, type ProfileRepository } from "./repository-sync.ts"
@@ -68,10 +68,10 @@ export const RUN_USAGE = `Usage:
           [--continue | --resume[=ID]] [-- <harness-args>]
 
 Harnesses: agency, claude, codex, copilot, fx, grok, headlong, jcode, omp, pi, prime, uji.
-Profiles come from ~/.config/trellage/config.toml.
-Profiles with always = true are added to every run; --no-always skips them. --dry-run prepares the composition and
-prints the launch plan without starting the harness. --skill adds one skill from a GitHub repository without a
-configured profile; repeat it for more skills.
+Profiles come from ~/.config/trellage/config.toml and built-in per-harness presets; a config profile with the same
+name wins. Run trx list to see them. With no profile, only always-on profiles are used. --no-always skips them.
+--dry-run prepares the composition and prints the launch plan without starting the harness. --skill adds one skill
+from a GitHub repository without a configured profile; repeat it for more skills.
 Conversations are kept per harness and profile set. --continue reopens the most recent one in this directory;
 --resume lists them (or --resume=ID opens one). Use the same harness and profiles as the original run.
 Profile clean launches the harness with no skills, MCP servers, instructions, hooks or plugins from trx, the
@@ -540,11 +540,35 @@ const adHocSkillProfile = (catalog: NativeCatalog, skills: ReadonlyArray<string>
   }
 }
 
+const availableRunProfiles = async (adapter: NativeAdapter, catalog: NativeCatalog): Promise<string[]> => {
+  const profiles = Object.entries(catalog.profiles)
+    .filter(([, profile]) => !profile.harnesses || profile.harnesses.includes(adapter.id))
+    .map(([name]) => name)
+  profiles.push(...nativePresetProfiles(adapter.id).filter((preset) => !Object.hasOwn(catalog.profiles, preset)))
+  for (const shared of nativeSharedPresets) {
+    if (Object.hasOwn(catalog.profiles, shared)) continue
+    const profile = await builtinProfile(shared)
+    if (profile && (!profile.harnesses || profile.harnesses.includes(adapter.id))) profiles.push(shared)
+  }
+  if (adapter.clean.supported) profiles.push(CLEAN_PROFILE)
+  return [...new Set(profiles)].sort()
+}
+
 const resolveRunProfiles = async (
   adapter: NativeAdapter,
   options: RunOptions,
   sourceCatalog: NativeCatalog,
 ): Promise<{ catalog: NativeCatalog; profiles: string[] }> => {
+  const available = await availableRunProfiles(adapter, sourceCatalog)
+  // Declared and shared profiles that exist but skip this harness get the specific "does not support" error below.
+  for (const profile of options.profiles) {
+    if (available.includes(profile) || Object.hasOwn(sourceCatalog.profiles, profile) || nativeSharedPresets.includes(profile))
+      continue
+    throw new NativeRunError(
+      "unknown-profile",
+      `unknown profile ${profile} for ${adapter.id}; available: ${available.join(", ") || "none"}`,
+    )
+  }
   const adHoc = adHocSkillProfile(sourceCatalog, options.skills ?? [])
   let catalog = adHoc?.catalog ?? sourceCatalog
   const profiles = options.profiles.map((profile) =>
@@ -923,13 +947,23 @@ export const runNative = async (options: RunOptions, dependencies: RunDependenci
       ? checkPiRefresh(environment)
       : Promise.resolve({})
 
-  let prepared = await prepareRun(options, dependencies)
+  let effectiveOptions = options
+  let prepared = await prepareRun(effectiveOptions, dependencies)
   for (const line of describePreparedRun(prepared)) write(line)
-  if (options.dryRun) return 0
+  if (effectiveOptions.dryRun) return 0
+  if (effectiveOptions.resume?.kind === "pick" && effectiveOptions.resume.id === undefined && prepared.adapter.pickResumeSession) {
+    const id = await prepared.adapter.pickResumeSession({
+      ownerHome: prepared.layout.ownerHome,
+      workspace: prepared.workspace,
+    })
+    if (id === undefined) return 0
+    effectiveOptions = { ...effectiveOptions, resume: { kind: "pick", id } }
+    prepared = await prepareRun(effectiveOptions, dependencies)
+  }
   if (!prepared.clean)
-    prepared = await refreshPreparedRun(prepared, options, dependencies, environment, write, await piRefresh)
-  assertLaunchIsolation(prepared, options)
-  return launchPreparedRun(prepared, options, dependencies, environment, cwd, paths, write)
+    prepared = await refreshPreparedRun(prepared, effectiveOptions, dependencies, environment, write, await piRefresh)
+  assertLaunchIsolation(prepared, effectiveOptions)
+  return launchPreparedRun(prepared, effectiveOptions, dependencies, environment, cwd, paths, write)
 }
 
 export const main = async (argv: ReadonlyArray<string>): Promise<number> => {

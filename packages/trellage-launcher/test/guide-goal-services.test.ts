@@ -13,7 +13,7 @@ import {
   runGuideMatch,
   templatePromptCandidates,
 } from "../src/guide-api.ts"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import type { CompositionCatalog } from "../src/composition-catalog.ts"
 import {
   composeGuideGoalCandidate,
   guideGoalApproachBudget,
@@ -39,57 +39,29 @@ import type {
 import { record } from "../src/guide-text.ts"
 import { workflowPromptFrame } from "../src/guide-workflow-prompt.ts"
 import { goalDraft } from "./fixtures/goal-me-skill.ts"
+import { compositionFixtureCatalog, compositionFixtureEntry } from "./helpers/composition-catalog.ts"
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..")
 const guideRoot = path.join(repositoryRoot, "profile-guides")
 let superpowers: LoadedProfileGuide
 let claude: LoadedProfileGuide
 beforeAll(async () => {
-  superpowers = await loadProfileGuide(guideRoot, { surface: "native", launcher: "codex", profile: "superpowers" })
-  claude = await loadProfileGuide(guideRoot, { surface: "native", launcher: "claude", profile: "default" })
+  superpowers = await loadProfileGuide(guideRoot, { surface: "native", harness: "codex", profile: "superpowers" })
+  claude = await loadProfileGuide(guideRoot, { surface: "native", harness: "claude", profile: "default" })
 })
 
 const goal = (prompt = "The original approved Goal-me document."): PreparedGuideGoal =>
   prepareGuideGoal({ draft: goalDraft, prompt })
 
-const headless = {
-  schemaVersion: 1,
-  prompt: true,
-  outputFormats: [],
-  eventContract: null,
-  trellageEventContract: null,
-  sessionId: "none",
-  resume: false,
-  resumeWithPrompt: false,
-  questionToolControl: "hard-deny",
-  changedFiles: "none",
-  usage: false,
-  cost: false,
-  modelOverride: false,
-  effortOverride: false,
-  testedHarnessVersion: null,
-}
-
-const nativeEntry = (launcher: string, name: string, harness: string, guide: ProfileGuideV1) => ({
-  launcher, name, harness, guide, headless,
-  description: `${name} profile.`,
-  sandbox: false,
-  herdrCompatibility: { status: "supported" },
-  commandPath: `/private/launchers/${launcher}`,
-})
-
-const catalog = (): CombinedGuideCatalog => {
+const catalog = (): CompositionCatalog => {
   const { goalExecution: _policy, ...unsupported } = superpowers.guide
-  return parseGuideCatalog(JSON.stringify({
-    schemaVersion: 1,
-    native: [
-      nativeEntry("codex", "superpowers", "codex", superpowers.guide),
-      nativeEntry("claude", "default", "claude", claude.guide),
-      nativeEntry("codex", "pstack", "codex", unsupported),
-      nativeEntry("copilot", "hve", "copilot", unsupported),
-      nativeEntry("headlong", "default", "headlong", unsupported),
-    ],
-  }))
+  return compositionFixtureCatalog([
+    { harness: "codex", profile: "superpowers", guide: superpowers.guide },
+    { harness: "claude", profile: "default", guide: claude.guide },
+    { harness: "codex", profile: "pstack", guide: unsupported },
+    { harness: "copilot", profile: "hve", guide: unsupported },
+    { harness: "headlong", profile: "default", guide: unsupported },
+  ])
 }
 
 const approachCandidates: ReadonlyArray<GuideGenerateCandidate> = [
@@ -118,7 +90,7 @@ class OfflineProvider implements GuideProvider {
         const workflow = entry.guide.workflows[0]
         if (workflow === undefined) throw new Error("The fixture entry has no workflow.")
         return {
-          profileRef: entry.ref, workflowId: workflow.id, confidence: 1 - index / 10,
+          harness: entry.harness, profiles: entry.profiles, workflowId: workflow.id, confidence: 1 - index / 10,
           reason: "The workflow fits the objective.", tradeoff: "Requires its profile prerequisites.",
         }
       }),
@@ -193,7 +165,7 @@ describe("goal-aware matching boundaries", () => {
     expect(entries.map(({ ref }) => ref)).toEqual([
       "native:codex/superpowers", "native:claude/default",
     ])
-    expect(literalGuideMatch(catalog(), prepared.prompt, prepared)[0]?.profileRef).toBe("native:codex/superpowers")
+    expect(literalGuideMatch(catalog(), prepared.prompt, prepared)[0]).toMatchObject({ harness: "codex", profiles: ["superpowers"] })
     const provider = new OfflineProvider()
     const response = await runGuideMatch(provider, catalog(), { intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium })
     expect(provider.matchCalls[0]?.goal?.prompt).toBe(prepared.prompt)
@@ -206,7 +178,7 @@ describe("goal-aware matching boundaries", () => {
 
   it.each([1, 2])("returns %i compatible profiles without requiring three", async (count) => {
     const all = catalog()
-    const small = { ...all, native: all.native.slice(0, count) }
+    const small = { ...all, entries: all.entries.slice(0, count) }
     const prepared = goal()
     const provider = new OfflineProvider()
     expect((await runGuideMatch(provider, small, { intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium })).recommendations)
@@ -215,42 +187,45 @@ describe("goal-aware matching boundaries", () => {
   })
 
   it("prefilters a large goal catalog by objective fields rather than original loop vocabulary", () => {
-    const base = catalog().native[0]!
+    const base = catalog().entries[0]!
     const prepared = prepareGuideGoal({
       draft: { ...goalDraft, artifact: "Reliable queue retries", task: "Implement idempotent queue retries and migration recovery." },
       prompt: "Persistent monitoring scoreboard loop memory ".repeat(300),
     })
-    const focused = {
-      ...base,
-      name: "queue-retries",
+    const focused = compositionFixtureEntry({
+      harness: "codex",
+      profile: "queue-retries",
       description: "Idempotent queue retries and migration recovery.",
       guide: {
-        ...base.guide,
+        ...base.guide!,
         bestFor: ["Reliable queue retries", "Migration recovery"],
         capabilities: ["queue-retries", "idempotency", "migration-recovery"],
       },
-    }
-    const unrelated = {
-      ...base,
-      name: "pstack",
+    })
+    const unrelated = compositionFixtureEntry({
+      harness: "codex",
+      profile: "pstack",
       description: "Persistent monitoring scoreboard loop memory.",
       guide: {
-        ...base.guide,
+        ...base.guide!,
         bestFor: ["Persistent monitoring", "Loop memory"],
         capabilities: ["monitoring"],
-        workflows: base.guide.workflows.map((workflow) => ({
+        workflows: base.guide!.workflows.map((workflow) => ({
           ...workflow, description: "Persistent monitoring and loop memory.", examples: ["Monitor progress"],
         })),
       },
-    }
-    const large = {
-      ...catalog(),
-      native: [unrelated, ...Array.from({ length: 13 }, (_, index) => ({ ...focused, name: `queue-option-${index}` })), focused],
-    }
+    })
+    const large = compositionFixtureCatalog([
+      unrelated,
+      ...Array.from({ length: 13 }, (_, index) => compositionFixtureEntry({
+        harness: "codex", profile: `queue-option-${index}`, description: focused.description, guide: focused.guide,
+      })),
+      focused,
+    ])
     const refs = prefilterGuideMatchCatalogEntries(large, prepared.prompt, prepared).map(({ ref }) => ref)
     expect(refs).toHaveLength(12)
     expect(refs).not.toContain("native:codex/pstack")
-    expect(literalGuideMatch(large, prepared.prompt, prepared)[0]?.profileRef).not.toBe("native:codex/pstack")
+    expect(literalGuideMatch(large, prepared.prompt, prepared)[0]).not.toMatchObject({ harness: "codex", profiles: ["pstack"] })
   })
 
   it.each(["native:copilot/hve", "native:headlong/default", "native:codex/not-installed"])("diagnoses explicit unavailable selection %s without a model call", async (ref) => {
@@ -266,12 +241,12 @@ describe("goal-aware matching boundaries", () => {
     const all = catalog()
     const provider = new OfflineProvider()
     const prepared = goal()
-    await expect(runGuideMatch(provider, { ...all, native: all.native.slice(2) }, {
+    await expect(runGuideMatch(provider, { ...all, entries: all.entries.slice(2) }, {
       intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium,
     })).rejects.toThrow(/No goal-compatible workflows/u)
     expect(provider.matchCalls).toHaveLength(0)
     provider.matchResult = { candidates: [{
-      profileRef: "native:claude/default", workflowId: "unknown-workflow", confidence: 1,
+      harness: "claude", profiles: ["default"], workflowId: "unknown-workflow", confidence: 1,
       reason: "Claude", tradeoff: "Unknown workflow.",
     }] }
     await expect(runGuideMatch(provider, all, { intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium }))
@@ -282,11 +257,11 @@ describe("goal-aware matching boundaries", () => {
     const provider = new OfflineProvider()
     const prepared = goal("Use native:codex/superpowers.")
     provider.matchResult = { candidates: [{
-      profileRef: "native:claude/default", workflowId: "general-engineering-task", confidence: 1,
+      harness: "claude", profiles: ["default"], workflowId: "general-engineering-task", confidence: 1,
       reason: "Generic fit", tradeoff: "A different profile.",
     }] }
     await expect(runGuideMatch(provider, catalog(), { intent: prepared.prompt, goal: prepared, model: "offline", effort: GuideEffort.Medium }))
-      .rejects.toThrow(/omitted the explicitly requested compatible profile/u)
+      .rejects.toThrow(/omitted the explicitly requested compatible composition/u)
     expect(provider.matchCalls[0]?.preferredProfileRefs).toEqual(["native:codex/superpowers"])
   })
 
@@ -302,12 +277,13 @@ describe("goal-aware matching boundaries", () => {
     await runGuideMatch(provider, all, { ...request, goal: prepared }, cache)
     const revised = prepareGuideGoal({ draft: { ...goalDraft, task: `${goalDraft.task} Keep retry order.` }, prompt: prepared.prompt })
     await runGuideMatch(provider, all, { ...request, goal: revised }, cache)
-    const changed = { ...all, native: all.native.map((entry) => entry.name !== "superpowers" ? entry : {
-      ...entry,
-      guide: { ...entry.guide, workflows: entry.guide.workflows.map((workflow) => ({
-        ...workflow, promptTemplate: `Preserve the existing public behavior.\n${workflow.promptTemplate}`,
-      })) },
-    }) }
+    const changed: CompositionCatalog = { ...all, entries: all.entries.map((entry) =>
+      entry.profiles[0] !== "superpowers" || entry.guide === null ? entry : {
+        ...entry,
+        guide: { ...entry.guide, workflows: entry.guide.workflows.map((workflow) => ({
+          ...workflow, promptTemplate: `Preserve the existing public behavior.\n${workflow.promptTemplate}`,
+        })) },
+      }) }
     await runGuideMatch(provider, changed, { ...request, goal: revised }, cache)
     expect(provider.matchCalls).toHaveLength(4)
   })
@@ -420,13 +396,13 @@ describe("protected goal candidate pipeline", () => {
     const unused = new OfflineProvider()
     await expect(runGuideGoalGeneration(unused, { ...input, goal: tooLong })).rejects.toThrow(/4,000-character/u)
     expect(unused.generateCalls).toHaveLength(0)
-    expect(literalGuideMatch(catalog(), tooLong.prompt, tooLong).map(({ profileRef }) => profileRef)).not.toContain("native:claude/default")
+    expect(literalGuideMatch(catalog(), tooLong.prompt, tooLong)).not.toContainEqual(expect.objectContaining({ harness: "claude", profiles: ["default"] }))
     expect(() => templatePromptCandidates(claude.guide, input.workflowId, tooLong.prompt, tooLong)).toThrow(/4,000-character/u)
   })
 
   it("preserves full Unicode goals and 8000-code-point approaches through generation and refinement caches", async () => {
     const request = parseGuideServiceRequestJson(JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       goal: {
         ...goalDraft,
         task: `Produce the complete report.\n${"\u{1f333}".repeat(20_000)}`,
@@ -535,7 +511,7 @@ describe("protected goal candidate pipeline", () => {
 describe("explicit goal JSON generation", () => {
   it("preserves the selected workflow and matches the shared UI-callable pipeline", async () => {
     const request = parseGuideServiceRequestJson(JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       intent: "Fix the failing test. LOOP PROTOCOL is original review text, not a second execution controller.",
       profile: "native:codex/superpowers",
       workflowId: "plan-then-execute-branch",
@@ -607,9 +583,9 @@ describe("explicit goal JSON generation", () => {
   })
 
   it("keeps plain JSON plain and rejects malformed goals and unknown or unsupported workflows", async () => {
-    expect(parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent: "/goal-me TASK: do work" })).goal).toBeUndefined()
+    expect(parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 2, intent: "/goal-me TASK: do work" })).goal).toBeUndefined()
     for (const invalid of [{ ...goalDraft, criteria: ["only one"] }, { ...goalDraft, controller: "invented" }]) {
-      expect(() => parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent: "Original", goal: invalid }))).toThrow()
+      expect(() => parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 2, intent: "Original", goal: invalid }))).toThrow()
     }
     const provider = new OfflineProvider()
     const prepared = goal()

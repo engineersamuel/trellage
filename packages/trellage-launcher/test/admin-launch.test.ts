@@ -24,6 +24,8 @@ const nativeEntry: AdminProfileEntry = {
   launcher: "copilot",
   harness: "copilot",
   name: "default",
+  profiles: ["default"],
+  lifecycle: { runtime: "cpx", profile: "default" },
   description: "Copilot native profile.",
   commandPath: "/usr/local/bin/trx",
   doctorSupported: true,
@@ -37,7 +39,7 @@ const nativeEntry: AdminProfileEntry = {
 }
 
 
-/** A hypothetical native launcher that lacks doctor support, to exercise the generic doctorSupported=false gate — no current native launcher (including cdx) actually lacks doctor support. */
+/** A hypothetical Native harness without doctor support, used to exercise the generic capability gate. */
 const nativeDoctorUnsupportedEntry: AdminProfileEntry = {
   ...nativeEntry,
   ref: "native:hypothetical-unsupported:default",
@@ -50,9 +52,9 @@ describe("toSelectedProfile", () => {
   it("maps a native admin entry to a native SelectedProfile", () => {
     expect(toSelectedProfile(nativeEntry)).toEqual({
       surface: "native",
-      launcher: "copilot",
+      harness: "copilot",
       commandPath: "/usr/local/bin/trx",
-      profile: "default",
+      profiles: ["default"],
       headlessPrompt: false,
     })
   })

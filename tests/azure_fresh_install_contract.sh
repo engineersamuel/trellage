@@ -21,10 +21,10 @@ grep -Fq 'all|create|bootstrap|accept|ssh|status|down|plan' <<<"$help" \
   || fail 'help does not publish the lifecycle commands'
 grep -Fq 'copilot-proxy-rs uses COPILOT_PROXY_GITHUB_TOKEN' <<<"$help" \
   || fail 'help does not state the separate proxy authentication source'
-grep -Fq 'Bare `trx` is an interactive TTY picker' <<<"$help" \
+grep -Fq 'Bare `trx` opens the interactive run composer' <<<"$help" \
   || fail 'help does not explain the automated native launch'
-grep -Fq 'install all nine Trellage Native launchers' <<<"$help" \
-  || fail 'help does not describe the complete Native installation'
+grep -Fq 'install the six launch-required lifecycle backends' <<<"$help" \
+  || fail 'help does not describe the Native backend installation'
 if grep -Fq 'trellage --profile claude-council' <<<"$help"; then
   fail 'help still describes the removed Sandbox acceptance profile'
 fi
@@ -110,7 +110,7 @@ grep -Fq 'GH_CONFIG_DIR="$gh_config" gh auth login --hostname github.com --with-
 grep -Fq 'trap cleanup_gh_config EXIT' "$script" \
   || fail 'acceptance does not remove the ephemeral GitHub CLI credential'
 grep -Fq '  - fish' "$script" \
-  || fail 'cloud-init does not install Fish for the Native Codex launcher'
+  || fail 'cloud-init does not install Fish for Native runtime prerequisites'
 grep -Fq '  - bubblewrap' "$script" \
   || fail 'cloud-init does not install bubblewrap for the Native Grok sandbox'
 grep -Fq 'profile trellage-bwrap /usr/bin/bwrap flags=(unconfined)' "$script" \
@@ -127,7 +127,7 @@ grep -Fq 'and .data.content != ""' "$script" \
   || fail 'Copilot result assertion does not ignore trailing empty events'
 grep -Fq "jq -e '.text == \"OK\"' \"\$log_dir/native-jcx.json\"" "$script" \
   || fail 'JCode result does not require exact JSON text OK'
-grep -Fq 'scripts/rebuild-profile-images.sh --install --native-only' "$script" \
+grep -Fq 'scripts/rebuild-profile-images.sh' "$script" \
   || fail 'bootstrap does not install the Native stack and trx'
 grep -Fq '@xai-official/grok@0.2.112' "$script" \
   || fail 'bootstrap does not install the verified Grok CLI'
@@ -171,6 +171,11 @@ for pair in \
   grep -Fq "trx run $pair --" "$script" \
     || fail "acceptance does not route $pair through trx run"
 done
+grep -Fq 'run_text_probe codex' "$script" || fail 'Codex probe does not use its public harness name'
+grep -Fq 'run_text_probe pi' "$script" || fail 'Pi probe does not use its public harness name'
+if grep -Eq 'trx (setup|doctor) (codex|pi)( |$)' "$script"; then
+  fail 'acceptance still runs retired Codex or Pi lifecycle maintenance'
+fi
 if grep -Eq 'trx (setup|doctor|run|inventory) firstmate' "$script"; then
   fail 'acceptance still uses the removed firstmate launcher'
 fi

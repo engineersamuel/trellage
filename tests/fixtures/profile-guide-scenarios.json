@@ -269,7 +269,7 @@
       "excludedProfiles": []
     },
     {
-      "id": "native-codex-marathon",
+      "id": "codex-marathon",
       "intent": "Use host-native Codex for a multi-day implementation marathon with brainstorm, plan, TDD, debugging, review, and parallel full-stack agent roles.",
       "expectedProfiles": ["native:codex/superpowers"],
       "maxRank": 3,

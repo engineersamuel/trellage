@@ -11,7 +11,8 @@
     "./skill-config": "./src/skill-config.ts",
     "./skill-update": "./src/skill-update.ts",
     "./native-run/source": "./src/native-run/source.ts",
-    "./native-run/paths": "./src/native-run/paths.ts"
+    "./native-run/paths": "./src/native-run/paths.ts",
+    "./native-run/inventory": "./src/native-run/inventory.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",

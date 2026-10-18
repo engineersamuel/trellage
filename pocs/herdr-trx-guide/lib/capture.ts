@@ -1,6 +1,5 @@
 import { assertCompletedAgent, sourceWorkingDirectory, validateAnswer } from "./context.ts"
 import { readAgent } from "./herdr.ts"
-import { captureSandboxFinalMessage } from "./sandbox-bridge.ts"
 import { formatConversationIntent } from "./conversation.ts"
 import { trellageSessionIdentity } from "./trellage-session.ts"
 import {
@@ -67,13 +66,6 @@ const currentTrellageIdentity = ({
   }
 }
 
-const directSessionId = (agentSessionId, processSessionId) => {
-  const directIds = new Set(
-    [agentSessionId, processSessionId].filter((value) => value !== undefined),
-  )
-  if (directIds.size > 1) throw new Error("Conflicting exact session identities were reported")
-  return [...directIds][0]
-}
 
 const captureStructuredAnswer = async ({
   mode,
@@ -85,10 +77,7 @@ const captureStructuredAnswer = async ({
   env,
   structuredLookup,
   conversationLookup,
-  sandboxLookup,
 }) => {
-  if (mode === "conversation" && identity?.surface === "sandbox") return undefined
-  if (identity?.surface === "sandbox") return sandboxLookup({ identity, cwd, env })
   const options = {
     agent,
     cwd,
@@ -100,13 +89,6 @@ const captureStructuredAnswer = async ({
   return mode === "conversation" ? conversationLookup(options) : structuredLookup(options)
 }
 
-const assertMatchingSandboxSession = (identity, structured, agentSessionId, processSessionId) => {
-  if (identity?.surface !== "sandbox") return
-  const expectedSessionId = directSessionId(agentSessionId, processSessionId)
-  if (expectedSessionId !== undefined && structured?.sessionId !== expectedSessionId) {
-    throw new Error("The Sandbox bridge result conflicts with the reported harness session")
-  }
-}
 
 const formattedCapturedConversation = ({ mode, agent, cwd, structured }) =>
   mode === "conversation"
@@ -129,7 +111,6 @@ const captureExactAnswer = async ({
   env,
   structuredLookup,
   conversationLookup,
-  sandboxLookup,
   onDiagnostic,
 }) => {
   const cwd = sourceWorkingDirectory(context, agentInfo)
@@ -157,9 +138,7 @@ const captureExactAnswer = async ({
       env,
       structuredLookup,
       conversationLookup,
-      sandboxLookup,
     })
-    assertMatchingSandboxSession(identity, structured, agentSessionId, processSessionId)
   } catch (error) {
     diagnostic(onDiagnostic, error)
     throw error
@@ -167,7 +146,7 @@ const captureExactAnswer = async ({
   if (structured === undefined) {
     throw new ExactCaptureUnavailableError(
       mode === "conversation"
-        ? "No exact conversation is available. Sandbox conversations are not supported yet."
+        ? "No exact conversation is available."
         : "No exact session identity is available. Choose a highlighted selection or review the terminal snapshot.",
     )
   }
@@ -216,7 +195,6 @@ export const captureAgentContent = async ({
   env = process.env,
   structuredLookup = captureStructuredFinalMessage,
   conversationLookup = captureStructuredConversation,
-  sandboxLookup = captureSandboxFinalMessage,
   terminalReader = (paneId) => readAgent(paneId),
   onDiagnostic,
   mode = context.captureMode ?? "exact",
@@ -233,7 +211,6 @@ export const captureAgentContent = async ({
       env,
       structuredLookup,
       conversationLookup,
-      sandboxLookup,
       onDiagnostic,
     })
   }

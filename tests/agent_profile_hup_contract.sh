@@ -17,11 +17,11 @@ grep -Fq 'trap - HUP INT TERM' scripts/verify-agent-profiles \
 grep -Fq "trap '' HUP INT TERM" scripts/verify-agent-profiles \
   || fail 'live launch supervisor does not ignore HUP during handoff'
 
-grep -Fq 'for verifier_signal in HUP INT TERM; do' tests/agent_profile_matrix.sh \
+grep -Fq '# HUP must terminate the active live process group, reap its child, and remove temporary state.' tests/agent_profile_matrix.sh \
   || fail 'dynamic process and temporary cleanup matrix omits HUP'
-grep -Fq "'HUP hold-before-release waiting'" tests/agent_profile_matrix.sh \
-  || fail 'launch-window cleanup matrix omits HUP'
-grep -Fq "'cpx HUP zeta'" tests/agent_profile_matrix.sh \
-  || fail 'descendant-tree cleanup matrix omits HUP'
+grep -Fq 'kill -HUP "$verifier_pid"' tests/agent_profile_matrix.sh \
+  || fail 'live verifier HUP delivery is not covered'
+grep -Fq "fail 'HUP left the live child running'" tests/agent_profile_matrix.sh \
+  || fail 'live descendant cleanup omits HUP'
 
 printf 'agent profile HUP contract: PASS\n'

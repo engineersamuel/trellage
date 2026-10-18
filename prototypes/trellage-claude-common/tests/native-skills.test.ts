@@ -49,7 +49,6 @@ interface Fixture {
   source: string
   bin: string
   cache: string
-  youtubeCache: string
   communityCache: string
   forbiddenLog: string
   envLog: string
@@ -76,11 +75,9 @@ interface ProfileFixture {
 const launchers: LauncherDescriptor[] = [
   { alias: "agx", package: "agency", marker: "agency", owner: "trellage-agency-profile-v1" },
   { alias: "cpx", package: "copilot" },
-  { alias: "cdx", package: "codex" },
   { alias: "cldx", package: "claude", marker: "claude", owner: "trellage-claude-profile-v1" },
   { alias: "jcx", package: "jcode", marker: "jcode", owner: "trellage-jcode-profile-v1" },
   { alias: "omp", package: "omp", marker: "omp", owner: "trellage-omp-profile-v1", leaf: "agent" },
-  { alias: "picx", package: "picx", marker: "picx", owner: "trellage-picx-profile-v2", leaf: "agent" },
   { alias: "prx", package: "prime", marker: "prime", owner: "trellage-prime-profile-v1" },
 ]
 
@@ -173,8 +170,7 @@ const fixtureFor = async (context: TestContext, descriptor: LauncherDescriptor |
     runtime,
     source,
     bin: path.join(root, "bin"),
-    cache: path.join(home, ".local/share/trellage/common", descriptor.alias === "cdx" ? "cdx-skills" : "skills"),
-    youtubeCache: path.join(home, ".local/share/trellage/common/cdx-youtube-pro-skills"),
+    cache: path.join(home, ".local/share/trellage/common/skills"),
     communityCache: path.join(home, ".local/share/trellage/common/omp-community-skills"),
     forbiddenLog: path.join(root, "forbidden.log"),
     envLog: path.join(root, "bun-environment.log"),
@@ -269,12 +265,6 @@ const installSourceFixture = async (fixture: Fixture) => {
 }
 
 const installSharedRuntime = async ({ descriptor, runtime }: Fixture) => {
-  if (descriptor.alias === "cdx") {
-    await copy(
-      path.join(repository, "prototypes/trellage-codex-common/native-codex"),
-      path.join(runtime, "lib/native-codex"),
-    )
-  }
   if (descriptor.alias === "cldx") {
     await copy(path.join(common, "native-claude"), path.join(runtime, "lib/native-claude"))
   }
@@ -310,7 +300,6 @@ const seedSnapshot = async (cache: string, names: string[], version: number) => 
 const seedCaches = async (fixture: Fixture, version: number) => {
   const names = version === 1 ? ["kept", "retired"] : ["added", "kept"]
   await seedSnapshot(fixture.cache, [...names], version)
-  await seedSnapshot(fixture.youtubeCache, [...names, "youtube-full"], version)
   await seedSnapshot(fixture.communityCache, names.map((name) => `omp-${name}`).concat("pstack-omp"), version)
   for (const variant of ["office", "office-charts"]) {
     await seedSnapshot(officeCache(fixture, variant), [...names], version)
@@ -332,10 +321,6 @@ const profileRoot = (fixture: Fixture, name: string) => {
   if (fixture.descriptor.alias === "omp") {
     assert.ok(typeof profile.ompProfile === "string")
     return path.join(fixture.home, ".omp/profiles", profile.ompProfile)
-  }
-  if (fixture.descriptor.alias === "picx") {
-    assert.ok(typeof profile.piProfile === "string")
-    return path.join(fixture.home, ".local/share/trellage/profiles/pi", profile.piProfile)
   }
   return path.join(fixture.home, ".local/share/trellage/profiles", fixture.descriptor.package, name)
 }
@@ -361,12 +346,9 @@ const seedSkillTarget = async (cache: string, home: string) => {
 const seedProfile = async (fixture: Fixture, name: string) => {
   const root = profileRoot(fixture, name)
   const home = path.join(root, fixture.descriptor.leaf ?? "home")
-  const cache =
-    fixture.descriptor.alias === "cldx" && name.startsWith("office")
-      ? officeCache(fixture, name)
-      : name === "youtube"
-        ? fixture.youtubeCache
-        : fixture.cache
+  const cache = fixture.descriptor.alias === "cldx" && name.startsWith("office")
+    ? officeCache(fixture, name)
+    : fixture.cache
   const profile: ProfileFixture = {
     name,
     root,
@@ -553,11 +535,8 @@ test("router checks all shared caches, including guide-only changes, without pro
   await copy(path.join(repository, "prototypes/trellage-router/bin/trx"), router)
   const guideCache = path.join(fixture.home, ".local/share/trellage/common/guide-prompt-master-skills")
   const architectureCache = path.join(fixture.home, ".local/share/trellage/common/guide-optimize-architecture-skills")
-  const codexCache = path.join(fixture.home, ".local/share/trellage/common/cdx-skills")
   const caches = [
     fixture.cache,
-    codexCache,
-    fixture.youtubeCache,
     fixture.communityCache,
     guideCache,
     officeCache(fixture, "office"),
@@ -650,7 +629,7 @@ test("older skill managers fail closed before fetching or installing", async (co
 })
 
 for (const descriptor of launchers) {
-  if (["cpx", "cdx", "cldx", "jcx"].includes(descriptor.alias)) {
+  if (["cpx", "cldx", "jcx"].includes(descriptor.alias)) {
     test(`${descriptor.alias} cleans skill check staging when cancelled`, async (context) => {
       const fixture = await fixtureFor(context, descriptor)
       await seedCaches(fixture, 1)
@@ -717,23 +696,14 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
 }
 `,
     )
-    await seedSnapshot(
-      path.join(freshRoot, descriptor.alias === "cdx" ? "native-common+codex-common" : "native-common"),
-      ["kept", "retired"],
-      1,
-    )
-    await seedSnapshot(
-      path.join(freshRoot, "native-common+codex-common+youtube"),
-      ["kept", "retired", "youtube-full"],
-      1,
-    )
+    await seedSnapshot(path.join(freshRoot, "native-common"), ["kept", "retired"], 1)
     await seedSnapshot(path.join(freshRoot, "omp-community"), ["omp-kept", "omp-retired", "pstack-omp"], 1)
     for (const variant of ["office", "office-charts"]) {
       await seedSnapshot(path.join(freshRoot, `native-common+claude-${variant}`), ["kept", "retired"], 1)
     }
     const before = await Promise.all(profiles.map((profile) => treeState(profile.root, true)))
     const caches = await Promise.all(
-      [fixture.cache, fixture.youtubeCache, fixture.communityCache].map((cache) => treeState(cache, true)),
+      [fixture.cache, fixture.communityCache].map((cache) => treeState(cache, true)),
     )
     succeeds(run(fixture, ["--help"]))
     assert.match(run(fixture, ["--help"]).stdout, /skills-check PROFILE/)
@@ -747,16 +717,7 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
           .every((line) => JSON.parse(line).kind === "current"),
       )
     }
-    await seedSnapshot(
-      path.join(freshRoot, descriptor.alias === "cdx" ? "native-common+codex-common" : "native-common"),
-      ["kept", "retired"],
-      2,
-    )
-    await seedSnapshot(
-      path.join(freshRoot, "native-common+codex-common+youtube"),
-      ["kept", "retired", "youtube-full"],
-      2,
-    )
+    await seedSnapshot(path.join(freshRoot, "native-common"), ["kept", "retired"], 2)
     for (const variant of ["office", "office-charts"]) {
       await seedSnapshot(path.join(freshRoot, `native-common+claude-${variant}`), ["kept", "retired"], 2)
     }
@@ -773,9 +734,7 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
     fails(run(fixture, ["skills-check", firstProfileName(fixture)], { SKILLS_FETCH_FAIL: "1" }), /source fetch failed/)
     assert.deepEqual(await Promise.all(profiles.map((profile) => treeState(profile.root, true))), before)
     assert.deepEqual(
-      await Promise.all(
-        [fixture.cache, fixture.youtubeCache, fixture.communityCache].map((cache) => treeState(cache, true)),
-      ),
+      await Promise.all([fixture.cache, fixture.communityCache].map((cache) => treeState(cache, true))),
       caches,
     )
     assert.deepEqual(
@@ -794,7 +753,7 @@ export const stageLatest = async ({ bundleIds, destination, readOnly }) => {
     const profiles = []
     for (const name of Object.keys(fixture.catalog.profiles)) profiles.push(await seedProfile(fixture, name))
     await seedCaches(fixture, 2)
-    const caches = [fixture.cache, fixture.youtubeCache, fixture.communityCache]
+    const caches = [fixture.cache, fixture.communityCache]
     const cachesBefore = await Promise.all(caches.map((cache) => treeState(cache, true)))
     for (const profile of profiles) {
       const before = await guardState(profile.guards)
@@ -873,53 +832,31 @@ test("OMP preflights both bundles before it replaces either copy", async (contex
   await noExternalCalls(fixture)
 })
 
-test("Codex YouTube management bypasses Varlock and rejects management verbs as native-auth profiles", async (context) => {
+
+test("Claude skills management scrubs provider credentials but retains file-backed GitHub configuration", async (context) => {
   const fixture = await fixtureFor(
     context,
-    launchers.find(({ alias }) => alias === "cdx"),
+    launchers.find((entry) => entry.alias === "cldx"),
   )
   await seedCaches(fixture, 1)
-  const profile = await seedProfile(fixture, "youtube")
+  const name = firstProfileName(fixture)
+  await seedProfile(fixture, name)
   await seedCaches(fixture, 2)
-  await write(
-    path.join(fixture.home, ".local/share/trellage/common/native-environment-runtime"),
-    "unsafe Varlock path\n",
+  succeeds(
+    run(fixture, ["skills-update", name], {
+      GH_TOKEN: "fixture-github",
+      ANTHROPIC_API_KEY: "fixture-claude",
+      OPENAI_API_KEY: "fixture-openai",
+    }),
   )
-  succeeds(run(fixture, ["skills-update", "youtube"]))
-  await verifyTarget(fixture.youtubeCache, profile.targets[0].target)
-  fails(run(fixture, ["--native-auth", "skills-update"]), /use trx run codex PROFILE/)
-  await noExternalCalls(fixture)
-})
-
-test("Claude and Codex skills management scrub provider credentials but retain file-backed GitHub configuration", async (context) => {
-  for (const alias of ["cldx", "cdx"]) {
-    const fixture = await fixtureFor(
-      context,
-      launchers.find((entry) => entry.alias === alias),
-    )
-    await seedCaches(fixture, 1)
-    const name = firstProfileName(fixture)
-    await seedProfile(fixture, name)
-    await seedCaches(fixture, 2)
-    succeeds(
-      run(fixture, ["skills-update", name], {
-        GH_TOKEN: "fixture-github",
-        ANTHROPIC_API_KEY: "fixture-claude",
-        OPENAI_API_KEY: "fixture-openai",
-        TRANSCRIPT_API_KEY: "fixture-transcript",
-        CODEX_API_KEY: "fixture-codex",
-      }),
-    )
-    const lines = (await readFile(fixture.envLog, "utf8")).trim().split("\n")
-    assert.ok(lines.length > 0)
-    for (const line of lines) {
-      const [ghConfig, github, claude, openai, transcript, codex] = line.split("|")
-      assert.equal(ghConfig, fixture.env.GH_CONFIG_DIR)
-      assert.deepEqual([github, claude, openai], ["unset", "unset", "unset"])
-      if (alias === "cdx") assert.deepEqual([transcript, codex], ["unset", "unset"])
-    }
-    await noExternalCalls(fixture)
+  const lines = (await readFile(fixture.envLog, "utf8")).trim().split("\n")
+  assert.ok(lines.length > 0)
+  for (const line of lines) {
+    const [ghConfig, github, claude, openai] = line.split("|")
+    assert.equal(ghConfig, fixture.env.GH_CONFIG_DIR)
+    assert.deepEqual([github, claude, openai], ["unset", "unset", "unset"])
   }
+  await noExternalCalls(fixture)
 })
 
 test("cache-only updates reject redirected caches, shared writes, hard links, and managed skill symlinks", async (context) => {
@@ -968,22 +905,6 @@ test("cache-only updates reject redirected caches, shared writes, hard links, an
   await noExternalCalls(fixture)
 })
 
-test("cache-only updates honor XDG_DATA_HOME without changing the default cache", async (context) => {
-  const fixture = await fixtureFor(
-    context,
-    launchers.find(({ alias }) => alias === "cdx"),
-  )
-  await seedCaches(fixture, 1)
-  const profile = await seedProfile(fixture, "youtube")
-  const defaultBefore = await treeState(fixture.youtubeCache, true)
-  const xdg = path.join(fixture.root, "data")
-  const cache = path.join(xdg, "trellage/common/cdx-youtube-pro-skills")
-  await seedSnapshot(cache, ["added", "kept", "youtube-full"], 2)
-  succeeds(run(fixture, ["skills-update", "youtube"], { XDG_DATA_HOME: xdg }))
-  await verifyTarget(cache, profile.targets[0].target)
-  assert.deepEqual(await treeState(fixture.youtubeCache, true), defaultBefore)
-  await noExternalCalls(fixture)
-})
 
 test("cache-only updates accept the Native wrappers' canonical HOME boundary", async (context) => {
   const fixture = await fixtureFor(
@@ -997,25 +918,5 @@ test("cache-only updates accept the Native wrappers' canonical HOME boundary", a
   await symlink(fixture.root, parentAlias)
   succeeds(run(fixture, ["skills-update", profile.name], { HOME: path.join(parentAlias, "home") }))
   await verifyTarget(fixture.cache, profile.targets[0].target)
-  await noExternalCalls(fixture)
-})
-
-test("Pi skills-only synchronization keeps the legacy managed ownership migration safe", async (context) => {
-  const fixture = await fixtureFor(
-    context,
-    launchers.find(({ alias }) => alias === "picx"),
-  )
-  await seedCaches(fixture, 1)
-  const profile = await seedProfile(fixture, "default")
-  const target = profile.targets[0].target
-  await rm(path.join(target, ".trellage-managed-skills"))
-  await write(path.join(target, ".trellage-engineersamuel-skills"), `${"a".repeat(40)}\nkept\nretired\n`)
-  await write(path.join(target, "show-me/SKILL.md"), "# Legacy show-me\n")
-  await write(path.join(target, "show-me/.managed-by-trellage-picx-profiles"), "trellage-picx-profile-v2\n")
-  await seedSnapshot(fixture.cache, ["added", "kept", "show-me"], 2)
-  succeeds(run(fixture, ["skills-update", "default"]))
-  await verifyTarget(fixture.cache, target)
-  await assert.rejects(lstat(path.join(target, "retired")), { code: "ENOENT" })
-  assert.equal(await readFile(path.join(target, "custom/SKILL.md"), "utf8"), "# User skill\n")
   await noExternalCalls(fixture)
 })

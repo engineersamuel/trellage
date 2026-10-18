@@ -1,10 +1,10 @@
 # trellage-claude-common
 
-Shared Native Claude runtime consumed by the owned Claude launcher `cldx`
+Shared Native Claude runtime consumed by the owned Claude backend `cldx`
 through this stable internal API. This package
 owns `native-claude`, an executable Bash script that centralizes shared
 Claude-profile logic, and `native-skills.mjs`, the cache-only skill sync
-adapter installed in all ten Native launcher runtimes.
+adapter installed in all retained Native backend runtimes.
 The optional `manual-skills.mjs` adapter is installed only for `jcx`.
 
 ## Internal API
@@ -39,9 +39,9 @@ Flags:
   directory. `native-claude` fails closed otherwise.
 - `--marker ABS` / `--marker-value VALUE`: absolute path to the caller's
   ownership marker file and the exact value it must contain. `native-claude`
-  never invents its own ownership scheme — the calling launcher supplies its
-  own marker path/value so multiple launchers can never collide.
-- `--bridge enabled|disabled`: whether the optional Trellage session-bridge
+  never invents its own ownership scheme — the calling backend supplies its
+  own marker path/value so multiple backends can never collide.
+- `--bridge enabled|disabled`: whether the optional conversation bridge
   hook should be installed (`enabled`) or absent (`disabled`) for this home.
   `launch` asserts the full bridge state (executable presence/absence *and*
   hook presence/absence) before exec-ing into Claude. See "Bridge contract"
@@ -58,7 +58,7 @@ Flags:
 
 `launch` requires a literal `--` separator before `CLAUDE_ARGS...` and execs
 the resolved `claude` binary in place (replacing the `native-claude`
-process), preserving PID/signal transparency for the calling launcher.
+process), preserving PID/signal transparency for the calling backend.
 
 `harness-update` takes no flags or profile arguments. It applies the shared
 provider/token scrub, resolves the host Claude executable, and execs the
@@ -106,12 +106,12 @@ uses the existing cache, `fresh` is read-only, and `prompt` returns only a verif
 manual skill body for an explicit request.
 
 JCode installs both adapters with `native-skills.mjs --install-manual RUNTIME`;
-the normal `--install` operation remains unchanged for other launchers.
+the normal `--install` operation remains unchanged for other backends.
 The programmatic `syncCachedSkills` and `checkFreshSkills` APIs accept an optional
 third tuple item, `[CACHE, TARGET, EXCLUDED_NAMES]`, for the discovered copy.
 The private library still receives the complete snapshot.
 
-The offline cross-launcher contract is
+The offline cross-backend contract is
 `node --test prototypes/trellage-claude-common/tests/native-skills.test.mjs`
 from the repository root. The Claude profile contract also runs it.
 
@@ -128,10 +128,10 @@ from the repository root. The Claude profile contract also runs it.
 - Explicit provider/token environment scrubbing (see "Provider/token scrub
   contract" below) and model defaulting/injection.
 - Signal/exec behavior for `launch`.
-- Optional Trellage session-bridge installation/removal.
+- Optional conversation-bridge installation/removal.
 
 Catalog schema validation, `list`/`inventory` projections, and vendored
-output-style assets remain owned by each launcher (e.g. `cldx`), since those
+output-style assets remain owned by each private backend (for example `cldx`), since those
 assets/schemas live outside this shared runtime's scope.
 
 ## Provider/token scrub contract
@@ -221,7 +221,7 @@ exec `claude` itself, only probe its version.
 
 Callers must export:
 
-- `TRELLAGE_CLAUDE_LAUNCHER_NAME`: the caller's own command name (e.g.
+- `TRELLAGE_CLAUDE_LAUNCHER_NAME`: the caller's own command name (for example
   `cldx`), used only for `native-claude`'s own error-message prefix and
   `repair`/`setup` hints. Must match `[A-Za-z0-9_-]+`.
 - `TRELLAGE_CLAUDE_RUNTIME_ROOT`: the caller's own installed runtime root
@@ -232,9 +232,9 @@ Callers must export:
   falling back to the dev-repo layout (`$runtime_root/../../scripts/...`)
   when running uninstalled from a worktree.
 
-## Owned launcher responsibilities
+## Owned backend responsibilities
 
-All Native launchers expose `skills-check PROFILE`. It fetches current skill
+All retained Native backends expose `skills-check PROFILE`. It fetches current skill
 sources into disposable staging under the caller's working directory and
 compares the contents with the profile's managed skills. It does not publish a
 shared cache, copy profile skills, install packages, or change authentication.
@@ -243,14 +243,11 @@ dependencies, unsafe paths, and fetch failures are errors, not proof of currency
 Each target reports JSON with `kind: "current"` or `kind: "available"`. Staging is removed after success, failure,
 or handled cancellation.
 
-Admin checks launcher help before calling this verb. Older launcher or helper
-installations need a normal Trellage launcher refresh before checks can work.
-Container profiles use `trellage skills-check PROFILE` instead. That check
-reads the actual immutable local image, not a leftover build context.
-Missing images or ambiguous ownership evidence remain unknown.
+Admin checks backend help before calling this verb. Older backend or helper
+installations need a normal Native runtime refresh before checks can work.
 
-An owned launcher (like `cldx`) remains a thin delegator: it owns its own
-public CLI surface, catalog validation, `list`/`inventory` projections, and
+An owned backend (like `cldx`) remains a thin delegator: it owns its own
+private CLI surface, catalog validation, `list`/`inventory` projections, and
 any vendored assets, then calls `native-claude prepare`/`doctor`/`launch`
 for everything else, exec-ing into `native-claude launch` for the final
-Claude invocation so the launcher's own PID is replaced (not wrapped).
+Claude invocation so the backend's own PID is replaced (not wrapped).

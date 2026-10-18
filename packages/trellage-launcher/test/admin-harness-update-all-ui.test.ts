@@ -82,6 +82,8 @@ const base = (name: string, harness = "claude"): AdminProfileEntry => ({
   launcher: harness,
   harness,
   name,
+  profiles: [name],
+  lifecycle: ["codex", "pi"].includes(harness) ? null : { runtime: harness, profile: name },
   description: name,
   commandPath: "/fixture/trx",
   doctorSupported: false,
@@ -128,6 +130,7 @@ const mountAdmin = async (
   onUpdate?: (options: CommandRunOptions | undefined, args: ReadonlyArray<string>) => Promise<CommandRunResult>,
   size = { columns: 140, rows: 48 },
   onVersion?: CommandRunner["run"],
+  onDoctor?: CommandRunner["run"],
 ) => {
   const stdin = new TestInput()
   const stdout = new TestOutput()
@@ -137,16 +140,22 @@ const mountAdmin = async (
   const run = vi.fn<CommandRunner["run"]>(async (executable, args, options) => {
     if (isUpdate(args) && onUpdate !== undefined) return onUpdate(options, args)
     if (args[0] === "harness-version" && onVersion !== undefined) return onVersion(executable, args, options)
+    if (args[0] === "doctor" && onDoctor !== undefined) return onDoctor(executable, args, options)
     return commandResult(args)
   })
   const clientFactory = vi.fn<() => never>(() => {
     throw new Error("Model inference is not allowed")
   })
+  const diagnosisProvider = new DoctorFailureDiagnosisProvider({ clientFactory })
+  vi.spyOn(diagnosisProvider, "diagnose").mockResolvedValue({
+    summary: "Doctor failed",
+    suggestedFix: "Use the confirmed repair action",
+  })
   const props = {
     runManager: new AdminRunManager({ runner: { run } }),
     guideRoot: "/unused",
     runner: { run },
-    diagnosisProvider: new DoctorFailureDiagnosisProvider({ clientFactory }),
+    diagnosisProvider,
     herdrEnv: {},
     cwd: "/fixture/worktree",
     routerCommandPath: "/fixture/trx",
@@ -183,6 +192,27 @@ const mountAdmin = async (
   await vi.waitFor(() => expect(screen()).toContain("Trellage Admin"))
   return { app, exited, screen, press, updates, run, replaceEntries, runManager: props.runManager }
 }
+
+describe("Admin startup diagnosis", () => {
+  it("does not repair or set up failed profiles on open or catalog refresh", async () => {
+    const failed = (name: string): AdminProfileEntry => ({
+      ...native(name),
+      ref: `native:claude/${name}`,
+      doctorSupported: true,
+      health: "unhealthy",
+    })
+    const doctor = vi.fn<CommandRunner["run"]>(async () => {
+      throw new Error("doctor failed")
+    })
+    const tui = await mountAdmin([failed("first")], undefined, undefined, undefined, doctor)
+    await vi.waitFor(() => expect(doctor).toHaveBeenCalledTimes(1))
+    await tui.replaceEntries([failed("first"), failed("second")])
+    await vi.waitFor(() => expect(doctor).toHaveBeenCalledTimes(2))
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(tui.run.mock.calls.filter(([, args]) => args[0] === "repair" || args[0] === "setup")).toEqual([])
+    expect(tui.screen()).not.toContain("Repair failure, setup running")
+  })
+})
 
 describe("global Admin update keyboard ownership", () => {
   it("hides current harnesses and skills and disables confirmation when nothing is available", async () => {
@@ -286,7 +316,7 @@ describe("global Admin update keyboard ownership", () => {
   })
 
   it("shows unknown checks separately without selecting or calling them current", async () => {
-    const entries = [other("available", "codex"), other("current", "jcode"), other("unknown", "pi")]
+    const entries = [other("available", "jcode"), other("current", "prime"), other("unknown", "omp")]
     vi.mocked(checkAdminSkillsUpdates).mockResolvedValueOnce(
       new Map([
         [entries[0]!.ref, { kind: "current" }],
@@ -302,15 +332,15 @@ describe("global Admin update keyboard ownership", () => {
     await vi.waitFor(() => expect(tui.screen()).toContain("[y] update selected items"))
     expect(tui.screen()).toContain("Incomplete checks")
     expect(tui.screen()).toContain("Skill source offline")
-    expect(tui.screen()).not.toContain("native:jcode/current")
-    expect(tui.screen()).not.toContain("Planned native:pi/unknown")
+    expect(tui.screen()).not.toContain("native:prime/current")
+    expect(tui.screen()).not.toContain("Planned native:omp/unknown")
     expect(tui.screen()).not.toContain("Everything is up to date")
     await tui.press("y")
     await vi.waitFor(() => expect(tui.screen()).toContain("Update all finished: 1 updated, 0 failed"))
     expect(tui.updates().map(([, args]) => args)).toEqual([
-      ["upgrade", "codex", "available", "--harness-only"],
+      ["upgrade", "jcode", "available"],
       ["skills", "update"],
-      ["upgrade", "codex", "available", "--skills-only"],
+      ["upgrade", "jcode", "available", "--skills-only"],
     ])
   })
 
@@ -353,9 +383,9 @@ describe("global Admin update keyboard ownership", () => {
     await tui.press("A")
     await vi.waitFor(() => expect(tui.screen()).toContain("including profiles hidden by filters"))
     await vi.waitFor(() => expect(tui.screen()).toContain("[y] update selected items"))
-    expect(tui.screen()).toContain("Native updates: 1 | Incomplete checks: 1")
+    expect(tui.screen()).toContain("Native updates: 1 | Incomplete checks: 0")
     expect(tui.screen()).toContain("Native skill copies: 2")
-    for (const entry of entries) expect(tui.screen()).toContain(entry.ref)
+    for (const entry of entries.slice(0, 2)) expect(tui.screen()).toContain(entry.ref)
     for (const key of ["U", "l", "p", "g", "i"]) await tui.press(key)
     expect(tui.updates()).toHaveLength(0)
     await tui.press("\u001b")
@@ -396,7 +426,7 @@ describe("global Admin update keyboard ownership", () => {
   })
 
   it("shows active progress, blocks duplicate or profile actions, and cancels pending work", async () => {
-    const tui = await mountAdmin([native(), other("queued")], async (options, args) => {
+    const tui = await mountAdmin([native(), other("queued", "jcode")], async (options, args) => {
       if (args[0] !== "skills") return commandResult(args)
       return new Promise((_resolve, reject) => {
         options?.signal?.addEventListener("abort", () => reject(new Error("Update cancelled")), { once: true })
@@ -422,7 +452,7 @@ describe("global Admin update keyboard ownership", () => {
   })
 
   it("shows Native skill cache failures without stopping independent harness updates", async () => {
-    const tui = await mountAdmin([native(), other("codex")], async (_options, args) => {
+    const tui = await mountAdmin([native(), other("other", "jcode")], async (_options, args) => {
       if (args[0] === "skills") throw new Error("Skill source unavailable")
       return commandResult(args)
     })

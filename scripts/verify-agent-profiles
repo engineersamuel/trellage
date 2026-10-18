@@ -35,7 +35,7 @@ report_error() {
   status=1
 }
 
-for required_command in jq trx codex; do
+for required_command in jq trx; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     report_error "required command not found: $required_command"
   fi
@@ -51,7 +51,6 @@ native_profile_command() {
   shift 2
   local harness
   case "$launcher" in
-    cdx) harness=codex ;;
     cpx) harness=copilot ;;
     *) report_error "unknown profile verifier harness: $launcher"; return 1 ;;
   esac
@@ -60,16 +59,9 @@ native_profile_command() {
     shift
     trx run "$harness" "$profile" -- "$@"
   else
-    local lifecycle=''
-    case "$launcher" in
-      cdx) lifecycle="${TRELLAGE_CODEX_LIFECYCLE_BIN-}" ;;
-      cpx) lifecycle="${TRELLAGE_COPILOT_LIFECYCLE_BIN-}" ;;
-    esac
+    local lifecycle="${TRELLAGE_COPILOT_LIFECYCLE_BIN-}"
     if [ -z "$lifecycle" ]; then
-      case "$launcher" in
-        cdx) lifecycle="$repo_root/prototypes/trellage-codex-profiles/bin/cdx" ;;
-        cpx) lifecycle="$repo_root/prototypes/trellage-copilot-profiles/bin/cpx" ;;
-      esac
+      lifecycle="$repo_root/prototypes/trellage-copilot-profiles/bin/cpx"
       [ -x "$lifecycle" ] || lifecycle=''
     fi
     if [ -z "$lifecycle" ]; then
@@ -563,46 +555,6 @@ validate_live_result() {
   fi
 }
 
-probe_codex_live() {
-  local launcher="$1"
-  local profile="$2"
-  local package="$3"
-  local source_skills="$4"
-  local storage_key="$profile"
-  local profile_home
-  local events_file="$temp_dir/live-$launcher-$profile-events.jsonl"
-  local result_file="$temp_dir/live-$launcher-$profile-result.json"
-  local error_file="$temp_dir/live-$launcher-$profile.stderr"
-  local command_status=0
-
-  profile_home="${HOME%/}/.local/share/trellage/profiles/codex/$storage_key/home"
-  prepare_live_probe "$launcher" "$profile" "$package" "$source_skills"
-  CODEX_HOME="$profile_home" run_live_process \
-    "$live_prompt_file" "$events_file" "$error_file" \
-    codex exec \
-      --ephemeral \
-      --sandbox read-only \
-      --config 'approval_policy="never"' \
-      --output-schema "$live_schema" \
-      --json \
-      --output-last-message "$result_file" \
-      - || command_status=$?
-  if [ "$live_process_timed_out" -eq 1 ]; then
-    report_error "codex live probe timed out for $profile"
-    set_live_failure 'timeout'
-  elif [ "$command_status" -ne 0 ]; then
-    report_error "codex live probe failed for $profile (exit $command_status)"
-    set_live_failure 'command'
-  elif ! jq -se 'all(.[]; type == "object")' "$events_file" >/dev/null 2>&1; then
-    report_error "codex live event stream was malformed for $profile"
-    set_live_failure 'malformed evidence'
-  elif live_events_have_tool_use "$events_file"; then
-    report_error "codex live probe attempted tool use for $profile"
-    set_live_failure 'tool use'
-  else
-    validate_live_result "$launcher" "$profile" "$live_expected_file" "$result_file"
-  fi
-}
 
 probe_cpx_live() {
   local profile="$1"
@@ -653,125 +605,6 @@ probe_cpx_live() {
   fi
 }
 
-verify_codex_profiles() {
-  local launcher="$1"
-  local list_output="$temp_dir/$launcher-list"
-  local inventory="$temp_dir/$launcher-inventory"
-  local profile
-  local package
-  local json_file
-  local text_file
-  local skills_file
-  local section_count
-  local visible_count
-  local package_count
-  local sample
-  local row_static
-  local row_live
-  local command_status
-  local inventory_valid
-
-  command -v trx >/dev/null 2>&1 || return 0
-  command -v codex >/dev/null 2>&1 || return 0
-  discover_catalog "$launcher" "$list_output" "$inventory" || return 0
-  if awk -F '\t' '
-    NR == 1 && $1 == "pstack" \
-      && $2 == "pstack-for-codex@pstack-for-codex-local" { next }
-    NR == 2 && $1 == "superpowers" \
-      && $2 == "superpowers@superpowers-marketplace" { next }
-    NR == 3 && $1 == "youtube" \
-      && $2 == "youtube-full" { next }
-    { invalid = 1 }
-    END { exit invalid || NR != 3 }
-  ' "$inventory"; then inventory_valid=yes; else inventory_valid=no; fi
-  if [ "$inventory_valid" != yes ]; then
-    report_error "$launcher profile inventory does not match managed catalog"
-    return 0
-  fi
-
-  while IFS=$'\t' read -r profile package; do
-    json_file="$temp_dir/$launcher-$profile.json"
-    text_file="$temp_dir/$launcher-$profile-text"
-    skills_file="$temp_dir/$launcher-$profile-skills"
-    row_static='pass'
-    package_count='n/a'
-    visible_count='?'
-    sample=''
-    row_live='not run'
-
-    command_status=0
-    native_profile_command "$launcher" doctor "$profile" >"$temp_dir/$launcher-$profile-doctor" \
-      2>"$temp_dir/$launcher-$profile-doctor.stderr" || command_status=$?
-    if [ "$command_status" -ne 0 ]; then
-      report_error "$launcher doctor failed for $profile (exit $command_status)"
-      set_row_failure 'doctor command'
-    fi
-    command_status=0
-    if [ "$profile" = 'youtube' ]; then
-      TRELLAGE_ENVIRONMENT=off \
-        TRANSCRIPT_API_KEY='trellage-static-profile-verification' \
-        native_profile_command "$launcher" run "$profile" debug prompt-input 'profile verification' \
-        >"$json_file" 2>"$temp_dir/$launcher-$profile.stderr" || command_status=$?
-    else
-      native_profile_command "$launcher" run "$profile" debug prompt-input 'profile verification' \
-        >"$json_file" 2>"$temp_dir/$launcher-$profile.stderr" || command_status=$?
-    fi
-    if [ "$command_status" -ne 0 ]; then
-      report_error "Codex prompt-input failed for $profile (exit $command_status)"
-      set_row_failure 'prompt input command'
-    elif ! jq -se 'length == 1 and (.[0] | type == "array")' "$json_file" >/dev/null 2>&1; then
-      report_error "Codex prompt validation failed for $profile: expected one JSON message array"
-      set_row_failure 'invalid prompt JSON'
-    elif ! jq -r '
-      .[]?.content[]?
-      | select(type == "object" and .type == "input_text" and (.text | type == "string"))
-      | .text
-    ' "$json_file" >"$text_file" 2>/dev/null; then
-      report_error "Codex prompt validation failed for $profile: expected one JSON message array"
-      set_row_failure 'invalid prompt JSON'
-    else
-      section_count="$(grep -Fxc '### Available skills' "$text_file" || true)"
-      if [ "$section_count" -ne 1 ]; then
-        report_error "Codex skill-section validation failed for $profile: expected exactly one available-skills section"
-        set_row_failure 'available-skills section'
-      else
-        awk '
-          $0 == "### Available skills" { in_skills = 1; next }
-          in_skills && $0 == "</skills_instructions>" { exit }
-          in_skills && /^### / { exit }
-          in_skills && /^- / {
-            line = substr($0, 3)
-            separator = index(line, ": ")
-            if (separator > 1) print substr(line, 1, separator - 1)
-          }
-        ' "$text_file" >"$skills_file"
-        if ! valid_skill_file "$skills_file"; then
-          report_error "Codex skill inventory validation failed for $profile: expected at least one valid skill name"
-          set_row_failure 'invalid skill inventory'
-        else
-          visible_count="$(line_count "$skills_file")"
-          sample="$(sample_skills "$skills_file")"
-          if [ "$profile" = 'youtube' ]; then
-            if grep -Fxq -- "$package" "$skills_file"; then
-              package_count=1
-            else
-              report_error "Codex managed skill validation failed for $profile: cataloged package is not visible"
-              set_row_failure 'missing managed skill'
-              package_count='?'
-            fi
-          fi
-        fi
-      fi
-    fi
-    if [ "$live_mode" -eq 1 ] && [ "$row_static" = 'pass' ]; then
-      probe_codex_live "$launcher" "$profile" "$package" "$skills_file"
-      if [ "$row_live" = 'not run' ]; then
-        row_live='pass'
-      fi
-    fi
-    emit_row "$launcher" "$profile" "$package" "$package_count" "$visible_count" "$sample" "$row_static" "$row_live"
-  done <"$inventory"
-}
 
 discover_catalog() {
   local launcher="$1"
@@ -920,6 +753,5 @@ verify_cpx_profiles() {
   done <"$inventory"
 }
 
-verify_codex_profiles cdx
 verify_cpx_profiles
 exit "$status"

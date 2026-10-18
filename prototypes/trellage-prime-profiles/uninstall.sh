@@ -21,11 +21,8 @@ install_root="$home/.local/share/trellage/prx"
 installed_launcher="$install_root/bin/prx"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-prime-profiles"
-command_path="$home/.local/share/trellage/.native-commands/prx"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
-  [[ ! -e "$command_path" && ! -L "$command_path" ]] \
-    || refuse "unowned command remains: $command_path"
   printf 'prx is not installed; profile state was preserved.\n'
   exit 0
 fi
@@ -43,28 +40,6 @@ fi
 [[ -f "$installed_catalog" && ! -L "$installed_catalog" ]] \
   || refuse "unsafe managed catalog: $installed_catalog"
 
-if [[ -e "$command_path" || -L "$command_path" ]]; then
-  [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
-    || refuse "unrelated command: $command_path"
-  rm -- "$command_path"
-fi
-
-# Also clear a leftover pre-rename `pax` install if still present.
-legacy_root="$home/.local/share/trellage/pax"
-legacy_launcher="$legacy_root/bin/pax"
-legacy_marker="$legacy_root/.managed-by-trellage-prime-profiles"
-legacy_command="$home/.local/bin/pax"
-if [[ -d "$legacy_root" && ! -L "$legacy_root" ]] \
-  && [[ -f "$legacy_marker" && ! -L "$legacy_marker" ]] \
-  && [[ "$(<"$legacy_marker")" == "$ownership_value" ]] \
-  && [[ "$(canonical_directory "$legacy_root")" == "$canonical_home/.local/share/trellage/pax" ]]; then
-  if [[ -e "$legacy_command" || -L "$legacy_command" ]]; then
-    [[ -L "$legacy_command" && "$(readlink "$legacy_command")" == "$legacy_launcher" ]] \
-      || refuse "unrelated legacy command: $legacy_command"
-    rm -- "$legacy_command"
-  fi
-  rm -rf -- "$legacy_root"
-fi
 
 rm -rf -- "$install_root"
 printf 'Uninstalled prx; Prime profile state and sessions were preserved.\n'

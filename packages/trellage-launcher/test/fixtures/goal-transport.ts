@@ -37,9 +37,9 @@ export const goalTransportFixture = (
   })
   const profile = parseSelectedProfile({
     surface: "native",
-    launcher: controller === "codex-goal" ? "codex" : "claude",
+    harness: controller === "codex-goal" ? "codex" : "claude",
     commandPath: "/opt/trellage/bin/trx",
-    profile: controller === "codex-goal" ? "superpowers" : "default",
+    profiles: [controller === "codex-goal" ? "superpowers" : "default"],
     headlessPrompt: true,
     goalExecutionPolicy: policy,
   })

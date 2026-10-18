@@ -110,7 +110,6 @@ describe("conversation source identity", () => {
       surface,
       agent,
       ...(surface === ConversationSurface.Host ? {} : { profile: "default" }),
-      ...(surface === ConversationSurface.Sandbox ? { containerId: "container-1", invocationId: "invocation-1" } : {}),
     }
     expect(validateConversationSource(source)).toEqual(source)
   })
@@ -135,8 +134,6 @@ describe("conversation source identity", () => {
     { surface: "container" },
     { agent: "other-agent" },
     { surface: ConversationSurface.Native },
-    { surface: ConversationSurface.Sandbox, profile: "default", containerId: "container-1" },
-    { containerId: "container-1" },
     { profile: "default" },
     { cwd: "relative/work" },
     { cwd: "/work/../other" },
@@ -172,21 +169,6 @@ describe("conversation snapshot", () => {
     expect(parsed.source).not.toBe(original.source)
   })
 
-  it("keeps a Sandbox domain snapshot UUID separate from its sealed transport identity", () => {
-    const original = snapshot()
-    const exported = {
-      ...original,
-      source: {
-        ...original.source,
-        surface: ConversationSurface.Sandbox,
-        profile: "claude-council",
-        containerId: "b".repeat(64),
-        invocationId: "invocation-1",
-      },
-    }
-    expect(validateConversationSnapshot(exported)).toEqual(exported)
-    expect(() => validateConversationSnapshot({ ...exported, id: "c".repeat(64) })).toThrow(/UUID/u)
-  })
 
   it.each([
     "a".repeat(63),
@@ -316,7 +298,7 @@ describe("continuation assessment", () => {
     { evidenceIds: ["invented-message"] },
     { evidenceIds: ["message-1", "message-1"] },
     { profileRef: "native:codex/invented" },
-    { profileRef: "cdx default; do-something" },
+    { profileRef: "bad default; do-something" },
     { workflowId: "invented" },
     { dependsOn: ["action-1"] },
     { dependsOn: ["action-6"] },

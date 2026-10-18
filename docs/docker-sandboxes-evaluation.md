@@ -1,10 +1,7 @@
 # Docker Sandboxes (`sbx`) — evaluation and decision
 
-Status: **Not adopted. Trellage Sandbox stays on hardened Docker containers.** The blocking defect
-is template provenance, not product maturity, so `sbx` reaching 1.0 or GA is explicitly *not* a
-revisit trigger on its own. Recorded so the finding is not re-discovered, in the same spirit as
-[`native-sandbox-research.md`](native-sandbox-research.md), which records the parallel decision to
-forego clawk.
+Status: Historical evaluation of the retired Trellage Sandbox product. Docker
+Sandboxes was not adopted during that product's lifetime.
 
 Evaluated 2026-08-26 against `sbx` 0.39.0 (released 2026-08-19) and Trellage at `24ac8d2`.
 Trellage later moved normal development profiles to floating stable inputs.

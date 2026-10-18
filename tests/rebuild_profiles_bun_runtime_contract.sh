@@ -106,15 +106,13 @@ trellage_ensure_bun_runtime() {
 EOF
 export TRELLAGE_TEST_REBUILD_LOG="$fixture_root/rebuild-calls"
 
-for retired in --sandbox-only --locked; do
-  : >"$TRELLAGE_TEST_REBUILD_LOG"
-  if output="$(bash "$workspace/scripts/rebuild-profile-images.sh" "$retired" 2>&1)"; then
-    fail "retired Sandbox option was accepted: $retired"
-  fi
-  [[ "$output" == *'Trellage Sandbox images are no longer built'* ]] \
-    || fail "retired option diagnostic was lost: $retired"
-  [[ ! -s "$TRELLAGE_TEST_REBUILD_LOG" ]] || fail "retired option started work: $retired"
-done
+: >"$TRELLAGE_TEST_REBUILD_LOG"
+if output="$(bash "$workspace/scripts/rebuild-profile-images.sh" --native-only 2>&1)"; then
+  fail 'removed compatibility option was accepted: --native-only'
+fi
+[[ "$output" == *'unknown argument: --native-only'* ]] \
+  || fail 'removed compatibility option did not use the ordinary unknown-argument diagnostic'
+[[ ! -s "$TRELLAGE_TEST_REBUILD_LOG" ]] || fail 'invalid option started work'
 
 native_home="$fixture_root/native-home"
 native_bin="$fixture_root/native-bin"
@@ -122,8 +120,8 @@ mkdir -p "$native_home" "$native_bin" "$workspace/prototypes/trellage-router"
 printf '#!/bin/sh\nexit 0\n' >"$workspace/prototypes/trellage-router/install.sh"
 printf '#!/bin/sh\nexit 0\n' >"$native_bin/trx"
 chmod +x "$workspace/prototypes/trellage-router/install.sh" "$native_bin/trx"
-for record in 'cdx codex v2' 'cpx copilot v1' 'agx agency v1' 'cldx claude v1' \
-  'jcx jcode v1' 'omp omp v2' 'picx picx v1' 'prx prime v1'; do
+for record in 'cpx copilot v1' 'agx agency v1' 'cldx claude v1' \
+  'jcx jcode v1' 'omp omp v2' 'prx prime v1'; do
   read -r backend package version <<<"$record"
   package_root="$workspace/prototypes/trellage-$package-profiles"
   runtime_root="$native_home/.local/share/trellage/$backend"
@@ -136,7 +134,7 @@ for record in 'cdx codex v2' 'cpx copilot v1' 'agx agency v1' 'cldx claude v1' \
   printf '%s-%s\n' "$marker" "$version" >"$runtime_root/.managed-by-$marker"
 done
 native_rebuild() {
-  HOME="$native_home" PATH="$native_bin:/usr/bin:/bin" bash "$workspace/scripts/rebuild-profile-images.sh" --native-only
+  HOME="$native_home" PATH="$native_bin:/usr/bin:/bin" bash "$workspace/scripts/rebuild-profile-images.sh"
 }
 output="$(native_rebuild 2>&1)" || fail "native rebuild required retired public aliases: $output"
 [[ "$output" == *'trx --help ok'* && "$output" == *'private backend prx'* ]] \

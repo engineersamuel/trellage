@@ -127,7 +127,7 @@ const checkCodexGoal = async (
   const home = env.HOME ?? homedir()
   if (!path.isAbsolute(home)) return unknown("HOME must identify the actual managed Codex profile directory.")
   const options = {
-    cwd, env: { ...env, CODEX_HOME: path.join(home, ".local/share/trellage/profiles/codex", selected.profile, "home") },
+    cwd, env: { ...env, CODEX_HOME: path.join(home, ".local/share/trellage/profiles/codex", selected.profiles.join("+"), "home") },
     timeoutMs: 30_000, ...(signal === undefined ? {} : { signal }),
   }
   const output = await runner.run("codex", ["--version"], options)
@@ -135,13 +135,13 @@ const checkCodexGoal = async (
   if (version === undefined || !versionAtLeast(version, [0, 153, 4])) {
     return unknown("Native /goal is confirmed for stable Codex 0.153.4 or later. Check the installed runtime; no goal was submitted.")
   }
-  // Bare feature listing can silently skip project config that a cdx launch trusts.
+  // Ask trx to apply the same generated home and command-line overrides as the selected composition.
   const features = await runner.run(
-    selected.commandPath, ["inventory", selected.launcher, selected.profile, "--goal-features"], options,
+    selected.commandPath, ["inventory", selected.harness, ...selected.profiles, "--goal-features"], options,
   ).catch((error: unknown) => {
     if (error instanceof CommandRunnerError && error.kind === "exited") {
       throw new GoalReadinessUnknownError(
-        `Codex goal features cannot be confirmed with the launch configuration. Check the installed launcher's inventory PROFILE --goal-features support and its diagnostic: ${error.stderr.trim() || error.message}`,
+        `Codex goal features cannot be confirmed with the launch configuration. Check trx inventory codex PROFILE --goal-features and its diagnostic: ${error.stderr.trim() || error.message}`,
         { cause: error },
       )
     }
@@ -163,7 +163,7 @@ interface ClaudeRuntime {
 
 const readClaudeRuntime = (source: string, selected: NativeSelectedProfile): ClaudeRuntime | undefined => {
   const payload = parseObject(source, "Claude runtime")
-  if (payload.schemaVersion !== 1 || payload.launcher !== selected.launcher || payload.harness !== "claude") {
+  if (payload.schemaVersion !== 1 || payload.harness !== selected.harness || payload.harness !== "claude") {
     throw new GoalReadinessEvidenceError("Claude runtime identity does not match the selected profile.")
   }
   const runtime = payload.goalRuntime
@@ -336,7 +336,7 @@ const checkClaudeGoal = async (
   signal?: AbortSignal,
 ): Promise<GuideGoalReadiness> => {
   const options = { cwd, timeoutMs: 30_000, ...(signal === undefined ? {} : { signal }) }
-  const version = await runner.run(selected.commandPath, ["harness-version", selected.launcher, selected.profile], options)
+  const version = await runner.run(selected.commandPath, ["harness-version", selected.harness, selected.profiles[0] ?? "default"], options)
   const runtime = readClaudeRuntime(version.stdout, selected)
   if (runtime === undefined) return unknown("This Claude launcher does not expose its goal evaluator runtime. Refresh the managed launcher before automatic goal delivery, or inspect the runtime and use native input manually.")
   // Claude's published changelog introduces interactive and -p /goal in 2.1.139.

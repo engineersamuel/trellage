@@ -56,11 +56,12 @@ const parseNativeInventory = (source: string, selected: NativeSelectedProfile): 
   }
   const inventory = value as Record<string, unknown>
   if (
-    inventory.schemaVersion !== 1 ||
-    inventory.launcher !== selected.launcher ||
-    inventory.profile !== selected.profile
+    inventory.schemaVersion !== 2 ||
+    inventory.harness !== selected.harness ||
+    !Array.isArray(inventory.profiles) ||
+    JSON.stringify(inventory.profiles) !== JSON.stringify(selected.profiles)
   ) {
-    throw new ProfilePreflightError("Native inventory identity does not match the selected profile")
+    throw new ProfilePreflightError("Native inventory identity does not match the selected composition")
   }
   if (
     inventory.readiness !== "healthy" &&
@@ -82,7 +83,7 @@ const checkNativeReadiness = async (
   let stdout: string
   try {
     stdout = (
-      await runner.run(selected.commandPath, ["inventory", selected.launcher, selected.profile, "--json"], {
+      await runner.run(selected.commandPath, ["inventory", selected.harness, ...selected.profiles, "--json"], {
         cwd,
         timeoutMs: 30_000,
         ...(signal === undefined ? {} : { signal }),
@@ -92,7 +93,7 @@ const checkNativeReadiness = async (
     if (cause instanceof CommandRunnerError) {
       return {
         kind: ProfileReadinessKind.Blocked,
-        summary: `${selected.launcher}/${selected.profile} failed its inventory check`,
+        summary: `${selected.harness}/${selected.profiles.join("+")} failed its inventory check`,
         diagnostic: diagnosticFromError(cause),
       }
     }
@@ -102,17 +103,17 @@ const checkNativeReadiness = async (
   return inventory.readiness === "healthy"
     ? {
         kind: ProfileReadinessKind.Ready,
-        summary: `${selected.launcher}/${selected.profile} is healthy`,
+        summary: `${selected.harness}/${selected.profiles.join("+")} is healthy`,
       }
     : {
         kind: ProfileReadinessKind.Blocked,
-        summary: `${selected.launcher}/${selected.profile} is ${inventory.readiness}`,
+        summary: `${selected.harness}/${selected.profiles.join("+")} is ${inventory.readiness}`,
         diagnostic:
           inventory.readiness === "not-setup"
-            ? `Run ${selected.launcher} setup ${selected.profile}, then retry.`
+            ? `Run trx setup ${selected.harness} ${selected.profiles.join(" ")}, then retry.`
             : inventory.readiness === "busy"
-              ? `Wait for the current ${selected.launcher} operation to finish, then retry.`
-            : `Run ${selected.launcher} doctor ${selected.profile} for details.`,
+              ? `Wait for the current ${selected.harness} operation to finish, then retry.`
+              : `Run trx doctor ${selected.harness} ${selected.profiles.join(" ")} for details.`,
       }
 }
 
@@ -127,8 +128,8 @@ const validateInteractiveCheck = (stdout: string, selected: NativeSelectedProfil
     throw new ProfilePreflightError("Workflow check must return an object")
   }
   const check = value as Record<string, unknown>
-  const identity = [check.schemaVersion, check.launcher, check.profile, check.mode, check.agent, check.requiredSkills]
-  const expected = [1, selected.launcher, selected.profile, "interactive", selected.agent, selected.interaction?.requiredSkills]
+  const identity = [check.schemaVersion, check.harness, check.profiles, check.mode, check.agent, check.requiredSkills]
+  const expected = [2, selected.harness, selected.profiles, "interactive", selected.agent, selected.interaction?.requiredSkills]
   if (JSON.stringify(identity) !== JSON.stringify(expected) ||
       typeof check.manifestSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(check.manifestSha256)) {
     throw new ProfilePreflightError("Workflow check does not match the selected interactive agent and skills")
@@ -145,7 +146,7 @@ const checkInteractiveReadiness = async (
   let stdout: string
   try {
     stdout = (await runner.run(selected.commandPath, [
-      "workflow-check", selected.launcher, selected.profile, "--agent", selected.agent,
+      "workflow-check", selected.harness, ...selected.profiles, "--agent", selected.agent,
       ...interaction.requiredSkills.flatMap((skill) => ["--require-skill", skill]),
     ], { cwd, timeoutMs: 30_000, ...(signal === undefined ? {} : { signal }) })).stdout
   } catch (cause) {

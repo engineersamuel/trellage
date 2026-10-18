@@ -15,12 +15,9 @@ import {
   exactSessionIdFromProcessInfo, findFocusedTranscript, sessionIdFromAgentSession,
   type FocusedTranscript,
 } from "./transcripts.ts"
-import {
-  trellageSessionIdentity, type TrellageNativeSessionIdentity, type TrellageSandboxSessionIdentity,
-} from "./trellage-session.ts"
+import { trellageSessionIdentity, type TrellageNativeSessionIdentity } from "./trellage-session.ts"
 import { parseConversationSnapshot } from "./conversation-validation.ts"
-import type { captureSandboxConversation } from "./sandbox-bridge.ts"
-import { isRecord, type JsonRecord } from "./records.ts"
+import type { JsonRecord } from "./records.ts"
 
 export interface FocusedConversationContext {
   readonly workspaceId: string
@@ -44,7 +41,6 @@ export interface FocusedCaptureDependencies {
   readonly serverIdentifier?: (env: NodeJS.ProcessEnv) => Promise<string>
   readonly transcriptResolver?: typeof findFocusedTranscript
   readonly recordReader?: typeof readStableConversationRecords
-  readonly sandboxLookup?: typeof captureSandboxConversation
   readonly policy?: ConversationCapturePolicy
   readonly signal?: AbortSignal | undefined
   readonly now?: () => Date
@@ -115,26 +111,9 @@ const checkedAgent = (agentInfo: JsonRecord, processInfo: JsonRecord, context: F
   return { agent, cwd }
 }
 
-const exactSandboxSessionId = (agent: ConversationAgent, agentInfo: JsonRecord, processInfo: JsonRecord) => {
-  const reference = agentInfo.agent_session
-  if (reference !== undefined &&
-    (!isRecord(reference) || reference.agent !== agent || reference.kind !== "id")) {
-    throw new ConversationSourceError("The Sandbox attachment has an unsupported harness session reference.")
-  }
-  const reported = sessionIdFromAgentSession(agent, reference)
-  if (reference !== undefined && reported === undefined) {
-    throw new ConversationSourceError("The Sandbox harness session reference is invalid.")
-  }
-  const processId = exactSessionIdFromProcessInfo(agent, processInfo)
-  if (reported !== undefined && processId !== undefined && reported !== processId) {
-    throw new ConversationSourceError("Conflicting exact Sandbox session identities were reported.")
-  }
-  return reported ?? processId
-}
 
 const sourceFields = [
-  "serverId", "surface", "agent", "sessionId", "workspaceId", "paneId",
-  "cwd", "tabId", "profile", "containerId", "invocationId",
+  "serverId", "surface", "agent", "sessionId", "workspaceId", "paneId", "cwd", "tabId", "profile",
 ] as const
 
 export const sameConversationSource = (left: ConversationSource, right: ConversationSource) =>
@@ -142,11 +121,7 @@ export const sameConversationSource = (left: ConversationSource, right: Conversa
 
 const assertBinding = (expected: FocusedConversationBinding | undefined, current: FocusedConversationBinding) => {
   if (expected === undefined) return
-  const changed = sourceFields.some((key) => {
-    if (key === "sessionId" && (expected.sessionId === undefined || current.sessionId === undefined) &&
-      expected.surface === ConversationSurface.Sandbox) return false
-    return expected[key] !== current[key]
-  })
+  const changed = sourceFields.some((key) => expected[key] !== current[key])
   if (changed || (expected.transcriptPath !== undefined && expected.transcriptPath !== current.transcriptPath)) {
     throw new ConversationSourceError("The original focused conversation identity changed. Open the source picker again.")
   }
@@ -154,31 +129,12 @@ const assertBinding = (expected: FocusedConversationBinding | undefined, current
 
 type SourceBindingBase = Pick<ConversationSource, "serverId" | "agent" | "cwd" | "workspaceId" | "paneId" | "tabId">
 
-interface BoundSandboxSource {
-  readonly surface: ConversationSurface.Sandbox
-  readonly binding: FocusedConversationBinding
-  readonly identity: TrellageSandboxSessionIdentity
-}
 
 interface BoundLocalSource {
-  readonly identity?: TrellageNativeSessionIdentity
-  readonly surface: ConversationSurface.Host | ConversationSurface.Native
   readonly binding: FocusedConversationBinding
   readonly transcript: FocusedTranscript
 }
 
-type BoundFocusedSource = BoundSandboxSource | BoundLocalSource
-
-const makeSandboxBinding = (
-  base: SourceBindingBase, identity: TrellageSandboxSessionIdentity, agentInfo: JsonRecord, processInfo: JsonRecord,
-): FocusedConversationBinding => {
-  const sessionId = exactSandboxSessionId(base.agent, agentInfo, processInfo)
-  return {
-    ...base, surface: ConversationSurface.Sandbox, profile: identity.profile,
-    containerId: identity.containerId, invocationId: identity.invocationId,
-    ...(sessionId === undefined ? {} : { sessionId }),
-  }
-}
 
 const makeLocalBinding = (
   base: SourceBindingBase, identity: TrellageNativeSessionIdentity | undefined, transcript: FocusedTranscript,
@@ -209,24 +165,13 @@ const bindFocusedSource = async (
     serverId, agent, cwd, workspaceId: context.workspaceId, paneId: context.paneId,
     ...(context.tabId === undefined ? {} : { tabId: context.tabId }),
   }
-  let bound: BoundFocusedSource
-  if (identity?.surface === ConversationSurface.Sandbox) {
-    bound = {
-      surface: ConversationSurface.Sandbox,
-      binding: makeSandboxBinding(base, identity, agentInfo, processInfo),
-      identity,
-    }
-  } else {
-    const transcript = await (dependencies.transcriptResolver ?? findFocusedTranscript)({
-      agent, cwd, agentSession: agentInfo.agent_session, processInfo,
-      tokens: agentInfo.tokens, env,
-    })
-    bound = {
-      surface: identity === undefined ? ConversationSurface.Host : ConversationSurface.Native,
-      binding: makeLocalBinding(base, identity, transcript),
-      transcript,
-      ...(identity === undefined ? {} : { identity }),
-    }
+  const transcript = await (dependencies.transcriptResolver ?? findFocusedTranscript)({
+    agent, cwd, agentSession: agentInfo.agent_session, processInfo,
+    tokens: agentInfo.tokens, env,
+  })
+  const bound: BoundLocalSource = {
+    binding: makeLocalBinding(base, identity, transcript),
+    transcript,
   }
   assertBinding(context.binding, bound.binding)
   assertBinding(context.expectedSource, bound.binding)
@@ -244,39 +189,6 @@ const snapshotSource = (binding: FocusedConversationBinding, sessionId: string):
   return { ...source, sessionId }
 }
 
-const defaultSandboxLookup = async (options: Parameters<typeof captureSandboxConversation>[0]) => {
-  const bridge = await import("./sandbox-bridge.ts")
-  if (typeof bridge.captureSandboxConversation !== "function") {
-    throw new ConversationSourceError("This Sandbox session bridge does not support conversation export.")
-  }
-  return bridge.captureSandboxConversation(options)
-}
-
-const captureBoundSandbox = async (
-  bound: BoundSandboxSource, dependencies: FocusedCaptureDependencies, env: NodeJS.ProcessEnv,
-) => {
-  const normalized = await (dependencies.sandboxLookup ?? defaultSandboxLookup)({
-    identity: {
-      ...bound.identity,
-      ...(bound.binding.sessionId === undefined ? {} : { sessionId: bound.binding.sessionId }),
-    },
-    cwd: bound.binding.cwd, env, signal: dependencies.signal,
-  })
-  if (typeof normalized.sessionId !== "string" || normalized.sessionId.length === 0 ||
-    (bound.binding.sessionId !== undefined && normalized.sessionId !== bound.binding.sessionId)) {
-    throw new ConversationSourceError("The Sandbox export does not match the exact focused session.")
-  }
-  if (!/^[a-f0-9]{64}$/u.test(normalized.revision) || !/^[a-f0-9]{64}$/u.test(normalized.activityRevision)) {
-    throw new ConversationSourceError("The Sandbox export has no valid conversation and activity revision.")
-  }
-  return {
-    source: snapshotSource(bound.binding, normalized.sessionId),
-    normalized: {
-      ...normalized,
-      revision: createHash("sha256").update(JSON.stringify([normalized.revision, normalized.activityRevision])).digest("hex"),
-    },
-  }
-}
 
 const captureBoundLocal = async (bound: BoundLocalSource, dependencies: FocusedCaptureDependencies) => {
   const policy = dependencies.policy ?? conversationCapturePolicy
@@ -296,9 +208,7 @@ export const captureFocusedConversation = async (
   dependencies: FocusedCaptureDependencies = {},
 ): Promise<ConversationSnapshot> => {
   const bound = await bindFocusedSource(context, dependencies)
-  const { source, normalized } = bound.surface === ConversationSurface.Sandbox
-    ? await captureBoundSandbox(bound, dependencies, dependencies.env ?? process.env)
-    : await captureBoundLocal(bound, dependencies)
+  const { source, normalized } = await captureBoundLocal(bound, dependencies)
   if (context.expectedSource !== undefined && !sameConversationSource(context.expectedSource, source)) {
     throw new ConversationSourceError("The original focused conversation identity changed. Open the source picker again.")
   }

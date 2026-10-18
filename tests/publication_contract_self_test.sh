@@ -139,7 +139,7 @@ fixture_git -C "$history_fixture" config user.name 'Samuel Mendenhall'
 fixture_git -C "$history_fixture" config user.email '2019830+engineersamuel@users.noreply.github.com'
 fixture_git -C "$history_fixture" add .
 fixture_git -C "$history_fixture" commit --no-verify -qm 'history fixture one'
-fixture_git -C "$history_fixture" branch feat/native-codex-profile-isolation
+fixture_git -C "$history_fixture" branch feat/native-profile-isolation
 printf 'Second approved state\n' >>"$history_fixture/README.md"
 fixture_git -C "$history_fixture" commit --no-verify -qam 'history fixture two'
 run_contract "$history_fixture" --sanitized-history >/dev/null \

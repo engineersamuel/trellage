@@ -13,7 +13,6 @@
     "./state": "./src/conversation-state.ts",
     "./validation": "./src/conversation-validation.ts",
     "./herdr": "./src/herdr.ts",
-    "./sandbox-bridge": "./src/sandbox-bridge.ts",
     "./source-context": "./src/source-context.ts",
     "./transcripts": "./src/transcripts.ts",
     "./transcript-format": "./src/transcript-format.ts",

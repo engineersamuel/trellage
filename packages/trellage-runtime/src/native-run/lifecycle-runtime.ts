@@ -15,11 +15,9 @@ const same = (profile: string): string => profile
 export const lifecycleRuntimes: ReadonlyArray<LifecycleRuntime> = [
   { harness: "agency", runtimeName: "agx", packageDirectory: "trellage-agency-profiles", profileName: (profile) => profile === "azure" ? "trellage-azure" : profile },
   { harness: "claude", runtimeName: "cldx", packageDirectory: "trellage-claude-profiles", profileName: same },
-  { harness: "codex", runtimeName: "cdx", packageDirectory: "trellage-codex-profiles", profileName: same },
   { harness: "copilot", runtimeName: "cpx", packageDirectory: "trellage-copilot-profiles", profileName: same },
   { harness: "jcode", runtimeName: "jcx", packageDirectory: "trellage-jcode-profiles", profileName: same },
   { harness: "omp", runtimeName: "omp", packageDirectory: "trellage-omp-profiles", profileName: (profile) => profile === "default" ? "copilot" : profile },
-  { harness: "pi", runtimeName: "picx", packageDirectory: "trellage-picx-profiles", profileName: same },
   { harness: "prime", runtimeName: "prx", packageDirectory: "trellage-prime-profiles", profileName: same },
 ]
 
@@ -36,10 +34,10 @@ export const lifecycleRuntimeCommand = (
   if (process.env.TRELLAGE_TRX_NATIVE_SOURCE || !existsSync(installed)) return source
   if (!lstatSync(installed).isFile() || realpathSync(installed) !== installed)
     throw new Error(`unsafe managed profile runtime: ${installed}`)
-  const markerNames: Record<string, string> = { cpx: "profiles", picx: "picx-profiles", omp: "omp-profiles" }
+  const markerNames: Record<string, string> = { cpx: "profiles", omp: "omp-profiles" }
   const markerName = markerNames[runtime.runtimeName] ?? `${runtime.harness}-profiles`
   const marker = path.join(path.dirname(path.dirname(installed)), `.managed-by-trellage-${markerName}`)
-  const versions = runtime.harness === "codex" ? ["v1", "v2"] : [runtime.harness === "omp" ? "v2" : "v1"]
+  const versions = runtime.harness === "omp" ? ["v2"] : ["v1"]
   if (!existsSync(marker) || !lstatSync(marker).isFile() ||
       !versions.some((version) => readFileSync(marker, "utf8").trim() === `trellage-${markerName}-${version}`))
     throw new Error(`missing or invalid managed profile runtime ownership: ${installed}`)

@@ -9,6 +9,8 @@ const entry: AdminProfileEntry = {
   launcher: "prime",
   harness: "prime",
   name: "default",
+  profiles: ["default"],
+  lifecycle: { runtime: "prx", profile: "default" },
   description: "Prime native profile.",
   commandPath: "/usr/local/bin/trx",
   doctorSupported: true,
@@ -32,11 +34,11 @@ describe("buildUpdateCheckCommand", () => {
 })
 
 describe("parseUpdateCheckOutput", () => {
-  it("parses the prime/jcode/omp/picx 'is current' message family", () => {
+  it("parses the prime/jcode/omp 'is current' message family", () => {
     expect(parseUpdateCheckOutput("prx update: 0.8.1 is current", "0.8.1")).toEqual({ current: true, installed: "0.8.1" })
   })
 
-  it("parses the prime/jcode/omp/picx '-> available' message family", () => {
+  it("parses the prime/jcode/omp '-> available' message family", () => {
     expect(parseUpdateCheckOutput("prx update: 0.8.1 -> 0.9.0 available", "0.8.1")).toEqual({
       current: false,
       installed: "0.8.1",
@@ -71,13 +73,6 @@ describe("parseUpdateCheckOutput", () => {
     if ("malformed" in result) expect(result.diagnostic).toContain("unrecognized")
   })
 
-  it("parses cdx's skill-only 'PROFILE: current' message with no version to name (e.g. youtube)", () => {
-    expect(parseUpdateCheckOutput("youtube: current", undefined)).toEqual({ current: true })
-  })
-
-  it("parses cdx's skill-only 'PROFILE: update available' message with no version to name", () => {
-    expect(parseUpdateCheckOutput("youtube: update available", undefined)).toEqual({ current: false, latest: "—" })
-  })
 })
 
 describe("versionColumnsFor", () => {

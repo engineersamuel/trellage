@@ -18,16 +18,19 @@ export type HarnessReleaseKey =
   | "oh-my-pi"
   | "pi-coding-agent"
   | "prime"
+  | "uji"
 
 const nativeReleaseKeys: Readonly<Partial<Record<NativeHarnessId, HarnessReleaseKey>>> = {
   copilot: "copilot-cli",
   codex: "codex",
   claude: "claude-code",
   fx: "fx",
+  grok: "grok",
   jcode: "jcode",
   omp: "oh-my-pi",
   pi: "pi-coding-agent",
   prime: "prime",
+  uji: "uji",
 }
 
 const nativeLatestLookupLaunchers: ReadonlySet<NativeHarnessId> = new Set([
@@ -62,12 +65,10 @@ export const harnessVersionOperationKeyFor = (entry: AdminProfileEntry): string 
   return `native:${entry.launcher}`
 }
 
-export const buildHarnessVersionCommand = (entry: AdminProfileEntry): CommandSpec => {
-  return {
-    executable: entry.commandPath,
-    args: ["harness-version", entry.launcher!, entry.name],
-  }
-}
+export const buildHarnessVersionCommand = (entry: AdminProfileEntry): CommandSpec =>
+  entry.lifecycle === null
+    ? { executable: entry.commandPath, args: ["inventory", entry.harness, ...entry.profiles, "--json"] }
+    : { executable: entry.commandPath, args: ["harness-version", entry.harness, ...entry.profiles] }
 
 export type AdminInstalledVersionState =
   | { readonly kind: "known"; readonly version: string }
@@ -127,19 +128,18 @@ const parseLatestState = (payload: Record<string, unknown>): AdminLatestVersionS
 
 export const parseHarnessVersionOutput = (stdout: string): AdminHarnessVersionResult => {
   const trimmed = stdout.trim()
-  if (trimmed.length === 0) return failedHarnessVersionResult("harness-version produced no output")
+  if (trimmed.length === 0) return failedHarnessVersionResult("version probe produced no output")
   let payload: unknown
   try {
     payload = JSON.parse(trimmed)
   } catch {
-    return failedHarnessVersionResult(
-      `harness-version produced non-JSON output: ${trimmed.split("\n")[0]?.slice(0, 400) ?? ""}`,
-    )
+    return failedHarnessVersionResult(`version probe produced non-JSON output: ${trimmed.split("\n")[0]?.slice(0, 400) ?? ""}`)
   }
-  if (!isPlainObject(payload) || payload.schemaVersion !== 1) {
-    return failedHarnessVersionResult("harness-version produced an unrecognized schema")
+  if (!isPlainObject(payload)) return failedHarnessVersionResult("version probe produced an unrecognized schema")
+  if (payload.schemaVersion === 2 && isPlainObject(payload.binary)) {
+    return { installed: parseInstalledState(payload.binary.version), latest: { kind: "unsupported" } }
   }
-
+  if (payload.schemaVersion !== 1) return failedHarnessVersionResult("version probe produced an unrecognized schema")
   return { installed: parseInstalledState(payload.installed), latest: parseLatestState(payload) }
 }
 

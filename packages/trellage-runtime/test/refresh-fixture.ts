@@ -7,11 +7,7 @@ const [root, action = "refresh", ...rest] = process.argv.slice(2)
 const isFixture = (candidate: string) =>
   candidate
     .split(path.sep)
-    .some(
-      (component) =>
-        component.startsWith(".contract-fixture.") ||
-        /^trellage-(?:cdx|pstack)-contract\.[a-z0-9]+$/i.test(component),
-    )
+    .some((component) => component.startsWith(".contract-fixture."))
 if (root === undefined || !path.isAbsolute(root) || !isFixture(root) || rest.length !== 0) {
   throw new Error("Only an explicitly changed shell contract fixture can be refreshed")
 }

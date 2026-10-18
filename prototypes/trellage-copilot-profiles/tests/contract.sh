@@ -885,7 +885,7 @@ assert_not_contains "$HOME/.copilot" "$fake_copilot_log"
 expected_hve_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "hello world", "--allow-tool", "git status"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "hello world", "--allow-tool", "git status"]}')"
 actual_hve_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | sed -n '1p')"
 [[ "$actual_hve_launch" == "$expected_hve_launch" ]] \
   || fail 'hve launch did not preserve the exact ordered argument vector'
@@ -917,12 +917,12 @@ expected_autopilot_plan_launch="$(jq -cn \
   cd "$worktree"
   trx_run_copilot superpowers --model 'gpt-5.5' --effort high --prompt 'two words' -- '--deny-tool'
 ) >"$fixture_root/superpowers-launch.out"
-actual_superpowers_launch="$(jq -c 'select(.args[0] == "--autopilot")' "$fake_copilot_argv_log" | sed -n '2p')"
+actual_superpowers_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | tail -n 1)"
 expected_superpowers_home="$(jq -r '.home' <<<"$actual_superpowers_launch")"
 expected_superpowers_launch="$(jq -cn \
   --arg home "$expected_superpowers_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-5.5", "--effort", "high", "--prompt", "two words", "--", "--deny-tool"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-5.5", "--effort", "high", "--prompt", "two words", "--", "--deny-tool"]}')"
 [[ "$actual_superpowers_launch" == "$expected_superpowers_launch" ]] \
   || fail 'superpowers launch did not preserve the exact ordered argument vector'
 
@@ -931,12 +931,12 @@ expected_plannotator_home="$HOME/.local/share/trellage/profiles/copilot/plannota
   cd "$worktree"
   trx_run_copilot awesome --prompt 'find useful skills' --deny-url=example.com --model=gpt-5.5 --reasoning-effort=low
 ) >"$fixture_root/awesome-launch.out"
-actual_awesome_launch="$(jq -c 'select(.args[0] == "--autopilot")' "$fake_copilot_argv_log" | sed -n '3p')"
+actual_awesome_launch="$(jq -c 'select(.args[0] != "plugin")' "$fake_copilot_argv_log" | tail -n 1)"
 expected_awesome_home="$(jq -r '.home' <<<"$actual_awesome_launch")"
 expected_awesome_launch="$(jq -cn \
   --arg home "$expected_awesome_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-5.5", "--effort", "low", "--prompt", "find useful skills", "--deny-url=example.com"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-5.5", "--effort", "low", "--prompt", "find useful skills", "--deny-url=example.com"]}')"
 [[ "$actual_awesome_launch" == "$expected_awesome_launch" ]] \
   || fail 'awesome launch did not preserve the exact ordered argument vector'
 
@@ -949,7 +949,7 @@ expected_compound_engineering_home="$(jq -r '.home' <<<"$actual_compound_enginee
 expected_compound_engineering_launch="$(jq -cn \
   --arg home "$expected_compound_engineering_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "ship and compound this feature"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "ship and compound this feature"]}')"
 [[ "$actual_compound_engineering_launch" == "$expected_compound_engineering_launch" ]] \
   || fail 'compound-engineering launch did not preserve the exact ordered argument vector'
 
@@ -962,7 +962,7 @@ expected_tufte_home="$(jq -r '.home' <<<"$actual_tufte_launch")"
 expected_tufte_launch="$(jq -cn \
   --arg home "$expected_tufte_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "critique this chart"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "critique this chart"]}')"
 actual_tufte_launch="$(jq -c \
   --arg home "$expected_tufte_home" \
   --arg prompt 'critique this chart' \
@@ -1019,7 +1019,7 @@ jq -se 'length == 2 and all(.[]; type == "object")' \
 expected_json_launch="$(jq -cn \
   --arg home "$expected_hve_home" \
   --arg cwd "$worktree" \
-  '{home: $home, cwd: $cwd, args: ["--autopilot", "--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "machine output", "--output-format", "json", "--stream", "off"]}')"
+  '{home: $home, cwd: $cwd, args: ["--allow-all", "--no-ask-user", "--model", "gpt-6-astra", "--effort", "low", "--prompt", "machine output", "--output-format", "json", "--stream", "off"]}')"
 [[ "$(tail -n 1 "$fake_copilot_argv_log")" == "$expected_json_launch" ]] \
   || fail 'JSON headless launch argument vector differs'
 
@@ -1070,7 +1070,7 @@ for permission_argument_vector in "${permission_argument_vectors[@]}"; do
     --arg home "$expected_hve_home" \
     --arg cwd "$worktree" \
     --args '{home: $home, cwd: $cwd, args: $ARGS.positional}' \
-    -- "--autopilot" "--allow-all" "--no-ask-user" --model gpt-6-astra --effort low "${permission_args[@]}" --prompt 'permission contract')"
+    -- "--allow-all" "--no-ask-user" --model gpt-6-astra --effort low "${permission_args[@]}" --prompt 'permission contract')"
   [[ "$actual_permission_launch" == "$expected_permission_launch" ]] \
     || fail "explicit permission arguments changed: $permission_argument_vector"
 done
@@ -1255,7 +1255,6 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cpx"
   and .harness == "copilot"
-  and .sandbox == false
   and [.profiles[].name] == ["awesome", "compound-engineering", "hve", "plannotator", "superpowers", "tufte-vdqi"]
   and all(.profiles[]; (.description | type == "string" and length > 0))
   and .profiles[0].headless == {
@@ -2421,16 +2420,7 @@ fi
 assert_contains 'unknown profile: not-a-profile' "$fixture_root/unknown.err"
 
 runtime_root="$HOME/.local/share/trellage/cpx"
-installed="$HOME/.local/share/trellage/.native-commands/cpx"
-mkdir -p "$(dirname "$installed")"
-ln -s "$runtime_root/bin/cpx" "$installed"
-if "$installer" >"$fixture_root/dangling-command-install.out" 2>"$fixture_root/dangling-command-install.err"; then
-  fail 'installer claimed an unowned dangling command symlink'
-fi
-assert_contains 'refusing to replace unrelated command' "$fixture_root/dangling-command-install.err"
-[[ -L "$installed" && "$(readlink "$installed")" == "$runtime_root/bin/cpx" ]] \
-  || fail 'installer changed an unowned dangling command symlink'
-rm "$installed"
+installed="$runtime_root/bin/cpx"
 
 mkdir -p "$runtime_root/bin"
 printf 'unrelated launcher\n' >"$runtime_root/bin/cpx"
@@ -2450,7 +2440,7 @@ assert_contains 'unrelated catalog' "$runtime_root/catalog.json"
 rm -rf "$runtime_root"
 
 "$installer"
-[[ -x "$installed" ]] || fail 'installer did not create ~/.local/share/trellage/.native-commands/cpx'
+[[ -x "$installed" && ! -L "$installed" ]] || fail 'installer did not publish the owned runtime command'
 assert_contains 'trellage-profiles-v1' "$runtime_root/.managed-by-trellage-profiles"
 [[ -f "$runtime_root/lib/trellage-session-bridge.py" \
   && ! -L "$runtime_root/lib/trellage-session-bridge.py" \
@@ -2532,7 +2522,7 @@ if XDG_CACHE_HOME="$fixture_root/old-workflow-cache" FAKE_COPILOT_VERSION=1.0.80
   fail 'workflow check accepted an unsupported CLI'
 fi
 "$uninstaller"
-[[ ! -e "$installed" && ! -L "$installed" ]] || fail 'uninstaller left ~/.local/share/trellage/.native-commands/cpx behind'
+[[ ! -e "$installed" ]] || fail 'uninstaller left the owned runtime command behind'
 [[ ! -e "$runtime_root/assets" ]] || fail 'uninstaller left runtime assets behind'
 [[ ! -e "$runtime_root/lib" ]] || fail 'uninstaller left runtime helpers behind'
 [[ -d "$HOME/.local/share/trellage/profiles/copilot/hve/home" ]] \
@@ -2576,64 +2566,6 @@ mv "$original_share" "$HOME/.local/share"
 assert_contains 'redirected launcher sentinel' "$redirected_share/trellage/cpx/bin/cpx"
 assert_contains 'redirected catalog sentinel' "$redirected_share/trellage/cpx/catalog.json"
 
-original_command_dir="$fixture_root/original-command-dir"
-redirected_command_dir="$fixture_root/redirected-command-dir"
-mv "$HOME/.local/share/trellage/.native-commands" "$original_command_dir"
-mkdir -p "$redirected_command_dir"
-printf 'command ancestor sentinel\n' >"$redirected_command_dir/sentinel"
-ln -s "$redirected_command_dir" "$HOME/.local/share/trellage/.native-commands"
-command_ancestor_install_status=0
-"$installer" \
-  >"$fixture_root/command-ancestor-install.out" \
-  2>"$fixture_root/command-ancestor-install.err" \
-  || command_ancestor_install_status=$?
-command_ancestor_install_created_command=false
-command_ancestor_install_created_runtime=false
-[[ -e "$redirected_command_dir/cpx" || -L "$redirected_command_dir/cpx" ]] \
-  && command_ancestor_install_created_command=true
-[[ -e "$runtime_root" || -L "$runtime_root" ]] \
-  && command_ancestor_install_created_runtime=true
-rm -f "$redirected_command_dir/cpx"
-rm "$HOME/.local/share/trellage/.native-commands"
-mv "$original_command_dir" "$HOME/.local/share/trellage/.native-commands"
-rm -rf "$runtime_root"
-[[ "$command_ancestor_install_status" -ne 0 ]] \
-  || fail 'installer accepted a symlinked command ancestor'
-[[ "$command_ancestor_install_created_command" == false ]] \
-  || fail 'installer created a command through a symlinked ancestor'
-[[ "$command_ancestor_install_created_runtime" == false ]] \
-  || fail 'installer mutated runtime before rejecting a symlinked command ancestor'
-assert_contains 'command ancestor sentinel' "$redirected_command_dir/sentinel"
-
-mkdir -p "$runtime_root/bin"
-printf 'trellage-profiles-v1\n' >"$runtime_root/.managed-by-trellage-profiles"
-printf 'owned launcher sentinel\n' >"$runtime_root/bin/cpx"
-printf 'owned catalog sentinel\n' >"$runtime_root/catalog.json"
-mv "$HOME/.local/share/trellage/.native-commands" "$original_command_dir"
-ln -s "$runtime_root/bin/cpx" "$redirected_command_dir/cpx"
-ln -s "$redirected_command_dir" "$HOME/.local/share/trellage/.native-commands"
-command_ancestor_uninstall_status=0
-"$uninstaller" \
-  >"$fixture_root/command-ancestor-uninstall.out" \
-  2>"$fixture_root/command-ancestor-uninstall.err" \
-  || command_ancestor_uninstall_status=$?
-command_ancestor_uninstall_preserved_command=false
-command_ancestor_uninstall_preserved_runtime=false
-[[ -L "$redirected_command_dir/cpx" ]] \
-  && command_ancestor_uninstall_preserved_command=true
-[[ -f "$runtime_root/bin/cpx" && -f "$runtime_root/catalog.json" ]] \
-  && command_ancestor_uninstall_preserved_runtime=true
-rm -f "$redirected_command_dir/cpx"
-rm "$HOME/.local/share/trellage/.native-commands"
-mv "$original_command_dir" "$HOME/.local/share/trellage/.native-commands"
-rm -rf "$runtime_root"
-[[ "$command_ancestor_uninstall_status" -ne 0 ]] \
-  || fail 'uninstaller accepted a symlinked command ancestor'
-[[ "$command_ancestor_uninstall_preserved_command" == true ]] \
-  || fail 'uninstaller removed a command through a symlinked ancestor'
-[[ "$command_ancestor_uninstall_preserved_runtime" == true ]] \
-  || fail 'uninstaller mutated runtime before rejecting a symlinked command ancestor'
-assert_contains 'command ancestor sentinel' "$redirected_command_dir/sentinel"
 
 symlink_runtime_target="$fixture_root/unrelated-runtime-target"
 mkdir -p "$symlink_runtime_target/bin"
@@ -2650,13 +2582,5 @@ assert_contains 'refusing unsafe symlinked runtime root' "$fixture_root/symlink-
 assert_contains 'symlink sentinel' "$symlink_runtime_target/bin/cpx"
 rm "$runtime_root"
 
-mkdir -p "$HOME/.local/share/trellage/.native-commands"
-printf '%s\n' '#!/usr/bin/env bash' 'printf unrelated' >"$installed"
-chmod 0755 "$installed"
-if "$installer" >"$fixture_root/collision.out" 2>"$fixture_root/collision.err"; then
-  fail 'installer overwrote an unrelated cpx command'
-fi
-assert_contains 'refusing to replace unrelated command' "$fixture_root/collision.err"
-assert_contains 'printf unrelated' "$installed"
 
 printf 'trellage profiles contract: PASS\n'

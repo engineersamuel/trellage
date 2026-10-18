@@ -1,4 +1,3 @@
-import { canonicalProfileRef } from "./native-identity.ts"
 import { createHash } from "node:crypto"
 import path from "node:path"
 import { GUIDE_MAX_ORIGINAL_INTENT } from "./guide-limits.ts"
@@ -6,7 +5,6 @@ import { GUIDE_MAX_ORIGINAL_INTENT } from "./guide-limits.ts"
 export enum ConversationSurface {
   Host = "host",
   Native = "native",
-  Sandbox = "sandbox",
 }
 
 export enum ConversationAgent {
@@ -30,8 +28,6 @@ export interface ConversationSource {
   readonly cwd: string
   readonly tabId?: string
   readonly profile?: string
-  readonly containerId?: string
-  readonly invocationId?: string
 }
 
 export interface ConversationMessage {
@@ -215,8 +211,7 @@ const opaqueIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f
 const identityPattern = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/u
 const kebabPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
 const digestPattern = /^[0-9a-f]{64}$/u
-const profilePattern =
-  /^(?:native:[a-z0-9]+(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*|sandbox:[a-z0-9]+(?:-[a-z0-9]+)*)$/u
+const profilePattern = /^native:[a-z0-9]+(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*$/u
 
 const object = (
   value: unknown,
@@ -314,8 +309,8 @@ const absolutePath = (value: unknown, field: string): string => {
 
 const profileRef = (value: unknown, field: string): string => {
   const result = string(value, field, conversationLimits.identifierChars)
-  if (!profilePattern.test(result)) return invalid(field, "must be a native or Sandbox profile reference")
-  return canonicalProfileRef(result)
+  if (!profilePattern.test(result)) return invalid(field, "must be a native profile reference")
+  return result
 }
 
 const workflowId = (value: unknown, field: string): string => {
@@ -371,21 +366,10 @@ const timestamp = (value: unknown, field: string): string => {
   return result
 }
 
-const validateSourceAttachment = (
-  surface: ConversationSurface,
-  profile: string | undefined,
-  containerId: string | undefined,
-  invocationId: string | undefined,
-): void => {
+const validateSourceAttachment = (surface: ConversationSurface, profile: string | undefined): void => {
   const field = "source"
-  if (surface !== ConversationSurface.Host && profile === undefined)
-    invalid(field, "requires a profile on this surface")
-  if (surface === ConversationSurface.Sandbox && (containerId === undefined || invocationId === undefined)) {
-    invalid(field, "requires exact container and invocation identities for Sandbox")
-  }
-  if (surface !== ConversationSurface.Sandbox && (containerId !== undefined || invocationId !== undefined)) {
-    invalid(field, "contains Sandbox identities on a non-Sandbox surface")
-  }
+  if (surface === ConversationSurface.Native && profile === undefined)
+    invalid(field, "requires a profile on the native surface")
   if (surface === ConversationSurface.Host && profile !== undefined)
     invalid(field, "contains a profile on the host surface")
 }
@@ -396,15 +380,11 @@ export const validateConversationSource = (value: unknown): ConversationSource =
     value,
     field,
     ["serverId", "surface", "agent", "sessionId", "workspaceId", "paneId", "cwd"],
-    ["tabId", "profile", "containerId", "invocationId"],
+    ["tabId", "profile"],
   )
   const surface = enumeration(fields.surface, `${field}.surface`, Object.values(ConversationSurface))
   const profile = fields.profile === undefined ? undefined : workflowId(fields.profile, `${field}.profile`)
-  const containerId =
-    fields.containerId === undefined ? undefined : identifier(fields.containerId, `${field}.containerId`)
-  const invocationId =
-    fields.invocationId === undefined ? undefined : identifier(fields.invocationId, `${field}.invocationId`)
-  validateSourceAttachment(surface, profile, containerId, invocationId)
+  validateSourceAttachment(surface, profile)
   return {
     serverId: identifier(fields.serverId, `${field}.serverId`),
     surface,
@@ -415,8 +395,6 @@ export const validateConversationSource = (value: unknown): ConversationSource =
     cwd: absolutePath(fields.cwd, `${field}.cwd`),
     ...(fields.tabId === undefined ? {} : { tabId: identifier(fields.tabId, `${field}.tabId`) }),
     ...(profile === undefined ? {} : { profile }),
-    ...(containerId === undefined ? {} : { containerId }),
-    ...(invocationId === undefined ? {} : { invocationId }),
   }
 }
 

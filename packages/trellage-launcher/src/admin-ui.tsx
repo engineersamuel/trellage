@@ -43,10 +43,10 @@ import { trellageTheme } from "./termcn/theme-trellage.ts"
 import type { AdminSortKey } from "./admin-table.ts"
 import { adminProfileType, adminTableColumnWidths, adminVisibleRowRange, filterAdminProfiles, resolveAdminViewState, sortAdminProfiles } from "./admin-table.ts"
 import { runBatchedDoctorChecks } from "./admin-batch-scheduler.ts"
-import { selectPendingDiagnosisTargets, selectPendingRepairTargets, shouldStartBatch } from "./admin-diagnosis-dispatch.ts"
+import { selectPendingDiagnosisTargets, shouldStartBatch } from "./admin-diagnosis-dispatch.ts"
 import { DoctorFailureDiagnosisProvider, type DoctorFailureDiagnosisResult } from "./admin-diagnosis-provider.ts"
 import { forkFailureToHerdrWorktree, isForkToHerdrAvailable, type HerdrForkOutcome } from "./admin-herdr-fork.ts"
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import type { CommandRunner, HerdrEnvironment } from "./guide-launch.ts"
 import { CommandRunnerError } from "./guide-launch.ts"
 import { MarkdownTextViewport, spinnerFrameAt } from "./guide-ui.tsx"
@@ -78,7 +78,7 @@ import {
   type HarnessUpdateOutcome,
   type HarnessUpdatePlan,
 } from "./admin-harness-update.ts"
-import { adminInventorySummary, buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.ts"
+import { buildInventoryCommand, parseInventoryOutput, type AdminInventoryOutcome } from "./admin-inventory.ts"
 import { refreshHarnessUpdateGroupVersions } from "./admin-harness-update-all.ts"
 import { HarnessUpdateAllOverlay, HarnessUpdateAllStatus, useHarnessUpdateAll } from "./admin-harness-update-all-ui.tsx"
 import { checkAdminHarnessUpdates } from "./admin-harness-update-discovery.ts"
@@ -716,7 +716,7 @@ const AdminDetailPanel = ({
       .catch((error: unknown) => setForkMessage(error instanceof Error ? error.message : String(error)))
   }
 
-  useInput((input, key) => {
+  useInput((input) => {
     const options: DetailInputOptions = {
       confirmation,
       entry,
@@ -1111,7 +1111,6 @@ export const AdminApp = ({
   >(undefined)
   const batchStartedRefs = useRef<Set<string>>(new Set())
   const diagnosedRefs = useRef<Set<string>>(new Set())
-  const repairAttemptedRefs = useRef<Set<string>>(new Set())
   const versionRunManagerRef = useRef<AdminRunManager | undefined>(undefined)
   if (versionRunManagerRef.current === undefined) versionRunManagerRef.current = new AdminRunManager({ runner })
   const versionRunManager = versionRunManagerRef.current
@@ -1331,35 +1330,6 @@ export const AdminApp = ({
       .finally(() => setTick((value) => value + 1))
   }
 
-  /**
-   * Attempts one automatic `repair` for every repair-capable profile that
-   * finishes the startup doctor batch (or any later retry) in a failed
-   * state, then rechecks doctor — the same "run once, then recheck" action
-   * as the manual `[p]` key, just triggered without waiting for the user to
-   * select the profile first. `selectPendingRepairTargets` guarantees each
-   * ref is auto-repaired at most once per session; a later manual `[p]`
-   * retry remains available and independent. Runs on every poll tick (no
-   * dependency array) to observe newly terminal-failed refs as the batch
-   * settles in the background, exactly like the diagnosis-dispatch effect
-   * above it.
-   */
-  useEffect(() => {
-    if (harnessUpdateManager.isBusy()) return
-    const statusesByRef = new Map<string, AdminRunStatus>(
-      entries.filter((entry) => entry.doctorSupported).map((entry) => [entry.ref, runManager.status(entry.ref)]),
-    )
-    const repairSupportedRefs = new Set(entries.filter(isRepairSupported).map((entry) => entry.ref))
-    const targets = selectPendingRepairTargets(statusesByRef, repairSupportedRefs, repairAttemptedRefs.current)
-    if (targets.length === 0) return
-    repairAttemptedRefs.current = new Set([...repairAttemptedRefs.current, ...targets])
-    for (const ref of targets) {
-      const entry = entries.find((candidate) => candidate.ref === ref)
-      if (entry === undefined) continue
-      void repairThenRecheckDoctor(entry, runManager, () => refreshRepairedVersions(entry)).finally(() => setTick((value) => value + 1))
-    }
-    // Runs each poll tick to observe newly terminal-failed refs from `AdminRunManager`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  })
 
   useEffect(() => {
     let cancelled = false
@@ -1683,7 +1653,7 @@ export const AdminRoot = ({
   herdrEnv,
   routerCommandPath = "trx",
 }: {
-  readonly catalog: CombinedGuideCatalog
+  readonly catalog: CompositionCatalog
   readonly runner: CommandRunner
   readonly runManager: AdminRunManager
   readonly guideRoot: string

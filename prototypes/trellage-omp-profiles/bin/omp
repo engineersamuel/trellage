@@ -273,9 +273,6 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "omp",
       harness: "oh-my-pi",
-      # oh-my-pi has no known native OS-level sandbox; runs directly on the
-      # host. See docs/native-sandbox-research.md.
-      sandbox: false,
       profiles: [
         .profiles
         | to_entries
@@ -959,7 +956,7 @@ resolve_host_omp() {
 
   launcher_path="$(canonical_executable "${BASH_SOURCE[0]}")" \
     || die 'could not resolve the running OMP launcher'
-  internal_path="$(canonical_executable "$runtime_root/../.native-commands/omp" 2>/dev/null)" \
+  internal_path="$(canonical_executable "$runtime_root/bin/omp" 2>/dev/null)" \
     || internal_path=''
   while [[ "$remaining" == *:* ]]; do
     entry="${remaining%%:*}"

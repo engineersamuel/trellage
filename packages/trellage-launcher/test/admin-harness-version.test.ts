@@ -17,7 +17,7 @@ const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEn
   ref: "native:omp/local",
   surface: "native",
   launcher: "omp",
-  harness: "oh-my-pi",
+  harness: "omp",
   name: "local",
   description: "Oh My Pi native profile.",
   commandPath: "/usr/local/bin/trx",
@@ -30,6 +30,8 @@ const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEn
   harnessVersionSupported: true,
   updateCheckStale: false,
   ...overrides,
+  profiles: overrides.profiles ?? [overrides.name ?? "local"],
+  lifecycle: Object.hasOwn(overrides, "lifecycle") ? overrides.lifecycle! : { runtime: "omp", profile: overrides.name ?? "local" },
 })
 
 
@@ -49,6 +51,20 @@ describe("buildHarnessVersionCommand", () => {
       executable: "/usr/local/bin/trx",
       args: ["harness-version", "omp", "local"],
     })
+  })
+
+  it("uses inventory v2 for externally managed harness versions", () => {
+    const grok = nativeEntry({
+      ref: "native:grok/default", launcher: "grok", harness: "grok", profiles: ["default"], lifecycle: null,
+    })
+    expect(buildHarnessVersionCommand(grok)).toEqual({
+      executable: "/usr/local/bin/trx",
+      args: ["inventory", "grok", "default", "--json"],
+    })
+    expect(parseHarnessVersionOutput(JSON.stringify({
+      schemaVersion: 2,
+      binary: { command: "grok", path: "/opt/grok", version: "1.0.46" },
+    }))).toEqual({ installed: { kind: "known", version: "1.0.46" }, latest: { kind: "unsupported" } })
   })
 
 })

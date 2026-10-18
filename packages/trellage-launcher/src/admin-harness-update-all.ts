@@ -20,9 +20,16 @@ export interface UnsupportedHarnessUpdate {
   readonly diagnostic: string
 }
 
+export interface ExternallyManagedHarnessUpdate {
+  readonly harness: string
+  readonly entries: ReadonlyArray<AdminProfileEntry>
+  readonly diagnostic: string
+}
+
 export interface HarnessUpdateAllPlan {
   readonly skills: NativeSkillsUpdatePlan | undefined
   readonly groups: ReadonlyArray<HarnessUpdatePlan>
+  readonly externallyManaged: ReadonlyArray<ExternallyManagedHarnessUpdate>
   readonly unsupported: ReadonlyArray<UnsupportedHarnessUpdate>
   readonly profileCount: number
   readonly nativeUpdateCount: number
@@ -62,6 +69,11 @@ const unsupportedReason = (entry: AdminProfileEntry): string => {
   return `No harness update command is supported for ${identity}.`
 }
 
+const externallyManagedHarnesses = new Set(["agency", "codex", "fx", "grok", "headlong", "pi", "uji"])
+
+const externalManagementReason = (): string =>
+  "installed and updated outside Trellage."
+
 export const harnessUpdateAllPlanFor = (
   entries: ReadonlyArray<AdminProfileEntry>,
   versionResultFor: (entry: AdminProfileEntry) => AdminHarnessVersionResult | undefined = () => undefined,
@@ -72,12 +84,17 @@ export const harnessUpdateAllPlanFor = (
   const skills = nativeSkillsUpdatePlanFor(profiles, routerCommandPath)
   const capturedTargets = new Map(skills?.targets.map((entry) => [entry.ref, entry]))
   const targetsByGroup = new Map<string, Array<AdminProfileEntry>>()
+  const externalTargets = new Map<string, Array<AdminProfileEntry>>()
   const unsupported: Array<UnsupportedHarnessUpdate> = []
   for (const entry of profiles) {
     const target = capturedTargets.get(entry.ref) ?? entry
     const key = harnessUpdateKeyFor(target)
     if (key === undefined) {
-      unsupported.push({ entry, diagnostic: unsupportedReason(entry) })
+      if (externallyManagedHarnesses.has(entry.harness)) {
+        const targets = externalTargets.get(entry.harness)
+        if (targets === undefined) externalTargets.set(entry.harness, [entry])
+        else targets.push(entry)
+      } else unsupported.push({ entry, diagnostic: unsupportedReason(entry) })
       continue
     }
     const groupKey = JSON.stringify([key, target.commandPath])
@@ -95,9 +112,15 @@ export const harnessUpdateAllPlanFor = (
     }
     if (plan !== undefined) groups.push(plan)
   }
+  const externallyManaged = [...externalTargets.entries()].map(([harness, targets]) => ({
+    harness,
+    entries: targets.sort((left, right) => left.ref.localeCompare(right.ref)),
+    diagnostic: externalManagementReason(),
+  })).sort((left, right) => left.harness.localeCompare(right.harness))
   return {
     skills,
     groups,
+    externallyManaged,
     unsupported: unsupported.sort((left, right) => left.entry.ref.localeCompare(right.entry.ref)),
     profileCount: profiles.length,
     nativeUpdateCount: groups.filter((group) => group.surface === "native").reduce((count, group) => count + group.steps.length, 0),
@@ -132,8 +155,9 @@ export const harnessUpdateAllSummary = (outcome: HarnessUpdateAllOutcome): Harne
   const updated = results.filter((result) => result.state === "success").length
   const failed = results.filter((result) => result.state === "failure").length
   const unsupported = outcome.plan.unsupported.length
+  const informational = outcome.plan.externallyManaged.reduce((count, group) => count + group.entries.length, 0)
   const refreshFailed = outcome.reports.filter((report) => report.refreshError !== undefined).length
-  const notRun = outcome.plan.profileCount - results.length - unsupported
+  const notRun = outcome.plan.profileCount - results.length - unsupported - informational
   const skills = nativeSkillsSummary(outcome)
   const skillsComplete = !skills.skillsCacheFailed && skills.nativeSkillsFailed === 0 && skills.nativeSkillsNotRun === 0
   return {

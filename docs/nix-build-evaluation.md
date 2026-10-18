@@ -1,5 +1,7 @@
 # Nix build evaluation — declined (2026-09-08)
 
+Status: Historical build evaluation for the retired Trellage Sandbox product.
+
 ## Decision
 
 We do not use Nix to build or configure profile container images. Profile images stay

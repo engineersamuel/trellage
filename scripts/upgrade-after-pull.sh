@@ -22,11 +22,9 @@ trx() {
 
 status=0
 printf 'upgrade-after-pull: updating Native harnesses and skills\n' >&2
-trx upgrade all --native --yes || status=1
-# `upgrade all` updates harness binaries and skills only; Codex and Copilot plugins update per profile.
-for harness in codex copilot; do
-  printf 'upgrade-after-pull: updating %s plugins\n' "$harness" >&2
-  trx upgrade "$harness" --all || status=1
-done
+trx upgrade all --yes || status=1
+# `upgrade all` updates harness binaries and skills only; Copilot plugins update per profile.
+printf 'upgrade-after-pull: updating copilot plugins\n' >&2
+trx upgrade copilot --all || status=1
 ((status == 0)) || printf 'upgrade-after-pull: some updates failed; rerun %s\n' "$0" >&2
 exit "$status"

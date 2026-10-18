@@ -740,7 +740,6 @@ describe("Owned source installation", () => {
     ["trellage-agency-profiles", "agx"],
     ["trellage-copilot-profiles", "cpx"],
     ["trellage-omp-profiles", "omp"],
-    ["trellage-picx-profiles", "picx"],
     ["trellage-prime-profiles", "prx"],
   ])("does not publish %s when source dependency preparation fails", (prototype, command) => {
     const root = fixture()

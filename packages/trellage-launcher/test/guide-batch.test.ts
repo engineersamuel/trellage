@@ -102,9 +102,9 @@ class BatchRunner implements CommandRunner {
     if (args[0] === "doctor") {
       return {
         stdout: [
-          `profile: ${args[2]} (sandbox)`,
+          `profile: ${args[2]} (native)`,
           "development resolution: true",
-          "image: trellage/sandbox (available)",
+          "runtime: available",
         ].join("\n"),
         stderr: "",
         exitCode: 0,
@@ -113,9 +113,9 @@ class BatchRunner implements CommandRunner {
     if (args[0] === "inventory") {
       return {
         stdout: JSON.stringify({
-          schemaVersion: 1,
-          launcher: args[1],
-          profile: args[2],
+          schemaVersion: 2,
+          harness: args[1],
+          profiles: args.slice(2, -1),
           readiness: "healthy",
         }),
         stderr: "",
@@ -171,17 +171,17 @@ class BatchRunner implements CommandRunner {
 
 const claude = (profile: string): SelectedProfile => ({
   surface: "native",
-  launcher: "claude",
+  harness: "claude",
   commandPath: "/opt/trellage/bin/trx",
-  profile,
+  profiles: [profile],
   headlessPrompt: false,
 })
 
-const native = (launcher: "copilot" | "codex", profile: string, agent?: string): SelectedProfile => ({
+const native = (harness: "copilot" | "codex", profile: string, agent?: string): SelectedProfile => ({
   surface: "native",
-  launcher,
+  harness,
   commandPath: "/opt/trellage/bin/trx",
-  profile,
+  profiles: [profile],
   headlessPrompt: false,
   ...(agent === undefined ? {} : { agent }),
 })
@@ -257,7 +257,7 @@ describe("guide batch queue", () => {
   it("keeps the full original input in an ordinary queued command after specification edits", () => {
     const originalIntent = "  Keep all existing behavior.\r\nDo not change public names.  "
     const profile: SelectedProfile = {
-      surface: "native", launcher: "copilot", commandPath: "/fixture/trx", profile: "default", headlessPrompt: true,
+      surface: "native", harness: "copilot", commandPath: "/fixture/trx", profiles: ["default"], headlessPrompt: true,
     }
     const guideContext = {
       originalIntent, workflowId: "review",
@@ -385,9 +385,9 @@ describe("guide batch queue", () => {
     const job = createQueuedGuideJob(1, sourceProfile, candidate.prompt, sourcePlacement, source)
     source.goal.draft.criteria[0] = "Changed after queueing."
     source.workflow.examples[0] = "Changed workflow."
-    sourceProfile.profile = "another-profile"
+    sourceProfile.profiles = ["another-profile"]
     sourcePlacement.direction = "down"
-    expect(job.profile.profile).toBe("superpowers")
+    expect(job.profile.profiles).toEqual(["superpowers"])
     expect(job.placement).toEqual(here)
     expect(job.goalExecution?.goal.draft.criteria).toEqual(candidate.goalExecution.goal.draft.criteria)
     expect(Object.isFrozen(job.goalExecution?.goal.draft.criteria)).toBe(true)
@@ -455,7 +455,7 @@ describe("guide batch queue", () => {
       {
         runner,
         write: () => undefined,
-        checkReadiness: async (_, profile) => profile.profile === "blocked"
+        checkReadiness: async (_, profile) => profile.profiles[0] === "blocked"
           ? { kind: ProfileReadinessKind.Blocked, summary: "Profile blocked", diagnostic: "Fixture readiness failure." }
           : { kind: ProfileReadinessKind.Ready, summary: "Fixture runtime checked." },
         onAllocated: async (job) => {
@@ -495,7 +495,7 @@ describe("guide batch queue", () => {
     const jobs = [
       { ...source, prompt: "Only an approach." },
       { ...source, command: { ...source.command, args: [...source.command.args, source.prompt] } },
-      { ...source, profile: { ...profile, launcher: "copilot", commandPath: "/opt/trellage/bin/trx" } },
+      { ...source, profile: { ...profile, harness: "copilot", commandPath: "/opt/trellage/bin/trx" } },
       { ...source, goalExecution: { ...candidate.goalExecution, approach: "An unapproved edit." } },
       { ...source, goalExecution: {
         ...candidate.goalExecution,
@@ -618,7 +618,7 @@ describe("guide batch queue", () => {
     const outcome = await executeGuideBatch({ jobs, context }, { runner, write: () => undefined })
 
     expect(outcome.exitCode).toBe(0)
-    expect(outcome.result.entries.map((entry) => [entry.job.profile.profile, entry.status])).toEqual([
+    expect(outcome.result.entries.map((entry) => [entry.job.profile.profiles[0], entry.status])).toEqual([
       ["claude-council", "launched"],
       ["claude-research", "launched"],
     ])

@@ -23,31 +23,6 @@ unset TRANSCRIPT_API_KEY
 
 readonly ownership_value='trellage-router-v3'
 
-# Hand-maintained Herdr-compatibility ledger for native launcher/profile pairs,
-# merged into `trx list --json` as each profile's `herdrCompatibility` field.
-# This is a curated signal (not live-probed): trx cannot detect Herdr-side
-# bugs (agent detection, consent-dialog handling, etc.) automatically, and
-# embedding it here (rather than reading a file at runtime) keeps `trx list`
-# fast and self-contained for the installed launcher, which has no access to
-# this repository's working tree. KEEP THIS IN SYNC with the native entries in
-# docs/herdr-compatibility.json.
-readonly trx_herdr_ledger='[
-  { "launcher": "agency", "profile": "azure", "status": "untested", "notes": "Static launcher, state-isolation, Agency configuration, inventory, and router contracts pass; awaiting an end-to-end Agency and Azure MCP round trip." },
-  { "launcher": "claude", "profile": "default", "status": "verified" },
-  { "launcher": "fx", "profile": "default", "status": "untested", "notes": "Fx preserves host HOME and ~/.fx context by design; static adapter and router contracts pass, but no end-to-end Herdr round trip is recorded." },
-  { "launcher": "omp", "profile": "default", "status": "verified" },
-  { "launcher": "pi", "profile": "default", "status": "untested", "notes": "Static launcher, catalog, inventory, and headless contracts pass; awaiting an end-to-end Herdr round trip." },
-  { "launcher": "codex", "profile": "pstack", "status": "untested", "notes": "Static profile, plugin inventory, and native launch contracts pass; awaiting an end-to-end Herdr round trip." },
-  { "launcher": "codex", "profile": "youtube", "status": "verified", "notes": "Verified end-to-end with Herdr v0.8.2: a fresh Codex youtube session loaded youtube-full and completed one free TranscriptAPI channel/resolve request for @GitHub with the expected channel ID and canonical URL, using standard-input curl configuration without putting the key in process arguments." },
-  { "launcher": "copilot", "profile": "hve", "status": "untested", "notes": "Was unhealthy (missing hve-core-all plugin); repaired locally through trx (now reports healthy). Awaiting a fresh end-to-end Herdr verification run to confirm the full round trip." },
-  { "launcher": "copilot", "profile": "compound-engineering", "status": "untested", "notes": "Static catalog, plugin inventory, and profile-guide contracts pass; an end-to-end Herdr round trip has not yet been recorded." },
-  { "launcher": "copilot", "profile": "awesome", "status": "known-issue", "issue": "F", "notes": "Repo-context role confusion when delegated within the orchestrator\u0027s own repo/worktree; never finished." },
-  { "launcher": "copilot", "profile": "superpowers", "status": "known-issue", "issue": "C", "notes": "Correct answer produced but stuck in a repeated approval loop; outcome=turn_limit." },
-  { "launcher": "codex", "profile": "superpowers", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
-  { "launcher": "jcode", "profile": "default", "status": "known-issue", "issue": "A", "notes": "Agent-detection timeout (300s); no pane ever detected." },
-  { "launcher": "omp", "profile": "local", "status": "known-issue", "issue": "G", "notes": "No local Qwen inference backend is registered with the running copilot-proxy-rs instance; out-of-repo infrastructure provisioning, not a Trellage code defect. driveLoop also masked the real error as an empty submind-answerer response." },
-  { "launcher": "prime", "profile": "default", "status": "known-issue", "issue": "E", "notes": "\"agent_not_ready: not an active named agent\"; pane never reached a ready state." }
-]'
 
 die() {
   printf 'trx: %s\n' "$1" >&2
@@ -64,47 +39,54 @@ usage() {
   cat <<'EOF'
 Usage:
   trx
+  trx run HARNESS [PROFILE...] [OPTIONS] [-- ARGS...]
   trx list [--json]
-  trx run HARNESS PROFILE [-- ARGS...]
-  trx guide [INTENT] [--json] [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
+  trx guide [INTENT]
+  trx guide --intent INTENT [--model MODEL] [--effort LEVEL] [--ui-variant NAME]
   trx guide --next-steps [--model MODEL] [--effort LEVEL]
   trx guide --engagement [--intent QUESTION] [--model MODEL] [--effort LEVEL]
   trx guide --review
   trx guide --optimize
+  trx guide --json [--intent INTENT] [--profile PROFILE_REF] [--model MODEL] [--effort LEVEL]
   trx guide --preview
-  trx guide --forks [VARIANT]
+  trx guide --forks [tabs|inline]
   trx guide --ritual [id] [--print | --copy]
-  trx inventory LAUNCHER PROFILE --json
+  trx inventory HARNESS [PROFILE...] [--no-always] --json
+  trx doctor|setup|repair HARNESS PROFILE
+  trx skill jcode SKILL PROMPT
   trx admin
-  trx upgrade all [--native] [--yes | --dry-run]
+  trx upgrade all [--yes | --dry-run]
+  trx upgrade HARNESS [--all | PROFILE]
   trx skills status
   trx skills check --json
-  trx skills update
+  trx skills update [--check | --upgrade-pins]
 
-Select an installed native harness/profile interactively, or list available
-profiles. Bare trx opens the launcher. `trx run` composes selected profiles
-and launches their canonical harness. For example:
-`trx run copilot tufte-vdqi`. The picker shows this exact command for each row.
-`trx guide`
-recommends a profile and builds prompt candidates; its JSON mode is
-non-interactive and has no launch or Herdr side effects. `trx inventory`
-reports the live readiness (`healthy`, `unhealthy`, `not-setup`, or `busy`) of
-a single profile by delegating to that launcher's own `inventory` command. It
-is not called during `list` or interactive selection, so those stay fast.
-`trx admin` opens a read-mostly command center listing every Native profile with health, install state, and diagnostics; it requires an
-interactive terminal and never launches a profile without an explicit,
-separately confirmed terminal-launch action.
-`trx upgrade all` previews Native harness version AND skill updates and
-requires explicit terminal confirmation. Use --yes to authorize a
-non-interactive update, or --dry-run to preview without updates. --native is
-accepted for compatibility. It does not install or upgrade Trellage itself.
+Bare trx opens the run composer. Run `trx run --help` for profile composition,
+model, effort, isolation, and dry-run options. `trx list` prints the harnesses,
+built-in presets, and composed profiles that `trx run` accepts.
+
+`trx guide` recommends profiles and builds prompt candidates. JSON mode is
+non-interactive and does not launch a harness or open a Herdr pane.
+
+`trx inventory` reports a composition's live readiness. `doctor`, `setup`, and
+`repair` run that harness's lifecycle checks and fixes. `trx admin` opens a
+read-mostly command center. It never repairs or launches a profile automatically.
+
+`trx upgrade all` updates supported harness versions and skills after a preview.
+Use --yes for a non-interactive update or --dry-run for a preview without updates.
+`trx upgrade HARNESS` uses the harness lifecycle command.
+
+`trx skills status` reports the shared skill cache. `trx skills check --json`
+checks configured sources. `trx skills update` refreshes floating sources;
+--check reports changes, and --upgrade-pins rewrites config.toml pins.
 EOF
 }
 
 upgrade_usage() {
   cat <<'EOF'
 Usage:
-  trx upgrade all [--native] [--yes | --dry-run]
+  trx upgrade all [--yes | --dry-run]
+  trx upgrade HARNESS [--all | PROFILE]
 
 Update harness versions AND skills for every Native catalog profile.
 The preview includes profiles hidden by Admin filters. One queue runs:
@@ -115,10 +97,11 @@ Native skill copies are final; harness updates cannot overwrite them afterward.
 Admin U remains the selected harness-only action.
 
 Without a flag, preview the scope and require you to type yes at a terminal.
---native is accepted for compatibility; every update is already Native.
 --yes authorizes updates without an interactive terminal.
 --dry-run previews the scope without running updates or version checks.
 
+The HARNESS form delegates to the managed harness lifecycle. Depending on the
+harness, it updates the shared runtime, every profile with --all, or one PROFILE.
 Existing profile version and source pins are preserved. Unsupported profiles,
 fallbacks, failures, and unreadable installed versions are reported.
 Independent updates continue after failures. Cancellation stops later updates.
@@ -145,8 +128,8 @@ Usage:
   trx guide --forks [tabs|inline]
   trx guide --ritual [id] [--print | --copy]
 
-PROFILE_REF is native:<launcher>/<profile>. JSON mode
-uses schemaVersion 1, has no launch or Herdr side effects, and accepts a JSON
+PROFILE_REF is native:<harness>/<profile>[+<profile>...]. JSON mode
+uses schemaVersion 2, has no launch or Herdr side effects, and accepts a JSON
 request on stdin when --intent is omitted.
 INTENT can contain line breaks and accepts up to 60,000 characters.
 --engagement reads selected repository documents to recommend the next
@@ -165,12 +148,12 @@ Press e in the prompt viewer to edit; Enter rematches a changed prompt.
 Interactive prompt viewers: pager, split, focus, bookends, dashboard.
 --preview renders the staged prompt basket composer overlay from fixture data.
 --forks renders two ways to fork the guide into parallel subflows.
-It reads no profile catalog, calls no model, and launches nothing.
+It loads no composition catalog, calls no model, and launches nothing.
 --ritual opens saved prompts. It calls no model. Opening the list copies nothing.
 --print writes one prompt to stdout. --copy copies one prompt and exits.
 Use --print or --copy with --ritual and an id.
 --review accepts --base, --intent, --intent-stdin, --model and --effort.
-It needs Copilot and selected review skills, not every Native launcher.
+It needs Copilot and selected review skills, not every Native harness.
 EOF
 }
 
@@ -205,334 +188,10 @@ resolve_file() {
   printf '%s/%s\n' "$directory" "$(basename "$path")"
 }
 
-read_catalog() {
-  local launcher="$1"
-  local harness="$2"
-  local catalog_path="$3"
-  local output
-
-  [[ -f "$catalog_path" && ! -L "$catalog_path" ]] || die "missing catalog: $launcher"
-  output="$(jq --arg launcher "$launcher" --arg harness "$harness" '
-    {schemaVersion: 1, launcher: $launcher, harness: $harness, sandbox: false,
-     profiles: [.profiles | (if type == "array" then .[] else to_entries[] | .value + {name: .key} end)
-       | .plugin //= null | .source //= null | .standaloneMcps //= []
-       | if .kind == "plugin" or .kind == "skills" then . else del(.kind) end
-       | .marketplace = (if (.marketplace | type) == "string" then {repository: .marketplace} else .marketplace end)]}
-  ' "$catalog_path")" || die "invalid catalog from $launcher"
-
-  jq -e --arg launcher "$launcher" --arg harness "$harness" '
-    def validHeadless:
-      type == "object"
-      and keys == [
-        "changedFiles",
-        "cost",
-        "effortOverride",
-        "eventContract",
-        "modelOverride",
-        "outputFormats",
-        "prompt",
-        "questionToolControl",
-        "resume",
-        "resumeWithPrompt",
-        "schemaVersion",
-        "sessionId",
-        "testedHarnessVersion",
-        "trellageEventContract",
-        "usage"
-      ]
-      and .schemaVersion == 1
-      and (.prompt | type == "boolean")
-      and (.outputFormats
-        | type == "array"
-        and length == (unique | length)
-        and all(.[]; . == "text" or . == "json" or . == "jsonl"))
-      and (.eventContract == null
-        or (.eventContract | type == "string" and length > 0))
-      and (.trellageEventContract == null
-        or .trellageEventContract == "trellage-headless-v1")
-      and (.sessionId == "native"
-        or .sessionId == "trellage"
-        or .sessionId == "none")
-      and (.resume | type == "boolean")
-      and (.resumeWithPrompt | type == "boolean")
-      and (.questionToolControl == "hard-deny"
-        or .questionToolControl == "prompt-only"
-        or .questionToolControl == "none")
-      and (.changedFiles == "native"
-        or .changedFiles == "git-diff"
-        or .changedFiles == "none")
-      and (.usage | type == "boolean")
-      and (.cost | type == "boolean")
-      and (.modelOverride | type == "boolean")
-      and (.effortOverride | type == "boolean")
-      and (.testedHarnessVersion == null
-        or (.testedHarnessVersion | type == "string" and length > 0));
-    type == "object"
-    and keys == ["harness", "launcher", "profiles", "sandbox", "schemaVersion"]
-    and .schemaVersion == 1
-    and .launcher == $launcher
-    and .harness == $harness
-    and (.sandbox | type == "boolean")
-    and (.profiles | type == "array" and length > 0)
-    and all(.profiles[];
-      type == "object"
-      and (.name | type == "string" and test("^[a-z0-9]+(-[a-z0-9]+)*$"))
-      and (.description
-        | type == "string"
-        and length > 0
-        and (test("[\u0000-\u001f\u007f-\u009f]") | not))
-      and (.headless == null or (.headless | validHeadless))
-      and (.plugin == null or
-        (.plugin
-          | type == "string"
-          and length > 0
-          and (test("[\u0000-\u001f\u007f-\u009f]") | not)))
-      and ((has("kind") | not) or (.kind == "plugin" or .kind == "skills"))
-      and (.source == null or (.source | type == "string" and length > 0))
-      and ((has("skillBundles") | not) or
-        (.skillBundles
-          | type == "array"
-          and length > 0
-          and length == (unique | length)
-          and all(.[]; type == "string" and test("^[a-z0-9]+(-[a-z0-9]+)*$"))))
-      and ((has("managedSkills") | not) or
-        (.managedSkills
-          | type == "array"
-          and length == (unique | length)
-          and all(.[]; type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$"))))
-      and ((has("requiredEnvironment") | not) or
-        (.requiredEnvironment
-          | type == "array"
-          and length == (unique | length)
-          and all(.[]; type == "string" and test("^[A-Z][A-Z0-9_]*$"))))
-      and (.marketplace == null or (.marketplace | type == "object"))
-      and (.standaloneMcps | type == "array")
-      and all(.standaloneMcps[];
-        (
-          if type == "string" then .
-          elif type == "object" then .name
-          else null
-          end
-        )
-        | type == "string"
-        and length > 0
-        and (test("[\u0000-\u001f\u007f-\u009f]") | not)))
-    and ([.profiles[].name] | length == (unique | length))
-  ' <<<"$output" >/dev/null || die "invalid catalog from $launcher"
-
-  printf '%s\n' "$output"
-}
-
-read_canonical_catalog() {
-  local harness="$1"
-  local package_directory="$2"
-  local lifecycle_runtime="$3"
-  local catalog_path="$source_workspace/prototypes/$package_directory/catalog.json"
-  if [[ "${TRELLAGE_TRX_NATIVE_SOURCE-}" == 1 && -n "${TRELLAGE_TRX_SOURCE_ROOT-}" ]]; then
-    catalog_path="$(dirname "$TRELLAGE_TRX_SOURCE_ROOT")/$package_directory/catalog.json"
-  elif [[ -z "${TRELLAGE_TRX_SOURCE_ROOT-}" && -f "$canonical_home/.local/share/trellage/$lifecycle_runtime/catalog.json" ]]; then
-    catalog_path="$canonical_home/.local/share/trellage/$lifecycle_runtime/catalog.json"
-  elif [[ ! -f "$catalog_path" && -f "$canonical_home/.local/share/trellage/trx/source/prototypes/$package_directory/catalog.json" ]]; then
-    catalog_path="$canonical_home/.local/share/trellage/trx/source/prototypes/$package_directory/catalog.json"
-  fi
-  [[ -f "$catalog_path" && ! -L "$catalog_path" ]] || die "missing canonical catalog: $harness"
-  local output
-  output="$(read_catalog "$harness" "$harness" "$catalog_path")" \
-    || die "invalid canonical catalog: $harness"
-  jq --arg harness "$harness" '
-    .launcher = $harness
-    | .harness = $harness
-    | .profiles |= map(
-        if $harness == "agency" and .name == "trellage-azure" then .name = "azure"
-        elif $harness == "omp" and .name == "copilot" then .name = "default"
-        else .
-        end
-      )
-  ' <<<"$output"
-}
-
-build_choices() {
-  jq -cn \
-    --argjson copilotCatalog "$1" \
-    --argjson codexCatalog "$2" \
-    --argjson claudeCatalog "$3" \
-    --argjson jcodeCatalog "$4" \
-    --argjson ompCatalog "$5" \
-    --argjson piCatalog "$6" \
-    --argjson primeCatalog "$7" \
-    --argjson agencyCatalog "$8" \
-    --argjson fxCatalog "$9" \
-    --argjson headlongCatalog "${10}" \
-    --arg trxPath "$router_command_path" \
-    --argjson passthroughArgs "${11}" '
-    def models($catalog; $profile):
-      if $catalog.harness == "copilot" or $catalog.harness == "codex" then
-        {defaultModel:"gpt-6-astra",models:["gpt-6-astra","gpt-5.6-sol","gpt-5.6-terra"],modelOverrideSupported:true}
-      elif $catalog.harness == "claude" then
-        {defaultModel:"claude-opus-5",models:["claude-opus-5","claude-sonnet-5","claude-haiku-4.5"],modelOverrideSupported:true}
-      elif $catalog.harness == "omp" and $profile.name == "default" then
-        {defaultModel:"github-copilot/gpt-5.6-sol:medium",models:["github-copilot/gpt-5.6-sol:medium","github-copilot/gpt-5.6-terra:medium"],modelOverrideSupported:true}
-      elif $catalog.harness == "pi" then
-        {defaultModel:"copilot-proxy-rs/gpt-6-astra:medium",models:["copilot-proxy-rs/gpt-6-astra:medium"],modelOverrideSupported:false}
-      elif $catalog.harness == "omp" then
-        {defaultModel:"copilot-proxy-rs/qwen3.6-35b-a3b-local",models:["copilot-proxy-rs/qwen3.6-35b-a3b-local"],modelOverrideSupported:false}
-      elif $catalog.harness == "jcode" then
-        {defaultModel:"gpt-5.6-sol",models:["gpt-5.6-sol"],modelOverrideSupported:true}
-      elif $catalog.harness == "prime" then
-        {defaultModel:"claude-opus-5",models:["claude-opus-5"],modelOverrideSupported:true}
-      else {models:[],modelOverrideSupported:false}
-      end;
-    def display_harness($catalog):
-      $catalog.harness;
-    def display_profile($catalog; $profile): $profile.name;
-    def binary_path($catalog):
-      $trxPath;
-    def pair($catalog):
-      $catalog.profiles[] as $profile
-      | (display_harness($catalog)) as $harness
-      | (display_profile($catalog; $profile)) as $displayProfile
-      | ({
-        id: ($harness + ":" + $displayProfile),
-        label: ($harness + " / " + $displayProfile),
-        harness: $harness,
-        profile: $displayProfile,
-        commandAlias: $harness,
-        commandPath: $trxPath,
-        profileArgument: $displayProfile,
-        passthroughArgs: $passthroughArgs,
-        description: $profile.description,
-        plugins: ([$profile.plugin] | map(select(type == "string" and length > 0)) | unique),
-        skills: ($profile.managedSkills // []),
-        mcps: ([$profile.standaloneMcps[]? | if type == "string" then . else .name end] | map(select(type == "string" and length > 0)) | unique),
-        sandbox: $catalog.sandbox,
-        details: "The selected launcher checks readiness before starting."
-      } + models($catalog; $profile));
-    {
-      prompt: "Select a Trellage harness/profile",
-      description: "Direct launch: trx run HARNESS PROFILE. The selected row shows its exact command below. Trellage Native runs coding-agent harnesses directly on the host with isolated state. Codex uses Full Access without a native sandbox; other Native profiles are not security boundaries.",
-      choices: [
-        pair($copilotCatalog),
-        pair($codexCatalog),
-        pair($claudeCatalog),
-        pair($fxCatalog),
-        pair($jcodeCatalog),
-        pair($ompCatalog),
-        pair($piCatalog),
-        pair($primeCatalog),
-        pair($agencyCatalog),
-        pair($headlongCatalog)
-      ]
-    }
-  '
-}
-
-build_profile_list() {
-  jq -cn \
-    --argjson copilotCatalog "$1" \
-    --argjson codexCatalog "$2" \
-    --argjson claudeCatalog "$3" \
-    --argjson jcodeCatalog "$4" \
-    --argjson ompCatalog "$5" \
-    --argjson piCatalog "$6" \
-    --argjson primeCatalog "$7" \
-    --argjson agencyCatalog "$8" \
-    --argjson fxCatalog "$9" \
-    --argjson headlongCatalog "${10}" \
-    --argjson herdrLedger "${11}" \
-    --argjson configProfiles "${12:-false}" '
-    def herdrCompatibility($launcher; $name):
-      ([$herdrLedger[] | select(.launcher == $launcher and .profile == $name)] | .[0]) as $entry
-      | if $entry == null then { status: "untested" }
-        else ($entry | del(.launcher, .profile))
-        end;
-    def profiles($catalog):
-      $catalog.profiles[] | {
-        launcher: $catalog.harness,
-        harness: $catalog.harness,
-        name,
-        description,
-        headless,
-        sandbox: $catalog.sandbox,
-        herdrCompatibility: herdrCompatibility($catalog.harness; .name)
-      };
-    # The firstmate config profile runs Firstmate from its own clone; it is interactive,
-    # so the guide hands its message over for pasting instead of passing a prompt.
-    def firstmateProfile($harness):
-      {
-        launcher: $harness,
-        harness: $harness,
-        name: "firstmate",
-        description: ("Firstmate fleet supervisor on " + $harness + ", run from its own clone at the latest main"),
-        headless: {schemaVersion: 1, prompt: false, outputFormats: ["text"], eventContract: null,
-          trellageEventContract: null, sessionId: "none", resume: false, resumeWithPrompt: false,
-          questionToolControl: "none", changedFiles: "none", usage: false, cost: false,
-          modelOverride: false, effortOverride: false, testedHarnessVersion: null},
-        sandbox: false,
-        herdrCompatibility: herdrCompatibility($harness; "firstmate")
-      };
-    {
-      schemaVersion: 1,
-      profiles: [
-        profiles($copilotCatalog),
-        profiles($codexCatalog),
-        profiles($claudeCatalog),
-        (if $configProfiles then firstmateProfile("claude") else empty end),
-        profiles($fxCatalog),
-        profiles($jcodeCatalog),
-        profiles($ompCatalog),
-        profiles($piCatalog),
-        (if $configProfiles then firstmateProfile("pi") else empty end),
-        profiles($primeCatalog),
-        profiles($agencyCatalog),
-        profiles($headlongCatalog)
-      ]
-    }
-  '
-}
-
-# Builds the profile-guide catalog shared by `guide`
-# `admin`, and `upgrade all`, writing it to "$1/combined.json". Requires guide_root,
-# runtime, source_workspace, picker_path, and the per-harness catalog variables
-# must already be in scope.
-build_combined_guide_catalog() {
-  local out_dir="$1"
-  # Config profiles (firstmate) are offered by the guide, not managed by upgrade or admin.
-  local config_profiles="${2:-false}"
-  local profile_list
-  profile_list="$(build_profile_list \
-    "$copilot_catalog" "$codex_catalog" "$claude_catalog" \
-    "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$agency_catalog" \
-    "$fx_catalog" "$headlong_catalog" "$trx_herdr_ledger" \
-    "$config_profiles")" \
-    || die 'could not build native profile list'
-
-  printf '%s\n' "$profile_list" \
-    | "${trellage_launcher[@]}" "$picker_path" enrich-native-list "$guide_root" \
-      >"$out_dir/native-public.json" \
-    || die 'could not enrich native profile list with guides'
-  jq --arg trxPath "$router_command_path" '.profiles |= map(. + {commandPath: $trxPath})' \
-    "$out_dir/native-public.json" >"$out_dir/native.json" \
-    || die 'could not add router command path to the guide catalog'
-  jq -n \
-    --slurpfile native "$out_dir/native.json" \
-    '{
-      schemaVersion: 1,
-      native: $native[0].profiles,
-      sandbox: []
-    }' \
-    >"$out_dir/combined.json" \
-    || die 'could not combine profile guide catalogs'
-}
 
 mode=''
 review_seen=false
 ritual_seen=false
-list_json=0
-inventory_launcher=''
-inventory_profile_arg=''
-run_launcher=''
-run_profile=''
-run_args=()
 skills_action=''
 guide_args=()
 upgrade_args=()
@@ -542,17 +201,15 @@ case "${1-}" in
     exit 0
     ;;
   list)
-    mode='list'
     shift
-    if [[ "$#" -eq 0 ]]; then
-      :
-    elif [[ "$#" -eq 1 && "$1" == --json ]]; then
-      list_json=1
-    elif [[ "$#" -ge 1 && "$#" -le 2 && "$1" != -* ]]; then
+    if [[ "$#" -eq 0 || ( "$#" -eq 1 && "$1" == --json ) ]]; then
+      mode='list'
+      list_args=("$@")
+    elif [[ ( "$#" -eq 1 || ( "$#" -eq 2 && "$2" == --json ) ) && "$1" != -* ]]; then
       mode='lifecycle'
       lifecycle_args=(list "$@")
     else
-      die 'list accepts only --json'
+      die 'list accepts only --json or HARNESS [--json]'
     fi
     ;;
   guide)
@@ -655,24 +312,23 @@ case "${1-}" in
       done
     fi
     ;;
-  models|setup|doctor|repair|workflow-check|harness-version|shutdown|skill|skills-update|skills-check|harness-update)
+  setup|doctor|repair|workflow-check|harness-version|shutdown|skills-update|skills-check|harness-update)
+    mode='lifecycle'
+    lifecycle_args=("$@")
+    ;;
+  skill)
+    [[ "${2-}" == jcode ]] || die 'skill supports only jcode'
     mode='lifecycle'
     lifecycle_args=("$@")
     ;;
   inventory)
-    mode='inventory'
     shift
-    [[ "$#" -ge 3 && ( "$3" == --json || "$3" == --goal-features ) ]] \
-      || die 'inventory requires LAUNCHER PROFILE --json'
-    inventory_launcher="$1"
-    inventory_profile_arg="$2"
-    case "$1" in
-      agency|codex|claude|copilot|fx|jcode|omp|pi|prime)
-        mode='lifecycle'
-        lifecycle_args=(inventory "$@")
-        ;;
-      *) die "unknown launcher: $1" ;;
-    esac
+    [[ "$#" -ge 2 ]] || die 'inventory requires HARNESS [PROFILE...] [--no-always] --json'
+    if [[ "${!#}" != --json ]]; then
+      [[ "$1" == codex && "${!#}" == --goal-features ]] || die 'inventory requires HARNESS [PROFILE...] [--no-always] --json'
+    fi
+    mode='lifecycle'
+    lifecycle_args=(inventory "$@")
     ;;
   run)
     shift
@@ -691,11 +347,11 @@ case "${1-}" in
         [[ "${1-}" == pi || "${1-}" == copilot || "${1-}" == claude || "${1-}" == codex || "${1-}" == grok || "${1-}" == agency || "${1-}" == fx || "${1-}" == headlong || "${1-}" == jcode || "${1-}" == omp || "${1-}" == prime || "${1-}" == uji ]] \
           || compose_args=(--help)
         ;;
-      *) die "unknown harness: $1; use: trx run copilot|codex|claude|agency|fx|headlong|jcode|omp|pi|prime|grok|uji PROFILE" ;;
+      *) die "unknown harness: $1; harnesses: agency, claude, codex, copilot, grok, jcode, omp, pi, prime, uji (also fx, headlong); usage: trx run HARNESS [PROFILE...]" ;;
     esac
     ;;
   --profile|--profile=*)
-    die '--profile aliases are retired; use: trx run agency azure [-- ARGS...]'
+    die '--profile aliases are retired; use: trx run HARNESS [PROFILE...] [-- ARGS...]'
     ;;
   admin)
     mode='admin'
@@ -705,30 +361,33 @@ case "${1-}" in
   upgrade)
     mode='upgrade'
     shift
-    if [[ "$#" -eq 1 && ("$1" == -h || "$1" == --help || "$1" == help) ]]; then
+    if [[ "$#" -eq 1 && ( "$1" == -h || "$1" == --help || "$1" == help ) ]]; then
       upgrade_usage
       exit 0
     fi
     if [[ "${1-}" != all ]]; then
-      case "${1-}" in agency|codex|claude|copilot|fx|jcode|omp|pi|prime) ;; *) die 'upgrade requires all [--native] [--yes | --dry-run] or HARNESS [PROFILE]' ;; esac
-      mode='lifecycle'
-      lifecycle_args=(upgrade "$@")
-    else
-    [[ "${1-}" == all && "$#" -le 3 ]] \
-      || die 'upgrade requires all [--native] [--yes | --dry-run]; use trx upgrade --help'
-    if [[ "$#" -eq 2 ]]; then
-      case "$2" in -h|--help|help) upgrade_usage; exit 0 ;; esac
-    fi
-    upgrade_native=0
-    upgrade_approval=0
-    for upgrade_flag in "${@:2}"; do
-      case "$upgrade_flag" in
-        --native) ((upgrade_native == 0)) || die 'upgrade requires all [--native] [--yes | --dry-run]; use trx upgrade --help'; upgrade_native=1 ;;
-        --yes|--dry-run) ((upgrade_approval == 0)) || die 'upgrade requires all [--native] [--yes | --dry-run]; use trx upgrade --help'; upgrade_approval=1 ;;
-        *) die 'upgrade requires all [--native] [--yes | --dry-run]; use trx upgrade --help' ;;
+      if [[ "$#" -eq 2 && ( "$2" == -h || "$2" == --help || "$2" == help ) ]]; then
+        upgrade_usage
+        exit 0
+      fi
+      case "${1-}" in
+        agency|codex|claude|copilot|fx|grok|headlong|jcode|omp|pi|prime|uji)
+          mode='lifecycle'
+          lifecycle_args=(upgrade "$@")
+          ;;
+        *) die 'upgrade requires all [--yes | --dry-run] or HARNESS [--all | PROFILE]' ;;
       esac
-    done
-    upgrade_args=("$@")
+    else
+      [[ "$#" -le 2 ]] \
+        || die 'upgrade requires all [--yes | --dry-run]; use trx upgrade --help'
+      if [[ "$#" -eq 2 ]]; then
+        case "$2" in
+          -h|--help|help) upgrade_usage; exit 0 ;;
+          --yes|--dry-run) ;;
+          *) die 'upgrade requires all [--yes | --dry-run]; use trx upgrade --help' ;;
+        esac
+      fi
+      upgrade_args=("$@")
     fi
     ;;
   skills)
@@ -748,10 +407,11 @@ case "${1-}" in
     die '-i and --interactive have been removed; run trx with no arguments'
     ;;
   '')
-    mode='interactive'
+    mode='compose-select'
+    compose_args=()
     ;;
   *)
-    mode='interactive'
+    die "unknown command: $1; run trx --help"
     ;;
 esac
 
@@ -885,9 +545,17 @@ if [[ "$mode" == lifecycle ]]; then
   require_source_runtime
   exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-runtime/src/native-run/lifecycle-cli.ts" "${lifecycle_args[@]}"
 fi
+if [[ "$mode" == list ]]; then
+  require_source_runtime
+  exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-launcher/src/run-list-cli.ts" ${list_args[@]+"${list_args[@]}"}
+fi
 if [[ "$mode" == compose-select ]]; then
   require_source_runtime
-  exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-launcher/src/run-select-cli.tsx" ${compose_args[@]+"${compose_args[@]}"}
+  if [[ "$trx_transcript_api_key_is_set" == true ]]; then
+    export TRANSCRIPT_API_KEY="$trx_transcript_api_key"
+  fi
+  TRELLAGE_TRX_COMMAND_PATH="$router_command_path" \
+    exec "${trellage_bun[@]}" "$source_workspace/packages/trellage-launcher/src/run-select-cli.tsx" ${compose_args[@]+"${compose_args[@]}"}
 fi
 if [[ "$mode" == compose ]]; then
   if [[ "${compose_args[0]-}" == codex && "${compose_args[1]-}" == youtube ]]; then restore_transcript_api_key codex youtube; fi
@@ -918,43 +586,12 @@ if [[ "$mode" == guide && "$review_seen" == true ]]; then
     || die 'floating-skills manager is missing or unsafe'
   [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
     || die 'floating-skills catalog is missing or unsafe'
-  if [[ "${TRELLAGE_REVIEW_PROFILES_ONLY:-}" != 1 ]]; then
-    review_catalog='{"schemaVersion":1,"sandbox":[],"native":[]}'
+  TRELLAGE_TRX_COMMAND_PATH="$router_command_path" \
     TRELLAGE_REVIEW_PROFILE_COMMAND="$script_path" \
-      TRELLAGE_GUIDE_SKILLS_MANAGER="$floating_skills_manager" \
-      TRELLAGE_GUIDE_SKILLS_CATALOG="$floating_skills_catalog" \
-      TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE="$native_common_root/skills" \
-      exec "${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "" "${guide_args[@]}" 3< <(printf '%s\n' "$review_catalog")
-  fi
-  review_profiles='[]'
-  for review_harness in copilot codex claude; do
-    case "$review_harness" in
-      copilot) review_package=trellage-copilot-profiles; review_runtime=cpx ;;
-      codex) review_package=trellage-codex-profiles; review_runtime=cdx ;;
-      claude) review_package=trellage-claude-profiles; review_runtime=cldx ;;
-    esac
-    review_inventory="$(read_canonical_catalog "$review_harness" "$review_package" "$review_runtime")"
-    review_profiles="$(jq -cn --argjson previous "$review_profiles" --argjson inventory "$review_inventory" \
-      --arg commandPath "$router_command_path" '
-      $previous + [$inventory.profiles[] | {
-        launcher: $inventory.harness,
-        commandPath: $commandPath, harness: $inventory.harness,
-        name, description, headless, sandbox: $inventory.sandbox,
-        herdrCompatibility: {status: "untested"}
-      }]')" \
-      || die 'invalid canonical Native profile inventory'
-  done
-  review_native="$(jq -cn --argjson profiles "$review_profiles" '{schemaVersion:1, profiles:$profiles}' \
-    | "${trellage_launcher[@]}" "$picker_path" enrich-native-list "$guide_root")" \
-    || die 'cannot read optional Native profiles'
-  review_catalog="$(jq -cn --argjson native "$review_native" --arg commandPath "$router_command_path" '{
-      schemaVersion:1, sandbox:[],
-      native: [$native.profiles[] as $entry | $entry + {
-        commandPath: $commandPath
-      }]
-    }')"
-  printf '%s\n' "$review_catalog"
-  exit 0
+    TRELLAGE_GUIDE_SKILLS_MANAGER="$floating_skills_manager" \
+    TRELLAGE_GUIDE_SKILLS_CATALOG="$floating_skills_catalog" \
+    TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE="$native_common_root/skills" \
+    exec "${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "" "${guide_args[@]}"
 fi
 
 if [[ "$mode" == guide && "$ritual_seen" == true ]]; then
@@ -988,7 +625,8 @@ if [[ "$mode" == guide && "$ritual_seen" == true ]]; then
   fi
   [[ -f "$picker_path" && ! -L "$picker_path" ]] \
     || die 'Ink launcher is missing or unsafe'
-  exec "${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "" "${guide_args[@]}"
+  TRELLAGE_TRX_COMMAND_PATH="$router_command_path" \
+    exec "${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "" "${guide_args[@]}"
 fi
 
 if [[ "$mode" == guide ]] && ((${#guide_args[@]} > 0)); then
@@ -1012,138 +650,47 @@ fi
 
 
 
-catalog_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx.XXXXXX")" \
-  || die 'cannot create catalog workspace'
-cleanup_catalog_tmp() {
-  rm -rf -- "$catalog_tmp"
-}
-trap cleanup_catalog_tmp EXIT HUP INT TERM
-
-read_canonical_catalog copilot trellage-copilot-profiles cpx >"$catalog_tmp/copilot"
-read_canonical_catalog codex trellage-codex-profiles cdx >"$catalog_tmp/codex"
-read_canonical_catalog claude trellage-claude-profiles cldx >"$catalog_tmp/claude"
-fx_catalog='{"schemaVersion":1,"launcher":"fx","harness":"fx","sandbox":false,"profiles":[{"name":"default","description":"Fx with shared host context through copilot-proxy-rs","headless":{"schemaVersion":1,"prompt":true,"outputFormats":["text","json"],"eventContract":null,"trellageEventContract":null,"sessionId":"native","resume":true,"resumeWithPrompt":true,"questionToolControl":"prompt-only","changedFiles":"native","usage":true,"cost":true,"modelOverride":true,"effortOverride":true,"testedHarnessVersion":null},"plugin":null,"source":"vercel-labs/fx","standaloneMcps":[]}]}'
-headlong_catalog='{"schemaVersion":1,"launcher":"headlong","harness":"headlong","sandbox":false,"profiles":[{"name":"default","description":"Persistent Headlong agent with durable identity, memory, and background thinking on the host.","headless":{"schemaVersion":1,"prompt":false,"outputFormats":["text"],"eventContract":null,"trellageEventContract":null,"sessionId":"none","resume":false,"resumeWithPrompt":false,"questionToolControl":"none","changedFiles":"none","usage":false,"cost":false,"modelOverride":false,"effortOverride":false,"testedHarnessVersion":null},"plugin":null,"source":"laude-institute/headlong","standaloneMcps":[],"managedSkills":[]}]}'
-read_canonical_catalog jcode trellage-jcode-profiles jcx >"$catalog_tmp/jcode"
-read_canonical_catalog omp trellage-omp-profiles omp >"$catalog_tmp/omp"
-read_canonical_catalog pi trellage-picx-profiles picx >"$catalog_tmp/pi"
-read_canonical_catalog prime trellage-prime-profiles prx >"$catalog_tmp/prime"
-read_canonical_catalog agency trellage-agency-profiles agx >"$catalog_tmp/agency"
-
-copilot_catalog="$(<"$catalog_tmp/copilot")"
-codex_catalog="$(<"$catalog_tmp/codex")"
-claude_catalog="$(<"$catalog_tmp/claude")"
-jcode_catalog="$(<"$catalog_tmp/jcode")"
-omp_catalog="$(<"$catalog_tmp/omp")"
-pi_catalog="$(<"$catalog_tmp/pi")"
-prime_catalog="$(<"$catalog_tmp/prime")"
-agency_catalog="$(<"$catalog_tmp/agency")"
 if [[ "$mode" == upgrade ]]; then
   require_source_runtime
-  [[ -f "$picker_path" && ! -L "$picker_path" ]] \
-    || die 'harness update CLI is missing or unsafe'
-  [[ -d "$guide_root" && ! -L "$guide_root" ]] \
-    || die 'profile guide registry is missing or unsafe'
-  build_combined_guide_catalog "$catalog_tmp"
-  upgrade_cancelled=0
-  upgrade_pid=''
-  upgrade_wait_interrupted=0
-  cancel_harness_upgrade() {
-    upgrade_wait_interrupted=1
-    upgrade_cancelled=1
-    if [[ -n "$upgrade_pid" ]]; then
-      kill -TERM "$upgrade_pid" 2>/dev/null || true
-    fi
-  }
-  # Forward signals while the Bun child owns the queue, then wait for its cleanup.
-  trap cancel_harness_upgrade HUP INT TERM
+  [[ -f "$picker_path" && ! -L "$picker_path" ]] || die 'harness update CLI is missing or unsafe'
+  [[ -d "$guide_root" && ! -L "$guide_root" ]] || die 'profile guide registry is missing or unsafe'
   TRELLAGE_TRX_COMMAND_PATH="$router_command_path" \
-    "${trellage_launcher[@]}" "$picker_path" upgrade "${upgrade_args[@]}" <"$catalog_tmp/combined.json" &
-  upgrade_pid=$!
-  [[ "$upgrade_cancelled" == 0 ]] || cancel_harness_upgrade
-  while :; do
-    upgrade_wait_interrupted=0
-    upgrade_status=0
-    wait "$upgrade_pid" || upgrade_status=$?
-    [[ "$upgrade_wait_interrupted" == 1 ]] || break
-  done
-  upgrade_pid=''
-  [[ "$upgrade_cancelled" == 0 ]] || upgrade_status=130
-  cleanup_catalog_tmp
-  trap - EXIT HUP INT TERM
-  exit "$upgrade_status"
-fi
-cleanup_catalog_tmp
-trap - EXIT HUP INT TERM
-
-
-
-if [[ "$mode" == list ]]; then
-  profile_list="$(build_profile_list \
-    "$copilot_catalog" "$codex_catalog" "$claude_catalog" \
-    "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$agency_catalog" \
-    "$fx_catalog" "$headlong_catalog" "$trx_herdr_ledger" true)" \
-    || die 'could not build profile list'
-  if ((list_json)); then
-    require_source_runtime
-    [[ -f "$picker_path" && ! -L "$picker_path" ]] \
-      || die 'Ink launcher is missing or unsafe'
-    [[ -d "$guide_root" && ! -L "$guide_root" ]] \
-      || die 'profile guide registry is missing or unsafe'
-    printf '%s\n' "$profile_list" \
-      | "${trellage_launcher[@]}" "$picker_path" enrich-native-list "$guide_root" \
-      || die 'could not enrich profile list with guides'
-  else
-    jq -r '.profiles[] | [(.launcher + "/" + .name), .description] | @tsv' \
-      <<<"$profile_list" || die 'could not format profile list'
-  fi
-  exit 0
+    exec "${trellage_launcher[@]}" "$picker_path" upgrade "${upgrade_args[@]}"
 fi
 
 if [[ "$mode" == guide ]]; then
   require_source_runtime
   load_optional_jev_api_key
-  [[ -f "$picker_path" && ! -L "$picker_path" ]] \
-    || die 'Ink launcher is missing or unsafe'
-  [[ -d "$guide_root" && ! -L "$guide_root" ]] \
-    || die 'profile guide registry is missing or unsafe'
+  [[ -f "$picker_path" && ! -L "$picker_path" ]] || die 'Ink launcher is missing or unsafe'
+  [[ -d "$guide_root" && ! -L "$guide_root" ]] || die 'profile guide registry is missing or unsafe'
 
-  guide_catalog_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx-guide.XXXXXX")" \
-    || die 'cannot create guide catalog workspace'
-  cleanup_guide_catalog_tmp() {
-    rm -rf -- "$guide_catalog_tmp"
-  }
-  trap cleanup_guide_catalog_tmp EXIT HUP INT TERM
+  guide_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx-guide.XXXXXX")" || die 'cannot create guide workspace'
+  cleanup_guide_tmp() { rm -rf -- "$guide_tmp"; }
+  trap cleanup_guide_tmp EXIT HUP INT TERM
 
   if [[ "$engagement_seen" == false ]]; then
-    [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] \
-      || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
-    [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] \
-      || die "floating-skills catalog is missing or unsafe: $floating_skills_catalog"
+    [[ -f "$floating_skills_manager" && ! -L "$floating_skills_manager" ]] || die "floating-skills manager is missing or unsafe: $floating_skills_manager"
+    [[ -f "$floating_skills_catalog" && ! -L "$floating_skills_catalog" ]] || die "floating-skills catalog is missing or unsafe: $floating_skills_catalog"
     "${trellage_bun[@]}" "$floating_skills_manager" ensure \
       --catalog "$floating_skills_catalog" \
       --bundle guide-prompt-master \
       --cache "$canonical_home/.local/share/trellage/common/guide-prompt-master-skills" \
-      --target "$guide_catalog_tmp/skills" \
+      --target "$guide_tmp/skills" \
       || die 'failed to prepare the guide Prompt Master skill'
-    [[ -f "$guide_catalog_tmp/skills/prompt-master/SKILL.md" \
-        && ! -L "$guide_catalog_tmp/skills/prompt-master/SKILL.md" ]] \
+    [[ -f "$guide_tmp/skills/prompt-master/SKILL.md" && ! -L "$guide_tmp/skills/prompt-master/SKILL.md" ]] \
       || die 'guide Prompt Master skill is missing or unsafe'
   fi
 
-  build_combined_guide_catalog "$guide_catalog_tmp" true
-
-  guide_command=("${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "$guide_catalog_tmp/skills/prompt-master")
-  if ((${#guide_args[@]} > 0)); then
-    guide_command+=("${guide_args[@]}")
-  fi
+  guide_command=("${trellage_launcher[@]}" "$picker_path" guide "$guide_root" "$guide_tmp/skills/prompt-master")
+  ((${#guide_args[@]} == 0)) || guide_command+=("${guide_args[@]}")
   guide_status=0
-  TRELLAGE_GUIDE_SKILLS_MANAGER="$floating_skills_manager" \
+  TRELLAGE_TRX_COMMAND_PATH="$router_command_path" \
+    TRELLAGE_GUIDE_SKILLS_MANAGER="$floating_skills_manager" \
     TRELLAGE_GUIDE_SKILLS_CATALOG="$floating_skills_catalog" \
     TRELLAGE_GUIDE_NATIVE_SKILLS_CACHE="$native_common_root/skills" \
     TRELLAGE_GUIDE_OPTIMIZE_SKILLS_CACHE="$canonical_home/.local/share/trellage/common/guide-optimize-architecture-skills" \
-    "${guide_command[@]}" 3<"$guide_catalog_tmp/combined.json" || guide_status=$?
-  cleanup_guide_catalog_tmp
+    "${guide_command[@]}" || guide_status=$?
+  cleanup_guide_tmp
   trap - EXIT HUP INT TERM
   exit "$guide_status"
 fi
@@ -1152,126 +699,8 @@ if [[ "$mode" == admin ]]; then
   require_source_runtime
   [[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
   load_optional_jev_api_key
-  [[ -f "$picker_path" && ! -L "$picker_path" ]] \
-    || die 'Ink launcher is missing or unsafe'
-  [[ -d "$guide_root" && ! -L "$guide_root" ]] \
-    || die 'profile guide registry is missing or unsafe'
-
-  admin_catalog_tmp="$(mktemp -d "${TMPDIR:-/tmp}/trellage-trx-admin.XXXXXX")" \
-    || die 'cannot create admin catalog workspace'
-  cleanup_admin_catalog_tmp() {
-    rm -rf -- "$admin_catalog_tmp"
-  }
-  trap cleanup_admin_catalog_tmp EXIT HUP INT TERM
-
-  build_combined_guide_catalog "$admin_catalog_tmp"
-
-  admin_status=0
+  [[ -f "$picker_path" && ! -L "$picker_path" ]] || die 'Ink launcher is missing or unsafe'
+  [[ -d "$guide_root" && ! -L "$guide_root" ]] || die 'profile guide registry is missing or unsafe'
   TRELLAGE_TRX_COMMAND_PATH="$router_command_path" \
-    "${trellage_launcher[@]}" "$picker_path" admin "$guide_root" 3<"$admin_catalog_tmp/combined.json" \
-    || admin_status=$?
-  cleanup_admin_catalog_tmp
-  trap - EXIT HUP INT TERM
-  exit "$admin_status"
+    exec "${trellage_launcher[@]}" "$picker_path" admin "$guide_root"
 fi
-
-require_source_runtime
-[[ -t 0 && -t 2 ]] || die 'an interactive terminal is required'
-[[ -f "$picker_path" && ! -L "$picker_path" ]] \
-  || die 'Ink launcher is missing or unsafe'
-
-passthrough_args="$(jq -cn '$ARGS.positional' --args -- "$@")" \
-  || die 'could not encode launcher arguments'
-choices="$(build_choices \
-  "$copilot_catalog" "$codex_catalog" "$claude_catalog" "$jcode_catalog" "$omp_catalog" "$pi_catalog" "$prime_catalog" "$agency_catalog" "$fx_catalog" "$headlong_catalog" \
-  "$passthrough_args")" \
-  || die 'could not build profile choices'
-
-choice_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-choices.XXXXXX")" \
-  || die 'cannot create launcher catalog file'
-result_file="$(mktemp "${TMPDIR:-/tmp}/trellage-trx-result.XXXXXX")" \
-  || { rm -f -- "$choice_file"; die 'cannot create launcher result file'; }
-printf '%s\n' "$choices" >"$choice_file"
-picker_status=0
-"${trellage_launcher[@]}" "$picker_path" "$choice_file" "$result_file" || picker_status=$?
-launch_intent="$(<"$result_file")"
-rm -f -- "$choice_file" "$result_file"
-if ((picker_status != 0)); then
-  exit "$picker_status"
-fi
-
-selection="$(jq -er '.id | select(type == "string")' <<<"$launch_intent")" \
-  || die 'Ink launcher returned an invalid selection'
-launch_target="$(jq -er '.target | select(. == "current" or . == "herdr")' <<<"$launch_intent")" \
-  || die 'Ink launcher returned an invalid target'
-selected_model="$(jq -r '.model // empty' <<<"$launch_intent")" \
-  || die 'Ink launcher returned an invalid model'
-launcher="${selection%%:*}"
-profile="${selection#*:}"
-case "$launcher" in
-  copilot)
-    selected_harness=copilot
-    selected_catalog="$copilot_catalog"
-    ;;
-  codex)
-    selected_harness=codex
-    selected_catalog="$codex_catalog"
-    ;;
-  claude)
-    selected_harness=claude
-    selected_catalog="$claude_catalog"
-    ;;
-  fx)
-    selected_harness=fx
-    selected_catalog="$fx_catalog"
-    ;;
-  jcode)
-    selected_harness=jcode
-    selected_catalog="$jcode_catalog"
-    ;;
-  omp)
-    selected_harness=omp
-    selected_catalog="$omp_catalog"
-    ;;
-  pi)
-    selected_harness=pi
-    selected_catalog="$pi_catalog"
-    ;;
-  prime)
-    selected_harness=prime
-    selected_catalog="$prime_catalog"
-    ;;
-  agency)
-    selected_harness=agency
-    selected_catalog="$agency_catalog"
-    ;;
-  *) die 'terminal picker returned an invalid launcher' ;;
-esac
-[[ "$profile" != "$selection" && "$profile" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
-  || die 'terminal picker returned an invalid profile'
-jq -e --arg profile "$profile" '.profiles | map(.name) | index($profile) != null' \
-  <<<"$selected_catalog" >/dev/null \
-  || die 'Ink launcher returned an unknown profile'
-launch_arguments=("$router_command_path" run "$selected_harness" "$profile")
-[[ -z "$selected_model" ]] || launch_arguments+=(--model "$selected_model")
-if (( $# > 0 )); then launch_arguments+=(-- "$@"); fi
-if [[ "$launch_target" == herdr ]]; then
-  if [[ "$launcher" == codex && "$profile" == youtube \
-      && "$trx_transcript_api_key_is_set" == true ]]; then
-    die 'explicit TRANSCRIPT_API_KEY cannot be forwarded securely to Herdr; use the Trellage Varlock source or launch in the current pane'
-  fi
-  [[ "${HERDR_ENV:-}" == 1 && -n "${HERDR_PANE_ID:-}" ]] \
-    || die 'Herdr launch requested outside a Herdr pane'
-  command -v herdr >/dev/null 2>&1 || die 'Herdr command is unavailable'
-  worktree="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" \
-    || die 'Herdr launch requires a Git worktree'
-  split="$(herdr pane split --current --direction right --cwd "$worktree" --focus)" \
-    || die 'could not create a Herdr pane'
-  pane="$(jq -er '.result.pane.pane_id' <<<"$split")" \
-    || die 'Herdr did not return a pane ID'
-  command_line="$(printf '%q ' "${launch_arguments[@]}")"
-  herdr pane run "$pane" "$command_line" || die 'could not start the selected profile in Herdr'
-  exit 0
-fi
-restore_transcript_api_key "$launcher" "$profile"
-exec "${launch_arguments[@]}"

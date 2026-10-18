@@ -20,7 +20,8 @@ import {
 import {
   executeGuideBatch, type GuideBatchEntryResult, type GuideQueuedContext, type JobPlacement, type QueuedGuideJob,
 } from "./guide-batch.ts"
-import { guideCatalogEntries, guideMatchCatalogEntries, type CombinedGuideCatalog } from "./guide-catalog.ts"
+import { guideCatalogEntries, guideMatchCatalogEntries } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import { completeSinglePromptArtifact, prepareGuidePrompt, validateGuideOriginalIntent } from "./guide-context.ts"
 import { inspectGitWorktreeIntent, type CommandRunner, type HerdrContext } from "./guide-launch.ts"
 import type { GuideProvider } from "./guide-provider.ts"
@@ -55,7 +56,7 @@ enum WorktreeInspectionKind {
 export interface ContinuationRuntimeOptions {
   readonly store: ContinuationStore
   readonly sourceClient: Pick<ContinuationSourceClient, "check" | "refresh">
-  readonly catalog: CombinedGuideCatalog
+  readonly catalog: CompositionCatalog
   readonly guideRoot: string
   readonly runner: CommandRunner
   readonly context?: HerdrContext | null
@@ -186,10 +187,10 @@ const requireContinuationPlacement = (edit: ContinuationActionDraft): Continuati
   return edit.placement
 }
 
-const continuationProfileOptions = (catalog: CombinedGuideCatalog): ReadonlyArray<ContinuationProfileOption> =>
+const continuationProfileOptions = (catalog: CompositionCatalog): ReadonlyArray<ContinuationProfileOption> =>
   guideCatalogEntries(catalog).map((entry) => ({
     ref: entry.ref,
-    name: entry.name,
+    name: `${entry.harness}/${entry.profiles.join("+")}`,
     workflows: entry.guide.workflows.map(({ id, description }) => ({ id, description })),
   }))
 
@@ -197,7 +198,7 @@ const continuationProfileOptions = (catalog: CombinedGuideCatalog): ReadonlyArra
 export const continuationQueuedContext = (
   draft: ContinuationDraft,
   actionId: string,
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
 ): GuideQueuedContext => {
   const { action, edit } = findAction(draft, actionId)
   const ref = edit.profileRef ?? action.profileRef

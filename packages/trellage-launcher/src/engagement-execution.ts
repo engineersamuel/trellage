@@ -1,4 +1,4 @@
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import { executeGuideUiResult, type GuideInteractiveExecutionServices } from "./guide-interactive-execution.ts"
 import { assertEngagementSnapshotCurrent, engagementErrorMessage } from "./engagement-context.ts"
 import { EngagementWorkStore, engagementLaunchPlan, type EngagementWork } from "./engagement-work.ts"
@@ -6,7 +6,7 @@ import { EngagementWorkStore, engagementLaunchPlan, type EngagementWork } from "
 export const executeEngagementWork = async (
   work: EngagementWork,
   store: EngagementWorkStore,
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   guideRoot: string,
   services: GuideInteractiveExecutionServices,
 ): Promise<{ readonly work: EngagementWork; readonly notice: string }> => {

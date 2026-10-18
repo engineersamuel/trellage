@@ -15,7 +15,10 @@ const base = (name: string, harness = "claude", commandPath = "/fixture/trx"): A
   ref: `native:unknown/${name}`,
   surface: "native",
   harness,
+  launcher: harness,
   name,
+  profiles: [name],
+  lifecycle: { runtime: harness, profile: name },
   description: name,
   commandPath,
   doctorSupported: true,
@@ -32,6 +35,9 @@ const native = (launcher: string, harness: string, name = "default", commandPath
   ...base(name, harness, commandPath),
   ref: `native:${launcher}/${name}`,
   launcher,
+  harness: launcher,
+  profiles: [name],
+  lifecycle: ["codex", "pi"].includes(launcher) ? null : { runtime: launcher, profile: name },
 })
 
 const success: CommandRunResult = { stdout: "updated", stderr: "", exitCode: 0 }
@@ -60,17 +66,16 @@ describe("all-harness update planning", () => {
     ]
     const plan = harnessUpdateAllPlanFor([...entries].reverse().concat(entries[0]!))
     expect(plan.profileCount).toBe(entries.length)
-    expect(plan.nativeUpdateCount).toBe(3)
-    expect(plan.unsupported).toEqual([{ entry: entries.at(-1), diagnostic: "No harness update command is supported for agency." }])
+    expect(plan.nativeUpdateCount).toBe(2)
+    expect(plan.externallyManaged.map(({ harness }) => harness)).toEqual(["agency", "pi"])
     expect(plan.groups.flatMap((group) => group.targets.map((entry) => entry.ref)).sort()).toEqual(
       entries
-        .slice(0, -1)
+        .filter((entry) => !["agency", "pi"].includes(entry.harness))
         .map((entry) => entry.ref)
         .sort(),
     )
-    expect(plan.groups.filter((group) => group.harness.includes("pi")).map((group) => group.key)).toEqual([
+    expect(plan.groups.filter((group) => group.key === "native:omp").map((group) => group.key)).toEqual([
       "native:omp",
-      "native:pi",
     ])
   })
 
@@ -173,7 +178,7 @@ describe("all-harness update queue", () => {
     expect(harnessUpdateAllSummary(outcome)).toEqual({
       updated: 2,
       failed: 1,
-      unsupported: 1,
+      unsupported: 0,
       refreshFailed: 1,
       notRun: 0,
       success: false,
@@ -186,7 +191,7 @@ describe("all-harness update queue", () => {
 
   it("deduplicates a repeated all-run and blocks U until the final version refresh completes", async () => {
     const plan = harnessUpdateAllPlanFor([native("claude", "claude", "claude")])
-    const other = harnessUpdateAllPlanFor([native("codex", "codex", "codex")]).groups[0]!
+    const other = harnessUpdateAllPlanFor([native("jcode", "jcode", "default")]).groups[0]!
     const run = successfulRun()
     const manager = new HarnessUpdateManager({ run }, "/worktree")
     const pending = deferred<void>()
@@ -237,7 +242,7 @@ describe("all-harness update queue", () => {
   })
 
   it("cancels the active command and does not start later profiles or groups", async () => {
-    const plan = harnessUpdateAllPlanFor([native("claude", "claude", "a"), native("claude", "claude", "b"), native("codex", "codex", "codex")])
+    const plan = harnessUpdateAllPlanFor([native("claude", "claude", "a"), native("claude", "claude", "b"), native("prime", "prime", "default")])
     const controller = new AbortController()
     const run = vi.fn<CommandRunner["run"]>(
       (_executable, _args, options) =>
@@ -272,11 +277,11 @@ describe("all-harness update queue", () => {
     expect(harnessUpdateAllSummary(outcome).success).toBe(false)
   })
 
-  it("does not report unsupported-only or empty catalogs as successful updates", async () => {
+  it("treats externally managed-only catalogs as informational success", async () => {
     const run = successfulRun()
     const manager = new HarnessUpdateManager({ run }, "/worktree")
     const outcome = await runAllHarnessUpdates(harnessUpdateAllPlanFor([native("agency", "agency")]), manager, { refresh: async () => {} })
-    expect(harnessUpdateAllSummary(outcome)).toMatchObject({ unsupported: 1, updated: 0, success: false })
+    expect(harnessUpdateAllSummary(outcome)).toMatchObject({ unsupported: 0, updated: 0, success: true })
     expect(harnessUpdateAllSummary(outcome).nativeSkillsUpdated).toBe(1)
     run.mockClear()
     await expect(runAllHarnessUpdates(harnessUpdateAllPlanFor([]), manager, { refresh: async () => {} })).rejects.toThrow(
@@ -300,7 +305,7 @@ describe("all-harness update queue", () => {
   })
 
   it("does not copy stale Native skills after cache refresh fails, but continues independent harness updates", async () => {
-    const entries = [native("claude", "claude"), native("codex", "codex")]
+    const entries = [native("claude", "claude"), native("jcode", "jcode")]
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) => {
       if (args[0] === "--help") return help
       if (args[0] === "skills") throw new Error("Skill source unavailable")

@@ -117,7 +117,6 @@ export interface ForkOrigin {
   readonly why: string
   readonly tradeoff: string
   readonly skill: string
-  readonly sandbox: boolean
   readonly headlessPrompt: boolean
   readonly herdr: string
   readonly prerequisites: string
@@ -149,7 +148,6 @@ export const previewLenses: ReadonlyArray<PreviewLens> = [
       why: "Runs the same question through three opposed reviewers before any code is written.",
       tradeoff: "Three passes cost three times the tokens of a direct implementation loop.",
       skill: "none",
-      sandbox: false,
       headlessPrompt: true,
       herdr: "known-issue",
       prerequisites: "none",
@@ -171,7 +169,6 @@ export const previewLenses: ReadonlyArray<PreviewLens> = [
       why: "Front-loads a survey pass, so the first edit lands with the constraints already known.",
       tradeoff: "The survey pass delays the first visible change.",
       skill: "none",
-      sandbox: true,
       headlessPrompt: true,
       herdr: "untested",
       prerequisites: "none",
@@ -193,7 +190,6 @@ export const previewLenses: ReadonlyArray<PreviewLens> = [
       why: "Blocks implementation behind an explicit risk register and an approved plan.",
       tradeoff: "Two gates before any code makes small changes feel heavy.",
       skill: "hve-core",
-      sandbox: false,
       headlessPrompt: true,
       herdr: "verified",
       prerequisites: "hve-core-all plugin",
@@ -213,7 +209,6 @@ export const previewRecommendations: ReadonlyArray<ForkOrigin> = [
     why: "Forces a failing test in front of every change, so nothing lands unverified.",
     tradeoff: "The per-step gate is slow on wide mechanical edits that need no proof.",
     skill: "none",
-    sandbox: true,
     headlessPrompt: true,
     herdr: "untested",
     prerequisites: "none",
@@ -229,7 +224,6 @@ export const previewRecommendations: ReadonlyArray<ForkOrigin> = [
     why: "Skips the survey pass and edits directly, which suits a scoped, well-described change.",
     tradeoff: "It assumes the scope is right, so a wrong premise is discovered late.",
     skill: "none",
-    sandbox: false,
     headlessPrompt: true,
     herdr: "verified",
     prerequisites: "none",
@@ -245,7 +239,6 @@ export const previewRecommendations: ReadonlyArray<ForkOrigin> = [
     why: "Adds no workflow of its own, which keeps the comparison against the other profiles honest.",
     tradeoff: "Nothing guides it, so quality tracks the prompt alone.",
     skill: "none",
-    sandbox: false,
     headlessPrompt: true,
     herdr: "untested",
     prerequisites: "none",
@@ -261,7 +254,6 @@ export const previewRecommendations: ReadonlyArray<ForkOrigin> = [
     why: "Removes the planning gates entirely to reach running code as fast as possible.",
     tradeoff: "It produces code you must review closely, because nothing reviewed it first.",
     skill: "none",
-    sandbox: true,
     headlessPrompt: true,
     herdr: "untested",
     prerequisites: "none",
@@ -842,8 +834,7 @@ const OriginDetail = ({ origin }: { readonly origin: ForkOrigin }) => (
       <Text wrap="wrap">{origin.tradeoff}</Text>
     </Box>
     <Text dimColor>
-      Skill: {origin.skill} | Sandbox: {origin.sandbox ? "on" : "off"} | Headless prompt:{" "}
-      {origin.headlessPrompt ? "yes" : "no"} | Herdr: {origin.herdr}
+      Skill: {origin.skill} | Headless prompt: {origin.headlessPrompt ? "yes" : "no"} | Herdr: {origin.herdr}
     </Text>
     <Text dimColor>Prerequisites: {origin.prerequisites}</Text>
   </Box>

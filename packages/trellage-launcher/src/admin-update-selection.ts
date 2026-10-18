@@ -92,6 +92,7 @@ export const selectAvailableAdminUpdates = (
     plan: {
       groups,
       skills,
+      externallyManaged: [],
       unsupported: [],
       profileCount: groups.reduce((count, group) => count + group.targets.length, 0),
       nativeUpdateCount: groups.filter((group) => group.surface === "native").reduce((count, group) => count + group.steps.length, 0),

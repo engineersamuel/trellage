@@ -1,11 +1,10 @@
 #!/usr/bin/env bun
 import "./bun-runtime.setup.ts"
-import { readdir, readFile } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import {
-  canonicalNativeIdentity,
   discoverProfileGuideRelativePaths,
   loadProfileGuideRegistry,
   profileGuideGoalExecutionProblem,
@@ -13,40 +12,16 @@ import {
   type ProfileGuideIdentity,
   type ProfileGuideWorkflow,
 } from "@trellage/guide-core"
+import { nativeHarnessPresets } from "../packages/trellage-runtime/src/native-run/presets.ts"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const guideRoot = path.join(root, "profile-guides")
 
-const expected: ProfileGuideIdentity[] = []
-expected.push({ surface: "native", launcher: "fx", profile: "default" })
-expected.push({ surface: "native", launcher: "headlong", profile: "default" })
-// The firstmate config profile is listed by the router for its supported harnesses.
-for (const launcher of ["claude", "pi"]) expected.push({ surface: "native", launcher, profile: "firstmate" })
-const prototypeEntries = await readdir(path.join(root, "prototypes"), { withFileTypes: true })
-const nativeFamilies = prototypeEntries
-  .filter((entry) => entry.isDirectory() && /^trellage-.+-profiles$/u.test(entry.name))
-  .map((entry) => entry.name)
-  .sort()
-for (const family of nativeFamilies) {
-  const launchers = (await readdir(path.join(root, "prototypes", family, "bin"), { withFileTypes: true }))
-    .filter((entry) => entry.isFile())
-    .map((entry) => entry.name)
-  const launcher = launchers[0]
-  if (launchers.length !== 1 || launcher === undefined)
-    throw new Error(`${family}/bin must contain exactly one launcher`)
-  const raw = await readFile(path.join(root, "prototypes", family, "catalog.json"), "utf8")
-  const catalog = JSON.parse(raw)
-  if (catalog === null || typeof catalog !== "object" || Array.isArray(catalog)) {
-    throw new Error(`${family}/catalog.json must contain an object`)
-  }
-  const profiles = catalog.profiles
-  if (profiles === null || typeof profiles !== "object" || Array.isArray(profiles)) {
-    throw new Error(`${family}/catalog.json must contain a profile object`)
-  }
-  for (const profile of Object.keys(profiles)) {
-    expected.push({ surface: "native", ...canonicalNativeIdentity(launcher, profile) })
-  }
-}
+const expected: ProfileGuideIdentity[] = Object.entries(nativeHarnessPresets)
+  .filter(([harness]) => harness !== "uji")
+  .flatMap(([harness, profiles]) => profiles.map((profile) => ({ surface: "native" as const, harness, profile })))
+// The shared firstmate preset is available only on its supported harnesses.
+for (const harness of ["claude", "pi"]) expected.push({ surface: "native", harness, profile: "firstmate" })
 
 const actual = await discoverProfileGuideRelativePaths(guideRoot)
 const coverage = validateProfileGuideCoverage(expected, actual)
@@ -64,7 +39,7 @@ const nativeGoalSurfaces = new Map([
 const expectedGoalSurface = (identity: ProfileGuideIdentity) => {
   // Firstmate supervises its own fleet loop; a single-agent goal controller does not apply.
   if (identity.profile === "firstmate") return undefined
-  return nativeGoalSurfaces.get(identity.launcher)
+  return nativeGoalSurfaces.get(identity.harness)
 }
 const operationalWorkflowId =
   /^(?:(?:doctor|health-check|inventory|readiness|setup|smoke-test)|(?:extension|launch|launcher|local|model|profile|proxy)-(?:doctor|health-check|inventory-check|readiness-check|repair|setup|smoke-test))$/u

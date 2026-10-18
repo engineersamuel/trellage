@@ -5,7 +5,7 @@ import {
   runRestrictedGuideModelRequest,
   type RestrictedGuideModelRequest,
 } from "./copilot-guide-provider.ts"
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import { formatCompositionRef, parseCompositionRef, type CompositionCatalog } from "./composition-catalog.ts"
 import type { GuideModelConfig } from "./guide-model-routing.ts"
 import { array, boundedNumber, exactKeys, literal, record, stringArray, text, uniqueArray } from "./guide-text.ts"
 import { engagementContextSource, type EngagementSnapshot } from "./engagement-context.ts"
@@ -18,7 +18,9 @@ export interface EngagementCitation {
 }
 
 export interface EngagementWorkflow {
-  readonly profileRef: string
+  readonly ref: string
+  readonly harness: string
+  readonly profiles: ReadonlyArray<string>
   readonly workflowId: string
 }
 
@@ -45,12 +47,14 @@ export interface EngagementAssessment {
   readonly actions: ReadonlyArray<EngagementAction>
 }
 
-export const engagementWorkflows = (catalog: CombinedGuideCatalog) =>
-  catalog.native.flatMap((entry) =>
+export const engagementWorkflows = (catalog: CompositionCatalog) =>
+  catalog.entries.flatMap((entry) => entry.guide === null ? [] :
     entry.guide.workflows
       .filter((workflow) => workflow.interaction?.mode === "interactive")
       .map((workflow) => ({
-        profileRef: `native:${entry.launcher}/${entry.name}`,
+        ref: entry.ref,
+        harness: entry.harness,
+        profiles: entry.profiles,
         workflowId: workflow.id,
         description: workflow.description,
       })),
@@ -95,19 +99,23 @@ export const parseEngagementAction = (
   let workflow: EngagementWorkflow | null = null
   if (action.workflow !== null) {
     const fields = record(action.workflow, "workflow")
-    exactKeys(fields, "workflow", ["profileRef", "workflowId"])
+    exactKeys(fields, "workflow", ["ref", "harness", "profiles", "workflowId"])
+    const harness = text(fields.harness, "harness", 64)
+    const profiles = stringArray(fields.profiles, "profiles", { minimum: 1, maximumItems: 16, itemMaximum: 128 })
+    const ref = text(fields.ref, "ref", 256)
+    if (ref !== formatCompositionRef(harness, profiles)) throw new Error("Invalid saved engagement workflow identity")
     workflow = {
-      profileRef: text(fields.profileRef, "profileRef", 256),
+      ref,
+      harness,
+      profiles,
       workflowId: text(fields.workflowId, "workflowId", 128),
     }
-    if (
-      !/^native:[a-z0-9]+\/[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(workflow.profileRef) ||
-      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(workflow.workflowId)
-    )
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(workflow.workflowId))
       throw new Error("Invalid saved engagement workflow identity")
+    parseCompositionRef(ref)
     if (
       workflows !== null &&
-      !workflows.some((entry) => entry.profileRef === workflow?.profileRef && entry.workflowId === workflow.workflowId)
+      !workflows.some((entry) => entry.ref === workflow?.ref && entry.workflowId === workflow.workflowId)
     ) {
       throw new Error("Assessment selected an unavailable engagement workflow")
     }
@@ -210,7 +218,7 @@ export class EngagementAssessmentResponseError extends Error {
 
 export const createEngagementAssessor =
   (
-    catalog: CombinedGuideCatalog,
+    catalog: CompositionCatalog,
     config: GuideModelConfig,
     request: (options: RestrictedGuideModelRequest) => Promise<string> = runRestrictedGuideModelRequest,
   ): EngagementAssessor =>
@@ -272,7 +280,7 @@ export const engagementAssessmentDocument = (assessment: EngagementAssessment): 
     ...(assessment.question === null ? [] : ["## One question", assessment.question]),
     ...assessment.actions.map(
       (action, index) =>
-        `## ${index === 0 ? "Recommended next action" : `Alternative ${index}`}: ${action.title}\n${action.objective}\n\nWhy now: ${action.whyNow}\n\nExpected result: ${action.expectedOutput}\n\nReview by: ${action.reviewer}\n\nSources: ${engagementCitationText(action.citations)}\n\nSupport: ${action.workflow === null ? "Human action; no agent launch" : `${action.workflow.profileRef} / ${action.workflow.workflowId}`}`,
+        `## ${index === 0 ? "Recommended next action" : `Alternative ${index}`}: ${action.title}\n${action.objective}\n\nWhy now: ${action.whyNow}\n\nExpected result: ${action.expectedOutput}\n\nReview by: ${action.reviewer}\n\nSources: ${engagementCitationText(action.citations)}\n\nSupport: ${action.workflow === null ? "Human action; no agent launch" : `${action.workflow.ref} / ${action.workflow.workflowId}`}`,
     ),
     ...(assessment.outcome === "no-action" ? ["## No further action recommended"] : []),
   ].join("\n\n")

@@ -147,14 +147,13 @@ export FAKE_JCODE_SIGNAL_LOG="$fixture_root/signal.log"
 : >"$FAKE_JCODE_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/share/trellage/.native-commands/jcx"
 runtime_root="$HOME/.local/share/trellage/jcx"
+command_path="$runtime_root/bin/jcx"
 profile_root="$HOME/.local/share/trellage/profiles/jcode/default"
 profile_home="$profile_root/home"
 
-[[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
-[[ "$(readlink "$command_path")" == "$runtime_root/bin/jcx" ]] \
-  || fail 'command symlink target differs'
+[[ -x "$command_path" && ! -L "$command_path" ]] \
+  || fail 'installer did not publish the owned runtime command'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
 cmp -s "$runtime_root/config-manager.ts" "$root/config-manager.ts" \
@@ -165,7 +164,6 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "jcx"
   and .harness == "jcode"
-  and .sandbox == false
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "1jehuang/jcode"
   and .profiles[0].description == "jcode for memory-backed, browser-driven, and coordinated-swarm work, with persistent sessions and keyless gpt-5.6-sol routing."
@@ -250,11 +248,6 @@ grep -Fqx 'supports_reasoning_effort = true' "$profile_home/config.toml" \
 jq -e '.launch_count == 6' "$profile_home/setup_hints.json" >/dev/null \
   || fail 'setup did not skip first-run onboarding'
 
-mv "$runtime_root/installed-version" "$runtime_root/version"
-"$command_path" doctor >"$fixture_root/legacy-receipt-doctor.out" \
-  || fail 'doctor did not migrate the legacy version receipt'
-[[ "$(<"$runtime_root/installed-version")" == 0.67.1 && ! -e "$runtime_root/version" ]] \
-  || fail 'legacy version receipt migration differs'
 
 "$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON list failed'
 jq -e '
@@ -631,14 +624,5 @@ HOME="$fixture_root/unrelated-home" "$runtime_root/bin/jcx" update \
 [[ ! -e "$command_path" && ! -L "$command_path" ]] || fail 'uninstaller left command'
 [[ -d "$profile_home" ]] || fail 'uninstaller removed profile state'
 
-"$installer" >"$fixture_root/legacy-layout-install.out" \
-  || fail 'legacy-layout reinstall failed'
-rm "$runtime_root/config-manager.ts"
-"$uninstaller" >"$fixture_root/legacy-layout-uninstall.out" \
-  || fail 'uninstaller rejected a legacy owned runtime'
-[[ ! -e "$runtime_root" ]] || fail 'legacy-layout uninstall left runtime'
-[[ ! -e "$command_path" && ! -L "$command_path" ]] \
-  || fail 'legacy-layout uninstall left command'
-[[ -d "$profile_home" ]] || fail 'legacy-layout uninstall removed profile state'
 
 printf 'jcx contract: PASS\n'

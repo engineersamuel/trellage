@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import path from "node:path"
-import type { CombinedGuideCatalog } from "../../src/guide-catalog.ts"
+import type { CompositionCatalog } from "../../src/composition-catalog.ts"
 import { defaultGuideModelRouting } from "../../src/guide-model-routing.ts"
 import { optimizeDigest } from "../../src/review-source.ts"
 import {
@@ -17,7 +17,7 @@ import { displayReviewers } from "../../src/review-view-model.ts"
 export const createFixtureOptimizeServices = (
   root: string,
   mode: FixtureMode,
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   record: RecordFixtureEvent,
 ): GuideReviewServices => {
   const reviews = new Map<string, ReviewRun>()

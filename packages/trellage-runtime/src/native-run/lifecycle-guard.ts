@@ -65,9 +65,8 @@ export const profileGuardProfiles = (
   harness: string,
   args: readonly string[],
 ): string[] => {
-  const runtime = lifecycleRuntime(harness);
-  if (!runtime) throw new Error(`unknown managed profile harness: ${harness}`);
   const profiles = nativePresetProfiles(harness);
+  if (profiles.length === 0) throw new Error(`unknown profile harness: ${harness}`);
   if (operation === "upgrade" && args.includes("--check")) return [];
   if (
     ![
@@ -170,7 +169,7 @@ const acquireScope = (
 const acquireOwners = (
   db: Database,
   harness: string,
-  runtime: NonNullable<ReturnType<typeof lifecycleRuntime>>,
+  runtimeProfile: (preset: string) => string,
   presets: readonly string[],
   operation: string,
   token: string,
@@ -185,7 +184,7 @@ const acquireOwners = (
         db,
         harness,
         preset,
-        runtime.profileName(preset),
+        runtimeProfile(preset),
         operation,
         token,
         started,
@@ -385,14 +384,14 @@ export const acquireProfileGuard = (
   if (presets.length === 0) return emptyProfileGuard();
   const runtime = lifecycleRuntime(harness);
   const profiles = nativePresetProfiles(harness);
-  if (!runtime || presets.some((preset) => !profiles.includes(preset as never)))
+  if (profiles.length === 0 || presets.some((preset) => !profiles.includes(preset as never)))
     throw new Error("invalid profile guard scope");
   const db = openProfileGuardDatabase(home);
   const token = randomUUID();
   const started = processStart(process.pid);
   try {
     if (started === null) throw new Error("cannot determine profile guard process identity");
-    acquireOwners(db, harness, runtime, presets, operation, token, started);
+    acquireOwners(db, harness, (preset) => runtime?.profileName(preset) ?? preset, presets, operation, token, started);
     return createOwnedProfileGuard(db, token);
   } catch (error) {
     db.close();

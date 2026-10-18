@@ -38,8 +38,8 @@ const planCommand = async (
   prompt: string
   review: ReviewRun
 }> => {
-  if (result.selectedProfile.launcher !== "copilot" || result.selectedProfile.profile !== "hve")
-    throw new Error("Planning requires the Native Copilot hve profile.")
+  if (result.selectedProfile.harness !== "copilot" || result.selectedProfile.profiles.length !== 1 || result.selectedProfile.profiles[0] !== "hve")
+    throw new Error("Planning requires the Native Copilot hve composition.")
   const review = await readReview(result)
   if (review.request.target.cwd !== result.cwd) throw new Error("Planning target belongs to another worktree.")
   const readiness = await checkSelectedProfileReadiness(runner, result.selectedProfile, result.cwd, signal)

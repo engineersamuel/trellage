@@ -203,7 +203,7 @@
       "id": "native-pi-0.84.2",
       "publication": {
         "surface": "native",
-        "catalog": "prototypes/trellage-picx-profiles/catalog.json",
+        "catalog": "packages/trellage-runtime/src/native-run/adapters.ts",
         "profiles": [
           "default"
         ]
@@ -229,7 +229,7 @@
       },
       "deterministicEvidence": [
         {
-          "path": "prototypes/trellage-picx-profiles/tests/contract.sh",
+          "path": "packages/trellage-runtime/test/native-run/run.test.ts",
           "cases": [
             "nonTtyCompletion",
             "nonZeroExit",

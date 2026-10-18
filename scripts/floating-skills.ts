@@ -562,19 +562,6 @@ const readLegacyManagedNames = async (file: string) => {
   return names
 }
 
-const readLegacyOwnedNames = async (targetPath: string) => {
-  const marker = path.join(targetPath, "show-me", ".managed-by-trellage-picx-profiles")
-  const status = await lstat(marker).catch(() => undefined)
-  if (status === undefined) return []
-  if (!status.isFile() || status.isSymbolicLink()) fail(`invalid legacy managed skill marker: ${marker}`)
-  if ((await readFile(marker, "utf8")) !== "trellage-picx-profile-v2\n") {
-    fail(`invalid legacy managed skill marker: ${marker}`)
-  }
-  const skill = path.dirname(marker)
-  const skillStatus = await lstat(skill)
-  if (!skillStatus.isDirectory() || skillStatus.isSymbolicLink()) fail(`invalid managed skill target: ${skill}`)
-  return ["show-me"]
-}
 
 const readTargetManagedNames = async (targetPath: string) => {
   const currentManaged = await readManagedNames(
@@ -582,9 +569,7 @@ const readTargetManagedNames = async (targetPath: string) => {
     "managed skill manifest",
   )
   if (currentManaged.length > 0) return currentManaged
-  const legacyManaged = await readLegacyManagedNames(path.join(targetPath, ".trellage-engineersamuel-skills"))
-  const legacyOwned = await readLegacyOwnedNames(targetPath)
-  return [...new Set([...legacyManaged, ...legacyOwned])]
+  return readLegacyManagedNames(path.join(targetPath, ".trellage-engineersamuel-skills"))
 }
 
 export const verifyRepairableTarget = async (target: string) => {
@@ -1016,16 +1001,6 @@ const checkSharedCommand = async (catalog: SkillCatalog) => {
       name: "claude-office-charts",
       bundles: ["native-common", "claude-office-charts"],
       cache: path.join(path.dirname(defaultCache()), "cldx-office-charts-skills"),
-    },
-    {
-      name: "codex",
-      bundles: ["native-common", "codex-common"],
-      cache: path.join(path.dirname(defaultCache()), "cdx-skills"),
-    },
-    {
-      name: "youtube",
-      bundles: ["native-common", "codex-common", "youtube"],
-      cache: path.join(path.dirname(defaultCache()), "cdx-youtube-pro-skills"),
     },
     { name: "omp-community", bundles: ["omp-community"], cache: path.join(common, "omp-community-skills") },
     {

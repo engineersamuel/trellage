@@ -11,32 +11,31 @@ import {
   type SelectedProfile,
 } from "./guide-launch.ts"
 
-export const toSelectedProfile = (entry: AdminProfileEntry): SelectedProfile =>
-  ({
-    surface: "native",
-    launcher: entry.launcher ?? "",
-    commandPath: entry.commandPath,
-    profile: entry.name,
-    headlessPrompt: false,
-  })
+export const toSelectedProfile = (entry: AdminProfileEntry): SelectedProfile => ({
+  surface: "native",
+  harness: entry.harness,
+  commandPath: entry.commandPath,
+  profiles: entry.profiles,
+  headlessPrompt: false,
+})
 
 export const buildAdminLaunchCommand = (entry: AdminProfileEntry): CommandSpec =>
   buildGuideLaunchCommand(toSelectedProfile(entry)).command
 
-/** Native launchers accept `doctor PROFILE`. Callers must check `entry.doctorSupported` first. */
+/** Lifecycle doctor is available only when the catalog row has a lifecycle mapping. */
 export const buildDiagnosticCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: ["doctor", entry.launcher!, entry.name],
+  args: ["doctor", entry.harness, ...entry.profiles],
 })
 
 /** Native repair support follows doctor support. */
 export const isRepairSupported = (entry: AdminProfileEntry): boolean => entry.doctorSupported
 
 export const buildRepairCommand = (entry: AdminProfileEntry): CommandSpec =>
-  ({ executable: entry.commandPath, args: ["repair", entry.launcher!, entry.name] })
+  ({ executable: entry.commandPath, args: ["repair", entry.harness, ...entry.profiles] })
 
 export const buildSetupCommand = (entry: AdminProfileEntry): CommandSpec =>
-  ({ executable: entry.commandPath, args: ["setup", entry.launcher!, entry.name] })
+  ({ executable: entry.commandPath, args: ["setup", entry.harness, ...entry.profiles] })
 
 /**
  * `repair`/`setup` can perform real installs (e.g. `mise install`, `npm ci`,

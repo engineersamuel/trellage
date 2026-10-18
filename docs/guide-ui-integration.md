@@ -127,8 +127,8 @@ also declare it in `.env.schema` as an optional sensitive item:
 TYPESAFE_API_KEY=
 ```
 
-The router resolves only this key and gives it to the launcher under a private
-name. The launcher removes that name from its environment at startup, so agents
+The router resolves only this key and gives it to the harness process under a private
+name. The router removes that name from its environment at startup, so agents
 that the guide launches do not inherit the key. The key is optional: if it is
 absent, the guide runs without Jev and shows no message. If the environment
 source is unsafe or Varlock cannot load it, the router does not load the key,
@@ -453,12 +453,12 @@ Handoffs are recorded requests, not real harness launches.
 | Answer one engagement question with multiline paste at 64 columns and 20 rows | 1 | 0 | 0 | 0 | The answer stays local until renewed consent and reaches the next assessment unchanged |
 | Prepare a human-only engagement action and reject its result | 1 | 1 assignment | 0 | 0 | No launch control; the explicit rejection is durable |
 | Select sources at 64 columns and 20 rows, then exclude one before assessment | 1 | 0 | 0 | 0 | The focused path stays visible; only checked files reach the model |
-| Select a Native or Sandbox profile and a non-default candidate; confirm this terminal | 2 | 3 | 0 | 1 | Exact launcher, prompt argument, cwd, and automation flag |
+| Select a Native or Sandbox profile and a non-default candidate; confirm this terminal | 2 | 3 | 0 | 1 | Exact harness, prompt argument, cwd, and automation flag |
 | Park a pending readiness probe, change the main selection, and reopen the fork | 1 | 3 | 0 | 0 | Exactly one inventory request survives parking; release reaches destination selection; cancellation launches nothing |
 | Prepare customer context, pause, leave unknowns blank, review, apply, and choose Discovery | 1 | 3 | 0 | 1 | No model or command before approval; original request and exact source labels survive; queue entry is refused; both readiness checks retain the agent and required skills |
 | Send Discovery directly to a Herdr pane, tab, new worktree, or existing worktree | 4 | 3 | 0 | 1 | No batch queue; exact interactive command; installed requirements rechecked in the selected directory before launch |
 | Queue Council, Research, and HVE RPI; return to the main screen and press `L` | 1 | 9 | 3 | 3 | Correct skill frames and the HVE `--agent hve-core:rpi-agent` argument |
-| Visit all five recommendations in seeded order; choose seeded candidates and press `L` | 2 | 15 | 5 | 5 | Every selected profile appears once, with its own prompt and launcher arguments |
+| Visit all five recommendations in seeded order; choose seeded candidates and press `L` | 2 | 15 | 5 | 5 | Every selected profile appears once, with its own prompt and harness arguments |
 | Queue all five recommendations and all three lenses; reopen a fork and press `L` | 1 | 24 | 8 | 8 | The global launch key dispatches the full queue, not only the active fork |
 | Remove three seeded entries from an eight-job queue at 120 and 240 columns | 2 | 24 | 8 to 5 | 5 | The selected job stays visible; only retained job IDs launch, in queue order; profile and prompt pairs stay intact |
 | Remove every entry; try `L` and Enter; cancel | 1 | 15 | 5 to 0 | 0 | Empty queues emit no allocation or launch command |
@@ -525,10 +525,9 @@ stays in `input.goal.prompt`, not the model payload. No SDK runtime starts.
 For each handoff, independent expected commands specify the executable,
 argument order, selected prompt, and destination. These expectations do not
 call the production launch or workflow builders. Coverage includes the
-different prompt arguments for `cdx`, `cpx`, `cldx`, `picx`, and Sandbox
-`trellage`, plus the pinned HVE agent argument. Working-directory paths contain
-spaces, and prompts contain quotes and newlines. Herdr command strings must
-preserve them through shell quoting.
+different prompt arguments for Codex, Copilot, Claude, and Pi, plus the pinned
+HVE agent argument. Working-directory paths contain spaces, and prompts contain
+quotes and newlines. Herdr command strings must preserve them through shell quoting.
 
 Codex goal handoffs are different from ordinary argv prompts. Read-only
 version and feature probes use fixture replies. Goal readiness is checked

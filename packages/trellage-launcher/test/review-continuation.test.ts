@@ -11,8 +11,8 @@ import type { CommandRunner, CommandSpec, HerdrContext, NativeSelectedProfile } 
 import type { ReviewContinuation } from "../src/review-ui.tsx"
 
 const profile: NativeSelectedProfile = {
-  surface: "native", launcher: "copilot", commandPath: "/fixture/trx",
-  profile: "hve", headlessPrompt: false,
+  surface: "native", harness: "copilot", commandPath: "/fixture/trx",
+  profiles: ["hve"], headlessPrompt: false,
 }
 const context: HerdrContext = { workspaceId: "ws-1", paneId: "pane-1", surface: "pane" }
 const result: ReviewContinuation = {

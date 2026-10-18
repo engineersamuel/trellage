@@ -151,7 +151,6 @@ test.each([
   ["claude", "--install"],
   ["jcode", "--install-manual"],
   ["omp", "--install"],
-  ["picx", "--install"],
   ["prime", "--install"],
 ])(
   "native %s installer disables the cache for its explicit Bun helper invocation",

@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { loadProfileGuide } from "@trellage/guide-core"
-import type { CombinedGuideCatalog } from "../../src/guide-catalog.ts"
+import type { CompositionCatalog } from "../../src/composition-catalog.ts"
 import { createNodeCommandRunner } from "../../src/guide-launch.ts"
 import {
   captureEngagementSnapshot,
@@ -42,7 +42,7 @@ export const engagementAssessment: EngagementAssessment = {
       expectedOutput: "A draft workshop brief with a learning objective, participant roles, and unresolved questions.",
       reviewer: "Engagement lead and customer sponsor",
       citations: [engagementCitation],
-      workflow: { profileRef: "native:copilot/hve", workflowId: "customer-discovery" },
+      workflow: { ref: "native:copilot/hve", harness: "copilot", profiles: ["hve"], workflowId: "customer-discovery" },
     },
   ],
 }
@@ -52,16 +52,17 @@ export const createEngagementFixture = async (directory: string) => {
   await runner.run("git", ["-c", "init.templateDir=", "init", "--quiet"], { cwd: directory })
   await mkdir(path.join(directory, "docs/engagement"), { recursive: true })
   await writeFile(path.join(directory, engagementSourcePath), engagementSource)
-  const catalog: CombinedGuideCatalog = {
-    schemaVersion: 1,
-    native: [
+  const catalog: CompositionCatalog = {
+    schemaVersion: 2,
+    entries: [
       {
-        launcher: "copilot",
+        ref: "native:copilot/hve",
         harness: "copilot",
-        name: "hve",
+        profiles: ["hve"],
+        kind: "preset",
+        canonicalHarness: true,
         description: "Native HVE",
         commandPath: "/fixture/trx",
-        sandbox: false,
         herdrCompatibility: { status: "untested" },
         headless: {
           schemaVersion: 1,
@@ -80,8 +81,9 @@ export const createEngagementFixture = async (directory: string) => {
           effortOverride: false,
           testedHarnessVersion: null,
         },
-        guide: (await loadProfileGuide(engagementGuideRoot, { surface: "native", launcher: "copilot", profile: "hve" }))
+        guide: (await loadProfileGuide(engagementGuideRoot, { surface: "native", harness: "copilot", profile: "hve" }))
           .guide,
+        lifecycle: null,
       },
     ],
   }

@@ -12,61 +12,60 @@ import type { AdminHarnessVersionCacheRecord } from "./admin-harness-version-cac
 import { aggregateAdminProfiles } from "./admin-model.ts"
 import { AdminRunManager } from "./admin-run-manager.ts"
 import { nativeSkillsUpdateCommand, type NativeSkillsUpdateEvent, type NativeSkillsUpdatePlan } from "./admin-skills-update.ts"
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import { renderCommandPreview, type CommandRunner } from "./guide-launch.ts"
 
 export const harnessUpgradeHelpText = `Usage:
-  trx upgrade all [--native] [--yes | --dry-run]
+  trx upgrade all [--yes | --dry-run]
+  trx upgrade HARNESS [--all | PROFILE]
 
-Update harness versions AND skills for every Native catalog profile.
-The preview includes profiles hidden by Admin filters. One queue runs:
-1. Native harness updates: shared runtimes once.
-2. Shared Native skill-cache refresh: one trx skills update.
-3. Native profile skill copies and verification, including Agency.
-Native skill copies are final; harness updates cannot overwrite them afterward.
+Update harness versions and shared skills for every Native composition.
+The preview includes compositions hidden by Admin filters. One queue runs:
+1. Trellage-managed harness updates, deduplicated per harness runtime.
+2. Shared Native skill-cache refresh.
+3. Lifecycle-backed profile skill copies and verification.
+Externally managed harnesses are reported as informational and are not failures.
 Admin U remains the selected harness-only action.
 
 Without a flag, preview the scope and require you to type yes at a terminal.
---native is accepted for compatibility; every update is already Native.
 --yes authorizes updates without an interactive terminal.
 --dry-run reads the catalog and previews the scope without running
 updates, readiness probes, or version checks.
 
+The HARNESS form delegates to the managed harness lifecycle. Depending on the
+harness, it updates the shared runtime, every profile with --all, or one PROFILE.
 Existing profile version and source pins are preserved. Unsupported profiles,
 fallbacks, failures, and unreadable installed versions are reported.
 Independent updates continue after failures. Cancellation stops later updates.
 Exit status is nonzero for incomplete discovery, unsupported profiles, failed
 harness or skill updates, failed installed-version reads, and profiles not run.
-A failed skill cache refresh skips Native copies, not independent harness updates.
+Externally managed harnesses do not make preview or execution fail.
 Cancellation exits 130.
 
 This does not install or upgrade Trellage itself.`
 
-export type HarnessUpgradeScope = "all" | "native"
 export type HarnessUpgradeArgs =
   | { readonly kind: "help" }
-  | { readonly kind: "run"; readonly approval: "confirm" | "yes" | "dry-run"; readonly scope: HarnessUpgradeScope }
+  | { readonly kind: "run"; readonly approval: "confirm" | "yes" | "dry-run" }
 
 const helpArguments: Record<string, true> = { "--help": true, "-h": true, help: true }
 const isHelpArgument = (argument: string | undefined): boolean =>
   argument !== undefined && Object.hasOwn(helpArguments, argument)
 const usageError = (): Error =>
-  new Error("Use trx upgrade all [--native] [--yes | --dry-run], or trx upgrade --help.")
+  new Error("Use trx upgrade all [--yes | --dry-run], or trx upgrade --help.")
 
 export const parseHarnessUpgradeArgv = (argv: ReadonlyArray<string>): HarnessUpgradeArgs => {
   if (argv.length === 1 && isHelpArgument(argv[0])) return { kind: "help" }
-  if (argv[0] !== "all" || argv.length > 3) throw usageError()
+  if (argv[0] !== "all" || argv.length > 2) throw usageError()
   const flags = argv.slice(1)
   if (flags.length === 1 && isHelpArgument(flags[0])) return { kind: "help" }
   let approval: "confirm" | "yes" | "dry-run" = "confirm"
-  let scope: HarnessUpgradeScope = "all"
   for (const flag of flags) {
-    if (flag === "--native" && scope === "all") scope = "native"
-    else if (flag === "--yes" && approval === "confirm") approval = "yes"
+    if (flag === "--yes" && approval === "confirm") approval = "yes"
     else if (flag === "--dry-run" && approval === "confirm") approval = "dry-run"
     else throw usageError()
   }
-  return { kind: "run", approval, scope }
+  return { kind: "run", approval }
 }
 
 export type HarnessUpgradeConfirmation = "confirmed" | "cancelled" | "unavailable"
@@ -115,7 +114,7 @@ export const confirmHarnessUpgrade = (
 
 export interface HarnessUpgradeCliOptions {
   readonly argv: ReadonlyArray<string>
-  readonly readCatalog: () => CombinedGuideCatalog | Promise<CombinedGuideCatalog>
+  readonly readCatalog: () => CompositionCatalog | Promise<CompositionCatalog>
   readonly runner: CommandRunner
   readonly cwd: string
   readonly routerCommandPath?: string
@@ -129,18 +128,18 @@ type WriteLine = HarnessUpgradeCliOptions["writeLine"]
 const groupLabel = (group: HarnessUpdatePlan): string =>
   `Native ${group.harness} (${group.key})`
 
-const completeCatalogEntries = (catalog: CombinedGuideCatalog) => {
-  if (catalog.native.length === 0) {
-    throw new Error("Incomplete catalog: Native profiles are required. No harness or skill updates were started.")
+const completeCatalogEntries = (catalog: CompositionCatalog) => {
+  if (catalog.entries.length === 0) {
+    throw new Error("Incomplete catalog: Native compositions are required. No harness or skill updates were started.")
   }
   const entries = aggregateAdminProfiles(catalog)
-  if (new Set(entries.map((entry) => entry.ref)).size !== catalog.native.length) {
-    throw new Error("Incomplete catalog: profile identities were lost or duplicated. No harness or skill updates were started.")
+  if (new Set(entries.map((entry) => entry.ref)).size !== catalog.entries.length) {
+    throw new Error("Incomplete catalog: composition identities were lost or duplicated. No harness or skill updates were started.")
   }
   return entries
 }
 
-const completeCatalogPlan = (catalog: CombinedGuideCatalog, options: HarnessUpgradeCliOptions): HarnessUpdateAllPlan => {
+const completeCatalogPlan = (catalog: CompositionCatalog, options: HarnessUpgradeCliOptions): HarnessUpdateAllPlan => {
   const entries = completeCatalogEntries(catalog)
   const plan = harnessUpdateAllPlanFor(entries, undefined, options.routerCommandPath ?? "trx")
   if (plan.profileCount !== entries.length) {
@@ -163,7 +162,7 @@ const writeSkillsPreview = (skills: NativeSkillsUpdatePlan | undefined, write: W
   if (skills === undefined) return
   write(`Native skills: refresh shared caches once; copy and verify ${skills.targets.length} catalog profiles.`)
   write(`  Refresh: ${renderCommandPreview(skills.refresh)}`)
-  write("  Caches: native-common, Codex YouTube, Oh My Pi community, and guide Prompt Master.")
+  write("  Caches: native-common, Oh My Pi community, and guide Prompt Master.")
   for (const entry of skills.targets) {
     const command = nativeSkillsUpdateCommand(entry)
     write(
@@ -183,15 +182,13 @@ const writeHarnessPreview = (groups: ReadonlyArray<HarnessUpdatePlan>, write: Wr
 }
 
 const writePreview = (plan: HarnessUpdateAllPlan, write: WriteLine): void => {
-  write(`Update all harness versions and skills: ${plan.profileCount} catalog profiles, ${plan.groups.length} supported harness groups.`)
-  write(`Scope: ${plan.nativeUpdateCount} Native runtime/profile updates.`)
+  write(`Update all harness versions and skills: ${plan.profileCount} catalog compositions, ${plan.groups.length} managed harness groups.`)
+  write(`Scope: ${plan.nativeUpdateCount} Native runtime updates.`)
   write("Includes the full catalog, without Admin filters. Existing profile version and source pins are preserved.")
-  write("Trellage installation and upgrades are separate. Unsupported profiles are not substituted with plugin updates.")
-  writeHarnessPreview(
-    plan.groups.filter((group) => group.surface === "native"),
-    write,
-  )
+  write("Trellage installation and upgrades are separate. Externally managed harnesses are not updated by trx.")
+  writeHarnessPreview(plan.groups, write)
   writeSkillsPreview(plan.skills, write)
+  for (const { harness, diagnostic } of plan.externallyManaged) write(`Externally managed ${harness}: ${diagnostic}`)
   for (const { entry, diagnostic } of plan.unsupported) write(`Unsupported harness ${entry.ref}: ${diagnostic}`)
 }
 
@@ -300,7 +297,9 @@ const writeOutcome = (outcome: HarnessUpdateAllOutcome, write: WriteLine): numbe
   }
   write(
     summary.success
-      ? "All catalog harness versions and skills were updated."
+      ? outcome.plan.externallyManaged.length > 0
+        ? "Managed updates completed. Externally managed harnesses were left unchanged."
+        : "All catalog harness versions and skills were updated."
       : "Update all did not complete successfully. See the diagnostics above.",
   )
   return summary.success ? 0 : 1

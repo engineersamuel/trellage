@@ -377,12 +377,11 @@ const projectCatalog = (entries: ReadonlyArray<GuideMatchCatalogEntry>): GuideMa
   if (entries.length === 0 || entries.length > 512) fail("invalid-catalog-size")
   const projected = entries.map((entry) => ({
     ref: string(entry.ref, 256, "invalid-catalog-ref"),
-    surface: entry.surface,
-    name: entry.name,
-    ...(entry.launcher === undefined ? {} : { launcher: entry.launcher }),
-    ...(entry.harness === undefined ? {} : { harness: entry.harness }),
+    harness: entry.harness,
+    profiles: [...entry.profiles],
+    kind: entry.kind,
+    headless: { ...entry.headless, outputFormats: [...entry.headless.outputFormats] },
     description: entry.description,
-    sandbox: entry.sandbox,
     guide: {
       schemaVersion: entry.guide.schemaVersion,
       capabilities: [...entry.guide.capabilities],
