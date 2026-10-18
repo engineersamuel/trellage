@@ -3,19 +3,18 @@ import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { parse, stringify } from "smol-toml"
+import { resolveInstructionFile } from "./resources.ts"
 import { readTrellageConfig, type NativeCatalog, type TrellageConfigLocation } from "../native-config.ts"
 
-const starterPath = fileURLToPath(new URL("../../../../config.toml", import.meta.url))
+const starterPath = fileURLToPath(new URL("../../../../config.example.toml", import.meta.url))
 
 /** A profile from the shipped config, or undefined when it ships none by that name. */
 export const builtinProfile = async (id: string): Promise<NativeCatalog["profiles"][string] | undefined> =>
   (await readTrellageConfig({ environment: { TRELLAGE_CONFIG: starterPath } })).config.native.profiles[id]
 
 /** Add only the selected missing preset; existing user policy and pins remain authoritative. */
-export const withBuiltinPreset = async (catalog: NativeCatalog, preset: string): Promise<NativeCatalog> => {
+export const mergeBuiltinPreset = (catalog: NativeCatalog, builtin: NativeCatalog, preset: string, starterDirectory: string): NativeCatalog => {
   if (Object.hasOwn(catalog.profiles, preset)) return catalog
-  const starter = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: starterPath } })
-  const builtin = starter.config.native
   const profile = builtin.profiles[preset]
   if (!profile) throw new Error(`missing shipped launch preset: ${preset}`)
   const sources = { ...catalog.sources }
@@ -34,9 +33,15 @@ export const withBuiltinPreset = async (catalog: NativeCatalog, preset: string):
       throw new Error(
         `instruction ${name} conflicts with shipped preset ${preset}; rename it or explicitly define native.profiles.${preset}`,
       )
-    instructions[name] = { file: path.resolve(path.dirname(starterPath), builtin.instructions[name]!.file) }
+    instructions[name] = { file: resolveInstructionFile(builtin.instructions[name]!.file,starterDirectory,starterDirectory) }
   }
-  return { sources, instructions, profiles: { ...catalog.profiles, [preset]: profile } }
+  return { ...catalog, sources, instructions, profiles: { ...catalog.profiles, [preset]: profile } }
+}
+
+export const withBuiltinPreset = async (catalog: NativeCatalog, preset: string): Promise<NativeCatalog> => {
+  if (Object.hasOwn(catalog.profiles, preset)) return catalog
+  const builtin = (await readTrellageConfig({environment:{TRELLAGE_CONFIG:starterPath}})).config.native
+  return mergeBuiltinPreset(catalog,builtin,preset,path.dirname(starterPath))
 }
 
 /** Seed defaults once; explicitly selected files always remain entirely user managed. */

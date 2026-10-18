@@ -1130,8 +1130,8 @@ const checkContainerCommand = async (catalog: SkillCatalog, bundles: readonly st
 const defaultCatalogPath = async () => {
   for (const candidate of [
     ...(process.env.TRELLAGE_CONFIG ? [process.env.TRELLAGE_CONFIG] : []),
-    path.join(scriptDirectory, "config.toml"),
-    path.join(scriptDirectory, "..", "config.toml"),
+    path.join(scriptDirectory, "config.example.toml"),
+    path.join(scriptDirectory, "..", "config.example.toml"),
   ]) {
     try {
       const status = await lstat(candidate)
@@ -1140,7 +1140,7 @@ const defaultCatalogPath = async () => {
       // Continue to the repository layout.
     }
   }
-  fail("cannot locate config.toml")
+  fail("cannot locate config.example.toml")
 }
 
 const defaultCache = () =>

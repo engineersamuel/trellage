@@ -1,30 +1,9 @@
 ---
-schemaVersion: 1
-capabilities:
-  - native-agent
-  - host-context
-bestFor:
-  - Work that needs existing GitHub CLI, Git, SSH, shell, or Fx state
-  - Interactive Fx sessions launched through Trellage
-avoidFor:
-  - Work requiring profile-scoped credentials or configuration isolation
-  - Strict selected-only skill isolation
-prerequisites:
-  - id: mise
-    description: mise installed on the host; setup uses it to resolve and pin the eligible Fx release.
-  - id: copilot-proxy
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 with gpt-6.1-sol and gpt-6-astra available.
-  - id: shared-host-state
-    description: Accept that Fx will read and write the existing host ~/.fx state rather than a profile-scoped home.
-workflows:
-  - id: interactive
-    description: Start Fx with the host context intact
-    examples:
-      - Inspect and modify this repository
-      - Use my existing GitHub CLI and SSH authentication
-    promptTemplate: |
-      {{intent}}
+schemaVersion: 2
+templates:
+  interactive: "{{intent}}"
 ---
+
 # Fx default
 
 Launch with `trx run fx default`. Trellage manages the Fx binary and disables upstream

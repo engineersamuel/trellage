@@ -150,6 +150,10 @@ export const validateProfileGuideV1 = (
   context?: { readonly identity: ProfileGuideIdentity; readonly harness: string },
 ): ProfileGuideV1 => {
   const fields = record(value, path)
+  if (fields.schemaVersion === 2) {
+    if (context === undefined) return fail(path, "resolved guide requires an identity")
+    return validateResolvedProfileGuide(value, context.identity)
+  }
   exactKeys(
     fields,
     path,
@@ -281,7 +285,7 @@ export interface CompactProfileGuideWorkflow {
 }
 
 export interface CompactProfileGuide {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 1 | 2
   readonly capabilities: ReadonlyArray<string>
   readonly bestFor: ReadonlyArray<string>
   readonly avoidFor: ReadonlyArray<string>
@@ -323,6 +327,9 @@ export const compactProfileGuide = (guide: ProfileGuideV1): CompactProfileGuide 
 })
 
 export interface GuideMatchCatalogEntry {
+  readonly harnessSelection?: SelectionMetadata
+  readonly profileSelection?: SelectionMetadata
+  readonly executionFactsKnown?: boolean
   readonly ref: string
   readonly harness: string
   readonly profiles: ReadonlyArray<string>

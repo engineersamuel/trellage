@@ -156,8 +156,8 @@ const createFixture = async () => {
 }
 
 test("the checked-in catalog contains policy but no fetched identity", async () => {
-  const source = await readFile(new URL("../config.toml", import.meta.url), "utf8")
-  const catalog = await readCatalog(new URL("../config.toml", import.meta.url))
+  const source = await readFile(new URL("../config.example.toml", import.meta.url), "utf8")
+  const catalog = await readCatalog(new URL("../config.example.toml", import.meta.url))
   assert.equal(catalog.schema, 1)
   assert.ok(Object.hasOwn(catalog.bundles, "sandbox-common"))
   assert.deepEqual(catalog.bundles["omp-community"], ["dsebban-omp", "pstack-portable"])
@@ -384,7 +384,7 @@ test("Native and comparison surfaces consume their common skill bundle", async (
   for (const dockerfile of ["Dockerfile.agent", "Dockerfile.copilot-agent"]) {
     assert.match(
       await readFile(path.join(repositoryRoot, dockerfile), "utf8"),
-      /COPY --chmod=0444 config\.toml \/opt\/floating-skills-catalog\.json/u,
+      /COPY --chmod=0444 config\.example\.toml \/opt\/floating-skills-catalog\.json/u,
       `${dockerfile} must install the floating-skills catalog`,
     )
   }
@@ -823,7 +823,7 @@ test("direct Native catalog reads honor user policy and explicit config without 
   const root = await temporaryRoot()
   const configHome = path.join(root, "config")
   const config = path.join(configHome, "trellage/config.toml")
-  const starter = path.join(repositoryRoot, "config.toml")
+  const starter = path.join(repositoryRoot, "config.example.toml")
   const policy = '[skills.sources.pinned]\nrepository = "https://github.com/example/pinned.git"\ncommit = "' + 'a'.repeat(40) + '"\nselect = ["chosen"]\n[skills.bundles]\nnative-common = ["pinned"]\n'
   await mkdir(path.dirname(config), { recursive: true })
   await writeFile(config, policy, { mode: 0o600 })

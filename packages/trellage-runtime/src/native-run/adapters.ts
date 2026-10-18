@@ -78,6 +78,7 @@ export interface LaunchCommand {
 
 export interface NativeAdapter {
   readonly id: string
+  readonly sandbox: boolean
   readonly label: string
   readonly isolation: IsolationStatus
   readonly skillsSubdirectory: string
@@ -271,6 +272,7 @@ const fxArguments = (effort: string, forwarded: ReadonlyArray<string>): string[]
 
 export const fxAdapter: NativeAdapter = {
   id: "fx",
+  sandbox: false,
   label: "Fx",
   isolation: {
     status: "unproven",
@@ -332,8 +334,7 @@ export const assertEffort = (adapter: NativeAdapter, effort: string | undefined)
     )
 }
 
-const binary = (environment: NodeJS.ProcessEnv, variable: string, fallback: string): string =>
-  environment[variable] && path.isAbsolute(environment[variable]!) ? environment[variable]! : fallback
+const binary = resolveNativeBinary
 
 const lifecycleBinary = (
   environment: NodeJS.ProcessEnv,
@@ -1018,6 +1019,7 @@ const headlongInitEnvironment = (
 
 export const headlongAdapter: NativeAdapter = {
   id: "headlong",
+  sandbox: false,
   label: "Headlong",
   isolation: unprovenEvidence(
     "Headlong runs its persistent agent and shell on the host; it has full host access and continues thinking after the TUI exits",
@@ -1080,6 +1082,7 @@ export const headlongAdapter: NativeAdapter = {
 
 export const agencyAdapter: NativeAdapter = {
   id: "agency",
+  sandbox: false,
   label: "Agency",
   isolation: unprovenEvidence("Agency owns the Copilot process while Trellage supplies its generated Copilot home"),
   skillsSubdirectory: "skills",
@@ -1142,6 +1145,7 @@ export const agencyAdapter: NativeAdapter = {
 
 export const jcodeAdapter: NativeAdapter = {
   id: "jcode",
+  sandbox: false,
   label: "JCode",
   isolation: unprovenEvidence("JCode receives a generated JCODE_HOME but may still discover repository context"),
   skillsSubdirectory: "skills",
@@ -1205,6 +1209,7 @@ export const jcodeAdapter: NativeAdapter = {
 
 export const ompAdapter: NativeAdapter = {
   id: "omp",
+  sandbox: false,
   label: "Oh My Pi",
   isolation: unprovenEvidence(
     "OMP uses its native profile store and receives selected Trellage instructions explicitly",
@@ -1252,6 +1257,7 @@ export const ompAdapter: NativeAdapter = {
 
 export const primeAdapter: NativeAdapter = {
   id: "prime",
+  sandbox: false,
   label: "Prime",
   isolation: unprovenEvidence("Prime uses the generated coding-agent directory while its kernel remains native"),
   skillsSubdirectory: "skills",
@@ -1481,6 +1487,7 @@ const piLaunch = (
 
 export const piAdapter: NativeAdapter = {
   id: "pi",
+  sandbox: false,
   label: "Pi",
   isolation: {
     status: "proven",
@@ -1652,6 +1659,7 @@ const COPILOT_CLEAN_ARGS: ReadonlyArray<string> = [
 
 export const copilotAdapter: NativeAdapter = {
   id: "copilot",
+  sandbox: false,
   label: "Copilot",
   isolation: unprovenEvidence(
     "Copilot CLI 1.0.93-1 still discovers trusted repository skills with a dedicated COPILOT_HOME (scripts/probe-native-isolation.ts)",
@@ -1909,6 +1917,7 @@ const codexLaunch = ({
 
 export const codexAdapter: NativeAdapter = {
   id: "codex",
+  sandbox: false,
   label: "Codex",
   isolation: unprovenEvidence(
     "Codex 0.160.1 skills/list still returns repository skills despite skip_host_skill_discovery and extra-root controls (scripts/probe-native-isolation.ts)",
@@ -2121,6 +2130,7 @@ const CLAUDE_CLEAN_ARGS: ReadonlyArray<string> = [
 
 export const claudeAdapter: NativeAdapter = {
   id: "claude",
+  sandbox: false,
   label: "Claude",
   isolation: unprovenEvidence("no model-free native proof exists for Claude Code discovery yet"),
   skillsSubdirectory: "skills",
@@ -2286,6 +2296,7 @@ const grokGithubEnvironment = async (
 
 export const grokAdapter: NativeAdapter = {
   id: "grok",
+  sandbox: true,
   label: "Grok",
   isolation: unprovenEvidence(
     "generated GROK_HOME disables host Claude/Cursor compatibility, but Grok still discovers repository-native instructions and skills",
@@ -2429,6 +2440,7 @@ export const hostDefaults = (harness: string, home: string = os.homedir(), plan?
 
 export const ujiAdapter: NativeAdapter = {
   id: "uji",
+  sandbox: false,
   label: "Uji",
   isolation: unprovenEvidence(
     "Uji uses a generated config and selected skill roots; broader workspace and tool isolation has not been verified",

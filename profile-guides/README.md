@@ -1,197 +1,190 @@
 # Profile guide authoring
 
-`trx guide` uses profile guides in two phases. Write each field for the phase
-that reads it.
+`trx guide` and `trx run list` share one selection catalog. Author descriptions,
+strengths, weaknesses, capabilities, suitable/unsuitable tasks, prerequisites,
+and workflow selection metadata in `config.example.toml`. This file contains
+shipped defaults; a user's effective config at `~/.config/trellage/config.toml`
+owns custom profiles and overrides.
+See [the run catalog contract](../docs/run-catalog.md) for precedence and readiness.
+
+Markdown files in this directory contain detailed operating notes and workflow
+prompt templates. They are not a second source of selection descriptions.
 
 ## Match-visible fields
 
-The match model receives:
+The match model receives both harness and profile selection metadata:
 
-- the Native catalog or Sandbox `profile.toml` `description`;
-- `capabilities`;
-- `bestFor`;
-- `avoidFor`;
-- prerequisites;
-- workflow IDs, descriptions, skills, and examples.
-
-It does not receive the Markdown body or `promptTemplate` values during
-matching.
-
-Use these fields as follows:
-
-| Field | Purpose |
+| TOML field | Purpose |
 | --- | --- |
-| Catalog description | State the profile identity, strongest outcome, and primary differentiator in concise text. |
-| `capabilities` | Name stable, searchable abilities. Do not copy a package inventory. |
-| `bestFor` | State user outcomes for which this profile is a strong choice. |
-| `avoidFor` | State concrete disqualifiers, costs, and close alternatives. |
-| Workflow description | State the outcome one workflow delivers. |
-| Workflow examples | Give natural user prompts that should select that workflow. |
+| `description` | Identity, strongest intended outcome, and primary differentiator. |
+| `strengths` | Concrete advantages of the configured tools or workflow. |
+| `weaknesses` | Known limits and costs, not unsupported benchmark claims. |
+| `capabilities` | Stable, searchable ability identifiers; not a package inventory. |
+| `best_for` | User outcomes for which this configuration is a strong choice. |
+| `avoid_for` | Concrete disqualifiers and close alternatives. |
+| Workflow `description` | The outcome one workflow delivers. |
+| Workflow `examples` | Natural prompts that distinguish it from close alternatives. |
 
-Every workflow must have at least two realistic examples. At least one example
-should distinguish the profile from its closest alternative when profiles
-share skills or broad capabilities.
+TOML uses snake_case; JSON projects `bestFor` and `avoidFor`. A description and
+one `best_for` entry are the minimum metadata for Guide eligibility. Missing
+assessments are unknown, not empty statements of no weaknesses. Keep existing
+user profiles runnable when metadata is missing, but do not recommend them.
 
-## Generation-only fields
+Every explicitly authored workflow must have at least two realistic examples.
+At least one should distinguish it from the closest alternative when profiles
+share skills or broad capabilities. The built-in generic `task` workflow has no
+fabricated examples and needs no Markdown document.
 
-After the user selects a profile, generation receives the complete selected
-guide, including:
+```toml
+[native.profiles.patch-review.selection]
+description = "Review a bounded patch for correctness and regressions."
+best_for = ["Pre-integration patch review"]
+avoid_for = ["Unbounded redesign"]
 
-- each workflow's `promptTemplate`;
-- the Markdown body below the frontmatter.
+[native.profiles.patch-review.guide]
+document = "patch-review.md"
 
-Use the body for detailed operating notes, verified invocation syntax, and
-generation context. Do not put important matching distinctions only in the
-body.
+[[native.profiles.patch-review.guide.workflows]]
+id = "review-patch"
+description = "Find correctness and regression risks in the requested patch."
+examples = [
+  "Review this parser change for edge cases before integration",
+  "Check this bug fix for regressions without redesigning the subsystem",
+]
+```
+
+User document paths resolve relative to the config file; `~/` is supported.
+Bundled documents use references such as `shipped:native/pi/default.md`, which
+resolve under the installed guide root rather than the user's config directory.
+For a shared profile, `guide.documents` maps harness IDs to different instruction
+documents and overrides `guide.document` for those harnesses.
+
+## Generation-only instructions
+
+A Markdown instruction document uses schema version 2:
+
+```markdown
+---
+schemaVersion: 2
+templates:
+  review-patch: |
+    Review {{intent}} for correctness and regression risks.
+    Report evidence and keep proposed changes within the requested scope.
+---
+
+# Patch review
+
+Detailed operating notes and verified tool invocation syntax go here.
+```
+
+Each template must contain exactly one `{{intent}}` placeholder and no other
+placeholder. The keys must match the TOML workflow IDs. The body must be nonempty.
+Do not repeat selection fields in this frontmatter: the parser rejects them.
+The match model receives neither prompt templates nor the Markdown body.
+Generation receives the selected workflow's full instructions after selection.
+
+Existing v1 document parsing remains for compatibility readers and fixtures;
+shipped selection descriptions are authored in TOML, not v1 Markdown.
 
 ## Workflow launch settings
 
-Use optional `launchAgent` metadata when a workflow requires a specific
-installed Copilot custom agent, for example `launchAgent: hve-core:dt-coach`.
-The value is an exact agent identifier of at most 128 ASCII letters, digits,
-periods, underscores, colons, or hyphens, starting with a letter or digit.
+Use optional TOML `launch_agent` when a workflow requires a specific installed
+Copilot custom agent, for example `hve-core:dt-coach`. The exact identifier has
+at most 128 ASCII letters, digits, periods, underscores, colons, or hyphens and
+starts with a letter or digit. JSON retains the `launchAgent` spelling.
 
-The guide carries this selection into command previews, current-terminal
-launches, and Herdr handoffs and queued jobs as `--agent <identifier>`.
-It is supported by Native Copilot and Sandbox `copilot` profiles. It does
-not install agents, change prompt delivery, or select an agent for other
-workflows on the same profile. Omit it when no workflow-specific agent is
-required.
+Guide carries it into command previews, current-terminal launches, and Herdr
+handoffs/jobs as `--agent <identifier>`. This does not install agents or change
+other workflows' prompt delivery.
 
-Use `interaction` only for verified customer workflows on `native:copilot/hve`:
+Verified customer workflows on `native:copilot/hve` may declare:
 
-```yaml
-launchAgent: hve-core:dt-coach
-interaction:
-  mode: interactive
-  requiredSkills: [dt-coaching-foundation, dt-methods, dt-rpi-integration]
-frame: fixed
+```toml
+launch_agent = "hve-core:dt-coach"
+interaction = { mode = "interactive", required_skills = ["dt-coaching-foundation", "dt-methods", "dt-rpi-integration"] }
+frame = "fixed"
 ```
 
-This metadata requires an explicit agent and 1 to 16 unique lowercase
-kebab-case skill names. It selects `trx run copilot hve -- --agent ...` with
-one `--require-skill` per entry and `-i` for the prompt. Guide checks the
-installed manifest and enabled skill files through the private Copilot lifecycle manager's `workflow-check`
-before launch, including a recheck in the chosen Herdr destination.
-It does not use headless capability fallback or autonomous Copilot defaults.
-The new launcher requires a terminal; interactive workflows cannot use the
-batch queue. Other profiles cannot declare this contract until they have
-equivalent checks.
+This requires an explicit agent and 1 to 16 unique lowercase kebab-case skill
+names. It selects `trx run copilot hve -- --agent ...` with one `--require-skill`
+per entry and `-i` for the prompt. Before launch, Guide checks the installed
+manifest and enabled skill files through the private Copilot lifecycle manager's
+`workflow-check`, including a recheck in the chosen Herdr destination.
 
-Keep the fixed frame bounded to one agent's purpose. Require the agent to
-load its applicable references and stop if they are unavailable. A successful
-static check does not prove that all upstream instructions were followed.
-Keep customer signoff, evidence quality, experiment outcomes, and permission
-to implement distinct.
+Interactive workflows require a terminal and cannot use the batch queue.
+They do not use headless fallback or autonomous Copilot defaults. Other profiles
+cannot declare this contract without equivalent verified checks. Keep a fixed
+frame bounded to one agent's purpose. Require applicable references and stop if
+they are unavailable. Static checks do not prove upstream instructions were
+followed; keep customer signoff, evidence quality, experiment outcomes, and
+permission to implement distinct.
 
 ## Goal execution policy
 
-Use optional `goalExecution` frontmatter to declare which existing workflows
-can execute an approved goal. A guide without this field declares no goal
-execution support. It remains available for ordinary prompts.
+Optional TOML `guide.goal_execution` declares which existing workflows can
+execute an approved goal. Omission means no goal execution support, not exclusion
+from ordinary matching.
 
-```yaml
-goalExecution:
-  controller: codex-goal
-  workflowIds:
-    - test-driven-development
-    - plan-then-execute-branch
+```toml
+[native.profiles.preset-codex-superpowers.guide.goal_execution]
+controller = "codex-goal"
+workflow_ids = ["test-driven-development", "plan-then-execute-branch"]
 ```
 
-The policy accepts exactly `controller` and `workflowIds`. The workflow list
-must contain 1 to 32 unique IDs from that guide. The guide file's Native or
-Sandbox identity and the catalog's actual harness must support the controller.
+The policy accepts exactly `controller` and `workflow_ids`, with 1 to 32 unique
+IDs from the profile's authored workflows. Canonical profile identity and actual
+harness must support the controller:
 
-| Controller | Supported surface | Workflow rule |
-| --- | --- | --- |
-| `codex-goal` | Native Codex (`trx run codex`) | Keep the existing workflow discipline inside the application-owned native `/goal` invocation. |
-| `claude-goal` | Native Claude Code | Keep the existing workflow frame inside the application-owned native `/goal` invocation. |
+| Controller | Supported Native harness |
+| --- | --- |
+| `codex-goal` | Codex |
+| `claude-goal` | Claude Code |
 
-Do not add `/goal` to a native goal workflow template. The application adds
-that command once. Do not invent `$goal`, use `/goal-me` or `$goal-me` to
-execute an approved goal, or bind a goal workflow to a Copilot `launchAgent`.
-Goal me authors goals; it is not an execution controller. Superpowers TDD,
-Codex pstack, and other workflow disciplines remain subordinate to the
-declared controller. Firstmate, HVE, Pi, and other wrappers do not get a
-controller from their skill names or model routes.
+Existing workflow discipline stays inside the application-owned native `/goal`
+invocation. Do not add `/goal` to a template; the application adds it once.
+Do not invent `$goal`, use `/goal-me` or `$goal-me` to execute an approved goal,
+or bind a goal workflow to a Copilot `launchAgent`. Goal me authors goals; it is
+not an execution controller. Firstmate, HVE, Pi, and other wrappers do not get a
+controller from skill names or model routes. Generic task workflows have none.
 
-The full catalog and selected guide retain the policy. Ordinary matching
-does not receive it. Goal matching must call `guideMatchCatalogEntries` or
-`toGuideMatchCatalogEntry` with `true` as the second (`includeGoalExecution`)
-argument; the policy is then present on the compact entry, not
-duplicated inside its `guide`. `compactProfileGuide` keeps its ordinary
-projection.
+The catalog retains the policy. Ordinary matching excludes it; goal matching
+uses `guideMatchCatalogEntries(catalog, true)` or
+`toGuideMatchCatalogEntry(entry, true)`. The policy appears on the compact entry,
+not duplicated inside its compact guide.
 
-This metadata does not prove runtime readiness or authorize more work.
-Launch still requires compatible runtime versions, enabled goal support,
-trust, and permitted hooks. Codex needs native command input, not a
-positional startup prompt. Claude print mode and interactive sessions have
-different delivery requirements. Keep profile restrictions, workflow
-approval gates, and the approved goal's criteria intact.
+Metadata is not runtime readiness or authorization. Launch still checks compatible
+runtime versions, enabled goal support, trust, and permitted hooks. Codex needs
+native command input, not a positional startup prompt. Claude print mode and
+interactive sessions have different delivery requirements. Preserve profile
+restrictions, workflow approval gates, and the approved goal's criteria.
 
 ## Exclude profile maintenance
 
-Workflows describe work that a user wants the agent to do. Do not add
-workflows or examples for:
+Workflows describe work a user wants the agent to do. Do not add workflow examples
+for setup/repair, doctor/readiness checks, launcher/proxy smoke tests, inventory
+checks, or prompts such as `Reply exactly PROFILE_OK`. Keep operational guidance
+in the Markdown body or the launcher's operational README.
 
-- setup or repair;
-- doctor or readiness checks;
-- profile, proxy, or launcher smoke tests;
-- extension or model inventory checks;
-- prompts such as `Reply exactly PROFILE_OK`.
+## Evaluation and generated content
 
-Keep those instructions in the Markdown body or the launcher's operational
-README.
+Normal validation uses deterministic literal-matching scenarios and makes no
+model calls. Scenarios set a maximum acceptable rank for the expected profile
+and may require close alternatives to rank lower.
 
-## Strong example
+Shipped examples and retained lifecycle descriptions are derived from TOML:
 
-```yaml
-bestFor:
-  - Bounded private code changes that must stay on a local model route
-  - Cost-controlled refactors where peak frontier-model quality is not required
-avoidFor:
-  - Hard architecture decisions that need frontier-model reasoning
-  - Broad multi-agent programs that need durable orchestration
-workflows:
-  - id: bounded-private-edit
-    description: Implement a well-scoped code change on the local model route.
-    examples:
-      - Add validation to this internal data-import script without using a hosted model
-      - Refactor this small parser while keeping all source code on my machine
-    promptTemplate: |
-      {{intent}}
+```sh
+bun scripts/generate-run-catalog-content.ts --check
+make profile-guide-contract
 ```
 
-## Weak example
-
-```yaml
-bestFor:
-  - Coding
-workflows:
-  - id: smoke-test
-    description: Confirm the profile works.
-    examples:
-      - Reply exactly OK
-```
-
-The weak form gives the matcher no useful outcome, boundary, or
-differentiator.
-
-## Evaluation
-
-Normal validation runs the source-controlled scenarios through the
-deterministic literal matcher. It does not make model calls.
-Each scenario sets a maximum acceptable rank for its expected profile and can
-name close alternatives that must rank lower.
-
-Live evaluation is explicit because it can consume paid quota:
+Live evaluation is explicit because it may consume paid quota:
 
 ```sh
 make profile-guide-live-evaluation
 ```
 
-The live evaluator builds the worktree launcher, uses an isolated guide cache,
-and runs the same scenarios through `trx guide --json`. Native launchers must
-be synchronized with the worktree first; the evaluator fails before model
-calls when an installed Native catalog description differs from its source
-catalog.
+It uses the shared effective catalog and local eligibility, an isolated Guide
+cache, and the scenarios through `trx guide --json`. Unavailable or incomplete
+choices are not valid evaluation recommendations. Diagnose local setup/metadata
+rather than silently expanding the catalog to make a scenario pass.

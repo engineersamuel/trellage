@@ -40,6 +40,7 @@
       "name": "@trellage/guide-core",
       "version": "0.1.0",
       "dependencies": {
+        "smol-toml": "1.8.0",
         "yaml": "2.9.1",
       },
       "devDependencies": {
@@ -84,6 +85,7 @@
       "name": "@trellage/runtime",
       "version": "0.1.0",
       "dependencies": {
+        "@trellage/guide-core": "workspace:*",
         "effect": "3.22.2",
         "smol-toml": "1.8.0",
       },

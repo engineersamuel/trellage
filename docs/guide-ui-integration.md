@@ -119,7 +119,7 @@ from these sources, in this order:
 
 Source 3 also resolves Varlock function values, such as encrypted secrets,
 which source 4 skips. Put the key in `~/.config/trellage/.env.local` (or the
-`[environment] path` in `config.toml`) and set that file to mode `0600`. You can
+`[environment] path` in `~/.config/trellage/config.toml`) and set that file to mode `0600`. You can
 also declare it in `.env.schema` as an optional sensitive item:
 
 ```dotenv

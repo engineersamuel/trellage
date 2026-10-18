@@ -13,6 +13,7 @@
     "test": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=../../bunfig.toml ./node_modules/vitest/vitest.mjs run --configLoader native"
   },
   "dependencies": {
+    "smol-toml": "1.8.0",
     "yaml": "2.9.1"
   },
   "devDependencies": {

@@ -113,6 +113,12 @@ describe("guidePromptSlug", () => {
 })
 
 describe("GuideArtifactCache", () => {
+  it("invalidates a match when the shared catalog instruction revision changes", async () => {
+    const cache = cacheFor(await temporaryRoot())
+    await cache.match({...matchInput,catalogRevision:"before"},async()=>matchResult)
+    const updated = await cache.match({...matchInput,catalogRevision:"after"},async()=>({candidates:matchResult.candidates.map(candidate=>({...candidate,reason:"Updated instructions were considered"}))}))
+    expect(updated.candidates[0]?.reason).toBe("Updated instructions were considered")
+  })
   it("round-trips readable match Markdown and reuses its UUID directory", async () => {
     const cwd = await temporaryRoot()
     let calls = 0

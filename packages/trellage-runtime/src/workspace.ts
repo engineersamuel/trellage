@@ -32,13 +32,13 @@ const distributionManifest = "package.source.json"
 const sourceDirectories = ["bin", "packages", "prototypes", "scripts", "profile-guides"]
 // `profiles/` held retired Sandbox profiles; older source trees may still ship it.
 const optionalSourceDirectories = [".agents", "profiles"]
-const rootFiles = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.base.json", "config.toml"]
+const rootFiles = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.base.json", "config.example.toml"]
 function sourceRootFiles(root: string): string[] {
   const legacy =
     existsSync(path.join(root, sourceMarker)) &&
-    lstatSync(path.join(root, "config.toml"), { throwIfNoEntry: false }) === undefined &&
+    lstatSync(path.join(root, "config.example.toml"), { throwIfNoEntry: false }) === undefined &&
     lstatSync(path.join(root, "skills.json"), { throwIfNoEntry: false }) !== undefined
-  return legacy ? rootFiles.map((name) => name === "config.toml" ? "skills.json" : name) : rootFiles
+  return legacy ? rootFiles.map((name) => name === "config.example.toml" ? "skills.json" : name) : rootFiles
 }
 const excludedDirectories = new Set(["node_modules", "dist", "coverage", "__pycache__"])
 const nativeProfileState = new Set([

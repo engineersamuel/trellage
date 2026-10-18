@@ -97,6 +97,9 @@ profile-guide-core:
 
 profile-guide-contract: profile-guide-core
 	bun --no-install --no-env-file tests/profile_guides_contract.ts
+	bun test tests/run_catalog_content.test.ts
+	bun --no-install --no-env-file scripts/generate-run-catalog-content.ts --check
+	bash tests/run_list_contract.sh
 
 profile-guide-live-evaluation:
 	bun --no-install --no-env-file scripts/evaluate-profile-guides.ts --live
@@ -217,7 +220,7 @@ build:
 	@skills_stage="$$(mktemp -d "$${TMPDIR:-/tmp}/trellage-make-skills.XXXXXX")"; \
 	trap 'rm -rf -- "$$skills_stage"' EXIT; \
 	bun --no-install --no-env-file scripts/floating-skills.ts stage \
-		--catalog config.toml \
+		--catalog config.example.toml \
 		--bundle comparison-common \
 		--output "$$skills_stage/snapshot" >/dev/null; \
 	HARNESS_SKILLS_CONTEXT="$$skills_stage/snapshot" docker compose build

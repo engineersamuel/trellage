@@ -22,7 +22,7 @@ import path from "node:path"
 import { test as nodeTest, type TestContext } from "node:test"
 import { fileURLToPath } from "node:url"
 import { bunExecutable } from "@trellage/runtime"
-import { writeReadiness } from "@trellage/runtime/workspace"
+import { normalizeDependencyPermissions, writeReadiness } from "@trellage/runtime/workspace"
 import { compareBakedSkills, syncSnapshot, verifyTarget } from "../../../scripts/floating-skills.ts"
 
 const repository = fileURLToPath(new URL("../../../", import.meta.url))
@@ -182,7 +182,8 @@ const fixtureFor = async (context: TestContext, descriptor: LauncherDescriptor |
   await copy(path.join(common, "native-skills.ts"), path.join(runtime, "native-skills.ts"))
   await copy(path.join(common, "manual-skills.ts"), path.join(runtime, "manual-skills.ts"))
   await copy(manager, path.join(workspace, "scripts/floating-skills.ts"))
-  await copy(path.join(repository, "config.toml"), path.join(workspace, "config.toml"))
+  await copy(path.join(repository, "config.example.toml"), path.join(workspace, "config.toml"))
+  await copy(path.join(repository, "config.example.toml"), path.join(workspace, "config.example.toml"))
   await installSharedRuntime(fixture)
   await write(fixture.forbiddenLog, "")
   await write(fixture.envLog, "")
@@ -191,6 +192,8 @@ const fixtureFor = async (context: TestContext, descriptor: LauncherDescriptor |
   fixture.env = {
     HOME: home,
     PATH: `${fixture.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
+    BUN_INSTALL_CACHE_DIR: path.join(root, "bun-cache"),
+    TRELLAGE_CONFIG: path.join(workspace, "config.toml"),
     TMPDIR: path.join(root, "work"),
     SKILLS_FORBIDDEN_LOG: fixture.forbiddenLog,
     SKILLS_ENV_LOG: fixture.envLog,
@@ -216,6 +219,15 @@ const installSourceFixture = async (fixture: Fixture) => {
     "packages/trellage-runtime/src/preparation-lock.ts",
   ])
     await copy(path.join(repository, file), path.join(workspace, file))
+  await cp(
+    path.join(repository, "packages/trellage-guide-core/src"),
+    path.join(workspace, "packages/trellage-guide-core/src"),
+    { recursive: true },
+  )
+  await copy(
+    path.join(repository, "packages/trellage-guide-core/package.json"),
+    path.join(workspace, "packages/trellage-guide-core/package.json"),
+  )
   await write(
     path.join(workspace, "package.json"),
     JSON.stringify({
@@ -223,7 +235,10 @@ const installSourceFixture = async (fixture: Fixture) => {
       private: true,
       type: "module",
       workspaces: ["packages/*"],
-      dependencies: { "@trellage/runtime": "workspace:*" },
+      dependencies: {
+        "@trellage/guide-core": "workspace:*",
+        "@trellage/runtime": "workspace:*",
+      },
     }),
   )
   await cp(path.join(repository, "packages/trellage-runtime/src"), path.join(workspace, "packages/trellage-runtime/src"), { recursive: true })
@@ -260,7 +275,11 @@ const installSourceFixture = async (fixture: Fixture) => {
     const manifest = JSON.parse(await readFile(path.join(packagePath, "package.json"), "utf8"))
     for (const nested of Object.keys(manifest.dependencies ?? {})) await copyDependency(nested, packagePath)
   }
-  for (const dependency of ["smol-toml", "effect"]) await copyDependency(dependency, path.join(repository, "packages/trellage-runtime"))
+  for (const dependency of ["smol-toml", "effect"]) {
+    await copyDependency(dependency, path.join(repository, "packages/trellage-runtime"))
+  }
+  await copyDependency("yaml", path.join(repository, "packages/trellage-guide-core"))
+  normalizeDependencyPermissions(workspace)
   writeReadiness(workspace)
 }
 
@@ -494,11 +513,15 @@ test("read-only source staging uses an existing CLI and never installs a missing
   const runtime = fixture.workspace
   await write(
     path.join(runtime, "config.toml"),
-    JSON.stringify({
-      schema: 1,
-      sources: { fixture: { repository: "https://github.com/fixture/skills.git", select: ["kept", "retired"] } },
-      bundles: { "native-common": ["fixture"] },
-    }),
+    `schema_version = 1
+[skills]
+schema = 1
+[skills.sources.fixture]
+repository = "https://github.com/fixture/skills.git"
+select = ["kept", "retired"]
+[skills.bundles]
+native-common = ["fixture"]
+`,
   )
   await installLocalSkillRepository(fixture, ["kept", "retired"])
   const before = await treeState(profile.root, true)
@@ -546,22 +569,22 @@ test("router checks all shared caches, including guide-only changes, without pro
   for (const cache of caches) await seedSnapshot(cache, ["fixture"], 1)
   await write(
     path.join(runtime, "config.toml"),
-    JSON.stringify({
-      schema: 1,
-      sources: {
-        fixture: { repository: "https://github.com/fixture/skills.git", select: ["fixture"] },
-      },
-      bundles: {
-        "native-common": ["fixture"],
-        "codex-common": ["fixture"],
-        youtube: ["fixture"],
-        "omp-community": ["fixture"],
-        "guide-prompt-master": ["fixture"],
-        "claude-office": ["fixture"],
-        "claude-office-charts": ["fixture"],
-        "guide-optimize-architecture": ["fixture"],
-      },
-    }),
+    `schema_version = 1
+[skills]
+schema = 1
+[skills.sources.fixture]
+repository = "https://github.com/fixture/skills.git"
+select = ["fixture"]
+[skills.bundles]
+native-common = ["fixture"]
+codex-common = ["fixture"]
+youtube = ["fixture"]
+omp-community = ["fixture"]
+guide-prompt-master = ["fixture"]
+claude-office = ["fixture"]
+claude-office-charts = ["fixture"]
+guide-optimize-architecture = ["fixture"]
+`,
   )
   await installLocalSkillRepository(fixture, ["fixture"])
   await installFixtureSkillsCli(fixture)

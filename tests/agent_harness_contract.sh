@@ -30,7 +30,7 @@ for required in \
   scripts/install-native-environment-runtime.sh \
   scripts/native-environment.ts \
   scripts/profile-compiler-fingerprint.sh \
-  config.toml \
+  config.example.toml \
   scripts/install-lefthook-hook.sh \
   scripts/refresh-native-if-stale.sh \
   scripts/upgrade-after-pull.sh; do

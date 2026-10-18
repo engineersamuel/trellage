@@ -54,10 +54,10 @@ launcher_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
 runtime_root="$launcher_root"
 readonly catalog="$launcher_root/catalog.json"
 floating_skills_manager="$runtime_root/../common/floating-skills-runtime/scripts/floating-skills.ts"
-floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.toml"
+floating_skills_catalog="$runtime_root/../common/floating-skills-runtime/config.example.toml"
 if [[ ! -f "$floating_skills_manager" ]]; then
   floating_skills_manager="$runtime_root/../../scripts/floating-skills.ts"
-  floating_skills_catalog="$runtime_root/../../config.toml"
+  floating_skills_catalog="$runtime_root/../../config.example.toml"
   runtime_root="$HOME/.local/share/trellage/omp"
 fi
 bun_runner="${floating_skills_manager%/*}/run-source.sh"

@@ -1,51 +1,10 @@
 ---
-schemaVersion: 1
-goalExecution:
-  controller: claude-goal
-  workflowIds:
-    - rundown-status-and-handoff
-    - general-engineering-task
-capabilities:
-  - opusplan-sonnet-5-5-proxy-routing
-  - keyless-copilot-proxy-auth
-  - isolated-claude-profile-home
-  - rundown-briefing-output-style
-  - native-common-skill-bundle
-  - autonomous-no-prompt-launch
-bestFor:
-  - One-shot or scripted Claude Code sessions that must not read or write a developer's personal ~/.claude state, theme, or credentials
-  - Teams standardizing on Claude Sonnet 5.5 for normal turns and Opus 5.5 for plan mode through a shared keyless copilot-proxy-rs endpoint instead of individual Anthropic API keys
-  - Status updates, standups, or PR summaries where the built-in Rundown TL;DR-plus-checklist output style should apply automatically
-avoidFor:
-  - Tasks that require direct Anthropic, Bedrock, Vertex, AWS, Google, or Azure credentials, since launch strips those environment variables before starting Claude
-  - Work that needs OS-level sandboxing or containment; this Native Claude profile grants full host access with no security boundary
-  - Sessions that need interactive approval prompts or AskUserQuestion; every launch bypasses permissions and disallows that tool
-prerequisites:
-  - id: claude-code-cli
-    description: Host `claude` (Claude Code) executable installed and resolvable on PATH.
-  - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 and advertising claude-sonnet-5.5 and claude-opus-5.5.
-  - id: cldx-setup-complete
-    description: trx setup claude run once so first-run onboarding and the managed output style are staged.
-  - id: cli-tools
-    description: curl and jq available on the host for health checks used by setup, doctor, and launch.
-workflows:
-  - id: rundown-status-and-handoff
-    description: Produce a concise project status, blockers, and next action in the profile's automatic Rundown format.
-    examples:
-      - Summarize this branch's progress, current blockers, and the next action
-      - Turn these investigation notes into a concise handoff for the next engineer
-    promptTemplate: |
-      Use the Rundown output style to provide a clear status and handoff for
-      {{intent}}.
-  - id: general-engineering-task
-    description: Delegate an implementation, debugging, or review task to Claude Sonnet 5.5 (Opus 5.5 in plan mode), with the shared native-common skill bundle (engineersamuel skills, show-me, and manually activated i-have-adhd) available for repository hygiene, naming, and review support.
-    examples:
-      - Review this PR diff for correctness and naming issues
-      - Debug why this test intermittently fails
-      - Implement this API validation change and verify the affected behavior
-    promptTemplate: |
-      {{intent}}
+schemaVersion: 2
+templates:
+  rundown-status-and-handoff: |-
+    Use the Rundown output style to provide a clear status and handoff for
+    {{intent}}.
+  general-engineering-task: "{{intent}}"
 ---
 
 # Native Claude Code (`claude`) — `default` profile
@@ -83,7 +42,7 @@ authoritative operational reference.
 - Every `setup`, `doctor`, `repair`, and launch verifies proxy health and that
   `claude-opus-5` is advertised before running.
 - The profile also installs the shared `native-common` floating skill bundle
-  (see `config.toml`: `engineersamuel` wildcard selection, `show-me`, and
+  (see `config.example.toml`: `engineersamuel` wildcard selection, `show-me`, and
   manually activated `i-have-adhd`), so
   general-purpose repository skills remain available alongside Claude's own
   tool use.

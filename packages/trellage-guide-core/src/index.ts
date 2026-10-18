@@ -59,7 +59,9 @@ export interface ProfileGuideGoalExecution {
 }
 
 export interface ProfileGuideV1 {
-  readonly schemaVersion: 1
+  readonly schemaVersion: 1 | 2
+  readonly selection?: SelectionMetadata
+  readonly genericWorkflow?: boolean
   readonly capabilities: ReadonlyArray<string>
   readonly bestFor: ReadonlyArray<string>
   readonly avoidFor: ReadonlyArray<string>
@@ -229,7 +231,7 @@ const workflowFrameOptions = (
   }
 }
 
-const workflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWorkflow> => {
+export const validateProfileWorkflows = (value: unknown, path: string): ReadonlyArray<ProfileGuideWorkflow> => {
   if (!Array.isArray(value)) return fail(path, "must be an array")
   if (value.length === 0) return fail(path, "must contain at least one workflow")
   if (value.length > 32) return fail(path, "must contain at most 32 workflows")
@@ -297,7 +299,7 @@ const goalExecution = (
   return execution
 }
 
-const parseFrontmatter = (path: string, source: string): { readonly value: unknown; readonly body: string } => {
+export const parseProfileFrontmatter = (path: string, source: string): { readonly value: unknown; readonly body: string } => {
   if (source.length > 128_000) fail(path, "must contain at most 128000 characters")
   const normalized = source.replace(/\r\n?/gu, "\n")
   if (!normalized.startsWith("---\n")) fail(path, "must start with YAML frontmatter")
@@ -318,7 +320,7 @@ const parseFrontmatter = (path: string, source: string): { readonly value: unkno
 }
 
 export const parseProfileGuide = (path: string, source: string): ProfileGuideDocument => {
-  const parsed = parseFrontmatter(path, source)
+  const parsed = parseProfileFrontmatter(path, source)
   const fields = record(parsed.value, `${path} frontmatter`)
   exactKeys(
     fields,
@@ -327,7 +329,7 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
     ["goalExecution"],
   )
   if (fields.schemaVersion !== 1) fail(`${path} frontmatter.schemaVersion`, "must equal 1")
-  const guideWorkflows = workflows(fields.workflows, `${path} frontmatter.workflows`)
+  const guideWorkflows = validateProfileWorkflows(fields.workflows, `${path} frontmatter.workflows`)
   if (guideWorkflows.some(({ interaction }) => interaction !== undefined) &&
       !/(?:^|\/)native\/copilot\/hve\.md$/u.test(path.replaceAll("\\", "/"))) {
     fail(`${path} frontmatter.workflows`, "verified interactive workflows require native/copilot/hve.md")
@@ -459,7 +461,9 @@ export const loadProfileGuide = async (root: string, identity: ProfileGuideIdent
   } catch (cause) {
     return filesystemError(relativePath, "read guide", cause)
   }
-  const document = parseProfileGuide(relativePath, source)
+  const document = record(parseProfileFrontmatter(relativePath, source).value, relativePath).schemaVersion === 2
+    ? await loadShippedProfileGuide(resolvedRoot, identity, source)
+    : parseProfileGuide(relativePath, source)
   return {
     identity,
     key: profileGuideIdentityKey(identity),

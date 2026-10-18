@@ -722,18 +722,21 @@ jq -e '
 ' "$fixture_root/list.json" >/dev/null \
   || fail 'JSON list schema 2 shape differs'
 
-# Model a source checkout, not an installed runtime with a missing receipt.
+# Listing refuses stale dependencies in source mode; preparation is explicit.
 mv "$fixture_source/.managed-by-trellage-source" "$fixture_root/source-ownership.saved"
 rm "$fixture_source/.trellage-source-ready.json"
+status=0
 TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
   TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides" \
-  "$fixture_source/prototypes/trellage-router/bin/trx" list --json >"$fixture_root/source-list.json" \
-  || fail 'worktree source JSON list failed'
-cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" \
-  || fail 'worktree source list differs from installed router list'
-[[ -f "$fixture_source/.trellage-source-ready.json" ]] \
-  || fail 'worktree source launch did not restore readiness automatically'
+  "$fixture_source/prototypes/trellage-router/bin/trx" run list --json >"$fixture_root/source-list.json" 2>"$fixture_root/source-list.err" || status=$?
+[[ "$status" == 1 && ! -f "$fixture_source/.trellage-source-ready.json" ]] || fail 'listing prepared source dependencies'
+refresh_fixture_source
+TRELLAGE_TRX_SOURCE_ROOT="$fixture_source/prototypes/trellage-router" \
+  TRELLAGE_TRX_GUIDE_ROOT="$runtime_parent/trx/share/profile-guides" \
+  "$fixture_source/prototypes/trellage-router/bin/trx" run list --json >"$fixture_root/source-list.json" || fail 'prepared source list failed'
+cmp -s "$fixture_root/source-list.json" "$fixture_root/list.json" || fail 'source and installed catalog differ'
 mv "$fixture_root/source-ownership.saved" "$fixture_source/.managed-by-trellage-source"
+refresh_fixture_source
 
 
 
@@ -812,7 +815,7 @@ jq -e \
     and (.promptMasterSkillDirectory | endswith("/skills/prompt-master"))
     and .routerCommandPath == ($runtimeParent + "/trx/bin/trx")
     and .goalSkills.managerPath == ($runtimeParent + "/trx/source/scripts/floating-skills.ts")
-    and .goalSkills.catalogPath == ($runtimeParent + "/trx/source/config.toml")
+    and .goalSkills.catalogPath == ($runtimeParent + "/trx/source/config.example.toml")
     and .goalSkills.cachePath == $goalCache
     and .args == ["--intent", "fixture intent", "--json"]
     and (has("catalog") | not)

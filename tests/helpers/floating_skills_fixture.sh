@@ -31,8 +31,8 @@ seed_floating_skills_cache() {
   printf '%s\n' prompt-master >"$guide_cache/managed-skills.txt"
   : >"$guide_cache/always-on.md"
   local repo_root="$(CDPATH= cd -P -- "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-  seal_floating_skills_cache "$cache" "$repo_root/config.toml" native-common
-  seal_floating_skills_cache "$guide_cache" "$repo_root/config.toml" guide-prompt-master
+  seal_floating_skills_cache "$cache" "$repo_root/config.example.toml" native-common
+  seal_floating_skills_cache "$guide_cache" "$repo_root/config.example.toml" guide-prompt-master
 }
 
 install_fixture_node() {

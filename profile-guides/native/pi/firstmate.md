@@ -1,56 +1,17 @@
 ---
-schemaVersion: 1
-capabilities:
-  - firstmate-fleet-supervisor
-  - parallel-isolated-worktree-workers
-  - ship-and-scout-tasks
-  - pull-request-delivery
-  - captain-merge-authority
-  - fleet-status-bearings
-  - copilot-proxy-workers
-  - latest-upstream-firstmate
-bestFor:
-  - Several related engineering tasks on one GitHub project that one supervisor should split, run in parallel isolated worktrees, and deliver as pull requests
-  - Mixed investigation and implementation, where read-only scouts answer open questions before ship tasks change code
-  - Long-running work where the human only approves decisions and merges instead of coordinating each agent
-  - Checking fleet progress, open pull requests, and pending decisions in a running Firstmate session
-avoidFor:
-  - One small edit or question that a single agent can finish; use trx run pi default
-  - Work on uncommitted changes, because workers start from the remote base branch and cannot see the local worktree
-  - Untrusted repositories or tasks that need a container boundary; workers run on the host with permissions bypassed
-prerequisites:
-  - id: firstmate-tools
-    description: git, gh, jq, node, treehouse, gh-axi and tasks-axi on PATH; trx run pi firstmate offers to install missing ones before launch.
-  - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080; the supervisor and its workers reach models through it.
-  - id: github-auth
-    description: gh authenticated for the target GitHub project, because workers push branches and open pull requests.
-workflows:
-  - id: fleet-delivery
-    description: Split a goal on one GitHub project into ship and scout tasks that run in parallel worktrees and return pull requests or reports.
-    examples:
-      - Fix the flaky login test and add dark mode to my web app
-      - Find out why the test suite is slow, then speed it up once I approve a fix
-      - Update the SDK to the new version and document the isolation status of every adapter
-    promptTemplate: |
-      ahoy! Plan this as Firstmate tasks for my GitHub project and run them as a fleet:
-      {{intent}}
-  - id: fleet-investigation
-    description: Run read-only scouts that answer questions about a project with measured evidence and return reports, without changing code.
-    examples:
-      - Find which code paths can leak the API key into a child process
-      - Measure the slowest tests and explain the cause of each
-    promptTemplate: |
-      ahoy! Send scouts (report only, no code changes) to answer:
-      {{intent}}
-  - id: fleet-status
-    description: Report the running fleet's tasks, pull requests, reports and decisions waiting on the captain, without starting work.
-    examples:
-      - What is the fleet working on and what needs my decision
-      - Which pull requests are ready to merge
-    promptTemplate: |
-      Show me /bearings, then answer without starting new work:
-      {{intent}}
+schemaVersion: 2
+templates:
+  fleet-delivery: >-
+    ahoy! Plan this as Firstmate tasks for my GitHub project and run them as a
+    fleet:
+
+    {{intent}}
+  fleet-investigation: |-
+    ahoy! Send scouts (report only, no code changes) to answer:
+    {{intent}}
+  fleet-status: |-
+    Show me /bearings, then answer without starting new work:
+    {{intent}}
 ---
 
 # Firstmate on Pi (`trx run pi firstmate`)

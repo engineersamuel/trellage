@@ -13,7 +13,7 @@ const router = path.resolve(import.meta.dir, "../../trellage-router/bin/trx")
 const config = path.join(fixture, "canonical-config.toml")
 const original = await readFile(executable, "utf8")
 const publishVersion = (version: string) => writeFile(executable, original.replaceAll("18.0.11", version))
-const catalog = await readFile(path.resolve(import.meta.dir, "../../../config.toml"), "utf8")
+const catalog = await readFile(path.resolve(import.meta.dir, "../../../config.example.toml"), "utf8")
 await writeFile(config, catalog.slice(0, catalog.indexOf("[native.")) + "[native.sources]\n[native.profiles]\n", { mode: 0o600 })
 const environment: NodeJS.ProcessEnv = {
   ...process.env,

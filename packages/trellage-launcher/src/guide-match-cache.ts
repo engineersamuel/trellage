@@ -81,6 +81,7 @@ export interface GuideArtifactCacheOptions {
 }
 
 export interface MatchCacheInput {
+  readonly catalogRevision?: string
   readonly intent: string
   readonly entries: ReadonlyArray<{
     readonly ref: string
@@ -432,6 +433,7 @@ export class GuideArtifactCache {
       schemaVersion: 1,
       intent: input.intent,
       catalog: input.entries,
+      ...(input.catalogRevision === undefined ? {} : {catalogRevision:input.catalogRevision}),
       preferredProfileRefs: input.preferredProfileRefs ?? [],
       ...(input.execution?.backend === "jev"
         ? {}

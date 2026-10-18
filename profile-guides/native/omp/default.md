@@ -1,55 +1,13 @@
 ---
-schemaVersion: 1
-capabilities:
-  - native-copilot-auth-model-catalog
-  - lsp-debugger-browser-eval-tools
-  - typed-subagent-fan-out
-  - community-skill-led-orchestration
-  - native-common-skill-bundle
-  - host-token-auth-forwarding
-bestFor:
-  - Work that should use OMP's native GitHub Copilot authentication and full discovered model catalog instead of the local proxy
-  - Sessions that lean on OMP's built-in LSP, debugger, browser, and eval tools alongside typed subagent fan-out
-  - Applying the shared poteto-mode, pstack-omp, and orchestrate-omp community skills with the 31 harness-neutral workflow, principle, automation, and support skills
-avoidFor:
-  - Hosts without a host-installed OMP executable or usable GitHub Copilot credential
-  - Fully offline or airgapped model routing; use trx run omp local for the keyless proxy-backed profile instead
-  - Non-interactive launches that must fail on any user prompt unless host OMP is exactly 18.8.5; only that version has the verified prompt/text contract
-prerequisites:
-  - id: host-omp
-    description: A valid host-installed OMP executable; Bun, Homebrew, and mise are supported owners for automatic update and latest-version checks, while manually maintained executables remain usable for setup, launch, repair, doctor, and inventory.
-  - id: copilot-credential
-    description: A usable GitHub Copilot credential in COPILOT_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN, gh auth token, or (macOS) the copilot-cli Keychain entry, or profile-scoped auth via trx run omp default auth-broker login github-copilot.
-  - id: omp-317-community-skills
-    description: OMP 17.3.5 or newer for the bundled community skill directory to be discovered; older host versions remain usable without it.
-  - id: cli-tools
-    description: curl and jq available on the host for setup, doctor, and owner update checks.
-workflows:
-  - id: native-copilot-tool-assisted-engineering
-    description: Deliver a complex engineering outcome with OMP's native Copilot provider, tool surface, and typed subagents.
-    examples:
-      - Trace this production failure with the debugger, implement the fix, and verify the regression test
-      - Use typed subagents to complete this refactor and review the integrated result
-    promptTemplate: |
-      Use OMP's native GitHub Copilot provider, available tools, and typed
-      subagents to deliver {{intent}}.
-  - id: poteto-mode-orchestration
-    description: Use the shared poteto-mode community skill to structure multi-step orchestration work.
-    skill: skill://poteto-mode
-    examples:
-      - Use poteto-mode to break this migration into coordinated phases
-      - Use poteto-mode to plan, implement, and verify this cross-service change
-    promptTemplate: |
-      Use skill://poteto-mode to plan and coordinate {{intent}}.
-  - id: pstack-orchestrate-omp
-    description: Combine the pstack-omp and orchestrate-omp community skills for workflow automation on OMP's typed subagent fan-out.
-    skill: skill://pstack-omp
-    examples:
-      - Use the pstack workflow skills to drive this feature through design, implementation, and review
-      - Coordinate specialized subagents to debug this regression and verify the final patch
-    promptTemplate: |
-      Use skill://pstack-omp together with skill://orchestrate-omp to drive
-      {{intent}} through OMP's typed subagent fan-out.
+schemaVersion: 2
+templates:
+  native-copilot-tool-assisted-engineering: |-
+    Use OMP's native GitHub Copilot provider, available tools, and typed
+    subagents to deliver {{intent}}.
+  poteto-mode-orchestration: Use skill://poteto-mode to plan and coordinate {{intent}}.
+  pstack-orchestrate-omp: |-
+    Use skill://pstack-omp together with skill://orchestrate-omp to drive
+    {{intent}} through OMP's typed subagent fan-out.
 ---
 
 # Native Oh My Pi (`omp`): `default` profile

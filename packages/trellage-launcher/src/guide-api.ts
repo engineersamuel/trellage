@@ -770,8 +770,9 @@ const assertRecommendationSet = <T>(
   items: ReadonlyArray<T>,
   label: string,
   goal?: PreparedGuideGoal,
+  availableCount = 5,
 ): ReadonlyArray<T> => {
-  const minimum = goal === undefined ? 3 : 1
+  const minimum = goal === undefined ? Math.max(1, Math.min(3, availableCount)) : 1
   if (items.length < minimum || items.length > 5) {
     throw new GuideServiceError(`${label} must contain ${minimum} to 5 items: got ${items.length}`)
   }
@@ -872,6 +873,7 @@ const prepareMatchInputs = (catalog: CompositionCatalog, request: GuideMatchRequ
   const rankingIntent = request.goal === undefined ? request.intent : goalMatchIntent(request.goal)
   const completeEntries = goalCatalog?.entries ?? ordinaryMatchEntries(compositionMatchEntries(catalog), request.intent)
   const legacy = (): GuideMatchInput => assertGuideMatchInput({
+    ...(catalog.catalogRevision === undefined ? {} : {catalogRevision:catalog.catalogRevision}),
     intent: request.intent,
     entries: prefilterMatchEntries(completeEntries, rankingIntent, request.goal === undefined ? undefined : request.intent),
     ...(request.goal === undefined ? {} : { goal: request.goal }),
@@ -885,6 +887,7 @@ const prepareMatchInputs = (catalog: CompositionCatalog, request: GuideMatchRequ
   return {
     legacy,
     matcher: assertGuideMatchInput({
+      ...(catalog.catalogRevision === undefined ? {} : {catalogRevision:catalog.catalogRevision}),
       intent: request.intent,
       entries: completeEntries,
       ...(request.goal === undefined ? {} : { goal: request.goal }),
@@ -1017,7 +1020,8 @@ export const runGuideMatch = async (
   cache?: GuideArtifactCache,
   options?: GuideMatchOptions,
 ): Promise<GuideMatchResponse> => {
-  const inputs = prepareMatchInputs(catalog, request)
+  const initialCatalog = catalog.runSource !== undefined && options?.resolveCatalog !== undefined ? await options.resolveCatalog(options.signal) : catalog
+  const inputs = prepareMatchInputs(initialCatalog, request)
   const executed = await executeMatch(provider, request, inputs, cache, options)
   const { result, execution: actualExecution, fallback } = executed
   aborted(options?.signal)
@@ -1029,6 +1033,7 @@ export const runGuideMatch = async (
     result.candidates.map((candidate) => enrichRecommendation(effectiveCatalog, candidate, request.goal)),
     "match recommendations",
     request.goal,
+    inputs.matcher.entries.length,
   )
   return {
     schemaVersion: 2,
@@ -1724,7 +1729,7 @@ export const literalGuideMatch = (
 ): ReadonlyArray<LiteralGuideCandidate> => {
   const goalCatalog = goal === undefined ? undefined : goalMatchCatalog(catalog, intent, goal)
   const entries = goalCatalog?.entries ?? ordinaryMatchEntries(guideMatchCatalogEntries(catalog), intent)
-  if (goal === undefined && entries.length < 3) {
+  if (catalog.runSource === undefined && goal === undefined && entries.length < 3) {
     throw new GuideServiceError(`Catalog must contain at least 3 profiles to rank literally: got ${entries.length}`)
   }
   if (entries.length === 0) {
@@ -1752,7 +1757,7 @@ export const literalGuideMatch = (
         : { goalExecution: goalPolicySummary(item.entry.goalExecution.controller) }),
     }),
   )
-  return assertRecommendationSet(candidates, "literal match candidates", goal)
+  return assertRecommendationSet(candidates, "literal match candidates", goal, entries.length)
 }
 
 /**

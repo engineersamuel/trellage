@@ -39,7 +39,10 @@ export const newestStableTag = (tags: readonly string[]): string => {
   versions.sort((a, b) => b.parts[0]! - a.parts[0]! || b.parts[1]! - a.parts[1]! || b.parts[2]! - a.parts[2]!)
   const first = versions[0]
   if (!first || (versions[1] && first.parts.join(".") === versions[1].parts.join("."))) {
-    throw new NativeRunError("config", "tag upgrade is ambiguous; choose an explicit new tag or commit in config.toml")
+    throw new NativeRunError(
+      "config",
+      "tag upgrade is ambiguous; choose an explicit new tag or commit in ~/.config/trellage/config.toml",
+    )
   }
   return first.tag
 }
@@ -101,7 +104,7 @@ export const updateSkills = async (options: SkillUpdateOptions): Promise<SkillUp
         if (!transport.listTags)
           throw new NativeRunError(
             "config",
-            `cannot determine stable tags for ${id}; select an explicit tag in config.toml`,
+            `cannot determine stable tags for ${id}; select an explicit tag in ~/.config/trellage/config.toml`,
           )
         const tag = newestStableTag(await transport.listTags(source.repository))
         candidateCommit = await transport.resolveRef(source.repository, tag)

@@ -201,7 +201,7 @@ profile_root="$HOME/.local/share/trellage/profiles/claude/default"
 profile_home="$profile_root/home"
 native_config="$fixture_root/native-config.toml"
 {
-  sed '/^\[native\.sources\./,$d' "$root/../../config.toml"
+  sed '/^\[native\.sources\./,$d' "$root/../../config.example.toml"
   cat <<'EOF'
 [native.profiles.base]
 label = "Fixture defaults"

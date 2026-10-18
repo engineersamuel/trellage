@@ -18,7 +18,10 @@
       "headless": {
         "schemaVersion": 1,
         "prompt": true,
-        "outputFormats": ["text", "jsonl"],
+        "outputFormats": [
+          "text",
+          "jsonl"
+        ],
         "eventContract": "claude-stream-json-v1",
         "trellageEventContract": null,
         "sessionId": "native",
@@ -52,7 +55,9 @@
       "headless": {
         "schemaVersion": 1,
         "prompt": false,
-        "outputFormats": ["text"],
+        "outputFormats": [
+          "text"
+        ],
         "eventContract": null,
         "trellageEventContract": null,
         "sessionId": "none",
@@ -74,7 +79,9 @@
       "headless": {
         "schemaVersion": 1,
         "prompt": false,
-        "outputFormats": ["text"],
+        "outputFormats": [
+          "text"
+        ],
         "eventContract": null,
         "trellageEventContract": null,
         "sessionId": "none",

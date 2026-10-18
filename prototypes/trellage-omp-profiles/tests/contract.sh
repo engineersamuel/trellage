@@ -12,7 +12,7 @@ root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 launcher="$root/bin/omp"
 installer="$root/install.sh"
 uninstaller="$root/uninstall.sh"
-skills_catalog="$root/../../config.toml"
+skills_catalog="$root/../../config.example.toml"
 community_skill_names=()
 while IFS= read -r skill_name; do
   community_skill_names+=("$skill_name")

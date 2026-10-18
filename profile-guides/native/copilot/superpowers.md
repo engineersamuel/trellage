@@ -1,55 +1,17 @@
 ---
-schemaVersion: 1
-capabilities:
-  - superpowers-tdd-and-debugging-workflows
-  - rundown-briefing-output-style
-  - autopilot-no-ask-user-launch
-  - native-common-skill-bundle
-  - isolated-copilot-home
-bestFor:
-  - Test-driven development and systematic root-cause debugging with GitHub Copilot CLI using the superpowers skill library
-  - Branch lifecycle discipline — writing plans, executing them, and finishing a development branch cleanly
-  - Code-review loops using requesting-code-review and receiving-code-review, plus subagent-driven or parallel-agent dispatch
-avoidFor:
-  - Tasks scoped to discovering/importing Copilot agents, instructions, or skills — use trx run copilot awesome instead
-  - Sessions that need an approval pause; every launch passes --autopilot --allow-all --no-ask-user
-  - Mixing in the hve-core plugin in the same profile; setup and launch manage exactly one cataloged plugin per profile
-  - Work needing isolation; choose the codex-superpowers Trellage Sandbox profile for Codex or `trx run grok superpowers` for Grok's native OS sandbox
-prerequisites:
-  - id: copilot-cli
-    description: GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host.
-  - id: cli-tools
-    description: jq and curl available on the host for setup, doctor, and update checks.
-workflows:
-  - id: test-driven-development
-    description: Drive an implementation from a failing test using the test-driven-development and systematic-debugging skills.
-    skill: test-driven-development
-    examples:
-      - Fix this bug by first writing a failing test that reproduces it
-      - Add this feature test-first and keep the test suite green throughout
-    promptTemplate: |
-      Use the test-driven-development and systematic-debugging skills to
-      address {{intent}}.
-  - id: plan-then-execute-branch
-    description: Write a plan, execute it, and finish the development branch cleanly using writing-plans, executing-plans, and finishing-a-development-branch.
-    skill: writing-plans
-    examples:
-      - Plan, implement, and verify this feature before preparing the branch for review
-      - Complete this approved implementation plan and finish the branch cleanly
-    promptTemplate: |
-      Use the writing-plans skill to draft a plan for {{intent}}, then
-      executing-plans to carry it out, and finishing-a-development-branch to
-      close it out.
-  - id: parallel-review-and-dispatch
-    description: Dispatch independent slices of work to parallel subagents and run a code-review exchange using dispatching-parallel-agents, subagent-driven-development, requesting-code-review, and receiving-code-review.
-    skill: dispatching-parallel-agents
-    examples:
-      - Split this refactor into independent pieces and dispatch them in parallel
-      - Assign separate review passes for the API, UI, and migration portions of this change
-    promptTemplate: |
-      Use dispatching-parallel-agents and subagent-driven-development to
-      split up {{intent}}, then run requesting-code-review and
-      receiving-code-review before merging.
+schemaVersion: 2
+templates:
+  test-driven-development: |-
+    Use the test-driven-development and systematic-debugging skills to
+    address {{intent}}.
+  plan-then-execute-branch: |-
+    Use the writing-plans skill to draft a plan for {{intent}}, then
+    executing-plans to carry it out, and finishing-a-development-branch to
+    close it out.
+  parallel-review-and-dispatch: |-
+    Use dispatching-parallel-agents and subagent-driven-development to
+    split up {{intent}}, then run requesting-code-review and
+    receiving-code-review before merging.
 ---
 
 # Native Copilot CLI (`copilot`) — `superpowers` profile
@@ -86,11 +48,11 @@ plugin from `obra/superpowers-marketplace`, the same skill library used by
 
 ## Workflow Notes
 
-- These skill names come directly from this repository's own `config.toml`
+- These skill names come directly from this repository's own `config.example.toml`
   `superpowers` source selection (`https://github.com/obra/superpowers.git`),
   which the installed `superpowers-marketplace` plugin wraps.
 - The profile also carries the shared `native-common` floating skill bundle
-  (see `config.toml`: `engineersamuel` wildcard, `show-me`, and manually
+  (see `config.example.toml`: `engineersamuel` wildcard, `show-me`, and manually
   activated `i-have-adhd`), so
   general-purpose repository skills remain available alongside superpowers'.
 - Update uses the native marketplace upgrade mechanism (`trx upgrade copilot superpowers

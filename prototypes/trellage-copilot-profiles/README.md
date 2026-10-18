@@ -41,7 +41,7 @@ The checked-in profiles are `awesome`, `compound-engineering`, `hve`,
 ## Commands
 
 ```bash
-trx list
+trx run list
 trx inventory copilot hve --json
 trx setup copilot awesome
 trx setup copilot compound-engineering

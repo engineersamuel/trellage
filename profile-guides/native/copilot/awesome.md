@@ -1,50 +1,9 @@
 ---
-schemaVersion: 1
-capabilities:
-  - awesome-copilot-discovery-meta-skills
-  - rundown-briefing-output-style
-  - autopilot-no-ask-user-launch
-  - isolated-copilot-home
-bestFor:
-  - Discovering and importing curated GitHub Copilot agents, instructions, and skills into the current repository
-  - Auditing a repository for outdated or duplicate agents/instructions/skills against the upstream awesome-copilot collection
-  - Bootstrapping a new repository's Copilot configuration from community-curated assets rather than writing it from scratch
-avoidFor:
-  - General coding, debugging, or review work unrelated to discovering/importing Copilot assets — use trx run copilot hve or trx run copilot superpowers instead
-  - Environments without Docker; the awesome-copilot plugin's bundled MCP server starts via docker run and fails without it
-  - Sessions that need a human approval pause; every launch passes --autopilot --allow-all --no-ask-user
-prerequisites:
-  - id: copilot-cli
-    description: GitHub Copilot CLI 1.0.74 or later, already authenticated, on the host.
-  - id: docker
-    description: Docker installed and on PATH; the awesome-copilot plugin's MCP server runs via docker run ... ghcr.io/microsoft/mcp-dotnet-samples/awesome-copilot:latest.
-  - id: cli-tools
-    description: jq and curl available on the host for setup, doctor, and update checks.
-workflows:
-  - id: suggest-agents
-    description: Suggest relevant GitHub Copilot custom agents from the awesome-copilot repository based on current repository context, avoiding duplicates with existing custom agents.
-    skill: awesome-copilot:suggest-awesome-github-copilot-agents
-    examples:
-      - Suggest custom agents from awesome-copilot that fit this repository
-      - Find agents relevant to our current tech stack and flag any that are already installed but outdated
-    promptTemplate: |
-      /awesome-copilot:suggest-awesome-github-copilot-agents {{intent}}
-  - id: suggest-instructions
-    description: Suggest relevant GitHub Copilot instruction files from the awesome-copilot repository, avoiding duplicates with existing instructions and flagging outdated ones.
-    skill: awesome-copilot:suggest-awesome-github-copilot-instructions
-    examples:
-      - Suggest instruction files that match the languages and frameworks used here
-      - Find a maintained instruction file for our test conventions and identify duplicates we already have
-    promptTemplate: |
-      /awesome-copilot:suggest-awesome-github-copilot-instructions {{intent}}
-  - id: suggest-skills
-    description: Suggest relevant GitHub Copilot skills from the awesome-copilot repository, avoiding duplicates with existing skills and flagging outdated ones.
-    skill: awesome-copilot:suggest-awesome-github-copilot-skills
-    examples:
-      - Suggest skills we're missing given the current repository content
-      - Recommend curated skills for this API project and flag installed skills that overlap
-    promptTemplate: |
-      /awesome-copilot:suggest-awesome-github-copilot-skills {{intent}}
+schemaVersion: 2
+templates:
+  suggest-agents: /awesome-copilot:suggest-awesome-github-copilot-agents {{intent}}
+  suggest-instructions: /awesome-copilot:suggest-awesome-github-copilot-instructions {{intent}}
+  suggest-skills: /awesome-copilot:suggest-awesome-github-copilot-skills {{intent}}
 ---
 
 # Native Copilot CLI (`copilot`) — `awesome` profile

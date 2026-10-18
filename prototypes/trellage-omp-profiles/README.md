@@ -145,7 +145,8 @@ The approved OMP community bundle contains 34 skills from:
 - [`Aqua-123/pstack-for-codex`](https://github.com/Aqua-123/pstack-for-codex):
   31 harness-neutral workflow, principle, automation, and support skills.
 
-The source policy is in `config.toml`. OMP 17.3.5 or newer discovers the
+The source policy is in `config.example.toml`, and user overrides are in
+`~/.config/trellage/config.toml`. OMP 17.3.5 or newer discovers the
 community directory. Older host versions remain usable without that directory.
 `trx skills update` refreshes approved caches; then
 `trx upgrade omp default --skills-only` or

@@ -702,7 +702,7 @@ trx doctor jcode
 trx doctor omp default
 trx doctor prime
 
-trx list --json >"$log_dir/trx-list.json"
+trx run list --json >"$log_dir/trx-list.json"
 jq -e '
   .harnesses as $harnesses
   | [

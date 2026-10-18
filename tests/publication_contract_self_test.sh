@@ -37,7 +37,7 @@ seed_fixture() {
   printf '%s\n' '{"name":"@trellage/guide-core","private":true,"license":"MIT"}' \
     >"$fixture/packages/trellage-guide-core/package.json"
   printf '%s\n' \
-    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["prototypes","bin","scripts","packages","bun.lock","bunfig.toml","tsconfig.base.json","config.toml"]}' \
+    '{"name":"trellage-publication-fixture","version":"0.0.0","files":["prototypes","bin","scripts","packages","bun.lock","bunfig.toml","tsconfig.base.json","config.example.toml"]}' \
     >"$fixture/package.json"
   printf '%s\n' '#!/usr/bin/env python3' >"$fixture/scripts/trellage-session-bridge.py"
   printf '%s\n' '#!/usr/bin/env bun' >"$fixture/scripts/floating-skills.ts"
@@ -60,7 +60,7 @@ seed_fixture() {
   printf '{}\n' >"$fixture/tsconfig.base.json"
   printf '[install]\nauto = "disable"\n' >"$fixture/bunfig.toml"
   cp "$fixture/bunfig.toml" "$fixture/packages/trellage-runtime/bunfig.toml"
-  printf '%s\n' '{"schemaVersion":1,"sources":{},"bundles":{}}' >"$fixture/config.toml"
+  printf '%s\n' '{"schemaVersion":1,"sources":{},"bundles":{}}' >"$fixture/config.example.toml"
   printf 'Generic fixture\n' >"$fixture/README.md"
 }
 

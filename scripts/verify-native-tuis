@@ -420,7 +420,7 @@ def discover_profiles(trx: str) -> list[Profile]:
         raise MatrixFailure("trx list --json returned no profiles")
     identities = [(profile.harness, profile.name) for profile in profiles]
     if len(identities) != len(set(identities)):
-        raise MatrixFailure("trx list --json returned duplicate profiles")
+        raise MatrixFailure("trx run list --json returned duplicate profiles")
     return profiles
 
 

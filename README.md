@@ -115,7 +115,8 @@ Azure resource group is deleted. On failure, the group remains available for
 `ssh`, `bootstrap`, or `accept`; delete it explicitly with `down` after
 diagnosis because the VM and disk remain billable.
 
-Skill sources and bundles are approved in [`config.toml`](config.toml).
+Skill sources and bundles are approved in your `~/.config/trellage/config.toml`.
+Copy [`config.example.toml`](config.example.toml) to start with the shipped defaults.
 Profiles select bundle names with `skill_bundles`; they do not store skill
 refs or digests. Wildcard sources may declare an `exclude` list for skills
 that must never enter any consuming bundle and a `required` list that makes
@@ -222,7 +223,7 @@ round. Both Decide workflows stay out of normal ranking unless the request
 names the profile.
 
 `six-hats` loads this repository's `plugins/six-hats` plugin for that session
-only (the `preset-claude-six-hats` profile in [`config.toml`](config.toml)): six
+only (the `preset-claude-six-hats` profile in [`config.example.toml`](config.example.toml)): six
 hat subagents and `/six-hats:decide`. White runs first; red, yellow, black, and
 green run in parallel on its facts; then blue returns one plan. Green copies the
 checkout's tracked and untracked, non-ignored files (including uncommitted
@@ -388,7 +389,7 @@ executables the profile needs. Before launch (not on `--dry-run`), trx lists
 missing ones with their install commands and asks to install them; without a
 terminal, or when you answer no, it stops. `--dry-run` marks them `(missing)`.
 
-`trx list` and `trx guide` also offer `claude/firstmate` and `pi/firstmate`.
+`trx run list` and `trx guide` also offer `claude/firstmate` and `pi/firstmate`.
 Their guides (`profile-guides/native/{claude,pi}/firstmate.md`) teach the
 guide's model the Firstmate message shape: `ahoy!` with the project and
 delivery mode, numbered `SCOUT`/`SHIP` tasks with a `Done when:` line each,
@@ -585,7 +586,7 @@ trx setup jcode
 trx setup omp default
 trx setup prime
 trx doctor copilot awesome
-trx list
+trx run list
 ```
 
 Pi and Codex are installed and updated outside Trellage. Use
@@ -618,8 +619,10 @@ Headlong, and Agency updates are externally managed and appear as informational
 entries, not failures. Real failures are reported while independent updates continue. This
 does not install Trellage or restart sessions.
 
-`config.toml` is the skill source of truth for Native and comparison
-profiles. Sources with an explicit commit or tag stay pinned during launch.
+Your `~/.config/trellage/config.toml` is the skill source of truth for Native
+and comparison profiles. The shipped defaults are in
+[`config.example.toml`](config.example.toml). Sources with an explicit commit
+or tag stay pinned during launch.
 Unpinned sources attempt a default-branch refresh on every profile load.
 A failed refresh warns and reuses a validated matching cache; without one,
 the launch fails. Each running session retains its selected snapshot.
@@ -818,8 +821,8 @@ replacing the installed native command:
 ```bash
 mise run trx
 mise run trx -- run agency azure
-mise run trx -- list
-mise run trx -- list --json
+mise run trx -- run list
+mise run trx -- run list --json
 mise run trx -- guide "Write a LinkedIn post about AI agents"
 ```
 
@@ -1073,7 +1076,8 @@ Selected skill content is frozen for a run. `trx skills update` refreshes the
 Native skill cache between runs; Review also refreshes it when a selected skill
 is missing from an otherwise valid cache.
 
-To add a leaf review, declare its exact skill in `config.toml` and
+To add a leaf review, declare its exact skill in your
+`~/.config/trellage/config.toml` and
 `native-common`, then add its ID, skill name, and model to
 `packages/trellage-launcher/src/review-catalog.ts`. The existing runner loads
 selected leaf skills without new orchestration code. A skill that starts its

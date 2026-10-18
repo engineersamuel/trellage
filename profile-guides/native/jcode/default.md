@@ -1,50 +1,11 @@
 ---
-schemaVersion: 1
-capabilities:
-  - keyless-proxy-model-routing
-  - semantic-memory
-  - firefox-browser-automation
-  - persistent-sessions
-  - coordinated-agent-swarms
-  - native-common-skill-bundle
-bestFor:
-  - Sessions that want jcode's built-in semantic memory to recall prior discussions, decisions, and patterns across sessions
-  - Browser-driven tasks that benefit from jcode's Firefox automation instead of a headless-only tool
-  - Multi-agent or coordinated-swarm work that jcode's own orchestration handles natively, without a separate plugin
-avoidFor:
-  - Tasks that need OS-level sandboxing or containment; jcx adds no containment and jcode runs with all host access available to the process
-  - Sessions that must avoid any telemetry surface; note that JCODE_NO_TELEMETRY=1 is set on every launch, but this is jcode's own opt-out flag, not a Trellage guarantee about upstream behavior
-  - Work that requires native OpenAI-style credentials; no API key is written and the profile always routes through the local proxy
-prerequisites:
-  - id: mise
-    description: mise installed on the host; setup uses it to resolve and pin the eligible jcode release.
-  - id: proxy-health
-    description: copilot-proxy-rs listening on http://127.0.0.1:8080 for the default gpt-5.6-sol (medium reasoning) routing.
-  - id: cli-tools
-    description: curl and jq available on the host for setup, doctor, and update checks.
-workflows:
-  - id: recall-prior-context
-    description: Use jcode's semantic memory to recall decisions or patterns from earlier sessions before starting related work.
-    examples:
-      - What did we decide about the retry strategy in an earlier session on this repo?
-      - Recall the earlier design constraints for this feature before proposing the next change
-    promptTemplate: |
-      Use jcode's semantic memory to recall prior context for {{intent}}.
-  - id: browser-driven-task
-    description: Drive jcode's Firefox browser automation for a task that needs real page interaction rather than a headless fetch.
-    examples:
-      - Open this internal dashboard in the browser and confirm the new deployment banner is visible
-      - Use Firefox to reproduce this checkout error and identify the failing request
-    promptTemplate: |
-      Use jcode's Firefox browser automation to complete {{intent}}.
-  - id: coordinated-swarm-delivery
-    description: Coordinate a larger outcome through jcode's native agent swarm while keeping the main task integrated.
-    examples:
-      - Coordinate a swarm to investigate this performance regression, implement the fix, and verify it
-      - Split this cross-cutting feature among a swarm, then integrate and test the complete result
-    promptTemplate: |
-      Use jcode's coordinated agent swarm to deliver {{intent}} while keeping
-      the final integration and verification in the main task.
+schemaVersion: 2
+templates:
+  recall-prior-context: Use jcode's semantic memory to recall prior context for {{intent}}.
+  browser-driven-task: Use jcode's Firefox browser automation to complete {{intent}}.
+  coordinated-swarm-delivery: |-
+    Use jcode's coordinated agent swarm to deliver {{intent}} while keeping
+    the final integration and verification in the main task.
 ---
 
 # Native jcode (`jcode`) — `default` profile

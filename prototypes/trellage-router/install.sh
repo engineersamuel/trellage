@@ -42,7 +42,9 @@ require_safe_directory() {
 
 require_owned_runtime_contents() {
   local path
-  if [[ "$(<"$ownership_marker")" == "$ownership_value" ]]; then
+  local installed_ownership
+  installed_ownership="$(<"$ownership_marker")"
+  if [[ "$installed_ownership" == "$ownership_value" ]]; then
     "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
       validate-replaceable-owned "$installed_source" \
       || refuse "unsafe owned source workspace: $installed_source"
@@ -76,7 +78,7 @@ require_owned_runtime_contents() {
       "$install_root/lib"|"$installed_dependency_bootstrap"|\
       "$installed_share"|"$installed_guides"|"$installed_herdr_compatibility") ;;
       "$installed_source"|"$installed_source"/*)
-        [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
+        [[ "$installed_ownership" == "$ownership_value" ]] \
           || refuse "refusing unrelated runtime path: $path"
         ;;
       "$installed_guides"/*)

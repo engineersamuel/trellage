@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "native:fx/default": {
+      "schemaVersion": 1,
+      "prompt": true,
+      "outputFormats": [
+        "text",
+        "json"
+      ],
+      "eventContract": null,
+      "trellageEventContract": null,
+      "sessionId": "native",
+      "resume": true,
+      "resumeWithPrompt": true,
+      "questionToolControl": "prompt-only",
+      "changedFiles": "native",
+      "usage": true,
+      "cost": true,
+      "modelOverride": true,
+      "effortOverride": true,
+      "testedHarnessVersion": null
+    },
+    "native:headlong/default": {
+      "schemaVersion": 1,
+      "prompt": false,
+      "outputFormats": [
+        "text"
+      ],
+      "eventContract": null,
+      "trellageEventContract": null,
+      "sessionId": "none",
+      "resume": false,
+      "resumeWithPrompt": false,
+      "questionToolControl": "none",
+      "changedFiles": "none",
+      "usage": false,
+      "cost": false,
+      "modelOverride": false,
+      "effortOverride": false,
+      "testedHarnessVersion": null
+    },
+    "native:pi/firstmate": {
+      "schemaVersion": 1,
+      "prompt": false,
+      "outputFormats": [
+        "text"
+      ],
+      "eventContract": null,
+      "trellageEventContract": null,
+      "sessionId": "none",
+      "resume": false,
+      "resumeWithPrompt": false,
+      "questionToolControl": "none",
+      "changedFiles": "none",
+      "usage": false,
+      "cost": false,
+      "modelOverride": false,
+      "effortOverride": false,
+      "testedHarnessVersion": null
+    },
+    "native:claude/firstmate": {
+      "schemaVersion": 1,
+      "prompt": false,
+      "outputFormats": [
+        "text"
+      ],
+      "eventContract": null,
+      "trellageEventContract": null,
+      "sessionId": "none",
+      "resume": false,
+      "resumeWithPrompt": false,
+      "questionToolControl": "none",
+      "changedFiles": "none",
+      "usage": false,
+      "cost": false,
+      "modelOverride": false,
+      "effortOverride": false,
+      "testedHarnessVersion": null
+    }
+  }
+}

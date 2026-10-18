@@ -222,7 +222,7 @@ const MAX_INSTRUCTION_BYTES = 64 * 1024
 const loadInstructions = async (configDirectory: string, catalog: NativeCatalog): Promise<Record<string, string>> => {
   const texts: Record<string, string> = {}
   for (const [id, instruction] of Object.entries(catalog.instructions)) {
-    const file = path.join(configDirectory, instruction.file)
+    const file = resolveInstructionFile(instruction.file, configDirectory, fileURLToPath(new URL("../../../../",import.meta.url)))
     try {
       const info = await lstat(file)
       if (!info.isFile() || info.size > MAX_INSTRUCTION_BYTES)
@@ -574,7 +574,7 @@ const resolveRunProfiles = async (
   const adHoc = adHocSkillProfile(sourceCatalog, options.skills ?? [])
   let catalog = adHoc?.catalog ?? sourceCatalog
   const profiles = options.profiles.map((profile) =>
-    Object.hasOwn(catalog.profiles, profile) ? profile : (nativePresetProfile(adapter.id, profile) ?? profile),
+    resolveProfileKey(catalog, adapter.id, profile),
   )
   for (const profile of profiles) {
     if (profile.startsWith(`preset-${adapter.id}-`) || nativeSharedPresets.includes(profile))

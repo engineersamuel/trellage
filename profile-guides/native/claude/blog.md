@@ -1,56 +1,9 @@
 ---
-schemaVersion: 1
-goalExecution:
-  controller: claude-goal
-  workflowIds:
-    - write-new-post
-    - audit-existing-post
-    - content-brief
-capabilities:
-- blog-post-writing
-- seo-optimization
-- content-briefs-and-outlines
-- editorial-calendars
-- ai-citation-readiness-audit
-- multilingual-publishing
-- content-repurposing
-bestFor:
-- Long-form technical blog posts and docs-as-blog content that need a full 5-gate delivery contract
-- SEO and AI-citation-readiness audits of existing published posts
-- Editorial calendars, content briefs, outlines, and topic-cluster planning
-avoidFor:
-- App coding sprints or feature implementation
-- Short-form social copy (use claude-social-media instead)
-- One-off Q&A without a delivery-contract need
-prerequisites: []
-workflows:
-- id: write-new-post
-  description: Generate a new blog post from a topic and push it through the 5-gate delivery contract
-    (capability discovery, format completeness, visual verification, content review, asset/link integrity).
-  skill: blog-write
-  examples:
-  - Write me a blog post about zero-trust networking for platform engineers
-  - /blog write agentic coding workflows for enterprise teams
-  - Create a reviewed docs-as-blog article that explains our new deployment model to SRE leads
-  promptTemplate: |
-    /blog write {{intent}}
-- id: audit-existing-post
-  description: Score an existing draft or published URL against the 0-100 quality rubric and surface P0/P1
-    issues.
-  skill: blog-analyze
-  examples:
-  - Analyze https://example.com/blog/my-post for SEO and citation gaps
-  - Audit this published engineering post and list the P0 issues blocking publication
-  promptTemplate: |
-    /blog analyze {{intent}}
-- id: content-brief
-  description: Produce a detailed content brief for a topic before any writing starts.
-  skill: blog-brief
-  examples:
-  - Give me a content brief for a post about Kubernetes cost optimization
-  - Plan a three-post topic cluster for platform-engineering observability
-  promptTemplate: |
-    /blog brief {{intent}}
+schemaVersion: 2
+templates:
+  write-new-post: /blog write {{intent}}
+  audit-existing-post: /blog analyze {{intent}}
+  content-brief: /blog brief {{intent}}
 ---
 
 # claude / blog
