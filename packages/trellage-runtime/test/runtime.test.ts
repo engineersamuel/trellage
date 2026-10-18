@@ -335,6 +335,25 @@ test("upgrades an owned legacy skills.json snapshot without accepting changed le
   expect(() => requireOwnedWorkspace(destination)).not.toThrow()
 })
 
+test("upgrades an owned legacy config.toml snapshot without changing user config", () => {
+  const { root, destination, home } = sourceFixture(true)
+  const userConfig = path.join(home, ".config/trellage/config.toml")
+  const userConfigContents = "user = true\n"
+  write(home, ".config/trellage/config.toml", userConfigContents)
+  expect(run("install", root, destination, { HOME: home }).status).toBe(0)
+  rmSync(path.join(destination, "config.example.toml"))
+  write(destination, "config.toml", "{}")
+  writeReadiness(destination)
+  expect(run("validate-replaceable-owned", destination).status).toBe(0)
+
+  const upgraded = run("install", root, destination, { HOME: home })
+  expect(upgraded.status, upgraded.stderr).toBe(0)
+  expect(existsSync(path.join(destination, "config.toml"))).toBe(false)
+  expect(readFileSync(path.join(destination, "config.example.toml"), "utf8")).toBe("{}")
+  expect(readFileSync(userConfig, "utf8")).toBe(userConfigContents)
+  expect(() => requireOwnedWorkspace(destination)).not.toThrow()
+})
+
 test("replaceable owned validation accepts a previous Bun pin but rejects changed contents", () => {
   const { root, destination, home } = sourceFixture(true)
   expect(run("install", root, destination, { HOME: home }).status).toBe(0)

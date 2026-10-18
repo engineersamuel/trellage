@@ -34,11 +34,16 @@ const sourceDirectories = ["bin", "packages", "prototypes", "scripts", "profile-
 const optionalSourceDirectories = [".agents", "profiles"]
 const rootFiles = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.base.json", "config.example.toml"]
 function sourceRootFiles(root: string): string[] {
-  const legacy =
+  const legacyCatalogs =
     existsSync(path.join(root, sourceMarker)) &&
-    lstatSync(path.join(root, "config.example.toml"), { throwIfNoEntry: false }) === undefined &&
-    lstatSync(path.join(root, "skills.json"), { throwIfNoEntry: false }) !== undefined
-  return legacy ? rootFiles.map((name) => (name === "config.example.toml" ? "skills.json" : name)) : rootFiles
+    lstatSync(path.join(root, "config.example.toml"), { throwIfNoEntry: false }) === undefined
+      ? ["skills.json", "config.toml"].filter(
+          (name) => lstatSync(path.join(root, name), { throwIfNoEntry: false }) !== undefined,
+        )
+      : []
+  return legacyCatalogs.length > 0
+    ? rootFiles.flatMap((name) => (name === "config.example.toml" ? legacyCatalogs : [name]))
+    : rootFiles
 }
 const excludedDirectories = new Set(["node_modules", "dist", "coverage", "__pycache__"])
 const nativeProfileState = new Set([
