@@ -231,7 +231,7 @@ describe("RunSelector terminal", { timeout: 15000 }, () => {
       for (const text of ["Frontier", "Other models"])
         expect(ui.cell(text)).toMatchObject({ fg: magenta, bold: true, dim: false })
       expect(ui.cell("● fixture-model-alpha")).toMatchObject({ fg: null, bg: null, inverse: true, bold: true })
-      await ui.press(down)
+      await ui.press(down, "fixture-model-beta", "↓ more")
       await ui.focus("fixture-model-beta")
       expect(ui.cell("● fixture-model-alpha")).toMatchObject({ fg: green, inverse: false })
       expect(ui.cell("fixture-model-beta")).toMatchObject({ fg: null, bg: null, inverse: true, bold: true })
