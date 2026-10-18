@@ -104,15 +104,13 @@ export const validateResolvedProfileGuide = (
   return resolved
 }
 
-export const assembleProfileGuide = (
-  selection: SelectionMetadata,
+const resolveGuideWorkflows = (
   workflows: ReadonlyArray<AuthoredWorkflow>,
   instructions: ProfileInstructions | undefined,
-  policy: ProfileGuideAssemblyPolicy,
-): ResolvedProfileGuideV2 => {
-  const generic = workflows.length === 0 && !policy.workflowsDeclared
+  generic: boolean,
+): ReadonlyArray<ProfileGuideWorkflow> => {
   if (!generic && workflows.length === 0) fail("guide.workflows", "explicit workflows must not be empty")
-  const resolved: ReadonlyArray<ProfileGuideWorkflow> = generic
+  return generic
     ? [
         {
           id: "task",
@@ -128,32 +126,56 @@ export const assembleProfileGuide = (
         })),
         "guide.workflows",
       )
+}
+
+const validateGuideInteraction = (
+  workflows: ReadonlyArray<ProfileGuideWorkflow>,
+  identity: ProfileGuideIdentity,
+): void => {
   if (
-    resolved.some((workflow) => workflow.interaction !== undefined) &&
+    workflows.some((workflow) => workflow.interaction !== undefined) &&
     !(
-      policy.identity.surface === "native" &&
-      policy.identity.harness === "copilot" &&
-      policy.identity.profile === "hve"
+      identity.surface === "native" &&
+      identity.harness === "copilot" &&
+      identity.profile === "hve"
     )
   ) {
     fail("guide.workflows", "verified interactive workflows require native/copilot/hve")
   }
-  if (policy.goalExecution !== undefined) {
-    const execution = record(policy.goalExecution, "guide.goalExecution")
-    exactKeys(execution, "guide.goalExecution", ["controller", "workflowIds"])
-    if (
-      !isProfileGuideGoalController(execution.controller) ||
-      !Array.isArray(execution.workflowIds) ||
-      execution.workflowIds.length < 1 ||
-      execution.workflowIds.length > 32
-    )
-      return fail("guide.goalExecution", "requires a supported controller and 1 to 32 workflow IDs")
-    const ids = execution.workflowIds.map((id) => identifier(id, "guide.goalExecution.workflowIds"))
-    if (new Set(ids).size !== ids.length) return fail("guide.goalExecution.workflowIds", "must contain unique IDs")
-    if (generic) fail("guide.goalExecution", "generic workflows have no goal controller")
-    const problem = profileGuideGoalExecutionProblem(policy.goalExecution, resolved, policy.identity)
-    if (problem !== undefined) fail("guide.goalExecution", problem)
-  }
+}
+
+const validateGuideGoalExecution = (
+  policy: ProfileGuideAssemblyPolicy,
+  workflows: ReadonlyArray<ProfileGuideWorkflow>,
+  generic: boolean,
+): void => {
+  if (policy.goalExecution === undefined) return
+  const execution = record(policy.goalExecution, "guide.goalExecution")
+  exactKeys(execution, "guide.goalExecution", ["controller", "workflowIds"])
+  if (
+    !isProfileGuideGoalController(execution.controller) ||
+    !Array.isArray(execution.workflowIds) ||
+    execution.workflowIds.length < 1 ||
+    execution.workflowIds.length > 32
+  )
+    return fail("guide.goalExecution", "requires a supported controller and 1 to 32 workflow IDs")
+  const ids = execution.workflowIds.map((id) => identifier(id, "guide.goalExecution.workflowIds"))
+  if (new Set(ids).size !== ids.length) return fail("guide.goalExecution.workflowIds", "must contain unique IDs")
+  if (generic) fail("guide.goalExecution", "generic workflows have no goal controller")
+  const problem = profileGuideGoalExecutionProblem(policy.goalExecution, workflows, policy.identity)
+  if (problem !== undefined) fail("guide.goalExecution", problem)
+}
+
+export const assembleProfileGuide = (
+  selection: SelectionMetadata,
+  workflows: ReadonlyArray<AuthoredWorkflow>,
+  instructions: ProfileInstructions | undefined,
+  policy: ProfileGuideAssemblyPolicy,
+): ResolvedProfileGuideV2 => {
+  const generic = workflows.length === 0 && !policy.workflowsDeclared
+  const resolved = resolveGuideWorkflows(workflows, instructions, generic)
+  validateGuideInteraction(resolved, policy.identity)
+  validateGuideGoalExecution(policy, resolved, generic)
   return {
     schemaVersion: 2,
     selection,

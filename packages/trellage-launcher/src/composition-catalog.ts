@@ -1,9 +1,14 @@
-import { loadProfileGuide, profileGuideRelativePath, type ProfileGuideV1 } from "@trellage/guide-core"
+import {
+  canonicalNativeIdentity,
+  loadProfileGuide,
+  profileGuideRelativePath,
+  type ProfileGuideV1,
+} from "@trellage/guide-core"
 import { lifecycleRuntime } from "@trellage/runtime/native-run"
 import { lstat, readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { loadRunCatalog, type RunCatalogProfile } from "./run-catalog.ts"
+import { loadRunCatalog, type RunCatalog, type RunCatalogProfile } from "./run-catalog.ts"
 
 export interface HeadlessCapabilitiesV1 {
   readonly schemaVersion: 1
@@ -115,90 +120,99 @@ type LegacyPresetMap = Readonly<Record<string, LegacyPreset>>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 
-const isOutputFormat = (value: unknown): value is "text" | "json" | "jsonl" =>
-  value === "text" || value === "json" || value === "jsonl"
-
-const isOutputFormats = (value: unknown): value is HeadlessCapabilitiesV1["outputFormats"] =>
-  Array.isArray(value) && value.every(isOutputFormat)
-
-const isValidHeadlessIdentity = (value: Record<string, unknown>): boolean =>
-  value.schemaVersion === 1 && typeof value.prompt === "boolean" && isOutputFormats(value.outputFormats)
-
-const isValidHeadlessContracts = (value: Record<string, unknown>): boolean =>
-  (value.eventContract === null || typeof value.eventContract === "string") &&
-  (value.trellageEventContract === null || value.trellageEventContract === "trellage-headless-v1") &&
-  (value.sessionId === "native" || value.sessionId === "trellage" || value.sessionId === "none") &&
-  (value.testedHarnessVersion === null || typeof value.testedHarnessVersion === "string")
-
-const isValidHeadlessExecution = (value: Record<string, unknown>): boolean =>
-  typeof value.resume === "boolean" &&
-  typeof value.resumeWithPrompt === "boolean" &&
-  (value.questionToolControl === "hard-deny" ||
-    value.questionToolControl === "prompt-only" ||
-    value.questionToolControl === "none") &&
-  (value.changedFiles === "native" || value.changedFiles === "git-diff" || value.changedFiles === "none")
-
-const isValidHeadlessReporting = (value: Record<string, unknown>): boolean =>
-  typeof value.usage === "boolean" &&
-  typeof value.cost === "boolean" &&
-  typeof value.modelOverride === "boolean" &&
-  typeof value.effortOverride === "boolean"
-
-const isValidHeadlessCapabilities = (
+const parseHeadlessOutput = (
   value: Record<string, unknown>,
-): value is Record<string, unknown> & HeadlessCapabilitiesV1 =>
-  isValidHeadlessIdentity(value) &&
-  isValidHeadlessContracts(value) &&
-  isValidHeadlessExecution(value) &&
-  isValidHeadlessReporting(value)
-
-const parseHeadless = (value: unknown, field: string): HeadlessCapabilitiesV1 => {
-  if (!isRecord(value)) return interactiveOnlyHeadless
-  if (!isValidHeadlessCapabilities(value)) throw new Error(`${field} must be a valid headless capability document`)
+  field: string,
+): Pick<
+  HeadlessCapabilitiesV1,
+  "outputFormats" | "eventContract" | "trellageEventContract" | "testedHarnessVersion"
+> => {
+  const formats = value.outputFormats
+  if (
+    !Array.isArray(formats) ||
+    !formats.every((format) => format === "text" || format === "json" || format === "jsonl") ||
+    !(value.eventContract === null || typeof value.eventContract === "string") ||
+    !(value.trellageEventContract === null || value.trellageEventContract === "trellage-headless-v1") ||
+    !(value.testedHarnessVersion === null || typeof value.testedHarnessVersion === "string")
+  )
+    throw new Error(`${field} must be a valid headless capability document`)
   return {
-    schemaVersion: 1,
-    prompt: value.prompt,
-    outputFormats: value.outputFormats,
+    outputFormats: formats,
     eventContract: value.eventContract,
     trellageEventContract: value.trellageEventContract,
-    sessionId: value.sessionId,
-    resume: value.resume,
-    resumeWithPrompt: value.resumeWithPrompt,
-    questionToolControl: value.questionToolControl,
-    changedFiles: value.changedFiles,
-    usage: value.usage,
-    cost: value.cost,
-    modelOverride: value.modelOverride,
-    effortOverride: value.effortOverride,
     testedHarnessVersion: value.testedHarnessVersion,
   }
 }
 
-const legacyProfileEntries = (harness: string, profiles: unknown): Array<[string, unknown]> => {
-  if (Array.isArray(profiles)) {
-    return profiles.map((value, index) => {
-      if (!isRecord(value) || typeof value.name !== "string")
-        throw new Error(`invalid legacy profile catalog entry: ${harness}/${index}`)
-      return [value.name, value]
-    })
-  }
-  if (isRecord(profiles)) return Object.entries(profiles)
-  throw new Error(`invalid legacy profile catalog for ${harness}`)
-}
-
-const legacyPublicName = (harness: string, name: string): string => {
-  if (harness === "agency" && name === "trellage-azure") return "azure"
-  if (harness === "omp" && name === "copilot") return "default"
-  return name
-}
-
-const parseLegacyPreset = (harness: string, name: string, value: unknown): LegacyPreset => {
-  if (!isRecord(value) || typeof value.description !== "string")
-    throw new Error(`invalid legacy profile catalog entry: ${harness}/${name}`)
+const parseHeadlessSession = (
+  value: Record<string, unknown>,
+  field: string,
+): Pick<HeadlessCapabilitiesV1, "sessionId" | "questionToolControl" | "changedFiles"> => {
+  if (
+    !(value.sessionId === "native" || value.sessionId === "trellage" || value.sessionId === "none") ||
+    !(
+      value.questionToolControl === "hard-deny" ||
+      value.questionToolControl === "prompt-only" ||
+      value.questionToolControl === "none"
+    ) ||
+    !(value.changedFiles === "native" || value.changedFiles === "git-diff" || value.changedFiles === "none")
+  )
+    throw new Error(`${field} must be a valid headless capability document`)
   return {
-    description: value.description,
-    headless: parseHeadless(value.headless, `${harness}/${name}.headless`),
+    sessionId: value.sessionId,
+    questionToolControl: value.questionToolControl,
+    changedFiles: value.changedFiles,
   }
+}
+
+const parseHeadlessFlags = (
+  value: Record<string, unknown>,
+  field: string,
+): Pick<
+  HeadlessCapabilitiesV1,
+  "prompt" | "resume" | "resumeWithPrompt" | "usage" | "cost" | "modelOverride" | "effortOverride"
+> => {
+  if (
+    value.schemaVersion !== 1 ||
+    typeof value.prompt !== "boolean" ||
+    typeof value.resume !== "boolean" ||
+    typeof value.resumeWithPrompt !== "boolean" ||
+    typeof value.usage !== "boolean" ||
+    typeof value.cost !== "boolean" ||
+    typeof value.modelOverride !== "boolean" ||
+    typeof value.effortOverride !== "boolean"
+  )
+    throw new Error(`${field} must be a valid headless capability document`)
+  return {
+    prompt: value.prompt,
+    resume: value.resume,
+    resumeWithPrompt: value.resumeWithPrompt,
+    usage: value.usage,
+    cost: value.cost,
+    modelOverride: value.modelOverride,
+    effortOverride: value.effortOverride,
+  }
+}
+
+const parseHeadless = (value: unknown, field: string): HeadlessCapabilitiesV1 => {
+  if (!isRecord(value)) return interactiveOnlyHeadless
+  return {
+    schemaVersion: 1,
+    ...parseHeadlessFlags(value, field),
+    ...parseHeadlessOutput(value, field),
+    ...parseHeadlessSession(value, field),
+  }
+}
+
+const legacyProfileEntries = (source: unknown, harness: string): Array<[string, unknown]> => {
+  if (!isRecord(source) || (!isRecord(source.profiles) && !Array.isArray(source.profiles)))
+    throw new Error(`invalid legacy profile catalog for ${harness}`)
+  if (!Array.isArray(source.profiles)) return Object.entries(source.profiles)
+  return source.profiles.map((value, index) => {
+    if (!isRecord(value) || typeof value.name !== "string")
+      throw new Error(`invalid legacy profile catalog entry: ${harness}/${index}`)
+    return [value.name, value]
+  })
 }
 
 const loadLegacyPresets = async (harness: string): Promise<LegacyPresetMap> => {
@@ -207,11 +221,18 @@ const loadLegacyPresets = async (harness: string): Promise<LegacyPresetMap> => {
   const source: unknown = JSON.parse(
     await readFile(path.join(repositoryRoot, "prototypes", packageName, "catalog.json"), "utf8"),
   )
-  if (!isRecord(source)) throw new Error(`invalid legacy profile catalog for ${harness}`)
   return Object.fromEntries(
-    legacyProfileEntries(harness, source.profiles).map(([name, value]) => {
-      const publicName = legacyPublicName(harness, name)
-      return [publicName, parseLegacyPreset(harness, publicName, value)]
+    legacyProfileEntries(source, harness).map(([legacyName, value]) => {
+      if (!isRecord(value) || typeof value.description !== "string")
+        throw new Error(`invalid legacy profile catalog entry: ${harness}/${legacyName}`)
+      const publicName = canonicalNativeIdentity(harness, legacyName).profile
+      return [
+        publicName,
+        {
+          description: value.description,
+          headless: parseHeadless(value.headless, `${harness}/${publicName}.headless`),
+        },
+      ]
     }),
   )
 }

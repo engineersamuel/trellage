@@ -1,6 +1,6 @@
 import os from "node:os"
 import path from "node:path"
-import { readTrellageConfig } from "@trellage/runtime/native-config"
+import { readTrellageConfig, type NativeCatalog, type NativeProfile } from "@trellage/runtime/native-config"
 import {
   adapters,
   builtinProfile,
@@ -40,18 +40,16 @@ export interface LoadRunCatalogOptions {
 const isPresetContentProfile = (id: string): boolean =>
   Object.keys(adapters).some((harness) => nativePresetProfiles(harness).some((preset) => id === `preset-${harness}-${preset}`))
 
-export const loadRunCatalog = async (options: LoadRunCatalogOptions = {}): Promise<RunCatalog> => {
-  const environment = options.environment ?? process.env
-  const home = options.home ?? environment.HOME ?? os.homedir()
-  const cwd = options.cwd ?? process.cwd()
-  const loaded = await readTrellageConfig({ environment, home, cwd })
-  const configuredProfiles = Object.entries(loaded.config.native.profiles).filter(([id]) => !isPresetContentProfile(id))
-  const harnessOrder = Object.keys(adapters)
+const collectProfileHarnesses = async (
+  catalog: NativeCatalog,
+  configuredProfiles: ReadonlyArray<readonly [string, NativeProfile]>,
+  harnessOrder: ReadonlyArray<string>,
+): Promise<Record<string, ReadonlyArray<string> | undefined>> => {
   const profileHarnesses: Record<string, ReadonlyArray<string> | undefined> = {}
 
   for (const harness of harnessOrder) {
     for (const profile of nativePresetProfiles(harness)) {
-      if (!Object.hasOwn(loaded.config.native.profiles, profile))
+      if (!Object.hasOwn(catalog.profiles, profile))
         profileHarnesses[profile] = [...(profileHarnesses[profile] ?? []), harness]
     }
   }
@@ -59,50 +57,85 @@ export const loadRunCatalog = async (options: LoadRunCatalogOptions = {}): Promi
     if (!profile.always) profileHarnesses[id] = profile.harnesses
   }
   for (const id of nativeSharedPresets) {
-    if (!Object.hasOwn(loaded.config.native.profiles, id)) profileHarnesses[id] = (await builtinProfile(id))?.harnesses
+    if (!Object.hasOwn(catalog.profiles, id)) profileHarnesses[id] = (await builtinProfile(id))?.harnesses
   }
   profileHarnesses[CLEAN_PROFILE] = harnessOrder.filter((id) => adapters[id]?.clean.supported)
+  return profileHarnesses
+}
 
+const catalogProfileEntry = (name: string, profile: NativeProfile, kind: RunProfileKind): RunCatalogProfile => ({
+  name,
+  label: profile.label ?? name,
+  kind,
+  always: kind === "shared" ? false : profile.always,
+  harnesses: profile.harnesses ?? null,
+  skills: profile.skills.flatMap((selection) => selection.names),
+})
+
+const collectProfileEntries = async (
+  catalog: NativeCatalog,
+  configuredProfiles: ReadonlyArray<readonly [string, NativeProfile]>,
+  cleanHarnesses: ReadonlyArray<string>,
+): Promise<RunCatalogProfile[]> => {
   const profileEntries: RunCatalogProfile[] = configuredProfiles
     .filter(([name]) => name !== CLEAN_PROFILE)
-    .map(([name, profile]) => ({
-      name,
-      label: profile.label ?? name,
-      kind: "config" as const,
-      always: profile.always,
-      harnesses: profile.harnesses ?? null,
-      skills: profile.skills.flatMap((selection) => selection.names),
-    }))
+    .map(([name, profile]) => catalogProfileEntry(name, profile, "config"))
     .sort((left, right) => left.name.localeCompare(right.name))
   for (const name of nativeSharedPresets) {
-    if (Object.hasOwn(loaded.config.native.profiles, name)) continue
+    if (Object.hasOwn(catalog.profiles, name)) continue
     const profile = await builtinProfile(name)
     if (!profile) continue
-    profileEntries.push({
-      name,
-      label: profile.label ?? name,
-      kind: "shared",
-      always: false,
-      harnesses: profile.harnesses ?? null,
-      skills: profile.skills.flatMap((selection) => selection.names),
-    })
+    profileEntries.push(catalogProfileEntry(name, profile, "shared"))
   }
   profileEntries.push({
     name: CLEAN_PROFILE,
     label: "Clean",
     kind: "special",
     always: false,
-    harnesses: profileHarnesses[CLEAN_PROFILE] ?? [],
+    harnesses: cleanHarnesses,
     skills: [],
   })
+  return profileEntries
+}
 
-  const modelCatalog = options.includeModels === false
+const loadRunModels = async (
+  includeModels: boolean | undefined,
+  environment: NodeJS.ProcessEnv,
+  home: string,
+) =>
+  includeModels === false
     ? { groups: [] }
     : await loadModelCatalog({
         paths: resolveNativeRunPaths({ environment, home }),
         hostModelsPath: path.join(home, ".copilot", "models.json"),
         ...(environment.TRELLAGE_MODELS_URL ? { url: environment.TRELLAGE_MODELS_URL } : {}),
       })
+
+const catalogHarnessEntry = (id: string): RunCatalog["harnesses"][number] => {
+  const adapter = adapters[id]
+  const defaults = adapter ? hostDefaults(id) : { model: undefined, effort: undefined }
+  return {
+    harness: id,
+    label: adapter?.label ?? id,
+    efforts: adapter?.efforts ?? [],
+    defaultModel: defaults.model,
+    defaultEffort: defaults.effort,
+    planModel: adapter?.effectivePolicy(defaults.model, defaults.effort).plan ?? "managed preset",
+    extensions: adapter?.extensions ?? [],
+  }
+}
+
+export const loadRunCatalog = async (options: LoadRunCatalogOptions = {}): Promise<RunCatalog> => {
+  const environment = options.environment ?? process.env
+  const home = options.home ?? environment.HOME ?? os.homedir()
+  const cwd = options.cwd ?? process.cwd()
+  const loaded = await readTrellageConfig({ environment, home, cwd })
+  const catalog = loaded.config.native
+  const configuredProfiles = Object.entries(catalog.profiles).filter(([id]) => !isPresetContentProfile(id))
+  const harnessOrder = Object.keys(adapters)
+  const profileHarnesses = await collectProfileHarnesses(catalog, configuredProfiles, harnessOrder)
+  const profileEntries = await collectProfileEntries(catalog, configuredProfiles, profileHarnesses[CLEAN_PROFILE] ?? [])
+  const modelCatalog = await loadRunModels(options.includeModels, environment, home)
   const first = modelCatalog.groups[0]
   const presetsByHarness = Object.fromEntries(
     harnessOrder.map((harness) => [
@@ -112,19 +145,7 @@ export const loadRunCatalog = async (options: LoadRunCatalogOptions = {}): Promi
   )
 
   return {
-    harnesses: harnessOrder.map((id) => {
-      const adapter = adapters[id]
-      const defaults = adapter ? hostDefaults(id) : { model: undefined, effort: undefined }
-      return {
-        harness: id,
-        label: adapter?.label ?? id,
-        efforts: adapter?.efforts ?? [],
-        defaultModel: defaults.model,
-        defaultEffort: defaults.effort,
-        planModel: adapter?.effectivePolicy(defaults.model, defaults.effort).plan ?? "managed preset",
-        extensions: adapter?.extensions ?? [],
-      }
-    }),
+    harnesses: harnessOrder.map(catalogHarnessEntry),
     profileHarnesses,
     profiles: Object.keys(profileHarnesses).sort(),
     disabledProfiles: Object.keys(profileHarnesses).filter(
