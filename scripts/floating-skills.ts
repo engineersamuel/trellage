@@ -1,6 +1,6 @@
 #!/usr/bin/env -S BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file --config=/dev/null
 
-import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
@@ -84,11 +84,23 @@ interface SkillOperation {
 }
 const skillOperation = new AsyncLocalStorage<SkillOperation>()
 
-const signalSkillChild = (pid: number | undefined, signal: NodeJS.Signals) => {
+export const signalSkillChild = (pid: number | undefined, signal: NodeJS.Signals) => {
   if (pid === undefined || !Number.isSafeInteger(pid) || pid < 1) return
   try {
     process.kill(-pid, signal)
   } catch (error) {
+    // Darwin reports EPERM for groups containing only zombies. Those processes
+    // have already exited; preserve permission failures for any live member.
+    if (process.platform === "darwin" && error instanceof Error && "code" in error && error.code === "EPERM") {
+      const rows = execFileSync("ps", ["-axo", "pgid=,stat="], {
+        encoding: "utf8", env: { ...process.env, LC_ALL: "C" },
+      }).trim().split("\n")
+      const liveMember = rows.some((row) => {
+        const [group, state] = row.trim().split(/\s+/)
+        return Number(group) === pid && !state?.startsWith("Z")
+      })
+      if (!liveMember) return
+    }
     if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error
   }
 }

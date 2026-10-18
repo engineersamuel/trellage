@@ -91,7 +91,8 @@ require_owned_runtime_contents() {
         ;;
       *) refuse "refusing unrelated runtime path: $path" ;;
     esac
-  done < <(find "$install_root" -mindepth 1 -print)
+  # The source validator owns its contents; keep its root in the ownership check.
+  done < <(find "$install_root" -mindepth 1 -print -path "$installed_source" -prune)
 }
 
 case "$HOME" in

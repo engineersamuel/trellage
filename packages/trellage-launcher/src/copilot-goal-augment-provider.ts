@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
 import {
-  CopilotClient,
   RuntimeConnection,
   type CopilotClientOptions,
   type SessionConfig,
@@ -18,6 +17,7 @@ import {
   type GuideModelClient,
 } from "./copilot-guide-provider.ts"
 import { validateGuideIntent } from "./guide-api.ts"
+import { createLiveCopilotClient } from "./provider-clients.ts"
 import {
   GuideGoalCancelledError,
   GuideGoalError,
@@ -434,7 +434,7 @@ export class CopilotGoalAugmentProvider implements GuideGoalAugmentProvider {
       telemetry: { captureContent: false },
       env: { ...process.env, OTEL_SDK_DISABLED: "true" },
     }
-    const client = (this.options.clientFactory ?? ((options) => new CopilotClient(options)))(clientOptions)
+    const client = (this.options.clientFactory ?? createLiveCopilotClient)(clientOptions)
     resources.client = client
     context.onActivity("Goal me: preparing the interview.")
     await run.wait(() => client.start())

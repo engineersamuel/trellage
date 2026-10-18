@@ -1,3 +1,5 @@
+import { createLiveCopilotClient } from "./provider-clients.ts"
+
 /**
  * Copilot SDK-backed implementation of `GuideProvider` for `trx guide`.
  *
@@ -55,7 +57,6 @@ import os from "node:os"
 import path from "node:path"
 import { guideTaskContext } from "./guide-context.ts"
 import {
-  CopilotClient,
   RuntimeConnection,
   type CopilotClientOptions,
   type CopilotSession,
@@ -206,7 +207,7 @@ export interface CopilotGuideProviderOptions {
   readonly signal?: AbortSignal
 }
 
-const defaultClientFactory = (options: CopilotClientOptions): GuideModelClient => new CopilotClient(options)
+const defaultClientFactory = (options: CopilotClientOptions): GuideModelClient => createLiveCopilotClient(options)
 
 const applyGlobalModelOverrides = (
   config: GuideModelRouting[GuideModelPhase],
@@ -543,7 +544,7 @@ class RestrictedGuideRequest {
     this.workingDirectory = options.workingDirectory ?? os.homedir()
     this.deadline = Date.now() + options.timeoutMs
     const cliPath = options.copilotCliPath ?? findExecutableOnPath("copilot")
-    this.client = (options.clientFactory ?? ((config) => new CopilotClient(config)))({
+    this.client = (options.clientFactory ?? createLiveCopilotClient)({
       mode: "empty",
       builtinPluginDirectories: [],
       ...(cliPath === undefined ? {} : { connection: RuntimeConnection.forStdio({ path: cliPath }) }),

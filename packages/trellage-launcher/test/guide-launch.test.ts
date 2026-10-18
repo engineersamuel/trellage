@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { execFileSync } from "node:child_process"
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 
 import {
   appendNativeArguments,
@@ -416,6 +419,39 @@ describe("guide launch command building", () => {
 })
 
 describe("shell preview escaping", () => {
+  it("keeps source router settings when a new terminal has a fresh environment", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "guide-handoff-"))
+    const sourceRoot = path.join(directory, "worktree ' $() `literal`", "trellage-router")
+    mkdirSync(path.join(sourceRoot, "bin"), { recursive: true })
+    const executable = path.join(sourceRoot, "bin", "trx")
+    writeFileSync(executable, `#!/bin/sh
+printf '%s\\0' "$TRELLAGE_TRX_SOURCE_ROOT" "$TRELLAGE_TRX_NATIVE_SOURCE" "$TRELLAGE_TRX_GUIDE_ROOT" "$TRELLAGE_DEV_SOURCES" "$UNRELATED_SECRET" "$@"
+`, { mode: 0o755 })
+    const settings = {
+      TRELLAGE_TRX_SOURCE_ROOT: sourceRoot,
+      TRELLAGE_TRX_NATIVE_SOURCE: "1",
+      TRELLAGE_TRX_GUIDE_ROOT: path.join(directory, "profile guides"),
+      TRELLAGE_DEV_SOURCES: `https://example.com/repo.git=${directory}`,
+      UNRELATED_SECRET: "must not be forwarded",
+    }
+    try {
+      const args = ["run", "codex", "superpowers"]
+      const preview = renderCommandPreview({ executable, args }, settings)
+      expect(execFileSync("sh", ["-c", `env TRELLAGE_AUTOMATION=1 ${preview}`], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH },
+      })).toBe([
+        sourceRoot, "1", settings.TRELLAGE_TRX_GUIDE_ROOT, settings.TRELLAGE_DEV_SOURCES, "", ...args,
+      ].map((value) => `${value}\0`).join(""))
+      expect(renderCommandPreview({ executable: "/installed/bin/trx", args }, settings))
+        .toBe("/installed/bin/trx run codex superpowers")
+      expect(renderCommandPreview({ executable, args }, {}))
+        .toBe([executable, ...args].map(posixShellEscape).join(" "))
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it("escapes empty, quoted, spaced, dollar, and newline text for display", () => {
     expect(posixShellEscape("")).toBe("''")
     expect(posixShellEscape("simple")).toBe("simple")

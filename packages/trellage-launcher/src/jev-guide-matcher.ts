@@ -1,5 +1,4 @@
 import {
-  TypeSafeClient,
   choice,
   noul,
   type Questions,
@@ -15,6 +14,7 @@ import {
 } from "./guide-provider.ts"
 import { taskSpecificGuideMatchEntries, type GuideMatchCatalogEntry } from "./guide-catalog.ts"
 import { jevApiKey, type JevSystemOneClient } from "./jev-decisions.ts"
+import { createLiveTypeSafeClient } from "./provider-clients.ts"
 
 export { userEnvironmentDirectory } from "./jev-decisions.ts"
 export type { JevSystemOneClient } from "./jev-decisions.ts"
@@ -42,7 +42,7 @@ const boundedText = (value: string): string =>
     .trim()
     .slice(0, 500)
 const loadDefaultClient = (apiKey: string): JevSystemOneClient =>
-  new TypeSafeClient({
+  createLiveTypeSafeClient({
     apiKey,
     defaultModel: MODEL,
     retry: { maxRetries: 0 },

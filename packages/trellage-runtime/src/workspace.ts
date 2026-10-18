@@ -274,11 +274,20 @@ export function copySources(root: string, destination: string): void {
   safeDirectory(root)
   safeDirectory(destination)
   if (readdirSync(destination).length !== 0) throw new Error(`source stage must be empty: ${destination}`)
-  for (const directory of sourceDirectoryNames(root)) mkdirSync(path.join(destination, directory), { mode: 0o755 })
+  const createdDirectories = new Set([destination])
+  for (const directory of sourceDirectoryNames(root)) {
+    const target = path.join(destination, directory)
+    mkdirSync(target, { mode: 0o755 })
+    createdDirectories.add(target)
+  }
   for (const relative of sourceFiles(root)) {
     const source = sourceFilePath(root, relative)
     const target = path.join(destination, relative)
-    mkdirSync(path.dirname(target), { recursive: true, mode: 0o755 })
+    const parent = path.dirname(target)
+    if (!createdDirectories.has(parent)) {
+      mkdirSync(parent, { recursive: true, mode: 0o755 })
+      createdDirectories.add(parent)
+    }
     copyFileSync(source, target)
     chmodSync(target, lstatSync(source).mode & 0o755)
   }

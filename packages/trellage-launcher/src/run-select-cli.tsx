@@ -2,6 +2,7 @@
 import { constants, openSync } from "node:fs"
 import path from "node:path"
 import tty from "node:tty"
+import { openControllingTerminalInput } from "./controlling-terminal-input.ts"
 import React from "react"
 import { render } from "ink"
 import { createSelectionHistory, main as runMain, resolveNativeRunPaths, scopeKeysFor } from "@trellage/runtime/native-run"
@@ -88,9 +89,8 @@ const launchInHerdr = async (
 const select = async (catalog: RunSelectorCatalog, argv: ReadonlyArray<string>): Promise<RunSelection | null> => {
   const paths = resolveNativeRunPaths({ environment: process.env })
   const restored = await createSelectionHistory(paths).restore(await scopeKeysFor(process.cwd()))
-  const inputFd = openSync("/dev/tty", constants.O_RDONLY)
   const outputFd = openSync("/dev/tty", constants.O_WRONLY)
-  const stdin = new tty.ReadStream(inputFd)
+  const stdin = openControllingTerminalInput()
   const stdout = new tty.WriteStream(outputFd)
   let result: RunSelection | null = null
   const herdrAvailable = process.env.HERDR_ENV === "1" && Boolean(process.env.HERDR_PANE_ID) && Bun.which("herdr") !== null

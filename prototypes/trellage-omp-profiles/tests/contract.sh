@@ -163,7 +163,7 @@ trap 'cleanup_stale_claim_process; rm -rf -- "$fixture_root"' EXIT HUP INT TERM
 fixture_registry="$(npm config get registry --workspaces=false)" \
   || fail 'could not discover the host npm registry'
 [[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
-export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export BUN_INSTALL_CACHE_DIR="${TRELLAGE_TEST_PACKAGE_CACHE:-$fixture_root/bun-cache}"
 export npm_config_registry="$fixture_registry"
 
 

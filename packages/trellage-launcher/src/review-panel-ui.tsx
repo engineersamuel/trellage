@@ -560,12 +560,11 @@ export const OptimizeReviewPanel = (props: ReviewProps) => {
         {flow.mode === "consent" ? (
           <MarkdownTextViewport value={consentDocument(flow)} width={props.width} height={height} />
         ) : null}
-        {flow.mode === "running" ? <ReviewReports flow={flow} height={height} /> : null}
-        {flow.mode === "findings" ? <Findings flow={flow} height={height} /> : null}
-        {flow.mode === "outcome" ? <ReviewOutcome flow={flow} height={height} width={props.width} /> : null}
-        {flow.mode === "report" && props.review !== undefined ? (
+        {flow.mode === "running" || (flow.mode === "report" && props.review !== undefined) ? (
           <ReviewReports flow={flow} height={height} />
         ) : null}
+        {flow.mode === "findings" ? <Findings flow={flow} height={height} /> : null}
+        {flow.mode === "outcome" ? <ReviewOutcome flow={flow} height={height} width={props.width} /> : null}
       </Box>
       {flow.error === undefined || flow.mode === "outcome" ? null : <Text color="yellow">{flow.error}</Text>}
       <Text dimColor>{keys}</Text>

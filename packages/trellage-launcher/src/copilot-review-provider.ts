@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
-  CopilotClient, RuntimeConnection, type CopilotClientOptions, type SessionConfig,
+  RuntimeConnection, type CopilotClientOptions, type SessionConfig,
   type SessionEvent, type Tool, type ModelInfo,
 } from "@github/copilot-sdk"
 import { findExecutableOnPath, restrictedGuideSessionConfig } from "./copilot-guide-provider.ts"
+import { createLiveCopilotClient } from "./provider-clients.ts"
 import { fleetLenses, pinnedFleetModel, type ReviewDefinition } from "./review-catalog.ts"
 import type { ReviewWorkspace } from "./review-skills.ts"
 import { validateFleetReport, type FleetReport, type ReviewOutput, type ReviewSnapshot } from "./review-run.ts"
@@ -595,7 +596,7 @@ export class CopilotReviewProvider {
   constructor(
     private readonly workspace: ReviewWorkspace,
     private readonly snapshot: ReviewSnapshot,
-    private readonly clientFactory: ReviewClientFactory = (options) => new CopilotClient(options),
+    private readonly clientFactory: ReviewClientFactory = createLiveCopilotClient,
     timeoutMs?: number,
     private readonly onOutput?: (id: string, output: ReviewOutput) => void,
     private readonly policy: ReviewProviderPolicy = {},

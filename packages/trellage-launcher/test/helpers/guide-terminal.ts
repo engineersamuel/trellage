@@ -79,6 +79,11 @@ export const createGuideTerminal = async (
           TRELLAGE_TRX_COMMAND_PATH: path.join(root, "bin", "trx"),
           TERM: "xterm-256color",
           CI: "true",
+          ...(process.env.TRELLAGE_TEST_OFFLINE === "1" ? {
+            TRELLAGE_TEST_OFFLINE: "1",
+            TRELLAGE_TEST_VIOLATIONS: process.env.TRELLAGE_TEST_VIOLATIONS,
+            TRELLAGE_TEST_BIN: process.env.TRELLAGE_TEST_BIN,
+          } : {}),
           // Queue focus changes use styling; keep those redraws enabled under CI.
           FORCE_COLOR: "1",
           ...fixtureEnvironment,

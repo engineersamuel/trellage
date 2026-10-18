@@ -738,8 +738,22 @@ export const posixShellEscape = (value: string): string => {
     .join("\\\\")
 }
 
-export const renderCommandPreview = (command: CommandSpec): string =>
-  [command.executable, ...command.args].map(posixShellEscape).join(" ")
+export const renderCommandPreview = (
+  command: CommandSpec,
+  env: NodeJS.ProcessEnv = process.env,
+): string => {
+  const sourceRoot = env.TRELLAGE_TRX_SOURCE_ROOT
+  const sourceSettings = sourceRoot && command.executable === path.join(sourceRoot, "bin", "trx")
+    ? ["TRELLAGE_TRX_SOURCE_ROOT", "TRELLAGE_TRX_NATIVE_SOURCE", "TRELLAGE_TRX_GUIDE_ROOT", "TRELLAGE_DEV_SOURCES"]
+      .flatMap((key) => env[key] === undefined ? [] : [`${key}=${env[key]}`])
+    : []
+  // A new terminal does not inherit the guide process's source-runtime settings.
+  return [
+    ...(sourceSettings.length === 0 ? [] : ["env", ...sourceSettings]),
+    command.executable,
+    ...command.args,
+  ].map(posixShellEscape).join(" ")
+}
 
 export const sameGuideCommand = (left: CommandSpec, right: CommandSpec): boolean =>
   left.executable === right.executable &&
@@ -1075,7 +1089,9 @@ export const runInteractiveTerminalCommand = async (
   let filename = "/dev/tty"
   if (process.platform === "darwin") {
     // macOS cannot poll the /dev/tty proxy with kqueue.
-    const name = execFileSync("/bin/ps", ["-p", String(process.pid), "-o", "tty="], {
+    const testTools = process.env.TRELLAGE_TEST_OFFLINE === "1" ? process.env.TRELLAGE_TEST_BIN : undefined
+    const processListing = testTools ? path.join(testTools, "ps") : "/bin/ps"
+    const name = execFileSync(processListing, ["-p", String(process.pid), "-o", "tty="], {
       encoding: "utf8",
       timeout: 5000,
       maxBuffer: 4096,

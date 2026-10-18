@@ -543,6 +543,8 @@ install_fixture_node "$fake_bin"
 ln -s /bin/bash "$fake_bin/bash"
 ln -s "$(command -v dirname)" "$fake_bin/dirname"
 seed_floating_skills_cache "$fixture_home"
+seed_native_skills_fixture "$fixture_home"
+bun --no-env-file "$prototype_root/../../tests/helpers/native-preset-sources.ts" "$fixture_home" copilot
 export HOME="$fixture_home"
 export PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export FAKE_COPILOT_LOG="$fake_copilot_log"
@@ -1033,7 +1035,7 @@ printf '%s\n' '{"type":"assistant.message","data":{"content":"partial"}}' 'not-j
     trx_run_copilot hve \
     --prompt 'malformed output' --output-format json --stream off
 ) >"$fixture_root/headless-malformed.out" 2>"$fixture_root/headless-malformed.err" \
-  || fail 'malformed-output fixture launch failed'
+  || { cat "$fixture_root/headless-malformed.err" >&2; fail 'malformed-output fixture launch failed'; }
 cmp -s "$malformed_json_stream" "$fixture_root/headless-malformed.out" \
   || fail 'malformed-output fixture changed native stdout'
 if jq -se 'all(.[]; type == "object")' "$fixture_root/headless-malformed.out" >/dev/null 2>&1; then
@@ -2254,6 +2256,7 @@ awesome_marketplace_add_count="$(awk 'index($0, "args=plugin marketplace add git
 awesome_missing_builtin_status=0
 mkdir -p "$fixture_root/awesome-decoy-home"
 seed_floating_skills_cache "$fixture_root/awesome-decoy-home"
+seed_native_skills_fixture "$fixture_root/awesome-decoy-home"
 HOME="$fixture_root/awesome-decoy-home" FAKE_HIDE_AWESOME_MARKETPLACE=1 \
   "$launcher" setup awesome \
   >"$fixture_root/awesome-missing-built-in.out" \

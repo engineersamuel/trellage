@@ -45,12 +45,13 @@ trap cleanup EXIT
 fixture_registry="$(npm config get registry --workspaces=false)" \
   || fail 'could not discover the host npm registry'
 [[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
-export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export BUN_INSTALL_CACHE_DIR="${TRELLAGE_TEST_PACKAGE_CACHE:-$fixture_root/bun-cache}"
 export npm_config_registry="$fixture_registry"
 
 mkdir -p "$fixture_home" "$fixture_bin" "$worktree" "$main_copilot"
 printf 'main state\n' >"$main_sentinel"
 seed_floating_skills_cache "$fixture_home"
+seed_native_skills_fixture "$fixture_home"
 ln -s "$real_node" "$fixture_bin/node"
 install_fixture_bun "$fixture_bin"
 ln -s "$real_jq" "$fixture_bin/jq"
@@ -239,7 +240,7 @@ sources_before_launch="$(grep -Fxc 'config list --show-source' "$agency_command_
 jq -e \
   --arg realHome "$fixture_home" \
   --arg cwd "$worktree" '
-  (.copilotHome | contains("/native-run/compositions/agency-") and endswith("/generations/045855f12ec790e9"))
+  (.copilotHome | contains("/native-run/compositions/agency-") and endswith("/generations/2827e3e1810f5a0e"))
   and .home == $realHome
   and .cwd == $cwd
   and .auth == "AzureCliCredential"
@@ -260,7 +261,7 @@ jq -e \
     "",
     "*"
   ]
-' "$agency_log" >/dev/null || fail 'launch environment or argument forwarding differs'
+' "$agency_log" >/dev/null || { cat "$agency_log" >&2; fail 'launch environment or argument forwarding differs'; }
 [[ "$(grep -Fxc 'config check --skip-remotes' "$agency_command_log")" \
   -eq $((checks_before_launch + 1)) ]] \
   || fail 'launch repeated Agency config validation'

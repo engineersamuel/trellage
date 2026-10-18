@@ -45,7 +45,7 @@ fail() {
 fixture_registry="$(npm config get registry --workspaces=false)" \
   || fail 'could not discover the host npm registry'
 [[ -n "$fixture_registry" ]] || fail 'host npm registry is empty'
-export BUN_INSTALL_CACHE_DIR="$fixture_root/bun-cache"
+export BUN_INSTALL_CACHE_DIR="${TRELLAGE_TEST_PACKAGE_CACHE:-$fixture_root/bun-cache}"
 export npm_config_registry="$fixture_registry"
 
 assert_contains() {
@@ -78,8 +78,13 @@ assert_native_skills_refreshed() {
 mkdir -p "$fixture_home" "$fixture_bin"
 export TMPDIR="$fixture_root"
 seed_floating_skills_cache "$fixture_home"
+seed_native_skills_fixture "$fixture_home"
+"$real_bun" --no-env-file "$prototype_root/../../tests/helpers/native-preset-sources.ts" "$fixture_home" codex copilot
 ln -s "$real_node" "$fixture_bin/node"
 ln -s "$real_bun" "$fixture_bin/bun"
+if [[ -n "${TRELLAGE_TEST_BIN-}" ]]; then
+  ln -s "$TRELLAGE_TEST_BIN/ps" "$fixture_bin/ps"
+fi
 ln -s "$real_jq" "$fixture_bin/jq"
 ln -s "$(command -v python3)" "$fixture_bin/python3"
 
@@ -926,7 +931,7 @@ chmod 0644 "$jev_environment/.env.local"
 jq -e '.jevKey.privateValue == null' "$fixture_root/guide-jev-unsafe.json" >/dev/null \
   || fail 'guide loaded a Jev key from an unsafe environment file'
 assert_contains 'Jev decisions stay off' "$fixture_root/guide-jev-unsafe.err"
-rm -rf -- "$fixture_home/.config"
+rm -f -- "$jev_environment/.env.schema" "$jev_environment/.env.local"
 
 status=0
 "$fixture_bin/trx" admin extra-arg >"$fixture_root/admin-invalid.out" \
@@ -1074,7 +1079,8 @@ status=0
 TRX_UPGRADE_LOG="$upgrade_log" "$fixture_bin/trx" upgrade all --yes \
   >"$fixture_root/upgrade-yes.out" 2>&1 || status=$?
 [[ "$status" == 0 ]] || fail "authorized upgrade returned unexpected status $status"
-[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 5 ]] || fail 'authorized upgrade did not run each planned update exactly once'
+[[ "$(wc -l <"$upgrade_log" | tr -d ' ')" == 5 ]] \
+  || { cat "$fixture_root/upgrade-yes.out" "$upgrade_log" >&2; fail 'authorized upgrade did not run each planned update exactly once'; }
 assert_native_skills_refreshed
 assert_contains 'cldx:harness-update' "$upgrade_log"
 assert_contains 'omp:update copilot' "$upgrade_log"
