@@ -51,6 +51,14 @@ jobs:
         run: sudo apt-get install --yes --no-install-recommends fish ripgrep
       - name: Verify required system tools
         run: for tool in jq curl git make fish rg bun node python3; do command -v "$tool" >/dev/null; done
+      - name: Enable offline test network namespaces
+        run: |
+          # Ubuntu 24.04 AppArmor otherwise denies unshare's uid_map write.
+          # This setting applies only to this disposable hosted runner.
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --user --map-root-user --net -- true
       - name: Require a checkout without installed dependencies
         run: |
           if [[ -n "$(find . -name node_modules -print -quit)" ]]; then

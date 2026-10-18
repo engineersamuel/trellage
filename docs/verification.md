@@ -195,6 +195,16 @@ fails under explicit test configuration and leaves a violation receipt, so catch
 that error cannot silently turn the run green. `make offline-llm-contract` checks
 the isolation with local canaries and no provider traffic.
 
+Linux requires `unshare --user --map-root-user --net -- true` to succeed as
+the test user. Ubuntu 24.04's AppArmor restriction on unprivileged user namespaces
+can reject the UID mapping with `write failed /proc/self/uid_map: Operation not
+permitted`, before any test command starts. CI sets
+`kernel.apparmor_restrict_unprivileged_userns=0` on its disposable hosted runner
+and probes the namespace setup before running tests. The network namespace
+restriction remains enforced; tests do not run with sudo or fall back to host
+network access. `make test-pr` also runs the isolation canaries so runner setup
+regressions are caught before merge.
+
 Tests require Python 3.11 or newer on `PATH`. Run `make test-prepare` once after changing locked dependencies to populate
 `.test-performance/package-cache` using the repository's frozen source preparer
 and the configured package feed, and install the separately locked Playwright
@@ -202,6 +212,18 @@ test dependencies with `npm ci`. This is setup, measured separately from warm
 tests. Fixtures still execute the frozen installer and receive independent
 dependency files; they reuse downloaded package bytes through
 `TRELLAGE_TEST_PACKAGE_CACHE`. Tests never fall back to an unrestricted network.
+Preparation installs into a source-only copy: staging an already prepared
+workspace can reuse `node_modules` without filling the download cache.
+`make test` checks a fresh offline installation before starting the parallel
+contracts, so an incomplete cache fails immediately. Lint, formatting, and root
+TypeScript checks also run in the full suite.
+
+Codex uses the shared Native source installer and composition adapter. Its
+installation coverage lives in `packages/trellage-runtime/test/runtime.test.ts`;
+launch and instruction behavior live in `test/native-run/run.test.ts` under the
+same package. These tests use local fixtures and do not install or invoke a
+paid Codex session. OMP process tests observe fixture process exit before checking
+for late writes, instead of sleeping after already completed cleanup.
 
 Use `python3 scripts/test-performance.py --reference REFERENCE --candidate CANDIDATE
 --package-cache CACHE --inventory test-performance.json --output NEW_REPORT.json`

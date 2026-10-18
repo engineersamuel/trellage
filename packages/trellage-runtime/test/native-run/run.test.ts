@@ -119,6 +119,31 @@ const primeLaunchInput = (root: string, environment: NodeJS.ProcessEnv): LaunchI
 
 const base = { dryRun: false, allowUnprovenIsolation: false, forwardedArgs: [] as string[] }
 
+test.each([
+  { profiles: ["empty"], noAlways: false, always: false, harnesses: ["codex"], fails: false },
+  { profiles: ["rules"], noAlways: false, always: false, harnesses: ["codex"], fails: true },
+  { profiles: ["empty"], noAlways: false, always: true, harnesses: ["codex"], fails: true },
+  { profiles: ["empty"], noAlways: true, always: true, harnesses: ["codex"], fails: false },
+  { profiles: ["rules"], noAlways: true, always: true, harnesses: ["codex"], fails: true },
+  { profiles: ["empty"], noAlways: false, always: true, harnesses: ["pi"], fails: false },
+])("instruction files are required only by effective profiles: %j", async ({ profiles, noAlways, always, harnesses, fails }) => {
+  const fixture = await world(`schema_version = 1
+[native.instructions.rules]
+file = "missing.md"
+[native.profiles.empty]
+[native.profiles.rules]
+always = ${always}
+harnesses = ${JSON.stringify(harnesses)}
+instructions = ["rules"]
+`)
+  const preparing = prepareRun(
+    { ...base, harness: "codex", profiles, dryRun: true, noAlways },
+    fixture.dependencies(),
+  )
+  if (fails) await expect(preparing).rejects.toThrow("instruction rules: cannot read")
+  else expect((await preparing).plan.instructions).toEqual([])
+})
+
 test("explicitly selecting an always profile preserves each generation's selection metadata", async () => {
   const fixture = await world(`schema_version = 1
 [native.profiles.core]

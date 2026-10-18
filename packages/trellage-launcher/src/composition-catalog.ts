@@ -8,7 +8,7 @@ import { lifecycleRuntime } from "@trellage/runtime/native-run"
 import { lstat, readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { loadRunCatalog, type RunCatalog, type RunCatalogProfile } from "./run-catalog.ts"
+import { loadRunCatalog, type RunCatalogProfile } from "./run-catalog.ts"
 
 export interface HeadlessCapabilitiesV1 {
   readonly schemaVersion: 1

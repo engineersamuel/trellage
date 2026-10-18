@@ -85,6 +85,26 @@ test("missing instruction files are reported before recommending a profile", asy
   ).toBe(true)
 })
 
+test.each([
+  { always: false, harnesses: ["pi"], unavailable: false },
+  { always: true, harnesses: ["pi"], unavailable: true },
+  { always: true, harnesses: ["codex"], unavailable: false },
+])("readiness checks instruction files only for effective profiles: %j", async ({ always, harnesses, unavailable }) => {
+  const f = await fixture()
+  const c = catalog()
+  const configured = {
+    ...c,
+    instructions: { rules: { file: "missing.md" } },
+    profiles: {
+      ...c.profiles,
+      rules: { always, harnesses, skills: [], plugins: [], instructions: ["rules"] },
+    },
+  }
+  const ready = await inspectHarnessReadiness("pi", f.context)
+  const result = await inspectProfileReadiness(resolveNamedRunProfile(configured, configured, "pi", "custom"), ready, f.context)
+  expect(result.reasons.some((reason) => reason.code === "missing-config")).toBe(unavailable)
+})
+
 test("Agency does not claim readiness when its required setup and worktree config are absent", async () => {
   const f = await fixture()
   await writeFile(path.join(f.bin, "agency"), "#!/bin/sh\nexit 99\n", { mode: 0o755 })

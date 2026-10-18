@@ -18,6 +18,7 @@ PARALLEL_TEST_TARGETS := test-command native-copilot-profiles native-prime-profi
 TIMING_SENSITIVE_TEST_TARGETS := native-omp-profile native-claude-profile native-tui-matrix-test
 FINAL_TEST_TARGETS := native-profile-router
 PARALLEL_TEST_TARGETS += cli-matrix-contract
+PARALLEL_TEST_TARGETS += source-checks
 
 test:
 	+$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract
@@ -44,7 +45,7 @@ cli-matrix-contract:
 	python3 scripts/test-offline.py -- bun tests/exhaustive/controlling-input-regression.ts
 	python3 scripts/test-offline.py -- bun tests/exhaustive/run-selector-regression.ts
 
-.PHONY: test-offline-workload offline-llm-contract test-prepare
+.PHONY: test-offline-workload offline-llm-contract offline-install-contract test-prepare
 test-prepare:
 	bash scripts/prepare-test-cache.sh
 
@@ -52,15 +53,21 @@ offline-llm-contract:
 	python3 tests/offline_llm_contract.py
 	python3 scripts/test-offline.py -- bun test tests/offline_provider.test.ts
 
+offline-install-contract:
+	bash tests/offline_install_contract.sh
+
 test-offline-workload:
 	@test "$$TRELLAGE_TEST_OFFLINE" = 1 || { echo 'Use make test for enforced offline execution' >&2; exit 1; }
+	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-install-contract
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j$(TEST_JOBS) $(PARALLEL_TEST_TARGETS)
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 profile-compiler-fingerprint
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 $(TIMING_SENSITIVE_TEST_TARGETS)
 	$(MAKE) --no-print-directory TEST_TIMING=1 -j$(TEST_JOBS) $(FINAL_TEST_TARGETS)
 
 test-pr:
-	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 shell-syntax test-command agent-harness trellage-identity manifest
+	$(MAKE) --no-print-directory TEST_TIMING=1 -j1 offline-llm-contract shell-syntax test-command agent-harness trellage-identity manifest
+	bun run lint
+	bun run format:check
 	bun run check
 	bun run test
 	bash tests/source_startup_contract.sh
@@ -68,6 +75,12 @@ test-pr:
 
 shell-syntax:
 	bash scripts/check-shell-syntax.sh
+
+.PHONY: source-checks
+source-checks:
+	bun run lint
+	bun run format:check
+	bun run check:root
 
 test-command:
 	python3 tests/test_command.py

@@ -221,10 +221,23 @@ export const parseRunArguments = (argv: ReadonlyArray<string>): RunOptions => {
 
 const MAX_INSTRUCTION_BYTES = 64 * 1024
 
-/** Read every instruction file the catalog declares; paths are relative to the config directory. */
-const loadInstructions = async (configDirectory: string, catalog: NativeCatalog): Promise<Record<string, string>> => {
+/** Read effective profiles' instructions relative to the config directory. */
+const loadInstructions = async (
+  configDirectory: string,
+  catalog: NativeCatalog,
+  profiles: ReadonlyArray<string>,
+  options: RunOptions,
+): Promise<Record<string, string>> => {
+  const instructions = new Set(
+    Object.entries(catalog.profiles)
+      .filter(([id, profile]) => profiles.includes(id) || (
+        !options.noAlways && profile.always && (!profile.harnesses || profile.harnesses.includes(options.harness))
+      ))
+      .flatMap(([, profile]) => profile.instructions),
+  )
   const texts: Record<string, string> = {}
-  for (const [id, instruction] of Object.entries(catalog.instructions)) {
+  for (const id of instructions) {
+    const instruction = catalog.instructions[id]!
     const file = resolveInstructionFile(instruction.file, configDirectory, fileURLToPath(new URL("../../../../",import.meta.url)))
     try {
       const info = await lstat(file)
@@ -620,7 +633,7 @@ const composeRun = async (
   catalog: NativeCatalog,
   profiles: ReadonlyArray<string>,
 ): Promise<{ plan: CompositionPlan; layout: GenerationLayout }> => {
-  const instructionTexts = await loadInstructions(configDirectory, catalog)
+  const instructionTexts = await loadInstructions(configDirectory, catalog, profiles, options)
   const transport = devSourceTransport(
     dependencies.transport ?? gitSourceTransport(),
     devSourceRoots(environment.TRELLAGE_DEV_SOURCES),
