@@ -29,7 +29,7 @@ def verify(report: dict) -> dict:
     assert profiles == report["profiles"], "incomplete or changed profile inputs"
     assert flags == report["flags"], "incomplete or changed boolean flags"
     assert len(flags) == 7, "audit changed boolean registry before accepting coverage"
-    catalog = tomllib.loads((ROOT / "config.toml").read_text())["native"]["profiles"]
+    catalog = tomllib.loads((ROOT / "config.example.toml").read_text())["native"]["profiles"]
     outcomes = collections.Counter()
     digest = hashlib.sha256()
     count = 0

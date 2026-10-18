@@ -14,7 +14,7 @@ export const expectedGuideRouting = (model?: string, effort?: string) =>
   )
 
 export const guideStdinFixture = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   intent: "Fixture intent from stdin",
   profile: "native:codex/default",
   model: "stdin-model",
@@ -40,7 +40,7 @@ export const assertGuideRequestResolution = (args: GuideHeadlessArgs, id: string
     )
     if (!args.json) continue
     const expected = {
-      ...(args.intent === undefined ? guideStdinFixture : { schemaVersion: 1, intent: args.intent }),
+      ...(args.intent === undefined ? guideStdinFixture : { schemaVersion: 2, intent: args.intent }),
       ...(args.profile === undefined ? {} : { profile: args.profile }),
       ...(args.model === undefined ? {} : { model: args.model }),
       ...(args.effort === undefined ? {} : { effort: args.effort }),

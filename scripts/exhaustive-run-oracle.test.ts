@@ -5,7 +5,7 @@ import { parseRunArguments, runNative } from "@trellage/runtime/native-run"
 import { createCleanRunWorld } from "./exhaustive-clean-run-world.ts"
 import { expectedRunOutcome, type RunOutcome } from "./exhaustive-run-oracle.ts"
 
-const configPath = fileURLToPath(new URL("../config.toml", import.meta.url))
+const configPath = fileURLToPath(new URL("../config.example.toml", import.meta.url))
 const {
   config: { native: catalog },
 } = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: configPath } })
@@ -18,8 +18,8 @@ const cases: { args: string[]; outcome: RunOutcome }[] = [
   { args: ["agency", "clean"], outcome: "unsupported" },
   { args: ["codex", "clean", "--skill", "a/b:c"], outcome: "usage" },
   { args: ["copilot", "clean", "--", "--plugin-dir", "fixture"], outcome: "usage" },
-  { args: ["codex", "unknown-profile", "firstmate"], outcome: "unsupported" },
-  { args: ["uji", "unknown-profile", "--model", "gpt-6-astra"], outcome: "usage" },
+  { args: ["codex", "unknown-profile", "firstmate"], outcome: "unknown-profile" },
+  { args: ["uji", "unknown-profile", "--model", "gpt-6-astra"], outcome: "unknown-profile" },
   { args: ["uji", "firstmate", "--model", "gpt-6-astra"], outcome: "unsupported" },
   { args: ["codex", "unknown-profile"], outcome: "unknown-profile" },
   { args: ["codex", "--no-always", "--require-proven-isolation"], outcome: "isolation" },

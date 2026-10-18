@@ -48,7 +48,7 @@ const homeVariable = {
   copilot: "COPILOT_HOME",
 }[harness]
 const root = fileURLToPath(new URL("../", import.meta.url))
-const configPath = path.join(root, "config.toml")
+const configPath = path.join(root, "config.example.toml")
 const {
   config: { native: catalog },
 } = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: configPath } })

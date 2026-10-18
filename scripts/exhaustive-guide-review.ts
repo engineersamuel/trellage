@@ -146,9 +146,9 @@ export const assertGuideReviewTarget = async (
       )
       assert.deepEqual(
         services.profiles.map((profile) => profile.ref),
-        world.catalog.native
-          .filter((entry) => ["copilot", "codex", "claude"].includes(entry.launcher))
-          .map((entry) => `native:${entry.launcher}/${entry.name}`),
+        world.catalog.entries
+          .filter((entry) => ["copilot", "codex", "claude"].includes(entry.harness))
+          .map((entry) => entry.ref),
         id,
       )
       assert.deepEqual(services.coordinator, { model: args.model ?? "gpt-6-astra", effort: args.effort ?? "max" }, id)

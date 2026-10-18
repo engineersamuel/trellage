@@ -74,7 +74,7 @@ if (import.meta.main) {
   assert(start >= 0n && count > 0n && end <= total, "range outside declared full product")
   const {
     config: { native: catalog },
-  } = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: path.join(root, "config.toml") } })
+  } = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: path.join(root, "config.example.toml") } })
   const worlds = new Map<string, Awaited<ReturnType<typeof createRunWorld>>>()
   const outcomes: Record<string, number> = {},
     digest = createHash("sha256")

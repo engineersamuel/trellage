@@ -23,7 +23,7 @@ export const createRunWorld = async (harness: string) => {
       ...host.environment,
       ...admission.environment,
       ...world.dependencies.environment,
-      TRELLAGE_CONFIG: fileURLToPath(new URL("../config.toml", import.meta.url)),
+      TRELLAGE_CONFIG: fileURLToPath(new URL("../config.example.toml", import.meta.url)),
       TRELLAGE_DEV_SOURCES: process.env.TRELLAGE_DEV_SOURCES,
     }
     if (harness === "jcode") delete environment.TRELLAGE_JCODE_BIN

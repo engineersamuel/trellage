@@ -70,7 +70,7 @@ for (const harness of ["claude", "copilot", "agency", "jcode"]) {
       const environment: NodeJS.ProcessEnv = {
         ...world.dependencies.environment,
         ...fixture.environment,
-        TRELLAGE_CONFIG: fileURLToPath(new URL("../config.toml", import.meta.url)),
+        TRELLAGE_CONFIG: fileURLToPath(new URL("../config.example.toml", import.meta.url)),
       }
       if (harness === "jcode") delete environment.TRELLAGE_JCODE_BIN
       const result = await runNative(parseRunArguments([harness, "--no-always", "--", "fixture prompt"]), {

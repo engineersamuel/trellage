@@ -80,7 +80,7 @@ for (const harness of ["omp", "prime"]) {
       const environment = {
         ...world.dependencies.environment,
         ...fixture.environment,
-        TRELLAGE_CONFIG: fileURLToPath(new URL("../config.toml", import.meta.url)),
+        TRELLAGE_CONFIG: fileURLToPath(new URL("../config.example.toml", import.meta.url)),
       }
       for (let turn = 0; turn < 2; turn++) {
         expect(

@@ -9,7 +9,7 @@ const destination = process.argv[2]
 if (!destination || !path.isAbsolute(destination) || /\s/.test(destination)) {
   throw new Error("Native source fixtures need an absolute destination without whitespace")
 }
-const configPath = fileURLToPath(new URL("../../config.toml", import.meta.url))
+const configPath = fileURLToPath(new URL("../../config.example.toml", import.meta.url))
 const config = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: configPath } })
 const declaredUrls = [...readFileSync(configPath, "utf8").matchAll(/https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/g)]
   .map(([url]) => url.replace(/\.git$/, ""))

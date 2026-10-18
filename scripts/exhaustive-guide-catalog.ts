@@ -1,50 +1,28 @@
 import { createHash } from "node:crypto"
-import { readFile } from "node:fs/promises"
+import { readFile, readdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
-import { canonicalNativeIdentity } from "@trellage/guide-core"
-import { enrichNativeProfileList } from "../packages/trellage-launcher/src/native-guide-list.ts"
+import { loadCompositionCatalog } from "../packages/trellage-launcher/src/composition-catalog.ts"
 
 const root = new URL("../", import.meta.url)
 export const loadGuideCatalogDomain = async () => {
   const sourceHashes: Record<string, string> = {}
-  const read = async (name: string): Promise<string> => {
-    const content = await readFile(new URL(name, root), "utf8")
-    sourceHashes[name] = createHash("sha256").update(content).digest("hex")
-    return content
+  const read = async (name: string): Promise<void> => {
+    sourceHashes[name] = createHash("sha256").update(await readFile(new URL(name, root))).digest("hex")
   }
-  const router = await read("prototypes/trellage-router/bin/trx")
-  const profiles: { launcher: string; name: string }[] = []
-  const catalogs = [...router.matchAll(/^read_canonical_catalog ([a-z]+) ([a-z-]+) [a-z]+ >"\$catalog_tmp\/[a-z]+"$/gm)]
-  if (!catalogs.length) throw new Error("Cannot find the router's canonical catalogs")
-  for (const [, harness, directory] of catalogs) {
-    const catalog = JSON.parse(await read(`prototypes/${directory}/catalog.json`))
-    const names = Array.isArray(catalog.profiles)
-      ? catalog.profiles.map((profile: { name: string }) => profile.name)
-      : Object.keys(catalog.profiles)
-    for (const name of names) {
-      const identity = canonicalNativeIdentity(harness!, name)
-      profiles.push({ launcher: identity.launcher, name: identity.profile })
-    }
-  }
-  const inline = [...router.matchAll(/^[a-z]+_catalog='(\{"schemaVersion":1,[^\n]+\})'$/gm)]
-  if (!inline.length) throw new Error("Cannot find the router's inline catalogs")
-  for (const [, source] of inline) {
-    const catalog = JSON.parse(source!)
-    for (const profile of catalog.profiles) profiles.push({ launcher: catalog.harness, name: profile.name })
-  }
-  const firstmate = [...router.matchAll(/then firstmateProfile\("([a-z]+)"\)/g)]
-  if (!firstmate.length) throw new Error("Cannot find the router's Firstmate profiles")
-  for (const [, harness] of firstmate) profiles.push({ launcher: harness!, name: "firstmate" })
-  const keys = profiles.map(({ launcher, name }) => `${launcher}/${name}`)
-  if (new Set(keys).size !== keys.length) throw new Error("Duplicate router profile identities")
-  const guideRoot = fileURLToPath(new URL("profile-guides", root))
-  const enriched = JSON.parse(await enrichNativeProfileList(JSON.stringify({ schemaVersion: 1, profiles }), guideRoot))
-  for (const profile of enriched.profiles) await read(`profile-guides/native/${profile.launcher}/${profile.name}.md`)
-  await read("packages/trellage-launcher/src/native-guide-list.ts")
-  await read("packages/trellage-guide-core/src/native-identity.ts")
+  for (const name of ["config.example.toml", "prototypes/trellage-router/bin/trx",
+    "packages/trellage-launcher/src/composition-catalog.ts", "packages/trellage-launcher/src/run-catalog.ts",
+    "packages/trellage-runtime/src/native-run/presets.ts", "docs/herdr-compatibility.json"])
+    await read(name)
+  for (const harness of await readdir(new URL("profile-guides/native/", root)))
+    for (const name of await readdir(new URL(`profile-guides/native/${harness}/`, root)))
+      if (name.endsWith(".md")) await read(`profile-guides/native/${harness}/${name}`)
+  const catalog = await loadCompositionCatalog({
+    guideRoot: fileURLToPath(new URL("profile-guides", root)), commandPath: "/fixture/bin/trx",
+  })
+  const key = (entry: typeof catalog.entries[number]) => `${entry.harness}/${entry.profiles.join("+")}`
   return {
-    declared: keys.sort(),
-    available: enriched.profiles.map((profile: { launcher: string; name: string }) => `${profile.launcher}/${profile.name}`).sort(),
+    declared: catalog.entries.map(key).sort(),
+    available: catalog.entries.filter((entry) => entry.guide !== null).map(key).sort(),
     sourceHashes,
   }
 }

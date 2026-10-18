@@ -128,7 +128,7 @@ export const assertContinuationLaunch = async (
                 assert.deepEqual(argv, ["inventory", entry.launcher, entry.name, "--json"], label)
                 assert.equal(options?.cwd, root, label)
                 assert.equal(options?.timeoutMs, 30_000, label)
-                return ok({ schemaVersion: 1, launcher: entry.launcher, profile: entry.name, readiness: "healthy" })
+                return ok({ schemaVersion: 2, harness: entry.harness, profiles: entry.profiles, readiness: "healthy" })
               }
               assert.equal(executable, "herdr", label)
               if (argv[0] === "tab") {

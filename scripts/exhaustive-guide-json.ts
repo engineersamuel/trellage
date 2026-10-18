@@ -1,5 +1,4 @@
 import assert from "node:assert/strict"
-import { canonicalProfileRef } from "@trellage/guide-core"
 import { runGuideGenerate, runGuideMatch, type GuideHeadlessArgs } from "../packages/trellage-launcher/src/guide-api.ts"
 import { resolveGuideRequest } from "../packages/trellage-launcher/src/guide-command.ts"
 import type { GuideProvider, GuideMatchCandidate } from "../packages/trellage-launcher/src/guide-provider.ts"
@@ -39,7 +38,7 @@ export const assertGuideJsonService = async (
   }
   const { request, routing } = resolveGuideRequest(
     args,
-    JSON.stringify({ schemaVersion: 1, intent: "Fixture intent from stdin" }),
+    JSON.stringify({ schemaVersion: 2, intent: "Fixture intent from stdin" }),
     {},
   )
   const { catalog, guideRoot } = world
@@ -59,7 +58,8 @@ export const assertGuideJsonService = async (
       assert(input.entries.length >= 3, id)
       calls.push("match")
       selected = input.entries.slice(0, 3).map((entry) => ({
-        profileRef: entry.ref,
+        harness: entry.harness,
+        profiles: entry.profiles,
         workflowId: entry.guide.workflows[0]!.id,
         confidence: 0.8,
         reason: "Explicit deterministic fixture",
@@ -96,14 +96,14 @@ export const assertGuideJsonService = async (
     assert.equal(result.model, routing.match.model, id)
     assert.equal(result.effort, routing.match.effort, id)
     assert.deepEqual(
-      result.recommendations.map(({ profileRef, workflowId }) => ({ profileRef, workflowId })),
-      selected.map(({ profileRef, workflowId }) => ({ profileRef, workflowId })),
+      result.recommendations.map(({ harness, profiles, workflowId }) => ({ harness, profiles, workflowId })),
+      selected.map(({ harness, profiles, workflowId }) => ({ harness, profiles, workflowId })),
       id,
     )
     return "match"
   }
   const entry = catalog.native.find(
-    (entry) => `native:${entry.launcher}/${entry.name}` === canonicalProfileRef(request.profile!),
+    (entry) => entry.ref === request.profile,
   )
   const generate = () =>
     runGuideGenerate(
@@ -135,7 +135,7 @@ export const assertGuideJsonService = async (
     id,
   )
   assert.equal(result.profile.workflowId, workflowId, id)
-  assert.equal(result.profile.profileRef, request.profile, id)
+  assert.equal(result.profile.ref, request.profile, id)
   assert.equal(result.intent, request.intent, id)
   assert.equal(result.model, routing.generate.model, id)
   assert.equal(result.effort, routing.generate.effort, id)

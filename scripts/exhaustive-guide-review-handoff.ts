@@ -45,9 +45,9 @@ export const assertGuideReviewHandoff = async (
     const expected = buildHerdrGuideLaunch(profile.profile, prompt)
     const expectedCommand = automatic ? {
       executable: expected.command.executable,
-      args: [profile.profile.profile, "--plan", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", prompt],
+      args: ["run", profile.profile.harness, ...profile.profile.profiles, "--", "--plan", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", prompt],
     } : expected.command
-    const automaticRejected = automatic && (destination !== "tab" || profile.profile.launcher !== "copilot" || profile.profile.profile !== "hve")
+    const automaticRejected = automatic && (destination !== "tab" || profile.profile.harness !== "copilot" || (profile.profile.profiles.length !== 1 || profile.profile.profiles[0] !== "hve"))
     let busyWriter = false
     let allocations = 0
     let dispatches = 0

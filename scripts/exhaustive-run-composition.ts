@@ -16,7 +16,7 @@ import { createCleanRunWorld } from "./exhaustive-clean-run-world.ts"
 
 // Preparation is a separate scope: launch, discovery, updates, and model execution are forbidden.
 const root = fileURLToPath(new URL("../", import.meta.url))
-const configPath = path.join(root, "config.toml")
+const configPath = path.join(root, "config.example.toml")
 assert.equal(process.env.TRELLAGE_TEST_OFFLINE, "1", "use scripts/test-offline.sh --native-sources")
 assert.ok(process.env.TRELLAGE_DEV_SOURCES, "local source mappings are required")
 const {
@@ -52,7 +52,7 @@ const hashFile = async (relative: string) => {
     .digest("hex")
 }
 for (const relative of [
-  "config.toml",
+  "config.example.toml",
   "scripts/exhaustive-run-composition.ts",
   "scripts/exhaustive-clean-run-world.ts",
   "tests/helpers/native-source-fixtures.ts",

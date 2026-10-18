@@ -13,7 +13,7 @@ test("selection oracle rejects missing or substituted manifest selections", asyn
     const {
       config: { native: catalog },
     } = await readTrellageConfig({
-      environment: { TRELLAGE_CONFIG: fileURLToPath(new URL("../config.toml", import.meta.url)) },
+      environment: { TRELLAGE_CONFIG: fileURLToPath(new URL("../config.example.toml", import.meta.url)) },
     })
     const options = parseRunArguments(["codex", "base", "--dry-run", "--skill", "a/b:c"])
     const prepared = await prepareRun(options, world.dependencies)

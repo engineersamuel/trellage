@@ -19,7 +19,7 @@ export const verifyRunBehaviorReports = async (reports: Record<string, unknown>[
   const {
     config: { native: catalog },
   } = await readTrellageConfig({
-    environment: { TRELLAGE_CONFIG: fileURLToPath(new URL("../config.toml", import.meta.url)) },
+    environment: { TRELLAGE_CONFIG: fileURLToPath(new URL("../config.example.toml", import.meta.url)) },
   })
   const total = productSize(run)
   const ranges = reports

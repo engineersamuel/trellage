@@ -61,7 +61,7 @@ const sources = [
   "packages/trellage-launcher/test/fixtures/guide-optimize-model.ts",
   "packages/trellage-launcher/src/review-coordinator.ts", "packages/trellage-launcher/src/review-skills.ts",
   "packages/trellage-launcher/src/copilot-review-provider.ts", "packages/trellage-launcher/src/copilot-guide-provider.ts",
-  "packages/trellage-launcher/src/live-clients.ts", "packages/trellage-launcher/src/review-normalize.ts",
+  "packages/trellage-launcher/src/provider-clients.ts", "packages/trellage-launcher/src/provider-isolation.ts", "packages/trellage-launcher/src/review-normalize.ts",
   "packages/trellage-launcher/src/review-run.ts", "packages/trellage-launcher/src/review-contracts.ts",
   "packages/trellage-launcher/src/review-artifacts.ts", "packages/trellage-launcher/src/review-context.ts",
   "packages/trellage-launcher/src/review-evidence.ts", "packages/trellage-launcher/src/review-snapshot.ts",
@@ -88,7 +88,7 @@ const sources = [
   "packages/trellage-launcher/src/guide-command.ts", "packages/trellage-launcher/src/guide-model-routing.ts",
   "scripts/exhaustive-run-arguments.ts", "scripts/exhaustive-run-oracle.ts", "scripts/exhaustive-guide-arguments.ts",
   "scripts/exhaustive-run-dispatch.ts", "scripts/verify-exhaustive-coverage.ts",
-  "config.toml", "prototypes/trellage-router/bin/trx",
+  "config.example.toml", "prototypes/trellage-router/bin/trx",
   "packages/trellage-runtime/src/native-run/run.ts",
   "packages/trellage-runtime/src/native-run/adapters.ts",
   "packages/trellage-runtime/src/native-run/presets.ts",
@@ -140,7 +140,7 @@ export const loadCliDomains = async () => {
   }
   const baseMaximum = literalBound(/text\(value, "--base", ([0-9_]+)\)/, "review base bound")
   const ritualMaximum = literalBound(/id\.length > ([0-9_]+)/, "ritual ID bound")
-  const config = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: fileURLToPath(new URL("config.toml", root)) } })
+  const config = await readTrellageConfig({ environment: { TRELLAGE_CONFIG: fileURLToPath(new URL("config.example.toml", root)) } })
   const guideCatalog = await loadGuideCatalogDomain()
   const harnesses = Object.keys(adapters).sort()
   const profiles = [...new Set([

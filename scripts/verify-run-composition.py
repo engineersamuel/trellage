@@ -15,7 +15,7 @@ def verify(report_path: Path) -> dict:
     root = Path(__file__).resolve().parent.parent
     report = json.loads(report_path.read_text())
     assert report["scope"] == "run-composition-preparation"
-    catalog = tomllib.loads((root / "config.toml").read_text())["native"]["profiles"]
+    catalog = tomllib.loads((root / "config.example.toml").read_text())["native"]["profiles"]
     presets = (root / "packages/trellage-runtime/src/native-run/presets.ts").read_text()
     block = presets.split("export const nativeHarnessPresets = {", 1)[1].split("} as const", 1)[0]
     aliases = re.findall(r'"([^"]+)"', block)
@@ -37,7 +37,7 @@ def verify(report_path: Path) -> dict:
     assert set(actual) == expected, "missing or unexpected cases"
     assert len(actual) == len(expected) == report["executed"] == report["fullProduct"] == report["expected"], "duplicate cases or incorrect totals"
     required_hashes = {
-        "config.toml", "scripts/exhaustive-run-composition.ts", "scripts/exhaustive-clean-run-world.ts",
+        "config.example.toml", "scripts/exhaustive-run-composition.ts", "scripts/exhaustive-clean-run-world.ts",
         "tests/helpers/native-source-fixtures.ts", "packages/trellage-runtime/src/native-config.ts",
     } | {str(file.relative_to(root)) for file in (root / "packages/trellage-runtime/src/native-run").rglob("*") if file.is_file()}
     assert set(report["sourceHashes"]) == required_hashes, "incomplete source identity"

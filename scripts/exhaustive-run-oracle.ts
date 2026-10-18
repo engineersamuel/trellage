@@ -34,16 +34,15 @@ export const expectedRunOutcome = (options: RunOptions | undefined, catalog: Nat
         ? `preset-${options.harness}-${name}`
         : name,
   )
+  if (resolved.some((name) => !Object.hasOwn(catalog.profiles, name))) return "unknown-profile"
   if (
     resolved.some(
       (name) => catalog.profiles[name]?.harnesses && !catalog.profiles[name]!.harnesses!.includes(options.harness),
     )
   )
     return "unsupported"
-  // Uji's provider policy validates its model before composition resolves unknown profiles.
   if (options.harness === "uji" && options.model !== undefined && !/^copilot-proxy-rs\/.+$/u.test(options.model))
     return "usage"
-  if (resolved.some((name) => !Object.hasOwn(catalog.profiles, name))) return "unknown-profile"
   if (options.dryRun) return "dry-run"
   if (options.harness !== "pi" && !options.allowUnprovenIsolation) return "isolation"
   return "launched"

@@ -17,7 +17,7 @@ const expectedSkills: Record<string, string[] | null> = {
   invalid: null,
 }
 expect(selectors.map((value) => value.id).sort()).toEqual(Object.keys(expectedSkills).sort())
-const config = fileURLToPath(new URL("../config.toml", import.meta.url))
+const config = fileURLToPath(new URL("../config.example.toml", import.meta.url))
 
 for (const harness of Object.keys(adapters).sort()) {
   test(`${harness}: declared ad hoc selectors prepare from owned local repositories`, async () => {

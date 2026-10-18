@@ -41,7 +41,7 @@ test("Firstmate launches Pi workers then clears owned pins for Claude without la
     await createGithubBridge(world.root, world.home, path.join(world.root, "bin"))
     const environment = {
       ...world.dependencies.environment,
-      TRELLAGE_CONFIG: fileURLToPath(new URL("../config.toml", import.meta.url)),
+      TRELLAGE_CONFIG: fileURLToPath(new URL("../config.example.toml", import.meta.url)),
     }
     const fixture = await createFirstmateFixture(world.root, environment)
     for (const harness of ["pi", "claude"]) {
@@ -95,7 +95,7 @@ test("Firstmate dry runs skip synchronization; strict admission preserves each h
     await createGithubBridge(world.root, world.home, path.join(world.root, "bin"))
     const environment = {
       ...world.dependencies.environment,
-      TRELLAGE_CONFIG: fileURLToPath(new URL("../config.toml", import.meta.url)),
+      TRELLAGE_CONFIG: fileURLToPath(new URL("../config.example.toml", import.meta.url)),
     }
     const fixture = await createFirstmateFixture(world.root, environment)
     for (const harness of ["pi", "claude"]) {

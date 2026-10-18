@@ -92,9 +92,10 @@ for (const entry of catalog.native)
             ...(workflow.launchAgent === undefined ? [] : ["--agent", workflow.launchAgent]),
             ...(workflow.interaction?.requiredSkills.flatMap((skill) => ["--require-skill", skill]) ?? []),
           ]
-          const automatic = ["codex", "claude"].includes(entry.launcher) || workflow.interaction !== undefined
+          const automatic = entry.headless.prompt || ["codex", "claude"].includes(entry.launcher) || workflow.interaction !== undefined
           if (automatic)
-            forwarded.push(...(["codex", "claude"].includes(entry.launcher) ? [] : ["-i"]), candidate.prompt)
+            forwarded.push(...(["codex", "claude"].includes(entry.launcher) ? [] :
+              [workflow.interaction !== undefined || entry.launcher === "copilot" ? "-i" : "-p"]), candidate.prompt)
           assert.equal(candidate.command.executable, "trx")
           assert.deepEqual(candidate.command.args, [
             "run",
@@ -135,7 +136,8 @@ for (const mode of ["copilot", "matcher", "fallback"])
       assert.equal(input.intent, "Inspect this repository")
       assert(input.entries.length >= 3)
       candidates = input.entries.slice(0, 3).map((entry) => ({
-        profileRef: entry.ref,
+        harness: entry.harness,
+        profiles: entry.profiles,
         workflowId: entry.guide.workflows[0]!.id,
         confidence: 0.8,
         reason: "Deterministic fixture selection",
@@ -182,8 +184,8 @@ for (const mode of ["copilot", "matcher", "fallback"])
     assert.deepEqual(calls, mode === "fallback" ? ["matcher", "copilot"] : [mode])
     assert.equal(response.execution?.backend, mode === "matcher" ? "jev" : "copilot")
     assert.deepEqual(
-      response.recommendations.map(({ profileRef, workflowId }) => ({ profileRef, workflowId })),
-      candidates.map(({ profileRef, workflowId }) => ({ profileRef, workflowId })),
+      response.recommendations.map(({ harness, profiles, workflowId }) => ({ harness, profiles, workflowId })),
+      candidates.map(({ harness, profiles, workflowId }) => ({ harness, profiles, workflowId })),
     )
     assert.deepEqual(response.fallback, mode === "fallback" ? { backend: "jev", reason: "request-failed" } : undefined)
   })

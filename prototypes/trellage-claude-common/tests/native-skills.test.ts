@@ -224,9 +224,14 @@ const installSourceFixture = async (fixture: Fixture) => {
     path.join(workspace, "packages/trellage-guide-core/src"),
     { recursive: true },
   )
-  await copy(
-    path.join(repository, "packages/trellage-guide-core/package.json"),
+  await write(
     path.join(workspace, "packages/trellage-guide-core/package.json"),
+    JSON.stringify({
+      name: "@trellage/guide-core",
+      version: "0.1.0",
+      type: "module",
+      exports: JSON.parse(await readFile(path.join(repository, "packages/trellage-guide-core/package.json"), "utf8")).exports,
+    }),
   )
   await write(
     path.join(workspace, "package.json"),

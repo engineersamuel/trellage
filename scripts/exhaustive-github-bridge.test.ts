@@ -45,7 +45,7 @@ for (const harness of ["grok", "uji"]) {
           ...world.dependencies,
           environment: {
             ...world.dependencies.environment,
-            TRELLAGE_CONFIG: fileURLToPath(new URL("../config.toml", import.meta.url)),
+            TRELLAGE_CONFIG: fileURLToPath(new URL("../config.example.toml", import.meta.url)),
           },
           refreshHarness: async () => undefined,
         },
