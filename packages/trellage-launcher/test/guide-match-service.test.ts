@@ -80,7 +80,7 @@ const provider = (calls: { legacy: unknown[] }): GuideProvider => ({
   optimize: async () => ({ candidates: [] }),
 })
 const matcher = (calls: { matcher: unknown[]; fail?: boolean }): GuideMatchAdapter => ({
-  execution: { backend: "jev", model: "jev-1.13.0" },
+  execution: { backend: "jev", model: "jev-1.14.0" },
   revision: "test",
   match: async (input) => {
     calls.matcher.push(input)
@@ -166,7 +166,7 @@ describe("guide match service", () => {
       cache,
       { matcher: matcher(second) },
     )
-    expect(firstResponse.execution).toEqual({ backend: "jev", model: "jev-1.13.0" })
+    expect(firstResponse.execution).toEqual({ backend: "jev", model: "jev-1.14.0" })
     expect(secondResponse.execution).toEqual(firstResponse.execution)
     expect(second.matcher).toHaveLength(0)
     expect(second.legacy).toHaveLength(0)
@@ -189,7 +189,7 @@ describe("guide match service", () => {
     }
     const options = {
       matcher: {
-        execution: { backend: "jev" as const, model: "jev-1.13.0" },
+        execution: { backend: "jev" as const, model: "jev-1.14.0" },
         revision: "test",
         match: async (input: Parameters<GuideMatchAdapter["match"]>[0]) => {
           events.push("match")
@@ -266,7 +266,7 @@ describe("guide match service", () => {
     const first = await invoke(GuideMatcherFallbackReason.MissingCredentials, firstAttempts)
     expect(first.fallback).toEqual({ backend: "jev", reason: GuideMatcherFallbackReason.MissingCredentials })
     expect(firstAttempts).toEqual([
-      { execution: { backend: "jev", model: "jev-1.13.0" }, profileCount: 16 },
+      { execution: { backend: "jev", model: "jev-1.14.0" }, profileCount: 16 },
       {
         execution: { backend: "copilot", model: "m", effort: GuideEffort.Medium },
         profileCount: expect.any(Number),
@@ -299,7 +299,7 @@ describe("guide match service", () => {
       prompts: { ...prompts, match: "changed llm instructions" },
     })
     const hit = await invoke({ onAttempt: (attempt: unknown) => attempts.push(attempt) }, changedCache)
-    expect(hit.execution).toEqual({ backend: "jev", model: "jev-1.13.0" })
+    expect(hit.execution).toEqual({ backend: "jev", model: "jev-1.14.0" })
     expect(calls.matcher).toHaveLength(3)
     expect(attempts).toEqual([{ execution: hit.execution, profileCount: 16 }])
     const sessions = await readdir(path.join(root, ".trx-guide"))
@@ -310,7 +310,7 @@ describe("guide match service", () => {
     )
     expect(artifacts).toHaveLength(2)
     const jev = artifacts.find((artifact) => artifact.includes("Routing: Jev"))!
-    expect(jev).toContain("Routing: Jev · jev-1.13.0\n")
+    expect(jev).toContain("Routing: Jev · jev-1.14.0\n")
     expect(jev).not.toContain("(medium)")
     const revised = { ...matcher(calls), revision: "new-questions" }
     await invoke({ matcher: revised })

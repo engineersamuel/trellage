@@ -22,7 +22,7 @@ export interface JevDecisionOptions {
   readonly timeoutMs?: number
 }
 
-export const jevModel = "jev-1.13.0"
+export const jevModel = "jev-1.14.0"
 export const jevTimeoutMs = 3_000
 
 const loadClient = (apiKey: string): JevSystemOneClient =>
