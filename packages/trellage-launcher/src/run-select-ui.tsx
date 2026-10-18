@@ -350,7 +350,6 @@ export const RunSelector = ({
   onHerdr,
 }: RunSelectorProps) => {
   const { exit } = useApp()
-  const theme = useTheme()
   const [state, dispatch] = useReducer(
     (current: ReturnType<typeof initialRunSelectorState>, action: Parameters<typeof runSelectorReducer>[1]) =>
       runSelectorReducer(current, action, catalog),
