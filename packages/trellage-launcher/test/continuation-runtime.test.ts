@@ -15,7 +15,7 @@ import * as guideLaunch from "../src/guide-launch.ts"
 import { continuationActionIntent, continuationQueuedContext, createContinuationServices } from "../src/continuation-runtime.ts"
 import { ContinuationStore } from "../src/continuation-store.ts"
 import type { GuideProvider } from "../src/guide-provider.ts"
-import type { CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import type { CompositionCatalog } from "../src/composition-catalog.ts"
 import { createContinuationFixtureRoot, runtimeAssessment, runtimeCatalog, runtimeSnapshot } from "./helpers/continuation-runtime-fixtures.ts"
 const roots: string[] = []
 afterEach(async () => {
@@ -24,7 +24,7 @@ afterEach(async () => {
 })
 
 const setup = async (input: {
-  readonly catalog?: CombinedGuideCatalog
+  readonly catalog?: CompositionCatalog
   readonly assessment?: ContinuationAssessment
 } = {}) => {
   const root = await createContinuationFixtureRoot()
@@ -37,9 +37,9 @@ const setup = async (input: {
     if (args[0] === "inventory")
       return {
         stdout: JSON.stringify({
-          schemaVersion: 1,
-          launcher: "codex",
-          profile: "default",
+          schemaVersion: 2,
+          harness: "codex",
+          profiles: ["default"],
           readiness: "healthy",
         }),
         stderr: "",
@@ -175,8 +175,8 @@ describe("continuation runtime", () => {
   it("passes the edited action and explicit workflow to generation without using a worktree cache", async () => {
     const f = await setup()
     const assessed = await f.analyzed()
-    const profile = runtimeCatalog().native[0]
-    if (profile === undefined || profile.guide.workflows[0] === undefined) throw new Error("Missing fixture profile")
+    const profile = runtimeCatalog().entries[0]
+    if (profile === undefined || profile.guide === null || profile.guide.workflows[0] === undefined) throw new Error("Missing fixture profile")
     const candidate = (index: number): guide.GuidePromptCandidate => ({
       title: `Choice ${index}`,
       prompt: `Reviewed complete prompt ${index}`,
@@ -189,19 +189,17 @@ describe("continuation runtime", () => {
       },
     })
     const generated = vi.spyOn(guide, "runGuideGenerate").mockResolvedValue({
-      schemaVersion: 1,
+      schemaVersion: 2,
       phase: guide.GuidePhase.Generation,
       intent: "Synthetic",
       model: "fixture-model",
       effort: guide.GuideEffort.Medium,
       profile: {
-        profileRef: "native:codex/default",
+        ref: "native:codex/default",
+        harness: "codex",
+        profiles: ["default"],
         workflowId: "review",
-        surface: "native",
-        name: "default",
-        launcher: "codex",
         description: profile.description,
-        sandbox: false,
         workflow: profile.guide.workflows[0],
         prerequisites: [],
         headless: profile.headless,

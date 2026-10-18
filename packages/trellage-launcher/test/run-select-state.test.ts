@@ -81,6 +81,11 @@ describe("run selector state", () => {
     expect(runSelectorChoice(state, cleanCatalog).profiles).toEqual(["clean"])
   })
 
+  it("includes pre-selection modifiers in the command preview", () => {
+    const choice = runSelectorChoice(initialRunSelectorState(catalog), catalog)
+    expect(runSelectorCommand(choice, ["--dry-run", "--no-always"])).toBe("trx run pi --dry-run --no-always")
+  })
+
   it("restores history and drops unknown profiles", () => {
     const state = initialRunSelectorState(catalog, {
       harness: "claude",

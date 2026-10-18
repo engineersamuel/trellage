@@ -76,6 +76,7 @@ const Fixture = () => {
               ? { harness: "pi", profiles: [catalog.profiles[0]!], model: models[0], effort: "high" }
               : undefined
         }
+        modifiers={scenario === "flags" ? ["--dry-run", "--no-always"] : undefined}
         restoredFrom={scenario === "restored" ? "worktree" : undefined}
         onDone={(choice) => callbacks.push(choice)}
       />

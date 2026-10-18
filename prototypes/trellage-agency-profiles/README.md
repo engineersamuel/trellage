@@ -1,6 +1,6 @@
 # Trellage Agency profiles
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend.
 
 `trx run agency azure` starts Agency's managed GitHub Copilot CLI with a named Agency profile
 and an isolated `COPILOT_HOME`. It preserves the real `HOME`, current worktree,
@@ -89,7 +89,7 @@ when the exact package is not already available.
 
 ## State and lifecycle
 
-Managed launcher files:
+Managed backend files:
 
 ```text
 ~/.local/share/trellage/agx/
@@ -105,9 +105,9 @@ Profile state:
 `setup`, `repair`, and launch refresh the owned profile root, isolated Copilot
 home, managed mode settings, and `native-common` floating skills. The shared
 model-settings helper preserves all other Copilot settings. Re-run `./install.sh`, or use
-the repository native rebuild, to update the launcher and catalog. Uninstall
-removes only the owned launcher runtime and exact command symlink; profile
-homes and Agency-managed state outside Trellage are preserved.
+the repository native rebuild, to update the backend and catalog. Uninstall
+removes only the owned private runtime; profile homes and Agency-managed state
+outside Trellage are preserved.
 
 ## Skills-only updates
 

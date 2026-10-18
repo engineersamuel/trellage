@@ -21,14 +21,9 @@ install_root="$home/.local/share/trellage/jcx"
 installed_launcher="$install_root/bin/jcx"
 installed_catalog="$install_root/catalog.json"
 installed_config_manager="$install_root/config-manager.ts"
-[[ -e "$installed_config_manager" || -L "$installed_config_manager" ]] \
-  || installed_config_manager="$install_root/config-manager.mjs"
 ownership_marker="$install_root/.managed-by-trellage-jcode-profiles"
-command_path="$home/.local/share/trellage/.native-commands/jcx"
 
 if [[ ! -e "$install_root" && ! -L "$install_root" ]]; then
-  [[ ! -e "$command_path" && ! -L "$command_path" ]] \
-    || refuse "unowned command remains: $command_path"
   printf 'jcx is not installed; profile state was preserved.\n'
   exit 0
 fi
@@ -50,11 +45,6 @@ if [[ -e "$installed_config_manager" || -L "$installed_config_manager" ]]; then
     || refuse "unsafe managed config manager: $installed_config_manager"
 fi
 
-if [[ -e "$command_path" || -L "$command_path" ]]; then
-  [[ -L "$command_path" && "$(readlink "$command_path")" == "$installed_launcher" ]] \
-    || refuse "unrelated command: $command_path"
-  rm -- "$command_path"
-fi
 
 rm -rf -- "$install_root"
 printf 'Uninstalled jcx; jcode profile state and sessions were preserved.\n'

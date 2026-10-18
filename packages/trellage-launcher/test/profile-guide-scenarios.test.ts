@@ -1,4 +1,3 @@
-import { canonicalNativeIdentity } from "@trellage/guide-core"
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -12,12 +11,10 @@ import { describe, expect, it } from "vitest"
 
 import { literalGuideMatch, prefilterGuideMatchCatalogEntries } from "../src/guide-api.ts"
 import { guideCatalogEntries } from "../src/guide-catalog.ts"
-import type {
-  CombinedGuideCatalog,
-  HeadlessCapabilitiesV1,
-  NativeGuideCatalogEntry,
-} from "../src/guide-catalog.ts"
+import type { HeadlessCapabilitiesV1 } from "../src/guide-catalog.ts"
 import { validateHeadlessCapabilitiesV1 } from "../src/guide-catalog.ts"
+import type { CompositionCatalog, CompositionCatalogEntry } from "../src/composition-catalog.ts"
+import { formatCompositionRef } from "../src/composition-catalog.ts"
 
 interface ProfileGuideScenario {
   readonly id: string
@@ -179,34 +176,27 @@ const conservativeHeadless = {
   testedHarnessVersion: null,
 }
 
-const nativeLauncher = async (familyRoot: string, family: string): Promise<string> => {
-  const launchers = (await readdir(path.join(familyRoot, "bin"), { withFileTypes: true }))
-    .filter((entry) => entry.isFile())
-    .map(({ name }) => name)
-  if (launchers.length !== 1) throw new Error(`${family}/bin must contain one launcher`)
-  return launchers[0]!
-}
 
 const nativeCatalogFamily = async (
   prototypes: string,
   family: string,
 ): Promise<ReadonlyArray<readonly [string, NativeCatalogMetadata]>> => {
   const familyRoot = path.join(prototypes, family)
-  const launcher = await nativeLauncher(familyRoot, family)
+  const harness = family.slice("trellage-".length, -"-profiles".length)
   const root = record(
     JSON.parse(await readFile(path.join(familyRoot, "catalog.json"), "utf8")),
     `${family}/catalog.json`,
   )
   const profiles = record(root.profiles, `${family}/catalog.json profiles`)
   return Object.entries(profiles).map(([profile, rawProfile]) => {
-    const entry = record(rawProfile, `${launcher}/${profile} catalog entry`)
+    const entry = record(rawProfile, `${harness}/${profile} catalog entry`)
     return [
-      `${canonicalNativeIdentity(launcher, profile).launcher}/${canonicalNativeIdentity(launcher, profile).profile}`,
+      `${harness}/${profile}`,
       {
-        description: text(entry.description, `${launcher}/${profile}.description`),
+        description: text(entry.description, `${harness}/${profile}.description`),
         headless: validateHeadlessCapabilitiesV1(
           entry.headless === null ? conservativeHeadless : entry.headless,
-          `${launcher}/${profile}.headless`,
+          `${harness}/${profile}.headless`,
         ),
       },
     ] as const
@@ -291,12 +281,11 @@ const nativeGuideIdentities = async (): Promise<
   ReadonlyArray<Extract<ProfileGuideIdentity, { readonly surface: "native" }>>
 > => {
   const identities: Array<Extract<ProfileGuideIdentity, { readonly surface: "native" }>> = []
-  for (const launcher of await readdir(path.join(guideRoot, "native"), { withFileTypes: true })) {
-    if (!launcher.isDirectory()) continue
-    for (const profile of await readdir(path.join(guideRoot, "native", launcher.name), { withFileTypes: true })) {
+  for (const harness of await readdir(path.join(guideRoot, "native"), { withFileTypes: true })) {
+    if (!harness.isDirectory()) continue
+    for (const profile of await readdir(path.join(guideRoot, "native", harness.name), { withFileTypes: true })) {
       if (profile.isFile() && profile.name.endsWith(".md")) {
-        const identity = parseProfileGuideIdentity(`native/${launcher.name}/${profile.name}`)
-        if (identity.surface !== "native") throw new Error("native guide path produced a non-native identity")
+        const identity = parseProfileGuideIdentity(`native/${harness.name}/${profile.name}`)
         identities.push(identity)
       }
     }
@@ -307,29 +296,36 @@ const nativeGuideIdentities = async (): Promise<
 const nativeCatalogEntry = async (
   identity: Extract<ProfileGuideIdentity, { readonly surface: "native" }>,
   metadata: ReadonlyMap<string, NativeCatalogMetadata>,
-): Promise<NativeGuideCatalogEntry> => {
+): Promise<CompositionCatalogEntry> => {
   const loaded = await loadProfileGuide(guideRoot, identity)
-  const catalogMetadata = metadata.get(`${identity.launcher}/${identity.profile}`)
-  if (catalogMetadata === undefined) throw new Error(`missing native catalog metadata for ${loaded.key}`)
+  const catalogMetadata = metadata.get(`${identity.harness}/${identity.profile}`) ?? {
+    description: loaded.guide.bestFor.join("; "),
+    headless: validateHeadlessCapabilitiesV1(
+      conservativeHeadless,
+      `${identity.harness}/${identity.profile}.headless`,
+    ),
+  }
   return {
-    launcher: identity.launcher,
-    harness: identity.launcher,
-    name: identity.profile,
+    ref: formatCompositionRef(identity.harness, [identity.profile]),
+    harness: identity.harness,
+    profiles: [identity.profile],
+    kind: "preset",
+    canonicalHarness: identity.harness !== "fx" && identity.harness !== "headlong",
     description: catalogMetadata.description,
     headless: catalogMetadata.headless,
-    sandbox: false,
     herdrCompatibility: { status: "test" },
     guide: loaded.guide,
-    commandPath: `/tmp/${identity.launcher}`,
+    commandPath: `/tmp/${identity.harness}`,
+    lifecycle: null,
   }
 }
 
-const loadCatalog = async (): Promise<CombinedGuideCatalog> => {
+const loadCatalog = async (): Promise<CompositionCatalog> => {
   const [metadata, nativeIdentities] = await Promise.all([nativeCatalogs(), nativeGuideIdentities()])
-  const native = await Promise.all(nativeIdentities.map((identity) => nativeCatalogEntry(identity, metadata)))
+  const entries = await Promise.all(nativeIdentities.map((identity) => nativeCatalogEntry(identity, metadata)))
   return {
-    schemaVersion: 1,
-    native,
+    schemaVersion: 2,
+    entries,
   }
 }
 
@@ -430,7 +426,7 @@ describe("profile guide recommendation scenarios", () => {
 
     for (const scenario of scenarios.scenarios) {
       const candidates = literalGuideMatch(catalog, scenario.intent)
-      const refs = candidates.map(({ profileRef }) => profileRef)
+      const refs = candidates.map(({ harness, profiles }) => formatCompositionRef(harness, profiles))
       for (const profileRef of scenario.expectedProfiles) {
         expect(knownProfiles.has(profileRef), `${scenario.id} references unknown profile ${profileRef}`).toBe(true)
         const profileRank = refs.indexOf(profileRef) + 1
@@ -465,7 +461,7 @@ describe("profile guide recommendation scenarios", () => {
           ).toBeGreaterThan(expectedRank)
         }
       }
-      expect(candidates.map(({ profileRef, workflowId }) => `${profileRef}/${workflowId}`)).not.toEqual(
+      expect(candidates.map(({ harness, profiles, workflowId }) => `${formatCompositionRef(harness, profiles)}/${workflowId}`)).not.toEqual(
         expect.arrayContaining(["native:copilot/hve/rpi-agent-cycle"]),
       )
       expect(candidates.map(({ workflowId }) => workflowId)).not.toEqual(

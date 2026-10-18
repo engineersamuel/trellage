@@ -121,7 +121,7 @@ if [[ "$mode" == 'sanitized-history' ]]; then
     || fail 'history must contain exactly one root commit'
   [ "$(git remote | wc -l | tr -d ' ')" -eq 0 ] || fail 'repository must have no remotes'
   [ "$(git tag | wc -l | tr -d ' ')" -eq 0 ] || fail 'repository must have no tags'
-  [ "$(git for-each-ref --format='%(refname)' refs/heads | sort)" = $'refs/heads/feat/native-codex-profile-isolation\nrefs/heads/main' ] \
+  [ "$(git for-each-ref --format='%(refname)' refs/heads | sort)" = $'refs/heads/feat/native-profile-isolation\nrefs/heads/main' ] \
     || fail 'unexpected branch refs'
 fi
 

@@ -512,7 +512,7 @@ const ActionChoices = ({ flow }: { readonly flow: Flow }) => {
     else if (key.return) flow.attempt(() => {
       flow.setAutomatic(flow.actionIndex === 1)
       if (flow.actionIndex === 0) { flow.setStage("profile"); return }
-      const profile = flow.props.services.profiles.findIndex((entry) => entry.profile.launcher === "copilot" && entry.profile.profile === "hve")
+      const profile = flow.props.services.profiles.findIndex((entry) => entry.profile.harness === "copilot" && entry.profile.profiles.length === 1 && entry.profile.profiles[0] === "hve")
       const tab = flow.props.services.destinations.indexOf("tab")
       if (profile < 0 || tab < 0) throw new Error("Automatic action unavailable: Copilot hve and a Herdr tab are required.")
       flow.setProfileIndex(profile)

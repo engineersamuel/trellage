@@ -3,7 +3,6 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { parseProfileGuide } from "@trellage/guide-core"
-import { parseGuideCatalog } from "../src/guide-catalog.ts"
 import { createNodeCommandRunner, type CommandRunner, type CommandSpec } from "../src/guide-launch.ts"
 import * as launchTransport from "../src/guide-launch.ts"
 import * as planningReadiness from "../src/guide-preflight.ts"
@@ -23,46 +22,24 @@ import { captureSharedReviewEvidence, reviewExecutionPolicy } from "../src/revie
 import type { ReviewRun } from "../src/review-contracts.ts"
 import { optimizeDigest } from "../src/review-source.ts"
 import { reviewAuthority } from "../src/review-view-model.ts"
+import { compositionFixtureCatalog } from "./helpers/composition-catalog.ts"
 
 const roots: string[] = []
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
-const catalog = parseGuideCatalog(
-  JSON.stringify({
-    schemaVersion: 1,
-    native: [
-      {
-        launcher: "copilot",
-        name: "reviewer",
-        harness: "copilot",
-        description: "Fixture reviewer",
-        commandPath: "/fixture/trx",
-        sandbox: false,
-        herdrCompatibility: { status: "supported" },
-        guide: parseProfileGuide("native/copilot/reviewer.md", guideSource(fixtureProfile("reviewer"))).guide,
-        headless: {
-          schemaVersion: 1,
-          prompt: true,
-          outputFormats: ["json"],
-          eventContract: null,
-          trellageEventContract: null,
-          sessionId: "native",
-          resume: false,
-          resumeWithPrompt: false,
-          questionToolControl: "hard-deny",
-          changedFiles: "native",
-          usage: true,
-          cost: true,
-          modelOverride: false,
-          effortOverride: false,
-          testedHarnessVersion: null,
-        },
-      },
-    ],
-  }),
-)
+const catalog = compositionFixtureCatalog([{
+  harness: "copilot",
+  profile: "reviewer",
+  description: "Fixture reviewer",
+  commandPath: "/fixture/trx",
+  guide: parseProfileGuide("native/copilot/reviewer.md", guideSource(fixtureProfile("reviewer"))).guide,
+}])
+const hveCatalog = {
+  ...catalog,
+  entries: catalog.entries.map((entry) => ({ ...entry, ref: "native:copilot/hve", profiles: ["hve"] })),
+}
 
 const fixture = async () => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), "guide-optimize-execution-")))
@@ -202,7 +179,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
       expect(reopened).not.toHaveProperty("reports")
       expect(reopened).toEqual(await new OptimizeReviewStore(f.request.target.gitDirectory).read(id))
       const services = createGuideReviewServices({
-        ...f.options, catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
+        ...f.options, catalog: hveCatalog,
       })
       const result = await services.plan!(reopened, "terminal", f.signal)
       if (!("action" in result)) throw new Error("Expected terminal planning.")
@@ -244,7 +221,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     await store.save({ ...incomplete, status: "running" })
     await store.save(incomplete)
     const services = createGuideReviewServices({
-      ...f.options, catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
+      ...f.options, catalog: hveCatalog,
     })
     const result = await services.plan!(incomplete, "terminal", f.signal)
     if (!("action" in result)) throw new Error("Expected a terminal planning handoff.")
@@ -269,28 +246,12 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
     }
   })
 
-  it("does not discover optional Native profiles until a handoff is requested", async () => {
-    const discover = vi.fn<CommandRunner["run"]>(async () => ({
-      stdout: JSON.stringify(catalog), stderr: "", exitCode: 0,
-    }))
-    const services = createGuideReviewServices({
-      cwd: process.cwd(), context: null, runner: { run: discover },
-      catalog: { ...catalog, native: [] },
-      env: { TRELLAGE_REVIEW_PROFILE_COMMAND: "/fixture/trx" },
-    })
-    expect(services.profiles).toEqual([])
-    expect(discover).not.toHaveBeenCalled()
-    await services.refreshProfiles?.(new AbortController().signal)
-    expect(discover).toHaveBeenCalledWith("/fixture/trx", ["guide", "--review"],
-      expect.objectContaining({ env: expect.objectContaining({ TRELLAGE_REVIEW_PROFILES_ONLY: "1" }) }))
-    expect(services.profiles.map((entry) => entry.ref)).toEqual(["native:copilot/reviewer"])
-  })
 
   it("requires saved approval for automatic hve and reserves its same-worktree tab once", async () => {
     const f = await fixture()
     const services = createGuideReviewServices({
       ...f.options,
-      catalog: { ...catalog, native: catalog.native.map((entry) => ({ ...entry, name: "hve" })) },
+      catalog: hveCatalog,
     })
     const request = { ...f.request, automatic: true as const, destination: "tab" as const }
     await expect(services.execute({ ...request, destination: "pane" }, "native:copilot/hve", f.signal))
@@ -550,7 +511,7 @@ describe("worktree-first Optimize execution", { timeout: 15_000 }, () => {
             request: { ...f.request, destination: "terminal" },
             selectedProfile: {
               ...profile.profile,
-              launcher,
+              harness: launcher,
               commandPath: `/fixture/${launcher}`,
               headlessPrompt,
             },

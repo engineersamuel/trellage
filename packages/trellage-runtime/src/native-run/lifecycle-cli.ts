@@ -8,6 +8,7 @@ import {
 } from "./lifecycle-runtime.ts";
 import { ensureFxProvider } from "./adapters.ts";
 import { main as runNative } from "./run.ts";
+import { inventoryCodexGoalFeatures, inventoryComposition } from "./inventory.ts";
 
 type CancellationSignal = "SIGTERM" | "SIGINT" | "SIGHUP";
 
@@ -82,22 +83,6 @@ const runFxHarnessVersion = async (): Promise<number> => {
   return 0;
 };
 
-const runFxInventory = async (): Promise<number> => {
-  const result = fxVersion();
-  console.log(
-    JSON.stringify({
-      schemaVersion: 1,
-      launcher: "fx",
-      harness: "fx",
-      profile: "default",
-      readiness: result.status === 0 ? "healthy" : "not-setup",
-      plugins: [],
-      skills: { packageCount: null, visibleCount: null },
-      mcps: [],
-    }),
-  );
-  return 0;
-};
 
 const runFxSkills = async (): Promise<number> => {
   process.stdout.write("default: Fx uses host ~/.fx skills; no Trellage-managed skill state\n");
@@ -117,7 +102,6 @@ const runFxList = async (): Promise<number> => {
       schemaVersion: 1,
       launcher: "fx",
       harness: "fx",
-      sandbox: false,
       profiles: [
         { name: "default", description: "Fx with shared host context through copilot-proxy-rs" },
       ],
@@ -133,7 +117,6 @@ const fxOperations: Readonly<Record<string, FxOperation>> = {
   repair: () => runFxSetup("repair"),
   doctor: runFxDoctor,
   "harness-version": runFxHarnessVersion,
-  inventory: runFxInventory,
   "skills-update": runFxSkills,
   "skills-check": runFxSkills,
   upgrade: runFxUpgrade,
@@ -336,14 +319,66 @@ const runLifecycleProcess = (context: LifecycleExecutionContext): Promise<number
   });
 };
 
+const runCompositionInventory = async (
+  harness: string,
+  args: ReadonlyArray<string>,
+): Promise<number> => {
+  if (!args.includes("--json")) throw new Error("inventory requires HARNESS [PROFILE...] --json");
+  const unsupported = args.filter(
+    (argument) => argument.startsWith("-") && argument !== "--json" && argument !== "--no-always",
+  );
+  if (unsupported.length > 0) throw new Error(`unknown inventory option: ${unsupported[0]}`);
+  const profiles = args.filter((argument) => !argument.startsWith("-"));
+  const inventory = await inventoryComposition({
+    harness,
+    profiles,
+    noAlways: args.includes("--no-always"),
+  });
+  console.log(JSON.stringify(inventory));
+  return 0;
+};
+
+const runCodexGoalFeatures = async (args: ReadonlyArray<string>): Promise<number> => {
+  if (!args.includes("--goal-features")) throw new Error("inventory codex requires PROFILE --goal-features");
+  const unsupported = args.filter(
+    (argument) => argument.startsWith("-") && argument !== "--goal-features" && argument !== "--no-always",
+  );
+  if (unsupported.length > 0) throw new Error(`unknown inventory option: ${unsupported[0]}`);
+  const profiles = args.filter((argument) => !argument.startsWith("-"));
+  if (profiles.length === 0) throw new Error("inventory codex requires PROFILE --goal-features");
+  const result = await inventoryCodexGoalFeatures({
+    harness: "codex",
+    profiles,
+    noAlways: args.includes("--no-always"),
+  });
+  process.stdout.write(result.stdout);
+  process.stderr.write(result.stderr);
+  if (result.timedOut) throw new Error("codex features list timed out");
+  return result.status ?? 1;
+};
+
+const externallyManagedHarnesses = new Set(["codex", "grok", "headlong", "pi", "uji"]);
+
+const externalManagementError = (harness: string, args: ReadonlyArray<string>): Error => {
+  const profile = args.find((argument) => !argument.startsWith("-")) ?? "PROFILE";
+  return new Error(
+    `${harness} is installed and updated outside Trellage; use trx inventory ${harness} ${profile} --json`,
+  );
+};
+
 export const runProfileOperation = async (
   operation: string,
   harness: string,
   args: ReadonlyArray<string>,
 ): Promise<number> => {
+  if (operation === "inventory") {
+    if (harness === "codex" && args.includes("--goal-features")) return runCodexGoalFeatures(args);
+    return runCompositionInventory(harness, args);
+  }
   if (operation === "run") throw new Error("profile lifecycle cannot launch agents; use trx run");
   if (harness === "fx") return runFxOperation(operation, args);
   const runtime = lifecycleRuntime(harness);
+  if (!runtime && externallyManagedHarnesses.has(harness)) throw externalManagementError(harness, args);
   if (!runtime) throw new Error(`unknown managed profile harness: ${harness}`);
   const command = lifecycleRuntimeCommand(runtime);
   const argv = profileOperationArguments(operation, harness, args);

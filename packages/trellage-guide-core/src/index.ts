@@ -1,5 +1,3 @@
-import { canonicalNativeIdentity, canonicalProfileRef } from "./native-identity.ts"
-export { canonicalNativeIdentity, canonicalProfileRef } from "./native-identity.ts"
 import { parse } from "yaml"
 import { lstat, readFile, readdir, realpath } from "node:fs/promises"
 import path from "node:path"
@@ -10,16 +8,11 @@ export * from "./conversation-sanitization.ts"
 export * from "./guide-limits.ts"
 export { ProfileGuideValidationError } from "./validation.ts"
 
-export type ProfileGuideIdentity =
-  | {
-      readonly surface: "native"
-      readonly launcher: string
-      readonly profile: string
-    }
-  | {
-      readonly surface: "sandbox"
-      readonly profile: string
-    }
+export interface ProfileGuideIdentity {
+  readonly surface: "native"
+  readonly harness: string
+  readonly profile: string
+}
 
 export interface ProfileGuidePrerequisite {
   readonly id: string
@@ -101,30 +94,17 @@ export const isProfileGuideGoalController = (value: unknown): value is ProfileGu
 const goalCommandPattern = /(?:^|[^A-Za-z0-9_:/.-])([/$]goal(?:-me)?)(?=$|[^A-Za-z0-9_:/.-])/u
 const goalSkillPattern = /(?:^|[:/])goal(?:-me)?$/u
 
-const goalControllerSupportsIdentity = (
-  controller: ProfileGuideGoalController,
-  identity: ProfileGuideIdentity,
-  harness?: string,
-): boolean => {
-  if (identity.surface === "native") {
-    return (
-      (controller === "codex-goal" && canonicalNativeIdentity(identity.launcher, identity.profile).launcher === "codex") ||
-      (controller === "claude-goal" && canonicalNativeIdentity(identity.launcher, identity.profile).launcher === "claude")
-    )
-  }
-  return (
-    controller === "claude-goal" &&
-    (harness === "claude" || identity.profile.startsWith("claude-"))
-  )
-}
 
 const goalExecutionSurfaceProblem = (
   controller: ProfileGuideGoalController,
   identity?: ProfileGuideIdentity,
   harness?: string,
 ): string | undefined => {
-  if (identity !== undefined && !goalControllerSupportsIdentity(controller, identity, harness)) {
-    return `${controller} is not supported by ${profileGuideIdentityKey(identity)}`
+  if (identity !== undefined) {
+    if ((controller === "codex-goal" && identity.harness !== "codex") ||
+        (controller === "claude-goal" && identity.harness !== "claude")) {
+      return `${controller} is not supported by ${profileGuideIdentityKey(identity)}`
+    }
   }
   const requiredHarness = controller === "codex-goal" ? "codex" : "claude"
   if (harness !== undefined && harness !== requiredHarness) {
@@ -349,16 +329,16 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
   if (fields.schemaVersion !== 1) fail(`${path} frontmatter.schemaVersion`, "must equal 1")
   const guideWorkflows = workflows(fields.workflows, `${path} frontmatter.workflows`)
   if (guideWorkflows.some(({ interaction }) => interaction !== undefined) &&
-      !/(?:^|\/)native\/(?:cpx|copilot)\/hve\.md$/u.test(path.replaceAll("\\", "/"))) {
+      !/(?:^|\/)native\/copilot\/hve\.md$/u.test(path.replaceAll("\\", "/"))) {
     fail(`${path} frontmatter.workflows`, "verified interactive workflows require native/copilot/hve.md")
   }
   let execution: ProfileGuideGoalExecution | undefined
   if (fields.goalExecution !== undefined) {
-    const identityPath = /(?:^|\/)((?:native\/[^/]+|sandbox)\/[^/]+\.md)$/u.exec(path.replaceAll("\\", "/"))?.[1]
+    const identityPath = /(?:^|\/)(native\/[^/]+\/[^/]+\.md)$/u.exec(path.replaceAll("\\", "/"))?.[1]
     if (identityPath === undefined) {
       return fail(
         `${path} frontmatter.goalExecution`,
-        "requires a native/<launcher>/<profile>.md or sandbox/<profile>.md identity",
+        "requires a native/<harness>/<profile>.md identity",
       )
     }
     execution = goalExecution(
@@ -395,31 +375,21 @@ export const parseProfileGuide = (path: string, source: string): ProfileGuideDoc
 }
 
 export const profileGuideIdentityKey = (identity: ProfileGuideIdentity): string =>
-  identity.surface === "native" ? canonicalProfileRef(`native:${identity.launcher}/${identity.profile}`) : `sandbox:${identity.profile}`
+  `native:${identity.harness}/${identity.profile}`
 
 export const profileGuideRelativePath = (identity: ProfileGuideIdentity): string =>
-  identity.surface === "native"
-    ? `native/${canonicalNativeIdentity(identity.launcher, identity.profile).launcher}/${canonicalNativeIdentity(identity.launcher, identity.profile).profile}.md`
-    : `sandbox/${identity.profile}.md`
+  `native/${identity.harness}/${identity.profile}.md`
 
 export const parseProfileGuideIdentity = (relativePath: string): ProfileGuideIdentity => {
   const normalized = relativePath.replaceAll("\\", "/").replace(/^\.?\//u, "")
   const native = /^native\/([^/]+)\/([^/]+)\.md$/u.exec(normalized)
-  if (native !== null) {
-    const launcher = native[1]!
-    const profile = native[2]!
-    if (!identityPart.test(launcher) || !identityPart.test(profile)) {
-      return fail(relativePath, "contains an invalid native guide identity")
-    }
-    return { surface: "native", ...canonicalNativeIdentity(launcher, profile) }
+  if (native === null) return fail(relativePath, "must match native/<harness>/<profile>.md")
+  const harness = native[1]!
+  const profile = native[2]!
+  if (!identityPart.test(harness) || !identityPart.test(profile)) {
+    return fail(relativePath, "contains an invalid native guide identity")
   }
-  const sandbox = /^sandbox\/([^/]+)\.md$/u.exec(normalized)
-  if (sandbox !== null) {
-    const profile = sandbox[1]!
-    if (!identityPart.test(profile)) return fail(relativePath, "contains an invalid Sandbox guide identity")
-    return { surface: "sandbox", profile }
-  }
-  return fail(relativePath, "must match native/<launcher>/<profile>.md or sandbox/<profile>.md")
+  return { surface: "native", harness, profile }
 }
 
 export const validateProfileGuideCoverage = (

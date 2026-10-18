@@ -54,15 +54,12 @@ description = "Remove the installed macOS TRX guide selection overlay"
 run = "./pocs/herdr-trx-guide/macos-overlay/scripts/uninstall.sh"
 
 [tasks.rebuild-profiles]
-description = "Refresh native trx/launchers from this worktree"
+description = "Refresh trx and launch-required Native backends from this worktree"
 run = "./scripts/rebuild-profile-images.sh"
 
-[tasks.rebuild-native-profiles]
-description = "Refresh native trx/launchers (alias of rebuild-profiles)"
-run = "./scripts/rebuild-profile-images.sh --native-only"
 
 [tasks.pull]
-description = "git pull --rebase origin main, then always refresh native launchers and upgrade Native harnesses, skills, and plugins"
+description = "git pull --rebase origin main, then always refresh Native backends and upgrade managed harnesses, skills, and plugins"
 # Hooks are off for the pull itself so the upgrade runs exactly once, even when already up to date.
 run = "git -c core.hooksPath=/dev/null pull --rebase origin main && ./scripts/refresh-native-if-stale.sh && ./scripts/upgrade-after-pull.sh"
 
@@ -71,7 +68,7 @@ description = "Eval prototype: up|run|down|status a Copilot profile on an epheme
 run = "./scripts/prototype-azure-copilot-spike.sh"
 
 [tasks.azure-fresh-install]
-description = "Create a fresh Azure ARM64 VM and prove Native + Sandbox Trellage installs"
+description = "Create a fresh Azure ARM64 VM and prove Trellage Native installs"
 run = "./scripts/azure-fresh-install.sh"
 
 [tools]

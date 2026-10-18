@@ -1,6 +1,6 @@
 # Native jcode profile
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend.
 
 `trx run jcode PROFILE` runs [jcode](https://github.com/1jehuang/jcode) directly on the host with
 an isolated profile. It uses keyless `copilot-proxy-rs` at
@@ -15,7 +15,7 @@ reasoning.
 - `jq`
 - `copilot-proxy-rs` listening on `http://127.0.0.1:8080`
 
-No API key is written. The launcher materializes an owned, keyless named
+No API key is written. The private backend materializes an owned, keyless named
 OpenAI-compatible provider and also applies the provider, model, and reasoning
 defaults through process environment variables. It forces cross-provider
 failover to `manual`, clears inherited `JCODE_*` overrides, and neutralizes
@@ -79,7 +79,7 @@ For an existing interactive JCode session, explicitly ask JCode to read and appl
 ```
 
 The mode then follows the upstream session rules; request `stop adhd mode` or
-`normal mode` to stop it. Install the updated launcher before `trx skills update`.
+`normal mode` to stop it. Install the updated backend before `trx skills update`.
 Setup, launch, repair, and `skills-update` maintain both managed copies. An
 unmanaged `home/skills/i-have-adhd` collision stops the operation rather than
 deleting user content or allowing automatic discovery.
@@ -106,10 +106,10 @@ trx run jcode default
 trx run jcode default -- run "Reply exactly JCODE_OK"
 ```
 
-The launcher passes `--no-update` before caller arguments; explicit jcode CLI
-flags can override other launcher defaults. `doctor` and every launch verify the
+The private backend passes `--no-update` before caller arguments; explicit jcode CLI
+flags can override other profile defaults. `doctor` and every launch verify the
 proxy health response and confirm that `gpt-5.6-sol` is advertised. JCode can
-expand `config.toml` with its own defaults during normal use. The launcher
+expand `config.toml` with its own defaults during normal use. The backend
 preserves those normalized settings while strictly checking the managed
 provider, model, proxy URL, keyless authentication, catalog, pinning, and
 reasoning fields through a Bun source TOML manager and JCode's own
@@ -135,4 +135,4 @@ make native-jcode-profile
 
 `config-manager.ts` is the authored runtime. Bun runs it directly with the
 locked `smol-toml` dependency. There is no generated manager or bundle to rebuild.
-Reinstall the Native launcher after changing its source.
+Reinstall the Native backend after changing its source.

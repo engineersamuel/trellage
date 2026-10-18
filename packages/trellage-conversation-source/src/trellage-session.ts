@@ -12,13 +12,6 @@ export interface TrellageNativeSessionIdentity extends SessionIdentityBase {
   readonly sessionId: string
 }
 
-export interface TrellageSandboxSessionIdentity extends SessionIdentityBase {
-  readonly surface: ConversationSurface.Sandbox
-  readonly invocationId: string
-  readonly containerId: string
-}
-
-export type TrellageSessionIdentity = TrellageNativeSessionIdentity | TrellageSandboxSessionIdentity
 
 const tokenText = (tokens: JsonRecord, name: string) => {
   const value = tokens?.[name]
@@ -27,8 +20,6 @@ const tokenText = (tokens: JsonRecord, name: string) => {
 
 const safeName = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(value)
 const safeSessionId = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/u.test(value)
-const safeInvocationId = (value: string) => /^[a-f0-9]{32}$/u.test(value)
-const safeContainerId = (value: string) => /^[a-f0-9]{64}$/u.test(value)
 const safeProcessGroup = (value: string) => /^[1-9][0-9]{0,15}$/u.test(value)
 
 export class TrellageSessionIdentityError extends Error {
@@ -58,7 +49,7 @@ const processGroupIdentity = (agentInfo: JsonRecord, tokens: JsonRecord) => {
 }
 
 const baseIdentity = (agentInfo: JsonRecord, tokens: JsonRecord, surface: string) => {
-  if (surface !== ConversationSurface.Native && surface !== ConversationSurface.Sandbox) {
+  if (surface !== ConversationSurface.Native) {
     throw new TrellageSessionIdentityError("Trellage session metadata has an unsupported surface.")
   }
   const agent = tokenText(tokens, "trellage_agent")
@@ -85,21 +76,8 @@ const nativeIdentity = (base: SessionIdentityBase, tokens: JsonRecord): Trellage
   return { ...base, surface: ConversationSurface.Native, sessionId }
 }
 
-const sandboxIdentity = (base: SessionIdentityBase, tokens: JsonRecord): TrellageSandboxSessionIdentity => {
-  const invocationId = tokenText(tokens, "trellage_invocation_id")
-  const containerId = tokenText(tokens, "trellage_container_id")
-  if (
-    invocationId === undefined ||
-    containerId === undefined ||
-    !safeInvocationId(invocationId) ||
-    !safeContainerId(containerId)
-  ) {
-    throw new TrellageSessionIdentityError("The Trellage Sandbox attachment identity is missing or invalid.")
-  }
-  return { ...base, surface: ConversationSurface.Sandbox, invocationId, containerId }
-}
 
-export const trellageSessionIdentity = (agentInfo: unknown): TrellageSessionIdentity | undefined => {
+export const trellageSessionIdentity = (agentInfo: unknown): TrellageNativeSessionIdentity | undefined => {
   if (!isRecord(agentInfo)) return undefined
   const tokens = agentInfo.tokens
   if (!isRecord(tokens)) {
@@ -115,5 +93,5 @@ export const trellageSessionIdentity = (agentInfo: unknown): TrellageSessionIden
     return undefined
   }
   const base = baseIdentity(agentInfo, tokens, surface)
-  return surface === ConversationSurface.Native ? nativeIdentity(base, tokens) : sandboxIdentity(base, tokens)
+  return nativeIdentity(base, tokens)
 }

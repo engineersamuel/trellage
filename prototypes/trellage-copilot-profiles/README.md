@@ -1,6 +1,6 @@
 # Lightweight Copilot Profiles
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend.
 
 `trx run copilot PROFILE` runs host-native GitHub Copilot CLI profiles with isolated `COPILOT_HOME`
 directories. It preserves the real `HOME`, working directory, terminal, Git,
@@ -81,7 +81,7 @@ trx repair copilot tufte-vdqi
 ```
 
 Use `trx list --json` for the stable machine-readable catalog, including
-launcher, harness, plugin, source, marketplace, standalone MCP metadata, and a
+harness, plugin, source, marketplace, standalone MCP metadata, and a
 version-gated `headless` object. Exact prompt/text-json, `--no-ask-user`
 hard-deny classification, and model-override publication are advertised only
 for GitHub Copilot CLI `1.0.81`. Other versions stay discoverable, but they
@@ -101,9 +101,9 @@ and MCP names. `visibleCount` reflects Copilot's enabled `skill list` entries;
 that native surface may include commands, so Trellage does not call it a package
 skill count.
 
-After installing the native launchers and the
+After installing the private Native backends and the
 [`trx` router](../trellage-router/README.md), run `trx` for one flat Ink
-harness/profile picker. Remaining arguments are forwarded to the selected canonical harness
+harness/profile picker. Remaining arguments are forwarded to the selected harness
 after selection; the bare picker never performs setup, repair, or update.
 
 Ordinary `trx run copilot PROFILE` launches pass `--autopilot --allow-all --no-ask-user`, so
@@ -194,8 +194,8 @@ requirements or an implementation-ready plan instead of a one-line idea.
 Version checks read the validated installed `.codex-plugin/plugin.json`.
 Health requires all 33 upstream runtime skills to be present and enabled. The
 profile does not provision optional MCP integrations. It uses the existing
-`cpx` launcher and shared `native-common` skills, but the plugin itself is
-opt-in and is not part of `native-common`.
+`cpx` private backend and shared `native-common` skills, but the plugin itself
+is opt-in and is not part of `native-common`.
 
 The `tufte-vdqi` profile installs
 `tufte-vdqi@tufte-vdqi-marketplace` from

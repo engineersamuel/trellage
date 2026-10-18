@@ -68,6 +68,7 @@ const operationSort = (
   right: AdminProfileEntry,
   preferredEntryRef: string | undefined,
 ): number => {
+  if ((left.lifecycle === null) !== (right.lifecycle === null)) return left.lifecycle === null ? 1 : -1
   if (left.ref === preferredEntryRef) return -1
   if (right.ref === preferredEntryRef) return 1
   return left.ref.localeCompare(right.ref)

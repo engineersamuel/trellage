@@ -95,11 +95,11 @@ test("comparison entrypoint uses workspace TS helpers and preserves the final co
     ],
     [
       ...flags,
-      `${root}/opt/codex-common/codex-agents.ts`,
+      `${root}/opt/codex-agents/codex-agents.ts`,
       "--",
       "install",
       `${codexHome}/agents`,
-      `${root}/opt/codex-common/agents`,
+      `${root}/opt/codex-agents/agents`,
     ],
   ])
   expect(readFileSync(`${codexHome}/agents/custom.toml`, "utf8")).toBe('name = "custom"\n')

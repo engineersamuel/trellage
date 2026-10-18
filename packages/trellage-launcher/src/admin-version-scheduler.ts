@@ -63,13 +63,8 @@ export const versionCheckResultForEntry = (
   if (latest === undefined) return undefined
   if (latest.state === "success") return parseUpdateCheckOutput(latest.stdout, entry.version)
   if (latest.state === "failure") {
-    // Some launchers (verified for cpx and cdx's shared native-codex
-    // implementation) exit non-zero specifically to signal "update available"
-    // as a normal business outcome rather than a genuine run failure — their
-    // stdout is the same parseable `update --check` text every other
-    // launcher prints on a zero exit. Try parsing it before treating the
-    // non-zero exit as unusable; fall back to the real stderr/stdout
-    // diagnostic only when the output truly doesn't match any known format.
+    // Some managed backends use a non-zero exit to signal "update available".
+    // Parse their normal update-check stdout before treating the run as failed.
     const parsed = parseUpdateCheckOutput(latest.stdout, entry.version)
     if (!("malformed" in parsed)) return parsed
   }

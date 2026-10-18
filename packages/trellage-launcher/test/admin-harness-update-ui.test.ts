@@ -15,17 +15,19 @@ vi.mock("../src/admin-harness-version-cache.ts", async (importOriginal) => ({
   defaultAdminHarnessVersionCachePath: () => "/unused/admin-cache.json",
 }))
 
-const renderEntry = (surface: "native", harness: string, launcher: string, name = "default"): string => {
+const renderEntry = (_surface: "native", harness: string, launcher: string, name = "default"): string => {
   const entry: AdminProfileEntry = {
-    ref: surface === "native" ? `native:${launcher}/${name}` : `sandbox:${name}`,
-    surface,
+    ref: `native:${launcher}/${name}`,
+    surface: "native",
     harness,
-    ...(surface === "native" ? { launcher } : {}),
+    launcher,
     name,
+    profiles: [name],
+    lifecycle: ["codex", "pi"].includes(launcher) ? null : { runtime: launcher, profile: name },
     description: `${harness} profile`,
-    commandPath: `/fixture/${surface === "native" ? launcher : "trellage"}`,
+    commandPath: `/fixture/${launcher}`,
     doctorSupported: true,
-    inventorySupported: surface === "native",
+    inventorySupported: true,
     health: "unknown",
     install: "unknown",
     stale: true,
@@ -58,23 +60,23 @@ describe("Admin harness update control", () => {
   it.each([
     ["native", "copilot", "copilot"],
     ["native", "claude", "claude"],
-    ["native", "oh-my-pi", "omp"],
+    ["native", "omp", "omp"],
     ["native", "jcode", "jcode"],
-    ["native", "pi", "pi"],
     ["native", "prime", "prime"],
   ] as const)("shows U for %s %s before version data is available, without starting an update", (surface, harness, launcher) => {
     expect(renderEntry(surface, harness, launcher)).toContain("[U] update harness")
   })
 
   it.each([
+    ["pi", "default", "pi"],
     ["codex", "youtube", "codex"],
     ["codex", "superpowers", "codex"],
-  ])("shows U for native %s/%s without starting a profile update", (harness, name, launcher) => {
-    expect(renderEntry("native", harness, launcher, name)).toContain("[U] update harness")
+  ])("does not show U for externally managed native %s/%s", (harness, name, launcher) => {
+    expect(renderEntry("native", harness, launcher, name)).not.toContain("[U] update harness")
   })
 
   it("does not offer harness updates for unsupported native launchers", () => {
-    expect(renderEntry("native", "claude", "unknown")).not.toContain("[U]")
+    expect(renderEntry("native", "unknown", "unknown")).not.toContain("[U]")
   })
 
 })

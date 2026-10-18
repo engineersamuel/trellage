@@ -52,15 +52,15 @@ an absent profile, but launch, setup, repair, and doctor all resolve and verify
 the host executable before they continue.
 
 Source-mode commands, including `mise run trx run omp`, use the worktree's
-launcher, catalog, and skill helpers. They still require the installed, owned
+backend, catalog, and skill helpers. They still require the installed, owned
 `~/.local/share/trellage/omp` runtime for overlays, initialization locks, and
 temporary files. Install the backend once with the command above before using
 source mode. No runtime files or ownership marker are written into the worktree.
 
 If an interrupted first launch leaves an initialization claim behind, an
 operator may run the installed backend command
-`~/.local/share/trellage/.native-commands/omp reap PROFILE` (with `PROFILE`
-set to `local` or `copilot`; its command form is `omp reap PROFILE`). The
+`~/.local/share/trellage/omp/bin/omp reap PROFILE` (with `PROFILE` set to
+`local` or `copilot`). The
 command only removes a validated stale initialization claim at the exact
 runtime/profile path: it requires a regular non-symlink `0600` file,
 a parseable claimant PID and birth identity, and a claimant that is no longer
@@ -178,7 +178,7 @@ trx run omp default -p "Reply exactly OMP_COPILOT_OK"
 
 ## Headless compatibility
 
-Headless capability publication is conservative. Only OMP 18.8.5 has the verified `--headless-policy no-user-input` contract. The launcher accepts that
+Headless capability publication is conservative. Only OMP 18.8.5 has the verified `--headless-policy no-user-input` contract. The backend accepts that
 policy for either profile only at that exact version and uses a temporary
 overlay. The default profile publishes its tested prompt/text capability. The
 local profile remains conservative and unverified because it has no live

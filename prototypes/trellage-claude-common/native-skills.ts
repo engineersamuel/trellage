@@ -132,23 +132,11 @@ const readManagedManifest = async (candidate: string, legacy = false) => {
   return lines
 }
 
-const legacyShowMe = async (target: string) => {
-  const directory = path.join(target, "show-me")
-  const status = await statusIfPresent(directory)
-  if (status === undefined || !status.isDirectory() || status.isSymbolicLink()) return []
-  const marker = path.join(directory, ".managed-by-trellage-picx-profiles")
-  if (!(await statusIfPresent(marker))) return []
-  await requireFile(marker)
-  if ((await readFile(marker, "utf8")) !== "trellage-picx-profile-v2\n") {
-    fail(`invalid legacy managed skill marker: ${marker}`)
-  }
-  return ["show-me"]
-}
 
 const targetManagedNames = async (target: string) => {
   const current = await readManagedManifest(path.join(target, ".trellage-managed-skills"))
   const legacy = await readManagedManifest(path.join(target, ".trellage-engineersamuel-skills"), true)
-  const names = current.length > 0 ? current : [...new Set([...legacy, ...(await legacyShowMe(target))])]
+  const names = current.length > 0 ? current : legacy
   if (names.length === 0 && !(await statusIfPresent(path.join(target, ".trellage-managed-skills")))) fail(`profile skills are not managed: ${target}; run the profile setup command first`)
   return names
 }
@@ -256,10 +244,6 @@ const bundlesForCache = (cache: string) => {
   switch (path.basename(cache)) {
     case "skills":
       return ["native-common"]
-    case "cdx-skills":
-      return ["native-common", "codex-common"]
-    case "cdx-youtube-pro-skills":
-      return ["native-common", "codex-common", "youtube"]
     case "cldx-office-skills":
       return ["native-common", "claude-office"]
     case "cldx-office-charts-skills":

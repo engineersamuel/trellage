@@ -67,7 +67,6 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
 readonly receipt_file="$runtime_root/installed-version"
-readonly legacy_version_file="$runtime_root/version"
 readonly npm_prefix="$runtime_root/npm-prefix"
 readonly runtime_identity_file="$runtime_root/runtime-identity.json"
 readonly managed_extension_source="$runtime_root/assets/extensions/${managed_extension_name}.ts"
@@ -133,14 +132,12 @@ transaction_active=''
 transaction_committed=''
 backup_npm_prefix=''
 backup_receipt=''
-backup_legacy_receipt=''
 backup_runtime_identity=''
 backup_kernel_venv=''
 backup_kernel_identity=''
 backup_daemon_stamp=''
 backup_npm_state='unprocessed'
 backup_receipt_state='unprocessed'
-backup_legacy_state='unprocessed'
 backup_runtime_identity_state='unprocessed'
 backup_kernel_state='unprocessed'
 backup_kernel_identity_state='unprocessed'
@@ -243,9 +240,6 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "prx",
       harness: "prime",
-      # Prime Agent has no known native OS-level sandbox; runs directly on
-      # the host. See docs/native-sandbox-research.md.
-      sandbox: false,
       profiles: [
         .profiles
         | to_entries[]
@@ -651,17 +645,6 @@ resolve_latest_version() {
 read_installed_version() {
   local version
 
-  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" ]]; then
-    if [[ ! -e "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
-      die 'prime-agent installed version receipt is missing; run prx setup'
-    fi
-    [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]] \
-      || die "unsafe legacy installed version receipt: $legacy_version_file"
-    version="$(<"$legacy_version_file")"
-    require_exact_version "$version"
-    printf '%s\n' "$version"
-    return
-  fi
   [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
     || die 'prime-agent installed version receipt is missing; run prx setup'
   version="$(<"$receipt_file")"
@@ -936,9 +919,6 @@ validate_transaction_paths() {
     || die "unsafe npm prefix: $npm_prefix"
   [[ ! -L "$receipt_file" && ( ! -e "$receipt_file" || -f "$receipt_file" ) ]] \
     || die "unsafe installed version receipt: $receipt_file"
-  [[ ! -L "$legacy_version_file" \
-    && ( ! -e "$legacy_version_file" || -f "$legacy_version_file" ) ]] \
-    || die "unsafe legacy installed version receipt: $legacy_version_file"
   [[ ! -L "$runtime_identity_file" \
     && ( ! -e "$runtime_identity_file" || -f "$runtime_identity_file" ) ]] \
     || die "unsafe Prime runtime identity: $runtime_identity_file"
@@ -957,7 +937,6 @@ begin_runtime_transaction() {
   transaction_committed=''
   backup_npm_state='unprocessed'
   backup_receipt_state='unprocessed'
-  backup_legacy_state='unprocessed'
   backup_runtime_identity_state='unprocessed'
   backup_kernel_state='unprocessed'
   backup_kernel_identity_state='unprocessed'
@@ -979,15 +958,6 @@ begin_runtime_transaction() {
     backup_receipt_state='present'
   else
     backup_receipt_state='absent'
-  fi
-  if [[ -f "$legacy_version_file" ]]; then
-    backup_legacy_receipt="$(make_file_backup_path "$runtime_root/.version-backup.XXXXXX")" \
-      || die 'could not stage legacy version receipt backup'
-    mv "$legacy_version_file" "$backup_legacy_receipt" \
-      || die 'could not preserve legacy version receipt'
-    backup_legacy_state='present'
-  else
-    backup_legacy_state='absent'
   fi
   if [[ -f "$runtime_identity_file" ]]; then
     backup_runtime_identity="$(make_file_backup_path "$runtime_root/.runtime-identity-backup.XXXXXX")" \
@@ -1052,8 +1022,6 @@ rollback_runtime_transaction() {
     "$backup_kernel_venv" directory || rollback_failed=1
   restore_transaction_path "$backup_runtime_identity_state" "$runtime_identity_file" \
     "$backup_runtime_identity" file || rollback_failed=1
-  restore_transaction_path "$backup_legacy_state" "$legacy_version_file" \
-    "$backup_legacy_receipt" file || rollback_failed=1
   restore_transaction_path "$backup_receipt_state" "$receipt_file" \
     "$backup_receipt" file || rollback_failed=1
   restore_transaction_path "$backup_npm_state" "$npm_prefix" \
@@ -1074,11 +1042,10 @@ rollback_runtime_transaction() {
 commit_runtime_transaction() {
   transaction_committed=1
   rm -rf -- "$backup_npm_prefix" "$backup_kernel_venv"
-  rm -f -- "$backup_receipt" "$backup_legacy_receipt" \
-    "$backup_runtime_identity" "$backup_kernel_identity" "$backup_daemon_stamp"
+  rm -f -- "$backup_receipt" "$backup_runtime_identity" \
+    "$backup_kernel_identity" "$backup_daemon_stamp"
   backup_npm_prefix=''
   backup_receipt=''
-  backup_legacy_receipt=''
   backup_runtime_identity=''
   backup_kernel_venv=''
   backup_kernel_identity=''
@@ -1091,8 +1058,6 @@ prime_version_if_available() {
 
   if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
     version="$(<"$receipt_file")"
-  elif [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
-    version="$(<"$legacy_version_file")"
   else
     return 0
   fi
@@ -1489,8 +1454,7 @@ setup_profile() {
   local version
 
   require_command mise
-  if [[ -e "$receipt_file" || -L "$receipt_file" \
-    || -e "$legacy_version_file" || -L "$legacy_version_file" ]]; then
+  if [[ -e "$receipt_file" || -L "$receipt_file" ]]; then
     version="$(read_installed_version)"
   else
     version="$(resolve_latest_version)"
@@ -1542,7 +1506,7 @@ replace_runtime_state() {
   mv "$staged_runtime_identity" "$runtime_identity_file"
   staged_runtime_identity=''
   write_identity_file "$kernel_identity_stamp" "$identity"
-  rm -f -- "$legacy_version_file" "$daemon_env_stamp"
+  rm -f -- "$daemon_env_stamp"
 
   cli="$(installed_cli "$version")"
   verify_cli_version "$cli" "$version"
@@ -1557,8 +1521,7 @@ replace_runtime_state() {
 runtime_state_is_current() {
   local version="$1" recorded actual
 
-  [[ -f "$receipt_file" && ! -L "$receipt_file" && ! -e "$legacy_version_file" \
-    && ! -L "$legacy_version_file" ]] || return 1
+  [[ -f "$receipt_file" && ! -L "$receipt_file" ]] || return 1
   [[ ! -L "$runtime_identity_file" && ! -L "$kernel_identity_stamp" ]] || return 1
   recorded="$(canonical_identity_from_file "$runtime_identity_file")" || return 1
   [[ "$(jq -r '.primeVersion' <<<"$recorded")" == "$version" ]] || return 1
@@ -1618,17 +1581,9 @@ update_profile() {
 }
 
 doctor_profile() {
-  local version cli recorded actual repair_legacy="${1:-true}"
+  local version cli recorded actual
 
   require_command mise
-  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
-    && ( -e "$legacy_version_file" || -L "$legacy_version_file" ) ]]; then
-    if [[ "$repair_legacy" == true ]]; then
-      repair_profile >/dev/null
-    else
-      die 'legacy Prime runtime state requires prx doctor or prx repair'
-    fi
-  fi
   verify_managed_profile
   version="$(read_installed_version)"
   cli="$(installed_cli "$version")"
@@ -1674,7 +1629,7 @@ inventory_profile() {
   fi
   (
     trap cleanup_on_exit EXIT
-    try_run_locked doctor_profile false >/dev/null 2>&1
+    try_run_locked doctor_profile >/dev/null 2>&1
   ) || status=$?
   case "$status" in
     0)

@@ -20,11 +20,16 @@ import type {
 
 export const continuationEntries: GuideMatchCatalogEntry[] = [{
   ref: "native:copilot/default",
-  surface: "native",
-  name: "default",
-  launcher: "copilot",
+  harness: "copilot",
+  profiles: ["default"],
+  kind: "preset",
+  headless: {
+    schemaVersion: 1, prompt: true, outputFormats: ["json"], eventContract: null,
+    trellageEventContract: null, sessionId: "native", resume: false, resumeWithPrompt: false,
+    questionToolControl: "none", changedFiles: "none", usage: false, cost: false,
+    modelOverride: false, effortOverride: false, testedHarnessVersion: null,
+  },
   description: "An assistant for scoped development and explanation.",
-  sandbox: false,
   guide: {
     schemaVersion: 1,
     capabilities: ["implementation", "review", "explanation"],

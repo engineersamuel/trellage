@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 fail() { printf 'trellage identity contract: FAIL: %s\n' "$1" >&2; exit 1; }
 
-legacy_identity_pattern='@sandbox-harness|harness-(grok-)?profiles|harness-profile|harness-enter|HARNESS_PROFILE|HARNESS_IMAGE|HARNESS_NETWORK|HARNESS_INSTALL_DIR|dev\.sandbox-harness|/(usr/local/)?share/harness|harness-(codex|copilot)-entry'
+legacy_identity_pattern='harness-(grok-)?profiles|harness-profile|harness-enter|HARNESS_PROFILE|HARNESS_IMAGE|HARNESS_NETWORK|HARNESS_INSTALL_DIR|/(usr/local/)?share/harness|harness-(codex|copilot)-entry'
 
 scan_legacy_identity() {
   local scan_status
@@ -28,34 +28,8 @@ scan_legacy_identity() {
   esac
 }
 
-scan_public_branding() {
-  local scan_status
-  if rg -n -F 'sandbox-harness' "$@"; then
-    scan_status=0
-  else
-    scan_status=$?
-  fi
 
-  case "$scan_status" in
-    0)
-      printf 'trellage identity contract: legacy public product branding matched\n' >&2
-      return 1
-      ;;
-    1) return 0 ;;
-    *)
-      printf 'trellage identity contract: public brand rg audit failed with status %s\n' \
-        "$scan_status" >&2
-      return "$scan_status"
-      ;;
-  esac
-}
-
-[[ ! -e "$repo_root/packages/trellage-cli" ]] || fail 'retired Sandbox compiler package remains'
 [[ ! -e "$repo_root/packages/harness-cli" ]] || fail 'legacy compiler package path remains'
-[[ -d "$repo_root/prototypes/trellage-codex-profiles" ]] \
-  || fail 'Codex profiles prototype path is missing'
-[[ -d "$repo_root/prototypes/trellage-codex-common" ]] \
-  || fail 'shared native Codex prototype path is missing'
 [[ ! -e "$repo_root/prototypes/trellage-pstack-profiles" ]] \
   || fail 'standalone pstack launcher prototype remains'
 [[ -d "$repo_root/prototypes/trellage-copilot-profiles" ]] \
@@ -74,17 +48,14 @@ scan_public_branding() {
 [[ -d "$repo_root/prototypes/trellage-jcode-profiles" ]] || fail 'jcode profile prototype path is missing'
 [[ ! -e "$repo_root/prototypes/harness-profiles" ]] || fail 'legacy Copilot profiles prototype path remains'
 [[ ! -e "$repo_root/prototypes/harness-grok-profiles" ]] || fail 'legacy Grok profiles prototype path remains'
-[[ ! -e "$repo_root/prototypes/trellage" ]] || fail 'retired Trellage Sandbox prototype remains'
-[[ ! -e "$repo_root/prototypes/harness-enter-codex" ]] || fail 'legacy prototype path remains'
-[[ ! -e "$repo_root/prototypes/trellage/harness" ]] || fail 'legacy command remains'
 
-for target in native-codex-catalog native-codex-installation native-codex-pstack native-copilot-profiles native-agency-profile native-jcode-profile; do
+for target in native-copilot-profiles native-agency-profile native-jcode-profile; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^PARALLEL_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile test does not run ${target}"
 done
-for target in native-codex-auth-config-launch native-codex-lifecycle native-omp-profile native-claude-profile native-tui-matrix-test; do
+for target in native-omp-profile native-claude-profile native-tui-matrix-test; do
   grep -Eq "^\\.PHONY:.* ${target}( |$)" "$repo_root/Makefile" \
     || fail "Makefile does not declare ${target} phony"
   grep -Eq "^TIMING_SENSITIVE_TEST_TARGETS :=.* ${target}( |$)" "$repo_root/Makefile" \
@@ -104,10 +75,6 @@ if grep -Eq '^(PARALLEL_TEST_TARGETS|TIMING_SENSITIVE_TEST_TARGETS|FINAL_TEST_TA
 fi
 [[ "$(sed -n '/^launcher:/,/^$/p' "$repo_root/Makefile")" != *profile_compiler_fingerprint_contract.sh* ]] \
   || fail 'parallel launcher target must not run the fingerprint performance contract'
-for block in auth-config-launch lifecycle catalog installation pstack; do
-  grep -Fqx $'\tbash prototypes/trellage-codex-profiles/tests/blocks/'"$block"'.sh' \
-    "$repo_root/Makefile" || fail "Makefile Codex ${block} target is stale"
-done
 grep -Fqx $'\tbash prototypes/trellage-copilot-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile Copilot profiles target is stale'
 grep -Fqx $'\tbash prototypes/trellage-agency-profiles/tests/contract.sh' \
@@ -118,9 +85,7 @@ grep -Fqx $'\tbash prototypes/trellage-jcode-profiles/tests/contract.sh' \
   "$repo_root/Makefile" || fail 'Makefile jcode profile target is stale'
 
 audit_error_output="$(mktemp "${TMPDIR:-/tmp}/trellage-identity-audit-error.XXXXXX")"
-public_brand_error_output="$(mktemp "${TMPDIR:-/tmp}/trellage-public-brand-audit-error.XXXXXX")"
-public_brand_match_input="$(mktemp "${TMPDIR:-/tmp}/trellage-public-brand-audit-match.XXXXXX")"
-trap 'rm -f -- "$audit_error_output" "$public_brand_error_output" "$public_brand_match_input"' EXIT
+trap 'rm -f -- "$audit_error_output"' EXIT
 if scan_legacy_identity "$repo_root/.missing-trellage-audit-path" \
   >"$audit_error_output" 2>&1; then
   fail 'identity audit accepted an rg operational error as clean'
@@ -133,34 +98,8 @@ grep -Fq 'trellage identity contract: rg audit failed with status ' \
   "$audit_error_output" \
   || fail 'identity audit did not report its rg operational error'
 
-printf '%s%s\n' 'sandbox-' 'harness' >"$public_brand_match_input"
-if scan_public_branding "$public_brand_match_input" \
-  >"$public_brand_error_output" 2>&1; then
-  fail 'public brand audit accepted legacy product branding'
-else
-  public_brand_match_status=$?
-fi
-[[ "$public_brand_match_status" -eq 1 ]] \
-  || fail 'public brand audit did not classify a legacy match as a contract failure'
-grep -Fq 'trellage identity contract: legacy public product branding matched' \
-  "$public_brand_error_output" \
-  || fail 'public brand audit did not report its legacy match'
-
-if scan_public_branding "$repo_root/.missing-trellage-public-brand-audit-path" \
-  >"$public_brand_error_output" 2>&1; then
-  fail 'public brand audit accepted an rg operational error as clean'
-else
-  public_brand_error_status=$?
-fi
-[[ "$public_brand_error_status" -ge 2 ]] \
-  || fail 'public brand audit collapsed an rg operational error into a clean or match status'
-grep -Fq 'trellage identity contract: public brand rg audit failed with status ' \
-  "$public_brand_error_output" \
-  || fail 'public brand audit did not report its rg operational error'
 
 scan_legacy_identity \
-  "$repo_root/prototypes/trellage-codex-profiles" \
-  "$repo_root/prototypes/trellage-codex-common" \
   "$repo_root/prototypes/trellage-copilot-profiles" \
   "$repo_root/prototypes/trellage-agency-profiles" \
   "$repo_root/prototypes/trellage-claude-common" \
@@ -169,13 +108,5 @@ scan_legacy_identity \
   "$repo_root/Makefile" \
   || fail 'legacy product identity remains or the operational audit failed'
 
-scan_public_branding \
-  "$repo_root/compose.yaml" \
-  "$repo_root/compose.copilot.yaml" \
-  "$repo_root/scripts/harness" \
-  "$repo_root/tests/playwright/package.json" \
-  "$repo_root/tests/playwright/package-lock.json" \
-  "$repo_root/tests/copilot_agent_image.sh" \
-  || fail 'legacy product branding remains or the public root audit failed'
 
 printf 'trellage identity contract: PASS\n'

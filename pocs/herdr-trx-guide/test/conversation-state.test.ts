@@ -139,7 +139,6 @@ test("snapshot schema rejects unknown fields, invalid cutoffs, duplicate evidenc
     { ...value, command: "do-not-run" },
     { ...value, cutoff: { messageId: value.messages[0].id, recordIndex: value.messages[0].recordIndex } },
     { ...value, messages: [value.messages[0], { ...value.messages[1], id: value.messages[0].id }] },
-    { ...value, source: { ...value.source, surface: "host", containerId: "a".repeat(64) } },
     { ...value, source: { ...value.source, transcriptPath: "/outside" } },
   ]) assert.throws(() => parseConversationSnapshot(invalid), /private conversation record/u)
 })

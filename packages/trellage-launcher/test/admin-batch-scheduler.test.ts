@@ -51,6 +51,8 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
   harnessVersionSupported: true,
   updateCheckStale: false,
   ...overrides,
+  profiles: overrides.profiles ?? [overrides.name ?? "hve"],
+  lifecycle: overrides.lifecycle ?? { runtime: "cpx", profile: overrides.name ?? "hve" },
 })
 
 const ok = (): CommandRunResult => ({ stdout: "healthy", stderr: "", exitCode: 0 })

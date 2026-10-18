@@ -65,9 +65,9 @@ describe("private continuation launch", () => {
       1,
       {
         surface: "native",
-        launcher: "copilot",
+        harness: "copilot",
         commandPath: "/profiles/trx",
-        profile: "default",
+        profiles: ["default"],
         headlessPrompt: true,
       },
       secretText,

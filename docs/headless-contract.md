@@ -53,7 +53,7 @@ remain in `outputFormats` because it is the normal terminal output mode.
 
 ## Launch checks
 
-The Native launcher checks the selected profile metadata before launch.
+The Native harness adapter checks the selected profile metadata before launch.
 Unsupported prompt, JSONL, resume, exact-session resume,
 resume-with-prompt, model override, and Trellage event requests fail with a
 nonzero status.
@@ -165,7 +165,7 @@ For the verified OMP version, Native OMP accepts:
 omp copilot --headless-policy no-user-input --print "PROMPT"
 ```
 
-The launcher creates a mode-0600 invocation-only overlay that contains:
+The adapter creates a mode-0600 invocation-only overlay that contains:
 
 ```yaml
 ask:

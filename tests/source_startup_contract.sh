@@ -159,7 +159,7 @@ assert_help() {
         || fail "$label did not print the public Trellage help"
       ;;
     trx)
-      grep -Fqx '  trx run HARNESS PROFILE [-- ARGS...]' "$output" \
+      grep -Fqx '  trx run HARNESS [PROFILE...] [OPTIONS] [-- ARGS...]' "$output" \
         || fail "$label did not print the public trx help"
       ;;
     *) fail "unknown help command: $command_name" ;;

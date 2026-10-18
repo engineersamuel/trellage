@@ -121,7 +121,6 @@ export interface BasketDestination {
   readonly profile: string
   readonly model: string
   readonly effort: string
-  readonly sandbox: boolean
   readonly cwd: string
   readonly herdrPane: string
 }
@@ -133,7 +132,6 @@ export const previewDestination: BasketDestination = {
   profile: "default",
   model: "claude-opus-5",
   effort: "medium",
-  sandbox: false,
   cwd: "~/src/trellage",
   herdrPane: "%4 right split",
 }
@@ -189,7 +187,7 @@ export const previewChunks: ReadonlyArray<BasketChunk> = [
     harness: "trx",
     color: "yellow",
     capturedAt: "09:40",
-    text: "prx default → agent_not_ready: not an active named agent.",
+    text: "prime default → agent_not_ready: not an active named agent.",
   },
   {
     id: "trace",
@@ -198,8 +196,8 @@ export const previewChunks: ReadonlyArray<BasketChunk> = [
     color: "red",
     capturedAt: "09:42",
     text: [
-      "$ trx inventory prx default --json",
-      "trx: prx inventory failed for default",
+      "$ trx inventory prime default --json",
+      "trx: prime default readiness: unhealthy (admission check failed)",
       "",
       "prx: readiness probe timed out after 300000ms",
       "    at probeAgent (/opt/prx/lib/agent.mjs:412:15)",
@@ -230,8 +228,8 @@ export const previewChunks: ReadonlyArray<BasketChunk> = [
       "4. Long blocks are readable. The list truncates; opening a block shows the whole thing with",
       "   paging, and never reflows into unreadable fragments at 60 columns.",
       "5. A block can be edited in place before sending, and reverted to the captured text.",
-      "6. The destination is visible without leaving the composer: launcher, harness, profile, model,",
-      "   effort, sandbox flag, working directory, target pane, and session name.",
+      "6. The destination is visible without leaving the composer: harness, profile, model, effort,",
+      "   working directory, target pane, and session name.",
       "7. Sending is one keystroke and prints the assembled prompt on stdout.",
       "",
       "Out of scope for now: persisting a basket across processes, and capturing from a pane that is",
@@ -432,7 +430,7 @@ export const isChunkEdited = (chunk: BasketChunk, captured: string | undefined):
 
 /** The two dense lines that say what will run the assembled prompt, and where. */
 export const destinationSummaryLines = (destination: BasketDestination): ReadonlyArray<string> => [
-  `${destination.launcher} · ${destination.harness}/${destination.profile} · ${destination.model} · effort ${destination.effort} · sandbox ${destination.sandbox ? "on" : "off"}`,
+  `${destination.launcher} · ${destination.harness}/${destination.profile} · ${destination.model} · effort ${destination.effort}`,
   `${destination.cwd} · herdr pane ${destination.herdrPane} · session ${destination.session}`,
 ]
 

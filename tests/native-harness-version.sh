@@ -12,7 +12,7 @@ printf '1.2.3\n'
 MISE
 chmod +x "$fixture/fake-bin/mise"
 export PATH="$fixture/fake-bin:$PATH"
-for spec in picx:picx prime:prx; do
+for spec in prime:prx; do
   package="${spec%:*}"
   launcher="${spec#*:}"
   runtime="$fixture/$launcher"

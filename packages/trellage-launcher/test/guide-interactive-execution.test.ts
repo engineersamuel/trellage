@@ -45,18 +45,18 @@ const command: CommandSpec = {
 }
 const profile = (headlessPrompt: boolean): SelectedProfile => ({
   surface: "native",
-  launcher: "copilot",
+  harness: "copilot",
   commandPath: command.executable,
-  profile: "hve-core",
+  profiles: ["hve-core"],
   headlessPrompt,
 })
 // jcode is the one harness with no argv prompt at all, so jcx is the only
 // launcher still on Herdr's paste path.
 const agentPromptProfile: SelectedProfile = {
   surface: "native",
-  launcher: "jcode",
+  harness: "jcode",
   commandPath: "/opt/trellage/bin/trx",
-  profile: "reviewer",
+  profiles: ["reviewer"],
   headlessPrompt: false,
 }
 
@@ -263,16 +263,16 @@ describe("interactive guide result execution", () => {
     )
   })
 
-  it("passes a cdx prompt positionally without printing manual-paste instructions", async () => {
+  it("passes a Codex prompt positionally without printing manual-paste instructions", async () => {
     const runner = new RecordingRunner()
     const writes: string[] = []
     const runInteractive = vi.fn(async () => undefined)
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
-        launcher: "codex",
+        harness: "codex",
         commandPath: "/opt/trellage/bin/trx",
-        profile: "pstack",
+        profiles: ["pstack"],
         headlessPrompt: false,
       },
       "Run the full workflow.",
@@ -382,7 +382,7 @@ describe("interactive guide result execution", () => {
     expect(writes).toHaveLength(0)
   })
 
-  it("queues cdx prompts in the launch command before a hook trust decision", async () => {
+  it("queues Codex prompts in the launch command before a hook trust decision", async () => {
     const runner = new RecordingRunner([
       { stdout: '{"result":{"pane":{"pane_id":"2-4"}}}', stderr: "", exitCode: 0 },
       { stdout: "", stderr: "", exitCode: 0 },
@@ -390,9 +390,9 @@ describe("interactive guide result execution", () => {
     const writes: string[] = []
     const cdxProfile: SelectedProfile = {
       surface: "native",
-      launcher: "codex",
+      harness: "codex",
       commandPath: "/opt/trellage/bin/trx",
-      profile: "pstack",
+      profiles: ["pstack"],
       headlessPrompt: false,
     }
 

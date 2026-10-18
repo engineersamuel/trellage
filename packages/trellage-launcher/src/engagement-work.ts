@@ -3,7 +3,7 @@ import { mkdir, open, readdir, rename, unlink } from "node:fs/promises"
 import path from "node:path"
 import { GUIDE_MAX_GENERATED_SPEC } from "@trellage/guide-core"
 import { applyWorkflowPromptTemplate, selectedProfileFromCatalogRef } from "./guide-api.ts"
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import { CommandRunnerError, type CommandRunner } from "./guide-launch.ts"
 import { loadSelectedGuide } from "./guide-selected.ts"
 import { exactKeys, literal, record, text, boundedNumber } from "./guide-text.ts"
@@ -140,7 +140,7 @@ const assignmentBody = (id: string, intent: string, action: EngagementAction, sn
   ].join("\n\n")
 
 export const renderEngagementAssignment = async (
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   guideRoot: string,
   id: string,
   intent: string,
@@ -150,7 +150,7 @@ export const renderEngagementAssignment = async (
   const body = assignmentBody(id, intent, action, snapshot)
   if (action.workflow === null)
     return text(body, "assignment", GUIDE_MAX_GENERATED_SPEC, { multiline: true, preserve: true, utf16: true })
-  const document = await loadSelectedGuide(catalog, guideRoot, action.workflow.profileRef)
+  const document = await loadSelectedGuide(catalog, guideRoot, action.workflow.ref)
   return applyWorkflowPromptTemplate(document.guide, action.workflow.workflowId, {
     title: action.title,
     prompt: body,
@@ -161,7 +161,7 @@ export const renderEngagementAssignment = async (
 export class EngagementWorkStore {
   constructor(
     readonly root: string,
-    private readonly catalog: CombinedGuideCatalog,
+    private readonly catalog: CompositionCatalog,
     private readonly runner: CommandRunner,
   ) {}
 
@@ -394,7 +394,7 @@ export class EngagementWorkStore {
 export const engagementLaunchPlan = async (
   work: EngagementWork,
   store: EngagementWorkStore,
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   guideRoot: string,
   runner: CommandRunner,
 ): Promise<GuideUiCurrentTerminalResult> => {
@@ -415,7 +415,7 @@ export const engagementLaunchPlan = async (
   )
   if (prompt !== work.request.prompt)
     throw new Error("The workflow frame changed. Prepare and review a new assignment.")
-  const selected = selectedProfileFromCatalogRef(catalog, action.workflow.profileRef, action.workflow.workflowId)
+  const selected = selectedProfileFromCatalogRef(catalog, action.workflow.ref, action.workflow.workflowId)
   return buildCurrentTerminalResult(selected, prompt, store.root)
 }
 

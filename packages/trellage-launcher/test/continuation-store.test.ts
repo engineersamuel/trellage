@@ -237,35 +237,7 @@ afterEach(async () => {
   }
 })
 
-describe("Sandbox domain snapshot identities", () => {
-  it("retains the domain snapshot UUID independently of request and draft UUIDs", async () => {
-    const state = await fixture()
-    const exportedSnapshot: ConversationSnapshot = {
-      ...state.snapshot,
-      source: {
-        ...state.snapshot.source,
-        surface: ConversationSurface.Sandbox,
-        profile: "claude-council",
-        containerId: "b".repeat(64),
-        invocationId: "invocation-1",
-      },
-    }
-    const probePath = await state.store.stageRequest(exportedSnapshot)
-    expect(path.basename(probePath)).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/u,
-    )
-    expect(path.basename(probePath, ".json")).not.toBe(exportedSnapshot.id)
-    expect(await state.store.consumeRequest(probePath)).toEqual(exportedSnapshot)
-    const created = await state.store.create(exportedSnapshot, "gpt-5.5", "high")
-    expect(created.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
-    expect(created.id).not.toBe(exportedSnapshot.id)
-    expect(created.snapshot.id).toBe(exportedSnapshot.id)
-    await state.store.acknowledgeRequest(probePath)
-    expect((await new ContinuationStore(state.root).load(created.id)).snapshot).toEqual(exportedSnapshot)
-    expect((await state.store.find(exportedSnapshot.source))?.id).toBe(created.id)
-    await expect(state.store.load("d".repeat(64))).rejects.toThrow(/UUID/u)
-  })
-
+describe("domain snapshot identities", () => {
   it("rejects transport snapshot IDs without consuming requests or replacing a valid draft", async () => {
     const state = await fixture()
     const transportSnapshot = { ...state.snapshot, id: "d".repeat(64) }
@@ -934,19 +906,8 @@ describe("durable source-bound drafts", () => {
     },
   )
 
-  it("binds Native profile and Sandbox invocation identities", async () => {
+  it("binds Native profile identities", async () => {
     const state = await fixture()
-    const source = {
-      ...state.snapshot.source,
-      surface: ConversationSurface.Sandbox,
-      profile: "default",
-      containerId: "container-1",
-      invocationId: "invocation-1",
-    }
-    await state.store.create({ ...state.snapshot, source }, "gpt-5.5", "high")
-    for (const change of [{ profile: "other" }, { containerId: "container-2" }, { invocationId: "invocation-2" }]) {
-      await expect(state.store.find({ ...source, ...change })).resolves.toBeUndefined()
-    }
     const native = { ...state.snapshot.source, surface: ConversationSurface.Native, profile: "default" }
     await state.store.create({ ...state.snapshot, source: native }, "gpt-5.5", "high")
     await expect(state.store.find({ ...native, profile: "other" })).resolves.toBeUndefined()

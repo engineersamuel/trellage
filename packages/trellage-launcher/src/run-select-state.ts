@@ -211,11 +211,15 @@ export const runSelectorChoice = (state: RunSelectorState, catalog: RunSelectorC
   }
 }
 
-export const runSelectorCommand = (choice: RunSelectorChoice): string =>
+export const runSelectorCommand = (
+  choice: RunSelectorChoice,
+  modifiers: ReadonlyArray<string> = [],
+): string =>
   [
     "trx run",
     choice.harness,
     ...choice.profiles,
     ...(choice.model === undefined ? [] : ["--model", choice.model]),
     ...(choice.effort === undefined ? [] : ["--effort", choice.effort]),
+    ...modifiers,
   ].join(" ")

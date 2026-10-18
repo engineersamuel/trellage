@@ -9,7 +9,7 @@ import { GuideAugmentKind, GuideAugmentPhase } from "../src/guide-augment.ts"
 import { renderGuideGoalProposal } from "../src/guide-goal-augment.ts"
 import { composeGuideGoalCandidate, prepareGuideGoal, resolveGuideGoalExecution } from "../src/guide-goal-execution.ts"
 import { goalDraft, goalMeSkill } from "./fixtures/goal-me-skill.ts"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import type { CompositionCatalog, CompositionCatalogEntry } from "../src/composition-catalog.ts"
 import {
   GuideEffort,
   GuideMatcherFallbackReason,
@@ -95,13 +95,13 @@ import {
   type GuideUiAction,
   type GuideUiState,
 } from "../src/guide-ui.tsx"
+import { compositionFixtureCatalog, compositionFixtureEntry } from "./helpers/composition-catalog.ts"
 
 // ---------------------------------------------------------------------------
-// Shared fixtures: a 3-entry catalog (2 native, 1 sandbox), mirroring the
-// fixture conventions in test/guide-api.test.ts.
+// Shared composition fixtures.
 // ---------------------------------------------------------------------------
 
-const headless = (overrides: { readonly prompt: boolean }): CombinedGuideCatalog["native"][number]["headless"] => ({
+const headless = (overrides: { readonly prompt: boolean }): CompositionCatalogEntry["headless"] => ({
   schemaVersion: 1,
   prompt: overrides.prompt,
   outputFormats: ["json"],
@@ -350,19 +350,6 @@ describe("capture source presentation", () => {
     })
     expect(
       captureSourcePresentation({
-        source: "sandbox-transcript",
-        confidence: "exact",
-        agent: "claude",
-        sessionId: "87654321-4321-4321-8321-cba987654321",
-        profile: "claude-research",
-      }),
-    ).toEqual({
-      label: "Exact Sandbox result",
-      detail: "Claude · session 87654321-432 · profile claude-research",
-      color: "green",
-    })
-    expect(
-      captureSourcePresentation({
         source: "conversation-transcript",
         confidence: "exact",
         agent: "copilot",
@@ -518,94 +505,48 @@ const fallbackRoundTripCases: ReadonlyArray<FallbackRoundTripCase> = [
   },
 ]
 
-/** Builds a 3-entry catalog (2 native, 1 sandbox), rooted at `tmpRoot` for the sandbox profile path. */
-const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
-  parseGuideCatalog(
-    JSON.stringify({
-      schemaVersion: 1,
-      native: [
-        {
-          launcher: "codex",
-          harness: "codex",
-          name: "reviewer",
-          description: "Codex host-native launcher.",
-          headless: headless({ prompt: true }),
-          sandbox: false,
-          herdrCompatibility: { status: "supported" },
-          guide: guideReviewer,
-          commandPath: "/opt/trellage/codex/bin/trx",
-        },
-        {
-          launcher: "jcode",
-          harness: "jules",
-          name: "writer",
-          description: "Jules code-native launcher.",
-          headless: headless({ prompt: true }),
-          sandbox: false,
-          herdrCompatibility: { status: "supported" },
-          guide: guideWriter,
-          commandPath: "/opt/trellage/jcode/bin/trx",
-        },
-        {
-          launcher: "copilot",
-          harness: "copilot",
-          name: "planner",
-          description: "Copilot planning profile.",
-          headless: headless({ prompt: false }),
-          sandbox: true,
-          herdrCompatibility: { status: "supported" },
-          guide: guidePlanner,
-          commandPath: "/opt/trellage/copilot/bin/trx",
-        },
-      ],
-    }),
-  )
+const buildCatalog = (_tmpRoot: string): CompositionCatalog => compositionFixtureCatalog([
+  compositionFixtureEntry({
+    harness: "codex", profile: "reviewer", description: "Codex host-native launcher.",
+    headless: headless({ prompt: true }), guide: guideReviewer, commandPath: "/opt/trellage/codex/bin/trx",
+  }),
+  compositionFixtureEntry({
+    harness: "jcode", profile: "writer", description: "Jules code-native launcher.",
+    headless: headless({ prompt: true }), guide: guideWriter, commandPath: "/opt/trellage/jcode/bin/trx",
+  }),
+  compositionFixtureEntry({
+    harness: "copilot", profile: "planner", description: "Copilot planning profile.",
+    headless: headless({ prompt: false }), guide: guidePlanner, commandPath: "/opt/trellage/copilot/bin/trx",
+  }),
+])
 
-const buildCatalogWithSkillReviewer = (tmpRoot: string): CombinedGuideCatalog => {
+const buildCatalogWithSkillReviewer = (tmpRoot: string): CompositionCatalog => {
   const catalog = buildCatalog(tmpRoot)
   return {
     ...catalog,
-    native: catalog.native.map((entry) =>
-      entry.launcher === "codex" && entry.name === "reviewer" ? { ...entry, guide: guideSkillReviewer } : entry,
+    entries: catalog.entries.map((entry) =>
+      entry.harness === "codex" && entry.profiles[0] === "reviewer" ? { ...entry, guide: guideSkillReviewer } : entry,
     ),
   }
 }
 
-const buildCatalogWithPinnedLenses = (tmpRoot: string): CombinedGuideCatalog => {
+const buildCatalogWithPinnedLenses = (tmpRoot: string): CompositionCatalog => {
   const catalog = buildCatalog(tmpRoot)
-  const nativeClaudeEntry = (
-    name: string,
-    description: string,
-    guide: ProfileGuideV1,
-  ): CombinedGuideCatalog["native"][number] => ({
-    launcher: "claude",
-    harness: "claude",
-    name,
-    description,
-    headless: headless({ prompt: false }),
-    sandbox: false,
-    herdrCompatibility: { status: "supported" },
-    guide,
+  const claude = (profile: string, description: string, guide: ProfileGuideV1) => compositionFixtureEntry({
+    harness: "claude", profile, description, guide, headless: headless({ prompt: false }),
     commandPath: "/opt/trellage/claude/bin/trx",
   })
   return {
     ...catalog,
-    native: [
-      ...catalog.native,
-      {
-        launcher: "copilot",
-        harness: "copilot",
-        name: "hve",
-        description: "Copilot with HVE Core.",
-        headless: catalog.native[0]!.headless,
-        sandbox: false,
-        herdrCompatibility: { status: "supported" },
-        guide: guideHve,
-        commandPath: "/opt/trellage/copilot/bin/trx",
-      },
-      nativeClaudeEntry("council", "Native Claude Council profile.", guideCouncil),
-      nativeClaudeEntry("research", "Native Claude Research profile.", guideResearch),
-      nativeClaudeEntry("six-hats", "Native Claude Six Hats profile.", guideSixHats),
+    entries: [
+      ...catalog.entries,
+      compositionFixtureEntry({
+        harness: "copilot", profile: "hve", description: "Copilot with HVE Core.", guide: guideHve,
+        headless: catalog.entries[0]!.headless, commandPath: "/opt/trellage/copilot/bin/trx",
+      }),
+      claude("council", "Native Claude Council profile.", guideCouncil),
+      claude("research", "Native Claude Research profile.", guideResearch),
+      claude("six-hats", "Native Claude Six Hats profile.", guideSixHats),
     ],
   }
 }
@@ -620,9 +561,9 @@ const writeGuideFixtures = async (root: string, reviewerMarkdown: string = revie
 
 const nativeSelectedProfile = (headlessPrompt: boolean): SelectedProfile => ({
   surface: "native",
-  launcher: "codex",
+  harness: "codex",
   commandPath: "/opt/trellage/codex/bin/trx",
-  profile: "reviewer",
+  profiles: ["reviewer"],
   headlessPrompt,
 })
 
@@ -648,16 +589,14 @@ const refinementCandidateTriple = (
 ]
 
 const recommendation = (overrides: Partial<GuideRecommendation> = {}): GuideRecommendation => ({
-  profileRef: "native:codex/reviewer",
+  ref: "native:codex/reviewer",
+  harness: "codex",
+  profiles: ["reviewer"],
   workflowId: "review",
   confidence: 0.9,
   reason: "Best match for reviewing a diff.",
   tradeoff: "Slower than a quick fix.",
-  surface: "native",
-  name: "reviewer",
-  launcher: "codex",
   description: "Codex host-native launcher.",
-  sandbox: false,
   workflow: { id: "review", description: "Review a diff.", examples: ["Review my last commit"] },
   prerequisites: guideReviewer.prerequisites,
   headless: headless({ prompt: true }) as never,
@@ -666,21 +605,9 @@ const recommendation = (overrides: Partial<GuideRecommendation> = {}): GuideReco
 })
 
 const recommendationTriple = (): readonly [GuideRecommendation, GuideRecommendation, GuideRecommendation] => [
-  recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" }),
-  recommendation({
-    profileRef: "native:jcode/writer",
-    workflowId: "draft",
-    surface: "native",
-    name: "writer",
-    launcher: "jcode",
-  }),
-  recommendation({
-    profileRef: "native:copilot/planner",
-    workflowId: "plan",
-    surface: "native",
-    name: "planner",
-    launcher: "copilot",
-  }),
+  recommendation({ ref: "native:codex/reviewer", harness: "codex", profiles: ["reviewer"], workflowId: "review" }),
+  recommendation({ ref: "native:jcode/writer", harness: "jcode", profiles: ["writer"], workflowId: "draft" }),
+  recommendation({ ref: "native:copilot/planner", harness: "copilot", profiles: ["planner"], workflowId: "plan" }),
 ]
 
 const readyInspection = (dirty: boolean): GitInspectionReady => ({
@@ -1317,7 +1244,7 @@ describe("guideUiReducer: recommendations and generation", () => {
     })
 
     expect(state.stage).toBe(GuideUiStage.Generating)
-    expect(state.selectedRecommendation?.profileRef).toBe("native:claude/council")
+    expect(state.selectedRecommendation?.ref).toBe("native:claude/council")
     expect(state.selectedRecommendation?.workflowId).toBe("run-council-deliberation")
   })
 
@@ -1732,7 +1659,7 @@ describe("guideUiReducer: candidates, direct edit, and refine", () => {
       state = guideUiReducer(state, {
         type: GuideUiActionType.GenerateGuideLoaded,
         guideDocument: {
-          ref: chosen.profileRef,
+          ref: chosen.ref,
           guide,
           body: "guide body",
         },
@@ -1854,12 +1781,8 @@ describe("runGuideMatchingStep", () => {
     const phases: GuideMatchPhase[] = []
     const provider: GuideProvider = {
       match: async () => ({
-        candidates: recommendationTriple().map(({ profileRef, workflowId, confidence, reason, tradeoff }) => ({
-          profileRef,
-          workflowId,
-          confidence,
-          reason,
-          tradeoff,
+        candidates: recommendationTriple().map(({ harness, profiles, workflowId, confidence, reason, tradeoff }) => ({
+          harness, profiles, workflowId, confidence, reason, tradeoff,
         })),
       }),
       generate: () => Promise.reject(new Error("generate must not be called during matching")),
@@ -1887,8 +1810,8 @@ describe("runGuideMatchingStep", () => {
     const matcher = {
       execution: { backend: "jev" as const, model: "jev-test" },
       revision: "fixture",
-      match: async () => ({ candidates: recommendationTriple().map(({ profileRef, workflowId, confidence, reason, tradeoff }) => ({
-        profileRef, workflowId, confidence, reason, tradeoff,
+      match: async () => ({ candidates: recommendationTriple().map(({ harness, profiles, workflowId, confidence, reason, tradeoff }) => ({
+        harness, profiles, workflowId, confidence, reason, tradeoff,
       })) }),
     }
     const provider = new FakeGuideProvider()
@@ -1932,12 +1855,8 @@ describe("runGuideMatchingStep", () => {
         match: async () => {
           matchCalls += 1
           return {
-            candidates: recommendationTriple().map(({ profileRef, workflowId, confidence, reason, tradeoff }) => ({
-              profileRef,
-              workflowId,
-              confidence,
-              reason,
-              tradeoff,
+            candidates: recommendationTriple().map(({ harness, profiles, workflowId, confidence, reason, tradeoff }) => ({
+              harness, profiles, workflowId, confidence, reason, tradeoff,
             })),
           }
         },
@@ -1975,7 +1894,7 @@ describe("runGuideGenerationStep", () => {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
       const provider = new FakeGuideProvider()
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
 
       const phases: GuideGenerationPhase[] = []
       const result = await runGuideGenerationStep(
@@ -2024,7 +1943,7 @@ describe("runGuideGenerationStep", () => {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
       const provider = new FakeGuideProvider()
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
       let gatedCandidates = 0
       const result = await runGuideGenerationStep(
         catalog,
@@ -2055,7 +1974,7 @@ describe("runGuideGenerationStep", () => {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
       const provider = new FakeGuideProvider()
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
       const cache = new GuideArtifactCache({
         cwd: tmpRoot,
         routing: {
@@ -2092,7 +2011,7 @@ describe("runGuideGenerationStep", () => {
           })),
         }),
       })
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
 
       const result = await runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)
 
@@ -2147,13 +2066,11 @@ describe("runGuideGenerationStep", () => {
       const researchWorkflow = guideResearch.workflows.find(({ id }) => id === "vault-backed-research")
       if (researchWorkflow === undefined) throw new Error("Missing Research workflow fixture")
       const chosen = recommendation({
-        profileRef: "native:claude/research",
+        ref: "native:claude/research",
+        harness: "claude",
+        profiles: ["research"],
         workflowId: "vault-backed-research",
-        surface: "native",
-        launcher: "claude",
-        name: "research",
         description: "Native Claude Research.",
-        sandbox: false,
         headless: headless({ prompt: false }),
         workflow: researchWorkflow,
         prerequisites: [],
@@ -2199,7 +2116,7 @@ describe("runGuideGenerationStep", () => {
           throw new Error("optimize must not be called after a body collision")
         },
       })
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
 
       expect(new Set(rawCandidates.map(({ prompt }) => prompt)).size).toBe(3)
       await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
@@ -2237,7 +2154,7 @@ describe("runGuideGenerationStep", () => {
           ],
         }),
       })
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
 
       await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
         /no longer distinct after optimization resolution and exact rendering.*template fallback/u,
@@ -2254,7 +2171,7 @@ describe("runGuideGenerationStep", () => {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
       const provider = new FakeGuideProvider({ generateResult: { candidates: [candidate()] } })
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
 
       await expect(runGuideGenerationStep(catalog, tmpRoot, provider, "Review my PR", chosen)).rejects.toThrow(
         /exactly three/u,
@@ -2269,7 +2186,7 @@ describe("runGuideGenerationStep", () => {
     try {
       const catalog = buildCatalog(tmpRoot)
       await writeGuideFixtures(tmpRoot)
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
       const failingProvider: GuideProvider = {
         match: () => Promise.reject(new Error("match must not be called during generation")),
         generate: () => Promise.reject(new Error("model unavailable")),
@@ -2298,7 +2215,7 @@ describe("runGuideGenerationStep", () => {
 describe("runGuideRefinementStep", () => {
   it("calls provider.refine constrained by the same intent/profile/workflow/guide/body plus the prior candidate and feedback", async () => {
     const provider = new FakeGuideProvider()
-    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+    const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
       ref: "native:codex/reviewer",
       guide: guideReviewer,
@@ -2345,8 +2262,8 @@ describe("runGuideRefinementStep", () => {
     const cwd = await mkdtemp(path.join(tmpdir(), "guide-ui-refine-cache-"))
     try {
       const provider = new FakeGuideProvider()
-      const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
-      const guideDocument: SelectedGuideDocument = { ref: chosen.profileRef, guide: guideReviewer, body: "guide body" }
+      const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
+      const guideDocument: SelectedGuideDocument = { ref: chosen.ref, guide: guideReviewer, body: "guide body" }
       const prior = refinementCandidateTriple(
         candidate({ title: "Focused", prompt: "Do the focused thing.", notes: "Quick pass." }),
       )
@@ -2396,7 +2313,7 @@ describe("runGuideRefinementStep", () => {
         throw new Error("optimize must not run after unsafe refinement")
       },
     })
-    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+    const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
       ref: "native:codex/reviewer",
       guide: guideReviewer,
@@ -2426,7 +2343,7 @@ describe("runGuideRefinementStep", () => {
       refineResult: { candidate: duplicate },
       optimizeResult: (input) => ({ candidates: input.candidates }),
     })
-    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+    const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
       ref: "native:codex/reviewer",
       guide: guideReviewer,
@@ -2476,7 +2393,7 @@ describe("runGuideRefinementStep", () => {
           : workflow,
       ),
     }
-    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+    const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
       ref: "native:codex/reviewer",
       guide: skillGuide,
@@ -2540,7 +2457,7 @@ describe("runGuideRefinementStep", () => {
         },
       },
     })
-    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "plan" })
+    const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "plan" })
     const guideDocument: SelectedGuideDocument = {
       ref: "native:codex/reviewer",
       guide: proseGuide,
@@ -2587,7 +2504,7 @@ describe("runGuideRefinementStep", () => {
         })),
       }),
     })
-    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+    const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
       ref: "native:codex/reviewer",
       guide: guideSkillReviewer,
@@ -2660,7 +2577,7 @@ describe("runGuideRefinementStep", () => {
       },
     })
     const chosen = recommendation({
-      profileRef: "native:codex/reviewer",
+      ref: "native:codex/reviewer",
       workflowId: "compound",
     })
     const guideDocument: SelectedGuideDocument = {
@@ -2722,7 +2639,7 @@ describe("runGuideRefinementStep", () => {
         },
       })
       const guideDocument: SelectedGuideDocument = {
-        ref: chosen.profileRef,
+        ref: chosen.ref,
         guide,
         body: "guide body",
       }
@@ -2754,7 +2671,7 @@ describe("runGuideRefinementStep", () => {
         },
       },
     })
-    const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+    const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
     const guideDocument: SelectedGuideDocument = {
       ref: "native:codex/reviewer",
       guide: guideSkillReviewer,
@@ -2801,19 +2718,17 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
       const literal = literalCandidates[index]
       expect(literal).toBeDefined()
       if (literal === undefined) throw new Error(`Missing literal candidate at index ${index}`)
-      expect(rec.profileRef).toBe(literal.profileRef)
+      expect(rec).toMatchObject({ harness: literal.harness, profiles: literal.profiles })
       expect(rec.workflowId).toBe(literal.workflowId)
       expect(rec.confidence).toBe(literal.confidence)
-      const entry = catalog.native.find(
-        (candidateEntry) => `native:${candidateEntry.launcher}/${candidateEntry.name}` === rec.profileRef,
-      )
+      const entry = catalog.entries.find((candidateEntry) => candidateEntry.ref === rec.ref)
       expect(entry).toBeDefined()
-      expect(rec.name).toBe(entry?.name)
-      expect(rec.launcher).toBe(entry?.launcher)
+      expect(rec.harness).toBe(entry?.harness)
+      expect(rec.profiles).toEqual(entry?.profiles)
       expect(rec.description).toBe(entry?.description)
       expect(rec.headless.prompt).toBe(entry?.headless.prompt)
       expect(rec.herdrCompatibility.status).toBe(entry?.herdrCompatibility.status)
-      expect(rec.prerequisites).toBe(entry?.guide.prerequisites)
+      expect(rec.prerequisites).toBe(entry?.guide?.prerequisites)
     }
   })
 
@@ -2826,7 +2741,7 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
           kind,
           key,
           decision,
-          profileRef: recommendation.profileRef,
+          ref: recommendation.ref,
           workflowId: recommendation.workflowId,
         })),
       ).toEqual([
@@ -2834,28 +2749,28 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
           kind: "council",
           key: "c",
           decision: true,
-          profileRef: "native:claude/council",
+          ref: "native:claude/council",
           workflowId: "run-council-deliberation",
         },
         {
           kind: "six-hats",
           key: "6",
           decision: true,
-          profileRef: "native:claude/six-hats",
+          ref: "native:claude/six-hats",
           workflowId: "run-six-hats-deliberation",
         },
         {
           kind: "research",
           key: "r",
           decision: false,
-          profileRef: "native:claude/research",
+          ref: "native:claude/research",
           workflowId: "vault-backed-research",
         },
         {
           kind: "hve-rpi",
           key: "h",
           decision: false,
-          profileRef: "native:copilot/hve",
+          ref: "native:copilot/hve",
           workflowId: "rpi-agent-cycle",
         },
       ])
@@ -2863,7 +2778,7 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
 
     it("omits the six hats lens when its Native profile is not in the catalog", () => {
       const catalog = buildCatalogWithPinnedLenses("/tmp-unused")
-      const withoutSixHats = { ...catalog, native: catalog.native.filter(({ name }) => name !== "six-hats") }
+      const withoutSixHats = { ...catalog, entries: catalog.entries.filter(({ ref }) => ref !== "native:claude/six-hats") }
 
       expect(pinnedGuideLenses(withoutSixHats).filter(({ decision }) => decision).map(({ kind }) => kind)).toEqual([
         "council",
@@ -2878,9 +2793,9 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
 
       expect(selectedProfileForPinnedLens(catalog, lens)).toEqual({
         surface: "native",
-        launcher: "copilot",
+        harness: "copilot",
         commandPath: "/opt/trellage/copilot/bin/trx",
-        profile: "hve",
+        profiles: ["hve"],
         headlessPrompt: true,
         agent: "hve-core:rpi-agent",
       })
@@ -2891,13 +2806,13 @@ describe("literalGuideRecommendations / enrichLiteralCandidate", () => {
     const catalog = buildCatalog("/tmp-unused")
     expect(() =>
       enrichLiteralCandidate(catalog, {
-        profileRef: "native:missing/profile",
+        harness: "missing", profiles: ["profile"],
         workflowId: "review",
         confidence: 0.5,
         reason: "n/a",
         tradeoff: "n/a",
       }),
-    ).toThrow(/unknown profile/u)
+    ).toThrow(/unknown composition/u)
   })
 })
 
@@ -3149,7 +3064,7 @@ describe("destinationOptions", () => {
       })
 
       it("describes generation as concise user-facing processing steps", () => {
-        const chosen = recommendation({ profileRef: "native:codex/reviewer", workflowId: "review" })
+        const chosen = recommendation({ ref: "native:codex/reviewer", workflowId: "review" })
         expect(generationProgressItems(chosen)).toEqual([
           { phase: GuideGenerationPhase.LoadingProfile, label: "Read Reviewer guidance" },
           {
@@ -3247,9 +3162,9 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
-        launcher: "copilot",
+        harness: "copilot",
         commandPath: "/opt/trellage/copilot/bin/trx",
-        profile: "plannotator",
+        profiles: ["plannotator"],
         headlessPrompt: true,
       },
       "Do the thing.",
@@ -3264,9 +3179,9 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
-        launcher: "copilot",
+        harness: "copilot",
         commandPath: "/opt/trellage/copilot/bin/trx",
-        profile: "hve",
+        profiles: ["hve"],
         headlessPrompt: true,
         agent: "hve-core:rpi-agent",
       },
@@ -3283,7 +3198,7 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     expect(result.promptHandling).toBe("argv")
   })
 
-  it("passes a cdx prompt positionally even when conservative headless support is false", () => {
+  it("passes a Codex prompt positionally even when conservative headless support is false", () => {
     const result = buildCurrentTerminalResult(nativeSelectedProfile(false), "Do the thing.", "/repo")
     expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])
     expect(result.promptHandling).toBe("argv")
@@ -3293,9 +3208,9 @@ describe("buildCurrentTerminalResult: headless gating", () => {
     const result = buildCurrentTerminalResult(
       {
         surface: "native",
-        launcher: "unknown",
+        harness: "unknown",
         commandPath: "/opt/trellage/unknown/bin/unknown",
-        profile: "reviewer",
+        profiles: ["reviewer"],
         headlessPrompt: false,
       },
       "Do the thing.",
@@ -3315,9 +3230,9 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
     const result = buildCurrentHerdrWorkspaceResult(
       {
         surface: "native",
-        launcher: "copilot",
+        harness: "copilot",
         commandPath: "/opt/trellage/copilot/bin/trx",
-        profile: "hve",
+        profiles: ["hve"],
         headlessPrompt: false,
         agent: "hve-core:rpi-agent",
       },
@@ -3329,7 +3244,7 @@ describe("Herdr result builders: trust-safe initial prompt delivery", () => {
     expect(result.promptDelivery).toBe("command")
   })
 
-  it("queues a cdx positional prompt so hook trust cannot consume later prompt injection", () => {
+  it("queues a Codex positional prompt so hook trust cannot consume later prompt injection", () => {
     const result = buildCurrentHerdrWorkspaceResult(nativeSelectedProfile(true), "Do the thing.", "/repo", herdrContext)
     expect(result.action).toBe("current-herdr-workspace")
     expect(result.command.args).toEqual(["run", "codex", "reviewer", "--", "Do the thing."])

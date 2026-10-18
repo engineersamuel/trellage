@@ -1,14 +1,14 @@
 # Trellage Agent Guide
 
-Trellage runs Native agent profiles. **Trellage Native** runs profile launchers directly on the
-host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
+Trellage runs Native agent profiles. **Trellage Native** runs harnesses directly on the
+host through `trx run HARNESS [PROFILE...] [-- AGENT_ARGS]`.
 
 ## Project overview
 
 - `trx` is the only Trellage entrypoint. The former Trellage Sandbox CLI
   (`trellage`), its container profile compiler, and `prototypes/trellage` are retired.
 - Trellage Native profiles isolate agent state but are not containers or security boundaries. Composed Grok (`trx run grok`) enables its native OS-level sandbox (Seatbelt/Landlock, workspace-write scope, network allowed). `trx run codex` uses Full Access by default: no command approval prompts and no Codex OS sandbox, for both interactive and non-interactive launches. See `docs/native-sandbox-research.md`.
-- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `jcode`, `omp`, `pi`, `prime`, `grok`, and `uji`. Historical alias files remain private backend implementations; public launcher symlinks are retired by their installers.
+- The `trx` router presents canonical Native harnesses: `agency`, `codex`, `claude`, `copilot`, `jcode`, `omp`, `pi`, `prime`, `grok`, and `uji`. Six private backends provide launch-time admission, setup, or executable resolution outside `PATH`.
 - `trx run HARNESS clean` launches `claude`, `codex`, `copilot`, or `pi` with no skills, MCP servers, instructions, hooks, or plugins from trx, the repository, or the host, and installs nothing. Other harnesses refuse a clean run.
 - `trx run claude firstmate` and `trx run pi firstmate` run [Firstmate](https://github.com/kunchenguid/firstmate) from its own clone at `~/.local/share/trellage/firstmate`, cloned when missing and rebased onto the latest `main` before every launch. Its workers get the same copilot-proxy-rs setup through files Firstmate passes on (Claude `settings.json` `env`, Pi `config/pi-account` and `config/crew-dispatch.json`). Before launch it offers to install missing tools (`treehouse`, `gh-axi`, `tasks-axi`, ...). Other harnesses refuse the profile, and the `trx run` menu shows it dimmed for them. `trx guide` → Augment → **Firstmate** rewrites a draft as a Firstmate message.
 - The comparison harness runs isolated coding-agent configurations against the same prompt.
@@ -36,24 +36,16 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   do not generate or commit application bundles, declarations, or `dist`.
 - Live profile probes require explicit `PROFILE_MATRIX_ARGS=--live` opt-in because they may consume paid quota.
 - Smoke-test locally: `mise run trx -- run <harness> <profile> -- -p "Reply exactly OK"`.
-- After merging CLI/compiler/native launcher changes, from the repo root run
-  `mise run rebuild-profiles`: reinstalls Native launcher backends and `trx`
-  from this worktree.
-  Installed `post-commit`, `post-merge`, and `post-rewrite` hooks prepare the
-  active worktree and compare its source receipt with
-  `~/.local/share/trellage/.native-stack-sources`. Changed runtime inputs
-  refresh every native launcher plus `trx`; unchanged inputs skip the
-  reinstall. The receipt advances only after the complete Native refresh
-  succeeds, so partial failures retry on the next hook. Application code runs
-  from source; profile-image rebuilding is a separate product operation.
-  When `git pull` (with or without `--rebase`) brings in commits, the
-  `post-merge`/`post-rewrite` hook then runs `scripts/upgrade-after-pull.sh`
-  in the foreground: `trx upgrade all --native --yes`, then
-  `trx upgrade codex --all` and `trx upgrade copilot --all` for plugins.
-  Launches never update harness binaries or plugins, so they stay fast; a
-  pull that is already up to date fires no hook. `mise run pull` runs
-  `git pull --rebase origin main` with hooks off, then always runs the Native
-  refresh and `scripts/upgrade-after-pull.sh` exactly once.
+- After merging router or Native backend changes, run `mise run rebuild-profiles`
+  from the repository root. It reinstalls the six launch-required private
+  backends and `trx` from this worktree. Application code runs from source;
+  comparison-image rebuilding is a separate comparison-harness operation.
+- Installed `post-merge` and `post-rewrite` hooks run
+  `scripts/upgrade-after-pull.sh` after a source refresh. It runs
+  `trx upgrade all --yes`, then `trx upgrade copilot --all` for Copilot
+  plugins. Codex and Pi are installed and updated outside Trellage.
+- `mise run pull` runs `git pull --rebase origin main` with hooks disabled,
+  refreshes the Native runtime, and runs `scripts/upgrade-after-pull.sh` once.
 
 ## Fresh Azure integration test
 
@@ -70,20 +62,20 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
 - Preview the effective Azure configuration without mutation:
   `mise run azure-fresh-install -- plan`.
 - After the changes are merged, run the complete proof with
-  `mise run azure-fresh-install -- all`. To test unmerged launcher candidates
+  `mise run azure-fresh-install -- all`. To test unmerged harness candidates
   from the current worktree, use
   `TRELLAGE_AZURE_APPLY_LOCAL_CHANGES=1 mise run azure-fresh-install -- all`.
 - A successful run must save evidence under
   `~/.local/state/trellage-azure-fresh/evidence/<resource-group>/`, verify exact
-  `OK` results for all eight Native launchers, and delete its owned Azure
+  `OK` results for all Native harnesses, and delete its owned Azure
   resource group.
 - A failed run intentionally retains the resource group. Use
   `mise run azure-fresh-install -- ssh`, then retry `bootstrap` or `accept`.
   Always finish an abandoned run with `mise run azure-fresh-install -- down`.
 - This is a live, billable, quota-consuming integration test. Do not add it to
   `make test` or run it without explicit intent. Before delivery, run
-  `make test`; after merged launcher or compiler changes, also run
-  `mise run rebuild-profiles`.
+  `make test`; after merged router or Native backend changes, reinstall the
+  Native runtime.
 
 ## Worktrees and mise trust
 
@@ -107,8 +99,8 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   public package exports, not private source paths or generated files.
 - `packages/trellage-conversation-source` contains production conversation capture.
 - `packages/trellage-runtime` contains shared Bun execution and source-runtime support.
-- `prototypes/trellage-router` and `prototypes/trellage-*-profiles` contain
-  the canonical Trellage Native router, adapters, and profile catalogs.
+- `prototypes/trellage-router` and the retained `prototypes/trellage-*-profiles`
+  directories contain the Native router, adapters, private backends, and catalogs.
 - Uji runs through `trx run uji default` and routes to the local `copilot-proxy-rs` endpoint; its generated config, selected skills, custom tools, and session database are profile-scoped, while Uji credentials remain in its normal data directory. The tracked Lua tools are copied from `packages/trellage-runtime/src/native-run/uji-tools.lua`; their content hash invalidates the generated configuration when they change. Uji defaults to `uji.tool.policy({ default = "allow" })`, so its tools run without per-call approval and are not sandboxed.
 - `scripts` contains repository orchestration and profile verification tools.
 - `tests` contains shell contracts for manifests, adapters, runners, sessions, workspaces, and evidence.
@@ -119,13 +111,13 @@ host through `trx run HARNESS PROFILE [-- AGENT_ARGS]`.
   delegates production capture to `packages/trellage-conversation-source`;
   other experiments remain outside the production workspace.
 
-## GitHub delivery
+## GitHub delivery in the comparison harness
 
-- Every profile image MUST declare the `gh` runtime package.
-- Launch Trellage from a valid Git worktree.
-- Trellage mounts writable worktree and common Git metadata.
-- `gh` auth is ephemeral under the container `/tmp` tmpfs.
-- NEVER bake, persist, log, or mount host GitHub credentials.
+- Every comparison profile image MUST declare the `gh` runtime package.
+- Launch the comparison harness from a valid Git worktree.
+- The comparison harness mounts the writable worktree and common Git metadata.
+- Its `gh` authentication is ephemeral under the container `/tmp` tmpfs.
+- NEVER bake, persist, log, or mount host GitHub credentials in comparison images.
 - Use `git` and `gh` only for explicit user-authorized delivery.
 - Verify scope, tests, PR state, and merge result before reporting delivery.
 
@@ -150,7 +142,7 @@ endpoints. Use Central Feed Services (CFS) packagefeedproxy instead:
 
 ### Trellage Native (`trx`)
 
-- Native launchers run on the host; they inherit host package-manager config.
+- Native harnesses run on the host; they inherit host package-manager config.
 - Configure npm, pip, and uv on the host (as above). Do not rely on public PyPI
   inside agent sessions on Microsoft-managed devices.
 - `trx` does not rewrite package feeds; keep shell/MDM defaults correct so every
@@ -187,7 +179,7 @@ endpoints. Use Central Feed Services (CFS) packagefeedproxy instead:
   `alwaysOn` or install its upstream plugin, hooks, or extensions.
 - JCode MUST keep `i-have-adhd` outside JCode's automatic skill discovery.
   Its managed library lives outside `JCODE_HOME`; explicit requests use
-  `trx skill jcode i-have-adhd PROMPT`. Reinstall the updated Native launchers before
+  `trx skill jcode i-have-adhd PROMPT`. Reinstall the updated Native backends before
   refreshing a shared cache that adds this skill.
 - Headlong MUST keep `i-have-adhd` in its private managed store, not in an
   identity's `skills` or `kernel` registry. Explicit requests read and apply

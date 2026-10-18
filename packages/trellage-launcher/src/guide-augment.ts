@@ -21,7 +21,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { guideIntentMaximumLength } from "./guide-api.ts"
-import type { CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import { CommandRunnerError, type CommandRunner } from "./guide-launch.ts"
 import { guideEnrichPackMaximumLength, type GuideProvider } from "./guide-provider.ts"
 import { jevIntentNeedsRepositoryContext } from "./jev-guide-gates.ts"
@@ -198,11 +198,11 @@ const researchPrompt = (intent: string): string =>
  */
 export const runResearchAugment = async (
   intent: string,
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   context: GuideAugmentContext,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<string> => {
-  const profile = catalog.native.find((entry) => entry.launcher === "copilot" && entry.name === "hve")
+  const profile = catalog.entries.find((entry) => entry.harness === "copilot" && entry.profiles.length === 1 && entry.profiles[0] === "hve")
   if (profile === undefined) {
     throw new GuideAugmentError(
       "research needs the native copilot/hve profile, which is not installed. Install it with: trx setup copilot hve",

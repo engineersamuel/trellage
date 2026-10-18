@@ -277,7 +277,7 @@ const marketplacePluginDirectory = async (
     (candidate) => candidate?.name === selection.plugin,
   )
   if (!entry) throw new NativeRunError("unsupported", `plugin ${selection.plugin} is missing from ${manifestPath}`)
-  if (typeof entry.source !== "string" || !entry.source.startsWith("./"))
+  if (typeof entry.source !== "string" || (entry.source !== "." && !entry.source.startsWith("./")))
     throw new NativeRunError("unsupported", `plugin ${selection.plugin} uses an unsupported marketplace source`)
   const directory = path.resolve(root, entry.source)
   const relative = path.relative(root, directory)
@@ -286,15 +286,18 @@ const marketplacePluginDirectory = async (
   return directory
 }
 
-const resolvePluginDirectory = async (source: ResolvedSource, selection: NativePluginSelection): Promise<string> => {
+const resolvePluginDirectory = async (
+  source: ResolvedSource,
+  selection: NativePluginSelection,
+): Promise<{ directory: string; marketplace: boolean }> => {
   const selectedRoot = path.resolve(source.directory, selection.path)
   const relative = path.relative(source.directory, selectedRoot)
   if (relative.startsWith("..") || path.isAbsolute(relative))
     throw new NativeRunError("unsafe-path", `plugin ${pluginName(selection)} escapes source ${selection.source}`)
-  if (await pluginManifestExists(selectedRoot)) return selectedRoot
-  const resolved = await marketplacePluginDirectory(selectedRoot, selection)
-  if (!resolved) throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} has no plugin manifest`)
-  return resolved
+  if (await pluginManifestExists(selectedRoot)) return { directory: selectedRoot, marketplace: false }
+  const directory = await marketplacePluginDirectory(selectedRoot, selection)
+  if (!directory) throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} has no plugin manifest`)
+  return { directory, marketplace: true }
 }
 
 /** Plugins may link files inside themselves (Council links skills/council/SKILL.md to its root SKILL.md). */
@@ -320,11 +323,11 @@ const validatePluginDirectory = async (
   profile: string,
 ): Promise<{ directory: string; digest: string }> => {
   try {
-    const directory = await resolvePluginDirectory(source, selection)
+    const { directory, marketplace } = await resolvePluginDirectory(source, selection)
     const info = await lstat(directory)
     if (!info.isDirectory() || info.isSymbolicLink())
       throw new NativeRunError("unsafe-path", `plugin ${pluginName(selection)} is not a safe directory`)
-    if (!(await pluginManifestExists(directory)))
+    if (!marketplace && !(await pluginManifestExists(directory)))
       throw new NativeRunError("unsupported", `plugin ${pluginName(selection)} has no regular Claude plugin manifest`)
     await assertSymlinksStayInside(directory, pluginName(selection))
     return { directory, digest: await digestDirectory(directory, true) }

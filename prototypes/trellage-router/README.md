@@ -1,36 +1,32 @@
 # Trellage Native profile router
 
 **Trellage Native** is the host-native profile family. Its `trx` router
-uses canonical harness adapters behind `trx run`, reads managed profile
-catalogs for lifecycle operations, and presents one
-flat interactive list.
+uses canonical harness adapters behind `trx run`. Bare `trx` opens the same
+run composer as `trx run`, and `trx list` describes that composer's harnesses
+and profiles.
 
 ## Install
 
-Install the managed Native runtimes, then install `trx`. Retired launcher
-aliases are not public commands.
+Install the managed private backends, then install `trx`.
 
 Prerequisites: Bash, the pinned Bun runtime, and `jq`. External agent tools can
 also require Node.js. Install the root source workspace dependencies with
 `bun install --frozen-lockfile` before using a development checkout.
 
 ```sh
-(cd ../trellage-codex-profiles && ./install.sh)
 (cd ../trellage-copilot-profiles && ./install.sh)
 (cd ../trellage-agency-profiles && ./install.sh)
 (cd ../trellage-claude-profiles && ./install.sh)
 (cd ../trellage-jcode-profiles && ./install.sh)
 (cd ../trellage-omp-profiles && ./install.sh)
-(cd ../trellage-picx-profiles && ./install.sh)
 (cd ../trellage-prime-profiles && ./install.sh)
 ./install.sh
 ```
 
 `~/.local/bin` must be on `PATH`. The `trx` installer publishes
 `~/.local/bin/trx` as a symlink to its managed runtime.
-Successful installation migrates the router runtime to ownership generation
-v2. Older v1 worktree installers then fail closed instead of replacing newer
-profile guides or launcher compatibility data.
+Successful installation publishes the current router ownership marker.
+Older installers fail closed instead of replacing the managed runtime.
 
 The router-specific owned paths are:
 
@@ -40,8 +36,8 @@ The router-specific owned paths are:
 ```
 
 It also publishes the shared floating-skill manager and revision-free catalog
-under `~/.local/share/trellage/common/floating-skills-runtime/`. Native
-launcher installers publish the same files. It refuses symlinked, redirected,
+under `~/.local/share/trellage/common/floating-skills-runtime/`. Retained
+backend installers publish the same files. It refuses symlinked, redirected,
 or unrelated paths instead of replacing them.
 
 ## Use
@@ -51,13 +47,13 @@ trx
 trx run agency azure
 trx run copilot hve -- --prompt "Reply exactly OK"
 trx run copilot tufte-vdqi
-trx run fx
-trx run fx ask "explain this repository"
-trx run fx --plan
+trx run fx default
+trx run fx default -- ask "explain this repository"
+trx run fx default --plan
 trx run claude default
 trx run uji default
 trx run uji default --model copilot-proxy-rs/gpt-4.1 --effort high
-trx --model gpt-5.6-terra
+trx run --model gpt-5.6-terra
 trx list
 trx list --json
 trx admin
@@ -89,36 +85,35 @@ mise run trx
 mise run trx -- run agency azure
 mise run trx -- run copilot tufte-vdqi
 mise run trx -- run claude default
-mise run trx -- --model gpt-5.6-terra
+mise run trx -- run --model gpt-5.6-terra
 mise run trx -- list --json
 mise run trx -- guide --intent "Write a technical LinkedIn post"
 mise run trx -- guide "$(cat /tmp/large-prompt.md)" --ui-variant split
 ```
 
-`mise run trx -- run agency azure` directly launches Agency without opening
-the picker. Remaining arguments are forwarded to Agency's managed Copilot CLI.
+`mise run trx -- run agency azure` launches Agency without opening the
+composer. Remaining arguments are forwarded to Agency's managed Copilot CLI.
 
-Direct runs use the selected harness adapter, not the retired public launcher
-commands. For example, `mise run trx -- run claude default` does not require
-`cpx` or `cldx` on `PATH`, or a valid Copilot catalog. An older worktree can
-still require those retired commands; update the worktree or use the installed
-`trx run claude default` instead.
+Direct runs use the selected harness adapter. For example,
+`mise run trx -- run claude default` does not require `cpx` or `cldx` on
+`PATH`, or a valid Copilot catalog.
 
-`trx list` prints one `launcher/profile` and catalog description per line.
-`trx list --json` emits a schema-versioned `profiles` array whose entries contain
-`launcher`, `harness`, `name`, `description`, `guide`, `headless`, `sandbox`,
-and `herdrCompatibility`. The nested guide is projected from the installed
-Markdown registry; Markdown remains the authored source. `trx` copies each
-harness catalog's `headless` object unchanged. It does not infer headless
-support from harness names. Both forms are non-interactive and work without a
-TTY. They validate canonical catalog data without requiring profile-manager
-executables.
+`trx list` prints two tables. The first table maps each harness to its built-in
+presets. The second lists config, shared, and special profiles with their
+harness limits and whether they are always applied. `trx list --json` emits
+schema version 2 with `harnesses` and `profiles` arrays. Each harness entry
+includes every profile name that `trx run HARNESS [PROFILE...]` accepts. Both
+forms use the run composer's catalog, are non-interactive, and work without a TTY.
 
-`trx guide` is separate from the search-first bare launcher. It loads the
-Native JSON catalog, uses `gpt-5.6-sol` with medium reasoning to
-rank five profiles, drafts three task-brief prompt candidates with
-`gpt-5.6-luna` at medium, then uses `gpt-5.6-sol` at medium for Prompt Master
-optimization and refinement. The model session has no tools, repository
+Bare `trx` and `trx run` open the run composer. The composer selects a harness,
+zero or more compatible profiles, a model, an effort level, flags, and agent
+arguments. Enter launches in the current pane. In a Herdr pane, `H` launches
+the composed command in a new pane.
+`trx guide` is separate from the run composer. It loads the composition catalog
+from `run-catalog.ts`, authored profile guides, and the Herdr compatibility
+ledger. It uses `gpt-5.6-sol` with medium reasoning to rank five profiles,
+drafts three task briefs with `gpt-5.6-luna` at medium, then uses
+`gpt-5.6-sol` at medium for Prompt Master optimization and refinement. The model session has no tools, repository
 attachments, or persistent history. `--model` forces one model across all
 model-backed phases; `--effort` applies one effort level across the phase
 route. Positional,
@@ -336,29 +331,24 @@ remain interactive.
 own clone, not in the caller's repository. The guide hands the selected message
 over for pasting instead of passing a prompt.
 
-The first sorted row is selected when the launcher opens. Start typing to filter
-by profile, harness, or description; no leading `/` is required. The arrow keys
-move within the filtered results. Enter launches the selected profile directly
-from filter mode, Escape leaves filter mode, and `/` re-enters it. From command
-mode, `S` sorts, `D` opens full details, and `M` selects an advertised or custom
-model for launchers that support overrides. `H`
-launches the selection in a new Herdr pane when available. Ctrl-C cancels from
-any mode; Escape cancels after filter mode is left. Cancellation exits with
-status 130. Remaining arguments are forwarded unchanged after the selected
-launcher profile. The bare picker never runs setup, update, or repair.
+The composer starts on the first harness. The arrow keys move between fields
+and choices. Select compatible profiles, then set the model, effort, isolation,
+and agent arguments as needed. Enter launches the composed command in the
+current pane. In Herdr, `H` opens a right-hand pane in the current Git worktree
+and runs the same absolute `trx run` command there. Ctrl-C cancels with status
+130. The composer does not run setup, update, or repair.
 
 ### Admin harness updates
 
 Press `A` in `trx admin` to preview **Update all harness versions and skills**,
-then confirm only the available updates. Discovery checks the full Native
-catalog, including profiles hidden by filters. It refreshes harness version
-observations and checks skill availability without updating installed
-runtimes or profile skills. Source checks may use the network.
-Confirmation is disabled while discovery runs.
-
-Discovery uses `trx skills-check HARNESS PROFILE` for Native profiles and
-`trx skills check --json` for the shared caches. Installed launchers must
-support these commands; old installations produce incomplete-check diagnostics.
+then confirm only the available managed updates. Admin reads the composition
+catalog directly, so built-in presets and applicable optional `config.toml`
+profiles all appear. Harness version checks are deduplicated per shared runtime.
+Lifecycle-backed rows receive bounded startup inventory checks; selecting the
+inventory view loads other compositions lazily with `trx inventory HARNESS
+[PROFILE...] --json`. Discovery does not update installed runtimes or skills.
+Source checks may use the network. Confirmation is disabled while discovery
+runs.
 
 Current harnesses and skills are hidden. Version changes show
 `current -> target`; configured version and source pins remain in force.
@@ -383,12 +373,11 @@ The scrollable view includes both stdout and stderr for the retained runs.
 Use PageUp/PageDown to scroll and `q` or Esc to return to the list.
 Output history is kept only for the current Admin session, not in a log file.
 
-Copilot, Codex, and Claude use `trx harness-update HARNESS` once per shared host binary. Selecting either Codex
-`youtube` or `superpowers` updates the same Codex binary for all native Codex profiles.
-Grok updates the stable channel. Oh My Pi, jcode, Pi Coding Agent, and Prime
-use `trx upgrade HARNESS PROFILE` once per shared runtime. Native launchers without a
-harness update command do not offer this action; plugin updates are not used
-as a substitute.
+Copilot, Codex, and Claude update once per shared host binary. Oh My Pi, JCode,
+Pi Coding Agent, and Prime use `trx upgrade HARNESS PROFILE` once per shared
+runtime. Grok, Uji, Fx, Headlong, and Agency are externally managed: Admin shows
+their installed version when the harness exposes one, but does not offer a fake
+updater. Plugin updates are not used as a substitute.
 
 Updates run sequentially within a group and report each profile's result.
 A failed profile does not stop the remaining profiles. Version data is
@@ -397,14 +386,12 @@ A running group cannot be started a second time.
 
 ### Global harness and skills update command
 
-`trx upgrade all` uses the same full catalog, planner, and sequential update
+`trx upgrade all` uses the same composition catalog, planner, and sequential
 queue as Admin's `A` action. The `trellage-upgrade-all` skill uses this command
-rather than a second update loop. The operation updates harness versions
-**and skills**. It prints the profiles, commands, unsupported entries, and
-update counts before it asks you to type `yes` at a terminal. Piped input is
-not approval. The catalog input and confirmation terminal are separate.
-Unlike Admin's updates-only selection, this command remains a full maintenance
-run. Its dry-run does not fetch update availability.
+rather than a second update loop. It prints managed commands and externally
+managed informational entries before it asks you to type `yes` at a terminal.
+Piped input is not approval. Unlike Admin's updates-only selection, this command
+remains a full maintenance run. Its dry-run does not fetch update availability.
 
 ```sh
 trx upgrade all --dry-run  # Preview only; no updates or version checks.
@@ -412,20 +399,17 @@ trx upgrade all           # Preview, then require terminal confirmation.
 trx upgrade all --yes     # Explicitly authorize non-interactive updates.
 ```
 
-`--native` is still accepted for compatibility; every update is already
-Native. `--yes` and `--dry-run` cannot be combined. Help and invalid arguments are
-handled before launcher discovery. Missing, invalid, or incomplete catalogs
-stop the operation before any update starts.
+`--yes` and `--dry-run` cannot be combined. Help and invalid arguments are
+handled before composition loading. Invalid configuration, guides, or
+compatibility data stop the operation before any update starts.
 
-The shared queue runs Native harness updates first. It then runs the current
-router's `trx skills update` once, refreshing all eight shared skill caches:
-`native-common`, Codex standard, Codex YouTube, Oh My Pi community, Guide
-Prompt Master, Guide architecture, Claude Office, and Claude Office charts.
-Every Native profile, including Agency, then receives `skills-update PROFILE`
-to copy and verify its configured skills. This final copy
-follows harness updates because some harness updaters rewrite skills. No `repair`, `setup`,
-or plugin update is substituted for a skills update. The router keeps its
-exact executable path, including when it runs from a source worktree.
+The shared queue runs Trellage-managed harness updates first, once per runtime.
+It then runs the current router's `trx skills update` once. Lifecycle-backed
+profiles receive their managed skill copy and verification after harness
+updates, because some harness updaters rewrite skills. Config-only compositions
+consume the shared composed sources and do not receive a fake legacy profile
+copy. No `repair`, `setup`, or plugin update is substituted for a skills update.
+The router keeps its exact executable path, including from a source worktree.
 
 All phases use the same exclusive queue as Admin's `A` action.
 
@@ -436,10 +420,10 @@ failures. If any shared skill cache refresh fails, all Native profile
 copies are skipped; old cached skills are not reported as current. A
 per-profile copy or verification failure does not stop the other profiles.
 
-Unsupported harnesses are reported rather than silently skipped. Agency
-still receives skills even when its harness updater is unsupported; that
-unsupported harness still makes the overall result incomplete. Harness
-fallback is a failure, not a successful update of the old harness.
+Unknown update authorities are reported as failures rather than silently
+skipped. Known externally managed harnesses are reported as informational and
+do not make the overall result fail. Harness fallback remains a failure, not a
+successful update of the old harness.
 
 Any failed harness update, shared skill cache refresh, Native skill copy
 or verification, unsupported profile, unreadable installed version, or
@@ -452,30 +436,19 @@ and does not roll back completed updates.
 Installing or upgrading Trellage itself is a separate operation; this
 command does neither.
 
-`trx` fails closed if a launcher is absent, does not resolve to its owned
-runtime, or has an invalid catalog. The selected native launcher performs its
-own launch-time readiness checks and handles not-setup or unhealthy profiles.
-The bare picker requires stdin and stderr attached to a TTY; a non-TTY
-invocation exits `1`.
+`trx` fails closed if a managed lifecycle harness is absent, does not resolve
+to its owned runtime, or has an invalid catalog. The run composer resolves the
+same harness and profile catalog as `trx list`.
 
-`trx run LAUNCHER PROFILE [-- ARGS...]` is the non-interactive routing
-surface. It performs the same canonical catalog validation as the picker,
-rejects unknown harness/profile pairs, then executes `trx run` with the selected profile and unchanged
-arguments. Arguments must follow `--` so router options cannot be confused
-with launcher options.
+`trx run HARNESS [PROFILE...] [OPTIONS] [-- ARGS...]` launches a composition
+without opening the composer. Profiles after the harness are combined in order,
+and arguments after `--` pass to the harness.
 
-The picker’s **HARNESS** and **PROFILE** columns are display labels, not a
-single command-line profile name. Use the exact **Run** command in the selected
-row’s detail pane. For example, `copilot / tufte-vdqi` runs as
-`trx run copilot tufte-vdqi`, while `claude / default` runs as
-`trx run claude default`. From this repository, prefix the same route with
-`mise run trx --`, such as `mise run trx -- run copilot tufte-vdqi`.
-
-Uji is available directly as `trx run uji default`; it is not a managed profile
-catalog entry, so it does not appear in `trx list`. Trellage writes an isolated
-Uji config with the selected skills and instructions, routes requests through
-the local `copilot-proxy-rs` OpenAI Responses endpoint, and stores sessions per
-composition. Uji keeps using its normal data directory for sign-in credentials.
+Uji is available directly as `trx run uji default`. It appears in the
+harness-centric `trx list`, but it is not a managed lifecycle catalog entry.
+Trellage writes an isolated Uji config with the selected skills and instructions.
+It routes requests through the local `copilot-proxy-rs` OpenAI Responses
+endpoint and stores sessions per composition. Uji keeps using its normal data directory for sign-in credentials.
 The default model is `copilot-proxy-rs/gpt-6-astra`. The first launch loads Uji's
 official skills pack. Use `--model copilot-proxy-rs/ID` to select another proxy
 model. Trellage also provides `proxy_preflight` (local health and model-list
@@ -486,8 +459,8 @@ Knowledge search asks for approval and searches only its `system`, `projects`,
 sources or private notes. `repo_brief` returns file paths and diff statistics,
 not file contents.
 Uji starts with its tool policy set to `default = "allow"`, so built-in file
-and command tools run without an approval prompt. This is host execution, not
-a sandbox. Use Uji's policy configuration if you need approval prompts or
+and command tools run without an approval prompt. This is unrestricted host
+execution. Use Uji's policy configuration if you need approval prompts or
 restrictions.
 
 The Lua plugin source is tracked in
@@ -496,7 +469,7 @@ composition copies it into `plugin/`; its content hash is part of the generation
 identity, so a refreshed Trellage runtime installs changed tools on the next
 launch without a separate plugin update step.
 
-The first setup or launch through any native launcher fetches the
+The first setup or launch through any Native harness fetches the
 `native-common` bundle from the approved repositories' current default
 branches. The shared snapshot is then reused without network access.
 `trx skills status` reports the installed names. `trx skills update` is the
@@ -514,17 +487,16 @@ is under the working directory and is removed after the check.
 
 Admin exposes this result as `skills:shared`, including Guide Prompt Master
 and architecture changes that need no Native profile copies. Older routers
-without this command need a normal launcher refresh.
+without this command need a normal runtime refresh.
 
-These commands do not require launcher discovery, bootstrap development
+These commands do not require backend discovery, bootstrap development
 dependencies, or start an agent.
 
 Rows show `harness / profile`. The highlighted detail pane shows the canonical
 command, absolute router path, and exact JSON argument vector, including
-empty or space-containing arguments—before the full catalog metadata and
-readiness status. Diagnostic inventory remains available directly from
-launchers that support `inventory PROFILE --json`; `trx` does not collect it on
-the launch path. Inventory can report `busy` while a launcher owns its mutation
+empty or space-containing arguments, before the composition metadata and
+readiness status. Selecting inventory runs `trx inventory HARNESS [PROFILE...]
+--json`. Inventory can report `busy` while a lifecycle runtime owns its mutation
 lock. `doctor` remains the full runtime health diagnostic.
 
 Trellage Native adds no containment. Canonical harnesses run their selected
@@ -555,7 +527,7 @@ Some harnesses need more than flags:
   none appear in the `$` picker.
 - Codex refuses inside a repository that has a `.codex` directory between the
   working directory and the repository root. Codex loads it in every writable
-  sandbox whatever the trust setting.
+  workspace regardless of the trust setting.
 - Copilot lists its skills and MCP servers before launch and disables each one
   by name. It also turns off custom instructions, built-in MCP servers, memory,
   and the agent tools.
@@ -576,8 +548,8 @@ managed policy.
 decisions from the Trellage Varlock environment (by default
 `~/.config/trellage`). Put the key in a mode-`0600` `.env.local` file there.
 You can declare it in `.env.schema` as `# @sensitive @optional`. The router
-resolves only this key and hands it to the launcher under a private name. The
-launcher removes that name from its environment, so agents that the guide
+resolves only this key and hands it to the harness process under a private name. The
+router removes that name from its environment at startup, so agents that the guide
 launches do not inherit the key. This also resolves Varlock function values,
 such as encrypted secrets. A `TYPESAFE_API_KEY` in the process environment or
 the worktree `.env` wins. A missing key is a silent no-op. An unsafe source or a Varlock
@@ -587,7 +559,7 @@ failure prints `Jev decisions stay off` and the guide continues without Jev.
 
 ### Package feeds (Microsoft-managed hosts)
 
-Native launchers inherit the host package-manager configuration. On
+Native harnesses inherit the host package-manager configuration. On
 Microsoft-managed devices, public PyPI/npm registries are blocked. Keep host
 defaults on Central Feed Services (CFS), for example:
 
@@ -608,8 +580,8 @@ section “Package feeds on Microsoft-managed devices”.
 ```
 
 Uninstall removes only the owned `trx` runtime and its exact command symlink.
-The shared floating-skill runtime and cache, native launcher runtimes, and all
-profile homes are preserved because other launchers use them.
+The shared floating-skill runtime and cache, private backend runtimes, and all
+profile homes are preserved because the backends use them.
 
 ## Test
 

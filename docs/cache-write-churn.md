@@ -1,8 +1,6 @@
 # Cache-Write Churn — Measured Findings
 
-Status: **live measurement, ongoing investigation.** Companion to
-`docs/lean-ctx-evaluation.md`, which established that cache write is 51-68% of
-spend and therefore the largest available lever.
+Status: Historical measurement from the retired Trellage Sandbox product.
 
 Measured in the running `claude-council` container
 (`trellage-claude-claude-council-worktree-clear-forest-905a-*`) against

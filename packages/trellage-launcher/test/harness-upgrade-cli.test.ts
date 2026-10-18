@@ -9,12 +9,11 @@ import {
   type HarnessUpgradeCliOptions,
   type HarnessUpgradeConfirmation,
 } from "../src/harness-upgrade-cli.ts"
-import {
-  parseGuideCatalog,
-  type CombinedGuideCatalog,
-  type HeadlessCapabilitiesV1,
-  type NativeGuideCatalogEntry,
-} from "../src/guide-catalog.ts"
+import type {
+  CompositionCatalog,
+  CompositionCatalogEntry,
+  HeadlessCapabilitiesV1,
+} from "../src/composition-catalog.ts"
 import { CommandRunnerError, type CommandRunner, type CommandRunResult } from "../src/guide-launch.ts"
 
 const headless: HeadlessCapabilitiesV1 = {
@@ -35,7 +34,7 @@ const headless: HeadlessCapabilitiesV1 = {
   testedHarnessVersion: null,
 }
 
-const guide: NativeGuideCatalogEntry["guide"] = {
+const guide: CompositionCatalogEntry["guide"] = {
   schemaVersion: 1,
   capabilities: ["fixture"],
   bestFor: ["Fixture updates", "Fixture previews"],
@@ -44,21 +43,23 @@ const guide: NativeGuideCatalogEntry["guide"] = {
   workflows: [{ id: "fixture", description: "Fixture", examples: ["One", "Two"], promptTemplate: "{{intent}}" }],
 }
 
-const native = (launcher = "claude", harness = "claude", name = "a"): NativeGuideCatalogEntry => ({
-  launcher,
+const native = (harness = "claude", _legacyHarness = harness, name = "a"): CompositionCatalogEntry => ({
+  ref: `native:${harness}/${name}`,
   harness,
-  name,
+  profiles: [name],
+  kind: "preset",
+  canonicalHarness: harness !== "fx" && harness !== "headlong",
   description: name,
   headless,
-  sandbox: false,
   herdrCompatibility: { status: "untested" },
   guide,
   commandPath: "/fixture/trx",
+  lifecycle: ["codex", "fx", "grok", "headlong", "pi", "uji"].includes(harness) ? null : { runtime: harness, profile: name },
 })
 
-const catalog = (): CombinedGuideCatalog => ({
-  schemaVersion: 1,
-  native: [native(), native("claude", "claude", "b")],
+const catalog = (): CompositionCatalog => ({
+  schemaVersion: 2,
+  entries: [native(), native("claude", "claude", "b")],
 })
 
 const success = (stdout = ""): CommandRunResult => ({ stdout, stderr: "", exitCode: 0 })
@@ -89,14 +90,11 @@ const fixture = (source = catalog()) => {
 
 describe("upgrade CLI arguments", () => {
   it.each([
-    { argv: ["all"], approval: "confirm", scope: "all" },
-    { argv: ["all", "--yes"], approval: "yes", scope: "all" },
-    { argv: ["all", "--dry-run"], approval: "dry-run", scope: "all" },
-    { argv: ["all", "--native"], approval: "confirm", scope: "native" },
-    { argv: ["all", "--native", "--yes"], approval: "yes", scope: "native" },
-    { argv: ["all", "--dry-run", "--native"], approval: "dry-run", scope: "native" },
-  ])("parses $argv without broadening approval", ({ argv, approval, scope }) => {
-    expect(parseHarnessUpgradeArgv(argv)).toEqual({ kind: "run", approval, scope })
+    { argv: ["all"], approval: "confirm" },
+    { argv: ["all", "--yes"], approval: "yes" },
+    { argv: ["all", "--dry-run"], approval: "dry-run" },
+  ])("parses $argv without broadening approval", ({ argv, approval }) => {
+    expect(parseHarnessUpgradeArgv(argv)).toEqual({ kind: "run", approval })
   })
 
   it.each(["--help", "-h", "help"])("serves %s without catalog discovery or commands", async (flag) => {
@@ -107,7 +105,7 @@ describe("upgrade CLI arguments", () => {
     expect(readCatalog).not.toHaveBeenCalled()
     expect(confirm).not.toHaveBeenCalled()
     expect(run).not.toHaveBeenCalled()
-    expect(lines.join("\n")).toContain("trx upgrade all [--native] [--yes | --dry-run]")
+    expect(lines.join("\n")).toContain("trx upgrade all [--yes | --dry-run]")
   })
 
   it.each(
@@ -124,9 +122,6 @@ describe("upgrade CLI arguments", () => {
       ["all", "profile"],
       ["all", "--help", "--yes"],
       ["--help", "--yes"],
-      ["all", "--native", "--native"],
-      ["all", "--native", "--yes", "--dry-run"],
-      ["all", "--native", "--help"],
     ].map((argv) => ({ argv })),
   )("rejects $argv before discovery, confirmation, or commands", async ({ argv }) => {
     const { invoke, readCatalog, run } = fixture()
@@ -149,10 +144,9 @@ describe("upgrade CLI discovery and authorization", () => {
     expect(confirm).not.toHaveBeenCalled()
     expect(run).not.toHaveBeenCalled()
     expect(JSON.stringify(source)).toBe(before)
-    expect(lines.join("\n")).toContain("2 catalog profiles")
+    expect(lines.join("\n")).toContain("2 catalog compositions")
     for (const ref of ["native:claude/a", "native:claude/b"]) expect(lines.join("\n")).toContain(ref)
-    expect(lines.join("\n")).not.toContain("sandbox:")
-    expect(lines.join("\n")).toContain("Scope: 1 Native runtime/profile updates.")
+    expect(lines.join("\n")).toContain("Scope: 1 Native runtime updates.")
     expect(lines.join("\n")).not.toContain("/fixture/trellage")
     expect(lines.join("\n")).toContain("Refresh: trx skills update")
     expect(lines.join("\n")).toContain("/fixture/trx upgrade claude a --skills-only")
@@ -164,32 +158,23 @@ describe("upgrade CLI discovery and authorization", () => {
     expect(lines.at(-1)).toContain("No harness or skill updates or installed-version checks were started")
   })
 
-  it("accepts --native with the same Native harness and skill preview", async () => {
-    const { invoke, lines, run } = fixture()
-    expect(await invoke(["all", "--native", "--dry-run"])).toBe(0)
-    expect(run).not.toHaveBeenCalled()
-    const preview = lines.join("\n")
-    expect(preview).toContain("Scope: 1 Native runtime/profile updates.")
-    expect(preview).toContain("/fixture/trx upgrade claude a --harness-only")
-    expect(preview).toContain("/fixture/trx upgrade claude b --skills-only")
-    expect(preview).not.toContain("Container")
-  })
 
   it("rejects duplicate static identities before running anything", async () => {
     const source = catalog()
     const { invoke, run } = fixture(source)
     await expect(invoke(["all", "--yes"], {
-      readCatalog: () => ({ ...source, native: [...source.native, ...source.native] }),
+      readCatalog: () => ({ ...source, entries: [...source.entries, ...source.entries] }),
     })).rejects.toThrow("Incomplete catalog")
     expect(run).not.toHaveBeenCalled()
   })
 
-  it("reports unsupported entries as an incomplete dry-run without running anything", async () => {
-    const { invoke, run, lines } = fixture({ ...catalog(), native: [native("agency", "agency")] })
-    expect(await invoke(["all", "--dry-run"])).toBe(1)
+  it("reports an externally managed harness once without failing dry-run", async () => {
+    const { invoke, run, lines } = fixture({ ...catalog(), entries: [native("agency", "agency"), native("agency", "agency", "hve")] })
+    expect(await invoke(["all", "--dry-run"])).toBe(0)
     expect(run).not.toHaveBeenCalled()
-    expect(lines.join("\n")).toContain("Unsupported harness native:agency/a: No harness update command is supported for agency.")
-    expect(lines.join("\n")).toContain("/fixture/trx upgrade agency a --skills-only")
+    expect(lines.filter((line) => line.startsWith("Externally managed agency:"))).toEqual([
+      "Externally managed agency: installed and updated outside Trellage.",
+    ])
   })
 
   it("prints the complete scope before asking for explicit approval", async () => {
@@ -231,8 +216,8 @@ describe("upgrade CLI discovery and authorization", () => {
   })
 
   it.each([
-    { native: [] },
-    { native: [native(), native()] },
+    { entries: [] },
+    { entries: [native(), native()] },
   ])("rejects an incomplete or duplicate catalog before approval", async (entries) => {
     const { invoke, run } = fixture({ ...catalog(), ...entries })
     const confirm = vi.fn()
@@ -241,9 +226,9 @@ describe("upgrade CLI discovery and authorization", () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
-  it("does not mask catalog read or parse failures with a success summary", async () => {
+  it("does not mask catalog failures with a success summary", async () => {
     const { invoke, run, lines } = fixture()
-    await expect(invoke(["all", "--yes"], { readCatalog: () => parseGuideCatalog("{}") })).rejects.toThrow("catalog")
+    await expect(invoke(["all", "--yes"], { readCatalog: () => ({ schemaVersion: 2, entries: [] }) })).rejects.toThrow("catalog")
     expect(run).not.toHaveBeenCalled()
     expect(lines).toEqual([])
   })
@@ -287,10 +272,10 @@ describe("upgrade CLI shared queue execution", () => {
     expect(lines.at(-1)).toBe("All catalog harness versions and skills were updated.")
   })
 
-  it("keeps Oh My Pi and Pi Coding Agent operations distinct", async () => {
-    const { invoke, run } = fixture({
+  it("updates Oh My Pi while reporting Pi Coding Agent as externally managed", async () => {
+    const { invoke, run, lines } = fixture({
       ...catalog(),
-      native: [
+      entries: [
         native("omp", "oh-my-pi"),
         native("pi", "pi"),
       ],
@@ -298,16 +283,14 @@ describe("upgrade CLI shared queue execution", () => {
     expect(await invoke(["all", "--yes"])).toBe(0)
     expect(
       run.mock.calls.filter(([, args]) => ["update", "upgrade"].includes(args[0]!) && !args.includes("--skills-only")).map(([executable, args]) => [executable, args]),
-    ).toEqual([
-      ["/fixture/trx", ["upgrade", "omp", "a"]],
-      ["/fixture/trx", ["upgrade", "pi", "a"]],
-    ])
+    ).toEqual([["/fixture/trx", ["upgrade", "omp", "a"]]])
+    expect(lines.join("\n")).toContain("Externally managed pi: installed and updated outside Trellage.")
   })
 
-  it("continues independent failures and reports unsupported profiles without declaring full success", async () => {
+  it("continues independent failures and reports external harnesses without declaring full success", async () => {
     const { invoke, run, lines } = fixture({
       ...catalog(),
-      native: [...catalog().native, native("agency", "agency")],
+      entries: [...catalog().entries, native("agency", "agency")],
     })
     run.mockImplementation(async (executable, args) => {
       if (args.includes("--harness-only")) {
@@ -324,8 +307,7 @@ describe("upgrade CLI shared queue execution", () => {
     })
     expect(await invoke(["all", "--yes"])).toBe(1)
     expect(lines.join("\n")).toContain("Failed harness native:claude/b: native package fetch failed")
-    expect(lines.join("\n")).not.toContain("sandbox:")
-    expect(lines.join("\n")).toContain("Unsupported harness native:agency/a")
+    expect(lines.join("\n")).toContain("Externally managed agency:")
     expect(lines.at(-1)).toContain("did not complete successfully")
   })
 
@@ -425,19 +407,13 @@ describe("upgrade CLI Native skills phase", () => {
     expect(lines.join("\n")).toContain("Refresh: '/fixture/current worktree/bin/trx' skills update")
   })
 
-  it("refreshes shared caches once and copies every Native profile, including unsupported Agency harnesses", async () => {
+  it("refreshes shared caches once and copies every lifecycle-backed profile", async () => {
     const launchers = [
-      ["agency", "agency"],
-      ["copilot", "copilot"],
-      ["codex", "codex"],
-      ["claude", "claude"],
-      ["jcode", "jcode"],
-      ["omp", "oh-my-pi"],
-      ["pi", "pi"],
-      ["prime", "prime"],
+      ["agency", "agency"], ["copilot", "copilot"], ["claude", "claude"],
+      ["jcode", "jcode"], ["omp", "oh-my-pi"], ["prime", "prime"],
     ] as const
-    const { invoke, run, lines } = fixture({ ...catalog(), native: launchers.map(([launcher, harness]) => native(launcher, harness)) })
-    expect(await invoke(["all", "--yes"])).toBe(1)
+    const { invoke, run, lines } = fixture({ ...catalog(), entries: launchers.map(([launcher, harness]) => native(launcher, harness)) })
+    expect(await invoke(["all", "--yes"])).toBe(0)
     expect(run.mock.calls.filter(([, args]) => args[0] === "skills")).toHaveLength(1)
     expect(
       run.mock.calls
@@ -446,8 +422,8 @@ describe("upgrade CLI Native skills phase", () => {
         .sort(),
     ).toEqual(launchers.map(([launcher]) => ["/fixture/trx", ["upgrade", launcher, "a", "--skills-only"]]).sort())
     expect(lines.join("\n")).toContain("Updated Native skills native:agency/a")
-    expect(lines.join("\n")).toContain("Unsupported harness native:agency/a")
-    expect(lines.join("\n")).toContain("Native skills summary: 8 updated, 0 failed, 0 not run")
+    expect(lines.join("\n")).toContain("Externally managed agency:")
+    expect(lines.join("\n")).toContain("Native skills summary: 6 updated, 0 failed, 0 not run")
   })
 
   it("does not use stale caches after refresh failure, but still runs independent harness updates", async () => {

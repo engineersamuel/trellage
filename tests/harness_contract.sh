@@ -35,7 +35,7 @@ assert config["agents"] == {
     "default_subagent_model": "gpt-5.6-luna", "default_subagent_reasoning_effort": "max",
 }
 assert config["features"]["context_management"]["experimental_mode"] is True
-roles = Path("prototypes/trellage-codex-common/agents")
+roles = Path("harnesses/codex-agents/agents")
 for role in ("explorer", "worker", "tester", "researcher", "reviewer"):
     agent = tomllib.loads((roles / f"{role}.toml").read_text())
     assert agent["name"] == role and agent["description"] and agent["developer_instructions"]

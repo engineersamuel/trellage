@@ -20,6 +20,8 @@ const entry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntry =>
   harnessVersionSupported: true,
   updateCheckStale: false,
   ...overrides,
+  profiles: overrides.profiles ?? [overrides.name ?? "claude"],
+  lifecycle: overrides.lifecycle ?? { runtime: "cldx", profile: overrides.name ?? "claude" },
 })
 
 const known = (installed: string, latest: string): AdminHarnessVersionResult => ({

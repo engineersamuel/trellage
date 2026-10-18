@@ -87,6 +87,7 @@ const confirmationView = (plan: HarnessUpdateAllPlan): HarnessUpdateAllView => (
 const emptySelectionPlan = (): HarnessUpdateAllPlan => ({
   groups: [],
   skills: undefined,
+  externallyManaged: [],
   unsupported: [],
   profileCount: 0,
   nativeUpdateCount: 0,

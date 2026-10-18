@@ -54,7 +54,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                 import time
                 from pathlib import Path
 
-                launcher, profile = sys.argv[1:3]
+                harness, profile = sys.argv[1:3]
                 log = Path(os.environ["FAKE_TUI_STATE"]) / "input.log"
                 ready = "\\x1b[1mREA\\x1b[0mDY>"
                 prompt_number = 1
@@ -65,7 +65,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                     termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, attributes)
 
                 def show_ready():
-                    if launcher == "fz":
+                    if harness == "fz":
                         print(f"{prompt_number}> ", flush=True)
                     else:
                         print(ready, flush=True)
@@ -118,7 +118,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                         continue
                     value = line.rstrip("\\r\\n")
                     with log.open("a") as output:
-                        output.write(f"{launcher}\\t{profile}\\t{value}\\n")
+                        output.write(f"{harness}\\t{profile}\\t{value}\\n")
                     if value == "/exit":
                         if profile == "exit-blocked":
                             print("CONSENT REQUIRED", flush=True)
@@ -160,27 +160,33 @@ class NativeTuiMatrixTest(unittest.TestCase):
                 readiness = json.loads(os.environ.get("FAKE_TUI_READINESS", "{{}}"))
                 arguments = sys.argv[1:]
                 if arguments == ["list", "--json"]:
-                    print(json.dumps({{"schemaVersion": 1, "profiles": catalog}}))
+                    harnesses = {{}}
+                    for entry in catalog:
+                        harnesses.setdefault(entry["harness"], []).append(entry["name"])
+                    print(json.dumps({{
+                        "schemaVersion": 2,
+                        "harnesses": [{{"harness": harness, "presets": names}} for harness, names in harnesses.items()],
+                    }}))
                     raise SystemExit(0)
                 if len(arguments) == 4 and arguments[0] == "inventory" and arguments[3] == "--json":
-                    launcher, profile = arguments[1:3]
+                    harness, profile = arguments[1:3]
                     with (state / "events.log").open("a") as output:
-                        output.write(f"inventory\\t{{launcher}}\\t{{profile}}\\n")
-                    value = readiness.get(f"{{launcher}}/{{profile}}", "healthy")
+                        output.write(f"inventory\\t{{harness}}\\t{{profile}}\\n")
+                    value = readiness.get(f"{{harness}}/{{profile}}", "healthy")
                     print(json.dumps({{
-                        "schemaVersion": 1,
-                        "launcher": launcher,
-                        "profile": profile,
+                        "schemaVersion": 2,
+                        "harness": harness,
+                        "profiles": [profile],
                         "readiness": value,
                     }}))
                     raise SystemExit(0)
                 if len(arguments) >= 3 and arguments[0] == "run":
-                    launcher, profile = arguments[1:3]
+                    harness, profile = arguments[1:3]
                     with (state / "events.log").open("a") as output:
-                        output.write(f"launch\\t{{launcher}}\\t{{profile}}\\n")
+                        output.write(f"launch\\t{{harness}}\\t{{profile}}\\n")
                     os.execv(
                         sys.executable,
-                        [sys.executable, {str(self.fake_tui)!r}, launcher, profile],
+                        [sys.executable, {str(self.fake_tui)!r}, harness, profile],
                     )
                 raise SystemExit(2)
                 """
@@ -273,7 +279,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
                     "skillPrefix": "/justify ",
                 }
             },
-            "launchers": {
+            "harnesses": {
                 "fx": "fixture",
                 "fy": "quiet-fixture",
                 "fz": "numbered-fixture",
@@ -320,8 +326,8 @@ class NativeTuiMatrixTest(unittest.TestCase):
         )
 
     @staticmethod
-    def profile(name: str, launcher: str = "fx") -> dict[str, str]:
-        return {"launcher": launcher, "harness": "fixture", "name": name}
+    def profile(name: str, harness: str = "fx") -> dict[str, str]:
+        return {"harness": harness, "name": name}
 
     def test_lifecycle_discovers_future_profiles(self) -> None:
         result = self.run_matrix([self.profile("current"), self.profile("future")])
@@ -339,14 +345,14 @@ class NativeTuiMatrixTest(unittest.TestCase):
         ])
 
     def test_lifecycle_supports_frame_then_quiet_readiness(self) -> None:
-        result = self.run_matrix([self.profile("current", launcher="fy")])
+        result = self.run_matrix([self.profile("current", harness="fy")])
         self.assertEqual(result.returncode, 0, result.stderr)
         profile = json.loads(result.stdout)["profiles"][0]
         self.assertEqual(profile["stages"]["ready"], "pass")
         self.assertEqual(profile["stages"]["exit"], "pass")
 
     def test_lifecycle_can_send_three_control_c_exit_keys(self) -> None:
-        result = self.run_matrix([self.profile("triple-exit", launcher="fv")])
+        result = self.run_matrix([self.profile("triple-exit", harness="fv")])
         self.assertEqual(result.returncode, 0, result.stderr)
         profile = json.loads(result.stdout)["profiles"][0]
         self.assertEqual(profile["stages"]["exit"], "pass")
@@ -426,14 +432,14 @@ class NativeTuiMatrixTest(unittest.TestCase):
             os.kill(pid, 0)
 
     def test_adapter_environment_overrides_inherited_quiet_mode(self) -> None:
-        result = self.run_matrix([self.profile("quiet-env", launcher="fy")])
+        result = self.run_matrix([self.profile("quiet-env", harness="fy")])
         self.assertEqual(result.returncode, 0, result.stderr)
         profile = json.loads(result.stdout)["profiles"][0]
         self.assertEqual(profile["stages"]["ready"], "pass")
 
     def test_live_mode_supports_startup_only_readiness_marker(self) -> None:
         result = self.run_matrix(
-            [self.profile("startup-only", launcher="fy")],
+            [self.profile("startup-only", harness="fy")],
             "--live",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -531,7 +537,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
 
     def test_live_mode_tracks_numbered_readiness_markers(self) -> None:
         result = self.run_matrix(
-            [self.profile("numbered", launcher="fz")],
+            [self.profile("numbered", harness="fz")],
             "--live",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -559,33 +565,33 @@ class NativeTuiMatrixTest(unittest.TestCase):
         self.assertEqual(profile["stages"]["skill"], "fail")
         self.assertIn("response omitted or misordered required pattern", profile["errors"][0])
 
-    def test_missing_launcher_adapter_fails_closed(self) -> None:
+    def test_missing_harness_adapter_fails_closed(self) -> None:
         result = self.run_matrix(
-            [self.profile("current"), self.profile("future", launcher="newx")],
-            "--launcher",
+            [self.profile("current"), self.profile("future", harness="newx")],
+            "--harness",
             "fx",
         )
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
-        self.assertIn("no PTY adapter for discovered launcher: newx", result.stderr)
+        self.assertIn("no PTY adapter for discovered harness: newx", result.stderr)
         self.assertFalse((self.state / "events.log").exists())
 
     def test_unknown_extra_filter_fails_closed(self) -> None:
         result = self.run_matrix(
             [self.profile("current")],
-            "--launcher",
+            "--harness",
             "fx",
-            "--launcher",
+            "--harness",
             "missing",
         )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("launcher filter was not discovered: missing", result.stderr)
+        self.assertIn("harness filter was not discovered: missing", result.stderr)
         self.assertFalse((self.state / "events.log").exists())
 
     def test_incompatible_combined_filter_fails_closed(self) -> None:
         result = self.run_matrix(
-            [self.profile("default"), self.profile("pstack", launcher="fy")],
-            "--launcher",
+            [self.profile("default"), self.profile("pstack", harness="fy")],
+            "--harness",
             "fx",
             "--profile",
             "default",
@@ -593,7 +599,7 @@ class NativeTuiMatrixTest(unittest.TestCase):
             "pstack",
         )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("profile filter matched no selected launcher: pstack", result.stderr)
+        self.assertIn("profile filter matched no selected harness: pstack", result.stderr)
         self.assertFalse((self.state / "events.log").exists())
 
     def test_unhealthy_profile_is_not_launched(self) -> None:
@@ -797,20 +803,20 @@ class NativeTuiMatrixTest(unittest.TestCase):
                 self.assertFalse((self.state / "events.log").exists())
                 self.write_config()
 
-    def test_legacy_discovery_generates_canonical_launch_commands(self) -> None:
+    def test_discovered_profiles_generate_canonical_launch_commands(self) -> None:
         namespace = runpy.run_path(str(RUNNER), run_name="native_tui_runner")
         adapter = namespace["load_config"](PRODUCTION_CONFIG).adapters["codex"]
-        profile = namespace["parse_profile"]({"launcher": "cdx", "harness": "codex", "name": "pstack"})
+        profile = namespace["parse_profile"]("codex", "pstack")
         self.assertEqual(namespace["prepare_command"]("trx", profile, adapter), ["trx", "run", "codex", "pstack"])
 
-    def test_production_config_covers_matrix_eligible_router_launchers(self) -> None:
+    def test_production_config_covers_matrix_eligible_router_harnesses(self) -> None:
         config = json.loads(PRODUCTION_CONFIG.read_text())
         presets = (REPOSITORY_ROOT / "packages" / "trellage-runtime" / "src" / "native-run" / "presets.ts").read_text()
         discovered = set(re.findall(r'^  ([a-z0-9]+): \[', presets, re.MULTILINE)) | {"grok"}
         # Headlong keeps its background mind after TUI exit; Uji is a direct route, not a managed profile.
         matrix_exclusions = {"headlong", "uji"}
-        self.assertEqual(set(config["launchers"]) | matrix_exclusions, discovered)
-        self.assertTrue(all(adapter in config["adapters"] for adapter in config["launchers"].values()))
+        self.assertEqual(set(config["harnesses"]) | matrix_exclusions, discovered)
+        self.assertTrue(all(adapter in config["adapters"] for adapter in config["harnesses"].values()))
         for adapter_name in ("agency", "copilot"):
             self.assertNotIn("--mode", config["adapters"][adapter_name]["launchArgs"])
         self.assertEqual(len(config["adapters"]["grok"]["exitSteps"]), 2)
@@ -847,8 +853,8 @@ class NativeTuiMatrixTest(unittest.TestCase):
         for command in (
             "scripts/verify-native-tuis",
             "make native-tui-matrix",
-            "scripts/verify-native-tuis --launcher claude --profile default",
-            "scripts/verify-native-tuis --live --launcher claude --profile default",
+            "scripts/verify-native-tuis --harness claude --profile default",
+            "scripts/verify-native-tuis --live --harness claude --profile default",
             "make native-tui-matrix-test",
         ):
             self.assertIn(command, readme)

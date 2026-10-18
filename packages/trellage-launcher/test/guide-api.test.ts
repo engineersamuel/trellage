@@ -4,7 +4,7 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 
 import type { ProfileGuideV1 } from "@trellage/guide-core"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import type { CompositionCatalog, CompositionCatalogEntry } from "../src/composition-catalog.ts"
 import type {
   GuideGenerateInput,
   GuideGenerateResult,
@@ -41,6 +41,7 @@ import {
   selectedProfileFromCatalogRef,
   templatePromptCandidates,
 } from "../src/guide-api.ts"
+import { compositionFixtureCatalog, compositionFixtureEntry } from "./helpers/composition-catalog.ts"
 
 // ---------------------------------------------------------------------------
 // Shared catalog fixture: 4 native profiles.
@@ -48,7 +49,7 @@ import {
 
 const headless = (
   overrides: { readonly prompt: boolean },
-): CombinedGuideCatalog["native"][number]["headless"] => ({
+): CompositionCatalogEntry["headless"] => ({
   schemaVersion: 1,
   prompt: overrides.prompt,
   outputFormats: ["json"],
@@ -384,63 +385,30 @@ const guideFoo: ProfileGuideV1 = {
 }
 
 /** Builds the combined catalog, rooted at `tmpRoot` for native guide-loading fixtures. */
-const buildCatalog = (tmpRoot: string): CombinedGuideCatalog =>
-  parseGuideCatalog(
-    JSON.stringify({
-      schemaVersion: 1,
-      native: [
-        {
-          launcher: "codex",
-          harness: "codex",
-          name: "pstack",
-          description: "Codex host-native launcher.",
-          headless: headless({ prompt: true }),
-          sandbox: false,
-          herdrCompatibility: { status: "supported" },
-          guide: guideCdxHve,
-          commandPath: "/opt/trellage/codex/bin/trx",
-        },
-        {
-          launcher: "jcode",
-          harness: "jules",
-          name: "foo",
-          description: "Jules code-native launcher.",
-          headless: headless({ prompt: true }),
-          sandbox: false,
-          herdrCompatibility: { status: "supported" },
-          guide: guideFoo,
-          commandPath: "/opt/trellage/jcode/bin/trx",
-        },
-        {
-          launcher: "copilot",
-          harness: "copilot",
-          name: "prime-agent",
-          description: "Copilot prime agent profile.",
-          headless: headless({ prompt: true }),
-          sandbox: true,
-          herdrCompatibility: { status: "supported" },
-          guide: guidePrimeAgent,
-          commandPath: "/opt/trellage/copilot/bin/trx",
-        },
-        {
-          launcher: "copilot",
-          harness: "copilot",
-          name: "other",
-          description: "Copilot documentation profile.",
-          headless: headless({ prompt: false }),
-          sandbox: true,
-          herdrCompatibility: { status: "supported" },
-          guide: guideOther,
-          commandPath: "/opt/trellage/copilot/bin/trx",
-        },
-      ],
+const buildCatalog = (_tmpRoot: string): CompositionCatalog =>
+  compositionFixtureCatalog([
+    compositionFixtureEntry({
+      harness: "codex", profile: "pstack", description: "Codex host-native launcher.",
+      headless: headless({ prompt: true }), guide: guideCdxHve, commandPath: "/opt/trellage/codex/bin/trx",
     }),
-  )
+    compositionFixtureEntry({
+      harness: "jcode", profile: "foo", description: "Jules code-native launcher.",
+      headless: headless({ prompt: true }), guide: guideFoo, commandPath: "/opt/trellage/jcode/bin/trx",
+    }),
+    compositionFixtureEntry({
+      harness: "copilot", profile: "prime-agent", description: "Copilot prime agent profile.",
+      headless: headless({ prompt: true }), guide: guidePrimeAgent, commandPath: "/opt/trellage/copilot/bin/trx",
+    }),
+    compositionFixtureEntry({
+      harness: "copilot", profile: "other", description: "Copilot documentation profile.",
+      headless: headless({ prompt: false }), guide: guideOther, commandPath: "/opt/trellage/copilot/bin/trx",
+    }),
+  ])
 
-const withCdxPstackGuide = (catalog: CombinedGuideCatalog, guide: ProfileGuideV1): CombinedGuideCatalog => ({
+const withCdxPstackGuide = (catalog: CompositionCatalog, guide: ProfileGuideV1): CompositionCatalog => ({
   ...catalog,
-  native: catalog.native.map((entry) =>
-    entry.launcher === "codex" && entry.name === "pstack" ? { ...entry, guide } : entry,
+  entries: catalog.entries.map((entry) =>
+    entry.harness === "codex" && entry.profiles[0] === "pstack" ? { ...entry, guide } : entry,
   ),
 })
 
@@ -722,20 +690,20 @@ describe("parseGuideHeadlessArgv", () => {
 
 describe("parseGuideServiceRequestJson", () => {
   it("accepts a minimal valid request", () => {
-    const request = parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent: "Review my PR" }))
-    expect(request).toEqual({ schemaVersion: 1, intent: "Review my PR" })
+    const request = parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 2, intent: "Review my PR" }))
+    expect(request).toEqual({ schemaVersion: 2, intent: "Review my PR" })
   })
 
   it("preserves multiline intent text through the service request", () => {
     const intent = "Research the options.\n\nReturn:\n- findings\n- recommendation"
-    const request = parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent }))
+    const request = parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 2, intent }))
     expect(request.intent).toBe(intent)
   })
 
   it("accepts optional profile/model/effort", () => {
     const request = parseGuideServiceRequestJson(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         intent: "Review my PR",
         profile: "native:codex/pstack",
         model: "gpt-5.4",
@@ -743,7 +711,7 @@ describe("parseGuideServiceRequestJson", () => {
       }),
     )
     expect(request).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       intent: "Review my PR",
       profile: "native:codex/pstack",
       model: "gpt-5.4",
@@ -753,7 +721,7 @@ describe("parseGuideServiceRequestJson", () => {
 
   it("accepts an stdin intent at the 60000-character limit", () => {
     const request = parseGuideServiceRequestJson(
-      JSON.stringify({ schemaVersion: 1, intent: "a".repeat(guideIntentMaximumLength) }),
+      JSON.stringify({ schemaVersion: 2, intent: "a".repeat(guideIntentMaximumLength) }),
     )
     expect(request.intent).toHaveLength(guideIntentMaximumLength)
   })
@@ -763,24 +731,24 @@ describe("parseGuideServiceRequestJson", () => {
   })
 
   it("rejects a wrong schemaVersion", () => {
-    expect(() => parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 2, intent: "x" }))).toThrow(
+    expect(() => parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent: "x" }))).toThrow(
       GuideValidationError,
     )
   })
 
   it("rejects a missing intent", () => {
-    expect(() => parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1 }))).toThrow(GuideValidationError)
+    expect(() => parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 2 }))).toThrow(GuideValidationError)
   })
 
   it("rejects unsupported top-level keys", () => {
     expect(() =>
-      parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent: "x", commandPath: "/bin/sh" })),
+      parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 2, intent: "x", commandPath: "/bin/sh" })),
     ).toThrow(GuideValidationError)
   })
 
   it("rejects an invalid effort value", () => {
     expect(() =>
-      parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 1, intent: "x", effort: "extreme" })),
+      parseGuideServiceRequestJson(JSON.stringify({ schemaVersion: 2, intent: "x", effort: "extreme" })),
     ).toThrow(GuideValidationError)
   })
 })
@@ -870,21 +838,21 @@ describe("runGuideMatch", () => {
         {
           candidates: [
             {
-              profileRef: "native:codex/pstack",
+              harness: "codex", profiles: ["pstack"],
               workflowId: "review",
               confidence: 0.9,
               reason: "Strong fit for reviewing diffs.",
               tradeoff: "Requires a local git checkout.",
             },
             {
-              profileRef: "native:copilot/prime-agent",
+              harness: "copilot", profiles: ["prime-agent"],
               workflowId: "review",
               confidence: 0.6,
               reason: "General-purpose reviewer.",
-              tradeoff: "Runs in a sandbox.",
+              tradeoff: "Runs with restricted access.",
             },
             {
-              profileRef: "native:copilot/other",
+              harness: "copilot", profiles: ["other"],
               workflowId: "draft",
               confidence: 0.2,
               reason: "Only useful for docs.",
@@ -901,18 +869,16 @@ describe("runGuideMatch", () => {
         effort: GuideEffort.Medium,
       })
 
-      expect(response.schemaVersion).toBe(1)
+      expect(response.schemaVersion).toBe(2)
       expect(response.phase).toBe(GuidePhase.Match)
       expect(response.recommendations).toHaveLength(3)
 
       const [first, second, third] = response.recommendations
       expect(first).toMatchObject({
-        profileRef: "native:codex/pstack",
+        ref: "native:codex/pstack",
+        harness: "codex",
+        profiles: ["pstack"],
         workflowId: "review",
-        surface: "native",
-        launcher: "codex",
-        name: "pstack",
-        sandbox: false,
       })
       expect(first?.workflow).toEqual({
         id: "review",
@@ -924,11 +890,11 @@ describe("runGuideMatch", () => {
       expect(first?.herdrCompatibility).toEqual({ status: "supported" })
 
       expect(second).toMatchObject({
-        profileRef: "native:copilot/prime-agent",
-        surface: "native",
-        launcher: "copilot",
+        ref: "native:copilot/prime-agent",
+        harness: "copilot",
+        profiles: ["prime-agent"],
       })
-      expect(third).toMatchObject({ profileRef: "native:copilot/other", surface: "native" })
+      expect(third).toMatchObject({ ref: "native:copilot/other", harness: "copilot", profiles: ["other"] })
 
       const serialized = JSON.stringify(response)
       expect(serialized).not.toContain("promptTemplate")
@@ -948,46 +914,42 @@ describe("runGuideMatch", () => {
     const tmpRoot = await mkdtemp(path.join(tmpdir(), "trellage-guide-api-prefilter-"))
     try {
       const baseCatalog = buildCatalog(tmpRoot)
-      const template = baseCatalog.native[3]
+      const template = baseCatalog.entries[3]
       if (template === undefined) throw new Error("missing Copilot test profile")
       const extraNames = Array.from({ length: 16 }, (_, index) => `extra-${index}`)
-      const catalog: CombinedGuideCatalog = {
+      const catalog: CompositionCatalog = {
         ...baseCatalog,
-        native: [
-          ...baseCatalog.native,
-          {
-            launcher: "headlong",
-            harness: "headlong",
-            name: "default",
-            description: "Persistent host-native agent.",
-            headless: headless({ prompt: false }),
-            sandbox: false,
-            herdrCompatibility: { status: "supported" },
-            guide: guideOther,
-            commandPath: "/opt/trellage/headlong/bin/trx",
-          },
-          ...extraNames.map((name) => ({ ...template, name })),
+        entries: [
+          ...baseCatalog.entries,
+          compositionFixtureEntry({
+            harness: "headlong", profile: "default", description: "Persistent host-native agent.",
+            headless: headless({ prompt: false }), guide: guideOther,
+            commandPath: "/opt/trellage/headlong/bin/trx", canonicalHarness: false,
+          }),
+          ...extraNames.map((profile) => ({
+            ...template, ref: `native:${template.harness}/${profile}`, profiles: [profile],
+          })),
         ],
       }
       const provider = new FakeGuideProvider(
         {
           candidates: [
             {
-              profileRef: "native:jcode/foo",
+              harness: "jcode", profiles: ["foo"],
               workflowId: "deep-refactor",
               confidence: 0.9,
               reason: "Strong refactoring fit.",
               tradeoff: "Uses the Jules harness.",
             },
             {
-              profileRef: "native:codex/pstack",
+              harness: "codex", profiles: ["pstack"],
               workflowId: "review",
               confidence: 0.8,
               reason: "Structured engineering fit.",
               tradeoff: "Requires Codex.",
             },
             {
-              profileRef: "native:headlong/default",
+              harness: "headlong", profiles: ["default"],
               workflowId: "draft",
               confidence: 0.7,
               reason: "Persistent work option.",
@@ -1022,7 +984,7 @@ describe("runGuideMatch", () => {
         {
           candidates: [
             {
-              profileRef: "native:codex/pstack",
+              harness: "codex", profiles: ["pstack"],
               workflowId: "review",
               confidence: 0.9,
               reason: "Strong fit.",
@@ -1122,21 +1084,21 @@ describe("runGuideGenerate", () => {
         {
           candidates: [
             {
-              profileRef: "native:copilot/prime-agent",
+              harness: "copilot", profiles: ["prime-agent"],
               workflowId: "plan",
               confidence: 0.8,
               reason: "Best fit for planning.",
-              tradeoff: "Sandboxed.",
+              tradeoff: "Restricted access.",
             },
             {
-              profileRef: "native:codex/pstack",
+              harness: "codex", profiles: ["pstack"],
               workflowId: "review",
               confidence: 0.5,
               reason: "Alternative.",
               tradeoff: "None.",
             },
             {
-              profileRef: "native:copilot/other",
+              harness: "copilot", profiles: ["other"],
               workflowId: "draft",
               confidence: 0.1,
               reason: "Weak fit.",
@@ -1156,7 +1118,7 @@ describe("runGuideGenerate", () => {
 
       expect(response.phase).toBe(GuidePhase.Generation)
       expect(response.profile.workflowId).toBe("plan")
-      expect(response.profile.profileRef).toBe("native:copilot/prime-agent")
+      expect(response.profile.ref).toBe("native:copilot/prime-agent")
       expect(response.candidates).toHaveLength(3)
       expect(response.candidates[0]?.prompt).toBe("Use the writing-plans skill:\nPrompt Master: Do the focused thing.")
       // The selected workflow declares launchAgent, so every generated
@@ -1354,21 +1316,21 @@ describe("runGuideGenerate", () => {
         {
           candidates: [
             {
-              profileRef: "native:codex/pstack",
+              harness: "codex", profiles: ["pstack"],
               workflowId: "review",
               confidence: 0.9,
               reason: "Top pick.",
               tradeoff: "None.",
             },
             {
-              profileRef: "native:copilot/prime-agent",
+              harness: "copilot", profiles: ["prime-agent"],
               workflowId: "review",
               confidence: 0.5,
               reason: "Second pick.",
               tradeoff: "None.",
             },
             {
-              profileRef: "native:copilot/other",
+              harness: "copilot", profiles: ["other"],
               workflowId: "draft",
               confidence: 0.1,
               reason: "Weakest pick.",
@@ -1393,7 +1355,7 @@ describe("runGuideGenerate", () => {
       expect(response.candidates[0]?.command.args).toEqual(["run", "jcode", "foo", "--", "-p", "Prompt Master: Do the focused thing."])
       expect(provider.optimizeCalls).toEqual([
         {
-          targetTool: "jules",
+          targetTool: "jcode terminal coding agent",
           profileRef: "native:jcode/foo",
           bodyBudget: 8000,
           candidates: genCandidates().candidates,
@@ -1453,7 +1415,7 @@ describe("runGuideGenerate", () => {
       })
 
       expect(optimizeInput).toEqual({
-        targetTool: "jules",
+        targetTool: "jcode terminal coding agent",
         profileRef: "native:jcode/foo",
         bodyBudget: 8000,
         candidates: generatedCandidates,
@@ -1988,9 +1950,9 @@ describe("selectedProfileFromCatalogRef", () => {
     const catalog = buildCatalog("/tmp-unused")
     expect(selectedProfileFromCatalogRef(catalog, "native:codex/pstack", "review")).toEqual({
       surface: "native",
-      launcher: "codex",
+      harness: "codex",
       commandPath: "/opt/trellage/codex/bin/trx",
-      profile: "pstack",
+      profiles: ["pstack"],
       headlessPrompt: true,
     })
   })
@@ -1999,9 +1961,9 @@ describe("selectedProfileFromCatalogRef", () => {
     const catalog = buildCatalog("/tmp-unused")
     expect(selectedProfileFromCatalogRef(catalog, "native:copilot/other", "draft")).toEqual({
       surface: "native",
-      launcher: "copilot",
+      harness: "copilot",
       commandPath: "/opt/trellage/copilot/bin/trx",
-      profile: "other",
+      profiles: ["other"],
       headlessPrompt: false,
     })
   })
@@ -2021,7 +1983,7 @@ describe("guideTargetTool", () => {
     const catalog = buildCatalog("/tmp-unused")
     expect(guideTargetTool(catalog, "native:codex/pstack")).toBe("Codex CLI terminal coding agent")
     expect(guideTargetTool(catalog, "native:copilot/prime-agent")).toBe("GitHub Copilot CLI terminal coding agent")
-    expect(guideTargetTool(catalog, "native:jcode/foo")).toBe("jules")
+    expect(guideTargetTool(catalog, "native:jcode/foo")).toBe("jcode terminal coding agent")
     expect(guidePromptTarget("constructor")).toBe("constructor")
   })
 
@@ -2036,7 +1998,7 @@ describe("literalGuideMatch", () => {
   it("ranks an explicitly named native launcher and profile first", () => {
     const candidates = literalGuideMatch(buildCatalog("/tmp-unused"), "Use trx run codex pstack to review this change")
 
-    expect(candidates[0]?.profileRef).toBe("native:codex/pstack")
+    expect(candidates[0]).toMatchObject({ harness: "codex", profiles: ["pstack"] })
     expect(candidates[0]?.reason).toContain("explicitly names native:codex/pstack")
   })
 
@@ -2045,10 +2007,10 @@ describe("literalGuideMatch", () => {
     const candidates = literalGuideMatch(catalog, "Refactor the payment pipeline carefully")
 
     expect(candidates).toHaveLength(4)
-    const refs = candidates.map((c) => c.profileRef)
+    const refs = candidates.map((candidate) => `native:${candidate.harness}/${candidate.profiles.join("+")}`)
     expect(new Set(refs).size).toBe(candidates.length)
     // native:jcode/foo's deep-refactor workflow shares the most terms with the intent.
-    expect(candidates[0]?.profileRef).toBe("native:jcode/foo")
+    expect(candidates[0]).toMatchObject({ harness: "jcode", profiles: ["foo"] })
     expect(candidates[0]?.workflowId).toBe("deep-refactor")
     for (const candidate of candidates) {
       expect(candidate.confidence).toBeGreaterThanOrEqual(0)
@@ -2102,48 +2064,29 @@ describe("literalGuideMatch", () => {
         },
       ],
     }
-    const comparisonCatalog: CombinedGuideCatalog = {
+    const comparisonCatalog: CompositionCatalog = {
       ...catalog,
-      native: [
-        {
-          ...catalog.native[1]!,
-          guide: verboseGuide,
-          description: "Broad repository engineering profile.",
-        },
-        {
-          ...catalog.native[0]!,
-          guide: focusedGuide,
-          description: "Focused payment pipeline refactoring.",
-        },
-        catalog.native[3]!,
+      entries: [
+        { ...catalog.entries[1]!, guide: verboseGuide, description: "Broad repository engineering profile." },
+        { ...catalog.entries[0]!, guide: focusedGuide, description: "Focused payment pipeline refactoring." },
+        catalog.entries[3]!,
       ],
     }
 
     const refs = literalGuideMatch(comparisonCatalog, "Refactor the payment pipeline").map(
-      ({ profileRef }) => profileRef,
+      ({ harness, profiles }) => `native:${harness}/${profiles.join("+")}`,
     )
     expect(refs.indexOf("native:codex/pstack")).toBeLessThan(refs.indexOf("native:jcode/foo"))
   })
 
   it("throws when the catalog has fewer than three profiles", () => {
-    const tinyCatalog = parseGuideCatalog(
-      JSON.stringify({
-        schemaVersion: 1,
-        native: [
-          {
-            launcher: "codex",
-            harness: "codex",
-            name: "pstack",
-            description: "Codex host-native launcher.",
-            headless: headless({ prompt: true }),
-            sandbox: false,
-            herdrCompatibility: { status: "supported" },
-            guide: guideCdxHve,
-            commandPath: "/opt/trellage/codex/bin/trx",
-          },
-        ],
+    const tinyCatalog = compositionFixtureCatalog([
+      compositionFixtureEntry({
+        harness: "codex", profile: "pstack", description: "Codex host-native launcher.",
+        headless: headless({ prompt: true }), guide: guideCdxHve,
+        commandPath: "/opt/trellage/codex/bin/trx",
       }),
-    )
+    ])
     expect(() => literalGuideMatch(tinyCatalog, "Review my PR")).toThrow(GuideServiceError)
   })
 })

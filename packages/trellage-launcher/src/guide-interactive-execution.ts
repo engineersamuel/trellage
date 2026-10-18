@@ -153,7 +153,7 @@ const writeHerdrFailure = (
   if (result.goalExecution !== undefined) {
     const pane = error instanceof GuideLaunchError && error.paneId !== undefined ? ` Pane: ${error.paneId}.` : ""
     const directory = error instanceof GuideLaunchError && error.cwd !== undefined ? ` Directory: ${error.cwd}.` : ""
-    writeGoalInput(services, result.prompt, result.goalExecution, `Goal launch for ${result.profile.profile} did not complete.${pane}${directory} Resolve the error before native input.`)
+    writeGoalInput(services, result.prompt, result.goalExecution, `Goal launch for ${result.profile.harness}/${result.profile.profiles.join("+")} did not complete.${pane}${directory} Resolve the error before native input.`)
   } else if (error instanceof GuideLaunchError && error.paneId !== undefined) {
     writeRecoveryPrompt(services, result.prompt)
   } else {
@@ -169,7 +169,7 @@ const executeHerdrResult = async (
   try {
     const launch = await launchHerdrResult(result, services)
     if (launch.status !== "needs-input") return 0
-    services.write(`Profile ${result.profile.profile}: needs-input in pane ${launch.paneId}; directory: ${launch.cwd}.\n`)
+    services.write(`Composition ${result.profile.harness}/${result.profile.profiles.join("+")}: needs-input in pane ${launch.paneId}; directory: ${launch.cwd}.\n`)
     if (launch.workspaceId !== undefined) services.write(`Workspace: ${launch.workspaceId}.\n`)
     if (result.goalExecution === undefined) writePrompt(services.write, result.prompt, "Use this prompt manually:")
     else writeGoalInput(services, result.prompt, result.goalExecution, "The goal has not been activated.")

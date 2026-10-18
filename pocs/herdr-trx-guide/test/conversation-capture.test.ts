@@ -8,7 +8,6 @@ import { bindFocusedConversation, captureFocusedConversation } from "../lib/conv
 import { parseConversationRecords } from "../lib/conversation-parser.ts"
 import { conversationCapturePolicy, validateConversationCapturePolicy } from "../lib/conversation-policy.ts"
 import { ConversationSourceError, readStableConversationRecords } from "../lib/conversation-reader.ts"
-import { captureSandboxConversation } from "../lib/sandbox-bridge.ts"
 import { checkConversationSource } from "../conversation-source.ts"
 import {
   assistantRecord, captureFixture, humanRecord, jsonl,
@@ -528,75 +527,4 @@ test("cancellation fails before source reading without selecting another source"
   await assert.rejects(captureFocusedConversation(fixture.context, {
     ...fixture.dependencies, signal: controller.signal,
   }), /abort/u)
-})
-
-for (const agent of ["copilot", "codex", "claude"]) {
-  test(`Sandbox ${agent} wraps bounded bridge pages without host fallback and tracks pending activity`, async (t) => {
-    const fixture = await captureFixture(t, agent)
-    const containerId = "a".repeat(64)
-    const invocationId = "b".repeat(32)
-    fixture.agentInfo.tokens = {
-      trellage_surface: "sandbox", trellage_agent: agent, trellage_profile: "fixture-profile",
-      trellage_container_id: containerId, trellage_invocation_id: invocationId, trellage_pgrp: "12345",
-    }
-    const messages = [
-      { id: "user-evidence", role: "user", text: "Sandbox original goal", recordIndex: 1 },
-      { id: "assistant-evidence", role: "assistant", text: "Sandbox completed answer", recordIndex: 4 },
-    ]
-    const revision = createHash("sha256").update(JSON.stringify(messages)).digest("hex")
-    let activityRevision = "c".repeat(64)
-    const operations = []
-    const bridgeRunner = async ({ identity, operation, snapshotId }) => {
-      operations.push(operation)
-      assert.equal(identity.agent, agent)
-      assert.equal(identity.sessionId, sessionId)
-      assert.equal(identity.containerId, containerId)
-      assert.equal(identity.invocationId, invocationId)
-      const source = { schemaVersion: 1, agent, profile: "fixture-profile", containerId, invocationId, sessionId }
-      if (operation === "release-conversation") {
-        return JSON.stringify({ ...source, snapshotId, released: true })
-      }
-      assert.equal(operation, "export-conversation")
-      return JSON.stringify({
-        ...source, snapshotId: "d".repeat(64), capturedAt: "2026-09-10T00:00:00.000Z",
-        cutoff: { messageId: "assistant-evidence", recordIndex: 4 },
-        revision, activityRevision, coverage: { complete: true, notices: [] },
-        messages, page: { index: 0, total: 1, nextCursor: null },
-      })
-    }
-    const dependencies = {
-      ...fixture.dependencies,
-      transcriptResolver: async () => { throw new Error("Host transcript fallback must not run") },
-      recordReader: async () => { throw new Error("Host transcript reading must not run") },
-      sandboxLookup: (options) => captureSandboxConversation({ ...options, bridgeRunner }),
-    }
-    const binding = await bindFocusedConversation(fixture.context, dependencies)
-    assert.deepEqual(operations, [])
-    const first = await captureFocusedConversation({ ...fixture.context, binding }, dependencies)
-    assert.equal(first.source.surface, "sandbox")
-    assert.equal(first.source.containerId, containerId)
-    assert.equal(first.source.invocationId, invocationId)
-    assert.deepEqual(first.messages, messages)
-    assert.deepEqual(operations, ["export-conversation", "release-conversation"])
-    activityRevision = "e".repeat(64)
-    const next = await captureFocusedConversation(fixture.context, dependencies)
-    assert.deepEqual(next.cutoff, first.cutoff)
-    assert.notEqual(next.revision, first.revision)
-    assert.equal((await checkConversationSource(first, { capture: async () => next })).advanced, true)
-  })
-}
-
-test("Sandbox bridge failures do not substitute a host transcript or screen capture", async (t) => {
-  const fixture = await captureFixture(t)
-  fixture.agentInfo.tokens = {
-    trellage_surface: "sandbox", trellage_agent: "copilot", trellage_profile: "fixture-profile",
-    trellage_container_id: "a".repeat(64), trellage_invocation_id: "b".repeat(32), trellage_pgrp: "12345",
-  }
-  let hostReads = 0
-  await assert.rejects(captureFocusedConversation(fixture.context, {
-    ...fixture.dependencies,
-    transcriptResolver: async () => { hostReads += 1; throw new Error("Must not run") },
-    sandboxLookup: async () => { throw new Error("Unsupported bridge version") },
-  }), /Unsupported bridge version/u)
-  assert.equal(hostReads, 0)
 })

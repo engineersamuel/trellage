@@ -76,6 +76,7 @@ export const createGuideTerminal = async (
           TMP: temporary,
           TEMP: temporary,
           PATH: path.dirname(bunExecutable()),
+          TRELLAGE_TRX_COMMAND_PATH: path.join(root, "bin", "trx"),
           TERM: "xterm-256color",
           CI: "true",
           // Queue focus changes use styling; keep those redraws enabled under CI.

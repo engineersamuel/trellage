@@ -61,7 +61,7 @@ test("Codex role source preflights every destination before publishing managed f
     const run = (command: string) =>
       spawnSync(
         bunExecutable(),
-        bunArguments(path.join(repository, "prototypes/trellage-codex-common/codex-agents.ts"), [
+        bunArguments(path.join(repository, "harnesses/codex-agents/codex-agents.ts"), [
           command,
           target,
           source,

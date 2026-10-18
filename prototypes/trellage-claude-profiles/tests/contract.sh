@@ -195,8 +195,8 @@ export FAKE_CLAUDE_SIGNAL_LOG="$fixture_root/signal.log"
 : >"$FAKE_CLAUDE_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/share/trellage/.native-commands/cldx"
 runtime_root="$HOME/.local/share/trellage/cldx"
+command_path="$runtime_root/bin/cldx"
 profile_root="$HOME/.local/share/trellage/profiles/claude/default"
 profile_home="$profile_root/home"
 native_config="$fixture_root/native-config.toml"
@@ -258,9 +258,8 @@ trx_exec_claude() {
     exec "$root/../trellage-router/bin/trx" run claude "$profile" -- "$@"
 }
 
-[[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
-[[ "$(readlink "$command_path")" == "$runtime_root/bin/cldx" ]] \
-  || fail 'command symlink target differs'
+[[ -x "$command_path" && ! -L "$command_path" ]] \
+  || fail 'installer did not publish the owned runtime command'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
 [[ -f "$runtime_root/lib/trellage-session-bridge.py" \
@@ -302,7 +301,6 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "cldx"
   and .harness == "claude"
-  and .sandbox == false
   and [.profiles[].name] == ["blog", "council", "default", "ecc", "frontend-design", "office", "office-charts", "research", "six-hats", "social-media"]
   and ([.profiles[] | select(.name == "office")][0].marketplace.source == "anthropics/skills")
   and ([.profiles[] | select(.name == "office")][0].skillBundles == ["native-common", "claude-office"])
@@ -825,13 +823,6 @@ printf 'stale\n' >"$output_style"
 cmp -s "$output_style" "$root/assets/rundown/rundown.md" \
   || fail 'repair did not refresh the output style'
 
-unrelated_home="$fixture_root/unrelated-home"
-mkdir -p "$unrelated_home/.local/share/trellage/.native-commands"
-printf 'unrelated\n' >"$unrelated_home/.local/share/trellage/.native-commands/cldx"
-HOME="$unrelated_home" "$installer" >"$fixture_root/unrelated.out" 2>&1 \
-  && fail 'installer replaced unrelated command'
-grep -Fq 'unrelated command' "$fixture_root/unrelated.out" \
-  || fail 'unrelated command error differs'
 
 # --- delegation: cldx must actually call the shared native Claude runtime,
 # not reimplement its logic. Swap the installed shared runtime for a stub

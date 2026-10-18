@@ -40,17 +40,17 @@ class FakeRunner implements CommandRunner {
 }
 
 const ok = (stdout = ""): CommandRunResult => ({ stdout, stderr: "", exitCode: 0 })
-const inventory = (launcher: string, profile: string): CommandRunResult =>
-  ok(JSON.stringify({ schemaVersion: 1, launcher, profile, readiness: "healthy" }))
+const inventory = (harness: string, profile: string): CommandRunResult =>
+  ok(JSON.stringify({ schemaVersion: 2, harness, profiles: [profile], readiness: "healthy" }))
 
 describe("customer workflow readiness", () => {
   const selected: NativeSelectedProfile = {
-    surface: "native", launcher: "copilot", profile: "hve", commandPath: "/opt/bin/trx", headlessPrompt: false,
+    surface: "native", harness: "copilot", profiles: ["hve"], commandPath: "/opt/bin/trx", headlessPrompt: false,
     agent: "hve-core:dt-coach", interaction: { mode: "interactive", requiredSkills: ["dt-methods"] },
   }
   const evidence = {
-    schemaVersion: 1, launcher: "copilot", profile: "hve", mode: "interactive", agent: selected.agent,
-    requiredSkills: ["dt-methods"], manifestSha256: "a".repeat(64), harnessVersion: "1.0.81",
+    schemaVersion: 2, harness: "copilot", profiles: ["hve"], mode: "interactive", agent: selected.agent,
+    requiredSkills: ["dt-methods"], manifestSha256: "a".repeat(64),
   }
 
   it("requires exact installed workflow evidence after general inventory", async () => {
@@ -164,114 +164,18 @@ describe("goal-only read-only readiness", () => {
         kind: "exited", executable: profile.commandPath,
         args: ["inventory", "codex", "superpowers", "--goal-features"],
         message: "Unsupported inventory option", exitCode: 1,
-        stderr: "usage: cdx inventory PROFILE --json",
+        stderr: "trx: unknown inventory option",
       }),
       ok("goals\tstable\ttrue\n"),
     ])
     await expect(checkSelectedProfileReadiness(runner, profile, "/repo", undefined, execution)).resolves.toMatchObject({
       kind: ProfileReadinessKind.Blocked, goalReadiness: "unknown",
-      diagnostic: expect.stringContaining("inventory PROFILE --goal-features"),
+      diagnostic: expect.stringContaining("trx inventory codex PROFILE --goal-features"),
     })
     expect(runner.calls).toHaveLength(3)
     expect(runner.calls[2]?.args).toEqual(["inventory", "codex", "superpowers", "--goal-features"])
   })
 
-  it("loads a silently skipped Codex project layer with launch trust without persisting trust", async () => {
-    const fixture = await realpath(await mkdtemp(path.join(tmpdir(), "trellage-goal-codex-layer-")))
-    try {
-      const home = path.join(fixture, "home")
-      const profileHome = path.join(home, ".local/share/trellage/profiles/codex/superpowers/home")
-      const repository = path.join(fixture, "linked")
-      const primary = path.join(fixture, "primary")
-      const cwd = path.join(repository, "subdirectory")
-      const bin = path.join(fixture, "bin")
-      const trace = path.join(fixture, "commands.jsonl")
-      const config = path.join(profileHome, "config.toml")
-      const projectConfig = path.join(cwd, ".codex/config.toml")
-      await mkdir(profileHome, { recursive: true, mode: 0o700 })
-      await mkdir(path.join(cwd, ".codex"), { recursive: true })
-      await mkdir(path.join(primary, ".git"), { recursive: true })
-      await mkdir(bin)
-      await writeFile(config, "[features]\ngoals = true\n", { mode: 0o600 })
-      await writeFile(projectConfig, "[features]\ngoals = false\n", { mode: 0o600 })
-      await writeFile(path.join(bin, "git"), `#!/bin/sh
-[ "$1" = -C ] && [ "$2" = "$FIXTURE_CWD" ] && [ "$3" = rev-parse ] || exit 97
-case "$4" in
-  --show-toplevel) printf '%s\\n' "$FIXTURE_REPOSITORY" ;;
-  --path-format=absolute) [ "$5" = --git-common-dir ] || exit 97; printf '%s/.git\\n' "$FIXTURE_PRIMARY" ;;
-  *) exit 97 ;;
-esac
-`, { mode: 0o755 })
-      await writeFile(path.join(bin, "codex"), `#!/usr/bin/env bun
-const fs = require("node:fs");
-const path = require("node:path");
-const args = process.argv.slice(2);
-fs.appendFileSync(process.env.FIXTURE_TRACE, JSON.stringify({ args, home: process.env.CODEX_HOME }) + "\\n");
-if (args.length === 1 && args[0] === "--version") {
-  console.log("codex-cli 0.153.4");
-} else if (args.at(-2) === "features" && args.at(-1) === "list") {
-  const projects = args.find((value, index) => args[index - 1] === "-c" && value.startsWith("projects="));
-  const roots = [process.cwd(), process.env.FIXTURE_REPOSITORY, process.env.FIXTURE_PRIMARY];
-  const trusted = roots.every((root) => projects?.includes(JSON.stringify(root) + '={trust_level="trusted"}'));
-  const disabled = fs.readFileSync(path.join(process.cwd(), ".codex/config.toml"), "utf8").includes("goals = false");
-  console.log("goals\\tstable\\t" + !(trusted && disabled));
-} else {
-  console.error("Only read-only version and feature queries are allowed.");
-  process.exit(97);
-}
-`, { mode: 0o755 })
-      const env = {
-        ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}`,
-        FIXTURE_CWD: cwd, FIXTURE_REPOSITORY: repository, FIXTURE_PRIMARY: primary, FIXTURE_TRACE: trace,
-      }
-      const beforeFiles = (await readdir(home, { recursive: true })).sort()
-      const beforeConfig = await stat(config)
-      const actual = createNodeCommandRunner()
-      const bare = await actual.run("codex", ["features", "list"], {
-        cwd, env: { ...env, CODEX_HOME: profileHome }, timeoutMs: 30_000,
-      })
-      expect(bare).toEqual(ok("goals\tstable\ttrue\n"))
-      const backend = fileURLToPath(new URL("../../../prototypes/trellage-codex-profiles/bin/cdx", import.meta.url))
-      const launcher = "/fixture/trx"
-      const { profile, execution } = goalTransportFixture()
-      const runner: CommandRunner = {
-        async run(executable, args, options) {
-          if (executable === launcher && args.join(" ") === "inventory codex superpowers --json") {
-            return inventory("codex", "superpowers")
-          }
-          expect([
-            ["codex", ["--version"]],
-            ["codex", ["features", "list"]],
-            [launcher, ["inventory", "codex", "superpowers", "--goal-features"]],
-          ]).toContainEqual([executable, args])
-          return actual.run(executable === launcher ? backend : executable, executable === launcher ? [args[0]!, ...args.slice(2)] : args, options)
-        },
-      }
-      await expect(checkSelectedProfileReadiness(runner, { ...profile, commandPath: launcher }, cwd, undefined, execution, { env })).resolves.toMatchObject({
-        kind: ProfileReadinessKind.Blocked, goalReadiness: "blocked", diagnostic: expect.stringContaining("disables goals"),
-      })
-      const commands = (await readFile(trace, "utf8")).trim().split("\n").map((line): unknown => JSON.parse(line))
-      expect(commands.slice(0, 2)).toEqual([
-        { args: ["features", "list"], home: profileHome },
-        { args: ["--version"], home: profileHome },
-      ])
-      const trustedLaunch = commands[2] as { args: string[]; home: string }
-      expect(trustedLaunch.home).toBe(profileHome)
-      expect(trustedLaunch.args).toEqual(expect.arrayContaining([
-        "sandbox_workspace_write.network_access=true",
-        "default_mode_request_user_input",
-        `projects={${[cwd, repository, primary].map((root) => `${JSON.stringify(root)}={trust_level="trusted"}`).join(",")}}`,
-      ]))
-      expect(trustedLaunch.args.slice(-2)).toEqual(["features", "list"])
-      expect(await readFile(config, "utf8")).toBe("[features]\ngoals = true\n")
-      expect(await readFile(projectConfig, "utf8")).toBe("[features]\ngoals = false\n")
-      expect((await stat(config)).mtimeMs).toBe(beforeConfig.mtimeMs)
-      expect((await stat(config)).mode & 0o777).toBe(0o600)
-      expect((await readdir(home, { recursive: true })).sort()).toEqual(beforeFiles)
-    } finally {
-      await rm(fixture, { recursive: true, force: true })
-    }
-  })
 
   it("requires the configured Claude evaluator, not just the main model", async () => {
     const { profile, execution } = goalTransportFixture("claude-goal")
@@ -411,16 +315,16 @@ if (args.length === 1 && args[0] === "--version") {
 
 describe("selected profile readiness", () => {
   it("uses native inventory and accepts only a matching healthy identity", async () => {
-    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"copilot","profile":"hve","readiness":"healthy"}')])
+    const runner = new FakeRunner([ok('{"schemaVersion":2,"harness":"copilot","profiles":["hve"],"readiness":"healthy"}')])
 
     await expect(
       checkSelectedProfileReadiness(
         runner,
         {
           surface: "native",
-          launcher: "copilot",
+          harness: "copilot",
           commandPath: "/opt/trellage/bin/trx",
-          profile: "hve",
+          profiles: ["hve"],
           headlessPrompt: false,
         },
         "/repo",
@@ -438,16 +342,16 @@ describe("selected profile readiness", () => {
 
   it("blocks native profiles that are not set up", async () => {
     const runner = new FakeRunner([
-      ok('{"schemaVersion":1,"launcher":"copilot","profile":"awesome","readiness":"not-setup"}'),
+      ok('{"schemaVersion":2,"harness":"copilot","profiles":["awesome"],"readiness":"not-setup"}'),
     ])
 
     const result = await checkSelectedProfileReadiness(
       runner,
       {
         surface: "native",
-        launcher: "copilot",
+        harness: "copilot",
         commandPath: "/opt/trellage/bin/trx",
-        profile: "awesome",
+        profiles: ["awesome"],
         headlessPrompt: false,
       },
       "/repo",
@@ -460,16 +364,16 @@ describe("selected profile readiness", () => {
   })
 
   it("blocks busy native profiles with a retry diagnostic", async () => {
-    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"prime","profile":"default","readiness":"busy"}')])
+    const runner = new FakeRunner([ok('{"schemaVersion":2,"harness":"prime","profiles":["default"],"readiness":"busy"}')])
 
     await expect(
       checkSelectedProfileReadiness(
         runner,
         {
           surface: "native",
-          launcher: "prime",
+          harness: "prime",
           commandPath: "/opt/trellage/bin/trx",
-          profile: "default",
+          profiles: ["default"],
           headlessPrompt: false,
         },
         "/repo",
@@ -482,16 +386,16 @@ describe("selected profile readiness", () => {
   })
 
   it("rejects mismatched native inventory output", async () => {
-    const runner = new FakeRunner([ok('{"schemaVersion":1,"launcher":"copilot","profile":"other","readiness":"healthy"}')])
+    const runner = new FakeRunner([ok('{"schemaVersion":2,"harness":"copilot","profiles":["other"],"readiness":"healthy"}')])
 
     await expect(
       checkSelectedProfileReadiness(
         runner,
         {
           surface: "native",
-          launcher: "copilot",
+          harness: "copilot",
           commandPath: "/opt/trellage/bin/trx",
-          profile: "hve",
+          profiles: ["hve"],
           headlessPrompt: false,
         },
         "/repo",

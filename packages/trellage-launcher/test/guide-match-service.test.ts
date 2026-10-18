@@ -2,13 +2,15 @@ import { mkdtemp, rm, readdir, readFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "../src/guide-catalog.ts"
+import type { ProfileGuideV1 } from "@trellage/guide-core"
+import { parseCompositionRef, type CompositionCatalog } from "../src/composition-catalog.ts"
 import { GuideArtifactCache } from "../src/guide-match-cache.ts"
 import { GuideEffort, GuideMatcherFallbackReason, runGuideMatch, prefilterGuideMatchCatalogEntries } from "../src/guide-api.ts"
 import { prepareGuideGoal } from "../src/guide-goal-execution.ts"
 import { GuideMatcherUnavailableError, type GuideMatchAdapter, type GuideProvider } from "../src/guide-provider.ts"
+import { compositionFixtureCatalog, compositionFixtureEntry } from "./helpers/composition-catalog.ts"
 
-const guide = (goal = false) => ({
+const guide = (goal = false): ProfileGuideV1 => ({
   schemaVersion: 1,
   capabilities: ["implementation"],
   bestFor: ["Implementation work", "Repository changes"],
@@ -25,50 +27,25 @@ const guide = (goal = false) => ({
   ...(goal ? { goalExecution: { controller: "claude-goal", workflowIds: ["implement"] } } : {}),
 })
 
-const catalog = (goalCompatible = false): CombinedGuideCatalog =>
-  parseGuideCatalog(
-    JSON.stringify({
-      schemaVersion: 1,
-      native: Array.from({ length: 16 }, (_, index) => ({
-        launcher: goalCompatible ? "claude" : "copilot",
-        harness: goalCompatible ? "claude" : "copilot",
-        name: `profile-${index}`,
-        description: `Profile ${index}`,
-        guide: guide(goalCompatible),
-        commandPath: "/bin/trx",
-        sandbox: false,
-        headless: {
-          schemaVersion: 1,
-          prompt: true,
-          outputFormats: ["json"],
-          eventContract: null,
-          trellageEventContract: null,
-          sessionId: "native",
-          resume: false,
-          resumeWithPrompt: false,
-          questionToolControl: "hard-deny",
-          changedFiles: "native",
-          usage: true,
-          cost: true,
-          modelOverride: false,
-          effortOverride: false,
-          testedHarnessVersion: null,
-        },
-        herdrCompatibility: { status: "supported" },
-      })),
-    }),
-  )
+const catalog = (goalCompatible = false): CompositionCatalog =>
+  compositionFixtureCatalog(Array.from({ length: 16 }, (_, index) => compositionFixtureEntry({
+    harness: goalCompatible ? "claude" : "copilot",
+    profile: `profile-${index}`,
+    description: `Profile ${index}`,
+    guide: guide(goalCompatible),
+    commandPath: "/bin/trx",
+  })))
 
 const resultFor = (refs: string[]) => ({
   candidates: refs
     .slice(0, 3)
-    .map((profileRef, index) => ({
-      profileRef,
+    .map((ref, index) => ({
+      ...parseCompositionRef(ref),
       workflowId: "implement",
       confidence: 0.9 - index / 10,
       reason: "fits",
       tradeoff: "tradeoff",
-    })),
+    }))
 })
 const provider = (calls: { legacy: unknown[] }): GuideProvider => ({
   match: async (input) => {
@@ -115,7 +92,7 @@ describe("guide match service", () => {
     const pruned = prefilterGuideMatchCatalogEntries(catalog(), "Use native:copilot/profile-0 to implement the change")
     expect(pruned).toHaveLength(12)
     const omitted = catalog()
-      .native.map(({ name }) => `native:copilot/${name}`)
+      .entries.map(({ ref }) => ref)
       .find((ref) => !pruned.some((entry) => entry.ref === ref))
     expect((calls.matcher[0] as { entries: { ref: string }[] }).entries.some(({ ref }) => ref === omitted)).toBe(true)
     expect(calls.legacy).toHaveLength(0)
@@ -177,13 +154,13 @@ describe("guide match service", () => {
     roots.push(root)
     const cache = new GuideArtifactCache({ cwd: root, routing, prompts })
     const events: string[] = []
-    const refreshed = (source: CombinedGuideCatalog): CombinedGuideCatalog => ({
+    const refreshed = (source: CompositionCatalog): CompositionCatalog => ({
       ...source,
-      native: source.native.map((entry, index) =>
+      entries: source.entries.map((entry, index) =>
         index === 0 ? { ...entry, headless: { ...entry.headless, prompt: false } } : entry,
       ),
     })
-    const resolveCatalog = async (): Promise<CombinedGuideCatalog> => {
+    const resolveCatalog = async (): Promise<CompositionCatalog> => {
       events.push("resolve")
       return refreshed(catalog())
     }

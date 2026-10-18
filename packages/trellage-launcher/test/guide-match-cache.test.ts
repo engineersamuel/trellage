@@ -71,7 +71,8 @@ const prompts = {
 }
 const matchResult: GuideMatchResult = {
   candidates: ["one", "two", "three"].map((name, index) => ({
-    profileRef: `native:codex/${name}`,
+    harness: "codex",
+    profiles: [name],
     workflowId: "review",
     confidence: 0.9 - index * 0.1,
     reason: `${name} matches the request.`,

@@ -32,7 +32,7 @@ export interface GuideQueuedContext {
 }
 
 const queuedTaskContext = (profile: SelectedProfile, context: GuideQueuedContext): GuideTaskContext => ({
-  ...(profile.surface === "native" ? { profileRef: `native:${profile.launcher}/${profile.profile}` } : {}),
+  profileRef: `native:${profile.harness}/${profile.profiles.join("+")}`,
   originalIntent: context.originalIntent,
   ...(context.customerContext === undefined ? {} : { customerContext: context.customerContext }),
 })
@@ -181,9 +181,9 @@ export class GuideQueueConflictError extends Error {
     readonly branch: string,
     readonly job: QueuedGuideJob,
   ) {
-    const launcher = job.profile.surface === "native" ? job.profile.launcher : "sandbox"
+    const harness = job.profile.harness
     super(
-      `Branch "${branch}" is already queued by job ${job.id} (${launcher} ${job.profile.profile}). Choose another branch.`,
+      `Branch "${branch}" is already queued by job ${job.id} (${harness} ${job.profile.profiles.join("+")}). Choose another branch.`,
     )
     this.name = "GuideQueueConflictError"
   }
@@ -615,7 +615,7 @@ const writeStartedJob = (
   entry: Extract<GuideBatchEntryResult, { readonly status: "launched" | "needs-input" }>,
   write: (text: string) => void,
 ): void => {
-  write(`${entry.job.id}. ${entry.job.profile.profile}: ${entry.status} in pane ${entry.paneId} · ${entry.cwd}\n`)
+  write(`${entry.job.id}. ${entry.job.profile.profiles.join("+")}: ${entry.status} in pane ${entry.paneId} · ${entry.cwd}\n`)
   if (entry.status !== "needs-input") return
   write(`Workspace: ${entry.workspaceId}. The goal has not been activated.\n`)
   write(entry.job.goalExecution === undefined
@@ -627,7 +627,7 @@ const writeFailedJob = (
   entry: Exclude<GuideBatchEntryResult, { readonly status: "launched" | "needs-input" }>,
   write: (text: string) => void,
 ): void => {
-  write(`${entry.job.id}. ${entry.job.profile.profile} (${describeJobPlacement(entry.job.placement)}): ${entry.stage} failed: ${entry.message}\n`)
+  write(`${entry.job.id}. ${entry.job.profile.profiles.join("+")} (${describeJobPlacement(entry.job.placement)}): ${entry.stage} failed: ${entry.message}\n`)
   if ("paneId" in entry && entry.paneId !== undefined) {
     write(`Allocated pane: ${entry.paneId}; workspace: ${entry.workspaceId ?? "unknown"}; directory: ${entry.cwd ?? "unknown"}.\n`)
   }

@@ -27,7 +27,6 @@ This does not capture a conversation or start a model.
 - `mise`
 - A local Trellage checkout with a trusted `mise.toml`
 - Installed source workspace dependencies
-- Docker for Trellage Sandbox capture
 
 This plugin runs `mise run trx -- guide` from the Trellage checkout that
 contains this directory. It is a local proof of concept, not a standalone
@@ -342,9 +341,7 @@ The full transcript is read from a bounded, verified prefix. Append-only
 growth is allowed; replacement, truncation, a changed prefix, malformed
 complete records, links, and ambiguous identity fail closed. Host capture
 uses the normal or explicitly configured harness home. Native capture stays
-inside the selected profile home. Sandbox capture uses the exact validated
-container/invocation bridge and releases its sealed export after reading it.
-An old bridge reports that conversation export is unsupported.
+inside the selected profile home.
 
 These paths require the updated bridge and prepared guide source runtime.
 
@@ -468,8 +465,6 @@ Structured exact identity can come from:
 1. Herdr's exact `agent_session` reference.
 2. An exact session ID in the focused harness process arguments.
 3. A Trellage Native session ID reported by that profile's SessionStart hook.
-4. A Trellage Sandbox attachment ID mapped to the main session inside its
-   private state volume.
 
 If independent exact sources disagree, capture fails instead of choosing one.
 
@@ -479,17 +474,7 @@ under the normal harness home or selected Native profile home under
 roots or select a transcript by working directory or modification time.
 Transcript files must be regular files, not symlinks.
 
-Sandbox capture does not expose the Herdr socket or mount the container state
-volume on the host. Each attachment gets a random invocation ID. The
-container's SessionStart hook atomically maps that ID to its main session. A
-fixed `trellage session final-message` command then validates the exact
-container, profile, worktree, image, state volume, agent, mapping, and
-transcript before it returns the final message. Copilot nested-agent records
-and Claude subagent sessions are excluded.
-
 **Open current conversation** supports direct and Native transcripts.
-Sandbox panes can use exact final-message capture through the
-`session final-message` protocol.
 
 ## Completion tracking for legacy result shortcuts
 
@@ -515,7 +500,7 @@ agent turn before the shortcut is available.
   source bytes, 16 MiB per source record, 250,000 records, 100,000 normalized
   messages, 4 MiB per visible message, 32 MiB total visible text, and 64 MiB
   per private request. A limit failure is explicit; it never drops the start
-  of the conversation to fit. Sandbox export also enforces its bridge limits.
+  of the conversation to fit.
 - Markdown line breaks are preserved.
 - The plugin does not silently shorten an answer.
 - If Herdr reports a truncated terminal snapshot, the plugin stops. Highlight
@@ -550,13 +535,8 @@ never selected text.
 - Completion markers do not contain answer text.
 - Native hooks report only short identity tokens through display-only Herdr
   metadata. They do not report a restorable `agent_session`.
-- Sandbox mappings stay mode `0600` inside the profile's private state volume.
-  Only the random invocation ID enters that attachment's container
-  environment.
 - The opaque token crosses Herdr's standard `selected_text` action-context
   field.
-- The Herdr socket and host harness homes are never mounted into a Sandbox
-  container.
 
 The final answer is not exposed in the process argument list or environment.
 Only the private one-use file path enters the guide environment. Standard
@@ -622,12 +602,9 @@ standalone snapshot paths and draft files are not transport inputs.
 
 Both source operations accept cancellation from the parent runner. On
 `SIGTERM`, `SIGINT`, or `SIGHUP`, the CLI aborts pending capture and Herdr
-socket requests, permits the Sandbox adapter to release any known sealed
-snapshot, and exits without output. The adapter receives the same
-`AbortSignal` for its owned page subprocesses. Existing request and draft
-files are preserved. Forced termination such as `SIGKILL` cannot run cleanup;
-the bridge's bounded stale-export cleanup remains the fallback. The parent
-runner retains its 60-second initial source-check limit.
+socket requests, then exits without output. Existing request and draft files
+are preserved. The parent runner retains its 60-second initial source-check
+limit.
 
 The source key binds the server socket instance, workspace/tab/pane, surface,
 harness, exact session, working directory, and applicable profile/container/
@@ -693,16 +670,14 @@ display the guide without receiving normal popup keys.
 **The plugin cannot offer an exact result**
 
 Herdr did not provide an exact session reference, the harness process did not
-contain one, the Native hook did not report metadata, the Sandbox bridge was
-not available in the current image, or exact identity was conflicting. Choose
-the clearly marked terminal snapshot only if its preview contains the full
-result, or highlight the required text.
+contain one, the Native hook did not report metadata, or exact identity was
+conflicting. Choose the clearly marked terminal snapshot only if its preview
+contains the full result, or highlight the required text.
 
 For Native profiles, reinstall the current launchers and run setup or repair
 for the profile. Existing sessions must start a new turn after the hook is
-installed. For Sandbox profiles, rebuild the image so it contains the session
-bridge, then start a new attachment. Herdr metadata tokens are intentionally
-ephemeral across a full Herdr server restart.
+installed. Herdr metadata tokens are intentionally ephemeral across a full
+Herdr server restart.
 
 Inspect plugin command failures with:
 

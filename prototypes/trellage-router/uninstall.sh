@@ -11,11 +11,9 @@ installed_launcher="$install_root/bin/trx"
 installed_dependency_bootstrap="$install_root/lib/bootstrap-development-dependencies.sh"
 installed_share="$install_root/share"
 installed_guides="$installed_share/profile-guides"
-legacy_picker="$install_root/lib/terminal-picker.mjs"
+installed_herdr_compatibility="$installed_share/herdr-compatibility.json"
 ownership_marker="$install_root/.managed-by-trellage-router"
 ownership_value='trellage-router-v3'
-previous_ownership_value='trellage-router-v2'
-legacy_ownership_value='trellage-router-v1'
 installed_source="$install_root/source"
 
 refuse() {
@@ -55,9 +53,8 @@ require_owned_runtime_contents() {
   while IFS= read -r path; do
     case "$path" in
       "$ownership_marker"|"$install_root/bin"|"$installed_launcher"|\
-      "$install_root/lib"|"$install_root/lib/launcher.mjs"|\
-      "$installed_dependency_bootstrap"|"$legacy_picker"|\
-      "$installed_share"|"$installed_guides") ;;
+      "$install_root/lib"|"$installed_dependency_bootstrap"|\
+      "$installed_share"|"$installed_guides"|"$installed_herdr_compatibility") ;;
       "$installed_source"|"$installed_source"/*)
         [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
           || refuse "refusing unrelated runtime path: $path"
@@ -100,11 +97,8 @@ fi
 
 [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
   || refuse "refusing unowned runtime root: $install_root"
-if [[ "$(<"$ownership_marker")" != "$ownership_value" ]] \
-  && [[ "$(<"$ownership_marker")" != "$previous_ownership_value" ]] \
-  && [[ "$(<"$ownership_marker")" != "$legacy_ownership_value" ]]; then
-  refuse "refusing unowned runtime root: $install_root"
-fi
+[[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
+  || refuse "refusing unowned runtime root: $install_root"
 [[ -d "$install_root/bin" && ! -L "$install_root/bin" ]] \
   || refuse "refusing unsafe managed runtime: $install_root/bin"
 [[ -d "$install_root/lib" && ! -L "$install_root/lib" ]] \
@@ -113,19 +107,20 @@ fi
   || refuse "refusing unsafe managed runtime: $installed_share"
 [[ -f "$installed_launcher" && ! -L "$installed_launcher" ]] \
   || refuse "refusing unsafe managed launcher: $installed_launcher"
-for path in "$install_root/lib/launcher.mjs" "$installed_dependency_bootstrap" "$legacy_picker"; do
-  [[ ! -e "$path" && ! -L "$path" ]] || {
-    [[ -f "$path" && ! -L "$path" ]] \
-      || refuse "refusing unsafe managed launcher UI: $path"
-  }
-done
-[[ -f "$install_root/lib/launcher.mjs" || -f "$legacy_picker" || -d "$installed_source" ]] \
-  || refuse "refusing incomplete managed launcher UI"
+[[ -f "$installed_dependency_bootstrap" && ! -L "$installed_dependency_bootstrap" ]] \
+  || refuse "refusing unsafe managed dependency bootstrap: $installed_dependency_bootstrap"
+[[ -d "$installed_source" && ! -L "$installed_source" ]] \
+  || refuse "refusing incomplete managed source runtime: $installed_source"
 require_owned_runtime_contents
 if [[ -e "$installed_guides" ]]; then
   [[ -d "$installed_guides" && ! -L "$installed_guides" ]] \
     || refuse "refusing unsafe profile guide registry: $installed_guides"
   rm -rf -- "$installed_guides"
+fi
+if [[ -e "$installed_herdr_compatibility" || -L "$installed_herdr_compatibility" ]]; then
+  [[ -f "$installed_herdr_compatibility" && ! -L "$installed_herdr_compatibility" ]] \
+    || refuse "refusing unsafe Herdr compatibility ledger: $installed_herdr_compatibility"
+  rm "$installed_herdr_compatibility"
 fi
 
 if [[ -e "$command_path" || -L "$command_path" ]]; then
@@ -138,11 +133,7 @@ if [[ -d "$installed_source" ]]; then
 fi
 
 rm "$installed_launcher" "$ownership_marker"
-for path in "$install_root/lib/launcher.mjs" "$installed_dependency_bootstrap" "$legacy_picker"; do
-  if [[ -e "$path" ]]; then
-    rm "$path"
-  fi
-done
+rm "$installed_dependency_bootstrap"
 rmdir "$install_root/bin" "$install_root/lib"
 [[ ! -d "$installed_share" ]] || rmdir "$installed_share"
 rmdir "$install_root"

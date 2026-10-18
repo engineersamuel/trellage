@@ -13,8 +13,6 @@ installed_statusline="$install_root/lib/trellage-statusline.sh"
 installed_model_settings="$install_root/lib/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-profiles"
 ownership_value='trellage-profiles-v1'
-command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/cpx"
 
 refuse() {
   printf 'cpx uninstall: %s\n' "$1" >&2
@@ -56,12 +54,8 @@ require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime a
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
-require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 if [[ ! -e "$install_root" ]]; then
-  if [[ -e "$command_path" || -L "$command_path" ]]; then
-    refuse "refusing unowned runtime root: $install_root"
-  fi
   printf 'cpx is not installed; profile homes were preserved.\n'
   exit 0
 fi
@@ -99,12 +93,6 @@ fi
   && ( ! -e "$install_root/native-skills.ts" || -f "$install_root/native-skills.ts" ) ]] \
   || refuse "unsafe Native skills helper: $install_root/native-skills.ts"
 
-if [[ -e "$command_path" || -L "$command_path" ]]; then
-  if [[ ! -L "$command_path" || "$(readlink "$command_path")" != "$installed_launcher" ]]; then
-    refuse "refusing to remove unrelated command: $command_path"
-  fi
-  rm "$command_path"
-fi
 
 rm -f "$installed_launcher" "$installed_catalog" "$ownership_marker" "$install_root/native-skills.mjs"
 rm -f -- "$install_root/native-skills.ts"

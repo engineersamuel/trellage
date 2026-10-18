@@ -36,6 +36,8 @@ const baseEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEntr
   harnessVersionSupported: true,
   updateCheckStale: false,
   ...overrides,
+  profiles: overrides.profiles ?? [overrides.name ?? "blog"],
+  lifecycle: overrides.lifecycle ?? { runtime: "cldx", profile: overrides.name ?? "blog" },
 })
 
 const versionResult = (installed: string, latest: string): AdminHarnessVersionResult => ({
@@ -48,9 +50,11 @@ const nativeEntry = (launcher: string, harness: string, name = "default"): Admin
   ref: `native:${launcher}/${name}`,
   surface: "native",
   launcher,
-  harness,
+  harness: launcher,
   name,
   commandPath: `/opt/trellage/${launcher}/bin/${launcher}`,
+  profiles: [name],
+  lifecycle: ["codex", "pi"].includes(launcher) ? null : { runtime: launcher, profile: name },
 })
 
 const requirePlan = (
@@ -70,12 +74,9 @@ const successfulRun = () => vi.fn<CommandRunner["run"]>(async (_executable, args
 describe("harnessUpdatePlanFor", () => {
   it.each([
     ["copilot", "copilot", "hve", ["upgrade", "copilot", "hve", "--harness-only"]],
-    ["codex", "codex", "youtube", ["upgrade", "codex", "youtube", "--harness-only"]],
-    ["codex", "codex", "superpowers", ["upgrade", "codex", "superpowers", "--harness-only"]],
     ["claude", "claude", "default", ["upgrade", "claude", "default", "--harness-only"]],
     ["omp", "oh-my-pi", "copilot", ["upgrade", "omp", "copilot"]],
     ["jcode", "jcode", "default", ["upgrade", "jcode", "default"]],
-    ["pi", "pi", "default", ["upgrade", "pi", "default"]],
     ["prime", "prime", "default", ["upgrade", "prime", "default"]],
   ] as const)("uses %s's harness command, not a plugin update", (launcher, harness, name, args) => {
     const selected = nativeEntry(launcher, harness, name)
@@ -99,14 +100,11 @@ describe("harnessUpdatePlanFor", () => {
     }
   })
 
-  it("keeps native Pi Coding Agent and native Oh My Pi in separate update groups", () => {
-    const pi = nativeEntry("pi", "pi")
-    const omp = nativeEntry("omp", "oh-my-pi", "local")
-    const entries = [pi, omp]
-    const plans = entries.map((selected) => requirePlan(selected, entries))
-
-    expect(plans.map(({ key }) => key)).toEqual(["native:pi", "native:omp"])
-    expect(plans.map(({ targets }) => targets)).toEqual([[pi], [omp]])
+  it("does not plan lifecycle updates for externally managed Pi or Codex", () => {
+    for (const selected of [nativeEntry("pi", "pi"), nativeEntry("codex", "codex", "pstack")]) {
+      expect(harnessUpdateKeyFor(selected)).toBeUndefined()
+      expect(harnessUpdatePlanFor(selected, [selected], versionResult("1.0.0", "2.0.0"))).toBeUndefined()
+    }
   })
 
   it("does not select another runtime executable with the same harness label", () => {
@@ -115,18 +113,6 @@ describe("harnessUpdatePlanFor", () => {
     expect(requirePlan(selected, [selected, otherRuntime]).targets).toEqual([selected])
   })
 
-  it("groups native Codex profiles", () => {
-    const youtube = nativeEntry("codex", "codex", "youtube")
-    const superpowers = nativeEntry("codex", "codex", "superpowers")
-    const entries = [youtube, superpowers]
-
-    for (const selected of [youtube, superpowers]) {
-      const plan = requirePlan(selected, entries)
-      expect(plan.key).toBe("native:codex")
-      expect(plan.targets).toEqual([superpowers, youtube])
-      expect(plan.steps).toHaveLength(1)
-    }
-  })
 
   it("fails closed for unsupported launchers and unknown or incomplete entries", () => {
     const unsupported = [nativeEntry("unknown", "copilot"), baseEntry({ commandPath: "" })]
@@ -141,7 +127,6 @@ describe("harnessUpdatePlanFor", () => {
 describe("runHarnessUpdate", () => {
   it.each([
     ["copilot", "copilot", ["awesome", "hve"]],
-    ["codex", "codex", ["youtube", "superpowers", "pstack"]],
     ["claude", "claude", ["default"]],
     ["omp", "oh-my-pi", ["local", "copilot"]],
   ] as const)("updates %s's shared harness once for all of its profiles", async (launcher, harness, names) => {
@@ -190,7 +175,6 @@ describe("runHarnessUpdate", () => {
 
   it.each([
     ["claude", "upgrade fallback: harness claude@latest -> 2.1.252"],
-    ["codex", "upgrade fallback: harness codex@latest -> 0.1.0"],
   ])("reports %s harness fallback as failure even if the command exits successfully", async (harness, fallback) => {
     const plan = requirePlan(nativeEntry(harness, harness))
     const run = vi.fn<CommandRunner["run"]>(async (_executable, args) =>
@@ -206,7 +190,6 @@ describe("runHarnessUpdate", () => {
 describe("harness update version refresh", () => {
   it.each([
     ["omp", "oh-my-pi", 1],
-    ["codex", "codex", 1],
     ["claude", "claude", 1],
   ] as const)("refreshes the correct installed scopes for %s", async (launcher, harness, expectedReads) => {
     const entries = ["a", "b"].map((name) => nativeEntry(launcher, harness, name))

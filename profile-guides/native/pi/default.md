@@ -49,9 +49,9 @@ workflows:
 
 # Native Pi (`pi`) — `default` profile
 
-`pi` runs upstream `@earendil-works/pi-coding-agent@0.84.2` routed through
-keyless `copilot-proxy-rs/gpt-5.6-sol:medium`, with one fixed, ordered
-extension set. See `prototypes/trellage-picx-profiles/README.md`.
+`trx run pi default` composes upstream Pi with
+keyless `copilot-proxy-rs/gpt-5.6-sol:medium` and one fixed, ordered extension
+set. Install and update the `pi` harness binary outside Trellage.
 
 ## Use This Profile When
 
@@ -71,18 +71,18 @@ extension set. See `prototypes/trellage-picx-profiles/README.md`.
 - You need host-specific Claude, Codex, Cursor, or OMP MCP configuration
   auto-loaded; managed `mcp.json` sets `hostConfigDiscovery` to `off`, and
   only the documented `pi-mcp-adapter` precedence applies.
-- You need a different extension list or a newer Pi release mid-session;
-  ordinary launches never update the pinned version or the ten extensions.
+- You need a different extension list mid-session; the `default` preset keeps
+  its ten extensions fixed.
 - You assume host Copilot, OpenAI, or Azure OpenAI credentials are available
   to the session; launches remove those variables because the managed proxy
   provider uses no API key.
 
 ## Workflow Notes
 
-- Bare `pi` and `trx run pi default` select the same, only profile.
-- `trx inventory pi default --json` reports the same readiness checks as
-  `trx doctor pi default` (`healthy`, `unhealthy`, `not-setup`) without changing
-  profile state; use `trx doctor pi default` when a detailed diagnostic is needed.
+- `trx run pi default` selects the built-in `default` preset.
+- `trx inventory pi default --json` probes the host `pi` binary and reports
+  readiness and its version. Pi lifecycle commands are unavailable because the
+  harness is installed and updated outside Trellage.
 - No documented explicit slash/invocation syntax exists for any of the ten
   bundled extensions in this repository's sources — treat extension names as
   descriptive vocabulary in prompts rather than commands.
@@ -92,8 +92,5 @@ extension set. See `prototypes/trellage-picx-profiles/README.md`.
 ## Gotchas
 
 - `trx`'s Herdr compatibility ledger marks `pi`/`default` as `untested`:
-  static launcher, catalog, inventory, and headless contracts pass, but an
+  static harness, catalog, inventory, and headless contracts pass, but an
   end-to-end Herdr round trip has not yet run.
-- The old `~/.omp/profiles/trellage-picx-default` profile path is not used
-  or deleted by this launcher; do not confuse it with the current profile
-  home.

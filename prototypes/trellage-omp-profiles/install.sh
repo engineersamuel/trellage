@@ -3,7 +3,6 @@
 set -euo pipefail
 
 ownership_value='trellage-omp-profiles-v2'
-legacy_ownership_value='trellage-omp-profiles-v1'
 
 refuse() {
   printf 'omp install: %s\n' "$1" >&2
@@ -27,8 +26,6 @@ install_root="$runtime_parent/omp"
 installed_launcher="$install_root/bin/omp"
 installed_catalog="$install_root/catalog.json"
 ownership_marker="$install_root/.managed-by-trellage-omp-profiles"
-command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/omp"
 
 require_safe_directory() {
   local path="$1" expected="$2" description="$3" canonical_path
@@ -43,25 +40,15 @@ require_safe_directory() {
 require_safe_directory "$local_dir" "$canonical_home/.local" 'runtime ancestor'
 require_safe_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
-require_safe_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 runtime_owned=false
 if [[ -e "$install_root" || -L "$install_root" ]]; then
   require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/omp" 'runtime root'
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "unowned runtime root: $install_root"
-  installed_ownership="$(<"$ownership_marker")"
-  [[ "$installed_ownership" == "$ownership_value" \
-    || "$installed_ownership" == "$legacy_ownership_value" ]] \
+  [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
     || refuse "unowned runtime root: $install_root"
   runtime_owned=true
-fi
-
-if [[ -e "$command_path" || -L "$command_path" ]]; then
-  [[ "$runtime_owned" == true && -L "$command_path" ]] \
-    || refuse "unrelated command: $command_path"
-  [[ "$(readlink "$command_path")" == "$installed_launcher" ]] \
-    || refuse "unrelated command: $command_path"
 fi
 
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/omp" 'runtime root'
@@ -95,7 +82,7 @@ is_retired_mise_cache() (
 )
 
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
-mkdir -p "$install_root/bin" "$command_dir"
+mkdir -p "$install_root/bin"
 require_safe_directory "$install_root" "$canonical_home/.local/share/trellage/omp" 'runtime root'
 require_safe_directory "$install_root/bin" "$canonical_home/.local/share/trellage/omp/bin" 'runtime bin'
 launcher_stage="$(mktemp "$install_root/bin/.omp.XXXXXX")"
@@ -109,12 +96,6 @@ mv -f "$launcher_stage" "$installed_launcher"
 mv -f "$catalog_stage" "$installed_catalog"
 mv -f "$marker_stage" "$ownership_marker"
 
-if [[ ! -L "$command_path" ]]; then
-  command_stage="$command_dir/.omp-command.$$"
-  [[ ! -e "$command_stage" && ! -L "$command_stage" ]] || refuse "unsafe command staging path: $command_stage"
-  ln -s "$installed_launcher" "$command_stage"
-  mv "$command_stage" "$command_path"
-fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
@@ -125,7 +106,4 @@ if [[ "$runtime_owned" == true ]]; then
     rm -rf -- "$install_root/cache"
   fi
 fi
-printf 'Installed omp at %s\n' "$command_path"
-
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" omp "$installed_launcher" "$ownership_marker" "$ownership_value"
+printf 'Installed omp at %s\n' "$installed_launcher"

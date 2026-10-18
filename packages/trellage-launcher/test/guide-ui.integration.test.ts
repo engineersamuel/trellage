@@ -266,16 +266,13 @@ const expectedPrompt = (selection: Pick<Selection, "profileId" | "candidate" | "
 
 const expectedProfile = (root: string, id: FixtureProfileId): SelectedProfile => {
   const profile = fixtureProfile(id)
-  const common = {
-    profile: profile.name,
+  return {
+    surface: "native",
+    harness: profile.harness,
+    profiles: [profile.name],
+    commandPath: path.join(root, "bin", "trx"),
     headlessPrompt: true,
     ...(profile.goalExecution === undefined ? {} : { goalExecutionPolicy: profile.goalExecution }),
-  }
-  return {
-    ...common,
-    surface: "native",
-    launcher: profile.launcher,
-    commandPath: path.join(root, "bin", "trx"),
     ...(profile.agent === undefined ? {} : { agent: profile.agent }),
   }
 }
@@ -313,10 +310,7 @@ const readinessCommand = (root: string, id: FixtureProfileId): RecordedCommand =
   const profile = expectedProfile(root, id)
   return {
     executable: profile.commandPath,
-    args:
-      profile.surface === "native"
-        ? ["inventory", profile.launcher, profile.profile, "--json"]
-        : ["doctor", "--profile", profile.profile],
+    args: ["inventory", profile.harness, ...profile.profiles, "--json"],
     cwd: root,
   }
 }
@@ -945,9 +939,9 @@ const expectedGoalJob = (root: string, selection: GoalSelection): QueuedGuideJob
     prompt,
     command: {
       executable: profile.commandPath,
-      args: profile.surface === "native" ? ["run", profile.launcher, profile.profile] : ["--profile", profile.profile, prompt],
+      args: ["run", profile.harness, ...profile.profiles],
     },
-    promptDelivery: profile.surface === "native" ? "manual" : "command",
+    promptDelivery: "manual",
     placement: selection.placement,
     goalExecution: expectedGoalContext(selection),
   }
@@ -1712,16 +1706,14 @@ test.for([FixtureMode.Terminal, FixtureMode.Herdr])(
       ...(mode === FixtureMode.Herdr ? { TRELLAGE_TEST_OPTIMIZE_BASE: "base" } : {}),
     })
     try {
-      await guide.start(mode, 80, 24, "Review changes")
+      await guide.start(mode, 80, 30, "Review changes")
       if (mode === FixtureMode.Terminal) await selectOptimizeBase(guide)
       await guide.waitForText(
         "Confirm target",
-        "3 of 4 files selected",
         `Branch base: ${mode === FixtureMode.Terminal ? "main" : "base"}`,
       )
       assert(guide.text().includes('[x] "code.ts" (branch)'))
       assert(guide.text().includes('[x] "dirty.ts" (staged, unstaged)'))
-      assert(guide.text().includes('[x] "notes.txt"'))
       assert(guide.text().includes('[ ] "linked.ts"'))
       assert(!guide.text().includes("ignored.txt"))
       await guide.pressAndWait("p", "Review context")
@@ -1897,10 +1889,9 @@ it.for([
     const report = await guide.finish(enter)
     const profile = expectedProfile(guide.root, profileId)
     const prompt = expectedGoalPrompt(selection)
-    assert(profile.surface === "native")
     const command = {
       executable: profile.commandPath,
-      args: manual ? ["run", profile.launcher, profile.profile] : ["run", profile.launcher, profile.profile, "--", "-p", prompt],
+      args: manual ? ["run", profile.harness, ...profile.profiles] : ["run", profile.harness, ...profile.profiles, "--", "-p", prompt],
     }
     expect(report.result).toEqual({
       action: "current-terminal",

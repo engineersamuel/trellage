@@ -4,6 +4,7 @@ import { lstat, mkdir, open, readdir, rename, unlink, writeFile } from "node:fs/
 import path from "node:path"
 
 import type { ProfileGuideGoalController, ProfileGuideWorkflow } from "@trellage/guide-core"
+import { formatCompositionRef } from "./composition-catalog.ts"
 import {
   assertPreparedGuideGoal,
   type GuideGoalExecution,
@@ -208,7 +209,7 @@ const renderMatch = (
       : `Routing: Copilot · ${execution?.model ?? routing.match.model} (${execution?.effort ?? routing.match.effort})`,
     "",
     ...result.candidates.flatMap((candidate, index) => [
-      `## ${index + 1}. ${candidate.profileRef} · ${candidate.workflowId}`,
+      `## ${index + 1}. ${formatCompositionRef(candidate.harness, candidate.profiles)} · ${candidate.workflowId}`,
       "",
       `Confidence: ${candidate.confidence}`,
       "",

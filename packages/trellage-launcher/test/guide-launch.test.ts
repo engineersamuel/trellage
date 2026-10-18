@@ -55,7 +55,7 @@ describe("Native argument boundary", () => {
     "separates %s prompt flags from router options",
     (launcher) => {
       const selected = parseSelectedProfile({
-        surface: "native", launcher, commandPath: "/fixture/trx", profile: "default", headlessPrompt: true,
+        surface: "native", harness: launcher, commandPath: "/fixture/trx", profiles: ["default"], headlessPrompt: true,
       })
       expect(buildGuideLaunchCommand(selected, { mode: "argv", prompt: "- literal prompt" }).command.args).toEqual([
         "run", launcher, "default", "--", launcher === "copilot" ? "-i" : "-p", "- literal prompt",
@@ -67,8 +67,8 @@ describe("Native argument boundary", () => {
 describe("profile worktree suggestions", () => {
   const profile = {
     surface: "native",
-    launcher: "copilot",
-    profile: "hve",
+    harness: "copilot",
+    profiles: ["hve"],
     commandPath: "copilot",
     headlessPrompt: true,
   } as const
@@ -79,7 +79,7 @@ describe("profile worktree suggestions", () => {
     expect(defaultWorktreeBranch("Review my PR")).toBe("worktree/review-my-pr")
   })
   it("keeps long identity hashes and suffixes within forty ASCII characters", () => {
-    const long = { ...profile, profile: "abcdefghijklmnopqrstuvwxyz" }
+    const long = { ...profile, profiles: ["abcdefghijklmnopqrstuvwxyz"] }
     const reserved: string[] = []
     for (let i = 1; i <= 12; i += 1) {
       const branch = suggestWorktreeBranch("abcdefghijklmnopqrstuv", long, reserved)
@@ -98,15 +98,15 @@ describe("profile worktree suggestions", () => {
     ).toBe(reserved[1])
   })
   it("distinguishes launchers and long profile identities without truncating the tag", () => {
-    expect(suggestWorktreeBranch("review", { ...profile, profile: "default" })).toBe("wt/copilot-default-review")
-    expect(suggestWorktreeBranch("review", { ...profile, launcher: "codex", profile: "default" })).toBe(
+    expect(suggestWorktreeBranch("review", { ...profile, profiles: ["default"] })).toBe("wt/copilot-default-review")
+    expect(suggestWorktreeBranch("review", { ...profile, harness: "codex", profiles: ["default"] })).toBe(
       "wt/codex-default-review",
     )
-    const first = suggestWorktreeBranch("x".repeat(100), { ...profile, profile: "a".repeat(80) })
-    const second = suggestWorktreeBranch("x".repeat(100), { ...profile, profile: `${"a".repeat(79)}b` })
+    const first = suggestWorktreeBranch("x".repeat(100), { ...profile, profiles: ["a".repeat(80)] })
+    const second = suggestWorktreeBranch("x".repeat(100), { ...profile, profiles: [`${"a".repeat(79)}b`] })
     expect(first).not.toBe(second)
     expect(first).toMatch(/^wt\/copilot-a{7}-[a-f0-9]{6}-x{14}$/u)
-    expect(suggestWorktreeBranch("x".repeat(100), { ...profile, profile: "a".repeat(80) })).toBe(first)
+    expect(suggestWorktreeBranch("x".repeat(100), { ...profile, profiles: ["a".repeat(80)] })).toBe(first)
   })
   it("uses word boundaries and accepts trimmed reservations", () => {
     expect(suggestWorktreeBranch("Review the login flow for regressions", profile)).toBe("wt/copilot-hve-review-the")
@@ -193,17 +193,17 @@ const clock = (): { readonly time: TimeController; readonly advance: (ms: number
 
 const nativeProfile = parseSelectedProfile({
   surface: "native",
-  launcher: "copilot",
+  harness: "copilot",
   commandPath: "/opt/trellage/bin/trx",
-  profile: "hve-core",
+  profiles: ["hve-core"],
   headlessPrompt: true,
 })
 
 const codexProfile = parseSelectedProfile({
   surface: "native",
-  launcher: "codex",
+  harness: "codex",
   commandPath: "/opt/trellage/bin/trx",
-  profile: "pstack",
+  profiles: ["pstack"],
   headlessPrompt: true,
 })
 
@@ -240,7 +240,7 @@ describe("guide launch command building", () => {
       command: { executable: profile.commandPath, args: ["run", "claude", "default"] },
       promptDelivery: "manual",
     })
-    const migratedProfile = { ...profile, profile: "social-media" }
+    const migratedProfile = { ...profile, profiles: ["social-media"] }
     expect(buildHerdrGuideLaunch(migratedProfile, candidate.prompt, candidate.goalExecution)).toEqual({
       command: { executable: profile.commandPath, args: ["run", "claude", "social-media"] },
       promptDelivery: "manual",
@@ -263,7 +263,7 @@ describe("guide launch command building", () => {
     expect(() => buildHerdrGuideLaunch(profile, "Unprotected approach", candidate.goalExecution)).toThrow(/no longer matches/u)
     expect(() => buildHerdrGuideLaunch({ ...profile, goalExecutionPolicy: { controller: "codex-goal", workflowIds: ["other"] } }, candidate.prompt, candidate.goalExecution)).toThrow(/does not declare/u)
     expect(() => buildHerdrGuideLaunch(
-      parseSelectedProfile({ ...profile, launcher: "copilot", commandPath: "/opt/trellage/bin/trx" }),
+      parseSelectedProfile({ ...profile, harness: "copilot", commandPath: "/opt/trellage/bin/trx" }),
       candidate.prompt, candidate.goalExecution,
     )).toThrow(/supported launch path/u)
   })
@@ -313,9 +313,9 @@ describe("guide launch command building", () => {
 
   it("chooses each launcher's own argv prompt shape, and keeps jcode on the paste path", () => {
     const prompt = "Compare the designs"
-    const launch = (launcher: string, commandPath: string) =>
+    const launch = (harness: string, commandPath: string) =>
       buildHerdrGuideLaunch(
-        parseSelectedProfile({ surface: "native", launcher, commandPath, profile: "default", headlessPrompt: true }),
+        parseSelectedProfile({ surface: "native", harness, commandPath, profiles: ["default"], headlessPrompt: true }),
         prompt,
       )
 
@@ -340,9 +340,9 @@ describe("guide launch command building", () => {
   it("places a validated Copilot agent override before the interactive prompt", () => {
     const profile = parseSelectedProfile({
       surface: "native",
-      launcher: "copilot",
+      harness: "copilot",
       commandPath: "/opt/trellage/bin/trx",
-      profile: "hve",
+      profiles: ["hve"],
       headlessPrompt: true,
       agent: "hve-core:rpi-agent",
     })
@@ -377,27 +377,27 @@ describe("guide launch command building", () => {
     expect(() => parseSelectedProfile({ ...nativeProfile, agent: "--unsafe" })).toThrow(/simple agent identifier/)
   })
 
-  it("keeps launcher identity and validates absolute command paths", () => {
+  it("keeps harness identity and validates absolute command paths", () => {
     expect(nativeProfile).toMatchObject({
       surface: "native",
-      launcher: "copilot",
+      harness: "copilot",
       commandPath: "/opt/trellage/bin/trx",
     })
     expect(() =>
       parseSelectedProfile({
         surface: "native",
-        launcher: "copilot",
+        harness: "copilot",
         commandPath: "copilot",
-        profile: "hve-core",
+        profiles: ["hve-core"],
         headlessPrompt: true,
       }),
     ).toThrow(/absolute path/)
     expect(() =>
       parseSelectedProfile({
         surface: "native",
-        launcher: "codex",
+        harness: "codex",
         commandPath: "/opt/trellage/bin/trx",
-        profile: "hve",
+        profiles: ["hve"],
         headlessPrompt: true,
         agent: "hve-core:rpi-agent",
       }),
@@ -405,9 +405,9 @@ describe("guide launch command building", () => {
     expect(() =>
       parseSelectedProfile({
         surface: "native",
-        launcher: "copilot",
+        harness: "copilot",
         commandPath: "/opt/trellage/bin/trx",
-        profile: "hve",
+        profiles: ["hve"],
         headlessPrompt: true,
         agent: "--unsafe",
       }),

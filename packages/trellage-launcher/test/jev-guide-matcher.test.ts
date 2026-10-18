@@ -2,31 +2,39 @@ import { chmod, mkdir, mkdtemp, symlink, writeFile, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { formatCompositionRef, parseCompositionRef } from "../src/composition-catalog.ts"
+import { compositionFixtureEntry } from "./helpers/composition-catalog.ts"
 import { JevGuideMatcher, type JevSystemOneClient } from "../src/jev-guide-matcher.ts"
 import { prepareGuideGoal } from "../src/guide-goal-execution.ts"
 import type { GuideMatchInput } from "../src/guide-provider.ts"
 import { GuideMatcherFallbackReason, validateGuideMatchResult } from "../src/guide-provider.ts"
 
-const entry = (ref: string, workflows = ["one"]) => ({
-  ref,
-  surface: "native" as const,
-  name: ref.split(":").pop()!,
-  description: `${ref} description`,
-  sandbox: true,
-  guide: {
-    schemaVersion: 1 as const,
-    capabilities: ["work"],
-    bestFor: ["implementation"],
-    avoidFor: ["unrelated work"],
-    prerequisites: [{ id: "repo", description: "A repository" }],
-    workflows: workflows.map((id) => ({ id, description: `${id} workflow`, examples: ["example"] })),
-  },
-})
+const entry = (ref: string, workflows = ["one"]) => {
+  const parsed = parseCompositionRef(ref)
+  return {
+    ref,
+    harness: parsed.harness,
+    profiles: parsed.profiles,
+    kind: "preset" as const,
+    headless: compositionFixtureEntry({ harness: parsed.harness, profile: parsed.profiles[0]! }).headless,
+    description: `${ref} description`,
+    guide: {
+      schemaVersion: 1 as const,
+      capabilities: ["work"],
+      bestFor: ["implementation"],
+      avoidFor: ["unrelated work"],
+      prerequisites: [{ id: "repo", description: "A repository" }],
+      workflows: workflows.map((id) => ({ id, description: `${id} workflow`, examples: ["example"] })),
+    },
+  }
+}
 
 const input = (entries: GuideMatchInput["entries"] = [entry("native:x/a"), entry("native:x/b"), entry("native:x/c")]): GuideMatchInput => ({
   intent: "Implement this safely",
   entries,
 })
+const candidateRef = ({ harness, profiles }: { readonly harness: string; readonly profiles: ReadonlyArray<string> }): string =>
+  formatCompositionRef(harness, profiles)
 const client = (answers: Record<string, unknown>): JevSystemOneClient & { request?: unknown } => ({
   systemOne: async (request) => {
     clientValue.request = request
@@ -58,7 +66,7 @@ describe("JevGuideMatcher", () => {
       p2: { type: "noul", noul: 0.9 },
     })
     const result = await new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match(input())
-    expect(result.candidates.map(({ profileRef }) => profileRef)).toEqual(["native:x/b", "native:x/c", "native:x/a"])
+    expect(result.candidates.map(candidateRef)).toEqual(["native:x/b", "native:x/c", "native:x/a"])
     validateGuideMatchResult(
       result,
       new Map(input().entries.map((item) => [item.ref, new Set(item.guide.workflows.map(({ id }) => id))])),
@@ -85,7 +93,7 @@ describe("JevGuideMatcher", () => {
       preferredProfileRefs: ["native:x/a"],
     })
     expect(result.candidates).toEqual(
-      expect.arrayContaining([expect.objectContaining({ profileRef: "native:x/a", workflowId: "second" })]),
+      expect.arrayContaining([expect.objectContaining({ harness: "x", profiles: ["a"], workflowId: "second" })]),
     )
   })
 
@@ -334,7 +342,7 @@ describe("JevGuideMatcher", () => {
         ],
       },
     }
-    const fillers = Array.from({ length: 6 }, (_, index) => entry(`sandbox:filler-${index}`))
+    const fillers = Array.from({ length: 6 }, (_, index) => entry(`native:x/filler-${index}`))
     const entries = [...fillers, headlong, poteto]
     const answers: Record<string, unknown> = Object.fromEntries(
       entries.map((_, index) => [`p${index}`, { type: "noul", noul: 0.99 - index / 100 }]),
@@ -352,7 +360,7 @@ describe("JevGuideMatcher", () => {
       intent: "substantial work",
       entries,
     })
-    expect(result.candidates.map(({ profileRef }) => profileRef)).toEqual(
+    expect(result.candidates.map(candidateRef)).toEqual(
       expect.arrayContaining(["native:headlong/default", "native:codex/pstack"]),
     )
   })
@@ -392,9 +400,9 @@ describe("JevGuideMatcher", () => {
     const matcher = new JevGuideMatcher({ cwd: "/tmp", client: sdk })
     const result = await matcher.match(input(entries))
     expect(result.candidates[0]?.workflowId).toBe("poteto-mode-entry-point")
-    expect(result.candidates.some(({ profileRef }) => profileRef === "native:claude/council")).toBe(false)
+    expect(result.candidates.some((candidate) => candidateRef(candidate) === "native:claude/council")).toBe(false)
     const explicit = await matcher.match({ ...input(entries), preferredProfileRefs: ["native:claude/council"] })
-    expect(explicit.candidates[0]?.profileRef).toBe("native:claude/council")
+    expect(explicit.candidates[0]).toMatchObject({ harness: "claude", profiles: ["council"] })
   })
 
   it("can rank an HVE customer workflow without exposing the generic RPI pin", async () => {
@@ -413,7 +421,7 @@ describe("JevGuideMatcher", () => {
       },
     }
     const result = await new JevGuideMatcher({ cwd: "/tmp", client: sdk }).match({ intent: "Discover customer needs", entries })
-    expect(result.candidates[0]).toMatchObject({ profileRef: "native:copilot/hve", workflowId: "customer-discovery" })
+    expect(result.candidates[0]).toMatchObject({ harness: "copilot", profiles: ["hve"], workflowId: "customer-discovery" })
   })
 
   it("clears the deadline after success and aborts promptly when transport ignores cancellation", async () => {

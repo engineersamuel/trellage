@@ -11,7 +11,6 @@ import { bunArguments, bunExecutable } from "@trellage/runtime"
 import { expect, test, vi, type TestContext } from "vitest"
 import { ConversationAgent, ConversationRole, ConversationSurface } from "@trellage/guide-core"
 import { ContinuationStore } from "../src/continuation-store.ts"
-import { runtimeCatalog } from "./helpers/continuation-runtime-fixtures.ts"
 import { spawnSourcePty, type SourcePtyExit } from "./helpers/source-pty.ts"
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url))
@@ -23,6 +22,21 @@ const initialModel = "fixture-initial-model"
 const editedModel = "fixture-saved-model"
 const userText = "SYNTHETIC ENTRY QUESTION: explain the bounded capture."
 const assistantText = "SYNTHETIC ENTRY ANSWER: the source capture is ready for review."
+const guideProfiles = ["default", "explainer", "tester", "visualizer", "writer"] as const
+const guideSource = `---
+schemaVersion: 1
+capabilities: [review]
+bestFor: [Reviewing changes, Explaining code]
+avoidFor: [Unrelated work, Unbounded background tasks]
+prerequisites: []
+workflows:
+  - id: review
+    description: Review the implementation.
+    examples: [Review this diff, Review the flow, Find defects]
+    promptTemplate: "Review the implementation: {{intent}}"
+---
+# Review
+`
 
 enum MetadataMethod {
   Agent = "agent.get",
@@ -52,8 +66,8 @@ const createFixture = async (onTestFailed: TestContext["onTestFailed"]) => {
   const bin = path.join(root, "bin")
   const scratch = path.join(root, "scratch")
   const socketPath = path.join(root, "h")
-  const catalogPath = path.join(root, "catalog.json")
   const deniedCallsPath = path.join(root, "denied-commands.jsonl")
+  const configPath = path.join(root, "config.toml")
   const cwd = await realpath(repositoryRoot)
   const sessionId = randomUUID()
   let currentSessionId = sessionId
@@ -150,6 +164,16 @@ const createFixture = async (onTestFailed: TestContext["onTestFailed"]) => {
   try {
     for (const directory of [home, stateRoot, bin, scratch]) await mkdir(directory, { mode: 0o700 })
     await mkdir(guideRoot, { recursive: true, mode: 0o700 })
+    await writeFile(configPath, guideProfiles.slice(1).map((profile) => `
+[native.profiles.${profile}]
+label = "${profile}"
+harnesses = ["codex"]
+`).join(""), { mode: 0o600 })
+    const codexGuideRoot = path.join(guideRoot, "native", "codex")
+    await mkdir(codexGuideRoot, { recursive: true, mode: 0o700 })
+    for (const profile of guideProfiles) {
+      await writeFile(path.join(codexGuideRoot, `${profile}.md`), guideSource, { mode: 0o600 })
+    }
     const promptMaster = path.join(path.dirname(guideRoot), "prompt-master")
     await mkdir(promptMaster, { mode: 0o700 })
     await writeFile(path.join(promptMaster, "SKILL.md"), "# Synthetic prompt master\n", { mode: 0o600 })
@@ -168,18 +192,6 @@ process.exitCode = 86
         { mode: 0o700 },
       )
     }
-    const catalog = runtimeCatalog()
-    await writeFile(
-      catalogPath,
-      JSON.stringify({
-        ...catalog,
-        native: catalog.native.map((entry) => ({
-          ...entry,
-          commandPath: path.join(bin, entry.launcher),
-        })),
-      }),
-      { mode: 0o600 },
-    )
     const transcriptRoot = path.join(home, ".copilot", "session-state", sessionId)
     await mkdir(transcriptRoot, { recursive: true, mode: 0o700 })
     await writeFile(path.join(transcriptRoot, "workspace.yaml"), `id: ${sessionId}\ncwd: ${cwd}\n`, { mode: 0o600 })
@@ -225,6 +237,8 @@ process.exitCode = 86
     CODEX_HOME: path.join(home, ".codex"),
     CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
     COPILOT_CLI_PATH: path.join(bin, "copilot"),
+    TRELLAGE_CONFIG: configPath,
+    TRELLAGE_TRX_COMMAND_PATH: path.join(bin, "trx"),
     HERDR_ENV: "1",
     HERDR_SOCKET_PATH: socketPath,
     HERDR_PLUGIN_STATE_DIR: stateRoot,
@@ -272,7 +286,6 @@ process.exitCode = 86
       const terminal = createTerminal({
         guideRoot,
         cwd,
-        catalogPath,
         requestPath,
         env: launchEnv,
         model,
@@ -298,7 +311,6 @@ process.exitCode = 86
 const createTerminal = (options: {
   readonly guideRoot: string
   readonly cwd: string
-  readonly catalogPath: string
   readonly requestPath: string
   readonly env: Record<string, string>
   readonly model: string
@@ -309,25 +321,18 @@ const createTerminal = (options: {
   let screen = ""
   let output = ""
   let inputReady = false
-  // The router supplies catalog fd3. This shell only reproduces that descriptor plumbing.
   const child = spawnSourcePty(
-    "/bin/sh",
-    [
-      "-c",
-      'exec "$@" 3<"$0"',
-      options.catalogPath,
-      bunExecutable(),
-      ...bunArguments(launcherEntry, [
-        "guide",
-        options.guideRoot,
-        path.join(path.dirname(options.guideRoot), "prompt-master"),
-        "--next-steps",
-        "--model",
-        options.model,
-        "--effort",
-        "medium",
-      ]),
-    ],
+    bunExecutable(),
+    bunArguments(launcherEntry, [
+      "guide",
+      options.guideRoot,
+      path.join(path.dirname(options.guideRoot), "prompt-master"),
+      "--next-steps",
+      "--model",
+      options.model,
+      "--effort",
+      "medium",
+    ]),
     {
       name: "xterm-256color",
       cols: terminal.cols,

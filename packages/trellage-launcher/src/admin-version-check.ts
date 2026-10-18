@@ -1,21 +1,6 @@
 /**
- * Builds the `update --check PROFILE` command for a native profile and
- * tolerantly parses its stdout into a structured current/latest-version
- * result. `update --check` is documented as read-only for every launcher
- * that implements it (e.g. `prime`/`jcode`/`omp`/`pi` resolve the latest eligible release via `mise`
- * without mutating any installed state) — safe to run in the background
- * alongside doctor checks. Callers must check `entry.updateCheckSupported`
- * first (see `admin-model.ts`'s `launchersWithoutUpdateCheckSupport`;
- * currently only `claude` lacks this command).
- *
- * Each native launcher implements `update --check` independently and their
- * exact human-readable message text differs (verified directly against
- * `prototypes/trellage-*-profiles/bin/*` and `native-codex`), so parsing
- * uses a small set of tolerant patterns covering every known family rather
- * than one launcher-specific format. Output that matches none of them is
- * never guessed at — it is reported as `{ malformed: true }`, the same
- * fail-closed posture `admin-model.ts` already uses for malformed doctor
- * output.
+ * Builds the read-only `update --check PROFILE` command and parses the managed
+ * backends' human-readable output. Unknown output fails closed as malformed.
  */
 import type { AdminProfileEntry, AdminUpdateCheckResult } from "./admin-model.ts"
 import type { CommandSpec } from "./guide-launch.ts"
@@ -30,23 +15,17 @@ export const buildUpdateCheckCommand = (entry: AdminProfileEntry): CommandSpec =
 const currentPatterns: ReadonlyArray<RegExp> = [
   // cpx: "default: current (1.2.3)"
   /\bcurrent\s*\(([^)]+)\)/i,
-  // prx/jcx/omp/picx: "prx update: 0.8.1 is current"
+  // prx/jcx/omp: "prx update: 0.8.1 is current"
   /\b(\S+)\s+is current\b/i,
-  // cdx skill-only profiles with no marketplace version to name, e.g.
-  // "youtube: current" (native-codex's `update_check_skill_profile`).
-  /:\s*current\s*$/i,
 ]
 
 /** Each pattern's capture group 1 is the installed version/commit/pin and group 2 is the latest available one. */
 const updateAvailablePatterns: ReadonlyArray<RegExp> = [
-  // prx/jcx/omp/picx: "prx update: 0.8.1 -> 0.9.0 available"
   /([^\s:][^\s]*)\s*->\s*([^\s]+?)\s+available/i,
   // cpx: "default: update available (1.2.3 -> 1.3.0)"
   /update available\s*\(\s*([^\s]+?)\s*->\s*([^\s)]+?)\s*\)/i,
 ]
 
-/** No capture groups: cdx skill-only profiles report an update with no version to name at all, e.g. "youtube: update available". */
-const bareUpdateAvailablePatterns: ReadonlyArray<RegExp> = [/:\s*update available\s*$/i]
 
 const notInstalledPatterns: ReadonlyArray<RegExp> = [
   /:\s*not installed\b/i,
@@ -132,9 +111,6 @@ export const parseUpdateCheckOutput = (stdout: string, installedVersion: string 
   }
   const parsed = availableVersion(trimmed, installedVersion) ?? currentVersion(trimmed, installedVersion)
   if (parsed !== undefined) return parsed
-  if (bareUpdateAvailablePatterns.some((pattern) => pattern.test(trimmed))) {
-    return { current: false, latest: "—", ...(installedVersion === undefined ? {} : { installed: installedVersion }) }
-  }
   return {
     malformed: true,
     diagnostic: `unrecognized update --check output${installedVersion === undefined ? "" : ` (installed ${installedVersion})`}: ${trimmed.split("\n")[0] ?? trimmed}`,

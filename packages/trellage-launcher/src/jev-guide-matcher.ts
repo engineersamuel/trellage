@@ -160,7 +160,8 @@ const resultFromSelection = (input: GuideMatchInput, selected: Ranked[]): GuideM
     candidates: selected.map(({ entry, workflowId, fit }) => {
       const workflow = entry.guide.workflows.find(({ id }) => id === workflowId)!
       return {
-        profileRef: entry.ref,
+        harness: entry.harness,
+        profiles: entry.profiles,
         workflowId,
         confidence: fit,
         reason: boundedText(workflow.description),

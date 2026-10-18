@@ -469,15 +469,13 @@ export const findTranscript = async (
 ): Promise<TranscriptMatch | undefined> => {
   if (!supportedAgents.has(agent)) return undefined
   const trellageIdentity = trellageSessionIdentity({ agent, tokens, processInfo })
-  if (trellageIdentity?.surface === ConversationSurface.Sandbox) return undefined
-  const nativeProfile = trellageIdentity?.surface === ConversationSurface.Native ? trellageIdentity.profile : undefined
+  const nativeProfile = trellageIdentity?.profile
   const roots = await transcriptRoots(agent, env, nativeProfile)
   if (roots.length === 0) return undefined
   const exactPath = await exactPathSession(agent, agentSession, roots, false)
   const agentSessionId = sessionIdFromAgentSession(agent, agentSession)
   const processSessionId = sessionIdFromProcessInfo(agent, processInfo)
-  const nativeSessionId =
-    trellageIdentity?.surface === ConversationSurface.Native ? trellageIdentity.sessionId : undefined
+  const nativeSessionId = trellageIdentity?.sessionId
   const exactId = exactSessionIdentity({ agentSessionId, processSessionId, nativeSessionId })
   const pathTranscript = exactPathTranscript(exactPath, exactId, nativeProfile)
   if (pathTranscript !== undefined || exactId === undefined) return pathTranscript
@@ -560,12 +558,11 @@ export const findFocusedTranscript = async ({
 }: TranscriptLookupOptions): Promise<FocusedTranscript> => {
   if (!supportedAgents.has(agent)) throw new Error("The focused harness does not support conversation analysis.")
   const identity = trellageSessionIdentity({ agent, tokens, processInfo })
-  if (identity?.surface === ConversationSurface.Sandbox) throw new Error("Sandbox conversations require the validated session bridge.")
-  const nativeProfile = identity?.surface === ConversationSurface.Native ? identity.profile : undefined
+  const nativeProfile = identity?.profile
   const identifiers = {
     agentSessionId: checkedFocusedReference(agent, agentSession),
     processSessionId: exactSessionIdFromProcessInfo(agent, processInfo),
-    nativeSessionId: identity?.surface === ConversationSurface.Native ? identity.sessionId : undefined,
+    nativeSessionId: identity?.sessionId,
   }
   const sessionId = exactSessionIdentity(identifiers)
   const roots = await focusedTranscriptRoots(agent, env, nativeProfile)

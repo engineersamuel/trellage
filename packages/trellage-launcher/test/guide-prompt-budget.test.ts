@@ -58,11 +58,13 @@ describe("remaining guide prompt body budget", () => {
       originalIntent: "Do not lose this input.",
     })
     expect(prepared).toThrow("leave no body space")
-    const loaded = await loadProfileGuide(guideRoot, { surface: "native", launcher: "codex", profile: "pstack" })
+    const loaded = await loadProfileGuide(guideRoot, { surface: "native", harness: "codex", profile: "pstack" })
     const base = runtimeCatalog()
     const catalog = {
       ...base,
-      native: base.native.map((entry) => entry.launcher === "codex" && entry.name === "default" ? { ...entry, name: "pstack", guide: loaded.guide } : entry),
+      entries: base.entries.map((entry) => entry.harness === "codex" && entry.profiles[0] === "default"
+        ? { ...entry, ref: "native:codex/pstack", profiles: ["pstack"], guide: loaded.guide }
+        : entry),
     }
     const oversizedIntent = "x".repeat(7990)
     await expect(runGuideGenerate(provider, catalog, guideRoot, {

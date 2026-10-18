@@ -14,7 +14,6 @@ const captureSources = new Set([
   "selection",
   "conversation-transcript",
   "transcript",
-  "sandbox-transcript",
   "terminal",
   "capture-queue",
 ])

@@ -1,21 +1,4 @@
-/**
- * Parses the existing `inventory PROFILE --json` command (already used by
- * `guide-preflight.ts` for a healthy/unhealthy readiness check) into the
- * richer install-detail view the admin UI's Inventory overlay needs:
- * installed plugins, skill package/visible counts, and MCP server names.
- * Every native launcher emits the same `{schemaVersion: 1, launcher,
- * harness, profile, readiness, plugins, skills, mcps}` shape (verified
- * across `prototypes/trellage-*-profiles/bin/*`'s own `inventory_profile`
- * implementations), so this is a single tolerant parser rather than a
- * per-launcher family like `admin-version-check.ts` needs.
- *
- * Skills in this architecture are a single git-commit-pinned bundle per
- * profile, not individually versioned packages (see
- * `scripts/floating-skills.ts`), so `skills` only ever reports counts
- * (`packageCount`/`visibleCount`), never a per-skill version. This view
- * intentionally reports exactly that — it does not fabricate a per-skill
- * version comparison the architecture cannot support.
- */
+/** Parses composition-aware inventory v2 for the Admin inventory overlay. */
 import type { AdminProfileEntry } from "./admin-model.ts"
 import type { CommandSpec } from "./guide-launch.ts"
 
@@ -30,6 +13,8 @@ export interface AdminInventorySkills {
 }
 
 export interface AdminInventoryResult {
+  readonly harness: string
+  readonly profiles: ReadonlyArray<string>
   readonly readiness: "healthy" | "unhealthy" | "not-setup" | "busy"
   readonly plugins: ReadonlyArray<AdminInventoryPlugin>
   readonly skills: AdminInventorySkills
@@ -38,10 +23,10 @@ export interface AdminInventoryResult {
 
 export type AdminInventoryOutcome = { readonly malformed: true; readonly diagnostic: string } | ({ readonly malformed?: false } & AdminInventoryResult)
 
-/** Builds `inventory PROFILE --json` for a profile. Callers must check `entry.inventorySupported` first. */
+/** Builds the read-only composition inventory command for an Admin row. */
 export const buildInventoryCommand = (entry: AdminProfileEntry): CommandSpec => ({
   executable: entry.commandPath,
-  args: ["inventory", entry.launcher!, entry.name, "--json"],
+  args: ["inventory", entry.harness!, ...entry.profiles, "--json"],
 })
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -72,11 +57,16 @@ const parseMcps = (value: unknown): ReadonlyArray<string> | undefined => {
   return value.every((item): item is string => typeof item === "string") ? value : undefined
 }
 
+const sameStrings = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index])
 const parseInventoryPayload = (value: unknown, entry: AdminProfileEntry | undefined): AdminInventoryOutcome => {
   if (!isPlainObject(value)) return { malformed: true, diagnostic: "inventory --json must return a JSON object" }
-  if (value.schemaVersion !== 1) return { malformed: true, diagnostic: "inventory --json returned an unsupported schema version" }
-  if (entry !== undefined && (value.launcher !== entry.launcher || value.profile !== entry.name)) {
-    return { malformed: true, diagnostic: "inventory --json returned another profile's identity" }
+  if (value.schemaVersion !== 2) return { malformed: true, diagnostic: "inventory --json returned an unsupported schema version" }
+  if (typeof value.harness !== "string" || !Array.isArray(value.profiles) || !value.profiles.every((item): item is string => typeof item === "string")) {
+    return { malformed: true, diagnostic: "inventory --json returned an invalid composition identity" }
+  }
+  if (entry !== undefined && (value.harness !== entry.harness || !sameStrings(value.profiles, entry.profiles))) {
+    return { malformed: true, diagnostic: "inventory --json returned another composition's identity" }
   }
   if (!isReadiness(value.readiness)) return { malformed: true, diagnostic: "inventory --json returned an unsupported readiness value" }
   const plugins = parsePlugins(value.plugins)
@@ -85,7 +75,7 @@ const parseInventoryPayload = (value: unknown, entry: AdminProfileEntry | undefi
   if (plugins === undefined || skills === undefined || mcps === undefined) {
     return { malformed: true, diagnostic: "inventory --json returned an unrecognized plugins/skills/mcps shape" }
   }
-  return { readiness: value.readiness, plugins, skills, mcps }
+  return { harness: value.harness, profiles: value.profiles, readiness: value.readiness, plugins, skills, mcps }
 }
 
 /** Read-only inventory must identify the selected profile. */

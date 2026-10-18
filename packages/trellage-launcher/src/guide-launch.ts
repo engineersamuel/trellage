@@ -1,4 +1,3 @@
-import { canonicalNativeIdentity } from "@trellage/guide-core"
 import path from "node:path"
 import { createHash } from "node:crypto"
 import { execFileSync, spawn } from "node:child_process"
@@ -24,7 +23,6 @@ const guideCaptureSources: ReadonlyArray<GuideCaptureSource> = [
   "selection",
   "conversation-transcript",
   "transcript",
-  "sandbox-transcript",
   "terminal",
   "capture-queue",
 ]
@@ -65,7 +63,6 @@ export type GuideCaptureSource =
   | "selection"
   | "conversation-transcript"
   | "transcript"
-  | "sandbox-transcript"
   | "terminal"
   | "capture-queue"
 export type GuideCaptureConfidence = "user-selected" | "exact" | "snapshot" | "user-curated"
@@ -75,9 +72,9 @@ export type GitWorktreeInspectionKind = "ready" | "collision" | "invalid-branch"
 
 export interface NativeSelectedProfile {
   readonly surface: "native"
-  readonly launcher: string
+  readonly harness: string
   readonly commandPath: string
-  readonly profile: string
+  readonly profiles: ReadonlyArray<string>
   readonly headlessPrompt: boolean
   readonly agent?: string
   readonly interaction?: ProfileGuideInteraction
@@ -334,12 +331,12 @@ const getString = (value: unknown, name: string): string => {
   return value
 }
 
-const validateLauncher = (value: unknown): string => {
-  const launcher = getString(value, "selected profile launcher")
-  if (!safeLauncherAlias.test(launcher)) {
-    throw new Error("selected profile launcher must be a safe lowercase alias")
+const validateHarness = (value: unknown): string => {
+  const harness = getString(value, "selected profile harness")
+  if (!safeLauncherAlias.test(harness)) {
+    throw new Error("selected profile harness must be a safe lowercase alias")
   }
-  return launcher
+  return harness
 }
 
 const validateProfileName = (value: unknown): string => {
@@ -369,10 +366,10 @@ const validateHeadlessPrompt = (value: unknown): boolean => {
   return value
 }
 
-const validateAgent = (value: unknown, launcher?: string): string | undefined => {
+const validateAgent = (value: unknown, harness?: string): string | undefined => {
   if (value === undefined) return undefined
   const agent = getString(value, "selected profile agent")
-  if (launcher !== undefined && launcher !== "copilot") {
+  if (harness !== undefined && harness !== "copilot") {
     throw new Error("selected profile agent is supported only by the Copilot harness")
   }
   if (!isLaunchAgentIdentifier(agent)) throw new Error("selected profile agent must be a simple agent identifier")
@@ -567,33 +564,41 @@ export class GuideLaunchError extends Error {
 }
 
 const selectedInteraction = (
-  value: Record<string, unknown>, launcher: string, agent: string | undefined,
+  value: Record<string, unknown>, harness: string, agent: string | undefined,
 ): ProfileGuideInteraction | undefined => {
   if (value.interaction === undefined) return undefined
   const interaction = parseProfileGuideInteraction(value.interaction)
-  if (launcher !== "copilot" || value.profile !== "hve" || agent === undefined) {
+  if (harness !== "copilot" || !Array.isArray(value.profiles) || !value.profiles.includes("hve") || agent === undefined) {
     throw new Error("Interactive workflows require native:copilot/hve and an explicit agent")
   }
   return interaction
 }
 
+const validateProfiles = (value: unknown): ReadonlyArray<string> => {
+  if (!Array.isArray(value) || value.length === 0) throw new Error("selected composition profiles must be a non-empty array")
+  const profiles = value.map((profile) => validateProfileName(profile))
+  if (new Set(profiles).size !== profiles.length) throw new Error("selected composition profiles must be unique")
+  if (profiles.includes("clean") && profiles.length !== 1) throw new Error("clean cannot be combined with other profiles")
+  return profiles
+}
+
 const parseNativeSelectedProfile = (value: Record<string, unknown>): NativeSelectedProfile => {
   const goalExecutionPolicy = validateGoalExecutionPolicy(value.goalExecutionPolicy)
-    const identity = canonicalNativeIdentity(validateLauncher(value.launcher), validateProfileName(value.profile))
-    const launcher = identity.launcher
-    value = { ...value, profile: identity.profile, commandPath: canonicalNativeCommandPath(validateCommandPath(value.commandPath)) }
-    const agent = validateAgent(value.agent, launcher)
-    const interaction = selectedInteraction(value, launcher, agent)
-    return {
-      surface: "native",
-      launcher,
-      commandPath: validateCommandPath(value.commandPath),
-      profile: validateProfileName(value.profile),
-      headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
-      ...(agent === undefined ? {} : { agent }),
-      ...(interaction === undefined ? {} : { interaction }),
-      ...(goalExecutionPolicy === undefined ? {} : { goalExecutionPolicy }),
-    }
+  const harness = validateHarness(value.harness)
+  const profiles = validateProfiles(value.profiles)
+  const commandPath = validateCommandPath(value.commandPath)
+  const agent = validateAgent(value.agent, harness)
+  const interaction = selectedInteraction(value, harness, agent)
+  return {
+    surface: "native",
+    harness,
+    commandPath,
+    profiles,
+    headlessPrompt: validateHeadlessPrompt(value.headlessPrompt),
+    ...(agent === undefined ? {} : { agent }),
+    ...(interaction === undefined ? {} : { interaction }),
+    ...(goalExecutionPolicy === undefined ? {} : { goalExecutionPolicy }),
+  }
 }
 
 export const parseSelectedProfile = (value: unknown): SelectedProfile => {
@@ -603,22 +608,16 @@ export const parseSelectedProfile = (value: unknown): SelectedProfile => {
   throw new Error("selected profile surface must be native")
 }
 
-export const canonicalNativeCommandPath = (commandPath: string): string => {
-  const aliases = ["agx", "cdx", "cpx", "cldx", "jcx", "omp", "picx", "prx"]
-  const parts = commandPath.split("/")
-  if (aliases.includes(parts.at(-1) ?? "")) parts[parts.length - 1] = "trx"
-  return parts.join("/")
-}
 
 const nativePromptArgs = (
   selectedProfile: NativeSelectedProfile,
   baseArgs: ReadonlyArray<string>,
   prompt: string,
 ): ReadonlyArray<string> => {
-  if (selectedProfile.launcher === "codex") return appendNativeArguments(baseArgs, [prompt])
+  if (selectedProfile.harness === "codex") return appendNativeArguments(baseArgs, [prompt])
   if (selectedProfile.interaction !== undefined) return appendNativeArguments(baseArgs, ["-i", prompt])
   if (!selectedProfile.headlessPrompt) return baseArgs
-  return appendNativeArguments(baseArgs, [selectedProfile.launcher === "copilot" ? "-i" : "-p", prompt])
+  return appendNativeArguments(baseArgs, [selectedProfile.harness === "copilot" ? "-i" : "-p", prompt])
 }
 
 export const appendNativeArguments = (
@@ -653,7 +652,7 @@ export const buildGuideLaunchCommand = (
 ): BuiltCommandSpec => {
   selectedProfile = parseSelectedProfile(selectedProfile)
   const normalizedDelivery = normalizePromptDelivery(delivery)
-  const baseArgs = appendNativeArguments(["run", selectedProfile.launcher, selectedProfile.profile], [
+  const baseArgs = appendNativeArguments(["run", selectedProfile.harness, ...selectedProfile.profiles], [
     ...(selectedProfile.interaction === undefined ? [] : ["--interactive"]),
     ...(selectedProfile.agent === undefined ? [] : ["--agent", selectedProfile.agent]),
     ...(selectedProfile.interaction?.requiredSkills.flatMap((skill) => ["--require-skill", skill]) ?? []),
@@ -666,12 +665,12 @@ export const buildGuideLaunchCommand = (
       command: {
         executable: selectedProfile.commandPath,
         // Claude opens interactively with the prompt as its first turn, so the session can continue.
-        args: selectedProfile.launcher === "claude"
+        args: selectedProfile.harness === "claude"
           ? appendNativeArguments(baseArgs, [normalizedDelivery.prompt])
           : nativePromptArgs(selectedProfile, baseArgs, normalizedDelivery.prompt),
       },
       promptHandling: selectedProfile.interaction !== undefined || selectedProfile.headlessPrompt ||
-        selectedProfile.launcher === "codex" || selectedProfile.launcher === "claude" ? "argv" : "manual-paste",
+        selectedProfile.harness === "codex" || selectedProfile.harness === "claude" ? "argv" : "manual-paste",
     }
   }
   return {
@@ -688,7 +687,7 @@ export const buildGuideLaunchCommand = (
  * An empty list means the prompt must stay a bare positional: `pi` and
  * `prime-agent` have no end-of-options guard, and their parser reads `--` as an
  * unknown flag that then consumes the prompt as its value and discards it. A
- * launcher absent from this table takes no argv prompt at all — `jcode` has
+ * harness absent from this table takes no argv prompt at all — `jcode` has
  * neither a positional prompt nor an initial-message flag — so it keeps the
  * paste path.
  */
@@ -706,7 +705,7 @@ const nativeArgvPromptSeparator: Record<string, ReadonlyArray<string>> = {
  * path encodes bracketed paste and Enter against the pane's recorded terminal
  * mode, which a harness TUI has not yet adopted while it still negotiates, so a
  * pasted prompt can land as literal escape text and never submit. An argv
- * prompt has no such handshake. Only launchers with no known prompt flag fall
+ * prompt has no such handshake. Only harnesses with no known prompt flag fall
  * back to the paste path.
  */
 export const buildHerdrGuideLaunch = (
@@ -720,7 +719,7 @@ export const buildHerdrGuideLaunch = (
       ? { command: buildGuideLaunchCommand(selectedProfile).command, promptDelivery: "manual" }
       : { command: buildGuideLaunchCommand(selectedProfile, { mode: "argv", prompt }, goalExecution).command, promptDelivery: "command" }
   }
-  const separator = nativeArgvPromptSeparator[selectedProfile.launcher]
+  const separator = nativeArgvPromptSeparator[selectedProfile.harness]
   const baseCommand = buildGuideLaunchCommand(selectedProfile).command
   if (separator === undefined) return { command: baseCommand, promptDelivery: "agent" }
   return {
@@ -1497,7 +1496,7 @@ export const suggestWorktreeBranch = (
   profile: SelectedProfile,
   reservedBranches: Iterable<string> = [],
 ): string => {
-  const identity = `${profile.surface === "native" ? profile.launcher : "sb"}-${profile.profile}`
+  const identity = `${profile.harness}-${profile.profiles.join("-")}`
   const normalized = normalizeWorktreeSlug(identity)
   const tag =
     normalized.length <= 22

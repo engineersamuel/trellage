@@ -1,9 +1,7 @@
 # Conversation next steps
 
-Status: retained continuation implementation notes. The separate analysis
-action and popup have been removed from the Herdr plugin. Use **Open current
-<harness> conversation (9)** in `prefix+ctrl+b`; its message count and preview
-are read afresh on every opening.
+Status: Historical implementation notes. Native Guide behavior has moved on,
+and the Trellage Sandbox sections describe a retired product.
 
 ## Purpose
 
@@ -210,14 +208,6 @@ router after source changes; there is no application bundle to rebuild.
 The linked plugin uses its checkout directly. Keep that checkout available
 while the shortcut commands point to it, and use Bun for the plugin commands.
 
-Sandbox conversation export uses `trellage session export-conversation`,
-`describe-conversation`, and `release-conversation`, through the same exact
-container validation as final-message export. The compiler copies the bridge
-into profile images. Rebuild an older profile image and start a new container
-to use the new export commands; re-attaching to an old container alone does not
-update its bridge. Unsupported containers fail explicitly rather than use
-terminal text or another conversation. Existing sessions are not rebuilt or
-interrupted automatically.
 
 ## Limits and verification
 

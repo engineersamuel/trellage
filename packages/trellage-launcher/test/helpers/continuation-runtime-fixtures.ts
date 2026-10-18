@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdtemp, realpath } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseGuideCatalog } from "../../src/guide-catalog.ts"
+import { compositionFixtureCatalog, compositionFixtureEntry } from "./composition-catalog.ts"
 import {
   ActionAccess,
   ActionImportance,
@@ -78,52 +78,26 @@ export const runtimeAssessment = (): ContinuationAssessment => ({
   })),
 })
 
+const runtimeGuide = {
+  schemaVersion: 1 as const,
+  capabilities: ["review"],
+  bestFor: ["Reviewing changes", "Explaining code"],
+  avoidFor: ["Unrelated work", "Unbounded background tasks"],
+  prerequisites: [],
+  workflows: [{
+    id: "review",
+    description: "Review the implementation.",
+    examples: ["Review this diff", "Review the flow", "Find defects"],
+    promptTemplate: "Review the implementation: {{intent}}",
+  }],
+}
+
 export const runtimeCatalog = () =>
-  parseGuideCatalog(
-    JSON.stringify({
-      schemaVersion: 1,
-      native: [
-        {
-          launcher: "codex",
-          harness: "codex",
-          name: "default",
-          description: "Synthetic profile for runtime tests.",
-          commandPath: "/profiles/trx",
-          sandbox: false,
-          herdrCompatibility: { status: "supported" },
-          headless: {
-            schemaVersion: 1,
-            prompt: true,
-            outputFormats: ["json"],
-            eventContract: null,
-            trellageEventContract: null,
-            sessionId: "native",
-            resume: false,
-            resumeWithPrompt: false,
-            questionToolControl: "hard-deny",
-            changedFiles: "native",
-            usage: true,
-            cost: true,
-            modelOverride: false,
-            effortOverride: false,
-            testedHarnessVersion: null,
-          },
-          guide: {
-            schemaVersion: 1,
-            capabilities: ["review"],
-            bestFor: ["Reviewing changes", "Explaining code"],
-            avoidFor: ["Unrelated work", "Unbounded background tasks"],
-            prerequisites: [],
-            workflows: [
-              {
-                id: "review",
-                description: "Review the implementation.",
-                examples: ["Review this diff", "Review the flow", "Find defects"],
-                promptTemplate: "Review the implementation: {{intent}}",
-              },
-            ],
-          },
-        },
-      ],
-    }),
-  )
+  compositionFixtureCatalog(["default", "explainer", "tester", "visualizer", "writer"].map((profile) =>
+    compositionFixtureEntry({
+      harness: "codex",
+      profile,
+      description: `Synthetic ${profile} profile for runtime tests.`,
+      commandPath: "/profiles/trx",
+      guide: runtimeGuide,
+    })))

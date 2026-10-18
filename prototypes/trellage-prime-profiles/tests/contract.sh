@@ -409,14 +409,13 @@ export PRX_TEST_DAEMON_MARKER="$FAKE_DAEMON_MARKER"
 : >"$FAKE_DAEMON_STOP_LOG"
 
 "$installer" >"$fixture_root/install.out" || fail 'install failed'
-command_path="$HOME/.local/share/trellage/.native-commands/prx"
 runtime_root="$HOME/.local/share/trellage/prx"
+command_path="$runtime_root/bin/prx"
 profile_root="$HOME/.local/share/trellage/profiles/prime/default"
 profile_home="$profile_root/home"
 
-[[ -L "$command_path" ]] || fail 'installer did not publish command symlink'
-[[ "$(readlink "$command_path")" == "$runtime_root/bin/prx" ]] \
-  || fail 'command symlink target differs'
+[[ -x "$command_path" && ! -L "$command_path" ]] \
+  || fail 'installer did not publish the owned runtime command'
 cmp -s "$runtime_root/catalog.json" "$root/catalog.json" \
   || fail 'installer did not publish catalog'
 [[ -f "$runtime_root/.managed-by-trellage-prime-profiles" ]] \
@@ -436,7 +435,6 @@ jq -e '
   .schemaVersion == 1
   and .launcher == "prx"
   and .harness == "prime"
-  and .sandbox == false
   and [.profiles[].name] == ["default"]
   and .profiles[0].source == "PrimeIntellect-ai/prime-agent"
   and .profiles[0].plugin == null
@@ -549,39 +547,6 @@ grep -Fq 'prx setup: ready (0.7.0, claude-opus-5.5)' "$fixture_root/setup.out" \
   || fail 'setup did not install prime-agent CLI'
 grep -Fq 'install github:PrimeIntellect-ai/prime-agent[asset_pattern=prime-agent-0.7.0.tgz]@0.7.0' "$FAKE_MISE_LOG" \
   || fail 'setup did not ask mise to install the receipt-selected release'
-
-legacy_uv_calls_before="$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')"
-legacy_npm_calls_before="$(wc -l <"$FAKE_NPM_LOG" | tr -d ' ')"
-legacy_daemon_stops_before="$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')"
-mv "$runtime_root/installed-version" "$runtime_root/version"
-rm -f "$runtime_root/runtime-identity.json" \
-  "$profile_home/kernel-runtime-identity.json"
-"$command_path" inventory default --json >"$fixture_root/legacy-inventory.json" \
-  || fail 'legacy inventory did not return readiness JSON'
-jq -e '.readiness == "unhealthy"' "$fixture_root/legacy-inventory.json" >/dev/null \
-  || fail 'legacy inventory did not report unhealthy'
-[[ -f "$runtime_root/version" && ! -e "$runtime_root/installed-version" \
-  && ! -e "$runtime_root/runtime-identity.json" \
-  && ! -e "$profile_home/kernel-runtime-identity.json" \
-  && -d "$runtime_root/npm-prefix" && -d "$profile_home/kernel-venv" ]] \
-  || fail 'legacy inventory mutated runtime state'
-[[ "$(wc -l <"$FAKE_NPM_LOG" | tr -d ' ')" == "$legacy_npm_calls_before" \
-  && "$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')" == "$legacy_uv_calls_before" \
-  && "$(wc -l <"$FAKE_DAEMON_STOP_LOG" | tr -d ' ')" == "$legacy_daemon_stops_before" ]] \
-  || fail 'legacy inventory performed runtime mutation work'
-[[ ! -e "$profile_root/.mutation.lock" ]] \
-  || fail 'legacy inventory leaked the profile mutation lock'
-[[ -z "$(find "$profile_root" -maxdepth 1 -name '.mutation.lock-owned.*' -print -quit)" ]] \
-  || fail 'legacy inventory leaked a mutation lock owner'
-"$command_path" doctor >"$fixture_root/legacy-receipt-doctor.out" \
-  || fail 'doctor did not migrate the legacy version receipt'
-[[ "$(<"$runtime_root/installed-version")" == 0.7.0 && ! -e "$runtime_root/version" ]] \
-  || fail 'legacy version receipt migration differs'
-[[ "$(wc -l <"$FAKE_UV_LOG" | tr -d ' ')" -gt "$legacy_uv_calls_before" ]] \
-  || fail 'legacy version-only state did not rebuild the kernel'
-cmp -s "$runtime_root/runtime-identity.json" \
-  "$profile_home/kernel-runtime-identity.json" \
-  || fail 'legacy migration did not publish matching identity state'
 
 "$command_path" list --json >"$fixture_root/list-verified.json" || fail 'verified JSON list failed'
 jq -e '

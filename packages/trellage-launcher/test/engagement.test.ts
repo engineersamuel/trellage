@@ -178,7 +178,7 @@ describe("evidence-backed engagement assessment", () => {
           {
             ...first,
             title: "Test the uncertainty",
-            workflow: { profileRef: "native:copilot/hve", workflowId: "test-assumption" },
+            workflow: { ref: "native:copilot/hve", harness: "copilot", profiles: ["hve"], workflowId: "test-assumption" },
           },
         ],
       },
@@ -186,7 +186,7 @@ describe("evidence-backed engagement assessment", () => {
       engagementWorkflows(fixture.catalog),
     )
     expect(result.actions).toHaveLength(2)
-    expect(result.actions.map((action) => action.workflow?.profileRef)).toEqual(["native:copilot/hve", "native:copilot/hve"])
+    expect(result.actions.map((action) => action.workflow?.ref)).toEqual(["native:copilot/hve", "native:copilot/hve"])
     for (const [citation, message] of [
       [{ ...engagementCitation, path: "not-shared.md" }, "not shared"],
       [{ ...engagementCitation, startLine: 1.5 }, "integers"],
@@ -206,7 +206,7 @@ describe("evidence-backed engagement assessment", () => {
     }
     for (const [action, message] of [
       [{ ...first, command: "untrusted command" }, "unsupported keys"],
-      [{ ...first, workflow: { profileRef: "native:copilot/hve", workflowId: "invented" } }, "unavailable"],
+      [{ ...first, workflow: { ref: "native:copilot/hve", harness: "copilot", profiles: ["hve"], workflowId: "invented" } }, "unavailable"],
     ] as const) {
       expect(() =>
         parseEngagementAssessment(
@@ -318,11 +318,11 @@ describe("reviewed assignment lifecycle", () => {
     expect(work.request.prompt.startsWith("Work with me as DT Coach.")).toBe(true)
     const reopened = new EngagementWorkStore(fixture.repository.root, fixture.catalog, fixture.runner)
     expect(await reopened.list()).toEqual([work])
-    const otherCatalog = { ...fixture.catalog, native: [] }
+    const otherCatalog = { ...fixture.catalog, entries: [] }
     expect(await new EngagementWorkStore(fixture.repository.root, otherCatalog, fixture.runner).list()).toEqual([work])
     await expect(
       engagementLaunchPlan(work, reopened, otherCatalog, engagementGuideRoot, fixture.runner),
-    ).rejects.toThrow("Unknown profile")
+    ).rejects.toThrow("Unknown composition reference")
     const runInteractive = vi.fn<() => Promise<void>>(async () => {
       expect((await reopened.read(work.request.id)).status).toBe("launching")
       await writeFile(path.join(root, "docs/engagement/workshop.md"), "Draft activities; customer review pending.\n")

@@ -58,7 +58,7 @@ for agent_config in /workspace/.codex/agents/*.toml; do
   install -m 0600 "$agent_config" "$CODEX_HOME/agents/$(basename "$agent_config")"
 done
 
-"${trellage_bun[@]}" /opt/codex-common/codex-agents.ts -- install "$CODEX_HOME/agents" /opt/codex-common/agents
+"${trellage_bun[@]}" /opt/codex-agents/codex-agents.ts -- install "$CODEX_HOME/agents" /opt/codex-agents/agents
 
 if ! git -C /workspace rev-parse --git-dir >/dev/null 2>&1; then
   git -C /workspace init -b main -q

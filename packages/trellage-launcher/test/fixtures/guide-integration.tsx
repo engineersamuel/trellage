@@ -6,7 +6,7 @@ import { render } from "ink"
 
 import { parseProfileGuide } from "@trellage/guide-core"
 import { defaultGuideModelRouting, guidePromptTarget } from "../../src/guide-api.ts"
-import { parseGuideCatalog } from "../../src/guide-catalog.ts"
+import type { CompositionCatalog } from "../../src/composition-catalog.ts"
 import { executeGuideUiResult } from "../../src/guide-interactive-execution.ts"
 import type { CommandRunner } from "../../src/guide-launch.ts"
 import { checkSelectedProfileReadiness } from "../../src/guide-preflight.ts"
@@ -75,37 +75,35 @@ const headless = {
   modelOverride: false,
   effortOverride: false,
   testedHarnessVersion: null,
-}
+} as const
 const guideRoot = path.join(root, "guides")
 const parsedGuides = new Map(
   fixtureProfiles.map((profile) => [
     profile.ref,
     parseProfileGuide(
-      `native/${profile.launcher}/${profile.name}.md`,
+      `native/${profile.harness}/${profile.name}.md`,
       guideSource(profile),
     ),
   ]),
 )
-const catalog = parseGuideCatalog(
-  JSON.stringify({
-    schemaVersion: 1,
-    native: fixtureProfiles
-      .filter((profile) => profile.surface === "native")
-      .map((profile) => ({
-        launcher: profile.launcher,
-        harness: profile.harness,
-        name: profile.name,
-        description: `${profile.name} integration fixture`,
-        commandPath: path.join(root, "bin", "trx"),
-        guide: parsedGuides.get(profile.ref)?.guide,
-        sandbox: false,
-        herdrCompatibility: { status: "supported" },
-        headless,
-      })),
-  }),
-)
+const catalog: CompositionCatalog = {
+  schemaVersion: 2 as const,
+  entries: fixtureProfiles.map((profile) => ({
+    ref: profile.ref,
+    harness: profile.harness,
+    profiles: [profile.name],
+    kind: "preset" as const,
+    canonicalHarness: true,
+    description: `${profile.name} integration fixture`,
+    commandPath: path.join(root, "bin", "trx"),
+    guide: parsedGuides.get(profile.ref)?.guide ?? null,
+    herdrCompatibility: { status: "supported" },
+    headless,
+    lifecycle: null,
+  })),
+}
 for (const profile of fixtureProfiles) {
-  const directory = path.join(guideRoot, "native", profile.launcher)
+  const directory = path.join(guideRoot, "native", profile.harness)
   await mkdir(directory, { recursive: true })
   await writeFile(path.join(directory, `${profile.name}.md`), guideSource(profile))
 }
@@ -133,7 +131,8 @@ const provider: GuideProvider = {
     const candidates = ids.map((id, index) => {
       const profile = fixtureProfile(id)
       return {
-        profileRef: profile.ref,
+        harness: profile.harness,
+        profiles: [profile.name],
         workflowId: profile.workflowId,
         confidence: 0.95 - index * 0.1,
         reason: `Use the ${profile.name} profile.`,
@@ -145,7 +144,7 @@ const provider: GuideProvider = {
       intent: input.intent,
       ...(input.goal === undefined ? {} : { goal: input.goal }),
       profileRefs: input.entries.map((entry) => entry.ref),
-      recommendations: candidates.map((candidate) => candidate.profileRef),
+      recommendations: candidates.map((candidate) => `native:${candidate.harness}/${candidate.profiles.join("+")}`),
     })
     return input.goal === undefined ? { candidates } : goalModelProvider("match", { candidates }).match(input)
   },
@@ -239,14 +238,14 @@ const instance = render(
   directOptimize ? <GuideReviewApp services={optimizeServices} /> : <GuideApp
     catalog={{
       ...catalog,
-      native: catalog.native.map((entry) => entry.launcher === "copilot"
+      entries: catalog.entries.map((entry) => entry.harness === "copilot"
         ? { ...entry, headless: { ...entry.headless, prompt: false, testedHarnessVersion: null } }
         : entry),
     }}
     resolveCatalog={async (signal) => {
       await Promise.resolve()
       signal?.throwIfAborted()
-      return { ...catalog, native: [...catalog.native] }
+      return { ...catalog, entries: [...catalog.entries] }
     }}
     guideRoot={guideRoot}
     provider={provider}

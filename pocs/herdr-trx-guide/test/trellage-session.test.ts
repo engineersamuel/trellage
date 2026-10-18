@@ -6,7 +6,7 @@ import {
   trellageSessionIdentity,
 } from "../lib/trellage-session.ts"
 
-test("parses Native and Sandbox pane metadata", () => {
+test("parses Native pane metadata", () => {
   assert.deepEqual(
     trellageSessionIdentity({
       agent: "codex",
@@ -25,29 +25,6 @@ test("parses Native and Sandbox pane metadata", () => {
       profile: "rpi",
       sessionId: "99999999-9999-4999-8999-999999999999",
       processGroup: 4242,
-    },
-  )
-
-  assert.deepEqual(
-    trellageSessionIdentity({
-      agent: "claude",
-      processInfo: { foreground_process_group_id: 4343 },
-      tokens: {
-        trellage_surface: "sandbox",
-        trellage_agent: "claude",
-        trellage_profile: "claude-research",
-        trellage_invocation_id: "a".repeat(32),
-        trellage_container_id: "b".repeat(64),
-        trellage_pgrp: "4343",
-      },
-    }),
-    {
-      surface: "sandbox",
-      agent: "claude",
-      profile: "claude-research",
-      invocationId: "a".repeat(32),
-      containerId: "b".repeat(64),
-      processGroup: 4343,
     },
   )
 })
@@ -76,15 +53,14 @@ test("rejects incomplete, mismatched, and malformed Trellage metadata", () => {
         agent: "claude",
         processInfo: { foreground_process_group_id: 4444 },
         tokens: {
-          trellage_surface: "sandbox",
+          trellage_surface: "unknown",
           trellage_agent: "claude",
           trellage_profile: "claude-research",
-          trellage_invocation_id: "../escape",
-          trellage_container_id: "b".repeat(64),
+          trellage_session_id: "session",
           trellage_pgrp: "4444",
         },
       }),
-    /missing or invalid/u,
+    /unsupported surface/u,
   )
   assert.throws(
     () =>
@@ -92,11 +68,10 @@ test("rejects incomplete, mismatched, and malformed Trellage metadata", () => {
         agent: "claude",
         processInfo: { foreground_process_group_id: 5555 },
         tokens: {
-          trellage_surface: "sandbox",
+          trellage_surface: "native",
           trellage_agent: "claude",
           trellage_profile: "claude-research",
-          trellage_invocation_id: "a".repeat(32),
-          trellage_container_id: "b".repeat(64),
+          trellage_session_id: "session",
           trellage_pgrp: "5554",
         },
       }),

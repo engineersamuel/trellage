@@ -74,7 +74,7 @@ const runClaudeGoalRuntime = (
   args: ReadonlyArray<string>,
   options: CommandRunOptions | undefined,
 ): CommandRunResult => {
-  deepStrictEqual(args, ["harness-version", "default"])
+  deepStrictEqual(args, ["harness-version", "claude", "default"])
   deepStrictEqual(options?.cwd, root)
   return success(JSON.stringify({
     schemaVersion: 1,
@@ -124,44 +124,38 @@ const runNative = (
   args: ReadonlyArray<string>,
   options: CommandRunOptions | undefined,
 ): CommandRunResult | Promise<CommandRunResult> => {
-  if (executable === path.join(root, "bin", "copilot") && args[0] === "hve" && args[1] === "--" && args[2] === "-p") {
-    return runResearch(root, args, options)
+  if (executable === path.join(root, "bin", "trx") && args[0] === "run" && args[1] === "copilot" && args[2] === "hve" && args[3] === "--") {
+    return runResearch(root, args.slice(2), options)
   }
-  if (executable === path.join(root, "bin", "claude") && args[0] === "harness-version") {
+  if (executable === path.join(root, "bin", "trx") && args[0] === "harness-version" && args[1] === "claude") {
     return runClaudeGoalRuntime(root, args, options)
   }
-  const native = profiles.find(
-    (profile) =>
-      profile.surface === "native" &&
-      executable === path.join(root, "bin", profile.launcher) &&
-      args[1] === profile.name,
-  )
-  assert(native?.surface === "native", `Unexpected native profile: ${args[1]}`)
+  const native = profiles.find((profile) =>
+    executable === path.join(root, "bin", "trx") && args[1] === profile.harness && args[2] === profile.name)
+  assert(native !== undefined, `Unexpected native composition: ${args.slice(1, 3).join("/")}`)
   if (native.interaction !== undefined) {
     assert([root, path.join(root, "worktrees", fixtureBranches.hve), path.join(root, "worktrees", "existing-canonical")]
       .includes(options?.cwd ?? ""), "Customer readiness must use a known selected destination")
   } else deepStrictEqual(options?.cwd, root)
-  if (native.launcher === "codex" && args[2] === "--goal-features") {
+  if (native.harness === "codex" && args[3] === "--goal-features") {
     return runCodexGoalProbe(root, args, options, "features")
   }
   if (args[0] === "workflow-check") {
     assert(native.interaction !== undefined)
-    deepStrictEqual(args, ["workflow-check", native.name, "--agent", native.agent,
+    deepStrictEqual(args, ["workflow-check", native.harness, native.name, "--agent", native.agent,
       ...native.interaction.requiredSkills.flatMap((skill) => ["--require-skill", skill])])
     return success(JSON.stringify({
-      schemaVersion: 1, launcher: "copilot", profile: "hve", mode: "interactive", agent: native.agent,
+      schemaVersion: 2, harness: "copilot", profiles: ["hve"], mode: "interactive", agent: native.agent,
       requiredSkills: native.interaction.requiredSkills, manifestSha256: "a".repeat(64), harnessVersion: "1.0.81",
     }))
   }
-  deepStrictEqual(args, ["inventory", native.name, "--json"])
-  return success(
-    JSON.stringify({
-      schemaVersion: 1,
-      launcher: native.launcher,
-      profile: native.name,
-      readiness: "healthy",
-    }),
-  )
+  deepStrictEqual(args, ["inventory", native.harness, native.name, "--json"])
+  return success(JSON.stringify({
+    schemaVersion: 2,
+    harness: native.harness,
+    profiles: [native.name],
+    readiness: "healthy",
+  }))
 }
 
 const runRepomix = async (
@@ -197,7 +191,7 @@ const runCodexGoalProbe = (
     deepStrictEqual(args, ["--version"])
     return success("codex-cli 0.153.4\n")
   }
-  deepStrictEqual(args, ["inventory", "planner", "--goal-features"])
+  deepStrictEqual(args, ["inventory", "codex", "planner", "--goal-features"])
   return success("goals\tstable\ttrue\n")
 }
 
@@ -329,9 +323,7 @@ const herdrRunner = (root: string, mode: FixtureMode) => {
 export const createFixtureRunner = (root: string, mode: FixtureMode, record: RecordFixtureEvent): CommandRunner => {
   const bin = (name: string): string => path.join(root, "bin", name)
   const fixtureProfiles = fixtureProfilesForMode(mode)
-  const nativeCommands = new Set(
-    fixtureProfiles.filter((profile) => profile.surface === "native").map((profile) => bin(profile.launcher)),
-  )
+  const nativeCommands = new Set([bin("trx")])
   const runHerdr = herdrRunner(root, mode)
 
   return {
@@ -344,11 +336,6 @@ export const createFixtureRunner = (root: string, mode: FixtureMode, record: Rec
           ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
         },
       })
-      if (executable === bin("trx")) {
-        const harness = args[1]!
-        const backendArgs = args[0] === "run" ? args.slice(2) : [args[0]!, ...args.slice(2)]
-        return runNative(root, fixtureProfiles, bin(harness), backendArgs, options)
-      }
       if (nativeCommands.has(executable)) return runNative(root, fixtureProfiles, executable, args, options)
       switch (executable) {
         case "codex":

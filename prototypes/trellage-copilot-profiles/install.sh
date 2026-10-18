@@ -18,9 +18,6 @@ installed_model_settings="$install_root/lib/copilot-model-settings.py"
 model_settings_source="$source_dir/../../scripts/copilot-model-settings.py"
 ownership_marker="$install_root/.managed-by-trellage-profiles"
 ownership_value='trellage-profiles-v1'
-command_dir="$runtime_parent/.native-commands"
-command_path="$command_dir/cpx"
-runtime_owned=false
 
 refuse() {
   printf 'cpx install: %s\n' "$1" >&2
@@ -62,7 +59,6 @@ require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime a
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
-require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 
 if [[ -e "$install_root" ]]; then
   [[ -d "$install_root" ]] || refuse "refusing unowned runtime root: $install_root"
@@ -89,17 +85,8 @@ if [[ -e "$install_root" ]]; then
   [[ ! -L "$installed_model_settings" \
     && ( ! -e "$installed_model_settings" || -f "$installed_model_settings" ) ]] \
     || refuse "refusing unsafe managed runtime path: $installed_model_settings"
-  runtime_owned=true
 fi
 
-if [[ -e "$command_path" || -L "$command_path" ]]; then
-  if [[ "$runtime_owned" != true || ! -L "$command_path" ]]; then
-    refuse "refusing to replace unrelated command: $command_path"
-  fi
-  if [[ "$(readlink "$command_path")" != "$installed_launcher" ]]; then
-    refuse "refusing to replace unrelated command: $command_path"
-  fi
-fi
 
 [[ -f "$session_bridge_source" && ! -L "$session_bridge_source" ]] \
   || refuse "missing session bridge: $session_bridge_source"
@@ -111,7 +98,6 @@ require_safe_existing_directory "$local_dir" "$canonical_home/.local" 'runtime a
 require_safe_existing_directory "$share_dir" "$canonical_home/.local/share" 'runtime ancestor'
 require_safe_existing_directory "$runtime_parent" "$canonical_home/.local/share/trellage" 'runtime parent'
 require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
-require_safe_existing_directory "$command_dir" "$canonical_home/.local/share/trellage/.native-commands" 'command directory'
 require_safe_existing_directory "$install_root/assets" \
   "$canonical_home/.local/share/trellage/cpx/assets" 'runtime assets'
 require_safe_existing_directory "$install_root/lib" \
@@ -124,7 +110,7 @@ for asset in rundown.instructions.md NOTICE.md; do
     || refuse "refusing unsafe managed runtime path: $installed_assets/$asset"
 done
 "$source_dir/../../scripts/install-floating-skills-runtime.sh"
-mkdir -p "$install_root/bin" "$install_root/lib" "$installed_assets" "$command_dir"
+mkdir -p "$install_root/bin" "$install_root/lib" "$installed_assets"
 require_safe_existing_directory "$install_root" "$canonical_home/.local/share/trellage/cpx" 'runtime root'
 require_safe_existing_directory "$install_root/bin" "$canonical_home/.local/share/trellage/cpx/bin" 'runtime bin'
 require_safe_existing_directory "$install_root/lib" "$canonical_home/.local/share/trellage/cpx/lib" 'runtime lib'
@@ -140,13 +126,7 @@ for asset in rundown.instructions.md NOTICE.md; do
   install -m 0644 "$source_dir/assets/rundown/$asset" "$installed_assets/$asset"
 done
 
-if [[ ! -L "$command_path" ]]; then
-  ln -s "$installed_launcher" "$command_path"
-fi
 
 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-install --no-env-file "--config=$source_dir/../../packages/trellage-runtime/bunfig.toml" \
   "$source_dir/../trellage-claude-common/native-skills.ts" --install "$install_root"
-printf 'Installed cpx at %s\n' "$command_path"
-
-# Retire only the old public symlink; retain the installed backend and runtime.
-bash "$source_dir/../../scripts/retire-native-command.sh" "$HOME" cpx "$installed_launcher" "$ownership_marker" "$ownership_value"
+printf 'Installed cpx at %s\n' "$installed_launcher"

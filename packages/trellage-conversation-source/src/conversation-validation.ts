@@ -42,14 +42,7 @@ const absolute = (value: unknown) => {
 }
 
 const surfaceIdentity = (binding: FocusedConversationBinding) => {
-  if (binding.surface === ConversationSurface.Sandbox) {
-    if (binding.profile === undefined || !/^[a-f0-9]{64}$/u.test(binding.containerId ?? "") ||
-      !/^[a-f0-9]{32}$/u.test(binding.invocationId ?? "") || binding.transcriptPath !== undefined) {
-      throw invalid()
-    }
-    return
-  }
-  if (binding.sessionId === undefined || binding.containerId !== undefined || binding.invocationId !== undefined ||
+  if (binding.sessionId === undefined ||
     (binding.surface === ConversationSurface.Native && binding.profile === undefined) ||
     (binding.surface === ConversationSurface.Host && binding.profile !== undefined)) {
     throw invalid()
@@ -60,7 +53,7 @@ export const parseConversationBinding = (value: unknown): FocusedConversationBin
   const source = record(value)
   keys(source, [
     "serverId", "surface", "agent", "sessionId", "workspaceId", "paneId", "cwd",
-    "tabId", "profile", "containerId", "invocationId", "transcriptPath",
+    "tabId", "profile", "transcriptPath",
   ])
   if (!Object.values(ConversationAgent).includes(source.agent as ConversationSource["agent"]) ||
     !Object.values(ConversationSurface).includes(source.surface as ConversationSource["surface"])) throw invalid()
@@ -75,8 +68,6 @@ export const parseConversationBinding = (value: unknown): FocusedConversationBin
       ["sessionId", optional(source.sessionId, (value) => id(value, 128))],
       ["tabId", optional(source.tabId)],
       ["profile", optional(source.profile, (value) => id(value, 80))],
-      ["containerId", optional(source.containerId)],
-      ["invocationId", optional(source.invocationId)],
       ["transcriptPath", optional(source.transcriptPath, absolute)],
     ].filter(([, value]) => value !== undefined)),
   }

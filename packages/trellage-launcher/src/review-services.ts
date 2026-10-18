@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from "node:util"
 import lockfile from "proper-lockfile"
 import { getProcessInfo, listAgents } from "@trellage/conversation-source/herdr"
 import { resolveGuideModelRouting, validateGuideIntent } from "./guide-api.ts"
-import { parseGuideCatalog, type CombinedGuideCatalog } from "./guide-catalog.ts"
+import type { CompositionCatalog } from "./composition-catalog.ts"
 import {
   buildHerdrGuideLaunch,
   CommandRunnerError,
@@ -99,19 +99,18 @@ const nativeLaunchers = new Set(["copilot", "codex", "claude"])
 const readyStatus = (value: unknown): boolean => value === "idle" || value === "done"
 const errorText = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
 
-export const reviewAgentProfiles = (catalog: CombinedGuideCatalog): ReadonlyArray<ReviewAgentProfile> =>
-  catalog.native
-    .filter((entry) => nativeLaunchers.has(entry.launcher))
+export const reviewAgentProfiles = (catalog: CompositionCatalog): ReadonlyArray<ReviewAgentProfile> =>
+  catalog.entries
+    .filter((entry) => nativeLaunchers.has(entry.harness))
     .map((entry) => {
       const profile = parseSelectedProfile({
         surface: "native",
-        launcher: entry.launcher,
+        harness: entry.harness,
         commandPath: entry.commandPath,
-        profile: entry.name,
+        profiles: entry.profiles,
         headlessPrompt: entry.headless.prompt,
       })
-      if (profile.surface !== "native") throw new Error("Optimize requires a Native profile in the current worktree.")
-      return { ref: `native:${entry.launcher}/${entry.name}`, label: `${entry.launcher} ${entry.name}`, profile }
+      return { ref: entry.ref, label: `${entry.harness} ${entry.profiles.join("+")}`, profile }
     })
 
 export const assertGuideReviewNoWriters = async (
@@ -234,7 +233,7 @@ interface OptimizeRuntime {
   readonly runner: CommandRunner
   readonly cwd: string
   readonly context: HerdrContext | null
-  readonly catalog: CombinedGuideCatalog
+  readonly catalog: CompositionCatalog
   readonly env?: NodeJS.ProcessEnv
   readonly dependencies?: GuideReviewDependencies
   readonly routing?: GuideModelRouting
@@ -318,7 +317,7 @@ const readyProfile = async (
   dependencies: GuideReviewDependencies,
   signal?: AbortSignal,
 ): Promise<void> => {
-  if (!nativeLaunchers.has(profile.launcher)) throw new Error("Choose a Native Copilot, Codex, or Claude profile.")
+  if (!nativeLaunchers.has(profile.harness)) throw new Error("Choose a Native Copilot, Codex, or Claude composition.")
   const readiness = await (dependencies.readiness ?? checkSelectedProfileReadiness)(runner, profile, cwd, signal)
   if (readiness.kind === ProfileReadinessKind.Blocked) throw new Error(`${readiness.summary}. ${readiness.diagnostic}`)
 }
@@ -336,11 +335,11 @@ const runFreshAgent = async (
   const dependencies = options.dependencies ?? {}
   const prompt = buildGuideReviewPrompt(request)
   const launch = buildHerdrGuideLaunch(profile, prompt)
-  if (request.automatic && (profile.launcher !== "copilot" || profile.profile !== "hve" || request.destination !== "tab"))
+  if (request.automatic && (profile.harness !== "copilot" || profile.profiles.length !== 1 || profile.profiles[0] !== "hve" || request.destination !== "tab"))
     throw new Error("Automatic approved implementation requires Copilot hve in a same-worktree Herdr tab.")
   const command = request.automatic ? {
     executable: launch.command.executable,
-    args: [profile.profile, "--plan", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", prompt],
+    args: ["run", profile.harness, ...profile.profiles, "--", "--plan", "--mode", "autopilot", "--allow-all", "--no-ask-user", "-i", prompt],
   } : launch.command
   if (launch.promptDelivery !== "command") throw new Error("This profile cannot start with an optimization request.")
   await readyProfile(options.runner, profile, request.target.cwd, dependencies, signal)
@@ -413,13 +412,7 @@ export const createGuideReviewServices = (initialOptions: OptimizeRuntime): Guid
     herdr: options.context !== null,
     get profiles() { return reviewAgentProfiles(options.catalog) },
     refreshProfiles: async (signal) => {
-      const env = options.env ?? process.env
-      const command = env.TRELLAGE_REVIEW_PROFILE_COMMAND
-      if (!command) return
-      const result = await options.runner.run(command, ["guide", "--review"], {
-        cwd: options.cwd, signal, env: { ...env, TRELLAGE_REVIEW_PROFILES_ONLY: "1" },
-      })
-      options = { ...options, catalog: parseGuideCatalog(result.stdout) }
+      signal.throwIfAborted()
     },
     reviewers: displayReviewers(assignments),
     coordinator,
@@ -478,7 +471,7 @@ export const createGuideReviewServices = (initialOptions: OptimizeRuntime): Guid
     },
     plan: async (review, destination, signal) => {
       const profile = reviewAgentProfiles(options.catalog).find((entry) =>
-        entry.profile.launcher === "copilot" && entry.profile.profile === "hve")?.profile
+        entry.profile.harness === "copilot" && entry.profile.profiles.length === 1 && entry.profile.profiles[0] === "hve")?.profile
       if (!profile) throw new Error("Planning unavailable: install Native Copilot hve.")
       const authority = await reviewAuthority(review.request.target.gitDirectory, review.id)
       const result: ReviewPlanTerminalResult = { action: "review-plan-terminal", id: review.id,

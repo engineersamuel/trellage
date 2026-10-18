@@ -6,6 +6,7 @@ import type {
 } from "../src/admin-harness-version-cache.ts"
 import {
   harnessVersionRefFor,
+  harnessVersionOperations,
   harnessVersionResultForOperation,
   runBatchedHarnessVersionChecks,
 } from "../src/admin-harness-version-scheduler.ts"
@@ -57,6 +58,8 @@ const nativeEntry = (overrides: Partial<AdminProfileEntry> = {}): AdminProfileEn
   harnessVersionSupported: true,
   updateCheckStale: false,
   ...overrides,
+  profiles: overrides.profiles ?? [overrides.name ?? "local"],
+  lifecycle: Object.hasOwn(overrides, "lifecycle") ? overrides.lifecycle! : { runtime: "omp", profile: overrides.name ?? "local" },
 })
 
 
@@ -79,6 +82,12 @@ const flush = async (): Promise<void> => {
 }
 
 describe("runBatchedHarnessVersionChecks", () => {
+  it("uses a lifecycle-backed row as the single shared-runtime probe", () => {
+    const config = nativeEntry({ ref: "native:omp/awesome", name: "awesome", profiles: ["awesome"], lifecycle: null })
+    const preset = nativeEntry({ ref: "native:omp/default", name: "default", profiles: ["default"] })
+    expect(harnessVersionOperations([config, preset]).map((operation) => operation.entry.ref)).toEqual([preset.ref])
+  })
+
   it("preserves successful installed and latest dimensions across a bounded retry", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })

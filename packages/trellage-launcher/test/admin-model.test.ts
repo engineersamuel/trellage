@@ -4,7 +4,7 @@ import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import type { ProfileGuideV1 } from "@trellage/guide-core"
-import { parseGuideCatalog } from "../src/guide-catalog.ts"
+import type { CompositionCatalog, HeadlessCapabilitiesV1 } from "../src/composition-catalog.ts"
 import { ProfileReadinessKind } from "../src/guide-preflight.ts"
 import {
   aggregateAdminProfiles,
@@ -30,7 +30,7 @@ const guide: ProfileGuideV1 = {
   ],
 }
 
-const headless = {
+const headless: HeadlessCapabilitiesV1 = {
   schemaVersion: 1,
   prompt: true,
   outputFormats: ["json"],
@@ -48,57 +48,31 @@ const headless = {
   testedHarnessVersion: null,
 }
 
-const fixtureCatalog = () =>
-  parseGuideCatalog(
-    JSON.stringify({
-      schemaVersion: 1,
-      native: [
-        {
-          launcher: "copilot",
-          harness: "copilot",
-          name: "hve",
-          description: "Copilot native launcher.",
-          headless,
-          sandbox: false,
-          herdrCompatibility: { status: "supported" },
-          guide,
-          commandPath: "/opt/trellage/copilot/bin/trx",
-        },
-        {
-          launcher: "codex",
-          harness: "codex",
-          name: "pstack",
-          description: "Codex native launcher.",
-          headless,
-          sandbox: false,
-          herdrCompatibility: { status: "supported" },
-          guide,
-          commandPath: "/opt/trellage/codex/bin/trx",
-        },
-      ],
-    }),
-  )
+const fixtureCatalog = (): CompositionCatalog => ({
+  schemaVersion: 2,
+  entries: [
+    {
+      ref: "native:copilot/hve", harness: "copilot", profiles: ["hve"], kind: "preset", canonicalHarness: true,
+      description: "Copilot native launcher.", headless, herdrCompatibility: { status: "supported" }, guide,
+      commandPath: "/opt/trellage/copilot/bin/trx", lifecycle: { runtime: "cpx", profile: "hve" },
+    },
+    {
+      ref: "native:codex/pstack", harness: "codex", profiles: ["pstack"], kind: "preset", canonicalHarness: true,
+      description: "Codex native launcher.", headless, herdrCompatibility: { status: "supported" }, guide,
+      commandPath: "/opt/trellage/codex/bin/trx", lifecycle: null,
+    },
+  ],
+})
 
 describe("nativeLauncherCapabilities", () => {
-  it("marks lifecycle-managed native launchers, including cdx, as supporting doctor/inventory", () => {
-    for (const launcher of ["agency", "copilot", "codex", "claude", "fx", "jcode", "omp", "pi", "prime"]) {
-      expect(nativeLauncherCapabilities(launcher)).toMatchObject({ doctorSupported: true, inventorySupported: true })
+  it("exposes inventory for every canonical harness and lifecycle actions only for mapped rows", () => {
+    for (const harness of ["agency", "copilot", "codex", "claude", "fx", "grok", "headlong", "jcode", "omp", "pi", "prime", "uji"]) {
+      expect(nativeLauncherCapabilities(harness).inventorySupported).toBe(true)
     }
-    expect(nativeLauncherCapabilities("headlong")).toMatchObject({ doctorSupported: false, inventorySupported: false })
-  })
-
-  it("marks lifecycle-managed native launchers except agx and cldx as supporting update --check", () => {
-    for (const launcher of ["copilot", "codex", "fx", "jcode", "omp", "pi", "prime"]) {
-      expect(nativeLauncherCapabilities(launcher).updateCheckSupported).toBe(true)
-    }
-    expect(nativeLauncherCapabilities("agency").updateCheckSupported).toBe(false)
-    expect(nativeLauncherCapabilities("claude").updateCheckSupported).toBe(false)
-    expect(nativeLauncherCapabilities("headlong").updateCheckSupported).toBe(false)
-  })
-
-  it("supports Agency harness versions but not Headlong lifecycle checks", () => {
-    expect(nativeLauncherCapabilities("agency").harnessVersionSupported).toBe(true)
-    expect(nativeLauncherCapabilities("headlong").harnessVersionSupported).toBe(false)
+    expect(nativeLauncherCapabilities("copilot", { runtime: "cpx", profile: "hve" }).doctorSupported).toBe(true)
+    expect(nativeLauncherCapabilities("grok", null).doctorSupported).toBe(false)
+    expect(nativeLauncherCapabilities("uji", null).harnessVersionSupported).toBe(true)
+    expect(nativeLauncherCapabilities("headlong", null).harnessVersionSupported).toBe(false)
   })
 
   it("fails closed for an unrecognized future native launcher", () => {
@@ -126,10 +100,10 @@ describe("aggregateAdminProfiles", () => {
     expect(entries.find((entry) => entry.ref === "native:codex/pstack")).toMatchObject({ health: "unknown", install: "unknown" })
   })
 
-  it("marks cdx as unknown until checked, the same as any other native launcher (it supports doctor/inventory)", () => {
+  it("marks externally managed Codex unknown until inventory is requested", () => {
     const entries = aggregateAdminProfiles(fixtureCatalog())
-    const cdx = entries.find((entry) => entry.ref === "native:codex/pstack")
-    expect(cdx).toMatchObject({ health: "unknown", install: "unknown", doctorSupported: true, stale: true })
+    const codex = entries.find((entry) => entry.ref === "native:codex/pstack")
+    expect(codex).toMatchObject({ health: "unknown", install: "unknown", doctorSupported: false, stale: true })
   })
 
   it("marks profiles with no readiness input yet as unknown and stale", () => {
@@ -189,25 +163,28 @@ describe("loadAdminProfileGuideBody", () => {
       "---\nschemaVersion: 1\ncapabilities: [code-review]\nbestFor: [A, B]\navoidFor: [C, D]\nprerequisites: []\nworkflows:\n  - id: review\n    description: Review a diff.\n    examples: [one, two]\n    promptTemplate: 'Review: {{intent}}'\n---\nHello from the hve guide.\n",
       "utf8",
     )
-    const result = await loadAdminProfileGuideBody(root, { surface: "native", launcher: "copilot", profile: "hve" })
+    const result = await loadAdminProfileGuideBody(root, { surface: "native", harness: "copilot", profile: "hve" })
     expect(result).toMatchObject({ available: true, body: "Hello from the hve guide." })
   })
 
   it("returns an explicit unavailable result, not a thrown exception, for a missing guide file", async () => {
-    const result = await loadAdminProfileGuideBody(root, { surface: "native", launcher: "copilot", profile: "missing" })
+    const result = await loadAdminProfileGuideBody(root, { surface: "native", harness: "copilot", profile: "missing" })
     expect(result.available).toBe(false)
     if (!result.available) expect(result.reason).toContain("guide unavailable")
   })
 })
 
 describe("toProfileGuideIdentity", () => {
-  it("builds a native identity, defaulting launcher to empty string when missing", () => {
+  it("builds a native harness identity", () => {
     expect(
       toProfileGuideIdentity({
         ref: "native:copilot/hve",
         surface: "native",
         launcher: "copilot",
         name: "hve",
+        harness: "copilot",
+        profiles: ["hve"],
+        lifecycle: { runtime: "cpx", profile: "hve" },
         description: "d",
         commandPath: "/bin/trx",
         doctorSupported: true,
@@ -219,7 +196,7 @@ describe("toProfileGuideIdentity", () => {
         harnessVersionSupported: true,
         updateCheckStale: false,
       }),
-    ).toEqual({ surface: "native", launcher: "copilot", profile: "hve" })
+    ).toEqual({ surface: "native", harness: "copilot", profile: "hve" })
   })
 
 })

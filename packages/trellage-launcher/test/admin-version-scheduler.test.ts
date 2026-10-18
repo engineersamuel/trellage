@@ -53,6 +53,8 @@ const entry = (overrides: Partial<AdminProfileEntry>): AdminProfileEntry => ({
   updateCheckStale: false,
   version: "0.8.1",
   ...overrides,
+  profiles: overrides.profiles ?? [overrides.name ?? "default"],
+  lifecycle: overrides.lifecycle ?? { runtime: "prx", profile: overrides.name ?? "default" },
 })
 
 const current = (): CommandRunResult => ({ stdout: "prx update: 0.8.1 is current", stderr: "", exitCode: 0 })
@@ -207,7 +209,7 @@ describe("versionCheckResultForEntry", () => {
     expect(versionCheckResultForEntry(target, manager)).toMatchObject({ malformed: true })
   })
 
-  it("still parses a non-zero-exit result as a normal update-available outcome (copilot/cdx exit non-zero to signal this)", async () => {
+  it("still parses a non-zero-exit result as a normal update-available outcome", async () => {
     const runner = new DeferredRunner()
     const manager = new AdminRunManager({ runner })
     const target = entry({})

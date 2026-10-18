@@ -13,12 +13,10 @@ installed_launcher="$install_root/bin/trx"
 installed_dependency_bootstrap="$install_root/lib/bootstrap-development-dependencies.sh"
 installed_share="$install_root/share"
 installed_guides="$installed_share/profile-guides"
-legacy_picker="$install_root/lib/terminal-picker.mjs"
+installed_herdr_compatibility="$installed_share/herdr-compatibility.json"
 ownership_marker="$install_root/.managed-by-trellage-router"
 installed_source="$install_root/source"
 ownership_value='trellage-router-v3'
-previous_ownership_value='trellage-router-v2'
-legacy_ownership_value='trellage-router-v1'
 
 refuse() {
   printf 'trx install: %s\n' "$1" >&2
@@ -65,9 +63,7 @@ require_owned_runtime_contents() {
 
   for path in \
     "$installed_launcher" \
-    "$install_root/lib/launcher.mjs" \
-    "$installed_dependency_bootstrap" \
-    "$legacy_picker"; do
+    "$installed_dependency_bootstrap"; do
     [[ ! -e "$path" && ! -L "$path" ]] || {
       [[ -f "$path" && ! -L "$path" ]] \
         || refuse "refusing unsafe managed runtime path: $path"
@@ -77,9 +73,8 @@ require_owned_runtime_contents() {
   while IFS= read -r path; do
     case "$path" in
       "$ownership_marker"|"$install_root/bin"|"$installed_launcher"|\
-      "$install_root/lib"|"$install_root/lib/launcher.mjs"|\
-      "$installed_dependency_bootstrap"|"$legacy_picker"|\
-      "$installed_share"|"$installed_guides") ;;
+      "$install_root/lib"|"$installed_dependency_bootstrap"|\
+      "$installed_share"|"$installed_guides"|"$installed_herdr_compatibility") ;;
       "$installed_source"|"$installed_source"/*)
         [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
           || refuse "refusing unrelated runtime path: $path"
@@ -119,6 +114,7 @@ trellage_bun_runtime "$repo_root"
 source_installer="$repo_root/scripts/install-source-runtime.sh"
 dependency_bootstrap="$source_dir/../../scripts/bootstrap-development-dependencies.sh"
 source_guides="$source_dir/../../profile-guides"
+source_herdr_compatibility="$source_dir/../../docs/herdr-compatibility.json"
 floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-runtime.sh"
 [[ -f "$source_installer" && -x "$source_installer" && ! -L "$source_installer" ]] \
   || refuse "source runtime installer is missing or unsafe: $source_installer"
@@ -126,6 +122,8 @@ floating_runtime_installer="$source_dir/../../scripts/install-floating-skills-ru
   || refuse "dependency bootstrap is missing or unsafe: $dependency_bootstrap"
 [[ -d "$source_guides" && ! -L "$source_guides" ]] \
   || refuse "profile guide registry is missing or unsafe: $source_guides"
+[[ -f "$source_herdr_compatibility" && ! -L "$source_herdr_compatibility" ]] \
+  || refuse "Herdr compatibility ledger is missing or unsafe: $source_herdr_compatibility"
 [[ -f "$floating_runtime_installer" && -x "$floating_runtime_installer" \
   && ! -L "$floating_runtime_installer" ]] \
   || refuse "floating-skills runtime installer is missing or unsafe: $floating_runtime_installer"
@@ -272,11 +270,8 @@ require_safe_directory "$command_dir" "$canonical_home/.local/bin" 'command dire
 if [[ -e "$install_root" ]]; then
   [[ -f "$ownership_marker" && ! -L "$ownership_marker" ]] \
     || refuse "refusing unowned runtime root: $install_root"
-  if [[ "$(<"$ownership_marker")" != "$ownership_value" ]] \
-    && [[ "$(<"$ownership_marker")" != "$previous_ownership_value" ]] \
-    && [[ "$(<"$ownership_marker")" != "$legacy_ownership_value" ]]; then
-    refuse "refusing unowned runtime root: $install_root"
-  fi
+  [[ "$(<"$ownership_marker")" == "$ownership_value" ]] \
+    || refuse "refusing unowned runtime root: $install_root"
   require_owned_runtime_contents
 fi
 
@@ -311,6 +306,8 @@ while IFS= read -r guide_path; do
   install -m 0644 "$guide_path" \
     "$staging_root/new-runtime/share/profile-guides/$relative"
 done < <(find "$source_guides" -type f -name '*.md' -print)
+install -m 0644 "$source_herdr_compatibility" \
+  "$staging_root/new-runtime/share/herdr-compatibility.json"
 "${trellage_bun[@]}" "$repo_root/packages/trellage-runtime/src/workspace-cli.ts" \
   validate-owned "$staging_root/new-runtime/source"
 [[ -z "$(find "$staging_root/new-runtime" -path "$staging_root/new-runtime/source" -prune -o -type l -print)" ]] \

@@ -19,8 +19,8 @@ Keep corrections, constraints, contradictions, and unresolved questions.
 
 Progress is reported, not verified. A claimed test result, review, completed
 change, or deployment is only a report in this conversation. Do not claim you
-ran or checked it. Profile readiness is not checked. A profile's sandbox flag
-or an action's access label is not proof that access controls are enforced.
+ran or checked it. Profile readiness is not checked. A profile's declared
+access model or an action's access label is not proof that controls are enforced.
 
 ## Outcomes
 

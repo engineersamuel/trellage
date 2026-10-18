@@ -291,7 +291,6 @@ describe("destinationSummaryLines", () => {
     const [runsOn, runsIn] = destinationSummaryLines(previewDestination)
     expect(runsOn).toContain("claude · claude/default")
     expect(runsOn).toContain("claude-opus-5")
-    expect(runsOn).toContain("sandbox off")
     expect(runsIn).toContain("~/src/trellage")
     expect(runsIn).toContain("session profile-match")
   })

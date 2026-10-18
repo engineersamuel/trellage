@@ -64,7 +64,6 @@ runtime_root="$(CDPATH= cd -P -- "$script_dir/.." && pwd)" \
   || die 'could not resolve runtime root'
 readonly catalog="$runtime_root/catalog.json"
 readonly receipt_file="$runtime_root/installed-version"
-readonly legacy_version_file="$runtime_root/version"
 readonly profile_root="$HOME/.local/share/trellage/profiles/jcode/default"
 readonly profile_home="$profile_root/home"
 readonly profile_marker="$profile_root/.managed-by-trellage-jcode-profiles"
@@ -192,9 +191,6 @@ list_profiles_json() {
       schemaVersion: 1,
       launcher: "jcx",
       harness: "jcode",
-      # jcode has no known native OS-level sandbox; runs directly on the
-      # host. See docs/native-sandbox-research.md.
-      sandbox: false,
       profiles: [
         .profiles
         | to_entries[]
@@ -484,14 +480,6 @@ resolve_latest_version() {
 read_installed_version() {
   local version
 
-  if [[ ! -e "$receipt_file" && ! -L "$receipt_file" \
-    && ( -e "$legacy_version_file" || -L "$legacy_version_file" ) ]]; then
-    [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]] \
-      || die "unsafe legacy installed version receipt: $legacy_version_file"
-    version="$(<"$legacy_version_file")"
-    require_exact_version "$version"
-    publish_installed_version "$version"
-  fi
   [[ -f "$receipt_file" && ! -L "$receipt_file" ]] \
     || die 'jcode installed version receipt is missing; run jcx setup'
   version="$(<"$receipt_file")"
@@ -539,7 +527,6 @@ publish_installed_version() {
   printf '%s\n' "$version" >"$staged"
   chmod 0600 "$staged"
   mv -f "$staged" "$receipt_file"
-  rm -f -- "$legacy_version_file"
 }
 
 jcode_version_if_available() {
@@ -547,8 +534,6 @@ jcode_version_if_available() {
 
   if [[ -f "$receipt_file" && ! -L "$receipt_file" ]]; then
     version="$(<"$receipt_file")"
-  elif [[ -f "$legacy_version_file" && ! -L "$legacy_version_file" ]]; then
-    version="$(<"$legacy_version_file")"
   else
     return 0
   fi
@@ -625,8 +610,7 @@ setup_profile() {
   local version binary
 
   require_command mise
-  if [[ -e "$receipt_file" || -L "$receipt_file" \
-    || -e "$legacy_version_file" || -L "$legacy_version_file" ]]; then
+  if [[ -e "$receipt_file" || -L "$receipt_file" ]]; then
     version="$(read_installed_version)"
   else
     version="$(resolve_latest_version)"

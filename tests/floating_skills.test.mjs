@@ -571,37 +571,6 @@ test("read-only image snapshots can be published and replaced by their owner", a
   }
 })
 
-test("legacy Pi ownership marker migrates show-me without weakening collision checks", async () => {
-  const fixture = await createFixture()
-  await rm(path.join(fixture.repository, ".omp", "skills", "fixture"), { recursive: true })
-  const showMe = path.join(fixture.repository, ".omp", "skills", "show-me")
-  await mkdir(showMe)
-  await writeFile(path.join(showMe, "SKILL.md"), "---\nname: show-me\n---\n\ncurrent\n")
-  fixture.catalog.sources.fixture.select = ["show-me"]
-  await commit(fixture.repository, "replace fixture with show-me")
-  await updateNative({
-    catalog: fixture.catalog,
-    bundleIds: ["test"],
-    cache: fixture.cache,
-  })
-
-  const targetShowMe = path.join(fixture.target, "show-me")
-  await mkdir(targetShowMe, { recursive: true })
-  await writeFile(path.join(targetShowMe, "SKILL.md"), "legacy\n")
-  await writeFile(path.join(targetShowMe, ".managed-by-trellage-picx-profiles"), "trellage-picx-profile-v2\n")
-  await writeFile(path.join(fixture.target, ".trellage-engineersamuel-skills"), `${"a".repeat(40)}\n`)
-  await syncSnapshot(fixture.cache, fixture.target)
-  assert.match(await readFile(path.join(targetShowMe, "SKILL.md"), "utf8"), /current/)
-  assert.equal(
-    await lstat(path.join(targetShowMe, ".managed-by-trellage-picx-profiles")).catch(() => undefined),
-    undefined,
-  )
-
-  await rm(fixture.target, { recursive: true })
-  await mkdir(targetShowMe, { recursive: true })
-  await writeFile(path.join(targetShowMe, "SKILL.md"), "unmanaged\n")
-  await assert.rejects(syncSnapshot(fixture.cache, fixture.target), /refusing to replace unmanaged skill/)
-})
 
 test("publication rejects unmanaged collisions and source symlinks", async () => {
   const fixture = await createFixture()

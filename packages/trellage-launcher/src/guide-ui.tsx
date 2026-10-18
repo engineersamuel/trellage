@@ -12,10 +12,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { Box, Text, useApp, useInput, usePaste, useWindowSize, type Key } from "ink"
 
-import {
-  profileGuideIdentityKey,
-  type ProfileGuideV1,
-  type ProfileGuideWorkflow,
+import type {
+  ProfileGuideV1,
+  ProfileGuideWorkflow,
 } from "@trellage/guide-core"
 import {
   basketBlockPreview,
@@ -73,7 +72,8 @@ import {
 } from "./guide-goal-execution.ts"
 import { runGuideGoalGeneration, runGuideGoalRefinement } from "./guide-goal-generation.ts"
 import type { GuideGoalReadinessServices } from "./guide-goal-readiness.ts"
-import { compactProfileGuide, type CombinedGuideCatalog } from "./guide-catalog.ts"
+import { compactProfileGuide } from "./guide-catalog.ts"
+import { formatCompositionRef, type CompositionCatalog, type CompositionCatalogEntry } from "./composition-catalog.ts"
 import {
   assertGuidePromptDeliveryContext,
   completeSinglePromptArtifact,
@@ -2072,7 +2072,7 @@ const guideUiPrompt = (state: GuideUiState): PreparedGuidePrompt | undefined => 
   const recommendation = state.selectedRecommendation
   if (state.guideDocument === undefined || recommendation === undefined || state.intent === undefined) return undefined
   return prepareGuidePrompt(
-    state.guideDocument.guide, recommendation.workflowId, recommendation.profileRef, guideUiTaskContext(state),
+    state.guideDocument.guide, recommendation.workflowId, recommendation.ref, guideUiTaskContext(state),
   )
 }
 
@@ -2816,31 +2816,28 @@ export const guideUiReducer = (state: GuideUiState, action: GuideUiAction): Guid
 }
 
 // ---------------------------------------------------------------------------
-// Deterministic literal-match enrichment. `literalGuideMatch` (guide-api.ts)
-// returns bare candidates (profileRef/workflowId/confidence/reason/tradeoff);
-// this mirrors guide-api.ts's private `enrichRecommendation` using only
-// exported catalog data, since the model-match path already gets fully
-// enriched `GuideRecommendation`s from `runGuideMatch`.
+// Deterministic literal-match enrichment mirrors guide-api.ts using only exported catalog data;
+// model matches already return fully enriched recommendations.
 // ---------------------------------------------------------------------------
 
+const isGuidedEntry = (entry: CompositionCatalogEntry): entry is CompositionCatalogEntry & { readonly guide: ProfileGuideV1 } =>
+  entry.guide !== null
+
 const findCombinedCatalogEntry = (
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   ref: string,
-): { readonly entry: CombinedGuideCatalog["native"][number] } | undefined => {
-  const entry = catalog.native.find(
-    (candidate) =>
-      profileGuideIdentityKey({ surface: "native", launcher: candidate.launcher, profile: candidate.name }) === ref,
-  )
+): { readonly entry: CompositionCatalogEntry & { readonly guide: ProfileGuideV1 } } | undefined => {
+  const entry = catalog.entries.filter(isGuidedEntry).find((candidate) => candidate.ref === ref)
   return entry === undefined ? undefined : { entry }
 }
 
 const goalRecommendationReason = (
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   goal: PreparedGuideGoal | undefined,
   recommendation: GuideRecommendation,
 ): string | undefined => {
   if (goal === undefined) return undefined
-  const found = findCombinedCatalogEntry(catalog, recommendation.profileRef)
+  const found = findCombinedCatalogEntry(catalog, recommendation.ref)
   if (found === undefined) return "The selected profile is no longer available."
   try {
     resolveGuideGoalExecution(goal, found.entry.guide, recommendation.workflowId)
@@ -2853,9 +2850,10 @@ const goalRecommendationReason = (
 
 /** Enriches a deterministic literal-match candidate into the same `GuideRecommendation` shape the model-match path produces. */
 export const enrichLiteralCandidate = (
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   candidate: {
-    readonly profileRef: string
+    readonly harness: string
+    readonly profiles: ReadonlyArray<string>
     readonly workflowId: string
     readonly confidence: number
     readonly reason: string
@@ -2863,24 +2861,23 @@ export const enrichLiteralCandidate = (
     readonly goalExecution?: NonNullable<GuideRecommendation["goalExecution"]>
   },
 ): GuideRecommendation => {
-  const found = findCombinedCatalogEntry(catalog, candidate.profileRef)
-  if (found === undefined) throw new Error(`Literal match references an unknown profile: ${candidate.profileRef}`)
+  const ref = formatCompositionRef(candidate.harness, candidate.profiles)
+  const found = findCombinedCatalogEntry(catalog, ref)
+  if (found === undefined) throw new Error(`Literal match references an unknown composition: ${ref}`)
   const { entry } = found
   const workflow = compactProfileGuide(entry.guide).workflows.find(({ id }) => id === candidate.workflowId)
   if (workflow === undefined) {
-    throw new Error(`Literal match references an unknown workflow of ${candidate.profileRef}: ${candidate.workflowId}`)
+    throw new Error(`Literal match references an unknown workflow of ${ref}: ${candidate.workflowId}`)
   }
   return {
-    profileRef: candidate.profileRef,
+    ref,
+    harness: entry.harness,
+    profiles: entry.profiles,
     workflowId: candidate.workflowId,
     confidence: candidate.confidence,
     reason: candidate.reason,
     tradeoff: candidate.tradeoff,
-    surface: "native",
-    name: entry.name,
-    launcher: entry.launcher,
     description: entry.description,
-    sandbox: entry.sandbox,
     workflow,
     prerequisites: entry.guide.prerequisites,
     headless: entry.headless,
@@ -2915,7 +2912,7 @@ export interface GuidePinnedLens {
 
 const pinnedLensDefinitions: ReadonlyArray<
   Omit<GuidePinnedLens, "recommendation"> & {
-    readonly profileRef: string
+    readonly ref: string
     readonly workflowId: string
     readonly reason: string
     readonly tradeoff: string
@@ -2928,7 +2925,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🧠",
     label: "Council",
     description: "Pressure-test the idea and its implementation.",
-    profileRef: "native:claude/council",
+    ref: "native:claude/council",
     workflowId: "run-council-deliberation",
     reason: "Use a structured council to challenge the idea, its assumptions, and its implementation.",
     tradeoff: "Adds deliberation time before implementation begins.",
@@ -2940,7 +2937,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🎩",
     label: "Six Thinking Hats",
     description: "Facts, gut, value, risks, and tried options, then one plan.",
-    profileRef: "native:claude/six-hats",
+    ref: "native:claude/six-hats",
     workflowId: "run-six-hats-deliberation",
     reason: "Separate facts, feelings, benefits, risks, and alternatives before committing to one plan.",
     tradeoff: "Runs six subagents, including a scratch-copy prototype, before implementation begins.",
@@ -2952,7 +2949,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🔎",
     label: "Research",
     description: "Gather evidence before implementation.",
-    profileRef: "native:claude/research",
+    ref: "native:claude/research",
     workflowId: "vault-backed-research",
     reason: "Collect source-backed evidence, prior art, risks, and implementation options before acting.",
     tradeoff: "Adds research time before implementation begins.",
@@ -2964,7 +2961,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🔄",
     label: "HVE RPI",
     description: "Run the dedicated HVE Core RPI agent.",
-    profileRef: "native:copilot/hve",
+    ref: "native:copilot/hve",
     workflowId: "rpi-agent-cycle",
     agent: "hve-core:rpi-agent",
     reason:
@@ -2978,7 +2975,7 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "💬",
     label: "Discover with the customer",
     description: "Clarify needs and evidence with DT Coach.",
-    profileRef: "native:copilot/hve",
+    ref: "native:copilot/hve",
     workflowId: "customer-discovery",
     reason: "Work with the customer on the problem and resume the method supported by the existing evidence.",
     tradeoff: "Needs your answers and customer decisions; not an unattended engineering run.",
@@ -2990,23 +2987,24 @@ const pinnedLensDefinitions: ReadonlyArray<
     emoji: "🧪",
     label: "Test an assumption",
     description: "Plan a bounded experiment before investment.",
-    profileRef: "native:copilot/hve",
+    ref: "native:copilot/hve",
     workflowId: "test-assumption",
     reason: "Define a falsifiable hypothesis and measurement criteria before approving an experiment.",
     tradeoff: "Needs human approval before execution; a working demo does not establish the hypothesis.",
   },
 ]
 
-export const pinnedGuideLenses = (catalog: CombinedGuideCatalog): ReadonlyArray<GuidePinnedLens> =>
+export const pinnedGuideLenses = (catalog: CompositionCatalog): ReadonlyArray<GuidePinnedLens> =>
   pinnedLensDefinitions.flatMap((definition) => {
-    const found = findCombinedCatalogEntry(catalog, definition.profileRef)
+    const found = findCombinedCatalogEntry(catalog, definition.ref)
     if (!found?.entry.guide.workflows.some(({ id }) => id === definition.workflowId)) return []
-    const { profileRef, workflowId, reason, tradeoff, ...lens } = definition
+    const { ref: _ref, workflowId, reason, tradeoff, ...lens } = definition
     return [
       {
         ...lens,
         recommendation: enrichLiteralCandidate(catalog, {
-          profileRef,
+          harness: found.entry.harness,
+          profiles: found.entry.profiles,
           workflowId,
           confidence: 1,
           reason,
@@ -3016,22 +3014,19 @@ export const pinnedGuideLenses = (catalog: CombinedGuideCatalog): ReadonlyArray<
     ]
   })
 
-export const selectedProfileForPinnedLens = (catalog: CombinedGuideCatalog, lens: GuidePinnedLens): SelectedProfile => {
+export const selectedProfileForPinnedLens = (catalog: CompositionCatalog, lens: GuidePinnedLens): SelectedProfile => {
   const selectedProfile = selectedProfileFromCatalogRef(
     catalog,
-    lens.recommendation.profileRef,
+    lens.recommendation.ref,
     lens.recommendation.workflowId,
   )
   if (lens.agent === undefined) return selectedProfile
-  if (selectedProfile.surface !== "native") {
-    throw new Error(`Pinned lens agent requires a native profile: ${lens.recommendation.profileRef}`)
-  }
   return parseSelectedProfile({ ...selectedProfile, agent: lens.agent })
 }
 
 /** Computes the three deterministic, model-free literal-match recommendations, fully enriched for display. */
 export const literalGuideRecommendations = (
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   intent: string,
   goal?: PreparedGuideGoal,
 ): ReadonlyArray<GuideRecommendation> =>
@@ -3076,7 +3071,7 @@ export interface GuideGenerationStepResult {
 
 export const runGuideMatchingStep = async (
   provider: GuideProvider,
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   request: GuideMatchRequest,
   onProgress?: (phase: GuideMatchPhase) => void,
   cache?: GuideArtifactCache,
@@ -3094,7 +3089,7 @@ export const runGuideMatchingStep = async (
  * Never re-runs matching and never recomputes the workflow.
  */
 export const runGuideGenerationStep = async (
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   guideRoot: string,
   provider: GuideProvider,
   intent: string,
@@ -3114,9 +3109,9 @@ export const runGuideGenerationStep = async (
 ): Promise<GuideGenerationStepResult> => {
   const goal = "fingerprint" in contextOrGoal ? contextOrGoal : undefined
   const context = "fingerprint" in contextOrGoal ? {} : contextOrGoal
-  const guideDocument = await loadSelectedGuide(catalog, guideRoot, recommendation.profileRef)
+  const guideDocument = await loadSelectedGuide(catalog, guideRoot, recommendation.ref)
   onGuideLoaded?.(guideDocument)
-  const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.profileRef, context)
+  const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.ref, context)
   const subject = stripCustomerContext(intent, prepared.context.customerContext)
   assertGuidePromptDeliveryContext(prepared.context)
   const workflow = prepared.workflow
@@ -3125,11 +3120,11 @@ export const runGuideGenerationStep = async (
       workflow, renderWorkflowBodyCandidate(workflow, guideModelBodyCandidate(workflow, candidate, prepared.context)), prepared.context,
     )
   const fixedFrame = workflowOptimizeFixedFrame(workflow)
-  const targetTool = guideTargetTool(catalog, recommendation.profileRef)
+  const targetTool = guideTargetTool(catalog, recommendation.ref)
   if (goal !== undefined) {
     const result = await runGuideGoalGeneration(provider, {
       intent,
-      profileRef: recommendation.profileRef,
+      profileRef: recommendation.ref,
       workflowId: recommendation.workflowId,
       guide: guideDocument.guide,
       guideBody: guideDocument.body,
@@ -3148,7 +3143,7 @@ export const runGuideGenerationStep = async (
     onProgress?.(GuideGenerationPhase.GeneratingCandidates)
     const generated = await provider.generate({
       intent: subject,
-      profileRef: recommendation.profileRef,
+      profileRef: recommendation.ref,
       workflowId: recommendation.workflowId,
       guide: prepared.guide,
       guideBody: guideDocument.body,
@@ -3170,7 +3165,7 @@ export const runGuideGenerationStep = async (
     )
     const optimizeInput: GuideOptimizeInput = {
       targetTool,
-      profileRef: recommendation.profileRef,
+      profileRef: recommendation.ref,
       candidates: bodyCandidates,
       ...prepared.context,
       bodyBudget: prepared.bodyBudget,
@@ -3218,7 +3213,7 @@ export const runGuideGenerationStep = async (
       : cache.generation(
           {
             intent,
-            profileRef: recommendation.profileRef,
+            profileRef: recommendation.ref,
             workflowId: recommendation.workflowId,
             guide: prepared.guide,
             guideBody: guideDocument.body,
@@ -3253,7 +3248,7 @@ export const runGuideGenerationStep = async (
  * candidate being refined and the user's feedback.
  */
 export const runGuideRefinementStep = async (
-  catalog: CombinedGuideCatalog,
+  catalog: CompositionCatalog,
   provider: GuideProvider,
   intent: string,
   recommendation: GuideRecommendation,
@@ -3267,18 +3262,18 @@ export const runGuideRefinementStep = async (
 ): Promise<GuideGenerateCandidate> => {
   const goal = "fingerprint" in contextOrGoal ? contextOrGoal : undefined
   const context = "fingerprint" in contextOrGoal ? {} : contextOrGoal
-  const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.profileRef, context)
+  const prepared = prepareGuidePrompt(guideDocument.guide, recommendation.workflowId, recommendation.ref, context)
   assertGuidePromptDeliveryContext(prepared.context)
   const workflow = prepared.workflow
   const candidate = tripleAt(candidates, candidateIndex)
   const bodyCandidate = guideModelBodyCandidate(workflow, candidate, prepared.context)
   const fixedFrame = workflowOptimizeFixedFrame(workflow)
-  const targetTool = guideTargetTool(catalog, recommendation.profileRef)
+  const targetTool = guideTargetTool(catalog, recommendation.ref)
   const preparedGoal = goal ?? candidate.goalExecution?.goal
   if (preparedGoal !== undefined) {
     const result = await runGuideGoalRefinement(provider, {
       intent,
-      profileRef: recommendation.profileRef,
+      profileRef: recommendation.ref,
       workflowId: recommendation.workflowId,
       guide: guideDocument.guide,
       guideBody: guideDocument.body,
@@ -3298,7 +3293,7 @@ export const runGuideRefinementStep = async (
   const produce = async () => {
     const refined = await provider.refine({
       intent: stripCustomerContext(intent, prepared.context.customerContext),
-      profileRef: recommendation.profileRef,
+      profileRef: recommendation.ref,
       workflowId: recommendation.workflowId,
       guide: prepared.guide,
       guideBody: guideDocument.body,
@@ -3315,7 +3310,7 @@ export const runGuideRefinementStep = async (
     )
     const optimizeInput: GuideOptimizeInput = {
       targetTool,
-      profileRef: recommendation.profileRef,
+      profileRef: recommendation.ref,
       candidates: [refinedBodyCandidate],
       ...prepared.context,
       bodyBudget: prepared.bodyBudget,
@@ -3338,7 +3333,7 @@ export const runGuideRefinementStep = async (
     : cache.refinement(
         {
           intent,
-          profileRef: recommendation.profileRef,
+          profileRef: recommendation.ref,
           workflowId: recommendation.workflowId,
           guide: prepared.guide,
           guideBody: guideDocument.body,
@@ -3568,9 +3563,9 @@ export const buildExistingHerdrWorktreeResult = (
 // ---------------------------------------------------------------------------
 
 export interface GuideUiProps {
-  readonly catalog: CombinedGuideCatalog
+  readonly catalog: CompositionCatalog
   /** Refreshes runtime capability fields; production entrypoints inject this, fixtures do not. */
-  readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CombinedGuideCatalog>
+  readonly resolveCatalog?: (signal?: AbortSignal) => Promise<CompositionCatalog>
   readonly guideRoot: string
   readonly provider: GuideProvider
   readonly matcher?: GuideMatchAdapter
@@ -3623,11 +3618,9 @@ export const captureSourcePresentation = (
   const profile = capture.profile === undefined ? "" : ` · profile ${capture.profile}`
   return {
     label:
-      capture.source === "sandbox-transcript"
-        ? "Exact Sandbox result"
-        : capture.source === "conversation-transcript"
-          ? "Exact conversation transcript"
-          : "Exact agent result",
+      capture.source === "conversation-transcript"
+        ? "Exact conversation transcript"
+        : "Exact agent result",
     detail: `${agent}${session}${profile}`,
     color: "green",
   }
@@ -3896,7 +3889,7 @@ const MatchProgress = ({
   fallback,
   profileCount,
 }: {
-  readonly catalog: CombinedGuideCatalog
+  readonly catalog: CompositionCatalog
   readonly phase: GuideMatchPhase
   readonly intent: string
   readonly model: string
@@ -3905,7 +3898,7 @@ const MatchProgress = ({
   readonly fallback: GuideMatcherFallback | undefined
   readonly profileCount: number | undefined
 }) => {
-  const availableProfileCount = catalog.native.length
+  const availableProfileCount = catalog.entries.length
   const readProfileCount = profileCount ?? availableProfileCount
   const executionLabel = matchExecutionLabel(execution, model, effort)
   return (
@@ -3982,7 +3975,7 @@ const GenerationProgress = ({
     intent={intent}
     items={generationProgressItems(recommendation)}
     activePhase={phase}
-    detail={`Draft: ${generateConfig.model} (${generateConfig.effort}) · Optimize: ${optimizeConfig.model} (${optimizeConfig.effort}) · Selected profile: ${recommendation.profileRef}`}
+    detail={`Draft: ${generateConfig.model} (${generateConfig.effort}) · Optimize: ${optimizeConfig.model} (${optimizeConfig.effort}) · Selected profile: ${recommendation.ref}`}
   />
 )
 
@@ -4676,19 +4669,16 @@ const titleCaseIdentifier = (value: string): string =>
     .map((part) => (part.length === 0 ? part : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`))
     .join(" ")
 
-const recommendationHarness = (recommendation: GuideRecommendation): string => {
-  if (recommendation.launcher !== undefined) {
-    return launcherHarnessLabels[recommendation.launcher] ?? recommendation.launcher
-  }
-  return titleCaseIdentifier(recommendation.harness ?? recommendation.name)
-}
+const recommendationHarness = (recommendation: GuideRecommendation): string =>
+  launcherHarnessLabels[recommendation.harness] ?? titleCaseIdentifier(recommendation.harness)
 
 const recommendationLabel = (recommendation: GuideRecommendation): string => {
-  if (recommendation.name === "pstack") return "Poteto Mode"
-  if (recommendation.name === "hve") {
-    return recommendation.launcher === "codex" ? "HVE Core" : `${recommendationHarness(recommendation)} HVE`
+  const label = recommendation.profiles.join(" + ")
+  if (recommendation.profiles.length === 1 && recommendation.profiles[0] === "pstack") return "Poteto Mode"
+  if (recommendation.profiles.length === 1 && recommendation.profiles[0] === "hve") {
+    return recommendation.harness === "codex" ? "HVE Core" : `${recommendationHarness(recommendation)} HVE`
   }
-  return titleCaseIdentifier(recommendation.name)
+  return titleCaseIdentifier(label)
 }
 
 const recommendationConfidence = (recommendation: GuideRecommendation): string =>
@@ -4708,7 +4698,7 @@ const RecommendationRail = ({
     {recommendations.map((recommendation, itemIndex) => {
       const active = itemIndex === index
       return (
-        <Box key={recommendation.profileRef} flexDirection="column" marginTop={compact ? 0 : 1}>
+        <Box key={recommendation.ref} flexDirection="column" marginTop={compact ? 0 : 1}>
           <Text bold={active} {...(active ? { color: "green" as const } : {})}>
             {active ? "❯ " : "  "}
             {recommendationLabel(recommendation)}
@@ -4740,7 +4730,7 @@ const RecommendationDetail = ({ recommendation, controllerLabel }: {
         {recommendationLabel(recommendation)}
       </Text>
       <Text dimColor>
-        {recommendation.profileRef} | {harness} | {recommendationConfidence(recommendation)}
+        {recommendation.ref} | {harness} | {recommendationConfidence(recommendation)}
         {controllerLabel === undefined ? "" : ` | ${controllerLabel}`}
       </Text>
       <Text wrap="wrap">{recommendation.reason}</Text>
@@ -4758,8 +4748,7 @@ const RecommendationDetail = ({ recommendation, controllerLabel }: {
         <Text wrap="wrap">{recommendation.tradeoff}</Text>
       </Box>
       <Text dimColor>
-        Skill: {recommendation.workflow.skill ?? "none"} | Sandbox: {recommendation.sandbox ? "on" : "off"} |
-        Headless prompt: {recommendation.headless.prompt ? "yes" : "no"} | Herdr:{" "}
+        Skill: {recommendation.workflow.skill ?? "none"} | Headless prompt: {recommendation.headless.prompt ? "yes" : "no"} | Herdr:{" "}
         {recommendation.herdrCompatibility.status}
       </Text>
       <Text dimColor wrap="wrap">
@@ -5162,7 +5151,7 @@ const DestinationView = ({
 
 /** `copilot · council`. */
 const describeJobRunner = (profile: SelectedProfile): string =>
-  `${profile.launcher} · ${profile.profile}${profile.agent === undefined ? "" : ` · ${profile.agent}`}`
+  `${profile.harness} · ${profile.profiles.join(" + ")}${profile.agent === undefined ? "" : ` · ${profile.agent}`}`
 
 const QueuedJobBlock = ({
   job,
@@ -5919,7 +5908,7 @@ const handleRecommendationsInput: GuideInputHandler = ({ props, state, dispatch,
       type: GuideUiActionType.RecommendationsConfirm,
       selectedProfile: selectedProfileFromCatalogRef(
         props.catalog,
-        recommendation.profileRef,
+        recommendation.ref,
         recommendation.workflowId,
       ),
       ...(goalUnavailableReason === undefined ? {} : { goalUnavailableReason }),
@@ -6526,7 +6515,7 @@ const renderRecommendations: GuideStageRenderer = (context) => {
     return <ErrorPanel title="No compatible profiles" message="Edit the goal or choose a normal prompt flow." keys="o Optimize · p view prompt · q cancel" />
   }
   const selected = recommendationAt(recommendations, recommendationIndex)
-  const controller = goal === undefined ? undefined : findCombinedCatalogEntry(context.props.catalog, selected.profileRef)?.entry.guide.goalExecution?.controller
+  const controller = goal === undefined ? undefined : findCombinedCatalogEntry(context.props.catalog, selected.ref)?.entry.guide.goalExecution?.controller
   return (
     <RecommendationsView
       pinnedLenses={pinnedGuideLenses(context.props.catalog)}
@@ -6576,7 +6565,7 @@ const renderCandidateStage: GuideStageRenderer = ({ props, state }) => {
       templateFallback={state.templateFallback}
       command={publicGuideLaunchCommand(
         props.catalog,
-        state.selectedRecommendation.profileRef,
+        state.selectedRecommendation.ref,
         tripleAt(state.candidates, state.candidateIndex).prompt,
         state.selectedRecommendation.workflowId,
         tripleAt(state.candidates, state.candidateIndex).goalExecution,
@@ -6674,7 +6663,7 @@ const LaunchProgress = ({ state }: { readonly state: GuideUiState }) => {
         const event = state.launchProgress.find((entry) => entry.jobId === job.id)
         return (
           <Text key={job.id} wrap="wrap">
-            <Text color={launchRowColor(event)}>{launchRowMarker(event, tick)}</Text> {job.id}. {job.profile.profile}
+            <Text color={launchRowColor(event)}>{launchRowMarker(event, tick)}</Text> {job.id}. {job.profile.profiles.join("+")}
             {" · "}
             {describeJobPlacement(job.placement)} — {launchRowDetail(event)}
           </Text>
@@ -6858,7 +6847,7 @@ export const GuideApp = (props: GuideUiProps): React.ReactElement => {
   const { exit } = useApp()
   const [catalog, setCatalog] = useState(props.catalog)
   const resolveCatalog = useCallback(
-    async (signal?: AbortSignal): Promise<CombinedGuideCatalog> => {
+    async (signal?: AbortSignal): Promise<CompositionCatalog> => {
       const refreshed = props.resolveCatalog === undefined ? props.catalog : await props.resolveCatalog(signal)
       signal?.throwIfAborted()
       setCatalog(refreshed)

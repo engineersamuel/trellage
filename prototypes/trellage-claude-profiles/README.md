@@ -1,6 +1,6 @@
 # Native Claude Code profile
 
-Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend; retired launcher aliases are not published on `PATH`.
+Public commands use the [`trx` router](../trellage-router/README.md). Install it alongside this private backend.
 
 `trx run claude PROFILE` runs the host-installed
 [Claude Code](https://github.com/anthropics/claude-code) executable with
@@ -73,7 +73,7 @@ is installed in your personal `~/.claude`.
 All profiles use the same Sonnet 5.5 medium / Opus 5.5 max model policy.
 The `opusplan` selector uses Sonnet for normal work and Opus in plan mode.
 Use `trx run claude office --permission-mode plan` to start in plan mode; an explicit
-permission mode takes precedence over the launcher's default bypass mode.
+permission mode takes precedence over the profile's default bypass mode.
 Canonical Claude model IDs map to the proxy's dotted IDs so Claude recognizes
 the 5.5 model capabilities.
 The Office profiles are available for interactive use. Their catalog

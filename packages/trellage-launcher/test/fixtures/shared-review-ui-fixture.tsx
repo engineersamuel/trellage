@@ -21,7 +21,7 @@ const selectedChecks = fixtureOutcome === "all"
     ? ["ponytail"]
   : ["fleet", "ponytail"]
 const base = createFixtureOptimizeServices(root, FixtureMode.Terminal,
-  { schemaVersion: 1, native: [] }, async () => {})
+  { schemaVersion: 2, entries: [] }, async () => {})
 const wait = async (name: string, signal: AbortSignal) => {
   while (!signal.aborted) {
     try { await readFile(path.join(root, name)); return } catch {}
