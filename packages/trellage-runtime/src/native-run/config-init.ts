@@ -13,7 +13,12 @@ export const builtinProfile = async (id: string): Promise<NativeCatalog["profile
   (await readTrellageConfig({ environment: { TRELLAGE_CONFIG: starterPath } })).config.native.profiles[id]
 
 /** Add only the selected missing preset; existing user policy and pins remain authoritative. */
-export const mergeBuiltinPreset = (catalog: NativeCatalog, builtin: NativeCatalog, preset: string, starterDirectory: string): NativeCatalog => {
+export const mergeBuiltinPreset = (
+  catalog: NativeCatalog,
+  builtin: NativeCatalog,
+  preset: string,
+  starterDirectory: string,
+): NativeCatalog => {
   if (Object.hasOwn(catalog.profiles, preset)) return catalog
   const profile = builtin.profiles[preset]
   if (!profile) throw new Error(`missing shipped launch preset: ${preset}`)
@@ -33,15 +38,69 @@ export const mergeBuiltinPreset = (catalog: NativeCatalog, builtin: NativeCatalo
       throw new Error(
         `instruction ${name} conflicts with shipped preset ${preset}; rename it or explicitly define native.profiles.${preset}`,
       )
-    instructions[name] = { file: resolveInstructionFile(builtin.instructions[name]!.file,starterDirectory,starterDirectory) }
+    instructions[name] = {
+      file: resolveInstructionFile(builtin.instructions[name]!.file, starterDirectory, starterDirectory),
+    }
   }
   return { ...catalog, sources, instructions, profiles: { ...catalog.profiles, [preset]: profile } }
 }
 
 export const withBuiltinPreset = async (catalog: NativeCatalog, preset: string): Promise<NativeCatalog> => {
   if (Object.hasOwn(catalog.profiles, preset)) return catalog
-  const builtin = (await readTrellageConfig({environment:{TRELLAGE_CONFIG:starterPath}})).config.native
-  return mergeBuiltinPreset(catalog,builtin,preset,path.dirname(starterPath))
+  const builtin = (await readTrellageConfig({ environment: { TRELLAGE_CONFIG: starterPath } })).config.native
+  return mergeBuiltinPreset(catalog, builtin, preset, path.dirname(starterPath))
+}
+
+const acquireInitializationLock = async (lock: string, configPath: string): Promise<void> => {
+  try {
+    await mkdir(lock, { mode: 0o700 })
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST")
+      throw new Error(`configuration initialization is already running: ${configPath}`)
+    throw error
+  }
+}
+
+const mergeStarterDefaults = (current: string, starter: string): string | undefined => {
+  const parsed = parse(current)
+  // Existing native settings stay authoritative, including intentionally empty profiles.
+  if (parsed.native !== undefined) return undefined
+  const defaults = parse(starter)
+  const additions: Record<string, unknown> = { native: defaults.native }
+  if (parsed.skills === undefined && defaults.skills !== undefined) additions.skills = defaults.skills
+  return `${current}\n# Native profile defaults added by trx.\n${stringify(additions)}`
+}
+
+const initializeConfigFile = async (
+  loaded: Awaited<ReturnType<typeof readTrellageConfig>>,
+  environment: NodeJS.ProcessEnv,
+  home: string,
+  starter: string,
+): Promise<string> => {
+  const lock = `${loaded.path}.initialize-lock`
+  await acquireInitializationLock(lock, loaded.path)
+  const temporary = `${loaded.path}.initialize-${process.pid}`
+  try {
+    const current = await readFile(loaded.path, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined
+      throw error
+    })
+    if (current === undefined) {
+      await writeFile(loaded.path, starter, { flag: "wx", mode: 0o600 })
+      return loaded.path
+    }
+    const text = mergeStarterDefaults(current, starter)
+    if (text === undefined) return loaded.path
+    await writeFile(temporary, text, { flag: "wx", mode: 0o600 })
+    await readTrellageConfig({ environment: { ...environment, TRELLAGE_CONFIG: temporary }, home })
+    if ((await readFile(loaded.path, "utf8")) !== current)
+      throw new Error("configuration changed during initialization; retry")
+    await rename(temporary, loaded.path)
+    return loaded.path
+  } finally {
+    await rm(temporary, { force: true })
+    await rm(lock, { recursive: true })
+  }
 }
 
 /** Seed defaults once; explicitly selected files always remain entirely user managed. */
@@ -55,39 +114,5 @@ export const ensureNativeConfig = async (
   if (loaded.present && Object.keys(loaded.config.native.profiles).length > 0) return loaded.path
   const starter = await readFile(location.starter ?? starterPath, "utf8")
   await mkdir(path.dirname(loaded.path), { recursive: true, mode: 0o700 })
-  const lock = `${loaded.path}.initialize-lock`
-  try {
-    await mkdir(lock, { mode: 0o700 })
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "EEXIST")
-      throw new Error(`configuration initialization is already running: ${loaded.path}`)
-    throw error
-  }
-  const temporary = `${loaded.path}.initialize-${process.pid}`
-  try {
-    const current = await readFile(loaded.path, "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined
-      throw error
-    })
-    if (current === undefined) {
-      await writeFile(loaded.path, starter, { flag: "wx", mode: 0o600 })
-      return loaded.path
-    }
-    const parsed = parse(current)
-    // Existing custom native settings are authoritative, including intentionally empty profiles.
-    if (parsed.native !== undefined) return loaded.path
-    const defaults = parse(starter)
-    const additions: Record<string, unknown> = { native: defaults.native }
-    if (parsed.skills === undefined && defaults.skills !== undefined) additions.skills = defaults.skills
-    const text = `${current}\n# Native profile defaults added by trx.\n${stringify(additions)}`
-    await writeFile(temporary, text, { flag: "wx", mode: 0o600 })
-    await readTrellageConfig({ environment: { ...environment, TRELLAGE_CONFIG: temporary }, home })
-    if ((await readFile(loaded.path, "utf8")) !== current)
-      throw new Error("configuration changed during initialization; retry")
-    await rename(temporary, loaded.path)
-    return loaded.path
-  } finally {
-    await rm(temporary, { force: true })
-    await rm(lock, { recursive: true })
-  }
+  return initializeConfigFile(loaded, environment, home, starter)
 }

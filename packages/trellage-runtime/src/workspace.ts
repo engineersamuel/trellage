@@ -38,7 +38,7 @@ function sourceRootFiles(root: string): string[] {
     existsSync(path.join(root, sourceMarker)) &&
     lstatSync(path.join(root, "config.example.toml"), { throwIfNoEntry: false }) === undefined &&
     lstatSync(path.join(root, "skills.json"), { throwIfNoEntry: false }) !== undefined
-  return legacy ? rootFiles.map((name) => name === "config.example.toml" ? "skills.json" : name) : rootFiles
+  return legacy ? rootFiles.map((name) => (name === "config.example.toml" ? "skills.json" : name)) : rootFiles
 }
 const excludedDirectories = new Set(["node_modules", "dist", "coverage", "__pycache__"])
 const nativeProfileState = new Set([
@@ -207,7 +207,11 @@ function statSignature(root: string, files: readonly string[]): string {
   const hash = createHash("sha256")
   for (const file of files) {
     const status = lstatSync(sourceFilePath(root, file), { bigint: true })
-    hash.update([sourceFilePath(root, file), status.dev, status.ino, status.size, status.mtimeNs, status.ctimeNs].join("\0")).update("\0")
+    hash
+      .update(
+        [sourceFilePath(root, file), status.dev, status.ino, status.size, status.mtimeNs, status.ctimeNs].join("\0"),
+      )
+      .update("\0")
   }
   return hash.digest("hex")
 }
@@ -226,7 +230,9 @@ function writeDigestMemo(memo: Record<string, string>): void {
     const target = digestMemoPath()
     mkdirSync(path.dirname(target), { recursive: true })
     const temporary = `${target}.${process.pid}`
-    writeFileSync(temporary, JSON.stringify(Object.fromEntries(Object.entries(memo).slice(-digestMemoLimit))), { mode: 0o600 })
+    writeFileSync(temporary, JSON.stringify(Object.fromEntries(Object.entries(memo).slice(-digestMemoLimit))), {
+      mode: 0o600,
+    })
     renameSync(temporary, target)
   } catch {
     // The memo only speeds up checks; a write failure changes nothing else.
@@ -368,9 +374,7 @@ function dependencyManifests(root: string): string[] {
 }
 
 export function dependencyDirectory(root: string, name: string): string {
-  return path.dirname(
-    path.join(root, dependencyManifest(root, path.join(root, "package.json"), name)),
-  )
+  return path.dirname(path.join(root, dependencyManifest(root, path.join(root, "package.json"), name)))
 }
 
 function validateRuntimeLink(root: string, candidate: string): void {
@@ -486,30 +490,37 @@ function normalizePermission(candidate: string, status: Stats): void {
   }
 }
 
-function removeRetiredWorkspaceLinks(root: string, links: readonly string[]): Set<string> {
+const retiredWorkspaceLink = (root: string, candidate: string): { target: string; retired: boolean } | undefined => {
+  const link = readlinkSync(candidate)
+  if (path.isAbsolute(link)) return undefined
+  const target = path.resolve(path.dirname(candidate), link)
+  if (!/\/node_modules\/(?:@[^/]+\/)?[^/]+$/.test(candidate)) return { target, retired: false }
+  if (path.dirname(target) !== path.join(root, "packages")) return { target, retired: false }
+  const status = lstatSync(target, { throwIfNoEntry: false })
+  if (status !== undefined && !status.isDirectory()) return { target, retired: false }
+  if (status !== undefined) safeDirectory(target)
+  const hasManifest = lstatSync(path.join(target, "package.json"), { throwIfNoEntry: false }) !== undefined
+  return { target, retired: !hasManifest }
+}
+
+const collectRetiredWorkspaceLinks = (root: string, links: readonly string[]): Set<string> => {
   const retired = new Set<string>()
   const targets = new Map<string, string>()
   for (const candidate of links) {
-    const link = readlinkSync(candidate)
-    if (path.isAbsolute(link)) continue
-    const target = path.resolve(path.dirname(candidate), link)
-    targets.set(candidate, target)
-    if (!/\/node_modules\/(?:@[^/]+\/)?[^/]+$/.test(candidate)) continue
-    if (path.dirname(target) !== path.join(root, "packages")) continue
-    const status = lstatSync(target, { throwIfNoEntry: false })
-    if (status !== undefined) {
-      if (!status.isDirectory()) continue
-      safeDirectory(target)
-    }
-    if (lstatSync(path.join(target, "package.json"), { throwIfNoEntry: false }) === undefined) {
-      retired.add(candidate)
-    }
+    const inspected = retiredWorkspaceLink(root, candidate)
+    if (!inspected) continue
+    targets.set(candidate, inspected.target)
+    if (inspected.retired) retired.add(candidate)
   }
   const removed = new Set(retired)
   for (const [candidate, target] of targets) {
     if (!path.dirname(candidate).endsWith(`${path.sep}node_modules${path.sep}.bin`)) continue
     if ([...retired].some((workspace) => inside(workspace, target))) removed.add(candidate)
   }
+  return removed
+}
+
+const unlinkRetiredWorkspaceLinks = (removed: ReadonlySet<string>): void => {
   for (const candidate of removed) {
     safeDirectory(path.dirname(candidate))
     const status = lstatSync(candidate)
@@ -518,6 +529,11 @@ function removeRetiredWorkspaceLinks(root: string, links: readonly string[]): Se
     }
     unlinkSync(candidate)
   }
+}
+
+function removeRetiredWorkspaceLinks(root: string, links: readonly string[]): Set<string> {
+  const removed = collectRetiredWorkspaceLinks(root, links)
+  unlinkRetiredWorkspaceLinks(removed)
   return removed
 }
 
@@ -642,7 +658,9 @@ export async function validateOwnedTreeAsync(root: string, development = false):
       batch.map(async (directory) => {
         const names = (await readdirAsync(directory)).sort()
         const included = names.filter((name) => include(directory, name)).map((name) => path.join(directory, name))
-        const found = await Promise.all(included.map(async (candidate) => [candidate, await lstatAsync(candidate, { bigint: true })] as const))
+        const found = await Promise.all(
+          included.map(async (candidate) => [candidate, await lstatAsync(candidate, { bigint: true })] as const),
+        )
         return { directory, names, found }
       }),
     )
