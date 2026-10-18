@@ -558,12 +558,12 @@ const availableRunProfiles = async (adapter: NativeAdapter, catalog: NativeCatal
   return [...new Set(profiles)].sort()
 }
 
-const resolveRunProfiles = async (
+const assertKnownRunProfiles = (
   adapter: NativeAdapter,
   options: RunOptions,
   sourceCatalog: NativeCatalog,
-): Promise<{ catalog: NativeCatalog; profiles: string[] }> => {
-  const available = await availableRunProfiles(adapter, sourceCatalog)
+  available: ReadonlyArray<string>,
+): void => {
   // Declared and shared profiles that exist but skip this harness get the specific "does not support" error below.
   for (const profile of options.profiles) {
     if (available.includes(profile) || Object.hasOwn(sourceCatalog.profiles, profile) || nativeSharedPresets.includes(profile))
@@ -573,6 +573,29 @@ const resolveRunProfiles = async (
       `unknown profile ${profile} for ${adapter.id}; available: ${available.join(", ") || "none"}`,
     )
   }
+}
+
+const assertProfileHarnessSupport = (
+  adapter: NativeAdapter,
+  catalog: NativeCatalog,
+  profiles: ReadonlyArray<string>,
+): void => {
+  for (const profile of profiles) {
+    const harnesses = catalog.profiles[profile]?.harnesses
+    if (harnesses && !harnesses.includes(adapter.id))
+      throw new NativeRunError(
+        "unsupported",
+        `profile ${profile} does not support ${adapter.label}; it supports: ${[...harnesses].sort().join(", ")}`,
+      )
+  }
+}
+
+const resolveRunProfiles = async (
+  adapter: NativeAdapter,
+  options: RunOptions,
+  sourceCatalog: NativeCatalog,
+): Promise<{ catalog: NativeCatalog; profiles: string[] }> => {
+  assertKnownRunProfiles(adapter, options, sourceCatalog, await availableRunProfiles(adapter, sourceCatalog))
   const adHoc = adHocSkillProfile(sourceCatalog, options.skills ?? [])
   let catalog = adHoc?.catalog ?? sourceCatalog
   const profiles = options.profiles.map((profile) =>
@@ -582,14 +605,7 @@ const resolveRunProfiles = async (
     if (profile.startsWith(`preset-${adapter.id}-`) || nativeSharedPresets.includes(profile))
       catalog = await withBuiltinPreset(catalog, profile)
   }
-  for (const profile of profiles) {
-    const harnesses = catalog.profiles[profile]?.harnesses
-    if (harnesses && !harnesses.includes(adapter.id))
-      throw new NativeRunError(
-        "unsupported",
-        `profile ${profile} does not support ${adapter.label}; it supports: ${[...harnesses].sort().join(", ")}`,
-      )
-  }
+  assertProfileHarnessSupport(adapter, catalog, profiles)
   return { catalog, profiles: adHoc === undefined ? profiles : [...profiles, adHoc.id] }
 }
 
@@ -738,6 +754,35 @@ const prepareCleanRun = async (
   }
 }
 
+const resolveRunWorkspace = (
+  plan: CompositionPlan,
+  dependencies: RunDependencies,
+  environment: NodeJS.ProcessEnv,
+): string => {
+  const invocation = dependencies.cwd ?? process.cwd()
+  return plan.workingDirectory
+    ? expandTrellagePath(plan.workingDirectory, dependencies.configHome ?? environment.HOME ?? invocation, invocation)
+    : invocation
+}
+
+const prepareRunPrerequisites = async (
+  plan: CompositionPlan,
+  options: RunOptions,
+  dependencies: RunDependencies,
+  environment: NodeJS.ProcessEnv,
+  workspace: string,
+): Promise<void> => {
+  if (plan.prerequisites && !options.dryRun)
+    await ensurePrerequisites(
+      `Profile ${options.profiles.join(" + ")}`,
+      plan.prerequisites,
+      environment,
+      dependencies.prerequisiteIo ?? defaultPrerequisiteIo(dependencies.write ?? ((line) => process.stderr.write(`${line}\n`))),
+    )
+  if (plan.repository && !options.dryRun)
+    await (dependencies.syncRepository ?? syncProfileRepository)(workspace, plan.repository, environment)
+}
+
 /** Resolve, validate, stage and publish the composition without starting the harness. */
 export const prepareRun = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<PreparedRun> => {
   const environment = dependencies.environment ?? process.env
@@ -761,19 +806,8 @@ export const prepareRun = async (options: RunOptions, dependencies: RunDependenc
     resolved.catalog,
     resolved.profiles,
   )
-  const invocation = dependencies.cwd ?? process.cwd()
-  const workspace = plan.workingDirectory
-    ? expandTrellagePath(plan.workingDirectory, dependencies.configHome ?? environment.HOME ?? invocation, invocation)
-    : invocation
-  if (plan.prerequisites && !options.dryRun)
-    await ensurePrerequisites(
-      `Profile ${options.profiles.join(" + ")}`,
-      plan.prerequisites,
-      environment,
-      dependencies.prerequisiteIo ?? defaultPrerequisiteIo(dependencies.write ?? ((line) => process.stderr.write(`${line}\n`))),
-    )
-  if (plan.repository && !options.dryRun)
-    await (dependencies.syncRepository ?? syncProfileRepository)(workspace, plan.repository, environment)
+  const workspace = resolveRunWorkspace(plan, dependencies, environment)
+  await prepareRunPrerequisites(plan, options, dependencies, environment, workspace)
   return buildPreparedRun(adapter, plan, layout, options, dependencies, environment, workspace)
 }
 
@@ -940,30 +974,47 @@ const launchPreparedRun = async (
   }
 }
 
+const checkRunPiRefresh = (
+  options: RunOptions,
+  dependencies: RunDependencies,
+  environment: NodeJS.ProcessEnv,
+): Promise<PiRefreshCheck> => {
+  const clean = options.profiles.includes(CLEAN_PROFILE)
+  return options.harness === "pi" && !clean && !options.dryRun && dependencies.refreshHarness === undefined
+    ? checkPiRefresh(environment)
+    : Promise.resolve({})
+}
+
+const pickRunResumeSession = async (
+  prepared: PreparedRun,
+  options: RunOptions,
+  dependencies: RunDependencies,
+): Promise<{ options: RunOptions; prepared: PreparedRun } | undefined> => {
+  if (options.resume?.kind !== "pick" || options.resume.id !== undefined || !prepared.adapter.pickResumeSession)
+    return { options, prepared }
+  const id = await prepared.adapter.pickResumeSession({
+    ownerHome: prepared.layout.ownerHome,
+    workspace: prepared.workspace,
+  })
+  if (id === undefined) return undefined
+  const resumedOptions: RunOptions = { ...options, resume: { kind: "pick", id } }
+  return { options: resumedOptions, prepared: await prepareRun(resumedOptions, dependencies) }
+}
+
 export const runNative = async (options: RunOptions, dependencies: RunDependencies = {}): Promise<number> => {
   const write = createRunWriter(options, dependencies)
   const environment = dependencies.environment ?? process.env
   const cwd = dependencies.cwd ?? process.cwd()
   const paths = dependencies.paths ?? resolveNativeRunPaths({ environment })
-  const clean = options.profiles.includes(CLEAN_PROFILE)
-  const piRefresh =
-    options.harness === "pi" && !clean && !options.dryRun && dependencies.refreshHarness === undefined
-      ? checkPiRefresh(environment)
-      : Promise.resolve({})
+  const piRefresh = checkRunPiRefresh(options, dependencies, environment)
 
-  let effectiveOptions = options
-  let prepared = await prepareRun(effectiveOptions, dependencies)
+  let prepared = await prepareRun(options, dependencies)
   for (const line of describePreparedRun(prepared)) write(line)
-  if (effectiveOptions.dryRun) return 0
-  if (effectiveOptions.resume?.kind === "pick" && effectiveOptions.resume.id === undefined && prepared.adapter.pickResumeSession) {
-    const id = await prepared.adapter.pickResumeSession({
-      ownerHome: prepared.layout.ownerHome,
-      workspace: prepared.workspace,
-    })
-    if (id === undefined) return 0
-    effectiveOptions = { ...effectiveOptions, resume: { kind: "pick", id } }
-    prepared = await prepareRun(effectiveOptions, dependencies)
-  }
+  if (options.dryRun) return 0
+  const resumed = await pickRunResumeSession(prepared, options, dependencies)
+  if (resumed === undefined) return 0
+  const effectiveOptions = resumed.options
+  prepared = resumed.prepared
   if (!prepared.clean)
     prepared = await refreshPreparedRun(prepared, effectiveOptions, dependencies, environment, write, await piRefresh)
   assertLaunchIsolation(prepared, effectiveOptions)
