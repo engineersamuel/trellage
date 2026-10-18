@@ -11,6 +11,38 @@ if (args.length > 1 || (args[0] !== undefined && args[0] !== "--all-terminal-wid
 const widths = args.length ? [69, 70, 100] : [100]
 const world = await guideWorld(root)
 let ordinal = 0n
+
+const verifySuccessfulJsonResponse = (
+  result: Awaited<ReturnType<typeof runGuideProcess>>,
+  item: {
+    readonly argv: readonly string[]
+    readonly fallback?: boolean
+    readonly optimize?: boolean
+  },
+): void => {
+  if (result.status !== 0 || !item.argv.includes("--json")) return
+  const response = JSON.parse(result.output)
+  if (item.argv.includes("--profile")) {
+    assert.equal(response.profile.ref, "native:codex/superpowers")
+    assert.equal(response.candidates.length, 3)
+    assert.equal(result.audit.calls["copilot.optimize"] ?? 0, item.optimize ? 1 : 0)
+    for (const candidate of response.candidates)
+      assert.deepEqual(candidate.command.args.slice(0, 3), ["run", "codex", "superpowers"])
+    return
+  }
+  assert.deepEqual(
+    response.recommendations.map(
+      ({ ref, workflowId, confidence }: { ref: string; workflowId: string; confidence: number }) => ({
+        profileRef: ref,
+        workflowId,
+        confidence,
+      }),
+    ),
+    result.audit.expectedMatches,
+  )
+  assert.equal(response.execution.backend, item.fallback ? "copilot" : "jev")
+}
+
 try {
   for (const ritual of shippedRituals)
     for (const flag of ["--print", "--copy"]) {
@@ -106,32 +138,7 @@ try {
       const result = await runGuideProcess({ world, cwd, ...item })
       assert.equal(result.status, item.status, result.output)
       assert.equal(result.audit.clean, !item.missingKey, result.audit.failure ?? "Unexpected model interaction")
-      if (item.status === 0 && item.argv.includes("--json")) {
-        const response = JSON.parse(result.output)
-        if (item.argv.includes("--profile")) {
-          assert.equal(response.profile.ref, "native:codex/superpowers")
-          assert.equal(response.candidates.length, 3)
-          assert.equal(result.audit.calls["copilot.optimize"] ?? 0, item.optimize ? 1 : 0)
-          for (const candidate of response.candidates)
-            assert.deepEqual(candidate.command.args.slice(0, 3), ["run", "codex", "superpowers"])
-        } else {
-          assert.deepEqual(
-            response.recommendations.map(
-              ({
-                ref,
-                workflowId,
-                confidence,
-              }: {
-                ref: string
-                workflowId: string
-                confidence: number
-              }) => ({ profileRef: ref, workflowId, confidence }),
-            ),
-            result.audit.expectedMatches,
-          )
-          assert.equal(response.execution.backend, item.fallback ? "copilot" : "jev")
-        }
-      }
+      verifySuccessfulJsonResponse(result, item)
     })
   for (const columns of widths)
     await world.withCase(ordinal++, async (cwd) => {

@@ -80,7 +80,8 @@ const lifecycleCatalogPackages: Readonly<Record<string, string>> = {
 const builtInDescriptions: Readonly<Record<string, string>> = {
   "fx/default": "Fx with shared host context through copilot-proxy-rs",
   "headlong/default": "Persistent Headlong agent with durable identity, memory, and background thinking on the host.",
-  "uji/default": "Uji with generated configuration, selected skills, and keyless model routing through copilot-proxy-rs.",
+  "uji/default":
+    "Uji with generated configuration, selected skills, and keyless model routing through copilot-proxy-rs.",
 }
 
 const adapterHeadlessCapabilities: Readonly<Record<string, HeadlessCapabilitiesV1>> = {
@@ -114,31 +115,50 @@ type LegacyPresetMap = Readonly<Record<string, LegacyPreset>>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
 
+const isOutputFormat = (value: unknown): value is "text" | "json" | "jsonl" =>
+  value === "text" || value === "json" || value === "jsonl"
+
+const isOutputFormats = (value: unknown): value is HeadlessCapabilitiesV1["outputFormats"] =>
+  Array.isArray(value) && value.every(isOutputFormat)
+
+const isValidHeadlessIdentity = (value: Record<string, unknown>): boolean =>
+  value.schemaVersion === 1 && typeof value.prompt === "boolean" && isOutputFormats(value.outputFormats)
+
+const isValidHeadlessContracts = (value: Record<string, unknown>): boolean =>
+  (value.eventContract === null || typeof value.eventContract === "string") &&
+  (value.trellageEventContract === null || value.trellageEventContract === "trellage-headless-v1") &&
+  (value.sessionId === "native" || value.sessionId === "trellage" || value.sessionId === "none") &&
+  (value.testedHarnessVersion === null || typeof value.testedHarnessVersion === "string")
+
+const isValidHeadlessExecution = (value: Record<string, unknown>): boolean =>
+  typeof value.resume === "boolean" &&
+  typeof value.resumeWithPrompt === "boolean" &&
+  (value.questionToolControl === "hard-deny" ||
+    value.questionToolControl === "prompt-only" ||
+    value.questionToolControl === "none") &&
+  (value.changedFiles === "native" || value.changedFiles === "git-diff" || value.changedFiles === "none")
+
+const isValidHeadlessReporting = (value: Record<string, unknown>): boolean =>
+  typeof value.usage === "boolean" &&
+  typeof value.cost === "boolean" &&
+  typeof value.modelOverride === "boolean" &&
+  typeof value.effortOverride === "boolean"
+
+const isValidHeadlessCapabilities = (
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & HeadlessCapabilitiesV1 =>
+  isValidHeadlessIdentity(value) &&
+  isValidHeadlessContracts(value) &&
+  isValidHeadlessExecution(value) &&
+  isValidHeadlessReporting(value)
+
 const parseHeadless = (value: unknown, field: string): HeadlessCapabilitiesV1 => {
   if (!isRecord(value)) return interactiveOnlyHeadless
-  const formats = value.outputFormats
-  if (
-    value.schemaVersion !== 1 ||
-    typeof value.prompt !== "boolean" ||
-    !Array.isArray(formats) ||
-    !formats.every((format) => format === "text" || format === "json" || format === "jsonl") ||
-    !(value.eventContract === null || typeof value.eventContract === "string") ||
-    !(value.trellageEventContract === null || value.trellageEventContract === "trellage-headless-v1") ||
-    !(value.sessionId === "native" || value.sessionId === "trellage" || value.sessionId === "none") ||
-    typeof value.resume !== "boolean" ||
-    typeof value.resumeWithPrompt !== "boolean" ||
-    !(value.questionToolControl === "hard-deny" || value.questionToolControl === "prompt-only" || value.questionToolControl === "none") ||
-    !(value.changedFiles === "native" || value.changedFiles === "git-diff" || value.changedFiles === "none") ||
-    typeof value.usage !== "boolean" ||
-    typeof value.cost !== "boolean" ||
-    typeof value.modelOverride !== "boolean" ||
-    typeof value.effortOverride !== "boolean" ||
-    !(value.testedHarnessVersion === null || typeof value.testedHarnessVersion === "string")
-  ) throw new Error(`${field} must be a valid headless capability document`)
+  if (!isValidHeadlessCapabilities(value)) throw new Error(`${field} must be a valid headless capability document`)
   return {
     schemaVersion: 1,
     prompt: value.prompt,
-    outputFormats: formats,
+    outputFormats: value.outputFormats,
     eventContract: value.eventContract,
     trellageEventContract: value.trellageEventContract,
     sessionId: value.sessionId,
@@ -154,34 +174,53 @@ const parseHeadless = (value: unknown, field: string): HeadlessCapabilitiesV1 =>
   }
 }
 
+const legacyProfileEntries = (harness: string, profiles: unknown): Array<[string, unknown]> => {
+  if (Array.isArray(profiles)) {
+    return profiles.map((value, index) => {
+      if (!isRecord(value) || typeof value.name !== "string")
+        throw new Error(`invalid legacy profile catalog entry: ${harness}/${index}`)
+      return [value.name, value]
+    })
+  }
+  if (isRecord(profiles)) return Object.entries(profiles)
+  throw new Error(`invalid legacy profile catalog for ${harness}`)
+}
+
+const legacyPublicName = (harness: string, name: string): string => {
+  if (harness === "agency" && name === "trellage-azure") return "azure"
+  if (harness === "omp" && name === "copilot") return "default"
+  return name
+}
+
+const parseLegacyPreset = (harness: string, name: string, value: unknown): LegacyPreset => {
+  if (!isRecord(value) || typeof value.description !== "string")
+    throw new Error(`invalid legacy profile catalog entry: ${harness}/${name}`)
+  return {
+    description: value.description,
+    headless: parseHeadless(value.headless, `${harness}/${name}.headless`),
+  }
+}
+
 const loadLegacyPresets = async (harness: string): Promise<LegacyPresetMap> => {
   const packageName = lifecycleCatalogPackages[harness]
   if (packageName === undefined) return {}
-  const source: unknown = JSON.parse(await readFile(path.join(repositoryRoot, "prototypes", packageName, "catalog.json"), "utf8"))
-  if (!isRecord(source) || (!isRecord(source.profiles) && !Array.isArray(source.profiles))) throw new Error(`invalid legacy profile catalog for ${harness}`)
-  const profileEntries: Array<[string, unknown]> = Array.isArray(source.profiles)
-    ? source.profiles.map((value, index) => {
-        if (!isRecord(value) || typeof value.name !== "string") throw new Error(`invalid legacy profile catalog entry: ${harness}/${index}`)
-        return [value.name, value]
-      })
-    : Object.entries(source.profiles)
-  const entries: Record<string, LegacyPreset> = {}
-  for (const [legacyName, value] of profileEntries) {
-    if (!isRecord(value) || typeof value.description !== "string") throw new Error(`invalid legacy profile catalog entry: ${harness}/${legacyName}`)
-    const publicName = harness === "agency" && legacyName === "trellage-azure"
-      ? "azure"
-      : harness === "omp" && legacyName === "copilot" ? "default" : legacyName
-    entries[publicName] = {
-      description: value.description,
-      headless: parseHeadless(value.headless, `${harness}/${publicName}.headless`),
-    }
-  }
-  return entries
+  const source: unknown = JSON.parse(
+    await readFile(path.join(repositoryRoot, "prototypes", packageName, "catalog.json"), "utf8"),
+  )
+  if (!isRecord(source)) throw new Error(`invalid legacy profile catalog for ${harness}`)
+  return Object.fromEntries(
+    legacyProfileEntries(harness, source.profiles).map(([name, value]) => {
+      const publicName = legacyPublicName(harness, name)
+      return [publicName, parseLegacyPreset(harness, publicName, value)]
+    }),
+  )
 }
 
-
 const loadHerdrLedger = async (guideRoot: string): Promise<ReadonlyMap<string, HerdrCompatibilityInfo>> => {
-  const candidates = [path.join(repositoryRoot, "docs", "herdr-compatibility.json"), path.join(path.dirname(guideRoot), "herdr-compatibility.json")]
+  const candidates = [
+    path.join(repositoryRoot, "docs", "herdr-compatibility.json"),
+    path.join(path.dirname(guideRoot), "herdr-compatibility.json"),
+  ]
   let contents: string | undefined
   for (const candidate of candidates) {
     try {
@@ -198,7 +237,12 @@ const loadHerdrLedger = async (guideRoot: string): Promise<ReadonlyMap<string, H
   }
   const result = new Map<string, HerdrCompatibilityInfo>()
   for (const [index, value] of source.entries.entries()) {
-    if (!isRecord(value) || typeof value.harness !== "string" || typeof value.profile !== "string" || typeof value.status !== "string") {
+    if (
+      !isRecord(value) ||
+      typeof value.harness !== "string" ||
+      typeof value.profile !== "string" ||
+      typeof value.status !== "string"
+    ) {
       throw new Error(`docs/herdr-compatibility.json entry ${index} is invalid`)
     }
     const harness = value.harness
@@ -230,19 +274,116 @@ const profileKind = (profile: RunCatalogProfile): CompositionCatalogEntry["kind"
 const configDescription = (profile: RunCatalogProfile): string =>
   profile.skills.length === 0 ? profile.label : `${profile.label} (${profile.skills.join(", ")})`
 
+interface CompositionRow {
+  readonly profile: string
+  readonly kind: CompositionCatalogEntry["kind"]
+  readonly description: string
+  readonly headless: HeadlessCapabilitiesV1
+}
+
+type LoadedRunCatalog = Awaited<ReturnType<typeof loadRunCatalog>>
+
+const defaultHeadlessCapabilities = (harness: string, presets: LegacyPresetMap): HeadlessCapabilitiesV1 =>
+  adapterHeadlessCapabilities[harness] ??
+  presets.default?.headless ??
+  Object.values(presets)[0]?.headless ??
+  interactiveOnlyHeadless
+
+const compositionRows = (catalog: LoadedRunCatalog, harness: string, presets: LegacyPresetMap): CompositionRow[] => {
+  const builtInProfiles = catalog.presetsByHarness[harness] ?? []
+  const capabilities = defaultHeadlessCapabilities(harness, presets)
+  return [
+    ...builtInProfiles.map((profile) => ({
+      profile,
+      kind: "preset" as const,
+      description:
+        presets[profile]?.description ?? builtInDescriptions[`${harness}/${profile}`] ?? `${harness} ${profile}`,
+      headless: presets[profile]?.headless ?? capabilities,
+    })),
+    ...catalog.profileEntries
+      .filter(
+        (profile) => !profile.always && !builtInProfiles.includes(profile.name) && profileApplies(profile, harness),
+      )
+      .map((profile) => ({
+        profile: profile.name,
+        kind: profileKind(profile),
+        description: configDescription(profile),
+        // Config profiles change composed content, not the harness CLI. Reuse the harness's default preset capability contract.
+        headless: profile.kind === "shared" && profile.name === "firstmate" ? interactiveOnlyHeadless : capabilities,
+      })),
+  ]
+}
+
+const compositionEntry = async (
+  row: CompositionRow,
+  harness: string,
+  options: { readonly guideRoot: string; readonly commandPath: string },
+  ledger: ReadonlyMap<string, HerdrCompatibilityInfo>,
+): Promise<CompositionCatalogEntry> => {
+  const guide = await loadGuide(options.guideRoot, harness, row.profile)
+  const runtime = row.kind === "preset" ? lifecycleRuntime(harness) : undefined
+  return {
+    ref: formatCompositionRef(harness, [row.profile]),
+    harness,
+    profiles: [row.profile],
+    kind: row.kind,
+    canonicalHarness: harness !== "fx" && harness !== "headlong",
+    description: guide?.bestFor[0] ?? row.description,
+    headless: row.headless,
+    herdrCompatibility: ledger.get(`${harness}/${row.profile}`) ?? { status: "untested" },
+    guide,
+    commandPath: options.commandPath,
+    lifecycle:
+      runtime === undefined ? null : { runtime: runtime.runtimeName, profile: runtime.profileName(row.profile) },
+  }
+}
+
+const loadPresetCatalogs = async (harnesses: ReadonlyArray<string>): Promise<ReadonlyMap<string, LegacyPresetMap>> => {
+  const entries = await Promise.all(
+    harnesses.map(async (harness) => [harness, await loadLegacyPresets(harness)] as const),
+  )
+  return new Map(entries)
+}
+
+const loadCompositionEntries = async (
+  catalog: LoadedRunCatalog,
+  options: { readonly guideRoot: string; readonly commandPath: string },
+  presets: ReadonlyMap<string, LegacyPresetMap>,
+  ledger: ReadonlyMap<string, HerdrCompatibilityInfo>,
+): Promise<CompositionCatalogEntry[]> =>
+  (
+    await Promise.all(
+      catalog.harnesses.map(async ({ harness }) => {
+        const rows = compositionRows(catalog, harness, presets.get(harness) ?? {})
+        return Promise.all(rows.map((row) => compositionEntry(row, harness, options, ledger)))
+      }),
+    )
+  ).flat()
+
 export const formatCompositionRef = (harness: string, profiles: ReadonlyArray<string>): string => {
-  if (!identifierPattern.test(harness) || profiles.length === 0 || profiles.some((profile) => !identifierPattern.test(profile))) {
+  if (
+    !identifierPattern.test(harness) ||
+    profiles.length === 0 ||
+    profiles.some((profile) => !identifierPattern.test(profile))
+  ) {
     throw new Error("composition refs require a harness and one or more lowercase kebab-case profiles")
   }
   return `native:${harness}/${profiles.join("+")}`
 }
 
 export const parseCompositionRef = (ref: string): { harness: string; profiles: string[] } => {
-  const match = /^native:([a-z0-9]+(?:-[a-z0-9]+)*)\/([a-z0-9]+(?:-[a-z0-9]+)*(?:\+[a-z0-9]+(?:-[a-z0-9]+)*)*)$/u.exec(ref)
+  const match = /^native:([a-z0-9]+(?:-[a-z0-9]+)*)\/([a-z0-9]+(?:-[a-z0-9]+)*(?:\+[a-z0-9]+(?:-[a-z0-9]+)*)*)$/u.exec(
+    ref,
+  )
   if (match === null) throw new Error(`invalid composition ref: ${ref}`)
   const harness = match[1]
   const profiles = match[2]?.split("+")
-  if (harness === undefined || profiles === undefined || profiles.length === 0 || new Set(profiles).size !== profiles.length) {
+  if (
+    harness === undefined ||
+    profiles === undefined ||
+    profiles.length === 0 ||
+    new Set(profiles).size !== profiles.length
+  ) {
     throw new Error(`invalid composition ref: ${ref}`)
   }
   return { harness, profiles }
@@ -254,49 +395,11 @@ export const loadCompositionCatalog = async (options: {
 }): Promise<CompositionCatalog> => {
   if (!path.isAbsolute(options.commandPath)) throw new Error("composition catalog commandPath must be absolute")
   const runCatalog = await loadRunCatalog({ includeModels: false })
-  const herdrLedger = await loadHerdrLedger(options.guideRoot)
-  const presetCatalogs = new Map<string, LegacyPresetMap>()
-  for (const { harness } of runCatalog.harnesses) presetCatalogs.set(harness, await loadLegacyPresets(harness))
-
-  const entries: CompositionCatalogEntry[] = []
-  for (const { harness } of runCatalog.harnesses) {
-    const presets = runCatalog.presetsByHarness[harness] ?? []
-    const legacyPresets = presetCatalogs.get(harness) ?? {}
-    const defaultCapabilities = adapterHeadlessCapabilities[harness] ?? legacyPresets.default?.headless ?? Object.values(legacyPresets)[0]?.headless ?? interactiveOnlyHeadless
-    const rows: Array<{ readonly profile: string; readonly kind: CompositionCatalogEntry["kind"]; readonly description: string; readonly headless: HeadlessCapabilitiesV1 }> = [
-      ...presets.map((profile) => ({
-        profile,
-        kind: "preset" as const,
-        description: legacyPresets[profile]?.description ?? builtInDescriptions[`${harness}/${profile}`] ?? `${harness} ${profile}`,
-        headless: legacyPresets[profile]?.headless ?? defaultCapabilities,
-      })),
-      ...runCatalog.profileEntries
-        .filter((profile) => !profile.always && !presets.includes(profile.name) && profileApplies(profile, harness))
-        .map((profile) => ({
-          profile: profile.name,
-          kind: profileKind(profile),
-          description: configDescription(profile),
-          // Config profiles change composed content, not the harness CLI. Reuse the harness's default preset capability contract.
-          headless: profile.kind === "shared" && profile.name === "firstmate" ? interactiveOnlyHeadless : defaultCapabilities,
-        })),
-    ]
-    for (const row of rows) {
-      const guide = await loadGuide(options.guideRoot, harness, row.profile)
-      const runtime = row.kind === "preset" ? lifecycleRuntime(harness) : undefined
-      entries.push({
-        ref: formatCompositionRef(harness, [row.profile]),
-        harness,
-        profiles: [row.profile],
-        kind: row.kind,
-        canonicalHarness: harness !== "fx" && harness !== "headlong",
-        description: guide?.bestFor[0] ?? row.description,
-        headless: row.headless,
-        herdrCompatibility: herdrLedger.get(`${harness}/${row.profile}`) ?? { status: "untested" },
-        guide,
-        commandPath: options.commandPath,
-        lifecycle: runtime === undefined ? null : { runtime: runtime.runtimeName, profile: runtime.profileName(row.profile) },
-      })
-    }
-  }
+  const harnesses = runCatalog.harnesses.map(({ harness }) => harness)
+  const [herdrLedger, presetCatalogs] = await Promise.all([
+    loadHerdrLedger(options.guideRoot),
+    loadPresetCatalogs(harnesses),
+  ])
+  const entries = await loadCompositionEntries(runCatalog, options, presetCatalogs, herdrLedger)
   return { schemaVersion: 2, entries }
 }
