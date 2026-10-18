@@ -116,6 +116,7 @@ export const createGuideTerminal = async (
       }, waitOptions)
     },
     async pressAndWait(keys: string, ...texts: ReadonlyArray<string>): Promise<void> {
+      await new Promise<void>((resolve) => setTimeout(resolve, waitOptions.interval))
       press(keys)
       await waitForText(...texts)
     },
